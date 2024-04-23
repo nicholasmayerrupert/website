@@ -27,11 +27,10 @@ const About = () => {
         <div className="mt-8 mr-32 max-w-4xl bg-gray-900 rounded-lg p-6 shadow-lg">
           <pre className="text-base sm:text-lg text-left text-white">
             <code>
-              <span className="text-blue-400">// Define a dictionary with detailed programming skills</span>{'\n'}
+              <span className="text-blue-400">// Define a dictionary with the languages I know</span>{'\n'}
               <span className="text-red-500">const</span> <span className="text-purple-300">programmingLanguages</span> = {'{\n'}
               <span className="text-yellow-500">    languages</span>: ['<span className="text-green-500">C++</span>', '<span className="text-green-500">Python</span>', '<span className="text-green-500">Java</span>'],{'\n'}
               {'};'}{'\n'}
-              <span className="text-blue-400">// Strong foundational knowledge in multiple programming paradigms.</span>
             </code>
           </pre>
         </div>
@@ -45,7 +44,6 @@ const About = () => {
               <span className="text-yellow-500">    frameworks</span>: ['<span className="text-green-500">React</span>', '<span className="text-green-500">Node.js</span>'],{'\n'}
               <span className="text-yellow-500">    libraries</span>: ['<span className="text-green-500">Pandas</span>','<span className="text-green-500">Matplotlib</span>','<span className="text-green-500">NumPy</span>', '<span className="text-green-500">OpenCV</span>'],{'\n'}
               {'};'}{'\n'}
-              <span className="text-blue-400">// Proficient in modern web technologies and data manipulation libraries.</span>
             </code>
           </pre>
         </div>
@@ -55,8 +53,7 @@ const About = () => {
           <pre className="text-base sm:text-lg text-left text-white">
             <code>
               <span className="text-blue-400">// Additional skills I've developed</span>{'\n'}
-              <span className="text-red-500">const</span> <span className="text-purple-300">additionalSkills</span> = ['<span className="text-green-500">Game Modding</span>', '<span className="text-green-500">Pixel Art</span>', '<span className="text-green-500">Data Science</span>'];{'\n'}
-              <span className="text-blue-400">// Creative and technical ability in fields including game design and data science.</span>
+              <span className="text-red-500">const</span> <span className="text-purple-300">additionals</span> = ['<span className="text-green-500">Chess</span>', '<span className="text-green-500">Pixel Art</span>', '<span className="text-green-500">Data Science</span>'];{'\n'}
             </code>
           </pre>
         </div>     

@@ -8,7 +8,7 @@ const About = () => {
         autoplay: true, 
         animationData: animationData,
         rendererSettings: {
-          preserveAspectRatio: 'xMidYMid slice' // Adjust this value to fit the animation as needed
+          preserveAspectRatio: 'xMidYMid slice' 
         }
       };
   return (

@@ -72,7 +72,7 @@ const GameOfLife3D = () => {
     controls.dampingFactor = 0.05;
     controls.enabled = false;
 
-    camera.position.set(width / 2, height * 3, 0); // Position it a bit higher based on your grid size
+    camera.position.set(width / 2, height * 3, 0);
     camera.lookAt(new THREE.Vector3(width / 2, 0, depth / 2)); // Look at the center of the grid
 
     let frameCount = 0;

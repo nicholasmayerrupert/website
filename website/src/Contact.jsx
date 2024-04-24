@@ -16,7 +16,7 @@ const Contact = () => {
     ];
 
     return (
-        <div className="pt-48 bg-dark py-12">
+        <div className=" bg-dark py-12">
             <div className="container mx-auto">
                 <h2 className="text-4xl font-bold mb-8 text-center text-white">Contact Me :D</h2>
                 <div className="flex justify-center">

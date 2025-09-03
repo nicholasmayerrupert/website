@@ -1,28 +1,30 @@
-import GameOfLife3D from './GameOfLife3D';
+import GameOfLife3D from "./GameOfLife3D";
 
 const Hero = () => {
-    return (
-        <div className="relative flex flex-1 overflow-hidden h-screen">
-            {/* Text overlay positioned on the left side of the screen */}
-            <div className="w-1/3 flex flex-col justify-start text-white pl-48 pt-48 break-keep">
-                <h1 className="text-8xl font-bold mb-4 whitespace-nowrap">
-                    NICHOLAS <br /> MAYER-RUPERT
-                </h1>
-                <p className="text-3xl ml-16">
-                    COMPUTER SCIENCE STUDENT AT SFU. SOFTWARE ENGINEERING ENJOYER.
-                </p>
-            </div>
+  return (
+    <section className="relative flex h-[100dvh] flex-col md:flex-row overflow-hidden bg-[#222222]">
+      {/* Text block */}
+      <div className="order-1 md:order-1 w-full md:w-1/2 lg:w-1/3 z-10 text-white px-6 sm:px-12 md:pl-24 pt-16 sm:pt-20 md:pt-28">
+        <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-4 md:mb-6 leading-tight md:leading-none md:whitespace-nowrap">
+          NICHOLAS <br className="hidden md:block" /> MAYER-RUPERT
+        </h1>
+        <p className="text-xl sm:text-2xl md:text-3xl md:ml-16">
+          COMPUTER SCIENCE STUDENT AT SFU. SOFTWARE ENGINEERING ENJOYER.
+        </p>
+      </div>
 
-            {/* GameOfLife3D positioned more to the left but independently from the text */}
-            <div className="w-1/2 relative">
-                <GameOfLife3D className="absolute top-0 left-0 w-full h-full object-cover" />
-            </div>
+      {/* 3D scene */}
+      <div className="order-2 md:order-2 relative w-full md:w-1/2 h-[40dvh] md:h-auto pointer-events-none mt-6 md:mt-0 md:ml-[10vw] lg:ml-[14vw] xl:ml-[18vw]">
+        <GameOfLife3D className="absolute inset-0 w-full h-full" />
+      </div>
 
-            {/* Gradient at the bottom across the whole screen */}
-            <div className="absolute bottom-0 left-0 w-full h-1/6 bg-gradient-to-t from-[#121212] to-transparent"></div>
-            <div className="absolute top-0 left-0 w-full h-1/6 bg-gradient-to-t from-transparent to-[#121212]"></div>
-        </div>
-    )
+      {/* Top fade to page background */}
+      <div className="pointer-events-none absolute top-0 left-0 w-full h-[18vh] md:h-[20vh] bg-gradient-to-b from-[#121212] to-[transparent]" />
+
+      {/* Bottom fade to page background */}
+      <div className="pointer-events-none absolute bottom-0 left-0 w-full h-[18vh] md:h-[20vh] bg-gradient-to-t from-[#121212] to-[transparent]" />
+    </section>
+  );
 };
 
 export default Hero;

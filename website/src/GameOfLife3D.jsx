@@ -1,136 +1,216 @@
-import React, { useEffect, useRef } from 'react';
-import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass';
-import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass';
-const GameOfLife3D = () => {
-  const canvasRef = useRef(null);
+// src/GameOfLife3D.jsx
+import React, { useEffect, useRef } from "react";
+import * as THREE from "three";
+
+export default function GameOfLife3D({ className }) {
+  const containerRef = useRef(null);
 
   useEffect(() => {
+    // Grid sizes
     const width = 16;
-    const height = 28; // Now represents the depth of the grid
-    const depth = 16; // Now represents the height of the grid
-    const cubeSize = 0.95 //0.97;
+    const depth = 16;   // z per layer
+    const height = 32;  // number of layers (y)
+    const cubeSize = 0.93;
 
+    // ---- SPEED CONTROLS ----
+    const MAX_STEPS_PER_SECOND = 15;               // simulation speed cap
+    const STEP_INTERVAL_MS = 1000 / MAX_STEPS_PER_SECOND;
+    const ROTATION_SPEED_RAD_PER_SEC = 0.25;       // yaw speed
+    const YAW_DIRECTION = 1;                        // flip to -1 if you want the other way
+
+    const container = containerRef.current;
+    const { clientWidth, clientHeight } = container;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: false,
+      powerPreference: "high-performance",
+    });
+    renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    renderer.setSize(clientWidth, clientHeight);
+    container.appendChild(renderer.domElement);
+
+    // Scene
     const scene = new THREE.Scene();
-    scene.rotation.y = 3*Math.PI / 2; // Rotate the scene 90 degrees around the Y-axis
-    scene.rotation.x = Math.PI / 4;
-    scene.scale.set(3.25, 3.25, 3.25); // Scale every object in the scene by a factor of 2
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8); // soft white light
-    scene.add(ambientLight);
+    // Pivot hierarchy: pivot (yaw spin) -> content (static orientation)
+    const pivot = new THREE.Group();
+    scene.add(pivot);
 
-    const directionalLight = new THREE.DirectionalLight(0xeeeeff, 2);
-    directionalLight.position.set(1.5, 1, 0); // coming from the top
+    const content = new THREE.Group();
+    // Base orientation: 90° CCW around Z, with your existing yaw + tilt
+    content.rotation.y = (3 * Math.PI) / 2; // existing yaw
+    content.rotation.x = 0;      // tilt (pitch)
+    content.rotation.z = Math.PI / 2;       // 90° CCW base orientation
+    pivot.add(content);
+
+    // Lights (kept on the scene so lighting doesn't spin with the model)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const directionalLight = new THREE.DirectionalLight(0xeeeeff, 1.2);
+    directionalLight.position.set(1.5, 1, 0);
     scene.add(directionalLight);
 
-    const directionalLight2 = new THREE.DirectionalLight(0xeeedff, 2.5);
-    directionalLight.position.set(-3.5, -10, -3.5); // coming from the top
+    const directionalLight2 = new THREE.DirectionalLight(0xeeedff, 1.3);
+    directionalLight2.position.set(-3.5, -10, -3.5);
     scene.add(directionalLight2);
 
+    // Camera
+    const camera = new THREE.PerspectiveCamera(22, clientWidth / clientHeight, 0.5, 20000);
+    camera.position.set(0, height * 3, 0);
+    camera.lookAt(new THREE.Vector3(0, 0, 0));
 
-
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ alpha: true,antialias:true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    canvasRef.current.appendChild(renderer.domElement);
-
-    const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
-    const aliveMaterial = new THREE.MeshPhongMaterial({ color: 0xffffff });
-    const deadMaterial = new THREE.MeshStandardMaterial({ color: 0x000000, transparent: true, opacity: 0 });
-
-    // Initialize the 3D grid with false (dead cells)
-
-    
+    // Cells (3D boolean grid) with ring buffer
     let cells = Array.from({ length: height }, () =>
-    Array.from({ length: depth }, () => Array(width).fill(false))
-  );
+      Array.from({ length: depth }, () => Array(width).fill(false))
+    );
 
-  // Methuselah pattern input as a single string (provided pattern)
-  //const patternString = "1110011010110111111111110000101001001001010111010010011000100100001000001010001110000110001110100001100100101001001111010010110011011001100000111011110100001110100011110011100001111111111001111100010111010111011011111100010101000001111010011101010110000010";
-  //pretty good const patternString = "0010010010110110110001110000101101010001010111010010011000111101001110011110001110001101111110100001000100101001001111010010110011011001100110111011110100001110100011110011100001111111111001111100010111010111011011111100010101000001111010011111010110000010";
-  const patternString = "0010010010111110110001110000101101010001010111010010011000111101001110011110001110001101111110100001000100101001001111010010110011011001100110111011110100001110100011110011100001111111111001111100010111010111011011111100010101000001111010011111010110000010";
-  // Convert the string into a 2D array for the top layer
-  cells[height - 1] = patternString.match(/.{1,16}/g).map(row =>
-    row.split('').map(bit => bit === '1')
-  );
+    // Seed pattern on the top layer
+    const patternString =
+      "0010010010111110110001110000101101010001010111010010011000111101001110011110001110001101111110100001000100101001001111010010110011011001100110111011110100001110100011110011100001111111111001111100010111010111011011111100010101000001111010011111010110000010";
+    const topLayer = patternString.match(/.{1,16}/g).map((row) =>
+      row.split("").map((bit) => bit === "1")
+    );
+    cells[height - 1] = topLayer;
 
-    const cubes = cells.flat(2).map((cell, idx) => {
-      const y = Math.floor(idx / (width * depth));
-      const z = Math.floor((idx % (width * depth)) / width);
-      const x = idx % width;
-      const material = cell ? aliveMaterial : deadMaterial;
-      const cube = new THREE.Mesh(geometry, material);
-      cube.position.set(x - width / 2, z - depth / 2, y - height / 2);
-      scene.add(cube);
-      return cube;
-    });
+    // Instanced mesh (one draw call)
+    const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+    const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const instanceCap = width * depth * height;
+    const instanced = new THREE.InstancedMesh(geometry, material, instanceCap);
+    instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    instanced.count = 0;
+    content.add(instanced); // add to content so yaw spins via parent pivot
 
-    const controls = new OrbitControls(camera, renderer.domElement);
+    // Precompute transforms (positions relative to 'content')
+    const precomputed = [];
+    const tmpPos = new THREE.Vector3();
+    const unitQuat = new THREE.Quaternion();
+    const unitScale = new THREE.Vector3(1, 1, 1);
 
-    controls.dampingFactor = 0.05;
-    controls.enabled = false;
+    const idxFor = (x, y, z) => y * (width * depth) + z * width + x;
 
-    camera.position.set(width / 2, height * 3, 0);
-    camera.lookAt(new THREE.Vector3(width / 2, 0, depth / 2)); // Look at the center of the grid
-
-    let frameCount = 0;
-    const frameSkip = 5;
-
-    const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-      if ( frameCount % frameSkip === 0){
-      // Move each slice down one level in y, update the top slice according to Game of Life rules
-      for (let y = 0; y < height - 1; y++) {
-        cells[y] = cells[y + 1];
+    for (let y = 0; y < height; y++) {
+      for (let z = 0; z < depth; z++) {
+        for (let x = 0; x < width; x++) {
+          const idx = idxFor(x, y, z);
+          // Map layer index to world Y (top-down motion)
+          tmpPos.set(x - width / 2, y - height / 2, z - depth / 2);
+          precomputed[idx] = new THREE.Matrix4().compose(
+            tmpPos.clone(),
+            unitQuat,
+            unitScale
+          );
+        }
       }
-      cells[height - 1] = getNextGeneration(cells[height - 1], width, depth);
-      scene.rotation.z += 0.02;
-      // Update cube materials
-      cells.flat(2).forEach((cell, idx) => {
-        cubes[idx].material = cell ? aliveMaterial : deadMaterial;
-      });
     }
-      renderer.render(scene, camera);
-      frameCount++;
-    };
 
-    const getNextGeneration = (currentLayer, width, depth) => {
-      return currentLayer.map((row, z) =>
-        row.map((cell, x) => {
-          const liveNeighbors = countLiveNeighbors(currentLayer, x, z, width, depth);
-          if (cell) {
-            return liveNeighbors === 2 || liveNeighbors === 3;
-          } else {
-            return liveNeighbors === 3;
-          }
-        })
-      );
-    };
-
-    const countLiveNeighbors = (layer, x, z, width, depth) => {
+    // Life helpers
+    const countLiveNeighbors = (layer, x, z) => {
       let count = 0;
-      for (let i = -1; i <= 1; i++) {
-        for (let j = -1; j <= 1; j++) {
-          if (i === 0 && j === 0) continue;
-          const dx = (x + i + width) % width;
-          const dz = (z + j + depth) % depth;
-          if (layer[dz][dx]) count++;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          if (dx === 0 && dz === 0) continue;
+          const nx = (x + dx + width) % width;
+          const nz = (z + dz + depth) % depth;
+          if (layer[nz][nx]) count++;
         }
       }
       return count;
     };
 
+    const nextGeneration = (current) => {
+      const next = Array.from({ length: depth }, () => Array(width).fill(false));
+      for (let z = 0; z < depth; z++) {
+        for (let x = 0; x < width; x++) {
+          const alive = current[z][x];
+          const n = countLiveNeighbors(current, x, z);
+          next[z][x] = alive ? n === 2 || n === 3 : n === 3;
+        }
+      }
+      return next;
+    };
+
+    // Render alive cells
+    const updateInstances = () => {
+      let aliveCount = 0;
+      for (let y = 0; y < height; y++) {
+        const layer = cells[y];
+        for (let z = 0; z < depth; z++) {
+          const row = layer[z];
+          for (let x = 0; x < width; x++) {
+            if (row[x]) {
+              const srcIdx = idxFor(x, y, z);
+              instanced.setMatrixAt(aliveCount++, precomputed[srcIdx]);
+            }
+          }
+        }
+      }
+      instanced.count = aliveCount;
+      instanced.instanceMatrix.needsUpdate = true;
+    };
+
+    updateInstances();
+
+    let raf = 0;
+    let lastStepTime = performance.now();
+    let lastRenderTime = lastStepTime;
+    let spin = 0;
+
+    const animate = () => {
+      raf = requestAnimationFrame(animate);
+
+      const now = performance.now();
+      const dt = now - lastRenderTime;
+
+      // Simulation step limiter
+      if (now - lastStepTime >= STEP_INTERVAL_MS) {
+        cells.shift();
+        const newTop = nextGeneration(cells[cells.length - 1]);
+        cells.push(newTop);
+        updateInstances();
+        lastStepTime = now;
+      }
+
+      // True yaw: rotate the pivot around Y
+      spin += YAW_DIRECTION * ROTATION_SPEED_RAD_PER_SEC * (dt / 1000);
+      pivot.rotation.z = spin;
+
+      renderer.render(scene, camera);
+      lastRenderTime = now;
+    };
+
     animate();
 
+    // Resize to container
+    const onResize = () => {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    const ro = new ResizeObserver(onResize);
+    ro.observe(container);
+
+    // Cleanup
     return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+      geometry.dispose();
+      material.dispose();
       renderer.dispose();
+      if (renderer.domElement.parentElement === container) {
+        container.removeChild(renderer.domElement);
+      }
     };
   }, []);
 
-  return <div ref={canvasRef} />;
-};
-
-export default GameOfLife3D;
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ width: "100%", height: "100%" }}
+    />
+  );
+}

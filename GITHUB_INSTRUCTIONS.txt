@@ -1,0 +1,6 @@
+# from repo root 
+npm ci
+npm run build
+git add docs
+git commit -m "Build site to docs for GitHub Pages"
+git push

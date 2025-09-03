@@ -4,7 +4,6 @@ import { AiOutlineArrowDown } from 'react-icons/ai';
 import NavBar from './NavBar';
 import Hero from './Hero';
 import About from "./About";
-import GridTiles from "./GridTiles";
 import Contact from "./Contact";
 import TileGrid from "./TileGrid";
 

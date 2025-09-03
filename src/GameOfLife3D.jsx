@@ -39,26 +39,30 @@ export default function GameOfLife3D({ className }) {
     scene.add(pivot);
 
     const content = new THREE.Group();
-    // Base orientation: 90° CCW around Z, with your existing yaw + tilt
-    content.rotation.y = (3 * Math.PI) / 2; // existing yaw
-    content.rotation.x = 0;      // tilt (pitch)
-    content.rotation.z = Math.PI / 2;       // 90° CCW base orientation
+    // Base orientation: 90° CCW around Z, with your existing yaw
+    content.rotation.y = (3 * Math.PI) / 6;
+    content.rotation.x = 0;
+    content.rotation.z = Math.PI / 2;
     pivot.add(content);
 
     // Lights (kept on the scene so lighting doesn't spin with the model)
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const directionalLight = new THREE.DirectionalLight(0xeeeeff, 1.2);
+    const directionalLight = new THREE.DirectionalLight(0xcccccc, 1.2);
     directionalLight.position.set(1.5, 1, 0);
     scene.add(directionalLight);
 
-    const directionalLight2 = new THREE.DirectionalLight(0xeeedff, 1.3);
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.6); // a bit brighter from below
     directionalLight2.position.set(-3.5, -10, -3.5);
     scene.add(directionalLight2);
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(22, clientWidth / clientHeight, 0.5, 20000);
-    camera.position.set(0, height * 3, 0);
-    camera.lookAt(new THREE.Vector3(0, 0, 0));
+    // Camera — bottom-up / underslung
+    const camera = new THREE.PerspectiveCamera(30, clientWidth / clientHeight, 0.5, 20000);
+    // Place camera below the stack (negative Y) and slightly forward on Z
+    camera.position.set(0, -height * 2.2, depth * 0.8);
+    // Use +Z as "up" so the pivot's Z-rotation reads as yaw from this angle
+    camera.up.set(0, 0, 1);
+    // Look slightly above center
+    camera.lookAt(new THREE.Vector3(0, height * 0.1, 0));
 
     // Cells (3D boolean grid) with ring buffer
     let cells = Array.from({ length: height }, () =>
@@ -172,7 +176,7 @@ export default function GameOfLife3D({ className }) {
         lastStepTime = now;
       }
 
-      // True yaw: rotate the pivot around Y
+      // True yaw: rotate the pivot around Z
       spin += YAW_DIRECTION * ROTATION_SPEED_RAD_PER_SEC * (dt / 1000);
       pivot.rotation.z = spin;
 

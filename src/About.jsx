@@ -550,10 +550,10 @@ function SandOverlay() {
     };
 
     // --- Stone rigid-body movement (in-place on grid) ---
-    function moveStoneComponentsDown() {
+  function moveStoneComponentsDown() {
       if (stoneComponents.length === 0) return;
 
-      // Recompute yMax and sort by yMax descending (move lower blocks first)
+      // Recompute yMax and move lower components first
       for (const comp of stoneComponents) {
         let ym = 0;
         for (const k of comp.cells) { const [, y] = XY(k); if (y > ym) ym = y; }
@@ -561,24 +561,47 @@ function SandOverlay() {
       }
       stoneComponents.sort((a, b) => b.yMax - a.yMax);
 
-      // Determine which components can move down by 1
       for (const comp of stoneComponents) {
         let canMove = true;
+
+        // Check if every cell can move down by 1
         for (const k of comp.cells) {
           const [x, y] = XY(k);
           const ny = y + 1;
           if (ny >= rows) { canMove = false; break; }
           const belowK = I(x, ny);
-          // If a cell below is EMPTY OR part of the same component (which it can't be since we're checking one step down),
-          // allow. If it's anything else (sand/water/stone from other comps), block.
-          if (!comp.cells.has(belowK) && grid[belowK] !== EMPTY) { canMove = false; break; }
+
+          // If below belongs to this same component (rare on a single-step), it's fine.
+          if (comp.cells.has(belowK)) continue;
+
+          // Allow EMPTY or WATER; block on SAND or STONE from other comps
+          const mat = grid[belowK];
+          if (mat !== EMPTY && mat !== WATER) { canMove = false; break; }
         }
         if (!canMove) continue;
 
-        // Clear old positions
+        // Build list of water swaps: water under a stone cell will rise into the stone's old cell
+        /** @type {Array<[number, number]>} */ // [waterIndexBelow, stoneOriginIndex]
+        const waterSwaps = [];
+        for (const k of comp.cells) {
+          const [x, y] = XY(k);
+          const belowK = I(x, y + 1);
+          if (!comp.cells.has(belowK) && grid[belowK] === WATER) {
+            waterSwaps.push([belowK, k]);
+          }
+        }
+
+        // 1) Clear old stone cells
         for (const k of comp.cells) grid[k] = EMPTY;
 
-        // Write new positions (down by 1)
+        // 2) Move water up into the vacated stone cells (1:1 swap)
+        for (const [waterIdx, originIdx] of waterSwaps) {
+          // Only lift if origin is still empty (it is, we just cleared stones)
+          // Note: we don't need to clear waterIdx here; it will be overwritten by stone in step 3.
+          grid[originIdx] = WATER;
+        }
+
+        // 3) Write new stone positions one row lower
         const newCells = new Set();
         for (const k of comp.cells) {
           const [x, y] = XY(k);
@@ -586,11 +609,11 @@ function SandOverlay() {
           newCells.add(nk);
         }
         for (const nk of newCells) grid[nk] = STONE;
+
         comp.cells = newCells;
         comp.yMax = Math.min(rows - 1, comp.yMax + 1);
       }
     }
-
     // Physics step
     const step = () => {
       // 1) Move rigid stones first, directly on grid

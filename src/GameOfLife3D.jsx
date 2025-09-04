@@ -9,7 +9,7 @@ export default function GameOfLife3D({ className }) {
     // Grid sizes
     const width = 16;
     const depth = 16;   // z per layer
-    const height = 32;  // number of layers (y)
+    const height = 30;  // number of layers (y)
     const cubeSize = 0.93;
 
     // ---- SPEED CONTROLS ----
@@ -56,7 +56,7 @@ export default function GameOfLife3D({ className }) {
     scene.add(directionalLight2);
 
     // Camera — bottom-up / underslung
-    const camera = new THREE.PerspectiveCamera(30, clientWidth / clientHeight, 0.5, 20000);
+    const camera = new THREE.PerspectiveCamera(35, clientWidth / clientHeight, 0.5, 20000);
     // Place camera below the stack (negative Y) and slightly forward on Z
     camera.position.set(0, -height * 2.2, depth * 0.8);
     // Use +Z as "up" so the pivot's Z-rotation reads as yaw from this angle

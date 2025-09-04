@@ -66,7 +66,7 @@ function ResponsiveLottie({ animationData }) {
   );
 }
 
-/* ---------- PONG OVERLAY (left = player, right = AI) ---------- */
+/* ---------- PONG OVERLAY (half-activation AI; left starts AI, switches to player on input) ---------- */
 function PongOverlay() {
   const overlayRef = useRef(null);
   const canvasRef = useRef(null);
@@ -83,12 +83,11 @@ function PongOverlay() {
   useEffect(() => {
     if (!overlayRef.current || !canvasRef.current || !ctrlRef.current) return;
 
-    const wrapper = overlayRef.current; // absolute, fills the section
+    const wrapper = overlayRef.current;
     const canvas = canvasRef.current;
-    const ctrl = ctrlRef.current;       // only this area consumes touch
-    const ctx = canvas.getContext('2d', { alpha: true }); // transparent
+    const ctx = canvas.getContext('2d', { alpha: true });
+    if (!ctx) return;
 
-    // Size canvas to wrapper (entire section)
     const setCanvasSize = () => {
       const { width, height } = wrapper.getBoundingClientRect();
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -100,20 +99,20 @@ function PongOverlay() {
     };
     setCanvasSize();
 
-    // World dims (CSS pixels)
     const world = () => {
       const r = wrapper.getBoundingClientRect();
       return { w: r.width || 600, h: r.height || 400 };
     };
 
-    // Game objects
     let { w, h } = world();
     const PAD_W = 12;
     const PAD_H = Math.max(60, Math.min(160, h * 0.22));
     const PAD_MARGIN = 18;
     const BALL_R = 8;
+
     const PADDLE_SPEED = 520;
     const AI_SPEED = 420;
+    const AI_IDLE_SPEED = 280; // gentle drift back to center when inactive
     const BALL_SPEED = 360;
     const BALL_SPEED_MAX = 780;
     const BALL_SPEED_INC = 1.05;
@@ -124,15 +123,21 @@ function PongOverlay() {
     if (Math.random() < 0.5) ball.vx *= -1;
     if (Math.random() < 0.5) ball.vy *= -1;
 
+    // left starts AI, flips to player on first input
+    let leftMode = 'auto'; // 'auto' | 'player'
+
     let last = performance.now();
     let anim = 0;
 
-    // Keyboard (optional)
+    // Keyboard
     const keys = new Set();
     const onKey = (e) => {
       if (e.type === 'keydown') {
         if (e.code === 'Space') { e.preventDefault(); setPaused(p => !p); return; }
         keys.add(e.code);
+        if (e.code === 'KeyW' || e.code === 'KeyS' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+          leftMode = 'player';
+        }
       } else {
         keys.delete(e.code);
       }
@@ -140,9 +145,7 @@ function PongOverlay() {
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
 
-    // Left-side input only
-    // Touch: relative drag inside control region (thumb-friendly)
-    // Mouse: absolute drag
+    // Pointer controls (left region only)
     let dragging = false;
     let mode = 'absolute';
     const TOUCH_SENSITIVITY = 1.25;
@@ -157,14 +160,13 @@ function PongOverlay() {
     };
 
     const onCtrlPointerDown = (e) => {
-      // Only this left control area has touch-action:none, so it won’t scroll
+      leftMode = 'player';
       dragging = true;
       if (e.pointerType === 'touch') {
         mode = 'relative';
         startTouchY = getYWithinOverlay(e);
         startPaddleY = left.y;
         e.preventDefault();
-        // capture subsequent moves on this element
         if (e.currentTarget.setPointerCapture) e.currentTarget.setPointerCapture(e.pointerId);
       } else {
         mode = 'absolute';
@@ -192,12 +194,13 @@ function PongOverlay() {
       }
     };
 
-    // Attach handlers to LEFT control region only
-    ctrl.addEventListener('pointerdown', onCtrlPointerDown, { passive: false });
-    ctrl.addEventListener('pointermove', onCtrlPointerMove,  { passive: false });
-    ctrl.addEventListener('pointerup',   onCtrlPointerUp,    { passive: false });
-    ctrl.addEventListener('pointercancel', onCtrlPointerUp,  { passive: false });
-    ctrl.addEventListener('pointerleave',  onCtrlPointerUp,  { passive: false });
+    const ctrlEl = ctrlRef.current;
+    if (!ctrlEl) return;
+    ctrlEl.addEventListener('pointerdown', onCtrlPointerDown, { passive: false });
+    ctrlEl.addEventListener('pointermove', onCtrlPointerMove,  { passive: false });
+    ctrlEl.addEventListener('pointerup',   onCtrlPointerUp,    { passive: false });
+    ctrlEl.addEventListener('pointercancel', onCtrlPointerUp,  { passive: false });
+    ctrlEl.addEventListener('pointerleave',  onCtrlPointerUp,  { passive: false });
 
     // Resize
     const ro = new ResizeObserver(() => {
@@ -213,6 +216,22 @@ function PongOverlay() {
     ro.observe(wrapper);
 
     const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
+    const centerY = (h - PAD_H) / 2;
+
+    // AI driver
+    const drivePaddleAI = (pad, targetX, dt) => {
+      const goingTowardPad = (targetX > ball.x && ball.vx > 0) || (targetX < ball.x && ball.vx < 0);
+      const travelTime = goingTowardPad ? Math.min(0.2, Math.abs(targetX - ball.x) / Math.max(Math.abs(ball.vx), 1e-3)) : 0.06;
+      const aimYCenter = ball.y + ball.vy * travelTime;
+      const aimTop = clamp(aimYCenter - PAD_H / 2, 0, h - PAD_H);
+      const dy = aimTop - pad.y;
+      pad.y = clamp(pad.y + clamp(dy, -AI_SPEED * dt, AI_SPEED * dt), 0, h - PAD_H);
+    };
+
+    const relaxToCenter = (pad, dt) => {
+      const dy = centerY - pad.y;
+      pad.y = clamp(pad.y + clamp(dy, -AI_IDLE_SPEED * dt, AI_IDLE_SPEED * dt), 0, h - PAD_H);
+    };
 
     // Loop
     const step = (now) => {
@@ -222,16 +241,29 @@ function PongOverlay() {
       last = now;
 
       const actuallyPaused = pausedRef.current || rmRef.current;
-
-      const upL = keys.has('KeyW');
-      const downL = keys.has('KeyS');
-
       if (!actuallyPaused) {
-        // Keyboard nudges add on top of touch/drag
-        const keyboardVy = (upL ? -PADDLE_SPEED : 0) + (downL ? PADDLE_SPEED : 0);
-        if (keyboardVy !== 0) {
-          left.y = clamp(left.y + keyboardVy * dt, 0, h - PAD_H);
+        // Activation band around center to avoid both paddles moving
+        const MID = w / 2;
+        const BAND = Math.max(40, w * 0.04); // a little hysteresis so both don't trigger
+
+        const leftActive  = (ball.vx < 0 && ball.x <= MID + BAND);  // ball moving left and on/near left half
+        const rightActive = (ball.vx > 0 && ball.x >= MID - BAND); // ball moving right and on/near right half
+
+        // LEFT paddle
+        if (leftMode === 'player') {
+          const keyboardVy =
+            (keys.has('KeyW') || keys.has('ArrowUp') ? -PADDLE_SPEED : 0) +
+            (keys.has('KeyS') || keys.has('ArrowDown') ? PADDLE_SPEED : 0);
+          if (keyboardVy !== 0) left.y = clamp(left.y + keyboardVy * dt, 0, h - PAD_H);
+          // pointer drag already updates left.y
+        } else {
+          if (leftActive) drivePaddleAI(left, left.x + PAD_W / 2, dt);
+          else relaxToCenter(left, dt);
         }
+
+        // RIGHT paddle (always AI, but only when active)
+        if (rightActive) drivePaddleAI(right, right.x + PAD_W / 2, dt);
+        else relaxToCenter(right, dt);
 
         // Ball
         ball.x += ball.vx * dt;
@@ -255,15 +287,6 @@ function PongOverlay() {
         if (ball.x - BALL_R <= left.x + PAD_W) {
           if (collidePaddle(left)) ball.x = left.x + PAD_W + BALL_R + 0.5;
         }
-
-        // AI (right)
-        const goingRight = ball.vx > 0;
-        const lookahead = goingRight ? Math.min(0.2, (right.x - ball.x) / Math.abs(ball.vx)) : 0.06;
-        const targetYCenter = ball.y + ball.vy * lookahead;
-        const targetY = clamp(targetYCenter - PAD_H / 2, 0, h - PAD_H);
-        const dy = targetY - right.y;
-        right.y = clamp(right.y + clamp(dy, -AI_SPEED * dt, AI_SPEED * dt), 0, h - PAD_H);
-
         if (ball.x + BALL_R >= right.x) {
           if (collidePaddle(right)) ball.x = right.x - BALL_R - 0.5;
         }
@@ -280,7 +303,7 @@ function PongOverlay() {
         if (ball.x > w + 40) reset(-1);
       }
 
-      // Draw (transparent)
+      // Draw
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#fff';
       ctx.fillRect(left.x, left.y, PAD_W, PAD_H);
@@ -296,29 +319,23 @@ function PongOverlay() {
       cancelAnimationFrame(anim);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('keyup', onKey);
-      ctrl.removeEventListener('pointerdown', onCtrlPointerDown);
-      ctrl.removeEventListener('pointermove', onCtrlPointerMove);
-      ctrl.removeEventListener('pointerup', onCtrlPointerUp);
-      ctrl.removeEventListener('pointercancel', onCtrlPointerUp);
-      ctrl.removeEventListener('pointerleave', onCtrlPointerUp);
+      ctrlEl.removeEventListener('pointerdown', onCtrlPointerDown);
+      ctrlEl.removeEventListener('pointermove', onCtrlPointerMove);
+      ctrlEl.removeEventListener('pointerup', onCtrlPointerUp);
+      ctrlEl.removeEventListener('pointercancel', onCtrlPointerUp);
+      ctrlEl.removeEventListener('pointerleave', onCtrlPointerUp);
       ro.disconnect();
     };
   }, []);
 
   return (
-    <div
-      ref={overlayRef}
-      className="absolute inset-0 z-30"
-      aria-hidden="false"
-    >
-      {/* Full-bleed game canvas (does not block scroll) */}
+    <div ref={overlayRef} className="absolute inset-0 z-30" aria-hidden="false">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none select-none"
         role="img"
         aria-label="Pong overlay"
       />
-
       {/* Left-side control region only (captures touch; right side scrolls) */}
       <div
         ref={ctrlRef}
@@ -329,6 +346,7 @@ function PongOverlay() {
     </div>
   );
 }
+
 
 
 /* ---------- PAGE ---------- */
@@ -344,40 +362,59 @@ export default function About() {
             </h2>
 
             <div className="mt-6 md:mt-8 md:ml-auto md:max-w-xl space-y-6">
-              {/* Programming Languages */}
-              <div className="bg-gray-900 rounded-lg p-4 sm:p-6 shadow-lg overflow-x-auto">
-                <pre className="text-sm sm:text-base text-left text-white whitespace-pre">
-                  <code>
-                    <span className="text-blue-400">// Define a dictionary with the languages I know</span>{'\n'}
-                    <span className="text-red-500">const</span> <span className="text-purple-300">programmingLanguages</span> = {'{\n'}
-                    <span className="text-yellow-500">    languages</span>: ['<span className="text-green-500">C++</span>', '<span className="text-green-500">Python</span>', '<span className="text-green-500">Java</span>'],{'\n'}
-                    {'};'}{'\n'}
-                  </code>
-                </pre>
-              </div>
+  {/* Experience: Connection Lab (top) */}
+  <div className="bg-gray-900 rounded-lg p-4 sm:p-6 shadow-lg overflow-hidden">
+    <pre className="text-sm sm:text-base text-left text-white whitespace-pre-wrap break-words">
+      <code>
+        <span className="text-blue-400">// Internship experience</span>{'\n'}
+        <span className="text-red-500">const</span> <span className="text-purple-300">connectionLab</span> {'= {'}{'\n'}
+        {'    '}<span className="text-yellow-500">role</span>{": '"}<span className="text-green-500">Full-Stack Developer Intern</span>{"',"}{'\n'}
+        {'    '}<span className="text-yellow-500">stack</span>{': {'}{'\n'}
+        {'        '}<span className="text-yellow-500">frontend</span>{": ['"}<span className="text-green-500">JavaScript</span>{"', '"}<span className="text-green-500">Handlebars</span>{"'],"}{'\n'}
+        {'        '}<span className="text-yellow-500">backend</span>{": ['"}<span className="text-green-500">Node.js</span>{"'],"}{'\n'}
+        {'        '}<span className="text-yellow-500">database</span>{": ['"}<span className="text-green-500">SQL</span>{"']"}{'\n'}
+        {'    '}{'},'}{'\n'}
+        {'    '}<span className="text-yellow-500">contributions</span>{": ["}{'\n'}
+        {'        '}"<span className="text-green-500">Built a production website end-to-end (frontend & backend)</span>{"\","}{'\n'}
+        {'        '}"<span className="text-green-500">Designed REST APIs and integrated client-side views</span>{"\","}{'\n'}
+        {'        '}"<span className="text-green-500">Managed relational schema, migrations, and optimized queries</span>{"\","}{'\n'}
+        {'        '}"<span className="text-green-500">Implemented auth, validation, and robust error handling</span>"{'\n'}
+        {'    '}{"]"}{'\n'}
+        {'}'}{';'}{'\n'}
+      </code>
+    </pre>
+  </div>
 
-              {/* Frameworks and Libraries */}
-              <div className="bg-gray-900 rounded-lg p-4 sm:p-6 shadow-lg overflow-x-auto">
-                <pre className="text-sm sm:text-base text-left text-white whitespace-pre">
-                  <code>
-                    <span className="text-blue-400">// Frameworks and libraries I've worked with</span>{'\n'}
-                    <span className="text-red-500">const</span> <span className="text-purple-300">frameworksAndLibraries</span> = {'{\n'}
-                    <span className="text-yellow-500">    frameworks</span>: ['<span className="text-green-500">React</span>', '<span className="text-green-500">Node.js</span>'],{'\n'}
-                    <span className="text-yellow-500">    libraries</span>: ['<span className="text-green-500">Pandas</span>','<span className="text-green-500">Matplotlib</span>','<span className="text-green-500">NumPy</span>', '<span className="text-green-500">OpenCV</span>'],{'\n'}
-                    {'};'}{'\n'}
-                  </code>
-                </pre>
-              </div>
+  {/* Unified Languages + Back-end & DB (merged) */}
+<div className="bg-gray-900 rounded-lg p-4 sm:p-6 shadow-lg overflow-hidden">
+  <pre className="text-sm sm:text-base text-left text-white whitespace-pre-wrap break-words">
+    <code>
+      <span className="text-blue-400">// Languages + back-end profile</span>{'\n'}
+      <span className="text-red-500">const</span> <span className="text-purple-300">techStack</span> {'= {'}{'\n'}
+      {'    '}<span className="text-yellow-500">languages</span>{": ['"}
+      <span className="text-green-500">C++</span>{"', '"}
+      <span className="text-green-500">Python</span>{"', '"}
+      <span className="text-green-500">Java</span>{"', '"}
+      <span className="text-green-500">JavaScript (ES6+)</span>{"', '"}
+      <span className="text-green-500">SQL</span>{"'],"}{'\n'}
+      {'    '}<span className="text-yellow-500">backend</span>{': {'}{'\n'}
+      {'        '}<span className="text-yellow-500">strengths</span>{": ['"}
+      <span className="text-green-500">REST APIs</span>{"', '"}
+      <span className="text-green-500">Auth & sessions</span>{"', '"}
+      <span className="text-green-500">Schema design</span>{"', '"}
+      <span className="text-green-500">Query optimization</span>{"'],"}{'\n'}
+      {'        '}<span className="text-yellow-500">summary</span>{": '"}
+      <span className="text-green-500">Production experience building secure, well-documented services and data models.</span>{"'"}{'\n'}
+      {'    '}{'}'},{'\n'}
+      {'    '}<span className="text-yellow-500">value</span>{": '"}
+      <span className="text-green-500">Bridges front-end and back-end to ship features quickly, safely, and with polish.</span>{"'"}{'\n'}
+      {'}'}{';'}{'\n'}
+    </code>
+  </pre>
+</div>
 
-              {/* Additional Skills */}
-              <div className="bg-gray-900 rounded-lg p-4 sm:p-6 shadow-lg overflow-x-auto">
-                <pre className="text-sm sm:text-base text-left text-white whitespace-pre">
-                  <code>
-                    <span className="text-blue-400">// Additional skills I've developed</span>{'\n'}
-                    <span className="text-red-500">const</span> <span className="text-purple-300">additionals</span> = ['<span className="text-green-500">Chess</span>', '<span className="text-green-500">Pixel Art</span>', '<span className="text-green-500">Data Science</span>'];{'\n'}
-                  </code>
-                </pre>
-              </div>
+
+
             </div>
           </div>
 

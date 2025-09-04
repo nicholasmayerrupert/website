@@ -52,8 +52,10 @@ function ResponsiveLottie({ animationData }) {
     };
   }, []);
 
-  return (
-    <div ref={containerRef} className="w-full aspect-square">
+return (
+  <div ref={containerRef} className="w-full aspect-square grid place-items-center">
+    {/* This box gets the computed square size and is centered */}
+    <div style={{ width: size, height: size }}>
       <Lottie
         options={{
           loop: !prefersReducedMotion,
@@ -64,9 +66,11 @@ function ResponsiveLottie({ animationData }) {
         height={size}
         width={size}
         isClickToPauseDisabled
+        style={{ display: 'block' }} // avoid extra inline gaps
       />
     </div>
-  );
+  </div>
+);
 }
 
 /* ---------- Snake backdrop (autopilot + player takeover) ---------- */
@@ -388,9 +392,9 @@ export default function TileGrid() {
                     </div>
                   ) : (
                     <div className="relative">
-                      <div className="px-3 pt-3">
-                        <ResponsiveLottie animationData={tile.animation} />
-                      </div>
+                        <div className="p-3">
+                          <ResponsiveLottie animationData={tile.animation} />
+                        </div>
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <h3 className="inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
                           {tile.title}

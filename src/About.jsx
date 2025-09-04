@@ -72,18 +72,20 @@ function SandOverlay() {
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'eraser' | 'stone'
-  const [isDrawing, setIsDrawing] = useState(true);
+  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone'
+  const [emittersOn, setEmittersOn] = useState(true);
+  const [sinksOn, setSinksOn] = useState(true);
 
   // Refs read by the simulation loop
   const toolRef = useRef('sand');
-  const isDrawingRef = useRef(true);
+  const emittersOnRef = useRef(true);
+  const sinksOnRef = useRef(true);
   const overrideToolRef = useRef(null); // 'eraser' while RMB held
 
   useEffect(() => { toolRef.current = selectedTool; }, [selectedTool]);
-  useEffect(() => { isDrawingRef.current = isDrawing; }, [isDrawing]);
+  useEffect(() => { emittersOnRef.current = emittersOn; }, [emittersOn]);
+  useEffect(() => { sinksOnRef.current = sinksOn; }, [sinksOn]);
 
-  // --- Simulation (mounted once; no grid reset) ---
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
@@ -102,11 +104,27 @@ function SandOverlay() {
     const STEP_MS = 1;
     const MAX_WATER_FLOW = 10;
 
-    // Opacity / colors
+    // Colors
     const SAND_COLOR = 'rgba(230, 200, 120, 0.475)';
     const WATER_COLOR = 'rgba(120, 170, 255, 0.40)';
     const STONE_COLOR = 'rgba(140, 140, 150, 0.70)';
     const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
+
+    // Side-sink settings (bottom is NOT a sink)
+    const SINK_STRIP_W = 2;
+    const INNER_STRIP_W = 1;
+    const SINK_WATER_P = 0.85;
+    const SINK_SAND_P  = 0.35;
+    const INNER_WATER_P = 0.35;
+    const INNER_SAND_P  = 0.10;
+
+    // Emitters (normalized positions) + buffers
+    const emitterDefs = [
+      { type: 'sand',  rateMs: 120, pos: { x: 0.12, y: 0.14 }, r: 2 },
+      { type: 'water', rateMs:  90, pos: { x: 0.88, y: 0.14 }, r: 2 },
+    ];
+    const EMITTER_EDGE_BUFFER = 3; // cells from side
+    const EMITTER_TOP_BUFFER  = 3; // cells from top
 
     // Materials
     const EMPTY = 0;
@@ -132,6 +150,9 @@ function SandOverlay() {
     /** @type {Set<number>} */
     let stoneDraft = new Set();
 
+    // Emitters (grid coords with timing)
+    let emitters = [];
+
     // Pointer tracking
     let clientX = -1, clientY = -1;
     let px = -1, py = -1;
@@ -144,8 +165,8 @@ function SandOverlay() {
       const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
       reduced = mq.matches;
       const onChange = () => (reduced = mq.matches);
-      if (mq.addEventListener) mq.addEventListener('change', onChange);
-      else mq.addListener(onChange);
+      mq.addEventListener?.('change', onChange);
+      mq.addListener?.(onChange);
     }
 
     // Fit grid/canvas
@@ -159,6 +180,8 @@ function SandOverlay() {
         }
       }
     };
+
+    const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
     const fit = () => {
       const { width, height } = wrap.getBoundingClientRect();
@@ -183,6 +206,16 @@ function SandOverlay() {
       stoneDraft.clear();
 
       seedInitialSand();
+
+      // Prepare emitters with edge/top buffers
+      emitters = emitterDefs.map(e => {
+        const rawX = Math.floor(e.pos.x * cols);
+        const rawY = Math.floor(e.pos.y * rows);
+        const gx = clamp(rawX, 1 + EMITTER_EDGE_BUFFER, cols - 2 - EMITTER_EDGE_BUFFER);
+        const gy = clamp(rawY, 1 + EMITTER_TOP_BUFFER,  rows - 2 - EMITTER_EDGE_BUFFER);
+        return { ...e, gx, gy, last: 0 };
+      });
+
       ctx.clearRect(0, 0, width, height);
     };
 
@@ -220,7 +253,9 @@ function SandOverlay() {
       }
     };
 
-    // LMB toggles draw for sand/water/eraser; for STONE it becomes hold-to-draft, release-to-drop
+    // LMB:
+    // - sand/water: paint while held
+    // - stone: hold to draft; release to drop
     const onPointerDown = (e) => {
       updatePointer(e.clientX, e.clientY);
       const overUI = uiRef.current && uiRef.current.contains(e.target);
@@ -228,29 +263,21 @@ function SandOverlay() {
 
       if (e.button === 0) {
         lmbDown = true;
-        // If active tool (considering RMB override) is stone, start drafting instead of toggling draw
         const rmbHeld = overrideToolRef.current === 'eraser';
         const activeTool = rmbHeld ? 'eraser' : toolRef.current;
 
         if (activeTool === 'stone') {
           isDraftingStone = true;
-          // seed first dab
           addDiscToDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
           e.preventDefault();
           return;
         }
-
-        // Default: toggle draw
-        setIsDrawing((prev) => {
-          const nxt = !prev;
-          isDrawingRef.current = nxt;
-          return nxt;
-        });
+        // sand/water just start painting; no toggle state needed
         e.preventDefault();
       }
 
       if (e.button === 2) {
-        overrideToolRef.current = 'eraser';
+        overrideToolRef.current = 'eraser'; // momentary while RMB held
         e.preventDefault();
       }
     };
@@ -262,8 +289,7 @@ function SandOverlay() {
       if (e.button === 0) {
         lmbDown = false;
         if (isDraftingStone) {
-          // finalize the stone draft into a rigid component
-          finalizeStoneDraft();
+          finalizeStoneDraft(); // convert preview → rigid chunk
           isDraftingStone = false;
           stoneDraft.clear();
         }
@@ -279,12 +305,23 @@ function SandOverlay() {
       if (clientX >= 0 && clientY >= 0) updatePointer(clientX, clientY);
     };
 
+    const onKeyDown = (e) => {
+      if (e.repeat) return;
+      if (e.key === 'e' || e.key === 'E') {
+        setEmittersOn(v => { emittersOnRef.current = !v; return !v; });
+      }
+      if (e.key === 's' || e.key === 'S') {
+        setSinksOn(v => { sinksOnRef.current = !v; return !v; });
+      }
+    };
+
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('touchmove', onTouchMove, { passive: true });
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('contextmenu', onContextMenu);
     window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('keydown', onKeyDown);
 
     // --- Draft helpers for stone ---
     function addDiscToDraft(cx, cy, radius) {
@@ -296,7 +333,7 @@ function SandOverlay() {
           const xx = cx + ox;
           if (xx <= 0 || xx >= cols - 1) continue;
           const k = I(xx, yy);
-          // don't draft over existing solid to avoid fusing with old stone during preview
+          // only draft over empty to avoid fusing-before-drop
           if (grid[k] === EMPTY) stoneDraft.add(k);
         }
       }
@@ -305,12 +342,10 @@ function SandOverlay() {
     function finalizeStoneDraft() {
       if (stoneDraft.size === 0) return;
 
-      // Write the draft cells into the grid as STONE and capture component cells
       const cells = new Set();
       let yMax = 0;
 
       for (const k of stoneDraft) {
-        // Only place into empty to avoid overwriting
         if (grid[k] === EMPTY) {
           grid[k] = STONE;
           cells.add(k);
@@ -318,19 +353,15 @@ function SandOverlay() {
           if (y > yMax) yMax = y;
         }
       }
-
-      // If nothing placed, skip
       if (cells.size === 0) return;
 
-      // Merge with adjacent existing stone components if touching
+      // Merge with adjacent existing stone chunks if touching
       const touchingComponentIds = new Set();
       for (const k of cells) {
         const [x, y] = XY(k);
-        const nks = [
-          I(x + 1, y), I(x - 1, y), I(x, y + 1), I(x, y - 1),
-        ].filter(nk => nk >= 0 && nk < grid.length && grid[nk] === STONE && !cells.has(nk));
+        const nks = [I(x+1,y), I(x-1,y), I(x,y+1), I(x,y-1)]
+          .filter(nk => nk >= 0 && nk < grid.length && grid[nk] === STONE && !cells.has(nk));
         for (const nk of nks) {
-          // find component containing nk
           for (const comp of stoneComponents) {
             if (comp.cells.has(nk)) { touchingComponentIds.add(comp.id); break; }
           }
@@ -339,7 +370,6 @@ function SandOverlay() {
 
       let newComp = { id: nextStoneId++, cells, yMax };
       if (touchingComponentIds.size > 0) {
-        // merge all touching comps into newComp
         const keep = [];
         for (const comp of stoneComponents) {
           if (touchingComponentIds.has(comp.id)) {
@@ -355,10 +385,9 @@ function SandOverlay() {
         stoneComponents = keep;
       }
       stoneComponents.push(newComp);
-      // done
     }
 
-    // Brushes (for sand, water, eraser)
+    // Brushes (for sand, water, RMB eraser)
     const paintDisc = (cx, cy, radius, material, overwrite = false) => {
       for (let oy = -radius; oy <= radius; oy++) {
         const yy = cy + oy;
@@ -374,7 +403,6 @@ function SandOverlay() {
     };
 
     const eraseDisc = (cx, cy, radius) => {
-      // erase from grid
       const erasedStoneCells = [];
       for (let oy = -radius; oy <= radius; oy++) {
         const yy = cy + oy;
@@ -388,13 +416,11 @@ function SandOverlay() {
             if (grid[k] === STONE) erasedStoneCells.push(k);
             grid[k] = EMPTY;
           }
-          // also erase from draft if present
           if (stoneDraft.has(k)) stoneDraft.delete(k);
         }
       }
-      // update stone components if any stone was erased
       if (erasedStoneCells.length > 0 && stoneComponents.length > 0) {
-        // For each component, remove erased cells and split if disconnected
+        // Remove erased cells from chunks and split if needed
         const updated = [];
         for (const comp of stoneComponents) {
           let changed = false;
@@ -404,7 +430,6 @@ function SandOverlay() {
           if (!changed) { updated.push(comp); continue; }
           if (comp.cells.size === 0) continue;
 
-          // Split into connected parts using BFS on grid adjacency among STONE cells still in comp
           const remaining = new Set(comp.cells);
           while (remaining.size > 0) {
             const [start] = remaining;
@@ -423,7 +448,6 @@ function SandOverlay() {
                 }
               }
             }
-            // compute yMax
             let yMax = 0;
             for (const k of part) { const [, y] = XY(k); if (y > yMax) yMax = y; }
             updated.push({ id: nextStoneId++, cells: part, yMax });
@@ -433,19 +457,22 @@ function SandOverlay() {
       }
     };
 
-    // Emission controller (for sand/water/eraser)
+    // Emission controller
     let lastEmit = 0;
     const emitAtPointer = (now) => {
       if (!inside) return;
 
-      // Only bypass the draw toggle when RMB override is active.
       const rmbHeld = overrideToolRef.current === 'eraser';
       const activeTool = rmbHeld ? 'eraser' : toolRef.current;
 
-      // Stone is handled by draft logic (hold LMB to draft, release to drop)
+      // Stone: handled by draft logic, not here
       if (activeTool === 'stone') return;
 
-      const shouldEmit = rmbHeld ? true : isDrawingRef.current;
+      // Paint only while LMB is down (or RMB for eraser)
+      const shouldEmit =
+        rmbHeld ? true :
+        (activeTool === 'sand' || activeTool === 'water') ? lmbDown : false;
+
       if (!shouldEmit) return;
       if (now - lastEmit < EMIT_INTERVAL_MS) return;
 
@@ -455,13 +482,11 @@ function SandOverlay() {
 
       if (activeTool === 'eraser') {
         eraseDisc(cx, cy, ERASE_BRUSH_RADIUS);
-        lastEmit = now;
-        return;
+        lastEmit = now; return;
       }
       if (activeTool === 'water') {
         paintDisc(cx, cy, WATER_BRUSH_RADIUS, WATER, false);
-        lastEmit = now;
-        return;
+        lastEmit = now; return;
       }
       // sand
       if (grid[I(cx, cy)] !== EMPTY) { lastEmit = now; return; }
@@ -469,9 +494,77 @@ function SandOverlay() {
       lastEmit = now;
     };
 
+    // --- Emitters ---
+    const applyEmitters = (now) => {
+      if (!emittersOnRef.current) return;
+      for (const e of emitters) {
+        if (now - e.last < e.rateMs) continue;
+        e.last = now;
+        const mat = e.type === 'water' ? WATER : SAND;
+        paintDisc(e.gx, e.gy, e.r, mat, false);
+      }
+    };
+
     // Helpers
     const emptyAt = (x, y) =>
       x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] === EMPTY && next[I(x, y)] === EMPTY;
+
+    // --- Cohesive STONE chunks ---
+    function moveStoneComponentsDown() {
+      if (stoneComponents.length === 0) return;
+
+      for (const comp of stoneComponents) {
+        let ym = 0;
+        for (const k of comp.cells) { const [, y] = XY(k); if (y > ym) ym = y; }
+        comp.yMax = ym;
+      }
+      stoneComponents.sort((a, b) => b.yMax - a.yMax);
+
+      for (const comp of stoneComponents) {
+        let canMove = true;
+
+        for (const k of comp.cells) {
+          const [x, y] = XY(k);
+          const ny = y + 1;
+          if (ny >= rows) { canMove = false; break; }
+          const belowK = I(x, ny);
+          if (comp.cells.has(belowK)) continue;
+          const mat = grid[belowK];
+          if (mat !== EMPTY && mat !== WATER) { canMove = false; break; }
+        }
+        if (!canMove) continue;
+
+        // Track water to bubble up
+        const waterSwaps = [];
+        for (const k of comp.cells) {
+          const [x, y] = XY(k);
+          const belowK = I(x, y + 1);
+          if (!comp.cells.has(belowK) && grid[belowK] === WATER) {
+            waterSwaps.push([belowK, k]); // [waterIndexBelow, stoneOriginIndex]
+          }
+        }
+
+        // Clear old stones
+        for (const k of comp.cells) grid[k] = EMPTY;
+
+        // Bubble water up into vacated cells
+        for (const [waterIdx, originIdx] of waterSwaps) {
+          grid[originIdx] = WATER;
+        }
+
+        // Move stones down
+        const newCells = new Set();
+        for (const k of comp.cells) {
+          const [x, y] = XY(k);
+          const nk = I(x, y + 1);
+          newCells.add(nk);
+        }
+        for (const nk of newCells) grid[nk] = STONE;
+
+        comp.cells = newCells;
+        comp.yMax = Math.min(rows - 1, comp.yMax + 1);
+      }
+    }
 
     // Sand physics
     const settleSand = (x, y) => {
@@ -549,107 +642,89 @@ function SandOverlay() {
       if (next[k] === EMPTY) next[k] = WATER;
     };
 
-    // --- Stone rigid-body movement (in-place on grid) ---
-  function moveStoneComponentsDown() {
-      if (stoneComponents.length === 0) return;
+    // --- Side sinks only (bottom preserved) ---
+    const applySideSinks = () => {
+      if (!sinksOnRef.current) return;
+      if (cols < 6) return;
 
-      // Recompute yMax and move lower components first
-      for (const comp of stoneComponents) {
-        let ym = 0;
-        for (const k of comp.cells) { const [, y] = XY(k); if (y > ym) ym = y; }
-        comp.yMax = ym;
+      const leftStart  = 1;
+      const leftEnd    = leftStart + SINK_STRIP_W - 1;
+      const rightStart = cols - 2 - (SINK_STRIP_W - 1);
+      const rightEnd   = cols - 2;
+
+      const innerLeftStart  = leftEnd + 1;
+      const innerLeftEnd    = innerLeftStart + INNER_STRIP_W - 1;
+      const innerRightEnd   = rightStart - 1;
+      const innerRightStart = innerRightEnd - (INNER_STRIP_W - 1);
+
+      for (let y = 1; y < rows - 1; y++) {
+        // hard sinks near the side walls
+        for (let x = leftStart; x <= leftEnd; x++) {
+          const k = I(x, y);
+          const m = grid[k];
+          if (m === WATER) { if (Math.random() < SINK_WATER_P) grid[k] = EMPTY; }
+          else if (m === SAND) { if (Math.random() < SINK_SAND_P) grid[k] = EMPTY; }
+        }
+        for (let x = rightStart; x <= rightEnd; x++) {
+          const k = I(x, y);
+          const m = grid[k];
+          if (m === WATER) { if (Math.random() < SINK_WATER_P) grid[k] = EMPTY; }
+          else if (m === SAND) { if (Math.random() < SINK_SAND_P) grid[k] = EMPTY; }
+        }
+
+        // gentle inner relief (helps sand/water reach the sink)
+        for (let x = innerLeftStart; x <= innerLeftEnd; x++) {
+          const k = I(x, y);
+          const m = grid[k];
+          if (m === WATER) { if (Math.random() < INNER_WATER_P) grid[k] = EMPTY; }
+          else if (m === SAND) { if (Math.random() < INNER_SAND_P) grid[k] = EMPTY; }
+        }
+        for (let x = innerRightStart; x <= innerRightEnd; x++) {
+          const k = I(x, y);
+          const m = grid[k];
+          if (m === WATER) { if (Math.random() < INNER_WATER_P) grid[k] = EMPTY; }
+          else if (m === SAND) { if (Math.random() < INNER_SAND_P) grid[k] = EMPTY; }
+        }
       }
-      stoneComponents.sort((a, b) => b.yMax - a.yMax);
+    };
 
-      for (const comp of stoneComponents) {
-        let canMove = true;
-
-        // Check if every cell can move down by 1
-        for (const k of comp.cells) {
-          const [x, y] = XY(k);
-          const ny = y + 1;
-          if (ny >= rows) { canMove = false; break; }
-          const belowK = I(x, ny);
-
-          // If below belongs to this same component (rare on a single-step), it's fine.
-          if (comp.cells.has(belowK)) continue;
-
-          // Allow EMPTY or WATER; block on SAND or STONE from other comps
-          const mat = grid[belowK];
-          if (mat !== EMPTY && mat !== WATER) { canMove = false; break; }
-        }
-        if (!canMove) continue;
-
-        // Build list of water swaps: water under a stone cell will rise into the stone's old cell
-        /** @type {Array<[number, number]>} */ // [waterIndexBelow, stoneOriginIndex]
-        const waterSwaps = [];
-        for (const k of comp.cells) {
-          const [x, y] = XY(k);
-          const belowK = I(x, y + 1);
-          if (!comp.cells.has(belowK) && grid[belowK] === WATER) {
-            waterSwaps.push([belowK, k]);
-          }
-        }
-
-        // 1) Clear old stone cells
-        for (const k of comp.cells) grid[k] = EMPTY;
-
-        // 2) Move water up into the vacated stone cells (1:1 swap)
-        for (const [waterIdx, originIdx] of waterSwaps) {
-          // Only lift if origin is still empty (it is, we just cleared stones)
-          // Note: we don't need to clear waterIdx here; it will be overwritten by stone in step 3.
-          grid[originIdx] = WATER;
-        }
-
-        // 3) Write new stone positions one row lower
-        const newCells = new Set();
-        for (const k of comp.cells) {
-          const [x, y] = XY(k);
-          const nk = I(x, y + 1);
-          newCells.add(nk);
-        }
-        for (const nk of newCells) grid[nk] = STONE;
-
-        comp.cells = newCells;
-        comp.yMax = Math.min(rows - 1, comp.yMax + 1);
-      }
-    }
     // Physics step
     const step = () => {
       // 1) Move rigid stones first, directly on grid
       moveStoneComponentsDown();
 
-      // 2) Now compute sand/water into next buffer, and also carry stones forward
+      // 2) Prepare next buffer & carry stones forward
       next.fill(0);
-
-      // Copy stones straight through so they persist (and block)
       for (let k = 0; k < grid.length; k++) {
         if (grid[k] === STONE) next[k] = STONE;
       }
 
-      // Sand settle
+      // 3) Sand settle
       for (let y = rows - 1; y >= 0; y--) {
         const ltr = (y & 1) === 0;
         if (ltr) { for (let x = 0; x < cols; x++) settleSand(x, y); }
         else     { for (let x = cols - 1; x >= 0; x--) settleSand(x, y); }
       }
 
-      // Water settle
+      // 4) Water settle
       for (let y = rows - 1; y >= 0; y--) {
         const ltr = (y & 1) === 0;
         if (ltr) { for (let x = 0; x < cols; x++) settleWater(x, y); }
         else     { for (let x = cols - 1; x >= 0; x--) settleWater(x, y); }
       }
 
-      // flip
+      // 5) Flip
       const tmp = grid; grid = next; next = tmp;
+
+      // 6) Side sinks (stones unaffected)
+      applySideSinks();
     };
 
     const render = () => {
       const { width, height } = wrap.getBoundingClientRect();
       ctx.clearRect(0, 0, width, height);
 
-      // draw sand
+      // sand
       ctx.fillStyle = SAND_COLOR;
       for (let y = 0; y < rows; y++) {
         const yy = y * cellSize;
@@ -657,7 +732,7 @@ function SandOverlay() {
           if (grid[I(x, y)] === SAND) ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
         }
       }
-      // draw water
+      // water
       ctx.fillStyle = WATER_COLOR;
       for (let y = 0; y < rows; y++) {
         const yy = y * cellSize;
@@ -665,7 +740,7 @@ function SandOverlay() {
           if (grid[I(x, y)] === WATER) ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
         }
       }
-      // draw stone
+      // stone
       ctx.fillStyle = STONE_COLOR;
       for (let y = 0; y < rows; y++) {
         const yy = y * cellSize;
@@ -673,7 +748,7 @@ function SandOverlay() {
           if (grid[I(x, y)] === STONE) ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
         }
       }
-      // draw stone draft overlay (preview) on top
+      // stone preview
       if (stoneDraft.size > 0) {
         ctx.fillStyle = STONE_PREVIEW_COLOR;
         for (const k of stoneDraft) {
@@ -683,7 +758,7 @@ function SandOverlay() {
       }
     };
 
-    // Main animation loop
+    // Main loop
     let raf = 0;
     let lastStep = performance.now();
     const loop = (now) => {
@@ -692,18 +767,19 @@ function SandOverlay() {
 
       if (clientX >= 0 && clientY >= 0) {
         const r = wrap.getBoundingClientRect();
-        inside = clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+        inside = clientX >= r.left && clientX <= r.right && clientY <= r.bottom && clientY >= r.top;
         px = clientX - r.left; py = clientY - r.top;
       }
 
       if (now - lastStep >= STEP_MS) {
-        // For draft: if holding LMB in stone mode, keep adding to draft at interval (already handled on move; this throttles emission-like behavior if stationary)
+        // keep growing the stone preview while held
         if (isDraftingStone && inside) {
           addDiscToDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
         }
 
-        emitAtPointer(now);
-        step();
+        emitAtPointer(now);   // sand/water while LMB; eraser while RMB
+        applyEmitters(now);   // permanent emitters (toggleable)
+        step();               // physics + sinks
         render();
         lastStep = now;
       }
@@ -720,8 +796,9 @@ function SandOverlay() {
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('keydown', onKeyDown);
     };
-  }, []); // IMPORTANT: no deps -> simulation persists
+  }, []); // IMPORTANT: single mount
 
   return (
     <div ref={wrapRef} className="absolute inset-0 z-0">
@@ -732,77 +809,75 @@ function SandOverlay() {
         aria-hidden="true"
       />
 
-      {/* Tool Selection Bar (always vertical on mobile, smaller sizes) */}
+      {/* Tool + toggles */}
       <div
         ref={uiRef}
-        className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-10 bg-gray-900/80 rounded-lg sm:rounded-xl p-1.5 sm:p-2 md:p-3 backdrop-blur-sm shadow-lg"
+        className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-10 bg-gray-900/80 rounded-lg sm:rounded-xl p-2 backdrop-blur-sm shadow-lg"
       >
-        <div className="flex flex-col items-stretch gap-1 sm:gap-2">
-          <div className="text-white text-[10px] sm:text-[11px] md:text-xs font-medium"></div>
-
-          {/* Vertical stack at all sizes (smaller on mobile) */}
-          <div className="flex flex-col gap-1 sm:gap-2">
+        <div className="flex flex-col items-stretch gap-2">
+          <div className="flex flex-col gap-2">
             <button
               onClick={() => setSelectedTool('sand')}
-              className={`w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md sm:rounded-lg flex items-center justify-center transition-all ${
-                selectedTool === 'sand'
-                  ? 'bg-yellow-600 shadow-lg scale-105'
-                  : 'bg-gray-700 hover:bg-gray-600'
+              className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
+                selectedTool === 'sand' ? 'bg-yellow-600 shadow-lg scale-105' : 'bg-gray-700 hover:bg-gray-600'
               }`}
-              title="Sand"
+              title="Sand (hold LMB)"
             >
               <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-yellow-400 rounded-sm opacity-80" />
             </button>
 
             <button
               onClick={() => setSelectedTool('water')}
-              className={`w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md sm:rounded-lg flex items-center justify-center transition-all ${
-                selectedTool === 'water'
-                  ? 'bg-blue-600 shadow-lg scale-105'
-                  : 'bg-gray-700 hover:bg-gray-600'
+              className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
+                selectedTool === 'water' ? 'bg-blue-600 shadow-lg scale-105' : 'bg-gray-700 hover:bg-gray-600'
               }`}
-              title="Water"
+              title="Water (hold LMB)"
             >
               <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-blue-400 rounded-full opacity-80" />
             </button>
 
-
-
             <button
               onClick={() => setSelectedTool('stone')}
-              className={`w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md sm:rounded-lg flex items-center justify-center transition-all ${
-                selectedTool === 'stone'
-                  ? 'bg-gray-600 shadow-lg scale-105'
-                  : 'bg-gray-700 hover:bg-gray-600'
+              className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
+                selectedTool === 'stone' ? 'bg-gray-600 shadow-lg scale-105' : 'bg-gray-700 hover:bg-gray-600'
               }`}
-              title="Stone"
+              title="Stone (hold to draft, release to drop)"
             >
               <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-gray-400 rounded-[3px] opacity-90" />
             </button>
-                        <button
-              onClick={() => setSelectedTool('eraser')}
-              className={`w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md sm:rounded-lg flex items-center justify-center transition-all ${
-                selectedTool === 'eraser'
-                  ? 'bg-red-600 shadow-lg scale-105'
-                  : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-              title="Eraser"
-            >
-              <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-red-400 rounded-lg opacity-80" />
-            </button>
           </div>
 
-          {/* (Optional) compact instructions, hidden on very small screens */}
-          <div className="hidden xs:block mt-1 sm:mt-2 text-[9px] sm:text-[10px] md:text-xs leading-tight text-gray-200 space-y-0.5">
-            <div>Left click: toggle draw (sand/water)</div>
-            <div>Hold left: draft stone; release to drop</div>
-            <div>Hold right: eraser</div>
+          {/* Toggles */}
+          <label className="flex items-center gap-2 text-xs text-gray-200 mt-1">
+            <input
+              type="checkbox"
+              className="accent-yellow-400"
+              checked={emittersOn}
+              onChange={() => setEmittersOn(v => !v)}
+            />
+            Taps
+          </label>
+          <label className="flex items-center gap-2 text-xs text-gray-200">
+            <input
+              type="checkbox"
+              className="accent-blue-400"
+              checked={sinksOn}
+              onChange={() => setSinksOn(v => !v)}
+            />
+            Sinks
+          </label>
+
+          <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
+            
+            
+            RMB=erase
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 
 /* ---------- PAGE ---------- */
 export default function About() {
@@ -859,10 +934,8 @@ export default function About() {
                     <span className="text-green-500">Schema design</span>{"', '"}
                     <span className="text-green-500">Query optimization</span>{"'],"}{'\n'}
                     {'        '}<span className="text-yellow-500">summary</span>{": '"}
-                    <span className="text-green-500">Production experience building secure, well-documented services and data models.</span>{"'"}{'\n'}
-                    {'    '}{"}'"},{'\n'}
-                    {'    '}<span className="text-yellow-500">value</span>{": '"}
-                    <span className="text-green-500">Bridges front-end and back-end to ship features quickly, safely, and with polish.</span>{"'"}{'\n'}
+                    <span className="text-green-500">Production experience building secure, well-documented services and data models.</span>{"'"}
+                    
                     {'}'}{';'}{'\n'}
                   </code>
                 </pre>

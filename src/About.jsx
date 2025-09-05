@@ -10,6 +10,7 @@ function SandOverlay() {
   const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone'
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
+  const [uiAtBottom, setUiAtBottom] = useState(false); // auto-place toolbar when cramped
 
   // Refs read by the simulation loop
   const toolRef = useRef('sand');
@@ -38,6 +39,7 @@ function SandOverlay() {
     const EMIT_INTERVAL_MS = 18;
     const STEP_MS = 1;
     const MAX_WATER_FLOW = 10;
+    const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
 
     // Colors
     const SAND_COLOR = 'rgba(230, 200, 120, 0.475)';
@@ -127,6 +129,9 @@ function SandOverlay() {
       canvas.style.width = '100%';
       canvas.style.height = '100%';
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Decide UI placement based on available horizontal space
+      setUiAtBottom(width < TOOL_COLLAPSE_W);
 
       cellSize = CELL_PX;
       cols = Math.max(60, Math.floor(width / cellSize));
@@ -740,13 +745,15 @@ function SandOverlay() {
         aria-hidden="true"
       />
 
-      {/* Tool + toggles */}
+      {/* Tool + toggles (adaptive placement) */}
       <div
         ref={uiRef}
-        className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-10 bg-gray-900/80 rounded-lg sm:rounded-xl p-2 backdrop-blur-sm shadow-lg"
+        className={`absolute z-10 bg-gray-900/80 rounded-lg p-2 backdrop-blur-sm shadow-lg pointer-events-auto
+          ${uiAtBottom ? 'bottom-3 left-1/2 -translate-x-1/2' : 'left-4 top-1/2 -translate-y-1/2'}
+        `}
       >
-        <div className="flex flex-col items-stretch gap-2">
-          <div className="flex flex-col gap-2">
+        <div className={`flex ${uiAtBottom ? 'flex-row items-center' : 'flex-col'} gap-2`}>
+          <div className={`flex ${uiAtBottom ? 'flex-row' : 'flex-col'} gap-2`}>
             <button
               onClick={() => setSelectedTool('sand')}
               className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
@@ -779,7 +786,7 @@ function SandOverlay() {
           </div>
 
           {/* Toggles */}
-          <label className="flex items-center gap-2 text-xs text-gray-200 mt-1">
+          <label className={`flex items-center gap-2 text-xs text-gray-200 ${uiAtBottom ? '' : 'mt-1'}`}>
             <input
               type="checkbox"
               className="accent-yellow-400"
@@ -798,9 +805,11 @@ function SandOverlay() {
             Sinks
           </label>
 
-          <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
-            RMB=erase
-          </div>
+          {!uiAtBottom && (
+            <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
+              RMB=erase
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -812,13 +821,13 @@ export default function About() {
   return (
     <section className="relative bg-dark">
       {/* Content */}
-      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-16 pb-10">
+      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-28 pb-48">
         <h2 className="text-white font-bold tracking-tight text-center text-3xl sm:text-5xl md:text-6xl">
           SKILLS & <br className="hidden sm:block" /> EXPERIENCE
         </h2>
 
         {/* Cards: stacked on mobile, side-by-side on md+; equal height & width */}
-        <div className="mt-6 md:mt-8">
+        <div className="mt-6 md:mt-16">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 items-stretch">
             {/* Experience (LHS) */}
             <div className="w-full h-full bg-gray-900/80 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">

@@ -1,71 +1,6 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import Lottie from 'react-lottie';
-import animationData from './laptop.json';
+import React, { useEffect, useRef, useState } from 'react';
 
-// Lottie that scales to its container (keeps a square)
-function ResponsiveLottie({ animationData }) {
-  const containerRef = useRef(null);
-  const [size, setSize] = useState(320);
-  const prefersReducedMotion = usePrefersReducedMotion();
-
-  useLayoutEffect(() => {
-    if (!containerRef.current) return;
-    const el = containerRef.current;
-    const update = () => {
-      const w = el.getBoundingClientRect().width || 320;
-      const clamped = Math.max(200, Math.min(560, Math.floor(w)));
-      setSize(clamped);
-    };
-    update();
-
-    let ro;
-    if ('ResizeObserver' in window) {
-      ro = new ResizeObserver(update);
-      ro.observe(el);
-    } else {
-      window.addEventListener('resize', update);
-    }
-    return () => {
-      if (ro) ro.disconnect();
-      else window.removeEventListener('resize', update);
-    };
-  }, []);
-
-  return (
-    <div ref={containerRef} className="w-full aspect-square">
-      <Lottie
-        options={{
-          loop: !prefersReducedMotion,
-          autoplay: !prefersReducedMotion,
-          animationData,
-          rendererSettings: { preserveAspectRatio: 'xMidYMid slice' },
-        }}
-        height={size}
-        width={size}
-        isClickToPauseDisabled
-      />
-    </div>
-  );
-}
-
-// Respect the user's reduced-motion setting
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setPrefersReducedMotion(mq.matches);
-    const handler = () => setPrefersReducedMotion(mq.matches);
-    if (mq.addEventListener) mq.addEventListener('change', handler);
-    else mq.addListener(handler);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', handler);
-      else mq.removeListener(handler);
-    };
-  }, []);
-  return prefersReducedMotion;
-}
-
+/* -------------------- SAND OVERLAY -------------------- */
 function SandOverlay() {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
@@ -239,7 +174,6 @@ function SandOverlay() {
         overrideToolRef.current = null;
         lmbDown = false;
       }
-      // While drafting stone, keep painting draft under cursor
       if (isDraftingStone && inside) {
         addDiscToDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
       }
@@ -272,7 +206,6 @@ function SandOverlay() {
           e.preventDefault();
           return;
         }
-        // sand/water just start painting; no toggle state needed
         e.preventDefault();
       }
 
@@ -289,7 +222,7 @@ function SandOverlay() {
       if (e.button === 0) {
         lmbDown = false;
         if (isDraftingStone) {
-          finalizeStoneDraft(); // convert preview → rigid chunk
+          finalizeStoneDraft();
           isDraftingStone = false;
           stoneDraft.clear();
         }
@@ -333,7 +266,6 @@ function SandOverlay() {
           const xx = cx + ox;
           if (xx <= 0 || xx >= cols - 1) continue;
           const k = I(xx, yy);
-          // only draft over empty to avoid fusing-before-drop
           if (grid[k] === EMPTY) stoneDraft.add(k);
         }
       }
@@ -772,14 +704,13 @@ function SandOverlay() {
       }
 
       if (now - lastStep >= STEP_MS) {
-        // keep growing the stone preview while held
         if (isDraftingStone && inside) {
           addDiscToDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
         }
 
-        emitAtPointer(now);   // sand/water while LMB; eraser while RMB
-        applyEmitters(now);   // permanent emitters (toggleable)
-        step();               // physics + sinks
+        emitAtPointer(now);
+        applyEmitters(now);
+        step();
         render();
         lastStep = now;
       }
@@ -868,8 +799,6 @@ function SandOverlay() {
           </label>
 
           <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
-            
-            
             RMB=erase
           </div>
         </div>
@@ -878,81 +807,67 @@ function SandOverlay() {
   );
 }
 
-
-/* ---------- PAGE ---------- */
+/* -------------------- PAGE -------------------- */
 export default function About() {
   return (
     <section className="relative bg-dark">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 pt-12 sm:pt-16 pb-8">
-        <div className="flex flex-col-reverse md:flex-row items-center md:items-start gap-4 md:gap-6">
-          {/* Right-aligned Text on desktop; centered on mobile */}
-          <div className="w-full md:w-1/2">
-            <h2 className="text-white font-bold tracking-tight text-center md:text-right text-3xl sm:text-5xl md:text-6xl">
-              SKILLS & <br className="hidden sm:block" /> EXPERIENCE
-            </h2>
+      {/* Content */}
+      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-16 pb-10">
+        <h2 className="text-white font-bold tracking-tight text-center text-3xl sm:text-5xl md:text-6xl">
+          SKILLS & <br className="hidden sm:block" /> EXPERIENCE
+        </h2>
 
-            <div className="mt-4 md:mt-6 md:ml-auto md:max-w-xl space-y-4">
-              {/* Experience */}
-              <div className="bg-gray-900/80 rounded-md p-3 sm:p-4 shadow-md  ring-1 ring-white/10 ">
-                <pre className="text-xs sm:text-sm leading-5 text-left text-white whitespace-pre-wrap break-words">
-                  <code>
-                    <span className="text-blue-400">// Internship experience</span>{'\n'}
-                    <span className="text-red-500">const</span> <span className="text-purple-300">connectionLab</span> {'= {'}{'\n'}
-                    {'    '}<span className="text-yellow-500">role</span>{": '"}<span className="text-green-500">Full-Stack Developer Intern</span>{"',"}{'\n'}
-                    {'    '}<span className="text-yellow-500">stack</span>{': {'}{'\n'}
-                    {'        '}<span className="text-yellow-500">frontend</span>{": ['"}<span className="text-green-500">JavaScript</span>{"', '"}<span className="text-green-500">Handlebars</span>{"'],"}{'\n'}
-                    {'        '}<span className="text-yellow-500">backend</span>{": ['"}<span className="text-green-500">Node.js</span>{"'],"}{'\n'}
-                    {'        '}<span className="text-yellow-500">database</span>{": ['"}<span className="text-green-500">SQL</span>{"']"}{'\n'}
-                    {'    '}{'},'}{'\n'}
-                    {'    '}<span className="text-yellow-500">contributions</span>{": ["}{'\n'}
-                    {'        '}{"\""}<span className="text-green-500">Built a production website end-to-end (frontend & backend)</span>{"\","}{'\n'}
-                    {'        '}{"\""}<span className="text-green-500">Designed REST APIs and integrated client-side views</span>{"\","}{'\n'}
-                    {'        '}{"\""}<span className="text-green-500">Managed migrations and optimized queries</span>{"\","}{'\n'}
-                    {'        '}{"\""}<span className="text-green-500">Implemented auth, validation, and robust error handling</span>{"\""}{'\n'}
-                    {'    '}{"]"}{'\n'}
-                    {'}'}{';'}{'\n'}
-                  </code>
-                </pre>
-              </div>
-
-              {/* Tech stack */}
-              <div className="bg-gray-900/80 rounded-md p-3 sm:p-4 shadow-md  ring-1 ring-white/10 ">
-                <pre className="text-xs sm:text-sm leading-5 text-left text-white whitespace-pre-wrap break-words">
-                  <code>
-                    <span className="text-blue-400">// Languages + back-end profile</span>{'\n'}
-                    <span className="text-red-500">const</span> <span className="text-purple-300">techStack</span> {'= {'}{'\n'}
-                    {'    '}<span className="text-yellow-500">languages</span>{": ['"}
-                    <span className="text-green-500">C++</span>{"', '"}
-                    <span className="text-green-500">Python</span>{"', '"}
-                    <span className="text-green-500">Java</span>{"', '"}
-                    <span className="text-green-500">JavaScript (ES6+)</span>{"', '"}
-                    <span className="text-green-500">SQL</span>{"'],"}{'\n'}
-                    {'    '}<span className="text-yellow-500">backend</span>{': {'}{'\n'}
-                    {'        '}<span className="text-yellow-500">strengths</span>{": ['"}
-                    <span className="text-green-500">REST APIs</span>{"', '"}
-                    <span className="text-green-500">Auth & sessions</span>{"', '"}
-                    <span className="text-green-500">Schema design</span>{"', '"}
-                    <span className="text-green-500">Query optimization</span>{"'],"}{'\n'}
-                    {'        '}<span className="text-yellow-500">summary</span>{": '"}
-                    <span className="text-green-500">Production experience building secure, well-documented services and data models.</span>{"'"}
-                    
-                    {'}'}{';'}{'\n'}
-                  </code>
-                </pre>
-              </div>
-            </div>
+        <div className="mt-6 md:mt-8 mx-auto max-w-3xl space-y-5">
+          {/* Experience */}
+          <div className="bg-gray-900/80 rounded-md p-4 sm:p-5 shadow-lg ring-1 ring-white/15">
+            <pre className="text-xs sm:text-sm leading-5 text-left text-white whitespace-pre-wrap break-words">
+              <code>
+                <span className="text-blue-400">// Internship experience</span>{'\n'}
+                <span className="text-red-500">const</span> <span className="text-purple-300">connectionLab</span> {'= {'}{'\n'}
+                {'    '}<span className="text-yellow-500">role</span>{": '"}<span className="text-green-500">Full-Stack Developer Intern</span>{"',"}{'\n'}
+                {'    '}<span className="text-yellow-500">stack</span>{': {'}{'\n'}
+                {'        '}<span className="text-yellow-500">frontend</span>{": ['"}<span className="text-green-500">JavaScript</span>{"', '"}<span className="text-green-500">Handlebars</span>{"'],"}{'\n'}
+                {'        '}<span className="text-yellow-500">backend</span>{": ['"}<span className="text-green-500">Node.js</span>{"'],"}{'\n'}
+                {'        '}<span className="text-yellow-500">database</span>{": ['"}<span className="text-green-500">SQL</span>{"']"}{'\n'}
+                {'    '}{'},'}{'\n'}
+                {'    '}<span className="text-yellow-500">contributions</span>{": ["}{'\n'}
+                {'        '}{"\""}<span className="text-green-500">Built a production website end-to-end (frontend & backend)</span>{"\","}{'\n'}
+                {'        '}{"\""}<span className="text-green-500">Designed REST APIs and integrated client-side views</span>{"\","}{'\n'}
+                {'        '}{"\""}<span className="text-green-500">Managed migrations and optimized queries</span>{"\","}{'\n'}
+                {'        '}{"\""}<span className="text-green-500">Implemented auth, validation, and robust error handling</span>{"\""}{'\n'}
+                {'    '}{"]"}{'\n'}
+                {'}'}{';'}{'\n'}
+              </code>
+            </pre>
           </div>
 
-          {/* Left column: Lottie */}
-          <div className="w-full md:w-1/2 flex flex-col items-center md:items-start gap-4">
-            <div className="w-full max-w-md sm:max-w-lg md:max-w-none">
-              <div style={{ transform: 'scaleX(-1)' }}>
-                <ResponsiveLottie animationData={animationData} />
-              </div>
-            </div>
+          {/* Tech stack */}
+          <div className="bg-gray-900/80 rounded-md p-4 sm:p-5 shadow-lg ring-1 ring-white/15">
+            <pre className="text-xs sm:text-sm leading-5 text-left text-white whitespace-pre-wrap break-words">
+              <code>
+                <span className="text-blue-400">// Languages + back-end profile</span>{'\n'}
+                <span className="text-red-500">const</span> <span className="text-purple-300">techStack</span> {'= {'}{'\n'}
+                {'    '}<span className="text-yellow-500">languages</span>{": ['"}
+                <span className="text-green-500">C++</span>{"', '"}
+                <span className="text-green-500">Python</span>{"', '"}
+                <span className="text-green-500">Java</span>{"', '"}
+                <span className="text-green-500">JavaScript (ES6+)</span>{"', '"}
+                <span className="text-green-500">SQL</span>{"'],"}{'\n'}
+                {'    '}<span className="text-yellow-500">backend</span>{': {'}{'\n'}
+                {'        '}<span className="text-yellow-500">strengths</span>{": ['"}
+                <span className="text-green-500">REST APIs</span>{"', '"}
+                <span className="text-green-500">Auth & sessions</span>{"', '"}
+                <span className="text-green-500">Schema design</span>{"', '"}
+                <span className="text-green-500">Query optimization</span>{"'],"}{'\n'}
+                {'        '}<span className="text-yellow-500">summary</span>{": '"}
+                <span className="text-green-500">Production experience building secure, well-documented services and data models.</span>{"'"}
+                {'}'}{';'}{'\n'}
+              </code>
+            </pre>
           </div>
         </div>
       </div>
+
       {/* Full-section Sand overlay */}
       <SandOverlay />
     </section>

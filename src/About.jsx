@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /* -------------------- SAND OVERLAY -------------------- */
 function SandOverlay() {
@@ -736,84 +737,103 @@ function SandOverlay() {
     };
   }, []); // IMPORTANT: single mount
 
-  return (
+  // IMPORTANT: make UI a sibling of the canvas wrapper so it can sit ABOVE page content.
+return (
+  // Overlay container sits ABOVE section content but stays scoped to the section bounds
+  <div className="absolute inset-0 z-[60] pointer-events-none">
+    {/* Simulation layer (kept behind content) */}
     <div ref={wrapRef} className="absolute inset-0 z-0">
-      {/* Simulation canvas */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none select-none"
         aria-hidden="true"
       />
+    </div>
 
-      {/* Tool + toggles (adaptive placement) */}
-      <div
-        ref={uiRef}
-        className={`absolute z-10 bg-gray-900/80 rounded-lg p-2 backdrop-blur-sm shadow-lg pointer-events-auto
-          ${uiAtBottom ? 'bottom-3 left-1/2 -translate-x-1/2' : 'left-4 top-1/2 -translate-y-1/2'}
-        `}
+    {/* Tool + toggles (adaptive placement) — high z-index and clickable */}
+    <div
+      ref={uiRef}
+      className={`absolute ${
+        uiAtBottom
+          ? 'bottom-3 left-1/2 -translate-x-1/2'
+          : 'left-4 top-1/2 -translate-y-1/2'
+      } z-[70] bg-gray-900/30 rounded-lg p-2 backdrop-blur-sm shadow-lg pointer-events-auto`}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.stopPropagation()}
+    >
+      <div className={`flex ${uiAtBottom ? 'flex-row items-center' : 'flex-col'} gap-2`}>
+        <div className={`flex ${uiAtBottom ? 'flex-row' : 'flex-col'} gap-2`}>
+          <button
+    onClick={() => setSelectedTool('sand')}
+    className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition
+      ${selectedTool === 'sand'
+        ? 'bg-yellow-600/55 ring-1 ring-yellow-300/30 shadow-lg scale-105'
+        : 'bg-gray-700/35 hover:bg-gray-700/55 ring-1 ring-white/10'
+      }`}
+    title="Sand (hold LMB)"
+  >
+    <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-yellow-400/70 rounded-sm" />
+      </button>
+
+      <button
+        onClick={() => setSelectedTool('water')}
+        className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition
+          ${selectedTool === 'water'
+            ? 'bg-blue-600/55 ring-1 ring-blue-300/30 shadow-lg scale-105'
+            : 'bg-gray-700/35 hover:bg-gray-700/55 ring-1 ring-white/10'
+          }`}
+        title="Water (hold LMB)"
       >
-        <div className={`flex ${uiAtBottom ? 'flex-row items-center' : 'flex-col'} gap-2`}>
-          <div className={`flex ${uiAtBottom ? 'flex-row' : 'flex-col'} gap-2`}>
-            <button
-              onClick={() => setSelectedTool('sand')}
-              className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
-                selectedTool === 'sand' ? 'bg-yellow-600 shadow-lg scale-105' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-              title="Sand (hold LMB)"
-            >
-              <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-yellow-400 rounded-sm opacity-80" />
-            </button>
+        <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-blue-400/70 rounded-full" />
+      </button>
 
-            <button
-              onClick={() => setSelectedTool('water')}
-              className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
-                selectedTool === 'water' ? 'bg-blue-600 shadow-lg scale-105' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-              title="Water (hold LMB)"
-            >
-              <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-blue-400 rounded-full opacity-80" />
-            </button>
-
-            <button
-              onClick={() => setSelectedTool('stone')}
-              className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ${
-                selectedTool === 'stone' ? 'bg-gray-600 shadow-lg scale-105' : 'bg-gray-700 hover:bg-gray-600'
-              }`}
-              title="Stone (hold to draft, release to drop)"
-            >
-              <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-gray-400 rounded-[3px] opacity-90" />
-            </button>
-          </div>
-
-          {/* Toggles */}
-          <label className={`flex items-center gap-2 text-xs text-gray-200 ${uiAtBottom ? '' : 'mt-1'}`}>
-            <input
-              type="checkbox"
-              className="accent-yellow-400"
-              checked={emittersOn}
-              onChange={() => setEmittersOn(v => !v)}
-            />
-            Taps
-          </label>
-          <label className="flex items-center gap-2 text-xs text-gray-200">
-            <input
-              type="checkbox"
-              className="accent-blue-400"
-              checked={sinksOn}
-              onChange={() => setSinksOn(v => !v)}
-            />
-            Sinks
-          </label>
-
-          {!uiAtBottom && (
-            <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
-              RMB=erase
-            </div>
-          )}
+      <button
+        onClick={() => setSelectedTool('stone')}
+        className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition
+          ${selectedTool === 'stone'
+            ? 'bg-gray-600/55 ring-1 ring-white/20 shadow-lg scale-105'
+            : 'bg-gray-700/35 hover:bg-gray-700/55 ring-1 ring-white/10'
+          }`}
+        title="Stone (hold to draft, release to drop)"
+      >
+        <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-gray-400/75 rounded-[3px]" />
+      </button>
         </div>
+
+        {/* Toggles */}
+        <label className={`flex items-center gap-2 text-xs text-gray-200 ${uiAtBottom ? '' : 'mt-1'}`}>
+          <input
+            type="checkbox"
+            className="accent-yellow-400"
+            checked={emittersOn}
+            onChange={() => setEmittersOn(v => !v)}
+          />
+          Taps
+        </label>
+        <label className="flex items-center gap-2 text-xs text-gray-200">
+          <input
+            type="checkbox"
+            className="accent-blue-400"
+            checked={sinksOn}
+            onChange={() => setSinksOn(v => !v)}
+          />
+          Sinks
+        </label>
+
+        {!uiAtBottom && (
+          <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
+            RMB=erase
+          </div>
+        )}
       </div>
     </div>
-  );
+  </div>
+);
+
+
+
 }
 
 /* -------------------- PAGE -------------------- */

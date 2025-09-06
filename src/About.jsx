@@ -841,7 +841,7 @@ export default function About() {
   return (
     <section className="relative bg-dark">
       {/* Content */}
-      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-28 pb-48">
+      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-6 pb-48">
         <h2 className="text-white font-bold tracking-tight text-center text-3xl sm:text-5xl md:text-6xl">
           SKILLS & <br className="hidden sm:block" /> EXPERIENCE
         </h2>

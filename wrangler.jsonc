@@ -1,5 +1,10 @@
 {
-  "name": "worker-name",
-  "compatibility_date": "2025-09-06",
-  "main": "dist/assets"
+  "$schema": "https://developers.cloudflare.com/workers/schemas/v3.0/config.schema.json",
+  "name": "personal-website",
+  "compatibility_date": "2024-09-01",
+  "assets": { "directory": "./dist", "html_handling": "auto-trailing-slash" },
+  "routes": [
+    { "pattern": "nicholasmayerrupert.com/*", "zone_name": "nicholasmayerrupert.com" },
+    { "pattern": "www.nicholasmayerrupert.com/*", "zone_name": "nicholasmayerrupert.com" }
+  ]
 }

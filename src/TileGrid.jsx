@@ -1,12 +1,20 @@
 // src/TileGrid.jsx
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+// Notes for future devs:
+// - SnakeBackdrop remains untouched.
+// - Bento-style grid with hover spotlight/particles.
+// - Each card flips in 3D on click (front: Lottie + title chip; back: details).
+// - We trigger the flip immediately on click (no waiting for ripple).
+// - While flipping, we blur/dim the front (Lottie) and hide the title chip to reduce visual clutter.
+
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import { gsap } from 'gsap';
 import Lottie from 'react-lottie';
 import animation1 from './chess.json';
 import animation2 from './grabby2.json';
 import animation3 from './fire.json';
 import animation4 from './whitelife.json';
+import './MagicBento.css';
 
-// Reduced-motion hook
 function usePrefersReducedMotion() {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   useEffect(() => {
@@ -24,7 +32,7 @@ function usePrefersReducedMotion() {
   return prefersReducedMotion;
 }
 
-// Responsive Lottie (square)
+/* ---------- Responsive Lottie (square) ---------- */
 function ResponsiveLottie({ animationData }) {
   const containerRef = useRef(null);
   const [size, setSize] = useState(300);
@@ -52,28 +60,27 @@ function ResponsiveLottie({ animationData }) {
     };
   }, []);
 
-return (
-  <div ref={containerRef} className="w-full aspect-square grid place-items-center">
-    {/* This box gets the computed square size and is centered */}
-    <div style={{ width: size, height: size }}>
-      <Lottie
-        options={{
-          loop: !prefersReducedMotion,
-          autoplay: !prefersReducedMotion,
-          animationData,
-          rendererSettings: { preserveAspectRatio: 'xMidYMid slice' },
-        }}
-        height={size}
-        width={size}
-        isClickToPauseDisabled
-        style={{ display: 'block' }} // avoid extra inline gaps
-      />
+  return (
+    <div ref={containerRef} className="w-full aspect-square grid place-items-center">
+      <div style={{ width: size, height: size }}>
+        <Lottie
+          options={{
+            loop: !prefersReducedMotion,
+            autoplay: !prefersReducedMotion,
+            animationData,
+            rendererSettings: { preserveAspectRatio: 'xMidYMid slice' },
+          }}
+          height={size}
+          width={size}
+          isClickToPauseDisabled
+          style={{ display: 'block' }}
+        />
+      </div>
     </div>
-  </div>
-);
+  );
 }
 
-/* ---------- Snake backdrop (autopilot + player takeover) ---------- */
+/* ---------- Snake backdrop (unchanged) ---------- */
 function SnakeBackdrop() {
   const overlayRef = useRef(null);
   const canvasRef = useRef(null);
@@ -160,7 +167,6 @@ function SnakeBackdrop() {
     };
     resetGame();
 
-    // Keyboard: take control (Arrow/WASD). Prevent page scroll for arrow keys.
     const onKey = (e) => {
       let nd = null;
       if (e.code === 'ArrowUp' || e.code === 'KeyW') { nd = { x: 0, y: -1 }; e.preventDefault(); }
@@ -168,7 +174,7 @@ function SnakeBackdrop() {
       else if (e.code === 'ArrowLeft' || e.code === 'KeyA') { nd = { x: -1, y: 0 }; e.preventDefault(); }
       else if (e.code === 'ArrowRight' || e.code === 'KeyD') { nd = { x: 1, y: 0 }; e.preventDefault(); }
       if (!nd) return;
-      if (nd.x === -dir.x && nd.y === -dir.y) return; // no 180s
+      if (nd.x === -dir.x && nd.y === -dir.y) return;
       nextDir = nd;
       controlMode = 'player';
       lastInputAt = performance.now();
@@ -190,6 +196,7 @@ function SnakeBackdrop() {
       { x: -1, y: 0 },
       { x: 1, y: 0 },
     ];
+
     const stepAuto = () => {
       const order = [...dirs].sort((a, b) => {
         const da = Math.abs(food.x - (snake[0].x + a.x)) + Math.abs(food.y - (snake[0].y + a.y));
@@ -214,7 +221,6 @@ function SnakeBackdrop() {
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
 
-      // faint grid for depth
       ctx.strokeStyle = 'rgba(255,255,255,0.06)';
       ctx.lineWidth = 1;
       const step = Math.max(18, cell);
@@ -225,18 +231,15 @@ function SnakeBackdrop() {
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
       }
 
-      // body tiles (transparent)
       ctx.fillStyle = 'rgba(126, 255, 114, 0.25)';
       for (let i = snake.length - 1; i >= 1; i--) {
         const s = snake[i];
         ctx.fillRect(s.x * cell, s.y * cell, cell - 1, cell - 1);
       }
 
-      // head (slightly less transparent)
       ctx.fillStyle = 'rgba(96, 255, 78, 0.35)';
       ctx.fillRect(snake[0].x * cell, snake[0].y * cell, cell - 1, cell - 1);
 
-      // food
       ctx.fillStyle = 'rgba(255,100,100,0.42)';
       const fx = food.x * cell, fy = food.y * cell;
       const r = Math.max(3, Math.floor(cell * 0.28));
@@ -247,7 +250,7 @@ function SnakeBackdrop() {
 
     const tick = (now) => {
       raf = requestAnimationFrame(tick);
-      if (rmRef.current) return; // respect reduced motion
+      if (rmRef.current) return;
 
       const dt = now - lastTick;
       if (dt >= stepMs) {
@@ -273,7 +276,7 @@ function SnakeBackdrop() {
 
         if (nx === food.x && ny === food.y) {
           food = spawnFood();
-          stepMs = Math.max(MIN_STEP_MS, stepMs * SPEEDUP);
+          stepMs = Math.max(MIN_STEP_MS, stepMs * 0.98);
         } else {
           snake.pop();
         }
@@ -294,7 +297,6 @@ function SnakeBackdrop() {
 
   return (
     <div ref={overlayRef} className="absolute inset-0 z-0" aria-hidden="true">
-      {/* Transparent, non-interactive canvas */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none select-none"
@@ -305,12 +307,341 @@ function SnakeBackdrop() {
   );
 }
 
-/* ---------- Page ---------- */
-export default function TileGrid() {
-  const [revealedTiles, setRevealedTiles] = useState([]);
+/* ---------- Bento helpers ---------- */
+const DEFAULT_PARTICLE_COUNT = 12;
+const DEFAULT_SPOTLIGHT_RADIUS = 300;
+const DEFAULT_GLOW_COLOR = '132, 0, 255';
+const MOBILE_BREAKPOINT = 768;
 
-  const handleTileClick = (index) => {
-    setRevealedTiles((prev) => (prev.includes(index) ? [] : [index]));
+const createParticleElement = (x, y, color = DEFAULT_GLOW_COLOR) => {
+  const el = document.createElement('div');
+  el.className = 'particle';
+  el.style.cssText = `
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(${color}, 1);
+    box-shadow: 0 0 6px rgba(${color}, 0.6);
+    pointer-events: none;
+    z-index: 100;
+    left: ${x}px;
+    top: ${y}px;
+  `;
+  return el;
+};
+
+const calculateSpotlightValues = (radius) => ({
+  proximity: radius * 0.5,
+  fadeDistance: radius * 0.75,
+});
+
+const updateCardGlowProperties = (card, mouseX, mouseY, glow, radius) => {
+  const rect = card.getBoundingClientRect();
+  const relativeX = ((mouseX - rect.left) / rect.width) * 100;
+  const relativeY = ((mouseY - rect.top) / rect.height) * 100;
+  card.style.setProperty('--glow-x', `${relativeX}%`);
+  card.style.setProperty('--glow-y', `${relativeY}%`);
+  card.style.setProperty('--glow-intensity', glow.toString());
+  card.style.setProperty('--glow-radius', `${radius}px`);
+};
+
+const useMobileDetection = () => {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= MOBILE_BREAKPOINT);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isMobile;
+};
+
+/* ---------- ParticleCard (hover effects + immediate click flip) ---------- */
+function ParticleCard({
+  children,
+  className = '',
+  disableAnimations = false,
+  style,
+  particleCount = DEFAULT_PARTICLE_COUNT,
+  glowColor = DEFAULT_GLOW_COLOR,
+  enableTilt = true,
+  clickEffect = true,
+  enableMagnetism = true,
+  onClick,
+  role,
+  tabIndex,
+  'aria-pressed': ariaPressed,
+}) {
+  const cardRef = useRef(null);
+  const particlesRef = useRef([]);
+  const timeoutsRef = useRef([]);
+  const memoizedParticles = useRef([]);
+  const particlesInitialized = useRef(false);
+  const magnetismAnimationRef = useRef(null);
+  const isHoveredRef = useRef(false);
+
+  const initializeParticles = useCallback(() => {
+    if (particlesInitialized.current || !cardRef.current) return;
+    const { width, height } = cardRef.current.getBoundingClientRect();
+    memoizedParticles.current = Array.from({ length: particleCount }, () =>
+      createParticleElement(Math.random() * width, Math.random() * height, glowColor)
+    );
+    particlesInitialized.current = true;
+  }, [particleCount, glowColor]);
+
+  const clearAllParticles = useCallback(() => {
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+    magnetismAnimationRef.current?.kill();
+    particlesRef.current.forEach((p) => {
+      gsap.to(p, {
+        scale: 0, opacity: 0, duration: 0.3, ease: 'back.in(1.7)',
+        onComplete: () => p.parentNode?.removeChild(p),
+      });
+    });
+    particlesRef.current = [];
+  }, []);
+
+  const animateParticles = useCallback(() => {
+    if (!cardRef.current || !isHoveredRef.current) return;
+    if (!particlesInitialized.current) initializeParticles();
+    memoizedParticles.current.forEach((particle, index) => {
+      const timeoutId = setTimeout(() => {
+        if (!isHoveredRef.current || !cardRef.current) return;
+        const clone = particle.cloneNode(true);
+        cardRef.current.appendChild(clone);
+        particlesRef.current.push(clone);
+        gsap.fromTo(clone, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(1.7)' });
+        gsap.to(clone, {
+          x: (Math.random() - 0.5) * 100,
+          y: (Math.random() - 0.5) * 100,
+          rotation: Math.random() * 360,
+          duration: 2 + Math.random() * 2,
+          ease: 'none',
+          repeat: -1,
+          yoyo: true,
+        });
+        gsap.to(clone, { opacity: 0.3, duration: 1.5, ease: 'power2.inOut', repeat: -1, yoyo: true });
+      }, index * 100);
+      timeoutsRef.current.push(timeoutId);
+    });
+  }, [initializeParticles]);
+
+  useEffect(() => {
+    if (disableAnimations || !cardRef.current) return;
+    const el = cardRef.current;
+
+    const handleMouseEnter = () => {
+      isHoveredRef.current = true;
+      animateParticles();
+      if (enableTilt) {
+        gsap.to(el, { rotateX: 5, rotateY: 5, duration: 0.3, ease: 'power2.out', transformPerspective: 1000 });
+      }
+    };
+    const handleMouseLeave = () => {
+      isHoveredRef.current = false;
+      clearAllParticles();
+      if (enableTilt) gsap.to(el, { rotateX: 0, rotateY: 0, duration: 0.3, ease: 'power2.out' });
+      if (enableMagnetism) gsap.to(el, { x: 0, y: 0, duration: 0.3, ease: 'power2.out' });
+    };
+    const handleMouseMove = (e) => {
+      if (!enableTilt && !enableMagnetism) return;
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      if (enableTilt) {
+        const rotateX = ((y - centerY) / centerY) * -10;
+        const rotateY = ((x - centerX) / centerX) * 10;
+        gsap.to(el, { rotateX, rotateY, duration: 0.1, ease: 'power2.out', transformPerspective: 1000 });
+      }
+      if (enableMagnetism) {
+        const magnetX = (x - centerX) * 0.05;
+        const magnetY = (y - centerY) * 0.05;
+        magnetismAnimationRef.current = gsap.to(el, { x: magnetX, y: magnetY, duration: 0.3, ease: 'power2.out' });
+      }
+    };
+    const handleClick = (e) => {
+      // Flip immediately; ripple runs in parallel so click works even while hovering.
+      onClick?.(e);
+
+      if (!clickEffect) return;
+
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const maxDistance = Math.max(
+        Math.hypot(x, y),
+        Math.hypot(x - rect.width, y),
+        Math.hypot(x, y - rect.height),
+        Math.hypot(x - rect.width, y - rect.height)
+      );
+      const ripple = document.createElement('div');
+      ripple.style.cssText = `
+        position: absolute;
+        width: ${maxDistance * 2}px;
+        height: ${maxDistance * 2}px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(${DEFAULT_GLOW_COLOR}, 0.4) 0%, rgba(${DEFAULT_GLOW_COLOR}, 0.2) 30%, transparent 70%);
+        left: ${x - maxDistance}px;
+        top: ${y - maxDistance}px;
+        pointer-events: none;
+        z-index: 1000;
+      `;
+      el.appendChild(ripple);
+      gsap.fromTo(ripple, { scale: 0, opacity: 1 }, {
+        scale: 1, opacity: 0, duration: 0.8, ease: 'power2.out',
+        onComplete: () => ripple.remove()
+      });
+    };
+
+    el.addEventListener('mouseenter', handleMouseEnter);
+    el.addEventListener('mouseleave', handleMouseLeave);
+    el.addEventListener('mousemove', handleMouseMove);
+    el.addEventListener('click', handleClick);
+
+    return () => {
+      isHoveredRef.current = false;
+      el.removeEventListener('mouseenter', handleMouseEnter);
+      el.removeEventListener('mouseleave', handleMouseLeave);
+      el.removeEventListener('mousemove', handleMouseMove);
+      el.removeEventListener('click', handleClick);
+      clearAllParticles();
+    };
+  }, [animateParticles, clearAllParticles, disableAnimations, enableTilt, enableMagnetism, clickEffect, onClick]);
+
+  return (
+    <div
+      ref={cardRef}
+      className={`${className} particle-container`}
+      style={{ ...style, position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
+      role={role}
+      tabIndex={tabIndex}
+      aria-pressed={ariaPressed}
+    >
+      {children}
+    </div>
+  );
+}
+
+/* ---------- Global Spotlight ---------- */
+function GlobalSpotlight({ gridRef, disableAnimations = false, enabled = true, spotlightRadius = DEFAULT_SPOTLIGHT_RADIUS }) {
+  const spotlightRef = useRef(null);
+  const isInsideSection = useRef(false);
+
+  useEffect(() => {
+    if (disableAnimations || !gridRef?.current || !enabled) return;
+
+    const spotlight = document.createElement('div');
+    spotlight.className = 'global-spotlight';
+    spotlight.style.cssText = `
+      position: fixed;
+      width: 800px;
+      height: 800px;
+      border-radius: 50%;
+      pointer-events: none;
+      background: radial-gradient(circle,
+        rgba(${DEFAULT_GLOW_COLOR}, 0.15) 0%,
+        rgba(${DEFAULT_GLOW_COLOR}, 0.08) 15%,
+        rgba(${DEFAULT_GLOW_COLOR}, 0.04) 25%,
+        rgba(${DEFAULT_GLOW_COLOR}, 0.02) 40%,
+        rgba(${DEFAULT_GLOW_COLOR}, 0.01) 65%,
+        transparent 70%
+      );
+      z-index: 200;
+      opacity: 0;
+      transform: translate(-50%, -50%);
+      mix-blend-mode: screen;
+    `;
+    document.body.appendChild(spotlight);
+    spotlightRef.current = spotlight;
+
+    const handleMouseMove = (e) => {
+      if (!spotlightRef.current || !gridRef.current) return;
+      const section = gridRef.current.closest('.bento-section');
+      const rect = section?.getBoundingClientRect();
+      const mouseInside =
+        rect && e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+
+      isInsideSection.current = mouseInside || false;
+      const cards = gridRef.current.querySelectorAll('.card');
+
+      if (!mouseInside) {
+        gsap.to(spotlightRef.current, { opacity: 0, duration: 0.3, ease: 'power2.out' });
+        cards.forEach((card) => card.style.setProperty('--glow-intensity', '0'));
+        return;
+      }
+
+      const { proximity, fadeDistance } = calculateSpotlightValues(spotlightRadius);
+      let minDistance = Infinity;
+
+      cards.forEach((card) => {
+        const cardRect = card.getBoundingClientRect();
+        const centerX = cardRect.left + cardRect.width / 2;
+        const centerY = cardRect.top + cardRect.height / 2;
+        const distance =
+          Math.hypot(e.clientX - centerX, e.clientY - centerY) - Math.max(cardRect.width, cardRect.height) / 2;
+        const effectiveDistance = Math.max(0, distance);
+
+        minDistance = Math.min(minDistance, effectiveDistance);
+
+        let glowIntensity = 0;
+        if (effectiveDistance <= proximity) glowIntensity = 1;
+        else if (effectiveDistance <= fadeDistance) glowIntensity = (fadeDistance - effectiveDistance) / (fadeDistance - proximity);
+
+        updateCardGlowProperties(card, e.clientX, e.clientY, glowIntensity, spotlightRadius);
+      });
+
+      gsap.to(spotlightRef.current, { left: e.clientX, top: e.clientY, duration: 0.1, ease: 'power2.out' });
+
+      const targetOpacity =
+        minDistance <= proximity
+          ? 0.8
+          : minDistance <= fadeDistance
+            ? ((fadeDistance - minDistance) / (fadeDistance - proximity)) * 0.8
+            : 0;
+
+      gsap.to(spotlightRef.current, {
+        opacity: targetOpacity,
+        duration: targetOpacity > 0 ? 0.2 : 0.5,
+        ease: 'power2.out'
+      });
+    };
+
+    const handleMouseLeave = () => {
+      isInsideSection.current = false;
+      gridRef.current?.querySelectorAll('.card').forEach((card) => {
+        card.style.setProperty('--glow-intensity', '0');
+      });
+      if (spotlightRef.current) {
+        gsap.to(spotlightRef.current, { opacity: 0, duration: 0.3, ease: 'power2.out' });
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseleave', handleMouseLeave);
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+      spotlightRef.current?.parentNode?.removeChild(spotlightRef.current);
+    };
+  }, [gridRef, disableAnimations, enabled, spotlightRadius]);
+
+  return null;
+}
+
+/* ---------- Page (Bento + 3D flip) ---------- */
+export default function TileGrid() {
+  // Single flipped target; also track which card is currently animating to toggle blur/title-hiding.
+  const [flippedIndex, setFlippedIndex] = useState(null);
+  const [flippingIndex, setFlippingIndex] = useState(null);
+
+  const handleCardClick = (index) => {
+    // Start flip immediately (fixes "must move cursor off" issue).
+    setFlippingIndex(index);
+    setFlippedIndex((prev) => (prev === index ? null : index));
   };
 
   const tiles = [
@@ -336,8 +667,8 @@ export default function TileGrid() {
         'A series of models designed to examine which factors predispose areas to forest fires most.',
       features: [
         'Analyzed causes of spread rates',
-        'Determined the most predictive factor extractable from public data to be humidity',
-        'Discovered weather to be a poor predictor of forest fires - likely due to data chunking',
+        'Determined humidity as most predictive',
+        'Weather alone underperforms due to data chunking',
       ],
     },
     {
@@ -353,56 +684,91 @@ export default function TileGrid() {
     },
   ];
 
+  const gridRef = useRef(null);
+  const isMobile = useMobileDetection();
+  const disableFancy = isMobile;
+
   return (
     <section className="relative bg-dark min-h-screen">
-      {/* Background Snake */}
       <SnakeBackdrop />
 
-      {/* Foreground content */}
       <div className="relative z-10 pt-24 sm:pt-28 pb-12">
         <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
           <h2 className="text-center text-white font-bold tracking-tight mb-8 sm:mb-12 text-4xl sm:text-6xl md:text-7xl">
             MY PROJECTS
           </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 md:gap-8">
+          <GlobalSpotlight
+            gridRef={gridRef}
+            disableAnimations={disableFancy}
+            enabled={!disableFancy}
+            spotlightRadius={DEFAULT_SPOTLIGHT_RADIUS}
+          />
+
+          <div className="card-grid bento-section" ref={gridRef}>
             {tiles.map((tile, index) => {
-              const isOpen = revealedTiles.includes(index);
+              const isFlipped = flippedIndex === index;
+              const isFlippingNow = flippingIndex === index;
+
               return (
-                <button
+                <ParticleCard
                   key={index}
-                  type="button"
-                  onClick={() => handleTileClick(index)}
-                  aria-pressed={isOpen}
-                  aria-label={`${isOpen ? 'Hide' : 'Show'} details for ${tile.title}`}
-                  className="group relative w-full text-left rounded-2xl bg-gray-900/60 shadow-lg ring-1 ring-white/10 hover:ring-white/20 transition
-                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900
-                             overflow-hidden hover:scale-[1.02] active:scale-[0.99] duration-200"
+                  className={`card card--text-autohide card--border-glow flip-3d ${isFlipped ? 'flipped' : ''} ${isFlippingNow ? 'flipping' : ''}`}
+                  style={{ backgroundColor: '#060010', '--glow-color': DEFAULT_GLOW_COLOR }}
+                  disableAnimations={disableFancy}
+                  particleCount={DEFAULT_PARTICLE_COUNT}
+                  enableTilt={!disableFancy}
+                  clickEffect={!disableFancy}
+                  enableMagnetism={!disableFancy}
+                  onClick={() => handleCardClick(index)}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={isFlipped}
                 >
-                  {isOpen ? (
-                    <div className="p-4 sm:p-6">
-                      <h3 className="text-2xl font-bold text-white text-center mb-2">{tile.title}</h3>
-                      <p className="text-center text-gray-300 mb-4">{tile.content}</p>
-                      <p className="text-gray-200 mb-4">{tile.description}</p>
-                      <ul className="list-disc pl-5 space-y-1 text-gray-200">
-                        {tile.features.map((feature, idx) => (
-                          <li key={idx}>{feature}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : (
-                    <div className="relative">
+                  <div
+                    className="flip-3d-inner"
+                    onTransitionEnd={(e) => {
+                      // Only clear when the flip rotation finishes on this card
+                      if (e.propertyName === 'transform' && flippingIndex === index) {
+                        setFlippingIndex(null);
+                      }
+                    }}
+                  >
+                    {/* Front face */}
+                    <div className="flip-face front">
+                      <div className="relative h-full w-full">
                         <div className="p-3">
                           <ResponsiveLottie animationData={tile.animation} />
                         </div>
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                        <h3 className="inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
-                          {tile.title}
-                        </h3>
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <h3 className="overlay-title inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
+                            {tile.title}
+                          </h3>
+                        </div>
                       </div>
                     </div>
-                  )}
-                </button>
+
+                    {/* Back face */}
+                    <div className="flip-face back">
+                      <div className="p-4 sm:p-6 h-full w-full flex flex-col">
+                        <div className="card__header mb-2">
+                          <div className="card__label">{tile.content}</div>
+                        </div>
+                        <div className="card__content">
+                          <h3 className="card__title text-white text-xl mb-2">{tile.title}</h3>
+                          <p className="card__description text-gray-300 mb-4">{tile.description}</p>
+                          <ul className="list-disc pl-5 space-y-1 text-gray-200">
+                            {tile.features.map((feature, idx) => (
+                              <li key={idx}>{feature}</li>
+                            ))}
+                          </ul>
+                          <div className="mt-auto pt-4 text-sm text-gray-400">
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </ParticleCard>
               );
             })}
           </div>

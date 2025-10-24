@@ -4,6 +4,8 @@
 // - Bento-style grid with hover spotlight/particles.
 // - Each card flips via react-card-flip (front: Lottie + title chip; back: details).
 // - We trigger the flip immediately on click (no waiting for ripple); animation handled by the library.
+// - Mobile fix: ParticleCard now wires onClick directly on the wrapper <div> so taps work even when
+//   hover/animation listeners are disabled on small screens. Also handles Enter/Space keys.
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
@@ -432,6 +434,7 @@ function ParticleCard({
     });
   }, [initializeParticles]);
 
+  // Mouse-based niceties are disabled on mobile; we still want clicks to work.
   useEffect(() => {
     if (disableAnimations || !cardRef.current) return;
     const el = cardRef.current;
@@ -467,15 +470,31 @@ function ParticleCard({
         magnetismAnimationRef.current = gsap.to(el, { x: magnetX, y: magnetY, duration: 0.3, ease: 'power2.out' });
       }
     };
-    const handleClick = (e) => {
-      // Flip immediately; ripple runs in parallel so click works even while hovering.
-      onClick?.(e);
 
-      if (!clickEffect) return;
+    el.addEventListener('mouseenter', handleMouseEnter);
+    el.addEventListener('mouseleave', handleMouseLeave);
+    el.addEventListener('mousemove', handleMouseMove);
 
+    return () => {
+      isHoveredRef.current = false;
+      el.removeEventListener('mouseenter', handleMouseEnter);
+      el.removeEventListener('mouseleave', handleMouseLeave);
+      el.removeEventListener('mousemove', handleMouseMove);
+      clearAllParticles();
+    };
+  }, [animateParticles, clearAllParticles, disableAnimations, enableTilt, enableMagnetism]);
+
+  // Unified "activate" handler used for click/tap and keyboard. Keeps ripple effect on desktop.
+  const handleActivate = useCallback((e) => {
+    // Fire the parent-provided onClick immediately so flip happens right away.
+    onClick?.(e);
+
+    // Optional ripple (skip on mobile where animations are disabled).
+    if (clickEffect && !disableAnimations && cardRef.current) {
+      const el = cardRef.current;
       const rect = el.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const x = ('clientX' in e ? e.clientX : 0) - rect.left;
+      const y = ('clientY' in e ? e.clientY : 0) - rect.top;
       const maxDistance = Math.max(
         Math.hypot(x, y),
         Math.hypot(x - rect.width, y),
@@ -499,31 +518,35 @@ function ParticleCard({
         scale: 1, opacity: 0, duration: 0.8, ease: 'power2.out',
         onComplete: () => ripple.remove()
       });
-    };
+    }
+  }, [onClick, clickEffect, disableAnimations]);
 
-    el.addEventListener('mouseenter', handleMouseEnter);
-    el.addEventListener('mouseleave', handleMouseLeave);
-    el.addEventListener('mousemove', handleMouseMove);
-    el.addEventListener('click', handleClick);
-
-    return () => {
-      isHoveredRef.current = false;
-      el.removeEventListener('mouseenter', handleMouseEnter);
-      el.removeEventListener('mouseleave', handleMouseLeave);
-      el.removeEventListener('mousemove', handleMouseMove);
-      el.removeEventListener('click', handleClick);
-      clearAllParticles();
-    };
-  }, [animateParticles, clearAllParticles, disableAnimations, enableTilt, enableMagnetism, clickEffect, onClick]);
+  const handleKeyDown = useCallback((e) => {
+    // Space/Enter activate the card for keyboard users
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleActivate(e);
+    }
+  }, [handleActivate]);
 
   return (
     <div
       ref={cardRef}
       className={`${className} particle-container`}
-      style={{ ...style, position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
+      style={{
+        ...style,
+        position: 'relative',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        userSelect: 'none',
+        // Helps mobile Safari treat taps as clicks without delay
+        touchAction: 'manipulation',
+      }}
       role={role}
       tabIndex={tabIndex}
       aria-pressed={ariaPressed}
+      onClick={handleActivate}        // <-- ensures taps/clicks work even when animations are disabled
+      onKeyDown={handleKeyDown}
     >
       {children}
     </div>

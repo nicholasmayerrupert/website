@@ -12,7 +12,8 @@ const Hero = () => {
           tag="h1"
           textAlign="left"
           splitType="words,chars"
-          delay={60}
+          delay={30}
+          duration={0.3}
         />
         <SplitText
           text="COMPUTER SCIENCE STUDENT AT SFU. SOFTWARE ENGINEERING ENJOYER."
@@ -20,7 +21,8 @@ const Hero = () => {
           tag="p"
           textAlign="left"
           splitType="words,chars"
-          delay={40}
+          delay={20}
+          duration={0.3}
         />
       </div>
 

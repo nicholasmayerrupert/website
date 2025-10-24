@@ -4,18 +4,10 @@
 // - Bento-style grid with hover spotlight/particles.
 // - Each card flips via react-card-flip (front: Lottie + title chip; back: details).
 // - We trigger the flip immediately on click (no waiting for ripple); animation handled by the library.
-// - Mobile fix: ParticleCard wires onClick directly on the wrapper <div> so taps work even when
+// - Mobile fix: ParticleCard now wires onClick directly on the wrapper <div> so taps work even when
 //   hover/animation listeners are disabled on small screens. Also handles Enter/Space keys.
-// - Chrome fix: ResponsiveLottie switches to 'canvas' renderer on Chrome to avoid SVG-in-3D
-//   compositing glitches during flips. Safari/Firefox stay on 'svg'.
 
-import React, {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  useCallback,
-} from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
 import ReactCardFlip from 'react-card-flip';
 import Lottie from 'react-lottie';
@@ -43,17 +35,10 @@ function usePrefersReducedMotion() {
 }
 
 /* ---------- Responsive Lottie (square) ---------- */
-function ResponsiveLottie({ animationData, className = '' }) {
+function ResponsiveLottie({ animationData }) {
   const containerRef = useRef(null);
   const [size, setSize] = useState(300);
   const prefersReducedMotion = usePrefersReducedMotion();
-
-  // Simple UA probe to selectively use canvas renderer on Chrome
-  const isChrome =
-    typeof navigator !== 'undefined' &&
-    /Chrome|Chromium|CriOS/.test(navigator.userAgent) &&
-    !/Edg|OPR/.test(navigator.userAgent) &&
-    !/Safari\/\d+/.test(navigator.userAgent);
 
   useLayoutEffect(() => {
     if (!containerRef.current) return;
@@ -78,42 +63,19 @@ function ResponsiveLottie({ animationData, className = '' }) {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className={`w-full aspect-square grid place-items-center ${className}`}
-    >
-      <div
-        style={{
-          width: size,
-          height: size,
-          // Promote during 3D transforms so Chrome doesn’t drop it
-          transform: 'translateZ(0)',
-          backfaceVisibility: 'hidden',
-          WebkitBackfaceVisibility: 'hidden',
-          willChange: 'transform',
-        }}
-      >
+    <div ref={containerRef} className="w-full aspect-square grid place-items-center">
+      <div style={{ width: size, height: size }}>
         <Lottie
           options={{
-            renderer: isChrome ? 'canvas' : 'svg',
             loop: !prefersReducedMotion,
             autoplay: !prefersReducedMotion,
             animationData,
-            rendererSettings: {
-              preserveAspectRatio: 'xMidYMid slice',
-              progressiveLoad: true,
-            },
+            rendererSettings: { preserveAspectRatio: 'xMidYMid slice' },
           }}
           height={size}
           width={size}
           isClickToPauseDisabled
-          style={{
-            display: 'block',
-            transform: 'translateZ(0)',
-            backfaceVisibility: 'hidden',
-            WebkitBackfaceVisibility: 'hidden',
-            willChange: 'transform',
-          }}
+          style={{ display: 'block' }}
         />
       </div>
     </div>
@@ -183,6 +145,7 @@ function SnakeBackdrop() {
 
     const BASE_STEP_MS = 110;
     const MIN_STEP_MS = 70;
+    const SPEEDUP = 0.98;
     let stepMs = BASE_STEP_MS;
 
     let controlMode = 'auto';
@@ -582,7 +545,7 @@ function ParticleCard({
       role={role}
       tabIndex={tabIndex}
       aria-pressed={ariaPressed}
-      onClick={handleActivate}
+      onClick={handleActivate}        // <-- ensures taps/clicks work even when animations are disabled
       onKeyDown={handleKeyDown}
     >
       {children}
@@ -698,7 +661,9 @@ function GlobalSpotlight({ gridRef, disableAnimations = false, enabled = true, s
 
 /* ---------- Page (Bento + 3D flip) ---------- */
 export default function TileGrid() {
+  // Track which card is showing details.
   const [flippedIndex, setFlippedIndex] = useState(null);
+
   const handleCardClick = (index) => {
     setFlippedIndex((prev) => (prev === index ? null : index));
   };
@@ -789,20 +754,18 @@ export default function TileGrid() {
                     containerClassName="card-flip__container"
                     cardStyles={CARD_FLIP_STYLES}
                   >
-                    {/* Front */}
                     <div key="front" className="card-face card-face--front">
-                      {/* Dim overlay while flipping to de-clutter; stays above Lottie, below title */}
                       <div
-                        className={`absolute inset-0 transition-opacity duration-300 bg-black/70 pointer-events-none z-[2] ${
+                        className={`absolute inset-0 transition-opacity duration-300 bg-black/70 pointer-events-none z-[1] ${
                           isFlipped ? 'opacity-60' : 'opacity-0'
                         }`}
                         style={{ borderRadius: 'inherit' }}
                       />
                       <div className="relative h-full w-full">
                         <div className="p-3">
-                          <ResponsiveLottie animationData={tile.animation} className="lottie" />
+                          <ResponsiveLottie animationData={tile.animation} />
                         </div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-[3]">
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <h3 className="overlay-title inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
                             {tile.title}
                           </h3>
@@ -810,7 +773,6 @@ export default function TileGrid() {
                       </div>
                     </div>
 
-                    {/* Back */}
                     <div key="back" className="card-face card-face--back">
                       <div className="p-4 sm:p-6 h-full w-full flex flex-col">
                         <div className="card__header mb-2">
@@ -824,7 +786,7 @@ export default function TileGrid() {
                               <li key={idx}>{feature}</li>
                             ))}
                           </ul>
-                          <div className="mt-auto pt-4 text-sm text-gray-400" />
+                          <div className="mt-auto pt-4 text-sm text-gray-400"></div>
                         </div>
                       </div>
                     </div>

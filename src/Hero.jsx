@@ -1,16 +1,27 @@
 import GameOfLife3D from "./GameOfLife3D";
+import SplitText from "./SplitText";
 
 const Hero = () => {
   return (
     <section className="relative flex h-[100dvh] flex-col md:flex-row overflow-hidden bg-[#222222]">
       {/* Text block (top-most) */}
       <div className="relative z-20 order-1 md:order-1 w-full md:w-1/2 lg:w-1/3 text-white px-6 sm:px-12 md:pl-24 pt-16 sm:pt-20 md:pt-28">
-        <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-4 md:mb-6 leading-tight md:leading-none md:whitespace-nowrap">
-          NICHOLAS <br className="hidden md:block" /> MAYER-RUPERT
-        </h1>
-        <p className="text-xl sm:text-2xl md:text-3xl md:ml-16">
-          COMPUTER SCIENCE STUDENT AT SFU. SOFTWARE ENGINEERING ENJOYER.
-        </p>
+        <SplitText
+          text="NICHOLAS MAYER-RUPERT"
+          className="text-5xl sm:text-6xl md:text-7xl lg:text-8xl font-bold mb-4 md:mb-6 leading-tight md:leading-none"
+          tag="h1"
+          textAlign="left"
+          splitType="words,chars"
+          delay={60}
+        />
+        <SplitText
+          text="COMPUTER SCIENCE STUDENT AT SFU. SOFTWARE ENGINEERING ENJOYER."
+          className="text-xl sm:text-2xl md:text-3xl md:ml-16"
+          tag="p"
+          textAlign="left"
+          splitType="words,chars"
+          delay={40}
+        />
       </div>
 
       {/* 3D scene (bottom layer) */}

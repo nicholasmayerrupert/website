@@ -2,12 +2,12 @@
 // Notes for future devs:
 // - SnakeBackdrop remains untouched.
 // - Bento-style grid with hover spotlight/particles.
-// - Each card flips in 3D on click (front: Lottie + title chip; back: details).
-// - We trigger the flip immediately on click (no waiting for ripple).
-// - While flipping, we blur/dim the front (Lottie) and hide the title chip to reduce visual clutter.
+// - Each card flips via react-card-flip (front: Lottie + title chip; back: details).
+// - We trigger the flip immediately on click (no waiting for ripple); animation handled by the library.
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
+import ReactCardFlip from 'react-card-flip';
 import Lottie from 'react-lottie';
 import animation1 from './chess.json';
 import animation2 from './grabby2.json';
@@ -312,6 +312,10 @@ const DEFAULT_PARTICLE_COUNT = 12;
 const DEFAULT_SPOTLIGHT_RADIUS = 300;
 const DEFAULT_GLOW_COLOR = '132, 0, 255';
 const MOBILE_BREAKPOINT = 768;
+const CARD_FLIP_STYLES = {
+  front: { height: '100%', width: '100%' },
+  back: { height: '100%', width: '100%' },
+};
 
 const createParticleElement = (x, y, color = DEFAULT_GLOW_COLOR) => {
   const el = document.createElement('div');
@@ -634,13 +638,10 @@ function GlobalSpotlight({ gridRef, disableAnimations = false, enabled = true, s
 
 /* ---------- Page (Bento + 3D flip) ---------- */
 export default function TileGrid() {
-  // Single flipped target; also track which card is currently animating to toggle blur/title-hiding.
+  // Track which card is showing details.
   const [flippedIndex, setFlippedIndex] = useState(null);
-  const [flippingIndex, setFlippingIndex] = useState(null);
 
   const handleCardClick = (index) => {
-    // Start flip immediately (fixes "must move cursor off" issue).
-    setFlippingIndex(index);
     setFlippedIndex((prev) => (prev === index ? null : index));
   };
 
@@ -708,12 +709,11 @@ export default function TileGrid() {
           <div className="card-grid bento-section" ref={gridRef}>
             {tiles.map((tile, index) => {
               const isFlipped = flippedIndex === index;
-              const isFlippingNow = flippingIndex === index;
 
               return (
                 <ParticleCard
                   key={index}
-                  className={`card card--text-autohide card--border-glow flip-3d ${isFlipped ? 'flipped' : ''} ${isFlippingNow ? 'flipping' : ''}`}
+                  className={`card card--text-autohide card--border-glow card-flip ${isFlipped ? 'card-flip--flipped' : ''}`}
                   style={{ backgroundColor: '#060010', '--glow-color': DEFAULT_GLOW_COLOR }}
                   disableAnimations={disableFancy}
                   particleCount={DEFAULT_PARTICLE_COUNT}
@@ -725,17 +725,19 @@ export default function TileGrid() {
                   tabIndex={0}
                   aria-pressed={isFlipped}
                 >
-                  <div
-                    className="flip-3d-inner"
-                    onTransitionEnd={(e) => {
-                      // Only clear when the flip rotation finishes on this card
-                      if (e.propertyName === 'transform' && flippingIndex === index) {
-                        setFlippingIndex(null);
-                      }
-                    }}
+                  <ReactCardFlip
+                    isFlipped={isFlipped}
+                    flipDirection="horizontal"
+                    containerClassName="card-flip__container"
+                    cardStyles={CARD_FLIP_STYLES}
                   >
-                    {/* Front face */}
-                    <div className="flip-face front">
+                    <div key="front" className="card-face card-face--front">
+                      <div
+                        className={`absolute inset-0 transition-opacity duration-300 bg-black/70 pointer-events-none z-[1] ${
+                          isFlipped ? 'opacity-60' : 'opacity-0'
+                        }`}
+                        style={{ borderRadius: 'inherit' }}
+                      />
                       <div className="relative h-full w-full">
                         <div className="p-3">
                           <ResponsiveLottie animationData={tile.animation} />
@@ -748,8 +750,7 @@ export default function TileGrid() {
                       </div>
                     </div>
 
-                    {/* Back face */}
-                    <div className="flip-face back">
+                    <div key="back" className="card-face card-face--back">
                       <div className="p-4 sm:p-6 h-full w-full flex flex-col">
                         <div className="card__header mb-2">
                           <div className="card__label">{tile.content}</div>
@@ -762,12 +763,11 @@ export default function TileGrid() {
                               <li key={idx}>{feature}</li>
                             ))}
                           </ul>
-                          <div className="mt-auto pt-4 text-sm text-gray-400">
-                          </div>
+                          <div className="mt-auto pt-4 text-sm text-gray-400"></div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </ReactCardFlip>
                 </ParticleCard>
               );
             })}

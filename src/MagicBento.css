@@ -1,3 +1,4 @@
+/* src/MagicBento.css */
 :root {
   --hue: 27;
   --sat: 69%;
@@ -16,7 +17,7 @@
   padding: 0.75em;
   max-width: 54em;
   font-size: clamp(1rem, 0.9rem + 0.5vw, 1.5rem);
-  margin: 0 auto; /* ensure centered in container */
+  margin: 0 auto;
 }
 
 .card {
@@ -35,6 +36,7 @@
   font-weight: 300;
   overflow: hidden;
   transition: all 0.3s ease;
+  isolation: isolate;               /* new: separate stacking context so z-index is predictable */
 
   --glow-x: 50%;
   --glow-y: 50%;
@@ -47,43 +49,77 @@
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
+/* ----- Persistent background media & dim sheet (UNDER flip content) ----- */
+.card-media {
+  position: absolute;
+  inset: 0;
+  z-index: 0;           /* sits at the very back inside the card */
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  contain: paint;       /* keeps the blur from messing with siblings' stacking */
+}
+
+.card-media .card-dim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;           /* above Lottie, still below the flipping content */
+  opacity: 0;
+  transition: opacity 180ms ease;
+  background: rgba(0, 0, 0, 0.66);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+.card-media .card-dim.is-on { opacity: 1; }
+
+/* Flip faces sit ABOVE background/dim */
+.card-flip__container {
+  position: relative;
+  z-index: 5;                 /* higher than the blur layer */
+  height: 100%;
+  width: 100%;
+  perspective: 1000px;
+  transform-style: preserve-3d;
+  will-change: transform;
+  transform: translateZ(0);  /* force own compositor layer */
+}
+
+.card-face {
+  height: 100%;
+  width: 100%;
+  position: relative;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+/* Title chip definitely above everything */
+.card-flip .overlay-title {
+  position: relative;
+  z-index: 6;
+  opacity: 1;
+  transition: opacity 140ms ease;
+}
+.card-flip--flipped .overlay-title {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* Content styles */
 .card__header,
 .card__content {
   display: flex;
   position: relative;
   color: var(--white);
 }
+.card__header { gap: 0.75em; justify-content: space-between; }
+.card__content { flex-direction: column; }
 
-.card__header {
-  gap: 0.75em;
-  justify-content: space-between;
-}
-
-.card__content {
-  flex-direction: column;
-}
-
-.card__label {
-  font-size: 16px;
-}
-
-.card__title,
-.card__description {
-  --clamp-title: 1;
-  --clamp-desc: 2;
-}
-
-.card__title {
-  font-weight: 400;
-  font-size: 16px;
-  margin: 0 0 0.25em;
-}
-
-.card__description {
-  font-size: 12px;
-  line-height: 1.2;
-  opacity: 0.9;
-}
+.card__label { font-size: 16px; }
+.card__title, .card__description { --clamp-title: 1; --clamp-desc: 2; }
+.card__title { font-weight: 400; font-size: 16px; margin: 0 0 0.25em; }
+.card__description { font-size: 12px; line-height: 1.2; opacity: 0.9; }
 
 .card--text-autohide .card__title,
 .card--text-autohide .card__description {
@@ -92,63 +128,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.card--text-autohide .card__title { -webkit-line-clamp: var(--clamp-title); line-clamp: var(--clamp-title); }
+.card--text-autohide .card__description { -webkit-line-clamp: var(--clamp-desc); line-clamp: var(--clamp-desc); }
 
-.card--text-autohide .card__title {
-  -webkit-line-clamp: var(--clamp-title);
-  line-clamp: var(--clamp-title);
-}
-
-.card--text-autohide .card__description {
-  -webkit-line-clamp: var(--clamp-desc);
-  line-clamp: var(--clamp-desc);
-}
-
+/* --- Uniform grid: mobile = 1 col, ≥600px = 2 cols, stick with 2 cols --- */
 @media (max-width: 599px) {
   .card-grid {
     grid-template-columns: 1fr;
     width: 90%;
     padding: 0.5em;
   }
-
-  .card {
-    width: 100%;
-    min-height: 180px;
-  }
+  .card { width: 100%; min-height: 180px; }
 }
-
-@media (min-width: 600px) {
-  .card-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* --- Uniform grid: mobile = 1 col, ≥768px = 2 cols --- */
-@media (max-width: 767px) {
-  .card-grid {
-    grid-template-columns: 1fr;
-    width: 90%;
-    padding: 0.5em;
-  }
-}
-
-@media (min-width: 768px) {
-  .card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-/* Keep 2 columns even on very large screens */
-@media (min-width: 1024px) {
-  .card-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
+@media (min-width: 600px) { .card-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 768px) { .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1024px){ .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Reset any old "bento showcase" spanning rules */
-.card-grid > .card {
-  grid-column: auto !important;
-  grid-row: auto !important;
-}
+.card-grid > .card { grid-column: auto !important; grid-row: auto !important; }
 
 /* Border glow effect */
 .card--border-glow::after {
@@ -175,41 +172,30 @@
   transition: opacity 0.3s ease;
   z-index: 1;
 }
-
-.card--border-glow:hover::after {
-  opacity: 1;
-}
-
+.card--border-glow:hover::after { opacity: 1; }
 .card--border-glow:hover {
   box-shadow:
     0 4px 20px rgba(46, 24, 78, 0.4),
     0 0 30px var(--purple-glow);
 }
 
-.particle-container {
-  position: relative;
-  overflow: hidden;
-}
-
+/* Particles */
+.particle-container { position: relative; overflow: hidden; }
 .particle::before {
   content: '';
   position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
+  top: -2px; left: -2px; right: -2px; bottom: -2px;
   background: rgba(132, 0, 255, 0.2);
   border-radius: 50%;
   z-index: -1;
 }
-
 .particle-container:hover {
   box-shadow:
     0 4px 20px rgba(46, 24, 78, 0.2),
     0 0 30px var(--purple-glow);
 }
 
-/* Global spotlight styles */
+/* Global spotlight */
 .global-spotlight {
   mix-blend-mode: screen;
   will-change: transform, opacity;
@@ -217,35 +203,4 @@
   pointer-events: none;
 }
 
-.bento-section {
-  position: relative;
-  user-select: none;
-}
-
-/* ========== Card Flip ========== */
-.card-flip {
-  position: relative;
-}
-
-.card-flip__container {
-  height: 100%;
-  width: 100%;
-}
-
-.card-face {
-  height: 100%;
-  width: 100%;
-  position: relative;
-}
-
-.card-flip .overlay-title {
-  position: relative;
-  z-index: 2;
-  opacity: 1;
-  transition: opacity 140ms ease;
-}
-
-.card-flip--flipped .overlay-title {
-  opacity: 0;
-  visibility: hidden;
-}
+.bento-section { position: relative; user-select: none; }

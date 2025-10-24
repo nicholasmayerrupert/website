@@ -1,11 +1,10 @@
 // src/TileGrid.jsx
 // Notes for future devs:
-// - SnakeBackdrop remains untouched.
-// - Bento-style grid with hover spotlight/particles.
-// - Each card flips via react-card-flip (front: Lottie + title chip; back: details).
-// - We trigger the flip immediately on click (no waiting for ripple); animation handled by the library.
-// - Mobile fix: ParticleCard now wires onClick directly on the wrapper <div> so taps work even when
-//   hover/animation listeners are disabled on small screens. Also handles Enter/Space keys.
+// - Lottie now lives in a persistent .card-media background layer.
+// - The blur/dim sheet (card-dim) is INSIDE .card-media, so it only dims/blurs the animation,
+//   not the text. Flipping content (.card-flip__container) sits above both.
+// - Hoisted animateParticles inside ParticleCard to avoid TDZ issues.
+// - Mobile: onClick wired on wrapper; Enter/Space supported.
 
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
@@ -63,8 +62,12 @@ function ResponsiveLottie({ animationData }) {
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full aspect-square grid place-items-center">
-      <div style={{ width: size, height: size }}>
+    <div
+      ref={containerRef}
+      className="w-full aspect-square grid place-items-center"
+      style={{ transform: 'translateZ(0)', willChange: 'transform' }}
+    >
+      <div style={{ width: size, height: size, pointerEvents: 'none' }}>
         <Lottie
           options={{
             loop: !prefersReducedMotion,
@@ -145,7 +148,6 @@ function SnakeBackdrop() {
 
     const BASE_STEP_MS = 110;
     const MIN_STEP_MS = 70;
-    const SPEEDUP = 0.98;
     let stepMs = BASE_STEP_MS;
 
     let controlMode = 'auto';
@@ -200,15 +202,16 @@ function SnakeBackdrop() {
     ];
 
     const stepAuto = () => {
+      const head = snake[0];
       const order = [...dirs].sort((a, b) => {
-        const da = Math.abs(food.x - (snake[0].x + a.x)) + Math.abs(food.y - (snake[0].y + a.y));
-        const db = Math.abs(food.x - (snake[0].x + b.x)) + Math.abs(food.y - (snake[0].y + b.y));
+        const da = Math.abs(food.x - (head.x + a.x)) + Math.abs(food.y - (head.y + a.y));
+        const db = Math.abs(food.x - (head.x + b.x)) + Math.abs(food.y - (head.y + b.y));
         return da - db;
       });
       for (const d of order) {
         if (d.x === -dir.x && d.y === -dir.y) continue;
-        const nx = snake[0].x + d.x;
-        const ny = snake[0].y + d.y;
+        const nx = head.x + d.x;
+        const ny = head.y + d.y;
         if (!inside(nx, ny)) continue;
         if (collideSelf(nx, ny)) continue;
         nextDir = d;
@@ -258,7 +261,7 @@ function SnakeBackdrop() {
       if (dt >= stepMs) {
         lastTick = now;
 
-        if (controlMode === 'player' && now - lastInputAt > PLAYER_TIMEOUT_MS) {
+        if (controlMode === 'player' && now - lastInputAt > 7000) {
           controlMode = 'auto';
         }
         if (controlMode === 'auto') stepAuto();
@@ -278,7 +281,7 @@ function SnakeBackdrop() {
 
         if (nx === food.x && ny === food.y) {
           food = spawnFood();
-          stepMs = Math.max(MIN_STEP_MS, stepMs * 0.98);
+          stepMs = Math.max(70, stepMs * 0.98);
         } else {
           snake.pop();
         }
@@ -409,35 +412,35 @@ function ParticleCard({
     particlesRef.current = [];
   }, []);
 
-  const animateParticles = useCallback(() => {
-    if (!cardRef.current || !isHoveredRef.current) return;
-    if (!particlesInitialized.current) initializeParticles();
-    memoizedParticles.current.forEach((particle, index) => {
-      const timeoutId = setTimeout(() => {
-        if (!isHoveredRef.current || !cardRef.current) return;
-        const clone = particle.cloneNode(true);
-        cardRef.current.appendChild(clone);
-        particlesRef.current.push(clone);
-        gsap.fromTo(clone, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(1.7)' });
-        gsap.to(clone, {
-          x: (Math.random() - 0.5) * 100,
-          y: (Math.random() - 0.5) * 100,
-          rotation: Math.random() * 360,
-          duration: 2 + Math.random() * 2,
-          ease: 'none',
-          repeat: -1,
-          yoyo: true,
-        });
-        gsap.to(clone, { opacity: 0.3, duration: 1.5, ease: 'power2.inOut', repeat: -1, yoyo: true });
-      }, index * 100);
-      timeoutsRef.current.push(timeoutId);
-    });
-  }, [initializeParticles]);
-
-  // Mouse-based niceties are disabled on mobile; we still want clicks to work.
   useEffect(() => {
     if (disableAnimations || !cardRef.current) return;
     const el = cardRef.current;
+
+    // Define first to avoid TDZ.
+    const animateParticles = () => {
+      if (!cardRef.current || !isHoveredRef.current) return;
+      if (!particlesInitialized.current) initializeParticles();
+      memoizedParticles.current.forEach((particle, index) => {
+        const timeoutId = setTimeout(() => {
+          if (!isHoveredRef.current || !cardRef.current) return;
+          const clone = particle.cloneNode(true);
+          cardRef.current.appendChild(clone);
+          particlesRef.current.push(clone);
+          gsap.fromTo(clone, { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(1.7)' });
+          gsap.to(clone, {
+            x: (Math.random() - 0.5) * 100,
+            y: (Math.random() - 0.5) * 100,
+            rotation: Math.random() * 360,
+            duration: 2 + Math.random() * 2,
+            ease: 'none',
+            repeat: -1,
+            yoyo: true,
+          });
+          gsap.to(clone, { opacity: 0.3, duration: 1.5, ease: 'power2.inOut', repeat: -1, yoyo: true });
+        }, index * 100);
+        timeoutsRef.current.push(timeoutId);
+      });
+    };
 
     const handleMouseEnter = () => {
       isHoveredRef.current = true;
@@ -482,14 +485,11 @@ function ParticleCard({
       el.removeEventListener('mousemove', handleMouseMove);
       clearAllParticles();
     };
-  }, [animateParticles, clearAllParticles, disableAnimations, enableTilt, enableMagnetism]);
+  }, [disableAnimations, enableTilt, enableMagnetism, glowColor, initializeParticles, clearAllParticles]);
 
-  // Unified "activate" handler used for click/tap and keyboard. Keeps ripple effect on desktop.
   const handleActivate = useCallback((e) => {
-    // Fire the parent-provided onClick immediately so flip happens right away.
     onClick?.(e);
 
-    // Optional ripple (skip on mobile where animations are disabled).
     if (clickEffect && !disableAnimations && cardRef.current) {
       const el = cardRef.current;
       const rect = el.getBoundingClientRect();
@@ -522,7 +522,6 @@ function ParticleCard({
   }, [onClick, clickEffect, disableAnimations]);
 
   const handleKeyDown = useCallback((e) => {
-    // Space/Enter activate the card for keyboard users
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       handleActivate(e);
@@ -539,13 +538,12 @@ function ParticleCard({
         overflow: 'hidden',
         cursor: 'pointer',
         userSelect: 'none',
-        // Helps mobile Safari treat taps as clicks without delay
         touchAction: 'manipulation',
       }}
       role={role}
       tabIndex={tabIndex}
       aria-pressed={ariaPressed}
-      onClick={handleActivate}        // <-- ensures taps/clicks work even when animations are disabled
+      onClick={handleActivate}
       onKeyDown={handleKeyDown}
     >
       {children}
@@ -661,7 +659,6 @@ function GlobalSpotlight({ gridRef, disableAnimations = false, enabled = true, s
 
 /* ---------- Page (Bento + 3D flip) ---------- */
 export default function TileGrid() {
-  // Track which card is showing details.
   const [flippedIndex, setFlippedIndex] = useState(null);
 
   const handleCardClick = (index) => {
@@ -748,31 +745,30 @@ export default function TileGrid() {
                   tabIndex={0}
                   aria-pressed={isFlipped}
                 >
+                  {/* Persistent background animation */}
+                  <div className="card-media" aria-hidden="true">
+                    <ResponsiveLottie animationData={tile.animation} />
+                    {/* Dim/blur sits ABOVE Lottie but BELOW flip content */}
+                    <div className={`card-dim ${isFlipped ? 'is-on' : ''}`} />
+                  </div>
+
+                  {/* Only text/content flips; background stays put */}
                   <ReactCardFlip
                     isFlipped={isFlipped}
                     flipDirection="horizontal"
                     containerClassName="card-flip__container"
                     cardStyles={CARD_FLIP_STYLES}
                   >
+                    {/* FRONT FACE */}
                     <div key="front" className="card-face card-face--front">
-                      <div
-                        className={`absolute inset-0 transition-opacity duration-300 bg-black/70 pointer-events-none z-[1] ${
-                          isFlipped ? 'opacity-60' : 'opacity-0'
-                        }`}
-                        style={{ borderRadius: 'inherit' }}
-                      />
-                      <div className="relative h-full w-full">
-                        <div className="p-3">
-                          <ResponsiveLottie animationData={tile.animation} />
-                        </div>
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <h3 className="overlay-title inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
-                            {tile.title}
-                          </h3>
-                        </div>
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <h3 className="overlay-title inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
+                          {tile.title}
+                        </h3>
                       </div>
                     </div>
 
+                    {/* BACK FACE */}
                     <div key="back" className="card-face card-face--back">
                       <div className="p-4 sm:p-6 h-full w-full flex flex-col">
                         <div className="card__header mb-2">

@@ -668,9 +668,9 @@ export default function TileGrid() {
   const tiles = [
     {
       animation: animation1,
-      title: 'Chess Engine',
+      title: 'LLM Chess Coach',
       content: 'Software Project',
-      description: 'A decent chess engine built using C++.',
+      description: 'LLM-based chess assistant tool - https://github.com/nicholasmayerrupert/cmpt419chess.',
       features: ['AI opponent from terminal', 'Move analysis', 'Plays at ~1200 ELO'],
     },
     {

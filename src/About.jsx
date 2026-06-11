@@ -59,7 +59,8 @@ function SandOverlay({ onDrawModeChange }) {
     const MAX_WATER_FLOW = 10;
     const STEAM_DECAY_P = 0.018;
     const FIRE_DECAY_P = 0.006;
-    const FIRE_SPREAD_P = 0.45;
+    const OIL_IGNITE_P = 0.25;
+    const FIRE_SPREAD_P = 0.11;
     const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
 
     // Colors
@@ -485,6 +486,19 @@ function SandOverlay({ onDrawModeChange }) {
     // Helpers
     const emptyAt = (x, y) =>
       x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] === EMPTY && next[I(x, y)] === EMPTY;
+    const canWaterEnter = (x, y) =>
+      x >= 0 && x < cols && y >= 0 && y < rows && (grid[I(x, y)] === EMPTY || grid[I(x, y)] === OIL) && next[I(x, y)] === EMPTY;
+    const moveWaterInto = (fromK, x, y) => {
+      const toK = I(x, y);
+      const displaced = grid[toK];
+      next[toK] = WATER;
+      if (displaced === OIL && next[fromK] === EMPTY) next[fromK] = OIL;
+    };
+    const moveOilIntoWater = (fromK, x, y) => {
+      const toK = I(x, y);
+      next[toK] = OIL;
+      if (next[fromK] === EMPTY) next[fromK] = WATER;
+    };
     const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows - 1;
     const neighbors4 = (x, y) => [
       [x + 1, y],
@@ -598,8 +612,7 @@ function SandOverlay({ onDrawModeChange }) {
         next[I(x, y + 1)] = WATER; return;
       }
       if (y + 1 < rows && grid[I(x, y + 1)] === OIL && next[I(x, y + 1)] === EMPTY) {
-        next[I(x, y + 1)] = WATER;
-        if (next[k] === EMPTY) next[k] = OIL;
+        moveWaterInto(k, x, y + 1);
         return;
       }
 
@@ -610,8 +623,7 @@ function SandOverlay({ onDrawModeChange }) {
         const ik = I(nx, ny);
         if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = WATER; return; }
         if (grid[ik] === OIL && next[ik] === EMPTY) {
-          next[ik] = WATER;
-          if (next[k] === EMPTY) next[k] = OIL;
+          moveWaterInto(k, nx, ny);
           return;
         }
       }
@@ -622,10 +634,10 @@ function SandOverlay({ onDrawModeChange }) {
           for (let d = 1; d <= MAX_WATER_FLOW; d++) {
             const nx = x + sgn * d;
             if (nx <= 0 || nx >= cols - 1) break;
-            if (grid[I(nx, y)] !== EMPTY || next[I(nx, y)] !== EMPTY) break;
-            if (y + 1 < rows && grid[I(nx, y + 1)] === EMPTY && next[I(nx, y + 1)] === EMPTY) {
+            if (!canWaterEnter(nx, y)) break;
+            if (y + 1 < rows && canWaterEnter(nx, y + 1)) {
               const stepX = x + sgn;
-              if (grid[I(stepX, y)] === EMPTY && next[I(stepX, y)] === EMPTY) return sgn;
+              if (canWaterEnter(stepX, y)) return sgn;
             }
           }
         }
@@ -635,11 +647,12 @@ function SandOverlay({ onDrawModeChange }) {
       const flow = findFlowDir();
       if (flow !== 0) {
         const stepX = x + flow;
-        if (emptyAt(stepX, y)) { next[I(stepX, y)] = WATER; return; }
+        if (canWaterEnter(stepX, y)) { moveWaterInto(k, stepX, y); return; }
       }
 
-      const jiggle = Math.random() < 0.5 ? -1 : 1;
-      if (emptyAt(x + jiggle, y)) { next[I(x + jiggle, y)] = WATER; return; }
+      for (const dx of dirs) {
+        if (canWaterEnter(x + dx, y)) { moveWaterInto(k, x + dx, y); return; }
+      }
 
       if (next[k] === EMPTY) next[k] = WATER;
     };
@@ -648,6 +661,21 @@ function SandOverlay({ onDrawModeChange }) {
       const k = I(x, y);
       if (grid[k] !== OIL) return;
       if (next[k] !== EMPTY) return;
+
+      if (y - 1 > 0 && grid[I(x, y - 1)] === WATER && next[I(x, y - 1)] === EMPTY) {
+        moveOilIntoWater(k, x, y - 1);
+        return;
+      }
+
+      const riseDirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+      for (const dx of riseDirs) {
+        const nx = x + dx, ny = y - 1;
+        if (nx <= 0 || nx >= cols - 1 || ny <= 0) continue;
+        if (grid[I(nx, ny)] === WATER && next[I(nx, ny)] === EMPTY) {
+          moveOilIntoWater(k, nx, ny);
+          return;
+        }
+      }
 
       if (y + 1 < rows && grid[I(x, y + 1)] === EMPTY && next[I(x, y + 1)] === EMPTY) {
         next[I(x, y + 1)] = OIL; return;
@@ -658,7 +686,7 @@ function SandOverlay({ onDrawModeChange }) {
         const nx = x + dx, ny = y + 1;
         if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
         const ik = I(nx, ny);
-        if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = OIL; return; }
+        if (grid[ik] === EMPTY && next[ik] === EMPTY && grid[I(x, y + 1)] !== WATER) { next[ik] = OIL; return; }
       }
 
       const findFlowDir = () => {
@@ -688,6 +716,79 @@ function SandOverlay({ onDrawModeChange }) {
       if (emptyAt(x + jiggle, y)) { next[I(x + jiggle, y)] = OIL; return; }
 
       if (next[k] === EMPTY) next[k] = OIL;
+    };
+
+    const relaxLiquidGaps = () => {
+      for (let pass = 0; pass < 2; pass++) {
+        for (let y = rows - 2; y > 0; y--) {
+          const ltr = Math.random() < 0.5;
+          const start = ltr ? 1 : cols - 2;
+          const end = ltr ? cols - 1 : 0;
+          const stepX = ltr ? 1 : -1;
+
+          for (let x = start; x !== end; x += stepX) {
+            const k = I(x, y);
+            if (grid[k] !== EMPTY) continue;
+
+            const aboveK = I(x, y - 1);
+            const above = grid[aboveK];
+            if (above === WATER || above === OIL) {
+              grid[k] = above;
+              grid[aboveK] = EMPTY;
+              continue;
+            }
+
+            const below = grid[I(x, y + 1)];
+            if (below === EMPTY) continue;
+
+            const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+            for (const dx of dirs) {
+              const sx = x + dx;
+              if (sx <= 0 || sx >= cols - 1) continue;
+              const sk = I(sx, y);
+              const side = grid[sk];
+              if (side !== WATER && side !== OIL) continue;
+              grid[k] = side;
+              grid[sk] = EMPTY;
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    const separateLiquidsByDensity = () => {
+      for (let pass = 0; pass < 4; pass++) {
+        for (let y = 1; y < rows - 1; y++) {
+          const ltr = (pass + y) % 2 === 0;
+          const start = ltr ? 1 : cols - 2;
+          const end = ltr ? cols - 1 : 0;
+          const stepX = ltr ? 1 : -1;
+
+          for (let x = start; x !== end; x += stepX) {
+            const k = I(x, y);
+            if (grid[k] !== OIL) continue;
+
+            const aboveK = I(x, y - 1);
+            if (grid[aboveK] === WATER) {
+              grid[aboveK] = OIL;
+              grid[k] = WATER;
+              continue;
+            }
+
+            const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+            for (const dx of dirs) {
+              const nx = x + dx;
+              if (nx <= 0 || nx >= cols - 1) continue;
+              const diagK = I(nx, y - 1);
+              if (grid[diagK] !== WATER) continue;
+              grid[diagK] = OIL;
+              grid[k] = WATER;
+              break;
+            }
+          }
+        }
+      }
     };
 
     const riseSteam = (x, y) => {
@@ -771,11 +872,12 @@ function SandOverlay({ onDrawModeChange }) {
           for (const [nx, ny] of neighbors4(x, y)) {
             const nk = I(nx, ny);
             if (grid[nk] === OIL) {
+              if (Math.random() > OIL_IGNITE_P) continue;
               toFire.add(nk);
               if (Math.random() < FIRE_SPREAD_P) {
                 for (const [ox, oy] of neighbors4(nx, ny)) {
                   const ok = I(ox, oy);
-                  if (grid[ok] === OIL && Math.random() < 0.45) toFire.add(ok);
+                  if (grid[ok] === OIL && Math.random() < 0.12) toFire.add(ok);
                 }
               }
             }
@@ -886,7 +988,13 @@ function SandOverlay({ onDrawModeChange }) {
       // 9) Flip
       const tmp = grid; grid = next; next = tmp;
 
-      // 10) Side sinks (stones unaffected)
+      // 10) Collapse small liquid air pockets
+      relaxLiquidGaps();
+
+      // 11) Let buried oil bubble up through water after crowded movement claims settle
+      separateLiquidsByDensity();
+
+      // 12) Side sinks (stones unaffected)
       applySideSinks();
     };
 

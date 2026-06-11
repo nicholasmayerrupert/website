@@ -102,7 +102,7 @@ function SandOverlay({ onDrawModeChange }) {
     const STEAM = 6;
 
     // Grid
-    let cols = 0, rows = 0, cellSize = CELL_PX, dpr = 1;
+    let cols = 0, rows = 0, cellSize = CELL_PX;
     let viewWidth = 0, viewHeight = 0;
     let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
     let gridA = new Uint8Array(0);
@@ -254,13 +254,11 @@ function SandOverlay({ onDrawModeChange }) {
 
     const fit = () => {
       const { width, height } = refreshBounds();
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-      canvas.width = Math.max(300, Math.floor(width * dpr));
-      canvas.height = Math.max(200, Math.floor(height * dpr));
+      canvas.width = Math.max(300, Math.floor(width));
+      canvas.height = Math.max(200, Math.floor(height));
       canvas.style.width = '100%';
       canvas.style.height = '100%';
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       imageData = ctx.createImageData(canvas.width, canvas.height);
       pixels = new Uint32Array(imageData.data.buffer);
 
@@ -1165,10 +1163,10 @@ function SandOverlay({ onDrawModeChange }) {
       pixels.fill(0);
 
       const canvasWidth = canvas.width;
-      const drawSize = Math.max(1, Math.floor((cellSize - 1) * dpr));
+      const drawSize = cellSize - 1;
       const drawCell = (x, y, color) => {
-        const startX = Math.floor(x * cellSize * dpr);
-        const startY = Math.floor(y * cellSize * dpr);
+        const startX = x * cellSize;
+        const startY = y * cellSize;
         const endX = Math.min(canvasWidth, startX + drawSize);
         const endY = Math.min(canvas.height, startY + drawSize);
         for (let py = startY; py < endY; py++) {

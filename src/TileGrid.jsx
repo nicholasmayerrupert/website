@@ -173,10 +173,10 @@ function SnakeBackdrop() {
 
     const onKey = (e) => {
       let nd = null;
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') { nd = { x: 0, y: -1 }; e.preventDefault(); }
-      else if (e.code === 'ArrowDown' || e.code === 'KeyS') { nd = { x: 0, y: 1 }; e.preventDefault(); }
-      else if (e.code === 'ArrowLeft' || e.code === 'KeyA') { nd = { x: -1, y: 0 }; e.preventDefault(); }
-      else if (e.code === 'ArrowRight' || e.code === 'KeyD') { nd = { x: 1, y: 0 }; e.preventDefault(); }
+      if (e.code === 'ArrowUp') { nd = { x: 0, y: -1 }; e.preventDefault(); }
+      else if (e.code === 'ArrowDown') { nd = { x: 0, y: 1 }; e.preventDefault(); }
+      else if (e.code === 'ArrowLeft') { nd = { x: -1, y: 0 }; e.preventDefault(); }
+      else if (e.code === 'ArrowRight') { nd = { x: 1, y: 0 }; e.preventDefault(); }
       if (!nd) return;
       if (nd.x === -dir.x && nd.y === -dir.y) return;
       nextDir = nd;

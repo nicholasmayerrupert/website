@@ -6,6 +6,8 @@ const GRID_WIDTH = 16;
 const GRID_DEPTH = 16;
 const GRID_HEIGHT = 30;
 const DEFAULT_STEPS_PER_SECOND = 15;
+const AUTO_ROTATION_RESUME_MS = 10000;
+const DRAG_ROTATION_SCALE = 0.008;
 const DEFAULT_SEED =
   "0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011";
 
@@ -99,6 +101,8 @@ export default function GameOfLife3D({ className }) {
     });
     renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
     renderer.setSize(clientWidth, clientHeight);
+    renderer.domElement.style.touchAction = "none";
+    renderer.domElement.style.cursor = "grab";
     container.appendChild(renderer.domElement);
 
     // Scene
@@ -228,6 +232,50 @@ export default function GameOfLife3D({ className }) {
     let lastStepTime = performance.now();
     let lastRenderTime = lastStepTime;
     let spin = 0;
+    let isDragging = false;
+    let lastPointerX = 0;
+    let autoRotationResumeAt = 0;
+
+    const pauseAutoRotation = () => {
+      autoRotationResumeAt = performance.now() + AUTO_ROTATION_RESUME_MS;
+    };
+
+    const onPointerDown = (event) => {
+      isDragging = true;
+      lastPointerX = event.clientX;
+      pauseAutoRotation();
+      renderer.domElement.style.cursor = "grabbing";
+      renderer.domElement.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    };
+
+    const onPointerMove = (event) => {
+      if (!isDragging) return;
+      const dx = event.clientX - lastPointerX;
+      lastPointerX = event.clientX;
+      spin += dx * DRAG_ROTATION_SCALE;
+      pivot.rotation.z = spin;
+      pauseAutoRotation();
+      event.preventDefault();
+    };
+
+    const stopDragging = (event) => {
+      if (!isDragging) return;
+      isDragging = false;
+      pauseAutoRotation();
+      renderer.domElement.style.cursor = "grab";
+      try {
+        renderer.domElement.releasePointerCapture?.(event.pointerId);
+      } catch (_) {
+        // Pointer capture may already be released by the browser.
+      }
+    };
+
+    renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    renderer.domElement.addEventListener("pointermove", onPointerMove);
+    renderer.domElement.addEventListener("pointerup", stopDragging);
+    renderer.domElement.addEventListener("pointercancel", stopDragging);
+    renderer.domElement.addEventListener("lostpointercapture", stopDragging);
 
     const animate = () => {
       raf = requestAnimationFrame(animate);
@@ -251,8 +299,9 @@ export default function GameOfLife3D({ className }) {
         lastStepTime = now;
       }
 
-      // True yaw: rotate the pivot around Z
-      spin += YAW_DIRECTION * ROTATION_SPEED_RAD_PER_SEC * (dt / 1000);
+      if (!isDragging && now >= autoRotationResumeAt) {
+        spin += YAW_DIRECTION * ROTATION_SPEED_RAD_PER_SEC * (dt / 1000);
+      }
       pivot.rotation.z = spin;
 
       renderer.render(scene, camera);
@@ -276,6 +325,11 @@ export default function GameOfLife3D({ className }) {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("pointerup", stopDragging);
+      renderer.domElement.removeEventListener("pointercancel", stopDragging);
+      renderer.domElement.removeEventListener("lostpointercapture", stopDragging);
       geometry.dispose();
       material.dispose();
       renderer.dispose();
@@ -285,10 +339,14 @@ export default function GameOfLife3D({ className }) {
     };
   }, []);
 
+  const interactiveClassName = (className || "")
+    .replace(/\bpointer-events-none\b/g, "")
+    .trim();
+
   return (
     <div
       ref={containerRef}
-      className={className}
+      className={`${interactiveClassName} pointer-events-auto`}
       style={{ width: "100%", height: "100%" }}
     >
       {!controlsOpen && (

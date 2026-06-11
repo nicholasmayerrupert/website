@@ -758,34 +758,22 @@ function SandOverlay({ onDrawModeChange }) {
     };
 
     const separateLiquidsByDensity = () => {
-      for (let pass = 0; pass < 4; pass++) {
-        for (let y = 1; y < rows - 1; y++) {
-          const ltr = (pass + y) % 2 === 0;
-          const start = ltr ? 1 : cols - 2;
-          const end = ltr ? cols - 1 : 0;
-          const stepX = ltr ? 1 : -1;
+      const parity = Math.random() < 0.5 ? 0 : 1;
+      for (let y = 1; y < rows - 1; y++) {
+        const ltr = y % 2 === 0;
+        const start = ltr ? 1 : cols - 2;
+        const end = ltr ? cols - 1 : 0;
+        const stepX = ltr ? 1 : -1;
 
-          for (let x = start; x !== end; x += stepX) {
-            const k = I(x, y);
-            if (grid[k] !== OIL) continue;
+        for (let x = start; x !== end; x += stepX) {
+          if ((x + y) % 2 !== parity) continue;
+          const k = I(x, y);
+          if (grid[k] !== OIL) continue;
 
-            const aboveK = I(x, y - 1);
-            if (grid[aboveK] === WATER) {
-              grid[aboveK] = OIL;
-              grid[k] = WATER;
-              continue;
-            }
-
-            const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
-            for (const dx of dirs) {
-              const nx = x + dx;
-              if (nx <= 0 || nx >= cols - 1) continue;
-              const diagK = I(nx, y - 1);
-              if (grid[diagK] !== WATER) continue;
-              grid[diagK] = OIL;
-              grid[k] = WATER;
-              break;
-            }
+          const aboveK = I(x, y - 1);
+          if (grid[aboveK] === WATER) {
+            grid[aboveK] = OIL;
+            grid[k] = WATER;
           }
         }
       }

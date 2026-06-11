@@ -6,8 +6,10 @@ const GRID_WIDTH = 16;
 const GRID_DEPTH = 16;
 const GRID_HEIGHT = 30;
 const DEFAULT_STEPS_PER_SECOND = 15;
-const AUTO_ROTATION_RESUME_MS = 10000;
+const AUTO_ROTATION_RESUME_MS = 6000;
 const DRAG_ROTATION_SCALE = 0.008;
+const PITCH_RESET_DURATION_MS = 2800;
+const MAX_MANUAL_PITCH = Math.PI * 0.42;
 const DEFAULT_SEED =
   "0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011";
 
@@ -53,17 +55,26 @@ const seedToLayer = (seedText) => {
   return textToLayer(seedText);
 };
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const smoothstep = (t) => t * t * (3 - 2 * t);
+
 export default function GameOfLife3D({ className }) {
   const containerRef = useRef(null);
   const speedRef = useRef(DEFAULT_STEPS_PER_SECOND);
   const seedRequestRef = useRef(null);
+  const manualRotateRef = useRef(false);
   const [speed, setSpeed] = useState(DEFAULT_STEPS_PER_SECOND);
   const [seedInput, setSeedInput] = useState(DEFAULT_SEED);
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [manualRotateOn, setManualRotateOn] = useState(false);
 
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
+
+  useEffect(() => {
+    manualRotateRef.current = manualRotateOn;
+  }, [manualRotateOn]);
 
   const applySeed = (seedText = seedInput) => {
     seedRequestRef.current = seedToLayer(seedText);
@@ -87,7 +98,7 @@ export default function GameOfLife3D({ className }) {
     const height = GRID_HEIGHT;  // number of layers (y)
     const cubeSize = 0.93;
 
-    const ROTATION_SPEED_RAD_PER_SEC = 0.25;       // yaw speed
+    const ROTATION_SPEED_RAD_PER_SEC = 0.14;       // yaw speed
     const YAW_DIRECTION = 1;                        // flip to -1 if you want the other way
 
     const container = containerRef.current;
@@ -101,7 +112,6 @@ export default function GameOfLife3D({ className }) {
     });
     renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
     renderer.setSize(clientWidth, clientHeight);
-    renderer.domElement.style.touchAction = "none";
     renderer.domElement.style.cursor = "grab";
     container.appendChild(renderer.domElement);
 
@@ -231,18 +241,24 @@ export default function GameOfLife3D({ className }) {
     let raf = 0;
     let lastStepTime = performance.now();
     let lastRenderTime = lastStepTime;
-    let spin = 0;
+    let yaw = 0;
+    let pitch = 0;
     let isDragging = false;
     let lastPointerX = 0;
+    let lastPointerY = 0;
     let autoRotationResumeAt = 0;
+    let pitchReset = null;
 
     const pauseAutoRotation = () => {
       autoRotationResumeAt = performance.now() + AUTO_ROTATION_RESUME_MS;
+      pitchReset = null;
     };
 
     const onPointerDown = (event) => {
+      if (!manualRotateRef.current) return;
       isDragging = true;
       lastPointerX = event.clientX;
+      lastPointerY = event.clientY;
       pauseAutoRotation();
       renderer.domElement.style.cursor = "grabbing";
       renderer.domElement.setPointerCapture?.(event.pointerId);
@@ -252,9 +268,13 @@ export default function GameOfLife3D({ className }) {
     const onPointerMove = (event) => {
       if (!isDragging) return;
       const dx = event.clientX - lastPointerX;
+      const dy = event.clientY - lastPointerY;
       lastPointerX = event.clientX;
-      spin += dx * DRAG_ROTATION_SCALE;
-      pivot.rotation.z = spin;
+      lastPointerY = event.clientY;
+      yaw += dx * DRAG_ROTATION_SCALE;
+      pitch = clamp(pitch + dy * DRAG_ROTATION_SCALE, -MAX_MANUAL_PITCH, MAX_MANUAL_PITCH);
+      pivot.rotation.z = yaw;
+      pivot.rotation.x = pitch;
       pauseAutoRotation();
       event.preventDefault();
     };
@@ -299,10 +319,27 @@ export default function GameOfLife3D({ className }) {
         lastStepTime = now;
       }
 
+      renderer.domElement.style.touchAction = manualRotateRef.current ? "none" : "pan-y";
+
       if (!isDragging && now >= autoRotationResumeAt) {
-        spin += YAW_DIRECTION * ROTATION_SPEED_RAD_PER_SEC * (dt / 1000);
+        if (Math.abs(pitch) > 0.001) {
+          if (!pitchReset) {
+            pitchReset = { startTime: now, startPitch: pitch };
+          }
+          const resetProgress = clamp(
+            (now - pitchReset.startTime) / PITCH_RESET_DURATION_MS,
+            0,
+            1
+          );
+          pitch = pitchReset.startPitch * (1 - smoothstep(resetProgress));
+        } else {
+          pitch = 0;
+          pitchReset = null;
+          yaw += YAW_DIRECTION * ROTATION_SPEED_RAD_PER_SEC * (dt / 1000);
+        }
       }
-      pivot.rotation.z = spin;
+      pivot.rotation.z = yaw;
+      pivot.rotation.x = pitch;
 
       renderer.render(scene, camera);
       lastRenderTime = now;
@@ -427,10 +464,15 @@ export default function GameOfLife3D({ className }) {
           />
           <button
             type="button"
-            onClick={() => setSpeed((current) => (current === 0 ? DEFAULT_STEPS_PER_SECOND : 0))}
-            className="mt-1.5 w-full rounded-md bg-white/10 px-2 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20 sm:text-[10px]"
+            onClick={() => setManualRotateOn((current) => !current)}
+            className={`mt-2 w-full rounded-md px-2 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
+              manualRotateOn
+                ? "bg-white/80 text-black hover:bg-white"
+                : "bg-white/10 text-white hover:bg-white/20"
+            }`}
+            aria-pressed={manualRotateOn}
           >
-            {speed === 0 ? "Resume" : "Freeze"}
+            Rotate {manualRotateOn ? "On" : "Off"}
           </button>
         </form>
       )}

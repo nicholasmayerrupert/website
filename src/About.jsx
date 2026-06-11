@@ -2,26 +2,41 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 /* -------------------- SAND OVERLAY -------------------- */
-function SandOverlay() {
+function SandOverlay({ onDrawModeChange }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone'
+  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire'
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
   const [uiAtBottom, setUiAtBottom] = useState(false); // auto-place toolbar when cramped
+  const [drawModeOn, setDrawModeOn] = useState(false);
 
   // Refs read by the simulation loop
   const toolRef = useRef('sand');
   const emittersOnRef = useRef(true);
   const sinksOnRef = useRef(true);
+  const drawModeOnRef = useRef(false);
   const overrideToolRef = useRef(null); // 'eraser' while RMB held
 
   useEffect(() => { toolRef.current = selectedTool; }, [selectedTool]);
   useEffect(() => { emittersOnRef.current = emittersOn; }, [emittersOn]);
   useEffect(() => { sinksOnRef.current = sinksOn; }, [sinksOn]);
+  useEffect(() => {
+    drawModeOnRef.current = drawModeOn;
+    onDrawModeChange?.(drawModeOn);
+  }, [drawModeOn, onDrawModeChange]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const shouldDefaultToScroll = window.matchMedia('(pointer: coarse)').matches;
+    if (shouldDefaultToScroll) {
+      drawModeOnRef.current = false;
+      setDrawModeOn(false);
+    }
+  }, []);
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -36,16 +51,25 @@ function SandOverlay() {
     const SAND_BRUSH_RADIUS = 2;
     const WATER_BRUSH_RADIUS = 2;
     const STONE_BRUSH_RADIUS = 2;
+    const OIL_BRUSH_RADIUS = 2;
+    const FIRE_BRUSH_RADIUS = 1;
     const ERASE_BRUSH_RADIUS = 3;
     const EMIT_INTERVAL_MS = 18;
     const STEP_MS = 1;
     const MAX_WATER_FLOW = 10;
+    const STEAM_DECAY_P = 0.018;
+    const FIRE_DECAY_P = 0.006;
+    const FIRE_SPREAD_P = 0.45;
     const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
 
     // Colors
     const SAND_COLOR = 'rgba(230, 200, 120, 0.475)';
     const WATER_COLOR = 'rgba(120, 170, 255, 0.40)';
     const STONE_COLOR = 'rgba(140, 140, 150, 0.70)';
+    const OIL_COLOR = 'rgba(105, 72, 28, 0.55)';
+    const FIRE_COLOR = 'rgba(255, 108, 34, 0.72)';
+    const FIRE_HOT_COLOR = 'rgba(255, 205, 80, 0.62)';
+    const STEAM_COLOR = 'rgba(210, 230, 255, 0.26)';
     const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
 
     // Side-sink settings (bottom is NOT a sink)
@@ -69,6 +93,9 @@ function SandOverlay() {
     const SAND = 1;
     const WATER = 2;
     const STONE = 3;
+    const OIL = 4;
+    const FIRE = 5;
+    const STEAM = 6;
 
     // Grid
     let cols = 0, rows = 0, cellSize = CELL_PX;
@@ -180,11 +207,13 @@ function SandOverlay() {
         overrideToolRef.current = null;
         lmbDown = false;
       }
+      if (!drawModeOnRef.current) return;
       if (isDraftingStone && inside) {
         addDiscToDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
       }
     };
     const onTouchMove = (e) => {
+      if (!drawModeOnRef.current) return;
       if (!e.touches || e.touches.length === 0) return;
       const t = e.touches[0];
       updatePointer(t.clientX, t.clientY);
@@ -197,6 +226,7 @@ function SandOverlay() {
     // - sand/water: paint while held
     // - stone: hold to draft; release to drop
     const onPointerDown = (e) => {
+      if (!drawModeOnRef.current) return;
       updatePointer(e.clientX, e.clientY);
       const overUI = uiRef.current && uiRef.current.contains(e.target);
       if (!inside || overUI) return;
@@ -237,7 +267,7 @@ function SandOverlay() {
 
     const onContextMenu = (e) => {
       const overUI = uiRef.current && uiRef.current.contains(e.target);
-      if (inside && !overUI) e.preventDefault();
+      if (drawModeOnRef.current && inside && !overUI) e.preventDefault();
     };
 
     const onScroll = () => {
@@ -405,11 +435,12 @@ function SandOverlay() {
 
       // Stone: handled by draft logic, not here
       if (activeTool === 'stone') return;
+      if (!drawModeOnRef.current) return;
 
       // Paint only while LMB is down (or RMB for eraser)
       const shouldEmit =
         rmbHeld ? true :
-        (activeTool === 'sand' || activeTool === 'water') ? lmbDown : false;
+        (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire') ? lmbDown : false;
 
       if (!shouldEmit) return;
       if (now - lastEmit < EMIT_INTERVAL_MS) return;
@@ -424,6 +455,14 @@ function SandOverlay() {
       }
       if (activeTool === 'water') {
         paintDisc(cx, cy, WATER_BRUSH_RADIUS, WATER, false);
+        lastEmit = now; return;
+      }
+      if (activeTool === 'oil') {
+        paintDisc(cx, cy, OIL_BRUSH_RADIUS, OIL, false);
+        lastEmit = now; return;
+      }
+      if (activeTool === 'fire') {
+        paintDisc(cx, cy, FIRE_BRUSH_RADIUS, FIRE, false);
         lastEmit = now; return;
       }
       // sand
@@ -446,6 +485,13 @@ function SandOverlay() {
     // Helpers
     const emptyAt = (x, y) =>
       x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] === EMPTY && next[I(x, y)] === EMPTY;
+    const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows - 1;
+    const neighbors4 = (x, y) => [
+      [x + 1, y],
+      [x - 1, y],
+      [x, y + 1],
+      [x, y - 1],
+    ].filter(([nx, ny]) => isInBounds(nx, ny));
 
     // --- Cohesive STONE chunks ---
     function moveStoneComponentsDown() {
@@ -517,6 +563,11 @@ function SandOverlay() {
         if (next[k] === EMPTY) next[k] = WATER;
         return;
       }
+      if (y + 1 < rows && grid[I(x, y + 1)] === OIL && next[I(x, y + 1)] === EMPTY) {
+        next[I(x, y + 1)] = SAND;
+        if (next[k] === EMPTY) next[k] = OIL;
+        return;
+      }
 
       const leftFirst = Math.random() < 0.5;
       const tryDiag = (dx) => {
@@ -526,6 +577,9 @@ function SandOverlay() {
         if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = SAND; return true; }
         if (grid[ik] === WATER && next[ik] === EMPTY) {
           next[ik] = SAND; if (next[k] === EMPTY) next[k] = WATER; return true;
+        }
+        if (grid[ik] === OIL && next[ik] === EMPTY) {
+          next[ik] = SAND; if (next[k] === EMPTY) next[k] = OIL; return true;
         }
         return false;
       };
@@ -543,6 +597,11 @@ function SandOverlay() {
       if (y + 1 < rows && grid[I(x, y + 1)] === EMPTY && next[I(x, y + 1)] === EMPTY) {
         next[I(x, y + 1)] = WATER; return;
       }
+      if (y + 1 < rows && grid[I(x, y + 1)] === OIL && next[I(x, y + 1)] === EMPTY) {
+        next[I(x, y + 1)] = WATER;
+        if (next[k] === EMPTY) next[k] = OIL;
+        return;
+      }
 
       const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
       for (const dx of dirs) {
@@ -550,6 +609,11 @@ function SandOverlay() {
         if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
         const ik = I(nx, ny);
         if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = WATER; return; }
+        if (grid[ik] === OIL && next[ik] === EMPTY) {
+          next[ik] = WATER;
+          if (next[k] === EMPTY) next[k] = OIL;
+          return;
+        }
       }
 
       const findFlowDir = () => {
@@ -578,6 +642,150 @@ function SandOverlay() {
       if (emptyAt(x + jiggle, y)) { next[I(x + jiggle, y)] = WATER; return; }
 
       if (next[k] === EMPTY) next[k] = WATER;
+    };
+
+    const settleOil = (x, y) => {
+      const k = I(x, y);
+      if (grid[k] !== OIL) return;
+      if (next[k] !== EMPTY) return;
+
+      if (y + 1 < rows && grid[I(x, y + 1)] === EMPTY && next[I(x, y + 1)] === EMPTY) {
+        next[I(x, y + 1)] = OIL; return;
+      }
+
+      const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+      for (const dx of dirs) {
+        const nx = x + dx, ny = y + 1;
+        if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
+        const ik = I(nx, ny);
+        if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = OIL; return; }
+      }
+
+      const findFlowDir = () => {
+        const dirPref = Math.random() < 0.5 ? [1, -1] : [-1, 1];
+        for (const sgn of dirPref) {
+          for (let d = 1; d <= MAX_WATER_FLOW; d++) {
+            const nx = x + sgn * d;
+            if (nx <= 0 || nx >= cols - 1) break;
+            if (grid[I(nx, y)] !== EMPTY || next[I(nx, y)] !== EMPTY) break;
+            const below = y + 1 < rows ? grid[I(nx, y + 1)] : STONE;
+            if (below === EMPTY) {
+              const stepX = x + sgn;
+              if (grid[I(stepX, y)] === EMPTY && next[I(stepX, y)] === EMPTY) return sgn;
+            }
+          }
+        }
+        return 0;
+      };
+
+      const flow = findFlowDir();
+      if (flow !== 0) {
+        const stepX = x + flow;
+        if (emptyAt(stepX, y)) { next[I(stepX, y)] = OIL; return; }
+      }
+
+      const jiggle = Math.random() < 0.5 ? -1 : 1;
+      if (emptyAt(x + jiggle, y)) { next[I(x + jiggle, y)] = OIL; return; }
+
+      if (next[k] === EMPTY) next[k] = OIL;
+    };
+
+    const riseSteam = (x, y) => {
+      const k = I(x, y);
+      if (grid[k] !== STEAM) return;
+      if (next[k] !== EMPTY) return;
+      if (Math.random() < STEAM_DECAY_P || y <= 1) return;
+
+      const up = I(x, y - 1);
+      if (grid[up] === EMPTY && next[up] === EMPTY && Math.random() < 0.72) {
+        next[up] = STEAM; return;
+      }
+
+      const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+      for (const dx of dirs) {
+        const nx = x + dx;
+        const ny = y - 1;
+        if (!isInBounds(nx, ny)) continue;
+        const ik = I(nx, ny);
+        if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = STEAM; return; }
+      }
+
+      if (Math.random() < 0.65) {
+        for (const dx of dirs) {
+          if (emptyAt(x + dx, y)) { next[I(x + dx, y)] = STEAM; return; }
+        }
+      }
+
+      if (next[k] === EMPTY) next[k] = STEAM;
+    };
+
+    const riseFire = (x, y) => {
+      const k = I(x, y);
+      if (grid[k] !== FIRE) return;
+      if (next[k] !== EMPTY) return;
+      if (Math.random() < FIRE_DECAY_P || y <= 1) return;
+
+      const dirs = Math.random() < 0.5 ? [-1, 1] : [1, -1];
+      if (Math.random() < 0.36) {
+        const up = I(x, y - 1);
+        if (grid[up] === EMPTY && next[up] === EMPTY) { next[up] = FIRE; return; }
+      }
+
+      for (const dx of dirs) {
+        const nx = x + dx;
+        const ny = Math.random() < 0.55 ? y - 1 : y;
+        if (!isInBounds(nx, ny)) continue;
+        const ik = I(nx, ny);
+        if (grid[ik] === EMPTY && next[ik] === EMPTY) { next[ik] = FIRE; return; }
+      }
+
+      if (next[k] === EMPTY) next[k] = FIRE;
+    };
+
+    const applyReactions = () => {
+      const toSteam = new Set();
+      const extinguishedFires = new Set();
+      const toFire = new Set();
+
+      for (let y = 1; y < rows - 1; y++) {
+        for (let x = 1; x < cols - 1; x++) {
+          const k = I(x, y);
+          if (grid[k] !== WATER) continue;
+
+          for (const [nx, ny] of neighbors4(x, y)) {
+            const nk = I(nx, ny);
+            if (grid[nk] === FIRE) {
+              toSteam.add(k);
+              extinguishedFires.add(nk);
+              break;
+            }
+          }
+        }
+      }
+
+      for (let y = 1; y < rows - 1; y++) {
+        for (let x = 1; x < cols - 1; x++) {
+          const k = I(x, y);
+          if (grid[k] !== FIRE || extinguishedFires.has(k)) continue;
+
+          for (const [nx, ny] of neighbors4(x, y)) {
+            const nk = I(nx, ny);
+            if (grid[nk] === OIL) {
+              toFire.add(nk);
+              if (Math.random() < FIRE_SPREAD_P) {
+                for (const [ox, oy] of neighbors4(nx, ny)) {
+                  const ok = I(ox, oy);
+                  if (grid[ok] === OIL && Math.random() < 0.45) toFire.add(ok);
+                }
+              }
+            }
+          }
+        }
+      }
+
+      for (const k of extinguishedFires) if (grid[k] === FIRE) grid[k] = EMPTY;
+      for (const k of toSteam) if (grid[k] === WATER) grid[k] = STEAM;
+      for (const k of toFire) if (grid[k] === OIL) grid[k] = FIRE;
     };
 
     // --- Side sinks only (bottom preserved) ---
@@ -631,30 +839,54 @@ function SandOverlay() {
       // 1) Move rigid stones first, directly on grid
       moveStoneComponentsDown();
 
-      // 2) Prepare next buffer & carry stones forward
+      // 2) Apply material reactions directly on grid
+      applyReactions();
+
+      // 3) Prepare next buffer & carry stones forward
       next.fill(0);
       for (let k = 0; k < grid.length; k++) {
         if (grid[k] === STONE) next[k] = STONE;
       }
 
-      // 3) Sand settle
+      // 4) Sand settle
       for (let y = rows - 1; y >= 0; y--) {
         const ltr = (y & 1) === 0;
         if (ltr) { for (let x = 0; x < cols; x++) settleSand(x, y); }
         else     { for (let x = cols - 1; x >= 0; x--) settleSand(x, y); }
       }
 
-      // 4) Water settle
+      // 5) Water settle
       for (let y = rows - 1; y >= 0; y--) {
         const ltr = (y & 1) === 0;
         if (ltr) { for (let x = 0; x < cols; x++) settleWater(x, y); }
         else     { for (let x = cols - 1; x >= 0; x--) settleWater(x, y); }
       }
 
-      // 5) Flip
+      // 6) Oil settle
+      for (let y = rows - 1; y >= 0; y--) {
+        const ltr = (y & 1) === 0;
+        if (ltr) { for (let x = 0; x < cols; x++) settleOil(x, y); }
+        else     { for (let x = cols - 1; x >= 0; x--) settleOil(x, y); }
+      }
+
+      // 7) Fire rise
+      for (let y = 0; y < rows; y++) {
+        const ltr = (y & 1) === 0;
+        if (ltr) { for (let x = 0; x < cols; x++) riseFire(x, y); }
+        else     { for (let x = cols - 1; x >= 0; x--) riseFire(x, y); }
+      }
+
+      // 8) Steam rise
+      for (let y = 0; y < rows; y++) {
+        const ltr = (y & 1) === 0;
+        if (ltr) { for (let x = 0; x < cols; x++) riseSteam(x, y); }
+        else     { for (let x = cols - 1; x >= 0; x--) riseSteam(x, y); }
+      }
+
+      // 9) Flip
       const tmp = grid; grid = next; next = tmp;
 
-      // 6) Side sinks (stones unaffected)
+      // 10) Side sinks (stones unaffected)
       applySideSinks();
     };
 
@@ -676,6 +908,33 @@ function SandOverlay() {
         const yy = y * cellSize;
         for (let x = 0; x < cols; x++) {
           if (grid[I(x, y)] === WATER) ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
+        }
+      }
+      // oil
+      ctx.fillStyle = OIL_COLOR;
+      for (let y = 0; y < rows; y++) {
+        const yy = y * cellSize;
+        for (let x = 0; x < cols; x++) {
+          if (grid[I(x, y)] === OIL) ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
+        }
+      }
+      // steam
+      ctx.fillStyle = STEAM_COLOR;
+      for (let y = 0; y < rows; y++) {
+        const yy = y * cellSize;
+        for (let x = 0; x < cols; x++) {
+          if (grid[I(x, y)] === STEAM && Math.random() > 0.18) {
+            ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
+          }
+        }
+      }
+      // fire
+      for (let y = 0; y < rows; y++) {
+        const yy = y * cellSize;
+        for (let x = 0; x < cols; x++) {
+          if (grid[I(x, y)] !== FIRE) continue;
+          ctx.fillStyle = Math.random() < 0.35 ? FIRE_HOT_COLOR : FIRE_COLOR;
+          ctx.fillRect(x * cellSize, yy, cellSize - 1, cellSize - 1);
         }
       }
       // stone
@@ -764,7 +1023,7 @@ return (
       onContextMenu={(e) => e.stopPropagation()}
     >
       <div className={`flex ${uiAtBottom ? 'flex-row items-center' : 'flex-col'} gap-2`}>
-        <div className={`flex ${uiAtBottom ? 'flex-row' : 'flex-col'} gap-2`}>
+        <div className={`flex ${uiAtBottom ? 'flex-row' : 'flex-col'} gap-2 ${drawModeOn ? '' : 'opacity-45'}`}>
           <button
     onClick={() => setSelectedTool('sand')}
     className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition
@@ -787,6 +1046,30 @@ return (
         title="Water (hold LMB)"
       >
         <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-blue-400/70 rounded-full" />
+      </button>
+
+      <button
+        onClick={() => setSelectedTool('oil')}
+        className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition
+          ${selectedTool === 'oil'
+            ? 'bg-amber-900/65 ring-1 ring-amber-300/30 shadow-lg scale-105'
+            : 'bg-gray-700/35 hover:bg-gray-700/55 ring-1 ring-white/10'
+          }`}
+        title="Oil (hold LMB)"
+      >
+        <div className="w-4 h-4 sm:w-5 sm:h-5 md:w-6 md:h-6 bg-amber-950/80 rounded-full" />
+      </button>
+
+      <button
+        onClick={() => setSelectedTool('fire')}
+        className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition
+          ${selectedTool === 'fire'
+            ? 'bg-orange-600/60 ring-1 ring-orange-200/35 shadow-lg scale-105'
+            : 'bg-gray-700/35 hover:bg-gray-700/55 ring-1 ring-white/10'
+          }`}
+        title="Fire (hold LMB)"
+      >
+        <div className="h-5 w-4 sm:h-6 sm:w-5 md:h-7 md:w-5 rounded-full bg-orange-400/85 shadow-[0_0_10px_rgba(251,146,60,0.45)]" />
       </button>
 
       <button
@@ -822,6 +1105,20 @@ return (
           Sinks
         </label>
 
+        <button
+          type="button"
+          onClick={() => setDrawModeOn(v => !v)}
+          className={`rounded-md px-2 py-1 text-[10px] font-semibold transition ${
+            drawModeOn
+              ? 'bg-white/80 text-black hover:bg-white'
+              : 'bg-white/10 text-white hover:bg-white/20'
+          }`}
+          title={drawModeOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation'}
+          aria-pressed={drawModeOn}
+        >
+          Draw {drawModeOn ? 'On' : 'Off'}
+        </button>
+
         {!uiAtBottom && (
           <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
             RMB=erase
@@ -838,6 +1135,8 @@ return (
 
 /* -------------------- PAGE -------------------- */
 export default function About() {
+  const [drawModeActive, setDrawModeActive] = useState(false);
+
   return (
     <section className="relative bg-dark">
       {/* Content */}
@@ -847,7 +1146,12 @@ export default function About() {
         </h2>
 
         {/* Cards: stacked on mobile, side-by-side on md+; equal height & width */}
-        <div className="mt-6 md:mt-16">
+        <div
+          className={`mt-6 md:mt-16 transition duration-300 ${
+            drawModeActive ? 'opacity-0 pointer-events-none select-none' : 'opacity-100'
+          }`}
+          aria-hidden={drawModeActive}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 items-stretch">
             {/* Experience (LHS) */}
             <div className="w-full h-full bg-gray-900/80 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">
@@ -907,7 +1211,7 @@ export default function About() {
       </div>
 
       {/* Full-section Sand overlay */}
-      <SandOverlay />
+      <SandOverlay onDrawModeChange={setDrawModeActive} />
     </section>
   );
 }

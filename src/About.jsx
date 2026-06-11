@@ -613,6 +613,16 @@ function SandOverlay({ onDrawModeChange }) {
       x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] === EMPTY && next[I(x, y)] === EMPTY;
     const canWaterEnter = (x, y) =>
       x >= 0 && x < cols && y >= 0 && y < rows && (grid[I(x, y)] === EMPTY || grid[I(x, y)] === OIL) && next[I(x, y)] === EMPTY;
+    const touchesGridEmpty = (k) => {
+      const x = k % cols;
+      const y = Math.floor(k / cols);
+      return (
+        (x > 1 && grid[k - 1] === EMPTY) ||
+        (x < cols - 2 && grid[k + 1] === EMPTY) ||
+        (y > 1 && grid[k - cols] === EMPTY) ||
+        (y < rows - 2 && grid[k + cols] === EMPTY)
+      );
+    };
     const writeGridIndex = (k, material) => {
       if (grid[k] === material) return;
       grid[k] = material;
@@ -621,7 +631,14 @@ function SandOverlay({ onDrawModeChange }) {
     const writeNextIndex = (k, material) => {
       if (next[k] === material) return;
       next[k] = material;
-      if (grid[k] !== material || material === FIRE || material === STEAM) markDirtyIndex(k);
+      if (
+        grid[k] !== material ||
+        material === FIRE ||
+        material === STEAM ||
+        (material === WATER && touchesGridEmpty(k))
+      ) {
+        markDirtyIndex(k);
+      }
     };
     const moveWaterInto = (fromK, x, y) => {
       const toK = I(x, y);
@@ -663,27 +680,28 @@ function SandOverlay({ onDrawModeChange }) {
           const belowK = I(x, ny);
           if (comp.cells.has(belowK)) continue;
           const mat = grid[belowK];
-          if (mat !== EMPTY && mat !== WATER) { canMove = false; break; }
+          if (mat !== EMPTY && mat !== WATER && mat !== OIL) { canMove = false; break; }
         }
         if (!canMove) continue;
 
-        // Track water to bubble up
-        const waterSwaps = [];
+        // Track displaced liquids to bubble up
+        const liquidSwaps = [];
         for (const k of comp.cells) {
           const [x, y] = XY(k);
           const belowK = I(x, y + 1);
-          if (!comp.cells.has(belowK) && grid[belowK] === WATER) {
-            waterSwaps.push([belowK, k]); // [waterIndexBelow, stoneOriginIndex]
+          const below = grid[belowK];
+          if (!comp.cells.has(belowK) && (below === WATER || below === OIL)) {
+            liquidSwaps.push([belowK, k, below]); // [liquidIndexBelow, stoneOriginIndex, material]
           }
         }
 
         // Clear old stones
         for (const k of comp.cells) writeGridIndex(k, EMPTY);
 
-        // Bubble water up into vacated cells
-        for (const [waterIdx, originIdx] of waterSwaps) {
-          writeGridIndex(originIdx, WATER);
-          markDirtyIndex(waterIdx);
+        // Bubble displaced liquids up into vacated cells
+        for (const [liquidIdx, originIdx, material] of liquidSwaps) {
+          writeGridIndex(originIdx, material);
+          markDirtyIndex(liquidIdx);
         }
 
         // Move stones down
@@ -869,14 +887,6 @@ function SandOverlay({ onDrawModeChange }) {
             const k = I(x, y);
             if (grid[k] !== EMPTY) continue;
 
-            const aboveK = I(x, y - 1);
-            const above = grid[aboveK];
-            if (above === WATER || above === OIL) {
-              writeGridIndex(k, above);
-              writeGridIndex(aboveK, EMPTY);
-              continue;
-            }
-
             const below = grid[I(x, y + 1)];
             if (below === EMPTY) continue;
 
@@ -889,8 +899,48 @@ function SandOverlay({ onDrawModeChange }) {
               if (side !== WATER && side !== OIL) continue;
               writeGridIndex(k, side);
               writeGridIndex(sk, EMPTY);
-              break;
+              if (grid[k] !== EMPTY) break;
             }
+
+            if (grid[k] !== EMPTY) continue;
+
+            const aboveK = I(x, y - 1);
+            const above = grid[aboveK];
+            if (above !== WATER && above !== OIL) continue;
+
+            const left = grid[I(x - 1, y)];
+            const right = grid[I(x + 1, y)];
+            if (left === above || right === above || below === above) {
+              writeGridIndex(k, above);
+              writeGridIndex(aboveK, EMPTY);
+            }
+          }
+        }
+      }
+    };
+
+    const sealWaterPockets = () => {
+      for (let pass = 0; pass < 2; pass++) {
+        for (let y = rows - 2; y > 0; y--) {
+          const minX = Math.max(1, activeRowMin[y]);
+          const maxX = Math.min(cols - 2, activeRowMax[y]);
+          if (maxX < minX) continue;
+          const ltr = (y & 1) === 0;
+          const start = ltr ? minX : maxX;
+          const end = ltr ? maxX + 1 : minX - 1;
+          const stepX = ltr ? 1 : -1;
+
+          for (let x = start; x !== end; x += stepX) {
+            const k = I(x, y);
+            if (grid[k] !== EMPTY) continue;
+
+            const below = grid[I(x, y + 1)];
+            if (below === EMPTY) continue;
+
+            const aboveK = I(x, y - 1);
+            if (grid[aboveK] !== WATER || below !== WATER) continue;
+            writeGridIndex(k, WATER);
+            writeGridIndex(aboveK, EMPTY);
           }
         }
       }
@@ -1149,6 +1199,7 @@ function SandOverlay({ onDrawModeChange }) {
 
       // 10) Collapse small liquid air pockets
       relaxLiquidGaps();
+      sealWaterPockets();
 
       // 11) Let buried oil bubble up through water after crowded movement claims settle
       separateLiquidsByDensity();

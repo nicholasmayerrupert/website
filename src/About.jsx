@@ -56,7 +56,7 @@ function SandOverlay({ onDrawModeChange }) {
     const OIL_BRUSH_RADIUS = 2;
     const FIRE_BRUSH_RADIUS = 1;
     const ERASE_BRUSH_RADIUS = 3;
-    const SEED_SIZE = 3;
+    const SEED_SIZE = 2;
     const EMIT_INTERVAL_MS = 18;
     const STEP_MS = 16;
     const MAX_WATER_FLOW = 10;
@@ -1931,26 +1931,52 @@ function SandOverlay({ onDrawModeChange }) {
     switch (id) {
       case 'sand':
         return (
-          <div className="grid grid-cols-3 gap-[2px]" aria-hidden="true">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <span key={i} className="h-1 w-1 rounded-full bg-yellow-300/85" />
-            ))}
+          <div className="relative h-6 w-7" aria-hidden="true">
+            <span className="absolute bottom-1 left-1 h-1.5 w-1.5 rounded-full bg-yellow-200/90" />
+            <span className="absolute bottom-1 left-3 h-1.5 w-1.5 rounded-full bg-amber-300/90" />
+            <span className="absolute bottom-1 left-5 h-1.5 w-1.5 rounded-full bg-yellow-300/80" />
+            <span className="absolute bottom-[7px] left-2 h-1.5 w-1.5 rounded-full bg-yellow-300/90" />
+            <span className="absolute bottom-[7px] left-4 h-1.5 w-1.5 rounded-full bg-amber-200/85" />
+            <span className="absolute bottom-[13px] left-3 h-1.5 w-1.5 rounded-full bg-yellow-100/90" />
+            <span className="absolute bottom-0 left-0 h-[2px] w-7 rounded-full bg-yellow-700/45" />
           </div>
         );
       case 'water':
-        return <div className="h-5 w-5 rounded-full bg-blue-400/75" aria-hidden="true" />;
+        return (
+          <div
+            className="h-6 w-5 rounded-[60%_60%_70%_70%] bg-blue-400/80 shadow-[inset_3px_4px_0_rgba(255,255,255,0.25),0_0_8px_rgba(96,165,250,0.35)] rotate-45"
+            aria-hidden="true"
+          />
+        );
       case 'oil':
-        return <div className="h-5 w-5 rounded-full bg-amber-950/85 ring-1 ring-amber-700/40" aria-hidden="true" />;
+        return (
+          <div
+            className="h-6 w-5 rounded-[60%_60%_70%_70%] bg-amber-950/90 ring-1 ring-amber-700/40 shadow-[inset_3px_4px_0_rgba(245,158,11,0.22),0_0_7px_rgba(120,53,15,0.35)] rotate-45"
+            aria-hidden="true"
+          />
+        );
       case 'fire':
-        return <div className="h-6 w-4 rounded-full bg-orange-400/85 shadow-[0_0_8px_rgba(251,146,60,0.35)]" aria-hidden="true" />;
+        return (
+          <div className="relative h-7 w-5" aria-hidden="true">
+            <span className="absolute bottom-0 left-1 h-5 w-4 rounded-[70%_30%_70%_40%] bg-orange-500/90 rotate-45 shadow-[0_0_9px_rgba(251,146,60,0.45)]" />
+            <span className="absolute bottom-2 left-[7px] h-4 w-3 rounded-[70%_30%_70%_40%] bg-yellow-300/90 rotate-45" />
+            <span className="absolute bottom-4 left-[4px] h-3 w-2.5 rounded-[70%_30%_70%_40%] bg-red-500/75 rotate-45" />
+          </div>
+        );
       case 'stone':
-        return <div className="h-5 w-5 rounded-[3px] bg-gray-400/80" aria-hidden="true" />;
+        return (
+          <div className="relative h-6 w-6" aria-hidden="true">
+            <span className="absolute bottom-1 left-1 h-4 w-5 rounded-[4px] bg-gray-400/85 shadow-[inset_2px_2px_0_rgba(255,255,255,0.18)] rotate-[-8deg]" />
+            <span className="absolute bottom-[5px] left-[9px] h-[3px] w-[3px] rounded-full bg-gray-700/35" />
+            <span className="absolute bottom-[11px] left-[5px] h-[2px] w-[6px] rounded-full bg-gray-100/25" />
+          </div>
+        );
       case 'seed':
         return (
-          <div className="grid grid-cols-3 gap-[2px]" aria-hidden="true">
-            {Array.from({ length: 9 }).map((_, i) => (
-              <span key={i} className="h-1.5 w-1.5 rounded-[1px] bg-green-400/80" />
-            ))}
+          <div className="relative h-6 w-6" aria-hidden="true">
+            <span className="absolute bottom-1 left-2 h-3 w-4 rounded-[55%_45%_55%_45%] bg-amber-900/85 rotate-[-20deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.16)]" />
+            <span className="absolute bottom-3 left-3 h-3 w-2 rounded-full bg-green-400/80 rotate-45" />
+            <span className="absolute bottom-[15px] left-[9px] h-2 w-1.5 rounded-full bg-lime-300/75 rotate-[-35deg]" />
           </div>
         );
       default:

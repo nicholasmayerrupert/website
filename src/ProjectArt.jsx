@@ -28,10 +28,8 @@ export function ChessArt() {
   }
 
   const traceNodes = [
-    [165, 110], [178, 128], [178, 156], [198, 176],
-    [192, 92], [212, 112], [212, 148],
-    [226, 124], [226, 158], [210, 174], [210, 198],
-    [184, 196], [184, 214],
+    [205, 92], [205, 120], [205, 146], [205, 178], [205, 212],
+    [190, 162], [184, 192], [220, 170], [226, 198],
   ];
 
   return (
@@ -42,7 +40,7 @@ export function ChessArt() {
           <stop offset="55%" stopColor="#140428" />
           <stop offset="100%" stopColor="#060010" />
         </radialGradient>
-        <linearGradient id="chess-knight" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="chess-piece" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#3c0d73" />
           <stop offset="55%" stopColor="#220747" />
           <stop offset="100%" stopColor="#12022a" />
@@ -95,45 +93,58 @@ export function ChessArt() {
       <rect x="142" y="240" width="128" height="15" rx="7" fill="#160433" stroke="#6d28d9" strokeWidth="1" />
       <line x1="152" y1="241.5" x2="260" y2="241.5" stroke="rgba(217,184,255,0.35)" strokeWidth="1" />
 
-      {/* the knight */}
+      {/* the pawn */}
       <g filter="url(#chess-glow)">
+        <circle
+          cx="205"
+          cy="92"
+          r="25"
+          fill="url(#chess-piece)"
+          stroke="#c084fc"
+          strokeWidth="2"
+        />
         <path
-          d="M 164 228
-             C 168 208 180 192 182 170
-             C 183 158 178 150 168 144
-             C 152 136 136 128 130 116
-             C 127 110 129 104 135 102
-             L 131 90
-             C 139 90 147 94 153 90
-             C 155 82 161 74 171 70
-             L 175 54
-             L 187 66
-             C 217 68 243 90 253 122
-             C 263 156 259 198 251 228
+          d="M 178 124
+             C 178 116 184 111 192 111
+             L 218 111
+             C 226 111 232 116 232 124
+             C 232 132 226 137 218 137
+             L 192 137
+             C 184 137 178 132 178 124
              Z"
-          fill="url(#chess-knight)"
+          fill="url(#chess-base)"
+          stroke="#c084fc"
+          strokeWidth="2"
+        />
+        <path
+          d="M 187 135
+             C 181 158 168 185 164 218
+             L 246 218
+             C 242 185 229 158 223 135
+             Z"
+          fill="url(#chess-piece)"
+          stroke="#c084fc"
+          strokeWidth="2"
+        />
+        <path
+          d="M 171 218
+             C 171 207 180 200 192 200
+             L 218 200
+             C 230 200 239 207 239 218
+             Z"
+          fill="url(#chess-base)"
           stroke="#c084fc"
           strokeWidth="2"
         />
       </g>
 
-      {/* face highlight, eye, nostril, mane */}
-      <path d="M 136 104 C 144 96 152 92 158 86" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="160" cy="100" r="3.2" fill="#ffd166" filter="url(#chess-glow)" />
-      <line x1="134" y1="108" x2="139" y2="111" stroke="#c084fc" strokeWidth="1.6" strokeLinecap="round" />
-      <g fill="none" stroke="#b78aff" strokeWidth="1.5" opacity="0.45">
-        <path d="M 196 78 C 214 82 232 98 240 120 C 248 142 250 168 247 196" />
-        <path d="M 238 116 C 228 120 226 130 230 140" />
-        <path d="M 244 146 C 234 150 232 160 236 170" />
-        <path d="M 247 176 C 237 180 235 190 239 200" />
-      </g>
-
       {/* circuitry running through the piece */}
-      <g fill="none" stroke="#d9b8ff" strokeWidth="1.2" opacity="0.55">
-        <path d="M 165 110 L 178 128 L 178 156 L 198 176" />
-        <path d="M 192 92 L 212 112 L 212 148" />
-        <path d="M 226 124 L 226 158 L 210 174 L 210 198" />
-        <path d="M 184 196 L 184 214" />
+      <g fill="none" stroke="#d9b8ff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.58">
+        <path d="M 205 92 L 205 212" />
+        <path d="M 205 146 L 190 162" />
+        <path d="M 205 178 L 184 192" />
+        <path d="M 205 156 L 220 170" />
+        <path d="M 205 184 L 226 198" />
       </g>
       <g fill="#ffd166">
         {traceNodes.map(([x, y], i) => (

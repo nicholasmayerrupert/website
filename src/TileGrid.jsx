@@ -1,8 +1,8 @@
 // src/TileGrid.jsx
 // Notes for future devs:
-// - Card art is custom SVG (ProjectArt.jsx) living in a persistent .card-media background layer.
+// - Card art is custom SVG (ProjectArt.jsx) living inside each flip face.
 // - The blur/dim sheet (card-dim) is INSIDE .card-media, so it only dims/blurs the artwork,
-//   not the text. Flipping content (.card-flip__container) sits above both.
+//   not the text.
 // - Hoisted animateParticles inside ParticleCard to avoid TDZ issues.
 // - Mobile: onClick wired on wrapper; Enter/Space supported.
 
@@ -689,14 +689,7 @@ export default function TileGrid() {
                   tabIndex={0}
                   aria-pressed={isFlipped}
                 >
-                  {/* Persistent background artwork */}
-                  <div className="card-media" aria-hidden="true">
-                    <tile.Art />
-                    {/* Dim/blur sits ABOVE the art but BELOW flip content */}
-                    <div className={`card-dim ${isFlipped ? 'is-on' : ''}`} />
-                  </div>
-
-                  {/* Only text/content flips; background stays put */}
+                  {/* Art and text flip together. */}
                   <ReactCardFlip
                     isFlipped={isFlipped}
                     flipDirection="horizontal"
@@ -705,6 +698,9 @@ export default function TileGrid() {
                   >
                     {/* FRONT FACE */}
                     <div key="front" className="card-face card-face--front">
+                      <div className="card-media" aria-hidden="true">
+                        <tile.Art />
+                      </div>
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <h3 className="overlay-title inline-block rounded-full bg-black/45 text-white font-bold py-2 px-4 text-lg sm:text-xl backdrop-blur-md">
                           {tile.title}
@@ -714,6 +710,10 @@ export default function TileGrid() {
 
                     {/* BACK FACE */}
                     <div key="back" className="card-face card-face--back">
+                      <div className="card-media" aria-hidden="true">
+                        <tile.Art />
+                        <div className="card-dim is-on" />
+                      </div>
                       <div className="p-4 sm:p-6 h-full w-full flex flex-col">
                         <div className="card__header mb-2">
                           <div className="card__label">{tile.content}</div>

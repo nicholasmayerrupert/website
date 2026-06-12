@@ -49,11 +49,11 @@
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
-/* ----- Persistent background media & dim sheet (UNDER flip content) ----- */
+/* ----- Face media & dim sheet ----- */
 .card-media {
   position: absolute;
   inset: 0;
-  z-index: 0;           /* sits at the very back inside the card */
+  z-index: 0;
   pointer-events: none;
   display: grid;
   place-items: center;
@@ -63,7 +63,7 @@
 .card-media .card-dim {
   position: absolute;
   inset: 0;
-  z-index: 1;           /* above Lottie, still below the flipping content */
+  z-index: 1;
   opacity: 0;
   transition: opacity 180ms ease;
   background: rgba(0, 0, 0, 0.66);
@@ -73,7 +73,7 @@
 }
 .card-media .card-dim.is-on { opacity: 1; }
 
-/* Flip faces sit ABOVE background/dim */
+/* Flip faces */
 .card-flip__container {
   position: relative;
   z-index: 5;                 /* higher than the blur layer */
@@ -92,6 +92,11 @@
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
   transform-style: preserve-3d;
+}
+
+.card-face > :not(.card-media) {
+  position: relative;
+  z-index: 2;
 }
 
 /* Title chip definitely above everything */

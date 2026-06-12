@@ -43,8 +43,10 @@ function SandOverlay({ onDrawModeChange }) {
     const canvas = canvasRef.current;
     if (!wrap || !canvas) return;
 
+    const cellCanvas = document.createElement('canvas');
+    const cellCtx = cellCanvas.getContext('2d', { alpha: true });
     const ctx = canvas.getContext('2d', { alpha: true });
-    if (!ctx) return;
+    if (!ctx || !cellCtx) return;
 
     // ---- Tunables ----
     const CELL_PX = 5;
@@ -56,7 +58,7 @@ function SandOverlay({ onDrawModeChange }) {
     const ERASE_BRUSH_RADIUS = 3;
     const SEED_SIZE = 3;
     const EMIT_INTERVAL_MS = 18;
-    const STEP_MS = 1;
+    const STEP_MS = 16;
     const MAX_WATER_FLOW = 10;
     const STEAM_DECAY_P = 0.018;
     const FIRE_DECAY_P = 0.006;
@@ -93,7 +95,7 @@ function SandOverlay({ onDrawModeChange }) {
     ];
     const EMITTER_EDGE_BUFFER = 3; // cells from side
     const EMITTER_TOP_BUFFER  = 3; // cells from top
-    const CHUNK_SIZE = 64;
+    const CHUNK_SIZE = 32;
     const DIRTY_PAD_X = MAX_WATER_FLOW + 2;
     const DIRTY_PAD_Y = 2;
 
@@ -124,7 +126,16 @@ function SandOverlay({ onDrawModeChange }) {
     let dirtyRender = new Uint8Array(0);
     let activeRowMin = new Int32Array(0);
     let activeRowMax = new Int32Array(0);
+    let reactionFlags = new Uint8Array(0);
+    let reactionSteam = new Int32Array(0);
+    let reactionFires = new Int32Array(0);
+    let reactionIgnite = new Int32Array(0);
     let forceFullRender = true;
+    let dirtyRenderCount = 0;
+    let tick = 0;
+    let perfStepMs = 0;
+    let perfRenderMs = 0;
+    let perfDirtyChunks = 0;
     const I = (x, y) => y * cols + x;
     const XY = (k) => [k % cols, Math.floor(k / cols)];
     const DIRS_LEFT_FIRST = [-1, 1];
@@ -148,6 +159,7 @@ function SandOverlay({ onDrawModeChange }) {
     const TRUNK_SIDE_FILL_P = 0.96;
     const TRUNK_DOUBLE_SIDE_FILL_P = 0.78;
     const TRUNK_WIDE_SIDE_FILL_P = 0.34;
+    const FULL_RENDER_DIRTY_CHUNK_RATIO = 0.38;
 
     // Stone components (rigid bodies)
     /** @type {Array<{id:number,cells:Set<number>,yMax:number}>} */
@@ -208,7 +220,11 @@ function SandOverlay({ onDrawModeChange }) {
       const r1 = Math.floor(maxY / CHUNK_SIZE);
       for (let cy = r0; cy <= r1; cy++) {
         const row = cy * chunkCols;
-        for (let cx = c0; cx <= c1; cx++) target[row + cx] = 1;
+        for (let cx = c0; cx <= c1; cx++) {
+          const k = row + cx;
+          if (target === dirtyRender && !target[k]) dirtyRenderCount++;
+          target[k] = 1;
+        }
       }
     };
     const markDirtyIndex = (k, target = dirtyNext) => {
@@ -218,18 +234,21 @@ function SandOverlay({ onDrawModeChange }) {
     };
     const markAllDirty = (target = dirtyCurrent) => {
       if (target.length) target.fill(1);
+      if (target === dirtyRender) dirtyRenderCount = target.length;
     };
     const buildActiveRows = () => {
       activeRowMin.fill(cols);
       activeRowMax.fill(-1);
 
       let hasActive = false;
+      perfDirtyChunks = 0;
       for (let cy = 0; cy < chunkRows; cy++) {
         const y0 = cy * CHUNK_SIZE;
         const y1 = Math.min(rows - 1, y0 + CHUNK_SIZE - 1);
         for (let cx = 0; cx < chunkCols; cx++) {
           if (!dirtyCurrent[cy * chunkCols + cx]) continue;
           hasActive = true;
+          perfDirtyChunks++;
           const x0 = cx * CHUNK_SIZE;
           const x1 = Math.min(cols - 1, x0 + CHUNK_SIZE - 1);
           for (let y = y0; y <= y1; y++) {
@@ -244,7 +263,10 @@ function SandOverlay({ onDrawModeChange }) {
       for (let i = 0; i < dirtyNext.length; i++) {
         if (dirtyNext[i]) {
           dirtyCurrent[i] = 1;
-          dirtyRender[i] = 1;
+          if (!dirtyRender[i]) {
+            dirtyRender[i] = 1;
+            dirtyRenderCount++;
+          }
         }
         dirtyNext[i] = 0;
       }
@@ -289,15 +311,18 @@ function SandOverlay({ onDrawModeChange }) {
       canvas.style.width = '100%';
       canvas.style.height = '100%';
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      imageData = ctx.createImageData(canvas.width, canvas.height);
-      pixels = new Uint32Array(imageData.data.buffer);
-
       // Decide UI placement based on available horizontal space
       setUiAtBottom(width < TOOL_COLLAPSE_W);
 
       cellSize = CELL_PX;
       cols = Math.max(60, Math.floor(width / cellSize));
       rows = Math.max(28, Math.floor(height / cellSize));
+      cellCanvas.width = cols;
+      cellCanvas.height = rows;
+      cellCtx.imageSmoothingEnabled = false;
+      ctx.imageSmoothingEnabled = false;
+      imageData = cellCtx.createImageData(cols, rows);
+      pixels = new Uint32Array(imageData.data.buffer);
 
       gridA = new Uint8Array(cols * rows);
       gridB = new Uint8Array(cols * rows);
@@ -309,6 +334,10 @@ function SandOverlay({ onDrawModeChange }) {
       dirtyRender = new Uint8Array(chunkCols * chunkRows);
       activeRowMin = new Int32Array(rows);
       activeRowMax = new Int32Array(rows);
+      reactionFlags = new Uint8Array(cols * rows);
+      reactionSteam = new Int32Array(cols * rows);
+      reactionFires = new Int32Array(cols * rows);
+      reactionIgnite = new Int32Array(cols * rows);
 
       stoneComponents = [];
       nextStoneId = 1;
@@ -332,6 +361,7 @@ function SandOverlay({ onDrawModeChange }) {
 
       pixels.fill(0);
       forceFullRender = true;
+      dirtyRenderCount = 0;
       ctx.clearRect(0, 0, width, height);
     };
 
@@ -908,24 +938,21 @@ function SandOverlay({ onDrawModeChange }) {
         }
         if (!canMove) continue;
 
-        const originCells = Array.from(comp.cells);
-        const originSet = new Set(originCells);
-        const targetSet = new Set();
         const displacedLiquids = [];
+        const vacatedCells = [];
         const movedCells = [];
-        for (const k of originCells) {
+        for (const k of comp.cells) {
           const [x, y] = XY(k);
           const belowK = I(x, y + 1);
           const below = grid[belowK];
-          const targetK = I(x, y + 1);
-          if (!originSet.has(belowK) && (below === WATER || below === OIL)) {
+          if (!comp.cells.has(belowK) && (below === WATER || below === OIL)) {
             displacedLiquids.push([belowK, below]);
           }
-          targetSet.add(targetK);
-          movedCells.push([targetK, grid[k]]);
+          if (!comp.cells.has(k - cols)) vacatedCells.push(k);
+          movedCells.push([k + cols, grid[k]]);
         }
 
-        for (const k of originCells) writeGridIndex(k, EMPTY);
+        for (const k of comp.cells) writeGridIndex(k, EMPTY);
 
         const newCells = new Set();
         let woodCount = 0;
@@ -937,9 +964,7 @@ function SandOverlay({ onDrawModeChange }) {
           else if (material === PLANT) leafCount++;
         }
 
-        const vacatedCells = originCells
-          .filter(k => !targetSet.has(k) && grid[k] === EMPTY)
-          .sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
+        vacatedCells.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
         for (let i = 0; i < displacedLiquids.length && i < vacatedCells.length; i++) {
           const [liquidIdx, material] = displacedLiquids[i];
           writeGridIndex(vacatedCells[i], material);
@@ -1154,35 +1179,37 @@ function SandOverlay({ onDrawModeChange }) {
       const k = I(x, y);
       if (grid[k] !== SAND) return;
 
-      if (y + 1 < rows && grid[I(x, y + 1)] === EMPTY && next[I(x, y + 1)] === EMPTY) {
-        writeNextIndex(I(x, y + 1), SAND); return;
+      const belowK = k + cols;
+      if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+        writeNextIndex(belowK, SAND); return;
       }
-      if (y + 1 < rows && grid[I(x, y + 1)] === WATER && next[I(x, y + 1)] === EMPTY) {
-        writeNextIndex(I(x, y + 1), SAND);
+      if (y + 1 < rows && grid[belowK] === WATER && next[belowK] === EMPTY) {
+        writeNextIndex(belowK, SAND);
         if (next[k] === EMPTY) writeNextIndex(k, WATER);
         return;
       }
-      if (y + 1 < rows && grid[I(x, y + 1)] === OIL && next[I(x, y + 1)] === EMPTY) {
-        writeNextIndex(I(x, y + 1), SAND);
+      if (y + 1 < rows && grid[belowK] === OIL && next[belowK] === EMPTY) {
+        writeNextIndex(belowK, SAND);
         if (next[k] === EMPTY) writeNextIndex(k, OIL);
         return;
       }
 
-      const leftFirst = Math.random() < 0.5;
-      const tryDiag = (dx) => {
-        const nx = x + dx, ny = y + 1;
-        if (nx <= 0 || nx >= cols - 1 || ny >= rows) return false;
-        const ik = I(nx, ny);
-        if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, SAND); return true; }
-        if (grid[ik] === WATER && next[ik] === EMPTY) {
-          writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, WATER); return true;
+      const firstDx = Math.random() < 0.5 ? -1 : 1;
+      const secondDx = -firstDx;
+      for (let i = 0; i < 2; i++) {
+        const dx = i === 0 ? firstDx : secondDx;
+        const nx = x + dx;
+        if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
+        const ik = belowK + dx;
+        const material = grid[ik];
+        if (material === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, SAND); return; }
+        if (material === WATER && next[ik] === EMPTY) {
+          writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, WATER); return;
         }
-        if (grid[ik] === OIL && next[ik] === EMPTY) {
-          writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, OIL); return true;
+        if (material === OIL && next[ik] === EMPTY) {
+          writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, OIL); return;
         }
-        return false;
-      };
-      if ((leftFirst && tryDiag(-1)) || (!leftFirst && tryDiag(1)) || tryDiag(-1) || tryDiag(1)) return;
+      }
 
       if (next[k] === EMPTY) writeNextIndex(k, SAND);
     };
@@ -1213,23 +1240,21 @@ function SandOverlay({ onDrawModeChange }) {
         }
       }
 
-      const findFlowDir = () => {
-        const dirPref = Math.random() < 0.5 ? DIRS_RIGHT_FIRST : DIRS_LEFT_FIRST;
-        for (const sgn of dirPref) {
-          for (let d = 1; d <= MAX_WATER_FLOW; d++) {
-            const nx = x + sgn * d;
-            if (nx <= 0 || nx >= cols - 1) break;
-            if (!canWaterEnter(nx, y)) break;
-            if (y + 1 < rows && canWaterEnter(nx, y + 1)) {
-              const stepX = x + sgn;
-              if (canWaterEnter(stepX, y)) return sgn;
-            }
+      let flow = 0;
+      const firstFlowDir = Math.random() < 0.5 ? 1 : -1;
+      for (let dirIndex = 0; dirIndex < 2 && flow === 0; dirIndex++) {
+        const sgn = dirIndex === 0 ? firstFlowDir : -firstFlowDir;
+        for (let d = 1; d <= MAX_WATER_FLOW; d++) {
+          const nx = x + sgn * d;
+          if (nx <= 0 || nx >= cols - 1) break;
+          if (!canWaterEnter(nx, y)) break;
+          if (y + 1 < rows && canWaterEnter(nx, y + 1)) {
+            const stepX = x + sgn;
+            if (canWaterEnter(stepX, y)) flow = sgn;
+            break;
           }
         }
-        return 0;
-      };
-
-      const flow = findFlowDir();
+      }
       if (flow !== 0) {
         const stepX = x + flow;
         if (canWaterEnter(stepX, y)) { moveWaterInto(k, stepX, y); return; }
@@ -1274,24 +1299,22 @@ function SandOverlay({ onDrawModeChange }) {
         if (grid[ik] === EMPTY && next[ik] === EMPTY && grid[I(x, y + 1)] !== WATER) { writeNextIndex(ik, OIL); return; }
       }
 
-      const findFlowDir = () => {
-        const dirPref = Math.random() < 0.5 ? DIRS_RIGHT_FIRST : DIRS_LEFT_FIRST;
-        for (const sgn of dirPref) {
-          for (let d = 1; d <= MAX_WATER_FLOW; d++) {
-            const nx = x + sgn * d;
-            if (nx <= 0 || nx >= cols - 1) break;
-            if (grid[I(nx, y)] !== EMPTY || next[I(nx, y)] !== EMPTY) break;
-            const below = y + 1 < rows ? grid[I(nx, y + 1)] : STONE;
-            if (below === EMPTY) {
-              const stepX = x + sgn;
-              if (grid[I(stepX, y)] === EMPTY && next[I(stepX, y)] === EMPTY) return sgn;
-            }
+      let flow = 0;
+      const firstFlowDir = Math.random() < 0.5 ? 1 : -1;
+      for (let dirIndex = 0; dirIndex < 2 && flow === 0; dirIndex++) {
+        const sgn = dirIndex === 0 ? firstFlowDir : -firstFlowDir;
+        for (let d = 1; d <= MAX_WATER_FLOW; d++) {
+          const nx = x + sgn * d;
+          if (nx <= 0 || nx >= cols - 1) break;
+          if (grid[I(nx, y)] !== EMPTY || next[I(nx, y)] !== EMPTY) break;
+          const below = y + 1 < rows ? grid[I(nx, y + 1)] : STONE;
+          if (below === EMPTY) {
+            const stepX = x + sgn;
+            if (grid[I(stepX, y)] === EMPTY && next[I(stepX, y)] === EMPTY) flow = sgn;
+            break;
           }
         }
-        return 0;
-      };
-
-      const flow = findFlowDir();
+      }
       if (flow !== 0) {
         const stepX = x + flow;
         if (emptyAt(stepX, y)) { writeNextIndex(I(stepX, y), OIL); return; }
@@ -1461,9 +1484,9 @@ function SandOverlay({ onDrawModeChange }) {
     };
 
     const applyReactions = () => {
-      const toSteam = new Set();
-      const extinguishedFires = new Set();
-      const toFire = new Set();
+      let steamCount = 0;
+      let fireCount = 0;
+      let igniteCount = 0;
 
       for (let y = 1; y < rows - 1; y++) {
         const minX = Math.max(1, activeRowMin[y]);
@@ -1473,12 +1496,15 @@ function SandOverlay({ onDrawModeChange }) {
           const k = I(x, y);
           if (grid[k] !== WATER) continue;
 
-          for (const [nx, ny] of neighbors4(x, y)) {
-            const nk = I(nx, ny);
-            if (grid[nk] === FIRE) {
-              toSteam.add(k);
-              extinguishedFires.add(nk);
-              break;
+          let nk = k + 1;
+          if (grid[nk] !== FIRE) nk = k - 1;
+          if (grid[nk] !== FIRE) nk = k + cols;
+          if (grid[nk] !== FIRE) nk = k - cols;
+          if (grid[nk] === FIRE) {
+            reactionSteam[steamCount++] = k;
+            if (!reactionFlags[nk]) {
+              reactionFlags[nk] = 1;
+              reactionFires[fireCount++] = nk;
             }
           }
         }
@@ -1490,17 +1516,17 @@ function SandOverlay({ onDrawModeChange }) {
         if (maxX < minX) continue;
         for (let x = minX; x <= maxX; x++) {
           const k = I(x, y);
-          if (grid[k] !== FIRE || extinguishedFires.has(k)) continue;
+          if (grid[k] !== FIRE || reactionFlags[k]) continue;
 
-          for (const [nx, ny] of neighbors4(x, y)) {
-            const nk = I(nx, ny);
+          for (let i = 0; i < 4; i++) {
+            const nk = i === 0 ? k + 1 : i === 1 ? k - 1 : i === 2 ? k + cols : k - cols;
             if (grid[nk] === OIL) {
               if (Math.random() > OIL_IGNITE_P) continue;
-              toFire.add(nk);
+              if (igniteCount < reactionIgnite.length) reactionIgnite[igniteCount++] = nk;
               if (Math.random() < FIRE_SPREAD_P) {
-                for (const [ox, oy] of neighbors4(nx, ny)) {
-                  const ok = I(ox, oy);
-                  if (grid[ok] === OIL && Math.random() < 0.12) toFire.add(ok);
+                for (let j = 0; j < 4; j++) {
+                  const ok = j === 0 ? nk + 1 : j === 1 ? nk - 1 : j === 2 ? nk + cols : nk - cols;
+                  if (grid[ok] === OIL && Math.random() < 0.12 && igniteCount < reactionIgnite.length) reactionIgnite[igniteCount++] = ok;
                 }
               }
             }
@@ -1508,9 +1534,19 @@ function SandOverlay({ onDrawModeChange }) {
         }
       }
 
-      for (const k of extinguishedFires) if (grid[k] === FIRE) writeGridIndex(k, EMPTY);
-      for (const k of toSteam) if (grid[k] === WATER) writeGridIndex(k, STEAM);
-      for (const k of toFire) if (grid[k] === OIL) writeGridIndex(k, FIRE);
+      for (let i = 0; i < fireCount; i++) {
+        const k = reactionFires[i];
+        if (grid[k] === FIRE) writeGridIndex(k, EMPTY);
+        reactionFlags[k] = 0;
+      }
+      for (let i = 0; i < steamCount; i++) {
+        const k = reactionSteam[i];
+        if (grid[k] === WATER) writeGridIndex(k, STEAM);
+      }
+      for (let i = 0; i < igniteCount; i++) {
+        const k = reactionIgnite[i];
+        if (grid[k] === OIL) writeGridIndex(k, FIRE);
+      }
     };
 
     // --- Side sinks only (bottom preserved) ---
@@ -1562,6 +1598,8 @@ function SandOverlay({ onDrawModeChange }) {
     // Physics step
     const step = () => {
       if (!beginStepDirty()) return false;
+      const stepStart = performance.now();
+      tick++;
 
       // 1) Move rigid bodies first, directly on grid
       moveStoneComponentsDown();
@@ -1580,93 +1618,79 @@ function SandOverlay({ onDrawModeChange }) {
         for (const k of comp.cells) next[k] = grid[k];
       }
 
-      // 4) Sand settle
+      // 4) Falling materials
       for (let y = rows - 1; y >= 0; y--) {
         const minX = activeRowMin[y];
         const maxX = activeRowMax[y];
         if (maxX < minX) continue;
         const ltr = (y & 1) === 0;
-        if (ltr) { for (let x = minX; x <= maxX; x++) settleSand(x, y); }
-        else     { for (let x = maxX; x >= minX; x--) settleSand(x, y); }
+        if (ltr) {
+          for (let x = minX; x <= maxX; x++) {
+            const material = grid[I(x, y)];
+            if (material === SAND) settleSand(x, y);
+            else if (material === WATER) settleWater(x, y);
+            else if (material === OIL) settleOil(x, y);
+          }
+        } else {
+          for (let x = maxX; x >= minX; x--) {
+            const material = grid[I(x, y)];
+            if (material === SAND) settleSand(x, y);
+            else if (material === WATER) settleWater(x, y);
+            else if (material === OIL) settleOil(x, y);
+          }
+        }
       }
 
-      // 5) Water settle
-      for (let y = rows - 1; y >= 0; y--) {
-        const minX = activeRowMin[y];
-        const maxX = activeRowMax[y];
-        if (maxX < minX) continue;
-        const ltr = (y & 1) === 0;
-        if (ltr) { for (let x = minX; x <= maxX; x++) settleWater(x, y); }
-        else     { for (let x = maxX; x >= minX; x--) settleWater(x, y); }
-      }
-
-      // 6) Oil settle
-      for (let y = rows - 1; y >= 0; y--) {
-        const minX = activeRowMin[y];
-        const maxX = activeRowMax[y];
-        if (maxX < minX) continue;
-        const ltr = (y & 1) === 0;
-        if (ltr) { for (let x = minX; x <= maxX; x++) settleOil(x, y); }
-        else     { for (let x = maxX; x >= minX; x--) settleOil(x, y); }
-      }
-
-      // 7) Fire rise
+      // 5) Rising materials
       for (let y = 0; y < rows; y++) {
         const minX = activeRowMin[y];
         const maxX = activeRowMax[y];
         if (maxX < minX) continue;
         const ltr = (y & 1) === 0;
-        if (ltr) { for (let x = minX; x <= maxX; x++) riseFire(x, y); }
-        else     { for (let x = maxX; x >= minX; x--) riseFire(x, y); }
+        if (ltr) {
+          for (let x = minX; x <= maxX; x++) {
+            const material = grid[I(x, y)];
+            if (material === FIRE) riseFire(x, y);
+            else if (material === STEAM) riseSteam(x, y);
+          }
+        } else {
+          for (let x = maxX; x >= minX; x--) {
+            const material = grid[I(x, y)];
+            if (material === FIRE) riseFire(x, y);
+            else if (material === STEAM) riseSteam(x, y);
+          }
+        }
       }
 
-      // 8) Steam rise
-      for (let y = 0; y < rows; y++) {
-        const minX = activeRowMin[y];
-        const maxX = activeRowMax[y];
-        if (maxX < minX) continue;
-        const ltr = (y & 1) === 0;
-        if (ltr) { for (let x = minX; x <= maxX; x++) riseSteam(x, y); }
-        else     { for (let x = maxX; x >= minX; x--) riseSteam(x, y); }
-      }
-
-      // 9) Flip
+      // 6) Flip
       const tmp = grid; grid = next; next = tmp;
 
-      // 10) Collapse small liquid air pockets
-      relaxLiquidGaps();
-      sealWaterPockets();
+      // 7) Collapse small liquid air pockets
+      if ((tick & 1) === 0) {
+        relaxLiquidGaps();
+        sealWaterPockets();
+      }
 
-      // 11) Let buried oil bubble up through water after crowded movement claims settle
-      separateLiquidsByDensity();
+      // 8) Let buried oil bubble up through water after crowded movement claims settle
+      if (tick % 3 === 0) separateLiquidsByDensity();
 
-      // 12) Side sinks (stones unaffected)
+      // 9) Side sinks (stones unaffected)
       applySideSinks();
+      perfStepMs = performance.now() - stepStart;
       return true;
     };
 
     const render = (full = false) => {
       if (!imageData) return;
 
-      const canvasWidth = canvas.width;
-      const drawSize = cellSize - 1;
+      const renderStart = performance.now();
       const drawPixelRect = (x0, y0, x1, y1) => {
-        const startX = x0 * cellSize;
-        const startY = y0 * cellSize;
-        const endX = Math.min(canvasWidth, (x1 + 1) * cellSize);
-        const endY = Math.min(canvas.height, (y1 + 1) * cellSize);
-        for (let py = startY; py < endY; py++) {
-          pixels.fill(0, py * canvasWidth + startX, py * canvasWidth + endX);
+        for (let y = y0; y <= y1; y++) {
+          pixels.fill(0, y * cols + x0, y * cols + x1 + 1);
         }
       };
       const drawCell = (x, y, color) => {
-        const startX = x * cellSize;
-        const startY = y * cellSize;
-        const endX = Math.min(canvasWidth, startX + drawSize);
-        const endY = Math.min(canvas.height, startY + drawSize);
-        for (let py = startY; py < endY; py++) {
-          pixels.fill(color, py * canvasWidth + startX, py * canvasWidth + endX);
-        }
+        pixels[y * cols + x] = color;
       };
       const drawGridCell = (x, y) => {
         switch (grid[I(x, y)]) {
@@ -1702,46 +1726,76 @@ function SandOverlay({ onDrawModeChange }) {
         }
       };
 
-      const shouldFullRender = full || forceFullRender;
+      let pendingDirtyCount = dirtyRenderCount;
+      for (let i = 0; i < dirtyNext.length; i++) {
+        if (dirtyNext[i] && !dirtyRender[i]) pendingDirtyCount++;
+      }
+      const shouldFullRender =
+        full ||
+        forceFullRender ||
+        pendingDirtyCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO;
       if (shouldFullRender) {
         pixels.fill(0);
         for (let y = 0; y < rows; y++) {
           for (let x = 0; x < cols; x++) drawGridCell(x, y);
         }
-        ctx.putImageData(imageData, 0, 0);
+        cellCtx.putImageData(imageData, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(cellCanvas, 0, 0, cols, rows, 0, 0, cols * cellSize, rows * cellSize);
         forceFullRender = false;
         dirtyRender.fill(0);
+        dirtyRenderCount = 0;
       } else {
         for (let cy = 0; cy < chunkRows; cy++) {
           const y0 = cy * CHUNK_SIZE;
           const y1 = Math.min(rows - 1, y0 + CHUNK_SIZE - 1);
-          for (let cx = 0; cx < chunkCols; cx++) {
+          let cx = 0;
+          while (cx < chunkCols) {
             const chunkIndex = cy * chunkCols + cx;
-            if (!dirtyNext[chunkIndex] && !dirtyRender[chunkIndex]) continue;
-            const x0 = cx * CHUNK_SIZE;
-            const x1 = Math.min(cols - 1, x0 + CHUNK_SIZE - 1);
+            if (!dirtyNext[chunkIndex] && !dirtyRender[chunkIndex]) {
+              cx++;
+              continue;
+            }
+            const startCx = cx;
+            while (cx + 1 < chunkCols) {
+              const nextChunkIndex = cy * chunkCols + cx + 1;
+              if (!dirtyNext[nextChunkIndex] && !dirtyRender[nextChunkIndex]) break;
+              cx++;
+            }
+            const endCx = cx;
+            const x0 = startCx * CHUNK_SIZE;
+            const x1 = Math.min(cols - 1, (endCx + 1) * CHUNK_SIZE - 1);
             drawPixelRect(x0, y0, x1, y1);
             for (let y = y0; y <= y1; y++) {
               for (let x = x0; x <= x1; x++) drawGridCell(x, y);
             }
-            ctx.putImageData(
+            const sourceW = x1 - x0 + 1;
+            const sourceH = y1 - y0 + 1;
+            const destX = x0 * cellSize;
+            const destY = y0 * cellSize;
+            const destW = Math.min(canvas.width, (x1 + 1) * cellSize) - destX;
+            const destH = Math.min(canvas.height, (y1 + 1) * cellSize) - destY;
+            cellCtx.putImageData(
               imageData,
               0,
               0,
-              x0 * cellSize,
-              y0 * cellSize,
-              Math.min(canvasWidth, (x1 + 1) * cellSize) - x0 * cellSize,
-              Math.min(canvas.height, (y1 + 1) * cellSize) - y0 * cellSize
+              x0,
+              y0,
+              sourceW,
+              sourceH
             );
+            ctx.drawImage(cellCanvas, x0, y0, sourceW, sourceH, destX, destY, destW, destH);
+            cx++;
           }
         }
         dirtyRender.fill(0);
+        dirtyRenderCount = 0;
       }
 
       // stone preview
       if (stoneDraft.size > 0) {
         ctx.fillStyle = STONE_PREVIEW_COLOR;
-        const previewSize = cellSize - 1;
+        const previewSize = cellSize;
         for (const k of stoneDraft) {
           const [x, y] = XY(k);
           ctx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
@@ -1752,14 +1806,26 @@ function SandOverlay({ onDrawModeChange }) {
         const [x0, y0] = seedDraftOrigin;
         const valid = canPlaceSeedAt(x0, y0);
         ctx.fillStyle = valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
-        const previewSize = cellSize - 1;
+        const previewSize = cellSize;
         for (let y = y0; y < y0 + SEED_SIZE; y++) {
           for (let x = x0; x < x0 + SEED_SIZE; x++) {
             ctx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
           }
         }
       }
+      perfRenderMs = performance.now() - renderStart;
     };
+
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      window.__sandPerf = () => ({
+        stepMs: Number(perfStepMs.toFixed(2)),
+        renderMs: Number(perfRenderMs.toFixed(2)),
+        dirtyChunks: perfDirtyChunks,
+        chunks: dirtyCurrent.length,
+        rows,
+        cols,
+      });
+    }
 
     // Main loop
     let raf = 0;

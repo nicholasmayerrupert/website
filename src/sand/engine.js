@@ -1116,6 +1116,14 @@ export function createEngine({
           const below = grid[I(x, y + 1)];
           if (below === EMPTY) continue;
 
+          const aboveK = I(x, y - 1);
+          const above = grid[aboveK];
+          if (above === WATER) {
+            writeGridIndex(k, WATER);
+            writeGridIndex(aboveK, EMPTY);
+            continue;
+          }
+
           const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
           for (const dx of dirs) {
             const sx = x + dx;
@@ -1130,8 +1138,6 @@ export function createEngine({
 
           if (grid[k] !== EMPTY) continue;
 
-          const aboveK = I(x, y - 1);
-          const above = grid[aboveK];
           if (above !== WATER && above !== OIL) continue;
 
           const left = grid[I(x - 1, y)];

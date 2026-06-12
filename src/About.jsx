@@ -85,8 +85,10 @@ function SandOverlay({ onDrawModeChange }) {
     const SINK_STRIP_W = 2;
     const INNER_STRIP_W = 1;
     const SINK_WATER_P = 0.85;
+    const SINK_OIL_P = 0.85;
     const SINK_SAND_P  = 0.35;
     const INNER_WATER_P = 0.35;
+    const INNER_OIL_P = 0.35;
     const INNER_SAND_P  = 0.10;
 
     // Emitters (normalized positions) + buffers
@@ -1695,12 +1697,14 @@ function SandOverlay({ onDrawModeChange }) {
           const k = I(x, y);
           const m = grid[k];
           if (m === WATER) { if (Math.random() < SINK_WATER_P) writeGridIndex(k, EMPTY); }
+          else if (m === OIL) { if (Math.random() < SINK_OIL_P) writeGridIndex(k, EMPTY); }
           else if (m === SAND) { if (Math.random() < SINK_SAND_P) writeGridIndex(k, EMPTY); }
         }
         for (let x = rightStart; x <= rightEnd; x++) {
           const k = I(x, y);
           const m = grid[k];
           if (m === WATER) { if (Math.random() < SINK_WATER_P) writeGridIndex(k, EMPTY); }
+          else if (m === OIL) { if (Math.random() < SINK_OIL_P) writeGridIndex(k, EMPTY); }
           else if (m === SAND) { if (Math.random() < SINK_SAND_P) writeGridIndex(k, EMPTY); }
         }
 
@@ -1709,12 +1713,14 @@ function SandOverlay({ onDrawModeChange }) {
           const k = I(x, y);
           const m = grid[k];
           if (m === WATER) { if (Math.random() < INNER_WATER_P) writeGridIndex(k, EMPTY); }
+          else if (m === OIL) { if (Math.random() < INNER_OIL_P) writeGridIndex(k, EMPTY); }
           else if (m === SAND) { if (Math.random() < INNER_SAND_P) writeGridIndex(k, EMPTY); }
         }
         for (let x = innerRightStart; x <= innerRightEnd; x++) {
           const k = I(x, y);
           const m = grid[k];
           if (m === WATER) { if (Math.random() < INNER_WATER_P) writeGridIndex(k, EMPTY); }
+          else if (m === OIL) { if (Math.random() < INNER_OIL_P) writeGridIndex(k, EMPTY); }
           else if (m === SAND) { if (Math.random() < INNER_SAND_P) writeGridIndex(k, EMPTY); }
         }
       }

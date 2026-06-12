@@ -124,6 +124,14 @@ function SandOverlay({ onDrawModeChange }) {
     let dirtyCurrent = new Uint8Array(0);
     let dirtyNext = new Uint8Array(0);
     let dirtyRender = new Uint8Array(0);
+    let dirtyCurrentMinX = new Int32Array(0);
+    let dirtyCurrentMaxX = new Int32Array(0);
+    let dirtyCurrentMinY = new Int32Array(0);
+    let dirtyCurrentMaxY = new Int32Array(0);
+    let dirtyNextMinX = new Int32Array(0);
+    let dirtyNextMaxX = new Int32Array(0);
+    let dirtyNextMinY = new Int32Array(0);
+    let dirtyNextMaxY = new Int32Array(0);
     let activeRowMin = new Int32Array(0);
     let activeRowMax = new Int32Array(0);
     let reactionFlags = new Uint8Array(0);
@@ -208,6 +216,18 @@ function SandOverlay({ onDrawModeChange }) {
     };
 
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+    const resetDirtyRectAt = (minX, maxX, minY, maxY, k) => {
+      minX[k] = cols;
+      maxX[k] = -1;
+      minY[k] = rows;
+      maxY[k] = -1;
+    };
+    const resetDirtyRectArrays = (minX, maxX, minY, maxY) => {
+      minX.fill(cols);
+      maxX.fill(-1);
+      minY.fill(rows);
+      maxY.fill(-1);
+    };
     const markDirtyRect = (x0, y0, x1, y1, target = dirtyNext) => {
       if (!target.length || cols <= 0 || rows <= 0) return;
       const minX = clamp(x0 - DIRTY_PAD_X, 0, cols - 1);
@@ -218,12 +238,41 @@ function SandOverlay({ onDrawModeChange }) {
       const c1 = Math.floor(maxX / CHUNK_SIZE);
       const r0 = Math.floor(minY / CHUNK_SIZE);
       const r1 = Math.floor(maxY / CHUNK_SIZE);
+      let rectMinX = null;
+      let rectMaxX = null;
+      let rectMinY = null;
+      let rectMaxY = null;
+      if (target === dirtyCurrent) {
+        rectMinX = dirtyCurrentMinX;
+        rectMaxX = dirtyCurrentMaxX;
+        rectMinY = dirtyCurrentMinY;
+        rectMaxY = dirtyCurrentMaxY;
+      } else if (target === dirtyNext) {
+        rectMinX = dirtyNextMinX;
+        rectMaxX = dirtyNextMaxX;
+        rectMinY = dirtyNextMinY;
+        rectMaxY = dirtyNextMaxY;
+      }
       for (let cy = r0; cy <= r1; cy++) {
         const row = cy * chunkCols;
+        const chunkY0 = cy * CHUNK_SIZE;
+        const chunkY1 = Math.min(rows - 1, chunkY0 + CHUNK_SIZE - 1);
         for (let cx = c0; cx <= c1; cx++) {
           const k = row + cx;
           if (target === dirtyRender && !target[k]) dirtyRenderCount++;
           target[k] = 1;
+          if (rectMinX) {
+            const chunkX0 = cx * CHUNK_SIZE;
+            const chunkX1 = Math.min(cols - 1, chunkX0 + CHUNK_SIZE - 1);
+            const rx0 = Math.max(minX, chunkX0);
+            const rx1 = Math.min(maxX, chunkX1);
+            const ry0 = Math.max(minY, chunkY0);
+            const ry1 = Math.min(maxY, chunkY1);
+            if (rx0 < rectMinX[k]) rectMinX[k] = rx0;
+            if (rx1 > rectMaxX[k]) rectMaxX[k] = rx1;
+            if (ry0 < rectMinY[k]) rectMinY[k] = ry0;
+            if (ry1 > rectMaxY[k]) rectMaxY[k] = ry1;
+          }
         }
       }
     };
@@ -235,6 +284,33 @@ function SandOverlay({ onDrawModeChange }) {
     const markAllDirty = (target = dirtyCurrent) => {
       if (target.length) target.fill(1);
       if (target === dirtyRender) dirtyRenderCount = target.length;
+      let rectMinX = null;
+      let rectMaxX = null;
+      let rectMinY = null;
+      let rectMaxY = null;
+      if (target === dirtyCurrent) {
+        rectMinX = dirtyCurrentMinX;
+        rectMaxX = dirtyCurrentMaxX;
+        rectMinY = dirtyCurrentMinY;
+        rectMaxY = dirtyCurrentMaxY;
+      } else if (target === dirtyNext) {
+        rectMinX = dirtyNextMinX;
+        rectMaxX = dirtyNextMaxX;
+        rectMinY = dirtyNextMinY;
+        rectMaxY = dirtyNextMaxY;
+      }
+      if (!rectMinX) return;
+      for (let cy = 0; cy < chunkRows; cy++) {
+        const y0 = cy * CHUNK_SIZE;
+        const y1 = Math.min(rows - 1, y0 + CHUNK_SIZE - 1);
+        for (let cx = 0; cx < chunkCols; cx++) {
+          const k = cy * chunkCols + cx;
+          rectMinX[k] = cx * CHUNK_SIZE;
+          rectMaxX[k] = Math.min(cols - 1, rectMinX[k] + CHUNK_SIZE - 1);
+          rectMinY[k] = y0;
+          rectMaxY[k] = y1;
+        }
+      }
     };
     const buildActiveRows = () => {
       activeRowMin.fill(cols);
@@ -243,14 +319,16 @@ function SandOverlay({ onDrawModeChange }) {
       let hasActive = false;
       perfDirtyChunks = 0;
       for (let cy = 0; cy < chunkRows; cy++) {
-        const y0 = cy * CHUNK_SIZE;
-        const y1 = Math.min(rows - 1, y0 + CHUNK_SIZE - 1);
         for (let cx = 0; cx < chunkCols; cx++) {
-          if (!dirtyCurrent[cy * chunkCols + cx]) continue;
+          const chunkIndex = cy * chunkCols + cx;
+          if (!dirtyCurrent[chunkIndex]) continue;
           hasActive = true;
           perfDirtyChunks++;
-          const x0 = cx * CHUNK_SIZE;
-          const x1 = Math.min(cols - 1, x0 + CHUNK_SIZE - 1);
+          const x0 = dirtyCurrentMinX[chunkIndex];
+          const x1 = dirtyCurrentMaxX[chunkIndex];
+          const y0 = dirtyCurrentMinY[chunkIndex];
+          const y1 = dirtyCurrentMaxY[chunkIndex];
+          if (x1 < x0 || y1 < y0) continue;
           for (let y = y0; y <= y1; y++) {
             if (x0 < activeRowMin[y]) activeRowMin[y] = x0;
             if (x1 > activeRowMax[y]) activeRowMax[y] = x1;
@@ -263,32 +341,31 @@ function SandOverlay({ onDrawModeChange }) {
       for (let i = 0; i < dirtyNext.length; i++) {
         if (dirtyNext[i]) {
           dirtyCurrent[i] = 1;
+          if (dirtyNextMinX[i] < dirtyCurrentMinX[i]) dirtyCurrentMinX[i] = dirtyNextMinX[i];
+          if (dirtyNextMaxX[i] > dirtyCurrentMaxX[i]) dirtyCurrentMaxX[i] = dirtyNextMaxX[i];
+          if (dirtyNextMinY[i] < dirtyCurrentMinY[i]) dirtyCurrentMinY[i] = dirtyNextMinY[i];
+          if (dirtyNextMaxY[i] > dirtyCurrentMaxY[i]) dirtyCurrentMaxY[i] = dirtyNextMaxY[i];
           if (!dirtyRender[i]) {
             dirtyRender[i] = 1;
             dirtyRenderCount++;
           }
         }
         dirtyNext[i] = 0;
+        resetDirtyRectAt(dirtyNextMinX, dirtyNextMaxX, dirtyNextMinY, dirtyNextMaxY, i);
       }
       const hasActive = buildActiveRows();
       dirtyCurrent.fill(0);
+      resetDirtyRectArrays(dirtyCurrentMinX, dirtyCurrentMaxX, dirtyCurrentMinY, dirtyCurrentMaxY);
       return hasActive;
     };
     const prepareNextBuffer = () => {
-      next.fill(0);
+      // Only active spans need claim clearing. Inactive spans already match across
+      // buffers once their dirty chunk has settled.
       for (let y = 0; y < rows; y++) {
         const rowStart = y * cols;
-        const rowEnd = rowStart + cols;
         const minX = activeRowMin[y];
         const maxX = activeRowMax[y];
-        if (maxX < minX) {
-          next.set(grid.subarray(rowStart, rowEnd), rowStart);
-          continue;
-        }
-        if (minX > 0) next.set(grid.subarray(rowStart, rowStart + minX), rowStart);
-        if (maxX < cols - 1) {
-          next.set(grid.subarray(rowStart + maxX + 1, rowEnd), rowStart + maxX + 1);
-        }
+        if (maxX >= minX) next.fill(EMPTY, rowStart + minX, rowStart + maxX + 1);
       }
     };
     const refreshBounds = () => {
@@ -332,6 +409,16 @@ function SandOverlay({ onDrawModeChange }) {
       dirtyCurrent = new Uint8Array(chunkCols * chunkRows);
       dirtyNext = new Uint8Array(chunkCols * chunkRows);
       dirtyRender = new Uint8Array(chunkCols * chunkRows);
+      dirtyCurrentMinX = new Int32Array(chunkCols * chunkRows);
+      dirtyCurrentMaxX = new Int32Array(chunkCols * chunkRows);
+      dirtyCurrentMinY = new Int32Array(chunkCols * chunkRows);
+      dirtyCurrentMaxY = new Int32Array(chunkCols * chunkRows);
+      dirtyNextMinX = new Int32Array(chunkCols * chunkRows);
+      dirtyNextMaxX = new Int32Array(chunkCols * chunkRows);
+      dirtyNextMinY = new Int32Array(chunkCols * chunkRows);
+      dirtyNextMaxY = new Int32Array(chunkCols * chunkRows);
+      resetDirtyRectArrays(dirtyCurrentMinX, dirtyCurrentMaxX, dirtyCurrentMinY, dirtyCurrentMaxY);
+      resetDirtyRectArrays(dirtyNextMinX, dirtyNextMaxX, dirtyNextMinY, dirtyNextMaxY);
       activeRowMin = new Int32Array(rows);
       activeRowMax = new Int32Array(rows);
       reactionFlags = new Uint8Array(cols * rows);
@@ -1183,12 +1270,12 @@ function SandOverlay({ onDrawModeChange }) {
       if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
         writeNextIndex(belowK, SAND); return;
       }
-      if (y + 1 < rows && grid[belowK] === WATER && next[belowK] === EMPTY) {
+      if (y + 1 < rows && grid[belowK] === WATER && (next[belowK] === EMPTY || next[belowK] === WATER)) {
         writeNextIndex(belowK, SAND);
         if (next[k] === EMPTY) writeNextIndex(k, WATER);
         return;
       }
-      if (y + 1 < rows && grid[belowK] === OIL && next[belowK] === EMPTY) {
+      if (y + 1 < rows && grid[belowK] === OIL && (next[belowK] === EMPTY || next[belowK] === OIL)) {
         writeNextIndex(belowK, SAND);
         if (next[k] === EMPTY) writeNextIndex(k, OIL);
         return;
@@ -1203,10 +1290,10 @@ function SandOverlay({ onDrawModeChange }) {
         const ik = belowK + dx;
         const material = grid[ik];
         if (material === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, SAND); return; }
-        if (material === WATER && next[ik] === EMPTY) {
+        if (material === WATER && (next[ik] === EMPTY || next[ik] === WATER)) {
           writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, WATER); return;
         }
-        if (material === OIL && next[ik] === EMPTY) {
+        if (material === OIL && (next[ik] === EMPTY || next[ik] === OIL)) {
           writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, OIL); return;
         }
       }
@@ -1220,10 +1307,11 @@ function SandOverlay({ onDrawModeChange }) {
       if (grid[k] !== WATER) return;
       if (next[k] !== EMPTY) return;
 
-      if (y + 1 < rows && grid[I(x, y + 1)] === EMPTY && next[I(x, y + 1)] === EMPTY) {
-        writeNextIndex(I(x, y + 1), WATER); return;
+      const belowK = k + cols;
+      if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+        writeNextIndex(belowK, WATER); return;
       }
-      if (y + 1 < rows && grid[I(x, y + 1)] === OIL && next[I(x, y + 1)] === EMPTY) {
+      if (y + 1 < rows && grid[belowK] === OIL && next[belowK] === EMPTY) {
         moveWaterInto(k, x, y + 1);
         return;
       }
@@ -1247,11 +1335,16 @@ function SandOverlay({ onDrawModeChange }) {
         for (let d = 1; d <= MAX_WATER_FLOW; d++) {
           const nx = x + sgn * d;
           if (nx <= 0 || nx >= cols - 1) break;
-          if (!canWaterEnter(nx, y)) break;
-          if (y + 1 < rows && canWaterEnter(nx, y + 1)) {
-            const stepX = x + sgn;
-            if (canWaterEnter(stepX, y)) flow = sgn;
-            break;
+          const sideK = k + sgn * d;
+          if (grid[sideK] !== EMPTY && grid[sideK] !== OIL) break;
+          if (next[sideK] !== EMPTY) break;
+          if (y + 1 < rows) {
+            const lowerK = sideK + cols;
+            if ((grid[lowerK] === EMPTY || grid[lowerK] === OIL) && next[lowerK] === EMPTY) {
+              const stepK = k + sgn;
+              if ((grid[stepK] === EMPTY || grid[stepK] === OIL) && next[stepK] === EMPTY) flow = sgn;
+              break;
+            }
           }
         }
       }
@@ -1272,7 +1365,9 @@ function SandOverlay({ onDrawModeChange }) {
       if (grid[k] !== OIL) return;
       if (next[k] !== EMPTY) return;
 
-      if (y - 1 > 0 && grid[I(x, y - 1)] === WATER && next[I(x, y - 1)] === EMPTY) {
+      const aboveK = k - cols;
+      const belowK = k + cols;
+      if (y - 1 > 0 && grid[aboveK] === WATER && next[aboveK] === EMPTY) {
         moveOilIntoWater(k, x, y - 1);
         return;
       }
@@ -1287,8 +1382,8 @@ function SandOverlay({ onDrawModeChange }) {
         }
       }
 
-      if (y + 1 < rows && grid[I(x, y + 1)] === EMPTY && next[I(x, y + 1)] === EMPTY) {
-        writeNextIndex(I(x, y + 1), OIL); return;
+      if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+        writeNextIndex(belowK, OIL); return;
       }
 
       const dirs = Math.random() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
@@ -1296,7 +1391,7 @@ function SandOverlay({ onDrawModeChange }) {
         const nx = x + dx, ny = y + 1;
         if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
         const ik = I(nx, ny);
-        if (grid[ik] === EMPTY && next[ik] === EMPTY && grid[I(x, y + 1)] !== WATER) { writeNextIndex(ik, OIL); return; }
+        if (grid[ik] === EMPTY && next[ik] === EMPTY && grid[belowK] !== WATER) { writeNextIndex(ik, OIL); return; }
       }
 
       let flow = 0;
@@ -1306,11 +1401,12 @@ function SandOverlay({ onDrawModeChange }) {
         for (let d = 1; d <= MAX_WATER_FLOW; d++) {
           const nx = x + sgn * d;
           if (nx <= 0 || nx >= cols - 1) break;
-          if (grid[I(nx, y)] !== EMPTY || next[I(nx, y)] !== EMPTY) break;
-          const below = y + 1 < rows ? grid[I(nx, y + 1)] : STONE;
+          const sideK = k + sgn * d;
+          if (grid[sideK] !== EMPTY || next[sideK] !== EMPTY) break;
+          const below = y + 1 < rows ? grid[sideK + cols] : STONE;
           if (below === EMPTY) {
-            const stepX = x + sgn;
-            if (grid[I(stepX, y)] === EMPTY && next[I(stepX, y)] === EMPTY) flow = sgn;
+            const stepK = k + sgn;
+            if (grid[stepK] === EMPTY && next[stepK] === EMPTY) flow = sgn;
             break;
           }
         }

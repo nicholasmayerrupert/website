@@ -213,6 +213,9 @@ function SandOverlay({ onDrawModeChange }) {
           if (Math.random() < p) grid[I(x, y)] = SAND;
         }
       }
+      const seedX = Math.floor(cols / 2 - SEED_SIZE / 2);
+      const seedY = rows - band - SEED_SIZE;
+      placeSeedAt(seedX, seedY);
     };
 
     const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

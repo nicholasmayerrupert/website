@@ -63,6 +63,7 @@ function SandOverlay({ onDrawModeChange }) {
     const STEAM_DECAY_P = 0.018;
     const FIRE_DECAY_P = 0.006;
     const OIL_IGNITE_P = 0.25;
+    const PLANT_IGNITE_P = OIL_IGNITE_P * 0.67;
     const FIRE_SPREAD_P = 0.11;
     const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
 
@@ -887,6 +888,8 @@ function SandOverlay({ onDrawModeChange }) {
       x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] === EMPTY && next[I(x, y)] === EMPTY;
     const canWaterEnter = (x, y) =>
       x >= 0 && x < cols && y >= 0 && y < rows && (grid[I(x, y)] === EMPTY || grid[I(x, y)] === OIL) && next[I(x, y)] === EMPTY;
+    const supportsWater = (material) =>
+      material !== EMPTY && material !== WATER && material !== OIL && material !== STEAM && material !== FIRE;
     const touchesGridEmpty = (k) => {
       const x = k % cols;
       const y = Math.floor(k / cols);
@@ -1356,6 +1359,22 @@ function SandOverlay({ onDrawModeChange }) {
         if (canWaterEnter(stepX, y)) { moveWaterInto(k, stepX, y); return; }
       }
 
+      if (y + 1 < rows && supportsWater(grid[belowK])) {
+        const aboveK = k - cols;
+        if (y > 1 && grid[aboveK] === WATER) {
+          for (const dx of dirs) {
+            const sideK = k + dx;
+            if (x + dx <= 0 || x + dx >= cols - 1) continue;
+            if (grid[sideK] === EMPTY && next[sideK] === EMPTY && supportsWater(grid[sideK + cols])) {
+              writeNextIndex(sideK, WATER);
+              return;
+            }
+          }
+        }
+        if (next[k] === EMPTY) writeNextIndex(k, WATER);
+        return;
+      }
+
       for (const dx of dirs) {
         if (canWaterEnter(x + dx, y)) { moveWaterInto(k, x + dx, y); return; }
       }
@@ -1586,6 +1605,7 @@ function SandOverlay({ onDrawModeChange }) {
       let steamCount = 0;
       let fireCount = 0;
       let igniteCount = 0;
+      let plantBurned = false;
 
       for (let y = 1; y < rows - 1; y++) {
         const minX = Math.max(1, activeRowMin[y]);
@@ -1628,6 +1648,8 @@ function SandOverlay({ onDrawModeChange }) {
                   if (grid[ok] === OIL && Math.random() < 0.12 && igniteCount < reactionIgnite.length) reactionIgnite[igniteCount++] = ok;
                 }
               }
+            } else if (isPlantMaterial(grid[nk]) && Math.random() < PLANT_IGNITE_P) {
+              if (igniteCount < reactionIgnite.length) reactionIgnite[igniteCount++] = nk;
             }
           }
         }
@@ -1644,8 +1666,12 @@ function SandOverlay({ onDrawModeChange }) {
       }
       for (let i = 0; i < igniteCount; i++) {
         const k = reactionIgnite[i];
-        if (grid[k] === OIL) writeGridIndex(k, FIRE);
+        if (grid[k] === OIL || isPlantMaterial(grid[k])) {
+          plantBurned = plantBurned || isPlantMaterial(grid[k]);
+          writeGridIndex(k, FIRE);
+        }
       }
+      if (plantBurned) plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
     };
 
     // --- Side sinks only (bottom preserved) ---

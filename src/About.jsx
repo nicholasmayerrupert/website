@@ -1270,12 +1270,12 @@ function SandOverlay({ onDrawModeChange }) {
       if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
         writeNextIndex(belowK, SAND); return;
       }
-      if (y + 1 < rows && grid[belowK] === WATER && (next[belowK] === EMPTY || next[belowK] === WATER)) {
+      if (y + 1 < rows && grid[belowK] === WATER && next[belowK] === EMPTY) {
         writeNextIndex(belowK, SAND);
         if (next[k] === EMPTY) writeNextIndex(k, WATER);
         return;
       }
-      if (y + 1 < rows && grid[belowK] === OIL && (next[belowK] === EMPTY || next[belowK] === OIL)) {
+      if (y + 1 < rows && grid[belowK] === OIL && next[belowK] === EMPTY) {
         writeNextIndex(belowK, SAND);
         if (next[k] === EMPTY) writeNextIndex(k, OIL);
         return;
@@ -1290,10 +1290,10 @@ function SandOverlay({ onDrawModeChange }) {
         const ik = belowK + dx;
         const material = grid[ik];
         if (material === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, SAND); return; }
-        if (material === WATER && (next[ik] === EMPTY || next[ik] === WATER)) {
+        if (material === WATER && next[ik] === EMPTY) {
           writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, WATER); return;
         }
-        if (material === OIL && (next[ik] === EMPTY || next[ik] === OIL)) {
+        if (material === OIL && next[ik] === EMPTY) {
           writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, OIL); return;
         }
       }
@@ -1714,7 +1714,25 @@ function SandOverlay({ onDrawModeChange }) {
         for (const k of comp.cells) next[k] = grid[k];
       }
 
-      // 4) Falling materials
+      // 4) Dense falling material. Sand gets first claim on water/oil swaps so
+      // stationary liquid claims cannot block density displacement.
+      for (let y = rows - 1; y >= 0; y--) {
+        const minX = activeRowMin[y];
+        const maxX = activeRowMax[y];
+        if (maxX < minX) continue;
+        const ltr = (y & 1) === 0;
+        if (ltr) {
+          for (let x = minX; x <= maxX; x++) {
+            if (grid[I(x, y)] === SAND) settleSand(x, y);
+          }
+        } else {
+          for (let x = maxX; x >= minX; x--) {
+            if (grid[I(x, y)] === SAND) settleSand(x, y);
+          }
+        }
+      }
+
+      // 5) Liquids
       for (let y = rows - 1; y >= 0; y--) {
         const minX = activeRowMin[y];
         const maxX = activeRowMax[y];
@@ -1723,21 +1741,19 @@ function SandOverlay({ onDrawModeChange }) {
         if (ltr) {
           for (let x = minX; x <= maxX; x++) {
             const material = grid[I(x, y)];
-            if (material === SAND) settleSand(x, y);
-            else if (material === WATER) settleWater(x, y);
+            if (material === WATER) settleWater(x, y);
             else if (material === OIL) settleOil(x, y);
           }
         } else {
           for (let x = maxX; x >= minX; x--) {
             const material = grid[I(x, y)];
-            if (material === SAND) settleSand(x, y);
-            else if (material === WATER) settleWater(x, y);
+            if (material === WATER) settleWater(x, y);
             else if (material === OIL) settleOil(x, y);
           }
         }
       }
 
-      // 5) Rising materials
+      // 6) Rising materials
       for (let y = 0; y < rows; y++) {
         const minX = activeRowMin[y];
         const maxX = activeRowMax[y];
@@ -1758,19 +1774,19 @@ function SandOverlay({ onDrawModeChange }) {
         }
       }
 
-      // 6) Flip
+      // 7) Flip
       const tmp = grid; grid = next; next = tmp;
 
-      // 7) Collapse small liquid air pockets
+      // 8) Collapse small liquid air pockets
       if ((tick & 1) === 0) {
         relaxLiquidGaps();
         sealWaterPockets();
       }
 
-      // 8) Let buried oil bubble up through water after crowded movement claims settle
+      // 9) Let buried oil bubble up through water after crowded movement claims settle
       if (tick % 3 === 0) separateLiquidsByDensity();
 
-      // 9) Side sinks (stones unaffected)
+      // 10) Side sinks (stones unaffected)
       applySideSinks();
       perfStepMs = performance.now() - stepStart;
       return true;

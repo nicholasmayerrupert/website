@@ -1,19 +1,15 @@
 // src/TileGrid.jsx
 // Notes for future devs:
-// - Lottie now lives in a persistent .card-media background layer.
-// - The blur/dim sheet (card-dim) is INSIDE .card-media, so it only dims/blurs the animation,
+// - Card art is custom SVG (ProjectArt.jsx) living in a persistent .card-media background layer.
+// - The blur/dim sheet (card-dim) is INSIDE .card-media, so it only dims/blurs the artwork,
 //   not the text. Flipping content (.card-flip__container) sits above both.
 // - Hoisted animateParticles inside ParticleCard to avoid TDZ issues.
 // - Mobile: onClick wired on wrapper; Enter/Space supported.
 
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
 import ReactCardFlip from 'react-card-flip';
-import Lottie from 'react-lottie';
-import animation1 from './chess.json';
-import animation2 from './grabby2.json';
-import animation3 from './fire.json';
-import animation4 from './whitelife.json';
+import { ChessArt, GrabbyArt, WildfireArt, LifeArt } from './ProjectArt';
 import './MagicBento.css';
 
 function usePrefersReducedMotion() {
@@ -31,58 +27,6 @@ function usePrefersReducedMotion() {
     };
   }, []);
   return prefersReducedMotion;
-}
-
-/* ---------- Responsive Lottie (square) ---------- */
-function ResponsiveLottie({ animationData }) {
-  const containerRef = useRef(null);
-  const [size, setSize] = useState(300);
-  const prefersReducedMotion = usePrefersReducedMotion();
-
-  useLayoutEffect(() => {
-    if (!containerRef.current) return;
-    const el = containerRef.current;
-    const update = () => {
-      const w = el.getBoundingClientRect().width || 300;
-      const clamped = Math.max(160, Math.min(420, Math.floor(w)));
-      setSize(clamped);
-    };
-    update();
-    let ro;
-    if ('ResizeObserver' in window) {
-      ro = new ResizeObserver(update);
-      ro.observe(el);
-    } else {
-      window.addEventListener('resize', update);
-    }
-    return () => {
-      if (ro) ro.disconnect();
-      else window.removeEventListener('resize', update);
-    };
-  }, []);
-
-  return (
-    <div
-      ref={containerRef}
-      className="w-full aspect-square grid place-items-center"
-      style={{ transform: 'translateZ(0)', willChange: 'transform' }}
-    >
-      <div style={{ width: size, height: size, pointerEvents: 'none' }}>
-        <Lottie
-          options={{
-            loop: !prefersReducedMotion,
-            autoplay: !prefersReducedMotion,
-            animationData,
-            rendererSettings: { preserveAspectRatio: 'xMidYMid slice' },
-          }}
-          height={size}
-          width={size}
-          isClickToPauseDisabled
-          style={{ display: 'block' }}
-        />
-      </div>
-    </div>
-  );
 }
 
 /* ---------- Snake backdrop (unchanged) ---------- */
@@ -667,21 +611,21 @@ export default function TileGrid() {
 
   const tiles = [
     {
-      animation: animation1,
+      Art: ChessArt,
       title: 'LLM Chess Coach',
       content: 'Software Project',
       description: 'LLM-based chess assistant tool - https://github.com/nicholasmayerrupert/cmpt419chess.',
       features: ['AI opponent from terminal', 'Move analysis', 'Plays at ~1200 ELO'],
     },
     {
-      animation: animation2,
+      Art: GrabbyArt,
       title: 'Grabby - OCR + Snipping Tool',
       content: 'Software Project',
       description: 'A versatile tool combining OCR and snipping capabilities.',
       features: ['Text extraction from images', 'Snipping tool integration', 'Multi-language support'],
     },
     {
-      animation: animation3,
+      Art: WildfireArt,
       title: 'Forest Fire Modelling',
       content: 'Data Science Project',
       description:
@@ -693,7 +637,7 @@ export default function TileGrid() {
       ],
     },
     {
-      animation: animation4,
+      Art: LifeArt,
       title: '3D Game of Life',
       content: 'Scroll up :P',
       description: 'A 3D implementation of the classic cellular automaton.',
@@ -745,10 +689,10 @@ export default function TileGrid() {
                   tabIndex={0}
                   aria-pressed={isFlipped}
                 >
-                  {/* Persistent background animation */}
+                  {/* Persistent background artwork */}
                   <div className="card-media" aria-hidden="true">
-                    <ResponsiveLottie animationData={tile.animation} />
-                    {/* Dim/blur sits ABOVE Lottie but BELOW flip content */}
+                    <tile.Art />
+                    {/* Dim/blur sits ABOVE the art but BELOW flip content */}
                     <div className={`card-dim ${isFlipped ? 'is-on' : ''}`} />
                   </div>
 

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createEngine, MAT, CHUNK_SIZE, SEED_SIZE } from './sand/engine';
 import { makeColorLUT, fillPixelSpan } from './sand/renderCore';
+import { buildCastleScene, castleEmitters } from './sand/scenes/castleScene';
 
 /* -------------------- SAND OVERLAY -------------------- */
 function SandOverlay({ onDrawModeChange }) {
@@ -167,6 +168,8 @@ function SandOverlay({ onDrawModeChange }) {
       engine = createEngine({
         cols,
         rows,
+        initialScene: buildCastleScene,
+        emitters: castleEmitters,
         emittersOn: emittersOnRef.current,
         sinksOn: sinksOnRef.current,
       });

@@ -15,6 +15,7 @@
 import { createEngine, MAT } from '../src/sand/engine.js';
 import { makeColorLUT, fillPixelSpan } from '../src/sand/renderCore.js';
 import { mulberry32, hashGrid } from '../src/sand/rng.js';
+import { buildCastleScene, castleEmitters } from '../src/sand/scenes/castleScene.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -168,7 +169,8 @@ function runScenario(scenario, cols, rows, rngKind, seed, { measure }) {
     cols,
     rows,
     rng: makeRng(rngKind, seed, scenario.name),
-    seedInitial: scenario.seedInitial,
+    initialScene: scenario.seedInitial ? buildCastleScene : null,
+    emitters: scenario.seedInitial ? castleEmitters : [],
   });
   scenario.setup(eng);
   const times = measure ? new Float64Array(scenario.steps) : null;

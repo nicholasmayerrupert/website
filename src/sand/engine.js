@@ -50,10 +50,6 @@ const INNER_OIL_P = 0.35;
 const INNER_SAND_P = 0.10;
 
 // Emitters (normalized positions) + buffers
-const emitterDefs = [
-  { type: 'sand',  rateMs: 120, pos: { x: 0.12, y: 0.14 }, r: 2 },
-  { type: 'water', rateMs:  90, pos: { x: 0.88, y: 0.14 }, r: 2 },
-];
 const EMITTER_EDGE_BUFFER = 3; // cells from side
 const EMITTER_TOP_BUFFER = 3; // cells from top
 const DIRTY_PAD_X = MAX_WATER_FLOW + 2;
@@ -76,7 +72,8 @@ export function createEngine({
   cols,
   rows,
   rng = Math.random,
-  seedInitial = true,
+  initialScene = null,
+  emitters: emitterDefs = [],
   emittersOn = true,
   sinksOn = true,
 } = {}) {
@@ -130,7 +127,7 @@ export function createEngine({
     const rawY = Math.floor(e.pos.y * rows);
     const gx = clamp(rawX, 1 + EMITTER_EDGE_BUFFER, cols - 2 - EMITTER_EDGE_BUFFER);
     const gy = clamp(rawY, 1 + EMITTER_TOP_BUFFER, rows - 2 - EMITTER_EDGE_BUFFER);
-    return { ...e, gx, gy, last: 0 };
+    return { ...e, material: e.material ?? SAND, gx, gy, last: 0 };
   });
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -234,18 +231,91 @@ export function createEngine({
     }
   };
 
-  const seedInitialSand = () => {
-    const band = Math.max(3, Math.floor(rows * 0.10));
-    for (let y = rows - 1; y >= rows - band; y--) {
-      const t = (y - (rows - band)) / Math.max(1, band - 1);
-      const p = 0.05 + t * 0.35;
-      for (let x = 1; x < cols - 1; x++) {
-        if (rand() < p) grid[I(x, y)] = SAND;
-      }
+  const putInitial = (x, y, material) => {
+    if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows - 1) return;
+    grid[I(x, y)] = material;
+  };
+  const rectInitial = (x0, y0, w, h, material) => {
+    const x1 = Math.min(cols - 2, x0 + w - 1);
+    const y1 = Math.min(rows - 2, y0 + h - 1);
+    for (let y = Math.max(1, y0); y <= y1; y++) {
+      for (let x = Math.max(1, x0); x <= x1; x++) putInitial(x, y, material);
     }
-    const seedX = Math.floor(cols / 2 - SEED_SIZE / 2);
-    const seedY = rows - band - SEED_SIZE;
-    placeSeedAt(seedX, seedY);
+  };
+  const registerSeededComponents = () => {
+    const registerComponents = (materialCheck, components, makeComponent) => {
+      const seen = new Uint8Array(cols * rows);
+      for (let k = 0; k < grid.length; k++) {
+        if (seen[k] || !materialCheck(grid[k])) continue;
+        const cells = new Set([k]);
+        const queue = [k];
+        seen[k] = 1;
+        let yMax = (k / cols) | 0;
+
+        while (queue.length) {
+          const cur = queue.shift();
+          const y = (cur / cols) | 0;
+          const x = cur - y * cols;
+          if (y > yMax) yMax = y;
+
+          for (let oy = -1; oy <= 1; oy++) {
+            for (let ox = -1; ox <= 1; ox++) {
+              if (ox === 0 && oy === 0) continue;
+              const nx = x + ox;
+              const ny = y + oy;
+              if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1) continue;
+              const nk = I(nx, ny);
+              if (seen[nk] || !materialCheck(grid[nk])) continue;
+              seen[nk] = 1;
+              cells.add(nk);
+              queue.push(nk);
+            }
+          }
+        }
+
+        components.push(makeComponent(cells, yMax));
+      }
+    };
+
+    registerComponents(
+      material => material === STONE,
+      stoneComponents,
+      (cells, yMax) => ({ id: nextStoneId++, cells, yMax })
+    );
+    registerComponents(
+      isPlantMaterial,
+      plantComponents,
+      (cells, yMax) => {
+        let woodCount = 0;
+        let leafCount = 0;
+        for (const k of cells) {
+          if (grid[k] === WOOD) woodCount++;
+          else if (grid[k] === PLANT) leafCount++;
+        }
+        return {
+          id: nextPlantId++,
+          cells,
+          yMax,
+          woodCount,
+          leafCount,
+          age: 0,
+          cacheDirty: true,
+        };
+      }
+    );
+  };
+
+  const applyInitialScene = () => {
+    if (typeof initialScene !== 'function') return;
+    initialScene({
+      cols,
+      rows,
+      MAT,
+      rand,
+      put: putInitial,
+      rect: rectInitial,
+    });
+    registerSeededComponents();
   };
 
   // --- Draft helpers for stone ---
@@ -502,8 +572,7 @@ export function createEngine({
     for (const e of emitters) {
       if (now - e.last < e.rateMs) continue;
       e.last = now;
-      const mat = e.type === 'water' ? WATER : SAND;
-      paintDisc(e.gx, e.gy, e.r, mat, false);
+      paintDisc(e.gx, e.gy, e.r, e.material, false);
     }
   };
 
@@ -1472,7 +1541,7 @@ export function createEngine({
     return true;
   };
 
-  if (seedInitial) seedInitialSand();
+  applyInitialScene();
   markAllDirty();
 
   return {

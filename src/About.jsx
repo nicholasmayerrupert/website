@@ -121,8 +121,10 @@ function SandOverlay({ onDrawModeChange }) {
     let chunkCols = 0, chunkRows = 0;
     let dirtyCurrent = new Uint8Array(0);
     let dirtyNext = new Uint8Array(0);
+    let dirtyRender = new Uint8Array(0);
     let activeRowMin = new Int32Array(0);
     let activeRowMax = new Int32Array(0);
+    let forceFullRender = true;
     const I = (x, y) => y * cols + x;
     const XY = (k) => [k % cols, Math.floor(k / cols)];
     const DIRS_LEFT_FIRST = [-1, 1];
@@ -151,7 +153,7 @@ function SandOverlay({ onDrawModeChange }) {
     /** @type {Array<{id:number,cells:Set<number>,yMax:number}>} */
     let stoneComponents = [];
     let nextStoneId = 1;
-    /** @type {Array<{id:number,cells:Set<number>,yMax:number,woodCount:number,leafCount:number,age:number}>} */
+    /** @type {Array<{id:number,cells:Set<number>,yMax:number,woodCount:number,leafCount:number,age:number,cacheDirty?:boolean,woodCells?:number[],seedWoodCells?:number[]}>} */
     let plantComponents = [];
     let nextPlantId = 1;
 
@@ -240,7 +242,10 @@ function SandOverlay({ onDrawModeChange }) {
     };
     const beginStepDirty = () => {
       for (let i = 0; i < dirtyNext.length; i++) {
-        if (dirtyNext[i]) dirtyCurrent[i] = 1;
+        if (dirtyNext[i]) {
+          dirtyCurrent[i] = 1;
+          dirtyRender[i] = 1;
+        }
         dirtyNext[i] = 0;
       }
       const hasActive = buildActiveRows();
@@ -301,6 +306,7 @@ function SandOverlay({ onDrawModeChange }) {
       chunkRows = Math.ceil(rows / CHUNK_SIZE);
       dirtyCurrent = new Uint8Array(chunkCols * chunkRows);
       dirtyNext = new Uint8Array(chunkCols * chunkRows);
+      dirtyRender = new Uint8Array(chunkCols * chunkRows);
       activeRowMin = new Int32Array(rows);
       activeRowMax = new Int32Array(rows);
 
@@ -325,6 +331,7 @@ function SandOverlay({ onDrawModeChange }) {
       });
 
       pixels.fill(0);
+      forceFullRender = true;
       ctx.clearRect(0, 0, width, height);
     };
 
@@ -560,6 +567,7 @@ function SandOverlay({ onDrawModeChange }) {
         woodCount: 0,
         leafCount: 0,
         age: 0,
+        cacheDirty: true,
       });
       markDirtyRect(x0, y0, x0 + SEED_SIZE - 1, y0 + SEED_SIZE - 1);
       return true;
@@ -606,6 +614,7 @@ function SandOverlay({ onDrawModeChange }) {
             woodCount,
             leafCount,
             age: comp.age ?? 0,
+            cacheDirty: true,
           });
           reusedOriginalId = true;
         }
@@ -940,45 +949,60 @@ function SandOverlay({ onDrawModeChange }) {
         comp.cells = newCells;
         comp.woodCount = woodCount;
         comp.leafCount = leafCount;
+        comp.cacheDirty = true;
         comp.yMax = Math.min(rows - 1, comp.yMax + 1);
       }
     }
 
     function findWaterTouchingComponent(comp, count = 1) {
       const candidates = [];
+      const consider = (nk) => {
+        if (grid[nk] !== WATER) return;
+        if (!candidates.includes(nk)) candidates.push(nk);
+      };
       for (const k of comp.cells) {
         const material = grid[k];
         if (material !== SEED && material !== WOOD) continue;
-        const [x, y] = XY(k);
-        for (const [nx, ny] of neighbors4(x, y)) {
-          const nk = I(nx, ny);
-          if (grid[nk] === WATER) candidates.push(nk);
-        }
+        const x = k % cols;
+        const y = Math.floor(k / cols);
+        if (x < cols - 2) consider(k + 1);
+        if (x > 1) consider(k - 1);
+        if (y < rows - 2) consider(k + cols);
+        if (y > 1) consider(k - cols);
       }
       if (candidates.length < count) return null;
       const picked = [];
       while (picked.length < count && candidates.length > 0) {
         const i = Math.floor(Math.random() * candidates.length);
         const [k] = candidates.splice(i, 1);
-        if (!picked.includes(k)) picked.push(k);
+        picked.push(k);
       }
       return picked.length === count ? picked : null;
     }
 
-    function componentCellsOf(comp, material) {
-      const cells = [];
+    function refreshPlantCache(comp) {
+      if (!comp.cacheDirty && comp.woodCells && comp.seedWoodCells) return;
+      const woodCells = [];
+      const seedWoodCells = [];
       for (const k of comp.cells) {
-        if (grid[k] === material) cells.push(k);
+        const material = grid[k];
+        if (material === WOOD) {
+          woodCells.push(k);
+          seedWoodCells.push(k);
+        } else if (material === SEED) {
+          seedWoodCells.push(k);
+        }
       }
-      return cells;
+      woodCells.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
+      seedWoodCells.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
+      comp.woodCells = woodCells;
+      comp.seedWoodCells = seedWoodCells;
+      comp.cacheDirty = false;
     }
 
     function tryGrowWood(comp, reserved = new Set()) {
-      const sources = componentCellsOf(comp, WOOD);
-      if (sources.length === 0) {
-        for (const k of comp.cells) if (grid[k] === SEED) sources.push(k);
-      }
-      sources.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
+      refreshPlantCache(comp);
+      const sources = comp.woodCells.length > 0 ? comp.woodCells : comp.seedWoodCells;
 
       for (const source of sources) {
         const [x, y] = XY(source);
@@ -1043,9 +1067,9 @@ function SandOverlay({ onDrawModeChange }) {
     }
 
     function tryGrowLeaf(comp, reserved = new Set()) {
-      const woodCells = componentCellsOf(comp, WOOD);
+      refreshPlantCache(comp);
+      const woodCells = comp.woodCells;
       if (woodCells.length === 0) return -1;
-      woodCells.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
 
       for (const source of woodCells) {
         const [x, y] = XY(source);
@@ -1061,9 +1085,12 @@ function SandOverlay({ onDrawModeChange }) {
           [x + 2, y - 1],
           [x - 3, y],
           [x + 3, y],
-        ].sort(() => Math.random() - 0.5);
+        ];
+        const start = Math.floor(Math.random() * candidates.length);
+        const step = Math.random() < 0.5 ? 1 : -1;
 
-        for (const [tx, ty] of candidates) {
+        for (let i = 0; i < candidates.length; i++) {
+          const [tx, ty] = candidates[(start + i * step + candidates.length) % candidates.length];
           if (!isInBounds(tx, ty)) continue;
           const tk = I(tx, ty);
           if (grid[tk] === EMPTY && !reserved.has(tk)) return tk;
@@ -1117,6 +1144,7 @@ function SandOverlay({ onDrawModeChange }) {
           if (y > comp.yMax) comp.yMax = y;
           if (material === WOOD) comp.woodCount++;
           else comp.leafCount++;
+          comp.cacheDirty = true;
         }
       }
     }
@@ -1617,12 +1645,20 @@ function SandOverlay({ onDrawModeChange }) {
       return true;
     };
 
-    const render = () => {
+    const render = (full = false) => {
       if (!imageData) return;
-      pixels.fill(0);
 
       const canvasWidth = canvas.width;
       const drawSize = cellSize - 1;
+      const drawPixelRect = (x0, y0, x1, y1) => {
+        const startX = x0 * cellSize;
+        const startY = y0 * cellSize;
+        const endX = Math.min(canvasWidth, (x1 + 1) * cellSize);
+        const endY = Math.min(canvas.height, (y1 + 1) * cellSize);
+        for (let py = startY; py < endY; py++) {
+          pixels.fill(0, py * canvasWidth + startX, py * canvasWidth + endX);
+        }
+      };
       const drawCell = (x, y, color) => {
         const startX = x * cellSize;
         const startY = y * cellSize;
@@ -1632,44 +1668,75 @@ function SandOverlay({ onDrawModeChange }) {
           pixels.fill(color, py * canvasWidth + startX, py * canvasWidth + endX);
         }
       };
+      const drawGridCell = (x, y) => {
+        switch (grid[I(x, y)]) {
+          case SAND:
+            drawCell(x, y, PACKED_SAND);
+            break;
+          case WATER:
+            drawCell(x, y, PACKED_WATER);
+            break;
+          case OIL:
+            drawCell(x, y, PACKED_OIL);
+            break;
+          case STEAM:
+            if (Math.random() > 0.18) drawCell(x, y, PACKED_STEAM);
+            break;
+          case FIRE:
+            drawCell(x, y, Math.random() < 0.35 ? PACKED_FIRE_HOT : PACKED_FIRE);
+            break;
+          case STONE:
+            drawCell(x, y, PACKED_STONE);
+            break;
+          case SEED:
+            drawCell(x, y, PACKED_SEED);
+            break;
+          case WOOD:
+            drawCell(x, y, PACKED_WOOD);
+            break;
+          case PLANT:
+            drawCell(x, y, PACKED_PLANT);
+            break;
+          default:
+            break;
+        }
+      };
 
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          switch (grid[I(x, y)]) {
-            case SAND:
-              drawCell(x, y, PACKED_SAND);
-              break;
-            case WATER:
-              drawCell(x, y, PACKED_WATER);
-              break;
-            case OIL:
-              drawCell(x, y, PACKED_OIL);
-              break;
-            case STEAM:
-              if (Math.random() > 0.18) drawCell(x, y, PACKED_STEAM);
-              break;
-            case FIRE:
-              drawCell(x, y, Math.random() < 0.35 ? PACKED_FIRE_HOT : PACKED_FIRE);
-              break;
-            case STONE:
-              drawCell(x, y, PACKED_STONE);
-              break;
-            case SEED:
-              drawCell(x, y, PACKED_SEED);
-              break;
-            case WOOD:
-              drawCell(x, y, PACKED_WOOD);
-              break;
-            case PLANT:
-              drawCell(x, y, PACKED_PLANT);
-              break;
-            default:
-              break;
+      const shouldFullRender = full || forceFullRender;
+      if (shouldFullRender) {
+        pixels.fill(0);
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) drawGridCell(x, y);
+        }
+        ctx.putImageData(imageData, 0, 0);
+        forceFullRender = false;
+        dirtyRender.fill(0);
+      } else {
+        for (let cy = 0; cy < chunkRows; cy++) {
+          const y0 = cy * CHUNK_SIZE;
+          const y1 = Math.min(rows - 1, y0 + CHUNK_SIZE - 1);
+          for (let cx = 0; cx < chunkCols; cx++) {
+            const chunkIndex = cy * chunkCols + cx;
+            if (!dirtyNext[chunkIndex] && !dirtyRender[chunkIndex]) continue;
+            const x0 = cx * CHUNK_SIZE;
+            const x1 = Math.min(cols - 1, x0 + CHUNK_SIZE - 1);
+            drawPixelRect(x0, y0, x1, y1);
+            for (let y = y0; y <= y1; y++) {
+              for (let x = x0; x <= x1; x++) drawGridCell(x, y);
+            }
+            ctx.putImageData(
+              imageData,
+              0,
+              0,
+              x0 * cellSize,
+              y0 * cellSize,
+              Math.min(canvasWidth, (x1 + 1) * cellSize) - x0 * cellSize,
+              Math.min(canvas.height, (y1 + 1) * cellSize) - y0 * cellSize
+            );
           }
         }
+        dirtyRender.fill(0);
       }
-
-      ctx.putImageData(imageData, 0, 0);
 
       // stone preview
       if (stoneDraft.size > 0) {
@@ -1717,7 +1784,8 @@ function SandOverlay({ onDrawModeChange }) {
         emitAtPointer(now);
         applyEmitters(now);
         const didStep = step();
-        if (didStep || stoneDraft.size > 0 || isDraftingSeed) render();
+        const hasDraftPreview = stoneDraft.size > 0 || isDraftingSeed;
+        if (didStep || hasDraftPreview) render(hasDraftPreview);
         lastStep = now;
       }
     };

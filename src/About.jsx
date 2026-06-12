@@ -1689,6 +1689,20 @@ function SandOverlay({ onDrawModeChange }) {
           pixels.fill(0, y * cols + x0, y * cols + x1 + 1);
         }
       };
+      const clearCellGutters = (x0, y0, x1, y1) => {
+        const destX = x0 * cellSize;
+        const destY = y0 * cellSize;
+        const destW = Math.min(canvas.width, (x1 + 1) * cellSize) - destX;
+        const destH = Math.min(canvas.height, (y1 + 1) * cellSize) - destY;
+        for (let x = x0; x <= x1; x++) {
+          const gx = x * cellSize + cellSize - 1;
+          if (gx < canvas.width) ctx.clearRect(gx, destY, 1, destH);
+        }
+        for (let y = y0; y <= y1; y++) {
+          const gy = y * cellSize + cellSize - 1;
+          if (gy < canvas.height) ctx.clearRect(destX, gy, destW, 1);
+        }
+      };
       const drawCell = (x, y, color) => {
         pixels[y * cols + x] = color;
       };
@@ -1742,6 +1756,7 @@ function SandOverlay({ onDrawModeChange }) {
         cellCtx.putImageData(imageData, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(cellCanvas, 0, 0, cols, rows, 0, 0, cols * cellSize, rows * cellSize);
+        clearCellGutters(0, 0, cols - 1, rows - 1);
         forceFullRender = false;
         dirtyRender.fill(0);
         dirtyRenderCount = 0;
@@ -1784,7 +1799,9 @@ function SandOverlay({ onDrawModeChange }) {
               sourceW,
               sourceH
             );
+            ctx.clearRect(destX, destY, destW, destH);
             ctx.drawImage(cellCanvas, x0, y0, sourceW, sourceH, destX, destY, destW, destH);
+            clearCellGutters(x0, y0, x1, y1);
             cx++;
           }
         }

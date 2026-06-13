@@ -1,10 +1,20 @@
 import { MAT } from '../engine.js';
 
+// Emitters: continuous material sources. pos is fractional (0..1) of the grid.
 export const castleEmitters = [
   { material: MAT.SAND, rateMs: 120, pos: { x: 0.12, y: 0.14 }, r: 2 },
   { material: MAT.WATER, rateMs: 90, pos: { x: 0.88, y: 0.14 }, r: 2 },
 ];
 
+// A scene seeds the initial world. The engine calls this once at startup with:
+//   cols, rows            grid dimensions
+//   rand()                float in [0, 1)
+//   MAT                   material id enum
+//   put(x, y, material)             set a single cell      (available, unused here)
+//   rect(x0, y0, w, h, material)    fill a rectangle
+// Stone/plant components are registered automatically afterward, so just place
+// materials. To add a new scene, copy this file and wire it in src/About.jsx.
+// See AGENTS.md > "Creating or changing a scene".
 export function buildCastleScene({ cols, rows, MAT, rand, rect }) {
   const dot = (x, y, material) => rect(x, y, 1, 1, material);
   const line = (x0, y0, x1, y1, material) => {

@@ -96,14 +96,31 @@ export function buildCastleScene({ cols, rows, MAT, rand, rect }) {
   };
 
   const groundTop = Math.max(18, rows - Math.max(5, Math.floor(rows * 0.16)));
+  const castleGroundY = rows;
   const hillTop = Math.max(8, groundTop - Math.floor(rows * 0.12));
+  const center = Math.floor(cols / 2);
+  const wallW = Math.max(34, Math.min(Math.floor(cols * 0.62), cols - 12));
+  const wallH = Math.max(7, Math.min(Math.floor(rows * 0.22), rows - 14));
+  const wallX = Math.max(4, center - Math.floor(wallW / 2));
+  const wallY = Math.max(6, castleGroundY - wallH);
+  const towerW = Math.max(7, Math.floor(wallW * 0.14));
+  const towerH = wallH + Math.max(5, Math.floor(rows * 0.12));
+  const towerY = Math.max(3, castleGroundY - towerH);
+  const leftTowerX = Math.max(2, wallX - Math.floor(towerW * 0.55));
+  const rightTowerX = Math.min(cols - towerW - 2, wallX + wallW - Math.floor(towerW * 0.45));
+  const castleBaseX0 = Math.max(1, leftTowerX - 2);
+  const castleBaseX1 = Math.min(cols - 2, rightTowerX + towerW + 1);
+  const underCastle = (x) => x >= castleBaseX0 && x <= castleBaseX1;
+
   for (let y = groundTop; y < rows - 1; y++) {
     const t = (y - groundTop) / Math.max(1, rows - groundTop - 2);
     for (let x = 1; x < cols - 1; x++) {
+      if (underCastle(x)) continue;
       if (rand() < 0.62 + t * 0.25) rect(x, y, 1, 1, MAT.SAND);
     }
   }
   for (let x = 1; x < cols - 1; x++) {
+    if (underCastle(x)) continue;
     const ridge =
       groundTop -
       Math.floor(Math.sin((x / cols) * Math.PI) * rows * 0.10) -
@@ -117,22 +134,19 @@ export function buildCastleScene({ cols, rows, MAT, rand, rect }) {
 
   const moatY = Math.min(rows - 3, groundTop + 1);
   const moatH = Math.max(2, Math.floor(rows * 0.06));
-  rect(1, moatY, cols - 2, moatH, MAT.WATER);
-  rect(1, moatY - 1, cols - 2, 1, MAT.SAND);
-  rect(1, moatY + moatH, cols - 2, 1, MAT.SAND);
-
-  const center = Math.floor(cols / 2);
-  const wallW = Math.max(34, Math.min(Math.floor(cols * 0.62), cols - 12));
-  const wallH = Math.max(7, Math.min(Math.floor(rows * 0.22), rows - 14));
-  const wallX = Math.max(4, center - Math.floor(wallW / 2));
-  const wallY = Math.max(6, groundTop - wallH);
-  const towerW = Math.max(7, Math.floor(wallW * 0.14));
-  const towerH = wallH + Math.max(5, Math.floor(rows * 0.12));
-  const towerY = Math.max(3, groundTop - towerH);
-  const leftTowerX = Math.max(2, wallX - Math.floor(towerW * 0.55));
-  const rightTowerX = Math.min(cols - towerW - 2, wallX + wallW - Math.floor(towerW * 0.45));
+  if (castleBaseX0 > 1) {
+    rect(1, moatY, castleBaseX0 - 1, moatH, MAT.WATER);
+    rect(1, moatY - 1, castleBaseX0 - 1, 1, MAT.SAND);
+    rect(1, moatY + moatH, castleBaseX0 - 1, 1, MAT.SAND);
+  }
+  if (castleBaseX1 < cols - 2) {
+    rect(castleBaseX1 + 1, moatY, cols - castleBaseX1 - 2, moatH, MAT.WATER);
+    rect(castleBaseX1 + 1, moatY - 1, cols - castleBaseX1 - 2, 1, MAT.SAND);
+    rect(castleBaseX1 + 1, moatY + moatH, cols - castleBaseX1 - 2, 1, MAT.SAND);
+  }
 
   rect(wallX, wallY, wallW, wallH, MAT.STONE);
+  rect(castleBaseX0, groundTop, castleBaseX1 - castleBaseX0 + 1, castleGroundY - groundTop + 1, MAT.STONE);
   rect(wallX + 2, wallY + 2, wallW - 4, 1, MAT.SAND);
   rect(wallX + 2, wallY + wallH - 4, wallW - 4, 1, MAT.SAND);
   for (let x = wallX + 2; x < wallX + wallW - 2; x += 4) {
@@ -182,24 +196,18 @@ export function buildCastleScene({ cols, rows, MAT, rand, rect }) {
   }
 
   for (const buttressX of [keepX - 2, keepX + keepW + 1, wallX + 2, wallX + wallW - 3]) {
-    line(buttressX, groundTop - 1, buttressX + (buttressX < center ? 3 : -3), wallY + 2, MAT.STONE);
-    line(buttressX + (buttressX < center ? 1 : -1), groundTop - 1, buttressX + (buttressX < center ? 4 : -4), wallY + 2, MAT.STONE);
+    line(buttressX, castleGroundY - 1, buttressX + (buttressX < center ? 3 : -3), wallY + 2, MAT.STONE);
+    line(buttressX + (buttressX < center ? 1 : -1), castleGroundY - 1, buttressX + (buttressX < center ? 4 : -4), wallY + 2, MAT.STONE);
   }
 
   const doorW = Math.max(4, Math.floor(wallW * 0.12));
   const doorH = Math.max(5, Math.floor(wallH * 0.58));
   const doorX = center - Math.floor(doorW / 2);
-  const doorY = groundTop - doorH - 1;
-  arch(center, groundTop - 1, Math.floor(doorW / 2), doorH, MAT.WOOD);
+  const doorY = castleGroundY - doorH - 1;
+  arch(center, castleGroundY - 1, Math.floor(doorW / 2), doorH, MAT.WOOD);
   rect(doorX + 1, doorY + 2, Math.max(1, doorW - 2), 1, MAT.SAND);
   dot(doorX + 1, doorY + Math.floor(doorH * 0.55), MAT.FIRE);
   dot(doorX + doorW - 2, doorY + Math.floor(doorH * 0.55), MAT.FIRE);
-
-  const bridgeY = moatY;
-  rect(doorX - 2, bridgeY, doorW + 4, moatH, MAT.WOOD);
-  for (let x = doorX - 2; x <= doorX + doorW + 1; x += 3) rect(x, bridgeY, 1, moatH, MAT.SAND);
-  line(doorX - 2, bridgeY - 1, wallX + 2, wallY + wallH - 2, MAT.WOOD);
-  line(doorX + doorW + 1, bridgeY - 1, wallX + wallW - 3, wallY + wallH - 2, MAT.WOOD);
 
   const windowW = 2;
   const windowH = Math.max(2, Math.floor(rows * 0.045));

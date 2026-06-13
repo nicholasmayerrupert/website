@@ -151,12 +151,12 @@ function SandOverlay({ onDrawModeChange }) {
 
       cellSize = CELL_PX;
       while (
-        Math.floor(width / cellSize) * Math.floor(height / cellSize) > MAX_CELLS
+        Math.ceil(width / cellSize) * Math.ceil(height / cellSize) > MAX_CELLS
       ) {
         cellSize++;
       }
-      cols = Math.max(60, Math.floor(width / cellSize));
-      rows = Math.max(28, Math.floor(height / cellSize));
+      cols = Math.max(60, Math.ceil(width / cellSize));
+      rows = Math.max(28, Math.ceil(height / cellSize));
       buildGutterPattern(cellSize);
       cellCanvas.width = cols;
       cellCanvas.height = rows;

@@ -240,12 +240,12 @@ export function createEngine({
   };
 
   const putInitial = (x, y, material) => {
-    if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows - 1) return;
+    if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return;
     grid[I(x, y)] = material;
   };
   const rectInitial = (x0, y0, w, h, material) => {
     const x1 = Math.min(cols - 2, x0 + w - 1);
-    const y1 = Math.min(rows - 2, y0 + h - 1);
+    const y1 = Math.min(rows - 1, y0 + h - 1);
     for (let y = Math.max(1, y0); y <= y1; y++) {
       for (let x = Math.max(1, x0); x <= x1; x++) putInitial(x, y, material);
     }
@@ -278,7 +278,7 @@ export function createEngine({
               if (ox === 0 && oy === 0) continue;
               const nx = x + ox;
               const ny = y + oy;
-              if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1) continue;
+              if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
               const nk = I(nx, ny);
               if (seen[nk] || !materialCheck(grid[nk])) continue;
               seen[nk] = 1;
@@ -338,7 +338,7 @@ export function createEngine({
     let changed = false;
     for (let oy = -radius; oy <= radius; oy++) {
       const yy = cy + oy;
-      if (yy <= 0 || yy >= rows - 1) continue;
+      if (yy <= 0 || yy >= rows) continue;
       for (let ox = -radius; ox <= radius; ox++) {
         if (ox * ox + oy * oy > radius * radius) continue;
         const xx = cx + ox;
@@ -409,13 +409,13 @@ export function createEngine({
   function getSeedOrigin(cx, cy) {
     const x0 = Math.floor(cx - SEED_SIZE / 2);
     const y0 = Math.floor(cy - SEED_SIZE / 2);
-    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE >= rows) return null;
+    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return null;
     return [x0, y0];
   }
 
   function canPlaceSeedAt(x0, y0) {
     if (x0 == null || y0 == null) return false;
-    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE >= rows) return false;
+    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return false;
     for (let y = y0; y < y0 + SEED_SIZE; y++) {
       for (let x = x0; x < x0 + SEED_SIZE; x++) {
         if (grid[I(x, y)] !== EMPTY) return false;
@@ -503,7 +503,7 @@ export function createEngine({
     let changed = false;
     for (let oy = -radius; oy <= radius; oy++) {
       const yy = cy + oy;
-      if (yy <= 0 || yy >= rows - 1) continue;
+      if (yy <= 0 || yy >= rows) continue;
       for (let ox = -radius; ox <= radius; ox++) {
         if (ox * ox + oy * oy > radius * radius) continue;
         const xx = cx + ox;
@@ -524,7 +524,7 @@ export function createEngine({
     let changed = false;
     for (let oy = -radius; oy <= radius; oy++) {
       const yy = cy + oy;
-      if (yy <= 0 || yy >= rows - 1) continue;
+      if (yy <= 0 || yy >= rows) continue;
       for (let ox = -radius; ox <= radius; ox++) {
         if (ox * ox + oy * oy > radius * radius) continue;
         const xx = cx + ox;
@@ -605,7 +605,7 @@ export function createEngine({
       (x > 1 && grid[k - 1] === EMPTY) ||
       (x < cols - 2 && grid[k + 1] === EMPTY) ||
       (y > 1 && grid[k - cols] === EMPTY) ||
-      (y < rows - 2 && grid[k + cols] === EMPTY)
+      (y < rows - 1 && grid[k + cols] === EMPTY)
     );
   };
   const writeGridIndex = (k, material) => {
@@ -636,7 +636,7 @@ export function createEngine({
     writeNextIndex(toK, OIL);
     if (next[fromK] === EMPTY) writeNextIndex(fromK, WATER);
   };
-  const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows - 1;
+  const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows;
   const neighborIndices8 = (x, y) => {
     const indices = [];
     for (let oy = -1; oy <= 1; oy++) {
@@ -790,7 +790,7 @@ export function createEngine({
       const y = Math.floor(k / cols);
       if (x < cols - 2) consider(k + 1);
       if (x > 1) consider(k - 1);
-      if (y < rows - 2) consider(k + cols);
+      if (y < rows - 1) consider(k + cols);
       if (y > 1) consider(k - cols);
     }
     if (candidates.length < count) return null;
@@ -1237,7 +1237,7 @@ export function createEngine({
 
   const separateLiquidsByDensity = () => {
     const parity = rand() < 0.5 ? 0 : 1;
-    for (let y = 1; y < rows - 1; y++) {
+    for (let y = 1; y < rows; y++) {
       const minX = Math.max(1, activeRowMin[y]);
       const maxX = Math.min(cols - 2, activeRowMax[y]);
       if (maxX < minX) continue;
@@ -1320,7 +1320,7 @@ export function createEngine({
     let igniteCount = 0;
     let plantBurned = false;
 
-    for (let y = 1; y < rows - 1; y++) {
+    for (let y = 1; y < rows; y++) {
       const minX = Math.max(1, activeRowMin[y]);
       const maxX = Math.min(cols - 2, activeRowMax[y]);
       if (maxX < minX) continue;
@@ -1328,11 +1328,10 @@ export function createEngine({
         const k = I(x, y);
         if (grid[k] !== WATER) continue;
 
-        let nk = k + 1;
-        if (grid[nk] !== FIRE) nk = k - 1;
-        if (grid[nk] !== FIRE) nk = k + cols;
-        if (grid[nk] !== FIRE) nk = k - cols;
-        if (grid[nk] === FIRE) {
+        let nk = grid[k + 1] === FIRE ? k + 1 : grid[k - 1] === FIRE ? k - 1 : -1;
+        if (nk < 0 && y < rows - 1 && grid[k + cols] === FIRE) nk = k + cols;
+        if (nk < 0 && grid[k - cols] === FIRE) nk = k - cols;
+        if (nk >= 0) {
           reactionSteam[steamCount++] = k;
           if (!reactionFlags[nk]) {
             reactionFlags[nk] = 1;
@@ -1342,7 +1341,7 @@ export function createEngine({
       }
     }
 
-    for (let y = 1; y < rows - 1; y++) {
+    for (let y = 1; y < rows; y++) {
       const minX = Math.max(1, activeRowMin[y]);
       const maxX = Math.min(cols - 2, activeRowMax[y]);
       if (maxX < minX) continue;
@@ -1350,14 +1349,15 @@ export function createEngine({
         const k = I(x, y);
         if (grid[k] !== FIRE || reactionFlags[k]) continue;
 
-        for (let i = 0; i < 4; i++) {
-          const nk = i === 0 ? k + 1 : i === 1 ? k - 1 : i === 2 ? k + cols : k - cols;
+        const neighbors = y < rows - 1 ? [k + 1, k - 1, k + cols, k - cols] : [k + 1, k - 1, k - cols];
+        for (const nk of neighbors) {
           if (grid[nk] === OIL) {
             if (rand() > OIL_IGNITE_P) continue;
             if (igniteCount < reactionIgnite.length) reactionIgnite[igniteCount++] = nk;
             if (rand() < FIRE_SPREAD_P) {
-              for (let j = 0; j < 4; j++) {
-                const ok = j === 0 ? nk + 1 : j === 1 ? nk - 1 : j === 2 ? nk + cols : nk - cols;
+              const oilY = (nk / cols) | 0;
+              const oilNeighbors = oilY < rows - 1 ? [nk + 1, nk - 1, nk + cols, nk - cols] : [nk + 1, nk - 1, nk - cols];
+              for (const ok of oilNeighbors) {
                 if (grid[ok] === OIL && rand() < 0.12 && igniteCount < reactionIgnite.length) reactionIgnite[igniteCount++] = ok;
               }
             }
@@ -1402,7 +1402,7 @@ export function createEngine({
     const innerRightEnd = rightStart - 1;
     const innerRightStart = innerRightEnd - (INNER_STRIP_W - 1);
 
-    for (let y = 1; y < rows - 1; y++) {
+    for (let y = 1; y < rows; y++) {
       // hard sinks near the side walls
       for (let x = leftStart; x <= leftEnd; x++) {
         const k = I(x, y);

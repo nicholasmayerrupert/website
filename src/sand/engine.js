@@ -100,6 +100,14 @@ export function createEngine({
   const reactionSteam = new Int32Array(cols * rows);
   const reactionFires = new Int32Array(cols * rows);
   const reactionIgnite = new Int32Array(cols * rows);
+  // Coherence tracking for component (stone/plant) cells across the double
+  // buffer. A stone/plant cell survives only via the carry-forward, and a dirty
+  // mark lives one step, so a vacated component cell gets cleared in only one of
+  // the two buffers — the other keeps a ghost that flickers every other frame.
+  // Each step we clear cells that were occupied last step but no longer are.
+  const compOccStamp = new Int32Array(cols * rows).fill(-1);
+  let prevCompCells = [];
+  let curCompCells = [];
   let dirtyRenderCount = 0;
   let tick = 0;
   let perfStepMs = 0;
@@ -1458,9 +1466,22 @@ export function createEngine({
     for (const comp of stoneComponents) {
       for (const k of comp.cells) next[k] = STONE;
     }
+    // Plant cells churn every step as the canopy grows/sheds; a vacated plant
+    // cell gets cleared in only one of the two buffers (a dirty mark lives one
+    // step), leaving a ghost that flickers every other frame. Track plant cells
+    // and clear any occupied last step but not this one. (Resting stone never
+    // vacates, so it needs no per-step tracking.)
+    curCompCells.length = 0;
     for (const comp of plantComponents) {
-      for (const k of comp.cells) next[k] = grid[k];
+      for (const k of comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; curCompCells.push(k); }
     }
+    // Writing next[k] clears the about-to-be-displayed buffer; markCellIndex
+    // makes the cell active next step so the other buffer is cleared too. Guard
+    // on grid[k] === EMPTY so we never erase a fluid that moved into the cell.
+    for (const k of prevCompCells) {
+      if (compOccStamp[k] !== tick && grid[k] === EMPTY) { next[k] = EMPTY; markCellIndex(k); }
+    }
+    const swapComp = prevCompCells; prevCompCells = curCompCells; curCompCells = swapComp;
     phase('prepare');
 
     // 4) Dense falling material. Sand gets first claim on water/oil swaps so

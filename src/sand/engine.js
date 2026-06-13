@@ -245,6 +245,13 @@ export function createEngine({
   const registerSeededComponents = () => {
     const registerComponents = (materialCheck, components, makeComponent) => {
       const seen = new Uint8Array(cols * rows);
+      // Cells already owned by an existing component must not be re-registered.
+      // Pre-seeding `seen` makes this function idempotent: both the outer scan and
+      // the neighbor flood-fill skip owned cells, so it can run again after runtime
+      // placement to adopt orphaned cells without duplicating existing components.
+      for (const comp of components) {
+        for (const k of comp.cells) seen[k] = 1;
+      }
       for (let k = 0; k < grid.length; k++) {
         if (seen[k] || !materialCheck(grid[k])) continue;
         const cells = new Set([k]);
@@ -1562,6 +1569,11 @@ export function createEngine({
     clearStoneDraft() { stoneDraft.clear(); },
     getStoneDraftCells() { return stoneDraft; },
     getGrid() { return grid; },
+    // Adopt any stone/plant cells that are in the grid but not yet owned by a
+    // component (e.g. placed via paintDisc or raw grid writes). Without this,
+    // such cells are erased each step by prepareNextBuffer and flicker, because
+    // only component membership carries stone/plant forward. Idempotent.
+    syncComponents() { registerSeededComponents(); },
     getRenderDirty() {
       // Marks made during the current step have not been folded yet.
       foldRowMarksToRender();

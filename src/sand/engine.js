@@ -314,31 +314,28 @@ export function createEngine({
     if (y > 0) consider(k - cols);
     return p;
   };
-  const erodeBodies = (cells) => {
-    if (cells.length === 0) return cells;
-    const bodyById = new Map();
-    for (const b of rigidWorld.bodies) bodyById.set(b.id, b);
-    const dirty = new Set();
+  const eraseBodyCellIndex = (k, bodyById, dirtyBodies) => {
+    const id = bodyOwner[k];
+    if (id < 0 || grid[k] !== RIGID) return false;
+    const b = bodyById.get(id);
+    if (!b) return false;
+    const y = (k / cols) | 0;
+    const x = k - y * cols;
+    const idx = rigidWorld.localCellAt(b, x + 0.5, y + 0.5);
+    if (idx < 0 || !rigidWorld.eraseLocalCell(b, idx)) return false;
+    writeGridIndex(k, EMPTY);
+    bodyOwner[k] = -1;
+    dirtyBodies.add(b);
+    return true;
+  };
+  const finishErasedBodies = (dirtyBodies, cells) => {
+    if (dirtyBodies.size === 0) return cells;
     const removedIds = new Set();
-
-    for (const k of cells) {
-      const id = bodyOwner[k];
-      if (id < 0 || grid[k] !== RIGID) continue;
-      const p = rigidErodeProbabilityAt(k);
-      if (p <= 0 || rand() >= p) continue;
-      const b = bodyById.get(id);
-      if (!b) continue;
-      const y = (k / cols) | 0;
-      const x = k - y * cols;
-      const idx = rigidWorld.localCellAt(b, x + 0.5, y + 0.5);
-      if (idx < 0 || !rigidWorld.eraseLocalCell(b, idx)) continue;
-      writeGridIndex(k, EMPTY);
-      bodyOwner[k] = -1;
-      dirty.add(b);
-    }
-
-    for (const b of dirty) {
-      if (rigidWorld.recomputeBody(b)) continue;
+    for (const b of dirtyBodies) {
+      if (rigidWorld.recomputeBody(b)) {
+        rigidWorld.splitDisconnectedBody(b);
+        continue;
+      }
       removedIds.add(b.id);
     }
     if (removedIds.size > 0) {
@@ -351,7 +348,40 @@ export function createEngine({
         bodyOwner[k] = -1;
       }
     }
-    return cells.filter(k => bodyOwner[k] !== -1 && grid[k] === RIGID);
+    for (const k of cells) {
+      if (grid[k] === RIGID) bodyOwner[k] = -1;
+    }
+    const kept = [];
+    const claimed = new Set();
+    for (const b of rigidWorld.bodies) {
+      rigidWorld.forEachBodyCell(b, (x, y) => {
+        const k = y * cols + x;
+        if (grid[k] !== RIGID || claimed.has(k)) return;
+        bodyOwner[k] = b.id;
+        claimed.add(k);
+        kept.push(k);
+      });
+    }
+    for (const k of cells) {
+      if (grid[k] === RIGID && !claimed.has(k)) {
+        writeGridIndex(k, EMPTY);
+        bodyOwner[k] = -1;
+      }
+    }
+    return kept;
+  };
+  const erodeBodies = (cells) => {
+    if (cells.length === 0) return cells;
+    const bodyById = new Map();
+    for (const b of rigidWorld.bodies) bodyById.set(b.id, b);
+    const dirtyBodies = new Set();
+
+    for (const k of cells) {
+      const p = rigidErodeProbabilityAt(k);
+      if (p <= 0 || rand() >= p) continue;
+      eraseBodyCellIndex(k, bodyById, dirtyBodies);
+    }
+    return finishErasedBodies(dirtyBodies, cells);
   };
   const moveBodies = () => {
     if (rigidWorld.bodies.length === 0 && bodyCells.length === 0) return;
@@ -910,6 +940,8 @@ export function createEngine({
   const eraseDisc = (cx, cy, radius) => {
     const erasedStoneCells = [];
     const erasedIceCells = [];
+    const bodyById = new Map();
+    const dirtyBodies = new Set();
     let erasedPlant = false;
     let changed = false;
     for (let oy = -radius; oy <= radius; oy++) {
@@ -920,6 +952,12 @@ export function createEngine({
         const xx = cx + ox;
         if (xx <= 0 || xx >= cols - 1) continue;
         const k = I(xx, yy);
+        if (grid[k] === RIGID) {
+          if (bodyById.size === 0) {
+            for (const b of rigidWorld.bodies) bodyById.set(b.id, b);
+          }
+          if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = true;
+        }
         if (grid[k] !== EMPTY) {
           if (grid[k] === STONE) erasedStoneCells.push(k);
           else if (grid[k] === ICE) erasedIceCells.push(k);
@@ -931,6 +969,7 @@ export function createEngine({
         if (iceDraft.delete(k)) changed = true;
       }
     }
+    bodyCells = finishErasedBodies(dirtyBodies, bodyCells);
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     stoneComponents = splitRigidAfterErase(stoneComponents, erasedStoneCells, () => nextStoneId++);
     iceComponents = splitRigidAfterErase(iceComponents, erasedIceCells, () => nextIceId++, () => ({ cacheDirty: true }));

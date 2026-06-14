@@ -629,6 +629,79 @@ export function createRigidWorld({ cols, rows }) {
   // Wake a sleeping body (e.g. when material lands on it). Idempotent.
   const wake = (b) => { b.awake = true; b.stillTicks = 0; };
   const recomputeBody = (b) => computeDerived(b, true);
+  const splitDisconnectedBody = (b) => {
+    const seen = new Uint8Array(b.occ.length);
+    const parts = [];
+    const stack = [];
+    for (let k = 0; k < b.occ.length; k++) {
+      if (seen[k] || !b.occ[k]) continue;
+      const part = [];
+      seen[k] = 1;
+      stack.push(k);
+      while (stack.length) {
+        const cur = stack.pop();
+        part.push(cur);
+        const i = cur % b.w;
+        const j = (cur / b.w) | 0;
+        const push = (ii, jj) => {
+          if (ii < 0 || ii >= b.w || jj < 0 || jj >= b.h) return;
+          const nk = jj * b.w + ii;
+          if (seen[nk] || !b.occ[nk]) return;
+          seen[nk] = 1;
+          stack.push(nk);
+        };
+        push(i - 1, j); push(i + 1, j); push(i, j - 1); push(i, j + 1);
+      }
+      parts.push(part);
+    }
+    if (parts.length <= 1) return false;
+
+    const oldPx = b.px, oldPy = b.py;
+    const oldVx = b.vx, oldVy = b.vy, oldOmega = b.omega;
+    const makePiece = (part, id) => {
+      let minI = Infinity, minJ = Infinity, maxI = -Infinity, maxJ = -Infinity;
+      for (const idx of part) {
+        const i = idx % b.w;
+        const j = (idx / b.w) | 0;
+        if (i < minI) minI = i; if (i > maxI) maxI = i;
+        if (j < minJ) minJ = j; if (j > maxJ) maxJ = j;
+      }
+      const w = maxI - minI + 1;
+      const h = maxJ - minJ + 1;
+      const occ = new Uint8Array(w * h);
+      for (const idx of part) {
+        const i = idx % b.w;
+        const j = (idx / b.w) | 0;
+        occ[(j - minJ) * w + (i - minI)] = 1;
+      }
+      const piece = {
+        id,
+        occ, w, h,
+        offsetX: b.offsetX + minI,
+        offsetY: b.offsetY + minJ,
+        px: oldPx, py: oldPy, angle: b.angle,
+        vx: oldVx, vy: oldVy, omega: oldOmega,
+        material: b.material,
+        density: b.density,
+        awake: true,
+        stillTicks: 0,
+      };
+      computeDerived(piece, true);
+      const rx = piece.px - oldPx;
+      const ry = piece.py - oldPy;
+      piece.vx = oldVx - oldOmega * ry;
+      piece.vy = oldVy + oldOmega * rx;
+      return piece;
+    };
+
+    const pieces = [makePiece(parts[0], b.id)];
+    for (let p = 1; p < parts.length; p++) pieces.push(makePiece(parts[p], nextId++));
+    Object.assign(b, pieces[0]);
+    const bi = bodies.indexOf(b);
+    if (bi >= 0) bodies.splice(bi + 1, 0, ...pieces.slice(1));
+    else bodies.push(...pieces.slice(1));
+    return true;
+  };
   const localCellAt = (b, wx, wy) => {
     b.cos = Math.cos(b.angle);
     b.sin = Math.sin(b.angle);
@@ -640,5 +713,5 @@ export function createRigidWorld({ cols, rows }) {
     return true;
   };
 
-  return { bodies, spawnBody, step, forEachBodyCell, wake, recomputeBody, localCellAt, eraseLocalCell };
+  return { bodies, spawnBody, step, forEachBodyCell, wake, recomputeBody, splitDisconnectedBody, localCellAt, eraseLocalCell };
 }

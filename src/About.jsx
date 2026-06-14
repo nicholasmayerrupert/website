@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createEngine, MAT, CHUNK_SIZE, SEED_SIZE } from './sand/engine';
-import { makeColorLUT, fillPixelSpan } from './sand/renderCore';
+import { makeColorLUT, makeTexture, fillPixelSpan } from './sand/renderCore';
 import { buildCastleScene, castleEmitters } from './sand/scenes/castleScene';
 
 /* -------------------- SAND OVERLAY -------------------- */
@@ -80,6 +80,7 @@ function SandOverlay({ onDrawModeChange }) {
     const ICE_PREVIEW_COLOR = 'rgba(150, 225, 240, 0.40)';
     const SEED_PREVIEW_COLOR = 'rgba(120, 190, 100, 0.32)';
     const colorLUT = makeColorLUT();
+    const colorTexture = makeTexture(colorLUT);
 
     // 1px transparent grid lines between cells, erased in a single
     // destination-out fill instead of one clearRect per row/column line.
@@ -433,7 +434,7 @@ function SandOverlay({ onDrawModeChange }) {
         forceFullRender ||
         dirtyRenderCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO;
       if (shouldFullRender) {
-        fillPixelSpan(pixels, grid, cols, 0, 0, cols - 1, rows - 1, colorLUT);
+        fillPixelSpan(pixels, grid, cols, 0, 0, cols - 1, rows - 1, colorLUT, colorTexture);
         cellCtx.putImageData(imageData, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(cellCanvas, 0, 0, cols, rows, 0, 0, cols * cellSize, rows * cellSize);
@@ -458,7 +459,7 @@ function SandOverlay({ onDrawModeChange }) {
             const endCx = cx;
             const x0 = startCx * CHUNK_SIZE;
             const x1 = Math.min(cols - 1, (endCx + 1) * CHUNK_SIZE - 1);
-            fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, colorLUT);
+            fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, colorLUT, colorTexture);
             const sourceW = x1 - x0 + 1;
             const sourceH = y1 - y0 + 1;
             const destX = x0 * cellSize;

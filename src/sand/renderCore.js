@@ -3,7 +3,7 @@
 
 import { MAT } from './engine.js';
 
-// ABGR packed colors (little-endian Uint32 view over RGBA ImageData).
+// ABGR packed colors (little-endian Uint32 view over RGBA ImageData): 0xAABBGGRR.
 export const PACKED_FIRE = 0xb8_22_6c_ff;
 export const PACKED_FIRE_HOT = 0x9e_50_cd_ff;
 const PACKED_STEAM = 0x42_ff_e6_d2;
@@ -26,19 +26,78 @@ export function makeColorLUT() {
   return lut;
 }
 
+// --- Static grain texture ---
+// Each material gets VARIANTS brightness-shifted shades; a fixed noise tile
+// picks one per cell by position, so the grain is stable across frames and
+// identical whether a cell is drawn by the full-render or per-chunk path.
+const VARIANTS = 8;
+const VAR_SHIFT = 3; // log2(VARIANTS)
+const NOISE_SIZE = 64;
+const NOISE_SHIFT = 6; // log2(NOISE_SIZE)
+const NOISE_MASK = NOISE_SIZE - 1;
+
+// Per-material grain strength (max +/- shift per channel, 0-255). Solids read
+// well grittier; liquids stay subtle; fire/steam/lava animate on their own.
+const TEXTURE_AMP = (() => {
+  const amp = new Uint8Array(16);
+  amp[MAT.SAND] = 7;
+  amp[MAT.STONE] = 8;
+  amp[MAT.WOOD] = 7;
+  amp[MAT.PLANT] = 9;
+  amp[MAT.SEED] = 5;
+  amp[MAT.ICE] = 5;
+  amp[MAT.OIL] = 4;
+  amp[MAT.WATER] = 3;
+  amp[MAT.ACID] = 4;
+  return amp;
+})();
+
+const jitterShade = (packed, delta) => {
+  if (packed === 0) return 0;
+  const a = packed & 0xff000000;
+  let r = packed & 0xff;
+  let g = (packed >>> 8) & 0xff;
+  let b = (packed >>> 16) & 0xff;
+  r += delta; if (r < 0) r = 0; else if (r > 255) r = 255;
+  g += delta; if (g < 0) g = 0; else if (g > 255) g = 255;
+  b += delta; if (b < 0) b = 0; else if (b > 255) b = 255;
+  return (a | (b << 16) | (g << 8) | r) >>> 0;
+};
+
+export function makeTexture(lut, rng = Math.random) {
+  const variants = new Uint32Array(16 * VARIANTS);
+  for (let m = 0; m < 16; m++) {
+    const base = lut[m];
+    const amp = TEXTURE_AMP[m];
+    for (let i = 0; i < VARIANTS; i++) {
+      const t = (i / (VARIANTS - 1)) * 2 - 1; // -1..1
+      variants[(m << VAR_SHIFT) + i] = jitterShade(base, Math.round(t * amp));
+    }
+  }
+  const noise = new Uint8Array(NOISE_SIZE * NOISE_SIZE);
+  for (let i = 0; i < noise.length; i++) noise[i] = (rng() * VARIANTS) | 0;
+  return { variants, noise, mask: NOISE_MASK, shift: NOISE_SHIFT };
+}
+
 const STEAM_ID = MAT.STEAM;
 const FIRE_ID = MAT.FIRE;
 const LAVA_ID = MAT.LAVA;
 
 // Fills pixels[k] for every cell in the inclusive rect, including EMPTY (0).
-// Steam shimmers by randomly skipping cells; fire flickers between two colors.
-export function fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, lut, rng = Math.random) {
+// When `texture` is provided, static per-cell grain is applied; steam shimmers
+// by randomly skipping cells, fire flickers, and lava sparkles regardless.
+export function fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, lut, texture = null, rng = Math.random) {
+  const variants = texture && texture.variants;
+  const noise = texture && texture.noise;
+  const nmask = texture ? texture.mask : 0;
+  const nshift = texture ? texture.shift : 0;
   for (let y = y0; y <= y1; y++) {
     const rowBase = y * cols;
+    const noiseRow = noise ? ((y & nmask) << nshift) : 0;
     for (let x = x0; x <= x1; x++) {
       const k = rowBase + x;
       const m = grid[k];
-      let c = lut[m];
+      let c = variants ? variants[(m << VAR_SHIFT) + noise[noiseRow + (x & nmask)]] : lut[m];
       if (m === STEAM_ID) {
         if (rng() <= 0.18) c = 0;
       } else if (m === FIRE_ID) {

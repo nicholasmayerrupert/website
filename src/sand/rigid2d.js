@@ -34,6 +34,8 @@ const PENETRATION_SLOP = 0.5;
 // bleeds energy and reaches the sleep thresholds instead of buzzing forever.
 const CONTACT_LIN_DAMP = 0.9;
 const CONTACT_ANG_DAMP = 0.6;
+const LIQUID_DRAG = 0.12;
+const LIQUID_ANG_DRAG = 0.1;
 const SLEEP_LIN = 0.03;       // |v| below which a body may sleep
 const SLEEP_ANG = 0.02;       // |omega| below which a body may sleep
 const SLEEP_TICKS = 20;
@@ -54,6 +56,65 @@ export function createRigidWorld({ cols, rows }) {
   const bodies = [];
   let nextId = 1;
 
+  const computeDerived = (b, preserveWorld = false) => {
+    let nPts = 0;
+    let sumX = 0, sumY = 0;
+    for (let j = 0; j < b.h; j++) {
+      for (let i = 0; i < b.w; i++) {
+        if (!b.occ[j * b.w + i]) continue;
+        nPts++;
+        sumX += b.offsetX + i;
+        sumY += b.offsetY + j;
+      }
+    }
+    if (nPts === 0) return false;
+
+    const dx = sumX / nPts;
+    const dy = sumY / nPts;
+    if (preserveWorld && (dx !== 0 || dy !== 0)) {
+      const cos = Math.cos(b.angle);
+      const sin = Math.sin(b.angle);
+      b.px += dx * cos - dy * sin;
+      b.py += dx * sin + dy * cos;
+    }
+    b.offsetX -= dx;
+    b.offsetY -= dy;
+
+    const points = new Float32Array(nPts * 2);
+    const boundary = [];
+    let pi = 0;
+    let inertia = 0;
+    let maxR2 = 0;
+    const filled = (ii, jj) => ii >= 0 && ii < b.w && jj >= 0 && jj < b.h && b.occ[jj * b.w + ii];
+    for (let j = 0; j < b.h; j++) {
+      for (let i = 0; i < b.w; i++) {
+        if (!b.occ[j * b.w + i]) continue;
+        const lx = b.offsetX + i;
+        const ly = b.offsetY + j;
+        points[pi * 2] = lx;
+        points[pi * 2 + 1] = ly;
+        const r2 = lx * lx + ly * ly;
+        inertia += b.density * r2;
+        if (r2 > maxR2) maxR2 = r2;
+        if (!filled(i - 1, j) || !filled(i + 1, j) || !filled(i, j - 1) || !filled(i, j + 1)) {
+          boundary.push(pi);
+        }
+        pi++;
+      }
+    }
+
+    const mass = b.density * nPts;
+    b.points = points;
+    b.nPts = nPts;
+    b.boundaryPts = Int32Array.from(boundary);
+    b.invMass = mass > 0 ? 1 / mass : 0;
+    b.invInertia = inertia > 0 ? 1 / inertia : 0;
+    b.maxR = Math.sqrt(maxR2);
+    b.awake = true;
+    b.stillTicks = 0;
+    return true;
+  };
+
   // Build a body from a list of integer cell coordinates [[x,y], ...]. The point
   // cloud is stored body-local relative to the center of mass; mass and inertia
   // come from the (uniform-density-weighted) point set.
@@ -63,17 +124,9 @@ export function createRigidWorld({ cols, rows }) {
     let cx = 0, cy = 0;
     for (let i = 0; i < nPts; i++) { cx += cells[i][0] + 0.5; cy += cells[i][1] + 0.5; }
     cx /= nPts; cy /= nPts;
-
-    const points = new Float32Array(nPts * 2);
-    let inertia = 0;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < nPts; i++) {
       const gx = cells[i][0], gy = cells[i][1];
-      const lx = gx + 0.5 - cx;
-      const ly = gy + 0.5 - cy;
-      points[i * 2] = lx;
-      points[i * 2 + 1] = ly;
-      inertia += density * (lx * lx + ly * ly);
       if (gx < minX) minX = gx; if (gx > maxX) maxX = gx;
       if (gy < minY) minY = gy; if (gy > maxY) maxY = gy;
     }
@@ -88,35 +141,17 @@ export function createRigidWorld({ cols, rows }) {
     }
     const offsetX = minX + 0.5 - cx;
     const offsetY = minY + 0.5 - cy;
-    // Boundary point indices (a cell with at least one empty 4-neighbor). Only
-    // these generate collision contacts: interior points buried deep inside the
-    // other body would fall back to radial normals that cancel out, letting the
-    // bodies merge instead of separating.
-    const boundary = [];
-    for (let i = 0; i < nPts; i++) {
-      const ci = cells[i][0] - minX, cj = cells[i][1] - minY;
-      const filled = (ii, jj) => ii >= 0 && ii < w && jj >= 0 && jj < h && occ[jj * w + ii];
-      if (!filled(ci - 1, cj) || !filled(ci + 1, cj) || !filled(ci, cj - 1) || !filled(ci, cj + 1)) {
-        boundary.push(i);
-      }
-    }
-    const boundaryPts = Int32Array.from(boundary);
-    const mass = density * nPts;
     const body = {
       id: nextId++,
-      points,
-      nPts,
-      boundaryPts,
       occ, w, h, offsetX, offsetY,
       px: cx, py: cy, angle: 0,
       vx, vy, omega,
-      invMass: mass > 0 ? 1 / mass : 0,
-      invInertia: inertia > 0 ? 1 / inertia : 0,
       material,
       density,
       awake: true,
       stillTicks: 0,
     };
+    computeDerived(body);
     bodies.push(body);
     return body;
   };
@@ -148,6 +183,10 @@ export function createRigidWorld({ cols, rows }) {
   // Local occupancy index of world point (wx,wy) inside body b, or -1 if outside.
   // Inverse-transforms the point into b's local frame (b.sin/b.cos precomputed).
   const insideBodyIndex = (b, wx, wy) => {
+    if (b.cos === undefined || b.sin === undefined) {
+      b.cos = Math.cos(b.angle);
+      b.sin = Math.sin(b.angle);
+    }
     const dx = wx - b.px;
     const dy = wy - b.py;
     const lx = dx * b.cos + dy * b.sin;
@@ -271,7 +310,7 @@ export function createRigidWorld({ cols, rows }) {
   // Advance the world one tick. `isSolidAt(x,y)` returns true for terrain the
   // bodies collide against (stone, settled sand, etc.); body cells must NOT be
   // reported solid here (the engine clears them before calling).
-  const step = (isSolidAt, dt = 1) => {
+  const step = (isSolidAt, fluidDensityAt = null, dt = 1) => {
     const wp = [0, 0];
     const nrm = [0, 0];
     const n = bodies.length;
@@ -286,14 +325,39 @@ export function createRigidWorld({ cols, rows }) {
       const b = bodies[bi];
       if (b.awake) {
         b.vy += GRAVITY * dt;
+      }
+      b.cos = Math.cos(b.angle);
+      b.sin = Math.sin(b.angle);
+      if (b.awake && fluidDensityAt && b.boundaryPts.length > 0) {
+        let wet = 0;
+        let densitySum = 0;
+        for (let bp = 0; bp < b.boundaryPts.length; bp++) {
+          worldPoint(b, b.boundaryPts[bp], b.sin, b.cos, wp);
+          const d = fluidDensityAt(Math.floor(wp[0]), Math.floor(wp[1]));
+          if (d <= 0) continue;
+          wet++;
+          densitySum += d;
+        }
+        if (wet > 0) {
+          const submerged = wet / b.boundaryPts.length;
+          const avgFluidD = densitySum / wet;
+          b.vy -= GRAVITY * (avgFluidD / b.density) * submerged * dt;
+          const drag = Math.max(0, 1 - LIQUID_DRAG * submerged);
+          b.vx *= drag;
+          b.vy *= drag;
+          b.omega *= Math.max(0, 1 - LIQUID_ANG_DRAG * submerged);
+        }
+      }
+      if (b.awake) {
         const sp2 = b.vx * b.vx + b.vy * b.vy;
         if (sp2 > MAX_SPEED * MAX_SPEED) {
           const s = MAX_SPEED / Math.sqrt(sp2);
           b.vx *= s; b.vy *= s;
         }
+        const wMax = MAX_SPEED / (b.maxR || 1);
+        if (b.omega > wMax) b.omega = wMax;
+        else if (b.omega < -wMax) b.omega = -wMax;
       }
-      b.cos = Math.cos(b.angle);
-      b.sin = Math.sin(b.angle);
       const cos = b.cos, sin = b.sin;
       const lx0 = b.offsetX - 0.5, lx1 = b.offsetX + b.w - 0.5;
       const ly0 = b.offsetY - 0.5, ly1 = b.offsetY + b.h - 0.5;
@@ -432,15 +496,26 @@ export function createRigidWorld({ cols, rows }) {
         const cx = Math.floor(wp[0]);
         const cy = Math.floor(wp[1]);
         if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
-        if (!isSolidAt(cx, cy)) continue;
-        terrainNormal(cx, cy, isSolidAt, nrm);
-        // Depth: march out along the normal until the cell is no longer solid.
-        let depth = 0.5, mx = wp[0], my = wp[1];
-        for (let s = 0; s < 4; s++) {
-          mx += nrm[0]; my += nrm[1];
-          const ix = Math.floor(mx), iy = Math.floor(my);
-          if (ix < 0 || ix >= cols || iy < 0 || iy >= rows || !isSolidAt(ix, iy)) break;
-          depth += 1;
+        let tx = cx, ty = cy;
+        let depth = 0.5;
+        if (!isSolidAt(cx, cy)) {
+          const rx = wp[0] - b.px;
+          const ry = wp[1] - b.py;
+          tx = Math.floor(wp[0] + (b.vx - b.omega * ry) * dt);
+          ty = Math.floor(wp[1] + (b.vy + b.omega * rx) * dt);
+          if (tx < 0 || tx >= cols || ty < 0 || ty >= rows || !isSolidAt(tx, ty)) continue;
+          depth = 0;
+        }
+        terrainNormal(tx, ty, isSolidAt, nrm);
+        if (depth > 0) {
+          // Depth: march out along the normal until the cell is no longer solid.
+          let mx = wp[0], my = wp[1];
+          for (let s = 0; s < 4; s++) {
+            mx += nrm[0]; my += nrm[1];
+            const ix = Math.floor(mx), iy = Math.floor(my);
+            if (ix < 0 || ix >= cols || iy < 0 || iy >= rows || !isSolidAt(ix, iy)) break;
+            depth += 1;
+          }
         }
         terrAcc.push({ wx: wp[0], wy: wp[1], nx: nrm[0], ny: nrm[1], depth });
       }
@@ -553,6 +628,17 @@ export function createRigidWorld({ cols, rows }) {
 
   // Wake a sleeping body (e.g. when material lands on it). Idempotent.
   const wake = (b) => { b.awake = true; b.stillTicks = 0; };
+  const recomputeBody = (b) => computeDerived(b, true);
+  const localCellAt = (b, wx, wy) => {
+    b.cos = Math.cos(b.angle);
+    b.sin = Math.sin(b.angle);
+    return insideBodyIndex(b, wx, wy);
+  };
+  const eraseLocalCell = (b, idx) => {
+    if (idx < 0 || idx >= b.occ.length || !b.occ[idx]) return false;
+    b.occ[idx] = 0;
+    return true;
+  };
 
-  return { bodies, spawnBody, step, forEachBodyCell, wake };
+  return { bodies, spawnBody, step, forEachBodyCell, wake, recomputeBody, localCellAt, eraseLocalCell };
 }

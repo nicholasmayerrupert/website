@@ -55,6 +55,8 @@ const ACID_DECAY_P = 0.4;
 const LAVA_VISCOSITY_P = 0.35;
 const LAVA_EMIT_FIRE_P = 0.001;
 const ICE_FREEZE_P = 0.03;
+const RIGID_FIRE_ERODE_P = FIRE_SPREAD_P;
+const RIGID_LAVA_ERODE_P = ACID_DISSOLVE_P;
 
 // Per-material density for rigid-assembly buoyancy. 0 = weightless (air/gas).
 // For liquids it is the buoyant fluid's density; for rigid materials it is body
@@ -221,8 +223,135 @@ export function createEngine({
   // Terrain a body collides against: settled solids, not liquids/gas/empty and
   // not RIGID (body cells are cleared from the grid before the solver runs).
   const isBodyTerrain = (x, y) => {
+    const k = y * cols + x;
+    const m = grid[k];
+    if (m === SAND) return groundedCell[k] === 1;
+    return m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE;
+  };
+  const fluidDensityAt = (x, y) => {
+    if (x < 0 || x >= cols || y < 0 || y >= rows) return 0;
     const m = grid[y * cols + x];
-    return m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === SAND;
+    return isLiquid(m) ? DENSITY[m] : 0;
+  };
+  const isBodyRelocatable = (material, k) =>
+    isLiquid(material) || (material === SAND && groundedCell[k] !== 1);
+  const canBodyOccupy = (material, k) =>
+    material === EMPTY || material === FIRE || material === STEAM || isBodyRelocatable(material, k);
+  const spillDisplacedBodyMaterial = (displaced, footprint) => {
+    if (displaced.length === 0) return;
+    displaced.sort((a, b) => a.from - b.from);
+    const neighborOffsets = [-cols, -1, 1, cols];
+    const seen = new Set();
+    const queue = [];
+    const canVisit = (k) => {
+      if (k <= 0 || k >= grid.length || footprint.has(k) || seen.has(k)) return false;
+      const y = (k / cols) | 0;
+      const x = k - y * cols;
+      const m = grid[k];
+      return x > 0 && x < cols - 1 && y > 0 && y < rows && (m === EMPTY || isBodyRelocatable(m, k));
+    };
+    const footprintEdgeStarts = [];
+    const footprintEdgeSeen = new Set();
+    const sortedFootprint = [...footprint].sort((a, b) => a - b);
+    for (const k of sortedFootprint) {
+      for (const off of neighborOffsets) {
+        const nk = k + off;
+        if (footprintEdgeSeen.has(nk)) continue;
+        const y = (nk / cols) | 0;
+        const x = nk - y * cols;
+        if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue;
+        const m = grid[nk];
+        if (m === EMPTY || isBodyRelocatable(m, nk)) {
+          footprintEdgeSeen.add(nk);
+          footprintEdgeStarts.push(nk);
+        }
+      }
+    }
+
+    for (const d of displaced) {
+      seen.clear();
+      queue.length = 0;
+      let target = -1;
+      for (const off of neighborOffsets) {
+        const nk = d.from + off;
+        if (!canVisit(nk)) continue;
+        seen.add(nk);
+        queue.push(nk);
+      }
+      if (queue.length === 0) {
+        for (const nk of footprintEdgeStarts) {
+          if (!canVisit(nk)) continue;
+          seen.add(nk);
+          queue.push(nk);
+        }
+      }
+      for (let qi = 0; qi < queue.length; qi++) {
+        const k = queue[qi];
+        if (grid[k] === EMPTY && !footprint.has(k)) { target = k; break; }
+        for (const off of neighborOffsets) {
+          const nk = k + off;
+          if (!canVisit(nk)) continue;
+          seen.add(nk);
+          queue.push(nk);
+        }
+      }
+      if (target >= 0) writeGridIndex(target, d.material);
+    }
+  };
+  const rigidErodeProbabilityAt = (k) => {
+    let p = 0;
+    const consider = (nk) => {
+      const m = grid[nk];
+      if (m === ACID) p = Math.max(p, ACID_DISSOLVE_P);
+      else if (m === LAVA) p = Math.max(p, RIGID_LAVA_ERODE_P);
+      else if (m === FIRE) p = Math.max(p, RIGID_FIRE_ERODE_P);
+    };
+    const x = k % cols;
+    const y = (k / cols) | 0;
+    if (x < cols - 1) consider(k + 1);
+    if (x > 0) consider(k - 1);
+    if (y < rows - 1) consider(k + cols);
+    if (y > 0) consider(k - cols);
+    return p;
+  };
+  const erodeBodies = (cells) => {
+    if (cells.length === 0) return cells;
+    const bodyById = new Map();
+    for (const b of rigidWorld.bodies) bodyById.set(b.id, b);
+    const dirty = new Set();
+    const removedIds = new Set();
+
+    for (const k of cells) {
+      const id = bodyOwner[k];
+      if (id < 0 || grid[k] !== RIGID) continue;
+      const p = rigidErodeProbabilityAt(k);
+      if (p <= 0 || rand() >= p) continue;
+      const b = bodyById.get(id);
+      if (!b) continue;
+      const y = (k / cols) | 0;
+      const x = k - y * cols;
+      const idx = rigidWorld.localCellAt(b, x + 0.5, y + 0.5);
+      if (idx < 0 || !rigidWorld.eraseLocalCell(b, idx)) continue;
+      writeGridIndex(k, EMPTY);
+      bodyOwner[k] = -1;
+      dirty.add(b);
+    }
+
+    for (const b of dirty) {
+      if (rigidWorld.recomputeBody(b)) continue;
+      removedIds.add(b.id);
+    }
+    if (removedIds.size > 0) {
+      for (let i = rigidWorld.bodies.length - 1; i >= 0; i--) {
+        if (removedIds.has(rigidWorld.bodies[i].id)) rigidWorld.bodies.splice(i, 1);
+      }
+      for (const k of cells) {
+        if (!removedIds.has(bodyOwner[k])) continue;
+        if (grid[k] === RIGID) writeGridIndex(k, EMPTY);
+        bodyOwner[k] = -1;
+      }
+    }
+    return cells.filter(k => bodyOwner[k] !== -1 && grid[k] === RIGID);
   };
   const moveBodies = () => {
     if (rigidWorld.bodies.length === 0 && bodyCells.length === 0) return;
@@ -232,23 +361,29 @@ export function createEngine({
       if (grid[k] === RIGID) writeGridIndex(k, EMPTY);
       bodyOwner[k] = -1;
     }
-    rigidWorld.step(isBodyTerrain);
+    computeGrounded();
+    rigidWorld.step(isBodyTerrain, fluidDensityAt);
     // Rasterize the new footprint. A cell already claimed by terrain stays
-    // terrain (the body rests against it); empty/liquid cells become RIGID.
+    // terrain (the body rests against it); empty/liquid/loose-sand cells become
+    // RIGID and the displaced material is spilled into connected empty space.
     const cells = [];
+    const footprint = new Set();
+    const displaced = [];
     for (const b of rigidWorld.bodies) {
       rigidWorld.forEachBodyCell(b, (x, y) => {
         const k = y * cols + x;
-        if (bodyOwner[k] === b.id) return;
+        if (bodyOwner[k] !== -1) return;
         const m = grid[k];
-        if (m === EMPTY || isLiquid(m)) {
-          writeGridIndex(k, RIGID);
-          bodyOwner[k] = b.id;
-          cells.push(k);
-        }
+        if (!canBodyOccupy(m, k)) return;
+        if (isBodyRelocatable(m, k)) displaced.push({ material: m, from: k });
+        writeGridIndex(k, RIGID);
+        bodyOwner[k] = b.id;
+        cells.push(k);
+        footprint.add(k);
       });
     }
-    bodyCells = cells;
+    spillDisplacedBodyMaterial(displaced, footprint);
+    bodyCells = erodeBodies(cells);
   };
 
   // Emitters (grid coords with timing)

@@ -11,20 +11,36 @@
 
 // Tunables (cells / ticks).
 const GRAVITY = 0.18;
-const MAX_SPEED = 0.9;        // clamp translation/tick below 1 cell (anti-tunnel)
+// Terminal speed is kept well below 1 cell/tick so a fast fall can't bury a body
+// several cells into another in a single step (deep penetration degrades the
+// contact and destabilises stacking); the solver then has slack to expel overlap.
+const MAX_SPEED = 0.45;
 const RESTITUTION = 0;        // inelastic so bodies settle, don't bounce
 const FRICTION = 0.6;
-const SOLVER_ITERS = 6;
+const SOLVER_ITERS = 12;
 const BAUMGARTE = 0.2;        // positional correction fraction
-const PENETRATION_SLOP = 0.1;
+// A boundary point resting on a surface sits ~0.5 cell into the contact cell (its
+// own cell-center), so 0.5 is the natural penetration of a body at rest. The slop
+// must match it: a smaller value makes the bias expel a correctly-resting body,
+// which then hovers and bounces and never sleeps. Only deeper overlap is corrected.
+const PENETRATION_SLOP = 0.5;
 // Velocity damping applied while a body is in contact, so the constant
 // positional correction can't sustain a perpetual rest jitter — a resting body
 // bleeds energy and reaches the sleep thresholds instead of buzzing forever.
 const CONTACT_LIN_DAMP = 0.9;
-const CONTACT_ANG_DAMP = 0.82;
+const CONTACT_ANG_DAMP = 0.6;
 const SLEEP_LIN = 0.03;       // |v| below which a body may sleep
 const SLEEP_ANG = 0.02;       // |omega| below which a body may sleep
 const SLEEP_TICKS = 20;
+// A sleeping body is only woken by a body moving faster than this (a real impact).
+// Gentle resting contact leaves it asleep (treated as static), so a body settling
+// on top of it can also sleep instead of the two endlessly re-waking each other.
+const WAKE_LIN2 = 0.12 * 0.12;
+const WAKE_ANG2 = 0.06 * 0.06;
+// A body may only sleep once its penetration is nearly resolved (~half a cell, the
+// natural resting depth). Otherwise it could freeze mid-overlap, since the split-
+// impulse expulsion lives in the pseudo-velocity and doesn't count toward sleep.
+const REST_DEPTH = 1.0;
 
 // Create an isolated rigid-body world. `cols`/`rows` bound the grid; the solver
 // queries terrain through the `isSolidAt(x, y)` callback supplied to `step`.
@@ -67,11 +83,25 @@ export function createRigidWorld({ cols, rows }) {
     }
     const offsetX = minX + 0.5 - cx;
     const offsetY = minY + 0.5 - cy;
+    // Boundary point indices (a cell with at least one empty 4-neighbor). Only
+    // these generate collision contacts: interior points buried deep inside the
+    // other body would fall back to radial normals that cancel out, letting the
+    // bodies merge instead of separating.
+    const boundary = [];
+    for (let i = 0; i < nPts; i++) {
+      const ci = cells[i][0] - minX, cj = cells[i][1] - minY;
+      const filled = (ii, jj) => ii >= 0 && ii < w && jj >= 0 && jj < h && occ[jj * w + ii];
+      if (!filled(ci - 1, cj) || !filled(ci + 1, cj) || !filled(ci, cj - 1) || !filled(ci, cj + 1)) {
+        boundary.push(i);
+      }
+    }
+    const boundaryPts = Int32Array.from(boundary);
     const mass = density * nPts;
     const body = {
       id: nextId++,
       points,
       nPts,
+      boundaryPts,
       occ, w, h, offsetX, offsetY,
       px: cx, py: cy, angle: 0,
       vx, vy, omega,
@@ -110,117 +140,306 @@ export function createRigidWorld({ cols, rows }) {
     out[1] = ny * inv;
   };
 
+  // Local occupancy index of world point (wx,wy) inside body b, or -1 if outside.
+  // Inverse-transforms the point into b's local frame (b.sin/b.cos precomputed).
+  const insideBodyIndex = (b, wx, wy) => {
+    const dx = wx - b.px;
+    const dy = wy - b.py;
+    const lx = dx * b.cos + dy * b.sin;
+    const ly = -dx * b.sin + dy * b.cos;
+    const i = Math.round(lx - b.offsetX);
+    const j = Math.round(ly - b.offsetY);
+    if (i < 0 || i >= b.w || j < 0 || j >= b.h) return -1;
+    const k = j * b.w + i;
+    return b.occ[k] ? k : -1;
+  };
+
+  // World-space outward surface normal of body b at local occupancy index `idx`,
+  // from the occupancy gradient (points from b's interior toward its exterior).
+  // Falls back to the radial direction (point - COM) for a fully-buried cell.
+  const bodyNormalAt = (b, idx, wx, wy, out) => {
+    const i = idx % b.w;
+    const j = (idx / b.w) | 0;
+    const occ = b.occ, w = b.w, h = b.h;
+    const at = (ii, jj) => (ii < 0 || ii >= w || jj < 0 || jj >= h) ? 0 : occ[jj * w + ii];
+    const nlx = at(i - 1, j) - at(i + 1, j);
+    const nly = at(i, j - 1) - at(i, j + 1);
+    if (nlx === 0 && nly === 0) {
+      let rx = wx - b.px, ry = wy - b.py;
+      const rl = Math.sqrt(rx * rx + ry * ry);
+      if (rl > 0) { out[0] = rx / rl; out[1] = ry / rl; } else { out[0] = 0; out[1] = -1; }
+      return;
+    }
+    // Rotate the local normal into world space by b's orientation.
+    const wx2 = nlx * b.cos - nly * b.sin;
+    const wy2 = nlx * b.sin + nly * b.cos;
+    const inv = 1 / Math.sqrt(wx2 * wx2 + wy2 * wy2);
+    out[0] = wx2 * inv;
+    out[1] = wy2 * inv;
+  };
+
+  // Apply a normal+friction impulse for a contact whose normal points toward
+  // body A (out of the terrain/body B). `b` may be null for a terrain contact.
+  const resolveContact = (c) => {
+    const A = c.a, B = c.b;
+    // A sleeping body acts as immovable static (invMass 0), so an awake body can
+    // rest on it and settle to sleep without perpetually re-waking it.
+    const aInvM = A.awake ? A.invMass : 0, aInvI = A.awake ? A.invInertia : 0;
+    const bInvM = (B && B.awake) ? B.invMass : 0, bInvI = (B && B.awake) ? B.invInertia : 0;
+    // Relative velocity at contact = velA(point) - velB(point).
+    let rvx = (A.vx - A.omega * c.ray);
+    let rvy = (A.vy + A.omega * c.rax);
+    if (B) { rvx -= (B.vx - B.omega * c.rby); rvy -= (B.vy + B.omega * c.rbx); }
+    const vn = rvx * c.nx + rvy * c.ny;
+    {
+      const rnA = c.rax * c.ny - c.ray * c.nx;
+      const rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
+      const denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
+      if (denom > 0) {
+        let jn = -(1 + RESTITUTION) * vn / denom;
+        if (jn < 0) jn = 0; // contacts push only, never pull
+        const jx = jn * c.nx, jy = jn * c.ny;
+        A.vx += jx * aInvM; A.vy += jy * aInvM;
+        A.omega += aInvI * (c.rax * jy - c.ray * jx);
+        if (B) { B.vx -= jx * bInvM; B.vy -= jy * bInvM; B.omega -= bInvI * (c.rbx * jy - c.rby * jx); }
+        c.jn = jn;
+      }
+    }
+    // Coulomb friction along the tangent, clamped to mu*jn.
+    const tx = -c.ny, ty = c.nx;
+    let rtvx = (A.vx - A.omega * c.ray);
+    let rtvy = (A.vy + A.omega * c.rax);
+    if (B) { rtvx -= (B.vx - B.omega * c.rby); rtvy -= (B.vy + B.omega * c.rbx); }
+    const vt = rtvx * tx + rtvy * ty;
+    const rtA = c.rax * ty - c.ray * tx;
+    const rtB = B ? c.rbx * ty - c.rby * tx : 0;
+    const denomT = aInvM + bInvM + aInvI * rtA * rtA + bInvI * rtB * rtB;
+    if (denomT > 0) {
+      let jt = -vt / denomT;
+      const maxF = FRICTION * (c.jn || 0);
+      if (jt > maxF) jt = maxF; else if (jt < -maxF) jt = -maxF;
+      const jx = jt * tx, jy = jt * ty;
+      A.vx += jx * aInvM; A.vy += jy * aInvM;
+      A.omega += aInvI * (c.rax * jy - c.ray * jx);
+      if (B) { B.vx -= jx * bInvM; B.vy -= jy * bInvM; B.omega -= bInvI * (c.rbx * jy - c.rby * jx); }
+    }
+  };
+
+  // Split-impulse position correction: resolve penetration in a SEPARATE pseudo-
+  // velocity (pvx/pvy/pw) that is integrated into position but never fed back into
+  // the real velocity. This expels overlap without the Baumgarte energy injection
+  // that would otherwise keep resting bodies jittering and prevent them sleeping.
+  const resolveBias = (c) => {
+    const A = c.a, B = c.b;
+    const bias = BAUMGARTE * Math.max(0, c.depth - PENETRATION_SLOP);
+    if (bias <= 0) return;
+    const aInvM = A.awake ? A.invMass : 0, aInvI = A.awake ? A.invInertia : 0;
+    const bInvM = (B && B.awake) ? B.invMass : 0, bInvI = (B && B.awake) ? B.invInertia : 0;
+    let rvx = A.pvx - A.pw * c.ray, rvy = A.pvy + A.pw * c.rax;
+    if (B) { rvx -= B.pvx - B.pw * c.rby; rvy -= B.pvy + B.pw * c.rbx; }
+    const vn = rvx * c.nx + rvy * c.ny;
+    if (vn >= bias) return;
+    const rnA = c.rax * c.ny - c.ray * c.nx;
+    const rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
+    const denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
+    if (denom <= 0) return;
+    const jn = (bias - vn) / denom;
+    const jx = jn * c.nx, jy = jn * c.ny;
+    A.pvx += jx * aInvM; A.pvy += jy * aInvM; A.pw += aInvI * (c.rax * jy - c.ray * jx);
+    if (B) { B.pvx -= jx * bInvM; B.pvy -= jy * bInvM; B.pw -= bInvI * (c.rbx * jy - c.rby * jx); }
+  };
+
   // Advance the world one tick. `isSolidAt(x,y)` returns true for terrain the
   // bodies collide against (stone, settled sand, etc.); body cells must NOT be
   // reported solid here (the engine clears them before calling).
   const step = (isSolidAt, dt = 1) => {
     const wp = [0, 0];
     const nrm = [0, 0];
-    for (let bi = 0; bi < bodies.length; bi++) {
+    const n = bodies.length;
+
+    // 1) Apply gravity to velocity (NOT position yet) and cache orientation + world
+    // AABB at the current pose. Position integrates after the contact solve, so the
+    // solver can cancel inward velocity and bias out penetration before the body
+    // actually moves — this is what stops loaded bodies from sinking through.
+    for (let bi = 0; bi < n; bi++) {
+      const b = bodies[bi];
+      if (b.awake) {
+        b.vy += GRAVITY * dt;
+        const sp2 = b.vx * b.vx + b.vy * b.vy;
+        if (sp2 > MAX_SPEED * MAX_SPEED) {
+          const s = MAX_SPEED / Math.sqrt(sp2);
+          b.vx *= s; b.vy *= s;
+        }
+      }
+      b.cos = Math.cos(b.angle);
+      b.sin = Math.sin(b.angle);
+      const cos = b.cos, sin = b.sin;
+      const lx0 = b.offsetX - 0.5, lx1 = b.offsetX + b.w - 0.5;
+      const ly0 = b.offsetY - 0.5, ly1 = b.offsetY + b.h - 0.5;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      const corner = (lx, ly) => {
+        const wx = b.px + lx * cos - ly * sin, wy = b.py + lx * sin + ly * cos;
+        if (wx < x0) x0 = wx; if (wx > x1) x1 = wx; if (wy < y0) y0 = wy; if (wy > y1) y1 = wy;
+      };
+      corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
+      b.aabbX0 = x0; b.aabbY0 = y0; b.aabbX1 = x1; b.aabbY1 = y1;
+      b.pvx = 0; b.pvy = 0; b.pw = 0; // pseudo-velocity (split-impulse position)
+      b.hadContact = false;
+      b.maxDepth = 0;
+    }
+
+    const contacts = [];
+
+    // 2) Body-body contacts. Sampling every penetrating boundary point as its own
+    // contact yields a noisy, asymmetric manifold that pumps rotation (stacked
+    // boxes spin up and merge). Instead, per colliding pair, collect penetrations
+    // from both directions, derive ONE consistent normal, and reduce to a 2-point
+    // manifold (the extremes along the contact tangent). Two points with a shared
+    // normal resist rotation, so bodies stack and tumble stably.
+    const penAcc = [];
+    // Penetration depth of world point along `nx,ny` out of body T (march until
+    // the point leaves T's occupancy; ~0.5 at the surface, larger when buried).
+    const penDepth = (T, wx, wy, nx, ny) => {
+      let d = 0.5, mx = wx, my = wy;
+      for (let s = 0; s < 4; s++) { mx += nx; my += ny; if (insideBodyIndex(T, mx, my) < 0) break; d += 1; }
+      return d;
+    };
+    // Collect P's boundary points that penetrate T. `sign` flips T's outward
+    // normal so every accumulated normal points toward body A of the pair.
+    const collectPen = (P, T, sign) => {
+      for (let bp = 0; bp < P.boundaryPts.length; bp++) {
+        const i = P.boundaryPts[bp];
+        worldPoint(P, i, P.sin, P.cos, wp);
+        if (wp[0] < T.aabbX0 || wp[0] > T.aabbX1 || wp[1] < T.aabbY0 || wp[1] > T.aabbY1) continue;
+        const idx = insideBodyIndex(T, wp[0], wp[1]);
+        if (idx < 0) continue;
+        bodyNormalAt(T, idx, wp[0], wp[1], nrm);
+        penAcc.push({ wx: wp[0], wy: wp[1], nx: nrm[0] * sign, ny: nrm[1] * sign, depth: penDepth(T, wp[0], wp[1], nrm[0], nrm[1]) });
+      }
+    };
+    // Reduce a set of penetration points {wx,wy,nx,ny,depth} (normals already
+    // pointing toward A) to a stable 2-point manifold with one shared normal, and
+    // push it into the contact list. Two points + one normal resist rotation, so
+    // resting bodies neither spin up nor wobble; a single point would let them tip.
+    const reduceManifold = (acc, A, B, fbx, fby) => {
+      if (acc.length === 0) return;
+      let snx = 0, sny = 0;
+      for (let p = 0; p < acc.length; p++) { snx += acc[p].nx; sny += acc[p].ny; }
+      const nl = Math.sqrt(snx * snx + sny * sny);
+      let Nx, Ny;
+      if (nl < 1e-6) { Nx = fbx; Ny = fby; } else { Nx = snx / nl; Ny = sny / nl; }
+      const tx = -Ny, ty = Nx;
+      let lo = null, hi = null, loP = Infinity, hiP = -Infinity;
+      for (let p = 0; p < acc.length; p++) {
+        const pt = acc[p];
+        const pr = pt.wx * tx + pt.wy * ty;
+        if (pr < loP) { loP = pr; lo = pt; }
+        if (pr > hiP) { hiP = pr; hi = pt; }
+      }
+      const push = (p) => {
+        contacts.push({
+          a: A, b: B,
+          rax: p.wx - A.px, ray: p.wy - A.py,
+          rbx: B ? p.wx - B.px : 0, rby: B ? p.wy - B.py : 0,
+          nx: Nx, ny: Ny, depth: p.depth, jn: 0,
+        });
+        if (p.depth > A.maxDepth) A.maxDepth = p.depth;
+        if (B && p.depth > B.maxDepth) B.maxDepth = p.depth;
+      };
+      push(lo);
+      if (hi !== lo) push(hi);
+      A.hadContact = true;
+      if (B) B.hadContact = true;
+    };
+    for (let i = 0; i < n; i++) {
+      const A = bodies[i];
+      for (let j = i + 1; j < n; j++) {
+        const B = bodies[j];
+        if (!A.awake && !B.awake) continue;
+        if (A.aabbX1 < B.aabbX0 || B.aabbX1 < A.aabbX0 ||
+            A.aabbY1 < B.aabbY0 || B.aabbY1 < A.aabbY0) continue;
+        penAcc.length = 0;
+        collectPen(A, B, 1);   // A's points in B (used for contact points + depth).
+        collectPen(B, A, -1);  // B's points in A.
+        if (penAcc.length === 0) continue;
+        // Wake a sleeping body only on a real impact from a fast-moving partner;
+        // gentle resting contact leaves it asleep (static) so both can settle.
+        const aMoving = A.awake && (A.vx * A.vx + A.vy * A.vy > WAKE_LIN2 || A.omega * A.omega > WAKE_ANG2);
+        const bMoving = B.awake && (B.vx * B.vx + B.vy * B.vy > WAKE_LIN2 || B.omega * B.omega > WAKE_ANG2);
+        if (!A.awake && bMoving) wake(A);
+        if (!B.awake && aMoving) wake(B);
+        if (!A.awake && !B.awake) continue; // both settled: leave them at rest
+        // Use the COM-to-COM direction as the contact normal rather than the
+        // per-point occupancy gradient. For two bodies the gradient degrades to a
+        // wrong (radial) direction once a fast impact buries the boundary points,
+        // shoving the bodies together; the COM direction is stable, never points
+        // the wrong way, and for stacked boxes is exactly vertical.
+        let dx = A.px - B.px, dy = A.py - B.py; const dl = Math.sqrt(dx * dx + dy * dy) || 1;
+        dx /= dl; dy /= dl;
+        for (let p = 0; p < penAcc.length; p++) { penAcc[p].nx = dx; penAcc[p].ny = dy; }
+        reduceManifold(penAcc, A, B, dx, dy);
+      }
+    }
+
+    // 3) Terrain contacts for awake bodies, reduced to a per-body 2-point manifold
+    // (same rationale as body-body: per-point terrain contacts wobble and never sleep).
+    const terrAcc = [];
+    for (let bi = 0; bi < n; bi++) {
       const b = bodies[bi];
       if (!b.awake) continue;
-
-      // 1) Integrate velocity + pose (semi-implicit Euler), clamped to < 1 cell.
-      b.vy += GRAVITY * dt;
-      const sp2 = b.vx * b.vx + b.vy * b.vy;
-      if (sp2 > MAX_SPEED * MAX_SPEED) {
-        const s = MAX_SPEED / Math.sqrt(sp2);
-        b.vx *= s; b.vy *= s;
-      }
-      b.px += b.vx * dt;
-      b.py += b.vy * dt;
-      b.angle += b.omega * dt;
-
-      // 2) Build contacts: body points embedded in terrain.
-      let sin = Math.sin(b.angle);
-      let cos = Math.cos(b.angle);
-      const contacts = [];
-      for (let i = 0; i < b.nPts; i++) {
-        worldPoint(b, i, sin, cos, wp);
+      terrAcc.length = 0;
+      for (let bp = 0; bp < b.boundaryPts.length; bp++) {
+        const i = b.boundaryPts[bp];
+        worldPoint(b, i, b.sin, b.cos, wp);
         const cx = Math.floor(wp[0]);
         const cy = Math.floor(wp[1]);
         if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
         if (!isSolidAt(cx, cy)) continue;
         terrainNormal(cx, cy, isSolidAt, nrm);
-        contacts.push({
-          rx: wp[0] - b.px,
-          ry: wp[1] - b.py,
-          nx: nrm[0],
-          ny: nrm[1],
-        });
-      }
-
-      if (contacts.length === 0) {
-        // Airborne: track for sleep (a falling body is never asleep).
-        b.stillTicks = 0;
-        continue;
-      }
-
-      // 3) Sequential-impulse velocity resolution. Impulse at offset r updates
-      // omega via cross(r, J) — the source of tumbling.
-      for (let it = 0; it < SOLVER_ITERS; it++) {
-        for (let ci = 0; ci < contacts.length; ci++) {
-          const c = contacts[ci];
-          // Relative velocity at the contact point: v + omega x r.
-          const rvx = b.vx - b.omega * c.ry;
-          const rvy = b.vy + b.omega * c.rx;
-          const vn = rvx * c.nx + rvy * c.ny;
-          if (vn < 0) {
-            const rn = c.rx * c.ny - c.ry * c.nx;
-            const denom = b.invMass + b.invInertia * rn * rn;
-            if (denom > 0) {
-              const jn = -(1 + RESTITUTION) * vn / denom;
-              const jx = jn * c.nx;
-              const jy = jn * c.ny;
-              b.vx += jx * b.invMass;
-              b.vy += jy * b.invMass;
-              b.omega += b.invInertia * (c.rx * jy - c.ry * jx);
-              c.jn = jn;
-            }
-          }
-          // Coulomb friction along the tangent, clamped to mu*jn.
-          const tx = -c.ny;
-          const ty = c.nx;
-          const rvx2 = b.vx - b.omega * c.ry;
-          const rvy2 = b.vy + b.omega * c.rx;
-          const vt = rvx2 * tx + rvy2 * ty;
-          const rt = c.rx * ty - c.ry * tx;
-          const denomT = b.invMass + b.invInertia * rt * rt;
-          if (denomT > 0) {
-            let jt = -vt / denomT;
-            const maxF = FRICTION * (c.jn || 0);
-            if (jt > maxF) jt = maxF;
-            else if (jt < -maxF) jt = -maxF;
-            const jx = jt * tx;
-            const jy = jt * ty;
-            b.vx += jx * b.invMass;
-            b.vy += jy * b.invMass;
-            b.omega += b.invInertia * (c.rx * jy - c.ry * jx);
-          }
+        // Depth: march out along the normal until the cell is no longer solid.
+        let depth = 0.5, mx = wp[0], my = wp[1];
+        for (let s = 0; s < 4; s++) {
+          mx += nrm[0]; my += nrm[1];
+          const ix = Math.floor(mx), iy = Math.floor(my);
+          if (ix < 0 || ix >= cols || iy < 0 || iy >= rows || !isSolidAt(ix, iy)) break;
+          depth += 1;
         }
+        terrAcc.push({ wx: wp[0], wy: wp[1], nx: nrm[0], ny: nrm[1], depth });
       }
+      reduceManifold(terrAcc, b, null, 0, -1);
+    }
 
-      // 4) Positional correction: push the body out of the deepest penetration
-      // along the averaged contact normal (linear only; rotation recovers via
-      // velocity impulses over subsequent ticks).
-      let anx = 0, any = 0;
-      for (let ci = 0; ci < contacts.length; ci++) { anx += contacts[ci].nx; any += contacts[ci].ny; }
-      const al = Math.sqrt(anx * anx + any * any);
-      if (al > 0) {
-        anx /= al; any /= al;
-        const corr = BAUMGARTE * Math.max(0, 1 - PENETRATION_SLOP);
-        b.px += anx * corr;
-        b.py += any * corr;
-      }
+    // 4) Sequential-impulse velocity resolution (real velocity), then a separate
+    // pseudo-velocity pass that expels penetration (split impulse). Each iteration
+    // alternates traversal direction: a fixed order biases the solver and injects a
+    // steady same-sign torque that slowly tips resting bodies over; alternating
+    // cancels it so a flat stack stays flat.
+    const nc = contacts.length;
+    for (let it = 0; it < SOLVER_ITERS; it++) {
+      if (it & 1) { for (let ci = nc - 1; ci >= 0; ci--) resolveContact(contacts[ci]); }
+      else { for (let ci = 0; ci < nc; ci++) resolveContact(contacts[ci]); }
+    }
+    for (let it = 0; it < SOLVER_ITERS; it++) {
+      if (it & 1) { for (let ci = nc - 1; ci >= 0; ci--) resolveBias(contacts[ci]); }
+      else { for (let ci = 0; ci < nc; ci++) resolveBias(contacts[ci]); }
+    }
 
-      // Bleed energy while resting so the body converges to sleep.
+    // 5) Integrate position with real + pseudo velocity, then damp + sleep on the
+    // real velocity only (the pseudo-velocity carries no energy into the next tick,
+    // so a resting body converges to sleep). A body with no contact never sleeps.
+    for (let bi = 0; bi < n; bi++) {
+      const b = bodies[bi];
+      if (!b.awake) continue;
+      b.px += (b.vx + b.pvx) * dt;
+      b.py += (b.vy + b.pvy) * dt;
+      b.angle += (b.omega + b.pw) * dt;
+      if (!b.hadContact) { b.stillTicks = 0; continue; }
       b.vx *= CONTACT_LIN_DAMP;
       b.vy *= CONTACT_LIN_DAMP;
       b.omega *= CONTACT_ANG_DAMP;
-
-      // 5) Sleep bodies that have come to rest.
       if (b.vx * b.vx + b.vy * b.vy < SLEEP_LIN * SLEEP_LIN &&
-          b.omega * b.omega < SLEEP_ANG * SLEEP_ANG) {
+          b.omega * b.omega < SLEEP_ANG * SLEEP_ANG &&
+          b.maxDepth <= REST_DEPTH) {
         if (++b.stillTicks >= SLEEP_TICKS) {
           b.awake = false;
           b.vx = 0; b.vy = 0; b.omega = 0;

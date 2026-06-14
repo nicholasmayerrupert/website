@@ -1126,6 +1126,10 @@ export function createEngine({
       // Equilibrium is density-scaled against exposed perimeter, not total area, so
       // a growing light body still floats while dense bodies still sink.
       const avgDensity = weight / cells.size;
+      if (avgDensity > immersion.liquidDensity) {
+        translateAssembly(grp, cells, cols);
+        continue;
+      }
       const targetWetCells = immersion.exposedCells * (avgDensity / immersion.liquidDensity) * BUOY_DRAFT_SCALE;
       const imbalance = immersion.wetCells - targetWetCells; // >0 over-submerged (rise), <0 sink
       const band = Math.max(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);

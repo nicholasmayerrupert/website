@@ -367,13 +367,14 @@ export function createEngine({
         const xx = cx + ox;
         if (xx <= 0 || xx >= cols - 1) continue;
         const k = I(xx, yy);
-        if (grid[k] === EMPTY) {
+        if (grid[k] === EMPTY && !stoneDraft.has(k)) {
           stoneDraft.add(k);
           changed = true;
         }
       }
     }
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return changed;
   }
 
   // Register a set of grid cells (already written as STONE) as a stone
@@ -460,13 +461,14 @@ export function createEngine({
         const xx = cx + ox;
         if (xx <= 0 || xx >= cols - 1) continue;
         const k = I(xx, yy);
-        if (grid[k] === EMPTY) {
+        if (grid[k] === EMPTY && !iceDraft.has(k)) {
           iceDraft.add(k);
           changed = true;
         }
       }
     }
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return changed;
   }
 
   function finalizeIceDraft() {
@@ -663,6 +665,7 @@ export function createEngine({
       }
     }
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return changed;
   };
 
   const eraseDisc = (cx, cy, radius) => {
@@ -685,7 +688,8 @@ export function createEngine({
           grid[k] = EMPTY;
           changed = true;
         }
-        if (stoneDraft.has(k)) stoneDraft.delete(k);
+        if (stoneDraft.delete(k)) changed = true;
+        if (iceDraft.delete(k)) changed = true;
       }
     }
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
@@ -694,6 +698,7 @@ export function createEngine({
     if (erasedPlant && plantComponents.length > 0) {
       plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
     }
+    return changed;
   };
 
   // --- Emitters ---
@@ -709,10 +714,6 @@ export function createEngine({
   // Helpers
   const emptyAt = (x, y) =>
     x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] === EMPTY && next[I(x, y)] === EMPTY;
-  const canWaterEnter = (x, y) =>
-    x >= 0 && x < cols && y >= 0 && y < rows && (grid[I(x, y)] === EMPTY || grid[I(x, y)] === OIL) && next[I(x, y)] === EMPTY;
-  const supportsWater = (material) =>
-    material !== EMPTY && material !== WATER && material !== OIL && material !== STEAM && material !== FIRE;
   const touchesGridEmpty = (k) => {
     const x = k % cols;
     const y = Math.floor(k / cols);
@@ -740,31 +741,25 @@ export function createEngine({
       markCellIndex(k);
     }
   };
-  const moveWaterInto = (fromK, x, y) => {
+  const isDisplacedLiquid = (material, displaced) => {
+    if (material === WATER) return displaced === OIL;
+    if (material === ACID) return displaced === WATER || displaced === OIL;
+    return false;
+  };
+  const canLiquidEnter = (x, y, material) =>
+    x >= 0 && x < cols && y >= 0 && y < rows && (grid[I(x, y)] === EMPTY || isDisplacedLiquid(material, grid[I(x, y)])) && next[I(x, y)] === EMPTY;
+  const supportsLiquid = (support, material) =>
+    support !== EMPTY && support !== material && !isDisplacedLiquid(material, support) && support !== STEAM && support !== FIRE;
+  const moveLiquidInto = (fromK, x, y, material) => {
     const toK = I(x, y);
     const displaced = grid[toK];
-    writeNextIndex(toK, WATER);
-    if (displaced === OIL && next[fromK] === EMPTY) writeNextIndex(fromK, OIL);
+    writeNextIndex(toK, material);
+    if (isDisplacedLiquid(material, displaced) && next[fromK] === EMPTY) writeNextIndex(fromK, displaced);
   };
   const moveOilIntoWater = (fromK, x, y) => {
     const toK = I(x, y);
     writeNextIndex(toK, OIL);
     if (next[fromK] === EMPTY) writeNextIndex(fromK, WATER);
-  };
-  // Acid is the densest liquid: it sinks through water/oil, pushing the lighter
-  // liquid up into the vacated cell.
-  const moveAcidInto = (fromK, x, y) => {
-    const toK = I(x, y);
-    const displaced = grid[toK];
-    writeNextIndex(toK, ACID);
-    if ((displaced === WATER || displaced === OIL) && next[fromK] === EMPTY) writeNextIndex(fromK, displaced);
-  };
-  // Water rising into the acid above it (acid is heavier, so it sinks past water).
-  // Mirror of moveOilIntoWater for the water/acid density pair.
-  const moveWaterIntoAcid = (fromK, x, y) => {
-    const toK = I(x, y);
-    writeNextIndex(toK, WATER);
-    if (next[fromK] === EMPTY) writeNextIndex(fromK, ACID);
   };
   const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows;
   const neighborIndices8 = (x, y) => {
@@ -1202,44 +1197,33 @@ export function createEngine({
     if (next[k] === EMPTY) writeNextIndex(k, SAND);
   };
 
-  // Water physics
-  const settleWater = (x, y, k) => {
+  const settleWaterLikeLiquid = (x, y, k, material) => {
     if (next[k] !== EMPTY) return;
 
     const belowK = k + cols;
-    // Acid is denser than water. When water is pinned below acid (it cannot fall
-    // into an empty/oil cell), it rises into the acid so the acid sinks past it —
-    // the same density swap that lets water fall through oil.
-    const canFall = y + 1 < rows && (grid[belowK] === EMPTY || grid[belowK] === OIL) && next[belowK] === EMPTY;
-    if (!canFall && y - 1 > 0) {
-      const aboveK = k - cols;
-      if (grid[aboveK] === ACID && next[aboveK] === EMPTY) {
-        moveWaterIntoAcid(k, x, y - 1); return;
-      }
-    }
-    // Fast paths for water that cannot fall, slide, or flow: either fully
-    // embedded in water, or resting on solid support with water at both sides
+    // Fast paths for liquids that cannot fall, slide, or flow: either fully
+    // embedded in their own material, or resting on solid support with same-material sides
     // and no openings diagonally below. Stays dirty only while exposed to air
     // above (writeNextIndex semantics inlined: sides/below are known blocked,
     // so only the above cell matters).
-    if (y + 1 < rows && x > 0 && x < cols - 1 && grid[k - 1] === WATER && grid[k + 1] === WATER) {
+    if (y + 1 < rows && x > 0 && x < cols - 1 && grid[k - 1] === material && grid[k + 1] === material) {
       const below = grid[belowK];
       const bl = grid[belowK - 1];
       const br = grid[belowK + 1];
       if (
-        (below === WATER && bl === WATER && br === WATER) ||
-        (supportsWater(below) && bl !== EMPTY && bl !== OIL && br !== EMPTY && br !== OIL)
+        (below === material && bl === material && br === material) ||
+        (supportsLiquid(below, material) && bl !== EMPTY && !isDisplacedLiquid(material, bl) && br !== EMPTY && !isDisplacedLiquid(material, br))
       ) {
-        next[k] = WATER;
+        next[k] = material;
         if (y > 1 && grid[k - cols] === EMPTY) markCellIndex(k);
         return;
       }
     }
     if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
-      writeNextIndex(belowK, WATER); return;
+      writeNextIndex(belowK, material); return;
     }
-    if (y + 1 < rows && grid[belowK] === OIL && next[belowK] === EMPTY) {
-      moveWaterInto(k, x, y + 1);
+    if (y + 1 < rows && isDisplacedLiquid(material, grid[belowK]) && next[belowK] === EMPTY) {
+      moveLiquidInto(k, x, y + 1, material);
       return;
     }
 
@@ -1248,9 +1232,9 @@ export function createEngine({
       const nx = x + dx, ny = y + 1;
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       const ik = I(nx, ny);
-      if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, WATER); return; }
-      if (grid[ik] === OIL && next[ik] === EMPTY) {
-        moveWaterInto(k, nx, ny);
+      if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, material); return; }
+      if (isDisplacedLiquid(material, grid[ik]) && next[ik] === EMPTY) {
+        moveLiquidInto(k, nx, ny, material);
         return;
       }
     }
@@ -1263,13 +1247,13 @@ export function createEngine({
         const nx = x + sgn * d;
         if (nx <= 0 || nx >= cols - 1) break;
         const sideK = k + sgn * d;
-        if (grid[sideK] !== EMPTY && grid[sideK] !== OIL) break;
+        if (grid[sideK] !== EMPTY && !isDisplacedLiquid(material, grid[sideK])) break;
         if (next[sideK] !== EMPTY) break;
         if (y + 1 < rows) {
           const lowerK = sideK + cols;
-          if ((grid[lowerK] === EMPTY || grid[lowerK] === OIL) && next[lowerK] === EMPTY) {
+          if ((grid[lowerK] === EMPTY || isDisplacedLiquid(material, grid[lowerK])) && next[lowerK] === EMPTY) {
             const stepK = k + sgn;
-            if ((grid[stepK] === EMPTY || grid[stepK] === OIL) && next[stepK] === EMPTY) flow = sgn;
+            if ((grid[stepK] === EMPTY || isDisplacedLiquid(material, grid[stepK])) && next[stepK] === EMPTY) flow = sgn;
             break;
           }
         }
@@ -1277,30 +1261,35 @@ export function createEngine({
     }
     if (flow !== 0) {
       const stepX = x + flow;
-      if (canWaterEnter(stepX, y)) { moveWaterInto(k, stepX, y); return; }
+      if (canLiquidEnter(stepX, y, material)) { moveLiquidInto(k, stepX, y, material); return; }
     }
 
-    if (y + 1 < rows && supportsWater(grid[belowK])) {
+    if (y + 1 < rows && supportsLiquid(grid[belowK], material)) {
       const aboveK = k - cols;
-      if (y > 1 && grid[aboveK] === WATER) {
+      if (y > 1 && grid[aboveK] === material) {
         for (const dx of dirs) {
           const sideK = k + dx;
           if (x + dx <= 0 || x + dx >= cols - 1) continue;
-          if (grid[sideK] === EMPTY && next[sideK] === EMPTY && supportsWater(grid[sideK + cols])) {
-            writeNextIndex(sideK, WATER);
+          if (grid[sideK] === EMPTY && next[sideK] === EMPTY && supportsLiquid(grid[sideK + cols], material)) {
+            writeNextIndex(sideK, material);
             return;
           }
         }
       }
-      if (next[k] === EMPTY) writeNextIndex(k, WATER);
+      if (next[k] === EMPTY) writeNextIndex(k, material);
       return;
     }
 
     for (const dx of dirs) {
-      if (canWaterEnter(x + dx, y)) { moveWaterInto(k, x + dx, y); return; }
+      if (canLiquidEnter(x + dx, y, material)) { moveLiquidInto(k, x + dx, y, material); return; }
     }
 
-    if (next[k] === EMPTY) writeNextIndex(k, WATER);
+    if (next[k] === EMPTY) writeNextIndex(k, material);
+  };
+
+  // Water physics
+  const settleWater = (x, y, k) => {
+    settleWaterLikeLiquid(x, y, k, WATER);
   };
 
   const settleOil = (x, y, k) => {
@@ -1376,56 +1365,8 @@ export function createEngine({
     if (next[k] === EMPTY) writeNextIndex(k, OIL);
   };
 
-  // Acid: flows like water but is denser, so it sinks through water and oil.
   const settleAcid = (x, y, k) => {
-    if (next[k] !== EMPTY) return;
-    const belowK = k + cols;
-
-    if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
-      writeNextIndex(belowK, ACID); return;
-    }
-    if (y + 1 < rows && (grid[belowK] === WATER || grid[belowK] === OIL) && next[belowK] === EMPTY) {
-      moveAcidInto(k, x, y + 1); return;
-    }
-
-    const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
-    for (const dx of dirs) {
-      const nx = x + dx, ny = y + 1;
-      if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
-      const ik = I(nx, ny);
-      if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, ACID); return; }
-      if ((grid[ik] === WATER || grid[ik] === OIL) && next[ik] === EMPTY) { moveAcidInto(k, nx, ny); return; }
-    }
-
-    let flow = 0;
-    const firstFlowDir = rand() < 0.5 ? 1 : -1;
-    for (let dirIndex = 0; dirIndex < 2 && flow === 0; dirIndex++) {
-      const sgn = dirIndex === 0 ? firstFlowDir : -firstFlowDir;
-      for (let d = 1; d <= MAX_WATER_FLOW; d++) {
-        const nx = x + sgn * d;
-        if (nx <= 0 || nx >= cols - 1) break;
-        const sideK = k + sgn * d;
-        if (grid[sideK] !== EMPTY && grid[sideK] !== WATER && grid[sideK] !== OIL) break;
-        if (next[sideK] !== EMPTY) break;
-        if (y + 1 < rows) {
-          const lowerK = sideK + cols;
-          if ((grid[lowerK] === EMPTY || grid[lowerK] === WATER || grid[lowerK] === OIL) && next[lowerK] === EMPTY) {
-            const stepK = k + sgn;
-            if ((grid[stepK] === EMPTY || grid[stepK] === WATER || grid[stepK] === OIL) && next[stepK] === EMPTY) flow = sgn;
-            break;
-          }
-        }
-      }
-    }
-    if (flow !== 0) {
-      const stepX = x + flow;
-      const toK = I(stepX, y);
-      if ((grid[toK] === EMPTY || grid[toK] === WATER || grid[toK] === OIL) && next[toK] === EMPTY) {
-        moveAcidInto(k, stepX, y); return;
-      }
-    }
-
-    if (next[k] === EMPTY) writeNextIndex(k, ACID);
+    settleWaterLikeLiquid(x, y, k, ACID);
   };
 
   // Lava: a viscous liquid. Most ticks it does not move (LAVA_VISCOSITY_P gate),
@@ -1492,8 +1433,8 @@ export function createEngine({
 
           const aboveK = I(x, y - 1);
           const above = grid[aboveK];
-          if (above === WATER) {
-            writeGridIndex(k, WATER);
+          if (above === WATER || above === ACID) {
+            writeGridIndex(k, above);
             writeGridIndex(aboveK, EMPTY);
             continue;
           }
@@ -1504,7 +1445,7 @@ export function createEngine({
             if (sx <= 0 || sx >= cols - 1) continue;
             const sk = I(sx, y);
             const side = grid[sk];
-            if (side !== WATER && side !== OIL) continue;
+            if (side !== WATER && side !== OIL && side !== ACID) continue;
             writeGridIndex(k, side);
             writeGridIndex(sk, EMPTY);
             if (grid[k] !== EMPTY) break;
@@ -1512,7 +1453,7 @@ export function createEngine({
 
           if (grid[k] !== EMPTY) continue;
 
-          if (above !== WATER && above !== OIL) continue;
+          if (above !== WATER && above !== OIL && above !== ACID) continue;
 
           const left = grid[I(x - 1, y)];
           const right = grid[I(x + 1, y)];
@@ -1548,9 +1489,10 @@ export function createEngine({
           }
         } else if (m === ACID) {
           const belowK = I(x, y + 1);
-          if (grid[belowK] === WATER) {
+          if (grid[belowK] === WATER || grid[belowK] === OIL) {
+            const displaced = grid[belowK];
             writeGridIndex(belowK, ACID);
-            writeGridIndex(k, WATER);
+            writeGridIndex(k, displaced);
           }
         }
       }
@@ -1697,13 +1639,21 @@ export function createEngine({
       for (let x = minX; x <= maxX; x++) {
         const k = I(x, y);
         if (grid[k] !== ACID) continue;
+
+        const right = k + 1, left = k - 1, down = k + cols, up = k - cols;
+        if (
+          !isDissolvable(grid[right]) &&
+          !isDissolvable(grid[left]) &&
+          !isDissolvable(grid[down]) &&
+          !isDissolvable(grid[up])
+        ) continue;
         if (rand() >= ACID_DISSOLVE_P) continue;
 
         const horizFirst = rand() < 0.5;
-        const a = horizFirst ? k + 1 : k + cols;
-        const b = horizFirst ? k - 1 : k - cols;
-        const c = horizFirst ? k + cols : k + 1;
-        const d = horizFirst ? k - cols : k - 1;
+        const a = horizFirst ? right : down;
+        const b = horizFirst ? left : up;
+        const c = horizFirst ? down : right;
+        const d = horizFirst ? up : left;
         let target = -1;
         if (isDissolvable(grid[a])) target = a;
         else if (isDissolvable(grid[b])) target = b;
@@ -1926,7 +1876,26 @@ export function createEngine({
     }
     phase('sand');
 
-    // 5) Liquids
+    // 5) Acid gets first claim on liquid density swaps so lighter liquids cannot
+    // pin it above water/oil.
+    for (let y = rows - 1; y >= 0; y--) {
+      const minX = activeRowMin[y];
+      const maxX = activeRowMax[y];
+      if (maxX < minX) continue;
+      const rowBase = y * cols;
+      const ltr = (y & 1) === 0;
+      if (ltr) {
+        for (let x = minX; x <= maxX; x++) {
+          if (grid[rowBase + x] === ACID) settleAcid(x, y, rowBase + x);
+        }
+      } else {
+        for (let x = maxX; x >= minX; x--) {
+          if (grid[rowBase + x] === ACID) settleAcid(x, y, rowBase + x);
+        }
+      }
+    }
+
+    // 6) Other liquids
     for (let y = rows - 1; y >= 0; y--) {
       const minX = activeRowMin[y];
       const maxX = activeRowMax[y];
@@ -1938,7 +1907,6 @@ export function createEngine({
           const material = grid[rowBase + x];
           if (material === WATER) settleWater(x, y, rowBase + x);
           else if (material === OIL) settleOil(x, y, rowBase + x);
-          else if (material === ACID) settleAcid(x, y, rowBase + x);
           else if (material === LAVA) settleLava(x, y, rowBase + x);
         }
       } else {
@@ -1946,14 +1914,13 @@ export function createEngine({
           const material = grid[rowBase + x];
           if (material === WATER) settleWater(x, y, rowBase + x);
           else if (material === OIL) settleOil(x, y, rowBase + x);
-          else if (material === ACID) settleAcid(x, y, rowBase + x);
           else if (material === LAVA) settleLava(x, y, rowBase + x);
         }
       }
     }
     phase('liquids');
 
-    // 6) Rising materials
+    // 7) Rising materials
     for (let y = 0; y < rows; y++) {
       const minX = activeRowMin[y];
       const maxX = activeRowMax[y];
@@ -1975,20 +1942,20 @@ export function createEngine({
       }
     }
 
-    // 7) Flip
+    // 8) Flip
     const tmp = grid; grid = next; next = tmp;
     phase('risers');
 
-    // 8) Collapse small liquid air pockets. The relax pass also seals water
+    // 9) Collapse small liquid air pockets. The relax pass also seals water
     // pockets: its above-pull rule covers water-above-water gaps directly.
     if ((tick & 1) === 0) relaxLiquidGaps();
     phase('relax');
 
-    // 9) Let buried oil bubble up through water after crowded movement claims settle
+    // 10) Let buried oil bubble up through water after crowded movement claims settle
     if (tick % 3 === 0) separateLiquidsByDensity();
     phase('separate');
 
-    // 10) Side sinks (stones unaffected)
+    // 11) Side sinks (stones unaffected)
     applySideSinks();
     phase('sinks');
     perfStepMs = performance.now() - stepStart;

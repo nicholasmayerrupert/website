@@ -44,7 +44,7 @@ export function fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, lut, rng = Mat
       } else if (m === FIRE_ID) {
         if (rng() < 0.35) c = PACKED_FIRE_HOT;
       } else if (m === LAVA_ID) {
-        if (rng() < 0.22) c = PACKED_LAVA_HOT;
+        if (((x * 17 + y * 31) & 7) === 0) c = PACKED_LAVA_HOT;
       }
       pixels[k] = c;
     }

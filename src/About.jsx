@@ -8,6 +8,7 @@ import { buildCastleScene, castleEmitters } from './sand/scenes/castleScene';
 function SandOverlay({ onDrawModeChange }) {
   const wrapRef = useRef(null);
   const canvasRef = useRef(null);
+  const previewCanvasRef = useRef(null);
   const uiRef = useRef(null);
 
   // UI state
@@ -44,12 +45,14 @@ function SandOverlay({ onDrawModeChange }) {
   useEffect(() => {
     const wrap = wrapRef.current;
     const canvas = canvasRef.current;
-    if (!wrap || !canvas) return;
+    const previewCanvas = previewCanvasRef.current;
+    if (!wrap || !canvas || !previewCanvas) return;
 
     const cellCanvas = document.createElement('canvas');
     const cellCtx = cellCanvas.getContext('2d', { alpha: true });
     const ctx = canvas.getContext('2d', { alpha: true });
-    if (!ctx || !cellCtx) return;
+    const previewCtx = previewCanvas.getContext('2d', { alpha: true });
+    if (!ctx || !cellCtx || !previewCtx) return;
 
     // ---- Tunables (render/UI side; physics tunables live in src/sand/engine.js) ----
     const CELL_PX = 5;
@@ -101,6 +104,8 @@ function SandOverlay({ onDrawModeChange }) {
     let pixels = new Uint32Array(0);
     let forceFullRender = true;
     let perfRenderMs = 0;
+    let previewDirty = false;
+    let previewVisible = false;
 
     // Rolling perf samples for window.__sandPerf
     const PERF_SAMPLES = 120;
@@ -148,9 +153,14 @@ function SandOverlay({ onDrawModeChange }) {
       const { width, height } = refreshBounds();
       canvas.width = Math.max(300, Math.floor(width));
       canvas.height = Math.max(200, Math.floor(height));
+      previewCanvas.width = canvas.width;
+      previewCanvas.height = canvas.height;
       canvas.style.width = '100%';
       canvas.style.height = '100%';
+      previewCanvas.style.width = '100%';
+      previewCanvas.style.height = '100%';
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      previewCtx.setTransform(1, 0, 0, 1, 0, 0);
       // Decide UI placement based on available horizontal space
       setUiAtBottom(width < TOOL_COLLAPSE_W);
 
@@ -167,6 +177,7 @@ function SandOverlay({ onDrawModeChange }) {
       cellCanvas.height = rows;
       cellCtx.imageSmoothingEnabled = false;
       ctx.imageSmoothingEnabled = false;
+      previewCtx.imageSmoothingEnabled = false;
       imageData = cellCtx.createImageData(cols, rows);
       pixels = new Uint32Array(imageData.data.buffer);
 
@@ -186,6 +197,9 @@ function SandOverlay({ onDrawModeChange }) {
       pixels.fill(0);
       forceFullRender = true;
       ctx.clearRect(0, 0, width, height);
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewDirty = false;
+      previewVisible = false;
     };
 
     fit();
@@ -199,6 +213,16 @@ function SandOverlay({ onDrawModeChange }) {
       px = cx - wrapBounds.left;
       py = cy - wrapBounds.top;
     };
+    const updateSeedDraft = () => {
+      const prevX = seedDraftOrigin ? seedDraftOrigin[0] : null;
+      const prevY = seedDraftOrigin ? seedDraftOrigin[1] : null;
+      const nextOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
+      const nextX = nextOrigin ? nextOrigin[0] : null;
+      const nextY = nextOrigin ? nextOrigin[1] : null;
+      const changed = prevX !== nextX || prevY !== nextY;
+      seedDraftOrigin = nextOrigin;
+      if (changed) previewDirty = true;
+    };
 
     // Global listeners so canvas can stay pointer-events:none
     const onPointerMove = (e) => {
@@ -209,13 +233,13 @@ function SandOverlay({ onDrawModeChange }) {
       }
       if (!drawModeOnRef.current) return;
       if (isDraftingStone && inside) {
-        engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
+        if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingIce && inside) {
-        engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
+        if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingSeed && inside) {
-        seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
+        updateSeedDraft();
       }
     };
     const onTouchMove = (e) => {
@@ -224,13 +248,13 @@ function SandOverlay({ onDrawModeChange }) {
       const t = e.touches[0];
       updatePointer(t.clientX, t.clientY);
       if (isDraftingStone && inside) {
-        engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
+        if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingIce && inside) {
-        engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
+        if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingSeed && inside) {
-        seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
+        updateSeedDraft();
       }
     };
 
@@ -250,19 +274,19 @@ function SandOverlay({ onDrawModeChange }) {
 
         if (activeTool === 'stone') {
           isDraftingStone = true;
-          engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
+          if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
           e.preventDefault();
           return;
         }
         if (activeTool === 'ice') {
           isDraftingIce = true;
-          engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
+          if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
           e.preventDefault();
           return;
         }
         if (activeTool === 'seed') {
           isDraftingSeed = true;
-          seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
+          updateSeedDraft();
           e.preventDefault();
           return;
         }
@@ -285,16 +309,19 @@ function SandOverlay({ onDrawModeChange }) {
           engine.finalizeStoneDraft();
           isDraftingStone = false;
           engine.clearStoneDraft();
+          previewDirty = true;
         }
         if (isDraftingIce) {
           engine.finalizeIceDraft();
           isDraftingIce = false;
           engine.clearIceDraft();
+          previewDirty = true;
         }
         if (isDraftingSeed) {
           if (seedDraftOrigin) engine.placeSeedAt(seedDraftOrigin[0], seedDraftOrigin[1]);
           isDraftingSeed = false;
           seedDraftOrigin = null;
+          previewDirty = true;
         }
       }
     };
@@ -453,43 +480,51 @@ function SandOverlay({ onDrawModeChange }) {
         }
       }
       engine.clearRenderDirty();
+      perfRenderMs = performance.now() - renderStart;
+    };
 
-      // stone preview
+    const renderPreview = () => {
+      if (!engine || !previewDirty) return;
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewVisible = false;
+
       const stoneDraft = engine.getStoneDraftCells();
       if (stoneDraft.size > 0) {
-        ctx.fillStyle = STONE_PREVIEW_COLOR;
+        previewCtx.fillStyle = STONE_PREVIEW_COLOR;
         const previewSize = cellSize;
         for (const k of stoneDraft) {
           const y = (k / cols) | 0;
           const x = k - y * cols;
-          ctx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+          previewCtx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
         }
+        previewVisible = true;
       }
 
-      // ice preview
       const iceDraft = engine.getIceDraftCells();
       if (iceDraft.size > 0) {
-        ctx.fillStyle = ICE_PREVIEW_COLOR;
+        previewCtx.fillStyle = ICE_PREVIEW_COLOR;
         const previewSize = cellSize;
         for (const k of iceDraft) {
           const y = (k / cols) | 0;
           const x = k - y * cols;
-          ctx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+          previewCtx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
         }
+        previewVisible = true;
       }
 
       if (isDraftingSeed && seedDraftOrigin) {
         const [x0, y0] = seedDraftOrigin;
         const valid = engine.canPlaceSeedAt(x0, y0);
-        ctx.fillStyle = valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
+        previewCtx.fillStyle = valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
         const previewSize = cellSize;
         for (let y = y0; y < y0 + SEED_SIZE; y++) {
           for (let x = x0; x < x0 + SEED_SIZE; x++) {
-            ctx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+            previewCtx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
           }
         }
+        previewVisible = true;
       }
-      perfRenderMs = performance.now() - renderStart;
+      previewDirty = false;
     };
 
     if (import.meta.env?.DEV && typeof window !== 'undefined') {
@@ -528,21 +563,21 @@ function SandOverlay({ onDrawModeChange }) {
 
       if (now - lastStep >= STEP_MS) {
         if (isDraftingStone && inside) {
-          engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
+          if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
         }
         if (isDraftingIce && inside) {
-          engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
+          if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
         }
         if (isDraftingSeed && inside) {
-          seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
+          updateSeedDraft();
         }
 
         emitAtPointer(now);
         engine.setEmittersOn(emittersOnRef.current);
         engine.setSinksOn(sinksOnRef.current);
         const didStep = engine.step(now);
-        const hasDraftPreview = engine.getStoneDraftCells().size > 0 || engine.getIceDraftCells().size > 0 || isDraftingSeed;
-        if (didStep || hasDraftPreview) render(hasDraftPreview);
+        if (didStep) render(false);
+        if (previewDirty || previewVisible) renderPreview();
         if (didStep) {
           perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
           perfRenderSamples[perfSampleIdx] = perfRenderMs;
@@ -712,6 +747,11 @@ return (
     <div ref={wrapRef} className="absolute inset-0 z-0">
       <canvas
         ref={canvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none select-none"
+        aria-hidden="true"
+      />
+      <canvas
+        ref={previewCanvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none select-none"
         aria-hidden="true"
       />

@@ -76,17 +76,17 @@ DENSITY_SORTED_LOOSE[OIL] = 1;
 DENSITY_SORTED_LOOSE[ACID] = 1;
 DENSITY_SORTED_LOOSE[LAVA] = 1;
 
-// Buoyancy deadband. Moving a body one row changes its submerged-cell count by
-// about its width, so the rest band must be ~half the body width for a stable
+// Buoyancy deadband. Moving a body one row changes its wet contact by about its
+// width, so the rest band must be ~half the body width for a stable
 // resting depth to exist — a narrow band guarantees overshoot and the body buzzes.
-// The waterline itself is taken as the global pool surface (median column top),
-// which is immune to the splashes and ice-freezing churn that made a per-body
-// "highest touching liquid" reading swing several rows every tick. The draft is
+// Buoyancy is measured from actual liquid contact around a rigid assembly. A
+// large body touching a single splash should keep falling; it needs a meaningful
+// wet perimeter before density-based floating/rising applies. The draft is
 // scaled down from physical density so floaters read clearly in this coarse grid.
 const BUOY_BAND_FRAC = 0.5;
 const BUOY_BAND_MIN = 1.5;
-const BUOY_SURFACE_SMOOTH = 0.1; // EMA rate for the shared waterline (lower = steadier)
 const BUOY_DRAFT_SCALE = 0.5;
+const BUOY_WET_PERIMETER_FRAC = 0.75;
 
 // Side-sink settings (bottom is NOT a sink)
 const SINK_STRIP_W = 2;
@@ -171,7 +171,6 @@ export function createEngine({
   const groundStack = new Int32Array(cols * rows);
   let prevCompCells = [];
   let curCompCells = [];
-  let buoySurfaceEMA = -1; // smoothed global liquid surface, decouples buoyancy from a body's own slosh
   let dirtyRenderCount = 0;
   let tick = 0;
   let perfStepMs = 0;
@@ -969,25 +968,6 @@ export function createEngine({
     }
     const order = [...groups.values()].sort((a, b) => b.maxY - a.maxY);
 
-    // Global liquid surface row = median over columns of the topmost liquid cell:
-    // a single splash can't move it. Then smooth it across steps (EMA) so a body's
-    // own up/down motion — which sloshes the whole pool and would otherwise feed
-    // back into its submersion reading and drive oscillation — is decoupled.
-    {
-      const tops = [];
-      for (let x = 1; x < cols - 1; x++) {
-        for (let y = 0; y < rows; y++) {
-          if (isLiquid(grid[I(x, y)])) { tops.push(y); break; }
-        }
-      }
-      if (tops.length) {
-        tops.sort((a, b) => a - b);
-        const raw = tops[tops.length >> 1];
-        buoySurfaceEMA = buoySurfaceEMA < 0 ? raw : buoySurfaceEMA + BUOY_SURFACE_SMOOTH * (raw - buoySurfaceEMA);
-      }
-    }
-    const liquidSurface = buoySurfaceEMA < 0 ? rows : Math.round(buoySurfaceEMA);
-
     const matOf = (i, k) =>
       i < nStone ? STONE : (i < nStonePlant ? grid[k] : ICE);
 
@@ -1056,43 +1036,91 @@ export function createEngine({
       return true;
     };
 
+    const measureLiquidImmersion = (cells) => {
+      let wetCells = 0;
+      let liquidDensity = 0;
+      let liquidContacts = 0;
+
+      for (const k of cells) {
+        const y = (k / cols) | 0;
+        const x = k - y * cols;
+        let wet = false;
+
+        if (x > 1 && !cells.has(k - 1)) {
+          const m = grid[k - 1];
+          if (isLiquid(m)) {
+            wet = true;
+            liquidDensity += DENSITY[m];
+            liquidContacts++;
+          }
+        }
+        if (x < cols - 2 && !cells.has(k + 1)) {
+          const m = grid[k + 1];
+          if (isLiquid(m)) {
+            wet = true;
+            liquidDensity += DENSITY[m];
+            liquidContacts++;
+          }
+        }
+        if (y > 1 && !cells.has(k - cols)) {
+          const m = grid[k - cols];
+          if (isLiquid(m)) {
+            wet = true;
+            liquidDensity += DENSITY[m];
+            liquidContacts++;
+          }
+        }
+        if (y < rows - 1 && !cells.has(k + cols)) {
+          const m = grid[k + cols];
+          if (isLiquid(m)) {
+            wet = true;
+            liquidDensity += DENSITY[m];
+            liquidContacts++;
+          }
+        }
+
+        if (wet) wetCells++;
+      }
+
+      if (liquidContacts === 0) return null;
+      const requiredWetCells = Math.max(1, Math.ceil(Math.sqrt(cells.size) * BUOY_WET_PERIMETER_FRAC));
+      if (wetCells < requiredWetCells) return null;
+      return {
+        wetCells,
+        liquidDensity: liquidDensity / liquidContacts,
+      };
+    };
+
     for (const grp of order) {
       if (grp.grounded) continue; // structure has a path to the floor — stays put
 
       const cells = new Set();
       for (const ci of grp.comps) for (const k of all[ci].cells) cells.add(k);
 
-      // Assembly weight (sum of per-material densities), width, and the liquid it
-      // touches (to confirm it is actually in water and read the fluid density).
+      // Assembly weight (sum of per-material densities), width, and actual wet
+      // contact. Sparse contact keeps behaving like air; meaningful immersion uses
+      // the contacted liquid density for generic floating/sinking.
       let weight = 0;
       let xMin = cols, xMax = 0;
-      let touchesLiquid = false;
-      let rhoL = 1;
       for (const ci of grp.comps) for (const k of all[ci].cells) {
         weight += DENSITY[matOf(ci, k)];
         const x = k - ((k / cols) | 0) * cols;
         if (x < xMin) xMin = x;
         if (x > xMax) xMax = x;
-        const nbs = [k - 1, k + 1, k - cols, k + cols];
-        for (const nk of nbs) {
-          if (cells.has(nk)) continue;
-          if (isLiquid(grid[nk])) { touchesLiquid = true; rhoL = DENSITY[grid[nk]]; }
-        }
       }
 
-      if (!touchesLiquid) {
+      const immersion = measureLiquidImmersion(cells);
+      if (!immersion) {
         translateAssembly(grp, cells, cols); // in air — fall under gravity
         continue;
       }
 
-      // Buoyancy: cells at or below the global surface are submerged; equilibrium
-      // is when scaled displaced liquid roughly balances weight. The deadband
-      // scales with width because one row of movement changes submerged by ~width,
-      // so a stable resting depth only exists when the band spans that step.
-      let submerged = 0;
-      for (const k of cells) { if (((k / cols) | 0) >= liquidSurface) submerged++; }
-      const targetSubmerged = (weight / rhoL) * BUOY_DRAFT_SCALE;
-      const imbalance = submerged - targetSubmerged; // >0 over-submerged (rise), <0 sink
+      // Buoyancy: wet perimeter approximates displaced liquid in this coarse grid;
+      // equilibrium is when scaled displaced liquid roughly balances weight. The
+      // deadband scales with width because one row of movement changes contact by
+      // ~width, so a stable resting depth only exists when the band spans that step.
+      const targetSubmerged = (weight / immersion.liquidDensity) * BUOY_DRAFT_SCALE;
+      const imbalance = immersion.wetCells - targetSubmerged; // >0 over-submerged (rise), <0 sink
       const band = Math.max(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
       if (imbalance < -band) translateAssembly(grp, cells, cols);        // too light a draught — sink
       else if (imbalance > band) translateAssembly(grp, cells, -cols);   // over-submerged — rise

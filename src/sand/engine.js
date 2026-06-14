@@ -119,6 +119,12 @@ export function createEngine({
   // the two buffers — the other keeps a ghost that flickers every other frame.
   // Each step we clear cells that were occupied last step but no longer are.
   const compOccStamp = new Int32Array(cols * rows).fill(-1);
+  // Stamped with the current tick when a cell's particle relocates during a
+  // settlement pass. `grid` is not mutated mid-pass, so a displacer reading
+  // `grid[toK]` cannot otherwise tell whether that material is still present or
+  // already moved this tick — the stamp distinguishes the two and stops a
+  // displacement from fabricating a duplicate of an already-relocated liquid.
+  const vacatedStamp = new Int32Array(cols * rows).fill(-1);
   let prevCompCells = [];
   let curCompCells = [];
   let dirtyRenderCount = 0;
@@ -765,7 +771,16 @@ export function createEngine({
   const moveMaterialInto = (fromK, toK, material) => {
     const displaced = grid[toK];
     writeNextIndex(toK, material);
-    if (displaced !== EMPTY && canDisplaceMaterial(material, displaced) && next[fromK] === EMPTY) {
+    vacatedStamp[fromK] = tick;
+    // Only re-materialize the displaced material when it is genuinely still at
+    // toK. If toK was already processed and relocated this tick, `grid[toK]` is
+    // stale and fabricating it into fromK would duplicate it.
+    if (
+      displaced !== EMPTY &&
+      canDisplaceMaterial(material, displaced) &&
+      next[fromK] === EMPTY &&
+      vacatedStamp[toK] !== tick
+    ) {
       writeNextIndex(fromK, displaced);
     }
   };
@@ -1176,6 +1191,7 @@ export function createEngine({
       return;
     }
     if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+      vacatedStamp[k] = tick;
       writeNextIndex(belowK, SAND); return;
     }
     if (y + 1 < rows && canDisplaceMaterial(SAND, grid[belowK]) && next[belowK] === EMPTY) {
@@ -1191,7 +1207,7 @@ export function createEngine({
       if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
       const ik = belowK + dx;
       const material = grid[ik];
-      if (material === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, SAND); return; }
+      if (material === EMPTY && next[ik] === EMPTY) { vacatedStamp[k] = tick; writeNextIndex(ik, SAND); return; }
       if (canDisplaceMaterial(SAND, material) && next[ik] === EMPTY) {
         moveMaterialInto(k, ik, SAND); return;
       }
@@ -1223,6 +1239,7 @@ export function createEngine({
       }
     }
     if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+      vacatedStamp[k] = tick;
       writeNextIndex(belowK, material); return;
     }
     if (y + 1 < rows && canDisplaceMaterial(material, grid[belowK]) && next[belowK] === EMPTY) {
@@ -1235,7 +1252,7 @@ export function createEngine({
       const nx = x + dx, ny = y + 1;
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       const ik = I(nx, ny);
-      if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, material); return; }
+      if (grid[ik] === EMPTY && next[ik] === EMPTY) { vacatedStamp[k] = tick; writeNextIndex(ik, material); return; }
       if (canDisplaceMaterial(material, grid[ik]) && next[ik] === EMPTY) {
         moveLiquidInto(k, nx, ny, material);
         return;

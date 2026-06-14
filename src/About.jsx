@@ -761,10 +761,9 @@ function SandOverlay({ onDrawModeChange }) {
 
   // IMPORTANT: make UI a sibling of the canvas wrapper so it can sit ABOVE page content.
 return (
-  // Overlay container sits ABOVE section content but stays scoped to the section bounds
-  <div className="absolute inset-0 z-[60] pointer-events-none">
-    {/* Simulation layer (kept behind content) */}
-    <div ref={wrapRef} className="absolute inset-0 z-0">
+  <>
+    {/* Simulation layer — sits BEHIND page content so the code stays readable */}
+    <div ref={wrapRef} className="absolute inset-0 z-0 pointer-events-none">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none select-none"
@@ -777,6 +776,8 @@ return (
       />
     </div>
 
+    {/* UI layer — sits ABOVE page content, scoped to the section bounds */}
+    <div className="absolute inset-0 z-[60] pointer-events-none">
     {/* Tool + toggles (adaptive placement) — high z-index and clickable */}
     <div
       ref={uiRef}
@@ -892,7 +893,8 @@ return (
 
       </div>
     </div>
-  </div>
+    </div>
+  </>
 );
 
 
@@ -920,7 +922,7 @@ export default function About() {
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 items-stretch">
             {/* Experience (LHS) */}
-            <div className="w-full h-full bg-gray-900/80 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">
+            <div className="w-full h-full bg-gray-900/90 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">
               <pre className="font-mono text-xs sm:text-sm leading-6 text-left text-white whitespace-pre-wrap break-words [word-break:break-word] grow">
                 <code>
                   <span className="text-blue-400">// Internship experience</span>{'\n'}
@@ -943,7 +945,7 @@ export default function About() {
             </div>
 
             {/* Tech stack (RHS, concise & balanced) */}
-            <div className="w-full h-full bg-gray-900/80 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">
+            <div className="w-full h-full bg-gray-900/90 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">
               <pre className="font-mono text-xs sm:text-sm leading-6 text-left text-white whitespace-pre-wrap break-words [word-break:break-word] grow">
                 <code>
                   <span className="text-blue-400">// Languages + back-end profile</span>{'\n'}

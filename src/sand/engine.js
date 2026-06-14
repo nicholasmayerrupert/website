@@ -92,11 +92,9 @@ const BUOY_WET_PERIMETER_FRAC = 0.75;
 // Side-sink settings (bottom is NOT a sink)
 const SINK_STRIP_W = 2;
 const INNER_STRIP_W = 1;
-const SINK_WATER_P = 0.85;
-const SINK_OIL_P = 0.85;
+const SINK_LIQUID_P = 0.85;
 const SINK_SAND_P = 0.35;
-const INNER_WATER_P = 0.35;
-const INNER_OIL_P = 0.35;
+const INNER_LIQUID_P = 0.35;
 const INNER_SAND_P = 0.10;
 
 // Emitters (normalized positions) + buffers
@@ -852,7 +850,7 @@ export function createEngine({
   // case is grounded and skipped — so treating SAND as passable only sinks a
   // body through genuinely unsupported sand.
   const componentDisplaceable = (m) =>
-    m === EMPTY || m === SAND || isLiquid(m);
+    m === EMPTY || m === SAND || isLiquid(m) || isGas(m);
 
   // Compute which rigid components have a support path to the floor. Sets
   // `comp.grounded` on every stone/plant/ice component. A component is grounded if
@@ -1821,38 +1819,23 @@ export function createEngine({
     const innerRightEnd = rightStart - 1;
     const innerRightStart = innerRightEnd - (INNER_STRIP_W - 1);
 
+    const drain = (xStart, xEnd, y, liquidP, sandP) => {
+      for (let x = xStart; x <= xEnd; x++) {
+        const k = I(x, y);
+        const m = grid[k];
+        const p = isLiquid(m) ? liquidP : (m === SAND ? sandP : 0);
+        if (p && rand() < p) writeGridIndex(k, EMPTY);
+      }
+    };
+
     for (let y = 1; y < rows; y++) {
       // hard sinks near the side walls
-      for (let x = leftStart; x <= leftEnd; x++) {
-        const k = I(x, y);
-        const m = grid[k];
-        if (m === WATER) { if (rand() < SINK_WATER_P) writeGridIndex(k, EMPTY); }
-        else if (m === OIL) { if (rand() < SINK_OIL_P) writeGridIndex(k, EMPTY); }
-        else if (m === SAND) { if (rand() < SINK_SAND_P) writeGridIndex(k, EMPTY); }
-      }
-      for (let x = rightStart; x <= rightEnd; x++) {
-        const k = I(x, y);
-        const m = grid[k];
-        if (m === WATER) { if (rand() < SINK_WATER_P) writeGridIndex(k, EMPTY); }
-        else if (m === OIL) { if (rand() < SINK_OIL_P) writeGridIndex(k, EMPTY); }
-        else if (m === SAND) { if (rand() < SINK_SAND_P) writeGridIndex(k, EMPTY); }
-      }
+      drain(leftStart, leftEnd, y, SINK_LIQUID_P, SINK_SAND_P);
+      drain(rightStart, rightEnd, y, SINK_LIQUID_P, SINK_SAND_P);
 
-      // gentle inner relief (helps sand/water reach the sink)
-      for (let x = innerLeftStart; x <= innerLeftEnd; x++) {
-        const k = I(x, y);
-        const m = grid[k];
-        if (m === WATER) { if (rand() < INNER_WATER_P) writeGridIndex(k, EMPTY); }
-        else if (m === OIL) { if (rand() < INNER_OIL_P) writeGridIndex(k, EMPTY); }
-        else if (m === SAND) { if (rand() < INNER_SAND_P) writeGridIndex(k, EMPTY); }
-      }
-      for (let x = innerRightStart; x <= innerRightEnd; x++) {
-        const k = I(x, y);
-        const m = grid[k];
-        if (m === WATER) { if (rand() < INNER_WATER_P) writeGridIndex(k, EMPTY); }
-        else if (m === OIL) { if (rand() < INNER_OIL_P) writeGridIndex(k, EMPTY); }
-        else if (m === SAND) { if (rand() < INNER_SAND_P) writeGridIndex(k, EMPTY); }
-      }
+      // gentle inner relief (helps sand/liquid reach the sink)
+      drain(innerLeftStart, innerLeftEnd, y, INNER_LIQUID_P, INNER_SAND_P);
+      drain(innerRightStart, innerRightEnd, y, INNER_LIQUID_P, INNER_SAND_P);
     }
   };
 

@@ -122,6 +122,40 @@ const scenarios = [
     },
   },
   {
+    name: 'acid-lava-ice',
+    steps: 900,
+    seedInitial: false,
+    setup(eng) {
+      const { cols, rows } = eng;
+      // Left third: a slab of sand/stone for acid to eat.
+      const slabTop = (rows * 0.5) | 0;
+      for (let y = slabTop; y < rows - 1; y += 2) {
+        for (let x = 2; x < (cols * 0.3) | 0; x += 2) {
+          eng.paintDisc(x, y, 1, MAT.SAND, true);
+        }
+      }
+      eng.addDiscToStoneDraft((cols * 0.2) | 0, slabTop - 4, 4);
+      eng.finalizeStoneDraft();
+      eng.clearStoneDraft();
+      // Middle + right: a water pool for lava to harden against and ice to freeze.
+      const poolTop = (rows * 0.75) | 0;
+      for (let y = poolTop; y < rows - 1; y += 2) {
+        for (let x = (cols * 0.35) | 0; x < cols - 2; x += 2) {
+          eng.paintDisc(x, y, 1, MAT.WATER, true);
+        }
+      }
+      eng.addDiscToIceDraft((cols * 0.85) | 0, poolTop + 2, 3);
+      eng.finalizeIceDraft();
+      eng.clearIceDraft();
+    },
+    onTick(eng, tick) {
+      const { cols, rows } = eng;
+      if (tick % 3 === 0) eng.paintDisc((cols * 0.15) | 0, 5, 2, MAT.ACID, false);
+      if (tick % 3 === 0) eng.paintDisc((cols * 0.55) | 0, 5, 2, MAT.LAVA, false);
+      if (tick === 200) eng.paintDisc((cols * 0.85) | 0, (rows * 0.7) | 0, 1, MAT.FIRE, true);
+    },
+  },
+  {
     name: 'plant-growth',
     steps: 1800,
     seedInitial: false,

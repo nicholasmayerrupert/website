@@ -11,7 +11,7 @@ function SandOverlay({ onDrawModeChange }) {
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed'
+  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice'
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
   const [uiAtBottom, setUiAtBottom] = useState(false); // auto-place toolbar when cramped
@@ -62,6 +62,9 @@ function SandOverlay({ onDrawModeChange }) {
     const STONE_BRUSH_RADIUS = 2;
     const OIL_BRUSH_RADIUS = 2;
     const FIRE_BRUSH_RADIUS = 1;
+    const ACID_BRUSH_RADIUS = 2;
+    const LAVA_BRUSH_RADIUS = 2;
+    const ICE_BRUSH_RADIUS = 2;
     const ERASE_BRUSH_RADIUS = 3;
     const EMIT_INTERVAL_MS = 18;
     const STEP_MS = 16;
@@ -70,6 +73,7 @@ function SandOverlay({ onDrawModeChange }) {
 
     // Colors
     const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
+    const ICE_PREVIEW_COLOR = 'rgba(150, 225, 240, 0.40)';
     const SEED_PREVIEW_COLOR = 'rgba(120, 190, 100, 0.32)';
     const colorLUT = makeColorLUT();
 
@@ -108,6 +112,7 @@ function SandOverlay({ onDrawModeChange }) {
     // Drafting state (data lives in the engine; UI flags live here)
     let isDraftingStone = false;
     let isDraftingSeed = false;
+    let isDraftingIce = false;
     let seedDraftOrigin = null;
 
     // Pointer tracking
@@ -175,6 +180,7 @@ function SandOverlay({ onDrawModeChange }) {
       });
       isDraftingStone = false;
       isDraftingSeed = false;
+      isDraftingIce = false;
       seedDraftOrigin = null;
 
       pixels.fill(0);
@@ -205,6 +211,9 @@ function SandOverlay({ onDrawModeChange }) {
       if (isDraftingStone && inside) {
         engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
       }
+      if (isDraftingIce && inside) {
+        engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
+      }
       if (isDraftingSeed && inside) {
         seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
       }
@@ -216,6 +225,9 @@ function SandOverlay({ onDrawModeChange }) {
       updatePointer(t.clientX, t.clientY);
       if (isDraftingStone && inside) {
         engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
+      }
+      if (isDraftingIce && inside) {
+        engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
       }
       if (isDraftingSeed && inside) {
         seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
@@ -239,6 +251,12 @@ function SandOverlay({ onDrawModeChange }) {
         if (activeTool === 'stone') {
           isDraftingStone = true;
           engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
+          e.preventDefault();
+          return;
+        }
+        if (activeTool === 'ice') {
+          isDraftingIce = true;
+          engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
           e.preventDefault();
           return;
         }
@@ -267,6 +285,11 @@ function SandOverlay({ onDrawModeChange }) {
           engine.finalizeStoneDraft();
           isDraftingStone = false;
           engine.clearStoneDraft();
+        }
+        if (isDraftingIce) {
+          engine.finalizeIceDraft();
+          isDraftingIce = false;
+          engine.clearIceDraft();
         }
         if (isDraftingSeed) {
           if (seedDraftOrigin) engine.placeSeedAt(seedDraftOrigin[0], seedDraftOrigin[1]);
@@ -312,14 +335,15 @@ function SandOverlay({ onDrawModeChange }) {
       const rmbHeld = overrideToolRef.current === 'eraser';
       const activeTool = rmbHeld ? 'eraser' : toolRef.current;
 
-      // Stone: handled by draft logic, not here
-      if (activeTool === 'stone') return;
+      // Stone and ice: handled by draft logic, not here
+      if (activeTool === 'stone' || activeTool === 'ice') return;
       if (!drawModeOnRef.current) return;
 
       // Paint only while LMB is down (or RMB for eraser)
       const shouldEmit =
         rmbHeld ? true :
-        (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire') ? lmbDown : false;
+        (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire' ||
+         activeTool === 'acid' || activeTool === 'lava') ? lmbDown : false;
 
       if (!shouldEmit) return;
       if (now - lastEmit < EMIT_INTERVAL_MS) return;
@@ -342,6 +366,14 @@ function SandOverlay({ onDrawModeChange }) {
       }
       if (activeTool === 'fire') {
         engine.paintDisc(cx, cy, FIRE_BRUSH_RADIUS, MAT.FIRE, false);
+        lastEmit = now; return;
+      }
+      if (activeTool === 'acid') {
+        engine.paintDisc(cx, cy, ACID_BRUSH_RADIUS, MAT.ACID, false);
+        lastEmit = now; return;
+      }
+      if (activeTool === 'lava') {
+        engine.paintDisc(cx, cy, LAVA_BRUSH_RADIUS, MAT.LAVA, false);
         lastEmit = now; return;
       }
       // sand
@@ -434,6 +466,18 @@ function SandOverlay({ onDrawModeChange }) {
         }
       }
 
+      // ice preview
+      const iceDraft = engine.getIceDraftCells();
+      if (iceDraft.size > 0) {
+        ctx.fillStyle = ICE_PREVIEW_COLOR;
+        const previewSize = cellSize;
+        for (const k of iceDraft) {
+          const y = (k / cols) | 0;
+          const x = k - y * cols;
+          ctx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+        }
+      }
+
       if (isDraftingSeed && seedDraftOrigin) {
         const [x0, y0] = seedDraftOrigin;
         const valid = engine.canPlaceSeedAt(x0, y0);
@@ -486,6 +530,9 @@ function SandOverlay({ onDrawModeChange }) {
         if (isDraftingStone && inside) {
           engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS);
         }
+        if (isDraftingIce && inside) {
+          engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS);
+        }
         if (isDraftingSeed && inside) {
           seedDraftOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
         }
@@ -494,7 +541,7 @@ function SandOverlay({ onDrawModeChange }) {
         engine.setEmittersOn(emittersOnRef.current);
         engine.setSinksOn(sinksOnRef.current);
         const didStep = engine.step(now);
-        const hasDraftPreview = engine.getStoneDraftCells().size > 0 || isDraftingSeed;
+        const hasDraftPreview = engine.getStoneDraftCells().size > 0 || engine.getIceDraftCells().size > 0 || isDraftingSeed;
         if (didStep || hasDraftPreview) render(hasDraftPreview);
         if (didStep) {
           perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
@@ -557,6 +604,24 @@ function SandOverlay({ onDrawModeChange }) {
       activeClass: 'bg-green-700/50 ring-green-200/35 text-green-100',
       idleClass: 'text-green-400/80 bg-green-400/10',
     },
+    {
+      id: 'acid',
+      title: 'Acid (hold LMB)',
+      activeClass: 'bg-lime-600/50 ring-lime-300/35 text-lime-100',
+      idleClass: 'text-lime-400/80 bg-lime-400/10',
+    },
+    {
+      id: 'lava',
+      title: 'Lava (hold LMB)',
+      activeClass: 'bg-red-700/55 ring-orange-300/35 text-orange-100',
+      idleClass: 'text-red-400/80 bg-red-500/10',
+    },
+    {
+      id: 'ice',
+      title: 'Ice (hold to draft, release to drop)',
+      activeClass: 'bg-cyan-600/50 ring-cyan-200/35 text-cyan-50',
+      idleClass: 'text-cyan-300/80 bg-cyan-400/10',
+    },
   ];
 
   const renderToolMark = (id) => {
@@ -609,6 +674,29 @@ function SandOverlay({ onDrawModeChange }) {
             <span className="absolute bottom-1 left-2 h-3 w-4 rounded-[55%_45%_55%_45%] bg-amber-900/85 rotate-[-20deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.16)]" />
             <span className="absolute bottom-3 left-3 h-3 w-2 rounded-full bg-green-400/80 rotate-45" />
             <span className="absolute bottom-[15px] left-[9px] h-2 w-1.5 rounded-full bg-lime-300/75 rotate-[-35deg]" />
+          </div>
+        );
+      case 'acid':
+        return (
+          <div
+            className="h-6 w-5 rounded-[60%_60%_70%_70%] bg-lime-400/85 ring-1 ring-lime-300/40 shadow-[inset_3px_4px_0_rgba(255,255,255,0.28),0_0_8px_rgba(132,204,22,0.45)] rotate-45"
+            aria-hidden="true"
+          />
+        );
+      case 'lava':
+        return (
+          <div className="relative h-7 w-5" aria-hidden="true">
+            <span className="absolute bottom-0 left-1 h-5 w-4 rounded-[70%_30%_70%_40%] bg-red-600/90 rotate-45 shadow-[0_0_9px_rgba(239,68,68,0.5)]" />
+            <span className="absolute bottom-2 left-[7px] h-4 w-3 rounded-[70%_30%_70%_40%] bg-orange-400/90 rotate-45" />
+            <span className="absolute bottom-3 left-[5px] h-2.5 w-2 rounded-[70%_30%_70%_40%] bg-yellow-300/80 rotate-45" />
+          </div>
+        );
+      case 'ice':
+        return (
+          <div className="relative h-6 w-6" aria-hidden="true">
+            <span className="absolute bottom-1 left-1 h-4 w-4 rounded-[4px] bg-cyan-200/85 rotate-[12deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.4),0_0_7px_rgba(103,232,249,0.4)]" />
+            <span className="absolute bottom-[7px] left-[6px] h-[2px] w-[7px] rounded-full bg-white/55 rotate-[12deg]" />
+            <span className="absolute bottom-[11px] left-[8px] h-[6px] w-[2px] rounded-full bg-white/45 rotate-[12deg]" />
           </div>
         );
       default:

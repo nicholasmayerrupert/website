@@ -14,6 +14,9 @@ export const MAT = {
   SEED: 7,
   WOOD: 8,
   PLANT: 9,
+  ACID: 10,
+  LAVA: 11,
+  ICE: 12,
 };
 
 export const CHUNK_SIZE = 32;
@@ -30,6 +33,9 @@ const STEAM = MAT.STEAM;
 const SEED = MAT.SEED;
 const WOOD = MAT.WOOD;
 const PLANT = MAT.PLANT;
+const ACID = MAT.ACID;
+const LAVA = MAT.LAVA;
+const ICE = MAT.ICE;
 
 // ---- Tunables ----
 const MAX_WATER_FLOW = 10;
@@ -38,6 +44,13 @@ const FIRE_DECAY_P = 0.006;
 const OIL_IGNITE_P = 0.25;
 const PLANT_IGNITE_P = OIL_IGNITE_P * 0.67;
 const FIRE_SPREAD_P = 0.11;
+
+// Acid / lava / ice tunables
+const ACID_DISSOLVE_P = 0.12;
+const ACID_DECAY_P = 0.4;
+const LAVA_VISCOSITY_P = 0.35;
+const LAVA_EMIT_FIRE_P = 0.02;
+const ICE_FREEZE_P = 0.03;
 
 // Side-sink settings (bottom is NOT a sink)
 const SINK_STRIP_W = 2;
@@ -125,9 +138,14 @@ export function createEngine({
   /** @type {Array<{id:number,cells:Set<number>,yMax:number,woodCount:number,leafCount:number,age:number,cacheDirty?:boolean,woodCells?:number[],seedWoodCells?:number[]}>} */
   let plantComponents = [];
   let nextPlantId = 1;
+  /** @type {Array<{id:number,cells:Set<number>,yMax:number,cacheDirty?:boolean}>} */
+  let iceComponents = [];
+  let nextIceId = 1;
 
   /** @type {Set<number>} */
   const stoneDraft = new Set();
+  /** @type {Set<number>} */
+  const iceDraft = new Set();
 
   // Emitters (grid coords with timing)
   const emitters = emitterDefs.map(e => {
@@ -318,6 +336,11 @@ export function createEngine({
         };
       }
     );
+    registerComponents(
+      material => material === ICE,
+      iceComponents,
+      (cells, yMax) => ({ id: nextIceId++, cells, yMax, cacheDirty: true })
+    );
   };
 
   const applyInitialScene = () => {
@@ -353,24 +376,11 @@ export function createEngine({
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   }
 
-  function finalizeStoneDraft() {
-    if (stoneDraft.size === 0) return;
-
-    const cells = new Set();
-    let yMax = 0;
-
-    for (const k of stoneDraft) {
-      if (grid[k] === EMPTY) {
-        grid[k] = STONE;
-        markCellIndex(k);
-        cells.add(k);
-        const y = (k / cols) | 0;
-        if (y > yMax) yMax = y;
-      }
-    }
+  // Register a set of grid cells (already written as STONE) as a stone
+  // component, merging with any adjacent existing stone components.
+  function registerStoneCells(cells, yMax) {
     if (cells.size === 0) return;
 
-    // Merge with adjacent existing stone chunks if touching
     const touchingComponentIds = new Set();
     for (const k of cells) {
       const y = (k / cols) | 0; const x = k - y * cols;
@@ -402,8 +412,104 @@ export function createEngine({
     stoneComponents.push(newComp);
   }
 
+  // Register a set of grid cells (already written as ICE) as an ice component,
+  // merging with any adjacent existing ice components.
+  function registerIceCells(cells, yMax) {
+    if (cells.size === 0) return;
+
+    const touchingComponentIds = new Set();
+    for (const k of cells) {
+      const y = (k / cols) | 0; const x = k - y * cols;
+      const nks = neighborIndices8(x, y)
+        .filter(nk => nk >= 0 && nk < grid.length && grid[nk] === ICE && !cells.has(nk));
+      for (const nk of nks) {
+        for (const comp of iceComponents) {
+          if (comp.cells.has(nk)) { touchingComponentIds.add(comp.id); break; }
+        }
+      }
+    }
+
+    let newComp = { id: nextIceId++, cells, yMax, cacheDirty: true };
+    if (touchingComponentIds.size > 0) {
+      const keep = [];
+      for (const comp of iceComponents) {
+        if (touchingComponentIds.has(comp.id)) {
+          for (const k of comp.cells) {
+            newComp.cells.add(k);
+            const y = (k / cols) | 0;
+            if (y > newComp.yMax) newComp.yMax = y;
+          }
+        } else {
+          keep.push(comp);
+        }
+      }
+      iceComponents = keep;
+    }
+    iceComponents.push(newComp);
+  }
+
+  // Ice is placed via a draft (hold to build a shape, release to drop), mirroring
+  // stone, so it doesn't fall instantly while the user is still painting.
+  function addDiscToIceDraft(cx, cy, radius) {
+    let changed = false;
+    for (let oy = -radius; oy <= radius; oy++) {
+      const yy = cy + oy;
+      if (yy <= 0 || yy >= rows - 1) continue;
+      for (let ox = -radius; ox <= radius; ox++) {
+        if (ox * ox + oy * oy > radius * radius) continue;
+        const xx = cx + ox;
+        if (xx <= 0 || xx >= cols - 1) continue;
+        const k = I(xx, yy);
+        if (grid[k] === EMPTY) {
+          iceDraft.add(k);
+          changed = true;
+        }
+      }
+    }
+    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+  }
+
+  function finalizeIceDraft() {
+    if (iceDraft.size === 0) return;
+    const cells = new Set();
+    let yMax = 0;
+    for (const k of iceDraft) {
+      if (grid[k] === EMPTY) {
+        grid[k] = ICE;
+        markCellIndex(k);
+        cells.add(k);
+        const y = (k / cols) | 0;
+        if (y > yMax) yMax = y;
+      }
+    }
+    registerIceCells(cells, yMax);
+  }
+
+  function finalizeStoneDraft() {
+    if (stoneDraft.size === 0) return;
+
+    const cells = new Set();
+    let yMax = 0;
+
+    for (const k of stoneDraft) {
+      if (grid[k] === EMPTY) {
+        grid[k] = STONE;
+        markCellIndex(k);
+        cells.add(k);
+        const y = (k / cols) | 0;
+        if (y > yMax) yMax = y;
+      }
+    }
+    registerStoneCells(cells, yMax);
+  }
+
   function isPlantMaterial(material) {
     return material === SEED || material === WOOD || material === PLANT;
+  }
+
+  function isDissolvable(material) {
+    return material === SAND || material === STONE || material === WOOD ||
+      material === PLANT || material === SEED;
   }
 
   function getSeedOrigin(cx, cy) {
@@ -498,6 +604,47 @@ export function createEngine({
     return updated;
   }
 
+  // Re-split rigid components (stone/ice) after some of their cells were removed
+  // from the grid. erasedCells lists the removed grid indices. makeId assigns
+  // ids to the resulting fragments; extra() supplies any extra per-component
+  // fields (e.g. cacheDirty for ice).
+  function splitRigidAfterErase(components, erasedCells, makeId, extra = null) {
+    if (erasedCells.length === 0 || components.length === 0) return components;
+    const updated = [];
+    for (const comp of components) {
+      let touched = false;
+      for (const k of erasedCells) {
+        if (comp.cells.delete(k)) touched = true;
+      }
+      if (!touched) { updated.push(comp); continue; }
+      if (comp.cells.size === 0) continue;
+
+      const remaining = new Set(comp.cells);
+      while (remaining.size > 0) {
+        const [start] = remaining;
+        const queue = [start];
+        const part = new Set([start]);
+        remaining.delete(start);
+        while (queue.length) {
+          const cur = queue.shift();
+          const y = (cur / cols) | 0; const x = cur - y * cols;
+          const neigh = neighborIndices8(x, y);
+          for (const nk of neigh) {
+            if (remaining.has(nk)) {
+              remaining.delete(nk);
+              part.add(nk);
+              queue.push(nk);
+            }
+          }
+        }
+        let yMax = 0;
+        for (const k of part) { const y = (k / cols) | 0; if (y > yMax) yMax = y; }
+        updated.push({ id: makeId(), cells: part, yMax, ...(extra ? extra() : {}) });
+      }
+    }
+    return updated;
+  }
+
   // Brushes (for sand, water, RMB eraser)
   const paintDisc = (cx, cy, radius, material, overwrite = false) => {
     let changed = false;
@@ -520,6 +667,7 @@ export function createEngine({
 
   const eraseDisc = (cx, cy, radius) => {
     const erasedStoneCells = [];
+    const erasedIceCells = [];
     let erasedPlant = false;
     let changed = false;
     for (let oy = -radius; oy <= radius; oy++) {
@@ -532,6 +680,7 @@ export function createEngine({
         const k = I(xx, yy);
         if (grid[k] !== EMPTY) {
           if (grid[k] === STONE) erasedStoneCells.push(k);
+          else if (grid[k] === ICE) erasedIceCells.push(k);
           if (isPlantMaterial(grid[k])) erasedPlant = true;
           grid[k] = EMPTY;
           changed = true;
@@ -540,42 +689,8 @@ export function createEngine({
       }
     }
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    if (erasedStoneCells.length > 0 && stoneComponents.length > 0) {
-      // Remove erased cells from chunks and split if needed
-      const updated = [];
-      for (const comp of stoneComponents) {
-        let changed = false;
-        for (const k of erasedStoneCells) {
-          if (comp.cells.delete(k)) changed = true;
-        }
-        if (!changed) { updated.push(comp); continue; }
-        if (comp.cells.size === 0) continue;
-
-        const remaining = new Set(comp.cells);
-        while (remaining.size > 0) {
-          const [start] = remaining;
-          const queue = [start];
-          const part = new Set([start]);
-          remaining.delete(start);
-          while (queue.length) {
-            const cur = queue.shift();
-            const y = (cur / cols) | 0; const x = cur - y * cols;
-            const neigh = neighborIndices8(x, y);
-            for (const nk of neigh) {
-              if (remaining.has(nk)) {
-                remaining.delete(nk);
-                part.add(nk);
-                queue.push(nk);
-              }
-            }
-          }
-          let yMax = 0;
-          for (const k of part) { const y = (k / cols) | 0; if (y > yMax) yMax = y; }
-          updated.push({ id: nextStoneId++, cells: part, yMax });
-        }
-      }
-      stoneComponents = updated;
-    }
+    stoneComponents = splitRigidAfterErase(stoneComponents, erasedStoneCells, () => nextStoneId++);
+    iceComponents = splitRigidAfterErase(iceComponents, erasedIceCells, () => nextIceId++, () => ({ cacheDirty: true }));
     if (erasedPlant && plantComponents.length > 0) {
       plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
     }
@@ -635,6 +750,21 @@ export function createEngine({
     const toK = I(x, y);
     writeNextIndex(toK, OIL);
     if (next[fromK] === EMPTY) writeNextIndex(fromK, WATER);
+  };
+  // Acid is the densest liquid: it sinks through water/oil, pushing the lighter
+  // liquid up into the vacated cell.
+  const moveAcidInto = (fromK, x, y) => {
+    const toK = I(x, y);
+    const displaced = grid[toK];
+    writeNextIndex(toK, ACID);
+    if ((displaced === WATER || displaced === OIL) && next[fromK] === EMPTY) writeNextIndex(fromK, displaced);
+  };
+  // Water rising into the acid above it (acid is heavier, so it sinks past water).
+  // Mirror of moveOilIntoWater for the water/acid density pair.
+  const moveWaterIntoAcid = (fromK, x, y) => {
+    const toK = I(x, y);
+    writeNextIndex(toK, WATER);
+    if (next[fromK] === EMPTY) writeNextIndex(fromK, ACID);
   };
   const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows;
   const neighborIndices8 = (x, y) => {
@@ -770,6 +900,60 @@ export function createEngine({
       comp.woodCount = woodCount;
       comp.leafCount = leafCount;
       comp.cacheDirty = true;
+      comp.yMax = Math.min(rows - 1, comp.yMax + 1);
+    }
+  }
+
+  // Ice falls as a cohesive rigid chunk, same as stone.
+  function moveIceComponentsDown() {
+    if (iceComponents.length === 0) return;
+
+    for (const comp of iceComponents) {
+      let ym = 0;
+      for (const k of comp.cells) { const y = (k / cols) | 0; if (y > ym) ym = y; }
+      comp.yMax = ym;
+    }
+    iceComponents.sort((a, b) => b.yMax - a.yMax);
+
+    for (const comp of iceComponents) {
+      let canMove = true;
+
+      for (const k of comp.cells) {
+        const y = (k / cols) | 0; const x = k - y * cols;
+        const ny = y + 1;
+        if (ny >= rows) { canMove = false; break; }
+        const belowK = I(x, ny);
+        if (comp.cells.has(belowK)) continue;
+        const mat = grid[belowK];
+        if (mat !== EMPTY && mat !== WATER && mat !== OIL) { canMove = false; break; }
+      }
+      if (!canMove) continue;
+
+      const liquidSwaps = [];
+      for (const k of comp.cells) {
+        const y = (k / cols) | 0; const x = k - y * cols;
+        const belowK = I(x, y + 1);
+        const below = grid[belowK];
+        if (!comp.cells.has(belowK) && (below === WATER || below === OIL)) {
+          liquidSwaps.push([belowK, k, below]);
+        }
+      }
+
+      for (const k of comp.cells) writeGridIndex(k, EMPTY);
+
+      for (const [liquidIdx, originIdx, material] of liquidSwaps) {
+        writeGridIndex(originIdx, material);
+        markCellIndex(liquidIdx);
+      }
+
+      const newCells = new Set();
+      for (const k of comp.cells) {
+        const y = (k / cols) | 0; const x = k - y * cols;
+        newCells.add(I(x, y + 1));
+      }
+      for (const nk of newCells) writeGridIndex(nk, ICE);
+
+      comp.cells = newCells;
       comp.yMax = Math.min(rows - 1, comp.yMax + 1);
     }
   }
@@ -1023,6 +1207,16 @@ export function createEngine({
     if (next[k] !== EMPTY) return;
 
     const belowK = k + cols;
+    // Acid is denser than water. When water is pinned below acid (it cannot fall
+    // into an empty/oil cell), it rises into the acid so the acid sinks past it —
+    // the same density swap that lets water fall through oil.
+    const canFall = y + 1 < rows && (grid[belowK] === EMPTY || grid[belowK] === OIL) && next[belowK] === EMPTY;
+    if (!canFall && y - 1 > 0) {
+      const aboveK = k - cols;
+      if (grid[aboveK] === ACID && next[aboveK] === EMPTY) {
+        moveWaterIntoAcid(k, x, y - 1); return;
+      }
+    }
     // Fast paths for water that cannot fall, slide, or flow: either fully
     // embedded in water, or resting on solid support with water at both sides
     // and no openings diagonally below. Stays dirty only while exposed to air
@@ -1182,6 +1376,102 @@ export function createEngine({
     if (next[k] === EMPTY) writeNextIndex(k, OIL);
   };
 
+  // Acid: flows like water but is denser, so it sinks through water and oil.
+  const settleAcid = (x, y, k) => {
+    if (next[k] !== EMPTY) return;
+    const belowK = k + cols;
+
+    if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+      writeNextIndex(belowK, ACID); return;
+    }
+    if (y + 1 < rows && (grid[belowK] === WATER || grid[belowK] === OIL) && next[belowK] === EMPTY) {
+      moveAcidInto(k, x, y + 1); return;
+    }
+
+    const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
+    for (const dx of dirs) {
+      const nx = x + dx, ny = y + 1;
+      if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
+      const ik = I(nx, ny);
+      if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, ACID); return; }
+      if ((grid[ik] === WATER || grid[ik] === OIL) && next[ik] === EMPTY) { moveAcidInto(k, nx, ny); return; }
+    }
+
+    let flow = 0;
+    const firstFlowDir = rand() < 0.5 ? 1 : -1;
+    for (let dirIndex = 0; dirIndex < 2 && flow === 0; dirIndex++) {
+      const sgn = dirIndex === 0 ? firstFlowDir : -firstFlowDir;
+      for (let d = 1; d <= MAX_WATER_FLOW; d++) {
+        const nx = x + sgn * d;
+        if (nx <= 0 || nx >= cols - 1) break;
+        const sideK = k + sgn * d;
+        if (grid[sideK] !== EMPTY && grid[sideK] !== WATER && grid[sideK] !== OIL) break;
+        if (next[sideK] !== EMPTY) break;
+        if (y + 1 < rows) {
+          const lowerK = sideK + cols;
+          if ((grid[lowerK] === EMPTY || grid[lowerK] === WATER || grid[lowerK] === OIL) && next[lowerK] === EMPTY) {
+            const stepK = k + sgn;
+            if ((grid[stepK] === EMPTY || grid[stepK] === WATER || grid[stepK] === OIL) && next[stepK] === EMPTY) flow = sgn;
+            break;
+          }
+        }
+      }
+    }
+    if (flow !== 0) {
+      const stepX = x + flow;
+      const toK = I(stepX, y);
+      if ((grid[toK] === EMPTY || grid[toK] === WATER || grid[toK] === OIL) && next[toK] === EMPTY) {
+        moveAcidInto(k, stepX, y); return;
+      }
+    }
+
+    if (next[k] === EMPTY) writeNextIndex(k, ACID);
+  };
+
+  // Lava: a viscous liquid. Most ticks it does not move (LAVA_VISCOSITY_P gate),
+  // giving it a slow, sticky flow. Water contact / fire emission handled in
+  // applyLava (grid phase) before this runs.
+  const settleLava = (x, y, k) => {
+    if (next[k] !== EMPTY) return;
+    if (rand() >= LAVA_VISCOSITY_P) { writeNextIndex(k, LAVA); return; }
+    const belowK = k + cols;
+
+    if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
+      writeNextIndex(belowK, LAVA); return;
+    }
+
+    const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
+    for (const dx of dirs) {
+      const nx = x + dx, ny = y + 1;
+      if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
+      const ik = I(nx, ny);
+      if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, LAVA); return; }
+    }
+
+    let flow = 0;
+    const firstFlowDir = rand() < 0.5 ? 1 : -1;
+    for (let dirIndex = 0; dirIndex < 2 && flow === 0; dirIndex++) {
+      const sgn = dirIndex === 0 ? firstFlowDir : -firstFlowDir;
+      for (let d = 1; d <= MAX_WATER_FLOW; d++) {
+        const nx = x + sgn * d;
+        if (nx <= 0 || nx >= cols - 1) break;
+        const sideK = k + sgn * d;
+        if (grid[sideK] !== EMPTY || next[sideK] !== EMPTY) break;
+        if (y + 1 < rows && grid[sideK + cols] === EMPTY && next[sideK + cols] === EMPTY) {
+          const stepK = k + sgn;
+          if (grid[stepK] === EMPTY && next[stepK] === EMPTY) flow = sgn;
+          break;
+        }
+      }
+    }
+    if (flow !== 0) {
+      const stepX = x + flow;
+      if (emptyAt(stepX, y)) { writeNextIndex(I(stepX, y), LAVA); return; }
+    }
+
+    if (next[k] === EMPTY) writeNextIndex(k, LAVA);
+  };
+
   const relaxLiquidGaps = () => {
     for (let pass = 0; pass < 2; pass++) {
       for (let y = rows - 2; y > 0; y--) {
@@ -1249,12 +1539,19 @@ export function createEngine({
       for (let x = start; x !== end; x += stepX) {
         if ((x + y) % 2 !== parity) continue;
         const k = I(x, y);
-        if (grid[k] !== OIL) continue;
-
-        const aboveK = I(x, y - 1);
-        if (grid[aboveK] === WATER) {
-          writeGridIndex(aboveK, OIL);
-          writeGridIndex(k, WATER);
+        const m = grid[k];
+        if (m === OIL) {
+          const aboveK = I(x, y - 1);
+          if (grid[aboveK] === WATER) {
+            writeGridIndex(aboveK, OIL);
+            writeGridIndex(k, WATER);
+          }
+        } else if (m === ACID) {
+          const belowK = I(x, y + 1);
+          if (grid[belowK] === WATER) {
+            writeGridIndex(belowK, ACID);
+            writeGridIndex(k, WATER);
+          }
         }
       }
     }
@@ -1387,6 +1684,124 @@ export function createEngine({
     if (plantBurned) plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
   };
 
+  // Acid dissolves an adjacent solid each tick (probabilistically) and may
+  // consume itself when it does. Runs on the grid before the buffer flip.
+  const applyAcid = () => {
+    let dissolvedStone = false;
+    let dissolvedPlant = false;
+    const erasedStoneCells = [];
+    for (let y = 1; y < rows - 1; y++) {
+      const minX = Math.max(1, activeRowMin[y]);
+      const maxX = Math.min(cols - 2, activeRowMax[y]);
+      if (maxX < minX) continue;
+      for (let x = minX; x <= maxX; x++) {
+        const k = I(x, y);
+        if (grid[k] !== ACID) continue;
+        if (rand() >= ACID_DISSOLVE_P) continue;
+
+        const horizFirst = rand() < 0.5;
+        const a = horizFirst ? k + 1 : k + cols;
+        const b = horizFirst ? k - 1 : k - cols;
+        const c = horizFirst ? k + cols : k + 1;
+        const d = horizFirst ? k - cols : k - 1;
+        let target = -1;
+        if (isDissolvable(grid[a])) target = a;
+        else if (isDissolvable(grid[b])) target = b;
+        else if (isDissolvable(grid[c])) target = c;
+        else if (isDissolvable(grid[d])) target = d;
+        if (target < 0) continue;
+
+        const tm = grid[target];
+        if (tm === STONE) { erasedStoneCells.push(target); dissolvedStone = true; }
+        else if (isPlantMaterial(tm)) dissolvedPlant = true;
+        writeGridIndex(target, EMPTY);
+        if (rand() < ACID_DECAY_P) writeGridIndex(k, EMPTY);
+      }
+    }
+    if (dissolvedStone) stoneComponents = splitRigidAfterErase(stoneComponents, erasedStoneCells, () => nextStoneId++);
+    if (dissolvedPlant) plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
+  };
+
+  // Lava hardens to stone where it touches water (turning that water to steam)
+  // and slowly sheds fire from any surface exposed to air.
+  const applyLava = () => {
+    const hardenedCells = new Set();
+    let hardenedYMax = 0;
+    for (let y = 1; y < rows - 1; y++) {
+      const minX = Math.max(1, activeRowMin[y]);
+      const maxX = Math.min(cols - 2, activeRowMax[y]);
+      if (maxX < minX) continue;
+      for (let x = minX; x <= maxX; x++) {
+        const k = I(x, y);
+        if (grid[k] !== LAVA) continue;
+
+        const right = k + 1, left = k - 1, down = k + cols, up = k - cols;
+        // Harden on water contact; the touched water flashes to steam.
+        let waterK = -1;
+        if (grid[right] === WATER) waterK = right;
+        else if (grid[left] === WATER) waterK = left;
+        else if (grid[down] === WATER) waterK = down;
+        else if (grid[up] === WATER) waterK = up;
+        if (waterK >= 0) {
+          writeGridIndex(waterK, STEAM);
+          writeGridIndex(k, STONE);
+          hardenedCells.add(k);
+          if (y > hardenedYMax) hardenedYMax = y;
+          continue;
+        }
+
+        // Emit fire from a surface exposed to air.
+        if (rand() < LAVA_EMIT_FIRE_P) {
+          let airK = -1;
+          if (grid[up] === EMPTY) airK = up;
+          else if (grid[right] === EMPTY) airK = right;
+          else if (grid[left] === EMPTY) airK = left;
+          if (airK >= 0) writeGridIndex(airK, FIRE);
+        }
+      }
+    }
+    if (hardenedCells.size > 0) registerStoneCells(hardenedCells, hardenedYMax);
+  };
+
+  // Ice melts to water beside fire or lava, and slowly freezes adjacent water.
+  const applyIce = () => {
+    let melted = false;
+    const meltedCells = [];
+    for (const comp of iceComponents) {
+      // Snapshot membership: freezing mutates comp.cells during iteration.
+      const cells = Array.from(comp.cells);
+      for (const k of cells) {
+        if (grid[k] !== ICE) continue;
+        const right = k + 1, left = k - 1, down = k + cols, up = k - cols;
+        const rm = grid[right], lm = grid[left], dm = grid[down], um = grid[up];
+
+        if (rm === FIRE || rm === LAVA || lm === FIRE || lm === LAVA ||
+            dm === FIRE || dm === LAVA || um === FIRE || um === LAVA) {
+          writeGridIndex(k, WATER);
+          meltedCells.push(k);
+          melted = true;
+          continue;
+        }
+
+        if (rand() < ICE_FREEZE_P) {
+          let waterK = -1;
+          if (rm === WATER) waterK = right;
+          else if (lm === WATER) waterK = left;
+          else if (dm === WATER) waterK = down;
+          else if (um === WATER) waterK = up;
+          if (waterK >= 0) {
+            writeGridIndex(waterK, ICE);
+            comp.cells.add(waterK);
+            const wy = (waterK / cols) | 0;
+            if (wy > comp.yMax) comp.yMax = wy;
+            comp.cacheDirty = true;
+          }
+        }
+      }
+    }
+    if (melted) iceComponents = splitRigidAfterErase(iceComponents, meltedCells, () => nextIceId++, () => ({ cacheDirty: true }));
+  };
+
   // --- Side sinks only (bottom preserved) ---
   const applySideSinks = () => {
     if (!sinksEnabled) return;
@@ -1453,15 +1868,19 @@ export function createEngine({
     // 1) Move rigid bodies first, directly on grid
     moveStoneComponentsDown();
     movePlantComponentsDown();
+    moveIceComponentsDown();
     phase('rigid');
 
     // 2) Grow plants and apply material reactions directly on grid
     growPlantComponents();
     phase('plants');
     applyReactions();
+    applyAcid();
+    applyLava();
+    applyIce();
     phase('reactions');
 
-    // 3) Prepare next buffer & carry stones forward
+    // 3) Prepare next buffer & carry rigid bodies forward
     prepareNextBuffer();
     for (const comp of stoneComponents) {
       for (const k of comp.cells) next[k] = STONE;
@@ -1482,6 +1901,9 @@ export function createEngine({
       if (compOccStamp[k] !== tick && grid[k] === EMPTY) { next[k] = EMPTY; markCellIndex(k); }
     }
     const swapComp = prevCompCells; prevCompCells = curCompCells; curCompCells = swapComp;
+    for (const comp of iceComponents) {
+      for (const k of comp.cells) next[k] = ICE;
+    }
     phase('prepare');
 
     // 4) Dense falling material. Sand gets first claim on water/oil swaps so
@@ -1516,12 +1938,16 @@ export function createEngine({
           const material = grid[rowBase + x];
           if (material === WATER) settleWater(x, y, rowBase + x);
           else if (material === OIL) settleOil(x, y, rowBase + x);
+          else if (material === ACID) settleAcid(x, y, rowBase + x);
+          else if (material === LAVA) settleLava(x, y, rowBase + x);
         }
       } else {
         for (let x = maxX; x >= minX; x--) {
           const material = grid[rowBase + x];
           if (material === WATER) settleWater(x, y, rowBase + x);
           else if (material === OIL) settleOil(x, y, rowBase + x);
+          else if (material === ACID) settleAcid(x, y, rowBase + x);
+          else if (material === LAVA) settleLava(x, y, rowBase + x);
         }
       }
     }
@@ -1589,6 +2015,10 @@ export function createEngine({
     finalizeStoneDraft,
     clearStoneDraft() { stoneDraft.clear(); },
     getStoneDraftCells() { return stoneDraft; },
+    addDiscToIceDraft,
+    finalizeIceDraft,
+    clearIceDraft() { iceDraft.clear(); },
+    getIceDraftCells() { return iceDraft; },
     getGrid() { return grid; },
     // Adopt any stone/plant cells that are in the grid but not yet owned by a
     // component (e.g. placed via paintDisc or raw grid writes). Without this,

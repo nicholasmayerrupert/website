@@ -12,7 +12,8 @@ function SandOverlay({ onDrawModeChange }) {
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice'
+  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice' | 'eraser'
+  const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
   const [uiAtBottom, setUiAtBottom] = useState(false); // auto-place toolbar when cramped
@@ -369,6 +370,7 @@ function SandOverlay({ onDrawModeChange }) {
       // Paint only while LMB is down (or RMB for eraser)
       const shouldEmit =
         rmbHeld ? true :
+        activeTool === 'eraser' ? lmbDown :
         (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire' ||
          activeTool === 'acid' || activeTool === 'lava') ? lmbDown : false;
 
@@ -657,7 +659,16 @@ function SandOverlay({ onDrawModeChange }) {
       activeClass: 'bg-cyan-600/50 ring-cyan-200/35 text-cyan-50',
       idleClass: 'text-cyan-300/80 bg-cyan-400/10',
     },
+    {
+      id: 'eraser',
+      title: 'Eraser (hold LMB, or hold RMB anytime)',
+      activeClass: 'bg-rose-600/50 ring-rose-200/35 text-rose-100',
+      idleClass: 'text-rose-300/80 bg-rose-400/10',
+    },
   ];
+
+  const selectedToolButton = toolButtons.find(({ id }) => id === selectedTool) ?? toolButtons[0];
+  const toolLabel = (id) => id.charAt(0).toUpperCase() + id.slice(1);
 
   const renderToolMark = (id) => {
     switch (id) {
@@ -734,6 +745,14 @@ function SandOverlay({ onDrawModeChange }) {
             <span className="absolute bottom-[11px] left-[8px] h-[6px] w-[2px] rounded-full bg-white/45 rotate-[12deg]" />
           </div>
         );
+      case 'eraser':
+        return (
+          <div className="relative h-6 w-6" aria-hidden="true">
+            <span className="absolute bottom-2 left-1 h-3.5 w-5 rounded-[4px] bg-rose-200/90 rotate-[-28deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.35)]" />
+            <span className="absolute bottom-[10px] left-[13px] h-3.5 w-[2px] rounded-full bg-rose-500/45 rotate-[-28deg]" />
+            <span className="absolute bottom-1 left-1 h-[2px] w-5 rounded-full bg-white/35" />
+          </div>
+        );
       default:
         return null;
     }
@@ -770,25 +789,68 @@ return (
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      <div className={`flex ${uiAtBottom ? 'flex-col items-center' : 'flex-col'} gap-2`}>
-        <div className={`${uiAtBottom ? 'grid grid-cols-3 grid-rows-2' : 'flex flex-col'} gap-2 ${drawModeOn ? '' : 'opacity-45'}`}>
-          {toolButtons.map(({ id, title, activeClass, idleClass }) => {
-            const active = selectedTool === id;
-            return (
-              <button
-                key={id}
-                onClick={() => setSelectedTool(id)}
-                className={`w-9 h-9 sm:w-10 sm:h-10 md:w-12 md:h-12 rounded-md flex items-center justify-center transition ring-1
-                  ${active
-                    ? `${activeClass} shadow-md`
-                    : `bg-gray-700/30 hover:bg-gray-700/50 ring-white/10 ${idleClass}`
-                }`}
-                title={title}
-              >
-                {renderToolMark(id)}
-              </button>
-            );
-          })}
+      <div className={`flex ${uiAtBottom ? 'flex-col items-stretch' : 'flex-col'} gap-2`}>
+        <div className={`relative ${drawModeOn ? '' : 'opacity-45'}`}>
+          <button
+            type="button"
+            onClick={() => setToolPickerOpen(v => !v)}
+            className={`w-48 max-w-[calc(100vw-2.5rem)] rounded-md p-2 text-left transition ring-1 ${
+              drawModeOn ? 'bg-gray-800/70 hover:bg-gray-800/85 ring-white/15' : 'bg-gray-800/45 ring-white/10'
+            }`}
+            title={selectedToolButton.title}
+            aria-haspopup="listbox"
+            aria-expanded={toolPickerOpen}
+          >
+            <span className="block text-[10px] uppercase tracking-wide text-gray-300">
+              Currently selected material
+            </span>
+            <span className="mt-1 flex items-center gap-2 text-sm font-semibold text-white">
+              <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md ring-1 ${selectedToolButton.activeClass}`}>
+                {renderToolMark(selectedTool)}
+              </span>
+              {toolLabel(selectedTool)}
+              <span className="ml-auto text-gray-300" aria-hidden="true">v</span>
+            </span>
+          </button>
+
+          {toolPickerOpen && (
+            <div
+              className={`absolute z-[80] w-48 max-w-[calc(100vw-2.5rem)] rounded-md bg-gray-950/95 p-1 shadow-xl ring-1 ring-white/15 backdrop-blur-sm ${
+                uiAtBottom ? 'bottom-full mb-2 left-0' : 'left-0 top-full mt-2'
+              }`}
+              role="listbox"
+              aria-label="Select material"
+            >
+              {toolButtons.map(({ id, title, activeClass, idleClass }) => {
+                const active = selectedTool === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedTool(id);
+                      setToolPickerOpen(false);
+                    }}
+                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition ${
+                      active
+                        ? 'bg-white/15 text-white'
+                        : 'text-gray-200 hover:bg-white/10'
+                    }`}
+                    title={title}
+                    role="option"
+                    aria-selected={active}
+                  >
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ring-1 ${
+                      active ? activeClass : `ring-white/10 ${idleClass}`
+                    }`}>
+                      {renderToolMark(id)}
+                    </span>
+                    <span>{toolLabel(id)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Toggles */}
@@ -827,11 +889,6 @@ return (
           Draw {drawModeOn ? 'On' : 'Off'}
         </button>
 
-        {!uiAtBottom && (
-          <div className="hidden sm:block text-[10px] text-gray-300 mt-1 leading-tight">
-            RMB=erase
-          </div>
-        )}
       </div>
     </div>
   </div>

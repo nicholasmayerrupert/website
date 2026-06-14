@@ -49,7 +49,7 @@ const FIRE_SPREAD_P = 0.11;
 const ACID_DISSOLVE_P = 0.12;
 const ACID_DECAY_P = 0.4;
 const LAVA_VISCOSITY_P = 0.35;
-const LAVA_EMIT_FIRE_P = 0.02;
+const LAVA_EMIT_FIRE_P = 0.001;
 const ICE_FREEZE_P = 0.03;
 
 // Side-sink settings (bottom is NOT a sink)

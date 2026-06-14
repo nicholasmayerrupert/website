@@ -17,8 +17,13 @@ const GRAVITY = 0.18;
 const MAX_SPEED = 0.45;
 const RESTITUTION = 0;        // inelastic so bodies settle, don't bounce
 const FRICTION = 0.6;
-const SOLVER_ITERS = 12;
+// Sequential-impulse iterations. Contact support propagates ~one body per iteration,
+// so the count needed grows with stack height; 64 holds a ~5-high column. The solver
+// is cheap next to the cellular automaton, so a generous count is affordable.
+// (Taller single columns may still compress — they'd need cross-frame warm starting.)
+const SOLVER_ITERS = 64;
 const BAUMGARTE = 0.2;        // positional correction fraction
+const MAX_BIAS_VEL = 0.3;     // cap on per-tick penetration-expulsion speed
 // A boundary point resting on a surface sits ~0.5 cell into the contact cell (its
 // own cell-center), so 0.5 is the natural penetration of a body at rest. The slop
 // must match it: a smaller value makes the bias expel a correctly-resting body,
@@ -196,16 +201,21 @@ export function createRigidWorld({ cols, rows }) {
       const rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
       const denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
       if (denom > 0) {
-        let jn = -(1 + RESTITUTION) * vn / denom;
-        if (jn < 0) jn = 0; // contacts push only, never pull
-        const jx = jn * c.nx, jy = jn * c.ny;
+        // Accumulated impulse: clamp the TOTAL normal impulse >= 0 and apply only
+        // the delta. Across iterations the total builds up to whatever supports the
+        // load, which is what lets a multi-body stack hold instead of slowly sinking
+        // (recomputing a fresh per-iteration impulse cannot accumulate that support).
+        const delta = -(1 + RESTITUTION) * vn / denom;
+        const newJn = Math.max(0, c.accJn + delta);
+        const applied = newJn - c.accJn;
+        c.accJn = newJn;
+        const jx = applied * c.nx, jy = applied * c.ny;
         A.vx += jx * aInvM; A.vy += jy * aInvM;
         A.omega += aInvI * (c.rax * jy - c.ray * jx);
         if (B) { B.vx -= jx * bInvM; B.vy -= jy * bInvM; B.omega -= bInvI * (c.rbx * jy - c.rby * jx); }
-        c.jn = jn;
       }
     }
-    // Coulomb friction along the tangent, clamped to mu*jn.
+    // Coulomb friction along the tangent, accumulated and clamped to mu*accJn.
     const tx = -c.ny, ty = c.nx;
     let rtvx = (A.vx - A.omega * c.ray);
     let rtvy = (A.vy + A.omega * c.rax);
@@ -215,10 +225,13 @@ export function createRigidWorld({ cols, rows }) {
     const rtB = B ? c.rbx * ty - c.rby * tx : 0;
     const denomT = aInvM + bInvM + aInvI * rtA * rtA + bInvI * rtB * rtB;
     if (denomT > 0) {
-      let jt = -vt / denomT;
-      const maxF = FRICTION * (c.jn || 0);
-      if (jt > maxF) jt = maxF; else if (jt < -maxF) jt = -maxF;
-      const jx = jt * tx, jy = jt * ty;
+      const maxF = FRICTION * c.accJn;
+      const delta = -vt / denomT;
+      let newJt = c.accJt + delta;
+      if (newJt > maxF) newJt = maxF; else if (newJt < -maxF) newJt = -maxF;
+      const applied = newJt - c.accJt;
+      c.accJt = newJt;
+      const jx = applied * tx, jy = applied * ty;
       A.vx += jx * aInvM; A.vy += jy * aInvM;
       A.omega += aInvI * (c.rax * jy - c.ray * jx);
       if (B) { B.vx -= jx * bInvM; B.vy -= jy * bInvM; B.omega -= bInvI * (c.rbx * jy - c.rby * jx); }
@@ -231,8 +244,10 @@ export function createRigidWorld({ cols, rows }) {
   // that would otherwise keep resting bodies jittering and prevent them sleeping.
   const resolveBias = (c) => {
     const A = c.a, B = c.b;
-    const bias = BAUMGARTE * Math.max(0, c.depth - PENETRATION_SLOP);
+    let bias = BAUMGARTE * Math.max(0, c.depth - PENETRATION_SLOP);
     if (bias <= 0) return;
+    if (bias > MAX_BIAS_VEL) bias = MAX_BIAS_VEL; // expel steadily, never with a kick
+
     const aInvM = A.awake ? A.invMass : 0, aInvI = A.awake ? A.invInertia : 0;
     const bInvM = (B && B.awake) ? B.invMass : 0, bInvI = (B && B.awake) ? B.invInertia : 0;
     let rvx = A.pvx - A.pw * c.ray, rvy = A.pvy + A.pw * c.rax;
@@ -243,8 +258,12 @@ export function createRigidWorld({ cols, rows }) {
     const rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
     const denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
     if (denom <= 0) return;
-    const jn = (bias - vn) / denom;
-    const jx = jn * c.nx, jy = jn * c.ny;
+    // Accumulated (clamped >= 0) so the expulsion impulse builds through a stack.
+    const delta = (bias - vn) / denom;
+    const newJ = Math.max(0, c.accBias + delta);
+    const applied = newJ - c.accBias;
+    c.accBias = newJ;
+    const jx = applied * c.nx, jy = applied * c.ny;
     A.pvx += jx * aInvM; A.pvy += jy * aInvM; A.pw += aInvI * (c.rax * jy - c.ray * jx);
     if (B) { B.pvx -= jx * bInvM; B.pvy -= jy * bInvM; B.pw -= bInvI * (c.rbx * jy - c.rby * jx); }
   };
@@ -256,6 +275,8 @@ export function createRigidWorld({ cols, rows }) {
     const wp = [0, 0];
     const nrm = [0, 0];
     const n = bodies.length;
+    const islandParent = new Int32Array(n);
+    const islandMinStill = new Float64Array(n);
 
     // 1) Apply gravity to velocity (NOT position yet) and cache orientation + world
     // AABB at the current pose. Position integrates after the contact solve, so the
@@ -286,6 +307,7 @@ export function createRigidWorld({ cols, rows }) {
       b.pvx = 0; b.pvy = 0; b.pw = 0; // pseudo-velocity (split-impulse position)
       b.hadContact = false;
       b.maxDepth = 0;
+      b.idx = bi;
     }
 
     const contacts = [];
@@ -341,7 +363,8 @@ export function createRigidWorld({ cols, rows }) {
           a: A, b: B,
           rax: p.wx - A.px, ray: p.wy - A.py,
           rbx: B ? p.wx - B.px : 0, rby: B ? p.wy - B.py : 0,
-          nx: Nx, ny: Ny, depth: p.depth, jn: 0,
+          nx: Nx, ny: Ny, depth: p.depth,
+          accJn: 0, accJt: 0, accBias: 0,
         });
         if (p.depth > A.maxDepth) A.maxDepth = p.depth;
         if (B && p.depth > B.maxDepth) B.maxDepth = p.depth;
@@ -376,7 +399,22 @@ export function createRigidWorld({ cols, rows }) {
         // the wrong way, and for stacked boxes is exactly vertical.
         let dx = A.px - B.px, dy = A.py - B.py; const dl = Math.sqrt(dx * dx + dy * dy) || 1;
         dx /= dl; dy /= dl;
-        for (let p = 0; p < penAcc.length; p++) { penAcc[p].nx = dx; penAcc[p].ny = dy; }
+        // Robust penetration depth: separating-axis overlap of the two bodies along
+        // N. The per-point march degrades for deep overlap (interior normals go
+        // radial and exit early), so it under-expels a stack; the projected overlap
+        // is correct at any depth. The expulsion velocity is capped in resolveBias,
+        // so even an over-estimate during a glancing fall can't deliver a flip-kick.
+        let minA = Infinity, maxB = -Infinity;
+        for (let bp = 0; bp < A.boundaryPts.length; bp++) {
+          worldPoint(A, A.boundaryPts[bp], A.sin, A.cos, wp);
+          const pr = wp[0] * dx + wp[1] * dy; if (pr < minA) minA = pr;
+        }
+        for (let bp = 0; bp < B.boundaryPts.length; bp++) {
+          worldPoint(B, B.boundaryPts[bp], B.sin, B.cos, wp);
+          const pr = wp[0] * dx + wp[1] * dy; if (pr > maxB) maxB = pr;
+        }
+        const depth = Math.max(0.5, (maxB - minA) + 0.5);
+        for (let p = 0; p < penAcc.length; p++) { penAcc[p].nx = dx; penAcc[p].ny = dy; penAcc[p].depth = depth; }
         reduceManifold(penAcc, A, B, dx, dy);
       }
     }
@@ -424,9 +462,9 @@ export function createRigidWorld({ cols, rows }) {
       else { for (let ci = 0; ci < nc; ci++) resolveBias(contacts[ci]); }
     }
 
-    // 5) Integrate position with real + pseudo velocity, then damp + sleep on the
-    // real velocity only (the pseudo-velocity carries no energy into the next tick,
-    // so a resting body converges to sleep). A body with no contact never sleeps.
+    // 5) Integrate position with real + pseudo velocity, then damp and update each
+    // body's still-counter on the real velocity only (the pseudo-velocity carries no
+    // energy into the next tick). Sleeping itself is deferred to the island pass.
     for (let bi = 0; bi < n; bi++) {
       const b = bodies[bi];
       if (!b.awake) continue;
@@ -440,13 +478,38 @@ export function createRigidWorld({ cols, rows }) {
       if (b.vx * b.vx + b.vy * b.vy < SLEEP_LIN * SLEEP_LIN &&
           b.omega * b.omega < SLEEP_ANG * SLEEP_ANG &&
           b.maxDepth <= REST_DEPTH) {
-        if (++b.stillTicks >= SLEEP_TICKS) {
-          b.awake = false;
-          b.vx = 0; b.vy = 0; b.omega = 0;
-        }
+        b.stillTicks++;
       } else {
         b.stillTicks = 0;
       }
+    }
+
+    // 6) Island sleep. Union awake bodies joined by a contact, then sleep a whole
+    // island only once EVERY member has been still long enough. Sleeping as a group
+    // (not individually) is essential for stacks: a body that sleeps alone beneath a
+    // still-settling neighbour gets re-woken every tick, and the repeated waking
+    // destabilises and collapses the stack. An airborne body (no contact) keeps
+    // stillTicks at 0 and so never drags an island to sleep.
+    for (let bi = 0; bi < n; bi++) islandParent[bi] = bi;
+    const ifind = (a) => { while (islandParent[a] !== a) { islandParent[a] = islandParent[islandParent[a]]; a = islandParent[a]; } return a; };
+    for (let ci = 0; ci < nc; ci++) {
+      const c = contacts[ci];
+      if (!c.b || !c.a.awake || !c.b.awake) continue;
+      const ra = ifind(c.a.idx), rb = ifind(c.b.idx);
+      if (ra !== rb) islandParent[ra] = rb;
+    }
+    for (let bi = 0; bi < n; bi++) islandMinStill[bi] = Infinity;
+    for (let bi = 0; bi < n; bi++) {
+      const b = bodies[bi];
+      if (!b.awake) continue;
+      const r = ifind(bi);
+      const st = b.hadContact ? b.stillTicks : 0;
+      if (st < islandMinStill[r]) islandMinStill[r] = st;
+    }
+    for (let bi = 0; bi < n; bi++) {
+      const b = bodies[bi];
+      if (!b.awake) continue;
+      if (islandMinStill[ifind(bi)] >= SLEEP_TICKS) { b.awake = false; b.vx = 0; b.vy = 0; b.omega = 0; }
     }
   };
 

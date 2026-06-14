@@ -81,8 +81,9 @@ DENSITY_SORTED_LOOSE[LAVA] = 1;
 // resting depth to exist — a narrow band guarantees overshoot and the body buzzes.
 // Buoyancy is measured from actual liquid contact around a rigid assembly. A
 // large body touching a single splash should keep falling; it needs a meaningful
-// wet perimeter before density-based floating/rising applies. The draft is
-// scaled down from physical density so floaters read clearly in this coarse grid.
+// wet perimeter before density-based floating/rising applies. Contact buoyancy is
+// compared on the same perimeter scale so large light bodies do not become
+// "heavier" just because their area grew.
 const BUOY_BAND_FRAC = 0.5;
 const BUOY_BAND_MIN = 1.5;
 const BUOY_DRAFT_SCALE = 0.5;
@@ -1038,6 +1039,7 @@ export function createEngine({
 
     const measureLiquidImmersion = (cells) => {
       let wetCells = 0;
+      let exposedCells = 0;
       let liquidDensity = 0;
       let liquidContacts = 0;
 
@@ -1045,8 +1047,10 @@ export function createEngine({
         const y = (k / cols) | 0;
         const x = k - y * cols;
         let wet = false;
+        let exposed = false;
 
         if (x > 1 && !cells.has(k - 1)) {
+          exposed = true;
           const m = grid[k - 1];
           if (isLiquid(m)) {
             wet = true;
@@ -1055,6 +1059,7 @@ export function createEngine({
           }
         }
         if (x < cols - 2 && !cells.has(k + 1)) {
+          exposed = true;
           const m = grid[k + 1];
           if (isLiquid(m)) {
             wet = true;
@@ -1063,6 +1068,7 @@ export function createEngine({
           }
         }
         if (y > 1 && !cells.has(k - cols)) {
+          exposed = true;
           const m = grid[k - cols];
           if (isLiquid(m)) {
             wet = true;
@@ -1071,6 +1077,7 @@ export function createEngine({
           }
         }
         if (y < rows - 1 && !cells.has(k + cols)) {
+          exposed = true;
           const m = grid[k + cols];
           if (isLiquid(m)) {
             wet = true;
@@ -1079,6 +1086,7 @@ export function createEngine({
           }
         }
 
+        if (exposed) exposedCells++;
         if (wet) wetCells++;
       }
 
@@ -1087,6 +1095,7 @@ export function createEngine({
       if (wetCells < requiredWetCells) return null;
       return {
         wetCells,
+        exposedCells,
         liquidDensity: liquidDensity / liquidContacts,
       };
     };
@@ -1097,7 +1106,7 @@ export function createEngine({
       const cells = new Set();
       for (const ci of grp.comps) for (const k of all[ci].cells) cells.add(k);
 
-      // Assembly weight (sum of per-material densities), width, and actual wet
+      // Assembly density, width, and actual wet
       // contact. Sparse contact keeps behaving like air; meaningful immersion uses
       // the contacted liquid density for generic floating/sinking.
       let weight = 0;
@@ -1115,12 +1124,12 @@ export function createEngine({
         continue;
       }
 
-      // Buoyancy: wet perimeter approximates displaced liquid in this coarse grid;
-      // equilibrium is when scaled displaced liquid roughly balances weight. The
-      // deadband scales with width because one row of movement changes contact by
-      // ~width, so a stable resting depth only exists when the band spans that step.
-      const targetSubmerged = (weight / immersion.liquidDensity) * BUOY_DRAFT_SCALE;
-      const imbalance = immersion.wetCells - targetSubmerged; // >0 over-submerged (rise), <0 sink
+      // Buoyancy: wet perimeter approximates displaced liquid in this coarse grid.
+      // Equilibrium is density-scaled against exposed perimeter, not total area, so
+      // a growing light body still floats while dense bodies still sink.
+      const avgDensity = weight / cells.size;
+      const targetWetCells = immersion.exposedCells * (avgDensity / immersion.liquidDensity) * BUOY_DRAFT_SCALE;
+      const imbalance = immersion.wetCells - targetWetCells; // >0 over-submerged (rise), <0 sink
       const band = Math.max(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
       if (imbalance < -band) translateAssembly(grp, cells, cols);        // too light a draught — sink
       else if (imbalance > band) translateAssembly(grp, cells, -cols);   // over-submerged — rise

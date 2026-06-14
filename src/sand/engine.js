@@ -747,15 +747,28 @@ export function createEngine({
     if (material === LAVA) return displaced === ACID || displaced === WATER || displaced === OIL;
     return false;
   };
+  const isGas = (material) => material === FIRE || material === STEAM;
+  const canDisplaceMaterial = (material, displaced) => {
+    if (isGas(displaced)) return true;
+    if (material === SAND) return displaced === WATER || displaced === OIL;
+    return isDisplacedLiquid(material, displaced);
+  };
+  const canEnterIndex = (k, material) =>
+    next[k] === EMPTY && (grid[k] === EMPTY || canDisplaceMaterial(material, grid[k]));
   const canLiquidEnter = (x, y, material) =>
-    x >= 0 && x < cols && y >= 0 && y < rows && (grid[I(x, y)] === EMPTY || isDisplacedLiquid(material, grid[I(x, y)])) && next[I(x, y)] === EMPTY;
+    x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), material);
   const supportsLiquid = (support, material) =>
-    support !== EMPTY && support !== material && !isDisplacedLiquid(material, support) && support !== STEAM && support !== FIRE;
-  const moveLiquidInto = (fromK, x, y, material) => {
-    const toK = I(x, y);
+    support !== EMPTY && support !== material && !canDisplaceMaterial(material, support);
+  const moveMaterialInto = (fromK, toK, material) => {
     const displaced = grid[toK];
     writeNextIndex(toK, material);
-    if (isDisplacedLiquid(material, displaced) && next[fromK] === EMPTY) writeNextIndex(fromK, displaced);
+    if (displaced !== EMPTY && canDisplaceMaterial(material, displaced) && next[fromK] === EMPTY) {
+      writeNextIndex(fromK, displaced);
+    }
+  };
+  const moveLiquidInto = (fromK, x, y, material) => {
+    const toK = I(x, y);
+    moveMaterialInto(fromK, toK, material);
   };
   const moveOilIntoWater = (fromK, x, y) => {
     const toK = I(x, y);
@@ -797,28 +810,28 @@ export function createEngine({
         const belowK = I(x, ny);
         if (comp.cells.has(belowK)) continue;
         const mat = grid[belowK];
-        if (mat !== EMPTY && mat !== WATER && mat !== OIL) { canMove = false; break; }
+        if (mat !== EMPTY && !canDisplaceMaterial(SAND, mat)) { canMove = false; break; }
       }
       if (!canMove) continue;
 
-      // Track displaced liquids to bubble up
-      const liquidSwaps = [];
+      // Track displaced material to bubble up.
+      const displacedCells = [];
       for (const k of comp.cells) {
         const y = (k / cols) | 0; const x = k - y * cols;
         const belowK = I(x, y + 1);
         const below = grid[belowK];
-        if (!comp.cells.has(belowK) && (below === WATER || below === OIL)) {
-          liquidSwaps.push([belowK, k, below]); // [liquidIndexBelow, stoneOriginIndex, material]
+        if (!comp.cells.has(belowK) && canDisplaceMaterial(SAND, below)) {
+          displacedCells.push([belowK, k, below]); // [displacedIndexBelow, stoneOriginIndex, material]
         }
       }
 
       // Clear old stones
       for (const k of comp.cells) writeGridIndex(k, EMPTY);
 
-      // Bubble displaced liquids up into vacated cells
-      for (const [liquidIdx, originIdx, material] of liquidSwaps) {
+      // Bubble displaced material up into vacated cells.
+      for (const [displacedIdx, originIdx, material] of displacedCells) {
         writeGridIndex(originIdx, material);
-        markCellIndex(liquidIdx);
+        markCellIndex(displacedIdx);
       }
 
       // Move stones down
@@ -855,19 +868,19 @@ export function createEngine({
         const belowK = I(x, ny);
         if (comp.cells.has(belowK)) continue;
         const mat = grid[belowK];
-        if (mat !== EMPTY && mat !== WATER && mat !== OIL) { canMove = false; break; }
+        if (mat !== EMPTY && !canDisplaceMaterial(SAND, mat)) { canMove = false; break; }
       }
       if (!canMove) continue;
 
-      const displacedLiquids = [];
+      const displacedCells = [];
       const vacatedCells = [];
       const movedCells = [];
       for (const k of comp.cells) {
         const y = (k / cols) | 0; const x = k - y * cols;
         const belowK = I(x, y + 1);
         const below = grid[belowK];
-        if (!comp.cells.has(belowK) && (below === WATER || below === OIL)) {
-          displacedLiquids.push([belowK, below]);
+        if (!comp.cells.has(belowK) && canDisplaceMaterial(SAND, below)) {
+          displacedCells.push([belowK, below]);
         }
         if (!comp.cells.has(k - cols)) vacatedCells.push(k);
         movedCells.push([k + cols, grid[k]]);
@@ -886,10 +899,10 @@ export function createEngine({
       }
 
       vacatedCells.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
-      for (let i = 0; i < displacedLiquids.length && i < vacatedCells.length; i++) {
-        const [liquidIdx, material] = displacedLiquids[i];
+      for (let i = 0; i < displacedCells.length && i < vacatedCells.length; i++) {
+        const [displacedIdx, material] = displacedCells[i];
         writeGridIndex(vacatedCells[i], material);
-        markCellIndex(liquidIdx);
+        markCellIndex(displacedIdx);
       }
 
       comp.cells = newCells;
@@ -921,25 +934,25 @@ export function createEngine({
         const belowK = I(x, ny);
         if (comp.cells.has(belowK)) continue;
         const mat = grid[belowK];
-        if (mat !== EMPTY && mat !== WATER && mat !== OIL) { canMove = false; break; }
+        if (mat !== EMPTY && !canDisplaceMaterial(SAND, mat)) { canMove = false; break; }
       }
       if (!canMove) continue;
 
-      const liquidSwaps = [];
+      const displacedCells = [];
       for (const k of comp.cells) {
         const y = (k / cols) | 0; const x = k - y * cols;
         const belowK = I(x, y + 1);
         const below = grid[belowK];
-        if (!comp.cells.has(belowK) && (below === WATER || below === OIL)) {
-          liquidSwaps.push([belowK, k, below]);
+        if (!comp.cells.has(belowK) && canDisplaceMaterial(SAND, below)) {
+          displacedCells.push([belowK, k, below]);
         }
       }
 
       for (const k of comp.cells) writeGridIndex(k, EMPTY);
 
-      for (const [liquidIdx, originIdx, material] of liquidSwaps) {
+      for (const [displacedIdx, originIdx, material] of displacedCells) {
         writeGridIndex(originIdx, material);
-        markCellIndex(liquidIdx);
+        markCellIndex(displacedIdx);
       }
 
       const newCells = new Set();
@@ -1167,14 +1180,8 @@ export function createEngine({
     if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
       writeNextIndex(belowK, SAND); return;
     }
-    if (y + 1 < rows && grid[belowK] === WATER && next[belowK] === EMPTY) {
-      writeNextIndex(belowK, SAND);
-      if (next[k] === EMPTY) writeNextIndex(k, WATER);
-      return;
-    }
-    if (y + 1 < rows && grid[belowK] === OIL && next[belowK] === EMPTY) {
-      writeNextIndex(belowK, SAND);
-      if (next[k] === EMPTY) writeNextIndex(k, OIL);
+    if (y + 1 < rows && canDisplaceMaterial(SAND, grid[belowK]) && next[belowK] === EMPTY) {
+      moveMaterialInto(k, belowK, SAND);
       return;
     }
 
@@ -1187,11 +1194,8 @@ export function createEngine({
       const ik = belowK + dx;
       const material = grid[ik];
       if (material === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, SAND); return; }
-      if (material === WATER && next[ik] === EMPTY) {
-        writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, WATER); return;
-      }
-      if (material === OIL && next[ik] === EMPTY) {
-        writeNextIndex(ik, SAND); if (next[k] === EMPTY) writeNextIndex(k, OIL); return;
+      if (canDisplaceMaterial(SAND, material) && next[ik] === EMPTY) {
+        moveMaterialInto(k, ik, SAND); return;
       }
     }
 
@@ -1213,7 +1217,7 @@ export function createEngine({
       const br = grid[belowK + 1];
       if (
         (below === material && bl === material && br === material) ||
-        (supportsLiquid(below, material) && bl !== EMPTY && !isDisplacedLiquid(material, bl) && br !== EMPTY && !isDisplacedLiquid(material, br))
+        (supportsLiquid(below, material) && bl !== EMPTY && !canDisplaceMaterial(material, bl) && br !== EMPTY && !canDisplaceMaterial(material, br))
       ) {
         next[k] = material;
         if (y > 1 && grid[k - cols] === EMPTY) markCellIndex(k);
@@ -1223,7 +1227,7 @@ export function createEngine({
     if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
       writeNextIndex(belowK, material); return;
     }
-    if (y + 1 < rows && isDisplacedLiquid(material, grid[belowK]) && next[belowK] === EMPTY) {
+    if (y + 1 < rows && canDisplaceMaterial(material, grid[belowK]) && next[belowK] === EMPTY) {
       moveLiquidInto(k, x, y + 1, material);
       return;
     }
@@ -1234,7 +1238,7 @@ export function createEngine({
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       const ik = I(nx, ny);
       if (grid[ik] === EMPTY && next[ik] === EMPTY) { writeNextIndex(ik, material); return; }
-      if (isDisplacedLiquid(material, grid[ik]) && next[ik] === EMPTY) {
+      if (canDisplaceMaterial(material, grid[ik]) && next[ik] === EMPTY) {
         moveLiquidInto(k, nx, ny, material);
         return;
       }
@@ -1248,13 +1252,12 @@ export function createEngine({
         const nx = x + sgn * d;
         if (nx <= 0 || nx >= cols - 1) break;
         const sideK = k + sgn * d;
-        if (grid[sideK] !== EMPTY && !isDisplacedLiquid(material, grid[sideK])) break;
-        if (next[sideK] !== EMPTY) break;
+        if (!canEnterIndex(sideK, material)) break;
         if (y + 1 < rows) {
           const lowerK = sideK + cols;
-          if ((grid[lowerK] === EMPTY || isDisplacedLiquid(material, grid[lowerK])) && next[lowerK] === EMPTY) {
+          if (canEnterIndex(lowerK, material)) {
             const stepK = k + sgn;
-            if ((grid[stepK] === EMPTY || isDisplacedLiquid(material, grid[stepK])) && next[stepK] === EMPTY) flow = sgn;
+            if (canEnterIndex(stepK, material)) flow = sgn;
             break;
           }
         }
@@ -1271,8 +1274,8 @@ export function createEngine({
         for (const dx of dirs) {
           const sideK = k + dx;
           if (x + dx <= 0 || x + dx >= cols - 1) continue;
-          if (grid[sideK] === EMPTY && next[sideK] === EMPTY && supportsLiquid(grid[sideK + cols], material)) {
-            writeNextIndex(sideK, material);
+          if (canEnterIndex(sideK, material) && supportsLiquid(grid[sideK + cols], material)) {
+            moveMaterialInto(k, sideK, material);
             return;
           }
         }
@@ -1326,8 +1329,8 @@ export function createEngine({
       }
     }
 
-    if (y + 1 < rows && grid[belowK] === EMPTY && next[belowK] === EMPTY) {
-      writeNextIndex(belowK, OIL); return;
+    if (y + 1 < rows && canEnterIndex(belowK, OIL)) {
+      moveMaterialInto(k, belowK, OIL); return;
     }
 
     const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
@@ -1335,7 +1338,7 @@ export function createEngine({
       const nx = x + dx, ny = y + 1;
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       const ik = I(nx, ny);
-      if (grid[ik] === EMPTY && next[ik] === EMPTY && grid[belowK] !== WATER) { writeNextIndex(ik, OIL); return; }
+      if (canEnterIndex(ik, OIL) && grid[belowK] !== WATER) { moveMaterialInto(k, ik, OIL); return; }
     }
 
     let flow = 0;
@@ -1346,22 +1349,26 @@ export function createEngine({
         const nx = x + sgn * d;
         if (nx <= 0 || nx >= cols - 1) break;
         const sideK = k + sgn * d;
-        if (grid[sideK] !== EMPTY || next[sideK] !== EMPTY) break;
+        if (!canEnterIndex(sideK, OIL)) break;
         const below = y + 1 < rows ? grid[sideK + cols] : STONE;
-        if (below === EMPTY) {
+        if (below === EMPTY || canDisplaceMaterial(OIL, below)) {
           const stepK = k + sgn;
-          if (grid[stepK] === EMPTY && next[stepK] === EMPTY) flow = sgn;
+          if (canEnterIndex(stepK, OIL)) flow = sgn;
           break;
         }
       }
     }
     if (flow !== 0) {
       const stepX = x + flow;
-      if (emptyAt(stepX, y)) { writeNextIndex(I(stepX, y), OIL); return; }
+      const stepK = I(stepX, y);
+      if (canEnterIndex(stepK, OIL)) { moveMaterialInto(k, stepK, OIL); return; }
     }
 
     const jiggle = rand() < 0.5 ? -1 : 1;
-    if (emptyAt(x + jiggle, y)) { writeNextIndex(I(x + jiggle, y), OIL); return; }
+    if (x + jiggle > 0 && x + jiggle < cols - 1) {
+      const sideK = I(x + jiggle, y);
+      if (canEnterIndex(sideK, OIL)) { moveMaterialInto(k, sideK, OIL); return; }
+    }
 
     if (next[k] === EMPTY) writeNextIndex(k, OIL);
   };

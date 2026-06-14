@@ -724,6 +724,8 @@ export function createEngine({
       (y < rows - 1 && grid[k + cols] === EMPTY)
     );
   };
+  const isLiquid = (material) =>
+    material === WATER || material === OIL || material === ACID || material === LAVA;
   const writeGridIndex = (k, material) => {
     if (grid[k] === material) return;
     grid[k] = material;
@@ -736,7 +738,7 @@ export function createEngine({
       grid[k] !== material ||
       material === FIRE ||
       material === STEAM ||
-      (material === WATER && touchesGridEmpty(k))
+      (isLiquid(material) && touchesGridEmpty(k))
     ) {
       markCellIndex(k);
     }
@@ -769,12 +771,6 @@ export function createEngine({
   const moveLiquidInto = (fromK, x, y, material) => {
     const toK = I(x, y);
     moveMaterialInto(fromK, toK, material);
-  };
-  const moveOilThroughDenseLiquid = (fromK, x, y) => {
-    const toK = I(x, y);
-    const displaced = grid[toK];
-    writeNextIndex(toK, OIL);
-    if (next[fromK] === EMPTY) writeNextIndex(fromK, displaced);
   };
   const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows;
   const neighborIndices8 = (x, y) => {
@@ -1203,7 +1199,7 @@ export function createEngine({
     if (next[k] === EMPTY) writeNextIndex(k, SAND);
   };
 
-  const settleWaterLikeLiquid = (x, y, k, material) => {
+  const settleLiquid = (x, y, k, material) => {
     if (next[k] !== EMPTY) return;
 
     const belowK = k + cols;
@@ -1292,89 +1288,13 @@ export function createEngine({
     if (next[k] === EMPTY) writeNextIndex(k, material);
   };
 
-  // Water physics
-  const settleWater = (x, y, k) => {
-    settleWaterLikeLiquid(x, y, k, WATER);
-  };
-
-  const settleOil = (x, y, k) => {
-    if (next[k] !== EMPTY) return;
-
-    const aboveK = k - cols;
-    const belowK = k + cols;
-    if (y - 1 > 0 && canDisplaceMaterial(grid[aboveK], OIL) && next[aboveK] === EMPTY) {
-      moveOilThroughDenseLiquid(k, x, y - 1);
-      return;
-    }
-
-    const riseDirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
-    for (const dx of riseDirs) {
-      const nx = x + dx, ny = y - 1;
-      if (nx <= 0 || nx >= cols - 1 || ny <= 0) continue;
-      const ik = I(nx, ny);
-      if (canDisplaceMaterial(grid[ik], OIL) && next[ik] === EMPTY) {
-        moveOilThroughDenseLiquid(k, nx, ny);
-        return;
-      }
-    }
-
-    if (y + 1 < rows && canEnterIndex(belowK, OIL)) {
-      moveMaterialInto(k, belowK, OIL); return;
-    }
-
-    const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
-    for (const dx of dirs) {
-      const nx = x + dx, ny = y + 1;
-      if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
-      const ik = I(nx, ny);
-      if (canEnterIndex(ik, OIL) && !canDisplaceMaterial(grid[belowK], OIL)) {
-        moveMaterialInto(k, ik, OIL); return;
-      }
-    }
-
-    let flow = 0;
-    const firstFlowDir = rand() < 0.5 ? 1 : -1;
-    for (let dirIndex = 0; dirIndex < 2 && flow === 0; dirIndex++) {
-      const sgn = dirIndex === 0 ? firstFlowDir : -firstFlowDir;
-      for (let d = 1; d <= MAX_WATER_FLOW; d++) {
-        const nx = x + sgn * d;
-        if (nx <= 0 || nx >= cols - 1) break;
-        const sideK = k + sgn * d;
-        if (!canEnterIndex(sideK, OIL)) break;
-        const below = y + 1 < rows ? grid[sideK + cols] : STONE;
-        if (below === EMPTY || canDisplaceMaterial(OIL, below)) {
-          const stepK = k + sgn;
-          if (canEnterIndex(stepK, OIL)) flow = sgn;
-          break;
-        }
-      }
-    }
-    if (flow !== 0) {
-      const stepX = x + flow;
-      const stepK = I(stepX, y);
-      if (canEnterIndex(stepK, OIL)) { moveMaterialInto(k, stepK, OIL); return; }
-    }
-
-    const jiggle = rand() < 0.5 ? -1 : 1;
-    if (x + jiggle > 0 && x + jiggle < cols - 1) {
-      const sideK = I(x + jiggle, y);
-      if (canEnterIndex(sideK, OIL)) { moveMaterialInto(k, sideK, OIL); return; }
-    }
-
-    if (next[k] === EMPTY) writeNextIndex(k, OIL);
-  };
-
-  const settleAcid = (x, y, k) => {
-    settleWaterLikeLiquid(x, y, k, ACID);
-  };
-
   // Lava: a viscous liquid. Most ticks it does not move (LAVA_VISCOSITY_P gate),
   // giving it a slow, sticky flow. Water/acid contact and fire emission handled in
   // applyLava (grid phase) before this runs.
   const settleLava = (x, y, k) => {
     if (next[k] !== EMPTY) return;
     if (rand() >= LAVA_VISCOSITY_P) { writeNextIndex(k, LAVA); return; }
-    settleWaterLikeLiquid(x, y, k, LAVA);
+    settleLiquid(x, y, k, LAVA);
   };
 
   const relaxLiquidGaps = () => {
@@ -1397,7 +1317,7 @@ export function createEngine({
 
           const aboveK = I(x, y - 1);
           const above = grid[aboveK];
-          if (above === WATER || above === ACID) {
+          if (above === WATER || above === ACID || above === OIL) {
             writeGridIndex(k, above);
             writeGridIndex(aboveK, EMPTY);
             continue;
@@ -1413,17 +1333,6 @@ export function createEngine({
             writeGridIndex(k, side);
             writeGridIndex(sk, EMPTY);
             if (grid[k] !== EMPTY) break;
-          }
-
-          if (grid[k] !== EMPTY) continue;
-
-          if (above !== WATER && above !== OIL && above !== ACID) continue;
-
-          const left = grid[I(x - 1, y)];
-          const right = grid[I(x + 1, y)];
-          if (left === above || right === above || below === above) {
-            writeGridIndex(k, above);
-            writeGridIndex(aboveK, EMPTY);
           }
         }
       }
@@ -1873,17 +1782,13 @@ export function createEngine({
         for (let x = minX; x <= maxX; x++) {
           const material = grid[rowBase + x];
           if (material === LAVA) settleLava(x, y, rowBase + x);
-          else if (material === ACID) settleAcid(x, y, rowBase + x);
-          else if (material === WATER) settleWater(x, y, rowBase + x);
-          else if (material === OIL) settleOil(x, y, rowBase + x);
+          else if (material === ACID || material === WATER || material === OIL) settleLiquid(x, y, rowBase + x, material);
         }
       } else {
         for (let x = maxX; x >= minX; x--) {
           const material = grid[rowBase + x];
           if (material === LAVA) settleLava(x, y, rowBase + x);
-          else if (material === ACID) settleAcid(x, y, rowBase + x);
-          else if (material === WATER) settleWater(x, y, rowBase + x);
-          else if (material === OIL) settleOil(x, y, rowBase + x);
+          else if (material === ACID || material === WATER || material === OIL) settleLiquid(x, y, rowBase + x, material);
         }
       }
     }

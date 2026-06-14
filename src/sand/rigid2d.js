@@ -10,11 +10,11 @@
 // rolling — emerges without any special-casing.
 
 // Tunables (cells / ticks).
-const GRAVITY = 0.18;
+const GRAVITY = 0.26;
 // Terminal speed is kept well below 1 cell/tick so a fast fall can't bury a body
 // several cells into another in a single step (deep penetration degrades the
 // contact and destabilises stacking); the solver then has slack to expel overlap.
-const MAX_SPEED = 0.45;
+const MAX_SPEED = 0.72;
 const RESTITUTION = 0;        // inelastic so bodies settle, don't bounce
 const FRICTION = 0.6;
 // Sequential-impulse iterations. Contact support propagates ~one body per iteration,

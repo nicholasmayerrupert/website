@@ -988,11 +988,13 @@ export function createEngine({
       i < nStone ? STONE : (i < nStonePlant ? grid[k] : ICE);
 
     // Translate a whole assembly one cell along `dir` (+cols = down, -cols = up).
-    // Symmetric in both directions: whatever sits on the LEADING edge (sand or
-    // displaceable liquid) is shoved out and bubbled into the cells the assembly
-    // vacates on its TRAILING edge, conserving fluid. Returns true if it moved.
+    // Displaced liquid is routed to connected free volume, so a sinking solid
+    // raises reachable fluid instead of teleporting a sheet onto its top or
+    // through unrelated walls. Non-liquid displaceables still fall back to
+    // trailing cells.
     const translateAssembly = (grp, cells, dir) => {
       const dy = dir > 0 ? 1 : -1;
+      const movedCells = new Set();
       // Can the whole assembly shift one cell along `dir`?
       for (const k of cells) {
         const leadK = k + dir;
@@ -1001,16 +1003,70 @@ export function createEngine({
         if (cells.has(leadK)) continue;
         if (!componentDisplaceable(grid[leadK])) return false;
       }
+      for (const k of cells) {
+        const nk = k + dir;
+        movedCells.add(nk);
+      }
 
-      // Material shoved off the leading edge, to bubble into the trailing cells
-      // the assembly vacates.
+      // Material shoved off the leading edge, plus trailing cells the assembly
+      // vacates.
       const displaced = [];
       const vacated = [];
       for (const k of cells) {
         const leadK = k + dir;
         const lead = grid[leadK];
-        if (!cells.has(leadK) && lead !== EMPTY && componentDisplaceable(lead)) displaced.push(lead);
+        if (!cells.has(leadK) && lead !== EMPTY && componentDisplaceable(lead)) {
+          displaced.push({ material: lead, from: leadK });
+        }
         if (!cells.has(k - dir)) vacated.push(k);
+      }
+
+      const liquidDisplacedCount = displaced.reduce((n, d) => n + (isLiquid(d.material) ? 1 : 0), 0);
+      const sideSpillTargets = [];
+      if (liquidDisplacedCount > 0) {
+        const seen = new Set();
+        const reserved = new Set();
+        const queue = [];
+        const neighborOffsets = dir > 0
+          ? [-1, 1, cols, -cols]
+          : [-1, 1, -cols, cols];
+        const canVisit = (k) => {
+          if (k < 0 || k >= grid.length || seen.has(k)) return false;
+          const y = (k / cols) | 0;
+          const x = k - y * cols;
+          if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
+          if (cells.has(k) || movedCells.has(k)) return false;
+          const m = grid[k];
+          return m === EMPTY || isLiquid(m);
+        };
+        const enqueue = (k) => {
+          if (!canVisit(k)) return;
+          seen.add(k);
+          queue.push(k);
+        };
+
+        for (const d of displaced) {
+          if (!isLiquid(d.material)) continue;
+          for (const off of neighborOffsets) enqueue(d.from + off);
+        }
+
+        for (let qi = 0; qi < queue.length && sideSpillTargets.length < liquidDisplacedCount; qi++) {
+          const k = queue[qi];
+          if (grid[k] === EMPTY) {
+            if (!reserved.has(k)) {
+              reserved.add(k);
+              sideSpillTargets.push(k);
+            }
+            continue;
+          }
+          for (const off of neighborOffsets) enqueue(k + off);
+        }
+        if (sideSpillTargets.length < liquidDisplacedCount) {
+          // No connected free volume for the displaced liquid. Treat the liquid
+          // as incompressible and leave the rigid body in place instead of
+          // teleporting fluid through walls or onto the trailing face.
+          return false;
+        }
       }
 
       // Capture each component's moved materials BEFORE clearing the grid.
@@ -1042,12 +1098,17 @@ export function createEngine({
         }
       }
 
-      // Bubble displaced material into the now-empty vacated cells.
+      // Preserve displaced material. Liquids spill beside the moved assembly;
+      // non-liquids use the trailing cells as before.
       let di = 0;
-      for (let vi = 0; vi < vacated.length && di < displaced.length; vi++) {
-        const vk = vacated[vi];
-        if (grid[vk] !== EMPTY) continue; // a moved cell landed here
-        writeGridIndex(vk, displaced[di++]);
+      let si = 0;
+      for (const d of displaced) {
+        if (isLiquid(d.material)) {
+          writeGridIndex(sideSpillTargets[si++], d.material);
+          continue;
+        }
+        while (di < vacated.length && grid[vacated[di]] !== EMPTY) di++;
+        if (di < vacated.length) writeGridIndex(vacated[di++], d.material);
       }
       return true;
     };

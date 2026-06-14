@@ -1859,44 +1859,10 @@ export function createEngine({
     }
     phase('sand');
 
-    // 5) Lava gets first liquid claim; it is the densest fluid.
-    for (let y = rows - 1; y >= 0; y--) {
-      const minX = activeRowMin[y];
-      const maxX = activeRowMax[y];
-      if (maxX < minX) continue;
-      const rowBase = y * cols;
-      const ltr = (y & 1) === 0;
-      if (ltr) {
-        for (let x = minX; x <= maxX; x++) {
-          if (grid[rowBase + x] === LAVA) settleLava(x, y, rowBase + x);
-        }
-      } else {
-        for (let x = maxX; x >= minX; x--) {
-          if (grid[rowBase + x] === LAVA) settleLava(x, y, rowBase + x);
-        }
-      }
-    }
-
-    // 6) Acid gets first claim after lava so lighter liquids cannot pin it above
-    // water/oil.
-    for (let y = rows - 1; y >= 0; y--) {
-      const minX = activeRowMin[y];
-      const maxX = activeRowMax[y];
-      if (maxX < minX) continue;
-      const rowBase = y * cols;
-      const ltr = (y & 1) === 0;
-      if (ltr) {
-        for (let x = minX; x <= maxX; x++) {
-          if (grid[rowBase + x] === ACID) settleAcid(x, y, rowBase + x);
-        }
-      } else {
-        for (let x = maxX; x >= minX; x--) {
-          if (grid[rowBase + x] === ACID) settleAcid(x, y, rowBase + x);
-        }
-      }
-    }
-
-    // 7) Lighter liquids
+    // 5) Liquids settle in one pass. Density is resolved entirely by
+    // canDisplaceMaterial (denser sinks, lighter rises), so every liquid
+    // interface resolves against one shared next-buffer and reaches a fixed
+    // point instead of trading cells across separate passes forever.
     for (let y = rows - 1; y >= 0; y--) {
       const minX = activeRowMin[y];
       const maxX = activeRowMax[y];
@@ -1906,20 +1872,24 @@ export function createEngine({
       if (ltr) {
         for (let x = minX; x <= maxX; x++) {
           const material = grid[rowBase + x];
-          if (material === WATER) settleWater(x, y, rowBase + x);
+          if (material === LAVA) settleLava(x, y, rowBase + x);
+          else if (material === ACID) settleAcid(x, y, rowBase + x);
+          else if (material === WATER) settleWater(x, y, rowBase + x);
           else if (material === OIL) settleOil(x, y, rowBase + x);
         }
       } else {
         for (let x = maxX; x >= minX; x--) {
           const material = grid[rowBase + x];
-          if (material === WATER) settleWater(x, y, rowBase + x);
+          if (material === LAVA) settleLava(x, y, rowBase + x);
+          else if (material === ACID) settleAcid(x, y, rowBase + x);
+          else if (material === WATER) settleWater(x, y, rowBase + x);
           else if (material === OIL) settleOil(x, y, rowBase + x);
         }
       }
     }
     phase('liquids');
 
-    // 8) Rising materials
+    // 6) Rising materials
     for (let y = 0; y < rows; y++) {
       const minX = activeRowMin[y];
       const maxX = activeRowMax[y];
@@ -1941,20 +1911,20 @@ export function createEngine({
       }
     }
 
-    // 9) Flip
+    // 7) Flip
     const tmp = grid; grid = next; next = tmp;
     phase('risers');
 
-    // 10) Collapse small liquid air pockets. The relax pass also seals water
+    // 8) Collapse small liquid air pockets. The relax pass also seals water
     // pockets: its above-pull rule covers water-above-water gaps directly.
     if ((tick & 1) === 0) relaxLiquidGaps();
     phase('relax');
 
-    // 11) Let buried liquids separate by density after crowded movement claims settle
+    // 9) Let buried liquids separate by density after crowded movement claims settle
     if (tick % 3 === 0) separateLiquidsByDensity();
     phase('separate');
 
-    // 12) Side sinks (stones unaffected)
+    // 10) Side sinks (stones unaffected)
     applySideSinks();
     phase('sinks');
     perfStepMs = performance.now() - stepStart;

@@ -770,10 +770,11 @@ export function createEngine({
     const toK = I(x, y);
     moveMaterialInto(fromK, toK, material);
   };
-  const moveOilIntoWater = (fromK, x, y) => {
+  const moveOilThroughDenseLiquid = (fromK, x, y) => {
     const toK = I(x, y);
+    const displaced = grid[toK];
     writeNextIndex(toK, OIL);
-    if (next[fromK] === EMPTY) writeNextIndex(fromK, WATER);
+    if (next[fromK] === EMPTY) writeNextIndex(fromK, displaced);
   };
   const isInBounds = (x, y) => x > 0 && x < cols - 1 && y > 0 && y < rows;
   const neighborIndices8 = (x, y) => {
@@ -1301,21 +1302,8 @@ export function createEngine({
 
     const aboveK = k - cols;
     const belowK = k + cols;
-    // Fast paths for oil that cannot move: embedded in oil, or floating on
-    // water (its stable state), with no water above to rise through.
-    // writeNextIndex never marks a stationary oil cell, so write directly.
-    if (
-      y + 1 < rows && y - 1 > 0 && x > 0 && x < cols - 1 &&
-      grid[k - 1] === OIL && grid[k + 1] === OIL &&
-      grid[aboveK] !== WATER && grid[aboveK - 1] !== WATER && grid[aboveK + 1] !== WATER &&
-      (grid[belowK] === WATER ||
-        (grid[belowK] === OIL && grid[belowK - 1] === OIL && grid[belowK + 1] === OIL))
-    ) {
-      next[k] = OIL;
-      return;
-    }
-    if (y - 1 > 0 && grid[aboveK] === WATER && next[aboveK] === EMPTY) {
-      moveOilIntoWater(k, x, y - 1);
+    if (y - 1 > 0 && canDisplaceMaterial(grid[aboveK], OIL) && next[aboveK] === EMPTY) {
+      moveOilThroughDenseLiquid(k, x, y - 1);
       return;
     }
 
@@ -1323,8 +1311,9 @@ export function createEngine({
     for (const dx of riseDirs) {
       const nx = x + dx, ny = y - 1;
       if (nx <= 0 || nx >= cols - 1 || ny <= 0) continue;
-      if (grid[I(nx, ny)] === WATER && next[I(nx, ny)] === EMPTY) {
-        moveOilIntoWater(k, nx, ny);
+      const ik = I(nx, ny);
+      if (canDisplaceMaterial(grid[ik], OIL) && next[ik] === EMPTY) {
+        moveOilThroughDenseLiquid(k, nx, ny);
         return;
       }
     }
@@ -1338,7 +1327,9 @@ export function createEngine({
       const nx = x + dx, ny = y + 1;
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       const ik = I(nx, ny);
-      if (canEnterIndex(ik, OIL) && grid[belowK] !== WATER) { moveMaterialInto(k, ik, OIL); return; }
+      if (canEnterIndex(ik, OIL) && !canDisplaceMaterial(grid[belowK], OIL)) {
+        moveMaterialInto(k, ik, OIL); return;
+      }
     }
 
     let flow = 0;
@@ -1456,9 +1447,10 @@ export function createEngine({
         const m = grid[k];
         if (m === OIL) {
           const aboveK = I(x, y - 1);
-          if (grid[aboveK] === WATER) {
+          if (canDisplaceMaterial(grid[aboveK], OIL)) {
+            const displaced = grid[aboveK];
             writeGridIndex(aboveK, OIL);
-            writeGridIndex(k, WATER);
+            writeGridIndex(k, displaced);
           }
         } else if (m === ACID) {
           const belowK = I(x, y + 1);

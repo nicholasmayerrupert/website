@@ -3,6 +3,8 @@
 // (scripts/bench-sand.mjs). The RNG is injectable so benchmark runs are
 // deterministic.
 
+import { createRigidWorld } from './rigid2d.js';
+
 export const MAT = {
   EMPTY: 0,
   SAND: 1,
@@ -17,6 +19,7 @@ export const MAT = {
   ACID: 10,
   LAVA: 11,
   ICE: 12,
+  RIGID: 13,
 };
 
 export const CHUNK_SIZE = 32;
@@ -36,6 +39,7 @@ const PLANT = MAT.PLANT;
 const ACID = MAT.ACID;
 const LAVA = MAT.LAVA;
 const ICE = MAT.ICE;
+const RIGID = MAT.RIGID;
 
 // ---- Tunables ----
 const MAX_WATER_FLOW = 10;
@@ -57,7 +61,7 @@ const ICE_FREEZE_P = 0.03;
 // weight. An ungrounded assembly floats when its summed weight is less than the
 // liquid it displaces (avg density < fluid), so ice (<1) floats ~90% submerged
 // and stone (>1) sinks. Detached wood/plant (<1) float too — see below.
-const DENSITY = new Float32Array(13);
+const DENSITY = new Float32Array(16);
 DENSITY[WATER] = 1.0;
 DENSITY[OIL] = 0.8;
 DENSITY[ACID] = 1.1;
@@ -68,15 +72,16 @@ DENSITY[STONE] = 2.6;
 DENSITY[WOOD] = 0.6;
 DENSITY[PLANT] = 0.4;
 DENSITY[SEED] = 0.5;
+DENSITY[RIGID] = 1.4;
 
-const DENSITY_SORTED_LOOSE = new Uint8Array(13);
+const DENSITY_SORTED_LOOSE = new Uint8Array(16);
 DENSITY_SORTED_LOOSE[SAND] = 1;
 DENSITY_SORTED_LOOSE[WATER] = 1;
 DENSITY_SORTED_LOOSE[OIL] = 1;
 DENSITY_SORTED_LOOSE[ACID] = 1;
 DENSITY_SORTED_LOOSE[LAVA] = 1;
 
-const LOOSE_MOBILITY_P = new Float32Array(13);
+const LOOSE_MOBILITY_P = new Float32Array(16);
 LOOSE_MOBILITY_P[SAND] = 1.0;
 LOOSE_MOBILITY_P[WATER] = 1.0;
 LOOSE_MOBILITY_P[OIL] = 1.0;
@@ -182,7 +187,7 @@ export function createEngine({
   let perfStepMs = 0;
   let perfDirtyChunks = 0;
   const perfPhases = {
-    rigid: 0, plants: 0, reactions: 0, prepare: 0,
+    rigid: 0, bodies: 0, plants: 0, reactions: 0, prepare: 0,
     sand: 0, liquids: 0, risers: 0, relax: 0, separate: 0, sinks: 0,
   };
   const I = (x, y) => y * cols + x;
@@ -202,6 +207,50 @@ export function createEngine({
   const stoneDraft = new Set();
   /** @type {Set<number>} */
   const iceDraft = new Set();
+
+  // Free rigid bodies (continuous pose + rotation) — a separate physics layer
+  // from the grid-aligned stone/plant/ice components above. The solver lives in
+  // rigid2d.js; the engine rasterizes body footprints into the grid as RIGID
+  // cells each tick so the CA interacts with them, and clears the previous
+  // footprint first. `bodyOwner` maps a RIGID cell back to its body id (-1 = none)
+  // for the grid->body coupling. Body cells survive the double buffer via the
+  // same carry-forward that keeps components alive.
+  const rigidWorld = createRigidWorld({ cols, rows });
+  const bodyOwner = new Int32Array(cols * rows).fill(-1);
+  let bodyCells = [];
+  let prevBodyCells = [];
+  // Terrain a body collides against: settled solids, not liquids/gas/empty and
+  // not RIGID (body cells are cleared from the grid before the solver runs).
+  const isBodyTerrain = (x, y) => {
+    const m = grid[y * cols + x];
+    return m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === SAND;
+  };
+  const moveBodies = () => {
+    if (rigidWorld.bodies.length === 0) return;
+    // Clear last tick's footprint from the grid so the solver sees only terrain.
+    for (const k of prevBodyCells) {
+      if (grid[k] === RIGID) writeGridIndex(k, EMPTY);
+      bodyOwner[k] = -1;
+    }
+    rigidWorld.step(isBodyTerrain);
+    // Rasterize the new footprint. A cell already claimed by terrain stays
+    // terrain (the body rests against it); empty/liquid cells become RIGID.
+    const cells = [];
+    for (const b of rigidWorld.bodies) {
+      rigidWorld.forEachBodyCell(b, (x, y) => {
+        const k = y * cols + x;
+        if (bodyOwner[k] === b.id) return;
+        const m = grid[k];
+        if (m === EMPTY || isLiquid(m)) {
+          writeGridIndex(k, RIGID);
+          bodyOwner[k] = b.id;
+          cells.push(k);
+        }
+      });
+    }
+    prevBodyCells = bodyCells;
+    bodyCells = cells;
+  };
 
   // Emitters (grid coords with timing)
   const emitters = emitterDefs.map(e => {
@@ -860,7 +909,7 @@ export function createEngine({
   // Load-bearing materials: rigid solids carry load as cohesive bodies, and
   // settled SAND bears load too. Liquids, gases and EMPTY do not.
   const isRigidMaterial = (m) =>
-    m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE;
+    m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === RIGID;
   const isBearingMaterial = (m) => m === SAND || isRigidMaterial(m);
   // A falling rigid body may pass through liquids, plus EMPTY, plus
   // (ungrounded) SAND. It never reaches here resting on *grounded* sand — that
@@ -1970,6 +2019,12 @@ export function createEngine({
     moveRigidAssemblies();
     phase('rigid');
 
+    // 1b) Advance free rigid bodies (continuous pose + rotation) and rasterize
+    // their footprints into the grid as RIGID cells so the CA below treats them
+    // as solid.
+    moveBodies();
+    phase('bodies');
+
     // 2) Grow plants and apply material reactions directly on grid
     growPlantComponents();
     phase('plants');
@@ -1996,6 +2051,9 @@ export function createEngine({
     for (const comp of iceComponents) {
       for (const k of comp.cells) { next[k] = ICE; compOccStamp[k] = tick; curCompCells.push(k); }
     }
+    // Free rigid bodies are not components; carry their rasterized cells forward
+    // the same way so a RIGID pixel is not cleared in the alternate buffer.
+    for (const k of bodyCells) { next[k] = RIGID; compOccStamp[k] = tick; curCompCells.push(k); }
     // Writing next[k] clears the about-to-be-displayed buffer; markCellIndex
     // makes the cell active next step so the other buffer is cleared too. If a
     // fluid has moved into the vacated cell, mirror it into next only when next
@@ -2141,6 +2199,16 @@ export function createEngine({
     clearIceDraft() { iceDraft.clear(); },
     getIceDraftCells() { return iceDraft; },
     getGrid() { return grid; },
+    // Spawn a free rigid body from integer cell coords [[x,y], ...]. Defaults to
+    // RIGID material at DENSITY[RIGID]. Returns the body handle.
+    spawnBody(cells, opts = {}) {
+      return rigidWorld.spawnBody(cells, {
+        material: RIGID,
+        density: DENSITY[RIGID],
+        ...opts,
+      });
+    },
+    getBodies() { return rigidWorld.bodies; },
     // Adopt any stone/plant cells that are in the grid but not yet owned by a
     // component (e.g. placed via paintDisc or raw grid writes). Without this,
     // such cells are erased each step by prepareNextBuffer and flicker, because

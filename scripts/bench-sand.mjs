@@ -180,6 +180,36 @@ const scenarios = [
       }
     },
   },
+  {
+    name: 'rigid-bodies',
+    steps: 600,
+    seedInitial: false,
+    setup(eng) {
+      const { cols, rows } = eng;
+      const grid = eng.getGrid();
+      // Stone terrain: flat floor on the left half, a rising ramp on the right
+      // so dropped bodies land flat, tip, and tumble/roll down the slope.
+      const baseY = rows - 3;
+      for (let x = 2; x < cols - 2; x++) {
+        const h = x > cols * 0.5 ? (((x - cols * 0.5) * 0.4) | 0) : 0;
+        for (let y = baseY - h; y < rows - 1; y++) grid[y * cols + x] = MAT.STONE;
+      }
+      eng.syncComponents();
+      const box = (cx, cy, w, h) => {
+        const cells = [];
+        for (let dx = 0; dx < w; dx++) for (let dy = 0; dy < h; dy++) cells.push([cx + dx, cy + dy]);
+        return cells;
+      };
+      eng.spawnBody(box((cols * 0.30) | 0, 8, 8, 6));
+      eng.spawnBody(box((cols * 0.58) | 0, 4, 10, 4));
+      eng.spawnBody(box((cols * 0.74) | 0, 12, 6, 6));
+    },
+    onTick(eng, tick) {
+      // Pour sand onto the falling/resting bodies to exercise CA-vs-RIGID
+      // solidity (sand must pile on a body, not pass through it).
+      if (tick % 4 === 0) eng.paintDisc((eng.cols * 0.30) | 0, 3, 2, MAT.SAND, false);
+    },
+  },
 ];
 
 // ---------- measurement ----------

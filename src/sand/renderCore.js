@@ -23,6 +23,7 @@ export function makeColorLUT() {
   lut[MAT.ACID] = 0x80_20_ff_80;
   lut[MAT.LAVA] = 0xc8_10_50_ff;
   lut[MAT.ICE] = 0x90_ff_f0_c0;
+  lut[MAT.RIGID] = 0xff_8a_72_5e;
   return lut;
 }
 
@@ -42,6 +43,7 @@ const TEXTURE_AMP = (() => {
   const amp = new Uint8Array(16);
   amp[MAT.SAND] = 7;
   amp[MAT.STONE] = 8;
+  amp[MAT.RIGID] = 6;
   amp[MAT.WOOD] = 7;
   amp[MAT.PLANT] = 9;
   amp[MAT.SEED] = 5;

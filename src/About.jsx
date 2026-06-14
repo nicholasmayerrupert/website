@@ -12,7 +12,7 @@ function SandOverlay({ onDrawModeChange }) {
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice' | 'eraser'
+  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice' | 'cube' | 'eraser'
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
@@ -78,6 +78,7 @@ function SandOverlay({ onDrawModeChange }) {
     const LAVA_BRUSH_RADIUS = 2;
     const ICE_BRUSH_RADIUS = 2;
     const ERASE_BRUSH_RADIUS = 3;
+    const CUBE_HALF = 6; // half-extent of the rigid cube body (cells)
     const EMIT_INTERVAL_MS = 18;
     const STEP_MS = 16;
     const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
@@ -297,6 +298,20 @@ function SandOverlay({ onDrawModeChange }) {
         if (activeTool === 'seed') {
           isDraftingSeed = true;
           updateSeedDraft();
+          e.preventDefault();
+          return;
+        }
+        if (activeTool === 'cube') {
+          const cx = Math.floor(px / cellSize);
+          const cy = Math.floor(py / cellSize);
+          const cells = [];
+          for (let dx = -CUBE_HALF; dx < CUBE_HALF; dx++) {
+            for (let dy = -CUBE_HALF; dy < CUBE_HALF; dy++) {
+              const x = cx + dx, y = cy + dy;
+              if (x >= 1 && x < cols - 1 && y >= 1 && y < rows - 1) cells.push([x, y]);
+            }
+          }
+          if (cells.length) engine.spawnBody(cells);
           e.preventDefault();
           return;
         }
@@ -669,6 +684,12 @@ function SandOverlay({ onDrawModeChange }) {
       idleClass: 'text-cyan-300/80 bg-cyan-400/10',
     },
     {
+      id: 'cube',
+      title: 'Cube (click to drop a tumbling rigid body)',
+      activeClass: 'bg-stone-600/50 ring-stone-300/35 text-stone-100',
+      idleClass: 'text-stone-400/85 bg-stone-400/10',
+    },
+    {
       id: 'eraser',
       title: 'Eraser (hold LMB, or hold RMB anytime)',
       activeClass: 'bg-rose-600/50 ring-rose-200/35 text-rose-100',
@@ -752,6 +773,13 @@ function SandOverlay({ onDrawModeChange }) {
             <span className="absolute bottom-1 left-1 h-4 w-4 rounded-[4px] bg-cyan-200/85 rotate-[12deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.4),0_0_7px_rgba(103,232,249,0.4)]" />
             <span className="absolute bottom-[7px] left-[6px] h-[2px] w-[7px] rounded-full bg-white/55 rotate-[12deg]" />
             <span className="absolute bottom-[11px] left-[8px] h-[6px] w-[2px] rounded-full bg-white/45 rotate-[12deg]" />
+          </div>
+        );
+      case 'cube':
+        return (
+          <div className="relative h-6 w-6" aria-hidden="true">
+            <span className="absolute bottom-1 left-1 h-4 w-4 rounded-[3px] bg-stone-300/85 rotate-[18deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.28),0_0_6px_rgba(168,162,158,0.35)]" />
+            <span className="absolute bottom-[10px] left-[7px] h-[2px] w-[7px] rounded-full bg-white/30 rotate-[18deg]" />
           </div>
         );
       case 'eraser':

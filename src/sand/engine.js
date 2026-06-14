@@ -726,6 +726,7 @@ export function createEngine({
   };
   const isLiquid = (material) =>
     material === WATER || material === OIL || material === ACID || material === LAVA;
+  const isFlammable = (material) => material === OIL || isPlantMaterial(material);
   const writeGridIndex = (k, material) => {
     if (grid[k] === material) return;
     grid[k] = material;
@@ -1559,6 +1560,7 @@ export function createEngine({
   const applyLava = () => {
     const hardenedCells = new Set();
     let hardenedYMax = 0;
+    let plantBurned = false;
     for (let y = 1; y < rows - 1; y++) {
       const minX = Math.max(1, activeRowMin[y]);
       const maxX = Math.min(cols - 2, activeRowMax[y]);
@@ -1568,13 +1570,14 @@ export function createEngine({
         if (grid[k] !== LAVA) continue;
 
         const right = k + 1, left = k - 1, down = k + cols, up = k - cols;
-        let oilK = -1;
-        if (grid[right] === OIL) oilK = right;
-        else if (grid[left] === OIL) oilK = left;
-        else if (grid[down] === OIL) oilK = down;
-        else if (grid[up] === OIL) oilK = up;
-        if (oilK >= 0) {
-          writeGridIndex(oilK, FIRE);
+        let burnK = -1;
+        if (isFlammable(grid[right])) burnK = right;
+        else if (isFlammable(grid[left])) burnK = left;
+        else if (isFlammable(grid[down])) burnK = down;
+        else if (isFlammable(grid[up])) burnK = up;
+        if (burnK >= 0) {
+          if (isPlantMaterial(grid[burnK])) plantBurned = true;
+          writeGridIndex(burnK, FIRE);
           continue;
         }
 
@@ -1603,6 +1606,7 @@ export function createEngine({
       }
     }
     if (hardenedCells.size > 0) registerStoneCells(hardenedCells, hardenedYMax);
+    if (plantBurned) plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
   };
 
   // Ice melts to water beside fire or lava, and slowly freezes adjacent water.

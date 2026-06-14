@@ -1936,10 +1936,18 @@ export function createEngine({
       for (const k of comp.cells) { next[k] = ICE; compOccStamp[k] = tick; curCompCells.push(k); }
     }
     // Writing next[k] clears the about-to-be-displayed buffer; markCellIndex
-    // makes the cell active next step so the other buffer is cleared too. Guard
-    // on grid[k] === EMPTY so we never erase a fluid that moved into the cell.
+    // makes the cell active next step so the other buffer is cleared too. If a
+    // fluid has moved into the vacated cell, mirror it into next only when next
+    // still contains a stale component pixel from the alternate buffer.
     for (const k of prevCompCells) {
-      if (compOccStamp[k] !== tick && grid[k] === EMPTY) { next[k] = EMPTY; markCellIndex(k); }
+      if (compOccStamp[k] === tick) continue;
+      if (grid[k] === EMPTY) {
+        next[k] = EMPTY;
+        markCellIndex(k);
+      } else if (!isRigidMaterial(grid[k]) && isRigidMaterial(next[k])) {
+        next[k] = grid[k];
+        markCellIndex(k);
+      }
     }
     const swapComp = prevCompCells; prevCompCells = curCompCells; curCompCells = swapComp;
     phase('prepare');

@@ -1646,8 +1646,8 @@ export function createEngine({
   };
 
   // Lava hardens to stone where it touches water or acid (turning the touched
-  // liquid to steam)
-  // and slowly sheds fire from any surface exposed to air.
+  // liquid to steam), ignites touched oil, and slowly sheds fire from any
+  // surface exposed to air.
   const applyLava = () => {
     const hardenedCells = new Set();
     let hardenedYMax = 0;
@@ -1660,6 +1660,16 @@ export function createEngine({
         if (grid[k] !== LAVA) continue;
 
         const right = k + 1, left = k - 1, down = k + cols, up = k - cols;
+        let oilK = -1;
+        if (grid[right] === OIL) oilK = right;
+        else if (grid[left] === OIL) oilK = left;
+        else if (grid[down] === OIL) oilK = down;
+        else if (grid[up] === OIL) oilK = up;
+        if (oilK >= 0) {
+          writeGridIndex(oilK, FIRE);
+          continue;
+        }
+
         // Harden on water/acid contact; the touched liquid flashes to steam.
         let liquidK = -1;
         if (grid[right] === WATER || grid[right] === ACID) liquidK = right;

@@ -69,6 +69,13 @@ DENSITY[WOOD] = 0.6;
 DENSITY[PLANT] = 0.4;
 DENSITY[SEED] = 0.5;
 
+const DENSITY_SORTED_LOOSE = new Uint8Array(13);
+DENSITY_SORTED_LOOSE[SAND] = 1;
+DENSITY_SORTED_LOOSE[WATER] = 1;
+DENSITY_SORTED_LOOSE[OIL] = 1;
+DENSITY_SORTED_LOOSE[ACID] = 1;
+DENSITY_SORTED_LOOSE[LAVA] = 1;
+
 // Buoyancy deadband. Moving a body one row changes its submerged-cell count by
 // about its width, so the rest band must be ~half the body width for a stable
 // resting depth to exist — a narrow band guarantees overshoot and the body buzzes.
@@ -786,17 +793,12 @@ export function createEngine({
       markCellIndex(k);
     }
   };
-  const isDisplacedLiquid = (material, displaced) => {
-    if (material === WATER) return displaced === OIL;
-    if (material === ACID) return displaced === WATER || displaced === OIL;
-    if (material === LAVA) return displaced === ACID || displaced === WATER || displaced === OIL;
-    return false;
-  };
+  const canDisplaceByLooseDensity = (material, displaced) =>
+    DENSITY_SORTED_LOOSE[material] && DENSITY_SORTED_LOOSE[displaced] && DENSITY[material] > DENSITY[displaced];
   const isGas = (material) => material === FIRE || material === STEAM;
   const canDisplaceMaterial = (material, displaced) => {
     if (isGas(displaced)) return true;
-    if (material === SAND) return displaced === WATER || displaced === OIL;
-    return isDisplacedLiquid(material, displaced);
+    return canDisplaceByLooseDensity(material, displaced);
   };
   const canEnterIndex = (k, material) =>
     next[k] === EMPTY && (grid[k] === EMPTY || canDisplaceMaterial(material, grid[k]));
@@ -848,7 +850,7 @@ export function createEngine({
   // that case is grounded and skipped — so treating SAND as passable only sinks a
   // body through genuinely unsupported sand.
   const componentDisplaceable = (m) =>
-    m === EMPTY || m === SAND || canDisplaceMaterial(SAND, m);
+    m === EMPTY || m === SAND || m === WATER || m === OIL;
 
   // Compute which rigid components have a support path to the floor. Sets
   // `comp.grounded` on every stone/plant/ice component. A component is grounded if
@@ -1472,9 +1474,9 @@ export function createEngine({
     }
   };
 
-  const separateLiquidsByDensity = () => {
+  const separateLooseByDensity = () => {
     const parity = rand() < 0.5 ? 0 : 1;
-    for (let y = 1; y < rows; y++) {
+    for (let y = 1; y < rows - 1; y++) {
       const minX = Math.max(1, activeRowMin[y]);
       const maxX = Math.min(cols - 2, activeRowMax[y]);
       if (maxX < minX) continue;
@@ -1486,28 +1488,12 @@ export function createEngine({
       for (let x = start; x !== end; x += stepX) {
         if ((x + y) % 2 !== parity) continue;
         const k = I(x, y);
-        const m = grid[k];
-        if (m === OIL) {
-          const aboveK = I(x, y - 1);
-          if (canDisplaceMaterial(grid[aboveK], OIL)) {
-            const displaced = grid[aboveK];
-            writeGridIndex(aboveK, OIL);
-            writeGridIndex(k, displaced);
-          }
-        } else if (m === ACID) {
-          const belowK = I(x, y + 1);
-          if (grid[belowK] === WATER || grid[belowK] === OIL) {
-            const displaced = grid[belowK];
-            writeGridIndex(belowK, ACID);
-            writeGridIndex(k, displaced);
-          }
-        } else if (m === LAVA) {
-          const belowK = I(x, y + 1);
-          if (grid[belowK] === ACID || grid[belowK] === WATER || grid[belowK] === OIL) {
-            const displaced = grid[belowK];
-            writeGridIndex(belowK, LAVA);
-            writeGridIndex(k, displaced);
-          }
+        const belowK = k + cols;
+        const upper = grid[k];
+        const lower = grid[belowK];
+        if (canDisplaceByLooseDensity(upper, lower)) {
+          writeGridIndex(belowK, upper);
+          writeGridIndex(k, lower);
         }
       }
     }
@@ -1962,8 +1948,8 @@ export function createEngine({
     if ((tick & 1) === 0) relaxLiquidGaps();
     phase('relax');
 
-    // 9) Let buried liquids separate by density after crowded movement claims settle
-    if (tick % 3 === 0) separateLiquidsByDensity();
+    // 9) Let buried loose materials separate by density after crowded movement claims settle
+    if (tick % 3 === 0) separateLooseByDensity();
     phase('separate');
 
     // 10) Side sinks (stones unaffected)

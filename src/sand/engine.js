@@ -52,6 +52,23 @@ const LAVA_VISCOSITY_P = 0.35;
 const LAVA_EMIT_FIRE_P = 0.001;
 const ICE_FREEZE_P = 0.03;
 
+// Per-material density for rigid-assembly buoyancy. 0 = weightless (air/gas).
+// For liquids it is the buoyant fluid's density; for rigid materials it is body
+// weight. An ungrounded assembly floats when its summed weight is less than the
+// liquid it displaces (avg density < fluid), so ice (<1) floats ~90% submerged
+// and stone (>1) sinks. Detached wood/plant (<1) float too — see below.
+const DENSITY = new Float32Array(13);
+DENSITY[WATER] = 1.0;
+DENSITY[OIL] = 0.8;
+DENSITY[ACID] = 1.1;
+DENSITY[LAVA] = 2.8;
+DENSITY[ICE] = 0.9;
+DENSITY[SAND] = 1.6;
+DENSITY[STONE] = 2.6;
+DENSITY[WOOD] = 0.6;
+DENSITY[PLANT] = 0.4;
+DENSITY[SEED] = 0.5;
+
 // Side-sink settings (bottom is NOT a sink)
 const SINK_STRIP_W = 2;
 const INNER_STRIP_W = 1;
@@ -881,14 +898,15 @@ export function createEngine({
   }
 
   // --- Cohesive STONE chunks ---
-  // Move rigid bodies down by one cell when unsupported. Stone, plant and ice
+  // Move rigid bodies by one cell when unsupported: sink, rise or rest by
+  // buoyancy when touching liquid, else fall. Stone, plant and ice
   // components that touch are one physical STRUCTURE (a building is stone walls +
   // wood roof + ivy), so they are unioned into type-agnostic ASSEMBLIES and fall
   // together. Without this, two interlocked components of different types each see
   // the other as a non-displaceable cell directly below and refuse to move, so an
   // ungrounded structure hangs in mid-air. `cellComp` and the stone→plant→ice
   // ordering are produced by computeGrounded(), which runs immediately before this.
-  function moveRigidAssembliesDown() {
+  function moveRigidAssemblies() {
     const all = [];
     for (const c of stoneComponents) all.push(c);
     const nStone = all.length;
@@ -939,33 +957,30 @@ export function createEngine({
     const matOf = (i, k) =>
       i < nStone ? STONE : (i < nStonePlant ? grid[k] : ICE);
 
-    for (const grp of order) {
-      if (grp.grounded) continue; // structure has a path to the floor — stays put
-
-      const cells = new Set();
-      for (const ci of grp.comps) for (const k of all[ci].cells) cells.add(k);
-
-      // Can the whole assembly drop one cell?
-      let canMove = true;
+    // Translate a whole assembly one cell along `dir` (+cols = down, -cols = up).
+    // Symmetric in both directions: whatever sits on the LEADING edge (sand or
+    // displaceable liquid) is shoved out and bubbled into the cells the assembly
+    // vacates on its TRAILING edge, conserving fluid. Returns true if it moved.
+    const translateAssembly = (grp, cells, dir) => {
+      const dy = dir > 0 ? 1 : -1;
+      // Can the whole assembly shift one cell along `dir`?
       for (const k of cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        if (y + 1 >= rows) { canMove = false; break; }
-        const belowK = I(x, y + 1);
-        if (cells.has(belowK)) continue;
-        if (!componentDisplaceable(grid[belowK])) { canMove = false; break; }
+        const leadK = k + dir;
+        const leadY = (leadK / cols) | 0;
+        if (leadY < 1 || leadY >= rows) return false;
+        if (cells.has(leadK)) continue;
+        if (!componentDisplaceable(grid[leadK])) return false;
       }
-      if (!canMove) continue;
 
-      // Material displaced from beneath the assembly (sand/liquid), to bubble up
-      // into the cells the assembly vacates at its top.
+      // Material shoved off the leading edge, to bubble into the trailing cells
+      // the assembly vacates.
       const displaced = [];
       const vacated = [];
       for (const k of cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        const belowK = I(x, y + 1);
-        const below = grid[belowK];
-        if (!cells.has(belowK) && below !== EMPTY && componentDisplaceable(below)) displaced.push(below);
-        if (!cells.has(k - cols)) vacated.push(k);
+        const leadK = k + dir;
+        const lead = grid[leadK];
+        if (!cells.has(leadK) && lead !== EMPTY && componentDisplaceable(lead)) displaced.push(lead);
+        if (!cells.has(k - dir)) vacated.push(k);
       }
 
       // Capture each component's moved materials BEFORE clearing the grid.
@@ -977,7 +992,7 @@ export function createEngine({
         let wood = 0; let leaf = 0;
         for (const k of comp.cells) {
           const m = matOf(ci, k);
-          mats.push([k + cols, m]);
+          mats.push([k + dir, m]);
           if (isPlant) { if (m === WOOD) wood++; else if (m === PLANT) leaf++; }
         }
         moves.push({ comp, isPlant, mats, wood, leaf });
@@ -989,7 +1004,7 @@ export function createEngine({
         const newCells = new Set();
         for (const [nk, m] of mv.mats) { writeGridIndex(nk, m); newCells.add(nk); }
         mv.comp.cells = newCells;
-        mv.comp.yMax = Math.min(rows - 1, mv.comp.yMax + 1);
+        mv.comp.yMax = Math.max(0, Math.min(rows - 1, mv.comp.yMax + dy));
         if (mv.isPlant) {
           mv.comp.woodCount = mv.wood;
           mv.comp.leafCount = mv.leaf;
@@ -997,13 +1012,58 @@ export function createEngine({
         }
       }
 
-      // Bubble displaced material into now-empty vacated cells (top of the assembly).
+      // Bubble displaced material into the now-empty vacated cells.
       let di = 0;
       for (let vi = 0; vi < vacated.length && di < displaced.length; vi++) {
         const vk = vacated[vi];
         if (grid[vk] !== EMPTY) continue; // a moved cell landed here
         writeGridIndex(vk, displaced[di++]);
       }
+      return true;
+    };
+
+    for (const grp of order) {
+      if (grp.grounded) continue; // structure has a path to the floor — stays put
+
+      const cells = new Set();
+      for (const ci of grp.comps) for (const k of all[ci].cells) cells.add(k);
+
+      // Assembly weight = sum of per-material densities.
+      let weight = 0;
+      for (const ci of grp.comps) for (const k of all[ci].cells) weight += DENSITY[matOf(ci, k)];
+
+      // Highest liquid surface touching the body (4-neighbours), and its density.
+      let touchesLiquid = false;
+      let yW = rows;
+      let rhoL = 1;
+      for (const k of cells) {
+        const nbs = [k - 1, k + 1, k - cols, k + cols];
+        for (const nk of nbs) {
+          if (cells.has(nk)) continue;
+          const m = grid[nk];
+          if (isLiquid(m)) {
+            touchesLiquid = true;
+            const ny = (nk / cols) | 0;
+            if (ny < yW) { yW = ny; rhoL = DENSITY[m]; }
+          }
+        }
+      }
+
+      if (!touchesLiquid) {
+        translateAssembly(grp, cells, cols); // in air — fall under gravity
+        continue;
+      }
+
+      // Buoyancy: cells at or below the surface row are submerged; equilibrium is
+      // when displaced liquid (submerged × rhoL) balances weight. The deadband
+      // prevents ±1-cell jitter from the integer-vs-fractional target.
+      let submerged = 0;
+      for (const k of cells) { if (((k / cols) | 0) >= yW) submerged++; }
+      const target = weight / rhoL;
+      const BAND = 0.5;
+      if (submerged < target - BAND) translateAssembly(grp, cells, cols);        // too little draught — sink
+      else if (submerged > target + BAND) translateAssembly(grp, cells, -cols);  // over-submerged — rise
+      // else within the deadband — rest
     }
   }
 
@@ -1759,7 +1819,7 @@ export function createEngine({
     // body only stays if it has a path to the ground (no false support from
     // ungrounded sand/floating chunks).
     computeGrounded();
-    moveRigidAssembliesDown();
+    moveRigidAssemblies();
     phase('rigid');
 
     // 2) Grow plants and apply material reactions directly on grid

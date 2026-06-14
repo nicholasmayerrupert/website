@@ -218,7 +218,6 @@ export function createEngine({
   const rigidWorld = createRigidWorld({ cols, rows });
   const bodyOwner = new Int32Array(cols * rows).fill(-1);
   let bodyCells = [];
-  let prevBodyCells = [];
   // Terrain a body collides against: settled solids, not liquids/gas/empty and
   // not RIGID (body cells are cleared from the grid before the solver runs).
   const isBodyTerrain = (x, y) => {
@@ -226,9 +225,10 @@ export function createEngine({
     return m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === SAND;
   };
   const moveBodies = () => {
-    if (rigidWorld.bodies.length === 0) return;
-    // Clear last tick's footprint from the grid so the solver sees only terrain.
-    for (const k of prevBodyCells) {
+    if (rigidWorld.bodies.length === 0 && bodyCells.length === 0) return;
+    // Clear the footprint currently on the grid (rasterized last tick) so the
+    // solver sees only terrain and no stale ghost trails behind a moving body.
+    for (const k of bodyCells) {
       if (grid[k] === RIGID) writeGridIndex(k, EMPTY);
       bodyOwner[k] = -1;
     }
@@ -248,7 +248,6 @@ export function createEngine({
         }
       });
     }
-    prevBodyCells = bodyCells;
     bodyCells = cells;
   };
 

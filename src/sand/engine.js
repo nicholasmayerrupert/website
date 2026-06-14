@@ -81,10 +81,12 @@ DENSITY_SORTED_LOOSE[LAVA] = 1;
 // resting depth to exist — a narrow band guarantees overshoot and the body buzzes.
 // The waterline itself is taken as the global pool surface (median column top),
 // which is immune to the splashes and ice-freezing churn that made a per-body
-// "highest touching liquid" reading swing several rows every tick.
+// "highest touching liquid" reading swing several rows every tick. The draft is
+// scaled down from physical density so floaters read clearly in this coarse grid.
 const BUOY_BAND_FRAC = 0.5;
 const BUOY_BAND_MIN = 1.5;
 const BUOY_SURFACE_SMOOTH = 0.1; // EMA rate for the shared waterline (lower = steadier)
+const BUOY_DRAFT_SCALE = 0.5;
 
 // Side-sink settings (bottom is NOT a sink)
 const SINK_STRIP_W = 2;
@@ -845,12 +847,12 @@ export function createEngine({
   const isRigidMaterial = (m) =>
     m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE;
   const isBearingMaterial = (m) => m === SAND || isRigidMaterial(m);
-  // A falling rigid body may pass through whatever it can displace, plus EMPTY,
-  // plus (ungrounded) SAND. It never reaches here resting on *grounded* sand —
-  // that case is grounded and skipped — so treating SAND as passable only sinks a
+  // A falling rigid body may pass through liquids, plus EMPTY, plus
+  // (ungrounded) SAND. It never reaches here resting on *grounded* sand — that
+  // case is grounded and skipped — so treating SAND as passable only sinks a
   // body through genuinely unsupported sand.
   const componentDisplaceable = (m) =>
-    m === EMPTY || m === SAND || m === WATER || m === OIL;
+    m === EMPTY || m === SAND || isLiquid(m);
 
   // Compute which rigid components have a support path to the floor. Sets
   // `comp.grounded` on every stone/plant/ice component. A component is grounded if
@@ -1084,12 +1086,13 @@ export function createEngine({
       }
 
       // Buoyancy: cells at or below the global surface are submerged; equilibrium
-      // is when displaced liquid (submerged × rhoL) balances weight. The deadband
+      // is when scaled displaced liquid roughly balances weight. The deadband
       // scales with width because one row of movement changes submerged by ~width,
       // so a stable resting depth only exists when the band spans that step.
       let submerged = 0;
       for (const k of cells) { if (((k / cols) | 0) >= liquidSurface) submerged++; }
-      const imbalance = submerged - weight / rhoL; // >0 over-submerged (rise), <0 sink
+      const targetSubmerged = (weight / rhoL) * BUOY_DRAFT_SCALE;
+      const imbalance = submerged - targetSubmerged; // >0 over-submerged (rise), <0 sink
       const band = Math.max(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
       if (imbalance < -band) translateAssembly(grp, cells, cols);        // too light a draught — sink
       else if (imbalance > band) translateAssembly(grp, cells, -cols);   // over-submerged — rise

@@ -76,6 +76,13 @@ DENSITY_SORTED_LOOSE[OIL] = 1;
 DENSITY_SORTED_LOOSE[ACID] = 1;
 DENSITY_SORTED_LOOSE[LAVA] = 1;
 
+const LOOSE_MOBILITY_P = new Float32Array(13);
+LOOSE_MOBILITY_P[SAND] = 1.0;
+LOOSE_MOBILITY_P[WATER] = 1.0;
+LOOSE_MOBILITY_P[OIL] = 1.0;
+LOOSE_MOBILITY_P[ACID] = 1.0;
+LOOSE_MOBILITY_P[LAVA] = LAVA_VISCOSITY_P;
+
 // Buoyancy deadband. Moving a body one row changes its wet contact by about its
 // width, so the rest band must be ~half the body width for a stable
 // resting depth to exist — a narrow band guarantees overshoot and the body buzzes.
@@ -781,6 +788,17 @@ export function createEngine({
     grid[k] = material;
     markCellIndex(k);
   };
+  const isLooseDensityMaterial = (material) => DENSITY_SORTED_LOOSE[material] === 1;
+  const canDisplaceByLooseDensity = (material, displaced) =>
+    isLooseDensityMaterial(material) && isLooseDensityMaterial(displaced) && DENSITY[material] > DENSITY[displaced];
+  const touchesUnstableLooseDensityInterface = (k, material) => {
+    if (!isLooseDensityMaterial(material)) return false;
+    const y = (k / cols) | 0;
+    return (
+      (y < rows - 1 && canDisplaceByLooseDensity(material, grid[k + cols])) ||
+      (y > 1 && canDisplaceByLooseDensity(grid[k - cols], material))
+    );
+  };
   const writeNextIndex = (k, material) => {
     if (next[k] === material) return;
     next[k] = material;
@@ -788,13 +806,12 @@ export function createEngine({
       grid[k] !== material ||
       material === FIRE ||
       material === STEAM ||
-      (isLiquid(material) && touchesGridEmpty(k))
+      (isLiquid(material) && touchesGridEmpty(k)) ||
+      touchesUnstableLooseDensityInterface(k, material)
     ) {
       markCellIndex(k);
     }
   };
-  const canDisplaceByLooseDensity = (material, displaced) =>
-    DENSITY_SORTED_LOOSE[material] && DENSITY_SORTED_LOOSE[displaced] && DENSITY[material] > DENSITY[displaced];
   const isGas = (material) => material === FIRE || material === STEAM;
   const canDisplaceMaterial = (material, displaced) => {
     if (isGas(displaced)) return true;
@@ -1337,8 +1354,37 @@ export function createEngine({
     }
   }
 
+  const canLooseDensitySettleThisTick = (material) => {
+    const mobility = LOOSE_MOBILITY_P[material];
+    return mobility >= 1 || rand() < mobility;
+  };
+
+  const settleLooseDensityInterface = (x, y, k) => {
+    const material = grid[k];
+    if (!isLooseDensityMaterial(material) || next[k] !== EMPTY) return;
+    if (!canLooseDensitySettleThisTick(material)) return;
+
+    const belowK = k + cols;
+    if (y + 1 < rows && canDisplaceByLooseDensity(material, grid[belowK]) && next[belowK] === EMPTY) {
+      moveMaterialInto(k, belowK, material);
+      return;
+    }
+
+    const dirs = rand() < 0.5 ? DIRS_LEFT_FIRST : DIRS_RIGHT_FIRST;
+    for (const dx of dirs) {
+      const nx = x + dx;
+      if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
+      const ik = belowK + dx;
+      if (canDisplaceByLooseDensity(material, grid[ik]) && next[ik] === EMPTY) {
+        moveMaterialInto(k, ik, material);
+        return;
+      }
+    }
+  };
+
   // Sand physics
   const settleSand = (x, y, k) => {
+    if (next[k] !== EMPTY) return;
     const belowK = k + cols;
     // Fast path: resting on sand with sand diagonals — cannot fall or slide.
     // writeNextIndex never marks a stationary sand cell, so write directly.
@@ -1898,7 +1944,22 @@ export function createEngine({
     const swapComp = prevCompCells; prevCompCells = curCompCells; curCompCells = swapComp;
     phase('prepare');
 
-    // 4) Dense falling material. Sand gets first claim on water/oil swaps so
+    // 4) Resolve unstable density interfaces between loose materials before
+    // material-specific passes can claim stationary cells.
+    for (let y = rows - 1; y >= 0; y--) {
+      const minX = activeRowMin[y];
+      const maxX = activeRowMax[y];
+      if (maxX < minX) continue;
+      const rowBase = y * cols;
+      const ltr = (y & 1) === 0;
+      if (ltr) {
+        for (let x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rowBase + x);
+      } else {
+        for (let x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rowBase + x);
+      }
+    }
+
+    // 4b) Dense falling material. Sand gets first claim on water/oil swaps so
     // stationary liquid claims cannot block density displacement.
     for (let y = rows - 1; y >= 0; y--) {
       const minX = activeRowMin[y];

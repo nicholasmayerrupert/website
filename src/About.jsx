@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createEngine, MAT, CHUNK_SIZE, SEED_SIZE } from './sand/engine';
 import { makeColorLUT, makeTexture, fillPixelSpan } from './sand/renderCore';
-import { buildCastleScene, castleEmitters } from './sand/scenes/castleScene';
+import { getScene } from './sand/scenes';
 
 /* -------------------- SAND OVERLAY -------------------- */
 function SandOverlay({ onDrawModeChange }) {
@@ -55,12 +55,20 @@ function SandOverlay({ onDrawModeChange }) {
     const previewCtx = previewCanvas.getContext('2d', { alpha: true });
     if (!ctx || !cellCtx || !previewCtx) return;
 
+    // Pick the initial world. Defaults to the procedural landscape; `?scene=castle`
+    // (or any registered key) overrides without rebuilding the UI.
+    const sceneKey =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search).get('scene')
+        : null;
+    const selectedScene = getScene(sceneKey);
+
     // ---- Tunables (render/UI side; physics tunables live in src/sand/engine.js) ----
-    const CELL_PX = 5;
+    const CELL_PX = 4;
     // Cap the simulation cell count so very large viewports (e.g. 1440p/4K
     // monitors) don't blow the per-step CPU budget on slow processors; cells
     // grow slightly instead.
-    const MAX_CELLS = 60000;
+    const MAX_CELLS = 130000;
     const SAND_BRUSH_RADIUS = 2;
     const WATER_BRUSH_RADIUS = 2;
     const STONE_BRUSH_RADIUS = 2;
@@ -186,8 +194,8 @@ function SandOverlay({ onDrawModeChange }) {
       engine = createEngine({
         cols,
         rows,
-        initialScene: buildCastleScene,
-        emitters: castleEmitters,
+        initialScene: selectedScene.build,
+        emitters: selectedScene.emitters,
         emittersOn: emittersOnRef.current,
         sinksOn: sinksOnRef.current,
       });

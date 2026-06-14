@@ -14,7 +14,8 @@ About page. Most agent work happens there. Map of the sim:
 | `src/sand/renderCore.js` | Color lookup table + pixel fill. |
 | `src/sand/rng.js` | `mulberry32` PRNG + `hashGrid` (deterministic checksums for the benchmark). |
 | `src/sand/feed.js` | Safe helpers for placing materials at **runtime** (`placeMaterial`, `placeBatch`). |
-| `src/sand/scenes/` | Scene definitions — the starting layout of the world. `castleScene.js` is the only one today. |
+| `src/sand/scenes/` | Scene definitions — the starting layout of the world. `index.js` is the registry; `landscapeScene.js` (default) and `castleScene.js` are the scenes. |
+| `src/sand/worldgen/` | Procedural-generation foundation: `noise.js` (seeded value/fbm/ridged noise), `context.js` (fixed-scale, center-anchored coords + clipped primitives + shadow grid), `terrain.js` (height field, caves, water, scatter), `structures.js` (surface-snapped prefabs). |
 | `src/About.jsx` | Canvas/pointer wrapper. Owns brushes, the toolbar, and wires the engine + scene together. |
 | `scripts/bench-sand.mjs`, `bench/` | Deterministic headless benchmark + recorded baselines. |
 
@@ -43,42 +44,51 @@ About page. Most agent work happens there. Map of the sim:
 ## Creating or changing a scene
 
 A **scene** seeds the initial world. It is a builder function plus an optional
-list of emitters (continuous material sources).
+list of emitters (continuous material sources). The engine calls the builder once
+at startup with `{ cols, rows, MAT, rand, put, rect }`; stone/plant components are
+registered automatically after it returns, so just place materials.
 
-**To change the current world:** edit `src/sand/scenes/castleScene.js`.
+Scenes are listed in the registry `src/sand/scenes/index.js` and selected in the
+browser with `?scene=<key>` (default: `landscape`).
 
-**To add a new scene:**
+### Author in world space, not fractions of the viewport
 
-1. Create `src/sand/scenes/myScene.js`:
+**Do not size features as fractions of `cols`/`rows`.** That rescales the whole
+composition to the grid, so a narrow screen *squishes* it. Instead author at a
+**fixed cell scale, anchored to the center and the bottom**, and let a narrow
+viewport **crop** the sides (truncation) while a wide one reveals more world.
 
-   ```js
-   import { MAT } from '../engine.js';
+The `src/sand/worldgen/` foundation provides exactly this. Build on it:
 
-   // The engine calls this once at startup with these helpers:
-   //   cols, rows            grid dimensions
-   //   rand()                float in [0, 1)
-   //   MAT                   material id enum
-   //   put(x, y, material)             set a single cell
-   //   rect(x0, y0, w, h, material)    fill a rectangle
-   // Stone/plant components are registered automatically after this returns,
-   // so just place materials — no syncComponents needed here.
-   export function buildMyScene({ cols, rows, MAT, rand, put, rect }) {
-     rect(10, rows - 8, 40, 6, MAT.STONE); // a stone shelf
-     put(20, rows - 9, MAT.SEED);          // a seed that will grow
-   }
+```js
+import { createWorldContext } from '../worldgen/context.js';
+import { heightField, fillTerrain, carveCaves } from '../worldgen/terrain.js';
+import { placeOnSurface, tree } from '../worldgen/structures.js';
 
-   // Optional: continuous sources. pos is fractional (0..1) of the grid.
-   export const myEmitters = [
-     { material: MAT.WATER, rateMs: 90, pos: { x: 0.5, y: 0.1 }, r: 2 },
-   ];
-   ```
+export function buildMyScene(api) {            // api == { cols, rows, MAT, rand, put, rect }
+  const ctx = createWorldContext(api);         // anchors (cx/worldX/fromBottom),
+                                               // clipped primitives, seeded noise,
+                                               // a queryable shadow grid
+  const field = heightField(ctx);              // ordered passes — add/reorder freely
+  fillTerrain(ctx, field);
+  carveCaves(ctx, field);
+  placeOnSurface(ctx, 0, tree);                // worldDx 0 == centered
+  ctx.commit();                                // REQUIRED: flush shadow grid to engine
+}
 
-2. Wire it in `src/About.jsx`: import `buildMyScene` / `myEmitters` and pass them
-   to `createEngine({ ..., initialScene: buildMyScene, emitters: myEmitters })`
-   (replacing `buildCastleScene` / `castleEmitters`).
+export const myEmitters = [
+  { material: 2 /* MAT.WATER */, rateMs: 90, pos: { x: 0.5, y: 0.1 }, r: 2 },
+];
+```
 
-The grid caps at ~60,000 cells (`About.jsx` grows `cellSize` to fit), so design
-in fractions of `cols`/`rows` rather than absolute pixel counts.
+Place features at world-x offsets (`ctx.cx(dx)`, `0` = center) and sample noise in
+`ctx.worldX(gx)` so the landscape stays coherent as the window widens. Remember to
+call `ctx.commit()` at the end. To add the scene, import it in
+`src/sand/scenes/index.js` and add a `{ build, emitters }` entry.
+
+The grid still caps at ~60,000 cells (`About.jsx` grows `cellSize` only on very
+large viewports); fixed-scale authoring is what keeps narrow screens truncating
+rather than scaling.
 
 ## Coding rules (Karpathy's four)
 

@@ -125,6 +125,14 @@ export function createEngine({
   // already moved this tick — the stamp distinguishes the two and stops a
   // displacement from fabricating a duplicate of an already-relocated liquid.
   const vacatedStamp = new Int32Array(cols * rows).fill(-1);
+  // Support solver buffers (reused each step). A rigid body falls unless it is
+  // "grounded" — connected through a chain of load-bearing material to the floor.
+  // groundedCell marks bearing cells with a path to the floor; cellComp maps a
+  // cell to its rigid component (for rigid coupling); groundStack is the BFS work
+  // list.
+  const groundedCell = new Uint8Array(cols * rows);
+  const cellComp = new Int32Array(cols * rows);
+  const groundStack = new Int32Array(cols * rows);
   let prevCompCells = [];
   let curCompCells = [];
   let dirtyRenderCount = 0;
@@ -802,181 +810,200 @@ export function createEngine({
     return indices;
   };
 
+  // Load-bearing materials: rigid solids carry load as cohesive bodies, and
+  // settled SAND bears load too. Liquids, gases and EMPTY do not.
+  const isRigidMaterial = (m) =>
+    m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE;
+  const isBearingMaterial = (m) => m === SAND || isRigidMaterial(m);
+  // A falling rigid body may pass through whatever it can displace, plus EMPTY,
+  // plus (ungrounded) SAND. It never reaches here resting on *grounded* sand —
+  // that case is grounded and skipped — so treating SAND as passable only sinks a
+  // body through genuinely unsupported sand.
+  const componentDisplaceable = (m) =>
+    m === EMPTY || m === SAND || canDisplaceMaterial(SAND, m);
+
+  // Compute which rigid components have a support path to the floor. Sets
+  // `comp.grounded` on every stone/plant/ice component. A component is grounded if
+  // any of its cells rests (directly above) on a bearing cell that is itself
+  // grounded — seeded from the floor row and propagated upward to a fixpoint, with
+  // rigid components grounded as a whole (rigid coupling) so arches, battlements,
+  // canopies and cave roofs bridged to their walls stay up.
+  function computeGrounded() {
+    groundedCell.fill(0);
+    cellComp.fill(-1);
+    const comps = [];
+    const indexComps = (list) => {
+      for (const c of list) {
+        c.grounded = false;
+        const id = comps.length;
+        comps.push(c);
+        for (const k of c.cells) cellComp[k] = id;
+      }
+    };
+    indexComps(stoneComponents);
+    indexComps(plantComponents);
+    indexComps(iceComponents);
+
+    let sp = 0;
+    const groundComp = (id) => {
+      const c = comps[id];
+      if (c.grounded) return;
+      c.grounded = true;
+      for (const k of c.cells) {
+        if (!groundedCell[k]) { groundedCell[k] = 1; groundStack[sp++] = k; }
+      }
+    };
+    const groundCellAt = (k, m) => {
+      if (groundedCell[k]) return;
+      if (isRigidMaterial(m)) {
+        const id = cellComp[k];
+        if (id >= 0) { groundComp(id); return; }
+      }
+      groundedCell[k] = 1;
+      groundStack[sp++] = k;
+    };
+
+    // Seed: bearing cells resting on the floor.
+    const floorBase = (rows - 1) * cols;
+    for (let x = 0; x < cols; x++) {
+      const k = floorBase + x;
+      const m = grid[k];
+      if (isBearingMaterial(m)) groundCellAt(k, m);
+    }
+    // Propagate upward: the cell resting on a grounded cell becomes grounded.
+    while (sp > 0) {
+      const k = groundStack[--sp];
+      const above = k - cols;
+      if (above < 0) continue;
+      const m = grid[above];
+      if (isBearingMaterial(m) && !groundedCell[above]) groundCellAt(above, m);
+    }
+  }
+
   // --- Cohesive STONE chunks ---
-  function moveStoneComponentsDown() {
-    if (stoneComponents.length === 0) return;
+  // Move rigid bodies down by one cell when unsupported. Stone, plant and ice
+  // components that touch are one physical STRUCTURE (a building is stone walls +
+  // wood roof + ivy), so they are unioned into type-agnostic ASSEMBLIES and fall
+  // together. Without this, two interlocked components of different types each see
+  // the other as a non-displaceable cell directly below and refuse to move, so an
+  // ungrounded structure hangs in mid-air. `cellComp` and the stone→plant→ice
+  // ordering are produced by computeGrounded(), which runs immediately before this.
+  function moveRigidAssembliesDown() {
+    const all = [];
+    for (const c of stoneComponents) all.push(c);
+    const nStone = all.length;
+    for (const c of plantComponents) all.push(c);
+    const nStonePlant = all.length;
+    for (const c of iceComponents) all.push(c);
+    const n = all.length;
+    if (n === 0) return;
 
-    for (const comp of stoneComponents) {
+    for (const comp of all) {
       let ym = 0;
       for (const k of comp.cells) { const y = (k / cols) | 0; if (y > ym) ym = y; }
       comp.yMax = ym;
     }
-    stoneComponents.sort((a, b) => b.yMax - a.yMax);
 
-    for (const comp of stoneComponents) {
-      let canMove = true;
-
-      for (const k of comp.cells) {
+    // Union components into assemblies by 8-adjacency (cellComp maps a cell to its
+    // index in `all`, set by computeGrounded over the same lists in the same order).
+    const parent = new Int32Array(n);
+    for (let i = 0; i < n; i++) parent[i] = i;
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    for (let i = 0; i < n; i++) {
+      for (const k of all[i].cells) {
         const y = (k / cols) | 0; const x = k - y * cols;
-        const ny = y + 1;
-        if (ny >= rows) { canMove = false; break; }
-        const belowK = I(x, ny);
-        if (comp.cells.has(belowK)) continue;
-        const mat = grid[belowK];
-        if (mat !== EMPTY && !canDisplaceMaterial(SAND, mat)) { canMove = false; break; }
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = x + ox; const ny = y + oy;
+            if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows) continue;
+            const j = cellComp[ny * cols + nx];
+            if (j >= 0) { const ri = find(i); const rj = find(j); if (ri !== rj) parent[ri] = rj; }
+          }
+        }
+      }
+    }
+
+    // Group components by assembly; an assembly is grounded if any member is.
+    const groups = new Map();
+    for (let i = 0; i < n; i++) {
+      const r = find(i);
+      let g = groups.get(r);
+      if (!g) { g = { comps: [], grounded: false, maxY: 0 }; groups.set(r, g); }
+      g.comps.push(i);
+      if (all[i].grounded) g.grounded = true;
+      if (all[i].yMax > g.maxY) g.maxY = all[i].yMax;
+    }
+    const order = [...groups.values()].sort((a, b) => b.maxY - a.maxY);
+
+    const matOf = (i, k) =>
+      i < nStone ? STONE : (i < nStonePlant ? grid[k] : ICE);
+
+    for (const grp of order) {
+      if (grp.grounded) continue; // structure has a path to the floor — stays put
+
+      const cells = new Set();
+      for (const ci of grp.comps) for (const k of all[ci].cells) cells.add(k);
+
+      // Can the whole assembly drop one cell?
+      let canMove = true;
+      for (const k of cells) {
+        const y = (k / cols) | 0; const x = k - y * cols;
+        if (y + 1 >= rows) { canMove = false; break; }
+        const belowK = I(x, y + 1);
+        if (cells.has(belowK)) continue;
+        if (!componentDisplaceable(grid[belowK])) { canMove = false; break; }
       }
       if (!canMove) continue;
 
-      // Track displaced material to bubble up.
-      const displacedCells = [];
-      for (const k of comp.cells) {
+      // Material displaced from beneath the assembly (sand/liquid), to bubble up
+      // into the cells the assembly vacates at its top.
+      const displaced = [];
+      const vacated = [];
+      for (const k of cells) {
         const y = (k / cols) | 0; const x = k - y * cols;
         const belowK = I(x, y + 1);
         const below = grid[belowK];
-        if (!comp.cells.has(belowK) && canDisplaceMaterial(SAND, below)) {
-          displacedCells.push([belowK, k, below]); // [displacedIndexBelow, stoneOriginIndex, material]
+        if (!cells.has(belowK) && below !== EMPTY && componentDisplaceable(below)) displaced.push(below);
+        if (!cells.has(k - cols)) vacated.push(k);
+      }
+
+      // Capture each component's moved materials BEFORE clearing the grid.
+      const moves = [];
+      for (const ci of grp.comps) {
+        const comp = all[ci];
+        const isPlant = ci >= nStone && ci < nStonePlant;
+        const mats = [];
+        let wood = 0; let leaf = 0;
+        for (const k of comp.cells) {
+          const m = matOf(ci, k);
+          mats.push([k + cols, m]);
+          if (isPlant) { if (m === WOOD) wood++; else if (m === PLANT) leaf++; }
+        }
+        moves.push({ comp, isPlant, mats, wood, leaf });
+      }
+
+      for (const k of cells) writeGridIndex(k, EMPTY);
+
+      for (const mv of moves) {
+        const newCells = new Set();
+        for (const [nk, m] of mv.mats) { writeGridIndex(nk, m); newCells.add(nk); }
+        mv.comp.cells = newCells;
+        mv.comp.yMax = Math.min(rows - 1, mv.comp.yMax + 1);
+        if (mv.isPlant) {
+          mv.comp.woodCount = mv.wood;
+          mv.comp.leafCount = mv.leaf;
+          mv.comp.cacheDirty = true;
         }
       }
 
-      // Clear old stones
-      for (const k of comp.cells) writeGridIndex(k, EMPTY);
-
-      // Bubble displaced material up into vacated cells.
-      for (const [displacedIdx, originIdx, material] of displacedCells) {
-        writeGridIndex(originIdx, material);
-        markCellIndex(displacedIdx);
+      // Bubble displaced material into now-empty vacated cells (top of the assembly).
+      let di = 0;
+      for (let vi = 0; vi < vacated.length && di < displaced.length; vi++) {
+        const vk = vacated[vi];
+        if (grid[vk] !== EMPTY) continue; // a moved cell landed here
+        writeGridIndex(vk, displaced[di++]);
       }
-
-      // Move stones down
-      const newCells = new Set();
-      for (const k of comp.cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        const nk = I(x, y + 1);
-        newCells.add(nk);
-      }
-      for (const nk of newCells) writeGridIndex(nk, STONE);
-
-      comp.cells = newCells;
-      comp.yMax = Math.min(rows - 1, comp.yMax + 1);
-    }
-  }
-
-  function movePlantComponentsDown() {
-    if (plantComponents.length === 0) return;
-
-    for (const comp of plantComponents) {
-      let ym = 0;
-      for (const k of comp.cells) { const y = (k / cols) | 0; if (y > ym) ym = y; }
-      comp.yMax = ym;
-    }
-    plantComponents.sort((a, b) => b.yMax - a.yMax);
-
-    for (const comp of plantComponents) {
-      let canMove = true;
-
-      for (const k of comp.cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        const ny = y + 1;
-        if (ny >= rows) { canMove = false; break; }
-        const belowK = I(x, ny);
-        if (comp.cells.has(belowK)) continue;
-        const mat = grid[belowK];
-        if (mat !== EMPTY && !canDisplaceMaterial(SAND, mat)) { canMove = false; break; }
-      }
-      if (!canMove) continue;
-
-      const displacedCells = [];
-      const vacatedCells = [];
-      const movedCells = [];
-      for (const k of comp.cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        const belowK = I(x, y + 1);
-        const below = grid[belowK];
-        if (!comp.cells.has(belowK) && canDisplaceMaterial(SAND, below)) {
-          displacedCells.push([belowK, below]);
-        }
-        if (!comp.cells.has(k - cols)) vacatedCells.push(k);
-        movedCells.push([k + cols, grid[k]]);
-      }
-
-      for (const k of comp.cells) writeGridIndex(k, EMPTY);
-
-      const newCells = new Set();
-      let woodCount = 0;
-      let leafCount = 0;
-      for (const [nk, material] of movedCells) {
-        writeGridIndex(nk, material);
-        newCells.add(nk);
-        if (material === WOOD) woodCount++;
-        else if (material === PLANT) leafCount++;
-      }
-
-      vacatedCells.sort((a, b) => Math.floor(a / cols) - Math.floor(b / cols));
-      for (let i = 0; i < displacedCells.length && i < vacatedCells.length; i++) {
-        const [displacedIdx, material] = displacedCells[i];
-        writeGridIndex(vacatedCells[i], material);
-        markCellIndex(displacedIdx);
-      }
-
-      comp.cells = newCells;
-      comp.woodCount = woodCount;
-      comp.leafCount = leafCount;
-      comp.cacheDirty = true;
-      comp.yMax = Math.min(rows - 1, comp.yMax + 1);
-    }
-  }
-
-  // Ice falls as a cohesive rigid chunk, same as stone.
-  function moveIceComponentsDown() {
-    if (iceComponents.length === 0) return;
-
-    for (const comp of iceComponents) {
-      let ym = 0;
-      for (const k of comp.cells) { const y = (k / cols) | 0; if (y > ym) ym = y; }
-      comp.yMax = ym;
-    }
-    iceComponents.sort((a, b) => b.yMax - a.yMax);
-
-    for (const comp of iceComponents) {
-      let canMove = true;
-
-      for (const k of comp.cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        const ny = y + 1;
-        if (ny >= rows) { canMove = false; break; }
-        const belowK = I(x, ny);
-        if (comp.cells.has(belowK)) continue;
-        const mat = grid[belowK];
-        if (mat !== EMPTY && !canDisplaceMaterial(SAND, mat)) { canMove = false; break; }
-      }
-      if (!canMove) continue;
-
-      const displacedCells = [];
-      for (const k of comp.cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        const belowK = I(x, y + 1);
-        const below = grid[belowK];
-        if (!comp.cells.has(belowK) && canDisplaceMaterial(SAND, below)) {
-          displacedCells.push([belowK, k, below]);
-        }
-      }
-
-      for (const k of comp.cells) writeGridIndex(k, EMPTY);
-
-      for (const [displacedIdx, originIdx, material] of displacedCells) {
-        writeGridIndex(originIdx, material);
-        markCellIndex(displacedIdx);
-      }
-
-      const newCells = new Set();
-      for (const k of comp.cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        newCells.add(I(x, y + 1));
-      }
-      for (const nk of newCells) writeGridIndex(nk, ICE);
-
-      comp.cells = newCells;
-      comp.yMax = Math.min(rows - 1, comp.yMax + 1);
     }
   }
 
@@ -1728,10 +1755,11 @@ export function createEngine({
     };
     tick++;
 
-    // 1) Move rigid bodies first, directly on grid
-    moveStoneComponentsDown();
-    movePlantComponentsDown();
-    moveIceComponentsDown();
+    // 1) Move rigid bodies first, directly on grid. Solve support up front so a
+    // body only stays if it has a path to the ground (no false support from
+    // ungrounded sand/floating chunks).
+    computeGrounded();
+    moveRigidAssembliesDown();
     phase('rigid');
 
     // 2) Grow plants and apply material reactions directly on grid

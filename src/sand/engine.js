@@ -1815,17 +1815,20 @@ export function createEngine({
 
     // 3) Prepare next buffer & carry rigid bodies forward
     prepareNextBuffer();
-    for (const comp of stoneComponents) {
-      for (const k of comp.cells) next[k] = STONE;
-    }
-    // Plant cells churn every step as the canopy grows/sheds; a vacated plant
-    // cell gets cleared in only one of the two buffers (a dirty mark lives one
-    // step), leaving a ghost that flickers every other frame. Track plant cells
-    // and clear any occupied last step but not this one. (Resting stone never
-    // vacates, so it needs no per-step tracking.)
+    // All component cells (stone/plant/ice) survive only via the carry-forward.
+    // A cell erased by acid, melting, or canopy shedding leaves its component but
+    // gets cleared in only one of the two buffers (a dirty mark lives one step),
+    // leaving a ghost that flickers every other frame. Stamp every component cell
+    // so a vacated one can be detected and cleared in both buffers.
     curCompCells.length = 0;
+    for (const comp of stoneComponents) {
+      for (const k of comp.cells) { next[k] = STONE; compOccStamp[k] = tick; curCompCells.push(k); }
+    }
     for (const comp of plantComponents) {
       for (const k of comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; curCompCells.push(k); }
+    }
+    for (const comp of iceComponents) {
+      for (const k of comp.cells) { next[k] = ICE; compOccStamp[k] = tick; curCompCells.push(k); }
     }
     // Writing next[k] clears the about-to-be-displayed buffer; markCellIndex
     // makes the cell active next step so the other buffer is cleared too. Guard
@@ -1834,9 +1837,6 @@ export function createEngine({
       if (compOccStamp[k] !== tick && grid[k] === EMPTY) { next[k] = EMPTY; markCellIndex(k); }
     }
     const swapComp = prevCompCells; prevCompCells = curCompCells; curCompCells = swapComp;
-    for (const comp of iceComponents) {
-      for (const k of comp.cells) next[k] = ICE;
-    }
     phase('prepare');
 
     // 4) Dense falling material. Sand gets first claim on water/oil swaps so

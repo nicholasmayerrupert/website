@@ -4,10 +4,12 @@
 
 import { buildCastleScene, castleEmitters } from './castleScene.js';
 import { buildLandscapeScene, landscapeEmitters } from './landscapeScene.js';
+import { buildNoitaScene, noitaEmitters } from './noitaScene.js';
 
 export const scenes = {
   landscape: { build: buildLandscapeScene, emitters: landscapeEmitters },
   castle: { build: buildCastleScene, emitters: castleEmitters },
+  noita: { build: buildNoitaScene, emitters: noitaEmitters },
 };
 
 export const DEFAULT_SCENE = 'landscape';

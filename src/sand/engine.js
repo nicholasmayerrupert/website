@@ -388,13 +388,17 @@ export function createEngine({
   };
   const moveBodies = () => {
     if (rigidWorld.bodies.length === 0 && bodyCells.length === 0) return;
-    // Clear the footprint currently on the grid (rasterized last tick) so the
-    // solver sees only terrain and no stale ghost trails behind a moving body.
+    // Ground while body footprints are still rasterized, so sand resting on a
+    // grounded body (RIGID is bearing) is itself recognized as grounded terrain.
+    // Clearing first would leave that sand floating above EMPTY and a body
+    // dropped onto it would treat it as loose and fall through.
+    computeGrounded();
+    // Now clear the footprint (rasterized last tick) so the solver sees only
+    // terrain and no stale ghost trails behind a moving body.
     for (const k of bodyCells) {
       if (grid[k] === RIGID) writeGridIndex(k, EMPTY);
       bodyOwner[k] = -1;
     }
-    computeGrounded();
     rigidWorld.step(isBodyTerrain, fluidDensityAt);
     // Rasterize the new footprint. A cell already claimed by terrain stays
     // terrain (the body rests against it); empty/liquid/loose-sand cells become

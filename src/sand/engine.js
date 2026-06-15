@@ -220,6 +220,13 @@ export function createEngine({
   const rigidWorld = createRigidWorld({ cols, rows });
   const bodyOwner = new Int32Array(cols * rows).fill(-1);
   let bodyCells = [];
+  // Dev diagnostics for the post-solve raster overlap validator (see
+  // depenetrateBodyRaster / moveBodies). Reset each moveBodies() pass.
+  // `rejectedCells` counts terrain cells the final rasterization had to skip
+  // *after* depenetration ran — these should be rare/zero once the validator
+  // works; a nonzero value flags a body still clipping into terrain.
+  let rigidRejectedCells = 0;
+  let rigidDepenetrations = 0;
   // Terrain a body collides against: settled solids, not liquids/gas/empty and
   // not RIGID (body cells are cleared from the grid before the solver runs).
   const isBodyTerrain = (x, y) => {
@@ -386,6 +393,102 @@ export function createEngine({
     }
     return finishErasedBodies(dirtyBodies, cells);
   };
+  // Post-solve raster overlap validator. The continuous rigid solver works in
+  // float poses; its rasterized footprint can dip a row into terrain even when
+  // the solver thought it was resting. These helpers validate/correct the pose
+  // before it is stamped, so a body never accepts a footprint that overlaps
+  // terrain (which the final raster would otherwise silently drop, leaving a
+  // visibly chewed-off body).
+  const capturePose = (b) => ({ px: b.px, py: b.py, angle: b.angle });
+  const applyPose = (b, px, py, angle) => { b.px = px; b.py = py; b.angle = angle; };
+  // How many of a body's rasterized cells land on non-occupiable terrain.
+  const bodyFootprintBlocked = (b) => {
+    let blocked = 0;
+    rigidWorld.forEachBodyCell(b, (x, y) => {
+      const k = y * cols + x;
+      const m = grid[k];
+      // Ignore the body's own already-stamped footprint (RIGID owned by b) so
+      // the count means "overlapping terrain / another body". During the
+      // in-engine validator pass footprints are cleared, so this is a no-op
+      // there; it matters when the helper is called after rasterization.
+      if (m === RIGID && bodyOwner[k] === b.id) return;
+      if (!canBodyOccupy(m, k)) blocked++;
+    });
+    return blocked;
+  };
+  // Shallow edge/corner overlap is tolerated so a body can tip and roll across
+  // a ledge: rotating a corner momentarily dips a cell or two into terrain, and
+  // the final rasterizer defensively skips those few cells. The validator is a
+  // safety net for *deep* clipping (a body sunk well into the ground), not a
+  // hard constraint that forbids that borderline overlap. The allowance scales
+  // with the body's smaller dimension so a full submerged row always trips it.
+  const bodyDepenTolerance = (b) => Math.max(1, Math.floor(Math.min(b.w, b.h) * 0.34));
+  // Push a body out of terrain its post-step footprint *deeply* overlaps.
+  // Rotation is never rolled back (tipping/rolling must survive) — only the
+  // translation this step is undone:
+  // 1) If the pre-step position (at the new angle) is within tolerance,
+  //    binary-search the straight translation old->new and accept the latest
+  //    in-tolerance pose, then kill the velocity component driving into terrain.
+  // 2) Otherwise lift straight up in small cell fractions, holding the new
+  //    angle. Returns true if the pose was corrected.
+  const depenetrateBodyRaster = (b, prePose) => {
+    const tol = bodyDepenTolerance(b);
+    if (bodyFootprintBlocked(b) <= tol) return false;
+    const newPx = b.px, newPy = b.py, newAngle = b.angle;
+
+    if (prePose) {
+      // Hold the solver's new angle; only the position is pulled back.
+      applyPose(b, prePose.px, prePose.py, newAngle);
+      if (bodyFootprintBlocked(b) <= tol) {
+        // lo is always an in-tolerance fraction along old->new, hi always over.
+        let lo = 0, hi = 1;
+        for (let iter = 0; iter < 6; iter++) {
+          const mid = (lo + hi) * 0.5;
+          applyPose(b,
+            prePose.px + (newPx - prePose.px) * mid,
+            prePose.py + (newPy - prePose.py) * mid,
+            newAngle);
+          if (bodyFootprintBlocked(b) <= tol) lo = mid; else hi = mid;
+        }
+        applyPose(b,
+          prePose.px + (newPx - prePose.px) * lo,
+          prePose.py + (newPy - prePose.py) * lo,
+          newAngle);
+        // Remove the velocity component along the motion we just undid so the
+        // body stops pushing into the terrain next step (e.g. zeroes vy when it
+        // was falling onto a floor, vx when sliding into a wall).
+        const mvx = newPx - prePose.px, mvy = newPy - prePose.py;
+        const len = Math.hypot(mvx, mvy);
+        if (len > 1e-6) {
+          const nx = mvx / len, ny = mvy / len;
+          const vn = b.vx * nx + b.vy * ny;
+          if (vn > 0) { b.vx -= vn * nx; b.vy -= vn * ny; }
+        }
+        b.awake = true;
+        b.stillTicks = 0;
+        return true;
+      }
+    }
+
+    // Fallback: vertical lift out of the ground, holding the new angle.
+    applyPose(b, newPx, newPy, newAngle);
+    const maxLift = 3.0;
+    const step = 0.125;
+    for (let lift = step; lift <= maxLift + 1e-9; lift += step) {
+      b.py = newPy - lift;
+      if (bodyFootprintBlocked(b) <= tol) {
+        if (b.vy > 0) b.vy = 0;
+        b.awake = true;
+        b.stillTicks = 0;
+        return true;
+      }
+    }
+    // No in-tolerance pose found: restore the solver pose. The final
+    // rasterization stays defensive and simply won't overwrite terrain cells.
+    applyPose(b, newPx, newPy, newAngle);
+    return false;
+  };
+
   const moveBodies = () => {
     if (rigidWorld.bodies.length === 0 && bodyCells.length === 0) return;
     // Ground while body footprints are still rasterized, so sand resting on a
@@ -399,7 +502,19 @@ export function createEngine({
       if (grid[k] === RIGID) writeGridIndex(k, EMPTY);
       bodyOwner[k] = -1;
     }
+    // Snapshot pre-step poses so the validator can binary-search the path each
+    // body travelled this step when its new footprint overlaps terrain.
+    const prePoses = new Map();
+    for (const b of rigidWorld.bodies) prePoses.set(b.id, capturePose(b));
     rigidWorld.step(isBodyTerrain, fluidDensityAt);
+    // Validate/correct each body's rasterized footprint before stamping it, so
+    // a continuous pose that has partly entered the ground is pushed back out
+    // rather than silently clipped during rasterization below.
+    rigidRejectedCells = 0;
+    rigidDepenetrations = 0;
+    for (const b of rigidWorld.bodies) {
+      if (depenetrateBodyRaster(b, prePoses.get(b.id))) rigidDepenetrations++;
+    }
     // Rasterize the new footprint. A cell already claimed by terrain stays
     // terrain (the body rests against it); empty/liquid/loose-sand cells become
     // RIGID and the displaced material is spilled into connected empty space.
@@ -413,7 +528,10 @@ export function createEngine({
         const k = y * cols + x;
         if (bodyOwner[k] !== -1) return;
         const m = grid[k];
-        if (!canBodyOccupy(m, k)) return;
+        // Defensive: the validator should have cleared terrain overlap, but a
+        // body that couldn't be depenetrated still must not overwrite terrain.
+        // Count these so clipping failures are visible in dev.
+        if (!canBodyOccupy(m, k)) { rigidRejectedCells++; return; }
         if (isBodyRelocatable(m, k)) pb.displaced.push({ material: m, from: k });
         writeGridIndex(k, RIGID);
         bodyOwner[k] = b.id;
@@ -426,6 +544,10 @@ export function createEngine({
       spillDisplacedBodyMaterial(pb.displaced, footprint, pb.footprint);
     }
     bodyCells = erodeBodies(cells);
+    // Dev-only: surface clipping failures the validator couldn't resolve.
+    if (rigidRejectedCells > 0 && import.meta.env?.DEV && typeof console !== 'undefined') {
+      console.warn(`[sand] rigid raster overlap: ${rigidRejectedCells} cell(s) skipped after ${rigidDepenetrations} depenetration(s)`);
+    }
   };
 
   // Emitters (grid coords with timing)
@@ -2414,6 +2536,12 @@ export function createEngine({
       return body;
     },
     getBodies() { return rigidWorld.bodies; },
+    // Number of a body's rasterized cells overlapping non-occupiable terrain.
+    // Exposed for the raster overlap validator's tests/diagnostics.
+    bodyFootprintBlocked(b) { return bodyFootprintBlocked(b); },
+    // Diagnostics from the last moveBodies() pass: cells the final raster had
+    // to skip (should be ~0) and how many bodies were depenetrated.
+    getRigidDebug() { return { rejectedCells: rigidRejectedCells, depenetrations: rigidDepenetrations }; },
     // Adopt any stone/plant cells that are in the grid but not yet owned by a
     // component (e.g. placed via paintDisc or raw grid writes). Without this,
     // such cells are erased each step by prepareNextBuffer and flicker, because

@@ -12,7 +12,7 @@ export const scenes = {
   noita: { build: buildNoitaScene, emitters: noitaEmitters },
 };
 
-export const DEFAULT_SCENE = 'landscape';
+export const DEFAULT_SCENE = 'noita';
 
 // Resolve a scene by key, falling back to the default if unknown/empty.
 export function getScene(key) {

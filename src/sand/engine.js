@@ -237,7 +237,7 @@ export function createEngine({
     isLiquid(material) || (material === SAND && groundedCell[k] !== 1);
   const canBodyOccupy = (material, k) =>
     material === EMPTY || material === FIRE || material === STEAM || isBodyRelocatable(material, k);
-  const spillDisplacedBodyMaterial = (displaced, footprint) => {
+  const spillDisplacedBodyMaterial = (displaced, footprint, edgeFootprint) => {
     if (displaced.length === 0) return;
     displaced.sort((a, b) => a.from - b.from);
     const neighborOffsets = [-cols, -1, 1, cols];
@@ -250,9 +250,12 @@ export function createEngine({
       const m = grid[k];
       return x > 0 && x < cols - 1 && y > 0 && y < rows && (m === EMPTY || isBodyRelocatable(m, k));
     };
+    // Fallback search seeds only from the displacing body's own footprint edge,
+    // so water a submerged body sheds can never be routed out next to a
+    // different body that happens to be sitting in open air.
     const footprintEdgeStarts = [];
     const footprintEdgeSeen = new Set();
-    const sortedFootprint = [...footprint].sort((a, b) => a - b);
+    const sortedFootprint = [...edgeFootprint].sort((a, b) => a - b);
     for (const k of sortedFootprint) {
       for (const off of neighborOffsets) {
         const nk = k + off;
@@ -398,21 +401,26 @@ export function createEngine({
     // RIGID and the displaced material is spilled into connected empty space.
     const cells = [];
     const footprint = new Set();
-    const displaced = [];
+    const perBody = new Map();
     for (const b of rigidWorld.bodies) {
+      let pb = perBody.get(b.id);
+      if (!pb) { pb = { displaced: [], footprint: new Set() }; perBody.set(b.id, pb); }
       rigidWorld.forEachBodyCell(b, (x, y) => {
         const k = y * cols + x;
         if (bodyOwner[k] !== -1) return;
         const m = grid[k];
         if (!canBodyOccupy(m, k)) return;
-        if (isBodyRelocatable(m, k)) displaced.push({ material: m, from: k });
+        if (isBodyRelocatable(m, k)) pb.displaced.push({ material: m, from: k });
         writeGridIndex(k, RIGID);
         bodyOwner[k] = b.id;
         cells.push(k);
         footprint.add(k);
+        pb.footprint.add(k);
       });
     }
-    spillDisplacedBodyMaterial(displaced, footprint);
+    for (const pb of perBody.values()) {
+      spillDisplacedBodyMaterial(pb.displaced, footprint, pb.footprint);
+    }
     bodyCells = erodeBodies(cells);
   };
 

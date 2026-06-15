@@ -1096,6 +1096,10 @@ export function createEngine({
           if (grid[k] === STONE) erasedStoneCells.push(k);
           else if (grid[k] === ICE) erasedIceCells.push(k);
           if (isPlantMaterial(grid[k])) erasedPlant = true;
+          // A RIGID cell reaching here means eraseBodyCellIndex couldn't map it
+          // back to a local body cell. Clear its owner too, or the stale id makes
+          // later bodies skip this cell when rasterizing (a "dead pixel" hole).
+          if (grid[k] === RIGID) bodyOwner[k] = -1;
           grid[k] = EMPTY;
           changed = true;
         }

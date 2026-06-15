@@ -1139,6 +1139,15 @@ export function createEngine({
       const m = grid[k];
       if (isBearingMaterial(m)) groundCellAt(k, m);
     }
+    // Viscous lava can carry a settled sand crust. Seed those sand cells as
+    // grounded so rigid bodies rest on the crust instead of treating it as loose.
+    for (let y = rows - 2; y > 0; y--) {
+      const rowBase = y * cols;
+      for (let x = 1; x < cols - 1; x++) {
+        const k = rowBase + x;
+        if (grid[k] === SAND && grid[k + cols] === LAVA) groundCellAt(k, SAND);
+      }
+    }
     // Propagate upward: the cell resting on a grounded cell becomes grounded.
     while (sp > 0) {
       const k = groundStack[--sp];
@@ -2375,11 +2384,22 @@ export function createEngine({
     // Spawn a free rigid body from integer cell coords [[x,y], ...]. Defaults to
     // RIGID material at DENSITY[RIGID]. Returns the body handle.
     spawnBody(cells, opts = {}) {
-      return rigidWorld.spawnBody(cells, {
+      const body = rigidWorld.spawnBody(cells, {
         material: RIGID,
         density: DENSITY[RIGID],
         ...opts,
       });
+      if (body && cells.length > 0) {
+        let minX = cols - 1, minY = rows - 1, maxX = 0, maxY = 0;
+        for (const [x, y] of cells) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+        markDirtyRect(minX, minY, maxX, maxY);
+      }
+      return body;
     },
     getBodies() { return rigidWorld.bodies; },
     // Adopt any stone/plant cells that are in the grid but not yet owned by a

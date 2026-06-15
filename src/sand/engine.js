@@ -246,16 +246,26 @@ export function createEngine({
     material === EMPTY || material === FIRE || material === STEAM || isBodyRelocatable(material, k);
   const spillDisplacedBodyMaterial = (displaced, footprint, edgeFootprint) => {
     if (displaced.length === 0) return;
-    displaced.sort((a, b) => a.from - b.from);
     const neighborOffsets = [-cols, -1, 1, cols];
     const seen = new Set();
     const queue = [];
+    // Cells the search can move through: empty, fluid, gas, or ungrounded sand.
+    const isPassable = (m, k) =>
+      m === EMPTY || isLiquid(m) || isGas(m) || (m === SAND && groundedCell[k] !== 1);
     const canVisit = (k) => {
       if (k <= 0 || k >= grid.length || footprint.has(k) || seen.has(k)) return false;
       const y = (k / cols) | 0;
       const x = k - y * cols;
+      return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k);
+    };
+    // A displaced pixel of `mat` can land here if the cell is empty, or holds a
+    // gas/fluid strictly lighter than `mat` (which then gets displaced in turn).
+    // Gas density is 0, so it is always lighter than any fluid/powder.
+    const isDropTarget = (k, mat) => {
+      if (footprint.has(k)) return false;
       const m = grid[k];
-      return x > 0 && x < cols - 1 && y > 0 && y < rows && (m === EMPTY || isBodyRelocatable(m, k));
+      if (m === EMPTY) return true;
+      return (isLiquid(m) || isGas(m)) && DENSITY[m] < DENSITY[mat];
     };
     // Fallback search seeds only from the displacing body's own footprint edge,
     // so water a submerged body sheds can never be routed out next to a
@@ -270,15 +280,20 @@ export function createEngine({
         const y = (nk / cols) | 0;
         const x = nk - y * cols;
         if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue;
-        const m = grid[nk];
-        if (m === EMPTY || isBodyRelocatable(m, nk)) {
+        if (isPassable(grid[nk], nk)) {
           footprintEdgeSeen.add(nk);
           footprintEdgeStarts.push(nk);
         }
       }
     }
 
-    for (const d of displaced) {
+    // Worklist of materials needing a home. Heaviest-first so heavy pixels
+    // settle before the lighter material they evict is re-placed. Every evicted
+    // pixel is strictly lighter than the one that displaced it, so the density
+    // chain monotonically descends and the loop terminates.
+    const worklist = [...displaced].sort((a, b) => DENSITY[b.material] - DENSITY[a.material]);
+    for (let wi = 0; wi < worklist.length; wi++) {
+      const d = worklist[wi];
       seen.clear();
       queue.length = 0;
       let target = -1;
@@ -297,7 +312,7 @@ export function createEngine({
       }
       for (let qi = 0; qi < queue.length; qi++) {
         const k = queue[qi];
-        if (grid[k] === EMPTY && !footprint.has(k)) { target = k; break; }
+        if (isDropTarget(k, d.material)) { target = k; break; }
         for (const off of neighborOffsets) {
           const nk = k + off;
           if (!canVisit(nk)) continue;
@@ -305,7 +320,11 @@ export function createEngine({
           queue.push(nk);
         }
       }
-      if (target >= 0) writeGridIndex(target, d.material);
+      if (target >= 0) {
+        const evicted = grid[target];
+        if (evicted !== EMPTY) worklist.push({ material: evicted, from: target });
+        writeGridIndex(target, d.material);
+      }
     }
   };
   const rigidErodeProbabilityAt = (k) => {

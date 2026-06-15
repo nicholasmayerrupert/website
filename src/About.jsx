@@ -12,7 +12,7 @@ function SandOverlay({ onDrawModeChange }) {
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('sand'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice' | 'cube' | 'eraser'
+  const [selectedTool, setSelectedTool] = useState('cube'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice' | 'cube' | 'eraser'
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
@@ -630,6 +630,12 @@ function SandOverlay({ onDrawModeChange }) {
   }, []); // IMPORTANT: single mount
   const toolButtons = [
     {
+      id: 'cube',
+      title: 'Cube (click to drop a tumbling rigid body)',
+      activeClass: 'bg-stone-600/50 ring-stone-300/35 text-stone-100',
+      idleClass: 'text-stone-400/85 bg-stone-400/10',
+    },
+    {
       id: 'sand',
       title: 'Sand (hold LMB)',
       activeClass: 'bg-yellow-600/50 ring-yellow-300/35 text-yellow-200',
@@ -682,12 +688,6 @@ function SandOverlay({ onDrawModeChange }) {
       title: 'Ice (hold to draft, release to drop)',
       activeClass: 'bg-cyan-600/50 ring-cyan-200/35 text-cyan-50',
       idleClass: 'text-cyan-300/80 bg-cyan-400/10',
-    },
-    {
-      id: 'cube',
-      title: 'Cube (click to drop a tumbling rigid body)',
-      activeClass: 'bg-stone-600/50 ring-stone-300/35 text-stone-100',
-      idleClass: 'text-stone-400/85 bg-stone-400/10',
     },
     {
       id: 'eraser',

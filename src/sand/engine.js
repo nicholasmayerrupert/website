@@ -82,6 +82,11 @@ const BUOY_BAND_FRAC = 0.5;
 const BUOY_BAND_MIN = 1.5;
 const BUOY_DRAFT_SCALE = 0.5;
 const BUOY_WET_PERIMETER_FRAC = 0.75;
+// Buoyant RISE is only allowed when at least this fraction of a body's underside
+// rests in liquid. Water merely running down the sides (under a tap / in a
+// waterfall) leaves the underside dry, so a light body falls instead of climbing
+// the water column up to the source.
+const BUOY_SUPPORT_FRAC = 0.5;
 
 // Side-sink settings (bottom is NOT a sink)
 const SINK_STRIP_W = 2;
@@ -961,7 +966,7 @@ export function createEngine({
     activeRowMin, activeRowMax, reactionFlags, reactionSteam, reactionFires, reactionIgnite,
     isLiquid, isGas, isDissolvable, isPlantMaterial, isFlammable, isInBounds, isRigidMaterial,
     writeGridIndex, markDirtyRect, markCellIndex, neighborIndices8,
-    BUOY_WET_PERIMETER_FRAC, BUOY_DRAFT_SCALE, BUOY_BAND_MIN, BUOY_BAND_FRAC,
+    BUOY_WET_PERIMETER_FRAC, BUOY_DRAFT_SCALE, BUOY_BAND_MIN, BUOY_BAND_FRAC, BUOY_SUPPORT_FRAC,
     DIRS_LEFT_FIRST, DIRS_RIGHT_FIRST,
     TRUNK_THICKEN_UNTIL_WOOD, TRUNK_SIDE_FILL_P, TRUNK_DOUBLE_SIDE_FILL_P, TRUNK_WIDE_SIDE_FILL_P,
     MAX_WOOD_CELLS, MAX_LEAF_CELLS, GROWTH_P, LEAF_GROWTH_P, WATER_PER_GROWTH,

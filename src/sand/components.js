@@ -15,7 +15,7 @@ export function createComponents(S) {
   const {
     cols, rows, I,
     EMPTY, SAND, STONE, WOOD, PLANT, SEED, ICE, LAVA, RIGID,
-    DENSITY, BUOY_WET_PERIMETER_FRAC, BUOY_DRAFT_SCALE, BUOY_BAND_MIN, BUOY_BAND_FRAC,
+    DENSITY, BUOY_WET_PERIMETER_FRAC, BUOY_DRAFT_SCALE, BUOY_BAND_MIN, BUOY_BAND_FRAC, BUOY_SUPPORT_FRAC,
     isLiquid, isGas, isPlantMaterial, isRigidMaterial, neighborIndices8, writeGridIndex,
     groundedCell, cellComp, groundStack,
   } = S;
@@ -291,6 +291,8 @@ export function createComponents(S) {
       let exposedCells = 0;
       let liquidDensity = 0;
       let liquidContacts = 0;
+      let bottomExposed = 0; // cells with open space directly below (the underside)
+      let bottomLiquid = 0;  // of those, how many rest on liquid
 
       for (const k of cells) {
         const y = (k / cols) | 0;
@@ -325,9 +327,11 @@ export function createComponents(S) {
         }
         if (y < rows - 1 && !cells.has(k + cols)) {
           exposed = true;
+          bottomExposed++;
           const m = grid[k + cols];
           if (isLiquid(m)) {
             wet = true;
+            bottomLiquid++;
             liquidDensity += DENSITY[m];
             liquidContacts++;
           }
@@ -343,6 +347,8 @@ export function createComponents(S) {
       return {
         wetCells,
         exposedCells,
+        bottomExposed,
+        bottomLiquid,
         liquidDensity: liquidDensity / liquidContacts,
       };
     };
@@ -382,8 +388,18 @@ export function createComponents(S) {
       const targetWetCells = immersion.exposedCells * (avgDensity / immersion.liquidDensity) * BUOY_DRAFT_SCALE;
       const imbalance = immersion.wetCells - targetWetCells; // >0 over-submerged (rise), <0 sink
       const band = Math.max(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
+      // A body may only float UP when its underside genuinely rests in liquid — a
+      // real pool buoys it up, but water merely running down its sides (a tap /
+      // waterfall) does not. Without this gate a light body chases the falling
+      // water column and rockets up to the source.
+      const buoyantSupport =
+        immersion.bottomExposed > 0 &&
+        immersion.bottomLiquid >= immersion.bottomExposed * BUOY_SUPPORT_FRAC;
       if (imbalance < -band) translateAssembly(grp, cells, cols);        // too light a draught — sink
-      else if (imbalance > band) translateAssembly(grp, cells, -cols);   // over-submerged — rise
+      else if (imbalance > band) {
+        if (buoyantSupport) translateAssembly(grp, cells, -cols);        // over-submerged in liquid — rise
+        else translateAssembly(grp, cells, cols);                        // only splashed — fall under gravity
+      }
       // else within the deadband — rest
     }
   }

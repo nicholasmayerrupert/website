@@ -117,6 +117,10 @@ static const double P_MOVE_ACCEL = 0.6, P_MAX_RUN = 1.6, P_RUN_MULT = 1.7;
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.8;
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 1.0;       // auto-climb height for 1-cell ledges
+// Player tool use (Phase 3): reach limit, per-action cooldown, brush radii.
+static const double P_TOOL_REACH = 18.0;   // max cells from player center
+static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held
+static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 struct Player {
   int id = 0;
   bool active = true, alive = true;
@@ -130,7 +134,7 @@ struct Player {
   int input = 0, prevInput = 0;
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
-  double lastActionMs = -1e9; // tool-use cooldown clock (Phase 3)
+  int toolCooldown = 0; // steps remaining before this player can act again
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
 static const int PLAYER_SNAP_STRIDE = 16;

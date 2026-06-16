@@ -73,6 +73,24 @@ try {
   const afterJump = await getP();
   check(`landed after jump (grounded ${afterJump.grounded})`, afterJump.grounded);
 
+  // player-mediated dig: enable draw mode + eraser, hold LMB at the player's
+  // own position, and assert the engine fired tool actions (mouse -> primary).
+  const a0 = await page.evaluate(() => window.__sandTest.actionCount());
+  const aim = await page.evaluate(() => {
+    window.__sandTest.setDrawMode(true);
+    window.__sandTest.setTool('eraser');
+    const r = document.getElementById('sand-main').getBoundingClientRect();
+    const s = window.__sandTest.playerScreen();
+    return { vx: r.left + s.x, vy: r.top + s.y };
+  });
+  await page.mouse.move(aim.vx, aim.vy);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForTimeout(400);
+  await page.mouse.up({ button: 'left' });
+  const a1 = await page.evaluate(() => window.__sandTest.actionCount());
+  check(`LMB drives player tool actions (${a0} -> ${a1})`, a1 > a0);
+  await page.evaluate(() => window.__sandTest.setDrawMode(false));
+
   // camera follows: the player should remain near the viewport center
   const followInfo = await page.evaluate(() => {
     const t = window.__sandTest, i = t.info(), cam = t.getCam(), p = t.getPlayer();

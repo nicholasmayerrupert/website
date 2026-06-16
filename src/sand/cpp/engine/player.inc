@@ -115,8 +115,78 @@ void integratePlayer(Player& p) {
   p.prevInput = p.input;
 }
 
+// ---- player-mediated tool use (Terraria-like dig/build) ----
+// The engine owns all policy: reach, cooldown, which materials place vs. mine,
+// and the no-self-overlap rule for solid builds. JS only forwards PRIMARY/
+// SECONDARY input bits + the aim cell.
+uint8_t toolMaterial(int tool) {
+  switch (tool) {
+    case T_SAND: return SAND; case T_WATER: return WATER; case T_OIL: return OIL;
+    case T_FIRE: return FIRE; case T_ACID: return ACID; case T_LAVA: return LAVA;
+    default: return EMPTY;
+  }
+}
+// Would a solid build (radius r at ax,ay) overlap the player's own AABB?
+bool playerBuildOverlapsSelf(Player& p, int ax, int ay, int r) {
+  double ix0 = std::floor(p.px), ix1 = std::floor(p.px + p.w - 1e-6);
+  double iy0 = std::floor(p.py), iy1 = std::floor(p.py + p.h - 1e-6);
+  double nx = ax < ix0 ? ix0 : (ax > ix1 ? ix1 : ax);
+  double ny = ay < iy0 ? iy0 : (ay > iy1 ? iy1 : ay);
+  double dx = ax - nx, dy = ay - ny;
+  return dx * dx + dy * dy <= (double)(r * r);
+}
+// Apply the player's selected tool (primary action) at the aim cell. Returns
+// whether anything was placed/built (mining via eraseDisc is handled inline).
+bool playerUseTool(Player& p, int ax, int ay) {
+  switch (p.selectedTool) {
+    case T_ERASER: eraseDisc(ax, ay, P_MINE_R); return true;
+    case T_SAND: case T_WATER: case T_OIL: case T_FIRE: case T_ACID: case T_LAVA:
+      paintDisc(ax, ay, P_PAINT_R, toolMaterial(p.selectedTool), false); return true;
+    case T_STONE:
+      if (playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R)) return false;
+      draftIsDriftwood = false; addDiscToDraft(stoneDraft, ax, ay, P_BUILD_R, rows);
+      finalizeStoneDraft(); stoneDraft.clear(); return true;
+    case T_DRIFTWOOD:
+      if (playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R)) return false;
+      addDiscToDraft(stoneDraft, ax, ay, P_BUILD_R, rows);
+      finalizeDriftwoodDraft(); stoneDraft.clear(); return true;
+    case T_ICE:
+      if (playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R)) return false;
+      addDiscToDraft(iceDraft, ax, ay, P_BUILD_R, rows - 1);
+      finalizeIceDraft(); iceDraft.clear(); return true;
+    case T_SEED: {
+      int x0, y0;
+      if (getSeedOrigin(ax, ay, x0, y0) && canPlaceSeedAt(x0, y0)) { placeSeedAt(x0, y0); return true; }
+      return false;
+    }
+    case T_CUBE:
+      if (playerBuildOverlapsSelf(p, ax, ay, CUBE_HALF)) return false;
+      spawnBox(ax, ay, CUBE_HALF, CUBE_HALF, RIGID); return true;
+    default: return false;
+  }
+}
+void applyPlayerTools() {
+  for (auto& p : players) {
+    if (!p.active || !p.alive) continue;
+    if (p.toolCooldown > 0) p.toolCooldown--;
+    bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
+    if (!primary && !secondary) continue;
+    if (p.toolCooldown > 0) continue;
+    // reach: aim must be within P_TOOL_REACH cells of the player center.
+    double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
+    int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
+    double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
+    if (dxp * dxp + dyp * dyp > P_TOOL_REACH * P_TOOL_REACH) continue;
+    if (secondary) eraseDisc(ax, ay, P_MINE_R); // RMB always mines
+    else playerUseTool(p, ax, ay);
+    p.toolCooldown = P_TOOL_COOLDOWN;
+    playerActionCount++;
+  }
+}
+
 void updatePlayers() {
   for (auto& p : players) if (p.active && p.alive) integratePlayer(p);
+  applyPlayerTools();
 }
 
 // Pack all players into playerSnapshot as flat float32 records (stride

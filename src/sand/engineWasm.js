@@ -102,6 +102,7 @@ export function initSandWasm() {
         playerSnapshot: c('engine_player_snapshot', 'number', ['number']),
         playerSnapshotPtr: c('engine_player_snapshot_ptr', 'number', ['number']),
         playerSnapshotStride: c('engine_player_snapshot_stride', 'number', ['number']),
+        playerActionCount: c('engine_player_action_count', 'number', ['number']),
       };
       return M;
     });
@@ -272,6 +273,7 @@ export function createEngineWasm({
       return out;
     },
     getPlayer(id) { return this.getPlayers().find((p) => p.id === id) || null; },
+    getPlayerActionCount() { return M.playerActionCount(ptr); },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },

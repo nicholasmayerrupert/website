@@ -183,5 +183,123 @@ const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);
   e.destroy();
 }
 
+// ---- Phase 3: player-mediated tool use (dig / build) ----
+const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
+const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+
+// 10. primary action with the eraser mines reachable stone.
+{
+  console.log('tool: mine reachable stone');
+  const e = mk();
+  stoneFloor(e, 60, 140, 90);
+  const id = e.spawnPlayer(100, 80);
+  runSteps(e, 30); // land
+  const p = e.getPlayer(id);
+  const before = countMat(e.getGrid(), 3);
+  // aim a few cells to the right at the stone surface, within reach
+  for (let i = 0; i < 20; i++) {
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: p.x + 4, aimY: 92 });
+    e.step(16 * i);
+  }
+  const after = countMat(e.getGrid(), 3);
+  check(`stone mined (${before} -> ${after})`, after < before);
+  e.destroy();
+}
+
+// 11. an aim beyond reach mines nothing.
+{
+  console.log('tool: reach limit');
+  const e = mk();
+  stoneFloor(e, 20, 190, 90);
+  const id = e.spawnPlayer(100, 80);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const before = countMat(e.getGrid(), 3);
+  for (let i = 0; i < 20; i++) {
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: p.x + 60, aimY: 92 }); // far away
+    e.step(16 * i);
+  }
+  check(`nothing mined out of reach (${before} == ${countMat(e.getGrid(), 3)})`, countMat(e.getGrid(), 3) === before);
+  e.destroy();
+}
+
+// 12. primary with stone places solid stone within reach.
+{
+  console.log('tool: place stone');
+  const e = mk();
+  stoneFloor(e, 60, 140, 100);
+  const id = e.spawnPlayer(100, 90);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const before = countMat(e.getGrid(), 3);
+  for (let i = 0; i < 8; i++) {
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: p.x + 8, aimY: p.y - 2 });
+    e.step(16 * i);
+  }
+  check(`stone placed within reach (${before} -> ${countMat(e.getGrid(), 3)})`, countMat(e.getGrid(), 3) > before);
+  e.destroy();
+}
+
+// 13. cannot place a solid block overlapping the player's own AABB.
+{
+  console.log('tool: no self-overlap build');
+  const e = mk();
+  stoneFloor(e, 60, 140, 100);
+  const id = e.spawnPlayer(100, 90);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const before = countMat(e.getGrid(), 3);
+  for (let i = 0; i < 8; i++) {
+    // aim at the player's own center -> build must be rejected
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: p.x + p.w / 2, aimY: p.y + p.h / 2 });
+    e.step(16 * i);
+  }
+  check(`no stone placed inside self (${before} == ${countMat(e.getGrid(), 3)})`, countMat(e.getGrid(), 3) === before);
+  e.destroy();
+}
+
+// 14. player edits mark dirty rects and the placed material simulates afterwards.
+{
+  console.log('tool: edits dirty + simulate');
+  const e = mk();
+  stoneFloor(e, 60, 140, 100);
+  const id = e.spawnPlayer(100, 90);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  e.clearRenderDirty();
+  // place sand above ground within reach
+  e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.sand, aimX: p.x + 6, aimY: p.y - 4 });
+  e.step(16);
+  const sand0 = countMat(e.getGrid(), 1);
+  const dirty = e.getRenderDirty();
+  check(`sand placed (${sand0})`, sand0 > 0);
+  check(`edit marked dirty (${dirty.rectCount} rects)`, dirty.rectCount > 0);
+  // it should keep existing (falls / settles) after more steps
+  e.setPlayerInput(id, { bits: 0 });
+  runSteps(e, 60);
+  check(`placed sand persists in sim (${countMat(e.getGrid(), 1)})`, countMat(e.getGrid(), 1) > 0);
+  e.destroy();
+}
+
+// 15. cooldown throttles repeated edits (no unbounded per-step mining).
+{
+  console.log('tool: cooldown throttle');
+  const e = mk();
+  stoneFloor(e, 60, 140, 90);
+  const id = e.spawnPlayer(100, 80);
+  runSteps(e, 30); // land on the floor
+  const p = e.getPlayer(id);
+  // Hold mine for 12 steps; the engine's action counter must be throttled by
+  // the 4-step cooldown (~3 actions), not fire every step (12).
+  const a0 = e.getPlayerActionCount();
+  for (let i = 0; i < 12; i++) {
+    e.setPlayerInput(id, { bits: INPUT.SECONDARY, aimX: p.x, aimY: 95 });
+    e.step(16 * i);
+  }
+  const actions = e.getPlayerActionCount() - a0;
+  check(`cooldown limited actions (${actions} of 12 steps, expect ~3)`, actions >= 2 && actions <= 4);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

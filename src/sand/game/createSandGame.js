@@ -138,6 +138,7 @@ export function createSandGame(container, opts = {}) {
   let clientX = -1, clientY = -1;
   let px = -1, py = -1;
   let inside = false;
+  let mouseButtons = 0; // bit 0 = LMB, bit 1 = RMB (drives player primary/secondary)
 
   // Reduced motion
   let reduced = false;
@@ -300,8 +301,9 @@ export function createSandGame(container, opts = {}) {
   // normalized button state + cell-space coords; the engine decides everything.
   const onPointerMove = (e) => {
     updatePointer(e.clientX, e.clientY);
+    mouseButtons = e.buttons;
     engine?.pointerButtons(e.buttons); // release the held/RMB state on buttons==0
-    if (!drawModeOn || !engine) return;
+    if (playMode || !drawModeOn || !engine) return; // play mode aims via the player
     if (inside && engine.pointerDraft(toCellX(), toCellY())) previewDirty = true;
   };
   const onTouchMove = (e) => {
@@ -319,6 +321,8 @@ export function createSandGame(container, opts = {}) {
     updatePointer(e.clientX, e.clientY);
     if (!inside) return;
     if (e.button === 0 || e.button === 2) {
+      mouseButtons = e.buttons;
+      if (playMode) { e.preventDefault(); return; } // player mines/builds via input bits
       if (engine.pointerDown(toCellX(), toCellY(), e.button)) previewDirty = true;
       e.preventDefault();
     }
@@ -326,6 +330,7 @@ export function createSandGame(container, opts = {}) {
 
   const onPointerUp = (e) => {
     if (!engine) return;
+    mouseButtons = e.buttons;
     engine.pointerButtons(e.buttons); // clears RMB/LMB when no buttons remain
     if (engine.pointerUp(e.button)) previewDirty = true;
   };
@@ -609,6 +614,18 @@ export function createSandGame(container, opts = {}) {
       getPlayMode() { return playMode; },
       getPlayer() { return localPlayer(); },
       getPlayers() { return engine ? engine.getPlayers() : []; },
+      setTool(name) { currentToolName = name; engine?.setTool(TOOL[name] ?? 0); },
+      setDrawMode(v) { drawModeOn = !!v; },
+      actionCount() { return engine ? engine.getPlayerActionCount() : 0; },
+      // device-px center of the local player (for aiming real mouse events)
+      playerScreen() {
+        const p = localPlayer(); if (!p) return null;
+        const camCol = Math.floor(camera.x), camRow = Math.floor(camera.y);
+        return {
+          x: ((p.x + p.w / 2 - camCol) * cellDev + lastOffX) / dpr,
+          y: ((p.y + p.h / 2 - camRow) * cellDev + lastOffY) / dpr,
+        };
+      },
     };
   }
 
@@ -698,18 +715,23 @@ export function createSandGame(container, opts = {}) {
       // Player input is sampled once per fixed step (deterministic). The engine
       // simulates the character; the aim cell is the pointer cell under the view.
       if (playMode && localPlayerId) {
+        // Play mode: keyboard movement + mouse-as-primary/secondary feed the
+        // player; the engine applies tools at the aim cell (reach-limited).
+        let bits = playerInputBits();
+        if (drawModeOn && inside) {
+          if (mouseButtons & 1) bits |= INPUT.PRIMARY;
+          if (mouseButtons & 2) bits |= INPUT.SECONDARY;
+        }
         engine.setPlayerInput(localPlayerId, {
-          bits: playerInputBits(),
-          aimX: toCellX(), aimY: toCellY(),
-          tool: TOOL[currentToolName] ?? 0,
-          seq: ++inputSeq,
+          bits, aimX: toCellX(), aimY: toCellY(),
+          tool: TOOL[currentToolName] ?? 0, seq: ++inputSeq,
         });
+      } else {
+        // Free-camera mode: classic pointer tools (drafts + held paint/erase).
+        // Coords are recomputed each step so a stationary cursor still tracks
+        // the world cell beneath it as the camera pans. The engine owns policy.
+        if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
       }
-
-      // Tool application: extend any active draft + apply held painting/erasing.
-      // Coords are recomputed each step so a stationary cursor still tracks the
-      // world cell beneath it as the camera pans. The engine owns the policy.
-      if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
       stepped = engine.step(now);
       if (stepped) {
         perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;

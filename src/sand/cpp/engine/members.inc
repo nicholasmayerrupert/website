@@ -44,6 +44,7 @@
   std::vector<Player> players;
   int nextPlayerId = 1;
   std::vector<float> playerSnapshot; // packed [PLAYER_SNAP_STRIDE] floats per player
+  int playerActionCount = 0;         // total player tool actions fired (debug/test)
   // Renderer (material -> RGBA). Owns its pixel buffer and grain tables. Uses a
   // SEPARATE rng so per-frame fire/steam flicker never perturbs the simulation.
   std::vector<uint8_t> renderPixels;  // cols*rows*4, RGBA (little-endian over uint32)

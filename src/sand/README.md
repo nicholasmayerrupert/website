@@ -71,7 +71,11 @@ from engine snapshots — the simulation stays in C++.
 | `W` / `↑` / `Space` | jump (only when grounded) |
 | `S` / `↓` | down / crouch (placeholder) |
 | `Shift` | run |
-| mouse + `Draw` toggle | aim + place/erase with the selected tool (free paint today; player-mediated in Phase 3) |
+| mouse + `Draw` toggle | aim; LMB uses the selected tool, RMB mines — player-mediated, reach-limited (≤18 cells) and cooldown-throttled |
+
+In free-camera mode the classic pointer tools (drafts + held paint/erase) are
+used instead. Player tool policy (reach, cooldown, place-vs-mine, no building
+inside your own body) lives in `cpp/engine/player.inc`.
 
 ## Testing
 

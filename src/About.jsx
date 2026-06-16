@@ -554,41 +554,33 @@ function SandOverlay({ onDrawModeChange }) {
         ctx.fillRect(destX, destY, destW, destH);
         ctx.globalCompositeOperation = 'source-over';
       };
-      // Paint one buffer-cell rect to the canvas at the camera-relative position.
-      const blit = (x0, y0, x1, y1) => {
+      // Refill one buffer-cell rect's pixels into the persistent cellCanvas
+      // (1px per cell, sized to the whole buffer). This is the only CPU pixel
+      // work; it depends on grid contents, not the camera, so panning alone
+      // never triggers it.
+      const blitContent = (x0, y0, x1, y1) => {
         const w = x1 - x0 + 1;
         const h = y1 - y0 + 1;
         fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, colorLUT, colorTexture);
         cellCtx.putImageData(imageData, 0, 0, x0, y0, w, h);
-        const destX = (x0 - camCol) * cellSize;
-        const destY = (y0 - camRow) * cellSize;
-        ctx.clearRect(destX, destY, w * cellSize, h * cellSize);
-        ctx.drawImage(cellCanvas, x0, y0, w, h, destX, destY, w * cellSize, h * cellSize);
-        clearCellGutters(x0, y0, x1, y1);
       };
 
-      // Panning shifts everything on screen, so a moved camera (even by a sub-cell
-      // fraction) forces a full (visible-window) redraw rather than per-cell chunks.
-      const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
-      const shouldFullRender =
-        full ||
-        forceFullRender ||
-        camMoved ||
-        dirtyRenderCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO;
-      // Apply the sub-cell offset for this frame; cells/gutter/blits all draw in
-      // whole-cell coords and ride this translate. Cleared/reset around the draw.
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      if (shouldFullRender) ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.setTransform(1, 0, 0, 1, offX, offY);
-      if (shouldFullRender) {
-        if (visX1 >= visX0 && visY1 >= visY0) blit(visX0, visY0, visX1, visY1);
-        forceFullRender = false;
-      } else {
+      // Bring cellCanvas in sync with the grid for cells whose contents changed.
+      // Processes dirty chunks across the WHOLE buffer (not clipped to the
+      // visible window) so off-screen changes are correct when they later scroll
+      // into view on a present-only frame.
+      const syncCellCanvas = (fullSync) => {
+        // When most chunks are dirty (or a full repaint is forced), one
+        // buffer-wide fill + a single upload beats many small putImageData calls.
+        if (fullSync || forceFullRender ||
+            dirtyRenderCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO) {
+          blitContent(0, 0, cols - 1, rows - 1);
+          forceFullRender = false;
+          return;
+        }
         for (let cy = 0; cy < chunkRows; cy++) {
           const cy0 = cy * CHUNK_SIZE;
-          if (cy0 > visY1) break;
           const cy1 = Math.min(rows - 1, cy0 + CHUNK_SIZE - 1);
-          if (cy1 < visY0) continue;
           let cx = 0;
           while (cx < chunkCols) {
             const chunkIndex = cy * chunkCols + cx;
@@ -604,17 +596,35 @@ function SandOverlay({ onDrawModeChange }) {
             const endCx = cx;
             const cx0 = startCx * CHUNK_SIZE;
             const cx1 = Math.min(cols - 1, (endCx + 1) * CHUNK_SIZE - 1);
-            // Clip the dirty span to the visible window, then draw only that.
-            const dx0 = Math.max(cx0, visX0);
-            const dx1 = Math.min(cx1, visX1);
-            const dy0 = Math.max(cy0, visY0);
-            const dy1 = Math.min(cy1, visY1);
-            if (dx1 >= dx0 && dy1 >= dy0) blit(dx0, dy0, dx1, dy1);
+            blitContent(cx0, cy0, cx1, cy1);
             cx++;
           }
         }
-      }
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset so other passes draw in screen space
+      };
+
+      // Present the visible window from cellCanvas onto the main canvas. Pure
+      // GPU: a single upscaling drawImage plus the gutter erase, riding the
+      // sub-cell translate. This is the cheap path that runs every camera-moved
+      // frame without any CPU pixel work.
+      const present = () => {
+        const vw = visX1 - visX0 + 1;
+        const vh = visY1 - visY0 + 1;
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(1, 0, 0, 1, offX, offY);
+        if (vw > 0 && vh > 0) {
+          // destX/destY are 0 because visX0/visY0 == camCol/camRow.
+          ctx.drawImage(cellCanvas, visX0, visY0, vw, vh, 0, 0, vw * cellSize, vh * cellSize);
+          clearCellGutters(visX0, visY0, visX1, visY1);
+        }
+        ctx.setTransform(1, 0, 0, 1, 0, 0); // reset so other passes draw in screen space
+      };
+
+      const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
+      const contentChanged = full || forceFullRender || dirtyRenderCount > 0;
+      if (contentChanged) syncCellCanvas(full);
+      if (contentChanged || camMoved) present();
+
       lastCamX = camera.x;
       lastCamY = camera.y;
       engine.clearRenderDirty();
@@ -707,11 +717,14 @@ function SandOverlay({ onDrawModeChange }) {
 
       if (now - lastStep >= STEP_MS) {
         // Pan the camera from held keys (sign-normalized so opposite keys cancel
-        // and WASD+arrows don't double-speed).
+        // and WASD+arrows don't double-speed). Scale by the real elapsed time so
+        // pan velocity stays even when frame timing jitters (clamped so a long
+        // stall doesn't produce a big jump).
         let panX = 0, panY = 0;
         for (const k of pressedKeys) { const d = PAN_KEYS[k]; panX += d[0]; panY += d[1]; }
         if (panX || panY) {
-          camera.panBy(Math.sign(panX) * PAN_CELLS_PER_STEP, Math.sign(panY) * PAN_CELLS_PER_STEP);
+          const panScale = PAN_CELLS_PER_STEP * Math.min(2, (now - lastStep) / STEP_MS);
+          camera.panBy(Math.sign(panX) * panScale, Math.sign(panY) * panScale);
           previewDirty = previewVisible; // re-place any draft overlay at the new offset
         }
 

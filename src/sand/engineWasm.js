@@ -30,11 +30,12 @@ export function initSandWasm() {
         destroy: c('engine_destroy', null, ['number']),
         step: c('engine_step', 'number', ['number']),
         grid: c('engine_grid', 'number', ['number']),
-        dirty: c('engine_dirty', 'number', ['number']),
         dirtyCount: c('engine_dirty_count', 'number', ['number']),
         chunkCols: c('engine_chunk_cols', 'number', ['number']),
         chunkRows: c('engine_chunk_rows', 'number', ['number']),
-        foldDirty: c('engine_fold_dirty', null, ['number']),
+        buildDirtyRects: c('engine_build_dirty_rects', null, ['number']),
+        dirtyRectCount: c('engine_dirty_rect_count', 'number', ['number']),
+        dirtyRects: c('engine_dirty_rects', 'number', ['number']),
         clearDirty: c('engine_clear_dirty', null, ['number']),
         paintDisc: c('engine_paint_disc', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
@@ -100,7 +101,8 @@ export function createEngineWasm({
 
   // Fresh views each call: grid swaps every step; ALLOW_MEMORY_GROWTH can detach.
   const gridView = () => new Uint8Array(mod.HEAPU8.buffer, M.grid(ptr), cellCount);
-  const dirtyView = () => new Uint8Array(mod.HEAPU8.buffer, M.dirty(ptr), chunkCols * chunkRows);
+  const emptyRects = new Int32Array(0);
+  const chunkTotal = chunkCols * chunkRows;
 
   // Scratch buffer in wasm memory for getSeedOrigin (2 ints).
   const seedOut = mod._malloc(8);
@@ -119,9 +121,15 @@ export function createEngineWasm({
     chunkRows,
     step() { return M.step(ptr) === 1; },
     getGrid() { return gridView(); },
+    // Build the coalesced dirty rects in C++ and hand back a zero-copy view.
+    // buildDirtyRects may grow wasm memory (its rect vector), so the HEAP32
+    // view is created AFTER the call. dirtyChunkCount/chunkTotal drive the
+    // full-vs-incremental repaint decision; rects are [x0,y0,x1,y1) exclusive.
     getRenderDirty() {
-      M.foldDirty(ptr);
-      return { dirtyRender: dirtyView(), dirtyRenderCount: M.dirtyCount(ptr), chunkCols, chunkRows };
+      M.buildDirtyRects(ptr);
+      const rectCount = M.dirtyRectCount(ptr);
+      const rects = rectCount ? new Int32Array(mod.HEAP32.buffer, M.dirtyRects(ptr), rectCount * 4) : emptyRects;
+      return { rects, rectCount, dirtyChunkCount: M.dirtyCount(ptr), chunkTotal };
     },
     clearRenderDirty() { M.clearDirty(ptr); },
     paintDisc(cx, cy, r, material, overwrite = false) {

@@ -557,8 +557,10 @@ export function createSandGame(container, opts = {}) {
     if (!imageData || !engine) return;
 
     const renderStart = performance.now();
+    // Build dirty rects first (may grow wasm memory), then take the grid view so
+    // it can't be left pointing at a detached buffer.
+    const { rects, rectCount, dirtyChunkCount, chunkTotal } = engine.getRenderDirty();
     const grid = engine.getGrid();
-    const { dirtyRender, dirtyRenderCount, chunkCols, chunkRows } = engine.getRenderDirty();
 
     // Visible buffer-cell window under the camera. Nothing outside it is ever
     // filled or blitted — that's the viewport culling. A buffer cell (bx,by)
@@ -597,32 +599,15 @@ export function createSandGame(container, opts = {}) {
       // When most chunks are dirty (or a full repaint is forced), one
       // buffer-wide fill + a single upload beats many small putImageData calls.
       if (fullSync || forceFullRender ||
-          dirtyRenderCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO) {
+          dirtyChunkCount > chunkTotal * FULL_RENDER_DIRTY_CHUNK_RATIO) {
         blitContent(0, 0, cols - 1, rows - 1);
         forceFullRender = false;
         return;
       }
-      for (let cy = 0; cy < chunkRows; cy++) {
-        const cy0 = cy * CHUNK_SIZE;
-        const cy1 = Math.min(rows - 1, cy0 + CHUNK_SIZE - 1);
-        let cx = 0;
-        while (cx < chunkCols) {
-          const chunkIndex = cy * chunkCols + cx;
-          if (!dirtyRender[chunkIndex]) {
-            cx++;
-            continue;
-          }
-          const startCx = cx;
-          while (cx + 1 < chunkCols) {
-            if (!dirtyRender[cy * chunkCols + cx + 1]) break;
-            cx++;
-          }
-          const endCx = cx;
-          const cx0 = startCx * CHUNK_SIZE;
-          const cx1 = Math.min(cols - 1, (endCx + 1) * CHUNK_SIZE - 1);
-          blitContent(cx0, cy0, cx1, cy1);
-          cx++;
-        }
+      // Refill each coalesced dirty rect. Rects are [x0,y0,x1,y1) exclusive from
+      // the engine; blitContent takes an inclusive rect, hence the -1s.
+      for (let i = 0, b = 0; i < rectCount; i++, b += 4) {
+        blitContent(rects[b], rects[b + 1], rects[b + 2] - 1, rects[b + 3] - 1);
       }
     };
 
@@ -655,7 +640,7 @@ export function createSandGame(container, opts = {}) {
     };
 
     const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
-    const contentChanged = full || forceFullRender || dirtyRenderCount > 0;
+    const contentChanged = full || forceFullRender || dirtyChunkCount > 0;
     if (contentChanged) syncCellCanvas(full);
     if (contentChanged || camMoved) present();
 

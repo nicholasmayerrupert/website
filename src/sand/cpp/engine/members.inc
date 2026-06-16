@@ -2,6 +2,7 @@
   std::vector<uint8_t> gridA, gridB;
   uint8_t* grid; uint8_t* next;
   std::vector<uint8_t> dirtyRender;
+  std::vector<int32_t> dirtyRects; // coalesced [x0,y0,x1,y1) cell rects (built on demand)
   std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp;
   std::vector<uint8_t> groundedCell;
   std::vector<int32_t> cellComp, groundStack, compOccStamp;
@@ -96,6 +97,26 @@
       for (int cy = cy0; cy <= cy1; cy++) {
         int rb = cy * chunkCols;
         for (int cx = c0; cx <= c1; cx++) { int ci = rb + cx; if (!dirtyRender[ci]) { dirtyRender[ci] = 1; dirtyRenderCount++; } }
+      }
+    }
+  }
+  // Coalesce the per-chunk dirty flags into cell-space rectangles: horizontal
+  // runs of dirty chunks within each chunk row. Rects are [x0,y0,x1,y1) with
+  // EXCLUSIVE upper bounds, packed into dirtyRects as flat int4 tuples so JS can
+  // read them zero-copy and refill exactly the changed spans of the cellCanvas.
+  void buildDirtyRects() {
+    foldRowMarksToRender();
+    dirtyRects.clear();
+    for (int cy = 0; cy < chunkRows; cy++) {
+      int cy0 = cy * CHUNK_SIZE, cy1 = imin(rows, cy0 + CHUNK_SIZE), rb = cy * chunkCols, cx = 0;
+      while (cx < chunkCols) {
+        if (!dirtyRender[rb + cx]) { cx++; continue; }
+        int startCx = cx;
+        while (cx + 1 < chunkCols && dirtyRender[rb + cx + 1]) cx++;
+        int x0 = startCx * CHUNK_SIZE, x1 = imin(cols, (cx + 1) * CHUNK_SIZE);
+        dirtyRects.push_back(x0); dirtyRects.push_back(cy0);
+        dirtyRects.push_back(x1); dirtyRects.push_back(cy1);
+        cx++;
       }
     }
   }

@@ -12,11 +12,13 @@ EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { return
 EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }
 EMSCRIPTEN_KEEPALIVE int engine_step(Engine* e) { return e->step() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->grid; }
-EMSCRIPTEN_KEEPALIVE uint8_t* engine_dirty(Engine* e) { return e->dirtyRender.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->dirtyRenderCount; }
 EMSCRIPTEN_KEEPALIVE int engine_chunk_cols(Engine* e) { return e->chunkCols; }
 EMSCRIPTEN_KEEPALIVE int engine_chunk_rows(Engine* e) { return e->chunkRows; }
-EMSCRIPTEN_KEEPALIVE void engine_fold_dirty(Engine* e) { e->foldRowMarksToRender(); }
+// Dirty-rect generation (C++ owns the coalescing; JS reads the packed rects).
+EMSCRIPTEN_KEEPALIVE void engine_build_dirty_rects(Engine* e) { e->buildDirtyRects(); }
+EMSCRIPTEN_KEEPALIVE int engine_dirty_rect_count(Engine* e) { return (int)(e->dirtyRects.size() / 4); }
+EMSCRIPTEN_KEEPALIVE int* engine_dirty_rects(Engine* e) { return e->dirtyRects.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_dirty(Engine* e) { memset(e->dirtyRender.data(), 0, e->dirtyRender.size()); e->dirtyRenderCount = 0; }
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) { return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0); }
 EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) { return e->eraseDisc(cx, cy, r); }

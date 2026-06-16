@@ -112,13 +112,11 @@ export function createEngineWasm({
 
   // Scratch buffer in wasm memory for getSeedOrigin (2 ints).
   const seedOut = mod._malloc(8);
-  const draftSet = (count) => {
-    const base = M.draftPtr(ptr) >> 2;
-    const view = new Int32Array(mod.HEAP32.buffer, base << 2, count);
-    const s = new Set();
-    for (let i = 0; i < count; i++) s.add(view[i]);
-    return s;
-  };
+  // Packed draft cell INDICES (k = y*cols + x) as a zero-copy view into wasm
+  // memory — no Set allocation. Stone and ice share one snapshot buffer, so the
+  // returned view is only valid until the next draft snapshot call; the caller
+  // must fully consume one draft before requesting the other.
+  const draftCells = (count) => (count ? new Int32Array(mod.HEAP32.buffer, M.draftPtr(ptr), count) : emptyRects);
 
   return {
     cols,
@@ -165,8 +163,8 @@ export function createEngineWasm({
     finalizeDriftwoodDraft() { M.finalizeDriftwoodDraft(ptr); },
     clearStoneDraft() { M.clearStoneDraft(ptr); },
     clearIceDraft() { M.clearIceDraft(ptr); },
-    getStoneDraftCells() { return draftSet(M.stoneDraftSnapshot(ptr)); },
-    getIceDraftCells() { return draftSet(M.iceDraftSnapshot(ptr)); },
+    getStoneDraftCells() { return draftCells(M.stoneDraftSnapshot(ptr)); },
+    getIceDraftCells() { return draftCells(M.iceDraftSnapshot(ptr)); },
     getSeedOrigin(cx, cy) {
       if (M.getSeedOrigin(ptr, cx, cy, seedOut) !== 1) return null;
       const o = seedOut >> 2;

@@ -638,11 +638,14 @@ export function createSandGame(container, opts = {}) {
     const camRow = Math.floor(camera.y);
     previewCtx.setTransform(1, 0, 0, 1, Math.round(-(camera.x - camCol) * cellDev), Math.round(-(camera.y - camRow) * cellDev));
 
+    // Draft cells come back as a packed wasm view of cell indices (no Set). Stone
+    // must be fully drawn before fetching ice (they share one snapshot buffer).
     const stoneDraft = engine.getStoneDraftCells();
-    if (stoneDraft.size > 0) {
+    if (stoneDraft.length > 0) {
       previewCtx.fillStyle = draftIsDriftwood ? DRIFTWOOD_PREVIEW_COLOR : STONE_PREVIEW_COLOR;
       const previewSize = cellDev;
-      for (const k of stoneDraft) {
+      for (let i = 0; i < stoneDraft.length; i++) {
+        const k = stoneDraft[i];
         const y = (k / cols) | 0;
         const x = k - y * cols;
         previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
@@ -651,10 +654,11 @@ export function createSandGame(container, opts = {}) {
     }
 
     const iceDraft = engine.getIceDraftCells();
-    if (iceDraft.size > 0) {
+    if (iceDraft.length > 0) {
       previewCtx.fillStyle = ICE_PREVIEW_COLOR;
       const previewSize = cellDev;
-      for (const k of iceDraft) {
+      for (let i = 0; i < iceDraft.length; i++) {
+        const k = iceDraft[i];
         const y = (k / cols) | 0;
         const x = k - y * cols;
         previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);

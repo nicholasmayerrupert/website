@@ -45,14 +45,21 @@ const CONTACT_LIN_DAMP = 0.9;
 const CONTACT_ANG_DAMP = 0.6;
 const LIQUID_DRAG = 0.12;
 const LIQUID_ANG_DRAG = 0.1;
-const SLEEP_LIN = 0.03;       // |v| below which a body may sleep
-const SLEEP_ANG = 0.02;       // |omega| below which a body may sleep
+// "At rest" is judged relative to the velocities gravity induces, so these scale
+// with GRAVITY. They were tuned at GRAVITY 0.26; with the gentler gravity a body
+// tipping or sliding off a corner rotates/slides ~4x slower, and at the old
+// thresholds that slow motion read as "still" so the body fell asleep mid-tip and
+// hung on the corner. Scaled down ~4x they again let such a body keep moving until
+// it actually falls, while a genuinely settled body (velocity ~0) still sleeps.
+const SLEEP_LIN = 0.007;      // |v| below which a body may sleep
+const SLEEP_ANG = 0.0045;     // |omega| below which a body may sleep
 const SLEEP_TICKS = 20;
 // A sleeping body is only woken by a body moving faster than this (a real impact).
 // Gentle resting contact leaves it asleep (treated as static), so a body settling
 // on top of it can also sleep instead of the two endlessly re-waking each other.
-const WAKE_LIN2 = 0.12 * 0.12;
-const WAKE_ANG2 = 0.06 * 0.06;
+// Scaled with GRAVITY for the same reason as the sleep thresholds above.
+const WAKE_LIN2 = 0.028 * 0.028;
+const WAKE_ANG2 = 0.014 * 0.014;
 // A body may only sleep once its penetration is nearly resolved (~half a cell, the
 // natural resting depth). Otherwise it could freeze mid-overlap, since the split-
 // impulse expulsion lives in the pseudo-velocity and doesn't count toward sleep.

@@ -14,7 +14,7 @@
 // simulation runs in the WebAssembly engine (../engineWasm.js); initSandWasm()
 // must have resolved before createSandGame() is called.
 
-import { createEngineWasm, CHUNK_SIZE, SEED_SIZE } from '../engineWasm';
+import { createEngineWasm, CHUNK_SIZE, SEED_SIZE, INPUT } from '../engineWasm';
 import { createCamera } from '../camera';
 
 export function createSandGame(container, opts = {}) {
@@ -52,6 +52,15 @@ export function createSandGame(container, opts = {}) {
   const TOOL = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
   let currentToolName = initialTool;
   let drawModeOn = false;
+
+  // Player mode: WASD/arrows drive the local character and the camera follows it.
+  // Free-camera (debug) mode restores the old WASD/arrow buffer panning and is
+  // used by the headless pan/flicker bench. The local player is simulated in the
+  // engine; JS only forwards input and draws the overlay.
+  let playMode = true;
+  let localPlayerId = 0;
+  const PLAYER_W = 4, PLAYER_H = 8; // mirrors PLAYER_W/PLAYER_H in cpp/common.hpp
+  let inputSeq = 0;
 
   // One seed per mount so resizing regenerates the *same* infinite world.
   const worldSeed = (Math.random() * 4294967296) >>> 0;
@@ -232,8 +241,16 @@ export function createSandGame(container, opts = {}) {
     // Camera spans the buffer minus the visible window. Start centered
     // horizontally and just above the surface so the spawn view shows ground.
     camera.setBounds(cols - viewCols, rows - viewRows);
-    const spawnWorldX = engine.getWorldOffsetX() + Math.floor(cols / 2);
-    const spawnRow = engine.worldSurfaceAt(spawnWorldX);
+    const spawnCol = Math.floor(cols / 2);
+    const worldX0 = engine.getWorldOffsetX();
+    const spawnRow = engine.worldSurfaceAt(worldX0 + spawnCol);
+    // Spawn above the HIGHEST terrain across the player's footprint so it drops
+    // cleanly onto the surface (never wedged inside a bump) with open headroom.
+    let topSurf = spawnRow;
+    for (let c = spawnCol - PLAYER_W; c <= spawnCol + PLAYER_W; c++) {
+      topSurf = Math.min(topSurf, engine.worldSurfaceAt(worldX0 + c));
+    }
+    localPlayerId = engine.spawnPlayer(spawnCol - PLAYER_W / 2, topSurf - PLAYER_H - 4);
     camera.set((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
     lastCamX = NaN;
     lastCamY = NaN;
@@ -354,10 +371,15 @@ export function createSandGame(container, opts = {}) {
       e.preventDefault(); // keep arrow keys from scrolling the page while panning
       return;
     }
+    // jump (space) + run (shift) for player mode; tracked alongside WASD/arrows.
+    if (key === ' ' || key === 'shift') {
+      pressedKeys.add(key);
+      if (key === ' ') e.preventDefault(); // space would scroll the page
+    }
   };
   const onKeyUp = (e) => {
     const key = e.key.toLowerCase();
-    if (PAN_KEYS[key]) pressedKeys.delete(key);
+    if (PAN_KEYS[key] || key === ' ' || key === 'shift') pressedKeys.delete(key);
   };
   const onBlur = () => pressedKeys.clear(); // avoid keys "sticking" on focus loss
 
@@ -452,12 +474,37 @@ export function createSandGame(container, opts = {}) {
         ctx.globalCompositeOperation = 'source-over';
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0); // reset so other passes draw in screen space
+      drawPlayers();
+    };
+
+    // Player overlay: solid AABB + a facing eye, in screen space. Drawn inside
+    // present() (right after the cells are blitted) so the overlay can't leave
+    // trails — every redraw clears and repaints in lockstep. Positions come from
+    // engine snapshots; the simulation stays in C++.
+    const drawPlayers = () => {
+      if (testPaused) return; // keep the paused flicker bench free of overlay noise
+      const players = engine.getPlayers();
+      for (let i = 0; i < players.length; i++) {
+        const p = players[i];
+        const sx = (p.x - camCol) * cellDev + offX;
+        const sy = (p.y - camRow) * cellDev + offY;
+        const pw = p.w * cellDev, ph = p.h * cellDev;
+        ctx.fillStyle = p.id === localPlayerId ? 'rgba(80,170,255,0.92)' : 'rgba(255,140,80,0.92)';
+        ctx.fillRect(sx, sy, pw, ph);
+        ctx.fillStyle = 'rgba(20,30,45,0.9)';
+        const eye = Math.max(1, Math.round(cellDev * 0.7));
+        const ex = p.facing >= 0 ? sx + pw - eye - cellDev * 0.4 : sx + cellDev * 0.4;
+        ctx.fillRect(ex, sy + ph * 0.18, eye, eye);
+      }
     };
 
     const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
     const contentChanged = full || forceFullRender || dirtyChunkCount > 0;
+    // Present (and thus repaint the player overlay) whenever any player exists,
+    // so a moving character is never left as a stale rectangle.
+    const hasPlayers = engine.playerCount() > 0;
     if (contentChanged) syncCellCanvas(full);
-    if (contentChanged || camMoved) present();
+    if (contentChanged || camMoved || hasPlayers) present();
 
     lastCamX = camera.x;
     lastCamY = camera.y;
@@ -557,6 +604,11 @@ export function createSandGame(container, opts = {}) {
       cellAt(pxCss, pyCss) { return [Math.floor(camera.x + (pxCss * dpr) / cellDev), Math.floor(camera.y + (pyCss * dpr) / cellDev)]; },
       // device-px top-left where a cell renders (for round-trip verification)
       cellRect(cx, cy) { const camCol = Math.floor(camera.x), camRow = Math.floor(camera.y); return { x: (cx - camCol) * cellDev + lastOffX, y: (cy - camRow) * cellDev + lastOffY, size: cellDev }; },
+      // player hooks for the headless gameplay test (scripts / Playwright)
+      setPlayMode(v) { playMode = !!v; },
+      getPlayMode() { return playMode; },
+      getPlayer() { return localPlayer(); },
+      getPlayers() { return engine ? engine.getPlayers() : []; },
     };
   }
 
@@ -578,6 +630,26 @@ export function createSandGame(container, opts = {}) {
     }
   };
 
+  // ---- local player input + camera follow (play mode) ----
+  const localPlayer = () => (engine && localPlayerId ? engine.getPlayer(localPlayerId) : null);
+  const playerInputBits = () => {
+    let bits = 0;
+    if (pressedKeys.has('a') || pressedKeys.has('arrowleft')) bits |= INPUT.LEFT;
+    if (pressedKeys.has('d') || pressedKeys.has('arrowright')) bits |= INPUT.RIGHT;
+    if (pressedKeys.has('w') || pressedKeys.has('arrowup') || pressedKeys.has(' ')) bits |= INPUT.JUMP;
+    if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) bits |= INPUT.DOWN;
+    if (pressedKeys.has('shift')) bits |= INPUT.RUN;
+    return bits;
+  };
+  // Glide the camera toward the player's center, clamped to the buffer bounds.
+  const followCamera = () => {
+    const p = localPlayer();
+    if (!p) return;
+    const tx = p.x + p.w / 2 - viewCols / 2;
+    const ty = p.y + p.h / 2 - viewRows / 2;
+    camera.set(camera.x + (tx - camera.x) * 0.18, camera.y + (ty - camera.y) * 0.18);
+  };
+
   // Main loop
   let raf = 0;
   let lastStep = performance.now();
@@ -597,12 +669,16 @@ export function createSandGame(container, opts = {}) {
     // clamped so a long stall (e.g. tab refocus) can't produce a big jump.
     const frameDt = Math.min(MAX_FRAME_DT, now - lastFrame);
     lastFrame = now;
-    let panX = 0, panY = 0;
-    for (const k of pressedKeys) { const d = PAN_KEYS[k]; panX += d[0]; panY += d[1]; }
-    if (panX || panY) {
-      const dist = PAN_CELLS_PER_SEC * (frameDt / 1000);
-      camera.panBy(Math.sign(panX) * dist, Math.sign(panY) * dist);
-      previewDirty = previewVisible; // re-place any draft overlay at the new offset
+    // Free-camera (debug) mode only: WASD/arrows pan the buffer. In play mode the
+    // same keys drive the player and the camera follows it (below).
+    if (!playMode) {
+      let panX = 0, panY = 0;
+      for (const k of pressedKeys) { const d = PAN_KEYS[k]; if (!d) continue; panX += d[0]; panY += d[1]; }
+      if (panX || panY) {
+        const dist = PAN_CELLS_PER_SEC * (frameDt / 1000);
+        camera.panBy(Math.sign(panX) * dist, Math.sign(panY) * dist);
+        previewDirty = previewVisible; // re-place any draft overlay at the new offset
+      }
     }
 
     // Fixed-timestep simulation: world-shift + tool application + engine.step
@@ -619,6 +695,17 @@ export function createSandGame(container, opts = {}) {
         camera.set(camera.x - dx, camera.y);
       }
 
+      // Player input is sampled once per fixed step (deterministic). The engine
+      // simulates the character; the aim cell is the pointer cell under the view.
+      if (playMode && localPlayerId) {
+        engine.setPlayerInput(localPlayerId, {
+          bits: playerInputBits(),
+          aimX: toCellX(), aimY: toCellY(),
+          tool: TOOL[currentToolName] ?? 0,
+          seq: ++inputSeq,
+        });
+      }
+
       // Tool application: extend any active draft + apply held painting/erasing.
       // Coords are recomputed each step so a stationary cursor still tracks the
       // world cell beneath it as the camera pans. The engine owns the policy.
@@ -632,6 +719,10 @@ export function createSandGame(container, opts = {}) {
       }
       lastStep = now;
     }
+
+    // Camera follows the local player each frame (smooth at any refresh rate).
+    // Skipped while paused so the headless pan/flicker bench keeps full control.
+    if (playMode && !testPaused) followCamera();
 
     // Present every frame the camera moved or the sim changed. A camera-only
     // frame is a cheap GPU blit (render() does no CPU pixel work when content
@@ -671,6 +762,8 @@ export function createSandGame(container, opts = {}) {
     setTool(id) { currentToolName = id; engine?.setTool(TOOL[id] ?? 0); },
     setDrawMode(on) { drawModeOn = !!on; },
     getDrawMode() { return drawModeOn; },
+    setPlayMode(on) { playMode = !!on; },
+    getPlayMode() { return playMode; },
     destroy,
   };
 }

@@ -32,8 +32,18 @@ bool tryMoveX(Player& p, double d) {
   double step = d > 0 ? P_MOVE_SUBSTEP : -P_MOVE_SUBSTEP, moved = 0;
   while (std::fabs(moved) < std::fabs(d)) {
     double adv = (std::fabs(d - moved) < P_MOVE_SUBSTEP) ? (d - moved) : step;
-    if (playerBoxHits(p.px + adv, p.py, p.w, p.h)) return true;
-    p.px += adv; moved += adv;
+    if (!playerBoxHits(p.px + adv, p.py, p.w, p.h)) { p.px += adv; moved += adv; continue; }
+    // Blocked: when grounded, try to auto-climb a low ledge (so walking over
+    // bumpy terrain / a 1-cell step doesn't stall, Terraria-style).
+    bool climbed = false;
+    if (p.grounded) {
+      for (double up = P_MOVE_SUBSTEP; up <= P_STEP_UP + 1e-9; up += P_MOVE_SUBSTEP) {
+        if (!playerBoxHits(p.px, p.py - up, p.w, p.h) && !playerBoxHits(p.px + adv, p.py - up, p.w, p.h)) {
+          p.py -= up; p.px += adv; moved += adv; climbed = true; break;
+        }
+      }
+    }
+    if (!climbed) return true;
   }
   return false;
 }

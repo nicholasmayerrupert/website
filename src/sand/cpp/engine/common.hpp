@@ -116,6 +116,7 @@ static const double P_GRAVITY = 0.25, P_MAX_FALL = 6.0;
 static const double P_MOVE_ACCEL = 0.6, P_MAX_RUN = 1.6, P_RUN_MULT = 1.7;
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.8;
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
+static const double P_STEP_UP = 1.0;       // auto-climb height for 1-cell ledges
 struct Player {
   int id = 0;
   bool active = true, alive = true;

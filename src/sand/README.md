@@ -57,6 +57,22 @@ collision against any non-empty/non-liquid/non-gas cell). Players advance every
 shifts. Determinism (no RNG) is what lets a fixed input stream replay identically
 — the basis for the planned host-authoritative multiplayer.
 
+A local player is spawned by `createSandGame` on the surface and the camera
+follows it. **Play mode** (default) maps the keys to the character; **free-camera
+mode** (`game.setPlayMode(false)`, used by the pan/flicker bench) restores the old
+WASD/arrow buffer panning. The player is drawn as an overlay on the main canvas
+from engine snapshots — the simulation stays in C++.
+
+### Controls (play mode)
+
+| Keys | Action |
+| --- | --- |
+| `A` / `←`, `D` / `→` | move left / right (auto-climbs 1-cell ledges) |
+| `W` / `↑` / `Space` | jump (only when grounded) |
+| `S` / `↓` | down / crouch (placeholder) |
+| `Shift` | run |
+| mouse + `Draw` toggle | aim + place/erase with the selected tool (free paint today; player-mediated in Phase 3) |
+
 ## Testing
 
 ```
@@ -64,8 +80,14 @@ npm run test          # sand + players + net protocol (headless, CI-friendly)
 npm run test:sand     # node scripts/sand-test.mjs
 npm run test:players  # node scripts/player-test.mjs
 npm run test:net      # node scripts/net-test.mjs
+npm run test:e2e      # node scripts/player-e2e.mjs (headless Chromium gameplay)
 npm run test:all      # npm run test && npm run build
 ```
+
+`test:e2e` boots the dev server, drives the local player with real keyboard
+events in headless Chromium (via the `playwright` library, like the pan bench),
+and asserts spawn/grounding, input wiring, jump, and camera-follow. It is not in
+the required `npm run test` chain (it needs a browser), but is CI-runnable.
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

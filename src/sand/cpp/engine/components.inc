@@ -30,24 +30,42 @@
   }
 
   void moveRigidAssemblies() {
+    // Only UNGROUNDED assemblies can move (fall/float) — grounded terrain stays
+    // put (the per-group loop below `continue`s on grounded). computeGrounded
+    // floods grounded-ness through rigid contact, so an ungrounded component is
+    // never 8-connected to a grounded one. So we process only ungrounded
+    // components here, making the whole pass O(ungrounded cells) instead of
+    // O(all stone) every step. `cellComp` (from computeGrounded) holds GLOBAL
+    // comp indices in stone|plant|ice order; localOf maps those to our filtered
+    // ungrounded `all` array (or -1 for grounded/none).
+    int totalComps = (int)(stoneComponents.size() + plantComponents.size() + iceComponents.size());
+    if (totalComps == 0) return;
     std::vector<Comp*> all;
-    for (auto& c : stoneComponents) all.push_back(&c);
-    int nStone = (int)all.size();
-    for (auto& c : plantComponents) all.push_back(&c);
-    int nStonePlant = (int)all.size();
-    for (auto& c : iceComponents) all.push_back(&c);
+    std::vector<int> localOf(totalComps, -1);
+    int gi = 0;
+    auto addList = [&](std::vector<Comp>& list) {
+      for (auto& c : list) { if (!c.grounded) { localOf[gi] = (int)all.size(); all.push_back(&c); } gi++; }
+    };
+    addList(stoneComponents); int nStone = (int)all.size();
+    addList(plantComponents); int nStonePlant = (int)all.size();
+    addList(iceComponents);
     int n = (int)all.size();
-    if (n == 0) return;
+    if (n == 0) return; // everything is grounded (settled) -> nothing to move
     for (auto* comp : all) { int ym = 0; for (int k : comp->cells) { int y = k / cols; if (y > ym) ym = y; } comp->yMax = ym; }
     std::vector<int> parent(n); for (int i = 0; i < n; i++) parent[i] = i;
+    // anchored[i]: this ungrounded comp is 8-adjacent to a GROUNDED comp, so it
+    // is attached to supported terrain and must not move. (In the original full
+    // union-find such a comp joined a grounded group and was skipped; this
+    // reproduces that exactly while only scanning ungrounded cells.)
+    std::vector<uint8_t> anchored(n, 0);
     auto find = [&](int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
     for (int i = 0; i < n; i++) for (int k : all[i]->cells) {
       int y = k / cols, x = k - y * cols;
-      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows) continue; int j = cellComp[ny * cols + nx]; if (j >= 0) { int ri = find(i), rj = find(j); if (ri != rj) parent[ri] = rj; } }
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows) continue; int gj = cellComp[ny * cols + nx]; if (gj >= 0) { int j = localOf[gj]; if (j >= 0) { int ri = find(i), rj = find(j); if (ri != rj) parent[ri] = rj; } else { anchored[i] = 1; } } }
     }
     struct Group { std::vector<int> comps; bool grounded = false; int maxY = 0; };
     std::unordered_map<int, Group> groups;
-    for (int i = 0; i < n; i++) { int r = find(i); Group& g = groups[r]; g.comps.push_back(i); if (all[i]->grounded) g.grounded = true; if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax; }
+    for (int i = 0; i < n; i++) { int r = find(i); Group& g = groups[r]; g.comps.push_back(i); if (all[i]->grounded || anchored[i]) g.grounded = true; if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax; }
     std::vector<Group*> order; order.reserve(groups.size());
     for (auto& kv : groups) order.push_back(&kv.second);
     std::sort(order.begin(), order.end(), [](Group* a, Group* b) { return a->maxY > b->maxY; });

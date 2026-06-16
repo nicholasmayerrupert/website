@@ -54,6 +54,7 @@
     std::vector<Comp> kept;
     for (auto& comp : list) {
       std::unordered_set<int> cells; int yMax = 0;
+      cells.reserve(comp.cells.size() * 2); // avoid repeated rehashing during the rebuild
       for (int k : comp.cells) { int nx = (k % cols) - dx; if (nx < 0 || nx >= cols) continue; int nk = k - dx; cells.insert(nk); int y = nk / cols; if (y > yMax) yMax = y; }
       if (cells.empty()) continue;
       comp.cells = std::move(cells); comp.yMax = yMax; comp.cacheDirty = true;
@@ -108,6 +109,7 @@
     csSaveMaterials(leaveColStart, s, leaveKey);
 
     // 3) slide the persistent buffers + dirty marks.
+    double _t = emscripten_get_now();
     shiftRowMajorU8(grid, dx, EMPTY);
     shiftRowMajorU8(next, dx, EMPTY);
     shiftRowMajorI32(bodyOwner.data(), dx, -1);
@@ -119,6 +121,7 @@
     }
     std::fill(compOccStamp.begin(), compOccStamp.end(), -1);
     std::fill(vacatedStamp.begin(), vacatedStamp.end(), -1);
+    perfShiftBuffers = emscripten_get_now() - _t;
 
     // 4) translate staying bodies; drop any that left the buffer.
     {
@@ -129,16 +132,22 @@
 
     // 5) bring in the newly exposed band: restore it if we've stored it before,
     //    else generate. Advance the offset and restore its saved bodies.
+    _t = emscripten_get_now();
     if (!csLoadMaterials(enterColStart, s, enterKey)) fillBand(enterColStart, s, newOffset);
     worldOffsetX = newOffset;
     for (auto& e : csTakeBodies(enterKey)) { e.first->px = e.second - newOffset; bodies.push_back(e.first); }
+    perfShiftFill = emscripten_get_now() - _t;
 
     // 6) mark the new band active so it simulates, then update components.
     for (int y = 0; y < rows; y++) { if (enterColStart < rowMarkMin[y]) rowMarkMin[y] = enterColStart; if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1; }
+    _t = emscripten_get_now();
     translateComponents(stoneComponents, dx);
     translateComponents(plantComponents, dx);
     translateComponents(iceComponents, dx);
+    perfShiftTranslate = emscripten_get_now() - _t;
+    _t = emscripten_get_now();
     registerSeededComponents(enterColStart, enterColStart + s);
+    perfShiftRegister = emscripten_get_now() - _t;
   }
   void shiftRowMajorI32(int32_t* arr, int dx, int32_t fill) {
     if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * 4); for (int i = b + cols - dx; i < b + cols; i++) arr[i] = fill; }

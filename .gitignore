@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# sand bench diagnostic image dumps (regenerate with scripts/bench-pan.mjs --png)
+bench/*.png

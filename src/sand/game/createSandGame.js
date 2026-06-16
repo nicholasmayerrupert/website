@@ -27,6 +27,7 @@ export function createSandGame(container, opts = {}) {
 
   // --- Host canvases (created and owned here) ---
   const canvas = document.createElement('canvas');
+  canvas.id = 'sand-main'; // stable selector for the headless pan/flicker bench
   const previewCanvas = document.createElement('canvas');
   for (const c of [canvas, previewCanvas]) {
     c.style.position = 'absolute';
@@ -97,29 +98,25 @@ export function createSandGame(container, opts = {}) {
   const colorLUT = makeColorLUT();
   const colorTexture = makeTexture(colorLUT);
 
-  // 1px transparent grid lines between cells, erased in a single
-  // destination-out fill instead of one clearRect per row/column line.
-  // Rebuilt on fit() because cellSize can grow on large viewports.
-  let gutterPattern = null;
-  const buildGutterPattern = (size) => {
-    const tile = document.createElement('canvas');
-    tile.width = size;
-    tile.height = size;
-    const tileCtx = tile.getContext('2d');
-    tileCtx.fillStyle = '#000';
-    tileCtx.fillRect(size - 1, 0, 1, size);
-    tileCtx.fillRect(0, size - 1, size, 1);
-    gutterPattern = ctx.createPattern(tile, 'repeat');
-  };
-
   // Simulation engine (recreated on resize)
   // cols/rows are the BUFFER (world) dimensions, larger than the viewport;
   // viewCols/viewRows are the visible cell window the camera shows.
   let engine = null;
   let cols = 0, rows = 0, cellSize = CELL_PX;
+  // cellSize is CSS px per cell (drives the cell budget, appearance, and pointer
+  // math). cellDev is the integer DEVICE px per cell used for all canvas drawing.
+  // Sizing the backing store to device px and snapping the pan offset to whole
+  // device px keeps cell edges + the 1px gutter grid on exact device pixels, so
+  // the compositor never resamples them — that resampling (at browser zoom < 100%,
+  // where devicePixelRatio drops below 1) is what caused the bright-block flicker.
+  let dpr = 1, cellDev = CELL_PX;
   let viewCols = 0, viewRows = 0;
   const camera = createCamera();
   let lastCamX = NaN, lastCamY = NaN; // detect camera movement (incl. sub-cell) to redraw
+  let testPaused = false;             // DEV-only: freeze stepping for the flicker bench
+  let gutterOn = true;                // DEV-only: toggle the grid for flicker A/B
+  let lastOffX = 0, lastOffY = 0;     // DEV-only: last snapped present offset
+  let snapOff = false;                // DEV-only: disable offset snapping for A/B
   const pressedKeys = new Set();         // held WASD/arrow keys for panning
   let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
   let imageData = null;
@@ -178,28 +175,38 @@ export function createSandGame(container, opts = {}) {
 
   const fit = () => {
     const { width, height } = refreshBounds();
-    canvas.width = Math.max(300, Math.floor(width));
-    canvas.height = Math.max(200, Math.floor(height));
-    previewCanvas.width = canvas.width;
-    previewCanvas.height = canvas.height;
+    // CSS-px size of the canvas element, and its DEVICE-px backing store. dpr < 1
+    // when the browser is zoomed out; sizing the backing store to device px makes
+    // it 1:1 with the screen so the compositor never resamples (no moiré).
+    dpr = window.devicePixelRatio || 1;
+    const cssW = Math.max(300, Math.floor(width));
+    const cssH = Math.max(200, Math.floor(height));
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     previewCanvas.style.width = '100%';
     previewCanvas.style.height = '100%';
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    previewCtx.setTransform(1, 0, 0, 1, 0, 0);
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < TOOL_COLLAPSE_W });
 
     cellSize = CELL_PX;
     while (
-      Math.ceil(width / cellSize) * Math.ceil(height / cellSize) > MAX_CELLS
+      Math.ceil(cssW / cellSize) * Math.ceil(cssH / cellSize) > MAX_CELLS
     ) {
       cellSize++;
     }
+    cellDev = Math.max(1, Math.round(cellSize * dpr)); // integer device px per cell
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    previewCanvas.width = canvas.width;
+    previewCanvas.height = canvas.height;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    previewCtx.imageSmoothingEnabled = false;
+
     // Visible window (cells on screen) vs. the larger simulation buffer.
-    viewCols = Math.max(60, Math.ceil(width / cellSize));
-    viewRows = Math.max(28, Math.ceil(height / cellSize));
+    viewCols = Math.max(60, Math.ceil(cssW / cellSize));
+    viewRows = Math.max(28, Math.ceil(cssH / cellSize));
     // Buffer: full world height (taller than the view) + horizontal margin,
     // both rounded up to whole render chunks. Shrink the height factor if the
     // cell budget would be exceeded.
@@ -211,15 +218,24 @@ export function createSandGame(container, opts = {}) {
       heightFactor -= 0.25;
       worldRows = roundChunks(Math.max(viewRows, Math.round(viewRows * heightFactor)));
     }
+
+    // The simulation buffer depends only on CSS size + cellSize, not on dpr. So a
+    // pure zoom change (dpr only) keeps the same world: just repaint at the new
+    // device resolution instead of destroying and regenerating the engine.
+    if (engine && cols === bufCols && rows === worldRows) {
+      forceFullRender = true;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewDirty = false;
+      previewVisible = false;
+      return;
+    }
     cols = bufCols;
     rows = worldRows;
 
-    buildGutterPattern(cellSize);
     cellCanvas.width = cols;
     cellCanvas.height = rows;
     cellCtx.imageSmoothingEnabled = false;
-    ctx.imageSmoothingEnabled = false;
-    previewCtx.imageSmoothingEnabled = false;
     imageData = cellCtx.createImageData(cols, rows);
     pixels = new Uint32Array(imageData.data.buffer);
 
@@ -248,7 +264,7 @@ export function createSandGame(container, opts = {}) {
 
     pixels.fill(0);
     forceFullRender = true;
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
     previewDirty = false;
     previewVisible = false;
@@ -257,6 +273,20 @@ export function createSandGame(container, opts = {}) {
   fit();
   const ro = new ResizeObserver(fit);
   ro.observe(container);
+
+  // Re-fit when devicePixelRatio changes (browser zoom). The ResizeObserver only
+  // watches the CSS box, which is unchanged by zoom, so it wouldn't fire here;
+  // fit() rebuilds the device-px backing store at the new ratio (and, since the
+  // CSS-derived world dims are unchanged, keeps the running simulation).
+  let mqDpr = null;
+  const onDprChange = () => { fit(); watchDpr(); };
+  function watchDpr() {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    mqDpr?.removeEventListener?.('change', onDprChange);
+    mqDpr = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    mqDpr.addEventListener?.('change', onDprChange);
+  }
+  watchDpr();
 
   // Pointer helpers
   const updatePointer = (cx, cy) => {
@@ -532,23 +562,17 @@ export function createSandGame(container, opts = {}) {
     // remainder so panning is smooth rather than snapping cell-to-cell.
     const camCol = Math.floor(camera.x);
     const camRow = Math.floor(camera.y);
-    const offX = -(camera.x - camCol) * cellSize; // sub-cell shift, (-cellSize, 0]
-    const offY = -(camera.y - camRow) * cellSize;
+    // Sub-cell shift, snapped to whole DEVICE px. Snapping is what keeps cell
+    // edges + the gutter grid on exact device pixels every frame, so panning no
+    // longer re-quantizes them sub-pixel (the source of the bright-block flicker).
+    const offX = snapOff ? -(camera.x - camCol) * cellDev : Math.round(-(camera.x - camCol) * cellDev);
+    const offY = snapOff ? -(camera.y - camRow) * cellDev : Math.round(-(camera.y - camRow) * cellDev);
+    lastOffX = offX; lastOffY = offY;
     const visX0 = camCol;
     const visY0 = camRow;
     const visX1 = Math.min(cols - 1, camCol + viewCols + 1); // +1 covers the shift
     const visY1 = Math.min(rows - 1, camRow + viewRows + 1);
 
-    const clearCellGutters = (x0, y0, x1, y1) => {
-      const destX = (x0 - camCol) * cellSize;
-      const destY = (y0 - camRow) * cellSize;
-      const destW = (x1 - x0 + 1) * cellSize;
-      const destH = (y1 - y0 + 1) * cellSize;
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = gutterPattern;
-      ctx.fillRect(destX, destY, destW, destH);
-      ctx.globalCompositeOperation = 'source-over';
-    };
     // Refill one buffer-cell rect's pixels into the persistent cellCanvas
     // (1px per cell, sized to the whole buffer). This is the only CPU pixel
     // work; it depends on grid contents, not the camera, so panning alone
@@ -606,11 +630,21 @@ export function createSandGame(container, opts = {}) {
       const vh = visY1 - visY0 + 1;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (vw <= 0 || vh <= 0) return;
+      const w = vw * cellDev, h = vh * cellDev;
+      // Riding the snapped sub-cell translate: a single nearest-neighbour upscale
+      // of the visible window, then the 1px grid erased on cell boundaries. Both
+      // are under the same integer-device-px transform, so they translate in
+      // lockstep and land on exact device pixels (no sub-pixel re-quantization,
+      // no compositor resample) -> no bright-block flicker while panning.
       ctx.setTransform(1, 0, 0, 1, offX, offY);
-      if (vw > 0 && vh > 0) {
-        // destX/destY are 0 because visX0/visY0 == camCol/camRow.
-        ctx.drawImage(cellCanvas, visX0, visY0, vw, vh, 0, 0, vw * cellSize, vh * cellSize);
-        clearCellGutters(visX0, visY0, visX1, visY1);
+      ctx.drawImage(cellCanvas, visX0, visY0, vw, vh, 0, 0, w, h);
+      if (gutterOn) {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = '#000';
+        for (let gx = cellDev; gx <= w; gx += cellDev) ctx.fillRect(gx - 1, 0, 1, h);
+        for (let gy = cellDev; gy <= h; gy += cellDev) ctx.fillRect(0, gy - 1, w, 1);
+        ctx.globalCompositeOperation = 'source-over';
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0); // reset so other passes draw in screen space
     };
@@ -634,16 +668,16 @@ export function createSandGame(container, opts = {}) {
     // Match the main canvas's sub-cell camera offset so drafts align with cells.
     const camCol = Math.floor(camera.x);
     const camRow = Math.floor(camera.y);
-    previewCtx.setTransform(1, 0, 0, 1, -(camera.x - camCol) * cellSize, -(camera.y - camRow) * cellSize);
+    previewCtx.setTransform(1, 0, 0, 1, Math.round(-(camera.x - camCol) * cellDev), Math.round(-(camera.y - camRow) * cellDev));
 
     const stoneDraft = engine.getStoneDraftCells();
     if (stoneDraft.size > 0) {
       previewCtx.fillStyle = draftIsDriftwood ? DRIFTWOOD_PREVIEW_COLOR : STONE_PREVIEW_COLOR;
-      const previewSize = cellSize;
+      const previewSize = cellDev;
       for (const k of stoneDraft) {
         const y = (k / cols) | 0;
         const x = k - y * cols;
-        previewCtx.fillRect((x - camera.colX) * cellSize, (y - camera.colY) * cellSize, previewSize, previewSize);
+        previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
       }
       previewVisible = true;
     }
@@ -651,11 +685,11 @@ export function createSandGame(container, opts = {}) {
     const iceDraft = engine.getIceDraftCells();
     if (iceDraft.size > 0) {
       previewCtx.fillStyle = ICE_PREVIEW_COLOR;
-      const previewSize = cellSize;
+      const previewSize = cellDev;
       for (const k of iceDraft) {
         const y = (k / cols) | 0;
         const x = k - y * cols;
-        previewCtx.fillRect((x - camera.colX) * cellSize, (y - camera.colY) * cellSize, previewSize, previewSize);
+        previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
       }
       previewVisible = true;
     }
@@ -664,10 +698,10 @@ export function createSandGame(container, opts = {}) {
       const [x0, y0] = seedDraftOrigin;
       const valid = engine.canPlaceSeedAt(x0, y0);
       previewCtx.fillStyle = valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
-      const previewSize = cellSize;
+      const previewSize = cellDev;
       for (let y = y0; y < y0 + SEED_SIZE; y++) {
         for (let x = x0; x < x0 + SEED_SIZE; x++) {
-          previewCtx.fillRect((x - camera.colX) * cellSize, (y - camera.colY) * cellSize, previewSize, previewSize);
+          previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
         }
       }
       previewVisible = true;
@@ -695,6 +729,18 @@ export function createSandGame(container, opts = {}) {
         rows,
         cols,
       };
+    };
+    // Deterministic hooks for the headless pan/flicker benchmark
+    // (scripts/bench-pan.mjs). DEV-only, same guard as __sandPerf above.
+    window.__sandTest = {
+      setCam(x, y) { camera.set(x, y); render(false); },
+      getCam() { return { x: camera.x, y: camera.y }; },
+      render() { render(false); },
+      setPaused(v) { testPaused = !!v; }, // freeze the sim so the flicker probe sees only pan changes
+      setGutter(v) { gutterOn = !!v; render(false); },
+      off() { return { offX: lastOffX, offY: lastOffY }; },
+      setSnap(v) { snapOff = !v; render(false); },
+      info() { return { cols, rows, cellSize, cellDev, viewCols, viewRows, dpr: window.devicePixelRatio || 1, canvasW: canvas.width, canvasH: canvas.height }; },
     };
   }
 
@@ -746,7 +792,7 @@ export function createSandGame(container, opts = {}) {
     // Fixed-timestep simulation: world-shift + drafts + emit + engine.step run
     // at STEP_MS for determinism, independent of the per-frame pan above.
     let stepped = false;
-    if (now - lastStep >= STEP_MS) {
+    if (now - lastStep >= STEP_MS && !testPaused) {
       // Stream the infinite world: when the camera nears a horizontal buffer
       // edge, slide the loaded window and pull the camera back so the view is
       // unchanged but there's room to keep panning. Fresh terrain is generated
@@ -798,6 +844,7 @@ export function createSandGame(container, opts = {}) {
     destroyed = true;
     cancelAnimationFrame(raf);
     ro.disconnect();
+    mqDpr?.removeEventListener?.('change', onDprChange);
     if (engine && engine.destroy) engine.destroy();
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('touchmove', onTouchMove);

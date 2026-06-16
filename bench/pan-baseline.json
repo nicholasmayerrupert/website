@@ -1,0 +1,46 @@
+{
+  "info": {
+    "cols": 608,
+    "rows": 512,
+    "cellSize": 4,
+    "cellDev": 4,
+    "viewCols": 342,
+    "viewRows": 200,
+    "dpr": 1,
+    "canvasW": 1366,
+    "canvasH": 800
+  },
+  "flicker": {
+    "subSteps": 24,
+    "cam0x": 133,
+    "instability": 0,
+    "perStep": 0,
+    "worst": 0,
+    "dbg": [
+      "133.042:0.0/sh0/ox0",
+      "133.083:0.0/sh0/ox0",
+      "133.125:0.0/sh0/ox0",
+      "133.167:0.0/sh1/ox-1",
+      "133.208:0.0/sh0/ox-1",
+      "133.250:0.0/sh0/ox-1",
+      "133.292:0.0/sh0/ox-1",
+      "133.333:0.0/sh0/ox-1",
+      "133.375:0.0/sh0/ox-1",
+      "133.417:0.0/sh1/ox-2",
+      "133.458:0.0/sh0/ox-2",
+      "133.500:0.0/sh0/ox-2",
+      "133.542:0.0/sh0/ox-2",
+      "133.583:0.0/sh0/ox-2"
+    ]
+  },
+  "perf": {
+    "stepMs": 10.6,
+    "renderMs": 0.5,
+    "avgFrameMs": 14.491,
+    "p95FrameMs": 22,
+    "samples": 56,
+    "dirtyChunks": 34,
+    "rows": 512,
+    "cols": 608
+  }
+}

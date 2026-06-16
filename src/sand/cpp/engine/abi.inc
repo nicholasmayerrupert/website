@@ -24,6 +24,16 @@ EMSCRIPTEN_KEEPALIVE void engine_set_sinks(Engine* e, int v) { e->sinksEnabled =
 EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->registerSeededComponents(0, e->cols); }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_ms(Engine* e) { return e->perfStepMs; }
 EMSCRIPTEN_KEEPALIVE int engine_perf_dirty_chunks(Engine* e) { return e->perfDirtyChunks; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_shift_buffers(Engine* e) { return e->perfShiftBuffers; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_shift_translate(Engine* e) { return e->perfShiftTranslate; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_shift_register(Engine* e) { return e->perfShiftRegister; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_shift_fill(Engine* e) { return e->perfShiftFill; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_ground(Engine* e) { return e->perfStepGround; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_rigid(Engine* e) { return e->perfStepRigid; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_react(Engine* e) { return e->perfStepReact; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_carry(Engine* e) { return e->perfStepCarry; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_settle(Engine* e) { return e->perfStepSettle; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_tail(Engine* e) { return e->perfStepTail; }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 
 // drafts / seed

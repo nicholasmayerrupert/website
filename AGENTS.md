@@ -6,89 +6,49 @@ Nicholas Mayer-Rupert's personal website. React + Vite + Tailwind, deployed to
 Cloudflare via Wrangler (`npm run dev`, `npm run build`, `npm run deploy`).
 
 Its centerpiece is a **2D falling-sand simulation** rendered to a canvas on the
-About page. Most agent work happens there. Map of the sim:
+About page. Most agent work happens there. The engine is written in **C++ and
+compiled to WebAssembly**; rendering, input, camera, and UI stay in JavaScript.
+`src/sand/README.md` is the authoritative map — read it before touching the sim.
+Quick orientation:
 
 | Path | What it is |
 | --- | --- |
-| `src/sand/engine.js` | The simulation: physics, materials, the grid, rigid/plant components. Pure module, injectable RNG. **Performance- and correctness-sensitive — see below.** |
-| `src/sand/renderCore.js` | Color lookup table + pixel fill. |
-| `src/sand/rng.js` | `mulberry32` PRNG + `hashGrid` (deterministic checksums for the benchmark). |
-| `src/sand/feed.js` | Safe helpers for placing materials at **runtime** (`placeMaterial`, `placeBatch`). |
-| `src/sand/scenes/` | Scene definitions — the starting layout of the world. `index.js` is the registry; `landscapeScene.js` (default) and `castleScene.js` are the scenes. |
-| `src/sand/worldgen/` | Procedural-generation foundation: `noise.js` (seeded value/fbm/ridged noise), `context.js` (fixed-scale, center-anchored coords + clipped primitives + shadow grid), `terrain.js` (height field, caves, water, scatter), `structures.js` (surface-snapped prefabs). |
-| `src/About.jsx` | Canvas/pointer wrapper. Owns brushes, the toolbar, and wires the engine + scene together. |
-| `scripts/bench-sand.mjs`, `bench/` | Deterministic headless benchmark + recorded baselines. |
+| `src/sand/cpp/` | The C++ engine. `sand.cpp` includes one `.inc` per subsystem (`core`, `components`, `reactions`, `growth`, `rigid`, `worldgen`, `tools`) + `common.hpp`. Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`). |
+| `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation handle. The grid is a zero-copy view into wasm memory. |
+| `src/sand/materials.js` | Material ids/colors/grain — ids must match `cpp/engine/common.hpp`. |
+| `src/sand/renderCore.js` | DOM-free pixel fill (colors + grain + fire/steam/lava shimmer). |
+| `src/sand/camera.js`, `src/sand/game/createSandGame.js` | View over the world buffer; the runtime that owns the canvases, render loop, input, world streaming, and engine. |
+| `scripts/bench-sand.mjs`, `scripts/bench-pan.mjs`, `bench/` | Headless engine benchmark + Playwright pan/flicker benchmark + recorded baselines. |
+
+The world is a **procedural, infinite, horizontally-streaming** landscape generated
+in `cpp/engine/worldgen.inc` (there is no JS scene/worldgen system anymore — the
+old `engine.js`, `scenes/`, `worldgen/`, `feed.js`, `rng.js` were removed). As the
+camera nears a buffer edge the loaded window slides (`shiftWorld`) and a fresh band
+is generated or restored from the chunk store.
 
 ## The sand engine (read before touching it)
 
-- One grid of material ids. The `MAT` enum (`engine.js`): `EMPTY, SAND, WATER,
-  STONE, OIL, FIRE, STEAM, SEED, WOOD, PLANT`.
+- One grid of material ids (see the `MAT` enum in `materials.js` / `common.hpp`).
 - Loose materials (sand, water, oil, fire, steam) are plain grid cells.
 - **`STONE` and the plant materials (`SEED`/`WOOD`/`PLANT`) are not loose pixels.**
-  They live as connected *components* — rigid stone chunks and living plants —
-  and each step they survive only by their component membership, carried into the
-  next frame. A stone/plant cell written to the grid with no component gets erased
-  every step and **flickers**.
-  - **Seeding a scene:** nothing to do — after a scene builder runs, the engine
-    registers stone/plant components automatically. Use `put`/`rect` freely.
-  - **Placing at runtime** (brushes, programmatic edits): never write
-    `STONE`/`SEED`/`WOOD`/`PLANT` via raw `paintDisc`/grid writes. Use
-    `src/sand/feed.js` (`placeMaterial`, or paint a batch then call
-    `engine.syncComponents()`).
-- Before changing physics, benchmark it:
-  `node scripts/bench-sand.mjs --compare bench/final.json`. Pure refactors must
-  keep checksums **identical**; intended behavior changes must keep material
-  counts within a few percent and pass the visual checklist in `bench/results.md`.
-  The browser RNG is `Math.random` by design — don't "optimize" it to a custom PRNG.
+  They live as connected *components* and survive each step only by their component
+  membership. A stone/plant cell written to the grid with no component gets erased
+  every step and **flickers**. Use the engine's component-aware paths, then
+  `engine.syncComponents()` for runtime edits.
 
-## Creating or changing a scene
+## Benchmarks (run before/after any sim or render change)
 
-A **scene** seeds the initial world. It is a builder function plus an optional
-list of emitters (continuous material sources). The engine calls the builder once
-at startup with `{ cols, rows, MAT, rand, put, rect }`; stone/plant components are
-registered automatically after it returns, so just place materials.
-
-Scenes are listed in the registry `src/sand/scenes/index.js` and selected in the
-browser with `?scene=<key>` (default: `landscape`).
-
-### Author in world space, not fractions of the viewport
-
-**Do not size features as fractions of `cols`/`rows`.** That rescales the whole
-composition to the grid, so a narrow screen *squishes* it. Instead author at a
-**fixed cell scale, anchored to the center and the bottom**, and let a narrow
-viewport **crop** the sides (truncation) while a wide one reveals more world.
-
-The `src/sand/worldgen/` foundation provides exactly this. Build on it:
-
-```js
-import { createWorldContext } from '../worldgen/context.js';
-import { heightField, fillTerrain, carveCaves } from '../worldgen/terrain.js';
-import { placeOnSurface, tree } from '../worldgen/structures.js';
-
-export function buildMyScene(api) {            // api == { cols, rows, MAT, rand, put, rect }
-  const ctx = createWorldContext(api);         // anchors (cx/worldX/fromBottom),
-                                               // clipped primitives, seeded noise,
-                                               // a queryable shadow grid
-  const field = heightField(ctx);              // ordered passes — add/reorder freely
-  fillTerrain(ctx, field);
-  carveCaves(ctx, field);
-  placeOnSurface(ctx, 0, tree);                // worldDx 0 == centered
-  ctx.commit();                                // REQUIRED: flush shadow grid to engine
-}
-
-export const myEmitters = [
-  { material: 2 /* MAT.WATER */, rateMs: 90, pos: { x: 0.5, y: 0.1 }, r: 2 },
-];
-```
-
-Place features at world-x offsets (`ctx.cx(dx)`, `0` = center) and sample noise in
-`ctx.worldX(gx)` so the landscape stays coherent as the window widens. Remember to
-call `ctx.commit()` at the end. To add the scene, import it in
-`src/sand/scenes/index.js` and add a `{ build, emitters }` entry.
-
-The grid still caps at ~60,000 cells (`About.jsx` grows `cellSize` only on very
-large viewports); fixed-scale authoring is what keeps narrow screens truncating
-rather than scaling.
+- **Engine** (headless, Node): `node scripts/bench-sand.mjs` prints p50/p95/p99 for
+  `step`, `shiftWorld` (cache miss/hit + phase breakdown), and `fillPixelSpan`, plus
+  a deterministic terrain checksum. Compare against a baseline with
+  `node scripts/bench-sand.mjs --compare bench/baseline.json` (re-record with
+  `--update`). **Pure refactors must keep the checksum identical.**
+- **Panning / flicker** (headless Chromium, Playwright): `node scripts/bench-pan.mjs`
+  starts the dev server, scripts a pan, and reports the sub-cell pan *instability*
+  (the bright-block flicker metric — must stay ~0) and frame timing. `--png bench/`
+  dumps frames; `DSF=0.75 node …` emulates a zoomed-out browser; `--compare
+  bench/pan-baseline.json` checks for regressions.
+- The browser RNG is `Math.random` by design — don't "optimize" it to a custom PRNG.
 
 ## Coding rules (Karpathy's four)
 

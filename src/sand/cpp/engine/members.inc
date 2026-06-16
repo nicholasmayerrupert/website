@@ -29,6 +29,8 @@
   std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
   int stepSerial = 0, dirtyRenderCount = 0, tick = 0, perfDirtyChunks = 0;
   double perfStepMs = 0;
+  double perfShiftBuffers = 0, perfShiftTranslate = 0, perfShiftRegister = 0, perfShiftFill = 0;
+  double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
   bool sinksEnabled;
   uint32_t rngState;
 

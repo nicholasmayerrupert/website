@@ -39,9 +39,23 @@ export function initSandWasm() {
         paintDisc: c('engine_paint_disc', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
         setSinks: c('engine_set_sinks', null, ['number', 'number']),
+        syncComponents: c('engine_sync_components', null, ['number']),
         perfStepMs: c('engine_perf_step_ms', 'number', ['number']),
         perfDirtyChunks: c('engine_perf_dirty_chunks', 'number', ['number']),
         tick: c('engine_tick', 'number', ['number']),
+        addStoneDraft: c('engine_add_stone_draft', 'number', ['number', 'number', 'number', 'number']),
+        addIceDraft: c('engine_add_ice_draft', 'number', ['number', 'number', 'number', 'number']),
+        finalizeStoneDraft: c('engine_finalize_stone_draft', null, ['number']),
+        finalizeIceDraft: c('engine_finalize_ice_draft', null, ['number']),
+        finalizeDriftwoodDraft: c('engine_finalize_driftwood_draft', null, ['number']),
+        clearStoneDraft: c('engine_clear_stone_draft', null, ['number']),
+        clearIceDraft: c('engine_clear_ice_draft', null, ['number']),
+        stoneDraftSnapshot: c('engine_stone_draft_snapshot', 'number', ['number']),
+        iceDraftSnapshot: c('engine_ice_draft_snapshot', 'number', ['number']),
+        draftPtr: c('engine_draft_ptr', 'number', ['number']),
+        getSeedOrigin: c('engine_get_seed_origin', 'number', ['number', 'number', 'number', 'number']),
+        canPlaceSeed: c('engine_can_place_seed', 'number', ['number', 'number', 'number']),
+        placeSeed: c('engine_place_seed', 'number', ['number', 'number', 'number']),
       };
       return M;
     });
@@ -72,7 +86,16 @@ export function createEngineWasm({
   const gridView = () => new Uint8Array(mod.HEAPU8.buffer, M.grid(ptr), cellCount);
   const dirtyView = () => new Uint8Array(mod.HEAPU8.buffer, M.dirty(ptr), chunkCols * chunkRows);
 
-  const noopSet = new Set();
+  // Scratch buffer in wasm memory for getSeedOrigin (2 ints).
+  const seedOut = mod._malloc(8);
+  const draftSet = (count) => {
+    const base = M.draftPtr(ptr) >> 2;
+    const view = new Int32Array(mod.HEAP32.buffer, base << 2, count);
+    const s = new Set();
+    for (let i = 0; i < count; i++) s.add(view[i]);
+    return s;
+  };
+
   return {
     cols,
     rows,
@@ -93,28 +116,34 @@ export function createEngineWasm({
     setEmittersOn() {},
     getPerf() { return { stepMs: M.perfStepMs(ptr), dirtyChunks: M.perfDirtyChunks(ptr), phases: {} }; },
     getTick() { return M.tick(ptr); },
-    destroy() { M.destroy(ptr); },
+    syncComponents() { M.syncComponents(ptr); },
+    destroy() { mod._free(seedOut); M.destroy(ptr); },
 
-    // --- Stubs until later C++ stages (host must not crash) ---
+    // Component drafts + seeds (Stage 3)
+    addDiscToStoneDraft(cx, cy, r) { return M.addStoneDraft(ptr, cx, cy, r) === 1; },
+    addDiscToIceDraft(cx, cy, r) { return M.addIceDraft(ptr, cx, cy, r) === 1; },
+    finalizeStoneDraft() { M.finalizeStoneDraft(ptr); },
+    finalizeIceDraft() { M.finalizeIceDraft(ptr); },
+    finalizeDriftwoodDraft() { M.finalizeDriftwoodDraft(ptr); },
+    clearStoneDraft() { M.clearStoneDraft(ptr); },
+    clearIceDraft() { M.clearIceDraft(ptr); },
+    getStoneDraftCells() { return draftSet(M.stoneDraftSnapshot(ptr)); },
+    getIceDraftCells() { return draftSet(M.iceDraftSnapshot(ptr)); },
+    getSeedOrigin(cx, cy) {
+      if (M.getSeedOrigin(ptr, cx, cy, seedOut) !== 1) return null;
+      const o = seedOut >> 2;
+      return [mod.HEAP32[o], mod.HEAP32[o + 1]];
+    },
+    canPlaceSeedAt(x0, y0) { return M.canPlaceSeed(ptr, x0, y0) === 1; },
+    placeSeedAt(x0, y0) { return M.placeSeed(ptr, x0, y0) === 1; },
+
+    // --- Stubs until Stage 4-5 (host must not crash) ---
     getWorldOffsetX() { return 0; },
     worldSurfaceAt() { return 0; },
     shiftWorld() {},
-    getSeedOrigin() { return null; },
-    canPlaceSeedAt() { return false; },
-    placeSeedAt() { return false; },
-    addDiscToStoneDraft() { return false; },
-    finalizeStoneDraft() {},
-    finalizeDriftwoodDraft() {},
-    clearStoneDraft() {},
-    getStoneDraftCells() { return noopSet; },
-    addDiscToIceDraft() { return false; },
-    finalizeIceDraft() {},
-    clearIceDraft() {},
-    getIceDraftCells() { return noopSet; },
     spawnBody() { return null; },
     getBodies() { return []; },
     bodyFootprintBlocked() { return 0; },
     getRigidDebug() { return { rejectedCells: 0, depenetrations: 0 }; },
-    syncComponents() {},
   };
 }

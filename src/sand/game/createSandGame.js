@@ -24,6 +24,9 @@ export function createSandGame(container, opts = {}) {
     sceneKey: sceneKeyOpt,
     onLayoutChange,
     reducedMotion,
+    // Engine factory (createEngine-shaped). Defaults to the JS engine; the React
+    // wrapper can inject the WASM engine (createEngineWasm) after its async init.
+    engineFactory = createEngine,
   } = opts;
 
   // --- Host canvases (created and owned here) ---
@@ -236,7 +239,8 @@ export function createSandGame(container, opts = {}) {
     imageData = cellCtx.createImageData(cols, rows);
     pixels = new Uint32Array(imageData.data.buffer);
 
-    engine = createEngine({
+    if (engine && engine.destroy) engine.destroy(); // free a prior (e.g. WASM) engine on resize
+    engine = engineFactory({
       cols,
       rows,
       infinite: true,
@@ -792,6 +796,7 @@ export function createSandGame(container, opts = {}) {
     destroyed = true;
     cancelAnimationFrame(raf);
     ro.disconnect();
+    if (engine && engine.destroy) engine.destroy();
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('touchmove', onTouchMove);
     window.removeEventListener('pointerdown', onPointerDown);

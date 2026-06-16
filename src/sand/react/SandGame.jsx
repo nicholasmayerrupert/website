@@ -11,6 +11,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createSandGame } from '../game/createSandGame';
+import { initSandWasm, createEngineWasm } from '../engineWasm';
 import { ToolPalette } from './ToolPalette';
 
 export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
@@ -32,14 +33,32 @@ export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
   // before React paints, so the setter must tolerate being called early.
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
-    const game = createSandGame(container, {
-      initialTool,
-      onLayoutChange: ({ uiAtBottom: b }) => setUiAtBottom(b),
-    });
-    gameRef.current = game;
+    if (!container) return undefined;
+    let game = null;
+    let cancelled = false;
+    const boot = (engineFactory) => {
+      if (cancelled || !containerRef.current) return;
+      game = createSandGame(container, {
+        initialTool,
+        engineFactory,
+        onLayoutChange: ({ uiAtBottom: b }) => setUiAtBottom(b),
+      });
+      gameRef.current = game;
+    };
+    // Opt into the C++/WASM engine with ?engine=wasm; default stays the JS engine.
+    const useWasm =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('engine') === 'wasm';
+    if (useWasm) {
+      initSandWasm()
+        .then(() => boot(createEngineWasm))
+        .catch((e) => { console.error('WASM sand engine failed to init; staying blank', e); });
+    } else {
+      boot(undefined); // default JS engine
+    }
     return () => {
-      game.destroy();
+      cancelled = true;
+      if (game) game.destroy();
       gameRef.current = null;
     };
   }, [initialTool]);

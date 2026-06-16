@@ -25,6 +25,21 @@ The hot per-cell movement and `step()` stay in `engine.js` for speed; everything
 else is a `createX(S)` factory closed over the shared context `S`. Hot functions
 read `S.grid` once per call into a local, so the inner loops use real locals.
 
+## C++ / WebAssembly engine
+
+`cpp/sand.cpp` is a C++ port of the simulation (CA, components, reactions,
+growth, tools, streaming worldgen) compiled to `wasm/sandEngine.js` (single-file
+ES module) via `wasm/build.sh` (needs emsdk: `source wasm/emenv.sh`). The
+generated file is committed so `npm run build` never needs emcc. `engineWasm.js`
+exposes `createEngineWasm()` with the same shape as `createEngine()` (grid is a
+zero-copy `HEAPU8` view); `initSandWasm()` must resolve once first.
+
+Opt in at runtime with `?engine=wasm` (the React wrapper awaits init then injects
+`createEngineWasm` into `createSandGame`); the JS engine remains the default and
+fallback. Parity is behavioral, not bit-identical — verify with
+`node scripts/wasm-parity.mjs`. Free rigid bodies (cube tool) are not yet ported
+to C++, so they no-op under the WASM engine. Worldgen is byte-identical to JS.
+
 ## Adding a material
 
 1. **Add one entry to `MATERIALS` in `materials.js`** with a unique `id`

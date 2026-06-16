@@ -23,6 +23,7 @@ export const COMPONENT_MATERIALS = new Set([
   MAT.SEED,
   MAT.WOOD,
   MAT.PLANT,
+  MAT.DRIFTWOOD,
 ]);
 
 /** True if placing `material` requires a component sync to avoid flicker. */

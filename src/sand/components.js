@@ -318,12 +318,10 @@ export function createComponents(S) {
         }
         if (y > 1 && !cells.has(k - cols)) {
           exposed = true;
-          const m = grid[k - cols];
-          if (isLiquid(m)) {
-            wet = true;
-            liquidDensity += DENSITY[m];
-            liquidContacts++;
-          }
+          // Liquid directly ABOVE a cell does not provide buoyant support — only
+          // perimeter exposure. Counting it as "wet" let water poured onto an
+          // ungrounded structure inflate its submersion measure and rocket it
+          // upward toward the source. Sides and the cell below still count.
         }
         if (y < rows - 1 && !cells.has(k + cols)) {
           exposed = true;

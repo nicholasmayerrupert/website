@@ -34,6 +34,7 @@ const ACID = MAT.ACID;
 const LAVA = MAT.LAVA;
 const ICE = MAT.ICE;
 const RIGID = MAT.RIGID;
+const DRIFTWOOD = MAT.DRIFTWOOD;
 
 // ---- Tunables ----
 const MAX_WATER_FLOW = 10;
@@ -324,12 +325,13 @@ export function createEngine({
   // Scene init + stone/ice drafts live in tools.js.
 
   function isPlantMaterial(material) {
-    return material === SEED || material === WOOD || material === PLANT;
+    return material === SEED || material === WOOD || material === PLANT ||
+      material === DRIFTWOOD;
   }
 
   function isDissolvable(material) {
     return material === SAND || material === STONE || material === WOOD ||
-      material === PLANT || material === SEED;
+      material === PLANT || material === SEED || material === DRIFTWOOD;
   }
 
   // Seed placement + brushes (paintDisc/eraseDisc) live in tools.js.
@@ -431,7 +433,8 @@ export function createEngine({
   // Load-bearing materials: rigid solids carry load as cohesive bodies, and
   // settled SAND bears load too. Liquids, gases and EMPTY do not.
   const isRigidMaterial = (m) =>
-    m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === RIGID;
+    m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === RIGID ||
+    m === DRIFTWOOD;
   // computeGrounded + moveRigidAssemblies (support solver, cohesive movement,
   // buoyancy) live in components.js (createComponents); assigned at wiring.
 

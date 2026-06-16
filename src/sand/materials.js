@@ -40,6 +40,7 @@ export const MATERIALS = [
   { id: 11, name: 'LAVA',  kind: KIND.LIQUID,     density: 2.8, looseSorted: true,  mobility: 0.35, color: 0xc81050ff, textureAmp: 0, renderAnim: 'lava' },
   { id: 12, name: 'ICE',   kind: KIND.COMPONENT,  density: 0.9, looseSorted: false, mobility: 0,    color: 0x90fff0c0, textureAmp: 5, renderAnim: 'none' },
   { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, density: 1.4, looseSorted: false, mobility: 0,    color: 0xff8a725e, textureAmp: 6, renderAnim: 'none' },
+  { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc26e7d8c, textureAmp: 7, renderAnim: 'none' },
 ];
 
 // Slots in the flat tables. 16 keeps a power-of-two-ish headroom over the 14

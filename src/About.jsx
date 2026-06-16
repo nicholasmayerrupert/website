@@ -12,7 +12,7 @@ function SandOverlay({ onDrawModeChange }) {
   const uiRef = useRef(null);
 
   // UI state
-  const [selectedTool, setSelectedTool] = useState('cube'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'acid' | 'lava' | 'ice' | 'cube' | 'eraser'
+  const [selectedTool, setSelectedTool] = useState('cube'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'driftwood' | 'acid' | 'lava' | 'ice' | 'cube' | 'eraser'
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
   const [emittersOn, setEmittersOn] = useState(true);
   const [sinksOn, setSinksOn] = useState(true);
@@ -77,6 +77,7 @@ function SandOverlay({ onDrawModeChange }) {
     const ACID_BRUSH_RADIUS = 2;
     const LAVA_BRUSH_RADIUS = 2;
     const ICE_BRUSH_RADIUS = 2;
+    const DRIFTWOOD_BRUSH_RADIUS = 2;
     const ERASE_BRUSH_RADIUS = 3;
     const CUBE_HALF = 6; // half-extent of the rigid cube body (cells)
     const EMIT_INTERVAL_MS = 18;
@@ -396,7 +397,7 @@ function SandOverlay({ onDrawModeChange }) {
         rmbHeld ? true :
         activeTool === 'eraser' ? lmbDown :
         (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire' ||
-         activeTool === 'acid' || activeTool === 'lava') ? lmbDown : false;
+         activeTool === 'acid' || activeTool === 'lava' || activeTool === 'driftwood') ? lmbDown : false;
 
       if (!shouldEmit) return;
       if (now - lastEmit < EMIT_INTERVAL_MS) return;
@@ -427,6 +428,13 @@ function SandOverlay({ onDrawModeChange }) {
       }
       if (activeTool === 'lava') {
         engine.paintDisc(cx, cy, LAVA_BRUSH_RADIUS, MAT.LAVA, false);
+        lastEmit = now; return;
+      }
+      if (activeTool === 'driftwood') {
+        // Rigid wood-like component: paint then adopt the cells into a component
+        // so they obey physics and stop flickering (see feed.js placeMaterial).
+        engine.paintDisc(cx, cy, DRIFTWOOD_BRUSH_RADIUS, MAT.DRIFTWOOD, false);
+        engine.syncComponents();
         lastEmit = now; return;
       }
       // sand
@@ -672,6 +680,12 @@ function SandOverlay({ onDrawModeChange }) {
       idleClass: 'text-green-400/80 bg-green-400/10',
     },
     {
+      id: 'driftwood',
+      title: 'Driftwood (hold LMB) — wood-like, does not grow',
+      activeClass: 'bg-stone-600/50 ring-stone-300/35 text-stone-100',
+      idleClass: 'text-stone-400/80 bg-stone-400/10',
+    },
+    {
       id: 'acid',
       title: 'Acid (hold LMB)',
       activeClass: 'bg-lime-600/50 ring-lime-300/35 text-lime-100',
@@ -750,6 +764,14 @@ function SandOverlay({ onDrawModeChange }) {
             <span className="absolute bottom-1 left-2 h-3 w-4 rounded-[55%_45%_55%_45%] bg-amber-900/85 rotate-[-20deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.16)]" />
             <span className="absolute bottom-3 left-3 h-3 w-2 rounded-full bg-green-400/80 rotate-45" />
             <span className="absolute bottom-[15px] left-[9px] h-2 w-1.5 rounded-full bg-lime-300/75 rotate-[-35deg]" />
+          </div>
+        );
+      case 'driftwood':
+        return (
+          <div className="relative h-6 w-6" aria-hidden="true">
+            <span className="absolute bottom-2 left-0 h-2 w-6 rounded-[3px] bg-stone-500/85 rotate-[-10deg] shadow-[inset_2px_2px_0_rgba(255,255,255,0.18)]" />
+            <span className="absolute bottom-[11px] left-1 h-[2px] w-4 rounded-full bg-stone-300/35 rotate-[-10deg]" />
+            <span className="absolute bottom-[7px] left-2 h-[2px] w-3 rounded-full bg-stone-800/35 rotate-[-10deg]" />
           </div>
         );
       case 'acid':

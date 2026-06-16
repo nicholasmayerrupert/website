@@ -8,6 +8,8 @@ import { MAT, KIND, buildDensity, buildLooseSorted, buildMobility, buildKind } f
 import { createRigidBodies } from './rigidBodies.js';
 import { createReactions } from './reactions.js';
 import { createGrowth } from './growth.js';
+import { createComponents } from './components.js';
+import { createTools } from './tools.js';
 
 // Material identity (ids, densities, colors, kinds) lives in materials.js — the
 // single place to edit when adding a material. Re-exported so existing importers
@@ -209,15 +211,10 @@ export function createEngine({
   let moveBodies, eraseBodyCellIndex, finishErasedBodies, bodyFootprintBlocked;
 
   // Emitters (grid coords with timing)
-  const emitters = emitterDefs.map(e => {
-    const rawX = Math.floor(e.pos.x * cols);
-    const rawY = Math.floor(e.pos.y * rows);
-    const gx = clamp(rawX, 1 + EMITTER_EDGE_BUFFER, cols - 2 - EMITTER_EDGE_BUFFER);
-    const gy = clamp(rawY, 1 + EMITTER_TOP_BUFFER, rows - 2 - EMITTER_EDGE_BUFFER);
-    return { ...e, material: e.material ?? SAND, gx, gy, last: 0 };
-  });
-
-  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  // Tools (brushes, drafts, seed, emitters, scene init) live in tools.js
+  // (createTools); assigned at module wiring below.
+  let applyInitialScene, addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft,
+    finalizeIceDraft, getSeedOrigin, canPlaceSeedAt, placeSeedAt, paintDisc, eraseDisc, applyEmitters;
   const markCellIndex = (k) => {
     const y = (k / cols) | 0;
     const x = k - y * cols;
@@ -318,253 +315,13 @@ export function createEngine({
     }
   };
 
-  const putInitial = (x, y, material) => {
-    if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return;
-    grid[I(x, y)] = material;
-  };
-  const rectInitial = (x0, y0, w, h, material) => {
-    const x1 = Math.min(cols - 2, x0 + w - 1);
-    const y1 = Math.min(rows - 1, y0 + h - 1);
-    for (let y = Math.max(1, y0); y <= y1; y++) {
-      for (let x = Math.max(1, x0); x <= x1; x++) putInitial(x, y, material);
-    }
-  };
-  const registerSeededComponents = () => {
-    const registerComponents = (materialCheck, components, makeComponent) => {
-      const seen = new Uint8Array(cols * rows);
-      // Cells already owned by an existing component must not be re-registered.
-      // Pre-seeding `seen` makes this function idempotent: both the outer scan and
-      // the neighbor flood-fill skip owned cells, so it can run again after runtime
-      // placement to adopt orphaned cells without duplicating existing components.
-      for (const comp of components) {
-        for (const k of comp.cells) seen[k] = 1;
-      }
-      for (let k = 0; k < grid.length; k++) {
-        if (seen[k] || !materialCheck(grid[k])) continue;
-        const cells = new Set([k]);
-        const queue = [k];
-        seen[k] = 1;
-        let yMax = (k / cols) | 0;
+  // putInitial/rectInitial live in tools.js.
+  // Component bookkeeping + support/assembly solver live in components.js
+  // (createComponents); assigned at module wiring below.
+  let registerSeededComponents, registerStoneCells, registerIceCells,
+    splitComponentsAfterErase, splitRigidAfterErase, computeGrounded, moveRigidAssemblies;
 
-        while (queue.length) {
-          const cur = queue.shift();
-          const y = (cur / cols) | 0;
-          const x = cur - y * cols;
-          if (y > yMax) yMax = y;
-
-          for (let oy = -1; oy <= 1; oy++) {
-            for (let ox = -1; ox <= 1; ox++) {
-              if (ox === 0 && oy === 0) continue;
-              const nx = x + ox;
-              const ny = y + oy;
-              if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
-              const nk = I(nx, ny);
-              if (seen[nk] || !materialCheck(grid[nk])) continue;
-              seen[nk] = 1;
-              cells.add(nk);
-              queue.push(nk);
-            }
-          }
-        }
-
-        components.push(makeComponent(cells, yMax));
-      }
-    };
-
-    registerComponents(
-      material => material === STONE,
-      stoneComponents,
-      (cells, yMax) => ({ id: nextStoneId++, cells, yMax })
-    );
-    registerComponents(
-      isPlantMaterial,
-      plantComponents,
-      (cells, yMax) => {
-        let woodCount = 0;
-        let leafCount = 0;
-        for (const k of cells) {
-          if (grid[k] === WOOD) woodCount++;
-          else if (grid[k] === PLANT) leafCount++;
-        }
-        return {
-          id: nextPlantId++,
-          cells,
-          yMax,
-          woodCount,
-          leafCount,
-          age: 0,
-          cacheDirty: true,
-        };
-      }
-    );
-    registerComponents(
-      material => material === ICE,
-      iceComponents,
-      (cells, yMax) => ({ id: nextIceId++, cells, yMax, cacheDirty: true })
-    );
-  };
-
-  const applyInitialScene = () => {
-    if (typeof initialScene !== 'function') return;
-    initialScene({
-      cols,
-      rows,
-      MAT,
-      rand,
-      put: putInitial,
-      rect: rectInitial,
-    });
-    registerSeededComponents();
-  };
-
-  // --- Draft helpers for stone ---
-  function addDiscToStoneDraft(cx, cy, radius) {
-    let changed = false;
-    for (let oy = -radius; oy <= radius; oy++) {
-      const yy = cy + oy;
-      if (yy <= 0 || yy >= rows) continue;
-      for (let ox = -radius; ox <= radius; ox++) {
-        if (ox * ox + oy * oy > radius * radius) continue;
-        const xx = cx + ox;
-        if (xx <= 0 || xx >= cols - 1) continue;
-        const k = I(xx, yy);
-        if (grid[k] === EMPTY && !stoneDraft.has(k)) {
-          stoneDraft.add(k);
-          changed = true;
-        }
-      }
-    }
-    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    return changed;
-  }
-
-  // Register a set of grid cells (already written as STONE) as a stone
-  // component, merging with any adjacent existing stone components.
-  function registerStoneCells(cells, yMax) {
-    if (cells.size === 0) return;
-
-    const touchingComponentIds = new Set();
-    for (const k of cells) {
-      const y = (k / cols) | 0; const x = k - y * cols;
-      const nks = neighborIndices8(x, y)
-        .filter(nk => nk >= 0 && nk < grid.length && grid[nk] === STONE && !cells.has(nk));
-      for (const nk of nks) {
-        for (const comp of stoneComponents) {
-          if (comp.cells.has(nk)) { touchingComponentIds.add(comp.id); break; }
-        }
-      }
-    }
-
-    let newComp = { id: nextStoneId++, cells, yMax };
-    if (touchingComponentIds.size > 0) {
-      const keep = [];
-      for (const comp of stoneComponents) {
-        if (touchingComponentIds.has(comp.id)) {
-          for (const k of comp.cells) {
-            newComp.cells.add(k);
-            const y = (k / cols) | 0;
-            if (y > newComp.yMax) newComp.yMax = y;
-          }
-        } else {
-          keep.push(comp);
-        }
-      }
-      stoneComponents = keep;
-    }
-    stoneComponents.push(newComp);
-  }
-
-  // Register a set of grid cells (already written as ICE) as an ice component,
-  // merging with any adjacent existing ice components.
-  function registerIceCells(cells, yMax) {
-    if (cells.size === 0) return;
-
-    const touchingComponentIds = new Set();
-    for (const k of cells) {
-      const y = (k / cols) | 0; const x = k - y * cols;
-      const nks = neighborIndices8(x, y)
-        .filter(nk => nk >= 0 && nk < grid.length && grid[nk] === ICE && !cells.has(nk));
-      for (const nk of nks) {
-        for (const comp of iceComponents) {
-          if (comp.cells.has(nk)) { touchingComponentIds.add(comp.id); break; }
-        }
-      }
-    }
-
-    let newComp = { id: nextIceId++, cells, yMax, cacheDirty: true };
-    if (touchingComponentIds.size > 0) {
-      const keep = [];
-      for (const comp of iceComponents) {
-        if (touchingComponentIds.has(comp.id)) {
-          for (const k of comp.cells) {
-            newComp.cells.add(k);
-            const y = (k / cols) | 0;
-            if (y > newComp.yMax) newComp.yMax = y;
-          }
-        } else {
-          keep.push(comp);
-        }
-      }
-      iceComponents = keep;
-    }
-    iceComponents.push(newComp);
-  }
-
-  // Ice is placed via a draft (hold to build a shape, release to drop), mirroring
-  // stone, so it doesn't fall instantly while the user is still painting.
-  function addDiscToIceDraft(cx, cy, radius) {
-    let changed = false;
-    for (let oy = -radius; oy <= radius; oy++) {
-      const yy = cy + oy;
-      if (yy <= 0 || yy >= rows - 1) continue;
-      for (let ox = -radius; ox <= radius; ox++) {
-        if (ox * ox + oy * oy > radius * radius) continue;
-        const xx = cx + ox;
-        if (xx <= 0 || xx >= cols - 1) continue;
-        const k = I(xx, yy);
-        if (grid[k] === EMPTY && !iceDraft.has(k)) {
-          iceDraft.add(k);
-          changed = true;
-        }
-      }
-    }
-    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    return changed;
-  }
-
-  function finalizeIceDraft() {
-    if (iceDraft.size === 0) return;
-    const cells = new Set();
-    let yMax = 0;
-    for (const k of iceDraft) {
-      if (grid[k] === EMPTY) {
-        grid[k] = ICE;
-        markCellIndex(k);
-        cells.add(k);
-        const y = (k / cols) | 0;
-        if (y > yMax) yMax = y;
-      }
-    }
-    registerIceCells(cells, yMax);
-  }
-
-  function finalizeStoneDraft() {
-    if (stoneDraft.size === 0) return;
-
-    const cells = new Set();
-    let yMax = 0;
-
-    for (const k of stoneDraft) {
-      if (grid[k] === EMPTY) {
-        grid[k] = STONE;
-        markCellIndex(k);
-        cells.add(k);
-        const y = (k / cols) | 0;
-        if (y > yMax) yMax = y;
-      }
-    }
-    registerStoneCells(cells, yMax);
-  }
+  // Scene init + stone/ice drafts live in tools.js.
 
   function isPlantMaterial(material) {
     return material === SEED || material === WOOD || material === PLANT;
@@ -575,215 +332,9 @@ export function createEngine({
       material === PLANT || material === SEED;
   }
 
-  function getSeedOrigin(cx, cy) {
-    const x0 = Math.floor(cx - SEED_SIZE / 2);
-    const y0 = Math.floor(cy - SEED_SIZE / 2);
-    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return null;
-    return [x0, y0];
-  }
+  // Seed placement + brushes (paintDisc/eraseDisc) live in tools.js.
 
-  function canPlaceSeedAt(x0, y0) {
-    if (x0 == null || y0 == null) return false;
-    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return false;
-    for (let y = y0; y < y0 + SEED_SIZE; y++) {
-      for (let x = x0; x < x0 + SEED_SIZE; x++) {
-        if (grid[I(x, y)] !== EMPTY) return false;
-      }
-    }
-    return true;
-  }
-
-  function placeSeedAt(x0, y0) {
-    if (!canPlaceSeedAt(x0, y0)) return false;
-    const cells = new Set();
-    let yMax = 0;
-    for (let y = y0; y < y0 + SEED_SIZE; y++) {
-      for (let x = x0; x < x0 + SEED_SIZE; x++) {
-        const k = I(x, y);
-        grid[k] = SEED;
-        cells.add(k);
-        if (y > yMax) yMax = y;
-      }
-    }
-    plantComponents.push({
-      id: nextPlantId++,
-      cells,
-      yMax,
-      woodCount: 0,
-      leafCount: 0,
-      age: 0,
-      cacheDirty: true,
-    });
-    markDirtyRect(x0, y0, x0 + SEED_SIZE - 1, y0 + SEED_SIZE - 1);
-    return true;
-  }
-
-  function splitComponentsAfterErase(components, allowedMaterial) {
-    const updated = [];
-    for (const comp of components) {
-      const remaining = new Set();
-      let reusedOriginalId = false;
-      for (const k of comp.cells) {
-        if (allowedMaterial(grid[k])) remaining.add(k);
-      }
-      while (remaining.size > 0) {
-        const [start] = remaining;
-        const queue = [start];
-        const part = new Set([start]);
-        remaining.delete(start);
-        while (queue.length) {
-          const cur = queue.shift();
-          const y = (cur / cols) | 0; const x = cur - y * cols;
-          const neigh = neighborIndices8(x, y);
-          for (const nk of neigh) {
-            if (remaining.has(nk)) {
-              remaining.delete(nk);
-              part.add(nk);
-              queue.push(nk);
-            }
-          }
-        }
-        let yMax = 0;
-        let woodCount = 0;
-        let leafCount = 0;
-        for (const k of part) {
-          const y = (k / cols) | 0;
-          if (y > yMax) yMax = y;
-          if (grid[k] === WOOD) woodCount++;
-          else if (grid[k] === PLANT) leafCount++;
-        }
-        updated.push({
-          id: reusedOriginalId ? nextPlantId++ : comp.id,
-          cells: part,
-          yMax,
-          woodCount,
-          leafCount,
-          age: comp.age ?? 0,
-          cacheDirty: true,
-        });
-        reusedOriginalId = true;
-      }
-    }
-    return updated;
-  }
-
-  // Re-split rigid components (stone/ice) after some of their cells were removed
-  // from the grid. erasedCells lists the removed grid indices. makeId assigns
-  // ids to the resulting fragments; extra() supplies any extra per-component
-  // fields (e.g. cacheDirty for ice).
-  function splitRigidAfterErase(components, erasedCells, makeId, extra = null) {
-    if (erasedCells.length === 0 || components.length === 0) return components;
-    const updated = [];
-    for (const comp of components) {
-      let touched = false;
-      for (const k of erasedCells) {
-        if (comp.cells.delete(k)) touched = true;
-      }
-      if (!touched) { updated.push(comp); continue; }
-      if (comp.cells.size === 0) continue;
-
-      const remaining = new Set(comp.cells);
-      while (remaining.size > 0) {
-        const [start] = remaining;
-        const queue = [start];
-        const part = new Set([start]);
-        remaining.delete(start);
-        while (queue.length) {
-          const cur = queue.shift();
-          const y = (cur / cols) | 0; const x = cur - y * cols;
-          const neigh = neighborIndices8(x, y);
-          for (const nk of neigh) {
-            if (remaining.has(nk)) {
-              remaining.delete(nk);
-              part.add(nk);
-              queue.push(nk);
-            }
-          }
-        }
-        let yMax = 0;
-        for (const k of part) { const y = (k / cols) | 0; if (y > yMax) yMax = y; }
-        updated.push({ id: makeId(), cells: part, yMax, ...(extra ? extra() : {}) });
-      }
-    }
-    return updated;
-  }
-
-  // Brushes (for sand, water, RMB eraser)
-  const paintDisc = (cx, cy, radius, material, overwrite = false) => {
-    let changed = false;
-    for (let oy = -radius; oy <= radius; oy++) {
-      const yy = cy + oy;
-      if (yy <= 0 || yy >= rows) continue;
-      for (let ox = -radius; ox <= radius; ox++) {
-        if (ox * ox + oy * oy > radius * radius) continue;
-        const xx = cx + ox;
-        if (xx <= 0 || xx >= cols - 1) continue;
-        const k = I(xx, yy);
-        if ((overwrite || grid[k] === EMPTY) && grid[k] !== material) {
-          grid[k] = material;
-          changed = true;
-        }
-      }
-    }
-    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    return changed;
-  };
-
-  const eraseDisc = (cx, cy, radius) => {
-    const erasedStoneCells = [];
-    const erasedIceCells = [];
-    const bodyById = new Map();
-    const dirtyBodies = new Set();
-    let erasedPlant = false;
-    let changed = false;
-    for (let oy = -radius; oy <= radius; oy++) {
-      const yy = cy + oy;
-      if (yy <= 0 || yy >= rows) continue;
-      for (let ox = -radius; ox <= radius; ox++) {
-        if (ox * ox + oy * oy > radius * radius) continue;
-        const xx = cx + ox;
-        if (xx <= 0 || xx >= cols - 1) continue;
-        const k = I(xx, yy);
-        if (grid[k] === RIGID) {
-          if (bodyById.size === 0) {
-            for (const b of rigidWorld.bodies) bodyById.set(b.id, b);
-          }
-          if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = true;
-        }
-        if (grid[k] !== EMPTY) {
-          if (grid[k] === STONE) erasedStoneCells.push(k);
-          else if (grid[k] === ICE) erasedIceCells.push(k);
-          if (isPlantMaterial(grid[k])) erasedPlant = true;
-          // A RIGID cell reaching here means eraseBodyCellIndex couldn't map it
-          // back to a local body cell. Clear its owner too, or the stale id makes
-          // later bodies skip this cell when rasterizing (a "dead pixel" hole).
-          if (grid[k] === RIGID) bodyOwner[k] = -1;
-          grid[k] = EMPTY;
-          changed = true;
-        }
-        if (stoneDraft.delete(k)) changed = true;
-        if (iceDraft.delete(k)) changed = true;
-      }
-    }
-    bodyCells = finishErasedBodies(dirtyBodies, bodyCells);
-    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    stoneComponents = splitRigidAfterErase(stoneComponents, erasedStoneCells, () => nextStoneId++);
-    iceComponents = splitRigidAfterErase(iceComponents, erasedIceCells, () => nextIceId++, () => ({ cacheDirty: true }));
-    if (erasedPlant && plantComponents.length > 0) {
-      plantComponents = splitComponentsAfterErase(plantComponents, isPlantMaterial);
-    }
-    return changed;
-  };
-
-  // --- Emitters ---
-  const applyEmitters = (now) => {
-    if (!emittersEnabled) return;
-    for (const e of emitters) {
-      if (now - e.last < e.rateMs) continue;
-      e.last = now;
-      paintDisc(e.gx, e.gy, e.r, e.material, false);
-    }
-  };
+  // applyEmitters lives in tools.js.
 
   // Helpers
   const emptyAt = (x, y) =>
@@ -879,370 +430,8 @@ export function createEngine({
   // settled SAND bears load too. Liquids, gases and EMPTY do not.
   const isRigidMaterial = (m) =>
     m === STONE || m === WOOD || m === PLANT || m === SEED || m === ICE || m === RIGID;
-  const isBearingMaterial = (m) => m === SAND || isRigidMaterial(m);
-  // A falling rigid body may pass through liquids, plus EMPTY, plus
-  // (ungrounded) SAND. It never reaches here resting on *grounded* sand — that
-  // case is grounded and skipped — so treating SAND as passable only sinks a
-  // body through genuinely unsupported sand.
-  const componentDisplaceable = (m) =>
-    m === EMPTY || m === SAND || isLiquid(m) || isGas(m);
-
-  // Compute which rigid components have a support path to the floor. Sets
-  // `comp.grounded` on every stone/plant/ice component. A component is grounded if
-  // any of its cells rests (directly above) on a bearing cell that is itself
-  // grounded — seeded from the floor row and propagated upward to a fixpoint, with
-  // rigid components grounded as a whole (rigid coupling) so arches, battlements,
-  // canopies and cave roofs bridged to their walls stay up.
-  function computeGrounded() {
-    groundedCell.fill(0);
-    cellComp.fill(-1);
-    const comps = [];
-    const indexComps = (list) => {
-      for (const c of list) {
-        c.grounded = false;
-        const id = comps.length;
-        comps.push(c);
-        for (const k of c.cells) cellComp[k] = id;
-      }
-    };
-    indexComps(stoneComponents);
-    indexComps(plantComponents);
-    indexComps(iceComponents);
-
-    let sp = 0;
-    const groundComp = (id) => {
-      const c = comps[id];
-      if (c.grounded) return;
-      c.grounded = true;
-      for (const k of c.cells) {
-        if (!groundedCell[k]) { groundedCell[k] = 1; groundStack[sp++] = k; }
-      }
-    };
-    const groundCellAt = (k, m) => {
-      if (groundedCell[k]) return;
-      if (isRigidMaterial(m)) {
-        const id = cellComp[k];
-        if (id >= 0) { groundComp(id); return; }
-      }
-      groundedCell[k] = 1;
-      groundStack[sp++] = k;
-    };
-
-    // Seed: bearing cells resting on the floor.
-    const floorBase = (rows - 1) * cols;
-    for (let x = 0; x < cols; x++) {
-      const k = floorBase + x;
-      const m = grid[k];
-      if (isBearingMaterial(m)) groundCellAt(k, m);
-    }
-    // Viscous lava can carry a settled sand crust. Seed those sand cells as
-    // grounded so rigid bodies rest on the crust instead of treating it as loose.
-    for (let y = rows - 2; y > 0; y--) {
-      const rowBase = y * cols;
-      for (let x = 1; x < cols - 1; x++) {
-        const k = rowBase + x;
-        if (grid[k] === SAND && grid[k + cols] === LAVA) groundCellAt(k, SAND);
-      }
-    }
-    // Propagate upward: the cell resting on a grounded cell becomes grounded.
-    while (sp > 0) {
-      const k = groundStack[--sp];
-      const above = k - cols;
-      if (above < 0) continue;
-      const m = grid[above];
-      if (isBearingMaterial(m) && !groundedCell[above]) groundCellAt(above, m);
-    }
-  }
-
-  // --- Cohesive STONE chunks ---
-  // Move rigid bodies by one cell when unsupported: sink, rise or rest by
-  // buoyancy when touching liquid, else fall. Stone, plant and ice
-  // components that touch are one physical STRUCTURE (a building is stone walls +
-  // wood roof + ivy), so they are unioned into type-agnostic ASSEMBLIES and fall
-  // together. Without this, two interlocked components of different types each see
-  // the other as a non-displaceable cell directly below and refuse to move, so an
-  // ungrounded structure hangs in mid-air. `cellComp` and the stone→plant→ice
-  // ordering are produced by computeGrounded(), which runs immediately before this.
-  function moveRigidAssemblies() {
-    const all = [];
-    for (const c of stoneComponents) all.push(c);
-    const nStone = all.length;
-    for (const c of plantComponents) all.push(c);
-    const nStonePlant = all.length;
-    for (const c of iceComponents) all.push(c);
-    const n = all.length;
-    if (n === 0) return;
-
-    for (const comp of all) {
-      let ym = 0;
-      for (const k of comp.cells) { const y = (k / cols) | 0; if (y > ym) ym = y; }
-      comp.yMax = ym;
-    }
-
-    // Union components into assemblies by 8-adjacency (cellComp maps a cell to its
-    // index in `all`, set by computeGrounded over the same lists in the same order).
-    const parent = new Int32Array(n);
-    for (let i = 0; i < n; i++) parent[i] = i;
-    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
-    for (let i = 0; i < n; i++) {
-      for (const k of all[i].cells) {
-        const y = (k / cols) | 0; const x = k - y * cols;
-        for (let oy = -1; oy <= 1; oy++) {
-          for (let ox = -1; ox <= 1; ox++) {
-            if (!ox && !oy) continue;
-            const nx = x + ox; const ny = y + oy;
-            if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows) continue;
-            const j = cellComp[ny * cols + nx];
-            if (j >= 0) { const ri = find(i); const rj = find(j); if (ri !== rj) parent[ri] = rj; }
-          }
-        }
-      }
-    }
-
-    // Group components by assembly; an assembly is grounded if any member is.
-    const groups = new Map();
-    for (let i = 0; i < n; i++) {
-      const r = find(i);
-      let g = groups.get(r);
-      if (!g) { g = { comps: [], grounded: false, maxY: 0 }; groups.set(r, g); }
-      g.comps.push(i);
-      if (all[i].grounded) g.grounded = true;
-      if (all[i].yMax > g.maxY) g.maxY = all[i].yMax;
-    }
-    const order = [...groups.values()].sort((a, b) => b.maxY - a.maxY);
-
-    const matOf = (i, k) =>
-      i < nStone ? STONE : (i < nStonePlant ? grid[k] : ICE);
-
-    // Translate a whole assembly one cell along `dir` (+cols = down, -cols = up).
-    // Displaced liquid is routed to connected free volume, so a sinking solid
-    // raises reachable fluid instead of teleporting a sheet onto its top or
-    // through unrelated walls. Non-liquid displaceables still fall back to
-    // trailing cells.
-    const translateAssembly = (grp, cells, dir) => {
-      const dy = dir > 0 ? 1 : -1;
-      const movedCells = new Set();
-      // Can the whole assembly shift one cell along `dir`?
-      for (const k of cells) {
-        const leadK = k + dir;
-        const leadY = (leadK / cols) | 0;
-        if (leadY < 1 || leadY >= rows) return false;
-        if (cells.has(leadK)) continue;
-        if (!componentDisplaceable(grid[leadK])) return false;
-      }
-      for (const k of cells) {
-        const nk = k + dir;
-        movedCells.add(nk);
-      }
-
-      // Material shoved off the leading edge, plus trailing cells the assembly
-      // vacates.
-      const displaced = [];
-      const vacated = [];
-      for (const k of cells) {
-        const leadK = k + dir;
-        const lead = grid[leadK];
-        if (!cells.has(leadK) && lead !== EMPTY && componentDisplaceable(lead)) {
-          displaced.push({ material: lead, from: leadK });
-        }
-        if (!cells.has(k - dir)) vacated.push(k);
-      }
-
-      const liquidDisplacedCount = displaced.reduce((n, d) => n + (isLiquid(d.material) ? 1 : 0), 0);
-      const sideSpillTargets = [];
-      if (liquidDisplacedCount > 0) {
-        const seen = new Set();
-        const reserved = new Set();
-        const queue = [];
-        const neighborOffsets = dir > 0
-          ? [-1, 1, cols, -cols]
-          : [-1, 1, -cols, cols];
-        const canVisit = (k) => {
-          if (k < 0 || k >= grid.length || seen.has(k)) return false;
-          const y = (k / cols) | 0;
-          const x = k - y * cols;
-          if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
-          if (cells.has(k) || movedCells.has(k)) return false;
-          const m = grid[k];
-          return m === EMPTY || isLiquid(m);
-        };
-        const enqueue = (k) => {
-          if (!canVisit(k)) return;
-          seen.add(k);
-          queue.push(k);
-        };
-
-        for (const d of displaced) {
-          if (!isLiquid(d.material)) continue;
-          for (const off of neighborOffsets) enqueue(d.from + off);
-        }
-
-        for (let qi = 0; qi < queue.length && sideSpillTargets.length < liquidDisplacedCount; qi++) {
-          const k = queue[qi];
-          if (grid[k] === EMPTY) {
-            if (!reserved.has(k)) {
-              reserved.add(k);
-              sideSpillTargets.push(k);
-            }
-            continue;
-          }
-          for (const off of neighborOffsets) enqueue(k + off);
-        }
-        if (sideSpillTargets.length < liquidDisplacedCount) {
-          // No connected free volume for the displaced liquid. Treat the liquid
-          // as incompressible and leave the rigid body in place instead of
-          // teleporting fluid through walls or onto the trailing face.
-          return false;
-        }
-      }
-
-      // Capture each component's moved materials BEFORE clearing the grid.
-      const moves = [];
-      for (const ci of grp.comps) {
-        const comp = all[ci];
-        const isPlant = ci >= nStone && ci < nStonePlant;
-        const mats = [];
-        let wood = 0; let leaf = 0;
-        for (const k of comp.cells) {
-          const m = matOf(ci, k);
-          mats.push([k + dir, m]);
-          if (isPlant) { if (m === WOOD) wood++; else if (m === PLANT) leaf++; }
-        }
-        moves.push({ comp, isPlant, mats, wood, leaf });
-      }
-
-      for (const k of cells) writeGridIndex(k, EMPTY);
-
-      for (const mv of moves) {
-        const newCells = new Set();
-        for (const [nk, m] of mv.mats) { writeGridIndex(nk, m); newCells.add(nk); }
-        mv.comp.cells = newCells;
-        mv.comp.yMax = Math.max(0, Math.min(rows - 1, mv.comp.yMax + dy));
-        if (mv.isPlant) {
-          mv.comp.woodCount = mv.wood;
-          mv.comp.leafCount = mv.leaf;
-          mv.comp.cacheDirty = true;
-        }
-      }
-
-      // Preserve displaced material. Liquids spill beside the moved assembly;
-      // non-liquids use the trailing cells as before.
-      let di = 0;
-      let si = 0;
-      for (const d of displaced) {
-        if (isLiquid(d.material)) {
-          writeGridIndex(sideSpillTargets[si++], d.material);
-          continue;
-        }
-        while (di < vacated.length && grid[vacated[di]] !== EMPTY) di++;
-        if (di < vacated.length) writeGridIndex(vacated[di++], d.material);
-      }
-      return true;
-    };
-
-    const measureLiquidImmersion = (cells) => {
-      let wetCells = 0;
-      let exposedCells = 0;
-      let liquidDensity = 0;
-      let liquidContacts = 0;
-
-      for (const k of cells) {
-        const y = (k / cols) | 0;
-        const x = k - y * cols;
-        let wet = false;
-        let exposed = false;
-
-        if (x > 1 && !cells.has(k - 1)) {
-          exposed = true;
-          const m = grid[k - 1];
-          if (isLiquid(m)) {
-            wet = true;
-            liquidDensity += DENSITY[m];
-            liquidContacts++;
-          }
-        }
-        if (x < cols - 2 && !cells.has(k + 1)) {
-          exposed = true;
-          const m = grid[k + 1];
-          if (isLiquid(m)) {
-            wet = true;
-            liquidDensity += DENSITY[m];
-            liquidContacts++;
-          }
-        }
-        if (y > 1 && !cells.has(k - cols)) {
-          exposed = true;
-          const m = grid[k - cols];
-          if (isLiquid(m)) {
-            wet = true;
-            liquidDensity += DENSITY[m];
-            liquidContacts++;
-          }
-        }
-        if (y < rows - 1 && !cells.has(k + cols)) {
-          exposed = true;
-          const m = grid[k + cols];
-          if (isLiquid(m)) {
-            wet = true;
-            liquidDensity += DENSITY[m];
-            liquidContacts++;
-          }
-        }
-
-        if (exposed) exposedCells++;
-        if (wet) wetCells++;
-      }
-
-      if (liquidContacts === 0) return null;
-      const requiredWetCells = Math.max(1, Math.ceil(Math.sqrt(cells.size) * BUOY_WET_PERIMETER_FRAC));
-      if (wetCells < requiredWetCells) return null;
-      return {
-        wetCells,
-        exposedCells,
-        liquidDensity: liquidDensity / liquidContacts,
-      };
-    };
-
-    for (const grp of order) {
-      if (grp.grounded) continue; // structure has a path to the floor — stays put
-
-      const cells = new Set();
-      for (const ci of grp.comps) for (const k of all[ci].cells) cells.add(k);
-
-      // Assembly density, width, and actual wet
-      // contact. Sparse contact keeps behaving like air; meaningful immersion uses
-      // the contacted liquid density for generic floating/sinking.
-      let weight = 0;
-      let xMin = cols, xMax = 0;
-      for (const ci of grp.comps) for (const k of all[ci].cells) {
-        weight += DENSITY[matOf(ci, k)];
-        const x = k - ((k / cols) | 0) * cols;
-        if (x < xMin) xMin = x;
-        if (x > xMax) xMax = x;
-      }
-
-      const immersion = measureLiquidImmersion(cells);
-      if (!immersion) {
-        translateAssembly(grp, cells, cols); // in air — fall under gravity
-        continue;
-      }
-
-      // Buoyancy: wet perimeter approximates displaced liquid in this coarse grid.
-      // Equilibrium is density-scaled against exposed perimeter, not total area, so
-      // a growing light body still floats while dense bodies still sink.
-      const avgDensity = weight / cells.size;
-      if (avgDensity > immersion.liquidDensity) {
-        translateAssembly(grp, cells, cols);
-        continue;
-      }
-      const targetWetCells = immersion.exposedCells * (avgDensity / immersion.liquidDensity) * BUOY_DRAFT_SCALE;
-      const imbalance = immersion.wetCells - targetWetCells; // >0 over-submerged (rise), <0 sink
-      const band = Math.max(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
-      if (imbalance < -band) translateAssembly(grp, cells, cols);        // too light a draught — sink
-      else if (imbalance > band) translateAssembly(grp, cells, -cols);   // over-submerged — rise
-      // else within the deadband — rest
-    }
-  }
+  // computeGrounded + moveRigidAssemblies (support solver, cohesive movement,
+  // buoyancy) live in components.js (createComponents); assigned at wiring.
 
   // Plant growth lives in growth.js (createGrowth); assigned at wiring below.
   let growPlantComponents;
@@ -1757,21 +946,23 @@ export function createEngine({
   // reassigns (grid/next buffers, the body-cell list, rigid diagnostics) are
   // exposed via accessors so modules always read the current value.
   const S = {
-    cols, rows, rand, I,
+    cols, rows, rand, I, MAT, SEED_SIZE, emitterDefs, initialScene,
     EMPTY, SAND, WATER, STONE, OIL, FIRE, STEAM, SEED, WOOD, PLANT, ACID, LAVA, ICE, RIGID,
     DENSITY, DENSITY_SORTED_LOOSE, LOOSE_MOBILITY_P, MAT_KIND,
     ACID_DISSOLVE_P, ACID_DECAY_P, RIGID_LAVA_ERODE_P, RIGID_FIRE_ERODE_P,
     OIL_IGNITE_P, FIRE_SPREAD_P, PLANT_IGNITE_P, LAVA_EMIT_FIRE_P, ICE_FREEZE_P,
-    rigidWorld, bodyOwner, groundedCell,
+    EMITTER_EDGE_BUFFER, EMITTER_TOP_BUFFER,
+    rigidWorld, bodyOwner, groundedCell, cellComp, groundStack, stoneDraft, iceDraft,
     activeRowMin, activeRowMax, reactionFlags, reactionSteam, reactionFires, reactionIgnite,
-    isLiquid, isGas, isDissolvable, isPlantMaterial, isFlammable, isInBounds,
-    writeGridIndex, markDirtyRect, markCellIndex, computeGrounded,
-    registerStoneCells, splitComponentsAfterErase, splitRigidAfterErase,
+    isLiquid, isGas, isDissolvable, isPlantMaterial, isFlammable, isInBounds, isRigidMaterial,
+    writeGridIndex, markDirtyRect, markCellIndex, neighborIndices8,
+    BUOY_WET_PERIMETER_FRAC, BUOY_DRAFT_SCALE, BUOY_BAND_MIN, BUOY_BAND_FRAC,
     DIRS_LEFT_FIRST, DIRS_RIGHT_FIRST,
     TRUNK_THICKEN_UNTIL_WOOD, TRUNK_SIDE_FILL_P, TRUNK_DOUBLE_SIDE_FILL_P, TRUNK_WIDE_SIDE_FILL_P,
     MAX_WOOD_CELLS, MAX_LEAF_CELLS, GROWTH_P, LEAF_GROWTH_P, WATER_PER_GROWTH,
     get grid() { return grid; }, set grid(v) { grid = v; },
     get next() { return next; }, set next(v) { next = v; },
+    get emittersEnabled() { return emittersEnabled; },
     get bodyCells() { return bodyCells; }, set bodyCells(v) { bodyCells = v; },
     get rigidRejectedCells() { return rigidRejectedCells; }, set rigidRejectedCells(v) { rigidRejectedCells = v; },
     get rigidDepenetrations() { return rigidDepenetrations; }, set rigidDepenetrations(v) { rigidDepenetrations = v; },
@@ -1782,9 +973,19 @@ export function createEngine({
     get nextPlantId() { return nextPlantId; }, set nextPlantId(v) { nextPlantId = v; },
     get nextIceId() { return nextIceId; }, set nextIceId(v) { nextIceId = v; },
   };
-  ({ moveBodies, eraseBodyCellIndex, finishErasedBodies, bodyFootprintBlocked } = createRigidBodies(S));
+  // Components must be wired first: rigidBodies (computeGrounded) and reactions
+  // (register*/split*) consume its functions via S.
+  const componentsAPI = createComponents(S);
+  Object.assign(S, componentsAPI);
+  ({ registerSeededComponents, registerStoneCells, registerIceCells,
+     splitComponentsAfterErase, splitRigidAfterErase, computeGrounded, moveRigidAssemblies } = componentsAPI);
+  const rigidAPI = createRigidBodies(S);
+  Object.assign(S, rigidAPI); // tools' eraseDisc needs eraseBodyCellIndex/finishErasedBodies
+  ({ moveBodies, eraseBodyCellIndex, finishErasedBodies, bodyFootprintBlocked } = rigidAPI);
   ({ applyReactions, applyAcid, applyLava, applyIce } = createReactions(S));
   ({ growPlantComponents } = createGrowth(S));
+  ({ applyInitialScene, addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft, finalizeIceDraft,
+     getSeedOrigin, canPlaceSeedAt, placeSeedAt, paintDisc, eraseDisc, applyEmitters } = createTools(S));
 
   applyInitialScene();
   markAllDirty();

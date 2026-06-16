@@ -125,5 +125,55 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 8. tool/pointer state machine: paint-while-held, throttle, RMB erase, stone
+//    draft+finalize, cube spawn, seed placement — all policy owned by the engine.
+{
+  console.log('tools / pointer');
+  const e = mk(); // empty (non-infinite) world: paint targets start EMPTY
+  const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
+  let t = 0; const tk = () => (t += 20); // > EMIT_INTERVAL_MS (18) so each apply emits
+
+  // water: paints only while LMB held
+  e.setTool(T.water);
+  e.pointerDown(50, 30, 0);
+  e.applyTool(50, 30, tk(), true, true);
+  e.applyTool(50, 30, tk(), true, true);
+  const water = counts(e.getGrid())[2];
+  e.pointerButtons(0); e.pointerUp(0);
+  const afterUp = counts(e.getGrid())[2];
+  e.applyTool(70, 30, tk(), true, true); // LMB up -> must not paint
+  check(`water tool paints while held (${water})`, water > 0);
+  check('no paint after release', counts(e.getGrid())[2] === afterUp);
+
+  // RMB arms a momentary eraser that overrides the tool
+  e.pointerDown(50, 30, 2);
+  e.applyTool(50, 30, tk(), true, true);
+  e.pointerButtons(0); e.pointerUp(2);
+  check(`RMB erase removed water (${counts(e.getGrid())[2]})`, counts(e.getGrid())[2] < water);
+
+  // stone: hold to draft, release to finalize into stone cells
+  e.setTool(T.stone);
+  e.pointerDown(100, 30, 0);
+  for (let i = 0; i < 6; i++) e.pointerDraft(100 + i, 30);
+  const draftN = e.getStoneDraftCells().length;
+  e.pointerUp(0);
+  const stone = counts(e.getGrid())[3];
+  check(`stone draft -> finalize (draft ${draftN}, stone ${stone})`, draftN > 0 && stone > 0);
+
+  // cube: spawns one rigid body on press
+  e.setTool(T.cube);
+  const b0 = e._bodyCount();
+  e.pointerDown(150, 18, 0);
+  check(`cube spawns a body (${b0} -> ${e._bodyCount()})`, e._bodyCount() === b0 + 1);
+
+  // seed: draft origin on press, placed on release
+  e.setTool(T.seed);
+  e.pointerDown(40, 18, 0);
+  const hasOrigin = !!e.getSeedDraft();
+  e.pointerUp(0);
+  check(`seed placed (origin ${hasOrigin}, seeds ${counts(e.getGrid())[7]})`, hasOrigin && counts(e.getGrid())[7] > 0);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

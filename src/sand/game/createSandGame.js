@@ -14,7 +14,7 @@
 // simulation runs in the WebAssembly engine (../engineWasm.js); initSandWasm()
 // must have resolved before createSandGame() is called.
 
-import { createEngineWasm, MAT, CHUNK_SIZE, SEED_SIZE } from '../engineWasm';
+import { createEngineWasm, CHUNK_SIZE, SEED_SIZE } from '../engineWasm';
 import { createCamera } from '../camera';
 
 export function createSandGame(container, opts = {}) {
@@ -46,10 +46,12 @@ export function createSandGame(container, opts = {}) {
     return { setTool() {}, setDrawMode() {}, getDrawMode: () => false, destroy() {} };
   }
 
-  // Mutable runtime flags (replace the React refs the old useEffect read).
-  let currentTool = initialTool;
+  // Tool selection: the name is kept here only so it can be re-sent to the
+  // engine when the engine is recreated (resize). All tool policy lives in C++.
+  // The engine owns the int ids; this maps the UI tool names onto them.
+  const TOOL = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
+  let currentToolName = initialTool;
   let drawModeOn = false;
-  let overrideTool = null; // 'eraser' while RMB held
 
   // One seed per mount so resizing regenerates the *same* infinite world.
   const worldSeed = (Math.random() * 4294967296) >>> 0;
@@ -60,18 +62,8 @@ export function createSandGame(container, opts = {}) {
   // monitors) don't blow the per-step CPU budget on slow processors; cells
   // grow slightly instead.
   const MAX_CELLS = 130000;
-  const SAND_BRUSH_RADIUS = 2;
-  const WATER_BRUSH_RADIUS = 2;
-  const STONE_BRUSH_RADIUS = 2;
-  const OIL_BRUSH_RADIUS = 2;
-  const FIRE_BRUSH_RADIUS = 1;
-  const ACID_BRUSH_RADIUS = 2;
-  const LAVA_BRUSH_RADIUS = 2;
-  const ICE_BRUSH_RADIUS = 2;
-  const DRIFTWOOD_BRUSH_RADIUS = 1; // small brush; drafts a shape, drops on release
-  const ERASE_BRUSH_RADIUS = 3;
-  const CUBE_HALF = 6; // half-extent of the rigid cube body (cells)
-  const EMIT_INTERVAL_MS = 18;
+  // Brush radii, the emit throttle, and the cube extent now live in the C++
+  // engine (it owns tool policy). JS keeps only the fixed sim-step interval.
   const STEP_MS = 16;
   const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
   const FULL_RENDER_DIRTY_CHUNK_RATIO = 0.38;
@@ -128,20 +120,12 @@ export function createSandGame(container, opts = {}) {
   let perfSampleIdx = 0;
   let perfSampleCount = 0;
 
-  // Drafting state (data lives in the engine; UI flags live here)
-  let isDraftingStone = false;
-  let isDraftingSeed = false;
-  let isDraftingIce = false;
-  // Driftwood reuses the stone draft buffer; this flag picks the smaller brush
-  // and the driftwood finalize on release.
-  let draftIsDriftwood = false;
-  let seedDraftOrigin = null;
+  // Drafting state lives entirely in the engine now; the preview reads it back.
 
-  // Pointer tracking
+  // Pointer tracking (browser-side; cell translation happens in toCellX/Y)
   let clientX = -1, clientY = -1;
   let px = -1, py = -1;
   let inside = false;
-  let lmbDown = false;
 
   // Reduced motion
   let reduced = false;
@@ -241,6 +225,7 @@ export function createSandGame(container, opts = {}) {
       emittersOn: false, // taps/sinks are obsolete in the streaming world
       sinksOn: false,
     });
+    engine.setTool(TOOL[currentToolName] ?? 0); // re-apply the selected tool
     // Camera spans the buffer minus the visible window. Start centered
     // horizontally and just above the surface so the spawn view shows ground.
     camera.setBounds(cols - viewCols, rows - viewRows);
@@ -249,11 +234,6 @@ export function createSandGame(container, opts = {}) {
     camera.set((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
     lastCamX = NaN;
     lastCamY = NaN;
-    isDraftingStone = false;
-    isDraftingSeed = false;
-    isDraftingIce = false;
-    draftIsDriftwood = false;
-    seedDraftOrigin = null;
 
     forceFullRender = true;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -295,131 +275,39 @@ export function createSandGame(container, opts = {}) {
   // cursor by an amount that grows with distance and flips sign around 100% zoom.
   const toCellX = () => Math.floor(camera.x + (px * dpr) / cellDev);
   const toCellY = () => Math.floor(camera.y + (py * dpr) / cellDev);
-  const updateSeedDraft = () => {
-    const prevX = seedDraftOrigin ? seedDraftOrigin[0] : null;
-    const prevY = seedDraftOrigin ? seedDraftOrigin[1] : null;
-    const nextOrigin = engine.getSeedOrigin(toCellX(), toCellY());
-    const nextX = nextOrigin ? nextOrigin[0] : null;
-    const nextY = nextOrigin ? nextOrigin[1] : null;
-    const changed = prevX !== nextX || prevY !== nextY;
-    seedDraftOrigin = nextOrigin;
-    if (changed) previewDirty = true;
-  };
 
-  // Global listeners so canvas can stay pointer-events:none
+  // Global listeners so canvas can stay pointer-events:none. JS forwards
+  // normalized button state + cell-space coords; the engine decides everything.
   const onPointerMove = (e) => {
     updatePointer(e.clientX, e.clientY);
-    if (e.buttons === 0) {
-      overrideTool = null;
-      lmbDown = false;
-    }
-    if (!drawModeOn) return;
-    if (isDraftingStone && inside) {
-      if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
-    }
-    if (isDraftingIce && inside) {
-      if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
-    }
-    if (isDraftingSeed && inside) {
-      updateSeedDraft();
-    }
+    engine?.pointerButtons(e.buttons); // release the held/RMB state on buttons==0
+    if (!drawModeOn || !engine) return;
+    if (inside && engine.pointerDraft(toCellX(), toCellY())) previewDirty = true;
   };
   const onTouchMove = (e) => {
-    if (!drawModeOn) return;
+    if (!drawModeOn || !engine) return;
     if (!e.touches || e.touches.length === 0) return;
     const t = e.touches[0];
     updatePointer(t.clientX, t.clientY);
-    if (isDraftingStone && inside) {
-      if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
-    }
-    if (isDraftingIce && inside) {
-      if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
-    }
-    if (isDraftingSeed && inside) {
-      updateSeedDraft();
-    }
+    if (inside && engine.pointerDraft(toCellX(), toCellY())) previewDirty = true;
   };
 
-  // LMB:
-  // - sand/water: paint while held
-  // - stone: hold to draft; release to drop
+  // LMB starts drafts / spawns the cube; RMB arms the momentary eraser. Paint
+  // and erase tools act continuously in the step loop (engine.applyTool).
   const onPointerDown = (e) => {
-    if (!drawModeOn) return;
+    if (!drawModeOn || !engine) return;
     updatePointer(e.clientX, e.clientY);
     if (!inside) return;
-
-    if (e.button === 0) {
-      lmbDown = true;
-      const rmbHeld = overrideTool === 'eraser';
-      const activeTool = rmbHeld ? 'eraser' : currentTool;
-
-      if (activeTool === 'stone') {
-        isDraftingStone = true;
-        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
-        e.preventDefault();
-        return;
-      }
-      if (activeTool === 'driftwood') {
-        // Hold-to-draft like stone, but dropped as driftwood on release.
-        isDraftingStone = true;
-        draftIsDriftwood = true;
-        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), DRIFTWOOD_BRUSH_RADIUS)) previewDirty = true;
-        e.preventDefault();
-        return;
-      }
-      if (activeTool === 'ice') {
-        isDraftingIce = true;
-        if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
-        e.preventDefault();
-        return;
-      }
-      if (activeTool === 'seed') {
-        isDraftingSeed = true;
-        updateSeedDraft();
-        e.preventDefault();
-        return;
-      }
-      if (activeTool === 'cube') {
-        engine.spawnBox(toCellX(), toCellY(), CUBE_HALF, CUBE_HALF, MAT.RIGID);
-        e.preventDefault();
-        return;
-      }
-      e.preventDefault();
-    }
-
-    if (e.button === 2) {
-      overrideTool = 'eraser'; // momentary while RMB held
+    if (e.button === 0 || e.button === 2) {
+      if (engine.pointerDown(toCellX(), toCellY(), e.button)) previewDirty = true;
       e.preventDefault();
     }
   };
 
   const onPointerUp = (e) => {
-    if (e.button === 2 || e.buttons === 0) {
-      overrideTool = null;
-    }
-    if (e.button === 0) {
-      lmbDown = false;
-      if (isDraftingStone) {
-        if (draftIsDriftwood) engine.finalizeDriftwoodDraft();
-        else engine.finalizeStoneDraft();
-        isDraftingStone = false;
-        draftIsDriftwood = false;
-        engine.clearStoneDraft();
-        previewDirty = true;
-      }
-      if (isDraftingIce) {
-        engine.finalizeIceDraft();
-        isDraftingIce = false;
-        engine.clearIceDraft();
-        previewDirty = true;
-      }
-      if (isDraftingSeed) {
-        if (seedDraftOrigin) engine.placeSeedAt(seedDraftOrigin[0], seedDraftOrigin[1]);
-        isDraftingSeed = false;
-        seedDraftOrigin = null;
-        previewDirty = true;
-      }
-    }
+    if (!engine) return;
+    engine.pointerButtons(e.buttons); // clears RMB/LMB when no buttons remain
+    if (engine.pointerUp(e.button)) previewDirty = true;
   };
 
   const onContextMenu = (e) => {
@@ -479,62 +367,6 @@ export function createSandGame(container, opts = {}) {
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
-
-  // Emission controller
-  let lastEmit = 0;
-  const emitAtPointer = (now) => {
-    if (!inside) return;
-
-    const rmbHeld = overrideTool === 'eraser';
-    const activeTool = rmbHeld ? 'eraser' : currentTool;
-
-    // Stone, ice and driftwood: handled by draft logic, not here
-    if (activeTool === 'stone' || activeTool === 'ice' || activeTool === 'driftwood') return;
-    if (!drawModeOn) return;
-
-    // Paint only while LMB is down (or RMB for eraser)
-    const shouldEmit =
-      rmbHeld ? true :
-      activeTool === 'eraser' ? lmbDown :
-      (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire' ||
-       activeTool === 'acid' || activeTool === 'lava') ? lmbDown : false;
-
-    if (!shouldEmit) return;
-    if (now - lastEmit < EMIT_INTERVAL_MS) return;
-
-    const cx = toCellX();
-    const cy = toCellY();
-    if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
-
-    if (activeTool === 'eraser') {
-      engine.eraseDisc(cx, cy, ERASE_BRUSH_RADIUS);
-      lastEmit = now; return;
-    }
-    if (activeTool === 'water') {
-      engine.paintDisc(cx, cy, WATER_BRUSH_RADIUS, MAT.WATER, false);
-      lastEmit = now; return;
-    }
-    if (activeTool === 'oil') {
-      engine.paintDisc(cx, cy, OIL_BRUSH_RADIUS, MAT.OIL, false);
-      lastEmit = now; return;
-    }
-    if (activeTool === 'fire') {
-      engine.paintDisc(cx, cy, FIRE_BRUSH_RADIUS, MAT.FIRE, false);
-      lastEmit = now; return;
-    }
-    if (activeTool === 'acid') {
-      engine.paintDisc(cx, cy, ACID_BRUSH_RADIUS, MAT.ACID, false);
-      lastEmit = now; return;
-    }
-    if (activeTool === 'lava') {
-      engine.paintDisc(cx, cy, LAVA_BRUSH_RADIUS, MAT.LAVA, false);
-      lastEmit = now; return;
-    }
-    // sand
-    if (engine.getGrid()[cy * cols + cx] !== MAT.EMPTY) { lastEmit = now; return; }
-    engine.paintDisc(cx, cy, SAND_BRUSH_RADIUS, MAT.SAND, false);
-    lastEmit = now;
-  };
 
   const render = (full = false) => {
     if (!engine) return;
@@ -642,7 +474,7 @@ export function createSandGame(container, opts = {}) {
     // must be fully drawn before fetching ice (they share one snapshot buffer).
     const stoneDraft = engine.getStoneDraftCells();
     if (stoneDraft.length > 0) {
-      previewCtx.fillStyle = draftIsDriftwood ? DRIFTWOOD_PREVIEW_COLOR : STONE_PREVIEW_COLOR;
+      previewCtx.fillStyle = engine.isDraftDriftwood() ? DRIFTWOOD_PREVIEW_COLOR : STONE_PREVIEW_COLOR;
       const previewSize = cellDev;
       for (let i = 0; i < stoneDraft.length; i++) {
         const k = stoneDraft[i];
@@ -666,13 +498,12 @@ export function createSandGame(container, opts = {}) {
       previewVisible = true;
     }
 
-    if (isDraftingSeed && seedDraftOrigin) {
-      const [x0, y0] = seedDraftOrigin;
-      const valid = engine.canPlaceSeedAt(x0, y0);
-      previewCtx.fillStyle = valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
+    const seed = engine.getSeedDraft();
+    if (seed) {
+      previewCtx.fillStyle = seed.valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
       const previewSize = cellDev;
-      for (let y = y0; y < y0 + SEED_SIZE; y++) {
-        for (let x = x0; x < x0 + SEED_SIZE; x++) {
+      for (let y = seed.y; y < seed.y + SEED_SIZE; y++) {
+        for (let x = seed.x; x < seed.x + SEED_SIZE; x++) {
           previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
         }
       }
@@ -765,8 +596,8 @@ export function createSandGame(container, opts = {}) {
       previewDirty = previewVisible; // re-place any draft overlay at the new offset
     }
 
-    // Fixed-timestep simulation: world-shift + drafts + emit + engine.step run
-    // at STEP_MS for determinism, independent of the per-frame pan above.
+    // Fixed-timestep simulation: world-shift + tool application + engine.step
+    // run at STEP_MS for determinism, independent of the per-frame pan above.
     let stepped = false;
     if (now - lastStep >= STEP_MS && !testPaused) {
       // Stream the infinite world: when the camera nears a horizontal buffer
@@ -784,17 +615,10 @@ export function createSandGame(container, opts = {}) {
         camera.set(camera.x + SHIFT_COLS, camera.y);
       }
 
-      if (isDraftingStone && inside) {
-        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
-      }
-      if (isDraftingIce && inside) {
-        if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
-      }
-      if (isDraftingSeed && inside) {
-        updateSeedDraft();
-      }
-
-      emitAtPointer(now);
+      // Tool application: extend any active draft + apply held painting/erasing.
+      // Coords are recomputed each step so a stationary cursor still tracks the
+      // world cell beneath it as the camera pans. The engine owns the policy.
+      if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
       stepped = engine.step(now);
       if (stepped) {
         perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
@@ -840,7 +664,7 @@ export function createSandGame(container, opts = {}) {
   };
 
   return {
-    setTool(id) { currentTool = id; },
+    setTool(id) { currentToolName = id; engine?.setTool(TOOL[id] ?? 0); },
     setDrawMode(on) { drawModeOn = !!on; },
     getDrawMode() { return drawModeOn; },
     destroy,

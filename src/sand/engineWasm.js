@@ -74,6 +74,14 @@ export function initSandWasm() {
         spawnBody: c('engine_spawn_body', null, ['number', 'number', 'number']),
         spawnBox: c('engine_spawn_box', null, ['number', 'number', 'number', 'number', 'number']),
         spawnDisc: c('engine_spawn_disc', null, ['number', 'number', 'number', 'number', 'number']),
+        setTool: c('engine_set_tool', null, ['number', 'number']),
+        pointerDown: c('engine_pointer_down', 'number', ['number', 'number', 'number', 'number']),
+        pointerDraft: c('engine_pointer_draft', 'number', ['number', 'number', 'number']),
+        pointerButtons: c('engine_pointer_buttons', null, ['number', 'number']),
+        pointerUp: c('engine_pointer_up', 'number', ['number', 'number']),
+        applyTool: c('engine_apply_tool', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
+        draftIsDriftwood: c('engine_draft_is_driftwood', 'number', ['number']),
+        seedDraft: c('engine_seed_draft', 'number', ['number', 'number']),
         bodyCount: c('engine_body_count', 'number', ['number']),
         bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
         bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
@@ -110,8 +118,9 @@ export function createEngineWasm({
   const emptyRects = new Int32Array(0);
   const chunkTotal = chunkCols * chunkRows;
 
-  // Scratch buffer in wasm memory for getSeedOrigin (2 ints).
+  // Scratch buffers in wasm memory: getSeedOrigin (2 ints), seedDraft (3 ints).
   const seedOut = mod._malloc(8);
+  const seedDraftOut = mod._malloc(12);
   // Packed draft cell INDICES (k = y*cols + x) as a zero-copy view into wasm
   // memory — no Set allocation. Stone and ice share one snapshot buffer, so the
   // returned view is only valid until the next draft snapshot call; the caller
@@ -148,12 +157,28 @@ export function createEngineWasm({
     eraseDisc(cx, cy, r) { return M.eraseDisc(ptr, cx, cy, r) === 1; },
     setSinksOn(v) { M.setSinks(ptr, v ? 1 : 0); },
     setEmittersOn() {},
+
+    // Tool / pointer input. JS translates browser coords to cells and normalizes
+    // buttons; the engine owns all tool policy. The pointer/draft/up calls and
+    // applyTool return whether the draft preview changed.
+    setTool(tool) { M.setTool(ptr, tool); },
+    pointerDown(cx, cy, button) { return M.pointerDown(ptr, cx, cy, button) === 1; },
+    pointerDraft(cx, cy) { return M.pointerDraft(ptr, cx, cy) === 1; },
+    pointerButtons(buttons) { M.pointerButtons(ptr, buttons); },
+    pointerUp(button) { return M.pointerUp(ptr, button) === 1; },
+    applyTool(cx, cy, now, inside, drawMode) { return M.applyTool(ptr, cx, cy, now, inside ? 1 : 0, drawMode ? 1 : 0) === 1; },
+    isDraftDriftwood() { return M.draftIsDriftwood(ptr) === 1; },
+    getSeedDraft() {
+      if (M.seedDraft(ptr, seedDraftOut) !== 1) return null;
+      const o = seedDraftOut >> 2;
+      return { x: mod.HEAP32[o], y: mod.HEAP32[o + 1], valid: mod.HEAP32[o + 2] === 1 };
+    },
     getPerf() { return { stepMs: M.perfStepMs(ptr), dirtyChunks: M.perfDirtyChunks(ptr), phases: {} }; },
     getShiftPerf() { return { buffers: M.perfShiftBuffers(ptr), translate: M.perfShiftTranslate(ptr), register: M.perfShiftRegister(ptr), fill: M.perfShiftFill(ptr) }; },
     getStepPerf() { return { ground: M.perfStepGround(ptr), rigid: M.perfStepRigid(ptr), react: M.perfStepReact(ptr), carry: M.perfStepCarry(ptr), settle: M.perfStepSettle(ptr), tail: M.perfStepTail(ptr) }; },
     getTick() { return M.tick(ptr); },
     syncComponents() { M.syncComponents(ptr); },
-    destroy() { mod._free(seedOut); M.destroy(ptr); },
+    destroy() { mod._free(seedOut); mod._free(seedDraftOut); M.destroy(ptr); },
 
     // Component drafts + seeds (Stage 3)
     addDiscToStoneDraft(cx, cy, r) { return M.addStoneDraft(ptr, cx, cy, r) === 1; },

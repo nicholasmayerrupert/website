@@ -34,6 +34,12 @@
   double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
   bool sinksEnabled;
   uint32_t rngState;
+  // ---- tool / pointer state (input policy ported from createSandGame) ----
+  int activeTool = T_CUBE;
+  bool lmbDown = false, rmbErase = false;
+  bool draftingStone = false, draftingIce = false, draftingSeed = false, draftIsDriftwood = false;
+  bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
+  double lastEmitMs = -1e9;
   // Renderer (material -> RGBA). Owns its pixel buffer and grain tables. Uses a
   // SEPARATE rng so per-frame fire/steam flicker never perturbs the simulation.
   std::vector<uint8_t> renderPixels;  // cols*rows*4, RGBA (little-endian over uint32)

@@ -33,6 +33,14 @@ static const float TRUNK_SIDE_FILL_P = 0.96f, TRUNK_DOUBLE_SIDE_FILL_P = 0.78f, 
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
 
+// Tool ids (mirror the JS tool-name -> int map in createSandGame). The engine
+// owns all tool policy: brush radii, which tool paints/erases/drafts/spawns,
+// the right-click eraser, draft lifecycle, seed placement, and emit throttling.
+enum Tool : int { T_CUBE = 0, T_SAND, T_WATER, T_STONE, T_OIL, T_FIRE, T_ACID, T_LAVA, T_ICE, T_SEED, T_DRIFTWOOD, T_ERASER };
+static const int BRUSH_SAND = 2, BRUSH_WATER = 2, BRUSH_OIL = 2, BRUSH_FIRE = 1, BRUSH_ACID = 2,
+                 BRUSH_LAVA = 2, BRUSH_ICE = 2, BRUSH_STONE = 2, BRUSH_DRIFTWOOD = 1, BRUSH_ERASE = 3, CUBE_HALF = 6;
+static const double EMIT_INTERVAL_MS = 18.0;
+
 // ---- Seeded noise (worldgen/noise.js) ----
 static inline double whash2(uint32_t seed, int x, int y) {
   uint32_t h = seed;

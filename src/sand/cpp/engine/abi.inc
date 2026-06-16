@@ -58,6 +58,20 @@ EMSCRIPTEN_KEEPALIVE int engine_get_seed_origin(Engine* e, int cx, int cy, int* 
 EMSCRIPTEN_KEEPALIVE int engine_can_place_seed(Engine* e, int x0, int y0) { return e->canPlaceSeedAt(x0, y0) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_place_seed(Engine* e, int x0, int y0) { return e->placeSeedAt(x0, y0) ? 1 : 0; }
 
+// tools / pointer (input policy lives in the engine; JS forwards cell events)
+EMSCRIPTEN_KEEPALIVE void engine_set_tool(Engine* e, int tool) { e->setTool(tool); }
+EMSCRIPTEN_KEEPALIVE int engine_pointer_down(Engine* e, int cx, int cy, int button) { return e->pointerDown(cx, cy, button); }
+EMSCRIPTEN_KEEPALIVE int engine_pointer_draft(Engine* e, int cx, int cy) { return e->pointerDraft(cx, cy); }
+EMSCRIPTEN_KEEPALIVE void engine_pointer_buttons(Engine* e, int buttons) { e->pointerButtons(buttons); }
+EMSCRIPTEN_KEEPALIVE int engine_pointer_up(Engine* e, int button) { return e->pointerUp(button); }
+EMSCRIPTEN_KEEPALIVE int engine_apply_tool(Engine* e, int cx, int cy, double now, int inside, int drawMode) { return e->applyTool(cx, cy, now, inside != 0, drawMode != 0); }
+EMSCRIPTEN_KEEPALIVE int engine_draft_is_driftwood(Engine* e) { return e->draftIsDriftwood ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_seed_draft(Engine* e, int* out) {
+  if (!e->draftingSeed || !e->hasSeedOrigin) return 0;
+  out[0] = e->seedOriginX; out[1] = e->seedOriginY; out[2] = e->canPlaceSeedAt(e->seedOriginX, e->seedOriginY) ? 1 : 0;
+  return 1;
+}
+
 // free rigid bodies
 EMSCRIPTEN_KEEPALIVE void engine_spawn_body(Engine* e, int* xy, int count) {
   std::vector<std::pair<int, int>> cells; cells.reserve(count);

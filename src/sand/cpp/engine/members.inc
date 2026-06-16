@@ -34,10 +34,23 @@
   double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
   bool sinksEnabled;
   uint32_t rngState;
+  // Renderer (material -> RGBA). Owns its pixel buffer and grain tables. Uses a
+  // SEPARATE rng so per-frame fire/steam flicker never perturbs the simulation.
+  std::vector<uint8_t> renderPixels;  // cols*rows*4, RGBA (little-endian over uint32)
+  uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
+  uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
+  uint32_t renderRngState = 0;
 
   inline double rand() {
     rngState = (rngState + 0x6d2b79f5u);
     uint32_t a = rngState;
+    uint32_t t = a ^ (a >> 15); t = t * (1u | a);
+    uint32_t t2 = t ^ (t >> 7); t = (t + (t2 * (61u | t))) ^ t;
+    return (double)(t ^ (t >> 14)) / 4294967296.0;
+  }
+  inline double renderRand() {
+    renderRngState = (renderRngState + 0x6d2b79f5u);
+    uint32_t a = renderRngState;
     uint32_t t = a ^ (a >> 15); t = t * (1u | a);
     uint32_t t2 = t ^ (t >> 7); t = (t + (t2 * (61u | t))) ^ t;
     return (double)(t ^ (t >> 14)) / 4294967296.0;
@@ -59,6 +72,9 @@
     compOccStamp.assign(n, -1);
     reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
     bodyOwner.assign(n, -1);
+    renderPixels.assign(n * 4, 0);
+    renderRngState = seed ^ 0x9e3779b9u;
+    buildRenderTables();
   }
   ~Engine() { for (Body* b : bodies) delete b; for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first; }
 

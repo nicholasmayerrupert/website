@@ -37,6 +37,10 @@ export function initSandWasm() {
         dirtyRectCount: c('engine_dirty_rect_count', 'number', ['number']),
         dirtyRects: c('engine_dirty_rects', 'number', ['number']),
         clearDirty: c('engine_clear_dirty', null, ['number']),
+        renderFull: c('engine_render_full', null, ['number']),
+        renderDirtyRects: c('engine_render_dirty_rects', null, ['number']),
+        renderPixels: c('engine_render_pixels', 'number', ['number']),
+        renderPixelsLen: c('engine_render_pixels_len', 'number', ['number']),
         paintDisc: c('engine_paint_disc', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
         setSinks: c('engine_set_sinks', null, ['number', 'number']),
@@ -132,6 +136,12 @@ export function createEngineWasm({
       return { rects, rectCount, dirtyChunkCount: M.dirtyCount(ptr), chunkTotal };
     },
     clearRenderDirty() { M.clearDirty(ptr); },
+    // Material -> RGBA generation in C++. renderFull/renderDirtyRects write into
+    // the engine's pixel buffer; getRenderPixels returns a fresh ImageData-ready
+    // view of it (re-derived each call: wasm memory can move on growth).
+    renderFull() { M.renderFull(ptr); },
+    renderDirtyRects() { M.renderDirtyRects(ptr); },
+    getRenderPixels() { return new Uint8ClampedArray(mod.HEAPU8.buffer, M.renderPixels(ptr), cellCount * 4); },
     paintDisc(cx, cy, r, material, overwrite = false) {
       return M.paintDisc(ptr, cx, cy, r, material, overwrite ? 1 : 0) === 1;
     },

@@ -15,7 +15,6 @@
 // must have resolved before createSandGame() is called.
 
 import { createEngineWasm, MAT, CHUNK_SIZE, SEED_SIZE } from '../engineWasm';
-import { makeColorLUT, makeTexture, fillPixelSpan } from '../renderCore';
 import { createCamera } from '../camera';
 
 export function createSandGame(container, opts = {}) {
@@ -95,8 +94,6 @@ export function createSandGame(container, opts = {}) {
   const DRIFTWOOD_PREVIEW_COLOR = 'rgba(140,125,110,0.45)';
   const ICE_PREVIEW_COLOR = 'rgba(150, 225, 240, 0.40)';
   const SEED_PREVIEW_COLOR = 'rgba(120, 190, 100, 0.32)';
-  const colorLUT = makeColorLUT();
-  const colorTexture = makeTexture(colorLUT);
 
   // Simulation engine (recreated on resize)
   // cols/rows are the BUFFER (world) dimensions, larger than the viewport;
@@ -119,8 +116,6 @@ export function createSandGame(container, opts = {}) {
   let snapOff = false;                // DEV-only: disable offset snapping for A/B
   const pressedKeys = new Set();         // held WASD/arrow keys for panning
   let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
-  let imageData = null;
-  let pixels = new Uint32Array(0);
   let forceFullRender = true;
   let perfRenderMs = 0;
   let previewDirty = false;
@@ -236,8 +231,6 @@ export function createSandGame(container, opts = {}) {
     cellCanvas.width = cols;
     cellCanvas.height = rows;
     cellCtx.imageSmoothingEnabled = false;
-    imageData = cellCtx.createImageData(cols, rows);
-    pixels = new Uint32Array(imageData.data.buffer);
 
     if (engine && engine.destroy) engine.destroy(); // free a prior (e.g. WASM) engine on resize
     engine = createEngineWasm({
@@ -262,7 +255,6 @@ export function createSandGame(container, opts = {}) {
     draftIsDriftwood = false;
     seedDraftOrigin = null;
 
-    pixels.fill(0);
     forceFullRender = true;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
@@ -554,13 +546,12 @@ export function createSandGame(container, opts = {}) {
   };
 
   const render = (full = false) => {
-    if (!imageData || !engine) return;
+    if (!engine) return;
 
     const renderStart = performance.now();
-    // Build dirty rects first (may grow wasm memory), then take the grid view so
-    // it can't be left pointing at a detached buffer.
+    // C++ owns dirty-rect generation and material->RGBA pixel generation. We
+    // build the rects, fill pixels in wasm, then upload the changed spans.
     const { rects, rectCount, dirtyChunkCount, chunkTotal } = engine.getRenderDirty();
-    const grid = engine.getGrid();
 
     // Visible buffer-cell window under the camera. Nothing outside it is ever
     // filled or blitted — that's the viewport culling. A buffer cell (bx,by)
@@ -580,34 +571,30 @@ export function createSandGame(container, opts = {}) {
     const visX1 = Math.min(cols - 1, camCol + viewCols + 1); // +1 covers the shift
     const visY1 = Math.min(rows - 1, camRow + viewRows + 1);
 
-    // Refill one buffer-cell rect's pixels into the persistent cellCanvas
-    // (1px per cell, sized to the whole buffer). This is the only CPU pixel
-    // work; it depends on grid contents, not the camera, so panning alone
-    // never triggers it.
-    const blitContent = (x0, y0, x1, y1) => {
-      const w = x1 - x0 + 1;
-      const h = y1 - y0 + 1;
-      fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, colorLUT, colorTexture);
-      cellCtx.putImageData(imageData, 0, 0, x0, y0, w, h);
-    };
-
-    // Bring cellCanvas in sync with the grid for cells whose contents changed.
-    // Processes dirty chunks across the WHOLE buffer (not clipped to the
-    // visible window) so off-screen changes are correct when they later scroll
-    // into view on a present-only frame.
+    // Bring cellCanvas (1px per cell, sized to the whole buffer) in sync with
+    // the grid for cells whose contents changed. The actual coloring happens in
+    // wasm; here we trigger the fill and upload the changed pixels. Off-screen
+    // changes are included so they're correct when they later scroll into view.
     const syncCellCanvas = (fullSync) => {
       // When most chunks are dirty (or a full repaint is forced), one
       // buffer-wide fill + a single upload beats many small putImageData calls.
-      if (fullSync || forceFullRender ||
-          dirtyChunkCount > chunkTotal * FULL_RENDER_DIRTY_CHUNK_RATIO) {
-        blitContent(0, 0, cols - 1, rows - 1);
+      const wholeBuffer = fullSync || forceFullRender ||
+        dirtyChunkCount > chunkTotal * FULL_RENDER_DIRTY_CHUNK_RATIO;
+      if (wholeBuffer) engine.renderFull();
+      else engine.renderDirtyRects();
+      // ImageData wrapping the freshly written wasm pixel buffer (zero-copy;
+      // re-wrapped each frame because wasm memory can move on growth).
+      const imgData = new ImageData(engine.getRenderPixels(), cols, rows);
+      if (wholeBuffer) {
+        cellCtx.putImageData(imgData, 0, 0);
         forceFullRender = false;
         return;
       }
-      // Refill each coalesced dirty rect. Rects are [x0,y0,x1,y1) exclusive from
-      // the engine; blitContent takes an inclusive rect, hence the -1s.
+      // Upload each coalesced dirty rect. Rects are [x0,y0,x1,y1) exclusive, so
+      // width/height are x1-x0 / y1-y0 directly.
       for (let i = 0, b = 0; i < rectCount; i++, b += 4) {
-        blitContent(rects[b], rects[b + 1], rects[b + 2] - 1, rects[b + 3] - 1);
+        const x0 = rects[b], y0 = rects[b + 1];
+        cellCtx.putImageData(imgData, 0, 0, x0, y0, rects[b + 2] - x0, rects[b + 3] - y0);
       }
     };
 

@@ -20,6 +20,11 @@ EMSCRIPTEN_KEEPALIVE void engine_build_dirty_rects(Engine* e) { e->buildDirtyRec
 EMSCRIPTEN_KEEPALIVE int engine_dirty_rect_count(Engine* e) { return (int)(e->dirtyRects.size() / 4); }
 EMSCRIPTEN_KEEPALIVE int* engine_dirty_rects(Engine* e) { return e->dirtyRects.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_dirty(Engine* e) { memset(e->dirtyRender.data(), 0, e->dirtyRender.size()); e->dirtyRenderCount = 0; }
+// Material -> RGBA rendering (C++ owns the pixel generation; JS uploads/blits).
+EMSCRIPTEN_KEEPALIVE void engine_render_full(Engine* e) { e->renderFull(); }
+EMSCRIPTEN_KEEPALIVE void engine_render_dirty_rects(Engine* e) { e->renderDirtyRects(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels(Engine* e) { return e->renderPixels.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_render_pixels_len(Engine* e) { return (int)e->renderPixels.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) { return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0); }
 EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) { return e->eraseDisc(cx, cy, r); }
 EMSCRIPTEN_KEEPALIVE void engine_set_sinks(Engine* e, int v) { e->sinksEnabled = v != 0; }

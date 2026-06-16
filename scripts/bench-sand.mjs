@@ -10,14 +10,13 @@
 //   - engine.step           (C++ step, measured inside wasm via emscripten_get_now)
 //   - shiftWorld (miss)     world streaming that has to generate fresh terrain
 //   - shiftWorld (hit)      world streaming that restores cached terrain
-//   - fillPixelSpan         full-buffer CPU pixel fill (the render hot path)
+//   - renderFull            full-buffer material->RGBA fill in wasm (render hot path)
 //
 // The engine is deterministic for a fixed seed, so step/shift costs and the
 // terrain checksum are stable run-to-run (modulo CPU noise in the timings).
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
-import { makeColorLUT, makeTexture, fillPixelSpan } from '../src/sand/renderCore.js';
 
 // --- args ---
 const args = process.argv.slice(2);
@@ -65,25 +64,18 @@ for (let i = 0; i < 60; i++) e.paintDisc(50 + (i % 40) * 6, 40 + ((i * 7) % 30),
 for (let i = 0; i < 40; i++) e.paintDisc(80 + (i % 30) * 7, 30 + ((i * 5) % 20), 5, 2, false); // water
 
 const stepMs = [];
-const fillMs = [];
+const renderMs = [];
 const shiftMissMs = [];
 const shiftHitMs = [];
-
-const lut = makeColorLUT();
-// Deterministic texture so the bench is reproducible run-to-run.
-let rs = 0x9e3779b9 >>> 0;
-const detRng = () => { rs ^= rs << 13; rs ^= rs >>> 17; rs ^= rs << 5; rs >>>= 0; return rs / 4294967296; };
-const texture = makeTexture(lut, detRng);
-const pixels = new Uint32Array(COLS * ROWS);
 
 const stepOnce = () => {
   e.step();
   stepMs.push(e.getPerf().stepMs);
-  // The render hot path: full-buffer fill (worst case / forceFullRender path).
-  const g = e.getGrid();
+  // The render hot path: full-buffer material->RGBA fill in wasm (worst case /
+  // forceFullRender path).
   const t = now();
-  fillPixelSpan(pixels, g, COLS, 0, 0, COLS - 1, ROWS - 1, lut, texture, detRng);
-  fillMs.push(now() - t);
+  e.renderFull();
+  renderMs.push(now() - t);
 };
 
 // Warm up (worldgen for the initial buffer, JIT, etc).
@@ -114,7 +106,7 @@ const result = {
   checksum: checksum(grid),
   worldOffsetX: e.getWorldOffsetX(),
   step: summarize(stepMs),
-  fillPixelSpan: summarize(fillMs),
+  renderFull: summarize(renderMs),
   shiftWorldMiss: summarize(shiftMissMs),
   shiftWorldHit: summarize(shiftHitMs),
   shiftPhases: {
@@ -129,7 +121,7 @@ const fmt = (s) => `mean ${s.mean.toFixed(3)}  p50 ${s.p50.toFixed(3)}  p95 ${s.
 console.log(`\nsand engine benchmark  (${COLS}x${ROWS}, seed ${SEED.toString(16)})`);
 console.log(`  checksum 0x${result.checksum.toString(16)}  worldOffsetX ${result.worldOffsetX}`);
 console.log(`  step            ${fmt(result.step)}`);
-console.log(`  fillPixelSpan   ${fmt(result.fillPixelSpan)}`);
+console.log(`  renderFull      ${fmt(result.renderFull)}`);
 console.log(`  shiftWorld miss ${fmt(result.shiftWorldMiss)}`);
 console.log(`  shiftWorld hit  ${fmt(result.shiftWorldHit)}`);
 const sp = result.shiftPhases;
@@ -147,7 +139,7 @@ if (comparePath) {
   } else {
     console.log(`  checksum identical (pure refactor / deterministic)`);
   }
-  const rows = [['step', 'p99'], ['fillPixelSpan', 'p99'], ['shiftWorldMiss', 'p99'], ['shiftWorldHit', 'p99'], ['step', 'mean'], ['fillPixelSpan', 'mean']];
+  const rows = [['step', 'p99'], ['renderFull', 'p99'], ['shiftWorldMiss', 'p99'], ['shiftWorldHit', 'p99'], ['step', 'mean'], ['renderFull', 'mean']];
   for (const [k, m] of rows) {
     const b = base[k][m], r = result[k][m];
     const d = b ? ((r - b) / b) * 100 : 0;

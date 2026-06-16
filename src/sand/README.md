@@ -16,13 +16,15 @@ rendering, input, and UI stay in JavaScript.
 - `engineWasm.js` — loads the wasm module and exposes `createEngineWasm()`, the
   simulation handle. Call `initSandWasm()` once and wait for it before creating an
   engine. The grid lives in wasm memory and is read back as a zero-copy view.
-- `materials.js` — material ids, colors, and grain. The ids here must match the
-  ones in `cpp/engine/common.hpp`.
-- `renderCore.js` — fills pixels from the grid (colors + grain + fire/steam/lava
-  shimmer).
+- `materials.schema.json` — the single source of truth for material identity
+  (ids, kinds, density, mobility, colors, render params). Run `npm run generate`
+  to regenerate `materials.generated.js` and `cpp/engine/materials.generated.hpp`.
+- `materials.js` — re-exports the generated registry and derives `MAT.<NAME>`.
 - `camera.js` — the view over the world buffer.
-- `game/createSandGame.js` — the runtime: it owns the canvases, the render loop,
-  input, world streaming, and the engine. No React.
+- `game/createSandGame.js` — the runtime: it owns the canvases, the present/blit
+  loop, input, world streaming, and the engine. Dirty-rect generation and
+  material->RGBA pixel generation live in the C++ engine; JS uploads and blits.
+  No React.
 - `react/SandGame.jsx` + `react/ToolPalette.jsx` — a thin React wrapper that mounts
   the runtime and draws the toolbar. `src/About.jsx` just renders `<SandGame>`.
 
@@ -46,7 +48,7 @@ growth, free rigid bodies, and that edits survive a world shift.
 
 ## Adding a material
 
-Add the id, color, density, kind, etc. in `materials.js` and the matching entry
-in `cpp/engine/common.hpp` (keep the numeric ids in sync), then rebuild the wasm.
-If it moves in a way no existing kind covers, or reacts with other materials, add
-that to the relevant `.inc` file.
+Add the id, color, density, kind, etc. as an entry in `materials.schema.json`,
+then run `npm run generate` (regenerates the JS + C++ tables) and rebuild the
+wasm. If it moves in a way no existing kind covers, or reacts with other
+materials, add that to the relevant `.inc` file.

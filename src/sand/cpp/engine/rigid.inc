@@ -240,20 +240,23 @@
     for (int bi = 0; bi < n; bi++) { Body* b = bodies[bi]; if (!b->awake) continue; if (islandMinStill[ifind(bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
   }
   template <class F> void forEachBodyCell(Body* b, F cb) {
-    // Rasterize occ -> world (forward): place EVERY filled occ cell into the grid
-    // cell containing its center. Sampling world -> occ (the inverse) instead
-    // skips occ cells whenever the body's sub-cell/rotation offset rounds two
-    // world cells onto the same occ index, leaving the stamped footprint holey
-    // and smaller than the body — which, on erase, makes finishErasedBodies fail
-    // to re-claim cells and erase them (a half of the body vanishing).
+    // Inverse rasterization: for each grid cell in the body's world AABB, map its
+    // center back into occ space and stamp if filled. This is hole-free for
+    // rotated bodies (forward occ->world point-sampling instead leaves gaps
+    // between rotated rows). The body shape stays authoritative in occ.
     double sn = std::sin(b->angle), cs = std::cos(b->angle);
-    for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
-      if (!b->occ[(size_t)j * b->w + i]) continue;
-      double lx = b->offsetX + i, ly = b->offsetY + j;
-      double wcx = b->px + lx * cs - ly * sn, wcy = b->py + lx * sn + ly * cs; // cell center in world
-      int gx = (int)std::floor(wcx), gy = (int)std::floor(wcy);
-      if (gx < 0 || gx >= cols || gy < 0 || gy >= rows) continue;
-      cb(gx, gy); // callers dedupe (two occ cells can share a grid cell)
+    double lx0 = b->offsetX - 0.5, lx1 = b->offsetX + b->w - 0.5, ly0 = b->offsetY - 0.5, ly1 = b->offsetY + b->h - 0.5;
+    double minWX = 1e18, minWY = 1e18, maxWX = -1e18, maxWY = -1e18;
+    auto corner = [&](double lx, double ly) { double wx = b->px + lx * cs - ly * sn, wy = b->py + lx * sn + ly * cs; if (wx < minWX) minWX = wx; if (wx > maxWX) maxWX = wx; if (wy < minWY) minWY = wy; if (wy > maxWY) maxWY = wy; };
+    corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
+    int x0 = (int)std::floor(minWX), x1 = (int)std::floor(maxWX), y0 = (int)std::floor(minWY), y1 = (int)std::floor(maxWY);
+    if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= cols) x1 = cols - 1; if (y1 >= rows) y1 = rows - 1;
+    for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
+      double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
+      double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+      int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
+      if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
+      if (b->occ[j * b->w + i]) cb(wx, wy);
     }
   }
   int localCellAt(Body* b, double wx, double wy) { b->cs = std::cos(b->angle); b->sn = std::sin(b->angle); return insideBodyIndex(b, wx, wy); }

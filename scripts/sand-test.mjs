@@ -112,9 +112,11 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.finalizeStoneDraft();
   const body = []; for (let dx = -8; dx < 8; dx++) for (let dy = 0; dy < 12; dy++) body.push([100 + dx, 10 + dy]);
   e.spawnBody(body);
-  run(400, e); // settle on the slope
+  run(400, e); // settle on the slope (body comes to rest rotated)
   const g0 = e.getGrid(); let t = 1e9, b = -1, l = 1e9, r = 0;
   for (let i = 0; i < g0.length; i++) if (g0[i] === 13) { const y = (i / COLS) | 0, x = i % COLS; if (y < t) t = y; if (y > b) b = y; if (x < l) l = x; if (x > r) r = x; }
+  // the rotated body must rasterize without holes (192-cell cube -> ~full count)
+  check(`rotated body renders solid (${rigidCells(g0)}/192 cells)`, rigidCells(g0) > 160);
   const midX = (l + r) >> 1;
   for (let y = t - 1; y <= b + 1; y += 2) e.eraseDisc(midX, y, 2); // vertical eraser swipe
   run(50, e);

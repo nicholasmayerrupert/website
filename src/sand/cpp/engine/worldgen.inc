@@ -61,14 +61,56 @@
     }
     list = std::move(kept);
   }
+  // ---- chunk store (chunkStore.js): persist edited bands across shifts ----
+  void csSaveMaterials(int colStart, int width, int key) {
+    MatBand& e = matStore[key];
+    if (e.width != width) { e.width = width; e.buf.assign((size_t)width * rows, 0); }
+    for (int y = 0; y < rows; y++) { int src = y * cols + colStart; memcpy(e.buf.data() + (size_t)y * width, grid + src, width); }
+  }
+  bool csLoadMaterials(int colStart, int width, int key) {
+    auto it = matStore.find(key);
+    if (it == matStore.end() || it->second.width != width) return false;
+    const uint8_t* buf = it->second.buf.data();
+    for (int y = 0; y < rows; y++) { int dst = y * cols + colStart; memcpy(grid + dst, buf + (size_t)y * width, width); memcpy(next + dst, buf + (size_t)y * width, width); }
+    return true;
+  }
+  void csSaveBodies(int key, std::vector<std::pair<Body*, double>>&& list) { if (!list.empty()) bodyStore[key] = std::move(list); }
+  std::vector<std::pair<Body*, double>> csTakeBodies(int key) {
+    auto it = bodyStore.find(key); if (it == bodyStore.end()) return {};
+    auto l = std::move(it->second); bodyStore.erase(it); return l;
+  }
+
+  // Slide the loaded window by dx world-columns. Mirrors worldWindow.shiftWorld:
+  // un-stamp body rasters, persist the leaving band (materials + bodies) to the
+  // store, memmove the buffers, translate survivors, then restore the entering
+  // band from the store if previously visited (else generate it).
   void shiftWorld(int dx) {
     if (!dx || !infinite) return;
     int s = std::abs(dx);
     if (s >= cols) return;
     int oldOffset = worldOffsetX, newOffset = oldOffset + dx;
+    int leaveColStart = dx > 0 ? 0 : cols - s;
     int enterColStart = dx > 0 ? cols - s : 0;
+    int leaveKey = oldOffset + leaveColStart, enterKey = newOffset + enterColStart;
+
+    // 1) clear body rasters so no RIGID ghost is saved or memmoved (bodies
+    //    re-rasterize from their float poses next step).
+    for (int k : bodyCells) { if (grid[k] == RIGID) grid[k] = EMPTY; if (next[k] == RIGID) next[k] = EMPTY; bodyOwner[k] = -1; }
+    bodyCells.clear();
+
+    // 2) persist the leaving band: bodies sitting in it (keyed by world-x), then
+    //    its materials.
+    {
+      std::vector<std::pair<Body*, double>> leaving; std::vector<Body*> staying;
+      for (Body* b : bodies) { if (b->px >= leaveColStart && b->px < leaveColStart + s) leaving.push_back({b, oldOffset + b->px}); else staying.push_back(b); }
+      if (!leaving.empty()) { bodies = std::move(staying); csSaveBodies(leaveKey, std::move(leaving)); }
+    }
+    csSaveMaterials(leaveColStart, s, leaveKey);
+
+    // 3) slide the persistent buffers + dirty marks.
     shiftRowMajorU8(grid, dx, EMPTY);
     shiftRowMajorU8(next, dx, EMPTY);
+    shiftRowMajorI32(bodyOwner.data(), dx, -1);
     for (int y = 0; y < rows; y++) {
       if (rowMarkMax[y] < rowMarkMin[y]) continue;
       int mn = rowMarkMin[y] - dx, mx = rowMarkMax[y] - dx;
@@ -77,18 +119,22 @@
     }
     std::fill(compOccStamp.begin(), compOccStamp.end(), -1);
     std::fill(vacatedStamp.begin(), vacatedStamp.end(), -1);
-    fillBand(enterColStart, s, newOffset);
-    worldOffsetX = newOffset;
-    for (int y = 0; y < rows; y++) { if (enterColStart < rowMarkMin[y]) rowMarkMin[y] = enterColStart; if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1; }
-    // un-stamp free bodies before the shift, then translate / drop them
-    for (int k : bodyCells) { if (grid[k] == RIGID) grid[k] = EMPTY; if (next[k] == RIGID) next[k] = EMPTY; bodyOwner[k] = -1; }
-    bodyCells.clear();
+
+    // 4) translate staying bodies; drop any that left the buffer.
     {
       std::vector<Body*> keep;
       for (Body* b : bodies) { b->px -= dx; if (b->px > -b->maxR && b->px < cols + b->maxR) keep.push_back(b); else delete b; }
       bodies = std::move(keep);
     }
-    shiftRowMajorI32(bodyOwner.data(), dx, -1);
+
+    // 5) bring in the newly exposed band: restore it if we've stored it before,
+    //    else generate. Advance the offset and restore its saved bodies.
+    if (!csLoadMaterials(enterColStart, s, enterKey)) fillBand(enterColStart, s, newOffset);
+    worldOffsetX = newOffset;
+    for (auto& e : csTakeBodies(enterKey)) { e.first->px = e.second - newOffset; bodies.push_back(e.first); }
+
+    // 6) mark the new band active so it simulates, then update components.
+    for (int y = 0; y < rows; y++) { if (enterColStart < rowMarkMin[y]) rowMarkMin[y] = enterColStart; if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1; }
     translateComponents(stoneComponents, dx);
     translateComponents(plantComponents, dx);
     translateComponents(iceComponents, dx);

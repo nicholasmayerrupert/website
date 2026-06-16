@@ -38,11 +38,13 @@ The WASM engine is now the **default** (the React wrapper awaits init then injec
 `createEngineWasm` into `createSandGame`); opt back into the legacy JS engine with
 `?engine=js`. Parity is behavioral, not bit-identical — verify with
 `node scripts/wasm-parity.mjs` (CA / components / reactions / growth) and
-`node scripts/wasm-rigid.mjs` (free rigid bodies). The full engine is ported —
-CA, components, reactions, growth, tools, free rigid bodies (rigid2d), and
-streaming worldgen (byte-identical to JS). Not yet ported: chunk-store
-persistence of player edits across world shifts (terrain still regenerates
-deterministically) and hand-authored fixed scenes (infinite mode only).
+`node scripts/wasm-rigid.mjs` (free rigid bodies), and
+`node scripts/wasm-worksave.mjs` (edited bands persist across world shifts). The
+full engine is ported — CA, components, reactions, growth, tools, free rigid
+bodies (rigid2d), streaming worldgen (byte-identical to JS), and chunk-store
+persistence of edits (materials + bodies) across world shifts. The only JS-only
+piece left is the hand-authored fixed scenes (castle/noita), which the app does
+not use — it always runs in infinite mode.
 
 ## Adding a material
 

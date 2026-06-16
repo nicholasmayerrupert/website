@@ -63,6 +63,8 @@ export function initSandWasm() {
         bodyCount: c('engine_body_count', 'number', ['number']),
         bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
         bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
+        rigidRejected: c('engine_rigid_rejected', 'number', ['number']),
+        rigidDepen: c('engine_rigid_depen', 'number', ['number']),
       };
       return M;
     });
@@ -162,7 +164,7 @@ export function createEngineWasm({
     },
     getBodies() { return []; }, // render reads RIGID cells from the grid; bodies need no JS mirror
     bodyFootprintBlocked() { return 0; },
-    getRigidDebug() { return { rejectedCells: 0, depenetrations: 0 }; },
+    getRigidDebug() { return { rejectedCells: M.rigidRejected(ptr), depenetrations: M.rigidDepen(ptr) }; },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },

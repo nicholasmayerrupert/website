@@ -51,4 +51,5 @@ EMSCRIPTEN_KEEPALIVE int engine_body_count(Engine* e) { return (int)e->bodies.si
 EMSCRIPTEN_KEEPALIVE int engine_body_blocked(Engine* e, int i) { return (i >= 0 && i < (int)e->bodies.size()) ? e->bodyFootprintBlocked(e->bodies[i]) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->bodies.size()) ? (e->bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_rigid_rejected(Engine* e) { return e->rigidRejectedCells; }
+EMSCRIPTEN_KEEPALIVE int engine_rigid_depen(Engine* e) { return e->rigidDepenetrations; }
 } // extern "C"

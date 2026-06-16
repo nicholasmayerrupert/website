@@ -23,6 +23,10 @@
   int nextBodyId = 1;
   std::vector<int32_t> bodyOwner;
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
+  // chunk store: persist edited bands (materials + bodies) across world shifts
+  struct MatBand { int width = 0; std::vector<uint8_t> buf; };
+  std::unordered_map<int, MatBand> matStore;                                // worldX -> saved band
+  std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
   int stepSerial = 0, dirtyRenderCount = 0, tick = 0, perfDirtyChunks = 0;
   double perfStepMs = 0;
   bool sinksEnabled;
@@ -53,7 +57,7 @@
     reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
     bodyOwner.assign(n, -1);
   }
-  ~Engine() { for (Body* b : bodies) delete b; }
+  ~Engine() { for (Body* b : bodies) delete b; for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first; }
 
   // ---- predicates ----
   inline bool isPlantMaterial(uint8_t m) { return m == SEED || m == WOOD || m == PLANT || m == DRIFTWOOD; }

@@ -90,8 +90,27 @@ npm run test:all      # npm run test && npm run build
 
 `test:e2e` boots the dev server, drives the local player with real keyboard
 events in headless Chromium (via the `playwright` library, like the pan bench),
-and asserts spawn/grounding, input wiring, jump, and camera-follow. It is not in
-the required `npm run test` chain (it needs a browser), but is CI-runnable.
+and asserts spawn/grounding, input wiring, jump, dig, and camera-follow. It is
+not in the required `npm run test` chain (it needs a browser), but is CI-runnable.
+
+## Multiplayer (in progress)
+
+The networking layer lives in `src/sand/net/` and is transport-agnostic so it
+unit-tests in Node (`test:net`) with no real socket:
+
+- `protocol.js` — the JSON wire format (`input`/`snapshot`/`join`/`leave`/
+  `ping`/`pong`), strict decode/validation, and message builders. Integer fields
+  are preserved exactly; out-of-range/malformed messages decode to `null`.
+- `client.js` — `SequenceTracker` (drops reordered-late/duplicate packets),
+  `InputSequencer`, and `applyInputStream` (reduces a lossy/shuffled input stream
+  to the strictly-increasing accepted set).
+
+The planned topology is **host-authoritative**: one browser runs the real engine,
+clients send input and receive snapshots. Determinism (fixed timestep, no RNG in
+player physics) is verified by a two-engine replay test: the same seed + same
+ordered input stream, round-tripped through the protocol, yields identical final
+player state and grid hash. The transport, host loop, and prediction land in
+later phases.
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

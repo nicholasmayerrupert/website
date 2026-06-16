@@ -126,13 +126,37 @@ export function createWorldWindow(S, ext) {
       if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1;
     }
 
-    // 6) Rebuild the component layer from the shifted/restored grid. Existing
-    // component cell-sets hold pre-shift indices, so they are discarded and
-    // re-derived from materials (registerSeededComponents is a full flood-fill).
-    S.stoneComponents = [];
-    S.plantComponents = [];
-    S.iceComponents = [];
-    S.registerSeededComponents();
+    // 6) Update the component layer incrementally (a full flood-fill rebuild here
+    // was the shift hitch). Translate surviving components by the shift — pure
+    // arithmetic on their cell indices, dropping cells that scrolled off — then
+    // register components for only the freshly exposed band.
+    const translate = (list) => {
+      const kept = [];
+      for (const comp of list) {
+        const cells = new Set();
+        let yMax = 0;
+        for (const k of comp.cells) {
+          const nx = (k % bufCols) - dx;
+          if (nx < 0 || nx >= bufCols) continue; // scrolled off the buffer
+          const nk = k - dx;
+          cells.add(nk);
+          const y = (nk / bufCols) | 0;
+          if (y > yMax) yMax = y;
+        }
+        if (cells.size === 0) continue; // whole component left the window
+        comp.cells = cells;
+        comp.yMax = yMax;
+        if (comp.cacheDirty !== undefined) comp.cacheDirty = true;
+        kept.push(comp);
+      }
+      return kept;
+    };
+    S.stoneComponents = translate(S.stoneComponents);
+    S.plantComponents = translate(S.plantComponents);
+    S.iceComponents = translate(S.iceComponents);
+    // Register components for just the new band (additive; existing translated
+    // components are skipped via registerSeededComponents' seen-set guard).
+    S.registerSeededComponents(enterColStart, enterColStart + s);
   };
 
   return { shiftWorld };

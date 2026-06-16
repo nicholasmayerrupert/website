@@ -13,7 +13,7 @@
 
 export function createComponents(S) {
   const {
-    cols, rows, I,
+    cols, rows, I, CHUNK_SHIFT,
     EMPTY, SAND, STONE, WOOD, PLANT, SEED, ICE, LAVA, RIGID,
     DENSITY, BUOY_WET_PERIMETER_FRAC, BUOY_DRAFT_SCALE, BUOY_BAND_MIN, BUOY_BAND_FRAC, BUOY_SUPPORT_FRAC,
     isLiquid, isGas, isPlantMaterial, isRigidMaterial, neighborIndices8, writeGridIndex,
@@ -407,49 +407,63 @@ export function createComponents(S) {
   // Scan the grid and register any stone/plant/ice cells not already owned by a
   // component (e.g. from a scene build or raw paint). Idempotent: cells already
   // in a component are skipped, so it can adopt orphaned cells on re-run.
-  const registerSeededComponents = () => {
+  // Register seeded components. With no range, scans the whole grid; with
+  // [colStart, colEnd) it scans only those columns (used after a world shift to
+  // register just the freshly exposed band, additively). `bounded` keeps a
+  // component inside one render-chunk box so huge contiguous regions (the stone
+  // core) split into many small components — splitting/erasing then touches only a
+  // tiny piece instead of flood-filling the whole underground.
+  const registerSeededComponents = (colStart = 0, colEnd = cols) => {
     const grid = S.grid;
-    const registerComponents = (materialCheck, components, makeComponent) => {
+    const registerComponents = (materialCheck, components, makeComponent, bounded = false) => {
       const seen = new Uint8Array(cols * rows);
       for (const comp of components) {
         for (const k of comp.cells) seen[k] = 1;
       }
-      for (let k = 0; k < grid.length; k++) {
-        if (seen[k] || !materialCheck(grid[k])) continue;
-        const cells = new Set([k]);
-        const queue = [k];
-        seen[k] = 1;
-        let yMax = (k / cols) | 0;
+      for (let sy = 0; sy < rows; sy++) {
+        for (let sx = colStart; sx < colEnd; sx++) {
+          const k = sy * cols + sx;
+          if (seen[k] || !materialCheck(grid[k])) continue;
+          const bx = bounded ? sx >> CHUNK_SHIFT : 0;
+          const by = bounded ? sy >> CHUNK_SHIFT : 0;
+          const cells = new Set([k]);
+          const queue = [k];
+          seen[k] = 1;
+          let yMax = sy;
 
-        while (queue.length) {
-          const cur = queue.shift();
-          const y = (cur / cols) | 0;
-          const x = cur - y * cols;
-          if (y > yMax) yMax = y;
+          while (queue.length) {
+            const cur = queue.shift();
+            const y = (cur / cols) | 0;
+            const x = cur - y * cols;
+            if (y > yMax) yMax = y;
 
-          for (let oy = -1; oy <= 1; oy++) {
-            for (let ox = -1; ox <= 1; ox++) {
-              if (ox === 0 && oy === 0) continue;
-              const nx = x + ox;
-              const ny = y + oy;
-              if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
-              const nk = I(nx, ny);
-              if (seen[nk] || !materialCheck(grid[nk])) continue;
-              seen[nk] = 1;
-              cells.add(nk);
-              queue.push(nk);
+            for (let oy = -1; oy <= 1; oy++) {
+              for (let ox = -1; ox <= 1; ox++) {
+                if (ox === 0 && oy === 0) continue;
+                const nx = x + ox;
+                const ny = y + oy;
+                if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
+                // Keep each component within a single render-chunk box.
+                if (bounded && ((nx >> CHUNK_SHIFT) !== bx || (ny >> CHUNK_SHIFT) !== by)) continue;
+                const nk = I(nx, ny);
+                if (seen[nk] || !materialCheck(grid[nk])) continue;
+                seen[nk] = 1;
+                cells.add(nk);
+                queue.push(nk);
+              }
             }
           }
-        }
 
-        components.push(makeComponent(cells, yMax));
+          components.push(makeComponent(cells, yMax));
+        }
       }
     };
 
     registerComponents(
       material => material === STONE,
       S.stoneComponents,
-      (cells, yMax) => ({ id: S.nextStoneId++, cells, yMax })
+      (cells, yMax) => ({ id: S.nextStoneId++, cells, yMax }),
+      true // chunk-bound stone so the underground isn't one giant component
     );
     registerComponents(
       isPlantMaterial,

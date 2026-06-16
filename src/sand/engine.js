@@ -969,7 +969,7 @@ export function createEngine({
   // reassigns (grid/next buffers, the body-cell list, rigid diagnostics) are
   // exposed via accessors so modules always read the current value.
   const S = {
-    cols, rows, rand, I, MAT, SEED_SIZE, emitterDefs, initialScene,
+    cols, rows, rand, I, CHUNK_SHIFT, MAT, SEED_SIZE, emitterDefs, initialScene,
     EMPTY, SAND, WATER, STONE, OIL, FIRE, STEAM, SEED, WOOD, PLANT, ACID, LAVA, ICE, RIGID,
     DENSITY, DENSITY_SORTED_LOOSE, LOOSE_MOBILITY_P, MAT_KIND,
     ACID_DISSOLVE_P, ACID_DECAY_P, RIGID_LAVA_ERODE_P, RIGID_FIRE_ERODE_P,

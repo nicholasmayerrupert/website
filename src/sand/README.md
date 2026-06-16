@@ -105,12 +105,24 @@ unit-tests in Node (`test:net`) with no real socket:
   `InputSequencer`, and `applyInputStream` (reduces a lossy/shuffled input stream
   to the strictly-increasing accepted set).
 
-The planned topology is **host-authoritative**: one browser runs the real engine,
+The topology is **host-authoritative**: one browser runs the real engine,
 clients send input and receive snapshots. Determinism (fixed timestep, no RNG in
 player physics) is verified by a two-engine replay test: the same seed + same
 ordered input stream, round-tripped through the protocol, yields identical final
-player state and grid hash. The transport, host loop, and prediction land in
-later phases.
+player state and grid hash.
+
+- `host.js` — the `Host`: owns the engine, spawns a player per client, applies
+  inputs through a per-client sequence gate (drops reordered/duplicate packets),
+  steps, and emits authoritative `snapshot`s (optionally with a world hash for
+  divergence detection). Transport-agnostic — `test:net` drives it in-process.
+- `scripts/dev-multiplayer-server.mjs` (`npm run mp:server`) — a pure WebSocket
+  relay: rooms + membership + message forwarding. The first peer to join a room
+  is the host; the server never simulates. A live two-client round-trip
+  (input → host, snapshot → client, disconnect → leave) is covered by `test:net`.
+
+Still to come: the browser WebSocket client + Host/Join UI + a two-context
+Playwright test (Phase 5 wiring), world diffs (Phase 6), and client prediction/
+reconciliation (Phase 7).
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

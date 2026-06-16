@@ -7,8 +7,13 @@ import {
   INPUT_BITS_MAX, TOOL_MAX,
 } from '../src/sand/net/protocol.js';
 import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/client.js';
+import { Host } from '../src/sand/net/host.js';
+import { startServer } from './dev-multiplayer-server.mjs';
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
 import { gridHash } from './sand-test-util.mjs';
+
+const COLS = 200, ROWS = 120;
+const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); e.finalizeStoneDraft(); };
 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
@@ -124,6 +129,81 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check(`final player y identical (${a.p.y.toFixed(4)})`, a.p.y === b.p.y);
   check('final velocities identical', a.p.vx === b.p.vx && a.p.vy === b.p.vy);
   check(`grid hash identical (${a.h.toString(16)})`, a.h === b.h);
+}
+
+// 8. host-authoritative core (in-process, no socket): remote input moves the
+//    right player; snapshots carry state + lastProcessedSeq; dup/late/unknown
+//    inputs are dropped; leave removes the player.
+{
+  console.log('host-authoritative (in-process)');
+  const engine = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0xC0FFEE, sinksOn: false });
+  stoneFloor(engine);
+  const host = new Host({ engine, roomId: 'r' });
+  const pA = host.addClient('A', { x: 80, y: 80 });
+  const pB = host.addClient('B', { x: 120, y: 80 });
+  check('two clients -> two players', pA && pB && pA !== pB && engine.playerCount() === 2);
+  for (let i = 0; i < 30; i++) host.step(); // settle on floor
+
+  const seqA = new InputSequencer();
+  const x0 = engine.getPlayer(pA).x;
+  for (let i = 0; i < 60; i++) {
+    host.receive(encode(seqA.next({ room: 'r', client: 'A', player: pA, tick: i, bits: INPUT.RIGHT, aimX: 0, aimY: 0, tool: 0 })));
+    host.step();
+  }
+  check(`remote input moved client A's player (${x0.toFixed(1)} -> ${engine.getPlayer(pA).x.toFixed(1)})`, engine.getPlayer(pA).x > x0 + 4);
+  check('client B player unaffected (no input)', Math.abs(engine.getPlayer(pB).x - 120) < 6);
+
+  const snap = host.snapshot({ withHash: true });
+  const snapA = snap.players.find((p) => p.id === pA);
+  check('snapshot carries both players', snap.players.length === 2 && !!snapA);
+  check(`snapshot lastProcessedSeq advanced (${snapA.seq})`, snapA.seq >= 59);
+  check('snapshot has world hash', typeof snap.hash === 'number');
+
+  check('duplicate/old seq dropped', host.receive(encode(makeInput({ room: 'r', client: 'A', player: pA, tick: 0, seq: 5, bits: INPUT.LEFT, aimX: 0, aimY: 0, tool: 0 }))) === null);
+  check('unknown client dropped', host.receive(encode(makeInput({ room: 'r', client: 'Z', player: 1, tick: 0, seq: 99999, bits: 0, aimX: 0, aimY: 0, tool: 0 }))) === null);
+
+  host.receive(encode(makeLeave('r', 'B')));
+  check('leave removes the player', engine.playerCount() === 1);
+  engine.destroy();
+}
+
+// 9. live WebSocket relay: two peers join a room; client input reaches the host
+//    peer, host snapshot reaches the client, disconnect produces a leave.
+{
+  console.log('websocket relay (live)');
+  const PORT = 5193;
+  const srv = startServer(PORT);
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const open = () => new Promise((res, rej) => { const ws = new WebSocket(`ws://localhost:${PORT}`); ws.onopen = () => res(ws); ws.onerror = () => rej(new Error('ws connect failed')); });
+  const inboxOf = (ws) => { const q = []; ws.onmessage = (ev) => { const m = decode(typeof ev.data === 'string' ? ev.data : ev.data.toString()); if (m) q.push(m); }; return q; };
+  try {
+    const hostWs = await open();
+    const clientWs = await open();
+    const hostIn = inboxOf(hostWs), clientIn = inboxOf(clientWs);
+
+    hostWs.send(encode(makeJoin('room1', 'host')));
+    await wait(40);
+    clientWs.send(encode(makeJoin('room1', 'c1')));
+    await wait(40);
+    check('host notified of client join', hostIn.some((m) => m.t === MSG.JOIN && m.client === 'c1'));
+
+    clientWs.send(encode(makeInput({ room: 'room1', client: 'c1', player: 1, tick: 0, seq: 0, bits: INPUT.RIGHT, aimX: 0, aimY: 0, tool: 0 })));
+    await wait(40);
+    check('client input relayed to host', hostIn.some((m) => m.t === MSG.INPUT && m.client === 'c1'));
+
+    hostWs.send(encode(makeSnapshot(5, [{ id: 1, x: 10, y: 20, vx: 0, vy: 0, facing: 1, grounded: true, tool: 0, health: 100, inputSeq: 0 }])));
+    await wait(40);
+    check('host snapshot relayed to client', clientIn.some((m) => m.t === MSG.SNAPSHOT && m.tick === 5));
+
+    clientWs.close();
+    await wait(80);
+    check('client disconnect produces leave', hostIn.some((m) => m.t === MSG.LEAVE && m.client === 'c1'));
+    hostWs.close();
+  } catch (err) {
+    check(`relay error: ${err.message}`, false);
+  } finally {
+    await srv.close();
+  }
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

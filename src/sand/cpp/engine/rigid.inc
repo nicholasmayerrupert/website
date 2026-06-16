@@ -410,8 +410,36 @@
     for (auto& kv : perBody) spillDisplacedBodyMaterial(kv.second.first, footprint, kv.second.second);
     erodeBodies(cells);
   }
-  Body* spawnBody(const std::vector<std::pair<int, int>>& cells) {
-    Body* b = spawnBodyImpl(cells, RIGID, DENSITY[RIGID]);
+  Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material) {
+    Body* b = spawnBodyImpl(cells, material, DENSITY[material]);
     if (b && !cells.empty()) { int minX = cols - 1, minY = rows - 1, maxX = 0, maxY = 0; for (auto& c : cells) { if (c.first < minX) minX = c.first; if (c.first > maxX) maxX = c.first; if (c.second < minY) minY = c.second; if (c.second > maxY) maxY = c.second; } markDirtyRect(minX, minY, maxX, maxY); }
     return b;
+  }
+  Body* spawnBody(const std::vector<std::pair<int, int>>& cells) { return finishSpawn(cells, RIGID); }
+
+  // Primitive body shapes built engine-side (no per-cell array marshalled from
+  // JS). Cells are clipped to the interior, exactly like the old JS cube tool
+  // (dx in [-halfW, halfW), dy in [-halfH, halfH) for the box).
+  Body* spawnBox(int cx, int cy, int halfW, int halfH, uint8_t material) {
+    if (material >= TABLE) material = RIGID;
+    std::vector<std::pair<int, int>> cells;
+    cells.reserve((size_t)imax(0, 2 * halfW) * imax(0, 2 * halfH));
+    for (int dx = -halfW; dx < halfW; dx++)
+      for (int dy = -halfH; dy < halfH; dy++) {
+        int x = cx + dx, y = cy + dy;
+        if (x >= 1 && x < cols - 1 && y >= 1 && y < rows - 1) cells.push_back({x, y});
+      }
+    return finishSpawn(cells, material);
+  }
+  Body* spawnDisc(int cx, int cy, int radius, uint8_t material) {
+    if (material >= TABLE) material = RIGID;
+    std::vector<std::pair<int, int>> cells;
+    int r2 = radius * radius;
+    for (int dy = -radius; dy <= radius; dy++)
+      for (int dx = -radius; dx <= radius; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        int x = cx + dx, y = cy + dy;
+        if (x >= 1 && x < cols - 1 && y >= 1 && y < rows - 1) cells.push_back({x, y});
+      }
+    return finishSpawn(cells, material);
   }

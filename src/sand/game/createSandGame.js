@@ -380,16 +380,7 @@ export function createSandGame(container, opts = {}) {
         return;
       }
       if (activeTool === 'cube') {
-        const cx = toCellX();
-        const cy = toCellY();
-        const cells = [];
-        for (let dx = -CUBE_HALF; dx < CUBE_HALF; dx++) {
-          for (let dy = -CUBE_HALF; dy < CUBE_HALF; dy++) {
-            const x = cx + dx, y = cy + dy;
-            if (x >= 1 && x < cols - 1 && y >= 1 && y < rows - 1) cells.push([x, y]);
-          }
-        }
-        if (cells.length) engine.spawnBody(cells);
+        engine.spawnBox(toCellX(), toCellY(), CUBE_HALF, CUBE_HALF, MAT.RIGID);
         e.preventDefault();
         return;
       }

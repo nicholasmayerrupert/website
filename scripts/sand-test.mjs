@@ -80,8 +80,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   console.log('free rigid body');
   const e = mk({ infinite: true });
   const surf = e.worldSurfaceAt(0);
-  const cells = []; for (let dx = -5; dx < 5; dx++) for (let dy = -5; dy < 5; dy++) cells.push([COLS / 2 + dx, surf - 20 + dy | 0]);
-  e.spawnBody(cells);
+  e.spawnBox(COLS / 2, surf - 20, 5, 5); // 10x10 box, built engine-side
   run(260, e);
   const n = rigidCells(e.getGrid());
   check(`cube intact and resting (${n} cells)`, n >= 90 && n <= 100);

@@ -72,6 +72,8 @@ export function initSandWasm() {
         canPlaceSeed: c('engine_can_place_seed', 'number', ['number', 'number', 'number']),
         placeSeed: c('engine_place_seed', 'number', ['number', 'number', 'number']),
         spawnBody: c('engine_spawn_body', null, ['number', 'number', 'number']),
+        spawnBox: c('engine_spawn_box', null, ['number', 'number', 'number', 'number', 'number']),
+        spawnDisc: c('engine_spawn_disc', null, ['number', 'number', 'number', 'number', 'number']),
         bodyCount: c('engine_body_count', 'number', ['number']),
         bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
         bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
@@ -189,6 +191,9 @@ export function createEngineWasm({
       mod._free(buf);
       return {}; // opaque handle; the engine owns the body
     },
+    // Primitive bodies built engine-side (no coordinate array marshalling).
+    spawnBox(cx, cy, halfW, halfH, material = MAT.RIGID) { M.spawnBox(ptr, cx, cy, halfW, halfH, material); },
+    spawnDisc(cx, cy, radius, material = MAT.RIGID) { M.spawnDisc(ptr, cx, cy, radius, material); },
     getBodies() { return []; }, // render reads RIGID cells from the grid; bodies need no JS mirror
     bodyFootprintBlocked() { return 0; },
     getRigidDebug() { return { rejectedCells: M.rigidRejected(ptr), depenetrations: M.rigidDepen(ptr) }; },

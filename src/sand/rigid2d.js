@@ -11,10 +11,16 @@
 
 // Tunables (cells / ticks).
 const GRAVITY = 0.26;
-// Terminal speed is kept well below 1 cell/tick so a fast fall can't bury a body
-// several cells into another in a single step (deep penetration degrades the
-// contact and destabilises stacking); the solver then has slack to expel overlap.
-const MAX_SPEED = 0.72;
+// Terminal speed. A fall accelerates up to this, so a long drop visibly speeds up
+// rather than pinning at a low constant velocity. A single integration step must
+// still not move a body much past one cell or it tunnels through thin terrain and
+// buries into other bodies (the terrain probe only looks one cell ahead). So the
+// tick is split into substeps each advancing at most ~SAFE_SUBSTEP_DISP cell; the
+// substep count is adaptive, so slow / resting / stacked bodies run a single step
+// and behave exactly as before — only fast movers pay for the finer integration.
+const MAX_SPEED = 3.0;
+const SAFE_SUBSTEP_DISP = 0.6; // max cells a body should travel in one substep
+const MAX_SUBSTEPS = 6;        // ceiling on substeps per tick
 const RESTITUTION = 0;        // inelastic so bodies settle, don't bounce
 const FRICTION = 0.6;
 // Sequential-impulse iterations. Contact support propagates ~one body per iteration,
@@ -310,12 +316,35 @@ export function createRigidWorld({ cols, rows }) {
   // Advance the world one tick. `isSolidAt(x,y)` returns true for terrain the
   // bodies collide against (stone, settled sand, etc.); body cells must NOT be
   // reported solid here (the engine clears them before calling).
-  const step = (isSolidAt, fluidDensityAt = null, dt = 1) => {
+  const step = (isSolidAt, fluidDensityAt = null, tickDt = 1) => {
     const wp = [0, 0];
     const nrm = [0, 0];
     const n = bodies.length;
     const islandParent = new Int32Array(n);
     const islandMinStill = new Float64Array(n);
+
+    // Adaptive sub-stepping: a body may now reach several cells/tick, but each
+    // integration substep must stay under ~1 cell so the one-cell-ahead terrain
+    // probe still catches collisions (no tunneling). Size the substep count to the
+    // fastest awake body (plus the gravity it will gain); slow / resting bodies use
+    // a single step, leaving their contact + sleep behaviour byte-identical.
+    let maxSpeed2 = 0;
+    for (let bi = 0; bi < n; bi++) {
+      const b = bodies[bi];
+      if (!b.awake) continue;
+      const sp2 = b.vx * b.vx + b.vy * b.vy;
+      if (sp2 > maxSpeed2) maxSpeed2 = sp2;
+    }
+    const maxSpeed = Math.sqrt(maxSpeed2) + GRAVITY * tickDt;
+    const substeps = Math.max(1, Math.min(MAX_SUBSTEPS, Math.ceil(maxSpeed / SAFE_SUBSTEP_DISP)));
+
+    // Produced by the final substep, consumed by the island-sleep pass after the
+    // loop, so they are declared out here.
+    let contacts = [];
+    let nc = 0;
+
+    for (let sub = 0; sub < substeps; sub++) {
+      const dt = tickDt / substeps;
 
     // 1) Apply gravity to velocity (NOT position yet) and cache orientation + world
     // AABB at the current pose. Position integrates after the contact solve, so the
@@ -374,7 +403,7 @@ export function createRigidWorld({ cols, rows }) {
       b.idx = bi;
     }
 
-    const contacts = [];
+    contacts = [];
 
     // 2) Body-body contacts. Sampling every penetrating boundary point as its own
     // contact yields a noisy, asymmetric manifold that pumps rotation (stacked
@@ -527,7 +556,7 @@ export function createRigidWorld({ cols, rows }) {
     // alternates traversal direction: a fixed order biases the solver and injects a
     // steady same-sign torque that slowly tips resting bodies over; alternating
     // cancels it so a flat stack stays flat.
-    const nc = contacts.length;
+    nc = contacts.length;
     for (let it = 0; it < SOLVER_ITERS; it++) {
       if (it & 1) { for (let ci = nc - 1; ci >= 0; ci--) resolveContact(contacts[ci]); }
       else { for (let ci = 0; ci < nc; ci++) resolveContact(contacts[ci]); }
@@ -558,6 +587,7 @@ export function createRigidWorld({ cols, rows }) {
         b.stillTicks = 0;
       }
     }
+    } // end substep loop
 
     // 6) Island sleep. Union awake bodies joined by a contact, then sleep a whole
     // island only once EVERY member has been still long enough. Sleeping as a group

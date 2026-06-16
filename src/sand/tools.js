@@ -137,6 +137,21 @@ export function createTools(S) {
     registerStoneCells(cells, yMax);
   }
 
+  // Driftwood drafts like stone (hold to build, release to drop) and shares the
+  // stone draft buffer, but its cells are a plant-family component — so finalize
+  // writes DRIFTWOOD and lets the seeded-component scan adopt them.
+  function finalizeDriftwoodDraft() {
+    if (stoneDraft.size === 0) return;
+    const grid = S.grid;
+    for (const k of stoneDraft) {
+      if (grid[k] === EMPTY) {
+        grid[k] = MAT.DRIFTWOOD;
+        markCellIndex(k);
+      }
+    }
+    registerSeededComponents();
+  }
+
   function getSeedOrigin(cx, cy) {
     const x0 = Math.floor(cx - SEED_SIZE / 2);
     const y0 = Math.floor(cy - SEED_SIZE / 2);
@@ -264,6 +279,7 @@ export function createTools(S) {
   return {
     applyInitialScene,
     addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft, finalizeIceDraft,
+    finalizeDriftwoodDraft,
     getSeedOrigin, canPlaceSeedAt, placeSeedAt,
     paintDisc, eraseDisc, applyEmitters,
   };

@@ -232,7 +232,7 @@ export function createEngine({
   // Emitters (grid coords with timing)
   // Tools (brushes, drafts, seed, emitters, scene init) live in tools.js
   // (createTools); assigned at module wiring below.
-  let applyInitialScene, addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft,
+  let applyInitialScene, addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft, finalizeDriftwoodDraft,
     finalizeIceDraft, getSeedOrigin, canPlaceSeedAt, placeSeedAt, paintDisc, eraseDisc, applyEmitters;
   const markCellIndex = (k) => {
     const y = (k / cols) | 0;
@@ -1008,6 +1008,7 @@ export function createEngine({
   ({ applyReactions, applyAcid, applyLava, applyIce } = createReactions(S));
   ({ growPlantComponents } = createGrowth(S));
   ({ applyInitialScene, addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft, finalizeIceDraft,
+     finalizeDriftwoodDraft,
      getSeedOrigin, canPlaceSeedAt, placeSeedAt, paintDisc, eraseDisc, applyEmitters } = createTools(S));
 
   if (infinite) {
@@ -1055,6 +1056,7 @@ export function createEngine({
     placeSeedAt,
     addDiscToStoneDraft,
     finalizeStoneDraft,
+    finalizeDriftwoodDraft,
     clearStoneDraft() { stoneDraft.clear(); },
     getStoneDraftCells() { return stoneDraft; },
     addDiscToIceDraft,

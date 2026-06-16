@@ -74,7 +74,7 @@ function SandOverlay({ onDrawModeChange }) {
     const ACID_BRUSH_RADIUS = 2;
     const LAVA_BRUSH_RADIUS = 2;
     const ICE_BRUSH_RADIUS = 2;
-    const DRIFTWOOD_BRUSH_RADIUS = 2;
+    const DRIFTWOOD_BRUSH_RADIUS = 1; // small brush; drafts a shape, drops on release
     const ERASE_BRUSH_RADIUS = 3;
     const CUBE_HALF = 6; // half-extent of the rigid cube body (cells)
     const EMIT_INTERVAL_MS = 18;
@@ -96,6 +96,7 @@ function SandOverlay({ onDrawModeChange }) {
 
     // Colors
     const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
+    const DRIFTWOOD_PREVIEW_COLOR = 'rgba(140,125,110,0.45)';
     const ICE_PREVIEW_COLOR = 'rgba(150, 225, 240, 0.40)';
     const SEED_PREVIEW_COLOR = 'rgba(120, 190, 100, 0.32)';
     const colorLUT = makeColorLUT();
@@ -145,6 +146,9 @@ function SandOverlay({ onDrawModeChange }) {
     let isDraftingStone = false;
     let isDraftingSeed = false;
     let isDraftingIce = false;
+    // Driftwood reuses the stone draft buffer; this flag picks the smaller brush
+    // and the driftwood finalize on release.
+    let draftIsDriftwood = false;
     let seedDraftOrigin = null;
 
     // Pointer tracking
@@ -242,6 +246,7 @@ function SandOverlay({ onDrawModeChange }) {
       isDraftingStone = false;
       isDraftingSeed = false;
       isDraftingIce = false;
+      draftIsDriftwood = false;
       seedDraftOrigin = null;
 
       pixels.fill(0);
@@ -286,7 +291,7 @@ function SandOverlay({ onDrawModeChange }) {
       }
       if (!drawModeOnRef.current) return;
       if (isDraftingStone && inside) {
-        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
+        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingIce && inside) {
         if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
@@ -301,7 +306,7 @@ function SandOverlay({ onDrawModeChange }) {
       const t = e.touches[0];
       updatePointer(t.clientX, t.clientY);
       if (isDraftingStone && inside) {
-        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
+        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingIce && inside) {
         if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
@@ -327,7 +332,15 @@ function SandOverlay({ onDrawModeChange }) {
 
         if (activeTool === 'stone') {
           isDraftingStone = true;
-          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
+          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
+          e.preventDefault();
+          return;
+        }
+        if (activeTool === 'driftwood') {
+          // Hold-to-draft like stone, but dropped as driftwood on release.
+          isDraftingStone = true;
+          draftIsDriftwood = true;
+          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), DRIFTWOOD_BRUSH_RADIUS)) previewDirty = true;
           e.preventDefault();
           return;
         }
@@ -373,8 +386,10 @@ function SandOverlay({ onDrawModeChange }) {
       if (e.button === 0) {
         lmbDown = false;
         if (isDraftingStone) {
-          engine.finalizeStoneDraft();
+          if (draftIsDriftwood) engine.finalizeDriftwoodDraft();
+          else engine.finalizeStoneDraft();
           isDraftingStone = false;
+          draftIsDriftwood = false;
           engine.clearStoneDraft();
           previewDirty = true;
         }
@@ -460,8 +475,8 @@ function SandOverlay({ onDrawModeChange }) {
       const rmbHeld = overrideToolRef.current === 'eraser';
       const activeTool = rmbHeld ? 'eraser' : toolRef.current;
 
-      // Stone and ice: handled by draft logic, not here
-      if (activeTool === 'stone' || activeTool === 'ice') return;
+      // Stone, ice and driftwood: handled by draft logic, not here
+      if (activeTool === 'stone' || activeTool === 'ice' || activeTool === 'driftwood') return;
       if (!drawModeOnRef.current) return;
 
       // Paint only while LMB is down (or RMB for eraser)
@@ -469,7 +484,7 @@ function SandOverlay({ onDrawModeChange }) {
         rmbHeld ? true :
         activeTool === 'eraser' ? lmbDown :
         (activeTool === 'sand' || activeTool === 'water' || activeTool === 'oil' || activeTool === 'fire' ||
-         activeTool === 'acid' || activeTool === 'lava' || activeTool === 'driftwood') ? lmbDown : false;
+         activeTool === 'acid' || activeTool === 'lava') ? lmbDown : false;
 
       if (!shouldEmit) return;
       if (now - lastEmit < EMIT_INTERVAL_MS) return;
@@ -500,13 +515,6 @@ function SandOverlay({ onDrawModeChange }) {
       }
       if (activeTool === 'lava') {
         engine.paintDisc(cx, cy, LAVA_BRUSH_RADIUS, MAT.LAVA, false);
-        lastEmit = now; return;
-      }
-      if (activeTool === 'driftwood') {
-        // Rigid wood-like component: paint then adopt the cells into a component
-        // so they obey physics and stop flickering (see feed.js placeMaterial).
-        engine.paintDisc(cx, cy, DRIFTWOOD_BRUSH_RADIUS, MAT.DRIFTWOOD, false);
-        engine.syncComponents();
         lastEmit = now; return;
       }
       // sand
@@ -625,7 +633,7 @@ function SandOverlay({ onDrawModeChange }) {
 
       const stoneDraft = engine.getStoneDraftCells();
       if (stoneDraft.size > 0) {
-        previewCtx.fillStyle = STONE_PREVIEW_COLOR;
+        previewCtx.fillStyle = draftIsDriftwood ? DRIFTWOOD_PREVIEW_COLOR : STONE_PREVIEW_COLOR;
         const previewSize = cellSize;
         for (const k of stoneDraft) {
           const y = (k / cols) | 0;
@@ -723,7 +731,7 @@ function SandOverlay({ onDrawModeChange }) {
         }
 
         if (isDraftingStone && inside) {
-          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
+          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), draftIsDriftwood ? DRIFTWOOD_BRUSH_RADIUS : STONE_BRUSH_RADIUS)) previewDirty = true;
         }
         if (isDraftingIce && inside) {
           if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
@@ -808,7 +816,7 @@ function SandOverlay({ onDrawModeChange }) {
     },
     {
       id: 'driftwood',
-      title: 'Driftwood (hold LMB) — wood-like, does not grow',
+      title: 'Driftwood (hold to draft, release to drop) — wood-like, does not grow',
       activeClass: 'bg-stone-600/50 ring-stone-300/35 text-stone-100',
       idleClass: 'text-stone-400/80 bg-stone-400/10',
     },

@@ -408,8 +408,20 @@ function SandOverlay({ onDrawModeChange }) {
       a: [-1, 0], arrowleft: [-1, 0],
       d: [1, 0], arrowright: [1, 0],
     };
-    const isEditableTarget = (t) =>
-      !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+    // Only TEXT-entry controls should swallow the WASD/arrow keys. A checkbox or
+    // button (e.g. the tap/sink toggles) keeps focus after a click, so treating
+    // every <input> as editable would silently disable camera panning.
+    const TEXT_INPUT_TYPES = new Set([
+      'text', 'search', 'email', 'password', 'number', 'url', 'tel',
+    ]);
+    const isEditableTarget = (t) => {
+      if (!t) return false;
+      if (t.isContentEditable) return true;
+      const tag = t.tagName;
+      if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
+      if (tag === 'INPUT') return TEXT_INPUT_TYPES.has((t.type || 'text').toLowerCase());
+      return false;
+    };
 
     const onKeyDown = (e) => {
       if (isEditableTarget(e.target)) return;

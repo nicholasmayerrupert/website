@@ -41,6 +41,12 @@ const PENETRATION_SLOP = 0.5;
 // Velocity damping applied while a body is in contact, so the constant
 // positional correction can't sustain a perpetual rest jitter — a resting body
 // bleeds energy and reaches the sleep thresholds instead of buzzing forever.
+// Only applied once a body is already slow (within the SETTLE band below): damping
+// every contacting body every tick also throttled genuine motion, so a block
+// rolling off a ledge plateaued at a constant slow spin instead of accelerating
+// and an impact's imparted spin was bled away before it could tumble. Above the
+// band, active motion is left alone; friction + zero restitution still bring a
+// spinning body to rest, at which point it enters the band and damps into sleep.
 const CONTACT_LIN_DAMP = 0.9;
 const CONTACT_ANG_DAMP = 0.6;
 const LIQUID_DRAG = 0.12;
@@ -53,6 +59,10 @@ const LIQUID_ANG_DRAG = 0.1;
 // it actually falls, while a genuinely settled body (velocity ~0) still sleeps.
 const SLEEP_LIN = 0.007;      // |v| below which a body may sleep
 const SLEEP_ANG = 0.0045;     // |omega| below which a body may sleep
+// Contact damping only engages below these (a settling band above the sleep
+// thresholds): residual jitter is bled, but a body in active motion is not.
+const SETTLE_LIN = SLEEP_LIN * 8;
+const SETTLE_ANG = SLEEP_ANG * 8;
 const SLEEP_TICKS = 20;
 // A sleeping body is only woken by a body moving faster than this (a real impact).
 // Gentle resting contact leaves it asleep (treated as static), so a body settling
@@ -586,9 +596,14 @@ export function createRigidWorld({ cols, rows }) {
       b.py += (b.vy + b.pvy) * dt;
       b.angle += (b.omega + b.pw) * dt;
       if (!b.hadContact) { b.stillTicks = 0; continue; }
-      b.vx *= CONTACT_LIN_DAMP;
-      b.vy *= CONTACT_LIN_DAMP;
-      b.omega *= CONTACT_ANG_DAMP;
+      // Only bleed energy from a body that is already nearly at rest, so active
+      // rotation/translation can accelerate and impact spin survives, while
+      // settling jitter is still damped away into sleep.
+      if (b.vx * b.vx + b.vy * b.vy < SETTLE_LIN * SETTLE_LIN) {
+        b.vx *= CONTACT_LIN_DAMP;
+        b.vy *= CONTACT_LIN_DAMP;
+      }
+      if (b.omega * b.omega < SETTLE_ANG * SETTLE_ANG) b.omega *= CONTACT_ANG_DAMP;
       if (b.vx * b.vx + b.vy * b.vy < SLEEP_LIN * SLEEP_LIN &&
           b.omega * b.omega < SLEEP_ANG * SLEEP_ANG &&
           b.maxDepth <= REST_DEPTH) {

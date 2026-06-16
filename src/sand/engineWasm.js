@@ -14,6 +14,12 @@ export { MAT };
 export const CHUNK_SIZE = 32;
 export const SEED_SIZE = 2;
 
+// Player input bitmask — mirrors `enum PlayerInput` in cpp/engine/common.hpp.
+// Shared by the browser input layer and the network protocol.
+export const INPUT = Object.freeze({
+  LEFT: 1, RIGHT: 2, JUMP: 4, DOWN: 8, PRIMARY: 16, SECONDARY: 32, RUN: 64,
+});
+
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns
 
@@ -89,6 +95,13 @@ export function initSandWasm() {
         bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
         rigidRejected: c('engine_rigid_rejected', 'number', ['number']),
         rigidDepen: c('engine_rigid_depen', 'number', ['number']),
+        spawnPlayer: c('engine_spawn_player', 'number', ['number', 'number', 'number']),
+        removePlayer: c('engine_remove_player', null, ['number', 'number']),
+        setPlayerInput: c('engine_set_player_input', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        playerCount: c('engine_player_count', 'number', ['number']),
+        playerSnapshot: c('engine_player_snapshot', 'number', ['number']),
+        playerSnapshotPtr: c('engine_player_snapshot_ptr', 'number', ['number']),
+        playerSnapshotStride: c('engine_player_snapshot_stride', 'number', ['number']),
       };
       return M;
     });
@@ -227,6 +240,38 @@ export function createEngineWasm({
     getBodies() { return []; }, // render reads RIGID cells from the grid; bodies need no JS mirror
     bodyFootprintBlocked() { return 0; },
     getRigidDebug() { return { rejectedCells: M.rigidRejected(ptr), depenetrations: M.rigidDepen(ptr) }; },
+
+    // Players (Terraria-like characters; physics owned by the engine). JS only
+    // collects input and reads snapshots to draw the overlay.
+    spawnPlayer(x, y) { return M.spawnPlayer(ptr, x, y); },
+    removePlayer(id) { M.removePlayer(ptr, id); },
+    // input: { bits, aimX, aimY, tool, seq }
+    setPlayerInput(id, { bits = 0, aimX = 0, aimY = 0, tool = 0, seq = 0 } = {}) {
+      M.setPlayerInput(ptr, id, bits | 0, aimX, aimY, tool | 0, seq | 0);
+    },
+    playerCount() { return M.playerCount(ptr); },
+    // Rebuild + read the packed player snapshot zero-copy (re-derived: the build
+    // call may grow wasm memory). Returns an array of plain player objects.
+    getPlayers() {
+      const n = M.playerSnapshot(ptr);
+      if (!n) return [];
+      const stride = M.playerSnapshotStride(ptr);
+      const f = new Float32Array(mod.HEAPF32.buffer, M.playerSnapshotPtr(ptr), n * stride);
+      const out = new Array(n);
+      for (let i = 0; i < n; i++) {
+        const o = i * stride;
+        out[i] = {
+          id: f[o] | 0, active: f[o + 1] === 1,
+          x: f[o + 2], y: f[o + 3], vx: f[o + 4], vy: f[o + 5],
+          w: f[o + 6] | 0, h: f[o + 7] | 0, facing: f[o + 8] | 0,
+          grounded: f[o + 9] === 1, tool: f[o + 10] | 0,
+          aimX: f[o + 11], aimY: f[o + 12], health: f[o + 13] | 0,
+          inputSeq: f[o + 14] >>> 0, alive: f[o + 15] === 1,
+        };
+      }
+      return out;
+    },
+    getPlayer(id) { return this.getPlayers().find((p) => p.id === id) || null; },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },

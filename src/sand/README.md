@@ -44,14 +44,34 @@ source wasm/emenv.sh   # puts emcc on PATH (Emscripten SDK under ~/Nick/emsdk)
 wasm/build.sh          # regenerates src/sand/wasm/sandEngine.js
 ```
 
+## Players
+
+Terraria-like player characters are simulated **in C++** (`cpp/engine/player.inc`)
+and presented in JS. JS only collects a normalized input bitmask (`INPUT.*` in
+`engineWasm.js`, mirroring `enum PlayerInput`) plus an aim cell, forwards it with
+`setPlayerInput(id, {bits, aimX, aimY, tool, seq})`, and reads `getPlayers()`
+snapshots to draw an overlay. Physics is a deterministic fixed-timestep AABB
+platformer (gravity, run/friction, edge-triggered jump, sub-cell-stepped
+collision against any non-empty/non-liquid/non-gas cell). Players advance every
+`step()`, even when the grid is static, and stay world-anchored across streaming
+shifts. Determinism (no RNG) is what lets a fixed input stream replay identically
+— the basis for the planned host-authoritative multiplayer.
+
 ## Testing
 
 ```
-node scripts/sand-test.mjs
+npm run test          # sand + players + net protocol (headless, CI-friendly)
+npm run test:sand     # node scripts/sand-test.mjs
+npm run test:players  # node scripts/player-test.mjs
+npm run test:net      # node scripts/net-test.mjs
+npm run test:all      # npm run test && npm run build
 ```
 
-Runs the engine headlessly and checks conservation, rigid components, reactions,
-growth, free rigid bodies, and that edits survive a world shift.
+`sand-test` checks conservation, rigid components, reactions, growth, free rigid
+bodies, tool/pointer policy, and that edits survive a world shift. `player-test`
+covers spawn/snapshot, gravity, landing/grounded, thin-floor and wall collision,
+jump gating, run+friction, and fixed-input determinism. Shared helpers live in
+`scripts/sand-test-util.mjs`.
 
 ## Adding a material
 

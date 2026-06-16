@@ -143,6 +143,8 @@
       for (Body* b : bodies) { b->px -= dx; if (b->px > -b->maxR && b->px < cols + b->maxR) keep.push_back(b); else delete b; }
       bodies = std::move(keep);
     }
+    // keep players anchored to the world as the buffer slides under them.
+    for (auto& p : players) { p.px -= dx; p.aimX -= dx; }
 
     // 5) bring in the newly exposed band: restore it if we've stored it before,
     //    else generate. Advance the offset and restore its saved bodies.

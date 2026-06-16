@@ -87,4 +87,13 @@ EMSCRIPTEN_KEEPALIVE int engine_body_blocked(Engine* e, int i) { return (i >= 0 
 EMSCRIPTEN_KEEPALIVE int engine_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->bodies.size()) ? (e->bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_rigid_rejected(Engine* e) { return e->rigidRejectedCells; }
 EMSCRIPTEN_KEEPALIVE int engine_rigid_depen(Engine* e) { return e->rigidDepenetrations; }
+
+// players (Terraria-like characters; physics in player.inc)
+EMSCRIPTEN_KEEPALIVE int engine_spawn_player(Engine* e, double x, double y) { return e->spawnPlayer(x, y); }
+EMSCRIPTEN_KEEPALIVE void engine_remove_player(Engine* e, int id) { e->removePlayer(id); }
+EMSCRIPTEN_KEEPALIVE void engine_set_player_input(Engine* e, int id, int inputBits, double aimX, double aimY, int selectedTool, int seq) { e->setPlayerInput(id, inputBits, aimX, aimY, selectedTool, (uint32_t)seq); }
+EMSCRIPTEN_KEEPALIVE int engine_player_count(Engine* e) { return (int)e->players.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->buildPlayerSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->playerSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_player_snapshot_stride(Engine* e) { return PLAYER_SNAP_STRIDE; }
 } // extern "C"

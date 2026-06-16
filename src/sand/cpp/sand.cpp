@@ -33,6 +33,7 @@ struct Engine {
 #include "engine/worldgen.inc"
 #include "engine/rigid.inc"
 #include "engine/render.inc"
+#include "engine/player.inc"
 };
 
 // Out-of-line definitions of the Engine static constants.

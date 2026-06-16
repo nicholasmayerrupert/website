@@ -40,6 +40,10 @@
   bool draftingStone = false, draftingIce = false, draftingSeed = false, draftIsDriftwood = false;
   bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
   double lastEmitMs = -1e9;
+  // ---- players (Terraria-like characters; physics in player.inc) ----
+  std::vector<Player> players;
+  int nextPlayerId = 1;
+  std::vector<float> playerSnapshot; // packed [PLAYER_SNAP_STRIDE] floats per player
   // Renderer (material -> RGBA). Owns its pixel buffer and grain tables. Uses a
   // SEPARATE rng so per-frame fire/steam flicker never perturbs the simulation.
   std::vector<uint8_t> renderPixels;  // cols*rows*4, RGBA (little-endian over uint32)

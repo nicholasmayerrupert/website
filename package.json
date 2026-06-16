@@ -9,7 +9,13 @@
     "generate:check": "node scripts/generate-materials.mjs --check",
     "build": "node scripts/generate-materials.mjs --check && vite build",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "test:sand": "node scripts/sand-test.mjs",
+    "test:players": "node scripts/player-test.mjs",
+    "test:net": "node scripts/net-test.mjs",
+    "test:e2e": "playwright test",
+    "test": "npm run test:sand && npm run test:players && npm run test:net",
+    "test:all": "npm run test && npm run build"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

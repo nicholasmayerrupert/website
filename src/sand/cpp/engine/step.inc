@@ -1,6 +1,10 @@
   // ---- step ----
   bool step() {
-    if (!beginStepDirty()) return false;
+    // Players advance every step at a fixed timestep, even when the grid is
+    // static (so a standing/idle world still moves characters). Player physics
+    // reads the current grid for collision; tool edits happen via applyTool.
+    updatePlayers();
+    if (!beginStepDirty()) return !players.empty();
     double t0 = emscripten_get_now();
     tick++;
     computeGrounded();

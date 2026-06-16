@@ -102,6 +102,38 @@ struct Body {
 };
 struct Contact { Body* a; Body* b; double rax, ray, rbx, rby, nx, ny, depth, accJn, accJt, accBias; };
 
+// ---- Player (Terraria-like character; simulated in C++, presented in JS) ----
+// Input is a normalized bitmask supplied by JS/network each step. Physics is
+// fully deterministic (no RNG) and runs at a fixed per-step timestep so a fixed
+// input stream replays identically — the foundation for multiplayer.
+enum PlayerInput : int {
+  PI_LEFT = 1, PI_RIGHT = 2, PI_JUMP = 4, PI_DOWN = 8,
+  PI_PRIMARY = 16, PI_SECONDARY = 32, PI_RUN = 64
+};
+// Player physics tunables (cells; velocities in cells per fixed step).
+static const int    PLAYER_W = 4, PLAYER_H = 8;
+static const double P_GRAVITY = 0.25, P_MAX_FALL = 6.0;
+static const double P_MOVE_ACCEL = 0.6, P_MAX_RUN = 1.6, P_RUN_MULT = 1.7;
+static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.8;
+static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
+struct Player {
+  int id = 0;
+  bool active = true, alive = true;
+  double px = 0, py = 0;   // AABB top-left, cell coords (world-local to the buffer)
+  double vx = 0, vy = 0;   // cells per step (+y is down, matching the grid)
+  int w = PLAYER_W, h = PLAYER_H;
+  int facing = 1;          // +1 right, -1 left
+  bool grounded = false;
+  int selectedTool = T_ERASER;
+  double aimX = 0, aimY = 0; // cell coords of the aim/cursor
+  int input = 0, prevInput = 0;
+  uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
+  int health = 100;
+  double lastActionMs = -1e9; // tool-use cooldown clock (Phase 3)
+};
+// Player snapshot layout (float32 per field) shared with JS and the net layer.
+static const int PLAYER_SNAP_STRIDE = 16;
+
 // Rigid tunables (rigid2d.js)
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.6;
 static const int    R_MAX_SUBSTEPS = 6, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;

@@ -129,7 +129,7 @@ function SandOverlay({ onDrawModeChange }) {
     let cols = 0, rows = 0, cellSize = CELL_PX;
     let viewCols = 0, viewRows = 0;
     const camera = createCamera();
-    let lastCamCol = -1, lastCamRow = -1; // detect camera movement to force a redraw
+    let lastCamX = NaN, lastCamY = NaN; // detect camera movement (incl. sub-cell) to redraw
     const pressedKeys = new Set();         // held WASD/arrow keys for panning
     let viewWidth = 0, viewHeight = 0;
     let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
@@ -243,8 +243,8 @@ function SandOverlay({ onDrawModeChange }) {
       const spawnWorldX = engine.getWorldOffsetX() + Math.floor(cols / 2);
       const spawnRow = engine.worldSurfaceAt(spawnWorldX);
       camera.set((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
-      lastCamCol = -1;
-      lastCamRow = -1;
+      lastCamX = NaN;
+      lastCamY = NaN;
       isDraftingStone = false;
       isDraftingSeed = false;
       isDraftingIce = false;
@@ -270,8 +270,8 @@ function SandOverlay({ onDrawModeChange }) {
       py = cy - wrapBounds.top;
     };
     // Screen pixel (canvas-relative) -> buffer cell, through the camera offset.
-    const toCellX = () => camera.colX + Math.floor(px / cellSize);
-    const toCellY = () => camera.colY + Math.floor(py / cellSize);
+    const toCellX = () => Math.floor(camera.x + px / cellSize);
+    const toCellY = () => Math.floor(camera.y + py / cellSize);
     const updateSeedDraft = () => {
       const prevX = seedDraftOrigin ? seedDraftOrigin[0] : null;
       const prevY = seedDraftOrigin ? seedDraftOrigin[1] : null;
@@ -535,13 +535,17 @@ function SandOverlay({ onDrawModeChange }) {
 
       // Visible buffer-cell window under the camera. Nothing outside it is ever
       // filled or blitted — that's the viewport culling. A buffer cell (bx,by)
-      // maps to canvas pixels ((bx-camCol)*cellSize, (by-camRow)*cellSize).
-      const camCol = camera.colX;
-      const camRow = camera.colY;
+      // maps to canvas pixels ((bx-camCol)*cellSize, (by-camRow)*cellSize), and a
+      // fractional canvas translate below shifts everything by the sub-cell
+      // remainder so panning is smooth rather than snapping cell-to-cell.
+      const camCol = Math.floor(camera.x);
+      const camRow = Math.floor(camera.y);
+      const offX = -(camera.x - camCol) * cellSize; // sub-cell shift, (-cellSize, 0]
+      const offY = -(camera.y - camRow) * cellSize;
       const visX0 = camCol;
       const visY0 = camRow;
-      const visX1 = Math.min(cols - 1, camCol + viewCols);
-      const visY1 = Math.min(rows - 1, camRow + viewRows);
+      const visX1 = Math.min(cols - 1, camCol + viewCols + 1); // +1 covers the shift
+      const visY1 = Math.min(rows - 1, camRow + viewRows + 1);
 
       const clearCellGutters = (x0, y0, x1, y1) => {
         const destX = (x0 - camCol) * cellSize;
@@ -566,16 +570,20 @@ function SandOverlay({ onDrawModeChange }) {
         clearCellGutters(x0, y0, x1, y1);
       };
 
-      // Panning shifts everything on screen, so a moved camera forces a full
-      // (visible-window) redraw rather than relying on per-cell dirty chunks.
-      const camMoved = camCol !== lastCamCol || camRow !== lastCamRow;
+      // Panning shifts everything on screen, so a moved camera (even by a sub-cell
+      // fraction) forces a full (visible-window) redraw rather than per-cell chunks.
+      const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
       const shouldFullRender =
         full ||
         forceFullRender ||
         camMoved ||
         dirtyRenderCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO;
+      // Apply the sub-cell offset for this frame; cells/gutter/blits all draw in
+      // whole-cell coords and ride this translate. Cleared/reset around the draw.
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      if (shouldFullRender) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(1, 0, 0, 1, offX, offY);
       if (shouldFullRender) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (visX1 >= visX0 && visY1 >= visY0) blit(visX0, visY0, visX1, visY1);
         forceFullRender = false;
       } else {
@@ -609,16 +617,22 @@ function SandOverlay({ onDrawModeChange }) {
           }
         }
       }
-      lastCamCol = camCol;
-      lastCamRow = camRow;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset so other passes draw in screen space
+      lastCamX = camera.x;
+      lastCamY = camera.y;
       engine.clearRenderDirty();
       perfRenderMs = performance.now() - renderStart;
     };
 
     const renderPreview = () => {
       if (!engine || !previewDirty) return;
+      previewCtx.setTransform(1, 0, 0, 1, 0, 0);
       previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
       previewVisible = false;
+      // Match the main canvas's sub-cell camera offset so drafts align with cells.
+      const camCol = Math.floor(camera.x);
+      const camRow = Math.floor(camera.y);
+      previewCtx.setTransform(1, 0, 0, 1, -(camera.x - camCol) * cellSize, -(camera.y - camRow) * cellSize);
 
       const stoneDraft = engine.getStoneDraftCells();
       if (stoneDraft.size > 0) {
@@ -656,6 +670,7 @@ function SandOverlay({ onDrawModeChange }) {
         }
         previewVisible = true;
       }
+      previewCtx.setTransform(1, 0, 0, 1, 0, 0);
       previewDirty = false;
     };
 
@@ -732,7 +747,7 @@ function SandOverlay({ onDrawModeChange }) {
         engine.setEmittersOn(emittersOnRef.current);
         engine.setSinksOn(sinksOnRef.current);
         const didStep = engine.step(now);
-        const camMoved = camera.colX !== lastCamCol || camera.colY !== lastCamRow;
+        const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
         if (didStep || camMoved) render(false);
         if (previewDirty || previewVisible) renderPreview();
         if (didStep) {

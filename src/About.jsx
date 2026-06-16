@@ -15,21 +15,15 @@ function SandOverlay({ onDrawModeChange }) {
   // UI state
   const [selectedTool, setSelectedTool] = useState('cube'); // 'sand' | 'water' | 'stone' | 'oil' | 'fire' | 'seed' | 'driftwood' | 'acid' | 'lava' | 'ice' | 'cube' | 'eraser'
   const [toolPickerOpen, setToolPickerOpen] = useState(false);
-  const [emittersOn, setEmittersOn] = useState(true);
-  const [sinksOn, setSinksOn] = useState(true);
   const [uiAtBottom, setUiAtBottom] = useState(false); // auto-place toolbar when cramped
   const [drawModeOn, setDrawModeOn] = useState(false);
 
   // Refs read by the simulation loop
   const toolRef = useRef('sand');
-  const emittersOnRef = useRef(true);
-  const sinksOnRef = useRef(true);
   const drawModeOnRef = useRef(false);
   const overrideToolRef = useRef(null); // 'eraser' while RMB held
 
   useEffect(() => { toolRef.current = selectedTool; }, [selectedTool]);
-  useEffect(() => { emittersOnRef.current = emittersOn; }, [emittersOn]);
-  useEffect(() => { sinksOnRef.current = sinksOn; }, [sinksOn]);
   useEffect(() => {
     drawModeOnRef.current = drawModeOn;
     onDrawModeChange?.(drawModeOn);
@@ -234,8 +228,8 @@ function SandOverlay({ onDrawModeChange }) {
         rows,
         infinite: true,
         worldSeed,
-        emittersOn: emittersOnRef.current,
-        sinksOn: sinksOnRef.current,
+        emittersOn: false, // taps/sinks are obsolete in the streaming world
+        sinksOn: false,
       });
       // Camera spans the buffer minus the visible window. Start centered
       // horizontally and just above the surface so the spawn view shows ground.
@@ -418,8 +412,8 @@ function SandOverlay({ onDrawModeChange }) {
       d: [1, 0], arrowright: [1, 0],
     };
     // Only TEXT-entry controls should swallow the WASD/arrow keys. A checkbox or
-    // button (e.g. the tap/sink toggles) keeps focus after a click, so treating
-    // every <input> as editable would silently disable camera panning.
+    // button keeps focus after a click, so treating every <input> as editable
+    // would silently disable camera panning.
     const TEXT_INPUT_TYPES = new Set([
       'text', 'search', 'email', 'password', 'number', 'url', 'tel',
     ]);
@@ -441,11 +435,6 @@ function SandOverlay({ onDrawModeChange }) {
         e.preventDefault(); // keep arrow keys from scrolling the page while panning
         return;
       }
-      if (e.repeat) return;
-      if (key === 'e') {
-        setEmittersOn(v => { emittersOnRef.current = !v; return !v; });
-      }
-      // Sinks toggle now lives on the toolbar only — 's' pans the camera down.
     };
     const onKeyUp = (e) => {
       const key = e.key.toLowerCase();
@@ -744,8 +733,6 @@ function SandOverlay({ onDrawModeChange }) {
         }
 
         emitAtPointer(now);
-        engine.setEmittersOn(emittersOnRef.current);
-        engine.setSinksOn(sinksOnRef.current);
         const didStep = engine.step(now);
         const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
         if (didStep || camMoved) render(false);
@@ -1051,28 +1038,6 @@ return (
               })}
             </div>
           )}
-        </div>
-
-        {/* Toggles */}
-        <div className={`flex ${uiAtBottom ? 'flex-row justify-center' : 'flex-col'} gap-2 ${uiAtBottom ? 'w-full' : ''}`}>
-          <label className={`flex items-center gap-2 text-xs text-gray-200 ${uiAtBottom ? '' : 'mt-1'}`}>
-            <input
-              type="checkbox"
-              className="accent-yellow-400"
-              checked={emittersOn}
-              onChange={() => setEmittersOn(v => !v)}
-            />
-            Taps
-          </label>
-          <label className="flex items-center gap-2 text-xs text-gray-200">
-            <input
-              type="checkbox"
-              className="accent-blue-400"
-              checked={sinksOn}
-              onChange={() => setSinksOn(v => !v)}
-            />
-            Sinks
-          </label>
         </div>
 
         <button

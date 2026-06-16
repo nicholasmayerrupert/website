@@ -59,6 +59,10 @@ export function initSandWasm() {
         getSeedOrigin: c('engine_get_seed_origin', 'number', ['number', 'number', 'number', 'number']),
         canPlaceSeed: c('engine_can_place_seed', 'number', ['number', 'number', 'number']),
         placeSeed: c('engine_place_seed', 'number', ['number', 'number', 'number']),
+        spawnBody: c('engine_spawn_body', null, ['number', 'number', 'number']),
+        bodyCount: c('engine_body_count', 'number', ['number']),
+        bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
+        bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
       };
       return M;
     });
@@ -145,10 +149,23 @@ export function createEngineWasm({
     worldSurfaceAt(worldX) { return M.worldSurfaceAt(ptr, worldX); },
     shiftWorld(dx) { M.shiftWorld(ptr, dx); },
 
-    // --- Stubs until Stage 4 free rigid bodies (host must not crash) ---
-    spawnBody() { return null; },
-    getBodies() { return []; },
+    // Free rigid bodies (Stage 4)
+    spawnBody(cells) {
+      const nn = cells.length;
+      if (!nn) return null;
+      const buf = mod._malloc(nn * 8);
+      const base = buf >> 2;
+      for (let i = 0; i < nn; i++) { mod.HEAP32[base + i * 2] = cells[i][0]; mod.HEAP32[base + i * 2 + 1] = cells[i][1]; }
+      M.spawnBody(ptr, buf, nn);
+      mod._free(buf);
+      return {}; // opaque handle; the engine owns the body
+    },
+    getBodies() { return []; }, // render reads RIGID cells from the grid; bodies need no JS mirror
     bodyFootprintBlocked() { return 0; },
     getRigidDebug() { return { rejectedCells: 0, depenetrations: 0 }; },
+    // test hooks
+    _bodyCount() { return M.bodyCount(ptr); },
+    _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },
+    _bodyAwake(i) { return M.bodyAwake(ptr, i); },
   };
 }

@@ -37,8 +37,12 @@ zero-copy `HEAPU8` view); `initSandWasm()` must resolve once first.
 Opt in at runtime with `?engine=wasm` (the React wrapper awaits init then injects
 `createEngineWasm` into `createSandGame`); the JS engine remains the default and
 fallback. Parity is behavioral, not bit-identical — verify with
-`node scripts/wasm-parity.mjs`. Free rigid bodies (cube tool) are not yet ported
-to C++, so they no-op under the WASM engine. Worldgen is byte-identical to JS.
+`node scripts/wasm-parity.mjs` (CA / components / reactions / growth) and
+`node scripts/wasm-rigid.mjs` (free rigid bodies). The full engine is ported —
+CA, components, reactions, growth, tools, free rigid bodies (rigid2d), and
+streaming worldgen (byte-identical to JS). Not yet ported: chunk-store
+persistence of player edits across world shifts (terrain still regenerates
+deterministically) and hand-authored fixed scenes (infinite mode only).
 
 ## Adding a material
 

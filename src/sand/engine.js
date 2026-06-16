@@ -349,8 +349,10 @@ export function createEngine({
       (y < rows - 1 && grid[k + cols] === EMPTY)
     );
   };
-  const isLiquid = (material) =>
-    material === WATER || material === OIL || material === ACID || material === LAVA;
+  // Derived from the registry kind so a new LIQUID/GAS material is recognized by
+  // the physics helpers automatically (same membership as the old hardcoded
+  // lists: WATER/OIL/ACID/LAVA are LIQUID, FIRE/STEAM are GAS).
+  const isLiquid = (material) => MAT_KIND[material] === K_LIQUID;
   const isFlammable = (material) => material === OIL || isPlantMaterial(material);
   const writeGridIndex = (k, material) => {
     if (grid[k] === material) return;
@@ -381,7 +383,7 @@ export function createEngine({
       markCellIndex(k);
     }
   };
-  const isGas = (material) => material === FIRE || material === STEAM;
+  const isGas = (material) => MAT_KIND[material] === K_GAS;
   const canDisplaceMaterial = (material, displaced) => {
     if (isGas(displaced)) return true;
     return canDisplaceByLooseDensity(material, displaced);

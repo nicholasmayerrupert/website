@@ -1,7 +1,7 @@
 # Personal website
 
 My portfolio site, built with React and Vite. The Skills/About section has an
-interactive falling-sand physics toy you can draw into — that engine lives in
+interactive falling-sand physics toy you can draw into, that engine lives in
 [`src/sand`](src/sand) and runs in WebAssembly.
 
 ## Running it
@@ -21,4 +21,4 @@ npm run deploy   # build and deploy to Cloudflare
   runtime and UI. See its [README](src/sand/README.md) to work on it.
 - `scripts/` — helper scripts (the headless sand test, art preview rendering).
 
-That's it — nothing fancy.
+

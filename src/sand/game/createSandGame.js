@@ -10,23 +10,19 @@
 //   game.setDrawMode(true);
 //   game.destroy();
 //
-// The React component in ../react/SandGame.jsx is a thin wrapper over this; the
-// engine itself lives in ../engine.js and is already DOM-free.
+// The React component in ../react/SandGame.jsx is a thin wrapper over this. The
+// simulation runs in the WebAssembly engine (../engineWasm.js); initSandWasm()
+// must have resolved before createSandGame() is called.
 
-import { createEngine, MAT, CHUNK_SIZE, SEED_SIZE } from '../engine';
+import { createEngineWasm, MAT, CHUNK_SIZE, SEED_SIZE } from '../engineWasm';
 import { makeColorLUT, makeTexture, fillPixelSpan } from '../renderCore';
-import { getScene } from '../scenes';
 import { createCamera } from '../camera';
 
 export function createSandGame(container, opts = {}) {
   const {
     initialTool = 'cube',
-    sceneKey: sceneKeyOpt,
     onLayoutChange,
     reducedMotion,
-    // Engine factory (createEngine-shaped). Defaults to the JS engine; the React
-    // wrapper can inject the WASM engine (createEngineWasm) after its async init.
-    engineFactory = createEngine,
   } = opts;
 
   // --- Host canvases (created and owned here) ---
@@ -55,19 +51,10 @@ export function createSandGame(container, opts = {}) {
   let drawModeOn = false;
   let overrideTool = null; // 'eraser' while RMB held
 
-  // Pick the initial world. Defaults to the procedural landscape; `?scene=castle`
-  // (or any registered key) overrides without rebuilding the UI.
-  const sceneKey =
-    sceneKeyOpt !== undefined
-      ? sceneKeyOpt
-      : typeof window !== 'undefined'
-      ? new URLSearchParams(window.location.search).get('scene')
-      : null;
-  const selectedScene = getScene(sceneKey);
   // One seed per mount so resizing regenerates the *same* infinite world.
   const worldSeed = (Math.random() * 4294967296) >>> 0;
 
-  // ---- Tunables (render/UI side; physics tunables live in ../engine.js) ----
+  // ---- Tunables (render/UI side; physics tunables live in the C++ engine) ----
   const CELL_PX = 4;
   // Cap the simulation cell count so very large viewports (e.g. 1440p/4K
   // monitors) don't blow the per-step CPU budget on slow processors; cells
@@ -134,7 +121,6 @@ export function createSandGame(container, opts = {}) {
   const camera = createCamera();
   let lastCamX = NaN, lastCamY = NaN; // detect camera movement (incl. sub-cell) to redraw
   const pressedKeys = new Set();         // held WASD/arrow keys for panning
-  let viewWidth = 0, viewHeight = 0;
   let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
   let imageData = null;
   let pixels = new Uint32Array(0);
@@ -181,8 +167,6 @@ export function createSandGame(container, opts = {}) {
 
   const refreshBounds = () => {
     const rect = container.getBoundingClientRect();
-    viewWidth = rect.width;
-    viewHeight = rect.height;
     wrapBounds = {
       left: rect.left,
       right: rect.right,
@@ -240,7 +224,7 @@ export function createSandGame(container, opts = {}) {
     pixels = new Uint32Array(imageData.data.buffer);
 
     if (engine && engine.destroy) engine.destroy(); // free a prior (e.g. WASM) engine on resize
-    engine = engineFactory({
+    engine = createEngineWasm({
       cols,
       rows,
       infinite: true,

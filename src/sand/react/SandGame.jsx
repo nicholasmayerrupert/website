@@ -11,7 +11,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { createSandGame } from '../game/createSandGame';
-import { initSandWasm, createEngineWasm } from '../engineWasm';
+import { initSandWasm } from '../engineWasm';
 import { ToolPalette } from './ToolPalette';
 
 export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
@@ -29,33 +29,24 @@ export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
     if (window.matchMedia('(pointer: coarse)').matches) setDrawModeOn(false);
   }, []);
 
-  // Mount the runtime once. `onLayoutChange` may fire (from the ResizeObserver)
-  // before React paints, so the setter must tolerate being called early.
+  // Mount the runtime once, after the WASM engine has loaded. `onLayoutChange`
+  // may fire (from the ResizeObserver) before React paints, so the setter must
+  // tolerate being called early.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
     let game = null;
     let cancelled = false;
-    const boot = (engineFactory) => {
-      if (cancelled || !containerRef.current) return;
-      game = createSandGame(container, {
-        initialTool,
-        engineFactory,
-        onLayoutChange: ({ uiAtBottom: b }) => setUiAtBottom(b),
-      });
-      gameRef.current = game;
-    };
-    // The C++/WASM engine is the default; opt into the legacy JS engine with ?engine=js.
-    const useWasm =
-      typeof window === 'undefined' ||
-      new URLSearchParams(window.location.search).get('engine') !== 'js';
-    if (useWasm) {
-      initSandWasm()
-        .then(() => boot(createEngineWasm))
-        .catch((e) => { console.error('WASM sand engine failed to init; staying blank', e); });
-    } else {
-      boot(undefined); // default JS engine
-    }
+    initSandWasm()
+      .then(() => {
+        if (cancelled || !containerRef.current) return;
+        game = createSandGame(container, {
+          initialTool,
+          onLayoutChange: ({ uiAtBottom: b }) => setUiAtBottom(b),
+        });
+        gameRef.current = game;
+      })
+      .catch((e) => { console.error('sand engine failed to init; staying blank', e); });
     return () => {
       cancelled = true;
       if (game) game.destroy();

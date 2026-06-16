@@ -1,14 +1,11 @@
-// Drop-in WebAssembly engine: same public shape as createEngine() in engine.js,
-// backed by the C++ core in cpp/sand.cpp (compiled to wasm/sandEngine.js).
+// The falling-sand engine, backed by the C++ core in cpp/sand.cpp (compiled to
+// wasm/sandEngine.js). createEngineWasm() returns the simulation handle the game
+// runtime drives.
 //
-// The wasm module is instantiated ONCE via initSandWasm(); createEngineWasm()
-// is then synchronous. The grid lives in wasm linear memory and is handed to JS
+// The wasm module is instantiated ONCE via initSandWasm(); createEngineWasm() is
+// then synchronous. The grid lives in wasm linear memory and is handed to JS
 // zero-copy as a HEAPU8 subarray (re-derived each call: the grid pointer swaps
 // every step and the heap can move on growth).
-//
-// STAGE 1: core CA + paint/erase for non-component materials. Component drafts,
-// seeds, rigid bodies, reactions, growth, and streaming are stubbed until the
-// matching C++ stage lands (so the host never crashes), and clearly marked.
 
 import createSandModule from './wasm/sandEngine.js';
 import { MAT } from './materials.js';

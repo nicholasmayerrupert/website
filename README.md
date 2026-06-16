@@ -1,8 +1,24 @@
-# React + Vite
+# Personal website
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+My portfolio site, built with React and Vite. The Skills/About section has an
+interactive falling-sand physics toy you can draw into — that engine lives in
+[`src/sand`](src/sand) and runs in WebAssembly.
 
-Currently, two official plugins are available:
+## Running it
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```
+npm install
+npm run dev      # local dev server
+npm run build    # production build into dist/
+npm run deploy   # build and deploy to Cloudflare
+```
+
+## Layout
+
+- `src/` — the React app. `App.jsx` wires up the pages and each section
+  (`Hero`, `About`, `Contact`, …) is its own component.
+- `src/sand/` — the sand game: a C++/WebAssembly simulation plus the JavaScript
+  runtime and UI. See its [README](src/sand/README.md) to work on it.
+- `scripts/` — helper scripts (the headless sand test, art preview rendering).
+
+That's it — nothing fancy.

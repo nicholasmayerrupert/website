@@ -366,6 +366,24 @@
     forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; uint8_t m = grid[k]; if (m == RIGID && bodyOwner[k] == b->id) return; if (!canBodyOccupy(m, k)) blocked++; });
     return blocked;
   }
+  // A sleeping body keeps its support if nudging it straight down by `probe`
+  // cells makes its footprint overlap solid terrain or another body. If nothing
+  // is there, its ground crumbled away (erased/dissolved/sand drained) and it
+  // must wake and fall. Must be called while the bodies' cells are still in the
+  // grid (so other bodies count as support); the body's own cells are ignored.
+  bool sleepingBodyHasSupport(Body* b, double probe) {
+    double savedPy = b->py;
+    b->py = savedPy + probe;
+    bool supported = false;
+    forEachBodyCell(b, [&](int x, int y) {
+      if (supported) return;
+      int k = y * cols + x; uint8_t m = grid[k];
+      if (m == RIGID) { if (bodyOwner[k] != b->id) supported = true; return; }
+      if (!canBodyOccupy(m, k)) supported = true; // solid terrain / grounded sand
+    });
+    b->py = savedPy;
+    return supported;
+  }
   int bodyDepenTolerance(Body* b) { return imax(1, (int)std::floor(imin(b->w, b->h) * 0.34)); }
   bool depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre) {
     int tol = bodyDepenTolerance(b);
@@ -390,6 +408,11 @@
   void moveBodies() {
     if (bodies.empty() && bodyCells.empty()) return;
     computeGrounded();
+    // Wake any sleeping body whose support crumbled away since it slept, so it
+    // falls instead of floating. Checked before the grid cells are cleared so
+    // other bodies still count as support; body-on-body stacks cascade (the
+    // bottom body wakes and moves, then the contact solver wakes those above).
+    for (Body* b : bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
     for (int k : bodyCells) { if (grid[k] == RIGID) writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
     std::unordered_map<int, std::pair<double, double>> prePoses;
     for (Body* b : bodies) prePoses[b->id] = {b->px, b->py};

@@ -175,5 +175,26 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 9. a sleeping body must wake and fall when the ground beneath it is removed.
+{
+  console.log('wake on support removal');
+  const e = mk({ infinite: false });
+  const bodyBottom = (g) => { let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === 13) { const y = (i / COLS) | 0; if (y > b) b = y; } return b; };
+  // GROUNDED stone block (reaches the floor, so it doesn't fall) + a box on top.
+  for (let x = 80; x < 120; x++) for (let y = 60; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.spawnBox(100, 54, 4, 4);
+  run(400, e); // settle on the block and fall asleep
+  const asleep = e._bodyAwake(0) === 0;
+  const restY = bodyBottom(e.getGrid());
+  check(`body came to rest and slept (bottom ${restY}, asleep ${asleep})`, asleep && restY >= 55 && restY < 65);
+  // dig a deep pit directly beneath the body (leaves the body's own cells alone)
+  for (let x = 90; x < 110; x++) for (let y = restY + 1; y < restY + 28; y++) e.eraseDisc(x, y, 0);
+  run(120, e);
+  const fellY = bodyBottom(e.getGrid());
+  check(`body woke and fell into the pit (${restY} -> ${fellY})`, fellY > restY + 18);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

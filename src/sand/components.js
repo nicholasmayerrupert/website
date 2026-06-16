@@ -52,21 +52,15 @@ export function createComponents(S) {
     indexComps(S.iceComponents);
 
     let sp = 0;
-    const groundComp = (id) => {
-      const c = comps[id];
-      if (c.grounded) return;
-      c.grounded = true;
-      for (const k of c.cells) {
-        if (!groundedCell[k]) { groundedCell[k] = 1; groundStack[sp++] = k; }
-      }
-    };
-    const groundCellAt = (k, m) => {
+    // Mark a cell grounded, flag its owning component grounded, and queue it. The
+    // component flag is what moveRigidAssemblies reads, so it must be set as cells
+    // ground rather than relying on whole-component grounding (which would miss
+    // rigid coupling across component boundaries once stone is chunk-partitioned).
+    const groundCellAt = (k) => {
       if (groundedCell[k]) return;
-      if (isRigidMaterial(m)) {
-        const id = cellComp[k];
-        if (id >= 0) { groundComp(id); return; }
-      }
       groundedCell[k] = 1;
+      const id = cellComp[k];
+      if (id >= 0) comps[id].grounded = true;
       groundStack[sp++] = k;
     };
 
@@ -74,8 +68,7 @@ export function createComponents(S) {
     const floorBase = (rows - 1) * cols;
     for (let x = 0; x < cols; x++) {
       const k = floorBase + x;
-      const m = grid[k];
-      if (isBearingMaterial(m)) groundCellAt(k, m);
+      if (isBearingMaterial(grid[k])) groundCellAt(k);
     }
     // Viscous lava can carry a settled sand crust. Seed those sand cells as
     // grounded so rigid bodies rest on the crust instead of treating it as loose.
@@ -83,16 +76,36 @@ export function createComponents(S) {
       const rowBase = y * cols;
       for (let x = 1; x < cols - 1; x++) {
         const k = rowBase + x;
-        if (grid[k] === SAND && grid[k + cols] === LAVA) groundCellAt(k, SAND);
+        if (grid[k] === SAND && grid[k + cols] === LAVA) groundCellAt(k);
       }
     }
-    // Propagate upward: the cell resting on a grounded cell becomes grounded.
+    // Propagate to a fixpoint. Two coupling rules, applied per grounded cell:
+    //  - anything bearing resting directly ON it (above) is supported (covers
+    //    sand columns and material stacked on rigid);
+    //  - rigid coupling: a grounded rigid cell holds every rigid cell it touches
+    //    (8-connected, all directions), so overhangs and cave roofs bridged to
+    //    grounded walls stay up regardless of how the stone is split into
+    //    components. This replaces the old whole-component grounding.
     while (sp > 0) {
       const k = groundStack[--sp];
       const above = k - cols;
-      if (above < 0) continue;
-      const m = grid[above];
-      if (isBearingMaterial(m) && !groundedCell[above]) groundCellAt(above, m);
+      if (above >= 0 && !groundedCell[above] && isBearingMaterial(grid[above])) groundCellAt(above);
+      if (isRigidMaterial(grid[k])) {
+        const ky = (k / cols) | 0;
+        const kx = k - ky * cols;
+        for (let oy = -1; oy <= 1; oy++) {
+          const ny = ky + oy;
+          if (ny <= 0 || ny >= rows) continue;
+          const rowBase = ny * cols;
+          for (let ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            const nx = kx + ox;
+            if (nx <= 0 || nx >= cols - 1) continue;
+            const nk = rowBase + nx;
+            if (!groundedCell[nk] && isRigidMaterial(grid[nk])) groundCellAt(nk);
+          }
+        }
+      }
     }
   }
 

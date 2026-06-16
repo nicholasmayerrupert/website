@@ -1,8 +1,12 @@
 # Sand engine (`src/sand`)
 
 A DOM-free falling-sand / cellular-automaton simulation. `createEngine()` in
-`engine.js` returns a self-contained world; `src/About.jsx` is a thin
-canvas/pointer wrapper and `scripts/bench-sand.mjs` drives it headlessly.
+`engine.js` returns a self-contained world. The interactive game is layered on
+top and is itself drop-in / standalone: `game/createSandGame.js` is a
+framework-agnostic (no-React) runtime — canvases, render loop, input, world
+streaming — and `react/SandGame.jsx` is a thin React wrapper that mounts it and
+renders `react/ToolPalette.jsx`. `src/About.jsx` just embeds `<SandGame>`, and
+`scripts/bench-sand.mjs` drives the engine headlessly.
 
 ## Layout
 

@@ -1,5 +1,5 @@
 // Pure falling-sand simulation core. No DOM/React dependencies — consumed by
-// the SandOverlay canvas wrapper (src/About.jsx) and the headless benchmark
+// the game runtime (src/sand/game/createSandGame.js) and the headless benchmark
 // (scripts/bench-sand.mjs). The RNG is injectable so benchmark runs are
 // deterministic.
 

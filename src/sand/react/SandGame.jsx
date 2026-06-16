@@ -45,10 +45,10 @@ export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
       });
       gameRef.current = game;
     };
-    // Opt into the C++/WASM engine with ?engine=wasm; default stays the JS engine.
+    // The C++/WASM engine is the default; opt into the legacy JS engine with ?engine=js.
     const useWasm =
-      typeof window !== 'undefined' &&
-      new URLSearchParams(window.location.search).get('engine') === 'wasm';
+      typeof window === 'undefined' ||
+      new URLSearchParams(window.location.search).get('engine') !== 'js';
     if (useWasm) {
       initSandWasm()
         .then(() => boot(createEngineWasm))

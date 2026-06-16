@@ -34,9 +34,9 @@ generated file is committed so `npm run build` never needs emcc. `engineWasm.js`
 exposes `createEngineWasm()` with the same shape as `createEngine()` (grid is a
 zero-copy `HEAPU8` view); `initSandWasm()` must resolve once first.
 
-Opt in at runtime with `?engine=wasm` (the React wrapper awaits init then injects
-`createEngineWasm` into `createSandGame`); the JS engine remains the default and
-fallback. Parity is behavioral, not bit-identical — verify with
+The WASM engine is now the **default** (the React wrapper awaits init then injects
+`createEngineWasm` into `createSandGame`); opt back into the legacy JS engine with
+`?engine=js`. Parity is behavioral, not bit-identical — verify with
 `node scripts/wasm-parity.mjs` (CA / components / reactions / growth) and
 `node scripts/wasm-rigid.mjs` (free rigid bodies). The full engine is ported —
 CA, components, reactions, growth, tools, free rigid bodies (rigid2d), and

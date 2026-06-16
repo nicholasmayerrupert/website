@@ -16,6 +16,12 @@ function hash2(seed, x, y) {
   return (h >>> 0) / 4294967296;
 }
 
+// Independent (uncorrelated) hash of a single integer coordinate to [0,1) — for
+// per-column decisions like "spawn a tree here" where smooth noise would clump.
+export function hash1(seed, x) {
+  return hash2(seed, x | 0, 0x9e37);
+}
+
 const fade = (t) => t * t * t * (t * (t * 6 - 15) + 10); // smootherstep
 const lerp = (a, b, t) => a + (b - a) * t;
 

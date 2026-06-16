@@ -10,6 +10,7 @@ import { createReactions } from './reactions.js';
 import { createGrowth } from './growth.js';
 import { createComponents } from './components.js';
 import { createTools } from './tools.js';
+import { createStreamGen } from './worldgen/streamGen.js';
 
 // Material identity (ids, densities, colors, kinds) lives in materials.js — the
 // single place to edit when adding a material. Re-exported so existing importers
@@ -123,6 +124,11 @@ export function createEngine({
   emitters: emitterDefs = [],
   emittersOn = true,
   sinksOn = true,
+  // Infinite mode: ignore the scene and stream a procedural world horizontally
+  // (worldgen/streamGen.js + worldWindow.js). The buffer is a window onto an
+  // endless world; `worldSeed` makes it reproducible.
+  infinite = false,
+  worldSeed = (Math.floor((rng() || Math.random()) * 4294967296) >>> 0),
 } = {}) {
   const rand = rng;
   let emittersEnabled = emittersOn;
@@ -132,6 +138,11 @@ export function createEngine({
   let gridA = new Uint8Array(cols * rows);
   let gridB = new Uint8Array(cols * rows);
   let grid = gridA, next = gridB;
+  // Streaming-world state: world-x of buffer column 0, the generator, and the
+  // sliding-window controller. Stay null/0 in non-infinite (scene) mode.
+  let worldOffsetX = 0;
+  let streamGen = null;
+  let worldWindow = null;
   const chunkCols = Math.ceil(cols / CHUNK_SIZE);
   const chunkRows = Math.ceil(rows / CHUNK_SIZE);
   const dirtyRender = new Uint8Array(chunkCols * chunkRows);
@@ -997,7 +1008,16 @@ export function createEngine({
   ({ applyInitialScene, addDiscToStoneDraft, addDiscToIceDraft, finalizeStoneDraft, finalizeIceDraft,
      getSeedOrigin, canPlaceSeedAt, placeSeedAt, paintDisc, eraseDisc, applyEmitters } = createTools(S));
 
-  applyInitialScene();
+  if (infinite) {
+    // Fill the whole buffer from the streaming generator instead of a scene.
+    // worldOffsetX is set so world-x 0 sits at the buffer's horizontal center.
+    streamGen = createStreamGen({ worldRows: rows, MAT, seed: worldSeed });
+    worldOffsetX = -Math.floor(cols / 2);
+    streamGen.generateBand({ grid, next, bufCols: cols, colStart: 0, colCount: cols, worldOffsetX });
+    registerSeededComponents();
+  } else {
+    applyInitialScene();
+  }
   markAllDirty();
 
   return {
@@ -1006,6 +1026,10 @@ export function createEngine({
     chunkCols,
     chunkRows,
     step,
+    // Streaming world: world-x of buffer column 0, and the surface row for a
+    // world column (used by the UI to spawn the camera near the surface).
+    getWorldOffsetX() { return worldOffsetX; },
+    worldSurfaceAt(worldX) { return streamGen ? streamGen.surfaceAt(worldX) : 0; },
     setEmittersOn(v) { emittersEnabled = !!v; },
     setSinksOn(v) { sinksEnabled = !!v; },
     paintDisc,

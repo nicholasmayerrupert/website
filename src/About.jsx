@@ -63,6 +63,8 @@ function SandOverlay({ onDrawModeChange }) {
         ? new URLSearchParams(window.location.search).get('scene')
         : null;
     const selectedScene = getScene(sceneKey);
+    // One seed per mount so resizing regenerates the *same* infinite world.
+    const worldSeed = (Math.random() * 4294967296) >>> 0;
 
     // ---- Tunables (render/UI side; physics tunables live in src/sand/engine.js) ----
     const CELL_PX = 4;
@@ -226,14 +228,17 @@ function SandOverlay({ onDrawModeChange }) {
       engine = createEngine({
         cols,
         rows,
-        initialScene: selectedScene.build,
-        emitters: selectedScene.emitters,
+        infinite: true,
+        worldSeed,
         emittersOn: emittersOnRef.current,
         sinksOn: sinksOnRef.current,
       });
-      // Camera spans the buffer minus the visible window; start centered.
+      // Camera spans the buffer minus the visible window. Start centered
+      // horizontally and just above the surface so the spawn view shows ground.
       camera.setBounds(cols - viewCols, rows - viewRows);
-      camera.center();
+      const spawnWorldX = engine.getWorldOffsetX() + Math.floor(cols / 2);
+      const spawnRow = engine.worldSurfaceAt(spawnWorldX);
+      camera.set((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
       lastCamCol = -1;
       lastCamRow = -1;
       isDraftingStone = false;

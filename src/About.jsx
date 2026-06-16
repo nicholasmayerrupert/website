@@ -261,8 +261,8 @@ function SandOverlay({ onDrawModeChange }) {
       py = cy - wrapBounds.top;
     };
     // Screen pixel (canvas-relative) -> buffer cell, through the camera offset.
-    const toCellX = () => camera.colX + toCellX();
-    const toCellY = () => camera.colY + toCellY();
+    const toCellX = () => camera.colX + Math.floor(px / cellSize);
+    const toCellY = () => camera.colY + Math.floor(py / cellSize);
     const updateSeedDraft = () => {
       const prevX = seedDraftOrigin ? seedDraftOrigin[0] : null;
       const prevY = seedDraftOrigin ? seedDraftOrigin[1] : null;

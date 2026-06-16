@@ -11,6 +11,7 @@ import { createGrowth } from './growth.js';
 import { createComponents } from './components.js';
 import { createTools } from './tools.js';
 import { createStreamGen } from './worldgen/streamGen.js';
+import { createWorldWindow } from './worldWindow.js';
 
 // Material identity (ids, densities, colors, kinds) lives in materials.js — the
 // single place to edit when adding a material. Re-exported so existing importers
@@ -1015,6 +1016,17 @@ export function createEngine({
     worldOffsetX = -Math.floor(cols / 2);
     streamGen.generateBand({ grid, next, bufCols: cols, colStart: 0, colCount: cols, worldOffsetX });
     registerSeededComponents();
+    worldWindow = createWorldWindow(S, {
+      bufCols: cols,
+      worldRows: rows,
+      compOccStamp,
+      vacatedStamp,
+      rowMarkMin,
+      rowMarkMax,
+      generateBand: streamGen.generateBand,
+      getWorldOffsetX: () => worldOffsetX,
+      setWorldOffsetX: (v) => { worldOffsetX = v; },
+    });
   } else {
     applyInitialScene();
   }
@@ -1030,6 +1042,8 @@ export function createEngine({
     // world column (used by the UI to spawn the camera near the surface).
     getWorldOffsetX() { return worldOffsetX; },
     worldSurfaceAt(worldX) { return streamGen ? streamGen.surfaceAt(worldX) : 0; },
+    // Slide the loaded window by dx world-columns (dx>0 reveals the right edge).
+    shiftWorld(dx) { if (worldWindow) worldWindow.shiftWorld(dx); },
     setEmittersOn(v) { emittersEnabled = !!v; },
     setSinksOn(v) { sinksEnabled = !!v; },
     paintDisc,

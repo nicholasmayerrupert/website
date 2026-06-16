@@ -92,9 +92,13 @@ function SandOverlay({ onDrawModeChange }) {
     // view; the camera pans within it (WASD/arrows). Horizontal streaming that
     // slides the window comes in a later phase.
     const WORLD_HEIGHT_FACTOR = 2.5; // world is this many viewports tall
-    const BUF_MARGIN_COLS = 64;      // extra buffer columns on each side of the view
-    const BUFFER_MAX_CELLS = 480000; // cap so the per-step budget stays bounded
+    const BUF_MARGIN_COLS = 128;     // extra buffer columns on each side of the view
+    const BUFFER_MAX_CELLS = 520000; // cap so the per-step budget stays bounded
     const PAN_CELLS_PER_STEP = 2.5;  // camera pan speed while a key is held
+    // Horizontal streaming: slide the world by SHIFT_COLS when the camera comes
+    // within SHIFT_EDGE_MARGIN of a buffer edge, so it always has room to pan.
+    const SHIFT_COLS = 128;
+    const SHIFT_EDGE_MARGIN = 40;
 
     // Colors
     const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
@@ -697,6 +701,21 @@ function SandOverlay({ onDrawModeChange }) {
         if (panX || panY) {
           camera.panBy(Math.sign(panX) * PAN_CELLS_PER_STEP, Math.sign(panY) * PAN_CELLS_PER_STEP);
           previewDirty = previewVisible; // re-place any draft overlay at the new offset
+        }
+
+        // Stream the infinite world: when the camera nears a horizontal buffer
+        // edge, slide the loaded window and pull the camera back so the view is
+        // unchanged but there's room to keep panning. Fresh terrain is generated
+        // (or, in a later phase, restored) on the newly exposed side.
+        const maxCamX = cols - viewCols;
+        if (camera.colX >= maxCamX - SHIFT_EDGE_MARGIN) {
+          engine.shiftWorld(SHIFT_COLS);
+          camera.set(camera.x - SHIFT_COLS, camera.y);
+          forceFullRender = true;
+        } else if (camera.colX <= SHIFT_EDGE_MARGIN) {
+          engine.shiftWorld(-SHIFT_COLS);
+          camera.set(camera.x + SHIFT_COLS, camera.y);
+          forceFullRender = true;
         }
 
         if (isDraftingStone && inside) {

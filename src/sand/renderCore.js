@@ -2,12 +2,12 @@
 // can measure render fill cost headlessly.
 
 import { MAT, buildColorLUT, buildTextureAmp } from './materials.js';
+import { PACKED_FIRE, PACKED_FIRE_HOT, PACKED_LAVA_HOT } from './materials.generated.js';
 
 // Animation-only colors (not base material colors): the hot/flicker shades the
-// shimmer logic below swaps in. Base colors live in the materials.js registry.
-export const PACKED_FIRE = 0xb8_22_6c_ff;
-export const PACKED_FIRE_HOT = 0x9e_50_cd_ff;
-const PACKED_LAVA_HOT = 0xc8_30_90_ff;
+// shimmer logic below swaps in. Base colors live in the materials.js registry;
+// these are generated from materials.schema.json (the single source).
+export { PACKED_FIRE, PACKED_FIRE_HOT };
 
 // Base per-material colors come straight from the registry (single source).
 export function makeColorLUT() {

@@ -11,18 +11,10 @@
 #include <functional>
 #include <emscripten.h>
 
-enum Mat : uint8_t {
-  EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 5, STEAM = 6,
-  SEED = 7, WOOD = 8, PLANT = 9, ACID = 10, LAVA = 11, ICE = 12, RIGID = 13,
-  DRIFTWOOD = 14
-};
-enum Kind : uint8_t { K_NONE = 0, K_POWDER = 1, K_LIQUID = 2, K_GAS = 3, K_COMPONENT = 4, K_FREE_RIGID = 5 };
-
-static const int TABLE = 16;
-static const float  DENSITY[TABLE]      = {0, 1.6f, 1.0f, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 0};
-static const uint8_t DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0};
-static const float  MOBILITY[TABLE]     = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0.35f, 0, 0, 0, 0};
-static const uint8_t MAT_KIND[TABLE]    = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_NONE};
+// Material ids, kinds, and flat lookup tables — generated from
+// src/sand/materials.schema.json (the single source shared with JS). Run
+// `npm run generate` after editing the schema.
+#include "materials.generated.hpp"
 
 // Tunables (mirror engine.js)
 static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5, SEED_SIZE = 2;

@@ -85,10 +85,24 @@
   // un-stamp body rasters, persist the leaving band (materials + bodies) to the
   // store, memmove the buffers, translate survivors, then restore the entering
   // band from the store if previously visited (else generate it).
+  // Decide whether the loaded world window should slide so the camera always
+  // has room to keep panning, and slide it if so. cameraCellX is the view's
+  // left column; the engine owns the shift distance. Returns the applied dx
+  // (0 if none); JS uses it to slide its visual cache and pull the camera back.
+  int maybeShiftWorld(int cameraCellX, int visibleCols, int marginCols) {
+    if (!infinite) return 0;
+    int maxCamX = cols - visibleCols;
+    int dx = 0;
+    if (cameraCellX >= maxCamX - marginCols) dx = WORLD_SHIFT_COLS;
+    else if (cameraCellX <= marginCols) dx = -WORLD_SHIFT_COLS;
+    if (dx) shiftWorld(dx);
+    return dx;
+  }
   void shiftWorld(int dx) {
     if (!dx || !infinite) return;
     int s = std::abs(dx);
     if (s >= cols) return;
+    worldShiftCount++;
     int oldOffset = worldOffsetX, newOffset = oldOffset + dx;
     int leaveColStart = dx > 0 ? 0 : cols - s;
     int enterColStart = dx > 0 ? cols - s : 0;

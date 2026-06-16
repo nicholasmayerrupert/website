@@ -7,6 +7,8 @@ EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, in
   return e;
 }
 EMSCRIPTEN_KEEPALIVE void engine_shift_world(Engine* e, int dx) { e->shiftWorld(dx); }
+EMSCRIPTEN_KEEPALIVE int engine_maybe_shift_world(Engine* e, int cameraCellX, int visibleCols, int marginCols) { return e->maybeShiftWorld(cameraCellX, visibleCols, marginCols); }
+EMSCRIPTEN_KEEPALIVE int engine_world_shift_count(Engine* e) { return e->worldShiftCount; }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->worldOffsetX; }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { return e->infinite ? e->genSurfaceAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }

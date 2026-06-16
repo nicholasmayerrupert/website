@@ -28,7 +28,7 @@
   struct MatBand { int width = 0; std::vector<uint8_t> buf; };
   std::unordered_map<int, MatBand> matStore;                                // worldX -> saved band
   std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
-  int stepSerial = 0, dirtyRenderCount = 0, tick = 0, perfDirtyChunks = 0;
+  int stepSerial = 0, dirtyRenderCount = 0, tick = 0, perfDirtyChunks = 0, worldShiftCount = 0;
   double perfStepMs = 0;
   double perfShiftBuffers = 0, perfShiftTranslate = 0, perfShiftRegister = 0, perfShiftFill = 0;
   double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;

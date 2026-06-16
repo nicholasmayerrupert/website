@@ -76,9 +76,9 @@ export function createSandGame(container, opts = {}) {
   const BUFFER_MAX_CELLS = 520000; // cap so the per-step budget stays bounded
   const PAN_CELLS_PER_SEC = 100;   // camera pan speed while a key is held
   const MAX_FRAME_DT = 50;         // ms; clamp so a stall can't produce a big jump
-  // Horizontal streaming: slide the world by SHIFT_COLS when the camera comes
-  // within SHIFT_EDGE_MARGIN of a buffer edge, so it always has room to pan.
-  const SHIFT_COLS = 128;
+  // Horizontal streaming margin: ask the engine to slide the world when the
+  // camera comes within this many cells of a buffer edge. The shift distance
+  // itself is owned by the engine (WORLD_SHIFT_COLS).
   const SHIFT_EDGE_MARGIN = 40;
 
   // Colors
@@ -112,6 +112,9 @@ export function createSandGame(container, opts = {}) {
   let perfRenderMs = 0;
   let previewDirty = false;
   let previewVisible = false;
+  // DEV debug counters (surfaced via window.__sandPerf)
+  let perfDirtyRects = 0;     // coalesced dirty rects uploaded last render
+  let perfFullRedraws = 0;    // times the whole buffer was repainted
 
   // Rolling perf samples for window.__sandPerf
   const PERF_SAMPLES = 120;
@@ -375,6 +378,7 @@ export function createSandGame(container, opts = {}) {
     // C++ owns dirty-rect generation and material->RGBA pixel generation. We
     // build the rects, fill pixels in wasm, then upload the changed spans.
     const { rects, rectCount, dirtyChunkCount, chunkTotal } = engine.getRenderDirty();
+    perfDirtyRects = rectCount;
 
     // Visible buffer-cell window under the camera. Nothing outside it is ever
     // filled or blitted — that's the viewport culling. A buffer cell (bx,by)
@@ -411,6 +415,7 @@ export function createSandGame(container, opts = {}) {
       if (wholeBuffer) {
         cellCtx.putImageData(imgData, 0, 0);
         forceFullRender = false;
+        perfFullRedraws++;
         return;
       }
       // Upload each coalesced dirty rect. Rects are [x0,y0,x1,y1) exclusive, so
@@ -529,6 +534,10 @@ export function createSandGame(container, opts = {}) {
         p95FrameMs: Number(p95.toFixed(3)),
         samples: n,
         dirtyChunks: perf.dirtyChunks,
+        dirtyRects: perfDirtyRects,
+        fullRedraws: perfFullRedraws,
+        worldShifts: engine ? engine.getWorldShiftCount() : 0,
+        wasmHeapMB: engine ? Number((engine.getHeapBytes() / (1024 * 1024)).toFixed(1)) : 0,
         rows,
         cols,
       };
@@ -600,19 +609,14 @@ export function createSandGame(container, opts = {}) {
     // run at STEP_MS for determinism, independent of the per-frame pan above.
     let stepped = false;
     if (now - lastStep >= STEP_MS && !testPaused) {
-      // Stream the infinite world: when the camera nears a horizontal buffer
-      // edge, slide the loaded window and pull the camera back so the view is
-      // unchanged but there's room to keep panning. Fresh terrain is generated
-      // (or, in a later phase, restored) on the newly exposed side.
-      const maxCamX = cols - viewCols;
-      if (camera.colX >= maxCamX - SHIFT_EDGE_MARGIN) {
-        engine.shiftWorld(SHIFT_COLS);
-        shiftCellCanvas(SHIFT_COLS); // cheap GPU slide; new band repaints from dirty chunks
-        camera.set(camera.x - SHIFT_COLS, camera.y);
-      } else if (camera.colX <= SHIFT_EDGE_MARGIN) {
-        engine.shiftWorld(-SHIFT_COLS);
-        shiftCellCanvas(-SHIFT_COLS);
-        camera.set(camera.x + SHIFT_COLS, camera.y);
+      // Stream the infinite world: the engine decides whether the loaded window
+      // should slide so the camera always has room to pan, and slides it. JS
+      // mirrors the slide in its visual cache (cheap GPU copy) and pulls the
+      // camera back so the view is unchanged. dx>0 slides right, dx<0 left.
+      const dx = engine.maybeShiftWorld(camera.colX, viewCols, SHIFT_EDGE_MARGIN);
+      if (dx) {
+        shiftCellCanvas(dx); // new band repaints from the engine's dirty chunks
+        camera.set(camera.x - dx, camera.y);
       }
 
       // Tool application: extend any active draft + apply held painting/erasing.

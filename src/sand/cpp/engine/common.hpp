@@ -40,6 +40,8 @@ enum Tool : int { T_CUBE = 0, T_SAND, T_WATER, T_STONE, T_OIL, T_FIRE, T_ACID, T
 static const int BRUSH_SAND = 2, BRUSH_WATER = 2, BRUSH_OIL = 2, BRUSH_FIRE = 1, BRUSH_ACID = 2,
                  BRUSH_LAVA = 2, BRUSH_ICE = 2, BRUSH_STONE = 2, BRUSH_DRIFTWOOD = 1, BRUSH_ERASE = 3, CUBE_HALF = 6;
 static const double EMIT_INTERVAL_MS = 18.0;
+// How far the infinite world slides per streaming shift (cells).
+static const int WORLD_SHIFT_COLS = 128;
 
 // ---- Seeded noise (worldgen/noise.js) ----
 static inline double whash2(uint32_t seed, int x, int y) {

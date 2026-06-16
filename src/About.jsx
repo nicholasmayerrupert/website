@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { createEngine, MAT, CHUNK_SIZE, SEED_SIZE } from './sand/engine';
 import { makeColorLUT, makeTexture, fillPixelSpan } from './sand/renderCore';
 import { getScene } from './sand/scenes';
+import { createCamera } from './sand/camera';
 
 /* -------------------- SAND OVERLAY -------------------- */
 function SandOverlay({ onDrawModeChange }) {
@@ -84,6 +85,14 @@ function SandOverlay({ onDrawModeChange }) {
     const STEP_MS = 16;
     const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
     const FULL_RENDER_DIRTY_CHUNK_RATIO = 0.38;
+    // World/camera: the simulation buffer is bigger than the viewport. It is the
+    // full (fixed) world height and a horizontal window a margin wider than the
+    // view; the camera pans within it (WASD/arrows). Horizontal streaming that
+    // slides the window comes in a later phase.
+    const WORLD_HEIGHT_FACTOR = 2.5; // world is this many viewports tall
+    const BUF_MARGIN_COLS = 64;      // extra buffer columns on each side of the view
+    const BUFFER_MAX_CELLS = 480000; // cap so the per-step budget stays bounded
+    const PAN_CELLS_PER_STEP = 2.5;  // camera pan speed while a key is held
 
     // Colors
     const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
@@ -108,8 +117,14 @@ function SandOverlay({ onDrawModeChange }) {
     };
 
     // Simulation engine (recreated on resize)
+    // cols/rows are the BUFFER (world) dimensions, larger than the viewport;
+    // viewCols/viewRows are the visible cell window the camera shows.
     let engine = null;
     let cols = 0, rows = 0, cellSize = CELL_PX;
+    let viewCols = 0, viewRows = 0;
+    const camera = createCamera();
+    let lastCamCol = -1, lastCamRow = -1; // detect camera movement to force a redraw
+    const pressedKeys = new Set();         // held WASD/arrow keys for panning
     let viewWidth = 0, viewHeight = 0;
     let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
     let imageData = null;
@@ -182,8 +197,23 @@ function SandOverlay({ onDrawModeChange }) {
       ) {
         cellSize++;
       }
-      cols = Math.max(60, Math.ceil(width / cellSize));
-      rows = Math.max(28, Math.ceil(height / cellSize));
+      // Visible window (cells on screen) vs. the larger simulation buffer.
+      viewCols = Math.max(60, Math.ceil(width / cellSize));
+      viewRows = Math.max(28, Math.ceil(height / cellSize));
+      // Buffer: full world height (taller than the view) + horizontal margin,
+      // both rounded up to whole render chunks. Shrink the height factor if the
+      // cell budget would be exceeded.
+      const roundChunks = (n) => Math.ceil(n / CHUNK_SIZE) * CHUNK_SIZE;
+      let bufCols = roundChunks(viewCols + BUF_MARGIN_COLS * 2);
+      let heightFactor = WORLD_HEIGHT_FACTOR;
+      let worldRows = roundChunks(Math.round(viewRows * heightFactor));
+      while (bufCols * worldRows > BUFFER_MAX_CELLS && heightFactor > 1) {
+        heightFactor -= 0.25;
+        worldRows = roundChunks(Math.max(viewRows, Math.round(viewRows * heightFactor)));
+      }
+      cols = bufCols;
+      rows = worldRows;
+
       buildGutterPattern(cellSize);
       cellCanvas.width = cols;
       cellCanvas.height = rows;
@@ -201,6 +231,11 @@ function SandOverlay({ onDrawModeChange }) {
         emittersOn: emittersOnRef.current,
         sinksOn: sinksOnRef.current,
       });
+      // Camera spans the buffer minus the visible window; start centered.
+      camera.setBounds(cols - viewCols, rows - viewRows);
+      camera.center();
+      lastCamCol = -1;
+      lastCamRow = -1;
       isDraftingStone = false;
       isDraftingSeed = false;
       isDraftingIce = false;
@@ -225,10 +260,13 @@ function SandOverlay({ onDrawModeChange }) {
       px = cx - wrapBounds.left;
       py = cy - wrapBounds.top;
     };
+    // Screen pixel (canvas-relative) -> buffer cell, through the camera offset.
+    const toCellX = () => camera.colX + toCellX();
+    const toCellY = () => camera.colY + toCellY();
     const updateSeedDraft = () => {
       const prevX = seedDraftOrigin ? seedDraftOrigin[0] : null;
       const prevY = seedDraftOrigin ? seedDraftOrigin[1] : null;
-      const nextOrigin = engine.getSeedOrigin(Math.floor(px / cellSize), Math.floor(py / cellSize));
+      const nextOrigin = engine.getSeedOrigin(toCellX(), toCellY());
       const nextX = nextOrigin ? nextOrigin[0] : null;
       const nextY = nextOrigin ? nextOrigin[1] : null;
       const changed = prevX !== nextX || prevY !== nextY;
@@ -245,10 +283,10 @@ function SandOverlay({ onDrawModeChange }) {
       }
       if (!drawModeOnRef.current) return;
       if (isDraftingStone && inside) {
-        if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
+        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingIce && inside) {
-        if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
+        if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingSeed && inside) {
         updateSeedDraft();
@@ -260,10 +298,10 @@ function SandOverlay({ onDrawModeChange }) {
       const t = e.touches[0];
       updatePointer(t.clientX, t.clientY);
       if (isDraftingStone && inside) {
-        if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
+        if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingIce && inside) {
-        if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
+        if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
       }
       if (isDraftingSeed && inside) {
         updateSeedDraft();
@@ -286,13 +324,13 @@ function SandOverlay({ onDrawModeChange }) {
 
         if (activeTool === 'stone') {
           isDraftingStone = true;
-          if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
+          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
           e.preventDefault();
           return;
         }
         if (activeTool === 'ice') {
           isDraftingIce = true;
-          if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
+          if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
           e.preventDefault();
           return;
         }
@@ -303,8 +341,8 @@ function SandOverlay({ onDrawModeChange }) {
           return;
         }
         if (activeTool === 'cube') {
-          const cx = Math.floor(px / cellSize);
-          const cy = Math.floor(py / cellSize);
+          const cx = toCellX();
+          const cy = toCellY();
           const cells = [];
           for (let dx = -CUBE_HALF; dx < CUBE_HALF; dx++) {
             for (let dy = -CUBE_HALF; dy < CUBE_HALF; dy++) {
@@ -362,15 +400,37 @@ function SandOverlay({ onDrawModeChange }) {
       if (clientX >= 0 && clientY >= 0) updatePointer(clientX, clientY);
     };
 
+    // Camera pan keys: WASD and arrows. Held keys live in `pressedKeys` and are
+    // applied each step in the loop so panning is smooth and diagonal.
+    const PAN_KEYS = {
+      w: [0, -1], arrowup: [0, -1],
+      s: [0, 1], arrowdown: [0, 1],
+      a: [-1, 0], arrowleft: [-1, 0],
+      d: [1, 0], arrowright: [1, 0],
+    };
+    const isEditableTarget = (t) =>
+      !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+
     const onKeyDown = (e) => {
+      if (isEditableTarget(e.target)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
+      const key = e.key.toLowerCase();
+      if (PAN_KEYS[key]) {
+        pressedKeys.add(key);
+        e.preventDefault(); // keep arrow keys from scrolling the page while panning
+        return;
+      }
       if (e.repeat) return;
-      if (e.key === 'e' || e.key === 'E') {
+      if (key === 'e') {
         setEmittersOn(v => { emittersOnRef.current = !v; return !v; });
       }
-      if (e.key === 's' || e.key === 'S') {
-        setSinksOn(v => { sinksOnRef.current = !v; return !v; });
-      }
+      // Sinks toggle now lives on the toolbar only — 's' pans the camera down.
     };
+    const onKeyUp = (e) => {
+      const key = e.key.toLowerCase();
+      if (PAN_KEYS[key]) pressedKeys.delete(key);
+    };
+    const onBlur = () => pressedKeys.clear(); // avoid keys "sticking" on focus loss
 
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('touchmove', onTouchMove, { passive: true });
@@ -379,6 +439,8 @@ function SandOverlay({ onDrawModeChange }) {
     window.addEventListener('contextmenu', onContextMenu);
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
 
     // Emission controller
     let lastEmit = 0;
@@ -402,8 +464,8 @@ function SandOverlay({ onDrawModeChange }) {
       if (!shouldEmit) return;
       if (now - lastEmit < EMIT_INTERVAL_MS) return;
 
-      const cx = Math.floor(px / cellSize);
-      const cy = Math.floor(py / cellSize);
+      const cx = toCellX();
+      const cy = toCellY();
       if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
 
       if (activeTool === 'eraser') {
@@ -449,32 +511,58 @@ function SandOverlay({ onDrawModeChange }) {
       const renderStart = performance.now();
       const grid = engine.getGrid();
       const { dirtyRender, dirtyRenderCount, chunkCols, chunkRows } = engine.getRenderDirty();
+
+      // Visible buffer-cell window under the camera. Nothing outside it is ever
+      // filled or blitted — that's the viewport culling. A buffer cell (bx,by)
+      // maps to canvas pixels ((bx-camCol)*cellSize, (by-camRow)*cellSize).
+      const camCol = camera.colX;
+      const camRow = camera.colY;
+      const visX0 = camCol;
+      const visY0 = camRow;
+      const visX1 = Math.min(cols - 1, camCol + viewCols);
+      const visY1 = Math.min(rows - 1, camRow + viewRows);
+
       const clearCellGutters = (x0, y0, x1, y1) => {
-        const destX = x0 * cellSize;
-        const destY = y0 * cellSize;
-        const destW = Math.min(canvas.width, (x1 + 1) * cellSize) - destX;
-        const destH = Math.min(canvas.height, (y1 + 1) * cellSize) - destY;
+        const destX = (x0 - camCol) * cellSize;
+        const destY = (y0 - camRow) * cellSize;
+        const destW = (x1 - x0 + 1) * cellSize;
+        const destH = (y1 - y0 + 1) * cellSize;
         ctx.globalCompositeOperation = 'destination-out';
         ctx.fillStyle = gutterPattern;
         ctx.fillRect(destX, destY, destW, destH);
         ctx.globalCompositeOperation = 'source-over';
       };
+      // Paint one buffer-cell rect to the canvas at the camera-relative position.
+      const blit = (x0, y0, x1, y1) => {
+        const w = x1 - x0 + 1;
+        const h = y1 - y0 + 1;
+        fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, colorLUT, colorTexture);
+        cellCtx.putImageData(imageData, 0, 0, x0, y0, w, h);
+        const destX = (x0 - camCol) * cellSize;
+        const destY = (y0 - camRow) * cellSize;
+        ctx.clearRect(destX, destY, w * cellSize, h * cellSize);
+        ctx.drawImage(cellCanvas, x0, y0, w, h, destX, destY, w * cellSize, h * cellSize);
+        clearCellGutters(x0, y0, x1, y1);
+      };
 
+      // Panning shifts everything on screen, so a moved camera forces a full
+      // (visible-window) redraw rather than relying on per-cell dirty chunks.
+      const camMoved = camCol !== lastCamCol || camRow !== lastCamRow;
       const shouldFullRender =
         full ||
         forceFullRender ||
+        camMoved ||
         dirtyRenderCount > dirtyRender.length * FULL_RENDER_DIRTY_CHUNK_RATIO;
       if (shouldFullRender) {
-        fillPixelSpan(pixels, grid, cols, 0, 0, cols - 1, rows - 1, colorLUT, colorTexture);
-        cellCtx.putImageData(imageData, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(cellCanvas, 0, 0, cols, rows, 0, 0, cols * cellSize, rows * cellSize);
-        clearCellGutters(0, 0, cols - 1, rows - 1);
+        if (visX1 >= visX0 && visY1 >= visY0) blit(visX0, visY0, visX1, visY1);
         forceFullRender = false;
       } else {
         for (let cy = 0; cy < chunkRows; cy++) {
-          const y0 = cy * CHUNK_SIZE;
-          const y1 = Math.min(rows - 1, y0 + CHUNK_SIZE - 1);
+          const cy0 = cy * CHUNK_SIZE;
+          if (cy0 > visY1) break;
+          const cy1 = Math.min(rows - 1, cy0 + CHUNK_SIZE - 1);
+          if (cy1 < visY0) continue;
           let cx = 0;
           while (cx < chunkCols) {
             const chunkIndex = cy * chunkCols + cx;
@@ -488,31 +576,20 @@ function SandOverlay({ onDrawModeChange }) {
               cx++;
             }
             const endCx = cx;
-            const x0 = startCx * CHUNK_SIZE;
-            const x1 = Math.min(cols - 1, (endCx + 1) * CHUNK_SIZE - 1);
-            fillPixelSpan(pixels, grid, cols, x0, y0, x1, y1, colorLUT, colorTexture);
-            const sourceW = x1 - x0 + 1;
-            const sourceH = y1 - y0 + 1;
-            const destX = x0 * cellSize;
-            const destY = y0 * cellSize;
-            const destW = Math.min(canvas.width, (x1 + 1) * cellSize) - destX;
-            const destH = Math.min(canvas.height, (y1 + 1) * cellSize) - destY;
-            cellCtx.putImageData(
-              imageData,
-              0,
-              0,
-              x0,
-              y0,
-              sourceW,
-              sourceH
-            );
-            ctx.clearRect(destX, destY, destW, destH);
-            ctx.drawImage(cellCanvas, x0, y0, sourceW, sourceH, destX, destY, destW, destH);
-            clearCellGutters(x0, y0, x1, y1);
+            const cx0 = startCx * CHUNK_SIZE;
+            const cx1 = Math.min(cols - 1, (endCx + 1) * CHUNK_SIZE - 1);
+            // Clip the dirty span to the visible window, then draw only that.
+            const dx0 = Math.max(cx0, visX0);
+            const dx1 = Math.min(cx1, visX1);
+            const dy0 = Math.max(cy0, visY0);
+            const dy1 = Math.min(cy1, visY1);
+            if (dx1 >= dx0 && dy1 >= dy0) blit(dx0, dy0, dx1, dy1);
             cx++;
           }
         }
       }
+      lastCamCol = camCol;
+      lastCamRow = camRow;
       engine.clearRenderDirty();
       perfRenderMs = performance.now() - renderStart;
     };
@@ -529,7 +606,7 @@ function SandOverlay({ onDrawModeChange }) {
         for (const k of stoneDraft) {
           const y = (k / cols) | 0;
           const x = k - y * cols;
-          previewCtx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+          previewCtx.fillRect((x - camera.colX) * cellSize, (y - camera.colY) * cellSize, previewSize, previewSize);
         }
         previewVisible = true;
       }
@@ -541,7 +618,7 @@ function SandOverlay({ onDrawModeChange }) {
         for (const k of iceDraft) {
           const y = (k / cols) | 0;
           const x = k - y * cols;
-          previewCtx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+          previewCtx.fillRect((x - camera.colX) * cellSize, (y - camera.colY) * cellSize, previewSize, previewSize);
         }
         previewVisible = true;
       }
@@ -553,7 +630,7 @@ function SandOverlay({ onDrawModeChange }) {
         const previewSize = cellSize;
         for (let y = y0; y < y0 + SEED_SIZE; y++) {
           for (let x = x0; x < x0 + SEED_SIZE; x++) {
-            previewCtx.fillRect(x * cellSize, y * cellSize, previewSize, previewSize);
+            previewCtx.fillRect((x - camera.colX) * cellSize, (y - camera.colY) * cellSize, previewSize, previewSize);
           }
         }
         previewVisible = true;
@@ -596,11 +673,20 @@ function SandOverlay({ onDrawModeChange }) {
       }
 
       if (now - lastStep >= STEP_MS) {
+        // Pan the camera from held keys (sign-normalized so opposite keys cancel
+        // and WASD+arrows don't double-speed).
+        let panX = 0, panY = 0;
+        for (const k of pressedKeys) { const d = PAN_KEYS[k]; panX += d[0]; panY += d[1]; }
+        if (panX || panY) {
+          camera.panBy(Math.sign(panX) * PAN_CELLS_PER_STEP, Math.sign(panY) * PAN_CELLS_PER_STEP);
+          previewDirty = previewVisible; // re-place any draft overlay at the new offset
+        }
+
         if (isDraftingStone && inside) {
-          if (engine.addDiscToStoneDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), STONE_BRUSH_RADIUS)) previewDirty = true;
+          if (engine.addDiscToStoneDraft(toCellX(), toCellY(), STONE_BRUSH_RADIUS)) previewDirty = true;
         }
         if (isDraftingIce && inside) {
-          if (engine.addDiscToIceDraft(Math.floor(px / cellSize), Math.floor(py / cellSize), ICE_BRUSH_RADIUS)) previewDirty = true;
+          if (engine.addDiscToIceDraft(toCellX(), toCellY(), ICE_BRUSH_RADIUS)) previewDirty = true;
         }
         if (isDraftingSeed && inside) {
           updateSeedDraft();
@@ -610,7 +696,8 @@ function SandOverlay({ onDrawModeChange }) {
         engine.setEmittersOn(emittersOnRef.current);
         engine.setSinksOn(sinksOnRef.current);
         const didStep = engine.step(now);
-        if (didStep) render(false);
+        const camMoved = camera.colX !== lastCamCol || camera.colY !== lastCamRow;
+        if (didStep || camMoved) render(false);
         if (previewDirty || previewVisible) renderPreview();
         if (didStep) {
           perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
@@ -634,6 +721,8 @@ function SandOverlay({ onDrawModeChange }) {
       window.removeEventListener('contextmenu', onContextMenu);
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, []); // IMPORTANT: single mount
   const toolButtons = [

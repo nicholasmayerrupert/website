@@ -6,18 +6,18 @@ Nicholas Mayer-Rupert's personal website. React + Vite + Tailwind, deployed to
 Cloudflare via Wrangler (`npm run dev`, `npm run build`, `npm run deploy`).
 
 Its centerpiece is a **2D falling-sand simulation** rendered to a canvas on the
-About page. Most agent work happens there. The engine is written in **C++ and
-compiled to WebAssembly**; rendering, input, camera, and UI stay in JavaScript.
-`src/sand/README.md` is the authoritative map — read it before touching the sim.
-Quick orientation:
+About page. Most agent work happens there. The simulation, rendering, tool
+semantics, and world streaming are written in **C++ and compiled to WebAssembly**;
+JavaScript is the browser shell (canvases, RAF loop, camera/present, input
+forwarding, blit) and the UI is React. `src/sand/README.md` is the authoritative
+map — read it before touching the sim. Quick orientation:
 
 | Path | What it is |
 | --- | --- |
-| `src/sand/cpp/` | The C++ engine. `sand.cpp` includes one `.inc` per subsystem (`core`, `components`, `reactions`, `growth`, `rigid`, `worldgen`, `tools`) + `common.hpp`. Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`). |
-| `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation handle. The grid is a zero-copy view into wasm memory. |
-| `src/sand/materials.js` | Material ids/colors/grain — ids must match `cpp/engine/common.hpp`. |
-| `src/sand/renderCore.js` | DOM-free pixel fill (colors + grain + fire/steam/lava shimmer). |
-| `src/sand/camera.js`, `src/sand/game/createSandGame.js` | View over the world buffer; the runtime that owns the canvases, render loop, input, world streaming, and engine. |
+| `src/sand/cpp/` | The C++ engine. `sand.cpp` includes one `.inc` per subsystem (`core`, `components`, `reactions`, `growth`, `rigid`, `worldgen`, `tools`, `render`) + `common.hpp`. Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`). |
+| `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation handle. The grid + render pixels are zero-copy views into wasm memory. |
+| `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
+| `src/sand/camera.js`, `src/sand/game/createSandGame.js` | View over the world buffer; the browser shell that owns the canvases, RAF loop, camera, and engine handle, and forwards pointer events (the engine owns tool policy, rendering, and the world-shift decision). |
 | `scripts/bench-sand.mjs`, `scripts/bench-pan.mjs`, `bench/` | Headless engine benchmark + Playwright pan/flicker benchmark + recorded baselines. |
 
 The world is a **procedural, infinite, horizontally-streaming** landscape generated
@@ -28,7 +28,8 @@ is generated or restored from the chunk store.
 
 ## The sand engine (read before touching it)
 
-- One grid of material ids (see the `MAT` enum in `materials.js` / `common.hpp`).
+- One grid of material ids (defined in `materials.schema.json`; see `MAT` in
+  `materials.js` and `enum Mat` in the generated `materials.generated.hpp`).
 - Loose materials (sand, water, oil, fire, steam) are plain grid cells.
 - **`STONE` and the plant materials (`SEED`/`WOOD`/`PLANT`) are not loose pixels.**
   They live as connected *components* and survive each step only by their component
@@ -39,7 +40,7 @@ is generated or restored from the chunk store.
 ## Benchmarks (run before/after any sim or render change)
 
 - **Engine** (headless, Node): `node scripts/bench-sand.mjs` prints p50/p95/p99 for
-  `step`, `shiftWorld` (cache miss/hit + phase breakdown), and `fillPixelSpan`, plus
+  `step`, `shiftWorld` (cache miss/hit + phase breakdown), and `renderFull`, plus
   a deterministic terrain checksum. Compare against a baseline with
   `node scripts/bench-sand.mjs --compare bench/baseline.json` (re-record with
   `--update`). **Pure refactors must keep the checksum identical.**

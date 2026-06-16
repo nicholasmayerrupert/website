@@ -1,8 +1,14 @@
 # Sand engine
 
 A falling-sand / cellular-automaton simulation that runs on the About section of
-the site. The simulation is written in C++ and compiled to WebAssembly; the
-rendering, input, and UI stay in JavaScript.
+the site. The simulation, rendering (material->RGBA + dirty rects), tool/pointer
+semantics, and world streaming all run in C++ compiled to WebAssembly. JavaScript
+is the browser shell: canvases, the RAF loop, the camera/present transform, input
+forwarding, and the final canvas upload/blit. The UI is React.
+
+  `cpp/engine/tools.inc`     brush/draft/seed primitives + the tool state machine
+  `cpp/engine/render.inc`    material -> RGBA pixel generation (grain + animation)
+  `cpp/engine/materials.generated.hpp`  ids/kinds/tables, generated from the schema
 
 ## Files
 
@@ -21,10 +27,11 @@ rendering, input, and UI stay in JavaScript.
   to regenerate `materials.generated.js` and `cpp/engine/materials.generated.hpp`.
 - `materials.js` — re-exports the generated registry and derives `MAT.<NAME>`.
 - `camera.js` — the view over the world buffer.
-- `game/createSandGame.js` — the runtime: it owns the canvases, the present/blit
-  loop, input, world streaming, and the engine. Dirty-rect generation and
-  material->RGBA pixel generation live in the C++ engine; JS uploads and blits.
-  No React.
+- `game/createSandGame.js` — the browser shell: it owns the canvases, the RAF
+  loop, the camera/present transform, and the engine handle. It translates
+  browser pointer events to cell coords and forwards them; the engine owns tool
+  policy, dirty rects, material->RGBA generation, and the world-shift decision.
+  JS uploads the wasm pixel buffer and blits. No React.
 - `react/SandGame.jsx` + `react/ToolPalette.jsx` — a thin React wrapper that mounts
   the runtime and draws the toolbar. `src/About.jsx` just renders `<SandGame>`.
 

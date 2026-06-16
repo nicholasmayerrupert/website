@@ -1,30 +1,17 @@
 // Pure pixel-fill core for the sand renderer. Kept DOM-free so the benchmark
 // can measure render fill cost headlessly.
 
-import { MAT } from './engine.js';
+import { MAT, buildColorLUT, buildTextureAmp } from './materials.js';
 
-// ABGR packed colors (little-endian Uint32 view over RGBA ImageData): 0xAABBGGRR.
+// Animation-only colors (not base material colors): the hot/flicker shades the
+// shimmer logic below swaps in. Base colors live in the materials.js registry.
 export const PACKED_FIRE = 0xb8_22_6c_ff;
 export const PACKED_FIRE_HOT = 0x9e_50_cd_ff;
-const PACKED_STEAM = 0x42_ff_e6_d2;
 const PACKED_LAVA_HOT = 0xc8_30_90_ff;
 
+// Base per-material colors come straight from the registry (single source).
 export function makeColorLUT() {
-  const lut = new Uint32Array(16);
-  lut[MAT.SAND] = 0x79_78_c8_e6;
-  lut[MAT.WATER] = 0x66_ff_aa_78;
-  lut[MAT.STONE] = 0xb3_96_8c_8c;
-  lut[MAT.OIL] = 0x8c_1c_48_69;
-  lut[MAT.FIRE] = PACKED_FIRE;
-  lut[MAT.STEAM] = PACKED_STEAM;
-  lut[MAT.SEED] = 0xc7_16_2e_58;
-  lut[MAT.WOOD] = 0xc2_23_4c_80;
-  lut[MAT.PLANT] = 0xa3_54_aa_5b;
-  lut[MAT.ACID] = 0x80_20_ff_80;
-  lut[MAT.LAVA] = 0xc8_10_50_ff;
-  lut[MAT.ICE] = 0x90_ff_f0_c0;
-  lut[MAT.RIGID] = 0xff_8a_72_5e;
-  return lut;
+  return buildColorLUT();
 }
 
 // --- Static grain texture ---
@@ -37,22 +24,9 @@ const NOISE_SIZE = 64;
 const NOISE_SHIFT = 6; // log2(NOISE_SIZE)
 const NOISE_MASK = NOISE_SIZE - 1;
 
-// Per-material grain strength (max +/- shift per channel, 0-255). Solids read
-// well grittier; liquids stay subtle; fire/steam/lava animate on their own.
-const TEXTURE_AMP = (() => {
-  const amp = new Uint8Array(16);
-  amp[MAT.SAND] = 7;
-  amp[MAT.STONE] = 8;
-  amp[MAT.RIGID] = 6;
-  amp[MAT.WOOD] = 7;
-  amp[MAT.PLANT] = 9;
-  amp[MAT.SEED] = 5;
-  amp[MAT.ICE] = 5;
-  amp[MAT.OIL] = 4;
-  amp[MAT.WATER] = 3;
-  amp[MAT.ACID] = 4;
-  return amp;
-})();
+// Per-material grain strength (max +/- shift per channel, 0-255), from the
+// registry. Solids read grittier; liquids stay subtle; fire/steam/lava animate.
+const TEXTURE_AMP = buildTextureAmp();
 
 const jitterShade = (packed, delta) => {
   if (packed === 0) return 0;

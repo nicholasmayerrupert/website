@@ -4,23 +4,12 @@
 // deterministic.
 
 import { createRigidWorld } from './rigid2d.js';
+import { MAT, KIND, buildDensity, buildLooseSorted, buildMobility, buildKind } from './materials.js';
 
-export const MAT = {
-  EMPTY: 0,
-  SAND: 1,
-  WATER: 2,
-  STONE: 3,
-  OIL: 4,
-  FIRE: 5,
-  STEAM: 6,
-  SEED: 7,
-  WOOD: 8,
-  PLANT: 9,
-  ACID: 10,
-  LAVA: 11,
-  ICE: 12,
-  RIGID: 13,
-};
+// Material identity (ids, densities, colors, kinds) lives in materials.js — the
+// single place to edit when adding a material. Re-exported so existing importers
+// (About.jsx, scenes, renderCore, benchmark) keep importing MAT from here.
+export { MAT };
 
 export const CHUNK_SIZE = 32;
 const CHUNK_SHIFT = 5; // log2(CHUNK_SIZE)
@@ -52,43 +41,28 @@ const FIRE_SPREAD_P = 0.11;
 // Acid / lava / ice tunables
 const ACID_DISSOLVE_P = 0.12;
 const ACID_DECAY_P = 0.4;
-const LAVA_VISCOSITY_P = 0.35;
 const LAVA_EMIT_FIRE_P = 0.001;
 const ICE_FREEZE_P = 0.03;
 const RIGID_FIRE_ERODE_P = FIRE_SPREAD_P;
 const RIGID_LAVA_ERODE_P = ACID_DISSOLVE_P;
 
-// Per-material density for rigid-assembly buoyancy. 0 = weightless (air/gas).
-// For liquids it is the buoyant fluid's density; for rigid materials it is body
-// weight. An ungrounded assembly floats when its summed weight is less than the
-// liquid it displaces (avg density < fluid), so ice (<1) floats ~90% submerged
-// and stone (>1) sinks. Detached wood/plant (<1) float too — see below.
-const DENSITY = new Float32Array(16);
-DENSITY[WATER] = 1.0;
-DENSITY[OIL] = 0.8;
-DENSITY[ACID] = 1.1;
-DENSITY[LAVA] = 2.8;
-DENSITY[ICE] = 0.9;
-DENSITY[SAND] = 1.6;
-DENSITY[STONE] = 2.6;
-DENSITY[WOOD] = 0.6;
-DENSITY[PLANT] = 0.4;
-DENSITY[SEED] = 0.5;
-DENSITY[RIGID] = 1.4;
-
-const DENSITY_SORTED_LOOSE = new Uint8Array(16);
-DENSITY_SORTED_LOOSE[SAND] = 1;
-DENSITY_SORTED_LOOSE[WATER] = 1;
-DENSITY_SORTED_LOOSE[OIL] = 1;
-DENSITY_SORTED_LOOSE[ACID] = 1;
-DENSITY_SORTED_LOOSE[LAVA] = 1;
-
-const LOOSE_MOBILITY_P = new Float32Array(16);
-LOOSE_MOBILITY_P[SAND] = 1.0;
-LOOSE_MOBILITY_P[WATER] = 1.0;
-LOOSE_MOBILITY_P[OIL] = 1.0;
-LOOSE_MOBILITY_P[ACID] = 1.0;
-LOOSE_MOBILITY_P[LAVA] = LAVA_VISCOSITY_P;
+// Per-material physics tables, compiled from the materials.js registry. The hot
+// loops read these as flat typed arrays (TABLE[m]).
+//   DENSITY: rigid-assembly buoyancy weight. 0 = weightless (air/gas). For
+//     liquids it is the buoyant fluid's density. An ungrounded assembly floats
+//     when its summed weight is less than the liquid it displaces (avg density <
+//     fluid), so ice (<1) floats ~90% submerged and stone (>1) sinks. Detached
+//     wood/plant (<1) float too.
+//   DENSITY_SORTED_LOOSE: 1 for powders/flowing liquids that density-sort.
+//   LOOSE_MOBILITY_P: per-tick chance a loose material attempts to move (lava
+//     < 1 is viscous; its settle gate also reads this table).
+const DENSITY = buildDensity();
+const DENSITY_SORTED_LOOSE = buildLooseSorted();
+const LOOSE_MOBILITY_P = buildMobility();
+// MAT_KIND[m] drives the step() motion dispatch: a new powder/liquid/gas routes
+// automatically by its registry `kind` with no edit here.
+const MAT_KIND = buildKind();
+const { POWDER: K_POWDER, LIQUID: K_LIQUID, GAS: K_GAS } = KIND;
 
 // Buoyancy deadband. Moving a body one row changes its wet contact by about its
 // width, so the rest band must be ~half the body width for a stable
@@ -1960,12 +1934,12 @@ export function createEngine({
     if (next[k] === EMPTY) writeNextIndex(k, material);
   };
 
-  // Lava: a viscous liquid. Most ticks it does not move (LAVA_VISCOSITY_P gate),
+  // Lava: a viscous liquid. Most ticks it does not move (its mobility gate),
   // giving it a slow, sticky flow. Water/acid contact and fire emission handled in
   // applyLava (grid phase) before this runs.
   const settleLava = (x, y, k) => {
     if (next[k] !== EMPTY) return;
-    if (rand() >= LAVA_VISCOSITY_P) { writeNextIndex(k, LAVA); return; }
+    if (rand() >= LOOSE_MOBILITY_P[LAVA]) { writeNextIndex(k, LAVA); return; }
     settleLiquid(x, y, k, LAVA);
   };
 
@@ -2435,11 +2409,11 @@ export function createEngine({
       const ltr = (y & 1) === 0;
       if (ltr) {
         for (let x = minX; x <= maxX; x++) {
-          if (grid[rowBase + x] === SAND) settleSand(x, y, rowBase + x);
+          if (MAT_KIND[grid[rowBase + x]] === K_POWDER) settleSand(x, y, rowBase + x);
         }
       } else {
         for (let x = maxX; x >= minX; x--) {
-          if (grid[rowBase + x] === SAND) settleSand(x, y, rowBase + x);
+          if (MAT_KIND[grid[rowBase + x]] === K_POWDER) settleSand(x, y, rowBase + x);
         }
       }
     }
@@ -2458,14 +2432,16 @@ export function createEngine({
       if (ltr) {
         for (let x = minX; x <= maxX; x++) {
           const material = grid[rowBase + x];
+          if (MAT_KIND[material] !== K_LIQUID) continue;
           if (material === LAVA) settleLava(x, y, rowBase + x);
-          else if (material === ACID || material === WATER || material === OIL) settleLiquid(x, y, rowBase + x, material);
+          else settleLiquid(x, y, rowBase + x, material);
         }
       } else {
         for (let x = maxX; x >= minX; x--) {
           const material = grid[rowBase + x];
+          if (MAT_KIND[material] !== K_LIQUID) continue;
           if (material === LAVA) settleLava(x, y, rowBase + x);
-          else if (material === ACID || material === WATER || material === OIL) settleLiquid(x, y, rowBase + x, material);
+          else settleLiquid(x, y, rowBase + x, material);
         }
       }
     }
@@ -2481,14 +2457,16 @@ export function createEngine({
       if (ltr) {
         for (let x = minX; x <= maxX; x++) {
           const material = grid[rowBase + x];
+          if (MAT_KIND[material] !== K_GAS) continue;
           if (material === FIRE) riseFire(x, y, rowBase + x);
-          else if (material === STEAM) riseSteam(x, y, rowBase + x);
+          else riseSteam(x, y, rowBase + x);
         }
       } else {
         for (let x = maxX; x >= minX; x--) {
           const material = grid[rowBase + x];
+          if (MAT_KIND[material] !== K_GAS) continue;
           if (material === FIRE) riseFire(x, y, rowBase + x);
-          else if (material === STEAM) riseSteam(x, y, rowBase + x);
+          else riseSteam(x, y, rowBase + x);
         }
       }
     }

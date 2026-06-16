@@ -102,5 +102,27 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 7. erasing through a (rotated) rigid body splits it into two simulated halves
+//    rather than shattering / losing a half.
+{
+  console.log('rigid body split');
+  const e = mk({ infinite: false });
+  // sloped stone floor so the cube rests rotated (the case that regressed).
+  for (let x = 5; x < COLS - 5; x++) { const top = 50 + ((x - 5) >> 1); for (let y = top; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); }
+  e.finalizeStoneDraft();
+  const body = []; for (let dx = -8; dx < 8; dx++) for (let dy = 0; dy < 12; dy++) body.push([100 + dx, 10 + dy]);
+  e.spawnBody(body);
+  run(400, e); // settle on the slope
+  const g0 = e.getGrid(); let t = 1e9, b = -1, l = 1e9, r = 0;
+  for (let i = 0; i < g0.length; i++) if (g0[i] === 13) { const y = (i / COLS) | 0, x = i % COLS; if (y < t) t = y; if (y > b) b = y; if (x < l) l = x; if (x > r) r = x; }
+  const midX = (l + r) >> 1;
+  for (let y = t - 1; y <= b + 1; y += 2) e.eraseDisc(midX, y, 2); // vertical eraser swipe
+  run(50, e);
+  const g = e.getGrid(); let left = 0, right = 0;
+  for (let i = 0; i < g.length; i++) if (g[i] === 13) ((i % COLS) < midX ? left++ : right++);
+  check(`both halves survive the cut (L${left} R${right}, ${e._bodyCount()} bodies)`, e._bodyCount() >= 2 && left > 12 && right > 12);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

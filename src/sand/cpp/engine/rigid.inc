@@ -240,56 +240,24 @@
     for (int bi = 0; bi < n; bi++) { Body* b = bodies[bi]; if (!b->awake) continue; if (islandMinStill[ifind(bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
   }
   template <class F> void forEachBodyCell(Body* b, F cb) {
+    // Rasterize occ -> world (forward): place EVERY filled occ cell into the grid
+    // cell containing its center. Sampling world -> occ (the inverse) instead
+    // skips occ cells whenever the body's sub-cell/rotation offset rounds two
+    // world cells onto the same occ index, leaving the stamped footprint holey
+    // and smaller than the body — which, on erase, makes finishErasedBodies fail
+    // to re-claim cells and erase them (a half of the body vanishing).
     double sn = std::sin(b->angle), cs = std::cos(b->angle);
-    double lx0 = b->offsetX - 0.5, lx1 = b->offsetX + b->w - 0.5, ly0 = b->offsetY - 0.5, ly1 = b->offsetY + b->h - 0.5;
-    double minWX = 1e18, minWY = 1e18, maxWX = -1e18, maxWY = -1e18;
-    auto corner = [&](double lx, double ly) { double wx = b->px + lx * cs - ly * sn, wy = b->py + lx * sn + ly * cs; if (wx < minWX) minWX = wx; if (wx > maxWX) maxWX = wx; if (wy < minWY) minWY = wy; if (wy > maxWY) maxWY = wy; };
-    corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
-    int x0 = (int)std::floor(minWX), x1 = (int)std::floor(maxWX), y0 = (int)std::floor(minWY), y1 = (int)std::floor(maxWY);
-    if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= cols) x1 = cols - 1; if (y1 >= rows) y1 = rows - 1;
-    for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
-      double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
-      double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
-      int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
-      if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
-      if (b->occ[j * b->w + i]) cb(wx, wy);
+    for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
+      if (!b->occ[(size_t)j * b->w + i]) continue;
+      double lx = b->offsetX + i, ly = b->offsetY + j;
+      double wcx = b->px + lx * cs - ly * sn, wcy = b->py + lx * sn + ly * cs; // cell center in world
+      int gx = (int)std::floor(wcx), gy = (int)std::floor(wcy);
+      if (gx < 0 || gx >= cols || gy < 0 || gy >= rows) continue;
+      cb(gx, gy); // callers dedupe (two occ cells can share a grid cell)
     }
   }
   int localCellAt(Body* b, double wx, double wy) { b->cs = std::cos(b->angle); b->sn = std::sin(b->angle); return insideBodyIndex(b, wx, wy); }
   bool eraseLocalCell(Body* b, int idx) { if (idx < 0 || idx >= (int)b->occ.size() || !b->occ[idx]) return false; b->occ[idx] = 0; return true; }
-  bool splitDisconnectedBody(Body* b) {
-    std::vector<uint8_t> seen(b->occ.size(), 0);
-    std::vector<std::vector<int>> parts;
-    for (int k = 0; k < (int)b->occ.size(); k++) {
-      if (seen[k] || !b->occ[k]) continue;
-      std::vector<int> part, stack; seen[k] = 1; stack.push_back(k);
-      while (!stack.empty()) { int cur = stack.back(); stack.pop_back(); part.push_back(cur); int i = cur % b->w, j = cur / b->w; auto pu = [&](int ii, int jj) { if (ii < 0 || ii >= b->w || jj < 0 || jj >= b->h) return; int nk = jj * b->w + ii; if (seen[nk] || !b->occ[nk]) return; seen[nk] = 1; stack.push_back(nk); }; pu(i - 1, j); pu(i + 1, j); pu(i, j - 1); pu(i, j + 1); }
-      parts.push_back(std::move(part));
-    }
-    if (parts.size() <= 1) return false;
-    double oldPx = b->px, oldPy = b->py, oldVx = b->vx, oldVy = b->vy, oldOmega = b->omega;
-    auto makePiece = [&](std::vector<int>& part, int id) -> Body* {
-      int minI = 1 << 30, minJ = 1 << 30, maxI = -(1 << 30), maxJ = -(1 << 30);
-      for (int idx : part) { int i = idx % b->w, j = idx / b->w; if (i < minI) minI = i; if (i > maxI) maxI = i; if (j < minJ) minJ = j; if (j > maxJ) maxJ = j; }
-      int w = maxI - minI + 1, h = maxJ - minJ + 1;
-      Body* p = new Body(); p->occ.assign((size_t)w * h, 0);
-      for (int idx : part) { int i = idx % b->w, j = idx / b->w; p->occ[(size_t)(j - minJ) * w + (i - minI)] = 1; }
-      p->w = w; p->h = h; p->offsetX = b->offsetX + minI; p->offsetY = b->offsetY + minJ;
-      p->px = oldPx; p->py = oldPy; p->angle = b->angle; p->material = b->material; p->density = b->density; p->id = id;
-      computeDerived(p, true);
-      double rx = p->px - oldPx, ry = p->py - oldPy; p->vx = oldVx - oldOmega * ry; p->vy = oldVy + oldOmega * rx; p->omega = oldOmega;
-      return p;
-    };
-    // first part reuses b in place
-    Body* first = makePiece(parts[0], b->id);
-    *b = *first; delete first;
-    int bi = -1; for (int i = 0; i < (int)bodies.size(); i++) if (bodies[i] == b) { bi = i; break; }
-    std::vector<Body*> extra;
-    for (size_t p = 1; p < parts.size(); p++) extra.push_back(makePiece(parts[p], nextBodyId++));
-    if (bi >= 0) bodies.insert(bodies.begin() + bi + 1, extra.begin(), extra.end());
-    else for (Body* e : extra) bodies.push_back(e);
-    return true;
-  }
 
   // ---- rigidBodies.js layer ----
   bool isBodyTerrain(int x, int y) {
@@ -339,13 +307,43 @@
   }
   void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells) {
     if (dirty.empty()) { bodyCells = cells; return; }
+    // Split each erased body by the connectivity of its actual WORLD grid cells
+    // (the clean source of truth), not its occ grid: the occ<->world map is lossy
+    // for rotated bodies, so an occ-space flood over-fragments a clean cut into
+    // dozens of slivers and loses a half. A body merely chipped (one world
+    // component) keeps its rotation via computeDerived; a body actually cut into
+    // multiple pieces is rebuilt as axis-aligned bodies, inheriting velocity.
     std::unordered_set<int> removedIds;
-    for (Body* b : dirty) { if (computeDerived(b, true)) { splitDisconnectedBody(b); } else removedIds.insert(b->id); }
+    for (Body* b : dirty) {
+      std::vector<int> wc; // b's remaining world cells
+      for (int k : cells) if (grid[k] == RIGID && bodyOwner[k] == b->id) wc.push_back(k);
+      if (wc.empty()) { removedIds.insert(b->id); continue; }
+      // flood (4-connected) into world-connected groups
+      std::unordered_map<int, int> idxOf; for (size_t i = 0; i < wc.size(); i++) idxOf[wc[i]] = (int)i;
+      std::vector<int> comp(wc.size(), -1); std::vector<std::vector<int>> groups;
+      for (size_t i = 0; i < wc.size(); i++) {
+        if (comp[i] != -1) continue; int gid = (int)groups.size(); groups.push_back({}); std::vector<int> st{(int)i}; comp[i] = gid;
+        while (!st.empty()) { int ci = st.back(); st.pop_back(); int k = wc[ci]; groups[gid].push_back(k); int y = k / cols, x = k - y * cols;
+          const int off[4][2] = {{-1,0},{1,0},{0,-1},{0,1}};
+          for (auto& o : off) { int nx = x + o[0], ny = y + o[1]; if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue; auto it = idxOf.find(ny * cols + nx); if (it == idxOf.end() || comp[it->second] != -1) continue; comp[it->second] = gid; st.push_back(it->second); } }
+      }
+      if (groups.size() <= 1) { computeDerived(b, true); continue; } // chip: keep the body (+ rotation)
+      // genuine split: rebuild each piece as an axis-aligned body with inherited motion
+      double ovx = b->vx, ovy = b->vy, ow = b->omega, opx = b->px, opy = b->py;
+      for (auto& grp : groups) {
+        std::vector<std::pair<int, int>> gc; gc.reserve(grp.size());
+        for (int k : grp) gc.push_back({k % cols, k / cols});
+        Body* p = spawnBodyImpl(gc, b->material, b->density);
+        if (!p) continue;
+        double rx = p->px - opx, ry = p->py - opy;
+        p->vx = ovx - ow * ry; p->vy = ovy + ow * rx; p->omega = ow;
+      }
+      removedIds.insert(b->id);
+    }
     if (!removedIds.empty()) {
       std::vector<Body*> keep;
       for (Body* b : bodies) { if (removedIds.count(b->id)) delete b; else keep.push_back(b); }
       bodies = std::move(keep);
-      for (int k : cells) { if (!removedIds.count(bodyOwner[k])) continue; if (grid[k] == RIGID) writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
     }
     for (int k : cells) if (grid[k] == RIGID) bodyOwner[k] = -1;
     std::vector<int> kept; std::unordered_set<int> claimed;

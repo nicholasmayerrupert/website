@@ -92,7 +92,8 @@ export function createSandGame(container, opts = {}) {
   const WORLD_HEIGHT_FACTOR = 2.5; // world is this many viewports tall
   const BUF_MARGIN_COLS = 128;     // extra buffer columns on each side of the view
   const BUFFER_MAX_CELLS = 520000; // cap so the per-step budget stays bounded
-  const PAN_CELLS_PER_STEP = 2.5;  // camera pan speed while a key is held
+  const PAN_CELLS_PER_SEC = 100;   // camera pan speed while a key is held
+  const MAX_FRAME_DT = 50;         // ms; clamp so a stall can't produce a big jump
   // Horizontal streaming: slide the world by SHIFT_COLS when the camera comes
   // within SHIFT_EDGE_MARGIN of a buffer edge, so it always has room to pan.
   const SHIFT_COLS = 128;
@@ -712,6 +713,7 @@ export function createSandGame(container, opts = {}) {
   // Main loop
   let raf = 0;
   let lastStep = performance.now();
+  let lastFrame = performance.now();
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     if (reduced) return;
@@ -721,19 +723,24 @@ export function createSandGame(container, opts = {}) {
       px = clientX - wrapBounds.left; py = clientY - wrapBounds.top;
     }
 
-    if (now - lastStep >= STEP_MS) {
-      // Pan the camera from held keys (sign-normalized so opposite keys cancel
-      // and WASD+arrows don't double-speed). Scale by the real elapsed time so
-      // pan velocity stays even when frame timing jitters (clamped so a long
-      // stall doesn't produce a big jump).
-      let panX = 0, panY = 0;
-      for (const k of pressedKeys) { const d = PAN_KEYS[k]; panX += d[0]; panY += d[1]; }
-      if (panX || panY) {
-        const panScale = PAN_CELLS_PER_STEP * Math.min(2, (now - lastStep) / STEP_MS);
-        camera.panBy(Math.sign(panX) * panScale, Math.sign(panY) * panScale);
-        previewDirty = previewVisible; // re-place any draft overlay at the new offset
-      }
+    // Per-frame camera pan: scaled by real frame time so motion is smooth at any
+    // refresh rate, independent of the fixed sim step. Sign-normalized so
+    // opposite keys cancel and WASD+arrows don't double-speed. Frame dt is
+    // clamped so a long stall (e.g. tab refocus) can't produce a big jump.
+    const frameDt = Math.min(MAX_FRAME_DT, now - lastFrame);
+    lastFrame = now;
+    let panX = 0, panY = 0;
+    for (const k of pressedKeys) { const d = PAN_KEYS[k]; panX += d[0]; panY += d[1]; }
+    if (panX || panY) {
+      const dist = PAN_CELLS_PER_SEC * (frameDt / 1000);
+      camera.panBy(Math.sign(panX) * dist, Math.sign(panY) * dist);
+      previewDirty = previewVisible; // re-place any draft overlay at the new offset
+    }
 
+    // Fixed-timestep simulation: world-shift + drafts + emit + engine.step run
+    // at STEP_MS for determinism, independent of the per-frame pan above.
+    let stepped = false;
+    if (now - lastStep >= STEP_MS) {
       // Stream the infinite world: when the camera nears a horizontal buffer
       // edge, slide the loaded window and pull the camera back so the view is
       // unchanged but there's room to keep panning. Fresh terrain is generated
@@ -760,11 +767,8 @@ export function createSandGame(container, opts = {}) {
       }
 
       emitAtPointer(now);
-      const didStep = engine.step(now);
-      const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
-      if (didStep || camMoved) render(false);
-      if (previewDirty || previewVisible) renderPreview();
-      if (didStep) {
+      stepped = engine.step(now);
+      if (stepped) {
         perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
         perfRenderSamples[perfSampleIdx] = perfRenderMs;
         perfSampleIdx = (perfSampleIdx + 1) % PERF_SAMPLES;
@@ -772,6 +776,13 @@ export function createSandGame(container, opts = {}) {
       }
       lastStep = now;
     }
+
+    // Present every frame the camera moved or the sim changed. A camera-only
+    // frame is a cheap GPU blit (render() does no CPU pixel work when content
+    // is unchanged), so this is safe to run at the display refresh rate.
+    const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
+    if (stepped || camMoved) render(false);
+    if (previewDirty || previewVisible) renderPreview();
   };
   raf = requestAnimationFrame(loop);
 

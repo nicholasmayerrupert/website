@@ -10,7 +10,10 @@
 // rolling — emerges without any special-casing.
 
 // Tunables (cells / ticks).
-const GRAVITY = 0.26;
+// GRAVITY is the per-tick velocity gain (how hard a fall accelerates); MAX_SPEED
+// below is the terminal speed it ramps toward. Keep this small so a drop speeds up
+// gently over a long fall instead of snapping to terminal velocity.
+const GRAVITY = 0.06;
 // Terminal speed. A fall accelerates up to this, so a long drop visibly speeds up
 // rather than pinning at a low constant velocity. A single integration step must
 // still not move a body much past one cell or it tunnels through thin terrain and

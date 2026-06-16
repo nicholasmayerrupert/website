@@ -26,7 +26,10 @@ export function initSandWasm() {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       M = {
         mod,
-        create: c('engine_create', 'number', ['number', 'number', 'number', 'number']),
+        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number']),
+        shiftWorld: c('engine_shift_world', null, ['number', 'number']),
+        worldOffsetX: c('engine_world_offset_x', 'number', ['number']),
+        worldSurfaceAt: c('engine_world_surface_at', 'number', ['number', 'number']),
         destroy: c('engine_destroy', null, ['number']),
         step: c('engine_step', 'number', ['number']),
         grid: c('engine_grid', 'number', ['number']),
@@ -72,12 +75,12 @@ export function createEngineWasm({
   rng = Math.random,
   emittersOn = true, // eslint-disable-line no-unused-vars
   sinksOn = true,
-  infinite = false, // eslint-disable-line no-unused-vars
+  infinite = false,
   worldSeed = (Math.floor((rng() || Math.random()) * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
   const { mod } = M;
-  const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0);
+  const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0);
   const chunkCols = M.chunkCols(ptr);
   const chunkRows = M.chunkRows(ptr);
   const cellCount = cols * rows;
@@ -137,10 +140,12 @@ export function createEngineWasm({
     canPlaceSeedAt(x0, y0) { return M.canPlaceSeed(ptr, x0, y0) === 1; },
     placeSeedAt(x0, y0) { return M.placeSeed(ptr, x0, y0) === 1; },
 
-    // --- Stubs until Stage 4-5 (host must not crash) ---
-    getWorldOffsetX() { return 0; },
-    worldSurfaceAt() { return 0; },
-    shiftWorld() {},
+    // Streaming infinite world (Stage 5)
+    getWorldOffsetX() { return M.worldOffsetX(ptr); },
+    worldSurfaceAt(worldX) { return M.worldSurfaceAt(ptr, worldX); },
+    shiftWorld(dx) { M.shiftWorld(ptr, dx); },
+
+    // --- Stubs until Stage 4 free rigid bodies (host must not crash) ---
     spawnBody() { return null; },
     getBodies() { return []; },
     bodyFootprintBlocked() { return 0; },

@@ -48,6 +48,35 @@ static const float TRUNK_SIDE_FILL_P = 0.96f, TRUNK_DOUBLE_SIDE_FILL_P = 0.78f, 
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
 
+// ---- Seeded noise (worldgen/noise.js) ----
+static inline double whash2(uint32_t seed, int x, int y) {
+  uint32_t h = seed;
+  h = (h ^ (uint32_t)x) * 0x27d4eb2du;
+  h = (h ^ (uint32_t)y) * 0x165667b1u;
+  h ^= h >> 15; h = h * 0x2c1b3c6du; h ^= h >> 13;
+  return (double)h / 4294967296.0;
+}
+static inline double whash1(uint32_t seed, int x) { return whash2(seed, x, 0x9e37); }
+static inline double wfade(double t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+static inline double wlerp(double a, double b, double t) { return a + (b - a) * t; }
+static double valueNoise2D(uint32_t seed, double x, double y) {
+  double xi = std::floor(x), yi = std::floor(y), xf = x - xi, yf = y - yi;
+  double u = wfade(xf), v = wfade(yf);
+  double aa = whash2(seed, (int)xi, (int)yi), ba = whash2(seed, (int)xi + 1, (int)yi);
+  double ab = whash2(seed, (int)xi, (int)yi + 1), bb = whash2(seed, (int)xi + 1, (int)yi + 1);
+  return wlerp(wlerp(aa, ba, u), wlerp(ab, bb, u), v);
+}
+static double wfbm2(uint32_t seed, double x, double y, int octaves, double gain) {
+  double amp = 1, freq = 1, sum = 0, norm = 0;
+  for (int o = 0; o < octaves; o++) { double n = valueNoise2D(seed + (uint32_t)o * 1013u, x * freq, y * freq); sum += n * amp; norm += amp; amp *= gain; freq *= 2; }
+  return norm > 0 ? sum / norm : 0;
+}
+static double wridged2(uint32_t seed, double x, double y, int octaves, double gain) {
+  double amp = 1, freq = 1, sum = 0, norm = 0;
+  for (int o = 0; o < octaves; o++) { double n = valueNoise2D(seed + (uint32_t)o * 1013u, x * freq, y * freq); double r = 1 - std::fabs(n * 2 - 1); sum += r * r * amp; norm += amp; amp *= gain; freq *= 2; }
+  return norm > 0 ? sum / norm : 0;
+}
+
 struct Comp {
   int id = 0;
   std::unordered_set<int> cells;
@@ -73,6 +102,12 @@ struct Engine {
   int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
   std::unordered_set<int> stoneDraft, iceDraft;
   std::vector<int> draftSnapshot;
+  // worldgen / streaming
+  bool infinite = false;
+  int worldOffsetX = 0;
+  uint32_t worldSeed = 0;
+  int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;
+  uint32_t gCaveSeed = 0, gTreeSeed = 0;
   int stepSerial = 0, dirtyRenderCount = 0, tick = 0, perfDirtyChunks = 0;
   double perfStepMs = 0;
   bool sinksEnabled;
@@ -885,14 +920,117 @@ struct Engine {
     markDirtyRect(x0, y0, x0 + SEED_SIZE - 1, y0 + SEED_SIZE - 1);
     return true;
   }
+
+  // ================= WORLDGEN STREAMING (streamGen.js + worldWindow.js) =================
+  static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
+  static const int SURFACE_OCT, GEN_SKIN;
+  int genSurfaceAt(int worldX) {
+    double n = wfbm2(worldSeed, worldX * SURFACE_FREQ, 0.5, SURFACE_OCT, 0.5);
+    int y = (int)std::lround(gSurfBase - (n - 0.5) * 2 * gSurfAmp);
+    if (y < 2) y = 2; if (y > rows - 4) y = rows - 4; return y;
+  }
+  bool genIsCave(int worldX, int y) { return wridged2(gCaveSeed, worldX * CAVE_FREQ, y * CAVE_FREQ, 3, 0.5) > CAVE_THRESH; }
+  uint8_t genCellAt(int worldX, int surf, int slope, int y) {
+    if (y < surf) return y >= gSeaRow ? WATER : EMPTY;
+    int depth = y - surf;
+    if (depth < GEN_SKIN) return slope <= 1 ? PLANT : SAND;
+    if (depth < GEN_SKIN + gSoil) return SAND;
+    if (depth >= GEN_SKIN + gSoil + 2 && genIsCave(worldX, y)) return EMPTY;
+    return STONE;
+  }
+  bool genTreeAt(int worldX, int surf) { return surf <= gSeaRow && whash1(gTreeSeed, worldX) < TREE_PROB; }
+  void fillBand(int colStart, int colCount, int wOffsetX) {
+    int colEnd = colStart + colCount;
+    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < 0 || y >= rows) return; grid[y * cols + lx] = m; };
+    for (int lx = colStart; lx < colEnd; lx++) {
+      int worldX = wOffsetX + lx; int surf = genSurfaceAt(worldX);
+      int slope = std::abs(genSurfaceAt(worldX + 1) - genSurfaceAt(worldX - 1));
+      for (int y = 0; y < rows; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, y);
+    }
+    const int TREE_REACH = 4;
+    for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
+      int worldX = wOffsetX + lx; int surf = genSurfaceAt(worldX);
+      if (!genTreeAt(worldX, surf)) continue;
+      int h = 6 + (int)(whash1(gTreeSeed + 1, worldX) * 7);
+      int top = surf - h;
+      for (int y = top; y < surf; y++) put(lx, y, WOOD);
+      for (int oy = -3; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 9) continue; put(lx + ox, top + oy, PLANT); }
+    }
+    for (int lx = colStart; lx < colEnd; lx++) for (int y = 0; y < rows; y++) { int k = y * cols + lx; next[k] = grid[k]; }
+  }
+  void initInfinite(uint32_t seed) {
+    infinite = true; worldSeed = seed;
+    gSurfAmp = imax(16, (int)std::floor(rows * 0.16));
+    gSurfBase = imax(8, (int)std::floor(rows * 0.24));
+    gSeaRow = gSurfBase + imax(2, (int)std::floor(rows * 0.05));
+    gSoil = imax(3, (int)std::floor(rows * 0.045));
+    gCaveSeed = seed ^ 0x5bd1e995u; gTreeSeed = seed ^ 0x1b56c4f9u;
+    worldOffsetX = -(cols / 2);
+    fillBand(0, cols, worldOffsetX);
+    registerSeededComponents(0, cols);
+  }
+  void shiftRowMajorU8(uint8_t* arr, int dx, uint8_t fill) {
+    if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, cols - dx); memset(arr + b + cols - dx, fill, dx); }
+    else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, cols - s); memset(arr + b, fill, s); } }
+  }
+  void translateComponents(std::vector<Comp>& list, int dx) {
+    std::vector<Comp> kept;
+    for (auto& comp : list) {
+      std::unordered_set<int> cells; int yMax = 0;
+      for (int k : comp.cells) { int nx = (k % cols) - dx; if (nx < 0 || nx >= cols) continue; int nk = k - dx; cells.insert(nk); int y = nk / cols; if (y > yMax) yMax = y; }
+      if (cells.empty()) continue;
+      comp.cells = std::move(cells); comp.yMax = yMax; comp.cacheDirty = true;
+      kept.push_back(std::move(comp));
+    }
+    list = std::move(kept);
+  }
+  void shiftWorld(int dx) {
+    if (!dx || !infinite) return;
+    int s = std::abs(dx);
+    if (s >= cols) return;
+    int oldOffset = worldOffsetX, newOffset = oldOffset + dx;
+    int enterColStart = dx > 0 ? cols - s : 0;
+    shiftRowMajorU8(grid, dx, EMPTY);
+    shiftRowMajorU8(next, dx, EMPTY);
+    for (int y = 0; y < rows; y++) {
+      if (rowMarkMax[y] < rowMarkMin[y]) continue;
+      int mn = rowMarkMin[y] - dx, mx = rowMarkMax[y] - dx;
+      if (mx < 0 || mn > cols - 1) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; continue; }
+      rowMarkMin[y] = mn < 0 ? 0 : mn; rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx;
+    }
+    std::fill(compOccStamp.begin(), compOccStamp.end(), -1);
+    std::fill(vacatedStamp.begin(), vacatedStamp.end(), -1);
+    fillBand(enterColStart, s, newOffset);
+    worldOffsetX = newOffset;
+    for (int y = 0; y < rows; y++) { if (enterColStart < rowMarkMin[y]) rowMarkMin[y] = enterColStart; if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1; }
+    translateComponents(stoneComponents, dx);
+    translateComponents(plantComponents, dx);
+    translateComponents(iceComponents, dx);
+    registerSeededComponents(enterColStart, enterColStart + s);
+  }
 };
+
+const double Engine::SURFACE_FREQ = 0.010;
+const double Engine::CAVE_FREQ = 0.05;
+const double Engine::CAVE_THRESH = 0.66;
+const double Engine::TREE_PROB = 0.05;
+const int Engine::SURFACE_OCT = 5;
+const int Engine::GEN_SKIN = 1;
 
 const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
 // ---------------- C ABI ----------------
 extern "C" {
-EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks) { Engine* e = new Engine(cols, rows, seed, sinks != 0); e->markAllDirty(); return e; }
+EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite) {
+  Engine* e = new Engine(cols, rows, seed, sinks != 0);
+  if (infinite) e->initInfinite(seed);
+  e->markAllDirty();
+  return e;
+}
+EMSCRIPTEN_KEEPALIVE void engine_shift_world(Engine* e, int dx) { e->shiftWorld(dx); }
+EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->worldOffsetX; }
+EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { return e->infinite ? e->genSurfaceAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }
 EMSCRIPTEN_KEEPALIVE int engine_step(Engine* e) { return e->step() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->grid; }

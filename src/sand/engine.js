@@ -12,6 +12,7 @@ import { createComponents } from './components.js';
 import { createTools } from './tools.js';
 import { createStreamGen } from './worldgen/streamGen.js';
 import { createWorldWindow } from './worldWindow.js';
+import { createChunkStore } from './chunkStore.js';
 
 // Material identity (ids, densities, colors, kinds) lives in materials.js — the
 // single place to edit when adding a material. Re-exported so existing importers
@@ -1026,6 +1027,7 @@ export function createEngine({
       generateBand: streamGen.generateBand,
       getWorldOffsetX: () => worldOffsetX,
       setWorldOffsetX: (v) => { worldOffsetX = v; },
+      chunkStore: createChunkStore({ worldRows: rows }),
     });
   } else {
     applyInitialScene();

@@ -31,7 +31,7 @@ export function createWorldWindow(S, ext) {
   const {
     bufCols, worldRows,
     compOccStamp, vacatedStamp, rowMarkMin, rowMarkMax,
-    generateBand, getWorldOffsetX, setWorldOffsetX,
+    generateBand, getWorldOffsetX, setWorldOffsetX, chunkStore,
   } = ext;
   const EMPTY = S.EMPTY;
   const RIGID = S.RIGID;
@@ -46,9 +46,18 @@ export function createWorldWindow(S, ext) {
     const next = S.next;
     const bodyOwner = S.bodyOwner;
     const rigidWorld = S.rigidWorld;
+    const oldOffset = getWorldOffsetX();
+    const newOffset = oldOffset + dx;
+    // Local column starts of the band leaving (scrolled off) and the band
+    // entering (newly exposed), plus their world-x keys for the store.
+    const leaveColStart = dx > 0 ? 0 : bufCols - s;
+    const enterColStart = dx > 0 ? bufCols - s : 0;
+    const leaveKey = oldOffset + leaveColStart;
+    const enterKey = newOffset + enterColStart;
 
-    // 1) Un-stamp free rigid bodies before the memmove so no stale RIGID raster is
-    // dragged along; moveBodies re-rasterizes from each body's float pose.
+    // 1) Un-stamp free rigid bodies before anything else so no stale RIGID raster
+    // is saved or carried through the memmove; moveBodies re-rasterizes from each
+    // body's float pose next step.
     for (const k of S.bodyCells) {
       if (grid[k] === RIGID) grid[k] = EMPTY;
       if (next[k] === RIGID) next[k] = EMPTY;
@@ -56,7 +65,25 @@ export function createWorldWindow(S, ext) {
     }
     S.bodyCells = [];
 
-    // 2) Slide the persistent buffers and the per-row dirty marks together.
+    // 2) Persist the leaving band: pull out the bodies that sit in it, then save
+    // its (now RIGID-free) materials. Bodies are stored with absolute world-x so
+    // they reappear in the right place on return.
+    if (chunkStore) {
+      const leaving = [];
+      const staying = [];
+      for (const b of rigidWorld.bodies) {
+        if (b.px >= leaveColStart && b.px < leaveColStart + s) leaving.push({ body: b, worldPx: oldOffset + b.px });
+        else staying.push(b);
+      }
+      if (leaving.length) {
+        rigidWorld.bodies.length = 0;
+        for (const b of staying) rigidWorld.bodies.push(b);
+        chunkStore.saveBodies(leaveKey, leaving);
+      }
+      chunkStore.saveMaterials(grid, bufCols, leaveColStart, s, leaveKey);
+    }
+
+    // 3) Slide the persistent buffers and the per-row dirty marks together.
     shiftRowMajor(grid, bufCols, worldRows, dx, EMPTY);
     shiftRowMajor(next, bufCols, worldRows, dx, EMPTY);
     shiftRowMajor(bodyOwner, bufCols, worldRows, dx, -1);
@@ -73,7 +100,7 @@ export function createWorldWindow(S, ext) {
     compOccStamp.fill(-1);
     vacatedStamp.fill(-1);
 
-    // 3) Translate live rigid bodies; drop any whose center left the buffer.
+    // 4) Translate the bodies that stayed; drop any that ended up off-buffer.
     const keep = [];
     for (const b of rigidWorld.bodies) {
       b.px -= dx;
@@ -82,18 +109,24 @@ export function createWorldWindow(S, ext) {
     rigidWorld.bodies.length = 0;
     for (const b of keep) rigidWorld.bodies.push(b);
 
-    // 4) Generate the newly exposed edge band and advance the world offset.
-    const newOffset = getWorldOffsetX() + dx;
-    const colStart = dx > 0 ? bufCols - s : 0;
-    generateBand({ grid, next, bufCols, colStart, colCount: s, worldOffsetX: newOffset });
+    // 5) Bring in the newly exposed band: restore it if we've been here before,
+    // otherwise generate it. Then advance the offset and restore its bodies.
+    const restored = chunkStore && chunkStore.loadMaterials(grid, next, bufCols, enterColStart, s, enterKey);
+    if (!restored) generateBand({ grid, next, bufCols, colStart: enterColStart, colCount: s, worldOffsetX: newOffset });
     setWorldOffsetX(newOffset);
+    if (chunkStore) {
+      for (const e of chunkStore.takeBodies(enterKey)) {
+        e.body.px = e.worldPx - newOffset;
+        rigidWorld.bodies.push(e.body);
+      }
+    }
     // Mark the new band active so it simulates (water settling, etc.).
     for (let y = 0; y < worldRows; y++) {
-      if (colStart < rowMarkMin[y]) rowMarkMin[y] = colStart;
-      if (colStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = colStart + s - 1;
+      if (enterColStart < rowMarkMin[y]) rowMarkMin[y] = enterColStart;
+      if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1;
     }
 
-    // 5) Rebuild the component layer from the shifted+generated grid. Existing
+    // 6) Rebuild the component layer from the shifted/restored grid. Existing
     // component cell-sets hold pre-shift indices, so they are discarded and
     // re-derived from materials (registerSeededComponents is a full flood-fill).
     S.stoneComponents = [];

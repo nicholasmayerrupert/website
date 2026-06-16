@@ -714,6 +714,24 @@ export function createSandGame(container, opts = {}) {
     };
   }
 
+  // Slide the persistent cellCanvas horizontally to mirror engine.shiftWorld, so
+  // streaming the world is a single cheap GPU copy instead of repainting the
+  // whole buffer (the old forceFullRender path — a ~per-cell fillPixelSpan over
+  // the entire buffer every ~second of panning, which caused the periodic stutter
+  // and made rigid bodies blink during the slow frame). The freshly exposed band
+  // is left stale here and repainted by syncCellCanvas from the engine's dirty
+  // chunks (shiftWorld marks that band dirty). drawImage onto the same canvas is
+  // well-defined for overlapping regions (it copies from a snapshot).
+  const shiftCellCanvas = (dx) => {
+    if (!dx) return;
+    if (dx > 0) {
+      if (cols - dx > 0) cellCtx.drawImage(cellCanvas, dx, 0, cols - dx, rows, 0, 0, cols - dx, rows);
+    } else {
+      const s = -dx;
+      if (cols - s > 0) cellCtx.drawImage(cellCanvas, 0, 0, cols - s, rows, s, 0, cols - s, rows);
+    }
+  };
+
   // Main loop
   let raf = 0;
   let lastStep = performance.now();
@@ -752,12 +770,12 @@ export function createSandGame(container, opts = {}) {
       const maxCamX = cols - viewCols;
       if (camera.colX >= maxCamX - SHIFT_EDGE_MARGIN) {
         engine.shiftWorld(SHIFT_COLS);
+        shiftCellCanvas(SHIFT_COLS); // cheap GPU slide; new band repaints from dirty chunks
         camera.set(camera.x - SHIFT_COLS, camera.y);
-        forceFullRender = true;
       } else if (camera.colX <= SHIFT_EDGE_MARGIN) {
         engine.shiftWorld(-SHIFT_COLS);
+        shiftCellCanvas(-SHIFT_COLS);
         camera.set(camera.x + SHIFT_COLS, camera.y);
-        forceFullRender = true;
       }
 
       if (isDraftingStone && inside) {

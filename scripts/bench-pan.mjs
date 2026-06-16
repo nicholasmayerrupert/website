@@ -132,6 +132,24 @@ try {
 
   const info = await page.evaluate(() => window.__sandTest.info());
 
+  // Pointer round-trip: a cursor at a cell's rendered center must map back to
+  // that cell. Catches brush/cursor offset bugs across zoom levels. Reports the
+  // worst |Δcell| over a grid of visible cells (must be 0).
+  const cursor = await page.evaluate(() => {
+    const T = window.__sandTest, i = T.info(), cam = T.getCam();
+    const camCol = Math.floor(cam.x), camRow = Math.floor(cam.y);
+    let worst = 0;
+    for (let gx = 4; gx < i.viewCols - 4; gx += 7) for (let gy = 4; gy < i.viewRows - 4; gy += 7) {
+      const cx = camCol + gx, cy = camRow + gy;
+      const r = T.cellRect(cx, cy);                 // device-px top-left
+      const pxCss = (r.x + r.size / 2) / i.dpr;      // cell center in canvas CSS px
+      const pyCss = (r.y + r.size / 2) / i.dpr;
+      const [bx, by] = T.cellAt(pxCss, pyCss);
+      worst = Math.max(worst, Math.abs(bx - cx), Math.abs(by - cy));
+    }
+    return { worstCellErr: worst };
+  });
+
   // Sub-cell pan instability (root-cause flicker metric).
   const flicker = await page.evaluate(PROBE, { subSteps: 24, noSnap: !!process.env.NO_SNAP });
 
@@ -164,7 +182,7 @@ try {
   const perf = await page.evaluate(() => window.__sandPerf());
   await page.keyboard.up('d');
 
-  result = { info, flicker, perf };
+  result = { info, cursor, flicker, perf };
 } finally {
   await browser.close();
   server.kill('SIGTERM');
@@ -172,6 +190,7 @@ try {
 
 // --- report ---
 console.log(`\npan/flicker benchmark  (canvas ${result.info.canvasW}x${result.info.canvasH}, cellSize ${result.info.cellSize}, dpr ${result.info.dpr})`);
+console.log(`  cursor->cell round-trip worst error: ${result.cursor.worstCellErr} cells (must be 0)`);
 console.log(`  sub-cell instability (luma 0..255; lower is better): total ${result.flicker.instability}  perStep ${result.flicker.perStep}  worst ${result.flicker.worst}`);
 if (result.flicker.dbg) console.log(`  dbg cam0x=${result.flicker.cam0x} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
 console.log(`  frame: avg ${result.perf.avgFrameMs}ms  p95 ${result.perf.p95FrameMs}ms  step ${result.perf.stepMs}ms  render ${result.perf.renderMs}ms  dirtyChunks ${result.perf.dirtyChunks}`);

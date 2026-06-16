@@ -296,8 +296,13 @@ export function createSandGame(container, opts = {}) {
     py = cy - wrapBounds.top;
   };
   // Screen pixel (canvas-relative) -> buffer cell, through the camera offset.
-  const toCellX = () => Math.floor(camera.x + px / cellSize);
-  const toCellY = () => Math.floor(camera.y + py / cellSize);
+  // Pointer (CSS px) -> cell, inverting the render mapping exactly: cells are
+  // drawn at cellDev DEVICE px, so convert the cursor to device px (* dpr) and
+  // divide by cellDev. Using cellSize (CSS) here drifts whenever cellSize*dpr
+  // isn't integer (cellDev = round(cellSize*dpr)), offsetting the brush from the
+  // cursor by an amount that grows with distance and flips sign around 100% zoom.
+  const toCellX = () => Math.floor(camera.x + (px * dpr) / cellDev);
+  const toCellY = () => Math.floor(camera.y + (py * dpr) / cellDev);
   const updateSeedDraft = () => {
     const prevX = seedDraftOrigin ? seedDraftOrigin[0] : null;
     const prevY = seedDraftOrigin ? seedDraftOrigin[1] : null;
@@ -741,6 +746,10 @@ export function createSandGame(container, opts = {}) {
       off() { return { offX: lastOffX, offY: lastOffY }; },
       setSnap(v) { snapOff = !v; render(false); },
       info() { return { cols, rows, cellSize, cellDev, viewCols, viewRows, dpr: window.devicePixelRatio || 1, canvasW: canvas.width, canvasH: canvas.height }; },
+      // cursor (canvas-relative CSS px) -> cell, same mapping as the real input path
+      cellAt(pxCss, pyCss) { return [Math.floor(camera.x + (pxCss * dpr) / cellDev), Math.floor(camera.y + (pyCss * dpr) / cellDev)]; },
+      // device-px top-left where a cell renders (for round-trip verification)
+      cellRect(cx, cy) { const camCol = Math.floor(camera.x), camRow = Math.floor(camera.y); return { x: (cx - camCol) * cellDev + lastOffX, y: (cy - camRow) * cellDev + lastOffY, size: cellDev }; },
     };
   }
 

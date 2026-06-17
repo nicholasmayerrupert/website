@@ -442,6 +442,10 @@ export function createSandGame(container, opts = {}) {
       setCam(x, y) { engine?.cameraSet(x, y); render(false); },
       getCam() { return engine ? engine.getCam() : { x: 0, y: 0 }; },
       render() { render(false); },
+      // vertical-streaming hooks (browser test): trigger a stream pass + read the
+      // 2D world offset, to verify a world shift is seamless on screen.
+      streamWorldTest() { if (engine) { engine.streamWorld(); render(false); } },
+      worldOffset() { return engine ? { x: engine.getWorldOffsetX(), y: engine.getWorldOffsetY() } : { x: 0, y: 0 }; },
       setPaused(v) { testPaused = !!v; }, // freeze the sim so the flicker probe sees only pan changes
       setGutter(v) { gutterOn = !!v; engine?.glSetFlags(gutterOn, snapOff); render(false); },
       off() { return engine ? engine.glGetOffset() : { offX: 0, offY: 0 }; },

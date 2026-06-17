@@ -145,6 +145,32 @@ void glShift(int dx) {
   glShiftTex(glTex, dx);
   glShiftTex(glTexBg, dx);
 }
+// Vertical analogue of glShiftTex: slide the cell texture by dy rows. The grid is
+// uploaded with row 0 at the top, but the GL framebuffer origin is bottom-left, so
+// a grid shift of +dy (content moves toward row 0) is a blit toward larger Y here.
+void glShiftTexV(GLuint& tex, int dy) {
+  int s = dy > 0 ? dy : -dy;
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, glReadFBO);
+  glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, glDrawFBO);
+  glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex2, 0);
+  if (dy > 0) glBlitFramebuffer(0, s, cols, rows, 0, 0, cols, rows - s, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  else        glBlitFramebuffer(0, 0, cols, rows - s, 0, s, cols, rows, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  std::swap(tex, glTex2);
+}
+void glShiftV(int dy) {
+  if (!dy || !glReady()) return;
+  emscripten_webgl_make_context_current(glc->handle);
+  if (dy >= rows || -dy >= rows) {
+    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
+    useLayer(&fg); renderFull(); glUploadFull(glTex);
+    return;
+  }
+  glShiftTexV(glTex, dy);
+  glShiftTexV(glTexBg, dy);
+}
 
 // ---- drawing ----
 inline void glSetClip(double dx0, double dy0, double dx1, double dy1) {

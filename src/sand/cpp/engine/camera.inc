@@ -99,7 +99,11 @@ void cameraFollowTo(double cx, double cy) {
 int streamWorld() {
   int dx = maybeShiftWorld(cameraColX(), viewportCols, CAM_SHIFT_EDGE_MARGIN);
   if (dx) { glShift(dx); cameraSet(camX - dx, camY); }
-  return dx;
+  // Vertical streaming: the player can dig down arbitrarily deep (the window
+  // follows in Y too). Slide the GL texture and pull the camera back in lockstep.
+  int dy = maybeShiftWorldVertical(cameraColY(), viewportRows, CAM_SHIFT_EDGE_MARGIN);
+  if (dy) { glShiftV(dy); cameraSet(camX, camY - dy); }
+  return dx | dy;
 }
 // Apply this frame's local input. Play mode: feed the player (id) its input bits
 // + aim. Draw (free-build) mode: run the active tool at the aim cell. Returns 1

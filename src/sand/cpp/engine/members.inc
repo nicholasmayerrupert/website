@@ -36,6 +36,7 @@
     std::vector<int32_t> bodyOwner;
     // worldgen / streaming (per-layer terrain + chunk store)
     bool infinite = false;
+    bool isBackground = false; // bg = a more-solid backdrop (sparser caves) behind the carved fg
     int worldOffsetX = 0;
     uint32_t worldSeed = 0;
     int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;

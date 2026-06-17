@@ -117,7 +117,10 @@
   }
   bool tryTransfer(Layer* from, Layer* to, int x, int y, int k) {
     uint8_t m = from->grid[k];
-    if (!isLoose(m)) return false;
+    // Only POWDERS cross layers. Liquids stay in their layer: an ocean's surface
+    // waves would otherwise bleed into the (solid, dry) background and strand thin
+    // shimmering puddles there. Powders (sand) settling between layers is fine.
+    if (MAT_KIND[m] != K_POWDER) return false;
     if (to->grid[k] != EMPTY) return false;
     if (!stuckIn(from, x, y, m)) return false;
     if (!canFall(to, x, y, m)) return false;

@@ -35,9 +35,12 @@ const STYLE = `
 .sg-dim { opacity: .45; }
 .sg-cap { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #d1d5db; }
 .sg-row { margin-top: 4px; display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
-.sg-swatch { width: 36px; height: 36px; flex: none; border-radius: 6px; display: inline-block;
-  border: 1px solid rgba(255,255,255,.2); box-shadow: inset 2px 2px 0 rgba(255,255,255,.25); }
+.sg-swatch { width: 36px; height: 36px; flex: none; border-radius: 6px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255,255,255,.18); background: rgba(10,14,22,.55); }
 .sg-swatch.sm { width: 28px; height: 28px; }
+.sg-mark { position: relative; display: inline-block; }
+.sg-swatch.sm .sg-mark { transform: scale(.8); }
 .sg-caret { margin-left: auto; color: #d1d5db; }
 .sg-menu { position: absolute; z-index: 80; width: 192px; max-width: calc(100vw - 2.5rem);
   border-radius: 6px; background: rgba(3,7,18,.95); padding: 4px; box-shadow: 0 20px 25px -5px rgba(0,0,0,.5);
@@ -54,6 +57,81 @@ const STYLE = `
 .sg-toggle.on { background: rgba(255,255,255,.8); color: #000; }
 .sg-toggle.on:hover { background: #fff; }
 `;
+
+// A little built-up SHAPE per material (ported from the old React ToolPalette's
+// renderToolMark, translated from Tailwind utilities to plain DOM + inline
+// styles): a pile of sand grains, a teardrop for liquids, layered flames, a
+// chipped stone, a sprouting seed, etc. — so the selector reads as the material
+// rather than a flat color square. Built from absolutely-positioned spans inside
+// a fixed-size relative box.
+function renderToolMark(id) {
+  const box = document.createElement('span');
+  box.className = 'sg-mark';
+  const size = (w, h) => { box.style.width = w + 'px'; box.style.height = h + 'px'; };
+  const part = (css) => { const s = document.createElement('span'); s.style.cssText = 'position:absolute;display:block;' + css; box.appendChild(s); return s; };
+  const drop = (w, h, bg, glow, ring) =>
+    part(`inset:0;width:${w}px;height:${h}px;border-radius:60% 60% 70% 70%;background:${bg};transform:rotate(45deg);`
+      + `box-shadow:inset 3px 4px 0 rgba(255,255,255,.26),0 0 8px ${glow}${ring ? ',0 0 0 1px ' + ring : ''};`);
+  const flame = (bg, mid, hot, glow) => {
+    part(`left:4px;bottom:0;width:16px;height:20px;border-radius:70% 30% 70% 40%;background:${bg};transform:rotate(45deg);box-shadow:0 0 9px ${glow};`);
+    part(`left:7px;bottom:8px;width:12px;height:16px;border-radius:70% 30% 70% 40%;background:${mid};transform:rotate(45deg);`);
+    part(`left:5px;bottom:13px;width:9px;height:11px;border-radius:70% 30% 70% 40%;background:${hot};transform:rotate(45deg);`);
+  };
+  switch (id) {
+    case 'sand': {
+      size(28, 24);
+      const dot = (l, b, c) => part(`left:${l}px;bottom:${b}px;width:6px;height:6px;border-radius:9999px;background:${c};`);
+      dot(4, 4, 'rgba(254,240,138,.9)'); dot(12, 4, 'rgba(252,211,77,.9)'); dot(20, 4, 'rgba(253,224,71,.8)');
+      dot(8, 7, 'rgba(253,224,71,.9)'); dot(16, 7, 'rgba(254,240,138,.85)'); dot(12, 13, 'rgba(254,249,195,.9)');
+      part('left:0;bottom:0;width:28px;height:2px;border-radius:9999px;background:rgba(161,98,7,.45);');
+      break;
+    }
+    case 'water': size(20, 24); drop(20, 24, 'rgba(96,165,250,.8)', 'rgba(96,165,250,.35)'); break;
+    case 'oil': size(20, 24); drop(20, 24, 'rgba(69,26,3,.9)', 'rgba(120,53,15,.35)', 'rgba(180,83,9,.4)'); break;
+    case 'acid': size(20, 24); drop(20, 24, 'rgba(163,230,53,.85)', 'rgba(132,204,22,.45)', 'rgba(190,242,100,.4)'); break;
+    case 'fire': size(20, 28); flame('rgba(249,115,22,.9)', 'rgba(253,224,71,.9)', 'rgba(239,68,68,.75)', 'rgba(251,146,60,.45)'); break;
+    case 'lava': size(20, 28); flame('rgba(220,38,38,.9)', 'rgba(251,146,60,.9)', 'rgba(253,224,71,.8)', 'rgba(239,68,68,.5)'); break;
+    case 'stone':
+      size(24, 24);
+      part('left:4px;bottom:4px;width:20px;height:16px;border-radius:4px;background:rgba(156,163,175,.85);box-shadow:inset 2px 2px 0 rgba(255,255,255,.18);transform:rotate(-8deg);');
+      part('left:9px;bottom:5px;width:3px;height:3px;border-radius:9999px;background:rgba(55,65,81,.35);');
+      part('left:5px;bottom:11px;width:6px;height:2px;border-radius:9999px;background:rgba(243,244,246,.25);');
+      break;
+    case 'cube':
+      size(24, 24);
+      part('left:4px;bottom:4px;width:16px;height:16px;border-radius:3px;background:rgba(214,211,209,.85);box-shadow:inset 2px 2px 0 rgba(255,255,255,.28),0 0 6px rgba(168,162,158,.35);transform:rotate(18deg);');
+      part('left:7px;bottom:10px;width:7px;height:2px;border-radius:9999px;background:rgba(255,255,255,.3);transform:rotate(18deg);');
+      break;
+    case 'seed':
+      size(24, 24);
+      part('left:8px;bottom:4px;width:16px;height:12px;border-radius:55% 45% 55% 45%;background:rgba(120,53,15,.85);box-shadow:inset 2px 2px 0 rgba(255,255,255,.16);transform:rotate(-20deg);');
+      part('left:12px;bottom:12px;width:8px;height:12px;border-radius:9999px;background:rgba(74,222,128,.8);transform:rotate(45deg);');
+      part('left:9px;bottom:15px;width:6px;height:8px;border-radius:9999px;background:rgba(190,242,100,.75);transform:rotate(-35deg);');
+      break;
+    case 'driftwood':
+      size(24, 24);
+      part('left:0;bottom:8px;width:24px;height:8px;border-radius:3px;background:rgba(120,113,108,.85);box-shadow:inset 2px 2px 0 rgba(255,255,255,.18);transform:rotate(-10deg);');
+      part('left:4px;bottom:11px;width:16px;height:2px;border-radius:9999px;background:rgba(214,211,209,.35);transform:rotate(-10deg);');
+      part('left:8px;bottom:7px;width:12px;height:2px;border-radius:9999px;background:rgba(41,37,36,.35);transform:rotate(-10deg);');
+      break;
+    case 'ice':
+      size(24, 24);
+      part('left:4px;bottom:4px;width:16px;height:16px;border-radius:4px;background:rgba(165,243,252,.85);box-shadow:inset 2px 2px 0 rgba(255,255,255,.4),0 0 7px rgba(103,232,249,.4);transform:rotate(12deg);');
+      part('left:6px;bottom:7px;width:7px;height:2px;border-radius:9999px;background:rgba(255,255,255,.55);transform:rotate(12deg);');
+      part('left:8px;bottom:11px;width:2px;height:6px;border-radius:9999px;background:rgba(255,255,255,.45);transform:rotate(12deg);');
+      break;
+    case 'eraser':
+      size(24, 24);
+      part('left:4px;bottom:8px;width:20px;height:14px;border-radius:4px;background:rgba(254,205,211,.9);box-shadow:inset 2px 2px 0 rgba(255,255,255,.35);transform:rotate(-28deg);');
+      part('left:13px;bottom:10px;width:2px;height:14px;border-radius:9999px;background:rgba(244,63,94,.45);transform:rotate(-28deg);');
+      part('left:4px;bottom:4px;width:20px;height:2px;border-radius:9999px;background:rgba(255,255,255,.35);');
+      break;
+    default:
+      size(22, 22);
+      part(`inset:0;width:22px;height:22px;border-radius:6px;background:${(TOOLS.find((t) => t.id === id) || {}).color || '#888'};`);
+  }
+  return box;
+}
 
 export function createToolPalette(root, { initialTool = 'cube', onSelectTool, onToggleDrawMode } = {}) {
   if (!root.querySelector('style[data-sand-palette]')) {
@@ -101,7 +179,7 @@ export function createToolPalette(root, { initialTool = 'cube', onSelectTool, on
 
   function renderState() {
     const t = tool(selected);
-    selBtn.querySelector('.sg-swatch').style.background = t.color;
+    selBtn.querySelector('.sg-swatch').replaceChildren(renderToolMark(selected));
     selBtn.querySelector('.sg-name').textContent = t.label;
     selBtn.title = t.title;
     selWrap.style.opacity = drawOn ? '1' : '.45';
@@ -122,7 +200,12 @@ export function createToolPalette(root, { initialTool = 'cube', onSelectTool, on
       opt.type = 'button';
       opt.className = `sg-opt${t.id === selected ? ' active' : ''}`;
       opt.title = t.title;
-      opt.innerHTML = `<span class="sg-swatch sm" style="background:${t.color}"></span><span>${t.label}</span>`;
+      const sw = document.createElement('span');
+      sw.className = 'sg-swatch sm';
+      sw.appendChild(renderToolMark(t.id));
+      const lbl = document.createElement('span');
+      lbl.textContent = t.label;
+      opt.append(sw, lbl);
       opt.addEventListener('click', () => {
         selected = t.id; open = false;
         onSelectTool?.(t.id); renderState(); renderMenu();

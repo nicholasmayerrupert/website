@@ -34,6 +34,7 @@ struct Engine {
 #include "engine/rigid.inc"
 #include "engine/render.inc"
 #include "engine/player.inc"
+#include "engine/netsync.inc"
 };
 
 // Out-of-line definitions of the Engine static constants.

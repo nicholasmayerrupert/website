@@ -8,6 +8,7 @@ import {
 } from '../src/sand/net/protocol.js';
 import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/client.js';
 import { Host } from '../src/sand/net/host.js';
+import { encodeWorld, encodeDiff, applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
 import { startServer } from './dev-multiplayer-server.mjs';
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
 import { gridHash } from './sand-test-util.mjs';
@@ -204,6 +205,59 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   } finally {
     await srv.close();
   }
+}
+
+// 10. world replication: full snapshot + incremental diffs keep a client grid in
+//     sync with the host; a lost diff is detected by hash and fixed by resync.
+{
+  console.log('world replication');
+  const mkEngine = (seed) => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false });
+  const host = mkEngine(0x1234);
+  const client = mkEngine(0x9999); // different seed -> different initial terrain
+  // some host edits (stone is static, so client doesn't need to simulate)
+  for (let x = 30; x < 60; x++) for (let y = 80; y < 90; y++) host.addDiscToStoneDraft(x, y, 0);
+  host.finalizeStoneDraft();
+
+  // full snapshot makes the client match exactly, despite a different seed.
+  check('grids differ before sync', host.gridHash() !== client.gridHash());
+  const w = decode(encode(encodeWorld(host, 0)));
+  const okW = applyWorldMessage(client, w);
+  check(`full snapshot syncs client (host ${host.gridHash().toString(16)})`, okW && host.gridHash() === client.gridHash());
+  host.resetDirty();
+
+  // a sequence of incremental diffs reconstructs the host hash on the client.
+  for (let i = 0; i < 4; i++) {
+    host.paintDisc(100 + i * 8, 40, 3, 1, true); // paint sand blobs in fresh regions
+    const d = decode(encode(encodeDiff(host, i + 1)));
+    host.resetDirty();
+    const ok = applyDiffMessage(client, d);
+    check(`diff ${i} applied, hashes match`, ok && host.gridHash() === client.gridHash());
+  }
+
+  // lost diff -> divergence detected -> resync restores the match.
+  host.paintDisc(150, 60, 3, 4, true); host.resetDirty(); // edit whose diff is LOST (never sent)
+  host.paintDisc(40, 30, 3, 6, true);
+  const dLate = decode(encode(encodeDiff(host, 99)));
+  host.resetDirty();
+  const okLate = applyDiffMessage(client, dLate); // applies the late edit but misses the lost one
+  check('lost diff detected by hash mismatch', okLate === false && client.gridHash() !== host.gridHash());
+  applyWorldMessage(client, decode(encode(encodeWorld(host, 100)))); // resync
+  check('resync restores the match', client.gridHash() === host.gridHash());
+
+  host.destroy(); client.destroy();
+}
+
+// 11. join-in-progress: a client joining mid-session gets the host's CURRENT world.
+{
+  console.log('join-in-progress');
+  const host = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x5151, sinksOn: false });
+  for (let x = 70; x < 110; x++) for (let y = 70; y < ROWS; y++) host.addDiscToStoneDraft(x, y, 0);
+  host.finalizeStoneDraft();
+  host.paintDisc(90, 60, 5, 2, true); // some water
+  const latecomer = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0xEEEE, sinksOn: false });
+  applyWorldMessage(latecomer, decode(encode(encodeWorld(host, 7))));
+  check('join-in-progress client matches host world', latecomer.gridHash() === host.gridHash());
+  host.destroy(); latecomer.destroy();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

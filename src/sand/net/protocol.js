@@ -12,6 +12,9 @@ export const MSG = Object.freeze({
   ASSIGN: 'assign',     // host -> client: your authoritative playerId
   INPUT: 'input',
   SNAPSHOT: 'snapshot',
+  WORLD: 'world',       // host -> client: full world snapshot (base64 RLE)
+  DIFF: 'diff',         // host -> client: changed cells (base64)
+  RESYNC: 'resync',     // client -> host: request a full world snapshot
   PING: 'ping',
   PONG: 'pong',
 });
@@ -59,6 +62,13 @@ export function makeSnapshot(tick, players, hash = null) {
     })),
   };
 }
+export function makeWorld(tick, cols, rows, hash, data) {
+  return { t: MSG.WORLD, tick: Math.trunc(tick), cols: cols | 0, rows: rows | 0, hash: hash >>> 0, data: String(data) };
+}
+export function makeDiff(tick, hash, data) {
+  return { t: MSG.DIFF, tick: Math.trunc(tick), hash: hash >>> 0, data: String(data) };
+}
+export function makeResync(room, client) { return { t: MSG.RESYNC, room, client }; }
 export function makePing(client, time) { return { t: MSG.PING, client, time: Math.trunc(time) }; }
 export function makePong(client, time) { return { t: MSG.PONG, client, time: Math.trunc(time) }; }
 
@@ -73,6 +83,9 @@ export function decode(str) {
     case MSG.ASSIGN: return (isRoom(m.room) && isId(m.client) && isNonNegInt(m.player)) ? m : null;
     case MSG.INPUT: return validateInput(m);
     case MSG.SNAPSHOT: return validateSnapshot(m);
+    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && isNonNegInt(m.rows) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
+    case MSG.DIFF: return (isNonNegInt(m.tick) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
+    case MSG.RESYNC: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.PING:
     case MSG.PONG: return (isId(m.client) && isNonNegInt(m.time)) ? m : null;
     default: return null;

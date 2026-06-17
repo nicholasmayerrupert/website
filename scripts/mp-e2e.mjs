@@ -106,6 +106,27 @@ try {
   // movement is terrain-dependent, so this is informational, not a gate
   console.log(`   (remote x ${remoteXBefore?.toFixed(1)} -> ${remoteXAfter?.toFixed(1)})`);
 
+  // world replication: the client receives the host's world and the host's edits.
+  // Both peers are still paused; drive them in lockstep via tickSteps. Measure a
+  // deep underground region (stable terrain, no sand inflow) so the host's hole
+  // replicates cleanly to the client. Region is relative to the live engine dims.
+  const dims = await host.page.evaluate(() => window.__sandTest.info());
+  const cx = Math.floor(dims.cols / 2), ey = dims.rows - 11;
+  const R = [cx - 20, dims.rows - 16, cx + 20, dims.rows - 6];
+  const solidIn = (p) => p.evaluate((r) => window.__sandTest.solidCount(r[0], r[1], r[2], r[3]), R);
+  // let the initial world snapshot + diffs flow to the client
+  for (let i = 0; i < 6; i++) { await host.page.evaluate(() => window.__sandNet.tickSteps(2)); await sleep(40); await client.page.evaluate(() => window.__sandNet.tickSteps(2)); }
+  const worldReady = await client.page.evaluate(() => window.__sandNet.debug().worldReady);
+  check('client received the host world snapshot', worldReady === true);
+  const beforeHost = await solidIn(host.page), beforeClient = await solidIn(client.page);
+  check(`client world matches host before edit (client ${beforeClient} ~ host ${beforeHost})`, beforeHost > 0 && Math.abs(beforeClient - beforeHost) <= 2);
+
+  // host digs a hole in that region; the diff must carry it to the client.
+  await host.page.evaluate(([x, y]) => window.__sandTest.erase(x, y, 7), [cx, ey]);
+  for (let i = 0; i < 5; i++) { await host.page.evaluate(() => window.__sandNet.tickSteps(2)); await sleep(40); await client.page.evaluate(() => window.__sandNet.tickSteps(2)); }
+  const afterHost = await solidIn(host.page), afterClient = await solidIn(client.page);
+  check(`host edit replicated to client (host ${beforeHost}->${afterHost}, client ${beforeClient}->${afterClient})`, afterHost < beforeHost && afterClient < beforeClient && Math.abs(afterClient - afterHost) <= 8);
+
   // disconnect the client -> the host drops the remote player
   await client.page.evaluate(() => window.__sandNet.disconnect());
   await sleep(200); // relay broadcasts the leave to the host

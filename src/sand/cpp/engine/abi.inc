@@ -97,4 +97,13 @@ EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->buildPlay
 EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->playerSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_player_snapshot_stride(Engine* e) { return PLAYER_SNAP_STRIDE; }
 EMSCRIPTEN_KEEPALIVE int engine_player_action_count(Engine* e) { return e->playerActionCount; }
+
+// world replication (Phase 6): serialize/apply full snapshots + dirty diffs.
+EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->serializeWorld(); }
+EMSCRIPTEN_KEEPALIVE int engine_serialize_diff(Engine* e) { return e->serializeDiff(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->netBlob.data(); }
+EMSCRIPTEN_KEEPALIVE void engine_apply_world(Engine* e, uint8_t* buf, int len) { e->applyWorld(buf, len); }
+EMSCRIPTEN_KEEPALIVE void engine_apply_diff(Engine* e, uint8_t* buf, int len) { e->applyDiff(buf, len); }
+EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->gridHashFNV(); }
+EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->clearAllDirty(); }
 } // extern "C"

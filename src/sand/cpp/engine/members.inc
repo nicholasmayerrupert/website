@@ -45,6 +45,7 @@
   int nextPlayerId = 1;
   std::vector<float> playerSnapshot; // packed [PLAYER_SNAP_STRIDE] floats per player
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
+  std::vector<uint8_t> netBlob;      // scratch buffer for world snapshot / diff serialization
   // Renderer (material -> RGBA). Owns its pixel buffer and grain tables. Uses a
   // SEPARATE rng so per-frame fire/steam flicker never perturbs the simulation.
   std::vector<uint8_t> renderPixels;  // cols*rows*4, RGBA (little-endian over uint32)
@@ -114,6 +115,13 @@
     }
   }
   void markAllDirty() { for (int y = 0; y < rows; y++) { rowMarkMin[y] = 0; rowMarkMax[y] = cols - 1; } }
+  // Fully reset dirty tracking (row marks + render chunk flags). Used between
+  // world-diff serializations so each diff carries only the changes since the
+  // last one (the host steps in the browser, which resets marks naturally).
+  void clearAllDirty() {
+    for (int y = 0; y < rows; y++) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; }
+    memset(dirtyRender.data(), 0, dirtyRender.size()); dirtyRenderCount = 0;
+  }
   void foldRowMarksToRender() {
     for (int y = 0; y < rows; y++) {
       int mn = rowMarkMin[y], mx = rowMarkMax[y];

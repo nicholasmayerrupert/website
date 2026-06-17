@@ -627,6 +627,15 @@ export function createSandGame(container, opts = {}) {
       renderedPlayers() { return playersForRender(); },
       localInput() { return currentLocalInput(); },
       heldKeys() { return [...pressedKeys]; },
+      // world-replication hooks (mp-e2e): edit the host world + measure a region.
+      gridHash() { return engine ? engine.gridHash() : 0; },
+      erase(x, y, r) { engine?.eraseDisc(x, y, r); },
+      solidCount(x0, y0, x1, y1) {
+        if (!engine) return 0;
+        const g = engine.getGrid(); let n = 0;
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (g[y * cols + x] !== 0) n++;
+        return n;
+      },
       setTool(name) { currentToolName = name; engine?.setTool(TOOL[name] ?? 0); },
       setDrawMode(v) { drawModeOn = !!v; },
       actionCount() { return engine ? engine.getPlayerActionCount() : 0; },
@@ -728,20 +737,24 @@ export function createSandGame(container, opts = {}) {
   // (tickSteps) can drive it identically — the test path is immune to RAF
   // throttling (which otherwise makes two-context multiplayer timing flaky).
   const doFixedStep = (now) => {
-    const dx = engine.maybeShiftWorld(camera.colX, viewCols, SHIFT_EDGE_MARGIN);
-    if (dx) {
-      shiftCellCanvas(dx); // new band repaints from the engine's dirty chunks
-      camera.set(camera.x - dx, camera.y);
-    }
     const isClient = net.role === 'client';
+    // A client doesn't stream or simulate the shared world — the host is
+    // authoritative and replicates it via diffs (applied in net.update).
+    if (!isClient) {
+      const dx = engine.maybeShiftWorld(camera.colX, viewCols, SHIFT_EDGE_MARGIN);
+      if (dx) {
+        shiftCellCanvas(dx); // new band repaints from the engine's dirty chunks
+        camera.set(camera.x - dx, camera.y);
+      }
+    }
     if (playMode && localPlayerId && !isClient) {
       const inp = currentLocalInput();
       engine.setPlayerInput(localPlayerId, { ...inp, seq: ++inputSeq });
-    } else if (!playMode) {
+    } else if (!playMode && !isClient) {
       if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
     }
     if (net.connected) net.update();
-    const didStep = engine.step(now);
+    const didStep = isClient ? false : engine.step(now);
     if (didStep) {
       perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
       perfRenderSamples[perfSampleIdx] = perfRenderMs;

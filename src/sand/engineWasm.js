@@ -103,6 +103,13 @@ export function initSandWasm() {
         playerSnapshotPtr: c('engine_player_snapshot_ptr', 'number', ['number']),
         playerSnapshotStride: c('engine_player_snapshot_stride', 'number', ['number']),
         playerActionCount: c('engine_player_action_count', 'number', ['number']),
+        serializeWorld: c('engine_serialize_world', 'number', ['number']),
+        serializeDiff: c('engine_serialize_diff', 'number', ['number']),
+        netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
+        applyWorld: c('engine_apply_world', null, ['number', 'number', 'number']),
+        applyDiff: c('engine_apply_diff', null, ['number', 'number', 'number']),
+        gridHash: c('engine_grid_hash', 'number', ['number']),
+        clearAllDirty: c('engine_clear_all_dirty', null, ['number']),
       };
       return M;
     });
@@ -274,6 +281,16 @@ export function createEngineWasm({
     },
     getPlayer(id) { return this.getPlayers().find((p) => p.id === id) || null; },
     getPlayerActionCount() { return M.playerActionCount(ptr); },
+
+    // World replication (Phase 6). serialize* return a COPY of the bytes (the
+    // blob is re-derived each call; copy so callers can hold it). apply* take a
+    // Uint8Array and write it into wasm memory. gridHash detects divergence.
+    serializeWorld() { const n = M.serializeWorld(ptr); return new Uint8Array(mod.HEAPU8.buffer, M.netBlobPtr(ptr), n).slice(); },
+    serializeDiff() { const n = M.serializeDiff(ptr); return new Uint8Array(mod.HEAPU8.buffer, M.netBlobPtr(ptr), n).slice(); },
+    applyWorld(bytes) { const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyWorld(ptr, buf, bytes.length); mod._free(buf); },
+    applyDiff(bytes) { if (!bytes.length) return; const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyDiff(ptr, buf, bytes.length); mod._free(buf); },
+    gridHash() { return M.gridHash(ptr) >>> 0; },
+    resetDirty() { M.clearAllDirty(ptr); },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },

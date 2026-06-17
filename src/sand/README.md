@@ -130,8 +130,23 @@ player state and grid hash.
 To try it locally: `npm run mp:server`, then open the site in two tabs, Host a
 room in one and Join it (same code) in the other.
 
-Player replication only (each peer keeps its own local sand world for now); world
-cell diffs are Phase 6, client prediction/reconciliation Phase 7.
+**World replication (Phase 6).** The host serializes its grid and the client
+applies it so both see the same sand world:
+- `cpp/engine/netsync.inc` — full snapshot (RLE over the grid) + dirty-rect diffs
+  + a FNV grid hash, with apply functions; `net/worldSync.js` bridges them to the
+  protocol (`world`/`diff` messages, base64).
+- On join (or `resync`) the host sends a full snapshot; thereafter it streams
+  per-step diffs. The client applies them, doesn't simulate the shared world
+  itself (host-authoritative), and requests a `resync` when a diff's hash doesn't
+  match (a dropped packet). `test:net` covers snapshot/diff/lost-diff-resync/
+  join-in-progress; `mp-e2e.mjs` asserts the client's world matches the host and
+  that a host dig replicates.
+- **Limitation:** peers must share the same buffer size (window dimensions) — a
+  client whose buffer differs keeps its own local world. Independent far-apart
+  exploration isn't supported yet.
+
+Still to come: client prediction/reconciliation (Phase 7) and host hardening
+(Phase 8).
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

@@ -13,7 +13,8 @@
 // replicated, which is enough to see and move each other.
 
 import { Host } from './host.js';
-import { encode, decode, makeInput, makeJoin, makeLeave, makeSnapshot, makeAssign, MSG } from './protocol.js';
+import { encode, decode, makeInput, makeJoin, makeLeave, makeSnapshot, makeAssign, makeResync, MSG } from './protocol.js';
+import { encodeWorld, encodeDiff, applyWorldMessage, applyDiffMessage } from './worldSync.js';
 
 const SNAPSHOT_INTERVAL = 3;     // steps between host snapshot broadcasts (~20Hz)
 const SMOOTH = 0.35;             // client render smoothing toward the latest snapshot
@@ -28,6 +29,8 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
   let host = null;                 // Host instance (host role only)
   let ownPlayerId = 0;             // client: my authoritative player id on the host
   let inputSeq = 0, snapCounter = 0, sinceSnap = 0;
+  let worldReady = false;     // client: has the initial world snapshot been applied?
+  let worldDimsMismatch = false; // client: host buffer size differs from ours (degraded)
   let dbgSent = 0, dbgRecvInput = 0; // diagnostics
   const inQueue = [];              // inbound decoded messages, drained each step
   const remotes = new Map();       // client render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty }
@@ -77,7 +80,8 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
       try { ws.close(); } catch { /* already closing */ }
     }
     ws = null; role = null; host = null; connected = false;
-    ownPlayerId = 0; inputSeq = 0; remotes.clear(); inQueue.length = 0;
+    ownPlayerId = 0; inputSeq = 0; worldReady = false; worldDimsMismatch = false;
+    remotes.clear(); inQueue.length = 0;
     setStatus('offline');
   }
 
@@ -87,9 +91,11 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
         if (m.client === clientId) break;
         const pid = host.addClient(m.client, getSpawn());
         if (pid) send(makeAssign(room, m.client, pid));
+        send(encodeWorld(engineNow(), snapCounter)); // full world for the joiner
         break;
       }
       case MSG.INPUT: dbgRecvInput++; host.receive(m); break;
+      case MSG.RESYNC: send(encodeWorld(engineNow(), snapCounter)); break; // client fell behind
       case MSG.LEAVE: host.removeClient(m.client); break;
       default: break;
     }
@@ -98,6 +104,17 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
     switch (m.t) {
       case MSG.ASSIGN: if (m.client === clientId) ownPlayerId = m.player; break;
       case MSG.SNAPSHOT: ingestSnapshot(m); break;
+      case MSG.WORLD: {
+        const e = engineNow();
+        if (m.cols !== e.cols || m.rows !== e.rows) { worldDimsMismatch = true; break; } // size differs -> can't replicate (MVP)
+        applyWorldMessage(e, m); worldReady = true; worldDimsMismatch = false;
+        break;
+      }
+      case MSG.DIFF: {
+        if (!worldReady || worldDimsMismatch) break;
+        if (!applyDiffMessage(engineNow(), m)) send(makeResync(room, clientId)); // hash mismatch -> resync
+        break;
+      }
       default: break;
     }
   }
@@ -118,10 +135,17 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
   // Called once per fixed step from the game loop.
   function update() {
     if (!connected) return;
+    // Client doesn't step, so reset its dirty marks here; the diffs applied below
+    // then mark exactly the cells that changed for an incremental repaint.
+    if (role === 'client') engineNow().resetDirty();
     for (let i = 0; i < inQueue.length; i++) (role === 'host' ? handleHost : handleClient)(inQueue[i]);
     inQueue.length = 0;
 
     if (role === 'host') {
+      // World diffs go out every step (row marks reset each step, so a lower rate
+      // would drop changes); only when someone is listening, and empty diffs are
+      // skipped. Must run BEFORE the engine's own render consumes the dirty marks.
+      if (host.clients.size > 0) { const d = encodeDiff(engineNow(), snapCounter); if (d) { d.room = room; send(d); } }
       if (++sinceSnap >= SNAPSHOT_INTERVAL) {
         sinceSnap = 0;
         const snap = makeSnapshot(snapCounter++, engineNow().getPlayers(), null);
@@ -167,6 +191,7 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
     get status() { return statusText; },
     set onStatus(fn) { onStatus = fn; },
     get clientId() { return clientId; },
-    get debug() { return { sent: dbgSent, recvInput: dbgRecvInput, ownPlayerId, role, connected }; },
+    get worldReady() { return worldReady; },
+    get debug() { return { sent: dbgSent, recvInput: dbgRecvInput, ownPlayerId, role, connected, worldReady, worldDimsMismatch }; },
   };
 }

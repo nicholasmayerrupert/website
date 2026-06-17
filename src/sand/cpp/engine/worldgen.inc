@@ -1,28 +1,80 @@
   // ================= WORLDGEN STREAMING (streamGen.js + worldWindow.js) =================
+  // Terraria/Starbound-flavoured generator. The SURFACE (height + biome + soil)
+  // is derived from the shared world seed, so the foreground and background line
+  // up at the top and the soil layer never erodes via cross-layer drain. The
+  // SUBSURFACE (caves + ore/liquid pockets) is derived from a PER-LAYER seed, so
+  // the background diverges underground — digging the foreground reveals a
+  // different cave network behind it, and cross-layer transfer flows wherever the
+  // two cavities mismatch. Biomes (plains / desert / rocky) vary the surface skin,
+  // soil depth, and tree density. Materials are the existing palette only.
+  enum Biome : int { BIOME_PLAINS = 0, BIOME_DESERT = 1, BIOME_ROCKY = 2 };
   static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
+  static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, OIL_POCKET_THRESH, LAVA_THRESH;
   static const int SURFACE_OCT, GEN_SKIN;
   int genSurfaceAt(int worldX) {
     double n = wfbm2(L->worldSeed, worldX * SURFACE_FREQ, 0.5, SURFACE_OCT, 0.5);
-    int y = (int)std::lround(L->gSurfBase - (n - 0.5) * 2 * L->gSurfAmp);
+    // A slower large-scale roll layers gentle hills + valleys onto the detail
+    // noise. Kept modest so slopes stay near the sand angle-of-repose (steep
+    // slopes would keep loose surface sand avalanching, churning the sim forever).
+    double hills = wfbm2(L->worldSeed ^ 0x9e3779b9u, worldX * SURFACE_FREQ * 0.25, 3.1, 3, 0.5);
+    double amp = L->gSurfAmp * (0.85 + hills * 0.4);
+    int y = (int)std::lround(L->gSurfBase - (n - 0.5) * 2 * amp);
     if (y < 2) y = 2; if (y > rows - 4) y = rows - 4; return y;
   }
+  // Biome from a low-frequency SHARED-seed band, so both layers agree on biome.
+  int genBiomeAt(int worldX) {
+    double n = wfbm2(L->worldSeed ^ 0xB10B10u, worldX * BIOME_FREQ, 2.5, 3, 0.5);
+    if (n < 0.42) return BIOME_PLAINS;
+    if (n < 0.66) return BIOME_DESERT;
+    return BIOME_ROCKY;
+  }
+  // Rocky has no loose soil (bare stone to the surface, so it stays one connected
+  // component); desert has a deep sand mantle; plains a normal dirt band.
+  int genSoilDepth(int biome) { return biome == BIOME_ROCKY ? 0 : (biome == BIOME_DESERT ? L->gSoil * 2 : L->gSoil); }
   bool genIsCave(int worldX, int y) { return wridged2(L->gCaveSeed, worldX * CAVE_FREQ, y * CAVE_FREQ, 3, 0.5) > CAVE_THRESH; }
-  uint8_t genCellAt(int worldX, int surf, int slope, int y) {
-    if (y < surf) return y >= L->gSeaRow ? WATER : EMPTY;
-    int depth = y - surf;
-    if (depth < GEN_SKIN) return slope <= 1 ? PLANT : SAND;
-    if (depth < GEN_SKIN + L->gSoil) return SAND;
-    if (depth >= GEN_SKIN + L->gSoil + 2 && genIsCave(worldX, y)) return EMPTY;
+  // The ONLY generated liquid: rare LAVA chambers sealed deep in the bedrock
+  // (deepFrac >= 0.84, below the cave zone, so they're enclosed by solid stone and
+  // stay inert until dug into). We deliberately avoid open or cave-adjacent
+  // liquids — a free liquid surface re-marks itself dirty every step forever,
+  // which would churn the whole buffer (huge net diffs + wasted CPU). Returns
+  // STONE when no chamber applies.
+  uint8_t genPocketAt(int worldX, int y, int depth, int soil) {
+    double deepFrac = (double)y / rows;
+    if (deepFrac >= 0.84 && wridged2(L->gPocketSeed ^ 0x1a7au, worldX * POCKET_FREQ, y * POCKET_FREQ, 3, 0.5) > LAVA_THRESH) return LAVA;
     return STONE;
   }
-  bool genTreeAt(int worldX, int surf) { return surf <= L->gSeaRow && whash1(L->gTreeSeed, worldX) < TREE_PROB; }
+  uint8_t genCellAt(int worldX, int surf, int slope, int biome, int soil, int y) {
+    // Above the surface is open sky. We deliberately do NOT flood valleys with open
+    // seas: a free water surface re-marks itself dirty every step forever, so large
+    // generated seas would churn the whole buffer (huge net diffs + wasted CPU).
+    // Water lives in CONTAINED underground pockets instead (inert until dug into).
+    if (y < surf) return EMPTY;
+    int depth = y - surf;
+    if (depth < GEN_SKIN) {                                    // surface skin
+      if (biome == BIOME_ROCKY) return STONE;                 // bare stone (connects down)
+      if (biome == BIOME_DESERT) return SAND;
+      return slope <= 1 ? PLANT : SAND;                       // plains: grass on flats, sand on steeps
+    }
+    if (depth < GEN_SKIN + soil) return SAND;                  // dirt / sand mantle
+    // Caves carve the explorable mid-depths only, starting a thick stone buffer
+    // BELOW the loose soil so generated sand never rests directly above a cave
+    // (otherwise the two layers' divergent caves let sand settle into different
+    // spots, and cross-layer transfer churns forever). The deep base (>=0.78) is
+    // solid bedrock so the world has a stable, grounded floor.
+    if (depth >= GEN_SKIN + soil + 8 && (double)y / rows < 0.78 && genIsCave(worldX, y)) return EMPTY;
+    return genPocketAt(worldX, y, depth, soil);               // stone + liquid/lava pockets
+  }
+  bool genTreeAt(int worldX, int surf) {
+    return genBiomeAt(worldX) == BIOME_PLAINS && surf <= L->gSeaRow && whash1(L->gTreeSeed, worldX) < TREE_PROB;
+  }
   void fillBand(int colStart, int colCount, int wOffsetX) {
     int colEnd = colStart + colCount;
     auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < 0 || y >= rows) return; grid[y * cols + lx] = m; };
     for (int lx = colStart; lx < colEnd; lx++) {
       int worldX = wOffsetX + lx; int surf = genSurfaceAt(worldX);
       int slope = std::abs(genSurfaceAt(worldX + 1) - genSurfaceAt(worldX - 1));
-      for (int y = 0; y < rows; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, y);
+      int biome = genBiomeAt(worldX); int soil = genSoilDepth(biome);
+      for (int y = 0; y < rows; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, biome, soil, y);
     }
     const int TREE_REACH = 4;
     for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
@@ -35,26 +87,28 @@
     }
     for (int lx = colStart; lx < colEnd; lx++) for (int y = 0; y < rows; y++) { int k = y * cols + lx; next[k] = grid[k]; }
   }
-  void initInfiniteLayer(uint32_t seed) {
+  // layerSalt distinguishes the per-layer subsurface seeds (caves + pockets) while
+  // leaving the surface seed shared, so the two layers share a silhouette but
+  // diverge below ground. fg passes 0, bg passes 1.
+  void initInfiniteLayer(uint32_t seed, uint32_t layerSalt) {
     L->infinite = true; L->worldSeed = seed;
     L->gSurfAmp = imax(16, (int)std::floor(rows * 0.16));
     L->gSurfBase = imax(8, (int)std::floor(rows * 0.24));
     L->gSeaRow = L->gSurfBase + imax(2, (int)std::floor(rows * 0.05));
-    L->gSoil = imax(3, (int)std::floor(rows * 0.045));
-    L->gCaveSeed = seed ^ 0x5bd1e995u; L->gTreeSeed = seed ^ 0x1b56c4f9u;
+    L->gSoil = imax(2, (int)std::floor(rows * 0.012)); // thin sand mantle: settles fast, doesn't churn
+    L->gCaveSeed = (seed ^ 0x5bd1e995u) + layerSalt * 0x9e3779b9u;
+    L->gPocketSeed = (seed ^ 0xC0FFEE11u) + layerSalt * 0x85ebca6bu;
+    L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
     L->worldOffsetX = -(cols / 2);
     fillBand(0, cols, L->worldOffsetX);
     registerSeededComponents(0, cols);
   }
-  // Generate terrain for BOTH layers from the SAME seed: the background is a
-  // second layer of the SAME world (a "2-deep" world), so the solid surface
-  // lines up and stays stable (no surface erosion from cross-layer drain). The
-  // layers still diverge once you dig/edit one of them, and the background is
-  // fully simulated; cross-layer transfer fires wherever they differ. Enabling
-  // the background activates that transfer.
+  // Generate BOTH layers: shared surface (no erosion), divergent subsurface. The
+  // background is fully simulated; cross-layer transfer flows where caves/pockets
+  // mismatch. Enabling the background activates that transfer.
   void initInfinite(uint32_t seed) {
-    useLayer(&fg); initInfiniteLayer(seed);
-    useLayer(&bg); initInfiniteLayer(seed);
+    useLayer(&fg); initInfiniteLayer(seed, 0);
+    useLayer(&bg); initInfiniteLayer(seed, 1);
     bgEnabled = true;
     useLayer(&fg);
   }

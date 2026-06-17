@@ -88,7 +88,10 @@ const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);
   runSteps(e, 30); // settle on ground
   for (let i = 0; i < 120; i++) { e.setPlayerInput(id, { bits: INPUT.RIGHT }); e.step(16 * i); }
   const p = e.getPlayer(id);
-  check(`blocked by wall (x ${p.x.toFixed(1)} < 120)`, p.x + p.w <= 120.5);
+  // Collision is forgiving (blocked only when >half the lower body is solid), so
+  // the player sinks up to ~half his width into the wall face but can NOT tunnel
+  // through a wall thicker than that: his CENTER stays at/before the wall (x=120).
+  check(`stopped at wall, no tunnel (x ${p.x.toFixed(1)}, center ${(p.x + p.w / 2).toFixed(1)})`, p.x + p.w / 2 <= 121 && p.x > 110);
   e.destroy();
 }
 
@@ -281,23 +284,33 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
-// 15. cooldown throttles repeated edits (no unbounded per-step mining).
+// 15. emit policy: continuous tools (fluids/sand) throttle by the cooldown while
+//     held; solids + the cube fire ONCE per press (rising edge), so holding the
+//     button doesn't spam blocks/boxes.
 {
-  console.log('tool: cooldown throttle');
+  console.log('tool: continuous throttle vs single-shot');
   const e = mk();
   stoneFloor(e, 60, 140, 90);
   const id = e.spawnPlayer(100, 80);
   runSteps(e, 30); // land on the floor
   const p = e.getPlayer(id);
-  // Hold mine for 12 steps; the engine's action counter must be throttled by
-  // the 4-step cooldown (~3 actions), not fire every step (12).
-  const a0 = e.getPlayerActionCount();
+  // continuous: hold PRIMARY + water for 12 steps -> throttled (~3, not 12).
+  const c0 = e.getPlayerActionCount();
   for (let i = 0; i < 12; i++) {
-    e.setPlayerInput(id, { bits: INPUT.SECONDARY, aimX: p.x, aimY: 95 });
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.water, aimX: p.x + 6, aimY: p.y - 4 });
     e.step(16 * i);
   }
-  const actions = e.getPlayerActionCount() - a0;
-  check(`cooldown limited actions (${actions} of 12 steps, expect ~3)`, actions >= 2 && actions <= 4);
+  const contActions = e.getPlayerActionCount() - c0;
+  check(`continuous tool throttled (${contActions} of 12 steps, expect ~3)`, contActions >= 2 && contActions <= 4);
+  // single-shot: release, then hold PRIMARY + cube for 12 steps -> exactly one.
+  e.setPlayerInput(id, { bits: 0 }); e.step(16); // release so the next press is a rising edge
+  const s0 = e.getPlayerActionCount();
+  for (let i = 0; i < 12; i++) {
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.cube, aimX: p.x + 14, aimY: p.y - 4 });
+    e.step(16 * i);
+  }
+  const cubeActions = e.getPlayerActionCount() - s0;
+  check(`cube fires once per press (${cubeActions} of 12 steps, expect 1)`, cubeActions === 1);
   e.destroy();
 }
 

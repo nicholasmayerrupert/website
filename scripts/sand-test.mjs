@@ -91,13 +91,17 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 {
   console.log('work-saving across world shift');
   const e = mk({ infinite: true });
-  for (let y = 30; y < 46; y++) for (let x = 20; x < 40; x++) e.paintDisc(x, y, 0, 4, true); // oil marker
-  const before = counts(e.getGrid())[4];
+  // Marker uses ICE (12) — a material the generator never produces — so the count
+  // reflects only this edit, not generated terrain (the revamp seeds oil/water/
+  // lava pockets underground).
+  const ICE = 12;
+  for (let y = 30; y < 46; y++) for (let x = 20; x < 40; x++) e.paintDisc(x, y, 0, ICE, true); // ice marker
+  const before = counts(e.getGrid())[ICE];
   e.shiftWorld(128);
-  const offEdge = counts(e.getGrid())[4];
+  const offEdge = counts(e.getGrid())[ICE];
   e.shiftWorld(-128);
-  const after = counts(e.getGrid())[4];
-  check(`oil marker saved (${before}) and restored (${after})`, before > 0 && offEdge === 0 && after === before);
+  const after = counts(e.getGrid())[ICE];
+  check(`edit marker saved (${before}) and restored (${after})`, before > 0 && offEdge === 0 && after === before);
   e.destroy();
 }
 

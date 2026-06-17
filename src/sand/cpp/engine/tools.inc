@@ -79,23 +79,32 @@
     return changed ? 1 : 0;
   }
   // Extend whichever draft is active (caller guarantees the pointer is inside).
+  // The draft lives in draftLayer (set on pointerDown), so paint into that layer.
   int continueDrafts(int cx, int cy) {
+    if (!draftingStone && !draftingIce && !draftingSeed) return 0;
+    useLayer(draftLayer ? &bg : &fg);
     int changed = 0;
     if (draftingStone) { if (addDiscToDraft(stoneDraft, cx, cy, draftIsDriftwood ? BRUSH_DRIFTWOOD : BRUSH_STONE, rows)) changed = 1; }
     if (draftingIce) { if (addDiscToDraft(iceDraft, cx, cy, BRUSH_ICE, rows - 1)) changed = 1; }
     if (draftingSeed) { changed |= updateSeedDraft(cx, cy); }
+    useLayer(&fg);
     return changed;
   }
   int pointerDraft(int cx, int cy) { return continueDrafts(cx, cy); }
 
-  // LMB starts drafts / spawns the cube; RMB arms the momentary eraser. Paint
-  // and erase tools act in applyTool (continuous, while held), not on down.
+  // LMB acts on the foreground, RMB on the background. Paint/erase tools are
+  // continuous (handled in emitHeldTool while held); draft/cube/seed tools act on
+  // this press, into the chosen layer.
   int pointerDown(int cx, int cy, int button) {
-    if (button == 2) { rmbDown = true; return 0; } // RMB places into the background (continuous in emitHeldTool)
-    if (button != 0) return 0;
-    lmbDown = true;
+    if (button != 0 && button != 2) return 0;
+    bool toBg = (button == 2);
+    if (toBg) { rmbDown = true; bgEnabled = true; } else lmbDown = true;
+    int tool = effectiveTool();
+    if (isPaintTool(tool) || tool == T_ERASER) return 0; // continuous; emitHeldTool routes the layer
+    draftLayer = toBg ? 1 : 0;
+    useLayer(toBg ? &bg : &fg);
     int changed = 0;
-    switch (effectiveTool()) {
+    switch (tool) {
       case T_STONE: draftingStone = true; draftIsDriftwood = false; if (addDiscToDraft(stoneDraft, cx, cy, BRUSH_STONE, rows)) changed = 1; break;
       case T_DRIFTWOOD: draftingStone = true; draftIsDriftwood = true; if (addDiscToDraft(stoneDraft, cx, cy, BRUSH_DRIFTWOOD, rows)) changed = 1; break;
       case T_ICE: draftingIce = true; if (addDiscToDraft(iceDraft, cx, cy, BRUSH_ICE, rows - 1)) changed = 1; break;
@@ -103,19 +112,23 @@
       case T_CUBE: spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, RIGID); break;
       default: break;
     }
+    useLayer(&fg);
     return changed;
   }
   // Track button release (mirrors the old buttons==0 reset on move/up).
   void pointerButtons(int buttons) { if (buttons == 0) { rmbDown = false; lmbDown = false; } }
   int pointerUp(int button) {
     if (button == 2) rmbDown = false;
+    if (button == 0) lmbDown = false;
+    // Finalize the active draft when the button that owns its layer is released.
+    bool ownerReleased = (draftLayer == 1) ? (button == 2) : (button == 0);
+    if (!ownerReleased) return 0;
     int changed = 0;
-    if (button == 0) {
-      lmbDown = false;
-      if (draftingStone) { if (draftIsDriftwood) finalizeDriftwoodDraft(); else finalizeStoneDraft(); draftingStone = false; draftIsDriftwood = false; stoneDraft.clear(); changed = 1; }
-      if (draftingIce) { finalizeIceDraft(); draftingIce = false; iceDraft.clear(); changed = 1; }
-      if (draftingSeed) { if (hasSeedOrigin) placeSeedAt(seedOriginX, seedOriginY); draftingSeed = false; hasSeedOrigin = false; changed = 1; }
-    }
+    useLayer(draftLayer ? &bg : &fg);
+    if (draftingStone) { if (draftIsDriftwood) finalizeDriftwoodDraft(); else finalizeStoneDraft(); draftingStone = false; draftIsDriftwood = false; stoneDraft.clear(); changed = 1; }
+    if (draftingIce) { finalizeIceDraft(); draftingIce = false; iceDraft.clear(); changed = 1; }
+    if (draftingSeed) { if (hasSeedOrigin) placeSeedAt(seedOriginX, seedOriginY); draftingSeed = false; hasSeedOrigin = false; changed = 1; }
+    useLayer(&fg);
     return changed;
   }
   // Apply one continuous tool emit at (cx,cy) on the ACTIVE layer.

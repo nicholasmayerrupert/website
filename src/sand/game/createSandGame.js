@@ -287,7 +287,8 @@ export function createSandGame(container, opts = {}) {
     mouseButtons = e.buttons;
     updatePointer(e.clientX, e.clientY);
     engine?.pointerButtons(e.buttons); // release the held/RMB state on buttons==0
-    if (playMode || !drawModeOn || !engine) return; // play mode aims via the player
+    if (playMode) { if (engine) previewDirty = true; return; } // re-present so the aim cursor follows
+    if (!drawModeOn || !engine) return;
     if (inside && engine.pointerDraftAtAim()) previewDirty = true;
   };
   const onTouchMove = (e) => {
@@ -301,12 +302,15 @@ export function createSandGame(container, opts = {}) {
   // LMB starts drafts / spawns the cube; RMB arms the momentary eraser. Paint
   // and erase tools act continuously in the step loop (engine.applyLocalInput).
   const onPointerDown = (e) => {
-    if (!drawModeOn || !engine) return;
+    if (!engine) return;
+    // Survival aims/builds with the mouse regardless of the Draw toggle; creative
+    // requires draw mode (so the page stays scrollable until the user opts in).
+    if (!playMode && !drawModeOn) return;
     mouseButtons = e.buttons;
     updatePointer(e.clientX, e.clientY);
     if (!inside) return;
     if (e.button === 0 || e.button === 2) {
-      if (playMode) { e.preventDefault(); return; } // player mines/builds via input bits
+      if (playMode) { previewDirty = true; e.preventDefault(); return; } // player builds/mines via input bits
       if (engine.pointerDownAtAim(e.button)) previewDirty = true;
       e.preventDefault();
     }
@@ -321,7 +325,7 @@ export function createSandGame(container, opts = {}) {
   };
 
   const onContextMenu = (e) => {
-    if (drawModeOn && inside) e.preventDefault();
+    if ((drawModeOn || playMode) && inside) e.preventDefault(); // RMB places in bg; no menu
   };
 
   const onScroll = () => {

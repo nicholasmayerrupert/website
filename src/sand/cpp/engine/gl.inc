@@ -223,21 +223,45 @@ void glDrawPreview() {
   auto cell = [&](int x, int y) {
     glSolidDev((x - camCol) * glCellDev + glOffX, (y - camRow) * glCellDev + glOffY, glCellDev, glCellDev);
   };
+  // Background drafts (RMB) read darker so they look like they're behind the world.
+  float df = (draftLayer == 1) ? GL_BG_TINT : 1.0f;
   if (!stoneDraft.empty()) {
-    if (draftIsDriftwood) glUniform4f(glc->uColor, 140 / 255.0f, 125 / 255.0f, 110 / 255.0f, 0.45f);
-    else                  glUniform4f(glc->uColor, 160 / 255.0f, 160 / 255.0f, 170 / 255.0f, 0.40f);
+    if (draftIsDriftwood) glUniform4f(glc->uColor, df * 140 / 255.0f, df * 125 / 255.0f, df * 110 / 255.0f, 0.45f);
+    else                  glUniform4f(glc->uColor, df * 160 / 255.0f, df * 160 / 255.0f, df * 170 / 255.0f, 0.40f);
     for (int k : stoneDraft) { int y = k / cols; cell(k - y * cols, y); }
   }
   if (!iceDraft.empty()) {
-    glUniform4f(glc->uColor, 150 / 255.0f, 225 / 255.0f, 240 / 255.0f, 0.40f);
+    glUniform4f(glc->uColor, df * 150 / 255.0f, df * 225 / 255.0f, df * 240 / 255.0f, 0.40f);
     for (int k : iceDraft) { int y = k / cols; cell(k - y * cols, y); }
   }
   if (draftingSeed && hasSeedOrigin) {
     bool valid = canPlaceSeedAt(seedOriginX, seedOriginY);
-    if (valid) glUniform4f(glc->uColor, 120 / 255.0f, 190 / 255.0f, 100 / 255.0f, 0.32f);
+    if (valid) glUniform4f(glc->uColor, df * 120 / 255.0f, df * 190 / 255.0f, df * 100 / 255.0f, 0.32f);
     else       glUniform4f(glc->uColor, 255 / 255.0f, 80 / 255.0f, 80 / 255.0f, 0.24f);
     for (int y = seedOriginY; y < seedOriginY + SEED_SIZE; y++)
       for (int x = seedOriginX; x < seedOriginX + SEED_SIZE; x++) cell(x, y);
+  }
+
+  // Survival: a "cursor" disc at the local player's aim shows where the tool will
+  // act and into which layer — LMB foreground (bright), RMB background (dim), the
+  // eraser red. Faded when the aim is out of the player's reach.
+  if (playModeOn && glOwnPlayerId) {
+    Player* lp = nullptr;
+    for (auto& pp : players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
+    if (lp) {
+      int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
+      bool toBg = (pointerBtns & 2) != 0;
+      bool erasing = (lp->selectedTool == T_ERASER);
+      double cxp = lp->px + lp->w / 2.0, cyp = lp->py + lp->h / 2.0;
+      double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
+      bool inReach = dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH;
+      float a = inReach ? 0.40f : 0.14f;
+      if (erasing)   glUniform4f(glc->uColor, 255 / 255.0f, 90 / 255.0f, 80 / 255.0f, a);
+      else if (toBg) glUniform4f(glc->uColor, 120 / 255.0f, 140 / 255.0f, 170 / 255.0f, a);
+      else           glUniform4f(glc->uColor, 180 / 255.0f, 215 / 255.0f, 255 / 255.0f, a);
+      int r = erasing ? P_MINE_R : P_BUILD_R;
+      for (int oy = -r; oy <= r; oy++) for (int ox = -r; ox <= r; ox++) { if (ox * ox + oy * oy > r * r) continue; cell(ax + ox, ay + oy); }
+    }
   }
 }
 

@@ -36,7 +36,7 @@
     int worldOffsetX = 0;
     uint32_t worldSeed = 0;
     int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;
-    uint32_t gCaveSeed = 0, gTreeSeed = 0;
+    uint32_t gCaveSeed = 0, gTreeSeed = 0, gPocketSeed = 0;
     std::unordered_map<int, MatBand> matStore;                                // worldX -> saved band
     std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
     // render pixels for this layer (cols*rows*4 RGBA)
@@ -116,8 +116,10 @@
   // ---- tool / pointer state (input policy ported from createSandGame) ----
   int activeTool = T_CUBE;
   bool lmbDown = false, rmbDown = false;
-  // Foreground drafts (LMB component staging). RMB places directly into bg (no
-  // per-layer draft lifecycle), so draft state is foreground-only / shared.
+  // The active draft (stone/ice/seed staging) targets this layer: 0 = foreground
+  // (LMB), 1 = background (RMB). The draft set is shared staging; finalize writes
+  // into the layer chosen here on pointerDown.
+  int draftLayer = 0;
   std::unordered_set<int> stoneDraft, iceDraft;
   std::vector<int> draftSnapshot;
   bool draftingStone = false, draftingIce = false, draftingSeed = false, draftIsDriftwood = false;

@@ -65,7 +65,11 @@ int localInputBits() {
   if (heldKeys & ((1u << IK_UP) | (1u << IK_SPACE))) b |= PI_JUMP;
   if (heldKeys & (1u << IK_DOWN)) b |= PI_DOWN;
   if (heldKeys & (1u << IK_SHIFT)) b |= PI_RUN;
-  if (drawModeOn && pointerInside) {
+  // Survival aims/places with the mouse whenever the cursor is over the canvas —
+  // no "Draw" toggle gating (the fullscreen game has no page to scroll). The
+  // player only acts while a button is held, so always-aim just means "hover to
+  // aim, click to build/mine."
+  if (pointerInside) {
     if (pointerBtns & 1) b |= PI_PRIMARY;
     if (pointerBtns & 2) b |= PI_SECONDARY;
   }

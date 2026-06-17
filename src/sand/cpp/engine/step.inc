@@ -55,10 +55,37 @@
     tick++;
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
     if (bgA) stepLayer(&bg);
+    crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);
     useLayer(&fg); // leave fg active for ABI/render/tool calls between steps
     perfStepMs = emscripten_get_now() - t0;
     return true;
+  }
+
+  // ---- cross-layer fire (uses the shared RNG) ----
+  // Fire jumps between layers: a FIRE cell in one layer ignites a flammable at the
+  // SAME (x,y) in the other layer (both directions, probabilistic). Runs after
+  // both layers have stepped, over the union of their active regions (fire is
+  // always in an active region). Gated on bgEnabled so single-layer scenes draw no
+  // RNG and stay byte-identical to a one-layer build.
+  void crossLayerReactions(bool fgA, bool bgA) {
+    if (!bgEnabled) return;
+    for (int y = 1; y < rows - 1; y++) {
+      int mn = cols, mx = -1;
+      if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
+      if (bgA && bg.activeRowMax[y] >= bg.activeRowMin[y]) { if (bg.activeRowMin[y] < mn) mn = bg.activeRowMin[y]; if (bg.activeRowMax[y] > mx) mx = bg.activeRowMax[y]; }
+      if (mx < mn) continue;
+      mn = imax(1, mn); mx = imin(cols - 2, mx);
+      for (int x = mn; x <= mx; x++) {
+        int k = y * cols + x;
+        uint8_t f = fg.grid[k], b = bg.grid[k];
+        if (f == FIRE && isFlammable(b)) {
+          if (rand() < FIRE_CROSS_P) { bg.grid[k] = FIRE; if (x < bg.rowMarkMin[y]) bg.rowMarkMin[y] = x; if (x > bg.rowMarkMax[y]) bg.rowMarkMax[y] = x; }
+        } else if (b == FIRE && isFlammable(f)) {
+          if (rand() < FIRE_CROSS_P) { fg.grid[k] = FIRE; if (x < fg.rowMarkMin[y]) fg.rowMarkMin[y] = x; if (x > fg.rowMarkMax[y]) fg.rowMarkMax[y] = x; }
+        }
+      }
+    }
   }
 
   // ---- cross-layer transfer (RNG-free) ----

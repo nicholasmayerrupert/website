@@ -2,8 +2,10 @@
 // powder/liquid transfer. Runs headless in Node. Run with:
 //   node scripts/layer-test.mjs
 
-import { initSandWasm, createEngineWasm, MAT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, MAT, INPUT } from '../src/sand/engineWasm.js';
 import { countMaterials } from './sand-test-util.mjs';
+
+const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
 
 await initSandWasm();
 
@@ -133,6 +135,61 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   lmb.applyTool(30, 30, 1000, true, true);
   check('LMB placed sand in the foreground', countIn(lmb.getGrid(), MAT.SAND) > 0);
   check('LMB left the background empty', countMaterials(lmb.getGridBg()).slice(1).every((c) => c === 0));
+}
+
+// 8. fire crosses layers: a FIRE cell ignites a flammable at the same (x,y) in
+//    the OTHER layer.
+{
+  console.log('cross-layer fire ignites the other layer');
+  const e = mk();
+  e.setBgEnabled(true);
+  stoneFloor(e, 0, 30, 76, 25); // fg floor (so the fed flame has somewhere to sit, no transfer)
+  stoneFloor(e, 1, 30, 76, 25); // bg floor (so the oil pool rests under the flame)
+  for (let x = 20; x < 40; x++) for (let y = 72; y < 76; y++) e.paintDiscLayer(1, x, y, 0, MAT.OIL, true); // bg oil pool
+  const bgOil0 = countIn(e.getGridBg(), MAT.OIL);
+  let bgFireSeen = 0;
+  for (let i = 0; i < 40; i++) {
+    for (let x = 20; x < 40; x++) for (let y = 72; y < 76; y++) e.paintDisc(x, y, 0, MAT.FIRE, true); // sustained fg flame over the oil
+    e.step(16 * (i + 1));
+    bgFireSeen = Math.max(bgFireSeen, countIn(e.getGridBg(), MAT.FIRE));
+  }
+  const bgOil1 = countIn(e.getGridBg(), MAT.OIL);
+  check('bg oil ignited by fg fire', bgFireSeen > 0 && bgOil1 < bgOil0, `(bg fire seen ${bgFireSeen}, oil ${bgOil0} -> ${bgOil1})`);
+}
+
+// 9. RMB places a SOLID (stone) into the background as a persistent component.
+{
+  console.log('RMB places a solid into the background');
+  const e = mk();
+  e.setTool(T.stone);
+  e.pointerDown(30, ROWS - 2, 2); // RMB down -> start a background stone draft (grounded at the bottom)
+  e.pointerUp(2);                 // release -> finalize into the bg
+  const bgStone = countIn(e.getGridBg(), MAT.STONE);
+  check('RMB placed stone in the background', bgStone > 0, `(${bgStone})`);
+  check('RMB left the foreground free of stone', countIn(e.getGrid(), MAT.STONE) === 0);
+  step(e, 20);
+  check('grounded bg stone persists as a component', countIn(e.getGridBg(), MAT.STONE) === bgStone, `(${countIn(e.getGridBg(), MAT.STONE)})`);
+}
+
+// 10. survival player tools: LMB -> foreground, RMB -> background, single-shot
+//     solids.
+{
+  console.log('survival player: LMB->fg, RMB->bg');
+  const e = mk();
+  stoneFloor(e, 0, 28, 70, 25); // fg ground to stand on
+  const id = e.spawnPlayer(26, 60);
+  step(e, 30); // land
+  const p = e.getPlayer(id);
+  const fgStone0 = countIn(e.getGrid(), MAT.STONE); // the fg floor only
+  // RMB + stone -> a single background stone disc near the player (edge-triggered)
+  e.setPlayerInput(id, { bits: INPUT.SECONDARY, tool: T.stone, aimX: p.x + 3, aimY: p.y });
+  step(e, 1);
+  check('player RMB placed stone in the background', countIn(e.getGridBg(), MAT.STONE) > 0, `(${countIn(e.getGridBg(), MAT.STONE)})`);
+  check('player RMB added no foreground stone', countIn(e.getGrid(), MAT.STONE) === fgStone0);
+  // LMB + sand -> foreground (continuous)
+  const fgSand0 = countIn(e.getGrid(), MAT.SAND);
+  for (let i = 0; i < 8; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.sand, aimX: p.x + 3, aimY: p.y - 3 }); step(e, 1); }
+  check('player LMB placed sand in the foreground', countIn(e.getGrid(), MAT.SAND) > fgSand0, `(${fgSand0} -> ${countIn(e.getGrid(), MAT.SAND)})`);
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);

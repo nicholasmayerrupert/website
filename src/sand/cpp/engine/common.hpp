@@ -29,6 +29,8 @@ static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
 static const float BUOY_BAND_FRAC = 0.5f, BUOY_BAND_MIN = 1.5f, BUOY_DRAFT_SCALE = 0.5f, BUOY_WET_PERIMETER_FRAC = 0.75f, BUOY_SUPPORT_FRAC = 0.5f;
 static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
+// Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
+static const float FIRE_CROSS_P = 0.18f;
 static const float ACID_DISSOLVE_P = 0.12f, ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
 static const int   MAX_WOOD_CELLS = 120, MAX_LEAF_CELLS = 105, WATER_PER_GROWTH = 2, TRUNK_THICKEN_UNTIL_WOOD = 52;
 static const float GROWTH_P = 0.58f, LEAF_GROWTH_P = 0.54f;
@@ -144,6 +146,7 @@ struct Player {
   int selectedTool = T_ERASER;
   double aimX = 0, aimY = 0; // cell coords of the aim/cursor
   int input = 0;
+  int prevInput = 0;       // last step's input bits (for single-shot edge detection)
   bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;

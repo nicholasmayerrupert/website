@@ -2,7 +2,13 @@
   "$schema": "https://developers.cloudflare.com/workers/schemas/v3.0/config.schema.json",
   "name": "personal-website",
   "compatibility_date": "2024-09-01",
-  "assets": { "directory": "./dist", "html_handling": "auto-trailing-slash" },
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    // Serve index.html for unmatched routes (e.g. /game) so the client-side
+    // router (src/main.jsx) can render them.
+    "not_found_handling": "single-page-application"
+  },
   "routes": [
     { "pattern": "nicholasmayerrupert.com/*", "zone_name": "nicholasmayerrupert.com" },
     { "pattern": "www.nicholasmayerrupert.com/*", "zone_name": "nicholasmayerrupert.com" }

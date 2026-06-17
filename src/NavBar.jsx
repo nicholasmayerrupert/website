@@ -45,6 +45,13 @@ const NavBar = () => {
             {item.label}
           </a>
         ))}
+        {/* Full navigation to the dedicated fullscreen sand game (not an in-page hash). */}
+        <a
+          href="/game"
+          className="px-4 py-2 text-sm font-semibold rounded-full transition bg-emerald-400/20 text-emerald-200 ring-1 ring-emerald-300/30 hover:bg-emerald-400/30 hover:text-emerald-100"
+        >
+          PLAY
+        </a>
       </div>
     </div>
   );

@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef } from 'react';
 
-export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
+export function SandGame({ initialTool = 'cube', mode = 'survival', onDrawModeChange }) {
   const ref = useRef(null);
   useEffect(() => {
     import('../embed/sandGame'); // registers the <sand-game> custom element (idempotent)
@@ -21,5 +21,5 @@ export function SandGame({ initialTool = 'cube', onDrawModeChange }) {
     return () => el.removeEventListener('sand:drawmodechange', onChange);
   }, [onDrawModeChange]);
 
-  return <sand-game ref={ref} initial-tool={initialTool} />;
+  return <sand-game ref={ref} initial-tool={initialTool} mode={mode} />;
 }

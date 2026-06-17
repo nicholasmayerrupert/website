@@ -35,7 +35,7 @@ try {
   browser = await chromium.launch();
   const context = await browser.newContext({ reducedMotion: 'no-preference' });
   const page = await context.newPage();
-  await page.goto(baseURL, { waitUntil: 'load' });
+  await page.goto(`${baseURL}game`, { waitUntil: 'load' }); // survival mode (the player character lives at /game)
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.getPlayer && window.__sandTest.getPlayer(), null, { timeout: 30000 });
 
   console.log('local player');

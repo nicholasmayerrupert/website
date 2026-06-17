@@ -41,6 +41,9 @@ class SandGameElement extends HTMLElement {
     root.appendChild(sim);
 
     const initialTool = this.getAttribute('initial-tool') || 'cube';
+    // 'survival' (default): player character + reach-limited tools, camera
+    // follows. 'creative': free camera, draw anywhere, no character.
+    const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
     let cancelled = false;
 
     initSandWasm()
@@ -48,6 +51,7 @@ class SandGameElement extends HTMLElement {
         if (cancelled || !this.isConnected) return;
         const game = createSandGame(sim, {
           initialTool,
+          mode,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
         });
         this._game = game;
@@ -61,13 +65,14 @@ class SandGameElement extends HTMLElement {
             }));
           },
         });
-        // Coarse-pointer (touch) devices keep draw off by default so the page
-        // can still scroll; the palette toggle opts in.
-        if (typeof window !== 'undefined' && window.matchMedia &&
-            window.matchMedia('(pointer: coarse)').matches) {
-          game.setDrawMode(false);
-          this._palette.setDrawMode(false);
-        }
+        // Default draw state: survival on a fine pointer starts drawing-enabled so
+        // the dedicated game is immediately playable (mouse mines/builds). Creative
+        // and coarse-pointer (touch) start draw-off so the page can still scroll.
+        const coarse = typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(pointer: coarse)').matches;
+        const drawDefault = mode === 'survival' && !coarse;
+        game.setDrawMode(drawDefault);
+        this._palette.setDrawMode(drawDefault);
       })
       .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 

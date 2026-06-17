@@ -78,8 +78,8 @@ export default function About() {
         </div>
       </div>
 
-      {/* Full-section Sand overlay */}
-      <SandGame onDrawModeChange={setDrawModeActive} />
+      {/* Full-section Sand overlay — Creative mode (free cam, draw anywhere, no character) */}
+      <SandGame mode="creative" onDrawModeChange={setDrawModeActive} />
     </section>
   );
 }

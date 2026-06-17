@@ -41,7 +41,7 @@ try {
   const open = async () => {
     const ctx = await browser.newContext({ reducedMotion: 'no-preference' });
     const page = await ctx.newPage();
-    await page.goto(baseURL, { waitUntil: 'load' });
+    await page.goto(`${baseURL}game`, { waitUntil: 'load' }); // survival mode (players live at /game)
     await page.waitForFunction(() => window.__sandNet && window.__sandTest && window.__sandTest.getPlayer(), null, { timeout: 30000 });
     return { ctx, page };
   };

@@ -22,7 +22,12 @@ export function createSandGame(container, opts = {}) {
     initialTool = 'cube',
     onLayoutChange,
     reducedMotion,
+    // 'survival' (default): a player character with reach/cooldown-restricted
+    // tools, camera follows. 'creative': free camera (WASD pans the infinite
+    // world), draw tools place/erase anywhere with no reach limit, no character.
+    mode = 'survival',
   } = opts;
+  const survival = mode === 'survival';
 
   // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
   // context on it and composites the cell texture, gutter grid, player overlay,
@@ -46,11 +51,11 @@ export function createSandGame(container, opts = {}) {
   let currentToolName = initialTool;
   let drawModeOn = false;
 
-  // Player mode: WASD/arrows drive the local character and the camera follows it.
-  // Free-camera (debug) mode restores the old WASD/arrow buffer panning and is
-  // used by the headless pan/flicker bench. The local player is simulated in the
-  // engine; JS only forwards input and draws the overlay.
-  let playMode = true;
+  // Player mode (survival): WASD/arrows drive the local character and the camera
+  // follows it. Free-camera mode (creative; also the pan/flicker bench) pans the
+  // buffer with WASD/arrows. The local player is simulated in the engine; JS only
+  // forwards input. Survival starts in play mode; creative starts in free-cam.
+  let playMode = survival;
   let localPlayerId = 0;
   const PLAYER_W = 4, PLAYER_H = 8; // mirrors PLAYER_W/PLAYER_H in cpp/common.hpp
   let inputSeq = 0;
@@ -230,9 +235,10 @@ export function createSandGame(container, opts = {}) {
     engine.glSetFlags(gutterOn, snapOff);
     const spawnCol = Math.floor(cols / 2);
     const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
-    // Spawn the local player on the surface (unless a client, where the host owns
-    // it — it gets removed and re-rendered from snapshots when joining).
-    if (!net || net.role !== 'client') {
+    // Spawn the local player on the surface in survival mode (unless a client,
+    // where the host owns it — it gets removed and re-rendered from snapshots when
+    // joining). Creative mode has no character.
+    if (survival && (!net || net.role !== 'client')) {
       const sp = surfaceSpawn(spawnCol);
       localPlayerId = engine.spawnPlayer(sp.x, sp.y);
     }
@@ -523,7 +529,7 @@ export function createSandGame(container, opts = {}) {
   };
   const netDisconnect = () => {
     net.disconnect();
-    if (!localPlayerId && engine) { const sp = surfaceSpawn(Math.floor(cols / 2)); localPlayerId = engine.spawnPlayer(sp.x, sp.y); }
+    if (survival && !localPlayerId && engine) { const sp = surfaceSpawn(Math.floor(cols / 2)); localPlayerId = engine.spawnPlayer(sp.x, sp.y); }
   };
   const netStatus = () => ({ role: net.role, connected: net.connected, remotes: net.remoteCount, ownPlayerId: net.ownPlayerId, status: net.status });
 

@@ -113,6 +113,10 @@ export function initSandWasm() {
         applyDiff: c('engine_apply_diff', null, ['number', 'number', 'number']),
         gridHash: c('engine_grid_hash', 'number', ['number']),
         clearAllDirty: c('engine_clear_all_dirty', null, ['number']),
+        gridBg: c('engine_grid_bg', 'number', ['number']),
+        setBgEnabled: c('engine_set_bg_enabled', null, ['number', 'number']),
+        paintDiscLayer: c('engine_paint_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        syncComponentsLayer: c('engine_sync_components_layer', null, ['number', 'number']),
         glInit: c('engine_gl_init', 'number', ['number', 'string']),
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
@@ -401,6 +405,12 @@ export function createEngineWasm({
     applyDiff(bytes) { if (!bytes.length) return; const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyDiff(ptr, buf, bytes.length); mod._free(buf); },
     gridHash() { return M.gridHash(ptr) >>> 0; },
     resetDirty() { M.clearAllDirty(ptr); },
+
+    // ---- two-layer access (background = layer 1) ----
+    getGridBg() { return new Uint8Array(mod.HEAPU8.buffer, M.gridBg(ptr), cellCount); },
+    setBgEnabled(on) { M.setBgEnabled(ptr, on ? 1 : 0); },
+    paintDiscLayer(layer, cx, cy, r, material, overwrite = false) { return M.paintDiscLayer(ptr, layer | 0, cx, cy, r, material, overwrite ? 1 : 0); },
+    syncComponentsLayer(layer) { M.syncComponentsLayer(ptr, layer | 0); },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },

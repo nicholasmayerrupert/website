@@ -14,8 +14,9 @@
     "test:sand": "node scripts/sand-test.mjs",
     "test:players": "node scripts/player-test.mjs",
     "test:net": "node scripts/net-test.mjs",
+    "test:layer": "node scripts/layer-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
-    "test": "npm run test:sand && npm run test:players && npm run test:net",
+    "test": "npm run test:sand && npm run test:players && npm run test:net && npm run test:layer",
     "test:all": "npm run test && npm run build",
     "mp:server": "node scripts/dev-multiplayer-server.mjs"
   },

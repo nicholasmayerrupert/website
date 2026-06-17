@@ -55,8 +55,8 @@
     return -1;
   }
   void growPlantComponents() {
-    if (plantComponents.empty()) return;
-    for (auto& comp : plantComponents) {
+    if (L->plantComponents.empty()) return;
+    for (auto& comp : L->plantComponents) {
       comp.age++;
       std::vector<int> waterCells;
       if (!findWaterTouching(comp, WATER_PER_GROWTH, waterCells)) continue;

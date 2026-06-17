@@ -1,7 +1,7 @@
   // ================= REACTIONS (reactions.js) =================
   void applyReactions() {
     int steamCount = 0, fireCount = 0, igniteCount = 0; bool plantBurned = false;
-    int igniteCap = (int)reactionIgnite.size();
+    int igniteCap = cols * rows;
     for (int y = 1; y < rows; y++) {
       int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
       for (int x = minX; x <= maxX; x++) {
@@ -54,7 +54,7 @@
         if (rand() < ACID_DECAY_P) writeGridIndex(k, EMPTY);
       }
     }
-    if (dissolvedStone) splitRigidAfterErase(stoneComponents, erasedStone, nextStoneId, false);
+    if (dissolvedStone) splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
     if (dissolvedPlant) splitPlantAfterErase();
   }
   void applyLava() {
@@ -73,12 +73,12 @@
         if (rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (grid[up] == EMPTY) airK = up; else if (grid[right] == EMPTY) airK = right; else if (grid[left] == EMPTY) airK = left; if (airK >= 0) writeGridIndex(airK, FIRE); }
       }
     }
-    if (!hardened.empty()) registerRigidCells(stoneComponents, nextStoneId, STONE, hardened, hardenedYMax, false);
+    if (!hardened.empty()) registerRigidCells(L->stoneComponents, L->nextStoneId, STONE, hardened, hardenedYMax, false);
     if (plantBurned) splitPlantAfterErase();
   }
   void applyIce() {
     bool melted = false; std::vector<int> meltedCells;
-    for (auto& comp : iceComponents) {
+    for (auto& comp : L->iceComponents) {
       std::vector<int> cells(comp.cells.begin(), comp.cells.end());
       for (int k : cells) {
         if (grid[k] != ICE) continue;
@@ -91,6 +91,6 @@
         }
       }
     }
-    if (melted) splitRigidAfterErase(iceComponents, meltedCells, nextIceId, true);
+    if (melted) splitRigidAfterErase(L->iceComponents, meltedCells, L->nextIceId, true);
   }
 

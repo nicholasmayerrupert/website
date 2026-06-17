@@ -36,15 +36,15 @@ void buildRenderTables() {
   }
 }
 
-// Fill renderPixels for an INCLUSIVE cell rect [x0,x1] x [y0,y1].
-inline void fillRenderSpan(int x0, int y0, int x1, int y1) {
-  uint32_t* p = (uint32_t*)renderPixels.data();
+// Fill `out` (RGBA over uint32) for an INCLUSIVE cell rect [x0,x1] x [y0,y1] from
+// `g` (a layer's grid). Parameterized so it serves either layer's renderPixels.
+inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1) {
   for (int y = y0; y <= y1; y++) {
     int rowBase = y * cols;
     int noiseRow = (y & 63) << 6;
     for (int x = x0; x <= x1; x++) {
       int k = rowBase + x;
-      uint8_t m = grid[k];
+      uint8_t m = g[k];
       uint32_t c = renderVariants[((int)m << 3) + renderNoise[noiseRow + (x & 63)]];
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
@@ -54,11 +54,13 @@ inline void fillRenderSpan(int x0, int y0, int x1, int y1) {
   }
 }
 
-void renderFull() { fillRenderSpan(0, 0, cols - 1, rows - 1); }
+// Render the ACTIVE layer (L) into its own renderPixels.
+void renderFull() { fillRenderSpan(L->grid, (uint32_t*)L->renderPixels.data(), 0, 0, cols - 1, rows - 1); }
 
-// Refill only the coalesced dirty rects (built by buildDirtyRects). Rects are
-// [x0,y0,x1,y1) exclusive; convert to inclusive for the fill.
+// Refill only the active layer's coalesced dirty rects. Rects are [x0,y0,x1,y1)
+// exclusive; convert to inclusive for the fill.
 void renderDirtyRects() {
-  for (size_t i = 0; i + 3 < dirtyRects.size(); i += 4)
-    fillRenderSpan(dirtyRects[i], dirtyRects[i + 1], dirtyRects[i + 2] - 1, dirtyRects[i + 3] - 1);
+  uint8_t* g = L->grid; uint32_t* p = (uint32_t*)L->renderPixels.data();
+  for (size_t i = 0; i + 3 < L->dirtyRects.size(); i += 4)
+    fillRenderSpan(g, p, L->dirtyRects[i], L->dirtyRects[i + 1], L->dirtyRects[i + 2] - 1, L->dirtyRects[i + 3] - 1);
 }

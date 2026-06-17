@@ -1,12 +1,15 @@
   // ---- step ----
-  bool step() {
-    // Players advance every step at a fixed timestep, even when the grid is
-    // static (so a standing/idle world still moves characters). Player physics
-    // reads the current grid for collision; tool edits happen via applyTool.
-    updatePlayers();
-    if (!beginStepDirty()) return !players.empty();
+  // Two layers run under ONE tick. updatePlayers + the tick++ happen once;
+  // each layer steps via stepLayer() (foreground FIRST, so the shared RNG stream
+  // for the foreground is byte-identical to a single-layer build when the
+  // background is idle). transferPass() then reconciles cross-layer powder/liquid
+  // flow (P2).
+  bool isLoose(uint8_t m) { return MAT_KIND[m] == K_POWDER || MAT_KIND[m] == K_LIQUID; }
+
+  void stepLayer(Layer* layer) {
+    useLayer(layer);
+    if (!beginStepDirty()) return; // nothing active in this layer this step
     double t0 = emscripten_get_now();
-    tick++;
     computeGrounded();
     double tG = emscripten_get_now(); perfStepGround = tG - t0;
     moveRigidAssemblies();
@@ -17,17 +20,17 @@
     double tX = emscripten_get_now(); perfStepReact = tX - tR;
     prepareNextBuffer();
     // carry-forward component + body cells across the double buffer
-    curCompCells.clear();
-    for (auto& comp : stoneComponents) for (int k : comp.cells) { next[k] = STONE; compOccStamp[k] = tick; curCompCells.push_back(k); }
-    for (auto& comp : plantComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; curCompCells.push_back(k); }
-    for (auto& comp : iceComponents) for (int k : comp.cells) { next[k] = ICE; compOccStamp[k] = tick; curCompCells.push_back(k); }
-    for (int k : bodyCells) { next[k] = RIGID; compOccStamp[k] = tick; curCompCells.push_back(k); }
-    for (int k : prevCompCells) {
+    L->curCompCells.clear();
+    for (auto& comp : L->stoneComponents) for (int k : comp.cells) { next[k] = STONE; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (auto& comp : L->plantComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (auto& comp : L->iceComponents) for (int k : comp.cells) { next[k] = ICE; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (int k : L->bodyCells) { next[k] = RIGID; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (int k : L->prevCompCells) {
       if (compOccStamp[k] == tick) continue;
       if (grid[k] == EMPTY) { next[k] = EMPTY; markCellIndex(k); }
       else if (!isRigidMaterial(grid[k]) && isRigidMaterial(next[k])) { next[k] = grid[k]; markCellIndex(k); }
     }
-    std::swap(prevCompCells, curCompCells);
+    std::swap(L->prevCompCells, L->curCompCells);
     double tC = emscripten_get_now(); perfStepCarry = tC - tX;
 
     for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
@@ -35,12 +38,72 @@
     for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_LIQUID) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_LIQUID) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
     for (int y = 0; y < rows; y++) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_GAS) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_GAS) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x); } }
     double tS = emscripten_get_now(); perfStepSettle = tS - tC;
-    uint8_t* tmp = grid; grid = next; next = tmp;
+    std::swap(grid, next); flushLayerGrids();
     if ((tick & 1) == 0) relaxLiquidGaps();
     if (tick % 3 == 0) separateLooseByDensity();
     applySideSinks();
     perfStepTail = emscripten_get_now() - tS;
+  }
+
+  bool step() {
+    // Players advance every step (foreground only); their tool edits mark fg active.
+    useLayer(&fg);
+    updatePlayers();
+    bool fgA = layerActive(&fg), bgA = layerActive(&bg);
+    if (!fgA && !bgA) { useLayer(&fg); return !players.empty(); }
+    double t0 = emscripten_get_now();
+    tick++;
+    if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
+    if (bgA) stepLayer(&bg);
+    transferPass(fgA, bgA);
+    useLayer(&fg); // leave fg active for ABI/render/tool calls between steps
     perfStepMs = emscripten_get_now() - t0;
     return true;
   }
 
+  // ---- cross-layer transfer (RNG-free) ----
+  // A loose cell (powder or liquid) that is stuck in its layer moves to the other
+  // layer at the same (x,y) when that cell is empty there AND it can keep falling
+  // there (the "can keep falling" rule prevents endless layer-to-layer bouncing).
+  inline bool canSettleInto(uint8_t* g, int k, uint8_t m) { uint8_t d = g[k]; return d == EMPTY || canDisplaceMaterial(m, d); }
+  // "no downward move available in `lay`": straight-down + both down-diagonals are
+  // blocked (and, for liquids, no immediate side-flow either) — i.e. "not falling".
+  bool stuckIn(Layer* lay, int x, int y, uint8_t m) {
+    if (y + 1 >= rows) return true;            // resting on the floor
+    uint8_t* g = lay->grid;
+    int below = (y + 1) * cols + x;
+    if (canSettleInto(g, below, m)) return false;
+    for (int i = 0; i < 2; i++) { int dx = i == 0 ? -1 : 1; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (canSettleInto(g, below + dx, m)) return false; }
+    if (MAT_KIND[m] == K_LIQUID) for (int i = 0; i < 2; i++) { int dx = i == 0 ? -1 : 1; int nx = x + dx; if (nx > 0 && nx < cols - 1 && canSettleInto(g, y * cols + nx, m)) return false; }
+    return true;
+  }
+  // can the material keep falling in `other` after landing at (x,y)?
+  bool canFall(Layer* other, int x, int y, uint8_t m) {
+    if (y + 1 >= rows) return false;
+    return canSettleInto(other->grid, (y + 1) * cols + x, m);
+  }
+  bool tryTransfer(Layer* from, Layer* to, int x, int y, int k) {
+    uint8_t m = from->grid[k];
+    if (!isLoose(m)) return false;
+    if (to->grid[k] != EMPTY) return false;
+    if (!stuckIn(from, x, y, m)) return false;
+    if (!canFall(to, x, y, m)) return false;
+    to->grid[k] = m; from->grid[k] = EMPTY;
+    // mark both layers dirty at (x,y) so render + net + next-step settle pick it up
+    if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
+    if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;
+    return true;
+  }
+  void transferPass(bool fgA, bool bgA) {
+    if (!bgEnabled) return; // an empty/untouched background does not interact
+    for (int y = rows - 1; y >= 0; y--) {
+      int mn = cols, mx = -1;
+      if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
+      if (bgA && bg.activeRowMax[y] >= bg.activeRowMin[y]) { if (bg.activeRowMin[y] < mn) mn = bg.activeRowMin[y]; if (bg.activeRowMax[y] > mx) mx = bg.activeRowMax[y]; }
+      if (mx < mn) continue;
+      mn = imax(0, mn); mx = imin(cols - 1, mx);
+      bool ltr = (y & 1) == 0;
+      if (ltr) for (int x = mn; x <= mx; x++) { int k = y * cols + x; if (!tryTransfer(&fg, &bg, x, y, k)) tryTransfer(&bg, &fg, x, y, k); }
+      else for (int x = mx; x >= mn; x--) { int k = y * cols + x; if (!tryTransfer(&fg, &bg, x, y, k)) tryTransfer(&bg, &fg, x, y, k); }
+    }
+  }

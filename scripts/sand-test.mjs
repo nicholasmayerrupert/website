@@ -145,11 +145,12 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   check(`water tool paints while held (${water})`, water > 0);
   check('no paint after release', counts(e.getGrid())[2] === afterUp);
 
-  // RMB arms a momentary eraser that overrides the tool
+  // RMB places the selected material into the BACKGROUND layer (fg untouched)
   e.pointerDown(50, 30, 2);
   e.applyTool(50, 30, tk(), true, true);
   e.pointerButtons(0); e.pointerUp(2);
-  check(`RMB erase removed water (${counts(e.getGrid())[2]})`, counts(e.getGrid())[2] < water);
+  check(`RMB placed water in the background (${counts(e.getGridBg())[2]})`, counts(e.getGridBg())[2] > 0);
+  check('RMB left the foreground water intact', counts(e.getGrid())[2] === afterUp);
 
   // stone: hold to draft, release to finalize into stone cells
   e.setTool(T.stone);

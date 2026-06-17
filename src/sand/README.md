@@ -9,6 +9,35 @@ engine, and carries the WebSocket multiplayer transport. It no longer touches
 pixels or owns the camera. The whole thing ships as a framework-free
 `<sand-game>` Web Component; a tiny React wrapper mounts that element on this site.
 
+## Two layers (foreground + background)
+
+The engine simulates **two** independent grids — a foreground (`fg`) and a
+background (`bg`) — both fully simulated (powder/liquid/gas settling, stone/plant/
+ice components, fire/acid/lava/ice reactions, plant growth, free rigid bodies, and
+generated terrain). They are a "2-deep" world: both layers generate from the SAME
+seed, so the solid surface lines up and stays stable, and they diverge once you
+dig/edit one of them. The background renders **behind** the foreground, **darker**
+(empty foreground cells are transparent, so it shows through gaps/dug holes).
+
+The only cross-layer interaction: a **powder or liquid** that is stuck in its layer
+(can't move down) moves to the other layer at the same cell when that cell is empty
+there **and it can keep falling there** (the "can keep falling" rule prevents
+oscillation). Gases and solids/components/bodies never transfer.
+
+Implementation: per-cell simulation state lives in `struct Layer` (members.inc);
+the Engine holds `fg`/`bg` + an active-layer pointer `L`, with raw-pointer mirrors
+of the hot indexed buffers so the settle hot path is layer-agnostic (`useLayer()`
+repoints them). `step()` runs `stepLayer(&fg)` then `stepLayer(&bg)` under one tick,
+then `transferPass()`. The foreground is stepped first so a single-layer scene
+(background empty/disabled) is byte-identical to a one-grid build. Networking
+(netsync.inc) serializes/hashes both grids in one opaque blob (no JS/protocol
+change). **Right-click** in creative draw mode paints the selected material into the
+background (left-click stays foreground); survival-mode RMB-mining is unchanged.
+
+**Perf:** with both layers active (e.g. continuous panning, which streams + settles
+both) the per-step cost is roughly 2× a single layer. An idle background (settled
+terrain) is skipped, so a static scene costs about the same as one layer.
+
   `cpp/engine/tools.inc`     brush/draft/seed primitives + the tool state machine
   `cpp/engine/render.inc`    material -> RGBA pixel generation (grain + animation)
   `cpp/engine/materials.generated.hpp`  ids/kinds/tables, generated from the schema

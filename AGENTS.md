@@ -11,7 +11,12 @@ the **view camera**, the **input policy**, tool semantics, and world streaming a
 written in **C++ and compiled to WebAssembly**; JavaScript is a thin shell (sizes
 the canvas, runs the RAF/fixed-step loop, forwards raw DOM events, carries the net
 transport). It ships as a framework-free `<sand-game>` Web Component
-(`src/sand/embed/`); a tiny React shim mounts it on this site.
+(`src/sand/embed/`); a tiny React shim mounts it on this site. The engine runs
+**two fully-simulated layers** — foreground + a darker background (`struct Layer`
+in members.inc; the Engine keeps raw-pointer mirrors of the hot per-cell buffers
+and `useLayer()` repoints them). `step()` steps `fg` then `bg` under one tick, then
+a `transferPass()` moves stuck powders/liquids between layers. Right-click in
+creative paints into the background.
 `src/sand/README.md` is the authoritative map — read it before touching the sim.
 Quick orientation:
 

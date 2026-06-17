@@ -1,42 +1,125 @@
+  // ================= TWO SIMULATION LAYERS =================
+  // The engine simulates two independent grids: a foreground (`fg`) and a
+  // background (`bg`). Each `Layer` holds ALL the per-cell simulation state
+  // (grids, dirty tracking, components, rigid bodies, chunk store, terrain,
+  // render pixels). The shared subsystems (camera, GL, networking, players,
+  // tools, tick, RNG, render tables) stay on the Engine.
+  //
+  // To avoid threading a layer pointer through the hot settle path, the Engine
+  // keeps raw-pointer MIRRORS of every indexed per-cell buffer (`grid`, `next`,
+  // `vacatedStamp`, ...). `useLayer(lay)` repoints them at the active layer, so
+  // the thousands of `buf[k]` accesses in core/components/reactions/... are
+  // unchanged. Collections + scalars live on `Layer` and are reached via `L->`.
+  struct Layer {
+    struct MatBand { int width = 0; std::vector<uint8_t> buf; };
+    // double buffer + the "current"/"next" pointers (alternate each step)
+    std::vector<uint8_t> gridA, gridB; uint8_t* grid = nullptr; uint8_t* next = nullptr;
+    // dirty tracking (per-layer active region)
+    std::vector<uint8_t> dirtyRender;
+    std::vector<int32_t> dirtyRects;
+    std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp;
+    int dirtyRenderCount = 0;
+    // per-cell sim scratch
+    std::vector<uint8_t> groundedCell;
+    std::vector<int32_t> cellComp, groundStack, compOccStamp;
+    std::vector<int> prevCompCells, curCompCells, bodyCells;
+    std::vector<uint8_t> reactionFlags;
+    std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
+    // components + ids
+    std::vector<Comp> stoneComponents, plantComponents, iceComponents;
+    int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
+    // free rigid bodies + ownership
+    std::vector<Body*> bodies; int nextBodyId = 1;
+    std::vector<int32_t> bodyOwner;
+    // worldgen / streaming (per-layer terrain + chunk store)
+    bool infinite = false;
+    int worldOffsetX = 0;
+    uint32_t worldSeed = 0;
+    int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;
+    uint32_t gCaveSeed = 0, gTreeSeed = 0;
+    std::unordered_map<int, MatBand> matStore;                                // worldX -> saved band
+    std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
+    // render pixels for this layer (cols*rows*4 RGBA)
+    std::vector<uint8_t> renderPixels;
+
+    void alloc(int cols, int rows, int chunkCols, int chunkRows) {
+      size_t n = (size_t)cols * rows;
+      gridA.assign(n, EMPTY); gridB.assign(n, EMPTY);
+      grid = gridA.data(); next = gridB.data();
+      dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
+      rowMarkMin.assign(rows, cols); rowMarkMax.assign(rows, -1);
+      chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
+      activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
+      vacatedStamp.assign(n, -1);
+      groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
+      compOccStamp.assign(n, -1);
+      reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
+      bodyOwner.assign(n, -1);
+      renderPixels.assign(n * 4, 0);
+    }
+    ~Layer() {
+      for (Body* b : bodies) delete b;
+      for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first;
+    }
+  };
+
   int cols, rows, chunkCols, chunkRows;
-  std::vector<uint8_t> gridA, gridB;
-  uint8_t* grid; uint8_t* next;
-  std::vector<uint8_t> dirtyRender;
-  std::vector<int32_t> dirtyRects; // coalesced [x0,y0,x1,y1) cell rects (built on demand)
-  std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp;
-  std::vector<uint8_t> groundedCell;
-  std::vector<int32_t> cellComp, groundStack, compOccStamp;
-  std::vector<int> prevCompCells, curCompCells, bodyCells;
-  std::vector<uint8_t> reactionFlags;
-  std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
-  std::vector<Comp> stoneComponents, plantComponents, iceComponents;
-  int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
-  std::unordered_set<int> stoneDraft, iceDraft;
-  std::vector<int> draftSnapshot;
-  // worldgen / streaming
-  bool infinite = false;
-  int worldOffsetX = 0;
-  uint32_t worldSeed = 0;
-  int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;
-  uint32_t gCaveSeed = 0, gTreeSeed = 0;
-  // free rigid bodies
-  std::vector<Body*> bodies;
-  int nextBodyId = 1;
-  std::vector<int32_t> bodyOwner;
+  Layer fg, bg;       // the two simulations
+  Layer* L = &fg;     // active layer (the mirrors below point into it)
+
+  // ---- raw-pointer mirrors of the active layer's indexed buffers ----
+  // Repointed by useLayer(); the hot per-cell code indexes these unchanged.
+  uint8_t* grid = nullptr; uint8_t* next = nullptr;
+  uint8_t* dirtyRender = nullptr; uint8_t* groundedCell = nullptr; uint8_t* reactionFlags = nullptr;
+  int32_t* rowMarkMin = nullptr; int32_t* rowMarkMax = nullptr; int32_t* chunkStamp = nullptr;
+  int32_t* activeRowMin = nullptr; int32_t* activeRowMax = nullptr; int32_t* vacatedStamp = nullptr;
+  int32_t* cellComp = nullptr; int32_t* groundStack = nullptr; int32_t* compOccStamp = nullptr;
+  int32_t* reactionSteam = nullptr; int32_t* reactionFires = nullptr; int32_t* reactionIgnite = nullptr;
+  int32_t* bodyOwner = nullptr;
+
+  // Point the mirrors at `lay` and make it the active layer.
+  void useLayer(Layer* lay) {
+    L = lay;
+    grid = lay->grid; next = lay->next;
+    dirtyRender = lay->dirtyRender.data();
+    groundedCell = lay->groundedCell.data();
+    reactionFlags = lay->reactionFlags.data();
+    rowMarkMin = lay->rowMarkMin.data(); rowMarkMax = lay->rowMarkMax.data();
+    chunkStamp = lay->chunkStamp.data();
+    activeRowMin = lay->activeRowMin.data(); activeRowMax = lay->activeRowMax.data();
+    vacatedStamp = lay->vacatedStamp.data();
+    cellComp = lay->cellComp.data(); groundStack = lay->groundStack.data();
+    compOccStamp = lay->compOccStamp.data();
+    reactionSteam = lay->reactionSteam.data(); reactionFires = lay->reactionFires.data();
+    reactionIgnite = lay->reactionIgnite.data();
+    bodyOwner = lay->bodyOwner.data();
+  }
+  // Persist the (possibly swapped) current/next buffer identity back to the layer.
+  void flushLayerGrids() { L->grid = grid; L->next = next; }
+  // Non-consuming check: does a layer have any active row marks this step?
+  bool layerActive(Layer* lay) {
+    for (int y = 0; y < rows; y++) if (lay->rowMarkMax[y] >= lay->rowMarkMin[y]) return true;
+    return false;
+  }
+
+  int stepSerial = 0, tick = 0, perfDirtyChunks = 0, worldShiftCount = 0;
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
-  // chunk store: persist edited bands (materials + bodies) across world shifts
-  struct MatBand { int width = 0; std::vector<uint8_t> buf; };
-  std::unordered_map<int, MatBand> matStore;                                // worldX -> saved band
-  std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
-  int stepSerial = 0, dirtyRenderCount = 0, tick = 0, perfDirtyChunks = 0, worldShiftCount = 0;
   double perfStepMs = 0;
   double perfShiftBuffers = 0, perfShiftTranslate = 0, perfShiftRegister = 0, perfShiftFill = 0;
   double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
   bool sinksEnabled;
   uint32_t rngState;
+  // Cross-layer transfer only runs once the background is "real" (has generated
+  // terrain or placed material). An empty/untouched background does not interact,
+  // so a pure single-layer scene (e.g. the headless tests) is byte-identical.
+  bool bgEnabled = false;
   // ---- tool / pointer state (input policy ported from createSandGame) ----
   int activeTool = T_CUBE;
-  bool lmbDown = false, rmbErase = false;
+  bool lmbDown = false, rmbDown = false;
+  // Foreground drafts (LMB component staging). RMB places directly into bg (no
+  // per-layer draft lifecycle), so draft state is foreground-only / shared.
+  std::unordered_set<int> stoneDraft, iceDraft;
+  std::vector<int> draftSnapshot;
   bool draftingStone = false, draftingIce = false, draftingSeed = false, draftIsDriftwood = false;
   bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
   double lastEmitMs = -1e9;
@@ -46,9 +129,8 @@
   std::vector<float> playerSnapshot; // packed [PLAYER_SNAP_STRIDE] floats per player
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
   std::vector<uint8_t> netBlob;      // scratch buffer for world snapshot / diff serialization
-  // Renderer (material -> RGBA). Owns its pixel buffer and grain tables. Uses a
-  // SEPARATE rng so per-frame fire/steam flicker never perturbs the simulation.
-  std::vector<uint8_t> renderPixels;  // cols*rows*4, RGBA (little-endian over uint32)
+  // Renderer tables (material -> RGBA). Shared (layer-agnostic). Uses a SEPARATE
+  // rng so per-frame fire/steam flicker never perturbs the simulation.
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
@@ -72,23 +154,13 @@
   Engine(int c, int r, uint32_t seed, bool sinks) : cols(c), rows(r), sinksEnabled(sinks), rngState(seed) {
     chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;
     chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    size_t n = (size_t)cols * rows;
-    gridA.assign(n, EMPTY); gridB.assign(n, EMPTY);
-    grid = gridA.data(); next = gridB.data();
-    dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
-    rowMarkMin.assign(rows, cols); rowMarkMax.assign(rows, -1);
-    chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
-    activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
-    vacatedStamp.assign(n, -1);
-    groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
-    compOccStamp.assign(n, -1);
-    reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
-    bodyOwner.assign(n, -1);
-    renderPixels.assign(n * 4, 0);
+    fg.alloc(cols, rows, chunkCols, chunkRows);
+    bg.alloc(cols, rows, chunkCols, chunkRows);
+    useLayer(&fg);
     renderRngState = seed ^ 0x9e3779b9u;
     buildRenderTables();
   }
-  ~Engine() { glDestroy(); for (Body* b : bodies) delete b; for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first; }
+  ~Engine() { glDestroy(); }
 
   // ---- predicates ----
   inline bool isPlantMaterial(uint8_t m) { return m == SEED || m == WOOD || m == PLANT || m == DRIFTWOOD; }
@@ -101,7 +173,7 @@
   inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquid(m) || isGas(m); }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
 
-  // ---- dirty tracking ----
+  // ---- dirty tracking (operates on the active layer via the mirrors) ----
   inline void markCellIndex(int k) {
     int y = k / cols, x = k - y * cols;
     if (x < rowMarkMin[y]) rowMarkMin[y] = x;
@@ -115,12 +187,10 @@
     }
   }
   void markAllDirty() { for (int y = 0; y < rows; y++) { rowMarkMin[y] = 0; rowMarkMax[y] = cols - 1; } }
-  // Fully reset dirty tracking (row marks + render chunk flags). Used between
-  // world-diff serializations so each diff carries only the changes since the
-  // last one (the host steps in the browser, which resets marks naturally).
+  // Fully reset dirty tracking (row marks + render chunk flags) for the active layer.
   void clearAllDirty() {
     for (int y = 0; y < rows; y++) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; }
-    memset(dirtyRender.data(), 0, dirtyRender.size()); dirtyRenderCount = 0;
+    memset(dirtyRender, 0, (size_t)chunkCols * chunkRows); L->dirtyRenderCount = 0;
   }
   void foldRowMarksToRender() {
     for (int y = 0; y < rows; y++) {
@@ -131,17 +201,15 @@
       int c0 = px0 >> CHUNK_SHIFT, c1 = px1 >> CHUNK_SHIFT, cy0 = py0 >> CHUNK_SHIFT, cy1 = py1 >> CHUNK_SHIFT;
       for (int cy = cy0; cy <= cy1; cy++) {
         int rb = cy * chunkCols;
-        for (int cx = c0; cx <= c1; cx++) { int ci = rb + cx; if (!dirtyRender[ci]) { dirtyRender[ci] = 1; dirtyRenderCount++; } }
+        for (int cx = c0; cx <= c1; cx++) { int ci = rb + cx; if (!dirtyRender[ci]) { dirtyRender[ci] = 1; L->dirtyRenderCount++; } }
       }
     }
   }
-  // Coalesce the per-chunk dirty flags into cell-space rectangles: horizontal
-  // runs of dirty chunks within each chunk row. Rects are [x0,y0,x1,y1) with
-  // EXCLUSIVE upper bounds, packed into dirtyRects as flat int4 tuples so JS can
-  // read them zero-copy and refill exactly the changed spans of the cellCanvas.
+  // Coalesce the per-chunk dirty flags into cell-space rectangles for the active
+  // layer: [x0,y0,x1,y1) EXCLUSIVE, packed into L->dirtyRects.
   void buildDirtyRects() {
     foldRowMarksToRender();
-    dirtyRects.clear();
+    L->dirtyRects.clear();
     for (int cy = 0; cy < chunkRows; cy++) {
       int cy0 = cy * CHUNK_SIZE, cy1 = imin(rows, cy0 + CHUNK_SIZE), rb = cy * chunkCols, cx = 0;
       while (cx < chunkCols) {
@@ -149,8 +217,8 @@
         int startCx = cx;
         while (cx + 1 < chunkCols && dirtyRender[rb + cx + 1]) cx++;
         int x0 = startCx * CHUNK_SIZE, x1 = imin(cols, (cx + 1) * CHUNK_SIZE);
-        dirtyRects.push_back(x0); dirtyRects.push_back(cy0);
-        dirtyRects.push_back(x1); dirtyRects.push_back(cy1);
+        L->dirtyRects.push_back(x0); L->dirtyRects.push_back(cy0);
+        L->dirtyRects.push_back(x1); L->dirtyRects.push_back(cy1);
         cx++;
       }
     }

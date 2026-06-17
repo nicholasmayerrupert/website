@@ -25,7 +25,7 @@ struct Ctx {
   EMSCRIPTEN_WEBGL_CONTEXT_HANDLE handle = 0;
   GLuint prog = 0, vbo = 0, vao = 0;
   GLint uClipRect = -1, uTexRect = -1, uQuadDev = -1, uTex = -1,
-        uCellDev = -1, uGutter = -1, uMode = -1, uColor = -1;
+        uCellDev = -1, uGutter = -1, uMode = -1, uColor = -1, uTint = -1;
   bool ready = false;
 };
 
@@ -64,6 +64,7 @@ inline const char* FRAG() {
          "uniform int uGutter;\n"
          "uniform int uMode;\n"   // 0 = textured cells, 1 = solid uColor
          "uniform vec4 uColor;\n"
+         "uniform float uTint;\n" // brightness multiplier (background drawn darker)
          "out vec4 frag;\n"
          "void main(){\n"
          "  if (uGutter == 1) {\n"
@@ -72,7 +73,7 @@ inline const char* FRAG() {
          "  }\n"
          "  vec4 c = (uMode == 0) ? texture(uTex, vUV) : uColor;\n"
          "  if (c.a <= 0.0) discard;\n"
-         "  frag = vec4(c.rgb * c.a, c.a);\n"  // premultiplied (context is premultipliedAlpha)
+         "  frag = vec4(c.rgb * uTint * c.a, c.a);\n"  // premultiplied (context is premultipliedAlpha)
          "}\n";
 }
 
@@ -121,6 +122,7 @@ inline void buildProgram(Ctx& c) {
   c.uGutter = glGetUniformLocation(p, "uGutter");
   c.uMode = glGetUniformLocation(p, "uMode");
   c.uColor = glGetUniformLocation(p, "uColor");
+  c.uTint = glGetUniformLocation(p, "uTint");
 
   // Unit quad as a triangle strip: (0,0)(1,0)(0,1)(1,1). Bound on a dedicated
   // VAO (required by WebGL2) so the draw path just binds the VAO + program.

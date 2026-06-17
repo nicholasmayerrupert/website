@@ -15,7 +15,9 @@
 static constexpr double GL_FULL_UPLOAD_DIRTY_RATIO = 0.38;
 
 sandgl::Ctx* glc = nullptr;
-GLuint glTex = 0, glTex2 = 0, glReadFBO = 0, glDrawFBO = 0;
+GLuint glTex = 0, glTexBg = 0, glTex2 = 0, glReadFBO = 0, glDrawFBO = 0;
+// Background draws at ~55% brightness behind the foreground so it reads as "behind".
+static constexpr float GL_BG_TINT = 0.55f;
 int glDevW = 0, glDevH = 0;           // canvas backing-store size (device px)
 double glCamX = 0, glCamY = 0;        // camera top-left in buffer cells (fractional)
 int glCellDev = 1, glViewCols = 0, glViewRows = 0;
@@ -41,11 +43,12 @@ int glInit(const char* target) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
   };
   mkTex(glTex);
+  mkTex(glTexBg);
   mkTex(glTex2);
   glGenFramebuffers(1, &glReadFBO);
   glGenFramebuffers(1, &glDrawFBO);
-  renderFull();
-  glUploadFull();
+  useLayer(&bg); renderFull(); glUploadFull(glTexBg);
+  useLayer(&fg); renderFull(); glUploadFull(glTex);
   return 1;
 }
 
@@ -54,10 +57,11 @@ void glDestroy() {
   if (!glc) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (glTex) glDeleteTextures(1, &glTex);
+  if (glTexBg) glDeleteTextures(1, &glTexBg);
   if (glTex2) glDeleteTextures(1, &glTex2);
   if (glReadFBO) glDeleteFramebuffers(1, &glReadFBO);
   if (glDrawFBO) glDeleteFramebuffers(1, &glDrawFBO);
-  glTex = glTex2 = glReadFBO = glDrawFBO = 0;
+  glTex = glTexBg = glTex2 = glReadFBO = glDrawFBO = 0;
   glc = nullptr;
 }
 
@@ -88,49 +92,58 @@ void glSetPlayers(int useExternal, const float* data, int count, int ownId) {
   else glExtPlayers.clear();
 }
 
-// ---- texture uploads (CPU pixels -> GPU) ----
-void glUploadFull() {
-  glBindTexture(GL_TEXTURE_2D, glTex);
+// ---- texture uploads (active layer's renderPixels -> the given texture) ----
+void glUploadFull(GLuint tex) {
+  glBindTexture(GL_TEXTURE_2D, tex);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
   glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
-  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cols, rows, GL_RGBA, GL_UNSIGNED_BYTE, renderPixels.data());
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, cols, rows, GL_RGBA, GL_UNSIGNED_BYTE, L->renderPixels.data());
 }
-void glUploadRects() {
-  glBindTexture(GL_TEXTURE_2D, glTex);
+void glUploadRects(GLuint tex) {
+  glBindTexture(GL_TEXTURE_2D, tex);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   glPixelStorei(GL_UNPACK_ROW_LENGTH, cols);
-  for (size_t i = 0; i + 3 < dirtyRects.size(); i += 4) {
-    int x0 = dirtyRects[i], y0 = dirtyRects[i + 1], x1 = dirtyRects[i + 2], y1 = dirtyRects[i + 3];
+  for (size_t i = 0; i + 3 < L->dirtyRects.size(); i += 4) {
+    int x0 = L->dirtyRects[i], y0 = L->dirtyRects[i + 1], x1 = L->dirtyRects[i + 2], y1 = L->dirtyRects[i + 3];
     int w = x1 - x0, h = y1 - y0;
     if (w <= 0 || h <= 0) continue;
     glPixelStorei(GL_UNPACK_SKIP_PIXELS, x0);
     glPixelStorei(GL_UNPACK_SKIP_ROWS, y0);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, renderPixels.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, L->renderPixels.data());
   }
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
   glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
 }
 
-// Slide the cell texture by dx world-columns to mirror shiftWorld's grid
-// memmove (the GPU analogue of the old shiftCellCanvas). The newly exposed band
-// is left stale and repainted from the engine's dirty chunks next frame.
-void glShift(int dx) {
-  if (!dx || !glReady()) return;
-  emscripten_webgl_make_context_current(glc->handle);
+// Slide ONE cell texture by dx world-columns (glTex2 is the scratch target).
+void glShiftTex(GLuint& tex, int dx) {
   int s = dx > 0 ? dx : -dx;
-  if (s >= cols) { renderFull(); glUploadFull(); return; }
   glBindFramebuffer(GL_READ_FRAMEBUFFER, glReadFBO);
-  glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex, 0);
+  glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tex, 0);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, glDrawFBO);
   glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, glTex2, 0);
   if (dx > 0) glBlitFramebuffer(dx, 0, cols, rows, 0, 0, cols - dx, rows, GL_COLOR_BUFFER_BIT, GL_NEAREST);
   else        glBlitFramebuffer(0, 0, cols - s, rows, s, 0, cols, rows, GL_COLOR_BUFFER_BIT, GL_NEAREST);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-  std::swap(glTex, glTex2);
+  std::swap(tex, glTex2);
+}
+// Slide BOTH layers' textures to mirror shiftWorld's grid memmove (the GPU
+// analogue of the old shiftCellCanvas). The exposed band repaints from dirty
+// chunks next frame. The world shifts both layers in lockstep (P5).
+void glShift(int dx) {
+  if (!dx || !glReady()) return;
+  emscripten_webgl_make_context_current(glc->handle);
+  if (dx >= cols || -dx >= cols) {
+    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
+    useLayer(&fg); renderFull(); glUploadFull(glTex);
+    return;
+  }
+  glShiftTex(glTex, dx);
+  glShiftTex(glTexBg, dx);
 }
 
 // ---- drawing ----
@@ -147,7 +160,11 @@ inline void glSolidDev(double dx0, double dy0, double w, double h) {
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-void glDrawCells() {
+// Draw the visible window of one layer's texture at brightness `tint`. The
+// background passes gutter=0 (no internal grid — the foreground's gutter reveals
+// the darker background behind it) and tint<1; the foreground passes the real
+// gutter flag and tint=1. Both use the same snapped camera offset (flicker fix).
+void glDrawCells(GLuint tex, float tint, int gutter) {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   int visX0 = camCol, visY0 = camRow;
   int visX1 = imin(cols - 1, camCol + glViewCols + 1);  // +1 covers the sub-cell shift
@@ -156,12 +173,13 @@ void glDrawCells() {
   if (vw <= 0 || vh <= 0) return;
   double devW = (double)vw * glCellDev, devH = (double)vh * glCellDev;
   glUniform1i(glc->uMode, 0);
-  glUniform1i(glc->uGutter, glGutterOn ? 1 : 0);
+  glUniform1i(glc->uGutter, gutter);
+  glUniform1f(glc->uTint, tint);
   glUniform1f(glc->uCellDev, (float)glCellDev);
   glUniform2f(glc->uQuadDev, (float)devW, (float)devH);
   glUniform4f(glc->uTexRect, (float)visX0 / cols, (float)visY0 / rows,
               (float)(visX0 + vw) / cols, (float)(visY0 + vh) / rows);
-  glBindTexture(GL_TEXTURE_2D, glTex);
+  glBindTexture(GL_TEXTURE_2D, tex);
   glSetClip(glOffX, glOffY, glOffX + devW, glOffY + devH);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
@@ -223,22 +241,31 @@ void glDrawPreview() {
   }
 }
 
-// One presented frame: decide + do the texture upload (mirrors syncCellCanvas),
-// then clear + composite cells, players, preview. forceFull forces a whole-
-// buffer upload (init/resize). Returns 1 if drawn.
+// Upload one layer's changed cells into its texture (per-layer dirty decision,
+// mirrors the old syncCellCanvas full-vs-rects choice).
+void glUploadLayer(Layer* lay, GLuint tex, int forceFull) {
+  useLayer(lay);
+  buildDirtyRects();
+  int chunkTotal = chunkCols * chunkRows;
+  if (forceFull || L->dirtyRenderCount > 0) {
+    bool whole = forceFull || L->dirtyRenderCount > (int)(chunkTotal * GL_FULL_UPLOAD_DIRTY_RATIO);
+    if (whole) { renderFull(); glUploadFull(tex); }
+    else { renderDirtyRects(); glUploadRects(tex); }
+    memset(dirtyRender, 0, (size_t)chunkCols * chunkRows);
+    L->dirtyRenderCount = 0;
+  }
+}
+
+// One presented frame: upload both layers, then composite background (darker)
+// then foreground, then players + preview. forceFull forces a whole-buffer
+// upload (init/resize). Returns 1 if drawn.
 int glRenderFrame(int forceFull) {
   if (!glReady()) return 0;
   emscripten_webgl_make_context_current(glc->handle);
   glSyncCamera();
-  buildDirtyRects();
-  int chunkTotal = chunkCols * chunkRows;
-  if (forceFull || dirtyRenderCount > 0) {
-    bool whole = forceFull || dirtyRenderCount > (int)(chunkTotal * GL_FULL_UPLOAD_DIRTY_RATIO);
-    if (whole) { renderFull(); glUploadFull(); }
-    else { renderDirtyRects(); glUploadRects(); }
-    memset(dirtyRender.data(), 0, dirtyRender.size());
-    dirtyRenderCount = 0;
-  }
+  glUploadLayer(&bg, glTexBg, forceFull);
+  glUploadLayer(&fg, glTex, forceFull);
+  useLayer(&fg); // preview/seed checks read the foreground grid
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, glDevW, glDevH);
   glDisable(GL_DEPTH_TEST);
@@ -250,7 +277,8 @@ int glRenderFrame(int forceFull) {
   glBindVertexArray(glc->vao);
   glActiveTexture(GL_TEXTURE0);
   glUniform1i(glc->uTex, 0);
-  glDrawCells();
+  glDrawCells(glTexBg, GL_BG_TINT, 0);            // background first (darker, no internal gutter)
+  glDrawCells(glTex, 1.0f, glGutterOn ? 1 : 0);   // foreground on top
   glDrawPlayers();
   glDrawPreview();
   return 1;

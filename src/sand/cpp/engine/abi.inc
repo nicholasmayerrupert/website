@@ -9,28 +9,28 @@ EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, in
 EMSCRIPTEN_KEEPALIVE void engine_shift_world(Engine* e, int dx) { e->shiftWorld(dx); }
 EMSCRIPTEN_KEEPALIVE int engine_maybe_shift_world(Engine* e, int cameraCellX, int visibleCols, int marginCols) { return e->maybeShiftWorld(cameraCellX, visibleCols, marginCols); }
 EMSCRIPTEN_KEEPALIVE int engine_world_shift_count(Engine* e) { return e->worldShiftCount; }
-EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->worldOffsetX; }
-EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { return e->infinite ? e->genSurfaceAt(worldX) : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->fg.worldOffsetX; }
+EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->genSurfaceAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }
 EMSCRIPTEN_KEEPALIVE int engine_step(Engine* e) { return e->step() ? 1 : 0; }
-EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->grid; }
-EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->dirtyRenderCount; }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->fg.grid; }
+EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->fg.dirtyRenderCount; }
 EMSCRIPTEN_KEEPALIVE int engine_chunk_cols(Engine* e) { return e->chunkCols; }
 EMSCRIPTEN_KEEPALIVE int engine_chunk_rows(Engine* e) { return e->chunkRows; }
 // Dirty-rect generation (C++ owns the coalescing; JS reads the packed rects).
-EMSCRIPTEN_KEEPALIVE void engine_build_dirty_rects(Engine* e) { e->buildDirtyRects(); }
-EMSCRIPTEN_KEEPALIVE int engine_dirty_rect_count(Engine* e) { return (int)(e->dirtyRects.size() / 4); }
-EMSCRIPTEN_KEEPALIVE int* engine_dirty_rects(Engine* e) { return e->dirtyRects.data(); }
-EMSCRIPTEN_KEEPALIVE void engine_clear_dirty(Engine* e) { memset(e->dirtyRender.data(), 0, e->dirtyRender.size()); e->dirtyRenderCount = 0; }
+EMSCRIPTEN_KEEPALIVE void engine_build_dirty_rects(Engine* e) { e->useLayer(&e->fg); e->buildDirtyRects(); }
+EMSCRIPTEN_KEEPALIVE int engine_dirty_rect_count(Engine* e) { return (int)(e->fg.dirtyRects.size() / 4); }
+EMSCRIPTEN_KEEPALIVE int* engine_dirty_rects(Engine* e) { return e->fg.dirtyRects.data(); }
+EMSCRIPTEN_KEEPALIVE void engine_clear_dirty(Engine* e) { memset(e->fg.dirtyRender.data(), 0, e->fg.dirtyRender.size()); e->fg.dirtyRenderCount = 0; }
 // Material -> RGBA rendering (C++ owns the pixel generation; JS uploads/blits).
-EMSCRIPTEN_KEEPALIVE void engine_render_full(Engine* e) { e->renderFull(); }
-EMSCRIPTEN_KEEPALIVE void engine_render_dirty_rects(Engine* e) { e->renderDirtyRects(); }
-EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels(Engine* e) { return e->renderPixels.data(); }
-EMSCRIPTEN_KEEPALIVE int engine_render_pixels_len(Engine* e) { return (int)e->renderPixels.size(); }
+EMSCRIPTEN_KEEPALIVE void engine_render_full(Engine* e) { e->useLayer(&e->fg); e->renderFull(); }
+EMSCRIPTEN_KEEPALIVE void engine_render_dirty_rects(Engine* e) { e->useLayer(&e->fg); e->renderDirtyRects(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels(Engine* e) { return e->fg.renderPixels.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_render_pixels_len(Engine* e) { return (int)e->fg.renderPixels.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) { return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0); }
 EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) { return e->eraseDisc(cx, cy, r); }
 EMSCRIPTEN_KEEPALIVE void engine_set_sinks(Engine* e, int v) { e->sinksEnabled = v != 0; }
-EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->registerSeededComponents(0, e->cols); }
+EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->useLayer(&e->fg); e->registerSeededComponents(0, e->cols); }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_ms(Engine* e) { return e->perfStepMs; }
 EMSCRIPTEN_KEEPALIVE int engine_perf_dirty_chunks(Engine* e) { return e->perfDirtyChunks; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_shift_buffers(Engine* e) { return e->perfShiftBuffers; }
@@ -82,9 +82,9 @@ EMSCRIPTEN_KEEPALIVE void engine_spawn_body(Engine* e, int* xy, int count) {
 }
 EMSCRIPTEN_KEEPALIVE void engine_spawn_box(Engine* e, int cx, int cy, int halfW, int halfH, int material) { e->spawnBox(cx, cy, halfW, halfH, (uint8_t)material); }
 EMSCRIPTEN_KEEPALIVE void engine_spawn_disc(Engine* e, int cx, int cy, int radius, int material) { e->spawnDisc(cx, cy, radius, (uint8_t)material); }
-EMSCRIPTEN_KEEPALIVE int engine_body_count(Engine* e) { return (int)e->bodies.size(); }
-EMSCRIPTEN_KEEPALIVE int engine_body_blocked(Engine* e, int i) { return (i >= 0 && i < (int)e->bodies.size()) ? e->bodyFootprintBlocked(e->bodies[i]) : -1; }
-EMSCRIPTEN_KEEPALIVE int engine_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->bodies.size()) ? (e->bodies[i]->awake ? 1 : 0) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_body_count(Engine* e) { return (int)e->fg.bodies.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_rigid_rejected(Engine* e) { return e->rigidRejectedCells; }
 EMSCRIPTEN_KEEPALIVE int engine_rigid_depen(Engine* e) { return e->rigidDepenetrations; }
 
@@ -107,7 +107,27 @@ EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->netBlob
 EMSCRIPTEN_KEEPALIVE void engine_apply_world(Engine* e, uint8_t* buf, int len) { e->applyWorld(buf, len); }
 EMSCRIPTEN_KEEPALIVE void engine_apply_diff(Engine* e, uint8_t* buf, int len) { e->applyDiff(buf, len); }
 EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->gridHashFNV(); }
-EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->clearAllDirty(); }
+EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->useLayer(&e->fg); e->clearAllDirty(); e->useLayer(&e->bg); e->clearAllDirty(); e->useLayer(&e->fg); }
+
+// ---- two-layer access (background = layer 1) ----
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid_bg(Engine* e) { return e->bg.grid; }
+EMSCRIPTEN_KEEPALIVE void engine_set_bg_enabled(Engine* e, int on) { e->bgEnabled = on != 0; }
+// Paint a disc into a specific layer (0=fg, 1=bg). Enables the background on bg paint.
+EMSCRIPTEN_KEEPALIVE int engine_paint_disc_layer(Engine* e, int layer, int cx, int cy, int r, int mat, int ow) {
+  e->useLayer(layer ? &e->bg : &e->fg);
+  if (layer) e->bgEnabled = true;
+  int n = e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0);
+  e->useLayer(&e->fg);
+  return n;
+}
+// Register stone/plant/ice components in a layer so raw painted solids become
+// component-backed (don't flicker). 0=fg, 1=bg.
+EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {
+  e->useLayer(layer ? &e->bg : &e->fg);
+  if (layer) e->bgEnabled = true;
+  e->registerSeededComponents(0, e->cols);
+  e->useLayer(&e->fg);
+}
 
 // WebGL presentation (gl.inc): the engine owns the cell texture + compositing.
 // JS creates the canvas, registers it as a context target, and drives one

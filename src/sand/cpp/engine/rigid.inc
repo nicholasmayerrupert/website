@@ -39,9 +39,9 @@
     for (auto& c : cells) b->occ[(size_t)(c.second - minY) * w + (c.first - minX)] = 1;
     b->w = w; b->h = h; b->offsetX = minX + 0.5 - cx; b->offsetY = minY + 0.5 - cy;
     b->px = cx; b->py = cy; b->angle = 0; b->vx = 0; b->vy = 0; b->omega = 0;
-    b->material = material; b->density = density; b->id = nextBodyId++;
+    b->material = material; b->density = density; b->id = L->nextBodyId++;
     computeDerived(b, false);
-    bodies.push_back(b);
+    L->bodies.push_back(b);
     return b;
   }
   void terrainNormalAt(int cx, int cy, double& ox, double& oy) {
@@ -120,11 +120,11 @@
   }
   void wakeBody(Body* b) { b->awake = true; b->stillTicks = 0; }
   void rigidStep(double tickDt) {
-    int n = (int)bodies.size();
+    int n = (int)L->bodies.size();
     std::vector<int> islandParent(n);
     std::vector<double> islandMinStill(n);
     double maxSpeed2 = 0;
-    for (Body* b : bodies) { if (!b->awake) continue; double sp2 = b->vx * b->vx + b->vy * b->vy; if (sp2 > maxSpeed2) maxSpeed2 = sp2; }
+    for (Body* b : L->bodies) { if (!b->awake) continue; double sp2 = b->vx * b->vx + b->vy * b->vy; if (sp2 > maxSpeed2) maxSpeed2 = sp2; }
     double maxSpeed = std::sqrt(maxSpeed2) + R_GRAVITY * tickDt;
     int substeps = (int)std::ceil(maxSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
     std::vector<Contact> contacts; int nc = 0;
@@ -134,7 +134,7 @@
     for (int sub = 0; sub < substeps; sub++) {
       double dt = tickDt / substeps;
       for (int bi = 0; bi < n; bi++) {
-        Body* b = bodies[bi];
+        Body* b = L->bodies[bi];
         if (b->awake) b->vy += R_GRAVITY * dt;
         b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
         if (b->awake && !b->boundaryPts.empty()) {
@@ -178,9 +178,9 @@
         A->hadContact = true; if (B) B->hadContact = true;
       };
       for (int i = 0; i < n; i++) {
-        Body* A = bodies[i];
+        Body* A = L->bodies[i];
         for (int j = i + 1; j < n; j++) {
-          Body* B = bodies[j];
+          Body* B = L->bodies[j];
           if (!A->awake && !B->awake) continue;
           if (A->aabbX1 < B->aabbX0 || B->aabbX1 < A->aabbX0 || A->aabbY1 < B->aabbY0 || B->aabbY1 < A->aabbY0) continue;
           penAcc.clear(); collectPen(A, B, 1); collectPen(B, A, -1);
@@ -200,7 +200,7 @@
         }
       }
       for (int bi = 0; bi < n; bi++) {
-        Body* b = bodies[bi]; if (!b->awake) continue;
+        Body* b = L->bodies[bi]; if (!b->awake) continue;
         terrAcc.clear();
         for (int bp : b->boundaryPts) {
           worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
@@ -224,7 +224,7 @@
       for (int it = 0; it < R_SOLVER_ITERS; it++) { if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) resolveContact(contacts[ci]); else for (int ci = 0; ci < nc; ci++) resolveContact(contacts[ci]); }
       for (int it = 0; it < R_SOLVER_ITERS; it++) { if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) resolveBias(contacts[ci]); else for (int ci = 0; ci < nc; ci++) resolveBias(contacts[ci]); }
       for (int bi = 0; bi < n; bi++) {
-        Body* b = bodies[bi]; if (!b->awake) continue;
+        Body* b = L->bodies[bi]; if (!b->awake) continue;
         b->px += (b->vx + b->pvx) * dt; b->py += (b->vy + b->pvy) * dt; b->angle += (b->omega + b->pw) * dt;
         if (!b->hadContact) { b->stillTicks = 0; continue; }
         if (b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) { b->vx *= R_CONTACT_LIN_DAMP; b->vy *= R_CONTACT_LIN_DAMP; }
@@ -236,13 +236,13 @@
     std::function<int(int)> ifind = [&](int a) { while (islandParent[a] != a) { islandParent[a] = islandParent[islandParent[a]]; a = islandParent[a]; } return a; };
     for (int ci = 0; ci < nc; ci++) { Contact& c = contacts[ci]; if (!c.b || !c.a->awake || !c.b->awake) continue; int ra = ifind(c.a->idx), rb = ifind(c.b->idx); if (ra != rb) islandParent[ra] = rb; }
     for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
-    for (int bi = 0; bi < n; bi++) { Body* b = bodies[bi]; if (!b->awake) continue; int r = ifind(bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
-    for (int bi = 0; bi < n; bi++) { Body* b = bodies[bi]; if (!b->awake) continue; if (islandMinStill[ifind(bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
+    for (int bi = 0; bi < n; bi++) { Body* b = L->bodies[bi]; if (!b->awake) continue; int r = ifind(bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
+    for (int bi = 0; bi < n; bi++) { Body* b = L->bodies[bi]; if (!b->awake) continue; if (islandMinStill[ifind(bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
   }
   template <class F> void forEachBodyCell(Body* b, F cb) {
     // Inverse rasterization: for each grid cell in the body's world AABB, map its
     // center back into occ space and stamp if filled. This is hole-free for
-    // rotated bodies (forward occ->world point-sampling instead leaves gaps
+    // rotated L->bodies (forward occ->world point-sampling instead leaves gaps
     // between rotated rows). The body shape stays authoritative in occ.
     double sn = std::sin(b->angle), cs = std::cos(b->angle);
     double lx0 = b->offsetX - 0.5, lx1 = b->offsetX + b->w - 0.5, ly0 = b->offsetY - 0.5, ly1 = b->offsetY + b->h - 0.5;
@@ -309,13 +309,13 @@
     writeGridIndex(k, EMPTY); bodyOwner[k] = -1; dirty.insert(b); return true;
   }
   void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells) {
-    if (dirty.empty()) { bodyCells = cells; return; }
+    if (dirty.empty()) { L->bodyCells = cells; return; }
     // Split each erased body by the connectivity of its actual WORLD grid cells
     // (the clean source of truth), not its occ grid: the occ<->world map is lossy
-    // for rotated bodies, so an occ-space flood over-fragments a clean cut into
+    // for rotated L->bodies, so an occ-space flood over-fragments a clean cut into
     // dozens of slivers and loses a half. A body merely chipped (one world
     // component) keeps its rotation via computeDerived; a body actually cut into
-    // multiple pieces is rebuilt as axis-aligned bodies, inheriting velocity.
+    // multiple pieces is rebuilt as axis-aligned L->bodies, inheriting velocity.
     std::unordered_set<int> removedIds;
     for (Body* b : dirty) {
       std::vector<int> wc; // b's remaining world cells
@@ -345,18 +345,18 @@
     }
     if (!removedIds.empty()) {
       std::vector<Body*> keep;
-      for (Body* b : bodies) { if (removedIds.count(b->id)) delete b; else keep.push_back(b); }
-      bodies = std::move(keep);
+      for (Body* b : L->bodies) { if (removedIds.count(b->id)) delete b; else keep.push_back(b); }
+      L->bodies = std::move(keep);
     }
     for (int k : cells) if (grid[k] == RIGID) bodyOwner[k] = -1;
     std::vector<int> kept; std::unordered_set<int> claimed;
-    for (Body* b : bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (grid[k] != RIGID || claimed.count(k)) return; bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
+    for (Body* b : L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (grid[k] != RIGID || claimed.count(k)) return; bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
     for (int k : cells) if (grid[k] == RIGID && !claimed.count(k)) { writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
-    bodyCells = kept;
+    L->bodyCells = kept;
   }
   void erodeBodies(std::vector<int>& cells) {
-    if (cells.empty()) { bodyCells = cells; return; }
-    std::unordered_map<int, Body*> bodyById; for (Body* b : bodies) bodyById[b->id] = b;
+    if (cells.empty()) { L->bodyCells = cells; return; }
+    std::unordered_map<int, Body*> bodyById; for (Body* b : L->bodies) bodyById[b->id] = b;
     std::unordered_set<Body*> dirty;
     for (int k : cells) { double p = rigidErodeProbabilityAt(k); if (p <= 0 || rand() >= p) continue; eraseBodyCellIndex(k, bodyById, dirty); }
     finishErasedBodies(dirty, cells);
@@ -369,8 +369,8 @@
   // A sleeping body keeps its support if nudging it straight down by `probe`
   // cells makes its footprint overlap solid terrain or another body. If nothing
   // is there, its ground crumbled away (erased/dissolved/sand drained) and it
-  // must wake and fall. Must be called while the bodies' cells are still in the
-  // grid (so other bodies count as support); the body's own cells are ignored.
+  // must wake and fall. Must be called while the L->bodies' cells are still in the
+  // grid (so other L->bodies count as support); the body's own cells are ignored.
   bool sleepingBodyHasSupport(Body* b, double probe) {
     double savedPy = b->py;
     b->py = savedPy + probe;
@@ -406,22 +406,22 @@
     b->px = newPx; b->py = newPy; b->angle = newAngle; return false;
   }
   void moveBodies() {
-    if (bodies.empty() && bodyCells.empty()) return;
+    if (L->bodies.empty() && L->bodyCells.empty()) return;
     computeGrounded();
     // Wake any sleeping body whose support crumbled away since it slept, so it
     // falls instead of floating. Checked before the grid cells are cleared so
-    // other bodies still count as support; body-on-body stacks cascade (the
+    // other L->bodies still count as support; body-on-body stacks cascade (the
     // bottom body wakes and moves, then the contact solver wakes those above).
-    for (Body* b : bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
-    for (int k : bodyCells) { if (grid[k] == RIGID) writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
+    for (Body* b : L->bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
+    for (int k : L->bodyCells) { if (grid[k] == RIGID) writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
     std::unordered_map<int, std::pair<double, double>> prePoses;
-    for (Body* b : bodies) prePoses[b->id] = {b->px, b->py};
+    for (Body* b : L->bodies) prePoses[b->id] = {b->px, b->py};
     rigidStep(1.0);
     rigidRejectedCells = 0; rigidDepenetrations = 0;
-    for (Body* b : bodies) { auto it = prePoses.find(b->id); bool hp = it != prePoses.end(); double ppx = hp ? it->second.first : 0, ppy = hp ? it->second.second : 0; if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++; }
+    for (Body* b : L->bodies) { auto it = prePoses.find(b->id); bool hp = it != prePoses.end(); double ppx = hp ? it->second.first : 0, ppy = hp ? it->second.second : 0; if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++; }
     std::vector<int> cells; std::unordered_set<int> footprint;
     std::unordered_map<int, std::pair<std::vector<Disp>, std::unordered_set<int>>> perBody;
-    for (Body* b : bodies) {
+    for (Body* b : L->bodies) {
       auto& pb = perBody[b->id];
       forEachBodyCell(b, [&](int x, int y) {
         int k = y * cols + x; if (bodyOwner[k] != -1) return; uint8_t m = grid[k];

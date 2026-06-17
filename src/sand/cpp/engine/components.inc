@@ -1,12 +1,12 @@
   // ================= COMPONENTS (components.js) =================
   void computeGrounded() {
-    std::fill(groundedCell.begin(), groundedCell.end(), 0);
-    std::fill(cellComp.begin(), cellComp.end(), -1);
+    std::fill(groundedCell, groundedCell + (size_t)cols * rows, (uint8_t)0);
+    std::fill(cellComp, cellComp + (size_t)cols * rows, -1);
     std::vector<Comp*> comps;
     auto indexComps = [&](std::vector<Comp>& list) {
       for (auto& c : list) { c.grounded = false; int id = (int)comps.size(); comps.push_back(&c); for (int k : c.cells) cellComp[k] = id; }
     };
-    indexComps(stoneComponents); indexComps(plantComponents); indexComps(iceComponents);
+    indexComps(L->stoneComponents); indexComps(L->plantComponents); indexComps(L->iceComponents);
     int sp = 0;
     auto groundCellAt = [&](int k) {
       if (groundedCell[k]) return;
@@ -38,7 +38,7 @@
     // O(all stone) every step. `cellComp` (from computeGrounded) holds GLOBAL
     // comp indices in stone|plant|ice order; localOf maps those to our filtered
     // ungrounded `all` array (or -1 for grounded/none).
-    int totalComps = (int)(stoneComponents.size() + plantComponents.size() + iceComponents.size());
+    int totalComps = (int)(L->stoneComponents.size() + L->plantComponents.size() + L->iceComponents.size());
     if (totalComps == 0) return;
     std::vector<Comp*> all;
     std::vector<int> localOf(totalComps, -1);
@@ -46,9 +46,9 @@
     auto addList = [&](std::vector<Comp>& list) {
       for (auto& c : list) { if (!c.grounded) { localOf[gi] = (int)all.size(); all.push_back(&c); } gi++; }
     };
-    addList(stoneComponents); int nStone = (int)all.size();
-    addList(plantComponents); int nStonePlant = (int)all.size();
-    addList(iceComponents);
+    addList(L->stoneComponents); int nStone = (int)all.size();
+    addList(L->plantComponents); int nStonePlant = (int)all.size();
+    addList(L->iceComponents);
     int n = (int)all.size();
     if (n == 0) return; // everything is grounded (settled) -> nothing to move
     for (auto* comp : all) { int ym = 0; for (int k : comp->cells) { int y = k / cols; if (y > ym) ym = y; } comp->yMax = ym; }
@@ -185,36 +185,36 @@
     // STONE (chunk-bounded)
     {
       std::vector<uint8_t> seen(n, 0);
-      for (auto& comp : stoneComponents) for (int k : comp.cells) seen[k] = 1;
+      for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = 1;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] || grid[k] != STONE) continue;
         std::unordered_set<int> cells; int yMax;
         floodComponent(sx, sy, seen, true, cells, yMax, &Engine::isStone);
-        Comp c; c.id = nextStoneId++; c.cells = std::move(cells); c.yMax = yMax; stoneComponents.push_back(std::move(c));
+        Comp c; c.id = L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax; L->stoneComponents.push_back(std::move(c));
       }
     }
     // PLANT family
     {
       std::vector<uint8_t> seen(n, 0);
-      for (auto& comp : plantComponents) for (int k : comp.cells) seen[k] = 1;
+      for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = 1;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] || !isPlantMaterial(grid[k])) continue;
         std::unordered_set<int> cells; int yMax;
         floodComponent(sx, sy, seen, false, cells, yMax, &Engine::isPlantMat);
-        Comp c; c.id = nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
+        Comp c; c.id = L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
         for (int kk : cells) { if (grid[kk] == WOOD) c.woodCount++; else if (grid[kk] == PLANT) c.leafCount++; }
-        c.cells = std::move(cells); plantComponents.push_back(std::move(c));
+        c.cells = std::move(cells); L->plantComponents.push_back(std::move(c));
       }
     }
     // ICE
     {
       std::vector<uint8_t> seen(n, 0);
-      for (auto& comp : iceComponents) for (int k : comp.cells) seen[k] = 1;
+      for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = 1;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] || grid[k] != ICE) continue;
         std::unordered_set<int> cells; int yMax;
         floodComponent(sx, sy, seen, false, cells, yMax, &Engine::isIce);
-        Comp c; c.id = nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; iceComponents.push_back(std::move(c));
+        Comp c; c.id = L->nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; L->iceComponents.push_back(std::move(c));
       }
     }
   }
@@ -245,7 +245,7 @@
   // split a plant-family component list keeping only cells still of plant material
   void splitPlantAfterErase() {
     std::vector<Comp> updated;
-    for (auto& comp : plantComponents) {
+    for (auto& comp : L->plantComponents) {
       std::unordered_set<int> remaining;
       for (int k : comp.cells) if (isPlantMaterial(grid[k])) remaining.insert(k);
       bool reused = false;
@@ -257,12 +257,12 @@
           int cur = queue[qi]; int y = cur / cols, x = cur - y * cols;
           for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.insert(nk); queue.push_back(nk); } }
         }
-        Comp c; c.id = reused ? nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
+        Comp c; c.id = reused ? L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
         for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; if (grid[k] == WOOD) c.woodCount++; else if (grid[k] == PLANT) c.leafCount++; }
         c.cells = std::move(part); updated.push_back(std::move(c)); reused = true;
       }
     }
-    plantComponents = std::move(updated);
+    L->plantComponents = std::move(updated);
   }
   // split stone/ice after erase: remove erased cells, re-flood
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache) {

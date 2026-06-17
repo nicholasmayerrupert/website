@@ -33,6 +33,8 @@ struct Engine {
 #include "engine/worldgen.inc"
 #include "engine/rigid.inc"
 #include "engine/render.inc"
+#include "engine/camera.inc"
+#include "engine/gl.inc"
 #include "engine/player.inc"
 #include "engine/netsync.inc"
 };

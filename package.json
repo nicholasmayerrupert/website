@@ -8,6 +8,7 @@
     "generate": "node scripts/generate-materials.mjs",
     "generate:check": "node scripts/generate-materials.mjs --check",
     "build": "node scripts/generate-materials.mjs --check && vite build",
+    "build:embed": "vite build --config vite.config.embed.js",
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy",
     "test:sand": "node scripts/sand-test.mjs",

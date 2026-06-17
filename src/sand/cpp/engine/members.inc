@@ -88,7 +88,7 @@
     renderRngState = seed ^ 0x9e3779b9u;
     buildRenderTables();
   }
-  ~Engine() { for (Body* b : bodies) delete b; for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first; }
+  ~Engine() { glDestroy(); for (Body* b : bodies) delete b; for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first; }
 
   // ---- predicates ----
   inline bool isPlantMaterial(uint8_t m) { return m == SEED || m == WOOD || m == PLANT || m == DRIFTWOOD; }

@@ -16,6 +16,10 @@
 // `npm run generate` after editing the schema.
 #include "materials.generated.hpp"
 
+// WebGL presentation: per-canvas context + shader program registry. The Engine
+// (gl.inc) uploads the CPU-generated pixel buffer into a texture and composites.
+#include "gl_shared.hpp"
+
 // Tunables (mirror engine.js)
 static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5, SEED_SIZE = 2;
 static const int   MAX_WATER_FLOW = 10;
@@ -37,6 +41,14 @@ static inline int imax(int a, int b) { return a > b ? a : b; }
 // owns all tool policy: brush radii, which tool paints/erases/drafts/spawns,
 // the right-click eraser, draft lifecycle, seed placement, and emit throttling.
 enum Tool : int { T_CUBE = 0, T_SAND, T_WATER, T_STONE, T_OIL, T_FIRE, T_ACID, T_LAVA, T_ICE, T_SEED, T_DRIFTWOOD, T_ERASER };
+
+// Held movement/pan keys forwarded from the browser (createSandGame maps the
+// physical keys onto these). The engine owns the camera + input policy now:
+// free-camera panning, the player input bitmask, and the pointer->aim mapping.
+enum InputKey : int { IK_LEFT = 0, IK_RIGHT, IK_UP, IK_DOWN, IK_SPACE, IK_SHIFT };
+static const double CAM_PAN_CELLS_PER_SEC = 100.0; // camera pan speed while a key is held
+static const double CAM_FOLLOW_LERP = 0.18;        // play-mode follow glide
+static const int    CAM_SHIFT_EDGE_MARGIN = 40;    // slide the world this near a buffer edge
 static const int BRUSH_SAND = 2, BRUSH_WATER = 2, BRUSH_OIL = 2, BRUSH_FIRE = 1, BRUSH_ACID = 2,
                  BRUSH_LAVA = 2, BRUSH_ICE = 2, BRUSH_STONE = 2, BRUSH_DRIFTWOOD = 1, BRUSH_ERASE = 3, CUBE_HALF = 6;
 static const double EMIT_INTERVAL_MS = 18.0;

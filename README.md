@@ -1,8 +1,10 @@
 # Personal website
 
 My portfolio site, built with React and Vite. The Skills/About section has an
-interactive falling-sand physics toy you can draw into, that engine lives in
-[`src/sand`](src/sand) and runs in WebAssembly.
+interactive falling-sand physics toy you can draw into. The engine lives in
+[`src/sand`](src/sand): the simulation, WebGL2 rendering, camera, and input all
+run in C++/WebAssembly, and it ships as a framework-free `<sand-game>` Web
+Component you can drop into any page (`npm run build:embed`).
 
 ## Running it
 
@@ -17,8 +19,9 @@ npm run deploy   # build and deploy to Cloudflare
 
 - `src/` — the React app. `App.jsx` wires up the pages and each section
   (`Hero`, `About`, `Contact`, …) is its own component.
-- `src/sand/` — the sand game: a C++/WebAssembly simulation plus the JavaScript
-  runtime and UI. See its [README](src/sand/README.md) to work on it.
+- `src/sand/` — the sand game: a C++/WebAssembly simulation + renderer + camera,
+  a thin JS shell, and the `<sand-game>` Web Component (`src/sand/embed/`). See
+  its [README](src/sand/README.md) to work on it.
 - `scripts/` — helper scripts (the headless sand test, art preview rendering).
 
 

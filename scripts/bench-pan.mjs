@@ -59,13 +59,14 @@ await waitForServer();
 //   - subSteps: sub-cell sample positions across one cell.
 const PROBE = ({ subSteps, noSnap }) => {
   const T = window.__sandTest;
-  const cv = document.getElementById('sand-main');
+  const cv = document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main');
   const W = cv.width, H = cv.height;
-  const ctx = cv.getContext('2d');
   const stride = 1; // full res: a clean 1-device-px pan must be exactly compensatable
   const sw = Math.floor(W / stride), sh = Math.floor(H / stride);
   const grab = () => {
-    const d = ctx.getImageData(0, 0, W, H).data;
+    // The main canvas is WebGL now; read pixels back through the engine
+    // (glReadPixels, top-down RGBA) instead of a 2D context.
+    const d = T.readPixels(0, 0, W, H);
     const luma = new Float32Array(sw * sh);
     for (let y = 0; y < sh; y++) {
       const sy = y * stride;
@@ -125,7 +126,7 @@ try {
   const page = await ctx.newPage();
   await page.goto(baseURL, { waitUntil: 'load' });
   // The game mounts after WASM init; wait for the hooks + a fitted engine.
-  await page.locator('#sand-main').scrollIntoViewIfNeeded().catch(() => {});
+  await page.locator('sand-game').scrollIntoViewIfNeeded().catch(() => {});
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.info().cols > 0, null, { timeout: 30000 });
   // Let the world settle a bit so terrain (not falling sand) dominates.
   await page.waitForTimeout(1500);
@@ -160,7 +161,7 @@ try {
       const dataUrl = await page.evaluate((f) => {
         const T = window.__sandTest; T.setPaused(true); const cam = T.getCam();
         T.setCam(Math.floor(cam.x) + f, cam.y);
-        const cv = document.getElementById('sand-main');
+        const cv = document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main');
         // crop a small full-res region so the grid/content shift is visible
         const off = document.createElement('canvas');
         off.width = 160; off.height = 120;

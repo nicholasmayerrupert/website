@@ -1,10 +1,13 @@
 # Sand engine
 
 A falling-sand / cellular-automaton simulation that runs on the About section of
-the site. The simulation, rendering (material->RGBA + dirty rects), tool/pointer
-semantics, and world streaming all run in C++ compiled to WebAssembly. JavaScript
-is the browser shell: canvases, the RAF loop, the camera/present transform, input
-forwarding, and the final canvas upload/blit. The UI is React.
+the site. The simulation, **rendering (WebGL2 compositing)**, the **view camera**,
+the **input policy**, tool/pointer semantics, and world streaming all run in C++
+compiled to WebAssembly. JavaScript is a thin browser shell: it sizes the canvas,
+runs the RAF/fixed-step loop, forwards raw DOM events (keys/pointer/resize) to the
+engine, and carries the WebSocket multiplayer transport. It no longer touches
+pixels or owns the camera. The whole thing ships as a framework-free
+`<sand-game>` Web Component; a tiny React wrapper mounts that element on this site.
 
   `cpp/engine/tools.inc`     brush/draft/seed primitives + the tool state machine
   `cpp/engine/render.inc`    material -> RGBA pixel generation (grain + animation)
@@ -14,26 +17,40 @@ forwarding, and the final canvas upload/blit. The UI is React.
 
 - `cpp/` — the C++ engine. `sand.cpp` pulls in one `.inc` file per subsystem
   (`engine/core.inc`, `components.inc`, `reactions.inc`, `growth.inc`,
-  `rigid.inc`, `worldgen.inc`, `tools.inc`, …) plus `common.hpp` for the shared
-  types and material tables.
+  `rigid.inc`, `worldgen.inc`, `tools.inc`, `render.inc`, …) plus `common.hpp` for
+  the shared types and material tables.
+  - `cpp/engine/gl_shared.hpp` + `gl.inc` — the WebGL2 compositor. `render.inc`
+    still generates the cell pixels on the CPU; `gl.inc` uploads them into a
+    `cols×rows` texture and draws the visible window (nearest upscale), the 1px
+    gutter grid, the player overlay, and the draft preview. The sub-cell pan
+    offset is snapped to whole device px here (the flicker fix). A world shift
+    slides the texture with `glBlitFramebuffer` instead of repainting.
+  - `cpp/engine/camera.inc` — the view camera (pan/bounds/follow), the
+    pointer→aim-cell mapping, the player input bitmask, and the per-frame pan /
+    world-stream drivers. JS just forwards held keys + the pointer.
 - `wasm/` — `build.sh` compiles `cpp/` to `sandEngine.js` (a single self-contained
-  ES module with the wasm embedded). The output is committed, so a normal
-  `npm run build` never needs the C++ toolchain.
+  ES module with the wasm embedded; built with WebGL2/`FULL_ES3`). The output is
+  committed, so a normal `npm run build` never needs the C++ toolchain.
 - `engineWasm.js` — loads the wasm module and exposes `createEngineWasm()`, the
-  simulation handle. Call `initSandWasm()` once and wait for it before creating an
-  engine. The grid lives in wasm memory and is read back as a zero-copy view.
+  simulation+render+camera handle. Call `initSandWasm()` once and wait for it
+  before creating an engine. The grid lives in wasm memory (zero-copy view).
 - `materials.schema.json` — the single source of truth for material identity
   (ids, kinds, density, mobility, colors, render params). Run `npm run generate`
   to regenerate `materials.generated.js` and `cpp/engine/materials.generated.hpp`.
 - `materials.js` — re-exports the generated registry and derives `MAT.<NAME>`.
-- `camera.js` — the view over the world buffer.
-- `game/createSandGame.js` — the browser shell: it owns the canvases, the RAF
-  loop, the camera/present transform, and the engine handle. It translates
-  browser pointer events to cell coords and forwards them; the engine owns tool
-  policy, dirty rects, material->RGBA generation, and the world-shift decision.
-  JS uploads the wasm pixel buffer and blits. No React.
-- `react/SandGame.jsx` + `react/ToolPalette.jsx` — a thin React wrapper that mounts
-  the runtime and draws the toolbar. `src/About.jsx` just renders `<SandGame>`.
+- `game/createSandGame.js` — the framework-agnostic browser shell. It creates the
+  canvas, hands it to the engine for a WebGL2 context, runs the RAF/fixed-step
+  loop, forwards DOM events (`engine.inputKey/inputPointer/...`), drives
+  `engine.glRenderFrame()` and `engine.streamWorld()`, and carries the net
+  transport. No pixels, no camera math, no React.
+- `embed/sandGame.js` — the `<sand-game>` Web Component: a shadow root holding the
+  sim canvas + the vanilla palette. Drop-in for any page (`<script type=module>` +
+  the tag); draw-mode changes are a `sand:drawmodechange` CustomEvent.
+  `npm run build:embed` bundles it to one self-contained `dist-embed/sand-game.js`.
+- `embed/toolPalette.js` — the framework-free tool palette (plain DOM + injected
+  `<style>`, no Tailwind).
+- `react/SandGame.jsx` — a ~15-line React shim that mounts `<sand-game>` and
+  bridges its CustomEvent to a prop. `src/About.jsx` just renders `<SandGame>`.
 
 ## Building the C++
 
@@ -59,9 +76,10 @@ shifts. Determinism (no RNG) is what lets a fixed input stream replay identicall
 
 A local player is spawned by `createSandGame` on the surface and the camera
 follows it. **Play mode** (default) maps the keys to the character; **free-camera
-mode** (`game.setPlayMode(false)`, used by the pan/flicker bench) restores the old
-WASD/arrow buffer panning. The player is drawn as an overlay on the main canvas
-from engine snapshots — the simulation stays in C++.
+mode** (`game.setPlayMode(false)`, used by the pan/flicker bench) pans the buffer
+with WASD/arrows. The player overlay (AABB + facing eye) is drawn by the C++ GL
+compositor from engine state; a networked client passes its host-snapshot players
+to the engine to draw (`engine.glSetPlayers`).
 
 ### Controls (play mode)
 
@@ -122,10 +140,11 @@ player state and grid hash.
 - `gameNet.js` — the browser glue wired into `createSandGame`. The **host** peer
   runs the engine, spawns a player per remote client (reusing `Host`), and
   broadcasts snapshots; a **client** peer sends input and renders all players from
-  the host's snapshots (smoothed). A minimal DEV-only Host/Join panel
-  (`SandGame.jsx`) drives it against the local relay. `scripts/mp-e2e.mjs` is a
-  two-context Playwright test (host + client) asserting the client's input reaches
-  the host, both peers observe it, and disconnect removes the remote player.
+  the host's snapshots (smoothed). In DEV the `window.__sandNet` hooks
+  (`host`/`join`/`disconnect`/`status`) drive it against the local relay.
+  `scripts/mp-e2e.mjs` is a two-context Playwright test (host + client) asserting
+  the client's input reaches the host, both peers observe it, and disconnect
+  removes the remote player.
 
 To try it locally: `npm run mp:server`, then open the site in two tabs, Host a
 room in one and Join it (same code) in the other.

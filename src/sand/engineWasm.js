@@ -22,6 +22,7 @@ export const INPUT = Object.freeze({
 
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns
+let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTargets
 
 export function initSandWasm() {
   if (!modPromise) {
@@ -112,6 +113,32 @@ export function initSandWasm() {
         applyDiff: c('engine_apply_diff', null, ['number', 'number', 'number']),
         gridHash: c('engine_grid_hash', 'number', ['number']),
         clearAllDirty: c('engine_clear_all_dirty', null, ['number']),
+        glInit: c('engine_gl_init', 'number', ['number', 'string']),
+        glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
+        glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
+        glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
+        glShift: c('engine_gl_shift', null, ['number', 'number']),
+        glRenderFrame: c('engine_gl_render_frame', 'number', ['number', 'number']),
+        glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
+        glReadPixels: c('engine_gl_read_pixels', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
+        setViewport: c('engine_set_viewport', null, ['number', 'number', 'number', 'number', 'number']),
+        cameraSet: c('engine_camera_set', null, ['number', 'number', 'number']),
+        cameraGet: c('engine_camera_get', null, ['number', 'number']),
+        cameraColX: c('engine_camera_col_x', 'number', ['number']),
+        cameraPanFrame: c('engine_camera_pan_frame', null, ['number', 'number']),
+        cameraFollowTo: c('engine_camera_follow_to', null, ['number', 'number', 'number']),
+        streamWorld: c('engine_stream_world', 'number', ['number']),
+        inputKey: c('engine_input_key', null, ['number', 'number', 'number']),
+        inputClearKeys: c('engine_input_clear_keys', null, ['number']),
+        heldKeys: c('engine_held_keys', 'number', ['number']),
+        inputPointer: c('engine_input_pointer', null, ['number', 'number', 'number', 'number', 'number']),
+        setPlayMode: c('engine_set_play_mode', null, ['number', 'number']),
+        setDrawMode: c('engine_set_draw_mode', null, ['number', 'number']),
+        localInputBits: c('engine_local_input_bits', 'number', ['number']),
+        aimCell: c('engine_aim_cell', null, ['number', 'number']),
+        applyLocalInput: c('engine_apply_local_input', 'number', ['number', 'number', 'number', 'number']),
+        pointerDraftAtAim: c('engine_pointer_draft_at_aim', 'number', ['number']),
+        pointerDownAtAim: c('engine_pointer_down_at_aim', 'number', ['number', 'number']),
       };
       return M;
     });
@@ -143,9 +170,12 @@ export function createEngineWasm({
   const emptyRects = new Int32Array(0);
   const chunkTotal = chunkCols * chunkRows;
 
-  // Scratch buffers in wasm memory: getSeedOrigin (2 ints), seedDraft (3 ints).
+  // Scratch buffers in wasm memory: getSeedOrigin (2 ints), seedDraft (3 ints),
+  // glGetOffset (2 ints).
   const seedOut = mod._malloc(8);
   const seedDraftOut = mod._malloc(12);
+  const glOffOut = mod._malloc(8);
+  const camOut = mod._malloc(16); // 2 doubles: cameraGet / aimCell
   // Packed draft cell INDICES (k = y*cols + x) as a zero-copy view into wasm
   // memory — no Set allocation. Stone and ice share one snapshot buffer, so the
   // returned view is only valid until the next draft snapshot call; the caller
@@ -198,12 +228,84 @@ export function createEngineWasm({
       const o = seedDraftOut >> 2;
       return { x: mod.HEAP32[o], y: mod.HEAP32[o + 1], valid: mod.HEAP32[o + 2] === 1 };
     },
+    // WebGL presentation. The engine owns the cell texture + compositing; JS
+    // creates the canvas, registers it as the context target, and drives one
+    // frame per RAF. glInit(target) creates the context (the target selector is
+    // resolved through emscripten's specialHTMLTargets, so it works inside a
+    // shadow root); glRenderFrame uploads dirty cells and composites.
+    glInit(canvasEl) {
+      // Register the actual <canvas> element under a unique key so emscripten's
+      // context creation resolves it via specialHTMLTargets (a plain selector
+      // can't reach into a shadow root). The key is stable per canvas so a
+      // resize (new engine, same canvas) reuses the existing context.
+      let key = canvasEl.__sandGlKey;
+      if (!key) {
+        key = `#sandgl_${glTargetSeq++}`;
+        canvasEl.__sandGlKey = key;
+        mod.specialHTMLTargets[key] = canvasEl;
+      }
+      return M.glInit(ptr, key) === 1;
+    },
+    glResize(devW, devH) { M.glResize(ptr, devW, devH); },
+    glSetCamera(camX, camY, cellDev, viewCols, viewRows, gutterOn, snapOff) {
+      M.glSetCamera(ptr, camX, camY, cellDev | 0, viewCols | 0, viewRows | 0, gutterOn ? 1 : 0, snapOff ? 1 : 0);
+    },
+    // Players to overlay. Host/local draws the engine's own players (own = the
+    // local id, blue). A client passes a packed [x,y,w,h,facing,own] Float32Array
+    // of host-authoritative snapshot players.
+    glSetPlayers(useExternal, packed, ownId) {
+      if (useExternal) {
+        const len = packed ? packed.length : 0;
+        if (len) {
+          const buf = mod._malloc(len * 4);
+          mod.HEAPF32.set(packed, buf >> 2);
+          M.glSetPlayers(ptr, 1, buf, (len / 6) | 0, ownId | 0);
+          mod._free(buf);
+        } else {
+          M.glSetPlayers(ptr, 1, 0, 0, ownId | 0); // external, but empty (draw none)
+        }
+      } else {
+        M.glSetPlayers(ptr, 0, 0, 0, ownId | 0);
+      }
+    },
+    glSetFlags(gutterOn, snapOff) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0); },
+    glShift(dx) { M.glShift(ptr, dx); },
+    glRenderFrame(forceFull) { return M.glRenderFrame(ptr, forceFull ? 1 : 0) === 1; },
+    glGetOffset() { M.glGetOffset(ptr, glOffOut); const o = glOffOut >> 2; return { offX: mod.HEAP32[o], offY: mod.HEAP32[o + 1] }; },
+
+    // ---- view camera + input policy (owned by the engine; camera.inc) ----
+    setViewport(dpr, cellDev, viewCols, viewRows) { M.setViewport(ptr, dpr, cellDev | 0, viewCols | 0, viewRows | 0); },
+    cameraSet(x, y) { M.cameraSet(ptr, x, y); },
+    getCam() { M.cameraGet(ptr, camOut); const o = camOut >> 3; return { x: mod.HEAPF64[o], y: mod.HEAPF64[o + 1] }; },
+    cameraColX() { return M.cameraColX(ptr); },
+    cameraPanFrame(frameDtMs) { M.cameraPanFrame(ptr, frameDtMs); },
+    cameraFollowTo(cx, cy) { M.cameraFollowTo(ptr, cx, cy); },
+    streamWorld() { return M.streamWorld(ptr); },
+    inputKey(code, down) { M.inputKey(ptr, code | 0, down ? 1 : 0); },
+    inputClearKeys() { M.inputClearKeys(ptr); },
+    getHeldKeys() { return M.heldKeys(ptr); },
+    inputPointer(cssX, cssY, buttons, inside) { M.inputPointer(ptr, cssX, cssY, buttons | 0, inside ? 1 : 0); },
+    setPlayMode(on) { M.setPlayMode(ptr, on ? 1 : 0); },
+    setDrawMode(on) { M.setDrawMode(ptr, on ? 1 : 0); },
+    localInputBits() { return M.localInputBits(ptr); },
+    getAim() { M.aimCell(ptr, camOut); const o = camOut >> 3; return { x: mod.HEAPF64[o], y: mod.HEAPF64[o + 1] }; },
+    applyLocalInput(playerId, now, seq) { return M.applyLocalInput(ptr, playerId | 0, now, seq | 0) === 1; },
+    pointerDraftAtAim() { return M.pointerDraftAtAim(ptr) === 1; },
+    pointerDownAtAim(button) { return M.pointerDownAtAim(ptr, button | 0) === 1; },
+    glReadPixels(x, y, w, h) {
+      const n = w * h * 4;
+      const buf = mod._malloc(n);
+      const ok = M.glReadPixels(ptr, x, y, w, h, buf) === 1;
+      const out = ok ? new Uint8ClampedArray(mod.HEAPU8.buffer, buf, n).slice() : new Uint8ClampedArray(n);
+      mod._free(buf);
+      return out;
+    },
     getPerf() { return { stepMs: M.perfStepMs(ptr), dirtyChunks: M.perfDirtyChunks(ptr), phases: {} }; },
     getShiftPerf() { return { buffers: M.perfShiftBuffers(ptr), translate: M.perfShiftTranslate(ptr), register: M.perfShiftRegister(ptr), fill: M.perfShiftFill(ptr) }; },
     getStepPerf() { return { ground: M.perfStepGround(ptr), rigid: M.perfStepRigid(ptr), react: M.perfStepReact(ptr), carry: M.perfStepCarry(ptr), settle: M.perfStepSettle(ptr), tail: M.perfStepTail(ptr) }; },
     getTick() { return M.tick(ptr); },
     syncComponents() { M.syncComponents(ptr); },
-    destroy() { mod._free(seedOut); mod._free(seedDraftOut); M.destroy(ptr); },
+    destroy() { mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); M.destroy(ptr); },
 
     // Component drafts + seeds (Stage 3)
     addDiscToStoneDraft(cx, cy, r) { return M.addStoneDraft(ptr, cx, cy, r) === 1; },

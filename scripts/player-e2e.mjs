@@ -96,7 +96,7 @@ try {
   const aim = await page.evaluate(() => {
     window.__sandTest.setDrawMode(true);
     window.__sandTest.setTool('eraser');
-    const r = document.getElementById('sand-main').getBoundingClientRect();
+    const r = (document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main')).getBoundingClientRect();
     const s = window.__sandTest.playerScreen();
     return { vx: r.left + s.x, vy: r.top + s.y };
   });

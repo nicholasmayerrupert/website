@@ -6,18 +6,22 @@ Nicholas Mayer-Rupert's personal website. React + Vite + Tailwind, deployed to
 Cloudflare via Wrangler (`npm run dev`, `npm run build`, `npm run deploy`).
 
 Its centerpiece is a **2D falling-sand simulation** rendered to a canvas on the
-About page. Most agent work happens there. The simulation, rendering, tool
-semantics, and world streaming are written in **C++ and compiled to WebAssembly**;
-JavaScript is the browser shell (canvases, RAF loop, camera/present, input
-forwarding, blit) and the UI is React. `src/sand/README.md` is the authoritative
-map — read it before touching the sim. Quick orientation:
+About page. Most agent work happens there. The simulation, **WebGL2 rendering**,
+the **view camera**, the **input policy**, tool semantics, and world streaming are
+written in **C++ and compiled to WebAssembly**; JavaScript is a thin shell (sizes
+the canvas, runs the RAF/fixed-step loop, forwards raw DOM events, carries the net
+transport). It ships as a framework-free `<sand-game>` Web Component
+(`src/sand/embed/`); a tiny React shim mounts it on this site.
+`src/sand/README.md` is the authoritative map — read it before touching the sim.
+Quick orientation:
 
 | Path | What it is |
 | --- | --- |
-| `src/sand/cpp/` | The C++ engine. `sand.cpp` includes one `.inc` per subsystem (`core`, `components`, `reactions`, `growth`, `rigid`, `worldgen`, `tools`, `render`) + `common.hpp`. Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`). |
-| `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation handle. The grid + render pixels are zero-copy views into wasm memory. |
+| `src/sand/cpp/` | The C++ engine. `sand.cpp` includes one `.inc` per subsystem (`core`, `components`, `reactions`, `growth`, `rigid`, `worldgen`, `tools`, `render`, `camera`, `gl`) + `common.hpp` (+ `gl_shared.hpp`). Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`). |
+| `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation+render+camera handle. The grid + render pixels are zero-copy views into wasm memory. |
 | `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
-| `src/sand/camera.js`, `src/sand/game/createSandGame.js` | View over the world buffer; the browser shell that owns the canvases, RAF loop, camera, and engine handle, and forwards pointer events (the engine owns tool policy, rendering, and the world-shift decision). |
+| `src/sand/game/createSandGame.js` | The thin browser shell: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events to the engine, and drives `engine.glRenderFrame()`/`streamWorld()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |
+| `src/sand/embed/` | The `<sand-game>` Web Component (`sandGame.js`) + vanilla palette (`toolPalette.js`). `npm run build:embed` → one self-contained `dist-embed/sand-game.js`. |
 | `scripts/bench-sand.mjs`, `scripts/bench-pan.mjs`, `bench/` | Headless engine benchmark + Playwright pan/flicker benchmark + recorded baselines. |
 
 The world is a **procedural, infinite, horizontally-streaming** landscape generated

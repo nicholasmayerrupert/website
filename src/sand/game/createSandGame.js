@@ -14,8 +14,7 @@
 // simulation runs in the WebAssembly engine (../engineWasm.js); initSandWasm()
 // must have resolved before createSandGame() is called.
 
-import { createEngineWasm, CHUNK_SIZE, SEED_SIZE, INPUT } from '../engineWasm';
-import { createCamera } from '../camera';
+import { createEngineWasm, CHUNK_SIZE } from '../engineWasm';
 import { createGameNet } from '../net/gameNet';
 
 export function createSandGame(container, opts = {}) {
@@ -25,27 +24,20 @@ export function createSandGame(container, opts = {}) {
     reducedMotion,
   } = opts;
 
-  // --- Host canvases (created and owned here) ---
+  // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
+  // context on it and composites the cell texture, gutter grid, player overlay,
+  // and draft preview directly (engine.glRenderFrame). JS no longer touches
+  // pixels — it only sizes the canvas, drives the camera, and forwards input. ---
   const canvas = document.createElement('canvas');
   canvas.id = 'sand-main'; // stable selector for the headless pan/flicker bench
-  const previewCanvas = document.createElement('canvas');
-  for (const c of [canvas, previewCanvas]) {
-    c.style.position = 'absolute';
-    c.style.inset = '0';
-    c.style.width = '100%';
-    c.style.height = '100%';
-    c.style.pointerEvents = 'none';
-    c.style.userSelect = 'none';
-    c.setAttribute('aria-hidden', 'true');
-    container.appendChild(c);
-  }
-  const cellCanvas = document.createElement('canvas');
-  const cellCtx = cellCanvas.getContext('2d', { alpha: true });
-  const ctx = canvas.getContext('2d', { alpha: true });
-  const previewCtx = previewCanvas.getContext('2d', { alpha: true });
-  if (!ctx || !cellCtx || !previewCtx) {
-    return { setTool() {}, setDrawMode() {}, getDrawMode: () => false, destroy() {} };
-  }
+  canvas.style.position = 'absolute';
+  canvas.style.inset = '0';
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.pointerEvents = 'none';
+  canvas.style.userSelect = 'none';
+  canvas.setAttribute('aria-hidden', 'true');
+  container.appendChild(canvas);
 
   // Tool selection: the name is kept here only so it can be re-sent to the
   // engine when the engine is recreated (resize). All tool policy lives in C++.
@@ -86,7 +78,6 @@ export function createSandGame(container, opts = {}) {
   // engine (it owns tool policy). JS keeps only the fixed sim-step interval.
   const STEP_MS = 16;
   const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
-  const FULL_RENDER_DIRTY_CHUNK_RATIO = 0.38;
   // World/camera: the simulation buffer is bigger than the viewport. It is the
   // full (fixed) world height and a horizontal window a margin wider than the
   // view; the camera pans within it (WASD/arrows). Horizontal streaming that
@@ -94,18 +85,11 @@ export function createSandGame(container, opts = {}) {
   const WORLD_HEIGHT_FACTOR = 2.5; // world is this many viewports tall
   const BUF_MARGIN_COLS = 128;     // extra buffer columns on each side of the view
   const BUFFER_MAX_CELLS = 520000; // cap so the per-step budget stays bounded
-  const PAN_CELLS_PER_SEC = 100;   // camera pan speed while a key is held
   const MAX_FRAME_DT = 50;         // ms; clamp so a stall can't produce a big jump
-  // Horizontal streaming margin: ask the engine to slide the world when the
-  // camera comes within this many cells of a buffer edge. The shift distance
-  // itself is owned by the engine (WORLD_SHIFT_COLS).
-  const SHIFT_EDGE_MARGIN = 40;
-
-  // Colors
-  const STONE_PREVIEW_COLOR = 'rgba(160,160,170,0.40)';
-  const DRIFTWOOD_PREVIEW_COLOR = 'rgba(140,125,110,0.45)';
-  const ICE_PREVIEW_COLOR = 'rgba(150, 225, 240, 0.40)';
-  const SEED_PREVIEW_COLOR = 'rgba(120, 190, 100, 0.32)';
+  // The camera (pan speed, follow, bounds), the world-stream edge margin, the
+  // pointer->aim mapping, the player input bitmask, and the preview/overlay
+  // colors all live in the C++ engine now (cpp/engine/camera.inc + gl.inc).
+  // JS forwards raw events and drives the RAF/fixed-step loop.
 
   // Simulation engine (recreated on resize)
   // cols/rows are the BUFFER (world) dimensions, larger than the viewport;
@@ -120,21 +104,19 @@ export function createSandGame(container, opts = {}) {
   // where devicePixelRatio drops below 1) is what caused the bright-block flicker.
   let dpr = 1, cellDev = CELL_PX;
   let viewCols = 0, viewRows = 0;
-  const camera = createCamera();
-  let lastCamX = NaN, lastCamY = NaN; // detect camera movement (incl. sub-cell) to redraw
+  // The camera lives in the engine (camera.inc). JS caches the last presented
+  // position to detect movement (incl. sub-cell) and re-present.
+  let lastCamX = NaN, lastCamY = NaN;
   let testPaused = false;             // DEV-only: freeze stepping for the flicker bench
   let gutterOn = true;                // DEV-only: toggle the grid for flicker A/B
-  let lastOffX = 0, lastOffY = 0;     // DEV-only: last snapped present offset
   let snapOff = false;                // DEV-only: disable offset snapping for A/B
-  const pressedKeys = new Set();         // held WASD/arrow keys for panning
+  // Physical keys -> engine InputKey codes (IK_LEFT..IK_SHIFT). The engine owns
+  // the pan/player-input policy; JS just forwards held state.
+  const KEY_CODE = { a: 0, arrowleft: 0, d: 1, arrowright: 1, w: 2, arrowup: 2, s: 3, arrowdown: 3, ' ': 4, shift: 5 };
   let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
   let forceFullRender = true;
   let perfRenderMs = 0;
-  let previewDirty = false;
-  let previewVisible = false;
-  // DEV debug counters (surfaced via window.__sandPerf)
-  let perfDirtyRects = 0;     // coalesced dirty rects uploaded last render
-  let perfFullRedraws = 0;    // times the whole buffer was repainted
+  let previewDirty = false;           // force a present so a fresh draft overlay shows
 
   // Rolling perf samples for window.__sandPerf
   const PERF_SAMPLES = 120;
@@ -145,7 +127,7 @@ export function createSandGame(container, opts = {}) {
 
   // Drafting state lives entirely in the engine now; the preview reads it back.
 
-  // Pointer tracking (browser-side; cell translation happens in toCellX/Y)
+  // Pointer tracking (browser-side; the engine maps it to the aim cell)
   let clientX = -1, clientY = -1;
   let px = -1, py = -1;
   let inside = false;
@@ -186,8 +168,6 @@ export function createSandGame(container, opts = {}) {
     const cssH = Math.max(200, Math.floor(height));
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-    previewCanvas.style.width = '100%';
-    previewCanvas.style.height = '100%';
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < TOOL_COLLAPSE_W });
 
@@ -200,12 +180,6 @@ export function createSandGame(container, opts = {}) {
     cellDev = Math.max(1, Math.round(cellSize * dpr)); // integer device px per cell
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
-    previewCanvas.width = canvas.width;
-    previewCanvas.height = canvas.height;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    previewCtx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    previewCtx.imageSmoothingEnabled = false;
 
     // Visible window (cells on screen) vs. the larger simulation buffer.
     viewCols = Math.max(60, Math.ceil(cssW / cellSize));
@@ -226,19 +200,16 @@ export function createSandGame(container, opts = {}) {
     // pure zoom change (dpr only) keeps the same world: just repaint at the new
     // device resolution instead of destroying and regenerating the engine.
     if (engine && cols === bufCols && rows === worldRows) {
+      // Pure zoom (dpr) change: same world, just resize the GL backing store and
+      // update the engine's cell metrics (cellDev changes with dpr).
+      engine.glResize(canvas.width, canvas.height);
+      engine.setViewport(dpr, cellDev, viewCols, viewRows);
       forceFullRender = true;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
       previewDirty = false;
-      previewVisible = false;
       return;
     }
     cols = bufCols;
     rows = worldRows;
-
-    cellCanvas.width = cols;
-    cellCanvas.height = rows;
-    cellCtx.imageSmoothingEnabled = false;
 
     if (engine && engine.destroy) engine.destroy(); // free a prior (e.g. WASM) engine on resize
     engine = createEngineWasm({
@@ -249,10 +220,14 @@ export function createSandGame(container, opts = {}) {
       emittersOn: false, // taps/sinks are obsolete in the streaming world
       sinksOn: false,
     });
+    engine.glInit(canvas);                          // create the WebGL2 context on our canvas
+    engine.glResize(canvas.width, canvas.height);
     engine.setTool(TOOL[currentToolName] ?? 0); // re-apply the selected tool
-    // Camera spans the buffer minus the visible window. Start centered
-    // horizontally and just above the surface so the spawn view shows ground.
-    camera.setBounds(cols - viewCols, rows - viewRows);
+    // Viewport + camera bounds + input mode (the engine owns the camera now).
+    engine.setViewport(dpr, cellDev, viewCols, viewRows);
+    engine.setPlayMode(playMode);
+    engine.setDrawMode(drawModeOn);
+    engine.glSetFlags(gutterOn, snapOff);
     const spawnCol = Math.floor(cols / 2);
     const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
     // Spawn the local player on the surface (unless a client, where the host owns
@@ -261,15 +236,13 @@ export function createSandGame(container, opts = {}) {
       const sp = surfaceSpawn(spawnCol);
       localPlayerId = engine.spawnPlayer(sp.x, sp.y);
     }
-    camera.set((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
+    // Start centered horizontally, just above the surface so spawn shows ground.
+    engine.cameraSet((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
     lastCamX = NaN;
     lastCamY = NaN;
 
     forceFullRender = true;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
     previewDirty = false;
-    previewVisible = false;
   };
 
   fit();
@@ -290,49 +263,45 @@ export function createSandGame(container, opts = {}) {
   }
   watchDpr();
 
-  // Pointer helpers
+  // Pointer helpers. JS computes the canvas-relative CSS-px position + inside
+  // flag and forwards them with the button state; the engine maps that to the
+  // aim cell (camera.inc owns the camera + cell metrics). mouseButtons: bit0=LMB,
+  // bit1=RMB (drives the player's primary/secondary in draw mode).
   const updatePointer = (cx, cy) => {
     clientX = cx; clientY = cy;
     inside = cx >= wrapBounds.left && cx <= wrapBounds.right && cy >= wrapBounds.top && cy <= wrapBounds.bottom;
     px = cx - wrapBounds.left;
     py = cy - wrapBounds.top;
+    engine?.inputPointer(px, py, mouseButtons, inside);
   };
-  // Screen pixel (canvas-relative) -> buffer cell, through the camera offset.
-  // Pointer (CSS px) -> cell, inverting the render mapping exactly: cells are
-  // drawn at cellDev DEVICE px, so convert the cursor to device px (* dpr) and
-  // divide by cellDev. Using cellSize (CSS) here drifts whenever cellSize*dpr
-  // isn't integer (cellDev = round(cellSize*dpr)), offsetting the brush from the
-  // cursor by an amount that grows with distance and flips sign around 100% zoom.
-  const toCellX = () => Math.floor(camera.x + (px * dpr) / cellDev);
-  const toCellY = () => Math.floor(camera.y + (py * dpr) / cellDev);
 
-  // Global listeners so canvas can stay pointer-events:none. JS forwards
-  // normalized button state + cell-space coords; the engine decides everything.
+  // Global listeners so the canvas can stay pointer-events:none. JS forwards raw
+  // pointer state; the engine owns the aim mapping and all tool policy.
   const onPointerMove = (e) => {
-    updatePointer(e.clientX, e.clientY);
     mouseButtons = e.buttons;
+    updatePointer(e.clientX, e.clientY);
     engine?.pointerButtons(e.buttons); // release the held/RMB state on buttons==0
     if (playMode || !drawModeOn || !engine) return; // play mode aims via the player
-    if (inside && engine.pointerDraft(toCellX(), toCellY())) previewDirty = true;
+    if (inside && engine.pointerDraftAtAim()) previewDirty = true;
   };
   const onTouchMove = (e) => {
     if (!drawModeOn || !engine) return;
     if (!e.touches || e.touches.length === 0) return;
     const t = e.touches[0];
     updatePointer(t.clientX, t.clientY);
-    if (inside && engine.pointerDraft(toCellX(), toCellY())) previewDirty = true;
+    if (inside && engine.pointerDraftAtAim()) previewDirty = true;
   };
 
   // LMB starts drafts / spawns the cube; RMB arms the momentary eraser. Paint
-  // and erase tools act continuously in the step loop (engine.applyTool).
+  // and erase tools act continuously in the step loop (engine.applyLocalInput).
   const onPointerDown = (e) => {
     if (!drawModeOn || !engine) return;
+    mouseButtons = e.buttons;
     updatePointer(e.clientX, e.clientY);
     if (!inside) return;
     if (e.button === 0 || e.button === 2) {
-      mouseButtons = e.buttons;
       if (playMode) { e.preventDefault(); return; } // player mines/builds via input bits
-      if (engine.pointerDown(toCellX(), toCellY(), e.button)) previewDirty = true;
+      if (engine.pointerDownAtAim(e.button)) previewDirty = true;
       e.preventDefault();
     }
   };
@@ -340,6 +309,7 @@ export function createSandGame(container, opts = {}) {
   const onPointerUp = (e) => {
     if (!engine) return;
     mouseButtons = e.buttons;
+    updatePointer(e.clientX, e.clientY);
     engine.pointerButtons(e.buttons); // clears RMB/LMB when no buttons remain
     if (engine.pointerUp(e.button)) previewDirty = true;
   };
@@ -353,14 +323,6 @@ export function createSandGame(container, opts = {}) {
     if (clientX >= 0 && clientY >= 0) updatePointer(clientX, clientY);
   };
 
-  // Camera pan keys: WASD and arrows. Held keys live in `pressedKeys` and are
-  // applied each step in the loop so panning is smooth and diagonal.
-  const PAN_KEYS = {
-    w: [0, -1], arrowup: [0, -1],
-    s: [0, 1], arrowdown: [0, 1],
-    a: [-1, 0], arrowleft: [-1, 0],
-    d: [1, 0], arrowright: [1, 0],
-  };
   // Only TEXT-entry controls should swallow the WASD/arrow keys. A checkbox or
   // button keeps focus after a click, so treating every <input> as editable
   // would silently disable camera panning.
@@ -376,26 +338,23 @@ export function createSandGame(container, opts = {}) {
     return false;
   };
 
+  // Movement keys (WASD/arrows + space/shift) are forwarded to the engine, which
+  // owns the pan/player-input policy. The editable-target guard + preventDefault
+  // stay in JS (they need the DOM event/target).
   const onKeyDown = (e) => {
     if (isEditableTarget(e.target)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
-    if (PAN_KEYS[key]) {
-      pressedKeys.add(key);
-      e.preventDefault(); // keep arrow keys from scrolling the page while panning
-      return;
-    }
-    // jump (space) + run (shift) for player mode; tracked alongside WASD/arrows.
-    if (key === ' ' || key === 'shift') {
-      pressedKeys.add(key);
-      if (key === ' ') e.preventDefault(); // space would scroll the page
-    }
+    const code = KEY_CODE[key];
+    if (code === undefined) return;
+    engine?.inputKey(code, 1);
+    if (key !== 'shift') e.preventDefault(); // arrows/space/wasd would scroll the page
   };
   const onKeyUp = (e) => {
-    const key = e.key.toLowerCase();
-    if (PAN_KEYS[key] || key === ' ' || key === 'shift') pressedKeys.delete(key);
+    const code = KEY_CODE[e.key.toLowerCase()];
+    if (code !== undefined) engine?.inputKey(code, 0);
   };
-  const onBlur = () => pressedKeys.clear(); // avoid keys "sticking" on focus loss
+  const onBlur = () => engine?.inputClearKeys(); // avoid keys "sticking" on focus loss
 
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('touchmove', onTouchMove, { passive: true });
@@ -407,177 +366,42 @@ export function createSandGame(container, opts = {}) {
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
 
+  // Present one frame. The engine owns the whole compositing pipeline now: it
+  // reads its own camera (camera.inc), uploads the cells whose contents changed
+  // (dirty-rect glTexSubImage2D), nearest-upscales the visible window onto the
+  // canvas, draws the 1px gutter grid, the player overlay, and the draft preview
+  // — all in C++/WebGL. JS only hands it the player set to draw.
+  //
+  // The sub-cell pan offset is snapped to whole device px inside the engine (the
+  // documented bright-block-flicker fix); the snap/gutter A/B flags live there too.
   const render = (full = false) => {
     if (!engine) return;
-
     const renderStart = performance.now();
-    // C++ owns dirty-rect generation and material->RGBA pixel generation. We
-    // build the rects, fill pixels in wasm, then upload the changed spans.
-    const { rects, rectCount, dirtyChunkCount, chunkTotal } = engine.getRenderDirty();
-    perfDirtyRects = rectCount;
-
-    // Visible buffer-cell window under the camera. Nothing outside it is ever
-    // filled or blitted — that's the viewport culling. A buffer cell (bx,by)
-    // maps to canvas pixels ((bx-camCol)*cellSize, (by-camRow)*cellSize), and a
-    // fractional canvas translate below shifts everything by the sub-cell
-    // remainder so panning is smooth rather than snapping cell-to-cell.
-    const camCol = Math.floor(camera.x);
-    const camRow = Math.floor(camera.y);
-    // Sub-cell shift, snapped to whole DEVICE px. Snapping is what keeps cell
-    // edges + the gutter grid on exact device pixels every frame, so panning no
-    // longer re-quantizes them sub-pixel (the source of the bright-block flicker).
-    const offX = snapOff ? -(camera.x - camCol) * cellDev : Math.round(-(camera.x - camCol) * cellDev);
-    const offY = snapOff ? -(camera.y - camRow) * cellDev : Math.round(-(camera.y - camRow) * cellDev);
-    lastOffX = offX; lastOffY = offY;
-    const visX0 = camCol;
-    const visY0 = camRow;
-    const visX1 = Math.min(cols - 1, camCol + viewCols + 1); // +1 covers the shift
-    const visY1 = Math.min(rows - 1, camRow + viewRows + 1);
-
-    // Bring cellCanvas (1px per cell, sized to the whole buffer) in sync with
-    // the grid for cells whose contents changed. The actual coloring happens in
-    // wasm; here we trigger the fill and upload the changed pixels. Off-screen
-    // changes are included so they're correct when they later scroll into view.
-    const syncCellCanvas = (fullSync) => {
-      // When most chunks are dirty (or a full repaint is forced), one
-      // buffer-wide fill + a single upload beats many small putImageData calls.
-      const wholeBuffer = fullSync || forceFullRender ||
-        dirtyChunkCount > chunkTotal * FULL_RENDER_DIRTY_CHUNK_RATIO;
-      if (wholeBuffer) engine.renderFull();
-      else engine.renderDirtyRects();
-      // ImageData wrapping the freshly written wasm pixel buffer (zero-copy;
-      // re-wrapped each frame because wasm memory can move on growth).
-      const imgData = new ImageData(engine.getRenderPixels(), cols, rows);
-      if (wholeBuffer) {
-        cellCtx.putImageData(imgData, 0, 0);
-        forceFullRender = false;
-        perfFullRedraws++;
-        return;
+    // Players to overlay. A client renders host-authoritative snapshot players;
+    // host/local renders the engine's own players (own = the local id, blue).
+    // While the bench is paused we draw none (an empty external set) so the
+    // flicker probe sees only the cell grid.
+    if (testPaused) {
+      engine.glSetPlayers(true, null, 0);
+    } else if (net.role === 'client') {
+      const ps = net.getPlayersForRender();
+      const packed = new Float32Array(ps.length * 6);
+      for (let i = 0; i < ps.length; i++) {
+        const p = ps[i], o = i * 6;
+        packed[o] = p.x; packed[o + 1] = p.y; packed[o + 2] = p.w; packed[o + 3] = p.h;
+        packed[o + 4] = p.facing; packed[o + 5] = p.id === net.ownPlayerId ? 1 : 0;
       }
-      // Upload each coalesced dirty rect. Rects are [x0,y0,x1,y1) exclusive, so
-      // width/height are x1-x0 / y1-y0 directly.
-      for (let i = 0, b = 0; i < rectCount; i++, b += 4) {
-        const x0 = rects[b], y0 = rects[b + 1];
-        cellCtx.putImageData(imgData, 0, 0, x0, y0, rects[b + 2] - x0, rects[b + 3] - y0);
-      }
-    };
-
-    // Present the visible window from cellCanvas onto the main canvas. Pure
-    // GPU: a single upscaling drawImage plus the gutter erase, riding the
-    // sub-cell translate. This is the cheap path that runs every camera-moved
-    // frame without any CPU pixel work.
-    const present = () => {
-      const vw = visX1 - visX0 + 1;
-      const vh = visY1 - visY0 + 1;
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (vw <= 0 || vh <= 0) return;
-      const w = vw * cellDev, h = vh * cellDev;
-      // Riding the snapped sub-cell translate: a single nearest-neighbour upscale
-      // of the visible window, then the 1px grid erased on cell boundaries. Both
-      // are under the same integer-device-px transform, so they translate in
-      // lockstep and land on exact device pixels (no sub-pixel re-quantization,
-      // no compositor resample) -> no bright-block flicker while panning.
-      ctx.setTransform(1, 0, 0, 1, offX, offY);
-      ctx.drawImage(cellCanvas, visX0, visY0, vw, vh, 0, 0, w, h);
-      if (gutterOn) {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = '#000';
-        for (let gx = cellDev; gx <= w; gx += cellDev) ctx.fillRect(gx - 1, 0, 1, h);
-        for (let gy = cellDev; gy <= h; gy += cellDev) ctx.fillRect(0, gy - 1, w, 1);
-        ctx.globalCompositeOperation = 'source-over';
-      }
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset so other passes draw in screen space
-      drawPlayers();
-    };
-
-    // Player overlay: solid AABB + a facing eye, in screen space. Drawn inside
-    // present() (right after the cells are blitted) so the overlay can't leave
-    // trails — every redraw clears and repaints in lockstep. Positions come from
-    // engine snapshots; the simulation stays in C++.
-    const drawPlayers = () => {
-      if (testPaused) return; // keep the paused flicker bench free of overlay noise
-      const players = playersForRender();
-      const ownId = renderOwnId();
-      for (let i = 0; i < players.length; i++) {
-        const p = players[i];
-        const sx = (p.x - camCol) * cellDev + offX;
-        const sy = (p.y - camRow) * cellDev + offY;
-        const pw = p.w * cellDev, ph = p.h * cellDev;
-        ctx.fillStyle = p.id === ownId ? 'rgba(80,170,255,0.92)' : 'rgba(255,140,80,0.92)';
-        ctx.fillRect(sx, sy, pw, ph);
-        ctx.fillStyle = 'rgba(20,30,45,0.9)';
-        const eye = Math.max(1, Math.round(cellDev * 0.7));
-        const ex = p.facing >= 0 ? sx + pw - eye - cellDev * 0.4 : sx + cellDev * 0.4;
-        ctx.fillRect(ex, sy + ph * 0.18, eye, eye);
-      }
-    };
-
-    const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
-    const contentChanged = full || forceFullRender || dirtyChunkCount > 0;
-    // Present (and thus repaint the player overlay) whenever any player exists,
-    // so a moving character is never left as a stale rectangle.
-    const hasPlayers = (net.role === 'client') ? net.getPlayersForRender().length > 0 : engine.playerCount() > 0;
-    if (contentChanged) syncCellCanvas(full);
-    if (contentChanged || camMoved || hasPlayers) present();
-
-    lastCamX = camera.x;
-    lastCamY = camera.y;
-    engine.clearRenderDirty();
-    perfRenderMs = performance.now() - renderStart;
-  };
-
-  const renderPreview = () => {
-    if (!engine || !previewDirty) return;
-    previewCtx.setTransform(1, 0, 0, 1, 0, 0);
-    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-    previewVisible = false;
-    // Match the main canvas's sub-cell camera offset so drafts align with cells.
-    const camCol = Math.floor(camera.x);
-    const camRow = Math.floor(camera.y);
-    previewCtx.setTransform(1, 0, 0, 1, Math.round(-(camera.x - camCol) * cellDev), Math.round(-(camera.y - camRow) * cellDev));
-
-    // Draft cells come back as a packed wasm view of cell indices (no Set). Stone
-    // must be fully drawn before fetching ice (they share one snapshot buffer).
-    const stoneDraft = engine.getStoneDraftCells();
-    if (stoneDraft.length > 0) {
-      previewCtx.fillStyle = engine.isDraftDriftwood() ? DRIFTWOOD_PREVIEW_COLOR : STONE_PREVIEW_COLOR;
-      const previewSize = cellDev;
-      for (let i = 0; i < stoneDraft.length; i++) {
-        const k = stoneDraft[i];
-        const y = (k / cols) | 0;
-        const x = k - y * cols;
-        previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
-      }
-      previewVisible = true;
+      engine.glSetPlayers(true, packed, net.ownPlayerId);
+    } else {
+      engine.glSetPlayers(false, null, localPlayerId);
     }
-
-    const iceDraft = engine.getIceDraftCells();
-    if (iceDraft.length > 0) {
-      previewCtx.fillStyle = ICE_PREVIEW_COLOR;
-      const previewSize = cellDev;
-      for (let i = 0; i < iceDraft.length; i++) {
-        const k = iceDraft[i];
-        const y = (k / cols) | 0;
-        const x = k - y * cols;
-        previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
-      }
-      previewVisible = true;
-    }
-
-    const seed = engine.getSeedDraft();
-    if (seed) {
-      previewCtx.fillStyle = seed.valid ? SEED_PREVIEW_COLOR : 'rgba(255, 80, 80, 0.24)';
-      const previewSize = cellDev;
-      for (let y = seed.y; y < seed.y + SEED_SIZE; y++) {
-        for (let x = seed.x; x < seed.x + SEED_SIZE; x++) {
-          previewCtx.fillRect((x - camera.colX) * cellDev, (y - camera.colY) * cellDev, previewSize, previewSize);
-        }
-      }
-      previewVisible = true;
-    }
-    previewCtx.setTransform(1, 0, 0, 1, 0, 0);
+    engine.glRenderFrame(full || forceFullRender);
+    forceFullRender = false;
     previewDirty = false;
+    const cam = engine.getCam();
+    lastCamX = cam.x;
+    lastCamY = cam.y;
+    perfRenderMs = performance.now() - renderStart;
   };
 
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
@@ -596,8 +420,6 @@ export function createSandGame(container, opts = {}) {
         p95FrameMs: Number(p95.toFixed(3)),
         samples: n,
         dirtyChunks: perf.dirtyChunks,
-        dirtyRects: perfDirtyRects,
-        fullRedraws: perfFullRedraws,
         worldShifts: engine ? engine.getWorldShiftCount() : 0,
         wasmHeapMB: engine ? Number((engine.getHeapBytes() / (1024 * 1024)).toFixed(1)) : 0,
         rows,
@@ -607,26 +429,29 @@ export function createSandGame(container, opts = {}) {
     // Deterministic hooks for the headless pan/flicker benchmark
     // (scripts/bench-pan.mjs). DEV-only, same guard as __sandPerf above.
     window.__sandTest = {
-      setCam(x, y) { camera.set(x, y); render(false); },
-      getCam() { return { x: camera.x, y: camera.y }; },
+      setCam(x, y) { engine?.cameraSet(x, y); render(false); },
+      getCam() { return engine ? engine.getCam() : { x: 0, y: 0 }; },
       render() { render(false); },
       setPaused(v) { testPaused = !!v; }, // freeze the sim so the flicker probe sees only pan changes
-      setGutter(v) { gutterOn = !!v; render(false); },
-      off() { return { offX: lastOffX, offY: lastOffY }; },
-      setSnap(v) { snapOff = !v; render(false); },
+      setGutter(v) { gutterOn = !!v; engine?.glSetFlags(gutterOn, snapOff); render(false); },
+      off() { return engine ? engine.glGetOffset() : { offX: 0, offY: 0 }; },
+      setSnap(v) { snapOff = !v; engine?.glSetFlags(gutterOn, snapOff); render(false); },
       info() { return { cols, rows, cellSize, cellDev, viewCols, viewRows, dpr: window.devicePixelRatio || 1, canvasW: canvas.width, canvasH: canvas.height }; },
       // cursor (canvas-relative CSS px) -> cell, same mapping as the real input path
-      cellAt(pxCss, pyCss) { return [Math.floor(camera.x + (pxCss * dpr) / cellDev), Math.floor(camera.y + (pyCss * dpr) / cellDev)]; },
-      // device-px top-left where a cell renders (for round-trip verification)
-      cellRect(cx, cy) { const camCol = Math.floor(camera.x), camRow = Math.floor(camera.y); return { x: (cx - camCol) * cellDev + lastOffX, y: (cy - camRow) * cellDev + lastOffY, size: cellDev }; },
+      cellAt(pxCss, pyCss) { const cam = engine ? engine.getCam() : { x: 0, y: 0 }; return [Math.floor(cam.x + (pxCss * dpr) / cellDev), Math.floor(cam.y + (pyCss * dpr) / cellDev)]; },
+      // device-px top-left where a cell renders (for round-trip verification). The
+      // snapped present offset lives in the engine now (engine.glGetOffset()).
+      cellRect(cx, cy) { const cam = engine ? engine.getCam() : { x: 0, y: 0 }; const camCol = Math.floor(cam.x), camRow = Math.floor(cam.y); const o = engine ? engine.glGetOffset() : { offX: 0, offY: 0 }; return { x: (cx - camCol) * cellDev + o.offX, y: (cy - camRow) * cellDev + o.offY, size: cellDev }; },
+      // read back a top-down RGBA region of the GL canvas (flicker probe)
+      readPixels(x, y, w, h) { return engine ? engine.glReadPixels(x, y, w, h) : new Uint8ClampedArray(w * h * 4); },
       // player hooks for the headless gameplay test (scripts / Playwright)
-      setPlayMode(v) { playMode = !!v; },
+      setPlayMode(v) { playMode = !!v; engine?.setPlayMode(playMode); },
       getPlayMode() { return playMode; },
       getPlayer() { return localPlayer(); },
       getPlayers() { return engine ? engine.getPlayers() : []; },
       renderedPlayers() { return playersForRender(); },
       localInput() { return currentLocalInput(); },
-      heldKeys() { return [...pressedKeys]; },
+      heldKeys() { return engine ? engine.getHeldKeys() : 0; },
       // world-replication hooks (mp-e2e): edit the host world + measure a region.
       gridHash() { return engine ? engine.gridHash() : 0; },
       erase(x, y, r) { engine?.eraseDisc(x, y, r); },
@@ -637,15 +462,17 @@ export function createSandGame(container, opts = {}) {
         return n;
       },
       setTool(name) { currentToolName = name; engine?.setTool(TOOL[name] ?? 0); },
-      setDrawMode(v) { drawModeOn = !!v; },
+      setDrawMode(v) { drawModeOn = !!v; engine?.setDrawMode(drawModeOn); },
       actionCount() { return engine ? engine.getPlayerActionCount() : 0; },
       // device-px center of the local player (for aiming real mouse events)
       playerScreen() {
         const p = localPlayer(); if (!p) return null;
-        const camCol = Math.floor(camera.x), camRow = Math.floor(camera.y);
+        const cam = engine ? engine.getCam() : { x: 0, y: 0 };
+        const camCol = Math.floor(cam.x), camRow = Math.floor(cam.y);
+        const o = engine ? engine.glGetOffset() : { offX: 0, offY: 0 };
         return {
-          x: ((p.x + p.w / 2 - camCol) * cellDev + lastOffX) / dpr,
-          y: ((p.y + p.h / 2 - camRow) * cellDev + lastOffY) / dpr,
+          x: ((p.x + p.w / 2 - camCol) * cellDev + o.offX) / dpr,
+          y: ((p.y + p.h / 2 - camRow) * cellDev + o.offY) / dpr,
         };
       },
     };
@@ -665,52 +492,21 @@ export function createSandGame(container, opts = {}) {
     };
   }
 
-  // Slide the persistent cellCanvas horizontally to mirror engine.shiftWorld, so
-  // streaming the world is a single cheap GPU copy instead of repainting the
-  // whole buffer (the old forceFullRender path — a ~per-cell fillPixelSpan over
-  // the entire buffer every ~second of panning, which caused the periodic stutter
-  // and made rigid bodies blink during the slow frame). The freshly exposed band
-  // is left stale here and repainted by syncCellCanvas from the engine's dirty
-  // chunks (shiftWorld marks that band dirty). drawImage onto the same canvas is
-  // well-defined for overlapping regions (it copies from a snapshot).
-  const shiftCellCanvas = (dx) => {
-    if (!dx) return;
-    if (dx > 0) {
-      if (cols - dx > 0) cellCtx.drawImage(cellCanvas, dx, 0, cols - dx, rows, 0, 0, cols - dx, rows);
-    } else {
-      const s = -dx;
-      if (cols - s > 0) cellCtx.drawImage(cellCanvas, 0, 0, cols - s, rows, s, 0, cols - s, rows);
-    }
-  };
-
   // ---- local player input + camera follow (play mode) ----
   const localPlayer = () => (engine && localPlayerId ? engine.getPlayer(localPlayerId) : null);
-  const playerInputBits = () => {
-    let bits = 0;
-    if (pressedKeys.has('a') || pressedKeys.has('arrowleft')) bits |= INPUT.LEFT;
-    if (pressedKeys.has('d') || pressedKeys.has('arrowright')) bits |= INPUT.RIGHT;
-    if (pressedKeys.has('w') || pressedKeys.has('arrowup') || pressedKeys.has(' ')) bits |= INPUT.JUMP;
-    if (pressedKeys.has('s') || pressedKeys.has('arrowdown')) bits |= INPUT.DOWN;
-    if (pressedKeys.has('shift')) bits |= INPUT.RUN;
-    return bits;
-  };
-  // Normalized local input each step (keyboard + mouse-as-primary/secondary).
+  // Normalized local input each step — the engine builds the bitmask (held keys +
+  // mouse-as-primary/secondary) and the aim cell from the forwarded pointer. The
+  // net layer sends this to the host.
   const currentLocalInput = () => {
-    let bits = playerInputBits();
-    if (drawModeOn && inside) {
-      if (mouseButtons & 1) bits |= INPUT.PRIMARY;
-      if (mouseButtons & 2) bits |= INPUT.SECONDARY;
-    }
-    return { bits, aimX: toCellX(), aimY: toCellY(), tool: TOOL[currentToolName] ?? 0 };
+    const a = engine ? engine.getAim() : { x: 0, y: 0 };
+    return { bits: engine ? engine.localInputBits() : 0, aimX: a.x, aimY: a.y, tool: TOOL[currentToolName] ?? 0 };
   };
-  // Glide the camera toward the followed player's center, clamped to bounds. On a
-  // client the followed player is our host-authoritative snapshot entity.
+  // Glide the camera toward the followed player's center (clamp + lerp in C++).
+  // On a client the followed player is our host-authoritative snapshot entity.
   const followCamera = () => {
     const p = (net && net.role === 'client') ? net.getOwnPlayer() : localPlayer();
-    if (!p) return;
-    const tx = p.x + p.w / 2 - viewCols / 2;
-    const ty = p.y + p.h / 2 - viewRows / 2;
-    camera.set(camera.x + (tx - camera.x) * 0.18, camera.y + (ty - camera.y) * 0.18);
+    if (!p || !engine) return;
+    engine.cameraFollowTo(p.x + p.w / 2, p.y + p.h / 2);
   };
 
   // Multiplayer glue. Host runs the engine; clients render players from snapshots.
@@ -720,7 +516,6 @@ export function createSandGame(container, opts = {}) {
     getSpawn: () => surfaceSpawn(Math.floor(cols / 2) + Math.floor((Math.random() - 0.5) * 24)),
   });
   const playersForRender = () => (net.role === 'client' ? net.getPlayersForRender() : engine.getPlayers());
-  const renderOwnId = () => (net.role === 'client' ? net.ownPlayerId : localPlayerId);
   const netHost = (url, room) => net.hostRoom(url, room);
   const netJoin = (url, room) => {
     if (localPlayerId) { engine.removePlayer(localPlayerId); localPlayerId = 0; } // host owns it now
@@ -740,18 +535,12 @@ export function createSandGame(container, opts = {}) {
     const isClient = net.role === 'client';
     // A client doesn't stream or simulate the shared world — the host is
     // authoritative and replicates it via diffs (applied in net.update).
+    // streamWorld() slides the buffer, the cell texture, and the camera in lockstep.
+    if (!isClient) engine.streamWorld();
+    // Apply this frame's local input: feed the player (play mode) or run the
+    // active tool at the aim cell (draw mode). The engine decides which.
     if (!isClient) {
-      const dx = engine.maybeShiftWorld(camera.colX, viewCols, SHIFT_EDGE_MARGIN);
-      if (dx) {
-        shiftCellCanvas(dx); // new band repaints from the engine's dirty chunks
-        camera.set(camera.x - dx, camera.y);
-      }
-    }
-    if (playMode && localPlayerId && !isClient) {
-      const inp = currentLocalInput();
-      engine.setPlayerInput(localPlayerId, { ...inp, seq: ++inputSeq });
-    } else if (!playMode && !isClient) {
-      if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
+      if (engine.applyLocalInput(localPlayerId, now, ++inputSeq)) previewDirty = true;
     }
     if (net.connected) net.update();
     const didStep = isClient ? false : engine.step(now);
@@ -772,28 +561,17 @@ export function createSandGame(container, opts = {}) {
     raf = requestAnimationFrame(loop);
     if (reduced) return;
 
-    if (clientX >= 0 && clientY >= 0) {
-      inside = clientX >= wrapBounds.left && clientX <= wrapBounds.right && clientY <= wrapBounds.bottom && clientY >= wrapBounds.top;
-      px = clientX - wrapBounds.left; py = clientY - wrapBounds.top;
-    }
+    // Keep the engine's pointer fresh as the page scrolls under a static cursor
+    // (re-derives inside/aim from the new canvas bounds).
+    if (clientX >= 0 && clientY >= 0) updatePointer(clientX, clientY);
 
-    // Per-frame camera pan: scaled by real frame time so motion is smooth at any
-    // refresh rate, independent of the fixed sim step. Sign-normalized so
-    // opposite keys cancel and WASD+arrows don't double-speed. Frame dt is
-    // clamped so a long stall (e.g. tab refocus) can't produce a big jump.
+    // Per-frame camera pan (free-camera mode): the engine pans from held keys,
+    // scaled by real frame time so motion is smooth at any refresh rate. Frame dt
+    // is clamped so a long stall (e.g. tab refocus) can't produce a big jump. In
+    // play mode the keys drive the player and the camera follows it (below).
     const frameDt = Math.min(MAX_FRAME_DT, now - lastFrame);
     lastFrame = now;
-    // Free-camera (debug) mode only: WASD/arrows pan the buffer. In play mode the
-    // same keys drive the player and the camera follows it (below).
-    if (!playMode) {
-      let panX = 0, panY = 0;
-      for (const k of pressedKeys) { const d = PAN_KEYS[k]; if (!d) continue; panX += d[0]; panY += d[1]; }
-      if (panX || panY) {
-        const dist = PAN_CELLS_PER_SEC * (frameDt / 1000);
-        camera.panBy(Math.sign(panX) * dist, Math.sign(panY) * dist);
-        previewDirty = previewVisible; // re-place any draft overlay at the new offset
-      }
-    }
+    engine?.cameraPanFrame(frameDt);
 
     // Fixed-timestep simulation: world-shift + tool application + engine.step
     // run at STEP_MS for determinism, independent of the per-frame pan above.
@@ -810,11 +588,12 @@ export function createSandGame(container, opts = {}) {
     // Present every frame the camera moved or the sim changed. A camera-only
     // frame is a cheap GPU blit (render() does no CPU pixel work when content
     // is unchanged), so this is safe to run at the display refresh rate.
-    const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
+    const cam = engine ? engine.getCam() : { x: lastCamX, y: lastCamY };
+    const camMoved = cam.x !== lastCamX || cam.y !== lastCamY;
     // A connected client animates remote players from snapshots even when its own
-    // grid is static, so keep presenting.
-    if (stepped || camMoved || (net.connected && net.role === 'client')) render(false);
-    if (previewDirty || previewVisible) renderPreview();
+    // grid is static, so keep presenting. previewDirty forces a present when a
+    // fresh draft overlay appears with no camera/step change.
+    if (stepped || camMoved || previewDirty || (net.connected && net.role === 'client')) render(false);
   };
   raf = requestAnimationFrame(loop);
 
@@ -841,14 +620,13 @@ export function createSandGame(container, opts = {}) {
       mqReduced.removeListener?.(onReducedChange);
     }
     canvas.remove();
-    previewCanvas.remove();
   };
 
   return {
     setTool(id) { currentToolName = id; engine?.setTool(TOOL[id] ?? 0); },
-    setDrawMode(on) { drawModeOn = !!on; },
+    setDrawMode(on) { drawModeOn = !!on; engine?.setDrawMode(drawModeOn); },
     getDrawMode() { return drawModeOn; },
-    setPlayMode(on) { playMode = !!on; },
+    setPlayMode(on) { playMode = !!on; engine?.setPlayMode(playMode); },
     getPlayMode() { return playMode; },
     netHost(url, room) { return netHost(url, room); },
     netJoin(url, room) { return netJoin(url, room); },

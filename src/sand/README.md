@@ -145,8 +145,18 @@ applies it so both see the same sand world:
   client whose buffer differs keeps its own local world. Independent far-apart
   exploration isn't supported yet.
 
-Still to come: client prediction/reconciliation (Phase 7) and host hardening
-(Phase 8).
+**Prediction + reconciliation (Phase 7).** `net/predict.js` lets the client
+simulate its own player immediately (no input lag) and reconcile against the
+host: it records each local input, and when an authoritative snapshot arrives it
+snaps the player to the host state (`engine.setPlayerState`, including the hidden
+`jumpReady`) and replays the inputs the host hasn't processed yet
+(`engine.stepPlayerOnly` — one player, no world sim). Because the physics is
+deterministic, prediction is exact and a mismatch converges in one correction;
+render error is eased in (hard-snapped past a threshold). Reordered corrections
+are ignored; a lost one is recovered by the next snapshot. `test:net` covers
+zero-latency, ~100ms latency, mismatch convergence, reorder, and loss.
+
+Still to come: host hardening (Phase 8).
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

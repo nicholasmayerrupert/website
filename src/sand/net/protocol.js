@@ -57,7 +57,7 @@ export function makeSnapshot(tick, players, hash = null) {
     hash: hash == null ? null : (hash >>> 0),
     players: players.map((p) => ({
       id: p.id | 0, x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0,
-      facing: p.facing | 0, grounded: p.grounded ? 1 : 0,
+      facing: p.facing | 0, grounded: p.grounded ? 1 : 0, jr: p.jumpReady ? 1 : 0,
       tool: p.tool | 0, health: p.health | 0, seq: (p.inputSeq ?? p.seq ?? 0) >>> 0,
     })),
   };

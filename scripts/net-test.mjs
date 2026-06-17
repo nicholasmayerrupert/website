@@ -9,7 +9,9 @@ import {
 import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/client.js';
 import { Host } from '../src/sand/net/host.js';
 import { encodeWorld, encodeDiff, applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
+import { Predictor } from '../src/sand/net/predict.js';
 import { startServer } from './dev-multiplayer-server.mjs';
+import { approxEqual } from './sand-test-util.mjs';
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
 import { gridHash } from './sand-test-util.mjs';
 
@@ -258,6 +260,103 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   applyWorldMessage(latecomer, decode(encode(encodeWorld(host, 7))));
   check('join-in-progress client matches host world', latecomer.gridHash() === host.gridHash());
   host.destroy(); latecomer.destroy();
+}
+
+// 12. client prediction + reconciliation (Phase 7). Player physics is
+//     deterministic, so prediction is exact and corrections converge in one step.
+{
+  console.log('prediction / reconciliation');
+  // identical flat-floor engines (player only interacts with the painted floor).
+  const makePlayerEngine = () => {
+    const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x2222, sinksOn: false });
+    for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+    e.finalizeStoneDraft();
+    return e;
+  };
+  const authState = (e, id) => { const p = e.getPlayer(id); return { x: p.x, y: p.y, vx: p.vx, vy: p.vy, facing: p.facing, grounded: p.grounded, jumpReady: p.jumpReady }; };
+  // a deterministic input program
+  const program = [];
+  for (let i = 0; i < 120; i++) { let b = i < 60 ? INPUT.RIGHT : INPUT.LEFT; if (i % 20 === 0) b |= INPUT.JUMP; program.push(b); }
+
+  // 12a. zero-latency prediction matches the host exactly (stepPlayerOnly vs step).
+  {
+    const host = makePlayerEngine(); const hid = host.spawnPlayer(100, 80);
+    const client = makePlayerEngine(); const cid = client.spawnPlayer(100, 80);
+    const pred = new Predictor(client, cid);
+    for (let i = 0; i < program.length; i++) {
+      host.setPlayerInput(hid, { bits: program[i], seq: i }); host.step(16 * i);
+      pred.predict(i, { bits: program[i] });
+    }
+    const hp = host.getPlayer(hid), cp = pred.state();
+    check(`zero-latency prediction matches host (${cp.x.toFixed(2)} == ${hp.x.toFixed(2)})`, cp.x === hp.x && cp.y === hp.y && cp.vx === hp.vx);
+    host.destroy(); client.destroy();
+  }
+
+  // 12b. with ~100ms (6-frame) latency the predicted position stays within
+  //      tolerance of where the host eventually is for the same input.
+  {
+    const LAG = 6;
+    const host = makePlayerEngine(); const hid = host.spawnPlayer(100, 80);
+    const states = [];
+    for (let i = 0; i < program.length; i++) { host.setPlayerInput(hid, { bits: program[i], seq: i }); host.step(16 * i); states.push(authState(host, hid)); }
+    const client = makePlayerEngine(); const cid = client.spawnPlayer(100, 80);
+    const pred = new Predictor(client, cid);
+    let maxErr = 0;
+    for (let i = 0; i < program.length; i++) {
+      pred.predict(i, { bits: program[i] });
+      const ackSeq = i - LAG; // the host's correction arrives LAG frames late
+      if (ackSeq >= 0) {
+        const cur = pred.state();
+        pred.reconcile(states[ackSeq], ackSeq);
+        maxErr = Math.max(maxErr, Math.hypot(cur.x - pred.state().x, cur.y - pred.state().y));
+      }
+    }
+    const cp = pred.state(), hp = states[states.length - 1];
+    check(`100ms-latency prediction within tolerance (maxErr ${maxErr.toFixed(3)})`, maxErr < 0.001);
+    check('predicted final matches host authoritative', approxEqual(cp.x, hp.x, 1e-6) && approxEqual(cp.y, hp.y, 1e-6));
+    host.destroy(); client.destroy();
+  }
+
+  // 12c. a correction after an artificial mismatch converges in one reconcile.
+  {
+    const host = makePlayerEngine(); const hid = host.spawnPlayer(100, 80);
+    const client = makePlayerEngine(); const cid = client.spawnPlayer(100, 80);
+    const pred = new Predictor(client, cid);
+    for (let i = 0; i < 40; i++) { host.setPlayerInput(hid, { bits: program[i], seq: i }); host.step(16 * i); pred.predict(i, { bits: program[i] }); }
+    // corrupt the client's predicted state (simulate divergence)
+    client.setPlayerState(cid, { x: 5, y: 5, vx: 0, vy: 0, facing: 1, grounded: false });
+    check('client diverged', pred.state().x !== host.getPlayer(hid).x);
+    pred.reconcile(authState(host, hid), 39); // all inputs acked -> snap to truth
+    check('correction converges to host', pred.state().x === host.getPlayer(hid).x && pred.state().y === host.getPlayer(hid).y);
+    host.destroy(); client.destroy();
+  }
+
+  // 12d. a reordered (older) correction is ignored, not applied over newer state.
+  {
+    const client = makePlayerEngine(); const cid = client.spawnPlayer(100, 80);
+    const pred = new Predictor(client, cid);
+    for (let i = 0; i < 20; i++) pred.predict(i, { bits: INPUT.RIGHT });
+    pred.reconcile({ x: 120, y: 82, vx: 0, vy: 0, facing: 1, grounded: true }, 15);
+    const afterNew = pred.state().x;
+    pred.reconcile({ x: 40, y: 82, vx: 0, vy: 0, facing: 1, grounded: true }, 8); // older -> ignore
+    check(`reordered correction ignored (${pred.state().x.toFixed(2)} == ${afterNew.toFixed(2)})`, pred.state().x === afterNew);
+    client.destroy();
+  }
+
+  // 12e. a lost correction is recovered by the next one (snap-to-authority).
+  {
+    const host = makePlayerEngine(); const hid = host.spawnPlayer(100, 80);
+    const states = [];
+    for (let i = 0; i < 60; i++) { host.setPlayerInput(hid, { bits: program[i], seq: i }); host.step(16 * i); states.push(authState(host, hid)); }
+    const client = makePlayerEngine(); const cid = client.spawnPlayer(100, 80);
+    const pred = new Predictor(client, cid);
+    for (let i = 0; i < 60; i++) pred.predict(i, { bits: program[i] });
+    // corrupt, then "lose" the ack@30 and only deliver ack@59 -> must still recover
+    client.setPlayerState(cid, { x: 7, y: 7, vx: 9, vy: 9, facing: -1, grounded: false });
+    pred.reconcile(states[59], 59);
+    check('lost correction recovered by next snapshot', approxEqual(pred.state().x, states[59].x, 1e-6) && approxEqual(pred.state().y, states[59].y, 1e-6));
+    host.destroy(); client.destroy();
+  }
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

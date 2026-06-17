@@ -103,6 +103,8 @@ export function initSandWasm() {
         playerSnapshotPtr: c('engine_player_snapshot_ptr', 'number', ['number']),
         playerSnapshotStride: c('engine_player_snapshot_stride', 'number', ['number']),
         playerActionCount: c('engine_player_action_count', 'number', ['number']),
+        stepPlayerOnly: c('engine_step_player_only', null, ['number', 'number']),
+        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         serializeWorld: c('engine_serialize_world', 'number', ['number']),
         serializeDiff: c('engine_serialize_diff', 'number', ['number']),
         netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
@@ -274,13 +276,19 @@ export function createEngineWasm({
           w: f[o + 6] | 0, h: f[o + 7] | 0, facing: f[o + 8] | 0,
           grounded: f[o + 9] === 1, tool: f[o + 10] | 0,
           aimX: f[o + 11], aimY: f[o + 12], health: f[o + 13] | 0,
-          inputSeq: f[o + 14] >>> 0, alive: f[o + 15] === 1,
+          inputSeq: f[o + 14] >>> 0, alive: f[o + 15] === 1, jumpReady: f[o + 16] === 1,
         };
       }
       return out;
     },
     getPlayer(id) { return this.getPlayers().find((p) => p.id === id) || null; },
     getPlayerActionCount() { return M.playerActionCount(ptr); },
+    // Prediction: step one player's physics without the world sim; snap a player
+    // to an authoritative state before replaying unacknowledged inputs.
+    stepPlayerOnly(id) { M.stepPlayerOnly(ptr, id); },
+    setPlayerState(id, { x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false }) {
+      M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0, jumpReady ? 1 : 0);
+    },
 
     // World replication (Phase 6). serialize* return a COPY of the bytes (the
     // blob is re-derived each call; copy so callers can hold it). apply* take a

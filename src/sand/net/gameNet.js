@@ -15,6 +15,7 @@
 import { Host } from './host.js';
 import { encode, decode, makeInput, makeJoin, makeLeave, makeSnapshot, makeAssign, makeResync, MSG } from './protocol.js';
 import { encodeWorld, encodeDiff, applyWorldMessage, applyDiffMessage } from './worldSync.js';
+import { Predictor } from './predict.js';
 
 const SNAPSHOT_INTERVAL = 3;     // steps between host snapshot broadcasts (~20Hz)
 const SMOOTH = 0.35;             // client render smoothing toward the latest snapshot
@@ -28,6 +29,7 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
   let ws = null, role = null, room = null, clientId = null, connected = false;
   let host = null;                 // Host instance (host role only)
   let ownPlayerId = 0;             // client: my authoritative player id on the host
+  let predictor = null, predId = 0; // client: local prediction of our own player
   let inputSeq = 0, snapCounter = 0, sinceSnap = 0;
   let worldReady = false;     // client: has the initial world snapshot been applied?
   let worldDimsMismatch = false; // client: host buffer size differs from ours (degraded)
@@ -81,6 +83,7 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
     }
     ws = null; role = null; host = null; connected = false;
     ownPlayerId = 0; inputSeq = 0; worldReady = false; worldDimsMismatch = false;
+    predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
     setStatus('offline');
   }
@@ -103,7 +106,15 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
   function handleClient(m) {
     switch (m.t) {
       case MSG.ASSIGN: if (m.client === clientId) ownPlayerId = m.player; break;
-      case MSG.SNAPSHOT: ingestSnapshot(m); break;
+      case MSG.SNAPSHOT: {
+        ingestSnapshot(m);
+        // reconcile our prediction against the host's authoritative own-player.
+        if (ownPlayerId) {
+          const op = m.players.find((p) => p.id === ownPlayerId);
+          if (op) reconcilePredictor(op);
+        }
+        break;
+      }
       case MSG.WORLD: {
         const e = engineNow();
         if (m.cols !== e.cols || m.rows !== e.rows) { worldDimsMismatch = true; break; } // size differs -> can't replicate (MVP)
@@ -117,6 +128,14 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
       }
       default: break;
     }
+  }
+
+  // Client: snap our local prediction to the host's authoritative own-player and
+  // replay unacknowledged inputs (lazily spawns the prediction player).
+  function reconcilePredictor(op) {
+    const e = engineNow();
+    if (!predictor) { predId = e.spawnPlayer(op.x, op.y); predictor = new Predictor(e, predId); }
+    predictor.reconcile({ x: op.x, y: op.y, vx: op.vx, vy: op.vy, facing: op.facing, grounded: !!op.grounded, jumpReady: !!op.jr }, op.seq >>> 0);
   }
 
   function ingestSnapshot(m) {
@@ -159,9 +178,10 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
         r.x += (r.tx - r.x) * SMOOTH;
         r.y += (r.ty - r.y) * SMOOTH;
       }
-      // send local input to the host
+      // send local input to the host AND predict it locally (immediate, no lag).
       const inp = getLocalInput();
       send(makeInput({ room, client: clientId, player: ownPlayerId, tick: inputSeq, seq: inputSeq, bits: inp.bits, aimX: inp.aimX, aimY: inp.aimY, tool: inp.tool }));
+      if (predictor) predictor.predict(inputSeq, inp);
       if (inp.bits) dbgSent++;
       inputSeq++;
     }
@@ -171,12 +191,18 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
   // smoothed snapshot entities.
   function getPlayersForRender() {
     if (role !== 'client') return engineNow().getPlayers();
+    const own = getOwnPlayer();
     const out = [];
-    for (const [id, r] of remotes) out.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded, tool: r.tool ?? 0 });
+    for (const [id, r] of remotes) {
+      if (id === ownPlayerId && own) { out.push({ id, x: own.x, y: own.y, w: own.w, h: own.h, facing: own.facing, grounded: own.grounded, tool: r.tool ?? 0 }); continue; }
+      out.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded, tool: r.tool ?? 0 });
+    }
     return out;
   }
   function getOwnPlayer() {
     if (role !== 'client') return null;
+    // predicted (responsive) state when available; else the raw snapshot entity.
+    if (predictor) { const ps = predictor.renderState(); if (ps) return { id: ownPlayerId, x: ps.x, y: ps.y, w: ps.w ?? DEFAULT_W, h: ps.h ?? DEFAULT_H, facing: ps.facing, grounded: ps.grounded }; }
     const r = remotes.get(ownPlayerId);
     return r ? { id: ownPlayerId, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded } : null;
   }

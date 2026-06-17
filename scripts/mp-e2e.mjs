@@ -121,10 +121,15 @@ try {
   const beforeHost = await solidIn(host.page), beforeClient = await solidIn(client.page);
   check(`client world matches host before edit (client ${beforeClient} ~ host ${beforeHost})`, beforeHost > 0 && Math.abs(beforeClient - beforeHost) <= 2);
 
-  // host digs a hole in that region; the diff must carry it to the client.
+  // host digs a hole in that region; the diff must carry it to the client. Poll
+  // host-tick + client-tick until the change converges (tolerant of ws jitter).
   await host.page.evaluate(([x, y]) => window.__sandTest.erase(x, y, 7), [cx, ey]);
-  for (let i = 0; i < 5; i++) { await host.page.evaluate(() => window.__sandNet.tickSteps(2)); await sleep(40); await client.page.evaluate(() => window.__sandNet.tickSteps(2)); }
-  const afterHost = await solidIn(host.page), afterClient = await solidIn(client.page);
+  let afterHost = beforeHost, afterClient = beforeClient;
+  for (let i = 0; i < 15; i++) {
+    await host.page.evaluate(() => window.__sandNet.tickSteps(2)); await sleep(40); await client.page.evaluate(() => window.__sandNet.tickSteps(2));
+    afterHost = await solidIn(host.page); afterClient = await solidIn(client.page);
+    if (afterHost < beforeHost && Math.abs(afterClient - afterHost) <= 8) break;
+  }
   check(`host edit replicated to client (host ${beforeHost}->${afterHost}, client ${beforeClient}->${afterClient})`, afterHost < beforeHost && afterClient < beforeClient && Math.abs(afterClient - afterHost) <= 8);
 
   // disconnect the client -> the host drops the remote player

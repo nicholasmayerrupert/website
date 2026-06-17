@@ -116,8 +116,6 @@ void integratePlayer(Player& p) {
   bool blockedDown = false;
   if (tryMoveY(p, p.vy)) { blockedDown = (p.vy > 0); p.vy = 0; }
   p.grounded = blockedDown;
-
-  p.prevInput = p.input;
 }
 
 // ---- player-mediated tool use (Terraria-like dig/build) ----
@@ -194,6 +192,23 @@ void updatePlayers() {
   applyPlayerTools();
 }
 
+// ---- client-side prediction support ----
+// Step ONE player's physics against the current grid, without running the world
+// simulation. The client predicts its own player this way (the host owns the
+// world), recording inputs to replay after a server correction.
+void stepPlayerOnly(int id) {
+  Player* p = findPlayer(id);
+  if (p && p->active && p->alive) integratePlayer(*p);
+}
+// Snap a player to an authoritative state (reconciliation), before replaying its
+// unacknowledged inputs.
+void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) {
+  Player* p = findPlayer(id);
+  if (!p) return;
+  p->px = x; p->py = y; p->vx = vx; p->vy = vy;
+  p->facing = facing; p->grounded = grounded != 0; p->jumpReady = jumpReady != 0;
+}
+
 // Pack all players into playerSnapshot as flat float32 records (stride
 // PLAYER_SNAP_STRIDE). JS reads this zero-copy to draw the player overlay.
 int buildPlayerSnapshot() {
@@ -217,6 +232,7 @@ int buildPlayerSnapshot() {
     o[13] = (float)p.health;
     o[14] = (float)p.inputSeq;
     o[15] = p.alive ? 1.0f : 0.0f;
+    o[16] = p.jumpReady ? 1.0f : 0.0f; // hidden jump state, needed for reconciliation
   }
   return (int)players.size();
 }

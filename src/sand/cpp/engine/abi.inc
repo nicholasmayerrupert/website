@@ -97,6 +97,8 @@ EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->buildPlay
 EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->playerSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_player_snapshot_stride(Engine* e) { return PLAYER_SNAP_STRIDE; }
 EMSCRIPTEN_KEEPALIVE int engine_player_action_count(Engine* e) { return e->playerActionCount; }
+EMSCRIPTEN_KEEPALIVE void engine_step_player_only(Engine* e, int id) { e->stepPlayerOnly(id); }
+EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
 
 // world replication (Phase 6): serialize/apply full snapshots + dirty diffs.
 EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->serializeWorld(); }

@@ -131,14 +131,14 @@ struct Player {
   bool grounded = false;
   int selectedTool = T_ERASER;
   double aimX = 0, aimY = 0; // cell coords of the aim/cursor
-  int input = 0, prevInput = 0;
+  int input = 0;
   bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
   int toolCooldown = 0; // steps remaining before this player can act again
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
-static const int PLAYER_SNAP_STRIDE = 16;
+static const int PLAYER_SNAP_STRIDE = 17;
 
 // Rigid tunables (rigid2d.js)
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.6;

@@ -284,6 +284,21 @@
     return (x > 1 && grid[k - 1] == EMPTY) || (x < cols - 2 && grid[k + 1] == EMPTY) ||
            (y < rows - 1 && grid[k + cols] == EMPTY);
   }
+  // Is this surface cell next to an INTERNAL hole — a 1-wide empty gap in the liquid
+  // layer with more of our liquid on its far side? Such a hole CAN be coalesced away
+  // (relaxLiquidGaps migrates it to an edge); an OPEN edge (empty-empty beyond) or a
+  // 1-lower neighbouring column (empty over liquid = a gentle slope) is NOT an
+  // internal hole, so a flat-but-ragged surface or a settled puddle still goes inert.
+  inline bool adjacentInternalHole(int k, uint8_t m) {
+    int x = k % cols, y = k / cols;
+    if (y + 1 >= rows) return false;
+    // The hole must also have SUPPORT below it (non-empty) — that is the gap
+    // relaxLiquidGaps actually fills. A hole with empty below is a rising bubble the
+    // fall handles, not a coalesce target, and re-marking on it would spin forever.
+    if (x > 2 && grid[k - 1] == EMPTY && grid[k - 2] == m && grid[k - 1 + cols] != EMPTY) return true;
+    if (x < cols - 3 && grid[k + 1] == EMPTY && grid[k + 2] == m && grid[k + 1 + cols] != EMPTY) return true;
+    return false;
+  }
   inline void writeGridIndex(int k, uint8_t m) { if (grid[k] == m) return; grid[k] = m; markCellIndex(k); }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
   inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }

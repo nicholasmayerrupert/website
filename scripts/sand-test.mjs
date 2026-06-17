@@ -229,5 +229,30 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Oil dropped onto a water pool on ONE SIDE must spread, separate, level to a flat
+// oil/water boundary, and SETTLE — not freeze as a mound and not shimmer forever.
+// Guards the liquid levelling/coalescence behaviour (the "drop oil into water" case).
+{
+  console.log('oil on water levels to a flat boundary + settles');
+  const OIL = 4;
+  const e = mk();
+  const L = 70, R = 110, floorY = 100, top = 40; // grounded stone basin
+  for (let y = top; y <= floorY; y++) { e.paintDisc(L, y, 0, 3, true); e.paintDisc(R, y, 0, 3, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, 3, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 18; y < floorY; y++) e.paintDisc(x, y, 0, 2, true); // water
+  let t = 0; for (let i = 0; i < 400; i++) { t += 16; if (!e.step(t)) break; }
+  for (let x = L + 1; x <= L + 8; x++) for (let y = floorY - 30; y < floorY - 18; y++) e.paintDisc(x, y, 0, OIL, true); // oil on the left
+  let settledAt = -1; for (let i = 0; i < 6000; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`oil/water scene settles to inert (step ${settledAt})`, settledAt >= 0);
+  // measure flatness: per column, the bottom-most oil row (the oil/water boundary)
+  const g = e.getGrid(); let bots = [], oilN = 0;
+  for (let x = L + 1; x < R; x++) { let b = -1; for (let y = top; y <= floorY; y++) if (g[y * COLS + x] === OIL) { b = y; oilN++; } if (b >= 0) bots.push(b); }
+  const spread = bots.length ? Math.max(...bots) - Math.min(...bots) : -1;
+  check(`oil spread across the surface and separated (${oilN} cells, ${bots.length} cols)`, bots.length > 25);
+  check(`oil/water boundary is flat (spread ${spread})`, spread >= 0 && spread <= 1);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

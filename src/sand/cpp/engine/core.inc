@@ -66,7 +66,7 @@
       // sideways across a flat floor just shuffles cells and churns the diff forever.
       // Go inert (re-wakes via dirty padding if a neighbour later opens a lower path).
       // PRESSURED cells (liquid above) keep the normal re-mark so columns still drain.
-      if (next[k] == EMPTY) { next[k] = m; if (hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k); }
+      if (next[k] == EMPTY) { next[k] = m; if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) || adjacentInternalHole(k, m)) markCellIndex(k); }
       return;
     }
     // Same-level sideways spread ONLY under pressure (liquid stacked directly
@@ -96,7 +96,7 @@
       }
       return;
     }
-    if (next[k] == EMPTY) { next[k] = m; if (touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k); }
+    if (next[k] == EMPTY) { next[k] = m; if (touchesUnstableLooseDensityInterface(k, m) || adjacentInternalHole(k, m)) markCellIndex(k); }
   }
   void settleLava(int x, int y, int k) { if (next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
   void relaxLiquidGaps() {
@@ -109,8 +109,13 @@
         if (grid[I(x, y + 1)] == EMPTY) continue;
         int aboveK = I(x, y - 1); uint8_t above = grid[aboveK];
         if (above == WATER || above == ACID || above == OIL) { writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY); continue; }
-        const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = grid[sk]; if (side != WATER && side != OIL && side != ACID) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (grid[k] != EMPTY) break; }
+        // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
+        // always migrates the same way — toward the layer's edge, where it vanishes.
+        // A holey liquid layer (e.g. oil arriving at the surface in scattered spots)
+        // thus coalesces into a solid, flat layer and SETTLES, instead of the random
+        // fill shuffling the holes around forever (perpetual churn).
+        static const int FILL_DIRS[2] = { -1, 1 };
+        for (int i = 0; i < 2; i++) { int dx = FILL_DIRS[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = grid[sk]; if (side != WATER && side != OIL && side != ACID) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (grid[k] != EMPTY) break; }
       }
     }
   }

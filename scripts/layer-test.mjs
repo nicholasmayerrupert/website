@@ -192,5 +192,53 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('player LMB placed sand in the foreground', countIn(e.getGrid(), MAT.SAND) > fgSand0, `(${fgSand0} -> ${countIn(e.getGrid(), MAT.SAND)})`);
 }
 
+// 11. Cross-layer support: a grounded solid in one layer holds up a solid at the
+//     SAME cells in the other layer (the user's "stone in front of a bg pillar").
+{
+  console.log('cross-layer support: bg pillar holds up fg stone');
+  const e = mk();
+  e.setBgEnabled(true);
+  // grounded background pillar reaching the floor at x in [28..32]
+  for (let x = 28; x <= 32; x++) for (let y = 55; y < ROWS; y++) e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(1);
+  // floating foreground stone directly IN FRONT of the pillar (no fg ground under it)
+  for (let x = 28; x <= 32; x++) for (let y = 55; y <= 62; y++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  const fgBefore = countIn(e.getGrid(), MAT.STONE);
+  step(e, 120);
+  const fg = e.getGrid();
+  check('fg stone count preserved', countIn(fg, MAT.STONE) === fgBefore, `(${fgBefore})`);
+  check('fg stone stayed in place (supported by bg)', fg[k(30, 55)] === MAT.STONE && fg[k(30, 62)] === MAT.STONE);
+}
+
+// 12. Control: with the background enabled but EMPTY behind it, the same floating
+//     fg stone is unsupported and falls — proves the support test isn't trivial.
+{
+  console.log('cross-layer support: control — unsupported fg stone falls');
+  const e = mk();
+  e.setBgEnabled(true); // bg live but empty -> no backing
+  for (let x = 28; x <= 32; x++) for (let y = 55; y <= 62; y++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  step(e, 120);
+  const fg = e.getGrid();
+  check('unsupported fg stone left its start rows', fg[k(30, 55)] === MAT.EMPTY);
+  check('unsupported fg stone fell to the floor', fg[k(30, ROWS - 1)] === MAT.STONE);
+}
+
+// 13. No mutual mid-air float: blocks that support ONLY each other (neither
+//     reaches real ground) must both fall — the joint flood bottoms out at terrain.
+{
+  console.log('cross-layer support: mutual mid-air support does not float');
+  const e = mk();
+  e.setBgEnabled(true);
+  for (let x = 28; x <= 32; x++) for (let y = 30; y <= 37; y++) { e.paintDiscLayer(0, x, y, 0, MAT.STONE, true); e.paintDiscLayer(1, x, y, 0, MAT.STONE, true); }
+  e.syncComponentsLayer(0); e.syncComponentsLayer(1);
+  step(e, 140);
+  const fg = e.getGrid(), bg = e.getGridBg();
+  check('fg mutual block did not float', fg[k(30, 30)] === MAT.EMPTY);
+  check('bg mutual block did not float', bg[k(30, 30)] === MAT.EMPTY);
+  check('both mutual blocks reached the floor', fg[k(30, ROWS - 1)] === MAT.STONE && bg[k(30, ROWS - 1)] === MAT.STONE);
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

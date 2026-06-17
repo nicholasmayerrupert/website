@@ -29,6 +29,57 @@
     }
   }
 
+  // Cross-layer grounding: a grounded solid in one layer supports a rigid solid
+  // at the SAME cell in the other layer. Runs ONE joint flood over both grids
+  // (only when the background is live) so e.g. a grounded background stone pillar
+  // holds up foreground stone placed in front of it, and vice versa. The flood is
+  // seeded only from real floor/terrain in either layer, so a pair that supports
+  // *only each other* in mid-air never gets grounded and still falls. Fills BOTH
+  // layers' groundedCell / cellComp / comp.grounded exactly as two standalone
+  // computeGrounded() calls would (same stone|plant|ice indexing order, so the
+  // global cellComp ids that moveRigidAssemblies maps from are unchanged), plus
+  // the same-cell cross edges. Uses no RNG, so it never perturbs the sim stream.
+  void computeGroundedBoth() {
+    size_t n = (size_t)cols * rows;
+    uint8_t* fgG = fg.grid; uint8_t* bgG = bg.grid;
+    uint8_t* fgGr = fg.groundedCell.data(); uint8_t* bgGr = bg.groundedCell.data();
+    int32_t* fgCC = fg.cellComp.data(); int32_t* bgCC = bg.cellComp.data();
+    int32_t* fgStk = fg.groundStack.data(); int32_t* bgStk = bg.groundStack.data();
+    std::fill(fgGr, fgGr + n, (uint8_t)0); std::fill(bgGr, bgGr + n, (uint8_t)0);
+    std::fill(fgCC, fgCC + n, -1); std::fill(bgCC, bgCC + n, -1);
+    std::vector<Comp*> fgComps, bgComps;
+    auto indexComps = [&](std::vector<Comp>& list, std::vector<Comp*>& comps, int32_t* cc) {
+      for (auto& c : list) { c.grounded = false; int id = (int)comps.size(); comps.push_back(&c); for (int k : c.cells) cc[k] = id; }
+    };
+    indexComps(fg.stoneComponents, fgComps, fgCC); indexComps(fg.plantComponents, fgComps, fgCC); indexComps(fg.iceComponents, fgComps, fgCC);
+    indexComps(bg.stoneComponents, bgComps, bgCC); indexComps(bg.plantComponents, bgComps, bgCC); indexComps(bg.iceComponents, bgComps, bgCC);
+    int spF = 0, spB = 0;
+    auto groundAt = [&](int k, int lay) {
+      uint8_t* gr = lay ? bgGr : fgGr;
+      if (gr[k]) return;
+      gr[k] = 1;
+      int id = (lay ? bgCC : fgCC)[k];
+      if (id >= 0) (lay ? bgComps : fgComps)[id]->grounded = true;
+      if (lay) bgStk[spB++] = k; else fgStk[spF++] = k;
+    };
+    int floorBase = (rows - 1) * cols;
+    for (int x = 0; x < cols; x++) { int k = floorBase + x; if (isBearingMaterial(fgG[k])) groundAt(k, 0); if (isBearingMaterial(bgG[k])) groundAt(k, 1); }
+    for (int y = rows - 2; y > 0; y--) { int rb = y * cols; for (int x = 1; x < cols - 1; x++) { int k = rb + x; if (fgG[k] == SAND && fgG[k + cols] == LAVA) groundAt(k, 0); if (bgG[k] == SAND && bgG[k + cols] == LAVA) groundAt(k, 1); } }
+    while (spF > 0 || spB > 0) {
+      int lay, k;
+      if (spF > 0) { k = fgStk[--spF]; lay = 0; } else { k = bgStk[--spB]; lay = 1; }
+      uint8_t* g = lay ? bgG : fgG; uint8_t* gr = lay ? bgGr : fgGr;
+      int above = k - cols;
+      if (above >= 0 && !gr[above] && isBearingMaterial(g[above])) groundAt(above, lay);
+      if (isRigidMaterial(g[k])) {
+        int ky = k / cols, kx = k - ky * cols;
+        for (int oy = -1; oy <= 1; oy++) { int ny = ky + oy; if (ny <= 0 || ny >= rows) continue; int rb = ny * cols; for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = kx + ox; if (nx <= 0 || nx >= cols - 1) continue; int nk = rb + nx; if (!gr[nk] && isRigidMaterial(g[nk])) groundAt(nk, lay); } }
+      }
+      // cross-layer: this grounded solid backs a rigid solid at the same cell in the other layer
+      if (isRigidMaterial((lay ? fgG : bgG)[k])) groundAt(k, lay ^ 1);
+    }
+  }
+
   void moveRigidAssemblies() {
     // Only UNGROUNDED assemblies can move (fall/float) — grounded terrain stays
     // put (the per-group loop below `continue`s on grounded). computeGrounded

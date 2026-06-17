@@ -10,7 +10,7 @@
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
     double t0 = emscripten_get_now();
-    computeGrounded();
+    if (!jointGroundReady) computeGrounded(); // joint cross-layer flood already ran in step()
     double tG = emscripten_get_now(); perfStepGround = tG - t0;
     moveRigidAssemblies();
     moveBodies();
@@ -53,6 +53,12 @@
     if (!fgA && !bgA) { useLayer(&fg); return !players.empty(); }
     double t0 = emscripten_get_now();
     tick++;
+    // Cross-layer grounding: compute groundedness jointly over both layers up
+    // front so solids in one layer support solids at the same cell in the other
+    // (gated on bgEnabled -> single-layer scenes stay byte-identical). Each
+    // stepLayer() then skips its own first computeGrounded().
+    jointGroundReady = false;
+    if (bgEnabled) { computeGroundedBoth(); jointGroundReady = true; }
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
     if (bgA) stepLayer(&bg);
     crossLayerReactions(fgA, bgA);

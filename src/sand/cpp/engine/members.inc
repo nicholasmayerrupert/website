@@ -113,6 +113,11 @@
   // terrain or placed material). An empty/untouched background does not interact,
   // so a pure single-layer scene (e.g. the headless tests) is byte-identical.
   bool bgEnabled = false;
+  // When bgEnabled, step() runs ONE joint grounding flood over both layers up
+  // front (computeGroundedBoth) so solids support solids across layers; this flag
+  // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
+  // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
+  bool jointGroundReady = false;
   // ---- tool / pointer state (input policy ported from createSandGame) ----
   int activeTool = T_CUBE;
   bool lmbDown = false, rmbDown = false;

@@ -56,10 +56,17 @@
     if (flow != 0) { int stepX = x + flow; if (canLiquidEnter(stepX, y, m)) { moveLiquidInto(k, stepX, y, m); return; } }
     if (y + 1 < rows && supportsLiquid(grid[belowK], m)) {
       int aboveK = k - cols;
-      if (y > 1 && grid[aboveK] == m) {
+      bool hasAbove = (y > 1 && grid[aboveK] == m);
+      if (hasAbove) {
         for (int i = 0; i < 2; i++) { int dx = dirs[i]; int sideK = k + dx; if (x + dx <= 0 || x + dx >= cols - 1) continue; if (canEnterIndex(sideK, m) && supportsLiquid(grid[sideK + cols], m)) { moveMaterialInto(k, sideK, m); return; } }
       }
-      if (next[k] == EMPTY) writeNextIndex(k, m);
+      // Resting on support with no reachable lower opening (the flow scan above found
+      // none) and no liquid stacked above. This cell cannot make downward progress, so
+      // a same-level empty neighbour is NOT a real escape: spreading a 1-deep puddle
+      // sideways across a flat floor just shuffles cells and churns the diff forever.
+      // Go inert (re-wakes via dirty padding if a neighbour later opens a lower path).
+      // PRESSURED cells (liquid above) keep the normal re-mark so columns still drain.
+      if (next[k] == EMPTY) { next[k] = m; if (hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k); }
       return;
     }
     // Same-level sideways spread ONLY under pressure (liquid stacked directly
@@ -70,8 +77,23 @@
     // but keep the density-interface re-mark so liquids still separate by density.
     bool pressured = (y > 1 && grid[k - cols] == m);
     if (pressured) {
-      for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (canLiquidEnter(x + dx, y, m)) { moveLiquidInto(k, x + dx, y, m); return; } }
-      if (next[k] == EMPTY) writeNextIndex(k, m);
+      // Equalize sideways ONLY toward a genuinely-lower surface: the target must be
+      // open at this level AND have nothing of ours stacked directly above it. A gap
+      // that has the same liquid right above is about to be filled by a vertical
+      // fall, so sliding into it merely chases the gap sideways. A sub-row air bubble
+      // pinned at a ragged container bottom would otherwise shimmer left/right every
+      // step forever (both flanking cells are pressured and swap the gap), never
+      // settling — letting it rise to the free surface instead lets the body go inert.
+      for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (canLiquidEnter(nx, y, m) && !(grid[I(nx, y - 1)] == m)) { moveLiquidInto(k, nx, y, m); return; } }
+      // Cannot usefully equalize: only stay active (re-mark) if a vertical fall can
+      // still fill the gap beside us (liquid above the gap) — otherwise go inert so a
+      // settled-but-imperfectly-packed body stops churning the per-step diff.
+      if (next[k] == EMPTY) {
+        next[k] = m;
+        bool fillableGap = false;
+        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (grid[I(nx, y)] == EMPTY && y > 1 && grid[I(nx, y - 1)] == m) { fillableGap = true; break; } }
+        if (fillableGap || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
+      }
       return;
     }
     if (next[k] == EMPTY) { next[k] = m; if (touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k); }

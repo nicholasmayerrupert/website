@@ -117,10 +117,14 @@
   }
   bool tryTransfer(Layer* from, Layer* to, int x, int y, int k) {
     uint8_t m = from->grid[k];
-    // Only POWDERS cross layers. Liquids stay in their layer: an ocean's surface
-    // waves would otherwise bleed into the (solid, dry) background and strand thin
-    // shimmering puddles there. Powders (sand) settling between layers is fine.
-    if (MAT_KIND[m] != K_POWDER) return false;
+    // Powders AND liquids cross layers when stuck. The transfer only fires when the
+    // cell is stuck in `from` (nowhere to fall/flow in its own layer) AND can keep
+    // FALLING in `to` (canFall) — so it never bleeds sideways into a solid backdrop
+    // (generated bg is solid behind oceans, so canFall is false there: no churn).
+    // It DOES drain into space the player digs out in the other layer — e.g. mining
+    // the background under foreground water lets the water pour into the new channel
+    // on its own. Settling fluids (flat bodies go inert) keep this from shimmering.
+    if (!isLoose(m)) return false;
     if (to->grid[k] != EMPTY) return false;
     if (!stuckIn(from, x, y, m)) return false;
     if (!canFall(to, x, y, m)) return false;

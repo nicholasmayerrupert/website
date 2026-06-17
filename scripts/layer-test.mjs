@@ -240,5 +240,40 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('both mutual blocks reached the floor', fg[k(30, ROWS - 1)] === MAT.STONE && bg[k(30, ROWS - 1)] === MAT.STONE);
 }
 
+// 14. Liquids cross layers into space the player digs out. A sealed foreground
+//     basin of water with a SOLID background behind it; digging a background drain
+//     shaft (background-only, no foreground action) must let the water pour into
+//     the new channel on its own AND the scene must re-settle to inert (no churn).
+{
+  console.log('liquid drains into a dug-out background channel + re-settles');
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 30, W = 4, top = 30, floorY = 50;
+  // fg basin: U of registered stone (walls + floor)
+  for (let y = top - 1; y <= floorY; y++) { e.paintDiscLayer(0, cx - W - 1, y, 0, MAT.STONE, true); e.paintDiscLayer(0, cx + W + 1, y, 0, MAT.STONE, true); }
+  for (let x = cx - W - 1; x <= cx + W + 1; x++) e.paintDiscLayer(0, x, floorY, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  // bg: solid registered block behind the basin and below (so water can't cross yet)
+  for (let x = cx - W - 1; x <= cx + W + 1; x++) for (let y = top - 1; y <= ROWS - 1; y++) e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(1);
+  // fill + settle the basin
+  for (let y = top; y <= floorY - 1; y++) for (let x = cx - W; x <= cx + W; x++) e.paintDiscLayer(0, x, y, 0, MAT.WATER, true);
+  let t = 0; for (let i = 0; i < 2000; i++) { t += 16; if (!e.step(t)) break; }
+  const fg0 = countIn(e.getGrid(), MAT.WATER);
+  check('foreground basin water settled', fg0 > 30, `(${fg0})`);
+  const bgWaterBelow = () => { const g = e.getGridBg(); let n = 0; for (let y = floorY; y < ROWS; y++) for (let x = cx - 6; x <= cx + 6; x++) if (g[y * COLS + x] === MAT.WATER) n++; return n; };
+  check('no background water before the dig', bgWaterBelow() === 0);
+  // dig a BACKGROUND drain shaft (RMB eraser path = background-only)
+  e.setTool(T.eraser);
+  for (let y = floorY; y <= ROWS - 2; y++) { e.pointerDown(cx, y, 2); e.applyTool(cx, y, (t += 50), true, true); e.pointerUp(2); e.pointerButtons(0); }
+  // step with NO foreground interaction
+  for (let i = 0; i < 400; i++) { t += 16; e.step(t); }
+  const bgDrained = bgWaterBelow(), fgLeft = countIn(e.getGrid(), MAT.WATER);
+  check('water poured into the dug background channel on its own', bgDrained > 10, `(${bgDrained})`);
+  check('foreground basin drained', fgLeft < fg0, `(${fg0} -> ${fgLeft})`);
+  let settledAt = -1; for (let i = 0; i < 2500; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check('drained scene re-settles to inert (no churn)', settledAt >= 0, `(step ${settledAt})`);
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

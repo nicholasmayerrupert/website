@@ -5,18 +5,22 @@
 // and the browser client wire a transport around this; none of that logic lives
 // here, so it unit-tests in Node without a socket.
 
-import { decode, makeSnapshot, MSG } from './protocol.js';
+import { decode, makeSnapshot, MSG, INPUT_BITS_MAX, TOOL_MAX } from './protocol.js';
 import { SequenceTracker } from './client.js';
 import { gridHashU8 } from './hash.js';
 
 export class Host {
-  constructor({ engine, roomId = 'local', maxPlayers = 8 } = {}) {
+  constructor({ engine, roomId = 'local', maxPlayers = 8, maxInputRate = 90, inputBurst = 30, now = () => Date.now() } = {}) {
     if (!engine) throw new Error('Host requires an engine');
     this.engine = engine;
     this.roomId = roomId;
     this.maxPlayers = maxPlayers;
-    this.clients = new Map();   // clientId -> { playerId, tracker }
+    this.maxInputRate = maxInputRate; // inputs/sec/client (token bucket)
+    this.inputBurst = inputBurst;     // max burst tokens
+    this.now = now;                   // injectable clock (tests)
+    this.clients = new Map();   // clientId -> { playerId, tracker, tokens, lastInput }
     this.tick = 0;
+    this.droppedInputs = 0;     // diagnostics (rate-limited / invalid)
   }
 
   hasRoom() { return this.clients.size < this.maxPlayers; }
@@ -25,9 +29,9 @@ export class Host {
   // or null if the room is full. `spawn` is { x, y } in buffer-local cells.
   addClient(clientId, spawn = { x: 0, y: 0 }) {
     if (this.clients.has(clientId)) return this.clients.get(clientId).playerId;
-    if (this.clients.size >= this.maxPlayers) return null;
+    if (this.clients.size >= this.maxPlayers) return null; // room full
     const playerId = this.engine.spawnPlayer(spawn.x, spawn.y);
-    this.clients.set(clientId, { playerId, tracker: new SequenceTracker() });
+    this.clients.set(clientId, { playerId, tracker: new SequenceTracker(), tokens: this.inputBurst, lastInput: this.now() });
     return playerId;
   }
 
@@ -58,9 +62,20 @@ export class Host {
     const c = this.clients.get(m.client);
     if (!c) return false;                  // unknown client -> reject
     if (!c.tracker.accept(m.seq)) return false; // out-of-order / duplicate -> drop
-    this.engine.setPlayerInput(c.playerId, {
-      bits: m.bits, aimX: m.aimX, aimY: m.aimY, tool: m.tool, seq: m.seq,
-    });
+    // Defense in depth: never trust a peer's fields even post-decode.
+    if (!Number.isInteger(m.bits) || m.bits < 0 || m.bits > INPUT_BITS_MAX ||
+        !Number.isInteger(m.tool) || m.tool < 0 || m.tool > TOOL_MAX ||
+        !Number.isFinite(m.aimX) || !Number.isFinite(m.aimY)) { this.droppedInputs++; return false; }
+    // Per-client rate limit (token bucket): a flood is dropped, not simulated.
+    const t = this.now();
+    c.tokens = Math.min(this.inputBurst, c.tokens + ((t - c.lastInput) / 1000) * this.maxInputRate);
+    c.lastInput = t;
+    if (c.tokens < 1) { this.droppedInputs++; return false; }
+    c.tokens -= 1;
+    // Clamp the aim into the buffer (+small margin); reach is enforced in C++.
+    const aimX = Math.max(-1, Math.min(this.engine.cols, m.aimX | 0));
+    const aimY = Math.max(-1, Math.min(this.engine.rows, m.aimY | 0));
+    this.engine.setPlayerInput(c.playerId, { bits: m.bits & INPUT_BITS_MAX, aimX, aimY, tool: m.tool, seq: m.seq });
     return true;
   }
 

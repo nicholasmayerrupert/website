@@ -156,7 +156,14 @@ render error is eased in (hard-snapped past a threshold). Reordered corrections
 are ignored; a lost one is recovered by the next snapshot. `test:net` covers
 zero-latency, ~100ms latency, mismatch convergence, reorder, and loss.
 
-Still to come: host hardening (Phase 8).
+**Hardening (Phase 8).** The host never trusts a peer: clients send input only
+(the protocol has no client→world-edit message, so a client cannot mutate the
+host grid). `Host.applyInput` re-validates every field post-decode, clamps the
+aim into the buffer (reach is additionally enforced in C++), and rate-limits each
+client with a token bucket (default 90/s, burst 30) so a flood is dropped, not
+simulated. Rooms are capped (`maxPlayers`, and the relay rejects an over-capacity
+join). Disconnect removes the player. `test:net` covers room caps, field
+validation, aim clamping, and rate limiting.
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

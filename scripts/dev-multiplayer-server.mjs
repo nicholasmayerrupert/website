@@ -12,6 +12,8 @@
 import { WebSocketServer } from 'ws';
 import { decode, encode, MSG, makeLeave } from '../src/sand/net/protocol.js';
 
+const MAX_ROOM_PLAYERS = 8;
+
 export function startServer(port = 5191) {
   const wss = new WebSocketServer({ port });
   const rooms = new Map(); // roomId -> Map(clientId -> { ws, isHost })
@@ -30,6 +32,7 @@ export function startServer(port = 5191) {
       if (!m) return; // drop malformed
       if (m.t === MSG.JOIN) {
         const room = roomOf(m.room);
+        if (room.size >= MAX_ROOM_PLAYERS) { ws.send(encode({ t: 'full', room: m.room })); ws.close(); return; }
         const isHost = room.size === 0; // first peer hosts
         room.set(m.client, { ws, isHost });
         joined = { roomId: m.room, clientId: m.client };

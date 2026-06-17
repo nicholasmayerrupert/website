@@ -141,7 +141,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   console.log('host-authoritative (in-process)');
   const engine = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0xC0FFEE, sinksOn: false });
   stoneFloor(engine);
-  const host = new Host({ engine, roomId: 'r' });
+  const host = new Host({ engine, roomId: 'r', inputBurst: 1000 }); // not testing rate-limit here
   const pA = host.addClient('A', { x: 80, y: 80 });
   const pB = host.addClient('B', { x: 120, y: 80 });
   check('two clients -> two players', pA && pB && pA !== pB && engine.playerCount() === 2);
@@ -357,6 +357,67 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     check('lost correction recovered by next snapshot', approxEqual(pred.state().x, states[59].x, 1e-6) && approxEqual(pred.state().y, states[59].y, 1e-6));
     host.destroy(); client.destroy();
   }
+}
+
+// 13. host hardening (Phase 8): room cap, field validation, aim clamp, rate limit.
+{
+  console.log('hardening');
+  const mkE = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x3333, sinksOn: false });
+
+  // room cap: only maxPlayers admitted, the rest rejected.
+  {
+    const e = mkE();
+    const host = new Host({ engine: e, roomId: 'r', maxPlayers: 3 });
+    let admitted = 0;
+    for (let i = 0; i < 6; i++) if (host.addClient('c' + i, { x: 50, y: 50 }) !== null) admitted++;
+    check(`room cap enforced (${admitted} of 6 admitted)`, admitted === 3 && e.playerCount() === 3);
+    e.destroy();
+  }
+
+  // invalid fields are dropped (defense in depth, even past protocol decode).
+  {
+    const e = mkE();
+    const host = new Host({ engine: e, roomId: 'r' });
+    const pid = host.addClient('A', { x: 50, y: 50 });
+    check('bad tool dropped', host.applyInput({ client: 'A', player: pid, seq: 1, bits: 0, aimX: 0, aimY: 0, tool: 99 }) === false);
+    check('bad bits dropped', host.applyInput({ client: 'A', player: pid, seq: 2, bits: 99999, aimX: 0, aimY: 0, tool: 0 }) === false);
+    check('NaN aim dropped', host.applyInput({ client: 'A', player: pid, seq: 3, bits: 0, aimX: NaN, aimY: 0, tool: 0 }) === false);
+    check('valid input accepted', host.applyInput({ client: 'A', player: pid, seq: 4, bits: INPUT.RIGHT, aimX: 10, aimY: 10, tool: 1 }) === true);
+    e.destroy();
+  }
+
+  // a wildly out-of-range aim is clamped into the buffer (reach is enforced in C++).
+  {
+    const e = mkE();
+    const host = new Host({ engine: e, roomId: 'r' });
+    const pid = host.addClient('A', { x: 50, y: 50 });
+    host.applyInput({ client: 'A', player: pid, seq: 1, bits: INPUT.PRIMARY, aimX: 9999999, aimY: -9999999, tool: 1 });
+    const p = e.getPlayer(pid);
+    check(`far aim clamped to buffer (${p.aimX},${p.aimY})`, p.aimX >= -1 && p.aimX <= e.cols && p.aimY >= -1 && p.aimY <= e.rows);
+    e.destroy();
+  }
+
+  // input rate limiting: a flood (clock frozen) is throttled to the burst size,
+  // and the bucket refills as time passes.
+  {
+    let clock = 1000;
+    const e = mkE();
+    const host = new Host({ engine: e, roomId: 'r', maxInputRate: 90, inputBurst: 10, now: () => clock });
+    const pid = host.addClient('A', { x: 50, y: 50 });
+    let applied = 0;
+    for (let i = 0; i < 100; i++) if (host.applyInput({ client: 'A', player: pid, seq: i + 1, bits: 0, aimX: 0, aimY: 0, tool: 0 })) applied++;
+    check(`input flood throttled to burst (${applied} of 100 applied)`, applied >= 8 && applied <= 12 && host.droppedInputs >= 85);
+    clock += 1000; // a second passes -> bucket refills (capped at burst)
+    let refilled = 0;
+    for (let i = 0; i < 100; i++) if (host.applyInput({ client: 'A', player: pid, seq: 200 + i, bits: 0, aimX: 0, aimY: 0, tool: 0 })) refilled++;
+    check(`bucket refills over time (${refilled} applied)`, refilled >= 8 && refilled <= 12);
+    e.destroy();
+  }
+
+  // clients can't edit the world directly — they only send input (the host owns
+  // all world writes). This is structural: the protocol has no client->world edit
+  // message, so a malicious client simply has no way to mutate the host grid.
+  check('protocol has no client world-edit message', typeof MSG.INPUT === 'string' && !Object.values(MSG).includes('worldedit'));
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

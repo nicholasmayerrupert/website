@@ -56,6 +56,7 @@ static const int BRUSH_SAND = 2, BRUSH_WATER = 2, BRUSH_OIL = 2, BRUSH_FIRE = 1,
 static const double EMIT_INTERVAL_MS = 18.0;
 // How far the infinite world slides per streaming shift (cells).
 static const int WORLD_SHIFT_COLS = 128;
+static const int WORLD_SHIFT_ROWS = 96; // vertical stream step (tile-aligned; smaller so it fits short buffers)
 
 // ---- Seeded noise (worldgen/noise.js) ----
 static inline double whash2(uint32_t seed, int x, int y) {

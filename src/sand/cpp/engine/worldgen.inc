@@ -23,15 +23,18 @@
     if (n < 0.64) return BIOME_DESERT;
     return BIOME_ROCKY;
   }
-  // Terrain top (smaller y = higher). Smooth multi-octave hills/valleys; valleys
-  // that fall below the sea row flood into oceans/lakes (handled in genCellAt).
-  int genSurfaceAt(int worldX) {
+  // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
+  // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
+  int genSurfaceAbs(int worldX) {
     double n = wfbm2(L->worldSeed, worldX * SURFACE_FREQ, 0.5, SURFACE_OCT, 0.5);
     double hills = wfbm2(L->worldSeed ^ 0x9e3779b9u, worldX * SURFACE_FREQ * 0.22, 3.1, 4, 0.5);
     double amp = L->gSurfAmp * (0.75 + hills * 0.6);
-    int y = (int)std::lround(L->gSurfBase - (n - 0.5) * 2 * amp);
-    if (y < 2) y = 2; if (y > rows - 4) y = rows - 4; return y;
+    return (int)std::lround(-(n - 0.5) * 2 * amp);
   }
+  // Terrain top as a BUFFER row in the current window (may be <0 or >=rows when the
+  // surface has scrolled off; genCellAt's `y < surf` test handles that as all-sky /
+  // all-underground). Used by spawn + tree placement.
+  int genSurfaceAt(int worldX) { return genSurfaceAbs(worldX) - L->worldOffsetY; }
   int genSoilDepth(int biome) {
     if (biome == BIOME_ROCKY) return 0;          // bare stone (stays one connected mass)
     if (biome == BIOME_DESERT) return L->gSoil * 3; // deep sand
@@ -46,12 +49,17 @@
   // Caves carve winding tunnels (ridged noise) plus the occasional larger cavern
   // (fbm). The BACKGROUND uses a higher threshold -> a more-solid backdrop behind
   // the foreground's traversable caves (the user's "back solid, front carved").
-  bool genIsCave(int worldX, int y) {
-    double tun = wridged2(L->gCaveSeed, worldX * CAVE_FREQ, y * CAVE_FREQ, 3, 0.5);
-    double cav = wfbm2(L->gCaveSeed ^ 0x55u, worldX * CAVE_FREQ * 0.45, y * CAVE_FREQ * 0.45, 3, 0.5);
+  bool genIsCave(int worldX, int worldY) {
+    double tun = wridged2(L->gCaveSeed, worldX * CAVE_FREQ, worldY * CAVE_FREQ, 3, 0.5);
+    double cav = wfbm2(L->gCaveSeed ^ 0x55u, worldX * CAVE_FREQ * 0.45, worldY * CAVE_FREQ * 0.45, 3, 0.5);
     double caveBias = L->isBackground ? 0.13 : 0.0; // bg: sparser caves
     return tun > CAVE_THRESH + caveBias || cav > 0.74 + caveBias;
   }
+  // Absolute-world depth zones (cells below the surface centre, worldY=0). These
+  // scale with the viewport but the world is infinitely deep: below the underworld
+  // top it's stone + lava forever. Surface->caves->deep ore->underworld lava.
+  int caveBottomAbs() { return rows * 9 / 5; }     // caves stop here (~1.8 viewports down)
+  int underworldAbs() { return rows * 13 / 5; }    // lava underworld begins (~2.6 down)
   // Sealed liquid/lava chambers in the DEEP stone (below the cave zone, so they're
   // enclosed by solid rock and stay inert until dug into — never cave-adjacent,
   // which would let them drain + churn). The zones are DEPTH-SEPARATED with stone
@@ -59,17 +67,18 @@
   // forever; oil against water would density-swap forever), and each pocket holds
   // a SINGLE liquid (a low-freq region selector) so no two liquids mix. STONE
   // otherwise.
-  uint8_t genPocketAt(int worldX, int y, double df) {
-    if (df < 0.80) return STONE;
-    double p = wridged2(L->gPocketSeed ^ 0x1a7au, worldX * POCKET_FREQ, y * POCKET_FREQ, 3, 0.5); // pocket shape
-    if (df >= 0.90) return p > LAVA_THRESH ? LAVA : STONE;     // underworld: lava only
-    if (df >= 0.86) return STONE;                              // solid buffer between water and lava
-    if (p <= WATER_POCKET_THRESH) return STONE;                // 0.80..0.86: water OR oil reservoirs...
-    double sel = wfbm2(L->gPocketSeed ^ 0x9bu, worldX * POCKET_FREQ * 0.3, y * POCKET_FREQ * 0.3, 2, 0.5);
-    return sel < 0.5 ? WATER : OIL;                            // ...each region a single liquid (no mixing)
+  uint8_t genPocketAt(int worldX, int worldY) {
+    int caveBottom = caveBottomAbs(), under = underworldAbs();
+    if (worldY < caveBottom) return STONE;
+    double p = wridged2(L->gPocketSeed ^ 0x1a7au, worldX * POCKET_FREQ, worldY * POCKET_FREQ, 3, 0.5); // pocket shape
+    if (worldY >= under) return p > LAVA_THRESH ? LAVA : STONE;          // underworld: lava only
+    if (worldY >= under - 8) return STONE;                               // solid buffer above the lava
+    if (p <= WATER_POCKET_THRESH) return STONE;                          // deep zone: water OR oil reservoirs...
+    double sel = wfbm2(L->gPocketSeed ^ 0x9bu, worldX * POCKET_FREQ * 0.3, worldY * POCKET_FREQ * 0.3, 2, 0.5);
+    return sel < 0.5 ? WATER : OIL;                                      // ...each region a single liquid (no mixing)
   }
   uint8_t genCellAt(int worldX, int surf, int slope, int biome, int soil, int y) {
-    int sea = L->gSeaRow;
+    int sea = L->gSeaRow - L->worldOffsetY;       // sea level as a buffer row (gSeaRow is absolute)
     if (y < surf) {
       // above the terrain: a valley below the sea row floods with water (a flat,
       // contained ocean that settles); the foreground holds the water, the
@@ -78,6 +87,7 @@
       return EMPTY;
     }
     int depth = y - surf;
+    int worldY = L->worldOffsetY + y;             // absolute depth for the cave/underworld zones
     bool underwater = surf > sea;
     // The FOREGROUND has the rich loose strata (skin + dirt/sand mantle). The
     // BACKGROUND skips them — a dry solid backdrop, no loose soil to churn.
@@ -89,36 +99,35 @@
     // from the cave zone, so generated sand never rests directly over a cave and
     // oceans can't drain into one (both churn the cross-layer transfer forever).
     int caveTop = GEN_SKIN + soil + imax(10, (int)std::floor(rows * 0.04));
-    double df = (double)y / rows; // depth fraction (relative to the buffer; absolute once vertical streaming lands)
     // Caves: the foreground gets traversable tunnels; the background gets the same
-    // network but SPARSER (genIsCave biases by layer) for a more-solid backdrop.
-    // The bg's caves are DRY (it has no soil/liquids), so they stay inert.
-    if (depth >= caveTop && df < 0.80 && genIsCave(worldX, y)) return EMPTY;
+    // network but SPARSER (genIsCave biases by layer). DRY in the bg (no soil/liquids).
+    if (depth >= caveTop && worldY < caveBottomAbs() && genIsCave(worldX, worldY)) return EMPTY;
     if (L->isBackground) return STONE;                       // bg: solid stone, no liquid pockets
-    return genPocketAt(worldX, y, df);                       // fg: stone + sealed deep liquids
+    return genPocketAt(worldX, worldY);                      // fg: deep stone + sealed liquids/lava
   }
   bool genTreeAt(int worldX, int surf) {
-    if (surf >= L->gSeaRow) return false;        // at/under water -> no trees
+    if (surf >= L->gSeaRow - L->worldOffsetY) return false;  // at/under water -> no trees
     int biome = genBiomeAt(worldX);
     double prob = biome == BIOME_FOREST ? TREE_PROB * 3.2 : (biome == BIOME_PLAINS ? TREE_PROB : 0.0);
     return whash1(L->gTreeSeed, worldX) < prob;
   }
-  void fillBand(int colStart, int colCount, int wOffsetX) {
-    int colEnd = colStart + colCount;
-    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < 0 || y >= rows) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
+  // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd).
+  // A horizontal stream-in passes a column band (full rows); a vertical one passes
+  // a row band (full cols); the initial fill is the whole buffer.
+  void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
+    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
     for (int lx = colStart; lx < colEnd; lx++) {
-      int worldX = wOffsetX + lx; int surf = genSurfaceAt(worldX);
+      int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
       int slope = std::abs(genSurfaceAt(worldX + 1) - genSurfaceAt(worldX - 1));
       int biome = genBiomeAt(worldX); int soil = genSoilDepth(biome);
-      for (int y = 0; y < rows; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, biome, soil, y);
+      for (int y = rowStart; y < rowEnd; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, biome, soil, y);
     }
-    // Trees: trunks + canopy, only on dry land (a tree's footprint reaches a few
-    // columns out, so scan past the band edges). Foreground only — the background
-    // is a clean backdrop. `put` won't overwrite existing solids/water.
+    // Trees (fg only): place only when a tree's footprint can reach this rect.
     if (!L->isBackground) {
       const int TREE_REACH = 4;
       for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
-        int worldX = wOffsetX + lx; int surf = genSurfaceAt(worldX);
+        int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
+        if (surf + 2 < rowStart || surf - 16 >= rowEnd) continue; // footprint misses the rect
         if (!genTreeAt(worldX, surf)) continue;
         int h = 6 + (int)(whash1(L->gTreeSeed + 1, worldX) * 8);
         int top = surf - h;
@@ -126,27 +135,24 @@
         for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, PLANT); }
       }
     }
-    for (int lx = colStart; lx < colEnd; lx++) for (int y = 0; y < rows; y++) { int k = y * cols + lx; next[k] = grid[k]; }
+    for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; next[k] = grid[k]; }
   }
   // layerSalt distinguishes the per-layer subsurface seeds (caves + pockets) while
-  // leaving the surface seed shared, so the two layers share a silhouette but
-  // diverge below ground. fg passes 0, bg passes 1 (+ isBackground).
+  // leaving the surface seed shared. fg passes 0, bg passes 1 (+ isBackground).
   void initInfiniteLayer(uint32_t seed, uint32_t layerSalt, bool background) {
     L->infinite = true; L->isBackground = background; L->worldSeed = seed;
     L->gSurfAmp = imax(20, (int)std::floor(rows * 0.17));
     L->gSurfBase = imax(8, (int)std::floor(rows * 0.22));
-    L->gSeaRow = L->gSurfBase + imax(2, (int)std::floor(rows * 0.03)); // sea level: below-average valleys flood into oceans/lakes
-    L->gSoil = imax(2, (int)std::floor(rows * 0.012)); // thin sand mantle: settles fast, doesn't churn
+    L->gSeaRow = (int)std::floor(L->gSurfAmp * 0.35); // ABSOLUTE sea level (worldY); valleys below flood
+    L->gSoil = imax(2, (int)std::floor(rows * 0.012));
     L->gCaveSeed = (seed ^ 0x5bd1e995u) + layerSalt * 0x9e3779b9u;
     L->gPocketSeed = (seed ^ 0xC0FFEE11u) + layerSalt * 0x85ebca6bu;
     L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
-    L->worldOffsetX = -(cols / 2);
-    fillBand(0, cols, L->worldOffsetX);
+    L->worldOffsetX = (-(cols / 2)) & ~(CHUNK_SIZE - 1);   // tile-aligned origin (2D tile store needs alignment)
+    L->worldOffsetY = (-L->gSurfBase) & ~(CHUNK_SIZE - 1); // surface centre (worldY=0) ~gSurfBase down the buffer
+    fillRect(0, cols, 0, rows);
     registerSeededComponents(0, cols);
   }
-  // Generate BOTH layers: shared surface (no erosion), divergent subsurface. The
-  // background is fully simulated; cross-layer transfer flows where caves/pockets
-  // mismatch. Enabling the background activates that transfer.
   void initInfinite(uint32_t seed) {
     useLayer(&fg); initInfiniteLayer(seed, 0, false); // foreground: caves carved for traversal
     useLayer(&bg); initInfiniteLayer(seed, 1, true);  // background: more-solid backdrop
@@ -157,136 +163,172 @@
     if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, cols - dx); memset(arr + b + cols - dx, fill, dx); }
     else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, cols - s); memset(arr + b, fill, s); } }
   }
-  // Re-index every component after the grid slid by dx columns. A column shift is a
-  // uniform index delta within each row (k -> k - dx), so we offset Comp.cells IN
-  // PLACE (compacting out cells that fell off the row's edge) rather than rebuilding
-  // an unordered_set per component. This is the bulk of the periodic pan-shift cost:
-  // the in-place vector pass is ~10x cheaper than the hash-set rebuild it replaces.
-  void translateComponents(std::vector<Comp>& list, int dx) {
-    size_t w = 0; // write cursor over `list`, dropping components that fully left the buffer
+  // Vertical slide of a row-major buffer by dy rows (dy>0: content moves UP, new
+  // band enters at the bottom). A single contiguous memmove (no per-row loop).
+  void shiftBufV(uint8_t* arr, int dy, uint8_t fill) {
+    int s = std::abs(dy); size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols;
+    if (dy > 0) { memmove(arr, arr + band, rest); memset(arr + rest, fill, band); }
+    else { memmove(arr + band, arr, rest); memset(arr, fill, band); }
+  }
+  void shiftBufVI32(int32_t* arr, int dy, int32_t fill) {
+    int s = std::abs(dy); size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols, n = (size_t)rows * cols;
+    if (dy > 0) { memmove(arr, arr + band, rest * 4); for (size_t i = rest; i < n; i++) arr[i] = fill; }
+    else { memmove(arr + band, arr, rest * 4); for (size_t i = 0; i < band; i++) arr[i] = fill; }
+  }
+  // Re-index every component after the grid slid by (dx,dy). One axis at a time:
+  // each cell's new (col,row) is (x-dx, y-dy); cells that slid off the buffer drop.
+  void translateComponents(std::vector<Comp>& list, int dx, int dy) {
+    size_t w = 0;
     for (size_t r = 0; r < list.size(); r++) {
-      Comp& comp = list[r];
-      auto& cs = comp.cells; size_t cw = 0; int yMax = 0;
+      Comp& comp = list[r]; auto& cs = comp.cells; size_t cw = 0; int yMax = 0;
       for (size_t i = 0; i < cs.size(); i++) {
-        int k = cs[i]; int nx = (k % cols) - dx; if (nx < 0 || nx >= cols) continue; // cell slid off this row -> drop
-        int nk = k - dx; cs[cw++] = nk; int y = nk / cols; if (y > yMax) yMax = y;
+        int k = cs[i]; int nxC = (k % cols) - dx, nyC = (k / cols) - dy;
+        if (nxC < 0 || nxC >= cols || nyC < 0 || nyC >= rows) continue; // slid off the buffer
+        cs[cw++] = nyC * cols + nxC; if (nyC > yMax) yMax = nyC;
       }
-      if (cw == 0) continue; // whole component left the buffer
+      if (cw == 0) continue;
       cs.resize(cw); comp.yMax = yMax; comp.cacheDirty = true;
       if (w != r) list[w] = std::move(comp);
       w++;
     }
     list.resize(w);
   }
-  // ---- chunk store (chunkStore.js): persist edited bands across shifts ----
-  void csSaveMaterials(int colStart, int width, int key) {
-    Layer::MatBand& e = L->matStore[key];
-    if (e.width != width) { e.width = width; e.buf.assign((size_t)width * rows, 0); }
-    for (int y = 0; y < rows; y++) { int src = y * cols + colStart; memcpy(e.buf.data() + (size_t)y * width, grid + src, width); }
+  // ---- 2D tile chunk store: full sim-state persistence keyed by absolute tiles ----
+  static inline int64_t tileKey(int tx, int ty) { return ((int64_t)tx << 32) | (uint32_t)ty; }
+  // Only WHOLE 32x32 tiles fully inside the buffer are persisted; a partial edge
+  // tile (when cols/rows aren't chunk-multiples — e.g. the headless tests) is
+  // skipped and just regenerates. The game's buffer is chunk-rounded, so every
+  // tile is whole and persistence is complete.
+  bool wholeTile(int tx, int ty) { return tx >= 0 && ty >= 0 && tx + CHUNK_SIZE <= cols && ty + CHUNK_SIZE <= rows; }
+  void csSaveTiles(int bx0, int by0, int w, int h) { // uses the CURRENT offset (leaving band)
+    for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
+      for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
+        if (!wholeTile(tx, ty)) continue;
+        int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
+        auto& buf = L->tileStore[tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT)];
+        if ((int)buf.size() != CHUNK_SIZE * CHUNK_SIZE) buf.resize((size_t)CHUNK_SIZE * CHUNK_SIZE);
+        for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, grid + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+      }
   }
-  bool csLoadMaterials(int colStart, int width, int key) {
-    auto it = L->matStore.find(key);
-    if (it == L->matStore.end() || it->second.width != width) return false;
-    const uint8_t* buf = it->second.buf.data();
-    for (int y = 0; y < rows; y++) { int dst = y * cols + colStart; memcpy(grid + dst, buf + (size_t)y * width, width); memcpy(next + dst, buf + (size_t)y * width, width); }
+  bool csTilesAllPresent(int bx0, int by0, int w, int h) { // entering band, NEW offset
+    for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
+      for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
+        if (!wholeTile(tx, ty)) return false; // a partial tile is never persisted -> must regenerate
+        int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
+        if (L->tileStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT)) == L->tileStore.end()) return false;
+      }
     return true;
   }
-  void csSaveBodies(int key, std::vector<std::pair<Body*, double>>&& list) { if (!list.empty()) L->bodyStore[key] = std::move(list); }
-  std::vector<std::pair<Body*, double>> csTakeBodies(int key) {
-    auto it = L->bodyStore.find(key); if (it == L->bodyStore.end()) return {};
-    auto l = std::move(it->second); L->bodyStore.erase(it); return l;
+  void csLoadTiles(int bx0, int by0, int w, int h) { // overlay saved tiles (NEW offset); missing left as-is
+    for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
+      for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
+        if (!wholeTile(tx, ty)) continue;
+        int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
+        auto it = L->tileStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT));
+        if (it == L->tileStore.end()) continue;
+        const uint8_t* buf = it->second.data();
+        for (int r = 0; r < CHUNK_SIZE; r++) { size_t d = (size_t)(ty + r) * cols + tx; memcpy(grid + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); memcpy(next + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); }
+      }
+  }
+  void csSaveBodiesLeaving(int bx0, int by0, int w, int h) { // CURRENT offset
+    std::vector<Body*> staying;
+    for (Body* b : L->bodies) {
+      if (b->px >= bx0 && b->px < bx0 + w && b->py >= by0 && b->py < by0 + h) {
+        double awx = L->worldOffsetX + b->px, awy = L->worldOffsetY + b->py;
+        L->bodyStore[tileKey((int)std::floor(awx) >> CHUNK_SHIFT, (int)std::floor(awy) >> CHUNK_SHIFT)].push_back({b, {awx, awy}});
+      } else staying.push_back(b);
+    }
+    L->bodies = std::move(staying);
+  }
+  void csRestoreBodies(int bx0, int by0, int w, int h) { // entering band, NEW offset
+    for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
+      for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
+        int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
+        auto it = L->bodyStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT));
+        if (it == L->bodyStore.end()) continue;
+        for (auto& e : it->second) { Body* b = e.first; b->px = e.second.first - L->worldOffsetX; b->py = e.second.second - L->worldOffsetY; L->bodies.push_back(b); }
+        L->bodyStore.erase(it);
+      }
   }
 
-  // Slide the loaded window by dx world-columns. Mirrors worldWindow.shiftWorld:
-  // un-stamp body rasters, persist the leaving band (materials + L->bodies) to the
-  // store, memmove the buffers, translate survivors, then restore the entering
-  // band from the store if previously visited (else generate it).
-  // Decide whether the loaded world window should slide so the camera always
-  // has room to keep panning, and slide it if so. cameraCellX is the view's
-  // left column; the engine owns the shift distance. Returns the applied dx
-  // (0 if none); JS uses it to slide its visual cache and pull the camera back.
+  // Slide the loaded window so the camera always has room. cameraCell is the view's
+  // left/top cell; returns the applied shift (0 if none). JS slides its GL texture
+  // and pulls the camera back. WORLD_SHIFT_* are tile-aligned (the 2D store needs it).
   int maybeShiftWorld(int cameraCellX, int visibleCols, int marginCols) {
     if (!fg.infinite) return 0;
-    int maxCamX = cols - visibleCols;
     int dx = 0;
-    if (cameraCellX >= maxCamX - marginCols) dx = WORLD_SHIFT_COLS;
+    if (cameraCellX >= cols - visibleCols - marginCols) dx = WORLD_SHIFT_COLS;
     else if (cameraCellX <= marginCols) dx = -WORLD_SHIFT_COLS;
-    if (dx) shiftWorld(dx);
+    if (dx) shiftWorld(dx, 0);
     return dx;
   }
-  // Slide BOTH layers in lockstep with the shared camera. Players are anchored
-  // once (not per layer).
-  void shiftWorld(int dx) {
-    if (!dx || !fg.infinite) return;
-    int s = std::abs(dx); if (s >= cols) return;
-    worldShiftCount++;
-    useLayer(&fg); shiftLayer(dx);
-    useLayer(&bg); shiftLayer(dx);
-    useLayer(&fg);
-    for (auto& p : players) { p.px -= dx; p.aimX -= dx; } // anchor players to the world once
+  int maybeShiftWorldVertical(int cameraCellY, int visibleRows, int marginRows) {
+    if (!fg.infinite) return 0;
+    int dy = 0;
+    if (cameraCellY >= rows - visibleRows - marginRows) dy = WORLD_SHIFT_ROWS;
+    else if (cameraCellY <= marginRows) dy = -WORLD_SHIFT_ROWS;
+    if (dy) shiftWorld(0, dy);
+    return dy;
   }
-  void shiftLayer(int dx) {
-    if (!dx || !L->infinite) return;
-    int s = std::abs(dx);
-    if (s >= cols) return;
-    int oldOffset = L->worldOffsetX, newOffset = oldOffset + dx;
-    int leaveColStart = dx > 0 ? 0 : cols - s;
-    int enterColStart = dx > 0 ? cols - s : 0;
-    int leaveKey = oldOffset + leaveColStart, enterKey = newOffset + enterColStart;
+  // Slide BOTH layers in lockstep with the shared camera; anchor players once.
+  void shiftWorld(int dx, int dy) {
+    if ((!dx && !dy) || !fg.infinite) return;
+    worldShiftCount++;
+    useLayer(&fg); shiftLayer(dx, dy);
+    useLayer(&bg); shiftLayer(dx, dy);
+    useLayer(&fg);
+    for (auto& p : players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
+  }
+  void shiftLayer(int dx, int dy) {
+    if ((!dx && !dy) || !L->infinite) return;
+    int s = std::abs(dx) + std::abs(dy);
+    if (s >= (dx ? cols : rows)) return;
+    // leaving / entering buffer rects (one axis only).
+    int lx0, ly0, lw, lh, ex0, ey0, ew, eh;
+    if (dx) { lh = eh = rows; ly0 = ey0 = 0; lw = ew = s; lx0 = dx > 0 ? 0 : cols - s; ex0 = dx > 0 ? cols - s : 0; }
+    else    { lw = ew = cols; lx0 = ex0 = 0; lh = eh = s; ly0 = dy > 0 ? 0 : rows - s; ey0 = dy > 0 ? rows - s : 0; }
 
-    // 1) clear body rasters so no RIGID ghost is saved or memmoved (L->bodies
-    //    re-rasterize from their float poses next step).
+    // 1) clear body rasters so no RIGID ghost is saved/memmoved.
     for (int k : L->bodyCells) { if (grid[k] == RIGID) grid[k] = EMPTY; if (next[k] == RIGID) next[k] = EMPTY; bodyOwner[k] = -1; }
     L->bodyCells.clear();
-
-    // 2) persist the leaving band: L->bodies sitting in it (keyed by world-x), then
-    //    its materials.
-    {
-      std::vector<std::pair<Body*, double>> leaving; std::vector<Body*> staying;
-      for (Body* b : L->bodies) { if (b->px >= leaveColStart && b->px < leaveColStart + s) leaving.push_back({b, oldOffset + b->px}); else staying.push_back(b); }
-      if (!leaving.empty()) { L->bodies = std::move(staying); csSaveBodies(leaveKey, std::move(leaving)); }
-    }
-    csSaveMaterials(leaveColStart, s, leaveKey);
-
-    // 3) slide the persistent buffers + dirty marks.
+    // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
+    csSaveBodiesLeaving(lx0, ly0, lw, lh);
+    csSaveTiles(lx0, ly0, lw, lh);
+    // 3) slide the buffers + dirty marks.
     double _t = emscripten_get_now();
-    shiftRowMajorU8(grid, dx, EMPTY);
-    shiftRowMajorU8(next, dx, EMPTY);
-    shiftRowMajorI32(bodyOwner, dx, -1);
-    for (int y = 0; y < rows; y++) {
-      if (rowMarkMax[y] < rowMarkMin[y]) continue;
-      int mn = rowMarkMin[y] - dx, mx = rowMarkMax[y] - dx;
-      if (mx < 0 || mn > cols - 1) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; continue; }
-      rowMarkMin[y] = mn < 0 ? 0 : mn; rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx;
+    if (dx) {
+      shiftRowMajorU8(grid, dx, EMPTY); shiftRowMajorU8(next, dx, EMPTY); shiftRowMajorI32(bodyOwner, dx, -1);
+      for (int y = 0; y < rows; y++) { if (rowMarkMax[y] < rowMarkMin[y]) continue; int mn = rowMarkMin[y] - dx, mx = rowMarkMax[y] - dx; if (mx < 0 || mn > cols - 1) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; continue; } rowMarkMin[y] = mn < 0 ? 0 : mn; rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx; }
+    } else {
+      shiftBufV(grid, dy, EMPTY); shiftBufV(next, dy, EMPTY); shiftBufVI32(bodyOwner, dy, -1);
+      if (dy > 0) for (int y = 0; y < rows; y++) { int sy = y + dy; rowMarkMin[y] = sy < rows ? rowMarkMin[sy] : cols; rowMarkMax[y] = sy < rows ? rowMarkMax[sy] : -1; }
+      else for (int y = rows - 1; y >= 0; y--) { int sy = y + dy; rowMarkMin[y] = sy >= 0 ? rowMarkMin[sy] : cols; rowMarkMax[y] = sy >= 0 ? rowMarkMax[sy] : -1; }
     }
     std::fill(compOccStamp, compOccStamp + (size_t)cols * rows, -1);
     std::fill(vacatedStamp, vacatedStamp + (size_t)cols * rows, -1);
     perfShiftBuffers = emscripten_get_now() - _t;
-
-    // 4) translate staying L->bodies; drop any that left the buffer.
-    {
-      std::vector<Body*> keep;
-      for (Body* b : L->bodies) { b->px -= dx; if (b->px > -b->maxR && b->px < cols + b->maxR) keep.push_back(b); else delete b; }
-      L->bodies = std::move(keep);
-    }
-
-    // 5) bring in the newly exposed band: restore it if we've stored it before,
-    //    else generate. Advance the offset and restore its saved L->bodies.
+    // 4) translate staying bodies; drop any fully off the buffer.
+    { std::vector<Body*> keep; for (Body* b : L->bodies) { b->px -= dx; b->py -= dy; if (b->px > -b->maxR && b->px < cols + b->maxR && b->py > -b->maxR && b->py < rows + b->maxR) keep.push_back(b); else delete b; } L->bodies = std::move(keep); }
+    // 5) advance the offset, then bring in the entering band: generate the baseline
+    //    only if not fully cached, then overlay any saved tiles + restore bodies.
+    L->worldOffsetX += dx; L->worldOffsetY += dy;
     _t = emscripten_get_now();
-    if (!csLoadMaterials(enterColStart, s, enterKey)) fillBand(enterColStart, s, newOffset);
-    L->worldOffsetX = newOffset;
-    for (auto& e : csTakeBodies(enterKey)) { e.first->px = e.second - newOffset; L->bodies.push_back(e.first); }
+    if (!csTilesAllPresent(ex0, ey0, ew, eh)) { if (dx) fillRect(ex0, ex0 + ew, 0, rows); else fillRect(0, cols, ey0, ey0 + eh); }
+    csLoadTiles(ex0, ey0, ew, eh);
+    csRestoreBodies(ex0, ey0, ew, eh);
     perfShiftFill = emscripten_get_now() - _t;
-
-    // 6) mark the new band active so it simulates, then update components.
-    for (int y = 0; y < rows; y++) { if (enterColStart < rowMarkMin[y]) rowMarkMin[y] = enterColStart; if (enterColStart + s - 1 > rowMarkMax[y]) rowMarkMax[y] = enterColStart + s - 1; }
+    // 6) mark the entering band active so it simulates.
+    if (dx) for (int y = 0; y < rows; y++) { if (ex0 < rowMarkMin[y]) rowMarkMin[y] = ex0; if (ex0 + s - 1 > rowMarkMax[y]) rowMarkMax[y] = ex0 + s - 1; }
+    else for (int y = ey0; y < ey0 + s; y++) { rowMarkMin[y] = 0; rowMarkMax[y] = cols - 1; }
+    // 7) re-index components, register the entering band.
     _t = emscripten_get_now();
-    translateComponents(L->stoneComponents, dx);
-    translateComponents(L->plantComponents, dx);
-    translateComponents(L->iceComponents, dx);
+    translateComponents(L->stoneComponents, dx, dy);
+    translateComponents(L->plantComponents, dx, dy);
+    translateComponents(L->iceComponents, dx, dy);
     perfShiftTranslate = emscripten_get_now() - _t;
     _t = emscripten_get_now();
-    registerSeededComponents(enterColStart, enterColStart + s);
+    if (dx) registerSeededComponents(ex0, ex0 + s, 0, rows);
+    else registerSeededComponents(0, cols, ey0, ey0 + s);
     perfShiftRegister = emscripten_get_now() - _t;
   }
   void shiftRowMajorI32(int32_t* arr, int dx, int32_t fill) {

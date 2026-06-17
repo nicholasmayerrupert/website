@@ -11,7 +11,6 @@
   // the thousands of `buf[k]` accesses in core/components/reactions/... are
   // unchanged. Collections + scalars live on `Layer` and are reached via `L->`.
   struct Layer {
-    struct MatBand { int width = 0; std::vector<uint8_t> buf; };
     // double buffer + the "current"/"next" pointers (alternate each step)
     std::vector<uint8_t> gridA, gridB; uint8_t* grid = nullptr; uint8_t* next = nullptr;
     // dirty tracking (per-layer active region)
@@ -37,12 +36,14 @@
     // worldgen / streaming (per-layer terrain + chunk store)
     bool infinite = false;
     bool isBackground = false; // bg = a more-solid backdrop (sparser caves) behind the carved fg
-    int worldOffsetX = 0;
+    int worldOffsetX = 0, worldOffsetY = 0; // buffer cell (x,y) maps to world (worldOffsetX+x, worldOffsetY+y)
     uint32_t worldSeed = 0;
     int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;
     uint32_t gCaveSeed = 0, gTreeSeed = 0, gPocketSeed = 0;
-    std::unordered_map<int, MatBand> matStore;                                // worldX -> saved band
-    std::unordered_map<int, std::vector<std::pair<Body*, double>>> bodyStore; // worldX -> [(body, worldPx)]
+    // 2D streaming persistence: full sim-state saved as CHUNK_SIZE x CHUNK_SIZE
+    // tiles keyed by absolute tile coords (so it survives shifts in BOTH axes).
+    std::unordered_map<int64_t, std::vector<uint8_t>> tileStore;              // (tileWX,tileWY) -> CHUNK*CHUNK cells
+    std::unordered_map<int64_t, std::vector<std::pair<Body*, std::pair<double, double>>>> bodyStore; // tile -> [(body, (worldPx,worldPy))]
     // render pixels for this layer (cols*rows*4 RGBA)
     std::vector<uint8_t> renderPixels;
 

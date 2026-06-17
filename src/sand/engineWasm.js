@@ -32,9 +32,12 @@ export function initSandWasm() {
         mod,
         create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number']),
         shiftWorld: c('engine_shift_world', null, ['number', 'number']),
+        shiftWorldXY: c('engine_shift_world_xy', null, ['number', 'number', 'number']),
         maybeShiftWorld: c('engine_maybe_shift_world', 'number', ['number', 'number', 'number', 'number']),
+        maybeShiftWorldV: c('engine_maybe_shift_world_v', 'number', ['number', 'number', 'number', 'number']),
         worldShiftCount: c('engine_world_shift_count', 'number', ['number']),
         worldOffsetX: c('engine_world_offset_x', 'number', ['number']),
+        worldOffsetY: c('engine_world_offset_y', 'number', ['number']),
         worldSurfaceAt: c('engine_world_surface_at', 'number', ['number', 'number']),
         destroy: c('engine_destroy', null, ['number']),
         step: c('engine_step', 'number', ['number']),
@@ -331,8 +334,11 @@ export function createEngineWasm({
 
     // Streaming infinite world (Stage 5)
     getWorldOffsetX() { return M.worldOffsetX(ptr); },
+    getWorldOffsetY() { return M.worldOffsetY(ptr); },
     worldSurfaceAt(worldX) { return M.worldSurfaceAt(ptr, worldX); },
     shiftWorld(dx) { M.shiftWorld(ptr, dx); },
+    shiftWorldXY(dx, dy) { M.shiftWorldXY(ptr, dx, dy); },
+    maybeShiftWorldV(cameraCellY, visibleRows, marginRows) { return M.maybeShiftWorldV(ptr, cameraCellY, visibleRows, marginRows); },
     // Engine decides whether/how far to slide the world window; returns the
     // applied dx (0 if none) so JS can slide its cache and adjust the camera.
     maybeShiftWorld(cameraCellX, visibleCols, marginCols) { return M.maybeShiftWorld(ptr, cameraCellX, visibleCols, marginCols); },

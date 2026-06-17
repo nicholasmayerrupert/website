@@ -232,7 +232,11 @@
   bool isIce(uint8_t m) { return m == ICE; }
   bool isPlantMat(uint8_t m) { return isPlantMaterial(m); }
 
-  void registerSeededComponents(int colStart, int colEnd) {
+  void registerSeededComponents(int colStart, int colEnd) { registerSeededComponents(colStart, colEnd, 0, rows); }
+  // Register stone/plant/ice components for unseen material in the buffer rect
+  // [colStart,colEnd) x [rowStart,rowEnd). A streamed-in vertical band passes a row
+  // range (cols-wide); a horizontal band passes a col range (rows-tall).
+  void registerSeededComponents(int colStart, int colEnd, int rowStart, int rowEnd) {
     // Reused generation-stamped scratch (allocated once in Layer::alloc): a cell
     // is "seen" iff seenStamp[k] == gen. Each of the three blocks bumps gen, so
     // the "clear" between materials costs O(1) instead of zeroing cols*rows.
@@ -241,7 +245,7 @@
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = gen;
-      for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
+      for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] == gen || grid[k] != STONE) continue;
         std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, gen, true, cells, yMax, &Engine::isStone);
@@ -252,7 +256,7 @@
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = gen;
-      for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
+      for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] == gen || !isPlantMaterial(grid[k])) continue;
         std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isPlantMat);
@@ -265,7 +269,7 @@
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = gen;
-      for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
+      for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] == gen || grid[k] != ICE) continue;
         std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isIce);

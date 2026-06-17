@@ -87,7 +87,7 @@
         if (rm == FIRE || rm == LAVA || lm == FIRE || lm == LAVA || dm == FIRE || dm == LAVA || um == FIRE || um == LAVA) { writeGridIndex(k, WATER); meltedCells.push_back(k); melted = true; continue; }
         if (rand() < ICE_FREEZE_P) {
           int waterK = -1; if (rm == WATER) waterK = right; else if (lm == WATER) waterK = left; else if (dm == WATER) waterK = down; else if (um == WATER) waterK = up;
-          if (waterK >= 0) { writeGridIndex(waterK, ICE); comp.cells.insert(waterK); int wy = waterK / cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; }
+          if (waterK >= 0) { writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); int wy = waterK / cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; } // waterK was WATER (live grid read) -> not already in comp
         }
       }
     }

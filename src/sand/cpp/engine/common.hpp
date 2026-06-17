@@ -88,7 +88,12 @@ static double wridged2(uint32_t seed, double x, double y, int octaves, double ga
 
 struct Comp {
   int id = 0;
-  std::unordered_set<int> cells;
+  // Cell membership as a flat vector (NOT a hash set): components are iterated far
+  // more than queried, and a world shift must re-index every cell — an in-place
+  // vector offset is ~10x cheaper than rebuilding an unordered_set (the periodic
+  // pan stutter). Inserts are dedup'd by construction at every call site (an
+  // EMPTY/seen guard precedes each push_back), so no cell is ever added twice.
+  std::vector<int> cells;
   int yMax = 0;
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;

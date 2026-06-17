@@ -157,8 +157,8 @@
       }
       for (int k : cells) writeGridIndex(k, EMPTY);
       for (auto& mv : moves) {
-        std::unordered_set<int> newCells;
-        for (auto& pr : mv.mats) { writeGridIndex(pr.first, pr.second); newCells.insert(pr.first); }
+        std::vector<int> newCells; newCells.reserve(mv.mats.size());
+        for (auto& pr : mv.mats) { writeGridIndex(pr.first, pr.second); newCells.push_back(pr.first); } // mats are distinct (k+dir over distinct k)
         mv.comp->cells = std::move(newCells);
         mv.comp->yMax = imax(0, imin(rows - 1, mv.comp->yMax + dy));
         if (mv.isPlant) { mv.comp->woodCount = mv.wood; mv.comp->leafCount = mv.leaf; mv.comp->cacheDirty = true; }
@@ -210,20 +210,19 @@
     }
   }
 
-  void floodComponent(int sx, int sy, std::vector<uint8_t>& seen, bool bounded, std::unordered_set<int>& outCells, int& outYMax,
+  void floodComponent(int sx, int sy, std::vector<uint8_t>& seen, bool bounded, std::vector<int>& outCells, int& outYMax,
                       bool (Engine::*matCheck)(uint8_t)) {
     int bx = bounded ? sx >> CHUNK_SHIFT : 0, by = bounded ? sy >> CHUNK_SHIFT : 0;
     int k0 = sy * cols + sx;
-    outCells.clear(); outCells.insert(k0); outYMax = sy; seen[k0] = 1;
-    std::vector<int> queue; queue.push_back(k0);
-    for (size_t qi = 0; qi < queue.size(); qi++) {
-      int cur = queue[qi]; int y = cur / cols, x = cur - y * cols; if (y > outYMax) outYMax = y;
+    outCells.clear(); outCells.push_back(k0); outYMax = sy; seen[k0] = 1; // seen[] dedups -> push_back never repeats
+    for (size_t qi = 0; qi < outCells.size(); qi++) {
+      int cur = outCells[qi]; int y = cur / cols, x = cur - y * cols; if (y > outYMax) outYMax = y;
       for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
         if (!ox && !oy) continue; int nx = x + ox, ny = y + oy;
         if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
         if (bounded && ((nx >> CHUNK_SHIFT) != bx || (ny >> CHUNK_SHIFT) != by)) continue;
         int nk = ny * cols + nx; if (seen[nk] || !(this->*matCheck)(grid[nk])) continue;
-        seen[nk] = 1; outCells.insert(nk); queue.push_back(nk);
+        seen[nk] = 1; outCells.push_back(nk);
       }
     }
   }
@@ -239,7 +238,7 @@
       for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = 1;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] || grid[k] != STONE) continue;
-        std::unordered_set<int> cells; int yMax;
+        std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, true, cells, yMax, &Engine::isStone);
         Comp c; c.id = L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax; L->stoneComponents.push_back(std::move(c));
       }
@@ -250,7 +249,7 @@
       for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = 1;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] || !isPlantMaterial(grid[k])) continue;
-        std::unordered_set<int> cells; int yMax;
+        std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, false, cells, yMax, &Engine::isPlantMat);
         Comp c; c.id = L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
         for (int kk : cells) { if (grid[kk] == WOOD) c.woodCount++; else if (grid[kk] == PLANT) c.leafCount++; }
@@ -263,7 +262,7 @@
       for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = 1;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] || grid[k] != ICE) continue;
-        std::unordered_set<int> cells; int yMax;
+        std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, false, cells, yMax, &Engine::isIce);
         Comp c; c.id = L->nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; L->iceComponents.push_back(std::move(c));
       }
@@ -272,20 +271,26 @@
 
   void registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache) {
     if (cells.empty()) return;
+    // Find which existing components the new cells touch. Comp.cells is a vector
+    // now, so a linear .count() per neighbor would be O(cells * comps * size); use
+    // a cell->component-index map built LAZILY (only once a same-material neighbor
+    // actually exists), keeping the common "placed in open space" case allocation-free.
     std::unordered_set<int> touchingIds;
+    std::unordered_map<int, int> owner; bool ownerBuilt = false;
     for (int k : cells) {
       int y = k / cols, x = k - y * cols;
       for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
         if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx;
         if (grid[nk] != mat || cells.count(nk)) continue;
-        for (auto& comp : list) if (comp.cells.count(nk)) { touchingIds.insert(comp.id); break; }
+        if (!ownerBuilt) { for (size_t i = 0; i < list.size(); i++) for (int c : list[i].cells) owner[c] = (int)i; ownerBuilt = true; }
+        auto it = owner.find(nk); if (it != owner.end()) touchingIds.insert(list[it->second].id);
       }
     }
-    Comp newComp; newComp.id = nextId++; newComp.cells = cells; newComp.yMax = yMax; newComp.cacheDirty = iceCache;
+    Comp newComp; newComp.id = nextId++; newComp.cells.assign(cells.begin(), cells.end()); newComp.yMax = yMax; newComp.cacheDirty = iceCache;
     if (!touchingIds.empty()) {
       std::vector<Comp> keep;
       for (auto& comp : list) {
-        if (touchingIds.count(comp.id)) { for (int k : comp.cells) { newComp.cells.insert(k); int y = k / cols; if (y > newComp.yMax) newComp.yMax = y; } }
+        if (touchingIds.count(comp.id)) { for (int k : comp.cells) { newComp.cells.push_back(k); int y = k / cols; if (y > newComp.yMax) newComp.yMax = y; } }
         else keep.push_back(std::move(comp));
       }
       list = std::move(keep);
@@ -302,11 +307,10 @@
       bool reused = false;
       while (!remaining.empty()) {
         int start = *remaining.begin();
-        std::vector<int> queue; queue.push_back(start);
-        std::unordered_set<int> part; part.insert(start); remaining.erase(start);
-        for (size_t qi = 0; qi < queue.size(); qi++) {
-          int cur = queue[qi]; int y = cur / cols, x = cur - y * cols;
-          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.insert(nk); queue.push_back(nk); } }
+        std::vector<int> part; part.push_back(start); remaining.erase(start); // part doubles as the BFS queue; remaining.erase dedups
+        for (size_t qi = 0; qi < part.size(); qi++) {
+          int cur = part[qi]; int y = cur / cols, x = cur - y * cols;
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.push_back(nk); } }
         }
         Comp c; c.id = reused ? L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
         for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; if (grid[k] == WOOD) c.woodCount++; else if (grid[k] == PLANT) c.leafCount++; }
@@ -318,20 +322,21 @@
   // split stone/ice after erase: remove erased cells, re-flood
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache) {
     if (erased.empty() || list.empty()) return;
+    std::unordered_set<int> erasedSet(erased.begin(), erased.end());
     std::vector<Comp> updated;
     for (auto& comp : list) {
       bool touched = false;
-      for (int k : erased) if (comp.cells.erase(k)) touched = true;
+      std::vector<int> survivors; survivors.reserve(comp.cells.size());
+      for (int k : comp.cells) { if (erasedSet.count(k)) touched = true; else survivors.push_back(k); }
       if (!touched) { updated.push_back(std::move(comp)); continue; }
-      if (comp.cells.empty()) continue;
-      std::unordered_set<int> remaining = comp.cells;
+      if (survivors.empty()) continue;
+      std::unordered_set<int> remaining(survivors.begin(), survivors.end());
       while (!remaining.empty()) {
         int start = *remaining.begin();
-        std::vector<int> queue; queue.push_back(start);
-        std::unordered_set<int> part; part.insert(start); remaining.erase(start);
-        for (size_t qi = 0; qi < queue.size(); qi++) {
-          int cur = queue[qi]; int y = cur / cols, x = cur - y * cols;
-          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.insert(nk); queue.push_back(nk); } }
+        std::vector<int> part; part.push_back(start); remaining.erase(start); // part doubles as the BFS queue
+        for (size_t qi = 0; qi < part.size(); qi++) {
+          int cur = part[qi]; int y = cur / cols, x = cur - y * cols;
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.push_back(nk); } }
         }
         Comp c; c.id = nextId++; c.yMax = 0; c.cacheDirty = iceCache;
         for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; }

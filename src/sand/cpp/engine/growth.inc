@@ -76,7 +76,8 @@
       }
       if (growth.empty()) continue;
       for (int wk : waterCells) writeGridIndex(wk, EMPTY);
-      for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (grid[targetK] != EMPTY) continue; writeGridIndex(targetK, material); comp.cells.insert(targetK); int y = targetK / cols; if (y > comp.yMax) comp.yMax = y; if (material == WOOD) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
+      // push_back (not a set insert) is safe: the EMPTY guard above means each targetK is written once, so no cell is added to comp.cells twice.
+      for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (grid[targetK] != EMPTY) continue; writeGridIndex(targetK, material); comp.cells.push_back(targetK); int y = targetK / cols; if (y > comp.yMax) comp.yMax = y; if (material == WOOD) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
     }
   }
 

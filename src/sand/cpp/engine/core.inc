@@ -31,7 +31,7 @@
     if (y + 1 < rows && x > 0 && x < cols - 1 && grid[k - 1] == m && grid[k + 1] == m) {
       uint8_t below = grid[belowK], bl = grid[belowK - 1], br = grid[belowK + 1];
       if ((below == m && bl == m && br == m) || (supportsLiquid(below, m) && bl != EMPTY && !canDisplaceMaterial(m, bl) && br != EMPTY && !canDisplaceMaterial(m, br))) {
-        next[k] = m; if (y > 1 && grid[k - cols] == EMPTY) markCellIndex(k); return;
+        next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
     if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(belowK, m); return; }
@@ -62,8 +62,19 @@
       if (next[k] == EMPTY) writeNextIndex(k, m);
       return;
     }
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (canLiquidEnter(x + dx, y, m)) { moveLiquidInto(k, x + dx, y, m); return; } }
-    if (next[k] == EMPTY) writeNextIndex(k, m);
+    // Same-level sideways spread ONLY under pressure (liquid stacked directly
+    // above). A FREE surface cell (open above) does not slide into a same-level
+    // gap, so a ragged surface settles to a stable shape instead of shimmering
+    // left/right forever. Pressured cells still equalize (and stay active);
+    // free-surface cells go inert (re-wake via dirty padding on disturbance),
+    // but keep the density-interface re-mark so liquids still separate by density.
+    bool pressured = (y > 1 && grid[k - cols] == m);
+    if (pressured) {
+      for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (canLiquidEnter(x + dx, y, m)) { moveLiquidInto(k, x + dx, y, m); return; } }
+      if (next[k] == EMPTY) writeNextIndex(k, m);
+      return;
+    }
+    if (next[k] == EMPTY) { next[k] = m; if (touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k); }
   }
   void settleLava(int x, int y, int k) { if (next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
   void relaxLiquidGaps() {

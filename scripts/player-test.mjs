@@ -314,5 +314,79 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
+// Bury the bottom `depth` pixel-rows of the player's box with grounded stone
+// (simulates sand piling INTO him from the feet up). Connects to the floor below.
+const buryFeet = (e, p, depth) => {
+  const x0 = Math.floor(p.x), x1 = Math.floor(p.x + p.w - 1e-6);
+  const bottom = Math.floor(p.y + p.h - 1e-6);
+  for (let row = bottom; row > bottom - depth; row--) for (let x = x0; x <= x1; x++) e.addDiscToStoneDraft(x, row, 0);
+  e.finalizeStoneDraft();
+};
+
+// N1. rests cleanly ON TOP of the floor — no sinking.
+{
+  console.log('survival: rest on floor without sinking');
+  const e = mk();
+  stoneFloor(e, 60, 140, 90);
+  const id = e.spawnPlayer(100, 70);
+  runSteps(e, 120);
+  const p = e.getPlayer(id);
+  const feet = p.y + p.h;
+  check(`feet rest on top, no sink (feet ${feet.toFixed(2)} ~ 90)`, feet > 89 && feet <= 90.5 && p.grounded);
+  e.destroy();
+}
+
+// N2. shallowly buried (3px of sand in the feet) -> can still JUMP OUT.
+{
+  console.log('survival: jump out when shallowly buried (3px)');
+  const e = mk();
+  stoneFloor(e, 60, 140, 90);
+  const id = e.spawnPlayer(100, 70);
+  runSteps(e, 120);
+  buryFeet(e, e.getPlayer(id), 3);
+  const y0 = e.getPlayer(id).y;
+  let minY = y0;
+  e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(0);
+  for (let i = 1; i < 40; i++) { e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(16 * i); minY = Math.min(minY, e.getPlayer(id).y); }
+  check(`shallow-buried player jumped out (y ${y0.toFixed(1)} -> peak ${minY.toFixed(1)})`, minY < y0 - 2);
+  e.destroy();
+}
+
+// N3. deeply buried (6px) -> jump is DENIED; he must dig out.
+{
+  console.log('survival: jump denied when deeply buried (6px)');
+  const e = mk();
+  stoneFloor(e, 60, 140, 90);
+  const id = e.spawnPlayer(100, 70);
+  runSteps(e, 120);
+  buryFeet(e, e.getPlayer(id), 6);
+  const y0 = e.getPlayer(id).y;
+  let minY = y0;
+  for (let i = 0; i < 25; i++) { e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(16 * i); minY = Math.min(minY, e.getPlayer(id).y); }
+  check(`deep-buried player cannot jump (y ${y0.toFixed(1)}, minY ${minY.toFixed(1)})`, minY >= y0 - 1);
+  // ...but after digging out the sand, he CAN jump again.
+  e.eraseDisc(Math.floor(e.getPlayer(id).x + 0.5), y0 + 7, 3); runSteps(e, 5);
+  const y1 = e.getPlayer(id).y; let minY2 = y1;
+  e.setPlayerInput(id, { bits: 0 }); e.step(0); // release to re-arm
+  for (let i = 1; i < 30; i++) { e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(16 * i); minY2 = Math.min(minY2, e.getPlayer(id).y); }
+  check(`after digging out he can jump (y ${y1.toFixed(1)} -> peak ${minY2.toFixed(1)})`, minY2 < y1 - 2);
+  e.destroy();
+}
+
+// N4. walks OVER a 1px bump without sticking (the original 1px-stick must not regress).
+{
+  console.log('survival: walk over a 1px bump');
+  const e = mk();
+  stoneFloor(e, 40, 180, 90);
+  stoneBlock(e, 118, 121, 89, 90); // a 1px-tall bump on the floor surface
+  const id = e.spawnPlayer(95, 80);
+  runSteps(e, 30);
+  const x0 = e.getPlayer(id).x;
+  for (let i = 0; i < 140; i++) { e.setPlayerInput(id, { bits: INPUT.RIGHT }); e.step(16 * i); }
+  const p = e.getPlayer(id);
+  check(`walked PAST the 1px bump (x ${x0.toFixed(1)} -> ${p.x.toFixed(1)})`, p.x > 125);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

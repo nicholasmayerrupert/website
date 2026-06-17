@@ -25,32 +25,49 @@ inline bool playerBoxHits(double px, double py, int w, int h) {
       if (playerCellSolid(x, y)) return true;
   return false;
 }
-// Horizontal collision is forgiving: the player is blocked only when MORE THAN
-// HALF of his lower half is solid at the candidate position. A single protruding
-// pixel (or a thin bump) doesn't stall him — he slides/steps over it. The upper
-// half is ignored for horizontal blocking, so he can clip a shallow overhang.
-// (Vertical collision still uses the full box, so he never sinks through floors.)
-inline bool lowerHalfBlocked(double px, double py, int w, int h) {
+// Any solid across the player's horizontal span [px, px+w) at integer row `row`?
+inline bool rowSolid(double px, int w, int row) {
   int ix0 = (int)std::floor(px), ix1 = (int)std::floor(px + w - 1e-6);
-  int iy0 = (int)std::floor(py + h / 2.0), iy1 = (int)std::floor(py + h - 1e-6);
-  int solid = 0, total = 0;
-  for (int y = iy0; y <= iy1; y++)
-    for (int x = ix0; x <= ix1; x++) { total++; if (playerCellSolid(x, y)) solid++; }
-  return total > 0 && solid * 2 > total;
+  for (int x = ix0; x <= ix1; x++) if (playerCellSolid(x, row)) return true;
+  return false;
 }
-// Advance one axis by `d` in <=P_MOVE_SUBSTEP increments. Returns true if blocked.
+// Any solid down the player's vertical span [py, py+h) at integer column `col`?
+inline bool colSolid(double py, int h, int col) {
+  int iy0 = (int)std::floor(py), iy1 = (int)std::floor(py + h - 1e-6);
+  for (int y = iy0; y <= iy1; y++) if (playerCellSolid(col, y)) return true;
+  return false;
+}
+// How many contiguous solid pixel-rows have risen INTO the box from the feet up.
+// 0 = feet clean (resting on top / in air). Sand falls THROUGH the player to the
+// floor and piles up into him, so this measures how "buried" he is — the jump
+// gate lets him leap out while shallow, and forces digging when deep.
+inline int buryDepth(const Player& p) {
+  int bottom = (int)std::floor(p.py + p.h - 1e-6), topRow = (int)std::floor(p.py), depth = 0;
+  for (int row = bottom; row >= topRow; row--) { if (!rowSolid(p.px, p.w, row)) break; depth++; }
+  return depth;
+}
+// Solid on the leading vertical edge in travel direction `dir` (full body height)?
+inline bool edgeBlockedX(double px, double py, int w, int h, int dir) {
+  int col = dir > 0 ? (int)std::floor(px + w - 1e-6) : (int)std::floor(px);
+  return colSolid(py, h, col);
+}
+// EDGE-BASED horizontal move. Advance in <=P_MOVE_SUBSTEP steps; block only on a
+// NEW leading-edge solid (solids already overlapping the box are ignored, so a
+// buried/clipped player can still shuffle). A low ledge (<=P_STEP_UP) auto-climbs
+// so 1-2px bumps don't stall him. Returns true if blocked.
 bool tryMoveX(Player& p, double d) {
   if (d == 0) return false;
-  double step = d > 0 ? P_MOVE_SUBSTEP : -P_MOVE_SUBSTEP, moved = 0;
+  int dir = d > 0 ? 1 : -1;
+  double step = dir * P_MOVE_SUBSTEP, moved = 0;
   while (std::fabs(moved) < std::fabs(d)) {
     double adv = (std::fabs(d - moved) < P_MOVE_SUBSTEP) ? (d - moved) : step;
-    if (!lowerHalfBlocked(p.px + adv, p.py, p.w, p.h)) { p.px += adv; moved += adv; continue; }
-    // Blocked: when grounded, try to auto-climb a low ledge (so walking over
-    // bumpy terrain / a 1-cell step doesn't stall, Terraria-style).
+    bool already = edgeBlockedX(p.px, p.py, p.w, p.h, dir);          // already against a wall? don't re-block
+    if (already || !edgeBlockedX(p.px + adv, p.py, p.w, p.h, dir)) { p.px += adv; moved += adv; continue; }
     bool climbed = false;
     if (p.grounded) {
       for (double up = P_MOVE_SUBSTEP; up <= P_STEP_UP + 1e-9; up += P_MOVE_SUBSTEP) {
-        if (!lowerHalfBlocked(p.px, p.py - up, p.w, p.h) && !lowerHalfBlocked(p.px + adv, p.py - up, p.w, p.h)) {
+        // raised leading edge clear AND no ceiling over the new head position
+        if (!edgeBlockedX(p.px + adv, p.py - up, p.w, p.h, dir) && !rowSolid(p.px + adv, p.w, (int)std::floor(p.py - up))) {
           p.py -= up; p.px += adv; moved += adv; climbed = true; break;
         }
       }
@@ -59,15 +76,36 @@ bool tryMoveX(Player& p, double d) {
   }
   return false;
 }
-bool tryMoveY(Player& p, double d) {
-  if (d == 0) return false;
-  double step = d > 0 ? P_MOVE_SUBSTEP : -P_MOVE_SUBSTEP, moved = 0;
-  while (std::fabs(moved) < std::fabs(d)) {
-    double adv = (std::fabs(d - moved) < P_MOVE_SUBSTEP) ? (d - moved) : step;
-    if (playerBoxHits(p.px, p.py + adv, p.w, p.h)) return true;
+// EDGE-BASED downward move: rest when the row just BELOW the box bottom is solid
+// (so the player sits ON TOP of the floor and never sinks). Solids already inside
+// the box are ignored. Returns true on floor contact.
+bool moveDown(Player& p, double d) {
+  double moved = 0;
+  while (moved < d - 1e-9) {
+    double adv = (d - moved < P_MOVE_SUBSTEP) ? (d - moved) : P_MOVE_SUBSTEP;
+    int curBottom = (int)std::floor(p.py + p.h - 1e-6);
+    int newBottom = (int)std::floor(p.py + adv + p.h - 1e-6);
+    if (newBottom != curBottom && rowSolid(p.px, p.w, curBottom + 1)) return true;
     p.py += adv; moved += adv;
   }
   return false;
+}
+// EDGE-BASED upward move: blocked only by a ceiling ABOVE the head; solids risen
+// into the feet do NOT block, so a shallowly-buried player rises out as he jumps.
+bool moveUp(Player& p, double d) { // d < 0
+  double moved = 0;
+  while (moved > d + 1e-9) {
+    double adv = (d - moved > -P_MOVE_SUBSTEP) ? (d - moved) : -P_MOVE_SUBSTEP;
+    int curTop = (int)std::floor(p.py);
+    int newTop = (int)std::floor(p.py + adv);
+    if (newTop != curTop && rowSolid(p.px, p.w, curTop - 1)) return true;
+    p.py += adv; moved += adv;
+  }
+  return false;
+}
+bool tryMoveY(Player& p, double d) {
+  if (d == 0) return false;
+  return d > 0 ? moveDown(p, d) : moveUp(p, d);
 }
 
 int spawnPlayer(double x, double y) {
@@ -110,24 +148,31 @@ void integratePlayer(Player& p) {
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
 
-  // jump: re-arm only when grounded AND the key is released, then fire on a held
-  // press while grounded. The armed flag persists across frames, so a press isn't
-  // lost to a single-frame `grounded` flicker (resting on shifting surface sand) —
-  // unlike a raw 1-frame edge. Requiring a release to re-arm means holding the key
-  // does NOT auto-bounce (Terraria-style: one press = one jump).
+  // jump: allowed when grounded OR shallowly buried (sand piled into his feet, up
+  // to P_BURY_JUMP_MAX deep) — he can leap out of a light burial, but deeper than
+  // that the jump is denied and he must dig himself free. Re-arm only when the key
+  // is released; the armed flag persists across frames so a press isn't lost to a
+  // single-frame `grounded` flicker (one press = one jump, Terraria-style).
   bool wantJump = (p.input & PI_JUMP) != 0;
-  if (p.grounded && !wantJump) p.jumpReady = true;
-  if (wantJump && p.grounded && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
+  int bury = buryDepth(p);
+  // Deep burial denies the jump outright (dig out); otherwise jump when grounded
+  // or shallowly buried. (A player buried past the cap is still `grounded`, so the
+  // cap must gate regardless of grounding.)
+  bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
+  if (canJump && !wantJump) p.jumpReady = true;
+  if (wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
 
   // horizontal move
   if (tryMoveX(p, p.vx)) p.vx = 0;
 
-  // gravity + vertical move; grounded iff blocked while moving down
+  // gravity + vertical move
   p.vy += P_GRAVITY;
   if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;
-  bool blockedDown = false;
-  if (tryMoveY(p, p.vy)) { blockedDown = (p.vy > 0); p.vy = 0; }
-  p.grounded = blockedDown;
+  if (tryMoveY(p, p.vy)) p.vy = 0;
+  // grounded := stable downward-edge contact (solid directly under the feet) OR
+  // buried — flicker-free vs. the old "was the down-move blocked" test.
+  int feetRow = (int)std::floor(p.py + p.h - 1e-6);
+  p.grounded = rowSolid(p.px, p.w, feetRow + 1) || buryDepth(p) > 0;
 }
 
 // ---- player-mediated tool use (Terraria-like dig/build) ----

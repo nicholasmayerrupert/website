@@ -22,6 +22,9 @@
     // per-cell sim scratch
     std::vector<uint8_t> groundedCell;
     std::vector<int32_t> cellComp, groundStack, compOccStamp;
+    // generation-stamped "seen" scratch for component flood fills (reused across
+    // calls; a cell is "seen" iff seenStamp[k] == seenGen, so a clear is just gen++).
+    std::vector<int32_t> seenStamp; int32_t seenGen = 0;
     std::vector<int> prevCompCells, curCompCells, bodyCells;
     std::vector<uint8_t> reactionFlags;
     std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
@@ -53,6 +56,7 @@
       vacatedStamp.assign(n, -1);
       groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
       compOccStamp.assign(n, -1);
+      seenStamp.assign(n, 0); seenGen = 0;
       reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
       bodyOwner.assign(n, -1);
       renderPixels.assign(n * 4, 0);
@@ -267,6 +271,17 @@
     return (x > 1 && grid[k - 1] == EMPTY) || (x < cols - 2 && grid[k + 1] == EMPTY) ||
            (y > 1 && grid[k - cols] == EMPTY) || (y < rows - 1 && grid[k + cols] == EMPTY);
   }
+  // A liquid only stays "active" if it has somewhere to FLOW — empty to a side or
+  // below. Empty ABOVE (open sky over a flat surface) is NOT an escape: liquid
+  // never flows up, so a surface cell blocked on its sides + below has settled and
+  // should go inert instead of re-marking itself dirty every step forever (the
+  // shimmer + the per-step diff churn that broke open oceans in multiplayer). It
+  // re-wakes normally when a neighbour changes (dirty padding covers the gap).
+  inline bool liquidCanEscape(int k) {
+    int x = k % cols, y = k / cols;
+    return (x > 1 && grid[k - 1] == EMPTY) || (x < cols - 2 && grid[k + 1] == EMPTY) ||
+           (y < rows - 1 && grid[k + cols] == EMPTY);
+  }
   inline void writeGridIndex(int k, uint8_t m) { if (grid[k] == m) return; grid[k] = m; markCellIndex(k); }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
   inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }
@@ -278,7 +293,7 @@
   inline void writeNextIndex(int k, uint8_t m) {
     if (next[k] == m) return;
     next[k] = m;
-    if (grid[k] != m || m == FIRE || m == STEAM || (isLiquid(m) && touchesGridEmpty(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
+    if (grid[k] != m || m == FIRE || m == STEAM || (isLiquid(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
   inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGas(d)) return true; return canDisplaceByLooseDensity(m, d); }
   inline bool canEnterIndex(int k, uint8_t m) { return next[k] == EMPTY && (grid[k] == EMPTY || canDisplaceMaterial(m, grid[k])); }

@@ -201,5 +201,33 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Flat / contained liquid SETTLES to inert instead of shimmering forever, and
+// re-wakes + flows when the basin is breached. Without the settle fix, step()
+// would stay active every frame (the open surface re-marks itself dirty), so this
+// both proves the fix and guards the multiplayer-churn regression it prevents.
+{
+  console.log('liquid settles flat (no shimmer) + re-wakes on breach');
+  const e = mk();
+  // grounded basin: two full-height walls + a one-row floor slab spanning them,
+  // with an EMPTY chamber beneath so a floor breach lets the water drain downward.
+  for (let y = 80; y < ROWS; y++) { e.paintDisc(80, y, 0, 3, true); e.paintDisc(120, y, 0, 3, true); }
+  for (let x = 81; x <= 119; x++) e.paintDisc(x, 100, 0, 3, true); // floor slab at y=100
+  e.syncComponents();
+  // pour water as an uneven column on the LEFT -> it must flow right and level out
+  // before it can settle (exercises the dynamic settle, not just a pre-flat body).
+  for (let x = 81; x <= 95; x++) for (let y = 82; y <= 99; y++) e.paintDisc(x, y, 0, 2, true);
+  let t = 0, settledAt = -1;
+  for (let i = 0; i < 1200; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`uneven water flows, levels, and settles to inert (step ${settledAt})`, settledAt > 1 && settledAt < 1200);
+  const waterBelow = () => { const g = e.getGrid(); let n = 0; for (let y = 101; y < ROWS; y++) for (let x = 81; x <= 119; x++) if (g[y * COLS + x] === 2) n++; return n; };
+  check(`water stayed above the floor while contained (${waterBelow()})`, waterBelow() === 0);
+  e.eraseDisc(100, 100, 2); // breach the floor slab
+  let woke = false; for (let i = 0; i < 4; i++) { t += 16; if (e.step(t)) woke = true; }
+  check('settled water re-wakes when the floor is breached', woke);
+  for (let i = 0; i < 400; i++) { t += 16; e.step(t); }
+  check(`water drained into the chamber below (${waterBelow()} cells)`, waterBelow() > 20);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -135,7 +135,8 @@ static const double P_GRAVITY = 0.25, P_MAX_FALL = 6.0;
 static const double P_MOVE_ACCEL = 0.6, P_MAX_RUN = 1.6, P_RUN_MULT = 1.7;
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.8;
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
-static const double P_STEP_UP = 1.0;       // auto-climb height for 1-cell ledges
+static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
+static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
 // Player tool use (Phase 3): reach limit, per-action cooldown, brush radii.
 static const double P_TOOL_REACH = 18.0;   // max cells from player center
 static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held

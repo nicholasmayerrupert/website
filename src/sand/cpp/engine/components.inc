@@ -210,19 +210,21 @@
     }
   }
 
-  void floodComponent(int sx, int sy, std::vector<uint8_t>& seen, bool bounded, std::vector<int>& outCells, int& outYMax,
+  // `seen[k] == gen` means visited. The caller bumps the generation (gen++) to
+  // "clear" the whole buffer in O(1) instead of reallocating/zeroing cols*rows.
+  void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax,
                       bool (Engine::*matCheck)(uint8_t)) {
     int bx = bounded ? sx >> CHUNK_SHIFT : 0, by = bounded ? sy >> CHUNK_SHIFT : 0;
     int k0 = sy * cols + sx;
-    outCells.clear(); outCells.push_back(k0); outYMax = sy; seen[k0] = 1; // seen[] dedups -> push_back never repeats
+    outCells.clear(); outCells.push_back(k0); outYMax = sy; seen[k0] = gen; // seen[] dedups -> push_back never repeats
     for (size_t qi = 0; qi < outCells.size(); qi++) {
       int cur = outCells[qi]; int y = cur / cols, x = cur - y * cols; if (y > outYMax) outYMax = y;
       for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
         if (!ox && !oy) continue; int nx = x + ox, ny = y + oy;
         if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
         if (bounded && ((nx >> CHUNK_SHIFT) != bx || (ny >> CHUNK_SHIFT) != by)) continue;
-        int nk = ny * cols + nx; if (seen[nk] || !(this->*matCheck)(grid[nk])) continue;
-        seen[nk] = 1; outCells.push_back(nk);
+        int nk = ny * cols + nx; if (seen[nk] == gen || !(this->*matCheck)(grid[nk])) continue;
+        seen[nk] = gen; outCells.push_back(nk);
       }
     }
   }
@@ -231,26 +233,29 @@
   bool isPlantMat(uint8_t m) { return isPlantMaterial(m); }
 
   void registerSeededComponents(int colStart, int colEnd) {
-    size_t n = (size_t)cols * rows;
+    // Reused generation-stamped scratch (allocated once in Layer::alloc): a cell
+    // is "seen" iff seenStamp[k] == gen. Each of the three blocks bumps gen, so
+    // the "clear" between materials costs O(1) instead of zeroing cols*rows.
+    std::vector<int32_t>& seen = L->seenStamp;
     // STONE (chunk-bounded)
     {
-      std::vector<uint8_t> seen(n, 0);
-      for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = 1;
+      int32_t gen = ++L->seenGen;
+      for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = gen;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-        int k = sy * cols + sx; if (seen[k] || grid[k] != STONE) continue;
+        int k = sy * cols + sx; if (seen[k] == gen || grid[k] != STONE) continue;
         std::vector<int> cells; int yMax;
-        floodComponent(sx, sy, seen, true, cells, yMax, &Engine::isStone);
+        floodComponent(sx, sy, seen, gen, true, cells, yMax, &Engine::isStone);
         Comp c; c.id = L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax; L->stoneComponents.push_back(std::move(c));
       }
     }
     // PLANT family
     {
-      std::vector<uint8_t> seen(n, 0);
-      for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = 1;
+      int32_t gen = ++L->seenGen;
+      for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = gen;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-        int k = sy * cols + sx; if (seen[k] || !isPlantMaterial(grid[k])) continue;
+        int k = sy * cols + sx; if (seen[k] == gen || !isPlantMaterial(grid[k])) continue;
         std::vector<int> cells; int yMax;
-        floodComponent(sx, sy, seen, false, cells, yMax, &Engine::isPlantMat);
+        floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isPlantMat);
         Comp c; c.id = L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
         for (int kk : cells) { if (grid[kk] == WOOD) c.woodCount++; else if (grid[kk] == PLANT) c.leafCount++; }
         c.cells = std::move(cells); L->plantComponents.push_back(std::move(c));
@@ -258,12 +263,12 @@
     }
     // ICE
     {
-      std::vector<uint8_t> seen(n, 0);
-      for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = 1;
+      int32_t gen = ++L->seenGen;
+      for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = gen;
       for (int sy = 0; sy < rows; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-        int k = sy * cols + sx; if (seen[k] || grid[k] != ICE) continue;
+        int k = sy * cols + sx; if (seen[k] == gen || grid[k] != ICE) continue;
         std::vector<int> cells; int yMax;
-        floodComponent(sx, sy, seen, false, cells, yMax, &Engine::isIce);
+        floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isIce);
         Comp c; c.id = L->nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; L->iceComponents.push_back(std::move(c));
       }
     }

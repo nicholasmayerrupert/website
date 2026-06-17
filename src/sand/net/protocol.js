@@ -9,6 +9,7 @@ export const PROTOCOL_VERSION = 1;
 export const MSG = Object.freeze({
   JOIN: 'join',
   LEAVE: 'leave',
+  ASSIGN: 'assign',     // host -> client: your authoritative playerId
   INPUT: 'input',
   SNAPSHOT: 'snapshot',
   PING: 'ping',
@@ -34,6 +35,9 @@ export function makeJoin(room, client, name = '') {
 }
 export function makeLeave(room, client) {
   return { t: MSG.LEAVE, v: PROTOCOL_VERSION, room, client };
+}
+export function makeAssign(room, client, player) {
+  return { t: MSG.ASSIGN, room, client, player: player | 0 };
 }
 export function makeInput({ room, client, player, tick, seq, bits, aimX, aimY, tool }) {
   return {
@@ -66,6 +70,7 @@ export function decode(str) {
   switch (m.t) {
     case MSG.JOIN: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.LEAVE: return (isRoom(m.room) && isId(m.client)) ? m : null;
+    case MSG.ASSIGN: return (isRoom(m.room) && isId(m.client) && isNonNegInt(m.player)) ? m : null;
     case MSG.INPUT: return validateInput(m);
     case MSG.SNAPSHOT: return validateSnapshot(m);
     case MSG.PING:

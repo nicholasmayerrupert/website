@@ -132,6 +132,7 @@ struct Player {
   int selectedTool = T_ERASER;
   double aimX = 0, aimY = 0; // cell coords of the aim/cursor
   int input = 0, prevInput = 0;
+  bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
   int toolCooldown = 0; // steps remaining before this player can act again

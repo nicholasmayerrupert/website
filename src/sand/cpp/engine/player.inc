@@ -98,9 +98,14 @@ void integratePlayer(Player& p) {
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
 
-  // jump: edge-triggered (press, not hold) and only when grounded
-  bool jumpPressed = (p.input & PI_JUMP) && !(p.prevInput & PI_JUMP);
-  if (jumpPressed && p.grounded) { p.vy = -P_JUMP_VEL; p.grounded = false; }
+  // jump: re-arm only when grounded AND the key is released, then fire on a held
+  // press while grounded. The armed flag persists across frames, so a press isn't
+  // lost to a single-frame `grounded` flicker (resting on shifting surface sand) —
+  // unlike a raw 1-frame edge. Requiring a release to re-arm means holding the key
+  // does NOT auto-bounce (Terraria-style: one press = one jump).
+  bool wantJump = (p.input & PI_JUMP) != 0;
+  if (p.grounded && !wantJump) p.jumpReady = true;
+  if (wantJump && p.grounded && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
 
   // horizontal move
   if (tryMoveX(p, p.vx)) p.vx = 0;

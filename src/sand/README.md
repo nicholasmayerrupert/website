@@ -119,10 +119,19 @@ player state and grid hash.
   relay: rooms + membership + message forwarding. The first peer to join a room
   is the host; the server never simulates. A live two-client round-trip
   (input → host, snapshot → client, disconnect → leave) is covered by `test:net`.
+- `gameNet.js` — the browser glue wired into `createSandGame`. The **host** peer
+  runs the engine, spawns a player per remote client (reusing `Host`), and
+  broadcasts snapshots; a **client** peer sends input and renders all players from
+  the host's snapshots (smoothed). A minimal DEV-only Host/Join panel
+  (`SandGame.jsx`) drives it against the local relay. `scripts/mp-e2e.mjs` is a
+  two-context Playwright test (host + client) asserting the client's input reaches
+  the host, both peers observe it, and disconnect removes the remote player.
 
-Still to come: the browser WebSocket client + Host/Join UI + a two-context
-Playwright test (Phase 5 wiring), world diffs (Phase 6), and client prediction/
-reconciliation (Phase 7).
+To try it locally: `npm run mp:server`, then open the site in two tabs, Host a
+room in one and Join it (same code) in the other.
+
+Player replication only (each peer keeps its own local sand world for now); world
+cell diffs are Phase 6, client prediction/reconciliation Phase 7.
 
 `sand-test` checks conservation, rigid components, reactions, growth, free rigid
 bodies, tool/pointer policy, and that edits survive a world shift. `player-test`

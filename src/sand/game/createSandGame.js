@@ -16,6 +16,7 @@
 
 import { createEngineWasm, CHUNK_SIZE, SEED_SIZE, INPUT } from '../engineWasm';
 import { createCamera } from '../camera';
+import { createGameNet } from '../net/gameNet';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -61,6 +62,16 @@ export function createSandGame(container, opts = {}) {
   let localPlayerId = 0;
   const PLAYER_W = 4, PLAYER_H = 8; // mirrors PLAYER_W/PLAYER_H in cpp/common.hpp
   let inputSeq = 0;
+  let net = null; // multiplayer glue (created lazily on host/join)
+
+  // Surface spawn for a column: above the highest terrain across the footprint so
+  // the character drops cleanly. Shared by the local spawn + remote (host) spawns.
+  const surfaceSpawn = (col) => {
+    const worldX0 = engine.getWorldOffsetX();
+    let topSurf = engine.worldSurfaceAt(worldX0 + col);
+    for (let c = col - PLAYER_W; c <= col + PLAYER_W; c++) topSurf = Math.min(topSurf, engine.worldSurfaceAt(worldX0 + c));
+    return { x: col - PLAYER_W / 2, y: topSurf - PLAYER_H - 4 };
+  };
 
   // One seed per mount so resizing regenerates the *same* infinite world.
   const worldSeed = (Math.random() * 4294967296) >>> 0;
@@ -243,15 +254,13 @@ export function createSandGame(container, opts = {}) {
     // horizontally and just above the surface so the spawn view shows ground.
     camera.setBounds(cols - viewCols, rows - viewRows);
     const spawnCol = Math.floor(cols / 2);
-    const worldX0 = engine.getWorldOffsetX();
-    const spawnRow = engine.worldSurfaceAt(worldX0 + spawnCol);
-    // Spawn above the HIGHEST terrain across the player's footprint so it drops
-    // cleanly onto the surface (never wedged inside a bump) with open headroom.
-    let topSurf = spawnRow;
-    for (let c = spawnCol - PLAYER_W; c <= spawnCol + PLAYER_W; c++) {
-      topSurf = Math.min(topSurf, engine.worldSurfaceAt(worldX0 + c));
+    const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
+    // Spawn the local player on the surface (unless a client, where the host owns
+    // it — it gets removed and re-rendered from snapshots when joining).
+    if (!net || net.role !== 'client') {
+      const sp = surfaceSpawn(spawnCol);
+      localPlayerId = engine.spawnPlayer(sp.x, sp.y);
     }
-    localPlayerId = engine.spawnPlayer(spawnCol - PLAYER_W / 2, topSurf - PLAYER_H - 4);
     camera.set((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
     lastCamX = NaN;
     lastCamY = NaN;
@@ -488,13 +497,14 @@ export function createSandGame(container, opts = {}) {
     // engine snapshots; the simulation stays in C++.
     const drawPlayers = () => {
       if (testPaused) return; // keep the paused flicker bench free of overlay noise
-      const players = engine.getPlayers();
+      const players = playersForRender();
+      const ownId = renderOwnId();
       for (let i = 0; i < players.length; i++) {
         const p = players[i];
         const sx = (p.x - camCol) * cellDev + offX;
         const sy = (p.y - camRow) * cellDev + offY;
         const pw = p.w * cellDev, ph = p.h * cellDev;
-        ctx.fillStyle = p.id === localPlayerId ? 'rgba(80,170,255,0.92)' : 'rgba(255,140,80,0.92)';
+        ctx.fillStyle = p.id === ownId ? 'rgba(80,170,255,0.92)' : 'rgba(255,140,80,0.92)';
         ctx.fillRect(sx, sy, pw, ph);
         ctx.fillStyle = 'rgba(20,30,45,0.9)';
         const eye = Math.max(1, Math.round(cellDev * 0.7));
@@ -507,7 +517,7 @@ export function createSandGame(container, opts = {}) {
     const contentChanged = full || forceFullRender || dirtyChunkCount > 0;
     // Present (and thus repaint the player overlay) whenever any player exists,
     // so a moving character is never left as a stale rectangle.
-    const hasPlayers = engine.playerCount() > 0;
+    const hasPlayers = (net.role === 'client') ? net.getPlayersForRender().length > 0 : engine.playerCount() > 0;
     if (contentChanged) syncCellCanvas(full);
     if (contentChanged || camMoved || hasPlayers) present();
 
@@ -614,6 +624,9 @@ export function createSandGame(container, opts = {}) {
       getPlayMode() { return playMode; },
       getPlayer() { return localPlayer(); },
       getPlayers() { return engine ? engine.getPlayers() : []; },
+      renderedPlayers() { return playersForRender(); },
+      localInput() { return currentLocalInput(); },
+      heldKeys() { return [...pressedKeys]; },
       setTool(name) { currentToolName = name; engine?.setTool(TOOL[name] ?? 0); },
       setDrawMode(v) { drawModeOn = !!v; },
       actionCount() { return engine ? engine.getPlayerActionCount() : 0; },
@@ -626,6 +639,20 @@ export function createSandGame(container, opts = {}) {
           y: ((p.y + p.h / 2 - camRow) * cellDev + lastOffY) / dpr,
         };
       },
+    };
+    // Multiplayer hooks for the two-context Playwright test.
+    window.__sandNet = {
+      host: (url, room) => netHost(url, room),
+      join: (url, room) => netJoin(url, room),
+      disconnect: () => netDisconnect(),
+      status: () => netStatus(),
+      players: () => playersForRender(),
+      playerCount: () => playersForRender().length,
+      ownPlayer: () => (net.role === 'client' ? net.getOwnPlayer() : localPlayer()),
+      debug: () => net.debug,
+      // Drive N fixed sim steps synchronously (RAF-throttling-immune) so the
+      // two-context multiplayer test is deterministic.
+      tickSteps: (n = 1) => { for (let i = 0; i < n; i++) doFixedStep(performance.now()); render(false); },
     };
   }
 
@@ -658,13 +685,70 @@ export function createSandGame(container, opts = {}) {
     if (pressedKeys.has('shift')) bits |= INPUT.RUN;
     return bits;
   };
-  // Glide the camera toward the player's center, clamped to the buffer bounds.
+  // Normalized local input each step (keyboard + mouse-as-primary/secondary).
+  const currentLocalInput = () => {
+    let bits = playerInputBits();
+    if (drawModeOn && inside) {
+      if (mouseButtons & 1) bits |= INPUT.PRIMARY;
+      if (mouseButtons & 2) bits |= INPUT.SECONDARY;
+    }
+    return { bits, aimX: toCellX(), aimY: toCellY(), tool: TOOL[currentToolName] ?? 0 };
+  };
+  // Glide the camera toward the followed player's center, clamped to bounds. On a
+  // client the followed player is our host-authoritative snapshot entity.
   const followCamera = () => {
-    const p = localPlayer();
+    const p = (net && net.role === 'client') ? net.getOwnPlayer() : localPlayer();
     if (!p) return;
     const tx = p.x + p.w / 2 - viewCols / 2;
     const ty = p.y + p.h / 2 - viewRows / 2;
     camera.set(camera.x + (tx - camera.x) * 0.18, camera.y + (ty - camera.y) * 0.18);
+  };
+
+  // Multiplayer glue. Host runs the engine; clients render players from snapshots.
+  net = createGameNet({
+    getEngine: () => engine,
+    getLocalInput: currentLocalInput,
+    getSpawn: () => surfaceSpawn(Math.floor(cols / 2) + Math.floor((Math.random() - 0.5) * 24)),
+  });
+  const playersForRender = () => (net.role === 'client' ? net.getPlayersForRender() : engine.getPlayers());
+  const renderOwnId = () => (net.role === 'client' ? net.ownPlayerId : localPlayerId);
+  const netHost = (url, room) => net.hostRoom(url, room);
+  const netJoin = (url, room) => {
+    if (localPlayerId) { engine.removePlayer(localPlayerId); localPlayerId = 0; } // host owns it now
+    return net.joinRoom(url, room);
+  };
+  const netDisconnect = () => {
+    net.disconnect();
+    if (!localPlayerId && engine) { const sp = surfaceSpawn(Math.floor(cols / 2)); localPlayerId = engine.spawnPlayer(sp.x, sp.y); }
+  };
+  const netStatus = () => ({ role: net.role, connected: net.connected, remotes: net.remoteCount, ownPlayerId: net.ownPlayerId, status: net.status });
+
+  // One fixed simulation step: world-shift + input/tool + multiplayer pump +
+  // engine.step. Extracted so the main loop AND the deterministic test hook
+  // (tickSteps) can drive it identically — the test path is immune to RAF
+  // throttling (which otherwise makes two-context multiplayer timing flaky).
+  const doFixedStep = (now) => {
+    const dx = engine.maybeShiftWorld(camera.colX, viewCols, SHIFT_EDGE_MARGIN);
+    if (dx) {
+      shiftCellCanvas(dx); // new band repaints from the engine's dirty chunks
+      camera.set(camera.x - dx, camera.y);
+    }
+    const isClient = net.role === 'client';
+    if (playMode && localPlayerId && !isClient) {
+      const inp = currentLocalInput();
+      engine.setPlayerInput(localPlayerId, { ...inp, seq: ++inputSeq });
+    } else if (!playMode) {
+      if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
+    }
+    if (net.connected) net.update();
+    const didStep = engine.step(now);
+    if (didStep) {
+      perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
+      perfRenderSamples[perfSampleIdx] = perfRenderMs;
+      perfSampleIdx = (perfSampleIdx + 1) % PERF_SAMPLES;
+      if (perfSampleCount < PERF_SAMPLES) perfSampleCount++;
+    }
+    return didStep;
   };
 
   // Main loop
@@ -702,43 +786,7 @@ export function createSandGame(container, opts = {}) {
     // run at STEP_MS for determinism, independent of the per-frame pan above.
     let stepped = false;
     if (now - lastStep >= STEP_MS && !testPaused) {
-      // Stream the infinite world: the engine decides whether the loaded window
-      // should slide so the camera always has room to pan, and slides it. JS
-      // mirrors the slide in its visual cache (cheap GPU copy) and pulls the
-      // camera back so the view is unchanged. dx>0 slides right, dx<0 left.
-      const dx = engine.maybeShiftWorld(camera.colX, viewCols, SHIFT_EDGE_MARGIN);
-      if (dx) {
-        shiftCellCanvas(dx); // new band repaints from the engine's dirty chunks
-        camera.set(camera.x - dx, camera.y);
-      }
-
-      // Player input is sampled once per fixed step (deterministic). The engine
-      // simulates the character; the aim cell is the pointer cell under the view.
-      if (playMode && localPlayerId) {
-        // Play mode: keyboard movement + mouse-as-primary/secondary feed the
-        // player; the engine applies tools at the aim cell (reach-limited).
-        let bits = playerInputBits();
-        if (drawModeOn && inside) {
-          if (mouseButtons & 1) bits |= INPUT.PRIMARY;
-          if (mouseButtons & 2) bits |= INPUT.SECONDARY;
-        }
-        engine.setPlayerInput(localPlayerId, {
-          bits, aimX: toCellX(), aimY: toCellY(),
-          tool: TOOL[currentToolName] ?? 0, seq: ++inputSeq,
-        });
-      } else {
-        // Free-camera mode: classic pointer tools (drafts + held paint/erase).
-        // Coords are recomputed each step so a stationary cursor still tracks
-        // the world cell beneath it as the camera pans. The engine owns policy.
-        if (engine.applyTool(toCellX(), toCellY(), now, inside, drawModeOn)) previewDirty = true;
-      }
-      stepped = engine.step(now);
-      if (stepped) {
-        perfStepSamples[perfSampleIdx] = engine.getPerf().stepMs;
-        perfRenderSamples[perfSampleIdx] = perfRenderMs;
-        perfSampleIdx = (perfSampleIdx + 1) % PERF_SAMPLES;
-        if (perfSampleCount < PERF_SAMPLES) perfSampleCount++;
-      }
+      stepped = doFixedStep(now);
       lastStep = now;
     }
 
@@ -750,7 +798,9 @@ export function createSandGame(container, opts = {}) {
     // frame is a cheap GPU blit (render() does no CPU pixel work when content
     // is unchanged), so this is safe to run at the display refresh rate.
     const camMoved = camera.x !== lastCamX || camera.y !== lastCamY;
-    if (stepped || camMoved) render(false);
+    // A connected client animates remote players from snapshots even when its own
+    // grid is static, so keep presenting.
+    if (stepped || camMoved || (net.connected && net.role === 'client')) render(false);
     if (previewDirty || previewVisible) renderPreview();
   };
   raf = requestAnimationFrame(loop);
@@ -762,6 +812,7 @@ export function createSandGame(container, opts = {}) {
     cancelAnimationFrame(raf);
     ro.disconnect();
     mqDpr?.removeEventListener?.('change', onDprChange);
+    net?.disconnect();
     if (engine && engine.destroy) engine.destroy();
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('touchmove', onTouchMove);
@@ -786,6 +837,10 @@ export function createSandGame(container, opts = {}) {
     getDrawMode() { return drawModeOn; },
     setPlayMode(on) { playMode = !!on; },
     getPlayMode() { return playMode; },
+    netHost(url, room) { return netHost(url, room); },
+    netJoin(url, room) { return netJoin(url, room); },
+    netDisconnect() { netDisconnect(); },
+    netStatus() { return netStatus(); },
     destroy,
   };
 }

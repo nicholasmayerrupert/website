@@ -136,7 +136,18 @@ export function createSandGame(container, opts = {}) {
   let clientX = -1, clientY = -1;
   let px = -1, py = -1;
   let inside = false;
-  let mouseButtons = 0; // bit 0 = LMB, bit 1 = RMB (drives player primary/secondary)
+  // bit 0 = LMB, bit 1 = RMB (drives player primary/secondary). This is the
+  // AUTHORITATIVE held-button state and it is owned by the pointerdown/pointerup
+  // EDGES, not by per-move `e.buttons`. Real hardware/drivers routinely emit a
+  // `pointermove` whose `buttons` field momentarily reads 0 while the button is
+  // still physically down (a "phantom release"). If a move were allowed to clear
+  // mouseButtons, the engine would see PI_PRIMARY fall for a step — finalizing the
+  // solid draft after a SINGLE chunk — then never see it rise again until the real
+  // release, which is exactly the "places one chunk then does nothing" bug. So
+  // down sets the bit, up clears it, and a move may only ADD a newly-pressed
+  // button, never drop a held one.
+  let mouseButtons = 0;
+  const BTN_BIT = { 0: 1, 2: 2 }; // pointer e.button -> mouseButtons bit (LMB, RMB)
 
   // Reduced motion
   let reduced = false;
@@ -284,9 +295,11 @@ export function createSandGame(container, opts = {}) {
   // Global listeners so the canvas can stay pointer-events:none. JS forwards raw
   // pointer state; the engine owns the aim mapping and all tool policy.
   const onPointerMove = (e) => {
-    mouseButtons = e.buttons;
+    // Only ADD buttons a move reports as newly pressed; a held button is released
+    // solely by pointerup/pointercancel/blur. Trusting e.buttons==0 here would let
+    // a phantom-release move drop a still-held button (see mouseButtons comment).
+    mouseButtons |= e.buttons;
     updatePointer(e.clientX, e.clientY);
-    engine?.pointerButtons(e.buttons); // release the held/RMB state on buttons==0
     if (playMode) { if (engine) previewDirty = true; return; } // re-present so the aim cursor follows
     if (!drawModeOn || !engine) return;
     if (inside && engine.pointerDraftAtAim()) previewDirty = true;
@@ -306,7 +319,10 @@ export function createSandGame(container, opts = {}) {
     // Survival aims/builds with the mouse regardless of the Draw toggle; creative
     // requires draw mode (so the page stays scrollable until the user opts in).
     if (!playMode && !drawModeOn) return;
-    mouseButtons = e.buttons;
+    // Authoritative press edge: latch this button's bit (plus any other buttons the
+    // event reports already down). The latch is what keeps PI_PRIMARY held across
+    // steps even if later moves momentarily report buttons==0.
+    mouseButtons |= e.buttons | (BTN_BIT[e.button] || 0);
     updatePointer(e.clientX, e.clientY);
     if (!inside) return;
     if (e.button === 0 || e.button === 2) {
@@ -318,9 +334,11 @@ export function createSandGame(container, opts = {}) {
 
   const onPointerUp = (e) => {
     if (!engine) return;
-    mouseButtons = e.buttons;
+    // Authoritative release edge: drop only the released button's bit. Other
+    // buttons stay latched until their own pointerup (or blur/cancel).
+    mouseButtons &= ~(BTN_BIT[e.button] || 0);
     updatePointer(e.clientX, e.clientY);
-    engine.pointerButtons(e.buttons); // clears RMB/LMB when no buttons remain
+    engine.pointerButtons(mouseButtons); // clears RMB/LMB when no buttons remain
     if (engine.pointerUp(e.button)) previewDirty = true;
   };
 
@@ -364,12 +382,26 @@ export function createSandGame(container, opts = {}) {
     const code = KEY_CODE[e.key.toLowerCase()];
     if (code !== undefined) engine?.inputKey(code, 0);
   };
-  const onBlur = () => engine?.inputClearKeys(); // avoid keys "sticking" on focus loss
+  const onBlur = () => {
+    engine?.inputClearKeys();      // avoid keys "sticking" on focus loss
+    mouseButtons = 0;              // and avoid a button "sticking" if focus is lost mid-press
+    engine?.pointerButtons(0);
+    updatePointer(clientX, clientY); // push the cleared state so PI_PRIMARY drops -> draft finalizes
+  };
+  // Pointer capture can be revoked (e.g. an OS gesture); treat it as a release so a
+  // held button can never get stranded latched.
+  const onPointerCancel = (e) => {
+    mouseButtons &= ~(BTN_BIT[e.button] || 0);
+    if (e.button < 0) mouseButtons = 0; // pointercancel has no button -> clear all
+    updatePointer(e.clientX, e.clientY);
+    engine?.pointerButtons(mouseButtons);
+  };
 
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('touchmove', onTouchMove, { passive: true });
   window.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerCancel);
   window.addEventListener('contextmenu', onContextMenu);
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('keydown', onKeyDown);
@@ -624,6 +656,7 @@ export function createSandGame(container, opts = {}) {
     window.removeEventListener('touchmove', onTouchMove);
     window.removeEventListener('pointerdown', onPointerDown);
     window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('pointercancel', onPointerCancel);
     window.removeEventListener('contextmenu', onContextMenu);
     window.removeEventListener('scroll', onScroll);
     window.removeEventListener('keydown', onKeyDown);

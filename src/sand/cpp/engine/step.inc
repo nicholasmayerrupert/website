@@ -126,14 +126,17 @@
     // the background under foreground water lets the water pour into the new channel
     // on its own. Settling fluids (flat bodies go inert) keep this from shimmering.
     if (!isLoose(m)) return false;
-    // Target empty -> a plain transfer. Target occupied by a LIGHTER liquid -> a
-    // density SWAP: a denser stuck liquid (fg water) pushes through the lighter liquid
-    // (bg oil), trading places across the layers. Antisymmetric density test means the
-    // reverse swap is impossible (no oscillation); the stuck+canFall gates keep it from
-    // bleeding into a packed backdrop or churning.
+    // Target empty -> a plain transfer. Target occupied by a LIGHTER loose material
+    // (powder OR liquid) -> a density SWAP: a denser stuck loose material (fg lava,
+    // fg water, ...) pushes through the lighter one (bg sand, bg oil, ...), trading
+    // places across the layers. canDisplaceByLooseDensity is powder+liquid generic, so
+    // lava(2.8) displaces sand(1.6), sand(1.6) displaces water(1.0), water(1.0)
+    // displaces oil(0.8), etc. Its strict density test is antisymmetric, so the reverse
+    // swap is impossible (no oscillation); the stuck+canFall gates keep it from bleeding
+    // into a packed backdrop or churning.
     uint8_t dst = to->grid[k]; bool swap = false;
     if (dst != EMPTY) {
-      if (!(isLiquid(m) && isLiquid(dst) && canDisplaceByLooseDensity(m, dst))) return false;
+      if (!canDisplaceByLooseDensity(m, dst)) return false;
       swap = true;
     }
     if (!stuckIn(from, x, y, m)) return false;

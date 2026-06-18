@@ -156,10 +156,15 @@ static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 static const int    P_MINE_DURABILITY = 40; // eraser sweep penetration budget; each mined cell spends DURABILITY[m]
 // Player buoyancy: while submerged in a liquid he sinks SLOWLY (gentle gravity, low
 // terminal fall speed, velocity drag) and can swim upward with the jump key.
+// He counts as "in water" once at least this fraction of his AABB cells are liquid,
+// so shallow wading (feet/lower body wet) already engages buoyancy+drag; the effect
+// then scales with how submerged he is (see integratePlayer's `wet` ramp).
+static const double P_WATER_SUBMERGE_FRAC = 0.34; // ~1/3 of the body in liquid
 static const double P_WATER_GRAVITY = 0.035; // vs P_GRAVITY 0.25 -> slow sink
 static const double P_WATER_MAX_FALL = 0.8;  // vs P_MAX_FALL 6.0 -> low terminal speed
 static const double P_WATER_VDRAG = 0.82;    // per-step vertical velocity damping in liquid
 static const double P_WATER_HDRAG = 0.86;    // per-step horizontal damping in liquid
+static const double P_WATER_MAX_RUN_MULT = 0.5; // top wading speed vs land (else the speed cap hides hdrag)
 static const double P_SWIM_VEL = 1.1;        // upward swim impulse from the jump key while submerged
 struct Player {
   int id = 0;

@@ -539,5 +539,54 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
+// 19. WADING through a shallow water layer (water only at the feet/lower body, the
+//     mid-body CENTER is dry) still slows the player — both his fall and his
+//     horizontal speed through the water are clearly less than through air. This is
+//     exactly the case the old center-cell-only test missed: with only the lower
+//     half wet, the geometric-center cell is dry, so the old check reported "not in
+//     water" and he moved through it as though it were nothing. PLAYER_H = 8.
+{
+  console.log('survival: wading (lower body wet, center dry) is slowed — not just full submersion');
+
+  // -- vertical: enter a shallow pool at the feet and sink through it. The body is
+  //    8 tall; a ~6-cell water band wets the lower body while the center stays dry. --
+  const fallThroughShallow = (water) => {
+    const e = mk();
+    // water band at the player's lower body (spawn y=40 -> body rows 40..47);
+    // rows 44..49 wet the lower half + just beneath, center row (~43) stays dry.
+    if (water) for (let x = 40; x < 160; x++) for (let y = 44; y < 50; y++) e.paintDisc(x, y, 0, 2, true);
+    stoneFloor(e, 40, 160, 116); // floor far below: he keeps descending, not resting
+    const id = e.spawnPlayer(100, 40);
+    const y0 = e.getPlayer(id).y;
+    for (let i = 0; i < 10; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(16 * i); }
+    const d = e.getPlayer(id).y - y0;
+    e.destroy();
+    return d;
+  };
+  const airFall = fallThroughShallow(false), wetFall = fallThroughShallow(true);
+  check(`wading slows the fall (water ${wetFall.toFixed(1)} < air ${airFall.toFixed(1)})`, wetFall < airFall * 0.8 && wetFall > 0);
+
+  // -- horizontal: wade RIGHT through a shallow pool on the floor vs. run on dry land.
+  //    Feet rest at y=100; the [96,100) water band wets the lower body but the center
+  //    (~y 94) is dry — the canonical "walks through water as if nothing" scenario. --
+  const runThroughShallow = (water) => {
+    const e = mk();
+    // long floor + pool so a 120-step run never reaches the edge (cols=200, but the
+    // run is bounded well under that from x=100; keep terrain to the buffer edge).
+    stoneFloor(e, 0, COLS, 100); // floor at y=100; player stands ON it (feet ~100)
+    if (water) for (let x = 0; x < COLS; x++) for (let y = 96; y < 100; y++) e.paintDisc(x, y, 0, 2, true);
+    const id = e.spawnPlayer(15, 92); // start near the left edge so an 80-step run stays in-bounds
+    runSteps(e, 20); // settle onto the floor
+    const x0 = e.getPlayer(id).x;
+    // long run so the steady-state cruise (not the shared accel ramp) dominates dx.
+    for (let i = 0; i < 80; i++) { e.setPlayerInput(id, { bits: INPUT.RIGHT }); e.step(16 * i); }
+    const dx = e.getPlayer(id).x - x0;
+    e.destroy();
+    return dx;
+  };
+  const airRun = runThroughShallow(false), wetRun = runThroughShallow(true);
+  check(`wading slows horizontal travel (water ${wetRun.toFixed(1)} < air ${airRun.toFixed(1)})`, wetRun < airRun * 0.82 && wetRun > 0);
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

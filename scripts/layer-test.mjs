@@ -297,6 +297,53 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check(`cross-layer two-fluid scene settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
 }
 
+// 16. Cross-layer powder-vs-liquid swap: a foreground LAVA column stuck directly
+//     above a background SAND column (with open background below it). Lava (2.8) is
+//     denser than sand (1.6), so the generic loose-density swap fires across layers:
+//     lava sinks into the background, sand rises into the foreground — conserved, no
+//     oscillation, settles to inert. This is the powder-OR-liquid generalization of
+//     the liquid-vs-liquid swap (case 15): the actor is a liquid, the target a powder.
+{
+  console.log('cross-layer: fg lava displaces bg sand (powder vs liquid, density)');
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 30, fy = 40;
+  stoneFloor(e, 1, cx, 70, 2);                                    // deep bg floor -> open space below the bg sand
+  for (let x = cx - 1; x <= cx + 1; x++) for (let y = fy; y <= fy + 6; y++) e.paintDiscLayer(1, x, y, 0, MAT.SAND, true); // bg sand column (3 wide)
+  stoneFloor(e, 0, cx, fy + 7, 2);                               // fg floor just below the lava -> lava stuck in fg
+  for (let x = cx - 1; x <= cx + 1; x++) for (let y = fy; y <= fy + 6; y++) e.paintDisc(x, y, 0, MAT.LAVA, true);        // fg lava column (3 wide)
+  const lava = () => countIn(e.getGrid(), MAT.LAVA) + countIn(e.getGridBg(), MAT.LAVA);
+  const sand = () => countIn(e.getGrid(), MAT.SAND) + countIn(e.getGridBg(), MAT.SAND);
+  const l0 = lava(), s0 = sand();
+  let settledAt = -1; for (let i = 0; i < 1200; i++) { if (!e.step(16 * (i + 1))) { settledAt = i; break; } }
+  check('lava + sand conserved across layers', lava() === l0 && sand() === s0 && l0 > 0 && s0 > 0, `(lava ${l0}->${lava()}, sand ${s0}->${sand()})`);
+  check('foreground lava reached the background (displaced the sand)', countIn(e.getGridBg(), MAT.LAVA) > 0, `(bg lava ${countIn(e.getGridBg(), MAT.LAVA)})`);
+  check('sand rose into the foreground (swapped up)', countIn(e.getGrid(), MAT.SAND) > 0, `(fg sand ${countIn(e.getGrid(), MAT.SAND)})`);
+  check(`cross-layer powder/liquid swap settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
+}
+
+// 17. Cross-layer powder-vs-liquid swap, the other ordering: a foreground SAND
+//     column stuck directly above a background WATER column. Sand (1.6) is denser
+//     than water (1.0), so the generic swap fires: sand sinks into the background,
+//     water rises into the foreground — conserved, settles to inert.
+{
+  console.log('cross-layer: fg sand displaces bg water (powder vs liquid, density)');
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 30, fy = 40;
+  stoneFloor(e, 1, cx, 70, 2);                                    // deep bg floor -> open space below the bg water
+  for (let x = cx - 1; x <= cx + 1; x++) for (let y = fy; y <= fy + 6; y++) e.paintDiscLayer(1, x, y, 0, MAT.WATER, true); // bg water column (3 wide)
+  stoneFloor(e, 0, cx, fy + 7, 2);                               // fg floor just below the sand -> sand stuck in fg
+  for (let x = cx - 1; x <= cx + 1; x++) for (let y = fy; y <= fy + 6; y++) e.paintDisc(x, y, 0, MAT.SAND, true);         // fg sand column (3 wide)
+  const sand = () => countIn(e.getGrid(), MAT.SAND) + countIn(e.getGridBg(), MAT.SAND);
+  const water = () => countIn(e.getGrid(), MAT.WATER) + countIn(e.getGridBg(), MAT.WATER);
+  const s0 = sand(), w0 = water();
+  let settledAt = -1; for (let i = 0; i < 1200; i++) { if (!e.step(16 * (i + 1))) { settledAt = i; break; } }
+  check('sand + water conserved across layers', sand() === s0 && water() === w0 && s0 > 0 && w0 > 0, `(sand ${s0}->${sand()}, water ${w0}->${water()})`);
+  check('foreground sand reached the background (displaced the water)', countIn(e.getGridBg(), MAT.SAND) > 0, `(bg sand ${countIn(e.getGridBg(), MAT.SAND)})`);
+  check(`cross-layer sand/water swap settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
+}
+
 // Worldgen trees spawn in the BACKGROUND only. Tree trunks are WOOD (the only
 // worldgen WOOD source; surface grass is PLANT, so count WOOD to isolate trees).
 // Manual placement is a separate path and is unaffected.

@@ -106,6 +106,37 @@ try {
   await page.mouse.up({ button: 'left' });
   const a1 = await page.evaluate(() => window.__sandTest.actionCount());
   check(`LMB drives player tool actions (${a0} -> ${a1})`, a1 > a0);
+
+  // HELD solid build (regression for "click+hold places ONE chunk then nothing"):
+  // select stone, click-and-HOLD while dragging in reach, and — mid-hold — inject a
+  // `pointermove` whose buttons==0 (the phantom release real hardware emits while a
+  // button is still physically down). PI_PRIMARY must SURVIVE that move (else the
+  // solid draft finalizes after a single chunk and never extends), and releasing
+  // must drop a connected stone piece into the world.
+  const PI_PRIMARY = 16;
+  const stoneAim = await page.evaluate(() => {
+    const t = window.__sandTest;
+    t.setTool('stone'); document.activeElement?.blur?.();
+    const r = (document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main')).getBoundingClientRect();
+    const s = t.playerScreen(), p = t.getPlayer(), ax = Math.floor(p.x), ay = Math.floor(p.y);
+    return { vx: r.left + s.x + 12, vy: r.top + s.y - 6, solid0: t.solidCount(ax - 40, ay - 30, ax + 40, ay + 30) };
+  });
+  await page.mouse.move(stoneAim.vx, stoneAim.vy);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForTimeout(80);
+  const heldBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+  // drag the held button to extend the draft preview
+  for (let i = 1; i <= 4; i++) { await page.mouse.move(stoneAim.vx + i * 3, stoneAim.vy); await page.waitForTimeout(40); }
+  // inject the phantom buttons==0 move that used to strand the held draft
+  await page.evaluate((pt) => window.dispatchEvent(new PointerEvent('pointermove', { clientX: pt.x + 2, clientY: pt.y, button: -1, buttons: 0, bubbles: true })), { x: stoneAim.vx, y: stoneAim.vy });
+  await page.waitForTimeout(80);
+  const survivedBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+  await page.mouse.up({ button: 'left' });
+  await page.waitForTimeout(200);
+  const stone1 = await page.evaluate(() => { const t = window.__sandTest, p = t.getPlayer(), ax = Math.floor(p.x), ay = Math.floor(p.y); return t.solidCount(ax - 40, ay - 30, ax + 40, ay + 30); });
+  check(`held LMB latches PI_PRIMARY (bits ${heldBits})`, (heldBits & PI_PRIMARY) !== 0);
+  check(`PI_PRIMARY survives a phantom buttons==0 move (bits ${survivedBits})`, (survivedBits & PI_PRIMARY) !== 0);
+  check(`held-and-released stone built a connected piece (+${stone1 - stoneAim.solid0})`, stone1 > stoneAim.solid0);
   await page.evaluate(() => window.__sandTest.setDrawMode(false));
 
   // camera follows: the player should remain near the viewport center

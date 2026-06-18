@@ -246,5 +246,51 @@ runRectScenario({ name: 'rect moat: pointer erase both layers', eraseOrder: [0, 
   e.destroy();
 }
 
+{
+  console.log('large creative pocket: foreground overlaps grounded background rim');
+  const cols = 180, rows = 140;
+  const e = createEngineWasm({ cols, rows, worldSeed: 0x51a7e, infinite: false, sinksOn: false });
+  e.setBgEnabled(true);
+  const k = (x, y) => y * cols + x;
+  const stats = (grid, x0, x1, y0, y1) => {
+    let n = 0, minY = rows, maxY = -1;
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      if (grid[k(x, y)] !== MAT.STONE) continue;
+      n++;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+    return { n, minY, maxY };
+  };
+  const fillPocket = (layer) => {
+    for (let y = 16; y < 72; y++) for (let x = 18; x < 162; x++) e.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    for (let y = 72; y < rows - 1; y++) {
+      for (let x = 18; x < 30; x++) e.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+      for (let x = 150; x < 162; x++) e.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    }
+    e.syncComponentsLayer(layer);
+  };
+  const eraseRectRing = (layer, x0, x1, y0, y1, width) => {
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const inner = x >= x0 + width && x < x1 - width && y >= y0 + width && y < y1 - width;
+      if (!inner) e.eraseDiscLayer(layer, x, y, 1);
+    }
+  };
+  for (const layer of [0, 1]) fillPocket(layer);
+  const beforeFg = stats(e.getGrid(), 56, 124, 38, 62);
+  const beforeBg = stats(e.getGridBg(), 68, 112, 42, 58);
+  eraseRectRing(0, 50, 130, 32, 68, 6);
+  eraseRectRing(1, 62, 118, 36, 64, 6);
+  for (let i = 0; i < 180; i++) e.step(16 * (i + 1));
+  const fg = stats(e.getGrid(), 56, 124, 38, rows);
+  const bg = stats(e.getGridBg(), 68, 112, 42, rows);
+  const fgFell = fg.minY > beforeFg.minY + 6;
+  const bgFell = bg.minY > beforeBg.minY + 6;
+  check('foreground island falls despite grounded background overlap', fgFell, `(top ${beforeFg.minY} -> ${fg.minY}, cells ${fg.n})`);
+  check('background island falls in overlap regression', bgFell, `(top ${beforeBg.minY} -> ${bg.minY}, cells ${bg.n})`);
+  check('overlap regression layers both fall', fgFell && bgFell, `(fg ${fgFell}, bg ${bgFell})`);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nno layer-detach failure reproduced' : `\n${failures} reproduced failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

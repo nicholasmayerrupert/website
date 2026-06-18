@@ -55,25 +55,9 @@
       auto supportList = [&](std::vector<Comp>& list) {
         for (auto& comp : list) {
           if (comp.grounded) continue;
-          std::unordered_set<int> cells(comp.cells.begin(), comp.cells.end());
           int minX = cols, maxX = 0, minY = rows, maxY = 0;
           for (int k : comp.cells) { int y = k / cols, x = k - y * cols; minX = imin(minX, x); maxX = imax(maxX, x); minY = imin(minY, y); maxY = imax(maxY, y); }
-          bool touchesSibling = false;
-          if (maxX - minX + 1 > 16 || maxY - minY + 1 > 16) {
-            for (int k : comp.cells) {
-              int y = k / cols, x = k - y * cols; uint8_t own = target.grid[k];
-              for (int oy = -1; oy <= 1 && !touchesSibling; oy++) for (int ox = -1; ox <= 1; ox++) {
-                if (!ox && !oy) continue;
-                int nx = x + ox, ny = y + oy; if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
-                int nk = ny * cols + nx; if (cells.count(nk)) continue;
-                uint8_t m = target.grid[nk];
-                bool sameFamily = (own == STONE && m == STONE) || (own == ICE && m == ICE) || (isPlantMaterial(own) && isPlantMaterial(m));
-                if (sameFamily) { touchesSibling = true; break; }
-              }
-              if (touchesSibling) break;
-            }
-          }
-          if (touchesSibling) continue;
+          if (comp.cells.size() > 128 || maxX - minX + 1 > 32 || maxY - minY + 1 > 32) continue;
           bool supported = false;
           for (int k : comp.cells) { if (otherBase[k] && isRigidMaterial(otherGrid[k])) { supported = true; break; } }
           if (!supported) continue;

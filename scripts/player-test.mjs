@@ -226,39 +226,52 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
-// 12. primary with stone places solid stone within reach.
+// 12. solids place EXACTLY like creative: holding draws a previewed draft (grid
+//     unchanged) and RELEASE finalizes one connected piece.
 {
-  console.log('tool: place stone');
+  console.log('tool: place stone (creative draft -> finalize on release)');
   const e = mk();
   stoneFloor(e, 60, 140, 100);
   const id = e.spawnPlayer(100, 90);
   runSteps(e, 30);
   const p = e.getPlayer(id);
   const before = countMat(e.getGrid(), 3);
-  for (let i = 0; i < 8; i++) {
-    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: p.x + 8, aimY: p.y - 2 });
-    e.step(16 * i);
-  }
-  check(`stone placed within reach (${before} -> ${countMat(e.getGrid(), 3)})`, countMat(e.getGrid(), 3) > before);
+  // hold + drag: the draft is a preview; nothing is written to the grid yet
+  for (let i = 0; i < 8; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: Math.floor(p.x) + 6 + i, aimY: 98 }); e.step(16 * i); }
+  check(`held draft is preview-only (grid unchanged, +${countMat(e.getGrid(), 3) - before})`, countMat(e.getGrid(), 3) === before);
+  // release -> finalize one connected piece
+  e.setPlayerInput(id, { bits: 0, tool: T.stone, aimX: Math.floor(p.x) + 13, aimY: 98 });
+  e.step(16 * 9);
+  check(`release places a connected stone piece (${before} -> ${countMat(e.getGrid(), 3)})`, countMat(e.getGrid(), 3) > before + 6);
   e.destroy();
 }
 
-// 13. cannot place a solid block overlapping the player's own AABB.
+// 13. gravity is unchanged: a solid drawn onto grounded terrain STAYS; one drawn in
+//     mid-air FALLS as one body and lands (creative parity, "stay only if supported").
 {
-  console.log('tool: no self-overlap build');
-  const e = mk();
-  stoneFloor(e, 60, 140, 100);
-  const id = e.spawnPlayer(100, 90);
-  runSteps(e, 30);
-  const p = e.getPlayer(id);
-  const before = countMat(e.getGrid(), 3);
-  for (let i = 0; i < 8; i++) {
-    // aim at the player's own center -> build must be rejected
-    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: p.x + p.w / 2, aimY: p.y + p.h / 2 });
-    e.step(16 * i);
-  }
-  check(`no stone placed inside self (${before} == ${countMat(e.getGrid(), 3)})`, countMat(e.getGrid(), 3) === before);
-  e.destroy();
+  const drawAndSettle = (aimY, floorTop) => {
+    const e = mk();
+    stoneFloor(e, 60, 160, floorTop);
+    const id = e.spawnPlayer(100, floorTop - 12);
+    runSteps(e, 30);
+    const p = e.getPlayer(id);
+    const before = countMat(e.getGrid(), 3);
+    for (let i = 0; i < 8; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: Math.floor(p.x) + 6 + i, aimY }); e.step(16 * i); }
+    e.setPlayerInput(id, { bits: 0, tool: T.stone, aimX: Math.floor(p.x) + 13, aimY }); e.step(16 * 9);
+    const placed = countMat(e.getGrid(), 3) - before;
+    const topOf = () => { const g = e.getGrid(); let m = 1e9; for (let i = 0; i < g.length; i++) if (g[i] === 3) { const y = (i / COLS) | 0; if (y < m && y < floorTop - 1) m = y; } return m; };
+    const t0 = topOf();
+    e.setPlayerInput(id, { bits: 0 }); runSteps(e, 80);
+    const t1 = topOf();
+    e.destroy();
+    return { placed, t0, t1 };
+  };
+  console.log('tool: solid stays when grounded');
+  const g = drawAndSettle(98, 100);               // drawn just above the floor -> grounded
+  check(`grounded solid placed (${g.placed}) and stays put (top ${g.t0}->${g.t1})`, g.placed > 6 && g.t1 === g.t0);
+  console.log('tool: solid drawn in mid-air falls');
+  const a = drawAndSettle(78, 110);               // drawn ~12 above the player, well above the floor
+  check(`mid-air solid placed (${a.placed}) and falls (top ${a.t0}->${a.t1})`, a.placed > 6 && a.t1 > a.t0 + 5);
 }
 
 // 14. player edits mark dirty rects and the placed material simulates afterwards.
@@ -482,66 +495,48 @@ const buryFeet = (e, p, depth) => {
   check(`soft sand digs further than hard stone (sand ${sand} > stone ${stone})`, sand > stone + 4);
 }
 
-// 17. solids HOLD-TO-DRAW: dragging draws a connected shape that STAYS when it reaches
-//     grounded terrain, and FALLS when drawn in mid-air (gravity unchanged).
+// 17. fluid placement (player path) paints a disc of water at the aim.
 {
-  console.log('tool: solid hold-to-draw (stays if supported)');
+  console.log('tool: player paints water');
   const e = mk();
-  stoneFloor(e, 60, 160, 100);
-  const id = e.spawnPlayer(100, 90);
-  runSteps(e, 30);
-  const p = e.getPlayer(id);
-  const before = countMat(e.getGrid(), 3);
-  for (let i = 0; i < 8; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: Math.floor(p.x) + 6 + i, aimY: 98 }); e.step(16 * i); }
-  const drawn = countMat(e.getGrid(), 3) - before;
-  e.setPlayerInput(id, { bits: 0 });
-  runSteps(e, 40);
-  const kept = countMat(e.getGrid(), 3) - before;
-  check(`drag drew a connected stone shape (${drawn} cells)`, drawn > 6);
-  check(`grounded drawing stays put (${kept} == ${drawn})`, kept === drawn);
-  e.destroy();
-}
-{
-  console.log('tool: solid drawn in mid-air falls');
-  const e = mk();
-  stoneFloor(e, 60, 160, 112);
+  stoneFloor(e, 60, 160, 110);
   const id = e.spawnPlayer(100, 100);
   runSteps(e, 30);
   const p = e.getPlayer(id);
-  const before = countMat(e.getGrid(), 3);
-  const topOf = () => { const g = e.getGrid(); let t = 1e9; for (let i = 0; i < g.length; i++) if (g[i] === 3) { const y = (i / COLS) | 0; if (y < t && y < 108) t = y; } return t; };
-  for (let i = 0; i < 6; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: Math.floor(p.x) + 10, aimY: Math.floor(p.y) - 15 }); e.step(16 * i); }
-  const drawn = countMat(e.getGrid(), 3) - before;
-  const top0 = topOf();
-  e.setPlayerInput(id, { bits: 0 });
-  runSteps(e, 80);
-  const top1 = topOf();
-  check(`mid-air stone was drawn (${drawn} cells)`, drawn > 6);
-  check(`unsupported drawing falls (top ${top0} -> ${top1})`, top1 > top0 + 5);
+  for (let i = 0; i < 4; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.water, aimX: Math.floor(p.x) + 8, aimY: Math.floor(p.y) - 2 }); e.step(16 * i); }
+  check(`water painted at the aim (${countMat(e.getGrid(), 2)})`, countMat(e.getGrid(), 2) > 0);
   e.destroy();
 }
 
-// 18. fluid/sand SPEW: scatters within reach of the cursor, sparse, and is fully
-//     deterministic (same seed + inputs -> byte-identical grid; required for replay).
+// 18. SLOW FALL IN WATER: a submerged player sinks far slower than he falls in air
+//     (buoyancy), and holding jump swims him upward.
 {
-  console.log('tool: fluid spew is sparse + deterministic');
-  const spew = () => {
+  console.log('survival: player falls slowly in water + swims up');
+  const dropIn = (water) => {
     const e = mk();
-    stoneFloor(e, 60, 160, 118);
-    const id = e.spawnPlayer(100, 108);
-    runSteps(e, 30);
-    const p = e.getPlayer(id);
-    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.water, aimX: Math.floor(p.x) + 10, aimY: Math.floor(p.y) });
-    e.step(16);
-    const w = countMat(e.getGrid(), 2);
-    const g = Array.from(e.getGrid());
+    if (water) for (let x = 40; x < 160; x++) for (let y = 40; y < 108; y++) e.paintDisc(x, y, 0, 2, true);
+    stoneFloor(e, 40, 160, 108);
+    const id = e.spawnPlayer(100, 30);
+    const y0 = e.getPlayer(id).y;
+    for (let i = 0; i < 25; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(16 * i); }
+    const d = e.getPlayer(id).y - y0;
     e.destroy();
-    return { w, g };
+    return d;
   };
-  const a = spew(), b = spew();
-  check(`water spewed out (${a.w} cells)`, a.w > 0);
-  check(`spew is sparse, not a full disc (${a.w} < 45)`, a.w < 45); // disc area ~pi*P_SPEW_R^2
-  check('spew is deterministic across identical runs', a.g.length === b.g.length && a.g.every((v, i) => v === b.g[i]));
+  const air = dropIn(false), wet = dropIn(true);
+  check(`falls slower submerged than in air (water ${wet.toFixed(1)} < air ${air.toFixed(1)})`, wet < air * 0.6 && wet > 0);
+
+  // swim: holding JUMP while submerged raises the player against gravity.
+  const e = mk();
+  for (let x = 40; x < 160; x++) for (let y = 30; y < 118; y++) e.paintDisc(x, y, 0, 2, true);
+  stoneFloor(e, 40, 160, 118);
+  const id = e.spawnPlayer(100, 80);
+  let t = 0; for (let i = 0; i < 20; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(t += 16); } // settle in water
+  const yMid = e.getPlayer(id).y;
+  for (let i = 0; i < 30; i++) { e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(t += 16); }
+  const yUp = e.getPlayer(id).y;
+  check(`holding jump swims upward (y ${yMid.toFixed(1)} -> ${yUp.toFixed(1)})`, yUp < yMid - 3);
+  e.destroy();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

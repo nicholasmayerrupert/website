@@ -181,9 +181,10 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   step(e, 30); // land
   const p = e.getPlayer(id);
   const fgStone0 = countIn(e.getGrid(), MAT.STONE); // the fg floor only
-  // RMB + stone -> a single background stone disc near the player (edge-triggered)
-  e.setPlayerInput(id, { bits: INPUT.SECONDARY, tool: T.stone, aimX: p.x + 3, aimY: p.y });
-  step(e, 1);
+  // RMB + stone -> a background stone draft (creative lifecycle): press begins the
+  // draft (preview), release finalizes it into the bg layer.
+  e.setPlayerInput(id, { bits: INPUT.SECONDARY, tool: T.stone, aimX: p.x + 3, aimY: p.y }); step(e, 1);
+  e.setPlayerInput(id, { bits: 0, tool: T.stone, aimX: p.x + 3, aimY: p.y }); step(e, 1); // release -> finalize
   check('player RMB placed stone in the background', countIn(e.getGridBg(), MAT.STONE) > 0, `(${countIn(e.getGridBg(), MAT.STONE)})`);
   check('player RMB added no foreground stone', countIn(e.getGrid(), MAT.STONE) === fgStone0);
   // LMB + sand -> foreground (continuous)

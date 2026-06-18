@@ -137,8 +137,18 @@ void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selecte
   p->inputSeq = seq;
 }
 
+// Submerged when the player's mid-body cell sits in a liquid (water/oil/acid/lava).
+// Liquids are non-solid to the player, so without this he'd fall through at full
+// speed; buoyancy makes him sink slowly and swim. Reads the active (fg) grid.
+inline bool playerSubmerged(const Player& p) {
+  int cx = (int)std::floor(p.px + p.w / 2.0), cy = (int)std::floor(p.py + p.h / 2.0);
+  if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return false;
+  return MAT_KIND[grid[I(cx, cy)]] == K_LIQUID;
+}
+
 void integratePlayer(Player& p) {
   if (!p.active) return;
+  bool inWater = playerSubmerged(p);
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
   bool run = (p.input & PI_RUN) != 0;
   double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0);
@@ -149,29 +159,39 @@ void integratePlayer(Player& p) {
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
   } else if (right) { p.vx += P_MOVE_ACCEL; p.facing = 1; }
   else              { p.vx -= P_MOVE_ACCEL; p.facing = -1; }
+  if (inWater) p.vx *= P_WATER_HDRAG; // water makes lateral motion sluggish
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
 
-  // jump: allowed when grounded OR shallowly buried (sand piled into his feet, up
-  // to P_BURY_JUMP_MAX deep) — he can leap out of a light burial, but deeper than
-  // that the jump is denied and he must dig himself free. Re-arm only when the key
-  // is released; the armed flag persists across frames so a press isn't lost to a
-  // single-frame `grounded` flicker (one press = one jump, Terraria-style).
+  // jump / swim: in water, holding jump swims UPWARD (no grounded/bury gate). On
+  // land, jump is allowed when grounded OR shallowly buried (he can leap out of a
+  // light burial, but past P_BURY_JUMP_MAX the jump is denied and he must dig out).
+  // Re-arm only on release so a press isn't lost to a single-frame grounded flicker.
   bool wantJump = (p.input & PI_JUMP) != 0;
   int bury = buryDepth(p);
-  // Deep burial denies the jump outright (dig out); otherwise jump when grounded
-  // or shallowly buried. (A player buried past the cap is still `grounded`, so the
-  // cap must gate regardless of grounding.)
-  bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
-  if (canJump && !wantJump) p.jumpReady = true;
-  if (wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
+  if (inWater) {
+    if (wantJump) { p.vy = -P_SWIM_VEL; p.grounded = false; }
+    p.jumpReady = false; // require a fresh press after surfacing
+  } else {
+    bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
+    if (canJump && !wantJump) p.jumpReady = true;
+    if (wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
+  }
 
   // horizontal move
   if (tryMoveX(p, p.vx, bury)) p.vx = 0;
 
-  // gravity + vertical move
-  p.vy += P_GRAVITY;
-  if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;
+  // gravity + vertical move. Submerged: gentle gravity, velocity drag, low terminal
+  // sink speed -> he falls SLOWLY through water (and rises only as fast as he swims).
+  if (inWater) {
+    p.vy += P_WATER_GRAVITY;
+    p.vy *= P_WATER_VDRAG;
+    if (p.vy >  P_WATER_MAX_FALL) p.vy =  P_WATER_MAX_FALL;
+    if (p.vy < -P_SWIM_VEL)       p.vy = -P_SWIM_VEL;
+  } else {
+    p.vy += P_GRAVITY;
+    if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;
+  }
   if (tryMoveY(p, p.vy)) p.vy = 0;
   // grounded := stable downward-edge contact (solid directly under the feet) OR
   // buried — flicker-free vs. the old "was the down-move blocked" test.
@@ -209,28 +229,7 @@ bool playerUseTool(Player& p, int ax, int ay, Layer* layer) {
   bool ok = false;
   switch (p.selectedTool) {
     case T_SAND: case T_WATER: case T_OIL: case T_FIRE: case T_ACID: case T_LAVA:
-      // Fluids/sand SPEW: a sparse scatter within P_SPEW_R of the cursor (not a dense
-      // disc), so material sprays out around where you aim. (Solids no longer route
-      // here — applyPlayerTools draws them as a held stroke via playerDrawSolid.)
-      spewDisc(ax, ay, P_SPEW_R, toolMaterial(p.selectedTool)); ok = true; break;
-    case T_STONE:
-      if (!(checkSelf && playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R))) {
-        draftIsDriftwood = false; addDiscToDraft(stoneDraft, ax, ay, P_BUILD_R, rows);
-        finalizeStoneDraft(); stoneDraft.clear(); ok = true;
-      }
-      break;
-    case T_DRIFTWOOD:
-      if (!(checkSelf && playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R))) {
-        addDiscToDraft(stoneDraft, ax, ay, P_BUILD_R, rows);
-        finalizeDriftwoodDraft(); stoneDraft.clear(); ok = true;
-      }
-      break;
-    case T_ICE:
-      if (!(checkSelf && playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R))) {
-        addDiscToDraft(iceDraft, ax, ay, P_BUILD_R, rows - 1);
-        finalizeIceDraft(); iceDraft.clear(); ok = true;
-      }
-      break;
+      paintDisc(ax, ay, P_PAINT_R, toolMaterial(p.selectedTool), false); ok = true; break;
     case T_SEED: {
       int x0, y0;
       if (getSeedOrigin(ax, ay, x0, y0) && canPlaceSeedAt(x0, y0)) { placeSeedAt(x0, y0); ok = true; }
@@ -241,7 +240,7 @@ bool playerUseTool(Player& p, int ax, int ay, Layer* layer) {
         spawnBox(ax, ay, CUBE_HALF, CUBE_HALF, RIGID); ok = true;
       }
       break;
-    default: break;
+    default: break; // solids (stone/driftwood/ice) use the persistent draft in applyPlayerTools
   }
   useLayer(&fg);
   return ok;
@@ -264,69 +263,84 @@ void mineSweep(Player& p, int ax, int ay, Layer* layer) {
   eraseSweep(sx, sy, tx, ty, P_MINE_R, P_MINE_DURABILITY);
   useLayer(&fg);
 }
-// Draw a solid (stone/driftwood/ice) as a CONNECTED disc-stroke from (fromX,fromY)
-// to (toX,toY) and finalize it immediately, into `layer`. Holding + dragging emits a
-// stroke per cooldown tick; adjacent finalized pieces ground/fall together as one
-// body (computeGrounded floods through rigid contact), so a stroke that reaches
-// terrain holds and one drawn in mid-air falls (gravity unchanged). RNG-free.
-void playerDrawSolid(Player& p, int tool, double fromX, double fromY, double toX, double toY, Layer* layer) {
-  useLayer(layer);
-  bool checkSelf = (layer == &fg);
-  bool ice = (tool == T_ICE);
-  std::unordered_set<int>& draft = ice ? iceDraft : stoneDraft;
-  int yLim = ice ? rows - 1 : rows;
-  double dx = toX - fromX, dy = toY - fromY, dist = std::sqrt(dx * dx + dy * dy);
-  int steps = (int)std::ceil(dist);
-  double ux = dist > 1e-9 ? dx / dist : 0.0, uy = dist > 1e-9 ? dy / dist : 0.0;
-  for (int s = 0; s <= steps; s++) {
-    int cx = (int)std::lround(fromX + ux * s), cy = (int)std::lround(fromY + uy * s);
-    if (checkSelf && playerBuildOverlapsSelf(p, cx, cy, P_BUILD_R)) continue; // don't entomb the player
-    addDiscToDraft(draft, cx, cy, P_BUILD_R, yLim);
-  }
-  draftIsDriftwood = (tool == T_DRIFTWOOD);
-  if (ice) finalizeIceDraft(); else if (tool == T_DRIFTWOOD) finalizeDriftwoodDraft(); else finalizeStoneDraft();
-  draft.clear();
+// ---- survival solids: the EXACT creative draft lifecycle, driven by a player ----
+// Begin a persistent solid draft into `btn`'s layer (0=fg LMB, 1=bg RMB) using the
+// player's own tool. This is the same engine draft state + live preview + finalize
+// that creative mode uses (continueDrafts / finalize*Draft), so survival places
+// solids identically: hold to draw a previewed shape, release to drop ONE connected
+// piece (it stays if it lands on grounded terrain, falls as one body if mid-air).
+void playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
+  draftLayer = btn; draftOwner = p.id;
+  useLayer(btn ? &bg : &fg);
+  if (tool == T_ICE) { draftingIce = true; addDiscToDraft(iceDraft, ax, ay, BRUSH_ICE, rows - 1); }
+  else { draftingStone = true; draftIsDriftwood = (tool == T_DRIFTWOOD);
+         addDiscToDraft(stoneDraft, ax, ay, draftIsDriftwood ? BRUSH_DRIFTWOOD : BRUSH_STONE, rows); }
   useLayer(&fg);
 }
-// Per step: LMB (primary) acts on the FOREGROUND, RMB (secondary) on the
-// BACKGROUND. Eraser sweeps toward the cursor; fluids/sand spew; solids draw a held
-// stroke — all repeat while held (throttled by the cooldown). Seed + cube fire ONCE
-// per press (rising edge), so holding doesn't spam them.
+// Finalize the in-progress draft into its layer (one connected component) and clear.
+void playerFinalizeSolidDraft() {
+  useLayer(draftLayer ? &bg : &fg);
+  if (draftingStone) { if (draftIsDriftwood) finalizeDriftwoodDraft(); else finalizeStoneDraft(); draftingStone = false; draftIsDriftwood = false; stoneDraft.clear(); }
+  if (draftingIce) { finalizeIceDraft(); draftingIce = false; iceDraft.clear(); }
+  draftOwner = -1;
+  useLayer(&fg);
+}
+// Per step: LMB (primary) acts on the FOREGROUND, RMB (secondary) on the BACKGROUND.
+// Eraser sweeps toward the cursor and fluids/sand paint — both repeat while held
+// (cooldown-throttled). Seed + cube fire once per press. Solids use the persistent
+// creative draft: begin on press, extend (preview) while held, finalize on release.
 void applyPlayerTools() {
   for (auto& p : players) {
     if (!p.active || !p.alive) { p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
+    int prev = p.prevInput;
     bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
-    bool primaryEdge = primary && !(p.prevInput & PI_PRIMARY);
-    bool secondaryEdge = secondary && !(p.prevInput & PI_SECONDARY);
+    bool primaryRising = primary && !(prev & PI_PRIMARY);
+    bool secondaryRising = secondary && !(prev & PI_SECONDARY);
+    bool primaryFalling = !primary && (prev & PI_PRIMARY);
+    bool secondaryFalling = !secondary && (prev & PI_SECONDARY);
     p.prevInput = p.input;
     int t = p.selectedTool;
     int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
-    // Fresh press anchors the draw stroke at the aim (first stroke is a dot).
-    if (primaryEdge || secondaryEdge) { p.toolPrevX = ax + 0.5; p.toolPrevY = ay + 0.5; }
-    if (!primary && !secondary) continue;
-    bool continuous = isPaintTool(t) || t == T_ERASER || isSolidTool(t);
-    bool doPrimary = continuous ? primary : primaryEdge;
-    bool doSecondary = continuous ? secondary : secondaryEdge;
-    if (continuous && p.toolCooldown > 0) { doPrimary = doSecondary = false; }
-    if (!doPrimary && !doSecondary) continue;
-    // reach: aim must be within P_TOOL_REACH cells of the player center.
     double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
-    if (dxp * dxp + dyp * dyp > P_TOOL_REACH * P_TOOL_REACH) continue;
+    bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
+
+    // --- finalize this player's solid draft when its owning button releases (or all
+    //     buttons are up) — independent of the currently selected tool ---
+    if ((draftingStone || draftingIce) && draftOwner == p.id) {
+      bool ownerReleased = (draftLayer == 1) ? secondaryFalling : primaryFalling;
+      if (ownerReleased || (!primary && !secondary)) { playerFinalizeSolidDraft(); playerActionCount++; }
+    }
+
+    // --- SOLIDS: begin / extend the persistent draft (creative parity) ---
+    if (isSolidTool(t)) {
+      bool busy = (draftingStone || draftingIce);
+      if (inReach && !busy && primaryRising) { playerBeginSolidDraft(p, t, ax, ay, 0); playerActionCount++; }
+      else if (inReach && !busy && secondaryRising) { bgEnabled = true; playerBeginSolidDraft(p, t, ax, ay, 1); playerActionCount++; }
+      else if (inReach && busy && draftOwner == p.id && (primary || secondary)) continueDrafts(ax, ay); // extend + preview
+      continue;
+    }
+
+    // --- non-solids: fluids/sand (continuous paint), eraser (continuous sweep),
+    //     seed/cube (one-shot on press) ---
+    if (!primary && !secondary) continue;
+    bool continuous = isPaintTool(t) || t == T_ERASER;
+    bool doPrimary = continuous ? primary : primaryRising;
+    bool doSecondary = continuous ? secondary : secondaryRising;
+    if (continuous && p.toolCooldown > 0) { doPrimary = doSecondary = false; }
+    if (!doPrimary && !doSecondary) continue;
+    if (!inReach) continue;
     bool acted = false;
     if (doPrimary) {
       if (t == T_ERASER) { mineSweep(p, ax, ay, &fg); acted = true; }
-      else if (isSolidTool(t)) { playerDrawSolid(p, t, p.toolPrevX, p.toolPrevY, ax + 0.5, ay + 0.5, &fg); acted = true; }
       else acted |= playerUseTool(p, ax, ay, &fg);
     }
     if (doSecondary) {
       bgEnabled = true;
       if (t == T_ERASER) { mineSweep(p, ax, ay, &bg); acted = true; }
-      else if (isSolidTool(t)) { playerDrawSolid(p, t, p.toolPrevX, p.toolPrevY, ax + 0.5, ay + 0.5, &bg); acted = true; }
       else acted |= playerUseTool(p, ax, ay, &bg);
     }
-    if (acted && continuous) { p.toolPrevX = ax + 0.5; p.toolPrevY = ay + 0.5; } // advance stroke anchor
     if (acted) { if (continuous) p.toolCooldown = P_TOOL_COOLDOWN; playerActionCount++; }
   }
 }

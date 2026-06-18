@@ -20,20 +20,6 @@
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
     return changed;
   }
-  // Spew a material as a SPARSE, DETERMINISTIC scatter inside a disc around the
-  // cursor (only fills EMPTY cells, never overwrites). The fill pattern is keyed on
-  // absolute world coords + the sim tick (whash2), so it varies per tick (reads as
-  // spraying/spewing as you hold) yet uses NO rand() — survival player tools must
-  // stay replay-deterministic for multiplayer. Used by fluids/sand placement.
-  int spewDisc(int cx, int cy, int radius, uint8_t material) {
-    int changed = 0; int woX = L->worldOffsetX, woY = L->worldOffsetY;
-    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy);
-      if (grid[k] != EMPTY) continue;
-      if (whash2((uint32_t)tick, woX + xx, woY + yy) >= SPEW_FILL_P) continue;
-      grid[k] = material; changed = 1; } }
-    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    return changed;
-  }
   // Sum the mining "durability" cost of the solid cells inside a disc (EMPTY = 0).
   // Lets the swept eraser spend a fixed penetration budget: soft material lets the
   // sweep run its full length, hard material stops it short.

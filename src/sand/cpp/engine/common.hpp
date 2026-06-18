@@ -153,9 +153,14 @@ static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can 
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
-static const int    P_SPEW_R = 4;          // fluids/sand scatter ("spew") radius around the cursor
-static const double SPEW_FILL_P = 0.35;    // fraction of empty cells a spew emit fills (deterministic per tick)
 static const int    P_MINE_DURABILITY = 40; // eraser sweep penetration budget; each mined cell spends DURABILITY[m]
+// Player buoyancy: while submerged in a liquid he sinks SLOWLY (gentle gravity, low
+// terminal fall speed, velocity drag) and can swim upward with the jump key.
+static const double P_WATER_GRAVITY = 0.035; // vs P_GRAVITY 0.25 -> slow sink
+static const double P_WATER_MAX_FALL = 0.8;  // vs P_MAX_FALL 6.0 -> low terminal speed
+static const double P_WATER_VDRAG = 0.82;    // per-step vertical velocity damping in liquid
+static const double P_WATER_HDRAG = 0.86;    // per-step horizontal damping in liquid
+static const double P_SWIM_VEL = 1.1;        // upward swim impulse from the jump key while submerged
 struct Player {
   int id = 0;
   bool active = true, alive = true;
@@ -172,7 +177,6 @@ struct Player {
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
   int toolCooldown = 0; // steps remaining before this player can act again
-  double toolPrevX = 0, toolPrevY = 0; // aim anchor for the in-progress continuous draw (solid stroke); reset on press
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
 static const int PLAYER_SNAP_STRIDE = 17;

@@ -140,6 +140,7 @@
   // (LMB), 1 = background (RMB). The draft set is shared staging; finalize writes
   // into the layer chosen here on pointerDown.
   int draftLayer = 0;
+  int draftOwner = -1; // survival: id of the player who owns the in-progress solid draft (-1 = creative/none)
   std::unordered_set<int> stoneDraft, iceDraft;
   std::vector<int> draftSnapshot;
   bool draftingStone = false, draftingIce = false, draftingSeed = false, draftIsDriftwood = false;

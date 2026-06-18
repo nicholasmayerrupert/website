@@ -17,6 +17,18 @@
     };
     int floorBase = (rows - 1) * cols;
     for (int x = 0; x < cols; x++) { int k = floorBase + x; if (isBearingMaterial(grid[k])) groundCellAt(k); }
+    // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
+    // UNLOADED world that may itself be grounded. A rigid cell touching such an edge is
+    // assumed supported, so a structure whose real floor-contact has streamed off the
+    // buffer does not spuriously fall (it reconnects when the region streams back in).
+    if (L->infinite) {
+      for (int y = 1; y < rows; y++) {
+        int kl = y * cols + 1;          if (isRigidMaterial(grid[kl])) groundCellAt(kl);
+        int kr = y * cols + (cols - 2); if (isRigidMaterial(grid[kr])) groundCellAt(kr);
+      }
+      int topBase = cols; // row y = 1
+      for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterial(grid[k])) groundCellAt(k); }
+    }
     for (int y = rows - 2; y > 0; y--) { int rb = y * cols; for (int x = 1; x < cols - 1; x++) { int k = rb + x; if (grid[k] == SAND && grid[k + cols] == LAVA) groundCellAt(k); } }
     while (sp > 0) {
       int k = groundStack[--sp];
@@ -64,6 +76,16 @@
     };
     int floorBase = (rows - 1) * cols;
     for (int x = 0; x < cols; x++) { int k = floorBase + x; if (isBearingMaterial(fgG[k])) groundAt(k, 0); if (isBearingMaterial(bgG[k])) groundAt(k, 1); }
+    // Streamed-edge support (see computeGrounded): rigid cells on the left/right/top
+    // buffer edges abut unloaded world and are assumed supported, in BOTH layers.
+    if (fg.infinite) {
+      for (int y = 1; y < rows; y++) {
+        int kl = y * cols + 1;          if (isRigidMaterial(fgG[kl])) groundAt(kl, 0); if (isRigidMaterial(bgG[kl])) groundAt(kl, 1);
+        int kr = y * cols + (cols - 2); if (isRigidMaterial(fgG[kr])) groundAt(kr, 0); if (isRigidMaterial(bgG[kr])) groundAt(kr, 1);
+      }
+      int topBase = cols; // row y = 1
+      for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterial(fgG[k])) groundAt(k, 0); if (isRigidMaterial(bgG[k])) groundAt(k, 1); }
+    }
     for (int y = rows - 2; y > 0; y--) { int rb = y * cols; for (int x = 1; x < cols - 1; x++) { int k = rb + x; if (fgG[k] == SAND && fgG[k + cols] == LAVA) groundAt(k, 0); if (bgG[k] == SAND && bgG[k + cols] == LAVA) groundAt(k, 1); } }
     while (spF > 0 || spB > 0) {
       int lay, k;

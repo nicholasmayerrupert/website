@@ -45,6 +45,33 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 2b. In the infinite world, a rigid structure touching the streamed buffer edge is
+//     treated as supported — its real floor-contact may have streamed off the buffer —
+//     so it does NOT spuriously fall, while an identical structure in open space still
+//     falls. Regression for: a block dropped when the chunk holding its support unloaded.
+{
+  console.log('edge-supported components (infinite)');
+  const e = mk({ infinite: true });
+  const EDGE_X0 = 1, EDGE_X1 = 13;   // leftmost column x=1 touches the streamed edge
+  const FREE_X0 = 40, FREE_X1 = 52;  // open space, touches no edge
+  // Place both blocks in empty sky, comfortably above the generated surface (see #5).
+  const surf = Math.min(e.worldSurfaceAt(EDGE_X0), e.worldSurfaceAt(FREE_X1));
+  const Y0 = Math.max(2, surf - 30), Y1 = Y0 + 8;
+  for (let y = Y0; y < Y1; y++) for (let x = EDGE_X0; x < EDGE_X1; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  for (let y = Y0; y < Y1; y++) for (let x = FREE_X0; x < FREE_X1; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  const before = counts(e.getGrid())[3];
+  const topRowIn = (g, x0, x1) => { let m = ROWS; for (let i = 0; i < g.length; i++) { if (g[i] !== 3) continue; const x = i % COLS, y = (i / COLS) | 0; if (x >= x0 && x < x1 && y < m) m = y; } return m; };
+  run(200, e);
+  const g = e.getGrid();
+  const edgeTop = topRowIn(g, EDGE_X0, EDGE_X1), freeTop = topRowIn(g, FREE_X0, FREE_X1);
+  check(`stone conserved (${before})`, counts(g)[3] === before && before > 0);
+  check(`edge-touching block stayed up (top row ${edgeTop} ~ ${Y0})`, edgeTop <= Y0 + 1);
+  check(`free block fell (top row ${freeTop} > ${Y0 + 8})`, freeTop > Y0 + 8);
+  e.destroy();
+}
+
 // 3. fire next to water makes steam.
 {
   console.log('reactions');

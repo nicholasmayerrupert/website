@@ -198,18 +198,29 @@ export function createSandGame(container, opts = {}) {
     canvas.height = Math.round(cssH * dpr);
 
     // Visible window (cells on screen) vs. the larger simulation buffer.
-    viewCols = Math.max(60, Math.ceil(cssW / cellSize));
-    viewRows = Math.max(28, Math.ceil(cssH / cellSize));
+    // CSS-px cell counts (dpr-independent) size the BUFFER, so a pure zoom keeps
+    // the same world (the early-return path below compares against these).
+    const viewColsCss = Math.max(60, Math.ceil(cssW / cellSize));
+    const viewRowsCss = Math.max(28, Math.ceil(cssH / cellSize));
+    // The rendered window must cover the DEVICE-px backing store. The engine draws
+    // each cell at cellDev = round(cellSize*dpr) integer device px, so at a
+    // fractional devicePixelRatio (e.g. Windows display scaling) viewColsCss*cellDev
+    // can fall short of canvas.width — leaving the bottom/right edge of the canvas
+    // unpainted (the empty buffer edge showing through). Deriving the window from
+    // the backing store guarantees viewCols*cellDev >= canvas size, so the quad
+    // always fills the canvas. At dpr==1 this equals the CSS counts (no change).
+    viewCols = Math.max(viewColsCss, Math.ceil(canvas.width / cellDev));
+    viewRows = Math.max(viewRowsCss, Math.ceil(canvas.height / cellDev));
     // Buffer: full world height (taller than the view) + horizontal margin,
     // both rounded up to whole render chunks. Shrink the height factor if the
     // cell budget would be exceeded.
     const roundChunks = (n) => Math.ceil(n / CHUNK_SIZE) * CHUNK_SIZE;
-    let bufCols = roundChunks(viewCols + BUF_MARGIN_COLS * 2);
+    let bufCols = roundChunks(viewColsCss + BUF_MARGIN_COLS * 2);
     let heightFactor = WORLD_HEIGHT_FACTOR;
-    let worldRows = roundChunks(Math.round(viewRows * heightFactor));
+    let worldRows = roundChunks(Math.round(viewRowsCss * heightFactor));
     while (bufCols * worldRows > BUFFER_MAX_CELLS && heightFactor > 1) {
       heightFactor -= 0.25;
-      worldRows = roundChunks(Math.max(viewRows, Math.round(viewRows * heightFactor)));
+      worldRows = roundChunks(Math.max(viewRowsCss, Math.round(viewRowsCss * heightFactor)));
     }
 
     // The simulation buffer depends only on CSS size + cellSize, not on dpr. So a

@@ -20,6 +20,45 @@
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
     return changed;
   }
+  // Spew a material as a SPARSE, DETERMINISTIC scatter inside a disc around the
+  // cursor (only fills EMPTY cells, never overwrites). The fill pattern is keyed on
+  // absolute world coords + the sim tick (whash2), so it varies per tick (reads as
+  // spraying/spewing as you hold) yet uses NO rand() — survival player tools must
+  // stay replay-deterministic for multiplayer. Used by fluids/sand placement.
+  int spewDisc(int cx, int cy, int radius, uint8_t material) {
+    int changed = 0; int woX = L->worldOffsetX, woY = L->worldOffsetY;
+    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy);
+      if (grid[k] != EMPTY) continue;
+      if (whash2((uint32_t)tick, woX + xx, woY + yy) >= SPEW_FILL_P) continue;
+      grid[k] = material; changed = 1; } }
+    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return changed;
+  }
+  // Sum the mining "durability" cost of the solid cells inside a disc (EMPTY = 0).
+  // Lets the swept eraser spend a fixed penetration budget: soft material lets the
+  // sweep run its full length, hard material stops it short.
+  int discDurabilityCost(int cx, int cy, int radius) {
+    int cost = 0;
+    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; cost += DURABILITY[grid[I(xx, yy)]]; } }
+    return cost;
+  }
+  // Mine a swept capsule from (sx,sy) toward (ex,ey): march the segment erasing a
+  // disc of `radius` at each cell-step, spending `budget` as it goes (each disc costs
+  // the durability of the solid cells it removes). Air costs 0 so the sweep reaches
+  // freely toward the cursor, then bites into material until the budget runs out.
+  // Deterministic geometry — no RNG.
+  void eraseSweep(double sx, double sy, double ex, double ey, int radius, int budget) {
+    double dx = ex - sx, dy = ey - sy; double dist = std::sqrt(dx * dx + dy * dy);
+    int steps = (int)std::ceil(dist);
+    double ux = dist > 1e-9 ? dx / dist : 0.0, uy = dist > 1e-9 ? dy / dist : 0.0;
+    int spent = 0;
+    for (int s = 0; s <= steps; s++) {
+      int cx = (int)std::lround(sx + ux * s), cy = (int)std::lround(sy + uy * s);
+      spent += discDurabilityCost(cx, cy, radius); // peek before erasing (cells still present)
+      eraseDisc(cx, cy, radius);
+      if (spent >= budget) return;
+    }
+  }
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {
     int changed = 0;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= yLimit) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); if (grid[k] == EMPTY && !draft.count(k)) { draft.insert(k); changed = 1; } } }

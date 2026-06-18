@@ -209,7 +209,10 @@ bool playerUseTool(Player& p, int ax, int ay, Layer* layer) {
   bool ok = false;
   switch (p.selectedTool) {
     case T_SAND: case T_WATER: case T_OIL: case T_FIRE: case T_ACID: case T_LAVA:
-      paintDisc(ax, ay, P_PAINT_R, toolMaterial(p.selectedTool), false); ok = true; break;
+      // Fluids/sand SPEW: a sparse scatter within P_SPEW_R of the cursor (not a dense
+      // disc), so material sprays out around where you aim. (Solids no longer route
+      // here — applyPlayerTools draws them as a held stroke via playerDrawSolid.)
+      spewDisc(ax, ay, P_SPEW_R, toolMaterial(p.selectedTool)); ok = true; break;
     case T_STONE:
       if (!(checkSelf && playerBuildOverlapsSelf(p, ax, ay, P_BUILD_R))) {
         draftIsDriftwood = false; addDiscToDraft(stoneDraft, ax, ay, P_BUILD_R, rows);
@@ -243,10 +246,52 @@ bool playerUseTool(Player& p, int ax, int ay, Layer* layer) {
   useLayer(&fg);
   return ok;
 }
+inline bool isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t == T_ICE; }
+// Mine a swept capsule from just in front of the player toward the aim cell, into
+// `layer`. The sweep starts a body-half ahead of the player center and runs to the
+// cursor; durability caps how far it bites into solids (see eraseSweep). Aiming at
+// open air just reaches harmlessly toward the cursor.
+void mineSweep(Player& p, int ax, int ay, Layer* layer) {
+  useLayer(layer);
+  double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
+  double tx = ax + 0.5, ty = ay + 0.5;
+  double dx = tx - cxp, dy = ty - cyp, dl = std::sqrt(dx * dx + dy * dy);
+  double ux = dl > 1e-9 ? dx / dl : (p.facing >= 0 ? 1.0 : -1.0);
+  double uy = dl > 1e-9 ? dy / dl : 0.0;
+  double startOff = imax(p.w, p.h) / 2.0;
+  double sx, sy;
+  if (startOff >= dl) { sx = tx; sy = ty; } else { sx = cxp + ux * startOff; sy = cyp + uy * startOff; }
+  eraseSweep(sx, sy, tx, ty, P_MINE_R, P_MINE_DURABILITY);
+  useLayer(&fg);
+}
+// Draw a solid (stone/driftwood/ice) as a CONNECTED disc-stroke from (fromX,fromY)
+// to (toX,toY) and finalize it immediately, into `layer`. Holding + dragging emits a
+// stroke per cooldown tick; adjacent finalized pieces ground/fall together as one
+// body (computeGrounded floods through rigid contact), so a stroke that reaches
+// terrain holds and one drawn in mid-air falls (gravity unchanged). RNG-free.
+void playerDrawSolid(Player& p, int tool, double fromX, double fromY, double toX, double toY, Layer* layer) {
+  useLayer(layer);
+  bool checkSelf = (layer == &fg);
+  bool ice = (tool == T_ICE);
+  std::unordered_set<int>& draft = ice ? iceDraft : stoneDraft;
+  int yLim = ice ? rows - 1 : rows;
+  double dx = toX - fromX, dy = toY - fromY, dist = std::sqrt(dx * dx + dy * dy);
+  int steps = (int)std::ceil(dist);
+  double ux = dist > 1e-9 ? dx / dist : 0.0, uy = dist > 1e-9 ? dy / dist : 0.0;
+  for (int s = 0; s <= steps; s++) {
+    int cx = (int)std::lround(fromX + ux * s), cy = (int)std::lround(fromY + uy * s);
+    if (checkSelf && playerBuildOverlapsSelf(p, cx, cy, P_BUILD_R)) continue; // don't entomb the player
+    addDiscToDraft(draft, cx, cy, P_BUILD_R, yLim);
+  }
+  draftIsDriftwood = (tool == T_DRIFTWOOD);
+  if (ice) finalizeIceDraft(); else if (tool == T_DRIFTWOOD) finalizeDriftwoodDraft(); else finalizeStoneDraft();
+  draft.clear();
+  useLayer(&fg);
+}
 // Per step: LMB (primary) acts on the FOREGROUND, RMB (secondary) on the
-// BACKGROUND; the Eraser tool mines its layer. Fluids/sand/eraser repeat while
-// held (throttled by the cooldown); solids + the cube fire ONCE per press (rising
-// edge), so holding doesn't spam blocks/boxes.
+// BACKGROUND. Eraser sweeps toward the cursor; fluids/sand spew; solids draw a held
+// stroke — all repeat while held (throttled by the cooldown). Seed + cube fire ONCE
+// per press (rising edge), so holding doesn't spam them.
 void applyPlayerTools() {
   for (auto& p : players) {
     if (!p.active || !p.alive) { p.prevInput = p.input; continue; }
@@ -255,27 +300,33 @@ void applyPlayerTools() {
     bool primaryEdge = primary && !(p.prevInput & PI_PRIMARY);
     bool secondaryEdge = secondary && !(p.prevInput & PI_SECONDARY);
     p.prevInput = p.input;
+    int t = p.selectedTool;
+    int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
+    // Fresh press anchors the draw stroke at the aim (first stroke is a dot).
+    if (primaryEdge || secondaryEdge) { p.toolPrevX = ax + 0.5; p.toolPrevY = ay + 0.5; }
     if (!primary && !secondary) continue;
-    bool continuous = isPaintTool(p.selectedTool) || p.selectedTool == T_ERASER;
+    bool continuous = isPaintTool(t) || t == T_ERASER || isSolidTool(t);
     bool doPrimary = continuous ? primary : primaryEdge;
     bool doSecondary = continuous ? secondary : secondaryEdge;
     if (continuous && p.toolCooldown > 0) { doPrimary = doSecondary = false; }
     if (!doPrimary && !doSecondary) continue;
     // reach: aim must be within P_TOOL_REACH cells of the player center.
     double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
-    int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
     if (dxp * dxp + dyp * dyp > P_TOOL_REACH * P_TOOL_REACH) continue;
     bool acted = false;
     if (doPrimary) {
-      if (p.selectedTool == T_ERASER) { useLayer(&fg); eraseDisc(ax, ay, P_MINE_R); useLayer(&fg); acted = true; }
+      if (t == T_ERASER) { mineSweep(p, ax, ay, &fg); acted = true; }
+      else if (isSolidTool(t)) { playerDrawSolid(p, t, p.toolPrevX, p.toolPrevY, ax + 0.5, ay + 0.5, &fg); acted = true; }
       else acted |= playerUseTool(p, ax, ay, &fg);
     }
     if (doSecondary) {
       bgEnabled = true;
-      if (p.selectedTool == T_ERASER) { useLayer(&bg); eraseDisc(ax, ay, P_MINE_R); useLayer(&fg); acted = true; }
+      if (t == T_ERASER) { mineSweep(p, ax, ay, &bg); acted = true; }
+      else if (isSolidTool(t)) { playerDrawSolid(p, t, p.toolPrevX, p.toolPrevY, ax + 0.5, ay + 0.5, &bg); acted = true; }
       else acted |= playerUseTool(p, ax, ay, &bg);
     }
+    if (acted && continuous) { p.toolPrevX = ax + 0.5; p.toolPrevY = ay + 0.5; } // advance stroke anchor
     if (acted) { if (continuous) p.toolCooldown = P_TOOL_COOLDOWN; playerActionCount++; }
   }
 }

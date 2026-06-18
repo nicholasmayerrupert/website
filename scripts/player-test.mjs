@@ -439,5 +439,110 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
+// 15. eraser SWEEPS from in front of the player toward the cursor (not a disc at the
+//     aim): cells on the player-side, well short of the cursor, get carved.
+{
+  console.log('tool: eraser sweeps toward the cursor');
+  const e = mk();
+  stoneFloor(e, 60, 170, 90);
+  const id = e.spawnPlayer(100, 80);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const aimX = Math.floor(p.x) + 16;
+  for (let i = 0; i < 6; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY: 92 }); e.step(16 * i); }
+  const g = e.getGrid();
+  const empty = (x, y) => g[y * COLS + x] === 0;
+  // a cell ~8 cells in front of the player (far from the cursor) is carved -> the carve
+  // originates at the player and sweeps outward, unlike the old disc-at-aim eraser.
+  const nearX = Math.floor(p.x) + 8;
+  check(`carve reaches the player side (x=${nearX} cleared, cursor x=${aimX})`, empty(nearX, 91) && nearX < aimX - 4);
+  e.destroy();
+}
+
+// 16. DURABILITY gates penetration: one mine action digs FURTHER through soft sand
+//     than through hard stone (same geometry, same budget).
+{
+  console.log('tool: durability gates mining penetration');
+  const penetrate = (mat) => {
+    const e = mk();
+    if (mat === 3) stoneFloor(e, 110, 141, 0);                 // full-height stone wall (component)
+    else for (let x = 110; x < 141; x++) for (let y = 0; y < ROWS; y++) e.paintDisc(x, y, 0, mat, true);
+    const id = e.spawnPlayer(100, 80);
+    runSteps(e, 30);
+    const p = e.getPlayer(id);
+    const before = countMat(e.getGrid(), mat);
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: 130, aimY: Math.floor(p.y) + 4 });
+    e.step(16);
+    const removed = before - countMat(e.getGrid(), mat);
+    e.destroy();
+    return removed;
+  };
+  const sand = penetrate(1), stone = penetrate(3);
+  check(`stone is mined but limited (${stone} > 0)`, stone > 0);
+  check(`soft sand digs further than hard stone (sand ${sand} > stone ${stone})`, sand > stone + 4);
+}
+
+// 17. solids HOLD-TO-DRAW: dragging draws a connected shape that STAYS when it reaches
+//     grounded terrain, and FALLS when drawn in mid-air (gravity unchanged).
+{
+  console.log('tool: solid hold-to-draw (stays if supported)');
+  const e = mk();
+  stoneFloor(e, 60, 160, 100);
+  const id = e.spawnPlayer(100, 90);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const before = countMat(e.getGrid(), 3);
+  for (let i = 0; i < 8; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: Math.floor(p.x) + 6 + i, aimY: 98 }); e.step(16 * i); }
+  const drawn = countMat(e.getGrid(), 3) - before;
+  e.setPlayerInput(id, { bits: 0 });
+  runSteps(e, 40);
+  const kept = countMat(e.getGrid(), 3) - before;
+  check(`drag drew a connected stone shape (${drawn} cells)`, drawn > 6);
+  check(`grounded drawing stays put (${kept} == ${drawn})`, kept === drawn);
+  e.destroy();
+}
+{
+  console.log('tool: solid drawn in mid-air falls');
+  const e = mk();
+  stoneFloor(e, 60, 160, 112);
+  const id = e.spawnPlayer(100, 100);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const before = countMat(e.getGrid(), 3);
+  const topOf = () => { const g = e.getGrid(); let t = 1e9; for (let i = 0; i < g.length; i++) if (g[i] === 3) { const y = (i / COLS) | 0; if (y < t && y < 108) t = y; } return t; };
+  for (let i = 0; i < 6; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.stone, aimX: Math.floor(p.x) + 10, aimY: Math.floor(p.y) - 15 }); e.step(16 * i); }
+  const drawn = countMat(e.getGrid(), 3) - before;
+  const top0 = topOf();
+  e.setPlayerInput(id, { bits: 0 });
+  runSteps(e, 80);
+  const top1 = topOf();
+  check(`mid-air stone was drawn (${drawn} cells)`, drawn > 6);
+  check(`unsupported drawing falls (top ${top0} -> ${top1})`, top1 > top0 + 5);
+  e.destroy();
+}
+
+// 18. fluid/sand SPEW: scatters within reach of the cursor, sparse, and is fully
+//     deterministic (same seed + inputs -> byte-identical grid; required for replay).
+{
+  console.log('tool: fluid spew is sparse + deterministic');
+  const spew = () => {
+    const e = mk();
+    stoneFloor(e, 60, 160, 118);
+    const id = e.spawnPlayer(100, 108);
+    runSteps(e, 30);
+    const p = e.getPlayer(id);
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.water, aimX: Math.floor(p.x) + 10, aimY: Math.floor(p.y) });
+    e.step(16);
+    const w = countMat(e.getGrid(), 2);
+    const g = Array.from(e.getGrid());
+    e.destroy();
+    return { w, g };
+  };
+  const a = spew(), b = spew();
+  check(`water spewed out (${a.w} cells)`, a.w > 0);
+  check(`spew is sparse, not a full disc (${a.w} < 45)`, a.w < 45); // disc area ~pi*P_SPEW_R^2
+  check('spew is deterministic across identical runs', a.g.length === b.g.length && a.g.every((v, i) => v === b.g[i]));
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -131,7 +131,7 @@
   // TREE_REACH cols outside the rect (clipped by `put`), so a band re-evaluates the
   // trunks just outside it and canopies span band seams identically to one big call.
   void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd) {
-    if (L->isBackground) return;
+    if (!L->isBackground) return;
     auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
     const int TREE_REACH = 4;
     for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {

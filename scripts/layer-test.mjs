@@ -296,5 +296,22 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check(`cross-layer two-fluid scene settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
 }
 
+// Worldgen trees spawn in the BACKGROUND only. Tree trunks are WOOD (the only
+// worldgen WOOD source; surface grass is PLANT, so count WOOD to isolate trees).
+// Manual placement is a separate path and is unaffected.
+{
+  console.log('worldgen: trees only in the background');
+  const woodIn = (g) => countIn(g, MAT.WOOD);
+  let fgWood = 0, bgWood = 0, sawTrees = false;
+  for (const seed of [0x55aa55, 0x9e3779b9, 0x777, 0x1234]) {
+    const e = createEngineWasm({ cols: 256, rows: 256, worldSeed: seed >>> 0, sinksOn: false, infinite: true });
+    const fw = woodIn(e.getGrid()), bw = woodIn(e.getGridBg());
+    fgWood += fw; bgWood += bw; if (bw > 0) sawTrees = true;
+    e.destroy();
+  }
+  check('a tree-bearing seed generated trees in the background', sawTrees, `(bg WOOD ${bgWood})`);
+  check('no worldgen tree trunks in the foreground', fgWood === 0, `(fg WOOD ${fgWood})`);
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

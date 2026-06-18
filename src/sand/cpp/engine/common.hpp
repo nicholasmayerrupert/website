@@ -150,9 +150,12 @@ static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneli
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
 // Player tool use (Phase 3): reach limit, per-action cooldown, brush radii.
-static const double P_TOOL_REACH = 18.0;   // max cells from player center
+static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
+static const int    P_SPEW_R = 4;          // fluids/sand scatter ("spew") radius around the cursor
+static const double SPEW_FILL_P = 0.35;    // fraction of empty cells a spew emit fills (deterministic per tick)
+static const int    P_MINE_DURABILITY = 40; // eraser sweep penetration budget; each mined cell spends DURABILITY[m]
 struct Player {
   int id = 0;
   bool active = true, alive = true;
@@ -169,6 +172,7 @@ struct Player {
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
   int toolCooldown = 0; // steps remaining before this player can act again
+  double toolPrevX = 0, toolPrevY = 0; // aim anchor for the in-progress continuous draw (solid stroke); reset on press
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
 static const int PLAYER_SNAP_STRIDE = 17;

@@ -1,4 +1,13 @@
   // ---- settle passes (identical to Stage 1) ----
+  // Density-scaled straight-down fall for liquids: a liquid may drop up to
+  // round(DENSITY * LIQUID_FALL_PER_DENSITY) cells per tick (clamped to
+  // [1, LIQUID_FALL_CAP]). With the values below: OIL(0.8)->2, WATER(1.0)->3,
+  // ACID(1.1)->3, LAVA(2.8)->8 capped to 5 — so density actually orders the
+  // fall speed (lighter oil lags, heavier lava plummets). Defined here (NOT
+  // common.hpp) on purpose. Only moves a liquid into EMPTY space strictly below,
+  // so settled scenes (nothing empty below) are byte-identical to single-step.
+  static const int LIQUID_FALL_PER_DENSITY = 3;
+  static const int LIQUID_FALL_CAP = 5;
   bool canLooseDensitySettleThisTick(uint8_t m) { float mob = MOBILITY[m]; return mob >= 1 || rand() < mob; }
   void settleLooseDensityInterface(int x, int y, int k) {
     uint8_t m = grid[k];
@@ -48,7 +57,33 @@
       int firstDx = ((x + y) & 1) ? 1 : -1;
       for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquid(grid[uk]) && canDisplaceByLooseDensity(grid[uk], m) && next[uk] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
     }
-    if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(belowK, m); return; }
+    if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) {
+      // DENSITY-SCALED FALL: denser liquids drop more cells per tick. Walk straight
+      // down, stopping at the first cell that isn't free (free == both grid AND next
+      // EMPTY, matching the single-step guard above and respecting the double buffer
+      // so two cells can't claim the same destination), and move to the farthest free
+      // cell. Only ever moves into EMPTY space strictly below, so a settled scene
+      // (nothing empty below any liquid) takes 0 steps and is byte-identical to before.
+      int maxFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
+      if (maxFall < 1) maxFall = 1;
+      if (maxFall > LIQUID_FALL_CAP) maxFall = LIQUID_FALL_CAP;
+      int dst = belowK;
+      for (int s = 2; s <= maxFall; s++) {
+        if (y + s >= rows) break;                       // bottom of buffer
+        int nk = k + s * cols;
+        if (grid[nk] != EMPTY || next[nk] != EMPTY) break;
+        dst = nk;
+      }
+      vacatedStamp[k] = tick; writeNextIndex(dst, m);
+      // A multi-cell jump moves the source >DIRTY_PAD_Y rows from the destination,
+      // so the vacated source/intermediate rows would fall outside next step's active
+      // band and prepareNextBuffer wouldn't blank their `next` slots — the double
+      // buffer then resurrects a stale value from 2 ticks ago as a ghost trail. Mark
+      // the whole fall span dirty so those rows stay active and get blanked. (For a
+      // single-cell fall dst==belowK and the existing pad already covers it.)
+      if (dst != belowK) markDirtyRect(x, y, x, dst / cols);
+      return;
+    }
     if (y + 1 < rows && canDisplaceMaterial(m, grid[belowK]) && next[belowK] == EMPTY) { moveLiquidInto(k, x, y + 1, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     for (int i = 0; i < 2; i++) {

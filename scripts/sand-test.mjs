@@ -336,7 +336,10 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, 3, true);
   e.syncComponents();
   for (let x = 48; x <= 51; x++) for (let y = 10; y < 26; y++) e.paintDisc(x, y, 0, WATER, true); // 4-wide column up high
-  let t = 0; for (let i = 0; i < 30; i++) { t += 16; e.step(t); } // still mid-air after 30 steps
+  // Sample while the column is still mid-air. Liquids now fall density-scaled (water
+  // ~3 cells/tick), so 12 steps lands the leading edge well above the floor — enough
+  // ticks to exercise the leveller, few enough that the water is still falling.
+  let t = 0; for (let i = 0; i < 12; i++) { t += 16; e.step(t); }
   const g = e.getGrid();
   let minX = 1e9, maxX = -1, maxY = -1;
   for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (g[y * COLS + x] === WATER) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }

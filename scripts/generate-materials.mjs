@@ -36,7 +36,7 @@ const animKeys = Object.keys(animColors).filter((k) => !k.startsWith('$'));
 // ---------------- JS ----------------
 const jsKindLines = Object.entries(kinds).map(([k, v]) => `  ${k}: ${v},`).join('\n');
 const jsMatLines = materials
-  .map((m) => `  { id: ${m.id}, name: '${m.name}', kind: KIND.${m.kind}, density: ${m.density}, looseSorted: ${m.looseSorted}, mobility: ${m.mobility}, color: ${m.color}, textureAmp: ${m.textureAmp}, renderAnim: '${m.renderAnim}' },`)
+  .map((m) => `  { id: ${m.id}, name: '${m.name}', kind: KIND.${m.kind}, density: ${m.density}, looseSorted: ${m.looseSorted}, mobility: ${m.mobility}, color: ${m.color}, textureAmp: ${m.textureAmp}, durability: ${m.durability}, renderAnim: '${m.renderAnim}' },`)
   .join('\n');
 const jsAnimLines = animKeys.map((k) => `export const ${k} = ${animColors[k]};`).join('\n');
 const js = `${BANNER('JS module')}
@@ -84,6 +84,7 @@ static const uint8_t  MAT_KIND[TABLE]       = {${materials.length ? col((m) => m
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};
+static const uint8_t  DURABILITY[TABLE]     = {${col((m) => m.durability, u8)}};
 ${cppAnimLines}
 `;
 

@@ -14,6 +14,7 @@ static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COM
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0x00000000u};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 0};
+static const uint8_t  DURABILITY[TABLE]     = {0, 2, 0, 8, 0, 0, 0, 2, 4, 2, 0, 0, 5, 10, 4, 0};
 static const uint32_t PACKED_FIRE = 0xb8226cffu;
 static const uint32_t PACKED_FIRE_HOT = 0x9e50cdffu;
 static const uint32_t PACKED_LAVA_HOT = 0xc83090ffu;

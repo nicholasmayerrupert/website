@@ -292,5 +292,49 @@ runRectScenario({ name: 'rect moat: pointer erase both layers', eraseOrder: [0, 
   e.destroy();
 }
 
+// DYNAMIC carving: the real-play sequence — carve ONE layer, let the sim run so a
+// cross-supported island settles (goes inactive), THEN carve the other layer. The
+// freed island must still fall even though its layer went idle. This is the actual
+// reported bug ("only one layer falls; whichever I carve SECOND drops, the first
+// stays"), which a carve-both-then-step test cannot catch. Geometry: a ceiling slab
+// spanning both layers, held by two side pillars, with a big VOID below; two
+// vertical cuts isolate the middle slab, which must drop into the void in BOTH
+// layers regardless of carve order, and even when the two cuts are slightly
+// mismatched (hand-drawn moats never align pixel-perfectly).
+{
+  const C = 140, R = 160, kk = (x, y) => y * C + x;
+  const mkBig = () => createEngineWasm({ cols: C, rows: R, worldSeed: 0x51a7e, infinite: false, sinksOn: false });
+  const fillBody = (e, l) => {
+    for (let y = 20; y < 60; y++) for (let x = 10; x < 130; x++) e.paintDiscLayer(l, x, y, 0, MAT.STONE, true);
+    for (let y = 60; y < R - 1; y++) { for (let x = 10; x < 22; x++) e.paintDiscLayer(l, x, y, 0, MAT.STONE, true); for (let x = 118; x < 130; x++) e.paintDiscLayer(l, x, y, 0, MAT.STONE, true); }
+    e.syncComponentsLayer(l);
+  };
+  const vcut = (e, l, cx0, cx1) => { for (let y = 16; y < 64; y++) for (let x = cx0; x < cx1; x++) e.eraseDiscLayer(l, x, y, 1); };
+  const slab = (g) => { let n = 0, minY = R; for (let y = 20; y < R; y++) for (let x = 55; x < 85; x++) { if (g[kk(x, y)] === MAT.STONE) { n++; if (y < minY) minY = y; } } return { n, minY }; };
+  const stepN = (e, n) => { for (let i = 0; i < n; i++) e.step(16 * (i + 1)); };
+  const dynScenario = (name, carveFirst, carveSecond) => {
+    console.log(name);
+    const e = mkBig(); e.setBgEnabled(true);
+    fillBody(e, 0); fillBody(e, 1);
+    const b0 = slab(e.getGrid()), b1 = slab(e.getGridBg());
+    carveFirst(e); stepN(e, 60);      // first layer carved; cross-supported slab settles
+    carveSecond(e); stepN(e, 200);    // second layer carved; both must now fall
+    const fg = slab(e.getGrid()), bg = slab(e.getGridBg());
+    const fgFell = fg.minY > b0.minY + 10, bgFell = bg.minY > b1.minY + 10;
+    check('foreground slab falls', fgFell, `(top ${b0.minY} -> ${fg.minY})`);
+    check('background slab falls', bgFell, `(top ${b1.minY} -> ${bg.minY})`);
+    check('both layers fall regardless of carve order', fgFell && bgFell, `(fg ${fgFell}, bg ${bgFell})`);
+    e.destroy();
+  };
+  // exact-aligned cuts at columns [34,40) and [100,106)
+  const cutA = (e, l) => { vcut(e, l, 34, 40); vcut(e, l, 100, 106); };
+  // bg cuts shifted +2 px — the hand-drawn mismatch that used to pin a layer
+  const cutMis = (e, l) => { const d = l ? 2 : 0; vcut(e, l, 34 + d, 40 + d); vcut(e, l, 100 - d, 106 - d); };
+  dynScenario('dynamic: carve fg, settle, then carve bg (aligned)', e => cutA(e, 0), e => cutA(e, 1));
+  dynScenario('dynamic: carve bg, settle, then carve fg (aligned)', e => cutA(e, 1), e => cutA(e, 0));
+  dynScenario('dynamic: carve fg, settle, then carve bg (mismatched)', e => cutMis(e, 0), e => cutMis(e, 1));
+  dynScenario('dynamic: carve bg, settle, then carve fg (mismatched)', e => cutMis(e, 1), e => cutMis(e, 0));
+}
+
 console.log(failures === 0 ? '\nno layer-detach failure reproduced' : `\n${failures} reproduced failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -137,6 +137,12 @@
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   bool jointGroundReady = false;
+  // Reusable scratch for computeGroundedBoth() (sized to cols*rows once; avoids
+  // per-step heap churn in two-layer scenes). prev* = last step's grounding (for
+  // re-waking solids that lost support); *Base = each layer's independent grounding
+  // snapshot; cgVisited/cgStack/cgIsland = the per-island flood working set.
+  std::vector<uint8_t> cgPrevFg, cgPrevBg, cgFgBase, cgBgBase, cgVisited;
+  std::vector<int> cgStack, cgIsland;
   // ---- tool / pointer state (input policy ported from createSandGame) ----
   int activeTool = T_CUBE;
   bool lmbDown = false, rmbDown = false;

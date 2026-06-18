@@ -254,5 +254,43 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// The INVERSE, and the harder case: WATER (denser) dropped into an OIL pool must SINK
+// through the oil, level into a FLAT layer BELOW it (flat interface), and SETTLE — not
+// freeze as a pile/mound under the oil. Guards the two-fluid density-levelling fix
+// (lateral density spread + lighter-liquid rise).
+{
+  console.log('water dropped into oil sinks, levels flat below it + settles');
+  const OIL = 4, WATER = 2;
+  const e = mk();
+  // grounded basin: walls reach the world bottom (ROWS) so the registered stone doesn't
+  // fall; a floor slab partway up holds the liquid.
+  const L = 70, R = 110, floorY = 100, top = 45;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, 3, true); e.paintDisc(R, y, 0, 3, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, 3, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 22; y < floorY; y++) e.paintDisc(x, y, 0, OIL, true); // oil pool
+  let t = 0; for (let i = 0; i < 500; i++) { t += 16; if (!e.step(t)) break; }
+  const cnt = (m) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+  const oil0 = cnt(OIL);
+  for (let x = L + 1; x <= L + 10; x++) for (let y = floorY - 34; y < floorY - 22; y++) e.paintDisc(x, y, 0, WATER, true); // water blob on the left, above the oil
+  const water0 = cnt(WATER);
+  let settledAt = -1; for (let i = 0; i < 8000; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`water/oil scene settles to inert (step ${settledAt})`, settledAt >= 0);
+  check(`oil + water conserved (${oil0}/${water0})`, cnt(OIL) === oil0 && cnt(WATER) === water0 && oil0 > 0 && water0 > 0);
+  const g = e.getGrid();
+  // per interior column: top-most water row (the interface), and water must be BELOW oil
+  let wTop = [], inverted = 0;
+  for (let x = L + 1; x < R; x++) {
+    let wt = -1, maxW = -1, maxO = -1;
+    for (let y = top; y <= floorY; y++) { const v = g[y * COLS + x]; if (v === WATER) { if (wt < 0) wt = y; maxW = y; } if (v === OIL) maxO = y; }
+    if (wt >= 0) wTop.push(wt);
+    if (maxW >= 0 && maxO >= 0 && maxO >= maxW) inverted++; // any oil at/below the water in this column = not separated
+  }
+  const spread = wTop.length ? Math.max(...wTop) - Math.min(...wTop) : -1;
+  check(`water settled as a layer below the oil (no inversion, ${inverted})`, inverted === 0 && wTop.length > 25);
+  check(`water/oil interface is flat (water-top spread ${spread})`, spread >= 0 && spread <= 2);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

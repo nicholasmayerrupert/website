@@ -34,6 +34,20 @@
         next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
+    // DENSITY RISE: a lighter liquid rises into a strictly-DENSER liquid directly
+    // above or up-diagonally — the symmetric partner of the down/down-diagonal sink
+    // below. Together they LEVEL a two-fluid interface (a water mound under oil
+    // flattens as oil rises and water sinks) and, because each swap strictly lowers
+    // gravitational PE, the body CONVERGES and settles. Restricted to a liquid above
+    // (powder sorting is handled by settleSand). Deterministic parity direction (no
+    // rand) so single-fluid scenes — which never have a denser liquid above — are
+    // byte-identical. Runs before the side flow so buoyancy beats lateral spread.
+    if (y > 1) {
+      int aboveK = k - cols;
+      if (isLiquid(grid[aboveK]) && canDisplaceByLooseDensity(grid[aboveK], m) && next[aboveK] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, aboveK, m); return; }
+      int firstDx = ((x + y) & 1) ? 1 : -1;
+      for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquid(grid[uk]) && canDisplaceByLooseDensity(grid[uk], m) && next[uk] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
+    }
     if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(belowK, m); return; }
     if (y + 1 < rows && canDisplaceMaterial(m, grid[belowK]) && next[belowK] == EMPTY) { moveLiquidInto(k, x, y + 1, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
@@ -54,6 +68,15 @@
       }
     }
     if (flow != 0) { int stepX = x + flow; if (canLiquidEnter(stepX, y, m)) { moveLiquidInto(k, stepX, y, m); return; } }
+    // LATERAL DENSITY SPREAD: push sideways into an adjacent strictly-LIGHTER liquid
+    // (water into oil). With the density-rise branch above (the displaced lighter liquid
+    // bubbles back up), this FLATTENS a two-fluid mound — the heavier liquid spreads to a
+    // flat bottom layer, the lighter to a flat top. Each exchange lowers the heavy
+    // liquid's centre of mass, so it CONVERGES and then settles (once the heavy liquid
+    // spans wall-to-wall there is no lighter liquid to push into). It can only fire at a
+    // genuine two-fluid interface — a single fluid has no lighter LIQUID neighbour — so it
+    // adds no same-fluid lateral shuffle and no shimmer/multiplayer churn.
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int sk = k + dx; if (next[sk] == EMPTY && isLiquid(grid[sk]) && canDisplaceByLooseDensity(m, grid[sk])) { moveLiquidInto(k, nx, y, m); return; } }
     if (y + 1 < rows && supportsLiquid(grid[belowK], m)) {
       int aboveK = k - cols;
       bool hasAbove = (y > 1 && grid[aboveK] == m);

@@ -125,10 +125,20 @@
     // the background under foreground water lets the water pour into the new channel
     // on its own. Settling fluids (flat bodies go inert) keep this from shimmering.
     if (!isLoose(m)) return false;
-    if (to->grid[k] != EMPTY) return false;
+    // Target empty -> a plain transfer. Target occupied by a LIGHTER liquid -> a
+    // density SWAP: a denser stuck liquid (fg water) pushes through the lighter liquid
+    // (bg oil), trading places across the layers. Antisymmetric density test means the
+    // reverse swap is impossible (no oscillation); the stuck+canFall gates keep it from
+    // bleeding into a packed backdrop or churning.
+    uint8_t dst = to->grid[k]; bool swap = false;
+    if (dst != EMPTY) {
+      if (!(isLiquid(m) && isLiquid(dst) && canDisplaceByLooseDensity(m, dst))) return false;
+      swap = true;
+    }
     if (!stuckIn(from, x, y, m)) return false;
     if (!canFall(to, x, y, m)) return false;
-    to->grid[k] = m; from->grid[k] = EMPTY;
+    if (swap) { to->grid[k] = m; from->grid[k] = dst; }
+    else { to->grid[k] = m; from->grid[k] = EMPTY; }
     // mark both layers dirty at (x,y) so render + net + next-step settle pick it up
     if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
     if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;

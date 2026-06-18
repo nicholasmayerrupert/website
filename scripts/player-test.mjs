@@ -388,5 +388,56 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
+// N5. deeply buried (> P_BURY_JUMP_MAX) -> cannot WALK side-to-side out either; he
+//     must dig free (same cap that denies the jump). Bury the bottom rows deep AND
+//     wall off both sides so the leading edge is solid sand on contact, with open
+//     space a couple cells away that he must NOT be able to reach by walking.
+{
+  console.log('survival: deeply buried cannot walk out (must dig)');
+  const e = mk();
+  stoneFloor(e, 60, 140, 90);
+  const id = e.spawnPlayer(100, 70);
+  runSteps(e, 120);
+  const p = e.getPlayer(id);
+  // Bury the feet 6px deep (> P_BURY_JUMP_MAX = 4) so the jump/walk gate engages.
+  buryFeet(e, e.getPlayer(id), 6);
+  // Wall off both sides of the lower body so any horizontal step pushes the leading
+  // edge INTO solid stone. The box spans [x0,x1]; put a 2px-thick wall just outside
+  // each side, full body height, leaving genuine open air a couple cells beyond.
+  const x0 = Math.floor(p.x), x1 = Math.floor(p.x + p.w - 1e-6);
+  const top = Math.floor(p.y), bot = Math.floor(p.y + p.h - 1e-6);
+  for (let y = top; y <= bot; y++) {
+    e.addDiscToStoneDraft(x0 - 1, y, 0); e.addDiscToStoneDraft(x0 - 2, y, 0);
+    e.addDiscToStoneDraft(x1 + 1, y, 0); e.addDiscToStoneDraft(x1 + 2, y, 0);
+  }
+  e.finalizeStoneDraft();
+  const startX = e.getPlayer(id).x;
+  // Sustained RIGHT input for many steps: he must stay put (can't walk out).
+  for (let i = 0; i < 120; i++) { e.setPlayerInput(id, { bits: INPUT.RIGHT }); e.step(16 * i); }
+  const afterRight = e.getPlayer(id).x;
+  check(`buried player can't walk RIGHT out (x ${startX.toFixed(1)} -> ${afterRight.toFixed(1)})`, Math.abs(afterRight - startX) < 1.0);
+  // And sustained LEFT input: also stuck.
+  for (let i = 0; i < 120; i++) { e.setPlayerInput(id, { bits: INPUT.LEFT }); e.step(16 * i); }
+  const afterLeft = e.getPlayer(id).x;
+  check(`buried player can't walk LEFT out (x ${startX.toFixed(1)} -> ${afterLeft.toFixed(1)})`, Math.abs(afterLeft - startX) < 1.0);
+  e.destroy();
+}
+
+// N6. control / regression guard: a SHALLOWLY buried (<= P_BURY_JUMP_MAX) player
+//     still walks horizontally with the same input — the gate must not over-block.
+{
+  console.log('survival: shallow-buried player still walks (regression)');
+  const e = mk();
+  stoneFloor(e, 40, 180, 90);
+  const id = e.spawnPlayer(100, 70);
+  runSteps(e, 120);
+  buryFeet(e, e.getPlayer(id), 3); // 3px <= P_BURY_JUMP_MAX -> must still walk
+  const x0 = e.getPlayer(id).x;
+  for (let i = 0; i < 120; i++) { e.setPlayerInput(id, { bits: INPUT.RIGHT }); e.step(16 * i); }
+  const p = e.getPlayer(id);
+  check(`shallow-buried player walks right (x ${x0.toFixed(1)} -> ${p.x.toFixed(1)})`, p.x > x0 + 8);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

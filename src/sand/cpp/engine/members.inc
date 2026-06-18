@@ -302,10 +302,32 @@
   inline void writeGridIndex(int k, uint8_t m) { if (grid[k] == m) return; grid[k] = m; markCellIndex(k); }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
   inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }
+  // True iff this cell still has a pending density swap with a neighbour — used to
+  // keep an UNLEVEL two-fluid interface awake until it settles flat.
+  //   - vertical (any loose material): a lighter material directly below, or a
+  //     heavier one directly above (preserves powder-on-water sorting).
+  //   - DIAGONAL, LIQUIDS ONLY: a denser liquid up-diagonal that `m` can rise into,
+  //     or a lighter liquid down-diagonal that `m` can sink into. This is what lets a
+  //     water mound under oil keep exchanging (water sinks / oil rises) until level.
+  // Restricted to liquids on the diagonals so powder sorting isn't double-counted and
+  // a SINGLE-fluid surface (no density difference anywhere) still returns false -> the
+  // surface goes inert, no shimmer/multiplayer churn.
   inline bool touchesUnstableLooseDensityInterface(int k, uint8_t m) {
     if (!isLooseDensityMaterial(m)) return false;
-    int y = k / cols;
-    return (y < rows - 1 && canDisplaceByLooseDensity(m, grid[k + cols])) || (y > 1 && canDisplaceByLooseDensity(grid[k - cols], m));
+    int y = k / cols, x = k - y * cols;
+    if (y < rows - 1 && canDisplaceByLooseDensity(m, grid[k + cols])) return true;
+    if (y > 1 && canDisplaceByLooseDensity(grid[k - cols], m)) return true;
+    if (isLiquid(m)) {
+      if (y > 1) {
+        if (x > 1 && isLiquid(grid[k - cols - 1]) && canDisplaceByLooseDensity(grid[k - cols - 1], m)) return true;
+        if (x < cols - 2 && isLiquid(grid[k - cols + 1]) && canDisplaceByLooseDensity(grid[k - cols + 1], m)) return true;
+      }
+      if (y < rows - 1) {
+        if (x > 1 && isLiquid(grid[k + cols - 1]) && canDisplaceByLooseDensity(m, grid[k + cols - 1])) return true;
+        if (x < cols - 2 && isLiquid(grid[k + cols + 1]) && canDisplaceByLooseDensity(m, grid[k + cols + 1])) return true;
+      }
+    }
+    return false;
   }
   inline void writeNextIndex(int k, uint8_t m) {
     if (next[k] == m) return;
@@ -323,6 +345,17 @@
     if (displaced != EMPTY && canDisplaceMaterial(m, displaced) && next[fromK] == EMPTY && vacatedStamp[toK] != tick) writeNextIndex(fromK, displaced);
   }
   inline void moveLiquidInto(int fromK, int x, int y, uint8_t m) { moveMaterialInto(fromK, I(x, y), m); }
+  // Symmetric two-fluid density swap: the lighter liquid `m` at fromK rises to toK;
+  // the heavier liquid currently at toK sinks into fromK. Both writes go to next[] and
+  // stamp vacatedStamp so neither cell is re-consumed this tick (blocks the immediate
+  // reverse swap = oscillation). Each swap strictly lowers gravitational PE, so a
+  // two-fluid interface levels in finitely many swaps and then settles to inert.
+  void moveDensitySwap(int fromK, int toK, uint8_t m) {
+    uint8_t heavier = grid[toK];
+    writeNextIndex(toK, m);
+    writeNextIndex(fromK, heavier);
+    vacatedStamp[fromK] = tick; vacatedStamp[toK] = tick;
+  }
 
   static const int DIRS_LF[2];
   static const int DIRS_RF[2];

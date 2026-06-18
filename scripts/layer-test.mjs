@@ -275,5 +275,26 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('drained scene re-settles to inert (no churn)', settledAt >= 0, `(step ${settledAt})`);
 }
 
+// 15. Cross-layer two-fluid: a foreground water column stuck above a background OIL
+//     column (with open background below it) drains into the background, displacing
+//     the lighter oil — conserved, no oscillation, settles to inert.
+{
+  console.log('cross-layer: fg water drains through/displaces bg oil (two-fluid)');
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 30, hw = 2, fy = 40;
+  stoneFloor(e, 1, cx, 70, hw);                                   // deep bg floor -> open space below the bg oil
+  for (let y = fy; y <= fy + 6; y++) e.paintDiscLayer(1, cx, y, 0, MAT.OIL, true);   // bg oil column
+  stoneFloor(e, 0, cx, fy + 7, hw);                              // fg floor just below the water -> water stuck in fg
+  for (let y = fy; y <= fy + 6; y++) e.paintDisc(cx, y, 0, MAT.WATER, true);          // fg water column
+  const water = () => countIn(e.getGrid(), MAT.WATER) + countIn(e.getGridBg(), MAT.WATER);
+  const oil = () => countIn(e.getGrid(), MAT.OIL) + countIn(e.getGridBg(), MAT.OIL);
+  const w0 = water(), o0 = oil();
+  let settledAt = -1; for (let i = 0; i < 800; i++) { if (!e.step(16 * (i + 1))) { settledAt = i; break; } }
+  check('water + oil conserved across layers', water() === w0 && oil() === o0 && w0 > 0 && o0 > 0, `(w ${w0}->${water()}, o ${o0}->${oil()})`);
+  check('foreground water reached the background (drained past the oil)', countIn(e.getGridBg(), MAT.WATER) > 0);
+  check(`cross-layer two-fluid scene settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

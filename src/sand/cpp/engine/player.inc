@@ -55,9 +55,13 @@ inline bool edgeBlockedX(double px, double py, int w, int h, int dir) {
 // NEW leading-edge solid (solids already overlapping the box are ignored, so a
 // buried/clipped player can still shuffle). A low ledge (<=P_STEP_UP) auto-climbs
 // so 1-2px bumps don't stall him. Returns true if blocked.
-bool tryMoveX(Player& p, double d) {
+bool tryMoveX(Player& p, double d, int bury) {
   if (d == 0) return false;
   int dir = d > 0 ? 1 : -1;
+  // Too deeply buried to jump out (same cap as the jump) -> also can't walk/climb
+  // out: pushing the leading edge INTO solid sand is blocked, so he must dig free.
+  // (A step toward genuinely open air — leading edge empty — is still allowed.)
+  if (bury > P_BURY_JUMP_MAX && edgeBlockedX(p.px, p.py, p.w, p.h, dir)) return true;
   double step = dir * P_MOVE_SUBSTEP, moved = 0;
   while (std::fabs(moved) < std::fabs(d)) {
     double adv = (std::fabs(d - moved) < P_MOVE_SUBSTEP) ? (d - moved) : step;
@@ -163,7 +167,7 @@ void integratePlayer(Player& p) {
   if (wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
 
   // horizontal move
-  if (tryMoveX(p, p.vx)) p.vx = 0;
+  if (tryMoveX(p, p.vx, bury)) p.vx = 0;
 
   // gravity + vertical move
   p.vy += P_GRAVITY;

@@ -414,6 +414,10 @@
     useLayer(&fg);
     for (auto& p : players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
     remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the grid shift)
+    useLayer(&fg); clearAllMineDamage();
+    useLayer(&bg); clearAllMineDamage();
+    useLayer(&fg);
+    for (auto& p : players) p.mineActive = false;
   }
   void shiftLayer(int dx, int dy) {
     if ((!dx && !dy) || !L->infinite) return;

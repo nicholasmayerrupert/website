@@ -20,13 +20,43 @@
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
     return changed;
   }
-  // Sum the mining "durability" of the solid cells inside a disc (EMPTY = 0). The
-  // player eraser peeks this before mining a disc at the cursor and scales its
-  // post-mine cooldown by the result, so harder material mines slower (see player.inc).
-  int discDurabilityCost(int cx, int cy, int radius) {
-    int cost = 0;
-    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; cost += DURABILITY[grid[I(xx, yy)]]; } }
-    return cost;
+  int clearMineDamageDisc(int cx, int cy, int radius) {
+    int changed = 0;
+    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } } }
+    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return changed;
+  }
+  void clearAllMineDamage() {
+    bool any = false;
+    for (uint8_t v : L->mineDamage) if (v) { any = true; break; }
+    if (!any) return;
+    std::fill(L->mineDamage.begin(), L->mineDamage.end(), 0);
+    markAllDirty();
+  }
+  int mineDamageDisc(int cx, int cy, int radius) {
+    std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
+    std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
+    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) { if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } continue; }
+      uint8_t dur = DURABILITY[m];
+      if (dur > 0) {
+        if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
+        L->mineDamage[k]--;
+        changed = 1;
+        if (L->mineDamage[k] > 0) continue;
+      }
+      if (m == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = 1; }
+      if (m == STONE) erasedStone.push_back(k); else if (m == ICE) erasedIce.push_back(k);
+      if (isPlantMaterial(m)) erasedPlant = true;
+      if (m == RIGID) bodyOwner[k] = -1;
+      grid[k] = EMPTY; L->mineDamage[k] = 0; changed = 1;
+      if (stoneDraft.erase(k)) changed = 1; if (iceDraft.erase(k)) changed = 1;
+    } }
+    finishErasedBodies(dirtyBodies, L->bodyCells);
+    if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
+    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
+    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    return changed;
   }
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {
     int changed = 0;

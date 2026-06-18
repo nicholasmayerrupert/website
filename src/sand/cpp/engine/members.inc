@@ -27,6 +27,9 @@
     std::vector<int> prevCompCells, curCompCells, bodyCells;
     std::vector<uint8_t> reactionFlags;
     std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
+    // Transient survival mining damage. 0 = no active damage; otherwise the
+    // remaining durability for the current held mine target. Not serialized.
+    std::vector<uint8_t> mineDamage;
     // components + ids
     std::vector<Comp> stoneComponents, plantComponents, iceComponents;
     int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
@@ -60,6 +63,7 @@
       compOccStamp.assign(n, -1);
       seenStamp.assign(n, 0); seenGen = 0;
       reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
+      mineDamage.assign(n, 0);
       bodyOwner.assign(n, -1);
       renderPixels.assign(n * 4, 0);
     }

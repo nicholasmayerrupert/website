@@ -200,7 +200,7 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   const p = e.getPlayer(id);
   const before = countMat(e.getGrid(), 3);
   // aim a few cells to the right at the stone surface, within reach
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 36; i++) {
     e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: p.x + 4, aimY: 92 });
     e.step(16 * i);
   }
@@ -463,7 +463,7 @@ const buryFeet = (e, p, depth) => {
   runSteps(e, 30);
   const p = e.getPlayer(id);
   const aimX = Math.floor(p.x) + 16;
-  for (let i = 0; i < 6; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY: 92 }); e.step(16 * i); }
+  for (let i = 0; i < 36; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY: 92 }); e.step(16 * i); }
   const g = e.getGrid();
   const empty = (x, y) => g[y * COLS + x] === 0;
   // the AIM cell is carved...
@@ -475,35 +475,39 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
-// 16. DURABILITY gates the mining RATE (not penetration): the eraser still removes a
-//     disc at the cursor, but the post-mine cooldown scales with material hardness, so
-//     fully mining a stone wall takes MORE held steps than the same volume of sand.
+// 16. DURABILITY is per-cell progress, not a slower hit rate: held eraser hits happen
+//     at the same cadence for every material, damaged stone renders darker, and
+//     releasing before a break resets the partial progress.
 {
-  console.log('tool: durability makes stone slower to mine than sand');
-  // Hold the eraser at a fixed cursor against a wall of `mat` for `steps` and count how
-  // many cells were removed (more cells in the same time = faster mining).
-  const minedOver = (mat, steps) => {
-    const e = mk();
-    if (mat === 3) stoneFloor(e, 110, 141, 0);                 // full-height stone wall (component)
-    else for (let x = 110; x < 141; x++) for (let y = 0; y < ROWS; y++) e.paintDisc(x, y, 0, mat, true);
-    const id = e.spawnPlayer(100, 80);
-    runSteps(e, 30);
-    const p = e.getPlayer(id);
-    const before = countMat(e.getGrid(), mat);
-    for (let i = 0; i < steps; i++) {
-      e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: 116, aimY: Math.floor(p.y) + 4 });
-      e.step(16 * i);
-    }
-    const removed = before - countMat(e.getGrid(), mat);
-    e.destroy();
-    return removed;
-  };
-  const STEPS = 60;
-  const sand = minedOver(1, STEPS), stone = minedOver(3, STEPS);
-  check(`stone is mined at the cursor (${stone} > 0)`, stone > 0);
-  // Over the SAME held duration soft sand removes more than hard stone (stone's longer
-  // per-mine cooldown throttles it). Sand should clear a good deal more volume.
-  check(`sand mines faster than stone (sand ${sand} > stone ${stone})`, sand > stone + 8);
+  console.log('tool: durability is block progress at a constant hit cadence');
+  const e = mk();
+  stoneFloor(e, 110, 141, 0);
+  const id = e.spawnPlayer(100, 80);
+  runSteps(e, 30);
+  const p = e.getPlayer(id);
+  const aimX = 116, aimY = Math.floor(p.y) + 4, k = aimY * COLS + aimX;
+
+  e.renderFull();
+  const beforePx = e.getRenderPixels().slice(k * 4, k * 4 + 4);
+  e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY });
+  e.step(0);
+  e.renderFull();
+  const damagedPx = e.getRenderPixels().slice(k * 4, k * 4 + 4);
+  const rgb = (p) => p[0] + p[1] + p[2];
+  check(`damaged stone renders darker (${rgb(damagedPx)} < ${rgb(beforePx)})`, rgb(damagedPx) < rgb(beforePx));
+  check('one hit does not mine stone immediately', e.getGrid()[k] === MAT.STONE);
+
+  for (let i = 1; i < 16; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY }); e.step(16 * i); }
+  e.setPlayerInput(id, { bits: 0, tool: T.eraser, aimX, aimY });
+  e.step(16 * 16);
+  for (let i = 17; i < 33; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY }); e.step(16 * i); }
+  check('partial durability resets after release', e.getGrid()[k] === MAT.STONE);
+
+  const actionsBefore = e.getPlayerActionCount();
+  for (let i = 33; i < 65; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY }); e.step(16 * i); }
+  const actionsAfter = e.getPlayerActionCount();
+  check(`stone mines after enough constant-rate hits (actions ${actionsAfter - actionsBefore})`, e.getGrid()[k] === MAT.EMPTY);
+  e.destroy();
 }
 
 // 17. fluid placement (player path) paints a disc of water at the aim.

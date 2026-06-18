@@ -278,6 +278,7 @@ void glDrawPreview() {
       int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
       bool toBg = (pointerBtns & 2) != 0;
       bool erasing = (lp->selectedTool == T_ERASER);
+      if (erasing && (pointerBtns & 3) != 0) return;
       double cxp = lp->px + lp->w / 2.0, cyp = lp->py + lp->h / 2.0;
       double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
       bool inReach = dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH;

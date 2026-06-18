@@ -153,13 +153,8 @@ static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can 
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
-// Eraser mines a disc AT THE AIM CELL (like every other tool). To keep "harder
-// material takes longer to mine", the post-mine cooldown scales with the summed
-// DURABILITY[] of the cells removed: cooldown = ceil(cost / this), clamped to a
-// floor of P_TOOL_COOLDOWN so soft sand/water mine at the base rate. With P_MINE_R=2
-// (~13 cells): water cost 0 -> base, sand ~26 -> base, stone ~104 -> ~12 (≈3x slower),
-// driftwood ~130 -> ~15. Bigger value = faster mining across the board.
-static const int    P_MINE_COST_PER_COOLDOWN = 9;
+// Eraser hits happen at this constant cadence for every material. DURABILITY[]
+// controls how many hits a cell survives, not the time between hits.
 // Player buoyancy: liquids are non-solid to the player, so without this he'd fall
 // through at full speed. Submersion is measured as the fraction of his AABB cells
 // that are liquid: past MIN_COVERAGE he's "in liquid" (gentle gravity, velocity
@@ -185,6 +180,8 @@ struct Player {
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
   int toolCooldown = 0; // steps remaining before this player can act again
+  bool mineActive = false;
+  int mineLayer = 0, mineX = 0, mineY = 0;
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
 static const int PLAYER_SNAP_STRIDE = 17;

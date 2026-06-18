@@ -271,17 +271,25 @@ bool playerUseTool(Player& p, int ax, int ay, Layer* layer) {
 }
 inline bool isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t == T_ICE; }
 // Mine a single disc AT THE AIM CELL into `layer` (like every other tool: a disc at
-// the cursor, NOT a sweep emanating from the player). Returns the summed mining
-// "durability" of the cells removed, so the caller can throttle the mining RATE by
-// material hardness (harder material -> longer cooldown -> slower mining). Peeks the
-// cost BEFORE erasing (cells still present), then erases. Deterministic — no RNG.
-int mineDisc(Player& p, int ax, int ay, Layer* layer) {
-  (void)p;
-  useLayer(layer);
-  int cost = discDurabilityCost(ax, ay, P_MINE_R); // hardness of what we're about to remove
-  eraseDisc(ax, ay, P_MINE_R);
+// the cursor, NOT a sweep emanating from the player). Each held-tool tick is one
+// constant-rate hit; DURABILITY[] controls how many hits a cell survives.
+void resetPlayerMine(Player& p) {
+  if (!p.mineActive) return;
+  useLayer(p.mineLayer ? &bg : &fg);
+  clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
   useLayer(&fg);
-  return cost;
+  p.mineActive = false;
+}
+bool mineDisc(Player& p, int ax, int ay, Layer* layer) {
+  int layerId = layer == &bg ? 1 : 0;
+  if (!p.mineActive || p.mineLayer != layerId || p.mineX != ax || p.mineY != ay) {
+    resetPlayerMine(p);
+    p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay;
+  }
+  useLayer(layer);
+  bool changed = mineDamageDisc(ax, ay, P_MINE_R) != 0;
+  useLayer(&fg);
+  return changed;
 }
 // ---- survival solids: the EXACT creative draft lifecycle, driven by a player ----
 // Begin a persistent solid draft into `btn`'s layer (0=fg LMB, 1=bg RMB) using the
@@ -311,7 +319,7 @@ void playerFinalizeSolidDraft() {
 // creative draft: begin on press, extend (preview) while held, finalize on release.
 void applyPlayerTools() {
   for (auto& p : players) {
-    if (!p.active || !p.alive) { p.prevInput = p.input; continue; }
+    if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
     int prev = p.prevInput;
     bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
@@ -335,6 +343,7 @@ void applyPlayerTools() {
 
     // --- SOLIDS: begin / extend the persistent draft (creative parity) ---
     if (isSolidTool(t)) {
+      resetPlayerMine(p);
       bool busy = (draftingStone || draftingIce);
       if (inReach && !busy && primaryRising) { playerBeginSolidDraft(p, t, ax, ay, 0); playerActionCount++; }
       else if (inReach && !busy && secondaryRising) { bgEnabled = true; playerBeginSolidDraft(p, t, ax, ay, 1); playerActionCount++; }
@@ -344,33 +353,26 @@ void applyPlayerTools() {
 
     // --- non-solids: fluids/sand (continuous paint), eraser (continuous sweep),
     //     seed/cube (one-shot on press) ---
-    if (!primary && !secondary) continue;
+    if (!primary && !secondary) { resetPlayerMine(p); continue; }
     bool continuous = isPaintTool(t) || t == T_ERASER;
     bool doPrimary = continuous ? primary : primaryRising;
     bool doSecondary = continuous ? secondary : secondaryRising;
     if (continuous && p.toolCooldown > 0) { doPrimary = doSecondary = false; }
     if (!doPrimary && !doSecondary) continue;
-    if (!inReach) continue;
+    if (!inReach) { resetPlayerMine(p); continue; }
+    if (t != T_ERASER) resetPlayerMine(p);
     bool acted = false;
-    int mineCost = 0;
     if (doPrimary) {
-      if (t == T_ERASER) { mineCost += mineDisc(p, ax, ay, &fg); acted = true; }
+      if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &fg);
       else acted |= playerUseTool(p, ax, ay, &fg);
     }
     if (doSecondary) {
       bgEnabled = true;
-      if (t == T_ERASER) { mineCost += mineDisc(p, ax, ay, &bg); acted = true; }
+      if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &bg);
       else acted |= playerUseTool(p, ax, ay, &bg);
     }
     if (acted) {
-      if (continuous) {
-        // Throttle the mining/paint RATE. For the eraser, harder material costs more
-        // durability and so takes a longer cooldown -> stone mines noticeably slower
-        // than sand/water (which stay at the base cooldown). Deterministic; no RNG.
-        int cd = P_TOOL_COOLDOWN;
-        if (t == T_ERASER) cd = imax(P_TOOL_COOLDOWN, (mineCost + P_MINE_COST_PER_COOLDOWN - 1) / P_MINE_COST_PER_COOLDOWN);
-        p.toolCooldown = cd;
-      }
+      if (continuous) p.toolCooldown = P_TOOL_COOLDOWN;
       playerActionCount++;
     }
   }

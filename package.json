@@ -15,6 +15,7 @@
     "test:players": "node scripts/player-test.mjs",
     "test:net": "node scripts/net-test.mjs",
     "test:layer": "node scripts/layer-test.mjs",
+    "test:stone-layers": "node scripts/stone-layer-dig-repro.mjs",
     "test:prefetch": "node scripts/prefetch-test.mjs",
     "test:render": "node scripts/render-noise-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",

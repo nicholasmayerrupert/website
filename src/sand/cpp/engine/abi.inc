@@ -126,6 +126,13 @@ EMSCRIPTEN_KEEPALIVE int engine_paint_disc_layer(Engine* e, int layer, int cx, i
   e->useLayer(&e->fg);
   return n;
 }
+EMSCRIPTEN_KEEPALIVE int engine_erase_disc_layer(Engine* e, int layer, int cx, int cy, int r) {
+  e->useLayer(layer ? &e->bg : &e->fg);
+  if (layer) e->bgEnabled = true;
+  int n = e->eraseDisc(cx, cy, r);
+  e->useLayer(&e->fg);
+  return n;
+}
 // Register stone/plant/ice components in a layer so raw painted solids become
 // component-backed (don't flicker). 0=fg, 1=bg.
 EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {

@@ -122,6 +122,7 @@ export function initSandWasm() {
         gridBg: c('engine_grid_bg', 'number', ['number']),
         setBgEnabled: c('engine_set_bg_enabled', null, ['number', 'number']),
         paintDiscLayer: c('engine_paint_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        eraseDiscLayer: c('engine_erase_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number']),
         syncComponentsLayer: c('engine_sync_components_layer', null, ['number', 'number']),
         glInit: c('engine_gl_init', 'number', ['number', 'string']),
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
@@ -423,6 +424,7 @@ export function createEngineWasm({
     getGridBg() { return new Uint8Array(mod.HEAPU8.buffer, M.gridBg(ptr), cellCount); },
     setBgEnabled(on) { M.setBgEnabled(ptr, on ? 1 : 0); },
     paintDiscLayer(layer, cx, cy, r, material, overwrite = false) { return M.paintDiscLayer(ptr, layer | 0, cx, cy, r, material, overwrite ? 1 : 0); },
+    eraseDiscLayer(layer, cx, cy, r) { return M.eraseDiscLayer(ptr, layer | 0, cx, cy, r) === 1; },
     syncComponentsLayer(layer) { M.syncComponentsLayer(ptr, layer | 0); },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },

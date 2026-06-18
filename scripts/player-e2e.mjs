@@ -6,27 +6,41 @@
 //
 //   node scripts/player-e2e.mjs
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 
 const PORT = 5180;
 const INPUT_JUMP = 4; // PI_JUMP bit (mirrors enum PlayerInput / INPUT.JUMP)
+const NPM = process.platform === 'win32' ? process.execPath : 'npm';
+const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
 // detached so we can kill the whole process group (npm spawns vite as a child;
 // killing only npm would orphan vite and leave the port held -> flaky reruns).
-const server = spawn('npm', ['run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
+const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 });
-const killServer = () => { try { process.kill(-server.pid, 'SIGKILL'); } catch { /* already gone */ } };
+const killServer = () => {
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
+    else process.kill(-server.pid, 'SIGKILL');
+  } catch { /* already gone */ }
+};
 const waitForServer = () => new Promise((resolve, reject) => {
   let buf = '';
-  const to = setTimeout(() => { killServer(); reject(new Error('dev server timeout')); }, 60000);
-  const onData = (d) => { buf += d.toString(); if (new RegExp(`localhost:${PORT}`).test(buf)) { clearTimeout(to); resolve(); } };
+  let done = false;
+  const finish = () => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); resolve(); };
+  const fail = (err) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); killServer(); reject(err); };
+  const to = setTimeout(() => fail(new Error('dev server timeout')), 60000);
+  const poll = setInterval(async () => {
+    try { if ((await fetch(baseURL)).ok) finish(); } catch {}
+  }, 500);
+  const onData = (d) => { buf += d.toString(); if (new RegExp(`localhost:${PORT}`).test(buf)) finish(); };
   server.stdout.on('data', onData);
-  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) { clearTimeout(to); killServer(); reject(new Error('dev server: ' + s.trim())); } });
+  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
 });
 
 let browser;

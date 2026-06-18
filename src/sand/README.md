@@ -98,8 +98,9 @@ and presented in JS. JS only collects a normalized input bitmask (`INPUT.*` in
 `setPlayerInput(id, {bits, aimX, aimY, tool, seq})`, and reads `getPlayers()`
 snapshots to draw an overlay. Physics is a deterministic fixed-timestep AABB
 platformer (gravity, run/friction, edge-triggered jump, sub-cell-stepped
-collision against any non-empty/non-liquid/non-gas cell). Players advance every
-`step()`, even when the grid is static, and stay world-anchored across streaming
+collision against solids/powders). Liquids remain pass-through cells but apply
+drag, a capped fall speed, and jump/up swimming while submerged. Players advance
+every `step()`, even when the grid is static, and stay world-anchored across streaming
 shifts. Determinism (no RNG) is what lets a fixed input stream replay identically
 — the basis for the planned host-authoritative multiplayer.
 

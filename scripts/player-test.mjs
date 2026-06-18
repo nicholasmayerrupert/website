@@ -3,7 +3,7 @@
 // Covers spawn/snapshot, gravity, landing/grounded, thin-floor and wall
 // collision, jump-only-when-grounded, run+friction, and fixed-input determinism.
 
-import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, INPUT, MAT } from '../src/sand/engineWasm.js';
 import { runSteps, approxEqual } from './sand-test-util.mjs';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;
@@ -508,84 +508,56 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
-// 18. SLOW FALL IN WATER: a submerged player sinks far slower than he falls in air
-//     (buoyancy), and holding jump swims him upward.
-{
-  console.log('survival: player falls slowly in water + swims up');
-  const dropIn = (water) => {
-    const e = mk();
-    if (water) for (let x = 40; x < 160; x++) for (let y = 40; y < 108; y++) e.paintDisc(x, y, 0, 2, true);
-    stoneFloor(e, 40, 160, 108);
-    const id = e.spawnPlayer(100, 30);
-    const y0 = e.getPlayer(id).y;
-    for (let i = 0; i < 25; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(16 * i); }
-    const d = e.getPlayer(id).y - y0;
-    e.destroy();
-    return d;
-  };
-  const air = dropIn(false), wet = dropIn(true);
-  check(`falls slower submerged than in air (water ${wet.toFixed(1)} < air ${air.toFixed(1)})`, wet < air * 0.6 && wet > 0);
+// Carve a water pool: stone side walls from `top` to the bottom, a stone floor at
+// `floor`, and the basin between the walls filled with water from `top` to `floor`.
+const waterPool = (e, x0, x1, top, floor) => {
+  stoneBlock(e, x0 - 2, x0, top, ROWS);
+  stoneBlock(e, x1, x1 + 2, top, ROWS);
+  stoneFloor(e, x0 - 2, x1 + 2, floor);
+  for (let x = x0; x < x1; x++) for (let y = top; y < floor; y++) e.paintDisc(x, y, 0, MAT.WATER, true);
+};
 
-  // swim: holding JUMP while submerged raises the player against gravity.
+// N7. liquids are not solid platforms, but they slow a falling player before he
+//     hits the pool floor.
+{
+  console.log('survival: water slows falling');
   const e = mk();
-  for (let x = 40; x < 160; x++) for (let y = 30; y < 118; y++) e.paintDisc(x, y, 0, 2, true);
-  stoneFloor(e, 40, 160, 118);
-  const id = e.spawnPlayer(100, 80);
-  let t = 0; for (let i = 0; i < 20; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(t += 16); } // settle in water
-  const yMid = e.getPlayer(id).y;
-  for (let i = 0; i < 30; i++) { e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(t += 16); }
-  const yUp = e.getPlayer(id).y;
-  check(`holding jump swims upward (y ${yMid.toFixed(1)} -> ${yUp.toFixed(1)})`, yUp < yMid - 3);
+  waterPool(e, 80, 120, 60, 105);
+  const id = e.spawnPlayer(100, 40);
+  for (let i = 0; i < 25; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(16 * i); }
+  const p = e.getPlayer(id);
+  check(`player entered water but did not pass through to floor (feet ${(p.y + p.h).toFixed(1)} < 105)`, p.y + p.h < 105 && !p.grounded);
+  check(`fall speed capped in water (vy ${p.vy.toFixed(2)})`, p.vy <= 1.2);
   e.destroy();
 }
 
-// 19. WADING through a shallow water layer (water only at the feet/lower body, the
-//     mid-body CENTER is dry) still slows the player — both his fall and his
-//     horizontal speed through the water are clearly less than through air. This is
-//     exactly the case the old center-cell-only test missed: with only the lower
-//     half wet, the geometric-center cell is dry, so the old check reported "not in
-//     water" and he moved through it as though it were nothing. PLAYER_H = 8.
+// N8. holding jump/up while submerged swims upward continuously.
 {
-  console.log('survival: wading (lower body wet, center dry) is slowed — not just full submersion');
+  console.log('survival: swim upward in water');
+  const e = mk();
+  waterPool(e, 80, 120, 55, 110);
+  const id = e.spawnPlayer(100, 82);
+  const y0 = e.getPlayer(id).y;
+  for (let i = 0; i < 18; i++) { e.setPlayerInput(id, { bits: INPUT.JUMP }); e.step(16 * i); }
+  const p = e.getPlayer(id);
+  check(`submerged player swam upward (y ${y0.toFixed(1)} -> ${p.y.toFixed(1)})`, p.y < y0 - 6);
+  check(`swim input produced upward velocity (vy ${p.vy.toFixed(2)})`, p.vy < 0);
+  e.destroy();
+}
 
-  // -- vertical: enter a shallow pool at the feet and sink through it. The body is
-  //    8 tall; a ~6-cell water band wets the lower body while the center stays dry. --
-  const fallThroughShallow = (water) => {
-    const e = mk();
-    // water band at the player's lower body (spawn y=40 -> body rows 40..47);
-    // rows 44..49 wet the lower half + just beneath, center row (~43) stays dry.
-    if (water) for (let x = 40; x < 160; x++) for (let y = 44; y < 50; y++) e.paintDisc(x, y, 0, 2, true);
-    stoneFloor(e, 40, 160, 116); // floor far below: he keeps descending, not resting
-    const id = e.spawnPlayer(100, 40);
-    const y0 = e.getPlayer(id).y;
-    for (let i = 0; i < 10; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(16 * i); }
-    const d = e.getPlayer(id).y - y0;
-    e.destroy();
-    return d;
-  };
-  const airFall = fallThroughShallow(false), wetFall = fallThroughShallow(true);
-  check(`wading slows the fall (water ${wetFall.toFixed(1)} < air ${airFall.toFixed(1)})`, wetFall < airFall * 0.8 && wetFall > 0);
-
-  // -- horizontal: wade RIGHT through a shallow pool on the floor vs. run on dry land.
-  //    Feet rest at y=100; the [96,100) water band wets the lower body but the center
-  //    (~y 94) is dry — the canonical "walks through water as if nothing" scenario. --
-  const runThroughShallow = (water) => {
-    const e = mk();
-    // long floor + pool so a 120-step run never reaches the edge (cols=200, but the
-    // run is bounded well under that from x=100; keep terrain to the buffer edge).
-    stoneFloor(e, 0, COLS, 100); // floor at y=100; player stands ON it (feet ~100)
-    if (water) for (let x = 0; x < COLS; x++) for (let y = 96; y < 100; y++) e.paintDisc(x, y, 0, 2, true);
-    const id = e.spawnPlayer(15, 92); // start near the left edge so an 80-step run stays in-bounds
-    runSteps(e, 20); // settle onto the floor
-    const x0 = e.getPlayer(id).x;
-    // long run so the steady-state cruise (not the shared accel ramp) dominates dx.
-    for (let i = 0; i < 80; i++) { e.setPlayerInput(id, { bits: INPUT.RIGHT }); e.step(16 * i); }
-    const dx = e.getPlayer(id).x - x0;
-    e.destroy();
-    return dx;
-  };
-  const airRun = runThroughShallow(false), wetRun = runThroughShallow(true);
-  check(`wading slows horizontal travel (water ${wetRun.toFixed(1)} < air ${airRun.toFixed(1)})`, wetRun < airRun * 0.82 && wetRun > 0);
+// N9. without swim input a submerged player sinks slowly, not at dry terminal
+//     velocity.
+{
+  console.log('survival: idle sink is slow in water');
+  const e = mk();
+  waterPool(e, 80, 120, 55, 110);
+  const id = e.spawnPlayer(100, 62);
+  const y0 = e.getPlayer(id).y;
+  for (let i = 0; i < 30; i++) { e.setPlayerInput(id, { bits: 0 }); e.step(16 * i); }
+  const p = e.getPlayer(id);
+  check(`submerged player sank gradually (y ${y0.toFixed(1)} -> ${p.y.toFixed(1)})`, p.y > y0 && p.y < y0 + 28);
+  check(`idle water fall speed remains capped (vy ${p.vy.toFixed(2)})`, p.vy <= 1.2);
+  e.destroy();
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

@@ -5,26 +5,40 @@
 //
 //   node scripts/mp-e2e.mjs
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { startServer } from './dev-multiplayer-server.mjs';
 
 const PORT = 5181, WS_PORT = 5191;
+const NPM = process.platform === 'win32' ? process.execPath : 'npm';
+const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
 const wsURL = `ws://localhost:${WS_PORT}`;
 const ROOM = 'e2e-room';
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
-const vite = spawn('npm', ['run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
+const vite = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 });
-const killVite = () => { try { process.kill(-vite.pid, 'SIGKILL'); } catch { /* gone */ } };
+const killVite = () => {
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(vite.pid), '/t', '/f'], { stdio: 'ignore' });
+    else process.kill(-vite.pid, 'SIGKILL');
+  } catch { /* gone */ }
+};
 const waitForServer = () => new Promise((resolve, reject) => {
   let buf = '';
-  const to = setTimeout(() => { killVite(); reject(new Error('dev server timeout')); }, 60000);
-  vite.stdout.on('data', (d) => { buf += d.toString(); if (new RegExp(`localhost:${PORT}`).test(buf)) { clearTimeout(to); resolve(); } });
-  vite.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) { clearTimeout(to); killVite(); reject(new Error('dev server: ' + s.trim())); } });
+  let done = false;
+  const finish = () => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); resolve(); };
+  const fail = (err) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); killVite(); reject(err); };
+  const to = setTimeout(() => fail(new Error('dev server timeout')), 60000);
+  const poll = setInterval(async () => {
+    try { if ((await fetch(baseURL)).ok) finish(); } catch {}
+  }, 500);
+  vite.stdout.on('data', (d) => { buf += d.toString(); if (new RegExp(`localhost:${PORT}`).test(buf)) finish(); });
+  vite.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
 });
 
 const relay = startServer(WS_PORT);

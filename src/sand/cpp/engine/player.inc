@@ -137,50 +137,45 @@ void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selecte
   p->inputSeq = seq;
 }
 
-// Fraction (0..1) of the player's AABB cells that sit in a liquid (water/oil/acid/
-// lava). Liquids are non-solid to the player, so without this he'd fall/walk through
-// them at full speed. Sampling the WHOLE body (not just the center cell) means
-// wading — water at the feet/lower body but not the mid-body center — is detected,
-// and the returned fraction lets buoyancy/drag scale with how deep he's in. Reads
-// the active (fg) grid; deterministic (pure grid sampling, no RNG).
-inline double submersionFraction(const Player& p) {
+// Liquid coverage of the player's AABB. Liquids are non-solid to the player, so
+// without buoyancy he'd fall/walk through them at full speed. Sampling the WHOLE
+// body (not just the center cell) means wading — water at the feet/lower body but
+// not the mid-body center — still registers. coverage is the fraction of the body's
+// cells that are liquid; deterministic (pure grid sampling, no RNG).
+struct PlayerFluidSample {
+  double coverage = 0;
+};
+inline bool playerCellLiquid(int x, int y) {
+  if (y < 0 || y >= rows || x < 0 || x >= cols) return false;
+  return isLiquid(grid[I(x, y)]);
+}
+inline PlayerFluidSample samplePlayerFluid(const Player& p) {
   int ix0 = (int)std::floor(p.px), ix1 = (int)std::floor(p.px + p.w - 1e-6);
   int iy0 = (int)std::floor(p.py), iy1 = (int)std::floor(p.py + p.h - 1e-6);
   int total = 0, wet = 0;
   for (int y = iy0; y <= iy1; y++) {
     for (int x = ix0; x <= ix1; x++) {
-      if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
       total++;
-      if (MAT_KIND[grid[I(x, y)]] == K_LIQUID) wet++;
+      if (playerCellLiquid(x, y)) wet++;
     }
   }
-  return total > 0 ? (double)wet / (double)total : 0.0;
-}
-// The player counts as "in water" once a meaningful fraction of his body is liquid,
-// so shallow wading (feet/lower body submerged) already engages buoyancy + drag —
-// not just full submersion of the mid-body center.
-inline bool playerSubmerged(const Player& p) {
-  return submersionFraction(p) >= P_WATER_SUBMERGE_FRAC;
+  PlayerFluidSample s;
+  s.coverage = total > 0 ? (double)wet / (double)total : 0;
+  return s;
 }
 
 void integratePlayer(Player& p) {
   if (!p.active) return;
-  // sub = fraction of the body in liquid (0..1). He's "in water" past a threshold,
-  // and buoyancy/drag scale with how submerged he is so a shallow wade slows him
-  // proportionally and a full dunk slows him the most.
-  double sub = submersionFraction(p);
-  bool inWater = sub >= P_WATER_SUBMERGE_FRAC;
-  // 0..1 ramp from the engage threshold to full submersion — scales the water
-  // effects so partial wading is sluggish but not as heavy as a full plunge.
-  double wet = inWater ? (sub - P_WATER_SUBMERGE_FRAC) / (1.0 - P_WATER_SUBMERGE_FRAC) : 0.0;
-  if (wet > 1.0) wet = 1.0;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
   bool run = (p.input & PI_RUN) != 0;
+  bool wantJump = (p.input & PI_JUMP) != 0;
+  // Two coverage thresholds: past MIN he's "in liquid" (drag + slow sink + slower
+  // run); past the higher SWIM threshold he can also swim upward with jump/up.
+  PlayerFluidSample fluid = samplePlayerFluid(p);
+  bool inLiquid = fluid.coverage >= P_LIQUID_MIN_COVERAGE;
+  bool swimming = fluid.coverage >= P_LIQUID_SWIM_COVERAGE;
   double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0);
-  // In water the TOP speed is capped lower (scaled by submersion), otherwise the
-  // per-step drag alone is masked by the speed cap — he'd still hit max run while
-  // wading. This is what makes lateral motion through liquid visibly sluggish.
-  if (inWater) maxRun *= 1.0 + (P_WATER_MAX_RUN_MULT - 1.0) * (0.5 + 0.5 * wet);
+  if (inLiquid) maxRun *= P_LIQUID_RUN_MULT;
 
   // horizontal accel / friction
   if (left == right) { // none or both -> decelerate
@@ -188,47 +183,35 @@ void integratePlayer(Player& p) {
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
   } else if (right) { p.vx += P_MOVE_ACCEL; p.facing = 1; }
   else              { p.vx -= P_MOVE_ACCEL; p.facing = -1; }
-  if (inWater) {
-    // per-step lateral drag eases in with submersion: a partial wade (hdrag ~0.93
-    // at the threshold) is slowed, a full dunk (P_WATER_HDRAG) is sluggish. Pairs
-    // with the lowered cap above so he both reaches AND holds a lower top speed.
-    double hdrag = 1.0 + (P_WATER_HDRAG - 1.0) * (0.5 + 0.5 * wet);
-    p.vx *= hdrag;
-  }
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
-
-  // jump / swim: in water, holding jump swims UPWARD (no grounded/bury gate). On
-  // land, jump is allowed when grounded OR shallowly buried (he can leap out of a
-  // light burial, but past P_BURY_JUMP_MAX the jump is denied and he must dig out).
-  // Re-arm only on release so a press isn't lost to a single-frame grounded flicker.
-  bool wantJump = (p.input & PI_JUMP) != 0;
-  int bury = buryDepth(p);
-  if (inWater) {
-    if (wantJump) { p.vy = -P_SWIM_VEL; p.grounded = false; }
-    p.jumpReady = false; // require a fresh press after surfacing
-  } else {
-    bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
-    if (canJump && !wantJump) p.jumpReady = true;
-    if (wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
+  if (inLiquid) {
+    p.vx *= P_LIQUID_DRAG_X;
+    if (std::fabs(p.vx) < 0.02) p.vx = 0;
   }
+
+  // jump: allowed when grounded OR shallowly buried (sand piled into his feet, up
+  // to P_BURY_JUMP_MAX deep) — he can leap out of a light burial, but deeper than
+  // that the jump is denied and he must dig. Re-arm only on release so a press isn't
+  // lost to a single-frame `grounded` flicker. While SWIMMING the jump key is
+  // consumed as the swim-up impulse below instead of a leap.
+  int bury = buryDepth(p);
+  bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
+  if (canJump && !wantJump) p.jumpReady = true;
+  if (!swimming && wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
 
   // horizontal move
   if (tryMoveX(p, p.vx, bury)) p.vx = 0;
 
-  // gravity + vertical move. Submerged: gentle gravity, velocity drag, low terminal
-  // sink speed -> he falls SLOWLY through water (and rises only as fast as he swims).
-  // Gravity, terminal speed, and the vertical drag all interpolate from the air
-  // values toward the water values with `wet`, so a shallow wade already sinks
-  // slower and a full plunge gives the strongest buoyancy.
-  if (inWater) {
-    double g     = P_GRAVITY   + (P_WATER_GRAVITY  - P_GRAVITY)   * (0.5 + 0.5 * wet);
-    double maxFl = P_MAX_FALL  + (P_WATER_MAX_FALL - P_MAX_FALL)  * (0.5 + 0.5 * wet);
-    double vdrag = 1.0         + (P_WATER_VDRAG    - 1.0)         * (0.5 + 0.5 * wet);
-    p.vy += g;
-    p.vy *= vdrag;
-    if (p.vy >  maxFl)      p.vy =  maxFl;
-    if (p.vy < -P_SWIM_VEL) p.vy = -P_SWIM_VEL;
+  // gravity / swim drag + vertical move. Submerged: vertical drag, gentle gravity,
+  // and a low terminal sink speed -> he falls SLOWLY through water; holding jump/up
+  // while swimming adds an upward impulse (capped rise speed).
+  if (inLiquid) {
+    p.vy *= P_LIQUID_DRAG_Y;
+    p.vy += P_LIQUID_GRAVITY;
+    if (swimming && wantJump) p.vy -= P_LIQUID_SWIM_ACCEL;
+    if (p.vy < P_LIQUID_MAX_RISE) p.vy = P_LIQUID_MAX_RISE;
+    if (p.vy > P_LIQUID_MAX_FALL) p.vy = P_LIQUID_MAX_FALL;
   } else {
     p.vy += P_GRAVITY;
     if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;

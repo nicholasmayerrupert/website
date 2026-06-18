@@ -154,18 +154,15 @@ static const double P_TOOL_REACH = 30.0;   // max cells from player center (plac
 static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 static const int    P_MINE_DURABILITY = 40; // eraser sweep penetration budget; each mined cell spends DURABILITY[m]
-// Player buoyancy: while submerged in a liquid he sinks SLOWLY (gentle gravity, low
-// terminal fall speed, velocity drag) and can swim upward with the jump key.
-// He counts as "in water" once at least this fraction of his AABB cells are liquid,
-// so shallow wading (feet/lower body wet) already engages buoyancy+drag; the effect
-// then scales with how submerged he is (see integratePlayer's `wet` ramp).
-static const double P_WATER_SUBMERGE_FRAC = 0.34; // ~1/3 of the body in liquid
-static const double P_WATER_GRAVITY = 0.035; // vs P_GRAVITY 0.25 -> slow sink
-static const double P_WATER_MAX_FALL = 0.8;  // vs P_MAX_FALL 6.0 -> low terminal speed
-static const double P_WATER_VDRAG = 0.82;    // per-step vertical velocity damping in liquid
-static const double P_WATER_HDRAG = 0.86;    // per-step horizontal damping in liquid
-static const double P_WATER_MAX_RUN_MULT = 0.5; // top wading speed vs land (else the speed cap hides hdrag)
-static const double P_SWIM_VEL = 1.1;        // upward swim impulse from the jump key while submerged
+// Player buoyancy: liquids are non-solid to the player, so without this he'd fall
+// through at full speed. Submersion is measured as the fraction of his AABB cells
+// that are liquid: past MIN_COVERAGE he's "in liquid" (gentle gravity, velocity
+// drag, low terminal sink speed, slower running); past the higher SWIM_COVERAGE he
+// can also swim upward with the jump key. Two coverage thresholds (not a ramp) keep
+// the behavior crisp: wade-drag vs full swim.
+static const double P_LIQUID_MIN_COVERAGE = 0.20, P_LIQUID_SWIM_COVERAGE = 0.45;
+static const double P_LIQUID_GRAVITY = 0.08, P_LIQUID_MAX_FALL = 1.15, P_LIQUID_MAX_RISE = -1.8;
+static const double P_LIQUID_RUN_MULT = 0.55, P_LIQUID_DRAG_X = 0.76, P_LIQUID_DRAG_Y = 0.82, P_LIQUID_SWIM_ACCEL = 0.34;
 struct Player {
   int id = 0;
   bool active = true, alive = true;

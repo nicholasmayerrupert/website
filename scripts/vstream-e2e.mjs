@@ -2,13 +2,29 @@
 // player sees the same thing before/after, because the camera pulls back exactly
 // as the world slides. Verifies worldOffsetY advances AND the GL vertical slide is
 // correct (frame before == frame after a triggered down-shift).
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 const PORT = 5184; const baseURL = `http://localhost:${PORT}/`;
+const NPM = process.platform === 'win32' ? process.execPath : 'npm';
+const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 let failures = 0; const check = (l, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${l}`); };
-const vite = spawn('npm', ['run', 'dev', '--', '--port', String(PORT), '--strictPort'], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-const kill = () => { try { process.kill(-vite.pid, 'SIGKILL'); } catch {} };
-const waitUp = () => new Promise((res, rej) => { let b = ''; const to = setTimeout(() => { kill(); rej(new Error('timeout')); }, 60000); vite.stdout.on('data', d => { b += d; if (new RegExp(`localhost:${PORT}`).test(b)) { clearTimeout(to); res(); } }); vite.stderr.on('data', d => { if (/in use/i.test(d.toString())) { clearTimeout(to); kill(); rej(new Error('port in use')); } }); });
+const vite = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], { cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+const kill = () => {
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(vite.pid), '/t', '/f'], { stdio: 'ignore' });
+    else process.kill(-vite.pid, 'SIGKILL');
+  } catch {}
+};
+const waitUp = () => new Promise((res, rej) => {
+  let b = '', done = false;
+  const finish = () => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); res(); };
+  const fail = (err) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); kill(); rej(err); };
+  const to = setTimeout(() => fail(new Error('timeout')), 60000);
+  const poll = setInterval(async () => { try { if ((await fetch(baseURL)).ok) finish(); } catch {} }, 500);
+  vite.stdout.on('data', d => { b += d; if (new RegExp(`localhost:${PORT}`).test(b)) finish(); });
+  vite.stderr.on('data', d => { if (/in use/i.test(d.toString())) fail(new Error('port in use')); });
+});
 let browser;
 try {
   await waitUp();

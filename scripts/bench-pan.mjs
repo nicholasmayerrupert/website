@@ -23,10 +23,13 @@
 //      held-key pan. (Headless uses software GL, so treat absolute numbers as
 //      relative-only; the flicker metric is the authoritative signal here.)
 
-import { spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync, writeFileSync, writeSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 
+const NPM = process.platform === 'win32' ? process.execPath : 'npm';
+const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const args = process.argv.slice(2);
 const flag = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
 const comparePath = flag('--compare');
@@ -34,16 +37,22 @@ const updatePath = flag('--update');
 const pngDir = flag('--png');
 
 // --- start dev server ---
-const server = spawn('npm', ['run', 'dev', '--', '--port', '5179', '--strictPort'], {
+const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', '5179', '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
 });
 const baseURL = 'http://localhost:5179/';
 const waitForServer = () => new Promise((resolve, reject) => {
   let buf = '';
-  const to = setTimeout(() => { server.kill('SIGKILL'); reject(new Error('dev server timeout')); }, 60000);
-  const onData = (d) => { buf += d.toString(); if (/localhost:5179/.test(buf)) { clearTimeout(to); resolve(); } };
+  let done = false;
+  const finish = () => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); resolve(); };
+  const fail = (err) => { if (done) return; done = true; clearTimeout(to); clearInterval(poll); server.kill('SIGKILL'); reject(err); };
+  const to = setTimeout(() => fail(new Error('dev server timeout')), 60000);
+  const poll = setInterval(async () => {
+    try { if ((await fetch(baseURL)).ok) finish(); } catch {}
+  }, 500);
+  const onData = (d) => { buf += d.toString(); if (/localhost:5179/.test(buf)) finish(); };
   server.stdout.on('data', onData);
-  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) { clearTimeout(to); server.kill('SIGKILL'); reject(new Error('dev server: ' + s.trim())); } });
+  server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
 });
 await waitForServer();
 
@@ -119,6 +128,18 @@ const PROBE = ({ subSteps, noSnap }) => {
 };
 
 const browser = await chromium.launch({ headless: true });
+// Tear down the browser and the dev server. taskkill on Windows (npm spawns
+// vite as a child; killing only npm orphans vite and holds the port); SIGTERM
+// elsewhere. Destroying the stdio pipes + unref lets Node's event loop drain
+// and exit cleanly on both platforms instead of hanging on the live child.
+const shutdown = async () => {
+  await browser.close().catch(() => {});
+  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
+  else server.kill('SIGTERM');
+  server.stdout.destroy();
+  server.stderr.destroy();
+  server.unref();
+};
 let result;
 try {
   const dsf = Number(process.env.DSF) || 1; // emulate browser zoom: <1 = zoomed out
@@ -184,28 +205,34 @@ try {
   await page.keyboard.up('d');
 
   result = { info, cursor, flicker, perf };
-} finally {
-  await browser.close();
-  server.kill('SIGTERM');
+} catch (err) {
+  await shutdown();
+  console.error(err);
+  process.exit(1);
 }
 
 // --- report ---
-console.log(`\npan/flicker benchmark  (canvas ${result.info.canvasW}x${result.info.canvasH}, cellSize ${result.info.cellSize}, dpr ${result.info.dpr})`);
-console.log(`  cursor->cell round-trip worst error: ${result.cursor.worstCellErr} cells (must be 0)`);
-console.log(`  sub-cell instability (luma 0..255; lower is better): total ${result.flicker.instability}  perStep ${result.flicker.perStep}  worst ${result.flicker.worst}`);
-if (result.flicker.dbg) console.log(`  dbg cam0x=${result.flicker.cam0x} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
-console.log(`  frame: avg ${result.perf.avgFrameMs}ms  p95 ${result.perf.p95FrameMs}ms  step ${result.perf.stepMs}ms  render ${result.perf.renderMs}ms  dirtyChunks ${result.perf.dirtyChunks}`);
+const report = [
+  '',
+  `pan/flicker benchmark  (canvas ${result.info.canvasW}x${result.info.canvasH}, cellSize ${result.info.cellSize}, dpr ${result.info.dpr})`,
+  `  cursor->cell round-trip worst error: ${result.cursor.worstCellErr} cells (must be 0)`,
+  `  sub-cell instability (luma 0..255; lower is better): total ${result.flicker.instability}  perStep ${result.flicker.perStep}  worst ${result.flicker.worst}`,
+];
+if (result.flicker.dbg) report.push(`  dbg cam0x=${result.flicker.cam0x} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
+report.push(`  frame: avg ${result.perf.avgFrameMs}ms  p95 ${result.perf.p95FrameMs}ms  step ${result.perf.stepMs}ms  render ${result.perf.renderMs}ms  dirtyChunks ${result.perf.dirtyChunks}`);
 
-if (updatePath) { writeFileSync(updatePath, JSON.stringify(result, null, 2)); console.log(`\nupdated baseline ${updatePath}`); }
+if (updatePath) { writeFileSync(updatePath, JSON.stringify(result, null, 2)); report.push('', `updated baseline ${updatePath}`); }
 
 let exit = 0;
 if (comparePath) {
   const base = JSON.parse(readFileSync(comparePath, 'utf8'));
-  console.log(`\ncompare vs ${comparePath}`);
+  report.push('', `compare vs ${comparePath}`);
   const d = result.flicker.instability - base.flicker.instability;
   const tag = d > 0.5 ? ' WORSE' : d < -0.5 ? ' better' : '';
-  console.log(`  instability: ${base.flicker.instability} -> ${result.flicker.instability}  (${d >= 0 ? '+' : ''}${d.toFixed(2)})${tag}`);
+  report.push(`  instability: ${base.flicker.instability} -> ${result.flicker.instability}  (${d >= 0 ? '+' : ''}${d.toFixed(2)})${tag}`);
   const fd = result.perf.avgFrameMs - base.perf.avgFrameMs;
-  console.log(`  frame avg: ${base.perf.avgFrameMs} -> ${result.perf.avgFrameMs}ms  (${fd >= 0 ? '+' : ''}${fd.toFixed(1)})`);
+  report.push(`  frame avg: ${base.perf.avgFrameMs} -> ${result.perf.avgFrameMs}ms  (${fd >= 0 ? '+' : ''}${fd.toFixed(1)})`);
 }
-process.exit(exit);
+writeSync(1, `${report.join('\n')}\n`);
+await shutdown();
+process.exitCode = exit;

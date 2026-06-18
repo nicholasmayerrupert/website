@@ -1,0 +1,8 @@
+# Shell scripts must stay LF so they run when checked out on Windows.
+*.sh text eol=lf
+
+# Codegen outputs are byte-compared by `generate-materials.mjs --check` (run from
+# wasm/build.sh and `npm run build`). The generator emits LF; without this,
+# autocrlf rewrites them to CRLF on Windows checkout and the check fails spuriously.
+src/sand/materials.generated.js text eol=lf
+src/sand/cpp/engine/materials.generated.hpp text eol=lf

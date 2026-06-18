@@ -322,5 +322,31 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// The surface leveller must NOT touch water that is still falling/flowing — only a
+// RESTING crooked surface. Regression guard for the bug where it teleported active
+// water sideways (a narrow falling column ballooned wide mid-air; spawned water shot
+// across to the lowest point "too fast"). A column dropped into open air must stay
+// narrow as it falls.
+{
+  console.log('falling water stays narrow (leveller ignores moving water)');
+  const WATER = 2;
+  const e = mk();
+  const L = 10, R = 90, floorY = 110;
+  for (let y = 6; y < ROWS; y++) { e.paintDisc(L, y, 0, 3, true); e.paintDisc(R, y, 0, 3, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, 3, true);
+  e.syncComponents();
+  for (let x = 48; x <= 51; x++) for (let y = 10; y < 26; y++) e.paintDisc(x, y, 0, WATER, true); // 4-wide column up high
+  let t = 0; for (let i = 0; i < 30; i++) { t += 16; e.step(t); } // still mid-air after 30 steps
+  const g = e.getGrid();
+  let minX = 1e9, maxX = -1, maxY = -1;
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (g[y * COLS + x] === WATER) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+  const w = maxX - minX + 1;
+  check(`column still falling (bottom y ${maxY} < floor ${floorY})`, maxY < floorY - 10);
+  // natural fall spreads a 4-wide column to ~19-21px here; the cascade bug flung it to
+  // ~34+ (and growing). 27 sits clearly between -> catches the regression, allows RNG.
+  check(`falling column stayed narrow (width ${w}, not flung sideways)`, w <= 27);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

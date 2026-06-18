@@ -156,7 +156,11 @@
   // near-flat surface is left strictly alone -> the body goes inert (no shimmer, no
   // per-step diff churn). Deterministic (no rand) -> a flat single fluid is untouched.
   void levelLiquidSurfaces() {
-    for (int y = 1; y < rows - 1; y++) {
+    // BOTTOM-TO-TOP: a cell pours DOWN into a lower row, so by visiting lower rows
+    // first the just-placed cell is never re-processed this pass. Top-to-bottom would
+    // let one cell cascade across the whole body in a single tick (water teleporting
+    // far faster than gravity — a falling blob spread wide mid-air).
+    for (int y = rows - 2; y >= 1; y--) {
       int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
       if (maxX < minX) continue;
       for (int x = minX; x <= maxX; x++) {
@@ -164,11 +168,20 @@
         uint8_t m = grid[k];
         if (!isLiquid(m) || m == LAVA) continue;   // lava keeps its own viscous (lumpy) surface
         if (grid[k - cols] != EMPTY) continue;     // not a free surface (air must be directly above)
+        if (grid[k + cols] == EMPTY) continue;     // RESTING only: a cell with air below is falling, not a surface to level
         // Only a STEP-EDGE cell (open air beside it at its own level) may pour: an
         // interior flat-run cell that teleported would punch a hole relaxLiquidGaps
         // just refills. This also skips every interior cell of a flat body, so a wide
         // calm surface costs ~nothing (and the body still erodes from its edges).
         if (grid[k - 1] != EMPTY && grid[k + 1] != EMPTY) continue;
+        // Act only on water that has come to REST — not water still flowing/falling
+        // this tick. If this cell, its support, or a side was vacated this tick the
+        // body is mid-flow; teleporting then makes freshly spawned/poured water shoot
+        // across to the low point before it can settle naturally (it spawns "too fast"
+        // and lands far from where you put it). Once flow stops the stamps go stale and
+        // the leveller quietly finishes the crooked surface.
+        if (vacatedStamp[k] == tick || vacatedStamp[k + cols] == tick ||
+            vacatedStamp[k - 1] == tick || vacatedStamp[k + 1] == tick) continue;
         int bestLvl = y, bestX = -1;
         for (int dir = 0; dir < 2; dir++) {
           int sgn = dir == 0 ? -1 : 1, lvl = y;

@@ -142,6 +142,55 @@
       }
     }
   }
+  // Flatten a wide free LIQUID-against-AIR surface (the TOP fluid's top). A single
+  // fluid's surface cannot be levelled by purely local moves: stepping a cell across a
+  // 1px height difference is energy-NEUTRAL, so a gradient-following rule shuffles
+  // forever (the churn that breaks multiplayer). But moving a surface cell from a
+  // column to a CONNECTED column whose surface is >=2px LOWER strictly lowers
+  // sum-of-column-heights^2 (a bounded-below Lyapunov), so it CONVERGES and then
+  // settles — the air-surface analogue of the density spread that levels a two-fluid
+  // interface. We walk along the surface (over equal/higher liquid of the same kind,
+  // descending through air to a lower surface, stopping at a wall, the floor, or a
+  // different material) up to LIQUID_LEVEL_RANGE, find the lowest reachable connected
+  // column, and pour ONE cell into it. The >=2 gate leaves <=1px residual steps, so a
+  // near-flat surface is left strictly alone -> the body goes inert (no shimmer, no
+  // per-step diff churn). Deterministic (no rand) -> a flat single fluid is untouched.
+  void levelLiquidSurfaces() {
+    for (int y = 1; y < rows - 1; y++) {
+      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
+      if (maxX < minX) continue;
+      for (int x = minX; x <= maxX; x++) {
+        int k = I(x, y);
+        uint8_t m = grid[k];
+        if (!isLiquid(m) || m == LAVA) continue;   // lava keeps its own viscous (lumpy) surface
+        if (grid[k - cols] != EMPTY) continue;     // not a free surface (air must be directly above)
+        // Only a STEP-EDGE cell (open air beside it at its own level) may pour: an
+        // interior flat-run cell that teleported would punch a hole relaxLiquidGaps
+        // just refills. This also skips every interior cell of a flat body, so a wide
+        // calm surface costs ~nothing (and the body still erodes from its edges).
+        if (grid[k - 1] != EMPTY && grid[k + 1] != EMPTY) continue;
+        int bestLvl = y, bestX = -1;
+        for (int dir = 0; dir < 2; dir++) {
+          int sgn = dir == 0 ? -1 : 1, lvl = y;
+          for (int d = 1; d <= LIQUID_LEVEL_RANGE; d++) {
+            int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
+            uint8_t c = grid[I(cx, lvl)];
+            if (c == m) continue;                  // liquid at this level -> connected, surface >= lvl
+            if (c != EMPTY) break;                 // wall / other material at the level -> body ends
+            int ny = lvl + 1;                      // air here -> this column is shorter; descend to its surface
+            while (ny < rows && grid[I(cx, ny)] == EMPTY) ny++;
+            if (ny >= rows || grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
+            lvl = ny;
+            if (lvl > bestLvl) { bestLvl = lvl; bestX = cx; }
+          }
+        }
+        if (bestX >= 0 && bestLvl - y >= 2) {      // pour one cell from this high surface into the low column
+          writeGridIndex(k, EMPTY);
+          writeGridIndex(I(bestX, bestLvl - 1), m);
+        }
+      }
+    }
+  }
   void separateLooseByDensity() {
     int parity = rand() < 0.5 ? 0 : 1;
     for (int y = 1; y < rows - 1; y++) {

@@ -284,9 +284,9 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   e.setBgEnabled(true);
   const cx = 30, hw = 2, fy = 40;
   stoneFloor(e, 1, cx, 70, hw);                                   // deep bg floor -> open space below the bg oil
-  for (let y = fy; y <= fy + 6; y++) e.paintDiscLayer(1, cx, y, 0, MAT.OIL, true);   // bg oil column
+  for (let x = cx - 1; x <= cx + 1; x++) for (let y = fy; y <= fy + 6; y++) e.paintDiscLayer(1, x, y, 0, MAT.OIL, true); // bg oil column (3 wide)
   stoneFloor(e, 0, cx, fy + 7, hw);                              // fg floor just below the water -> water stuck in fg
-  for (let y = fy; y <= fy + 6; y++) e.paintDisc(cx, y, 0, MAT.WATER, true);          // fg water column
+  for (let x = cx - 1; x <= cx + 1; x++) for (let y = fy; y <= fy + 6; y++) e.paintDisc(x, y, 0, MAT.WATER, true);       // fg water column (3 wide)
   const water = () => countIn(e.getGrid(), MAT.WATER) + countIn(e.getGridBg(), MAT.WATER);
   const oil = () => countIn(e.getGrid(), MAT.OIL) + countIn(e.getGridBg(), MAT.OIL);
   const w0 = water(), o0 = oil();

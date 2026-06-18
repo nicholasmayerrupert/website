@@ -292,5 +292,35 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// A wide single fluid's TOP (fluid-against-air) surface must flatten too, not just
+// the fluid/fluid interface: a one-sided dump used to settle as a crooked ramp
+// (~1px per MAX_WATER_FLOW cells) because local moves across a 1px step are
+// energy-neutral and go inert. levelLiquidSurfaces pours surface cells from a column
+// into a connected column >=2px lower (strictly lowers sum-of-heights^2 -> converges),
+// so the surface ends nearly level AND inert.
+{
+  console.log('wide single-fluid top surface flattens + settles');
+  const WATER = 2;
+  const e = mk();
+  const L = 18, R = 182, floorY = 100, top = 30;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, 3, true); e.paintDisc(R, y, 0, 3, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, 3, true);
+  e.syncComponents();
+  // one-sided dump: a tall water block on the left quarter only
+  for (let x = L + 1; x <= L + 48; x++) for (let y = floorY - 52; y < floorY; y++) e.paintDisc(x, y, 0, WATER, true);
+  const cntW = () => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === WATER) n++; return n; };
+  const water0 = cntW();
+  let t = 0, settledAt = -1; for (let i = 0; i < 9000; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`single-fluid scene settles to inert (step ${settledAt})`, settledAt >= 0);
+  check(`water conserved (${water0})`, cntW() === water0 && water0 > 0);
+  const g = e.getGrid();
+  let tops = [];
+  for (let x = L + 1; x < R; x++) { for (let y = top; y <= floorY; y++) { if (g[y * COLS + x] === WATER) { tops.push(y); break; } } }
+  const spread = tops.length ? Math.max(...tops) - Math.min(...tops) : -1;
+  // pre-fix this body settled with a ~5-9px ramp; the leveller brings it to <=3px.
+  check(`wide top surface is near-flat (spread ${spread}px over ${tops.length} cols)`, spread >= 0 && spread <= 3 && tops.length > 100);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

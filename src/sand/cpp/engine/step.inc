@@ -41,6 +41,7 @@
     std::swap(grid, next); flushLayerGrids();
     if ((tick & 1) == 0) relaxLiquidGaps();
     if (tick % 3 == 0) separateLooseByDensity();
+    levelLiquidSurfaces();
     applySideSinks();
     perfStepTail = emscripten_get_now() - tS;
   }

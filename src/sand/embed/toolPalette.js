@@ -149,8 +149,17 @@ export function createToolPalette(root, { initialTool = 'cube', onSelectTool, on
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-palette side';
-  // Don't let palette clicks reach the window-level game input handlers.
-  for (const ev of ['pointerdown', 'pointerup', 'click', 'contextmenu']) {
+  // Don't let palette pointer events reach the window-level game input handlers.
+  // pointermove MUST be included: when a press starts on a palette button the
+  // browser implicitly captures the pointer to that button, so every move (and the
+  // closing pointerup) is delivered to the button — inside `wrap` — until release.
+  // If pointermove were allowed through, dragging off the open dropdown onto the
+  // canvas while still holding would hit the window's onPointerMove, which does
+  // `mouseButtons |= e.buttons` and latches the LMB bit. The matching pointerup is
+  // captured back to the button and stopped here, so that latch is never cleared —
+  // leaving PI_PRIMARY stuck on, which makes a freshly-selected paint/eraser tool
+  // act as if the mouse is held. Stopping pointermove too closes that gap.
+  for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu']) {
     wrap.addEventListener(ev, (e) => e.stopPropagation());
   }
 

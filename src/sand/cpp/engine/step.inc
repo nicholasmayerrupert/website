@@ -108,7 +108,19 @@
     int below = (y + 1) * cols + x;
     if (canSettleInto(g, below, m)) return false;
     for (int i = 0; i < 2; i++) { int dx = i == 0 ? -1 : 1; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (canSettleInto(g, below + dx, m)) return false; }
-    if (MAT_KIND[m] == K_LIQUID) for (int i = 0; i < 2; i++) { int dx = i == 0 ? -1 : 1; int nx = x + dx; if (nx > 0 && nx < cols - 1 && canSettleInto(g, y * cols + nx, m)) return false; }
+    // Liquid side-flow only counts as "not stuck" if it is a REAL escape: a side
+    // cell the liquid can enter that ALSO opens downward (the liquid can keep
+    // descending from there), matching settleLiquid's flow scan. A side neighbour
+    // resting on support with nothing below it — empty floor puddle, or a LIGHTER
+    // loose cell stuck on stone (lava beside bg sand, both on the stone band) — is
+    // NOT an escape: the in-layer settle declines that lateral move (a 1-deep puddle
+    // goes inert; lateral density spread only fires into a lighter LIQUID), so the
+    // cell is genuinely stuck and must stay free to transfer cross-layer.
+    if (MAT_KIND[m] == K_LIQUID) for (int i = 0; i < 2; i++) {
+      int dx = i == 0 ? -1 : 1; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
+      int sideK = y * cols + nx;
+      if (canSettleInto(g, sideK, m) && canSettleInto(g, sideK + cols, m)) return false;
+    }
     return true;
   }
   // can the material keep falling in `other` after landing at (x,y)?

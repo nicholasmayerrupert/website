@@ -452,10 +452,11 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
-// 15. eraser SWEEPS from in front of the player toward the cursor (not a disc at the
-//     aim): cells on the player-side, well short of the cursor, get carved.
+// 15. eraser acts as a DISC AT THE AIM CELL (like every other tool), NOT a directional
+//     sweep emanating from the player. Cells at the cursor are carved; cells back on
+//     the player side (well short of the cursor) are NOT touched.
 {
-  console.log('tool: eraser sweeps toward the cursor');
+  console.log('tool: eraser mines a disc at the cursor (no sweep from player)');
   const e = mk();
   stoneFloor(e, 60, 170, 90);
   const id = e.spawnPlayer(100, 80);
@@ -465,18 +466,23 @@ const buryFeet = (e, p, depth) => {
   for (let i = 0; i < 6; i++) { e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX, aimY: 92 }); e.step(16 * i); }
   const g = e.getGrid();
   const empty = (x, y) => g[y * COLS + x] === 0;
-  // a cell ~8 cells in front of the player (far from the cursor) is carved -> the carve
-  // originates at the player and sweeps outward, unlike the old disc-at-aim eraser.
+  // the AIM cell is carved...
+  check(`aim cell carved (x=${aimX})`, empty(aimX, 92));
+  // ...but a cell ~8 cells in FRONT OF THE PLAYER (far from the cursor) is untouched:
+  // there is no capsule swept out from the player anymore.
   const nearX = Math.floor(p.x) + 8;
-  check(`carve reaches the player side (x=${nearX} cleared, cursor x=${aimX})`, empty(nearX, 91) && nearX < aimX - 4);
+  check(`player-side cell NOT carved (x=${nearX}, cursor x=${aimX})`, !empty(nearX, 91) && nearX < aimX - 4);
   e.destroy();
 }
 
-// 16. DURABILITY gates penetration: one mine action digs FURTHER through soft sand
-//     than through hard stone (same geometry, same budget).
+// 16. DURABILITY gates the mining RATE (not penetration): the eraser still removes a
+//     disc at the cursor, but the post-mine cooldown scales with material hardness, so
+//     fully mining a stone wall takes MORE held steps than the same volume of sand.
 {
-  console.log('tool: durability gates mining penetration');
-  const penetrate = (mat) => {
+  console.log('tool: durability makes stone slower to mine than sand');
+  // Hold the eraser at a fixed cursor against a wall of `mat` for `steps` and count how
+  // many cells were removed (more cells in the same time = faster mining).
+  const minedOver = (mat, steps) => {
     const e = mk();
     if (mat === 3) stoneFloor(e, 110, 141, 0);                 // full-height stone wall (component)
     else for (let x = 110; x < 141; x++) for (let y = 0; y < ROWS; y++) e.paintDisc(x, y, 0, mat, true);
@@ -484,15 +490,20 @@ const buryFeet = (e, p, depth) => {
     runSteps(e, 30);
     const p = e.getPlayer(id);
     const before = countMat(e.getGrid(), mat);
-    e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: 130, aimY: Math.floor(p.y) + 4 });
-    e.step(16);
+    for (let i = 0; i < steps; i++) {
+      e.setPlayerInput(id, { bits: INPUT.PRIMARY, tool: T.eraser, aimX: 116, aimY: Math.floor(p.y) + 4 });
+      e.step(16 * i);
+    }
     const removed = before - countMat(e.getGrid(), mat);
     e.destroy();
     return removed;
   };
-  const sand = penetrate(1), stone = penetrate(3);
-  check(`stone is mined but limited (${stone} > 0)`, stone > 0);
-  check(`soft sand digs further than hard stone (sand ${sand} > stone ${stone})`, sand > stone + 4);
+  const STEPS = 60;
+  const sand = minedOver(1, STEPS), stone = minedOver(3, STEPS);
+  check(`stone is mined at the cursor (${stone} > 0)`, stone > 0);
+  // Over the SAME held duration soft sand removes more than hard stone (stone's longer
+  // per-mine cooldown throttles it). Sand should clear a good deal more volume.
+  check(`sand mines faster than stone (sand ${sand} > stone ${stone})`, sand > stone + 8);
 }
 
 // 17. fluid placement (player path) paints a disc of water at the aim.
@@ -557,6 +568,59 @@ const waterPool = (e, x0, x1, top, floor) => {
   const p = e.getPlayer(id);
   check(`submerged player sank gradually (y ${y0.toFixed(1)} -> ${p.y.toFixed(1)})`, p.y > y0 && p.y < y0 + 28);
   check(`idle water fall speed remains capped (vy ${p.vy.toFixed(2)})`, p.vy <= 1.2);
+  e.destroy();
+}
+
+// N10. REGRESSION (the "solid jolt" bug): an in-progress solid draft must stay
+//      pinned to its WORLD location when the world buffer slides under it mid-draft.
+//      Drafts hold BUFFER-relative indices (k = y*cols + x); a world shift slides the
+//      grid contents but used to leave the draft's stale indices alone, so the
+//      finalized solid landed displaced by the shift amount. The remap in shiftWorld
+//      (mirroring translateComponents) must move the draft cells WITH the world.
+{
+  console.log('survival: solid draft stays pinned across a world shift (no jolt)');
+  const ENC = 1 << 20;
+  // World-absolute coord of a buffer cell index k, given the layer offset.
+  const worldOf = (k, offX, offY) => (((k / COLS) | 0) + offY) * ENC + ((k % COLS) + offX);
+  // World-absolute set of the current stone DRAFT (preview footprint).
+  const draftWorldSet = (e) => {
+    const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY(), s = new Set();
+    for (const k of e.getStoneDraftCells()) s.add(worldOf(k, offX, offY));
+    return s;
+  };
+  // World-absolute set of the stone cells the draft's exact buffer indices hold.
+  const placedAt = (e, draftCells) => {
+    const g = e.getGrid(), offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY(), s = new Set();
+    for (const k of draftCells) if (g[k] === MAT.STONE) s.add(worldOf(k, offX, offY));
+    return s;
+  };
+  // Stage a stone draft up in the EMPTY sky (top rows are above generated terrain),
+  // so addDiscToStoneDraft (EMPTY-only) actually stages every cell.
+  const stage = (e) => { for (let x = 100; x < 112; x++) for (let y = 4; y < 16; y++) e.addDiscToStoneDraft(x, y, 0); };
+
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
+  stage(e);
+  const before = draftWorldSet(e);
+  check(`draft staged in empty sky (${before.size} cells)`, before.size > 50);
+
+  // Slide the world under the active draft: both axes, then a second horizontal-only
+  // slide. The remap must move the draft cells WITH the grid so their WORLD coords
+  // are invariant (pre-fix they stayed at stale buffer indices -> world coords moved).
+  // Negative shifts move buffer content toward higher indices, keeping this sky-high
+  // draft (small y) on-buffer instead of sliding it off the top edge.
+  e.shiftWorldXY(-32, -32);
+  e.shiftWorldXY(-32, 0);
+  const after = draftWorldSet(e);
+  let invariant = after.size === before.size; for (const k of before) if (!after.has(k)) invariant = false;
+  check(`draft world location invariant across shifts (${before.size} -> ${after.size})`, invariant);
+
+  // Finalize: the placed solid lands at exactly the (post-shift) draft cells, i.e. at
+  // the SAME world location it was staged at — no jolt in the direction of travel.
+  const draftCells = e.getStoneDraftCells();
+  e.finalizeStoneDraft();
+  const placed = placedAt(e, draftCells);
+  let same = placed.size === before.size; for (const k of before) if (!placed.has(k)) same = false;
+  check(`finalized solid sits at the original world location (${placed.size} == ${before.size})`, same);
   e.destroy();
 }
 

@@ -378,5 +378,51 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Cross-layer density transfer: LAVA resting in the BACKGROUND on bg STONE, with a
+// SAND pile in the FOREGROUND over the same region, must SINK into the foreground via
+// the cross-layer density swap (lava 2.8 > sand 1.6) — leaving NO lava stranded on the
+// bg stone and resolving in the fg with sand resting on top of the lava.
+// Regression for: stuckIn() treated a liquid's lateral "displace a lighter loose
+// neighbour" as an escape, so bg lava interlocked with bg sand on the stone band was
+// judged "not stuck" and never transferred. It now requires a real downward-opening
+// side channel, matching settleLiquid, so the stuck lava transfers cross-layer.
+{
+  console.log('bg lava on stone sinks into fg sand (cross-layer density)');
+  const SAND = 1, STONE = 3, LAVA = 11;
+  const e = mk();
+  // FG basin: grounded stone walls + floor, placed wide so loose cells never drift
+  // over a wall column. Centered sand pile sits in it.
+  const L = 24, R = 40, floorY = 50;
+  for (let y = 30; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = 30; x <= 34; x++) for (let y = floorY - 8; y < floorY; y++) e.paintDisc(x, y, 0, SAND, true);
+  // BG: full-width stone band; a few lava cells resting on it over the sand columns.
+  const bgTop = floorY - 4;
+  for (let y = bgTop; y < ROWS; y++) for (let x = 0; x < COLS; x++) e.paintDiscLayer(1, x, y, 0, STONE, true);
+  e.syncComponentsLayer(1);
+  for (let x = 30; x <= 34; x++) for (let y = bgTop - 3; y < bgTop; y++) e.paintDiscLayer(1, x, y, 0, LAVA, true);
+
+  const bg = () => e.getGridBg(), fg = () => e.getGrid();
+  const cntFg = (m) => { const g = fg(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+  const cntBg = (m) => { const g = bg(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+  const lava0 = cntBg(LAVA), sand0 = cntFg(SAND);
+  let t = 0, settledAt = -1; for (let i = 0; i < 4000; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`scene settles to inert (step ${settledAt})`, settledAt >= 0);
+  // ZERO lava left in the background (none stranded on the bg stone).
+  check(`no lava left in the background (${cntBg(LAVA)} of ${lava0})`, cntBg(LAVA) === 0 && lava0 > 0);
+  // The lava moved into the foreground (conserved across the swap).
+  check(`lava moved into the foreground (${cntFg(LAVA)})`, cntFg(LAVA) === lava0);
+  // sand is conserved overall (a few cells may ride along into the bg on a swap);
+  // the bulk of the pile stays in the fg resting on the transferred lava.
+  check(`sand conserved overall (fg ${cntFg(SAND)} + bg ${cntBg(SAND)} = ${sand0})`, cntFg(SAND) + cntBg(SAND) === sand0 && cntFg(SAND) > sand0 / 2);
+  // Vertical ordering at the centre column: sand rests ABOVE lava in the fg (the
+  // top-most lava row is strictly below the bottom-most sand row).
+  const g = fg(); let sandBot = -1, lavaTop = ROWS;
+  for (let y = 0; y < ROWS; y++) { const v = g[y * COLS + 32]; if (v === SAND) sandBot = y; if (v === LAVA && y < lavaTop) lavaTop = y; }
+  check(`sand sits on top of lava in the fg (sandBot ${sandBot} < lavaTop ${lavaTop})`, sandBot >= 0 && lavaTop < ROWS && sandBot < lavaTop);
+  e.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

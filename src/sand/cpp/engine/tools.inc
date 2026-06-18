@@ -20,30 +20,13 @@
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
     return changed;
   }
-  // Sum the mining "durability" cost of the solid cells inside a disc (EMPTY = 0).
-  // Lets the swept eraser spend a fixed penetration budget: soft material lets the
-  // sweep run its full length, hard material stops it short.
+  // Sum the mining "durability" of the solid cells inside a disc (EMPTY = 0). The
+  // player eraser peeks this before mining a disc at the cursor and scales its
+  // post-mine cooldown by the result, so harder material mines slower (see player.inc).
   int discDurabilityCost(int cx, int cy, int radius) {
     int cost = 0;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; cost += DURABILITY[grid[I(xx, yy)]]; } }
     return cost;
-  }
-  // Mine a swept capsule from (sx,sy) toward (ex,ey): march the segment erasing a
-  // disc of `radius` at each cell-step, spending `budget` as it goes (each disc costs
-  // the durability of the solid cells it removes). Air costs 0 so the sweep reaches
-  // freely toward the cursor, then bites into material until the budget runs out.
-  // Deterministic geometry — no RNG.
-  void eraseSweep(double sx, double sy, double ex, double ey, int radius, int budget) {
-    double dx = ex - sx, dy = ey - sy; double dist = std::sqrt(dx * dx + dy * dy);
-    int steps = (int)std::ceil(dist);
-    double ux = dist > 1e-9 ? dx / dist : 0.0, uy = dist > 1e-9 ? dy / dist : 0.0;
-    int spent = 0;
-    for (int s = 0; s <= steps; s++) {
-      int cx = (int)std::lround(sx + ux * s), cy = (int)std::lround(sy + uy * s);
-      spent += discDurabilityCost(cx, cy, radius); // peek before erasing (cells still present)
-      eraseDisc(cx, cy, radius);
-      if (spent >= budget) return;
-    }
   }
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {
     int changed = 0;
@@ -96,6 +79,25 @@
   inline int effectiveTool() { return activeTool; }
   inline bool isPaintTool(int t) { return t == T_SAND || t == T_WATER || t == T_OIL || t == T_FIRE || t == T_ACID || t == T_LAVA; }
   void setTool(int tool) { activeTool = tool; }
+
+  // When the world buffer slides under an active draft, remap the staged cells by
+  // the SAME per-cell delta the grid uses (decode x/y, x-=dx, y-=dy, re-encode),
+  // mirroring translateComponents/shiftRowMajorU8 so the preview + finalized solid
+  // stay pinned to their world location instead of jolting with the buffer. Drafts
+  // are shared engine state (used per draftLayer), so this remaps both layers' set.
+  void remapDraftForShift(std::unordered_set<int>& draft, int dx, int dy) {
+    if (draft.empty()) return;
+    std::unordered_set<int> moved; moved.reserve(draft.size());
+    for (int k : draft) { int nx = (k % cols) - dx, ny = (k / cols) - dy; if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue; moved.insert(ny * cols + nx); }
+    draft.swap(moved);
+  }
+  void remapDraftsForShift(int dx, int dy) {
+    if (!dx && !dy) return;
+    remapDraftForShift(stoneDraft, dx, dy);
+    remapDraftForShift(iceDraft, dx, dy);
+    if (hasSeedOrigin) { seedOriginX -= dx; seedOriginY -= dy; // seed origin is a buffer-space top-left corner; same delta
+      if (seedOriginX < 0 || seedOriginX + SEED_SIZE > cols || seedOriginY < 0 || seedOriginY + SEED_SIZE > rows) hasSeedOrigin = false; }
+  }
 
   int updateSeedDraft(int cx, int cy) {
     int nx, ny; bool ok = getSeedOrigin(cx, cy, nx, ny);

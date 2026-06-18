@@ -151,6 +151,40 @@ try {
   check(`held LMB latches PI_PRIMARY (bits ${heldBits})`, (heldBits & PI_PRIMARY) !== 0);
   check(`PI_PRIMARY survives a phantom buttons==0 move (bits ${survivedBits})`, (survivedBits & PI_PRIMARY) !== 0);
   check(`held-and-released stone built a connected piece (+${stone1 - stoneAim.solid0})`, stone1 > stoneAim.solid0);
+
+  // Selecting a tool must NOT act as if the mouse is held (regression for "first
+  // select latches PI_PRIMARY"). The browser implicitly captures the pointer to a
+  // palette button on press, so dragging off the open dropdown onto the canvas
+  // while holding used to feed window.onPointerMove (mouseButtons |= e.buttons) and
+  // strand the LMB bit — the matching pointerup was captured back to the button and
+  // swallowed by the palette. Drive that exact gesture and assert no latch/action.
+  const selCenter = await page.evaluate(() => {
+    const r = document.querySelector('sand-game').getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  });
+  const a2 = await page.evaluate(() => window.__sandTest.actionCount());
+  const openBox = await page.evaluate(() => {
+    const b = document.querySelector('sand-game').shadowRoot.querySelector('.sg-selbtn').getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  });
+  await page.mouse.click(openBox.x, openBox.y); // open the dropdown
+  await page.waitForTimeout(40);
+  const erOpt = await page.evaluate(() => {
+    const o = [...document.querySelector('sand-game').shadowRoot.querySelectorAll('.sg-opt')].find((x) => /eraser/i.test(x.textContent));
+    const b = o.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  });
+  await page.mouse.move(erOpt.x, erOpt.y);
+  await page.mouse.down({ button: 'left' });           // press starts on the option (captures pointer)
+  await page.mouse.move(selCenter.cx, selCenter.cy, { steps: 4 }); // drag onto the canvas while held
+  await page.mouse.up({ button: 'left' });             // release over the canvas
+  await page.mouse.move(selCenter.cx + 6, selCenter.cy + 6); // a plain hover, no button
+  await page.waitForTimeout(120);
+  const selectBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+  const a3 = await page.evaluate(() => window.__sandTest.actionCount());
+  check(`selecting a tool does NOT latch PI_PRIMARY (bits ${selectBits})`, (selectBits & PI_PRIMARY) === 0);
+  check(`selecting a tool fires no phantom tool action (${a2} -> ${a3})`, a3 === a2);
+
   await page.evaluate(() => window.__sandTest.setDrawMode(false));
 
   // camera follows: the player should remain near the viewport center

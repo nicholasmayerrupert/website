@@ -41,35 +41,79 @@
     }
   }
 
-  // Cross-layer grounding: a REAL grounded solid in one layer supports a rigid
-  // solid at the SAME cell in the other layer. This intentionally does NOT run a
-  // joint flood through cross-layer edges: otherwise two slightly different cuts
-  // can let a grounded rim in one layer bridge the other layer's moat and pin a
-  // detached island. Instead, compute each layer's own floor/edge-grounded mask,
-  // then do one non-cascading support pass from those base masks.
+  // Cross-layer grounding: a solid that is unsupported within its OWN layer can
+  // still be held up when it is backed by GROUNDED solid at the same cells in the
+  // other layer (the user's "stone painted in front of a grounded bg pillar").
+  //
+  // We deliberately do NOT run a single mutual flood through cross-layer edges.
+  // A mutual flood lets a grounded rim in one layer bridge the OTHER layer's moat:
+  // when a body that spans both layers is freed by two hand-drawn moats (never
+  // pixel-identical), the leftover grounded rim of one layer reaches across and
+  // pins the detached island of the other, so only one layer falls. Instead we
+  // ground each layer independently (computeGrounded, which preserves the
+  // stone|plant|ice comp indexing that moveRigidAssemblies maps from), snapshot
+  // those self-grounded masks, then run ONE non-cascading cross-support pass keyed
+  // off the snapshots — neither pass observes the other's cross-grounding, so the
+  // result is symmetric and order-independent.
+  //
+  // The decision is made per CONNECTED ISLAND, not per component: an island is the
+  // 8-connected cluster of a layer's self-ungrounded rigid cells (exactly the unit
+  // moveRigidAssemblies will move as one). An island is held only when a MAJORITY
+  // of its cells are backed by independently-grounded other-layer solid. Full
+  // backing (a slab flush against a wall) holds; an island that merely grazes a
+  // grounded rim along one edge is NOT held and falls, even though that thin rim
+  // alone may be locally well-backed. A pair that backs only each other in mid-air
+  // has zero independently-grounded backing, so it still falls. Uses no RNG, so it
+  // never perturbs the sim stream.
   void computeGroundedBoth() {
     size_t n = (size_t)cols * rows;
-    useLayer(&fg); computeGrounded(); std::vector<uint8_t> fgBase(fg.groundedCell.begin(), fg.groundedCell.end());
-    useLayer(&bg); computeGrounded(); std::vector<uint8_t> bgBase(bg.groundedCell.begin(), bg.groundedCell.end());
-    auto crossSupport = [&](Layer& target, uint8_t* otherGrid, const std::vector<uint8_t>& otherBase) {
-      auto supportList = [&](std::vector<Comp>& list) {
-        for (auto& comp : list) {
-          if (comp.grounded) continue;
-          int minX = cols, maxX = 0, minY = rows, maxY = 0;
-          for (int k : comp.cells) { int y = k / cols, x = k - y * cols; minX = imin(minX, x); maxX = imax(maxX, x); minY = imin(minY, y); maxY = imax(maxY, y); }
-          if (comp.cells.size() > 128 || maxX - minX + 1 > 32 || maxY - minY + 1 > 32) continue;
-          bool supported = false;
-          for (int k : comp.cells) { if (otherBase[k] && isRigidMaterial(otherGrid[k])) { supported = true; break; } }
-          if (!supported) continue;
-          comp.grounded = true;
-          for (int k : comp.cells) target.groundedCell[k] = 1;
+    useLayer(&fg); computeGrounded();
+    std::vector<uint8_t> fgBase(fg.groundedCell.begin(), fg.groundedCell.end());
+    useLayer(&bg); computeGrounded();
+    std::vector<uint8_t> bgBase(bg.groundedCell.begin(), bg.groundedCell.end());
+    std::vector<uint8_t> visited(n, 0);
+    std::vector<int> stack, island;
+    auto crossSupport = [&](Layer& target, const uint8_t* otherGrid, const std::vector<uint8_t>& selfBase, const std::vector<uint8_t>& otherBase) {
+      uint8_t* tg = target.grid;
+      std::fill(visited.begin(), visited.end(), (uint8_t)0);
+      for (size_t s = 0; s < n; s++) {
+        if (visited[s] || selfBase[s] || !isRigidMaterial(tg[s])) continue;
+        // Flood one island of self-ungrounded rigid cells; tally its backing.
+        island.clear(); stack.clear();
+        stack.push_back((int)s); visited[s] = 1;
+        size_t backed = 0;
+        while (!stack.empty()) {
+          int k = stack.back(); stack.pop_back();
+          island.push_back(k);
+          if (otherBase[k] && isRigidMaterial(otherGrid[k])) backed++;
+          int y = k / cols, x = k - y * cols;
+          for (int oy = -1; oy <= 1; oy++) { int ny = y + oy; if (ny < 0 || ny >= rows) continue; int rb = ny * cols;
+            for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox; if (nx < 0 || nx >= cols) continue;
+              int nk = rb + nx; if (visited[nk] || selfBase[nk] || !isRigidMaterial(tg[nk])) continue;
+              visited[nk] = 1; stack.push_back(nk); } }
         }
-      };
-      supportList(target.stoneComponents); supportList(target.plantComponents); supportList(target.iceComponents);
+        if (backed * 2 < island.size()) continue; // island not majority-backed -> falls
+        for (int k : island) {
+          target.groundedCell[k] = 1;
+          int id = target.cellComp[k];
+          if (id >= 0) compById(target, id)->grounded = true;
+        }
+      }
     };
-    crossSupport(fg, bg.grid, bgBase);
-    crossSupport(bg, fg.grid, fgBase);
+    crossSupport(fg, bg.grid, fgBase, bgBase);
+    crossSupport(bg, fg.grid, bgBase, fgBase);
     useLayer(&fg);
+  }
+
+  // Map a cellComp id (assigned by computeGrounded in stone|plant|ice order) back
+  // to its Comp* in the SAME layer.
+  Comp* compById(Layer& lay, int id) {
+    size_t ns = lay.stoneComponents.size();
+    if ((size_t)id < ns) return &lay.stoneComponents[id];
+    id -= (int)ns;
+    size_t np = lay.plantComponents.size();
+    if ((size_t)id < np) return &lay.plantComponents[id];
+    return &lay.iceComponents[id - (int)np];
   }
 
   void moveRigidAssemblies() {

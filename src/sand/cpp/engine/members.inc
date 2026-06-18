@@ -112,6 +112,15 @@
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
   double perfStepMs = 0;
   double perfShiftBuffers = 0, perfShiftTranslate = 0, perfShiftRegister = 0, perfShiftFill = 0;
+  // Predictive worldgen prefetch (worldgen.inc): amortize the shift's fillRect over
+  // the off-screen frames before the boundary is crossed. Generates the upcoming
+  // stream-in band into the tileStore a slice per frame so the shift can skip
+  // fillRect. pfGrid is a scratch band buffer; the stage machine spans fg then bg.
+  enum { PF_FG_TERRAIN = 0, PF_BG_TERRAIN = 1, PF_DONE = 2 };
+  std::vector<uint8_t> pfGrid;
+  int pfDx = 0, pfDy = 0, pfStage = PF_DONE, pfCursor = 0;
+  int pfEx0 = 0, pfEy0 = 0, pfEw = 0, pfEh = 0; // entering band rect being prefetched
+  int shiftFillHit = 0, shiftFillMiss = 0;      // per-layer shift: band cached vs fillRect fallback
   double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
   bool sinksEnabled;
   uint32_t rngState;

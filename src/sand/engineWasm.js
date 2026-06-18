@@ -36,6 +36,9 @@ export function initSandWasm() {
         maybeShiftWorld: c('engine_maybe_shift_world', 'number', ['number', 'number', 'number', 'number']),
         maybeShiftWorldV: c('engine_maybe_shift_world_v', 'number', ['number', 'number', 'number', 'number']),
         worldShiftCount: c('engine_world_shift_count', 'number', ['number']),
+        prefetchAdvance: c('engine_prefetch_advance', null, ['number', 'number', 'number', 'number', 'number']),
+        shiftFillHit: c('engine_shift_fill_hit', 'number', ['number']),
+        shiftFillMiss: c('engine_shift_fill_miss', 'number', ['number']),
         worldOffsetX: c('engine_world_offset_x', 'number', ['number']),
         worldOffsetY: c('engine_world_offset_y', 'number', ['number']),
         worldSurfaceAt: c('engine_world_surface_at', 'number', ['number', 'number']),
@@ -343,6 +346,10 @@ export function createEngineWasm({
     // applied dx (0 if none) so JS can slide its cache and adjust the camera.
     maybeShiftWorld(cameraCellX, visibleCols, marginCols) { return M.maybeShiftWorld(ptr, cameraCellX, visibleCols, marginCols); },
     getWorldShiftCount() { return M.worldShiftCount(ptr); },
+    // Predictive worldgen prefetch (test/bench hook): advance the prefetch for the
+    // upcoming stream-in band given the camera + viewport, without shifting/GL.
+    prefetchAdvance(camCellX, camCellY, visCols, visRows) { M.prefetchAdvance(ptr, camCellX | 0, camCellY | 0, visCols | 0, visRows | 0); },
+    getShiftFillStats() { return { hit: M.shiftFillHit(ptr), miss: M.shiftFillMiss(ptr) }; },
     getHeapBytes() { return mod.HEAPU8.length; }, // wasm linear-memory size (debug)
 
     // Free rigid bodies (Stage 4)

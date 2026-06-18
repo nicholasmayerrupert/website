@@ -56,6 +56,12 @@ enum InputKey : int { IK_LEFT = 0, IK_RIGHT, IK_UP, IK_DOWN, IK_SPACE, IK_SHIFT 
 static const double CAM_PAN_CELLS_PER_SEC = 100.0; // camera pan speed while a key is held
 static const double CAM_FOLLOW_LERP = 0.18;        // play-mode follow glide
 static const int    CAM_SHIFT_EDGE_MARGIN = 40;    // slide the world this near a buffer edge
+// Predictive worldgen prefetch: begin generating the upcoming stream-in band this
+// many cells of camera travel BEFORE the shift boundary, so the band's tiles are
+// cached by the time the shift fires (fillRect skipped). The per-frame worldgen
+// budget bounds the prefetch's own frame cost (~1.5ms; spread over several frames).
+static const int    PREFETCH_LOOKAHEAD = 96;
+static const int    PREFETCH_CELLS_PER_FRAME = 9000;
 static const int BRUSH_SAND = 2, BRUSH_WATER = 2, BRUSH_OIL = 2, BRUSH_FIRE = 1, BRUSH_ACID = 2,
                  BRUSH_LAVA = 2, BRUSH_ICE = 2, BRUSH_STONE = 2, BRUSH_DRIFTWOOD = 1, BRUSH_ERASE = 3, CUBE_HALF = 6;
 static const double EMIT_INTERVAL_MS = 18.0;

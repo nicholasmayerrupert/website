@@ -114,28 +114,46 @@
   // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd).
   // A horizontal stream-in passes a column band (full rows); a vertical one passes
   // a row band (full cols); the initial fill is the whole buffer.
-  void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
-    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
+  // Base terrain (no trees) over the rect. Split out of fillRect so the prefetch
+  // path can generate a band one column-slice at a time across frames; trees must
+  // run only AFTER all of a band's terrain columns exist (a tree canopy spills over
+  // sky cells, which a later terrain slice would otherwise overwrite), so they're a
+  // separate pass. Each column is generated independently of the others.
+  void fillTerrain(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int lx = colStart; lx < colEnd; lx++) {
       int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
       int slope = std::abs(genSurfaceAt(worldX + 1) - genSurfaceAt(worldX - 1));
       int biome = genBiomeAt(worldX); int soil = genSoilDepth(biome);
       for (int y = rowStart; y < rowEnd; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, biome, soil, y);
     }
-    // Trees (fg only): place only when a tree's footprint can reach this rect.
-    if (!L->isBackground) {
-      const int TREE_REACH = 4;
-      for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
-        int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
-        if (surf + 2 < rowStart || surf - 16 >= rowEnd) continue; // footprint misses the rect
-        if (!genTreeAt(worldX, surf)) continue;
-        int h = 6 + (int)(whash1(L->gTreeSeed + 1, worldX) * 8);
-        int top = surf - h;
-        for (int y = top; y < surf; y++) put(lx, y, WOOD);
-        for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, PLANT); }
-      }
+  }
+  // Trees (fg only) over already-generated terrain in the rect. Trees reach
+  // TREE_REACH cols outside the rect (clipped by `put`), so a band re-evaluates the
+  // trunks just outside it and canopies span band seams identically to one big call.
+  void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd) {
+    if (L->isBackground) return;
+    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
+    const int TREE_REACH = 4;
+    for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
+      int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
+      if (surf + 2 < rowStart || surf - 16 >= rowEnd) continue; // footprint misses the rect
+      if (!genTreeAt(worldX, surf)) continue;
+      int h = 6 + (int)(whash1(L->gTreeSeed + 1, worldX) * 8);
+      int top = surf - h;
+      for (int y = top; y < surf; y++) put(lx, y, WOOD);
+      for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, PLANT); }
     }
+  }
+  void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; next[k] = grid[k]; }
+  }
+  // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd):
+  // terrain, then trees, then mirror into `next`. (Same order/output as before the
+  // split — terrain first, trees second, next-copy last.)
+  void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
+    fillTerrain(colStart, colEnd, rowStart, rowEnd);
+    fillTrees(colStart, colEnd, rowStart, rowEnd);
+    copyGridToNext(colStart, colEnd, rowStart, rowEnd);
   }
   // layerSalt distinguishes the per-layer subsurface seeds (caves + pockets) while
   // leaving the surface seed shared. fg passes 0, bg passes 1 (+ isBackground).
@@ -251,6 +269,123 @@
       }
   }
 
+  // ---- predictive worldgen prefetch ----------------------------------------
+  // The shift's fillRect (per-cell multi-octave noise over the whole entering band,
+  // x2 layers) is the dominant cause of the periodic ~1/sec pan hitch when exploring
+  // NEW terrain. But the entering band is OFF-SCREEN (the shift fires `margin` cells
+  // before the edge and slides a whole chunk), so there's ~1s of runway to build it.
+  // So we pre-generate the upcoming band's tiles into the tileStore a slice per
+  // frame; when the shift fires, csTilesAllPresent is already true and fillRect is
+  // skipped -> only the cheap csLoadTiles memcpy runs on that frame.
+  //
+  // SAFETY (multiplayer / determinism): prefetch changes only WHEN worldgen runs,
+  // never WHAT it produces. Tiles are generated by the SAME fillTerrain/fillTrees
+  // keyed on ABSOLUTE coords, so a prefetched tile is byte-identical to fillRect's
+  // for that position regardless of timing. Worst case is a cache MISS (graceful
+  // fallback to the synchronous fillRect), never corruption. It writes only to the
+  // side-cache tileStore; the live sim buffers are untouched.
+
+  // The entering band's buffer rect for a coming shift (mirrors shiftLayer).
+  void pfBand(int dx, int dy, int& ex0, int& ey0, int& ew, int& eh) {
+    int s = std::abs(dx) + std::abs(dy);
+    if (dx) { eh = rows; ey0 = 0; ew = s; ex0 = dx > 0 ? cols - s : 0; }
+    else    { ew = cols; ex0 = 0; eh = s; ey0 = dy > 0 ? rows - s : 0; }
+  }
+  // Is every whole tile of a layer's entering band already in its tileStore (saved
+  // edits or a prior prefetch)? A partial edge tile (non-chunk-multiple buffer) is
+  // never persisted, so such a band can't be all-present -> prefetch is a no-op there.
+  bool pfBandCached(Layer* Lx, int futOffX, int futOffY) {
+    for (int ty = pfEy0; ty < pfEy0 + pfEh; ty += CHUNK_SIZE)
+      for (int tx = pfEx0; tx < pfEx0 + pfEw; tx += CHUNK_SIZE) {
+        if (!wholeTile(tx, ty)) return false;
+        if (Lx->tileStore.find(tileKey((futOffX + tx) >> CHUNK_SHIFT, (futOffY + ty) >> CHUNK_SHIFT)) == Lx->tileStore.end()) return false;
+      }
+    return true;
+  }
+  // Slice the prefetched band out of the scratch grid and store any tile not already
+  // present (never clobber a saved/edited tile). Keyed by FUTURE absolute coords so
+  // the shift's csLoadTiles (which uses the post-shift offset) finds them.
+  void pfStoreTiles(Layer* Lx, int futOffX, int futOffY) {
+    for (int ty = pfEy0; ty < pfEy0 + pfEh; ty += CHUNK_SIZE)
+      for (int tx = pfEx0; tx < pfEx0 + pfEw; tx += CHUNK_SIZE) {
+        if (!wholeTile(tx, ty)) continue;
+        int64_t key = tileKey((futOffX + tx) >> CHUNK_SHIFT, (futOffY + ty) >> CHUNK_SHIFT);
+        if (Lx->tileStore.find(key) != Lx->tileStore.end()) continue;
+        auto& buf = Lx->tileStore[key];
+        buf.resize((size_t)CHUNK_SIZE * CHUNK_SIZE);
+        for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, pfGrid.data() + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+      }
+  }
+  // Run one terrain slice for layer Lx into the scratch grid at the future offset.
+  // We retarget only L + grid + Lx's offset (NOT useLayer) and restore them: terrain
+  // gen reads L->* + grid + cols/rows only, never the other per-cell mirrors. Returns
+  // true once the whole band's terrain is generated.
+  bool pfTerrainStep(Layer* Lx, int futOffX, int futOffY) {
+    Layer* sL = L; uint8_t* sGrid = grid;
+    int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
+    L = Lx; grid = pfGrid.data();
+    Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
+    bool done;
+    if (pfDx) {
+      int per = imax(1, PREFETCH_CELLS_PER_FRAME / imax(1, rows));
+      int c0 = pfEx0 + pfCursor, c1 = imin(pfEx0 + pfEw, c0 + per);
+      fillTerrain(c0, c1, 0, rows); pfCursor += c1 - c0; done = pfCursor >= pfEw;
+    } else {
+      int per = imax(1, PREFETCH_CELLS_PER_FRAME / imax(1, cols));
+      int r0 = pfEy0 + pfCursor, r1 = imin(pfEy0 + pfEh, r0 + per);
+      fillTerrain(0, cols, r0, r1); pfCursor += r1 - r0; done = pfCursor >= pfEh;
+    }
+    Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
+    grid = sGrid; L = sL;
+    return done;
+  }
+  // Trees over the whole band (fg only), then slice the band into the tileStore.
+  void pfFinalizeLayer(Layer* Lx, int futOffX, int futOffY) {
+    Layer* sL = L; uint8_t* sGrid = grid;
+    int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
+    L = Lx; grid = pfGrid.data();
+    Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
+    fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
+    grid = sGrid; L = sL;
+    pfStoreTiles(Lx, futOffX, futOffY);
+  }
+  void pfStartTarget(int dx, int dy) {
+    pfDx = dx; pfDy = dy; pfCursor = 0;
+    if ((int)pfGrid.size() != cols * rows) pfGrid.assign((size_t)cols * rows, EMPTY);
+    pfBand(dx, dy, pfEx0, pfEy0, pfEw, pfEh);
+    int futOffX = fg.worldOffsetX + dx, futOffY = fg.worldOffsetY + dy; // fg/bg share one offset
+    bool cached = pfBandCached(&fg, futOffX, futOffY) && (!bgEnabled || pfBandCached(&bg, futOffX, futOffY));
+    pfStage = cached ? PF_DONE : PF_FG_TERRAIN;
+  }
+  // Generate at most one slice toward caching the band; advances the stage machine.
+  void pfRunSlice() {
+    int futOffX = fg.worldOffsetX + pfDx, futOffY = fg.worldOffsetY + pfDy;
+    if (pfStage == PF_FG_TERRAIN) {
+      if (pfTerrainStep(&fg, futOffX, futOffY)) { pfFinalizeLayer(&fg, futOffX, futOffY); pfCursor = 0; pfStage = bgEnabled ? PF_BG_TERRAIN : PF_DONE; }
+    } else if (pfStage == PF_BG_TERRAIN) {
+      if (pfTerrainStep(&bg, futOffX, futOffY)) { pfFinalizeLayer(&bg, futOffX, futOffY); pfStage = PF_DONE; }
+    }
+  }
+  // Per-frame driver: pick the nearest upcoming shift boundary within
+  // PREFETCH_LOOKAHEAD cells of camera travel and advance its prefetch. Called from
+  // streamWorld with the live camera; also exposed as a test hook.
+  void prefetchAdvance(int camCellX, int camCellY, int visCols, int visRows) {
+    if (!fg.infinite) return;
+    int wantDx = 0, wantDy = 0, best = PREFETCH_LOOKAHEAD + 1;
+    int distR = (cols - visCols - CAM_SHIFT_EDGE_MARGIN) - camCellX; // cells until each trigger fires
+    int distL = camCellX - CAM_SHIFT_EDGE_MARGIN;
+    int distB = (rows - visRows - CAM_SHIFT_EDGE_MARGIN) - camCellY;
+    int distT = camCellY - CAM_SHIFT_EDGE_MARGIN;
+    if (distR >= 0 && distR < best) { best = distR; wantDx = WORLD_SHIFT_COLS; wantDy = 0; }
+    if (distL >= 0 && distL < best) { best = distL; wantDx = -WORLD_SHIFT_COLS; wantDy = 0; }
+    if (distB >= 0 && distB < best) { best = distB; wantDx = 0; wantDy = WORLD_SHIFT_ROWS; }
+    if (distT >= 0 && distT < best) { best = distT; wantDx = 0; wantDy = -WORLD_SHIFT_ROWS; }
+    if (!wantDx && !wantDy) { pfDx = pfDy = 0; return; }
+    if (wantDx != pfDx || wantDy != pfDy) pfStartTarget(wantDx, wantDy);
+    if (pfStage != PF_DONE) pfRunSlice();
+  }
+
   // Slide the loaded window so the camera always has room. cameraCell is the view's
   // left/top cell; returns the applied shift (0 if none). JS slides its GL texture
   // and pulls the camera back. WORLD_SHIFT_* are tile-aligned (the 2D store needs it).
@@ -313,7 +448,8 @@
     //    only if not fully cached, then overlay any saved tiles + restore bodies.
     L->worldOffsetX += dx; L->worldOffsetY += dy;
     _t = emscripten_get_now();
-    if (!csTilesAllPresent(ex0, ey0, ew, eh)) { if (dx) fillRect(ex0, ex0 + ew, 0, rows); else fillRect(0, cols, ey0, ey0 + eh); }
+    if (!csTilesAllPresent(ex0, ey0, ew, eh)) { shiftFillMiss++; if (dx) fillRect(ex0, ex0 + ew, 0, rows); else fillRect(0, cols, ey0, ey0 + eh); }
+    else shiftFillHit++; // band fully cached (saved tiles or a prefetched baseline) -> no worldgen this frame
     csLoadTiles(ex0, ey0, ew, eh);
     csRestoreBodies(ex0, ey0, ew, eh);
     perfShiftFill = emscripten_get_now() - _t;

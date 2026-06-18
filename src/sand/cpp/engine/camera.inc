@@ -97,6 +97,9 @@ void cameraFollowTo(double cx, double cy) {
 // Decide + apply a world-stream: slide the buffer (engine), the cell texture
 // (GL), and pull the camera back in lockstep. Returns the applied dx.
 int streamWorld() {
+  // Generate the upcoming off-screen band ahead of the boundary so the shift below
+  // finds it cached and skips fillRect (no ~1/sec worldgen hitch while exploring).
+  prefetchAdvance(cameraColX(), cameraColY(), viewportCols, viewportRows);
   int dx = maybeShiftWorld(cameraColX(), viewportCols, CAM_SHIFT_EDGE_MARGIN);
   if (dx) { glShift(dx); cameraSet(camX - dx, camY); }
   // Vertical streaming: the player can dig down arbitrarily deep (the window

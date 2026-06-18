@@ -11,6 +11,9 @@ EMSCRIPTEN_KEEPALIVE void engine_shift_world_xy(Engine* e, int dx, int dy) { e->
 EMSCRIPTEN_KEEPALIVE int engine_maybe_shift_world(Engine* e, int cameraCellX, int visibleCols, int marginCols) { return e->maybeShiftWorld(cameraCellX, visibleCols, marginCols); }
 EMSCRIPTEN_KEEPALIVE int engine_maybe_shift_world_v(Engine* e, int cameraCellY, int visibleRows, int marginRows) { return e->maybeShiftWorldVertical(cameraCellY, visibleRows, marginRows); }
 EMSCRIPTEN_KEEPALIVE int engine_world_shift_count(Engine* e) { return e->worldShiftCount; }
+EMSCRIPTEN_KEEPALIVE void engine_prefetch_advance(Engine* e, int camCellX, int camCellY, int visCols, int visRows) { e->prefetchAdvance(camCellX, camCellY, visCols, visRows); }
+EMSCRIPTEN_KEEPALIVE int engine_shift_fill_hit(Engine* e) { return e->shiftFillHit; }
+EMSCRIPTEN_KEEPALIVE int engine_shift_fill_miss(Engine* e) { return e->shiftFillMiss; }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->fg.worldOffsetX; }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_y(Engine* e) { return e->fg.worldOffsetY; }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->genSurfaceAt(worldX) : 0; }

@@ -16,8 +16,9 @@
     "test:net": "node scripts/net-test.mjs",
     "test:layer": "node scripts/layer-test.mjs",
     "test:prefetch": "node scripts/prefetch-test.mjs",
+    "test:render": "node scripts/render-noise-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
-    "test": "npm run test:sand && npm run test:players && npm run test:net && npm run test:layer && npm run test:prefetch",
+    "test": "npm run test:sand && npm run test:players && npm run test:net && npm run test:layer && npm run test:prefetch && npm run test:render",
     "test:all": "npm run test && npm run build",
     "mp:server": "node scripts/dev-multiplayer-server.mjs"
   },

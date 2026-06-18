@@ -3,8 +3,12 @@
 // Writes one RGBA pixel per cell into renderPixels (little-endian uint32, so the
 // bytes land as R,G,B,A for an ImageData). Each material gets a fixed set of 8
 // brightness-shifted shades; a stable 64x64 noise tile picks one per cell by
-// position, so the grain is steady across frames and identical on the full and
-// per-rect paths. Steam shimmers (random skip), fire flickers, lava sparkles.
+// ABSOLUTE WORLD position (worldOffset+buffer), so the grain stays locked to the
+// terrain across frames AND across world shifts. Keying on buffer position instead
+// makes the grain visibly "reapply" on a vertical shift, because WORLD_SHIFT_ROWS
+// (96) is not a multiple of the 64-tile, so the slid texture and the re-rendered
+// cells would disagree on the tile phase. It is identical on the full and per-rect
+// paths. Steam shimmers (random skip), fire flickers, lava sparkles.
 //
 // JS owns the camera/presentation; it calls render_full or render_dirty_rects,
 // then uploads renderPixels (putImageData) and blits with drawImage.
@@ -39,16 +43,23 @@ void buildRenderTables() {
 // Fill `out` (RGBA over uint32) for an INCLUSIVE cell rect [x0,x1] x [y0,y1] from
 // `g` (a layer's grid). Parameterized so it serves either layer's renderPixels.
 inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1) {
+  // Index the noise/sparkle by absolute world coords so the grain is locked to the
+  // terrain, not the buffer. worldOffset is 0 for bounded worlds (no-op there);
+  // for infinite worlds it advances per shift. `& 63`/`& 7` stay in range for
+  // negative offsets too (two's-complement low bits == value mod 64/8).
+  int woX = L->worldOffsetX, woY = L->worldOffsetY;
   for (int y = y0; y <= y1; y++) {
     int rowBase = y * cols;
-    int noiseRow = (y & 63) << 6;
+    int wy = woY + y;
+    int noiseRow = (wy & 63) << 6;
     for (int x = x0; x <= x1; x++) {
       int k = rowBase + x;
+      int wx = woX + x;
       uint8_t m = g[k];
-      uint32_t c = renderVariants[((int)m << 3) + renderNoise[noiseRow + (x & 63)]];
+      uint32_t c = renderVariants[((int)m << 3) + renderNoise[noiseRow + (wx & 63)]];
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
-      else if (m == LAVA) { if (((x * 17 + y * 31) & 7) == 0) c = PACKED_LAVA_HOT; }
+      else if (m == LAVA) { if (((wx * 17 + wy * 31) & 7) == 0) c = PACKED_LAVA_HOT; }
       p[k] = c;
     }
   }

@@ -362,6 +362,40 @@
     list.push_back(std::move(newComp));
   }
 
+  // Split the freshly-placed `cells` into 8-connected groups and register each as
+  // its OWN component (each still merges with adjacent EXISTING same-material comps
+  // inside registerRigidCells). A fast cursor leaves air gaps between brush stamps,
+  // so one draft can drop several physically-disconnected blobs. Lumping them into a
+  // SINGLE component (plain registerRigidCells) makes the whole thing inherit the
+  // grounded flag of any one supported blob — computeGrounded sets comp->grounded
+  // from any grounded cell, and moveRigidAssemblies only moves !grounded comps — so
+  // floating blobs never fall. Splitting first lets each disconnected blob be judged
+  // for support on its own, matching driftwood (which registers through the flood-fill
+  // registerSeededComponents). 8-connectivity mirrors computeGrounded/moveRigidAssemblies
+  // so the split agrees with how the physics later groups and grounds these cells.
+  void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
+                               std::unordered_set<int>& cells, bool iceCache) {
+    if (cells.empty()) return;
+    std::unordered_set<int> remaining(cells.begin(), cells.end());
+    std::vector<int> stack;
+    while (!remaining.empty()) {
+      int seed = *remaining.begin(); remaining.erase(remaining.begin());
+      std::unordered_set<int> group; int yMax = 0;
+      stack.clear(); stack.push_back(seed);
+      while (!stack.empty()) {
+        int k = stack.back(); stack.pop_back();
+        group.insert(k); int y = k / cols, x = k - y * cols; if (y > yMax) yMax = y;
+        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue; int nx = x + ox, ny = y + oy;
+          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+          int nk = ny * cols + nx; auto it = remaining.find(nk);
+          if (it != remaining.end()) { remaining.erase(it); stack.push_back(nk); }
+        }
+      }
+      registerRigidCells(list, nextId, mat, group, yMax, iceCache);
+    }
+  }
+
   // split a plant-family component list keeping only cells still of plant material
   void splitPlantAfterErase() {
     std::vector<Comp> updated;

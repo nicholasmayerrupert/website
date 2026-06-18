@@ -66,15 +66,18 @@
   }
   void finalizeStoneDraft() {
     if (stoneDraft.empty()) return;
-    std::unordered_set<int> cells; int yMax = 0;
-    for (int k : stoneDraft) if (grid[k] == EMPTY) { grid[k] = STONE; markCellIndex(k); cells.insert(k); int y = k / cols; if (y > yMax) yMax = y; }
-    registerRigidCells(L->stoneComponents, L->nextStoneId, STONE, cells, yMax, false);
+    std::unordered_set<int> cells;
+    for (int k : stoneDraft) if (grid[k] == EMPTY) { grid[k] = STONE; markCellIndex(k); cells.insert(k); }
+    // Split into connected blobs so a gap-riddled fast-drawn draft drops each piece
+    // as its own component; unsupported pieces then fall even when a same-draft piece
+    // is grounded (was: one lumped component held the whole thing up). Matches driftwood.
+    registerRigidCellsSplit(L->stoneComponents, L->nextStoneId, STONE, cells, false);
   }
   void finalizeIceDraft() {
     if (iceDraft.empty()) return;
-    std::unordered_set<int> cells; int yMax = 0;
-    for (int k : iceDraft) if (grid[k] == EMPTY) { grid[k] = ICE; markCellIndex(k); cells.insert(k); int y = k / cols; if (y > yMax) yMax = y; }
-    registerRigidCells(L->iceComponents, L->nextIceId, ICE, cells, yMax, true);
+    std::unordered_set<int> cells;
+    for (int k : iceDraft) if (grid[k] == EMPTY) { grid[k] = ICE; markCellIndex(k); cells.insert(k); }
+    registerRigidCellsSplit(L->iceComponents, L->nextIceId, ICE, cells, true);
   }
   void finalizeDriftwoodDraft() {
     if (stoneDraft.empty()) return;

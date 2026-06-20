@@ -286,11 +286,15 @@
     useLayer(&fg);
     return changed;
   }
-  // Track button release (mirrors the old buttons==0 reset on move/up).
-  void pointerButtons(int buttons) { if (buttons == 0) { rmbDown = false; lmbDown = false; } }
+  // Track button release (mirrors the old buttons==0 reset on move/up). Releasing
+  // all buttons ends the active stroke, so the NEXT press starts a fresh stroke
+  // instead of interpolating a paint/erase line from the previous stroke's last
+  // emit cell (which would draw across whatever lies between two separate clicks).
+  void pointerButtons(int buttons) { if (buttons == 0) { rmbDown = false; lmbDown = false; emitStrokeActive = false; } }
   int pointerUp(int button) {
     if (button == 2) rmbDown = false;
     if (button == 0) lmbDown = false;
+    if (!lmbDown && !rmbDown) emitStrokeActive = false; // stroke ended -> next press restarts it
     bool ownerReleased = (draftLayer == 1) ? (button == 2) : (button == 0);
     if (!ownerReleased) return 0;
     int changed = 0;

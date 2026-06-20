@@ -7,7 +7,8 @@
   // different cave network behind it, and cross-layer transfer flows wherever the
   // two cavities mismatch. Biomes (plains / desert / rocky) vary the surface skin,
   // soil depth, and tree density. Materials are the existing palette only.
-  enum Biome : int { BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_DESERT = 2, BIOME_ROCKY = 3 };
+  enum Biome : int { BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_DESERT = 2, BIOME_ROCKY = 3,
+                     BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
   static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
   static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, OIL_POCKET_THRESH, LAVA_THRESH;
   static const int SURFACE_OCT, GEN_SKIN;
@@ -17,10 +18,17 @@
   // biome seams, which would otherwise be steep enough to avalanche surface sand
   // forever).
   int genBiomeAt(int worldX) {
+    // n is the primary climate band; t is a secondary (moisture) splitter that
+    // varies the biome WITHIN a band. Both are shared-seed + worldX only, so the
+    // foreground and background agree and there is no worldY dependence (height
+    // stays biome-independent — see the cliff/avalanche note above).
     double n = wfbm2(L->worldSeed ^ 0xB10B10u, worldX * BIOME_FREQ, 2.5, 3, 0.5);
     double t = wfbm2(L->worldSeed ^ 0x7A11D2u, worldX * BIOME_FREQ * 1.7, 5.5, 2, 0.5);
-    if (n < 0.40) return t < 0.5 ? BIOME_PLAINS : BIOME_FOREST;
-    if (n < 0.64) return BIOME_DESERT;
+    if (n < 0.30) return t < 0.5 ? BIOME_PLAINS : BIOME_FOREST;
+    if (n < 0.42) return t < 0.45 ? BIOME_FOREST : BIOME_JUNGLE;
+    if (n < 0.54) return t < 0.5 ? BIOME_DESERT : BIOME_SWAMP;
+    if (n < 0.66) return BIOME_DESERT;
+    if (n < 0.80) return t < 0.5 ? BIOME_TUNDRA : BIOME_ROCKY;
     return BIOME_ROCKY;
   }
   // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
@@ -36,15 +44,31 @@
   // all-underground). Used by spawn + tree placement.
   int genSurfaceAt(int worldX) { return genSurfaceAbs(worldX) - L->worldOffsetY; }
   int genSoilDepth(int biome) {
-    if (biome == BIOME_ROCKY) return 0;          // bare stone (stays one connected mass)
+    if (biome == BIOME_ROCKY) return 0;            // bare stone (stays one connected mass)
     if (biome == BIOME_DESERT) return L->gSoil * 3; // deep sand
-    return L->gSoil + 2;                          // plains / forest dirt
+    if (biome == BIOME_JUNGLE) return L->gSoil + 3; // thick lush mantle
+    return L->gSoil + 2;                            // plains / forest / tundra / swamp
   }
   uint8_t genSkinMat(int biome, int slope, bool underwater) {
-    if (underwater) return STONE;                // solid seabed (loose sand under water just avalanches)
-    if (biome == BIOME_ROCKY) return STONE;
-    if (biome == BIOME_DESERT) return SAND;
-    return slope <= 2 ? PLANT : SAND;            // plains/forest: grass on gentle ground, sand on steeps
+    if (underwater) return STONE;                // solid seabed (loose powder under water just avalanches)
+    switch (biome) {
+      case BIOME_ROCKY:  return STONE;
+      case BIOME_DESERT: return SAND;
+      case BIOME_TUNDRA: return SNOW;            // snow blanket over the dirt mantle
+      case BIOME_SWAMP:  return slope <= 2 ? PLANT : MUD;
+      default:           return slope <= 2 ? PLANT : SAND; // plains/forest/jungle: grass on gentle, sand on steeps
+    }
+  }
+  // Material of the loose mantle between the skin and the deep stone (was a literal
+  // SAND). `d` is depth into the soil band. All powders here rest on the stone
+  // buffer below (caveTop) so they settle inert just like the old sand mantle.
+  uint8_t genSoilMat(int biome, int d, int soil) {
+    switch (biome) {
+      case BIOME_DESERT: return d >= soil * 2 / 3 ? SANDSTONE : SAND; // sand over a sandstone base
+      case BIOME_SWAMP:  return MUD;
+      case BIOME_ROCKY:  return STONE;
+      default:           return DIRT; // plains / forest / tundra / jungle
+    }
   }
   // Caves carve winding tunnels (ridged noise) plus the occasional larger cavern
   // (fbm). The BACKGROUND uses a higher threshold -> a more-solid backdrop behind
@@ -93,7 +117,7 @@
     // BACKGROUND skips them — a dry solid backdrop, no loose soil to churn.
     if (!L->isBackground) {
       if (depth < GEN_SKIN) return genSkinMat(biome, slope, underwater);
-      if (depth < GEN_SKIN + soil) return underwater ? STONE : SAND; // solid under oceans
+      if (depth < GEN_SKIN + soil) return underwater ? STONE : genSoilMat(biome, depth - GEN_SKIN, soil); // solid under oceans
     }
     // A thick solid stone buffer separates the loose soil (and any ocean floor)
     // from the cave zone, so generated sand never rests directly over a cave and
@@ -105,11 +129,22 @@
     if (L->isBackground) return STONE;                       // bg: solid stone, no liquid pockets
     return genPocketAt(worldX, worldY);                      // fg: deep stone + sealed liquids/lava
   }
+  // Per-biome tree density. Forest/jungle are dense; plains/tundra/swamp sparser;
+  // desert/rocky bare. (Tree TYPE — pine/willow/cactus/... — is assigned in the
+  // flora phase; here it only gates WHETHER a trunk seeds at this column.)
+  double genTreeProb(int biome) {
+    switch (biome) {
+      case BIOME_FOREST: return TREE_PROB * 3.2;
+      case BIOME_JUNGLE: return TREE_PROB * 4.0;
+      case BIOME_SWAMP:  return TREE_PROB * 2.0;
+      case BIOME_TUNDRA: return TREE_PROB * 1.5;
+      case BIOME_PLAINS: return TREE_PROB;
+      default:           return 0.0; // desert / rocky
+    }
+  }
   bool genTreeAt(int worldX, int surf) {
     if (surf >= L->gSeaRow - L->worldOffsetY) return false;  // at/under water -> no trees
-    int biome = genBiomeAt(worldX);
-    double prob = biome == BIOME_FOREST ? TREE_PROB * 3.2 : (biome == BIOME_PLAINS ? TREE_PROB : 0.0);
-    return whash1(L->gTreeSeed, worldX) < prob;
+    return whash1(L->gTreeSeed, worldX) < genTreeProb(genBiomeAt(worldX));
   }
   // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd).
   // A horizontal stream-in passes a column band (full rows); a vertical one passes

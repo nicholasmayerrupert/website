@@ -598,21 +598,37 @@ const waterPool = (e, x0, x1, top, floor) => {
     for (const k of draftCells) if (g[k] === MAT.STONE) s.add(worldOf(k, offX, offY));
     return s;
   };
-  // Stage a stone draft up in the EMPTY sky (top rows are above generated terrain),
-  // so addDiscToStoneDraft (EMPTY-only) actually stages every cell.
-  const stage = (e) => { for (let x = 100; x < 112; x++) for (let y = 4; y < 16; y++) e.addDiscToStoneDraft(x, y, 0); };
+  // Stage a stone draft in a genuinely EMPTY 12x12 sky block (addDiscToStoneDraft
+  // only stages EMPTY cells). We SEARCH for an empty block rather than assume a
+  // fixed spot, so the test is robust to worldgen content (tree canopies etc. can
+  // reach high into the sky). It sits in the upper-left so the negative shifts
+  // below move it DOWN-RIGHT (toward higher buffer indices), keeping it on-buffer.
+  // Its world coords stay empty after the shift by determinism, so finalize fills
+  // every cell at the same world location.
+  const findEmptySky = (e) => {
+    const g = e.getGrid();
+    for (let y0 = 2; y0 < 40; y0++) for (let x0 = 70; x0 < 130; x0++) {
+      let ok = true;
+      for (let yy = y0; yy < y0 + 12 && ok; yy++) for (let xx = x0; xx < x0 + 12; xx++) if (g[yy * COLS + xx] !== 0) { ok = false; break; }
+      if (ok) return { x0, y0 };
+    }
+    return { x0: 100, y0: 4 };
+  };
+  const stage = (e) => { const { x0, y0 } = findEmptySky(e); for (let x = x0; x < x0 + 12; x++) for (let y = y0; y < y0 + 12; y++) e.addDiscToStoneDraft(x, y, 0); };
 
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
   stage(e);
   const before = draftWorldSet(e);
   check(`draft staged in empty sky (${before.size} cells)`, before.size > 50);
 
-  // Slide the world under the active draft: both axes, then a second horizontal-only
-  // slide. The remap must move the draft cells WITH the grid so their WORLD coords
-  // are invariant (pre-fix they stayed at stale buffer indices -> world coords moved).
-  // Negative shifts move buffer content toward higher indices, keeping this sky-high
-  // draft (small y) on-buffer instead of sliding it off the top edge.
-  e.shiftWorldXY(-32, -32);
+  // Slide the world under the active draft on each axis in turn (the game only ever
+  // shifts one axis per frame — maybeShiftWorld / maybeShiftWorldVertical — and
+  // shiftLayer slides a single-axis band). The remap must move the draft cells WITH
+  // the grid so their WORLD coords are invariant (pre-fix they stayed at stale buffer
+  // indices -> world coords moved). Negative shifts move buffer content toward higher
+  // indices, keeping this sky draft (small y) on-buffer instead of sliding off the top.
+  e.shiftWorldXY(-32, 0);
+  e.shiftWorldXY(0, -32);
   e.shiftWorldXY(-32, 0);
   const after = draftWorldSet(e);
   let invariant = after.size === before.size; for (const k of before) if (!after.has(k)) invariant = false;

@@ -21,8 +21,9 @@
     "test:render": "node scripts/render-noise-test.mjs",
     "test:mat-flags": "node scripts/materials-flags-test.mjs",
     "test:mat-behavior": "node scripts/material-behavior-test.mjs",
+    "test:biomes": "node scripts/worldgen-biome-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
-    "test": "npm run test:mat-flags && npm run test:mat-behavior && npm run test:sand && npm run test:players && npm run test:net && npm run test:layer && npm run test:prefetch && npm run test:render && npm run test:stone-airgap",
+    "test": "npm run test:mat-flags && npm run test:mat-behavior && npm run test:biomes && npm run test:sand && npm run test:players && npm run test:net && npm run test:layer && npm run test:prefetch && npm run test:render && npm run test:stone-airgap",
     "test:all": "npm run test && npm run build",
     "mp:server": "node scripts/dev-multiplayer-server.mjs"
   },

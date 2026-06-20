@@ -118,6 +118,7 @@ int spawnPlayer(double x, double y) {
   p.px = x; p.py = y;
   p.aimX = x; p.aimY = y;
   players.push_back(p);
+  if (survivalInventory) seedStarterTools(players.back()); // survival spawns with the starter kit
   return p.id;
 }
 Player* findPlayer(int id) {
@@ -288,6 +289,26 @@ bool mineDisc(Player& p, int ax, int ay, Layer* layer) {
   }
   useLayer(layer);
   bool changed = mineDamageDisc(ax, ay, P_MINE_R) != 0;
+  // Survival drops: foreground mining only. Each destroyed cell yields a dropped
+  // ITEM iff the player's held tool satisfies the material's class+tier gate (the
+  // bare hand additionally drops loose shovel-tier-0 soils). The block breaks either
+  // way; the tool only gates the reward. A cosmetic PARTICLE always pops. No rand():
+  // velocities use a (tick,cell) hash so the sim stream stays deterministic.
+  if (layerId == 0 && !lastMinedCells.empty()) {
+    for (auto& mc : lastMinedCells) {
+      uint8_t m = mc.first; int k = mc.second;
+      int cxk = k % cols, cyk = k / cols;
+      uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
+      bool drop = false;
+      if (cls != TC_NONE) {
+        if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
+        else if (p.heldToolClass == TC_HAND && cls == TC_SHOVEL && tier == TT_HAND) drop = true;
+      }
+      double j = whash2((uint32_t)tick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;
+      if (drop) spawnItem(m, 1, cxk + 0.5, cyk + 0.5, j * 0.4, -0.4);
+      spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6, IT_PARTICLE_LIFE);
+    }
+  }
   useLayer(&fg);
   return changed;
 }
@@ -319,6 +340,9 @@ void playerFinalizeSolidDraft() {
 // creative draft: begin on press, extend (preview) while held, finalize on release.
 void applyPlayerTools() {
   for (auto& p : players) {
+    // Survival inventory drives the controls (selected slot = mine-tool or place-
+    // material). Creative keeps the classic tool flow below.
+    if (survivalInventory) { applyInventoryPlayer(p); continue; }
     if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; continue; }
     if (p.toolCooldown > 0) p.toolCooldown--;
     int prev = p.prevInput;

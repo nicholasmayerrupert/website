@@ -164,6 +164,16 @@
   std::vector<Player> players;
   int nextPlayerId = 1;
   std::vector<float> playerSnapshot; // packed [PLAYER_SNAP_STRIDE] floats per player
+  // ---- dropped items + particles (entities; physics in items.inc) ----
+  std::vector<Item> items;
+  int nextItemId = 1;
+  std::vector<float> itemSnapshot;        // packed [ITEM_SNAP_STRIDE] floats per item
+  std::vector<float> invSnapshot;         // packed [INV_SNAP_STRIDE] floats per slot (one player)
+  std::unordered_set<int> itemOcc;        // cells claimed by resting items (rebuilt each step)
+  bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
+  // Cells destroyed by the last mineDamageDisc() call: (material, cellIndex). mineDisc
+  // reads this to decide drops against the acting player's held tool (Phase C).
+  std::vector<std::pair<uint8_t, int>> lastMinedCells;
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
   std::vector<uint8_t> netBlob;      // scratch buffer for world snapshot / diff serialization
   // Renderer tables (material -> RGBA). Shared (layer-agnostic). Uses a SEPARATE

@@ -19,9 +19,11 @@ const jsPath = resolve(root, 'src/sand/materials.generated.js');
 const hppPath = resolve(root, 'src/sand/cpp/engine/materials.generated.hpp');
 
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-const { tableSize, kinds, flagBits, componentGroups, materials, animColors } = schema;
+const { tableSize, kinds, flagBits, componentGroups, toolClasses, toolTiers, materials, animColors } = schema;
 
 if (!flagBits || !componentGroups) throw new Error('schema must define flagBits and componentGroups');
+if (!toolClasses || !toolTiers) throw new Error('schema must define toolClasses and toolTiers');
+const maxToolTier = Math.max(...Object.values(toolTiers));
 
 // Materials indexed by id, with empty slots for any gaps up to tableSize.
 const byId = new Array(tableSize).fill(null);
@@ -33,6 +35,9 @@ for (const m of materials) {
   if (!(m.componentGroup in componentGroups)) throw new Error(`material ${m.name} has unknown componentGroup ${m.componentGroup}`);
   if (!('flags' in m)) throw new Error(`material ${m.name} missing flags`);
   for (const f of m.flags) if (!(f in flagBits)) throw new Error(`material ${m.name} has unknown flag ${f}`);
+  if (!('toolClass' in m)) throw new Error(`material ${m.name} missing toolClass`);
+  if (!(m.toolClass in toolClasses)) throw new Error(`material ${m.name} has unknown toolClass ${m.toolClass}`);
+  if (!('toolTier' in m) || !Number.isInteger(m.toolTier) || m.toolTier < 0 || m.toolTier > maxToolTier) throw new Error(`material ${m.name} has invalid toolTier ${m.toolTier}`);
   byId[m.id] = m;
 }
 
@@ -50,6 +55,8 @@ const jsMatLines = materials
 const jsAnimLines = animKeys.map((k) => `export const ${k} = ${animColors[k]};`).join('\n');
 const jsFlagLines = Object.entries(flagBits).map(([k, v]) => `  ${k}: ${1 << v},`).join('\n');
 const jsCgroupLines = Object.entries(componentGroups).map(([k, v]) => `  ${k}: ${v},`).join('\n');
+const jsToolClassLines = Object.entries(toolClasses).map(([k, v]) => `  ${k}: ${v},`).join('\n');
+const jsToolTierLines = Object.entries(toolTiers).map(([k, v]) => `  ${k}: ${v},`).join('\n');
 const jsArr = (pick) => byId.map((m) => (m ? pick(m) : 0)).join(', ');
 const js = `${BANNER('JS module')}
 // Slots in the flat lookup tables (power-of-two headroom over the live ids).
@@ -70,6 +77,14 @@ export const CG = {
 ${jsCgroupLines}
 };
 
+// Mining tool classes + tiers (mirror C++ enum ToolClass / ToolTier).
+export const TC = {
+${jsToolClassLines}
+};
+export const TT = {
+${jsToolTierLines}
+};
+
 // The material registry. Each entry fully distinguishes one material across the
 // whole simulation AND the renderer.
 export const MATERIALS = [
@@ -80,6 +95,10 @@ ${jsMatLines}
 // MAT_FLAGS / MAT_CGROUP tables.
 export const MAT_FLAGS = [${jsArr(flagMask)}];
 export const MAT_CGROUP = [${jsArr((m) => componentGroups[m.componentGroup])}];
+
+// Mining gate tables: which tool class drops a material and the min tier required.
+export const MAT_TOOLCLASS = [${jsArr((m) => toolClasses[m.toolClass])}];
+export const MAT_TOOLTIER = [${jsArr((m) => m.toolTier)}];
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 ${jsAnimLines}
@@ -101,12 +120,17 @@ const cppAnimLines = animKeys.map((k) => `static const uint32_t ${k} = ${animCol
 const cppEnumCGroup = Object.entries(componentGroups).map(([k, v]) => `CG_${k.toUpperCase()} = ${v}`).join(', ');
 const cppFlagConsts = Object.entries(flagBits).map(([k, v]) => `static const uint16_t MF_${k.toUpperCase()} = 1u << ${v};`).join('\n');
 const cgroupVal = (m) => (m === null ? 'CG_NONE' : `CG_${m.componentGroup.toUpperCase()}`);
+const cppEnumToolClass = Object.entries(toolClasses).map(([k, v]) => `TC_${k.toUpperCase()} = ${v}`).join(', ');
+const cppEnumToolTier = Object.entries(toolTiers).map(([k, v]) => `TT_${k.toUpperCase()} = ${v}`).join(', ');
 const hpp = `#pragma once
 ${BANNER('C++ header')}
 enum Mat : uint8_t { ${cppEnumMat} };
 enum Kind : uint8_t { ${cppEnumKind} };
 // Seeded-component groups: which list a material registers into.
 enum CGroup : uint8_t { ${cppEnumCGroup} };
+// Mining tool classes + tiers (drives MAT_TOOLCLASS / MAT_TOOLTIER drop gating).
+enum ToolClass : uint8_t { ${cppEnumToolClass} };
+enum ToolTier : uint8_t { ${cppEnumToolTier} };
 // Behavior-flag bits packed into MAT_FLAGS[]. Predicates AND against these.
 ${cppFlagConsts}
 
@@ -118,6 +142,9 @@ static const uint8_t  MAT_KIND[TABLE]       = {${materials.length ? col((m) => m
 // Class-based behavior: flag bitmask + seeded-component group per material.
 static const uint16_t MAT_FLAGS[TABLE]      = {${col((m) => flagMask(m), u8)}};
 static const uint8_t  MAT_CGROUP[TABLE]     = {${materials.length ? col((m) => m, cgroupVal) : ''}};
+// Mining gate: which tool class drops a material + the min tier required.
+static const uint8_t  MAT_TOOLCLASS[TABLE]  = {${col((m) => toolClasses[m.toolClass], u8)}};
+static const uint8_t  MAT_TOOLTIER[TABLE]   = {${col((m) => m.toolTier, u8)}};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};

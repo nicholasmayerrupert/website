@@ -32,6 +32,22 @@ export const CG = {
   ice: 3,
 };
 
+// Mining tool classes + tiers (mirror C++ enum ToolClass / ToolTier).
+export const TC = {
+  none: 0,
+  pickaxe: 1,
+  axe: 2,
+  shovel: 3,
+  hand: 4,
+};
+export const TT = {
+  hand: 0,
+  wood: 1,
+  stone: 2,
+  iron: 3,
+  gold: 4,
+};
+
 // The material registry. Each entry fully distinguishes one material across the
 // whole simulation AND the renderer.
 export const MATERIALS = [
@@ -72,6 +88,10 @@ export const MATERIALS = [
 // MAT_FLAGS / MAT_CGROUP tables.
 export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 10, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0];
 export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0];
+
+// Mining gate tables: which tool class drops a material and the min tier required.
+export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0];
+export const MAT_TOOLTIER = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0];
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 export const PACKED_FIRE = 0xb8226cff;

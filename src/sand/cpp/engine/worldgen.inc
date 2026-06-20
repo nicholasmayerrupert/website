@@ -568,6 +568,13 @@
     useLayer(&bg); shiftLayer(dx, dy);
     useLayer(&fg);
     for (auto& p : players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
+    // Items are buffer-local entities like players: slide them by the same delta and
+    // drop any that leave the loaded window (v1 — no off-buffer item persistence).
+    if (!items.empty()) {
+      std::vector<Item> keep; keep.reserve(items.size());
+      for (auto& it : items) { it.px -= dx; it.py -= dy; if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it); }
+      items.swap(keep);
+    }
     remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the grid shift)
     useLayer(&fg); clearAllMineDamage();
     useLayer(&bg); clearAllMineDamage();

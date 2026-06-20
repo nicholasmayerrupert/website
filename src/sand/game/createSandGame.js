@@ -26,6 +26,11 @@ export function createSandGame(container, opts = {}) {
     // tools, camera follows. 'creative': free camera (WASD pans the infinite
     // world), draw tools place/erase anywhere with no reach limit, no character.
     mode = 'survival',
+    // Survival inventory hooks: onInventory(snapshot) feeds the HUD each step;
+    // onToggleInventory() opens/closes the grid (the E key). The inventory itself is
+    // authoritative in the engine — these only move snapshots out and intents in.
+    onInventory = null,
+    onToggleInventory = null,
   } = opts;
   const survival = mode === 'survival';
 
@@ -260,9 +265,11 @@ export function createSandGame(container, opts = {}) {
     // Spawn the local player on the surface in survival mode (unless a client,
     // where the host owns it — it gets removed and re-rendered from snapshots when
     // joining). Creative mode has no character.
+    if (survival) engine.setSurvivalInventory(true); // mining->drops->inventory; spawnPlayer seeds the starter kit
     if (survival && (!net || net.role !== 'client')) {
       const sp = surfaceSpawn(spawnCol);
       localPlayerId = engine.spawnPlayer(sp.x, sp.y);
+      onInventory?.(engine.getInventory(localPlayerId)); // initial HUD fill
     }
     // Start centered horizontally, just above the surface so spawn shows ground.
     engine.cameraSet((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
@@ -384,6 +391,12 @@ export function createSandGame(container, opts = {}) {
     if (isEditableTarget(e.target)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
+    // Survival inventory hotkeys (engine owns the selection policy): digits 1-9
+    // pick a hotbar slot; E toggles the grid. Handled before the movement-key map.
+    if (survival && localPlayerId && engine) {
+      if (key >= '1' && key <= '9') { engine.setSelectedSlot(localPlayerId, +key - 1); e.preventDefault(); return; }
+      if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
+    }
     const code = KEY_CODE[key];
     if (code === undefined) return;
     engine?.inputKey(code, 1);
@@ -408,8 +421,16 @@ export function createSandGame(container, opts = {}) {
     engine?.pointerButtons(mouseButtons);
   };
 
+  // Survival: scroll cycles the selected hotbar slot (wrap-around policy is in C++).
+  const onWheel = (e) => {
+    if (!survival || !localPlayerId || !engine || !inside || isEditableTarget(e.target)) return;
+    engine.cycleSelectedSlot(localPlayerId, e.deltaY > 0 ? 1 : -1);
+    e.preventDefault();
+  };
+
   window.addEventListener('pointermove', onPointerMove, { passive: true });
   window.addEventListener('touchmove', onTouchMove, { passive: true });
+  if (survival) window.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointerup', onPointerUp);
   window.addEventListener('pointercancel', onPointerCancel);
@@ -638,6 +659,10 @@ export function createSandGame(container, opts = {}) {
       lastStep = now;
     }
 
+    // Refresh the survival HUD when the sim advanced (pickups/placement happen in
+    // steps). Reads the engine's authoritative inventory snapshot.
+    if (stepped && survival && localPlayerId && onInventory) onInventory(engine.getInventory(localPlayerId));
+
     // Camera follows the local player each frame (smooth at any refresh rate).
     // Skipped while paused so the headless pan/flicker bench keeps full control.
     if (playMode && !testPaused) followCamera();
@@ -665,6 +690,7 @@ export function createSandGame(container, opts = {}) {
     if (engine && engine.destroy) engine.destroy();
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('touchmove', onTouchMove);
+    window.removeEventListener('wheel', onWheel);
     window.removeEventListener('pointerdown', onPointerDown);
     window.removeEventListener('pointerup', onPointerUp);
     window.removeEventListener('pointercancel', onPointerCancel);
@@ -686,6 +712,11 @@ export function createSandGame(container, opts = {}) {
     getDrawMode() { return drawModeOn; },
     setPlayMode(on) { playMode = !!on; engine?.setPlayMode(playMode); },
     getPlayMode() { return playMode; },
+    // Survival inventory intents (forwarded to the authoritative engine state).
+    isSurvival() { return survival; },
+    selectSlot(i) { if (localPlayerId) engine?.setSelectedSlot(localPlayerId, i | 0); },
+    moveSlot(from, to) { if (localPlayerId) engine?.inventoryMove(localPlayerId, from | 0, to | 0); },
+    getInventory() { return localPlayerId && engine ? engine.getInventory(localPlayerId) : { slots: [], selected: 0 }; },
     netHost(url, room) { return netHost(url, room); },
     netJoin(url, room) { return netJoin(url, room); },
     netDisconnect() { netDisconnect(); },

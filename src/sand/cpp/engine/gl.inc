@@ -242,6 +242,29 @@ void glDrawPlayers() {
   }
 }
 
+// Dropped items + particles overlay, drawn after players (same world->screen
+// transform). Each is a small rect centered on its cell at the material's color;
+// particles shrink/fade by remaining life. The engine draws from its own `items`
+// vector — no JS state push, exactly like host-side player drawing.
+void glDrawItems() {
+  if (items.empty()) return;
+  glUniform1i(glc->uMode, 1);
+  glUniform1i(glc->uGutter, 0);
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  for (auto& it : items) {
+    uint32_t c = MAT_COLOR[it.material];
+    float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
+    float baseA = ((c >> 24) & 0xff) / 255.0f;
+    float a = (it.kind == IT_PARTICLE) ? baseA * (float)it.life / (float)IT_PARTICLE_LIFE : baseA;
+    if (a <= 0.01f) continue;
+    glUniform4f(glc->uColor, r, g, b, a);
+    double sz = (it.kind == IT_PARTICLE) ? glCellDev * 0.5 : glCellDev * 0.8;
+    double cx = ((int)std::floor(it.px) + 0.5 - camCol) * glCellDev + glOffX;
+    double cy = ((int)std::floor(it.py) + 0.5 - camRow) * glCellDev + glOffY;
+    glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
+  }
+}
+
 void glDrawPreview() {
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
@@ -331,6 +354,7 @@ int glRenderFrame(int forceFull) {
   glDrawCells(glTexBg, GL_BG_TINT, 0);            // background first (darker, no internal gutter)
   glDrawCells(glTex, 1.0f, glGutterOn ? 1 : 0);   // foreground on top
   glDrawPlayers();
+  glDrawItems();
   glDrawPreview();
   return 1;
 }

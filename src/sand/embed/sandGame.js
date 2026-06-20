@@ -19,6 +19,7 @@
 import { initSandWasm } from '../engineWasm';
 import { createSandGame } from '../game/createSandGame';
 import { createToolPalette } from './toolPalette';
+import { createInventoryHud } from './inventoryHud';
 
 const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none; }
@@ -53,18 +54,32 @@ class SandGameElement extends HTMLElement {
           initialTool,
           mode,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
+          // Survival inventory HUD wiring (the engine owns the inventory state).
+          onInventory: (inv) => this._hud?.update(inv),
+          onToggleInventory: () => this._hud?.toggleOpen(),
         });
         this._game = game;
-        this._palette = createToolPalette(root, {
-          initialTool,
-          onSelectTool: (id) => game.setTool(id),
-          onToggleDrawMode: (on) => {
-            game.setDrawMode(on);
-            this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
-              detail: { on }, bubbles: true, composed: true,
-            }));
-          },
-        });
+        if (mode === 'survival') {
+          // Survival uses the inventory HUD (hotbar + openable grid). Slot select /
+          // move are forwarded to the engine; mining/placing comes from the held slot.
+          this._hud = createInventoryHud(root, {
+            onSelect: (i) => game.selectSlot(i),
+            onMove: (from, to) => game.moveSlot(from, to),
+          });
+          this._hud.update(game.getInventory());
+        } else {
+          // Creative keeps the classic tool palette (infinite materials).
+          this._palette = createToolPalette(root, {
+            initialTool,
+            onSelectTool: (id) => game.setTool(id),
+            onToggleDrawMode: (on) => {
+              game.setDrawMode(on);
+              this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
+                detail: { on }, bubbles: true, composed: true,
+              }));
+            },
+          });
+        }
         // Default draw state: survival on a fine pointer starts drawing-enabled so
         // the dedicated game is immediately playable (mouse mines/builds). Creative
         // and coarse-pointer (touch) start draw-off so the page can still scroll.
@@ -72,7 +87,7 @@ class SandGameElement extends HTMLElement {
           window.matchMedia('(pointer: coarse)').matches;
         const drawDefault = mode === 'survival' && !coarse;
         game.setDrawMode(drawDefault);
-        this._palette.setDrawMode(drawDefault);
+        this._palette?.setDrawMode(drawDefault);
       })
       .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 
@@ -83,7 +98,8 @@ class SandGameElement extends HTMLElement {
     this._cancel?.();
     this._game?.destroy();
     this._palette?.destroy();
-    this._game = this._palette = null;
+    this._hud?.destroy();
+    this._game = this._palette = this._hud = null;
     this._mounted = false;
   }
 

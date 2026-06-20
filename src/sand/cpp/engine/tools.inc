@@ -56,6 +56,7 @@
     markAllDirty();
   }
   int mineDamageDisc(int cx, int cy, int radius) {
+    lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) { if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } continue; }
@@ -70,6 +71,7 @@
       if (m == STONE) erasedStone.push_back(k); else if (m == ICE) erasedIce.push_back(k);
       if (isPlantMaterial(m)) erasedPlant = true;
       if (m == RIGID) bodyOwner[k] = -1;
+      lastMinedCells.push_back({m, k}); // record what was destroyed for drop resolution
       grid[k] = EMPTY; L->mineDamage[k] = 0; changed = 1;
       if (stoneDraft.erase(k)) changed = 1; if (iceDraft.erase(k)) changed = 1;
     } }

@@ -36,6 +36,8 @@ struct Engine {
 #include "engine/camera.inc"
 #include "engine/gl.inc"
 #include "engine/player.inc"
+#include "engine/items.inc"
+#include "engine/inventory.inc"
 #include "engine/netsync.inc"
 };
 

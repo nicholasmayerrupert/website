@@ -115,7 +115,34 @@ EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->pl
 EMSCRIPTEN_KEEPALIVE int engine_player_snapshot_stride(Engine* e) { return PLAYER_SNAP_STRIDE; }
 EMSCRIPTEN_KEEPALIVE int engine_player_action_count(Engine* e) { return e->playerActionCount; }
 EMSCRIPTEN_KEEPALIVE void engine_step_player_only(Engine* e, int id) { e->stepPlayerOnly(id); }
+// Held mining tool (class/tier) — drives drop gating. Set directly here for tests;
+// the inventory sets it from the selected slot in normal play.
+EMSCRIPTEN_KEEPALIVE void engine_set_player_tool(Engine* e, int id, int cls, int tier) { Player* p = e->findPlayer(id); if (p) { p->heldToolClass = (uint8_t)cls; p->heldToolTier = (uint8_t)tier; } }
+// Mine one disc at (ax,ay) on the foreground for a player (test/gameplay hook).
+EMSCRIPTEN_KEEPALIVE int engine_player_mine(Engine* e, int id, int ax, int ay) { Player* p = e->findPlayer(id); if (!p) return 0; return e->mineDisc(*p, ax, ay, &e->fg) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
+
+// dropped items + particles (entities; physics in items.inc). spawn_item/_particle
+// are test/gameplay hooks; the snapshot lets JS draw or inspect them.
+EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) { return e->spawnItem((uint8_t)mat, count, px, py, vx, vy); }
+EMSCRIPTEN_KEEPALIVE void engine_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) { e->spawnParticle((uint8_t)mat, px, py, vx, vy, life); }
+EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->items.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_item_snapshot(Engine* e) { return e->buildItemSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->itemSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_item_snapshot_stride(Engine* e) { return ITEM_SNAP_STRIDE; }
+
+// survival inventory (inventory.inc): authoritative per-player stacks. JS reads the
+// snapshot for the HUD and forwards slot-select / move / place intents.
+EMSCRIPTEN_KEEPALIVE void engine_set_survival_inventory(Engine* e, int on) { e->survivalInventory = on != 0; }
+EMSCRIPTEN_KEEPALIVE void engine_seed_starter_tools(Engine* e, int id) { e->seedStarterTools(id); }
+EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) { return e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_selected_slot(Engine* e, int id, int slot) { e->setSelectedSlot(id, slot); }
+EMSCRIPTEN_KEEPALIVE void engine_cycle_selected_slot(Engine* e, int id, int delta) { e->cycleSelectedSlot(id, delta); }
+EMSCRIPTEN_KEEPALIVE void engine_inventory_move(Engine* e, int id, int from, int to) { e->moveSlot(id, from, to); }
+EMSCRIPTEN_KEEPALIVE int engine_place_from_selected(Engine* e, int id, int ax, int ay) { return e->placeFromSelected(id, ax, ay) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e->buildInventorySnapshot(id); }
+EMSCRIPTEN_KEEPALIVE float* engine_inventory_snapshot_ptr(Engine* e) { return e->invSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot_stride(Engine* e) { return INV_SNAP_STRIDE; }
 
 // world replication (Phase 6): serialize/apply full snapshots + dirty diffs.
 EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->serializeWorld(); }

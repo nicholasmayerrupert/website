@@ -142,6 +142,34 @@ struct Body {
 };
 struct Contact { Body* a; Body* b; double rax, ray, rbx, rby, nx, ny, depth, accJn, accJt, accBias; };
 
+// ---- Dropped items + cosmetic particles (items.inc) ----
+// A lightweight NON-GRID entity. IT_ITEM = a dropped material the player can pick
+// up; IT_PARTICLE = a short-lived fleck of mining debris (no pickup). Items fall
+// under gravity (slower in liquid), rest on solid grid cells (never clip through)
+// and stack on one another; they do not otherwise interact with the simulation.
+// Pose is buffer-local cell coords like Player/Body, so a world shift remaps them
+// by (dx,dy). Updated with NO rand(), so the sim RNG stream stays byte-identical.
+enum ItemKind : uint8_t { IT_ITEM = 0, IT_PARTICLE = 1 };
+static const double IT_GRAVITY = 0.18, IT_MAX_FALL = 4.0;
+static const double IT_LIQUID_GRAVITY = 0.05, IT_LIQUID_MAX_FALL = 0.9, IT_LIQUID_DRAG = 0.85;
+static const double IT_MOVE_SUBSTEP = 0.34;  // sub-cell stepping prevents tunneling
+static const int    IT_PICKUP_DELAY = 12;    // steps after spawn before a drop can be vacuumed
+static const double IT_PICKUP_R = 5.0;       // auto-vacuum radius (cells, from player center; covers the body + a small magnet)
+static const int    IT_PARTICLE_LIFE = 24;   // default mining-debris lifetime (steps)
+static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then item) evicted
+static const int    ITEM_SNAP_STRIDE = 7;    // id, kind, material, count, px, py, life
+struct Item {
+  int id = 0;
+  uint8_t kind = IT_ITEM;
+  uint8_t material = 0;
+  uint8_t count = 1;       // stack carried by this dropped item (merged at pickup)
+  double px = 0, py = 0;   // buffer-local cell coords (a point), +y down
+  double vx = 0, vy = 0;   // cells per step
+  int life = 0;            // PARTICLE: steps remaining
+  int pickupDelay = 0;     // ITEM: steps before it can be vacuumed
+  bool resting = false;    // settled on solid this step (drives item-vs-item stacking)
+};
+
 // ---- Player (Terraria-like character; simulated in C++, presented in JS) ----
 // Input is a normalized bitmask supplied by JS/network each step. Physics is
 // fully deterministic (no RNG) and runs at a fixed per-step timestep so a fixed
@@ -173,6 +201,23 @@ static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 static const double P_LIQUID_MIN_COVERAGE = 0.20, P_LIQUID_SWIM_COVERAGE = 0.45;
 static const double P_LIQUID_GRAVITY = 0.08, P_LIQUID_MAX_FALL = 1.15, P_LIQUID_MAX_RISE = -1.8;
 static const double P_LIQUID_RUN_MULT = 0.55, P_LIQUID_DRAG_X = 0.76, P_LIQUID_DRAG_Y = 0.82, P_LIQUID_SWIM_ACCEL = 0.34;
+// ---- Survival inventory (inventory.inc) ----
+// A fixed grid of stacks per player: the first INV_HOTBAR slots are the always-
+// visible hotbar; the rest are the openable grid. A slot holds either a material
+// stack (placeable) or a tool (mines; never stacks). count 0 = empty.
+static const int INV_HOTBAR = 9;
+static const int INV_GRID = 27;
+static const int INV_SLOTS = INV_HOTBAR + INV_GRID; // 36
+static const int INV_STACK_MAX = 999;
+static const int INV_SNAP_STRIDE = 6; // material, isTool, toolClass, toolTier, count, selected
+struct InvSlot {
+  uint8_t material = 0;   // material id for a stack (0 when a tool or empty)
+  uint8_t isTool = 0;     // 1 = a mining tool (class/tier below), not a placeable stack
+  uint8_t toolClass = 0;  // ToolClass when isTool
+  uint8_t toolTier = 0;   // ToolTier when isTool
+  int count = 0;          // stack size (tools = 1); 0 = empty
+};
+
 struct Player {
   int id = 0;
   bool active = true, alive = true;
@@ -191,6 +236,13 @@ struct Player {
   int toolCooldown = 0; // steps remaining before this player can act again
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0;
+  // Held mining tool: a destroyed cell drops its material only when this class/tier
+  // satisfies the material's MAT_TOOLCLASS/MAT_TOOLTIER gate (set from the selected
+  // inventory slot in inventory.inc; defaults to a bare hand).
+  uint8_t heldToolClass = TC_HAND, heldToolTier = TT_HAND;
+  // Survival inventory: hotbar + grid stacks, and the selected hotbar slot.
+  InvSlot inv[INV_SLOTS];
+  int selectedSlot = 0;
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
 static const int PLAYER_SNAP_STRIDE = 17;

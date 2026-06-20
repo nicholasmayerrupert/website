@@ -7,6 +7,9 @@ enum Mat : uint8_t { EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 
 enum Kind : uint8_t { K_NONE = 0, K_POWDER = 1, K_LIQUID = 2, K_GAS = 3, K_COMPONENT = 4, K_FREE_RIGID = 5 };
 // Seeded-component groups: which list a material registers into.
 enum CGroup : uint8_t { CG_NONE = 0, CG_STONE = 1, CG_PLANT = 2, CG_ICE = 3 };
+// Mining tool classes + tiers (drives MAT_TOOLCLASS / MAT_TOOLTIER drop gating).
+enum ToolClass : uint8_t { TC_NONE = 0, TC_PICKAXE = 1, TC_AXE = 2, TC_SHOVEL = 3, TC_HAND = 4 };
+enum ToolTier : uint8_t { TT_HAND = 0, TT_WOOD = 1, TT_STONE = 2, TT_IRON = 3, TT_GOLD = 4 };
 // Behavior-flag bits packed into MAT_FLAGS[]. Predicates AND against these.
 static const uint16_t MF_FLAMMABLE = 1u << 0;
 static const uint16_t MF_DISSOLVABLE = 1u << 1;
@@ -22,6 +25,9 @@ static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COM
 // Class-based behavior: flag bitmask + seeded-component group per material.
 static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 10, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0};
 static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_NONE, CG_NONE, CG_NONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_ICE, CG_NONE, CG_PLANT, CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE};
+// Mining gate: which tool class drops a material + the min tier required.
+static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0};
+static const uint8_t  MAT_TOOLTIER[TABLE]   = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x00000000u};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 7, 4, 5, 5, 7, 8, 8, 8, 8, 8, 4, 6, 6, 6, 8, 9, 0};

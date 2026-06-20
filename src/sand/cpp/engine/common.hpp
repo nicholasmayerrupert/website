@@ -145,16 +145,26 @@ struct Contact { Body* a; Body* b; double rax, ray, rbx, rby, nx, ny, depth, acc
 // ---- Dropped items + cosmetic particles (items.inc) ----
 // A lightweight NON-GRID entity. IT_ITEM = a dropped material the player can pick
 // up; IT_PARTICLE = a short-lived fleck of mining debris (no pickup). Items fall
-// under gravity (slower in liquid), rest on solid grid cells (never clip through)
-// and stack on one another; they do not otherwise interact with the simulation.
-// Pose is buffer-local cell coords like Player/Body, so a world shift remaps them
-// by (dx,dy). Updated with NO rand(), so the sim RNG stream stays byte-identical.
+// under gravity (slower in liquid), rest on the SURFACE of solids (never buried —
+// they rise out if covered), pass through each other (no stacking), and MAGNET
+// toward a nearby player. Pose is buffer-local cell coords like Player/Body, so a
+// world shift remaps them by (dx,dy). Updated with NO rand(), so the sim RNG stream
+// stays byte-identical.
 enum ItemKind : uint8_t { IT_ITEM = 0, IT_PARTICLE = 1 };
 static const double IT_GRAVITY = 0.18, IT_MAX_FALL = 4.0;
 static const double IT_LIQUID_GRAVITY = 0.05, IT_LIQUID_MAX_FALL = 0.9, IT_LIQUID_DRAG = 0.85;
 static const double IT_MOVE_SUBSTEP = 0.34;  // sub-cell stepping prevents tunneling
 static const int    IT_PICKUP_DELAY = 12;    // steps after spawn before a drop can be vacuumed
-static const double IT_PICKUP_R = 5.0;       // auto-vacuum radius (cells, from player center; covers the body + a small magnet)
+static const double IT_PICKUP_R = 1.6;       // collect radius (cells, from player center) — magnet feeds it
+static const double IT_MAGNET_R = 12.0;      // homing radius: within this an item flies to the player
+static const double IT_MAGNET_ACCEL = 0.6;   // homing acceleration toward the player (cells/step^2)
+static const double IT_MAGNET_MAX_SPEED = 3.2; // homing speed clamp (cells/step)
+static const double IT_RISE_STEP = 1.0;      // un-bury rise speed when an item is inside a solid
+static const double IT_BOB_AMP = 0.14;       // render-only surface bob amplitude (cells)
+static const int    IT_BOB_PERIOD = 70;      // render-only bob period (steps)
+static const double IT_THROW_SPEED = 1.7;    // horizontal throw speed (facing direction)
+static const double IT_THROW_UP = -0.9;      // upward kick on a throw
+static const int    IT_THROW_PICKUP_DELAY = 40; // a thrown item ignores the magnet this long
 static const int    IT_PARTICLE_LIFE = 24;   // default mining-debris lifetime (steps)
 static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then item) evicted
 static const int    ITEM_SNAP_STRIDE = 7;    // id, kind, material, count, px, py, life
@@ -166,8 +176,7 @@ struct Item {
   double px = 0, py = 0;   // buffer-local cell coords (a point), +y down
   double vx = 0, vy = 0;   // cells per step
   int life = 0;            // PARTICLE: steps remaining
-  int pickupDelay = 0;     // ITEM: steps before it can be vacuumed
-  bool resting = false;    // settled on solid this step (drives item-vs-item stacking)
+  int pickupDelay = 0;     // ITEM: steps before it can be vacuumed (and homed)
 };
 
 // ---- Player (Terraria-like character; simulated in C++, presented in JS) ----
@@ -218,6 +227,14 @@ struct InvSlot {
   int count = 0;          // stack size (tools = 1); 0 = empty
 };
 
+// Creative brush mode (tools.inc): the searchable palette selects ANY material,
+// any seed species, the eraser, or the cube; the brush routes by mode rather than a
+// fixed per-material Tool enum. PAINT = powder/liquid/gas (continuous), DRAFT = a
+// component material drawn with a live preview then dropped on release.
+enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_ERASE, CM_CUBE };
+// What a creative palette selection refers to (engine_set_creative_material kind).
+enum CreativeKind : uint8_t { CK_MATERIAL = 0, CK_SEED, CK_ERASER, CK_CUBE };
+
 struct Player {
   int id = 0;
   bool active = true, alive = true;
@@ -243,6 +260,8 @@ struct Player {
   // Survival inventory: hotbar + grid stacks, and the selected hotbar slot.
   InvSlot inv[INV_SLOTS];
   int selectedSlot = 0;
+  // The stack currently "held on the cursor" (Minecraft-style pick/place/throw). 0 = empty.
+  InvSlot cursor;
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
 static const int PLAYER_SNAP_STRIDE = 17;

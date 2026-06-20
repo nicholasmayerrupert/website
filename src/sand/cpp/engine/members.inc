@@ -155,9 +155,17 @@
   // original behavior byte-identical.
   uint8_t gGrowType = PT_OAK, gWoodMat = WOOD, gLeafMat = PLANT;
   int draftOwner = -1; // survival: id of the player who owns the in-progress solid draft (-1 = creative/none)
-  std::unordered_set<int> stoneDraft, iceDraft;
+  // A SINGLE component draft (any material), staged then dropped on release with a
+  // live preview. draftMaterial is the component being drawn (stone/ice/driftwood/ore/…).
+  std::unordered_set<int> draft;
+  uint8_t draftMaterial = STONE;
+  // Cached center-first disc offsets per radius (placeMaterialAtCapped, per-pixel placement).
+  std::unordered_map<int, std::vector<std::pair<int, int>>> discOffsetCache;
   std::vector<int> draftSnapshot;
-  bool draftingStone = false, draftingIce = false, draftingSeed = false, draftIsDriftwood = false;
+  bool drafting = false, draftingSeed = false;
+  // Creative brush: the searchable palette selects any material / seed species / eraser
+  // / cube; the pointer flow routes by mode rather than a fixed per-material Tool enum.
+  uint8_t creativeMode = CM_DRAFT, creativeMaterial = STONE, creativeSeed = PT_OAK;
   bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
   double lastEmitMs = -1e9;
   // ---- players (Terraria-like characters; physics in player.inc) ----
@@ -169,7 +177,7 @@
   int nextItemId = 1;
   std::vector<float> itemSnapshot;        // packed [ITEM_SNAP_STRIDE] floats per item
   std::vector<float> invSnapshot;         // packed [INV_SNAP_STRIDE] floats per slot (one player)
-  std::unordered_set<int> itemOcc;        // cells claimed by resting items (rebuilt each step)
+  std::vector<float> cursorSnap;          // packed [INV_SNAP_STRIDE] floats for the carried cursor stack
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
   // Cells destroyed by the last mineDamageDisc() call: (material, cellIndex). mineDisc
   // reads this to decide drops against the acting player's held tool (Phase C).

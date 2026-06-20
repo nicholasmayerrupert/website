@@ -4,16 +4,17 @@
   // move / place intents. Mining drops feed addToInventory (items.inc pickup); the
   // selected slot drives the held tool (mining) or the placed material (building).
 
-  // Reset a player's inventory to the survival starter kit: bare hand + a wood
-  // pickaxe/axe/shovel in the first hotbar slots, pickaxe selected.
+  // Reset a player's inventory to the survival starter kit: a wood pickaxe/axe/shovel
+  // in the first hotbar slots, pickaxe selected. There is NO hand slot — an empty (or
+  // material) slot means the bare hand (setSelectedSlot resolves that to TC_HAND).
   void seedStarterTools(Player& p) {
     for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
+    p.cursor = InvSlot();
     auto tool = [&](int i, uint8_t cls, uint8_t tier) { p.inv[i].isTool = 1; p.inv[i].toolClass = cls; p.inv[i].toolTier = tier; p.inv[i].count = 1; };
-    tool(0, TC_HAND, TT_HAND);
-    tool(1, TC_PICKAXE, TT_WOOD);
-    tool(2, TC_AXE, TT_WOOD);
-    tool(3, TC_SHOVEL, TT_WOOD);
-    setSelectedSlot(p, 1);
+    tool(0, TC_PICKAXE, TT_WOOD);
+    tool(1, TC_AXE, TT_WOOD);
+    tool(2, TC_SHOVEL, TT_WOOD);
+    setSelectedSlot(p, 0);
   }
   void seedStarterTools(int id) { Player* p = findPlayer(id); if (p) seedStarterTools(*p); }
 
@@ -58,18 +59,18 @@
   }
   bool addToInventory(int id, uint8_t mat, int count) { Player* p = findPlayer(id); return p ? addToInventory(*p, mat, count) : false; }
 
-  // Place one unit of the selected slot's material at the aim cell (foreground).
-  // Consumes a single count per successful call (v1 economy). Tools/empty/self-overlap
-  // place nothing.
+  // Place the selected slot's material at the aim cell, capped at how many units the
+  // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
+  // Tools/empty/self-overlap place nothing.
   bool placeFromSelected(Player& p, int ax, int ay, int r) {
     InvSlot& s = p.inv[p.selectedSlot];
     if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
     if (playerBuildOverlapsSelf(p, ax, ay, r)) return false;
     useLayer(&fg);
-    int changed = placeMaterialAt(ax, ay, r, s.material);
+    int placed = placeMaterialAtCapped(ax, ay, r, s.material, s.count);
     useLayer(&fg);
-    if (!changed) return false;
-    if (--s.count <= 0) s = InvSlot();
+    if (placed <= 0) return false;
+    s.count -= placed; if (s.count <= 0) s = InvSlot();
     return true;
   }
   bool placeFromSelected(int id, int ax, int ay) { Player* p = findPlayer(id); return p ? placeFromSelected(*p, ax, ay, P_BUILD_R) : false; }
@@ -87,6 +88,57 @@
     InvSlot tmp = a; a = b; b = tmp;
   }
   void moveSlot(int id, int from, int to) { Player* p = findPlayer(id); if (p) moveSlot(*p, from, to); }
+
+  // ---- Minecraft cursor model (the carried stack p.cursor) ----
+  // Click a slot to pick up / place / merge / swap the carried stack. half=true is the
+  // right-click variant (pick up half, place one). Refreshes the held tool if the
+  // touched slot is the selected hotbar slot.
+  void cursorPick(Player& p, int slot, bool half) {
+    if (slot < 0 || slot >= INV_SLOTS) return;
+    InvSlot& s = p.inv[slot]; InvSlot& c = p.cursor;
+    bool cEmpty = c.count <= 0, sEmpty = s.count <= 0;
+    if (cEmpty) {
+      if (sEmpty) return;
+      if (half && !s.isTool && s.count > 1) { c = s; c.count = (s.count + 1) / 2; s.count -= c.count; }
+      else { c = s; s = InvSlot(); }
+    } else if (sEmpty) {
+      if (half) { s = c; s.count = 1; if (--c.count <= 0) c = InvSlot(); }
+      else { s = c; c = InvSlot(); }
+    } else if (!c.isTool && !s.isTool && c.material == s.material) { // merge same material
+      int room = INV_STACK_MAX - s.count;
+      int mv = half ? imin(1, imin(room, c.count)) : imin(room, c.count);
+      s.count += mv; c.count -= mv; if (c.count <= 0) c = InvSlot();
+    } else if (!half) { // different contents -> swap (left-click only)
+      InvSlot tmp = s; s = c; c = tmp;
+    }
+    if (slot == p.selectedSlot) setSelectedSlot(p, p.selectedSlot); // re-derive held tool
+  }
+  void cursorPick(int id, int slot, int half) { Player* p = findPlayer(id); if (p) cursorPick(*p, slot, half != 0); }
+
+  // Throw the carried stack into the world in the facing direction (drop-out). whole=
+  // the entire stack, else one. Tools can't be thrown. The thrown item ignores the
+  // magnet briefly so it doesn't fly straight back. Returns true if anything was thrown.
+  bool throwFromCursor(Player& p, bool whole) {
+    InvSlot& c = p.cursor;
+    if (c.count <= 0 || c.isTool || c.material == EMPTY) return false;
+    int n = whole ? imin(c.count, 255) : 1;
+    double sx = p.px + p.w / 2.0 + p.facing * 1.5, sy = p.py + p.h / 2.0;
+    throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED, IT_THROW_UP);
+    c.count -= n; if (c.count <= 0) c = InvSlot();
+    return true;
+  }
+  bool throwFromCursor(int id, int whole) { Player* p = findPlayer(id); return p ? throwFromCursor(*p, whole != 0) : false; }
+
+  // Pack the carried cursor stack (one slot record) for the HUD's floating item.
+  int buildCursorSnapshot(int playerId) {
+    cursorSnap.assign(INV_SNAP_STRIDE, 0.0f);
+    Player* p = findPlayer(playerId); if (!p) return 0;
+    InvSlot& s = p->cursor;
+    float* o = cursorSnap.data();
+    o[0] = (float)s.material; o[1] = (float)s.isTool; o[2] = (float)s.toolClass;
+    o[3] = (float)s.toolTier; o[4] = (float)s.count; o[5] = 0.0f;
+    return s.count > 0 ? 1 : 0;
+  }
 
   // Pack one player's inventory into invSnapshot for the JS HUD.
   int buildInventorySnapshot(int playerId) {

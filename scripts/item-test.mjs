@@ -45,15 +45,40 @@ const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step
   e.destroy();
 }
 
-// 3) Items stack: three dropped at the same spot end up in three distinct cells.
+// 3) Items pass through each other (NO stacking): three dropped at the same spot
+//    settle onto the SAME surface cell instead of piling into distinct rows.
 {
   const e = withFloor();
   for (let i = 0; i < 3; i++) e.spawnItem(MAT.STONE, 1, 40, 20, 0, 0);
   run(e, 220);
-  const rows = new Set(e.getItems().map((i) => Math.floor(i.y)));
-  check(`three items occupy three distinct stacked rows (${rows.size})`, rows.size === 3);
-  const allAboveFloor = e.getItems().every((i) => i.y < FLOOR && i.y > FLOOR - 6);
-  check('the whole pile rests above the floor', allAboveFloor);
+  const items = e.getItems();
+  const rows = new Set(items.map((i) => Math.floor(i.y)));
+  check(`three items overlap on one surface cell, not stacked (${rows.size} row)`, rows.size === 1);
+  check('all rest just above the floor', items.every((i) => i.y < FLOOR && i.y > FLOOR - 3));
+  e.destroy();
+}
+
+// 3b) Magnet: an item within magnet range flies to the player and is collected.
+{
+  const e = withFloor();
+  const id = e.spawnPlayer(40, FLOOR - 8);
+  e.spawnItem(MAT.WOOD, 1, 48, FLOOR - 6, 0, 0); // ~8 cells away, inside the magnet radius
+  run(e, 40);
+  check(`item magnets to the player and is collected (count ${e.itemCount()})`, e.itemCount() === 0);
+  const inv = e.getInventory(id);
+  check('collected wood landed in inventory', inv.slots.some((s) => !s.isTool && s.material === MAT.WOOD && s.count >= 1));
+  e.destroy();
+}
+
+// 3c) Never buried: an item covered by a freshly placed solid rises to the surface.
+{
+  const e = withFloor();
+  e.spawnItem(MAT.STONE, 1, 70, FLOOR - 1, 0, 0);
+  run(e, 5); // settle on the floor
+  e.placeMaterial(70, FLOOR - 2, 2, MAT.STONE); // bury it under stone
+  run(e, 40);
+  const it = e.getItems()[0];
+  check(`buried item rose back to the surface (y ${it?.y.toFixed(1)})`, it && it.y < FLOOR - 2);
   e.destroy();
 }
 

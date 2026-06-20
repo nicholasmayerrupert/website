@@ -259,8 +259,13 @@ void glDrawItems() {
     if (a <= 0.01f) continue;
     glUniform4f(glc->uColor, r, g, b, a);
     double sz = (it.kind == IT_PARTICLE) ? glCellDev * 0.5 : glCellDev * 0.8;
-    double cx = ((int)std::floor(it.px) + 0.5 - camCol) * glCellDev + glOffX;
-    double cy = ((int)std::floor(it.py) + 0.5 - camRow) * glCellDev + glOffY;
+    // Items draw at their float position with a gentle surface bob (render-only,
+    // per-item phase from id so a pile doesn't bob in lockstep). Particles don't bob.
+    double bob = (it.kind == IT_ITEM)
+      ? IT_BOB_AMP * std::sin(6.2831853 * (((tick + it.id * 11) % IT_BOB_PERIOD) / (double)IT_BOB_PERIOD))
+      : 0.0;
+    double cx = (it.px + 0.5 - camCol) * glCellDev + glOffX;
+    double cy = (it.py + 0.5 + bob - camRow) * glCellDev + glOffY;
     glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
   }
 }
@@ -274,14 +279,13 @@ void glDrawPreview() {
   };
   // Background drafts (RMB) read darker so they look like they're behind the world.
   float df = (draftLayer == 1) ? GL_BG_TINT : 1.0f;
-  if (!stoneDraft.empty()) {
-    if (draftIsDriftwood) glUniform4f(glc->uColor, df * 140 / 255.0f, df * 125 / 255.0f, df * 110 / 255.0f, 0.45f);
-    else                  glUniform4f(glc->uColor, df * 160 / 255.0f, df * 160 / 255.0f, df * 170 / 255.0f, 0.40f);
-    for (int k : stoneDraft) { int y = k / cols; cell(k - y * cols, y); }
-  }
-  if (!iceDraft.empty()) {
-    glUniform4f(glc->uColor, df * 150 / 255.0f, df * 225 / 255.0f, df * 240 / 255.0f, 0.40f);
-    for (int k : iceDraft) { int y = k / cols; cell(k - y * cols, y); }
+  // The single component draft previews in its own material color (generalized from the
+  // old stone/ice/driftwood-specific blocks — ANY component material now previews).
+  if (!draft.empty()) {
+    uint32_t c = MAT_COLOR[draftMaterial];
+    float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
+    glUniform4f(glc->uColor, df * r, df * g, df * b, 0.42f);
+    for (int k : draft) { int y = k / cols; cell(k - y * cols, y); }
   }
   if (draftingSeed && hasSeedOrigin) {
     bool valid = canPlaceSeedAt(seedOriginX, seedOriginY);

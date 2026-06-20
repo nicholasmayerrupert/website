@@ -717,6 +717,12 @@ export function createSandGame(container, opts = {}) {
     selectSlot(i) { if (localPlayerId) engine?.setSelectedSlot(localPlayerId, i | 0); },
     moveSlot(from, to) { if (localPlayerId) engine?.inventoryMove(localPlayerId, from | 0, to | 0); },
     getInventory() { return localPlayerId && engine ? engine.getInventory(localPlayerId) : { slots: [], selected: 0 }; },
+    // Minecraft cursor model (carried stack) + throw-out (facing direction).
+    cursorPick(slot, half) { if (localPlayerId) engine?.inventoryCursorPick(localPlayerId, slot | 0, half); },
+    throwFromCursor(whole) { if (localPlayerId) engine?.throwFromCursor(localPlayerId, whole); },
+    getCursor() { return localPlayerId && engine ? engine.getCursor(localPlayerId) : null; },
+    // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).
+    setCreativeMaterial(kind, value) { engine?.setCreativeMaterial(kind, value); },
     netHost(url, room) { return netHost(url, room); },
     netJoin(url, room) { return netJoin(url, room); },
     netDisconnect() { netDisconnect(); },

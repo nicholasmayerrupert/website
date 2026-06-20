@@ -1,9 +1,10 @@
   // ================= DROPPED ITEMS + PARTICLES (items.inc) =================
-  // Entities, NOT grid cells: they fall, rest on solid grid + on each other, fall
-  // slower in liquid, and (IT_ITEM) get vacuumed into a nearby player's inventory
-  // (pickupItems, wired in inventory.inc). They never write the grid, never go
-  // through the tile store, and use NO rand() — so worldgen prefetch byte-identicality
-  // and the sim RNG stream are untouched (determinism + inertness invariants hold).
+  // Entities, NOT grid cells. An IT_ITEM is a Starbound-style surface sprite: it
+  // falls, rests ON TOP of solids, NEVER stays buried (rises out if covered), passes
+  // freely through other items (no stacking), and MAGNETS toward a nearby player
+  // until collected. IT_PARTICLE is cosmetic mining debris. They never write the grid,
+  // never go through the tile store, and use NO rand() — so worldgen prefetch
+  // byte-identicality and the sim RNG stream are untouched (determinism invariant).
 
   inline int itemCell(const Item& it) { int x = (int)std::floor(it.px), y = (int)std::floor(it.py); return y * cols + x; }
   // A grid cell is "solid" to an item exactly as it is to a player (settled powder +
@@ -17,13 +18,9 @@
     if (y < 0 || y >= rows || x < 0 || x >= cols) return false;
     return isLiquid(grid[I(x, y)]);
   }
-  // Entering cell (x,y) is blocked by a solid grid cell OR a cell already claimed by
-  // another RESTING item (itemOcc, rebuilt each step) — that is what makes items pile
-  // up instead of sinking through one another to the floor.
-  inline bool itemBlocked(int x, int y) { return itemGridSolid(x, y) || itemOcc.count(I(x, y)) != 0; }
 
+  // Fall vertically, stopping just above the first solid cell below (never clips in).
   void moveItemY(Item& it) {
-    it.resting = false;
     double mag = std::fabs(it.vy); if (mag < 1e-6) return;
     double dir = it.vy > 0 ? 1.0 : -1.0, moved = 0;
     int ix = (int)std::floor(it.px);
@@ -31,9 +28,8 @@
       double step = (mag - moved < IT_MOVE_SUBSTEP) ? (mag - moved) : IT_MOVE_SUBSTEP;
       double ny = it.py + dir * step;
       int curIy = (int)std::floor(it.py), nextIy = (int)std::floor(ny);
-      if (nextIy != curIy && itemBlocked(ix, nextIy)) {
-        if (dir > 0) { it.py = nextIy - 1e-3; it.resting = true; } // sit just above the solid
-        else { it.py = curIy + 1e-3; }                            // bonk a ceiling
+      if (nextIy != curIy && itemGridSolid(ix, nextIy)) {
+        if (dir > 0) it.py = nextIy - 1e-3; else it.py = curIy + 1e-3;
         it.vy = 0; return;
       }
       it.py = ny; moved += step;
@@ -51,11 +47,29 @@
       if ((nextIx != curIx && itemGridSolid(nextIx, iy)) || nx < 0 || nx >= cols) { it.vx = 0; return; }
       it.px = nx; moved += step;
     }
-    it.vx *= 0.86; if (std::fabs(it.vx) < 0.02) it.vx = 0; // horizontal drift bleeds off (particles)
+    it.vx *= 0.86; if (std::fabs(it.vx) < 0.02) it.vx = 0; // horizontal drift bleeds off
+  }
+  // Never buried: if the item's cell is solid (terrain grew/fell over it, or it spawned
+  // inside one), rise until it reaches an empty cell or the top.
+  void unburyItem(Item& it) {
+    int x = (int)std::floor(it.px), guard = 0;
+    while (it.py > 0 && itemGridSolid(x, (int)std::floor(it.py)) && guard < rows) { it.py -= IT_RISE_STEP; guard++; }
+    if (it.py < 0) it.py = 0;
+  }
+  // Nearest active/alive player center within IT_MAGNET_R of the item (or null).
+  Player* magnetTarget(const Item& it) {
+    Player* best = nullptr; double bestD = IT_MAGNET_R * IT_MAGNET_R;
+    for (auto& p : players) {
+      if (!p.active || !p.alive) continue;
+      double dx = it.px - (p.px + p.w / 2.0), dy = it.py - (p.py + p.h / 2.0);
+      double d = dx * dx + dy * dy;
+      if (d <= bestD) { bestD = d; best = &p; }
+    }
+    return best;
   }
 
   // Keep memory + per-step cost bounded: evict the oldest PARTICLE first, then the
-  // oldest ITEM (front of the append-ordered vector). Particles are always cheaper to lose.
+  // oldest ITEM (front of the append-ordered vector).
   void ensureItemCapacity() {
     if ((int)items.size() < IT_MAX_ITEMS) return;
     for (size_t i = 0; i < items.size(); i++) if (items[i].kind == IT_PARTICLE) { items.erase(items.begin() + i); return; }
@@ -68,26 +82,18 @@
     it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = IT_PICKUP_DELAY;
     items.push_back(it); return it.id;
   }
+  // Thrown items get a longer pickup delay so they escape the magnet before homing back.
+  int throwItem(uint8_t mat, int count, double px, double py, double vx, double vy) {
+    int id = spawnItem(mat, count, px, py, vx, vy);
+    items.back().pickupDelay = IT_THROW_PICKUP_DELAY;
+    return id;
+  }
   void spawnParticle(uint8_t mat, double px, double py, double vx, double vy, int life) {
     ensureItemCapacity();
     Item it; it.id = nextItemId++; it.kind = IT_PARTICLE; it.material = mat; it.count = 1;
     it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.life = life > 0 ? life : IT_PARTICLE_LIFE;
     items.push_back(it);
   }
-  // Separate resting items that ended up sharing a cell (e.g. dropped at the same
-  // spot, or settled together onto the floor): push duplicates upward one cell at a
-  // time so a pile forms. Bounded by the column height; never pushes into a solid.
-  void resolveItemStacking() {
-    std::unordered_set<int> occ;
-    for (auto& it : items) {
-      if (it.kind != IT_ITEM || !it.resting) continue;
-      int ix = (int)std::floor(it.px), iy = (int)std::floor(it.py), guard = 0;
-      while (iy > 0 && occ.count(iy * cols + ix) && !itemGridSolid(ix, iy - 1) && guard < IT_MAX_ITEMS) { iy--; guard++; }
-      it.py = iy + 1e-3;
-      occ.insert(iy * cols + ix);
-    }
-  }
-
   // Compact out dead entities (spent particles + picked-up items with count 0).
   void cullItems() {
     size_t w = 0;
@@ -104,29 +110,44 @@
   void updateItems() {
     if (items.empty()) return;
     useLayer(&fg);
-    itemOcc.clear();
-    for (auto& it : items) if (it.kind == IT_ITEM && it.resting) itemOcc.insert(itemCell(it));
     for (auto& it : items) {
       if (it.pickupDelay > 0) it.pickupDelay--;
+      if (it.kind == IT_PARTICLE) {
+        it.vy += IT_GRAVITY; if (it.vy > IT_MAX_FALL) it.vy = IT_MAX_FALL;
+        moveItemY(it); moveItemX(it);
+        continue;
+      }
+      // Magnet: home toward a nearby player (free flight, ignores terrain so it can't
+      // get stuck), clamped so it never overshoots the player.
+      Player* mag = it.pickupDelay == 0 ? magnetTarget(it) : nullptr;
+      if (mag) {
+        double dx = (mag->px + mag->w / 2.0) - it.px, dy = (mag->py + mag->h / 2.0) - it.py;
+        double d = std::sqrt(dx * dx + dy * dy);
+        if (d > 1e-6) { it.vx += IT_MAGNET_ACCEL * dx / d; it.vy += IT_MAGNET_ACCEL * dy / d; }
+        double sp = std::sqrt(it.vx * it.vx + it.vy * it.vy);
+        double cap = std::min(IT_MAGNET_MAX_SPEED, d); // don't fly past the player
+        if (sp > cap && sp > 1e-6) { it.vx *= cap / sp; it.vy *= cap / sp; }
+        it.px += it.vx; it.py += it.vy;
+        continue;
+      }
+      // Free-fall + settle on the surface; never buried.
       bool inLiquid = itemCellLiquidAt((int)std::floor(it.px), (int)std::floor(it.py));
       double g = inLiquid ? IT_LIQUID_GRAVITY : IT_GRAVITY;
       double mx = inLiquid ? IT_LIQUID_MAX_FALL : IT_MAX_FALL;
       it.vy += g; if (it.vy > mx) it.vy = mx;
       if (inLiquid) { it.vx *= IT_LIQUID_DRAG; it.vy *= IT_LIQUID_DRAG; }
-      if (it.kind == IT_ITEM) itemOcc.erase(itemCell(it)); // don't let an item block itself
       moveItemY(it);
       moveItemX(it);
-      if (it.kind == IT_ITEM && it.resting) itemOcc.insert(itemCell(it));
+      unburyItem(it);
     }
-    resolveItemStacking();
     for (auto& it : items) if (it.kind == IT_PARTICLE) it.life--;
     pickupItems();
     cullItems();
   }
 
-  // Auto-vacuum pickup: each ready IT_ITEM goes to the nearest active player within
-  // IT_PICKUP_R; absorbed items are zeroed and culled. Particles never pick up. Pure
-  // distance math (no rand()).
+  // Auto-vacuum pickup: each ready IT_ITEM within the (small) collect radius of a
+  // player goes to its inventory; absorbed items are zeroed and culled. The magnet
+  // above feeds items into this radius. Particles never pick up. Pure distance math.
   void pickupItems() {
     if (players.empty() || items.empty()) return;
     for (auto& it : items) {

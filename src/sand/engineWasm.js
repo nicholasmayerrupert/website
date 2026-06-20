@@ -93,6 +93,7 @@ export function initSandWasm() {
         spawnBox: c('engine_spawn_box', null, ['number', 'number', 'number', 'number', 'number']),
         spawnDisc: c('engine_spawn_disc', null, ['number', 'number', 'number', 'number', 'number']),
         setTool: c('engine_set_tool', null, ['number', 'number']),
+        setCreativeMaterial: c('engine_set_creative_material', null, ['number', 'number', 'number']),
         pointerDown: c('engine_pointer_down', 'number', ['number', 'number', 'number', 'number']),
         pointerDraft: c('engine_pointer_draft', 'number', ['number', 'number', 'number']),
         pointerButtons: c('engine_pointer_buttons', null, ['number', 'number']),
@@ -133,6 +134,10 @@ export function initSandWasm() {
         inventorySnapshot: c('engine_inventory_snapshot', 'number', ['number', 'number']),
         inventorySnapshotPtr: c('engine_inventory_snapshot_ptr', 'number', ['number']),
         inventorySnapshotStride: c('engine_inventory_snapshot_stride', 'number', ['number']),
+        inventoryCursorPick: c('engine_inventory_cursor_pick', null, ['number', 'number', 'number', 'number']),
+        inventoryThrowFromCursor: c('engine_inventory_throw_from_cursor', 'number', ['number', 'number', 'number']),
+        cursorSnapshot: c('engine_cursor_snapshot', 'number', ['number', 'number']),
+        cursorSnapshotPtr: c('engine_cursor_snapshot_ptr', 'number', ['number']),
         serializeWorld: c('engine_serialize_world', 'number', ['number']),
         serializeDiff: c('engine_serialize_diff', 'number', ['number']),
         netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
@@ -238,14 +243,15 @@ export function createEngineWasm({
     renderFull() { M.renderFull(ptr); },
     renderDirtyRects() { M.renderDirtyRects(ptr); },
     getRenderPixels() { return new Uint8ClampedArray(mod.HEAPU8.buffer, M.renderPixels(ptr), cellCount * 4); },
+    // These now return the COUNT of cells changed (per-pixel economy); >0 = success.
     paintDisc(cx, cy, r, material, overwrite = false) {
-      return M.paintDisc(ptr, cx, cy, r, material, overwrite ? 1 : 0) === 1;
+      return M.paintDisc(ptr, cx, cy, r, material, overwrite ? 1 : 0) > 0;
     },
-    eraseDisc(cx, cy, r) { return M.eraseDisc(ptr, cx, cy, r) === 1; },
+    eraseDisc(cx, cy, r) { return M.eraseDisc(ptr, cx, cy, r) > 0; },
     // Generic placement by material id (inventory-forward): any material is
     // placeable without a per-material tool. layer 0=fg, 1=bg.
     placeMaterial(cx, cy, r, material, layer = 0) {
-      return (layer ? M.placeMaterialLayer(ptr, layer, cx, cy, r, material) : M.placeMaterial(ptr, cx, cy, r, material)) === 1;
+      return (layer ? M.placeMaterialLayer(ptr, layer, cx, cy, r, material) : M.placeMaterial(ptr, cx, cy, r, material)) > 0;
     },
     setSinksOn(v) { M.setSinks(ptr, v ? 1 : 0); },
     setEmittersOn() {},
@@ -254,6 +260,8 @@ export function createEngineWasm({
     // buttons; the engine owns all tool policy. The pointer/draft/up calls and
     // applyTool return whether the draft preview changed.
     setTool(tool) { M.setTool(ptr, tool); },
+    // Creative palette selection. kind: 0=material id, 1=seed species, 2=eraser, 3=cube.
+    setCreativeMaterial(kind, value = 0) { M.setCreativeMaterial(ptr, kind | 0, value | 0); },
     pointerDown(cx, cy, button) { return M.pointerDown(ptr, cx, cy, button) === 1; },
     pointerDraft(cx, cy) { return M.pointerDraft(ptr, cx, cy) === 1; },
     pointerButtons(buttons) { M.pointerButtons(ptr, buttons); },
@@ -446,6 +454,16 @@ export function createEngineWasm({
     cycleSelectedSlot(id, delta) { M.cycleSelectedSlot(ptr, id | 0, delta | 0); },
     inventoryMove(id, from, to) { M.inventoryMove(ptr, id | 0, from | 0, to | 0); },
     placeFromSelected(id, ax, ay) { return M.placeFromSelected(ptr, id | 0, ax | 0, ay | 0) === 1; },
+    // Minecraft cursor model. cursorPick(slot, half) picks/places/swaps the carried
+    // stack; throwFromCursor(whole) ejects it into the world (facing dir). getCursor
+    // reads the carried stack for the HUD's floating item (null when empty).
+    inventoryCursorPick(id, slot, half) { M.inventoryCursorPick(ptr, id | 0, slot | 0, half ? 1 : 0); },
+    throwFromCursor(id, whole) { return M.inventoryThrowFromCursor(ptr, id | 0, whole ? 1 : 0) === 1; },
+    getCursor(id) {
+      if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
+      const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), M.inventorySnapshotStride(ptr));
+      return { material: f[0] | 0, isTool: f[1] === 1, toolClass: f[2] | 0, toolTier: f[3] | 0, count: f[4] | 0 };
+    },
     getInventory(id) {
       const n = M.inventorySnapshot(ptr, id | 0);
       if (!n) return { slots: [], selected: 0 };
@@ -499,7 +517,7 @@ export function createEngineWasm({
     getGridBg() { return new Uint8Array(mod.HEAPU8.buffer, M.gridBg(ptr), cellCount); },
     setBgEnabled(on) { M.setBgEnabled(ptr, on ? 1 : 0); },
     paintDiscLayer(layer, cx, cy, r, material, overwrite = false) { return M.paintDiscLayer(ptr, layer | 0, cx, cy, r, material, overwrite ? 1 : 0); },
-    eraseDiscLayer(layer, cx, cy, r) { return M.eraseDiscLayer(ptr, layer | 0, cx, cy, r) === 1; },
+    eraseDiscLayer(layer, cx, cy, r) { return M.eraseDiscLayer(ptr, layer | 0, cx, cy, r) > 0; },
     syncComponentsLayer(layer) { M.syncComponentsLayer(ptr, layer | 0); },
     // test hooks
     _bodyCount() { return M.bodyCount(ptr); },

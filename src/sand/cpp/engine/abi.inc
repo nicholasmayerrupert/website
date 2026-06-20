@@ -62,16 +62,20 @@ EMSCRIPTEN_KEEPALIVE double engine_perf_step_tail(Engine* e) { return e->perfSte
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 
 // drafts / seed
-EMSCRIPTEN_KEEPALIVE int engine_add_stone_draft(Engine* e, int cx, int cy, int r) { return e->addDiscToDraft(e->stoneDraft, cx, cy, r, e->rows); }
-EMSCRIPTEN_KEEPALIVE int engine_add_ice_draft(Engine* e, int cx, int cy, int r) { return e->addDiscToDraft(e->iceDraft, cx, cy, r, e->rows - 1); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_stone_draft(Engine* e) { e->finalizeStoneDraft(); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_ice_draft(Engine* e) { e->finalizeIceDraft(); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_driftwood_draft(Engine* e) { e->finalizeDriftwoodDraft(); }
-EMSCRIPTEN_KEEPALIVE void engine_clear_stone_draft(Engine* e) { e->stoneDraft.clear(); }
-EMSCRIPTEN_KEEPALIVE void engine_clear_ice_draft(Engine* e) { e->iceDraft.clear(); }
-EMSCRIPTEN_KEEPALIVE int engine_stone_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->stoneDraft.begin(), e->stoneDraft.end()); return (int)e->draftSnapshot.size(); }
-EMSCRIPTEN_KEEPALIVE int engine_ice_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->iceDraft.begin(), e->iceDraft.end()); return (int)e->draftSnapshot.size(); }
+// Draft staging is now a SINGLE material-parameterized set; these legacy hooks set
+// draftMaterial and route through the unified draft + finalizeDraft (back-compat).
+EMSCRIPTEN_KEEPALIVE int engine_add_stone_draft(Engine* e, int cx, int cy, int r) { e->draftMaterial = STONE; return e->addDiscToDraft(e->draft, cx, cy, r, e->rows); }
+EMSCRIPTEN_KEEPALIVE int engine_add_ice_draft(Engine* e, int cx, int cy, int r) { e->draftMaterial = ICE; return e->addDiscToDraft(e->draft, cx, cy, r, e->rows - 1); }
+EMSCRIPTEN_KEEPALIVE void engine_finalize_stone_draft(Engine* e) { e->draftMaterial = STONE; e->finalizeDraft(); e->draft.clear(); }
+EMSCRIPTEN_KEEPALIVE void engine_finalize_ice_draft(Engine* e) { e->draftMaterial = ICE; e->finalizeDraft(); e->draft.clear(); }
+EMSCRIPTEN_KEEPALIVE void engine_finalize_driftwood_draft(Engine* e) { e->draftMaterial = DRIFTWOOD; e->finalizeDraft(); e->draft.clear(); }
+EMSCRIPTEN_KEEPALIVE void engine_clear_stone_draft(Engine* e) { e->draft.clear(); }
+EMSCRIPTEN_KEEPALIVE void engine_clear_ice_draft(Engine* e) { e->draft.clear(); }
+EMSCRIPTEN_KEEPALIVE int engine_stone_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_ice_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
 EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->draftSnapshot.data(); }
+// Creative palette: select any material / seed species / eraser / cube (CreativeKind).
+EMSCRIPTEN_KEEPALIVE void engine_set_creative_material(Engine* e, int kind, int value) { e->setCreativeMaterial(kind, value); }
 EMSCRIPTEN_KEEPALIVE int engine_get_seed_origin(Engine* e, int cx, int cy, int* out) { int x0, y0; if (!e->getSeedOrigin(cx, cy, x0, y0)) return 0; out[0] = x0; out[1] = y0; return 1; }
 EMSCRIPTEN_KEEPALIVE int engine_can_place_seed(Engine* e, int x0, int y0) { return e->canPlaceSeedAt(x0, y0) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_place_seed(Engine* e, int x0, int y0) { return e->placeSeedAt(x0, y0) ? 1 : 0; }
@@ -84,7 +88,7 @@ EMSCRIPTEN_KEEPALIVE int engine_pointer_draft(Engine* e, int cx, int cy) { retur
 EMSCRIPTEN_KEEPALIVE void engine_pointer_buttons(Engine* e, int buttons) { e->pointerButtons(buttons); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_up(Engine* e, int button) { return e->pointerUp(button); }
 EMSCRIPTEN_KEEPALIVE int engine_apply_tool(Engine* e, int cx, int cy, double now, int inside, int drawMode) { return e->applyTool(cx, cy, now, inside != 0, drawMode != 0); }
-EMSCRIPTEN_KEEPALIVE int engine_draft_is_driftwood(Engine* e) { return e->draftIsDriftwood ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_draft_is_driftwood(Engine* e) { return e->draftMaterial == DRIFTWOOD ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_seed_draft(Engine* e, int* out) {
   if (!e->draftingSeed || !e->hasSeedOrigin) return 0;
   out[0] = e->seedOriginX; out[1] = e->seedOriginY; out[2] = e->canPlaceSeedAt(e->seedOriginX, e->seedOriginY) ? 1 : 0;
@@ -143,6 +147,11 @@ EMSCRIPTEN_KEEPALIVE int engine_place_from_selected(Engine* e, int id, int ax, i
 EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e->buildInventorySnapshot(id); }
 EMSCRIPTEN_KEEPALIVE float* engine_inventory_snapshot_ptr(Engine* e) { return e->invSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot_stride(Engine* e) { return INV_SNAP_STRIDE; }
+// Minecraft cursor model: pick/place/half + throw-out + the carried-stack snapshot.
+EMSCRIPTEN_KEEPALIVE void engine_inventory_cursor_pick(Engine* e, int id, int slot, int half) { e->cursorPick(id, slot, half); }
+EMSCRIPTEN_KEEPALIVE int engine_inventory_throw_from_cursor(Engine* e, int id, int whole) { return e->throwFromCursor(id, whole) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_cursor_snapshot(Engine* e, int id) { return e->buildCursorSnapshot(id); }
+EMSCRIPTEN_KEEPALIVE float* engine_cursor_snapshot_ptr(Engine* e) { return e->cursorSnap.data(); }
 
 // world replication (Phase 6): serialize/apply full snapshots + dirty diffs.
 EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->serializeWorld(); }

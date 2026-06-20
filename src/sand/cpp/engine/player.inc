@@ -300,7 +300,8 @@ bool mineDisc(Player& p, int ax, int ay, Layer* layer) {
       int cxk = k % cols, cyk = k / cols;
       uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
       bool drop = false;
-      if (cls != TC_NONE) {
+      if (isLiquid(m)) drop = true; // liquids are scoopable by any tool/hand (1 unit per cell)
+      else if (cls != TC_NONE) {
         if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
         else if (p.heldToolClass == TC_HAND && cls == TC_SHOVEL && tier == TT_HAND) drop = true;
       }
@@ -321,16 +322,15 @@ bool mineDisc(Player& p, int ax, int ay, Layer* layer) {
 void playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
   draftLayer = btn; draftOwner = p.id;
   useLayer(btn ? &bg : &fg);
-  if (tool == T_ICE) { draftingIce = true; addDiscToDraft(iceDraft, ax, ay, BRUSH_ICE, rows - 1); }
-  else { draftingStone = true; draftIsDriftwood = (tool == T_DRIFTWOOD);
-         addDiscToDraft(stoneDraft, ax, ay, draftIsDriftwood ? BRUSH_DRIFTWOOD : BRUSH_STONE, rows); }
+  drafting = true;
+  draftMaterial = (tool == T_ICE) ? ICE : (tool == T_DRIFTWOOD) ? DRIFTWOOD : STONE;
+  addDiscToDraft(draft, ax, ay, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows);
   useLayer(&fg);
 }
 // Finalize the in-progress draft into its layer (one connected component) and clear.
 void playerFinalizeSolidDraft() {
   useLayer(draftLayer ? &bg : &fg);
-  if (draftingStone) { if (draftIsDriftwood) finalizeDriftwoodDraft(); else finalizeStoneDraft(); draftingStone = false; draftIsDriftwood = false; stoneDraft.clear(); }
-  if (draftingIce) { finalizeIceDraft(); draftingIce = false; iceDraft.clear(); }
+  if (drafting) { finalizeDraft(); drafting = false; draft.clear(); }
   draftOwner = -1;
   useLayer(&fg);
 }
@@ -360,7 +360,7 @@ void applyPlayerTools() {
 
     // --- finalize this player's solid draft when its owning button releases (or all
     //     buttons are up) — independent of the currently selected tool ---
-    if ((draftingStone || draftingIce) && draftOwner == p.id) {
+    if (drafting && draftOwner == p.id) {
       bool ownerReleased = (draftLayer == 1) ? secondaryFalling : primaryFalling;
       if (ownerReleased || (!primary && !secondary)) { playerFinalizeSolidDraft(); playerActionCount++; }
     }
@@ -368,7 +368,7 @@ void applyPlayerTools() {
     // --- SOLIDS: begin / extend the persistent draft (creative parity) ---
     if (isSolidTool(t)) {
       resetPlayerMine(p);
-      bool busy = (draftingStone || draftingIce);
+      bool busy = drafting;
       if (inReach && !busy && primaryRising) { playerBeginSolidDraft(p, t, ax, ay, 0); playerActionCount++; }
       else if (inReach && !busy && secondaryRising) { bgEnabled = true; playerBeginSolidDraft(p, t, ax, ay, 1); playerActionCount++; }
       else if (inReach && busy && draftOwner == p.id && (primary || secondary)) continueDrafts(ax, ay); // extend + preview

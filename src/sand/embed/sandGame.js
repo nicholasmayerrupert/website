@@ -60,18 +60,21 @@ class SandGameElement extends HTMLElement {
         });
         this._game = game;
         if (mode === 'survival') {
-          // Survival uses the inventory HUD (hotbar + openable grid). Slot select /
-          // move are forwarded to the engine; mining/placing comes from the held slot.
+          // Survival uses the inventory HUD (hotbar + openable grid) with the full
+          // Minecraft cursor model. All state is authoritative in the engine; the HUD
+          // forwards intents (select, pick/place the carried stack, throw out).
           this._hud = createInventoryHud(root, {
-            onSelect: (i) => game.selectSlot(i),
-            onMove: (from, to) => game.moveSlot(from, to),
+            selectSlot: (i) => game.selectSlot(i),
+            cursorPick: (slot, half) => game.cursorPick(slot, half),
+            throwFromCursor: (whole) => game.throwFromCursor(whole),
+            getCursor: () => game.getCursor(),
           });
           this._hud.update(game.getInventory());
         } else {
-          // Creative keeps the classic tool palette (infinite materials).
+          // Creative uses the searchable "spawn anything" palette: every material +
+          // a seed per species + eraser + cube, routed through setCreativeMaterial.
           this._palette = createToolPalette(root, {
-            initialTool,
-            onSelectTool: (id) => game.setTool(id),
+            onSelectCreative: ({ kind, value }) => game.setCreativeMaterial(kind, value),
             onToggleDrawMode: (on) => {
               game.setDrawMode(on);
               this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
@@ -106,7 +109,7 @@ class SandGameElement extends HTMLElement {
   attributeChangedCallback(name, _old, value) {
     if (name === 'initial-tool' && value && this._game) {
       this._game.setTool(value);
-      this._palette?.setTool(value);
+      this._palette?.setTool?.(value);
     }
   }
 }

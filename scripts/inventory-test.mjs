@@ -49,8 +49,8 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  // Fill every non-tool slot (32 of them, tools occupy 4) with stone at max stack.
-  e.addToInventory(id, MAT.STONE, 999 * 32);
+  // Fill every non-tool slot (33 of them; tools occupy slots 0-2) with stone at max stack.
+  e.addToInventory(id, MAT.STONE, 999 * 33);
   const full = e.addToInventory(id, MAT.GOLD_ORE, 1);
   check('a full inventory rejects a new material', full === false);
   // And a world item near the player is NOT absorbed when the inventory is full.
@@ -60,12 +60,16 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.destroy();
 }
 
-// 4) Selected slot drives the held tool: pickaxe drops stone, hand does not.
+// 4) Starter kit + empty-slot-is-hand: pickaxe (slot 0) drops stone; an EMPTY slot
+//    mines by hand and drops no stone.
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8); // far from the mined block (no auto-pickup)
+  const kit = e.getInventory(id);
+  check('starter kit has no hand slot (slots 0-2 = pickaxe/axe/shovel)',
+    kit.slots[0].toolClass === TC.pickaxe && kit.slots[1].toolClass === TC.axe && kit.slots[2].toolClass === TC.shovel && kit.slots[3].count === 0);
   e.placeMaterial(60, 50, 2, MAT.STONE);
-  e.setSelectedSlot(id, 1); // wood pickaxe
+  e.setSelectedSlot(id, 0); // wood pickaxe
   for (let i = 0; i < 60; i++) e.playerMine(id, 60, 50);
   const withPick = e.getItems().filter((it) => it.kind === 0 && it.material === MAT.STONE).length;
   check(`selecting the pickaxe drops stone (${withPick})`, withPick > 0);
@@ -73,27 +77,39 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   const e2 = survivalEngine();
   const id2 = e2.spawnPlayer(10, FLOOR - 8);
   e2.placeMaterial(60, 50, 2, MAT.STONE);
-  e2.setSelectedSlot(id2, 0); // bare hand
+  e2.setSelectedSlot(id2, 5); // an EMPTY slot -> bare hand
   for (let i = 0; i < 60; i++) e2.playerMine(id2, 60, 50);
   const withHand = e2.getItems().filter((it) => it.kind === 0 && it.material === MAT.STONE).length;
-  check(`selecting the hand drops no stone (${withHand})`, withHand === 0);
+  check(`an empty slot mines by hand, no stone drop (${withHand})`, withHand === 0);
   e.destroy(); e2.destroy();
 }
 
-// 5) Place-from-slot consumes one count per call and writes the grid.
+// 5) Per-pixel economy: placing consumes exactly as many units as cells it creates,
+//    capped at the stack count.
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8);
-  e.addToInventory(id, MAT.STONE, 10); // lands in the first empty slot (4)
+  e.addToInventory(id, MAT.STONE, 50);
   const slot = e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.STONE && s.count > 0);
   e.setSelectedSlot(id, slot);
-  const placed = e.placeFromSelected(id, 40, 30);
-  check('placeFromSelected reports success', placed);
-  check(`grid received stone at the aim`, e.getGrid()[30 * COLS + 40] === MAT.STONE);
-  check(`one count consumed (10 -> ${slotCount(e, id, MAT.STONE)})`, slotCount(e, id, MAT.STONE) === 9);
-  e.placeFromSelected(id, 45, 30);
-  check(`second place consumes again (-> ${slotCount(e, id, MAT.STONE)})`, slotCount(e, id, MAT.STONE) === 8);
-  e.destroy();
+  // A full radius-2 disc into open air writes 13 cells -> consumes exactly 13.
+  const stoneBefore = e.getGrid().reduce((a, v) => a + (v === MAT.STONE), 0);
+  const before = slotCount(e, id, MAT.STONE);
+  e.placeFromSelected(id, 40, 30); // open air, above the floor
+  const stoneAfter = e.getGrid().reduce((a, v) => a + (v === MAT.STONE), 0);
+  const placed = before - slotCount(e, id, MAT.STONE);
+  check(`placed cells == consumed units (${placed})`, placed > 0 && placed === stoneAfter - stoneBefore);
+
+  // A stack of 3 can place at most 3 cells (center-first cap).
+  const e2 = survivalEngine();
+  const id2 = e2.spawnPlayer(10, FLOOR - 8);
+  e2.addToInventory(id2, MAT.SAND, 3);
+  const s2 = e2.getInventory(id2).slots.findIndex((s) => !s.isTool && s.material === MAT.SAND && s.count > 0);
+  e2.setSelectedSlot(id2, s2);
+  e2.placeFromSelected(id2, 40, 20);
+  let sand = 0; for (const v of e2.getGrid()) if (v === MAT.SAND) sand++;
+  check(`a 3-stack places exactly 3 cells (${sand}) and empties the slot`, sand === 3 && slotCount(e2, id2, MAT.SAND) === 0);
+  e.destroy(); e2.destroy();
 }
 
 const failures = done();

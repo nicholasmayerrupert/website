@@ -60,6 +60,16 @@ function mineBlob(mat, cls, tier, { hits = 80, placeR = 2 } = {}) {
   check(`hand yields no stone drop (${stone.drops})`, stone.drops === 0);
 }
 
+// 4b) Liquids are scoopable by ANY tool/hand (1 unit per destroyed cell).
+{
+  const hand = mineBlob(MAT.WATER, TC.hand, TT.hand);
+  check(`hand scoops water into water drops (${hand.drops})`, hand.drops > 0 && hand.centerEmpty);
+  const pick = mineBlob(MAT.LAVA, TC.pickaxe, TT.wood);
+  check(`a tool also scoops lava (${pick.drops})`, pick.drops > 0);
+  const oil = mineBlob(MAT.OIL, TC.shovel, TT.wood);
+  check(`oil is collectible too (${oil.drops})`, oil.drops > 0);
+}
+
 // 5) Determinism: an identical mining script produces identical grid + item counts.
 {
   const a = mineBlob(MAT.STONE, TC.pickaxe, TT.wood);

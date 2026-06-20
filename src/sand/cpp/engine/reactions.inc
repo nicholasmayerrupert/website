@@ -43,6 +43,13 @@
         int k = I(x, y); if (grid[k] != ACID) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
         if (!isDissolvable(grid[right]) && !isDissolvable(grid[left]) && !isDissolvable(grid[down]) && !isDissolvable(grid[up])) continue;
+        // Acid touching dissolvable material is actively boring: keep it in the active
+        // band so it keeps eating on later steps. Without this, a failed dissolve roll
+        // lets settleLiquid see the enclosed acid as resting-on-support and go inert,
+        // dropping it out of the band forever — it freezes mid-solid after eating only
+        // a little (acid "settles in stone"). Re-marking ends naturally once no
+        // dissolvable neighbour remains or the acid decays.
+        markCellIndex(k);
         if (rand() >= ACID_DISSOLVE_P) continue;
         bool hf = rand() < 0.5; int a = hf ? right : down, b = hf ? left : up, c = hf ? down : right, d = hf ? up : left;
         int target = -1;

@@ -154,6 +154,7 @@ export function initSandWasm() {
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
+        glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
         glShift: c('engine_gl_shift', null, ['number', 'number']),
         glRenderFrame: c('engine_gl_render_frame', 'number', ['number', 'number']),
         glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
@@ -312,6 +313,18 @@ export function createEngineWasm({
       } else {
         M.glSetPlayers(ptr, 0, 0, 0, ownId | 0);
       }
+    },
+    // Dropped items to overlay. Host/local draws the engine's own items. A client
+    // passes a packed [id,kind,material,count,x,y,life] Float32Array of the host's
+    // item snapshot; null/empty makes the engine draw its own (single-player).
+    glSetItems(packed) {
+      if (packed === null || packed === undefined) { M.glSetItems(ptr, 0, 0, 0); return; }
+      const len = packed.length;
+      if (!len) { M.glSetItems(ptr, 1, 0, 0); return; } // external, but empty (draw none)
+      const buf = mod._malloc(len * 4);
+      mod.HEAPF32.set(packed, buf >> 2);
+      M.glSetItems(ptr, 1, buf, (len / 7) | 0); // 7 floats per item
+      mod._free(buf);
     },
     glSetFlags(gutterOn, snapOff) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0); },
     glShift(dx) { M.glShift(ptr, dx); },

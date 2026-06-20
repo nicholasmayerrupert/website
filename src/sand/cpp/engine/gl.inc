@@ -27,6 +27,9 @@ int glOwnPlayerId = 0;                // which engine player draws as "own" (blu
 bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
 std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own,animState,animFrame] per player
 static const int GL_EXT_STRIDE = 8;
+bool glUseExtItems = false;           // client renders dropped items from host snapshots
+std::vector<float> glExtItems;        // packed [id,kind,material,count,px,py,life] per item
+static const int GL_ITEM_STRIDE = 7;
 
 bool glReady() const { return glc != nullptr && glc->ready && glTex != 0; }
 
@@ -91,6 +94,13 @@ void glSetPlayers(int useExternal, const float* data, int count, int ownId) {
   glUseExtPlayers = useExternal != 0;
   if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GL_EXT_STRIDE);
   else glExtPlayers.clear();
+}
+// Client items override: when external, glDrawItems draws these instead of the
+// engine's own (a client doesn't simulate the world, so it has no local items).
+void glSetItems(int useExternal, const float* data, int count) {
+  glUseExtItems = useExternal != 0;
+  if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * GL_ITEM_STRIDE);
+  else glExtItems.clear();
 }
 
 // ---- texture uploads (active layer's renderPixels -> the given texture) ----
@@ -259,35 +269,51 @@ void glDrawPlayers() {
 // transform). Each is a small rect centered on its cell at the material's color;
 // particles shrink/fade by remaining life. The engine draws from its own `items`
 // vector — no JS state push, exactly like host-side player drawing.
+// Draw one dropped item/particle. Identical for engine-owned items and the
+// client's host-snapshot items, so id-keyed bob/glimmer stay in sync.
+void glDrawOneItem(int id, int kind, int material, double px, double py, int life,
+                   int camCol, int camRow) {
+  uint32_t c = MAT_COLOR[material];
+  float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
+  float baseA = ((c >> 24) & 0xff) / 255.0f;
+  float a = (kind == IT_PARTICLE) ? baseA * (float)life / (float)IT_PARTICLE_LIFE : baseA;
+  if (a <= 0.01f) return;
+  double bob = 0.0;
+  if (kind == IT_ITEM) {
+    // render-only surface bob (per-item phase so a pile doesn't bob in lockstep).
+    bob = IT_BOB_AMP * std::sin(6.2831853 * (((tick + id * 11) % IT_BOB_PERIOD) / (double)IT_BOB_PERIOD));
+    // render-only GLIMMER: a gentle brightness pulse + an occasional bright sparkle.
+    float glim = 0.88f + 0.12f * (float)std::sin(6.2831853 * (((tick + id * 23) % 96) / 96.0));
+    r *= glim; g *= glim; b *= glim;
+    if (((tick / 2 + id * 5) % 70) < 4) { r = std::min(1.0f, r + 0.45f); g = std::min(1.0f, g + 0.45f); b = std::min(1.0f, b + 0.45f); }
+  }
+  glUniform4f(glc->uColor, r, g, b, a);
+  double sz = (kind == IT_PARTICLE) ? glCellDev * 0.5 : glCellDev * 0.8;
+  double szCells = (kind == IT_PARTICLE) ? 0.5 : 0.8;
+  // py is the item's bottom contact point; draw the sprite sitting ON it (bottom at
+  // py) so a resting item never sinks into the surface. x uses the float point.
+  double cx = (px - camCol) * glCellDev + glOffX;
+  double cy = (py - szCells * 0.5 + bob - camRow) * glCellDev + glOffY;
+  glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
+}
+
 void glDrawItems() {
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  if (glUseExtItems) {
+    int n = (int)(glExtItems.size() / GL_ITEM_STRIDE);
+    if (!n) return;
+    glUniform1i(glc->uMode, 1);
+    glUniform1i(glc->uGutter, 0);
+    for (int i = 0; i < n; i++) {
+      const float* it = &glExtItems[(size_t)i * GL_ITEM_STRIDE];
+      glDrawOneItem((int)it[0], (int)it[1], (int)it[2], it[4], it[5], (int)it[6], camCol, camRow);
+    }
+    return;
+  }
   if (items.empty()) return;
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
-  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
-  for (auto& it : items) {
-    uint32_t c = MAT_COLOR[it.material];
-    float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
-    float baseA = ((c >> 24) & 0xff) / 255.0f;
-    float a = (it.kind == IT_PARTICLE) ? baseA * (float)it.life / (float)IT_PARTICLE_LIFE : baseA;
-    if (a <= 0.01f) continue;
-    double bob = 0.0;
-    if (it.kind == IT_ITEM) {
-      // render-only surface bob (per-item phase so a pile doesn't bob in lockstep).
-      bob = IT_BOB_AMP * std::sin(6.2831853 * (((tick + it.id * 11) % IT_BOB_PERIOD) / (double)IT_BOB_PERIOD));
-      // render-only GLIMMER: a gentle brightness pulse + an occasional bright sparkle.
-      float glim = 0.88f + 0.12f * (float)std::sin(6.2831853 * (((tick + it.id * 23) % 96) / 96.0));
-      r *= glim; g *= glim; b *= glim;
-      if (((tick / 2 + it.id * 5) % 70) < 4) { r = std::min(1.0f, r + 0.45f); g = std::min(1.0f, g + 0.45f); b = std::min(1.0f, b + 0.45f); }
-    }
-    glUniform4f(glc->uColor, r, g, b, a);
-    double sz = (it.kind == IT_PARTICLE) ? glCellDev * 0.5 : glCellDev * 0.8;
-    double szCells = (it.kind == IT_PARTICLE) ? 0.5 : 0.8;
-    // py is the item's bottom contact point; draw the sprite sitting ON it (bottom at
-    // py) so a resting item never sinks into the surface. x uses the float point.
-    double cx = (it.px - camCol) * glCellDev + glOffX;
-    double cy = (it.py - szCells * 0.5 + bob - camRow) * glCellDev + glOffY;
-    glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
-  }
+  for (auto& it : items) glDrawOneItem(it.id, it.kind, it.material, it.px, it.py, it.life, camCol, camRow);
 }
 
 void glDrawPreview() {

@@ -20,6 +20,7 @@ import { initSandWasm } from '../engineWasm';
 import { createSandGame } from '../game/createSandGame';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
+import { createConnectPanel } from './connectPanel';
 
 const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none; }
@@ -70,6 +71,13 @@ class SandGameElement extends HTMLElement {
             getCursor: () => game.getCursor(),
           });
           this._hud.update(game.getInventory());
+          // Multiplayer connect panel (collapsed): join an authoritative server
+          // by IP:port. Survival-only; single-player UI is unchanged at rest.
+          this._mp = createConnectPanel(root, {
+            join: (url, room) => game.netJoin(url, room),
+            disconnect: () => game.netDisconnect(),
+            getStatus: () => game.netStatus(),
+          });
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
@@ -102,7 +110,8 @@ class SandGameElement extends HTMLElement {
     this._game?.destroy();
     this._palette?.destroy();
     this._hud?.destroy();
-    this._game = this._palette = this._hud = null;
+    this._mp?.destroy();
+    this._game = this._palette = this._hud = this._mp = null;
     this._mounted = false;
   }
 

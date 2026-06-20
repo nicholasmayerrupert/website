@@ -222,6 +222,20 @@ void integratePlayer(Player& p) {
   // buried — flicker-free vs. the old "was the down-move blocked" test.
   int feetRow = (int)std::floor(p.py + p.h - 1e-6);
   p.grounded = rowSolid(p.px, p.w, feetRow + 1) || buryDepth(p) > 0;
+
+  // ---- animation state (deterministic; reuses the fluid sample computed above) ----
+  // Priority: liquid overrides airborne overrides grounded-move overrides idle. The
+  // frame is a pure function of the shared `tick`, so prediction/replay stay in sync.
+  double spd = std::fabs(p.vx);
+  uint8_t as;
+  if (swimming) as = AS_SWIM;
+  else if (inLiquid) as = AS_WADE;
+  else if (!p.grounded) as = (p.vy < -AS_RISE_EPS) ? AS_RISE : AS_FALL;
+  else if (spd >= AS_RUN_SPEED && (p.input & PI_RUN)) as = AS_RUN;
+  else if (spd >= AS_MOVE_EPS) as = AS_WALK;
+  else as = AS_IDLE;
+  p.animState = as;
+  p.animFrame = (uint8_t)(((uint32_t)tick / ANIM_T[as]) % ANIM_N[as]);
 }
 
 // ---- player-mediated tool use (Terraria-like dig/build) ----
@@ -449,6 +463,8 @@ int buildPlayerSnapshot() {
     o[14] = (float)p.inputSeq;
     o[15] = p.alive ? 1.0f : 0.0f;
     o[16] = p.jumpReady ? 1.0f : 0.0f; // hidden jump state, needed for reconciliation
+    o[17] = (float)p.animState;
+    o[18] = (float)p.animFrame;
   }
   return (int)players.size();
 }

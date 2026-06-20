@@ -459,11 +459,12 @@ export function createSandGame(container, opts = {}) {
       engine.glSetPlayers(true, null, 0);
     } else if (net.role === 'client') {
       const ps = net.getPlayersForRender();
-      const packed = new Float32Array(ps.length * 6);
+      const packed = new Float32Array(ps.length * 8); // [x,y,w,h,facing,own,animState,animFrame]
       for (let i = 0; i < ps.length; i++) {
-        const p = ps[i], o = i * 6;
+        const p = ps[i], o = i * 8;
         packed[o] = p.x; packed[o + 1] = p.y; packed[o + 2] = p.w; packed[o + 3] = p.h;
         packed[o + 4] = p.facing; packed[o + 5] = p.id === net.ownPlayerId ? 1 : 0;
+        packed[o + 6] = p.animState || 0; packed[o + 7] = p.animFrame || 0;
       }
       engine.glSetPlayers(true, packed, net.ownPlayerId);
     } else {

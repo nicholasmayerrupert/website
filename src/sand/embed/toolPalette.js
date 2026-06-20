@@ -1,9 +1,15 @@
 // Framework-free, searchable "spawn anything" palette for the sand game. Builds
 // plain DOM into a host root (a Web Component's shadow root) with a single
 // injected <style> — no React and no Tailwind on the host page. Pure callbacks
-// out: it owns the visible UI state (selected entry, draw on/off, layout) and
-// calls onSelectCreative / onToggleDrawMode; the caller wires those into the
-// runtime.
+// out: it owns the visible UI state (selected entry, draw on/off, layout,
+// expanded/collapsed) and calls onSelectCreative / onToggleDrawMode; the caller
+// wires those into the runtime.
+//
+// To keep it small the palette is COLLAPSED by default: it shows only a compact
+// bar (the selected swatch + name, an Expand button, and the Draw On/Off toggle).
+// The full ~38-entry searchable grid is built lazily and only mounted while
+// expanded, so the heavy list never takes space (or DOM) until the user asks for
+// it. Picking an entry collapses back to the bar.
 //
 // Every entry resolves to a creative pick {kind, value} matching the engine's
 // CreativeKind enum (consumed by game.setCreativeMaterial):
@@ -12,7 +18,7 @@
 //   CK_ERASER   = 2  -> value = 0
 //   CK_CUBE     = 3  -> value = 0
 // Entries: every MATERIALS row except EMPTY, one seed per plant species, plus an
-// eraser and a tumbling rigid cube.
+// eraser and a tumbling rigid cube. The default selection is the Cube.
 
 import { MATERIALS } from '../materials.generated';
 
@@ -28,6 +34,10 @@ const SEED_SWATCH = 'rgb(120,190,100)';
 const ERASER_SWATCH = 'rgb(254,205,211)';
 const CUBE_SWATCH = 'rgb(214,211,209)';
 
+// Most-used builders float to the top of the list so they aren't buried under
+// the long tail of exotic materials. Matched against the lowercased entry label.
+const PRIORITY_LABELS = ['cube', 'stone', 'dirt', 'sand', 'water'];
+
 // packed ABGR number -> css rgb(...) using the low 24 bits (r,g,b).
 function packedToRgb(c) {
   return `rgb(${c & 0xff},${(c >> 8) & 0xff},${(c >> 16) & 0xff})`;
@@ -35,7 +45,9 @@ function packedToRgb(c) {
 
 // Build the full entry list: materials (minus EMPTY), 6 seeds, eraser, cube.
 // Each entry is { key, label, color, kind, value } where `color` is a css color
-// string used as the swatch background.
+// string used as the swatch background. Entries are then reordered so the common
+// builders in PRIORITY_LABELS lead, in that exact order, with everything else
+// following in its natural order.
 function buildEntries() {
   const entries = [];
   for (const m of MATERIALS) {
@@ -59,7 +71,14 @@ function buildEntries() {
   });
   entries.push({ key: 'eraser', label: 'Eraser', color: ERASER_SWATCH, kind: CK_ERASER, value: 0 });
   entries.push({ key: 'cube', label: 'Cube', color: CUBE_SWATCH, kind: CK_CUBE, value: 0 });
-  return entries;
+
+  const lead = [];
+  for (const want of PRIORITY_LABELS) {
+    const hit = entries.find((e) => e.label === want);
+    if (hit) lead.push(hit);
+  }
+  const rest = entries.filter((e) => !lead.includes(e));
+  return [...lead, ...rest];
 }
 
 const STYLE = `
@@ -70,17 +89,30 @@ const STYLE = `
 .sg-palette.bottom { bottom: 12px; left: 50%; transform: translateX(-50%); }
 .sg-col { display: flex; flex-direction: column; gap: 8px; }
 .sg-cap { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #d1d5db; }
+
+/* Collapsed bar: selected entry preview + expand control, side by side. */
+.sg-bar { display: flex; align-items: center; gap: 6px; }
+.sg-current { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto;
+  border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); border-radius: 6px;
+  padding: 5px 7px; font-size: 12px; line-height: 1.15; color: #f3f4f6; cursor: pointer; overflow: hidden; }
+.sg-current:hover { background: rgba(255,255,255,.12); }
+.sg-current .sg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg-expand { flex: none; border-radius: 6px; padding: 5px 9px; font-size: 11px; font-weight: 600;
+  border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
+.sg-expand:hover { background: rgba(255,255,255,.2); }
+
 .sg-search { width: 100%; box-sizing: border-box; border-radius: 6px; padding: 6px 8px; font-size: 13px;
   border: 1px solid rgba(255,255,255,.18); background: rgba(3,7,18,.6); color: #fff; outline: none; }
 .sg-search::placeholder { color: #9ca3af; }
 .sg-search:focus { border-color: rgba(255,255,255,.4); }
 .sg-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; width: 220px;
-  max-width: calc(100vw - 2.5rem); max-height: 260px; overflow: auto;
-  padding: 2px; border-radius: 6px; background: rgba(3,7,18,.35); }
+  max-width: calc(100vw - 2.5rem); max-height: 240px; overflow-y: auto; scroll-behavior: smooth;
+  overscroll-behavior: contain; padding: 2px; border-radius: 6px; background: rgba(3,7,18,.35); }
 .sg-palette.bottom .sg-list { grid-template-columns: repeat(3, 1fr); width: 340px; max-height: 200px; }
 .sg-opt { display: flex; align-items: center; gap: 7px;
-  border: 1px solid transparent; background: rgba(255,255,255,.04); border-radius: 6px; padding: 5px 6px;
-  text-align: left; font-size: 12px; line-height: 1.15; color: #e5e7eb; cursor: pointer; overflow: hidden; }
+  border: 1px solid transparent; background: rgba(255,255,255,.04); border-radius: 6px; padding: 6px;
+  text-align: left; font-size: 12px; line-height: 1.15; color: #e5e7eb; cursor: pointer; overflow: hidden;
+  min-height: 38px; }
 .sg-opt:hover { background: rgba(255,255,255,.1); }
 .sg-opt.active { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.35); color: #fff; }
 .sg-opt .sg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -95,7 +127,7 @@ const STYLE = `
 `;
 
 // Decorative color swatch for an entry (a flat rounded square in the entry's
-// color). The old per-tool built-up SHAPE marks are gone with the 12-tool set.
+// color).
 function renderSwatch(color) {
   const sw = document.createElement('span');
   sw.className = 'sg-swatch';
@@ -112,10 +144,12 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
   }
 
   const entries = buildEntries();
-  let selectedKey = null;
+  // Default selection is the Cube (the engine starts on the cube too).
+  let selected = entries.find((e) => e.kind === CK_CUBE) || entries[0];
   let query = '';
   let drawOn = false;
   let atBottom = false;
+  let expanded = false;
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-palette side';
@@ -144,17 +178,37 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
   cap.textContent = 'Spawn anything';
   col.appendChild(cap);
 
+  // --- Collapsed bar: current selection preview + expand button -------------
+  const bar = document.createElement('div');
+  bar.className = 'sg-bar';
+
+  const current = document.createElement('button');
+  current.type = 'button';
+  current.className = 'sg-current';
+  const currentSwatch = renderSwatch(selected.color);
+  const currentName = document.createElement('span');
+  currentName.className = 'sg-name';
+  current.append(currentSwatch, currentName);
+  current.addEventListener('click', () => setExpanded(!expanded));
+
+  const expandBtn = document.createElement('button');
+  expandBtn.type = 'button';
+  expandBtn.className = 'sg-expand';
+  expandBtn.addEventListener('click', () => setExpanded(!expanded));
+
+  bar.append(current, expandBtn);
+  col.appendChild(bar);
+
+  // --- Expanded panel: search + scrollable list (mounted only when open) ----
   const search = document.createElement('input');
   search.type = 'text';
   search.className = 'sg-search';
   search.placeholder = 'Search materials…';
   search.setAttribute('aria-label', 'Search spawnable materials');
   search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); renderList(); });
-  col.appendChild(search);
 
   const list = document.createElement('div');
   list.className = 'sg-list';
-  col.appendChild(list);
 
   const toggle = document.createElement('button');
   toggle.type = 'button';
@@ -162,11 +216,40 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
   toggle.addEventListener('click', () => { drawOn = !drawOn; onToggleDrawMode?.(drawOn); renderState(); });
   col.appendChild(toggle);
 
+  function setExpanded(next) {
+    expanded = next;
+    if (expanded) {
+      // Mount search + list above the Draw toggle.
+      col.insertBefore(search, toggle);
+      col.insertBefore(list, toggle);
+      renderList();
+      search.focus();
+    } else {
+      query = '';
+      search.value = '';
+      search.remove();
+      list.remove();
+      list.replaceChildren();
+    }
+    renderState();
+  }
+
   function renderState() {
     toggle.textContent = `Draw ${drawOn ? 'On' : 'Off'}`;
     toggle.className = `sg-toggle${drawOn ? ' on' : ''}`;
     toggle.title = drawOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation';
     wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'}`;
+    currentSwatch.style.background = selected.color;
+    currentName.textContent = selected.label;
+    current.title = `Selected: ${selected.label} — click to ${expanded ? 'collapse' : 'change'}`;
+    expandBtn.textContent = expanded ? 'Close' : 'Expand';
+  }
+
+  function pick(entry) {
+    selected = entry;
+    onSelectCreative?.({ kind: entry.kind, value: entry.value });
+    // Collapsing after a pick keeps the footprint small.
+    setExpanded(false);
   }
 
   function renderList() {
@@ -182,29 +265,26 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
     for (const e of shown) {
       const opt = document.createElement('button');
       opt.type = 'button';
-      opt.className = `sg-opt${e.key === selectedKey ? ' active' : ''}`;
+      opt.className = `sg-opt${e.key === selected.key ? ' active' : ''}`;
       opt.title = e.label;
       const lbl = document.createElement('span');
       lbl.className = 'sg-name';
       lbl.textContent = e.label;
       opt.append(renderSwatch(e.color), lbl);
-      opt.addEventListener('click', () => {
-        selectedKey = e.key;
-        onSelectCreative?.({ kind: e.kind, value: e.value });
-        renderList();
-      });
+      opt.addEventListener('click', () => pick(e));
       list.appendChild(opt);
     }
   }
 
   root.appendChild(wrap);
   renderState();
-  renderList();
+  // Emit the initial selection so the engine starts on the cube.
+  onSelectCreative?.({ kind: selected.kind, value: selected.value });
 
   return {
     el: wrap,
     setDrawMode(on) { drawOn = !!on; renderState(); },
-    setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); renderList(); },
+    setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
     destroy() { wrap.remove(); },
   };
 }

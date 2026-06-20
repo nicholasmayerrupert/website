@@ -3,16 +3,81 @@
 // with the selected material via LMB) — the camera follows. It's the same
 // <sand-game> Web Component as the About background, in survival mode, given the
 // whole viewport.
+//
+// DESKTOP-ONLY for now. The sandbox needs a mouse + keyboard, and the WASM
+// engine is heavy, so on small / coarse-pointer devices we render a friendly
+// message and never mount <sand-game> (so the engine never loads). The NavBar's
+// PLAY button is also hidden on mobile, but this gate also covers anyone who
+// hand-types /game.
+//
+// ─── Future: mobile creative controls (notes only) ───────────────────────────
+// The current touch experience fights page scrolling and has tiny targets.
+// A real mobile creative mode would want:
+//   • A bottom touch toolbar with large tap targets (mine / place / select).
+//   • Tap-to-place and drag-to-paint, with an explicit "draw vs scroll" toggle so
+//     the page can still scroll when the user isn't actively painting.
+//   • A floating action button (FAB) that opens the material picker as a
+//     bottom sheet instead of the cramped left rail.
+//   • Pinch-to-zoom + two-finger pan for camera control (one finger = paint).
+//   • Haptic tap feedback and a small undo button, since misfires are common.
+// Until that exists, mobile stays gated to the message below.
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import './sand/embed/sandGame'; // registers the <sand-game> custom element
 
+// Treat narrow viewports OR coarse-only pointers (phones/tablets) as "mobile".
+// matchMedia is read inside an effect (never during render) so SSR/first paint
+// is consistent, and we subscribe to changes so rotating / resizing updates it.
+const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia(MOBILE_QUERY);
+    const update = () => setIsMobile(mq.matches);
+    update();
+    if (mq.addEventListener) mq.addEventListener('change', update);
+    else mq.addListener(update);
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener('change', update);
+      else mq.removeListener(update);
+    };
+  }, []);
+  return isMobile;
+}
+
 export default function GamePage() {
+  const isMobile = useIsMobile();
+
   useEffect(() => {
     const prev = document.title;
     document.title = 'Sand Game — Nicholas Mayer-Rupert';
     return () => { document.title = prev; };
   }, []);
+
+  if (isMobile) {
+    return (
+      <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-dark px-6 text-center">
+        <div className="max-w-sm">
+          <div className="mb-4 text-5xl">🖥️</div>
+          <h1 className="mb-3 text-xl font-semibold text-white">
+            The sandbox is desktop-only for now
+          </h1>
+          <p className="text-sm leading-relaxed text-white/70">
+            Visit on a larger screen with a mouse and keyboard to dig, build, and
+            explore. Touch controls are coming later.
+          </p>
+          <a
+            href="/"
+            className="mt-6 inline-flex rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white/85 backdrop-blur transition hover:bg-white/10 hover:text-white"
+          >
+            ← back to site
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-dark">

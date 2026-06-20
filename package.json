@@ -13,6 +13,7 @@
     "deploy": "npm run build && wrangler deploy",
     "test:sand": "node scripts/sand-test.mjs",
     "test:players": "node scripts/player-test.mjs",
+    "test:anim": "node scripts/player-anim-test.mjs",
     "test:net": "node scripts/net-test.mjs",
     "test:layer": "node scripts/layer-test.mjs",
     "test:stone-layers": "node scripts/stone-layer-dig-repro.mjs",
@@ -32,7 +33,7 @@
     "test:structures": "node scripts/worldgen-structures-test.mjs",
     "test:flora": "node scripts/flora-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
-    "test": "npm run test:tooltier && npm run test:items && npm run test:mining && npm run test:inventory && npm run test:inv-bridge && npm run test:creative && npm run test:throw && npm run test:mat-flags && npm run test:mat-behavior && npm run test:biomes && npm run test:structures && npm run test:flora && npm run test:sand && npm run test:players && npm run test:net && npm run test:layer && npm run test:prefetch && npm run test:render && npm run test:stone-airgap",
+    "test": "npm run test:tooltier && npm run test:items && npm run test:mining && npm run test:inventory && npm run test:inv-bridge && npm run test:creative && npm run test:throw && npm run test:mat-flags && npm run test:mat-behavior && npm run test:biomes && npm run test:structures && npm run test:flora && npm run test:sand && npm run test:players && npm run test:anim && npm run test:net && npm run test:layer && npm run test:prefetch && npm run test:render && npm run test:stone-airgap",
     "test:all": "npm run test && npm run build",
     "mp:server": "node scripts/dev-multiplayer-server.mjs"
   },

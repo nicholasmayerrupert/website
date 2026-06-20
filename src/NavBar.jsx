@@ -45,10 +45,13 @@ const NavBar = () => {
             {item.label}
           </a>
         ))}
-        {/* Full navigation to the dedicated fullscreen sand game (not an in-page hash). */}
+        {/* Full navigation to the dedicated fullscreen sand game (not an in-page hash).
+            Desktop-only for now: hidden below the `md` breakpoint (768px) via pure
+            CSS so it's SSR-safe and never flashes. The game page itself also gates
+            on mobile, so even a hand-typed /game shows the "desktop only" message. */}
         <a
           href="/game"
-          className="px-4 py-2 text-sm font-semibold rounded-full transition bg-emerald-400/20 text-emerald-200 ring-1 ring-emerald-300/30 hover:bg-emerald-400/30 hover:text-emerald-100"
+          className="hidden md:inline-flex px-4 py-2 text-sm font-semibold rounded-full transition bg-emerald-400/20 text-emerald-200 ring-1 ring-emerald-300/30 hover:bg-emerald-400/30 hover:text-emerald-100"
         >
           PLAY
         </a>

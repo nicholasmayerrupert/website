@@ -146,6 +146,7 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
       if (!r) { r = { x: p.x, y: p.y, w: DEFAULT_W, h: DEFAULT_H }; remotes.set(p.id, r); }
       r.tx = p.x; r.ty = p.y; r.vx = p.vx; r.vy = p.vy;
       r.facing = p.facing; r.grounded = !!p.grounded; r.tool = p.tool; r.seq = p.seq;
+      r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = DEFAULT_W; r.h = DEFAULT_H;
     }
     for (const id of [...remotes.keys()]) if (!seen.has(id)) remotes.delete(id); // left
@@ -194,8 +195,8 @@ export function createGameNet({ getEngine, getLocalInput, getSpawn }) {
     const own = getOwnPlayer();
     const out = [];
     for (const [id, r] of remotes) {
-      if (id === ownPlayerId && own) { out.push({ id, x: own.x, y: own.y, w: own.w, h: own.h, facing: own.facing, grounded: own.grounded, tool: r.tool ?? 0 }); continue; }
-      out.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded, tool: r.tool ?? 0 });
+      if (id === ownPlayerId && own) { out.push({ id, x: own.x, y: own.y, w: own.w, h: own.h, facing: own.facing, grounded: own.grounded, tool: r.tool ?? 0, animState: own.animState | 0, animFrame: own.animFrame | 0 }); continue; }
+      out.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded, tool: r.tool ?? 0, animState: r.animState | 0, animFrame: r.animFrame | 0 });
     }
     return out;
   }

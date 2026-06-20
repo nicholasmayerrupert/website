@@ -313,7 +313,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     }
     const cp = pred.state(), hp = states[states.length - 1];
     check(`100ms-latency prediction within tolerance (maxErr ${maxErr.toFixed(3)})`, maxErr < 0.001);
-    check('predicted final matches host authoritative', approxEqual(cp.x, hp.x, 1e-6) && approxEqual(cp.y, hp.y, 1e-6));
+    // Tolerance is float32-snapshot scale, not 1e-6: reconciliation snaps to the
+    // authoritative state read back through the float32 player snapshot (real netcode),
+    // so the final can differ from the host's float64 trajectory by up to ~1 float32 ULP
+    // (~1e-5 at these magnitudes). A real prediction bug diverges by whole cells, not micro-units.
+    check('predicted final matches host authoritative', approxEqual(cp.x, hp.x, 1e-4) && approxEqual(cp.y, hp.y, 1e-4));
     host.destroy(); client.destroy();
   }
 

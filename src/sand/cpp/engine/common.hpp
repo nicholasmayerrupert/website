@@ -190,7 +190,7 @@ enum PlayerInput : int {
 // Player physics tunables (cells; velocities in cells per fixed step).
 static const int    PLAYER_W = 4, PLAYER_H = 8;
 static const double P_GRAVITY = 0.25, P_MAX_FALL = 6.0;
-static const double P_MOVE_ACCEL = 0.6, P_MAX_RUN = 1.6, P_RUN_MULT = 1.7;
+static const double P_MOVE_ACCEL = 0.42, P_MAX_RUN = 1.05, P_RUN_MULT = 1.7;
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.8;
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
@@ -235,6 +235,75 @@ enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_ERASE, CM_CUBE
 // What a creative palette selection refers to (engine_set_creative_material kind).
 enum CreativeKind : uint8_t { CK_MATERIAL = 0, CK_SEED, CK_ERASER, CK_CUBE };
 
+// ---- Player sprite + animation (player.inc state pick; gl.inc per-pixel blit) ----
+// Deterministic: animState picked from physics at the end of integratePlayer, frame
+// derived from the shared `tick`, so prediction/replay reproduce the same frame.
+enum AnimState : uint8_t { AS_IDLE = 0, AS_WALK, AS_RUN, AS_RISE, AS_FALL, AS_WADE, AS_SWIM, AS_COUNT };
+static const double AS_MOVE_EPS = 0.10;            // |vx| below -> idle
+static const double AS_RUN_SPEED = P_MAX_RUN * 0.95; // run only past ~walk top speed
+static const double AS_RISE_EPS = 0.05;            // airborne |vy| below -> treat as fall (apex)
+static const uint8_t ANIM_N[AS_COUNT] = {2, 4, 4, 2, 2, 2, 4}; // frames per state
+static const uint8_t ANIM_T[AS_COUNT] = {36, 8, 5, 6, 6, 14, 7}; // ticks per frame
+// Sprite: 6x10 sprite-pixels, each = one world cell. Anchored at AABB offset (-1,-2)
+// cells so feet plant on the surface and the body centers on the 4-wide hitbox.
+static const int SPR_W = 6, SPR_H = 10;
+static const float SPR_PAL[8][4] = {
+  {0, 0, 0, 0},                                       // 0 transparent
+  {26 / 255.f, 20 / 255.f, 28 / 255.f, 1},            // 1 outline
+  {232 / 255.f, 180 / 255.f, 140 / 255.f, 1},         // 2 skin
+  {188 / 255.f, 128 / 255.f, 96 / 255.f, 1},          // 3 skin-shadow
+  {120 / 255.f, 72 / 255.f, 40 / 255.f, 1},           // 4 hair
+  {70 / 255.f, 130 / 255.f, 200 / 255.f, 1},          // 5 shirt
+  {60 / 255.f, 56 / 255.f, 78 / 255.f, 1},            // 6 pants
+  {40 / 255.f, 30 / 255.f, 24 / 255.f, 1},            // 7 boots
+};
+// [state][frame][row] of 6-char digit rows (palette indices), facing RIGHT (mirror for
+// left). Unused frame slots (states with N<4) repeat frame 0 and are never indexed.
+static const char* const SPR_GRID[AS_COUNT][4][SPR_H] = {
+  { // AS_IDLE
+    {"011110","014410","142421","112221","015551","055552","055552","066662","007700","007000"},
+    {"000000","011110","014410","142421","112221","015551","055552","066662","077770","007700"},
+    {"011110","014410","142421","112221","015551","055552","055552","066662","007700","007000"},
+    {"011110","014410","142421","112221","015551","055552","055552","066662","007700","007000"},
+  },
+  { // AS_WALK
+    {"011110","014410","142421","112221","015551","055552","055552","066662","077070","070007"},
+    {"011110","014410","142421","112221","015551","055552","055552","066662","007700","007700"},
+    {"011110","014410","142421","112221","015551","055552","055552","066662","070070","700070"},
+    {"011110","014410","142421","112221","015551","055552","055552","066662","007700","070070"},
+  },
+  { // AS_RUN
+    {"001111","001441","014242","011222","001555","005555","055552","066620","066000","070700"},
+    {"001111","001441","014242","011222","001555","005555","055552","066662","000770","007007"},
+    {"001111","001441","014242","011222","001555","005555","055552","066662","007070","070070"},
+    {"001111","001441","014242","011222","001555","005555","055552","066620","066700","007000"},
+  },
+  { // AS_RISE
+    {"011110","014410","142421","112221","015551","555555","055550","066660","007700","000000"},
+    {"050000","015110","014410","142421","112221","015551","055552","066662","006600","000000"},
+    {"011110","014410","142421","112221","015551","555555","055550","066660","007700","000000"},
+    {"011110","014410","142421","112221","015551","555555","055550","066660","007700","000000"},
+  },
+  { // AS_FALL
+    {"011110","014410","142421","112221","515555","055550","066660","066660","070070","700007"},
+    {"510015","014410","142421","112221","115551","055552","066660","066660","700070","070007"},
+    {"011110","014410","142421","112221","515555","055550","066660","066660","070070","700007"},
+    {"011110","014410","142421","112221","515555","055550","066660","066660","070070","700007"},
+  },
+  { // AS_WADE
+    {"011110","014410","142421","112221","515551","055552","055552","000000","000000","000000"},
+    {"011110","014410","142421","112221","155555","055552","055552","000000","000000","000000"},
+    {"011110","014410","142421","112221","515551","055552","055552","000000","000000","000000"},
+    {"011110","014410","142421","112221","515551","055552","055552","000000","000000","000000"},
+  },
+  { // AS_SWIM
+    {"000000","000000","000550","014455","142255","112225","005555","066600","006600","000000"},
+    {"000000","000000","000000","014405","142255","112255","055555","666000","060600","000000"},
+    {"000000","000000","000000","014400","142220","112250","055555","066660","006600","000000"},
+    {"000000","000000","000550","014455","142255","112225","005555","060060","600060","000000"},
+  },
+};
+
 struct Player {
   int id = 0;
   bool active = true, alive = true;
@@ -262,9 +331,11 @@ struct Player {
   int selectedSlot = 0;
   // The stack currently "held on the cursor" (Minecraft-style pick/place/throw). 0 = empty.
   InvSlot cursor;
+  // Animation (computed at the end of integratePlayer; frame derived from tick).
+  uint8_t animState = AS_IDLE, animFrame = 0;
 };
 // Player snapshot layout (float32 per field) shared with JS and the net layer.
-static const int PLAYER_SNAP_STRIDE = 17;
+static const int PLAYER_SNAP_STRIDE = 19;
 
 // Rigid tunables (rigid2d.js)
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.6;

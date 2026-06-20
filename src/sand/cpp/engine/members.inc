@@ -165,9 +165,14 @@
   bool drafting = false, draftingSeed = false;
   // Creative brush: the searchable palette selects any material / seed species / eraser
   // / cube; the pointer flow routes by mode rather than a fixed per-material Tool enum.
-  uint8_t creativeMode = CM_DRAFT, creativeMaterial = STONE, creativeSeed = PT_OAK;
+  // Default is the cube (matches the palette's default selection).
+  uint8_t creativeMode = CM_CUBE, creativeMaterial = STONE, creativeSeed = PT_OAK;
   bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
   double lastEmitMs = -1e9;
+  // Continuous-paint/erase stroke tracking: interpolate the brush from the last emit
+  // cell to the current one so a fast mouse drag doesn't skip over gaps.
+  int lastEmitCx = -1, lastEmitCy = -1;
+  bool emitStrokeActive = false;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   std::vector<Player> players;
   int nextPlayerId = 1;

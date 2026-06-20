@@ -25,7 +25,8 @@ int glGutterOn = 1, glSnapOff = 0;
 double glOffX = 0, glOffY = 0;        // snapped sub-cell present offset (device px)
 int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
 bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
-std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own] per player
+std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own,animState,animFrame] per player
+static const int GL_EXT_STRIDE = 8;
 
 bool glReady() const { return glc != nullptr && glc->ready && glTex != 0; }
 
@@ -88,7 +89,7 @@ void glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = 
 void glSetPlayers(int useExternal, const float* data, int count, int ownId) {
   glOwnPlayerId = ownId;
   glUseExtPlayers = useExternal != 0;
-  if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * 6);
+  if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GL_EXT_STRIDE);
   else glExtPlayers.clear();
 }
 
@@ -210,18 +211,30 @@ void glDrawCells(GLuint tex, float tint, int gutter) {
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-void glDrawOnePlayer(double pxc, double pyc, int w, int h, int facing, bool own,
-                     int camCol, int camRow) {
-  double sx = (pxc - camCol) * glCellDev + glOffX;
-  double sy = (pyc - camRow) * glCellDev + glOffY;
-  double pw = (double)w * glCellDev, ph = (double)h * glCellDev;
-  if (own) glUniform4f(glc->uColor, 80 / 255.0f, 170 / 255.0f, 255 / 255.0f, 0.92f);
-  else     glUniform4f(glc->uColor, 255 / 255.0f, 140 / 255.0f, 80 / 255.0f, 0.92f);
-  glSolidDev(sx, sy, pw, ph);
-  double eye = imax(1, (int)std::lround(glCellDev * 0.7));
-  double ex = facing >= 0 ? sx + pw - eye - glCellDev * 0.4 : sx + glCellDev * 0.4;
-  glUniform4f(glc->uColor, 20 / 255.0f, 30 / 255.0f, 45 / 255.0f, 0.9f);
-  glSolidDev(ex, sy + ph * 0.18, eye, eye);
+// Blit the player's current animation frame as per-pixel rects (one sprite-pixel =
+// one world cell). The sprite is anchored at AABB offset (-1,-2) cells so the feet
+// plant on the surface and the body centers on the 4-wide hitbox; mirrored when
+// facing left. A subtle own/other tint distinguishes the local player.
+void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
+                     bool own, int camCol, int camRow) {
+  if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
+  if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
+  double cell = (double)glCellDev;
+  double sprX = (pxc - camCol) * glCellDev + glOffX - cell;       // (-1) cell
+  double sprY = (pyc - camRow) * glCellDev + glOffY - 2.0 * cell; // (-2) cells
+  for (int r = 0; r < SPR_H; r++) {
+    const char* row = SPR_GRID[animState][animFrame][r];
+    for (int c = 0; c < SPR_W; c++) {
+      int idx = row[c] - '0';
+      if (idx <= 0 || idx > 7) continue;
+      int cc = (facing >= 0) ? c : (SPR_W - 1 - c);
+      const float* col = SPR_PAL[idx];
+      float tr = col[0], tg = col[1], tb = col[2];
+      if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
+      glUniform4f(glc->uColor, tr, tg, tb, col[3]);
+      glSolidDev(sprX + cc * cell, sprY + r * cell, cell, cell);
+    }
+  }
 }
 
 void glDrawPlayers() {
@@ -229,15 +242,15 @@ void glDrawPlayers() {
   glUniform1i(glc->uGutter, 0);
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   if (glUseExtPlayers) {
-    int n = (int)(glExtPlayers.size() / 6);
+    int n = (int)(glExtPlayers.size() / GL_EXT_STRIDE);
     for (int i = 0; i < n; i++) {
-      const float* p = &glExtPlayers[(size_t)i * 6];
-      glDrawOnePlayer(p[0], p[1], (int)p[2], (int)p[3], (int)p[4], p[5] > 0.5f, camCol, camRow);
+      const float* p = &glExtPlayers[(size_t)i * GL_EXT_STRIDE];
+      glDrawOnePlayer(p[0], p[1], (int)p[4], (int)p[6], (int)p[7], p[5] > 0.5f, camCol, camRow);
     }
   } else {
     for (auto& p : players) {
       if (!p.active) continue;
-      glDrawOnePlayer(p.px, p.py, p.w, p.h, p.facing, p.id == glOwnPlayerId, camCol, camRow);
+      glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.id == glOwnPlayerId, camCol, camRow);
     }
   }
 }

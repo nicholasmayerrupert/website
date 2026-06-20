@@ -288,16 +288,38 @@
     if (MAT_KIND[m] == K_POWDER && grid[I(cx, cy)] != EMPTY) return; // don't stack powder on a filled cell
     paintDisc(cx, cy, brushFor(m), m, false);
   }
+  // Apply the brush along the LINE from (x0,y0) to (x1,y1) on one layer, so a fast
+  // pointer drag between throttled emits paints/erases a continuous stroke instead of
+  // leaving gaps. Disc centers are spaced ~brush-radius apart so they overlap.
+  void emitStrokeLayer(int x0, int y0, int x1, int y1, bool toBg) {
+    useLayer(toBg ? &bg : &fg);
+    int rad = (creativeMode == CM_ERASE) ? BRUSH_ERASE : brushFor(creativeMaterial);
+    int spacing = imax(1, rad);
+    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+    if (steps == 0) emitToolAt(x0, y0);
+    else {
+      for (int i = 0; i <= steps; i += spacing) {
+        double t = (double)i / steps;
+        emitToolAt((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
+      }
+      emitToolAt(x1, y1); // always include the endpoint
+    }
+    if (toBg) useLayer(&fg);
+  }
   // Continuous painting while held, throttled. LMB paints the foreground; RMB the
   // background. Draft/cube/seed act on click. Survival mining is separate (player.inc).
   void emitHeldTool(int cx, int cy, double now, bool inside, bool drawMode) {
-    if (!inside || !drawMode) return;
-    if (!(creativeMode == CM_PAINT || creativeMode == CM_ERASE)) return;
-    if (!lmbDown && !rmbDown) return;
+    if (!inside || !drawMode || !(creativeMode == CM_PAINT || creativeMode == CM_ERASE) || (!lmbDown && !rmbDown)) {
+      emitStrokeActive = false; // stroke ended (released / left / non-continuous tool)
+      return;
+    }
     if (now - lastEmitMs < EMIT_INTERVAL_MS) return;
     if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) return;
-    if (lmbDown) { useLayer(&fg); emitToolAt(cx, cy); }
-    if (rmbDown) { useLayer(&bg); bgEnabled = true; emitToolAt(cx, cy); useLayer(&fg); }
+    // Interpolate from the previous emit cell; on a fresh stroke start at the current cell.
+    int sx = emitStrokeActive ? lastEmitCx : cx, sy = emitStrokeActive ? lastEmitCy : cy;
+    if (lmbDown) emitStrokeLayer(sx, sy, cx, cy, false);
+    if (rmbDown) { bgEnabled = true; emitStrokeLayer(sx, sy, cx, cy, true); }
+    lastEmitCx = cx; lastEmitCy = cy; emitStrokeActive = true;
     lastEmitMs = now;
   }
   // Per fixed step: extend active drafts + apply held painting. Returns 1 if the

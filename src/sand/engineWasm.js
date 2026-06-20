@@ -304,7 +304,7 @@ export function createEngineWasm({
         if (len) {
           const buf = mod._malloc(len * 4);
           mod.HEAPF32.set(packed, buf >> 2);
-          M.glSetPlayers(ptr, 1, buf, (len / 6) | 0, ownId | 0);
+          M.glSetPlayers(ptr, 1, buf, (len / 8) | 0, ownId | 0); // 8 floats per ext player
           mod._free(buf);
         } else {
           M.glSetPlayers(ptr, 1, 0, 0, ownId | 0); // external, but empty (draw none)
@@ -432,6 +432,7 @@ export function createEngineWasm({
           grounded: f[o + 9] === 1, tool: f[o + 10] | 0,
           aimX: f[o + 11], aimY: f[o + 12], health: f[o + 13] | 0,
           inputSeq: f[o + 14] >>> 0, alive: f[o + 15] === 1, jumpReady: f[o + 16] === 1,
+          animState: f[o + 17] | 0, animFrame: f[o + 18] | 0,
         };
       }
       return out;

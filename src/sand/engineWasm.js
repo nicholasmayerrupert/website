@@ -88,6 +88,7 @@ export function initSandWasm() {
         getSeedOrigin: c('engine_get_seed_origin', 'number', ['number', 'number', 'number', 'number']),
         canPlaceSeed: c('engine_can_place_seed', 'number', ['number', 'number', 'number']),
         placeSeed: c('engine_place_seed', 'number', ['number', 'number', 'number']),
+        placeSeedTyped: c('engine_place_seed_typed', 'number', ['number', 'number', 'number', 'number']),
         spawnBody: c('engine_spawn_body', null, ['number', 'number', 'number']),
         spawnBox: c('engine_spawn_box', null, ['number', 'number', 'number', 'number', 'number']),
         spawnDisc: c('engine_spawn_disc', null, ['number', 'number', 'number', 'number', 'number']),
@@ -342,6 +343,7 @@ export function createEngineWasm({
     },
     canPlaceSeedAt(x0, y0) { return M.canPlaceSeed(ptr, x0, y0) === 1; },
     placeSeedAt(x0, y0) { return M.placeSeed(ptr, x0, y0) === 1; },
+    placeSeedTyped(x0, y0, plantType) { return M.placeSeedTyped(ptr, x0, y0, plantType) === 1; },
 
     // Streaming infinite world (Stage 5)
     getWorldOffsetX() { return M.worldOffsetX(ptr); },

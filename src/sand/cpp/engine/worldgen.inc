@@ -172,9 +172,8 @@
     }
     return genOreFor(biome, worldX, worldY);                 // solid stone -> maybe an ore vein
   }
-  // Per-biome tree density. Forest/jungle are dense; plains/tundra/swamp sparser;
-  // desert/rocky bare. (Tree TYPE — pine/willow/cactus/... — is assigned in the
-  // flora phase; here it only gates WHETHER a trunk seeds at this column.)
+  // Per-biome tree density. Forest/jungle dense; plains/tundra/swamp sparser;
+  // desert sparse (cacti); rocky bare.
   double genTreeProb(int biome) {
     switch (biome) {
       case BIOME_FOREST: return TREE_PROB * 3.2;
@@ -182,7 +181,21 @@
       case BIOME_SWAMP:  return TREE_PROB * 2.0;
       case BIOME_TUNDRA: return TREE_PROB * 1.5;
       case BIOME_PLAINS: return TREE_PROB;
-      default:           return 0.0; // desert / rocky
+      case BIOME_DESERT: return TREE_PROB * 0.7; // cacti
+      default:           return 0.0;             // rocky
+    }
+  }
+  // Flora species for a surface tree column: a pure function of biome + worldX, so
+  // both layers agree and the species is recoverable from the stamped wood material.
+  uint8_t pickTreeType(int biome, int worldX) {
+    double r = whash1(L->gTreeSeed ^ 0x7ee7u, worldX);
+    switch (biome) {
+      case BIOME_DESERT: return PT_CACTUS;
+      case BIOME_TUNDRA: return PT_PINE;
+      case BIOME_SWAMP:  return PT_WILLOW;
+      case BIOME_FOREST: return r < 0.5 ? PT_PINE : PT_OAK;
+      case BIOME_JUNGLE: return r < 0.35 ? PT_BUSH : PT_OAK;
+      default:           return r < 0.25 ? PT_BUSH : PT_OAK; // plains
     }
   }
   bool genTreeAt(int worldX, int surf) {
@@ -211,15 +224,34 @@
   void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (!L->isBackground) return;
     auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
-    const int TREE_REACH = 4;
+    const int TREE_REACH = 6;    // >= max canopy horizontal reach
+    const int TREE_MAX_UP = 30;  // >= max trunk height + canopy upward reach
     for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
       int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
-      if (surf + 2 < rowStart || surf - 16 >= rowEnd) continue; // footprint misses the rect
+      if (surf + 2 < rowStart || surf - TREE_MAX_UP >= rowEnd) continue; // footprint misses the rect
       if (!genTreeAt(worldX, surf)) continue;
-      int h = 6 + (int)(whash1(L->gTreeSeed + 1, worldX) * 8);
+      int biome = genBiomeAt(worldX);
+      uint8_t pt = pickTreeType(biome, worldX);
+      uint8_t wood = plantWoodMat(pt), leaf = plantLeafMat(pt);
+      double hr = whash1(L->gTreeSeed + 1, worldX);
+      int h = pt == PT_PINE ? 12 + (int)(hr * 7)      // tall conifer
+            : pt == PT_BUSH ? 3 + (int)(hr * 3)       // low shrub
+            : pt == PT_CACTUS ? 6 + (int)(hr * 5)     // medium column
+            : pt == PT_WILLOW ? 8 + (int)(hr * 6)
+            : 6 + (int)(hr * 8);                      // oak
       int top = surf - h;
-      for (int y = top; y < surf; y++) put(lx, y, WOOD);
-      for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, PLANT); }
+      for (int y = top; y < surf; y++) put(lx, y, wood); // trunk
+      if (pt == PT_CACTUS) {                            // arms, no foliage
+        int armY = top + 2 + (int)(whash1(L->gTreeSeed ^ 0x3a3au, worldX) * imax(1, h - 4));
+        put(lx - 1, armY, wood); put(lx - 2, armY, wood); put(lx - 2, armY - 1, wood);
+        put(lx + 1, armY + 2, wood); put(lx + 2, armY + 2, wood); put(lx + 2, armY + 1, wood);
+      } else if (pt == PT_PINE) {                       // conical needles, narrowing upward
+        for (int oy = 0; oy <= 6; oy++) { int wRad = (oy + 1) / 2; for (int ox = -wRad; ox <= wRad; ox++) put(lx + ox, top + oy, leaf); }
+      } else if (pt == PT_WILLOW) {                     // wide, drooping
+        for (int oy = -3; oy <= 3; oy++) for (int ox = -4; ox <= 4; ox++) { if (ox * ox + (oy < 0 ? oy * oy : 0) > 14) continue; put(lx + ox, top + oy, leaf); }
+      } else {                                          // oak / bush round canopy
+        for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, leaf); }
+      }
     }
   }
   // ---- deterministic structure stamping (ruins) -----------------------------

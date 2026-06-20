@@ -98,8 +98,13 @@ static double wridged2(uint32_t seed, double x, double y, int octaves, double ga
   return norm > 0 ? sum / norm : 0;
 }
 
+// Flora species — drives growth rules + which wood/leaf material a tree is made of.
+// 0 = OAK = the original behavior, so existing/un-typed plant comps are unchanged.
+enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROOM, PT_BUSH };
+
 struct Comp {
   int id = 0;
+  uint8_t plantType = PT_OAK; // flora species (plant comps only); survives shifts/splits/streaming
   // Cell membership as a flat vector (NOT a hash set): components are iterated far
   // more than queried, and a world shift must re-index every cell — an in-place
   // vector offset is ~10x cheaper than rebuilding an unordered_set (the periodic
@@ -110,6 +115,10 @@ struct Comp {
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
   bool grounded = false;
+  // Only SEEDED plants actively grow. Worldgen-stamped trees (and restored/streamed
+  // comps) are inert scenery (growing=false) so they never self-activate the sim.
+  // Cleared once a growing plant reaches its species' size cap.
+  bool growing = false;
   std::vector<int> woodCells, seedWoodCells;
 };
 

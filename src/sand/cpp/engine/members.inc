@@ -150,6 +150,10 @@
   // (LMB), 1 = background (RMB). The draft set is shared staging; finalize writes
   // into the layer chosen here on pointerDown.
   int draftLayer = 0;
+  // Per-tree growth scratch: set at the top of each comp in growPlantComponents so
+  // the growth helpers emit the right species materials. OAK defaults keep the
+  // original behavior byte-identical.
+  uint8_t gGrowType = PT_OAK, gWoodMat = WOOD, gLeafMat = PLANT;
   int draftOwner = -1; // survival: id of the player who owns the in-progress solid draft (-1 = creative/none)
   std::unordered_set<int> stoneDraft, iceDraft;
   std::vector<int> draftSnapshot;
@@ -207,6 +211,16 @@
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isLiquid(uint8_t m) { return MAT_KIND[m] == K_LIQUID; }
   inline bool isGas(uint8_t m) { return MAT_KIND[m] == K_GAS; }
+  // Flora-type material classification: which plant-family materials act as a tree
+  // trunk vs foliage, and the species<->material mapping. A plant comp is a single
+  // species, so its trunk/leaf material is derived from its plantType (and vice
+  // versa when re-registering streamed-in cells). DRIFTWOOD/VINE are neither, so
+  // they never act as a growth source (driftwood stays non-growing as before).
+  inline bool isPlantWood(uint8_t m) { return m == WOOD || m == PINE_WOOD || m == CACTUS || m == MUSH_STEM; }
+  inline bool isPlantLeaf(uint8_t m) { return m == PLANT || m == MUSH_CAP; }
+  inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : WOOD; }
+  inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_MUSHROOM ? MUSH_CAP : PLANT; }
+  inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : PT_OAK; }
   inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquid(m) || isGas(m); }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
 

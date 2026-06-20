@@ -75,6 +75,7 @@ EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->draftSnapshot.
 EMSCRIPTEN_KEEPALIVE int engine_get_seed_origin(Engine* e, int cx, int cy, int* out) { int x0, y0; if (!e->getSeedOrigin(cx, cy, x0, y0)) return 0; out[0] = x0; out[1] = y0; return 1; }
 EMSCRIPTEN_KEEPALIVE int engine_can_place_seed(Engine* e, int x0, int y0) { return e->canPlaceSeedAt(x0, y0) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_place_seed(Engine* e, int x0, int y0) { return e->placeSeedAt(x0, y0) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_place_seed_typed(Engine* e, int x0, int y0, int pt) { return e->placeSeedAtTyped(x0, y0, (uint8_t)pt) ? 1 : 0; }
 
 // tools / pointer (input policy lives in the engine; JS forwards cell events)
 EMSCRIPTEN_KEEPALIVE void engine_set_tool(Engine* e, int tool) { e->setTool(tool); }

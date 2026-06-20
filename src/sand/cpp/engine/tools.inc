@@ -116,9 +116,13 @@
     for (int y = y0; y < y0 + SEED_SIZE; y++) for (int x = x0; x < x0 + SEED_SIZE; x++) if (grid[I(x, y)] != EMPTY) return false;
     return true;
   }
-  bool placeSeedAt(int x0, int y0) {
+  bool placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_OAK); }
+  // Place a seed of a given species. The comp carries the plantType so growth.inc
+  // dispatches the right shape/material; the grown wood material then re-encodes
+  // the type so it survives streaming.
+  bool placeSeedAtTyped(int x0, int y0, uint8_t pt) {
     if (!canPlaceSeedAt(x0, y0)) return false;
-    Comp c; c.id = L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true;
+    Comp c; c.id = L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
     for (int y = y0; y < y0 + SEED_SIZE; y++) for (int x = x0; x < x0 + SEED_SIZE; x++) { int k = I(x, y); grid[k] = SEED; c.cells.push_back(k); if (y > c.yMax) c.yMax = y; } // fresh component, distinct cells
     L->plantComponents.push_back(std::move(c));
     markDirtyRect(x0, y0, x0 + SEED_SIZE - 1, y0 + SEED_SIZE - 1);

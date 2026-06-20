@@ -209,7 +209,7 @@
       for (int ci : grp->comps) {
         Comp* comp = all[ci]; bool isPlant = ci >= nStone && ci < nStonePlant;
         std::vector<std::pair<int, uint8_t>> mats; int wood = 0, leaf = 0;
-        for (int k : comp->cells) { uint8_t m = matOf(ci, k); mats.push_back({k + dir, m}); if (isPlant) { if (m == WOOD) wood++; else if (m == PLANT) leaf++; } }
+        for (int k : comp->cells) { uint8_t m = matOf(ci, k); mats.push_back({k + dir, m}); if (isPlant) { if (isPlantWood(m)) wood++; else if (isPlantLeaf(m)) leaf++; } }
         moves.push_back({comp, isPlant, std::move(mats), wood, leaf});
       }
       for (int k : cells) writeGridIndex(k, EMPTY);
@@ -328,7 +328,9 @@
         std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isPlantMat);
         Comp c; c.id = L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
-        for (int kk : cells) { if (grid[kk] == WOOD) c.woodCount++; else if (grid[kk] == PLANT) c.leafCount++; }
+        // Re-derive the species from the trunk material (so a streamed-in / restored
+        // tree keeps its type — the cells ARE the persistence) and count generically.
+        for (int kk : cells) { uint8_t m = grid[kk]; if (isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = plantTypeFromWood(m); } else if (isPlantLeaf(m)) c.leafCount++; }
         c.cells = std::move(cells); L->plantComponents.push_back(std::move(c));
       }
     }
@@ -423,7 +425,8 @@
           for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.push_back(nk); } }
         }
         Comp c; c.id = reused ? L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
-        for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; if (grid[k] == WOOD) c.woodCount++; else if (grid[k] == PLANT) c.leafCount++; }
+        c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
+        for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; if (isPlantWood(grid[k])) c.woodCount++; else if (isPlantLeaf(grid[k])) c.leafCount++; }
         c.cells = std::move(part); updated.push_back(std::move(c)); reused = true;
       }
     }

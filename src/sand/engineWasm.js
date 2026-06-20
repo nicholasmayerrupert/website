@@ -58,6 +58,8 @@ export function initSandWasm() {
         renderPixelsLen: c('engine_render_pixels_len', 'number', ['number']),
         paintDisc: c('engine_paint_disc', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
+        placeMaterial: c('engine_place_material', 'number', ['number', 'number', 'number', 'number', 'number']),
+        placeMaterialLayer: c('engine_place_material_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         setSinks: c('engine_set_sinks', null, ['number', 'number']),
         syncComponents: c('engine_sync_components', null, ['number']),
         perfStepMs: c('engine_perf_step_ms', 'number', ['number']),
@@ -221,6 +223,11 @@ export function createEngineWasm({
       return M.paintDisc(ptr, cx, cy, r, material, overwrite ? 1 : 0) === 1;
     },
     eraseDisc(cx, cy, r) { return M.eraseDisc(ptr, cx, cy, r) === 1; },
+    // Generic placement by material id (inventory-forward): any material is
+    // placeable without a per-material tool. layer 0=fg, 1=bg.
+    placeMaterial(cx, cy, r, material, layer = 0) {
+      return (layer ? M.placeMaterialLayer(ptr, layer, cx, cy, r, material) : M.placeMaterial(ptr, cx, cy, r, material)) === 1;
+    },
     setSinksOn(v) { M.setSinks(ptr, v ? 1 : 0); },
     setEmittersOn() {},
 

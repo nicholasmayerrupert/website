@@ -3,7 +3,7 @@
 // (JS module)
 
 // Slots in the flat lookup tables (power-of-two headroom over the live ids).
-export const TABLE_SIZE = 16;
+export const TABLE_SIZE = 32;
 
 // How the engine routes a cell each tick (mirrors C++ enum Kind).
 export const KIND = {
@@ -50,12 +50,28 @@ export const MATERIALS = [
   { id: 12, name: 'ICE', kind: KIND.COMPONENT, density: 0.9, looseSorted: false, mobility: 0, color: 0x90fff0c0, textureAmp: 5, durability: 5, renderAnim: 'none' },
   { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, density: 1.4, looseSorted: false, mobility: 0, color: 0xff8a725e, textureAmp: 6, durability: 10, renderAnim: 'none' },
   { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc26e7d8c, textureAmp: 7, durability: 4, renderAnim: 'none' },
+  { id: 15, name: 'DIRT', kind: KIND.POWDER, density: 1.5, looseSorted: true, mobility: 1, color: 0xc8305278, textureAmp: 7, durability: 2, renderAnim: 'none' },
+  { id: 16, name: 'SNOW', kind: KIND.POWDER, density: 0.4, looseSorted: true, mobility: 1, color: 0xe0faf2eb, textureAmp: 4, durability: 1, renderAnim: 'none' },
+  { id: 17, name: 'MUD', kind: KIND.POWDER, density: 1.7, looseSorted: true, mobility: 1, color: 0xd02a3a4a, textureAmp: 5, durability: 2, renderAnim: 'none' },
+  { id: 18, name: 'CLAY', kind: KIND.COMPONENT, density: 2, looseSorted: false, mobility: 0, color: 0xb34868b2, textureAmp: 5, durability: 6, renderAnim: 'none' },
+  { id: 19, name: 'SANDSTONE', kind: KIND.COMPONENT, density: 2.3, looseSorted: false, mobility: 0, color: 0xb382b4d2, textureAmp: 7, durability: 6, renderAnim: 'none' },
+  { id: 20, name: 'MOSS', kind: KIND.COMPONENT, density: 0.9, looseSorted: false, mobility: 0, color: 0xb33e7856, textureAmp: 8, durability: 3, renderAnim: 'none' },
+  { id: 21, name: 'COPPER_ORE', kind: KIND.COMPONENT, density: 2.7, looseSorted: false, mobility: 0, color: 0xb3466eaf, textureAmp: 8, durability: 10, renderAnim: 'none' },
+  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, density: 2.8, looseSorted: false, mobility: 0, color: 0xb3788ca0, textureAmp: 8, durability: 14, renderAnim: 'none' },
+  { id: 23, name: 'COAL_ORE', kind: KIND.COMPONENT, density: 2.6, looseSorted: false, mobility: 0, color: 0xb3555050, textureAmp: 8, durability: 9, renderAnim: 'none' },
+  { id: 24, name: 'GOLD_ORE', kind: KIND.COMPONENT, density: 3, looseSorted: false, mobility: 0, color: 0xb35aafc8, textureAmp: 8, durability: 12, renderAnim: 'none' },
+  { id: 25, name: 'BRICK', kind: KIND.COMPONENT, density: 2.4, looseSorted: false, mobility: 0, color: 0xc8374696, textureAmp: 4, durability: 12, renderAnim: 'none' },
+  { id: 26, name: 'PINE_WOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc21e3a5a, textureAmp: 6, durability: 4, renderAnim: 'none' },
+  { id: 27, name: 'CACTUS', kind: KIND.COMPONENT, density: 0.7, looseSorted: false, mobility: 0, color: 0xc23c7846, textureAmp: 6, durability: 3, renderAnim: 'none' },
+  { id: 28, name: 'MUSH_STEM', kind: KIND.COMPONENT, density: 0.5, looseSorted: false, mobility: 0, color: 0xb0afc8d2, textureAmp: 6, durability: 2, renderAnim: 'none' },
+  { id: 29, name: 'MUSH_CAP', kind: KIND.COMPONENT, density: 0.45, looseSorted: false, mobility: 0, color: 0xb83237b4, textureAmp: 8, durability: 2, renderAnim: 'none' },
+  { id: 30, name: 'VINE', kind: KIND.COMPONENT, density: 0.4, looseSorted: false, mobility: 0, color: 0xa32d6e3c, textureAmp: 9, durability: 1, renderAnim: 'none' },
 ];
 
 // Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++
 // MAT_FLAGS / MAT_CGROUP tables.
-export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 0];
-export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0];
+export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 10, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0];
+export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0];
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 export const PACKED_FIRE = 0xb8226cff;

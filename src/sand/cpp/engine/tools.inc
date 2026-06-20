@@ -5,6 +5,28 @@
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     return changed;
   }
+  // Generic material placement by id — the inventory-forward path. Routes by the
+  // material's kind/group so a new material is placeable with NO new tool enum or
+  // switch case: powders/liquids/gases paint as loose cells; component materials
+  // are written into EMPTY cells and registered into their seeded-component list
+  // (stone/ice via registerRigidCellsSplit keyed on the actual material; plant via
+  // the flood-fill registrar). EMPTY erases. Returns 1 if anything changed.
+  int placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
+    if (mat == EMPTY) return eraseDisc(cx, cy, radius);
+    if (MAT_KIND[mat] != K_COMPONENT) return paintDisc(cx, cy, radius, mat, false);
+    std::unordered_set<int> cells;
+    for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue;
+      for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
+        int k = I(xx, yy); if (grid[k] == EMPTY) { grid[k] = mat; markCellIndex(k); cells.insert(k); } } }
+    if (cells.empty()) return 0;
+    markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    switch (MAT_CGROUP[mat]) {
+      case CG_ICE:  registerRigidCellsSplit(L->iceComponents, L->nextIceId, mat, cells, true); break;
+      case CG_PLANT: registerSeededComponents(0, cols); break; // unbounded flood (a tree/blob is one comp)
+      default:      registerRigidCellsSplit(L->stoneComponents, L->nextStoneId, mat, cells, false); break; // stone group
+    }
+    return 1;
+  }
   int eraseDisc(int cx, int cy, int radius) {
     std::vector<int> erasedStone, erasedIce, bodyCellList; bool erasedPlant = false; int changed = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;

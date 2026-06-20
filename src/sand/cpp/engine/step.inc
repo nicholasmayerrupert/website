@@ -21,9 +21,12 @@
     prepareNextBuffer();
     // carry-forward component + body cells across the double buffer
     L->curCompCells.clear();
-    for (auto& comp : L->stoneComponents) for (int k : comp.cells) { next[k] = STONE; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    // Carry component cells forward in `next` keeping each cell's actual material
+    // (grid[k]) so stone-group ores and any future ice-group materials survive the
+    // double-buffer swap instead of collapsing to STONE/ICE.
+    for (auto& comp : L->stoneComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (auto& comp : L->plantComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (auto& comp : L->iceComponents) for (int k : comp.cells) { next[k] = ICE; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (auto& comp : L->iceComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (int k : L->bodyCells) { next[k] = RIGID; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (int k : L->prevCompCells) {
       if (compOccStamp[k] == tick) continue;

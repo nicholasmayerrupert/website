@@ -18,21 +18,25 @@
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue; int ik = belowK + dx; if (canDisplaceByLooseDensity(m, grid[ik]) && next[ik] == EMPTY) { moveMaterialInto(k, ik, m); return; } }
   }
+  // Settle one POWDER cell. `self` is the actual powder material (SAND, DIRT,
+  // SNOW, ...), so every new position keeps that material instead of becoming
+  // SAND. The "packed" early-out checks for the SAME powder all around below.
   void settleSand(int x, int y, int k) {
     if (next[k] != EMPTY) return;
+    uint8_t self = grid[k];
     int belowK = k + cols;
-    if (y + 1 < rows && x > 0 && x < cols - 1 && grid[belowK] == SAND && grid[belowK - 1] == SAND && grid[belowK + 1] == SAND) { if (next[k] == EMPTY) next[k] = SAND; return; }
-    if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(belowK, SAND); return; }
-    if (y + 1 < rows && canDisplaceMaterial(SAND, grid[belowK]) && next[belowK] == EMPTY) { moveMaterialInto(k, belowK, SAND); return; }
+    if (y + 1 < rows && x > 0 && x < cols - 1 && grid[belowK] == self && grid[belowK - 1] == self && grid[belowK + 1] == self) { if (next[k] == EMPTY) next[k] = self; return; }
+    if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(belowK, self); return; }
+    if (y + 1 < rows && canDisplaceMaterial(self, grid[belowK]) && next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
     int firstDx = rand() < 0.5 ? -1 : 1, secondDx = -firstDx;
     for (int i = 0; i < 2; i++) {
       int dx = i == 0 ? firstDx : secondDx; int nx = x + dx;
       if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
       int ik = belowK + dx; uint8_t m = grid[ik];
-      if (m == EMPTY && next[ik] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(ik, SAND); return; }
-      if (canDisplaceMaterial(SAND, m) && next[ik] == EMPTY) { moveMaterialInto(k, ik, SAND); return; }
+      if (m == EMPTY && next[ik] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(ik, self); return; }
+      if (canDisplaceMaterial(self, m) && next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
     }
-    if (next[k] == EMPTY) writeNextIndex(k, SAND);
+    if (next[k] == EMPTY) writeNextIndex(k, self);
   }
   void settleLiquid(int x, int y, int k, uint8_t m) {
     if (next[k] != EMPTY) return;

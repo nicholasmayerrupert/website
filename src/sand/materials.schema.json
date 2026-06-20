@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for material identity, shared by JS and C++. Edit here, then run `npm run generate` to regenerate materials.generated.js and cpp/engine/materials.generated.hpp. Numeric ids MUST stay stable: saved scenes, worldgen, tests, and the WASM grid key off them. `flags` and `componentGroup` make material behavior class-based: predicates (isFlammable/isDissolvable/isRigidMaterial/isBearingMaterial/isPlantMaterial) and component registration are generated from these, so a new material that reuses existing physics needs only a schema entry.",
-  "tableSize": 16,
+  "tableSize": 32,
   "kinds": {
     "NONE": 0,
     "POWDER": 1,
@@ -39,7 +39,24 @@
     { "id": 11, "name": "LAVA",      "kind": "LIQUID",     "density": 2.8, "looseSorted": true,  "mobility": 0.35, "color": "0xc81050ff", "textureAmp": 0, "durability": 0,  "renderAnim": "lava",  "componentGroup": "none",  "flags": [] },
     { "id": 12, "name": "ICE",       "kind": "COMPONENT",  "density": 0.9, "looseSorted": false, "mobility": 0,    "color": "0x90fff0c0", "textureAmp": 5, "durability": 5,  "renderAnim": "none",  "componentGroup": "ice",   "flags": ["rigid", "bearing"] },
     { "id": 13, "name": "RIGID",     "kind": "FREE_RIGID", "density": 1.4, "looseSorted": false, "mobility": 0,    "color": "0xff8a725e", "textureAmp": 6, "durability": 10, "renderAnim": "none",  "componentGroup": "none",  "flags": ["rigid", "bearing"] },
-    { "id": 14, "name": "DRIFTWOOD", "kind": "COMPONENT",  "density": 0.6, "looseSorted": false, "mobility": 0,    "color": "0xc26e7d8c", "textureAmp": 7, "durability": 4,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"] }
+    { "id": 14, "name": "DRIFTWOOD", "kind": "COMPONENT",  "density": 0.6, "looseSorted": false, "mobility": 0,    "color": "0xc26e7d8c", "textureAmp": 7, "durability": 4,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"] },
+
+    { "id": 15, "name": "DIRT",      "kind": "POWDER",     "density": 1.5, "looseSorted": true,  "mobility": 1.0,  "color": "0xc8305278", "textureAmp": 7, "durability": 2,  "renderAnim": "none",  "componentGroup": "none",  "flags": ["dissolvable", "bearing"] },
+    { "id": 16, "name": "SNOW",      "kind": "POWDER",     "density": 0.4, "looseSorted": true,  "mobility": 1.0,  "color": "0xe0faf2eb", "textureAmp": 4, "durability": 1,  "renderAnim": "none",  "componentGroup": "none",  "flags": ["dissolvable", "bearing"] },
+    { "id": 17, "name": "MUD",       "kind": "POWDER",     "density": 1.7, "looseSorted": true,  "mobility": 1.0,  "color": "0xd02a3a4a", "textureAmp": 5, "durability": 2,  "renderAnim": "none",  "componentGroup": "none",  "flags": ["dissolvable", "bearing"] },
+    { "id": 18, "name": "CLAY",      "kind": "COMPONENT",  "density": 2.0, "looseSorted": false, "mobility": 0,    "color": "0xb34868b2", "textureAmp": 5, "durability": 6,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 19, "name": "SANDSTONE", "kind": "COMPONENT",  "density": 2.3, "looseSorted": false, "mobility": 0,    "color": "0xb382b4d2", "textureAmp": 7, "durability": 6,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 20, "name": "MOSS",      "kind": "COMPONENT",  "density": 0.9, "looseSorted": false, "mobility": 0,    "color": "0xb33e7856", "textureAmp": 8, "durability": 3,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 21, "name": "COPPER_ORE","kind": "COMPONENT",  "density": 2.7, "looseSorted": false, "mobility": 0,    "color": "0xb3466eaf", "textureAmp": 8, "durability": 10, "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 22, "name": "IRON_ORE",  "kind": "COMPONENT",  "density": 2.8, "looseSorted": false, "mobility": 0,    "color": "0xb3788ca0", "textureAmp": 8, "durability": 14, "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 23, "name": "COAL_ORE",  "kind": "COMPONENT",  "density": 2.6, "looseSorted": false, "mobility": 0,    "color": "0xb3555050", "textureAmp": 8, "durability": 9,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 24, "name": "GOLD_ORE",  "kind": "COMPONENT",  "density": 3.0, "looseSorted": false, "mobility": 0,    "color": "0xb35aafc8", "textureAmp": 8, "durability": 12, "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 25, "name": "BRICK",     "kind": "COMPONENT",  "density": 2.4, "looseSorted": false, "mobility": 0,    "color": "0xc8374696", "textureAmp": 4, "durability": 12, "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+    { "id": 26, "name": "PINE_WOOD", "kind": "COMPONENT",  "density": 0.6, "looseSorted": false, "mobility": 0,    "color": "0xc21e3a5a", "textureAmp": 6, "durability": 4,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["flammable", "dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 27, "name": "CACTUS",    "kind": "COMPONENT",  "density": 0.7, "looseSorted": false, "mobility": 0,    "color": "0xc23c7846", "textureAmp": 6, "durability": 3,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 28, "name": "MUSH_STEM", "kind": "COMPONENT",  "density": 0.5, "looseSorted": false, "mobility": 0,    "color": "0xb0afc8d2", "textureAmp": 6, "durability": 2,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 29, "name": "MUSH_CAP",  "kind": "COMPONENT",  "density": 0.45,"looseSorted": false, "mobility": 0,    "color": "0xb83237b4", "textureAmp": 8, "durability": 2,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 30, "name": "VINE",      "kind": "COMPONENT",  "density": 0.4, "looseSorted": false, "mobility": 0,    "color": "0xa32d6e3c", "textureAmp": 9, "durability": 1,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["flammable", "dissolvable", "rigid", "plantFamily"] }
   ],
   "animColors": {
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",

@@ -35,6 +35,16 @@ EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels(Engine* e) { return e->fg.ren
 EMSCRIPTEN_KEEPALIVE int engine_render_pixels_len(Engine* e) { return (int)e->fg.renderPixels.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) { return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0); }
 EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) { return e->eraseDisc(cx, cy, r); }
+// Generic material placement by id (inventory-forward): routes by kind/group so
+// any material is placeable without a per-material tool. 0=fg, 1=bg.
+EMSCRIPTEN_KEEPALIVE int engine_place_material(Engine* e, int cx, int cy, int r, int mat) { return e->placeMaterialAt(cx, cy, r, (uint8_t)mat); }
+EMSCRIPTEN_KEEPALIVE int engine_place_material_layer(Engine* e, int layer, int cx, int cy, int r, int mat) {
+  e->useLayer(layer ? &e->bg : &e->fg);
+  if (layer) e->bgEnabled = true;
+  int n = e->placeMaterialAt(cx, cy, r, (uint8_t)mat);
+  e->useLayer(&e->fg);
+  return n;
+}
 EMSCRIPTEN_KEEPALIVE void engine_set_sinks(Engine* e, int v) { e->sinksEnabled = v != 0; }
 EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->useLayer(&e->fg); e->registerSeededComponents(0, e->cols); }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_ms(Engine* e) { return e->perfStepMs; }

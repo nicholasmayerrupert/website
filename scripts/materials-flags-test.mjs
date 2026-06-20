@@ -22,7 +22,12 @@ const EXPECTED = {
   plantFamily:  ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD'],
 };
 
-const ids = new Set(Object.values(MAT));
+// Pin only the ORIGINAL 15 materials (ids 0-14): this guards that the flag/class
+// refactor reproduced the historical hand-written predicate sets exactly. Newer
+// materials (id >= 15) legitimately add flags and are validated by the schema
+// generator, not here.
+const LEGACY = ['EMPTY', 'SAND', 'WATER', 'STONE', 'OIL', 'FIRE', 'STEAM', 'SEED', 'WOOD', 'PLANT', 'ACID', 'LAVA', 'ICE', 'RIGID', 'DRIFTWOOD'];
+const ids = new Set(LEGACY.map((n) => MAT[n]));
 const has = (id, bit) => (MAT_FLAGS[id] & bit) !== 0;
 
 for (const [flag, names] of Object.entries(EXPECTED)) {

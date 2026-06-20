@@ -265,8 +265,9 @@
   // ---- rigidBodies.js layer ----
   bool isBodyTerrain(int x, int y) {
     int k = y * cols + x; uint8_t m = grid[k];
-    if (m == SAND) return groundedCell[k] == 1;
-    return m == STONE || m == WOOD || m == PLANT || m == SEED || m == ICE;
+    if (MAT_KIND[m] == K_POWDER) return groundedCell[k] == 1;   // grounded loose powder is terrain (SAND/DIRT/SNOW/...)
+    if (m == DRIFTWOOD || m == RIGID) return false;             // free body / drifting wood are not static terrain
+    return isRigidMaterial(m);                                  // stone/plant/ice-group solids incl. new ores & woods
   }
   double fluidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquid(m) ? DENSITY[m] : 0; }
   bool isBodyRelocatable(uint8_t m, int k) { return isLiquid(m) || (m == SAND && groundedCell[k] != 1); }

@@ -19,8 +19,11 @@
     return isLiquid(grid[I(x, y)]);
   }
 
-  // Fall vertically, stopping just above the first solid cell below (never clips in).
-  void moveItemY(Item& it) {
+  // Fall vertically, stopping just above the first cell below that supports the item.
+  // `floats` (dropped/mined items) treats a LIQUID surface as a floor too, so the item
+  // rests ON TOP of water/oil/acid/lava instead of sinking through it. Cosmetic
+  // particles pass `floats=false` and still splash down through fluids.
+  void moveItemY(Item& it, bool floats = false) {
     double mag = std::fabs(it.vy); if (mag < 1e-6) return;
     double dir = it.vy > 0 ? 1.0 : -1.0, moved = 0;
     int ix = (int)std::floor(it.px);
@@ -28,7 +31,8 @@
       double step = (mag - moved < IT_MOVE_SUBSTEP) ? (mag - moved) : IT_MOVE_SUBSTEP;
       double ny = it.py + dir * step;
       int curIy = (int)std::floor(it.py), nextIy = (int)std::floor(ny);
-      if (nextIy != curIy && itemGridSolid(ix, nextIy)) {
+      bool blocked = itemGridSolid(ix, nextIy) || (floats && dir > 0 && itemCellLiquidAt(ix, nextIy));
+      if (nextIy != curIy && blocked) {
         if (dir > 0) it.py = nextIy - 1e-3; else it.py = curIy + 1e-3;
         it.vy = 0; return;
       }
@@ -55,6 +59,16 @@
     int x = (int)std::floor(it.px), guard = 0;
     while (it.py > 0 && itemGridSolid(x, (int)std::floor(it.py)) && guard < rows) { it.py -= IT_RISE_STEP; guard++; }
     if (it.py < 0) it.py = 0;
+  }
+  // Buoyancy: an item submerged in a fluid (spawned underwater, or one a rising fluid
+  // closed over) floats up to the surface and rests there. Mirrors unburyItem but for
+  // liquids; together with the liquid-as-floor stop in moveItemY the item settles with
+  // its cell just above the fluid surface and stays put (no sink-then-pop sawtooth).
+  void floatItem(Item& it) {
+    int x = (int)std::floor(it.px), guard = 0;
+    while (it.py > 0 && itemCellLiquidAt(x, (int)std::floor(it.py)) && guard < rows) { it.py -= IT_RISE_STEP; guard++; }
+    if (it.py < 0) it.py = 0;
+    if (it.vy > 0 && itemCellLiquidAt(x, (int)std::floor(it.py) + 1)) it.vy = 0; // resting on the surface
   }
   // Nearest active/alive player center within IT_MAGNET_R of the item (or null).
   Player* magnetTarget(const Item& it) {
@@ -137,9 +151,10 @@
       double mx = inLiquid ? IT_LIQUID_MAX_FALL : IT_MAX_FALL;
       it.vy += g; if (it.vy > mx) it.vy = mx;
       if (inLiquid) { it.vx *= IT_LIQUID_DRAG; it.vy *= IT_LIQUID_DRAG; }
-      moveItemY(it);
+      moveItemY(it, /*floats=*/true);
       moveItemX(it);
       unburyItem(it);
+      floatItem(it);
     }
     for (auto& it : items) if (it.kind == IT_PARTICLE) it.life--;
     pickupItems();

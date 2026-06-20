@@ -131,6 +131,26 @@
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     return changed;
   }
+  // Survival draft: stage up to `maxAdd` NEW empty cells (nearest-center first) into the
+  // draft, skipping the player's own AABB (so you don't build on yourself). Returns the
+  // number staged — the caller consumes that many inventory units as the preview grows.
+  int addDiscToDraftCapped(std::unordered_set<int>& d, int cx, int cy, int radius, int yLimit, int maxAdd, const Player* p) {
+    if (maxAdd <= 0) return 0;
+    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
+    if (p) { px0 = (int)std::floor(p->px); px1 = (int)std::floor(p->px + p->w - 1e-6); py0 = (int)std::floor(p->py); py1 = (int)std::floor(p->py + p->h - 1e-6); }
+    int added = 0;
+    const std::vector<std::pair<int, int>>& offs = discOffsets(radius);
+    for (const auto& o : offs) {
+      if (added >= maxAdd) break;
+      int xx = cx + o.first, yy = cy + o.second;
+      if (yy <= 0 || yy >= yLimit || xx <= 0 || xx >= cols - 1) continue;
+      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue; // don't build on the player
+      int k = I(xx, yy);
+      if (grid[k] == EMPTY && !d.count(k)) { d.insert(k); added++; }
+    }
+    if (added) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return added;
+  }
   // Brush radius for a creative material (preserves the historical per-material sizes;
   // FIRE/DRIFTWOOD draw a tighter 1-radius, everything else 2).
   int brushFor(uint8_t m) { return (m == FIRE || m == DRIFTWOOD) ? 1 : 2; }

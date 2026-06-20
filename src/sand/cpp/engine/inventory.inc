@@ -154,14 +154,20 @@
     return INV_SLOTS;
   }
 
-  // Survival input model. The selected hotbar slot decides what the PRIMARY (LMB, the
-  // FOREGROUND) and SECONDARY (RMB, the BACKGROUND) buttons do:
-  //   - a TOOL or an EMPTY slot  -> MINE that layer (an empty slot = the bare hand).
-  //   - a MATERIAL stack         -> PLACE that material on the foreground (one press).
-  // Mining is continuous (cooldown-throttled); placing fires once per press. Only runs
-  // when survivalInventory is on, so creative is untouched.
+  // Survival input model. The selected hotbar slot decides what PRIMARY (LMB, the
+  // FOREGROUND) and SECONDARY (RMB, the BACKGROUND) do:
+  //   - a TOOL or an EMPTY slot      -> MINE that layer (empty = the bare hand).
+  //   - a COMPONENT material (stone) -> creative-style DRAFT: hold to draw a growing
+  //         preview that consumes inventory per staged cell, stops when you run out,
+  //         and MATERIALIZES on release (exactly like creative solids).
+  //   - a loose material (sand/water)-> continuous capped paint.
+  // Only runs when survivalInventory is on, so creative is untouched.
   void applyInventoryPlayer(Player& p) {
-    if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; return; }
+    if (!p.active || !p.alive) {
+      resetPlayerMine(p);
+      if (drafting && draftOwner == p.id) playerFinalizeSolidDraft();
+      p.prevInput = p.input; return;
+    }
     if (p.toolCooldown > 0) p.toolCooldown--;
     int prev = p.prevInput;
     bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
@@ -171,17 +177,43 @@
     double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
     bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
-    if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); return; }
     InvSlot& sel = p.inv[p.selectedSlot];
+
+    // (1) An active component draft this player owns takes over PRIMARY: extend it while
+    //     held (consuming inventory per staged cell), materialize it on release.
+    if (drafting && draftOwner == p.id) {
+      if (!primary) { playerFinalizeSolidDraft(); playerActionCount++; }
+      else if (inReach && !sel.isTool && sel.count > 0 && sel.material == draftMaterial) {
+        useLayer(&fg);
+        int added = addDiscToDraftCapped(draft, ax, ay, P_BUILD_R, rows, sel.count, &p);
+        if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
+        useLayer(&fg);
+      }
+      return;
+    }
+
     bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
+    bool isComp = !mineMode && sel.material != EMPTY && MAT_KIND[sel.material] == K_COMPONENT;
+    if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); return; }
+
     if (mineMode) {
       if (p.toolCooldown > 0) return;
       bool acted = false;
       if (primary) acted |= mineDisc(p, ax, ay, &fg);
       if (secondary) { bgEnabled = true; acted |= mineDisc(p, ax, ay, &bg); }
       if (acted) { p.toolCooldown = P_TOOL_COOLDOWN; playerActionCount++; }
-    } else { // a material stack -> place on the foreground (one unit-budget per press)
+    } else if (isComp) {
+      // begin a component draft on press (stage + consume the first disc immediately).
+      if (primaryRising) {
+        drafting = true; draftOwner = p.id; draftLayer = 0; draftMaterial = sel.material;
+        useLayer(&fg);
+        int added = addDiscToDraftCapped(draft, ax, ay, P_BUILD_R, rows, sel.count, &p);
+        if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
+        useLayer(&fg);
+        playerActionCount++;
+      }
+    } else { // loose material -> continuous capped paint (consume per cell)
       resetPlayerMine(p);
-      if (primaryRising && placeFromSelected(p, ax, ay, P_BUILD_R)) playerActionCount++;
+      if (p.toolCooldown <= 0 && sel.count > 0 && placeFromSelected(p, ax, ay, P_BUILD_R)) p.toolCooldown = P_TOOL_COOLDOWN;
     }
   }

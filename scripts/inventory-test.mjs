@@ -133,6 +133,32 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.destroy();
 }
 
+// 7) Placing a COMPONENT material in survival uses the creative-style DRAFT: holding
+//    draws a preview that consumes inventory (before it's in the world); releasing
+//    materializes it.
+{
+  const PI_PRIMARY = 16;
+  const e = survivalEngine();
+  const id = e.spawnPlayer(40, FLOOR - 9);
+  let t = 0; for (let s = 0; s < 8; s++) { t += 16; e.step(t); } // settle
+  e.addToInventory(id, MAT.STONE, 8);
+  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.STONE && s.count > 0));
+  const stoneOf = () => e.getGrid().reduce((a, v) => a + (v === MAT.STONE), 0);
+  const before = stoneOf();
+  let seq = 100;
+  // hold primary, aiming at open air in reach -> the draft grows + consumes inventory.
+  for (let s = 0; s < 4; s++) { e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 50.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t); }
+  const staged = e.getStoneDraftCells().length;
+  const invDuring = slotCount(e, id, MAT.STONE);
+  check(`draft consumes inventory but isn't in the world yet (${staged} staged, inv ${invDuring}, grid +${stoneOf() - before})`,
+    staged > 0 && invDuring < 8 && stoneOf() === before);
+  // release -> materialize exactly what was consumed.
+  e.setPlayerInput(id, { bits: 0, aimX: 50.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  check(`releasing materializes the draft (grid +${stoneOf() - before} == consumed ${8 - invDuring})`,
+    stoneOf() - before > 0 && stoneOf() - before === 8 - invDuring);
+  e.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

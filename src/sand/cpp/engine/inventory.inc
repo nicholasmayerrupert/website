@@ -65,9 +65,11 @@
   bool placeFromSelected(Player& p, int ax, int ay, int r) {
     InvSlot& s = p.inv[p.selectedSlot];
     if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
-    if (playerBuildOverlapsSelf(p, ax, ay, r)) return false;
+    // Don't reject the whole build when the disc grazes the player — place only the
+    // cells outside the body (passing &p), so building against yourself still works
+    // and holding keeps placing as the loose material flows/settles away.
     useLayer(&fg);
-    int placed = placeMaterialAtCapped(ax, ay, r, s.material, s.count);
+    int placed = placeMaterialAtCapped(ax, ay, r, s.material, s.count, &p);
     useLayer(&fg);
     if (placed <= 0) return false;
     s.count -= placed; if (s.count <= 0) s = InvSlot();

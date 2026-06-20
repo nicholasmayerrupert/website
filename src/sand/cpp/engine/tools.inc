@@ -38,9 +38,15 @@
   // Per-pixel placement: write at most `maxCells` cells, NEAREST-TO-CENTER first, so
   // an inventory stack places exactly as many pixels as it can afford. Deterministic
   // (static distance-sorted offset order). Returns cells written. EMPTY erases (no cap).
-  int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells) {
+  // Optional `p` excludes the player's own AABB cell-by-cell (mirrors
+  // addDiscToDraftCapped) so a build disc that grazes the player still places its
+  // non-overlapping cells instead of being rejected wholesale — you can build right
+  // up against yourself and hold to place continuously without trapping the body.
+  int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr) {
     if (mat == EMPTY) return eraseDisc(cx, cy, radius);
     if (maxCells <= 0) return 0;
+    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
+    if (p) { px0 = (int)std::floor(p->px); px1 = (int)std::floor(p->px + p->w - 1e-6); py0 = (int)std::floor(p->py); py1 = (int)std::floor(p->py + p->h - 1e-6); }
     const std::vector<std::pair<int, int>>& offs = discOffsets(radius);
     bool comp = MAT_KIND[mat] == K_COMPONENT;
     std::unordered_set<int> cells; int placed = 0;
@@ -48,6 +54,7 @@
       if (placed >= maxCells) break;
       int xx = cx + o.first, yy = cy + o.second;
       if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
+      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue; // don't build on the player
       int k = I(xx, yy); if (grid[k] != EMPTY) continue;
       grid[k] = mat; placed++;
       if (comp) { markCellIndex(k); cells.insert(k); }

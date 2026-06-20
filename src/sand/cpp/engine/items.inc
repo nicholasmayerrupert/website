@@ -117,17 +117,18 @@
         moveItemY(it); moveItemX(it);
         continue;
       }
-      // Magnet: home toward a nearby player (free flight, ignores terrain so it can't
-      // get stuck), clamped so it never overshoots the player.
+      // Magnet: PURE PURSUIT toward a nearby player — the velocity points straight at
+      // the player every step (no accumulated sideways momentum), so items zip in and
+      // never orbit. Free flight (ignores terrain) and clamped so it can't overshoot.
       Player* mag = it.pickupDelay == 0 ? magnetTarget(it) : nullptr;
       if (mag) {
         double dx = (mag->px + mag->w / 2.0) - it.px, dy = (mag->py + mag->h / 2.0) - it.py;
         double d = std::sqrt(dx * dx + dy * dy);
-        if (d > 1e-6) { it.vx += IT_MAGNET_ACCEL * dx / d; it.vy += IT_MAGNET_ACCEL * dy / d; }
-        double sp = std::sqrt(it.vx * it.vx + it.vy * it.vy);
-        double cap = std::min(IT_MAGNET_MAX_SPEED, d); // don't fly past the player
-        if (sp > cap && sp > 1e-6) { it.vx *= cap / sp; it.vy *= cap / sp; }
-        it.px += it.vx; it.py += it.vy;
+        if (d > 1e-6) {
+          double speed = std::min(IT_MAGNET_MAX_SPEED, d);
+          it.vx = dx / d * speed; it.vy = dy / d * speed;
+          it.px += it.vx; it.py += it.vy;
+        }
         continue;
       }
       // Free-fall + settle on the surface; never buried.

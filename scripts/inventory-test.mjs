@@ -112,6 +112,27 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.destroy(); e2.destroy();
 }
 
+// 6) The survival CONTROLS route an empty slot to bare-hand mining (driven through
+//    real player input, exercising applyInventoryPlayer — not the direct mine hook).
+{
+  const PI_PRIMARY = 16;
+  const e = survivalEngine();
+  const id = e.spawnPlayer(40, FLOOR - 8);
+  let t = 0; for (let s = 0; s < 6; s++) { t += 16; e.step(t); } // let the player settle on the floor
+  e.placeMaterial(44, FLOOR - 1, 1, MAT.DIRT); // a dirt patch within reach
+  e.setSelectedSlot(id, 5); // an EMPTY slot -> bare hand
+  for (let s = 0; s < 40; s++) {
+    e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 44.5, aimY: FLOOR - 1 + 0.5, seq: s + 1 });
+    t += 16; e.step(t);
+  }
+  const dirtLeft = e.getGrid().reduce((a, v) => a + (v === MAT.DIRT), 0);
+  const inv = e.getInventory(id);
+  const gotDirt = inv.slots.some((s) => !s.isTool && s.material === MAT.DIRT && s.count > 0) ||
+    e.getItems().some((it) => it.kind === 0 && it.material === MAT.DIRT);
+  check(`empty-slot hand mining breaks the dirt (${dirtLeft} left) and yields it`, dirtLeft === 0 && gotDirt);
+  e.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

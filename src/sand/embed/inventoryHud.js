@@ -63,12 +63,11 @@ const STYLE = `
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 .inv-hint { font-size: 10px; color: rgba(229,231,235,.7); text-shadow: 0 1px 2px #000; }
 .inv-hud.open .inv-hint { color: rgba(229,231,235,.95); }
-.inv-cursor-item { position: fixed; z-index: 90; display: none; pointer-events: none;
-  width: 34px; height: 34px; margin: -17px 0 0 -17px; align-items: center; justify-content: center;
-  filter: drop-shadow(0 4px 6px rgba(0,0,0,.6)); }
-.inv-cursor-item.show { display: flex; }
-.inv-cursor-item .inv-swatch, .inv-cursor-item .inv-tool { width: 30px; height: 30px; }
-.inv-cursor-item .inv-count { right: -2px; bottom: -2px; font-size: 12px; }
+.inv-toast { position: relative; pointer-events: none; padding: 3px 10px; border-radius: 999px;
+  background: rgba(3,7,18,.78); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.2;
+  text-shadow: 0 1px 2px #000; box-shadow: 0 4px 6px -1px rgba(0,0,0,.4);
+  opacity: 0; transition: opacity .4s ease; }
+.inv-toast.show { opacity: 1; transition: none; }
 `;
 
 export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor } = {}) {
@@ -80,6 +79,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   }
 
   let open = false;
+  // Last-seen selected slot index + a fade timer, for the name-on-select label. -1
+  // (no prior render) suppresses the label on the very first update().
+  let lastSelected = -1;
+  let toastTimer = 0;
   // The slot a pointerdown started on, so a press-drag-release can place onto a
   // DIFFERENT slot (and we avoid double-firing when down/up land on the same slot).
   let downSlot = -1;
@@ -108,12 +111,28 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const hint = document.createElement('div');
   hint.className = 'inv-hint';
   hint.textContent = 'E — inventory · 1–9 / scroll — select';
-  hud.append(grid, bar, hint);
+  // Minecraft-style "selected item name" label: fades in above the hotbar on a
+  // selection change, then fades out after ~2s. Sits between the grid and the bar so
+  // it reads as floating just above the hotbar.
+  const toast = document.createElement('div');
+  toast.className = 'inv-toast';
+  hud.append(grid, toast, bar, hint);
 
   // The carried stack, rendered as a small floating swatch/chip that follows the
-  // pointer while the grid is open. Lives at the root so it can sit above the panels.
+  // pointer while the grid is open. It is appended to document.body (NOT the shadow
+  // root) so position:fixed anchors to the real viewport — a CSS transform/filter on
+  // the <sand-game> host or an ancestor would otherwise capture position:fixed and
+  // strand it in the top-left, decoupled from clientX/clientY. Because it lives
+  // outside the shadow root the injected <style> can't reach it, so it is styled with
+  // INLINE styles only.
   const cursorItem = document.createElement('div');
-  cursorItem.className = 'inv-cursor-item';
+  Object.assign(cursorItem.style, {
+    position: 'fixed', left: '0', top: '0', zIndex: '2147483646', display: 'none',
+    pointerEvents: 'none', width: '32px', height: '32px', marginLeft: '-16px', marginTop: '-16px',
+    alignItems: 'center', justifyContent: 'center',
+    filter: 'drop-shadow(0 4px 6px rgba(0,0,0,.6))',
+  });
+  document.body.appendChild(cursorItem);
 
   // Build the 36 slot elements once; update() refills them. Bar = slots 0..8 (the
   // hotbar), grid = slots 9..35. The grid renders top-to-bottom but indexes the
@@ -159,16 +178,60 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     }
   }
 
+  // Render the carried stack into the body-appended floating element using INLINE
+  // styles (the shadow <style> can't reach an element outside the shadow root). Mirrors
+  // renderStack's swatch/count + tool-chip layout, just self-styled.
+  function renderCursorInline(s) {
+    if (!s) return;
+    if (s.isTool) {
+      const g = document.createElement('span');
+      Object.assign(g.style, {
+        width: '28px', height: '28px', borderRadius: '4px', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        fontSize: '16px', fontWeight: '800', color: '#f1f5f9', background: 'rgba(120,130,150,.85)',
+        boxShadow: 'inset 2px 2px 0 rgba(255,255,255,.18)',
+      });
+      g.textContent = TOOL_GLYPH[s.toolClass] || '·';
+      cursorItem.appendChild(g);
+      if (s.toolTier > 0) {
+        const t = document.createElement('span');
+        Object.assign(t.style, {
+          position: 'absolute', right: '-2px', bottom: '-2px', fontSize: '11px', fontWeight: '700',
+          color: '#cbd5e1', textShadow: '0 1px 2px #000',
+        });
+        t.textContent = TIER[s.toolTier] || '';
+        cursorItem.appendChild(t);
+      }
+    } else if (s.count > 0) {
+      const sw = document.createElement('span');
+      Object.assign(sw.style, {
+        width: '28px', height: '28px', borderRadius: '4px',
+        background: COLOR[s.material] || '#888', boxShadow: 'inset 2px 2px 0 rgba(255,255,255,.18)',
+      });
+      cursorItem.appendChild(sw);
+      if (s.count > 1) {
+        const c = document.createElement('span');
+        Object.assign(c.style, {
+          position: 'absolute', right: '-2px', bottom: '-2px', fontSize: '12px', fontWeight: '700',
+          color: '#fff', textShadow: '0 1px 2px #000, 0 0 2px #000',
+          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        });
+        c.textContent = String(s.count);
+        cursorItem.appendChild(c);
+      }
+    }
+  }
+
   // Re-read the carried stack from the engine and refresh the floating element.
   // Called from update() and right after every action so the cursor stays in sync.
   function refreshCursor() {
     const c = getCursor?.() || null;
     cursorItem.replaceChildren();
     if (open && c) {
-      renderStack(cursorItem, c);
-      cursorItem.classList.add('show');
+      renderCursorInline(c);
+      cursorItem.style.display = 'flex';
     } else {
-      cursorItem.classList.remove('show');
+      cursorItem.style.display = 'none';
     }
   }
 
@@ -241,8 +304,30 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     cursorItem.style.top = e.clientY + 'px';
   };
 
+  // The display name of a slot's contents: "Wood Pickaxe" for tools, "copper ore" for
+  // materials, "Hand" for an empty slot (the implicit bare hand).
+  const slotName = (s) => {
+    if (!s) return 'Hand';
+    if (s.isTool) return `${TIER_NAME[s.toolTier] || ''} ${TOOL_NAME[s.toolClass] || 'Tool'}`.trim();
+    if (s.count > 0) return (NAME[s.material] || '').toLowerCase();
+    return 'Hand';
+  };
+
+  // Flash the selected item's name above the hotbar, then fade it out after ~2s. The
+  // .show class snaps it to full opacity (transition:none); dropping .show after the
+  // timer lets the base .4s opacity transition fade it back out.
+  function showToast(name) {
+    toast.textContent = name;
+    toast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toast.classList.remove('show'); toastTimer = 0; }, 2000);
+  }
+
   function update(inv) {
     if (inv && inv.slots) {
+      const sel = inv.selected;
+      if (lastSelected >= 0 && sel !== lastSelected) showToast(slotName(inv.slots[sel]));
+      lastSelected = sel;
       for (let i = 0; i < SLOTS; i++) {
         const el = slots[i];
         if (!el) continue;
@@ -276,7 +361,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     refreshCursor();
   };
 
-  root.append(backdrop, hud, cursorItem);
+  // cursorItem is intentionally NOT appended here — it lives on document.body (see above).
+  root.append(backdrop, hud);
   return {
     el: hud,
     update,
@@ -285,9 +371,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     isOpen() { return open; },
     destroy() {
       window.removeEventListener('pointermove', onMove);
+      if (toastTimer) { clearTimeout(toastTimer); toastTimer = 0; }
       backdrop.remove();
       hud.remove();
-      cursorItem.remove();
+      cursorItem.remove(); // removes it from document.body
     },
   };
 }

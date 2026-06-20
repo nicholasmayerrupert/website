@@ -257,15 +257,22 @@ void glDrawItems() {
     float baseA = ((c >> 24) & 0xff) / 255.0f;
     float a = (it.kind == IT_PARTICLE) ? baseA * (float)it.life / (float)IT_PARTICLE_LIFE : baseA;
     if (a <= 0.01f) continue;
+    double bob = 0.0;
+    if (it.kind == IT_ITEM) {
+      // render-only surface bob (per-item phase so a pile doesn't bob in lockstep).
+      bob = IT_BOB_AMP * std::sin(6.2831853 * (((tick + it.id * 11) % IT_BOB_PERIOD) / (double)IT_BOB_PERIOD));
+      // render-only GLIMMER: a gentle brightness pulse + an occasional bright sparkle.
+      float glim = 0.88f + 0.12f * (float)std::sin(6.2831853 * (((tick + it.id * 23) % 96) / 96.0));
+      r *= glim; g *= glim; b *= glim;
+      if (((tick / 2 + it.id * 5) % 70) < 4) { r = std::min(1.0f, r + 0.45f); g = std::min(1.0f, g + 0.45f); b = std::min(1.0f, b + 0.45f); }
+    }
     glUniform4f(glc->uColor, r, g, b, a);
     double sz = (it.kind == IT_PARTICLE) ? glCellDev * 0.5 : glCellDev * 0.8;
-    // Items draw at their float position with a gentle surface bob (render-only,
-    // per-item phase from id so a pile doesn't bob in lockstep). Particles don't bob.
-    double bob = (it.kind == IT_ITEM)
-      ? IT_BOB_AMP * std::sin(6.2831853 * (((tick + it.id * 11) % IT_BOB_PERIOD) / (double)IT_BOB_PERIOD))
-      : 0.0;
-    double cx = (it.px + 0.5 - camCol) * glCellDev + glOffX;
-    double cy = (it.py + 0.5 + bob - camRow) * glCellDev + glOffY;
+    double szCells = (it.kind == IT_PARTICLE) ? 0.5 : 0.8;
+    // py is the item's bottom contact point; draw the sprite sitting ON it (bottom at
+    // py) so a resting item never sinks into the surface. x uses the float point.
+    double cx = (it.px - camCol) * glCellDev + glOffX;
+    double cy = (it.py - szCells * 0.5 + bob - camRow) * glCellDev + glOffY;
     glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
   }
 }

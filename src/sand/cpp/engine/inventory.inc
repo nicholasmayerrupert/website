@@ -154,27 +154,34 @@
     return INV_SLOTS;
   }
 
-  // Survival input model: the selected hotbar slot decides the primary action — a
-  // TOOL mines (continuous, drops gated by class/tier), a MATERIAL places one unit
-  // per press. Only runs when survivalInventory is on, so creative is untouched.
+  // Survival input model. The selected hotbar slot decides what the PRIMARY (LMB, the
+  // FOREGROUND) and SECONDARY (RMB, the BACKGROUND) buttons do:
+  //   - a TOOL or an EMPTY slot  -> MINE that layer (an empty slot = the bare hand).
+  //   - a MATERIAL stack         -> PLACE that material on the foreground (one press).
+  // Mining is continuous (cooldown-throttled); placing fires once per press. Only runs
+  // when survivalInventory is on, so creative is untouched.
   void applyInventoryPlayer(Player& p) {
     if (!p.active || !p.alive) { resetPlayerMine(p); p.prevInput = p.input; return; }
     if (p.toolCooldown > 0) p.toolCooldown--;
     int prev = p.prevInput;
-    bool primary = (p.input & PI_PRIMARY) != 0;
+    bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
     bool primaryRising = primary && !(prev & PI_PRIMARY);
     p.prevInput = p.input;
     int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
     double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
     bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
-    if (!primary || !inReach) { resetPlayerMine(p); return; }
+    if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); return; }
     InvSlot& sel = p.inv[p.selectedSlot];
-    if (sel.isTool) {
+    bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
+    if (mineMode) {
       if (p.toolCooldown > 0) return;
-      if (mineDisc(p, ax, ay, &fg)) { p.toolCooldown = P_TOOL_COOLDOWN; playerActionCount++; }
-    } else if (sel.count > 0 && primaryRising) {
+      bool acted = false;
+      if (primary) acted |= mineDisc(p, ax, ay, &fg);
+      if (secondary) { bgEnabled = true; acted |= mineDisc(p, ax, ay, &bg); }
+      if (acted) { p.toolCooldown = P_TOOL_COOLDOWN; playerActionCount++; }
+    } else { // a material stack -> place on the foreground (one unit-budget per press)
       resetPlayerMine(p);
-      if (placeFromSelected(p, ax, ay, P_BUILD_R)) playerActionCount++;
+      if (primaryRising && placeFromSelected(p, ax, ay, P_BUILD_R)) playerActionCount++;
     }
   }

@@ -156,9 +156,9 @@ static const double IT_LIQUID_GRAVITY = 0.05, IT_LIQUID_MAX_FALL = 0.9, IT_LIQUI
 static const double IT_MOVE_SUBSTEP = 0.34;  // sub-cell stepping prevents tunneling
 static const int    IT_PICKUP_DELAY = 12;    // steps after spawn before a drop can be vacuumed
 static const double IT_PICKUP_R = 1.6;       // collect radius (cells, from player center) — magnet feeds it
-static const double IT_MAGNET_R = 12.0;      // homing radius: within this an item flies to the player
-static const double IT_MAGNET_ACCEL = 0.6;   // homing acceleration toward the player (cells/step^2)
-static const double IT_MAGNET_MAX_SPEED = 3.2; // homing speed clamp (cells/step)
+static const double IT_MAGNET_R = 14.0;      // homing radius: within this an item flies to the player
+static const double IT_MAGNET_MAX_SPEED = 4.5; // homing speed clamp (cells/step). Pure-pursuit (velocity
+                                               // points straight at the player each step) so items never orbit.
 static const double IT_RISE_STEP = 1.0;      // un-bury rise speed when an item is inside a solid
 static const double IT_BOB_AMP = 0.14;       // render-only surface bob amplitude (cells)
 static const int    IT_BOB_PERIOD = 70;      // render-only bob period (steps)

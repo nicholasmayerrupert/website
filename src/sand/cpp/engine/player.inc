@@ -289,12 +289,13 @@ bool mineDisc(Player& p, int ax, int ay, Layer* layer) {
   }
   useLayer(layer);
   bool changed = mineDamageDisc(ax, ay, P_MINE_R) != 0;
-  // Survival drops: foreground mining only. Each destroyed cell yields a dropped
-  // ITEM iff the player's held tool satisfies the material's class+tier gate (the
-  // bare hand additionally drops loose shovel-tier-0 soils). The block breaks either
-  // way; the tool only gates the reward. A cosmetic PARTICLE always pops. No rand():
-  // velocities use a (tick,cell) hash so the sim stream stays deterministic.
-  if (layerId == 0 && !lastMinedCells.empty()) {
+  // Survival drops (foreground OR background mining). Each destroyed cell yields a
+  // dropped ITEM iff the player's held tool satisfies the material's class+tier gate
+  // (the bare hand additionally drops loose shovel-tier-0 soils; liquids scoop with
+  // any tool). The block breaks either way; the tool only gates the reward. A cosmetic
+  // PARTICLE always pops. No rand(): velocities use a (tick,cell) hash so the sim
+  // stream stays deterministic.
+  if (!lastMinedCells.empty()) {
     for (auto& mc : lastMinedCells) {
       uint8_t m = mc.first; int k = mc.second;
       int cxk = k % cols, cyk = k / cols;

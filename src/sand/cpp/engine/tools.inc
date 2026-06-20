@@ -75,7 +75,7 @@
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy);
       if (grid[k] == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = true; }
-      if (grid[k] != EMPTY) { if (grid[k] == STONE) erasedStone.push_back(k); else if (grid[k] == ICE) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; if (grid[k] == RIGID) bodyOwner[k] = -1; grid[k] = EMPTY; changed = true; cleared++; }
+      if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; if (grid[k] == RIGID) bodyOwner[k] = -1; grid[k] = EMPTY; changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
@@ -111,7 +111,7 @@
         if (L->mineDamage[k] > 0) continue;
       }
       if (m == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = 1; }
-      if (m == STONE) erasedStone.push_back(k); else if (m == ICE) erasedIce.push_back(k);
+      if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
       if (isPlantMaterial(m)) erasedPlant = true;
       if (m == RIGID) bodyOwner[k] = -1;
       lastMinedCells.push_back({m, k}); // record what was destroyed for drop resolution

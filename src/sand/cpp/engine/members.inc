@@ -234,6 +234,15 @@
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isLiquid(uint8_t m) { return MAT_KIND[m] == K_LIQUID; }
   inline bool isGas(uint8_t m) { return MAT_KIND[m] == K_GAS; }
+  // Which rigid-component list a destroyed grid cell belongs to, mirroring
+  // registerComponentCells' routing (CG_ICE -> ice, CG_PLANT -> plant via
+  // isPlantMaterial, else stone). EVERY site that clears a component cell from the
+  // grid (erase, mine, acid) must feed it to splitRigidAfterErase via these, or the
+  // body keeps an invisible cell that still collides/grounds — sand floats on the
+  // hole and powders/liquids won't pass. Keyed on group, not material id, so new
+  // ores/blocks (sandstone, brick, …) are covered with no edit here.
+  inline bool isStoneComp(uint8_t m) { return MAT_KIND[m] == K_COMPONENT && MAT_CGROUP[m] != CG_ICE && MAT_CGROUP[m] != CG_PLANT; }
+  inline bool isIceComp(uint8_t m) { return MAT_KIND[m] == K_COMPONENT && MAT_CGROUP[m] == CG_ICE; }
   // Flora-type material classification: which plant-family materials act as a tree
   // trunk vs foliage, and the species<->material mapping. A plant comp is a single
   // species, so its trunk/leaf material is derived from its plantType (and vice

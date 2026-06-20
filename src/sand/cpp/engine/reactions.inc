@@ -36,7 +36,7 @@
     if (plantBurned) splitPlantAfterErase();
   }
   void applyAcid() {
-    bool dissolvedStone = false, dissolvedPlant = false; std::vector<int> erasedStone;
+    bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false; std::vector<int> erasedStone, erasedIce;
     for (int y = 1; y < rows - 1; y++) {
       int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
       for (int x = minX; x <= maxX; x++) {
@@ -49,12 +49,13 @@
         if (isDissolvable(grid[a])) target = a; else if (isDissolvable(grid[b])) target = b; else if (isDissolvable(grid[c])) target = c; else if (isDissolvable(grid[d])) target = d;
         if (target < 0) continue;
         uint8_t tm = grid[target];
-        if (tm == STONE) { erasedStone.push_back(target); dissolvedStone = true; } else if (isPlantMaterial(tm)) dissolvedPlant = true;
+        if (isStoneComp(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (isIceComp(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (isPlantMaterial(tm)) dissolvedPlant = true;
         writeGridIndex(target, EMPTY);
         if (rand() < ACID_DECAY_P) writeGridIndex(k, EMPTY);
       }
     }
     if (dissolvedStone) splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
+    if (dissolvedIce) splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
     if (dissolvedPlant) splitPlantAfterErase();
   }
   void applyLava() {

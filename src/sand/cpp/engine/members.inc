@@ -196,11 +196,15 @@
   ~Engine() { glDestroy(); }
 
   // ---- predicates ----
-  inline bool isPlantMaterial(uint8_t m) { return m == SEED || m == WOOD || m == PLANT || m == DRIFTWOOD; }
-  inline bool isDissolvable(uint8_t m) { return m == SAND || m == STONE || m == WOOD || m == PLANT || m == SEED || m == DRIFTWOOD; }
-  inline bool isRigidMaterial(uint8_t m) { return m == STONE || m == WOOD || m == PLANT || m == SEED || m == ICE || m == RIGID || m == DRIFTWOOD; }
-  inline bool isFlammable(uint8_t m) { return m == OIL || isPlantMaterial(m); }
-  inline bool isBearingMaterial(uint8_t m) { return m == SAND || isRigidMaterial(m); }
+  // Behavior predicates are generated from materials.schema.json `flags`
+  // (the MAT_FLAGS bitmask). Adding a material that reuses existing physics
+  // needs only a schema entry — no edit here. The bit sets reproduce the
+  // former hand-written id lists exactly.
+  inline bool isPlantMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTFAMILY; }
+  inline bool isDissolvable(uint8_t m) { return MAT_FLAGS[m] & MF_DISSOLVABLE; }
+  inline bool isRigidMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_RIGID; }
+  inline bool isFlammable(uint8_t m) { return MAT_FLAGS[m] & MF_FLAMMABLE; }
+  inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isLiquid(uint8_t m) { return MAT_KIND[m] == K_LIQUID; }
   inline bool isGas(uint8_t m) { return MAT_KIND[m] == K_GAS; }
   inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquid(m) || isGas(m); }

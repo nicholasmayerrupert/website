@@ -5,12 +5,23 @@
 
 enum Mat : uint8_t { EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 5, STEAM = 6, SEED = 7, WOOD = 8, PLANT = 9, ACID = 10, LAVA = 11, ICE = 12, RIGID = 13, DRIFTWOOD = 14 };
 enum Kind : uint8_t { K_NONE = 0, K_POWDER = 1, K_LIQUID = 2, K_GAS = 3, K_COMPONENT = 4, K_FREE_RIGID = 5 };
+// Seeded-component groups: which list a material registers into.
+enum CGroup : uint8_t { CG_NONE = 0, CG_STONE = 1, CG_PLANT = 2, CG_ICE = 3 };
+// Behavior-flag bits packed into MAT_FLAGS[]. Predicates AND against these.
+static const uint16_t MF_FLAMMABLE = 1u << 0;
+static const uint16_t MF_DISSOLVABLE = 1u << 1;
+static const uint16_t MF_RIGID = 1u << 2;
+static const uint16_t MF_BEARING = 1u << 3;
+static const uint16_t MF_PLANTFAMILY = 1u << 4;
 
 static const int TABLE = 16;
 static const float    DENSITY[TABLE]        = {0, 1.6f, 1, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 0};
 static const uint8_t  DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0};
 static const float    MOBILITY[TABLE]       = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0.35f, 0, 0, 0, 0};
 static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_NONE};
+// Class-based behavior: flag bitmask + seeded-component group per material.
+static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 0};
+static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_NONE, CG_NONE, CG_NONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_ICE, CG_NONE, CG_PLANT, CG_NONE};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0x00000000u};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 0};

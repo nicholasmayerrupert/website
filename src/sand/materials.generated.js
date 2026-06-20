@@ -15,6 +15,23 @@ export const KIND = {
   FREE_RIGID: 5,
 };
 
+// Behavior-flag bitmasks (mirrors C++ MF_* constants). OR together per material.
+export const MF = {
+  flammable: 1,
+  dissolvable: 2,
+  rigid: 4,
+  bearing: 8,
+  plantFamily: 16,
+};
+
+// Seeded-component group ids (mirrors C++ enum CGroup / CG_*).
+export const CG = {
+  none: 0,
+  stone: 1,
+  plant: 2,
+  ice: 3,
+};
+
 // The material registry. Each entry fully distinguishes one material across the
 // whole simulation AND the renderer.
 export const MATERIALS = [
@@ -34,6 +51,11 @@ export const MATERIALS = [
   { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, density: 1.4, looseSorted: false, mobility: 0, color: 0xff8a725e, textureAmp: 6, durability: 10, renderAnim: 'none' },
   { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc26e7d8c, textureAmp: 7, durability: 4, renderAnim: 'none' },
 ];
+
+// Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++
+// MAT_FLAGS / MAT_CGROUP tables.
+export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 0];
+export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0];
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 export const PACKED_FIRE = 0xb8226cff;

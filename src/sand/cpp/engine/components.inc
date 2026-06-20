@@ -176,7 +176,9 @@
     for (auto& kv : groups) order.push_back(&kv.second);
     std::sort(order.begin(), order.end(), [](Group* a, Group* b) { return a->maxY > b->maxY; });
 
-    auto matOf = [&](int i, int k) -> uint8_t { return i < nStone ? STONE : (i < nStonePlant ? grid[k] : ICE); };
+    // Read the live grid for stone-group and plant comps so a falling component
+    // keeps its real material (ore stays ore, not STONE). Ice comps are pure ICE.
+    auto matOf = [&](int i, int k) -> uint8_t { return i < nStonePlant ? grid[k] : ICE; };
 
     auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
       int dy = dir > 0 ? 1 : -1;
@@ -283,9 +285,14 @@
       }
     }
   }
-  bool isStone(uint8_t m) { return m == STONE; }
-  bool isIce(uint8_t m) { return m == ICE; }
-  bool isPlantMat(uint8_t m) { return isPlantMaterial(m); }
+  // Component-group membership for the seeded-component floods (generated from the
+  // schema `componentGroup`). The stone group floods each material as its OWN id
+  // (an ore vein is its own island, not merged with surrounding stone), so it uses
+  // floodTargetMat rather than a group-membership predicate.
+  uint8_t floodTargetMat = 0;                                  // set before a per-material stone flood
+  bool isFloodTargetMat(uint8_t m) { return m == floodTargetMat; }
+  bool isIceGroup(uint8_t m) { return MAT_CGROUP[m] == CG_ICE; }
+  bool isPlantMat(uint8_t m) { return MAT_CGROUP[m] == CG_PLANT; }
 
   void registerSeededComponents(int colStart, int colEnd) { registerSeededComponents(colStart, colEnd, 0, rows); }
   // Register stone/plant/ice components for unseen material in the buffer rect
@@ -296,23 +303,28 @@
     // is "seen" iff seenStamp[k] == gen. Each of the three blocks bumps gen, so
     // the "clear" between materials costs O(1) instead of zeroing cols*rows.
     std::vector<int32_t>& seen = L->seenStamp;
-    // STONE (chunk-bounded)
+    // STONE group (chunk-bounded). Each same-id region floods as its own island,
+    // so a vein of ore inside stone is a distinct component (and stays a distinct
+    // material when it falls — see matOf in moveRigidAssemblies). New ores/blocks
+    // with componentGroup "stone" register here automatically.
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = gen;
       for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-        int k = sy * cols + sx; if (seen[k] == gen || grid[k] != STONE) continue;
+        int k = sy * cols + sx; if (seen[k] == gen || MAT_CGROUP[grid[k]] != CG_STONE) continue;
         std::vector<int> cells; int yMax;
-        floodComponent(sx, sy, seen, gen, true, cells, yMax, &Engine::isStone);
+        floodTargetMat = grid[k];
+        floodComponent(sx, sy, seen, gen, true, cells, yMax, &Engine::isFloodTargetMat);
         Comp c; c.id = L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax; L->stoneComponents.push_back(std::move(c));
       }
     }
-    // PLANT family
+    // PLANT group (unbounded — a whole tree is one component). New plant-family
+    // flora with componentGroup "plant" register here automatically.
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = gen;
       for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-        int k = sy * cols + sx; if (seen[k] == gen || !isPlantMaterial(grid[k])) continue;
+        int k = sy * cols + sx; if (seen[k] == gen || MAT_CGROUP[grid[k]] != CG_PLANT) continue;
         std::vector<int> cells; int yMax;
         floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isPlantMat);
         Comp c; c.id = L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
@@ -320,14 +332,14 @@
         c.cells = std::move(cells); L->plantComponents.push_back(std::move(c));
       }
     }
-    // ICE
+    // ICE group (unbounded).
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = gen;
       for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-        int k = sy * cols + sx; if (seen[k] == gen || grid[k] != ICE) continue;
+        int k = sy * cols + sx; if (seen[k] == gen || MAT_CGROUP[grid[k]] != CG_ICE) continue;
         std::vector<int> cells; int yMax;
-        floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isIce);
+        floodComponent(sx, sy, seen, gen, false, cells, yMax, &Engine::isIceGroup);
         Comp c; c.id = L->nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; L->iceComponents.push_back(std::move(c));
       }
     }

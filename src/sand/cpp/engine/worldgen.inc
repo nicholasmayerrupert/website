@@ -11,6 +11,7 @@
                      BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
   static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
   static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, OIL_POCKET_THRESH, LAVA_THRESH;
+  static const double ORE_FREQ, ORE_THRESH;
   static const int SURFACE_OCT, GEN_SKIN;
   // Biome from a low-frequency SHARED-seed band, so both layers agree. A secondary
   // band splits plains/forest. Biomes vary the surface skin, soil depth and trees
@@ -77,7 +78,41 @@
     double tun = wridged2(L->gCaveSeed, worldX * CAVE_FREQ, worldY * CAVE_FREQ, 3, 0.5);
     double cav = wfbm2(L->gCaveSeed ^ 0x55u, worldX * CAVE_FREQ * 0.45, worldY * CAVE_FREQ * 0.45, 3, 0.5);
     double caveBias = L->isBackground ? 0.13 : 0.0; // bg: sparser caves
-    return tun > CAVE_THRESH + caveBias || cav > 0.74 + caveBias;
+    // Depth zoning: near the surface, winding tunnels dominate; deeper, the cavern
+    // (fbm) threshold drops so large open caverns open up. Pure in worldY.
+    double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
+    if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
+    double cavThresh = 0.78 - depthFrac * 0.12;
+    return tun > CAVE_THRESH + caveBias || cav > cavThresh + caveBias;
+  }
+  // Solid stone that sits one cell from a carved cave (a cave-wall surface). Pure
+  // noise (samples genIsCave at the 4 neighbours), so it stays deterministic. The
+  // caller has already checked this cell is in the carved cave zone and is stone.
+  bool genIsCaveWall(int worldX, int worldY) {
+    return genIsCave(worldX + 1, worldY) || genIsCave(worldX - 1, worldY)
+        || genIsCave(worldX, worldY + 1) || genIsCave(worldX, worldY - 1);
+  }
+  // Ore veins: sparse winding clusters of ore embedded in the deep stone (returns
+  // STONE where there's no vein). Pure in (seed, worldX, worldY) so prefetch stays
+  // byte-identical; ore is solid-in-solid so it's inert and grounds like stone.
+  // Biome + depth bias WHICH ore. gPocketSeed is per-layer (fg only places ore).
+  uint8_t genOreFor(int biome, int worldX, int worldY) {
+    double v = wridged2(L->gPocketSeed ^ 0x0a5eu, worldX * ORE_FREQ, worldY * ORE_FREQ, 2, 0.5);
+    if (v < ORE_THRESH) return STONE;
+    double sel = wfbm2(L->gPocketSeed ^ 0x5e1eu, worldX * ORE_FREQ * 0.7, worldY * ORE_FREQ * 0.7, 2, 0.5);
+    bool deep = worldY > caveBottomAbs();
+    // GOLD is rare and only deep; the others scale coal(common)->copper->iron.
+    if (deep && sel > 0.90) return GOLD_ORE;
+    switch (biome) {
+      case BIOME_DESERT: return sel < 0.55 ? COPPER_ORE : IRON_ORE;
+      case BIOME_ROCKY:
+      case BIOME_TUNDRA: return sel < 0.55 ? COAL_ORE : IRON_ORE;
+      case BIOME_JUNGLE: return sel < 0.6 ? COPPER_ORE : IRON_ORE;
+      default: // plains / forest / swamp
+        if (sel < 0.45) return COAL_ORE;
+        if (sel < 0.78) return COPPER_ORE;
+        return IRON_ORE;
+    }
   }
   // Absolute-world depth zones (cells below the surface centre, worldY=0). These
   // scale with the viewport but the world is infinitely deep: below the underworld
@@ -127,7 +162,15 @@
     // network but SPARSER (genIsCave biases by layer). DRY in the bg (no soil/liquids).
     if (depth >= caveTop && worldY < caveBottomAbs() && genIsCave(worldX, worldY)) return EMPTY;
     if (L->isBackground) return STONE;                       // bg: solid stone, no liquid pockets
-    return genPocketAt(worldX, worldY);                      // fg: deep stone + sealed liquids/lava
+    uint8_t base = genPocketAt(worldX, worldY);              // fg: deep stone + sealed liquids/lava
+    if (base != STONE) return base;                          // sealed liquid / lava chamber
+    // Cave-wall lining: in mossy regions (a low-freq selector), stone facing a cave
+    // is MOSS. Solid-against-air, so it's inert and grounds via the stone behind it.
+    if (depth >= caveTop && worldY < caveBottomAbs() && genIsCaveWall(worldX, worldY)) {
+      double moss = wfbm2(L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
+      if (moss > 0.66) return MOSS;
+    }
+    return genOreFor(biome, worldX, worldY);                 // solid stone -> maybe an ore vein
   }
   // Per-biome tree density. Forest/jungle are dense; plains/tundra/swamp sparser;
   // desert/rocky bare. (Tree TYPE — pine/willow/cactus/... — is assigned in the
@@ -179,6 +222,47 @@
       for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, PLANT); }
     }
   }
+  // ---- deterministic structure stamping (ruins) -----------------------------
+  // Discrete structures anchor on a coarse world-cell lattice. Each lattice cell's
+  // presence/size is a pure hash of its (latX,latY), so a structure is byte-identical
+  // no matter which band generates it. Like fillTrees, we OVERSCAN the rect by
+  // STRUCT_REACH and clip with `put`, so a structure straddling a band seam is written
+  // identically whether produced by one big fillRect or two band calls. fg only.
+  static const int STRUCT_LATTICE = 56;  // world cells between candidate anchors
+  static const int STRUCT_REACH = 24;    // >= max (jitter + structure extent)
+  static int floorDiv(int a, int b) { int q = a / b, r = a % b; if (r != 0 && ((r < 0) != (b < 0))) q--; return q; }
+  void fillStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
+    if (L->isBackground) return;                       // fg only (matches trees)
+    auto put = [&](int wx, int wy, uint8_t m) {
+      int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
+      if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
+      grid[y * cols + lx] = m;                         // structures OVERWRITE terrain
+    };
+    uint32_t sseed = L->worldSeed ^ 0x57121314u;       // fg-only struct seed (shared is fine)
+    int wx0 = L->worldOffsetX + colStart - STRUCT_REACH, wx1 = L->worldOffsetX + colEnd + STRUCT_REACH;
+    int wy0 = L->worldOffsetY + rowStart - STRUCT_REACH, wy1 = L->worldOffsetY + rowEnd + STRUCT_REACH;
+    int lxMin = floorDiv(wx0, STRUCT_LATTICE), lxMax = floorDiv(wx1, STRUCT_LATTICE);
+    int lyMin = floorDiv(wy0, STRUCT_LATTICE), lyMax = floorDiv(wy1, STRUCT_LATTICE);
+    for (int ly = lyMin; ly <= lyMax; ly++) for (int lx = lxMin; lx <= lxMax; lx++) {
+      if (whash2(sseed, lx, ly) >= 0.18) continue;     // rare: a ruin at this anchor
+      // jittered anchor + hashed size
+      int ax = lx * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xA1u, lx, ly) * 6);
+      int ay = ly * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xB2u, lx, ly) * 6);
+      int w = 11 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 7); // 11..17
+      int h = 7 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 4);  // 7..10
+      // Only underground in solid stone, above the sealed-liquid zone: keeps the
+      // carved interior away from loose soil (no avalanche) and from pockets.
+      int surfAbs = genSurfaceAbs(ax + w / 2);
+      if (ay < surfAbs + 30) continue;
+      if (ay + h > caveBottomAbs()) continue;
+      int doorX = ax + 1 + (int)(whash2(sseed ^ 0xE5u, lx, ly) * (w - 4)); // doorway in the bottom wall
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        bool door = oy == h - 1 && ox >= doorX && ox <= doorX + 1; // 2-wide doorway
+        put(ax + ox, ay + oy, (border && !door) ? BRICK : EMPTY);
+      }
+    }
+  }
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; next[k] = grid[k]; }
   }
@@ -187,6 +271,7 @@
   // split — terrain first, trees second, next-copy last.)
   void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
+    fillStructures(colStart, colEnd, rowStart, rowEnd); // overwrite terrain (ruins) before trees overlay
     fillTrees(colStart, colEnd, rowStart, rowEnd);
     copyGridToNext(colStart, colEnd, rowStart, rowEnd);
   }
@@ -380,6 +465,9 @@
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
     L = Lx; grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
+    // Structures BEFORE trees and BEFORE pfStoreTiles, mirroring fillRect's order,
+    // so a prefetched tile is byte-identical to the synchronous fillRect tile.
+    fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
     grid = sGrid; L = sL;

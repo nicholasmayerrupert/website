@@ -197,7 +197,7 @@ static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) 
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
 // Player tool use (Phase 3): reach limit, per-action cooldown, brush radii.
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
-static const int    P_TOOL_COOLDOWN = 4;   // steps between actions while held
+static const int    P_TOOL_COOLDOWN = 4;   // steps between held creative/place actions (survival mining progresses every tick)
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
 // Eraser hits happen at this constant cadence for every material. DURABILITY[]
 // controls how many hits a cell survives, not the time between hits.

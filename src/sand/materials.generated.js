@@ -94,6 +94,7 @@ export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3,
 export const MAT_TOOLTIER = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0];
 export const TOOL_CLASS_SPEED = [100, 35, 35, 35, 50, 100, 100, 35, 35, 35, 100, 35, 100, 35, 35, 100, 35, 35, 100, 35, 100, 25, 25, 60, 100];
 export const TOOL_TIER_SPEED = [50, 100, 135, 175, 210];
+export const MINING_PROGRESS_DIVISOR = 5;
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 export const PACKED_FIRE = 0xb8226cff;

@@ -39,8 +39,9 @@
     "iron": 3,
     "gold": 4
   },
-  "$miningSpeedDoc": "Mining progress uses 16 fixed-point units per baseline hit. Rows in classPercent are held tool classes and columns are the material's preferred toolClass, both in numeric enum order. tierPercent is indexed by held tool tier. Effective power scales by both percentages; DURABILITY remains the base hardness in baseline hits.",
+  "$miningSpeedDoc": "Mining progress uses 16 fixed-point units per baseline hit. Rows in classPercent are held tool classes and columns are the material's preferred toolClass, both in numeric enum order. tierPercent is indexed by held tool tier. Effective power scales by both percentages and progressDivisor; DURABILITY remains the base hardness. Survival applies progress every held tick.",
   "miningSpeed": {
+    "progressDivisor": 5,
     "classPercent": [
       [100, 35, 35, 35, 50],
       [100, 100, 35, 35, 35],

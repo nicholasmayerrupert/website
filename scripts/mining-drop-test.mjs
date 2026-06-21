@@ -14,7 +14,7 @@ const { check, done } = makeChecker('mining drops (Phase C)');
 
 // Place a blob of `mat`, equip (cls,tier), mine its center until destroyed. No
 // stepping: items persist where spawned and the placed solid stays put.
-function mineBlob(mat, cls, tier, { hits = 80, placeR = 2 } = {}) {
+function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 3, sinksOn: false, infinite: false });
   const id = e.spawnPlayer(40, 40);
   e.setPlayerTool(id, cls, tier);

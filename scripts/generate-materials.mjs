@@ -27,6 +27,7 @@ const toolClassCount = Math.max(...Object.values(toolClasses)) + 1;
 const toolTierCount = Math.max(...Object.values(toolTiers)) + 1;
 if (!miningSpeed || miningSpeed.classPercent?.length !== toolClassCount || miningSpeed.classPercent.some((r) => r.length !== toolClassCount)) throw new Error('miningSpeed.classPercent must be a square tool-class matrix');
 if (miningSpeed.tierPercent?.length !== toolTierCount) throw new Error('miningSpeed.tierPercent must have one entry per tool tier');
+if (!Number.isInteger(miningSpeed.progressDivisor) || miningSpeed.progressDivisor < 1) throw new Error('miningSpeed.progressDivisor must be a positive integer');
 const maxToolTier = Math.max(...Object.values(toolTiers));
 
 // Materials indexed by id, with empty slots for any gaps up to tableSize.
@@ -105,6 +106,7 @@ export const MAT_TOOLCLASS = [${jsArr((m) => toolClasses[m.toolClass])}];
 export const MAT_TOOLTIER = [${jsArr((m) => m.toolTier)}];
 export const TOOL_CLASS_SPEED = [${miningSpeed.classPercent.flat().join(', ')}];
 export const TOOL_TIER_SPEED = [${miningSpeed.tierPercent.join(', ')}];
+export const MINING_PROGRESS_DIVISOR = ${miningSpeed.progressDivisor};
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 ${jsAnimLines}
@@ -155,6 +157,7 @@ static const uint8_t  MAT_TOOLTIER[TABLE]   = {${col((m) => m.toolTier, u8)}};
 static const int TOOL_CLASS_COUNT = ${toolClassCount};
 static const uint8_t  TOOL_CLASS_SPEED[${toolClassCount * toolClassCount}] = {${miningSpeed.classPercent.flat().join(', ')}};
 static const uint8_t  TOOL_TIER_SPEED[${toolTierCount}] = {${miningSpeed.tierPercent.join(', ')}};
+static const int MINING_PROGRESS_DIVISOR = ${miningSpeed.progressDivisor};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};

@@ -118,7 +118,7 @@
           uint8_t heldClass = miner.heldToolClass <= TC_HAND ? miner.heldToolClass : TC_HAND;
           uint8_t heldTier = miner.heldToolTier <= TT_GOLD ? miner.heldToolTier : TT_GOLD;
           uint8_t mineClass = MAT_TOOLCLASS[m] <= TC_HAND ? MAT_TOOLCLASS[m] : TC_NONE;
-          power = (uint16_t)TOOL_CLASS_SPEED[heldClass * TOOL_CLASS_COUNT + mineClass] * TOOL_TIER_SPEED[heldTier] * 16u / 10000u;
+          power = (uint16_t)TOOL_CLASS_SPEED[heldClass * TOOL_CLASS_COUNT + mineClass] * TOOL_TIER_SPEED[heldTier] * 16u / (10000u * MINING_PROGRESS_DIVISOR);
           if (power == 0) power = 1;
         }
         L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;

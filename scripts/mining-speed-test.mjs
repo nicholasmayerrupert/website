@@ -1,7 +1,7 @@
 // Data-driven mining speed: material durability is base hardness, while the
 // held tool class/tier scales progress per hit. Drop gating is tested separately.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
 import { MAT } from '../src/sand/materials.js';
 import { TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
@@ -42,6 +42,33 @@ const stonePickStone = hitsToBreak(MAT.STONE, TC.pickaxe, TT.stone);
 const ironPickStone = hitsToBreak(MAT.STONE, TC.pickaxe, TT.iron);
 check(`stone pickaxe beats wood tier (${stonePickStone} < ${woodPickStone})`, stonePickStone < woodPickStone);
 check(`iron pickaxe beats stone tier (${ironPickStone} < ${stonePickStone})`, ironPickStone < stonePickStone);
+
+// Exercise the real survival path: starter inventory selection + held input +
+// engine steps. Wrong tools and hand must still break stone, just more slowly.
+function survivalStepsToBreakStone(slot) {
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
+  for (let x = 30; x < 90; x++) for (let y = 70; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.setSurvivalInventory(true);
+  const id = e.spawnPlayer(55, 62);
+  e.setSelectedSlot(id, slot);
+  let steps = 0;
+  while (e.getGrid()[70 * COLS + 60] !== MAT.EMPTY && steps < 500) {
+    e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX: 60, aimY: 70, tool: 0, seq: steps });
+    e.step(steps * 16);
+    steps++;
+  }
+  const broke = e.getGrid()[70 * COLS + 60] === MAT.EMPTY;
+  e.destroy();
+  return { steps, broke };
+}
+
+const survivalPick = survivalStepsToBreakStone(0);
+const survivalAxe = survivalStepsToBreakStone(1);
+const survivalHand = survivalStepsToBreakStone(3);
+check(`inventory pickaxe is faster on stone (${survivalPick.steps} < ${survivalAxe.steps})`, survivalPick.broke && survivalPick.steps < survivalAxe.steps);
+check(`wrong inventory tool still breaks stone (${survivalAxe.steps} steps)`, survivalAxe.broke);
+check(`bare hand still breaks stone (${survivalHand.steps} steps)`, survivalHand.broke);
 
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

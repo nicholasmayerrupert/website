@@ -199,11 +199,10 @@
     if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); return; }
 
     if (mineMode) {
-      if (p.toolCooldown > 0) return;
       bool acted = false;
       if (primary) acted |= mineDisc(p, ax, ay, &fg);
       if (secondary) { bgEnabled = true; acted |= mineDisc(p, ax, ay, &bg); }
-      if (acted) { p.toolCooldown = P_TOOL_COOLDOWN; playerActionCount++; }
+      if (acted) playerActionCount++;
     } else if (isComp) {
       // begin a component draft on press (stage + consume the first disc immediately).
       if (primaryRising) {

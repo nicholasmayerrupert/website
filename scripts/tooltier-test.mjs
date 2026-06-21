@@ -5,7 +5,7 @@
 // Run: node scripts/tooltier-test.mjs
 
 import { MAT } from '../src/sand/materials.js';
-import { MAT_TOOLCLASS, MAT_TOOLTIER, TC, TT } from '../src/sand/materials.generated.js';
+import { MAT_TOOLCLASS, MAT_TOOLTIER, TOOL_CLASS_SPEED, TOOL_TIER_SPEED, TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('material tool classes/tiers (Phase A)');
@@ -13,6 +13,7 @@ const { check, done } = makeChecker('material tool classes/tiers (Phase A)');
 // Table shape: one entry per slot, power-of-two headroom over the live ids.
 check(`MAT_TOOLCLASS has 32 entries (${MAT_TOOLCLASS.length})`, MAT_TOOLCLASS.length === 32);
 check(`MAT_TOOLTIER has 32 entries (${MAT_TOOLTIER.length})`, MAT_TOOLTIER.length === 32);
+check('mining speed tables cover every class/tier', TOOL_CLASS_SPEED.length === 25 && TOOL_TIER_SPEED.length === 5);
 
 // Enums exported for both sides.
 check('TC enum present', TC.none === 0 && TC.pickaxe === 1 && TC.axe === 2 && TC.shovel === 3 && TC.hand === 4);
@@ -31,6 +32,8 @@ check(`STONE tier is wood (${tier('STONE')})`, tier('STONE') === TT.wood);
 check(`IRON_ORE tier is stone (${tier('IRON_ORE')})`, tier('IRON_ORE') === TT.stone);
 check(`GOLD_ORE tier is iron (${tier('GOLD_ORE')})`, tier('GOLD_ORE') === TT.iron);
 check(`DIRT tier is hand/0 (${tier('DIRT')})`, tier('DIRT') === TT.hand);
+check('correct classes are faster than wrong classes', TOOL_CLASS_SPEED[TC.pickaxe * 5 + TC.pickaxe] > TOOL_CLASS_SPEED[TC.shovel * 5 + TC.pickaxe]);
+check('higher tiers increase mining power', TOOL_TIER_SPEED[TT.wood] < TOOL_TIER_SPEED[TT.stone] && TOOL_TIER_SPEED[TT.stone] < TOOL_TIER_SPEED[TT.iron]);
 
 // Non-droppable: liquids/gas/free-rigid never drop (class none).
 check('WATER/OIL/LAVA/ACID are none', cls('WATER') === TC.none && cls('OIL') === TC.none && cls('LAVA') === TC.none && cls('ACID') === TC.none);

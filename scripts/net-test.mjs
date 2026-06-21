@@ -10,10 +10,12 @@ import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/n
 import { Host } from '../src/sand/net/host.js';
 import { encodeWorld, encodeDiff, applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
 import { Predictor } from '../src/sand/net/predict.js';
+import { createGameNet } from '../src/sand/net/gameNet.js';
 import { startServer } from './dev-multiplayer-server.mjs';
 import { approxEqual } from './sand-test-util.mjs';
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
 import { gridHash } from './sand-test-util.mjs';
+import { WebSocket } from 'ws';
 
 const COLS = 200, ROWS = 120;
 const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); e.finalizeStoneDraft(); };
@@ -21,6 +23,28 @@ const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 const rt = (m) => decode(encode(m)); // round trip through the wire format
+
+// Connection setup is transactional: a socket failure rejects and leaves no
+// public client state behind.
+{
+  console.log('failed connection rollback');
+  const RealWebSocket = globalThis.WebSocket;
+  class FailingWebSocket {
+    constructor() { this.readyState = 0; queueMicrotask(() => this.onerror?.(new Error('refused'))); }
+    close() { this.readyState = 3; queueMicrotask(() => this.onclose?.()); }
+  }
+  globalThis.WebSocket = FailingWebSocket;
+  const net = createGameNet({ getEngine: () => null, getLocalInput: () => ({ bits: 0, aimX: 0, aimY: 0, tool: 0 }), rebuildEngine: () => null });
+  let rejected = false;
+  try { await net.joinRoom('ws://localhost:1', 'main'); } catch { rejected = true; }
+  check('joinRoom rejects', rejected);
+  check('failed join is disconnected', !net.connected);
+  check('failed join clears client role', net.role === null);
+  check('failed join clears world readiness', !net.worldReady);
+  check('failed join clears remotes', net.remoteCount === 0);
+  check(`failed join status is not joined (${net.status})`, !net.status.startsWith('joined '));
+  globalThis.WebSocket = RealWebSocket;
+}
 
 // 1. input message round trip.
 {

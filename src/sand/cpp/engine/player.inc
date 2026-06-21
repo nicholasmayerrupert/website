@@ -287,7 +287,7 @@ bool playerUseTool(Player& p, int ax, int ay, Layer* layer) {
 inline bool isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t == T_ICE; }
 // Mine a single disc AT THE AIM CELL into `layer` (like every other tool: a disc at
 // the cursor, NOT a sweep emanating from the player). Each held-tool tick is one
-// constant-rate hit; DURABILITY[] controls how many hits a cell survives.
+// hit; DURABILITY[] controls base hardness and held class/tier controls progress.
 void resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
   useLayer(p.mineLayer ? &bg : &fg);
@@ -295,14 +295,14 @@ void resetPlayerMine(Player& p) {
   useLayer(&fg);
   p.mineActive = false;
 }
-bool mineDisc(Player& p, int ax, int ay, Layer* layer) {
+bool mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true) {
   int layerId = layer == &bg ? 1 : 0;
   if (!p.mineActive || p.mineLayer != layerId || p.mineX != ax || p.mineY != ay) {
     resetPlayerMine(p);
     p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay;
   }
   useLayer(layer);
-  bool changed = mineDamageDisc(ax, ay, P_MINE_R) != 0;
+  bool changed = mineDamageDisc(ax, ay, P_MINE_R, p, scaledSpeed) != 0;
   // Survival drops (foreground OR background mining). Each destroyed cell yields a
   // dropped ITEM iff the player's held tool satisfies the material's class+tier gate
   // (the bare hand additionally drops loose shovel-tier-0 soils; liquids scoop with
@@ -402,12 +402,12 @@ void applyPlayerTools() {
     if (t != T_ERASER) resetPlayerMine(p);
     bool acted = false;
     if (doPrimary) {
-      if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &fg);
+      if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &fg, false);
       else acted |= playerUseTool(p, ax, ay, &fg);
     }
     if (doSecondary) {
       bgEnabled = true;
-      if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &bg);
+      if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &bg, false);
       else acted |= playerUseTool(p, ax, ay, &bg);
     }
     if (acted) {

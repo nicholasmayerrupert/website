@@ -57,7 +57,7 @@ inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int 
       int wx = woX + x;
       uint8_t m = g[k];
       uint32_t c = renderVariants[((int)m << 3) + renderNoise[noiseRow + (wx & 63)]];
-      uint8_t rem = L->mineDamage[k], dur = DURABILITY[m];
+      uint16_t rem = L->mineDamage[k], dur = (uint16_t)DURABILITY[m] * 16u;
       if (rem > 0 && dur > 0 && rem < dur) {
         double damaged = (double)(dur - rem) / (double)dur;
         c = jitterShade(c, -(int)std::lround(80.0 * damaged));

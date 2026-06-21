@@ -43,21 +43,45 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const send = (obj) => { if (ws && ws.readyState === 1) ws.send(encode(obj)); };
   const setStatus = (s) => { statusText = s; onStatus?.(s); };
 
+  function resetState(status = 'offline') {
+    ws = null; role = null; room = null; connected = false;
+    ownPlayerId = 0; inputSeq = 0; worldReady = false;
+    predictor = null; predId = 0;
+    remotes.clear(); inQueue.length = 0;
+    itemsForRender = new Float32Array(0);
+    invByPlayer.clear(); curByPlayer.clear(); invDirty = false;
+    setStatus(status);
+  }
+
   function connect(url, asRole) {
     disconnect();
-    role = asRole;
-    room = null;
     clientId = newClientId();
-    ws = new WebSocket(url);
+    const socket = new WebSocket(url);
+    ws = socket;
     setStatus('connecting');
-    ws.onmessage = (ev) => {
+    socket.onmessage = (ev) => {
       const m = decode(typeof ev.data === 'string' ? ev.data : ev.data.toString());
       if (m) inQueue.push(m);
     };
-    ws.onclose = () => { connected = false; setStatus('disconnected'); };
-    ws.onerror = () => setStatus('error');
-    return new Promise((resolve) => {
-      ws.onopen = () => { connected = true; resolve(); };
+    return new Promise((resolve, reject) => {
+      let settled = false, opened = false;
+      socket.onopen = () => {
+        if (ws !== socket) return;
+        opened = true; connected = true; role = asRole; settled = true;
+        resolve();
+      };
+      socket.onerror = () => {
+        if (ws !== socket || opened) return;
+        try { socket.close(); } catch { /* failed socket */ }
+        resetState('error');
+        if (!settled) { settled = true; reject(new Error('WebSocket connection failed')); }
+      };
+      socket.onclose = () => {
+        if (ws !== socket) return;
+        if (opened) { resetState('disconnected'); return; }
+        resetState('disconnected');
+        if (!settled) { settled = true; reject(new Error('WebSocket connection closed before opening')); }
+      };
     });
   }
 
@@ -71,16 +95,13 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   }
 
   function disconnect() {
-    if (ws) {
-      try { if (room && clientId) send(makeLeave(room, clientId)); } catch { /* closing */ }
-      try { ws.close(); } catch { /* already closing */ }
+    const socket = ws;
+    if (socket) {
+      try { if (connected && room && clientId && socket.readyState === 1) socket.send(encode(makeLeave(room, clientId))); } catch { /* closing */ }
+      socket.onopen = socket.onclose = socket.onerror = socket.onmessage = null;
+      try { socket.close(); } catch { /* already closing */ }
     }
-    ws = null; role = null; connected = false;
-    ownPlayerId = 0; inputSeq = 0; worldReady = false;
-    predictor = null; predId = 0;
-    remotes.clear(); inQueue.length = 0;
-    itemsForRender = new Float32Array(0); invByPlayer.clear(); curByPlayer.clear(); invDirty = false;
-    setStatus('offline');
+    resetState('offline');
   }
 
   function handleMessage(m) {
@@ -100,7 +121,9 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
         // Adopt the server's buffer dims so diffs apply 1:1 (rebuild the local
         // render engine if ours differs). Only full snapshots (join/resync) carry
         // dims, so this is rare.
-        if (m.cols !== cur.cols || m.rows !== cur.rows) { e = rebuildEngine(m.cols, m.rows); predictor = null; predId = 0; }
+        if (!worldReady || m.cols !== cur.cols || m.rows !== cur.rows) {
+          e = rebuildEngine(m.cols, m.rows); predictor = null; predId = 0;
+        }
         applyWorldMessage(e, m); worldReady = true;
         break;
       }

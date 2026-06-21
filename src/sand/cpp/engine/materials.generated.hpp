@@ -28,6 +28,10 @@ static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STO
 // Mining gate: which tool class drops a material + the min tier required.
 static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0};
 static const uint8_t  MAT_TOOLTIER[TABLE]   = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0};
+// Mining speed percentages: held-class x preferred-class matrix, then held tier.
+static const int TOOL_CLASS_COUNT = 5;
+static const uint8_t  TOOL_CLASS_SPEED[25] = {100, 35, 35, 35, 50, 100, 100, 35, 35, 35, 100, 35, 100, 35, 35, 100, 35, 35, 100, 35, 100, 25, 25, 60, 100};
+static const uint8_t  TOOL_TIER_SPEED[5] = {50, 100, 135, 175, 210};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x00000000u};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 7, 4, 5, 5, 7, 8, 8, 8, 8, 8, 4, 6, 6, 6, 8, 9, 0};

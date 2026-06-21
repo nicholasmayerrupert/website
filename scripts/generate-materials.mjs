@@ -19,10 +19,14 @@ const jsPath = resolve(root, 'src/sand/materials.generated.js');
 const hppPath = resolve(root, 'src/sand/cpp/engine/materials.generated.hpp');
 
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-const { tableSize, kinds, flagBits, componentGroups, toolClasses, toolTiers, materials, animColors } = schema;
+const { tableSize, kinds, flagBits, componentGroups, toolClasses, toolTiers, miningSpeed, materials, animColors } = schema;
 
 if (!flagBits || !componentGroups) throw new Error('schema must define flagBits and componentGroups');
 if (!toolClasses || !toolTiers) throw new Error('schema must define toolClasses and toolTiers');
+const toolClassCount = Math.max(...Object.values(toolClasses)) + 1;
+const toolTierCount = Math.max(...Object.values(toolTiers)) + 1;
+if (!miningSpeed || miningSpeed.classPercent?.length !== toolClassCount || miningSpeed.classPercent.some((r) => r.length !== toolClassCount)) throw new Error('miningSpeed.classPercent must be a square tool-class matrix');
+if (miningSpeed.tierPercent?.length !== toolTierCount) throw new Error('miningSpeed.tierPercent must have one entry per tool tier');
 const maxToolTier = Math.max(...Object.values(toolTiers));
 
 // Materials indexed by id, with empty slots for any gaps up to tableSize.
@@ -99,6 +103,8 @@ export const MAT_CGROUP = [${jsArr((m) => componentGroups[m.componentGroup])}];
 // Mining gate tables: which tool class drops a material and the min tier required.
 export const MAT_TOOLCLASS = [${jsArr((m) => toolClasses[m.toolClass])}];
 export const MAT_TOOLTIER = [${jsArr((m) => m.toolTier)}];
+export const TOOL_CLASS_SPEED = [${miningSpeed.classPercent.flat().join(', ')}];
+export const TOOL_TIER_SPEED = [${miningSpeed.tierPercent.join(', ')}];
 
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 ${jsAnimLines}
@@ -145,6 +151,10 @@ static const uint8_t  MAT_CGROUP[TABLE]     = {${materials.length ? col((m) => m
 // Mining gate: which tool class drops a material + the min tier required.
 static const uint8_t  MAT_TOOLCLASS[TABLE]  = {${col((m) => toolClasses[m.toolClass], u8)}};
 static const uint8_t  MAT_TOOLTIER[TABLE]   = {${col((m) => m.toolTier, u8)}};
+// Mining speed percentages: held-class x preferred-class matrix, then held tier.
+static const int TOOL_CLASS_COUNT = ${toolClassCount};
+static const uint8_t  TOOL_CLASS_SPEED[${toolClassCount * toolClassCount}] = {${miningSpeed.classPercent.flat().join(', ')}};
+static const uint8_t  TOOL_TIER_SPEED[${toolTierCount}] = {${miningSpeed.tierPercent.join(', ')}};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};

@@ -24,7 +24,7 @@
     "plant": 2,
     "ice": 3
   },
-  "$toolDoc": "Mining gate (survival): a destroyed cell drops an item only if the held tool's class == toolClass AND its tier >= toolTier. toolClass 'none' never drops (liquids/gas/free-rigid). The bare 'hand' additionally drops any shovel-class material of tier 0 (loose dirt/sand). Wrong class or too-low tier still breaks the block, it just yields nothing.",
+  "$toolDoc": "Mining gate (survival): toolClass is both the preferred mining class and the drop gate. A destroyed cell drops an item only if the held tool's class == toolClass AND its tier >= toolTier. toolClass 'none' never drops (liquids/gas/free-rigid). The bare 'hand' additionally drops any shovel-class material of tier 0 (loose dirt/sand). Wrong class or too-low tier still breaks the block, it just yields nothing.",
   "toolClasses": {
     "none": 0,
     "pickaxe": 1,
@@ -38,6 +38,17 @@
     "stone": 2,
     "iron": 3,
     "gold": 4
+  },
+  "$miningSpeedDoc": "Mining progress uses 16 fixed-point units per baseline hit. Rows in classPercent are held tool classes and columns are the material's preferred toolClass, both in numeric enum order. tierPercent is indexed by held tool tier. Effective power scales by both percentages; DURABILITY remains the base hardness in baseline hits.",
+  "miningSpeed": {
+    "classPercent": [
+      [100, 35, 35, 35, 50],
+      [100, 100, 35, 35, 35],
+      [100, 35, 100, 35, 35],
+      [100, 35, 35, 100, 35],
+      [100, 25, 25, 60, 100]
+    ],
+    "tierPercent": [50, 100, 135, 175, 210]
   },
   "materials": [
     { "id": 0,  "name": "EMPTY",     "kind": "NONE",       "density": 0,   "looseSorted": false, "mobility": 0,    "color": "0x00000000", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "none",  "componentGroup": "none",  "flags": [] },

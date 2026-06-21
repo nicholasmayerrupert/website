@@ -65,6 +65,7 @@ export function createSandGame(container, opts = {}) {
   const PLAYER_W = 4, PLAYER_H = 8; // mirrors PLAYER_W/PLAYER_H in cpp/common.hpp
   let inputSeq = 0;
   let net = null; // multiplayer glue (created lazily on host/join)
+  const netClientReady = () => !!net && net.role === 'client' && net.connected && net.worldReady;
 
   // Surface spawn for a column: above the highest terrain across the footprint so
   // the character drops cleanly. Shared by the local spawn + remote (host) spawns.
@@ -231,7 +232,7 @@ export function createSandGame(container, opts = {}) {
     // As a connected multiplayer client the simulation buffer is the SERVER's
     // (diffs are authored in its cols/rows); never rebuild it to window dims on
     // resize — only resize the GL backing store + viewport (the pure-zoom path).
-    if (net && net.role === 'client' && engine) { bufCols = cols; worldRows = rows; }
+    if (netClientReady() && engine) { bufCols = cols; worldRows = rows; }
 
     // The simulation buffer depends only on CSS size + cellSize, not on dpr. So a
     // pure zoom change (dpr only) keeps the same world: just repaint at the new
@@ -271,7 +272,7 @@ export function createSandGame(container, opts = {}) {
     // where the host owns it — it gets removed and re-rendered from snapshots when
     // joining). Creative mode has no character.
     if (survival) engine.setSurvivalInventory(true); // mining->drops->inventory; spawnPlayer seeds the starter kit
-    if (survival && (!net || net.role !== 'client')) {
+    if (survival && !netClientReady()) {
       const sp = surfaceSpawn(spawnCol);
       localPlayerId = engine.spawnPlayer(sp.x, sp.y);
       onInventory?.(engine.getInventory(localPlayerId)); // initial HUD fill
@@ -398,10 +399,10 @@ export function createSandGame(container, opts = {}) {
     const key = e.key.toLowerCase();
     // Survival inventory hotkeys (engine owns the selection policy): digits 1-9
     // pick a hotbar slot; E toggles the grid. Handled before the movement-key map.
-    if (survival && engine && (localPlayerId || net.role === 'client')) {
+    if (survival && engine && (localPlayerId || netClientReady())) {
       if (key >= '1' && key <= '9') {
         const slot = +key - 1;
-        if (net.role === 'client') net.sendSelect(slot); else engine.setSelectedSlot(localPlayerId, slot);
+        if (netClientReady()) net.sendSelect(slot); else engine.setSelectedSlot(localPlayerId, slot);
         e.preventDefault(); return;
       }
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
@@ -433,7 +434,7 @@ export function createSandGame(container, opts = {}) {
   // Survival: scroll cycles the selected hotbar slot (wrap-around policy is in C++).
   const onWheel = (e) => {
     if (!survival || !engine || !inside || isEditableTarget(e.target)) return;
-    if (net.role === 'client') {
+    if (netClientReady()) {
       const inv = net.getOwnInventory(); if (!inv) return;
       net.sendSelect((inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9); // hotbar is slots 0-8
       e.preventDefault(); return;
@@ -472,7 +473,7 @@ export function createSandGame(container, opts = {}) {
     // flicker probe sees only the cell grid.
     if (testPaused) {
       engine.glSetPlayers(true, null, 0);
-    } else if (net.role === 'client') {
+    } else if (netClientReady()) {
       const ps = net.getPlayersForRender();
       const packed = new Float32Array(ps.length * 8); // [x,y,w,h,facing,own,animState,animFrame]
       for (let i = 0; i < ps.length; i++) {
@@ -487,7 +488,7 @@ export function createSandGame(container, opts = {}) {
     }
     // Dropped items: a client draws the server's authoritative items; host/local
     // (and single-player) draws the engine's own (null = engine-owned).
-    engine.glSetItems(net.role === 'client' ? net.getItemsForRender() : null);
+    engine.glSetItems(netClientReady() ? net.getItemsForRender() : null);
     engine.glRenderFrame(full || forceFullRender);
     forceFullRender = false;
     previewDirty = false;
@@ -580,11 +581,11 @@ export function createSandGame(container, opts = {}) {
       status: () => netStatus(),
       players: () => playersForRender(),
       playerCount: () => playersForRender().length,
-      ownPlayer: () => (net.role === 'client' ? net.getOwnPlayer() : localPlayer()),
+      ownPlayer: () => (netClientReady() ? net.getOwnPlayer() : localPlayer()),
       // dropped-item count (client: from the server snapshot; else the engine).
-      items: () => (net.role === 'client' ? net.getItemsForRender().length / 7 : (engine ? engine.itemCount() : 0)),
-      ownInventory: () => (net.role === 'client' ? net.getOwnInventory() : (localPlayerId && engine ? engine.getInventory(localPlayerId) : null)),
-      ownCursor: () => (net.role === 'client' ? net.getOwnCursor() : (localPlayerId && engine ? engine.getCursor(localPlayerId) : null)),
+      items: () => (netClientReady() ? net.getItemsForRender().length / 7 : (engine ? engine.itemCount() : 0)),
+      ownInventory: () => (netClientReady() ? net.getOwnInventory() : (localPlayerId && engine ? engine.getInventory(localPlayerId) : null)),
+      ownCursor: () => (netClientReady() ? net.getOwnCursor() : (localPlayerId && engine ? engine.getCursor(localPlayerId) : null)),
       // survival intents routed to the server (used by the mp e2e test).
       select: (slot) => net.sendSelect(slot),
       pick: (slot, half) => net.sendPick(slot, half),
@@ -608,7 +609,7 @@ export function createSandGame(container, opts = {}) {
   // Glide the camera toward the followed player's center (clamp + lerp in C++).
   // On a client the followed player is our host-authoritative snapshot entity.
   const followCamera = () => {
-    const p = (net && net.role === 'client') ? net.getOwnPlayer() : localPlayer();
+    const p = netClientReady() ? net.getOwnPlayer() : localPlayer();
     if (!p || !engine) return;
     engine.cameraFollowTo(p.x + p.w / 2, p.y + p.h / 2);
   };
@@ -618,7 +619,11 @@ export function createSandGame(container, opts = {}) {
   // world, never its own). Keeps the current view metrics; does NOT spawn a local
   // player (the server owns it). Called by the net layer on the first WORLD.
   const rebuildEngineForDims = (netCols, netRows) => {
-    if (engine && cols === netCols && rows === netRows) { localPlayerId = 0; return engine; }
+    if (engine && cols === netCols && rows === netRows) {
+      if (localPlayerId) engine.removePlayer(localPlayerId);
+      localPlayerId = 0;
+      return engine;
+    }
     if (engine && engine.destroy) engine.destroy();
     cols = netCols; rows = netRows;
     engine = createEngineWasm({ cols, rows, infinite: true, worldSeed, emittersOn: false, sinksOn: false });
@@ -644,10 +649,15 @@ export function createSandGame(container, opts = {}) {
     getLocalInput: currentLocalInput,
     rebuildEngine: rebuildEngineForDims,
   });
-  const playersForRender = () => (net.role === 'client' ? net.getPlayersForRender() : engine.getPlayers());
-  const netJoin = (url, room) => {
-    if (localPlayerId) { engine.removePlayer(localPlayerId); localPlayerId = 0; } // the server owns it now
-    return net.joinRoom(url, room);
+  const playersForRender = () => (netClientReady() ? net.getPlayersForRender() : engine.getPlayers());
+  const netJoin = async (url, room) => {
+    try {
+      await net.joinRoom(url, room);
+    } catch (e) {
+      net.disconnect();
+      if (survival && !localPlayerId) { cols = 0; rows = 0; fit(); }
+      throw e;
+    }
   };
   const netDisconnect = () => {
     net.disconnect();
@@ -656,14 +666,17 @@ export function createSandGame(container, opts = {}) {
     // mismatch makes fit() take the full-rebuild path, which respawns the player.
     if (survival) { cols = 0; rows = 0; fit(); }
   };
-  const netStatus = () => ({ role: net.role, connected: net.connected, remotes: net.remoteCount, ownPlayerId: net.ownPlayerId, status: net.status });
+  const netStatus = () => ({ role: net.role, connected: net.connected, worldReady: net.worldReady, remotes: net.remoteCount, ownPlayerId: net.ownPlayerId, status: net.status });
 
   // One fixed simulation step: world-shift + input/tool + multiplayer pump +
   // engine.step. Extracted so the main loop AND the deterministic test hook
   // (tickSteps) can drive it identically — the test path is immune to RAF
   // throttling (which otherwise makes two-context multiplayer timing flaky).
   const doFixedStep = (now) => {
-    const isClient = net.role === 'client';
+    // A server-side close clears the transactional net state. Recreate the local
+    // world/player on the next tick just as an explicit Disconnect does.
+    if (survival && !net.connected && !localPlayerId) { cols = 0; rows = 0; fit(); }
+    const isClient = netClientReady();
     // A client doesn't stream or simulate the shared world — the host is
     // authoritative and replicates it via diffs (applied in net.update).
     // streamWorld() slides the buffer, the cell texture, and the camera in lockstep.
@@ -716,7 +729,7 @@ export function createSandGame(container, opts = {}) {
     // client (only when it changed), else from the local engine's authoritative
     // snapshot when the sim advanced (pickups/placement happen in steps).
     if (survival && onInventory) {
-      if (net.role === 'client') {
+      if (netClientReady()) {
         if (net.consumeInventoryDirty()) { const inv = net.getOwnInventory(); if (inv) onInventory(inv); }
       } else if (stepped && localPlayerId) {
         onInventory(engine.getInventory(localPlayerId));
@@ -735,7 +748,7 @@ export function createSandGame(container, opts = {}) {
     // A connected client animates remote players from snapshots even when its own
     // grid is static, so keep presenting. previewDirty forces a present when a
     // fresh draft overlay appears with no camera/step change.
-    if (stepped || camMoved || previewDirty || (net.connected && net.role === 'client')) render(false);
+    if (stepped || camMoved || previewDirty || netClientReady()) render(false);
   };
   raf = requestAnimationFrame(loop);
 
@@ -775,17 +788,17 @@ export function createSandGame(container, opts = {}) {
     // Survival inventory intents. When connected as a client they go to the
     // authoritative server; offline they apply to the local engine (unchanged).
     isSurvival() { return survival; },
-    selectSlot(i) { if (net.role === 'client') net.sendSelect(i | 0); else if (localPlayerId) engine?.setSelectedSlot(localPlayerId, i | 0); },
-    moveSlot(from, to) { if (net.role === 'client') net.sendMove(from | 0, to | 0); else if (localPlayerId) engine?.inventoryMove(localPlayerId, from | 0, to | 0); },
+    selectSlot(i) { if (netClientReady()) net.sendSelect(i | 0); else if (localPlayerId) engine?.setSelectedSlot(localPlayerId, i | 0); },
+    moveSlot(from, to) { if (netClientReady()) net.sendMove(from | 0, to | 0); else if (localPlayerId) engine?.inventoryMove(localPlayerId, from | 0, to | 0); },
     getInventory() {
-      if (net.role === 'client') return net.getOwnInventory() || { slots: [], selected: 0 };
+      if (netClientReady()) return net.getOwnInventory() || { slots: [], selected: 0 };
       return localPlayerId && engine ? engine.getInventory(localPlayerId) : { slots: [], selected: 0 };
     },
     // Minecraft cursor model (carried stack) + throw-out (facing direction).
-    cursorPick(slot, half) { if (net.role === 'client') net.sendPick(slot | 0, half); else if (localPlayerId) engine?.inventoryCursorPick(localPlayerId, slot | 0, half); },
-    throwFromCursor(whole) { if (net.role === 'client') net.sendThrow(whole); else if (localPlayerId) engine?.throwFromCursor(localPlayerId, whole); },
+    cursorPick(slot, half) { if (netClientReady()) net.sendPick(slot | 0, half); else if (localPlayerId) engine?.inventoryCursorPick(localPlayerId, slot | 0, half); },
+    throwFromCursor(whole) { if (netClientReady()) net.sendThrow(whole); else if (localPlayerId) engine?.throwFromCursor(localPlayerId, whole); },
     getCursor() {
-      if (net.role === 'client') return net.getOwnCursor();
+      if (netClientReady()) return net.getOwnCursor();
       return localPlayerId && engine ? engine.getCursor(localPlayerId) : null;
     },
     // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).

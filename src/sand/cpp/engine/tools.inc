@@ -105,15 +105,23 @@
     std::fill(L->mineDamage.begin(), L->mineDamage.end(), 0);
     markAllDirty();
   }
-  int mineDamageDisc(int cx, int cy, int radius) {
+  int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed) {
     lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) { if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } continue; }
-      uint8_t dur = DURABILITY[m];
+      uint16_t dur = (uint16_t)DURABILITY[m] * 16u;
       if (dur > 0) {
         if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
-        L->mineDamage[k]--;
+        uint16_t power = 16;
+        if (scaledSpeed) {
+          uint8_t heldClass = miner.heldToolClass <= TC_HAND ? miner.heldToolClass : TC_HAND;
+          uint8_t heldTier = miner.heldToolTier <= TT_GOLD ? miner.heldToolTier : TT_GOLD;
+          uint8_t mineClass = MAT_TOOLCLASS[m] <= TC_HAND ? MAT_TOOLCLASS[m] : TC_NONE;
+          power = (uint16_t)TOOL_CLASS_SPEED[heldClass * TOOL_CLASS_COUNT + mineClass] * TOOL_TIER_SPEED[heldTier] * 16u / 10000u;
+          if (power == 0) power = 1;
+        }
+        L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
         changed = 1;
         if (L->mineDamage[k] > 0) continue;
       }

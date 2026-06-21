@@ -32,6 +32,7 @@ const STYLE = `
 .mp-btn { width: 100%; padding: 7px; font-size: 13px; font-weight: 800; border-radius: 8px; cursor: pointer;
   border: 1px solid rgba(255,255,255,.18); background: #2563eb; color: #fff; }
 .mp-btn:hover { background: #1d4ed8; }
+.mp-btn:disabled { cursor: wait; opacity: .7; }
 .mp-btn.leave { background: #b91c1c; }
 .mp-btn.leave:hover { background: #991b1b; }
 .mp-status { margin-top: 7px; font-size: 11px; color: rgba(255,255,255,.7); min-height: 14px; word-break: break-word; }
@@ -71,18 +72,21 @@ export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
     wrap.addEventListener(ev, (e) => e.stopPropagation());
   }
 
-  let connected = false;
+  let connected = false, connecting = false, lastError = '';
   const refresh = () => {
     const st = getStatus?.() || { connected: false, status: 'offline' };
     connected = !!st.connected;
     toggle.classList.toggle('online', connected);
     btn.classList.toggle('leave', connected);
-    btn.textContent = connected ? 'Disconnect' : 'Connect';
-    hostIn.disabled = portIn.disabled = roomIn.disabled = connected;
+    btn.disabled = connecting;
+    btn.textContent = connecting ? 'Connecting…' : connected ? 'Disconnect' : 'Connect';
+    hostIn.disabled = portIn.disabled = roomIn.disabled = connected || connecting;
     const remotes = typeof st.remotes === 'number' ? st.remotes : 0;
-    statusEl.textContent = connected
-      ? `${st.status || 'connected'}${remotes ? ` · ${remotes} other player${remotes === 1 ? '' : 's'}` : ''}`
-      : (st.status && st.status !== 'offline' ? st.status : '');
+    if (connecting) statusEl.textContent = st.status === 'connecting' ? 'connecting…' : (st.status || 'connecting…');
+    else if (connected && !st.worldReady) statusEl.textContent = 'connected · waiting for world snapshot…';
+    else if (connected) statusEl.textContent = `${st.status || 'connected'}${remotes ? ` · ${remotes} other player${remotes === 1 ? '' : 's'}` : ''}`;
+    else if (lastError) statusEl.textContent = lastError;
+    else statusEl.textContent = st.status && st.status !== 'offline' ? st.status : '';
   };
 
   toggle.addEventListener('click', () => { panel.classList.toggle('open'); refresh(); });
@@ -93,11 +97,14 @@ export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
     const port = (portIn.value || '5191').trim();
     const room = (roomIn.value || 'main').trim();
     const url = `ws://${host}:${port}`;
-    statusEl.textContent = `connecting to ${url} …`;
+    connecting = true; lastError = '';
+    refresh();
     try {
       await join?.(url, room);
     } catch (e) {
-      statusEl.textContent = `failed: ${e?.message || e}`;
+      lastError = `failed: ${e?.message || e}`;
+    } finally {
+      connecting = false;
     }
     refresh();
   });

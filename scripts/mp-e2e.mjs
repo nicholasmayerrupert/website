@@ -77,6 +77,19 @@ try {
   // Pause both clients' RAF; drive them deterministically with tickSteps + sleeps.
   await a.page.evaluate(() => window.__sandTest.setPaused(true));
   await b.page.evaluate(() => window.__sandTest.setPaused(true));
+
+  // A refused connection must be a transaction: keep the local player and keep
+  // stepping the single-player engine without a page refresh.
+  const localBefore = await a.page.evaluate(() => ({ player: window.__sandTest.getPlayer(), count: window.__sandNet.playerCount() }));
+  const failedJoin = await a.page.evaluate(async (u) => {
+    try { await window.__sandNet.join(u, 'missing'); return false; } catch { return true; }
+  }, `ws://localhost:${WS_PORT + 1}`);
+  await a.page.evaluate(() => window.__sandNet.tickSteps(4));
+  const localAfter = await a.page.evaluate(() => ({ player: window.__sandTest.getPlayer(), count: window.__sandNet.playerCount(), status: window.__sandNet.status() }));
+  check('unavailable server rejects the join', failedJoin);
+  check('failed join keeps the local player', !!localBefore.player && !!localAfter.player && localBefore.player.id === localAfter.player.id && localAfter.count === 1);
+  check('failed join clears connected client state', !localAfter.status.connected && localAfter.status.role === null && !localAfter.status.worldReady);
+
   // Pump BOTH clients (send input + drain inbound) then let the server tick/reply.
   const pump = async (n = 4, ms = 90) => {
     await a.page.evaluate((k) => window.__sandNet.tickSteps(k), n);

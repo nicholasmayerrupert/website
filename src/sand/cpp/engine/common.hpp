@@ -21,7 +21,7 @@
 #include "gl_shared.hpp"
 
 // Tunables (mirror engine.js)
-static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5, SEED_SIZE = 2;
+static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5, SEED_SIZE = 1;
 static const int   MAX_WATER_FLOW = 10;
 // How far along a connected free surface the leveller looks for a lower column to
 // pour into (levelLiquidSurfaces). Bounds the residual: a settled surface is flat to
@@ -37,8 +37,9 @@ static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SP
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
 static const float FIRE_CROSS_P = 0.18f;
 static const float ACID_DISSOLVE_P = 0.12f, ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
-static const int   MAX_WOOD_CELLS = 120, MAX_LEAF_CELLS = 105, WATER_PER_GROWTH = 2, TRUNK_THICKEN_UNTIL_WOOD = 52;
+static const int   MAX_WOOD_CELLS = 120, MAX_LEAF_CELLS = 105, WATER_PER_GROWTH = 1, TRUNK_THICKEN_UNTIL_WOOD = 52;
 static const float GROWTH_P = 0.58f, LEAF_GROWTH_P = 0.54f;
+static const float LEAF_SEED_DROP_P = 0.10f;
 static const float TRUNK_SIDE_FILL_P = 0.96f, TRUNK_DOUBLE_SIDE_FILL_P = 0.78f, TRUNK_WIDE_SIDE_FILL_P = 0.34f;
 
 static inline int imin(int a, int b) { return a < b ? a : b; }

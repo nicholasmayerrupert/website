@@ -70,6 +70,12 @@
     if (it.py < 0) it.py = 0;
     if (it.vy > 0 && itemCellLiquidAt(x, (int)std::floor(it.py) + 1)) it.vy = 0; // resting on the surface
   }
+  bool seedItemCanPlant(const Item& it, int& x, int& y) {
+    if (it.kind != IT_ITEM || it.material != SEED || it.count == 0) return false;
+    x = (int)std::floor(it.px); y = (int)std::floor(it.py);
+    if (!isInBounds(x, y) || grid[I(x, y)] != EMPTY) return false;
+    return itemCellLiquidAt(x, y + 1) || itemCellLiquidAt(x - 1, y) || itemCellLiquidAt(x + 1, y) || itemCellLiquidAt(x, y - 1);
+  }
   // Nearest active/alive player center within IT_MAGNET_R of the item (or null).
   Player* magnetTarget(const Item& it) {
     Player* best = nullptr; double bestD = IT_MAGNET_R * IT_MAGNET_R;
@@ -155,6 +161,10 @@
       moveItemX(it);
       unburyItem(it);
       floatItem(it);
+      int px, py;
+      if (seedItemCanPlant(it, px, py) && placeSeedAt(px, py)) {
+        if (--it.count > 0) it.pickupDelay = IT_PICKUP_DELAY;
+      }
     }
     for (auto& it : items) if (it.kind == IT_PARTICLE) it.life--;
     pickupItems();

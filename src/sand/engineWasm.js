@@ -12,7 +12,7 @@ import { MAT } from './materials.js';
 
 export { MAT };
 export const CHUNK_SIZE = 32;
-export const SEED_SIZE = 2;
+export const SEED_SIZE = 1;
 
 // Player input bitmask — mirrors `enum PlayerInput` in cpp/engine/common.hpp.
 // Shared by the browser input layer and the network protocol.

@@ -31,7 +31,18 @@
     if (cells.empty()) return;
     switch (MAT_CGROUP[mat]) {
       case CG_ICE:  registerRigidCellsSplit(L->iceComponents, L->nextIceId, mat, cells, true); break;
-      case CG_PLANT: registerSeededComponents(0, cols); break; // unbounded flood (a tree/blob is one comp)
+      case CG_PLANT:
+        registerSeededComponents(0, cols); // unbounded flood (a tree/blob is one comp)
+        if (mat != SEED) break;
+        for (auto& comp : L->plantComponents) {
+          for (int k : cells) {
+            if (std::find(comp.cells.begin(), comp.cells.end(), k) == comp.cells.end()) continue;
+            comp.growing = true;
+            comp.cacheDirty = true;
+            break;
+          }
+        }
+        break;
       default:      registerRigidCellsSplit(L->stoneComponents, L->nextStoneId, mat, cells, false); break; // stone group
     }
   }
@@ -179,7 +190,8 @@
     registerComponentCells(draftMaterial, cells);
   }
   bool getSeedOrigin(int cx, int cy, int& x0, int& y0) {
-    x0 = (int)std::floor(cx - SEED_SIZE / 2.0); y0 = (int)std::floor(cy - SEED_SIZE / 2.0);
+    x0 = SEED_SIZE == 1 ? cx : (int)std::floor(cx - SEED_SIZE / 2.0);
+    y0 = SEED_SIZE == 1 ? cy : (int)std::floor(cy - SEED_SIZE / 2.0);
     if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return false;
     return true;
   }
@@ -197,7 +209,7 @@
     Comp c; c.id = L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
     for (int y = y0; y < y0 + SEED_SIZE; y++) for (int x = x0; x < x0 + SEED_SIZE; x++) { int k = I(x, y); grid[k] = SEED; c.cells.push_back(k); if (y > c.yMax) c.yMax = y; } // fresh component, distinct cells
     L->plantComponents.push_back(std::move(c));
-    markDirtyRect(x0, y0, x0 + SEED_SIZE - 1, y0 + SEED_SIZE - 1);
+    markDirtyRect(x0 - 1, y0 - 1, x0 + SEED_SIZE, y0 + SEED_SIZE);
     return true;
   }
 

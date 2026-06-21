@@ -1,6 +1,6 @@
 // Phase C: mining drops. A destroyed cell yields a dropped ITEM only when the
-// player's held tool class + tier satisfies the material's gate (the bare hand also
-// drops loose shovel-tier-0 soils). Wrong tool/tier still breaks the block, it just
+// player's held tool class + tier satisfies the material's gate. Hand-tier
+// materials drop with any tool. Wrong tool/tier still breaks the block, it just
 // yields nothing. Run: node scripts/mining-drop-test.mjs
 
 import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
@@ -55,6 +55,8 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
 {
   const dirt = mineBlob(MAT.DIRT, TC.hand, TT.hand);
   check(`hand drops dirt (${dirt.drops})`, dirt.drops > 0);
+  const pickDirt = mineBlob(MAT.DIRT, TC.pickaxe, TT.wood);
+  check(`pickaxe also drops hand-tier dirt (${pickDirt.drops})`, pickDirt.drops > 0);
   const stone = mineBlob(MAT.STONE, TC.hand, TT.hand);
   check('hand breaks stone', stone.centerEmpty);
   check(`hand yields no stone drop (${stone.drops})`, stone.drops === 0);
@@ -68,6 +70,22 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
   check(`a tool also scoops lava (${pick.drops})`, pick.drops > 0);
   const oil = mineBlob(MAT.OIL, TC.shovel, TT.wood);
   check(`oil is collectible too (${oil.drops})`, oil.drops > 0);
+}
+
+// 4c) Leaves do not drop themselves with normal tools; they have a small
+// deterministic chance to drop seed items.
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 3, sinksOn: false, infinite: false });
+  const id = e.spawnPlayer(40, 40);
+  e.setPlayerTool(id, TC.hand, TT.hand);
+  e.placeMaterial(60, 50, 5, MAT.PLANT);
+  for (let i = 0; i < 200; i++) e.playerMine(id, 60, 50);
+  const items = e.getItems();
+  const leafDrops = items.filter((it) => it.kind === 0 && it.material === MAT.PLANT).length;
+  const seedDrops = items.filter((it) => it.kind === 0 && it.material === MAT.SEED).length;
+  check(`leaves drop seeds sometimes (${seedDrops})`, seedDrops > 0);
+  check(`leaves do not drop leaf items (${leafDrops})`, leafDrops === 0);
+  e.destroy();
 }
 
 // 5) Determinism: an identical mining script produces identical grid + item counts.

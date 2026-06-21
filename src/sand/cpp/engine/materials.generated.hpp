@@ -30,7 +30,7 @@ static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 
 static const uint8_t  MAT_TOOLTIER[TABLE]   = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0};
 // Mining speed percentages: held-class x preferred-class matrix, then held tier.
 static const int TOOL_CLASS_COUNT = 5;
-static const uint8_t  TOOL_CLASS_SPEED[25] = {100, 35, 35, 35, 50, 100, 100, 35, 35, 35, 100, 35, 100, 35, 35, 100, 35, 35, 100, 35, 100, 25, 25, 60, 100};
+static const uint8_t  TOOL_CLASS_SPEED[25] = {100, 35, 35, 35, 50, 100, 255, 35, 35, 35, 100, 35, 100, 35, 35, 100, 35, 35, 100, 35, 100, 25, 25, 60, 100};
 static const uint8_t  TOOL_TIER_SPEED[5] = {50, 100, 135, 175, 210};
 static const int MINING_PROGRESS_DIVISOR = 5;
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).

@@ -55,7 +55,7 @@ const at = (g, x, y) => g[y * COLS + x];
   e.pointerDown(50, 40, 0);
   e.pointerUp(0);
   let seeds = 0; for (const v of e.getGrid()) if (v === MAT.SEED) seeds++;
-  check(`pine seed placed SEED cells (${seeds})`, seeds > 0);
+  check(`pine seed placed one SEED cell (${seeds})`, seeds === 1);
   e.destroy();
 }
 

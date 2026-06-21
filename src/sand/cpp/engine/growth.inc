@@ -5,6 +5,10 @@
   // gLeafMat=PLANT and no straight/droop bias, every branch + rand() call below is
   // identical to before, so existing growth stays byte-identical.
   bool growStraight() { return gGrowType == PT_PINE || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM; }
+  bool compHasSeed(Comp& comp) {
+    for (int k : comp.cells) if (grid[k] == SEED) return true;
+    return false;
+  }
   bool findWaterTouching(Comp& comp, int count, std::vector<int>& picked) {
     std::vector<int> candidates; std::unordered_set<int> seen;
     auto consider = [&](int nk) { if (grid[nk] != WATER || seen.count(nk)) return; seen.insert(nk); candidates.push_back(nk); };
@@ -71,6 +75,7 @@
     for (auto& comp : L->plantComponents) {
       comp.age++;
       if (!comp.growing) continue;                          // worldgen/restored trees are inert scenery
+      if (!compHasSeed(comp)) { comp.growing = false; continue; }
       // species materials + per-type caps (OAK keeps the original literals).
       gGrowType = comp.plantType; gWoodMat = plantWoodMat(gGrowType); gLeafMat = plantLeafMat(gGrowType);
       int maxWood = gGrowType == PT_BUSH ? 14 : gGrowType == PT_MUSHROOM ? 10 : gGrowType == PT_CACTUS ? 26 : MAX_WOOD_CELLS;

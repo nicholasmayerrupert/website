@@ -55,6 +55,36 @@ check(`cactus has zero foliage (leaves ${cactus.leaves})`, cactus.leaves === 0);
 const mush = grow(PT.MUSHROOM, false); // NO water
 check(`mushroom grows WITHOUT water: stem + cap (${mush.cnt[MAT.MUSH_STEM] || 0} stem, ${mush.cnt[MAT.MUSH_CAP] || 0} cap)`, (mush.cnt[MAT.MUSH_STEM] || 0) > 4 && (mush.cnt[MAT.MUSH_CAP] || 0) > 4);
 
+// Generic wood placement should stay inert. Trees only grow while connected to a seed.
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
+  for (let x = 20; x < 140; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.placeMaterial(70, 88, 1, MAT.WOOD);
+  let t = 0;
+  for (let s = 0; s < 500; s++) { if (s % 15 === 0) e.paintDisc(70, 86, 2, MAT.WATER, false); t += 16; e.step(t); }
+  let wood = 0, plant = 0;
+  for (const v of e.getGrid()) { if (v === MAT.WOOD) wood++; if (v === MAT.PLANT) plant++; }
+  check(`placed wood does not grow without a seed (${wood} wood, ${plant} foliage)`, wood <= 13 && plant === 0);
+  e.destroy();
+}
+
+// A dropped seed item floating on water should plant itself and wake growth.
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
+  for (let x = 50; x < 90; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  for (let x = 62; x <= 78; x++) for (let y = 84; y < 90; y++) e.paintDisc(x, y, 0, MAT.WATER, false);
+  e.spawnItem(MAT.SEED, 1, 70, 80, 0, 0);
+  let t = 0;
+  for (let s = 0; s < 800; s++) { t += 16; e.step(t); }
+  let seed = 0, wood = 0, leaf = 0, itemSeeds = 0;
+  for (const v of e.getGrid()) { if (v === MAT.SEED) seed++; if (v === MAT.WOOD) wood++; if (v === MAT.PLANT) leaf++; }
+  for (const it of e.getItems()) if (it.kind === 0 && it.material === MAT.SEED) itemSeeds += it.count;
+  check(`dropped seed auto-plants on water and grows (seed ${seed}, wood ${wood}, leaf ${leaf}, item ${itemSeeds})`, seed > 0 && wood > 0 && itemSeeds === 0);
+  e.destroy();
+}
+
 // Worldgen produces typed flora (trees are stamped into the background layer).
 {
   const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 0xBED, sinksOn: false, infinite: true });

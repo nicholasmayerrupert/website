@@ -45,7 +45,8 @@
     "test:all": "npm run test && npm run build",
     "mp:server": "node scripts/dev-multiplayer-server.mjs",
     "sand:server": "node scripts/sand-server.mjs",
-    "sand:doctor": "node scripts/sand-doctor.mjs"
+    "sand:doctor": "node scripts/sand-doctor.mjs",
+    "check:embed": "node scripts/check-embed-boundary.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

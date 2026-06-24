@@ -18,7 +18,7 @@ import { applyWorldMessage, applyDiffMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
 
 const SMOOTH = 0.35;             // client render smoothing toward the latest snapshot
-const DEFAULT_W = 4, DEFAULT_H = 8;
+const fallbackPlayerSize = (engine) => engine?.getPlayerSize?.() || { w: 4, h: 8 };
 
 let clientCounter = 0;
 const newClientId = () => `c${Date.now().toString(36)}-${(clientCounter++).toString(36)}`;
@@ -152,11 +152,12 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     for (const p of m.players) {
       seen.add(p.id);
       let r = remotes.get(p.id);
-      if (!r) { r = { x: p.x, y: p.y, w: DEFAULT_W, h: DEFAULT_H }; remotes.set(p.id, r); }
+      const size = fallbackPlayerSize(engineNow());
+      if (!r) { r = { x: p.x, y: p.y, w: size.w, h: size.h }; remotes.set(p.id, r); }
       r.tx = p.x; r.ty = p.y; r.vx = p.vx; r.vy = p.vy;
       r.facing = p.facing; r.grounded = !!p.grounded; r.tool = p.tool; r.seq = p.seq;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
-      r.w = DEFAULT_W; r.h = DEFAULT_H;
+      r.w = size.w; r.h = size.h;
     }
     for (const id of [...remotes.keys()]) if (!seen.has(id)) remotes.delete(id); // left
   }
@@ -223,7 +224,13 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   function getOwnPlayer() {
     if (role !== 'client') return null;
     // predicted (responsive) state when available; else the raw snapshot entity.
-    if (predictor) { const ps = predictor.renderState(); if (ps) return { id: ownPlayerId, x: ps.x, y: ps.y, w: ps.w ?? DEFAULT_W, h: ps.h ?? DEFAULT_H, facing: ps.facing, grounded: ps.grounded }; }
+    if (predictor) {
+      const ps = predictor.renderState();
+      if (ps) {
+        const size = fallbackPlayerSize(engineNow());
+        return { id: ownPlayerId, x: ps.x, y: ps.y, w: ps.w ?? size.w, h: ps.h ?? size.h, facing: ps.facing, grounded: ps.grounded };
+      }
+    }
     const r = remotes.get(ownPlayerId);
     return r ? { id: ownPlayerId, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded } : null;
   }

@@ -24,7 +24,6 @@ const STEP_MS = 16;            // fixed sim step (matches the browser STEP_MS)
 const SNAPSHOT_INTERVAL = 3;   // steps between player-snapshot broadcasts (~20Hz)
 const ITEMS_INTERVAL = 6;      // steps between dropped-item broadcasts (~10Hz)
 const MAX_PLAYERS = 8;
-const PLAYER_W = 4, PLAYER_H = 8; // mirrors PLAYER_W/PLAYER_H in cpp/common.hpp
 const CATCHUP_CAP_MS = 250;    // never simulate more than this much after a stall
 
 export async function startSandServer(opts = {}) {
@@ -38,15 +37,7 @@ export async function startSandServer(opts = {}) {
   engine.setPlayMode(true);
   const host = new Host({ engine, roomId: cfg.room, maxPlayers: MAX_PLAYERS });
 
-  // Surface spawn for a column (mirrors createSandGame.surfaceSpawn): above the
-  // highest terrain across the player footprint so the character drops cleanly.
-  const surfaceSpawn = (col) => {
-    const worldX0 = engine.getWorldOffsetX();
-    let top = engine.worldSurfaceAt(worldX0 + col);
-    for (let c = col - PLAYER_W; c <= col + PLAYER_W; c++) top = Math.min(top, engine.worldSurfaceAt(worldX0 + c));
-    return { x: col - PLAYER_W / 2, y: top - PLAYER_H - 4 };
-  };
-  const spawnFor = (i) => surfaceSpawn(Math.floor(cfg.cols / 2) + ((i % 5) - 2) * 6);
+  const spawnFor = (i) => engine.getSurfaceSpawn(Math.floor(cfg.cols / 2) + ((i % 5) - 2) * 6);
 
   const peers = new Map(); // clientId -> { ws, pid, invRev }
   let joinCounter = 0;

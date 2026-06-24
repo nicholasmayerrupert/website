@@ -111,6 +111,10 @@ EMSCRIPTEN_KEEPALIVE int engine_rigid_depen(Engine* e) { return e->rigidDepenetr
 
 // players (Terraria-like characters; physics in player.inc)
 EMSCRIPTEN_KEEPALIVE int engine_spawn_player(Engine* e, double x, double y) { return e->spawnPlayer(x, y); }
+EMSCRIPTEN_KEEPALIVE int engine_spawn_player_surface(Engine* e, int col) { return e->spawnPlayerAtSurface(col); }
+EMSCRIPTEN_KEEPALIVE void engine_player_surface_spawn(Engine* e, int col, double* out) { e->playerSurfaceSpawn(col, out); }
+EMSCRIPTEN_KEEPALIVE int engine_player_width() { return PLAYER_W; }
+EMSCRIPTEN_KEEPALIVE int engine_player_height() { return PLAYER_H; }
 EMSCRIPTEN_KEEPALIVE void engine_remove_player(Engine* e, int id) { e->removePlayer(id); }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_input(Engine* e, int id, int inputBits, double aimX, double aimY, int selectedTool, int seq) { e->setPlayerInput(id, inputBits, aimX, aimY, selectedTool, (uint32_t)seq); }
 EMSCRIPTEN_KEEPALIVE int engine_player_count(Engine* e) { return (int)e->players.size(); }

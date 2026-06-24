@@ -104,8 +104,8 @@ every `step()`, even when the grid is static, and stay world-anchored across str
 shifts. Determinism (no RNG) is what lets a fixed input stream replay identically
 — the basis for the planned host-authoritative multiplayer.
 
-A local player is spawned by `createSandGame` on the surface and the camera
-follows it. **Play mode** (default) maps the keys to the character; **free-camera
+A local player is spawned by the engine on the surface and the camera follows it
+from the JS runtime. **Play mode** (default) maps the keys to the character; **free-camera
 mode** (`game.setPlayMode(false)`, used by the pan/flicker bench) pans the buffer
 with WASD/arrows. The player overlay (AABB + facing eye) is drawn by the C++ GL
 compositor from engine state; a networked client passes its host-snapshot players

@@ -107,6 +107,10 @@ export function initSandWasm() {
         rigidRejected: c('engine_rigid_rejected', 'number', ['number']),
         rigidDepen: c('engine_rigid_depen', 'number', ['number']),
         spawnPlayer: c('engine_spawn_player', 'number', ['number', 'number', 'number']),
+        spawnPlayerSurface: c('engine_spawn_player_surface', 'number', ['number', 'number']),
+        playerSurfaceSpawn: c('engine_player_surface_spawn', null, ['number', 'number', 'number']),
+        playerWidth: c('engine_player_width', 'number', []),
+        playerHeight: c('engine_player_height', 'number', []),
         removePlayer: c('engine_remove_player', null, ['number', 'number']),
         setPlayerInput: c('engine_set_player_input', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         playerCount: c('engine_player_count', 'number', ['number']),
@@ -293,9 +297,6 @@ export function createEngineWasm({
       return M.glInit(ptr, key) === 1;
     },
     glResize(devW, devH) { M.glResize(ptr, devW, devH); },
-    glSetCamera(camX, camY, cellDev, viewCols, viewRows, gutterOn, snapOff) {
-      M.glSetCamera(ptr, camX, camY, cellDev | 0, viewCols | 0, viewRows | 0, gutterOn ? 1 : 0, snapOff ? 1 : 0);
-    },
     // Players to overlay. Host/local draws the engine's own players (own = the
     // local id, blue). A client passes a packed [x,y,w,h,facing,own] Float32Array
     // of host-authoritative snapshot players.
@@ -422,6 +423,13 @@ export function createEngineWasm({
     // Players (Terraria-like characters; physics owned by the engine). JS only
     // collects input and reads snapshots to draw the overlay.
     spawnPlayer(x, y) { return M.spawnPlayer(ptr, x, y); },
+    spawnPlayerAtSurface(col) { return M.spawnPlayerSurface(ptr, col | 0); },
+    getSurfaceSpawn(col) {
+      M.playerSurfaceSpawn(ptr, col | 0, camOut);
+      const o = camOut >> 3;
+      return { x: mod.HEAPF64[o], y: mod.HEAPF64[o + 1] };
+    },
+    getPlayerSize() { return { w: M.playerWidth(), h: M.playerHeight() }; },
     removePlayer(id) { M.removePlayer(ptr, id); },
     // input: { bits, aimX, aimY, tool, seq }
     setPlayerInput(id, { bits = 0, aimX = 0, aimY = 0, tool = 0, seq = 0 } = {}) {

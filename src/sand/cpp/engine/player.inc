@@ -121,6 +121,21 @@ int spawnPlayer(double x, double y) {
   if (survivalInventory) seedStarterTools(players.back()); // survival spawns with the starter kit
   return p.id;
 }
+void playerSurfaceSpawn(int col, double* out) {
+  int worldX0 = fg.worldOffsetX;
+  int top = fg.infinite ? genSurfaceAt(worldX0 + col) : rows / 2;
+  for (int c = col - PLAYER_W; c <= col + PLAYER_W; c++) {
+    int surf = fg.infinite ? genSurfaceAt(worldX0 + c) : rows / 2;
+    if (surf < top) top = surf;
+  }
+  out[0] = col - PLAYER_W / 2.0;
+  out[1] = top - PLAYER_H - 4;
+}
+int spawnPlayerAtSurface(int col) {
+  double out[2];
+  playerSurfaceSpawn(col, out);
+  return spawnPlayer(out[0], out[1]);
+}
 Player* findPlayer(int id) {
   for (auto& p : players) if (p.id == id) return &p;
   return nullptr;

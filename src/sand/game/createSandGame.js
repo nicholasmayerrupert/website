@@ -16,10 +16,19 @@
 
 import { createEngineWasm, CHUNK_SIZE } from '../engineWasm';
 import { createGameNet } from '../net/gameNet';
+import {
+  BUTTON_BITS,
+  DEFAULT_TOOL,
+  KEY_CODES,
+  SIZING,
+  STEP_MS,
+  TEXT_INPUT_TYPES,
+  TOOL_IDS,
+} from './runtimeConfig';
 
 export function createSandGame(container, opts = {}) {
   const {
-    initialTool = 'cube',
+    initialTool = DEFAULT_TOOL,
     onLayoutChange,
     reducedMotion,
     // 'survival' (default): a player character with reach/cooldown-restricted
@@ -49,10 +58,8 @@ export function createSandGame(container, opts = {}) {
   canvas.setAttribute('aria-hidden', 'true');
   container.appendChild(canvas);
 
-  // Tool selection: the name is kept here only so it can be re-sent to the
-  // engine when the engine is recreated (resize). All tool policy lives in C++.
-  // The engine owns the int ids; this maps the UI tool names onto them.
-  const TOOL = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
+  // Tool selection: the name is kept here only so it can be re-sent to the engine
+  // when the engine is recreated (resize). All tool policy lives in C++.
   let currentToolName = initialTool;
   let drawModeOn = false;
 
@@ -62,41 +69,16 @@ export function createSandGame(container, opts = {}) {
   // forwards input. Survival starts in play mode; creative starts in free-cam.
   let playMode = survival;
   let localPlayerId = 0;
-  const PLAYER_W = 4, PLAYER_H = 8; // mirrors PLAYER_W/PLAYER_H in cpp/common.hpp
   let inputSeq = 0;
   let net = null; // multiplayer glue (created lazily on host/join)
   const netClientReady = () => !!net && net.role === 'client' && net.connected && net.worldReady;
 
-  // Surface spawn for a column: above the highest terrain across the footprint so
-  // the character drops cleanly. Shared by the local spawn + remote (host) spawns.
-  const surfaceSpawn = (col) => {
-    const worldX0 = engine.getWorldOffsetX();
-    let topSurf = engine.worldSurfaceAt(worldX0 + col);
-    for (let c = col - PLAYER_W; c <= col + PLAYER_W; c++) topSurf = Math.min(topSurf, engine.worldSurfaceAt(worldX0 + c));
-    return { x: col - PLAYER_W / 2, y: topSurf - PLAYER_H - 4 };
-  };
-
   // One seed per mount so resizing regenerates the *same* infinite world.
   const worldSeed = (Math.random() * 4294967296) >>> 0;
 
-  // ---- Tunables (render/UI side; physics tunables live in the C++ engine) ----
-  const CELL_PX = 4;
-  // Cap the simulation cell count so very large viewports (e.g. 1440p/4K
-  // monitors) don't blow the per-step CPU budget on slow processors; cells
-  // grow slightly instead.
-  const MAX_CELLS = 130000;
-  // Brush radii, the emit throttle, and the cube extent now live in the C++
-  // engine (it owns tool policy). JS keeps only the fixed sim-step interval.
-  const STEP_MS = 16;
-  const TOOL_COLLAPSE_W = 1300; // px: move toolbar to bottom if wrapper width < this
-  // World/camera: the simulation buffer is bigger than the viewport. It is the
-  // full (fixed) world height and a horizontal window a margin wider than the
-  // view; the camera pans within it (WASD/arrows). Horizontal streaming that
-  // slides the window comes in a later phase.
-  const WORLD_HEIGHT_FACTOR = 2.5; // world is this many viewports tall
-  const BUF_MARGIN_COLS = 128;     // extra buffer columns on each side of the view
-  const BUFFER_MAX_CELLS = 520000; // cap so the per-step budget stays bounded
-  const MAX_FRAME_DT = 50;         // ms; clamp so a stall can't produce a big jump
+  // Browser-side tunables live in runtimeConfig.js. Brush radii, emit throttle,
+  // cube extent, camera behavior, input bitmask, tool policy, and terrain all
+  // live in the C++ engine.
   // The camera (pan speed, follow, bounds), the world-stream edge margin, the
   // pointer->aim mapping, the player input bitmask, and the preview/overlay
   // colors all live in the C++ engine now (cpp/engine/camera.inc + gl.inc).
@@ -106,14 +88,14 @@ export function createSandGame(container, opts = {}) {
   // cols/rows are the BUFFER (world) dimensions, larger than the viewport;
   // viewCols/viewRows are the visible cell window the camera shows.
   let engine = null;
-  let cols = 0, rows = 0, cellSize = CELL_PX;
+  let cols = 0, rows = 0, cellSize = SIZING.cellPx;
   // cellSize is CSS px per cell (drives the cell budget, appearance, and pointer
   // math). cellDev is the integer DEVICE px per cell used for all canvas drawing.
   // Sizing the backing store to device px and snapping the pan offset to whole
   // device px keeps cell edges + the 1px gutter grid on exact device pixels, so
   // the compositor never resamples them — that resampling (at browser zoom < 100%,
   // where devicePixelRatio drops below 1) is what caused the bright-block flicker.
-  let dpr = 1, cellDev = CELL_PX;
+  let dpr = 1, cellDev = SIZING.cellPx;
   let viewCols = 0, viewRows = 0;
   // The camera lives in the engine (camera.inc). JS caches the last presented
   // position to detect movement (incl. sub-cell) and re-present.
@@ -121,9 +103,6 @@ export function createSandGame(container, opts = {}) {
   let testPaused = false;             // DEV-only: freeze stepping for the flicker bench
   let gutterOn = true;                // DEV-only: toggle the grid for flicker A/B
   let snapOff = false;                // DEV-only: disable offset snapping for A/B
-  // Physical keys -> engine InputKey codes (IK_LEFT..IK_SHIFT). The engine owns
-  // the pan/player-input policy; JS just forwards held state.
-  const KEY_CODE = { a: 0, arrowleft: 0, d: 1, arrowright: 1, w: 2, arrowup: 2, s: 3, arrowdown: 3, ' ': 4, shift: 5 };
   let wrapBounds = { left: 0, right: 0, top: 0, bottom: 0 };
   let forceFullRender = true;
   let perfRenderMs = 0;
@@ -153,7 +132,7 @@ export function createSandGame(container, opts = {}) {
   // down sets the bit, up clears it, and a move may only ADD a newly-pressed
   // button, never drop a held one.
   let mouseButtons = 0;
-  const BTN_BIT = { 0: 1, 2: 2 }; // pointer e.button -> mouseButtons bit (LMB, RMB)
+  // pointer e.button -> mouseButtons bit (LMB, RMB)
 
   // Reduced motion
   let reduced = false;
@@ -191,11 +170,11 @@ export function createSandGame(container, opts = {}) {
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     // Decide UI placement based on available horizontal space
-    onLayoutChange?.({ uiAtBottom: width < TOOL_COLLAPSE_W });
+    onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
-    cellSize = CELL_PX;
+    cellSize = SIZING.cellPx;
     while (
-      Math.ceil(cssW / cellSize) * Math.ceil(cssH / cellSize) > MAX_CELLS
+      Math.ceil(cssW / cellSize) * Math.ceil(cssH / cellSize) > SIZING.maxViewportCells
     ) {
       cellSize++;
     }
@@ -221,10 +200,10 @@ export function createSandGame(container, opts = {}) {
     // both rounded up to whole render chunks. Shrink the height factor if the
     // cell budget would be exceeded.
     const roundChunks = (n) => Math.ceil(n / CHUNK_SIZE) * CHUNK_SIZE;
-    let bufCols = roundChunks(viewColsCss + BUF_MARGIN_COLS * 2);
-    let heightFactor = WORLD_HEIGHT_FACTOR;
+    let bufCols = roundChunks(viewColsCss + SIZING.bufferMarginCols * 2);
+    let heightFactor = SIZING.worldHeightFactor;
     let worldRows = roundChunks(Math.round(viewRowsCss * heightFactor));
-    while (bufCols * worldRows > BUFFER_MAX_CELLS && heightFactor > 1) {
+    while (bufCols * worldRows > SIZING.bufferMaxCells && heightFactor > 1) {
       heightFactor -= 0.25;
       worldRows = roundChunks(Math.max(viewRowsCss, Math.round(viewRowsCss * heightFactor)));
     }
@@ -260,7 +239,7 @@ export function createSandGame(container, opts = {}) {
     });
     engine.glInit(canvas);                          // create the WebGL2 context on our canvas
     engine.glResize(canvas.width, canvas.height);
-    engine.setTool(TOOL[currentToolName] ?? 0); // re-apply the selected tool
+    engine.setTool(TOOL_IDS[currentToolName] ?? 0); // re-apply the selected tool
     // Viewport + camera bounds + input mode (the engine owns the camera now).
     engine.setViewport(dpr, cellDev, viewCols, viewRows);
     engine.setPlayMode(playMode);
@@ -273,8 +252,7 @@ export function createSandGame(container, opts = {}) {
     // joining). Creative mode has no character.
     if (survival) engine.setSurvivalInventory(true); // mining->drops->inventory; spawnPlayer seeds the starter kit
     if (survival && !netClientReady()) {
-      const sp = surfaceSpawn(spawnCol);
-      localPlayerId = engine.spawnPlayer(sp.x, sp.y);
+      localPlayerId = engine.spawnPlayerAtSurface(spawnCol);
       onInventory?.(engine.getInventory(localPlayerId)); // initial HUD fill
     }
     // Start centered horizontally, just above the surface so spawn shows ground.
@@ -346,7 +324,7 @@ export function createSandGame(container, opts = {}) {
     // Authoritative press edge: latch this button's bit (plus any other buttons the
     // event reports already down). The latch is what keeps PI_PRIMARY held across
     // steps even if later moves momentarily report buttons==0.
-    mouseButtons |= e.buttons | (BTN_BIT[e.button] || 0);
+    mouseButtons |= e.buttons | (BUTTON_BITS[e.button] || 0);
     updatePointer(e.clientX, e.clientY);
     if (!inside) return;
     if (e.button === 0 || e.button === 2) {
@@ -360,7 +338,7 @@ export function createSandGame(container, opts = {}) {
     if (!engine) return;
     // Authoritative release edge: drop only the released button's bit. Other
     // buttons stay latched until their own pointerup (or blur/cancel).
-    mouseButtons &= ~(BTN_BIT[e.button] || 0);
+    mouseButtons &= ~(BUTTON_BITS[e.button] || 0);
     updatePointer(e.clientX, e.clientY);
     engine.pointerButtons(mouseButtons); // clears RMB/LMB when no buttons remain
     if (engine.pointerUp(e.button)) previewDirty = true;
@@ -378,9 +356,6 @@ export function createSandGame(container, opts = {}) {
   // Only TEXT-entry controls should swallow the WASD/arrow keys. A checkbox or
   // button keeps focus after a click, so treating every <input> as editable
   // would silently disable camera panning.
-  const TEXT_INPUT_TYPES = new Set([
-    'text', 'search', 'email', 'password', 'number', 'url', 'tel',
-  ]);
   const isEditableTarget = (t) => {
     if (!t) return false;
     if (t.isContentEditable) return true;
@@ -407,13 +382,13 @@ export function createSandGame(container, opts = {}) {
       }
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
     }
-    const code = KEY_CODE[key];
+    const code = KEY_CODES[key];
     if (code === undefined) return;
     engine?.inputKey(code, 1);
     if (key !== 'shift') e.preventDefault(); // arrows/space/wasd would scroll the page
   };
   const onKeyUp = (e) => {
-    const code = KEY_CODE[e.key.toLowerCase()];
+    const code = KEY_CODES[e.key.toLowerCase()];
     if (code !== undefined) engine?.inputKey(code, 0);
   };
   const onBlur = () => {
@@ -425,7 +400,7 @@ export function createSandGame(container, opts = {}) {
   // Pointer capture can be revoked (e.g. an OS gesture); treat it as a release so a
   // held button can never get stranded latched.
   const onPointerCancel = (e) => {
-    mouseButtons &= ~(BTN_BIT[e.button] || 0);
+    mouseButtons &= ~(BUTTON_BITS[e.button] || 0);
     if (e.button < 0) mouseButtons = 0; // pointercancel has no button -> clear all
     updatePointer(e.clientX, e.clientY);
     engine?.pointerButtons(mouseButtons);
@@ -559,7 +534,7 @@ export function createSandGame(container, opts = {}) {
         for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (g[y * cols + x] !== 0) n++;
         return n;
       },
-      setTool(name) { currentToolName = name; engine?.setTool(TOOL[name] ?? 0); },
+      setTool(name) { currentToolName = name; engine?.setTool(TOOL_IDS[name] ?? 0); },
       setDrawMode(v) { drawModeOn = !!v; engine?.setDrawMode(drawModeOn); },
       actionCount() { return engine ? engine.getPlayerActionCount() : 0; },
       // device-px center of the local player (for aiming real mouse events)
@@ -604,7 +579,7 @@ export function createSandGame(container, opts = {}) {
   // net layer sends this to the host.
   const currentLocalInput = () => {
     const a = engine ? engine.getAim() : { x: 0, y: 0 };
-    return { bits: engine ? engine.localInputBits() : 0, aimX: a.x, aimY: a.y, tool: TOOL[currentToolName] ?? 0 };
+    return { bits: engine ? engine.localInputBits() : 0, aimX: a.x, aimY: a.y, tool: TOOL_IDS[currentToolName] ?? 0 };
   };
   // Glide the camera toward the followed player's center (clamp + lerp in C++).
   // On a client the followed player is our host-authoritative snapshot entity.
@@ -629,7 +604,7 @@ export function createSandGame(container, opts = {}) {
     engine = createEngineWasm({ cols, rows, infinite: true, worldSeed, emittersOn: false, sinksOn: false });
     engine.glInit(canvas);
     engine.glResize(canvas.width, canvas.height);
-    engine.setTool(TOOL[currentToolName] ?? 0);
+    engine.setTool(TOOL_IDS[currentToolName] ?? 0);
     engine.setViewport(dpr, cellDev, viewCols, viewRows);
     engine.setPlayMode(playMode);
     engine.setDrawMode(drawModeOn);
@@ -713,7 +688,7 @@ export function createSandGame(container, opts = {}) {
     // scaled by real frame time so motion is smooth at any refresh rate. Frame dt
     // is clamped so a long stall (e.g. tab refocus) can't produce a big jump. In
     // play mode the keys drive the player and the camera follows it (below).
-    const frameDt = Math.min(MAX_FRAME_DT, now - lastFrame);
+    const frameDt = Math.min(SIZING.maxFrameDtMs, now - lastFrame);
     lastFrame = now;
     engine?.cameraPanFrame(frameDt);
 
@@ -780,7 +755,7 @@ export function createSandGame(container, opts = {}) {
   };
 
   return {
-    setTool(id) { currentToolName = id; engine?.setTool(TOOL[id] ?? 0); },
+    setTool(id) { currentToolName = id; engine?.setTool(TOOL_IDS[id] ?? 0); },
     setDrawMode(on) { drawModeOn = !!on; engine?.setDrawMode(drawModeOn); },
     getDrawMode() { return drawModeOn; },
     setPlayMode(on) { playMode = !!on; engine?.setPlayMode(playMode); },

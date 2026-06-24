@@ -1,4 +1,8 @@
-  // ================= REACTIONS (reactions.js) =================
+  // Material reactions.
+  //
+  // Runs after growth/rigid movement inside each layer step. This file owns
+  // local transformations such as water/fire steam, ignition, freezing/melting,
+  // acid erosion, and lava cooling. It should not own broad movement order.
   void applyReactions() {
     int steamCount = 0, fireCount = 0, igniteCount = 0; bool plantBurned = false;
     int igniteCap = cols * rows;
@@ -101,4 +105,3 @@
     }
     if (melted) splitRigidAfterErase(L->iceComponents, meltedCells, L->nextIceId, true);
   }
-

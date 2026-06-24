@@ -1,4 +1,8 @@
-  // ================= GROWTH (growth.js) =================
+  // Plant and organic growth.
+  //
+  // Trees, cacti, mushrooms, kelp, and vines grow as plant components. This file
+  // owns species-specific shape and water/terrain interactions; component
+  // registration and grounding remain in components.inc.
   // Trees grow as plant components. The SPECIES (comp.plantType) selects the trunk
   // and foliage MATERIAL (gWoodMat/gLeafMat, set per-comp in growPlantComponents)
   // and shape biases. PT_OAK = the original behavior: with gWoodMat=WOOD,

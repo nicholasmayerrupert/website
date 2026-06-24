@@ -1,4 +1,5 @@
-  // ================= DROPPED ITEMS + PARTICLES (items.inc) =================
+  // Dropped items and particles.
+  //
   // Entities, NOT grid cells. An IT_ITEM is a Starbound-style surface sprite: it
   // falls, rests ON TOP of solids, NEVER stays buried (rises out if covered), passes
   // freely through other items (no stacking), and MAGNETS toward a nearby player

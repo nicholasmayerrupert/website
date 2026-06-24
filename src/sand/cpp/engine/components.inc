@@ -1,4 +1,9 @@
-  // ================= COMPONENTS (components.js) =================
+  // Component lifetime and connectivity.
+  //
+  // Stone, ice, and plant materials are not loose pixels. They survive a step
+  // only through component membership, and unregistered component cells are
+  // erased during cleanup. Tool placement, worldgen, growth, and world shifting
+  // should route component writes through this subsystem and then sync/register.
   void computeGrounded() {
     std::fill(groundedCell, groundedCell + (size_t)cols * rows, (uint8_t)0);
     std::fill(cellComp, cellComp + (size_t)cols * rows, -1);
@@ -458,4 +463,3 @@
     }
     list = std::move(updated);
   }
-

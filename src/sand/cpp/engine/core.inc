@@ -1,3 +1,10 @@
+  // Hot per-cell movement helpers for loose powders, liquids, gases, and
+  // density interfaces.
+  //
+  // step.inc decides the tick order; this file owns the tiny local movement
+  // rules used inside that order. Keep high-level gameplay/tool policy out of
+  // this path because it runs over the active rows every simulation tick.
+
   // ---- settle passes (identical to Stage 1) ----
   // Density-scaled straight-down fall for liquids: a liquid may drop up to
   // round(DENSITY * LIQUID_FALL_PER_DENSITY) cells per tick (clamped to
@@ -290,4 +297,3 @@
       drain(innerRightStart, innerRightEnd, y, INNER_LIQUID_P, INNER_SAND_P);
     }
   }
-

@@ -1,4 +1,9 @@
-// ---------------- C ABI ----------------
+// C ABI surface exported to JavaScript through engineFactory.js.
+//
+// Keep this file as the narrow bridge contract: JS calls these functions to
+// create engines, step/render/stream worlds, forward browser input, read packed
+// snapshots, and apply multiplayer state. Gameplay policy belongs in the
+// subsystem files below, not in the bridge.
 extern "C" {
 EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite) {
   Engine* e = new Engine(cols, rows, seed, sinks != 0);

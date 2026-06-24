@@ -1,4 +1,8 @@
-  // ================= FREE RIGID BODIES (rigid2d.js + rigidBodies.js) =================
+  // Free rigid bodies and component-to-body conversion.
+  //
+  // Components are grid-anchored while bodies are moving entities. This file owns
+  // body geometry, integration, collision sampling, and stamping settled bodies
+  // back into component-aware grid state.
   void worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy) {
     double lx = b->points[i * 2], ly = b->points[i * 2 + 1];
     ox = b->px + lx * cs - ly * sn; oy = b->py + lx * sn + ly * cs;

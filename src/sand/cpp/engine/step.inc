@@ -1,3 +1,9 @@
+  // Simulation tick orchestration.
+  //
+  // This file owns the top-level order: active-region prep, rigid/growth,
+  // reactions, loose-cell movement, cleanup, cross-layer transfer, players, and
+  // dirty/perf bookkeeping. Local movement rules live in core.inc.
+
   // ---- step ----
   // Two layers run under ONE tick. updatePlayers + the tick++ happen once;
   // each layer steps via stepLayer() (foreground FIRST, so the shared RNG stream

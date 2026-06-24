@@ -1,4 +1,8 @@
-  // ================= TOOLS (tools.js) =================
+  // Tool semantics and player/world edits.
+  //
+  // JS forwards raw input and selected tool/material ids; this file decides what
+  // those intents do to the world. Keep component-aware writes here, and keep DOM
+  // or pointer policy in camera.inc/JS.
   // Returns the NUMBER OF CELLS actually written (for the per-pixel inventory economy).
   int paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) {
     int changed = 0;
@@ -380,4 +384,3 @@
     emitHeldTool(cx, cy, now, inside, drawMode);
     return changed;
   }
-

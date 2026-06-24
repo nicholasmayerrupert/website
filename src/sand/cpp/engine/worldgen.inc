@@ -1,4 +1,9 @@
-  // ================= WORLDGEN STREAMING (streamGen.js + worldWindow.js) =================
+  // Procedural terrain, chunk store, and infinite world streaming.
+  //
+  // Owns deterministic generation from absolute world coordinates, cached chunk
+  // save/restore, prefetch, and horizontal/vertical window shifts. Camera.inc may
+  // request a shift, but this subsystem decides how cells/components/entities
+  // move across the loaded window.
   // Terraria/Starbound-flavoured generator. The SURFACE (height + biome + soil)
   // is derived from the shared world seed, so the foreground and background line
   // up at the top and the soil layer never erodes via cross-layer drain. The
@@ -638,4 +643,3 @@
     if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * 4); for (int i = b + cols - dx; i < b + cols; i++) arr[i] = fill; }
     else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, (size_t)(cols - s) * 4); for (int i = b; i < b + s; i++) arr[i] = fill; } }
   }
-

@@ -1,4 +1,5 @@
-  // ================= TWO SIMULATION LAYERS =================
+  // Engine-owned state and two simulation layers.
+  //
   // The engine simulates two independent grids: a foreground (`fg`) and a
   // background (`bg`). Each `Layer` holds ALL the per-cell simulation state
   // (grids, dirty tracking, components, rigid bodies, chunk store, terrain,
@@ -429,4 +430,3 @@
 
   static const int DIRS_LF[2];
   static const int DIRS_RF[2];
-

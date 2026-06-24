@@ -1,4 +1,5 @@
-  // ================= INVENTORY (inventory.inc) =================
+  // Authoritative survival inventory.
+  //
   // Per-player stacks (hotbar + grid). Authoritative in the engine like player
   // physics: JS reads a packed snapshot to draw the HUD and forwards slot-select /
   // move / place intents. Mining drops feed addToInventory (items.inc pickup); the

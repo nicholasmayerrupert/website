@@ -58,8 +58,9 @@ terrain) is skipped, so a static scene costs about the same as one layer.
     pointer→aim-cell mapping, the player input bitmask, and the per-frame pan /
     world-stream drivers. JS just forwards held keys + the pointer.
 - `wasm/` — `build.sh` compiles `cpp/` to `sandEngine.js` (a single self-contained
-  ES module with the wasm embedded; built with WebGL2/`FULL_ES3`). The output is
-  committed, so a normal `npm run build` never needs the C++ toolchain.
+  ES module with the wasm embedded; built with WebGL2/`FULL_ES3`) and writes
+  `src/sand/wasm/build-info.json` provenance. The output is committed, so a
+  normal `npm run build` never needs the C++ toolchain.
 - `engineWasm.js` — loads the wasm module and exposes `createEngineWasm()`, the
   simulation+render+camera handle. Call `initSandWasm()` once and wait for it
   before creating an engine. The grid lives in wasm memory (zero-copy view).
@@ -89,6 +90,9 @@ You only need this if you change anything under `cpp/`:
 source wasm/emenv.sh   # puts emcc on PATH (Emscripten SDK under ~/Nick/emsdk)
 wasm/build.sh          # regenerates src/sand/wasm/sandEngine.js
 ```
+
+The build also writes `src/sand/wasm/build-info.json` with output hashes, source
+commit/dirty state, and Emscripten identity. `npm run sand:doctor` reports it.
 
 ## Players
 

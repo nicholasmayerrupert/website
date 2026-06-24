@@ -71,6 +71,9 @@ const fileHash = (path) => {
 const safeExec = (cmd, argv = []) => {
   try { return execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
 };
+const readJson = (path) => {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
+};
 const gitMeta = () => {
   const commit = safeExec('git', ['rev-parse', '--short', 'HEAD']);
   const dirty = spawnSync('git', ['diff', '--quiet']).status !== 0 || spawnSync('git', ['diff', '--cached', '--quiet']).status !== 0;
@@ -79,7 +82,14 @@ const gitMeta = () => {
 const wasmMeta = () => {
   const path = 'src/sand/wasm/sandEngine.js';
   const st = statSync(path);
-  return { path, bytes: st.size, fnv1a: fileHash(path), emcc: safeExec('emcc', ['--version'])?.split('\n')[0] || null, emccPath: safeExec('which', ['emcc']) };
+  return {
+    path,
+    bytes: st.size,
+    fnv1a: fileHash(path),
+    emcc: safeExec('emcc', ['--version'])?.split('\n')[0] || null,
+    emccPath: safeExec('which', ['emcc']),
+    buildInfo: readJson('src/sand/wasm/build-info.json'),
+  };
 };
 const metadata = () => ({
   generatedAt: new Date().toISOString(),
@@ -274,6 +284,10 @@ function printOne(r) {
   console.log(`\nsand engine benchmark:${r.scenario}  (${COLS}x${ROWS}, seed ${SEED.toString(16)})`);
   console.log(`  checksum 0x${r.checksum.toString(16)}${r.checksumStable ? '' : ' (UNSTABLE ACROSS REPEATS)'}  worldOffset ${r.worldOffsetX},${r.worldOffsetY}`);
   console.log(`  meta git ${r.metadata.git.commit}${r.metadata.git.dirty ? ' dirty' : ''}  wasm ${r.metadata.wasm.bytes} bytes fnv 0x${r.metadata.wasm.fnv1a.toString(16)}`);
+  if (r.metadata.wasm.buildInfo) {
+    const b = r.metadata.wasm.buildInfo;
+    console.log(`  wasm build ${b.source?.commit || 'unknown'}${b.source?.dirty ? ' dirty' : ' clean'}  ${b.toolchain?.emcc || 'emcc unknown'}`);
+  }
   console.log(`  step            ${fmt(r.step)}`);
   if (!checksumOnly) {
     console.log(`  renderFull      ${fmt(r.renderFull)}`);

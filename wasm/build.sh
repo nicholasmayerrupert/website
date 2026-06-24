@@ -33,4 +33,5 @@ em++ \
   src/sand/cpp/sand.cpp \
   -o "$OUT"
 
+node scripts/write-wasm-build-info.mjs "$OUT"
 echo "built $OUT ($(wc -c < "$OUT") bytes)"

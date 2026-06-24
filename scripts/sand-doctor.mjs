@@ -20,8 +20,12 @@ const fileHash = (path) => {
 };
 const fmtHex = (n) => `0x${(n >>> 0).toString(16)}`;
 const status = (ok) => ok ? 'ok' : 'FAIL';
+const readJson = (path) => {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
+};
 
 const wasmPath = 'src/sand/wasm/sandEngine.js';
+const wasmInfoPath = 'src/sand/wasm/build-info.json';
 const baselinePath = 'bench/baseline.json';
 const tmpJson = join(tmpdir(), `sand-doctor-${Date.now()}.json`);
 
@@ -37,6 +41,7 @@ let baseline = null;
 try { baseline = JSON.parse(readFileSync(baselinePath, 'utf8')); } catch { /* missing baseline */ }
 
 const wasmStat = statSync(wasmPath);
+const wasmInfo = readJson(wasmInfoPath);
 const checksumMatches = benchResult && baseline && benchResult.checksum === baseline.checksum;
 
 console.log('\nsand doctor');
@@ -44,6 +49,12 @@ console.log(`  git: ${gitCommit || 'unknown'}${gitDirty ? ' dirty' : ' clean'}`)
 console.log(`  emcc: ${emccPath || 'not found'}`);
 console.log(`  materials: ${status(materialCheck.status === 0)}${materialCheck.status === 0 ? '' : ` (${(materialCheck.stderr || materialCheck.stdout).trim()})`}`);
 console.log(`  wasm: ${wasmStat.size} bytes  fnv ${fmtHex(fileHash(wasmPath))}`);
+if (wasmInfo) {
+  console.log(`  wasm build-info: ${wasmInfo.source?.commit || 'unknown'}${wasmInfo.source?.dirty ? ' dirty' : ' clean'}  ${wasmInfo.toolchain?.emcc || 'emcc unknown'}`);
+  if (wasmInfo.output?.bytes !== wasmStat.size) console.log(`  wasm build-info size: FAIL (${wasmInfo.output?.bytes} recorded)`);
+} else {
+  console.log('  wasm build-info: missing (run source wasm/emenv.sh && wasm/build.sh)');
+}
 if (benchResult) {
   console.log(`  current checksum: ${fmtHex(benchResult.checksum)}  stable: ${benchResult.checksumStable ? 'yes' : 'no'}`);
   console.log(`  baseline checksum: ${baseline ? fmtHex(baseline.checksum) : 'missing'}`);

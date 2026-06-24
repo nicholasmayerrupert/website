@@ -55,3 +55,11 @@ actionable instead of just producing timing numbers.
   rebuild.
 - If only p99 regresses but mean and phase medians are stable, treat it as noise
   until repeated runs confirm it.
+
+## Baseline History
+
+- `bench/baseline.json` was refreshed after `ec1ef4f` because the current stable
+  checksum `0x52881001` was already present at pre-refactor commit `d4d0516`
+  (`seed changes, mining changes`). The previous baseline checksum `0x729849dd`
+  was stale relative to those gameplay/material changes, not caused by the later
+  runtime-boundary refactor.

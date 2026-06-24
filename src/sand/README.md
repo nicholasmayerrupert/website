@@ -102,7 +102,7 @@ collision against solids/powders). Liquids remain pass-through cells but apply
 drag, a capped fall speed, and jump/up swimming while submerged. Players advance
 every `step()`, even when the grid is static, and stay world-anchored across streaming
 shifts. Determinism (no RNG) is what lets a fixed input stream replay identically
-— the basis for the planned host-authoritative multiplayer.
+— the basis for server-authoritative multiplayer.
 
 A local player is spawned by the engine on the surface and the camera follows it
 from the JS runtime. **Play mode** (default) maps the keys to the character; **free-camera
@@ -141,7 +141,7 @@ events in headless Chromium (via the `playwright` library, like the pan bench),
 and asserts spawn/grounding, input wiring, jump, dig, and camera-follow. It is
 not in the required `npm run test` chain (it needs a browser), but is CI-runnable.
 
-## Multiplayer (in progress)
+## Multiplayer
 
 The networking layer lives in `src/sand/net/` and is transport-agnostic so it
 unit-tests in Node (`test:net`) with no real socket:
@@ -153,31 +153,37 @@ unit-tests in Node (`test:net`) with no real socket:
   `InputSequencer`, and `applyInputStream` (reduces a lossy/shuffled input stream
   to the strictly-increasing accepted set).
 
-The topology is **host-authoritative**: one browser runs the real engine,
-clients send input and receive snapshots. Determinism (fixed timestep, no RNG in
-player physics) is verified by a two-engine replay test: the same seed + same
-ordered input stream, round-tripped through the protocol, yields identical final
-player state and grid hash.
+The production-oriented topology is **server-authoritative**:
 
-- `host.js` — the `Host`: owns the engine, spawns a player per client, applies
-  inputs through a per-client sequence gate (drops reordered/duplicate packets),
-  steps, and emits authoritative `snapshot`s (optionally with a world hash for
-  divergence detection). Transport-agnostic — `test:net` drives it in-process.
-- `scripts/dev-multiplayer-server.mjs` (`npm run mp:server`) — a pure WebSocket
-  relay: rooms + membership + message forwarding. The first peer to join a room
-  is the host; the server never simulates. A live two-client round-trip
-  (input → host, snapshot → client, disconnect → leave) is covered by `test:net`.
-- `gameNet.js` — the browser glue wired into `createSandGame`. The **host** peer
-  runs the engine, spawns a player per remote client (reusing `Host`), and
-  broadcasts snapshots; a **client** peer sends input and renders all players from
-  the host's snapshots (smoothed). In DEV the `window.__sandNet` hooks
-  (`host`/`join`/`disconnect`/`status`) drive it against the local relay.
-  `scripts/mp-e2e.mjs` is a two-context Playwright test (host + client) asserting
-  the client's input reaches the host, both peers observe it, and disconnect
-  removes the remote player.
+```
+browser <sand-game> clients
+  -> input / inventory intents over WebSocket
+scripts/sand-server.mjs
+  -> C++/WASM Host + fixed-step engine
+  -> world diffs, player snapshots, items, inventory, cursor
+browser <sand-game> clients
+```
 
-To try it locally: `npm run mp:server`, then open the site in two tabs, Host a
-room in one and Join it (same code) in the other.
+- `scripts/sand-server.mjs` (`npm run sand:server`) — the authoritative headless
+  server. It loads the WASM engine, owns the world, spawns one player per client,
+  applies movement/tool/inventory intents, steps on a fixed timer, and broadcasts
+  world diffs plus player/item/inventory snapshots. Browsers are pure clients.
+- `src/sand/net/host.js` — transport-free authority logic shared by the server and
+  tests: player assignment, per-client input sequencing/rate limiting, validation,
+  stepping, and snapshot creation.
+- `src/sand/net/gameNet.js` — browser client glue wired into `createSandGame`.
+  Offline, it is inert and the local browser engine runs single-player. Connected,
+  it sends input/intents to `sand-server`, applies authoritative world diffs,
+  predicts/reconciles only the local player, and renders server snapshots.
+- `scripts/dev-multiplayer-server.mjs` (`npm run mp:server`) — legacy/dev-only
+  pure WebSocket relay. It tracks rooms and forwards messages; it does **not**
+  simulate. Keep it for relay protocol tests and experiments, not as the main
+  game authority.
+
+To try the current authoritative path locally: `npm run sand:server`, then open
+the site and join `ws://localhost:5191` from the multiplayer panel. `test:server`
+checks the server round trip; `test:net` checks protocol/host/client logic in
+process.
 
 **World replication (Phase 6).** The host serializes its grid and the client
 applies it so both see the same sand world:
@@ -186,7 +192,7 @@ applies it so both see the same sand world:
   protocol (`world`/`diff` messages, base64).
 - On join (or `resync`) the host sends a full snapshot; thereafter it streams
   per-step diffs. The client applies them, doesn't simulate the shared world
-  itself (host-authoritative), and requests a `resync` when a diff's hash doesn't
+  itself (server-authoritative), and requests a `resync` when a diff's hash doesn't
   match (a dropped packet). `test:net` covers snapshot/diff/lost-diff-resync/
   join-in-progress; `mp-e2e.mjs` asserts the client's world matches the host and
   that a host dig replicates.

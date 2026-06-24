@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sand Game Embed Example</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #050505;
+      }
+
+      .game-shell {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="game-shell">
+      <sand-game mode="survival" initial-tool="cube"></sand-game>
+    </div>
+    <script type="module" src="/src/sand/embed/sandGame.js"></script>
+  </body>
+</html>

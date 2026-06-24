@@ -4,6 +4,7 @@
 //   node scripts/bench-sand.mjs --json out.json       # also write raw results
 //   node scripts/bench-sand.mjs --compare bench/baseline.json
 //   node scripts/bench-sand.mjs --repeat 5            # reduce timing noise
+//   node scripts/bench-sand.mjs --scenario all        # run every load scenario
 //   node scripts/bench-sand.mjs --checksum-only       # deterministic behavior check
 //   node scripts/bench-sand.mjs --update bench/baseline.json   # (re)write baseline
 //
@@ -31,6 +32,7 @@ const updatePath = flag('--update');
 const jsonPath = flag('--json');
 const repeat = Math.max(1, Number(flag('--repeat') || 1) | 0);
 const checksumOnly = hasFlag('--checksum-only');
+const scenarioArg = flag('--scenario') || 'pan-stream';
 
 // --- config (mirrors a ~1080p viewport buffer; see createSandGame fit()) ---
 const COLS = 768, ROWS = 320, SEED = 0xC0FFEE;
@@ -38,6 +40,7 @@ const SHIFT_COLS = 128;        // matches game streaming
 const WARMUP_STEPS = 120;
 const SHIFTS_EACH_WAY = 16;    // distinct shift bursts to sample
 const STEPS_PER_SHIFT = 8;     // sim steps between shifts (settling)
+const SCENARIOS = ['pan-stream', 'liquid-active', 'components-active', 'survival-actions', 'net-apply'];
 
 // --- stats helpers ---
 const pct = (sorted, p) => {
@@ -113,14 +116,72 @@ const summarizeSamples = (samples) => ({
   shiftFill: { hit: summarize(samples.shiftHits), miss: summarize(samples.shiftMisses) },
 });
 
-function runScenario() {
+function setupScenario(e, name) {
+  const ctx = { name, client: null, playerId: 0, seq: 0 };
+  if (name === 'pan-stream') return ctx;
+  if (name === 'liquid-active') {
+    for (let i = 0; i < 90; i++) e.paintDisc(90 + (i % 45) * 6, 25 + ((i * 5) % 45), 5, 2, false); // water
+    for (let i = 0; i < 70; i++) e.paintDisc(110 + (i % 35) * 7, 28 + ((i * 7) % 50), 4, 4, false); // oil
+    for (let i = 0; i < 55; i++) e.paintDisc(130 + (i % 30) * 8, 32 + ((i * 11) % 52), 4, 10, false); // acid
+    return ctx;
+  }
+  if (name === 'components-active') {
+    for (let i = 0; i < 80; i++) e.addDiscToStoneDraft(70 + (i % 40) * 8, 34 + ((i * 9) % 70), 4);
+    e.finalizeStoneDraft();
+    for (let i = 0; i < 24; i++) {
+      const x = 120 + (i % 12) * 36;
+      const y = 52 + ((i * 17) % 70);
+      e.placeSeedTyped(x, y, i % 6);
+    }
+    return ctx;
+  }
+  if (name === 'survival-actions') {
+    e.setSurvivalInventory(true);
+    ctx.playerId = e.spawnPlayerAtSurface(Math.floor(COLS / 2));
+    e.addToInventory(ctx.playerId, 1, 999); // sand
+    e.addToInventory(ctx.playerId, 3, 999); // stone
+    e.setSelectedSlot(ctx.playerId, 3);
+    return ctx;
+  }
+  if (name === 'net-apply') {
+    ctx.client = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
+    ctx.client.applyWorld(e.serializeWorld());
+    ctx.client.resetDirty();
+    return ctx;
+  }
+  throw new Error(`unknown scenario "${name}"`);
+}
+
+function beforeStep(e, ctx) {
+  if (ctx.name !== 'survival-actions' || !ctx.playerId) return;
+  const t = ctx.seq * 16;
+  const aimX = Math.floor(COLS / 2) + ((ctx.seq % 24) - 12);
+  const aimY = Math.floor(ROWS * 0.45) + ((ctx.seq % 9) - 4);
+  e.setPlayerInput(ctx.playerId, { bits: 16, aimX, aimY, tool: 1, seq: ctx.seq });
+  e.applyLocalInput(ctx.playerId, t, ctx.seq);
+  ctx.seq++;
+}
+
+function afterStep(e, ctx) {
+  if (ctx.name !== 'net-apply' || !ctx.client) return;
+  ctx.client.applyDiff(e.serializeDiff());
+}
+
+function destroyScenario(ctx) {
+  if (ctx.client) ctx.client.destroy();
+}
+
+function runScenario(name) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
   for (let i = 0; i < 60; i++) e.paintDisc(50 + (i % 40) * 6, 40 + ((i * 7) % 30), 5, 1, false); // sand
   for (let i = 0; i < 40; i++) e.paintDisc(80 + (i % 30) * 7, 30 + ((i * 5) % 20), 5, 2, false); // water
+  const ctx = setupScenario(e, name);
 
   const samples = emptySamples();
   const stepOnce = () => {
+    beforeStep(e, ctx);
     e.step();
+    afterStep(e, ctx);
     const perf = e.getPerf();
     const stepPerf = e.getStepPerf();
     samples.stepMs.push(perf.stepMs);
@@ -156,64 +217,86 @@ function runScenario() {
 
   const grid = e.getGrid();
   const out = {
+    scenario: name,
     checksum: checksum(grid),
     worldOffsetX: e.getWorldOffsetX(),
     worldOffsetY: e.getWorldOffsetY(),
     samples,
     summaries: summarizeSamples(samples),
   };
+  destroyScenario(ctx);
   e.destroy();
   return out;
 }
 
-const runs = [];
-const combined = emptySamples();
-for (let i = 0; i < repeat; i++) {
-  const run = runScenario();
-  runs.push({
-    index: i + 1,
-    checksum: run.checksum,
-    worldOffsetX: run.worldOffsetX,
-    worldOffsetY: run.worldOffsetY,
-    ...run.summaries,
-  });
-  addSamples(combined, run.samples);
+function runBenchmark(name) {
+  const runs = [];
+  const combined = emptySamples();
+  for (let i = 0; i < repeat; i++) {
+    const run = runScenario(name);
+    runs.push({
+      index: i + 1,
+      scenario: name,
+      checksum: run.checksum,
+      worldOffsetX: run.worldOffsetX,
+      worldOffsetY: run.worldOffsetY,
+      ...run.summaries,
+    });
+    addSamples(combined, run.samples);
+  }
+  const checksums = [...new Set(runs.map((r) => r.checksum))];
+  return {
+    scenario: name,
+    config: { COLS, ROWS, SEED, SHIFT_COLS, WARMUP_STEPS, SHIFTS_EACH_WAY, STEPS_PER_SHIFT, repeat, checksumOnly, scenario: name },
+    metadata: metadata(),
+    checksum: runs[0].checksum,
+    checksumStable: checksums.length === 1,
+    checksums,
+    worldOffsetX: runs[0].worldOffsetX,
+    worldOffsetY: runs[0].worldOffsetY,
+    ...summarizeSamples(combined),
+    runs,
+  };
 }
 
-const checksums = [...new Set(runs.map((r) => r.checksum))];
-const result = {
-  config: { COLS, ROWS, SEED, SHIFT_COLS, WARMUP_STEPS, SHIFTS_EACH_WAY, STEPS_PER_SHIFT, repeat, checksumOnly },
+const scenarioNames = scenarioArg === 'all' ? SCENARIOS : [scenarioArg];
+for (const name of scenarioNames) if (!SCENARIOS.includes(name)) throw new Error(`unknown scenario "${name}". expected one of: ${SCENARIOS.join(', ')}, all`);
+const scenarioResults = Object.fromEntries(scenarioNames.map((name) => [name, runBenchmark(name)]));
+const result = scenarioArg === 'all' ? {
+  config: { repeat, checksumOnly, scenario: 'all', scenarios: SCENARIOS },
   metadata: metadata(),
-  checksum: runs[0].checksum,
-  checksumStable: checksums.length === 1,
-  checksums,
-  worldOffsetX: runs[0].worldOffsetX,
-  worldOffsetY: runs[0].worldOffsetY,
-  ...summarizeSamples(combined),
-  runs,
-};
+  scenarios: scenarioResults,
+} : scenarioResults[scenarioArg];
 
 // --- report ---
 const fmt = (s) => `mean ${s.mean.toFixed(3)}  p50 ${s.p50.toFixed(3)}  p95 ${s.p95.toFixed(3)}  p99 ${s.p99.toFixed(3)}  max ${s.max.toFixed(3)}  (n=${s.n})`;
-console.log(`\nsand engine benchmark  (${COLS}x${ROWS}, seed ${SEED.toString(16)})`);
-console.log(`  checksum 0x${result.checksum.toString(16)}${result.checksumStable ? '' : ' (UNSTABLE ACROSS REPEATS)'}  worldOffset ${result.worldOffsetX},${result.worldOffsetY}`);
-console.log(`  meta git ${result.metadata.git.commit}${result.metadata.git.dirty ? ' dirty' : ''}  wasm ${result.metadata.wasm.bytes} bytes fnv 0x${result.metadata.wasm.fnv1a.toString(16)}`);
-console.log(`  step            ${fmt(result.step)}`);
-if (!checksumOnly) {
-  console.log(`  renderFull      ${fmt(result.renderFull)}`);
-  console.log(`  shiftWorld miss ${fmt(result.shiftWorldMiss)}`);
-  console.log(`  shiftWorld hit  ${fmt(result.shiftWorldHit)}`);
+function printOne(r) {
+  console.log(`\nsand engine benchmark:${r.scenario}  (${COLS}x${ROWS}, seed ${SEED.toString(16)})`);
+  console.log(`  checksum 0x${r.checksum.toString(16)}${r.checksumStable ? '' : ' (UNSTABLE ACROSS REPEATS)'}  worldOffset ${r.worldOffsetX},${r.worldOffsetY}`);
+  console.log(`  meta git ${r.metadata.git.commit}${r.metadata.git.dirty ? ' dirty' : ''}  wasm ${r.metadata.wasm.bytes} bytes fnv 0x${r.metadata.wasm.fnv1a.toString(16)}`);
+  console.log(`  step            ${fmt(r.step)}`);
+  if (!checksumOnly) {
+    console.log(`  renderFull      ${fmt(r.renderFull)}`);
+    console.log(`  shiftWorld miss ${fmt(r.shiftWorldMiss)}`);
+    console.log(`  shiftWorld hit  ${fmt(r.shiftWorldHit)}`);
+  }
+  const sp = r.shiftPhases, stp = r.stepPhases;
+  console.log(`  step phases (median ms): ground ${stp.ground.p50}  rigid ${stp.rigid.p50}  react ${stp.react.p50}  carry ${stp.carry.p50}  settle ${stp.settle.p50}  tail ${stp.tail.p50}`);
+  console.log(`  shift phases (median ms): translate ${sp.translate.p50}  register ${sp.register.p50}  buffers ${sp.buffers.p50}  fill ${sp.fill.p50}`);
+  console.log(`  dirty chunks p95 ${r.dirtyChunks.p95}  heap ${(r.heapBytes.p50 / (1024 * 1024)).toFixed(1)}MB  shift fill hit/miss p50 ${r.shiftFill.hit.p50}/${r.shiftFill.miss.p50}`);
 }
-const sp = result.shiftPhases, stp = result.stepPhases;
-console.log(`  step phases (median ms): ground ${stp.ground.p50}  rigid ${stp.rigid.p50}  react ${stp.react.p50}  carry ${stp.carry.p50}  settle ${stp.settle.p50}  tail ${stp.tail.p50}`);
-console.log(`  shift phases (median ms): translate ${sp.translate.p50}  register ${sp.register.p50}  buffers ${sp.buffers.p50}  fill ${sp.fill.p50}`);
-console.log(`  dirty chunks p95 ${result.dirtyChunks.p95}  heap ${(result.heapBytes.p50 / (1024 * 1024)).toFixed(1)}MB  shift fill hit/miss p50 ${result.shiftFill.hit.p50}/${result.shiftFill.miss.p50}`);
+if (scenarioArg === 'all') for (const name of scenarioNames) printOne(result.scenarios[name]);
+else printOne(result);
 
 if (jsonPath) { writeFileSync(jsonPath, JSON.stringify(result, null, 2)); console.log(`\nwrote ${jsonPath}`); }
 if (updatePath) { writeFileSync(updatePath, JSON.stringify(result, null, 2)); console.log(`\nupdated baseline ${updatePath}`); }
 
 let exit = 0;
 if (comparePath) {
+  if (scenarioArg === 'all') {
+    console.log('\ncompare skipped for --scenario all; compare individual scenario baselines instead.');
+    process.exit(0);
+  }
   const base = JSON.parse(readFileSync(comparePath, 'utf8'));
   console.log(`\ncompare vs ${comparePath}`);
   if (base.checksum !== result.checksum) {

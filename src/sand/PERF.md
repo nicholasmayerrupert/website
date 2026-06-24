@@ -24,8 +24,24 @@ actionable instead of just producing timing numbers.
   benchmark with repeated runs to distinguish p99 noise from real regressions.
 - `node scripts/bench-sand.mjs --checksum-only`: fast behavior check when timing
   is irrelevant.
+- `node scripts/bench-sand.mjs --scenario all --repeat 3`: broader gameplay
+  load sweep. Use it before and after performance work that touches tools,
+  inventory/player input, components, liquids, or net snapshots.
 - `node scripts/bench-pan.mjs --compare bench/pan-baseline.json`: browser/WebGL
   pan, cursor mapping, frame-time, and flicker check.
+
+## Engine Scenarios
+
+- `pan-stream`: baseline panning workload. Stresses step, render fill, and
+  streaming in both generated and cached directions.
+- `liquid-active`: water, oil, and acid activity. Use for reaction, flow, and
+  dirty-chunk regressions.
+- `components-active`: stone draft plus seeds. Use for component registration,
+  rigid/plant lifetime, and world-shift remapping regressions.
+- `survival-actions`: inventory-backed player tool use. Use for input policy,
+  inventory bridges, mining/placement, and player interaction regressions.
+- `net-apply`: serializes authoritative diffs into a second engine. Use for
+  snapshot size, dirty propagation, and client-apply regressions.
 
 ## Metric Ownership
 

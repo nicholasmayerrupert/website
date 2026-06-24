@@ -159,6 +159,8 @@ export function initSandWasm() {
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
         glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
+        glPlayerExtStride: c('engine_gl_player_ext_stride', 'number', []),
+        glItemExtStride: c('engine_gl_item_ext_stride', 'number', []),
         glShift: c('engine_gl_shift', null, ['number', 'number']),
         glRenderFrame: c('engine_gl_render_frame', 'number', ['number', 'number']),
         glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
@@ -206,6 +208,10 @@ export function createEngineWasm({
   const chunkCols = M.chunkCols(ptr);
   const chunkRows = M.chunkRows(ptr);
   const cellCount = cols * rows;
+  const renderStrides = Object.freeze({
+    player: M.glPlayerExtStride(),
+    item: M.glItemExtStride(),
+  });
 
   // Fresh views each call: grid swaps every step; ALLOW_MEMORY_GROWTH can detach.
   const gridView = () => new Uint8Array(mod.HEAPU8.buffer, M.grid(ptr), cellCount);
@@ -304,9 +310,10 @@ export function createEngineWasm({
       if (useExternal) {
         const len = packed ? packed.length : 0;
         if (len) {
+          if (len % renderStrides.player !== 0) throw new Error(`external player buffer length ${len} is not divisible by stride ${renderStrides.player}`);
           const buf = mod._malloc(len * 4);
           mod.HEAPF32.set(packed, buf >> 2);
-          M.glSetPlayers(ptr, 1, buf, (len / 8) | 0, ownId | 0); // 8 floats per ext player
+          M.glSetPlayers(ptr, 1, buf, (len / renderStrides.player) | 0, ownId | 0);
           mod._free(buf);
         } else {
           M.glSetPlayers(ptr, 1, 0, 0, ownId | 0); // external, but empty (draw none)
@@ -322,11 +329,13 @@ export function createEngineWasm({
       if (packed === null || packed === undefined) { M.glSetItems(ptr, 0, 0, 0); return; }
       const len = packed.length;
       if (!len) { M.glSetItems(ptr, 1, 0, 0); return; } // external, but empty (draw none)
+      if (len % renderStrides.item !== 0) throw new Error(`external item buffer length ${len} is not divisible by stride ${renderStrides.item}`);
       const buf = mod._malloc(len * 4);
       mod.HEAPF32.set(packed, buf >> 2);
-      M.glSetItems(ptr, 1, buf, (len / 7) | 0); // 7 floats per item
+      M.glSetItems(ptr, 1, buf, (len / renderStrides.item) | 0);
       mod._free(buf);
     },
+    getRenderStrides() { return renderStrides; },
     glSetFlags(gutterOn, snapOff) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0); },
     glShift(dx) { M.glShift(ptr, dx); },
     glRenderFrame(forceFull) { return M.glRenderFrame(ptr, forceFull ? 1 : 0) === 1; },

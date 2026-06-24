@@ -201,6 +201,8 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->g
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff) { e->glSetFlags(gutterOn, snapOff); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, float* data, int count, int ownId) { e->glSetPlayers(useExternal, data, count, ownId); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_items(Engine* e, int useExternal, float* data, int count) { e->glSetItems(useExternal, data, count); }
+EMSCRIPTEN_KEEPALIVE int engine_gl_player_ext_stride() { return Engine::GL_EXT_STRIDE; }
+EMSCRIPTEN_KEEPALIVE int engine_gl_item_ext_stride() { return Engine::GL_ITEM_STRIDE; }
 EMSCRIPTEN_KEEPALIVE void engine_gl_shift(Engine* e, int dx) { e->glShift(dx); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_render_frame(Engine* e, int forceFull) { return e->glRenderFrame(forceFull); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_get_offset(Engine* e, int* out) { e->glGetOffset(out); }

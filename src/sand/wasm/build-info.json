@@ -1,0 +1,17 @@
+{
+  "generatedAt": "2026-06-24T19:21:29.483Z",
+  "output": {
+    "path": "src/sand/wasm/sandEngine.js",
+    "bytes": 343851,
+    "sha256": "6d252fde3ac7ea4c4fcbedade3120a1250031b8850c0ce00307a798e09cfa8c8",
+    "fnv1a": "0xd9c7cc0"
+  },
+  "source": {
+    "commit": "5cb69a0",
+    "dirty": false
+  },
+  "toolchain": {
+    "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 5.0.7-git",
+    "emccPath": "/opt/homebrew/bin/emcc"
+  }
+}

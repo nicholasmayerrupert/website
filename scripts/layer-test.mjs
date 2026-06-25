@@ -281,6 +281,21 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('large fg block fell despite one-cell overlap', after.minY > before.minY + 2, `(top ${before.minY} -> ${after.minY})`);
 }
 
+// 15b. A tiny (1-3 cell) fg chunk fully backed by grounded background solid stays
+//      supported: the bond floor is capped at the chunk's own size, so it bonds
+//      instead of falling (fails on the old fixed MIN_CELLS=4 floor).
+{
+  console.log('cross-layer support: tiny fg chunk supported by grounded bg behind it');
+  const e = mk();
+  e.setBgEnabled(true);
+  rect(e, 1, 30, 31, 20, ROWS); // grounded bg column reaching the floor
+  rect(e, 0, 30, 31, 20, 23);   // 3-cell fg chunk floating in front of it
+  const before = bbox(e.getGrid(), 28, 33, 18, 30);
+  step(e, 60);
+  const after = bbox(e.getGrid(), 28, 33, 18, 30);
+  check('tiny fg chunk stayed supported by grounded bg', after.n === before.n && after.minY === before.minY, `(top ${before.minY} -> ${after.minY}, cells ${before.n}->${after.n})`);
+}
+
 // 16. Dynamic carve order: the first-carved layer can go inactive while held by
 //     the other layer; when the second support is removed, both layers must move
 //     on that same tick.

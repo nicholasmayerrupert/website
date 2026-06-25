@@ -117,6 +117,26 @@
     bg.crossBondedComp.assign(nb, 0);
     cgBonds.clear();
 
+    // Tiny (< MIN_CELLS) chunks can never reach the bond patch threshold, so a
+    // 1-3 cell stone bit in front of solid background used to fall. They also
+    // don't need the coupled-assembly move machinery (they just shouldn't fall) —
+    // routing them through bonds made churny terrain re-run that machinery every
+    // step. Instead ground a tiny ungrounded comp directly when a majority of its
+    // cells are backed by GROUNDED other-layer rigid. Uses the independent base
+    // grounding snapshots (cgFgBase/cgBgBase) so it never chains or lets two
+    // ungrounded chunks float on each other; cheap (O(tiny-comp cells)).
+    auto directGroundSmall = [&](Layer& lay, int count, const std::vector<uint8_t>& otherBase, const uint8_t* otherGrid) {
+      for (int i = 0; i < count; i++) {
+        Comp* c = compById(lay, i);
+        if (c->grounded || (int)c->cells.size() >= CROSS_LAYER_BOND_MIN_CELLS) continue;
+        int backed = 0;
+        for (int k : c->cells) if (otherBase[k] && isRigidMaterial(otherGrid[k])) backed++;
+        if (backed * 2 >= (int)c->cells.size()) { c->grounded = true; for (int k : c->cells) lay.groundedCell[k] = 1; }
+      }
+    };
+    directGroundSmall(fg, nf, cgBgBase, bg.grid);
+    directGroundSmall(bg, nb, cgFgBase, fg.grid);
+
     bool anyUnsupported = false;
     for (int i = 0; i < nf && !anyUnsupported; i++) if (!compById(fg, i)->grounded) anyUnsupported = true;
     for (int i = 0; i < nb && !anyUnsupported; i++) if (!compById(bg, i)->grounded) anyUnsupported = true;

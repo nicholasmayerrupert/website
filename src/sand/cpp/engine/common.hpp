@@ -33,6 +33,8 @@ static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
 static const float BUOY_BAND_FRAC = 0.5f, BUOY_BAND_MIN = 1.5f, BUOY_DRAFT_SCALE = 0.5f, BUOY_WET_PERIMETER_FRAC = 0.75f, BUOY_SUPPORT_FRAC = 0.5f;
+static const int   CROSS_LAYER_BOND_MIN_CELLS = 4;
+static const float CROSS_LAYER_BOND_AREA_FRAC = 0.05f;
 static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
 static const float FIRE_CROSS_P = 0.18f;
@@ -346,4 +348,3 @@ static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6, R_LIQUID
 static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;
 static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG * 8;
 static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.0;
-

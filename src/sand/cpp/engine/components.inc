@@ -46,76 +46,32 @@
     }
   }
 
-  // Cross-layer grounding (runs once per step when the background is live). A solid
-  // unsupported within its OWN layer can still be held up when it is backed by
-  // GROUNDED solid at the same cells in the other layer — the user's "stone painted
-  // in front of a grounded bg pillar". Two coupled problems make the naive version
-  // wrong, and both are fixed here:
-  //
-  //  (1) MISMATCHED CUTS. A single mutual flood through cross-layer edges lets a
-  //      grounded rim in one layer reach across and pin the OTHER layer's detached
-  //      island. When a body spanning both layers is freed by two hand-drawn moats
-  //      (never pixel-identical), one layer's leftover grounded rim overlaps the
-  //      other's island edge and holds it up, so only one layer falls. We instead
-  //      ground each layer INDEPENDENTLY (computeGrounded, preserving the
-  //      stone|plant|ice comp indexing moveRigidAssemblies maps from), then decide
-  //      cross-support per CONNECTED ISLAND: an island (the 8-connected cluster of a
-  //      layer's self-ungrounded rigid cells — exactly what moveRigidAssemblies
-  //      moves as one) is held only when a MAJORITY of its cells are backed by
-  //      independently-grounded other-layer solid. A slab flush against a wall holds;
-  //      an island that merely grazes a grounded rim falls. Snapshots keep the two
-  //      directions symmetric and order-independent.
-  //
-  //  (2) STALE SETTLED ISLANDS. A solid held up only by the other layer settles and
-  //      goes inactive; its layer's beginStepDirty() then stays false and
-  //      moveRigidAssemblies() never re-runs. When the player LATER carves away the
-  //      other layer's support, the island is recomputed as ungrounded but would
-  //      never move — it floats. (This is why the layer carved SECOND fell while the
-  //      first stayed.) wakeLost() re-marks every cell that went grounded->ungrounded
-  //      so its layer re-activates this same step and the freed island falls.
-  //
-  // Uses no RNG, so it never perturbs the sim stream.
+  int compCount(Layer& lay) { return (int)(lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size()); }
+
+  // Cross-layer grounding (runs once per step when the background is live). Each
+  // layer is grounded independently first; cross-layer contact then creates
+  // transient component bonds only when a connected overlap patch is large enough.
+  // A bonded assembly is grounded only if one member has ordinary same-layer/floor
+  // support. Unsupported overlaps therefore fall together instead of pinning each
+  // other, and tiny accidental overlaps do not transmit support.
   void computeGroundedBoth() {
     size_t n = (size_t)cols * rows;
-    // (2) snapshot last step's grounding before computeGrounded overwrites it.
     cgPrevFg.assign(fg.groundedCell.begin(), fg.groundedCell.end());
     cgPrevBg.assign(bg.groundedCell.begin(), bg.groundedCell.end());
-    // (1) self-ground each layer, then snapshot those independent masks.
     useLayer(&fg); computeGrounded();
     cgFgBase.assign(fg.groundedCell.begin(), fg.groundedCell.end());
     useLayer(&bg); computeGrounded();
     cgBgBase.assign(bg.groundedCell.begin(), bg.groundedCell.end());
-    cgVisited.assign(n, 0);
-    auto crossSupport = [&](Layer& target, const uint8_t* otherGrid, const std::vector<uint8_t>& selfBase, const std::vector<uint8_t>& otherBase) {
-      const uint8_t* tg = target.grid;
-      std::fill(cgVisited.begin(), cgVisited.end(), (uint8_t)0);
-      for (size_t s = 0; s < n; s++) {
-        if (cgVisited[s] || selfBase[s] || !isRigidMaterial(tg[s])) continue;
-        cgIsland.clear(); cgStack.clear();
-        cgStack.push_back((int)s); cgVisited[s] = 1;
-        size_t backed = 0;
-        while (!cgStack.empty()) {
-          int k = cgStack.back(); cgStack.pop_back();
-          cgIsland.push_back(k);
-          if (otherBase[k] && isRigidMaterial(otherGrid[k])) backed++;
-          int y = k / cols, x = k - y * cols;
-          for (int oy = -1; oy <= 1; oy++) { int ny = y + oy; if (ny < 0 || ny >= rows) continue; int rb = ny * cols;
-            for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox; if (nx < 0 || nx >= cols) continue;
-              int nk = rb + nx; if (cgVisited[nk] || selfBase[nk] || !isRigidMaterial(tg[nk])) continue;
-              cgVisited[nk] = 1; cgStack.push_back(nk); } }
-        }
-        if (backed * 2 < cgIsland.size()) continue; // island not majority-backed -> falls
-        for (int k : cgIsland) {
-          target.groundedCell[k] = 1;
-          int id = target.cellComp[k];
-          if (id >= 0) compById(target, id)->grounded = true;
-        }
-      }
-    };
-    crossSupport(fg, bg.grid, cgFgBase, cgBgBase);
-    crossSupport(bg, fg.grid, cgBgBase, cgFgBase);
-    // (2) re-wake whatever lost grounding this step (only the 1->0 transition;
-    // already-ungrounded cells stay active from their own motion/edits).
+
+    int nf = compCount(fg), nb = compCount(bg);
+    fg.crossBondedComp.assign(nf, 0);
+    bg.crossBondedComp.assign(nb, 0);
+    cgBonds.clear();
+
+    bool anyUnsupported = false;
+    for (int i = 0; i < nf && !anyUnsupported; i++) if (!compById(fg, i)->grounded) anyUnsupported = true;
+    for (int i = 0; i < nb && !anyUnsupported; i++) if (!compById(bg, i)->grounded) anyUnsupported = true;
+
     auto wakeLost = [&](Layer& lay, const std::vector<uint8_t>& prev) {
       const uint8_t* gr = lay.groundedCell.data(); const uint8_t* g = lay.grid;
       int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
@@ -125,6 +81,125 @@
         rmn[y] = mn; rmx[y] = mx;
       }
     };
+    if (!anyUnsupported) {
+      wakeLost(fg, cgPrevFg); wakeLost(bg, cgPrevBg);
+      useLayer(&fg);
+      return;
+    }
+
+    std::vector<int> fgArea(nf, 0), bgArea(nb, 0);
+    for (int i = 0; i < nf; i++) fgArea[i] = (int)compById(fg, i)->cells.size();
+    for (int i = 0; i < nb; i++) bgArea[i] = (int)compById(bg, i)->cells.size();
+
+    std::unordered_map<int64_t, std::vector<int>> pairCells;
+    for (int fi = 0; fi < nf; fi++) {
+      Comp* fc = compById(fg, fi);
+      if (fc->grounded) continue;
+      for (int k : fc->cells) {
+        int bi = bg.cellComp[k];
+        if (bi < 0 || !isRigidMaterial(bg.grid[k])) continue;
+        int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
+        pairCells[key].push_back(k);
+      }
+    }
+    for (int bi = 0; bi < nb; bi++) {
+      Comp* bc = compById(bg, bi);
+      if (bc->grounded) continue;
+      for (int k : bc->cells) {
+        int fi = fg.cellComp[k];
+        if (fi < 0 || !isRigidMaterial(fg.grid[k]) || !compById(fg, fi)->grounded) continue;
+        int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
+        pairCells[key].push_back(k);
+      }
+    }
+
+    std::unordered_set<int> remaining;
+    std::vector<int> stack;
+    for (auto& kv : pairCells) {
+      int fi = (int)(kv.first >> 32), bi = (int)(uint32_t)kv.first;
+      int required = imax(CROSS_LAYER_BOND_MIN_CELLS, (int)std::ceil(CROSS_LAYER_BOND_AREA_FRAC * (double)imin(fgArea[fi], bgArea[bi])));
+      if ((int)kv.second.size() < required) continue;
+      remaining.clear();
+      for (int k : kv.second) remaining.insert(k);
+      int largest = 0;
+      while (!remaining.empty()) {
+        int start = *remaining.begin(); remaining.erase(start);
+        stack.clear(); stack.push_back(start);
+        int patch = 0;
+        while (!stack.empty()) {
+          int k = stack.back(); stack.pop_back(); patch++;
+          int y = k / cols, x = k - y * cols;
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            int nx = x + ox, ny = y + oy;
+            if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+            int nk = ny * cols + nx;
+            auto it = remaining.find(nk);
+            if (it != remaining.end()) { remaining.erase(it); stack.push_back(nk); }
+          }
+        }
+        if (patch > largest) largest = patch;
+      }
+      if (largest >= required) {
+        cgBonds.push_back({fi, bi, true});
+        fg.crossBondedComp[fi] = 1;
+        bg.crossBondedComp[bi] = 1;
+      } else if (largest > 0 && !compById(fg, fi)->grounded && !compById(bg, bi)->grounded) {
+        cgBonds.push_back({fi, bi, false});
+        fg.crossBondedComp[fi] = 1;
+        bg.crossBondedComp[bi] = 1;
+      }
+    }
+
+    if (cgBonds.empty()) {
+      wakeLost(fg, cgPrevFg); wakeLost(bg, cgPrevBg);
+      useLayer(&fg);
+      return;
+    }
+
+    std::vector<int> parent(nf + nb), groundParent(nf + nb);
+    for (int i = 0; i < nf + nb; i++) parent[i] = groundParent[i] = i;
+    auto find = [&](std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; };
+    auto unite = [&](std::vector<int>& p, int a, int b) { int ra = find(p, a), rb = find(p, b); if (ra != rb) p[ra] = rb; };
+    for (auto& b : cgBonds) {
+      unite(parent, b.fgComp, nf + b.bgComp);
+      if (b.supportsGround) unite(groundParent, b.fgComp, nf + b.bgComp);
+    }
+    auto uniteLayerAdj = [&](Layer& lay, int offset) {
+      for (int k = 0; k < (int)n; k++) {
+        int id = lay.cellComp[k]; if (id < 0) continue;
+        int y = k / cols, x = k - y * cols;
+        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          int nx = x + ox, ny = y + oy;
+          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+          int nid = lay.cellComp[ny * cols + nx];
+          if (nid >= 0) { unite(parent, offset + id, offset + nid); unite(groundParent, offset + id, offset + nid); }
+        }
+      }
+    };
+    uniteLayerAdj(fg, 0);
+    uniteLayerAdj(bg, nf);
+    std::vector<uint8_t> rootBonded(nf + nb, 0);
+    for (auto& b : cgBonds) rootBonded[find(parent, b.fgComp)] = 1;
+    std::fill(fg.crossBondedComp.begin(), fg.crossBondedComp.end(), (uint8_t)0);
+    std::fill(bg.crossBondedComp.begin(), bg.crossBondedComp.end(), (uint8_t)0);
+    for (int i = 0; i < nf; i++) if (rootBonded[find(parent, i)]) fg.crossBondedComp[i] = 1;
+    for (int i = 0; i < nb; i++) if (rootBonded[find(parent, nf + i)]) bg.crossBondedComp[i] = 1;
+    std::vector<uint8_t> rootGrounded(nf + nb, 0);
+    for (int i = 0; i < nf; i++) if (compById(fg, i)->grounded) rootGrounded[find(groundParent, i)] = 1;
+    for (int i = 0; i < nb; i++) if (compById(bg, i)->grounded) rootGrounded[find(groundParent, nf + i)] = 1;
+    for (int i = 0; i < nf; i++) if (fg.crossBondedComp[i] && rootGrounded[find(groundParent, i)]) {
+      Comp* c = compById(fg, i); c->grounded = true;
+      for (int k : c->cells) fg.groundedCell[k] = 1;
+    }
+    for (int i = 0; i < nb; i++) if (bg.crossBondedComp[i] && rootGrounded[find(groundParent, nf + i)]) {
+      Comp* c = compById(bg, i); c->grounded = true;
+      for (int k : c->cells) bg.groundedCell[k] = 1;
+    };
+
+    // Re-wake whatever lost grounding this step (only the 1->0 transition;
+    // already-ungrounded cells stay active from their own motion/edits).
     wakeLost(fg, cgPrevFg); wakeLost(bg, cgPrevBg);
     useLayer(&fg);
   }
@@ -138,6 +213,100 @@
     size_t np = lay.plantComponents.size();
     if ((size_t)id < np) return &lay.plantComponents[id];
     return &lay.iceComponents[id - (int)np];
+  }
+
+  bool compIdIsPlant(Layer& lay, int id) {
+    int ns = (int)lay.stoneComponents.size();
+    if (id < ns) return false;
+    id -= ns;
+    return id < (int)lay.plantComponents.size();
+  }
+
+  void moveCrossLayerBondedAssemblies() {
+    int nf = compCount(fg), nb = compCount(bg);
+    if (cgBonds.empty() || nf == 0 || nb == 0) return;
+    std::vector<int> parent(nf + nb);
+    for (int i = 0; i < nf + nb; i++) parent[i] = i;
+    auto find = [&](int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    auto unite = [&](int a, int b) { int ra = find(a), rb = find(b); if (ra != rb) parent[ra] = rb; };
+    for (auto& b : cgBonds) unite(b.fgComp, nf + b.bgComp);
+    auto uniteLayerAdj = [&](Layer& lay, int offset) {
+      size_t n = (size_t)cols * rows;
+      for (int k = 0; k < (int)n; k++) {
+        int id = lay.cellComp[k]; if (id < 0) continue;
+        int y = k / cols, x = k - y * cols;
+        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          int nx = x + ox, ny = y + oy;
+          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
+          int nid = lay.cellComp[ny * cols + nx];
+          if (nid >= 0) unite(offset + id, offset + nid);
+        }
+      }
+    };
+    uniteLayerAdj(fg, 0);
+    uniteLayerAdj(bg, nf);
+
+    struct JointGroup { std::vector<int> fgComps, bgComps; bool grounded = false; int maxY = 0; };
+    std::unordered_map<int, JointGroup> groups;
+    for (int i = 0; i < nf; i++) if (i < (int)fg.crossBondedComp.size() && fg.crossBondedComp[i]) {
+      int r = find(i); JointGroup& g = groups[r]; g.fgComps.push_back(i);
+      Comp* c = compById(fg, i); if (c->grounded) g.grounded = true; if (c->yMax > g.maxY) g.maxY = c->yMax;
+    }
+    for (int i = 0; i < nb; i++) if (i < (int)bg.crossBondedComp.size() && bg.crossBondedComp[i]) {
+      int r = find(nf + i); JointGroup& g = groups[r]; g.bgComps.push_back(i);
+      Comp* c = compById(bg, i); if (c->grounded) g.grounded = true; if (c->yMax > g.maxY) g.maxY = c->yMax;
+    }
+    std::vector<JointGroup*> order; order.reserve(groups.size());
+    for (auto& kv : groups) order.push_back(&kv.second);
+    std::sort(order.begin(), order.end(), [](JointGroup* a, JointGroup* b) { return a->maxY > b->maxY; });
+
+    std::unordered_set<int> fgCells, bgCells;
+    struct CellMat { int k; uint8_t m; };
+    std::vector<CellMat> fgMats, bgMats;
+    auto collect = [&](Layer& lay, const std::vector<int>& ids, std::unordered_set<int>& cells, std::vector<CellMat>& mats) {
+      cells.clear(); mats.clear();
+      for (int id : ids) {
+        Comp* c = compById(lay, id);
+        for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
+      }
+    };
+    auto canMoveLayer = [&](Layer& lay, const std::unordered_set<int>& own) {
+      for (int k : own) {
+        int nk = k + cols, ny = nk / cols;
+        if (ny < 1 || ny >= rows) return false;
+        if (own.count(nk)) continue;
+        if (lay.grid[nk] != EMPTY) return false;
+      }
+      return true;
+    };
+    auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells, const std::vector<CellMat>& mats) {
+      useLayer(&lay);
+      for (int k : cells) if (!cells.count(k - cols)) writeGridIndex(k, EMPTY);
+      for (auto& cm : mats) writeGridIndex(cm.k + cols, cm.m);
+      for (int id : ids) {
+        Comp* c = compById(lay, id);
+        bool isPlant = compIdIsPlant(lay, id);
+        int wood = 0, leaf = 0, ym = 0;
+        for (int& k : c->cells) {
+          k += cols;
+          int y = k / cols; if (y > ym) ym = y;
+          if (isPlant) { uint8_t m = lay.grid[k]; if (isPlantWood(m)) wood++; else if (isPlantLeaf(m)) leaf++; }
+        }
+        c->yMax = ym;
+        if (isPlant) { c->woodCount = wood; c->leafCount = leaf; c->cacheDirty = true; }
+      }
+    };
+
+    for (JointGroup* g : order) {
+      if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
+      collect(fg, g->fgComps, fgCells, fgMats);
+      collect(bg, g->bgComps, bgCells, bgMats);
+      if (!canMoveLayer(fg, fgCells) || !canMoveLayer(bg, bgCells)) continue;
+      applyLayer(fg, g->fgComps, fgCells, fgMats);
+      applyLayer(bg, g->bgComps, bgCells, bgMats);
+    }
+    useLayer(&fg);
   }
 
   void moveRigidAssemblies() {
@@ -155,7 +324,7 @@
     std::vector<int> localOf(totalComps, -1);
     int gi = 0;
     auto addList = [&](std::vector<Comp>& list) {
-      for (auto& c : list) { if (!c.grounded) { localOf[gi] = (int)all.size(); all.push_back(&c); } gi++; }
+      for (auto& c : list) { if (!c.grounded && (!jointGroundReady || gi >= (int)L->crossBondedComp.size() || !L->crossBondedComp[gi])) { localOf[gi] = (int)all.size(); all.push_back(&c); } gi++; }
     };
     addList(L->stoneComponents); int nStone = (int)all.size();
     addList(L->plantComponents); int nStonePlant = (int)all.size();

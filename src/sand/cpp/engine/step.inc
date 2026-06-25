@@ -69,9 +69,29 @@
     // (gated on bgEnabled -> single-layer scenes stay byte-identical). Each
     // stepLayer() then skips its own first computeGrounded().
     jointGroundReady = false;
-    if (bgEnabled) { computeGroundedBoth(); jointGroundReady = true; }
+    auto layerRigidMarked = [&](Layer& lay) {
+      const uint8_t* g = lay.grid;
+      for (int y = 0; y < rows; y++) {
+        int mn = lay.rowMarkMin[y], mx = lay.rowMarkMax[y];
+        if (mx < mn) continue;
+        mn = imax(0, mn); mx = imin(cols - 1, mx);
+        int rb = y * cols;
+        for (int x = mn; x <= mx; x++) if (isRigidMaterial(g[rb + x])) return true;
+      }
+      return false;
+    };
+    if (bgEnabled && (!cgBonds.empty() || layerRigidMarked(fg) || layerRigidMarked(bg))) {
+      computeGroundedBoth(); jointGroundReady = true;
+      fgA = fgA || layerActive(&fg);
+      bgA = bgA || layerActive(&bg);
+    }
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
     if (bgA) stepLayer(&bg);
+    if (jointGroundReady) {
+      moveCrossLayerBondedAssemblies();
+      fgA = fgA || layerActive(&fg);
+      bgA = bgA || layerActive(&bg);
+    }
     crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);
     useLayer(&fg); // leave fg active for ABI/render/tool calls between steps

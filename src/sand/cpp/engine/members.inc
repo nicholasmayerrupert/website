@@ -34,6 +34,7 @@
     // components + ids
     std::vector<Comp> stoneComponents, plantComponents, iceComponents;
     int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
+    std::vector<uint8_t> crossBondedComp;
     // free rigid bodies + ownership
     std::vector<Body*> bodies; int nextBodyId = 1;
     std::vector<int32_t> bodyOwner;
@@ -144,6 +145,8 @@
   // snapshot; cgVisited/cgStack/cgIsland = the per-island flood working set.
   std::vector<uint8_t> cgPrevFg, cgPrevBg, cgFgBase, cgBgBase, cgVisited;
   std::vector<int> cgStack, cgIsland;
+  struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
+  std::vector<CrossLayerBond> cgBonds;
   // ---- tool / pointer state (input policy ported from createSandGame) ----
   int activeTool = T_CUBE;
   bool lmbDown = false, rmbDown = false;

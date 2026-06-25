@@ -14,6 +14,17 @@ const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, infinite: false, sin
 const k = (x, y) => y * COLS + x;
 const step = (e, n, dt = 16) => { let t = 0; for (let i = 0; i < n; i++) { t += dt; e.step(t); } };
 const countIn = (grid, mat) => { let c = 0; for (let i = 0; i < grid.length; i++) if (grid[i] === mat) c++; return c; };
+const rect = (e, layer, x0, x1, y0, y1, mat = MAT.STONE) => {
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) e.paintDiscLayer(layer, x, y, 0, mat, true);
+  if (mat === MAT.STONE || mat === MAT.ICE || mat === MAT.WOOD || mat === MAT.PLANT) e.syncComponentsLayer(layer);
+};
+const bbox = (grid, x0 = 0, x1 = COLS, y0 = 0, y1 = ROWS, mat = MAT.STONE) => {
+  let n = 0, minX = x1, maxX = -1, minY = y1, maxY = -1;
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (grid[k(x, y)] === mat) {
+    n++; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  return { n, minX, maxX, minY, maxY };
+};
 
 let failures = 0;
 const check = (label, ok, extra = '') => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${extra ? ' ' + extra : ''}`); };
@@ -239,6 +250,141 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('fg mutual block did not float', fg[k(30, 30)] === MAT.EMPTY);
   check('bg mutual block did not float', bg[k(30, 30)] === MAT.EMPTY);
   check('both mutual blocks reached the floor', fg[k(30, ROWS - 1)] === MAT.STONE && bg[k(30, ROWS - 1)] === MAT.STONE);
+}
+
+// 14. Component-bond support: a small connected overlap patch can transmit real
+//     support, but it is not the old brittle 50% total-overlap rule.
+{
+  console.log('cross-layer support: connected contact patch supports large fg block');
+  const e = mk();
+  e.setBgEnabled(true);
+  rect(e, 0, 25, 35, 30, 40);             // 10x10 foreground block, no fg floor
+  rect(e, 1, 28, 31, 30, ROWS);           // grounded bg pillar, 3x10 contact patch
+  const before = bbox(e.getGrid(), 25, 35, 30, 45);
+  step(e, 80);
+  const after = bbox(e.getGrid(), 25, 35, 30, 45);
+  check('large fg block stayed supported by small connected patch', after.n === before.n && after.minY === before.minY, `(top ${before.minY} -> ${after.minY}, cells ${before.n}->${after.n})`);
+}
+
+// 15. A one-cell accidental overlap is below the bond threshold and cannot hold
+//     up a large unsupported component.
+{
+  console.log('cross-layer support: one-cell overlap does not support a large block');
+  const e = mk();
+  e.setBgEnabled(true);
+  rect(e, 0, 30, 40, 30, 40);
+  rect(e, 1, 29, 30, 30, ROWS); // grounded path outside the fg block
+  e.paintDiscLayer(1, 30, 30, 0, MAT.STONE, true); e.syncComponentsLayer(1); // one supported overlap cell
+  const before = bbox(e.getGrid(), 30, 40, 30, 45);
+  step(e, 30);
+  const after = bbox(e.getGrid(), 30, 45, 30, ROWS);
+  check('large fg block fell despite one-cell overlap', after.minY > before.minY + 2, `(top ${before.minY} -> ${after.minY})`);
+}
+
+// 16. Dynamic carve order: the first-carved layer can go inactive while held by
+//     the other layer; when the second support is removed, both layers must move
+//     on that same tick.
+{
+  console.log('cross-layer support: lost support wakes both layers same tick');
+  const C = COLS, R = ROWS;
+  const e = mk();
+  e.setBgEnabled(true);
+  const fillBridge = (layer) => {
+    rect(e, layer, 8, 52, 15, 30);
+    rect(e, layer, 8, 14, 30, R);
+    rect(e, layer, 46, 52, 30, R);
+  };
+  const cutBridge = (layer) => {
+    for (let y = 12; y < 32; y++) for (let x = 18; x < 22; x++) e.eraseDiscLayer(layer, x, y, 0);
+    for (let y = 12; y < 32; y++) for (let x = 38; x < 42; x++) e.eraseDiscLayer(layer, x, y, 0);
+  };
+  const slab = (grid) => bbox(grid, 24, 36, 15, R);
+  fillBridge(0); fillBridge(1);
+  const b0 = slab(e.getGrid()), b1 = slab(e.getGridBg());
+  cutBridge(0); step(e, 30);
+  cutBridge(1); step(e, 1);
+  const fg = slab(e.getGrid()), bg = slab(e.getGridBg());
+  check('foreground moved on the first unsupported tick', fg.minY > b0.minY, `(top ${b0.minY} -> ${fg.minY})`);
+  check('sleeping background moved on the same tick', bg.minY > b1.minY, `(top ${b1.minY} -> ${bg.minY})`);
+  check('same-tick displacement matched', fg.minY - b0.minY === bg.minY - b1.minY, `(fg ${fg.minY - b0.minY}, bg ${bg.minY - b1.minY})`);
+}
+
+// 17. Bonded unsupported foreground/background pieces remain coupled while
+//     falling, so their relative displacement never drifts over multiple ticks.
+{
+  console.log('cross-layer support: bonded pieces preserve displacement while falling');
+  const e = mk();
+  e.setBgEnabled(true);
+  rect(e, 0, 26, 34, 18, 26);
+  rect(e, 1, 26, 34, 18, 26);
+  let ok = true, lastDelta = 0;
+  for (let i = 0; i < 12; i++) {
+    step(e, 1);
+    const fg = bbox(e.getGrid(), 20, 40, 18, ROWS), bg = bbox(e.getGridBg(), 20, 40, 18, ROWS);
+    lastDelta = fg.minY - bg.minY;
+    if (fg.n === 0 || bg.n === 0 || lastDelta !== 0) ok = false;
+  }
+  check('bonded fg/bg pieces stayed aligned during fall', ok, `(final delta ${lastDelta})`);
+}
+
+// 18. A collision under only one layer stops the whole bonded assembly instead of
+//     letting the other layer continue through empty space.
+{
+  console.log('cross-layer support: one-layer obstacle stops bonded assembly');
+  const e = mk();
+  e.setBgEnabled(true);
+  rect(e, 0, 26, 34, 18, 24);
+  rect(e, 1, 26, 34, 18, 24);
+  rect(e, 0, 26, 34, 31, ROWS); // foreground-only grounded obstacle
+  step(e, 40);
+  const fg = bbox(e.getGrid(), 26, 34, 18, 31), bg = bbox(e.getGridBg(), 26, 34, 18, 31);
+  check('foreground piece stopped above the obstacle', fg.maxY === 30, `(maxY ${fg.maxY})`);
+  check('background piece stopped with the foreground', bg.maxY === 30, `(maxY ${bg.maxY})`);
+}
+
+// 19. Seeded, slightly irregular cuts reproduce the hand-drawn separation case:
+//     carve one layer, let it sleep while cross-supported, then carve the other
+//     with different edge noise. Both bonded slabs must still fall together.
+{
+  console.log('cross-layer support: seeded irregular cuts keep bonded slabs together');
+  const rand = (seed) => () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  let ok = true, details = [];
+  for (const seed of [0x51a7e, 0x9e3779b9, 0x12345678]) {
+    const e = mk();
+    e.setBgEnabled(true);
+    const fillBridge = (layer) => {
+      rect(e, layer, 8, 52, 15, 30);
+      rect(e, layer, 8, 14, 30, ROWS);
+      rect(e, layer, 46, 52, 30, ROWS);
+    };
+    const noisyCuts = (layer, s) => {
+      const r = rand(s);
+      for (const [a, b] of [[18, 22], [38, 42]]) {
+        for (let y = 12; y < 33; y++) {
+          const drift = Math.floor(r() * 3) - 1;
+          for (let x = a + drift; x < b + drift; x++) e.eraseDiscLayer(layer, x, y, 0);
+          if (r() < 0.35) e.eraseDiscLayer(layer, a - 1 + drift, y, 0);
+          if (r() < 0.35) e.eraseDiscLayer(layer, b + drift, y, 0);
+        }
+      }
+    };
+    const slab = (grid) => bbox(grid, 24, 36, 15, ROWS);
+    fillBridge(0); fillBridge(1);
+    const b0 = slab(e.getGrid()), b1 = slab(e.getGridBg());
+    noisyCuts(0, seed); step(e, 30);
+    noisyCuts(1, seed ^ 0xa5a5a5a5); step(e, 90);
+    const fg = slab(e.getGrid()), bg = slab(e.getGridBg());
+    const fgDy = fg.minY - b0.minY, bgDy = bg.minY - b1.minY;
+    const pass = fgDy > 8 && bgDy > 8 && fgDy === bgDy;
+    if (!pass) ok = false;
+    details.push(`${seed.toString(16)}:${fgDy}/${bgDy}`);
+  }
+  check('seeded irregular cut slabs fell with identical displacement', ok, `(${details.join(', ')})`);
 }
 
 // 14. Liquids cross layers into space the player digs out. A sealed foreground

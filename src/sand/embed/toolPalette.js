@@ -69,8 +69,12 @@ function buildEntries() {
       value: i,
     });
   });
-  entries.push({ key: 'eraser', label: 'Eraser', color: ERASER_SWATCH, kind: CK_ERASER, value: 0 });
-  entries.push({ key: 'cube', label: 'Cube', color: CUBE_SWATCH, kind: CK_CUBE, value: 0 });
+  // Labels are lowercase to match the materials above (m.name.toLowerCase()) so
+  // they display consistently AND match the lowercased search query / the
+  // lowercase PRIORITY_LABELS lookup (otherwise 'cube' never leads and neither
+  // tool can be found by typing its name).
+  entries.push({ key: 'eraser', label: 'eraser', color: ERASER_SWATCH, kind: CK_ERASER, value: 0 });
+  entries.push({ key: 'cube', label: 'cube', color: CUBE_SWATCH, kind: CK_CUBE, value: 0 });
 
   const lead = [];
   for (const want of PRIORITY_LABELS) {
@@ -254,7 +258,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
 
   function renderList() {
     list.replaceChildren();
-    const shown = query ? entries.filter((e) => e.label.includes(query)) : entries;
+    const shown = query ? entries.filter((e) => e.label.toLowerCase().includes(query)) : entries;
     if (shown.length === 0) {
       const none = document.createElement('div');
       none.className = 'sg-empty';

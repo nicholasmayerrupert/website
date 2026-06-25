@@ -305,9 +305,17 @@ inline bool isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t ==
 // hit; DURABILITY[] controls base hardness and held class/tier controls progress.
 void resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
-  useLayer(p.mineLayer ? &bg : &fg);
-  if (p.mineFootprint >= 0) clearMineDamageFootprint(p.mineX, p.mineY, getSurvivalFootprint(p.mineFootprint));
-  else clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
+  auto clearLayer = [&](Layer* layer) {
+    useLayer(layer);
+    if (p.mineFootprint >= 0) clearMineDamageFootprint(p.mineX, p.mineY, getSurvivalFootprint(p.mineFootprint));
+    else clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
+  };
+  if (p.mineLayer == 2) {
+    clearLayer(&fg);
+    clearLayer(&bg);
+  } else {
+    clearLayer(p.mineLayer ? &bg : &fg);
+  }
   useLayer(&fg);
   p.mineActive = false;
   p.mineFootprint = -1;
@@ -353,6 +361,23 @@ bool mineFootprint(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = t
   }
   useLayer(layer);
   bool changed = mineDamageFootprint(ax, ay, getSurvivalFootprint(footprintId), p, scaledSpeed) != 0;
+  resolveMineDrops(p);
+  useLayer(&fg);
+  return changed;
+}
+bool mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed = true) {
+  int footprintId = clampSurvivalFootprintId(p.selectedFootprint);
+  if (!p.mineActive || p.mineLayer != 2 || p.mineX != ax || p.mineY != ay || p.mineFootprint != footprintId) {
+    resetPlayerMine(p);
+    p.mineActive = true; p.mineLayer = 2; p.mineX = ax; p.mineY = ay; p.mineFootprint = footprintId;
+  }
+  const SurvivalFootprint& fp = getSurvivalFootprint(footprintId);
+  useLayer(&fg);
+  bool changed = mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
+  resolveMineDrops(p);
+  bgEnabled = true;
+  useLayer(&bg);
+  changed |= mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
   resolveMineDrops(p);
   useLayer(&fg);
   return changed;

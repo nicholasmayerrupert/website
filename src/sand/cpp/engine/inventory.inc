@@ -160,8 +160,8 @@
   }
 
   // Survival input model. The selected hotbar slot decides what the mouse buttons do:
-  //   - a TOOL or an EMPTY slot      -> MINE the visible target (empty = bare hand).
-  //         LMB mines foreground; RMB mines foreground when present, otherwise bg.
+  //   - a TOOL or an EMPTY slot      -> MINE (empty = bare hand).
+  //         LMB mines foreground; RMB mines foreground and background together.
   //   - a COMPONENT material (stone) -> creative-style DRAFT: hold to draw a growing
   //         preview that consumes inventory per staged cell, stops when you run out,
   //         and MATERIALIZES on release (exactly like creative solids).
@@ -206,13 +206,7 @@
     if (mineMode) {
       bool acted = false;
       if (primary) acted |= mineFootprint(p, ax, ay, &fg);
-      if (secondary && !primary) {
-        useLayer(&fg);
-        bool fgTarget = footprintHasMaterialAt(ax, ay, fp);
-        useLayer(&fg);
-        if (fgTarget) acted |= mineFootprint(p, ax, ay, &fg);
-        else { bgEnabled = true; acted |= mineFootprint(p, ax, ay, &bg); }
-      }
+      if (secondary && !primary) acted |= mineFootprintBoth(p, ax, ay);
       if (acted) playerActionCount++;
     } else if (isSeed) {
       resetPlayerMine(p);

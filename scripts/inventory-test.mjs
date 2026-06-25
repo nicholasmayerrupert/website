@@ -165,24 +165,27 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.destroy();
 }
 
-// 6a) RMB mining in survival inventory targets visible foreground first. This keeps
-//     the user-facing "RMB mines" control from silently digging the background when
-//     a foreground block is under the cursor.
+// 6a) RMB mining in survival inventory digs both layers. This keeps the user-facing
+//     "RMB mines" control useful for foreground blocks while still allowing
+//     background mining when a large footprint overlaps nearby foreground.
 {
   const PI_SECONDARY = 32;
   const e = survivalEngine();
   const id = e.spawnPlayer(40, FLOOR - 8);
   let t = 0; for (let s = 0; s < 6; s++) { t += 16; e.step(t); }
-  e.placeMaterial(44, FLOOR - 1, 0, MAT.DIRT);
-  e.setSelectedSlot(id, 5);
+  e.placeMaterial(44, FLOOR - 1, 0, MAT.STONE);
+  e.paintDiscLayer(1, 44, FLOOR - 1, 0, MAT.STONE, true);
+  e.syncComponentsLayer(1);
+  e.setSelectedSlot(id, 0);
   e.setSelectedFootprint(id, 0);
   for (let s = 0; s < 40; s++) {
     e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 44.5, aimY: FLOOR - 1 + 0.5, seq: s + 1 });
     t += 16; e.step(t);
   }
-  const fgDirt = e.getGrid().reduce((a, v) => a + (v === MAT.DIRT), 0);
-  const bgDirt = e.getGridBg().reduce((a, v) => a + (v === MAT.DIRT), 0);
-  check(`secondary mining clears foreground dirt (${fgDirt} fg, ${bgDirt} bg)`, fgDirt === 0 && bgDirt === 0);
+  const k = (FLOOR - 1) * COLS + 44;
+  const fgCell = e.getGrid()[k];
+  const bgCell = e.getGridBg()[k];
+  check(`secondary mining clears foreground and background stone (${fgCell} fg, ${bgCell} bg)`, fgCell === MAT.EMPTY && bgCell === MAT.EMPTY);
   e.destroy();
 }
 

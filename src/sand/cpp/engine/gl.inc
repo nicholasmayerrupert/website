@@ -356,11 +356,6 @@ void glDrawPreview() {
         const InvSlot& sel = lp->inv[lp->selectedSlot];
         erasing = sel.isTool || sel.count <= 0;
         fp = &getSurvivalFootprint(*lp);
-        if (erasing && toBg) {
-          useLayer(&fg);
-          toBg = !footprintHasMaterialAt(ax, ay, *fp);
-          useLayer(&fg);
-        }
       }
       double cxp = lp->px + lp->w / 2.0, cyp = lp->py + lp->h / 2.0;
       double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;

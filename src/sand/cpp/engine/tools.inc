@@ -284,8 +284,6 @@
   double playerMineProgress(int id) {
     Player* p = findPlayer(id);
     if (!p || !p->mineActive) return 0.0;
-    Layer* target = p->mineLayer ? &bg : &fg;
-    useLayer(target);
     double best = 0.0;
     auto consider = [&](int xx, int yy, uint32_t areaScale) {
       if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) return;
@@ -298,17 +296,28 @@
       double progress = 1.0 - (double)rem / (double)dur;
       if (progress > best) best = progress;
     };
-    if (p->mineFootprint >= 0) {
-      const SurvivalFootprint& fp = getSurvivalFootprint(p->mineFootprint);
-      uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
-      for (const SurvivalFootprintCell& o : fp.cells) consider(p->mineX + (int)o.ox, p->mineY + (int)o.oy, areaScale);
-    } else {
-      for (int oy = -P_MINE_R; oy <= P_MINE_R; oy++) {
-        for (int ox = -P_MINE_R; ox <= P_MINE_R; ox++) {
-          if (ox * ox + oy * oy > P_MINE_R * P_MINE_R) continue;
-          consider(p->mineX + ox, p->mineY + oy, 1);
+    auto scanActiveLayer = [&]() {
+      if (p->mineFootprint >= 0) {
+        const SurvivalFootprint& fp = getSurvivalFootprint(p->mineFootprint);
+        uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
+        for (const SurvivalFootprintCell& o : fp.cells) consider(p->mineX + (int)o.ox, p->mineY + (int)o.oy, areaScale);
+      } else {
+        for (int oy = -P_MINE_R; oy <= P_MINE_R; oy++) {
+          for (int ox = -P_MINE_R; ox <= P_MINE_R; ox++) {
+            if (ox * ox + oy * oy > P_MINE_R * P_MINE_R) continue;
+            consider(p->mineX + ox, p->mineY + oy, 1);
+          }
         }
       }
+    };
+    if (p->mineLayer == 2) {
+      useLayer(&fg);
+      scanActiveLayer();
+      useLayer(&bg);
+      scanActiveLayer();
+    } else {
+      useLayer(p->mineLayer ? &bg : &fg);
+      scanActiveLayer();
     }
     useLayer(&fg);
     return best;

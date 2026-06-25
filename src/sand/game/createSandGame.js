@@ -159,7 +159,7 @@ export function createSandGame(container, opts = {}) {
   // pointer e.button -> mouseButtons bit (LMB, RMB)
 
   const updateMineProgress = () => {
-    if (!survival || !engine || !localPlayerId || !inside || !(mouseButtons & BUTTON_BITS[0])) {
+    if (!survival || !engine || !localPlayerId || !inside || !(mouseButtons & (BUTTON_BITS[0] | BUTTON_BITS[2]))) {
       mineProgress.style.display = 'none';
       return;
     }

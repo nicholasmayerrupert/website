@@ -59,7 +59,19 @@ const at = (g, x, y) => g[y * COLS + x];
   e.destroy();
 }
 
-// 5) Cube spawns a free rigid body.
+// 5) Default material SEED follows the seed path too, not the generic solid draft.
+{
+  const e = mk();
+  e.setCreativeMaterial(CK.MATERIAL, MAT.SEED);
+  e.pointerDown(50, 40, 0);
+  check('default seed does not create a stone-style draft preview', e.getStoneDraftCells().length === 0);
+  e.pointerUp(0);
+  let seeds = 0; for (const v of e.getGrid()) if (v === MAT.SEED) seeds++;
+  check(`default seed placed one SEED cell (${seeds})`, seeds === 1);
+  e.destroy();
+}
+
+// 6) Cube spawns a free rigid body.
 {
   const e = mk();
   e.setCreativeMaterial(CK.CUBE, 0);
@@ -68,7 +80,7 @@ const at = (g, x, y) => g[y * COLS + x];
   e.destroy();
 }
 
-// 6) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
+// 7) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
 {
   const e = mk();
   e.addDiscToStoneDraft(60, 60, 0);

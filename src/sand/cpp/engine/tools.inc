@@ -253,6 +253,7 @@
         uint8_t m = (uint8_t)value;
         if (m == EMPTY) creativeMode = CM_ERASE;
         else if (m == RIGID) creativeMode = CM_CUBE;
+        else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
         else if (MAT_KIND[m] == K_COMPONENT) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
         else { creativeMode = CM_PAINT; creativeMaterial = m; }
         break;

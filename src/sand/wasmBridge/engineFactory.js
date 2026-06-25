@@ -121,6 +121,7 @@ export function initSandWasm() {
         stepPlayerOnly: c('engine_step_player_only', null, ['number', 'number']),
         setPlayerTool: c('engine_set_player_tool', null, ['number', 'number', 'number', 'number']),
         playerMine: c('engine_player_mine', 'number', ['number', 'number', 'number', 'number']),
+        playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
         setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnParticle: c('engine_spawn_particle', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
@@ -133,6 +134,11 @@ export function initSandWasm() {
         addToInventory: c('engine_add_to_inventory', 'number', ['number', 'number', 'number', 'number']),
         setSelectedSlot: c('engine_set_selected_slot', null, ['number', 'number', 'number']),
         cycleSelectedSlot: c('engine_cycle_selected_slot', null, ['number', 'number', 'number']),
+        setSelectedFootprint: c('engine_set_selected_footprint', null, ['number', 'number', 'number']),
+        selectedFootprint: c('engine_selected_footprint', 'number', ['number', 'number']),
+        survivalFootprintSnapshot: c('engine_survival_footprint_snapshot', 'number', ['number']),
+        survivalFootprintSnapshotPtr: c('engine_survival_footprint_snapshot_ptr', 'number', ['number']),
+        survivalFootprintSnapshotStride: c('engine_survival_footprint_snapshot_stride', 'number', ['number']),
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
         placeFromSelected: c('engine_place_from_selected', 'number', ['number', 'number', 'number', 'number']),
         inventorySnapshot: c('engine_inventory_snapshot', 'number', ['number', 'number']),
@@ -483,6 +489,27 @@ export function createEngineWasm({
     addToInventory(id, material, count) { return M.addToInventory(ptr, id | 0, material | 0, count | 0) === 1; },
     setSelectedSlot(id, slot) { M.setSelectedSlot(ptr, id | 0, slot | 0); },
     cycleSelectedSlot(id, delta) { M.cycleSelectedSlot(ptr, id | 0, delta | 0); },
+    setSelectedFootprint(id, footprintId) { M.setSelectedFootprint(ptr, id | 0, footprintId | 0); },
+    getSelectedFootprint(id) { return M.selectedFootprint(ptr, id | 0) | 0; },
+    getSurvivalFootprints() {
+      const n = M.survivalFootprintSnapshot(ptr);
+      if (!n) return [];
+      const stride = M.survivalFootprintSnapshotStride(ptr);
+      const f = new Int32Array(mod.HEAP32.buffer, M.survivalFootprintSnapshotPtr(ptr), n * stride);
+      const out = new Array(n);
+      for (let i = 0; i < n; i++) {
+        const o = i * stride;
+        out[i] = {
+          id: f[o] | 0,
+          width: f[o + 1] | 0,
+          height: f[o + 2] | 0,
+          cellCount: f[o + 3] | 0,
+          anchorX: f[o + 4] | 0,
+          anchorY: f[o + 5] | 0,
+        };
+      }
+      return out;
+    },
     inventoryMove(id, from, to) { M.inventoryMove(ptr, id | 0, from | 0, to | 0); },
     placeFromSelected(id, ax, ay) { return M.placeFromSelected(ptr, id | 0, ax | 0, ay | 0) === 1; },
     // Minecraft cursor model. cursorPick(slot, half) picks/places/swaps the carried
@@ -497,7 +524,7 @@ export function createEngineWasm({
     },
     getInventory(id) {
       const n = M.inventorySnapshot(ptr, id | 0);
-      if (!n) return { slots: [], selected: 0 };
+      if (!n) return { slots: [], selected: 0, selectedFootprint: 0 };
       const stride = M.inventorySnapshotStride(ptr);
       const f = new Float32Array(mod.HEAPF32.buffer, M.inventorySnapshotPtr(ptr), n * stride);
       const slots = new Array(n);
@@ -507,7 +534,7 @@ export function createEngineWasm({
         slots[i] = { material: f[o] | 0, isTool: f[o + 1] === 1, toolClass: f[o + 2] | 0, toolTier: f[o + 3] | 0, count: f[o + 4] | 0 };
         if (f[o + 5] === 1) selected = i;
       }
-      return { slots, selected };
+      return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
     },
     // Rebuild + read the packed item snapshot zero-copy. Returns plain item objects.
     getItems() {
@@ -530,6 +557,7 @@ export function createEngineWasm({
     // the destroyed material as an item only when the held tool satisfies its gate.
     setPlayerTool(id, toolClass, toolTier) { M.setPlayerTool(ptr, id, toolClass | 0, toolTier | 0); },
     playerMine(id, ax, ay) { return M.playerMine(ptr, id, ax, ay) === 1; },
+    getPlayerMineProgress(id) { return Math.max(0, Math.min(1, M.playerMineProgress(ptr, id | 0) || 0)); },
     setPlayerState(id, { x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false }) {
       M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0, jumpReady ? 1 : 0);
     },

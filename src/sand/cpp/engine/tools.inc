@@ -3,6 +3,87 @@
   // JS forwards raw input and selected tool/material ids; this file decides what
   // those intents do to the world. Keep component-aware writes here, and keep DOM
   // or pointer policy in camera.inc/JS.
+  void initSurvivalFootprints() {
+    survivalFootprints.clear();
+    survivalFootprints.reserve(SURVIVAL_FOOTPRINT_MAX_SIZE);
+    auto makeSquare = [&](int id, int size) {
+      SurvivalFootprint fp;
+      fp.id = (uint8_t)id;
+      fp.width = (uint8_t)size;
+      fp.height = (uint8_t)size;
+      fp.anchorX = (int8_t)(size / 2 - (size % 2 == 0 ? 1 : 0));
+      fp.anchorY = (int8_t)(size / 2 - (size % 2 == 0 ? 1 : 0));
+      double cx = (double)(size - 1) * 0.5 - fp.anchorX;
+      double cy = (double)(size - 1) * 0.5 - fp.anchorY;
+      std::vector<SurvivalFootprintCell> cells;
+      cells.reserve((size_t)size * (size_t)size);
+      for (int y = 0; y < size; y++) {
+        for (int x = 0; x < size; x++) {
+          SurvivalFootprintCell c;
+          c.ox = (int8_t)(x - fp.anchorX);
+          c.oy = (int8_t)(y - fp.anchorY);
+          cells.push_back(c);
+        }
+      }
+      std::stable_sort(cells.begin(), cells.end(), [&](const SurvivalFootprintCell& a, const SurvivalFootprintCell& b) {
+        double dax = (double)a.ox - cx, day = (double)a.oy - cy;
+        double dbx = (double)b.ox - cx, dby = (double)b.oy - cy;
+        double da = dax * dax + day * day, db = dbx * dbx + dby * dby;
+        if (da != db) return da < db;
+        if (a.oy != b.oy) return a.oy < b.oy;
+        return a.ox < b.ox;
+      });
+      fp.cells = std::move(cells);
+      survivalFootprints.push_back(std::move(fp));
+    };
+    for (int size = 1; size <= SURVIVAL_FOOTPRINT_MAX_SIZE; size++) makeSquare(size - 1, size);
+  }
+  int survivalFootprintCount() const { return (int)survivalFootprints.size(); }
+  int clampSurvivalFootprintId(int id) const {
+    if (survivalFootprints.empty()) return 0;
+    if (id < 0) return 0;
+    if (id >= (int)survivalFootprints.size()) return (int)survivalFootprints.size() - 1;
+    return id;
+  }
+  const SurvivalFootprint& getSurvivalFootprint(int id) const { return survivalFootprints[(size_t)clampSurvivalFootprintId(id)]; }
+  const SurvivalFootprint& getSurvivalFootprint(const Player& p) const { return getSurvivalFootprint(p.selectedFootprint); }
+  int buildSurvivalFootprintSnapshot() {
+    survivalFootprintSnapshot.assign((size_t)survivalFootprints.size() * SURVIVAL_FOOTPRINT_SNAP_FIELDS, 0);
+    for (size_t i = 0; i < survivalFootprints.size(); i++) {
+      const SurvivalFootprint& fp = survivalFootprints[i];
+      int32_t* o = survivalFootprintSnapshot.data() + i * SURVIVAL_FOOTPRINT_SNAP_FIELDS;
+      o[0] = fp.id;
+      o[1] = fp.width;
+      o[2] = fp.height;
+      o[3] = (int32_t)fp.cells.size();
+      o[4] = fp.anchorX;
+      o[5] = fp.anchorY;
+    }
+    return (int)survivalFootprints.size();
+  }
+  void setSelectedFootprint(Player& p, int id) {
+    int next = clampSurvivalFootprintId(id);
+    if (p.selectedFootprint == next) return;
+    p.selectedFootprint = next;
+    resetPlayerMine(p);
+  }
+  void setSelectedFootprint(int id, int footprintId) { Player* p = findPlayer(id); if (p) setSelectedFootprint(*p, footprintId); }
+  int selectedFootprintId(int id) const { const Player* p = nullptr; for (const auto& pp : players) if (pp.id == id) { p = &pp; break; } return p ? clampSurvivalFootprintId(p->selectedFootprint) : 0; }
+  int survivalFootprintCellCount(const Player& p) const { return (int)getSurvivalFootprint(p).cells.size(); }
+  void survivalFootprintBounds(const SurvivalFootprint& fp, int cx, int cy, int& x0, int& y0, int& x1, int& y1) const {
+    x0 = cx - fp.anchorX;
+    y0 = cy - fp.anchorY;
+    x1 = x0 + fp.width - 1;
+    y1 = y0 + fp.height - 1;
+  }
+  bool footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint& fp) {
+    for (const SurvivalFootprintCell& o : fp.cells) {
+      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
+      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
+      if (grid[yy * cols + xx] != EMPTY) return true;
+    }
+    return false;
+  }
   // Returns the NUMBER OF CELLS actually written (for the per-pixel inventory economy).
   int paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) {
     int changed = 0;
@@ -78,6 +159,37 @@
     if (comp) registerComponentCells(mat, cells);
     return placed;
   }
+  int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr) {
+    if (maxCells <= 0) return 0;
+    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
+    if (p) {
+      px0 = (int)std::floor(p->px);
+      px1 = (int)std::floor(p->px + p->w - 1e-6);
+      py0 = (int)std::floor(p->py);
+      py1 = (int)std::floor(p->py + p->h - 1e-6);
+    }
+    bool comp = MAT_KIND[mat] == K_COMPONENT;
+    std::unordered_set<int> cells;
+    int placed = 0;
+    for (const SurvivalFootprintCell& o : fp.cells) {
+      if (placed >= maxCells) break;
+      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
+      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
+      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue;
+      int k = I(xx, yy);
+      if (grid[k] != EMPTY) continue;
+      grid[k] = mat;
+      placed++;
+      if (comp) { markCellIndex(k); cells.insert(k); }
+    }
+    if (placed) {
+      int x0, y0, x1, y1;
+      survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
+      markDirtyRect(x0, y0, x1, y1);
+    }
+    if (comp) registerComponentCells(mat, cells);
+    return placed;
+  }
   // Disc cell offsets ordered by distance from center (cached per radius). Tie-break
   // on (oy,ox) keeps the order stable/deterministic across calls and peers.
   const std::vector<std::pair<int, int>>& discOffsets(int radius) {
@@ -132,29 +244,84 @@
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     return changed;
   }
+  int clearMineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp) {
+    int changed = 0;
+    for (const SurvivalFootprintCell& o : fp.cells) {
+      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
+      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
+      int k = I(xx, yy);
+      if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; }
+    }
+    if (changed) {
+      int x0, y0, x1, y1;
+      survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
+      markDirtyRect(x0, y0, x1, y1);
+    }
+    return changed;
+  }
   void clearAllMineDamage() {
     bool any = false;
-    for (uint8_t v : L->mineDamage) if (v) { any = true; break; }
+    for (uint32_t v : L->mineDamage) if (v) { any = true; break; }
     if (!any) return;
     std::fill(L->mineDamage.begin(), L->mineDamage.end(), 0);
     markAllDirty();
+  }
+  uint32_t mineDurationFor(uint8_t m, uint32_t areaScale) const {
+    return (uint32_t)DURABILITY[m] * 16u * imax(1, (int)areaScale);
+  }
+  uint32_t minePowerFor(uint8_t m, const Player& miner, bool scaledSpeed, uint32_t speedMultiplier = 1) const {
+    uint32_t power = 16;
+    if (scaledSpeed) {
+      uint8_t heldClass = miner.heldToolClass <= TC_HAND ? miner.heldToolClass : TC_HAND;
+      uint8_t heldTier = miner.heldToolTier <= TT_GOLD ? miner.heldToolTier : TT_GOLD;
+      uint8_t mineClass = MAT_TOOLCLASS[m] <= TC_HAND ? MAT_TOOLCLASS[m] : TC_NONE;
+      power = (uint32_t)TOOL_CLASS_SPEED[heldClass * TOOL_CLASS_COUNT + mineClass] * TOOL_TIER_SPEED[heldTier] * 16u / (10000u * MINING_PROGRESS_DIVISOR);
+      if (power == 0) power = 1;
+      power *= imax(1, (int)speedMultiplier);
+    }
+    return power;
+  }
+  double playerMineProgress(int id) {
+    Player* p = findPlayer(id);
+    if (!p || !p->mineActive) return 0.0;
+    Layer* target = p->mineLayer ? &bg : &fg;
+    useLayer(target);
+    double best = 0.0;
+    auto consider = [&](int xx, int yy, uint32_t areaScale) {
+      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) return;
+      int k = I(xx, yy);
+      uint8_t m = grid[k];
+      if (m == EMPTY || L->mineDamage[k] == 0) return;
+      uint32_t dur = mineDurationFor(m, areaScale);
+      if (dur == 0) return;
+      uint32_t rem = L->mineDamage[k] > dur ? dur : L->mineDamage[k];
+      double progress = 1.0 - (double)rem / (double)dur;
+      if (progress > best) best = progress;
+    };
+    if (p->mineFootprint >= 0) {
+      const SurvivalFootprint& fp = getSurvivalFootprint(p->mineFootprint);
+      uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
+      for (const SurvivalFootprintCell& o : fp.cells) consider(p->mineX + (int)o.ox, p->mineY + (int)o.oy, areaScale);
+    } else {
+      for (int oy = -P_MINE_R; oy <= P_MINE_R; oy++) {
+        for (int ox = -P_MINE_R; ox <= P_MINE_R; ox++) {
+          if (ox * ox + oy * oy > P_MINE_R * P_MINE_R) continue;
+          consider(p->mineX + ox, p->mineY + oy, 1);
+        }
+      }
+    }
+    useLayer(&fg);
+    return best;
   }
   int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed) {
     lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) { if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } continue; }
-      uint16_t dur = (uint16_t)DURABILITY[m] * 16u;
+      uint32_t dur = mineDurationFor(m, 1);
       if (dur > 0) {
         if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
-        uint16_t power = 16;
-        if (scaledSpeed) {
-          uint8_t heldClass = miner.heldToolClass <= TC_HAND ? miner.heldToolClass : TC_HAND;
-          uint8_t heldTier = miner.heldToolTier <= TT_GOLD ? miner.heldToolTier : TT_GOLD;
-          uint8_t mineClass = MAT_TOOLCLASS[m] <= TC_HAND ? MAT_TOOLCLASS[m] : TC_NONE;
-          power = (uint16_t)TOOL_CLASS_SPEED[heldClass * TOOL_CLASS_COUNT + mineClass] * TOOL_TIER_SPEED[heldTier] * 16u / (10000u * MINING_PROGRESS_DIVISOR);
-          if (power == 0) power = 1;
-        }
+        uint32_t power = minePowerFor(m, miner, scaledSpeed);
         L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
         changed = 1;
         if (L->mineDamage[k] > 0) continue;
@@ -169,6 +336,52 @@
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
+    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
+    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    return changed;
+  }
+  int mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed) {
+    lastMinedCells.clear();
+    std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
+    std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
+    uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
+    for (const SurvivalFootprintCell& o : fp.cells) {
+      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
+      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
+      int k = I(xx, yy);
+      uint8_t m = grid[k];
+      if (m == EMPTY) {
+        if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; }
+        continue;
+      }
+      uint32_t dur = mineDurationFor(m, areaScale);
+      if (dur > 0) {
+        if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
+        uint32_t power = minePowerFor(m, miner, scaledSpeed, SURVIVAL_MINING_SPEED_MULTIPLIER);
+        L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
+        changed = 1;
+        if (L->mineDamage[k] > 0) continue;
+      }
+      if (m == RIGID) {
+        if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b;
+        if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = 1;
+      }
+      if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
+      if (isPlantMaterial(m)) erasedPlant = true;
+      if (m == RIGID) bodyOwner[k] = -1;
+      lastMinedCells.push_back({m, k});
+      grid[k] = EMPTY;
+      L->mineDamage[k] = 0;
+      changed = 1;
+      if (draft.erase(k)) changed = 1;
+    }
+    finishErasedBodies(dirtyBodies, L->bodyCells);
+    if (changed) {
+      int x0, y0, x1, y1;
+      survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
+      markDirtyRect(x0, y0, x1, y1);
+    }
     splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
@@ -198,6 +411,31 @@
       if (grid[k] == EMPTY && !d.count(k)) { d.insert(k); added++; }
     }
     if (added) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    return added;
+  }
+  int addFootprintToDraftCapped(std::unordered_set<int>& d, int cx, int cy, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) {
+    if (maxAdd <= 0) return 0;
+    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
+    if (p) {
+      px0 = (int)std::floor(p->px);
+      px1 = (int)std::floor(p->px + p->w - 1e-6);
+      py0 = (int)std::floor(p->py);
+      py1 = (int)std::floor(p->py + p->h - 1e-6);
+    }
+    int added = 0;
+    for (const SurvivalFootprintCell& o : fp.cells) {
+      if (added >= maxAdd) break;
+      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
+      if (yy <= 0 || yy >= yLimit || xx <= 0 || xx >= cols - 1) continue;
+      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue;
+      int k = I(xx, yy);
+      if (grid[k] == EMPTY && !d.count(k)) { d.insert(k); added++; }
+    }
+    if (added) {
+      int x0, y0, x1, y1;
+      survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
+      markDirtyRect(x0, y0, x1, y1);
+    }
     return added;
   }
   // Brush radius for a creative material (preserves the historical per-material sizes;

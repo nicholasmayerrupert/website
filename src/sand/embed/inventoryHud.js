@@ -110,7 +110,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   bar.className = 'inv-bar';
   const hint = document.createElement('div');
   hint.className = 'inv-hint';
-  hint.textContent = 'E — inventory · 1–9 / scroll — select';
+  hint.textContent = 'E — inventory · Q — size · 1–9 / scroll — select';
   // Minecraft-style "selected item name" label: fades in above the hotbar on a
   // selection change, then fades out after ~2s. Sits between the grid and the bar so
   // it reads as floating just above the hotbar.

@@ -52,6 +52,7 @@ function survivalStepsToBreakStone(slot) {
   e.setSurvivalInventory(true);
   const id = e.spawnPlayer(55, 62);
   e.setSelectedSlot(id, slot);
+  e.setSelectedFootprint(id, 0); // isolate tool-class speed from area scaling
   let steps = 0;
   while (e.getGrid()[70 * COLS + 60] !== MAT.EMPTY && steps < 500) {
     e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX: 60, aimY: 70, tool: 0, seq: steps });

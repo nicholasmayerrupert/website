@@ -229,6 +229,22 @@ struct InvSlot {
   uint8_t toolTier = 0;   // ToolTier when isTool
   int count = 0;          // stack size (tools = 1); 0 = empty
 };
+// Survival tool footprints are engine-defined shape masks. v1 ships square presets,
+// but the shape representation is generic so future custom patterns can reuse the
+// same placement/mining/draft code paths.
+struct SurvivalFootprintCell {
+  int8_t ox = 0, oy = 0;
+};
+struct SurvivalFootprint {
+  uint8_t id = 0;
+  uint8_t width = 0, height = 0;
+  int8_t anchorX = 0, anchorY = 0; // aimed cell maps to local mask cell (anchorX,anchorY)
+  std::vector<SurvivalFootprintCell> cells; // deterministic center-first ordering
+};
+static const int SURVIVAL_FOOTPRINT_SNAP_FIELDS = 6; // id,width,height,cellCount,anchorX,anchorY
+static const int SURVIVAL_FOOTPRINT_MAX_SIZE = 8;
+static const int SURVIVAL_FOOTPRINT_DEFAULT_ID = 2;  // 3x3 in the default preset list
+static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
 
 // Creative brush mode (tools.inc): the searchable palette selects ANY material,
 // any seed species, the eraser, or the cube; the brush routes by mode rather than a
@@ -324,7 +340,7 @@ struct Player {
   int health = 100;
   int toolCooldown = 0; // steps remaining before this player can act again
   bool mineActive = false;
-  int mineLayer = 0, mineX = 0, mineY = 0;
+  int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
   // Held mining tool: a destroyed cell drops its material only when this class/tier
   // satisfies the material's MAT_TOOLCLASS/MAT_TOOLTIER gate (set from the selected
   // inventory slot in inventory.inc; defaults to a bare hand).
@@ -332,6 +348,7 @@ struct Player {
   // Survival inventory: hotbar + grid stacks, and the selected hotbar slot.
   InvSlot inv[INV_SLOTS];
   int selectedSlot = 0;
+  int selectedFootprint = SURVIVAL_FOOTPRINT_DEFAULT_ID;
   // The stack currently "held on the cursor" (Minecraft-style pick/place/throw). 0 = empty.
   InvSlot cursor;
   // Animation (computed at the end of integratePlayer; frame derived from tick).

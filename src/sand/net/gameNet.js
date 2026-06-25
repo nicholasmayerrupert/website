@@ -12,7 +12,7 @@
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,
-  makeSelect, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS,
+  makeSelect, makeSize, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS,
 } from './protocol.js';
 import { applyWorldMessage, applyDiffMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
@@ -34,7 +34,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const inQueue = [];              // inbound decoded messages, drained each step
   const remotes = new Map();       // render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty,animState,animFrame }
   let itemsForRender = new Float32Array(0); // packed [id,kind,material,count,x,y,life] from the server
-  const invByPlayer = new Map();   // player id -> { slots, selected } (server-authoritative)
+  const invByPlayer = new Map();   // player id -> { slots, selected, selectedFootprint } (server-authoritative)
   const curByPlayer = new Map();   // player id -> carried cursor stack (or null)
   let invDirty = false;            // our own inventory changed since last read (HUD pull)
   let statusText = 'offline';
@@ -172,7 +172,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       const o = i * INV_FIELDS;
       slots[i] = { material: m.data[o] | 0, isTool: m.data[o + 1] === 1, toolClass: m.data[o + 2] | 0, toolTier: m.data[o + 3] | 0, count: m.data[o + 4] | 0 };
     }
-    invByPlayer.set(m.player, { slots, selected: m.selected | 0 });
+    invByPlayer.set(m.player, { slots, selected: m.selected | 0, selectedFootprint: m.selectedFootprint | 0 });
     if (m.player === ownPlayerId) invDirty = true;
   }
   function ingestCursor(m) {
@@ -205,6 +205,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
 
   // ---- survival-inventory intents (forwarded to the authoritative server) ----
   const sendSelect = (slot) => send(makeSelect(room, clientId, slot | 0));
+  const sendSize = (footprint) => send(makeSize(room, clientId, footprint | 0));
   const sendMove = (from, to) => send(makeMove(room, clientId, from | 0, to | 0));
   const sendPick = (slot, half) => send(makePick(room, clientId, slot | 0, half));
   const sendThrow = (whole) => send(makeThrow(room, clientId, whole));
@@ -247,7 +248,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     joinRoom, disconnect, update,
     getPlayersForRender, getOwnPlayer,
     getItemsForRender, getOwnInventory, getOwnCursor, consumeInventoryDirty,
-    sendSelect, sendMove, sendPick, sendThrow,
+    sendSelect, sendSize, sendMove, sendPick, sendThrow,
     get role() { return role; },
     get connected() { return connected; },
     get ownPlayerId() { return ownPlayerId; },

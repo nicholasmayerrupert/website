@@ -40,6 +40,7 @@ export function createSandGame(container, opts = {}) {
     // authoritative in the engine — these only move snapshots out and intents in.
     onInventory = null,
     onToggleInventory = null,
+    onToggleFootprintMenu = null,
   } = opts;
   const survival = mode === 'survival';
 
@@ -57,6 +58,29 @@ export function createSandGame(container, opts = {}) {
   canvas.style.userSelect = 'none';
   canvas.setAttribute('aria-hidden', 'true');
   container.appendChild(canvas);
+
+  const mineProgress = document.createElement('div');
+  mineProgress.style.position = 'absolute';
+  mineProgress.style.width = '5px';
+  mineProgress.style.height = '42px';
+  mineProgress.style.border = '1px solid rgba(255,255,255,.55)';
+  mineProgress.style.borderRadius = '999px';
+  mineProgress.style.background = 'rgba(3,7,18,.58)';
+  mineProgress.style.boxShadow = '0 6px 14px rgba(0,0,0,.35)';
+  mineProgress.style.pointerEvents = 'none';
+  mineProgress.style.zIndex = '69';
+  mineProgress.style.overflow = 'hidden';
+  mineProgress.style.display = 'none';
+  const mineProgressFill = document.createElement('div');
+  mineProgressFill.style.position = 'absolute';
+  mineProgressFill.style.left = '0';
+  mineProgressFill.style.right = '0';
+  mineProgressFill.style.bottom = '0';
+  mineProgressFill.style.height = '0%';
+  mineProgressFill.style.background = '#f8fafc';
+  mineProgressFill.style.boxShadow = '0 0 8px rgba(248,250,252,.85)';
+  mineProgress.appendChild(mineProgressFill);
+  container.appendChild(mineProgress);
 
   // Tool selection: the name is kept here only so it can be re-sent to the engine
   // when the engine is recreated (resize). All tool policy lives in C++.
@@ -133,6 +157,23 @@ export function createSandGame(container, opts = {}) {
   // button, never drop a held one.
   let mouseButtons = 0;
   // pointer e.button -> mouseButtons bit (LMB, RMB)
+
+  const updateMineProgress = () => {
+    if (!survival || !engine || !localPlayerId || !inside || !(mouseButtons & BUTTON_BITS[0])) {
+      mineProgress.style.display = 'none';
+      return;
+    }
+    const progress = engine.getPlayerMineProgress?.(localPlayerId) || 0;
+    if (progress <= 0) {
+      mineProgress.style.display = 'none';
+      return;
+    }
+    const x = Math.max(4, Math.min(wrapBounds.right - wrapBounds.left - 12, clientX - wrapBounds.left + 14));
+    const y = Math.max(8, Math.min(wrapBounds.bottom - wrapBounds.top - 50, clientY - wrapBounds.top - 20));
+    mineProgress.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+    mineProgressFill.style.height = `${Math.round(progress * 100)}%`;
+    mineProgress.style.display = 'block';
+  };
 
   // Reduced motion
   let reduced = false;
@@ -385,6 +426,7 @@ export function createSandGame(container, opts = {}) {
         e.preventDefault(); return;
       }
       if (key === 'e') { onToggleInventory?.(); e.preventDefault(); return; }
+      if (key === 'q') { onToggleFootprintMenu?.(); e.preventDefault(); return; }
     }
     const code = KEY_CODES[key];
     if (code === undefined) return;
@@ -715,6 +757,7 @@ export function createSandGame(container, opts = {}) {
         onInventory(engine.getInventory(localPlayerId));
       }
     }
+    updateMineProgress();
 
     // Camera follows the local player each frame (smooth at any refresh rate).
     // Skipped while paused so the headless pan/flicker bench keeps full control.
@@ -737,6 +780,7 @@ export function createSandGame(container, opts = {}) {
     if (destroyed) return;
     destroyed = true;
     cancelAnimationFrame(raf);
+    mineProgress.remove();
     ro.disconnect();
     mqDpr?.removeEventListener?.('change', onDprChange);
     net?.disconnect();
@@ -769,10 +813,18 @@ export function createSandGame(container, opts = {}) {
     // authoritative server; offline they apply to the local engine (unchanged).
     isSurvival() { return survival; },
     selectSlot(i) { if (netClientReady()) net.sendSelect(i | 0); else if (localPlayerId) engine?.setSelectedSlot(localPlayerId, i | 0); },
+    setSelectedFootprint(i) {
+      if (netClientReady()) net.sendSize(i | 0);
+      else if (localPlayerId && engine) {
+        engine.setSelectedFootprint(localPlayerId, i | 0);
+        onInventory?.(engine.getInventory(localPlayerId));
+      }
+    },
+    getSurvivalFootprints() { return engine?.getSurvivalFootprints?.() || []; },
     moveSlot(from, to) { if (netClientReady()) net.sendMove(from | 0, to | 0); else if (localPlayerId) engine?.inventoryMove(localPlayerId, from | 0, to | 0); },
     getInventory() {
-      if (netClientReady()) return net.getOwnInventory() || { slots: [], selected: 0 };
-      return localPlayerId && engine ? engine.getInventory(localPlayerId) : { slots: [], selected: 0 };
+      if (netClientReady()) return net.getOwnInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
+      return localPlayerId && engine ? engine.getInventory(localPlayerId) : { slots: [], selected: 0, selectedFootprint: 0 };
     },
     // Minecraft cursor model (carried stack) + throw-out (facing direction).
     cursorPick(slot, half) { if (netClientReady()) net.sendPick(slot | 0, half); else if (localPlayerId) engine?.inventoryCursorPick(localPlayerId, slot | 0, half); },

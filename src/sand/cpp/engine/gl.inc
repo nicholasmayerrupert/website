@@ -351,7 +351,17 @@ void glDrawPreview() {
       int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
       bool toBg = (pointerBtns & 2) != 0;
       bool erasing = (lp->selectedTool == T_ERASER);
-      if (erasing && (pointerBtns & 3) != 0) return;
+      const SurvivalFootprint* fp = nullptr;
+      if (survivalInventory) {
+        const InvSlot& sel = lp->inv[lp->selectedSlot];
+        erasing = sel.isTool || sel.count <= 0;
+        fp = &getSurvivalFootprint(*lp);
+        if (erasing && toBg) {
+          useLayer(&fg);
+          toBg = !footprintHasMaterialAt(ax, ay, *fp);
+          useLayer(&fg);
+        }
+      }
       double cxp = lp->px + lp->w / 2.0, cyp = lp->py + lp->h / 2.0;
       double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
       bool inReach = dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH;
@@ -359,8 +369,12 @@ void glDrawPreview() {
       if (erasing)   glUniform4f(glc->uColor, 255 / 255.0f, 90 / 255.0f, 80 / 255.0f, a);
       else if (toBg) glUniform4f(glc->uColor, 120 / 255.0f, 140 / 255.0f, 170 / 255.0f, a);
       else           glUniform4f(glc->uColor, 180 / 255.0f, 215 / 255.0f, 255 / 255.0f, a);
-      int r = erasing ? P_MINE_R : P_BUILD_R;
-      for (int oy = -r; oy <= r; oy++) for (int ox = -r; ox <= r; ox++) { if (ox * ox + oy * oy > r * r) continue; cell(ax + ox, ay + oy); }
+      if (fp) {
+        for (const SurvivalFootprintCell& o : fp->cells) cell(ax + (int)o.ox, ay + (int)o.oy);
+      } else {
+        int r = erasing ? P_MINE_R : P_BUILD_R;
+        for (int oy = -r; oy <= r; oy++) for (int ox = -r; ox <= r; ox++) { if (ox * ox + oy * oy > r * r) continue; cell(ax + ox, ay + oy); }
+      }
     }
   }
 }

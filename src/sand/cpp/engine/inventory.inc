@@ -11,6 +11,7 @@
   void seedStarterTools(Player& p) {
     for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
     p.cursor = InvSlot();
+    p.selectedFootprint = clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
     auto tool = [&](int i, uint8_t cls, uint8_t tier) { p.inv[i].isTool = 1; p.inv[i].toolClass = cls; p.inv[i].toolTier = tier; p.inv[i].count = 1; };
     tool(0, TC_PICKAXE, TT_WOOD);
     tool(1, TC_AXE, TT_WOOD);
@@ -25,6 +26,7 @@
   void setSelectedSlot(Player& p, int slot) {
     if (slot < 0) slot = 0; if (slot >= INV_HOTBAR) slot = INV_HOTBAR - 1;
     p.selectedSlot = slot;
+    resetPlayerMine(p);
     InvSlot& s = p.inv[slot];
     if (s.isTool) { p.heldToolClass = s.toolClass; p.heldToolTier = s.toolTier; }
     else { p.heldToolClass = TC_HAND; p.heldToolTier = TT_HAND; }
@@ -63,20 +65,20 @@
   // Place the selected slot's material at the aim cell, capped at how many units the
   // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
   // Tools/empty/self-overlap place nothing.
-  bool placeFromSelected(Player& p, int ax, int ay, int r) {
+  bool placeFromSelected(Player& p, int ax, int ay) {
     InvSlot& s = p.inv[p.selectedSlot];
     if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
     // Don't reject the whole build when the disc grazes the player — place only the
     // cells outside the body (passing &p), so building against yourself still works
     // and holding keeps placing as the loose material flows/settles away.
     useLayer(&fg);
-    int placed = placeMaterialAtCapped(ax, ay, r, s.material, s.count, &p);
+    int placed = placeMaterialAtFootprintCapped(ax, ay, getSurvivalFootprint(p), s.material, s.count, &p);
     useLayer(&fg);
     if (placed <= 0) return false;
     s.count -= placed; if (s.count <= 0) s = InvSlot();
     return true;
   }
-  bool placeFromSelected(int id, int ax, int ay) { Player* p = findPlayer(id); return p ? placeFromSelected(*p, ax, ay, P_BUILD_R) : false; }
+  bool placeFromSelected(int id, int ax, int ay) { Player* p = findPlayer(id); return p ? placeFromSelected(*p, ax, ay) : false; }
 
   // Move/swap/merge slot `from` into `to` (the openable-grid drag). Same-material
   // non-tool stacks merge (respecting INV_STACK_MAX); otherwise the slots swap.
@@ -157,9 +159,9 @@
     return INV_SLOTS;
   }
 
-  // Survival input model. The selected hotbar slot decides what PRIMARY (LMB, the
-  // FOREGROUND) and SECONDARY (RMB, the BACKGROUND) do:
-  //   - a TOOL or an EMPTY slot      -> MINE that layer (empty = the bare hand).
+  // Survival input model. The selected hotbar slot decides what the mouse buttons do:
+  //   - a TOOL or an EMPTY slot      -> MINE the visible target (empty = bare hand).
+  //         LMB mines foreground; RMB mines foreground when present, otherwise bg.
   //   - a COMPONENT material (stone) -> creative-style DRAFT: hold to draw a growing
   //         preview that consumes inventory per staged cell, stops when you run out,
   //         and MATERIALIZES on release (exactly like creative solids).
@@ -181,6 +183,7 @@
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
     bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
     InvSlot& sel = p.inv[p.selectedSlot];
+    const SurvivalFootprint& fp = getSurvivalFootprint(p);
 
     // (1) An active component draft this player owns takes over PRIMARY: extend it while
     //     held (consuming inventory per staged cell), materialize it on release.
@@ -188,7 +191,7 @@
       if (!primary) { playerFinalizeSolidDraft(); playerActionCount++; }
       else if (inReach && !sel.isTool && sel.count > 0 && sel.material == draftMaterial) {
         useLayer(&fg);
-        int added = addDiscToDraftCapped(draft, ax, ay, P_BUILD_R, rows, sel.count, &p);
+        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, &p);
         if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
         useLayer(&fg);
       }
@@ -202,8 +205,14 @@
 
     if (mineMode) {
       bool acted = false;
-      if (primary) acted |= mineDisc(p, ax, ay, &fg);
-      if (secondary) { bgEnabled = true; acted |= mineDisc(p, ax, ay, &bg); }
+      if (primary) acted |= mineFootprint(p, ax, ay, &fg);
+      if (secondary && !primary) {
+        useLayer(&fg);
+        bool fgTarget = footprintHasMaterialAt(ax, ay, fp);
+        useLayer(&fg);
+        if (fgTarget) acted |= mineFootprint(p, ax, ay, &fg);
+        else { bgEnabled = true; acted |= mineFootprint(p, ax, ay, &bg); }
+      }
       if (acted) playerActionCount++;
     } else if (isSeed) {
       resetPlayerMine(p);
@@ -223,13 +232,13 @@
       if (primaryRising) {
         drafting = true; draftOwner = p.id; draftLayer = 0; draftMaterial = sel.material;
         useLayer(&fg);
-        int added = addDiscToDraftCapped(draft, ax, ay, P_BUILD_R, rows, sel.count, &p);
+        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, &p);
         if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
         useLayer(&fg);
         playerActionCount++;
       }
     } else { // loose material -> continuous capped paint (consume per cell)
       resetPlayerMine(p);
-      if (p.toolCooldown <= 0 && sel.count > 0 && placeFromSelected(p, ax, ay, P_BUILD_R)) p.toolCooldown = P_TOOL_COOLDOWN;
+      if (p.toolCooldown <= 0 && sel.count > 0 && placeFromSelected(p, ax, ay)) p.toolCooldown = P_TOOL_COOLDOWN;
     }
   }

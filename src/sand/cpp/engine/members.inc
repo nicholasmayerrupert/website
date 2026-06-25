@@ -30,7 +30,7 @@
     std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
     // Transient survival mining damage. 0 = no active damage; otherwise the
     // remaining durability for the current held mine target. Not serialized.
-    std::vector<uint8_t> mineDamage;
+    std::vector<uint32_t> mineDamage;
     // components + ids
     std::vector<Comp> stoneComponents, plantComponents, iceComponents;
     int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
@@ -172,6 +172,8 @@
   // live preview. draftMaterial is the component being drawn (stone/ice/driftwood/ore/…).
   std::unordered_set<int> draft;
   uint8_t draftMaterial = STONE;
+  std::vector<SurvivalFootprint> survivalFootprints;
+  std::vector<int32_t> survivalFootprintSnapshot; // packed SURVIVAL_FOOTPRINT_SNAP_FIELDS ints
   // Cached center-first disc offsets per radius (placeMaterialAtCapped, per-pixel placement).
   std::unordered_map<int, std::vector<std::pair<int, int>>> discOffsetCache;
   std::vector<int> draftSnapshot;
@@ -232,6 +234,7 @@
     useLayer(&fg);
     renderRngState = seed ^ 0x9e3779b9u;
     buildRenderTables();
+    initSurvivalFootprints();
   }
   ~Engine() { glDestroy(); }
 

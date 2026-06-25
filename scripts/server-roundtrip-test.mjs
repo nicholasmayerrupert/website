@@ -7,7 +7,7 @@
 import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
-import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makePick } from '../src/sand/net/protocol.js';
+import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick } from '../src/sand/net/protocol.js';
 import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
@@ -54,9 +54,11 @@ function survivalEngine() {
   const pid = e.spawnPlayer(50, FLOOR - 8); // seeds starter tools in slots 0-2
   e.addToInventory(pid, MAT.STONE, 42);
   e.setSelectedSlot(pid, 4);
+  e.setSelectedFootprint(pid, 3);
   const m = decode(encode(encodeInventory(e, 0, pid)));
   check('inventory message decodes', m && m.t === MSG.INVENTORY && m.player === pid);
   check('selected slot preserved', m && m.selected === 4);
+  check('selected footprint preserved', m && m.selectedFootprint === 3);
   // slot 0 is the wood pickaxe (isTool, toolClass 1); compare against the engine.
   const inv = e.getInventory(pid);
   check('slot 0 tool fields match engine', m && m.data[1] === (inv.slots[0].isTool ? 1 : 0) && m.data[2] === inv.slots[0].toolClass);
@@ -90,10 +92,13 @@ function survivalEngine() {
   const r1 = inventoryRevision(e, pid);
   e.setSelectedSlot(pid, 5);
   check('revision changes after select', inventoryRevision(e, pid) !== r1);
+  const r2 = inventoryRevision(e, pid);
+  e.setSelectedFootprint(pid, 4);
+  check('revision changes after footprint select', inventoryRevision(e, pid) !== r2);
   e.destroy();
 }
 
-// 5) intents mutate engine state the way the server dispatch does (select/pick).
+// 5) intents mutate engine state the way the server dispatch does (select/size/pick).
 {
   const e = survivalEngine();
   const pid = e.spawnPlayer(50, FLOOR - 8);
@@ -101,6 +106,9 @@ function survivalEngine() {
   const sel = decode(encode(makeSelect('r', 'c', 6)));
   e.setSelectedSlot(pid, sel.slot);
   check('ACT_SELECT moves the selected slot', e.getInventory(pid).selected === 6);
+  const size = decode(encode(makeSize('r', 'c', 4)));
+  e.setSelectedFootprint(pid, size.footprint);
+  check('ACT_SIZE moves the selected footprint', e.getInventory(pid).selectedFootprint === 4);
   // simulate server's ACT_PICK dispatch
   const pick = decode(encode(makePick('r', 'c', 0, false)));
   e.inventoryCursorPick(pid, pick.slot, pick.half);
@@ -137,6 +145,11 @@ function survivalEngine() {
     a.send(encode(makeSelect('r', 'A', 3))); await wait(120);
     const invSel = last(ai, MSG.INVENTORY);
     check('ACT_SELECT reflected in A inventory broadcast', invSel && invSel.selected === 3);
+
+    ai.length = 0;
+    a.send(encode(makeSize('r', 'A', 4))); await wait(120);
+    const invSize = last(ai, MSG.INVENTORY);
+    check('ACT_SIZE reflected in A inventory broadcast', invSize && invSize.selectedFootprint === 4);
 
     // ACT_PICK from A -> the server sends a non-null cursor for A.
     a.send(encode(makePick('r', 'A', 0, false))); await wait(120);

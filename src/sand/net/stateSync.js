@@ -13,7 +13,7 @@ export function encodeItems(engine, tick) {
 }
 export function encodeInventory(engine, tick, playerId) {
   const inv = engine.getInventory(playerId);
-  return makeInventory(tick, playerId, inv.slots, inv.selected);
+  return makeInventory(tick, playerId, inv.slots, inv.selected, inv.selectedFootprint);
 }
 export function encodeCursor(engine, tick, playerId) {
   return makeCursor(tick, playerId, engine.getCursor(playerId));
@@ -28,6 +28,7 @@ export function inventoryRevision(engine, playerId) {
   const mix = (v) => { h = Math.imul(h ^ (v & 0xffffffff), 0x01000193) >>> 0; };
   const inv = engine.getInventory(playerId);
   mix(inv.selected);
+  mix(inv.selectedFootprint ?? 0);
   for (const s of inv.slots) {
     mix(s.material);
     mix(s.count);

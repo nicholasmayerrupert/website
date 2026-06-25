@@ -71,6 +71,7 @@ export async function startSandServer(opts = {}) {
         case MSG.INPUT: host.receive(m); break; // movement + place/mine (rate-limited, validated)
         case MSG.RESYNC: sendTo(ws, encode(encodeWorld(engine, host.tick))); break;
         case MSG.ACT_SELECT: { const p = host.playerIdFor(cid); if (p) engine.setSelectedSlot(p, m.slot); break; }
+        case MSG.ACT_SIZE: { const p = host.playerIdFor(cid); if (p) engine.setSelectedFootprint(p, m.footprint); break; }
         case MSG.ACT_MOVE: { const p = host.playerIdFor(cid); if (p) engine.inventoryMove(p, m.from, m.to); break; }
         case MSG.ACT_PICK: { const p = host.playerIdFor(cid); if (p) engine.inventoryCursorPick(p, m.slot, m.half); break; }
         case MSG.ACT_THROW: { const p = host.playerIdFor(cid); if (p) engine.throwFromCursor(p, m.whole); break; }

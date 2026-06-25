@@ -5,7 +5,7 @@
 
 import {
   MSG, encode, decode, makeItems, makeInventory, makeCursor,
-  makeSelect, makeMove, makePick, makeThrow,
+  makeSelect, makeSize, makeMove, makePick, makeThrow,
   INV_SLOTS, ITEM_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
 } from '../src/sand/net/protocol.js';
 
@@ -16,7 +16,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 2', PROTOCOL_VERSION === 2);
+  check('PROTOCOL_VERSION is 3', PROTOCOL_VERSION === 3);
 }
 
 // 1. items snapshot round trip + exactness (mixed item/particle, neg coords).
@@ -38,8 +38,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('inventory round trip');
   const slots = Array.from({ length: INV_SLOTS }, (_, i) => ({ material: i, isTool: i === 0, toolClass: i === 0 ? 1 : 0, toolTier: i === 0 ? 2 : 0, count: i }));
-  const d = rt(makeInventory(7, 3, slots, 4));
-  check('decodes to inventory', d && d.t === MSG.INVENTORY && d.player === 3 && d.selected === 4);
+  const d = rt(makeInventory(7, 3, slots, 4, 2));
+  check('decodes to inventory', d && d.t === MSG.INVENTORY && d.player === 3 && d.selected === 4 && d.selectedFootprint === 2);
   check('flat length is 36*5', d && d.data.length === INV_SLOTS * INV_FIELDS);
   check('slot 0 is the wood pickaxe', d && d.data[1] === 1 && d.data[2] === 1 && d.data[3] === 2);
   check('slot 5 count preserved', d && d.data[5 * INV_FIELDS + 4] === 5);
@@ -58,6 +58,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('intents round trip');
   check('select', rt(makeSelect('r', 'c', 3)).slot === 3);
+  check('size', rt(makeSize('r', 'c', 4)).footprint === 4);
   check('move', (() => { const d = rt(makeMove('r', 'c', 9, 35)); return d.from === 9 && d.to === 35; })());
   check('pick half', (() => { const d = rt(makePick('r', 'c', 4, true)); return d.slot === 4 && d.half === 1; })());
   check('throw whole', rt(makeThrow('r', 'c', true)).whole === 1);
@@ -70,11 +71,13 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 0, 0, 1, Number.NaN, 0, 0] })) === null);
   check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: [1.5, 0, 0, 1, 0, 0, 0] })) === null);
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);
-  check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0 })) === null);
-  check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS })) === null);
+  check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0, selectedFootprint: 0 })) === null);
+  check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS, selectedFootprint: 0 })) === null);
+  check('inventory footprint required', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: 0 })) === null);
   check('cursor bad shape', decode(JSON.stringify({ t: 'cursor', tick: 0, player: 0, cur: { material: 1.2 } })) === null);
   check('select slot >= INV_SLOTS rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: INV_SLOTS })) === null);
   check('select negative slot rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: -1 })) === null);
+  check('size negative rejected', decode(JSON.stringify({ t: 'asize', room: 'r', client: 'c', footprint: -1 })) === null);
   check('move slot out of range rejected', decode(JSON.stringify({ t: 'amove', room: 'r', client: 'c', from: 0, to: 999 })) === null);
   check('pick half non-bit rejected', decode(JSON.stringify({ t: 'apick', room: 'r', client: 'c', slot: 0, half: 2 })) === null);
   check('throw non-bit rejected', decode(JSON.stringify({ t: 'athrow', room: 'r', client: 'c', whole: 5 })) === null);

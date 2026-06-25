@@ -52,8 +52,9 @@ const giveAndSelect = (e, id, mat, n) => {
 {
   const { e, id, run } = makeWorld();
   giveAndSelect(e, id, MAT.SAND, 500);
-  // player AABB ~ x[30..35] y[66..75]; aim on the body so the disc straddles its edge.
-  e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 31, aimY: 67, seq: 1 });
+  // player AABB ~ x[30..33] y[66..73]; aim so the default 3x3 footprint overlaps
+  // the top-left edge of the body instead of sitting entirely inside it.
+  e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 29, aimY: 65, seq: 1 });
   run(5);
   const placed = gridCount(e, MAT.SAND);
   check(`a build grazing the player still places its non-overlapping cells (placed=${placed} > 0)`, placed > 0);

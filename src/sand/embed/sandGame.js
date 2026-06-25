@@ -20,6 +20,7 @@ import { initSandWasm } from '../engineWasm';
 import { createSandGame } from '../game/createSandGame';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
+import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 
 const HOST_CSS = `
@@ -56,8 +57,12 @@ class SandGameElement extends HTMLElement {
           mode,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
           // Survival inventory HUD wiring (the engine owns the inventory state).
-          onInventory: (inv) => this._hud?.update(inv),
+          onInventory: (inv) => {
+            this._hud?.update(inv);
+            this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint);
+          },
           onToggleInventory: () => this._hud?.toggleOpen(),
+          onToggleFootprintMenu: () => this._sizeMenu?.toggleOpen(),
         });
         this._game = game;
         if (mode === 'survival') {
@@ -70,7 +75,11 @@ class SandGameElement extends HTMLElement {
             throwFromCursor: (whole) => game.throwFromCursor(whole),
             getCursor: () => game.getCursor(),
           });
+          this._sizeMenu = createFootprintMenu(root, {
+            selectFootprint: (id) => game.setSelectedFootprint(id),
+          });
           this._hud.update(game.getInventory());
+          this._sizeMenu.update(game.getSurvivalFootprints(), game.getInventory().selectedFootprint);
           // Multiplayer connect panel (collapsed): join an authoritative server
           // by IP:port. Survival-only; single-player UI is unchanged at rest.
           this._mp = createConnectPanel(root, {
@@ -110,8 +119,9 @@ class SandGameElement extends HTMLElement {
     this._game?.destroy();
     this._palette?.destroy();
     this._hud?.destroy();
+    this._sizeMenu?.destroy();
     this._mp?.destroy();
-    this._game = this._palette = this._hud = this._mp = null;
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = null;
     this._mounted = false;
   }
 

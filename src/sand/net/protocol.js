@@ -4,7 +4,7 @@
 // strictly validated and integer fields are preserved exactly — divergence here
 // would desync a host-authoritative session.
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const MSG = Object.freeze({
   JOIN: 'join',
@@ -19,6 +19,7 @@ export const MSG = Object.freeze({
   INVENTORY: 'inv',     // host -> client: one player's authoritative inventory
   CURSOR: 'cursor',     // host -> client: one player's carried cursor stack
   ACT_SELECT: 'aselect',// client -> host: select a hotbar slot
+  ACT_SIZE: 'asize',    // client -> host: select a survival footprint preset
   ACT_MOVE: 'amove',    // client -> host: move/swap two inventory slots
   ACT_PICK: 'apick',    // client -> host: cursor pick/place/swap on a slot
   ACT_THROW: 'athrow',  // client -> host: throw the carried cursor stack out
@@ -99,14 +100,14 @@ export function makeItems(tick, items) {
 }
 // One player's authoritative inventory. `slots` is the getInventory() slots array
 // ({material,isTool,toolClass,toolTier,count}); `selected` is the hotbar index.
-export function makeInventory(tick, player, slots, selected) {
+export function makeInventory(tick, player, slots, selected, selectedFootprint = 0) {
   const data = new Array(slots.length * INV_FIELDS);
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i], o = i * INV_FIELDS;
     data[o] = s.material | 0; data[o + 1] = s.isTool ? 1 : 0;
     data[o + 2] = s.toolClass | 0; data[o + 3] = s.toolTier | 0; data[o + 4] = s.count | 0;
   }
-  return { t: MSG.INVENTORY, tick: Math.trunc(tick), player: player | 0, data, selected: selected | 0 };
+  return { t: MSG.INVENTORY, tick: Math.trunc(tick), player: player | 0, data, selected: selected | 0, selectedFootprint: selectedFootprint | 0 };
 }
 // One player's carried cursor stack (null when empty).
 export function makeCursor(tick, player, cur) {
@@ -118,6 +119,7 @@ export function makeCursor(tick, player, cur) {
 
 // ---- client -> host survival-inventory intents (Phase 9) ----
 export function makeSelect(room, client, slot) { return { t: MSG.ACT_SELECT, room, client, slot: slot | 0 }; }
+export function makeSize(room, client, footprint) { return { t: MSG.ACT_SIZE, room, client, footprint: footprint | 0 }; }
 export function makeMove(room, client, from, to) { return { t: MSG.ACT_MOVE, room, client, from: from | 0, to: to | 0 }; }
 export function makePick(room, client, slot, half) { return { t: MSG.ACT_PICK, room, client, slot: slot | 0, half: half ? 1 : 0 }; }
 export function makeThrow(room, client, whole) { return { t: MSG.ACT_THROW, room, client, whole: whole ? 1 : 0 }; }
@@ -140,6 +142,7 @@ export function decode(str) {
     case MSG.INVENTORY: return validateInventory(m);
     case MSG.CURSOR: return validateCursor(m);
     case MSG.ACT_SELECT: return (isRoom(m.room) && isId(m.client) && isSlot(m.slot)) ? m : null;
+    case MSG.ACT_SIZE: return (isRoom(m.room) && isId(m.client) && isNonNegInt(m.footprint) && m.footprint <= 255) ? m : null;
     case MSG.ACT_MOVE: return (isRoom(m.room) && isId(m.client) && isSlot(m.from) && isSlot(m.to)) ? m : null;
     case MSG.ACT_PICK: return (isRoom(m.room) && isId(m.client) && isSlot(m.slot) && isBit(m.half)) ? m : null;
     case MSG.ACT_THROW: return (isRoom(m.room) && isId(m.client) && isBit(m.whole)) ? m : null;
@@ -169,6 +172,7 @@ function validateInventory(m) {
   if (!Array.isArray(m.data) || m.data.length !== INV_SLOTS * INV_FIELDS) return null;
   for (const v of m.data) if (!isInt(v)) return null;
   if (!isInt(m.selected) || m.selected < 0 || m.selected >= INV_SLOTS) return null;
+  if (!isNonNegInt(m.selectedFootprint) || m.selectedFootprint > 255) return null;
   return m;
 }
 

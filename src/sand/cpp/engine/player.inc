@@ -306,43 +306,54 @@ inline bool isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t ==
 void resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
   useLayer(p.mineLayer ? &bg : &fg);
-  clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
+  if (p.mineFootprint >= 0) clearMineDamageFootprint(p.mineX, p.mineY, getSurvivalFootprint(p.mineFootprint));
+  else clearMineDamageDisc(p.mineX, p.mineY, P_MINE_R);
   useLayer(&fg);
   p.mineActive = false;
+  p.mineFootprint = -1;
+}
+void resolveMineDrops(Player& p) {
+  if (lastMinedCells.empty()) return;
+  for (auto& mc : lastMinedCells) {
+    uint8_t m = mc.first; int k = mc.second;
+    int cxk = k % cols, cyk = k / cols;
+    uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
+    bool drop = false;
+    if (isPlantLeaf(m)) {
+      double r = whash2(((uint32_t)tick ^ 0x51ED5EEDu), cxk, cyk);
+      if (r < LEAF_SEED_DROP_P) spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35);
+    } else if (isLiquid(m)) drop = true;
+    else if (cls != TC_NONE) {
+      if (tier == TT_HAND) drop = true;
+      else if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
+    }
+    double j = whash2((uint32_t)tick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;
+    if (drop) spawnItem(m, 1, cxk + 0.5, cyk + 0.5, j * 0.4, -0.4);
+    spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6, IT_PARTICLE_LIFE);
+  }
 }
 bool mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true) {
   int layerId = layer == &bg ? 1 : 0;
-  if (!p.mineActive || p.mineLayer != layerId || p.mineX != ax || p.mineY != ay) {
+  if (!p.mineActive || p.mineLayer != layerId || p.mineX != ax || p.mineY != ay || p.mineFootprint >= 0) {
     resetPlayerMine(p);
-    p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay;
+    p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay; p.mineFootprint = -1;
   }
   useLayer(layer);
   bool changed = mineDamageDisc(ax, ay, P_MINE_R, p, scaledSpeed) != 0;
-  // Survival drops (foreground OR background mining). Each destroyed cell yields a
-  // dropped ITEM iff the player's held tool satisfies the material's class+tier gate.
-  // Hand-tier materials drop with any tool; liquids scoop with any tool. The block
-  // breaks either way; the tool only gates the reward. A cosmetic
-  // PARTICLE always pops. No rand(): velocities use a (tick,cell) hash so the sim
-  // stream stays deterministic.
-  if (!lastMinedCells.empty()) {
-    for (auto& mc : lastMinedCells) {
-      uint8_t m = mc.first; int k = mc.second;
-      int cxk = k % cols, cyk = k / cols;
-      uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
-      bool drop = false;
-      if (isPlantLeaf(m)) {
-        double r = whash2(((uint32_t)tick ^ 0x51ED5EEDu), cxk, cyk);
-        if (r < LEAF_SEED_DROP_P) spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35);
-      } else if (isLiquid(m)) drop = true; // liquids are scoopable by any tool/hand (1 unit per cell)
-      else if (cls != TC_NONE) {
-        if (tier == TT_HAND) drop = true;
-        else if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
-      }
-      double j = whash2((uint32_t)tick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;
-      if (drop) spawnItem(m, 1, cxk + 0.5, cyk + 0.5, j * 0.4, -0.4);
-      spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6, IT_PARTICLE_LIFE);
-    }
+  resolveMineDrops(p);
+  useLayer(&fg);
+  return changed;
+}
+bool mineFootprint(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true) {
+  int layerId = layer == &bg ? 1 : 0;
+  int footprintId = clampSurvivalFootprintId(p.selectedFootprint);
+  if (!p.mineActive || p.mineLayer != layerId || p.mineX != ax || p.mineY != ay || p.mineFootprint != footprintId) {
+    resetPlayerMine(p);
+    p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay; p.mineFootprint = footprintId;
   }
+  useLayer(layer);
+  bool changed = mineDamageFootprint(ax, ay, getSurvivalFootprint(footprintId), p, scaledSpeed) != 0;
+  resolveMineDrops(p);
   useLayer(&fg);
   return changed;
 }

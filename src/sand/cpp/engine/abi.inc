@@ -132,7 +132,12 @@ EMSCRIPTEN_KEEPALIVE void engine_step_player_only(Engine* e, int id) { e->stepPl
 // the inventory sets it from the selected slot in normal play.
 EMSCRIPTEN_KEEPALIVE void engine_set_player_tool(Engine* e, int id, int cls, int tier) { Player* p = e->findPlayer(id); if (p) { p->heldToolClass = (uint8_t)cls; p->heldToolTier = (uint8_t)tier; } }
 // Mine one disc at (ax,ay) on the foreground for a player (test/gameplay hook).
-EMSCRIPTEN_KEEPALIVE int engine_player_mine(Engine* e, int id, int ax, int ay) { Player* p = e->findPlayer(id); if (!p) return 0; return e->mineDisc(*p, ax, ay, &e->fg) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_player_mine(Engine* e, int id, int ax, int ay) {
+  Player* p = e->findPlayer(id);
+  if (!p) return 0;
+  return (e->survivalInventory ? e->mineFootprint(*p, ax, ay, &e->fg) : e->mineDisc(*p, ax, ay, &e->fg)) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE double engine_player_mine_progress(Engine* e, int id) { return e->playerMineProgress(id); }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
 
 // dropped items + particles (entities; physics in items.inc). spawn_item/_particle
@@ -151,6 +156,11 @@ EMSCRIPTEN_KEEPALIVE void engine_seed_starter_tools(Engine* e, int id) { e->seed
 EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) { return e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_slot(Engine* e, int id, int slot) { e->setSelectedSlot(id, slot); }
 EMSCRIPTEN_KEEPALIVE void engine_cycle_selected_slot(Engine* e, int id, int delta) { e->cycleSelectedSlot(id, delta); }
+EMSCRIPTEN_KEEPALIVE void engine_set_selected_footprint(Engine* e, int id, int footprintId) { e->setSelectedFootprint(id, footprintId); }
+EMSCRIPTEN_KEEPALIVE int engine_selected_footprint(Engine* e, int id) { return e->selectedFootprintId(id); }
+EMSCRIPTEN_KEEPALIVE int engine_survival_footprint_snapshot(Engine* e) { return e->buildSurvivalFootprintSnapshot(); }
+EMSCRIPTEN_KEEPALIVE int32_t* engine_survival_footprint_snapshot_ptr(Engine* e) { return e->survivalFootprintSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_survival_footprint_snapshot_stride(Engine* e) { return SURVIVAL_FOOTPRINT_SNAP_FIELDS; }
 EMSCRIPTEN_KEEPALIVE void engine_inventory_move(Engine* e, int id, int from, int to) { e->moveSlot(id, from, to); }
 EMSCRIPTEN_KEEPALIVE int engine_place_from_selected(Engine* e, int id, int ax, int ay) { return e->placeFromSelected(id, ax, ay) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e->buildInventorySnapshot(id); }

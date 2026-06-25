@@ -159,6 +159,26 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.destroy();
 }
 
+// 8) Seeds are components internally, but survival places them through the seed
+//    path: one press -> one 1x1 seed, not a stone-style brush draft.
+{
+  const PI_PRIMARY = 16;
+  const e = survivalEngine();
+  const id = e.spawnPlayer(40, FLOOR - 9);
+  let t = 0; for (let s = 0; s < 8; s++) { t += 16; e.step(t); }
+  e.addToInventory(id, MAT.SEED, 4);
+  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.SEED && s.count > 0));
+  const seedOf = () => e.getGrid().reduce((a, v) => a + (v === MAT.SEED), 0);
+  const before = seedOf();
+  let seq = 200;
+  for (let s = 0; s < 4; s++) { e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 50.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t); }
+  const staged = e.getStoneDraftCells().length;
+  const invAfter = slotCount(e, id, MAT.SEED);
+  check(`seed places exactly one cell without a component draft (grid +${seedOf() - before}, staged ${staged}, inv ${invAfter})`,
+    seedOf() - before === 1 && staged === 0 && invAfter === 3);
+  e.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

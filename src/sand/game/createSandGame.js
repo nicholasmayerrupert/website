@@ -364,12 +364,16 @@ export function createSandGame(container, opts = {}) {
     if (tag === 'INPUT') return TEXT_INPUT_TYPES.has((t.type || 'text').toLowerCase());
     return false;
   };
+  const isEditableEvent = (e) => {
+    if (isEditableTarget(e.target)) return true;
+    return !!e.composedPath?.().some(isEditableTarget);
+  };
 
   // Movement keys (WASD/arrows + space/shift) are forwarded to the engine, which
   // owns the pan/player-input policy. The editable-target guard + preventDefault
   // stay in JS (they need the DOM event/target).
   const onKeyDown = (e) => {
-    if (isEditableTarget(e.target)) return;
+    if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
     // Survival inventory hotkeys (engine owns the selection policy): digits 1-9
@@ -408,7 +412,7 @@ export function createSandGame(container, opts = {}) {
 
   // Survival: scroll cycles the selected hotbar slot (wrap-around policy is in C++).
   const onWheel = (e) => {
-    if (!survival || !engine || !inside || isEditableTarget(e.target)) return;
+    if (!survival || !engine || !inside || isEditableEvent(e)) return;
     if (netClientReady()) {
       const inv = net.getOwnInventory(); if (!inv) return;
       net.sendSelect((inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9); // hotbar is slots 0-8

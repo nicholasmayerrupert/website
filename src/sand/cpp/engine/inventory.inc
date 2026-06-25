@@ -196,7 +196,8 @@
     }
 
     bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
-    bool isComp = !mineMode && sel.material != EMPTY && MAT_KIND[sel.material] == K_COMPONENT;
+    bool isSeed = !mineMode && sel.material == SEED;
+    bool isComp = !mineMode && !isSeed && sel.material != EMPTY && MAT_KIND[sel.material] == K_COMPONENT;
     if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); return; }
 
     if (mineMode) {
@@ -204,6 +205,19 @@
       if (primary) acted |= mineDisc(p, ax, ay, &fg);
       if (secondary) { bgEnabled = true; acted |= mineDisc(p, ax, ay, &bg); }
       if (acted) playerActionCount++;
+    } else if (isSeed) {
+      resetPlayerMine(p);
+      if (primaryRising && sel.count > 0) {
+        int x0, y0;
+        useLayer(&fg);
+        bool placed = getSeedOrigin(ax, ay, x0, y0) && placeSeedAt(x0, y0);
+        useLayer(&fg);
+        if (placed) {
+          sel.count--;
+          if (sel.count <= 0) sel = InvSlot();
+          playerActionCount++;
+        }
+      }
     } else if (isComp) {
       // begin a component draft on press (stage + consume the first disc immediately).
       if (primaryRising) {

@@ -207,6 +207,47 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 8b. Creative held eraser must stay pinned through world shifts. The stroke
+//     stores buffer-space cells; when the loaded window slides, the previous emit
+//     point must slide too or the next emit sweeps a long line across new chunks.
+{
+  console.log('creative eraser across world shifts');
+  const T = { eraser: 11 };
+  const stoneAt = (e, x, y) => e.getGrid()[y * COLS + x] === 3;
+
+  {
+    const e = mk({ infinite: true });
+    let t = 0;
+    e.setTool(T.eraser);
+    e.pointerDown(50, 40, 0);
+    e.applyTool(50, 40, t += 20, true, true);
+    e.shiftWorldXY(-128, 0);
+    e.eraseDisc(110, 40, 3);
+    e.addDiscToStoneDraft(110, 40, 0);
+    e.finalizeStoneDraft();
+    e.applyTool(178, 40, t += 20, true, true);
+    check('horizontal shift does not erase between stale and remapped cursor', stoneAt(e, 110, 40));
+    e.pointerButtons(0); e.pointerUp(0);
+    e.destroy();
+  }
+
+  {
+    const e = mk({ infinite: true });
+    let t = 0;
+    e.setTool(T.eraser);
+    e.pointerDown(50, 10, 0);
+    e.applyTool(50, 10, t += 20, true, true);
+    e.shiftWorldXY(0, -96);
+    e.eraseDisc(50, 58, 3);
+    e.addDiscToStoneDraft(50, 58, 0);
+    e.finalizeStoneDraft();
+    e.applyTool(50, 106, t += 20, true, true);
+    check('vertical shift does not erase between stale and remapped cursor', stoneAt(e, 50, 58));
+    e.pointerButtons(0); e.pointerUp(0);
+    e.destroy();
+  }
+}
+
 // 9. a sleeping body must wake and fall when the ground beneath it is removed.
 {
   console.log('wake on support removal');

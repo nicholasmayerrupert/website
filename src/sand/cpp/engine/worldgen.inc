@@ -581,6 +581,7 @@
       items.swap(keep);
     }
     remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the grid shift)
+    remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide
     useLayer(&fg); clearAllMineDamage();
     useLayer(&bg); clearAllMineDamage();
     useLayer(&fg);

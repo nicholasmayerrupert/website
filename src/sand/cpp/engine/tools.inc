@@ -107,6 +107,25 @@
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
     return cleared;
   }
+  // Batched eraser for continuous creative strokes: collect the whole swept brush
+  // footprint, then split affected components once. This avoids doing flood-fill
+  // cleanup for every interpolated brush stamp while the pointer is held.
+  int eraseStrokeCells(const std::unordered_set<int>& cells, int x0, int y0, int x1, int y1) {
+    if (cells.empty()) return 0;
+    std::vector<int> erasedStone, erasedIce; bool erasedPlant = false, changed = false; int cleared = 0;
+    std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
+    for (int k : cells) {
+      if (grid[k] == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = true; }
+      if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; if (grid[k] == RIGID) bodyOwner[k] = -1; grid[k] = EMPTY; changed = true; cleared++; }
+      if (draft.erase(k)) changed = true;
+    }
+    finishErasedBodies(dirtyBodies, L->bodyCells);
+    if (changed) markDirtyRect(x0, y0, x1, y1);
+    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
+    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
+    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    return cleared;
+  }
   int clearMineDamageDisc(int cx, int cy, int radius) {
     int changed = 0;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } } }
@@ -280,6 +299,11 @@
     if (hasSeedOrigin) { seedOriginX -= dx; seedOriginY -= dy; // seed origin is a buffer-space top-left corner; same delta
       if (seedOriginX < 0 || seedOriginX + SEED_SIZE > cols || seedOriginY < 0 || seedOriginY + SEED_SIZE > rows) hasSeedOrigin = false; }
   }
+  void remapEmitStrokeForShift(int dx, int dy) {
+    if (!emitStrokeActive || (!dx && !dy)) return;
+    lastEmitCx -= dx; lastEmitCy -= dy;
+    if (lastEmitCx < 0 || lastEmitCx >= cols || lastEmitCy < 0 || lastEmitCy >= rows) emitStrokeActive = false;
+  }
 
   int updateSeedDraft(int cx, int cy) {
     int nx, ny; bool ok = getSeedOrigin(cx, cy, nx, ny);
@@ -352,7 +376,24 @@
     int rad = (creativeMode == CM_ERASE) ? BRUSH_ERASE : brushFor(creativeMaterial);
     int spacing = imax(1, rad);
     int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
-    if (steps == 0) emitToolAt(x0, y0);
+    if (creativeMode == CM_ERASE) {
+      std::unordered_set<int> cells;
+      int minX = imin(x0, x1) - rad, minY = imin(y0, y1) - rad, maxX = imax(x0, x1) + rad, maxY = imax(y0, y1) + rad;
+      int centers = steps == 0 ? 1 : (steps / spacing) + 2;
+      cells.reserve((size_t)centers * (size_t)(rad * 2 + 1) * (size_t)(rad * 2 + 1));
+      auto addDisc = [&](int cx, int cy) {
+        for (int oy = -rad; oy <= rad; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -rad; ox <= rad; ox++) { if (ox * ox + oy * oy > rad * rad) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; cells.insert(I(xx, yy)); } }
+      };
+      if (steps == 0) addDisc(x0, y0);
+      else {
+        for (int i = 0; i <= steps; i += spacing) {
+          double t = (double)i / steps;
+          addDisc((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
+        }
+        addDisc(x1, y1);
+      }
+      eraseStrokeCells(cells, minX, minY, maxX, maxY);
+    } else if (steps == 0) emitToolAt(x0, y0);
     else {
       for (int i = 0; i <= steps; i += spacing) {
         double t = (double)i / steps;

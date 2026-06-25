@@ -110,7 +110,7 @@
   // Batched eraser for continuous creative strokes: collect the whole swept brush
   // footprint, then split affected components once. This avoids doing flood-fill
   // cleanup for every interpolated brush stamp while the pointer is held.
-  int eraseStrokeCells(const std::unordered_set<int>& cells, int x0, int y0, int x1, int y1) {
+  int eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, int x1, int y1) {
     if (cells.empty()) return 0;
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false, changed = false; int cleared = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
@@ -370,27 +370,29 @@
   }
   // Apply the brush along the LINE from (x0,y0) to (x1,y1) on one layer, so a fast
   // pointer drag between throttled emits paints/erases a continuous stroke instead of
-  // leaving gaps. Disc centers are spaced ~brush-radius apart so they overlap.
+  // leaving gaps. Erase uses an exact capsule footprint, avoiding stamp aliasing when
+  // the camera is moving and avoiding per-cell hash-table churn.
   void emitStrokeLayer(int x0, int y0, int x1, int y1, bool toBg) {
     useLayer(toBg ? &bg : &fg);
     int rad = (creativeMode == CM_ERASE) ? BRUSH_ERASE : brushFor(creativeMaterial);
     int spacing = imax(1, rad);
     int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
     if (creativeMode == CM_ERASE) {
-      std::unordered_set<int> cells;
-      int minX = imin(x0, x1) - rad, minY = imin(y0, y1) - rad, maxX = imax(x0, x1) + rad, maxY = imax(y0, y1) + rad;
-      int centers = steps == 0 ? 1 : (steps / spacing) + 2;
-      cells.reserve((size_t)centers * (size_t)(rad * 2 + 1) * (size_t)(rad * 2 + 1));
-      auto addDisc = [&](int cx, int cy) {
-        for (int oy = -rad; oy <= rad; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -rad; ox <= rad; ox++) { if (ox * ox + oy * oy > rad * rad) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; cells.insert(I(xx, yy)); } }
-      };
-      if (steps == 0) addDisc(x0, y0);
-      else {
-        for (int i = 0; i <= steps; i += spacing) {
-          double t = (double)i / steps;
-          addDisc((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
+      std::vector<int> cells;
+      int minX = imax(1, imin(x0, x1) - rad), minY = imax(1, imin(y0, y1) - rad);
+      int maxX = imin(cols - 2, imax(x0, x1) + rad), maxY = imin(rows - 1, imax(y0, y1) + rad);
+      if (maxX >= minX && maxY >= minY) {
+        cells.reserve((size_t)(maxX - minX + 1) * (size_t)(maxY - minY + 1));
+        double vx = (double)(x1 - x0), vy = (double)(y1 - y0);
+        double len2 = vx * vx + vy * vy, r2 = (double)rad * rad + 0.25;
+        for (int yy = minY; yy <= maxY; yy++) for (int xx = minX; xx <= maxX; xx++) {
+          double dx = (double)xx - x0, dy = (double)yy - y0;
+          double t = len2 > 0 ? (dx * vx + dy * vy) / len2 : 0.0;
+          if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
+          double px = x0 + vx * t, py = y0 + vy * t;
+          double ex = (double)xx - px, ey = (double)yy - py;
+          if (ex * ex + ey * ey <= r2) cells.push_back(I(xx, yy));
         }
-        addDisc(x1, y1);
       }
       eraseStrokeCells(cells, minX, minY, maxX, maxY);
     } else if (steps == 0) emitToolAt(x0, y0);

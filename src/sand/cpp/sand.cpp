@@ -45,7 +45,7 @@ struct Engine {
 const double Engine::RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
 const double Engine::RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
 const double Engine::SURFACE_FREQ = 0.010;
-const double Engine::CAVE_FREQ = 0.05;
+const double Engine::CAVE_FREQ = 0.01;            // ~5x larger caves (lower freq = bigger features)
 const double Engine::CAVE_THRESH = 0.66;
 const double Engine::TREE_PROB = 0.05;
 const double Engine::BIOME_FREQ = 0.004;          // ~250-cell-wide biome bands

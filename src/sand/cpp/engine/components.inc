@@ -48,6 +48,56 @@
 
   int compCount(Layer& lay) { return (int)(lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size()); }
 
+  // Union same-layer 8-adjacent components into `parent` (and `groundParent` when
+  // non-null), restricted to the components reachable from a cross-layer bonded
+  // comp. This replaces the old O(cols*rows) full-grid uniteLayerAdj pass that ran
+  // up to 4x per step. Cross-layer bond unions + the global grounded scan are done
+  // by the caller; here we only add same-layer adjacency.
+  //
+  // We seed from each layer's UNGROUNDED cross-bonded comps and walk same-layer
+  // adjacency. computeGrounded floods grounding across 8-adjacency, so an
+  // ungrounded rigid cell never borders a grounded one — every comp discovered by
+  // the walk is therefore ungrounded too, and the walk stays inside the floating
+  // region instead of scanning the whole grounded terrain mass. A grounded bonded
+  // endpoint needs no walk: its bond union (caller) + grounded scan already make
+  // its class grounded; whether its same-layer neighbours get marked cross-bonded
+  // is unobservable (grounded comps never move and are skipped everywhere).
+  void unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb) {
+    int total = nf + nb;
+    if ((int)cgCompStamp.size() < total) cgCompStamp.assign(total, 0);
+    auto find = [&](std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; };
+    auto unite = [&](std::vector<int>& p, int a, int b) { int ra = find(p, a), rb = find(p, b); if (ra != rb) p[ra] = rb; };
+    int32_t gen = ++cgCompGen;
+    cgWorkQueue.clear();
+    auto seed = [&](Layer& lay, int offset, int count) {
+      for (int i = 0; i < count; i++) {
+        if (i >= (int)lay.crossBondedComp.size() || !lay.crossBondedComp[i]) continue;
+        if (compById(lay, i)->grounded) continue;
+        int gid = offset + i;
+        if (cgCompStamp[gid] == gen) continue;
+        cgCompStamp[gid] = gen; cgWorkQueue.push_back(gid);
+      }
+    };
+    seed(fg, 0, nf); seed(bg, nf, nb);
+    for (size_t qi = 0; qi < cgWorkQueue.size(); qi++) {
+      int gid = cgWorkQueue[qi];
+      bool isFg = gid < nf; Layer& lay = isFg ? fg : bg; int offset = isFg ? 0 : nf;
+      Comp* c = compById(lay, gid - offset);
+      const int32_t* cc = lay.cellComp.data();
+      for (int k : c->cells) {
+        int y = k / cols, x = k - y * cols;
+        for (int oy = -1; oy <= 1; oy++) { int ny = y + oy; if (ny < 0 || ny >= rows) continue; int rb = ny * cols;
+          for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox; if (nx < 0 || nx >= cols) continue;
+            int nid = cc[rb + nx]; if (nid < 0) continue; int ngid = offset + nid;
+            unite(parent, gid, ngid);
+            if (groundParent) unite(*groundParent, gid, ngid);
+            if (cgCompStamp[ngid] != gen) { cgCompStamp[ngid] = gen; cgWorkQueue.push_back(ngid); }
+          }
+        }
+      }
+    }
+  }
+
   // Cross-layer grounding (runs once per step when the background is live). Each
   // layer is grounded independently first; cross-layer contact then creates
   // transient component bonds only when a connected overlap patch is large enough.
@@ -55,7 +105,6 @@
   // support. Unsupported overlaps therefore fall together instead of pinning each
   // other, and tiny accidental overlaps do not transmit support.
   void computeGroundedBoth() {
-    size_t n = (size_t)cols * rows;
     cgPrevFg.assign(fg.groundedCell.begin(), fg.groundedCell.end());
     cgPrevBg.assign(bg.groundedCell.begin(), bg.groundedCell.end());
     useLayer(&fg); computeGrounded();
@@ -113,18 +162,20 @@
       }
     }
 
-    std::unordered_set<int> remaining;
-    std::vector<int> stack;
+    // Largest-connected-overlap test, stamp-flooded (no per-pair hash sets): a cell
+    // of this pair's overlap is "present" iff seen[k] == gen; consuming it sets 0.
+    std::vector<int32_t>& seen = fg.seenStamp;
+    std::vector<int>& stack = cgStack;
     for (auto& kv : pairCells) {
       int fi = (int)(kv.first >> 32), bi = (int)(uint32_t)kv.first;
       int required = imax(CROSS_LAYER_BOND_MIN_CELLS, (int)std::ceil(CROSS_LAYER_BOND_AREA_FRAC * (double)imin(fgArea[fi], bgArea[bi])));
       if ((int)kv.second.size() < required) continue;
-      remaining.clear();
-      for (int k : kv.second) remaining.insert(k);
+      int32_t gen = ++fg.seenGen;
+      for (int k : kv.second) seen[k] = gen;
       int largest = 0;
-      while (!remaining.empty()) {
-        int start = *remaining.begin(); remaining.erase(start);
-        stack.clear(); stack.push_back(start);
+      for (int start : kv.second) {
+        if (seen[start] != gen) continue;
+        seen[start] = 0; stack.clear(); stack.push_back(start);
         int patch = 0;
         while (!stack.empty()) {
           int k = stack.back(); stack.pop_back(); patch++;
@@ -134,8 +185,7 @@
             int nx = x + ox, ny = y + oy;
             if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
             int nk = ny * cols + nx;
-            auto it = remaining.find(nk);
-            if (it != remaining.end()) { remaining.erase(it); stack.push_back(nk); }
+            if (seen[nk] == gen) { seen[nk] = 0; stack.push_back(nk); }
           }
         }
         if (patch > largest) largest = patch;
@@ -157,7 +207,8 @@
       return;
     }
 
-    std::vector<int> parent(nf + nb), groundParent(nf + nb);
+    std::vector<int>& parent = cgParent; std::vector<int>& groundParent = cgGroundParent;
+    parent.assign(nf + nb, 0); groundParent.assign(nf + nb, 0);
     for (int i = 0; i < nf + nb; i++) parent[i] = groundParent[i] = i;
     auto find = [&](std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; };
     auto unite = [&](std::vector<int>& p, int a, int b) { int ra = find(p, a), rb = find(p, b); if (ra != rb) p[ra] = rb; };
@@ -165,21 +216,9 @@
       unite(parent, b.fgComp, nf + b.bgComp);
       if (b.supportsGround) unite(groundParent, b.fgComp, nf + b.bgComp);
     }
-    auto uniteLayerAdj = [&](Layer& lay, int offset) {
-      for (int k = 0; k < (int)n; k++) {
-        int id = lay.cellComp[k]; if (id < 0) continue;
-        int y = k / cols, x = k - y * cols;
-        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-          if (!ox && !oy) continue;
-          int nx = x + ox, ny = y + oy;
-          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
-          int nid = lay.cellComp[ny * cols + nx];
-          if (nid >= 0) { unite(parent, offset + id, offset + nid); unite(groundParent, offset + id, offset + nid); }
-        }
-      }
-    };
-    uniteLayerAdj(fg, 0);
-    uniteLayerAdj(bg, nf);
+    // Same-layer adjacency: bounded walk from ungrounded bonded comps instead of
+    // the old O(cols*rows) full-grid scan (the panning-perf regression).
+    unionCrossBondedClusters(parent, &groundParent, nf, nb);
     std::vector<uint8_t> rootBonded(nf + nb, 0);
     for (auto& b : cgBonds) rootBonded[find(parent, b.fgComp)] = 1;
     std::fill(fg.crossBondedComp.begin(), fg.crossBondedComp.end(), (uint8_t)0);
@@ -225,27 +264,16 @@
   void moveCrossLayerBondedAssemblies() {
     int nf = compCount(fg), nb = compCount(bg);
     if (cgBonds.empty() || nf == 0 || nb == 0) return;
-    std::vector<int> parent(nf + nb);
+    std::vector<int>& parent = cgParent;
+    parent.assign(nf + nb, 0);
     for (int i = 0; i < nf + nb; i++) parent[i] = i;
     auto find = [&](int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
     auto unite = [&](int a, int b) { int ra = find(a), rb = find(b); if (ra != rb) parent[ra] = rb; };
     for (auto& b : cgBonds) unite(b.fgComp, nf + b.bgComp);
-    auto uniteLayerAdj = [&](Layer& lay, int offset) {
-      size_t n = (size_t)cols * rows;
-      for (int k = 0; k < (int)n; k++) {
-        int id = lay.cellComp[k]; if (id < 0) continue;
-        int y = k / cols, x = k - y * cols;
-        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-          if (!ox && !oy) continue;
-          int nx = x + ox, ny = y + oy;
-          if (nx < 0 || nx >= cols || ny < 0 || ny >= rows) continue;
-          int nid = lay.cellComp[ny * cols + nx];
-          if (nid >= 0) unite(offset + id, offset + nid);
-        }
-      }
-    };
-    uniteLayerAdj(fg, 0);
-    uniteLayerAdj(bg, nf);
+    // Bounded same-layer union-find (replaces the old full-grid uniteLayerAdj),
+    // seeded from ungrounded cross-bonded comps; operates on cgParent so the
+    // helper's internal find/unite share this same array.
+    unionCrossBondedClusters(parent, nullptr, nf, nb);
 
     struct JointGroup { std::vector<int> fgComps, bgComps; bool grounded = false; int maxY = 0; };
     std::unordered_map<int, JointGroup> groups;

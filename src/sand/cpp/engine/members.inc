@@ -147,6 +147,15 @@
   std::vector<int> cgStack, cgIsland;
   struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
   std::vector<CrossLayerBond> cgBonds;
+  // Reusable scratch for the cross-bonded union-find (replaces the old O(grid)
+  // uniteLayerAdj): cgParent/cgGroundParent are the union-find arrays (size
+  // nf+nb), cgWorkQueue is the worklist, cgCompStamp marks enqueued comps
+  // (enqueued iff cgCompStamp[gid] == cgCompGen). Walking starts only from
+  // ungrounded cross-bonded comps; since computeGrounded floods grounding across
+  // 8-adjacency, an ungrounded comp is never 8-adjacent to a grounded one, so the
+  // walk stays within the floating region instead of the whole terrain mass.
+  std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
+  int32_t cgCompGen = 0;
   // ---- tool / pointer state (input policy ported from createSandGame) ----
   int activeTool = T_CUBE;
   bool lmbDown = false, rmbDown = false;

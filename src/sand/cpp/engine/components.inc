@@ -587,16 +587,18 @@
   // split a plant-family component list keeping only cells still of plant material
   void splitPlantAfterErase() {
     std::vector<Comp> updated;
+    std::vector<int32_t>& seen = L->seenStamp;
+    std::vector<int> part;
     for (auto& comp : L->plantComponents) {
-      std::unordered_set<int> remaining;
-      for (int k : comp.cells) if (isPlantMaterial(grid[k])) remaining.insert(k);
+      int32_t remGen = ++L->seenGen;
+      for (int k : comp.cells) if (isPlantMaterial(grid[k])) seen[k] = remGen;
       bool reused = false;
-      while (!remaining.empty()) {
-        int start = *remaining.begin();
-        std::vector<int> part; part.push_back(start); remaining.erase(start); // part doubles as the BFS queue; remaining.erase dedups
+      for (int seed : comp.cells) {
+        if (seen[seed] != remGen) continue;
+        part.clear(); part.push_back(seed); seen[seed] = 0; // part doubles as the BFS queue; seen[] dedups
         for (size_t qi = 0; qi < part.size(); qi++) {
           int cur = part[qi]; int y = cur / cols, x = cur - y * cols;
-          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.push_back(nk); } }
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (seen[nk] == remGen) { seen[nk] = 0; part.push_back(nk); } }
         }
         Comp c; c.id = reused ? L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
         c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
@@ -609,25 +611,31 @@
   // split stone/ice after erase: remove erased cells, re-flood
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache) {
     if (erased.empty() || list.empty()) return;
-    std::unordered_set<int> erasedSet(erased.begin(), erased.end());
+    std::vector<int32_t>& seen = L->seenStamp;
+    int32_t erasedGen = ++L->seenGen;
+    for (int k : erased) seen[k] = erasedGen;
     std::vector<Comp> updated;
+    std::vector<int> survivors, part;
     for (auto& comp : list) {
       bool touched = false;
-      std::vector<int> survivors; survivors.reserve(comp.cells.size());
-      for (int k : comp.cells) { if (erasedSet.count(k)) touched = true; else survivors.push_back(k); }
+      survivors.clear(); survivors.reserve(comp.cells.size());
+      for (int k : comp.cells) { if (seen[k] == erasedGen) touched = true; else survivors.push_back(k); }
       if (!touched) { updated.push_back(std::move(comp)); continue; }
       if (survivors.empty()) continue;
-      std::unordered_set<int> remaining(survivors.begin(), survivors.end());
-      while (!remaining.empty()) {
-        int start = *remaining.begin();
-        std::vector<int> part; part.push_back(start); remaining.erase(start); // part doubles as the BFS queue
+      int32_t remGen = ++L->seenGen;
+      for (int k : survivors) seen[k] = remGen;
+      bool reused = false;
+      for (int start : survivors) {
+        if (seen[start] != remGen) continue;
+        part.clear(); part.push_back(start); seen[start] = 0; // part doubles as the BFS queue
         for (size_t qi = 0; qi < part.size(); qi++) {
           int cur = part[qi]; int y = cur / cols, x = cur - y * cols;
-          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (remaining.count(nk)) { remaining.erase(nk); part.push_back(nk); } }
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (seen[nk] == remGen) { seen[nk] = 0; part.push_back(nk); } }
         }
-        Comp c; c.id = nextId++; c.yMax = 0; c.cacheDirty = iceCache;
+        Comp c; c.id = reused ? nextId++ : comp.id; c.yMax = 0; c.cacheDirty = iceCache;
         for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; }
         c.cells = std::move(part); updated.push_back(std::move(c));
+        reused = true;
       }
     }
     list = std::move(updated);

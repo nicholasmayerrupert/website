@@ -46,6 +46,7 @@
     "mp:server": "node scripts/dev-multiplayer-server.mjs",
     "sand:server": "node scripts/sand-server.mjs",
     "sand:doctor": "node scripts/sand-doctor.mjs",
+    "bench:eraser": "node scripts/bench-eraser.mjs",
     "check:embed": "node scripts/check-embed-boundary.mjs"
   },
   "dependencies": {

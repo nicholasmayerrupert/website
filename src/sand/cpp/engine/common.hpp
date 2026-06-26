@@ -38,6 +38,7 @@ static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SP
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
 static const float FIRE_CROSS_P = 0.18f;
 static const float ACID_DISSOLVE_P = 0.12f, ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
+static const float ACRID_SMOKE_P = 0.5f; // chance a dissolved cell emits acrid smoke instead of leaving empty space
 static const int   MAX_WOOD_CELLS = 120, MAX_LEAF_CELLS = 105, WATER_PER_GROWTH = 1, TRUNK_THICKEN_UNTIL_WOOD = 52;
 static const float GROWTH_P = 0.58f, LEAF_GROWTH_P = 0.54f;
 static const float LEAF_SEED_DROP_P = 0.10f;

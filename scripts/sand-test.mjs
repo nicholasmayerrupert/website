@@ -88,6 +88,28 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 3b. acid dissolving stone emits acrid smoke (a yellow gas) that rises and
+//     dissipates like steam, and keeps its own identity (never turns into steam).
+{
+  console.log('acid dissolving emits acrid smoke');
+  const STONE = 3, ACID = 10, STEAM = 6, ACRID = 31;
+  const e = mk();
+  for (let y = 50; y < 90; y++) for (let x = 60; x < 120; x++) e.paintDisc(x, y, 0, STONE, true);
+  e.syncComponents();
+  for (let y = 46; y < 50; y++) for (let x = 60; x < 120; x++) e.paintDisc(x, y, 0, ACID, true);
+  const count = (mat) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === mat) n++; return n; };
+  const topMost = (mat) => { const g = e.getGrid(); for (let i = 0; i < g.length; i++) if (g[i] === mat) return (i / COLS) | 0; return -1; };
+  let t = 0, peakSmoke = 0, anySteam = 0;
+  for (let s = 0; s < 150; s++) { t += 16; e.step(t); peakSmoke = Math.max(peakSmoke, count(ACRID)); anySteam = Math.max(anySteam, count(STEAM)); }
+  const rose = topMost(ACRID);
+  check(`acid dissolving produced acrid smoke (peak ${peakSmoke})`, peakSmoke > 0);
+  check(`acrid smoke rose above the acid layer (top row ${rose} < 46)`, rose >= 0 && rose < 46);
+  check(`acrid smoke never became steam (steam ${anySteam})`, anySteam === 0);
+  for (let s = 0; s < 500; s++) { t += 16; e.step(t); }
+  check(`acrid smoke dissipates over time (${count(ACRID)} <= 3)`, count(ACRID) <= 3);
+  e.destroy();
+}
+
 // 4. a watered seed grows.
 {
   console.log('growth');

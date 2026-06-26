@@ -82,6 +82,7 @@ export const MATERIALS = [
   { id: 28, name: 'MUSH_STEM', kind: KIND.COMPONENT, density: 0.5, looseSorted: false, mobility: 0, color: 0xb0afc8d2, textureAmp: 6, durability: 2, renderAnim: 'none' },
   { id: 29, name: 'MUSH_CAP', kind: KIND.COMPONENT, density: 0.45, looseSorted: false, mobility: 0, color: 0xb83237b4, textureAmp: 8, durability: 2, renderAnim: 'none' },
   { id: 30, name: 'VINE', kind: KIND.COMPONENT, density: 0.4, looseSorted: false, mobility: 0, color: 0xa32d6e3c, textureAmp: 9, durability: 1, renderAnim: 'none' },
+  { id: 31, name: 'ACRID_SMOKE', kind: KIND.GAS, density: 0, looseSorted: false, mobility: 0, color: 0x6030c8d8, textureAmp: 0, durability: 0, renderAnim: 'steam' },
 ];
 
 // Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++

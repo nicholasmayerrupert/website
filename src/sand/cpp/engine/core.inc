@@ -261,15 +261,18 @@
       }
     }
   }
-  void riseSteam(int x, int y, int k) {
+  // Shared rise/dissipate behaviour for buoyant gases. Writes the SAME material
+  // `m` it is moving (not a hardcoded STEAM) so e.g. ACRID_SMOKE rises and
+  // dissipates exactly like steam while keeping its own identity/colour.
+  void riseSteam(int x, int y, int k, uint8_t m) {
     if (next[k] != EMPTY) return;
     if (rand() < STEAM_DECAY_P || y <= 1) { markCellIndex(k); return; }
     int up = I(x, y - 1);
-    if (grid[up] == EMPTY && next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, STEAM); return; }
+    if (grid[up] == EMPTY && next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (grid[ik] == EMPTY && next[ik] == EMPTY) { writeNextIndex(ik, STEAM); return; } }
-    if (rand() < 0.65) for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (emptyAt(x + dx, y)) { writeNextIndex(I(x + dx, y), STEAM); return; } }
-    if (next[k] == EMPTY) writeNextIndex(k, STEAM);
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (grid[ik] == EMPTY && next[ik] == EMPTY) { writeNextIndex(ik, m); return; } }
+    if (rand() < 0.65) for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (emptyAt(x + dx, y)) { writeNextIndex(I(x + dx, y), m); return; } }
+    if (next[k] == EMPTY) writeNextIndex(k, m);
   }
   void riseFire(int x, int y, int k) {
     if (next[k] != EMPTY) return;

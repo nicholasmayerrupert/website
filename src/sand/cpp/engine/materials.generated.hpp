@@ -3,7 +3,7 @@
 // DO NOT EDIT BY HAND. Edit the schema, then run `npm run generate`.
 // (C++ header)
 
-enum Mat : uint8_t { EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 5, STEAM = 6, SEED = 7, WOOD = 8, PLANT = 9, ACID = 10, LAVA = 11, ICE = 12, RIGID = 13, DRIFTWOOD = 14, DIRT = 15, SNOW = 16, MUD = 17, CLAY = 18, SANDSTONE = 19, MOSS = 20, COPPER_ORE = 21, IRON_ORE = 22, COAL_ORE = 23, GOLD_ORE = 24, BRICK = 25, PINE_WOOD = 26, CACTUS = 27, MUSH_STEM = 28, MUSH_CAP = 29, VINE = 30 };
+enum Mat : uint8_t { EMPTY = 0, SAND = 1, WATER = 2, STONE = 3, OIL = 4, FIRE = 5, STEAM = 6, SEED = 7, WOOD = 8, PLANT = 9, ACID = 10, LAVA = 11, ICE = 12, RIGID = 13, DRIFTWOOD = 14, DIRT = 15, SNOW = 16, MUD = 17, CLAY = 18, SANDSTONE = 19, MOSS = 20, COPPER_ORE = 21, IRON_ORE = 22, COAL_ORE = 23, GOLD_ORE = 24, BRICK = 25, PINE_WOOD = 26, CACTUS = 27, MUSH_STEM = 28, MUSH_CAP = 29, VINE = 30, ACRID_SMOKE = 31 };
 enum Kind : uint8_t { K_NONE = 0, K_POWDER = 1, K_LIQUID = 2, K_GAS = 3, K_COMPONENT = 4, K_FREE_RIGID = 5 };
 // Seeded-component groups: which list a material registers into.
 enum CGroup : uint8_t { CG_NONE = 0, CG_STONE = 1, CG_PLANT = 2, CG_ICE = 3 };
@@ -21,7 +21,7 @@ static const int TABLE = 32;
 static const float    DENSITY[TABLE]        = {0, 1.6f, 1, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 1.5f, 0.4f, 1.7f, 2, 2.3f, 0.9f, 2.7f, 2.8f, 2.6f, 3, 2.4f, 0.6f, 0.7f, 0.5f, 0.45f, 0.4f, 0};
 static const uint8_t  DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const float    MOBILITY[TABLE]       = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0.35f, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_POWDER, K_POWDER, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_NONE};
+static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_POWDER, K_POWDER, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_GAS};
 // Class-based behavior: flag bitmask + seeded-component group per material.
 static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 10, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0};
 static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_NONE, CG_NONE, CG_NONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_ICE, CG_NONE, CG_PLANT, CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE};
@@ -34,7 +34,7 @@ static const uint8_t  TOOL_CLASS_SPEED[25] = {100, 35, 35, 35, 50, 100, 255, 35,
 static const uint8_t  TOOL_TIER_SPEED[5] = {50, 100, 135, 175, 210};
 static const int MINING_PROGRESS_DIVISOR = 5;
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
-static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x00000000u};
+static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x6030c8d8u};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 7, 4, 5, 5, 7, 8, 8, 8, 8, 8, 4, 6, 6, 6, 8, 9, 0};
 static const uint8_t  DURABILITY[TABLE]     = {0, 2, 0, 8, 0, 0, 0, 2, 4, 2, 0, 0, 5, 10, 4, 2, 1, 2, 6, 6, 3, 10, 14, 9, 12, 12, 4, 3, 2, 2, 1, 0};
 static const uint32_t PACKED_FIRE = 0xb8226cffu;

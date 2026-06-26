@@ -392,19 +392,34 @@
   struct Disp { uint8_t material; int from; };
   void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint, double bodyDensity) {
     if (displaced.empty()) return;
-    int offs[4] = {-cols, -1, 1, cols}; int gridLen = cols * rows;
-    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || (isLiquid(m) && DENSITY[m] < bodyDensity) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < bodyDensity)); };
+    (void)bodyDensity;
+    // Spread displaced fluid sideways and downward before upward (lateral, down,
+    // then up last) — same priority the component-body spill uses. A body plunging
+    // into a pool then distributes the rise across the surface instead of firing a
+    // narrow fountain straight up out of the entry column ("lava out the top").
+    int offs[4] = {-1, 1, cols, -cols}; int gridLen = cols * rows;
+    // Passability is keyed to the DISPLACED material's own density (curD), not the
+    // body's: a dense fluid (lava) shoved aside by a lighter body must be able to
+    // percolate through its own pool to reach the free surface — otherwise, deep in
+    // the pool it finds no path and is silently dropped (volume loss). It can move
+    // through EMPTY/gas, equal-or-lighter liquid, and ungrounded/lighter powder.
+    double curD = 0;
+    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || (isLiquid(m) && DENSITY[m] <= curD) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < curD)); };
     std::unordered_set<int> seen;
     auto canVisit = [&](int k) { if (k <= 0 || k >= gridLen || footprint.count(k) || seen.count(k)) return false; int y = k / cols, x = k - y * cols; return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k); };
     auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquid(m) || isGas(m) || MAT_KIND[m] == K_POWDER) && DENSITY[m] < DENSITY[mat]; };
+    // Footprint-edge seeds (used when a displaced cell's own neighbours are all
+    // blocked). Permissive — any fluid/empty/gas/loose powder; canVisit re-filters
+    // per displaced material once curD is set in the worklist loop below.
+    auto seedPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || isLiquid(m) || (MAT_KIND[m] == K_POWDER && groundedCell[k] != 1); };
     std::vector<int> footprintEdgeStarts; std::unordered_set<int> footprintEdgeSeen;
     std::vector<int> sortedFootprint(edgeFootprint.begin(), edgeFootprint.end()); std::sort(sortedFootprint.begin(), sortedFootprint.end());
-    for (int k : sortedFootprint) for (int off : offs) { int nk = k + off; if (footprintEdgeSeen.count(nk)) continue; int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue; if (isPassable(grid[nk], nk)) { footprintEdgeSeen.insert(nk); footprintEdgeStarts.push_back(nk); } }
+    for (int k : sortedFootprint) for (int off : offs) { int nk = k + off; if (footprintEdgeSeen.count(nk)) continue; int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue; if (seedPassable(grid[nk], nk)) { footprintEdgeSeen.insert(nk); footprintEdgeStarts.push_back(nk); } }
     std::vector<Disp> worklist = displaced;
     std::sort(worklist.begin(), worklist.end(), [](const Disp& a, const Disp& b) { return DENSITY[b.material] < DENSITY[a.material]; });
     std::vector<int> queue;
     for (size_t wi = 0; wi < worklist.size(); wi++) {
-      Disp d = worklist[wi]; seen.clear(); queue.clear(); int target = -1;
+      Disp d = worklist[wi]; curD = DENSITY[d.material]; seen.clear(); queue.clear(); int target = -1;
       for (int off : offs) { int nk = d.from + off; if (!canVisit(nk)) continue; seen.insert(nk); queue.push_back(nk); }
       if (queue.empty()) for (int nk : footprintEdgeStarts) { if (!canVisit(nk)) continue; seen.insert(nk); queue.push_back(nk); }
       for (size_t qi = 0; qi < queue.size(); qi++) { int k = queue[qi]; if (isDropTarget(k, d.material)) { target = k; break; } for (int off : offs) { int nk = k + off; if (!canVisit(nk)) continue; seen.insert(nk); queue.push_back(nk); } }

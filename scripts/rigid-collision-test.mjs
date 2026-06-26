@@ -293,7 +293,34 @@ for (const dt of [16, 8, 33, 50]) {
   }
 }
 
-// 9. Determinism: the same scenario run twice yields identical final pose.
+// 9. Volume preservation: a light body plunging into a denser fluid must not
+//    destroy the fluid it displaces. The displaced fluid percolates through its
+//    own pool to the surface (spill BFS keyed to the fluid's density, not the
+//    body's) instead of being dropped when it is boxed in by more of itself.
+{
+  console.log('plunge into a denser fluid conserves fluid volume');
+  const LAVA = 11;                                            // density 2.8 > body 1.4
+  const x0 = 70, x1 = 130, top = 20, surf = 45, yBot = 110;  // deep walled lava pool
+  const e = mk();
+  for (let y = top; y <= yBot + 3; y++) for (let d = 1; d <= 3; d++) { e.paintDisc(x0 - d, y, 0, STONE, true); e.paintDisc(x1 + d, y, 0, STONE, true); }
+  for (let x = x0 - 3; x <= x1 + 3; x++) for (let d = 1; d <= 3; d++) e.paintDisc(x, yBot + d, 0, STONE, true);
+  e.syncComponents();
+  for (let y = surf; y <= yBot; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, LAVA, true);
+  run(e, 150);
+  const lavaCount = () => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === LAVA) n++; return n; };
+  const before = lavaCount();
+  const idx = e._bodyCount();
+  e.spawnBox(100, 32, 6, 5, RIGID);
+  e._setBodyMotion(idx, 0, 3.0, 0);                          // fast plunge deep into the pool
+  let minLava = before;
+  for (let k = 0; k < 24; k++) { run(e, 1); const l = lavaCount(); if (l < minLava) minLava = l; }
+  // Lava erodes the body and can only ADD lava (never used to GAIN), so the guard
+  // is the floor: the displaced lava must never be silently dropped mid-plunge.
+  check(`displaced lava is never lost during the plunge (min ${minLava} >= ${before})`, minLava >= before);
+  e.destroy();
+}
+
+// 10. Determinism: the same scenario run twice yields identical final pose.
 {
   console.log('determinism');
   const finalPose = () => {

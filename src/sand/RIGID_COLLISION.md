@@ -75,8 +75,13 @@ The previous body↔body path had four compounding defects:
   body lighter than the fluid settles part-submerged at its float depth (denser
   body → deeper) instead of resting on top as if the fluid were solid; a body
   denser than the fluid sinks through. Fluid the body enters is spilled around it
-  (`spillDisplacedBodyMaterial`); a settled float is mass-conserving (a violent
-  entry splash can drop a few cells when no spill target exists). Floating bodies
+  (`spillDisplacedBodyMaterial`): the spill BFS spreads sideways/down before up
+  (so a plunge raises the surface instead of firing a fountain out the entry
+  column) and its passability is keyed to the *displaced* fluid's density, not the
+  body's — so a dense fluid (lava) shoved aside by a lighter body percolates
+  through its own pool to the free surface rather than being silently dropped when
+  it is boxed in by more of itself (the old per-body test lost volume mid-plunge).
+  Floating bodies
   have no solid contact so they never latch the sleep gate — they stay awake and
   gently bob, which drag keeps stable (negligible cost for a few bodies).
 

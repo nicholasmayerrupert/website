@@ -110,6 +110,27 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 3c. Acrid smoke that is boxed in (can't vent) dissolves quickly instead of
+//     churning up through fluid forever — a trapped cloud keeps the layer active,
+//     and an active layer pays a full grounding reflood every step, so a long-lived
+//     trapped cloud is pure cost. A sealed pocket of acrid must clear fast.
+{
+  console.log('trapped acrid smoke dissolves quickly');
+  const STONE = 3, ACRID = 31;
+  const e = mk();
+  const x0 = 60, x1 = 100, y0 = 50, y1 = 80;
+  for (let y = y0 - 3; y <= y1 + 3; y++) for (let d = 1; d <= 3; d++) { e.paintDisc(x0 - d, y, 0, STONE, true); e.paintDisc(x1 + d, y, 0, STONE, true); }
+  for (let x = x0 - 3; x <= x1 + 3; x++) for (let d = 1; d <= 3; d++) { e.paintDisc(x, y0 - d, 0, STONE, true); e.paintDisc(x, y1 + d, 0, STONE, true); }
+  e.syncComponents();
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, ACRID, true);
+  const count = (mat) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === mat) n++; return n; };
+  const start = count(ACRID);
+  let t = 0; for (let s = 0; s < 80; s++) { t += 16; e.step(t); }
+  const after = count(ACRID);
+  check(`sealed acrid pocket mostly dissolved in 80 steps (${after} < ${Math.round(start * 0.1)} of ${start})`, after < start * 0.1);
+  e.destroy();
+}
+
 // 4. a watered seed grows.
 {
   console.log('growth');

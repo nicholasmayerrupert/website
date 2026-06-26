@@ -266,7 +266,23 @@
   // dissipates exactly like steam while keeping its own identity/colour.
   void riseSteam(int x, int y, int k, uint8_t m) {
     if (next[k] != EMPTY) return;
-    if (rand() < STEAM_DECAY_P || y <= 1) { markCellIndex(k); return; }
+    float decayP = STEAM_DECAY_P;
+    if (m == ACRID_SMOKE) {
+      decayP = ACRID_DECAY_P;
+      // Acrid smoke that can't vent (no empty cell above or beside it — boxed in by
+      // liquid/solid) dissolves quickly rather than churning. Re-rising through a
+      // fluid every step keeps a large region awake, and an awake layer pays a full
+      // grounding reflood per step, so a trapped cloud is pure cost with no payoff.
+      // Reads only (no extra RNG draw before the decay roll) so steam stays
+      // byte-identical and non-acrid scenes are unaffected.
+      bool canVent = (y > 1 && grid[I(x, y - 1)] == EMPTY)
+                  || (x > 1 && grid[I(x - 1, y)] == EMPTY)
+                  || (x < cols - 1 && grid[I(x + 1, y)] == EMPTY)
+                  || (y > 1 && x > 1 && grid[I(x - 1, y - 1)] == EMPTY)
+                  || (y > 1 && x < cols - 1 && grid[I(x + 1, y - 1)] == EMPTY);
+      if (!canVent) decayP = ACRID_TRAPPED_DECAY_P;
+    }
+    if (rand() < decayP || y <= 1) { markCellIndex(k); return; }
     int up = I(x, y - 1);
     if (grid[up] == EMPTY && next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;

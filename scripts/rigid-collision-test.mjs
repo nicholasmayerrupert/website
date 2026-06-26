@@ -320,6 +320,33 @@ for (const dt of [16, 8, 33, 50]) {
   e.destroy();
 }
 
+// 9b. Gases never support (or block) a body. A body dropped over a thick pocket
+//     of gas must sweep straight through it to the floor — gas is not terrain.
+//     Checked for steam AND acrid smoke (id 31): support is keyed off K_GAS, so a
+//     newly added gas needs no engine change to behave correctly.
+{
+  console.log('gases never support a body');
+  const STEAM = 6, ACRID_SMOKE = 31;
+  const floorY = ROWS - 2;
+  const dropThroughGas = (gasId) => {
+    const e = mk();
+    stoneRect(e, 0, floorY, COLS - 1, ROWS - 1);             // floor only — no walls/terrain in the fall path
+    e.syncComponents();
+    for (let y = 50; y < floorY; y++) for (let x = 60; x <= 140; x++) e.paintDisc(x, y, 0, gasId, true);
+    const idx = e._bodyCount();
+    e.spawnBox(100, 30, 5, 5, RIGID);                        // dropped above the gas pocket
+    run(e, 600);
+    const bot = rigidBottom(e.getGrid());
+    e.destroy();
+    return bot;
+  };
+  const steamBot = dropThroughGas(STEAM);
+  const acridBot = dropThroughGas(ACRID_SMOKE);
+  check(`body falls through steam to the floor (bottom ${steamBot} >= ${floorY - 3})`, steamBot >= floorY - 3);
+  check(`body falls through acrid smoke to the floor (bottom ${acridBot} >= ${floorY - 3})`, acridBot >= floorY - 3);
+  check(`acrid smoke supports a body no more than steam does (${acridBot} ~= ${steamBot})`, Math.abs(acridBot - steamBot) <= 2);
+}
+
 // 10. Determinism: the same scenario run twice yields identical final pose.
 {
   console.log('determinism');

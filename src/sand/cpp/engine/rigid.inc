@@ -388,7 +388,10 @@
   // (spilled around the body), letting it part-sink to its buoyant equilibrium
   // rather than being blocked at the surface. Lighter fluid was already displaceable.
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { return isLiquid(m) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < bodyDensity)); }
-  bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || m == FIRE || m == STEAM || isBodyRelocatable(m, k, bodyDensity); }
+  // Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
+  // through them and they vanish on commit. Keyed off K_GAS so any new gas is
+  // handled automatically (was a hardcoded FIRE/STEAM list that missed ACRID_SMOKE).
+  bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || isGas(m) || isBodyRelocatable(m, k, bodyDensity); }
   struct Disp { uint8_t material; int from; };
   void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint, double bodyDensity) {
     if (displaced.empty()) return;

@@ -228,15 +228,28 @@
         }
       };
       // Swept body-to-terrain sampling: same idea against the static grid mask.
+      // The loaded-buffer rim counts as solid wall: a body's own motion must not
+      // carry it off the simulated window (where its raster is clipped away and it
+      // silently vanishes). Off-buffer cells get an inward-pointing normal so the
+      // body rests against / is pushed back from the render boundary until the
+      // window streams that region into view. World-stream eviction (which legitly
+      // carries bodies off-buffer and persists them) is a separate path.
       auto collectTerrain = [&](Body* b, double dt) {
         const std::vector<float>& S = b->boundarySamples;
-        auto solid = [&](int ix, int iy) { return ix >= 0 && ix < cols && iy >= 0 && iy < rows && isBodyTerrain(ix, iy, b->density); };
+        auto solid = [&](int ix, int iy) { return ix < 0 || ix >= cols || iy < 0 || iy >= rows || isBodyTerrain(ix, iy, b->density); };
+        auto tnorm = [&](int ix, int iy, double& ox, double& oy) {
+          if (ix < 0) { ox = 1; oy = 0; return; }
+          if (ix >= cols) { ox = -1; oy = 0; return; }
+          if (iy < 0) { ox = 0; oy = 1; return; }
+          if (iy >= rows) { ox = 0; oy = -1; return; }
+          terrainNormalAt(ix, iy, b->density, ox, oy);
+        };
         for (size_t si = 0; si + 1 < S.size(); si += 2) {
           double lx = S[si], ly = S[si + 1];
           double sx = b->px + lx * b->cs - ly * b->sn, sy = b->py + lx * b->sn + ly * b->cs;
           int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
           if (solid(cx, cy)) {
-            terrainNormalAt(cx, cy, b->density, nx_, ny_);
+            tnorm(cx, cy, nx_, ny_);
             double depth = 0.5, mx = sx, my = sy;
             for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; if (!solid((int)std::floor(mx), (int)std::floor(my))) break; depth += 1; }
             terrAcc.push_back({sx, sy, nx_, ny_, depth, 0}); continue;
@@ -254,7 +267,7 @@
             for (int it = 0; it < 6; it++) { double mm = (a + bb) * 0.5; if (solid((int)std::floor(sx + dirx * mm), (int)std::floor(sy + diry * mm))) bb = mm; else a = mm; }
             double hx = sx + dirx * bb, hy = sy + diry * bb; int hxx = (int)std::floor(hx), hyy = (int)std::floor(hy);
             if (!solid(hxx, hyy)) { hx = sx + dirx * dk; hy = sy + diry * dk; hxx = (int)std::floor(hx); hyy = (int)std::floor(hy); }
-            terrainNormalAt(hxx, hyy, b->density, nx_, ny_); terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
+            tnorm(hxx, hyy, nx_, ny_); terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
             break;
           }
         }

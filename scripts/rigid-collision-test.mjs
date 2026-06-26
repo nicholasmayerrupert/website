@@ -5,7 +5,9 @@
 // Focus: thin shapes must not pass through one another, off-centre impacts must
 // use surface-appropriate (mask-derived) normals rather than a centre-to-centre
 // normal, fast/rotating thin bodies must not tunnel, and resting contacts must
-// stay stable for long simulations — at several timestep groupings.
+// stay stable for long simulations — at several timestep groupings. The loaded
+// buffer rim also acts as a wall so a body's own motion can't carry it off the
+// simulated window (where its raster is clipped away and it vanishes).
 
 import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
 
@@ -213,7 +215,38 @@ for (const dt of [16, 8, 33, 50]) {
   e.destroy();
 }
 
-// 7. Determinism: the same scenario run twice yields identical final pose.
+// 7. Render-boundary wall: a body driven off the loaded buffer by its own motion
+// must stop at the rim and keep all its cells, not silently vanish (its raster
+// would otherwise be clipped away the moment it leaves the simulated window).
+{
+  console.log('render boundary acts as a wall');
+  // Rightward: clear open air toward the +x edge — no terrain involved.
+  {
+    const e = mk();
+    const idx = e._bodyCount();
+    e.spawnBody(hbarCells(COLS - 30, 30, 12));   // thin bar near the right edge
+    e._setBodyMotion(idx, 6.0, 0, 0);            // hurl it at the rim (fast → would tunnel a naive check)
+    run(e, 400);
+    const s = e._bodyState(idx);
+    check(`body stopped inside the right rim (px ${s.px.toFixed(1)} < ${COLS})`, s && s.px < COLS);
+    check(`body still present at the rim (${s ? s.nPts : -1}/12)`, s && s.nPts === 12);
+    e.destroy();
+  }
+  // Downward: nothing painted below — without the wall it falls past ROWS and dies.
+  {
+    const e = mk();
+    const idx = e._bodyCount();
+    e.spawnBody(vbarCells(20, 20, 12));          // bar near the left, high up
+    e._setBodyMotion(idx, 0, 6.0, 0);            // drive it straight down hard
+    run(e, 400);
+    const s = e._bodyState(idx);
+    check(`body did not fall through the bottom rim (py ${s ? s.py.toFixed(1) : 'gone'} <= ${ROWS})`, s && s.py <= ROWS);
+    check(`body still present after the drop (${s ? s.nPts : -1}/12)`, s && s.nPts === 12);
+    e.destroy();
+  }
+}
+
+// 8. Determinism: the same scenario run twice yields identical final pose.
 {
   console.log('determinism');
   const finalPose = () => {

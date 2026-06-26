@@ -54,6 +54,15 @@ The previous body↔body path had four compounding defects:
 - **Depenetration fallback** (`depenetrateBodyRaster`, unchanged) still runs
   after the solver as a last resort along valid mask normals — it is a fallback,
   not the primary mechanism.
+- **Render-boundary wall.** `collectTerrain`'s `solid()` test treats any cell
+  outside the loaded buffer (`x<0 || x>=cols || y<0 || y>=rows`) as solid, with an
+  inward-pointing normal. A body's own motion can no longer carry it off the
+  simulated window — where its raster is clipped away and it silently
+  disappears. It rests against / is pushed back from the rim until that region
+  streams into view (then it resumes). This is distinct from world-stream
+  eviction, which legitimately carries bodies off-buffer and persists them
+  (`csSaveBodiesLeaving`/`csRestoreBodies` in `shiftLayer`); the wall only blocks
+  *self-propelled* exit, not camera-driven streaming.
 
 Constants live in `common.hpp`: `R_SAFE_SUBSTEP` 0.5, `R_MAX_SUBSTEPS` 10,
 `R_CONTACT_SKIN` 0.1, `R_SWEEP_STEP` 0.4.

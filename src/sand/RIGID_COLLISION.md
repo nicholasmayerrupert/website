@@ -64,8 +64,25 @@ The previous body↔body path had four compounding defects:
   (`csSaveBodiesLeaving`/`csRestoreBodies` in `shiftLayer`); the wall only blocks
   *self-propelled* exit, not camera-driven streaming.
 
+- **Buoyancy / partial submersion.** Fluids are no longer treated as solid
+  terrain (`isBodyTerrain` returns false for any liquid) and any liquid is
+  displaceable by a submerging body (`isBodyRelocatable`). Depth is governed by an
+  Archimedes force in `rigidStep`: each substep the body gains
+  `−R_GRAVITY·(fluidDensity/bodyDensity)·submerged` vertically plus linear/angular
+  drag (`R_LIQUID_DRAG`/`R_LIQUID_ANG_DRAG`). The submerged fraction is the share
+  of boundary cells with a liquid 4-neighbour — sampled on the *surrounding* medium
+  because the body's own footprint is cleared to EMPTY during the step. Result: a
+  body lighter than the fluid settles part-submerged at its float depth (denser
+  body → deeper) instead of resting on top as if the fluid were solid; a body
+  denser than the fluid sinks through. Fluid the body enters is spilled around it
+  (`spillDisplacedBodyMaterial`); a settled float is mass-conserving (a violent
+  entry splash can drop a few cells when no spill target exists). Floating bodies
+  have no solid contact so they never latch the sleep gate — they stay awake and
+  gently bob, which drag keeps stable (negligible cost for a few bodies).
+
 Constants live in `common.hpp`: `R_SAFE_SUBSTEP` 0.5, `R_MAX_SUBSTEPS` 10,
-`R_CONTACT_SKIN` 0.1, `R_SWEEP_STEP` 0.4.
+`R_CONTACT_SKIN` 0.1, `R_SWEEP_STEP` 0.4, `R_LIQUID_DRAG` 0.12,
+`R_LIQUID_ANG_DRAG` 0.1.
 
 ## Tests
 

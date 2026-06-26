@@ -246,7 +246,54 @@ for (const dt of [16, 8, 33, 50]) {
   }
 }
 
-// 8. Determinism: the same scenario run twice yields identical final pose.
+// 8. Buoyancy: a body lighter than the fluid part-submerges and floats (it no
+//    longer rests on top of a denser fluid as if it were solid); a body denser
+//    than the fluid sinks through to the floor. Fluid mass is conserved.
+{
+  const WATER = 2, WOOD = 8;                                 // water density 1.0, wood 0.6
+  const x0 = 40, x1 = 160, yTop = 50, yBot = 110;            // walled pool with a stone floor
+  const buildPool = (e) => {
+    for (let y = yTop - 1; y <= yBot + 1; y++) { e.paintDisc(x0 - 1, y, 0, STONE, true); e.paintDisc(x1 + 1, y, 0, STONE, true); }
+    for (let x = x0 - 1; x <= x1 + 1; x++) e.paintDisc(x, yBot + 1, 0, STONE, true);
+    e.syncComponents();
+    for (let y = yTop; y <= yBot; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, WATER, true);
+  };
+  const waterCount = (e) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === WATER) n++; return n; };
+  const bodyBottom = (e) => { const g = e.getGrid(); let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) b = Math.max(b, (i / COLS) | 0); return b; };
+  const surfaceY = (e) => { const g = e.getGrid(); for (let i = 0; i < g.length; i++) if (g[i] === WATER) return (i / COLS) | 0; return ROWS; };
+
+  { // Light body (wood) floats part-submerged and stays put.
+    console.log('light body part-submerges in a denser fluid');
+    const e = mk();
+    buildPool(e);
+    run(e, 120);                                            // settle the pool
+    const idx = e._bodyCount();
+    e.spawnBox(100, 35, 8, 5, WOOD);                        // 16x10 wood box dropped above the pool
+    run(e, 400);                                            // let it plunge and find its float depth
+    const water1 = waterCount(e);
+    run(e, 400);                                            // float undisturbed
+    const s = e._bodyState(idx), bot = bodyBottom(e), surf = surfaceY(e), water2 = waterCount(e);
+    check(`wood did not sink to the floor (bottom ${bot} < ${yBot - 2})`, bot >= 0 && bot < yBot - 2);
+    check(`wood is partially submerged, not resting on top (bottom ${bot} > surface ${surf})`, bot > surf + 1);
+    check(`wood came to rest while floating (|vy| ${Math.abs(s.vy).toFixed(3)})`, Math.abs(s.vy) < 0.1);
+    check(`no ongoing fluid leak once floating (${water2} == ${water1})`, water2 === water1);
+    e.destroy();
+  }
+  { // Heavy body (default rigid) sinks through the fluid to the floor.
+    console.log('heavy body sinks through a lighter fluid');
+    const e = mk();
+    buildPool(e);
+    run(e, 120);
+    const idx = e._bodyCount();
+    e.spawnBox(100, 35, 8, 5, RIGID);                       // density 1.4 > water 1.0
+    run(e, 700);
+    const bot = bodyBottom(e);
+    check(`rigid body sank to the pool floor (bottom ${bot} >= ${yBot - 4})`, bot >= yBot - 4);
+    e.destroy();
+  }
+}
+
+// 9. Determinism: the same scenario run twice yields identical final pose.
 {
   console.log('determinism');
   const finalPose = () => {

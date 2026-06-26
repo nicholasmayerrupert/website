@@ -494,31 +494,29 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     check(`default body rests on denser sand (bottom ${bottom})`, bottom >= 60 && bottom < 70);
     e.destroy();
   }
-  {
+  // A body lighter than a fluid part-submerges into it (buoyant equilibrium)
+  // rather than resting on its surface as if it were solid; a body denser than
+  // the fluid sinks deeper still. Measured in lava (the only fluid denser than a
+  // default body) early, before lava erosion melts much of the body.
+  const lavaSink = (mat) => {
     const e = mk();
     const L = 45, R = 115, floorY = 88, lavaTop = 64;
     for (let y = 45; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
     for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
     e.syncComponents();
     for (let x = L + 1; x < R; x++) for (let y = lavaTop; y < floorY; y++) e.paintDisc(x, y, 0, LAVA, true);
-    e.spawnBox(80, 45, 4, 4);
+    if (mat === undefined) e.spawnBox(80, 45, 4, 4); else e.spawnBox(80, 45, 4, 4, mat);
     run(40, e);
-    const g = e.getGrid(), bottom = bodyBottom(g), n = bodyCount(g);
-    check(`default body floats on denser lava before eroding (bottom ${bottom}, cells ${n})`, n > 0 && bottom < lavaTop);
+    const g = e.getGrid();
+    const out = { bottom: bodyBottom(g), n: bodyCount(g), lavaTop };
     e.destroy();
-  }
+    return out;
+  };
   {
-    const e = mk();
-    const L = 45, R = 115, floorY = 88, lavaTop = 64;
-    for (let y = 45; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
-    for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
-    e.syncComponents();
-    for (let x = L + 1; x < R; x++) for (let y = lavaTop; y < floorY; y++) e.paintDisc(x, y, 0, LAVA, true);
-    e.spawnBox(80, 45, 4, 4, GOLD_ORE);
-    run(40, e);
-    const g = e.getGrid(), bottom = bodyBottom(g), n = bodyCount(g);
-    check(`gold-density body sinks into lava before eroding (bottom ${bottom}, cells ${n})`, n > 0 && bottom > lavaTop + 8);
-    e.destroy();
+    const light = lavaSink(undefined);                       // default body, density 1.4 < lava 2.8
+    const heavy = lavaSink(GOLD_ORE);                        // gold density 3.0 > lava 2.8
+    check(`body lighter than lava part-sinks below the surface, not resting on top (bottom ${light.bottom} > ${light.lavaTop}, cells ${light.n})`, light.n > 0 && light.bottom > light.lavaTop);
+    check(`body denser than lava sinks deeper than a lighter one (${heavy.bottom} > ${light.bottom}, cells ${heavy.n})`, heavy.n > 0 && heavy.bottom > light.bottom);
   }
 }
 

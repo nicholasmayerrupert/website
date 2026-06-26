@@ -160,8 +160,23 @@
         if (b->awake) b->vy += R_GRAVITY * dt;
         b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
         if (b->awake && !b->boundaryPts.empty()) {
+          // Buoyancy/drag from surrounding fluid. The body's own footprint is
+          // cleared to EMPTY for the duration of rigidStep, so probing the
+          // boundary cell itself reads air; we instead take the densest liquid
+          // among its 4-neighbours (the medium the body sits IN). A face deep in
+          // fluid has wet neighbours; a face above the surface does not — so the
+          // wet fraction rises with depth and gives an Archimedes restoring force
+          // that settles a light body part-submerged in a denser fluid rather than
+          // resting on top of it (fluid is no longer treated as solid terrain).
           int wet = 0; double densitySum = 0;
-          for (int bp : b->boundaryPts) { worldPoint(b, bp, b->sn, b->cs, wpx, wpy); double d = fluidDensityAt((int)std::floor(wpx), (int)std::floor(wpy)); if (d <= 0) continue; wet++; densitySum += d; }
+          for (int bp : b->boundaryPts) {
+            worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
+            int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
+            double d = fluidDensityAt(cx, cy);
+            d = std::fmax(d, fluidDensityAt(cx - 1, cy)); d = std::fmax(d, fluidDensityAt(cx + 1, cy));
+            d = std::fmax(d, fluidDensityAt(cx, cy - 1)); d = std::fmax(d, fluidDensityAt(cx, cy + 1));
+            if (d <= 0) continue; wet++; densitySum += d;
+          }
           if (wet > 0) {
             double submerged = (double)wet / b->boundaryPts.size(), avgFluidD = densitySum / wet;
             b->vy -= R_GRAVITY * (avgFluidD / b->density) * submerged * dt;
@@ -364,12 +379,15 @@
   bool isBodyTerrain(int x, int y, double bodyDensity) {
     int k = y * cols + x; uint8_t m = grid[k];
     if (MAT_KIND[m] == K_POWDER) return groundedCell[k] == 1 && DENSITY[m] >= bodyDensity;
-    if (isLiquid(m)) return DENSITY[m] >= bodyDensity;
+    if (isLiquid(m)) return false;                              // fluids are never a solid wall — buoyancy (rigidStep) governs how deep a body sinks, so a light body part-submerges in a denser fluid instead of resting on top
     if (m == DRIFTWOOD || m == RIGID) return false;             // free body / drifting wood are not static terrain
     return isRigidMaterial(m);                                  // stone/plant/ice-group solids incl. new ores & woods
   }
   double fluidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquid(m) ? DENSITY[m] : 0; }
-  bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { return (isLiquid(m) && DENSITY[m] < bodyDensity) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < bodyDensity)); }
+  // Any liquid is relocatable: a body submerging into a denser fluid displaces it
+  // (spilled around the body), letting it part-sink to its buoyant equilibrium
+  // rather than being blocked at the surface. Lighter fluid was already displaceable.
+  bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { return isLiquid(m) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < bodyDensity)); }
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || m == FIRE || m == STEAM || isBodyRelocatable(m, k, bodyDensity); }
   struct Disp { uint8_t material; int from; };
   void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint, double bodyDensity) {

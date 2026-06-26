@@ -135,9 +135,16 @@ struct Body {
   bool awake = true; int stillTicks = 0;
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
+  // Local-space collision samples (interleaved lx,ly): the cell centre plus the
+  // midpoint of every exposed cell face and exposed convex corner. The body
+  // shape is the union of 1x1 occupied squares, so sampling only cell centres
+  // misses the exposed edges of thin shapes; these are cached and rebuilt only
+  // when the occupancy changes (computeDerived).
+  std::vector<float> boundarySamples;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;
+  double sweepMargin = 0;
   double aabbX0 = 0, aabbY0 = 0, aabbX1 = 0, aabbY1 = 0;
   double pvx = 0, pvy = 0, pw = 0;
   bool hadContact = false; double maxDepth = 0; int idx = 0;
@@ -360,8 +367,12 @@ struct Player {
 static const int PLAYER_SNAP_STRIDE = 19;
 
 // Rigid tunables (rigid2d.js)
-static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.6;
-static const int    R_MAX_SUBSTEPS = 6, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
+static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+// Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
+// stability + earlier contact), and a sample's per-substep relative path is
+// marched in steps no larger than R_SWEEP_STEP cells looking for first impact.
+static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_RESTITUTION = 0, R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6, R_LIQUID_DRAG = 0.12, R_LIQUID_ANG_DRAG = 0.1;
 static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;

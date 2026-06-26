@@ -104,6 +104,8 @@ export function initSandWasm() {
         bodyCount: c('engine_body_count', 'number', ['number']),
         bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
         bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
+        bodyState: c('engine_body_state', 'number', ['number', 'number', 'number']),
+        setBodyMotion: c('engine_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
         rigidRejected: c('engine_rigid_rejected', 'number', ['number']),
         rigidDepen: c('engine_rigid_depen', 'number', ['number']),
         spawnPlayer: c('engine_spawn_player', 'number', ['number', 'number', 'number']),
@@ -582,5 +584,20 @@ export function createEngineWasm({
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },
     _bodyAwake(i) { return M.bodyAwake(ptr, i); },
+    // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
+    _bodyState(i) {
+      const buf = mod._malloc(8 * 8);
+      const ok = M.bodyState(ptr, i | 0, buf);
+      if (!ok) { mod._free(buf); return null; }
+      const base = buf >> 3;
+      const s = {
+        px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
+        vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
+        nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
+      };
+      mod._free(buf);
+      return s;
+    },
+    _setBodyMotion(i, vx, vy, omega = 0) { return M.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0; },
   };
 }

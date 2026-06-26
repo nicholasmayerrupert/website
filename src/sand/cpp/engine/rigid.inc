@@ -14,15 +14,24 @@
     double dx = sumX / nPts, dy = sumY / nPts;
     if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
     b->offsetX -= dx; b->offsetY -= dy;
-    b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear();
+    b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear(); b->boundarySamples.clear();
     int pi = 0; double inertia = 0, maxR2 = 0;
     auto filled = [&](int ii, int jj) { return ii >= 0 && ii < b->w && jj >= 0 && jj < b->h && b->occ[jj * b->w + ii]; };
+    auto addSample = [&](double sx, double sy) { b->boundarySamples.push_back((float)sx); b->boundarySamples.push_back((float)sy); };
     for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
       if (!b->occ[j * b->w + i]) continue;
       double lx = b->offsetX + i, ly = b->offsetY + j;
       b->points[pi * 2] = (float)lx; b->points[pi * 2 + 1] = (float)ly;
       double r2 = lx * lx + ly * ly; inertia += b->density * r2; if (r2 > maxR2) maxR2 = r2;
-      if (!filled(i - 1, j) || !filled(i + 1, j) || !filled(i, j - 1) || !filled(i, j + 1)) b->boundaryPts.push_back(pi);
+      bool exL = !filled(i - 1, j), exR = !filled(i + 1, j), exU = !filled(i, j - 1), exD = !filled(i, j + 1);
+      if (exL || exR || exU || exD) {
+        b->boundaryPts.push_back(pi);
+        addSample(lx, ly);                                   // cell centre
+        if (exR) addSample(lx + 0.5, ly);                    // exposed face midpoints
+        if (exL) addSample(lx - 0.5, ly);
+        if (exD) addSample(lx, ly + 0.5);
+        if (exU) addSample(lx, ly - 0.5);
+      }
       pi++;
     }
     double mass = b->density * nPts;
@@ -127,12 +136,21 @@
     int n = (int)L->bodies.size();
     std::vector<int> islandParent(n);
     std::vector<double> islandMinStill(n);
-    double maxSpeed2 = 0;
-    for (Body* b : L->bodies) { if (!b->awake) continue; double sp2 = b->vx * b->vx + b->vy * b->vy; if (sp2 > maxSpeed2) maxSpeed2 = sp2; }
-    double maxSpeed = std::sqrt(maxSpeed2) + R_GRAVITY * tickDt;
-    int substeps = (int)std::ceil(maxSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
+    // Substep count is driven by the fastest *point* on any body — linear speed
+    // plus angular tip speed (|omega|*radius) — not just the centre velocity, so
+    // a slowly-translating but fast-spinning bar still gets enough substeps that
+    // its tip moves only a fraction of a cell per substep (no endpoint tunnelling).
+    double maxPointSpeed = 0;
+    for (Body* b : L->bodies) {
+      if (!b->awake) continue;
+      double lin = std::sqrt(b->vx * b->vx + b->vy * b->vy);
+      double pt = lin + std::fabs(b->omega) * (b->maxR > 0 ? b->maxR : 1);
+      if (pt > maxPointSpeed) maxPointSpeed = pt;
+    }
+    maxPointSpeed += R_GRAVITY * tickDt;
+    int substeps = (int)std::ceil(maxPointSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
     std::vector<Contact> contacts; int nc = 0;
-    struct PenPt { double wx, wy, nx, ny, depth; };
+    struct PenPt { double wx, wy, nx, ny, depth; int bk; };
     std::vector<PenPt> penAcc, terrAcc;
     double wpx, wpy, nx_, ny_;
     for (int sub = 0; sub < substeps; sub++) {
@@ -162,23 +180,105 @@
         double x0 = 1e18, y0 = 1e18, x1 = -1e18, y1 = -1e18;
         auto corner = [&](double lx, double ly) { double wx = b->px + lx * cs - ly * sn, wy = b->py + lx * sn + ly * cs; if (wx < x0) x0 = wx; if (wx > x1) x1 = wx; if (wy < y0) y0 = wy; if (wy > y1) y1 = wy; };
         corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
-        b->aabbX0 = x0; b->aabbY0 = y0; b->aabbX1 = x1; b->aabbY1 = y1;
+        // Expand the broad-phase AABB by this body's per-substep reach (point speed
+        // travelled this substep + contact skin) so a swept sample that starts just
+        // outside the static AABB but moves into the pair this substep is not pruned.
+        b->sweepMargin = (std::sqrt(b->vx * b->vx + b->vy * b->vy) + std::fabs(b->omega) * (b->maxR > 0 ? b->maxR : 1)) * dt + R_CONTACT_SKIN + 0.5;
+        double m = b->sweepMargin;
+        b->aabbX0 = x0 - m; b->aabbY0 = y0 - m; b->aabbX1 = x1 + m; b->aabbY1 = y1 + m;
         b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
       }
       contacts.clear();
+      // Penetration depth of a point that is already inside target T, measured by
+      // marching outward along T's surface normal until it exits the mask.
       auto penDepth = [&](Body* T, double wx, double wy, double nx, double ny) { double d = 0.5, mx = wx, my = wy; for (int s = 0; s < 4; s++) { mx += nx; my += ny; if (insideBodyIndex(T, mx, my) < 0) break; d += 1; } return d; };
-      auto collectPen = [&](Body* P, Body* T, double sign) {
-        for (int bp : P->boundaryPts) { worldPoint(P, bp, P->sn, P->cs, wpx, wpy); if (wpx < T->aabbX0 || wpx > T->aabbX1 || wpy < T->aabbY0 || wpy > T->aabbY1) continue; int idx = insideBodyIndex(T, wpx, wpy); if (idx < 0) continue; bodyNormalAt(T, idx, wpx, wpy, nx_, ny_); penAcc.push_back({wpx, wpy, nx_ * sign, ny_ * sign, penDepth(T, wpx, wpy, nx_, ny_)}); }
+      // Swept body-to-body sampling: for each exposed boundary sample of P, either
+      // record an existing penetration (t=0) or march the sample's per-substep
+      // RELATIVE path (P's point velocity minus T's velocity at that point) through
+      // T's occupancy mask and record the first impact. The contact normal is taken
+      // from T's mask surface (bodyNormalAt), oriented from B toward A via `sign`,
+      // never a centre-to-centre direction. This stops a sample crossing from one
+      // side of a thin body to the other without generating a contact.
+      auto collectSweep = [&](Body* P, Body* T, double sign, double dt) {
+        const std::vector<float>& S = P->boundarySamples; double pm = P->sweepMargin;
+        for (size_t si = 0; si + 1 < S.size(); si += 2) {
+          double lx = S[si], ly = S[si + 1];
+          double sx = P->px + lx * P->cs - ly * P->sn, sy = P->py + lx * P->sn + ly * P->cs;
+          if (sx < T->aabbX0 - pm || sx > T->aabbX1 + pm || sy < T->aabbY0 - pm || sy > T->aabbY1 + pm) continue;
+          int idx0 = insideBodyIndex(T, sx, sy);
+          if (idx0 >= 0) { bodyNormalAt(T, idx0, sx, sy, nx_, ny_); penAcc.push_back({sx, sy, nx_ * sign, ny_ * sign, penDepth(T, sx, sy, nx_, ny_), 0}); continue; }
+          double rPx = sx - P->px, rPy = sy - P->py, rTx = sx - T->px, rTy = sy - T->py;
+          double mvx = ((P->vx - P->omega * rPy) - (T->vx - T->omega * rTy)) * dt;
+          double mvy = ((P->vy + P->omega * rPx) - (T->vy + T->omega * rTx)) * dt;
+          double mlen = std::sqrt(mvx * mvx + mvy * mvy);
+          if (mlen < 1e-9) continue;
+          double dirx = mvx / mlen, diry = mvy / mlen, total = mlen + R_CONTACT_SKIN;
+          int steps = (int)std::ceil(total / R_SWEEP_STEP); if (steps < 1) steps = 1;
+          for (int k = 1; k <= steps; k++) {
+            double dk = total * (double)k / steps;
+            if (insideBodyIndex(T, sx + dirx * dk, sy + diry * dk) < 0) continue;
+            double a = total * (double)(k - 1) / steps, bb = dk;
+            for (int it = 0; it < 6; it++) { double mm = (a + bb) * 0.5; if (insideBodyIndex(T, sx + dirx * mm, sy + diry * mm) >= 0) bb = mm; else a = mm; }
+            double hx = sx + dirx * bb, hy = sy + diry * bb; int hidx = insideBodyIndex(T, hx, hy);
+            if (hidx < 0) { hx = sx + dirx * dk; hy = sy + diry * dk; hidx = insideBodyIndex(T, hx, hy); }
+            if (hidx < 0) break;
+            bodyNormalAt(T, hidx, hx, hy, nx_, ny_); penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
+            break;
+          }
+        }
       };
+      // Swept body-to-terrain sampling: same idea against the static grid mask.
+      auto collectTerrain = [&](Body* b, double dt) {
+        const std::vector<float>& S = b->boundarySamples;
+        auto solid = [&](int ix, int iy) { return ix >= 0 && ix < cols && iy >= 0 && iy < rows && isBodyTerrain(ix, iy, b->density); };
+        for (size_t si = 0; si + 1 < S.size(); si += 2) {
+          double lx = S[si], ly = S[si + 1];
+          double sx = b->px + lx * b->cs - ly * b->sn, sy = b->py + lx * b->sn + ly * b->cs;
+          int cx = (int)std::floor(sx), cy = (int)std::floor(sy);
+          if (solid(cx, cy)) {
+            terrainNormalAt(cx, cy, b->density, nx_, ny_);
+            double depth = 0.5, mx = sx, my = sy;
+            for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; if (!solid((int)std::floor(mx), (int)std::floor(my))) break; depth += 1; }
+            terrAcc.push_back({sx, sy, nx_, ny_, depth, 0}); continue;
+          }
+          double rx = sx - b->px, ry = sy - b->py;
+          double mvx = (b->vx - b->omega * ry) * dt, mvy = (b->vy + b->omega * rx) * dt;
+          double mlen = std::sqrt(mvx * mvx + mvy * mvy);
+          if (mlen < 1e-9) continue;
+          double dirx = mvx / mlen, diry = mvy / mlen, total = mlen + R_CONTACT_SKIN;
+          int steps = (int)std::ceil(total / R_SWEEP_STEP); if (steps < 1) steps = 1;
+          for (int k = 1; k <= steps; k++) {
+            double dk = total * (double)k / steps;
+            if (!solid((int)std::floor(sx + dirx * dk), (int)std::floor(sy + diry * dk))) continue;
+            double a = total * (double)(k - 1) / steps, bb = dk;
+            for (int it = 0; it < 6; it++) { double mm = (a + bb) * 0.5; if (solid((int)std::floor(sx + dirx * mm), (int)std::floor(sy + diry * mm))) bb = mm; else a = mm; }
+            double hx = sx + dirx * bb, hy = sy + diry * bb; int hxx = (int)std::floor(hx), hyy = (int)std::floor(hy);
+            if (!solid(hxx, hyy)) { hx = sx + dirx * dk; hy = sy + diry * dk; hxx = (int)std::floor(hx); hyy = (int)std::floor(hy); }
+            terrainNormalAt(hxx, hyy, b->density, nx_, ny_); terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
+            break;
+          }
+        }
+      };
+      // Reduce raw samples into a small contact manifold. Samples are bucketed by
+      // quantized normal direction so materially different contact faces stay
+      // separate (not blended into one diagonal normal); within each bucket the two
+      // tangential extremes are kept so a long contact gets stable torque at both
+      // ends. Deepest contributes to maxDepth for the sleep gate.
       auto reduceManifold = [&](std::vector<PenPt>& acc, Body* A, Body* B, double fbx, double fby) {
         if (acc.empty()) return;
-        double snx = 0, sny = 0; for (auto& p : acc) { snx += p.nx; sny += p.ny; }
-        double nl = std::sqrt(snx * snx + sny * sny), Nx, Ny;
-        if (nl < 1e-6) { Nx = fbx; Ny = fby; } else { Nx = snx / nl; Ny = sny / nl; }
-        double tx = -Ny, ty = Nx; PenPt* lo = nullptr; PenPt* hi = nullptr; double loP = 1e18, hiP = -1e18;
-        for (auto& pt : acc) { double pr = pt.wx * tx + pt.wy * ty; if (pr < loP) { loP = pr; lo = &pt; } if (pr > hiP) { hiP = pr; hi = &pt; } }
-        auto push = [&](PenPt* p) { contacts.push_back({A, B, p->wx - A->px, p->wy - A->py, B ? p->wx - B->px : 0, B ? p->wy - B->py : 0, Nx, Ny, p->depth, 0, 0, 0}); if (p->depth > A->maxDepth) A->maxDepth = p->depth; if (B && p->depth > B->maxDepth) B->maxDepth = p->depth; };
-        push(lo); if (hi != lo) push(hi);
+        const double Q = 8.0 / (2.0 * M_PI);
+        double snx[8] = {0}, sny[8] = {0}; int cnt[8] = {0};
+        for (auto& p : acc) { int bk = ((int)std::lround(std::atan2(p.ny, p.nx) * Q)) & 7; p.bk = bk; snx[bk] += p.nx; sny[bk] += p.ny; cnt[bk]++; }
+        double Nx[8], Ny[8], tx[8], ty[8], loP[8], hiP[8]; PenPt* lo[8] = {nullptr}; PenPt* hi[8] = {nullptr};
+        for (int bk = 0; bk < 8; bk++) {
+          if (!cnt[bk]) continue;
+          double nl = std::sqrt(snx[bk] * snx[bk] + sny[bk] * sny[bk]);
+          if (nl < 1e-6) { Nx[bk] = fbx; Ny[bk] = fby; } else { Nx[bk] = snx[bk] / nl; Ny[bk] = sny[bk] / nl; }
+          tx[bk] = -Ny[bk]; ty[bk] = Nx[bk]; loP[bk] = 1e18; hiP[bk] = -1e18;
+        }
+        for (auto& p : acc) { int bk = p.bk; double pr = p.wx * tx[bk] + p.wy * ty[bk]; if (pr < loP[bk]) { loP[bk] = pr; lo[bk] = &p; } if (pr > hiP[bk]) { hiP[bk] = pr; hi[bk] = &p; } }
+        auto push = [&](PenPt* p, int bk) { if (!p) return; contacts.push_back({A, B, p->wx - A->px, p->wy - A->py, B ? p->wx - B->px : 0, B ? p->wy - B->py : 0, Nx[bk], Ny[bk], p->depth, 0, 0, 0}); if (p->depth > A->maxDepth) A->maxDepth = p->depth; if (B && p->depth > B->maxDepth) B->maxDepth = p->depth; };
+        for (int bk = 0; bk < 8; bk++) { if (!cnt[bk]) continue; push(lo[bk], bk); if (hi[bk] != lo[bk]) push(hi[bk], bk); }
         A->hadContact = true; if (B) B->hadContact = true;
       };
       for (int i = 0; i < n; i++) {
@@ -187,41 +287,22 @@
           Body* B = L->bodies[j];
           if (!A->awake && !B->awake) continue;
           if (A->aabbX1 < B->aabbX0 || B->aabbX1 < A->aabbX0 || A->aabbY1 < B->aabbY0 || B->aabbY1 < A->aabbY0) continue;
-          penAcc.clear(); collectPen(A, B, 1); collectPen(B, A, -1);
-          if (penAcc.empty()) continue;
           bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
           bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
+          penAcc.clear(); collectSweep(A, B, 1, dt); collectSweep(B, A, -1, dt);
+          if (penAcc.empty()) continue;
           if (!A->awake && bMoving) wakeBody(A);
           if (!B->awake && aMoving) wakeBody(B);
           if (!A->awake && !B->awake) continue;
-          double dx = A->px - B->px, dy = A->py - B->py; double dl = std::sqrt(dx * dx + dy * dy); if (dl == 0) dl = 1; dx /= dl; dy /= dl;
-          double minA = 1e18, maxB = -1e18;
-          for (int bp : A->boundaryPts) { worldPoint(A, bp, A->sn, A->cs, wpx, wpy); double pr = wpx * dx + wpy * dy; if (pr < minA) minA = pr; }
-          for (int bp : B->boundaryPts) { worldPoint(B, bp, B->sn, B->cs, wpx, wpy); double pr = wpx * dx + wpy * dy; if (pr > maxB) maxB = pr; }
-          double depth = std::fmax(0.5, (maxB - minA) + 0.5);
-          for (auto& p : penAcc) { p.nx = dx; p.ny = dy; p.depth = depth; }
-          reduceManifold(penAcc, A, B, dx, dy);
+          double fbx = A->px - B->px, fby = A->py - B->py, fl = std::sqrt(fbx * fbx + fby * fby);
+          if (fl < 1e-9) { fbx = 0; fby = -1; } else { fbx /= fl; fby /= fl; }
+          reduceManifold(penAcc, A, B, fbx, fby);
         }
       }
       for (int bi = 0; bi < n; bi++) {
         Body* b = L->bodies[bi]; if (!b->awake) continue;
         terrAcc.clear();
-        for (int bp : b->boundaryPts) {
-          worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
-          int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
-          if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
-          int tx = cx, ty = cy; double depth = 0.5;
-          if (!isBodyTerrain(cx, cy, b->density)) {
-            double rx = wpx - b->px, ry = wpy - b->py;
-            tx = (int)std::floor(wpx + (b->vx - b->omega * ry) * dt);
-            ty = (int)std::floor(wpy + (b->vy + b->omega * rx) * dt);
-            if (tx < 0 || tx >= cols || ty < 0 || ty >= rows || !isBodyTerrain(tx, ty, b->density)) continue;
-            depth = 0;
-          }
-          terrainNormalAt(tx, ty, b->density, nx_, ny_);
-          if (depth > 0) { double mx = wpx, my = wpy; for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; int ix = (int)std::floor(mx), iy = (int)std::floor(my); if (ix < 0 || ix >= cols || iy < 0 || iy >= rows || !isBodyTerrain(ix, iy, b->density)) break; depth += 1; } }
-          terrAcc.push_back({wpx, wpy, nx_, ny_, depth});
-        }
+        collectTerrain(b, dt);
         reduceManifold(terrAcc, b, nullptr, 0, -1);
       }
       nc = (int)contacts.size();

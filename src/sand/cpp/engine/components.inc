@@ -4,25 +4,34 @@
   // only through component membership, and unregistered component cells are
   // erased during cleanup. Tool placement, worldgen, growth, and world shifting
   // should route component writes through this subsystem and then sync/register.
+  // Rebuild cellComp[] (cell -> component index), the cgComps index, and per-
+  // component mean density. Shared by the full reflood (computeGrounded) and the
+  // incremental refresh (incrementalGroundingRefresh). Resets each Comp's grounded
+  // flag to false (the flood / refresh sets it back). Does NOT touch groundedCell[].
+  // O(total component cells).
+  void indexComponents() {
+    cgComps.clear();
+    cgCompDensity.clear();
+    auto idx = [&](std::vector<Comp>& list) {
+      for (auto& c : list) {
+        c.grounded = false;
+        int id = (int)cgComps.size();
+        cgComps.push_back(&c);
+        double sum = 0;
+        for (int k : c.cells) { cellComp[k] = id; sum += DENSITY[grid[k]]; }
+        cgCompDensity.push_back(c.cells.empty() ? 0 : sum / c.cells.size());
+      }
+    };
+    idx(L->stoneComponents); idx(L->plantComponents); idx(L->iceComponents);
+  }
   void computeGrounded() {
     std::fill(groundedCell, groundedCell + (size_t)cols * rows, (uint8_t)0);
     std::fill(cellComp, cellComp + (size_t)cols * rows, -1);
-    std::vector<Comp*> comps;
-    std::vector<double> compDensity;
-    auto indexComps = [&](std::vector<Comp>& list) {
-      for (auto& c : list) {
-        c.grounded = false;
-        int id = (int)comps.size();
-        comps.push_back(&c);
-        double sum = 0;
-        for (int k : c.cells) { cellComp[k] = id; sum += DENSITY[grid[k]]; }
-        compDensity.push_back(c.cells.empty() ? 0 : sum / c.cells.size());
-      }
-    };
-    indexComps(L->stoneComponents); indexComps(L->plantComponents); indexComps(L->iceComponents);
+    indexComponents();
+    bool sawPowder = false;
     auto effectiveRigidDensityAt = [&](int k) {
       int id = cellComp[k];
-      return id >= 0 ? compDensity[id] : (double)DENSITY[grid[k]];
+      return id >= 0 ? cgCompDensity[id] : (double)DENSITY[grid[k]];
     };
     auto canGroundAbove = [&](int below, int above) {
       uint8_t upper = grid[above];
@@ -36,7 +45,7 @@
       if (groundedCell[k]) return;
       groundedCell[k] = 1;
       int id = cellComp[k];
-      if (id >= 0) comps[id]->grounded = true;
+      if (id >= 0) cgComps[id]->grounded = true;
       groundStack[sp++] = k;
     };
     int floorBase = (rows - 1) * cols;
@@ -57,7 +66,10 @@
       int rb = y * cols;
       for (int x = 1; x < cols - 1; x++) {
         int k = rb + x;
-        if (MAT_KIND[grid[k]] == K_POWDER && isLiquid(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k);
+        if (MAT_KIND[grid[k]] == K_POWDER) {
+          sawPowder = true;
+          if (isLiquid(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k);
+        }
       }
     }
     while (sp > 0) {
@@ -69,6 +81,132 @@
         for (int oy = -1; oy <= 1; oy++) { int ny = ky + oy; if (ny <= 0 || ny >= rows) continue; int rb = ny * cols; for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = kx + ox; if (nx <= 0 || nx >= cols - 1) continue; int nk = rb + nx; if (!groundedCell[nk] && isRigidMaterial(grid[nk])) groundCellAt(nk); } }
       }
     }
+    // The cache is now fresh. Stay "dirty" (force a full reflood next step too)
+    // while any powder is present: powder grounding (line above) depends on the
+    // liquid beneath it, and liquids move without routing through the component
+    // hooks that set groundDirty, so we can't safely skip the flood with powder
+    // around. Powder-free scenes (e.g. acid eating stone) go clean and can skip.
+    L->groundSawPowder = sawPowder;
+    L->groundDirty = sawPowder;
+  }
+
+  // Incremental grounding for the common single-layer, powder-free case: the
+  // expensive part of computeGrounded is the flood; everything else (cellComp +
+  // per-component density + grounded flags) is a cheap O(stone) linear pass. When
+  // no removal disconnected anything (Layer::groundDirty stayed false), the cached
+  // groundedCell[] is still the true grounded set (removed cells were patched to 0
+  // at the dissolve site), so we skip the flood entirely and only rebuild the
+  // cheap bookkeeping, deriving each component's grounded flag from the cache.
+  // Produces a byte-identical groundedCell[]/cellComp[] to a full reflood (verified).
+  void incrementalGroundingRefresh() {
+    std::fill(cellComp, cellComp + (size_t)cols * rows, -1);
+    indexComponents();                       // rebuilds cellComp + cgCompDensity, resets grounded=false
+    for (Comp* c : cgComps) {                // a connected component is grounded iff ANY of its cells is
+      for (int k : c->cells) if (groundedCell[k]) { c->grounded = true; break; }
+    }
+  }
+
+  // Single-layer grounding entry point (the cross-layer path uses computeGrounded
+  // directly via computeGroundedBoth). Picks the full reflood or the incremental
+  // refresh, and when groundVerify is on, runs BOTH and asserts byte-equality so a
+  // wrong fast path can never silently desync — it shows up as a test failure.
+  void ensureGroundedSingleLayer() {
+    bool full = groundForceFull || bgEnabled || L->groundDirty;
+    if (!groundVerify) {
+      if (full) computeGrounded(); else incrementalGroundingRefresh();
+      return;
+    }
+    if (full) computeGrounded(); else incrementalGroundingRefresh();
+    gvGrounded.assign(groundedCell, groundedCell + (size_t)cols * rows);
+    gvCellComp.assign(cellComp, cellComp + (size_t)cols * rows);
+    computeGrounded(); // the trusted reference; leaves the live arrays correct regardless
+    for (size_t i = 0, n = (size_t)cols * rows; i < n; i++) {
+      if (gvGrounded[i] != groundedCell[i] || gvCellComp[i] != cellComp[i]) { groundMismatches++; break; }
+    }
+  }
+
+  // Do all of the rigid cells in `boundary` (the surviving rigid neighbours of the
+  // removed blob) reconnect to one another through rigid material within [x0,x1] x
+  // [y0,y1], WITHOUT passing through any cell stamped `removedGen`? If so, the blob is
+  // not a cut: every path that used the blob reroutes through the reconnected
+  // boundary, so removing it disconnects nothing. A bounded window + visit cap keep
+  // it cheap; failing to connect (or exceeding the cap) is treated as a cut, which is
+  // always safe (the caller refloods).
+  bool blobBoundaryReconnects(const std::vector<int>& boundary, int32_t inN, int x0, int y0, int x1, int y1, int32_t removedGen) {
+    int32_t vis = ++L->seenGen;
+    // Early-exit means a genuine reconnection finds all boundary cells quickly, so the
+    // cap only bounds the wasted work of a check that is going to FAIL (a real cut):
+    // keep it modest so a failing check costs far less than the reflood it precedes.
+    int* q = groundStack; const int cap = 8000;
+    int qh = 0, qt = 0;
+    int need = (int)boundary.size(), found = 1; // boundary[0] is the BFS seed
+    L->seenStamp[boundary[0]] = vis; q[qt++] = boundary[0];
+    while (qh < qt) {
+      if (qt >= cap) return false;
+      int cur = q[qh++]; int cy = cur / cols, cx = cur - cy * cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = cx + ox, ny = cy + oy;
+        if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
+        int nk = ny * cols + nx;
+        int32_t s = L->seenStamp[nk];
+        if (s == vis || s == removedGen) continue;
+        if (!isRigidMaterial(grid[nk])) continue;
+        if (s == inN && ++found == need) return true; // all boundary cells reconnected -> not a cut (early out)
+        L->seenStamp[nk] = vis; q[qt++] = nk;
+      }
+    }
+    return found == need;
+  }
+
+  // Decide whether a batch of just-removed rigid cells (grid already cleared at each)
+  // keeps the grounding cache valid. A removal changes another cell's grounding only
+  // by disconnecting it from a SEED (floor / streamed buffer edge / powder-on-dense-
+  // liquid). The removed cells must be checked AS A BLOB, not one at a time: two
+  // adjacent removals can together bridge two regions even though neither alone is a
+  // cut. So we require the whole removed set to be (a) compact (small bbox) and clear
+  // of the edge/floor seed margin, (b) free of powder in its neighbourhood, and (c)
+  // such that every surviving rigid neighbour of the blob reconnects to the others
+  // without the blob. Then removing it disconnects nothing and the only grounding
+  // change is the removed cells themselves, which we patch to 0. Otherwise the caller
+  // refloods. groundedCell stays a pure function of the grid -- verified byte-for-byte
+  // against a full reflood every step under groundVerify (see the grounding test).
+  bool removalsKeepGroundingValid(const std::vector<int>& removed) {
+    if (removed.empty()) return true;
+    const int MARGIN = 2;  // stay clear of the floor (row rows-1) and streamed edges
+    const int SPAN = 128;  // max blob extent for the fast path; wider spreads reflood
+    const int W = 8;       // reconnect-search margin around the blob bbox
+    int32_t gen = ++L->seenGen;
+    int bx0 = cols, by0 = rows, bx1 = -1, by1 = -1;
+    for (int k : removed) {
+      L->seenStamp[k] = gen;
+      int y = k / cols, x = k - y * cols;
+      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+    }
+    if (bx1 - bx0 > SPAN || by1 - by0 > SPAN) { gbSpan++; return false; }
+    if (bx0 <= MARGIN || bx1 >= cols - 1 - MARGIN || by0 <= MARGIN || by1 >= rows - 1 - MARGIN) { gbEdge++; return false; }
+    // Gather the blob's surviving rigid neighbours (deduped via the inN stamp); bail
+    // on any powder nearby (powder/liquid grounding nuance not modelled here).
+    int32_t inN = ++L->seenGen;
+    cgBlobN.clear();
+    for (int r : removed) {
+      int ry = r / cols, rx = r - ry * cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nk = (ry + oy) * cols + (rx + ox);
+        uint8_t m = grid[nk];
+        if (MAT_KIND[m] == K_POWDER) { gbPowder++; return false; }
+        if (isRigidMaterial(m) && L->seenStamp[nk] != gen && L->seenStamp[nk] != inN) { L->seenStamp[nk] = inN; cgBlobN.push_back(nk); }
+      }
+    }
+    if ((int)cgBlobN.size() > 1) {  // 0/1 external connection: the blob is a pendant, removing it disconnects nothing else
+      int x0 = imax(1, bx0 - W), x1 = imin(cols - 2, bx1 + W);
+      int y0 = imax(1, by0 - W), y1 = imin(rows - 2, by1 + W);
+      if (!blobBoundaryReconnects(cgBlobN, inN, x0, y0, x1, y1, gen)) { gbCut++; return false; }
+    }
+    for (int k : removed) groundedCell[k] = 0;          // only these cells lose grounding
+    gbFast++;
+    return true;
   }
 
   int compCount(Layer& lay) { return (int)(lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size()); }
@@ -309,6 +447,7 @@
   void moveCrossLayerBondedAssemblies() {
     int nf = compCount(fg), nb = compCount(bg);
     if (cgBonds.empty() || nf == 0 || nb == 0) return;
+    fg.groundDirty = true; bg.groundDirty = true; // cross-layer assembly may move -> reflood both
     std::vector<int>& parent = cgParent;
     parent.assign(nf + nb, 0);
     for (int i = 0; i < nf + nb; i++) parent[i] = i;
@@ -470,6 +609,7 @@
         for (int k : comp->cells) { uint8_t m = matOf(ci, k); mats.push_back({k + dir, m}); if (isPlant) { if (isPlantWood(m)) wood++; else if (isPlantLeaf(m)) leaf++; } }
         moves.push_back({comp, isPlant, std::move(mats), wood, leaf});
       }
+      L->groundDirty = true; // an assembly is relocating -> grounding changes -> full reflood
       for (int k : cells) writeGridIndex(k, EMPTY);
       for (auto& mv : moves) {
         std::vector<int> newCells; newCells.reserve(mv.mats.size());
@@ -557,6 +697,7 @@
   // [colStart,colEnd) x [rowStart,rowEnd). A streamed-in vertical band passes a row
   // range (cols-wide); a horizontal band passes a col range (rows-tall).
   void registerSeededComponents(int colStart, int colEnd, int rowStart, int rowEnd) {
+    L->groundDirty = true; // bulk component rebuild (sync/tools/worldgen/shift) -> full reflood
     // Reused generation-stamped scratch (allocated once in Layer::alloc): a cell
     // is "seen" iff seenStamp[k] == gen. Each of the three blocks bumps gen, so
     // the "clear" between materials costs O(1) instead of zeroing cols*rows.
@@ -607,6 +748,7 @@
 
   void registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache) {
     if (cells.empty()) return;
+    L->groundDirty = true; // adds rigid cells (lava harden / tool placement) -> full reflood
     // Find which existing components the new cells touch. Comp.cells is a vector
     // now, so a linear .count() per neighbor would be O(cells * comps * size); use
     // a cell->component-index map built LAZILY (only once a same-material neighbor
@@ -670,6 +812,7 @@
 
   // split a plant-family component list keeping only cells still of plant material
   void splitPlantAfterErase() {
+    L->groundDirty = true; // plant cells removed/split -> full reflood
     std::vector<Comp> updated;
     std::vector<int32_t>& seen = L->seenStamp;
     std::vector<int> part;
@@ -693,7 +836,12 @@
     L->plantComponents = std::move(updated);
   }
   // split stone/ice after erase: remove erased cells, re-flood
-  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache) {
+  // markGroundDirty=true (the default, used by tools-erase and ice-melt) forces a
+  // full grounding reflood next pass. Acid passes false and instead runs its own
+  // cut-vertex check (noteAcidRemovals) to keep the grounding cache valid when a
+  // dissolve doesn't disconnect anything.
+  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true) {
+    if (markGroundDirty && !erased.empty()) L->groundDirty = true;
     if (erased.empty() || list.empty()) return;
     std::vector<int32_t>& seen = L->seenStamp;
     int32_t erasedGen = ++L->seenGen;

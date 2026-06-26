@@ -65,6 +65,12 @@ EMSCRIPTEN_KEEPALIVE double engine_perf_step_carry(Engine* e) { return e->perfSt
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_settle(Engine* e) { return e->perfStepSettle; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_tail(Engine* e) { return e->perfStepTail; }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
+// Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
+// AND a full reflood every step and counts mismatches; forceFull=1 always refloods
+// (the byte-identical reference for the checksum test).
+EMSCRIPTEN_KEEPALIVE void engine_set_grounding_debug(Engine* e, int verify, int forceFull) { e->groundVerify = verify != 0; e->groundForceFull = forceFull != 0; }
+EMSCRIPTEN_KEEPALIVE double engine_grounding_mismatches(Engine* e) { return (double)e->groundMismatches; }
+EMSCRIPTEN_KEEPALIVE double engine_grounding_diag(Engine* e, int which) { return which == 0 ? (double)e->gbFast : which == 1 ? (double)e->gbEdge : which == 2 ? (double)e->gbPowder : which == 3 ? (double)e->gbCut : (double)e->gbSpan; }
 
 // drafts / seed
 // Draft staging is now a SINGLE material-parameterized set; these legacy hooks set

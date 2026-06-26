@@ -34,6 +34,12 @@
     // components + ids
     std::vector<Comp> stoneComponents, plantComponents, iceComponents;
     int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
+    // Incremental-grounding cache state (see members near cgComps). groundDirty
+    // true => the next grounding pass must be a full reflood; it is set true by any
+    // component add/move/split/growth/sync and stays true while powder is present
+    // (powder grounding depends on liquids that don't route through these hooks).
+    // groundSawPowder records whether the last full reflood saw any powder.
+    bool groundDirty = true, groundSawPowder = false;
     std::vector<uint8_t> crossBondedComp;
     // free rigid bodies + ownership
     std::vector<Body*> bodies; int nextBodyId = 1;
@@ -145,6 +151,28 @@
   // snapshot; cgVisited/cgStack/cgIsland = the per-island flood working set.
   std::vector<uint8_t> cgPrevFg, cgPrevBg, cgFgBase, cgBgBase, cgVisited;
   std::vector<int> cgStack, cgIsland;
+  // Shared scratch for the grounding flood: cgComps maps a component index (the
+  // value stored in cellComp[]) back to its Comp*, cgCompDensity holds each
+  // component's mean density. Rebuilt every grounding pass by indexComponents().
+  std::vector<Comp*> cgComps;
+  std::vector<double> cgCompDensity;
+  // ---- incremental grounding (single-layer only) ----
+  // computeGrounded() re-floods the whole grid every active step; that is the
+  // dominant cost when acid eats a large grounded stone mass. Grounding only
+  // CHANGES when rigid topology changes, so we keep groundedCell[] between steps
+  // and skip the flood when nothing relevant changed (Layer::groundDirty false).
+  // Acid removals that don't disconnect anything (cut-vertex check) keep the cache
+  // valid and just patch the removed cells. groundedCell[] is a pure function of
+  // the grid, so the cached result is byte-identical to a fresh reflood — verified
+  // below. Restricted to single-layer worlds; the cross-layer path always refloods.
+  bool groundVerify = false;     // debug: after each pass, also full-reflood and assert equality
+  bool groundForceFull = false;  // force a full reflood every step (the checksum-equality reference)
+  long groundMismatches = 0;     // count of verify failures (0 == fast path matched the reflood)
+  long gbEdge = 0, gbPowder = 0, gbCut = 0, gbSpan = 0, gbFast = 0; // diagnostic: removal-batch bail reasons
+  std::vector<uint8_t> gvGrounded;   // verifier snapshot of the fast-path groundedCell
+  std::vector<int32_t> gvCellComp;   // verifier snapshot of the fast-path cellComp
+  std::vector<int> cgRemovedCells;   // rigid cells removed this step, pending the cut-vertex check
+  std::vector<int> cgBlobN;          // surviving rigid neighbours of the removed blob (cut-vertex check)
   struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
   std::vector<CrossLayerBond> cgBonds;
   // Reusable scratch for the cross-bonded union-find (replaces the old O(grid)

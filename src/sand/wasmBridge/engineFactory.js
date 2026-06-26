@@ -62,6 +62,9 @@ export function initSandWasm() {
         placeMaterialLayer: c('engine_place_material_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         setSinks: c('engine_set_sinks', null, ['number', 'number']),
         syncComponents: c('engine_sync_components', null, ['number']),
+        setGroundingDebug: c('engine_set_grounding_debug', null, ['number', 'number', 'number']),
+        groundingMismatches: c('engine_grounding_mismatches', 'number', ['number']),
+        groundingDiag: c('engine_grounding_diag', 'number', ['number', 'number']),
         perfStepMs: c('engine_perf_step_ms', 'number', ['number']),
         perfDirtyChunks: c('engine_perf_dirty_chunks', 'number', ['number']),
         perfShiftBuffers: c('engine_perf_shift_buffers', 'number', ['number']),
@@ -381,6 +384,9 @@ export function createEngineWasm({
     getStepPerf() { return { ground: M.perfStepGround(ptr), rigid: M.perfStepRigid(ptr), react: M.perfStepReact(ptr), carry: M.perfStepCarry(ptr), settle: M.perfStepSettle(ptr), tail: M.perfStepTail(ptr) }; },
     getTick() { return M.tick(ptr); },
     syncComponents() { M.syncComponents(ptr); },
+    setGroundingDebug(verify, forceFull) { M.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0); },
+    groundingMismatches() { return M.groundingMismatches(ptr); },
+    groundingDiag() { return { fast: M.groundingDiag(ptr, 0), edge: M.groundingDiag(ptr, 1), powder: M.groundingDiag(ptr, 2), cut: M.groundingDiag(ptr, 3), span: M.groundingDiag(ptr, 4) }; },
     destroy() { mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); M.destroy(ptr); },
 
     // Component drafts + seeds (Stage 3)

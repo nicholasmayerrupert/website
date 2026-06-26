@@ -68,9 +68,20 @@
         if (rand() < ACID_DECAY_P) writeGridIndex(k, EMPTY);
       }
     }
-    if (dissolvedStone) splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
-    if (dissolvedIce) splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
-    if (dissolvedPlant) splitPlantAfterErase();
+    // Pass markGroundDirty=false and decide grounding ourselves: a dissolve that
+    // doesn't disconnect anything (the common case of acid boring through bulk
+    // stone) keeps the grounding cache valid and skips the full-grid reflood that
+    // otherwise dominates the cost. removalsKeepGroundingValid patches the removed
+    // cells when safe; any disconnect / seed / powder case forces a reflood.
+    if (dissolvedStone) splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false, false);
+    if (dissolvedIce) splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true, false);
+    if (dissolvedPlant) splitPlantAfterErase(); // sets groundDirty (plant grounding nuance)
+    if (dissolvedStone || dissolvedIce) {
+      cgRemovedCells.clear();
+      cgRemovedCells.insert(cgRemovedCells.end(), erasedStone.begin(), erasedStone.end());
+      cgRemovedCells.insert(cgRemovedCells.end(), erasedIce.begin(), erasedIce.end());
+      if (!removalsKeepGroundingValid(cgRemovedCells)) L->groundDirty = true;
+    }
   }
   void applyLava() {
     std::unordered_set<int> hardened; int hardenedYMax = 0; bool plantBurned = false;
@@ -105,7 +116,7 @@
         if (rm == FIRE || rm == LAVA || lm == FIRE || lm == LAVA || dm == FIRE || dm == LAVA || um == FIRE || um == LAVA) { writeGridIndex(k, WATER); meltedCells.push_back(k); melted = true; continue; }
         if (rand() < ICE_FREEZE_P) {
           int waterK = -1; if (rm == WATER) waterK = right; else if (lm == WATER) waterK = left; else if (dm == WATER) waterK = down; else if (um == WATER) waterK = up;
-          if (waterK >= 0) { writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); int wy = waterK / cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; } // waterK was WATER (live grid read) -> not already in comp
+          if (waterK >= 0) { writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); int wy = waterK / cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; L->groundDirty = true; } // waterK was WATER (live grid read) -> not already in comp; new ICE cell -> reflood
         }
       }
     }

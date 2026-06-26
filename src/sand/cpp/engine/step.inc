@@ -16,7 +16,7 @@
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
     double t0 = emscripten_get_now();
-    if (!jointGroundReady) computeGrounded(); // joint cross-layer flood already ran in step()
+    if (!jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     double tG = emscripten_get_now(); perfStepGround = tG - t0;
     moveRigidAssemblies();
     moveBodies();

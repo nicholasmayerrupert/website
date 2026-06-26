@@ -80,6 +80,7 @@
       comp.age++;
       if (!comp.growing) continue;                          // worldgen/restored trees are inert scenery
       if (!compHasSeed(comp)) { comp.growing = false; continue; }
+      L->groundDirty = true; // an actively-growing plant may add cells this step -> full reflood
       // species materials + per-type caps (OAK keeps the original literals).
       gGrowType = comp.plantType; gWoodMat = plantWoodMat(gGrowType); gLeafMat = plantLeafMat(gGrowType);
       int maxWood = gGrowType == PT_BUSH ? 14 : gGrowType == PT_MUSHROOM ? 10 : gGrowType == PT_CACTUS ? 26 : MAX_WOOD_CELLS;

@@ -188,64 +188,60 @@
       }
     }
   }
-  // Flatten a wide free LIQUID-against-AIR surface (the TOP fluid's top). A single
-  // fluid's surface cannot be levelled by purely local moves: stepping a cell across a
-  // 1px height difference is energy-NEUTRAL, so a gradient-following rule shuffles
-  // forever (the churn that breaks multiplayer). But moving a surface cell from a
-  // column to a CONNECTED column whose surface is >=2px LOWER strictly lowers
-  // sum-of-column-heights^2 (a bounded-below Lyapunov), so it CONVERGES and then
-  // settles — the air-surface analogue of the density spread that levels a two-fluid
-  // interface. We walk along the surface (over equal/higher liquid of the same kind,
-  // descending through air to a lower surface, stopping at a wall, the floor, or a
-  // different material) up to LIQUID_LEVEL_RANGE, find the lowest reachable connected
-  // column, and pour ONE cell into it. The >=2 gate leaves <=1px residual steps, so a
-  // near-flat surface is left strictly alone -> the body goes inert (no shimmer, no
-  // per-step diff churn). Deterministic (no rand) -> a flat single fluid is untouched.
+  // Keep a wide free LIQUID-against-AIR surface flowing locally until it is nearly
+  // level. The probe looks along a connected surface to see whether a side reaches a
+  // column >=2px lower, but the actual move is only ONE adjacent sideways step into
+  // air. The next normal settle pass then lets that cell fall naturally. This avoids
+  // both failure modes: a one-sided pile/ramp that goes inert too soon, and the old
+  // non-local "flattening" jump that placed a cell directly at the distant low point.
   void levelLiquidSurfaces() {
-    // BOTTOM-TO-TOP: a cell pours DOWN into a lower row, so by visiting lower rows
-    // first the just-placed cell is never re-processed this pass. Top-to-bottom would
-    // let one cell cascade across the whole body in a single tick (water teleporting
-    // far faster than gravity — a falling blob spread wide mid-air).
-    for (int y = rows - 2; y >= 1; y--) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
-      if (maxX < minX) continue;
-      for (int x = minX; x <= maxX; x++) {
-        int k = I(x, y);
-        uint8_t m = grid[k];
-        if (!isLiquid(m) || m == LAVA) continue;   // lava keeps its own viscous (lumpy) surface
-        if (grid[k - cols] != EMPTY) continue;     // not a free surface (air must be directly above)
-        if (grid[k + cols] == EMPTY) continue;     // RESTING only: a cell with air below is falling, not a surface to level
-        // Only a STEP-EDGE cell (open air beside it at its own level) may pour: an
-        // interior flat-run cell that teleported would punch a hole relaxLiquidGaps
-        // just refills. This also skips every interior cell of a flat body, so a wide
-        // calm surface costs ~nothing (and the body still erodes from its edges).
-        if (grid[k - 1] != EMPTY && grid[k + 1] != EMPTY) continue;
-        // Act only on water that has come to REST — not water still flowing/falling
-        // this tick. If this cell, its support, or a side was vacated this tick the
-        // body is mid-flow; teleporting then makes freshly spawned/poured water shoot
-        // across to the low point before it can settle naturally (it spawns "too fast"
-        // and lands far from where you put it). Once flow stops the stamps go stale and
-        // the leveller quietly finishes the crooked surface.
-        if (vacatedStamp[k] == tick || vacatedStamp[k + cols] == tick ||
-            vacatedStamp[k - 1] == tick || vacatedStamp[k + 1] == tick) continue;
-        int bestLvl = y, bestX = -1;
-        for (int dir = 0; dir < 2; dir++) {
-          int sgn = dir == 0 ? -1 : 1, lvl = y;
-          for (int d = 1; d <= LIQUID_LEVEL_RANGE; d++) {
-            int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
-            uint8_t c = grid[I(cx, lvl)];
-            if (c == m) continue;                  // liquid at this level -> connected, surface >= lvl
-            if (c != EMPTY) break;                 // wall / other material at the level -> body ends
-            int ny = lvl + 1;                      // air here -> this column is shorter; descend to its surface
-            while (ny < rows && grid[I(cx, ny)] == EMPTY) ny++;
-            if (ny >= rows || grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
-            lvl = ny;
-            if (lvl > bestLvl) { bestLvl = lvl; bestX = cx; }
-          }
-        }
-        if (bestX >= 0 && bestLvl - y >= 2) {      // pour one cell from this high surface into the low column
+    auto lowerSurfaceDrop = [&](int x, int y, uint8_t m, int sgn) {
+      int lvl = y;
+      for (int d = 1; d <= LIQUID_SURFACE_LOOKAHEAD; d++) {
+        int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
+        uint8_t c = grid[I(cx, lvl)];
+        if (c == m) continue;                  // liquid at this level -> connected, surface >= lvl
+        if (c != EMPTY) break;                 // wall / other material at the level -> body ends
+        int ny = lvl + 1;                      // air here -> this column is shorter; descend to its surface
+        while (ny < rows && grid[I(cx, ny)] == EMPTY) ny++;
+        if (ny >= rows || grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
+        lvl = ny;
+        if (lvl - y >= 2) return lvl - y;
+      }
+      return 0;
+    };
+
+    for (int pass = 0; pass < LIQUID_SURFACE_FLOW_PASSES; pass++) {
+      // Bottom-to-top plus stamping prevents same-tick cascades: a moved source or
+      // destination will not be consumed again until the next simulation tick.
+      for (int y = rows - 2; y >= 1; y--) {
+        int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
+        if (maxX < minX) continue;
+        bool ltr = ((y + pass + tick) & 1) == 0;
+        int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
+        for (int x = start; x != end; x += stepX) {
+          int k = I(x, y);
+          uint8_t m = grid[k];
+          if (!isLiquid(m) || m == LAVA) continue;   // lava keeps its own viscous (lumpy) surface
+          if (grid[k - cols] != EMPTY) continue;     // not a free surface (air must be directly above)
+          if (grid[k + cols] == EMPTY) continue;     // falling cells are handled by the normal liquid settle pass
+          if (vacatedStamp[k] == tick || vacatedStamp[k + cols] == tick ||
+              vacatedStamp[k - 1] == tick || vacatedStamp[k + 1] == tick) continue;
+
+          int leftK = k - 1, rightK = k + 1;
+          int leftDrop = (grid[leftK] == EMPTY && vacatedStamp[leftK] != tick) ? lowerSurfaceDrop(x, y, m, -1) : 0;
+          int rightDrop = (grid[rightK] == EMPTY && vacatedStamp[rightK] != tick) ? lowerSurfaceDrop(x, y, m, 1) : 0;
+          if (leftDrop == 0 && rightDrop == 0) continue;
+          int dir = 0;
+          if (leftDrop > rightDrop) dir = -1;
+          else if (rightDrop > leftDrop) dir = 1;
+          else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
+          int toK = k + dir;
+          if (grid[toK] != EMPTY || vacatedStamp[toK] == tick) continue;
           writeGridIndex(k, EMPTY);
-          writeGridIndex(I(bestX, bestLvl - 1), m);
+          writeGridIndex(toK, m);
+          vacatedStamp[k] = tick;
+          vacatedStamp[toK] = tick;
         }
       }
     }

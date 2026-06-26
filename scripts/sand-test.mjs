@@ -363,9 +363,9 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 // A wide single fluid's TOP (fluid-against-air) surface must flatten too, not just
 // the fluid/fluid interface: a one-sided dump used to settle as a crooked ramp
 // (~1px per MAX_WATER_FLOW cells) because local moves across a 1px step are
-// energy-neutral and go inert. levelLiquidSurfaces pours surface cells from a column
-// into a connected column >=2px lower (strictly lowers sum-of-heights^2 -> converges),
-// so the surface ends nearly level AND inert.
+// energy-neutral and go inert. levelLiquidSurfaces now detects connected lower
+// surface to a side, but only moves one cell sideways per pass so the body flows
+// locally, ends nearly level, and then goes inert.
 {
   console.log('wide single-fluid top surface flattens + settles');
   const WATER = 2;
@@ -417,6 +417,39 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   // ~34+ (and growing). 27 sits clearly between -> catches the regression, allows RNG.
   check(`falling column stayed narrow (width ${w}, not flung sideways)`, w <= 27);
   e.destroy();
+}
+
+// A pressured reservoir released through a dam breach must not duplicate liquid.
+// This specifically exercises the surface leveller during a "tidal wave" case:
+// a tall wall of liquid with a lot of liquid behind it drains into an empty basin.
+// The count immediately after the breach is the invariant for every following tick.
+{
+  console.log('tidal wave liquid release conserves mass');
+  const WATER = 2, STONE = 3, OIL = 4, ACID = 10, ICE = 12;
+  const runTidalWave = (name, liquid, support) => {
+    const e = mk();
+    const L = 8, DAM = 96, R = 190, floorY = 112, top = 20;
+    for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, support, true); e.paintDisc(DAM, y, 0, support, true); e.paintDisc(R, y, 0, support, true); }
+    for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, support, true);
+    e.syncComponents();
+    for (let x = L + 1; x < DAM; x++) for (let y = 36; y < floorY; y++) e.paintDisc(x, y, 0, liquid, true);
+    const cnt = () => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === liquid) n++; return n; };
+    let t = 0; for (let i = 0; i < 1500; i++) { t += 16; if (!e.step(t)) break; }
+    const before = cnt();
+    for (let y = 42; y < floorY; y++) e.eraseDisc(DAM, y, 0);
+    const afterBreach = cnt();
+    let min = afterBreach, max = afterBreach;
+    for (let i = 0; i < 900; i++) {
+      t += 16; e.step(t);
+      const c = cnt(); min = Math.min(min, c); max = Math.max(max, c);
+    }
+    check(`${name} breach did not erase liquid (${before} -> ${afterBreach})`, before === afterBreach && before > 0);
+    check(`${name} tidal wave conserved liquid (${afterBreach}, min ${min}, max ${max})`, min === afterBreach && max === afterBreach);
+    e.destroy();
+  };
+  runTidalWave('water', WATER, STONE);
+  runTidalWave('oil', OIL, STONE);
+  runTidalWave('acid', ACID, ICE); // acid dissolves stone; ice is component-registered and non-dissolvable.
 }
 
 // Cross-layer density transfer: LAVA resting in the BACKGROUND on bg STONE, with a

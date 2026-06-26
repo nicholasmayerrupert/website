@@ -23,11 +23,10 @@
 // Tunables (mirror engine.js)
 static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5, SEED_SIZE = 1;
 static const int   MAX_WATER_FLOW = 10;
-// How far along a connected free surface the leveller looks for a lower column to
-// pour into (levelLiquidSurfaces). Bounds the residual: a settled surface is flat to
-// <=1px within any window this wide, so a wider body keeps a gentle (imperceptible)
-// slope while still going fully inert.
-static const int   LIQUID_LEVEL_RANGE = 128;
+// Surface levelling stays local: look ahead only to decide whether a side leads to
+// a meaningfully lower connected surface, then move one cell sideways. Two passes
+// let resting water flow visibly without long-distance correction jumps.
+static const int   LIQUID_SURFACE_LOOKAHEAD = 64, LIQUID_SURFACE_FLOW_PASSES = 2;
 static const float STEAM_DECAY_P = 0.018f, FIRE_DECAY_P = 0.006f;
 static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;

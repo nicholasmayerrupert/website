@@ -48,11 +48,11 @@
     L->bodies.push_back(b);
     return b;
   }
-  void terrainNormalAt(int cx, int cy, double& ox, double& oy) {
-    int l = cx > 0 && isBodyTerrain(cx - 1, cy) ? 1 : 0;
-    int r = cx < cols - 1 && isBodyTerrain(cx + 1, cy) ? 1 : 0;
-    int u = cy > 0 && isBodyTerrain(cx, cy - 1) ? 1 : 0;
-    int d = cy < rows - 1 && isBodyTerrain(cx, cy + 1) ? 1 : 0;
+  void terrainNormalAt(int cx, int cy, double bodyDensity, double& ox, double& oy) {
+    int l = cx > 0 && isBodyTerrain(cx - 1, cy, bodyDensity) ? 1 : 0;
+    int r = cx < cols - 1 && isBodyTerrain(cx + 1, cy, bodyDensity) ? 1 : 0;
+    int u = cy > 0 && isBodyTerrain(cx, cy - 1, bodyDensity) ? 1 : 0;
+    int d = cy < rows - 1 && isBodyTerrain(cx, cy + 1, bodyDensity) ? 1 : 0;
     double nx = l - r, ny = u - d;
     if (nx == 0 && ny == 0) { ox = 0; oy = -1; return; }
     double inv = 1 / std::sqrt(nx * nx + ny * ny); ox = nx * inv; oy = ny * inv;
@@ -211,15 +211,15 @@
           int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
           if (cx < 0 || cx >= cols || cy < 0 || cy >= rows) continue;
           int tx = cx, ty = cy; double depth = 0.5;
-          if (!isBodyTerrain(cx, cy)) {
+          if (!isBodyTerrain(cx, cy, b->density)) {
             double rx = wpx - b->px, ry = wpy - b->py;
             tx = (int)std::floor(wpx + (b->vx - b->omega * ry) * dt);
             ty = (int)std::floor(wpy + (b->vy + b->omega * rx) * dt);
-            if (tx < 0 || tx >= cols || ty < 0 || ty >= rows || !isBodyTerrain(tx, ty)) continue;
+            if (tx < 0 || tx >= cols || ty < 0 || ty >= rows || !isBodyTerrain(tx, ty, b->density)) continue;
             depth = 0;
           }
-          terrainNormalAt(tx, ty, nx_, ny_);
-          if (depth > 0) { double mx = wpx, my = wpy; for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; int ix = (int)std::floor(mx), iy = (int)std::floor(my); if (ix < 0 || ix >= cols || iy < 0 || iy >= rows || !isBodyTerrain(ix, iy)) break; depth += 1; } }
+          terrainNormalAt(tx, ty, b->density, nx_, ny_);
+          if (depth > 0) { double mx = wpx, my = wpy; for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; int ix = (int)std::floor(mx), iy = (int)std::floor(my); if (ix < 0 || ix >= cols || iy < 0 || iy >= rows || !isBodyTerrain(ix, iy, b->density)) break; depth += 1; } }
           terrAcc.push_back({wpx, wpy, nx_, ny_, depth});
         }
         reduceManifold(terrAcc, b, nullptr, 0, -1);
@@ -267,23 +267,24 @@
   bool eraseLocalCell(Body* b, int idx) { if (idx < 0 || idx >= (int)b->occ.size() || !b->occ[idx]) return false; b->occ[idx] = 0; return true; }
 
   // ---- rigidBodies.js layer ----
-  bool isBodyTerrain(int x, int y) {
+  bool isBodyTerrain(int x, int y, double bodyDensity) {
     int k = y * cols + x; uint8_t m = grid[k];
-    if (MAT_KIND[m] == K_POWDER) return groundedCell[k] == 1;   // grounded loose powder is terrain (SAND/DIRT/SNOW/...)
+    if (MAT_KIND[m] == K_POWDER) return groundedCell[k] == 1 && DENSITY[m] >= bodyDensity;
+    if (isLiquid(m)) return DENSITY[m] >= bodyDensity;
     if (m == DRIFTWOOD || m == RIGID) return false;             // free body / drifting wood are not static terrain
     return isRigidMaterial(m);                                  // stone/plant/ice-group solids incl. new ores & woods
   }
   double fluidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquid(m) ? DENSITY[m] : 0; }
-  bool isBodyRelocatable(uint8_t m, int k) { return isLiquid(m) || (m == SAND && groundedCell[k] != 1); }
-  bool canBodyOccupy(uint8_t m, int k) { return m == EMPTY || m == FIRE || m == STEAM || isBodyRelocatable(m, k); }
+  bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { return (isLiquid(m) && DENSITY[m] < bodyDensity) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < bodyDensity)); }
+  bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || m == FIRE || m == STEAM || isBodyRelocatable(m, k, bodyDensity); }
   struct Disp { uint8_t material; int from; };
-  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint) {
+  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint, double bodyDensity) {
     if (displaced.empty()) return;
     int offs[4] = {-cols, -1, 1, cols}; int gridLen = cols * rows;
-    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isLiquid(m) || isGas(m) || (m == SAND && groundedCell[k] != 1); };
+    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || (isLiquid(m) && DENSITY[m] < bodyDensity) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < bodyDensity)); };
     std::unordered_set<int> seen;
     auto canVisit = [&](int k) { if (k <= 0 || k >= gridLen || footprint.count(k) || seen.count(k)) return false; int y = k / cols, x = k - y * cols; return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k); };
-    auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquid(m) || isGas(m)) && DENSITY[m] < DENSITY[mat]; };
+    auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquid(m) || isGas(m) || MAT_KIND[m] == K_POWDER) && DENSITY[m] < DENSITY[mat]; };
     std::vector<int> footprintEdgeStarts; std::unordered_set<int> footprintEdgeSeen;
     std::vector<int> sortedFootprint(edgeFootprint.begin(), edgeFootprint.end()); std::sort(sortedFootprint.begin(), sortedFootprint.end());
     for (int k : sortedFootprint) for (int off : offs) { int nk = k + off; if (footprintEdgeSeen.count(nk)) continue; int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue; if (isPassable(grid[nk], nk)) { footprintEdgeSeen.insert(nk); footprintEdgeStarts.push_back(nk); } }
@@ -368,7 +369,7 @@
   }
   int bodyFootprintBlocked(Body* b) {
     int blocked = 0;
-    forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; uint8_t m = grid[k]; if (m == RIGID && bodyOwner[k] == b->id) return; if (!canBodyOccupy(m, k)) blocked++; });
+    forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; uint8_t m = grid[k]; if (m == RIGID && bodyOwner[k] == b->id) return; if (!canBodyOccupy(m, k, b->density)) blocked++; });
     return blocked;
   }
   // A sleeping body keeps its support if nudging it straight down by `probe`
@@ -384,7 +385,7 @@
       if (supported) return;
       int k = y * cols + x; uint8_t m = grid[k];
       if (m == RIGID) { if (bodyOwner[k] != b->id) supported = true; return; }
-      if (!canBodyOccupy(m, k)) supported = true; // solid terrain / grounded sand
+      if (!canBodyOccupy(m, k, b->density)) supported = true; // solid terrain / dense grounded powder
     });
     b->py = savedPy;
     return supported;
@@ -430,12 +431,15 @@
       auto& pb = perBody[b->id];
       forEachBodyCell(b, [&](int x, int y) {
         int k = y * cols + x; if (bodyOwner[k] != -1) return; uint8_t m = grid[k];
-        if (!canBodyOccupy(m, k)) { rigidRejectedCells++; return; }
-        if (isBodyRelocatable(m, k)) pb.first.push_back({m, k});
+        if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
+        if (isBodyRelocatable(m, k, b->density)) pb.first.push_back({m, k});
         writeGridIndex(k, RIGID); bodyOwner[k] = b->id; cells.push_back(k); footprint.insert(k); pb.second.insert(k);
       });
     }
-    for (auto& kv : perBody) spillDisplacedBodyMaterial(kv.second.first, footprint, kv.second.second);
+    for (Body* b : L->bodies) {
+      auto it = perBody.find(b->id);
+      if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, footprint, it->second.second, b->density);
+    }
     erodeBodies(cells);
   }
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material) {

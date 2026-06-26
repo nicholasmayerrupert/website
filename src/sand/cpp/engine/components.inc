@@ -8,10 +8,29 @@
     std::fill(groundedCell, groundedCell + (size_t)cols * rows, (uint8_t)0);
     std::fill(cellComp, cellComp + (size_t)cols * rows, -1);
     std::vector<Comp*> comps;
+    std::vector<double> compDensity;
     auto indexComps = [&](std::vector<Comp>& list) {
-      for (auto& c : list) { c.grounded = false; int id = (int)comps.size(); comps.push_back(&c); for (int k : c.cells) cellComp[k] = id; }
+      for (auto& c : list) {
+        c.grounded = false;
+        int id = (int)comps.size();
+        comps.push_back(&c);
+        double sum = 0;
+        for (int k : c.cells) { cellComp[k] = id; sum += DENSITY[grid[k]]; }
+        compDensity.push_back(c.cells.empty() ? 0 : sum / c.cells.size());
+      }
     };
     indexComps(L->stoneComponents); indexComps(L->plantComponents); indexComps(L->iceComponents);
+    auto effectiveRigidDensityAt = [&](int k) {
+      int id = cellComp[k];
+      return id >= 0 ? compDensity[id] : (double)DENSITY[grid[k]];
+    };
+    auto canGroundAbove = [&](int below, int above) {
+      uint8_t upper = grid[above];
+      if (!isBearingMaterial(upper)) return false;
+      uint8_t lower = grid[below];
+      if (MAT_KIND[lower] == K_POWDER && isRigidMaterial(upper) && DENSITY[lower] < effectiveRigidDensityAt(above)) return false;
+      return true;
+    };
     int sp = 0;
     auto groundCellAt = [&](int k) {
       if (groundedCell[k]) return;
@@ -34,11 +53,17 @@
       int topBase = cols; // row y = 1
       for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterial(grid[k])) groundCellAt(k); }
     }
-    for (int y = rows - 2; y > 0; y--) { int rb = y * cols; for (int x = 1; x < cols - 1; x++) { int k = rb + x; if (grid[k] == SAND && grid[k + cols] == LAVA) groundCellAt(k); } }
+    for (int y = rows - 2; y > 0; y--) {
+      int rb = y * cols;
+      for (int x = 1; x < cols - 1; x++) {
+        int k = rb + x;
+        if (MAT_KIND[grid[k]] == K_POWDER && isLiquid(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k);
+      }
+    }
     while (sp > 0) {
       int k = groundStack[--sp];
       int above = k - cols;
-      if (above >= 0 && !groundedCell[above] && isBearingMaterial(grid[above])) groundCellAt(above);
+      if (above >= 0 && !groundedCell[above] && canGroundAbove(k, above)) groundCellAt(above);
       if (isRigidMaterial(grid[k])) {
         int ky = k / cols, kx = k - ky * cols;
         for (int oy = -1; oy <= 1; oy++) { int ny = ky + oy; if (ny <= 0 || ny >= rows) continue; int rb = ny * cols; for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = kx + ox; if (nx <= 0 || nx >= cols - 1) continue; int nk = rb + nx; if (!groundedCell[nk] && isRigidMaterial(grid[nk])) groundCellAt(nk); } }
@@ -404,12 +429,20 @@
 
     auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
       int dy = dir > 0 ? 1 : -1;
+      double assemblyDensity = 0;
+      int assemblyCells = 0;
+      for (int ci : grp->comps) for (int k : all[ci]->cells) { assemblyDensity += DENSITY[matOf(ci, k)]; assemblyCells++; }
+      assemblyDensity = assemblyCells > 0 ? assemblyDensity / assemblyCells : 0;
+      auto componentDisplaceableForAssembly = [&](uint8_t m) {
+        if (m == EMPTY || isGas(m) || isLiquid(m)) return true;
+        return MAT_KIND[m] == K_POWDER && DENSITY[m] < assemblyDensity;
+      };
       std::unordered_set<int> movedCells;
-      for (int k : cells) { int leadK = k + dir; int leadY = leadK / cols; if (leadY < 1 || leadY >= rows) return false; if (cells.count(leadK)) continue; if (!componentDisplaceable(grid[leadK])) return false; }
+      for (int k : cells) { int leadK = k + dir; int leadY = leadK / cols; if (leadY < 1 || leadY >= rows) return false; if (cells.count(leadK)) continue; if (!componentDisplaceableForAssembly(grid[leadK])) return false; }
       for (int k : cells) movedCells.insert(k + dir);
       struct Disp { uint8_t material; int from; };
       std::vector<Disp> displaced; std::vector<int> vacated;
-      for (int k : cells) { int leadK = k + dir; uint8_t lead = grid[leadK]; if (!cells.count(leadK) && lead != EMPTY && componentDisplaceable(lead)) displaced.push_back({lead, leadK}); if (!cells.count(k - dir)) vacated.push_back(k); }
+      for (int k : cells) { int leadK = k + dir; uint8_t lead = grid[leadK]; if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK}); if (!cells.count(k - dir)) vacated.push_back(k); }
       int liquidDisplacedCount = 0; for (auto& d : displaced) if (isLiquid(d.material)) liquidDisplacedCount++;
       std::vector<int> sideSpillTargets;
       if (liquidDisplacedCount > 0) {

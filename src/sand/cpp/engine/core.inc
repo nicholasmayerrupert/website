@@ -114,15 +114,11 @@
       }
     }
     if (flow != 0) { int stepX = x + flow; if (canLiquidEnter(stepX, y, m)) { moveLiquidInto(k, stepX, y, m); return; } }
-    // LATERAL DENSITY SPREAD: push sideways into an adjacent strictly-LIGHTER liquid
-    // (water into oil). With the density-rise branch above (the displaced lighter liquid
-    // bubbles back up), this FLATTENS a two-fluid mound — the heavier liquid spreads to a
-    // flat bottom layer, the lighter to a flat top. Each exchange lowers the heavy
-    // liquid's centre of mass, so it CONVERGES and then settles (once the heavy liquid
-    // spans wall-to-wall there is no lighter liquid to push into). It can only fire at a
-    // genuine two-fluid interface — a single fluid has no lighter LIQUID neighbour — so it
-    // adds no same-fluid lateral shuffle and no shimmer/multiplayer churn.
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int sk = k + dx; if (next[sk] == EMPTY && isLiquid(grid[sk]) && canDisplaceByLooseDensity(m, grid[sk])) { moveLiquidInto(k, nx, y, m); return; } }
+    // LATERAL DENSITY SPREAD: push sideways into an adjacent strictly-LIGHTER loose
+    // material. This started as two-liquid leveling (water into oil); allowing powders
+    // here lets pressured water/lava push light snow/sand aside, after which the normal
+    // vertical density pass lifts the displaced powder above the denser liquid.
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int sk = k + dx; if (next[sk] == EMPTY && isLooseDensityMaterial(grid[sk]) && canDisplaceByLooseDensity(m, grid[sk])) { moveLiquidInto(k, nx, y, m); return; } }
     if (y + 1 < rows && supportsLiquid(grid[belowK], m)) {
       int aboveK = k - cols;
       bool hasAbove = (y > 1 && grid[aboveK] == m);
@@ -195,15 +191,18 @@
   // both failure modes: a one-sided pile/ramp that goes inert too soon, and the old
   // non-local "flattening" jump that placed a cell directly at the distant low point.
   void levelLiquidSurfaces() {
+    auto surfacePassable = [&](uint8_t c, uint8_t m) {
+      return c == EMPTY || (MAT_KIND[c] == K_POWDER && canDisplaceByLooseDensity(m, c));
+    };
     auto lowerSurfaceDrop = [&](int x, int y, uint8_t m, int sgn) {
       int lvl = y;
       for (int d = 1; d <= LIQUID_SURFACE_LOOKAHEAD; d++) {
         int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
         uint8_t c = grid[I(cx, lvl)];
         if (c == m) continue;                  // liquid at this level -> connected, surface >= lvl
-        if (c != EMPTY) break;                 // wall / other material at the level -> body ends
+        if (!surfacePassable(c, m)) break;     // wall / denser material at the level -> body ends
         int ny = lvl + 1;                      // air here -> this column is shorter; descend to its surface
-        while (ny < rows && grid[I(cx, ny)] == EMPTY) ny++;
+        while (ny < rows && surfacePassable(grid[I(cx, ny)], m)) ny++;
         if (ny >= rows || grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
         lvl = ny;
         if (lvl - y >= 2) return lvl - y;
@@ -222,23 +221,26 @@
         for (int x = start; x != end; x += stepX) {
           int k = I(x, y);
           uint8_t m = grid[k];
-          if (!isLiquid(m) || m == LAVA) continue;   // lava keeps its own viscous (lumpy) surface
-          if (grid[k - cols] != EMPTY) continue;     // not a free surface (air must be directly above)
+          if (!isLiquid(m)) continue;
+          if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
+          uint8_t above = grid[k - cols];
+          if (above != EMPTY && !surfacePassable(above, m)) continue; // free air or lighter powder surface
           if (grid[k + cols] == EMPTY) continue;     // falling cells are handled by the normal liquid settle pass
           if (vacatedStamp[k] == tick || vacatedStamp[k + cols] == tick ||
               vacatedStamp[k - 1] == tick || vacatedStamp[k + 1] == tick) continue;
 
           int leftK = k - 1, rightK = k + 1;
-          int leftDrop = (grid[leftK] == EMPTY && vacatedStamp[leftK] != tick) ? lowerSurfaceDrop(x, y, m, -1) : 0;
-          int rightDrop = (grid[rightK] == EMPTY && vacatedStamp[rightK] != tick) ? lowerSurfaceDrop(x, y, m, 1) : 0;
+          int leftDrop = (surfacePassable(grid[leftK], m) && vacatedStamp[leftK] != tick) ? lowerSurfaceDrop(x, y, m, -1) : 0;
+          int rightDrop = (surfacePassable(grid[rightK], m) && vacatedStamp[rightK] != tick) ? lowerSurfaceDrop(x, y, m, 1) : 0;
           if (leftDrop == 0 && rightDrop == 0) continue;
           int dir = 0;
           if (leftDrop > rightDrop) dir = -1;
           else if (rightDrop > leftDrop) dir = 1;
           else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
           int toK = k + dir;
-          if (grid[toK] != EMPTY || vacatedStamp[toK] == tick) continue;
-          writeGridIndex(k, EMPTY);
+          if (!surfacePassable(grid[toK], m) || vacatedStamp[toK] == tick) continue;
+          uint8_t displaced = grid[toK];
+          writeGridIndex(k, displaced);
           writeGridIndex(toK, m);
           vacatedStamp[k] = tick;
           vacatedStamp[toK] = tick;

@@ -419,6 +419,152 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Water is denser than snow, so a pressured water column dropped through a snow cap
+// must push the snow aside/up and settle as a flat layer below it. Pre-fix, the
+// water formed a tall center mound under the snow and then went inert.
+{
+  console.log('water through snow levels instead of pyramiding');
+  const WATER = 2, SNOW = 16, STONE = 3;
+  const e = mk();
+  const L = 35, R = 85, floorY = 78, top = 18;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 14; y < floorY; y++) e.paintDisc(x, y, 0, WATER, true);
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 23; y < floorY - 14; y++) e.paintDisc(x, y, 0, SNOW, true);
+  for (let x = 58; x <= 62; x++) for (let y = floorY - 38; y < floorY - 23; y++) e.paintDisc(x, y, 0, WATER, true);
+  const cnt = (m) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+  const water0 = cnt(WATER), snow0 = cnt(SNOW);
+  let t = 0, settledAt = -1;
+  for (let i = 0; i < 7000; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`snow/water scene settles to inert (step ${settledAt})`, settledAt >= 0);
+  check(`water + snow conserved (${water0}/${snow0})`, cnt(WATER) === water0 && cnt(SNOW) === snow0 && water0 > 0 && snow0 > 0);
+  const g = e.getGrid(); const tops = [];
+  for (let x = L + 1; x < R; x++) {
+    for (let y = top; y <= floorY; y++) { if (g[y * COLS + x] === WATER) { tops.push(y); break; } }
+  }
+  const spread = tops.length ? Math.max(...tops) - Math.min(...tops) : -1;
+  check(`water under snow is near-flat (top spread ${spread}px over ${tops.length} cols)`, tops.length > 35 && spread >= 0 && spread <= 2);
+  e.destroy();
+}
+
+// Dense component solids should sink through lighter loose powders instead of being
+// grounded by them. Stone (2.6) must pass through snow (0.4), conserving both.
+{
+  console.log('stone component sinks through snow');
+  const STONE = 3, SNOW = 16;
+  const e = mk();
+  for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SNOW, true);
+  for (let y = 40; y < 48; y++) for (let x = 56; x < 64; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  const cnt = (m) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+  const stone0 = cnt(STONE), snow0 = cnt(SNOW);
+  run(700, e);
+  const g = e.getGrid(); let minY = ROWS, maxY = -1;
+  for (let i = 0; i < g.length; i++) if (g[i] === STONE) { const y = (i / COLS) | 0; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+  check(`stone + snow conserved (${stone0}/${snow0})`, cnt(STONE) === stone0 && cnt(SNOW) === snow0 && stone0 > 0 && snow0 > 0);
+  check(`stone sank through the snow bed (rows ${minY}-${maxY})`, maxY >= ROWS - 3 && minY > 65);
+  e.destroy();
+}
+
+// Free rigid bodies use their material density too: a stone-density body sinks
+// through snow, while the default cube (1.4) is still supported by denser sand (1.6).
+{
+  console.log('free rigid bodies use powder density');
+  const STONE = 3, SNOW = 16, SAND = 1, LAVA = 11, RIGID = 13, GOLD_ORE = 24;
+  const bodyBottom = (g) => { let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) b = Math.max(b, (i / COLS) | 0); return b; };
+  const bodyCount = (g) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) n++; return n; };
+  {
+    const e = mk();
+    for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SNOW, true);
+    for (let x = 25; x < 95; x++) e.paintDisc(x, ROWS - 1, 0, STONE, true);
+    e.syncComponents();
+    e.spawnBox(60, 40, 4, 4, STONE);
+    run(800, e);
+    const bottom = bodyBottom(e.getGrid());
+    check(`stone-density body sank through snow (bottom ${bottom})`, bottom >= ROWS - 4);
+    e.destroy();
+  }
+  {
+    const e = mk();
+    for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
+    e.spawnBox(60, 40, 4, 4);
+    run(500, e);
+    const bottom = bodyBottom(e.getGrid());
+    check(`default body rests on denser sand (bottom ${bottom})`, bottom >= 60 && bottom < 70);
+    e.destroy();
+  }
+  {
+    const e = mk();
+    const L = 45, R = 115, floorY = 88, lavaTop = 64;
+    for (let y = 45; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+    for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+    e.syncComponents();
+    for (let x = L + 1; x < R; x++) for (let y = lavaTop; y < floorY; y++) e.paintDisc(x, y, 0, LAVA, true);
+    e.spawnBox(80, 45, 4, 4);
+    run(40, e);
+    const g = e.getGrid(), bottom = bodyBottom(g), n = bodyCount(g);
+    check(`default body floats on denser lava before eroding (bottom ${bottom}, cells ${n})`, n > 0 && bottom < lavaTop);
+    e.destroy();
+  }
+  {
+    const e = mk();
+    const L = 45, R = 115, floorY = 88, lavaTop = 64;
+    for (let y = 45; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+    for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+    e.syncComponents();
+    for (let x = L + 1; x < R; x++) for (let y = lavaTop; y < floorY; y++) e.paintDisc(x, y, 0, LAVA, true);
+    e.spawnBox(80, 45, 4, 4, GOLD_ORE);
+    run(40, e);
+    const g = e.getGrid(), bottom = bodyBottom(g), n = bodyCount(g);
+    check(`gold-density body sinks into lava before eroding (bottom ${bottom}, cells ${n})`, n > 0 && bottom > lavaTop + 8);
+    e.destroy();
+  }
+}
+
+// Lava should use the same density/viscosity liquid rules as the other liquids:
+// it is slower via MOBILITY, but not exempt from leveling through lighter powders.
+{
+  console.log('lava sinks through sand and levels by density');
+  const SAND = 1, STONE = 3, LAVA = 11;
+  const e = mk();
+  const L = 35, R = 85, floorY = 78, top = 18;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 14; y < floorY; y++) e.paintDisc(x, y, 0, SAND, true);
+  for (let x = L + 1; x <= L + 14; x++) for (let y = floorY - 30; y < floorY - 14; y++) e.paintDisc(x, y, 0, LAVA, true);
+  const cnt = (m) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
+  const lava0 = cnt(LAVA), sand0 = cnt(SAND);
+  let t = 0, settledAt = -1;
+  for (let i = 0; i < 14000; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
+  check(`lava/sand scene settles to inert (step ${settledAt})`, settledAt >= 0);
+  check(`lava + sand conserved (${lava0}/${sand0})`, cnt(LAVA) === lava0 && cnt(SAND) === sand0 && lava0 > 0 && sand0 > 0);
+  const g = e.getGrid(); const tops = [];
+  for (let x = L + 1; x < R; x++) {
+    for (let y = top; y <= floorY; y++) { if (g[y * COLS + x] === LAVA) { tops.push(y); break; } }
+  }
+  const spread = tops.length ? Math.max(...tops) - Math.min(...tops) : -1;
+  check(`lava under sand is near-flat despite viscosity (top spread ${spread}px over ${tops.length} cols)`, tops.length > 25 && spread >= 0 && spread <= 3);
+  e.destroy();
+}
+
+// Lava touching snow melts it to water. The next lava-water reaction may harden the
+// lava, so sample immediately after one reaction step to pin the melt transform.
+{
+  console.log('lava melts snow into water');
+  const WATER = 2, LAVA = 11, SNOW = 16;
+  const e = mk();
+  e.paintDisc(60, 50, 0, LAVA, true);
+  e.paintDisc(61, 50, 0, SNOW, true);
+  e.step(16);
+  const g = e.getGrid();
+  let water = 0, snow = 0;
+  for (let i = 0; i < g.length; i++) { if (g[i] === WATER) water++; else if (g[i] === SNOW) snow++; }
+  check(`snow adjacent to lava melted into moving water (water ${water}, snow ${snow})`, water === 1 && snow === 0);
+  e.destroy();
+}
+
 // A pressured reservoir released through a dam breach must not duplicate liquid.
 // This specifically exercises the surface leveller during a "tidal wave" case:
 // a tall wall of liquid with a lot of liquid behind it drains into an empty basin.

@@ -76,6 +76,9 @@
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != LAVA) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
+        int snowK = -1;
+        if (grid[right] == SNOW) snowK = right; else if (grid[left] == SNOW) snowK = left; else if (grid[down] == SNOW) snowK = down; else if (grid[up] == SNOW) snowK = up;
+        if (snowK >= 0) { writeGridIndex(snowK, WATER); markCellIndex(k); continue; }
         int burnK = -1;
         if (isFlammable(grid[right])) burnK = right; else if (isFlammable(grid[left])) burnK = left; else if (isFlammable(grid[down])) burnK = down; else if (isFlammable(grid[up])) burnK = up;
         if (burnK >= 0) { if (isPlantMaterial(grid[burnK])) plantBurned = true; writeGridIndex(burnK, FIRE); continue; }

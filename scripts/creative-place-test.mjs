@@ -14,6 +14,11 @@ await initSandWasm();
 const { check, done } = makeChecker('creative spawn-everything (Phase C)');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 1, sinksOn: false, infinite: false });
 const at = (g, x, y) => g[y * COLS + x];
+const hasCell = (cells, x, y) => {
+  const k = y * COLS + x;
+  for (const c of cells) if (c === k) return true;
+  return false;
+};
 
 // 1) Any COMPONENT material drafts with a live preview, then finalizes into the grid.
 {
@@ -94,7 +99,35 @@ const at = (g, x, y) => g[y * COLS + x];
   e.destroy();
 }
 
-// 8) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
+// 8) Fast rigid/component draft moves interpolate between samples instead of
+// leaving empty chunks in the preview/finalized shape.
+{
+  const e = mk();
+  e.setCreativeMaterial(CK.MATERIAL, MAT.RIGID);
+  e.pointerDown(20, 40, 0);
+  e.pointerDraft(36, 40);
+  const cells = e.getStoneDraftCells();
+  let continuous = true;
+  for (let x = 20; x <= 36; x++) if (!hasCell(cells, x, 40)) continuous = false;
+  check('rigid draft interpolates a fast horizontal stroke', continuous);
+  e.pointerUp(0);
+  check('interpolated rigid draft materializes as one free body', e._bodyCount() === 1);
+  e.destroy();
+}
+
+{
+  const e = mk();
+  e.setCreativeMaterial(CK.MATERIAL, MAT.BRICK);
+  e.pointerDown(20, 40, 0);
+  e.pointerDraft(36, 40);
+  e.pointerUp(0);
+  let solidLine = true;
+  for (let x = 20; x <= 36; x++) if (at(e.getGrid(), x, 40) !== MAT.BRICK) solidLine = false;
+  check('component draft materializes an interpolated stroke without gaps', solidLine);
+  e.destroy();
+}
+
+// 9) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
 {
   const e = mk();
   e.addDiscToStoneDraft(60, 60, 0);

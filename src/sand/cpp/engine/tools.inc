@@ -65,6 +65,7 @@
     int next = clampSurvivalFootprintId(id);
     if (p.selectedFootprint == next) return;
     p.selectedFootprint = next;
+    p.placeStrokeActive = false;
     resetPlayerMine(p);
   }
   void setSelectedFootprint(int id, int footprintId) { Player* p = findPlayer(id); if (p) setSelectedFootprint(*p, footprintId); }
@@ -422,6 +423,18 @@
     if (added) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     return added;
   }
+  int addDiscStrokeToDraft(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, int radius, int yLimit) {
+    int changed = 0;
+    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+    int spacing = imax(1, radius);
+    if (steps == 0) return addDiscToDraft(d, x0, y0, radius, yLimit);
+    for (int i = 0; i <= steps; i += spacing) {
+      double t = (double)i / (double)steps;
+      changed |= addDiscToDraft(d, (int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t), radius, yLimit);
+    }
+    changed |= addDiscToDraft(d, x1, y1, radius, yLimit);
+    return changed;
+  }
   int addFootprintToDraftCapped(std::unordered_set<int>& d, int cx, int cy, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) {
     if (maxAdd <= 0) return 0;
     int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
@@ -446,6 +459,45 @@
       markDirtyRect(x0, y0, x1, y1);
     }
     return added;
+  }
+  int footprintStrokeSpacing(const SurvivalFootprint& fp) const {
+    return imax(1, imin((int)fp.width, (int)fp.height));
+  }
+  int addFootprintStrokeToDraftCapped(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) {
+    if (maxAdd <= 0) return 0;
+    int added = 0, remaining = maxAdd;
+    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+    int spacing = footprintStrokeSpacing(fp);
+    auto stamp = [&](int x, int y) {
+      if (remaining <= 0) return;
+      int n = addFootprintToDraftCapped(d, x, y, fp, yLimit, remaining, p);
+      added += n; remaining -= n;
+    };
+    if (steps == 0) { stamp(x0, y0); return added; }
+    for (int i = 0; i <= steps && remaining > 0; i += spacing) {
+      double t = (double)i / (double)steps;
+      stamp((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
+    }
+    if (remaining > 0) stamp(x1, y1);
+    return added;
+  }
+  int placeMaterialAtFootprintStrokeCapped(int x0, int y0, int x1, int y1, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr) {
+    if (maxCells <= 0) return 0;
+    int placed = 0, remaining = maxCells;
+    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+    int spacing = footprintStrokeSpacing(fp);
+    auto stamp = [&](int x, int y) {
+      if (remaining <= 0) return;
+      int n = placeMaterialAtFootprintCapped(x, y, fp, mat, remaining, p);
+      placed += n; remaining -= n;
+    };
+    if (steps == 0) { stamp(x0, y0); return placed; }
+    for (int i = 0; i <= steps && remaining > 0; i += spacing) {
+      double t = (double)i / (double)steps;
+      stamp((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
+    }
+    if (remaining > 0) stamp(x1, y1);
+    return placed;
   }
   // Brush radius for a creative material (preserves the historical per-material sizes;
   // FIRE/DRIFTWOOD draw a tighter 1-radius, everything else 2).
@@ -550,6 +602,10 @@
   void remapDraftsForShift(int dx, int dy) {
     if (!dx && !dy) return;
     remapDraftForShift(draft, dx, dy);
+    if (draftStrokeActive) {
+      lastDraftCx -= dx; lastDraftCy -= dy;
+      if (lastDraftCx < 0 || lastDraftCx >= cols || lastDraftCy < 0 || lastDraftCy >= rows) draftStrokeActive = false;
+    }
     if (hasSeedOrigin) { seedOriginX -= dx; seedOriginY -= dy; // seed origin is a buffer-space top-left corner; same delta
       if (seedOriginX < 0 || seedOriginX + SEED_SIZE > cols || seedOriginY < 0 || seedOriginY + SEED_SIZE > rows) hasSeedOrigin = false; }
   }
@@ -570,7 +626,11 @@
     if (!drafting && !draftingSeed) return 0;
     useLayer(draftLayer ? &bg : &fg);
     int changed = 0;
-    if (drafting) { if (addDiscToDraft(draft, cx, cy, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows)) changed = 1; }
+    if (drafting) {
+      int sx = draftStrokeActive ? lastDraftCx : cx, sy = draftStrokeActive ? lastDraftCy : cy;
+      if (addDiscStrokeToDraft(draft, sx, sy, cx, cy, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows)) changed = 1;
+      lastDraftCx = cx; lastDraftCy = cy; draftStrokeActive = true;
+    }
     if (draftingSeed) { changed |= updateSeedDraft(cx, cy); }
     useLayer(&fg);
     return changed;
@@ -588,7 +648,10 @@
     useLayer(toBg ? &bg : &fg);
     int changed = 0;
     switch (creativeMode) {
-      case CM_DRAFT: drafting = true; if (addDiscToDraft(draft, cx, cy, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows)) changed = 1; break;
+      case CM_DRAFT:
+        drafting = true; lastDraftCx = cx; lastDraftCy = cy; draftStrokeActive = true;
+        if (addDiscToDraft(draft, cx, cy, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows)) changed = 1;
+        break;
       case CM_SEED: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
       case CM_CUBE: spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, RIGID); break;
       default: break;
@@ -609,7 +672,7 @@
     if (!ownerReleased) return 0;
     int changed = 0;
     useLayer(draftLayer ? &bg : &fg);
-    if (drafting) { finalizeDraft(); drafting = false; draft.clear(); changed = 1; }
+    if (drafting) { finalizeDraft(); drafting = false; draftStrokeActive = false; draft.clear(); changed = 1; }
     if (draftingSeed) { if (hasSeedOrigin) placeSeedAtTyped(seedOriginX, seedOriginY, creativeSeed); draftingSeed = false; hasSeedOrigin = false; changed = 1; }
     useLayer(&fg);
     return changed;
@@ -678,6 +741,7 @@
   // Per fixed step: extend active drafts + apply held painting. Returns 1 if the
   // draft preview changed.
   int applyTool(int cx, int cy, double now, bool inside, bool drawMode) {
+    if (!inside && drafting) draftStrokeActive = false;
     int changed = inside ? continueDrafts(cx, cy) : 0;
     emitHeldTool(cx, cy, now, inside, drawMode);
     return changed;

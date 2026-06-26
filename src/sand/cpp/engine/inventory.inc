@@ -19,6 +19,11 @@
     setSelectedSlot(p, 0);
   }
   void seedStarterTools(int id) { Player* p = findPlayer(id); if (p) seedStarterTools(*p); }
+  void resetPlayerPlaceStroke(Player& p) {
+    p.placeStrokeActive = false;
+    p.placeStrokeMaterial = EMPTY;
+    p.placeStrokeFootprint = -1;
+  }
 
   // Select a hotbar slot and refresh the held tool: a tool slot equips its class/tier
   // (mining); any other slot (material/empty) means a bare hand, so blocks placed
@@ -26,6 +31,7 @@
   void setSelectedSlot(Player& p, int slot) {
     if (slot < 0) slot = 0; if (slot >= INV_HOTBAR) slot = INV_HOTBAR - 1;
     p.selectedSlot = slot;
+    resetPlayerPlaceStroke(p);
     resetPlayerMine(p);
     InvSlot& s = p.inv[slot];
     if (s.isTool) { p.heldToolClass = s.toolClass; p.heldToolTier = s.toolTier; }
@@ -75,6 +81,18 @@
     if (!foreground) bgEnabled = true;
     useLayer(layer);
     int placed = placeMaterialAtFootprintCapped(ax, ay, getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
+    useLayer(&fg);
+    if (placed <= 0) return false;
+    s.count -= placed; if (s.count <= 0) s = InvSlot();
+    return true;
+  }
+  bool placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer) {
+    InvSlot& s = p.inv[p.selectedSlot];
+    if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
+    bool foreground = layer == &fg;
+    if (!foreground) bgEnabled = true;
+    useLayer(layer);
+    int placed = placeMaterialAtFootprintStrokeCapped(x0, y0, x1, y1, getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
     useLayer(&fg);
     if (placed <= 0) return false;
     s.count -= placed; if (s.count <= 0) s = InvSlot();
@@ -172,6 +190,7 @@
   void applyInventoryPlayer(Player& p) {
     if (!p.active || !p.alive) {
       resetPlayerMine(p);
+      resetPlayerPlaceStroke(p);
       if (drafting && draftOwner == p.id) playerFinalizeSolidDraft();
       p.prevInput = p.input; return;
     }
@@ -195,19 +214,22 @@
       if (!held) { playerFinalizeSolidDraft(); playerActionCount++; }
       else if (inReach && !sel.isTool && sel.count > 0 && sel.material == draftMaterial) {
         useLayer(draftLayer ? &bg : &fg);
-        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, draftLayer ? nullptr : &p);
+        int sx = draftStrokeActive ? lastDraftCx : ax, sy = draftStrokeActive ? lastDraftCy : ay;
+        int added = addFootprintStrokeToDraftCapped(draft, sx, sy, ax, ay, fp, rows, sel.count, draftLayer ? nullptr : &p);
+        lastDraftCx = ax; lastDraftCy = ay; draftStrokeActive = true;
         if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
         useLayer(&fg);
-      }
+      } else if (!inReach) draftStrokeActive = false;
       return;
     }
 
     bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
     bool isSeed = !mineMode && sel.material == SEED;
     bool isComp = !mineMode && !isSeed && sel.material != EMPTY && MAT_KIND[sel.material] == K_COMPONENT;
-    if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); return; }
+    if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
 
     if (mineMode) {
+      if (p.placeStrokeActive) return; // selected stack ran dry during this held placement stroke
       bool acted = false;
       if (primary) acted |= mineFootprint(p, ax, ay, &fg);
       if (secondary && !primary) acted |= mineFootprintBoth(p, ax, ay);
@@ -233,6 +255,7 @@
         bool toBg = secondaryRising && !primaryRising;
         if (toBg) bgEnabled = true;
         drafting = true; draftOwner = p.id; draftLayer = toBg ? 1 : 0; draftMaterial = sel.material;
+        lastDraftCx = ax; lastDraftCy = ay; draftStrokeActive = true;
         useLayer(toBg ? &bg : &fg);
         int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, toBg ? nullptr : &p);
         if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
@@ -243,7 +266,13 @@
       resetPlayerMine(p);
       if (p.toolCooldown <= 0 && sel.count > 0) {
         Layer* layer = (secondary && !primary) ? &bg : &fg;
-        if (placeFromSelected(p, ax, ay, layer)) p.toolCooldown = P_TOOL_COOLDOWN;
+        int layerId = layer == &bg ? 1 : 0;
+        int fpId = clampSurvivalFootprintId(p.selectedFootprint);
+        bool sameStroke = p.placeStrokeActive && p.placeStrokeLayer == layerId && p.placeStrokeMaterial == sel.material && p.placeStrokeFootprint == fpId;
+        int sx = sameStroke ? p.placeStrokeX : ax, sy = sameStroke ? p.placeStrokeY : ay;
+        if (placeFromSelectedStroke(p, sx, sy, ax, ay, layer)) p.toolCooldown = P_TOOL_COOLDOWN;
+        p.placeStrokeActive = true;
+        p.placeStrokeX = ax; p.placeStrokeY = ay; p.placeStrokeLayer = layerId; p.placeStrokeMaterial = sel.material; p.placeStrokeFootprint = fpId;
       }
     }
   }

@@ -392,6 +392,7 @@ void playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
   draftLayer = btn; draftOwner = p.id;
   useLayer(btn ? &bg : &fg);
   drafting = true;
+  lastDraftCx = ax; lastDraftCy = ay; draftStrokeActive = true;
   draftMaterial = (tool == T_ICE) ? ICE : (tool == T_DRIFTWOOD) ? DRIFTWOOD : STONE;
   addDiscToDraft(draft, ax, ay, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows);
   useLayer(&fg);
@@ -399,7 +400,7 @@ void playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
 // Finalize the in-progress draft into its layer (one connected component) and clear.
 void playerFinalizeSolidDraft() {
   useLayer(draftLayer ? &bg : &fg);
-  if (drafting) { finalizeDraft(); drafting = false; draft.clear(); }
+  if (drafting) { finalizeDraft(); drafting = false; draftStrokeActive = false; draft.clear(); }
   draftOwner = -1;
   useLayer(&fg);
 }
@@ -441,6 +442,7 @@ void applyPlayerTools() {
       if (inReach && !busy && primaryRising) { playerBeginSolidDraft(p, t, ax, ay, 0); playerActionCount++; }
       else if (inReach && !busy && secondaryRising) { bgEnabled = true; playerBeginSolidDraft(p, t, ax, ay, 1); playerActionCount++; }
       else if (inReach && busy && draftOwner == p.id && (primary || secondary)) continueDrafts(ax, ay); // extend + preview
+      else if (!inReach && busy && draftOwner == p.id) draftStrokeActive = false;
       continue;
     }
 

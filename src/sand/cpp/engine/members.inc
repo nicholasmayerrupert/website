@@ -172,6 +172,8 @@
   // live preview. draftMaterial is the component being drawn (stone/ice/driftwood/ore/…).
   std::unordered_set<int> draft;
   uint8_t draftMaterial = STONE;
+  int lastDraftCx = -1, lastDraftCy = -1;
+  bool draftStrokeActive = false;
   std::vector<SurvivalFootprint> survivalFootprints;
   std::vector<int32_t> survivalFootprintSnapshot; // packed SURVIVAL_FOOTPRINT_SNAP_FIELDS ints
   // Cached center-first disc offsets per radius (placeMaterialAtCapped, per-pixel placement).

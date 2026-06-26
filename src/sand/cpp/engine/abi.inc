@@ -71,11 +71,11 @@ EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 // draftMaterial and route through the unified draft + finalizeDraft (back-compat).
 EMSCRIPTEN_KEEPALIVE int engine_add_stone_draft(Engine* e, int cx, int cy, int r) { e->draftMaterial = STONE; return e->addDiscToDraft(e->draft, cx, cy, r, e->rows); }
 EMSCRIPTEN_KEEPALIVE int engine_add_ice_draft(Engine* e, int cx, int cy, int r) { e->draftMaterial = ICE; return e->addDiscToDraft(e->draft, cx, cy, r, e->rows - 1); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_stone_draft(Engine* e) { e->draftMaterial = STONE; e->finalizeDraft(); e->draft.clear(); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_ice_draft(Engine* e) { e->draftMaterial = ICE; e->finalizeDraft(); e->draft.clear(); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_driftwood_draft(Engine* e) { e->draftMaterial = DRIFTWOOD; e->finalizeDraft(); e->draft.clear(); }
-EMSCRIPTEN_KEEPALIVE void engine_clear_stone_draft(Engine* e) { e->draft.clear(); }
-EMSCRIPTEN_KEEPALIVE void engine_clear_ice_draft(Engine* e) { e->draft.clear(); }
+EMSCRIPTEN_KEEPALIVE void engine_finalize_stone_draft(Engine* e) { e->draftMaterial = STONE; e->finalizeDraft(); e->draft.clear(); e->draftStrokeActive = false; }
+EMSCRIPTEN_KEEPALIVE void engine_finalize_ice_draft(Engine* e) { e->draftMaterial = ICE; e->finalizeDraft(); e->draft.clear(); e->draftStrokeActive = false; }
+EMSCRIPTEN_KEEPALIVE void engine_finalize_driftwood_draft(Engine* e) { e->draftMaterial = DRIFTWOOD; e->finalizeDraft(); e->draft.clear(); e->draftStrokeActive = false; }
+EMSCRIPTEN_KEEPALIVE void engine_clear_stone_draft(Engine* e) { e->draft.clear(); e->draftStrokeActive = false; }
+EMSCRIPTEN_KEEPALIVE void engine_clear_ice_draft(Engine* e) { e->draft.clear(); e->draftStrokeActive = false; }
 EMSCRIPTEN_KEEPALIVE int engine_stone_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_ice_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
 EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->draftSnapshot.data(); }

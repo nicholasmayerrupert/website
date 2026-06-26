@@ -21,6 +21,11 @@ function survivalEngine() {
 }
 const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step(t); } };
 const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTool && s.material === mat).reduce((a, s) => a + s.count, 0);
+const hasDraftCell = (cells, x, y) => {
+  const k = y * COLS + x;
+  for (const c of cells) if (c === k) return true;
+  return false;
+};
 
 // 1) Pickup: a dropped item near a player is vacuumed into the inventory.
 {
@@ -272,6 +277,32 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 54.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
   const bgWaterAfter = e.getGridBg().reduce((a, v) => a + (v === MAT.WATER), 0);
   check(`RMB survival loose material places in background (${bgWaterBefore} -> ${bgWaterAfter})`, bgWaterAfter > bgWaterBefore);
+  e.destroy();
+}
+
+// 7c) Survival component drafts interpolate between aim samples and stop
+// contiguously when the selected stack runs out.
+{
+  const PI_PRIMARY = 16;
+  const e = survivalEngine();
+  const id = e.spawnPlayer(40, FLOOR - 9);
+  let t = 0; for (let s = 0; s < 8; s++) { t += 16; e.step(t); }
+  e.setSelectedFootprint(id, 0); // 1x1 makes gaps/counting exact.
+  e.addToInventory(id, MAT.STONE, 8);
+  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.STONE && s.count > 0));
+  let seq = 400;
+  e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 45.5, aimY: FLOOR - 14 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 55.5, aimY: FLOOR - 14 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  const cells = e.getStoneDraftCells();
+  let continuous = cells.length === 8;
+  for (let x = 45; x <= 52; x++) if (!hasDraftCell(cells, x, FLOOR - 14)) continuous = false;
+  for (let x = 53; x <= 55; x++) if (hasDraftCell(cells, x, FLOOR - 14)) continuous = false;
+  check(`survival draft interpolates until inventory runs out (${cells.length} staged)`, continuous);
+  check('survival interpolation consumed exactly the staged cells', slotCount(e, id, MAT.STONE) === 0);
+  const beforeRelease = e.getGrid().reduce((a, v) => a + (v === MAT.STONE), 0);
+  e.setPlayerInput(id, { bits: 0, aimX: 55.5, aimY: FLOOR - 14 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  const afterRelease = e.getGrid().reduce((a, v) => a + (v === MAT.STONE), 0);
+  check(`release after runout materializes the capped draft (+${afterRelease - beforeRelease})`, afterRelease - beforeRelease === 8);
   e.destroy();
 }
 

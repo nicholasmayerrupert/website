@@ -348,6 +348,9 @@ struct Player {
   InvSlot inv[INV_SLOTS];
   int selectedSlot = 0;
   int selectedFootprint = SURVIVAL_FOOTPRINT_DEFAULT_ID;
+  bool placeStrokeActive = false;
+  int placeStrokeX = 0, placeStrokeY = 0, placeStrokeLayer = 0, placeStrokeFootprint = -1;
+  uint8_t placeStrokeMaterial = EMPTY;
   // The stack currently "held on the cursor" (Minecraft-style pick/place/throw). 0 = empty.
   InvSlot cursor;
   // Animation (computed at the end of integratePlayer; frame derived from tick).

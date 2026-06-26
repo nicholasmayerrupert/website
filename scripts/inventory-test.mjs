@@ -238,6 +238,43 @@ const slotCount = (e, id, mat) => e.getInventory(id).slots.filter((s) => !s.isTo
   e.destroy();
 }
 
+// 7b) RMB places selected materials into the background in survival inventory:
+//     component drafts, seeds, and loose materials all route by button.
+{
+  const PI_SECONDARY = 32;
+  const e = survivalEngine();
+  const id = e.spawnPlayer(40, FLOOR - 9);
+  let t = 0; for (let s = 0; s < 8; s++) { t += 16; e.step(t); }
+  e.setSelectedFootprint(id, 0);
+  e.addToInventory(id, MAT.STONE, 4);
+  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.STONE && s.count > 0));
+  const bgStoneBefore = e.getGridBg().reduce((a, v) => a + (v === MAT.STONE), 0);
+  let seq = 300;
+  e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 50.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  e.setPlayerInput(id, { bits: 0, aimX: 50.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  const bgStoneAfter = e.getGridBg().reduce((a, v) => a + (v === MAT.STONE), 0);
+  const fgStoneAtAim = e.getGrid()[(FLOOR - 6) * COLS + 50];
+  check(`RMB survival stone draft materializes in background (${bgStoneBefore} -> ${bgStoneAfter}, fg ${fgStoneAtAim})`,
+    bgStoneAfter > bgStoneBefore && fgStoneAtAim !== MAT.STONE);
+
+  e.addToInventory(id, MAT.SEED, 1);
+  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.SEED && s.count > 0));
+  const bgSeedBefore = e.getGridBg().reduce((a, v) => a + (v === MAT.SEED), 0);
+  e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 52.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  const bgSeedAfter = e.getGridBg().reduce((a, v) => a + (v === MAT.SEED), 0);
+  const fgSeedAtAim = e.getGrid()[(FLOOR - 6) * COLS + 52];
+  check(`RMB survival seed places in background (${bgSeedBefore} -> ${bgSeedAfter}, fg ${fgSeedAtAim})`,
+    bgSeedAfter === bgSeedBefore + 1 && fgSeedAtAim !== MAT.SEED);
+
+  e.addToInventory(id, MAT.WATER, 1);
+  e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.WATER && s.count > 0));
+  const bgWaterBefore = e.getGridBg().reduce((a, v) => a + (v === MAT.WATER), 0);
+  e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 54.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  const bgWaterAfter = e.getGridBg().reduce((a, v) => a + (v === MAT.WATER), 0);
+  check(`RMB survival loose material places in background (${bgWaterBefore} -> ${bgWaterAfter})`, bgWaterAfter > bgWaterBefore);
+  e.destroy();
+}
+
 // 8) Seeds are components internally, but survival places them through the seed
 //    path: one press -> one 1x1 seed, not a stone-style brush draft.
 {

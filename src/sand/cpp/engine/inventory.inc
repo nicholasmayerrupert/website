@@ -65,20 +65,22 @@
   // Place the selected slot's material at the aim cell, capped at how many units the
   // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
   // Tools/empty/self-overlap place nothing.
-  bool placeFromSelected(Player& p, int ax, int ay) {
+  bool placeFromSelected(Player& p, int ax, int ay, Layer* layer) {
     InvSlot& s = p.inv[p.selectedSlot];
     if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
     // Don't reject the whole build when the disc grazes the player — place only the
     // cells outside the body (passing &p), so building against yourself still works
     // and holding keeps placing as the loose material flows/settles away.
-    useLayer(&fg);
-    int placed = placeMaterialAtFootprintCapped(ax, ay, getSurvivalFootprint(p), s.material, s.count, &p);
+    bool foreground = layer == &fg;
+    if (!foreground) bgEnabled = true;
+    useLayer(layer);
+    int placed = placeMaterialAtFootprintCapped(ax, ay, getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
     useLayer(&fg);
     if (placed <= 0) return false;
     s.count -= placed; if (s.count <= 0) s = InvSlot();
     return true;
   }
-  bool placeFromSelected(int id, int ax, int ay) { Player* p = findPlayer(id); return p ? placeFromSelected(*p, ax, ay) : false; }
+  bool placeFromSelected(int id, int ax, int ay) { Player* p = findPlayer(id); return p ? placeFromSelected(*p, ax, ay, &fg) : false; }
 
   // Move/swap/merge slot `from` into `to` (the openable-grid drag). Same-material
   // non-tool stacks merge (respecting INV_STACK_MAX); otherwise the slots swap.
@@ -177,6 +179,7 @@
     int prev = p.prevInput;
     bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
     bool primaryRising = primary && !(prev & PI_PRIMARY);
+    bool secondaryRising = secondary && !(prev & PI_SECONDARY);
     p.prevInput = p.input;
     int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
     double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
@@ -185,13 +188,14 @@
     InvSlot& sel = p.inv[p.selectedSlot];
     const SurvivalFootprint& fp = getSurvivalFootprint(p);
 
-    // (1) An active component draft this player owns takes over PRIMARY: extend it while
-    //     held (consuming inventory per staged cell), materialize it on release.
+    // (1) An active component draft this player owns takes over its originating
+    //     button: extend while held, materialize on release.
     if (drafting && draftOwner == p.id) {
-      if (!primary) { playerFinalizeSolidDraft(); playerActionCount++; }
+      bool held = draftLayer ? secondary : primary;
+      if (!held) { playerFinalizeSolidDraft(); playerActionCount++; }
       else if (inReach && !sel.isTool && sel.count > 0 && sel.material == draftMaterial) {
-        useLayer(&fg);
-        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, &p);
+        useLayer(draftLayer ? &bg : &fg);
+        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, draftLayer ? nullptr : &p);
         if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
         useLayer(&fg);
       }
@@ -210,9 +214,11 @@
       if (acted) playerActionCount++;
     } else if (isSeed) {
       resetPlayerMine(p);
-      if (primaryRising && sel.count > 0) {
+      if ((primaryRising || secondaryRising) && sel.count > 0) {
+        bool toBg = secondaryRising && !primaryRising;
+        if (toBg) bgEnabled = true;
         int x0, y0;
-        useLayer(&fg);
+        useLayer(toBg ? &bg : &fg);
         bool placed = getSeedOrigin(ax, ay, x0, y0) && placeSeedAt(x0, y0);
         useLayer(&fg);
         if (placed) {
@@ -223,16 +229,21 @@
       }
     } else if (isComp) {
       // begin a component draft on press (stage + consume the first disc immediately).
-      if (primaryRising) {
-        drafting = true; draftOwner = p.id; draftLayer = 0; draftMaterial = sel.material;
-        useLayer(&fg);
-        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, &p);
+      if (primaryRising || secondaryRising) {
+        bool toBg = secondaryRising && !primaryRising;
+        if (toBg) bgEnabled = true;
+        drafting = true; draftOwner = p.id; draftLayer = toBg ? 1 : 0; draftMaterial = sel.material;
+        useLayer(toBg ? &bg : &fg);
+        int added = addFootprintToDraftCapped(draft, ax, ay, fp, rows, sel.count, toBg ? nullptr : &p);
         if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
         useLayer(&fg);
         playerActionCount++;
       }
     } else { // loose material -> continuous capped paint (consume per cell)
       resetPlayerMine(p);
-      if (p.toolCooldown <= 0 && sel.count > 0 && placeFromSelected(p, ax, ay)) p.toolCooldown = P_TOOL_COOLDOWN;
+      if (p.toolCooldown <= 0 && sel.count > 0) {
+        Layer* layer = (secondary && !primary) ? &bg : &fg;
+        if (placeFromSelected(p, ax, ay, layer)) p.toolCooldown = P_TOOL_COOLDOWN;
+      }
     }
   }

@@ -455,6 +455,13 @@
   // ice, driftwood, ores — ANY component — drop as connected pieces identically).
   void finalizeDraft() {
     if (draft.empty()) return;
+    if (draftMaterial == RIGID) {
+      std::vector<std::pair<int, int>> cells;
+      cells.reserve(draft.size());
+      for (int k : draft) if (grid[k] == EMPTY) cells.push_back({k % cols, k / cols});
+      finishSpawn(cells, RIGID);
+      return;
+    }
     std::unordered_set<int> cells;
     for (int k : draft) if (grid[k] == EMPTY) { grid[k] = draftMaterial; markCellIndex(k); cells.insert(k); }
     registerComponentCells(draftMaterial, cells);
@@ -511,14 +518,14 @@
     }
   }
   // The searchable creative palette path: select ANY material, seed species, eraser,
-  // or cube. Routes by the material's kind — components draft (live preview), the rest
-  // paint; EMPTY/RIGID map to the eraser/cube.
+  // or cube. Routes by the material's kind — components and RIGID draft (live
+  // preview), the rest paint; EMPTY maps to the eraser.
   void setCreativeMaterial(int kind, int value) {
     switch (kind) {
       case CK_MATERIAL: {
         uint8_t m = (uint8_t)value;
         if (m == EMPTY) creativeMode = CM_ERASE;
-        else if (m == RIGID) creativeMode = CM_CUBE;
+        else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
         else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
         else if (MAT_KIND[m] == K_COMPONENT) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
         else { creativeMode = CM_PAINT; creativeMaterial = m; }

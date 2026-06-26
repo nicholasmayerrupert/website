@@ -80,7 +80,21 @@ const at = (g, x, y) => g[y * COLS + x];
   e.destroy();
 }
 
-// 7) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
+// 7) The RIGID material selector drafts an arbitrary free body shape. The separate
+// cube entry above stays the one-click cube tool.
+{
+  const e = mk();
+  e.setCreativeMaterial(CK.MATERIAL, MAT.RIGID);
+  e.pointerDown(50, 40, 0);
+  check(`rigid material shows a draft preview (${e.getStoneDraftCells().length} cells)`, e.getStoneDraftCells().length > 0);
+  check('rigid material did not spawn a cube on press', e._bodyCount() === 0);
+  for (let x = 51; x <= 55; x++) e.pointerDraft(x, 40);
+  e.pointerUp(0);
+  check('rigid material finalized as one free rigid body', e._bodyCount() === 1);
+  e.destroy();
+}
+
+// 8) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
 {
   const e = mk();
   e.addDiscToStoneDraft(60, 60, 0);

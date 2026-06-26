@@ -437,15 +437,18 @@
         if (m == EMPTY || isGas(m) || isLiquid(m)) return true;
         return MAT_KIND[m] == K_POWDER && DENSITY[m] < assemblyDensity;
       };
-      std::unordered_set<int> movedCells;
       for (int k : cells) { int leadK = k + dir; int leadY = leadK / cols; if (leadY < 1 || leadY >= rows) return false; if (cells.count(leadK)) continue; if (!componentDisplaceableForAssembly(grid[leadK])) return false; }
-      for (int k : cells) movedCells.insert(k + dir);
       struct Disp { uint8_t material; int from; };
       std::vector<Disp> displaced; std::vector<int> vacated;
       for (int k : cells) { int leadK = k + dir; uint8_t lead = grid[leadK]; if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK}); if (!cells.count(k - dir)) vacated.push_back(k); }
       int liquidDisplacedCount = 0; for (auto& d : displaced) if (isLiquid(d.material)) liquidDisplacedCount++;
       std::vector<int> sideSpillTargets;
       if (liquidDisplacedCount > 0) {
+        // Cells the assembly is about to occupy — the spill BFS must not target
+        // them. Built lazily here (only when liquid is actually displaced) so a
+        // large slab falling through air/empty skips O(area) hash-set work/step.
+        std::unordered_set<int> movedCells;
+        for (int k : cells) movedCells.insert(k + dir);
         std::unordered_set<int> seen, reserved; std::vector<int> queue;
         int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = cols; offs[3] = -cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -cols; offs[3] = cols; }
         int gridLen = cols * rows;

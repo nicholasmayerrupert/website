@@ -23,7 +23,7 @@ static const uint8_t  DENSITY_SORTED[TABLE] = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 
 static const float    MOBILITY[TABLE]       = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0.35f, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_POWDER, K_POWDER, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_GAS};
 // Class-based behavior: flag bitmask + seeded-component group per material.
-static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 10, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0};
+static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0};
 static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_NONE, CG_NONE, CG_NONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_ICE, CG_NONE, CG_PLANT, CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE};
 // Mining gate: which tool class drops a material + the min tier required.
 static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0};

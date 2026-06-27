@@ -40,7 +40,9 @@
     if (plantBurned) splitPlantAfterErase();
   }
   void applyAcid() {
-    bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false; std::vector<int> erasedStone, erasedIce;
+    bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false;
+    std::vector<int>& erasedStone = acidErasedStone; std::vector<int>& erasedIce = acidErasedIce;
+    erasedStone.clear(); erasedIce.clear();
     for (int y = 1; y < rows - 1; y++) {
       int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
       for (int x = minX; x <= maxX; x++) {
@@ -99,7 +101,8 @@
     }
   }
   void applyLava() {
-    std::unordered_set<int> hardened; int hardenedYMax = 0; bool plantBurned = false;
+    std::unordered_set<int>& hardened = lavaHardenedScratch; hardened.clear();
+    int hardenedYMax = 0; bool plantBurned = false;
     for (int y = 1; y < rows - 1; y++) {
       int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
       for (int x = minX; x <= maxX; x++) {
@@ -121,10 +124,15 @@
     if (plantBurned) splitPlantAfterErase();
   }
   void applyIce() {
-    bool melted = false; std::vector<int> meltedCells;
+    bool melted = false; std::vector<int>& meltedCells = iceMeltedScratch; meltedCells.clear();
     for (auto& comp : L->iceComponents) {
-      std::vector<int> cells(comp.cells.begin(), comp.cells.end());
-      for (int k : cells) {
+      // Iterate by snapshot length, not a copy: freezing appends ICE cells to
+      // comp.cells, and those new cells are already ICE (no further melt/freeze this
+      // pass), so capping the loop at the pre-pass size is byte-identical to copying
+      // the vector first — without the per-component heap allocation.
+      size_t iceN = comp.cells.size();
+      for (size_t ci = 0; ci < iceN; ci++) {
+        int k = comp.cells[ci];
         if (grid[k] != ICE) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
         uint8_t rm = grid[right], lm = grid[left], dm = grid[down], um = grid[up];

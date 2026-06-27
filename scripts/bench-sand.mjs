@@ -105,7 +105,7 @@ await initSandWasm();
 
 const emptySamples = () => ({
   stepMs: [], renderMs: [], shiftMissMs: [], shiftHitMs: [],
-  stepPhases: { ground: [], rigid: [], react: [], carry: [], settle: [], tail: [] },
+  stepPhases: { ground: [], rigid: [], react: [], carry: [], settle: [], tail: [], joint: [], layers: [], cross: [] },
   shiftPhases: { buffers: [], translate: [], register: [], fill: [] },
   dirtyChunks: [], heapBytes: [], shiftHits: [], shiftMisses: [],
 });
@@ -296,6 +296,7 @@ function printOne(r) {
   }
   const sp = r.shiftPhases, stp = r.stepPhases;
   console.log(`  step phases (median ms): ground ${stp.ground.p50}  rigid ${stp.rigid.p50}  react ${stp.react.p50}  carry ${stp.carry.p50}  settle ${stp.settle.p50}  tail ${stp.tail.p50}`);
+  console.log(`  step()-level (median ms): joint ${stp.joint.p50}  layers(fg+bg) ${stp.layers.p50}  cross ${stp.cross.p50}  [joint mean ${stp.joint.mean} p95 ${stp.joint.p95}]`);
   console.log(`  shift phases (median ms): translate ${sp.translate.p50}  register ${sp.register.p50}  buffers ${sp.buffers.p50}  fill ${sp.fill.p50}`);
   console.log(`  dirty chunks p95 ${r.dirtyChunks.p95}  heap ${(r.heapBytes.p50 / (1024 * 1024)).toFixed(1)}MB  shift fill hit/miss p50 ${r.shiftFill.hit.p50}/${r.shiftFill.miss.p50}`);
 }

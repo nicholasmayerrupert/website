@@ -64,6 +64,9 @@ EMSCRIPTEN_KEEPALIVE double engine_perf_step_react(Engine* e) { return e->perfSt
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_carry(Engine* e) { return e->perfStepCarry; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_settle(Engine* e) { return e->perfStepSettle; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_tail(Engine* e) { return e->perfStepTail; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_joint(Engine* e) { return e->perfStepJoint; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_layers(Engine* e) { return e->perfStepLayers; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_step_cross(Engine* e) { return e->perfStepCross; }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
 // AND a full reflood every step and counts mismatches; forceFull=1 always refloods

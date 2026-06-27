@@ -263,8 +263,9 @@
   void clearAllMineDamage() {
     bool any = false;
     for (uint32_t v : L->mineDamage) if (v) { any = true; break; }
-    if (!any) return;
+    if (!any) { L->mineDamageAny = false; return; }
     std::fill(L->mineDamage.begin(), L->mineDamage.end(), 0);
+    L->mineDamageAny = false;
     markAllDirty();
   }
   uint32_t mineDurationFor(uint8_t m, uint32_t areaScale) const {
@@ -331,6 +332,7 @@
       uint32_t dur = mineDurationFor(m, 1);
       if (dur > 0) {
         if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
+        L->mineDamageAny = true;
         uint32_t power = minePowerFor(m, miner, scaledSpeed);
         L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
         changed = 1;
@@ -368,6 +370,7 @@
       uint32_t dur = mineDurationFor(m, areaScale);
       if (dur > 0) {
         if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
+        L->mineDamageAny = true;
         uint32_t power = minePowerFor(m, miner, scaledSpeed, SURVIVAL_MINING_SPEED_MULTIPLIER);
         L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
         changed = 1;

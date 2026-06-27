@@ -41,26 +41,32 @@
       return true;
     };
     int sp = 0;
-    auto groundCellAt = [&](int k) {
+    if (groundStackX.size() != (size_t)cols * rows) groundStackX.assign((size_t)cols * rows, 0);
+    int32_t* gsx = groundStackX.data();
+    // groundCellAt records the cell's column x alongside k, so the DFS below never
+    // recomputes k/cols (an integer division per popped rigid cell). Every caller
+    // already knows x: the seeds iterate x, and a propagation target's column is
+    // derived from its parent (the cell above shares x; an 8-neighbour is nx).
+    auto groundCellAt = [&](int k, int x) {
       if (groundedCell[k]) return;
       groundedCell[k] = 1;
       int id = cellComp[k];
       if (id >= 0) cgComps[id]->grounded = true;
-      groundStack[sp++] = k;
+      gsx[sp] = x; groundStack[sp++] = k;
     };
     int floorBase = (rows - 1) * cols;
-    for (int x = 0; x < cols; x++) { int k = floorBase + x; if (isBearingMaterial(grid[k])) groundCellAt(k); }
+    for (int x = 0; x < cols; x++) { int k = floorBase + x; if (isBearingMaterial(grid[k])) groundCellAt(k, x); }
     // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
     // UNLOADED world that may itself be grounded. A rigid cell touching such an edge is
     // assumed supported, so a structure whose real floor-contact has streamed off the
     // buffer does not spuriously fall (it reconnects when the region streams back in).
     if (L->infinite) {
       for (int y = 1; y < rows; y++) {
-        int kl = y * cols + 1;          if (isRigidMaterial(grid[kl])) groundCellAt(kl);
-        int kr = y * cols + (cols - 2); if (isRigidMaterial(grid[kr])) groundCellAt(kr);
+        int kl = y * cols + 1;          if (isRigidMaterial(grid[kl])) groundCellAt(kl, 1);
+        int kr = y * cols + (cols - 2); if (isRigidMaterial(grid[kr])) groundCellAt(kr, cols - 2);
       }
       int topBase = cols; // row y = 1
-      for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterial(grid[k])) groundCellAt(k); }
+      for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterial(grid[k])) groundCellAt(k, x); }
     }
     for (int y = rows - 2; y > 0; y--) {
       int rb = y * cols;
@@ -68,17 +74,28 @@
         int k = rb + x;
         if (MAT_KIND[grid[k]] == K_POWDER) {
           sawPowder = true;
-          if (isLiquid(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k);
+          if (isLiquid(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k, x);
         }
       }
     }
+    int gridLen = cols * rows;
     while (sp > 0) {
-      int k = groundStack[--sp];
+      --sp; int k = groundStack[sp], kx = gsx[sp];
       int above = k - cols;
-      if (above >= 0 && !groundedCell[above] && canGroundAbove(k, above)) groundCellAt(above);
+      if (above >= 0 && !groundedCell[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
       if (isRigidMaterial(grid[k])) {
-        int ky = k / cols, kx = k - ky * cols;
-        for (int oy = -1; oy <= 1; oy++) { int ny = ky + oy; if (ny <= 0 || ny >= rows) continue; int rb = ny * cols; for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = kx + ox; if (nx <= 0 || nx >= cols - 1) continue; int nk = rb + nx; if (!groundedCell[nk] && isRigidMaterial(grid[nk])) groundCellAt(nk); } }
+        // Neighbour-row validity ny in [1, rows-1] <=> (k + oy*cols) in [cols, gridLen):
+        // a division-free restatement of the original `ny<=0 || ny>=rows` test.
+        for (int oy = -1; oy <= 1; oy++) {
+          int rb = k + oy * cols;
+          if (rb < cols || rb >= gridLen) continue;
+          for (int ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            int nx = kx + ox; if (nx <= 0 || nx >= cols - 1) continue;
+            int nk = rb + ox;
+            if (!groundedCell[nk] && isRigidMaterial(grid[nk])) groundCellAt(nk, nx);
+          }
+        }
       }
     }
     // The cache is now fresh. Stay "dirty" (force a full reflood next step too)
@@ -320,18 +337,80 @@
   // A bonded assembly is grounded only if one member has ordinary same-layer/floor
   // support. Unsupported overlaps therefore fall together instead of pinning each
   // other, and tiny accidental overlaps do not transmit support.
+  // Produce one layer's BASE grounding (independent of the cross-layer step), either
+  // by a full flood or by reusing the cached base from a prior flood. The reuse path
+  // is taken only when the layer's rigid topology is provably unchanged: groundDirty
+  // false (every add/split/remove/move/freeze/registration sets it) AND no acid
+  // fast-path removal (groundContentDirty) AND a valid cache. Because computeGrounded
+  // ends with groundDirty = sawPowder, a layer holding powder ALWAYS refloods; only a
+  // powder-free, edit-free layer (the dry stone background during a pan) reuses. The
+  // reused groundedCell/comp.grounded are byte-identical to a fresh flood (groundedCell
+  // is a pure function of the grid; cellComp is written ONLY by grounding so it stays
+  // valid untouched between passes). This halves computeGroundedBoth's cost in the
+  // common two-layer pan case (the bg flood was ~half the joint-grounding time).
+  void groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache, bool& baseValid, std::vector<uint8_t>& gbCache) {
+    useLayer(lay);
+    int cc = (int)(lay->stoneComponents.size() + lay->plantComponents.size() + lay->iceComponents.size());
+    bool full = groundForceFull || lay->groundDirty || lay->groundContentDirty || !baseValid || (int)gbCache.size() != cc;
+    if (full) {
+      computeGrounded();
+      lay->groundContentDirty = false;
+      baseCache.assign(lay->groundedCell.begin(), lay->groundedCell.end());
+      gbCache.clear(); gbCache.reserve(cc);
+      for (auto& c : lay->stoneComponents) gbCache.push_back(c.grounded ? 1 : 0);
+      for (auto& c : lay->plantComponents) gbCache.push_back(c.grounded ? 1 : 0);
+      for (auto& c : lay->iceComponents) gbCache.push_back(c.grounded ? 1 : 0);
+      baseValid = true;
+    } else {
+      std::copy(baseCache.begin(), baseCache.end(), lay->groundedCell.begin());
+      size_t i = 0;
+      for (auto& c : lay->stoneComponents) c.grounded = gbCache[i++] != 0;
+      for (auto& c : lay->plantComponents) c.grounded = gbCache[i++] != 0;
+      for (auto& c : lay->iceComponents) c.grounded = gbCache[i++] != 0;
+    }
+  }
+
   void computeGroundedBoth() {
     cgPrevFg.assign(fg.groundedCell.begin(), fg.groundedCell.end());
     cgPrevBg.assign(bg.groundedCell.begin(), bg.groundedCell.end());
-    useLayer(&fg); computeGrounded();
-    cgFgBase.assign(fg.groundedCell.begin(), fg.groundedCell.end());
-    useLayer(&bg); computeGrounded();
-    cgBgBase.assign(bg.groundedCell.begin(), bg.groundedCell.end());
+    // Each layer's base grounding: full flood when its rigid topology changed, else a
+    // cheap cache reuse. cgFgBase/cgBgBase are populated here (the cross-layer machinery
+    // below reads them as the independent base snapshots).
+    groundLayerBase(&fg, cgFgBase, cgFgBaseValid, cgFgGroundedBase);
+    groundLayerBase(&bg, cgBgBase, cgBgBaseValid, cgBgGroundedBase);
 
     int nf = compCount(fg), nb = compCount(bg);
     fg.crossBondedComp.assign(nf, 0);
     bg.crossBondedComp.assign(nb, 0);
     cgBonds.clear();
+
+    // Common settled-terrain case: every component already grounded by its own
+    // layer's flood. Then the whole cross-layer machinery below is provably a no-op
+    // — directGroundSmall only ever touches UNGROUNDED comps, and with none
+    // ungrounded no bond patch can form (a bond needs an ungrounded endpoint). So
+    // skip it, AND skip the two full-grid base snapshots (cgFgBase/cgBgBase) that
+    // only directGroundSmall + the pair-overlap test read. fg.groundedCell is
+    // untouched by bg's flood, so deferring those copies to the ungrounded path
+    // below is byte-identical to taking them here. Only wakeLost (re-waking cells
+    // that lost grounding) still must run.
+    bool anyUngrounded = false;
+    for (int i = 0; i < nf && !anyUngrounded; i++) if (!compById(fg, i)->grounded) anyUngrounded = true;
+    for (int i = 0; i < nb && !anyUngrounded; i++) if (!compById(bg, i)->grounded) anyUngrounded = true;
+    if (!anyUngrounded) {
+      auto wakeLostQuick = [&](Layer& lay, const std::vector<uint8_t>& prev) {
+        const uint8_t* gr = lay.groundedCell.data(); const uint8_t* g = lay.grid;
+        int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
+        for (int y = 0; y < rows; y++) {
+          int rb = y * cols, mn = rmn[y], mx = rmx[y];
+          for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterial(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
+          rmn[y] = mn; rmx[y] = mx;
+        }
+      };
+      wakeLostQuick(fg, cgPrevFg); wakeLostQuick(bg, cgPrevBg);
+      useLayer(&fg);
+      return;
+    }
+    // cgFgBase/cgBgBase already hold each layer's base grounding (groundLayerBase).
 
     // Tiny (< MIN_CELLS) chunks can never reach the bond patch threshold, so a
     // 1-3 cell stone bit in front of solid background used to fall. They also

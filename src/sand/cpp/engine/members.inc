@@ -31,6 +31,13 @@
     // Transient survival mining damage. 0 = no active damage; otherwise the
     // remaining durability for the current held mine target. Not serialized.
     std::vector<uint32_t> mineDamage;
+    // Conservative "this layer might have nonzero mineDamage" flag: set true the
+    // moment any cell is damaged, cleared only when the whole array is zeroed
+    // (clearAllMineDamage / world shift). Lets the render fill skip the per-cell
+    // mineDamage load + crack-shading branch entirely in the overwhelmingly common
+    // case that nobody is mining (a pure render speedup; pixels aren't in the
+    // checksum). A stale-true flag just falls back to the exact per-cell path.
+    bool mineDamageAny = false;
     // components + ids
     std::vector<Comp> stoneComponents, plantComponents, iceComponents;
     int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
@@ -145,6 +152,9 @@
   int pfEx0 = 0, pfEy0 = 0, pfEw = 0, pfEh = 0; // entering band rect being prefetched
   int shiftFillHit = 0, shiftFillMiss = 0;      // per-layer shift: band cached vs fillRect fallback
   double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
+  // step()-level phase timers (NOT inside stepLayer): the joint cross-layer grounding
+  // flood, the two stepLayer() calls combined, and the cross-layer reactions/transfer.
+  double perfStepJoint = 0, perfStepLayers = 0, perfStepCross = 0;
   bool sinksEnabled;
   uint32_t rngState;
   // Cross-layer transfer only runs once the background is "real" (has generated
@@ -162,6 +172,20 @@
   // snapshot; cgVisited/cgStack/cgIsland = the per-island flood working set.
   std::vector<uint8_t> cgPrevFg, cgPrevBg, cgFgBase, cgBgBase, cgVisited;
   std::vector<int> cgStack, cgIsland;
+  // Parallel x-coordinate stack for computeGrounded's flood: stores each pushed
+  // cell's column so the DFS never recomputes k/cols (an integer division per popped
+  // rigid cell — the dominant grounding cost). Engine-level scratch (the flood runs
+  // one layer at a time), sized cols*rows lazily.
+  std::vector<int32_t> groundStackX;
+  // Per-layer BASE-grounding reuse cache (computeGroundedBoth). cgFgBase/cgBgBase hold
+  // each layer's independent (pre-cross-layer) groundedCell; cgFgGroundedBase/
+  // cgBgGroundedBase hold the matching per-component grounded flags (stone|plant|ice
+  // order). A powder-free, edit-free layer (the dry stone background while panning)
+  // reuses these instead of re-running its O(rigid cells) flood — byte-identical while
+  // the layer is unchanged. Valid iff cg*BaseValid (set after a full flood; groundDirty
+  // forces a refresh on any rigid change, incl. world shifts).
+  std::vector<uint8_t> cgFgGroundedBase, cgBgGroundedBase;
+  bool cgFgBaseValid = false, cgBgBaseValid = false;
   // Shared scratch for the grounding flood: cgComps maps a component index (the
   // value stored in cellComp[]) back to its Comp*, cgCompDensity holds each
   // component's mean density. Rebuilt every grounding pass by indexComponents().
@@ -182,6 +206,10 @@
   long gbEdge = 0, gbPowder = 0, gbCut = 0, gbSpan = 0, gbFast = 0; // diagnostic: removal-batch bail reasons
   std::vector<uint8_t> gvGrounded;   // verifier snapshot of the fast-path groundedCell
   std::vector<int32_t> gvCellComp;   // verifier snapshot of the fast-path cellComp
+  std::vector<int> acidErasedStone, acidErasedIce; // reusable per-call scratch for applyAcid (avoids a heap alloc every acid step)
+  std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
+  std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava
+  std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
   std::vector<int> cgRemovedCells;   // rigid cells removed this step, pending the cut-vertex check
   std::vector<int> cgBlobN;          // surviving rigid neighbours of the removed blob (cut-vertex check)
   std::vector<int> cgRemovedComp;    // one 8-connected component of the removed batch (partitioned cut-vertex check)

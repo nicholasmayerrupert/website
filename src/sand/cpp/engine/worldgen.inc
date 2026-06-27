@@ -216,9 +216,20 @@
   // sky cells, which a later terrain slice would otherwise overwrite), so they're a
   // separate pass. Each column is generated independently of the others.
   void fillTerrain(int colStart, int colEnd, int rowStart, int rowEnd) {
-    for (int lx = colStart; lx < colEnd; lx++) {
-      int worldX = L->worldOffsetX + lx; int surf = genSurfaceAt(worldX);
-      int slope = std::abs(genSurfaceAt(worldX + 1) - genSurfaceAt(worldX - 1));
+    int n = colEnd - colStart;
+    if (n <= 0) return;
+    // genSurfaceAbs is multi-octave value noise. The original evaluated genSurfaceAt
+    // 3x per column (self + both neighbours for the slope), so each boundary height
+    // was recomputed for the adjacent column too. Precompute the band's absolute
+    // surface once for [colStart-1, colEnd] and read neighbours from it: byte-identical
+    // heights (genSurfaceAt = genSurfaceAbs - worldOffsetY; the offset cancels in the
+    // slope difference) with ~3x fewer noise evaluations.
+    surfAbsScratch.resize((size_t)n + 2);
+    for (int i = 0; i < n + 2; i++) surfAbsScratch[i] = genSurfaceAbs(L->worldOffsetX + colStart - 1 + i);
+    for (int lx = colStart, j = 0; lx < colEnd; lx++, j++) {
+      int worldX = L->worldOffsetX + lx;
+      int surf = surfAbsScratch[j + 1] - L->worldOffsetY;
+      int slope = std::abs(surfAbsScratch[j + 2] - surfAbsScratch[j]);
       int biome = genBiomeAt(worldX); int soil = genSoilDepth(biome);
       for (int y = rowStart; y < rowEnd; y++) grid[y * cols + lx] = genCellAt(worldX, surf, slope, biome, soil, y);
     }

@@ -48,19 +48,29 @@ inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int 
   // for infinite worlds it advances per shift. `& 63`/`& 7` stay in range for
   // negative offsets too (two's-complement low bits == value mod 64/8).
   int woX = L->worldOffsetX, woY = L->worldOffsetY;
+  // Skip the per-cell mineDamage load + crack-shading branch entirely unless this
+  // layer actually has live mining damage (almost never). mineDamage is a parallel
+  // cols*rows array, so eliding the load also removes a cache stream from the hot
+  // fill. The damaged uint32_t* is only dereferenced on the rare path.
+  const uint32_t* dmg = L->mineDamageAny ? L->mineDamage.data() : nullptr;
   for (int y = y0; y <= y1; y++) {
     int rowBase = y * cols;
     int wy = woY + y;
-    int noiseRow = (wy & 63) << 6;
-    for (int x = x0; x <= x1; x++) {
+    const uint8_t* noiseRow = &renderNoise[(wy & 63) << 6];
+    int wx = woX + x0;
+    for (int x = x0; x <= x1; x++, wx++) {
       int k = rowBase + x;
-      int wx = woX + x;
       uint8_t m = g[k];
-      uint32_t c = renderVariants[((int)m << 3) + renderNoise[noiseRow + (wx & 63)]];
-      uint16_t rem = L->mineDamage[k], dur = (uint16_t)DURABILITY[m] * 16u;
-      if (rem > 0 && dur > 0 && rem < dur) {
-        double damaged = (double)(dur - rem) / (double)dur;
-        c = jitterShade(c, -(int)std::lround(80.0 * damaged));
+      uint32_t c = renderVariants[((int)m << 3) + noiseRow[wx & 63]];
+      if (dmg) {
+        uint32_t rem = dmg[k];
+        if (rem > 0) {
+          uint32_t dur = (uint32_t)DURABILITY[m] * 16u;
+          if (dur > 0 && rem < dur) {
+            double damaged = (double)(dur - rem) / (double)dur;
+            c = jitterShade(c, -(int)std::lround(80.0 * damaged));
+          }
+        }
       }
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }

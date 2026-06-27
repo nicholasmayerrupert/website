@@ -80,13 +80,18 @@
       }
       return false;
     };
+    double tJ0 = emscripten_get_now();
     if (bgEnabled && (!cgBonds.empty() || layerRigidMarked(fg) || layerRigidMarked(bg))) {
       computeGroundedBoth(); jointGroundReady = true;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
+    perfStepJoint = emscripten_get_now() - tJ0;
+    double tL0 = emscripten_get_now();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
     if (bgA) stepLayer(&bg);
+    perfStepLayers = emscripten_get_now() - tL0;
+    double tX0 = emscripten_get_now();
     if (jointGroundReady) {
       moveCrossLayerBondedAssemblies();
       fgA = fgA || layerActive(&fg);
@@ -94,6 +99,7 @@
     }
     crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);
+    perfStepCross = emscripten_get_now() - tX0;
     useLayer(&fg); // leave fg active for ABI/render/tool calls between steps
     perfStepMs = emscripten_get_now() - t0;
     return true;

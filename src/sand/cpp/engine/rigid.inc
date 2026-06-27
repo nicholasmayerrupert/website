@@ -202,6 +202,7 @@
         double m = b->sweepMargin;
         b->aabbX0 = x0 - m; b->aabbY0 = y0 - m; b->aabbX1 = x1 + m; b->aabbY1 = y1 + m;
         b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
+        b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
       }
       contacts.clear();
       // Penetration depth of a point that is already inside target T, measured by
@@ -341,7 +342,14 @@
         b->px += (b->vx + b->pvx) * dt; b->py += (b->vy + b->pvy) * dt; b->angle += (b->omega + b->pw) * dt;
         if (!b->hadContact) { b->stillTicks = 0; continue; }
         if (b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) { b->vx *= R_CONTACT_LIN_DAMP; b->vy *= R_CONTACT_LIN_DAMP; }
-        if (b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG) b->omega *= R_CONTACT_ANG_DAMP;
+        // Don't damp a spin the contact solve is actively building in one direction
+        // (a body toppling about a corner): that is real rotation, not jitter, and
+        // damping it every substep is what made hand-drawn bodies creep over
+        // agonizingly slowly instead of tipping. Rest jitter oscillates sign / decays
+        // (omega*omegaPre <= 0 or |omega| not growing) and is still damped, so bodies
+        // whose centre of mass sits over their support stay put and settle as before.
+        bool spinGrowing = b->omega * b->omegaPre > 0 && std::fabs(b->omega) > std::fabs(b->omegaPre);
+        if (!spinGrowing && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG) b->omega *= R_CONTACT_ANG_DAMP;
         if (b->vx * b->vx + b->vy * b->vy < R_SLEEP_LIN * R_SLEEP_LIN && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG && b->maxDepth <= R_REST_DEPTH) b->stillTicks++; else b->stillTicks = 0;
       }
     }

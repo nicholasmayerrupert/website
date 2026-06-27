@@ -153,6 +153,11 @@ struct Body {
   double sweepMargin = 0;
   double aabbX0 = 0, aabbY0 = 0, aabbX1 = 0, aabbY1 = 0;
   double pvx = 0, pvy = 0, pw = 0;
+  // omega entering the substep's contact solve (before the solver converts the
+  // body's fall into rotation). Used to tell a genuine topple — where the solver
+  // feeds angular velocity that grows in one direction each substep — apart from
+  // rest jitter, so contact damping settles the latter without crushing the former.
+  double omegaPre = 0;
   bool hadContact = false; double maxDepth = 0; int idx = 0;
 };
 struct Contact { Body* a; Body* b; double rax, ray, rbx, rby, nx, ny, depth, accJn, accJt, accBias; };

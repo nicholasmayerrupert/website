@@ -54,6 +54,21 @@ The previous body↔body path had four compounding defects:
 - **Depenetration fallback** (`depenetrateBodyRaster`, unchanged) still runs
   after the solver as a last resort along valid mask normals — it is a fallback,
   not the primary mechanism.
+- **Topple-aware settle damping.** While a body is in contact and barely moving it
+  is damped each substep (`R_CONTACT_LIN_DAMP`/`R_CONTACT_ANG_DAMP`) so residual
+  solver jitter dies and it can sleep. The angular part used to fire on *any* small
+  `|omega|`, which also crushed the slow *onset* of a genuine topple: a tall/thin
+  hand-drawn body whose centre of mass had moved past its support would creep over
+  across hundreds of ticks instead of tipping (a compact cube escaped because its
+  lower inertia spun it past the damping threshold quickly). The fix distinguishes
+  the two by what the contact solve is doing to the spin: a real topple is the
+  solver converting the body's fall into rotation, so `omega` grows in one
+  consistent direction every substep (`omega*omegaPre > 0 && |omega| > |omegaPre|`);
+  rest jitter oscillates sign or decays. Angular damping is skipped while the spin
+  is consistently growing and still applied otherwise — so an imbalanced body tips
+  promptly while a body whose COM sits over its support stays put and settles as
+  before. `omegaPre` (the spin entering the substep's solve) is cached per body in
+  `rigidStep`. Guarded by `scripts/rigid-topple-test.mjs`.
 - **Render-boundary wall.** `collectTerrain`'s `solid()` test treats any cell
   outside the loaded buffer (`x<0 || x>=cols || y<0 || y>=rows`) as solid, with an
   inward-pointing normal. A body's own motion can no longer carry it off the

@@ -523,19 +523,42 @@
         for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
       }
     };
-    auto canMoveLayer = [&](Layer& lay, const std::unordered_set<int>& own) {
+    // Plan a one-cell descent of `own` in `lay`. An assembly descends into EMPTY
+    // (or its own) cells, and — like the single-layer translateAssembly — shoves
+    // aside any LIGHTER powder/liquid directly beneath its shell instead of being
+    // pinned by it. Without this a sand/water-FILLED bonded shell (a stone circle
+    // mirrored in both layers, filled with sand) could never move: its own contents
+    // sit directly below the top arc and block the move, so it floats forever.
+    // Displaced contents are relocated into the cells the assembly vacates (its
+    // per-column tops); if they can't fit there, we decline the move (status quo).
+    // Gas is simply overrun (it dissipates), matching translateAssembly.
+    auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, double density,
+                             std::vector<std::pair<int, uint8_t>>& relocate) -> bool {
+      relocate.clear();
       for (int k : own) {
         int nk = k + cols, ny = nk / cols;
         if (ny < 1 || ny >= rows) return false;
         if (own.count(nk)) continue;
-        if (lay.grid[nk] != EMPTY) return false;
+        uint8_t below = lay.grid[nk];
+        if (below == EMPTY || isGas(below)) continue;
+        bool displaceable = isLiquid(below) || (MAT_KIND[below] == K_POWDER && DENSITY[below] < density);
+        if (!displaceable) return false;
+        relocate.push_back({0, below}); // dest cell assigned below (after vacated cells are known)
       }
+      // Vacated cells (own cells with no own cell above) become empty after the move
+      // and receive the displaced material. Count must cover every displaced cell.
+      int slots = 0;
+      for (int k : own) if (!own.count(k - cols)) slots++;
+      if ((int)relocate.size() > slots) return false;
+      int ri = 0;
+      for (int k : own) { if (ri >= (int)relocate.size()) break; if (!own.count(k - cols)) relocate[ri++].first = k; }
       return true;
     };
-    auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells, const std::vector<CellMat>& mats) {
+    auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells, const std::vector<CellMat>& mats, const std::vector<std::pair<int, uint8_t>>& relocate) {
       useLayer(&lay);
       for (int k : cells) if (!cells.count(k - cols)) writeGridIndex(k, EMPTY);
       for (auto& cm : mats) writeGridIndex(cm.k + cols, cm.m);
+      for (auto& r : relocate) writeGridIndex(r.first, r.second); // displaced contents into vacated tops
       for (int id : ids) {
         Comp* c = compById(lay, id);
         bool isPlant = compIdIsPlant(lay, id);
@@ -550,13 +573,22 @@
       }
     };
 
+    std::vector<std::pair<int, uint8_t>> fgReloc, bgReloc;
     for (JointGroup* g : order) {
       if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
       collect(fg, g->fgComps, fgCells, fgMats);
       collect(bg, g->bgComps, bgCells, bgMats);
-      if (!canMoveLayer(fg, fgCells) || !canMoveLayer(bg, bgCells)) continue;
-      applyLayer(fg, g->fgComps, fgCells, fgMats);
-      applyLayer(bg, g->bgComps, bgCells, bgMats);
+      // Mean density of the whole bonded assembly (both layers) decides which
+      // powders/liquids it is heavy enough to shove aside as it descends.
+      double sum = 0; int n = 0;
+      for (auto& cm : fgMats) { sum += DENSITY[cm.m]; n++; }
+      for (auto& cm : bgMats) { sum += DENSITY[cm.m]; n++; }
+      double density = n ? sum / n : 0;
+      // Both layers must be able to descend (the assembly moves as one unit); if
+      // either is blocked by non-displaceable material, the assembly stays put.
+      if (!planLayerMove(fg, fgCells, density, fgReloc) || !planLayerMove(bg, bgCells, density, bgReloc)) continue;
+      applyLayer(fg, g->fgComps, fgCells, fgMats, fgReloc);
+      applyLayer(bg, g->bgComps, bgCells, bgMats, bgReloc);
     }
     useLayer(&fg);
   }

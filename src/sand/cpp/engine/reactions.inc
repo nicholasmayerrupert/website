@@ -73,6 +73,7 @@
     // stone) keeps the grounding cache valid and skips the full-grid reflood that
     // otherwise dominates the cost. removalsKeepGroundingValid patches the removed
     // cells when safe; any disconnect / seed / powder case forces a reflood.
+    L->compsReshaped = false; // splitRigidAfterErase sets this if the comp SET changes
     if (dissolvedStone) splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false, false);
     if (dissolvedIce) splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true, false);
     if (dissolvedPlant) splitPlantAfterErase(); // sets groundDirty (plant grounding nuance)
@@ -80,7 +81,21 @@
       cgRemovedCells.clear();
       cgRemovedCells.insert(cgRemovedCells.end(), erasedStone.begin(), erasedStone.end());
       cgRemovedCells.insert(cgRemovedCells.end(), erasedIce.begin(), erasedIce.end());
-      if (!removalsKeepGroundingValid(cgRemovedCells)) L->groundDirty = true;
+      if (!removalsKeepGroundingValid(cgRemovedCells)) {
+        L->groundDirty = true; // a real disconnect -> full reflood
+      } else if (L->compsReshaped) {
+        // Grounding still valid, but a comp split/vanished so the positional comp ids
+        // that cellComp stores shifted -> the next pass must re-index (incremental).
+        L->groundContentDirty = true;
+      } else {
+        // Pure bore: every surviving comp kept its id and position, so the cached
+        // cellComp is still correct except at the removed cells. groundedCell was just
+        // patched by removalsKeepGroundingValid; patch cellComp to match and leave the
+        // cache otherwise untouched, so the next grounding pass SKIPS entirely. This is
+        // what stops acid boring bulk stone from re-indexing the whole layer (incl. a
+        // big inert ice tub holding a separate acid pool) every dissolve step.
+        for (int k : cgRemovedCells) cellComp[k] = -1;
+      }
     }
   }
   void applyLava() {

@@ -112,6 +112,19 @@
   // wrong fast path can never silently desync — it shows up as a test failure.
   void ensureGroundedSingleLayer() {
     bool full = groundForceFull || bgEnabled || L->groundDirty;
+    // Skip the whole pass when nothing that affects grounding changed since the last
+    // one: powder-free (powder grounding tracks liquids outside the component hooks),
+    // no structural change (groundDirty), and no acid fast-path removal
+    // (groundContentDirty). Every rigid mutation EITHER sets groundDirty or is the
+    // acid fast-path removal (which sets groundContentDirty), so when all three are
+    // clear the cached cellComp[]/groundedCell[]/comp.grounded are byte-identical to a
+    // fresh incremental refresh — re-running it (an O(all rigid cells) pass) is pure
+    // waste. This is what keeps a big INERT rigid mass cheap: a resting acid pool held
+    // in an ice tub, say, while acid bores stone elsewhere. The boring keeps the LAYER
+    // active every step, but only the steps that actually edit rigid content pay the
+    // O(stone+ice) grounding cost; idle/non-dissolving steps reuse the cache for free.
+    if (!full && !groundVerify && !L->groundSawPowder && !L->groundContentDirty) return;
+    L->groundContentDirty = false;
     if (!groundVerify) {
       if (full) computeGrounded(); else incrementalGroundingRefresh();
       return;
@@ -925,7 +938,7 @@
       survivors.clear(); survivors.reserve(comp.cells.size());
       for (int k : comp.cells) { if (seen[k] == erasedGen) touched = true; else survivors.push_back(k); }
       if (!touched) { updated.push_back(std::move(comp)); continue; }
-      if (survivors.empty()) continue;
+      if (survivors.empty()) { L->compsReshaped = true; continue; } // comp fully erased -> ids shift
       int32_t remGen = ++L->seenGen;
       for (int k : survivors) seen[k] = remGen;
       bool reused = false;
@@ -936,6 +949,7 @@
           int cur = part[qi]; int y = cur / cols, x = cur - y * cols;
           for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!isInBounds(nx, ny)) continue; int nk = ny * cols + nx; if (seen[nk] == remGen) { seen[nk] = 0; part.push_back(nk); } }
         }
+        if (reused) L->compsReshaped = true; // a 2nd+ surviving piece -> a split: ids shift
         Comp c; c.id = reused ? nextId++ : comp.id; c.yMax = 0; c.cacheDirty = iceCache;
         for (int k : part) { int y = k / cols; if (y > c.yMax) c.yMax = y; }
         c.cells = std::move(part); updated.push_back(std::move(c));

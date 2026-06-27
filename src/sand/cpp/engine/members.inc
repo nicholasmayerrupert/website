@@ -39,7 +39,18 @@
     // component add/move/split/growth/sync and stays true while powder is present
     // (powder grounding depends on liquids that don't route through these hooks).
     // groundSawPowder records whether the last full reflood saw any powder.
-    bool groundDirty = true, groundSawPowder = false;
+    // groundContentDirty: a rigid component change that did NOT set groundDirty (the
+    // acid fast-path removal) happened since the last grounding pass, so the cached
+    // cellComp/groundedCell must be refreshed even though no full reflood is forced.
+    // When it (and groundDirty/powder) are all clear, the cached grounding is still
+    // the exact grounding of the current grid and the whole pass can be skipped.
+    bool groundDirty = true, groundSawPowder = false, groundContentDirty = true;
+    // Set by splitRigidAfterErase when an erase changes the component SET (a comp
+    // splits into >1 piece or is fully removed), shifting the positional comp ids that
+    // cellComp stores. The acid fast path clears it first, then uses it to decide
+    // whether a dissolve that kept grounding valid needs a full re-index (structure
+    // changed) or just a cheap cellComp patch of the removed cells (a pure bore).
+    bool compsReshaped = false;
     std::vector<uint8_t> crossBondedComp;
     // free rigid bodies + ownership
     std::vector<Body*> bodies; int nextBodyId = 1;

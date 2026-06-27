@@ -210,6 +210,7 @@
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
   std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
+  std::vector<int> reactionSnowMelt;               // reusable per-call scratch for applyReactions (snow melted by fire -> water)
   std::vector<int> cgRemovedCells;   // rigid cells removed this step, pending the cut-vertex check
   std::vector<int> cgBlobN;          // surviving rigid neighbours of the removed blob (cut-vertex check)
   std::vector<int> cgRemovedComp;    // one 8-connected component of the removed batch (partitioned cut-vertex check)

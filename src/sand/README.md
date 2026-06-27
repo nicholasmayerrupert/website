@@ -235,4 +235,32 @@ jump gating, run+friction, and fixed-input determinism. Shared helpers live in
 Add the id, color, density, kind, etc. as an entry in `materials.schema.json`,
 then run `npm run generate` (regenerates the JS + C++ tables) and rebuild the
 wasm. If it moves in a way no existing kind covers, or reacts with other
-materials, add that to the relevant `.inc` file.
+materials, add that to the relevant `.inc` file. Ignition, dissolving, grounding,
+and component registration are all driven off the schema `flags`/`componentGroup`,
+so a material that reuses existing physics needs only a schema entry. Bumping past
+the current `tableSize` (power-of-two headroom over the live ids) is fine — the
+lookup tables and tests size off it.
+
+## Material reactions (quick reference)
+
+Local transforms live in `reactions.inc` (dispatched each layer step in
+`step.inc`). Ignition and dissolving are **flag-driven**: fire and lava both ignite
+any `flammable` cell, and acid eats any `dissolvable` cell — so the flag, not a
+hardcoded id list, decides who reacts.
+
+- **Fire**: water it touches turns to steam (and the fire is spent); ignites
+  `flammable` neighbours (oil, gunpowder, the flammable plants — but NOT juicy
+  cactus / wet mushrooms, which are flagged non-flammable); melts `SNOW` → water.
+- **Oil**: flammable; a fire front whooshes along connected oil.
+- **Gunpowder**: a fast fuse — catches on any flame with no roll and the burn front
+  races through every adjacent grain, so a trail/pile deflagrates in a couple steps.
+- **Acid**: bores through any `dissolvable` material (most solids), emitting acrid
+  smoke ~half the time; decays as it works.
+- **Lava**: ignites `flammable` neighbours; quenches against `WATER`/`ACID`/`BRINE`
+  (→ steam) and hardens to stone; melts `SNOW` → water; rarely spits fire into air.
+- **Ice**: melts to water next to fire/lava; slowly freezes adjacent `WATER` → ice.
+- **Salt**: a de-icer/desiccant. Dissolves in `WATER` → **brine** (saltwater), and
+  melts `ICE`/`SNOW` → brine on contact (the grain is spent).
+- **Brine**: flows like water but is **freeze-immune** (the ice-freeze reaction only
+  targets `WATER`), so salted meltwater never re-ices; still boils off on lava, and
+  won't nourish plants (trees drink `WATER`), so saltwater kills crops.

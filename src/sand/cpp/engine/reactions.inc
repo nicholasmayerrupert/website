@@ -6,6 +6,7 @@
   void applyReactions() {
     int steamCount = 0, fireCount = 0, igniteCount = 0; bool plantBurned = false;
     int igniteCap = cols * rows;
+    std::vector<int>& snowMelt = reactionSnowMelt; snowMelt.clear();
     for (int y = 1; y < rows; y++) {
       int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
       for (int x = minX; x <= maxX; x++) {
@@ -30,13 +31,27 @@
               int oilY = nk / cols; int on[4]; int onn; if (oilY < rows - 1) { on[0] = nk + 1; on[1] = nk - 1; on[2] = nk + cols; on[3] = nk - cols; onn = 4; } else { on[0] = nk + 1; on[1] = nk - 1; on[2] = nk - cols; onn = 3; }
               for (int oi = 0; oi < onn; oi++) { int ok = on[oi]; if (grid[ok] == OIL && rand() < 0.12 && igniteCount < igniteCap) reactionIgnite[igniteCount++] = ok; }
             }
-          } else if (isPlantMaterial(grid[nk]) && rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) reactionIgnite[igniteCount++] = nk; }
+          } else if (grid[nk] == GUNPOWDER) {
+            // Gunpowder is a fast fuse: it catches on any flame contact (no roll) and
+            // the burn front races on through every adjacent grain, so a connected
+            // trail or pile deflagrates in a couple of steps. It is also flammable, so
+            // lava lights it directly (applyLava) and the chain takes over here.
+            if (igniteCount < igniteCap) reactionIgnite[igniteCount++] = nk;
+            int gy = nk / cols; int gn[4]; int gnn; if (gy < rows - 1) { gn[0] = nk + 1; gn[1] = nk - 1; gn[2] = nk + cols; gn[3] = nk - cols; gnn = 4; } else { gn[0] = nk + 1; gn[1] = nk - 1; gn[2] = nk - cols; gnn = 3; }
+            for (int gi = 0; gi < gnn; gi++) { int gk = gn[gi]; if (grid[gk] == GUNPOWDER && igniteCount < igniteCap) reactionIgnite[igniteCount++] = gk; }
+          } else if (grid[nk] == SNOW) { snowMelt.push_back(nk); } // fire melts snow to water (consistent with lava+snow and ice melting near fire)
+          // Ignition is keyed to the `flammable` FLAG, not plant-family: the doc says
+          // flammable = "ignites near fire/lava", and lava already uses isFlammable.
+          // This stops fire from burning non-flammable plants (juicy cactus, wet
+          // mushrooms) and lets any flammable powder/liquid catch the same way oil does.
+          else if (isFlammable(grid[nk]) && rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) reactionIgnite[igniteCount++] = nk; }
         }
       }
     }
     for (int i = 0; i < fireCount; i++) { int k = reactionFires[i]; if (grid[k] == FIRE) writeGridIndex(k, EMPTY); reactionFlags[k] = 0; }
     for (int i = 0; i < steamCount; i++) { int k = reactionSteam[i]; if (grid[k] == WATER) writeGridIndex(k, STEAM); }
-    for (int i = 0; i < igniteCount; i++) { int k = reactionIgnite[i]; if (grid[k] == OIL || isPlantMaterial(grid[k])) { plantBurned = plantBurned || isPlantMaterial(grid[k]); writeGridIndex(k, FIRE); } }
+    for (size_t i = 0; i < snowMelt.size(); i++) { int k = snowMelt[i]; if (grid[k] == SNOW) writeGridIndex(k, WATER); }
+    for (int i = 0; i < igniteCount; i++) { int k = reactionIgnite[i]; if (isFlammable(grid[k])) { plantBurned = plantBurned || isPlantMaterial(grid[k]); writeGridIndex(k, FIRE); } }
     if (plantBurned) splitPlantAfterErase();
   }
   void applyAcid() {
@@ -115,7 +130,9 @@
         if (isFlammable(grid[right])) burnK = right; else if (isFlammable(grid[left])) burnK = left; else if (isFlammable(grid[down])) burnK = down; else if (isFlammable(grid[up])) burnK = up;
         if (burnK >= 0) { if (isPlantMaterial(grid[burnK])) plantBurned = true; writeGridIndex(burnK, FIRE); continue; }
         int liquidK = -1;
-        if (grid[right] == WATER || grid[right] == ACID) liquidK = right; else if (grid[left] == WATER || grid[left] == ACID) liquidK = left; else if (grid[down] == WATER || grid[down] == ACID) liquidK = down; else if (grid[up] == WATER || grid[up] == ACID) liquidK = up;
+        // Brine quenches lava like water/acid (saltwater boils too) -> steam + hardened stone.
+        auto quenches = [&](int q) { uint8_t m = grid[q]; return m == WATER || m == ACID || m == BRINE; };
+        if (quenches(right)) liquidK = right; else if (quenches(left)) liquidK = left; else if (quenches(down)) liquidK = down; else if (quenches(up)) liquidK = up;
         if (liquidK >= 0) { writeGridIndex(liquidK, STEAM); writeGridIndex(k, STONE); hardened.insert(k); if (y > hardenedYMax) hardenedYMax = y; continue; }
         if (rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (grid[up] == EMPTY) airK = up; else if (grid[right] == EMPTY) airK = right; else if (grid[left] == EMPTY) airK = left; if (airK >= 0) writeGridIndex(airK, FIRE); }
       }
@@ -137,6 +154,14 @@
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
         uint8_t rm = grid[right], lm = grid[left], dm = grid[down], um = grid[up];
         if (rm == FIRE || rm == LAVA || lm == FIRE || lm == LAVA || dm == FIRE || dm == LAVA || um == FIRE || um == LAVA) { writeGridIndex(k, WATER); meltedCells.push_back(k); melted = true; continue; }
+        // Salt de-ices: ice touching a salt grain melts to BRINE (not water), and the
+        // grain is spent (also -> brine). Brine never refreezes because the freeze
+        // check below only targets WATER, so the melt sticks. Deterministic (no rand):
+        // an ice-free / salt-free scene consumes no RNG here, so checksums are stable.
+        if (rm == SALT || lm == SALT || dm == SALT || um == SALT) {
+          int saltK = rm == SALT ? right : lm == SALT ? left : dm == SALT ? down : up;
+          writeGridIndex(k, BRINE); writeGridIndex(saltK, BRINE); meltedCells.push_back(k); melted = true; continue;
+        }
         if (rand() < ICE_FREEZE_P) {
           int waterK = -1; if (rm == WATER) waterK = right; else if (lm == WATER) waterK = left; else if (dm == WATER) waterK = down; else if (um == WATER) waterK = up;
           if (waterK >= 0) { writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); int wy = waterK / cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; L->groundDirty = true; } // waterK was WATER (live grid read) -> not already in comp; new ICE cell -> reflood
@@ -144,4 +169,32 @@
       }
     }
     if (melted) splitRigidAfterErase(L->iceComponents, meltedCells, L->nextIceId, true);
+  }
+  // Salt is a desiccant / de-icer. A grain that touches WATER dissolves into it,
+  // turning that water to BRINE (saltwater) and liquefying the grain into brine as
+  // well; the same grain melts SNOW to brine on contact. Brine is freeze-immune (the
+  // ice-freeze reaction only ever targets WATER), so salted meltwater never re-ices.
+  // Ice de-icing lives in applyIce (ice is a component and needs the split
+  // bookkeeping). Deterministic (no rand): a salt-free scene writes nothing here, so
+  // existing checksums are unchanged. Each grain salinates only itself + one
+  // neighbour, so a pinch of salt makes a little brine — no runaway ocean conversion.
+  void applySalt() {
+    for (int y = 1; y < rows - 1; y++) {
+      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      for (int x = minX; x <= maxX; x++) {
+        int k = I(x, y); if (grid[k] != SALT) continue;
+        int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
+        int waterK = -1;
+        if (grid[right] == WATER) waterK = right; else if (grid[left] == WATER) waterK = left; else if (grid[down] == WATER) waterK = down; else if (grid[up] == WATER) waterK = up;
+        if (waterK >= 0) { writeGridIndex(waterK, BRINE); writeGridIndex(k, BRINE); continue; }
+        // NOTE: salt does NOT dissolve on contact with existing brine — a denser salt
+        // grain sinks THROUGH meltwater/brine to reach fresh ice below and keep
+        // de-icing (applyIce runs first and consumes any grain adjacent to ice). The
+        // tradeoff is a rare undissolved grain stranded in a deep brine pool, which
+        // reads fine (a pinch of un-dissolved salt at the bottom).
+        int snowK = -1;
+        if (grid[right] == SNOW) snowK = right; else if (grid[left] == SNOW) snowK = left; else if (grid[down] == SNOW) snowK = down; else if (grid[up] == SNOW) snowK = up;
+        if (snowK >= 0) { writeGridIndex(snowK, BRINE); writeGridIndex(k, BRINE); }
+      }
+    }
   }

@@ -5,14 +5,15 @@
 // Run: node scripts/tooltier-test.mjs
 
 import { MAT } from '../src/sand/materials.js';
-import { MAT_TOOLCLASS, MAT_TOOLTIER, TOOL_CLASS_SPEED, TOOL_TIER_SPEED, TC, TT } from '../src/sand/materials.generated.js';
+import { MAT_TOOLCLASS, MAT_TOOLTIER, TOOL_CLASS_SPEED, TOOL_TIER_SPEED, TC, TT, TABLE_SIZE } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('material tool classes/tiers (Phase A)');
 
-// Table shape: one entry per slot, power-of-two headroom over the live ids.
-check(`MAT_TOOLCLASS has 32 entries (${MAT_TOOLCLASS.length})`, MAT_TOOLCLASS.length === 32);
-check(`MAT_TOOLTIER has 32 entries (${MAT_TOOLTIER.length})`, MAT_TOOLTIER.length === 32);
+// Table shape: one entry per slot, power-of-two headroom over the live ids
+// (TABLE_SIZE is generated from the schema's tableSize — don't hardcode it).
+check(`MAT_TOOLCLASS has TABLE_SIZE entries (${MAT_TOOLCLASS.length}/${TABLE_SIZE})`, MAT_TOOLCLASS.length === TABLE_SIZE);
+check(`MAT_TOOLTIER has TABLE_SIZE entries (${MAT_TOOLTIER.length}/${TABLE_SIZE})`, MAT_TOOLTIER.length === TABLE_SIZE);
 check('mining speed tables cover every class/tier', TOOL_CLASS_SPEED.length === 25 && TOOL_TIER_SPEED.length === 5);
 
 // Enums exported for both sides.

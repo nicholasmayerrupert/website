@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for material identity, shared by JS and C++. Edit here, then run `npm run generate` to regenerate materials.generated.js and cpp/engine/materials.generated.hpp. Numeric ids MUST stay stable: saved scenes, worldgen, tests, and the WASM grid key off them. `flags` and `componentGroup` make material behavior class-based: predicates (isFlammable/isDissolvable/isRigidMaterial/isBearingMaterial/isPlantMaterial) and component registration are generated from these, so a new material that reuses existing physics needs only a schema entry.",
-  "tableSize": 32,
+  "tableSize": 64,
   "kinds": {
     "NONE": 0,
     "POWDER": 1,
@@ -84,7 +84,11 @@
     { "id": 28, "name": "MUSH_STEM", "kind": "COMPONENT",  "density": 0.5, "looseSorted": false, "mobility": 0,    "color": "0xb0afc8d2", "toolClass": "axe", "toolTier": 0, "textureAmp": 6, "durability": 2,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
     { "id": 29, "name": "MUSH_CAP",  "kind": "COMPONENT",  "density": 0.45,"looseSorted": false, "mobility": 0,    "color": "0xb83237b4", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
     { "id": 30, "name": "VINE",      "kind": "COMPONENT",  "density": 0.4, "looseSorted": false, "mobility": 0,    "color": "0xa32d6e3c", "toolClass": "axe", "toolTier": 0, "textureAmp": 9, "durability": 1,  "renderAnim": "none",  "componentGroup": "plant", "flags": ["flammable", "dissolvable", "rigid", "plantFamily"] },
-    { "id": 31, "name": "ACRID_SMOKE","kind": "GAS",       "density": 0,   "looseSorted": false, "mobility": 0,    "color": "0x6030c8d8", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "steam", "componentGroup": "none",  "flags": [] }
+    { "id": 31, "name": "ACRID_SMOKE","kind": "GAS",       "density": 0,   "looseSorted": false, "mobility": 0,    "color": "0x6030c8d8", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0,  "renderAnim": "steam", "componentGroup": "none",  "flags": [] },
+
+    { "id": 32, "name": "SALT",      "kind": "POWDER",     "density": 1.5, "looseSorted": true,  "mobility": 1.0,  "color": "0xe8f2f8f8", "toolClass": "shovel", "toolTier": 0, "textureAmp": 4, "durability": 1,  "renderAnim": "none",  "componentGroup": "none",  "flags": ["bearing"] },
+    { "id": 33, "name": "BRINE",     "kind": "LIQUID",     "density": 1.05,"looseSorted": true,  "mobility": 1.0,  "color": "0x66c0c890", "toolClass": "none", "toolTier": 0, "textureAmp": 3, "durability": 0,  "renderAnim": "none",  "componentGroup": "none",  "flags": [] },
+    { "id": 34, "name": "GUNPOWDER", "kind": "POWDER",     "density": 1.2, "looseSorted": true,  "mobility": 1.0,  "color": "0xc84a4a52", "toolClass": "shovel", "toolTier": 0, "textureAmp": 6, "durability": 1,  "renderAnim": "none",  "componentGroup": "none",  "flags": ["flammable", "bearing"] }
   ],
   "animColors": {
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",

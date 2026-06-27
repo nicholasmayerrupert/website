@@ -22,7 +22,7 @@
     moveBodies();
     double tR = emscripten_get_now(); perfStepRigid = tR - tG;
     growPlantComponents();
-    applyReactions(); applyAcid(); applyLava(); applyIce();
+    applyReactions(); applyAcid(); applyLava(); applyIce(); applySalt();
     double tX = emscripten_get_now(); perfStepReact = tX - tR;
     prepareNextBuffer();
     // carry-forward component + body cells across the double buffer

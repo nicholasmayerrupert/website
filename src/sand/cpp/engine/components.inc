@@ -159,26 +159,23 @@
     return found == need;
   }
 
-  // Decide whether a batch of just-removed rigid cells (grid already cleared at each)
-  // keeps the grounding cache valid. A removal changes another cell's grounding only
-  // by disconnecting it from a SEED (floor / streamed buffer edge / powder-on-dense-
-  // liquid). The removed cells must be checked AS A BLOB, not one at a time: two
-  // adjacent removals can together bridge two regions even though neither alone is a
-  // cut. So we require the whole removed set to be (a) compact (small bbox) and clear
-  // of the edge/floor seed margin, (b) free of powder in its neighbourhood, and (c)
-  // such that every surviving rigid neighbour of the blob reconnects to the others
+  // Decide whether ONE 8-connected blob of just-removed rigid cells (grid already
+  // cleared at each) keeps the grounding cache valid. A removal changes another cell's
+  // grounding only by disconnecting it from a SEED (floor / streamed buffer edge /
+  // powder-on-dense-liquid). The blob is safe when it is (a) compact (small bbox) and
+  // clear of the edge/floor seed margin, (b) free of powder in its neighbourhood, and
+  // (c) such that every surviving rigid neighbour of the blob reconnects to the others
   // without the blob. Then removing it disconnects nothing and the only grounding
-  // change is the removed cells themselves, which we patch to 0. Otherwise the caller
-  // refloods. groundedCell stays a pure function of the grid -- verified byte-for-byte
-  // against a full reflood every step under groundVerify (see the grounding test).
-  bool removalsKeepGroundingValid(const std::vector<int>& removed) {
-    if (removed.empty()) return true;
+  // change is the removed cells themselves. Does NOT patch groundedCell -- the caller
+  // (removalsKeepGroundingValid) patches once every component of the batch is cleared,
+  // so a later failing component still leaves the cache untouched for the reflood.
+  bool blobKeepsGroundingValid(const std::vector<int>& blob) {
     const int MARGIN = 2;  // stay clear of the floor (row rows-1) and streamed edges
     const int SPAN = 128;  // max blob extent for the fast path; wider spreads reflood
     const int W = 8;       // reconnect-search margin around the blob bbox
     int32_t gen = ++L->seenGen;
     int bx0 = cols, by0 = rows, bx1 = -1, by1 = -1;
-    for (int k : removed) {
+    for (int k : blob) {
       L->seenStamp[k] = gen;
       int y = k / cols, x = k - y * cols;
       if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
@@ -186,10 +183,12 @@
     if (bx1 - bx0 > SPAN || by1 - by0 > SPAN) { gbSpan++; return false; }
     if (bx0 <= MARGIN || bx1 >= cols - 1 - MARGIN || by0 <= MARGIN || by1 >= rows - 1 - MARGIN) { gbEdge++; return false; }
     // Gather the blob's surviving rigid neighbours (deduped via the inN stamp); bail
-    // on any powder nearby (powder/liquid grounding nuance not modelled here).
+    // on any powder nearby (powder/liquid grounding nuance not modelled here). Removed
+    // cells of OTHER components are already empty in the grid, so they are skipped by
+    // the isRigidMaterial test and never pollute this blob's boundary.
     int32_t inN = ++L->seenGen;
     cgBlobN.clear();
-    for (int r : removed) {
+    for (int r : blob) {
       int ry = r / cols, rx = r - ry * cols;
       for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
         if (!ox && !oy) continue;
@@ -204,8 +203,49 @@
       int y0 = imax(1, by0 - W), y1 = imin(rows - 2, by1 + W);
       if (!blobBoundaryReconnects(cgBlobN, inN, x0, y0, x1, y1, gen)) { gbCut++; return false; }
     }
-    for (int k : removed) groundedCell[k] = 0;          // only these cells lose grounding
     gbFast++;
+    return true;
+  }
+
+  // Decide whether a batch of just-removed rigid cells keeps the grounding cache valid,
+  // by partitioning it into 8-connected components and requiring EVERY component to
+  // independently pass blobKeepsGroundingValid. Checking per-component is essential and
+  // sound: the cells must be checked as a blob, not one at a time (two ADJACENT removals
+  // can together sever a bridge that neither severs alone -- the co-removed neighbour,
+  // already cleared, otherwise looks like plain empty space and hides it), but distinct
+  // 8-connected components are by definition non-adjacent, so no component can hide a
+  // bridge running through another's cells. Any path through a removed cell reroutes
+  // locally around its own component using surviving material; disjoint components never
+  // share that reroute. This lets a wide erosion front (e.g. a broad acid pool) split
+  // into many small blobs that each fast-path, instead of the whole batch bailing on its
+  // overall span. groundedCell stays a pure function of the grid -- verified byte-for-byte
+  // against a full reflood every step under groundVerify (see the grounding test).
+  bool removalsKeepGroundingValid(const std::vector<int>& removed) {
+    if (removed.empty()) return true;
+    // seenStamp marks each removed cell's partition state: `present` = a removed cell
+    // not yet claimed by a component, `taken` = already swept into one. blobKeeps...
+    // re-stamps a component's own cells (with a fresh gen) but only after we have
+    // finished sweeping that component, so the outer scan still sees later components.
+    int32_t present = ++L->seenGen;
+    for (int k : removed) L->seenStamp[k] = present;
+    int32_t taken = ++L->seenGen;
+    for (int seed : removed) {
+      if (L->seenStamp[seed] != present) continue; // already pulled into an earlier component
+      cgRemovedComp.clear();
+      int qt = 0; groundStack[qt++] = seed; L->seenStamp[seed] = taken;
+      for (int qh = 0; qh < qt; qh++) {
+        int cur = groundStack[qh]; cgRemovedComp.push_back(cur);
+        int cy = cur / cols, cx = cur - cy * cols;
+        for (int oy = -1; oy <= 1; oy++) { int ny = cy + oy; if (ny < 0 || ny >= rows) continue;
+          for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = cx + ox; if (nx < 0 || nx >= cols) continue;
+            int nk = ny * cols + nx;
+            if (L->seenStamp[nk] == present) { L->seenStamp[nk] = taken; groundStack[qt++] = nk; }
+          }
+        }
+      }
+      if (!blobKeepsGroundingValid(cgRemovedComp)) return false; // a real cut/edge/powder/span -> reflood
+    }
+    for (int k : removed) groundedCell[k] = 0; // every component safe: only the removed cells lose grounding
     return true;
   }
 

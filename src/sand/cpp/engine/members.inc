@@ -173,6 +173,7 @@
   std::vector<int32_t> gvCellComp;   // verifier snapshot of the fast-path cellComp
   std::vector<int> cgRemovedCells;   // rigid cells removed this step, pending the cut-vertex check
   std::vector<int> cgBlobN;          // surviving rigid neighbours of the removed blob (cut-vertex check)
+  std::vector<int> cgRemovedComp;    // one 8-connected component of the removed batch (partitioned cut-vertex check)
   struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
   std::vector<CrossLayerBond> cgBonds;
   // Reusable scratch for the cross-bonded union-find (replaces the old O(grid)

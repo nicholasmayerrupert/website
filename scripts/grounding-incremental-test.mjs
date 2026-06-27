@@ -127,5 +127,32 @@ function buildScript(seed) {
   a.destroy(); b.destroy();
 }
 
+// ---------------------------------------------------------------------------
+// 4. WIDE ACID FRONT: the partition's reason for existing. A broad acid pool eats a
+//    broad stone surface; the per-step removed batch spans far more than SPAN (128),
+//    so the OLD whole-batch check bailed on `span` every step and refooded. Partitioning
+//    into 8-connected components must (a) stay byte-identical to a full reflood, and
+//    (b) drive the whole-batch span bail to zero -- each small component fast-paths
+//    instead. (Genuine chip detachments still reflood via `cut`; that is correct.)
+{
+  console.log('wide acid front: partitioned fast path is byte-identical and never span-bails');
+  const STONE = 3, ACID = 10;
+  const buildWide = (e) => {
+    for (let y = 40; y < ROWS - 1; y++) for (let x = 6; x < COLS - 6; x++) e.paintDisc(x, y, 0, STONE, true);
+    for (let x = 0; x < COLS; x++) e.paintDisc(x, ROWS - 1, 0, STONE, true);
+    e.syncComponents();
+    for (let y = 20; y < 40; y++) for (let x = 20; x < COLS - 20; x++) e.paintDisc(x, y, 0, ACID, true); // wide pool, ~SPAN wide
+  };
+  const v = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 17, sinksOn: false });
+  v.setGroundingDebug(true, false);
+  buildWide(v);
+  let t = 0; for (let i = 0; i < 200; i++) { t += 16; v.step(t); }
+  const diag = v.groundingDiag();
+  check(`wide-front grounding matches reflood (${v.groundingMismatches()} mismatches)`, v.groundingMismatches() === 0);
+  check(`wide-front never bails on the whole-batch span (span=${diag.span})`, diag.span === 0);
+  check(`wide-front fast path actually fired (fast=${diag.fast})`, diag.fast > 0);
+  v.destroy();
+}
+
 console.log(failures ? `\n${failures} checks FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

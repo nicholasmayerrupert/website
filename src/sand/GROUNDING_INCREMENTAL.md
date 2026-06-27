@@ -35,8 +35,9 @@ reflood". `ensureGroundedSingleLayer()` (the single-layer dispatch; the cross-la
   `splitRigidAfterErase`.
 
 The win on the hot path comes from **acid removals**. When acid dissolves stone, instead
-of forcing a reflood, `removalsKeepGroundingValid()` checks whether the removed cells —
-**as a blob, not one at a time** — could have disconnected anything:
+of forcing a reflood, `removalsKeepGroundingValid()` partitions the step's removed cells
+into **8-connected components** and checks each component independently as its own blob
+(`blobKeepsGroundingValid`). A single blob is *not a cut* when it is:
 
 1. compact (bbox within `SPAN`) and clear of the floor/edge seed `MARGIN`;
 2. no powder in the blob's neighbourhood (powder/liquid grounding nuance not modelled);
@@ -44,18 +45,31 @@ of forcing a reflood, `removalsKeepGroundingValid()` checks whether the removed 
    bounded local flood that avoids the blob (`blobBoundaryReconnects`, with early-exit
    and a visit `cap`).
 
-If all hold, removing the blob is not a cut: the only grounding change is the removed
-cells, which are patched to 0, and the cache stays valid. Otherwise we reflood.
+If *every* component holds, removing them is not a cut: the only grounding change is the
+removed cells, which are patched to 0, and the cache stays valid. If any component fails
+(a real cut / seed / powder / oversized blob), we reflood.
 
-Checking the removed cells **as a blob** is essential: two adjacent removals can together
-bridge two regions even though neither alone is a cut (the earlier per-cell version had
-exactly this bug — caught immediately by the verifier).
+**Why partition** — and why per-component is sound. Removed cells must be checked as a
+*blob*, not one at a time: two *adjacent* removals can together sever a bridge that
+neither severs alone (the co-removed neighbour, already cleared to empty, otherwise looks
+like plain empty space and hides the bridge — the original per-cell version had exactly
+this bug, caught immediately by the verifier). But distinct 8-connected components are by
+definition non-adjacent, so no component can hide a bridge running through another's
+cells; any path through a removed cell reroutes locally around its own component using
+surviving material, and disjoint components never share that reroute. Partitioning lets a
+**wide erosion front** (a broad acid pool) split into many small blobs that each fast-path,
+instead of the whole batch bailing on its combined `span` and reflooding every step.
 
 ## When it wins / falls back
 
 - Boring a channel / compact erosion through bulk stone → fast path, big win.
-- Wide-front erosion of a deep, rough cavity, or a removal that genuinely severs a piece
-  (which must then fall) → falls back to a full reflood (correct, just not accelerated).
+- Wide-front erosion (broad acid pool) → each step's removals partition into small
+  components that fast-path; only the steps where a component **genuinely severs a piece**
+  (which must then fall) reflood. A wide *flat* front over a flat slab chips off many tiny
+  fragments, so it still refloods often — those refloods are real (audited: 0 false cuts),
+  not a fast-path limitation. Proving the large surviving mass is still grounded after a
+  tiny chip detaches would need real dynamic connectivity (a far flood to the seed), which
+  is deliberately out of scope here.
 - Any powder/liquid-grounding scene, cross-layer scene, or structural change → full
   reflood (status quo).
 
@@ -71,6 +85,9 @@ today's behavior. Setting `groundForceFull` disables the fast path entirely.
   identical grid checksums at every step.
 - The acid-burn block also asserts the fast path actually fires, so a future change can't
   silently disable it.
+- The wide-acid-front block asserts the partition keeps `span` bails at zero (the whole
+  batch never trips the combined-span limit) while staying byte-identical — locking in the
+  reason the partition exists.
 
 `engine_grounding_diag` exposes per-batch bail counts (`fast/edge/powder/cut/span`) for
 tuning `SPAN` / `W` / `cap`.

@@ -25,12 +25,99 @@ for (const m of MATERIALS) {
   COLOR[m.id] = `rgb(${c & 0xff},${(c >> 8) & 0xff},${(c >> 16) & 0xff})`;
   NAME[m.id] = m.name;
 }
-// Tool letters by ToolClass id (mirrors enum ToolClass: 1 pick, 2 axe, 3 shovel).
-// There is no hand tool anymore — the bare hand is implicit (empty slot).
-const TOOL_GLYPH = { 1: 'P', 2: 'A', 3: 'S' };
+// Tool names/tier letters by ToolClass id (mirrors enum ToolClass: 1 pick, 2 axe,
+// 3 shovel). There is no hand tool anymore — the bare hand is implicit (empty slot).
 const TOOL_NAME = { 1: 'Pickaxe', 2: 'Axe', 3: 'Shovel' };
 const TIER = ['', 'W', 'S', 'I', 'G'];
 const TIER_NAME = ['', 'Wood', 'Stone', 'Iron', 'Gold'];
+
+// Tool icons as simple 12x12 pixel art (replacing the old single-letter glyphs).
+// 'H' = wooden handle, 'M' = metal head (tinted by tier), '.'/' ' = empty. Rendered
+// as a crisp SVG so it scales to any slot size without blur.
+const TOOL_ART = {
+  1: [ // pickaxe — spiked head over a vertical handle
+    '............',
+    '..M......M..',
+    '.MMM....MMM.',
+    '.MMMMMMMMMM.',
+    '..MMMMMMMM..',
+    '.....MM.....',
+    '.....HH.....',
+    '.....HH.....',
+    '.....HH.....',
+    '.....HH.....',
+    '.....HH.....',
+    '............',
+  ],
+  2: [ // axe — blade on the left, handle down the right
+    '............',
+    '...MMM......',
+    '..MMMMM.....',
+    '.MMMMMMM....',
+    '.MMMMMMMHH..',
+    '.MMMMMMMHH..',
+    '.MMMMMMMHH..',
+    '..MMMMM.HH..',
+    '...MMM..HH..',
+    '........HH..',
+    '........HH..',
+    '............',
+  ],
+  3: [ // shovel — handle on top, spade scoop at the bottom
+    '............',
+    '.....HH.....',
+    '.....HH.....',
+    '.....HH.....',
+    '.....HH.....',
+    '....MMMM....',
+    '...MMMMMM...',
+    '...MMMMMM...',
+    '...MMMMMM...',
+    '...MMMMMM...',
+    '....MMMM....',
+    '............',
+  ],
+};
+const TOOL_HANDLE = '#9b6a39'; // wood
+// Metal-head tint indexed by toolTier (0 = generic, 1 wood, 2 stone, 3 iron, 4 gold).
+const TOOL_HEAD = ['#c9ccd4', '#b07a44', '#9aa0a8', '#dfe4ec', '#f2c734'];
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const _toolIconCache = new Map();
+function buildToolIcon(toolClass, toolTier, sizePx) {
+  const grid = TOOL_ART[toolClass];
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12');
+  svg.setAttribute('width', String(sizePx));
+  svg.setAttribute('height', String(sizePx));
+  svg.setAttribute('shape-rendering', 'crispEdges');
+  svg.style.display = 'block';
+  if (!grid) return svg; // unknown tool class -> empty icon
+  const head = TOOL_HEAD[toolTier] || TOOL_HEAD[0];
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r];
+    for (let c = 0; c < row.length; c++) {
+      const ch = row[c];
+      if (ch !== 'H' && ch !== 'M') continue;
+      const rect = document.createElementNS(SVG_NS, 'rect');
+      rect.setAttribute('x', String(c));
+      rect.setAttribute('y', String(r));
+      // Bleed each cell by a hair so crisp-edges scaling never leaves seams.
+      rect.setAttribute('width', '1.02');
+      rect.setAttribute('height', '1.02');
+      rect.setAttribute('fill', ch === 'H' ? TOOL_HANDLE : head);
+      svg.appendChild(rect);
+    }
+  }
+  return svg;
+}
+// Cached per (class, tier, size); cloned per use so the same icon can live in many slots.
+function toolIcon(toolClass, toolTier, sizePx) {
+  const key = toolClass + ':' + toolTier + ':' + sizePx;
+  let icon = _toolIconCache.get(key);
+  if (!icon) { icon = buildToolIcon(toolClass, toolTier, sizePx); _toolIconCache.set(key, icon); }
+  return icon.cloneNode(true);
+}
 
 const STYLE = `
 .inv-backdrop { position: fixed; inset: 0; z-index: 71; display: none;
@@ -52,9 +139,6 @@ const STYLE = `
 .inv-slot:hover { border-color: rgba(255,255,255,.4); }
 .inv-slot.selected { border-color: #fde68a; box-shadow: 0 0 0 2px rgba(253,230,138,.55) inset; }
 .inv-swatch { width: 26px; height: 26px; border-radius: 4px; box-shadow: inset 2px 2px 0 rgba(255,255,255,.18); }
-.inv-tool { width: 26px; height: 26px; border-radius: 4px; display: flex; align-items: center; justify-content: center;
-  font-size: 15px; font-weight: 800; color: #f1f5f9; background: rgba(120,130,150,.5);
-  box-shadow: inset 2px 2px 0 rgba(255,255,255,.18); }
 .inv-count { position: absolute; right: 2px; bottom: 1px; font-size: 11px; font-weight: 700; color: #fff;
   text-shadow: 0 1px 2px #000, 0 0 2px #000; pointer-events: none; }
 .inv-num { position: absolute; left: 3px; top: 1px; font-size: 9px; font-weight: 700; color: rgba(255,255,255,.6);
@@ -87,6 +171,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // DIFFERENT slot (and we avoid double-firing when down/up land on the same slot).
   let downSlot = -1;
   let downOnSlot = false; // did the active press start on a slot (vs the backdrop)?
+  // Latest pointer position, kept current so the carried chip can be placed the
+  // instant it appears — a freshly picked stack must not flash at (0,0) before the
+  // first move. Updated by onMove and by the pick pointerdown.
+  let ptrX = 0, ptrY = 0;
 
   // Darkened full-window backdrop BEHIND the panels (Minecraft style). Clicking it
   // while carrying throws the carried stack out into the world.
@@ -158,9 +246,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function renderStack(el, s) {
     if (!s) return;
     if (s.isTool) {
-      const g = document.createElement('span'); g.className = 'inv-tool';
-      g.textContent = TOOL_GLYPH[s.toolClass] || '·';
-      el.appendChild(g);
+      el.appendChild(toolIcon(s.toolClass, s.toolTier, 28));
       if (s.toolTier > 0) {
         const t = document.createElement('span'); t.className = 'inv-tier';
         t.textContent = TIER[s.toolTier] || '';
@@ -184,15 +270,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function renderCursorInline(s) {
     if (!s) return;
     if (s.isTool) {
-      const g = document.createElement('span');
-      Object.assign(g.style, {
-        width: '28px', height: '28px', borderRadius: '4px', display: 'flex',
-        alignItems: 'center', justifyContent: 'center', fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-        fontSize: '16px', fontWeight: '800', color: '#f1f5f9', background: 'rgba(120,130,150,.85)',
-        boxShadow: 'inset 2px 2px 0 rgba(255,255,255,.18)',
-      });
-      g.textContent = TOOL_GLYPH[s.toolClass] || '·';
-      cursorItem.appendChild(g);
+      cursorItem.appendChild(toolIcon(s.toolClass, s.toolTier, 30));
       if (s.toolTier > 0) {
         const t = document.createElement('span');
         Object.assign(t.style, {
@@ -229,6 +307,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     cursorItem.replaceChildren();
     if (open && c) {
       renderCursorInline(c);
+      cursorItem.style.left = ptrX + 'px';
+      cursorItem.style.top = ptrY + 'px';
       cursorItem.style.display = 'flex';
     } else {
       cursorItem.style.display = 'none';
@@ -258,6 +338,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     e.preventDefault();
     downSlot = i;
     downOnSlot = true;
+    ptrX = e.clientX; ptrY = e.clientY; // so the chip appears under the cursor at once
     const half = e.button === 2;
     cursorPick?.(i, half);
     refreshCursor();
@@ -297,11 +378,17 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     refreshCursor();
   });
 
-  // The carried element follows the pointer whenever the grid is open.
+  // The carried element follows the pointer whenever the grid is open. Registered in
+  // the CAPTURE phase (see setOpen): while open, the full-window backdrop and the hud
+  // call stopPropagation() on every pointer event — including pointermove — so a
+  // bubble-phase window listener would never fire and the chip would stay stranded at
+  // (0,0). Capture runs top-down before the target's stopPropagation, so it still sees
+  // every move.
   const onMove = (e) => {
+    ptrX = e.clientX; ptrY = e.clientY;
     if (!open) return;
-    cursorItem.style.left = e.clientX + 'px';
-    cursorItem.style.top = e.clientY + 'px';
+    cursorItem.style.left = ptrX + 'px';
+    cursorItem.style.top = ptrY + 'px';
   };
 
   // The display name of a slot's contents: "Wood Pickaxe" for tools, "copper ore" for
@@ -356,8 +443,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     hud.classList.toggle('open', open);
     backdrop.classList.toggle('open', open);
     if (!open) { downSlot = -1; downOnSlot = false; }
-    if (open) window.addEventListener('pointermove', onMove);
-    else window.removeEventListener('pointermove', onMove);
+    if (open) window.addEventListener('pointermove', onMove, true);
+    else window.removeEventListener('pointermove', onMove, true);
     refreshCursor();
   };
 
@@ -370,7 +457,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     toggleOpen() { setOpen(!open); },
     isOpen() { return open; },
     destroy() {
-      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointermove', onMove, true);
       if (toastTimer) { clearTimeout(toastTimer); toastTimer = 0; }
       backdrop.remove();
       hud.remove();

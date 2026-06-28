@@ -264,3 +264,18 @@ hardcoded id list, decides who reacts.
 - **Brine**: flows like water but is **freeze-immune** (the ice-freeze reaction only
   targets `WATER`), so salted meltwater never re-ices; still boils off on lava, and
   won't nourish plants (trees drink `WATER`), so saltwater kills crops.
+- **TNT** (`explosives.inc`): lit by fire/lava (or a gunpowder fuse), it fuses then
+  detonates a **`DURABILITY`-gated crater** — soft blocks blow up from farther out
+  than hard ones. The blast scatters cosmetic particles, ejects rubble chunks (free
+  bodies of the destroyed material that bake back into terrain), shoves nearby free
+  bodies, and chains adjacent TNT. Works the same whether the TNT is a placed solid
+  or a free TNT body.
+
+## Rigid bodies that are real material (`rigid.inc` + the BODY-MATERIAL INVARIANT)
+
+A free rigid body stamps its **real material** into the grid, so a stone body reads,
+renders, mines, and reacts as `STONE`; `isBodyCell(k)` distinguishes it from static
+terrain. A body whose material has a static form (stone-group or ice) **bakes** into a
+normal component when it comes to rest; `RIGID` and other bodies (driftwood) stay free
+forever. The cube tool spawns a body of the selected solid (default `RIGID`); explosion
+debris is the other source. See the invariant doc-block in `members.inc`.

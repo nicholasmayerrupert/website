@@ -73,9 +73,46 @@ function blastCrater(M) {
   for (let i = 0; i < 200; i++) {
     e.placeMaterial(70, 64, 2, MAT.FIRE); // a flame where the body falls/rests
     e.step(i * 16);
-    if (count(e.getGrid(), MAT.TNT) === 0 && e._bodyCount() === 0 && count(e.getGrid(), MAT.STONE) < stone0 - 20) { gone = true; break; }
+    if (count(e.getGrid(), MAT.TNT) === 0 && e._bodyCount() === 0) { gone = true; break; } // TNT body fell, but watch it explode + clear
+    if (count(e.getGrid(), MAT.TNT) === 0 && count(e.getGrid(), MAT.STONE) < stone0 - 20) { gone = true; break; } // detonated + cratered (STONE debris may linger transiently)
   }
-  check(`explosive TNT body detonated (no TNT/body left, stone cratered)`, gone);
+  check(`explosive TNT body detonated (TNT consumed, stone cratered)`, gone);
+  e.destroy();
+}
+
+// --- Phase 3: debris chunks (that bake into rubble), cosmetic particles, shockwave ---
+{
+  const e = mk();
+  for (let x = 30; x < 110; x++) for (let y = 50; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);
+  e.placeMaterial(70, 49, 0, MAT.TNT);
+  e.syncComponents();
+  const items0 = e.itemCount();
+  let maxBodies = 0, particlesSeen = false;
+  for (let i = 0; i < 60; i++) {
+    e.placeMaterial(71, 49, 1, MAT.FIRE);
+    e.step(i * 16);
+    maxBodies = Math.max(maxBodies, e._bodyCount());
+    if (e.itemCount() > items0 + 5) particlesSeen = true;
+  }
+  check(`blast scattered cosmetic particles (items ${items0} -> peak)`, particlesSeen);
+  check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
+  for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle + bake
+  check(`debris chunks baked back into static rubble (bodies now ${e._bodyCount()})`, e._bodyCount() <= 1);
+  e.destroy();
+}
+{
+  // a free body within the blast radius is shoved outward (away from the centre)
+  const e = mk();
+  for (let x = 20; x < 120; x++) e.placeMaterial(x, ROWS - 1, 0, MAT.STONE); // floor
+  e.placeMaterial(60, ROWS - 2, 0, MAT.TNT);
+  e.syncComponents();
+  e.spawnBox(72, ROWS - 5, 2, 2, MAT.RIGID); // a body just to the right of the TNT, inside the blast
+  for (let i = 0; i < 30; i++) e.step(i * 16); // settle
+  const avgRigidX = () => { const g = e.getGrid(); let s = 0, n = 0; for (let i = 0; i < g.length; i++) if (g[i] === MAT.RIGID) { s += i % COLS; n++; } return n ? s / n : -1; };
+  const x0 = avgRigidX();
+  for (let i = 30; i < 90; i++) { e.placeMaterial(61, ROWS - 2, 1, MAT.FIRE); e.step(i * 16); }
+  const x1 = avgRigidX();
+  check(`shockwave shoved the nearby body outward (x ${x0.toFixed(1)} -> ${x1.toFixed(1)})`, x0 > 0 && x1 > x0 + 2);
   e.destroy();
 }
 

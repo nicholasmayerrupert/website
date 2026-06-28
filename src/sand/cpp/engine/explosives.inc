@@ -15,6 +15,15 @@
   static const int    TNT_CHAIN_FUSE = 4;    // a TNT caught in a blast chains this fast
   static const int    TNT_BLAST_RADIUS = 14; // crater reach (cells)
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
+  // Phase 3 (debris + shockwave). All deterministic — velocities come from geometry +
+  // whash2 (the same rand-free spatial hash the item drops use), never rand().
+  static const int    BLAST_DEBRIS_CHUNKS = 4;    // physical rubble chunks ejected per blast
+  static const int    BLAST_DEBRIS_CAP = 120;     // stop ejecting chunks past this many live bodies (chain safety)
+  static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
+  static constexpr double BLAST_PARTICLE_SPEED = 2.6; // cosmetic fleck speed
+  static const int    BLAST_PARTICLE_LIFE = 26;
+  static constexpr double BLAST_PUSH = 3.0;       // outward shove given to nearby free bodies
+  static constexpr double TWO_PI = 6.283185307179586;
 
   // Schedule a detonation at a cell (no-op if one is already pending there, so a fuse
   // is never shortened by re-ignition).
@@ -32,6 +41,8 @@
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     int r2 = radius * radius;
+    uint32_t bseed = (uint32_t)tick * 2654435761u ^ (uint32_t)(cy * cols + cx); // per-blast deterministic seed
+    uint8_t debrisMat = EMPTY; // first solid material destroyed -> what the rubble chunks are made of
     for (int oy = -radius; oy <= radius; oy++) {
       int yy = cy + oy; if (yy <= 0 || yy >= rows) continue;
       for (int ox = -radius; ox <= radius; ox++) {
@@ -40,26 +51,56 @@
         int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) continue;
         double energy = power * (1.0 - std::sqrt((double)dd) / radius);
         if (energy < (double)DURABILITY[m]) continue; // too hard to blow up at this distance
-        if (m == TNT) queueDetonation(k, TNT_CHAIN_FUSE); // chain: nearby TNT detonates a beat later
+        if (m == TNT && dd > 0) queueDetonation(k, TNT_CHAIN_FUSE); // chain OTHER TNT a beat later (dd>0 so a blast never re-queues its own centre)
         // body-material invariant: a body cell goes through the body system, a static
         // cell through the component-split system (see isBodyCell).
         if (isBodyCell(k)) {
           if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b;
           if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; }
         } else {
-          if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
+          // Track the first destroyed solid as the rubble-chunk material (never TNT —
+          // exploding TNT must be consumed, not scattered as live shrapnel).
+          if (isStoneComp(m)) { erasedStone.push_back(k); if (debrisMat == EMPTY && m != TNT) debrisMat = m; }
+          else if (isIceComp(m)) { erasedIce.push_back(k); if (debrisMat == EMPTY) debrisMat = m; }
           if (isPlantMaterial(m)) erasedPlant = true;
           grid[k] = EMPTY;
         }
         markCellIndex(k);
-        // PHASE 3 will eject debris chunks / particles here, by (ox,oy) direction.
+        // Scatter the destroyed material outward as cosmetic flecks (this is also how
+        // loose powders/liquids in the blast get "flung"). Throttled to ~1/3 of cells,
+        // deterministic via whash2 — no rand(), so the sim RNG stream is untouched.
+        if (!isGas(m) && (((xx * 3) ^ yy) % 3 == 0)) {
+          double dist = std::sqrt((double)dd), inv = dist > 0.5 ? 1.0 / dist : 0.0;
+          double sp = BLAST_PARTICLE_SPEED * (1.0 - dist / radius) * (0.5 + whash2(bseed, xx, yy));
+          spawnParticle(m, xx + 0.5, yy + 0.5, ox * inv * sp, oy * inv * sp - 0.6, BLAST_PARTICLE_LIFE);
+        }
+      }
+    }
+    // Shockwave: shove nearby free bodies outward and wake them.
+    for (Body* b : L->bodies) {
+      double ddx = b->px - cx, ddy = b->py - cy, bd = std::sqrt(ddx * ddx + ddy * ddy);
+      if (bd >= radius || bd < 0.01) continue;
+      double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
+      b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
+    }
+    // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
+    // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
+    // can't flood the body solver.
+    if (debrisMat != EMPTY && (int)L->bodies.size() < BLAST_DEBRIS_CAP) {
+      for (int i = 0; i < BLAST_DEBRIS_CHUNKS; i++) {
+        double j = whash2(bseed, i, 13);
+        int sx = cx + (i * 2 - (BLAST_DEBRIS_CHUNKS - 1)) * 3; // fan out horizontally just above the crater centre (cleared air)
+        Body* b = spawnBox(sx, cy - 3, 1, 1, debrisMat);       // a 2x2 chunk launched up + out; it arcs back down and BAKES into rubble
+        if (!b) continue;
+        b->vx = (double)(sx - cx) * 0.45 + (j - 0.5);
+        b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
+        b->awake = true; b->stillTicks = 0;
       }
     }
     finishErasedBodies(dirtyBodies, L->bodyCells);
     splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
-    // PHASE 3 will push nearby free bodies + fling loose powders/liquids here.
     markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   }
 

@@ -12,11 +12,16 @@ await initSandWasm();
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false });
 const { check, done } = makeChecker('explosives (TNT)');
 const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return n; };
-// A blast carves the crater AND fills it with steam/acrid smoke, so a "carved" cell is
-// void OR gas (EMPTY/FIRE/STEAM/ACRID_SMOKE) — counting only EMPTY would miss the gassed
-// inner crater entirely (e.g. a small hard-block crater is all steam).
 const GAS = new Set([MAT.FIRE, MAT.STEAM, MAT.ACRID_SMOKE]);
+const AFTERMATH = [MAT.ACRID_SMOKE, MAT.STEAM, MAT.FIRE];
 const carvedInBox = (g, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; const v = g[y * COLS + x]; if (v === MAT.EMPTY || GAS.has(v)) n++; } return n; };
+const countAny = (g, mats) => { let n = 0; for (const v of g) if (mats.includes(v)) n++; return n; };
+const aftermathStats = (g) => ({
+  acrid: count(g, MAT.ACRID_SMOKE),
+  steam: count(g, MAT.STEAM),
+  fire: count(g, MAT.FIRE),
+  total: countAny(g, AFTERMATH),
+});
 
 // Fill a solid grounded block of material M, sit a TNT on top, light it, and run until
 // the blast fires (a sudden jump in carved cells inside the crater box). Return how many
@@ -120,22 +125,61 @@ function blastCrater(M) {
   e.destroy();
 }
 
-// --- a blast billows a LOT of steam and some acrid smoke into the crater ---
+// --- each consumed TNT pixel emits one aftermath cell: mostly acrid smoke, some steam/fire ---
+{
+  const e = mk();
+  const cx = 70, cy = 50, half = 5;
+  for (let y = cy - 14; y <= cy + 14; y++) for (let x = cx - 14; x <= cx + 14; x++) {
+    if (x >= cx - half && x <= cx + half && y >= cy - half && y <= cy + half) continue;
+    if (x >= cx + half + 1 && x <= cx + half + 3 && y >= cy - 1 && y <= cy + 1) continue;
+    e.placeMaterial(x, y, 0, MAT.SANDSTONE);
+  }
+  for (let y = cy - half; y <= cy + half; y++) for (let x = cx - half; x <= cx + half; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  e.syncComponents();
+  const tnt0 = count(e.getGrid(), MAT.TNT);
+  let peak = { acrid: 0, steam: 0, fire: 0, total: 0 };
+  let tntLeft = tnt0;
+  for (let i = 0; i < 80; i++) {
+    if (i < 3) e.placeMaterial(cx + half + 2, cy, 1, MAT.FIRE); // light the TNT block once; the fuse persists
+    e.step(i * 16);
+    const g = e.getGrid();
+    const stats = aftermathStats(g);
+    if (stats.total > peak.total) peak = stats;
+    tntLeft = count(g, MAT.TNT);
+    if (tntLeft === 0 && i > 35) break;
+  }
+  check(`TNT block existed (${tnt0} cells)`, tnt0 === (half * 2 + 1) * (half * 2 + 1));
+  check(`TNT block was consumed (${tntLeft} left)`, tntLeft === 0);
+  check(`blast emitted about one aftermath cell per TNT pixel (peak ${peak.total} vs TNT ${tnt0})`, peak.total >= tnt0 * 0.6 && peak.total <= tnt0 + 12);
+  check(`acrid smoke dominates the aftermath (acrid ${peak.acrid}, steam ${peak.steam})`, peak.acrid > peak.steam * 1.8);
+  check(`blast emits some steam (peak ${peak.steam})`, peak.steam > 10);
+  check(`blast emits some fire (peak ${peak.fire})`, peak.fire > 4);
+  e.destroy();
+}
+
+// --- gases inside a blast radius survive instead of being carved away ---
 {
   const e = mk();
   const cx = 70, top = 50;
   for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, MAT.SANDSTONE);
   e.placeMaterial(cx, top - 1, 0, MAT.TNT);
   e.syncComponents();
-  let maxSteam = 0, maxAcrid = 0;
-  for (let i = 0; i < 50; i++) {
-    e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE); // hold a flame on the fuse
+  let survived = false, steamBeforeBlast = 0;
+  for (let i = 0; i < 80; i++) {
+    e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE);
+    if (i >= 24) {
+      for (let x = cx - 12; x <= cx + 12; x++) {
+        if (x >= cx - 1 && x <= cx + 2) continue;
+        e.placeMaterial(x, top - 8, 0, MAT.STEAM);
+      }
+    }
+    steamBeforeBlast = count(e.getGrid(), MAT.STEAM);
     e.step(i * 16);
-    maxSteam = Math.max(maxSteam, count(e.getGrid(), MAT.STEAM));
-    maxAcrid = Math.max(maxAcrid, count(e.getGrid(), MAT.ACRID_SMOKE));
+    const tntLeft = count(e.getGrid(), MAT.TNT);
+    const steamNow = count(e.getGrid(), MAT.STEAM);
+    if (tntLeft === 0) { survived = steamNow >= steamBeforeBlast * 0.75; break; }
   }
-  check(`blast billows a LOT of steam (peak ${maxSteam} cells)`, maxSteam > 40);
-  check(`blast emits some acrid smoke (peak ${maxAcrid} cells)`, maxAcrid > 3);
+  check(`gas survives TNT blast carving (steam before blast ${steamBeforeBlast})`, survived);
   e.destroy();
 }
 

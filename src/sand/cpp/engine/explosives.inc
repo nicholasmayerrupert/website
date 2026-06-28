@@ -12,8 +12,7 @@
   // reflood + body-finish it triggers. A chain (or several body+static blasts in one
   // step) used to pay that PER detonation; now carveBlast() accumulates every crater of
   // a step into one BlastBatch and finishBlasts() runs the shared finalize ONCE. The
-  // steam/smoke puff and cosmetic flecks are both capped per step so a big blast can't
-  // flood the gas sim / particle pool.
+  // cosmetic flecks are capped per step so a big blast can't flood the particle pool.
   //
   // Determinism: NO rand() — crater shape, fleck/gas choice, and debris velocities all
   // come from whash2 (the rand-free spatial hash). Static fuses live in
@@ -21,7 +20,7 @@
   // fuses detonate in sorted cell order so unordered_map iteration never leaks in.
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
   static const int    TNT_CHAIN_FUSE = 4;    // a TNT caught in a blast chains this fast
-  static const int    TNT_BLAST_RADIUS = 17; // crater reach (cells) — a bit larger than before
+  static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().
@@ -36,22 +35,20 @@
   static const int    BLAST_PARTICLE_CAP = 48;    // hard cap on cosmetic flecks per step (steam carries the visual now)
   static constexpr double BLAST_PUSH = 3.0;       // outward shove given to nearby free bodies
   static constexpr double TWO_PI = 6.283185307179586;
-  // Steam + acrid-smoke puff. The crater loop runs top-to-bottom, so capping the gas
-  // count makes the cloud fill from the TOP of the crater first — it billows upward and
-  // vents instead of trapping a slab of slow-decaying steam deep in solid terrain.
-  static const int    BLAST_GAS_CAP = 160;        // max gas cells written per blast (a LOT of steam, but bounded)
-  static constexpr double BLAST_ACRID_FRAC = 0.12; // of the gassed cells, the share that is acrid smoke ("some")
-  static constexpr double BLAST_STEAM_FRAC = 0.68; // ... and the share that is steam ("a lot"); the rest stay void
+  // TNT aftermath: each destroyed TNT cell leaves exactly one hot gas/fire cell.
+  static constexpr double TNT_ACRID_FRAC = 0.70; // acrid smoke dominates the blast cloud
+  static constexpr double TNT_STEAM_FRAC = 0.20; // plus some steam; the remaining 10% is fire
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
     bool erasedPlant = false;
+    std::vector<std::pair<int, uint8_t>> tntAftermath;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
-    int particles = 0, gasCells = 0;
+    int particles = 0;
     bool any = false;
   };
 
@@ -81,10 +78,11 @@
       for (int ox = -radius; ox <= radius; ox++) {
         int dd = ox * ox + oy * oy; if (dd > r2) continue;
         int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
-        int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) continue;
+        int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY || isGas(m)) continue;
         double energy = power * (1.0 - std::sqrt((double)dd) / radius);
         if (energy < (double)DURABILITY[m]) continue; // too hard to blow up at this distance
-        if (m == TNT && dd > 0) queueDetonation(k, TNT_CHAIN_FUSE); // chain OTHER TNT a beat later (dd>0 so a blast never re-queues its own centre)
+        bool wasTnt = (m == TNT);
+        if (wasTnt && dd > 0) queueDetonation(k, TNT_CHAIN_FUSE); // chain OTHER TNT a beat later (dd>0 so a blast never re-queues its own centre)
         // body-material invariant: a body cell goes through the body system, a static
         // cell through the component-split system (see isBodyCell).
         if (isBodyCell(k)) {
@@ -100,19 +98,20 @@
         }
         markCellIndex(k);
         // Cosmetic flecks of the destroyed material, flung outward (also how loose
-        // powders/liquids in the blast get scattered). Capped + sparse: the steam puff
-        // below now carries the bulk of the visual, so we need far fewer entities.
+        // powders/liquids in the blast get scattered). Capped + sparse so large
+        // chains don't flood the item/particle pool.
         if (!isGas(m) && bb.particles < BLAST_PARTICLE_CAP && (((xx * 7) ^ (yy * 3)) % 8 == 0)) {
           double dist = std::sqrt((double)dd), inv = dist > 0.5 ? 1.0 / dist : 0.0;
           double sp = BLAST_PARTICLE_SPEED * (1.0 - dist / radius) * (0.5 + whash2(bseed, xx, yy));
           spawnParticle(m, xx + 0.5, yy + 0.5, ox * inv * sp, oy * inv * sp - 0.6, BLAST_PARTICLE_LIFE);
           bb.particles++;
         }
-        // Steam + acrid-smoke puff into the freshly-cleared void (top-biased by the cap).
-        if (grid[k] == EMPTY && bb.gasCells < BLAST_GAS_CAP) {
+        // Record one aftermath cell per consumed TNT pixel. The write happens in
+        // finishBlasts(), after component/body cleanup, so carry-forward cannot erase it.
+        if (wasTnt) {
           double g = whash2(bseed, xx + 7, yy + 13);
-          if (g < BLAST_ACRID_FRAC) { writeGridIndex(k, ACRID_SMOKE); bb.gasCells++; }
-          else if (g < BLAST_ACRID_FRAC + BLAST_STEAM_FRAC) { writeGridIndex(k, STEAM); bb.gasCells++; }
+          uint8_t aftermath = g < TNT_ACRID_FRAC ? ACRID_SMOKE : (g < TNT_ACRID_FRAC + TNT_STEAM_FRAC ? STEAM : FIRE);
+          bb.tntAftermath.push_back({k, aftermath});
         }
       }
     }
@@ -146,6 +145,7 @@
     splitRigidAfterErase(L->stoneComponents, bb.erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, bb.erasedIce, L->nextIceId, true);
     if (bb.erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    for (auto& pr : bb.tntAftermath) if (grid[pr.first] == EMPTY) writeGridIndex(pr.first, pr.second);
     markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
   }
 

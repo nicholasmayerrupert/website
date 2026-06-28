@@ -943,6 +943,18 @@
     list.push_back(std::move(newComp));
   }
 
+  // Plant analogue of registerRigidCells, used when a free plant-family body (a wood
+  // log, etc.) bakes into terrain on rest. Delegates the cell/merge bookkeeping to
+  // registerRigidCells (so a baked log fuses with an adjacent same-material tree), then
+  // re-derives the plant-comp fields (species + wood/leaf counts) from the resulting
+  // cell set. The baked plant is inert scenery (growing=false), like worldgen flora.
+  void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) {
+    registerRigidCells(L->plantComponents, L->nextPlantId, mat, cells, yMax, false);
+    Comp& c = L->plantComponents.back();
+    c.woodCount = 0; c.leafCount = 0; c.age = 0; c.growing = false; c.cacheDirty = true; c.plantType = PT_OAK;
+    for (int k : c.cells) { uint8_t m = grid[k]; if (isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = plantTypeFromWood(m); } else if (isPlantLeaf(m)) c.leafCount++; }
+  }
+
   // Split the freshly-placed `cells` into 8-connected groups and register each as
   // its OWN component (each still merges with adjacent EXISTING same-material comps
   // inside registerRigidCells). A fast cursor leaves air gaps between brush stamps,

@@ -571,16 +571,41 @@
     });
     if (baked.empty()) return;
     if (isIceComp(b->material)) registerRigidCells(L->iceComponents, L->nextIceId, b->material, baked, yMax, true);
+    else if (isPlantMaterial(b->material)) registerPlantCells(b->material, baked, yMax); // wood/plant body -> inert plant component (analogue of the stone path)
     else registerRigidCells(L->stoneComponents, L->nextStoneId, b->material, baked, yMax, false);
   }
-  // Only bodies whose material has a STATIC component form solidify: stone-group
-  // (stone/ores/brick/TNT) and ice. RIGID stays a free body forever (as before), and
-  // so do free bodies of any other material (e.g. a floating DRIFTWOOD body).
-  bool bodySolidifies(uint8_t m) { return isStoneComp(m) || isIceComp(m); }
+  // Every solid component material has a static form to bake into: stone-group
+  // (stone/ores/brick/TNT), ice, and plant-family (wood/plant/cactus/…). Only the
+  // generic RIGID cube has no terrain form, so it stays a free body forever.
+  bool bodySolidifies(uint8_t m) { return isStoneComp(m) || isIceComp(m) || isPlantMaterial(m); }
+  // True iff the body is resting on SOLID ground (terrain, dense grounded powder, the
+  // world floor) rather than FLOATING on liquid. Probes the cell directly under each
+  // bottom-edge cell of the footprint and compares solid vs liquid contact. This is
+  // what lets a wood log bake when it beaches but keep bobbing while afloat — a
+  // floating body is "asleep" at buoyant equilibrium too, so sleep alone isn't enough.
+  // (sleepingBodyHasSupport can't be reused: it clamps the AABB and so misses the
+  // world-floor boundary, where stone/wood bodies legitimately come to rest.)
+  bool bodyRestsOnSolid(Body* b) {
+    std::unordered_set<int> occ;
+    forEachBodyCell(b, [&](int x, int y) { occ.insert(y * cols + x); });
+    int solidBelow = 0, liquidBelow = 0;
+    for (int k : occ) {
+      int y = k / cols, x = k - y * cols, bk = (y + 1) * cols + x;
+      if (occ.count(bk)) continue;                            // interior cell, not a bottom edge
+      if (y + 1 >= rows) { solidBelow++; continue; }          // the world floor is solid support
+      uint8_t m = grid[bk];
+      if (isLiquid(m)) liquidBelow++;
+      else if (!canBodyOccupy(m, bk, b->density)) solidBelow++; // solid terrain / dense grounded powder
+    }
+    return solidBelow > 0 && solidBelow >= liquidBelow;
+  }
   void bakeRestingBodies() {
     bool baked = false; std::vector<Body*> keep;
     for (Body* b : L->bodies) {
-      if (!b->awake && bodySolidifies(b->material)) { bakeBodyToGrid(b); delete b; baked = true; } // solidify on rest
+      // Solidify only a sleeping body resting on solid ground. A light body still
+      // floating on liquid (a wood log bobbing on water) keeps bobbing as a free body
+      // — baking it there would strip its buoyancy and sink it.
+      if (!b->awake && bodySolidifies(b->material) && bodyRestsOnSolid(b)) { bakeBodyToGrid(b); delete b; baked = true; }
       else keep.push_back(b);
     }
     if (baked) L->bodies = std::move(keep);

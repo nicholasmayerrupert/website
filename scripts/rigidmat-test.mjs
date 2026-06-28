@@ -50,15 +50,34 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
-// --- a WOOD body works and renders as WOOD, but (like driftwood) stays a free body
-//     forever: only stone/ice-group materials have a static form to bake into ---
+// --- a WOOD body renders as WOOD and BAKES into a plant component when it beaches on
+//     solid ground (wood/plant solidify like stone/ice now) ---
 {
   const e = mk();
-  e.spawnBox(60, 14, 4, 4, MAT.WOOD);
+  e.spawnBox(60, 14, 4, 4, MAT.WOOD); // 8x8 wood body up high over empty floor
   e.step(16);
-  check(`WOOD body renders as WOOD in flight (cells ${count(e.getGrid(), MAT.WOOD)})`, count(e.getGrid(), MAT.WOOD) > 0);
-  for (let i = 0; i < 600; i++) e.step((i + 2) * 16); // fall + rest on the floor
-  check(`WOOD body does NOT bake (stays a free body, count ${e._bodyCount()})`, e._bodyCount() === 1);
+  const airWood = count(e.getGrid(), MAT.WOOD);
+  check(`WOOD body renders as WOOD in flight (cells ${airWood})`, airWood > 0);
+  let baked = -1;
+  for (let i = 0; i < 600; i++) { e.step((i + 2) * 16); if (e._bodyCount() === 0) { baked = i; break; } }
+  check(`WOOD body solidified on solid rest (body count -> 0 at step ${baked})`, baked > 0 && e._bodyCount() === 0);
+  check(`baked wood conserved (~${airWood} -> ${count(e.getGrid(), MAT.WOOD)})`, count(e.getGrid(), MAT.WOOD) >= airWood - 4 && count(e.getGrid(), MAT.WOOD) > 0);
+  e.destroy();
+}
+
+// --- a WOOD body FLOATING on water does NOT bake: it keeps bobbing as a free body
+//     (baking it there would strip its buoyancy and sink it) ---
+{
+  const e = mk();
+  const x0 = 40, x1 = 80, yTop = 50, yBot = 80;        // small walled pool with a stone floor
+  for (let y = yTop - 1; y <= yBot + 1; y++) { e.paintDisc(x0 - 1, y, 0, MAT.STONE, true); e.paintDisc(x1 + 1, y, 0, MAT.STONE, true); }
+  for (let x = x0 - 1; x <= x1 + 1; x++) e.paintDisc(x, yBot + 1, 0, MAT.STONE, true);
+  e.syncComponents();
+  for (let y = yTop; y <= yBot; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, MAT.WATER, true);
+  for (let i = 0; i < 120; i++) e.step((i + 1) * 16); // settle the pool
+  e.spawnBox(60, 35, 4, 4, MAT.WOOD);                  // drop a wood body onto the water
+  for (let i = 0; i < 700; i++) e.step((i + 122) * 16); // plunge, find float depth, bob a long while
+  check(`WOOD body floating on water does NOT bake (stays a free body, count ${e._bodyCount()})`, e._bodyCount() === 1);
   e.destroy();
 }
 

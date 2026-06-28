@@ -22,6 +22,15 @@ const aftermathStats = (g) => ({
   fire: count(g, MAT.FIRE),
   total: countAny(g, AFTERMATH),
 });
+const gasDistanceStats = (g, cx, cy, mats = AFTERMATH) => {
+  let n = 0, sum = 0;
+  for (let i = 0; i < g.length; i++) {
+    if (!mats.includes(g[i])) continue;
+    const x = i % COLS, y = Math.floor(i / COLS);
+    n++; sum += Math.hypot(x - cx, y - cy);
+  }
+  return { count: n, avg: n ? sum / n : 0 };
+};
 
 // Fill a solid grounded block of material M, sit a TNT on top, light it, and run until
 // the blast fires (a sudden jump in carved cells inside the crater box). Return how many
@@ -128,32 +137,29 @@ function blastCrater(M) {
 // --- each consumed TNT pixel emits one aftermath cell: mostly acrid smoke, some steam/fire ---
 {
   const e = mk();
-  const cx = 70, cy = 50, half = 5;
-  for (let y = cy - 14; y <= cy + 14; y++) for (let x = cx - 14; x <= cx + 14; x++) {
-    if (x >= cx - half && x <= cx + half && y >= cy - half && y <= cy + half) continue;
-    if (x >= cx + half + 1 && x <= cx + half + 3 && y >= cy - 1 && y <= cy + 1) continue;
-    e.placeMaterial(x, y, 0, MAT.SANDSTONE);
-  }
+  const cx = 70, half = 5, cy = ROWS - 2 - half;
   for (let y = cy - half; y <= cy + half; y++) for (let x = cx - half; x <= cx + half; x++) e.placeMaterial(x, y, 0, MAT.TNT);
   e.syncComponents();
   const tnt0 = count(e.getGrid(), MAT.TNT);
   let peak = { acrid: 0, steam: 0, fire: 0, total: 0 };
+  let peakDist = { count: 0, avg: 0 };
   let tntLeft = tnt0;
   for (let i = 0; i < 80; i++) {
     if (i < 3) e.placeMaterial(cx + half + 2, cy, 1, MAT.FIRE); // light the TNT block once; the fuse persists
     e.step(i * 16);
     const g = e.getGrid();
     const stats = aftermathStats(g);
-    if (stats.total > peak.total) peak = stats;
+    if (stats.total > peak.total) { peak = stats; peakDist = gasDistanceStats(g, cx, cy); }
     tntLeft = count(g, MAT.TNT);
     if (tntLeft === 0 && i > 35) break;
   }
   check(`TNT block existed (${tnt0} cells)`, tnt0 === (half * 2 + 1) * (half * 2 + 1));
   check(`TNT block was consumed (${tntLeft} left)`, tntLeft === 0);
-  check(`blast emitted about one aftermath cell per TNT pixel (peak ${peak.total} vs TNT ${tnt0})`, peak.total >= tnt0 * 0.6 && peak.total <= tnt0 + 12);
-  check(`acrid smoke dominates the aftermath (acrid ${peak.acrid}, steam ${peak.steam})`, peak.acrid > peak.steam * 1.8);
-  check(`blast emits some steam (peak ${peak.steam})`, peak.steam > 10);
-  check(`blast emits some fire (peak ${peak.fire})`, peak.fire > 4);
+  check(`open blast emitted a substantial aftermath cloud (peak ${peak.total} vs TNT ${tnt0})`, peak.total >= tnt0 * 0.6 && peak.total <= tnt0 + 20);
+  check(`blast emits a lot of acrid smoke (acrid ${peak.acrid}, steam ${peak.steam})`, peak.acrid > peak.steam * 2);
+  check(`blast emits some steam (peak ${peak.steam})`, peak.steam > 7);
+  check(`blast emits some fire (peak ${peak.fire})`, peak.fire > 10);
+  check(`blast shockwave pushes emitted gas outward (avg distance ${peakDist.avg.toFixed(1)})`, peakDist.avg > 14);
   e.destroy();
 }
 
@@ -164,7 +170,7 @@ function blastCrater(M) {
   for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, MAT.SANDSTONE);
   e.placeMaterial(cx, top - 1, 0, MAT.TNT);
   e.syncComponents();
-  let survived = false, steamBeforeBlast = 0;
+  let survived = false, steamBeforeBlast = 0, steamDistBefore = 0, steamDistAfter = 0;
   for (let i = 0; i < 80; i++) {
     e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE);
     if (i >= 24) {
@@ -174,12 +180,39 @@ function blastCrater(M) {
       }
     }
     steamBeforeBlast = count(e.getGrid(), MAT.STEAM);
+    steamDistBefore = gasDistanceStats(e.getGrid(), cx, top - 1, [MAT.STEAM]).avg;
     e.step(i * 16);
     const tntLeft = count(e.getGrid(), MAT.TNT);
     const steamNow = count(e.getGrid(), MAT.STEAM);
-    if (tntLeft === 0) { survived = steamNow >= steamBeforeBlast * 0.75; break; }
+    steamDistAfter = gasDistanceStats(e.getGrid(), cx, top - 1, [MAT.STEAM]).avg;
+    if (tntLeft === 0) { survived = steamNow >= steamBeforeBlast * 0.9 && steamDistAfter > steamDistBefore + 4; break; }
   }
-  check(`gas survives TNT blast carving (steam before blast ${steamBeforeBlast})`, survived);
+  check(`gas survives and is pushed by TNT blast carving (steam ${steamBeforeBlast}, avg ${steamDistBefore.toFixed(1)} -> ${steamDistAfter.toFixed(1)})`, survived);
+  e.destroy();
+}
+
+// --- a large TNT mass chains as a staged wave, not as one same-frame detonation ---
+{
+  const C = 220, R = 180, side = 49;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  const x0 = 70, y0 = 90;
+  for (let y = y0; y < y0 + side; y++) for (let x = x0; x < x0 + side; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  e.syncComponents();
+  const tnt0 = count(e.getGrid(), MAT.TNT);
+  let peakGas = 0, tntLeft = tnt0, firstDropLeft = -1;
+  for (let i = 0; i < 80; i++) {
+    e.placeMaterial(x0 + side + 2, y0 + 20, 1, MAT.FIRE);
+    e.step(i * 16);
+    const g = e.getGrid();
+    peakGas = Math.max(peakGas, countAny(g, AFTERMATH));
+    tntLeft = count(g, MAT.TNT);
+    if (firstDropLeft < 0 && tntLeft < tnt0) firstDropLeft = tntLeft;
+    if (tntLeft === 0 && i > 35) break;
+  }
+  check(`large TNT block existed (${tnt0} cells)`, tnt0 === side * side);
+  check(`large TNT chain staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
+  check(`large TNT chain completed (${tntLeft} left)`, tntLeft === 0);
+  check(`large TNT chain produced visible gas (peak ${peakGas})`, peakGas > 250);
   e.destroy();
 }
 

@@ -38,13 +38,16 @@
   // TNT aftermath: each destroyed TNT cell leaves exactly one hot gas/fire cell.
   static constexpr double TNT_ACRID_FRAC = 0.70; // acrid smoke dominates the blast cloud
   static constexpr double TNT_STEAM_FRAC = 0.20; // plus some steam; the remaining 10% is fire
+  static const int    BLAST_GAS_SEARCH_CAP = 96; // outward gas-shock search limit (cells beyond the blast rim)
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
+  struct BlastWave { int cx, cy, radius; uint32_t seed; };
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
     bool erasedPlant = false;
     std::vector<std::pair<int, uint8_t>> tntAftermath;
+    std::vector<BlastWave> gasShockwaves;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
@@ -57,6 +60,96 @@
   void queueDetonation(int cell, int fuse) {
     auto& pd = L->pendingDetonations;
     if (!pd.count(cell)) pd[cell] = fuse;
+  }
+
+  int blastGasTarget(int sx, int sy, int cx, int cy, int radius, uint32_t seed,
+                     const std::unordered_set<int>& reservedTargets) {
+    double dx = (double)(sx - cx), dy = (double)(sy - cy), dist = std::sqrt(dx * dx + dy * dy);
+    double ux, uy;
+    if (dist > 0.5) { ux = dx / dist; uy = dy / dist; }
+    else {
+      double a = whash2(seed, sx + 31, sy + 17) * TWO_PI;
+      ux = std::cos(a); uy = std::sin(a);
+    }
+    int tx = (int)std::lround((double)cx + ux * radius);
+    int ty = (int)std::lround((double)cy + uy * radius);
+    if (tx <= 0 || tx >= cols - 1 || ty <= 0 || ty >= rows) return -1;
+
+    int minD = imax(0, radius - 1); minD *= minD;
+    int maxD = radius + BLAST_GAS_SEARCH_CAP; maxD *= maxD;
+    int32_t gen = ++L->seenGen;
+    int qh = 0, qt = 0, cap = (int)L->groundStack.size();
+    auto enqueue = [&](int x, int y) {
+      if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows || qt >= cap) return;
+      int dx = x - cx, dy = y - cy, dd = dx * dx + dy * dy;
+      if (dd < minD || dd > maxD) return;
+      int k = I(x, y); if (L->seenStamp[k] == gen) return;
+      L->seenStamp[k] = gen; L->groundStack[qt++] = k;
+    };
+    enqueue(tx, ty);
+    static const int OFFS[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}};
+    while (qh < qt) {
+      int k = L->groundStack[qh++];
+      if (!reservedTargets.count(k) && grid[k] == EMPTY) return k;
+      if (!reservedTargets.count(k) && !isGas(grid[k])) continue;
+      int y = k / cols, x = k - y * cols;
+      for (auto& off : OFFS) enqueue(x + off[0], y + off[1]);
+    }
+    return -1;
+  }
+
+  void pushBlastGasesOutward(const std::vector<BlastWave>& waves) {
+    if (waves.empty()) return;
+    struct GasMove { int k, target, wave, dd; uint8_t material; };
+    std::unordered_map<int, GasMove> byCell;
+    for (int wi = 0; wi < (int)waves.size(); wi++) {
+      const BlastWave& wave = waves[wi];
+      int cx = wave.cx, cy = wave.cy, radius = wave.radius;
+      int r2 = radius * radius;
+      for (int oy = -radius; oy <= radius; oy++) {
+        int yy = cy + oy; if (yy <= 0 || yy >= rows) continue;
+        for (int ox = -radius; ox <= radius; ox++) {
+          int dd = ox * ox + oy * oy; if (dd > r2) continue;
+          int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
+          int k = I(xx, yy); uint8_t m = grid[k]; if (!isGas(m)) continue;
+          int deepness = r2 - dd;
+          auto it = byCell.find(k);
+          if (it == byCell.end() || deepness > it->second.dd) byCell[k] = {k, k, wi, deepness, m};
+        }
+      }
+    }
+    if (byCell.empty()) return;
+    std::vector<GasMove> moves; moves.reserve(byCell.size());
+    for (auto& kv : byCell) moves.push_back(kv.second);
+    std::sort(moves.begin(), moves.end(), [](const GasMove& a, const GasMove& b) {
+      if (a.dd != b.dd) return a.dd > b.dd;
+      return a.k < b.k;
+    });
+
+    std::unordered_set<int> reservedTargets; reservedTargets.reserve(moves.size() * 2);
+    for (auto& mv : moves) {
+      if (!isGas(grid[mv.k])) continue;
+      const BlastWave& wave = waves[mv.wave];
+      int y = mv.k / cols, x = mv.k - y * cols;
+      int target = blastGasTarget(x, y, wave.cx, wave.cy, wave.radius, wave.seed, reservedTargets);
+      mv.target = target;
+      if (mv.target >= 0) reservedTargets.insert(mv.target);
+    }
+
+    for (auto& mv : moves) if (isGas(grid[mv.k])) writeGridIndex(mv.k, EMPTY);
+    for (auto& mv : moves) {
+      if (mv.target < 0 || grid[mv.target] != EMPTY) continue;
+      writeGridIndex(mv.target, mv.material);
+      vacatedStamp[mv.target] = tick;
+    }
+  }
+
+  void activateBlastRectNow(int x0, int y0, int x1, int y1) {
+    x0 = imax(0, x0); x1 = imin(cols - 1, x1); y0 = imax(0, y0); y1 = imin(rows - 1, y1);
+    for (int y = y0; y <= y1; y++) {
+      if (x0 < activeRowMin[y]) activeRowMin[y] = x0;
+      if (x1 > activeRowMax[y]) activeRowMax[y] = x1;
+    }
   }
 
   // Carve one durability-gated crater centred at (cx,cy) INTO the shared batch (no
@@ -72,6 +165,7 @@
     if (cy + radius > bb.maxY) bb.maxY = cy + radius;
     int r2 = radius * radius;
     uint32_t bseed = (uint32_t)tick * 2654435761u ^ (uint32_t)(cy * cols + cx); // per-blast deterministic seed
+    bb.gasShockwaves.push_back({cx, cy, radius, bseed});
     uint8_t debrisMat = EMPTY; // first solid material destroyed -> what the rubble chunks are made of
     for (int oy = -radius; oy <= radius; oy++) {
       int yy = cy + oy; if (yy <= 0 || yy >= rows) continue;
@@ -145,8 +239,12 @@
     splitRigidAfterErase(L->stoneComponents, bb.erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, bb.erasedIce, L->nextIceId, true);
     if (bb.erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
-    for (auto& pr : bb.tntAftermath) if (grid[pr.first] == EMPTY) writeGridIndex(pr.first, pr.second);
-    markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
+    for (auto& pr : bb.tntAftermath) if (grid[pr.first] == EMPTY) { writeGridIndex(pr.first, pr.second); vacatedStamp[pr.first] = tick; }
+    pushBlastGasesOutward(bb.gasShockwaves);
+    int gasX0 = bb.minX - BLAST_GAS_SEARCH_CAP, gasY0 = bb.minY - BLAST_GAS_SEARCH_CAP;
+    int gasX1 = bb.maxX + BLAST_GAS_SEARCH_CAP, gasY1 = bb.maxY + BLAST_GAS_SEARCH_CAP;
+    activateBlastRectNow(gasX0, gasY0, gasX1, gasY1);
+    markDirtyRect(gasX0, gasY0, gasX1, gasY1);
   }
 
   // Single-blast convenience wrapper (one crater, its own finalize).

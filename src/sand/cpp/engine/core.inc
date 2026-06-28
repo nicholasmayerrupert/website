@@ -266,6 +266,7 @@
   // dissipates exactly like steam while keeping its own identity/colour.
   void riseSteam(int x, int y, int k, uint8_t m) {
     if (next[k] != EMPTY) return;
+    if (vacatedStamp[k] == tick) { writeNextIndex(k, m); return; } // blast-shocked gas gets one visible frame before normal decay/motion
     float decayP = STEAM_DECAY_P;
     if (m == ACRID_SMOKE) {
       decayP = ACRID_DECAY_P;
@@ -292,6 +293,7 @@
   }
   void riseFire(int x, int y, int k) {
     if (next[k] != EMPTY) return;
+    if (vacatedStamp[k] == tick) { writeNextIndex(k, FIRE); return; } // keep explosion fire volume through the detonation step
     if (rand() < FIRE_DECAY_P || y <= 1) { markCellIndex(k); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     if (rand() < 0.36) { int up = I(x, y - 1); if (grid[up] == EMPTY && next[up] == EMPTY) { writeNextIndex(up, FIRE); return; } }

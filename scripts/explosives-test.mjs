@@ -12,10 +12,14 @@ await initSandWasm();
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false });
 const { check, done } = makeChecker('explosives (TNT)');
 const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return n; };
-const emptyInBox = (g, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; if (g[y * COLS + x] === MAT.EMPTY) n++; } return n; };
+// A blast carves the crater AND fills it with steam/acrid smoke, so a "carved" cell is
+// void OR gas (EMPTY/FIRE/STEAM/ACRID_SMOKE) — counting only EMPTY would miss the gassed
+// inner crater entirely (e.g. a small hard-block crater is all steam).
+const GAS = new Set([MAT.FIRE, MAT.STEAM, MAT.ACRID_SMOKE]);
+const carvedInBox = (g, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; const v = g[y * COLS + x]; if (v === MAT.EMPTY || GAS.has(v)) n++; } return n; };
 
 // Fill a solid grounded block of material M, sit a TNT on top, light it, and run until
-// the blast fires (a sudden jump in EMPTY cells inside the crater box). Return how many
+// the blast fires (a sudden jump in carved cells inside the crater box). Return how many
 // crater cells were carved.
 function blastCrater(M) {
   const e = mk();
@@ -23,7 +27,7 @@ function blastCrater(M) {
   for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, M);
   e.placeMaterial(cx, top - 1, 0, MAT.TNT); // TNT resting on the block
   e.syncComponents();
-  const box = () => emptyInBox(e.getGrid(), cx, top - 1, 14); // centred on the blast point
+  const box = () => carvedInBox(e.getGrid(), cx, top - 1, 14); // centred on the blast point
   const empty0 = box();
   let blast = -1, crater = 0;
   for (let i = 0; i < 80; i++) {
@@ -113,6 +117,25 @@ function blastCrater(M) {
   for (let i = 30; i < 90; i++) { e.placeMaterial(61, ROWS - 2, 1, MAT.FIRE); e.step(i * 16); }
   const x1 = avgRigidX();
   check(`shockwave shoved the nearby body outward (x ${x0.toFixed(1)} -> ${x1.toFixed(1)})`, x0 > 0 && x1 > x0 + 2);
+  e.destroy();
+}
+
+// --- a blast billows a LOT of steam and some acrid smoke into the crater ---
+{
+  const e = mk();
+  const cx = 70, top = 50;
+  for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, MAT.SANDSTONE);
+  e.placeMaterial(cx, top - 1, 0, MAT.TNT);
+  e.syncComponents();
+  let maxSteam = 0, maxAcrid = 0;
+  for (let i = 0; i < 50; i++) {
+    e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE); // hold a flame on the fuse
+    e.step(i * 16);
+    maxSteam = Math.max(maxSteam, count(e.getGrid(), MAT.STEAM));
+    maxAcrid = Math.max(maxAcrid, count(e.getGrid(), MAT.ACRID_SMOKE));
+  }
+  check(`blast billows a LOT of steam (peak ${maxSteam} cells)`, maxSteam > 40);
+  check(`blast emits some acrid smoke (peak ${maxAcrid} cells)`, maxAcrid > 3);
   e.destroy();
 }
 

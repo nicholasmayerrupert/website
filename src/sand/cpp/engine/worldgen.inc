@@ -612,6 +612,7 @@
     //    real material now, so clear by isBodyCell, not by == RIGID.
     for (int k : L->bodyCells) { if (isBodyCell(k)) { grid[k] = EMPTY; next[k] = EMPTY; } bodyOwner[k] = -1; }
     L->bodyCells.clear();
+    L->pendingDetonations.clear(); // lit-fuse cell indices are buffer-local; drop them on a shift (a rare lost fuse)
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
     csSaveBodiesLeaving(lx0, ly0, lw, lh);
     csSaveTiles(lx0, ly0, lw, lh);

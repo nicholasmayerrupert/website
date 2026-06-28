@@ -32,6 +32,7 @@ struct Engine {
 #include "engine/tools.inc"
 #include "engine/worldgen.inc"
 #include "engine/rigid.inc"
+#include "engine/explosives.inc"
 #include "engine/render.inc"
 #include "engine/camera.inc"
 #include "engine/gl.inc"

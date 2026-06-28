@@ -62,6 +62,9 @@
     // free rigid bodies + ownership
     std::vector<Body*> bodies; int nextBodyId = 1;
     std::vector<int32_t> bodyOwner;
+    // lit static TNT cells counting down to detonation (cell -> ticksLeft). Body TNT
+    // uses Body::fuseTicks instead, since a body's cells move. See explosives.inc.
+    std::unordered_map<int, int> pendingDetonations;
     // worldgen / streaming (per-layer terrain + chunk store)
     bool infinite = false;
     bool isBackground = false; // bg = a more-solid backdrop (sparser caves) behind the carved fg

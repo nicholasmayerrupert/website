@@ -139,6 +139,7 @@ struct Body {
   double vx = 0, vy = 0, omega = 0;
   uint8_t material = 13; double density = 1;
   bool awake = true; int stillTicks = 0;
+  int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
   // Local-space collision samples (interleaved lx,ly): the cell centre plus the

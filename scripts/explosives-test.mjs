@@ -1,0 +1,84 @@
+// Explosives (TNT). A TNT cell lit by fire fuses, then detonates a DURABILITY-gated
+// crater: soft blocks (low durability) blow up from farther out than hard blocks.
+// Covers: detonation, "easier to mine = easier to blow up", TNT->TNT chaining, and the
+// explosive RIGID BODY (a free TNT body detonates when exposed to fire).
+// Run: node scripts/explosives-test.mjs
+import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { MAT } from '../src/sand/materials.js';
+import { makeChecker } from './sand-test-util.mjs';
+
+const COLS = 140, ROWS = 110, SEED = 0xC0FFEE;
+await initSandWasm();
+const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false });
+const { check, done } = makeChecker('explosives (TNT)');
+const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return n; };
+const emptyInBox = (g, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; if (g[y * COLS + x] === MAT.EMPTY) n++; } return n; };
+
+// Fill a solid grounded block of material M, sit a TNT on top, light it, and run until
+// the blast fires (a sudden jump in EMPTY cells inside the crater box). Return how many
+// crater cells were carved.
+function blastCrater(M) {
+  const e = mk();
+  const cx = 70, top = 50;
+  for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, M);
+  e.placeMaterial(cx, top - 1, 0, MAT.TNT); // TNT resting on the block
+  e.syncComponents();
+  const box = () => emptyInBox(e.getGrid(), cx, top - 1, 14); // centred on the blast point
+  const empty0 = box();
+  let blast = -1, crater = 0;
+  for (let i = 0; i < 80; i++) {
+    e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE); // keep a flame beside the TNT past the fuse
+    e.step(i * 16);
+    const now = box();
+    if (now - empty0 > 12) { blast = i; crater = now - empty0; break; } // detect the blast's sudden crater
+  }
+  const tntLeft = count(e.getGrid(), MAT.TNT);
+  e.destroy();
+  return { blast, crater, tntLeft };
+}
+
+// --- detonation happens, and the TNT is consumed ---
+{
+  const soft = blastCrater(MAT.SANDSTONE); // durability 6
+  const hard = blastCrater(MAT.IRON_ORE);  // durability 14
+  check(`TNT detonated (blast fired at step ${soft.blast})`, soft.blast > 0);
+  check(`TNT is consumed by its own blast (${soft.tntLeft} left)`, soft.tntLeft === 0);
+  check(`soft block carves a crater (${soft.crater} cells)`, soft.crater > 30);
+  check(`hard block carves a crater (${hard.crater} cells)`, hard.crater > 0);
+  // the headline rule: easier-to-mine (lower durability) blows up from farther out
+  check(`soft block blows up MORE than hard (${soft.crater} > ${hard.crater})`, soft.crater > hard.crater * 1.5);
+}
+
+// --- TNT chains: light one end of a line, the whole line goes ---
+{
+  const e = mk();
+  const y = ROWS - 2; // resting directly on the floor so the line stays put (grounded)
+  for (let x = 30; x <= 100; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  e.syncComponents();
+  const tnt0 = count(e.getGrid(), MAT.TNT);
+  for (let i = 0; i < 200; i++) { e.placeMaterial(28, y, 1, MAT.FIRE); e.step(i * 16); if (count(e.getGrid(), MAT.TNT) === 0) break; } // light the left end from the side
+  check(`TNT line existed (${tnt0})`, tnt0 > 30);
+  check(`a single spark chained the whole TNT line (0 left)`, count(e.getGrid(), MAT.TNT) === 0);
+  e.destroy();
+}
+
+// --- explosive RIGID BODY: a free TNT body detonates when it meets fire ---
+{
+  const e = mk();
+  for (let x = 30; x < 110; x++) for (let y = 70; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);
+  e.syncComponents();
+  e.spawnBox(70, 60, 3, 3, MAT.TNT); // a TNT body dropped onto the stone
+  const stone0 = count(e.getGrid(), MAT.STONE);
+  let gone = false;
+  for (let i = 0; i < 200; i++) {
+    e.placeMaterial(70, 64, 2, MAT.FIRE); // a flame where the body falls/rests
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) === 0 && e._bodyCount() === 0 && count(e.getGrid(), MAT.STONE) < stone0 - 20) { gone = true; break; }
+  }
+  check(`explosive TNT body detonated (no TNT/body left, stone cratered)`, gone);
+  e.destroy();
+}
+
+const failures = done();
+console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
+process.exit(failures === 0 ? 0 : 1);

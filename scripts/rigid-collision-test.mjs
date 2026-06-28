@@ -349,6 +349,78 @@ for (const dt of [16, 8, 33, 50]) {
   check(`acrid smoke supports a body no more than steam does (${acridBot} ~= ${steamBot})`, Math.abs(acridBot - steamBot) <= 2);
 }
 
+// 9c. Powders behave like liquids under a denser solid. A solid heavier than the
+//     powder sinks through it to the floor (like a stone in water), and the displaced
+//     powder is relocated volume-preservingly by the spill BFS (spread out to the free
+//     surface) instead of being deleted or piled in a column on the solid's back. A
+//     solid LIGHTER than the powder rests on top, mirroring buoyancy. Density-driven
+//     (STONE 2.6 / RIGID 1.4 vs SAND 1.6), never id-specific. Checked for BOTH a free
+//     rigid body and a painted static assembly — the two paths that move a solid through
+//     powder.
+{
+  const SAND = 1, yTop = 40, floorY = ROWS - 2, x0 = 60, x1 = 140; // SAND powder, density 1.6
+  const sandCount = (e) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === SAND) n++; return n; };
+  const surfaceY = (e) => { const g = e.getGrid(); for (let y = 0; y < ROWS; y++) for (let x = x0; x <= x1; x++) if (g[y * COLS + x] === SAND) return y; return ROWS; };
+  const stoneBottomInPool = (e) => { const g = e.getGrid(); let b = -1; for (let y = 0; y < floorY; y++) for (let x = x0; x <= x1; x++) if (g[y * COLS + x] === STONE) b = Math.max(b, y); return b; };
+  const matBottom = (e, mat) => { const g = e.getGrid(); let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === mat) b = Math.max(b, (i / COLS) | 0); return b; };
+  // A grounded walled SAND basin: the walls + floor connect to the bottom row, so the
+  // basin itself stays put (grounded) while a dropped solid sinks through the sand.
+  const buildSandPool = (e) => {
+    stoneRect(e, 0, floorY, COLS - 1, ROWS - 1);                 // world floor (grounds the basin)
+    for (let y = yTop - 1; y < floorY; y++) { e.paintDisc(x0 - 1, y, 0, STONE, true); e.paintDisc(x1 + 1, y, 0, STONE, true); }
+    e.syncComponents();
+    for (let y = yTop; y < floorY; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, SAND, true);
+  };
+
+  { // Free rigid body: a STONE box (density 2.6) plunges through SAND (1.6) to the floor.
+    console.log('heavy free body sinks through a deep sand pool (sand conserved)');
+    const e = mk();
+    buildSandPool(e);
+    run(e, 200);                                                // settle the sand
+    const sand0 = sandCount(e), surf0 = surfaceY(e);
+    e.spawnBox(100, 22, 6, 5, STONE);                           // 12x10 stone body above the pool
+    run(e, 600);                                                // let it sink and the sand re-level
+    const bot = stoneBottomInPool(e), surf1 = surfaceY(e), sand1 = sandCount(e);
+    check(`free body sank to the pool floor (bottom ${bot} >= ${floorY - 4})`, bot >= floorY - 4);
+    check(`displaced sand conserved, not deleted (${sand1} == ${sand0})`, sand1 === sand0);
+    check(`displaced sand raised the surface, not piled on the body (surf ${surf1} < initial ${surf0})`, surf1 < surf0);
+    e.destroy();
+  }
+  { // Static assembly: a painted STONE block (an ungrounded component) sinks the same way.
+    console.log('heavy painted block (assembly) sinks through a deep sand pool');
+    const e = mk();
+    buildSandPool(e);
+    run(e, 200);
+    const sand0 = sandCount(e), surf0 = surfaceY(e);
+    for (let y = yTop - 9; y < yTop - 1; y++) for (let x = 90; x < 111; x++) e.paintDisc(x, y, 0, STONE, true);
+    e.syncComponents();                                         // 21x8 ungrounded stone block floating above the sand
+    run(e, 600);
+    const bot = stoneBottomInPool(e), surf1 = surfaceY(e), sand1 = sandCount(e);
+    check(`painted block sank to the pool floor (bottom ${bot} >= ${floorY - 4})`, bot >= floorY - 4);
+    // Conserved within a tiny dynamic-surface tolerance: a few loose surface grains can
+    // be lost to the base powder sim at the moment of impact; the deep sink itself loses
+    // nothing. The displaced sand must NOT be dumped on the block's back (surface rises).
+    check(`displaced sand conserved within impact tolerance (${sand1} in [${sand0 - 8}, ${sand0}])`, sand1 >= sand0 - 8 && sand1 <= sand0);
+    check(`displaced sand raised the surface (surf ${surf1} < initial ${surf0})`, surf1 < surf0);
+    e.destroy();
+  }
+  { // Density gate: a body LIGHTER than the powder must NOT sink — grounded sand is solid
+    //   support, so it rests on top (mirrors a light body floating on a denser fluid).
+    console.log('a body lighter than the powder rests on top (does not sink)');
+    const e = mk();
+    buildSandPool(e);
+    run(e, 200);
+    const surf0 = surfaceY(e), idx = e._bodyCount();
+    e.spawnBox(100, 22, 6, 5, RIGID);                           // RIGID density 1.4 < SAND 1.6
+    run(e, 500);
+    const s = e._bodyState(idx), bot = matBottom(e, RIGID);
+    check(`light body did not sink to the floor (bottom ${bot} < ${floorY - 30})`, bot >= 0 && bot < floorY - 30);
+    check(`light body rests on the sand surface (bottom ${bot} <= surface ${surf0} + 2)`, bot <= surf0 + 2);
+    check(`light body came to rest (|vy| ${Math.abs(s.vy).toFixed(3)})`, Math.abs(s.vy) < 0.1);
+    e.destroy();
+  }
+}
+
 // 10. Determinism: the same scenario run twice yields identical final pose.
 {
   console.log('determinism');

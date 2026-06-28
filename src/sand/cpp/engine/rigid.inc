@@ -413,9 +413,13 @@
     // body's: a dense fluid (lava) shoved aside by a lighter body must be able to
     // percolate through its own pool to reach the free surface — otherwise, deep in
     // the pool it finds no path and is silently dropped (volume loss). It can move
-    // through EMPTY/gas, equal-or-lighter liquid, and ungrounded/lighter powder.
+    // through EMPTY/gas, equal-or-lighter liquid, and ungrounded or equal-or-lighter
+    // powder. Powder uses the SAME <= rule liquids do (not a strict <) so displaced
+    // sand can rise through its own grounded pool to the surface and spread flat,
+    // exactly like water — instead of jamming against equal-density sand and heaping
+    // into a local cone at the body's entry column.
     double curD = 0;
-    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || (isLiquid(m) && DENSITY[m] <= curD) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] < curD)); };
+    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || (isLiquid(m) && DENSITY[m] <= curD) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] <= curD)); };
     std::unordered_set<int> seen;
     auto canVisit = [&](int k) { if (k <= 0 || k >= gridLen || footprint.count(k) || seen.count(k)) return false; int y = k / cols, x = k - y * cols; return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k); };
     auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquid(m) || isGas(m) || MAT_KIND[m] == K_POWDER) && DENSITY[m] < DENSITY[mat]; };

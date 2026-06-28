@@ -161,21 +161,22 @@
         b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
         b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
         if (b->awake && !b->boundaryPts.empty()) {
-          // Buoyancy/drag from surrounding loose media. The body's own footprint is
+          // Buoyancy/drag from surrounding liquids. The body's own footprint is
           // cleared to EMPTY for the duration of rigidStep, so probing the
-          // boundary cell itself reads air; we instead take the densest liquid/powder
+          // boundary cell itself reads air; we instead take the densest liquid
           // among its 4-neighbours (the medium the body sits IN). A face deep in
           // a medium has wet neighbours; a face above the surface does not — so the
           // wet fraction rises with depth and gives an Archimedes restoring force
           // that settles a light body part-submerged in a denser medium rather than
-          // resting on top of it (loose media are no longer treated as solid terrain).
+          // resting on top of it. Powders are displaceable, but they never lift a
+          // body upward; in grains, bodies can only sink.
           int wet = 0; double densitySum = 0;
           for (int bp : b->boundaryPts) {
             worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
             int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
-            double d = buoyantMediumDensityAt(cx, cy);
-            d = std::fmax(d, buoyantMediumDensityAt(cx - 1, cy)); d = std::fmax(d, buoyantMediumDensityAt(cx + 1, cy));
-            d = std::fmax(d, buoyantMediumDensityAt(cx, cy - 1)); d = std::fmax(d, buoyantMediumDensityAt(cx, cy + 1));
+            double d = buoyantLiquidDensityAt(cx, cy);
+            d = std::fmax(d, buoyantLiquidDensityAt(cx - 1, cy)); d = std::fmax(d, buoyantLiquidDensityAt(cx + 1, cy));
+            d = std::fmax(d, buoyantLiquidDensityAt(cx, cy - 1)); d = std::fmax(d, buoyantLiquidDensityAt(cx, cy + 1));
             if (d <= 0) continue; wet++; densitySum += d;
           }
           if (wet > 0) {
@@ -394,14 +395,14 @@
   bool isBodyTerrain(int x, int y, double bodyDensity) {
     (void)bodyDensity;
     int k = y * cols + x; uint8_t m = grid[k];
-    if (isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls — buoyancy governs how deep a body sinks
+    if (isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls; liquids buoy, powders only displace
     if (m == DRIFTWOOD || m == RIGID) return false;             // free body / drifting wood are not static terrain
     return isRigidMaterial(m);                                  // stone/plant/ice-group solids incl. new ores & woods
   }
-  double buoyantMediumDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isBuoyantMedium(m) ? DENSITY[m] : 0; }
-  // Any loose buoyant medium is relocatable: a body submerging into denser liquid
-  // or powder displaces it (spilled around the body), letting it part-sink to its
-  // buoyant equilibrium rather than being blocked at the surface.
+  double buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquid(m) ? DENSITY[m] : 0; }
+  // Any loose medium is relocatable: a body submerging into liquid or powder
+  // displaces it (spilled around the body) rather than being blocked at the surface.
+  // Only liquids provide upward buoyancy; powders are pass-through grains.
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { (void)k; (void)bodyDensity; return isBuoyantMedium(m); }
   // Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
   // through them and they vanish on commit. Keyed off K_GAS so any new gas is
@@ -590,9 +591,10 @@
   // (stone/ores/brick/TNT), ice, and plant-family (wood/plant/cactus/…). Only the
   // generic RIGID cube has no terrain form, so it stays a free body forever.
   bool bodySolidifies(uint8_t m) { return isStoneComp(m) || isIceComp(m) || isPlantMaterial(m); }
-  // A sleeping body bakes UNLESS it is FLOATING in a buoyant loose medium. "Floating"
-  // = its bottom-edge contact is predominantly liquid/powder (a wood log bobbing on
-  // water, or driftwood part-buried in sand). Everything else at rest solidifies:
+  // A sleeping body bakes UNLESS it is FLOATING in liquid. "Floating" = its
+  // bottom-edge contact is predominantly liquid (a wood log bobbing on water).
+  // Powders never provide upward support, so a body in grains can only sink.
+  // Everything else at rest solidifies:
   // on terrain, the world floor, OR piled on other debris (at bake time other bodies'
   // cells are already cleared from the grid, so a debris pile reads as empty-below, not
   // medium-supported — so it bakes, which is what keeps a big TNT chain's rubble from lingering as
@@ -608,7 +610,7 @@
       if (occ.count(bk)) continue;                            // interior cell, not a bottom edge
       if (y + 1 >= rows) { solidBelow++; continue; }          // the world floor is solid support
       uint8_t m = grid[bk];
-      if (isBuoyantMedium(m)) mediumBelow++;
+      if (isLiquid(m)) mediumBelow++;
       else if (m != EMPTY && !isGas(m)) solidBelow++;         // terrain / another body's cell
     }
     return mediumBelow > 0 && mediumBelow > solidBelow;
@@ -616,7 +618,7 @@
   void bakeRestingBodies() {
     bool baked = false; std::vector<Body*> keep;
     for (Body* b : L->bodies) {
-      // Solidify a sleeping body unless it is still floating in liquid/powder.
+      // Solidify a sleeping body unless it is still floating in liquid.
       if (!b->awake && bodySolidifies(b->material) && !bodyFloatsOnMedium(b)) { bakeBodyToGrid(b); delete b; baked = true; }
       else keep.push_back(b);
     }

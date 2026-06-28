@@ -350,12 +350,10 @@ for (const dt of [16, 8, 33, 50]) {
   check(`acrid smoke supports a body no more than steam does (${acridBot} ~= ${steamBot})`, Math.abs(acridBot - steamBot) <= 2);
 }
 
-// 9c. Powders behave like buoyant loose media for solids. A solid heavier than the
-//     powder sinks through it to the floor (like a stone in water), and the displaced
-//     powder is relocated volume-preservingly by the spill BFS (spread out to the free
-//     surface) instead of being deleted or piled in a column on the solid's back. A
-//     solid lighter than the powder part-submerges instead of resting on the surface.
-//     Density-driven (STONE 2.6 / DRIFTWOOD 0.6 vs SAND 1.6), never id-specific.
+// 9c. Powders are pass-through grains for solids. Solid bodies and assemblies sink
+//     through them to the floor regardless of density, and the displaced powder is
+//     relocated volume-preservingly by the spill BFS (spread out to the free surface)
+//     instead of being deleted or piled in a column on the solid's back.
 //     Checked for BOTH a free rigid body and a painted static assembly — the two paths
 //     that move a solid through powder.
 {
@@ -364,6 +362,7 @@ for (const dt of [16, 8, 33, 50]) {
   const surfaceY = (e) => { const g = e.getGrid(); for (let y = 0; y < ROWS; y++) for (let x = x0; x <= x1; x++) if (g[y * COLS + x] === SAND) return y; return ROWS; };
   const stoneBottomInPool = (e) => { const g = e.getGrid(); let b = -1; for (let y = 0; y < floorY; y++) for (let x = x0; x <= x1; x++) if (g[y * COLS + x] === STONE) b = Math.max(b, y); return b; };
   const matBottom = (e, mat) => { const g = e.getGrid(); let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === mat) b = Math.max(b, (i / COLS) | 0); return b; };
+  const matCount = (e, mat) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === mat) n++; return n; };
   // A grounded walled SAND basin: the walls + floor connect to the bottom row, so the
   // basin itself stays put (grounded) while a dropped solid sinks through the sand.
   const buildSandPool = (e) => {
@@ -405,23 +404,19 @@ for (const dt of [16, 8, 33, 50]) {
     check(`displaced sand raised the surface (surf ${surf1} < initial ${surf0})`, surf1 < surf0);
     e.destroy();
   }
-  { // A light, tall driftwood body part-submerges in dense sand instead of being
-    //   pinned to the surface by grounded powder acting as solid terrain.
-    console.log('a light driftwood tower part-submerges in dense sand');
+  { // A light, tall driftwood body still sinks in dense sand. Powders never lift it
+    //   upward; after reaching the floor it can sleep and bake into a static component.
+    console.log('a light driftwood tower sinks through dense sand');
     const e = mk();
     buildSandPool(e);
     run(e, 200);
     const surf0 = surfaceY(e), idx = e._bodyCount();
     e.spawnBox(100, 30, 4, 24, DRIFTWOOD);                       // DRIFTWOOD density 0.6 < SAND 1.6
     run(e, 900);
-    const s = e._bodyState(idx), bot = matBottom(e, DRIFTWOOD), surf1 = surfaceY(e);
-    check(`driftwood tower stayed a free buoyant body (${e._bodyCount()} bodies, ${s ? s.nPts : -1} cells)`, e._bodyCount() === idx + 1 && s && s.nPts >= 360);
-    check(`light body did not sink to the floor (bottom ${bot} < ${floorY - 30})`, bot >= 0 && bot < floorY - 30);
-    check(`light body is partially buried, not resting on top (bottom ${bot} > surface ${surf1} + 6)`, bot > surf1 + 6);
+    const bot = matBottom(e, DRIFTWOOD), n = matCount(e, DRIFTWOOD), surf1 = surfaceY(e);
+    check(`driftwood tower sank to the pool floor (bottom ${bot} >= ${floorY - 4})`, bot >= floorY - 4);
+    check(`driftwood tower solidified after sinking (${e._bodyCount()} bodies, ${n} cells)`, e._bodyCount() === idx && n >= 360);
     check(`displaced sand raised around the tower (surface ${surf1} < initial ${surf0})`, surf1 < surf0);
-    const vy = s ? Math.abs(s.vy) : 999;
-    check(`light body came to rest (|vy| ${vy.toFixed(3)})`, vy < 0.1);
-    check(`light body slept at granular equilibrium (awake ${e._bodyAwake(idx)})`, e._bodyAwake(idx) === 0);
     e.destroy();
   }
 }

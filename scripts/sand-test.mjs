@@ -515,10 +515,10 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
-// A light rigid component should settle to a stable partial depth in denser grains
-// instead of bobbing up/down one row around its buoyant equilibrium.
+// A light rigid component in grains should only sink; powders do not buoy solids
+// upward even when the solid is lighter than the powder.
 {
-  console.log('light solid component settles in sand without bobbing');
+  console.log('light solid component sinks through sand');
   const SAND = 1, MOSS = 20; // MOSS is a rigid stone-group component, density 0.9 < sand 1.6
   const e = mk();
   for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
@@ -533,15 +533,16 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   const a = bbox();
   run(500, e);
   const b = bbox();
-  check(`light solid part-submerged in sand (rows ${b.minY}-${b.maxY})`, b.n === 64 && b.minY > 55 && b.maxY < ROWS - 20);
-  check(`light solid stopped bobbing in sand (rows ${a.minY}-${a.maxY} -> ${b.minY}-${b.maxY})`, a.minY === b.minY && a.maxY === b.maxY);
+  check(`light solid sank through sand (rows ${b.minY}-${b.maxY})`, b.n === 64 && b.maxY >= ROWS - 3);
+  check(`light solid did not rise in sand (rows ${a.minY}-${a.maxY} -> ${b.minY}-${b.maxY})`, b.minY >= a.minY && b.maxY >= a.maxY);
   e.destroy();
 }
 
-// Free rigid bodies use their material density too: a stone-density body sinks
-// through snow, while the default cube (1.4) part-submerges in denser sand (1.6).
+// Free rigid bodies use their material density in liquids, but powders only let
+// bodies sink through them. A stone-density body sinks through snow, and the
+// default cube also sinks through denser sand instead of being lifted by it.
 {
-  console.log('free rigid bodies use powder density');
+  console.log('free rigid bodies sink through powders');
   const STONE = 3, SNOW = 16, SAND = 1, LAVA = 11, RIGID = 13, GOLD_ORE = 24;
   // Bodies stamp their REAL material into the grid now, so track each body by the
   // material it was spawned with (use one distinct from the terrain to stay unambiguous).
@@ -565,8 +566,8 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     e.spawnBox(60, 40, 4, 4);
     run(500, e);
     const bottom = bodyBottom(e.getGrid(), RIGID), s = e._bodyState(idx);
-    check(`default body part-submerges in denser sand (bottom ${bottom})`, bottom > 68 && bottom < ROWS - 20);
-    check(`default body settles while buoyant in sand (|vy| ${Math.abs(s ? s.vy : 999).toFixed(3)})`, s && Math.abs(s.vy) < 0.1);
+    check(`default body sank through denser sand (bottom ${bottom})`, bottom >= ROWS - 4);
+    check(`default body has no upward velocity in sand (vy ${s ? s.vy.toFixed(3) : 'missing'})`, s && s.vy >= -0.01);
     e.destroy();
   }
   // A body lighter than a fluid part-submerges into it (buoyant equilibrium)

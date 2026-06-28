@@ -276,7 +276,10 @@ hardcoded id list, decides who reacts.
 
 A free rigid body stamps its **real material** into the grid, so a stone body reads,
 renders, mines, and reacts as `STONE`; `isBodyCell(k)` distinguishes it from static
-terrain. A body whose material has a static form (stone-group or ice) **bakes** into a
-normal component when it comes to rest; `RIGID` and other bodies (driftwood) stay free
-forever. The cube tool spawns a body of the selected solid (default `RIGID`); explosion
-debris is the other source. See the invariant doc-block in `members.inc`.
+terrain. A body whose material has a static form (stone-group, ice, or plant-family)
+**bakes** into a normal component when it comes to rest; `RIGID` stays free forever.
+Liquids provide buoyancy, so light bodies can rise/float in them. Powders/grains are
+only displaceable: bodies and ungrounded solid components can sink through them, but
+grains never push solids upward. The cube tool spawns a body of the selected solid
+(default `RIGID`); explosion debris is the other source. See the invariant doc-block
+in `members.inc`.

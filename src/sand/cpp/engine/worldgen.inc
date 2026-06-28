@@ -607,8 +607,10 @@
     if (dx) { lh = eh = rows; ly0 = ey0 = 0; lw = ew = s; lx0 = dx > 0 ? 0 : cols - s; ex0 = dx > 0 ? cols - s : 0; }
     else    { lw = ew = cols; lx0 = ex0 = 0; lh = eh = s; ly0 = dy > 0 ? 0 : rows - s; ey0 = dy > 0 ? rows - s : 0; }
 
-    // 1) clear body rasters so no RIGID ghost is saved/memmoved.
-    for (int k : L->bodyCells) { if (grid[k] == RIGID) grid[k] = EMPTY; if (next[k] == RIGID) next[k] = EMPTY; bodyOwner[k] = -1; }
+    // 1) clear body rasters so no body ghost is saved/memmoved (bodies persist via
+    //    bodyStore + translate below). body-material invariant: body cells hold their
+    //    real material now, so clear by isBodyCell, not by == RIGID.
+    for (int k : L->bodyCells) { if (isBodyCell(k)) { grid[k] = EMPTY; next[k] = EMPTY; } bodyOwner[k] = -1; }
     L->bodyCells.clear();
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
     csSaveBodiesLeaving(lx0, ly0, lw, lh);

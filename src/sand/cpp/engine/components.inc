@@ -873,6 +873,7 @@
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->stoneComponents) for (int k : comp.cells) seen[k] = gen;
+      for (int k : L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components (skip both seeding and flood-merge)
       for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] == gen || MAT_CGROUP[grid[k]] != CG_STONE) continue;
         std::vector<int> cells; int yMax;
@@ -886,6 +887,7 @@
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->plantComponents) for (int k : comp.cells) seen[k] = gen;
+      for (int k : L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
       for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] == gen || MAT_CGROUP[grid[k]] != CG_PLANT) continue;
         std::vector<int> cells; int yMax;
@@ -901,6 +903,7 @@
     {
       int32_t gen = ++L->seenGen;
       for (auto& comp : L->iceComponents) for (int k : comp.cells) seen[k] = gen;
+      for (int k : L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
       for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
         int k = sy * cols + sx; if (seen[k] == gen || MAT_CGROUP[grid[k]] != CG_ICE) continue;
         std::vector<int> cells; int yMax;

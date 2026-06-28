@@ -209,8 +209,9 @@
     std::vector<int> erasedStone, erasedIce, bodyCellList; bool erasedPlant = false; bool changed = false; int cleared = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy);
-      if (grid[k] == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = true; }
-      if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; if (grid[k] == RIGID) bodyOwner[k] = -1; grid[k] = EMPTY; changed = true; cleared++; }
+      // body-material invariant: body cells hold their real material; the body system erases them, the component-split system erases static cells.
+      if (isBodyCell(k)) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } changed = true; }
+      else if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
@@ -228,8 +229,9 @@
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false, changed = false; int cleared = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int k : cells) {
-      if (grid[k] == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = true; }
-      if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; if (grid[k] == RIGID) bodyOwner[k] = -1; grid[k] = EMPTY; changed = true; cleared++; }
+      // body-material invariant: body cells hold their real material; the body system erases them, the component-split system erases static cells.
+      if (isBodyCell(k)) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } changed = true; }
+      else if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     }
     finishErasedBodies(dirtyBodies, L->bodyCells);
@@ -338,12 +340,10 @@
         changed = 1;
         if (L->mineDamage[k] > 0) continue;
       }
-      if (m == RIGID) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = 1; }
-      if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
-      if (isPlantMaterial(m)) erasedPlant = true;
-      if (m == RIGID) bodyOwner[k] = -1;
-      lastMinedCells.push_back({m, k}); // record what was destroyed for drop resolution
-      grid[k] = EMPTY; L->mineDamage[k] = 0; changed = 1;
+      // body-material invariant: mining a body cell drops its real material and removes it from the body; static cells split their component.
+      if (isBodyCell(k)) { lastMinedCells.push_back({m, k}); if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } }
+      else { if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k); if (isPlantMaterial(m)) erasedPlant = true; lastMinedCells.push_back({m, k}); grid[k] = EMPTY; }
+      L->mineDamage[k] = 0; changed = 1;
       if (draft.erase(k)) changed = 1;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
@@ -376,15 +376,17 @@
         changed = 1;
         if (L->mineDamage[k] > 0) continue;
       }
-      if (m == RIGID) {
+      // body-material invariant: mining a body cell drops its real material and removes it from the body; static cells split their component.
+      if (isBodyCell(k)) {
+        lastMinedCells.push_back({m, k});
         if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b;
-        if (eraseBodyCellIndex(k, bodyById, dirtyBodies)) changed = 1;
+        if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; }
+      } else {
+        if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
+        if (isPlantMaterial(m)) erasedPlant = true;
+        lastMinedCells.push_back({m, k});
+        grid[k] = EMPTY;
       }
-      if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
-      if (isPlantMaterial(m)) erasedPlant = true;
-      if (m == RIGID) bodyOwner[k] = -1;
-      lastMinedCells.push_back({m, k});
-      grid[k] = EMPTY;
       L->mineDamage[k] = 0;
       changed = 1;
       if (draft.erase(k)) changed = 1;
@@ -584,6 +586,9 @@
         else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
         else if (MAT_KIND[m] == K_COMPONENT) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
         else { creativeMode = CM_PAINT; creativeMaterial = m; }
+        // Remember the last solid for the CUBE tool so it can spawn a stone/ice/TNT body
+        // (or a permanent RIGID one). Powders/liquids/plant comps aren't body materials.
+        if (m == RIGID || isStoneComp(m) || isIceComp(m)) cubeMaterial = m;
         break;
       }
       case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; break;
@@ -656,7 +661,7 @@
         if (addDiscToDraft(draft, cx, cy, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows)) changed = 1;
         break;
       case CM_SEED: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
-      case CM_CUBE: spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, RIGID); break;
+      case CM_CUBE: spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial); break; // RIGID by default; a selected stone/ice/TNT solid spawns a material body that bakes/explodes
       default: break;
     }
     useLayer(&fg);

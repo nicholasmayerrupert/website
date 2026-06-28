@@ -253,6 +253,10 @@
   // / cube; the pointer flow routes by mode rather than a fixed per-material Tool enum.
   // Default is the cube (matches the palette's default selection).
   uint8_t creativeMode = CM_CUBE, creativeMaterial = STONE, creativeSeed = PT_OAK;
+  // Material the CUBE tool spawns as a free rigid body. Defaults to RIGID (a permanent
+  // body, as before); selecting a stone/ice solid sets it so the cube spawns a body of
+  // that material — which bakes into a static component on rest (see bakeRestingBodies).
+  uint8_t cubeMaterial = RIGID;
   bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
   double lastEmitMs = -1e9;
   // Continuous-paint/erase stroke tracking: interpolate the brush from the last emit
@@ -342,6 +346,25 @@
   inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : PT_OAK; }
   inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquid(m) || isGas(m); }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
+
+  // ===== BODY-MATERIAL INVARIANT (read this once; it explains the whole rewrite) =====
+  // A free rigid body stamps its REAL material into the grid (moveBodies), so a stone
+  // body's cells literally read STONE — they render, mine, and carry durability as
+  // stone for free. `bodyOwner[k] != -1`, i.e. isBodyCell(k), is what distinguishes a
+  // body-owned cell from identical-looking STATIC terrain.
+  //   * Anything that just READS a cell's appearance/material (render, mining drops,
+  //     durability) needs no change — material-identity is automatic.
+  //   * Anything that builds or reacts with STATIC terrain (the grounding flood,
+  //     component registration, the acid/lava/fire/ice/salt reactions, the world-shift
+  //     clear) MUST skip body cells via isBodyCell(k). Each such site carries the
+  //     comment `// body-material invariant: skip free-body cells (see isBodyCell)` so
+  //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
+  //   * A body whose material has a static component form (stone-group or ice) BAKES
+  //     into that component when it sleeps (bakeRestingBodies in rigid.inc). RIGID and
+  //     other free bodies (e.g. a floating driftwood body) never bake.
+  // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
+  // detonates whether it is static or body-owned.
+  inline bool isBodyCell(int k) { return bodyOwner[k] != -1; }
 
   // ---- dirty tracking (operates on the active layer via the mirrors) ----
   inline void markCellIndex(int k) {

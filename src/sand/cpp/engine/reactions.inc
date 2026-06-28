@@ -44,14 +44,14 @@
           // flammable = "ignites near fire/lava", and lava already uses isFlammable.
           // This stops fire from burning non-flammable plants (juicy cactus, wet
           // mushrooms) and lets any flammable powder/liquid catch the same way oil does.
-          else if (isFlammable(grid[nk]) && rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) reactionIgnite[igniteCount++] = nk; }
+          else if (!isBodyCell(nk) && isFlammable(grid[nk]) && rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) reactionIgnite[igniteCount++] = nk; } // body-material invariant: a flammable body disintegrates via erodeBodies, not in-place ignition
         }
       }
     }
     for (int i = 0; i < fireCount; i++) { int k = reactionFires[i]; if (grid[k] == FIRE) writeGridIndex(k, EMPTY); reactionFlags[k] = 0; }
     for (int i = 0; i < steamCount; i++) { int k = reactionSteam[i]; if (grid[k] == WATER) writeGridIndex(k, STEAM); }
     for (size_t i = 0; i < snowMelt.size(); i++) { int k = snowMelt[i]; if (grid[k] == SNOW) writeGridIndex(k, WATER); }
-    for (int i = 0; i < igniteCount; i++) { int k = reactionIgnite[i]; if (isFlammable(grid[k])) { plantBurned = plantBurned || isPlantMaterial(grid[k]); writeGridIndex(k, FIRE); } }
+    for (int i = 0; i < igniteCount; i++) { int k = reactionIgnite[i]; if (!isBodyCell(k) && isFlammable(grid[k])) { plantBurned = plantBurned || isPlantMaterial(grid[k]); writeGridIndex(k, FIRE); } }
     if (plantBurned) splitPlantAfterErase();
   }
   void applyAcid() {
@@ -63,7 +63,10 @@
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != ACID) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
-        if (!isDissolvable(grid[right]) && !isDissolvable(grid[left]) && !isDissolvable(grid[down]) && !isDissolvable(grid[up])) continue;
+        // body-material invariant: a stone body cell IS dissolvable material, but acid
+        // on free-body cells is owned by the body-erosion path (erodeBodies), so skip them here.
+        auto acidEats = [&](int q) { return isDissolvable(grid[q]) && !isBodyCell(q); };
+        if (!acidEats(right) && !acidEats(left) && !acidEats(down) && !acidEats(up)) continue;
         // Acid touching dissolvable material is actively boring: keep it in the active
         // band so it keeps eating on later steps. Without this, a failed dissolve roll
         // lets settleLiquid see the enclosed acid as resting-on-support and go inert,
@@ -74,7 +77,7 @@
         if (rand() >= ACID_DISSOLVE_P) continue;
         bool hf = rand() < 0.5; int a = hf ? right : down, b = hf ? left : up, c = hf ? down : right, d = hf ? up : left;
         int target = -1;
-        if (isDissolvable(grid[a])) target = a; else if (isDissolvable(grid[b])) target = b; else if (isDissolvable(grid[c])) target = c; else if (isDissolvable(grid[d])) target = d;
+        if (acidEats(a)) target = a; else if (acidEats(b)) target = b; else if (acidEats(c)) target = c; else if (acidEats(d)) target = d;
         if (target < 0) continue;
         uint8_t tm = grid[target];
         if (isStoneComp(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (isIceComp(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (isPlantMaterial(tm)) dissolvedPlant = true;
@@ -127,7 +130,9 @@
         if (grid[right] == SNOW) snowK = right; else if (grid[left] == SNOW) snowK = left; else if (grid[down] == SNOW) snowK = down; else if (grid[up] == SNOW) snowK = up;
         if (snowK >= 0) { writeGridIndex(snowK, WATER); markCellIndex(k); continue; }
         int burnK = -1;
-        if (isFlammable(grid[right])) burnK = right; else if (isFlammable(grid[left])) burnK = left; else if (isFlammable(grid[down])) burnK = down; else if (isFlammable(grid[up])) burnK = up;
+        // body-material invariant: lava disintegrates a flammable body via erodeBodies, not in-place ignition.
+        auto lavaBurns = [&](int q) { return isFlammable(grid[q]) && !isBodyCell(q); };
+        if (lavaBurns(right)) burnK = right; else if (lavaBurns(left)) burnK = left; else if (lavaBurns(down)) burnK = down; else if (lavaBurns(up)) burnK = up;
         if (burnK >= 0) { if (isPlantMaterial(grid[burnK])) plantBurned = true; writeGridIndex(burnK, FIRE); continue; }
         int liquidK = -1;
         // Brine quenches lava like water/acid (saltwater boils too) -> steam + hardened stone.

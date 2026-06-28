@@ -520,17 +520,19 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 {
   console.log('free rigid bodies use powder density');
   const STONE = 3, SNOW = 16, SAND = 1, LAVA = 11, RIGID = 13, GOLD_ORE = 24;
-  const bodyBottom = (g) => { let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) b = Math.max(b, (i / COLS) | 0); return b; };
-  const bodyCount = (g) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) n++; return n; };
+  // Bodies stamp their REAL material into the grid now, so track each body by the
+  // material it was spawned with (use one distinct from the terrain to stay unambiguous).
+  const bodyBottom = (g, mat) => { let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === mat) b = Math.max(b, (i / COLS) | 0); return b; };
+  const bodyCount = (g, mat) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === mat) n++; return n; };
   {
     const e = mk();
     for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SNOW, true);
     for (let x = 25; x < 95; x++) e.paintDisc(x, ROWS - 1, 0, STONE, true);
     e.syncComponents();
-    e.spawnBox(60, 40, 4, 4, STONE);
+    e.spawnBox(60, 40, 4, 4, GOLD_ORE); // dense (3.0), and distinct from the STONE floor so it stays trackable after it bakes
     run(800, e);
-    const bottom = bodyBottom(e.getGrid());
-    check(`stone-density body sank through snow (bottom ${bottom})`, bottom >= ROWS - 4);
+    const bottom = bodyBottom(e.getGrid(), GOLD_ORE);
+    check(`dense body sank through snow to the floor (bottom ${bottom})`, bottom >= ROWS - 4);
     e.destroy();
   }
   {
@@ -538,7 +540,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
     e.spawnBox(60, 40, 4, 4);
     run(500, e);
-    const bottom = bodyBottom(e.getGrid());
+    const bottom = bodyBottom(e.getGrid(), RIGID);
     check(`default body rests on denser sand (bottom ${bottom})`, bottom >= 60 && bottom < 70);
     e.destroy();
   }
@@ -556,7 +558,8 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     if (mat === undefined) e.spawnBox(80, 45, 4, 4); else e.spawnBox(80, 45, 4, 4, mat);
     run(40, e);
     const g = e.getGrid();
-    const out = { bottom: bodyBottom(g), n: bodyCount(g), lavaTop };
+    const tracked = mat === undefined ? RIGID : mat; // a body stamps its own material
+    const out = { bottom: bodyBottom(g, tracked), n: bodyCount(g, tracked), lavaTop };
     e.destroy();
     return out;
   };

@@ -33,7 +33,7 @@
     for (auto& comp : L->stoneComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (auto& comp : L->plantComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (auto& comp : L->iceComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (int k : L->bodyCells) { next[k] = RIGID; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (int k : L->bodyCells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); } // body-material invariant: carry the body's real material, not RIGID
     for (int k : L->prevCompCells) {
       if (compOccStamp[k] == tick) continue;
       if (grid[k] == EMPTY) { next[k] = EMPTY; markCellIndex(k); }

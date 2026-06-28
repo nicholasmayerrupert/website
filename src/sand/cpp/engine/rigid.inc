@@ -445,7 +445,7 @@
   }
   static const double RIGID_LAVA_ERODE_P, RIGID_FIRE_ERODE_P;
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty) {
-    int id = bodyOwner[k]; if (id < 0 || grid[k] != RIGID) return false;
+    int id = bodyOwner[k]; if (id < 0) return false; // bodyOwner is authoritative (cell holds the body's real material, not RIGID)
     auto it = bodyById.find(id); if (it == bodyById.end()) return false; Body* b = it->second;
     int y = k / cols, x = k - y * cols;
     int idx = localCellAt(b, x + 0.5, y + 0.5);
@@ -463,7 +463,7 @@
     std::unordered_set<int> removedIds;
     for (Body* b : dirty) {
       std::vector<int> wc; // b's remaining world cells
-      for (int k : cells) if (grid[k] == RIGID && bodyOwner[k] == b->id) wc.push_back(k);
+      for (int k : cells) if (bodyOwner[k] == b->id) wc.push_back(k); // body cells carry the body's real material; bodyOwner identifies them
       if (wc.empty()) { removedIds.insert(b->id); continue; }
       // flood (4-connected) into world-connected groups
       std::unordered_map<int, int> idxOf; for (size_t i = 0; i < wc.size(); i++) idxOf[wc[i]] = (int)i;
@@ -492,10 +492,16 @@
       for (Body* b : L->bodies) { if (removedIds.count(b->id)) delete b; else keep.push_back(b); }
       L->bodies = std::move(keep);
     }
-    for (int k : cells) if (grid[k] == RIGID) bodyOwner[k] = -1;
+    // Re-assign ownership from scratch over the FORMER body cells. Body cells carry
+    // the body's real material now (not RIGID), so the old `grid[k] == RIGID` no longer
+    // identifies them — `wasBody` (the prior body-cell set) is the authoritative source,
+    // and disambiguates a body cell from identical-looking static terrain of the same
+    // material that the rebuilt footprint may overlap.
+    std::unordered_set<int> wasBody(cells.begin(), cells.end());
+    for (int k : cells) bodyOwner[k] = -1;
     std::vector<int> kept; std::unordered_set<int> claimed;
-    for (Body* b : L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (grid[k] != RIGID || claimed.count(k)) return; bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
-    for (int k : cells) if (grid[k] == RIGID && !claimed.count(k)) { writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
+    for (Body* b : L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (!wasBody.count(k) || claimed.count(k)) return; bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
+    for (int k : cells) if (!claimed.count(k)) { writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
     L->bodyCells = kept;
   }
   void erodeBodies(std::vector<int>& cells) {
@@ -507,7 +513,7 @@
   }
   int bodyFootprintBlocked(Body* b) {
     int blocked = 0;
-    forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; uint8_t m = grid[k]; if (m == RIGID && bodyOwner[k] == b->id) return; if (!canBodyOccupy(m, k, b->density)) blocked++; });
+    forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (bodyOwner[k] == b->id) return; uint8_t m = grid[k]; if (!canBodyOccupy(m, k, b->density)) blocked++; });
     return blocked;
   }
   // A sleeping body keeps its support if nudging it straight down by `probe`
@@ -522,7 +528,7 @@
     forEachBodyCell(b, [&](int x, int y) {
       if (supported) return;
       int k = y * cols + x; uint8_t m = grid[k];
-      if (m == RIGID) { if (bodyOwner[k] != b->id) supported = true; return; }
+      if (isBodyCell(k)) { if (bodyOwner[k] != b->id) supported = true; return; } // another body underneath counts as support; our own cells are ignored
       if (!canBodyOccupy(m, k, b->density)) supported = true; // solid terrain / dense grounded powder
     });
     b->py = savedPy;
@@ -549,6 +555,36 @@
     for (double lift = st; lift <= maxLift + 1e-9; lift += st) { b->py = newPy - lift; if (bodyFootprintBlocked(b) <= tol) { if (b->vy > 0) b->vy = 0; b->awake = true; b->stillTicks = 0; return true; } }
     b->px = newPx; b->py = newPy; b->angle = newAngle; return false;
   }
+  // ===== Body material identity & solidify-on-rest =====
+  // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
+  // real material into the grid; when a NON-RIGID body sleeps it bakes into a normal
+  // static component here. RIGID bodies never bake — they stay free bodies forever.
+  void bakeBodyToGrid(Body* b) {
+    // The body's cells were just cleared to EMPTY (moveBodies), so write the body's
+    // material into them and hand the set to registerRigidCells — the exact primitive
+    // lava-hardening uses to turn loose cells into a grounded stone/ice component.
+    std::unordered_set<int> baked; int yMax = 0;
+    forEachBodyCell(b, [&](int x, int y) {
+      int k = y * cols + x;
+      if (grid[k] != EMPTY && !componentDisplaceable(grid[k])) return; // never clobber solid terrain it came to rest against
+      writeGridIndex(k, b->material); baked.insert(k); if (y > yMax) yMax = y;
+    });
+    if (baked.empty()) return;
+    if (isIceComp(b->material)) registerRigidCells(L->iceComponents, L->nextIceId, b->material, baked, yMax, true);
+    else registerRigidCells(L->stoneComponents, L->nextStoneId, b->material, baked, yMax, false);
+  }
+  // Only bodies whose material has a STATIC component form solidify: stone-group
+  // (stone/ores/brick/TNT) and ice. RIGID stays a free body forever (as before), and
+  // so do free bodies of any other material (e.g. a floating DRIFTWOOD body).
+  bool bodySolidifies(uint8_t m) { return isStoneComp(m) || isIceComp(m); }
+  void bakeRestingBodies() {
+    bool baked = false; std::vector<Body*> keep;
+    for (Body* b : L->bodies) {
+      if (!b->awake && bodySolidifies(b->material)) { bakeBodyToGrid(b); delete b; baked = true; } // solidify on rest
+      else keep.push_back(b);
+    }
+    if (baked) L->bodies = std::move(keep);
+  }
   void moveBodies() {
     if (L->bodies.empty() && L->bodyCells.empty()) return;
     computeGrounded();
@@ -557,12 +593,13 @@
     // other L->bodies still count as support; body-on-body stacks cascade (the
     // bottom body wakes and moves, then the contact solver wakes those above).
     for (Body* b : L->bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
-    for (int k : L->bodyCells) { if (grid[k] == RIGID) writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
+    for (int k : L->bodyCells) { if (isBodyCell(k)) writeGridIndex(k, EMPTY); bodyOwner[k] = -1; } // body-material invariant: body cells hold the body's real material; bodyOwner marks them
     std::unordered_map<int, std::pair<double, double>> prePoses;
     for (Body* b : L->bodies) prePoses[b->id] = {b->px, b->py};
     rigidStep(1.0);
     rigidRejectedCells = 0; rigidDepenetrations = 0;
     for (Body* b : L->bodies) { auto it = prePoses.find(b->id); bool hp = it != prePoses.end(); double ppx = hp ? it->second.first : 0, ppy = hp ? it->second.second : 0; if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++; }
+    bakeRestingBodies(); // a non-RIGID body that just slept solidifies into a static component (after depenetrate, which may re-wake it)
     std::vector<int> cells; std::unordered_set<int> footprint;
     std::unordered_map<int, std::pair<std::vector<Disp>, std::unordered_set<int>>> perBody;
     for (Body* b : L->bodies) {
@@ -571,7 +608,7 @@
         int k = y * cols + x; if (bodyOwner[k] != -1) return; uint8_t m = grid[k];
         if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
         if (isBodyRelocatable(m, k, b->density)) pb.first.push_back({m, k});
-        writeGridIndex(k, RIGID); bodyOwner[k] = b->id; cells.push_back(k); footprint.insert(k); pb.second.insert(k);
+        writeGridIndex(k, b->material); bodyOwner[k] = b->id; cells.push_back(k); footprint.insert(k); pb.second.insert(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
       });
     }
     for (Body* b : L->bodies) {

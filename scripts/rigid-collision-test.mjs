@@ -259,7 +259,9 @@ for (const dt of [16, 8, 33, 50]) {
     for (let y = yTop; y <= yBot; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, WATER, true);
   };
   const waterCount = (e) => { const g = e.getGrid(); let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === WATER) n++; return n; };
-  const bodyBottom = (e) => { const g = e.getGrid(); let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) b = Math.max(b, (i / COLS) | 0); return b; };
+  // Bodies stamp their REAL material into the grid now, so track each body by the
+  // material it was spawned with (a WOOD body reads WOOD, a RIGID body reads RIGID).
+  const bodyBottom = (e, mat) => { const g = e.getGrid(); let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === mat) b = Math.max(b, (i / COLS) | 0); return b; };
   const surfaceY = (e) => { const g = e.getGrid(); for (let i = 0; i < g.length; i++) if (g[i] === WATER) return (i / COLS) | 0; return ROWS; };
 
   { // Light body (wood) floats part-submerged and stays put.
@@ -272,7 +274,7 @@ for (const dt of [16, 8, 33, 50]) {
     run(e, 400);                                            // let it plunge and find its float depth
     const water1 = waterCount(e);
     run(e, 400);                                            // float undisturbed
-    const s = e._bodyState(idx), bot = bodyBottom(e), surf = surfaceY(e), water2 = waterCount(e);
+    const s = e._bodyState(idx), bot = bodyBottom(e, WOOD), surf = surfaceY(e), water2 = waterCount(e);
     check(`wood did not sink to the floor (bottom ${bot} < ${yBot - 2})`, bot >= 0 && bot < yBot - 2);
     check(`wood is partially submerged, not resting on top (bottom ${bot} > surface ${surf})`, bot > surf + 1);
     check(`wood came to rest while floating (|vy| ${Math.abs(s.vy).toFixed(3)})`, Math.abs(s.vy) < 0.1);
@@ -287,7 +289,7 @@ for (const dt of [16, 8, 33, 50]) {
     const idx = e._bodyCount();
     e.spawnBox(100, 35, 8, 5, RIGID);                       // density 1.4 > water 1.0
     run(e, 700);
-    const bot = bodyBottom(e);
+    const bot = bodyBottom(e, RIGID);
     check(`rigid body sank to the pool floor (bottom ${bot} >= ${yBot - 4})`, bot >= yBot - 4);
     e.destroy();
   }

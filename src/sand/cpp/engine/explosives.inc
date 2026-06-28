@@ -44,6 +44,7 @@
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
   struct BlastWave { int cx, cy, radius; uint32_t seed; };
+  struct BlastDebrisSource { uint8_t material; int cell; };
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
     bool erasedPlant = false;
@@ -167,7 +168,8 @@
     int r2 = radius * radius;
     uint32_t bseed = (uint32_t)tick * 2654435761u ^ (uint32_t)(cy * cols + cx); // per-blast deterministic seed
     bb.gasShockwaves.push_back({cx, cy, radius, bseed});
-    uint8_t debrisMat = EMPTY; // first solid material destroyed -> what the rubble chunks are made of
+    uint8_t debrisSeen[TABLE]; std::fill(debrisSeen, debrisSeen + TABLE, (uint8_t)0);
+    std::vector<BlastDebrisSource> debrisSources;
     for (int oy = -radius; oy <= radius; oy++) {
       int yy = cy + oy; if (yy <= 0 || yy >= rows) continue;
       for (int ox = -radius; ox <= radius; ox++) {
@@ -184,10 +186,11 @@
           if (!bb.bodyMapBuilt) { for (Body* b : L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
           if (!eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; }
         } else {
-          // Track the first destroyed solid as the rubble-chunk material (never TNT —
-          // exploding TNT must be consumed, not scattered as live shrapnel).
-          if (isStoneComp(m)) { bb.erasedStone.push_back(k); if (debrisMat == EMPTY && m != TNT) debrisMat = m; }
-          else if (isIceComp(m)) { bb.erasedIce.push_back(k); if (debrisMat == EMPTY) debrisMat = m; }
+          // Track each destroyed solid material as a physical-rubble source (never
+          // TNT — exploding TNT must be consumed, not scattered as live shrapnel).
+          if (m != TNT && isRigidMaterial(m) && !debrisSeen[m]) { debrisSeen[m] = 1; debrisSources.push_back({m, k}); }
+          if (isStoneComp(m)) bb.erasedStone.push_back(k);
+          else if (isIceComp(m)) bb.erasedIce.push_back(k);
           if (isPlantMaterial(m)) bb.erasedPlant = true;
           grid[k] = EMPTY;
         }
@@ -220,13 +223,15 @@
     // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
     // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
     // can't flood the body solver.
-    if (debrisMat != EMPTY && (int)L->bodies.size() < BLAST_DEBRIS_CAP) {
-      for (int i = 0; i < BLAST_DEBRIS_CHUNKS; i++) {
-        double j = whash2(bseed, i, 13);
-        int sx = cx + (i * 2 - (BLAST_DEBRIS_CHUNKS - 1)) * 3; // fan out horizontally just above the crater centre (cleared air)
-        Body* b = spawnBox(sx, cy - 3, 1, 1, debrisMat);       // a 2x2 chunk launched up + out; it arcs back down and BAKES into rubble
+    for (size_t di = 0; di < debrisSources.size() && (int)L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
+      uint8_t debrisMat = debrisSources[di].material;
+      int src = debrisSources[di].cell, sy = src / cols, sx0 = src - sy * cols;
+      for (int i = 0; i < BLAST_DEBRIS_CHUNKS && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
+        double j = whash2(bseed, (int)di * 17 + i, 13);
+        int sx = sx0 + (i * 2 - (BLAST_DEBRIS_CHUNKS - 1)) * 2; // fan out around that material's destroyed source
+        Body* b = spawnBox(sx, sy - 3, 1, 1, debrisMat);       // a 2x2 chunk launched up + out; it arcs back down and BAKES into rubble
         if (!b) continue;
-        b->vx = (double)(sx - cx) * 0.45 + (j - 0.5);
+        b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
         b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
         b->awake = true; b->stillTicks = 0;
       }

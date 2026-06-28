@@ -156,6 +156,27 @@ function blastCrater(M) {
     launched && launched.vx > 0.4 && launched.vy < 0.4);
   e.destroy();
 }
+{
+  // Grounded plant-family solids still need physical rubble. This catches the path
+  // where the blast destroys WOOD in a mixed-material crater but the remaining plant
+  // component never detaches.
+  const e = mk();
+  for (let y = 68; y < ROWS; y++) for (let x = 48; x < 92; x++) e.placeMaterial(x, y, 0, MAT.WOOD);
+  for (let y = 68; y < ROWS; y++) for (let x = 48; x < 58; x++) e.placeMaterial(x, y, 0, MAT.STONE);
+  e.placeMaterial(70, 67, 0, MAT.TNT);
+  e.syncComponents();
+  let peakBodies = 0;
+  let sawWoodBody = false;
+  for (let i = 0; i < 90; i++) {
+    e.placeMaterial(71, 67, 1, MAT.FIRE);
+    e.step(i * 16);
+    peakBodies = Math.max(peakBodies, e._bodyCount());
+    for (let b = 0; b < e._bodyCount(); b++) if (e._bodyMaterial(b) === MAT.WOOD) sawWoodBody = true;
+  }
+  check(`mixed grounded blast emitted physical rubble (peak bodies ${peakBodies})`, peakBodies > 0);
+  check(`mixed grounded blast emitted WOOD rubble specifically`, sawWoodBody);
+  e.destroy();
+}
 
 // --- each consumed TNT pixel emits one aftermath cell: mostly acrid smoke, some steam/fire ---
 {

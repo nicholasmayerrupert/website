@@ -110,6 +110,7 @@ export function initSandWasm() {
         bodyCount: c('engine_body_count', 'number', ['number']),
         bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
         bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
+        bodyMaterial: c('engine_body_material', 'number', ['number', 'number']),
         bodyState: c('engine_body_state', 'number', ['number', 'number', 'number']),
         setBodyMotion: c('engine_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
         rigidRejected: c('engine_rigid_rejected', 'number', ['number']),
@@ -593,6 +594,7 @@ export function createEngineWasm({
     _bodyCount() { return M.bodyCount(ptr); },
     _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },
     _bodyAwake(i) { return M.bodyAwake(ptr, i); },
+    _bodyMaterial(i) { return M.bodyMaterial(ptr, i); },
     // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
     _bodyState(i) {
       const buf = mod._malloc(8 * 8);

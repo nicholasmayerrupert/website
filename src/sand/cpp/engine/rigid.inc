@@ -159,6 +159,7 @@
         Body* b = L->bodies[bi];
         if (b->awake) b->vy += R_GRAVITY * dt;
         b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
+        b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
         if (b->awake && !b->boundaryPts.empty()) {
           // Buoyancy/drag from surrounding loose media. The body's own footprint is
           // cleared to EMPTY for the duration of rigidStep, so probing the
@@ -179,7 +180,14 @@
           }
           if (wet > 0) {
             double submerged = (double)wet / b->boundaryPts.size(), avgMediumD = densitySum / wet;
-            b->vy -= R_GRAVITY * (avgMediumD / b->density) * submerged * dt;
+            double supportRatio = (avgMediumD / b->density) * submerged;
+            b->vy -= R_GRAVITY * supportRatio * dt;
+            if (std::fabs(supportRatio - 1.0) <= R_BUOY_REST_BAND) {
+              b->vy *= R_BUOY_REST_DAMP;
+              if (std::fabs(b->vy) < R_BUOY_ZERO_VY) b->vy = 0;
+              if (std::fabs(b->omega) < R_SETTLE_ANG) b->omega = 0;
+              b->hadContact = true; // buoyant rest counts as support for sleeping.
+            }
             double drag = std::fmax(0.0, 1 - R_LIQUID_DRAG * submerged);
             b->vx *= drag; b->vy *= drag; b->omega *= std::fmax(0.0, 1 - R_LIQUID_ANG_DRAG * submerged);
           }
@@ -201,7 +209,6 @@
         b->sweepMargin = (std::sqrt(b->vx * b->vx + b->vy * b->vy) + std::fabs(b->omega) * (b->maxR > 0 ? b->maxR : 1)) * dt + R_CONTACT_SKIN + 0.5;
         double m = b->sweepMargin;
         b->aabbX0 = x0 - m; b->aabbY0 = y0 - m; b->aabbX1 = x1 + m; b->aabbY1 = y1 + m;
-        b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
         b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
       }
       contacts.clear();
@@ -526,6 +533,7 @@
   // must wake and fall. Must be called while the L->bodies' cells are still in the
   // grid (so other L->bodies count as support); the body's own cells are ignored.
   bool sleepingBodyHasSupport(Body* b, double probe) {
+    if (bodyFloatsOnMedium(b)) return true;
     double savedPy = b->py;
     b->py = savedPy + probe;
     bool supported = false;

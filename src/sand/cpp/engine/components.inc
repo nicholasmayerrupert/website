@@ -844,9 +844,10 @@
       double targetWetCells = exposedCells * (avgDensity / mediumDensity) * BUOY_DRAFT_SCALE;
       double imbalance = wetCells - targetWetCells;
       double band = std::fmax(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
+      double upBand = band + BUOY_UP_EXTRA_BAND;
       bool buoyantSupport = bottomExposed > 0 && bottomMedium >= bottomExposed * BUOY_SUPPORT_FRAC;
       if (imbalance < -band) translateAssembly(grp, cells, cols);
-      else if (imbalance > band) { if (buoyantSupport) translateAssembly(grp, cells, -cols); else translateAssembly(grp, cells, cols); }
+      else if (imbalance > upBand) { if (buoyantSupport) translateAssembly(grp, cells, -cols); else translateAssembly(grp, cells, cols); }
     }
   }
 

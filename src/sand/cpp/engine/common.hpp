@@ -31,7 +31,7 @@ static const float STEAM_DECAY_P = 0.018f, FIRE_DECAY_P = 0.006f;
 static const int   DIRTY_PAD_X = MAX_WATER_FLOW + 2, DIRTY_PAD_Y = 2;
 static const int   SINK_STRIP_W = 2, INNER_STRIP_W = 1;
 static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 0.35f, INNER_SAND_P = 0.10f;
-static const float BUOY_BAND_FRAC = 0.5f, BUOY_BAND_MIN = 1.5f, BUOY_DRAFT_SCALE = 0.5f, BUOY_WET_PERIMETER_FRAC = 0.75f, BUOY_SUPPORT_FRAC = 0.5f;
+static const float BUOY_BAND_FRAC = 0.5f, BUOY_BAND_MIN = 1.5f, BUOY_UP_EXTRA_BAND = 1.0f, BUOY_DRAFT_SCALE = 0.5f, BUOY_WET_PERIMETER_FRAC = 0.75f, BUOY_SUPPORT_FRAC = 0.5f;
 static const int   CROSS_LAYER_BOND_MIN_CELLS = 4;
 static const float CROSS_LAYER_BOND_AREA_FRAC = 0.05f;
 static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
@@ -389,4 +389,5 @@ static const double R_RESTITUTION = 0, R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MA
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6, R_LIQUID_DRAG = 0.12, R_LIQUID_ANG_DRAG = 0.1;
 static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;
 static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG * 8;
+static const double R_BUOY_REST_BAND = 0.08, R_BUOY_REST_DAMP = 0.45, R_BUOY_ZERO_VY = 0.02;
 static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.0;

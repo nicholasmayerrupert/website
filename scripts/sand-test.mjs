@@ -515,6 +515,29 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// A light rigid component should settle to a stable partial depth in denser grains
+// instead of bobbing up/down one row around its buoyant equilibrium.
+{
+  console.log('light solid component settles in sand without bobbing');
+  const SAND = 1, MOSS = 20; // MOSS is a rigid stone-group component, density 0.9 < sand 1.6
+  const e = mk();
+  for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
+  for (let y = 40; y < 48; y++) for (let x = 56; x < 64; x++) e.paintDisc(x, y, 0, MOSS, true);
+  e.syncComponents();
+  const bbox = () => {
+    const g = e.getGrid(); let minY = ROWS, maxY = -1, n = 0;
+    for (let i = 0; i < g.length; i++) if (g[i] === MOSS) { const y = (i / COLS) | 0; if (y < minY) minY = y; if (y > maxY) maxY = y; n++; }
+    return { minY, maxY, n };
+  };
+  run(500, e);
+  const a = bbox();
+  run(500, e);
+  const b = bbox();
+  check(`light solid part-submerged in sand (rows ${b.minY}-${b.maxY})`, b.n === 64 && b.minY > 55 && b.maxY < ROWS - 20);
+  check(`light solid stopped bobbing in sand (rows ${a.minY}-${a.maxY} -> ${b.minY}-${b.maxY})`, a.minY === b.minY && a.maxY === b.maxY);
+  e.destroy();
+}
+
 // Free rigid bodies use their material density too: a stone-density body sinks
 // through snow, while the default cube (1.4) part-submerges in denser sand (1.6).
 {

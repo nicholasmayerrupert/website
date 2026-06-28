@@ -278,6 +278,7 @@ for (const dt of [16, 8, 33, 50]) {
     check(`wood did not sink to the floor (bottom ${bot} < ${yBot - 2})`, bot >= 0 && bot < yBot - 2);
     check(`wood is partially submerged, not resting on top (bottom ${bot} > surface ${surf})`, bot > surf + 1);
     check(`wood came to rest while floating (|vy| ${Math.abs(s.vy).toFixed(3)})`, Math.abs(s.vy) < 0.1);
+    check(`wood slept at buoyant equilibrium (awake ${e._bodyAwake(idx)})`, e._bodyAwake(idx) === 0);
     check(`no ongoing fluid leak once floating (${water2} == ${water1})`, water2 === water1);
     e.destroy();
   }
@@ -420,6 +421,7 @@ for (const dt of [16, 8, 33, 50]) {
     check(`displaced sand raised around the tower (surface ${surf1} < initial ${surf0})`, surf1 < surf0);
     const vy = s ? Math.abs(s.vy) : 999;
     check(`light body came to rest (|vy| ${vy.toFixed(3)})`, vy < 0.1);
+    check(`light body slept at granular equilibrium (awake ${e._bodyAwake(idx)})`, e._bodyAwake(idx) === 0);
     e.destroy();
   }
 }

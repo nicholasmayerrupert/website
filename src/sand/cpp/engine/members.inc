@@ -328,6 +328,7 @@
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isLiquid(uint8_t m) { return MAT_KIND[m] == K_LIQUID; }
   inline bool isGas(uint8_t m) { return MAT_KIND[m] == K_GAS; }
+  inline bool isBuoyantMedium(uint8_t m) { return isLiquid(m) || MAT_KIND[m] == K_POWDER; }
   // Which rigid-component list a destroyed grid cell belongs to, mirroring
   // registerComponentCells' routing (CG_ICE -> ice, CG_PLANT -> plant via
   // isPlantMaterial, else stone). EVERY site that clears a component cell from the

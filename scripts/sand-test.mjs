@@ -516,7 +516,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 }
 
 // Free rigid bodies use their material density too: a stone-density body sinks
-// through snow, while the default cube (1.4) is still supported by denser sand (1.6).
+// through snow, while the default cube (1.4) part-submerges in denser sand (1.6).
 {
   console.log('free rigid bodies use powder density');
   const STONE = 3, SNOW = 16, SAND = 1, LAVA = 11, RIGID = 13, GOLD_ORE = 24;
@@ -538,10 +538,12 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   {
     const e = mk();
     for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
+    const idx = e._bodyCount();
     e.spawnBox(60, 40, 4, 4);
     run(500, e);
-    const bottom = bodyBottom(e.getGrid(), RIGID);
-    check(`default body rests on denser sand (bottom ${bottom})`, bottom >= 60 && bottom < 70);
+    const bottom = bodyBottom(e.getGrid(), RIGID), s = e._bodyState(idx);
+    check(`default body part-submerges in denser sand (bottom ${bottom})`, bottom > 68 && bottom < ROWS - 20);
+    check(`default body settles while buoyant in sand (|vy| ${Math.abs(s ? s.vy : 999).toFixed(3)})`, s && Math.abs(s.vy) < 0.1);
     e.destroy();
   }
   // A body lighter than a fluid part-submerges into it (buoyant equilibrium)

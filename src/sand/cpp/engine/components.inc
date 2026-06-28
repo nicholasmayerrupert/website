@@ -29,15 +29,15 @@
     std::fill(cellComp, cellComp + (size_t)cols * rows, -1);
     indexComponents();
     bool sawPowder = false;
-    auto effectiveRigidDensityAt = [&](int k) {
-      int id = cellComp[k];
-      return id >= 0 ? cgCompDensity[id] : (double)DENSITY[grid[k]];
-    };
     auto canGroundAbove = [&](int below, int above) {
       uint8_t upper = grid[above];
       if (!isBearingMaterial(upper)) return false;
       uint8_t lower = grid[below];
-      if (MAT_KIND[lower] == K_POWDER && isRigidMaterial(upper) && DENSITY[lower] < effectiveRigidDensityAt(above)) return false;
+      // Powders support other bearing loose cells, but they are a buoyant medium
+      // for rigid solids. Rigid-on-powder is handled by moveRigidAssemblies with
+      // density-based displacement/buoyancy, not by marking the rigid component
+      // grounded at the powder surface.
+      if (MAT_KIND[lower] == K_POWDER && isRigidMaterial(upper)) return false;
       return true;
     };
     int sp = 0;
@@ -617,7 +617,7 @@
     };
     // Plan a one-cell descent of `own` in `lay`. An assembly descends into EMPTY
     // (or its own) cells, and — like the single-layer translateAssembly — shoves
-    // aside any LIGHTER powder/liquid directly beneath its shell instead of being
+    // aside loose powder/liquid directly beneath its shell instead of being
     // pinned by it. Without this a sand/water-FILLED bonded shell (a stone circle
     // mirrored in both layers, filled with sand) could never move: its own contents
     // sit directly below the top arc and block the move, so it floats forever.
@@ -626,6 +626,7 @@
     // Gas is simply overrun (it dissipates), matching translateAssembly.
     auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, double density,
                              std::vector<std::pair<int, uint8_t>>& relocate) -> bool {
+      (void)density;
       relocate.clear();
       for (int k : own) {
         int nk = k + cols, ny = nk / cols;
@@ -633,7 +634,7 @@
         if (own.count(nk)) continue;
         uint8_t below = lay.grid[nk];
         if (below == EMPTY || isGas(below)) continue;
-        bool displaceable = isLiquid(below) || (MAT_KIND[below] == K_POWDER && DENSITY[below] < density);
+        bool displaceable = isBuoyantMedium(below);
         if (!displaceable) return false;
         relocate.push_back({0, below}); // dest cell assigned below (after vacated cells are known)
       }
@@ -670,8 +671,9 @@
       if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
       collect(fg, g->fgComps, fgCells, fgMats);
       collect(bg, g->bgComps, bgCells, bgMats);
-      // Mean density of the whole bonded assembly (both layers) decides which
-      // powders/liquids it is heavy enough to shove aside as it descends.
+      // Mean density of the whole bonded assembly (both layers) is passed through
+      // for parity with the single-layer movement API; loose media are displaced
+      // generally and buoyancy is resolved in the per-layer assembly path.
       double sum = 0; int n = 0;
       for (auto& cm : fgMats) { sum += DENSITY[cm.m]; n++; }
       for (auto& cm : bgMats) { sum += DENSITY[cm.m]; n++; }
@@ -732,13 +734,8 @@
 
     auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
       int dy = dir > 0 ? 1 : -1;
-      double assemblyDensity = 0;
-      int assemblyCells = 0;
-      for (int ci : grp->comps) for (int k : all[ci]->cells) { assemblyDensity += DENSITY[matOf(ci, k)]; assemblyCells++; }
-      assemblyDensity = assemblyCells > 0 ? assemblyDensity / assemblyCells : 0;
       auto componentDisplaceableForAssembly = [&](uint8_t m) {
-        if (m == EMPTY || isGas(m) || isLiquid(m)) return true;
-        return MAT_KIND[m] == K_POWDER && DENSITY[m] < assemblyDensity;
+        return m == EMPTY || isGas(m) || isBuoyantMedium(m);
       };
       for (int k : cells) { int leadK = k + dir; int leadY = leadK / cols; if (leadY < 1 || leadY >= rows) return false; if (cells.count(leadK)) continue; if (!componentDisplaceableForAssembly(grid[leadK])) return false; }
       struct Disp { uint8_t material; int from; };
@@ -746,7 +743,7 @@
       for (int k : cells) { int leadK = k + dir; uint8_t lead = grid[leadK]; if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK}); if (!cells.count(k - dir)) vacated.push_back(k); }
       int liquidDisplacedCount = 0, powderDisplacedCount = 0;
       for (auto& d : displaced) { if (isLiquid(d.material)) liquidDisplacedCount++; else if (MAT_KIND[d.material] == K_POWDER) powderDisplacedCount++; }
-      // Liquids AND lighter powders are relocated volume-preservingly by a spill BFS
+      // Liquids and powders are relocated volume-preservingly by a spill BFS
       // (each percolates through its own pool to a free surface cell), exactly like a
       // free body's displacement (spillDisplacedBodyMaterial). A heavy assembly sinking
       // into sand thus pushes the sand out to nearby free room — raising the surface
@@ -815,22 +812,22 @@
       return true;
     };
 
-    // measureLiquidImmersion returns via out-params; returns false if "null".
-    auto measureLiquidImmersion = [&](std::unordered_set<int>& cells, int& wetCells, int& exposedCells, int& bottomExposed, int& bottomLiquid, double& liquidDensityOut) -> bool {
-      wetCells = 0; exposedCells = 0; bottomExposed = 0; bottomLiquid = 0;
-      double liquidDensity = 0; int liquidContacts = 0;
+    // measureMediumImmersion returns via out-params; returns false if "null".
+    auto measureMediumImmersion = [&](std::unordered_set<int>& cells, int& wetCells, int& exposedCells, int& bottomExposed, int& bottomMedium, double& mediumDensityOut) -> bool {
+      wetCells = 0; exposedCells = 0; bottomExposed = 0; bottomMedium = 0;
+      double mediumDensity = 0; int mediumContacts = 0;
       for (int k : cells) {
         int y = k / cols, x = k - y * cols; bool wet = false, exposed = false;
-        if (x > 1 && !cells.count(k - 1)) { exposed = true; uint8_t m = grid[k - 1]; if (isLiquid(m)) { wet = true; liquidDensity += DENSITY[m]; liquidContacts++; } }
-        if (x < cols - 2 && !cells.count(k + 1)) { exposed = true; uint8_t m = grid[k + 1]; if (isLiquid(m)) { wet = true; liquidDensity += DENSITY[m]; liquidContacts++; } }
+        if (x > 1 && !cells.count(k - 1)) { exposed = true; uint8_t m = grid[k - 1]; if (isBuoyantMedium(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
+        if (x < cols - 2 && !cells.count(k + 1)) { exposed = true; uint8_t m = grid[k + 1]; if (isBuoyantMedium(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
         if (y > 1 && !cells.count(k - cols)) { exposed = true; }
-        if (y < rows - 1 && !cells.count(k + cols)) { exposed = true; bottomExposed++; uint8_t m = grid[k + cols]; if (isLiquid(m)) { wet = true; bottomLiquid++; liquidDensity += DENSITY[m]; liquidContacts++; } }
+        if (y < rows - 1 && !cells.count(k + cols)) { exposed = true; bottomExposed++; uint8_t m = grid[k + cols]; if (isBuoyantMedium(m)) { wet = true; bottomMedium++; mediumDensity += DENSITY[m]; mediumContacts++; } }
         if (exposed) exposedCells++; if (wet) wetCells++;
       }
-      if (liquidContacts == 0) return false;
+      if (mediumContacts == 0) return false;
       int requiredWet = imax(1, (int)std::ceil(std::sqrt((double)cells.size()) * BUOY_WET_PERIMETER_FRAC));
       if (wetCells < requiredWet) return false;
-      liquidDensityOut = liquidDensity / liquidContacts;
+      mediumDensityOut = mediumDensity / mediumContacts;
       return true;
     };
 
@@ -840,14 +837,14 @@
       for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
       double weight = 0; int xMin = cols, xMax = 0;
       for (int ci : grp->comps) for (int k : all[ci]->cells) { weight += DENSITY[matOf(ci, k)]; int x = k - (k / cols) * cols; if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
-      int wetCells, exposedCells, bottomExposed, bottomLiquid; double liquidDensity;
-      if (!measureLiquidImmersion(cells, wetCells, exposedCells, bottomExposed, bottomLiquid, liquidDensity)) { translateAssembly(grp, cells, cols); continue; }
+      int wetCells, exposedCells, bottomExposed, bottomMedium; double mediumDensity;
+      if (!measureMediumImmersion(cells, wetCells, exposedCells, bottomExposed, bottomMedium, mediumDensity)) { translateAssembly(grp, cells, cols); continue; }
       double avgDensity = weight / cells.size();
-      if (avgDensity > liquidDensity) { translateAssembly(grp, cells, cols); continue; }
-      double targetWetCells = exposedCells * (avgDensity / liquidDensity) * BUOY_DRAFT_SCALE;
+      if (avgDensity > mediumDensity) { translateAssembly(grp, cells, cols); continue; }
+      double targetWetCells = exposedCells * (avgDensity / mediumDensity) * BUOY_DRAFT_SCALE;
       double imbalance = wetCells - targetWetCells;
       double band = std::fmax(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
-      bool buoyantSupport = bottomExposed > 0 && bottomLiquid >= bottomExposed * BUOY_SUPPORT_FRAC;
+      bool buoyantSupport = bottomExposed > 0 && bottomMedium >= bottomExposed * BUOY_SUPPORT_FRAC;
       if (imbalance < -band) translateAssembly(grp, cells, cols);
       else if (imbalance > band) { if (buoyantSupport) translateAssembly(grp, cells, -cols); else translateAssembly(grp, cells, cols); }
     }

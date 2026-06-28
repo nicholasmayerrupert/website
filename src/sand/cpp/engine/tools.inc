@@ -586,9 +586,13 @@
         else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
         else if (MAT_KIND[m] == K_COMPONENT) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
         else { creativeMode = CM_PAINT; creativeMaterial = m; }
-        // Remember the last solid for the CUBE tool so it can spawn a stone/ice/TNT body
-        // (or a permanent RIGID one). Powders/liquids/plant comps aren't body materials.
-        if (m == RIGID || isStoneComp(m) || isIceComp(m)) cubeMaterial = m;
+        // Remember the last SOLID for the CUBE tool so it spawns a body of that material.
+        // Any component (stone/ore/brick/ice/TNT, and the plant family: wood/plant/
+        // driftwood/cactus/…) qualifies, plus the permanent RIGID. Powders/liquids/gases
+        // can't be free bodies (settle would flow a powder body's cells apart). Stone &
+        // ice bodies bake into terrain on rest (bodySolidifies); the rest — like the
+        // existing driftwood float — stay free bodies (a wood body tumbles/floats forever).
+        if (m == RIGID || MAT_KIND[m] == K_COMPONENT) cubeMaterial = m;
         break;
       }
       case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; break;

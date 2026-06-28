@@ -50,6 +50,18 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
+// --- a WOOD body works and renders as WOOD, but (like driftwood) stays a free body
+//     forever: only stone/ice-group materials have a static form to bake into ---
+{
+  const e = mk();
+  e.spawnBox(60, 14, 4, 4, MAT.WOOD);
+  e.step(16);
+  check(`WOOD body renders as WOOD in flight (cells ${count(e.getGrid(), MAT.WOOD)})`, count(e.getGrid(), MAT.WOOD) > 0);
+  for (let i = 0; i < 600; i++) e.step((i + 2) * 16); // fall + rest on the floor
+  check(`WOOD body does NOT bake (stays a free body, count ${e._bodyCount()})`, e._bodyCount() === 1);
+  e.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

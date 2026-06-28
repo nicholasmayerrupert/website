@@ -279,7 +279,7 @@ renders, mines, and reacts as `STONE`; `isBodyCell(k)` distinguishes it from sta
 terrain. A body whose material has a static form (stone-group, ice, or plant-family)
 **bakes** into a normal component when it comes to rest; `RIGID` stays free forever.
 Liquids provide buoyancy, so light bodies can rise/float in them. Powders/grains are
-only displaceable: bodies and ungrounded solid components can sink through them, but
-grains never push solids upward. The cube tool spawns a body of the selected solid
-(default `RIGID`); explosion debris is the other source. See the invariant doc-block
-in `members.inc`.
+displaceable and provide one-way support: bodies and ungrounded solid components can
+sink into them and settle, but grains never push solids upward. The cube tool spawns
+a body of the selected solid (default `RIGID`); explosion debris is the other source.
+See the invariant doc-block in `members.inc`.

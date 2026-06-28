@@ -34,6 +34,7 @@
   static const int    BLAST_PARTICLE_LIFE = 26;
   static const int    BLAST_PARTICLE_CAP = 48;    // hard cap on cosmetic flecks per step (steam carries the visual now)
   static constexpr double BLAST_PUSH = 3.0;       // outward shove given to nearby free bodies
+  static constexpr double BLAST_SOLID_LAUNCH = 3.2; // outward velocity for static solid fragments cut free by a blast
   static constexpr double TWO_PI = 6.283185307179586;
   // TNT aftermath: each destroyed TNT cell leaves exactly one hot gas/fire cell.
   static constexpr double TNT_ACRID_FRAC = 0.70; // acrid smoke dominates the blast cloud
@@ -233,12 +234,99 @@
   }
 
   // Run the expensive finalize once for all craters carved into the batch this step.
+  uint8_t dominantRigidMaterial(const Comp& comp) {
+    int counts[TABLE]; std::fill(counts, counts + TABLE, 0);
+    uint8_t best = EMPTY; int bestN = 0;
+    for (int k : comp.cells) {
+      uint8_t m = grid[k];
+      if (!isRigidMaterial(m)) continue;
+      int n = ++counts[m];
+      if (n > bestN) { bestN = n; best = m; }
+    }
+    return best;
+  }
+
+  bool blastInfluenceOnComponent(const Comp& comp, const std::vector<BlastWave>& waves,
+                                 double& outX, double& outY, double& outStrength, uint32_t& outSeed) {
+    if (waves.empty() || comp.cells.empty()) return false;
+    double cx = 0, cy = 0;
+    for (int k : comp.cells) { int y = k / cols, x = k - y * cols; cx += x + 0.5; cy += y + 0.5; }
+    cx /= comp.cells.size(); cy /= comp.cells.size();
+    double best = 0, bx = 0, by = 0; uint32_t seed = 0;
+    for (const BlastWave& w : waves) {
+      double nearest = 1e18;
+      int reach = w.radius + 3, reach2 = reach * reach;
+      for (int k : comp.cells) {
+        int y = k / cols, x = k - y * cols;
+        int dx = x - w.cx, dy = y - w.cy, dd = dx * dx + dy * dy;
+        if (dd > reach2) continue;
+        double d = std::sqrt((double)dd);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest == 1e18) continue;
+      double strength = 1.0 - nearest / w.radius;
+      if (strength < 0.12) strength = 0.12;
+      if (strength <= best) continue;
+      double dx = cx - w.cx, dy = cy - w.cy, len = std::sqrt(dx * dx + dy * dy);
+      if (len < 0.5) {
+        double a = whash2(w.seed, (int)cx, (int)cy) * TWO_PI;
+        dx = std::cos(a); dy = std::sin(a); len = 1;
+      }
+      best = strength; bx = dx / len; by = dy / len; seed = w.seed;
+    }
+    if (best <= 0) return false;
+    outX = bx; outY = by; outStrength = best; outSeed = seed;
+    return true;
+  }
+
+  void launchBlastSolidFragmentsFrom(std::vector<Comp>& list, const std::vector<BlastWave>& waves, int& launched) {
+    if (list.empty() || waves.empty()) return;
+    std::vector<Comp> keep; keep.reserve(list.size());
+    for (auto& comp : list) {
+      double ux = 0, uy = 0, strength = 0; uint32_t seed = 0;
+      if (comp.grounded || launched >= BLAST_DEBRIS_CAP || (int)L->bodies.size() >= BLAST_DEBRIS_CAP ||
+          !blastInfluenceOnComponent(comp, waves, ux, uy, strength, seed)) {
+        keep.push_back(std::move(comp));
+        continue;
+      }
+      uint8_t mat = dominantRigidMaterial(comp);
+      if (mat == EMPTY || mat == TNT) { keep.push_back(std::move(comp)); continue; }
+      std::vector<std::pair<int, int>> cells; cells.reserve(comp.cells.size());
+      for (int k : comp.cells) {
+        int y = k / cols, x = k - y * cols;
+        cells.push_back({x, y});
+        writeGridIndex(k, EMPTY);
+      }
+      Body* b = spawnBodyImpl(cells, mat, DENSITY[mat]);
+      if (!b) continue;
+      double jitter = whash2(seed, b->id, (int)comp.cells.size()) - 0.5;
+      double speed = BLAST_SOLID_LAUNCH * strength;
+      b->vx = ux * speed + jitter * 0.6;
+      b->vy = uy * speed - 0.9 * strength;
+      b->omega = jitter * 0.35;
+      b->awake = true; b->stillTicks = 0;
+      launched++;
+    }
+    list = std::move(keep);
+  }
+
+  void launchBlastSolidFragments(const std::vector<BlastWave>& waves) {
+    if (waves.empty()) return;
+    computeGrounded();
+    int launched = 0;
+    launchBlastSolidFragmentsFrom(L->stoneComponents, waves, launched);
+    launchBlastSolidFragmentsFrom(L->plantComponents, waves, launched);
+    launchBlastSolidFragmentsFrom(L->iceComponents, waves, launched);
+    if (launched > 0) L->groundDirty = true;
+  }
+
   void finishBlasts(BlastBatch& bb) {
     if (!bb.any) return;
     finishErasedBodies(bb.dirtyBodies, L->bodyCells);
     splitRigidAfterErase(L->stoneComponents, bb.erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, bb.erasedIce, L->nextIceId, true);
     if (bb.erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    launchBlastSolidFragments(bb.gasShockwaves);
     for (auto& pr : bb.tntAftermath) if (grid[pr.first] == EMPTY) { writeGridIndex(pr.first, pr.second); vacatedStamp[pr.first] = tick; }
     pushBlastGasesOutward(bb.gasShockwaves);
     int gasX0 = bb.minX - BLAST_GAS_SEARCH_CAP, gasY0 = bb.minY - BLAST_GAS_SEARCH_CAP;

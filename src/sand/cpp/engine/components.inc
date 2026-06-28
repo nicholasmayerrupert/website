@@ -33,10 +33,10 @@
       uint8_t upper = grid[above];
       if (!isBearingMaterial(upper)) return false;
       uint8_t lower = grid[below];
-      // Powders support other bearing loose cells, but they are pass-through grains
-      // for rigid solids. Rigid-on-powder is handled by moveRigidAssemblies with
-      // downward displacement, not by marking the rigid component grounded at the
-      // powder surface.
+      // Powders support other bearing loose cells and can settle rigid solids, but
+      // they never push a rigid solid upward. Rigid-on-powder is handled by
+      // moveRigidAssemblies with one-way granular support/displacement, not by
+      // marking the rigid component grounded at the powder surface.
       if (MAT_KIND[lower] == K_POWDER && isRigidMaterial(upper)) return false;
       return true;
     };
@@ -812,16 +812,19 @@
       return true;
     };
 
-    // measureLiquidImmersion returns via out-params; returns false if "null".
-    auto measureLiquidImmersion = [&](std::unordered_set<int>& cells, int& wetCells, int& exposedCells, int& bottomExposed, int& bottomMedium, double& mediumDensityOut) -> bool {
-      wetCells = 0; exposedCells = 0; bottomExposed = 0; bottomMedium = 0;
+    // measureLooseImmersion returns via out-params; returns false if "null".
+    auto measureLooseImmersion = [&](std::unordered_set<int>& cells, int& wetCells, int& exposedCells, int& bottomExposed, int& bottomMedium, int& bottomLiquid, double& mediumDensityOut) -> bool {
+      wetCells = 0; exposedCells = 0; bottomExposed = 0; bottomMedium = 0; bottomLiquid = 0;
       double mediumDensity = 0; int mediumContacts = 0;
       for (int k : cells) {
         int y = k / cols, x = k - y * cols; bool wet = false, exposed = false;
-        if (x > 1 && !cells.count(k - 1)) { exposed = true; uint8_t m = grid[k - 1]; if (isLiquid(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
-        if (x < cols - 2 && !cells.count(k + 1)) { exposed = true; uint8_t m = grid[k + 1]; if (isLiquid(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
+        if (x > 1 && !cells.count(k - 1)) { exposed = true; uint8_t m = grid[k - 1]; if (isBuoyantMedium(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
+        if (x < cols - 2 && !cells.count(k + 1)) { exposed = true; uint8_t m = grid[k + 1]; if (isBuoyantMedium(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
         if (y > 1 && !cells.count(k - cols)) { exposed = true; }
-        if (y < rows - 1 && !cells.count(k + cols)) { exposed = true; bottomExposed++; uint8_t m = grid[k + cols]; if (isLiquid(m)) { wet = true; bottomMedium++; mediumDensity += DENSITY[m]; mediumContacts++; } }
+        if (y < rows - 1 && !cells.count(k + cols)) {
+          exposed = true; bottomExposed++; uint8_t m = grid[k + cols];
+          if (isBuoyantMedium(m)) { wet = true; bottomMedium++; if (isLiquid(m)) bottomLiquid++; mediumDensity += DENSITY[m]; mediumContacts++; }
+        }
         if (exposed) exposedCells++; if (wet) wetCells++;
       }
       if (mediumContacts == 0) return false;
@@ -837,19 +840,20 @@
       for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
       double weight = 0; int xMin = cols, xMax = 0;
       for (int ci : grp->comps) for (int k : all[ci]->cells) { weight += DENSITY[matOf(ci, k)]; int x = k - (k / cols) * cols; if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
-      int wetCells, exposedCells, bottomExposed, bottomMedium; double mediumDensity;
-      // Powders are still displaceable, so assemblies can descend through grains,
-      // but only liquid immersion can generate upward motion.
-      if (!measureLiquidImmersion(cells, wetCells, exposedCells, bottomExposed, bottomMedium, mediumDensity)) { translateAssembly(grp, cells, cols); continue; }
+      int wetCells, exposedCells, bottomExposed, bottomMedium, bottomLiquid; double mediumDensity;
+      // Powders are still displaceable and can support a settled assembly, but
+      // only liquid immersion can generate upward motion.
+      if (!measureLooseImmersion(cells, wetCells, exposedCells, bottomExposed, bottomMedium, bottomLiquid, mediumDensity)) { translateAssembly(grp, cells, cols); continue; }
       double avgDensity = weight / cells.size();
       if (avgDensity > mediumDensity) { translateAssembly(grp, cells, cols); continue; }
       double targetWetCells = exposedCells * (avgDensity / mediumDensity) * BUOY_DRAFT_SCALE;
       double imbalance = wetCells - targetWetCells;
       double band = std::fmax(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
       double upBand = band + BUOY_UP_EXTRA_BAND;
-      bool buoyantSupport = bottomExposed > 0 && bottomMedium >= bottomExposed * BUOY_SUPPORT_FRAC;
+      bool looseSupport = bottomExposed > 0 && bottomMedium >= bottomExposed * BUOY_SUPPORT_FRAC;
+      bool buoyantSupport = bottomExposed > 0 && bottomLiquid >= bottomExposed * BUOY_SUPPORT_FRAC;
       if (imbalance < -band) translateAssembly(grp, cells, cols);
-      else if (imbalance > upBand) { if (buoyantSupport) translateAssembly(grp, cells, -cols); else translateAssembly(grp, cells, cols); }
+      else if (imbalance > upBand) { if (buoyantSupport) translateAssembly(grp, cells, -cols); else if (!looseSupport) translateAssembly(grp, cells, cols); }
     }
   }
 

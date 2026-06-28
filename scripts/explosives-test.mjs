@@ -133,6 +133,29 @@ function blastCrater(M) {
   check(`shockwave shoved the nearby body outward (x ${x0.toFixed(1)} -> ${x1.toFixed(1)})`, x0 > 0 && x1 > x0 + 2);
   e.destroy();
 }
+{
+  // a blast-cut static wood component should become a free wood body and get the
+  // same outward launch as stone/ice debris paths.
+  const e = mk();
+  for (let x = 20; x < 120; x++) e.placeMaterial(x, ROWS - 1, 0, MAT.STONE);
+  for (let y = 45; y < ROWS - 1; y++) e.placeMaterial(72, y, 0, MAT.WOOD);
+  e.placeMaterial(60, 72, 0, MAT.TNT);
+  e.syncComponents();
+  let launched = null;
+  for (let i = 0; i < 90; i++) {
+    e.placeMaterial(61, 72, 1, MAT.FIRE);
+    e.step(i * 16);
+    for (let b = 0; b < e._bodyCount(); b++) {
+      const s = e._bodyState(b);
+      if (s && s.vx > 0.4 && s.vy < 0.4) launched = s;
+    }
+    if (launched) break;
+  }
+  check(`TNT launched a detached static WOOD chunk as a body (bodies ${e._bodyCount()})`, e._bodyCount() > 0);
+  check(`launched WOOD chunk has outward/upward motion (vx ${launched?.vx.toFixed(2)}, vy ${launched?.vy.toFixed(2)})`,
+    launched && launched.vx > 0.4 && launched.vy < 0.4);
+  e.destroy();
+}
 
 // --- each consumed TNT pixel emits one aftermath cell: mostly acrid smoke, some steam/fire ---
 {

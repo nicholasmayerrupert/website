@@ -161,27 +161,35 @@
         b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
         b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
         if (b->awake && !b->boundaryPts.empty()) {
-          // Buoyancy/drag from surrounding liquids. The body's own footprint is
+          // Support/drag from surrounding loose media. The body's own footprint is
           // cleared to EMPTY for the duration of rigidStep, so probing the
-          // boundary cell itself reads air; we instead take the densest liquid
+          // boundary cell itself reads air; we instead take the densest liquid/powder
           // among its 4-neighbours (the medium the body sits IN). A face deep in
           // a medium has wet neighbours; a face above the surface does not — so the
-          // wet fraction rises with depth and gives an Archimedes restoring force
-          // that settles a light body part-submerged in a denser medium rather than
-          // resting on top of it. Powders are displaceable, but they never lift a
-          // body upward; in grains, bodies can only sink.
-          int wet = 0; double densitySum = 0;
+          // wet fraction rises with depth. Liquids may produce true buoyancy
+          // (including upward acceleration); powders can only cancel gravity, never
+          // exceed it, so bodies in grains settle but do not bob/rise.
+          int liquidWet = 0, powderWet = 0; double liquidDensitySum = 0, powderDensitySum = 0;
           for (int bp : b->boundaryPts) {
             worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
             int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
-            double d = buoyantLiquidDensityAt(cx, cy);
-            d = std::fmax(d, buoyantLiquidDensityAt(cx - 1, cy)); d = std::fmax(d, buoyantLiquidDensityAt(cx + 1, cy));
-            d = std::fmax(d, buoyantLiquidDensityAt(cx, cy - 1)); d = std::fmax(d, buoyantLiquidDensityAt(cx, cy + 1));
-            if (d <= 0) continue; wet++; densitySum += d;
+            double ld = buoyantLiquidDensityAt(cx, cy);
+            ld = std::fmax(ld, buoyantLiquidDensityAt(cx - 1, cy)); ld = std::fmax(ld, buoyantLiquidDensityAt(cx + 1, cy));
+            ld = std::fmax(ld, buoyantLiquidDensityAt(cx, cy - 1)); ld = std::fmax(ld, buoyantLiquidDensityAt(cx, cy + 1));
+            double pd = granularMediumDensityAt(cx, cy);
+            pd = std::fmax(pd, granularMediumDensityAt(cx - 1, cy)); pd = std::fmax(pd, granularMediumDensityAt(cx + 1, cy));
+            pd = std::fmax(pd, granularMediumDensityAt(cx, cy - 1)); pd = std::fmax(pd, granularMediumDensityAt(cx, cy + 1));
+            if (ld > 0) { liquidWet++; liquidDensitySum += ld; }
+            if (pd > 0) { powderWet++; powderDensitySum += pd; }
           }
-          if (wet > 0) {
-            double submerged = (double)wet / b->boundaryPts.size(), avgMediumD = densitySum / wet;
-            double supportRatio = (avgMediumD / b->density) * submerged;
+          if (liquidWet > 0 || powderWet > 0) {
+            double liquidSubmerged = (double)liquidWet / b->boundaryPts.size();
+            double powderSubmerged = (double)powderWet / b->boundaryPts.size();
+            double liquidSupport = liquidWet > 0 ? (liquidDensitySum / liquidWet / b->density) * liquidSubmerged : 0;
+            double powderSupport = powderWet > 0 ? (powderDensitySum / powderWet / b->density) * powderSubmerged : 0;
+            double supportRatio = liquidSupport + powderSupport;
+            double maxSupport = powderWet > 0 ? std::fmax(1.0, liquidSupport) : supportRatio;
+            if (supportRatio > maxSupport) supportRatio = maxSupport;
             b->vy -= R_GRAVITY * supportRatio * dt;
             if (std::fabs(supportRatio - 1.0) <= R_BUOY_REST_BAND) {
               b->vy *= R_BUOY_REST_DAMP;
@@ -189,6 +197,7 @@
               if (std::fabs(b->omega) < R_SETTLE_ANG) b->omega = 0;
               b->hadContact = true; // buoyant rest counts as support for sleeping.
             }
+            double submerged = std::fmax(liquidSubmerged, powderSubmerged);
             double drag = std::fmax(0.0, 1 - R_LIQUID_DRAG * submerged);
             b->vx *= drag; b->vy *= drag; b->omega *= std::fmax(0.0, 1 - R_LIQUID_ANG_DRAG * submerged);
           }
@@ -395,14 +404,16 @@
   bool isBodyTerrain(int x, int y, double bodyDensity) {
     (void)bodyDensity;
     int k = y * cols + x; uint8_t m = grid[k];
-    if (isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls; liquids buoy, powders only displace
-    if (m == DRIFTWOOD || m == RIGID) return false;             // free body / drifting wood are not static terrain
+    if (isBodyCell(k)) return false;                            // free bodies collide via body-vs-body, not as static terrain
+    if (isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls; liquid buoys, powder supports one-way
     return isRigidMaterial(m);                                  // stone/plant/ice-group solids incl. new ores & woods
   }
   double buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquid(m) ? DENSITY[m] : 0; }
+  double granularMediumDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return MAT_KIND[m] == K_POWDER ? DENSITY[m] : 0; }
   // Any loose medium is relocatable: a body submerging into liquid or powder
   // displaces it (spilled around the body) rather than being blocked at the surface.
-  // Only liquids provide upward buoyancy; powders are pass-through grains.
+  // Only liquids provide upward buoyancy; powders can support, but only by
+  // cancelling gravity.
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { (void)k; (void)bodyDensity; return isBuoyantMedium(m); }
   // Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
   // through them and they vanish on commit. Keyed off K_GAS so any new gas is
@@ -534,7 +545,7 @@
   // must wake and fall. Must be called while the L->bodies' cells are still in the
   // grid (so other L->bodies count as support); the body's own cells are ignored.
   bool sleepingBodyHasSupport(Body* b, double probe) {
-    if (bodyFloatsOnMedium(b)) return true;
+    if (bodyHasLooseSupport(b)) return true;
     double savedPy = b->py;
     b->py = savedPy + probe;
     bool supported = false;
@@ -612,6 +623,20 @@
       uint8_t m = grid[bk];
       if (isLiquid(m)) mediumBelow++;
       else if (m != EMPTY && !isGas(m)) solidBelow++;         // terrain / another body's cell
+    }
+    return mediumBelow > 0 && mediumBelow > solidBelow;
+  }
+  bool bodyHasLooseSupport(Body* b) {
+    std::unordered_set<int> occ;
+    forEachBodyCell(b, [&](int x, int y) { occ.insert(y * cols + x); });
+    int solidBelow = 0, mediumBelow = 0;
+    for (int k : occ) {
+      int y = k / cols, x = k - y * cols, bk = (y + 1) * cols + x;
+      if (occ.count(bk)) continue;
+      if (y + 1 >= rows) { solidBelow++; continue; }
+      uint8_t m = grid[bk];
+      if (isBuoyantMedium(m)) mediumBelow++;
+      else if (m != EMPTY && !isGas(m)) solidBelow++;
     }
     return mediumBelow > 0 && mediumBelow > solidBelow;
   }

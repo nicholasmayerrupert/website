@@ -350,10 +350,11 @@ for (const dt of [16, 8, 33, 50]) {
   check(`acrid smoke supports a body no more than steam does (${acridBot} ~= ${steamBot})`, Math.abs(acridBot - steamBot) <= 2);
 }
 
-// 9c. Powders are pass-through grains for solids. Solid bodies and assemblies sink
-//     through them to the floor regardless of density, and the displaced powder is
-//     relocated volume-preservingly by the spill BFS (spread out to the free surface)
-//     instead of being deleted or piled in a column on the solid's back.
+// 9c. Powders are one-way support for solids. Heavy bodies/assemblies sink through
+//     them to the floor; lighter bodies settle into the grains without being pushed
+//     upward. Displaced powder is relocated volume-preservingly by the spill BFS
+//     (spread out to the free surface) instead of being deleted or piled in a column
+//     on the solid's back.
 //     Checked for BOTH a free rigid body and a painted static assembly — the two paths
 //     that move a solid through powder.
 {
@@ -404,9 +405,9 @@ for (const dt of [16, 8, 33, 50]) {
     check(`displaced sand raised the surface (surf ${surf1} < initial ${surf0})`, surf1 < surf0);
     e.destroy();
   }
-  { // A light, tall driftwood body still sinks in dense sand. Powders never lift it
-    //   upward; after reaching the floor it can sleep and bake into a static component.
-    console.log('a light driftwood tower sinks through dense sand');
+  { // A light, tall driftwood body settles in dense sand. Powders can stop its
+    //   descent, but never lift it upward; once sleeping it bakes into a component.
+    console.log('a light driftwood tower settles in dense sand');
     const e = mk();
     buildSandPool(e);
     run(e, 200);
@@ -414,9 +415,46 @@ for (const dt of [16, 8, 33, 50]) {
     e.spawnBox(100, 30, 4, 24, DRIFTWOOD);                       // DRIFTWOOD density 0.6 < SAND 1.6
     run(e, 900);
     const bot = matBottom(e, DRIFTWOOD), n = matCount(e, DRIFTWOOD), surf1 = surfaceY(e);
-    check(`driftwood tower sank to the pool floor (bottom ${bot} >= ${floorY - 4})`, bot >= floorY - 4);
-    check(`driftwood tower solidified after sinking (${e._bodyCount()} bodies, ${n} cells)`, e._bodyCount() === idx && n >= 360);
+    check(`driftwood tower settled into sand without reaching the floor (bottom ${bot})`, bot > yTop + 8 && bot < floorY - 30);
+    check(`driftwood tower solidified after settling (${e._bodyCount()} bodies, ${n} cells)`, e._bodyCount() === idx && n >= 360);
     check(`displaced sand raised around the tower (surface ${surf1} < initial ${surf0})`, surf1 < surf0);
+    e.destroy();
+  }
+  { // Baked driftwood keeps supporting later driftwood bodies. Regression for
+    // baked DRIFTWOOD being ignored by terrain collision because moving body cells
+    // use the same material id.
+    console.log('baked driftwood stack supports later driftwood cubes');
+    const e = mk();
+    for (let y = 92; y < floorY; y++) for (let x = 40; x <= 160; x++) e.paintDisc(x, y, 0, SAND, true);
+    run(e, 120);
+    e.spawnBox(100, 60, 6, 6, DRIFTWOOD);
+    run(e, 260);
+    const bodiesAfterFirst = e._bodyCount(), driftwoodAfterFirst = matCount(e, DRIFTWOOD);
+    e.spawnBox(100, 44, 6, 6, DRIFTWOOD);
+    let maxOmega = 0, maxBlocked = 0;
+    for (let i = 0; i < 360; i++) {
+      run(e, 1);
+      for (let b = 0; b < e._bodyCount(); b++) {
+        const s = e._bodyState(b);
+        maxOmega = Math.max(maxOmega, Math.abs(s.omega));
+        maxBlocked = Math.max(maxBlocked, e._bodyBlocked(b));
+      }
+    }
+    const bodiesAfterSecond = e._bodyCount(), driftwoodAfterSecond = matCount(e, DRIFTWOOD);
+    e.spawnBox(100, 28, 6, 6, DRIFTWOOD);
+    for (let i = 0; i < 600; i++) {
+      run(e, 1);
+      for (let b = 0; b < e._bodyCount(); b++) {
+        const s = e._bodyState(b);
+        maxOmega = Math.max(maxOmega, Math.abs(s.omega));
+        maxBlocked = Math.max(maxBlocked, e._bodyBlocked(b));
+      }
+    }
+    const bodiesAfterThird = e._bodyCount(), driftwoodAfterThird = matCount(e, DRIFTWOOD);
+    check(`first driftwood cube baked (${bodiesAfterFirst} bodies, ${driftwoodAfterFirst} cells)`, bodiesAfterFirst === 0 && driftwoodAfterFirst === 144);
+    check(`second driftwood cube baked onto the first (${bodiesAfterSecond} bodies, ${driftwoodAfterSecond} cells)`, bodiesAfterSecond === 0 && driftwoodAfterSecond === 288);
+    check(`third driftwood cube baked onto the stack (${bodiesAfterThird} bodies, ${driftwoodAfterThird} cells)`, bodiesAfterThird === 0 && driftwoodAfterThird === 432);
+    check(`stack never entered persistent blocked-overlap spin (max blocked ${maxBlocked}, max omega ${maxOmega.toFixed(5)})`, maxBlocked === 0 && maxOmega < 1e-6);
     e.destroy();
   }
 }

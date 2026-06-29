@@ -25,6 +25,7 @@
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().
   static const int    BLAST_DEBRIS_CHUNKS = 3;    // physical rubble chunks ejected per blast
+  static const int    BLAST_FORCED_DEBRIS_CHUNKS = 3; // extra generic blast debris, even in open air
   static const int    BLAST_DEBRIS_CAP = 24;      // stop ejecting chunks past this many live bodies. A big TNT chain
                                                   // dumps debris faster than 2x2 chunks can settle+bake, and ~100 live
                                                   // bodies jostling never sleep -> never bake -> grind the solver; this
@@ -154,6 +155,18 @@
     }
   }
 
+  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt) {
+    for (int i = 0; i < count && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
+      double j = whash2(bseed, salt + i, 13);
+      int sx = sx0 + (i * 2 - (count - 1)) * 2;
+      Body* b = spawnBox(sx, sy - 3, 1, 1, debrisMat);
+      if (!b) continue;
+      b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
+      b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
+      b->awake = true; b->stillTicks = 0;
+    }
+  }
+
   // Carve one durability-gated crater centred at (cx,cy) INTO the shared batch (no
   // finalize — that's finishBlasts). A cell at distance d survives iff its DURABILITY
   // exceeds the blast energy there: energy = power*(1 - d/radius). Soft blocks
@@ -221,21 +234,14 @@
       double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
       b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
     }
+    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97);
     // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
     // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
     // can't flood the body solver.
     for (size_t di = 0; di < debrisSources.size() && (int)L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
       uint8_t debrisMat = debrisSources[di].material;
       int src = debrisSources[di].cell, sy = src / cols, sx0 = src - sy * cols;
-      for (int i = 0; i < BLAST_DEBRIS_CHUNKS && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
-        double j = whash2(bseed, (int)di * 17 + i, 13);
-        int sx = sx0 + (i * 2 - (BLAST_DEBRIS_CHUNKS - 1)) * 2; // fan out around that material's destroyed source
-        Body* b = spawnBox(sx, sy - 3, 1, 1, debrisMat);       // a 2x2 chunk launched up + out; it arcs back down and BAKES into rubble
-        if (!b) continue;
-        b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
-        b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
-        b->awake = true; b->stillTicks = 0;
-      }
+      spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17);
     }
   }
 
@@ -341,9 +347,36 @@
     markDirtyRect(gasX0, gasY0, gasX1, gasY1);
   }
 
+  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb) {
+    Layer* src = L;
+    size_t srcAftermath0 = bb.tntAftermath.size();
+    carveBlast(cx, cy, radius, power, bb);
+    size_t srcAftermath1 = bb.tntAftermath.size();
+    if (!bgEnabled || !otherBb) return;
+    Layer* other = (src == &fg) ? &bg : &fg;
+    useLayer(other);
+    size_t otherAftermath0 = otherBb->tntAftermath.size();
+    carveBlast(cx, cy, radius, power, *otherBb);
+    size_t otherAftermath1 = otherBb->tntAftermath.size();
+    otherBb->tntAftermath.insert(otherBb->tntAftermath.end(), bb.tntAftermath.begin() + srcAftermath0, bb.tntAftermath.begin() + srcAftermath1);
+    useLayer(src);
+    bb.tntAftermath.insert(bb.tntAftermath.end(), otherBb->tntAftermath.begin() + otherAftermath0, otherBb->tntAftermath.begin() + otherAftermath1);
+  }
+
+  void finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
+    Layer* src = L;
+    if (bgEnabled && otherBb) {
+      Layer* other = (src == &fg) ? &bg : &fg;
+      useLayer(other);
+      finishBlasts(*otherBb);
+      useLayer(src);
+    }
+    finishBlasts(bb);
+  }
+
   // Single-blast convenience wrapper (one crater, its own finalize).
   void detonate(int cx, int cy, int radius, double power) {
-    BlastBatch bb; carveBlast(cx, cy, radius, power, bb); finishBlasts(bb);
+    BlastBatch bb, otherBb; carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb); finishBlastBatches(bb, &otherBb);
   }
 
   // Step pass (dispatched in step.inc next to the other reactions): light TNT touching
@@ -372,20 +405,20 @@
         lightTnt(k + 1); lightTnt(k - 1); lightTnt(k + cols); lightTnt(k - cols);
       }
     }
-    BlastBatch bb;
+    BlastBatch bb, otherBb;
     // 2) Tick static fuses; carve the expired ones in deterministic (sorted) order.
     if (!L->pendingDetonations.empty()) {
       std::vector<int> fire;
       for (auto& kv : L->pendingDetonations) if (--kv.second <= 0) fire.push_back(kv.first);
       for (int cell : fire) L->pendingDetonations.erase(cell);
       std::sort(fire.begin(), fire.end());
-      for (int cell : fire) carveBlast(cell % cols, cell / cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb);
+      for (int cell : fire) carveBlastAcrossLayers(cell % cols, cell / cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
     }
     // 3) Tick body fuses; an expired TNT body detonates at its centre (the blast
     //    consumes its own cells, so finishErasedBodies removes the now-empty body).
     std::vector<std::pair<int, int>> bodyBlasts;
     for (Body* b : L->bodies) if (b->material == TNT && b->fuseTicks > 0 && --b->fuseTicks <= 0)
       bodyBlasts.push_back({(int)std::lround(b->px), (int)std::lround(b->py)});
-    for (auto& c : bodyBlasts) carveBlast(c.first, c.second, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb);
-    finishBlasts(bb); // one finalize for every crater of this step
+    for (auto& c : bodyBlasts) carveBlastAcrossLayers(c.first, c.second, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
+    finishBlastBatches(bb, &otherBb); // one finalize per layer for every crater of this step
   }

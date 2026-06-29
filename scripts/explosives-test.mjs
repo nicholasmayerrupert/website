@@ -95,7 +95,7 @@ function blastDamagesMaterial(name) {
 {
   const damageNames = [
     'WOOD', 'PINE_WOOD', 'DRIFTWOOD', 'PLANT', 'VINE', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP',
-    'STONE', 'BRICK', 'COPPER_ORE', 'IRON_ORE', 'COAL_ORE', 'GOLD_ORE', 'ICE',
+    'STONE', 'BRICK', 'COPPER_ORE', 'IRON_ORE', 'COAL_ORE', 'GOLD_ORE', 'DEBRIS', 'ICE',
     'SAND', 'DIRT', 'SNOW', 'GUNPOWDER',
   ];
   for (const name of damageNames) {
@@ -143,16 +143,34 @@ function blastDamagesMaterial(name) {
   e.syncComponents();
   const items0 = e.itemCount();
   let maxBodies = 0, particlesSeen = false;
+  let sawGenericDebris = false;
   for (let i = 0; i < 60; i++) {
     e.placeMaterial(71, 49, 1, MAT.FIRE);
     e.step(i * 16);
     maxBodies = Math.max(maxBodies, e._bodyCount());
+    for (let b = 0; b < e._bodyCount(); b++) if (e._bodyMaterial(b) === MAT.DEBRIS) sawGenericDebris = true;
     if (e.itemCount() > items0 + 5) particlesSeen = true;
   }
   check(`blast scattered cosmetic particles (items ${items0} -> peak)`, particlesSeen);
   check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
+  check(`blast always ejected generic DEBRIS chunks`, sawGenericDebris);
   for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle + bake
   check(`debris chunks baked back into static rubble (bodies now ${e._bodyCount()})`, e._bodyCount() <= 1);
+  e.destroy();
+}
+{
+  const e = mk();
+  const cx = 70, cy = 55;
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  e.syncComponents();
+  let sawGenericDebris = false;
+  for (let i = 0; i < 80; i++) {
+    e.placeMaterial(cx + 1, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    for (let b = 0; b < e._bodyCount(); b++) if (e._bodyMaterial(b) === MAT.DEBRIS) sawGenericDebris = true;
+    if (count(e.getGrid(), MAT.TNT) === 0 && sawGenericDebris) break;
+  }
+  check(`open-air TNT still ejects generic DEBRIS chunks`, sawGenericDebris);
   e.destroy();
 }
 {
@@ -241,6 +259,40 @@ function blastDamagesMaterial(name) {
   check(`blast emits some steam (peak ${peak.steam})`, peak.steam > 7);
   check(`blast emits some fire (peak ${peak.fire})`, peak.fire > 10);
   check(`blast shockwave pushes emitted gas outward (avg distance ${peakDist.avg.toFixed(1)})`, peakDist.avg > 14);
+  e.destroy();
+}
+
+// --- one TNT blast damages the opposite layer and mirrors aftermath gas there ---
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 70, top = 56;
+  for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) {
+    e.placeMaterial(x, y, 0, MAT.STONE);
+    e.placeMaterial(x, y, 0, MAT.STONE, 1);
+  }
+  e.placeMaterial(cx, top - 1, 0, MAT.TNT);
+  e.syncComponentsLayer(0);
+  e.syncComponentsLayer(1);
+  const fgStone0 = countInBox(e.getGrid(), MAT.STONE, cx, top - 1, 18);
+  const bgStone0 = countInBox(e.getGridBg(), MAT.STONE, cx, top - 1, 18);
+  let fgStone1 = fgStone0, bgStone1 = bgStone0, fgGas = 0, bgGas = 0, tntLeft = 1;
+  for (let i = 0; i < 90; i++) {
+    e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE);
+    e.step(i * 16);
+    tntLeft = count(e.getGrid(), MAT.TNT);
+    if (tntLeft === 0) {
+      fgStone1 = countInBox(e.getGrid(), MAT.STONE, cx, top - 1, 18);
+      bgStone1 = countInBox(e.getGridBg(), MAT.STONE, cx, top - 1, 18);
+      fgGas = countAny(e.getGrid(), AFTERMATH);
+      bgGas = countAny(e.getGridBg(), AFTERMATH);
+      break;
+    }
+  }
+  check(`cross-layer TNT blast consumed foreground TNT`, tntLeft === 0);
+  check(`cross-layer TNT blast carved foreground stone (${fgStone0} -> ${fgStone1})`, fgStone1 < fgStone0);
+  check(`cross-layer TNT blast carved background stone (${bgStone0} -> ${bgStone1})`, bgStone1 < bgStone0);
+  check(`cross-layer TNT blast emitted gas in both layers (fg ${fgGas}, bg ${bgGas})`, fgGas > 0 && bgGas > 0);
   e.destroy();
 }
 

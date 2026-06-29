@@ -153,11 +153,50 @@
     }
   }
 
+  bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid) {
+    if (cells.empty()) return false;
+    double density = DENSITY[material];
+    std::unordered_set<int> footprint; footprint.reserve(cells.size() * 2);
+    for (auto& c : cells) {
+      int x = c.first, y = c.second;
+      if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows - 1) return false;
+      int k = I(x, y);
+      footprint.insert(k);
+      if (!footprintAlreadySolid && !canBodyOccupy(grid[k], k, density)) return false;
+    }
+    static const int OFFS[4] = {-1, 1, 0, 0};
+    static const int YOFFS[4] = {0, 0, -1, 1};
+    for (auto& c : cells) {
+      int x = c.first, y = c.second;
+      for (int i = 0; i < 4; i++) {
+        int nx = x + OFFS[i], ny = y + YOFFS[i];
+        if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1) continue;
+        int nk = I(nx, ny);
+        if (footprint.count(nk)) continue;
+        if (canBodyOccupy(grid[nk], nk, density)) return true;
+      }
+    }
+    return false;
+  }
+
+  std::vector<std::pair<int, int>> blastBoxCells(int cx, int cy, int halfW, int halfH) {
+    std::vector<std::pair<int, int>> cells;
+    cells.reserve((size_t)imax(0, 2 * halfW) * imax(0, 2 * halfH));
+    for (int dx = -halfW; dx < halfW; dx++)
+      for (int dy = -halfH; dy < halfH; dy++) {
+        int x = cx + dx, y = cy + dy;
+        if (x >= 1 && x < cols - 1 && y >= 1 && y < rows - 1) cells.push_back({x, y});
+      }
+    return cells;
+  }
+
   void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb) {
     for (int i = 0; i < count && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
       double j = whash2(bseed, salt + i, 13);
       int sx = sx0 + (i * 2 - (count - 1)) * 2;
-      Body* b = spawnBox(sx, sy - 3, 1, 1, debrisMat);
+      std::vector<std::pair<int, int>> cells = blastBoxCells(sx, sy - 3, 1, 1);
+      if (!blastBodyCandidateHasEscape(cells, debrisMat, false)) continue;
+      Body* b = finishSpawn(cells, debrisMat);
       if (!b) continue;
       b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
       b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
@@ -306,6 +345,9 @@
       for (int k : comp.cells) {
         int y = k / cols, x = k - y * cols;
         cells.push_back({x, y});
+      }
+      if (!blastBodyCandidateHasEscape(cells, mat, true)) { keep.push_back(std::move(comp)); continue; }
+      for (int k : comp.cells) {
         writeGridIndex(k, EMPTY);
       }
       Body* b = spawnBodyImpl(cells, mat, DENSITY[mat]);

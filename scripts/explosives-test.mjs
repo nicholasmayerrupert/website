@@ -174,6 +174,31 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 {
+  // Buried TNT may eject debris into the carved cavity, but no physical chunk should
+  // be born fully embedded in the surrounding stone.
+  const e = mk();
+  const cx = 70, cy = 68;
+  for (let y = 20; y < ROWS - 1; y++) for (let x = 20; x < 120; x++) {
+    if (x >= cx && x <= cx + 3 && y === cy) continue; // short ignition tunnel
+    e.placeMaterial(x, y, 0, MAT.STONE);
+  }
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  e.syncComponents();
+  const empty0 = carvedInBox(e.getGrid(), cx, cy, 14);
+  let peakBodies = 0, maxBlocked = 0, blasted = false;
+  for (let i = 0; i < 90; i++) {
+    e.placeMaterial(cx + 2, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (carvedInBox(e.getGrid(), cx, cy, 14) - empty0 > 20) blasted = true;
+    if (!blasted) continue;
+    peakBodies = Math.max(peakBodies, e._bodyCount());
+    for (let b = 0; b < e._bodyCount(); b++) maxBlocked = Math.max(maxBlocked, e._bodyBlocked(b));
+  }
+  check(`buried TNT still ejected passable debris (peak bodies ${peakBodies})`, peakBodies > 0);
+  check(`buried TNT did not spawn debris inside solid walls (max blocked ${maxBlocked})`, maxBlocked === 0);
+  e.destroy();
+}
+{
   // a free body within the blast radius is shoved outward (away from the centre)
   const e = mk();
   for (let x = 20; x < 120; x++) e.placeMaterial(x, ROWS - 1, 0, MAT.STONE); // floor

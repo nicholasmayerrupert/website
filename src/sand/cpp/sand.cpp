@@ -18,7 +18,7 @@
 //   rigid.inc      free rigid bodies                     (rigid2d.js + rigidBodies.js)
 //   abi.inc        extern "C" exports consumed by engineWasm.js
 //
-// Material ids MUST stay in lockstep with src/sand/materials.js.
+// Material ids MUST stay in lockstep with src/sand/materials.schema.json.
 
 #include "engine/common.hpp"
 

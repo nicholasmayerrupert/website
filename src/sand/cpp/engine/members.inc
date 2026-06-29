@@ -344,6 +344,9 @@
   inline bool isBlockingForItem(uint8_t m) { return isBlockingForPlayer(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
   inline bool canPlaceInto(uint8_t existing) { return isEmptyMaterial(existing) || isGasMaterial(existing); }
+  // Compatibility aliases only. New code should prefer the explicit material
+  // model helpers: isGasMaterial, isLiquidMaterial, isLooseSolidMaterial,
+  // isRigidMaterialClass, isComponentMaterial, and componentGroupOf.
   inline bool isRigidMaterial(uint8_t m) { return isRigidMaterialClass(m); } // legacy name
   inline bool isLiquid(uint8_t m) { return isLiquidMaterial(m); }            // legacy name
   inline bool isGas(uint8_t m) { return isGasMaterial(m); }                  // legacy name
@@ -354,6 +357,8 @@
   // body keeps an invisible cell that still collides/grounds — sand floats on the
   // hole and powders/liquids won't pass. Keyed on group, not material id, so new
   // ores/blocks (sandstone, brick, …) are covered with no edit here.
+  // Compatibility aliases only. New code should prefer componentGroupOf plus the
+  // explicit component helpers above.
   inline bool isStoneComp(uint8_t m) { return isStoneComponentMaterial(m); } // legacy name
   inline bool isIceComp(uint8_t m) { return isIceComponentMaterial(m); }     // legacy name
   // Flora-type material classification: which plant-family materials act as a tree

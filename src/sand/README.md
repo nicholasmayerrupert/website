@@ -66,8 +66,10 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   before creating an engine. The grid lives in wasm memory (zero-copy view).
 - `materials.schema.json` — the single source of truth for material identity
   (ids, kinds, density, mobility, colors, render params). Run `npm run generate`
-  to regenerate `materials.generated.js` and `cpp/engine/materials.generated.hpp`.
+  to emit `materials.generated.js` and `cpp/engine/materials.generated.hpp`.
 - `materials.js` — re-exports the generated registry and derives `MAT.<NAME>`.
+- `MATERIAL_MODEL.md` — explains material IDs, classes, kinds, flags, component
+  groups, and free-body ownership.
 - `game/createSandGame.js` — the framework-agnostic browser shell. It creates the
   canvas, hands it to the engine for a WebGL2 context, runs the RAF/fixed-step
   loop, forwards DOM events (`engine.inputKey/inputPointer/...`), drives
@@ -232,9 +234,11 @@ jump gating, run+friction, and fixed-input determinism. Shared helpers live in
 
 ## Adding a material
 
-Add the id, color, density, kind, etc. as an entry in `materials.schema.json`,
-then run `npm run generate` (regenerates the JS + C++ tables) and rebuild the
-wasm. If it moves in a way no existing kind covers, or reacts with other
+`materials.schema.json` is the source of truth for material identity. Add the id,
+color, density, kind, etc. there, then run `npm run generate`; it emits
+`materials.generated.js` and `cpp/engine/materials.generated.hpp`. Rebuild the
+wasm after changing the C++ tables. If it moves in a way no existing kind covers,
+or reacts with other
 materials, add that to the relevant `.inc` file. Ignition, dissolving, grounding,
 and component registration are all driven off the schema `flags`/`componentGroup`,
 so a material that reuses existing physics needs only a schema entry. Bumping past

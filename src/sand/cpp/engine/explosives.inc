@@ -24,12 +24,10 @@
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().
-  static const int    BLAST_DEBRIS_CHUNKS = 3;    // physical rubble chunks ejected per blast
-  static const int    BLAST_FORCED_DEBRIS_CHUNKS = 3; // extra generic blast debris, even in open air
-  static const int    BLAST_DEBRIS_CAP = 24;      // stop ejecting chunks past this many live bodies. A big TNT chain
-                                                  // dumps debris faster than 2x2 chunks can settle+bake, and ~100 live
-                                                  // bodies jostling never sleep -> never bake -> grind the solver; this
-                                                  // bounds the solver cost (the steam/flecks carry the visual scatter).
+  static const int    BLAST_DEBRIS_CHUNKS = 2;    // physical rubble chunks ejected per blast
+  static const int    BLAST_FORCED_DEBRIS_CHUNKS = 2; // extra generic blast debris, even in open air
+  static const int    BLAST_DEBRIS_STEP_CAP = 5;  // max chunks a same-tick blast wave can add per layer
+  static const int    BLAST_DEBRIS_CAP = 96;      // hard live-body solver ceiling; per-step cap keeps chains paced
   static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
   static constexpr double BLAST_PARTICLE_SPEED = 2.6; // cosmetic fleck speed
   static const int    BLAST_PARTICLE_LIFE = 26;
@@ -54,7 +52,7 @@
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
-    int particles = 0;
+    int particles = 0, debrisSpawned = 0;
     bool any = false;
   };
 
@@ -155,8 +153,8 @@
     }
   }
 
-  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt) {
-    for (int i = 0; i < count && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
+  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb) {
+    for (int i = 0; i < count && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
       double j = whash2(bseed, salt + i, 13);
       int sx = sx0 + (i * 2 - (count - 1)) * 2;
       Body* b = spawnBox(sx, sy - 3, 1, 1, debrisMat);
@@ -164,6 +162,7 @@
       b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
       b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
       b->awake = true; b->stillTicks = 0;
+      bb.debrisSpawned++;
     }
   }
 
@@ -234,14 +233,14 @@
       double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
       b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
     }
-    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97);
+    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
     // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
     // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
     // can't flood the body solver.
-    for (size_t di = 0; di < debrisSources.size() && (int)L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
+    for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
       uint8_t debrisMat = debrisSources[di].material;
       int src = debrisSources[di].cell, sy = src / cols, sx0 = src - sy * cols;
-      spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17);
+      spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb);
     }
   }
 
@@ -291,12 +290,12 @@
     return true;
   }
 
-  void launchBlastSolidFragmentsFrom(std::vector<Comp>& list, const std::vector<BlastWave>& waves, int& launched) {
+  void launchBlastSolidFragmentsFrom(std::vector<Comp>& list, const std::vector<BlastWave>& waves, BlastBatch& bb, int& launched) {
     if (list.empty() || waves.empty()) return;
     std::vector<Comp> keep; keep.reserve(list.size());
     for (auto& comp : list) {
       double ux = 0, uy = 0, strength = 0; uint32_t seed = 0;
-      if (comp.grounded || launched >= BLAST_DEBRIS_CAP || (int)L->bodies.size() >= BLAST_DEBRIS_CAP ||
+      if (comp.grounded || bb.debrisSpawned >= BLAST_DEBRIS_STEP_CAP || (int)L->bodies.size() >= BLAST_DEBRIS_CAP ||
           !blastInfluenceOnComponent(comp, waves, ux, uy, strength, seed)) {
         keep.push_back(std::move(comp));
         continue;
@@ -317,18 +316,18 @@
       b->vy = uy * speed - 0.9 * strength;
       b->omega = jitter * 0.35;
       b->awake = true; b->stillTicks = 0;
-      launched++;
+      bb.debrisSpawned++; launched++;
     }
     list = std::move(keep);
   }
 
-  void launchBlastSolidFragments(const std::vector<BlastWave>& waves) {
-    if (waves.empty()) return;
+  void launchBlastSolidFragments(BlastBatch& bb) {
+    if (bb.gasShockwaves.empty()) return;
     computeGrounded();
     int launched = 0;
-    launchBlastSolidFragmentsFrom(L->stoneComponents, waves, launched);
-    launchBlastSolidFragmentsFrom(L->plantComponents, waves, launched);
-    launchBlastSolidFragmentsFrom(L->iceComponents, waves, launched);
+    launchBlastSolidFragmentsFrom(L->stoneComponents, bb.gasShockwaves, bb, launched);
+    launchBlastSolidFragmentsFrom(L->plantComponents, bb.gasShockwaves, bb, launched);
+    launchBlastSolidFragmentsFrom(L->iceComponents, bb.gasShockwaves, bb, launched);
     if (launched > 0) L->groundDirty = true;
   }
 
@@ -338,7 +337,7 @@
     splitRigidAfterErase(L->stoneComponents, bb.erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, bb.erasedIce, L->nextIceId, true);
     if (bb.erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
-    launchBlastSolidFragments(bb.gasShockwaves);
+    launchBlastSolidFragments(bb);
     for (auto& pr : bb.tntAftermath) if (grid[pr.first] == EMPTY) { writeGridIndex(pr.first, pr.second); vacatedStamp[pr.first] = tick; }
     pushBlastGasesOutward(bb.gasShockwaves);
     int gasX0 = bb.minX - BLAST_GAS_SEARCH_CAP, gasY0 = bb.minY - BLAST_GAS_SEARCH_CAP;

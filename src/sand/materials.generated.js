@@ -15,6 +15,15 @@ export const KIND = {
   FREE_RIGID: 5,
 };
 
+// Broad gameplay/physics class (mirrors C++ enum MaterialClass / MC_*).
+export const MC = {
+  NONE: 0,
+  GAS: 1,
+  SOLID: 2,
+  RIGID: 3,
+  LIQUID: 4,
+};
+
 // Behavior-flag bitmasks (mirrors C++ MF_* constants). OR together per material.
 export const MF = {
   flammable: 1,
@@ -51,46 +60,47 @@ export const TT = {
 // The material registry. Each entry fully distinguishes one material across the
 // whole simulation AND the renderer.
 export const MATERIALS = [
-  { id: 0, name: 'EMPTY', kind: KIND.NONE, density: 0, looseSorted: false, mobility: 0, color: 0x00000000, textureAmp: 0, durability: 0, renderAnim: 'none' },
-  { id: 1, name: 'SAND', kind: KIND.POWDER, density: 1.6, looseSorted: true, mobility: 1, color: 0x7978c8e6, textureAmp: 7, durability: 2, renderAnim: 'none' },
-  { id: 2, name: 'WATER', kind: KIND.LIQUID, density: 1, looseSorted: true, mobility: 1, color: 0x66ffaa78, textureAmp: 3, durability: 0, renderAnim: 'none' },
-  { id: 3, name: 'STONE', kind: KIND.COMPONENT, density: 2.6, looseSorted: false, mobility: 0, color: 0xb3968c8c, textureAmp: 8, durability: 8, renderAnim: 'none' },
-  { id: 4, name: 'OIL', kind: KIND.LIQUID, density: 0.8, looseSorted: true, mobility: 1, color: 0x8c1c4869, textureAmp: 4, durability: 0, renderAnim: 'none' },
-  { id: 5, name: 'FIRE', kind: KIND.GAS, density: 0, looseSorted: false, mobility: 0, color: 0xb8226cff, textureAmp: 0, durability: 0, renderAnim: 'fire' },
-  { id: 6, name: 'STEAM', kind: KIND.GAS, density: 0, looseSorted: false, mobility: 0, color: 0x42ffe6d2, textureAmp: 0, durability: 0, renderAnim: 'steam' },
-  { id: 7, name: 'SEED', kind: KIND.COMPONENT, density: 0.5, looseSorted: false, mobility: 0, color: 0xc7162e58, textureAmp: 5, durability: 2, renderAnim: 'none' },
-  { id: 8, name: 'WOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc2234c80, textureAmp: 7, durability: 4, renderAnim: 'none' },
-  { id: 9, name: 'PLANT', kind: KIND.COMPONENT, density: 0.4, looseSorted: false, mobility: 0, color: 0xa354aa5b, textureAmp: 9, durability: 2, renderAnim: 'none' },
-  { id: 10, name: 'ACID', kind: KIND.LIQUID, density: 1.1, looseSorted: true, mobility: 1, color: 0x8020ff80, textureAmp: 4, durability: 0, renderAnim: 'none' },
-  { id: 11, name: 'LAVA', kind: KIND.LIQUID, density: 2.8, looseSorted: true, mobility: 0.35, color: 0xc81050ff, textureAmp: 0, durability: 0, renderAnim: 'lava' },
-  { id: 12, name: 'ICE', kind: KIND.COMPONENT, density: 0.9, looseSorted: false, mobility: 0, color: 0x90fff0c0, textureAmp: 5, durability: 5, renderAnim: 'none' },
-  { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, density: 1.4, looseSorted: false, mobility: 0, color: 0xff8a725e, textureAmp: 6, durability: 10, renderAnim: 'none' },
-  { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc26e7d8c, textureAmp: 7, durability: 4, renderAnim: 'none' },
-  { id: 15, name: 'DIRT', kind: KIND.POWDER, density: 1.5, looseSorted: true, mobility: 1, color: 0xc8305278, textureAmp: 7, durability: 2, renderAnim: 'none' },
-  { id: 16, name: 'SNOW', kind: KIND.POWDER, density: 0.4, looseSorted: true, mobility: 1, color: 0xe0faf2eb, textureAmp: 4, durability: 1, renderAnim: 'none' },
-  { id: 17, name: 'MUD', kind: KIND.POWDER, density: 1.7, looseSorted: true, mobility: 1, color: 0xd02a3a4a, textureAmp: 5, durability: 2, renderAnim: 'none' },
-  { id: 18, name: 'CLAY', kind: KIND.COMPONENT, density: 2, looseSorted: false, mobility: 0, color: 0xb34868b2, textureAmp: 5, durability: 6, renderAnim: 'none' },
-  { id: 19, name: 'SANDSTONE', kind: KIND.COMPONENT, density: 2.3, looseSorted: false, mobility: 0, color: 0xb382b4d2, textureAmp: 7, durability: 6, renderAnim: 'none' },
-  { id: 20, name: 'MOSS', kind: KIND.COMPONENT, density: 0.9, looseSorted: false, mobility: 0, color: 0xb33e7856, textureAmp: 8, durability: 3, renderAnim: 'none' },
-  { id: 21, name: 'COPPER_ORE', kind: KIND.COMPONENT, density: 2.7, looseSorted: false, mobility: 0, color: 0xb3466eaf, textureAmp: 8, durability: 10, renderAnim: 'none' },
-  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, density: 2.8, looseSorted: false, mobility: 0, color: 0xb3788ca0, textureAmp: 8, durability: 14, renderAnim: 'none' },
-  { id: 23, name: 'COAL_ORE', kind: KIND.COMPONENT, density: 2.6, looseSorted: false, mobility: 0, color: 0xb3555050, textureAmp: 8, durability: 9, renderAnim: 'none' },
-  { id: 24, name: 'GOLD_ORE', kind: KIND.COMPONENT, density: 3, looseSorted: false, mobility: 0, color: 0xb35aafc8, textureAmp: 8, durability: 12, renderAnim: 'none' },
-  { id: 25, name: 'BRICK', kind: KIND.COMPONENT, density: 2.4, looseSorted: false, mobility: 0, color: 0xc8374696, textureAmp: 4, durability: 12, renderAnim: 'none' },
-  { id: 26, name: 'PINE_WOOD', kind: KIND.COMPONENT, density: 0.6, looseSorted: false, mobility: 0, color: 0xc21e3a5a, textureAmp: 6, durability: 4, renderAnim: 'none' },
-  { id: 27, name: 'CACTUS', kind: KIND.COMPONENT, density: 0.7, looseSorted: false, mobility: 0, color: 0xc23c7846, textureAmp: 6, durability: 3, renderAnim: 'none' },
-  { id: 28, name: 'MUSH_STEM', kind: KIND.COMPONENT, density: 0.5, looseSorted: false, mobility: 0, color: 0xb0afc8d2, textureAmp: 6, durability: 2, renderAnim: 'none' },
-  { id: 29, name: 'MUSH_CAP', kind: KIND.COMPONENT, density: 0.45, looseSorted: false, mobility: 0, color: 0xb83237b4, textureAmp: 8, durability: 2, renderAnim: 'none' },
-  { id: 30, name: 'VINE', kind: KIND.COMPONENT, density: 0.4, looseSorted: false, mobility: 0, color: 0xa32d6e3c, textureAmp: 9, durability: 1, renderAnim: 'none' },
-  { id: 31, name: 'ACRID_SMOKE', kind: KIND.GAS, density: 0, looseSorted: false, mobility: 0, color: 0x6030c8d8, textureAmp: 0, durability: 0, renderAnim: 'steam' },
-  { id: 32, name: 'SALT', kind: KIND.POWDER, density: 1.5, looseSorted: true, mobility: 1, color: 0xe8f2f8f8, textureAmp: 4, durability: 1, renderAnim: 'none' },
-  { id: 33, name: 'BRINE', kind: KIND.LIQUID, density: 1.05, looseSorted: true, mobility: 1, color: 0x66c0c890, textureAmp: 3, durability: 0, renderAnim: 'none' },
-  { id: 34, name: 'GUNPOWDER', kind: KIND.POWDER, density: 1.2, looseSorted: true, mobility: 1, color: 0xc84a4a52, textureAmp: 6, durability: 1, renderAnim: 'none' },
-  { id: 35, name: 'TNT', kind: KIND.COMPONENT, density: 1.6, looseSorted: false, mobility: 0, color: 0xc82838cc, textureAmp: 4, durability: 3, renderAnim: 'none' },
+  { id: 0, name: 'EMPTY', kind: KIND.NONE, materialClass: MC.NONE, density: 0, looseSorted: false, mobility: 0, color: 0x00000000, textureAmp: 0, durability: 0, renderAnim: 'none' },
+  { id: 1, name: 'SAND', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.6, looseSorted: true, mobility: 1, color: 0x7978c8e6, textureAmp: 7, durability: 2, renderAnim: 'none' },
+  { id: 2, name: 'WATER', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 1, looseSorted: true, mobility: 1, color: 0x66ffaa78, textureAmp: 3, durability: 0, renderAnim: 'none' },
+  { id: 3, name: 'STONE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, color: 0xb3968c8c, textureAmp: 8, durability: 8, renderAnim: 'none' },
+  { id: 4, name: 'OIL', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 0.8, looseSorted: true, mobility: 1, color: 0x8c1c4869, textureAmp: 4, durability: 0, renderAnim: 'none' },
+  { id: 5, name: 'FIRE', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, color: 0xb8226cff, textureAmp: 0, durability: 0, renderAnim: 'fire' },
+  { id: 6, name: 'STEAM', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, color: 0x42ffe6d2, textureAmp: 0, durability: 0, renderAnim: 'steam' },
+  { id: 7, name: 'SEED', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, color: 0xc7162e58, textureAmp: 5, durability: 2, renderAnim: 'none' },
+  { id: 8, name: 'WOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, color: 0xc2234c80, textureAmp: 7, durability: 4, renderAnim: 'none' },
+  { id: 9, name: 'PLANT', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, color: 0xa354aa5b, textureAmp: 9, durability: 2, renderAnim: 'none' },
+  { id: 10, name: 'ACID', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 1.1, looseSorted: true, mobility: 1, color: 0x8020ff80, textureAmp: 4, durability: 0, renderAnim: 'none' },
+  { id: 11, name: 'LAVA', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 2.8, looseSorted: true, mobility: 0.35, color: 0xc81050ff, textureAmp: 0, durability: 0, renderAnim: 'lava' },
+  { id: 12, name: 'ICE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, color: 0x90fff0c0, textureAmp: 5, durability: 5, renderAnim: 'none' },
+  { id: 13, name: 'RIGID', kind: KIND.FREE_RIGID, materialClass: MC.RIGID, density: 1.4, looseSorted: false, mobility: 0, color: 0xff8a725e, textureAmp: 6, durability: 10, renderAnim: 'none' },
+  { id: 14, name: 'DRIFTWOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, color: 0xc26e7d8c, textureAmp: 7, durability: 4, renderAnim: 'none' },
+  { id: 15, name: 'DIRT', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.5, looseSorted: true, mobility: 1, color: 0xc8305278, textureAmp: 7, durability: 2, renderAnim: 'none' },
+  { id: 16, name: 'SNOW', kind: KIND.POWDER, materialClass: MC.SOLID, density: 0.4, looseSorted: true, mobility: 1, color: 0xe0faf2eb, textureAmp: 4, durability: 1, renderAnim: 'none' },
+  { id: 17, name: 'MUD', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.7, looseSorted: true, mobility: 1, color: 0xd02a3a4a, textureAmp: 5, durability: 2, renderAnim: 'none' },
+  { id: 18, name: 'CLAY', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2, looseSorted: false, mobility: 0, color: 0xb34868b2, textureAmp: 5, durability: 6, renderAnim: 'none' },
+  { id: 19, name: 'SANDSTONE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.3, looseSorted: false, mobility: 0, color: 0xb382b4d2, textureAmp: 7, durability: 6, renderAnim: 'none' },
+  { id: 20, name: 'MOSS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, color: 0xb33e7856, textureAmp: 8, durability: 3, renderAnim: 'none' },
+  { id: 21, name: 'COPPER_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.7, looseSorted: false, mobility: 0, color: 0xb3466eaf, textureAmp: 8, durability: 10, renderAnim: 'none' },
+  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.8, looseSorted: false, mobility: 0, color: 0xb3788ca0, textureAmp: 8, durability: 14, renderAnim: 'none' },
+  { id: 23, name: 'COAL_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, color: 0xb3555050, textureAmp: 8, durability: 9, renderAnim: 'none' },
+  { id: 24, name: 'GOLD_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 3, looseSorted: false, mobility: 0, color: 0xb35aafc8, textureAmp: 8, durability: 12, renderAnim: 'none' },
+  { id: 25, name: 'BRICK', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, color: 0xc8374696, textureAmp: 4, durability: 12, renderAnim: 'none' },
+  { id: 26, name: 'PINE_WOOD', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.6, looseSorted: false, mobility: 0, color: 0xc21e3a5a, textureAmp: 6, durability: 4, renderAnim: 'none' },
+  { id: 27, name: 'CACTUS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.7, looseSorted: false, mobility: 0, color: 0xc23c7846, textureAmp: 6, durability: 3, renderAnim: 'none' },
+  { id: 28, name: 'MUSH_STEM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.5, looseSorted: false, mobility: 0, color: 0xb0afc8d2, textureAmp: 6, durability: 2, renderAnim: 'none' },
+  { id: 29, name: 'MUSH_CAP', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, color: 0xb83237b4, textureAmp: 8, durability: 2, renderAnim: 'none' },
+  { id: 30, name: 'VINE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, color: 0xa32d6e3c, textureAmp: 9, durability: 1, renderAnim: 'none' },
+  { id: 31, name: 'ACRID_SMOKE', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, color: 0x6030c8d8, textureAmp: 0, durability: 0, renderAnim: 'steam' },
+  { id: 32, name: 'SALT', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.5, looseSorted: true, mobility: 1, color: 0xe8f2f8f8, textureAmp: 4, durability: 1, renderAnim: 'none' },
+  { id: 33, name: 'BRINE', kind: KIND.LIQUID, materialClass: MC.LIQUID, density: 1.05, looseSorted: true, mobility: 1, color: 0x66c0c890, textureAmp: 3, durability: 0, renderAnim: 'none' },
+  { id: 34, name: 'GUNPOWDER', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.2, looseSorted: true, mobility: 1, color: 0xc84a4a52, textureAmp: 6, durability: 1, renderAnim: 'none' },
+  { id: 35, name: 'TNT', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.6, looseSorted: false, mobility: 0, color: 0xc82838cc, textureAmp: 4, durability: 3, renderAnim: 'none' },
 ];
 
 // Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++
-// MAT_FLAGS / MAT_CGROUP tables.
+// MAT_CLASS / MAT_FLAGS / MAT_CGROUP tables.
+export const MAT_CLASS = [0, 2, 4, 3, 4, 1, 1, 3, 3, 3, 4, 4, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 2, 4, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0, 8, 0, 9, 12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 

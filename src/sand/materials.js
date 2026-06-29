@@ -1,6 +1,6 @@
 // Material identity for the JS side of the sim/renderer.
 //
-// The registry itself (KIND, MATERIALS) is generated from
+// The registry itself (KIND, MC, MATERIALS) is generated from
 // src/sand/materials.schema.json — the single source shared with the C++ engine.
 // Edit the schema, then run `npm run generate`. To add a material: add a schema
 // entry. If it moves in a way no existing `kind` covers, also add a case to the
@@ -16,9 +16,9 @@
 // density 0 = weightless (air/gas). looseSorted marks materials that participate
 // in density-sorted loose settling (powders + flowing liquids). mobility is the
 // per-tick chance a loose material attempts to move (lava < 1 = viscous).
-import { KIND, MATERIALS } from './materials.generated.js';
+import { KIND, MATERIALS, MAT_CLASS, MC } from './materials.generated.js';
 
-export { KIND, MATERIALS };
+export { KIND, MATERIALS, MAT_CLASS, MC };
 
 // MAT.<NAME> = id, derived from the registry so ids live in exactly one place.
 export const MAT = Object.fromEntries(MATERIALS.map((m) => [m.name, m.id]));

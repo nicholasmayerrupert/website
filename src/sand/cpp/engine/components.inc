@@ -37,7 +37,7 @@
       // they never push a rigid solid upward. Rigid-on-powder is handled by
       // moveRigidAssemblies with one-way granular support/displacement, not by
       // marking the rigid component grounded at the powder surface.
-      if (MAT_KIND[lower] == K_POWDER && isRigidMaterial(upper)) return false;
+      if (isLooseSolidMaterial(lower) && isRigidMaterialClass(upper)) return false;
       return true;
     };
     int sp = 0;
@@ -62,19 +62,19 @@
     // buffer does not spuriously fall (it reconnects when the region streams back in).
     if (L->infinite) {
       for (int y = 1; y < rows; y++) {
-        int kl = y * cols + 1;          if (isRigidMaterial(grid[kl])) groundCellAt(kl, 1);
-        int kr = y * cols + (cols - 2); if (isRigidMaterial(grid[kr])) groundCellAt(kr, cols - 2);
+        int kl = y * cols + 1;          if (isRigidMaterialClass(grid[kl])) groundCellAt(kl, 1);
+        int kr = y * cols + (cols - 2); if (isRigidMaterialClass(grid[kr])) groundCellAt(kr, cols - 2);
       }
       int topBase = cols; // row y = 1
-      for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterial(grid[k])) groundCellAt(k, x); }
+      for (int x = 1; x < cols - 1; x++) { int k = topBase + x; if (isRigidMaterialClass(grid[k])) groundCellAt(k, x); }
     }
     for (int y = rows - 2; y > 0; y--) {
       int rb = y * cols;
       for (int x = 1; x < cols - 1; x++) {
         int k = rb + x;
-        if (MAT_KIND[grid[k]] == K_POWDER) {
+        if (isLooseSolidMaterial(grid[k])) {
           sawPowder = true;
-          if (isLiquid(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k, x);
+          if (isLiquidMaterial(grid[k + cols]) && DENSITY[grid[k + cols]] >= DENSITY[grid[k]]) groundCellAt(k, x);
         }
       }
     }
@@ -83,7 +83,7 @@
       --sp; int k = groundStack[sp], kx = gsx[sp];
       int above = k - cols;
       if (above >= 0 && !groundedCell[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
-      if (isRigidMaterial(grid[k])) {
+      if (isRigidMaterialClass(grid[k])) {
         // Neighbour-row validity ny in [1, rows-1] <=> (k + oy*cols) in [cols, gridLen):
         // a division-free restatement of the original `ny<=0 || ny>=rows` test.
         for (int oy = -1; oy <= 1; oy++) {
@@ -93,7 +93,7 @@
             if (!ox && !oy) continue;
             int nx = kx + ox; if (nx <= 0 || nx >= cols - 1) continue;
             int nk = rb + ox;
-            if (!groundedCell[nk] && isRigidMaterial(grid[nk])) groundCellAt(nk, nx);
+            if (!groundedCell[nk] && isRigidMaterialClass(grid[nk])) groundCellAt(nk, nx);
           }
         }
       }
@@ -181,7 +181,7 @@
         int nk = ny * cols + nx;
         int32_t s = L->seenStamp[nk];
         if (s == vis || s == removedGen) continue;
-        if (!isRigidMaterial(grid[nk])) continue;
+        if (!isRigidMaterialClass(grid[nk])) continue;
         if (s == inN && ++found == need) return true; // all boundary cells reconnected -> not a cut (early out)
         L->seenStamp[nk] = vis; q[qt++] = nk;
       }
@@ -224,8 +224,8 @@
         if (!ox && !oy) continue;
         int nk = (ry + oy) * cols + (rx + ox);
         uint8_t m = grid[nk];
-        if (MAT_KIND[m] == K_POWDER) { gbPowder++; return false; }
-        if (isRigidMaterial(m) && L->seenStamp[nk] != gen && L->seenStamp[nk] != inN) { L->seenStamp[nk] = inN; cgBlobN.push_back(nk); }
+        if (isLooseSolidMaterial(m)) { gbPowder++; return false; }
+        if (isRigidMaterialClass(m) && L->seenStamp[nk] != gen && L->seenStamp[nk] != inN) { L->seenStamp[nk] = inN; cgBlobN.push_back(nk); }
       }
     }
     if ((int)cgBlobN.size() > 1) {  // 0/1 external connection: the blob is a pendant, removing it disconnects nothing else
@@ -402,7 +402,7 @@
         int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
         for (int y = 0; y < rows; y++) {
           int rb = y * cols, mn = rmn[y], mx = rmx[y];
-          for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterial(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
+          for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterialClass(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
           rmn[y] = mn; rmx[y] = mx;
         }
       };
@@ -425,7 +425,7 @@
         Comp* c = compById(lay, i);
         if (c->grounded || (int)c->cells.size() >= CROSS_LAYER_BOND_MIN_CELLS) continue;
         int backed = 0;
-        for (int k : c->cells) if (otherBase[k] && isRigidMaterial(otherGrid[k])) backed++;
+        for (int k : c->cells) if (otherBase[k] && isRigidMaterialClass(otherGrid[k])) backed++;
         if (backed * 2 >= (int)c->cells.size()) { c->grounded = true; for (int k : c->cells) lay.groundedCell[k] = 1; }
       }
     };
@@ -441,7 +441,7 @@
       int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
       for (int y = 0; y < rows; y++) {
         int rb = y * cols, mn = rmn[y], mx = rmx[y];
-        for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterial(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
+        for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterialClass(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
         rmn[y] = mn; rmx[y] = mx;
       }
     };
@@ -461,7 +461,7 @@
       if (fc->grounded) continue;
       for (int k : fc->cells) {
         int bi = bg.cellComp[k];
-        if (bi < 0 || !isRigidMaterial(bg.grid[k])) continue;
+        if (bi < 0 || !isRigidMaterialClass(bg.grid[k])) continue;
         int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
         pairCells[key].push_back(k);
       }
@@ -471,7 +471,7 @@
       if (bc->grounded) continue;
       for (int k : bc->cells) {
         int fi = fg.cellComp[k];
-        if (fi < 0 || !isRigidMaterial(fg.grid[k]) || !compById(fg, fi)->grounded) continue;
+        if (fi < 0 || !isRigidMaterialClass(fg.grid[k]) || !compById(fg, fi)->grounded) continue;
         int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
         pairCells[key].push_back(k);
       }
@@ -633,7 +633,7 @@
         if (ny < 1 || ny >= rows) return false;
         if (own.count(nk)) continue;
         uint8_t below = lay.grid[nk];
-        if (below == EMPTY || isGas(below)) continue;
+        if (below == EMPTY || isGasMaterial(below)) continue;
         bool displaceable = isBuoyantMedium(below);
         if (!displaceable) return false;
         relocate.push_back({0, below}); // dest cell assigned below (after vacated cells are known)
@@ -735,14 +735,14 @@
     auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
       int dy = dir > 0 ? 1 : -1;
       auto componentDisplaceableForAssembly = [&](uint8_t m) {
-        return m == EMPTY || isGas(m) || isBuoyantMedium(m);
+        return m == EMPTY || isGasMaterial(m) || isBuoyantMedium(m);
       };
       for (int k : cells) { int leadK = k + dir; int leadY = leadK / cols; if (leadY < 1 || leadY >= rows) return false; if (cells.count(leadK)) continue; if (!componentDisplaceableForAssembly(grid[leadK])) return false; }
       struct Disp { uint8_t material; int from; };
       std::vector<Disp> displaced; std::vector<int> vacated;
       for (int k : cells) { int leadK = k + dir; uint8_t lead = grid[leadK]; if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK}); if (!cells.count(k - dir)) vacated.push_back(k); }
       int liquidDisplacedCount = 0, powderDisplacedCount = 0;
-      for (auto& d : displaced) { if (isLiquid(d.material)) liquidDisplacedCount++; else if (MAT_KIND[d.material] == K_POWDER) powderDisplacedCount++; }
+      for (auto& d : displaced) { if (isLiquidMaterial(d.material)) liquidDisplacedCount++; else if (isLooseSolidMaterial(d.material)) powderDisplacedCount++; }
       // Liquids and powders are relocated volume-preservingly by a spill BFS
       // (each percolates through its own pool to a free surface cell), exactly like a
       // free body's displacement (spillDisplacedBodyMaterial). A heavy assembly sinking
@@ -768,9 +768,9 @@
         auto runSpill = [&](bool wantPowder, int need, std::vector<int>& out) -> bool {
           if (need <= 0) return true;
           std::unordered_set<int> seen; std::vector<int> queue;
-          auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || seen.count(k)) return false; int y = k / cols, x = k - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false; if (cells.count(k) || movedCells.count(k)) return false; uint8_t m = grid[k]; return m == EMPTY || isLiquid(m) || (wantPowder && MAT_KIND[m] == K_POWDER); };
+          auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || seen.count(k)) return false; int y = k / cols, x = k - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false; if (cells.count(k) || movedCells.count(k)) return false; uint8_t m = grid[k]; return m == EMPTY || isLiquidMaterial(m) || (wantPowder && isLooseSolidMaterial(m)); };
           auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); };
-          for (auto& d : displaced) { bool isPow = MAT_KIND[d.material] == K_POWDER; if (wantPowder ? !isPow : !isLiquid(d.material)) continue; for (int off : offs) enqueue(d.from + off); }
+          for (auto& d : displaced) { bool isPow = isLooseSolidMaterial(d.material); if (wantPowder ? !isPow : !isLiquidMaterial(d.material)) continue; for (int off : offs) enqueue(d.from + off); }
           for (size_t qi = 0; qi < queue.size() && (int)out.size() < need; qi++) {
             int k = queue[qi];
             if (grid[k] == EMPTY) { if (!reserved.count(k)) { reserved.insert(k); out.push_back(k); } continue; }
@@ -804,9 +804,9 @@
       // byte-identical cells while the powder goes to its spill target instead.
       int di = 0, si = 0, pi = 0;
       for (auto& d : displaced) {
-        if (isLiquid(d.material)) { writeGridIndex(liquidTargets[si++], d.material); continue; }
+        if (isLiquidMaterial(d.material)) { writeGridIndex(liquidTargets[si++], d.material); continue; }
         while (di < (int)vacated.size() && grid[vacated[di]] != EMPTY) di++;
-        if (MAT_KIND[d.material] == K_POWDER) { writeGridIndex(powderTargets[pi++], d.material); if (di < (int)vacated.size()) di++; }
+        if (isLooseSolidMaterial(d.material)) { writeGridIndex(powderTargets[pi++], d.material); if (di < (int)vacated.size()) di++; }
         else if (di < (int)vacated.size()) writeGridIndex(vacated[di++], d.material); // gas
       }
       return true;
@@ -823,7 +823,7 @@
         if (y > 1 && !cells.count(k - cols)) { exposed = true; }
         if (y < rows - 1 && !cells.count(k + cols)) {
           exposed = true; bottomExposed++; uint8_t m = grid[k + cols];
-          if (isBuoyantMedium(m)) { wet = true; bottomMedium++; if (isLiquid(m)) bottomLiquid++; mediumDensity += DENSITY[m]; mediumContacts++; }
+          if (isBuoyantMedium(m)) { wet = true; bottomMedium++; if (isLiquidMaterial(m)) bottomLiquid++; mediumDensity += DENSITY[m]; mediumContacts++; }
         }
         if (exposed) exposedCells++; if (wet) wetCells++;
       }

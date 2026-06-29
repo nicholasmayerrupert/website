@@ -10,7 +10,7 @@
   // for the foreground is byte-identical to a single-layer build when the
   // background is idle). transferPass() then reconciles cross-layer powder/liquid
   // flow (P2).
-  bool isLoose(uint8_t m) { return MAT_KIND[m] == K_POWDER || MAT_KIND[m] == K_LIQUID; }
+  bool isLoose(uint8_t m) { return isLooseMedium(m); }
 
   void stepLayer(Layer* layer) {
     useLayer(layer);
@@ -37,15 +37,15 @@
     for (int k : L->prevCompCells) {
       if (compOccStamp[k] == tick) continue;
       if (grid[k] == EMPTY) { next[k] = EMPTY; markCellIndex(k); }
-      else if (!isRigidMaterial(grid[k]) && isRigidMaterial(next[k])) { next[k] = grid[k]; markCellIndex(k); }
+      else if (!isRigidMaterialClass(grid[k]) && isRigidMaterialClass(next[k])) { next[k] = grid[k]; markCellIndex(k); }
     }
     std::swap(L->prevCompCells, L->curCompCells);
     double tC = emscripten_get_now(); perfStepCarry = tC - tX;
 
     for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
-    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (MAT_KIND[grid[rb + x]] == K_POWDER) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (MAT_KIND[grid[rb + x]] == K_POWDER) settleSand(x, y, rb + x); } }
-    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_LIQUID) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_LIQUID) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
-    for (int y = 0; y < rows; y++) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_GAS) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (MAT_KIND[m] != K_GAS) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
+    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (isLooseSolidMaterial(grid[rb + x])) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (isLooseSolidMaterial(grid[rb + x])) settleSand(x, y, rb + x); } }
+    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
+    for (int y = 0; y < rows; y++) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
     double tS = emscripten_get_now(); perfStepSettle = tS - tC;
     std::swap(grid, next); flushLayerGrids();
     if ((tick & 1) == 0) relaxLiquidGaps();
@@ -76,7 +76,7 @@
         if (mx < mn) continue;
         mn = imax(0, mn); mx = imin(cols - 1, mx);
         int rb = y * cols;
-        for (int x = mn; x <= mx; x++) if (isRigidMaterial(g[rb + x])) return true;
+        for (int x = mn; x <= mx; x++) if (isRigidMaterialClass(g[rb + x])) return true;
       }
       return false;
     };
@@ -152,7 +152,7 @@
     // NOT an escape: the in-layer settle declines that lateral move (a 1-deep puddle
     // goes inert; lateral density spread only fires into a lighter LIQUID), so the
     // cell is genuinely stuck and must stay free to transfer cross-layer.
-    if (MAT_KIND[m] == K_LIQUID) for (int i = 0; i < 2; i++) {
+    if (isLiquidMaterial(m)) for (int i = 0; i < 2; i++) {
       int dx = i == 0 ? -1 : 1; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
       int sideK = y * cols + nx;
       if (canSettleInto(g, sideK, m) && canSettleInto(g, sideK + cols, m)) return false;

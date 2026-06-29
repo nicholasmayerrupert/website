@@ -15,6 +15,7 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
 const GAS = new Set([MAT.FIRE, MAT.STEAM, MAT.ACRID_SMOKE]);
 const AFTERMATH = [MAT.ACRID_SMOKE, MAT.STEAM, MAT.FIRE];
 const carvedInBox = (g, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; const v = g[y * COLS + x]; if (v === MAT.EMPTY || GAS.has(v)) n++; } return n; };
+const countInBox = (g, mat, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; if (g[y * COLS + x] === mat) n++; } return n; };
 const countAny = (g, mats) => { let n = 0; for (const v of g) if (mats.includes(v)) n++; return n; };
 const aftermathStats = (g) => ({
   acrid: count(g, MAT.ACRID_SMOKE),
@@ -55,6 +56,29 @@ function blastCrater(M) {
   return { blast, crater, tntLeft };
 }
 
+function blastDamagesMaterial(name) {
+  const e = mk();
+  const M = MAT[name];
+  const cx = 70, top = 70;
+  for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, MAT.STONE);
+  for (let y = top - 20; y < top; y++) for (let x = cx + 6; x <= cx + 22; x++) e.placeMaterial(x, y, 0, M);
+  e.placeMaterial(cx, top - 1, 0, MAT.TNT);
+  e.syncComponents();
+  const before = countInBox(e.getGrid(), M, cx, top - 1, 14);
+  let after = before, consumed = false;
+  for (let i = 0; i < 90; i++) {
+    e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) === 0) {
+      after = countInBox(e.getGrid(), M, cx, top - 1, 14);
+      consumed = true;
+      break;
+    }
+  }
+  e.destroy();
+  return { before, after, consumed };
+}
+
 // --- detonation happens, and the TNT is consumed ---
 {
   const soft = blastCrater(MAT.SANDSTONE); // durability 6
@@ -65,6 +89,19 @@ function blastCrater(M) {
   check(`hard block carves a crater (${hard.crater} cells)`, hard.crater > 0);
   // the headline rule: easier-to-mine (lower durability) blows up from farther out
   check(`soft block blows up MORE than hard (${soft.crater} > ${hard.crater})`, soft.crater > hard.crater * 1.5);
+}
+
+// --- material-class damage coverage: broad blast gate, storage-aware cleanup ---
+{
+  const damageNames = [
+    'WOOD', 'PINE_WOOD', 'DRIFTWOOD', 'PLANT', 'VINE', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP',
+    'STONE', 'BRICK', 'COPPER_ORE', 'IRON_ORE', 'COAL_ORE', 'GOLD_ORE', 'ICE',
+    'SAND', 'DIRT', 'SNOW', 'GUNPOWDER',
+  ];
+  for (const name of damageNames) {
+    const r = blastDamagesMaterial(name);
+    check(`TNT damages ${name} (${r.before} -> ${r.after})`, r.consumed && r.before > 0 && r.after < r.before);
+  }
 }
 
 // --- TNT chains: light one end of a line, the whole line goes ---

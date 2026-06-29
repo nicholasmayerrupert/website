@@ -100,7 +100,7 @@
   // the flood-fill registrar). EMPTY erases. Returns the NUMBER OF CELLS written.
   int placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
     if (mat == EMPTY) return eraseDisc(cx, cy, radius);
-    if (MAT_KIND[mat] != K_COMPONENT) return paintDisc(cx, cy, radius, mat, false);
+    if (!isComponentMaterial(mat)) return paintDisc(cx, cy, radius, mat, false);
     std::unordered_set<int> cells;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue;
       for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
@@ -145,7 +145,7 @@
     int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
     if (p) { px0 = (int)std::floor(p->px); px1 = (int)std::floor(p->px + p->w - 1e-6); py0 = (int)std::floor(p->py); py1 = (int)std::floor(p->py + p->h - 1e-6); }
     const std::vector<std::pair<int, int>>& offs = discOffsets(radius);
-    bool comp = MAT_KIND[mat] == K_COMPONENT;
+    bool comp = isComponentMaterial(mat);
     std::unordered_set<int> cells; int placed = 0;
     for (const auto& o : offs) {
       if (placed >= maxCells) break;
@@ -169,7 +169,7 @@
       py0 = (int)std::floor(p->py);
       py1 = (int)std::floor(p->py + p->h - 1e-6);
     }
-    bool comp = MAT_KIND[mat] == K_COMPONENT;
+    bool comp = isComponentMaterial(mat);
     std::unordered_set<int> cells;
     int placed = 0;
     for (const SurvivalFootprintCell& o : fp.cells) {
@@ -584,7 +584,7 @@
         if (m == EMPTY) creativeMode = CM_ERASE;
         else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
         else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
-        else if (MAT_KIND[m] == K_COMPONENT) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
+        else if (isComponentMaterial(m)) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
         else { creativeMode = CM_PAINT; creativeMaterial = m; }
         // Remember the last SOLID for the CUBE tool so it spawns a body of that material.
         // Any component (stone/ore/brick/ice/TNT, and the plant family: wood/plant/
@@ -592,7 +592,7 @@
         // can't be free bodies (settle would flow a powder body's cells apart). Stone &
         // ice bodies bake into terrain on rest (bodySolidifies); the rest — like the
         // existing driftwood float — stay free bodies (a wood body tumbles/floats forever).
-        if (m == RIGID || MAT_KIND[m] == K_COMPONENT) cubeMaterial = m;
+        if (m == RIGID || isComponentMaterial(m)) cubeMaterial = m;
         break;
       }
       case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; break;
@@ -694,7 +694,7 @@
     if (creativeMode == CM_ERASE) { eraseDisc(cx, cy, BRUSH_ERASE); return; }
     if (creativeMode != CM_PAINT) return;
     uint8_t m = creativeMaterial;
-    if (MAT_KIND[m] == K_POWDER && grid[I(cx, cy)] != EMPTY) return; // don't stack powder on a filled cell
+    if (isLooseSolidMaterial(m) && grid[I(cx, cy)] != EMPTY) return; // don't stack powder on a filled cell
     paintDisc(cx, cy, brushFor(m), m, false);
   }
   // Apply the brush along the LINE from (x0,y0) to (x1,y1) on one layer, so a fast

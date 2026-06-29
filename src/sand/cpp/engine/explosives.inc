@@ -93,7 +93,7 @@
     while (qh < qt) {
       int k = L->groundStack[qh++];
       if (!reservedTargets.count(k) && grid[k] == EMPTY) return k;
-      if (!reservedTargets.count(k) && !isGas(grid[k])) continue;
+      if (!reservedTargets.count(k) && !isGasMaterial(grid[k])) continue;
       int y = k / cols, x = k - y * cols;
       for (auto& off : OFFS) enqueue(x + off[0], y + off[1]);
     }
@@ -113,7 +113,7 @@
         for (int ox = -radius; ox <= radius; ox++) {
           int dd = ox * ox + oy * oy; if (dd > r2) continue;
           int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
-          int k = I(xx, yy); uint8_t m = grid[k]; if (!isGas(m)) continue;
+          int k = I(xx, yy); uint8_t m = grid[k]; if (!isGasMaterial(m)) continue;
           int deepness = r2 - dd;
           auto it = byCell.find(k);
           if (it == byCell.end() || deepness > it->second.dd) byCell[k] = {k, k, wi, deepness, m};
@@ -130,7 +130,7 @@
 
     std::unordered_set<int> reservedTargets; reservedTargets.reserve(moves.size() * 2);
     for (auto& mv : moves) {
-      if (!isGas(grid[mv.k])) continue;
+      if (!isGasMaterial(grid[mv.k])) continue;
       const BlastWave& wave = waves[mv.wave];
       int y = mv.k / cols, x = mv.k - y * cols;
       int target = blastGasTarget(x, y, wave.cx, wave.cy, wave.radius, wave.seed, reservedTargets);
@@ -138,7 +138,7 @@
       if (mv.target >= 0) reservedTargets.insert(mv.target);
     }
 
-    for (auto& mv : moves) if (isGas(grid[mv.k])) writeGridIndex(mv.k, EMPTY);
+    for (auto& mv : moves) if (isGasMaterial(grid[mv.k])) writeGridIndex(mv.k, EMPTY);
     for (auto& mv : moves) {
       if (mv.target < 0 || grid[mv.target] != EMPTY) continue;
       writeGridIndex(mv.target, mv.material);
@@ -175,7 +175,7 @@
       for (int ox = -radius; ox <= radius; ox++) {
         int dd = ox * ox + oy * oy; if (dd > r2) continue;
         int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
-        int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY || isGas(m)) continue;
+        int k = I(xx, yy); uint8_t m = grid[k]; if (!isBlastDamageable(m)) continue;
         double energy = power * (1.0 - std::sqrt((double)dd) / radius);
         if (energy < (double)DURABILITY[m]) continue; // too hard to blow up at this distance
         bool wasTnt = (m == TNT);
@@ -188,17 +188,18 @@
         } else {
           // Track each destroyed solid material as a physical-rubble source (never
           // TNT — exploding TNT must be consumed, not scattered as live shrapnel).
-          if (m != TNT && isRigidMaterial(m) && !debrisSeen[m]) { debrisSeen[m] = 1; debrisSources.push_back({m, k}); }
-          if (isStoneComp(m)) bb.erasedStone.push_back(k);
-          else if (isIceComp(m)) bb.erasedIce.push_back(k);
-          if (isPlantMaterial(m)) bb.erasedPlant = true;
+          if (m != TNT && isRigidMaterialClass(m) && !debrisSeen[m]) { debrisSeen[m] = 1; debrisSources.push_back({m, k}); }
+          uint8_t group = componentGroupOf(m);
+          if (group == CG_STONE) bb.erasedStone.push_back(k);
+          else if (group == CG_ICE) bb.erasedIce.push_back(k);
+          else if (group == CG_PLANT) bb.erasedPlant = true;
           grid[k] = EMPTY;
         }
         markCellIndex(k);
         // Cosmetic flecks of the destroyed material, flung outward (also how loose
         // powders/liquids in the blast get scattered). Capped + sparse so large
         // chains don't flood the item/particle pool.
-        if (!isGas(m) && bb.particles < BLAST_PARTICLE_CAP && (((xx * 7) ^ (yy * 3)) % 8 == 0)) {
+        if (!isGasMaterial(m) && bb.particles < BLAST_PARTICLE_CAP && (((xx * 7) ^ (yy * 3)) % 8 == 0)) {
           double dist = std::sqrt((double)dd), inv = dist > 0.5 ? 1.0 / dist : 0.0;
           double sp = BLAST_PARTICLE_SPEED * (1.0 - dist / radius) * (0.5 + whash2(bseed, xx, yy));
           spawnParticle(m, xx + 0.5, yy + 0.5, ox * inv * sp, oy * inv * sp - 0.6, BLAST_PARTICLE_LIFE);
@@ -244,7 +245,7 @@
     uint8_t best = EMPTY; int bestN = 0;
     for (int k : comp.cells) {
       uint8_t m = grid[k];
-      if (!isRigidMaterial(m)) continue;
+      if (!isRigidMaterialClass(m)) continue;
       int n = ++counts[m];
       if (n > bestN) { bestN = n; best = m; }
     }

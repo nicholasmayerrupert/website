@@ -8,7 +8,7 @@
 // fire/oil/acid/lava do not. Out of bounds: below the buffer is floor (can't
 // fall out the bottom); above and to the sides is open air.
 inline bool isSolidForPlayer(uint8_t m) {
-  return m != EMPTY && MAT_KIND[m] != K_LIQUID && MAT_KIND[m] != K_GAS;
+  return isBlockingForPlayer(m);
 }
 inline bool playerCellSolid(int x, int y) {
   if (y >= rows) return true;        // floor under the world
@@ -163,7 +163,7 @@ struct PlayerFluidSample {
 };
 inline bool playerCellLiquid(int x, int y) {
   if (y < 0 || y >= rows || x < 0 || x >= cols) return false;
-  return isLiquid(grid[I(x, y)]);
+  return isLiquidMaterial(grid[I(x, y)]);
 }
 inline PlayerFluidSample samplePlayerFluid(const Player& p) {
   int ix0 = (int)std::floor(p.px), ix1 = (int)std::floor(p.px + p.w - 1e-6);
@@ -330,7 +330,7 @@ void resolveMineDrops(Player& p) {
     if (isPlantLeaf(m)) {
       double r = whash2(((uint32_t)tick ^ 0x51ED5EEDu), cxk, cyk);
       if (r < LEAF_SEED_DROP_P) spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35);
-    } else if (isLiquid(m)) drop = true;
+    } else if (isLiquidMaterial(m)) drop = true;
     else if (cls != TC_NONE) {
       if (tier == TT_HAND) drop = true;
       else if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;

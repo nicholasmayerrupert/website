@@ -17,7 +17,7 @@
   }
   inline bool itemCellLiquidAt(int x, int y) {
     if (y < 0 || y >= rows || x < 0 || x >= cols) return false;
-    return isLiquid(grid[I(x, y)]);
+    return isLiquidMaterial(grid[I(x, y)]);
   }
 
   // Fall vertically, stopping just above the first cell below that supports the item.

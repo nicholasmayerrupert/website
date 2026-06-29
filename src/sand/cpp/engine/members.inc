@@ -316,19 +316,37 @@
   }
   ~Engine() { glDestroy(); }
 
-  // ---- predicates ----
-  // Behavior predicates are generated from materials.schema.json `flags`
-  // (the MAT_FLAGS bitmask). Adding a material that reuses existing physics
-  // needs only a schema entry — no edit here. The bit sets reproduce the
-  // former hand-written id lists exactly.
+  // ---- material predicates ----
+  // Material id is exact identity. MAT_CLASS is the broad gameplay/physics
+  // bucket, MAT_FLAGS are extra traits, and MAT_CGROUP routes static component
+  // storage/splitting. Adding a material that reuses existing physics should
+  // need only a schema entry.
+  inline bool isEmptyMaterial(uint8_t m) { return m == EMPTY || MAT_CLASS[m] == MC_NONE; }
+  inline bool isGasMaterial(uint8_t m) { return MAT_CLASS[m] == MC_GAS; }
+  inline bool isLiquidMaterial(uint8_t m) { return MAT_CLASS[m] == MC_LIQUID; }
+  inline bool isLooseSolidMaterial(uint8_t m) { return MAT_CLASS[m] == MC_SOLID; }
+  inline bool isRigidMaterialClass(uint8_t m) { return MAT_CLASS[m] == MC_RIGID; }
+  inline bool isComponentMaterial(uint8_t m) { return MAT_CGROUP[m] != CG_NONE; }
+  inline uint8_t componentGroupOf(uint8_t m) { return MAT_CGROUP[m]; }
+  inline bool isStoneComponentMaterial(uint8_t m) { return MAT_CGROUP[m] == CG_STONE; }
+  inline bool isPlantComponentMaterial(uint8_t m) { return MAT_CGROUP[m] == CG_PLANT; }
+  inline bool isIceComponentMaterial(uint8_t m) { return MAT_CGROUP[m] == CG_ICE; }
+  inline bool hasRigidFlag(uint8_t m) { return MAT_FLAGS[m] & MF_RIGID; }
   inline bool isPlantMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTFAMILY; }
   inline bool isDissolvable(uint8_t m) { return MAT_FLAGS[m] & MF_DISSOLVABLE; }
-  inline bool isRigidMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_RIGID; }
   inline bool isFlammable(uint8_t m) { return MAT_FLAGS[m] & MF_FLAMMABLE; }
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
-  inline bool isLiquid(uint8_t m) { return MAT_KIND[m] == K_LIQUID; }
-  inline bool isGas(uint8_t m) { return MAT_KIND[m] == K_GAS; }
-  inline bool isBuoyantMedium(uint8_t m) { return isLiquid(m) || MAT_KIND[m] == K_POWDER; }
+  inline bool isBlastDamageable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
+  inline bool isLooseMedium(uint8_t m) { return isLiquidMaterial(m) || isLooseSolidMaterial(m); }
+  inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
+  inline bool isStructuralMaterial(uint8_t m) { return isRigidMaterialClass(m); }
+  inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
+  inline bool isBlockingForItem(uint8_t m) { return isBlockingForPlayer(m); }
+  inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
+  inline bool canPlaceInto(uint8_t existing) { return isEmptyMaterial(existing) || isGasMaterial(existing); }
+  inline bool isRigidMaterial(uint8_t m) { return isRigidMaterialClass(m); } // legacy name
+  inline bool isLiquid(uint8_t m) { return isLiquidMaterial(m); }            // legacy name
+  inline bool isGas(uint8_t m) { return isGasMaterial(m); }                  // legacy name
   // Which rigid-component list a destroyed grid cell belongs to, mirroring
   // registerComponentCells' routing (CG_ICE -> ice, CG_PLANT -> plant via
   // isPlantMaterial, else stone). EVERY site that clears a component cell from the
@@ -336,8 +354,8 @@
   // body keeps an invisible cell that still collides/grounds — sand floats on the
   // hole and powders/liquids won't pass. Keyed on group, not material id, so new
   // ores/blocks (sandstone, brick, …) are covered with no edit here.
-  inline bool isStoneComp(uint8_t m) { return MAT_KIND[m] == K_COMPONENT && MAT_CGROUP[m] != CG_ICE && MAT_CGROUP[m] != CG_PLANT; }
-  inline bool isIceComp(uint8_t m) { return MAT_KIND[m] == K_COMPONENT && MAT_CGROUP[m] == CG_ICE; }
+  inline bool isStoneComp(uint8_t m) { return isStoneComponentMaterial(m); } // legacy name
+  inline bool isIceComp(uint8_t m) { return isIceComponentMaterial(m); }     // legacy name
   // Flora-type material classification: which plant-family materials act as a tree
   // trunk vs foliage, and the species<->material mapping. A plant comp is a single
   // species, so its trunk/leaf material is derived from its plantType (and vice
@@ -348,7 +366,7 @@
   inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : WOOD; }
   inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_MUSHROOM ? MUSH_CAP : PLANT; }
   inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : PT_OAK; }
-  inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquid(m) || isGas(m); }
+  inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquidMaterial(m) || isGasMaterial(m); }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
 
   // ===== BODY-MATERIAL INVARIANT (read this once; it explains the whole rewrite) =====
@@ -503,14 +521,14 @@
     int y = k / cols, x = k - y * cols;
     if (y < rows - 1 && canDisplaceByLooseDensity(m, grid[k + cols])) return true;
     if (y > 1 && canDisplaceByLooseDensity(grid[k - cols], m)) return true;
-    if (isLiquid(m)) {
+    if (isLiquidMaterial(m)) {
       if (y > 1) {
-        if (x > 1 && isLiquid(grid[k - cols - 1]) && canDisplaceByLooseDensity(grid[k - cols - 1], m)) return true;
-        if (x < cols - 2 && isLiquid(grid[k - cols + 1]) && canDisplaceByLooseDensity(grid[k - cols + 1], m)) return true;
+        if (x > 1 && isLiquidMaterial(grid[k - cols - 1]) && canDisplaceByLooseDensity(grid[k - cols - 1], m)) return true;
+        if (x < cols - 2 && isLiquidMaterial(grid[k - cols + 1]) && canDisplaceByLooseDensity(grid[k - cols + 1], m)) return true;
       }
       if (y < rows - 1) {
-        if (x > 1 && isLiquid(grid[k + cols - 1]) && canDisplaceByLooseDensity(m, grid[k + cols - 1])) return true;
-        if (x < cols - 2 && isLiquid(grid[k + cols + 1]) && canDisplaceByLooseDensity(m, grid[k + cols + 1])) return true;
+        if (x > 1 && isLiquidMaterial(grid[k + cols - 1]) && canDisplaceByLooseDensity(m, grid[k + cols - 1])) return true;
+        if (x < cols - 2 && isLiquidMaterial(grid[k + cols + 1]) && canDisplaceByLooseDensity(m, grid[k + cols + 1])) return true;
       }
     }
     return false;
@@ -518,9 +536,9 @@
   inline void writeNextIndex(int k, uint8_t m) {
     if (next[k] == m) return;
     next[k] = m;
-    if (grid[k] != m || m == FIRE || m == STEAM || (isLiquid(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
+    if (grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
-  inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGas(d)) return true; return canDisplaceByLooseDensity(m, d); }
+  inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGasMaterial(d)) return true; return canDisplaceByLooseDensity(m, d); }
   inline bool canEnterIndex(int k, uint8_t m) { return next[k] == EMPTY && (grid[k] == EMPTY || canDisplaceMaterial(m, grid[k])); }
   inline bool canLiquidEnter(int x, int y, uint8_t m) { return x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), m); }
   inline bool supportsLiquid(uint8_t s, uint8_t m) { return s != EMPTY && s != m && !canDisplaceMaterial(m, s); }

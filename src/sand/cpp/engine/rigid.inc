@@ -406,19 +406,18 @@
     int k = y * cols + x; uint8_t m = grid[k];
     if (isBodyCell(k)) return false;                            // free bodies collide via body-vs-body, not as static terrain
     if (isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls; liquid buoys, powder supports one-way
-    return isRigidMaterial(m);                                  // stone/plant/ice-group solids incl. new ores & woods
+    return isRigidMaterialClass(m);                             // stone/plant/ice-group solids incl. new ores & woods
   }
-  double buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquid(m) ? DENSITY[m] : 0; }
-  double granularMediumDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return MAT_KIND[m] == K_POWDER ? DENSITY[m] : 0; }
+  double buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLiquidMaterial(m) ? DENSITY[m] : 0; }
+  double granularMediumDensityAt(int x, int y) { if (x < 0 || x >= cols || y < 0 || y >= rows) return 0; uint8_t m = grid[y * cols + x]; return isLooseSolidMaterial(m) ? DENSITY[m] : 0; }
   // Any loose medium is relocatable: a body submerging into liquid or powder
   // displaces it (spilled around the body) rather than being blocked at the surface.
   // Only liquids provide upward buoyancy; powders can support, but only by
   // cancelling gravity.
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity) { (void)k; (void)bodyDensity; return isBuoyantMedium(m); }
   // Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
-  // through them and they vanish on commit. Keyed off K_GAS so any new gas is
-  // handled automatically (was a hardcoded FIRE/STEAM list that missed ACRID_SMOKE).
-  bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || isGas(m) || isBodyRelocatable(m, k, bodyDensity); }
+  // through them and they vanish on commit.
+  bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || isGasMaterial(m) || isBodyRelocatable(m, k, bodyDensity); }
   struct Disp { uint8_t material; int from; };
   void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint, double bodyDensity) {
     if (displaced.empty()) return;
@@ -438,14 +437,14 @@
     // exactly like water — instead of jamming against equal-density sand and heaping
     // into a local cone at the body's entry column.
     double curD = 0;
-    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGas(m) || (isLiquid(m) && DENSITY[m] <= curD) || (MAT_KIND[m] == K_POWDER && (groundedCell[k] != 1 || DENSITY[m] <= curD)); };
+    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGasMaterial(m) || (isLiquidMaterial(m) && DENSITY[m] <= curD) || (isLooseSolidMaterial(m) && (groundedCell[k] != 1 || DENSITY[m] <= curD)); };
     std::unordered_set<int> seen;
     auto canVisit = [&](int k) { if (k <= 0 || k >= gridLen || footprint.count(k) || seen.count(k)) return false; int y = k / cols, x = k - y * cols; return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k); };
-    auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquid(m) || isGas(m) || MAT_KIND[m] == K_POWDER) && DENSITY[m] < DENSITY[mat]; };
+    auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquidMaterial(m) || isGasMaterial(m) || isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
     // Footprint-edge seeds (used when a displaced cell's own neighbours are all
     // blocked). Permissive — any fluid/empty/gas/loose powder; canVisit re-filters
     // per displaced material once curD is set in the worklist loop below.
-    auto seedPassable = [&](uint8_t m, int k) { (void)k; return m == EMPTY || isGas(m) || isBuoyantMedium(m); };
+    auto seedPassable = [&](uint8_t m, int k) { (void)k; return m == EMPTY || isGasMaterial(m) || isBuoyantMedium(m); };
     std::vector<int> footprintEdgeStarts; std::unordered_set<int> footprintEdgeSeen;
     std::vector<int> sortedFootprint(edgeFootprint.begin(), edgeFootprint.end()); std::sort(sortedFootprint.begin(), sortedFootprint.end());
     for (int k : sortedFootprint) for (int off : offs) { int nk = k + off; if (footprintEdgeSeen.count(nk)) continue; int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue; if (seedPassable(grid[nk], nk)) { footprintEdgeSeen.insert(nk); footprintEdgeStarts.push_back(nk); } }
@@ -621,8 +620,8 @@
       if (occ.count(bk)) continue;                            // interior cell, not a bottom edge
       if (y + 1 >= rows) { solidBelow++; continue; }          // the world floor is solid support
       uint8_t m = grid[bk];
-      if (isLiquid(m)) mediumBelow++;
-      else if (m != EMPTY && !isGas(m)) solidBelow++;         // terrain / another body's cell
+      if (isLiquidMaterial(m)) mediumBelow++;
+      else if (m != EMPTY && !isGasMaterial(m)) solidBelow++; // terrain / another body's cell
     }
     return mediumBelow > 0 && mediumBelow > solidBelow;
   }
@@ -636,7 +635,7 @@
       if (y + 1 >= rows) { solidBelow++; continue; }
       uint8_t m = grid[bk];
       if (isBuoyantMedium(m)) mediumBelow++;
-      else if (m != EMPTY && !isGas(m)) solidBelow++;
+      else if (m != EMPTY && !isGasMaterial(m)) solidBelow++;
     }
     return mediumBelow > 0 && mediumBelow > solidBelow;
   }

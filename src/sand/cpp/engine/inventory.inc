@@ -225,7 +225,7 @@
 
     bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
     bool isSeed = !mineMode && sel.material == SEED;
-    bool isComp = !mineMode && !isSeed && sel.material != EMPTY && MAT_KIND[sel.material] == K_COMPONENT;
+    bool isComp = !mineMode && !isSeed && sel.material != EMPTY && isComponentMaterial(sel.material);
     if ((!primary && !secondary) || !inReach) { resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
 
     if (mineMode) {

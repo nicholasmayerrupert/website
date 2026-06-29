@@ -64,9 +64,9 @@
     // byte-identical. Runs before the side flow so buoyancy beats lateral spread.
     if (y > 1) {
       int aboveK = k - cols;
-      if (isLiquid(grid[aboveK]) && canDisplaceByLooseDensity(grid[aboveK], m) && next[aboveK] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, aboveK, m); return; }
+      if (isLiquidMaterial(grid[aboveK]) && canDisplaceByLooseDensity(grid[aboveK], m) && next[aboveK] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, aboveK, m); return; }
       int firstDx = ((x + y) & 1) ? 1 : -1;
-      for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquid(grid[uk]) && canDisplaceByLooseDensity(grid[uk], m) && next[uk] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
+      for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquidMaterial(grid[uk]) && canDisplaceByLooseDensity(grid[uk], m) && next[uk] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
     }
     if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) {
       // DENSITY-SCALED FALL: denser liquids drop more cells per tick. Walk straight
@@ -192,7 +192,7 @@
   // non-local "flattening" jump that placed a cell directly at the distant low point.
   void levelLiquidSurfaces() {
     auto surfacePassable = [&](uint8_t c, uint8_t m) {
-      return c == EMPTY || (MAT_KIND[c] == K_POWDER && canDisplaceByLooseDensity(m, c));
+      return c == EMPTY || (isLooseSolidMaterial(c) && canDisplaceByLooseDensity(m, c));
     };
     auto lowerSurfaceDrop = [&](int x, int y, uint8_t m, int sgn) {
       int lvl = y;
@@ -221,7 +221,7 @@
         for (int x = start; x != end; x += stepX) {
           int k = I(x, y);
           uint8_t m = grid[k];
-          if (!isLiquid(m)) continue;
+          if (!isLiquidMaterial(m)) continue;
           if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
           uint8_t above = grid[k - cols];
           if (above != EMPTY && !surfacePassable(above, m)) continue; // free air or lighter powder surface
@@ -301,7 +301,7 @@
     if (next[k] == EMPTY) writeNextIndex(k, FIRE);
   }
   void drain(int xs, int xe, int y, float liquidP, float sandP) {
-    for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = grid[k]; float p = isLiquid(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndex(k, EMPTY); }
+    for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = grid[k]; float p = isLiquidMaterial(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndex(k, EMPTY); }
   }
   void applySideSinks() {
     if (!sinksEnabled || cols < 6) return;

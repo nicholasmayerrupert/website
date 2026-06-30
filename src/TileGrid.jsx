@@ -9,7 +9,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { gsap } from 'gsap';
 import ReactCardFlip from 'react-card-flip';
-import { ChessArt, GrabbyArt, WildfireArt, LifeArt } from './ProjectArt';
+import { ChessArt, SandSimArt, WildfireArt, LifeArt } from './ProjectArt';
 import './MagicBento.css';
 
 function usePrefersReducedMotion() {
@@ -618,11 +618,11 @@ export default function TileGrid() {
       features: ['AI opponent from terminal', 'Move analysis', 'Plays at ~1200 ELO'],
     },
     {
-      Art: GrabbyArt,
-      title: 'Grabby - OCR + Snipping Tool',
-      content: 'Software Project',
-      description: 'A versatile tool combining OCR and snipping capabilities.',
-      features: ['Text extraction from images', 'Snipping tool integration', 'Multi-language support'],
+      Art: SandSimArt,
+      title: 'Falling Sand Simulation',
+      content: 'Website Centerpiece',
+      description: 'The interactive pixel simulation above, built as a C++/WebAssembly falling-sand engine.',
+      features: ['WebGL2 canvas rendering', 'Two simulated material layers', 'Procedural streaming terrain'],
     },
     {
       Art: WildfireArt,

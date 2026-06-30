@@ -1,25 +1,30 @@
 import React, { useState } from 'react';
-import { SandGame } from './sand/react/SandGame';
+import GameOfLife3D from './GameOfLife3D';
 
 /* -------------------- PAGE -------------------- */
 export default function About() {
-  const [drawModeActive, setDrawModeActive] = useState(false);
+  const [rotateActive, setRotateActive] = useState(false);
 
   return (
-    <section className="relative bg-dark">
+    <section className="relative overflow-hidden bg-dark">
+      <GameOfLife3D
+        className="absolute inset-0 z-0 h-full w-full opacity-70"
+        onManualRotateChange={setRotateActive}
+      />
+
       {/* Content */}
-      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-6 pb-48">
+      <div
+        className={`relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-6 pb-48 transition duration-300 ${
+          rotateActive ? 'opacity-0 pointer-events-none select-none' : 'opacity-100'
+        }`}
+        aria-hidden={rotateActive}
+      >
         <h2 className="text-white font-bold tracking-tight text-center text-3xl sm:text-5xl md:text-6xl">
           SKILLS & <br className="hidden sm:block" /> EXPERIENCE
         </h2>
 
         {/* Cards: stacked on mobile, side-by-side on md+; equal height & width */}
-        <div
-          className={`mt-6 md:mt-16 transition duration-300 ${
-            drawModeActive ? 'opacity-0 pointer-events-none select-none' : 'opacity-100'
-          }`}
-          aria-hidden={drawModeActive}
-        >
+        <div className="mt-6 md:mt-16">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 items-stretch">
             {/* Experience (LHS) */}
             <div className="w-full h-full bg-gray-900/90 rounded-xl p-4 sm:p-5 shadow-lg ring-1 ring-white/15 overflow-hidden min-h-[360px] flex">
@@ -77,9 +82,6 @@ export default function About() {
           </div>
         </div>
       </div>
-
-      {/* Full-section Sand overlay — Creative mode (free cam, draw anywhere, no character) */}
-      <SandGame mode="creative" onDrawModeChange={setDrawModeActive} />
     </section>
   );
 }

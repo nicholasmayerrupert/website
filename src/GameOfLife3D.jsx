@@ -58,7 +58,7 @@ const seedToLayer = (seedText) => {
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
-export default function GameOfLife3D({ className }) {
+export default function GameOfLife3D({ className, onManualRotateChange }) {
   const containerRef = useRef(null);
   const speedRef = useRef(DEFAULT_STEPS_PER_SECOND);
   const seedRequestRef = useRef(null);
@@ -74,6 +74,7 @@ export default function GameOfLife3D({ className }) {
 
   useEffect(() => {
     manualRotateRef.current = manualRotateOn;
+    onManualRotateChange?.(manualRotateOn);
   }, [manualRotateOn]);
 
   const applySeed = (seedText = seedInput) => {

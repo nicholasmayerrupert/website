@@ -59,14 +59,15 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('snapshot round trip');
   const players = [
-    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, inputSeq: 9 },
-    { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, inputSeq: 0 },
+    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, inputSeq: 9, animState: 2, animFrame: 3 },
+    { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, inputSeq: 0, animState: 0, animFrame: 1 },
   ];
   const d = rt(makeSnapshot(123, players, 0xdeadbeef));
   check('decodes to snapshot', d && d.t === MSG.SNAPSHOT && d.tick === 123);
   check('hash preserved', d && d.hash === 0xdeadbeef);
   check('two players, positions intact', d && d.players.length === 2 && d.players[0].x === 10.5 && d.players[0].y === 20.25 && d.players[1].id === 2);
   check('grounded normalized to 0/1', d && d.players[0].grounded === 1 && d.players[1].grounded === 0);
+  check('animation state preserved', d && d.players[0].animState === 2 && d.players[0].animFrame === 3 && d.players[1].animFrame === 1);
 }
 
 // 3. join/leave/ping/pong round trip.
@@ -88,6 +89,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('input tool out of range', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: TOOL_MAX + 1 })) === null);
   check('input non-int aim', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 1.5, aimY: 0, tool: 0 })) === null);
   check('snapshot bad player', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: -1 }] })) === null);
+  check('snapshot missing anim rejected', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: 1, x: 0, y: 0, vx: 0, vy: 0, facing: 1, tool: 0, seq: 0 }] })) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);
 }
 

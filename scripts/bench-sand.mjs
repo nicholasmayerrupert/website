@@ -71,12 +71,25 @@ const fileHash = (path) => {
 const safeExec = (cmd, argv = []) => {
   try { return execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
 };
+const benchSourcePrefixes = [
+  'src/sand/cpp/',
+  'src/sand/materials.schema.json',
+  'src/sand/materials.generated.js',
+];
+const dirtyInBenchSources = () => {
+  const status = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], { encoding: 'utf8' });
+  if (status.status !== 0) return true;
+  return status.stdout.split('\n').some((line) => {
+    const path = line.slice(3).trim();
+    return path && benchSourcePrefixes.some((prefix) => path === prefix || path.startsWith(prefix));
+  });
+};
 const readJson = (path) => {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 };
 const gitMeta = () => {
   const commit = safeExec('git', ['rev-parse', '--short', 'HEAD']);
-  const dirty = spawnSync('git', ['diff', '--quiet']).status !== 0 || spawnSync('git', ['diff', '--cached', '--quiet']).status !== 0;
+  const dirty = dirtyInBenchSources();
   return { commit, dirty };
 };
 const wasmMeta = () => {

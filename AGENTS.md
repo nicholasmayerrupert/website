@@ -53,6 +53,13 @@ is generated or restored from the chunk store.
   a deterministic terrain checksum. Compare against a baseline with
   `node scripts/bench-sand.mjs --compare bench/baseline.json` (re-record with
   `--update`). **Pure refactors must keep the checksum identical.**
+- After a sim/render behavior or performance change is confirmed and before
+  committing, rerun the relevant benchmark compare(s). If the compare reports that
+  a committed baseline is stale and the change is intentional, update the
+  baseline in the same change (`node scripts/bench-sand.mjs --update
+  bench/baseline.json`, and the corresponding pan baseline command when the
+  panning/flicker benchmark is affected). Do not leave known-stale benchmark
+  baselines for the next agent.
 - **Panning / flicker** (headless Chromium, Playwright): `node scripts/bench-pan.mjs`
   starts the dev server, scripts a pan, and reports the sub-cell pan *instability*
   (the bright-block flicker metric — must stay ~0) and frame timing. `--png bench/`

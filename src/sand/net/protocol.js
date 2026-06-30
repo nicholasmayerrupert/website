@@ -72,6 +72,7 @@ export function makeSnapshot(tick, players, hash = null) {
       id: p.id | 0, x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0,
       facing: p.facing | 0, grounded: p.grounded ? 1 : 0, jr: p.jumpReady ? 1 : 0,
       tool: p.tool | 0, health: p.health | 0, seq: (p.inputSeq ?? p.seq ?? 0) >>> 0,
+      animState: p.animState | 0, animFrame: p.animFrame | 0,
     })),
   };
 }
@@ -202,6 +203,7 @@ function validateSnapshot(m) {
     if (!p || !isNonNegInt(p.id)) return null;
     if (!isFiniteNum(p.x) || !isFiniteNum(p.y) || !isFiniteNum(p.vx) || !isFiniteNum(p.vy)) return null;
     if (!isInt(p.facing) || !isNonNegInt(p.tool) || !isNonNegInt(p.seq)) return null;
+    if (!isNonNegInt(p.animState) || !isNonNegInt(p.animFrame)) return null;
   }
   return m;
 }

@@ -11,6 +11,11 @@ const generatedPaths = new Set([
   'src/sand/wasm/sandEngine.js',
   'src/sand/wasm/build-info.json',
 ]);
+const sourcePathPrefixes = [
+  'src/sand/cpp/',
+  'src/sand/materials.schema.json',
+  'src/sand/materials.generated.js',
+];
 
 const safeExec = (cmd, argv = []) => {
   try { return execFileSync(cmd, argv, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; }
@@ -20,7 +25,7 @@ const gitDirty = () => {
   if (status.status !== 0) return true;
   return status.stdout.split('\n').some((line) => {
     const path = line.slice(3).trim();
-    return path && !generatedPaths.has(path);
+    return path && !generatedPaths.has(path) && sourcePathPrefixes.some((prefix) => path === prefix || path.startsWith(prefix));
   });
 };
 const fnv1a = (bytes) => {

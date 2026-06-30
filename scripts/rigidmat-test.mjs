@@ -50,6 +50,18 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
+// --- a body that cannot stamp any visible cell is culled instead of surviving as
+//     an invisible solver participant ---
+{
+  const e = mk();
+  for (let y = 30; y < 70; y++) for (let x = 40; x < 80; x++) e.paintDisc(x, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  e.spawnBox(60, 50, 4, 4, MAT.RIGID);
+  e.step(16);
+  check(`fully embedded body is culled (count ${e._bodyCount()})`, e._bodyCount() === 0);
+  e.destroy();
+}
+
 // --- a WOOD body renders as WOOD and BAKES into a plant component when it beaches on
 //     solid ground (wood/plant solidify like stone/ice now) ---
 {

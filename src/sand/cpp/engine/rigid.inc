@@ -674,6 +674,16 @@
         writeGridIndex(k, b->material); bodyOwner[k] = b->id; cells.push_back(k); footprint.insert(k); pb.second.insert(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
       });
     }
+    {
+      std::vector<Body*> keep;
+      keep.reserve(L->bodies.size());
+      for (Body* b : L->bodies) {
+        auto it = perBody.find(b->id);
+        if (it != perBody.end() && it->second.second.empty()) { delete b; continue; }
+        keep.push_back(b);
+      }
+      if (keep.size() != L->bodies.size()) L->bodies = std::move(keep);
+    }
     for (Body* b : L->bodies) {
       auto it = perBody.find(b->id);
       if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, footprint, it->second.second, b->density);

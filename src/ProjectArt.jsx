@@ -345,11 +345,8 @@ const BG_SAND_CELLS = [
 
 const FALLING_GRAINS = [
   { x: 5, y: 0, fill: '#ffd166', delay: 0 },
-  { x: 6, y: 1, fill: '#f59e0b', delay: 0.55 },
-  { x: 5, y: 1, fill: '#ffd166', delay: 1.1 },
   { x: 10, y: 1, fill: '#3ce0ff', delay: 0.25 },
-  { x: 11, y: 2, fill: '#38bdf8', delay: 0.9 },
-  { x: 12, y: 2, fill: '#ff7b2f', delay: 1.45 },
+  { x: 12, y: 2, fill: '#ff7b2f', delay: 0.9 },
 ];
 
 const sandCellX = (c) => SAND_GRID.x + c * (SAND_GRID.size + SAND_GRID.gap);
@@ -403,20 +400,6 @@ export function SandSimArt() {
           <stop offset="50%" stopColor="rgba(60,224,255,0.48)" />
           <stop offset="100%" stopColor="rgba(60,224,255,0)" />
         </linearGradient>
-        <filter id="sand-glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="2.5" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter id="sand-soft-glow" x="-80%" y="-80%" width="260%" height="260%">
-          <feGaussianBlur stdDeviation="5" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
         <pattern id="sand-dots" width="20" height="20" patternUnits="userSpaceOnUse">
           <circle cx="2" cy="2" r="1" fill="#6b5fa8" />
         </pattern>
@@ -436,11 +419,11 @@ export function SandSimArt() {
       </g>
       <g fill="#d9b8ff">
         {[[72, 58], [96, 38], [122, 68], [96, 96], [318, 210], [346, 190], [370, 220], [336, 238]].map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="1.8" className="pa-pulse" style={{ animationDelay: `${i * 0.35}s` }} />
+          <circle key={i} cx={x} cy={y} r="1.8" />
         ))}
       </g>
 
-      <g filter="url(#sand-soft-glow)">
+      <g>
         <rect x="83" y="56" width="236" height="172" rx="13" fill="#08051a" stroke="#463a72" strokeWidth="1.2" opacity="0.96" />
         <rect x="95" y="66" width="214" height="151" rx="9" fill="#0b0820" stroke="rgba(60,224,255,0.22)" strokeWidth="1" />
       </g>
@@ -454,15 +437,13 @@ export function SandSimArt() {
           ))}
         </g>
         <g stroke="#1f173a" strokeWidth="0.45" opacity="0.72">{gridLines}</g>
-        {SAND_CELLS.map(([c, r, fill, opacity], i) => (
+        {SAND_CELLS.map(([c, r, fill, opacity]) => (
           <SandCell
-            key={`fg${i}`}
+            key={`fg${c}-${r}-${fill}`}
             c={c}
             r={r}
             fill={fill}
             opacity={opacity}
-            className={fill === '#ffd166' || fill === '#3ce0ff' || fill === '#ff7b2f' ? 'pa-pulse' : undefined}
-            style={{ animationDelay: `${(i % 8) * 0.18}s` }}
           />
         ))}
         {FALLING_GRAINS.map(({ x, y, fill, delay }, i) => (
@@ -491,7 +472,7 @@ export function SandSimArt() {
         strokeDasharray="6 7"
         className="pa-ants"
       />
-      <g stroke="#3ce0ff" strokeWidth="3" fill="none" strokeLinecap="round" filter="url(#sand-glow)">
+      <g stroke="#3ce0ff" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.9">
         <path d="M 102 92 L 102 72 L 122 72" />
         <path d="M 292 72 L 312 72 L 312 92" />
         <path d="M 312 192 L 312 212 L 292 212" />
@@ -500,7 +481,7 @@ export function SandSimArt() {
 
       <path d="M 266 46 C 244 56 228 74 220 100" fill="none" stroke="#ffd166" strokeWidth="1.3" strokeDasharray="5 7" opacity="0.58" className="pa-dash" />
       <polygon points="260,42 274,40 268,53" fill="#ffd166" opacity="0.78" />
-      <g className="pa-float" filter="url(#sand-glow)">
+      <g className="pa-float">
         <circle cx="222" cy="94" r="12" fill="none" stroke="#ffd166" strokeWidth="1.3" opacity="0.7" />
         <line x1="222" y1="78" x2="222" y2="86" stroke="#ffd166" strokeWidth="1.3" />
         <line x1="222" y1="102" x2="222" y2="110" stroke="#ffd166" strokeWidth="1.3" />

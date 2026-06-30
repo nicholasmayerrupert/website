@@ -558,7 +558,7 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
 
       {controlsOpen && (
         <form
-          className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-hidden rounded-lg border border-white/15 bg-gray-900/75 p-3 text-white shadow-2xl backdrop-blur-md md:static md:h-full md:rounded-none md:border-y-0 md:border-r-0 md:bg-gray-900/55"
+          className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-y-auto rounded-lg border border-white/15 bg-gray-900/75 p-3 text-white shadow-2xl backdrop-blur-md md:static md:h-full md:rounded-none md:border-y-0 md:border-r-0 md:border-l md:bg-gray-900/55"
           onSubmit={(event) => {
             event.preventDefault();
             applySeed();
@@ -643,7 +643,7 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
             ref={editorCanvasRef}
             width={EDITOR_CANVAS_SIZE}
             height={EDITOR_CANVAS_SIZE}
-            className="mt-1 aspect-square w-full touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated]"
+            className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] md:max-h-none md:max-w-none md:self-auto"
             aria-label="Editable top layer of the Game of Life simulation"
             onContextMenu={(event) => event.preventDefault()}
             onPointerDown={onEditorPointerDown}

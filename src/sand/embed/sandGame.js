@@ -26,7 +26,95 @@ import { createConnectPanel } from './connectPanel';
 const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none; }
 .sg-sim { position: absolute; inset: 0; overflow: hidden; }
+.sg-dpad { position: absolute; right: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 68;
+  display: grid; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 28px); gap: 4px;
+  pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  padding: 6px; border-radius: 8px;
+  background: rgba(17,24,39,.3); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px); }
+.sg-dpad button { border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
+  position: relative; background: rgba(255,255,255,.06); color: #fff; font-size: 0; user-select: none;
+  -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.sg-dpad button::before { content: ""; position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: translate(-50%, -50%); }
+.sg-dpad .up::before { border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 9px solid currentColor; }
+.sg-dpad .left::before { border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 9px solid currentColor; }
+.sg-dpad .right::before { border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid currentColor; }
+.sg-dpad .down::before { border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 9px solid currentColor; }
+.sg-dpad button:active, .sg-dpad button.pressed { background: rgba(255,255,255,.82); color: #000; }
+.sg-dpad .up { grid-column: 2; grid-row: 1; }
+.sg-dpad .left { grid-column: 1; grid-row: 2; }
+.sg-dpad .right { grid-column: 3; grid-row: 2; }
+.sg-dpad .down { grid-column: 2; grid-row: 3; }
 `;
+
+function createMobileDpad(root, game) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sg-dpad';
+  wrap.setAttribute('aria-label', 'Movement controls');
+
+  const buttons = [
+    { cls: 'up', label: 'Up', code: 2 },
+    { cls: 'left', label: 'Left', code: 0 },
+    { cls: 'right', label: 'Right', code: 1 },
+    { cls: 'down', label: 'Down', code: 3 },
+  ];
+  const release = (button, code, pointerId) => {
+    button.classList.remove('pressed');
+    game.inputKey(code, false);
+    try { button.releasePointerCapture?.(pointerId); } catch (_) {}
+  };
+
+  for (const b of buttons) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = b.cls;
+    btn.setAttribute('aria-label', b.label);
+    btn.addEventListener('pointerdown', (e) => {
+      btn.classList.add('pressed');
+      btn.setPointerCapture?.(e.pointerId);
+      game.inputKey(b.code, true);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+      btn.addEventListener(ev, (e) => {
+        release(btn, b.code, e.pointerId);
+        e.preventDefault();
+        e.stopPropagation();
+      });
+    }
+    wrap.appendChild(btn);
+  }
+
+  root.appendChild(wrap);
+  return {
+    destroy() {
+      for (const b of buttons) game.inputKey(b.code, false);
+      wrap.remove();
+    },
+  };
+}
+
+function setPageScrollLocked(lock) {
+  if (typeof document === 'undefined') return;
+  const html = document.documentElement;
+  const body = document.body;
+  if (!html || !body) return;
+  if (lock) {
+    if (!body.dataset.sandPrevOverflow) body.dataset.sandPrevOverflow = body.style.overflow || ' ';
+    if (!html.dataset.sandPrevOverflow) html.dataset.sandPrevOverflow = html.style.overflow || ' ';
+    body.style.overflow = 'hidden';
+    html.style.overflow = 'hidden';
+  } else {
+    if (body.dataset.sandPrevOverflow !== undefined) {
+      body.style.overflow = body.dataset.sandPrevOverflow === ' ' ? '' : body.dataset.sandPrevOverflow;
+      delete body.dataset.sandPrevOverflow;
+    }
+    if (html.dataset.sandPrevOverflow !== undefined) {
+      html.style.overflow = html.dataset.sandPrevOverflow === ' ' ? '' : html.dataset.sandPrevOverflow;
+      delete html.dataset.sandPrevOverflow;
+    }
+  }
+}
 
 class SandGameElement extends HTMLElement {
   static get observedAttributes() { return ['initial-tool']; }
@@ -65,6 +153,8 @@ class SandGameElement extends HTMLElement {
           onToggleFootprintMenu: () => this._sizeMenu?.toggleOpen(),
         });
         this._game = game;
+        const coarse = typeof window !== 'undefined' && window.matchMedia &&
+          window.matchMedia('(pointer: coarse)').matches;
         if (mode === 'survival') {
           // Survival uses the inventory HUD (hotbar + openable grid) with the full
           // Minecraft cursor model. All state is authoritative in the engine; the HUD
@@ -91,23 +181,23 @@ class SandGameElement extends HTMLElement {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
           this._palette = createToolPalette(root, {
+            showDrawToggle: coarse,
             onSelectCreative: ({ kind, value }) => game.setCreativeMaterial(kind, value),
             onToggleDrawMode: (on) => {
               game.setDrawMode(on);
+              if (coarse) setPageScrollLocked(on);
               this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
                 detail: { on }, bubbles: true, composed: true,
               }));
             },
           });
         }
-        // Default draw state: survival on a fine pointer starts drawing-enabled so
-        // the dedicated game is immediately playable (mouse mines/builds). Creative
-        // and coarse-pointer (touch) start draw-off so the page can still scroll.
-        const coarse = typeof window !== 'undefined' && window.matchMedia &&
-          window.matchMedia('(pointer: coarse)').matches;
-        const drawDefault = mode === 'survival' && !coarse;
+        // Default draw state: fine pointers are always draw-enabled. Coarse
+        // pointers start off so touch pages can scroll until the user opts in.
+        const drawDefault = !coarse;
         game.setDrawMode(drawDefault);
         this._palette?.setDrawMode(drawDefault);
+        if (coarse) this._dpad = createMobileDpad(root, game);
       })
       .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 
@@ -121,7 +211,9 @@ class SandGameElement extends HTMLElement {
     this._hud?.destroy();
     this._sizeMenu?.destroy();
     this._mp?.destroy();
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = null;
+    this._dpad?.destroy();
+    setPageScrollLocked(false);
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._dpad = null;
     this._mounted = false;
   }
 

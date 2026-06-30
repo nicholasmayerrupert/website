@@ -2,27 +2,29 @@
 import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 
-const GRID_WIDTH = 16;
-const GRID_DEPTH = 16;
 const GRID_HEIGHT = 30;
+const GRID_SIZE_OPTIONS = [16, 32, 64];
 const DEFAULT_STEPS_PER_SECOND = 15;
 const AUTO_ROTATION_RESUME_MS = 6000;
 const DRAG_ROTATION_SCALE = 0.008;
 const PITCH_RESET_DURATION_MS = 2800;
 const MAX_MANUAL_PITCH = Math.PI * 0.42;
+const EDITOR_CANVAS_SIZE = 256;
 const DEFAULT_SEED =
   "0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011";
 
-const makeEmptyLayer = () =>
-  Array.from({ length: GRID_DEPTH }, () => Array(GRID_WIDTH).fill(false));
+const makeEmptyLayer = (size) =>
+  Array.from({ length: size }, () => Array(size).fill(false));
 
-const makeEmptyCells = () =>
-  Array.from({ length: GRID_HEIGHT }, makeEmptyLayer);
+const makeEmptyCells = (size) =>
+  Array.from({ length: GRID_HEIGHT }, () => makeEmptyLayer(size));
 
-const binaryToLayer = (binarySeed) =>
+const cloneLayer = (layer) => layer.map((row) => row.slice());
+
+const binaryToLayer = (binarySeed, size) =>
   binarySeed
-    .slice(0, GRID_WIDTH * GRID_DEPTH)
-    .match(new RegExp(`.{1,${GRID_WIDTH}}`, "g"))
+    .slice(0, size * size)
+    .match(new RegExp(`.{1,${size}}`, "g"))
     .map((row) => row.split("").map((bit) => bit === "1"));
 
 const mulberry32 = (seed) => {
@@ -35,7 +37,7 @@ const mulberry32 = (seed) => {
   };
 };
 
-const textToLayer = (seedText) => {
+const textToLayer = (seedText, size) => {
   let hash = 2166136261;
   const value = seedText.trim() || "game-of-life";
   for (let i = 0; i < value.length; i++) {
@@ -44,68 +46,153 @@ const textToLayer = (seedText) => {
   }
 
   const random = mulberry32(hash);
-  return Array.from({ length: GRID_DEPTH }, () =>
-    Array.from({ length: GRID_WIDTH }, () => random() > 0.62)
+  return Array.from({ length: size }, () =>
+    Array.from({ length: size }, () => random() > 0.62)
   );
 };
 
-const seedToLayer = (seedText) => {
+const seedToLayer = (seedText, size) => {
   const binary = seedText.replace(/[^01]/g, "");
-  if (binary.length >= GRID_WIDTH * GRID_DEPTH) return binaryToLayer(binary);
-  return textToLayer(seedText);
+  if (binary.length >= size * size) return binaryToLayer(binary, size);
+  return textToLayer(seedText, size);
 };
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
 export default function GameOfLife3D({ className, onManualRotateChange }) {
-  const containerRef = useRef(null);
+  const canvasHostRef = useRef(null);
+  const editorCanvasRef = useRef(null);
   const speedRef = useRef(DEFAULT_STEPS_PER_SECOND);
+  const pausedRef = useRef(false);
   const seedRequestRef = useRef(null);
   const manualRotateRef = useRef(false);
+  const resumeStepResetRef = useRef(false);
+  const editorPointerActiveRef = useRef(false);
+  const seedInputRef = useRef(DEFAULT_SEED);
+  const simulationApiRef = useRef({
+    clearTopLayer: () => {},
+    renderEditor: () => {},
+    setTopCell: () => {},
+  });
+
   const [speed, setSpeed] = useState(DEFAULT_STEPS_PER_SECOND);
   const [seedInput, setSeedInput] = useState(DEFAULT_SEED);
-  const [controlsOpen, setControlsOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return false;
+    return window.matchMedia("(min-width: 768px)").matches;
+  });
   const [manualRotateOn, setManualRotateOn] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [drawMode, setDrawMode] = useState("draw");
+  const [gridSize, setGridSize] = useState(16);
 
   useEffect(() => {
     speedRef.current = speed;
   }, [speed]);
 
   useEffect(() => {
+    pausedRef.current = paused;
+  }, [paused]);
+
+  useEffect(() => {
+    seedInputRef.current = seedInput;
+  }, [seedInput]);
+
+  useEffect(() => {
     manualRotateRef.current = manualRotateOn;
     onManualRotateChange?.(manualRotateOn);
-  }, [manualRotateOn]);
+  }, [manualRotateOn, onManualRotateChange]);
+
+  useEffect(() => {
+    if (controlsOpen) simulationApiRef.current.renderEditor();
+  }, [controlsOpen]);
 
   const applySeed = (seedText = seedInput) => {
-    seedRequestRef.current = seedToLayer(seedText);
+    seedRequestRef.current = seedToLayer(seedText, gridSize);
   };
 
   const resetDefaultSeed = () => {
     setSeedInput(DEFAULT_SEED);
-    seedRequestRef.current = seedToLayer(DEFAULT_SEED);
+    seedRequestRef.current = seedToLayer(DEFAULT_SEED, gridSize);
   };
 
   const randomizeSeed = () => {
     const randomSeed = `random-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setSeedInput(randomSeed);
-    seedRequestRef.current = seedToLayer(randomSeed);
+    seedRequestRef.current = seedToLayer(randomSeed, gridSize);
+  };
+
+  const togglePaused = () => {
+    setPaused((current) => {
+      const next = !current;
+      if (current && !next) resumeStepResetRef.current = true;
+      return next;
+    });
+  };
+
+  const clearTopLayer = () => {
+    simulationApiRef.current.clearTopLayer();
+  };
+
+  const paintFromPointer = (event) => {
+    const canvas = editorCanvasRef.current;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = clamp(
+      Math.floor(((event.clientX - rect.left) / rect.width) * gridSize),
+      0,
+      gridSize - 1
+    );
+    const z = clamp(
+      Math.floor(((event.clientY - rect.top) / rect.height) * gridSize),
+      0,
+      gridSize - 1
+    );
+    const erase =
+      drawMode === "erase" ||
+      event.button === 2 ||
+      event.buttons === 2 ||
+      event.altKey ||
+      event.shiftKey;
+    simulationApiRef.current.setTopCell(x, z, !erase);
+  };
+
+  const onEditorPointerDown = (event) => {
+    editorPointerActiveRef.current = true;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    paintFromPointer(event);
+    event.preventDefault();
+  };
+
+  const onEditorPointerMove = (event) => {
+    if (!editorPointerActiveRef.current) return;
+    paintFromPointer(event);
+    event.preventDefault();
+  };
+
+  const onEditorPointerEnd = (event) => {
+    editorPointerActiveRef.current = false;
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch (_) {
+      // Pointer capture may already be released by the browser.
+    }
   };
 
   useEffect(() => {
-    // Grid sizes
-    const width = GRID_WIDTH;
-    const depth = GRID_DEPTH;   // z per layer
-    const height = GRID_HEIGHT;  // number of layers (y)
+    const width = gridSize;
+    const depth = gridSize;
+    const height = GRID_HEIGHT;
     const cubeSize = 0.93;
 
-    const ROTATION_SPEED_RAD_PER_SEC = 0.14;       // yaw speed
-    const YAW_DIRECTION = 1;                        // flip to -1 if you want the other way
+    const ROTATION_SPEED_RAD_PER_SEC = 0.14;
+    const YAW_DIRECTION = 1;
 
-    const container = containerRef.current;
+    const container = canvasHostRef.current;
+    if (!container) return undefined;
     const { clientWidth, clientHeight } = container;
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
       antialias: false,
@@ -116,53 +203,47 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
     renderer.domElement.style.cursor = "grab";
     container.appendChild(renderer.domElement);
 
-    // Scene
     const scene = new THREE.Scene();
 
-    // Pivot hierarchy: pivot (yaw spin) -> content (static orientation)
     const pivot = new THREE.Group();
     scene.add(pivot);
 
     const content = new THREE.Group();
-    // Base orientation: 90° CCW around Z, with your existing yaw
     content.rotation.y = (3 * Math.PI) / 6;
     content.rotation.x = 0;
     content.rotation.z = Math.PI / 2;
     pivot.add(content);
 
-    // Lights (kept on the scene so lighting doesn't spin with the model)
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const directionalLight = new THREE.DirectionalLight(0xcccccc, 1.2);
     directionalLight.position.set(1.5, 1, 0);
     scene.add(directionalLight);
 
-    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.6); // a bit brighter from below
+    const directionalLight2 = new THREE.DirectionalLight(0xffffff, 1.6);
     directionalLight2.position.set(-3.5, -10, -3.5);
     scene.add(directionalLight2);
 
-    // Camera — bottom-up / underslung
-    const camera = new THREE.PerspectiveCamera(35, clientWidth / clientHeight, 0.5, 20000);
-    // Place camera below the stack (negative Y) and slightly forward on Z
+    const camera = new THREE.PerspectiveCamera(
+      35,
+      clientWidth / Math.max(1, clientHeight),
+      0.5,
+      20000
+    );
     camera.position.set(0, -height * 2.2, depth * 0.8);
-    // Use +Z as "up" so the pivot's Z-rotation reads as yaw from this angle
     camera.up.set(0, 0, 1);
-    // Look slightly above center
     camera.lookAt(new THREE.Vector3(0, height * 0.1, 0));
 
-    // Cells (3D boolean grid) with ring buffer
-    let cells = makeEmptyCells();
-    cells[height - 1] = seedToLayer(DEFAULT_SEED);
+    let cells = makeEmptyCells(gridSize);
+    cells[height - 1] = seedToLayer(seedInputRef.current, gridSize);
 
-    // Instanced mesh (one draw call)
     const geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
     const material = new THREE.MeshLambertMaterial({ color: 0xffffff });
     const instanceCap = width * depth * height;
     const instanced = new THREE.InstancedMesh(geometry, material, instanceCap);
     instanced.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     instanced.count = 0;
-    content.add(instanced); // add to content so yaw spins via parent pivot
+    content.add(instanced);
 
-    // Precompute transforms (positions relative to 'content')
     const precomputed = [];
     const tmpPos = new THREE.Vector3();
     const unitQuat = new THREE.Quaternion();
@@ -174,7 +255,6 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
       for (let z = 0; z < depth; z++) {
         for (let x = 0; x < width; x++) {
           const idx = idxFor(x, y, z);
-          // Map layer index to world Y (top-down motion)
           tmpPos.set(x - width / 2, y - height / 2, z - depth / 2);
           precomputed[idx] = new THREE.Matrix4().compose(
             tmpPos.clone(),
@@ -185,7 +265,6 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
       }
     }
 
-    // Life helpers
     const countLiveNeighbors = (layer, x, z) => {
       let count = 0;
       for (let dx = -1; dx <= 1; dx++) {
@@ -211,7 +290,48 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
       return next;
     };
 
-    // Render alive cells
+    const renderEditor = () => {
+      const canvas = editorCanvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      const cellSize = EDITOR_CANVAS_SIZE / width;
+      const topLayer = cells[cells.length - 1];
+
+      ctx.clearRect(0, 0, EDITOR_CANVAS_SIZE, EDITOR_CANVAS_SIZE);
+
+      ctx.fillStyle = "#f8fafc";
+      for (let z = 0; z < depth; z++) {
+        for (let x = 0; x < width; x++) {
+          if (topLayer[z][x]) {
+            ctx.fillRect(
+              x * cellSize + 1,
+              z * cellSize + 1,
+              Math.max(1, cellSize - 2),
+              Math.max(1, cellSize - 2)
+            );
+          }
+        }
+      }
+
+      ctx.strokeStyle = width > 32 ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.13)";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= width; i++) {
+        const p = Math.round(i * cellSize) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(p, 0);
+        ctx.lineTo(p, EDITOR_CANVAS_SIZE);
+        ctx.stroke();
+      }
+      for (let i = 0; i <= depth; i++) {
+        const p = Math.round(i * cellSize) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, p);
+        ctx.lineTo(EDITOR_CANVAS_SIZE, p);
+        ctx.stroke();
+      }
+    };
+
     const updateInstances = () => {
       let aliveCount = 0;
       for (let y = 0; y < height; y++) {
@@ -230,14 +350,38 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
       instanced.instanceMatrix.needsUpdate = true;
     };
 
-    updateInstances();
-
     const replaceSeed = (topLayer) => {
-      cells = makeEmptyCells();
-      cells[height - 1] = topLayer;
+      cells = makeEmptyCells(gridSize);
+      cells[height - 1] = cloneLayer(topLayer);
       updateInstances();
+      renderEditor();
       lastStepTime = performance.now();
     };
+
+    const setTopCell = (x, z, alive) => {
+      const topLayer = cells[cells.length - 1];
+      if (topLayer[z][x] === alive) return;
+      topLayer[z][x] = alive;
+      updateInstances();
+      renderEditor();
+      lastStepTime = performance.now();
+    };
+
+    const clearTopLayerOnly = () => {
+      cells[cells.length - 1] = makeEmptyLayer(gridSize);
+      updateInstances();
+      renderEditor();
+      lastStepTime = performance.now();
+    };
+
+    simulationApiRef.current = {
+      clearTopLayer: clearTopLayerOnly,
+      renderEditor,
+      setTopCell,
+    };
+
+    updateInstances();
+    renderEditor();
 
     let raf = 0;
     let lastStepTime = performance.now();
@@ -310,13 +454,22 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
         replaceSeed(pendingSeed);
       }
 
-      // Simulation step limiter
+      if (resumeStepResetRef.current) {
+        resumeStepResetRef.current = false;
+        lastStepTime = now;
+      }
+
       const stepsPerSecond = speedRef.current;
-      if (stepsPerSecond > 0 && now - lastStepTime >= 1000 / stepsPerSecond) {
+      if (
+        !pausedRef.current &&
+        stepsPerSecond > 0 &&
+        now - lastStepTime >= 1000 / stepsPerSecond
+      ) {
         cells.shift();
         const newTop = nextGeneration(cells[cells.length - 1]);
         cells.push(newTop);
         updateInstances();
+        renderEditor();
         lastStepTime = now;
       }
 
@@ -348,10 +501,9 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
 
     animate();
 
-    // Resize to container
     const onResize = () => {
-      const w = container.clientWidth;
-      const h = container.clientHeight;
+      const w = Math.max(1, container.clientWidth);
+      const h = Math.max(1, container.clientHeight);
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -359,8 +511,12 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
     const ro = new ResizeObserver(onResize);
     ro.observe(container);
 
-    // Cleanup
     return () => {
+      simulationApiRef.current = {
+        clearTopLayer: () => {},
+        renderEditor: () => {},
+        setTopCell: () => {},
+      };
       cancelAnimationFrame(raf);
       ro.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -375,7 +531,7 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
         container.removeChild(renderer.domElement);
       }
     };
-  }, []);
+  }, [gridSize]);
 
   const interactiveClassName = (className || "")
     .replace(/\bpointer-events-none\b/g, "")
@@ -383,15 +539,17 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
 
   return (
     <div
-      ref={containerRef}
-      className={`${interactiveClassName} pointer-events-auto`}
-      style={{ width: "100%", height: "100%" }}
+      className={`${interactiveClassName} relative h-full w-full overflow-hidden pointer-events-auto ${
+        controlsOpen ? "md:grid md:grid-cols-[minmax(0,1fr)_18rem]" : ""
+      }`}
     >
+      <div ref={canvasHostRef} className="relative h-full min-h-0 w-full" />
+
       {!controlsOpen && (
         <button
           type="button"
           onClick={() => setControlsOpen(true)}
-          className="pointer-events-auto absolute bottom-2 right-2 z-20 rounded-md border border-white/15 bg-black/45 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-md transition hover:bg-black/65 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:[writing-mode:vertical-rl]"
+          className="pointer-events-auto absolute bottom-3 right-3 z-20 rounded-md border border-white/15 bg-gray-900/55 px-2.5 py-2 text-[10px] font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-md transition hover:bg-gray-900/75 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:[writing-mode:vertical-rl]"
           aria-label="Open Game of Life controls"
         >
           Life
@@ -400,7 +558,7 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
 
       {controlsOpen && (
         <form
-          className="pointer-events-auto absolute bottom-2 right-2 z-20 w-[min(9.75rem,calc(100vw-1rem))] rounded-lg border border-white/15 bg-black/55 p-2 text-white shadow-lg backdrop-blur-md sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2 sm:w-44"
+          className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-hidden rounded-lg border border-white/15 bg-gray-900/75 p-3 text-white shadow-2xl backdrop-blur-md md:static md:h-full md:rounded-none md:border-y-0 md:border-r-0 md:bg-gray-900/55"
           onSubmit={(event) => {
             event.preventDefault();
             applySeed();
@@ -413,19 +571,21 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
             <button
               type="button"
               onClick={() => setControlsOpen(false)}
-              className="grid h-5 w-5 place-items-center rounded bg-white/10 text-xs leading-none text-white transition hover:bg-white/20"
+              className="grid h-6 w-6 place-items-center rounded bg-white/10 text-xs leading-none text-white transition hover:bg-white/20"
               aria-label="Close Game of Life controls"
             >
               x
             </button>
           </div>
+
           <textarea
             value={seedInput}
             onChange={(event) => setSeedInput(event.target.value)}
-            className="mt-1 h-12 w-full resize-none rounded-md border border-white/15 bg-black/50 p-1.5 font-mono text-[9px] leading-tight text-white outline-none focus:border-white/45 sm:h-16 sm:text-[10px]"
+            className="mt-1 h-14 w-full resize-none rounded-md border border-white/15 bg-gray-950/45 p-1.5 font-mono text-[9px] leading-tight text-white outline-none focus:border-white/45 sm:h-16 sm:text-[10px]"
             spellCheck="false"
             aria-label="Game of Life seed"
           />
+
           <div className="mt-1.5 grid grid-cols-3 gap-1">
             <button
               type="submit"
@@ -449,13 +609,91 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
             </button>
           </div>
 
-          <label className="mt-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+          <div className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+            <span>Size</span>
+            <span>{gridSize}x{gridSize}</span>
+          </div>
+          <div className="mt-1 grid grid-cols-3 gap-1">
+            {GRID_SIZE_OPTIONS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  seedRequestRef.current = null;
+                  setGridSize(option);
+                }}
+                className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
+                  gridSize === option
+                    ? "bg-white/80 text-black hover:bg-white"
+                    : "bg-white/10 text-white hover:bg-white/20"
+                }`}
+                aria-pressed={gridSize === option}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+            <span>Top layer</span>
+            <span>{paused ? "Paused" : "Live"}</span>
+          </div>
+
+          <canvas
+            ref={editorCanvasRef}
+            width={EDITOR_CANVAS_SIZE}
+            height={EDITOR_CANVAS_SIZE}
+            className="mt-1 aspect-square w-full touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated]"
+            aria-label="Editable top layer of the Game of Life simulation"
+            onContextMenu={(event) => event.preventDefault()}
+            onPointerDown={onEditorPointerDown}
+            onPointerMove={onEditorPointerMove}
+            onPointerUp={onEditorPointerEnd}
+            onPointerCancel={onEditorPointerEnd}
+            onLostPointerCapture={onEditorPointerEnd}
+          />
+
+          <div className="mt-2 grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => setDrawMode("draw")}
+              className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
+                drawMode === "draw"
+                  ? "bg-white/80 text-black hover:bg-white"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              aria-pressed={drawMode === "draw"}
+            >
+              Draw
+            </button>
+            <button
+              type="button"
+              onClick={() => setDrawMode("erase")}
+              className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
+                drawMode === "erase"
+                  ? "bg-white/80 text-black hover:bg-white"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              aria-pressed={drawMode === "erase"}
+            >
+              Erase
+            </button>
+            <button
+              type="button"
+              onClick={clearTopLayer}
+              className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20 sm:text-[10px]"
+            >
+              Clear
+            </button>
+          </div>
+
+          <label className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
             <span>Speed</span>
-            <span>{speed === 0 ? "Frozen" : `${speed}/s`}</span>
+            <span>{speed}/s</span>
           </label>
           <input
             type="range"
-            min="0"
+            min="1"
             max="30"
             step="1"
             value={speed}
@@ -463,18 +701,33 @@ export default function GameOfLife3D({ className, onManualRotateChange }) {
             className="mt-1 w-full accent-white"
             aria-label="Game of Life simulation speed"
           />
-          <button
-            type="button"
-            onClick={() => setManualRotateOn((current) => !current)}
-            className={`mt-2 w-full rounded-md px-2 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
-              manualRotateOn
-                ? "bg-white/80 text-black hover:bg-white"
-                : "bg-white/10 text-white hover:bg-white/20"
-            }`}
-            aria-pressed={manualRotateOn}
-          >
-            Rotate {manualRotateOn ? "On" : "Off"}
-          </button>
+
+          <div className="mt-auto grid grid-cols-2 gap-1 pt-3">
+            <button
+              type="button"
+              onClick={togglePaused}
+              className={`rounded-md px-2 py-1.5 text-[9px] font-semibold transition sm:text-[10px] ${
+                paused
+                  ? "bg-white/80 text-black hover:bg-white"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              aria-pressed={paused}
+            >
+              {paused ? "Resume" : "Pause"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setManualRotateOn((current) => !current)}
+              className={`rounded-md px-2 py-1.5 text-[9px] font-semibold transition sm:text-[10px] ${
+                manualRotateOn
+                  ? "bg-white/80 text-black hover:bg-white"
+                  : "bg-white/10 text-white hover:bg-white/20"
+              }`}
+              aria-pressed={manualRotateOn}
+            >
+              Rotate {manualRotateOn ? "On" : "Off"}
+            </button>
+          </div>
         </form>
       )}
     </div>

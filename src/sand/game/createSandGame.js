@@ -809,6 +809,7 @@ export function createSandGame(container, opts = {}) {
     getDrawMode() { return drawModeOn; },
     setPlayMode(on) { playMode = !!on; engine?.setPlayMode(playMode); },
     getPlayMode() { return playMode; },
+    inputKey(code, on) { engine?.inputKey(code | 0, on ? 1 : 0); },
     // Survival inventory intents. When connected as a client they go to the
     // authoritative server; offline they apply to the local engine (unchanged).
     isSurvival() { return survival; },

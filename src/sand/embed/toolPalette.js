@@ -100,10 +100,14 @@ const STYLE = `
   border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); border-radius: 6px;
   padding: 5px 7px; font-size: 12px; line-height: 1.15; color: #f3f4f6; cursor: pointer; overflow: hidden; }
 .sg-current:hover { background: rgba(255,255,255,.12); }
+.sg-current.locked { opacity: .55; cursor: not-allowed; }
+.sg-current.locked:hover { background: rgba(255,255,255,.06); }
 .sg-current .sg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sg-expand { flex: none; border-radius: 6px; padding: 5px 9px; font-size: 11px; font-weight: 600;
   border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
 .sg-expand:hover { background: rgba(255,255,255,.2); }
+.sg-expand.locked { opacity: .55; cursor: not-allowed; }
+.sg-expand.locked:hover { background: rgba(255,255,255,.1); }
 
 .sg-search { width: 100%; box-sizing: border-box; border-radius: 6px; padding: 6px 8px; font-size: 13px;
   border: 1px solid rgba(255,255,255,.18); background: rgba(3,7,18,.6); color: #fff; outline: none; }
@@ -139,7 +143,7 @@ function renderSwatch(color) {
   return sw;
 }
 
-export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } = {}) {
+export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, showDrawToggle = true } = {}) {
   if (!root.querySelector('style[data-sand-palette]')) {
     const s = document.createElement('style');
     s.setAttribute('data-sand-palette', '');
@@ -193,12 +197,17 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
   const currentName = document.createElement('span');
   currentName.className = 'sg-name';
   current.append(currentSwatch, currentName);
-  current.addEventListener('click', () => setExpanded(!expanded));
+  const canSelectMaterial = () => !showDrawToggle || drawOn;
+  const toggleExpandedFromButton = () => {
+    if (!canSelectMaterial()) return;
+    setExpanded(!expanded);
+  };
+  current.addEventListener('click', toggleExpandedFromButton);
 
   const expandBtn = document.createElement('button');
   expandBtn.type = 'button';
   expandBtn.className = 'sg-expand';
-  expandBtn.addEventListener('click', () => setExpanded(!expanded));
+  expandBtn.addEventListener('click', toggleExpandedFromButton);
 
   bar.append(current, expandBtn);
   col.appendChild(bar);
@@ -214,20 +223,27 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
   const list = document.createElement('div');
   list.className = 'sg-list';
 
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'sg-toggle';
-  toggle.addEventListener('click', () => { drawOn = !drawOn; onToggleDrawMode?.(drawOn); renderState(); });
-  col.appendChild(toggle);
+  const toggle = showDrawToggle ? document.createElement('button') : null;
+  if (toggle) {
+    toggle.type = 'button';
+    toggle.className = 'sg-toggle';
+    toggle.addEventListener('click', () => {
+      drawOn = !drawOn;
+      onToggleDrawMode?.(drawOn);
+      if (!drawOn && expanded) setExpanded(false);
+      else renderState();
+    });
+    col.appendChild(toggle);
+  }
 
   function setExpanded(next) {
     expanded = next;
     if (expanded) {
-      // Mount search + list above the Draw toggle.
+      // Mount search + list above the Draw toggle when it exists.
       col.insertBefore(search, toggle);
       col.insertBefore(list, toggle);
       renderList();
-      search.focus();
+      if (!showDrawToggle) search.focus();
     } else {
       query = '';
       search.value = '';
@@ -239,17 +255,26 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
   }
 
   function renderState() {
-    toggle.textContent = `Draw ${drawOn ? 'On' : 'Off'}`;
-    toggle.className = `sg-toggle${drawOn ? ' on' : ''}`;
-    toggle.title = drawOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation';
+    if (toggle) {
+      toggle.textContent = `Draw ${drawOn ? 'On' : 'Off'}`;
+      toggle.className = `sg-toggle${drawOn ? ' on' : ''}`;
+      toggle.title = drawOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation';
+    }
+    const locked = !canSelectMaterial();
     wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'}`;
+    current.className = `sg-current${locked ? ' locked' : ''}`;
+    current.disabled = locked;
     currentSwatch.style.background = selected.color;
     currentName.textContent = selected.label;
     current.title = `Selected: ${selected.label} — click to ${expanded ? 'collapse' : 'change'}`;
     expandBtn.textContent = expanded ? 'Close' : 'Expand';
+    expandBtn.className = `sg-expand${locked ? ' locked' : ''}`;
+    expandBtn.disabled = locked;
+    expandBtn.title = locked ? 'Turn Draw On to select materials' : '';
   }
 
   function pick(entry) {
+    if (!canSelectMaterial()) return;
     selected = entry;
     onSelectCreative?.({ kind: entry.kind, value: entry.value });
     // Collapsing after a pick keeps the footprint small.
@@ -287,7 +312,11 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode } =
 
   return {
     el: wrap,
-    setDrawMode(on) { drawOn = !!on; renderState(); },
+    setDrawMode(on) {
+      drawOn = !!on;
+      if (!drawOn && expanded) setExpanded(false);
+      else renderState();
+    },
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
     destroy() { wrap.remove(); },
   };

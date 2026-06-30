@@ -1,27 +1,19 @@
-import React, { useState } from 'react';
+import React from 'react';
 import GameOfLife3D from './GameOfLife3D';
 
 /* -------------------- PAGE -------------------- */
 export default function About() {
-  const [rotateActive, setRotateActive] = useState(false);
-
   return (
     <section className="relative overflow-hidden bg-dark">
-      <GameOfLife3D
-        className="absolute inset-0 z-0 h-full w-full opacity-70"
-        onManualRotateChange={setRotateActive}
-      />
-
       {/* Content */}
-      <div
-        className={`relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-6 pb-48 transition duration-300 ${
-          rotateActive ? 'opacity-0 pointer-events-none select-none' : 'opacity-100'
-        }`}
-        aria-hidden={rotateActive}
-      >
+      <div className="relative z-[1] mx-auto max-w-6xl px-4 sm:px-6 pt-12 sm:pt-6 pb-48">
         <h2 className="text-white font-bold tracking-tight text-center text-3xl sm:text-5xl md:text-6xl">
           SKILLS & <br className="hidden sm:block" /> EXPERIENCE
         </h2>
+
+        <div className="mt-8 h-[34rem] overflow-hidden rounded-xl border border-white/10 bg-white/[0.03] shadow-2xl md:h-[38rem]">
+          <GameOfLife3D className="h-full w-full" />
+        </div>
 
         {/* Cards: stacked on mobile, side-by-side on md+; equal height & width */}
         <div className="mt-6 md:mt-16">

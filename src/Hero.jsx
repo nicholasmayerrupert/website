@@ -6,7 +6,7 @@ const Hero = () => {
   const [drawModeActive, setDrawModeActive] = useState(false);
 
   return (
-    <section className="relative h-[100dvh] overflow-hidden bg-[#222222]">
+    <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       <div className="absolute inset-0 z-10">
         <SandGame mode="creative" onDrawModeChange={setDrawModeActive} />
       </div>
@@ -30,8 +30,8 @@ const Hero = () => {
       </div>
 
       {/* Fades: above simulation, below text */}
-      <div className="pointer-events-none absolute top-0 left-0 w-full h-[18vh] md:h-[20vh] bg-gradient-to-b from-[#121212] to-transparent z-10" />
-      <div className="pointer-events-none absolute bottom-0 left-0 w-full h-[18vh] md:h-[20vh] bg-gradient-to-t from-[#121212] to-transparent z-10" />
+      <div className="pointer-events-none absolute top-0 left-0 w-full h-[18svh] md:h-[20vh] bg-gradient-to-b from-[#121212] to-transparent z-10" />
+      <div className="pointer-events-none absolute bottom-0 left-0 w-full h-[18svh] md:h-[20vh] bg-gradient-to-t from-[#121212] to-transparent z-10" />
     </section>
   );
 };

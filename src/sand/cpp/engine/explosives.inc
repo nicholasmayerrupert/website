@@ -61,6 +61,11 @@
     auto& pd = L->pendingDetonations;
     if (!pd.count(cell)) pd[cell] = fuse;
   }
+  void shortenTntBodyFuse(Body* b, int fuse) {
+    if (!b || b->material != TNT) return;
+    if (b->fuseTicks <= 0 || b->fuseTicks > fuse) b->fuseTicks = fuse;
+    b->awake = true; b->stillTicks = 0;
+  }
 
   int blastGasTarget(int sx, int sy, int cx, int cy, int radius, uint32_t seed,
                      const std::unordered_set<int>& reservedTargets) {
@@ -209,7 +214,7 @@
   // exceeds the blast energy there: energy = power*(1 - d/radius). Soft blocks
   // (sand/dirt) are cleared almost to the rim; hard ones (iron ore) only near centre.
   // Destruction is component-safe and body-aware, reusing the eraser/mining primitives.
-  void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb) {
+  void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr) {
     bb.any = true;
     if (cx - radius < bb.minX) bb.minX = cx - radius;
     if (cy - radius < bb.minY) bb.minY = cy - radius;
@@ -229,7 +234,24 @@
         double energy = power * (1.0 - std::sqrt((double)dd) / radius);
         if (energy < (double)DURABILITY[m]) continue; // too hard to blow up at this distance
         bool wasTnt = (m == TNT);
-        if (wasTnt && dd > 0) queueDetonation(k, TNT_CHAIN_FUSE); // chain OTHER TNT a beat later (dd>0 so a blast never re-queues its own centre)
+        if (wasTnt && dd > 0) {
+          if (isBodyCell(k)) {
+            if (!bb.bodyMapBuilt) { for (Body* b : L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
+            auto it = bb.bodyById.find(bodyOwner[k]);
+            Body* hitBody = it == bb.bodyById.end() ? nullptr : it->second;
+            if (hitBody != sourceBody) {
+              shortenTntBodyFuse(hitBody, TNT_CHAIN_FUSE);
+              markCellIndex(k);
+              continue;
+            }
+          } else {
+            // Keep chained static TNT physically present until its short fuse fires.
+            // Erasing it here created stale cell-coordinate blasts a few ticks later.
+            queueDetonation(k, TNT_CHAIN_FUSE);
+            markCellIndex(k);
+            continue;
+          }
+        }
         // body-material invariant: a body cell goes through the body system, a static
         // cell through the component-split system (see isBodyCell).
         if (isBodyCell(k)) {
@@ -296,16 +318,16 @@
     markDirtyRect(gasX0, gasY0, gasX1, gasY1);
   }
 
-  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb) {
+  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody = nullptr) {
     Layer* src = L;
     size_t srcAftermath0 = bb.tntAftermath.size();
-    carveBlast(cx, cy, radius, power, bb);
+    carveBlast(cx, cy, radius, power, bb, sourceBody);
     size_t srcAftermath1 = bb.tntAftermath.size();
     if (!bgEnabled || !otherBb) return;
     Layer* other = (src == &fg) ? &bg : &fg;
     useLayer(other);
     size_t otherAftermath0 = otherBb->tntAftermath.size();
-    carveBlast(cx, cy, radius, power, *otherBb);
+    carveBlast(cx, cy, radius, power, *otherBb, nullptr);
     size_t otherAftermath1 = otherBb->tntAftermath.size();
     otherBb->tntAftermath.insert(otherBb->tntAftermath.end(), bb.tntAftermath.begin() + srcAftermath0, bb.tntAftermath.begin() + srcAftermath1);
     useLayer(src);
@@ -359,15 +381,22 @@
     if (!L->pendingDetonations.empty()) {
       std::vector<int> fire;
       for (auto& kv : L->pendingDetonations) if (--kv.second <= 0) fire.push_back(kv.first);
-      for (int cell : fire) L->pendingDetonations.erase(cell);
       std::sort(fire.begin(), fire.end());
-      for (int cell : fire) carveBlastAcrossLayers(cell % cols, cell / cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
+      for (int cell : fire) {
+        if (cell >= 0 && cell < cols * rows && grid[cell] == TNT && !isBodyCell(cell))
+          carveBlastAcrossLayers(cell % cols, cell / cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
+      }
+      for (int cell : fire) L->pendingDetonations.erase(cell);
     }
     // 3) Tick body fuses; an expired TNT body detonates at its centre (the blast
     //    consumes its own cells, so finishErasedBodies removes the now-empty body).
     std::vector<std::pair<int, int>> bodyBlasts;
-    for (Body* b : L->bodies) if (b->material == TNT && b->fuseTicks > 0 && --b->fuseTicks <= 0)
+    std::vector<Body*> bodyBlastSources;
+    for (Body* b : L->bodies) if (b->material == TNT && b->fuseTicks > 0 && --b->fuseTicks <= 0) {
       bodyBlasts.push_back({(int)std::lround(b->px), (int)std::lround(b->py)});
-    for (auto& c : bodyBlasts) carveBlastAcrossLayers(c.first, c.second, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
+      bodyBlastSources.push_back(b);
+    }
+    for (size_t i = 0; i < bodyBlasts.size(); i++)
+      carveBlastAcrossLayers(bodyBlasts[i].first, bodyBlasts[i].second, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb, bodyBlastSources[i]);
     finishBlastBatches(bb, &otherBb); // one finalize per layer for every crater of this step
   }

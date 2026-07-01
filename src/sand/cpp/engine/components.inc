@@ -789,6 +789,16 @@
         for (int k : comp->cells) { uint8_t m = matOf(ci, k); mats.push_back({k + dir, m}); if (isPlant) { if (isPlantWood(m)) wood++; else if (isPlantLeaf(m)) leaf++; } }
         moves.push_back({comp, isPlant, std::move(mats), wood, leaf});
       }
+      std::vector<std::pair<int, int>> movedFuses;
+      if (!L->pendingDetonations.empty()) {
+        movedFuses.reserve(L->pendingDetonations.size());
+        for (int k : cells) {
+          auto it = L->pendingDetonations.find(k);
+          if (it == L->pendingDetonations.end()) continue;
+          movedFuses.push_back({k + dir, it->second});
+          L->pendingDetonations.erase(it);
+        }
+      }
       L->groundDirty = true; // an assembly is relocating -> grounding changes -> full reflood
       for (int k : cells) writeGridIndex(k, EMPTY);
       for (auto& mv : moves) {
@@ -797,6 +807,10 @@
         mv.comp->cells = std::move(newCells);
         mv.comp->yMax = imax(0, imin(rows - 1, mv.comp->yMax + dy));
         if (mv.isPlant) { mv.comp->woodCount = mv.wood; mv.comp->leafCount = mv.leaf; mv.comp->cacheDirty = true; }
+      }
+      for (auto& pr : movedFuses) {
+        auto it = L->pendingDetonations.find(pr.first);
+        if (it == L->pendingDetonations.end() || pr.second < it->second) L->pendingDetonations[pr.first] = pr.second;
       }
       // Relocate every displaced cell: liquids -> liquidTargets, powders -> powderTargets
       // (both reserved above), gas -> the vacated-cell dump. A powder STILL advances the

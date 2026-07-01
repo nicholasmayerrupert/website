@@ -446,6 +446,19 @@
     }
   }
   bool beginStepDirty() {
+    for (auto& kv : L->pendingDetonations) {
+      int k = kv.first;
+      if (k < 0 || k >= cols * rows) continue;
+      int y = k / cols, x = k - y * cols;
+      if (x < rowMarkMin[y]) rowMarkMin[y] = x;
+      if (x > rowMarkMax[y]) rowMarkMax[y] = x;
+    }
+    for (Body* b : L->bodies) if (b->material == TNT && b->fuseTicks > 0) {
+      int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
+      if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
+      if (x < rowMarkMin[y]) rowMarkMin[y] = x;
+      if (x > rowMarkMax[y]) rowMarkMax[y] = x;
+    }
     foldRowMarksToRender();
     for (int y = 0; y < rows; y++) { activeRowMin[y] = cols; activeRowMax[y] = -1; }
     bool hasActive = false;

@@ -214,32 +214,29 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 {
-  // a blast-cut static wood component should become a free wood body and get the
-  // same outward launch as stone/ice debris paths.
+  // A blast-cut static component should not become one massive launched body.
+  // Destroyed solid cells still emit small physical rubble of their own material.
   const e = mk();
   for (let x = 20; x < 120; x++) e.placeMaterial(x, ROWS - 1, 0, MAT.STONE);
   for (let y = 45; y < ROWS - 1; y++) e.placeMaterial(72, y, 0, MAT.WOOD);
   e.placeMaterial(60, 72, 0, MAT.TNT);
   e.syncComponents();
-  let launched = null;
+  let maxWoodPts = 0;
   for (let i = 0; i < 90; i++) {
     e.placeMaterial(61, 72, 1, MAT.FIRE);
     e.step(i * 16);
     for (let b = 0; b < e._bodyCount(); b++) {
+      if (e._bodyMaterial(b) !== MAT.WOOD) continue;
       const s = e._bodyState(b);
-      if (s && s.vx > 0.4 && s.vy < 0.4) launched = s;
+      if (s) maxWoodPts = Math.max(maxWoodPts, s.nPts);
     }
-    if (launched) break;
   }
-  check(`TNT launched a detached static WOOD chunk as a body (bodies ${e._bodyCount()})`, e._bodyCount() > 0);
-  check(`launched WOOD chunk has outward/upward motion (vx ${launched?.vx.toFixed(2)}, vy ${launched?.vy.toFixed(2)})`,
-    launched && launched.vx > 0.4 && launched.vy < 0.4);
+  check(`TNT emitted small WOOD rubble from destroyed cells (max body cells ${maxWoodPts})`, maxWoodPts > 0);
+  check(`TNT did not launch a massive detached WOOD chunk (max body cells ${maxWoodPts})`, maxWoodPts <= 4);
   e.destroy();
 }
 {
-  // Grounded plant-family solids still need physical rubble. This catches the path
-  // where the blast destroys WOOD in a mixed-material crater but the remaining plant
-  // component never detaches.
+  // Grounded plant-family solids still need physical rubble from destroyed cells.
   const e = mk();
   for (let y = 68; y < ROWS; y++) for (let x = 48; x < 92; x++) e.placeMaterial(x, y, 0, MAT.WOOD);
   for (let y = 68; y < ROWS; y++) for (let x = 48; x < 58; x++) e.placeMaterial(x, y, 0, MAT.STONE);

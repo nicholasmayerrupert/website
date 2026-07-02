@@ -41,6 +41,8 @@ int rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
 void applyWorld(const uint8_t* buf, int len) {
   int p = rleDecode(buf, len, 0, fg.grid);
   rleDecode(buf, len, p, bg.grid);
+  fg.skyWorldReachY.clear(); fg.skyValid = false; fg.skyDirty = true;
+  bg.skyWorldReachY.clear(); bg.skyValid = false; bg.skyDirty = true;
   useLayer(&fg); registerSeededComponents(0, cols); markAllDirty();
   useLayer(&bg); registerSeededComponents(0, cols); markAllDirty();
   useLayer(&fg);
@@ -82,6 +84,7 @@ void applyDiff(const uint8_t* buf, int len) {
   if (len < 2) return;
   int p = readDiffLayer(buf, len, 0, &fg);
   readDiffLayer(buf, len, p, &bg);
+  fg.skyDirty = true; bg.skyDirty = true;
   useLayer(&fg); registerSeededComponents(0, cols);
   useLayer(&bg); registerSeededComponents(0, cols);
   useLayer(&fg);

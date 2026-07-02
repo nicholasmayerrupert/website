@@ -162,6 +162,57 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   e.destroy();
 }
 
+// A real vertical shaft keeps direct skylight across vertical streaming.
+{
+  const e = mkInfinite();
+  for (let i = 0; i < 6; i++) {
+    fillStone(e, 8, 0, 87, 95);
+    carve(e, 45, 0, 50, 95);
+    e.renderFull();
+    if (i < 5) e.shiftWorldXY(0, 32);
+  }
+  const shaftFace = brightness(e, 44, 70);
+  const sealed = brightness(e, 20, 70);
+  check(`streamed deep shaft keeps direct skylight (${shaftFace.toFixed(1)} > ${sealed.toFixed(1)})`, shaftFace > sealed + 35);
+  e.destroy();
+}
+
+// The same streamed shaft stays lit while returning upward through saved chunks.
+{
+  const e = mkInfinite();
+  for (let i = 0; i < 6; i++) {
+    fillStone(e, 8, 0, 87, 95);
+    carve(e, 45, 0, 50, 95);
+    e.renderFull();
+    if (i < 5) e.shiftWorldXY(0, 32);
+  }
+  e.shiftWorldXY(0, -32);
+  e.renderFull();
+  const shaftFace = brightness(e, 44, 42);
+  const sealed = brightness(e, 20, 42);
+  check(`streamed shaft stays lit when returning upward (${shaftFace.toFixed(1)} > ${sealed.toFixed(1)})`, shaftFace > sealed + 35);
+  e.destroy();
+}
+
+// Direct shaft skylight survives unloading the shaft horizontally and returning.
+{
+  const e = mkInfinite();
+  for (let i = 0; i < 6; i++) {
+    fillStone(e, 8, 0, 87, 95);
+    carve(e, 45, 0, 50, 95);
+    e.renderFull();
+    if (i < 5) e.shiftWorldXY(0, 32);
+  }
+  e.shiftWorldXY(64, 0);
+  e.renderFull();
+  e.shiftWorldXY(-64, 0);
+  e.renderFull();
+  const shaftFace = brightness(e, 44, 70);
+  const sealed = brightness(e, 20, 70);
+  check(`streamed shaft stays lit after horizontal unload/reload (${shaftFace.toFixed(1)} > ${sealed.toFixed(1)})`, shaftFace > sealed + 35);
+  e.destroy();
+}
+
 // Light decays quickly through solid material.
 {
   const e = mk();

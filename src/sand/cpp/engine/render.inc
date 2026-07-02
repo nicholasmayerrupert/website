@@ -77,10 +77,63 @@ inline bool sideRayStartsInSky(Layer* lay, int x, int y) {
   return worldY < genSurfaceAbs(worldX) && worldY < lay->gSeaRow;
 }
 
+inline bool directSkyCurrent(Layer* lay) {
+  int n = cols * rows;
+  return lay->skyValid && !lay->skyDirty && lay->skyOffsetX == lay->worldOffsetX && lay->skyOffsetY == lay->worldOffsetY &&
+         (int)lay->skyLight.size() == n && (int)lay->skyDownDepth.size() == cols && (int)lay->skyDownValue.size() == cols;
+}
+
+void remapSkyTopInput(Layer* lay) {
+  if ((int)lay->skyTopInput.size() != cols) lay->skyTopInput.assign(cols, 0);
+  if (!lay->infinite) {
+    std::fill(lay->skyTopInput.begin(), lay->skyTopInput.end(), 0);
+    return;
+  }
+  if (!lay->skyValid || (int)lay->skyDownDepth.size() != cols || (int)lay->skyDownValue.size() != cols) {
+    std::fill(lay->skyTopInput.begin(), lay->skyTopInput.end(), 0);
+    return;
+  }
+  if (lay->skyOffsetX == lay->worldOffsetX && lay->skyOffsetY == lay->worldOffsetY) return;
+  std::vector<uint8_t> nextTop((size_t)cols, 0);
+  const uint8_t* g = lay->grid;
+  for (int x = 0; x < cols; x++) {
+    int worldX = lay->worldOffsetX + x;
+    int oldX = lay->worldOffsetX + x - lay->skyOffsetX;
+    if (oldX >= 0 && oldX < cols) {
+      int depth = lay->skyDownDepth[oldX];
+      if (depth >= 0) {
+        int oldTopInNew = lay->skyOffsetY - lay->worldOffsetY;
+        int oldLitEndInNew = oldTopInNew + depth;
+        if (oldLitEndInNew >= 0 && oldTopInNew < rows) {
+          int firstKnownLit = imax(0, oldTopInNew);
+          if (firstKnownLit <= oldLitEndInNew) {
+            bool clearToKnownLit = true;
+            for (int y = 0; y < firstKnownLit; y++) {
+              if (!transparentForLight(g[y * cols + x])) { clearToKnownLit = false; break; }
+            }
+            if (clearToKnownLit) {
+              nextTop[x] = lay->skyDownValue[oldX];
+              continue;
+            }
+          }
+        }
+      }
+    }
+    auto it = lay->skyWorldReachY.find(worldX);
+    if (it != lay->skyWorldReachY.end() && it->second >= lay->worldOffsetY) nextTop[x] = renderSkyLight;
+  }
+  lay->skyTopInput.swap(nextTop);
+}
+
 void computeDirectSky(Layer* lay) {
   const int n = cols * rows;
+  remapSkyTopInput(lay);
   if ((int)lay->skyLight.size() != n) lay->skyLight.assign(n, 0);
   else std::fill(lay->skyLight.begin(), lay->skyLight.end(), 0);
+  if ((int)lay->skyDownDepth.size() != cols) lay->skyDownDepth.assign(cols, -1);
+  else std::fill(lay->skyDownDepth.begin(), lay->skyDownDepth.end(), -1);
+  if ((int)lay->skyDownValue.size() != cols) lay->skyDownValue.assign(cols, 0);
+  else std::fill(lay->skyDownValue.begin(), lay->skyDownValue.end(), 0);
   const uint8_t* g = lay->grid;
   auto seedSkyOnly = [&](int k, uint8_t v) {
     if (v > lay->skyLight[k]) lay->skyLight[k] = v;
@@ -92,12 +145,23 @@ void computeDirectSky(Layer* lay) {
   // worlds only start these rays from real outside-sky coordinates, so unloaded
   // underground buffer edges do not become fake cave skylights.
   for (int x = 0; x < cols; x++) {
-    if (!topRayStartsInSky(lay, x)) continue;
+    uint8_t topValue = lay->skyTopInput[x];
+    if (topRayStartsInSky(lay, x) && renderSkyLight > topValue) topValue = renderSkyLight;
+    if (topValue <= LIGHT_AMBIENT) continue;
+    int deepest = -1;
     for (int y = 0; y < rows; y++) {
       int k = y * cols + x;
-      seedSkyOnly(k, renderSkyLight);
+      seedSkyOnly(k, topValue);
+      deepest = y;
       if (!transparentForLight(g[k])) break;
     }
+    lay->skyDownDepth[x] = deepest;
+    lay->skyDownValue[x] = topValue;
+    int worldX = lay->worldOffsetX + x;
+    int32_t reach = lay->worldOffsetY + deepest;
+    bool blocked = deepest >= 0 && !transparentForLight(g[deepest * cols + x]);
+    auto it = lay->skyWorldReachY.find(worldX);
+    if (blocked || it == lay->skyWorldReachY.end() || reach > it->second) lay->skyWorldReachY[worldX] = reach;
   }
   uint8_t edge = edgeSkyLight();
   for (int y = 0; y < rows; y++) {
@@ -116,6 +180,10 @@ void computeDirectSky(Layer* lay) {
       }
     }
   }
+  lay->skyOffsetX = lay->worldOffsetX;
+  lay->skyOffsetY = lay->worldOffsetY;
+  lay->skyValid = true;
+  lay->skyDirty = false;
 }
 
 void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
@@ -126,7 +194,7 @@ void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
   lightQueue.reserve((size_t)n / 4);
 
   computeDirectSky(lay);
-  if (crossLay) computeDirectSky(crossLay);
+  if (crossLay && !directSkyCurrent(crossLay)) computeDirectSky(crossLay);
 
   const uint8_t* g = lay->grid;
   auto seed = [&](int k, uint8_t v) {

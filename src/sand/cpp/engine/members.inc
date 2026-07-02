@@ -36,7 +36,11 @@
     std::vector<uint32_t> mineDamage;
     // Render-only light values (0..255). Recomputed before full render; never
     // serialized or used by simulation/checksum paths.
-    std::vector<uint8_t> light, skyLight;
+    std::vector<uint8_t> light, skyLight, skyTopInput, skyDownValue;
+    std::vector<int32_t> skyDownDepth;
+    std::unordered_map<int, int32_t> skyWorldReachY;
+    int skyOffsetX = 0, skyOffsetY = 0;
+    bool skyValid = false, skyDirty = true;
     // Conservative "this layer might have nonzero mineDamage" flag: set true the
     // moment any cell is damaged, cleared only when the whole array is zeroed
     // (clearAllMineDamage / world shift). Lets the render fill skip the per-cell
@@ -100,7 +104,10 @@
       rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
       reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
       mineDamage.assign(n, 0);
-      light.assign(n, 0); skyLight.assign(n, 0);
+      light.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
+      skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
+      skyWorldReachY.clear();
+      skyOffsetX = skyOffsetY = 0; skyValid = false; skyDirty = true;
       bodyOwner.assign(n, -1);
       renderPixels.assign(n * 4, 0);
     }

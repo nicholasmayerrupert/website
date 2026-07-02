@@ -106,6 +106,7 @@
       for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue;
         int k = I(xx, yy); if (grid[k] == EMPTY) { grid[k] = mat; markCellIndex(k); cells.insert(k); } } }
     if (cells.empty()) return 0;
+    L->skyDirty = true;
     markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     registerComponentCells(mat, cells);
     return (int)cells.size();
@@ -156,7 +157,7 @@
       grid[k] = mat; placed++;
       if (comp) { markCellIndex(k); cells.insert(k); }
     }
-    if (placed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
+    if (placed) { L->skyDirty = true; markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius); }
     if (comp) registerComponentCells(mat, cells);
     return placed;
   }
@@ -235,7 +236,7 @@
       if (draft.erase(k)) changed = true;
     }
     finishErasedBodies(dirtyBodies, L->bodyCells);
-    if (changed) markDirtyRect(x0, y0, x1, y1);
+    if (changed) { L->skyDirty = true; markDirtyRect(x0, y0, x1, y1); }
     splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
     if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
@@ -347,6 +348,7 @@
       if (draft.erase(k)) changed = 1;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
+    if (!lastMinedCells.empty()) L->skyDirty = true;
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
     splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
@@ -395,6 +397,7 @@
     if (changed) {
       int x0, y0, x1, y1;
       survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
+      if (!lastMinedCells.empty()) L->skyDirty = true;
       markDirtyRect(x0, y0, x1, y1);
     }
     splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
@@ -521,6 +524,7 @@
     }
     std::unordered_set<int> cells;
     for (int k : draft) if (grid[k] == EMPTY) { grid[k] = draftMaterial; markCellIndex(k); cells.insert(k); }
+    if (!cells.empty()) L->skyDirty = true;
     registerComponentCells(draftMaterial, cells);
   }
   bool getSeedOrigin(int cx, int cy, int& x0, int& y0) {
@@ -543,6 +547,7 @@
     Comp c; c.id = L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
     for (int y = y0; y < y0 + SEED_SIZE; y++) for (int x = x0; x < x0 + SEED_SIZE; x++) { int k = I(x, y); grid[k] = SEED; c.cells.push_back(k); if (y > c.yMax) c.yMax = y; } // fresh component, distinct cells
     L->plantComponents.push_back(std::move(c));
+    L->skyDirty = true;
     markDirtyRect(x0 - 1, y0 - 1, x0 + SEED_SIZE, y0 + SEED_SIZE);
     return true;
   }

@@ -6,7 +6,7 @@
 import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;
-const counts = (g) => { const c = new Array(16).fill(0); for (let i = 0; i < g.length; i++) c[g[i]]++; return c; };
+const counts = (g) => { const c = new Array(64).fill(0); for (let i = 0; i < g.length; i++) c[g[i]]++; return c; };
 const rigidCells = (g) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === 13) n++; return n; };
 
 await initSandWasm();
@@ -595,6 +595,152 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     check(`body lighter than lava part-sinks below the surface, not resting on top (bottom ${light.bottom} > ${light.lavaTop}, cells ${light.n})`, light.n > 0 && light.bottom > light.lavaTop);
     check(`body denser than lava sinks deeper than a lighter one (${heavy.bottom} > ${light.bottom}, cells ${heavy.n})`, heavy.n > 0 && heavy.bottom > light.bottom);
   }
+}
+
+// Ice at an oil/brine interface should settle there instead of bobbing between
+// layers. Dense displaced brine must not teleport through oil to the free surface.
+{
+  console.log('ice settles at oil/brine interface without brine rain');
+  const STONE = 3, OIL = 4, ICE = 12, BRINE = 33;
+  const e = mk({ infinite: false });
+  const L = 58, R = 142, top = 34, oilTop = 60, iface = 84, floorY = 104;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = iface; y < floorY; y++) e.paintDisc(x, y, 0, BRINE, true);
+  for (let x = L + 1; x < R; x++) for (let y = oilTop; y < iface; y++) e.paintDisc(x, y, 0, OIL, true);
+  const c0 = counts(e.getGrid());
+  const idx = e._bodyCount();
+  e.spawnBox(100, iface - 10, 5, 5, ICE);
+  let t = 0, ys = [], maxAbsVy = 0, finalState = null, maxBrineAboveFreeSurface = 0, maxBrineAboveOilCols = 0;
+  for (let i = 0; i < 2200; i++) {
+    t += 16; e.step(t);
+    const tickGrid = e.getGrid();
+    let tickBrineAboveFreeSurface = 0, tickBrineAboveOilCols = 0;
+    for (let x = L + 1; x < R; x++) {
+      let seenBrine = false, badCol = false;
+      for (let y = top; y < floorY; y++) {
+        const v = tickGrid[y * COLS + x];
+        if (v === BRINE && y < oilTop) tickBrineAboveFreeSurface++;
+        if (v === BRINE) seenBrine = true;
+        if (v === OIL && seenBrine) badCol = true;
+      }
+      if (badCol) tickBrineAboveOilCols++;
+    }
+    maxBrineAboveFreeSurface = Math.max(maxBrineAboveFreeSurface, tickBrineAboveFreeSurface);
+    maxBrineAboveOilCols = Math.max(maxBrineAboveOilCols, tickBrineAboveOilCols);
+    if (i >= 1900) {
+      const s = e._bodyState(idx);
+      if (s) { ys.push(s.py); maxAbsVy = Math.max(maxAbsVy, Math.abs(s.vy)); finalState = s; }
+    }
+  }
+  const g = e.getGrid(), c1 = counts(g);
+  const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 1e9;
+  let brineAboveFreeSurface = 0, brineAboveOilCols = 0;
+  for (let x = L + 1; x < R; x++) {
+    let seenBrine = false, badCol = false;
+    for (let y = top; y < floorY; y++) {
+      const v = g[y * COLS + x];
+      if (v === BRINE && y < oilTop) brineAboveFreeSurface++;
+      if (v === BRINE) seenBrine = true;
+      if (v === OIL && seenBrine) badCol = true;
+    }
+    if (badCol) brineAboveOilCols++;
+  }
+  const asleep = e._bodyAwake(idx) === 0;
+  check(`ice body still tracked at the interface (py ${finalState ? finalState.py.toFixed(2) : 'missing'})`, !!finalState && finalState.py > iface - 12 && finalState.py < iface + 10);
+  check(`ice vertical motion settled (range ${yRange.toFixed(3)}, max |vy| ${maxAbsVy.toFixed(3)}, asleep ${asleep})`, yRange < 2.0 && (asleep || maxAbsVy < 0.08));
+  check(`oil + brine conserved (${c0[OIL]}/${c0[BRINE]} -> ${c1[OIL]}/${c1[BRINE]})`, c1[OIL] === c0[OIL] && c1[BRINE] === c0[BRINE]);
+  check(`no brine rained above the oil surface during motion (peak ${maxBrineAboveFreeSurface}, final ${brineAboveFreeSurface})`, maxBrineAboveFreeSurface === 0 && brineAboveFreeSurface === 0);
+  check(`brine stayed below oil by column during motion (peak ${maxBrineAboveOilCols}, final ${brineAboveOilCols})`, maxBrineAboveOilCols <= 1 && brineAboveOilCols === 0);
+  e.destroy();
+}
+
+// Tall bodies were the hard spill case: a lower brine source could trace upward
+// through the body footprint and use an air cell above the oil as its escape,
+// making brine rain down from the surface while the ice crossed the interface.
+{
+  console.log('tall ice crossing oil/brine does not vent brine at the surface');
+  const STONE = 3, OIL = 4, ICE = 12, BRINE = 33;
+  const e = mk({ infinite: false });
+  const L = 58, R = 142, top = 8, oilTop = 28, iface = 62, floorY = 108;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = iface; y < floorY; y++) e.paintDisc(x, y, 0, BRINE, true);
+  for (let x = L + 1; x < R; x++) for (let y = oilTop; y < iface; y++) e.paintDisc(x, y, 0, OIL, true);
+  const c0 = counts(e.getGrid());
+  const idx = e._bodyCount();
+  e.spawnBox(100, 30, 4, 20, ICE);
+  e._setBodyMotion(idx, 0, 1.2, 0);
+  let t = 0, maxBrineAboveFreeSurface = 0, maxBrineAboveOilCols = 0, ys = [], maxAbsVy = 0;
+  for (let i = 0; i < 1800; i++) {
+    t += 16; e.step(t);
+    const g = e.getGrid();
+    let tickAbove = 0, tickBadCols = 0;
+    for (let x = L + 1; x < R; x++) {
+      let seenBrine = false, badCol = false;
+      for (let y = top; y < floorY; y++) {
+        const v = g[y * COLS + x];
+        if (v === BRINE && y < oilTop) tickAbove++;
+        if (v === BRINE) seenBrine = true;
+        if (v === OIL && seenBrine) badCol = true;
+      }
+      if (badCol) tickBadCols++;
+    }
+    maxBrineAboveFreeSurface = Math.max(maxBrineAboveFreeSurface, tickAbove);
+    maxBrineAboveOilCols = Math.max(maxBrineAboveOilCols, tickBadCols);
+    if (i >= 1300) {
+      const s = e._bodyState(idx);
+      if (s) { ys.push(s.py); maxAbsVy = Math.max(maxAbsVy, Math.abs(s.vy)); }
+    }
+  }
+  const g = e.getGrid(), c1 = counts(g), s = e._bodyState(idx);
+  const yRange = ys.length ? Math.max(...ys) - Math.min(...ys) : 1e9;
+  check(`tall ice remains a free body and settles (py ${s ? s.py.toFixed(2) : 'missing'}, range ${yRange.toFixed(3)}, max |vy| ${maxAbsVy.toFixed(3)})`, !!s && yRange < 2.0 && maxAbsVy < 0.08 && e._bodyAwake(idx) === 0);
+  check(`tall crossing conserved oil + brine (${c0[OIL]}/${c0[BRINE]} -> ${c1[OIL]}/${c1[BRINE]})`, c1[OIL] === c0[OIL] && c1[BRINE] === c0[BRINE]);
+  check(`tall crossing never vented brine above the oil surface (peak ${maxBrineAboveFreeSurface})`, maxBrineAboveFreeSurface === 0);
+  check(`tall crossing kept brine below oil except contact jitter (${maxBrineAboveOilCols} cols)`, maxBrineAboveOilCols <= 2);
+  e.destroy();
+}
+
+// Direct displacement regression: when a body footprint is forced into brine
+// under oil, displaced brine should evict nearby oil, then that oil rises into
+// air. Brine must not use the top of the body as a shortcut to the free surface.
+{
+  console.log('rigid displacement through oil/brine uses density chain');
+  const STONE = 3, OIL = 4, ICE = 12, BRINE = 33;
+  const e = mk({ infinite: false });
+  const L = 86, R = 114, top = 28, oilTop = 54, iface = 74, floorY = 106;
+  for (let y = top; y < ROWS; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = iface; y < floorY; y++) e.paintDisc(x, y, 0, BRINE, true);
+  for (let x = L + 1; x < R; x++) for (let y = oilTop; y < iface; y++) e.paintDisc(x, y, 0, OIL, true);
+  const c0 = counts(e.getGrid());
+  const idx = e._bodyCount();
+  e.spawnBox(100, iface + 6, 5, 6, ICE);
+  e._setBodyMotion(idx, 0, 0.8, 0);
+  let t = 0; for (let i = 0; i < 2000; i++) { t += 16; e.step(t); }
+  const g = e.getGrid(), c1 = counts(g);
+  let brineAboveFreeSurface = 0, brineAboveOilCols = 0, topOil = ROWS;
+  for (let x = L + 1; x < R; x++) {
+    let seenBrine = false, badCol = false;
+    for (let y = top; y < floorY; y++) {
+      const v = g[y * COLS + x];
+      if (v === OIL && y < topOil) topOil = y;
+      if (v === BRINE && y < oilTop) brineAboveFreeSurface++;
+      if (v === BRINE) seenBrine = true;
+      if (v === OIL && seenBrine) badCol = true;
+    }
+    if (badCol) brineAboveOilCols++;
+  }
+  check(`oil + brine conserved through body displacement (${c0[OIL]}/${c0[BRINE]} -> ${c1[OIL]}/${c1[BRINE]})`, c1[OIL] === c0[OIL] && c1[BRINE] === c0[BRINE]);
+  check(`forced ice body returned to rest near the interface (py ${e._bodyState(idx)?.py.toFixed(2)}, awake ${e._bodyAwake(idx)})`, e._bodyAwake(idx) === 0 && e._bodyState(idx).py > iface - 2 && e._bodyState(idx).py < iface + 12);
+  check(`oil rose into the available headspace (top ${topOil} < ${oilTop})`, topOil < oilTop);
+  check(`displaced brine did not appear above the free surface (${brineAboveFreeSurface})`, brineAboveFreeSurface === 0);
+  check(`stratification preserved after displacement (${brineAboveOilCols} inverted cols)`, brineAboveOilCols === 0);
+  e.destroy();
 }
 
 // Lava should use the same density/viscosity liquid rules as the other liquids:

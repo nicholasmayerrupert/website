@@ -149,6 +149,9 @@ struct Body {
   // misses the exposed edges of thin shapes; these are cached and rebuilt only
   // when the occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
+  // Local-space buoyancy samples (interleaved lx,ly,nx,ny,weight). These are
+  // exposed face midpoints only; fluid support samples just outside that face.
+  std::vector<float> buoyancySamples;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;

@@ -14,10 +14,15 @@
     double dx = sumX / nPts, dy = sumY / nPts;
     if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
     b->offsetX -= dx; b->offsetY -= dy;
-    b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear(); b->boundarySamples.clear();
+    b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear(); b->boundarySamples.clear(); b->buoyancySamples.clear();
     int pi = 0; double inertia = 0, maxR2 = 0;
     auto filled = [&](int ii, int jj) { return ii >= 0 && ii < b->w && jj >= 0 && jj < b->h && b->occ[jj * b->w + ii]; };
     auto addSample = [&](double sx, double sy) { b->boundarySamples.push_back((float)sx); b->boundarySamples.push_back((float)sy); };
+    auto addBuoySample = [&](double sx, double sy, double nx, double ny) {
+      b->buoyancySamples.push_back((float)sx); b->buoyancySamples.push_back((float)sy);
+      b->buoyancySamples.push_back((float)nx); b->buoyancySamples.push_back((float)ny);
+      b->buoyancySamples.push_back(1.f);
+    };
     for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
       if (!b->occ[j * b->w + i]) continue;
       double lx = b->offsetX + i, ly = b->offsetY + j;
@@ -27,10 +32,10 @@
       if (exL || exR || exU || exD) {
         b->boundaryPts.push_back(pi);
         addSample(lx, ly);                                   // cell centre
-        if (exR) addSample(lx + 0.5, ly);                    // exposed face midpoints
-        if (exL) addSample(lx - 0.5, ly);
-        if (exD) addSample(lx, ly + 0.5);
-        if (exU) addSample(lx, ly - 0.5);
+        if (exR) { addSample(lx + 0.5, ly); addBuoySample(lx + 0.5, ly, 1, 0); }  // exposed face midpoints
+        if (exL) { addSample(lx - 0.5, ly); addBuoySample(lx - 0.5, ly, -1, 0); }
+        if (exD) { addSample(lx, ly + 0.5); addBuoySample(lx, ly + 0.5, 0, 1); }
+        if (exU) { addSample(lx, ly - 0.5); addBuoySample(lx, ly - 0.5, 0, -1); }
       }
       pi++;
     }
@@ -160,33 +165,30 @@
         if (b->awake) b->vy += R_GRAVITY * dt;
         b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
         b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
-        if (b->awake && !b->boundaryPts.empty()) {
-          // Support/drag from surrounding loose media. The body's own footprint is
-          // cleared to EMPTY for the duration of rigidStep, so probing the
-          // boundary cell itself reads air; we instead take the densest liquid/powder
-          // among its 4-neighbours (the medium the body sits IN). A face deep in
-          // a medium has wet neighbours; a face above the surface does not — so the
-          // wet fraction rises with depth. Liquids may produce true buoyancy
-          // (including upward acceleration); powders can only cancel gravity, never
-          // exceed it, so bodies in grains settle but do not bob/rise.
-          int liquidWet = 0, powderWet = 0; double liquidDensitySum = 0, powderDensitySum = 0;
-          for (int bp : b->boundaryPts) {
-            worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
-            int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
-            double ld = buoyantLiquidDensityAt(cx, cy);
-            ld = std::fmax(ld, buoyantLiquidDensityAt(cx - 1, cy)); ld = std::fmax(ld, buoyantLiquidDensityAt(cx + 1, cy));
-            ld = std::fmax(ld, buoyantLiquidDensityAt(cx, cy - 1)); ld = std::fmax(ld, buoyantLiquidDensityAt(cx, cy + 1));
-            double pd = granularMediumDensityAt(cx, cy);
-            pd = std::fmax(pd, granularMediumDensityAt(cx - 1, cy)); pd = std::fmax(pd, granularMediumDensityAt(cx + 1, cy));
-            pd = std::fmax(pd, granularMediumDensityAt(cx, cy - 1)); pd = std::fmax(pd, granularMediumDensityAt(cx, cy + 1));
-            if (ld > 0) { liquidWet++; liquidDensitySum += ld; }
-            if (pd > 0) { powderWet++; powderDensitySum += pd; }
+        if (b->awake && !b->buoyancySamples.empty()) {
+          // Support/drag from surrounding loose media. The body's footprint is
+          // cleared while rigidStep runs, so each exposed face samples just outside
+          // that face. This keeps a stratified interface local: one brine cell next
+          // to a side face no longer makes the whole boundary point count as brine.
+          double liquidWet = 0, powderWet = 0, liquidDensitySum = 0, powderDensitySum = 0, sampleWeight = 0;
+          const std::vector<float>& B = b->buoyancySamples;
+          for (size_t si = 0; si + 4 < B.size(); si += 5) {
+            double lx = B[si], ly = B[si + 1], lnx = B[si + 2], lny = B[si + 3], wt = B[si + 4];
+            double wx = b->px + lx * b->cs - ly * b->sn, wy = b->py + lx * b->sn + ly * b->cs;
+            double wnx = lnx * b->cs - lny * b->sn, wny = lnx * b->sn + lny * b->cs;
+            double sx = wx + wnx * 0.55, sy = wy + wny * 0.55;
+            double lw = 0, pw = 0;
+            double ld = buoyantLiquidDensitySampleAt(sx, sy, lw), pd = granularMediumDensitySampleAt(sx, sy, pw);
+            sampleWeight += wt;
+            if (ld > 0) { liquidWet += lw * wt; liquidDensitySum += ld * wt; }
+            if (pd > 0) { powderWet += pw * wt; powderDensitySum += pd * wt; }
           }
           if (liquidWet > 0 || powderWet > 0) {
-            double liquidSubmerged = (double)liquidWet / b->boundaryPts.size();
-            double powderSubmerged = (double)powderWet / b->boundaryPts.size();
-            double liquidSupport = liquidWet > 0 ? (liquidDensitySum / liquidWet / b->density) * liquidSubmerged : 0;
-            double powderSupport = powderWet > 0 ? (powderDensitySum / powderWet / b->density) * powderSubmerged : 0;
+            double invWeight = sampleWeight > 0 ? 1.0 / sampleWeight : 0;
+            double liquidSubmerged = liquidWet * invWeight;
+            double powderSubmerged = powderWet * invWeight;
+            double liquidSupport = liquidDensitySum * invWeight / b->density;
+            double powderSupport = powderDensitySum * invWeight / b->density;
             double supportRatio = liquidSupport + powderSupport;
             double maxSupport = powderWet > 0 ? std::fmax(1.0, liquidSupport) : supportRatio;
             if (supportRatio > maxSupport) supportRatio = maxSupport;
@@ -418,6 +420,25 @@
   // Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
   // through them and they vanish on commit.
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || isGasMaterial(m) || isBodyRelocatable(m, k, bodyDensity); }
+  double mediumDensitySampleAt(double sx, double sy, bool wantLiquid, double& wetWeight) {
+    int x0 = (int)std::floor(sx), y0 = (int)std::floor(sy);
+    double fx = sx - x0, fy = sy - y0;
+    double density = 0; wetWeight = 0;
+    auto sample = [&](int x, int y, double w) {
+      if (w <= 0 || x < 0 || x >= cols || y < 0 || y >= rows) return;
+      uint8_t m = grid[y * cols + x];
+      bool ok = wantLiquid ? isLiquidMaterial(m) : isLooseSolidMaterial(m);
+      if (!ok) return;
+      wetWeight += w; density += DENSITY[m] * w;
+    };
+    sample(x0, y0, (1 - fx) * (1 - fy));
+    sample(x0 + 1, y0, fx * (1 - fy));
+    sample(x0, y0 + 1, (1 - fx) * fy);
+    sample(x0 + 1, y0 + 1, fx * fy);
+    return density;
+  }
+  double buoyantLiquidDensitySampleAt(double sx, double sy, double& wetWeight) { return mediumDensitySampleAt(sx, sy, true, wetWeight); }
+  double granularMediumDensitySampleAt(double sx, double sy, double& wetWeight) { return mediumDensitySampleAt(sx, sy, false, wetWeight); }
   struct Disp { uint8_t material; int from; };
   void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, double bodyDensity) {
     if (displaced.empty()) return;
@@ -427,37 +448,89 @@
     // into a pool then distributes the rise across the surface instead of firing a
     // narrow fountain straight up out of the entry column ("lava out the top").
     int offs[4] = {-1, 1, cols, -cols}; int gridLen = cols * rows;
-    // Passability is keyed to the DISPLACED material's own density (curD), not the
-    // body's: a dense fluid (lava) shoved aside by a lighter body must be able to
-    // percolate through its own pool to reach the free surface — otherwise, deep in
-    // the pool it finds no path and is silently dropped (volume loss). It can move
-    // through EMPTY/gas, equal-or-lighter liquid, and ungrounded or equal-or-lighter
-    // powder. Powder uses the SAME <= rule liquids do (not a strict <) so displaced
-    // sand can rise through its own grounded pool to the surface and spread flat,
-    // exactly like water — instead of jamming against equal-density sand and heaping
-    // into a local cone at the body's entry column.
+    // Search is keyed to the DISPLACED material's own density (curD), not the
+    // body's. Equal-density loose material is passable. Lower-density material is
+    // an eviction target, and the BFS may continue through it to find more local
+    // evictions, but EMPTY/gas targets reached after crossing that lighter layer
+    // are ignored. Dense brine can push oil upward without teleporting to air.
     double curD = 0;
-    auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGasMaterial(m) || (isLiquidMaterial(m) && DENSITY[m] <= curD) || (isLooseSolidMaterial(m) && (groundedCell[k] != 1 || DENSITY[m] <= curD)); };
+    std::unordered_map<int, uint8_t> displacedAt;
+    displacedAt.reserve(displaced.size() * 2 + 1);
+    for (const Disp& d : displaced) displacedAt[d.from] = d.material;
     int32_t reservedGen = ++L->seenGen;
     auto inFootprint = [&](int k) { return L->rigidSpillFootprint[k] == footprintGen; };
-    auto isDropTarget = [&](int k, uint8_t mat) { if (inFootprint(k) || L->rigidSpillReserved[k] == reservedGen || isBodyCell(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquidMaterial(m) || isGasMaterial(m) || isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
-    // Footprint-edge seeds (used when a displaced cell's own neighbours are all
-    // blocked). Permissive — any fluid/empty/gas/loose powder; canVisit re-filters
-    // per displaced material once curD is set in the worklist loop below.
-    auto seedPassable = [&](uint8_t m, int k) { (void)k; return m == EMPTY || isGasMaterial(m) || isBuoyantMedium(m); };
-    std::vector<int> footprintEdgeStarts; int32_t edgeGen = ++L->seenGen;
-    std::vector<int> sortedFootprint(edgeFootprint.begin(), edgeFootprint.end()); std::sort(sortedFootprint.begin(), sortedFootprint.end());
-    for (int k : sortedFootprint) for (int off : offs) {
-      int nk = k + off; if (nk <= 0 || nk >= gridLen || L->seenStamp[nk] == edgeGen) continue;
-      int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue;
-      if (seedPassable(grid[nk], nk)) { L->seenStamp[nk] = edgeGen; footprintEdgeStarts.push_back(nk); }
-    }
+    auto validSpillCell = [&](int k) {
+      if (k <= 0 || k >= gridLen || inFootprint(k) || L->rigidSpillReserved[k] == reservedGen || isBodyCell(k)) return false;
+      int y = k / cols, x = k - y * cols;
+      return x > 0 && x < cols - 1 && y > 0 && y < rows;
+    };
+    auto isEvictTarget = [&](int k, uint8_t mat) {
+      if (!validSpillCell(k)) return false;
+      uint8_t m = grid[k];
+      return (isLiquidMaterial(m) || isLooseSolidMaterial(m) || isGasMaterial(m)) && DENSITY[m] < DENSITY[mat];
+    };
+    auto isEmptyTarget = [&](int k) {
+      if (!validSpillCell(k)) return false;
+      uint8_t m = grid[k];
+      return m == EMPTY || isGasMaterial(m);
+    };
+    auto canSearchCell = [&](int k) {
+      if (!validSpillCell(k)) return false;
+      uint8_t m = grid[k];
+      if (m == EMPTY || isGasMaterial(m)) return true;
+      if (isLiquidMaterial(m)) return DENSITY[m] <= curD;
+      if (isLooseSolidMaterial(m)) return groundedCell[k] != 1 || DENSITY[m] <= curD;
+      return false;
+    };
+    auto canExpandFrom = [&](int k) {
+      uint8_t m = grid[k];
+      if (m == EMPTY || isGasMaterial(m)) return true;
+      if (isLiquidMaterial(m) || isLooseSolidMaterial(m)) return DENSITY[m] <= curD;
+      return false;
+    };
+    struct SpillSeed { int k, d; bool crossedLower; };
+    auto isLowerLooseFor = [&](uint8_t m, uint8_t mat) {
+      return (isLiquidMaterial(m) || isLooseSolidMaterial(m) || isGasMaterial(m)) && DENSITY[m] < DENSITY[mat];
+    };
+    auto localExitSeeds = [&](int from, uint8_t mat, bool anyLowerInFootprint, std::vector<SpillSeed>& seeds) {
+      std::vector<SpillSeed> exits;
+      for (int off : offs) {
+        int nk = from + off;
+        int dist = 1;
+        bool crossedLower = false;
+        while (nk > 0 && nk < gridLen && inFootprint(nk) && dist < 256) {
+          auto it = displacedAt.find(nk);
+          if (it != displacedAt.end() && isLowerLooseFor(it->second, mat)) crossedLower = true;
+          if (!crossedLower) {
+            int y = nk / cols, x = nk - y * cols;
+            if (x > 1 && !inFootprint(nk - 1) && isLowerLooseFor(grid[nk - 1], mat)) crossedLower = true;
+            if (x < cols - 2 && !inFootprint(nk + 1) && isLowerLooseFor(grid[nk + 1], mat)) crossedLower = true;
+            if (y > 1 && !inFootprint(nk - cols) && isLowerLooseFor(grid[nk - cols], mat)) crossedLower = true;
+            if (y < rows - 1 && !inFootprint(nk + cols) && isLowerLooseFor(grid[nk + cols], mat)) crossedLower = true;
+          }
+          nk += off; dist++;
+        }
+        if (nk > 0 && nk < gridLen) {
+          uint8_t exitMat = grid[nk];
+          if (dist > 1 && anyLowerInFootprint && (exitMat == EMPTY || isGasMaterial(exitMat))) crossedLower = true;
+          exits.push_back({nk, dist, crossedLower});
+        }
+      }
+      std::sort(exits.begin(), exits.end(), [](const SpillSeed& a, const SpillSeed& b) { return a.d == b.d ? a.k < b.k : a.d < b.d; });
+      int last = -1;
+      for (auto& s : exits) {
+        if (s.k == last) { if (s.crossedLower && !seeds.empty()) seeds.back().crossedLower = true; continue; }
+        seeds.push_back(s); last = s.k;
+      }
+    };
     // Intentionally batch by material: each density/material group gets one
     // multi-source BFS instead of clearing a queue and searching once per displaced
     // cell. Heavier groups run first so they claim spill targets before lighter
     // material; evicted lighter material is processed in later waves.
     std::vector<Disp> pending = displaced, nextPending;
-    std::vector<int> queue, targets;
+    std::vector<int> queue, evictTargets, emptyTargets, targets;
+    std::vector<SpillSeed> seeds;
+    std::vector<uint8_t> queueCrossedLower;
     for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
       std::sort(pending.begin(), pending.end(), [](const Disp& a, const Disp& b) {
         if (DENSITY[a.material] != DENSITY[b.material]) return DENSITY[a.material] > DENSITY[b.material];
@@ -470,31 +543,50 @@
         size_t gj = gi + 1;
         while (gj < pending.size() && pending[gj].material == mat) gj++;
         curD = DENSITY[mat];
+        bool anyLowerInFootprint = false;
+        for (const auto& kv : displacedAt) if (isLowerLooseFor(kv.second, mat)) { anyLowerInFootprint = true; break; }
+        if (!anyLowerInFootprint) {
+          for (int k : edgeFootprint) {
+            int y = k / cols, x = k - y * cols;
+            if (x > 1 && !inFootprint(k - 1) && isLowerLooseFor(grid[k - 1], mat)) { anyLowerInFootprint = true; break; }
+            if (x < cols - 2 && !inFootprint(k + 1) && isLowerLooseFor(grid[k + 1], mat)) { anyLowerInFootprint = true; break; }
+            if (y > 1 && !inFootprint(k - cols) && isLowerLooseFor(grid[k - cols], mat)) { anyLowerInFootprint = true; break; }
+            if (y < rows - 1 && !inFootprint(k + cols) && isLowerLooseFor(grid[k + cols], mat)) { anyLowerInFootprint = true; break; }
+          }
+        }
         int need = (int)(gj - gi);
-        queue.clear(); targets.clear();
+        queue.clear(); queueCrossedLower.clear(); seeds.clear(); evictTargets.clear(); emptyTargets.clear(); targets.clear();
         int32_t seenGen = ++L->seenGen;
         auto canVisit = [&](int k) {
-          if (k <= 0 || k >= gridLen || inFootprint(k) || L->rigidSpillReserved[k] == reservedGen || L->seenStamp[k] == seenGen) return false;
-          int y = k / cols, x = k - y * cols;
-          return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k);
+          return k > 0 && k < gridLen && L->seenStamp[k] != seenGen && canSearchCell(k);
         };
-        auto enqueue = [&](int k) { if (!canVisit(k)) return; L->seenStamp[k] = seenGen; queue.push_back(k); };
-        for (size_t di = gi; di < gj; di++) for (int off : offs) enqueue(pending[di].from + off);
-        if (queue.empty()) for (int nk : footprintEdgeStarts) enqueue(nk);
+        auto enqueue = [&](int k, bool crossedLower) { if (!canVisit(k)) return; L->seenStamp[k] = seenGen; queue.push_back(k); queueCrossedLower.push_back(crossedLower ? 1 : 0); };
+        for (size_t di = gi; di < gj; di++) localExitSeeds(pending[di].from, mat, anyLowerInFootprint, seeds);
+        for (auto& s : seeds) enqueue(s.k, s.crossedLower);
         int visitBudget = imin(gridLen, imax(4096, need * 128));
         int visits = 0;
-        for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget; qi++, visits++) {
+        for (size_t qi = 0; qi < queue.size() && (int)evictTargets.size() < need && visits < visitBudget; qi++, visits++) {
           int k = queue[qi];
-          if (isDropTarget(k, mat)) { L->rigidSpillReserved[k] = reservedGen; targets.push_back(k); }
-          for (int off : offs) enqueue(k + off);
+          bool crossedLower = queueCrossedLower[qi] != 0;
+          bool lower = isEvictTarget(k, mat);
+          if (lower) { evictTargets.push_back(k); crossedLower = true; }
+          if (!crossedLower && isEmptyTarget(k)) emptyTargets.push_back(k);
+          uint8_t km = grid[k];
+          if (crossedLower && (km == EMPTY || isGasMaterial(km))) continue;
+          if (!canExpandFrom(k)) continue;
+          for (int off : offs) enqueue(k + off, crossedLower);
         }
+        for (int k : evictTargets) targets.push_back(k);
+        for (int k : emptyTargets) { if ((int)targets.size() >= need) break; targets.push_back(k); }
         int n = imin((int)targets.size(), need);
         for (int i = 0; i < n; i++) {
           int target = targets[i];
           uint8_t evicted = grid[target];
+          L->rigidSpillReserved[target] = reservedGen;
           if (evicted != EMPTY) nextPending.push_back({evicted, target});
           writeGridIndex(target, mat);
         }
+        for (int i = n; i < need; i++) nextPending.push_back(pending[gi + (size_t)i]);
         gi = gj;
       }
       pending.swap(nextPending);

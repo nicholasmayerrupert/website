@@ -96,6 +96,45 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   e.destroy();
 }
 
+// Cross-layer FIRE/LAVA seed emissive light into the opposite layer. Skylight is
+// disabled here so the baseline is ambient-only, not cross-layer sky import.
+{
+  const base = mk();
+  base.setSkyLight(0);
+  fillStoneLayer(base, 1, 8, 8, 87, 88);
+  base.renderFullLayer(1);
+  const bgAmbient = brightnessLayer(base, 1, 48, 52);
+  base.destroy();
+
+  const lit = mk();
+  lit.setSkyLight(0);
+  fillStoneLayer(lit, 1, 8, 8, 87, 88);
+  lit.paintDisc(48, 52, 0, MAT.FIRE, true);
+  lit.renderFullLayer(1);
+  const bgLit = brightnessLayer(lit, 1, 48, 52);
+  check(`foreground fire brightens background stone (${bgLit.toFixed(1)} > ${bgAmbient.toFixed(1)})`, bgLit > bgAmbient + 35);
+  lit.destroy();
+}
+
+{
+  const base = mk();
+  base.setSkyLight(0);
+  fillStone(base, 8, 8, 87, 88);
+  base.setBgEnabled(true);
+  base.renderFull();
+  const fgAmbient = brightness(base, 48, 52);
+  base.destroy();
+
+  const lit = mk();
+  lit.setSkyLight(0);
+  fillStone(lit, 8, 8, 87, 88);
+  lit.paintDiscLayer(1, 48, 52, 0, MAT.LAVA, true);
+  lit.renderFull();
+  const fgLit = brightness(lit, 48, 52);
+  check(`background lava brightens foreground stone (${fgLit.toFixed(1)} > ${fgAmbient.toFixed(1)})`, fgLit > fgAmbient + 35);
+  lit.destroy();
+}
+
 // Background-only surface builds get their own skylight even when the foreground
 // has terrain in front of them.
 {

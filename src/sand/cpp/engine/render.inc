@@ -46,6 +46,15 @@ inline uint8_t emissionFor(uint8_t m) {
   return 0;
 }
 
+static constexpr uint8_t CROSS_LAYER_EMISSIVE_LOSS = 28;
+
+inline uint8_t crossLayerEmissionFor(uint8_t m) {
+  uint8_t e = emissionFor(m);
+  if (!e) return 0;
+  int v = (int)e - CROSS_LAYER_EMISSIVE_LOSS;
+  return v > LIGHT_AMBIENT ? (uint8_t)v : 0;
+}
+
 inline uint8_t edgeSkyLight() {
   return (uint8_t)(((int)renderSkyLight * 220 + 127) / 255);
 }
@@ -215,6 +224,13 @@ void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
   for (int k = 0; k < n; k++) {
     uint8_t e = emissionFor(g[k]);
     if (e) seed(k, e);
+  }
+  if (crossLay) {
+    const uint8_t* cg = crossLay->grid;
+    for (int k = 0; k < n; k++) {
+      uint8_t e = crossLayerEmissionFor(cg[k]);
+      if (e) seed(k, e);
+    }
   }
 
   for (size_t qi = 0; qi < lightQueue.size(); qi++) {

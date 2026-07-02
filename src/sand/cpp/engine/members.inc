@@ -137,6 +137,8 @@
   void flushLayerGrids() { L->grid = grid; L->next = next; }
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
+    if (!lay->pendingDetonations.empty()) return true;
+    for (Body* b : lay->bodies) if (b->material == TNT && b->fuseTicks > 0) return true;
     for (int y = 0; y < rows; y++) if (lay->rowMarkMax[y] >= lay->rowMarkMin[y]) return true;
     return false;
   }

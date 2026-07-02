@@ -117,6 +117,22 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a lit TNT fuse keeps the layer active even after the igniting fire dies ---
+{
+  const e = mk();
+  const cx = 70, cy = 55;
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  e.syncComponents();
+  e.placeMaterial(cx + 1, cy, 1, MAT.FIRE);
+  let detonated = false;
+  for (let i = 0; i < 100; i++) {
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) === 0) { detonated = true; break; }
+  }
+  check(`lit TNT detonated without a persistent flame`, detonated);
+  e.destroy();
+}
+
 // --- explosive RIGID BODY: a free TNT body detonates when it meets fire ---
 {
   const e = mk();

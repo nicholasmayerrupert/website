@@ -135,6 +135,51 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   lit.destroy();
 }
 
+// Cross-layer light should travel through open space in the source layer instead
+// of dying immediately inside solid target-layer backdrop.
+{
+  const base = mk();
+  base.setSkyLight(0);
+  fillStone(base, 8, 8, 87, 88);
+  carve(base, 28, 48, 66, 56);
+  fillStoneLayer(base, 1, 8, 8, 87, 88);
+  base.renderFullLayer(1);
+  const farAmbient = brightnessLayer(base, 1, 62, 52);
+  base.destroy();
+
+  const lit = mk();
+  lit.setSkyLight(0);
+  fillStone(lit, 8, 8, 87, 88);
+  carve(lit, 28, 48, 66, 56);
+  fillStoneLayer(lit, 1, 8, 8, 87, 88);
+  lit.paintDisc(30, 52, 0, MAT.FIRE, true);
+  lit.renderFullLayer(1);
+  const farBgWall = brightnessLayer(lit, 1, 62, 52);
+  check(`foreground fire carries through foreground tunnel to background wall (${farBgWall.toFixed(1)} > ${farAmbient.toFixed(1)})`,
+    farBgWall > farAmbient + 20);
+  lit.destroy();
+}
+
+{
+  const blocked = mk();
+  fillStone(blocked, 8, 8, 87, 88);
+  fillStoneLayer(blocked, 1, 8, 8, 87, 88);
+  blocked.renderFullLayer(1);
+  const blockedBgWall = brightnessLayer(blocked, 1, 78, 31);
+  blocked.destroy();
+
+  const open = mk();
+  fillStone(open, 8, 8, 87, 88);
+  carve(open, 45, 0, 50, 26);
+  carve(open, 20, 22, 80, 30);
+  fillStoneLayer(open, 1, 8, 8, 87, 88);
+  open.renderFullLayer(1);
+  const openBgWall = brightnessLayer(open, 1, 78, 31);
+  check(`foreground skylit side cave carries light to background wall (${openBgWall.toFixed(1)} > ${blockedBgWall.toFixed(1)})`,
+    openBgWall > blockedBgWall + 35);
+  open.destroy();
+}
+
 // Background-only surface builds get their own skylight even when the foreground
 // has terrain in front of them.
 {

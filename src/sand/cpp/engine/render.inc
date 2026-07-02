@@ -195,7 +195,7 @@ void computeDirectSky(Layer* lay) {
   lay->skyDirty = false;
 }
 
-void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
+void computeLightingBase(Layer* lay) {
   const int n = cols * rows;
   if ((int)lay->light.size() != n) lay->light.assign(n, LIGHT_AMBIENT);
   else std::fill(lay->light.begin(), lay->light.end(), LIGHT_AMBIENT);
@@ -203,7 +203,6 @@ void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
   lightQueue.reserve((size_t)n / 4);
 
   computeDirectSky(lay);
-  if (crossLay && !directSkyCurrent(crossLay)) computeDirectSky(crossLay);
 
   const uint8_t* g = lay->grid;
   auto seed = [&](int k, uint8_t v) {
@@ -214,23 +213,11 @@ void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
   };
 
   for (int k = 0; k < n; k++) if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]);
-  if (crossLay) {
-    const uint8_t* cg = crossLay->grid;
-    const uint8_t* cs = crossLay->skyLight.data();
-    for (int k = 0; k < n; k++) if (transparentForLight(cg[k]) && cs[k] > LIGHT_AMBIENT) seed(k, cs[k]);
-  }
 
   // Then let sky and emissive sources spill into liquids/solids with material loss.
   for (int k = 0; k < n; k++) {
     uint8_t e = emissionFor(g[k]);
     if (e) seed(k, e);
-  }
-  if (crossLay) {
-    const uint8_t* cg = crossLay->grid;
-    for (int k = 0; k < n; k++) {
-      uint8_t e = crossLayerEmissionFor(cg[k]);
-      if (e) seed(k, e);
-    }
   }
 
   for (size_t qi = 0; qi < lightQueue.size(); qi++) {
@@ -248,6 +235,50 @@ void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
     if (y > 0) pushNeighbour(k - cols);
     if (y + 1 < rows) pushNeighbour(k + cols);
   }
+}
+
+void projectCrossLayerLight(Layer* lay, Layer* crossLay) {
+  const int n = cols * rows;
+  const uint8_t* g = lay->grid;
+  const uint8_t* cg = crossLay->grid;
+  const uint8_t* cl = crossLay->light.data();
+  lightQueue.clear();
+  lightQueue.reserve((size_t)n / 8);
+  for (int k = 0; k < n; k++) {
+    int v = 0;
+    if (transparentForLight(cg[k])) {
+      v = (int)cl[k] - CROSS_LAYER_EMISSIVE_LOSS;
+    } else {
+      v = (int)crossLayerEmissionFor(cg[k]);
+    }
+    if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
+      lay->light[k] = (uint8_t)v;
+      if (transparentForLight(g[k])) lightQueue.push_back(k);
+    }
+  }
+
+  for (size_t qi = 0; qi < lightQueue.size(); qi++) {
+    int k = lightQueue[qi];
+    int cur = lay->light[k];
+    int y = k / cols, x = k - y * cols;
+    auto pushNeighbour = [&](int nk) {
+      int nl = cur - lightLossFor(g[nk]);
+      if (nl <= (int)lay->light[nk]) return;
+      lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
+      if (transparentForLight(g[nk])) lightQueue.push_back(nk);
+    };
+    if (x > 0) pushNeighbour(k - 1);
+    if (x + 1 < cols) pushNeighbour(k + 1);
+    if (y > 0) pushNeighbour(k - cols);
+    if (y + 1 < rows) pushNeighbour(k + cols);
+  }
+}
+
+void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
+  computeLightingBase(lay);
+  if (!crossLay) return;
+  computeLightingBase(crossLay);
+  projectCrossLayerLight(lay, crossLay);
 }
 
 inline uint8_t renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) {

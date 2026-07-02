@@ -296,8 +296,8 @@ export function createSandGame(container, opts = {}) {
       localPlayerId = engine.spawnPlayerAtSurface(spawnCol);
       onInventory?.(engine.getInventory(localPlayerId)); // initial HUD fill
     }
-    // Start centered horizontally, just above the surface so spawn shows ground.
-    engine.cameraSet((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * 0.4));
+    // Start centered horizontally, with roughly one third of the view underground.
+    engine.cameraSet((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * (2 / 3)));
     lastCamX = NaN;
     lastCamY = NaN;
 
@@ -583,6 +583,8 @@ export function createSandGame(container, opts = {}) {
       },
       setTool(name) { currentToolName = name; engine?.setTool(TOOL_IDS[name] ?? 0); },
       setDrawMode(v) { drawModeOn = !!v; engine?.setDrawMode(drawModeOn); },
+      addInventory(material, count) { return localPlayerId && engine ? engine.addToInventory(localPlayerId, material | 0, count | 0) : false; },
+      selectSlot(i) { if (localPlayerId) engine?.setSelectedSlot(localPlayerId, i | 0); },
       actionCount() { return engine ? engine.getPlayerActionCount() : 0; },
       // device-px center of the local player (for aiming real mouse events)
       playerScreen() {

@@ -63,6 +63,7 @@ enum Tool : int { T_CUBE = 0, T_SAND, T_WATER, T_STONE, T_OIL, T_FIRE, T_ACID, T
 enum InputKey : int { IK_LEFT = 0, IK_RIGHT, IK_UP, IK_DOWN, IK_SPACE, IK_SHIFT };
 static const double CAM_PAN_CELLS_PER_SEC = 100.0; // camera pan speed while a key is held
 static const double CAM_FOLLOW_LERP = 0.18;        // play-mode follow glide
+static const double CAM_SURFACE_VIEW_Y_FRAC = 2.0 / 3.0; // surface sits ~2/3 down the view
 static const int    CAM_SHIFT_EDGE_MARGIN = 40;    // slide the world this near a buffer edge
 // Predictive worldgen prefetch: begin generating the upcoming stream-in band this
 // many cells of camera travel BEFORE the shift boundary, so the band's tiles are

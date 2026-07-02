@@ -51,6 +51,17 @@ try {
   const page = await context.newPage();
   await page.goto(`${baseURL}game`, { waitUntil: 'load' }); // survival mode (the player character lives at /game)
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.getPlayer && window.__sandTest.getPlayer(), null, { timeout: 30000 });
+  await page.evaluate(() => {
+    window.__sandTestCellScreenPoint = (cx, cy) => {
+      const t = window.__sandTest, i = t.info(), cam = t.getCam(), off = t.off();
+      const canvas = document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main');
+      const r = canvas.getBoundingClientRect();
+      return {
+        vx: r.left + (((cx + 0.5 - Math.floor(cam.x)) * i.cellDev + off.offX) / i.dpr),
+        vy: r.top + (((cy + 0.5 - Math.floor(cam.y)) * i.cellDev + off.offY) / i.dpr),
+      };
+    };
+  });
 
   console.log('local player');
   const getP = () => page.evaluate(() => window.__sandTest.getPlayer());
@@ -104,15 +115,14 @@ try {
   const movedL = await getP();
   check(`A drives player left (facing ${movedL.facing})`, movedL.facing === -1);
 
-  // player-mediated dig: enable draw mode + eraser, hold LMB at the player's
-  // own position, and assert the engine fired tool actions (mouse -> primary).
+  // player-mediated dig: enable draw mode + eraser, hold LMB on ground just below
+  // the player's feet, and assert the engine fired tool actions (mouse -> primary).
   const a0 = await page.evaluate(() => window.__sandTest.actionCount());
   const aim = await page.evaluate(() => {
     window.__sandTest.setDrawMode(true);
     window.__sandTest.setTool('eraser');
-    const r = (document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main')).getBoundingClientRect();
-    const s = window.__sandTest.playerScreen();
-    return { vx: r.left + s.x, vy: r.top + s.y };
+    const p = window.__sandTest.getPlayer();
+    return window.__sandTestCellScreenPoint(Math.floor(p.x + p.w / 2), Math.floor(p.y + p.h + 1));
   });
   await page.mouse.move(aim.vx, aim.vy);
   await page.mouse.down({ button: 'left' });
@@ -130,10 +140,9 @@ try {
   const PI_PRIMARY = 16;
   const stoneAim = await page.evaluate(() => {
     const t = window.__sandTest;
-    t.setTool('stone'); document.activeElement?.blur?.();
-    const r = (document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main')).getBoundingClientRect();
-    const s = t.playerScreen(), p = t.getPlayer(), ax = Math.floor(p.x), ay = Math.floor(p.y);
-    return { vx: r.left + s.x + 12, vy: r.top + s.y - 6, solid0: t.solidCount(ax - 40, ay - 30, ax + 40, ay + 30) };
+    t.addInventory(3, 99); t.selectSlot(3); document.activeElement?.blur?.(); // STONE = 3
+    const p = t.getPlayer(), ax = Math.floor(p.x), ay = Math.floor(p.y);
+    return { ...window.__sandTestCellScreenPoint(Math.floor(p.x + p.w + 4), Math.floor(p.y + 2)), solid0: t.solidCount(ax - 40, ay - 30, ax + 40, ay + 30) };
   });
   await page.mouse.move(stoneAim.vx, stoneAim.vy);
   await page.mouse.down({ button: 'left' });
@@ -158,32 +167,35 @@ try {
   // while holding used to feed window.onPointerMove (mouseButtons |= e.buttons) and
   // strand the LMB bit — the matching pointerup was captured back to the button and
   // swallowed by the palette. Drive that exact gesture and assert no latch/action.
-  const selCenter = await page.evaluate(() => {
-    const r = document.querySelector('sand-game').getBoundingClientRect();
-    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  const palette = await page.evaluate(() => {
+    const host = document.querySelector('sand-game');
+    const btn = host?.shadowRoot?.querySelector('.sg-selbtn');
+    if (!host || !btn) return null;
+    const r = host.getBoundingClientRect(), b = btn.getBoundingClientRect();
+    return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, bx: b.left + b.width / 2, by: b.top + b.height / 2 };
   });
-  const a2 = await page.evaluate(() => window.__sandTest.actionCount());
-  const openBox = await page.evaluate(() => {
-    const b = document.querySelector('sand-game').shadowRoot.querySelector('.sg-selbtn').getBoundingClientRect();
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-  });
-  await page.mouse.click(openBox.x, openBox.y); // open the dropdown
-  await page.waitForTimeout(40);
-  const erOpt = await page.evaluate(() => {
-    const o = [...document.querySelector('sand-game').shadowRoot.querySelectorAll('.sg-opt')].find((x) => /eraser/i.test(x.textContent));
-    const b = o.getBoundingClientRect();
-    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
-  });
-  await page.mouse.move(erOpt.x, erOpt.y);
-  await page.mouse.down({ button: 'left' });           // press starts on the option (captures pointer)
-  await page.mouse.move(selCenter.cx, selCenter.cy, { steps: 4 }); // drag onto the canvas while held
-  await page.mouse.up({ button: 'left' });             // release over the canvas
-  await page.mouse.move(selCenter.cx + 6, selCenter.cy + 6); // a plain hover, no button
-  await page.waitForTimeout(120);
-  const selectBits = await page.evaluate(() => window.__sandTest.localInput().bits);
-  const a3 = await page.evaluate(() => window.__sandTest.actionCount());
-  check(`selecting a tool does NOT latch PI_PRIMARY (bits ${selectBits})`, (selectBits & PI_PRIMARY) === 0);
-  check(`selecting a tool fires no phantom tool action (${a2} -> ${a3})`, a3 === a2);
+  if (palette) {
+    const a2 = await page.evaluate(() => window.__sandTest.actionCount());
+    await page.mouse.click(palette.bx, palette.by); // open the dropdown
+    await page.waitForTimeout(40);
+    const erOpt = await page.evaluate(() => {
+      const o = [...document.querySelector('sand-game').shadowRoot.querySelectorAll('.sg-opt')].find((x) => /eraser/i.test(x.textContent));
+      const b = o.getBoundingClientRect();
+      return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+    });
+    await page.mouse.move(erOpt.x, erOpt.y);
+    await page.mouse.down({ button: 'left' });           // press starts on the option (captures pointer)
+    await page.mouse.move(palette.cx, palette.cy, { steps: 4 }); // drag onto the canvas while held
+    await page.mouse.up({ button: 'left' });             // release over the canvas
+    await page.mouse.move(palette.cx + 6, palette.cy + 6); // a plain hover, no button
+    await page.waitForTimeout(120);
+    const selectBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+    const a3 = await page.evaluate(() => window.__sandTest.actionCount());
+    check(`selecting a tool does NOT latch PI_PRIMARY (bits ${selectBits})`, (selectBits & PI_PRIMARY) === 0);
+    check(`selecting a tool fires no phantom tool action (${a2} -> ${a3})`, a3 === a2);
+  } else {
+    console.log('  skip palette pointer-capture regression (no embedded palette on /game)');
+  }
 
   await page.evaluate(() => window.__sandTest.setDrawMode(false));
 

@@ -33,16 +33,16 @@ inline bool transparentForLight(uint8_t m) {
 }
 
 inline int lightLossFor(uint8_t m) {
-  if (isEmptyMaterial(m) || isGasMaterial(m)) return 8;
-  if (isLiquidMaterial(m)) return 16;
-  if (isLooseSolidMaterial(m)) return 34;
-  if (isRigidMaterialClass(m) || isComponentMaterial(m)) return 48;
-  return 40;
+  if (isEmptyMaterial(m) || isGasMaterial(m)) return 4;
+  if (isLiquidMaterial(m)) return 8;
+  if (isLooseSolidMaterial(m)) return 17;
+  if (isRigidMaterialClass(m) || isComponentMaterial(m)) return 24;
+  return 20;
 }
 
 inline uint8_t emissionFor(uint8_t m) {
-  if (m == FIRE) return 230;
-  if (m == LAVA) return 210;
+  if (m == FIRE) return 245;
+  if (m == LAVA) return 230;
   return 0;
 }
 

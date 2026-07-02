@@ -91,7 +91,8 @@ void cameraPanFrame(double frameDtMs) {
 // supplies the center so the source (local engine player vs. host snapshot on a
 // client) stays its concern.
 void cameraFollowTo(double cx, double cy) {
-  double tx = cx - viewportCols / 2.0, ty = cy - viewportRows / 2.0;
+  double playerCenterToSurface = PLAYER_H / 2.0 + 4.0;
+  double tx = cx - viewportCols / 2.0, ty = cy + playerCenterToSurface - viewportRows * CAM_SURFACE_VIEW_Y_FRAC;
   cameraSet(camX + (tx - camX) * CAM_FOLLOW_LERP, camY + (ty - camY) * CAM_FOLLOW_LERP);
 }
 // Decide + apply a world-stream: slide the buffer (engine), the cell texture

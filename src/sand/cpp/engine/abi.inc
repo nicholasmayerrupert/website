@@ -35,9 +35,15 @@ EMSCRIPTEN_KEEPALIVE int* engine_dirty_rects(Engine* e) { return e->fg.dirtyRect
 EMSCRIPTEN_KEEPALIVE void engine_clear_dirty(Engine* e) { memset(e->fg.dirtyRender.data(), 0, e->fg.dirtyRender.size()); e->fg.dirtyRenderCount = 0; }
 // Material -> RGBA rendering (C++ owns the pixel generation; JS uploads/blits).
 EMSCRIPTEN_KEEPALIVE void engine_render_full(Engine* e) { e->useLayer(&e->fg); e->renderFull(); }
+EMSCRIPTEN_KEEPALIVE void engine_render_full_layer(Engine* e, int layer) {
+  if (layer) { e->useLayer(&e->fg); if (Engine::RENDER_LIGHTING_ENABLED) e->computeLighting(&e->fg); }
+  e->useLayer(layer ? &e->bg : &e->fg); e->renderFull(); e->useLayer(&e->fg);
+}
 EMSCRIPTEN_KEEPALIVE void engine_render_dirty_rects(Engine* e) { e->useLayer(&e->fg); e->renderDirtyRects(); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels(Engine* e) { return e->fg.renderPixels.data(); }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_render_pixels_layer(Engine* e, int layer) { return (layer ? e->bg.renderPixels : e->fg.renderPixels).data(); }
 EMSCRIPTEN_KEEPALIVE int engine_render_pixels_len(Engine* e) { return (int)e->fg.renderPixels.size(); }
+EMSCRIPTEN_KEEPALIVE void engine_set_sky_light(Engine* e, int v) { e->renderSkyLight = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); }
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc(Engine* e, int cx, int cy, int r, int mat, int ow) { return e->paintDisc(cx, cy, r, (uint8_t)mat, ow != 0); }
 EMSCRIPTEN_KEEPALIVE int engine_erase_disc(Engine* e, int cx, int cy, int r) { return e->eraseDisc(cx, cy, r); }
 // Generic material placement by id (inventory-forward): routes by kind/group so

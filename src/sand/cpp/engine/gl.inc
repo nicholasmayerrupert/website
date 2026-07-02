@@ -51,8 +51,8 @@ int glInit(const char* target) {
   mkTex(glTex2);
   glGenFramebuffers(1, &glReadFBO);
   glGenFramebuffers(1, &glDrawFBO);
-  useLayer(&bg); renderFull(); glUploadFull(glTexBg);
   useLayer(&fg); renderFull(); glUploadFull(glTex);
+  useLayer(&bg); renderFull(); glUploadFull(glTexBg);
   return 1;
 }
 
@@ -149,8 +149,8 @@ void glShift(int dx) {
   if (!dx || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (dx >= cols || -dx >= cols) {
-    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
     useLayer(&fg); renderFull(); glUploadFull(glTex);
+    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
     return;
   }
   glShiftTex(glTex, dx);
@@ -175,8 +175,8 @@ void glShiftV(int dy) {
   if (!dy || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (dy >= rows || -dy >= rows) {
-    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
     useLayer(&fg); renderFull(); glUploadFull(glTex);
+    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
     return;
   }
   glShiftTexV(glTex, dy);
@@ -376,7 +376,7 @@ void glDrawPreview() {
 
 // Upload one layer's changed cells into its texture (per-layer dirty decision,
 // mirrors the old syncCellCanvas full-vs-rects choice).
-void glUploadLayer(Layer* lay, GLuint tex, int forceFull) {
+bool glUploadLayer(Layer* lay, GLuint tex, int forceFull) {
   useLayer(lay);
   buildDirtyRects();
   int chunkTotal = chunkCols * chunkRows;
@@ -386,7 +386,9 @@ void glUploadLayer(Layer* lay, GLuint tex, int forceFull) {
     else { renderDirtyRects(); glUploadRects(tex); }
     memset(dirtyRender, 0, (size_t)chunkCols * chunkRows);
     L->dirtyRenderCount = 0;
+    return true;
   }
+  return false;
 }
 
 // One presented frame: upload both layers, then composite background (darker)
@@ -396,8 +398,10 @@ int glRenderFrame(int forceFull) {
   if (!glReady()) return 0;
   emscripten_webgl_make_context_current(glc->handle);
   glSyncCamera();
-  glUploadLayer(&bg, glTexBg, forceFull);
-  glUploadLayer(&fg, glTex, forceFull);
+  bool fgDirty = forceFull || fg.dirtyRenderCount > 0;
+  bool bgDirty = forceFull || bg.dirtyRenderCount > 0;
+  glUploadLayer(&fg, glTex, forceFull || (RENDER_LIGHTING_ENABLED && bgDirty));
+  glUploadLayer(&bg, glTexBg, forceFull || (RENDER_LIGHTING_ENABLED && fgDirty));
   useLayer(&fg); // preview/seed checks read the foreground grid
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, glDevW, glDevH);

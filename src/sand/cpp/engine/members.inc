@@ -36,7 +36,7 @@
     std::vector<uint32_t> mineDamage;
     // Render-only light values (0..255). Recomputed before full render; never
     // serialized or used by simulation/checksum paths.
-    std::vector<uint8_t> light;
+    std::vector<uint8_t> light, skyLight;
     // Conservative "this layer might have nonzero mineDamage" flag: set true the
     // moment any cell is damaged, cleared only when the whole array is zeroed
     // (clearAllMineDamage / world shift). Lets the render fill skip the per-cell
@@ -100,7 +100,7 @@
       rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
       reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
       mineDamage.assign(n, 0);
-      light.assign(n, 0);
+      light.assign(n, 0); skyLight.assign(n, 0);
       bodyOwner.assign(n, -1);
       renderPixels.assign(n * 4, 0);
     }
@@ -297,6 +297,7 @@
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
+  uint8_t renderSkyLight = 255;        // render-only day/night input; 255 = full day
   std::vector<int> lightQueue;         // render-only flood-fill scratch
 
   inline double rand() {

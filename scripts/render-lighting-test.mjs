@@ -11,9 +11,16 @@ const k = (x, y) => y * COLS + x;
 await initSandWasm();
 const { check, done } = makeChecker('render-only lighting');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1eed, sinksOn: false, infinite: false });
+const mkInfinite = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1eed, sinksOn: false, infinite: true });
 
 function brightness(e, x, y) {
   const p = e.getRenderPixels();
+  const i = k(x, y) * 4;
+  return (p[i] + p[i + 1] + p[i + 2]) / 3;
+}
+
+function brightnessLayer(e, layer, x, y) {
+  const p = e.getRenderPixelsLayer(layer);
   const i = k(x, y) * 4;
   return (p[i] + p[i + 1] + p[i + 2]) / 3;
 }
@@ -26,6 +33,14 @@ function carve(e, x0, y0, x1, y1) {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.eraseDisc(x, y, 0);
 }
 
+function fillStoneLayer(e, layer, x0, y0, x1, y1) {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+}
+
+function carveLayer(e, layer, x0, y0, x1, y1) {
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.eraseDiscLayer(layer, x, y, 0);
+}
+
 // Empty shaft from the top lights exposed deep stone faces.
 {
   const e = mk();
@@ -33,8 +48,23 @@ function carve(e, x0, y0, x1, y1) {
   carve(e, 45, 0, 50, 78);
   e.renderFull();
   const shaftFace = brightness(e, 44, 70);
+  const topFace = brightness(e, 44, 8);
   const sealed = brightness(e, 20, 70);
   check(`deep shaft face is brighter than sealed stone (${shaftFace.toFixed(1)} > ${sealed.toFixed(1)})`, shaftFace > sealed + 35);
+  check(`open shaft keeps sky-contact faces bright down the shaft (${shaftFace.toFixed(1)} ~= ${topFace.toFixed(1)})`, Math.abs(shaftFace - topFace) < 10);
+  e.destroy();
+}
+
+// A winding cave connected to the entrance gets lossy bounce, not full skylight.
+{
+  const e = mk();
+  fillStone(e, 8, 8, 87, 88);
+  carve(e, 45, 0, 50, 22);
+  carve(e, 20, 22, 80, 30);
+  e.renderFull();
+  const shaftFace = brightness(e, 44, 18);
+  const farCaveFace = brightness(e, 20, 31);
+  check(`side cave falls off instead of inheriting full sky (${farCaveFace.toFixed(1)} << ${shaftFace.toFixed(1)})`, farCaveFace + 50 < shaftFace);
   e.destroy();
 }
 
@@ -66,6 +96,72 @@ function carve(e, x0, y0, x1, y1) {
   e.destroy();
 }
 
+// Background-only surface builds get their own skylight even when the foreground
+// has terrain in front of them.
+{
+  const e = mk();
+  fillStone(e, 8, 8, 87, 88);
+  fillStoneLayer(e, 1, 30, 8, 66, 44);
+  e.renderFullLayer(1);
+  const bgTop = brightnessLayer(e, 1, 48, 8);
+  const bgCore = brightnessLayer(e, 1, 48, 32);
+  check(`background-only surface solid is sky-lit (${bgTop.toFixed(1)} > ${bgCore.toFixed(1)})`, bgTop > bgCore + 45);
+  e.destroy();
+}
+
+// A foreground shaft also projects direct sky onto background solids behind it.
+{
+  const blocked = mk();
+  fillStone(blocked, 8, 8, 87, 88);
+  fillStoneLayer(blocked, 1, 8, 8, 87, 88);
+  blocked.renderFullLayer(1);
+  const blockedBgWall = brightnessLayer(blocked, 1, 48, 70);
+  blocked.destroy();
+
+  const open = mk();
+  fillStone(open, 8, 8, 87, 88);
+  fillStoneLayer(open, 1, 8, 8, 87, 88);
+  carve(open, 45, 0, 50, 78);
+  open.renderFullLayer(1);
+  const openBgWall = brightnessLayer(open, 1, 48, 70);
+  check(`foreground shaft projects skylight onto background (${openBgWall.toFixed(1)} > ${blockedBgWall.toFixed(1)})`, openBgWall > blockedBgWall + 60);
+  open.destroy();
+}
+
+// A background shaft also projects direct sky into a foreground cave.
+{
+  const blocked = mk();
+  fillStone(blocked, 8, 8, 87, 88);
+  carve(blocked, 35, 66, 60, 78);
+  fillStoneLayer(blocked, 1, 8, 8, 87, 88);
+  blocked.renderFull();
+  const blockedFgWall = brightness(blocked, 34, 70);
+  blocked.destroy();
+
+  const open = mk();
+  fillStone(open, 8, 8, 87, 88);
+  carve(open, 35, 66, 60, 78);
+  fillStoneLayer(open, 1, 8, 8, 87, 88);
+  carveLayer(open, 1, 45, 0, 50, 78);
+  open.renderFull();
+  const openFgWall = brightness(open, 34, 70);
+  check(`background shaft projects skylight into foreground cave (${openFgWall.toFixed(1)} > ${blockedFgWall.toFixed(1)})`, openFgWall > blockedFgWall + 60);
+  open.destroy();
+}
+
+// A streamed underground buffer edge is not treated as outside sky.
+{
+  const e = mkInfinite();
+  for (let i = 0; i < 6; i++) e.shiftWorldXY(0, 32);
+  fillStone(e, 8, 0, 87, 88);
+  carve(e, 45, 0, 50, 78);
+  e.renderFull();
+  const shaftFace = brightness(e, 44, 70);
+  const sealed = brightness(e, 20, 70);
+  check(`underground buffer top is not fake sky (${shaftFace.toFixed(1)} ~= ${sealed.toFixed(1)})`, shaftFace < sealed + 20);
+  e.destroy();
+}
+
 // Light decays quickly through solid material.
 {
   const e = mk();
@@ -74,6 +170,19 @@ function carve(e, x0, y0, x1, y1) {
   const exposed = brightness(e, 32, 8);
   const deep = brightness(e, 32, 18);
   check(`solid wall darkens within a few cells (${deep.toFixed(1)} < ${exposed.toFixed(1)})`, deep + 60 < exposed);
+  e.destroy();
+}
+
+// Sky brightness is render-only and quantized for future day/night control.
+{
+  const e = mk();
+  fillStone(e, 16, 8, 79, 88);
+  e.renderFull();
+  const day = brightness(e, 32, 8);
+  e.setSkyLight(128);
+  e.renderFull();
+  const dim = brightness(e, 32, 8);
+  check(`sky brightness can be lowered without changing terrain (${dim.toFixed(1)} < ${day.toFixed(1)})`, dim < day - 35 && e.getGrid()[k(32, 8)] === MAT.STONE);
   e.destroy();
 }
 

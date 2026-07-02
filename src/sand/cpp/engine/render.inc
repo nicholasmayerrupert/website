@@ -33,8 +33,8 @@ inline bool transparentForLight(uint8_t m) {
 }
 
 inline int lightLossFor(uint8_t m) {
-  if (isEmptyMaterial(m) || isGasMaterial(m)) return 2;
-  if (isLiquidMaterial(m)) return 12;
+  if (isEmptyMaterial(m) || isGasMaterial(m)) return 8;
+  if (isLiquidMaterial(m)) return 16;
   if (isLooseSolidMaterial(m)) return 34;
   if (isRigidMaterialClass(m) || isComponentMaterial(m)) return 48;
   return 40;
@@ -44,6 +44,10 @@ inline uint8_t emissionFor(uint8_t m) {
   if (m == FIRE) return 230;
   if (m == LAVA) return 210;
   return 0;
+}
+
+inline uint8_t edgeSkyLight() {
+  return (uint8_t)(((int)renderSkyLight * 220 + 127) / 255);
 }
 
 inline uint32_t applyLight(uint32_t packed, uint8_t light) {
@@ -60,12 +64,69 @@ inline bool faceLitMaterial(uint8_t m) {
   return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m);
 }
 
-void computeLighting(Layer* lay) {
+inline bool topRayStartsInSky(Layer* lay, int x) {
+  if (!lay->infinite) return true;
+  int worldX = lay->worldOffsetX + x;
+  int topWorldY = lay->worldOffsetY;
+  return topWorldY < genSurfaceAbs(worldX) && topWorldY < lay->gSeaRow;
+}
+
+inline bool sideRayStartsInSky(Layer* lay, int x, int y) {
+  if (!lay->infinite) return true;
+  int worldX = lay->worldOffsetX + x, worldY = lay->worldOffsetY + y;
+  return worldY < genSurfaceAbs(worldX) && worldY < lay->gSeaRow;
+}
+
+void computeDirectSky(Layer* lay) {
+  const int n = cols * rows;
+  if ((int)lay->skyLight.size() != n) lay->skyLight.assign(n, 0);
+  else std::fill(lay->skyLight.begin(), lay->skyLight.end(), 0);
+  const uint8_t* g = lay->grid;
+  auto seedSkyOnly = [&](int k, uint8_t v) {
+    if (v > lay->skyLight[k]) lay->skyLight[k] = v;
+  };
+
+  // Directional skylight: cast straight rays from the top and from the visible
+  // side edges. This keeps open shafts and surface faces bright without making a
+  // whole winding cave bright just because it has one surface connection. Infinite
+  // worlds only start these rays from real outside-sky coordinates, so unloaded
+  // underground buffer edges do not become fake cave skylights.
+  for (int x = 0; x < cols; x++) {
+    if (!topRayStartsInSky(lay, x)) continue;
+    for (int y = 0; y < rows; y++) {
+      int k = y * cols + x;
+      seedSkyOnly(k, renderSkyLight);
+      if (!transparentForLight(g[k])) break;
+    }
+  }
+  uint8_t edge = edgeSkyLight();
+  for (int y = 0; y < rows; y++) {
+    if (sideRayStartsInSky(lay, 0, y)) {
+      for (int x = 0; x < cols; x++) {
+        int k = y * cols + x;
+        seedSkyOnly(k, edge);
+        if (!transparentForLight(g[k])) break;
+      }
+    }
+    if (sideRayStartsInSky(lay, cols - 1, y)) {
+      for (int x = cols - 1; x >= 0; x--) {
+        int k = y * cols + x;
+        seedSkyOnly(k, edge);
+        if (!transparentForLight(g[k])) break;
+      }
+    }
+  }
+}
+
+void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
   const int n = cols * rows;
   if ((int)lay->light.size() != n) lay->light.assign(n, LIGHT_AMBIENT);
   else std::fill(lay->light.begin(), lay->light.end(), LIGHT_AMBIENT);
   lightQueue.clear();
   lightQueue.reserve((size_t)n / 4);
+
+  computeDirectSky(lay);
+  if (crossLay) computeDirectSky(crossLay);
 
   const uint8_t* g = lay->grid;
   auto seed = [&](int k, uint8_t v) {
@@ -75,15 +136,14 @@ void computeLighting(Layer* lay) {
     }
   };
 
-  for (int x = 0; x < cols; x++) {
-    int k = x;
-    if (transparentForLight(g[k])) seed(k, 255);
+  for (int k = 0; k < n; k++) if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]);
+  if (crossLay) {
+    const uint8_t* cg = crossLay->grid;
+    const uint8_t* cs = crossLay->skyLight.data();
+    for (int k = 0; k < n; k++) if (transparentForLight(cg[k]) && cs[k] > LIGHT_AMBIENT) seed(k, cs[k]);
   }
-  for (int y = 0; y < rows; y++) {
-    int l = y * cols, r = l + cols - 1;
-    if (transparentForLight(g[l])) seed(l, 220);
-    if (transparentForLight(g[r])) seed(r, 220);
-  }
+
+  // Then let sky and emissive sources spill into liquids/solids with material loss.
   for (int k = 0; k < n; k++) {
     uint8_t e = emissionFor(g[k]);
     if (e) seed(k, e);
@@ -174,7 +234,10 @@ inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int 
 
 // Render the ACTIVE layer (L) into its own renderPixels.
 void renderFull() {
-  if (RENDER_LIGHTING_ENABLED) computeLighting(L);
+  if (RENDER_LIGHTING_ENABLED) {
+    Layer* crossLay = (L == &bg) ? &fg : ((L == &fg && bgEnabled) ? &bg : nullptr);
+    computeLighting(L, crossLay);
+  }
   fillRenderSpan(L->grid, (uint32_t*)L->renderPixels.data(), 0, 0, cols - 1, rows - 1);
 }
 

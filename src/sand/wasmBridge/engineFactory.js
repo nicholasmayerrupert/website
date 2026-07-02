@@ -53,9 +53,12 @@ export function initSandWasm() {
         dirtyRects: c('engine_dirty_rects', 'number', ['number']),
         clearDirty: c('engine_clear_dirty', null, ['number']),
         renderFull: c('engine_render_full', null, ['number']),
+        renderFullLayer: c('engine_render_full_layer', null, ['number', 'number']),
         renderDirtyRects: c('engine_render_dirty_rects', null, ['number']),
         renderPixels: c('engine_render_pixels', 'number', ['number']),
+        renderPixelsLayer: c('engine_render_pixels_layer', 'number', ['number', 'number']),
         renderPixelsLen: c('engine_render_pixels_len', 'number', ['number']),
+        setSkyLight: c('engine_set_sky_light', null, ['number', 'number']),
         paintDisc: c('engine_paint_disc', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
         placeMaterial: c('engine_place_material', 'number', ['number', 'number', 'number', 'number', 'number']),
@@ -267,8 +270,11 @@ export function createEngineWasm({
     // the engine's pixel buffer; getRenderPixels returns a fresh ImageData-ready
     // view of it (re-derived each call: wasm memory can move on growth).
     renderFull() { M.renderFull(ptr); },
+    renderFullLayer(layer) { M.renderFullLayer(ptr, layer ? 1 : 0); },
     renderDirtyRects() { M.renderDirtyRects(ptr); },
     getRenderPixels() { return new Uint8ClampedArray(mod.HEAPU8.buffer, M.renderPixels(ptr), cellCount * 4); },
+    getRenderPixelsLayer(layer) { return new Uint8ClampedArray(mod.HEAPU8.buffer, M.renderPixelsLayer(ptr, layer ? 1 : 0), cellCount * 4); },
+    setSkyLight(value) { M.setSkyLight(ptr, value | 0); },
     // These now return the COUNT of cells changed (per-pixel economy); >0 = success.
     paintDisc(cx, cy, r, material, overwrite = false) {
       return M.paintDisc(ptr, cx, cy, r, material, overwrite ? 1 : 0) > 0;

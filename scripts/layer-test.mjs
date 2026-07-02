@@ -96,6 +96,30 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('exactly one grain conserved across both layers', totals.size === 1 && totals.has(1), `(totals ${[...totals]})`);
 }
 
+// 4b. A gas trapped under a foreground ceiling transfers into an open background
+//     cell where it can keep rising.
+{
+  console.log('transfer: blocked fg gas -> bg');
+  const e = mk();
+  e.setBgEnabled(true);
+  const y = 21;
+  for (let x = 26; x <= 34; x++) {
+    e.paintDiscLayer(0, x, y - 1, 0, MAT.STONE, true);
+    e.paintDiscLayer(0, x, y + 1, 0, MAT.STONE, true);
+  }
+  e.paintDiscLayer(0, 26, y, 0, MAT.STONE, true);
+  e.paintDiscLayer(0, 34, y, 0, MAT.STONE, true);
+  for (let yy = y + 1; yy < ROWS; yy++) e.paintDiscLayer(0, 26, yy, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  for (let x = 28; x <= 32; x++) e.paintDisc(x, y, 0, MAT.STEAM, true);
+  const fg0 = countIn(e.getGrid(), MAT.STEAM);
+  step(e, 1);
+  const fgSteam = countIn(e.getGrid(), MAT.STEAM), bgSteam = countIn(e.getGridBg(), MAT.STEAM);
+  check('steam started in the foreground pocket', fg0 > 0, `(${fg0})`);
+  check('blocked steam moved into the background', bgSteam > 0, `(bg ${bgSteam}, fg ${fgSteam})`);
+  check('foreground pocket lost steam to cross-layer transfer', fgSteam < fg0, `(${fg0} -> ${fgSteam})`);
+}
+
 // 5. The background fully simulates components (a bg stone floor persists).
 {
   console.log('background components persist');

@@ -19,10 +19,12 @@ seed, so the solid surface lines up and stays stable, and they diverge once you
 dig/edit one of them. The background renders **behind** the foreground, **darker**
 (empty foreground cells are transparent, so it shows through gaps/dug holes).
 
-The only cross-layer interaction: a **powder or liquid** that is stuck in its layer
-(can't move down) moves to the other layer at the same cell when that cell is empty
-there **and it can keep falling there** (the "can keep falling" rule prevents
-oscillation). Gases and solids/components/bodies never transfer.
+The main cross-layer interaction: a **powder or liquid** that is stuck in its
+layer (can't move down) moves to the other layer at the same cell when it can keep
+falling there; a **gas** that is blocked from rising does the inverse, moving to
+an empty same-cell target in the other layer only when it can keep rising there.
+The "can keep moving" rule prevents oscillation. Solids/components/bodies never
+transfer.
 
 Implementation: per-cell simulation state lives in `struct Layer` (members.inc);
 the Engine holds `fg`/`bg` + an active-layer pointer `L`, with raw-pointer mirrors

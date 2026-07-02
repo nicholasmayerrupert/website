@@ -8,9 +8,8 @@
   // Two layers run under ONE tick. updatePlayers + the tick++ happen once;
   // each layer steps via stepLayer() (foreground FIRST, so the shared RNG stream
   // for the foreground is byte-identical to a single-layer build when the
-  // background is idle). transferPass() then reconciles cross-layer powder/liquid
+  // background is idle). transferPass() then reconciles cross-layer loose/gas
   // flow (P2).
-  bool isLoose(uint8_t m) { return isLooseMedium(m); }
 
   void stepLayer(Layer* layer) {
     useLayer(layer);
@@ -133,8 +132,10 @@
 
   // ---- cross-layer transfer (RNG-free) ----
   // A loose cell (powder or liquid) that is stuck in its layer moves to the other
-  // layer at the same (x,y) when that cell is empty there AND it can keep falling
-  // there (the "can keep falling" rule prevents endless layer-to-layer bouncing).
+  // layer at the same (x,y) when it can keep falling there. A gas uses the inverse
+  // rule: when it is blocked upward here, it moves to an empty same-cell target in
+  // the other layer only if it can keep rising there. The "can keep moving" rule
+  // prevents endless layer-to-layer bouncing.
   inline bool canSettleInto(uint8_t* g, int k, uint8_t m) { uint8_t d = g[k]; return d == EMPTY || canDisplaceMaterial(m, d); }
   // "no downward move available in `lay`": straight-down + both down-diagonals are
   // blocked (and, for liquids, no immediate side-flow either) — i.e. "not falling".
@@ -164,8 +165,33 @@
     if (y + 1 >= rows) return false;
     return canSettleInto(other->grid, (y + 1) * cols + x, m);
   }
+  bool gasBlockedUpIn(Layer* lay, int x, int y) {
+    if (y <= 1) return true;
+    uint8_t* g = lay->grid;
+    int above = (y - 1) * cols + x;
+    if (g[above] == EMPTY) return false;
+    for (int i = 0; i < 2; i++) {
+      int dx = i == 0 ? -1 : 1, nx = x + dx;
+      if (nx <= 0 || nx >= cols - 1) continue;
+      if (g[above + dx] == EMPTY) return false;
+    }
+    return true;
+  }
+  bool canRise(Layer* other, int x, int y) {
+    if (y <= 1) return false;
+    return other->grid[(y - 1) * cols + x] == EMPTY;
+  }
   bool tryTransfer(Layer* from, Layer* to, int x, int y, int k) {
     uint8_t m = from->grid[k];
+    if (isGasMaterial(m)) {
+      if (to->grid[k] != EMPTY) return false;
+      if (!gasBlockedUpIn(from, x, y)) return false;
+      if (!canRise(to, x, y)) return false;
+      to->grid[k] = m; from->grid[k] = EMPTY;
+      if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
+      if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;
+      return true;
+    }
     // Powders AND liquids cross layers when stuck. The transfer only fires when the
     // cell is stuck in `from` (nowhere to fall/flow in its own layer) AND can keep
     // FALLING in `to` (canFall) — so it never bleeds sideways into a solid backdrop
@@ -173,7 +199,7 @@
     // It DOES drain into space the player digs out in the other layer — e.g. mining
     // the background under foreground water lets the water pour into the new channel
     // on its own. Settling fluids (flat bodies go inert) keep this from shimmering.
-    if (!isLoose(m)) return false;
+    if (!isLooseMedium(m)) return false;
     // Target empty -> a plain transfer. Target occupied by a LIGHTER loose material
     // (powder OR liquid) -> a density SWAP: a denser stuck loose material (fg lava,
     // fg water, ...) pushes through the lighter one (bg sand, bg oil, ...), trading

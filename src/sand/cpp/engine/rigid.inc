@@ -419,7 +419,7 @@
   // through them and they vanish on commit.
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || isGasMaterial(m) || isBodyRelocatable(m, k, bodyDensity); }
   struct Disp { uint8_t material; int from; };
-  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, std::unordered_set<int>& footprint, std::unordered_set<int>& edgeFootprint, double bodyDensity) {
+  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, double bodyDensity) {
     if (displaced.empty()) return;
     (void)bodyDensity;
     // Spread displaced fluid sideways and downward before upward (lateral, down,
@@ -438,25 +438,66 @@
     // into a local cone at the body's entry column.
     double curD = 0;
     auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || isGasMaterial(m) || (isLiquidMaterial(m) && DENSITY[m] <= curD) || (isLooseSolidMaterial(m) && (groundedCell[k] != 1 || DENSITY[m] <= curD)); };
-    std::unordered_set<int> seen;
-    auto canVisit = [&](int k) { if (k <= 0 || k >= gridLen || footprint.count(k) || seen.count(k)) return false; int y = k / cols, x = k - y * cols; return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k); };
-    auto isDropTarget = [&](int k, uint8_t mat) { if (footprint.count(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquidMaterial(m) || isGasMaterial(m) || isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
+    int32_t reservedGen = ++L->seenGen;
+    auto inFootprint = [&](int k) { return L->rigidSpillFootprint[k] == footprintGen; };
+    auto isDropTarget = [&](int k, uint8_t mat) { if (inFootprint(k) || L->rigidSpillReserved[k] == reservedGen || isBodyCell(k)) return false; uint8_t m = grid[k]; if (m == EMPTY) return true; return (isLiquidMaterial(m) || isGasMaterial(m) || isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
     // Footprint-edge seeds (used when a displaced cell's own neighbours are all
     // blocked). Permissive — any fluid/empty/gas/loose powder; canVisit re-filters
     // per displaced material once curD is set in the worklist loop below.
     auto seedPassable = [&](uint8_t m, int k) { (void)k; return m == EMPTY || isGasMaterial(m) || isBuoyantMedium(m); };
-    std::vector<int> footprintEdgeStarts; std::unordered_set<int> footprintEdgeSeen;
+    std::vector<int> footprintEdgeStarts; int32_t edgeGen = ++L->seenGen;
     std::vector<int> sortedFootprint(edgeFootprint.begin(), edgeFootprint.end()); std::sort(sortedFootprint.begin(), sortedFootprint.end());
-    for (int k : sortedFootprint) for (int off : offs) { int nk = k + off; if (footprintEdgeSeen.count(nk)) continue; int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue; if (seedPassable(grid[nk], nk)) { footprintEdgeSeen.insert(nk); footprintEdgeStarts.push_back(nk); } }
-    std::vector<Disp> worklist = displaced;
-    std::sort(worklist.begin(), worklist.end(), [](const Disp& a, const Disp& b) { return DENSITY[b.material] < DENSITY[a.material]; });
-    std::vector<int> queue;
-    for (size_t wi = 0; wi < worklist.size(); wi++) {
-      Disp d = worklist[wi]; curD = DENSITY[d.material]; seen.clear(); queue.clear(); int target = -1;
-      for (int off : offs) { int nk = d.from + off; if (!canVisit(nk)) continue; seen.insert(nk); queue.push_back(nk); }
-      if (queue.empty()) for (int nk : footprintEdgeStarts) { if (!canVisit(nk)) continue; seen.insert(nk); queue.push_back(nk); }
-      for (size_t qi = 0; qi < queue.size(); qi++) { int k = queue[qi]; if (isDropTarget(k, d.material)) { target = k; break; } for (int off : offs) { int nk = k + off; if (!canVisit(nk)) continue; seen.insert(nk); queue.push_back(nk); } }
-      if (target >= 0) { uint8_t evicted = grid[target]; if (evicted != EMPTY) worklist.push_back({evicted, target}); writeGridIndex(target, d.material); }
+    for (int k : sortedFootprint) for (int off : offs) {
+      int nk = k + off; if (nk <= 0 || nk >= gridLen || L->seenStamp[nk] == edgeGen) continue;
+      int y = nk / cols, x = nk - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) continue;
+      if (seedPassable(grid[nk], nk)) { L->seenStamp[nk] = edgeGen; footprintEdgeStarts.push_back(nk); }
+    }
+    // Intentionally batch by material: each density/material group gets one
+    // multi-source BFS instead of clearing a queue and searching once per displaced
+    // cell. Heavier groups run first so they claim spill targets before lighter
+    // material; evicted lighter material is processed in later waves.
+    std::vector<Disp> pending = displaced, nextPending;
+    std::vector<int> queue, targets;
+    for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
+      std::sort(pending.begin(), pending.end(), [](const Disp& a, const Disp& b) {
+        if (DENSITY[a.material] != DENSITY[b.material]) return DENSITY[a.material] > DENSITY[b.material];
+        if (a.material != b.material) return a.material < b.material;
+        return a.from < b.from;
+      });
+      nextPending.clear();
+      for (size_t gi = 0; gi < pending.size();) {
+        uint8_t mat = pending[gi].material;
+        size_t gj = gi + 1;
+        while (gj < pending.size() && pending[gj].material == mat) gj++;
+        curD = DENSITY[mat];
+        int need = (int)(gj - gi);
+        queue.clear(); targets.clear();
+        int32_t seenGen = ++L->seenGen;
+        auto canVisit = [&](int k) {
+          if (k <= 0 || k >= gridLen || inFootprint(k) || L->rigidSpillReserved[k] == reservedGen || L->seenStamp[k] == seenGen) return false;
+          int y = k / cols, x = k - y * cols;
+          return x > 0 && x < cols - 1 && y > 0 && y < rows && isPassable(grid[k], k);
+        };
+        auto enqueue = [&](int k) { if (!canVisit(k)) return; L->seenStamp[k] = seenGen; queue.push_back(k); };
+        for (size_t di = gi; di < gj; di++) for (int off : offs) enqueue(pending[di].from + off);
+        if (queue.empty()) for (int nk : footprintEdgeStarts) enqueue(nk);
+        int visitBudget = imin(gridLen, imax(4096, need * 128));
+        int visits = 0;
+        for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget; qi++, visits++) {
+          int k = queue[qi];
+          if (isDropTarget(k, mat)) { L->rigidSpillReserved[k] = reservedGen; targets.push_back(k); }
+          for (int off : offs) enqueue(k + off);
+        }
+        int n = imin((int)targets.size(), need);
+        for (int i = 0; i < n; i++) {
+          int target = targets[i];
+          uint8_t evicted = grid[target];
+          if (evicted != EMPTY) nextPending.push_back({evicted, target});
+          writeGridIndex(target, mat);
+        }
+        gi = gj;
+      }
+      pending.swap(nextPending);
     }
   }
   double rigidErodeProbabilityAt(int k) {
@@ -663,15 +704,15 @@
     rigidRejectedCells = 0; rigidDepenetrations = 0;
     for (Body* b : L->bodies) { auto it = prePoses.find(b->id); bool hp = it != prePoses.end(); double ppx = hp ? it->second.first : 0, ppy = hp ? it->second.second : 0; if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++; }
     bakeRestingBodies(); // a non-RIGID body that just slept solidifies into a static component (after depenetrate, which may re-wake it)
-    std::vector<int> cells; std::unordered_set<int> footprint;
-    std::unordered_map<int, std::pair<std::vector<Disp>, std::unordered_set<int>>> perBody;
+    std::vector<int> cells, footprint;
+    std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
     for (Body* b : L->bodies) {
       auto& pb = perBody[b->id];
       forEachBodyCell(b, [&](int x, int y) {
         int k = y * cols + x; if (bodyOwner[k] != -1) return; uint8_t m = grid[k];
         if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
         if (isBodyRelocatable(m, k, b->density)) pb.first.push_back({m, k});
-        writeGridIndex(k, b->material); bodyOwner[k] = b->id; cells.push_back(k); footprint.insert(k); pb.second.insert(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+        writeGridIndex(k, b->material); bodyOwner[k] = b->id; cells.push_back(k); footprint.push_back(k); pb.second.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
       });
     }
     {
@@ -684,9 +725,11 @@
       }
       if (keep.size() != L->bodies.size()) L->bodies = std::move(keep);
     }
+    int32_t footprintGen = ++L->seenGen;
+    for (int k : footprint) L->rigidSpillFootprint[k] = footprintGen;
     for (Body* b : L->bodies) {
       auto it = perBody.find(b->id);
-      if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, footprint, it->second.second, b->density);
+      if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, it->second.second, footprintGen, b->density);
     }
     erodeBodies(cells);
   }

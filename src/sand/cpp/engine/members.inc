@@ -25,6 +25,9 @@
     // generation-stamped "seen" scratch for component flood fills (reused across
     // calls; a cell is "seen" iff seenStamp[k] == seenGen, so a clear is just gen++).
     std::vector<int32_t> seenStamp; int32_t seenGen = 0;
+    // Free rigid-body displacement spill scratch. Footprint and reserved targets
+    // must be live at the same time as a BFS seen set, so they use separate stamps.
+    std::vector<int32_t> rigidSpillFootprint, rigidSpillReserved;
     std::vector<int> prevCompCells, curCompCells, bodyCells;
     std::vector<uint8_t> reactionFlags;
     std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
@@ -91,6 +94,7 @@
       groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
       compOccStamp.assign(n, -1);
       seenStamp.assign(n, 0); seenGen = 0;
+      rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
       reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
       mineDamage.assign(n, 0);
       bodyOwner.assign(n, -1);

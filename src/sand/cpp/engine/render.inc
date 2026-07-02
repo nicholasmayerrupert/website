@@ -25,6 +25,97 @@ static inline uint32_t jitterShade(uint32_t packed, int delta) {
   return a | ((uint32_t)b << 16) | ((uint32_t)g << 8) | (uint32_t)r;
 }
 
+static constexpr bool RENDER_LIGHTING_ENABLED = true;
+static constexpr uint8_t LIGHT_AMBIENT = 35;
+
+inline bool transparentForLight(uint8_t m) {
+  return isEmptyMaterial(m) || isGasMaterial(m);
+}
+
+inline int lightLossFor(uint8_t m) {
+  if (isEmptyMaterial(m) || isGasMaterial(m)) return 2;
+  if (isLiquidMaterial(m)) return 12;
+  if (isLooseSolidMaterial(m)) return 34;
+  if (isRigidMaterialClass(m) || isComponentMaterial(m)) return 48;
+  return 40;
+}
+
+inline uint8_t emissionFor(uint8_t m) {
+  if (m == FIRE) return 230;
+  if (m == LAVA) return 210;
+  return 0;
+}
+
+inline uint32_t applyLight(uint32_t packed, uint8_t light) {
+  if (packed == 0) return 0;
+  uint32_t a = packed & 0xff000000u;
+  uint32_t r = packed & 0xffu, g = (packed >> 8) & 0xffu, b = (packed >> 16) & 0xffu;
+  r = (r * light + 127u) / 255u;
+  g = (g * light + 127u) / 255u;
+  b = (b * light + 127u) / 255u;
+  return a | (b << 16) | (g << 8) | r;
+}
+
+inline bool faceLitMaterial(uint8_t m) {
+  return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m);
+}
+
+void computeLighting(Layer* lay) {
+  const int n = cols * rows;
+  if ((int)lay->light.size() != n) lay->light.assign(n, LIGHT_AMBIENT);
+  else std::fill(lay->light.begin(), lay->light.end(), LIGHT_AMBIENT);
+  lightQueue.clear();
+  lightQueue.reserve((size_t)n / 4);
+
+  const uint8_t* g = lay->grid;
+  auto seed = [&](int k, uint8_t v) {
+    if (v > lay->light[k]) {
+      lay->light[k] = v;
+      lightQueue.push_back(k);
+    }
+  };
+
+  for (int x = 0; x < cols; x++) {
+    int k = x;
+    if (transparentForLight(g[k])) seed(k, 255);
+  }
+  for (int y = 0; y < rows; y++) {
+    int l = y * cols, r = l + cols - 1;
+    if (transparentForLight(g[l])) seed(l, 220);
+    if (transparentForLight(g[r])) seed(r, 220);
+  }
+  for (int k = 0; k < n; k++) {
+    uint8_t e = emissionFor(g[k]);
+    if (e) seed(k, e);
+  }
+
+  for (size_t qi = 0; qi < lightQueue.size(); qi++) {
+    int k = lightQueue[qi];
+    int cur = lay->light[k];
+    int y = k / cols, x = k - y * cols;
+    auto pushNeighbour = [&](int nk) {
+      int nl = cur - lightLossFor(g[nk]);
+      if (nl <= (int)lay->light[nk]) return;
+      lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
+      lightQueue.push_back(nk);
+    };
+    if (x > 0) pushNeighbour(k - 1);
+    if (x + 1 < cols) pushNeighbour(k + 1);
+    if (y > 0) pushNeighbour(k - cols);
+    if (y + 1 < rows) pushNeighbour(k + cols);
+  }
+}
+
+inline uint8_t renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) {
+  uint8_t v = light[k];
+  if (!faceLitMaterial(m)) return v;
+  if (x > 0 && light[k - 1] > v) v = light[k - 1];
+  if (x + 1 < cols && light[k + 1] > v) v = light[k + 1];
+  if (y > 0 && light[k - cols] > v) v = light[k - cols];
+  if (y + 1 < rows && light[k + cols] > v) v = light[k + cols];
+  return v;
+}
+
 void buildRenderTables() {
   for (int m = 0; m < TABLE; m++) {
     uint32_t base = MAT_COLOR[m];
@@ -75,17 +166,22 @@ inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int 
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
       else if (m == LAVA) { if (((wx * 17 + wy * 31) & 7) == 0) c = PACKED_LAVA_HOT; }
+      if (RENDER_LIGHTING_ENABLED) c = applyLight(c, renderLightForCell(L->light.data(), k, x, y, m));
       p[k] = c;
     }
   }
 }
 
 // Render the ACTIVE layer (L) into its own renderPixels.
-void renderFull() { fillRenderSpan(L->grid, (uint32_t*)L->renderPixels.data(), 0, 0, cols - 1, rows - 1); }
+void renderFull() {
+  if (RENDER_LIGHTING_ENABLED) computeLighting(L);
+  fillRenderSpan(L->grid, (uint32_t*)L->renderPixels.data(), 0, 0, cols - 1, rows - 1);
+}
 
 // Refill only the active layer's coalesced dirty rects. Rects are [x0,y0,x1,y1)
 // exclusive; convert to inclusive for the fill.
 void renderDirtyRects() {
+  if (RENDER_LIGHTING_ENABLED) { renderFull(); return; }
   uint8_t* g = L->grid; uint32_t* p = (uint32_t*)L->renderPixels.data();
   for (size_t i = 0; i + 3 < L->dirtyRects.size(); i += 4)
     fillRenderSpan(g, p, L->dirtyRects[i], L->dirtyRects[i + 1], L->dirtyRects[i + 2] - 1, L->dirtyRects[i + 3] - 1);

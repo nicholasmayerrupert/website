@@ -381,7 +381,7 @@ void glUploadLayer(Layer* lay, GLuint tex, int forceFull) {
   buildDirtyRects();
   int chunkTotal = chunkCols * chunkRows;
   if (forceFull || L->dirtyRenderCount > 0) {
-    bool whole = forceFull || L->dirtyRenderCount > (int)(chunkTotal * GL_FULL_UPLOAD_DIRTY_RATIO);
+    bool whole = RENDER_LIGHTING_ENABLED || forceFull || L->dirtyRenderCount > (int)(chunkTotal * GL_FULL_UPLOAD_DIRTY_RATIO);
     if (whole) { renderFull(); glUploadFull(tex); }
     else { renderDirtyRects(); glUploadRects(tex); }
     memset(dirtyRender, 0, (size_t)chunkCols * chunkRows);

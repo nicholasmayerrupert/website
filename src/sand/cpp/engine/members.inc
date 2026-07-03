@@ -186,6 +186,7 @@
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   bool jointGroundReady = false;
+  bool jointBondsInvalid = false;
   // Reusable scratch for computeGroundedBoth() (sized to cols*rows once; avoids
   // per-step heap churn in two-layer scenes). prev* = last step's grounding (for
   // re-waking solids that lost support); *Base = each layer's independent grounding

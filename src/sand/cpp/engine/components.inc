@@ -315,13 +315,14 @@
     for (size_t qi = 0; qi < cgWorkQueue.size(); qi++) {
       int gid = cgWorkQueue[qi];
       bool isFg = gid < nf; Layer& lay = isFg ? fg : bg; int offset = isFg ? 0 : nf;
+      int layerCount = isFg ? nf : nb;
       Comp* c = compById(lay, gid - offset);
       const int32_t* cc = lay.cellComp.data();
       for (int k : c->cells) {
         int y = k / cols, x = k - y * cols;
         for (int oy = -1; oy <= 1; oy++) { int ny = y + oy; if (ny < 0 || ny >= rows) continue; int rb = ny * cols;
           for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox; if (nx < 0 || nx >= cols) continue;
-            int nid = cc[rb + nx]; if (nid < 0) continue; int ngid = offset + nid;
+            int nid = cc[rb + nx]; if (nid < 0 || nid >= layerCount) continue; int ngid = offset + nid;
             unite(parent, gid, ngid);
             if (groundParent) unite(*groundParent, gid, ngid);
             if (cgCompStamp[ngid] != gen) { cgCompStamp[ngid] = gen; cgWorkQueue.push_back(ngid); }
@@ -461,7 +462,7 @@
       if (fc->grounded) continue;
       for (int k : fc->cells) {
         int bi = bg.cellComp[k];
-        if (bi < 0 || !isRigidMaterialClass(bg.grid[k])) continue;
+        if (bi < 0 || bi >= nb || !isRigidMaterialClass(bg.grid[k])) continue;
         int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
         pairCells[key].push_back(k);
       }
@@ -471,7 +472,7 @@
       if (bc->grounded) continue;
       for (int k : bc->cells) {
         int fi = fg.cellComp[k];
-        if (fi < 0 || !isRigidMaterialClass(fg.grid[k]) || !compById(fg, fi)->grounded) continue;
+        if (fi < 0 || fi >= nf || !isRigidMaterialClass(fg.grid[k]) || !compById(fg, fi)->grounded) continue;
         int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
         pairCells[key].push_back(k);
       }
@@ -585,7 +586,10 @@
     for (int i = 0; i < nf + nb; i++) parent[i] = i;
     auto find = [&](int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
     auto unite = [&](int a, int b) { int ra = find(a), rb = find(b); if (ra != rb) parent[ra] = rb; };
-    for (auto& b : cgBonds) unite(b.fgComp, nf + b.bgComp);
+    for (auto& b : cgBonds) {
+      if (b.fgComp < 0 || b.fgComp >= nf || b.bgComp < 0 || b.bgComp >= nb) continue;
+      unite(b.fgComp, nf + b.bgComp);
+    }
     // Bounded same-layer union-find (replaces the old full-grid uniteLayerAdj),
     // seeded from ungrounded cross-bonded comps; operates on cgParent so the
     // helper's internal find/unite share this same array.
@@ -1183,6 +1187,7 @@
 
   // split a plant-family component list keeping only cells still of plant material
   void splitPlantAfterErase() {
+    if (jointGroundReady) { jointBondsInvalid = true; jointGroundReady = false; }
     L->groundDirty = true; // plant cells removed/split -> full reflood
     std::vector<Comp> updated;
     std::vector<int32_t>& seen = L->seenStamp;
@@ -1212,6 +1217,7 @@
   // cut-vertex check (noteAcidRemovals) to keep the grounding cache valid when a
   // dissolve doesn't disconnect anything.
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true) {
+    if (jointGroundReady && !erased.empty()) { jointBondsInvalid = true; jointGroundReady = false; }
     if (markGroundDirty && !erased.empty()) L->groundDirty = true;
     if (erased.empty() || list.empty()) return;
     std::vector<int32_t>& seen = L->seenStamp;

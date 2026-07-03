@@ -32,6 +32,43 @@ const gasDistanceStats = (g, cx, cy, mats = AFTERMATH) => {
   }
   return { count: n, avg: n ? sum / n : 0 };
 };
+const stressRng = (seed) => {
+  let s = seed >>> 0;
+  return () => {
+    s = Math.imul(s ^ (s >>> 15), 2246822519) >>> 0;
+    s = Math.imul(s ^ (s >>> 13), 3266489917) >>> 0;
+    return ((s ^= s >>> 16) >>> 0) / 4294967296;
+  };
+};
+function stampGeneratedTerrainTntStrokes(e, cols, rows, seed, layer = 0) {
+  const r = stressRng(seed);
+  for (let s = 0; s < 14; s++) {
+    let x = Math.floor(20 + r() * 80);
+    let y = Math.floor(e.worldSurfaceAt(e.getWorldOffsetX() + x) - 45 - r() * 50);
+    const segments = 8 + Math.floor(r() * 10);
+    for (let i = 0; i < segments; i++) {
+      const nx = Math.max(2, Math.min(cols - 3, x + Math.floor(20 + r() * 65)));
+      const surf = e.worldSurfaceAt(e.getWorldOffsetX() + nx);
+      const ny = Math.max(2, Math.min(rows - 3, Math.floor(surf - 15 - r() * 80)));
+      const steps = Math.max(Math.abs(nx - x), Math.abs(ny - y));
+      for (let t = 0; t <= steps; t += 3) {
+        const a = steps ? t / steps : 0;
+        e.placeMaterial(Math.round(x + (nx - x) * a), Math.round(y + (ny - y) * a), 2, MAT.TNT, layer);
+      }
+      x = nx; y = ny;
+    }
+  }
+  e.syncComponentsLayer(layer);
+}
+function igniteGeneratedTerrainStress(e, cols, rows, seed) {
+  const r = stressRng(seed ^ 0x9e3779b9);
+  for (let i = 0; i < 24; i++) {
+    const x = Math.floor(3 + r() * (cols - 6));
+    const surf = e.worldSurfaceAt(e.getWorldOffsetX() + x);
+    const y = Math.max(2, Math.min(rows - 3, surf - 20 + Math.floor(r() * 40)));
+    e.placeMaterial(x, y, 2, i % 3 === 0 ? MAT.LAVA : MAT.FIRE);
+  }
+}
 
 // Fill a solid grounded block of material M, sit a TNT on top, light it, and run until
 // the blast fires (a sudden jump in carved cells inside the crater box). Return how many
@@ -384,6 +421,23 @@ function blastDamagesMaterial(name) {
   check(`large TNT chain staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
   check(`large TNT chain completed (${tntLeft} left)`, tntLeft === 0);
   check(`large TNT chain produced visible gas (peak ${peakGas})`, peakGas > 250);
+  e.destroy();
+}
+
+// --- generated two-layer terrain: foreground TNT blast invalidates stale cross-layer bonds ---
+{
+  const C = 512, R = 256, seed = 12648430;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: seed, sinksOn: false, infinite: true });
+  e.setBgEnabled(true);
+  stampGeneratedTerrainTntStrokes(e, C, R, seed, 0);
+  igniteGeneratedTerrainStress(e, C, R, seed);
+  let survived = true;
+  try {
+    for (let i = 0; i < 80; i++) e.step(i * 16);
+  } catch {
+    survived = false;
+  }
+  check(`generated-terrain TNT stress survives cross-layer component reshaping`, survived);
   e.destroy();
 }
 

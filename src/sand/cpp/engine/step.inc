@@ -68,6 +68,7 @@
     // (gated on bgEnabled -> single-layer scenes stay byte-identical). Each
     // stepLayer() then skips its own first computeGrounded().
     jointGroundReady = false;
+    jointBondsInvalid = false;
     auto layerRigidMarked = [&](Layer& lay) {
       const uint8_t* g = lay.grid;
       for (int y = 0; y < rows; y++) {
@@ -91,10 +92,12 @@
     if (bgA) stepLayer(&bg);
     perfStepLayers = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
-    if (jointGroundReady) {
+    if (jointGroundReady && !jointBondsInvalid) {
       moveCrossLayerBondedAssemblies();
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
+    } else if (jointBondsInvalid) {
+      cgBonds.clear();
     }
     crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);

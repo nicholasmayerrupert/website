@@ -538,6 +538,29 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Liquid falling onto the TOP of a light component must not count as buoyant
+// immersion. Only side/bottom wetted area can lift an ungrounded solid.
+{
+  console.log('top-only liquid contact does not lift a light solid');
+  const SAND = 1, WATER = 2, MOSS = 20;
+  const e = mk();
+  for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
+  for (let y = 40; y < 48; y++) for (let x = 56; x < 64; x++) e.paintDisc(x, y, 0, MOSS, true);
+  e.syncComponents();
+  const bbox = () => {
+    const g = e.getGrid(); let minY = ROWS, maxY = -1, n = 0;
+    for (let i = 0; i < g.length; i++) if (g[i] === MOSS) { const y = (i / COLS) | 0; if (y < minY) minY = y; if (y > maxY) maxY = y; n++; }
+    return { minY, maxY, n };
+  };
+  run(500, e);
+  const settled = bbox();
+  for (let x = 56; x < 64; x++) for (let y = 38; y < settled.minY; y++) e.paintDisc(x, y, 0, WATER, true);
+  run(120, e);
+  const after = bbox();
+  check(`top water did not lift moss (rows ${settled.minY}-${settled.maxY} -> ${after.minY}-${after.maxY})`, after.n === settled.n && after.minY >= settled.minY && after.maxY >= settled.maxY);
+  e.destroy();
+}
+
 // Ice density sits between oil and brine. It should find a buoyant row between
 // them without entering a deterministic one-cell up/down cycle while the two
 // liquids are still leveling.
@@ -569,6 +592,62 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   }
   check(`ice stayed present in the oil/brine interface (${ys.length} samples)`, ys.length > 300);
   check(`ice did not jitter vertically while liquids leveled (${reversals} reversals)`, reversals === 0);
+  e.destroy();
+}
+
+// Dense component solids should keep sinking through an oil-over-brine interface.
+// The anti-jitter hold used for buoyant ice must not pin dense components at the
+// boundary between two liquids.
+{
+  console.log('stone sinks through oil over brine');
+  const STONE = 3, OIL = 4, BRINE = 33, BRICK = 25;
+  const e = mk();
+  const L = 45, R = 155, top = 35, floorY = 108;
+  for (let y = top; y <= floorY; y++) { e.paintDisc(L, y, 0, BRICK, true); e.paintDisc(R, y, 0, BRICK, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, BRICK, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = 62; y <= 74; y++) e.paintDisc(x, y, 0, OIL, true);
+  for (let x = L + 1; x < R; x++) for (let y = 75; y < floorY; y++) e.paintDisc(x, y, 0, BRINE, true);
+  for (let y = 50; y <= 55; y++) for (let x = 98; x <= 102; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  const bounds = () => {
+    const g = e.getGrid(); let n = 0, minY = ROWS, maxY = -1;
+    for (let i = 0; i < g.length; i++) if (g[i] === STONE) { const y = (i / COLS) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { n, minY, maxY };
+  };
+  run(180, e);
+  const b = bounds();
+  check(`stone crossed the oil/brine interface and sank into brine (rows ${b.minY}-${b.maxY})`, b.n === 30 && b.minY > 75);
+  e.destroy();
+}
+
+// Touching static components use true mass-average density. A small stone load on
+// a larger ice raft should not, by itself, force the whole raft downward.
+{
+  console.log('mass-average stone/ice assembly does not use densest-member sinking');
+  const STONE = 3, ICE = 12, BRINE = 33, BRICK = 25;
+  const e = mk();
+  const L = 35, R = 165, top = 28, floorY = 105;
+  for (let y = top; y <= floorY + 2; y++) { e.paintDisc(L, y, 0, BRICK, true); e.paintDisc(R, y, 0, BRICK, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, BRICK, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 42; y < floorY; y++) e.paintDisc(x, y, 0, BRINE, true);
+  run(40, e);
+  e.addDiscToIceDraft(100, floorY - 43, 8);
+  e.finalizeIceDraft();
+  run(240, e);
+  const matBounds = (mat) => {
+    const g = e.getGrid(); let n = 0, minY = ROWS, maxY = -1;
+    for (let i = 0; i < g.length; i++) if (g[i] === mat) { const y = (i / COLS) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { n, minY, maxY };
+  };
+  const iceBefore = matBounds(ICE);
+  for (let y = iceBefore.minY - 4; y <= iceBefore.minY - 1; y++) for (let x = 98; x <= 102; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  run(180, e);
+  const stone = matBounds(STONE), ice = matBounds(ICE);
+  check(`small stone load did not force the ice raft downward (stone rows ${stone.minY}-${stone.maxY}, ice was ${iceBefore.minY}-${iceBefore.maxY})`, stone.n === 20 && stone.maxY <= iceBefore.minY);
+  check(`ice remained present while overloaded (ice rows ${ice.minY}-${ice.maxY})`, ice.n === iceBefore.n);
   e.destroy();
 }
 

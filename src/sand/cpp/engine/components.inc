@@ -617,16 +617,14 @@
     };
     // Plan a one-cell descent of `own` in `lay`. An assembly descends into EMPTY
     // (or its own) cells, and — like the single-layer translateAssembly — shoves
-    // aside loose powder/liquid directly beneath its shell instead of being
-    // pinned by it. Without this a sand/water-FILLED bonded shell (a stone circle
-    // mirrored in both layers, filled with sand) could never move: its own contents
-    // sit directly below the top arc and block the move, so it floats forever.
+    // aside lower-density powder/liquid directly beneath its shell instead of
+    // being pinned by it. Denser loose media provide support; liquid above the
+    // shell is ignored by this downward-only cross-layer decision.
     // Displaced contents are relocated into the cells the assembly vacates (its
     // per-column tops); if they can't fit there, we decline the move (status quo).
     // Gas is simply overrun (it dissipates), matching translateAssembly.
     auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, double density,
                              std::vector<std::pair<int, uint8_t>>& relocate) -> bool {
-      (void)density;
       relocate.clear();
       for (int k : own) {
         int nk = k + cols, ny = nk / cols;
@@ -634,7 +632,7 @@
         if (own.count(nk)) continue;
         uint8_t below = lay.grid[nk];
         if (below == EMPTY || isGasMaterial(below)) continue;
-        bool displaceable = isBuoyantMedium(below);
+        bool displaceable = isBuoyantMedium(below) && density > DENSITY[below];
         if (!displaceable) return false;
         relocate.push_back({0, below}); // dest cell assigned below (after vacated cells are known)
       }
@@ -737,10 +735,20 @@
       auto componentDisplaceableForAssembly = [&](uint8_t m) {
         return m == EMPTY || isGasMaterial(m) || isBuoyantMedium(m);
       };
-      for (int k : cells) { int leadK = k + dir; int leadY = leadK / cols; if (leadY < 1 || leadY >= rows) return false; if (cells.count(leadK)) continue; if (!componentDisplaceableForAssembly(grid[leadK])) return false; }
+      for (int k : cells) {
+        int leadK = k + dir; int leadY = leadK / cols;
+        if (leadY < 1 || leadY >= rows) return false;
+        if (cells.count(leadK)) continue;
+        uint8_t lead = grid[leadK];
+        if (!componentDisplaceableForAssembly(lead)) return false;
+      }
       struct Disp { uint8_t material; int from; };
       std::vector<Disp> displaced; std::vector<int> vacated;
-      for (int k : cells) { int leadK = k + dir; uint8_t lead = grid[leadK]; if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK}); if (!cells.count(k - dir)) vacated.push_back(k); }
+      for (int k : cells) {
+        int leadK = k + dir; uint8_t lead = grid[leadK];
+        if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
+        if (!cells.count(k - dir)) vacated.push_back(k);
+      }
       int liquidDisplacedCount = 0, powderDisplacedCount = 0;
       for (auto& d : displaced) { if (isLiquidMaterial(d.material)) liquidDisplacedCount++; else if (isLooseSolidMaterial(d.material)) powderDisplacedCount++; }
       // Liquids and powders are relocated volume-preservingly. Liquids use a
@@ -870,68 +878,77 @@
       return true;
     };
 
-    // measureLooseImmersion returns via out-params; returns false if "null".
-    auto measureLooseImmersion = [&](std::unordered_set<int>& cells, int& wetCells, int& exposedCells, int& bottomExposed, int& bottomMedium, int& bottomLiquid, double& mediumDensityOut) -> bool {
-      wetCells = 0; exposedCells = 0; bottomExposed = 0; bottomMedium = 0; bottomLiquid = 0;
-      double mediumDensity = 0; int mediumContacts = 0;
+    struct FaceContact {
+      int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0;
+      double liquidDensityArea = 0, powderDensityArea = 0;
+    };
+    auto measureFaceContact = [&](std::unordered_set<int>& cells) {
+      FaceContact c;
       for (int k : cells) {
-        int y = k / cols, x = k - y * cols; bool wet = false, exposed = false;
-        if (x > 1 && !cells.count(k - 1)) { exposed = true; uint8_t m = grid[k - 1]; if (isBuoyantMedium(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
-        if (x < cols - 2 && !cells.count(k + 1)) { exposed = true; uint8_t m = grid[k + 1]; if (isBuoyantMedium(m)) { wet = true; mediumDensity += DENSITY[m]; mediumContacts++; } }
-        if (y > 1 && !cells.count(k - cols)) { exposed = true; }
-        if (y < rows - 1 && !cells.count(k + cols)) {
-          exposed = true; bottomExposed++; uint8_t m = grid[k + cols];
-          if (isBuoyantMedium(m)) { wet = true; bottomMedium++; if (isLiquidMaterial(m)) bottomLiquid++; mediumDensity += DENSITY[m]; mediumContacts++; }
+        int y = k / cols, x = k - y * cols;
+        const int offs[3] = { -1, 1, cols }; // side + bottom area only; top liquid never creates lift
+        for (int i = 0; i < 3; i++) {
+          int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == cols ? 1 : 0);
+          if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
+          if (cells.count(nk)) continue;
+          uint8_t m = grid[nk];
+          c.faces++;
+          if (isLiquidMaterial(m)) {
+            c.liquidFaces++;
+            c.liquidDensityArea += DENSITY[m];
+            if (offs[i] == cols) c.bottomLiquidFaces++;
+          } else if (isLooseSolidMaterial(m)) {
+            c.powderFaces++;
+            c.powderDensityArea += DENSITY[m];
+            if (offs[i] == cols) c.bottomPowderFaces++;
+          }
         }
-        if (exposed) exposedCells++; if (wet) wetCells++;
       }
-      if (mediumContacts == 0) return false;
-      int requiredWet = imax(1, (int)std::ceil(std::sqrt((double)cells.size()) * BUOY_WET_PERIMETER_FRAC));
-      if (wetCells < requiredWet) return false;
-      mediumDensityOut = mediumDensity / mediumContacts;
-      return true;
+      return c;
     };
 
-    auto buoyancyDecision = [&](std::unordered_set<int>& cells, double avgDensity, int xMin, int xMax) -> int {
-      int wetCells, exposedCells, bottomExposed, bottomMedium, bottomLiquid; double mediumDensity;
-      // Powders are still displaceable and can support a settled assembly, but
-      // only liquid immersion can generate upward motion.
-      if (!measureLooseImmersion(cells, wetCells, exposedCells, bottomExposed, bottomMedium, bottomLiquid, mediumDensity)) return 1;
-      if (avgDensity > mediumDensity) return 1;
-      double targetWetCells = exposedCells * (avgDensity / mediumDensity) * BUOY_DRAFT_SCALE;
-      double imbalance = wetCells - targetWetCells;
-      double band = std::fmax(BUOY_BAND_MIN, (xMax - xMin + 1) * BUOY_BAND_FRAC);
-      double upBand = band + BUOY_UP_EXTRA_BAND;
-      bool looseSupport = bottomExposed > 0 && bottomMedium >= bottomExposed * BUOY_SUPPORT_FRAC;
-      bool buoyantSupport = bottomExposed > 0 && bottomLiquid >= bottomExposed * BUOY_SUPPORT_FRAC;
-      if (imbalance < -band) return 1;
-      if (imbalance > upBand) {
-        if (buoyantSupport) return -1;
-        if (!looseSupport) return 1;
+    auto motionDecision = [&](std::unordered_set<int>& cells, double avgDensity) -> int {
+      FaceContact c = measureFaceContact(cells);
+      bool powderSupports = false;
+      if (c.powderFaces > 0) {
+        double powderDensity = c.powderDensityArea / c.powderFaces;
+        powderSupports = c.bottomPowderFaces > 0 && avgDensity <= powderDensity + 1e-6;
       }
-      return 0;
+      if (c.liquidFaces > 0) {
+        double liquidDensity = c.liquidDensityArea / c.liquidFaces;
+        if (avgDensity > liquidDensity + 1e-6) return powderSupports ? 0 : 1;
+        double targetFaces = c.faces > 0 ? c.faces * (avgDensity / liquidDensity) : 0;
+        double imbalance = c.liquidFaces - targetFaces;
+        double band = std::fmax(1.0, std::sqrt((double)cells.size()) * 0.25);
+        if (imbalance > band && c.bottomLiquidFaces > 0) return -1;
+        if (c.bottomLiquidFaces > 0 && imbalance >= -band) return 0;
+        return powderSupports ? 0 : 1;
+      }
+      if (powderSupports) return 0; // one-way granular support, never lift
+      return 1;
     };
 
     for (Group* grp : order) {
       if (grp->grounded) continue;
       std::unordered_set<int> cells;
       for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
-      double weight = 0; int xMin = cols, xMax = 0;
-      for (int ci : grp->comps) for (int k : all[ci]->cells) { weight += DENSITY[matOf(ci, k)]; int x = k - (k / cols) * cols; if (x < xMin) xMin = x; if (x > xMax) xMax = x; }
+      double weight = 0;
+      for (int ci : grp->comps) {
+        for (int k : all[ci]->cells) {
+          double d = DENSITY[matOf(ci, k)];
+          weight += d;
+        }
+      }
       double avgDensity = weight / cells.size();
-      int decision = buoyancyDecision(cells, avgDensity, xMin, xMax);
+      int decision = motionDecision(cells, avgDensity);
       if (decision == 0) continue;
       std::unordered_set<int> shifted; shifted.reserve(cells.size());
-      int sxMin = cols, sxMax = 0, dirK = decision > 0 ? cols : -cols;
-      for (int k : cells) {
-        int nk = k + dirK;
-        shifted.insert(nk);
-        int x = nk - (nk / cols) * cols; if (x < sxMin) sxMin = x; if (x > sxMax) sxMax = x;
-      }
+      int dirK = decision > 0 ? cols : -cols;
+      for (int k : cells) shifted.insert(k + dirK);
       // If a one-cell move would immediately ask for the opposite move, the
       // assembly is already straddling buoyant equilibrium. Hold it there instead
       // of producing a deterministic up/down two-cycle.
-      if (buoyancyDecision(shifted, avgDensity, sxMin, sxMax) == -decision) continue;
+      if (motionDecision(shifted, avgDensity) == -decision) continue;
       translateAssembly(grp, cells, dirK);
     }
   }

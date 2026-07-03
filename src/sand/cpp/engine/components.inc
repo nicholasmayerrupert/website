@@ -615,15 +615,58 @@
         for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
       }
     };
+    struct CrossFaceContact {
+      int liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0;
+      double liquidDensityArea = 0, powderDensityArea = 0;
+    };
+    auto addCrossLayerContact = [&](Layer& lay, const std::unordered_set<int>& own, CrossFaceContact& c) {
+      uint8_t* g = lay.grid;
+      for (int k : own) {
+        int y = k / cols, x = k - y * cols;
+        const int offs[3] = { -1, 1, cols }; // side + bottom only; top liquid never creates support/lift
+        for (int i = 0; i < 3; i++) {
+          int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == cols ? 1 : 0);
+          if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
+          if (own.count(nk)) continue;
+          uint8_t m = g[nk];
+          if (isLiquidMaterial(m)) {
+            c.liquidFaces++;
+            c.liquidDensityArea += DENSITY[m];
+            if (offs[i] == cols) c.bottomLiquidFaces++;
+          } else if (isLooseSolidMaterial(m)) {
+            c.powderFaces++;
+            c.powderDensityArea += DENSITY[m];
+            if (offs[i] == cols) c.bottomPowderFaces++;
+          }
+        }
+      }
+    };
+    auto crossLayerShouldDescend = [&](double density, const std::unordered_set<int>& fCells, const std::unordered_set<int>& bCells) {
+      CrossFaceContact c;
+      addCrossLayerContact(fg, fCells, c);
+      addCrossLayerContact(bg, bCells, c);
+      if (c.liquidFaces > 0) {
+        double liquidDensity = c.liquidDensityArea / c.liquidFaces;
+        if (density > liquidDensity + 1e-6) return true;
+        return c.bottomLiquidFaces == 0;
+      }
+      if (c.powderFaces > 0) {
+        double powderDensity = c.powderDensityArea / c.powderFaces;
+        if (density > powderDensity + 1e-6) return true;
+        return c.bottomPowderFaces == 0;
+      }
+      return true;
+    };
+
     // Plan a one-cell descent of `own` in `lay`. An assembly descends into EMPTY
-    // (or its own) cells, and — like the single-layer translateAssembly — shoves
-    // aside lower-density powder/liquid directly beneath its shell instead of
-    // being pinned by it. Denser loose media provide support; liquid above the
-    // shell is ignored by this downward-only cross-layer decision.
+    // (or its own) cells, and - after the joint side/bottom contact decision says
+    // it should sink - shoves aside powder/liquid directly beneath its shell
+    // instead of being pinned by it. Liquid above the shell is ignored by this
+    // downward-only cross-layer decision.
     // Displaced contents are relocated into the cells the assembly vacates (its
     // per-column tops); if they can't fit there, we decline the move (status quo).
     // Gas is simply overrun (it dissipates), matching translateAssembly.
-    auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, double density,
+    auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own,
                              std::vector<std::pair<int, uint8_t>>& relocate) -> bool {
       relocate.clear();
       for (int k : own) {
@@ -632,7 +675,7 @@
         if (own.count(nk)) continue;
         uint8_t below = lay.grid[nk];
         if (below == EMPTY || isGasMaterial(below)) continue;
-        bool displaceable = isBuoyantMedium(below) && density > DENSITY[below];
+        bool displaceable = isBuoyantMedium(below);
         if (!displaceable) return false;
         relocate.push_back({0, below}); // dest cell assigned below (after vacated cells are known)
       }
@@ -678,7 +721,8 @@
       double density = n ? sum / n : 0;
       // Both layers must be able to descend (the assembly moves as one unit); if
       // either is blocked by non-displaceable material, the assembly stays put.
-      if (!planLayerMove(fg, fgCells, density, fgReloc) || !planLayerMove(bg, bgCells, density, bgReloc)) continue;
+      if (!crossLayerShouldDescend(density, fgCells, bgCells)) continue;
+      if (!planLayerMove(fg, fgCells, fgReloc) || !planLayerMove(bg, bgCells, bgReloc)) continue;
       applyLayer(fg, g->fgComps, fgCells, fgMats, fgReloc);
       applyLayer(bg, g->bgComps, bgCells, bgMats, bgReloc);
     }
@@ -754,21 +798,32 @@
       // Liquids and powders are relocated volume-preservingly. Liquids use a
       // density chain: dense fluid claims nearby lighter fluid first, then that
       // lighter fluid continues the same search until the chain reaches a surface.
-      // Powders use a spill BFS to nearby free room. GAS keeps the original
-      // vacated-cell dump.
+      // The cells the assembly vacates are valid free volume for this planning
+      // step; large slanted solids otherwise need too many distant surface cells
+      // and can pin in full liquid stacks. Powders use a spill BFS to nearby free
+      // room. GAS keeps the original vacated-cell dump.
       struct LiquidWrite { int target; uint8_t material; };
       std::vector<LiquidWrite> liquidWrites;
       std::vector<int> powderTargets;
+      std::unordered_set<int> reserved; // cells already claimed by liquid/powder relocation
       if (liquidDisplacedCount > 0 || powderDisplacedCount > 0) {
         // Cells the assembly is about to occupy — a spill target must not be one of
         // them. Built lazily here (only when liquid/powder is displaced) so a large
         // slab falling through air/empty skips O(area) hash-set work/step.
         std::unordered_set<int> movedCells;
         for (int k : cells) movedCells.insert(k + dir);
+        std::unordered_set<int> vacatedCells(vacated.begin(), vacated.end());
         int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = cols; offs[3] = -cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -cols; offs[3] = cols; }
         int gridLen = cols * rows;
-        std::unordered_set<int> reserved; // cells already claimed by liquid/powder relocation
+        auto plannedMaterialAt = [&](int k) -> uint8_t { return vacatedCells.count(k) ? EMPTY : grid[k]; };
         auto planLiquidChain = [&](uint8_t startMaterial, int startFrom) -> bool {
+          size_t writeBase = liquidWrites.size();
+          std::vector<int> claimed;
+          auto fail = [&]() {
+            liquidWrites.resize(writeBase);
+            for (int k : claimed) reserved.erase(k);
+            return false;
+          };
           uint8_t moving = startMaterial;
           int origin = startFrom;
           for (int chain = 0; chain < TABLE + 2; chain++) {
@@ -777,8 +832,8 @@
               if (k < 0 || k >= gridLen || seen.count(k) || reserved.count(k)) return false;
               int y = k / cols, x = k - y * cols;
               if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
-              if (cells.count(k) || movedCells.count(k)) return false;
-              uint8_t m = grid[k];
+              if (movedCells.count(k) || (cells.count(k) && !vacatedCells.count(k))) return false;
+              uint8_t m = plannedMaterialAt(k);
               return m == EMPTY || isLiquidMaterial(m);
             };
             auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); };
@@ -788,7 +843,7 @@
               int lighterTarget = -1, emptyTarget = -1;
               for (; qi < levelEnd; qi++) {
                 int k = queue[qi];
-                uint8_t m = grid[k];
+                uint8_t m = plannedMaterialAt(k);
                 if (isLiquidMaterial(m) && DENSITY[m] < DENSITY[moving]) {
                   if (lighterTarget < 0) lighterTarget = k;
                   continue;
@@ -801,9 +856,10 @@
               }
               int target = lighterTarget >= 0 ? lighterTarget : emptyTarget;
               if (target < 0) continue;
-              uint8_t displacedLiquid = grid[target];
+              uint8_t displacedLiquid = plannedMaterialAt(target);
               liquidWrites.push_back({target, moving});
               reserved.insert(target);
+              claimed.push_back(target);
               if (isLiquidMaterial(displacedLiquid)) {
                 moving = displacedLiquid;
                 origin = target;
@@ -811,21 +867,33 @@
               }
               return true;
             }
-            if (queue.empty()) return false;
+            if (queue.empty()) return fail();
           }
-          return false;
+          return fail();
         };
-        for (auto& d : displaced) if (isLiquidMaterial(d.material) && !planLiquidChain(d.material, d.from)) return false;
+        int vacatedRelocCursor = 0;
+        auto planVacatedLiquidDump = [&](uint8_t material) {
+          while (vacatedRelocCursor < (int)vacated.size() && reserved.count(vacated[vacatedRelocCursor])) vacatedRelocCursor++;
+          if (vacatedRelocCursor >= (int)vacated.size()) return false;
+          int target = vacated[vacatedRelocCursor++];
+          liquidWrites.push_back({target, material});
+          reserved.insert(target);
+          return true;
+        };
+        for (auto& d : displaced) {
+          if (!isLiquidMaterial(d.material)) continue;
+          if (!planLiquidChain(d.material, d.from) && !planVacatedLiquidDump(d.material)) return false;
+        }
 
         auto runPowderSpill = [&](int need, std::vector<int>& out) -> bool {
           if (need <= 0) return true;
           std::unordered_set<int> seen; std::vector<int> queue;
-          auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || seen.count(k) || reserved.count(k)) return false; int y = k / cols, x = k - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false; if (cells.count(k) || movedCells.count(k)) return false; uint8_t m = grid[k]; return m == EMPTY || isLiquidMaterial(m) || isLooseSolidMaterial(m); };
+          auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || seen.count(k) || reserved.count(k)) return false; int y = k / cols, x = k - y * cols; if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false; if (movedCells.count(k) || (cells.count(k) && !vacatedCells.count(k))) return false; uint8_t m = plannedMaterialAt(k); return m == EMPTY || isLiquidMaterial(m) || isLooseSolidMaterial(m); };
           auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); };
           for (auto& d : displaced) { if (!isLooseSolidMaterial(d.material)) continue; for (int off : offs) enqueue(d.from + off); }
           for (size_t qi = 0; qi < queue.size() && (int)out.size() < need; qi++) {
             int k = queue[qi];
-            if (grid[k] == EMPTY) { if (!reserved.count(k)) { reserved.insert(k); out.push_back(k); } continue; }
+            if (plannedMaterialAt(k) == EMPTY) { if (!reserved.count(k)) { reserved.insert(k); out.push_back(k); } continue; }
             for (int off : offs) enqueue(k + off);
           }
           return (int)out.size() >= need;
@@ -870,7 +938,7 @@
       int di = 0, pi = 0;
       for (auto& d : displaced) {
         if (isLiquidMaterial(d.material)) continue;
-        while (di < (int)vacated.size() && grid[vacated[di]] != EMPTY) di++;
+        while (di < (int)vacated.size() && (grid[vacated[di]] != EMPTY || reserved.count(vacated[di]))) di++;
         if (isLooseSolidMaterial(d.material)) { writeGridIndex(powderTargets[pi++], d.material); if (di < (int)vacated.size()) di++; }
         else if (di < (int)vacated.size()) writeGridIndex(vacated[di++], d.material); // gas
       }

@@ -426,6 +426,98 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('seeded irregular cut slabs fell with identical displacement', ok, `(${details.join(', ')})`);
 }
 
+// 20. A solid load in one layer must affect a buoyant component in the other
+//     layer at the foreground/background boundary. This mirrors same-layer
+//     stone-on-ice in an oil/brine stack: once the stone overlaps the bg ice, the
+//     bonded assembly should continue descending instead of pinning at the layer
+//     boundary.
+{
+  console.log('cross-layer solid load sinks buoyant ice at layer boundary');
+  const C = 200, R0 = 128;
+  const e = createEngineWasm({ cols: C, rows: R0, infinite: false, sinksOn: false });
+  e.setBgEnabled(true);
+  const L = 35, R = 165, top = 28, floorY = 105;
+  const fillRect = (layer, mat, x0, x1, y0, y1) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.paintDiscLayer(layer, x, y, 0, mat, true);
+  };
+  const matBounds = (grid, mat) => {
+    let n = 0, minY = R0, maxY = -1;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === mat) { const y = (i / C) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { n, minY, maxY };
+  };
+  for (const layer of [0, 1]) {
+    fillRect(layer, MAT.BRICK, L, L, top, floorY + 2);
+    fillRect(layer, MAT.BRICK, R, R, top, floorY + 2);
+    fillRect(layer, MAT.BRICK, L, R, floorY, floorY);
+    e.syncComponentsLayer(layer);
+    fillRect(layer, MAT.BRINE, L + 1, R - 1, floorY - 42, floorY - 1);
+    fillRect(layer, MAT.OIL, L + 1, R - 1, floorY - 72, floorY - 43);
+  }
+  step(e, 40);
+  fillRect(1, MAT.ICE, 92, 108, 58, 74);
+  e.syncComponentsLayer(1);
+  step(e, 300);
+  const iceBefore = matBounds(e.getGridBg(), MAT.ICE);
+  fillRect(0, MAT.STONE, 98, 102, iceBefore.minY - 4, iceBefore.minY - 1);
+  e.syncComponentsLayer(0);
+  const stoneBefore = matBounds(e.getGrid(), MAT.STONE);
+  step(e, 250);
+  const stone = matBounds(e.getGrid(), MAT.STONE);
+  const ice = matBounds(e.getGridBg(), MAT.ICE);
+  check('fg stone was placed above bg ice', stoneBefore.n === 20 && iceBefore.n > 0);
+  check('cross-layer stone load descended with bg ice', stone.maxY > stoneBefore.maxY + 4 && ice.maxY > iceBefore.maxY + 4,
+    `(stone ${stoneBefore.minY}-${stoneBefore.maxY} -> ${stone.minY}-${stone.maxY}, ice ${iceBefore.minY}-${iceBefore.maxY} -> ${ice.minY}-${ice.maxY})`);
+  e.destroy();
+}
+
+// 21. Large slanted solids displace many liquid cells at once. The displaced
+//     oil/brine must be allowed to occupy the cells vacated by the descending
+//     solid; otherwise a dense diagonal stone slab can pin at the liquid
+//     interface despite having no solid blocker below it.
+{
+  console.log('large diagonal stone sinks through oil/brine stack');
+  const C = 220, R0 = 150;
+  const e = createEngineWasm({ cols: C, rows: R0, infinite: false, sinksOn: false });
+  const L = 35, R = 185, top = 30, floorY = 122;
+  const fillRect = (mat, x0, x1, y0, y1) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.paintDiscLayer(0, x, y, 0, mat, true);
+  };
+  const drawDiagonalStone = (cx, cy, len, thick, slope = 0.55) => {
+    for (let i = -len; i <= len; i++) {
+      const x = Math.round(cx + i), y = Math.round(cy + i * slope);
+      for (let oy = -thick; oy <= thick; oy++) for (let ox = -thick; ox <= thick; ox++) {
+        if (ox * ox + oy * oy <= thick * thick) e.paintDiscLayer(0, x + ox, y + oy, 0, MAT.STONE, true);
+      }
+    }
+  };
+  const matBounds = (grid, mat) => {
+    let n = 0, minY = R0, maxY = -1;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === mat) { const y = (i / C) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { n, minY, maxY };
+  };
+  const countStoneBelowFloor = () => {
+    const g = e.getGrid(); let n = 0;
+    for (let y = floorY; y < R0; y++) for (let x = L + 1; x < R; x++) if (g[y * C + x] === MAT.STONE) n++;
+    return n;
+  };
+  fillRect(MAT.BRICK, L, L, top, R0 - 1);
+  fillRect(MAT.BRICK, R, R, top, R0 - 1);
+  fillRect(MAT.BRICK, L, R, floorY, R0 - 1);
+  e.syncComponentsLayer(0);
+  fillRect(MAT.BRINE, L + 1, R - 1, floorY - 38, floorY - 1);
+  fillRect(MAT.OIL, L + 1, R - 1, floorY - 70, floorY - 39);
+  step(e, 40);
+  drawDiagonalStone(110, 36, 38, 6);
+  e.syncComponentsLayer(0);
+  const before = matBounds(e.getGrid(), MAT.STONE);
+  step(e, 180);
+  const after = matBounds(e.getGrid(), MAT.STONE);
+  check('diagonal stone was placed above the liquid stack', before.n > 1000 && before.maxY < floorY - 50, `(${before.n}, y ${before.minY}-${before.maxY})`);
+  check('diagonal stone sank to the basin floor', after.maxY >= floorY - 1 && countStoneBelowFloor() === 0,
+    `(stone ${before.minY}-${before.maxY} -> ${after.minY}-${after.maxY}, below floor ${countStoneBelowFloor()})`);
+  e.destroy();
+}
+
 // 14. Liquids cross layers into space the player digs out. A sealed foreground
 //     basin of water with a SOLID background behind it; digging a background drain
 //     shaft (background-only, no foreground action) must let the water pour into

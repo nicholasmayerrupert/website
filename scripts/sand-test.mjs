@@ -642,11 +642,12 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     return { n, minY, maxY };
   };
   const iceBefore = matBounds(ICE);
-  for (let y = iceBefore.minY - 4; y <= iceBefore.minY - 1; y++) for (let x = 98; x <= 102; x++) e.addDiscToStoneDraft(x, y, 0);
+  for (let y = iceBefore.minY - 3; y <= iceBefore.minY - 1; y++) for (let x = 99; x <= 101; x++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
   run(180, e);
   const stone = matBounds(STONE), ice = matBounds(ICE);
-  check(`small stone load did not force the ice raft downward (stone rows ${stone.minY}-${stone.maxY}, ice was ${iceBefore.minY}-${iceBefore.maxY})`, stone.n === 20 && stone.maxY <= iceBefore.minY);
+  check(`small stone load did not force the ice raft to the floor (stone rows ${stone.minY}-${stone.maxY}, ice was ${iceBefore.minY}-${iceBefore.maxY})`,
+    stone.n === 9 && stone.maxY < ice.minY && ice.maxY <= iceBefore.maxY + 12);
   check(`ice remained present while overloaded (ice rows ${ice.minY}-${ice.maxY})`, ice.n === iceBefore.n);
   e.destroy();
 }

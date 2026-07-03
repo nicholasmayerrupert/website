@@ -1075,7 +1075,10 @@
         std::vector<int> cells; int yMax;
         floodTargetMat = grid[k];
         floodComponent(sx, sy, seen, gen, true, cells, yMax, &Engine::isFloodTargetMat);
-        Comp c; c.id = L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax; L->stoneComponents.push_back(std::move(c));
+        Comp c; c.id = L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax;
+        c.growing = floodTargetMat == MYCELIUM_SPORE;
+        if (c.growing) L->myceliumActive = true;
+        L->stoneComponents.push_back(std::move(c));
       }
     }
     // PLANT group (unbounded — a whole tree is one component). New plant-family

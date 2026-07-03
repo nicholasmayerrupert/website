@@ -96,6 +96,39 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   e.destroy();
 }
 
+// CRYSTAL and mycelium are mild emissive blocks: visible in sealed caves without
+// behaving like fire/lava-level light sources.
+{
+  const base = mk();
+  base.setSkyLight(0);
+  fillStone(base, 8, 8, 87, 88);
+  carve(base, 35, 42, 60, 62);
+  base.renderFull();
+  const farWall = brightness(base, 20, 52);
+  base.destroy();
+
+  const crystal = mk();
+  crystal.setSkyLight(0);
+  fillStone(crystal, 8, 8, 87, 88);
+  carve(crystal, 35, 42, 60, 62);
+  crystal.paintDisc(36, 52, 0, MAT.CRYSTAL, true);
+  crystal.renderFull();
+  const nearCrystal = brightness(crystal, 34, 52);
+  check(`crystal mildly lights a sealed cave (${nearCrystal.toFixed(1)} > ${farWall.toFixed(1)})`, nearCrystal > farWall + 18);
+  crystal.destroy();
+
+  const myc = mk();
+  myc.setSkyLight(0);
+  fillStone(myc, 8, 8, 87, 88);
+  carve(myc, 35, 42, 60, 62);
+  myc.paintDisc(36, 52, 1, MAT.MYCELIUM, true);
+  myc.paintDisc(36, 52, 0, MAT.MYCELIUM_SPORE, true);
+  myc.renderFull();
+  const nearMyc = brightness(myc, 34, 52);
+  check(`mycelium dimly lights a sealed cave (${nearMyc.toFixed(1)} > ${farWall.toFixed(1)})`, nearMyc > farWall + 8);
+  myc.destroy();
+}
+
 // Cross-layer FIRE/LAVA seed emissive light into the opposite layer. Skylight is
 // disabled here so the baseline is ambient-only, not cross-layer sky import.
 {

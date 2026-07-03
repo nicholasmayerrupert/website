@@ -41,9 +41,26 @@ inline int lightLossFor(uint8_t m) {
 }
 
 inline uint8_t emissionFor(uint8_t m) {
-  if (m == FIRE) return 245;
-  if (m == LAVA) return 230;
-  return 0;
+  switch (m) {
+    case FIRE: return 245;
+    case LAVA: return 230;
+    case CRYSTAL: return 132;
+    case MYCELIUM_SPORE: return 112;
+    case MYCELIUM: return 58;
+    default: return 0;
+  }
+}
+
+inline uint32_t renderCellHash(int wx, int wy) {
+  uint32_t h = (uint32_t)wx * 0x9e3779b1u;
+  h ^= (uint32_t)wy * 0x85ebca77u;
+  h ^= h >> 16; h *= 0x7feb352du; h ^= h >> 15;
+  return h;
+}
+
+inline bool myceliumNoduleAt(int wx, int wy) {
+  uint32_t h = renderCellHash(wx, wy);
+  return (h % 19u) == 0u || (((h >> 8) % 53u) == 0u);
 }
 
 static constexpr uint8_t CROSS_LAYER_EMISSIVE_LOSS = 28;
@@ -341,6 +358,10 @@ inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int 
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
       else if (m == LAVA) { if (((wx * 17 + wy * 31) & 7) == 0) c = PACKED_LAVA_HOT; }
+      else if (m == CRYSTAL) { if ((renderCellHash(wx, wy) & 7u) == 0u) c = PACKED_CRYSTAL_CORE; }
+      else if (m == MYCELIUM || m == MYCELIUM_SPORE) {
+        if (m == MYCELIUM_SPORE || myceliumNoduleAt(wx, wy)) c = PACKED_MYCELIUM_NODULE;
+      }
       if (RENDER_LIGHTING_ENABLED) c = applyLight(c, renderLightForCell(L->light.data(), k, x, y, m));
       p[k] = c;
     }

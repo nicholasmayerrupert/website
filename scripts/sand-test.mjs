@@ -4,9 +4,10 @@
 // plant growth, free rigid bodies, and edits persisting across a world shift.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { MAT } from '../src/sand/materials.js';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;
-const counts = (g) => { const c = new Array(16).fill(0); for (let i = 0; i < g.length; i++) c[g[i]]++; return c; };
+const counts = (g) => { const c = new Array(64).fill(0); for (let i = 0; i < g.length; i++) c[g[i]]++; return c; };
 const rigidCells = (g) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === 13) n++; return n; };
 
 await initSandWasm();
@@ -142,6 +143,72 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   for (let s = 0; s < 400; s++) { if (s % 40 === 0) e.paintDisc(80, 77, 2, 2, false); t += 16; e.step(t); }
   const c = counts(e.getGrid());
   check(`plant material grew (${c[7] + c[8] + c[9]})`, c[7] + c[8] + c[9] > 0);
+  e.destroy();
+}
+
+// 4b. magic mycelium grows through stone from a spore, then goes inert.
+{
+  console.log('magic mycelium');
+  const e = mk();
+  for (let y = 42; y <= 88; y++) for (let x = 54; x <= 124; x++) e.paintDisc(x, y, 0, MAT.STONE, true);
+  e.paintDisc(88, 66, 0, MAT.MYCELIUM_SPORE, true);
+  e.syncComponents();
+  const start = counts(e.getGrid());
+  run(900, e);
+  const mid = counts(e.getGrid());
+  const grown = (mid[MAT.MYCELIUM] || 0) + (mid[MAT.MYCELIUM_SPORE] || 0);
+  check(`mycelium converted nearby stone (${grown} cells)`, grown > 20);
+  check(`mycelium consumed stone locally (${start[MAT.STONE]} -> ${mid[MAT.STONE]})`, mid[MAT.STONE] < start[MAT.STONE] - 20);
+  run(1800, e);
+  const after = counts(e.getGrid());
+  const finalGrid = e.getGrid();
+  const finalGrown = (after[MAT.MYCELIUM] || 0) + (after[MAT.MYCELIUM_SPORE] || 0);
+  let myc = 0, neighbourSum = 0, denseCells = 0;
+  const isMyc = (v) => v === MAT.MYCELIUM || v === MAT.MYCELIUM_SPORE;
+  for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) {
+    if (!isMyc(finalGrid[y * COLS + x])) continue;
+    myc++;
+    let n = 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      if (isMyc(finalGrid[(y + oy) * COLS + x + ox])) n++;
+    }
+    neighbourSum += n;
+    if (n >= 4) denseCells++;
+  }
+  const avgNeighbours = myc ? neighbourSum / myc : 0;
+  check(`mycelium remains bounded (${finalGrown} cells)`, finalGrown <= 190);
+  check(`mycelium grows as sparse tendrils (avg neighbours ${avgNeighbours.toFixed(2)}, dense ${denseCells})`, avgNeighbours < 2.5 && denseCells <= 2);
+  check(`mycelium spore remains as colony core (${after[MAT.MYCELIUM_SPORE] || 0})`, (after[MAT.MYCELIUM_SPORE] || 0) === 1);
+  e.destroy();
+}
+
+// 4c. a spore placed in open air can fall first, then activate once it contacts stone.
+{
+  console.log('falling mycelium spore activates on stone contact');
+  const e = mk();
+  for (let y = 94; y <= 96; y++) for (let x = 70; x <= 110; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.placeMaterial(90, 20, 0, MAT.MYCELIUM_SPORE);
+  run(900, e);
+  const c = counts(e.getGrid());
+  const grown = (c[MAT.MYCELIUM] || 0) + (c[MAT.MYCELIUM_SPORE] || 0);
+  check(`falling spore infected stone after landing (${grown} cells)`, grown > 1);
+  check(`falling spore remained as one colony core (${c[MAT.MYCELIUM_SPORE] || 0})`, (c[MAT.MYCELIUM_SPORE] || 0) === 1);
+  e.destroy();
+}
+
+// 4d. diagonal contact is enough for a spore to infect stone.
+{
+  console.log('mycelium spore infects diagonal stone');
+  const e = mk();
+  e.paintDisc(82, 82, 0, MAT.STONE, true);
+  e.paintDisc(81, 81, 0, MAT.MYCELIUM_SPORE, true);
+  e.syncComponents();
+  run(400, e);
+  const c = counts(e.getGrid());
+  check(`diagonal spore converted the diagonal stone (${c[MAT.MYCELIUM] || 0})`, (c[MAT.MYCELIUM] || 0) >= 1);
+  check(`diagonal spore remained as one colony core (${c[MAT.MYCELIUM_SPORE] || 0})`, (c[MAT.MYCELIUM_SPORE] || 0) === 1);
   e.destroy();
 }
 

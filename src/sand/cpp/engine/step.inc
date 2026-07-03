@@ -21,6 +21,7 @@
     moveBodies();
     double tR = emscripten_get_now(); perfStepRigid = tR - tG;
     growPlantComponents();
+    growMyceliumComponents();
     applyReactions(); applyAcid(); applyLava(); applyIce(); applySalt(); applyExplosives();
     double tX = emscripten_get_now(); perfStepReact = tX - tR;
     prepareNextBuffer();

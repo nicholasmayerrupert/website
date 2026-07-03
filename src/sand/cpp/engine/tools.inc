@@ -130,7 +130,19 @@
           }
         }
         break;
-      default:      registerRigidCellsSplit(L->stoneComponents, L->nextStoneId, mat, cells, false); break; // stone group
+      default:
+        registerRigidCellsSplit(L->stoneComponents, L->nextStoneId, mat, cells, false); // stone group
+        if (mat == MYCELIUM_SPORE) {
+          L->myceliumActive = true;
+          for (auto& comp : L->stoneComponents) {
+            for (int k : cells) {
+              if (std::find(comp.cells.begin(), comp.cells.end(), k) == comp.cells.end()) continue;
+              comp.growing = true;
+              break;
+            }
+          }
+        }
+        break;
     }
   }
   // Per-pixel placement: write at most `maxCells` cells, NEAREST-TO-CENTER first, so
@@ -551,6 +563,19 @@
     markDirtyRect(x0 - 1, y0 - 1, x0 + SEED_SIZE, y0 + SEED_SIZE);
     return true;
   }
+  bool placeMyceliumSporeAt(int x0, int y0) {
+    if (!canPlaceSeedAt(x0, y0)) return false;
+    Comp c; c.id = L->nextStoneId++; c.yMax = y0; c.age = 0; c.growing = true;
+    int k = I(x0, y0);
+    grid[k] = MYCELIUM_SPORE;
+    c.cells.push_back(k);
+    L->stoneComponents.push_back(std::move(c));
+    L->myceliumActive = true;
+    L->groundDirty = true;
+    L->skyDirty = true;
+    markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
+    return true;
+  }
 
   // ---- tool / pointer state machine (input policy from createSandGame) ----
   // JS owns browser-coord -> cell translation, button normalization, the RAF
@@ -589,6 +614,7 @@
         if (m == EMPTY) creativeMode = CM_ERASE;
         else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
         else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
+        else if (m == MYCELIUM_SPORE) { creativeMode = CM_MYCELIUM_SPORE; creativeMaterial = m; }
         else if (isComponentMaterial(m)) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
         else { creativeMode = CM_PAINT; creativeMaterial = m; }
         // Remember the last SOLID for the CUBE tool so it spawns a body of that material.
@@ -669,7 +695,8 @@
         drafting = true; lastDraftCx = cx; lastDraftCy = cy; draftStrokeActive = true;
         if (addDiscToDraft(draft, cx, cy, brushFor(draftMaterial), draftMaterial == ICE ? rows - 1 : rows)) changed = 1;
         break;
-      case CM_SEED: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
+      case CM_SEED:
+      case CM_MYCELIUM_SPORE: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
       case CM_CUBE: spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial); break; // RIGID by default; a selected stone/ice/TNT solid spawns a material body that bakes/explodes
       default: break;
     }
@@ -690,7 +717,13 @@
     int changed = 0;
     useLayer(draftLayer ? &bg : &fg);
     if (drafting) { finalizeDraft(); drafting = false; draftStrokeActive = false; draft.clear(); changed = 1; }
-    if (draftingSeed) { if (hasSeedOrigin) placeSeedAtTyped(seedOriginX, seedOriginY, creativeSeed); draftingSeed = false; hasSeedOrigin = false; changed = 1; }
+    if (draftingSeed) {
+      if (hasSeedOrigin) {
+        if (creativeMode == CM_MYCELIUM_SPORE) placeMyceliumSporeAt(seedOriginX, seedOriginY);
+        else placeSeedAtTyped(seedOriginX, seedOriginY, creativeSeed);
+      }
+      draftingSeed = false; hasSeedOrigin = false; changed = 1;
+    }
     useLayer(&fg);
     return changed;
   }

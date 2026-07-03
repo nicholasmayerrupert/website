@@ -79,6 +79,18 @@ const hasCell = (cells, x, y) => {
 // 6) Cube spawns a free rigid body.
 {
   const e = mk();
+  e.setCreativeMaterial(CK.MATERIAL, MAT.MYCELIUM_SPORE);
+  e.pointerDown(50, 40, 0);
+  check('mycelium spore does not create a stone-style draft preview', e.getStoneDraftCells().length === 0);
+  e.pointerUp(0);
+  let spores = 0; for (const v of e.getGrid()) if (v === MAT.MYCELIUM_SPORE) spores++;
+  check(`mycelium spore placed one cell (${spores})`, spores === 1);
+  e.destroy();
+}
+
+// 6) Cube spawns a free rigid body.
+{
+  const e = mk();
   e.setCreativeMaterial(CK.CUBE, 0);
   e.pointerDown(50, 40, 0);
   check('cube spawned a rigid body', e._bodyCount() > 0);

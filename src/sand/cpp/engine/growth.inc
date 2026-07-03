@@ -116,3 +116,131 @@
       for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (grid[targetK] != EMPTY) continue; writeGridIndex(targetK, material); comp.cells.push_back(targetK); int y = targetK / cols; if (y > comp.yMax) comp.yMax = y; if (isPlantWood(material)) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
     }
   }
+
+  int myceliumNeighbourCount(int k) {
+    int y = k / cols, x = k - y * cols, n = 0;
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      int nx = x + ox, ny = y + oy;
+      if (!isInBounds(nx, ny)) continue;
+      if (isMyceliumMaterial(grid[I(nx, ny)])) n++;
+    }
+    return n;
+  }
+
+  bool myceliumFindStoneTarget(Comp& comp, int& targetK) {
+    targetK = -1;
+    if (comp.cells.empty()) return false;
+    const int dirs[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}};
+    int startCell = comp.cells.empty() ? 0 : (int)(rand() * comp.cells.size());
+    if (startCell < 0) startCell = 0;
+    if (startCell >= (int)comp.cells.size()) startCell = (int)comp.cells.size() - 1;
+    int step = rand() < 0.5 ? 1 : -1;
+    bool sawStone = false;
+    bool branch = rand() < 0.10;
+    for (int ci = 0; ci < (int)comp.cells.size(); ci++) {
+      int idx = ((startCell + ci * step) % (int)comp.cells.size() + (int)comp.cells.size()) % (int)comp.cells.size();
+      int source = comp.cells[idx];
+      if (!isMyceliumMaterial(grid[source])) continue;
+      int sourceNeighbours = myceliumNeighbourCount(source);
+      if (sourceNeighbours > (branch ? 2 : 1)) continue;
+      int y = source / cols, x = source - y * cols;
+      int startDir = (int)(rand() * 8.0); if (startDir < 0) startDir = 0; if (startDir > 7) startDir = 7;
+      for (int di = 0; di < 8; di++) {
+        const int* d = dirs[(startDir + di) & 7];
+        int nx = x + d[0], ny = y + d[1];
+        if (!isInBounds(nx, ny)) continue;
+        int nk = I(nx, ny);
+        if (isBodyCell(nk) || grid[nk] != STONE) continue;
+        int targetNeighbours = myceliumNeighbourCount(nk);
+        if (targetNeighbours > (branch ? 2 : 1)) continue;
+        sawStone = true;
+        if (targetK < 0) targetK = nk;
+      }
+      if (targetK >= 0) break;
+    }
+    return sawStone;
+  }
+
+  bool myceliumCompHasSpore(Comp& comp) {
+    for (int k : comp.cells) if (grid[k] == MYCELIUM_SPORE) return true;
+    return false;
+  }
+
+  bool myceliumCompTouchesStone(Comp& comp) {
+    for (int k : comp.cells) {
+      if (!isMyceliumMaterial(grid[k])) continue;
+      int y = k / cols, x = k - y * cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = x + ox, ny = y + oy;
+        if (!isInBounds(nx, ny)) continue;
+        if (grid[I(nx, ny)] == STONE) return true;
+      }
+    }
+    return false;
+  }
+
+  void refreshDormantMyceliumComponents() {
+    bool active = false;
+    for (auto& comp : L->stoneComponents) {
+      if (!myceliumCompHasSpore(comp)) { comp.growing = false; continue; }
+      if ((int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
+      if (!comp.growing && myceliumCompTouchesStone(comp)) { comp.growing = true; comp.age = 0; }
+      if (comp.growing) active = true;
+    }
+    L->myceliumActive = active;
+  }
+
+  void growMyceliumComponents() {
+    if (L->stoneComponents.empty()) { L->myceliumActive = false; return; }
+    refreshDormantMyceliumComponents();
+    if (!L->myceliumActive) return;
+    struct MycGrowth { int compId; int targetK; };
+    std::vector<MycGrowth> growth;
+    std::unordered_set<int> reserved;
+    bool anyGrowing = false;
+    for (auto& comp : L->stoneComponents) {
+      if (!comp.growing) continue;
+      comp.age++;
+      if (!myceliumCompHasSpore(comp) || comp.age > MYCELIUM_MAX_AGE || (int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
+      L->groundDirty = true; // an active colony may add rigid cells this step
+      if (!comp.cells.empty()) markCellIndex(comp.cells[0]); // keep the colony awake while it is still active
+      int targetK = -1;
+      bool sawStone = myceliumFindStoneTarget(comp, targetK);
+      if (!sawStone) { comp.growing = false; continue; }
+      anyGrowing = true;
+      if (targetK < 0 || reserved.count(targetK)) continue;
+      if (rand() > MYCELIUM_GROWTH_P) continue;
+      reserved.insert(targetK);
+      growth.push_back({comp.id, targetK});
+    }
+    if (!anyGrowing) L->myceliumActive = false;
+    if (growth.empty()) return;
+
+    std::vector<int> converted;
+    converted.reserve(growth.size());
+    for (const MycGrowth& g : growth) {
+      if (grid[g.targetK] != STONE || isBodyCell(g.targetK)) continue;
+      writeGridIndex(g.targetK, MYCELIUM);
+      converted.push_back(g.targetK);
+    }
+    if (converted.empty()) return;
+
+    splitRigidAfterErase(L->stoneComponents, converted, L->nextStoneId, false);
+    for (const MycGrowth& g : growth) {
+      if (grid[g.targetK] != MYCELIUM) continue;
+      for (auto& comp : L->stoneComponents) {
+        if (comp.id != g.compId) continue;
+        if (std::find(comp.cells.begin(), comp.cells.end(), g.targetK) != comp.cells.end()) break;
+        comp.cells.push_back(g.targetK);
+        int y = g.targetK / cols;
+        if (y > comp.yMax) comp.yMax = y;
+        comp.growing = (int)comp.cells.size() < MYCELIUM_MAX_CELLS && comp.age <= MYCELIUM_MAX_AGE;
+        if (comp.growing) L->myceliumActive = true;
+        break;
+      }
+    }
+    L->skyDirty = true;
+    L->groundDirty = true;
+  }

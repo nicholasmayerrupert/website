@@ -36,7 +36,7 @@ const CUBE_SWATCH = 'rgb(214,211,209)';
 
 // Most-used builders float to the top of the list so they aren't buried under
 // the long tail of exotic materials. Matched against the lowercased entry label.
-const PRIORITY_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'water', 'lava', 'acid', 'tnt', 'oil', 'brine', 'seed'];
+const PRIORITY_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'crystal', 'water', 'lava', 'acid', 'tnt', 'oil', 'brine', 'seed', 'mycelium_spore'];
 
 // packed ABGR number -> css rgb(...) using the low 24 bits (r,g,b).
 function packedToRgb(c) {

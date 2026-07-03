@@ -51,6 +51,7 @@
     // components + ids
     std::vector<Comp> stoneComponents, plantComponents, iceComponents;
     int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
+    bool myceliumActive = false;
     // Incremental-grounding cache state (see members near cgComps). groundDirty
     // true => the next grounding pass must be a full reflood; it is set true by any
     // component add/move/split/growth/sync and stays true while powder is present
@@ -391,6 +392,7 @@
   inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : WOOD; }
   inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_MUSHROOM ? MUSH_CAP : PLANT; }
   inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : PT_OAK; }
+  inline bool isMyceliumMaterial(uint8_t m) { return m == MYCELIUM || m == MYCELIUM_SPORE; }
   inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquidMaterial(m) || isGasMaterial(m); }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
 

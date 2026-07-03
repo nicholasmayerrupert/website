@@ -47,6 +47,8 @@ static const int   MAX_WOOD_CELLS = 120, MAX_LEAF_CELLS = 105, WATER_PER_GROWTH 
 static const float GROWTH_P = 0.58f, LEAF_GROWTH_P = 0.54f;
 static const float LEAF_SEED_DROP_P = 0.10f;
 static const float TRUNK_SIDE_FILL_P = 0.96f, TRUNK_DOUBLE_SIDE_FILL_P = 0.78f, TRUNK_WIDE_SIDE_FILL_P = 0.34f;
+static const int   MYCELIUM_MAX_CELLS = 180, MYCELIUM_MAX_AGE = 1100;
+static const float MYCELIUM_GROWTH_P = 0.34f;
 
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
@@ -268,7 +270,7 @@ static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
 // any seed species, the eraser, or the cube; the brush routes by mode rather than a
 // fixed per-material Tool enum. PAINT = powder/liquid/gas (continuous), DRAFT = a
 // component material drawn with a live preview then dropped on release.
-enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_ERASE, CM_CUBE };
+enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_MYCELIUM_SPORE, CM_ERASE, CM_CUBE };
 // What a creative palette selection refers to (engine_set_creative_material kind).
 enum CreativeKind : uint8_t { CK_MATERIAL = 0, CK_SEED, CK_ERASER, CK_CUBE };
 

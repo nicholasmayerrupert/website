@@ -14,6 +14,7 @@
   // soil depth, and tree density. Materials are the existing palette only.
   enum Biome : int { BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_DESERT = 2, BIOME_ROCKY = 3,
                      BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
+  enum CaveBiome : int { CAVE_NORMAL = 0, CAVE_LUSH = 1, CAVE_MYCELIUM = 2, CAVE_CRYSTAL = 3, CAVE_ACID = 4, CAVE_LAVA = 5 };
   static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
   static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, OIL_POCKET_THRESH, LAVA_THRESH;
   static const double ORE_FREQ, ORE_THRESH;
@@ -42,8 +43,9 @@
   int genSurfaceAbs(int worldX) {
     double n = wfbm2(L->worldSeed, worldX * SURFACE_FREQ, 0.5, SURFACE_OCT, 0.5);
     double hills = wfbm2(L->worldSeed ^ 0x9e3779b9u, worldX * SURFACE_FREQ * 0.22, 3.1, 4, 0.5);
+    double cuts = wridged2(L->worldSeed ^ 0xA5116Eu, worldX * SURFACE_FREQ * 1.35, 11.0, 2, 0.55);
     double amp = L->gSurfAmp * (0.75 + hills * 0.6);
-    return (int)std::lround(-(n - 0.5) * 2 * amp);
+    return (int)std::lround(-(n - 0.5) * 2 * amp + (cuts - 0.45) * L->gSurfAmp * 0.22);
   }
   // Terrain top as a BUFFER row in the current window (may be <0 or >=rows when the
   // surface has scrolled off; genCellAt's `y < surf` test handles that as all-sky /
@@ -76,19 +78,49 @@
       default:           return DIRT; // plains / forest / tundra / jungle
     }
   }
-  // Caves carve winding tunnels (ridged noise) plus the occasional larger cavern
-  // (fbm). The BACKGROUND uses a higher threshold -> a more-solid backdrop behind
-  // the foreground's traversable caves (the user's "back solid, front carved").
-  bool genIsCave(int worldX, int worldY) {
-    double tun = wridged2(L->gCaveSeed, worldX * CAVE_FREQ, worldY * CAVE_FREQ, 3, 0.5);
-    double cav = wfbm2(L->gCaveSeed ^ 0x55u, worldX * CAVE_FREQ * 0.45, worldY * CAVE_FREQ * 0.45, 3, 0.5);
-    double caveBias = L->isBackground ? 0.13 : 0.0; // bg: sparser caves
-    // Depth zoning: near the surface, winding tunnels dominate; deeper, the cavern
-    // (fbm) threshold drops so large open caverns open up. Pure in worldY.
+  int genCaveTopAbs(int worldX) {
+    int biome = genBiomeAt(worldX), soil = genSoilDepth(biome);
+    return genSurfaceAbs(worldX) + GEN_SKIN + soil + imax(10, (int)std::floor(rows * 0.04));
+  }
+  int genCaveBiomeAt(int worldX, int worldY) {
+    if (worldY < genCaveTopAbs(worldX) + 18 || worldY >= caveBottomAbs()) return CAVE_NORMAL;
     double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
     if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
-    double cavThresh = 0.78 - depthFrac * 0.12;
-    return tun > CAVE_THRESH + caveBias || cav > cavThresh + caveBias;
+    double wx = worldX + (wfbm2(L->gCaveSeed ^ 0xB107u, worldX * 0.007, worldY * 0.006, 2, 0.5) - 0.5) * 42.0;
+    double wy = worldY + (wfbm2(L->gCaveSeed ^ 0xB108u, worldX * 0.006, worldY * 0.007, 2, 0.5) - 0.5) * 36.0;
+    double a = wfbm2(L->gCaveSeed ^ 0xB109u, wx * 0.0045, wy * 0.0055, 3, 0.5);
+    double b = wfbm2(L->gCaveSeed ^ 0xB10Au, wx * 0.0055, wy * 0.0040, 3, 0.5);
+    // Large low-frequency regions, with dangerous liquids biased deeper so fresh
+    // spawn-depth terrain stays inert.
+    if (depthFrac > 0.58 && a > 0.79 && b > 0.40) return CAVE_LAVA;
+    if (depthFrac > 0.48 && a < 0.14 && b > 0.48) return CAVE_ACID;
+    if (b > 0.74) return CAVE_CRYSTAL;
+    if (a > 0.64 && b < 0.58) return CAVE_MYCELIUM;
+    if (a < 0.43) return CAVE_LUSH;
+    return CAVE_NORMAL;
+  }
+  // Caves combine Minecraft-style density fields: broad "cheese" voids plus
+  // contour-line "spaghetti/noodle" tunnels. Terraria-like detail passes decorate
+  // the resulting cave floors/walls later, rather than carving independent rooms.
+  bool genIsCave(int worldX, int worldY) {
+    double warpX = (wfbm2(L->gCaveSeed ^ 0xCA71u, worldX * 0.010, worldY * 0.010, 1, 0.5) - 0.5) * 18.0;
+    double warpY = (wfbm2(L->gCaveSeed ^ 0xCA72u, worldX * 0.009, worldY * 0.011, 1, 0.5) - 0.5) * 14.0;
+    double sx = worldX + warpX, sy = worldY + warpY;
+    double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
+    if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
+    double bgBias = L->isBackground ? 0.060 : 0.0;
+    double cheese = wfbm2(L->gCaveSeed ^ 0x55u, sx * CAVE_FREQ * 0.52, sy * CAVE_FREQ * 0.42, 3, 0.5);
+    double spaghetti = std::fabs(wfbm2(L->gCaveSeed ^ 0x5A6Eu, sx * CAVE_FREQ * 1.55, sy * CAVE_FREQ * 0.82, 2, 0.5) - 0.5);
+    double noodle = std::fabs(wfbm2(L->gCaveSeed ^ 0x7A6Eu, sx * CAVE_FREQ * 2.8, sy * CAVE_FREQ * 1.9, 1, 0.5) - 0.5);
+    double shaft = std::fabs(wfbm2(L->gCaveSeed ^ 0x5A7Fu, sx * CAVE_FREQ * 0.80, sy * CAVE_FREQ * 2.20, 1, 0.5) - 0.5);
+    double chamberThresh = 0.755 - depthFrac * 0.075 + bgBias * 3.0;
+    double spaghettiWidth = 0.055 + depthFrac * 0.020 - bgBias;
+    double noodleWidth = 0.026 + depthFrac * 0.008 - bgBias * 0.6;
+    double shaftWidth = 0.033 + depthFrac * 0.007 - bgBias * 0.8;
+    return cheese > chamberThresh || spaghetti < spaghettiWidth || noodle < noodleWidth || shaft < shaftWidth;
+  }
+  bool genOpenCaveAt(int worldX, int worldY) {
+    return worldY >= genCaveTopAbs(worldX) && worldY < caveBottomAbs() && genIsCave(worldX, worldY);
   }
   // Solid stone that sits one cell from a carved cave (a cave-wall surface). Pure
   // noise (samples genIsCave at the 4 neighbours), so it stays deterministic. The
@@ -163,17 +195,25 @@
     // from the cave zone, so generated sand never rests directly over a cave and
     // oceans can't drain into one (both churn the cross-layer transfer forever).
     int caveTop = GEN_SKIN + soil + imax(10, (int)std::floor(rows * 0.04));
-    // Caves: the foreground gets traversable tunnels; the background gets the same
-    // network but SPARSER (genIsCave biases by layer). DRY in the bg (no soil/liquids).
+    // Caves are foreground traversal. The generated background stays solid stone
+    // behind them; players can still dig/paint the background, but streaming does
+    // not spend half the terrain budget carving a second hidden cave network.
+    if (L->isBackground) return STONE;
     if (depth >= caveTop && worldY < caveBottomAbs() && genIsCave(worldX, worldY)) return EMPTY;
-    if (L->isBackground) return STONE;                       // bg: solid stone, no liquid pockets
     uint8_t base = genPocketAt(worldX, worldY);              // fg: deep stone + sealed liquids/lava
     if (base != STONE) return base;                          // sealed liquid / lava chamber
-    // Cave-wall lining: in mossy regions (a low-freq selector), stone facing a cave
-    // is MOSS. Solid-against-air, so it's inert and grounds via the stone behind it.
+    // Cave-wall lining is intentionally sparse. Whole-biome component walls look
+    // rich, but they create enormous static components; structures carry most of
+    // the biome identity instead.
     if (depth >= caveTop && worldY < caveBottomAbs() && genIsCaveWall(worldX, worldY)) {
+      int caveBiome = genCaveBiomeAt(worldX, worldY);
+      double detail = whash2(L->gCaveSeed ^ 0x305bu, worldX, worldY);
+      if (caveBiome == CAVE_LUSH && detail > 0.82) return MOSS;
+      if (caveBiome == CAVE_MYCELIUM && detail > 0.92) return MYCELIUM;
+      if (caveBiome == CAVE_CRYSTAL && detail > 0.88) return CRYSTAL;
+      if (caveBiome == CAVE_ACID && detail > 0.94) return CRYSTAL;
       double moss = wfbm2(L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
-      if (moss > 0.66) return MOSS;
+      if (moss > 0.74 && detail > 0.88) return MOSS;
     }
     return genOreFor(biome, worldX, worldY);                 // solid stone -> maybe an ore vein
   }
@@ -311,6 +351,116 @@
       }
     }
   }
+  void putCaveFeatureCell(int colStart, int colEnd, int rowStart, int rowEnd, int wx, int wy, uint8_t m, bool requireEmpty = true) {
+    int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
+    if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
+    int k = y * cols + lx;
+    if (requireEmpty && grid[k] != EMPTY) return;
+    grid[k] = m;
+  }
+  // Foreground cave biomes. The terrain pass decides the cave shape; this pass
+  // attaches biome detail to floors, ceilings and walls so features blend into the
+  // existing cave network rather than carving detached oval rooms.
+  void fillCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd) {
+    if (L->isBackground) return;
+    uint32_t sseed = L->gCaveSeed ^ 0xF3A741u;
+    static const int FEATURE_LATTICE = 11, FEATURE_REACH = 24;
+    int wx0 = L->worldOffsetX + colStart - FEATURE_REACH, wx1 = L->worldOffsetX + colEnd + FEATURE_REACH;
+    int wy0 = L->worldOffsetY + rowStart - FEATURE_REACH, wy1 = L->worldOffsetY + rowEnd + FEATURE_REACH;
+    int lxMin = floorDiv(wx0, FEATURE_LATTICE), lxMax = floorDiv(wx1, FEATURE_LATTICE);
+    int lyMin = floorDiv(wy0, FEATURE_LATTICE), lyMax = floorDiv(wy1, FEATURE_LATTICE);
+    auto findFloor = [&](int wx, int wy, int& floorY) {
+      for (int dy = -8; dy <= 12; dy++) {
+        int yy = wy + dy;
+        if (genOpenCaveAt(wx, yy) && !genOpenCaveAt(wx, yy + 1)) { floorY = yy; return true; }
+      }
+      return false;
+    };
+    auto findCeiling = [&](int wx, int wy, int& ceilY) {
+      for (int dy = -12; dy <= 8; dy++) {
+        int yy = wy + dy;
+        if (genOpenCaveAt(wx, yy) && !genOpenCaveAt(wx, yy - 1)) { ceilY = yy; return true; }
+      }
+      return false;
+    };
+    for (int gy = lyMin; gy <= lyMax; gy++) for (int gx = lxMin; gx <= lxMax; gx++) {
+      int wx = gx * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x11u, gx, gy) * FEATURE_LATTICE);
+      int wy = gy * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x22u, gx, gy) * FEATURE_LATTICE);
+      int caveBiome = genCaveBiomeAt(wx, wy);
+      double h = whash2(sseed, gx, gy);
+      int floorY = wy, ceilY = wy;
+      bool hasFloor = findFloor(wx, wy, floorY), hasCeil = findCeiling(wx, wy, ceilY);
+
+      if (caveBiome == CAVE_LUSH) {
+        if (hasFloor && h < 0.70) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, h < 0.34 ? PLANT : MOSS);
+        if (hasCeil && h > 0.70) {
+          int len = 2 + (int)(whash2(sseed ^ 0x110u, gx, gy) * 8);
+          for (int i = 0; i < len && genOpenCaveAt(wx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, ceilY + i, VINE);
+        }
+        if (hasFloor && h > 0.93) {
+          int ht = 2 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 5);
+          for (int i = 0; i < ht && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, CRYSTAL);
+        }
+      } else if (caveBiome == CAVE_MYCELIUM) {
+        if (hasFloor && h < 0.78) {
+          int len = 3 + (int)(whash2(sseed ^ 0x220u, gx, gy) * 12);
+          int drift = (int)std::floor((whash2(sseed ^ 0x221u, gx, gy) - 0.5) * 8.0);
+          for (int i = 0; i < len; i++) {
+            int px = wx + (drift * i) / imax(1, len);
+            if (genOpenCaveAt(px, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY, MYCELIUM);
+          }
+        }
+        if (hasFloor && h > 0.82) {
+          int mh = 3 + (int)(whash2(sseed ^ 0x222u, gx, gy) * 5);
+          for (int i = 0; i < mh && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, MUSH_STEM);
+          int capY = floorY - mh;
+          for (int dx = -3; dx <= 3; dx++) if (std::abs(dx) <= 1 || whash2(sseed ^ 0x223u, wx + dx, capY) < 0.72) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
+        }
+      } else if (caveBiome == CAVE_CRYSTAL) {
+        if ((hasFloor || hasCeil) && h < 0.38) {
+          bool fromFloor = hasFloor && (!hasCeil || h < 0.24);
+          int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
+          int ht = 3 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 9);
+          for (int i = 0; i < ht && genOpenCaveAt(wx, baseY + dir * i); i++) {
+            int rad = i < 2 ? 1 : 0;
+            for (int dx = -rad; dx <= rad; dx++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, baseY + dir * i, CRYSTAL);
+          }
+        }
+      } else if (caveBiome == CAVE_ACID) {
+        if (hasFloor && h < 0.060) {
+          int halfW = 5 + (int)(whash2(sseed ^ 0x440u, gx, gy) * 8);
+          for (int dx = -halfW - 2; dx <= halfW + 2; dx++) {
+            int px = wx + dx;
+            if (!genOpenCaveAt(px, floorY)) continue;
+            putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + 1, CRYSTAL, false);
+            if (std::abs(dx) >= halfW) {
+              for (int yy = floorY - 2; yy <= floorY; yy++) if (genOpenCaveAt(px, yy)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, CRYSTAL);
+            } else {
+              if (!genOpenCaveAt(px - 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px - 1, floorY, CRYSTAL, false);
+              if (!genOpenCaveAt(px + 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px + 1, floorY, CRYSTAL, false);
+              if (!genOpenCaveAt(px, floorY - 1)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY - 1, CRYSTAL, false);
+              putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY, ACID);
+              if (whash2(sseed ^ 0x441u, px, floorY) < 0.04) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + 2, SALT, false);
+            }
+          }
+        } else if ((hasFloor || hasCeil) && h > 0.78) {
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, hasFloor ? floorY : ceilY, CRYSTAL);
+        }
+      } else if (caveBiome == CAVE_LAVA) {
+        if (hasFloor && h < 0.075) {
+          int halfW = 6 + (int)(whash2(sseed ^ 0x550u, gx, gy) * 6);
+          for (int dx = -halfW; dx <= halfW; dx++) {
+            int px = wx + dx;
+            if (!genOpenCaveAt(px, floorY)) continue;
+            putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY, LAVA);
+            if (genOpenCaveAt(px, floorY - 1)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY - 1, LAVA);
+          }
+        }
+      } else if (hasFloor && h < 0.025) {
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, MOSS);
+      }
+    }
+  }
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; next[k] = grid[k]; }
   }
@@ -319,7 +469,8 @@
   // split — terrain first, trees second, next-copy last.)
   void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
-    fillStructures(colStart, colEnd, rowStart, rowEnd); // overwrite terrain (ruins) before trees overlay
+    fillStructures(colStart, colEnd, rowStart, rowEnd); // overwrite terrain before cave features / trees overlay
+    fillCaveFeatures(colStart, colEnd, rowStart, rowEnd);
     fillTrees(colStart, colEnd, rowStart, rowEnd);
     copyGridToNext(colStart, colEnd, rowStart, rowEnd);
   }
@@ -513,9 +664,11 @@
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
     L = Lx; grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
-    // Structures BEFORE trees and BEFORE pfStoreTiles, mirroring fillRect's order,
-    // so a prefetched tile is byte-identical to the synchronous fillRect tile.
+    // Structures / cave features BEFORE trees and BEFORE pfStoreTiles, mirroring
+    // fillRect's order, so a prefetched tile is byte-identical to the synchronous
+    // fillRect tile.
     fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
     grid = sGrid; L = sL;

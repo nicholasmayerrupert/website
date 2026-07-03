@@ -538,6 +538,68 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Ice density sits between oil and brine. It should find a buoyant row between
+// them without entering a deterministic one-cell up/down cycle while the two
+// liquids are still leveling.
+{
+  console.log('ice settles stably between oil and brine');
+  const STONE = 3, OIL = 4, ICE = 12, BRINE = 33;
+  const e = mk();
+  const L = 24, R = 176, top = 20, floorY = 104;
+  for (let y = top; y <= floorY + 2; y++) { e.paintDisc(L - 2, y, 0, STONE, true); e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); e.paintDisc(R + 2, y, 0, STONE, true); }
+  for (let x = L - 2; x <= R + 2; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = floorY - 48; y < floorY; y++) e.paintDisc(x, y, 0, BRINE, true);
+  run(30, e);
+  e.addDiscToIceDraft(100, floorY - 46, 7);
+  e.finalizeIceDraft();
+  for (let x = L + 3; x <= L + 72; x++) for (let y = floorY - 78; y < floorY - 49; y++) e.paintDisc(x, y, 0, OIL, true);
+  const iceCy = () => {
+    const g = e.getGrid(); let n = 0, sy = 0;
+    for (let i = 0; i < g.length; i++) if (g[i] === ICE) { n++; sy += (i / COLS) | 0; }
+    return n ? sy / n : null;
+  };
+  const ys = [];
+  for (let i = 0; i < 360; i++) { e.step(16 * (i + 1)); const y = iceCy(); if (y !== null) ys.push(y); }
+  let reversals = 0, lastDir = 0;
+  for (let i = 1; i < ys.length; i++) {
+    const d = Math.sign(ys[i] - ys[i - 1]);
+    if (d && lastDir && d !== lastDir) reversals++;
+    if (d) lastDir = d;
+  }
+  check(`ice stayed present in the oil/brine interface (${ys.length} samples)`, ys.length > 300);
+  check(`ice did not jitter vertically while liquids leveled (${reversals} reversals)`, reversals === 0);
+  e.destroy();
+}
+
+// A rigid component displacing brine under oil should push the brine into the
+// nearest lighter liquid cell first. The displaced oil then rises to the surface.
+// This prevents dense brine from being teleported straight to the air surface.
+{
+  console.log('component displacement chains dense liquid through lighter liquid');
+  const STONE = 3, OIL = 4, BRINE = 33, GOLD_ORE = 24;
+  const e = mk();
+  const L = 50, R = 150, top = 45, floorY = 100;
+  for (let y = top; y <= floorY; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = 60; y <= 69; y++) e.paintDisc(x, y, 0, OIL, true);
+  for (let x = L + 1; x < R; x++) for (let y = 70; y <= 95; y++) e.paintDisc(x, y, 0, BRINE, true);
+  for (let x = 94; x <= 106; x++) for (let y = 60; y <= 69; y++) e.paintDisc(x, y, 0, GOLD_ORE, true);
+  e.syncComponents();
+  const bounds = (mat) => {
+    const g = e.getGrid(); let n = 0, minY = ROWS, maxY = -1;
+    for (let i = 0; i < g.length; i++) if (g[i] === mat) { const y = (i / COLS) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    return { n, minY, maxY };
+  };
+  const oil0 = bounds(OIL).n, brine0 = bounds(BRINE).n;
+  e.step(16);
+  const oil = bounds(OIL), brine = bounds(BRINE);
+  check(`oil and brine conserved during component displacement (${oil.n}/${brine.n})`, oil.n === oil0 && brine.n === brine0);
+  check(`brine entered the oil layer but not the air surface (top ${brine.minY}, oil top ${oil.minY})`, brine.minY >= oil.minY + 6 && brine.minY < 70);
+  e.destroy();
+}
+
 // Free rigid bodies use their material density in liquids. In powders, support is
 // one-way: dense bodies can keep sinking, while lighter bodies settle without being
 // pushed upward.

@@ -16,6 +16,7 @@
 
 import { createEngineWasm, CHUNK_SIZE } from '../engineWasm';
 import { createGameNet } from '../net/gameNet';
+import { createParallaxBackground } from './parallaxBackground';
 import {
   BUTTON_BITS,
   DEFAULT_TOOL,
@@ -48,12 +49,15 @@ export function createSandGame(container, opts = {}) {
   // context on it and composites the cell texture, gutter grid, player overlay,
   // and draft preview directly (engine.glRenderFrame). JS no longer touches
   // pixels — it only sizes the canvas, drives the camera, and forwards input. ---
+  const parallax = createParallaxBackground(container);
+
   const canvas = document.createElement('canvas');
   canvas.id = 'sand-main'; // stable selector for the headless pan/flicker bench
   canvas.style.position = 'absolute';
   canvas.style.inset = '0';
   canvas.style.width = '100%';
   canvas.style.height = '100%';
+  canvas.style.zIndex = '1';
   canvas.style.pointerEvents = 'none';
   canvas.style.userSelect = 'none';
   canvas.setAttribute('aria-hidden', 'true');
@@ -141,6 +145,14 @@ export function createSandGame(container, opts = {}) {
 
   // Drafting state lives entirely in the engine now; the preview reads it back.
 
+  const parallaxCamera = (cam = engine?.getCam()) => {
+    if (!engine || !cam) return undefined;
+    return {
+      camX: engine.getWorldOffsetX() + cam.x,
+      camY: engine.getWorldOffsetY() + cam.y,
+    };
+  };
+
   // Pointer tracking (browser-side; the engine maps it to the aim cell)
   let clientX = -1, clientY = -1;
   let px = -1, py = -1;
@@ -210,6 +222,8 @@ export function createSandGame(container, opts = {}) {
     const cssH = Math.max(200, Math.floor(height));
     canvas.style.width = '100%';
     canvas.style.height = '100%';
+    parallax.resize(cssW, cssH);
+    parallax.draw(parallaxCamera());
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
@@ -262,6 +276,7 @@ export function createSandGame(container, opts = {}) {
       // update the engine's cell metrics (cellDev changes with dpr).
       engine.glResize(canvas.width, canvas.height);
       engine.setViewport(dpr, cellDev, viewCols, viewRows);
+      parallax.draw(parallaxCamera());
       forceFullRender = true;
       previewDirty = false;
       return;
@@ -298,6 +313,7 @@ export function createSandGame(container, opts = {}) {
     }
     // Start centered horizontally, with roughly one third of the view underground.
     engine.cameraSet((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * (2 / 3)));
+    parallax.draw(parallaxCamera());
     lastCamX = NaN;
     lastCamY = NaN;
 
@@ -515,6 +531,7 @@ export function createSandGame(container, opts = {}) {
     forceFullRender = false;
     previewDirty = false;
     const cam = engine.getCam();
+    parallax.draw(parallaxCamera(cam));
     lastCamX = cam.x;
     lastCamY = cam.y;
     perfRenderMs = performance.now() - renderStart;
@@ -787,6 +804,7 @@ export function createSandGame(container, opts = {}) {
     mqDpr?.removeEventListener?.('change', onDprChange);
     net?.disconnect();
     if (engine && engine.destroy) engine.destroy();
+    parallax.destroy();
     window.removeEventListener('pointermove', onPointerMove);
     window.removeEventListener('touchmove', onTouchMove);
     window.removeEventListener('wheel', onWheel);

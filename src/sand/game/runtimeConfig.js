@@ -27,8 +27,15 @@ export const TOOL_IDS = Object.freeze({
 
 export const SIZING = Object.freeze({
   cellPx: 4,
+  mobileCellPx: 3,
+  mobileMaxCssWidth: 640,
+  minViewportCols: 60,
+  minViewportRows: 28,
+  viewportCellBucket: 4,
+  stableHeightThresholdPx: 48,
   maxViewportCells: 130000,
   toolCollapseWidth: 1300,
+  chunkSize: 32,
   worldHeightFactor: 2.5,
   bufferMarginCols: 128,
   bufferMaxCells: 520000,

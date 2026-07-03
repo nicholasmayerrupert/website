@@ -14,7 +14,7 @@
 // simulation runs in the WebAssembly engine (../engineWasm.js); initSandWasm()
 // must have resolved before createSandGame() is called.
 
-import { createEngineWasm, CHUNK_SIZE } from '../engineWasm';
+import { createEngineWasm } from '../engineWasm';
 import { createGameNet } from '../net/gameNet';
 import { createParallaxBackground } from './parallaxBackground';
 import {
@@ -26,6 +26,7 @@ import {
   TEXT_INPUT_TYPES,
   TOOL_IDS,
 } from './runtimeConfig';
+import { chooseStableCssSize, computeViewportSizing } from './viewportSizing';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -125,6 +126,7 @@ export function createSandGame(container, opts = {}) {
   // where devicePixelRatio drops below 1) is what caused the bright-block flicker.
   let dpr = 1, cellDev = SIZING.cellPx;
   let viewCols = 0, viewRows = 0;
+  let stableCssSize = null;
   // The camera lives in the engine (camera.inc). JS caches the last presented
   // position to detect movement (incl. sub-cell) and re-present.
   let lastCamX = NaN, lastCamY = NaN;
@@ -214,12 +216,13 @@ export function createSandGame(container, opts = {}) {
 
   const fit = () => {
     const { width, height } = refreshBounds();
-    // CSS-px size of the canvas element, and its DEVICE-px backing store. dpr < 1
-    // when the browser is zoomed out; sizing the backing store to device px makes
-    // it 1:1 with the screen so the compositor never resamples (no moiré).
+    // CSS-px layout chooses the logical sand viewport. DPR only chooses the
+    // backing-store size and integer device-px cell size, so zoom/display scaling
+    // no longer changes how many simulated cells are visible.
     dpr = window.devicePixelRatio || 1;
-    const cssW = Math.max(300, Math.floor(width));
-    const cssH = Math.max(200, Math.floor(height));
+    stableCssSize = chooseStableCssSize(width, height, stableCssSize);
+    const cssW = stableCssSize.width;
+    const cssH = stableCssSize.height;
     canvas.style.width = '100%';
     canvas.style.height = '100%';
     parallax.resize(cssW, cssH);
@@ -227,50 +230,24 @@ export function createSandGame(container, opts = {}) {
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
-    cellSize = SIZING.cellPx;
-    while (
-      Math.ceil(cssW / cellSize) * Math.ceil(cssH / cellSize) > SIZING.maxViewportCells
-    ) {
-      cellSize++;
-    }
-    cellDev = Math.max(1, Math.round(cellSize * dpr)); // integer device px per cell
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
-
-    // Visible window (cells on screen) vs. the larger simulation buffer.
-    // CSS-px cell counts (dpr-independent) size the BUFFER, so a pure zoom keeps
-    // the same world (the early-return path below compares against these).
-    const viewColsCss = Math.max(60, Math.ceil(cssW / cellSize));
-    const viewRowsCss = Math.max(28, Math.ceil(cssH / cellSize));
-    // The rendered window must cover the DEVICE-px backing store. The engine draws
-    // each cell at cellDev = round(cellSize*dpr) integer device px, so at a
-    // fractional devicePixelRatio (e.g. Windows display scaling) viewColsCss*cellDev
-    // can fall short of canvas.width — leaving the bottom/right edge of the canvas
-    // unpainted (the empty buffer edge showing through). Deriving the window from
-    // the backing store guarantees viewCols*cellDev >= canvas size, so the quad
-    // always fills the canvas. At dpr==1 this equals the CSS counts (no change).
-    viewCols = Math.max(viewColsCss, Math.ceil(canvas.width / cellDev));
-    viewRows = Math.max(viewRowsCss, Math.ceil(canvas.height / cellDev));
-    // Buffer: full world height (taller than the view) + horizontal margin,
-    // both rounded up to whole render chunks. Shrink the height factor if the
-    // cell budget would be exceeded.
-    const roundChunks = (n) => Math.ceil(n / CHUNK_SIZE) * CHUNK_SIZE;
-    let bufCols = roundChunks(viewColsCss + SIZING.bufferMarginCols * 2);
-    let heightFactor = SIZING.worldHeightFactor;
-    let worldRows = roundChunks(Math.round(viewRowsCss * heightFactor));
-    while (bufCols * worldRows > SIZING.bufferMaxCells && heightFactor > 1) {
-      heightFactor -= 0.25;
-      worldRows = roundChunks(Math.max(viewRowsCss, Math.round(viewRowsCss * heightFactor)));
-    }
+    const sizing = computeViewportSizing(cssW, cssH, dpr);
+    cellSize = sizing.cellSize;
+    cellDev = sizing.cellDev;
+    canvas.width = sizing.canvasW;
+    canvas.height = sizing.canvasH;
+    viewCols = sizing.viewCols;
+    viewRows = sizing.viewRows;
+    let bufCols = sizing.bufCols;
+    let worldRows = sizing.worldRows;
 
     // As a connected multiplayer client the simulation buffer is the SERVER's
     // (diffs are authored in its cols/rows); never rebuild it to window dims on
     // resize — only resize the GL backing store + viewport (the pure-zoom path).
     if (netClientReady() && engine) { bufCols = cols; worldRows = rows; }
 
-    // The simulation buffer depends only on CSS size + cellSize, not on dpr. So a
-    // pure zoom change (dpr only) keeps the same world: just repaint at the new
-    // device resolution instead of destroying and regenerating the engine.
+    // The simulation buffer depends on logical CSS viewport cells, not on dpr. So
+    // a pure zoom/display-scale change keeps the same world and only repaints at
+    // the new device resolution.
     if (engine && cols === bufCols && rows === worldRows) {
       // Pure zoom (dpr) change: same world, just resize the GL backing store and
       // update the engine's cell metrics (cellDev changes with dpr).
@@ -338,6 +315,8 @@ export function createSandGame(container, opts = {}) {
     mqDpr.addEventListener?.('change', onDprChange);
   }
   watchDpr();
+  const onVisualViewportResize = () => fit();
+  window.visualViewport?.addEventListener?.('resize', onVisualViewportResize);
 
   // Pointer helpers. JS computes the canvas-relative CSS-px position + inside
   // flag and forwards them with the button state; the engine maps that to the
@@ -802,6 +781,7 @@ export function createSandGame(container, opts = {}) {
     mineProgress.remove();
     ro.disconnect();
     mqDpr?.removeEventListener?.('change', onDprChange);
+    window.visualViewport?.removeEventListener?.('resize', onVisualViewportResize);
     net?.disconnect();
     if (engine && engine.destroy) engine.destroy();
     parallax.destroy();

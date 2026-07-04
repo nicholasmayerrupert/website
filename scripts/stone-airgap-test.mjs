@@ -6,7 +6,7 @@
 // single grounded blob set the component's grounded flag and the floating blobs were
 // frozen in mid-air. Driftwood already did the right thing (flood-fill registration);
 // this asserts stone and ice now match. Run: node scripts/stone-airgap-test.mjs
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;
 await initSandWasm();

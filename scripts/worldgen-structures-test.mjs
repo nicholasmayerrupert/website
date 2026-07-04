@@ -3,7 +3,7 @@
 // BYTE-IDENTICAL across streaming (a structure straddling a band seam regenerates
 // the same), persisted by the tile store. Run: node scripts/worldgen-structures-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

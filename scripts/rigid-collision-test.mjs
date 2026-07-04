@@ -9,7 +9,7 @@
 // buffer rim also acts as a wall so a body's own motion can't carry it off the
 // simulated window (where its raster is clipped away and it vanishes).
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 200, ROWS = 140, SEED = 0xC0FFEE, STONE = 3, RIGID = 13, DRIFTWOOD = 14;
 await initSandWasm();

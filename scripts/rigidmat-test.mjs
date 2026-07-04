@@ -6,7 +6,7 @@
 //     into a grounded stone component on rest (body count 1 -> 0, stone conserved);
 //   - a RIGID body never bakes (count stays 1).
 // Run: node scripts/rigidmat-test.mjs
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

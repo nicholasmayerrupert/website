@@ -11,7 +11,7 @@
 // Exports startSandServer(opts) so tests can spin one up in-process.
 
 import { WebSocketServer } from 'ws';
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/worldSync.js';

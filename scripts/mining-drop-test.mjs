@@ -3,7 +3,7 @@
 // materials drop with any tool. Wrong tool/tier still breaks the block, it just
 // yields nothing. Run: node scripts/mining-drop-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker, gridHash } from './sand-test-util.mjs';

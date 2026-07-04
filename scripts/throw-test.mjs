@@ -2,7 +2,7 @@
 // swaps the carried stack; throwFromCursor ejects it into the world in the facing
 // direction (and it isn't instantly vacuumed back). Run: node scripts/throw-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

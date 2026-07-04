@@ -7,7 +7,7 @@
 // now shoves aside lighter contents like the single-layer translateAssembly does.
 // Run: node scripts/xlayer-bonded-fall-test.mjs
 
-import { initSandWasm, createEngineWasm, MAT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 30, ROWS = 36;

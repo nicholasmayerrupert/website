@@ -1,7 +1,7 @@
 // Render-only lighting smoke tests. These assert the visual pixel output, not an
 // exported light buffer, so lighting stays outside the ABI/protocol/save state.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

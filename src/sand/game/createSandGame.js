@@ -11,10 +11,10 @@
 //   game.destroy();
 //
 // The React component in ../react/SandGame.jsx is a thin wrapper over this. The
-// simulation runs in the WebAssembly engine (../engineWasm.js); initSandWasm()
+// simulation runs in the WebAssembly engine (../wasmBridge/engineFactory.js); initSandWasm()
 // must have resolved before createSandGame() is called.
 
-import { createEngineWasm } from '../engineWasm';
+import { createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { createGameNet } from '../net/gameNet';
 import { createParallaxBackground } from './parallaxBackground';
 import {

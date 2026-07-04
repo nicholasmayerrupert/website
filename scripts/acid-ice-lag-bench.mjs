@@ -11,7 +11,7 @@
 //
 //   node scripts/acid-ice-lag-bench.mjs            (wide flat acid lake = worst case)
 //   node scripts/acid-ice-lag-bench.mjs --narrow   (narrow dropped-blob bore = typical)
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 
 const COLS = 420, ROWS = 280, STEPS = 240, WARM = 60;

@@ -11,7 +11,7 @@
 //
 // Run: node scripts/prefetch-test.mjs   (also part of `npm test`)
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 // Chunk-aligned buffer (cols/rows multiples of 32) so whole tiles persist — the
 // game's buffer is chunk-rounded; a partial-tile buffer never caches, so prefetch

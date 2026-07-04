@@ -3,7 +3,7 @@
 // Covers spawn/snapshot, gravity, landing/grounded, thin-floor and wall
 // collision, jump-only-when-grounded, run+friction, and fixed-input determinism.
 
-import { initSandWasm, createEngineWasm, INPUT, MAT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, INPUT, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { runSteps, approxEqual } from './sand-test-util.mjs';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;

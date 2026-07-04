@@ -17,7 +17,7 @@
 // into small per-frame slices, so the worst frame should drop well under budget —
 // proving the hitch is ELIMINATED, not merely relocated.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 768, ROWS = 320, SEED = 0xC0FFEE;     // chunk-aligned (24x10 tiles)
 const VIS = 342, VISR = 160, MARGIN = 40;          // MARGIN = CAM_SHIFT_EDGE_MARGIN (game value)

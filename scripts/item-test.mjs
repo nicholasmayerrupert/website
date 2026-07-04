@@ -3,7 +3,7 @@
 // capped, remap on world shift, and never perturb the sim RNG (determinism).
 // Run: node scripts/item-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker, gridHash } from './sand-test-util.mjs';
 

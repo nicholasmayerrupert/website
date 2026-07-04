@@ -7,7 +7,7 @@
 // the median / p95 rigid-phase ms and total wall time so the swept-collision
 // changes can be compared against the prior implementation.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 240, ROWS = 180, SEED = 0xBEEF, STONE = 3;
 await initSandWasm();

@@ -5,7 +5,7 @@
 // stone island grows the per-step cost climbs.
 //
 //   node scripts/acid-lava-lag-bench.mjs
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 
 const COLS = 420, ROWS = 280, STEPS = 300, WARM = 40;

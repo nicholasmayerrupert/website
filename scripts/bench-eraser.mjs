@@ -3,7 +3,7 @@
 //   node scripts/bench-eraser.mjs
 //   npm run bench:eraser
 
-import { initSandWasm, createEngineWasm, MAT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 320, ROWS = 220;
 const T = { eraser: 11 };

@@ -16,7 +16,7 @@
 // `composed: true` lets the event cross the shadow boundary so any host (React,
 // vanilla, another framework) can listen.
 
-import { initSandWasm } from '../engineWasm';
+import { initSandWasm } from '../wasmBridge/engineFactory.js';
 import { createSandGame } from '../game/createSandGame';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';

@@ -4,7 +4,7 @@
 // This is intentionally not wired into `npm run test` yet. It documents and
 // detects the current failure mode so the engine fix can promote it later.
 
-import { initSandWasm, createEngineWasm, MAT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 96, ROWS = 96;
 const T = { eraser: 11 };

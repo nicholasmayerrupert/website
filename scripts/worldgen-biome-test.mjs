@@ -4,7 +4,7 @@
 // the generated world still settles to INERT (the new loose-powder mantle must
 // not churn). Run: node scripts/worldgen-biome-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

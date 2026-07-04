@@ -21,7 +21,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { platform, release } from 'node:os';
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 // --- args ---
 const args = process.argv.slice(2);

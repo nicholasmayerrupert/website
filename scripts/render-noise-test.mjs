@@ -15,7 +15,7 @@
 //
 // Run: node scripts/render-noise-test.mjs   (also part of `npm test`)
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 256, ROWS = 256, SEED = 0xBEEF77; // chunk-aligned (multiples of 32)
 const VISR = 96, MARGIN = 40;                  // MARGIN matches CAM_SHIFT_EDGE_MARGIN

@@ -13,7 +13,7 @@ import { Predictor } from '../src/sand/net/predict.js';
 import { createGameNet } from '../src/sand/net/gameNet.js';
 import { startServer } from './dev-multiplayer-server.mjs';
 import { approxEqual } from './sand-test-util.mjs';
-import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { gridHash } from './sand-test-util.mjs';
 import { WebSocket } from 'ws';
 

@@ -3,7 +3,7 @@
 // Covers: detonation, "easier to mine = easier to blow up", TNT->TNT chaining, and the
 // explosive RIGID BODY (a free TNT body detonates when exposed to fire).
 // Run: node scripts/explosives-test.mjs
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

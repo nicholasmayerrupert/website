@@ -1,7 +1,7 @@
 // Data-driven mining speed: material durability is base hardness, while the
 // held tool class/tier scales progress per hit. Drop gating is tested separately.
 
-import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';

@@ -2,7 +2,7 @@
 // the HUD consumes and the intents it forwards round-trip through the engine. The
 // HUD DOM itself is verified manually in-browser. Run: node scripts/inventory-bridge-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';

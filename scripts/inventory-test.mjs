@@ -3,7 +3,7 @@
 // stays in world); the selected slot drives held tool vs placed material; placing
 // consumes a count. Run: node scripts/inventory-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 import { TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';

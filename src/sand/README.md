@@ -64,7 +64,7 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   ES module with the wasm embedded; built with WebGL2/`FULL_ES3`) and writes
   `src/sand/wasm/build-info.json` provenance. The output is committed, so a
   normal `npm run build` never needs the C++ toolchain.
-- `engineWasm.js` — loads the wasm module and exposes `createEngineWasm()`, the
+- `wasmBridge/engineFactory.js` — loads the wasm module and exposes `createEngineWasm()`, the
   simulation+render+camera handle. Call `initSandWasm()` once and wait for it
   before creating an engine. The grid lives in wasm memory (zero-copy view).
 - `materials.schema.json` — the single source of truth for material identity
@@ -104,7 +104,7 @@ commit/dirty state, and Emscripten identity. `npm run sand:doctor` reports it.
 
 Terraria-like player characters are simulated **in C++** (`cpp/engine/player.inc`)
 and presented in JS. JS only collects a normalized input bitmask (`INPUT.*` in
-`engineWasm.js`, mirroring `enum PlayerInput`) plus an aim cell, forwards it with
+`wasmBridge/engineFactory.js`, mirroring `enum PlayerInput`) plus an aim cell, forwards it with
 `setPlayerInput(id, {bits, aimX, aimY, tool, seq})`, and reads `getPlayers()`
 snapshots to draw an overlay. Physics is a deterministic fixed-timestep AABB
 platformer (gravity, run/friction, edge-triggered jump, sub-cell-stepped

@@ -2,7 +2,7 @@
 // powder/liquid transfer. Runs headless in Node. Run with:
 //   node scripts/layer-test.mjs
 
-import { initSandWasm, createEngineWasm, MAT, INPUT } from '../src/sand/engineWasm.js';
+import { initSandWasm, createEngineWasm, MAT, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { countMaterials } from './sand-test-util.mjs';
 
 const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };

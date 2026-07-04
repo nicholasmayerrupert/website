@@ -1,3 +1,5 @@
+import { injectStyleOnce, swallowEvents } from './uiShared.js';
+
 const STYLE = `
 .fp-backdrop { position: fixed; inset: 0; z-index: 73; display: none; pointer-events: auto; }
 .fp-backdrop.open { display: block; }
@@ -17,12 +19,7 @@ const STYLE = `
 `;
 
 export function createFootprintMenu(root, { selectFootprint } = {}) {
-  if (!root.querySelector('style[data-sand-footprints]')) {
-    const s = document.createElement('style');
-    s.setAttribute('data-sand-footprints', '');
-    s.textContent = STYLE;
-    root.appendChild(s);
-  }
+  injectStyleOnce(root, 'data-sand-footprints', STYLE);
 
   let open = false;
   let options = [];
@@ -47,10 +44,8 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   panel.append(head, list);
   wrap.appendChild(panel);
 
-  for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu', 'wheel']) {
-    panel.addEventListener(ev, (e) => e.stopPropagation());
-    backdrop.addEventListener(ev, (e) => e.stopPropagation());
-  }
+  swallowEvents(panel);
+  swallowEvents(backdrop);
   panel.addEventListener('contextmenu', (e) => e.preventDefault());
   backdrop.addEventListener('contextmenu', (e) => e.preventDefault());
   backdrop.addEventListener('pointerdown', () => setOpen(false));

@@ -21,6 +21,7 @@
 // eraser and a tumbling rigid cube. The default selection is the Cube.
 
 import { MATERIALS } from '../materials.generated';
+import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
 const CK_MATERIAL = 0;
 const CK_SEED = 1;
@@ -38,10 +39,6 @@ const CUBE_SWATCH = 'rgb(214,211,209)';
 // the long tail of exotic materials. Matched against the lowercased entry label.
 const PRIORITY_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'crystal', 'water', 'lava', 'acid', 'tnt', 'oil', 'brine', 'seed', 'mycelium_spore', 'glowberry', 'glowshroom'];
 
-// packed ABGR number -> css rgb(...) using the low 24 bits (r,g,b).
-function packedToRgb(c) {
-  return `rgb(${c & 0xff},${(c >> 8) & 0xff},${(c >> 16) & 0xff})`;
-}
 
 // Build the full entry list: materials (minus EMPTY), 6 seeds, eraser, cube.
 // Each entry is { key, label, color, kind, value } where `color` is a css color
@@ -147,12 +144,7 @@ function renderSwatch(color) {
 }
 
 export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, showDrawToggle = true } = {}) {
-  if (!root.querySelector('style[data-sand-palette]')) {
-    const s = document.createElement('style');
-    s.setAttribute('data-sand-palette', '');
-    s.textContent = STYLE;
-    root.appendChild(s);
-  }
+  injectStyleOnce(root, 'data-sand-palette', STYLE);
 
   const entries = buildEntries();
   // Default selection is the Cube (the engine starts on the cube too).
@@ -176,9 +168,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, sh
   // act as if the mouse is held. Stopping pointermove too closes that gap.
   // The search input is a normal text field, so keystrokes stay local; only its
   // pointer events need the same guard, which it inherits from this wrap.
-  for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu']) {
-    wrap.addEventListener(ev, (e) => e.stopPropagation());
-  }
+  swallowEvents(wrap, ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu']);
 
   const col = document.createElement('div');
   col.className = 'sg-col';

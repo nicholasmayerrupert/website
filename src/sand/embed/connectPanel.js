@@ -9,6 +9,8 @@
 // server's IP/host + port + room. The panel is collapsed behind a small
 // "Multiplayer" button so single-player UI is unchanged at rest.
 
+import { injectStyleOnce, swallowEvents } from './uiShared.js';
+
 const STYLE = `
 .mp-wrap { position: absolute; top: 10px; right: 10px; z-index: 73; pointer-events: auto;
   font-family: ui-sans-serif, system-ui, sans-serif; color: #e5e7eb; }
@@ -39,9 +41,7 @@ const STYLE = `
 `;
 
 export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
-  const s = document.createElement('style');
-  s.textContent = STYLE;
-  root.appendChild(s);
+  injectStyleOnce(root, 'data-sand-connect', STYLE);
 
   const wrap = document.createElement('div');
   wrap.className = 'mp-wrap';
@@ -68,9 +68,7 @@ export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
   const statusEl = wrap.querySelector('.mp-status');
 
   // Don't let clicks/keys inside the panel reach the game (movement, tool use).
-  for (const ev of ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup', 'wheel']) {
-    wrap.addEventListener(ev, (e) => e.stopPropagation());
-  }
+  swallowEvents(wrap, ['pointerdown', 'pointerup', 'click', 'keydown', 'keyup', 'wheel']);
 
   let connected = false, connecting = false, lastError = '';
   const refresh = () => {
@@ -118,6 +116,6 @@ export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
   return {
     el: wrap,
     refresh,
-    destroy() { clearInterval(timer); wrap.remove(); s.remove(); },
+    destroy() { clearInterval(timer); wrap.remove(); },
   };
 }

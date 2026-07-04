@@ -18,6 +18,7 @@
 
 import { initSandWasm } from '../wasmBridge/engineFactory.js';
 import { createSandGame } from '../game/createSandGame';
+import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
 import { createFootprintMenu } from './footprintMenu';
@@ -127,7 +128,7 @@ function createMobileJoystick(root, game) {
     wrap.classList.remove('active');
     knob.style.transform = 'translate(0px, 0px)';
     releaseAll();
-    try { wrap.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    try { wrap.releasePointerCapture?.(e.pointerId); } catch { /* capture already gone */ }
     e.preventDefault();
     e.stopPropagation();
   };
@@ -285,7 +286,7 @@ class SandGameElement extends HTMLElement {
     sim.className = 'sg-sim';
     root.appendChild(sim);
 
-    const initialTool = this.getAttribute('initial-tool') || 'cube';
+    const initialTool = this.getAttribute('initial-tool') || DEFAULT_TOOL;
     // 'survival' (default): player character + reach-limited tools, camera
     // follows. 'creative': free camera, draw anywhere, no character.
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';

@@ -12,17 +12,17 @@
 // place / swap / merge; clicks on the backdrop throw the carried stack out.
 
 import { MATERIALS } from '../materials.generated.js';
+import { INV_SLOTS } from '../net/protocol.js';
+import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
 const HOTBAR = 9; // mirrors INV_HOTBAR in cpp/engine/common.hpp
-const SLOTS = 36; // mirrors INV_SLOTS
+const SLOTS = INV_SLOTS;
 
-// Per-material css color, derived from the packed 0xAABBGGRR material color (R is the
-// low byte) so the swatch matches the in-world pixel exactly.
+// Per-material css color + name so a swatch matches the in-world pixel exactly.
 const COLOR = {};
 const NAME = {};
 for (const m of MATERIALS) {
-  const c = m.color >>> 0;
-  COLOR[m.id] = `rgb(${c & 0xff},${(c >> 8) & 0xff},${(c >> 16) & 0xff})`;
+  COLOR[m.id] = packedToRgb(m.color >>> 0);
   NAME[m.id] = m.name;
 }
 // Tool names/tier letters by ToolClass id (mirrors enum ToolClass: 1 pick, 2 axe,
@@ -155,12 +155,7 @@ const STYLE = `
 `;
 
 export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor } = {}) {
-  if (!root.querySelector('style[data-sand-inventory]')) {
-    const s = document.createElement('style');
-    s.setAttribute('data-sand-inventory', '');
-    s.textContent = STYLE;
-    root.appendChild(s);
-  }
+  injectStyleOnce(root, 'data-sand-inventory', STYLE);
 
   let open = false;
   // Last-seen selected slot index + a fade timer, for the name-on-select label. -1
@@ -187,10 +182,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // Stop HUD pointer events from reaching the window-level game input (which would
   // latch mouse buttons / mine through the panel) — same guard as toolPalette. The
   // backdrop stops them too: its clicks are throws, not game actions.
-  for (const ev of ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu', 'wheel']) {
-    hud.addEventListener(ev, (e) => e.stopPropagation());
-    backdrop.addEventListener(ev, (e) => e.stopPropagation());
-  }
+  swallowEvents(hud);
+  swallowEvents(backdrop);
 
   const grid = document.createElement('div');
   grid.className = 'inv-grid';

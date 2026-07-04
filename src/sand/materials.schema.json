@@ -101,7 +101,10 @@
     { "id": 36, "name": "DEBRIS",    "kind": "COMPONENT",  "materialClass": "rigid",  "density": 2.4, "looseSorted": false, "mobility": 0,    "color": "0xb8424852", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 8,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
     { "id": 37, "name": "CRYSTAL",   "kind": "COMPONENT",  "materialClass": "rigid",  "density": 2.5, "looseSorted": false, "mobility": 0,    "color": "0xd8fff4e8", "toolClass": "pickaxe", "toolTier": 2, "textureAmp": 7, "durability": 10, "renderAnim": "none",  "componentGroup": "stone", "flags": ["rigid", "bearing"] },
     { "id": 38, "name": "MYCELIUM",  "kind": "COMPONENT",  "materialClass": "rigid",  "density": 1.2, "looseSorted": false, "mobility": 0,    "color": "0xc8643255", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 12, "durability": 4,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
-    { "id": 39, "name": "MYCELIUM_SPORE","kind": "COMPONENT","materialClass": "rigid","density": 1.1, "looseSorted": false, "mobility": 0,    "color": "0xdf96547d", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 5,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] }
+    { "id": 39, "name": "MYCELIUM_SPORE","kind": "COMPONENT","materialClass": "rigid","density": 1.1, "looseSorted": false, "mobility": 0,    "color": "0xdf96547d", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 5,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
+
+    { "id": 40, "name": "GLOWBERRY", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xd81e9bff", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 1, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "plantFamily"] },
+    { "id": 41, "name": "GLOWSHROOM","kind": "COMPONENT", "materialClass": "rigid", "density": 0.45,"looseSorted": false, "mobility": 0, "color": "0xc8ffd69b", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] }
   ],
   "animColors": {
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",
@@ -109,6 +112,8 @@
     "PACKED_FIRE_HOT": "0x9e50cdff",
     "PACKED_LAVA_HOT": "0xc83090ff",
     "PACKED_CRYSTAL_CORE": "0xf0fffdf8",
-    "PACKED_MYCELIUM_NODULE": "0xeadc7db4"
+    "PACKED_MYCELIUM_NODULE": "0xeadc7db4",
+    "PACKED_GLOWBERRY_CORE": "0xf08cd2ff",
+    "PACKED_GLOWSHROOM_CORE": "0xf0ffebc8"
   }
 }

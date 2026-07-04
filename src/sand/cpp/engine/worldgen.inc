@@ -628,7 +628,7 @@
       if (caveBiome == CAVE_CRYSTAL) {
         if (hasFloor && h < 0.030) stampCrystalAcidBasin(wx, floorY, gx, gy);   // sparse, big lakes
         else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
-        else if ((hasFloor || hasCeil) && h < 0.44) {
+        else if ((hasFloor || hasCeil) && h < 0.40) {
           // GIANT crystal cluster: a slender central spire hugged by a couple of
           // shorter ones — a tight bouquet, not a wide fan.
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x333u, gx, gy) < 0.70);
@@ -641,7 +641,7 @@
           stampCrystalSpike(wx - 2, baseY, dir, bigH / 2, 0);
           stampCrystalSpike(wx + 2, baseY, dir, bigH / 2, 0);
         }
-        else if ((hasFloor || hasCeil) && h < 0.74) {
+        else if ((hasFloor || hasCeil) && h < 0.64) {
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x331u, gx, gy) < 0.68);
           int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
           int ht = 3 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 8); // 3..10 slender spikes
@@ -655,9 +655,16 @@
           for (int i = 0; i < mh && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, MUSH_STEM);
           int capY = floorY - mh;
           int capR = 2 + (int)(whash2(sseed ^ 0x223u, gx, gy) * 3);
+          // About half the giant mushrooms are bioluminescent — a glowing blue cap.
+          uint8_t capMat = whash2(sseed ^ 0x226u, gx, gy) < 0.5 ? GLOWSHROOM : MUSH_CAP;
           for (int dx = -capR; dx <= capR; dx++) {
-            if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
+            if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, capMat);
           }
+        }
+        if (hasFloor && h > 0.40 && h < 0.56) {   // little bioluminescent mushrooms scattered on the floor
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, MUSH_STEM);
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - 1, GLOWSHROOM);
+          if (whash2(sseed ^ 0x230u, gx, gy) < 0.5 && genOpenCaveAt(wx + 1, floorY) && !genOpenCaveAt(wx + 1, floorY + 1)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + 1, floorY, GLOWSHROOM);
         }
         if ((hasFloor || hasCeil) && h > 0.89) {   // occasional crystal spike — brighten the fungal dark
           int baseY = hasFloor ? floorY : ceilY;
@@ -676,13 +683,20 @@
           if (pMoss < 0.6 && genOpenCaveAt(wx - 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx - 1, floorY, MOSS);
         }
         // Long drooping vines from the ceiling, often in a second offset strand.
+        // Ripe glowberries stud the vines and light the hollow orange (they hang
+        // beside a vine cell so they join the vine's plant component and stay put).
+        auto studBerry = [&](int vx, int vy) {
+          if (whash2(sseed ^ 0x120u, vx, vy) >= 0.13) return;
+          int bdx = whash2(sseed ^ 0x121u, vx, vy) < 0.5 ? 1 : -1;
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, vx + bdx, vy, GLOWBERRY);
+        };
         if (hasCeil && pVine < 0.80) {
           int len = 5 + (int)(whash2(sseed ^ 0x110u, gx, gy) * 18);
-          for (int i = 0; i < len && genOpenCaveAt(wx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, ceilY + i, VINE);
+          for (int i = 0; i < len && genOpenCaveAt(wx, ceilY + i); i++) { putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, ceilY + i, VINE); if (i > 0) studBerry(wx, ceilY + i); }
           if (pVine < 0.42) {
             int vdx = whash2(sseed ^ 0x115u, gx, gy) < 0.5 ? 1 : -1;
             int len2 = 3 + (int)(whash2(sseed ^ 0x114u, gx, gy) * 12);
-            for (int i = 0; i < len2 && genOpenCaveAt(wx + vdx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + vdx, ceilY + i, VINE);
+            for (int i = 0; i < len2 && genOpenCaveAt(wx + vdx, ceilY + i); i++) { putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + vdx, ceilY + i, VINE); if (i > 0) studBerry(wx + vdx, ceilY + i); }
           }
         }
         // Leafy green bushes / tall plants rising from the floor with a little crown.

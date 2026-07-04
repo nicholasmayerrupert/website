@@ -54,7 +54,7 @@ const flagMask = (m) => m.flags.reduce((acc, f) => acc | (1 << flagBits[f]), 0);
 
 const hasFlag = (m, f) => m.flags.includes(f);
 const mc = (name) => materialClasses[name];
-const bearingExceptions = new Set(['VINE']);
+const bearingExceptions = new Set(['VINE', 'GLOWBERRY']);
 for (const m of materials) {
   const c = materialClasses[m.materialClass];
   if (m.name === 'EMPTY' && c !== mc('none')) throw new Error('EMPTY must have materialClass none');

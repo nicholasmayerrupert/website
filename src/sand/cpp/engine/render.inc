@@ -59,6 +59,8 @@ inline uint8_t emissionForCell(uint8_t m, int wx, int wy) {
     case FIRE: return 245;
     case LAVA: return 230;
     case CRYSTAL: return (((wx * 17 + wy * 31) & 3) == 0) ? 132 : 0;
+    case GLOWBERRY: return 195;   // warm orange lantern
+    case GLOWSHROOM: return 190;  // cool blue biolume
     case MYCELIUM_SPORE: return 112;
     case MYCELIUM: return (((wx * 13 + wy * 29) & 31) == 0) ? 58 : 0;
     default: return 0;
@@ -367,6 +369,8 @@ inline void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int 
       else if (m == MYCELIUM || m == MYCELIUM_SPORE) {
         if (m == MYCELIUM_SPORE || myceliumNoduleAt(wx, wy)) c = PACKED_MYCELIUM_NODULE;
       }
+      else if (m == GLOWBERRY) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWBERRY_CORE; }
+      else if (m == GLOWSHROOM) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWSHROOM_CORE; }
       if (RENDER_LIGHTING_ENABLED) c = applyLight(c, renderLightForCell(L->light.data(), k, x, y, m));
       p[k] = c;
     }

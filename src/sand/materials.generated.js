@@ -100,16 +100,18 @@ export const MATERIALS = [
   { id: 37, name: 'CRYSTAL', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.5, looseSorted: false, mobility: 0, color: 0xd8fff4e8, textureAmp: 7, durability: 10, renderAnim: 'none' },
   { id: 38, name: 'MYCELIUM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.2, looseSorted: false, mobility: 0, color: 0xc8643255, textureAmp: 12, durability: 4, renderAnim: 'none' },
   { id: 39, name: 'MYCELIUM_SPORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.1, looseSorted: false, mobility: 0, color: 0xdf96547d, textureAmp: 8, durability: 5, renderAnim: 'none' },
+  { id: 40, name: 'GLOWBERRY', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, color: 0xd81e9bff, textureAmp: 8, durability: 1, renderAnim: 'none' },
+  { id: 41, name: 'GLOWSHROOM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, color: 0xc8ffd69b, textureAmp: 8, durability: 2, renderAnim: 'none' },
 ];
 
 // Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++
 // MAT_CLASS / MAT_FLAGS / MAT_CGROUP tables.
-export const MAT_CLASS = [0, 2, 4, 3, 4, 1, 1, 3, 3, 3, 4, 4, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 2, 4, 2, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0, 8, 0, 9, 12, 14, 12, 14, 14, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_CLASS = [0, 2, 4, 3, 4, 1, 1, 3, 3, 3, 4, 4, 3, 3, 3, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 1, 2, 4, 2, 3, 3, 3, 3, 3, 3, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_FLAGS = [0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0, 8, 0, 9, 12, 14, 12, 14, 14, 22, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_CGROUP = [0, 0, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 3, 0, 2, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 // Mining gate tables: which tool class drops a material and the min tier required.
-export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+export const MAT_TOOLCLASS = [0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 export const MAT_TOOLTIER = [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 export const TOOL_CLASS_SPEED = [100, 35, 35, 35, 50, 100, 255, 35, 35, 35, 100, 35, 100, 35, 35, 100, 35, 35, 100, 35, 100, 25, 25, 60, 100];
 export const TOOL_TIER_SPEED = [50, 100, 135, 175, 210];
@@ -121,3 +123,5 @@ export const PACKED_FIRE_HOT = 0x9e50cdff;
 export const PACKED_LAVA_HOT = 0xc83090ff;
 export const PACKED_CRYSTAL_CORE = 0xf0fffdf8;
 export const PACKED_MYCELIUM_NODULE = 0xeadc7db4;
+export const PACKED_GLOWBERRY_CORE = 0xf08cd2ff;
+export const PACKED_GLOWSHROOM_CORE = 0xf0ffebc8;

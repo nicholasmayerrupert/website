@@ -82,6 +82,7 @@ const CLASS_EXPECTED = {
     'CRYSTAL', 'MYCELIUM', 'MYCELIUM_SPORE',
     'ICE', 'RIGID', 'TNT',
     'SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
+    'GLOWBERRY', 'GLOWSHROOM',
   ],
 };
 const liveIds = new Set(MATERIALS.map((m) => m.id));

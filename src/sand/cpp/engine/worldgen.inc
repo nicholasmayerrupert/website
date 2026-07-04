@@ -626,7 +626,7 @@
       }
 
       if (caveBiome == CAVE_CRYSTAL) {
-        if (hasFloor && h < 0.038) stampCrystalAcidBasin(wx, floorY, gx, gy);   // ~half as common as before
+        if (hasFloor && h < 0.030) stampCrystalAcidBasin(wx, floorY, gx, gy);   // sparse, big lakes
         else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
         else if ((hasFloor || hasCeil) && h < 0.44) {
           // GIANT crystal cluster: a slender central spire hugged by a couple of
@@ -659,7 +659,7 @@
             if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
           }
         }
-        if ((hasFloor || hasCeil) && h > 0.66) {   // little crystal spikes — brighten the fungal dark
+        if ((hasFloor || hasCeil) && h > 0.89) {   // occasional crystal spike — brighten the fungal dark
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 3 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 5), whash2(sseed ^ 0x22Au, gx, gy) < 0.4 ? 1 : 0);
         }
@@ -692,15 +692,15 @@
           int crownY = floorY - ht + 1;
           for (int cdx = -1; cdx <= 1; cdx += 2) if (genOpenCaveAt(wx + cdx, crownY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + cdx, crownY, PLANT);
         }
-        if ((hasFloor || hasCeil) && h > 0.74) {   // crystal accents scattered through the greenery
+        if ((hasFloor || hasCeil) && h > 0.91) {   // crystal accents scattered through the greenery
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 3 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 5), whash2(sseed ^ 0x113u, gx, gy) < 0.4 ? 1 : 0);
         }
       } else {   // CAVE_DEFAULT: the darkest caves — seed them with the most glinting minerals
-        if ((hasFloor || hasCeil) && h > 0.58) {
+        if ((hasFloor || hasCeil) && h > 0.86) {
           int baseY = hasFloor ? floorY : ceilY, dir = hasFloor ? -1 : 1;
-          // often a small clustered spike, otherwise a lone slender one
-          if (h > 0.86) stampCrystalSpike(wx, baseY, dir, 4 + (int)(whash2(sseed ^ 0x229u, gx, gy) * 5), 1);
+          // occasionally a small clustered spike, otherwise a lone slender one
+          if (h > 0.95) stampCrystalSpike(wx, baseY, dir, 4 + (int)(whash2(sseed ^ 0x229u, gx, gy) * 5), 1);
           else stampCrystalSpike(wx, baseY, dir, 3 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 4), whash2(sseed ^ 0x22Bu, gx, gy) < 0.35 ? 1 : 0);
         }
       }

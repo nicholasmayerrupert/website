@@ -415,6 +415,15 @@
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return bodyOwner[k] != -1; }
 
+  // Clamped active-row settle band for row y (the [1, cols-2] interior). Returns
+  // false when the row has no active cells — the per-row guard every reaction /
+  // interior scan starts with.
+  inline bool activeRowSpan(int y, int& minX, int& maxX) {
+    minX = imax(1, activeRowMin[y]);
+    maxX = imin(cols - 2, activeRowMax[y]);
+    return maxX >= minX;
+  }
+
   // ---- dirty tracking (operates on the active layer via the mirrors) ----
   inline void markCellIndex(int k) {
     int y = k / cols, x = k - y * cols;

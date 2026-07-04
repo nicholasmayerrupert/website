@@ -166,8 +166,7 @@
   void settleLava(int x, int y, int k) { if (next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
   void relaxLiquidGaps() {
     for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
-      if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
       for (int x = start; x != end; x += stepX) {
         int k = I(x, y); if (grid[k] != EMPTY) continue;
@@ -214,8 +213,7 @@
       // Bottom-to-top plus stamping prevents same-tick cascades: a moved source or
       // destination will not be consumed again until the next simulation tick.
       for (int y = rows - 2; y >= 1; y--) {
-        int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
-        if (maxX < minX) continue;
+        int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
         bool ltr = ((y + pass + tick) & 1) == 0;
         int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
         for (int x = start; x != end; x += stepX) {
@@ -251,8 +249,7 @@
   void separateLooseByDensity() {
     int parity = rand() < 0.5 ? 0 : 1;
     for (int y = 1; y < rows - 1; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]);
-      if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       bool ltr = (y % 2) == 0; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
       for (int x = start; x != end; x += stepX) {
         if (((x + y) % 2) != parity) continue;

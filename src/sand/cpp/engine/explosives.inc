@@ -376,7 +376,7 @@
       } else queueDetonation(k, TNT_FUSE_TICKS);
     };
     for (int y = 1; y < rows - 1; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); uint8_t m = grid[k]; if (m != FIRE && m != LAVA) continue;
         lightTnt(k + 1); lightTnt(k - 1); lightTnt(k + cols); lightTnt(k - cols);

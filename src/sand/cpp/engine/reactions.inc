@@ -8,7 +8,7 @@
     int igniteCap = cols * rows;
     std::vector<int>& snowMelt = reactionSnowMelt; snowMelt.clear();
     for (int y = 1; y < rows; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != WATER) continue;
         int nk = grid[k + 1] == FIRE ? k + 1 : (grid[k - 1] == FIRE ? k - 1 : -1);
@@ -18,7 +18,7 @@
       }
     }
     for (int y = 1; y < rows; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != FIRE || reactionFlags[k]) continue;
         int neigh[4]; int nn; if (y < rows - 1) { neigh[0] = k + 1; neigh[1] = k - 1; neigh[2] = k + cols; neigh[3] = k - cols; nn = 4; } else { neigh[0] = k + 1; neigh[1] = k - 1; neigh[2] = k - cols; nn = 3; }
@@ -59,7 +59,7 @@
     std::vector<int>& erasedStone = acidErasedStone; std::vector<int>& erasedIce = acidErasedIce;
     erasedStone.clear(); erasedIce.clear();
     for (int y = 1; y < rows - 1; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != ACID) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
@@ -122,7 +122,7 @@
     std::unordered_set<int>& hardened = lavaHardenedScratch; hardened.clear();
     int hardenedYMax = 0; bool plantBurned = false;
     for (int y = 1; y < rows - 1; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != LAVA) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;
@@ -185,7 +185,7 @@
   // neighbour, so a pinch of salt makes a little brine — no runaway ocean conversion.
   void applySalt() {
     for (int y = 1; y < rows - 1; y++) {
-      int minX = imax(1, activeRowMin[y]), maxX = imin(cols - 2, activeRowMax[y]); if (maxX < minX) continue;
+      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = I(x, y); if (grid[k] != SALT) continue;
         int right = k + 1, left = k - 1, down = k + cols, up = k - cols;

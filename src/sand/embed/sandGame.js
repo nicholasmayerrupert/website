@@ -30,24 +30,15 @@ const HOST_CSS = `
 /* Keep text-entry controls (search, multiplayer IP, etc.) selectable/editable. */
 input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 .sg-sim { position: absolute; inset: 0; overflow: hidden; }
-.sg-dpad { position: absolute; right: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 68;
-  display: grid; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 28px); gap: 4px;
-  pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-  padding: 6px; border-radius: 8px;
-  background: rgba(17,24,39,.3); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px); }
-.sg-dpad button { border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
-  position: relative; background: rgba(255,255,255,.06); color: #fff; font-size: 0; user-select: none;
-  -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
-.sg-dpad button::before { content: ""; position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform: translate(-50%, -50%); }
-.sg-dpad .up::before { border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 9px solid currentColor; }
-.sg-dpad .left::before { border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-right: 9px solid currentColor; }
-.sg-dpad .right::before { border-top: 6px solid transparent; border-bottom: 6px solid transparent; border-left: 9px solid currentColor; }
-.sg-dpad .down::before { border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 9px solid currentColor; }
-.sg-dpad button:active, .sg-dpad button.pressed { background: rgba(255,255,255,.82); color: #000; }
-.sg-dpad .up { grid-column: 2; grid-row: 1; }
-.sg-dpad .left { grid-column: 1; grid-row: 2; }
-.sg-dpad .right { grid-column: 3; grid-row: 2; }
-.sg-dpad .down { grid-column: 2; grid-row: 3; }
+.sg-stick { position: absolute; right: 10px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 68;
+  width: 118px; height: 118px; border-radius: 50%; pointer-events: auto; touch-action: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  background: rgba(17,24,39,.3); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,.14); }
+.sg-stick .sg-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+  border-radius: 50%; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.5);
+  box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
+.sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
 .sg-zoom { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 71;
   display: flex; flex-direction: column; gap: 6px; pointer-events: auto; touch-action: manipulation;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -58,49 +49,90 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .sg-zoom button:active { background: rgba(255,255,255,.82); color: #000; }
 `;
 
-function createMobileDpad(root, game) {
-  const wrap = document.createElement('div');
-  wrap.className = 'sg-dpad';
-  wrap.setAttribute('aria-label', 'Movement controls');
+// Mobile-only analog thumbstick. Maps the knob offset to the same four movement
+// keys the d-pad drove (left=0, right=1, up=2, down=3), engaging a direction once
+// the stick passes a per-axis deadzone. Diagonals fall out naturally by holding
+// two keys at once, matching how WASD/arrows behave on desktop.
+function createMobileJoystick(root, game) {
+  const CODE = { left: 0, right: 1, up: 2, down: 3 };
+  const DEADZONE = 0.32; // fraction of max travel before an axis engages
 
-  const buttons = [
-    { cls: 'up', label: 'Up', code: 2 },
-    { cls: 'left', label: 'Left', code: 0 },
-    { cls: 'right', label: 'Right', code: 1 },
-    { cls: 'down', label: 'Down', code: 3 },
-  ];
-  const release = (button, code, pointerId) => {
-    button.classList.remove('pressed');
-    game.inputKey(code, false);
-    try { button.releasePointerCapture?.(pointerId); } catch (_) {}
+  const wrap = document.createElement('div');
+  wrap.className = 'sg-stick';
+  wrap.setAttribute('aria-label', 'Movement joystick');
+  const knob = document.createElement('div');
+  knob.className = 'sg-knob';
+  wrap.appendChild(knob);
+
+  const held = { 0: false, 1: false, 2: false, 3: false };
+  let pointerId = null;
+  let maxTravel = 33; // recomputed from real geometry on each press
+
+  const setDir = (code, on) => {
+    if (held[code] === on) return;
+    held[code] = on;
+    game.inputKey(code, on);
+  };
+  const releaseAll = () => {
+    for (const code of [CODE.left, CODE.right, CODE.up, CODE.down]) setDir(code, false);
   };
 
-  for (const b of buttons) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = b.cls;
-    btn.setAttribute('aria-label', b.label);
-    btn.addEventListener('pointerdown', (e) => {
-      btn.classList.add('pressed');
-      btn.setPointerCapture?.(e.pointerId);
-      game.inputKey(b.code, true);
-      e.preventDefault();
-      e.stopPropagation();
-    });
-    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-      btn.addEventListener(ev, (e) => {
-        release(btn, b.code, e.pointerId);
-        e.preventDefault();
-        e.stopPropagation();
-      });
-    }
-    wrap.appendChild(btn);
+  const apply = (dx, dy) => {
+    // Clamp the knob inside the ring, then map its position to the axes.
+    const dist = Math.hypot(dx, dy);
+    const scale = dist > maxTravel ? maxTravel / dist : 1;
+    const kx = dx * scale;
+    const ky = dy * scale;
+    knob.style.transform = `translate(${kx}px, ${ky}px)`;
+    const nx = kx / maxTravel;
+    const ny = ky / maxTravel;
+    setDir(CODE.left, nx < -DEADZONE);
+    setDir(CODE.right, nx > DEADZONE);
+    setDir(CODE.up, ny < -DEADZONE);
+    setDir(CODE.down, ny > DEADZONE);
+  };
+
+  const fromCenter = (e) => {
+    const r = wrap.getBoundingClientRect();
+    return [e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)];
+  };
+
+  const onDown = (e) => {
+    pointerId = e.pointerId;
+    wrap.classList.add('active');
+    wrap.setPointerCapture?.(e.pointerId);
+    maxTravel = wrap.getBoundingClientRect().width / 2 - knob.offsetWidth / 2;
+    apply(...fromCenter(e));
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const onMove = (e) => {
+    if (e.pointerId !== pointerId) return;
+    apply(...fromCenter(e));
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  const onUp = (e) => {
+    if (pointerId !== null && e.pointerId !== pointerId) return;
+    pointerId = null;
+    wrap.classList.remove('active');
+    knob.style.transform = 'translate(0px, 0px)';
+    releaseAll();
+    try { wrap.releasePointerCapture?.(e.pointerId); } catch (_) {}
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  wrap.addEventListener('pointerdown', onDown);
+  wrap.addEventListener('pointermove', onMove);
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    wrap.addEventListener(ev, onUp);
   }
 
   root.appendChild(wrap);
   return {
     destroy() {
-      for (const b of buttons) game.inputKey(b.code, false);
+      releaseAll();
       wrap.remove();
     },
   };
@@ -236,7 +268,7 @@ class SandGameElement extends HTMLElement {
         const drawDefault = !coarse;
         game.setDrawMode(drawDefault);
         this._palette?.setDrawMode(drawDefault);
-        if (coarse) this._dpad = createMobileDpad(root, game);
+        if (coarse) this._stick = createMobileJoystick(root, game);
       })
       .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 
@@ -250,10 +282,10 @@ class SandGameElement extends HTMLElement {
     this._hud?.destroy();
     this._sizeMenu?.destroy();
     this._mp?.destroy();
-    this._dpad?.destroy();
+    this._stick?.destroy();
     this._zoom?.destroy();
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._dpad = this._zoom = null;
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = null;
     this._mounted = false;
   }
 

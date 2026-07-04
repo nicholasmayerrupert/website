@@ -213,15 +213,13 @@ export function initSandWasm() {
 
 export function isSandWasmReady() { return M !== null; }
 
-// Mirror createEngine({...}) from engine.js. Requires initSandWasm() resolved.
+// Create one engine instance. Requires initSandWasm() resolved.
 export function createEngineWasm({
   cols,
   rows,
-  rng = Math.random,
-  emittersOn = true, // eslint-disable-line no-unused-vars
   sinksOn = true,
   infinite = false,
-  worldSeed = (Math.floor((rng() || Math.random()) * 4294967296) >>> 0),
+  worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
   const { mod } = M;
@@ -311,8 +309,6 @@ export function createEngineWasm({
     placeMaterial(cx, cy, r, material, layer = 0) {
       return (layer ? M.placeMaterialLayer(ptr, layer, cx, cy, r, material) : M.placeMaterial(ptr, cx, cy, r, material)) > 0;
     },
-    setSinksOn(v) { M.setSinks(ptr, v ? 1 : 0); },
-    setEmittersOn() {},
 
     // Tool / pointer input. JS translates browser coords to cells and normalizes
     // buttons; the engine owns all tool policy. The pointer/draft/up calls and
@@ -473,8 +469,6 @@ export function createEngineWasm({
     // Primitive bodies built engine-side (no coordinate array marshalling).
     spawnBox(cx, cy, halfW, halfH, material = MAT.RIGID) { M.spawnBox(ptr, cx, cy, halfW, halfH, material); },
     spawnDisc(cx, cy, radius, material = MAT.RIGID) { M.spawnDisc(ptr, cx, cy, radius, material); },
-    getBodies() { return []; }, // render reads RIGID cells from the grid; bodies need no JS mirror
-    bodyFootprintBlocked() { return 0; },
     getRigidDebug() { return { rejectedCells: M.rigidRejected(ptr), depenetrations: M.rigidDepen(ptr) }; },
 
     // Players (Terraria-like characters; physics owned by the engine). JS only

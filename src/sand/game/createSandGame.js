@@ -99,6 +99,7 @@ export function createSandGame(container, opts = {}) {
   let playMode = survival;
   let localPlayerId = 0;
   let inputSeq = 0;
+  let lastInvHash = -1; // last pushed offline-inventory hash (HUD dirty check)
   let net = null; // multiplayer glue (created lazily on host/join)
   const netClientReady = () => !!net && net.role === 'client' && net.connected && net.worldReady;
 
@@ -151,12 +152,25 @@ export function createSandGame(container, opts = {}) {
   let perfRenderMs = 0;
   let previewDirty = false;           // force a present so a fresh draft overlay shows
 
-  // Rolling perf samples for window.__sandPerf
+  // Rolling perf samples for window.__sandPerf / perfStats()
   const PERF_SAMPLES = 120;
   const perfStepSamples = new Float32Array(PERF_SAMPLES);
   const perfRenderSamples = new Float32Array(PERF_SAMPLES);
   let perfSampleIdx = 0;
   let perfSampleCount = 0;
+  // avg + p95 of the sampled step+render frame cost (shared by both perf surfaces).
+  const perfFrameSummary = () => {
+    const n = perfSampleCount;
+    if (!n) return { avg: 0, p95: 0, samples: 0 };
+    const sums = [];
+    for (let i = 0; i < n; i++) sums.push(perfStepSamples[i] + perfRenderSamples[i]);
+    sums.sort((a, b) => a - b);
+    return {
+      avg: sums.reduce((a, b) => a + b, 0) / n,
+      p95: sums[Math.min(n - 1, Math.floor(n * 0.95))],
+      samples: n,
+    };
+  };
 
   // Drafting state lives entirely in the engine now; the preview reads it back.
 
@@ -305,6 +319,7 @@ export function createSandGame(container, opts = {}) {
     if (survival && !netClientReady()) {
       localPlayerId = engine.spawnPlayerAtSurface(spawnCol);
       onInventory?.(engine.getInventory(localPlayerId)); // initial HUD fill
+      lastInvHash = engine.inventoryHash(localPlayerId);
     }
     // Start centered horizontally, with roughly one third of the view underground.
     engine.cameraSet((cols - viewCols) / 2, spawnRow - Math.floor(viewRows * (2 / 3)));
@@ -360,12 +375,20 @@ export function createSandGame(container, opts = {}) {
   // flag and forwards them with the button state; the engine maps that to the
   // aim cell (camera.inc owns the camera + cell metrics). mouseButtons: bit0=LMB,
   // bit1=RMB (drives the player's primary/secondary in draw mode).
+  // Forward only when something actually changed (the loop calls this every
+  // frame): the engine stores the pointer and derives the aim cell on demand,
+  // so identical state doesn't need an FFI call. A recreated engine (resize)
+  // starts with pointer state unset, hence the sentEngine check.
+  let sentPX = NaN, sentPY = NaN, sentButtons = -1, sentInside = null, sentEngine = null;
   const updatePointer = (cx, cy) => {
     clientX = cx; clientY = cy;
     inside = cx >= wrapBounds.left && cx <= wrapBounds.right && cy >= wrapBounds.top && cy <= wrapBounds.bottom;
     px = cx - wrapBounds.left;
     py = cy - wrapBounds.top;
-    engine?.inputPointer(px, py, mouseButtons, inside);
+    if (!engine) return;
+    if (engine === sentEngine && px === sentPX && py === sentPY && mouseButtons === sentButtons && inside === sentInside) return;
+    engine.inputPointer(px, py, mouseButtons, inside);
+    sentEngine = engine; sentPX = px; sentPY = py; sentButtons = mouseButtons; sentInside = inside;
   };
 
   // Global listeners so the canvas can stay pointer-events:none. JS forwards raw
@@ -523,6 +546,8 @@ export function createSandGame(container, opts = {}) {
   //
   // The sub-cell pan offset is snapped to whole device px inside the engine (the
   // documented bright-block-flicker fix); the snap/gutter A/B flags live there too.
+  // Grow-only packing buffer for the per-frame client player upload.
+  let packScratch = new Float32Array(0);
   const render = (full = false) => {
     if (!engine) return;
     const renderStart = performance.now();
@@ -535,7 +560,9 @@ export function createSandGame(container, opts = {}) {
     } else if (netClientReady()) {
       const ps = net.getPlayersForRender();
       const stride = engine.getRenderStrides().player;
-      const packed = new Float32Array(ps.length * stride); // [x,y,w,h,facing,own,animState,animFrame]
+      const floats = ps.length * stride;
+      if (packScratch.length < floats) packScratch = new Float32Array(floats);
+      const packed = packScratch.subarray(0, floats); // [x,y,w,h,facing,own,animState,animFrame]
       for (let i = 0; i < ps.length; i++) {
         const p = ps[i], o = i * stride;
         packed[o] = p.x; packed[o + 1] = p.y; packed[o + 2] = p.w; packed[o + 3] = p.h;
@@ -561,12 +588,7 @@ export function createSandGame(container, opts = {}) {
 
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     window.__sandPerf = () => {
-      const n = perfSampleCount;
-      const sums = [];
-      for (let i = 0; i < n; i++) sums.push(perfStepSamples[i] + perfRenderSamples[i]);
-      sums.sort((a, b) => a - b);
-      const avg = n > 0 ? sums.reduce((a, b) => a + b, 0) / n : 0;
-      const p95 = n > 0 ? sums[Math.min(n - 1, Math.floor(n * 0.95))] : 0;
+      const { avg, p95, samples } = perfFrameSummary();
       const perf = engine ? engine.getPerf() : { stepMs: 0, dirtyChunks: 0 };
       return {
         stepMs: Number(perf.stepMs.toFixed(2)),
@@ -576,7 +598,7 @@ export function createSandGame(container, opts = {}) {
         uploadMs: Number((perf.uploadMs || 0).toFixed(3)),
         avgFrameMs: Number(avg.toFixed(3)),
         p95FrameMs: Number(p95.toFixed(3)),
-        samples: n,
+        samples,
         dirtyChunks: perf.dirtyChunks,
         worldShifts: engine ? engine.getWorldShiftCount() : 0,
         wasmHeapMB: engine ? Number((engine.getHeapBytes() / (1024 * 1024)).toFixed(1)) : 0,
@@ -674,8 +696,13 @@ export function createSandGame(container, opts = {}) {
   };
   // Glide the camera toward the followed player's center (clamp + lerp in C++).
   // On a client the followed player is our host-authoritative snapshot entity.
+  // Runs every frame, so the local read reuses one scratch object (no per-frame
+  // player-object churn).
+  const followScratch = {};
   const followCamera = () => {
-    const p = netClientReady() ? net.getOwnPlayer() : localPlayer();
+    const p = netClientReady()
+      ? net.getOwnPlayer()
+      : (engine && localPlayerId ? engine.getPlayer(localPlayerId, followScratch) : null);
     if (!p || !engine) return;
     engine.cameraFollowTo(p.x + p.w / 2, p.y + p.h / 2);
   };
@@ -814,7 +841,10 @@ export function createSandGame(container, opts = {}) {
       if (netClientReady()) {
         if (net.consumeInventoryDirty()) { const inv = net.getOwnInventory(); if (inv) onInventory(inv); }
       } else if (stepped && localPlayerId) {
-        onInventory(engine.getInventory(localPlayerId));
+        // Only rebuild + push the snapshot when it actually changed (the hash
+        // reads the packed floats without allocating slot objects).
+        const h = engine.inventoryHash(localPlayerId);
+        if (h !== lastInvHash) { lastInvHash = h; onInventory(engine.getInventory(localPlayerId)); }
       }
     }
     updateMineProgress();
@@ -908,15 +938,7 @@ export function createSandGame(container, opts = {}) {
     // the DEV-only window.__sandPerf but is always available. fps/tickrate are left
     // to the caller to derive from wall-clock deltas of `tick` + its own frames.
     perfStats() {
-      const n = perfSampleCount;
-      let avg = 0, p95 = 0;
-      if (n > 0) {
-        const sums = [];
-        for (let i = 0; i < n; i++) sums.push(perfStepSamples[i] + perfRenderSamples[i]);
-        sums.sort((a, b) => a - b);
-        avg = sums.reduce((a, b) => a + b, 0) / n;
-        p95 = sums[Math.min(n - 1, Math.floor(n * 0.95))];
-      }
+      const { avg, p95 } = perfFrameSummary();
       const perf = engine ? engine.getPerf() : { stepMs: 0, dirtyChunks: 0 };
       return {
         stepMs: perf.stepMs,

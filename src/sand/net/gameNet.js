@@ -164,7 +164,9 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
 
   function ingestItems(m) {
     // m.data is a plain number array; Float32Array is what glSetItems uploads.
-    itemsForRender = Float32Array.from(m.data);
+    // Reuse the buffer when the length matches (steady state between pickups).
+    if (itemsForRender.length === m.data.length) itemsForRender.set(m.data);
+    else itemsForRender = Float32Array.from(m.data);
   }
   function ingestInventory(m) {
     const slots = new Array(INV_SLOTS);

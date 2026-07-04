@@ -410,6 +410,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     toastTimer = setTimeout(() => { toast.classList.remove('show'); toastTimer = 0; }, 2000);
   }
 
+  // Per-slot content signature so update() only rebuilds the slots whose stack
+  // actually changed (selection highlight is a cheap class toggle either way).
+  const slotSig = new Array(SLOTS).fill(null);
+
   function update(inv) {
     if (inv && inv.slots) {
       const sel = inv.selected;
@@ -420,6 +424,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         if (!el) continue;
         const s = inv.slots[i] || { material: 0, isTool: false, count: 0 };
         el.classList.toggle('selected', i === inv.selected);
+        const sig = `${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
+        if (sig === slotSig[i]) continue;
+        slotSig[i] = sig;
         el.replaceChildren();
         if (i < HOTBAR) {
           const n = document.createElement('span'); n.className = 'inv-num';

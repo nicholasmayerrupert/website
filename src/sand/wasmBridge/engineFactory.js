@@ -245,11 +245,34 @@ export function createEngineWasm({
   const seedDraftOut = mod._malloc(12);
   const glOffOut = mod._malloc(8);
   const camOut = mod._malloc(16); // 2 doubles: cameraGet / aimCell
+  // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
+  // reuses it instead of a _malloc/_free round trip per call.
+  let glScratchPtr = 0, glScratchCap = 0;
+  const glScratch = (floats) => {
+    if (floats > glScratchCap) {
+      if (glScratchPtr) mod._free(glScratchPtr);
+      glScratchCap = Math.max(floats, glScratchCap * 2, 64);
+      glScratchPtr = mod._malloc(glScratchCap * 4);
+    }
+    return glScratchPtr;
+  };
   // Packed draft cell INDICES (k = y*cols + x) as a zero-copy view into wasm
   // memory — no Set allocation. Stone and ice share one snapshot buffer, so the
   // returned view is only valid until the next draft snapshot call; the caller
   // must fully consume one draft before requesting the other.
   const draftCells = (count) => (count ? new Int32Array(mod.HEAP32.buffer, M.draftPtr(ptr), count) : emptyRects);
+
+  // Decode one player from the packed snapshot at float offset o into `out`.
+  const readPlayer = (f, o, out) => {
+    out.id = f[o] | 0; out.active = f[o + 1] === 1;
+    out.x = f[o + 2]; out.y = f[o + 3]; out.vx = f[o + 4]; out.vy = f[o + 5];
+    out.w = f[o + 6] | 0; out.h = f[o + 7] | 0; out.facing = f[o + 8] | 0;
+    out.grounded = f[o + 9] === 1; out.tool = f[o + 10] | 0;
+    out.aimX = f[o + 11]; out.aimY = f[o + 12]; out.health = f[o + 13] | 0;
+    out.inputSeq = f[o + 14] >>> 0; out.alive = f[o + 15] === 1; out.jumpReady = f[o + 16] === 1;
+    out.animState = f[o + 17] | 0; out.animFrame = f[o + 18] | 0;
+    return out;
+  };
 
   return {
     cols,
@@ -335,10 +358,9 @@ export function createEngineWasm({
         const len = packed ? packed.length : 0;
         if (len) {
           if (len % renderStrides.player !== 0) throw new Error(`external player buffer length ${len} is not divisible by stride ${renderStrides.player}`);
-          const buf = mod._malloc(len * 4);
+          const buf = glScratch(len);
           mod.HEAPF32.set(packed, buf >> 2);
           M.glSetPlayers(ptr, 1, buf, (len / renderStrides.player) | 0, ownId | 0);
-          mod._free(buf);
         } else {
           M.glSetPlayers(ptr, 1, 0, 0, ownId | 0); // external, but empty (draw none)
         }
@@ -354,10 +376,9 @@ export function createEngineWasm({
       const len = packed.length;
       if (!len) { M.glSetItems(ptr, 1, 0, 0); return; } // external, but empty (draw none)
       if (len % renderStrides.item !== 0) throw new Error(`external item buffer length ${len} is not divisible by stride ${renderStrides.item}`);
-      const buf = mod._malloc(len * 4);
+      const buf = glScratch(len);
       mod.HEAPF32.set(packed, buf >> 2);
       M.glSetItems(ptr, 1, buf, (len / renderStrides.item) | 0);
-      mod._free(buf);
     },
     getRenderStrides() { return renderStrides; },
     glSetFlags(gutterOn, snapOff) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0); },
@@ -400,7 +421,7 @@ export function createEngineWasm({
     setGroundingDebug(verify, forceFull) { M.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0); },
     groundingMismatches() { return M.groundingMismatches(ptr); },
     groundingDiag() { return { fast: M.groundingDiag(ptr, 0), edge: M.groundingDiag(ptr, 1), powder: M.groundingDiag(ptr, 2), cut: M.groundingDiag(ptr, 3), span: M.groundingDiag(ptr, 4) }; },
-    destroy() { mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); M.destroy(ptr); },
+    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); M.destroy(ptr); },
 
     // Component drafts + seeds (Stage 3)
     addDiscToStoneDraft(cx, cy, r) { return M.addStoneDraft(ptr, cx, cy, r) === 1; },
@@ -480,21 +501,23 @@ export function createEngineWasm({
       const stride = M.playerSnapshotStride(ptr);
       const f = new Float32Array(mod.HEAPF32.buffer, M.playerSnapshotPtr(ptr), n * stride);
       const out = new Array(n);
-      for (let i = 0; i < n; i++) {
-        const o = i * stride;
-        out[i] = {
-          id: f[o] | 0, active: f[o + 1] === 1,
-          x: f[o + 2], y: f[o + 3], vx: f[o + 4], vy: f[o + 5],
-          w: f[o + 6] | 0, h: f[o + 7] | 0, facing: f[o + 8] | 0,
-          grounded: f[o + 9] === 1, tool: f[o + 10] | 0,
-          aimX: f[o + 11], aimY: f[o + 12], health: f[o + 13] | 0,
-          inputSeq: f[o + 14] >>> 0, alive: f[o + 15] === 1, jumpReady: f[o + 16] === 1,
-          animState: f[o + 17] | 0, animFrame: f[o + 18] | 0,
-        };
-      }
+      for (let i = 0; i < n; i++) out[i] = readPlayer(f, i * stride, {});
       return out;
     },
-    getPlayer(id) { return this.getPlayers().find((p) => p.id === id) || null; },
+    // Single-player read without rebuilding every player. Pass `out` to reuse an
+    // object across frames (the camera-follow path); omit it for a fresh object
+    // (predict.js holds before/after snapshots simultaneously).
+    getPlayer(id, out) {
+      const n = M.playerSnapshot(ptr);
+      if (!n) return null;
+      const stride = M.playerSnapshotStride(ptr);
+      const f = new Float32Array(mod.HEAPF32.buffer, M.playerSnapshotPtr(ptr), n * stride);
+      for (let i = 0; i < n; i++) {
+        const o = i * stride;
+        if ((f[o] | 0) === id) return readPlayer(f, o, out || {});
+      }
+      return null;
+    },
 
     // Dropped items + particles (entities; physics owned by the engine). spawnItem
     // returns the new item id; spawnParticle is fire-and-forget cosmetic debris.
@@ -542,6 +565,18 @@ export function createEngineWasm({
       if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
       const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), M.inventorySnapshotStride(ptr));
       return { material: f[0] | 0, isTool: f[1] === 1, toolClass: f[2] | 0, toolTier: f[3] | 0, count: f[4] | 0 };
+    },
+    // Cheap change detector for the HUD: hash the packed snapshot (all fields
+    // are int-valued) without building the 36 slot objects. Includes the
+    // selected footprint so a footprint change refreshes the HUD too.
+    inventoryHash(id) {
+      const n = M.inventorySnapshot(ptr, id | 0);
+      if (!n) return 0;
+      const stride = M.inventorySnapshotStride(ptr);
+      const f = new Float32Array(mod.HEAPF32.buffer, M.inventorySnapshotPtr(ptr), n * stride);
+      let h = 2166136261 >>> 0;
+      for (let i = 0; i < f.length; i++) h = Math.imul(h ^ (f[i] | 0), 16777619) >>> 0;
+      return Math.imul(h ^ (M.selectedFootprint(ptr, id | 0) | 0), 16777619) >>> 0;
     },
     getInventory(id) {
       const n = M.inventorySnapshot(ptr, id | 0);

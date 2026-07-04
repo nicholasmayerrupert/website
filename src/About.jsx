@@ -18,17 +18,17 @@ const EXPERIENCE = [
     blurb:
       'Built a comprehensive course-and-community platform end-to-end, spanning real-time chat, payments, and Zoom-powered live sessions.',
     points: [
-      'Built real-time chat with Socket.io, storing shared images on Amazon S3',
+      'Built real-time chat with WebSocket, storing shared images on Amazon S3',
       'Integrated Stripe to handle payments and checkout',
       'Automated live sessions via the Zoom API, auto-creating meetings and syncing scheduling and attendance',
-      'Designed REST APIs, owned schema design and migrations, and tuned slow queries',
-      'Implemented auth, input validation, and resilient error handling',
+      'Managed user sign-in and authentication, with validation and resilient error handling',
+      'Designed REST APIs, migrated databases, and tuned slow queries',
     ],
     tags: [
       'JavaScript',
       'Handlebars',
       'Node.js',
-      'Socket.io',
+      'WebSocket',
       'Stripe',
       'Zoom API',
       'AWS S3',

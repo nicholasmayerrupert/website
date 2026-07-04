@@ -100,7 +100,7 @@ void glSetCamera(double camX_, double camY_, int cellDev, int viewCols, int view
 // Copy the engine's live camera/viewport (camera.inc) into the GL present state.
 // The camera moved into the engine in P2; the GL compositor reads it through
 // this each frame instead of JS passing it in.
-void glSyncCamera() { glSetCamera(camX, camY, cellDevPx, viewportCols, viewportRows, glGutterOn, glSnapOff); }
+void glSyncCamera() { glSetCamera(cam.camX, cam.camY, cam.cellDevPx, cam.viewportCols, cam.viewportRows, glGutterOn, glSnapOff); }
 // DEV A/B flags (flicker bench): toggle the gutter grid and offset snapping.
 void glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = snapOff; }
 
@@ -385,12 +385,12 @@ void glDrawPreview() {
   // Survival: a "cursor" disc at the local player's aim shows where the tool will
   // act and into which layer — LMB foreground (bright), RMB background (dim), the
   // eraser red. Faded when the aim is out of the player's reach.
-  if (playModeOn && glOwnPlayerId) {
+  if (cam.playModeOn && glOwnPlayerId) {
     Player* lp = nullptr;
     for (auto& pp : players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
     if (lp) {
       int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
-      bool toBg = (pointerBtns & 2) != 0;
+      bool toBg = (cam.pointerBtns & 2) != 0;
       bool erasing = (lp->selectedTool == T_ERASER);
       const SurvivalFootprint* fp = nullptr;
       if (survivalInventory) {

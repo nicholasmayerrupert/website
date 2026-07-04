@@ -264,14 +264,14 @@ EMSCRIPTEN_KEEPALIVE int engine_gl_read_pixels(Engine* e, int x, int y, int w, i
 // semantics; JS forwards raw DOM events and drives the loop.
 EMSCRIPTEN_KEEPALIVE void engine_set_viewport(Engine* e, double dpr, int cellDev, int vCols, int vRows) { e->setViewport(dpr, cellDev, vCols, vRows); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_set(Engine* e, double x, double y) { e->cameraSet(x, y); }
-EMSCRIPTEN_KEEPALIVE void engine_camera_get(Engine* e, double* out) { out[0] = e->camX; out[1] = e->camY; }
+EMSCRIPTEN_KEEPALIVE void engine_camera_get(Engine* e, double* out) { out[0] = e->cam.camX; out[1] = e->cam.camY; }
 EMSCRIPTEN_KEEPALIVE int engine_camera_col_x(Engine* e) { return e->cameraColX(); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_pan_frame(Engine* e, double frameDtMs) { e->cameraPanFrame(frameDtMs); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_follow_to(Engine* e, double cx, double cy) { e->cameraFollowTo(cx, cy); }
 EMSCRIPTEN_KEEPALIVE int engine_stream_world(Engine* e) { return e->streamWorld(); }
 EMSCRIPTEN_KEEPALIVE void engine_input_key(Engine* e, int code, int down) { e->inputKey(code, down); }
 EMSCRIPTEN_KEEPALIVE void engine_input_clear_keys(Engine* e) { e->inputClearKeys(); }
-EMSCRIPTEN_KEEPALIVE int engine_held_keys(Engine* e) { return (int)e->heldKeys; }
+EMSCRIPTEN_KEEPALIVE int engine_held_keys(Engine* e) { return (int)e->cam.heldKeys; }
 EMSCRIPTEN_KEEPALIVE void engine_input_pointer(Engine* e, double cssX, double cssY, int buttons, int inside) { e->inputPointer(cssX, cssY, buttons, inside); }
 EMSCRIPTEN_KEEPALIVE void engine_set_play_mode(Engine* e, int on) { e->setPlayModeOn(on); }
 EMSCRIPTEN_KEEPALIVE void engine_set_draw_mode(Engine* e, int on) { e->setDrawModeOn(on); }

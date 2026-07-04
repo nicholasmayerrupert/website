@@ -783,12 +783,28 @@ export function createSandGame(container, opts = {}) {
     lastFrame = now;
     engine?.cameraPanFrame(frameDt);
 
-    // Fixed-timestep simulation: world-shift + tool application + engine.step
-    // run at STEP_MS for determinism, independent of the per-frame pan above.
+    // Fixed-timestep simulation with catch-up: world-shift + tool application +
+    // engine.step run at STEP_MS for determinism, independent of the per-frame pan
+    // above. We run as many steps as the elapsed real time owes (advancing lastStep
+    // by STEP_MS each, so the sub-step remainder is preserved) — a frame that runs
+    // long no longer permanently drops a step's worth of time, which is what made the
+    // survival character crawl under load. Capped at maxCatchupSteps so a long stall
+    // (tab refocus) or sustained overload sheds its backlog instead of avalanching;
+    // past the cap the sim degrades to slow-motion rather than freezing. A network
+    // client never steps the world locally (the host is authoritative), so it just
+    // pumps the net at STEP_MS cadence as before.
     let stepped = false;
-    if (now - lastStep >= STEP_MS && !testPaused) {
-      stepped = doFixedStep(now);
-      lastStep = now;
+    if (!testPaused) {
+      if (netClientReady()) {
+        if (now - lastStep >= STEP_MS) { doFixedStep(now); lastStep = now; }
+      } else {
+        const maxDebt = STEP_MS * SIZING.maxCatchupSteps;
+        if (now - lastStep > maxDebt) lastStep = now - maxDebt;
+        while (now - lastStep >= STEP_MS) {
+          if (doFixedStep(now)) stepped = true;
+          lastStep += STEP_MS;
+        }
+      }
     }
 
     // Refresh the survival HUD: from the server's inventory when connected as a

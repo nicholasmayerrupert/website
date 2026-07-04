@@ -206,14 +206,24 @@
     if (depth >= caveTop && worldY < caveBottomAbs() && genIsCaveWall(worldX, worldY)) {
       int caveBiome = genCaveBiomeAt(worldX, worldY);
       double detail = whash2(L->gCaveSeed ^ 0x305bu, worldX, worldY);
-      if (caveBiome == CAVE_LUSH && detail > 0.70) return MOSS;
+      if (caveBiome == CAVE_LUSH && detail > 0.55) return MOSS;   // richer moss lining
       if (caveBiome == CAVE_MUSHROOM) {
         double tendril = std::fabs(wfbm2(L->gCaveSeed ^ 0x4d79u, worldX * 0.035, worldY * 0.050, 2, 0.5) - 0.5);
-        if (detail > 0.970 || (detail > 0.70 && tendril < 0.020)) return MYCELIUM;
+        if (detail > 0.960 || (detail > 0.62 && tendril < 0.024)) return MYCELIUM; // denser wall mycelium
       }
-      if (caveBiome == CAVE_CRYSTAL && detail > 0.985) return CRYSTAL;
+      // Crystal specks stud cave walls in EVERY biome (densest in the crystal
+      // biome), so lone 1x1 crystals are common outside the salt caverns too.
+      double crystalCut = caveBiome == CAVE_CRYSTAL ? 0.955 : 0.975;
+      if (detail > crystalCut) return CRYSTAL;
       double moss = wfbm2(L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
       if (moss > 0.74 && detail > 0.88) return MOSS;
+    }
+    // Mycelium doesn't only cling to the cave surface — in a mushroom biome it also
+    // threads THROUGH the surrounding solid stone as embedded veins (like ore), so a
+    // dug wall reveals fungal rock, not just a mossy skin.
+    if (depth >= caveTop && worldY < caveBottomAbs()) {
+      double vein = wridged2(L->gCaveSeed ^ 0x4d80u, worldX * 0.045, worldY * 0.055, 2, 0.5);
+      if (vein > 0.86 && genCaveBiomeAt(worldX, worldY) == CAVE_MUSHROOM) return MYCELIUM;
     }
     return genOreFor(biome, worldX, worldY);                 // solid stone -> maybe an ore vein
   }
@@ -487,12 +497,25 @@
 
       if (caveBiome == CAVE_CRYSTAL) {
         if (hasFloor && h < 0.075) stampCrystalAcidBasin(wx, floorY, gx, gy);
-        else if (hasFloor && h < 0.34) stampSaltPile(wx, floorY, gx, gy);
-        else if ((hasFloor || hasCeil) && h < 0.62) {
+        else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
+        else if ((hasFloor || hasCeil) && h < 0.44) {
+          // GIANT crystal cluster: a tall central spike flanked by shorter ones,
+          // fanned out for a dramatic geode look.
+          bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x333u, gx, gy) < 0.70);
+          int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
+          int bigH = 12 + (int)(whash2(sseed ^ 0x334u, gx, gy) * 16); // 12..27 tall
+          int bigR = 2 + (int)(whash2(sseed ^ 0x335u, gx, gy) * 3);   // 2..4 wide
+          stampCrystalSpike(wx, baseY, dir, bigH, bigR);
+          stampCrystalSpike(wx - 2, baseY, dir, bigH * 2 / 3, imax(1, bigR - 1));
+          stampCrystalSpike(wx + 2, baseY, dir, bigH * 3 / 4, imax(1, bigR - 1));
+          stampCrystalSpike(wx - 4, baseY, dir, bigH / 2, 1);
+          stampCrystalSpike(wx + 4, baseY, dir, bigH / 2, 1);
+        }
+        else if ((hasFloor || hasCeil) && h < 0.74) {
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x331u, gx, gy) < 0.68);
           int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
-          int ht = 4 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 13);
-          stampCrystalSpike(wx, baseY, dir, ht, 1 + (int)(whash2(sseed ^ 0x332u, gx, gy) * 2));
+          int ht = 6 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 16); // taller regular spikes
+          stampCrystalSpike(wx, baseY, dir, ht, 1 + (int)(whash2(sseed ^ 0x332u, gx, gy) * 3));
         }
       } else if (caveBiome == CAVE_MUSHROOM) {
         if (hasFloor && h < 0.50) stampMyceliumTendril(wx, floorY, gx, gy);
@@ -506,26 +529,47 @@
             if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
           }
         }
-        if ((hasFloor || hasCeil) && h > 0.935) {
+        if ((hasFloor || hasCeil) && h > 0.86) {   // 1x1 crystal specks — more common now
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 4), 0);
         }
       } else if (caveBiome == CAVE_LUSH) {
-        if (hasFloor && h < 0.88) {
-          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, h < 0.56 ? PLANT : MOSS);
-          if (h < 0.38 && genOpenCaveAt(wx + 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + 1, floorY, MOSS);
+        // Independent per-feature rolls (not one shared h) so a lush cell can carry a
+        // mossy floor AND drooping vines AND a leafy bush at once -> visibly greener.
+        double pMoss = whash2(sseed ^ 0x101u, gx, gy);
+        double pVine = whash2(sseed ^ 0x102u, gx, gy);
+        double pBush = whash2(sseed ^ 0x103u, gx, gy);
+        // Mossy floor carpet almost everywhere there's a floor, spreading sideways.
+        if (hasFloor && pMoss < 0.92) {
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, pMoss < 0.5 ? PLANT : MOSS);
+          if (genOpenCaveAt(wx + 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + 1, floorY, MOSS);
+          if (pMoss < 0.6 && genOpenCaveAt(wx - 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx - 1, floorY, MOSS);
         }
-        if (hasCeil && h > 0.42) {
-          int len = 3 + (int)(whash2(sseed ^ 0x110u, gx, gy) * 11);
+        // Long drooping vines from the ceiling, often in a second offset strand.
+        if (hasCeil && pVine < 0.80) {
+          int len = 5 + (int)(whash2(sseed ^ 0x110u, gx, gy) * 18);
           for (int i = 0; i < len && genOpenCaveAt(wx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, ceilY + i, VINE);
+          if (pVine < 0.42) {
+            int vdx = whash2(sseed ^ 0x115u, gx, gy) < 0.5 ? 1 : -1;
+            int len2 = 3 + (int)(whash2(sseed ^ 0x114u, gx, gy) * 12);
+            for (int i = 0; i < len2 && genOpenCaveAt(wx + vdx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + vdx, ceilY + i, VINE);
+          }
         }
-        if (hasFloor && h > 0.80) {
-          int ht = 2 + (int)(whash2(sseed ^ 0x111u, gx, gy) * 5);
+        // Leafy green bushes / tall plants rising from the floor with a little crown.
+        if (hasFloor && pBush < 0.50) {
+          int ht = 3 + (int)(whash2(sseed ^ 0x111u, gx, gy) * 6);
           for (int i = 0; i < ht && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, PLANT);
+          int crownY = floorY - ht + 1;
+          for (int cdx = -1; cdx <= 1; cdx += 2) if (genOpenCaveAt(wx + cdx, crownY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + cdx, crownY, PLANT);
         }
-        if ((hasFloor || hasCeil) && h > 0.935) {
+        if ((hasFloor || hasCeil) && h > 0.90) {   // occasional crystal accent
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 4), 0);
+        }
+      } else {   // CAVE_DEFAULT: sparse mineral specks so plain caves still glint
+        if ((hasFloor || hasCeil) && h > 0.88) {
+          int baseY = hasFloor ? floorY : ceilY;
+          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 3), 0);
         }
       }
     }

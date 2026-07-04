@@ -8,6 +8,9 @@ const CLOUD_LIGHT = '#e6ece8';
 const RIDGE_FAR = '#31455b';
 const RIDGE_MID = '#263c44';
 const RIDGE_NEAR = '#1a2d2f';
+// A very dark grey ridge sitting well below the others: it fills the lower screen
+// so freshly-dug caves read against a dim rocky backdrop instead of flat sky.
+const RIDGE_DEEP = '#14171a';
 const HORIZON_RATIO = 0.36;
 const SURFACE_CAM_Y = -120;
 const MAX_VERTICAL_DRIFT_UP = 18;
@@ -166,6 +169,7 @@ export function createParallaxBackground(container) {
     drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 8, 9, RIDGE_FAR, 3.2);
     drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 20, 13, RIDGE_MID, 7.9);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 34, 16, RIDGE_NEAR, 12.4);
+    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 58, 21, RIDGE_DEEP, 18.5);
   };
 
   return {

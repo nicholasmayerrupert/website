@@ -28,7 +28,10 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING) {
   const canvasW = Math.max(1, Math.round(cssW * safeDpr));
   const canvasH = Math.max(1, Math.round(cssH * safeDpr));
   const devPxPerCell = Math.max(canvasW / viewCols, canvasH / viewRows);
-  const cellDev = Math.max(1, Math.round(devPxPerCell));
+  // Ceil, not round: rounding down leaves viewCols*cellDev < canvasW, which shows
+  // as an unpainted strip on the right/bottom (Chrome DPR buckets hit this). Ceiling
+  // guarantees the cell layer always covers the backing store.
+  const cellDev = Math.max(1, Math.ceil(devPxPerCell - 0.001));
   const cellSize = cssW / viewCols;
 
   const chunkSize = cfg.chunkSize || 32;

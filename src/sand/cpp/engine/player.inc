@@ -158,14 +158,13 @@ void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selecte
 // body (not just the center cell) means wading — water at the feet/lower body but
 // not the mid-body center — still registers. coverage is the fraction of the body's
 // cells that are liquid; deterministic (pure grid sampling, no RNG).
-struct PlayerFluidSample {
-  double coverage = 0;
-};
 inline bool playerCellLiquid(int x, int y) {
   if (y < 0 || y >= rows || x < 0 || x >= cols) return false;
   return isLiquidMaterial(grid[I(x, y)]);
 }
-inline PlayerFluidSample samplePlayerFluid(const Player& p) {
+// Returns the liquid coverage (fraction of the player's AABB cells that are
+// liquid). Deterministic: pure grid sampling, no RNG.
+inline double samplePlayerFluidCoverage(const Player& p) {
   int ix0 = (int)std::floor(p.px), ix1 = (int)std::floor(p.px + p.w - 1e-6);
   int iy0 = (int)std::floor(p.py), iy1 = (int)std::floor(p.py + p.h - 1e-6);
   int total = 0, wet = 0;
@@ -175,9 +174,7 @@ inline PlayerFluidSample samplePlayerFluid(const Player& p) {
       if (playerCellLiquid(x, y)) wet++;
     }
   }
-  PlayerFluidSample s;
-  s.coverage = total > 0 ? (double)wet / (double)total : 0;
-  return s;
+  return total > 0 ? (double)wet / (double)total : 0;
 }
 
 void integratePlayer(Player& p) {
@@ -187,9 +184,9 @@ void integratePlayer(Player& p) {
   bool wantJump = (p.input & PI_JUMP) != 0;
   // Two coverage thresholds: past MIN he's "in liquid" (drag + slow sink + slower
   // run); past the higher SWIM threshold he can also swim upward with jump/up.
-  PlayerFluidSample fluid = samplePlayerFluid(p);
-  bool inLiquid = fluid.coverage >= P_LIQUID_MIN_COVERAGE;
-  bool swimming = fluid.coverage >= P_LIQUID_SWIM_COVERAGE;
+  double fluidCoverage = samplePlayerFluidCoverage(p);
+  bool inLiquid = fluidCoverage >= P_LIQUID_MIN_COVERAGE;
+  bool swimming = fluidCoverage >= P_LIQUID_SWIM_COVERAGE;
   double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0);
   if (inLiquid) maxRun *= P_LIQUID_RUN_MULT;
 

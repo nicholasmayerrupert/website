@@ -365,28 +365,16 @@
   inline bool isBlastDamageable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
   inline bool isLooseMedium(uint8_t m) { return isLiquidMaterial(m) || isLooseSolidMaterial(m); }
   inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
-  inline bool isStructuralMaterial(uint8_t m) { return isRigidMaterialClass(m); }
   inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
-  inline bool isBlockingForItem(uint8_t m) { return isBlockingForPlayer(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
-  inline bool canPlaceInto(uint8_t existing) { return isEmptyMaterial(existing) || isGasMaterial(existing); }
-  // Compatibility aliases only. New code should prefer the explicit material
-  // model helpers: isGasMaterial, isLiquidMaterial, isLooseSolidMaterial,
-  // isRigidMaterialClass, isComponentMaterial, and componentGroupOf.
-  inline bool isRigidMaterial(uint8_t m) { return isRigidMaterialClass(m); } // legacy name
-  inline bool isLiquid(uint8_t m) { return isLiquidMaterial(m); }            // legacy name
-  inline bool isGas(uint8_t m) { return isGasMaterial(m); }                  // legacy name
-  // Which rigid-component list a destroyed grid cell belongs to, mirroring
+  // Which rigid-component list a destroyed grid cell belongs to mirrors
   // registerComponentCells' routing (CG_ICE -> ice, CG_PLANT -> plant via
   // isPlantMaterial, else stone). EVERY site that clears a component cell from the
-  // grid (erase, mine, acid) must feed it to splitRigidAfterErase via these, or the
-  // body keeps an invisible cell that still collides/grounds — sand floats on the
-  // hole and powders/liquids won't pass. Keyed on group, not material id, so new
-  // ores/blocks (sandstone, brick, …) are covered with no edit here.
-  // Compatibility aliases only. New code should prefer componentGroupOf plus the
-  // explicit component helpers above.
-  inline bool isStoneComp(uint8_t m) { return isStoneComponentMaterial(m); } // legacy name
-  inline bool isIceComp(uint8_t m) { return isIceComponentMaterial(m); }     // legacy name
+  // grid (erase, mine, acid) must feed it to splitRigidAfterErase via
+  // componentGroupOf, or the body keeps an invisible cell that still
+  // collides/grounds — sand floats on the hole and powders/liquids won't pass.
+  // Keyed on group, not material id, so new ores/blocks (sandstone, brick, …)
+  // are covered with no edit here.
   // Flora-type material classification: which plant-family materials act as a tree
   // trunk vs foliage, and the species<->material mapping. A plant comp is a single
   // species, so its trunk/leaf material is derived from its plantType (and vice

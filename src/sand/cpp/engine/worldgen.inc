@@ -16,7 +16,7 @@
                      BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
   enum CaveBiome : int { CAVE_DEFAULT = 0, CAVE_CRYSTAL = 1, CAVE_MUSHROOM = 2, CAVE_LUSH = 3 };
   static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
-  static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, OIL_POCKET_THRESH, LAVA_THRESH;
+  static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, LAVA_THRESH;
   static const double ORE_FREQ, ORE_THRESH;
   static const int SURFACE_OCT, GEN_SKIN;
   // Biome from a low-frequency SHARED-seed band, so both layers agree. A secondary

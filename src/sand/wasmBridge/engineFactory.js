@@ -16,7 +16,6 @@ export { MAT };
 // (abi.generated.js) — one schema edit changes both sides.
 export { INPUT };
 export const CHUNK_SIZE = 32;
-export const SEED_SIZE = 1;
 
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns

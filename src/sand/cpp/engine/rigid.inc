@@ -634,14 +634,14 @@
       writeGridIndex(k, b->material); baked.insert(k); if (y > yMax) yMax = y;
     });
     if (baked.empty()) return;
-    if (isIceComp(b->material)) registerRigidCells(L->iceComponents, L->nextIceId, b->material, baked, yMax, true);
+    if (isIceComponentMaterial(b->material)) registerRigidCells(L->iceComponents, L->nextIceId, b->material, baked, yMax, true);
     else if (isPlantMaterial(b->material)) registerPlantCells(b->material, baked, yMax); // wood/plant body -> inert plant component (analogue of the stone path)
     else registerRigidCells(L->stoneComponents, L->nextStoneId, b->material, baked, yMax, false);
   }
   // Every solid component material has a static form to bake into: stone-group
   // (stone/ores/brick/TNT), ice, and plant-family (wood/plant/cactus/…). Only the
   // generic RIGID cube has no terrain form, so it stays a free body forever.
-  bool bodySolidifies(uint8_t m) { return isStoneComp(m) || isIceComp(m) || isPlantMaterial(m); }
+  bool bodySolidifies(uint8_t m) { return isStoneComponentMaterial(m) || isIceComponentMaterial(m) || isPlantMaterial(m); }
   // A sleeping body bakes UNLESS it is FLOATING in liquid. "Floating" = its
   // bottom-edge contact is predominantly liquid (a wood log bobbing on water).
   // Powders never provide upward support, so a body in grains can only sink.

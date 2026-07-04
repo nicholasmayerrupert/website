@@ -80,7 +80,7 @@
         if (acidEats(a)) target = a; else if (acidEats(b)) target = b; else if (acidEats(c)) target = c; else if (acidEats(d)) target = d;
         if (target < 0) continue;
         uint8_t tm = grid[target];
-        if (isStoneComp(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (isIceComp(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (isPlantMaterial(tm)) dissolvedPlant = true;
+        if (isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (isPlantMaterial(tm)) dissolvedPlant = true;
         // Dissolving releases acrid smoke (a yellow gas that rises/dissipates like
         // steam) from the dissolved cell ~half the time; otherwise it leaves space.
         if (rand() < ACRID_SMOKE_P) { writeGridIndex(target, ACRID_SMOKE); markCellIndex(target); }

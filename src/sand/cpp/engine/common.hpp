@@ -28,7 +28,7 @@
 #include "gl_shared.hpp"
 
 // Tunables (mirror engine.js)
-static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5, SEED_SIZE = 1;
+static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5;
 static const int   MAX_WATER_FLOW = 10;
 // Surface levelling stays local: look ahead only to decide whether a side leads to
 // a meaningfully lower connected surface, then move one cell sideways. Two passes
@@ -145,7 +145,7 @@ struct Body {
   double offsetX = 0, offsetY = 0;
   double px = 0, py = 0, angle = 0;
   double vx = 0, vy = 0, omega = 0;
-  uint8_t material = 13; double density = 1;
+  uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   std::vector<float> points; int nPts = 0;

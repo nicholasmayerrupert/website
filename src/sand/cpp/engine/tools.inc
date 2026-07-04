@@ -224,7 +224,7 @@
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy);
       // body-material invariant: body cells hold their real material; the body system erases them, the component-split system erases static cells.
       if (isBodyCell(k)) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } changed = true; }
-      else if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
+      else if (grid[k] != EMPTY) { if (isStoneComponentMaterial(grid[k])) erasedStone.push_back(k); else if (isIceComponentMaterial(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
@@ -244,7 +244,7 @@
     for (int k : cells) {
       // body-material invariant: body cells hold their real material; the body system erases them, the component-split system erases static cells.
       if (isBodyCell(k)) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } changed = true; }
-      else if (grid[k] != EMPTY) { if (isStoneComp(grid[k])) erasedStone.push_back(k); else if (isIceComp(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
+      else if (grid[k] != EMPTY) { if (isStoneComponentMaterial(grid[k])) erasedStone.push_back(k); else if (isIceComponentMaterial(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     }
     finishErasedBodies(dirtyBodies, L->bodyCells);
@@ -355,7 +355,7 @@
       }
       // body-material invariant: mining a body cell drops its real material and removes it from the body; static cells split their component.
       if (isBodyCell(k)) { lastMinedCells.push_back({m, k}); if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } }
-      else { if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k); if (isPlantMaterial(m)) erasedPlant = true; lastMinedCells.push_back({m, k}); grid[k] = EMPTY; }
+      else { if (isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (isIceComponentMaterial(m)) erasedIce.push_back(k); if (isPlantMaterial(m)) erasedPlant = true; lastMinedCells.push_back({m, k}); grid[k] = EMPTY; }
       L->mineDamage[k] = 0; changed = 1;
       if (draft.erase(k)) changed = 1;
     } }
@@ -396,7 +396,7 @@
         if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b;
         if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; }
       } else {
-        if (isStoneComp(m)) erasedStone.push_back(k); else if (isIceComp(m)) erasedIce.push_back(k);
+        if (isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (isIceComponentMaterial(m)) erasedIce.push_back(k);
         if (isPlantMaterial(m)) erasedPlant = true;
         lastMinedCells.push_back({m, k});
         grid[k] = EMPTY;
@@ -539,16 +539,15 @@
     if (!cells.empty()) L->skyDirty = true;
     registerComponentCells(draftMaterial, cells);
   }
+  // A seed is a single cell (the old SEED_SIZE generalization was never used).
   bool getSeedOrigin(int cx, int cy, int& x0, int& y0) {
-    x0 = SEED_SIZE == 1 ? cx : (int)std::floor(cx - SEED_SIZE / 2.0);
-    y0 = SEED_SIZE == 1 ? cy : (int)std::floor(cy - SEED_SIZE / 2.0);
-    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return false;
-    return true;
+    x0 = cx;
+    y0 = cy;
+    return x0 > 0 && y0 > 0 && x0 + 1 < cols && y0 + 1 <= rows;
   }
   bool canPlaceSeedAt(int x0, int y0) {
-    if (x0 <= 0 || y0 <= 0 || x0 + SEED_SIZE >= cols || y0 + SEED_SIZE > rows) return false;
-    for (int y = y0; y < y0 + SEED_SIZE; y++) for (int x = x0; x < x0 + SEED_SIZE; x++) if (grid[I(x, y)] != EMPTY) return false;
-    return true;
+    if (x0 <= 0 || y0 <= 0 || x0 + 1 >= cols || y0 + 1 > rows) return false;
+    return grid[I(x0, y0)] == EMPTY;
   }
   bool placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_OAK); }
   // Place a seed of a given species. The comp carries the plantType so growth.inc
@@ -557,10 +556,10 @@
   bool placeSeedAtTyped(int x0, int y0, uint8_t pt) {
     if (!canPlaceSeedAt(x0, y0)) return false;
     Comp c; c.id = L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
-    for (int y = y0; y < y0 + SEED_SIZE; y++) for (int x = x0; x < x0 + SEED_SIZE; x++) { int k = I(x, y); grid[k] = SEED; c.cells.push_back(k); if (y > c.yMax) c.yMax = y; } // fresh component, distinct cells
+    { int k = I(x0, y0); grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
     L->plantComponents.push_back(std::move(c));
     L->skyDirty = true;
-    markDirtyRect(x0 - 1, y0 - 1, x0 + SEED_SIZE, y0 + SEED_SIZE);
+    markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
     return true;
   }
   bool placeMyceliumSporeAt(int x0, int y0) {
@@ -649,8 +648,8 @@
       lastDraftCx -= dx; lastDraftCy -= dy;
       if (lastDraftCx < 0 || lastDraftCx >= cols || lastDraftCy < 0 || lastDraftCy >= rows) draftStrokeActive = false;
     }
-    if (hasSeedOrigin) { seedOriginX -= dx; seedOriginY -= dy; // seed origin is a buffer-space top-left corner; same delta
-      if (seedOriginX < 0 || seedOriginX + SEED_SIZE > cols || seedOriginY < 0 || seedOriginY + SEED_SIZE > rows) hasSeedOrigin = false; }
+    if (hasSeedOrigin) { seedOriginX -= dx; seedOriginY -= dy; // seed origin is a buffer-space cell; same delta
+      if (seedOriginX < 0 || seedOriginX + 1 > cols || seedOriginY < 0 || seedOriginY + 1 > rows) hasSeedOrigin = false; }
   }
   void remapEmitStrokeForShift(int dx, int dy) {
     if (!emitStrokeActive || (!dx && !dy)) return;

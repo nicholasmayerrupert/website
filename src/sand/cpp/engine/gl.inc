@@ -379,8 +379,7 @@ void glDrawPreview() {
     bool valid = canPlaceSeedAt(seedOriginX, seedOriginY);
     if (valid) glUniform4f(glc->uColor, df * 120 / 255.0f, df * 190 / 255.0f, df * 100 / 255.0f, 0.32f);
     else       glUniform4f(glc->uColor, 255 / 255.0f, 80 / 255.0f, 80 / 255.0f, 0.24f);
-    for (int y = seedOriginY; y < seedOriginY + SEED_SIZE; y++)
-      for (int x = seedOriginX; x < seedOriginX + SEED_SIZE; x++) cell(x, y);
+    cell(seedOriginX, seedOriginY); // a seed is a single cell
   }
 
   // Survival: a "cursor" disc at the local player's aim shows where the tool will

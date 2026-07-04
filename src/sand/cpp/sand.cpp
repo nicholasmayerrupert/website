@@ -60,4 +60,7 @@ const int Engine::GEN_SKIN = 1;
 const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
+// Out-of-line method bodies for the extracted subsystem classes (need Engine).
+#include "engine/netsync_impl.inc"
+
 #include "engine/abi.inc"

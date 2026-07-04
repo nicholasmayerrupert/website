@@ -305,7 +305,6 @@
   // reads this to decide drops against the acting player's held tool (Phase C).
   std::vector<std::pair<uint8_t, int>> lastMinedCells;
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
-  std::vector<uint8_t> netBlob;      // scratch buffer for world snapshot / diff serialization
   // Renderer tables (material -> RGBA). Shared (layer-agnostic). Uses a SEPARATE
   // rng so per-frame fire/steam flicker never perturbs the simulation.
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material

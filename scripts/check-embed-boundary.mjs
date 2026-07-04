@@ -11,14 +11,11 @@ const root = process.cwd();
 const entry = resolve(root, 'src/sand/embed/sandGame.js');
 const srcRoot = resolve(root, 'src');
 
+// The structural rule below (everything in src/ must live under src/sand/)
+// covers the site app; list here only sand-internal paths the embed must not
+// pull in.
 const forbiddenPathPatterns = [
-  /(^|\/)src\/App\.(jsx?|tsx?)$/,
-  /(^|\/)src\/main\.(jsx?|tsx?)$/,
-  /(^|\/)src\/index\.css$/,
-  /(^|\/)src\/components\//,
-  /(^|\/)src\/pages\//,
-  /(^|\/)src\/assets\//,
-  /(^|\/)src\/styles\//,
+  /(^|\/)src\/sand\/react\//,
 ];
 const forbiddenBarePackages = [
   /^@vitejs\//,
@@ -65,6 +62,9 @@ function checkFile(path) {
   const relFile = rel(file);
   if (!file.startsWith(srcRoot) && !file.includes('/src/sand/wasm/')) {
     failures.push(`${relFile}: outside src/ boundary`);
+  }
+  if (relFile.startsWith('src/') && !relFile.startsWith('src/sand/')) {
+    failures.push(`${relFile}: forbidden site dependency (embed may only import src/sand/)`);
   }
   for (const pattern of forbiddenPathPatterns) {
     if (pattern.test(relFile)) failures.push(`${relFile}: forbidden site dependency`);

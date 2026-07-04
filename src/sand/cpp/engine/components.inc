@@ -567,6 +567,38 @@
     return id < (int)lay.plantComponents.size();
   }
 
+  // Side/bottom face contact of a cell set against a grid (top faces excluded on
+  // purpose: top liquid never creates support/lift). Shared by the single-layer
+  // buoyancy decision (moveRigidAssemblies) and the cross-layer descend decision
+  // (moveCrossLayerBondedAssemblies) — the latter accumulates over both layers
+  // and ignores the `faces` total.
+  struct FaceContact {
+    int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0;
+    double liquidDensityArea = 0, powderDensityArea = 0;
+  };
+  void accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c) {
+    for (int k : cells) {
+      int y = k / cols, x = k - y * cols;
+      const int offs[3] = { -1, 1, cols };
+      for (int i = 0; i < 3; i++) {
+        int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == cols ? 1 : 0);
+        if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
+        if (cells.count(nk)) continue;
+        uint8_t m = g[nk];
+        c.faces++;
+        if (isLiquidMaterial(m)) {
+          c.liquidFaces++;
+          c.liquidDensityArea += DENSITY[m];
+          if (offs[i] == cols) c.bottomLiquidFaces++;
+        } else if (isLooseSolidMaterial(m)) {
+          c.powderFaces++;
+          c.powderDensityArea += DENSITY[m];
+          if (offs[i] == cols) c.bottomPowderFaces++;
+        }
+      }
+    }
+  }
+
   void moveCrossLayerBondedAssemblies() {
     int nf = compCount(fg), nb = compCount(bg);
     if (cgBonds.empty() || nf == 0 || nb == 0) return;
@@ -607,36 +639,10 @@
         for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
       }
     };
-    struct CrossFaceContact {
-      int liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0;
-      double liquidDensityArea = 0, powderDensityArea = 0;
-    };
-    auto addCrossLayerContact = [&](Layer& lay, const std::unordered_set<int>& own, CrossFaceContact& c) {
-      uint8_t* g = lay.grid;
-      for (int k : own) {
-        int y = k / cols, x = k - y * cols;
-        const int offs[3] = { -1, 1, cols }; // side + bottom only; top liquid never creates support/lift
-        for (int i = 0; i < 3; i++) {
-          int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == cols ? 1 : 0);
-          if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
-          if (own.count(nk)) continue;
-          uint8_t m = g[nk];
-          if (isLiquidMaterial(m)) {
-            c.liquidFaces++;
-            c.liquidDensityArea += DENSITY[m];
-            if (offs[i] == cols) c.bottomLiquidFaces++;
-          } else if (isLooseSolidMaterial(m)) {
-            c.powderFaces++;
-            c.powderDensityArea += DENSITY[m];
-            if (offs[i] == cols) c.bottomPowderFaces++;
-          }
-        }
-      }
-    };
     auto crossLayerShouldDescend = [&](double density, const std::unordered_set<int>& fCells, const std::unordered_set<int>& bCells) {
-      CrossFaceContact c;
-      addCrossLayerContact(fg, fCells, c);
-      addCrossLayerContact(bg, bCells, c);
+      FaceContact c;
+      accumulateFaceContact(fg.grid, fCells, c);
+      accumulateFaceContact(bg.grid, bCells, c);
       if (c.liquidFaces > 0) {
         double liquidDensity = c.liquidDensityArea / c.liquidFaces;
         if (density > liquidDensity + 1e-6) return true;
@@ -949,37 +955,9 @@
       return true;
     };
 
-    struct FaceContact {
-      int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0;
-      double liquidDensityArea = 0, powderDensityArea = 0;
-    };
-    auto measureFaceContact = [&](std::unordered_set<int>& cells) {
-      FaceContact c;
-      for (int k : cells) {
-        int y = k / cols, x = k - y * cols;
-        const int offs[3] = { -1, 1, cols }; // side + bottom area only; top liquid never creates lift
-        for (int i = 0; i < 3; i++) {
-          int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == cols ? 1 : 0);
-          if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows) continue;
-          if (cells.count(nk)) continue;
-          uint8_t m = grid[nk];
-          c.faces++;
-          if (isLiquidMaterial(m)) {
-            c.liquidFaces++;
-            c.liquidDensityArea += DENSITY[m];
-            if (offs[i] == cols) c.bottomLiquidFaces++;
-          } else if (isLooseSolidMaterial(m)) {
-            c.powderFaces++;
-            c.powderDensityArea += DENSITY[m];
-            if (offs[i] == cols) c.bottomPowderFaces++;
-          }
-        }
-      }
-      return c;
-    };
-
     auto motionDecision = [&](std::unordered_set<int>& cells, double avgDensity) -> int {
-      FaceContact c = measureFaceContact(cells);
+      FaceContact c;
+      accumulateFaceContact(grid, cells, c);
       bool powderSupports = false;
       if (c.powderFaces > 0) {
         double powderDensity = c.powderDensityArea / c.powderFaces;

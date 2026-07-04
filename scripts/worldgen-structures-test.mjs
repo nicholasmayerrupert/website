@@ -142,7 +142,11 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
   check(`acid basin bottoms are crystal-lined (${acidBottomCrystal}/${acidBottomBoundary})`, acidBottomBoundary > 0 && acidBottomCrystal === acidBottomBoundary);
   check(`acid basin solid side walls are crystal (${acidSideCrystal}/${acidSideBoundary})`, acidSideBoundary > 0 && acidSideCrystal === acidSideBoundary);
   check(`acid basin edges are grounded into stone (${stoneBankComponents}/${basinComponents})`, basinComponents > 0 && stoneBankComponents > basinComponents * 0.80);
-  check(`acid has substantial crystal contact (${acidTouchCrystal}/${acid} touch crystal, ${acidOverCrystal} sit directly on crystal)`, acidTouchCrystal > acid * 0.20 && acidOverCrystal > acid * 0.10);
+  // Acid basins are now large lakes, so the crystal lining (a perimeter) is a
+  // smaller fraction of the acid VOLUME than it was for the old small ponds — but
+  // every basin bottom/wall is still crystal (asserted above). Contact stays well
+  // above a tenth of the acid.
+  check(`acid has substantial crystal contact (${acidTouchCrystal}/${acid} touch crystal, ${acidOverCrystal} sit directly on crystal)`, acidTouchCrystal > acid * 0.10 && acidOverCrystal > acid * 0.05);
   check(`acid does not start adjacent to dissolvable cave walls (${acidTouchDissolvable})`, acidTouchDissolvable === 0);
 }
 

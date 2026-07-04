@@ -489,7 +489,7 @@
   void fillCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (L->isBackground) return;
     uint32_t sseed = L->gCaveSeed ^ 0xF3A741u;
-    static const int FEATURE_LATTICE = 11, FEATURE_REACH = 30;
+    static const int FEATURE_LATTICE = 11, FEATURE_REACH = 40; // >= widest feature (big acid lakes)
     int wx0 = L->worldOffsetX + colStart - FEATURE_REACH, wx1 = L->worldOffsetX + colEnd + FEATURE_REACH;
     int wy0 = L->worldOffsetY + rowStart - FEATURE_REACH, wy1 = L->worldOffsetY + rowEnd + FEATURE_REACH;
     int lxMin = floorDiv(wx0, FEATURE_LATTICE), lxMax = floorDiv(wx1, FEATURE_LATTICE);
@@ -509,12 +509,13 @@
       return false;
     };
     auto stampCrystalSpike = [&](int wx, int baseY, int dir, int ht, int baseRad) {
+      // Width is purely the tapering radius (no height-driven base flare — that was
+      // what made tall spikes balloon out sideways). Base width = 2*baseRad+1,
+      // narrowing to a point every 4 rows up.
       for (int i = 0; i < ht && genOpenCaveAt(wx, baseY + dir * i); i++) {
-        int rad = imax(0, baseRad - i / 3);
-        for (int dx = -rad; dx <= rad; dx++) {
-          if (std::abs(dx) * 2 + i > baseRad * 4 + ht / 3) continue;
+        int rad = imax(0, baseRad - i / 4);
+        for (int dx = -rad; dx <= rad; dx++)
           putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, baseY + dir * i, CRYSTAL);
-        }
       }
     };
     auto stampSaltPile = [&](int wx, int floorY, int gx, int gy) {
@@ -558,12 +559,12 @@
       }
     };
     auto stampCrystalAcidBasin = [&](int wx, int floorY, int gx, int gy) {
-      // Much wider size spread than before: the product of two rolls skews toward
-      // small caustic ponds with rarer big lakes. Depth tracks width so even the
-      // wide basins stay rounded (never a flat acid smear).
+      // Big lakes are the norm: taking the MAX of two rolls skews the size toward
+      // the large end, and the floor keeps out tiny ponds entirely. Depth tracks
+      // width so even the widest basins stay rounded (never a flat acid smear).
       double av = whash2(sseed ^ 0x440u, gx, gy), bv = whash2(sseed ^ 0x441u, gx, gy);
-      int rx = 4 + (int)(av * bv * 20);                                    // 4..24
-      int ry = 2 + (int)(whash2(sseed ^ 0x442u, gx, gy) * 5) + rx / 4;     // depth grows with width
+      int rx = 12 + (int)(std::fmax(av, bv) * 23);                         // 12..35, large-skewed
+      int ry = 3 + (int)(whash2(sseed ^ 0x442u, gx, gy) * 5) + rx / 5;     // depth grows with width (lake-like)
       for (int dx = -rx - 4; dx <= rx + 4; dx++) {
         int px = wx + dx;
         double ax = (double)std::abs(dx);
@@ -628,23 +629,23 @@
         if (hasFloor && h < 0.038) stampCrystalAcidBasin(wx, floorY, gx, gy);   // ~half as common as before
         else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
         else if ((hasFloor || hasCeil) && h < 0.44) {
-          // GIANT crystal cluster: a tall central spike flanked by shorter ones,
-          // fanned out for a dramatic geode look.
+          // GIANT crystal cluster: a slender central spire hugged by a couple of
+          // shorter ones — a tight bouquet, not a wide fan.
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x333u, gx, gy) < 0.70);
           int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
-          int bigH = 8 + (int)(whash2(sseed ^ 0x334u, gx, gy) * 11); // 8..18 tall (smaller geodes)
-          int bigR = 2 + (int)(whash2(sseed ^ 0x335u, gx, gy) * 2);  // 2..3 wide
+          int bigH = 7 + (int)(whash2(sseed ^ 0x334u, gx, gy) * 8); // 7..14 tall
+          int bigR = 1 + (int)(whash2(sseed ^ 0x335u, gx, gy) * 2); // 1..2 wide
           stampCrystalSpike(wx, baseY, dir, bigH, bigR);
-          stampCrystalSpike(wx - 2, baseY, dir, bigH * 2 / 3, imax(1, bigR - 1));
-          stampCrystalSpike(wx + 2, baseY, dir, bigH * 3 / 4, imax(1, bigR - 1));
-          stampCrystalSpike(wx - 4, baseY, dir, bigH / 2, 1);
-          stampCrystalSpike(wx + 4, baseY, dir, bigH / 2, 1);
+          stampCrystalSpike(wx - 1, baseY, dir, bigH * 2 / 3, 1);
+          stampCrystalSpike(wx + 1, baseY, dir, bigH * 3 / 4, 1);
+          stampCrystalSpike(wx - 2, baseY, dir, bigH / 2, 0);
+          stampCrystalSpike(wx + 2, baseY, dir, bigH / 2, 0);
         }
         else if ((hasFloor || hasCeil) && h < 0.74) {
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x331u, gx, gy) < 0.68);
           int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
-          int ht = 4 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 10); // 4..13 regular spikes
-          stampCrystalSpike(wx, baseY, dir, ht, 1 + (int)(whash2(sseed ^ 0x332u, gx, gy) * 2));
+          int ht = 3 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 8); // 3..10 slender spikes
+          stampCrystalSpike(wx, baseY, dir, ht, 1);
         }
       } else if (caveBiome == CAVE_MUSHROOM) {
         if (hasFloor && h < 0.50) stampMyceliumTendril(wx, floorY, gx, gy);
@@ -658,9 +659,9 @@
             if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
           }
         }
-        if ((hasFloor || hasCeil) && h > 0.76) {   // glinting crystal specks — brighten the fungal dark
+        if ((hasFloor || hasCeil) && h > 0.66) {   // little crystal spikes — brighten the fungal dark
           int baseY = hasFloor ? floorY : ceilY;
-          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 4), 0);
+          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 3 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 5), whash2(sseed ^ 0x22Au, gx, gy) < 0.4 ? 1 : 0);
         }
       } else if (caveBiome == CAVE_LUSH) {
         // Independent per-feature rolls (not one shared h) so a lush cell can carry a
@@ -691,16 +692,16 @@
           int crownY = floorY - ht + 1;
           for (int cdx = -1; cdx <= 1; cdx += 2) if (genOpenCaveAt(wx + cdx, crownY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + cdx, crownY, PLANT);
         }
-        if ((hasFloor || hasCeil) && h > 0.82) {   // crystal accents scattered through the greenery
+        if ((hasFloor || hasCeil) && h > 0.74) {   // crystal accents scattered through the greenery
           int baseY = hasFloor ? floorY : ceilY;
-          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 4), 0);
+          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 3 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 5), whash2(sseed ^ 0x113u, gx, gy) < 0.4 ? 1 : 0);
         }
       } else {   // CAVE_DEFAULT: the darkest caves — seed them with the most glinting minerals
-        if ((hasFloor || hasCeil) && h > 0.68) {
+        if ((hasFloor || hasCeil) && h > 0.58) {
           int baseY = hasFloor ? floorY : ceilY, dir = hasFloor ? -1 : 1;
-          // occasionally a small clustered spike, otherwise a lone glinting speck
-          if (h > 0.94) stampCrystalSpike(wx, baseY, dir, 3 + (int)(whash2(sseed ^ 0x229u, gx, gy) * 4), 1);
-          else stampCrystalSpike(wx, baseY, dir, 2 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 3), 0);
+          // often a small clustered spike, otherwise a lone slender one
+          if (h > 0.86) stampCrystalSpike(wx, baseY, dir, 4 + (int)(whash2(sseed ^ 0x229u, gx, gy) * 5), 1);
+          else stampCrystalSpike(wx, baseY, dir, 3 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 4), whash2(sseed ^ 0x22Bu, gx, gy) < 0.35 ? 1 : 0);
         }
       }
     }

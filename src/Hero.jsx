@@ -2,13 +2,18 @@ import { useState } from "react";
 import SplitText from "./SplitText";
 import { SandGame } from "./sand/react/SandGame";
 
+// /fps renders the normal portfolio but flips the hero's sand game into a
+// performance-monitoring view (fps / tickrate / timings in the top-right).
+const PERF_ROUTE = typeof window !== 'undefined' &&
+  window.location.pathname.replace(/\/+$/, '') === '/fps';
+
 const Hero = () => {
   const [drawModeActive, setDrawModeActive] = useState(false);
 
   return (
     <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       <div className="absolute inset-0 z-10">
-        <SandGame mode="creative" onDrawModeChange={setDrawModeActive} />
+        <SandGame mode="creative" onDrawModeChange={setDrawModeActive} perfHud={PERF_ROUTE} />
       </div>
 
       {/* Text block */}

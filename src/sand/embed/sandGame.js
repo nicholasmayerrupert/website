@@ -47,6 +47,15 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   backdrop-filter: blur(4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3);
   -webkit-tap-highlight-color: transparent; }
 .sg-zoom button:active { background: rgba(255,255,255,.82); color: #000; }
+.sg-perf { position: absolute; top: 64px; right: 12px; z-index: 72; pointer-events: none;
+  min-width: 150px; padding: 8px 10px; border-radius: 8px; font-size: 11px; line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e5e7eb;
+  background: rgba(17,24,39,.55); border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px); }
+.sg-perf .sg-perf-title { display: block; font-size: 9px; letter-spacing: .08em; text-transform: uppercase;
+  color: #9ca3af; margin-bottom: 4px; }
+.sg-perf .sg-perf-row { display: flex; justify-content: space-between; gap: 12px; white-space: nowrap; }
+.sg-perf .sg-perf-row span:last-child { color: #fff; font-variant-numeric: tabular-nums; }
 `;
 
 // Mobile-only analog thumbstick. Maps the knob offset to the same four movement
@@ -162,6 +171,77 @@ function createZoomButtons(root, game) {
   return { destroy() { wrap.remove(); } };
 }
 
+// Live performance overlay (the /fps route). A tiny top-right panel that polls
+// game.perfStats() and derives fps (its own rAF cadence) + tickrate (sim-step
+// delta) over a rolling ~500ms window. Read-only, pointer-events: none.
+function createPerfHud(root, game) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sg-perf';
+  const title = document.createElement('span');
+  title.className = 'sg-perf-title';
+  title.textContent = 'Performance';
+  wrap.appendChild(title);
+
+  const rows = {};
+  const addRow = (key, label) => {
+    const row = document.createElement('div');
+    row.className = 'sg-perf-row';
+    const l = document.createElement('span');
+    l.textContent = label;
+    const v = document.createElement('span');
+    v.textContent = '–';
+    row.append(l, v);
+    wrap.appendChild(row);
+    rows[key] = v;
+  };
+  addRow('fps', 'fps');
+  addRow('tps', 'tick/s');
+  addRow('step', 'step ms');
+  addRow('render', 'render ms');
+  addRow('frame', 'frame p95');
+  addRow('dirty', 'dirty chunks');
+  addRow('shifts', 'world shifts');
+  addRow('heap', 'heap MB');
+  addRow('grid', 'grid');
+  addRow('tick', 'tick');
+  root.appendChild(wrap);
+
+  let raf = 0;
+  let frames = 0;
+  let winStart = performance.now();
+  let lastTick = null;
+  const tick = () => {
+    raf = requestAnimationFrame(tick);
+    frames++;
+    const now = performance.now();
+    const dt = now - winStart;
+    if (dt < 500) return;
+    const s = game.perfStats ? game.perfStats() : null;
+    const fps = (frames * 1000) / dt;
+    let tps = 0;
+    if (s) {
+      if (lastTick !== null) tps = ((s.tick - lastTick) * 1000) / dt;
+      lastTick = s.tick;
+    }
+    frames = 0;
+    winStart = now;
+    if (!s) return;
+    rows.fps.textContent = fps.toFixed(0);
+    rows.tps.textContent = tps.toFixed(0);
+    rows.step.textContent = s.stepMs.toFixed(2);
+    rows.render.textContent = s.renderMs.toFixed(2);
+    rows.frame.textContent = s.p95FrameMs.toFixed(2);
+    rows.dirty.textContent = String(s.dirtyChunks);
+    rows.shifts.textContent = String(s.worldShifts);
+    rows.heap.textContent = s.heapMB.toFixed(1);
+    rows.grid.textContent = `${s.cols}×${s.rows}`;
+    rows.tick.textContent = String(s.tick);
+  };
+  raf = requestAnimationFrame(tick);
+
+  return { destroy() { cancelAnimationFrame(raf); wrap.remove(); } };
+}
+
 function setPageScrollLocked(lock) {
   if (typeof document === 'undefined') return;
   const html = document.documentElement;
@@ -269,6 +349,8 @@ class SandGameElement extends HTMLElement {
         game.setDrawMode(drawDefault);
         this._palette?.setDrawMode(drawDefault);
         if (coarse) this._stick = createMobileJoystick(root, game);
+        // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).
+        if (this.hasAttribute('perf-hud')) this._perfHud = createPerfHud(root, game);
       })
       .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 
@@ -284,8 +366,9 @@ class SandGameElement extends HTMLElement {
     this._mp?.destroy();
     this._stick?.destroy();
     this._zoom?.destroy();
+    this._perfHud?.destroy();
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = null;
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = this._perfHud = null;
     this._mounted = false;
   }
 

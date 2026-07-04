@@ -885,6 +885,32 @@ export function createSandGame(container, opts = {}) {
     getZoom() { return { index: zoomIndex, factor: zoomFactor(), count: SIZING.zoomSteps.length }; },
     // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).
     setCreativeMaterial(kind, value) { engine?.setCreativeMaterial(kind, value); },
+    // Live performance snapshot for the on-screen perf HUD (the /fps route). Mirrors
+    // the DEV-only window.__sandPerf but is always available. fps/tickrate are left
+    // to the caller to derive from wall-clock deltas of `tick` + its own frames.
+    perfStats() {
+      const n = perfSampleCount;
+      let avg = 0, p95 = 0;
+      if (n > 0) {
+        const sums = [];
+        for (let i = 0; i < n; i++) sums.push(perfStepSamples[i] + perfRenderSamples[i]);
+        sums.sort((a, b) => a - b);
+        avg = sums.reduce((a, b) => a + b, 0) / n;
+        p95 = sums[Math.min(n - 1, Math.floor(n * 0.95))];
+      }
+      const perf = engine ? engine.getPerf() : { stepMs: 0, dirtyChunks: 0 };
+      return {
+        stepMs: perf.stepMs,
+        renderMs: perfRenderMs,
+        avgFrameMs: avg,
+        p95FrameMs: p95,
+        dirtyChunks: perf.dirtyChunks,
+        tick: engine ? engine.getTick() : 0,
+        worldShifts: engine ? engine.getWorldShiftCount() : 0,
+        heapMB: engine ? engine.getHeapBytes() / (1024 * 1024) : 0,
+        rows, cols,
+      };
+    },
     netJoin(url, room) { return netJoin(url, room); },
     netDisconnect() { netDisconnect(); },
     netStatus() { return netStatus(); },

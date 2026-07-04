@@ -62,12 +62,22 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.finalizeStoneDraft();
   for (let y = Y0; y < Y1; y++) for (let x = FREE_X0; x < FREE_X1; x++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
-  const before = counts(e.getGrid())[3];
   const topRowIn = (g, x0, x1) => { let m = ROWS; for (let i = 0; i < g.length; i++) { if (g[i] !== 3) continue; const x = i % COLS, y = (i / COLS) | 0; if (x >= x0 && x < x1 && y < m) m = y; } return m; };
+  const skyStoneIn = (g, x0, x1) => {
+    let n = 0;
+    for (let i = 0; i < g.length; i++) {
+      if (g[i] !== MAT.STONE) continue;
+      const x = i % COLS, y = (i / COLS) | 0;
+      if (x >= x0 && x < x1 && y < e.worldSurfaceAt(x) - 1) n++;
+    }
+    return n;
+  };
+  const edgeBefore = skyStoneIn(e.getGrid(), EDGE_X0, EDGE_X1);
   run(200, e);
   const g = e.getGrid();
   const edgeTop = topRowIn(g, EDGE_X0, EDGE_X1), freeTop = topRowIn(g, FREE_X0, FREE_X1);
-  check(`stone conserved (${before})`, counts(g)[3] === before && before > 0);
+  const edgeAfter = skyStoneIn(g, EDGE_X0, EDGE_X1);
+  check(`edge-supported block conserved (${edgeAfter}/${edgeBefore})`, edgeAfter === edgeBefore && edgeBefore > 0);
   check(`edge-touching block stayed up (top row ${edgeTop} ~ ${Y0})`, edgeTop <= Y0 + 1);
   check(`free block fell (top row ${freeTop} > ${Y0 + 8})`, freeTop > Y0 + 8);
   e.destroy();

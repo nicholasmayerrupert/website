@@ -40,17 +40,6 @@ inline int lightLossFor(uint8_t m) {
   return 20;
 }
 
-inline uint8_t emissionFor(uint8_t m) {
-  switch (m) {
-    case FIRE: return 245;
-    case LAVA: return 230;
-    case CRYSTAL: return 132;
-    case MYCELIUM_SPORE: return 112;
-    case MYCELIUM: return 58;
-    default: return 0;
-  }
-}
-
 inline uint32_t renderCellHash(int wx, int wy) {
   uint32_t h = (uint32_t)wx * 0x9e3779b1u;
   h ^= (uint32_t)wy * 0x85ebca77u;
@@ -65,8 +54,19 @@ inline bool myceliumNoduleAt(int wx, int wy) {
 
 static constexpr uint8_t CROSS_LAYER_EMISSIVE_LOSS = 28;
 
-inline uint8_t crossLayerEmissionFor(uint8_t m) {
-  uint8_t e = emissionFor(m);
+inline uint8_t emissionForCell(uint8_t m, int wx, int wy) {
+  switch (m) {
+    case FIRE: return 245;
+    case LAVA: return 230;
+    case CRYSTAL: return (((wx * 17 + wy * 31) & 3) == 0) ? 132 : 0;
+    case MYCELIUM_SPORE: return 112;
+    case MYCELIUM: return (((wx * 13 + wy * 29) & 31) == 0) ? 58 : 0;
+    default: return 0;
+  }
+}
+
+inline uint8_t crossLayerEmissionFor(uint8_t m, int wx, int wy) {
+  uint8_t e = emissionForCell(m, wx, wy);
   if (!e) return 0;
   int v = (int)e - CROSS_LAYER_EMISSIVE_LOSS;
   return v > LIGHT_AMBIENT ? (uint8_t)v : 0;
@@ -232,9 +232,13 @@ void computeLightingBase(Layer* lay) {
   for (int k = 0; k < n; k++) if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]);
 
   // Then let sky and emissive sources spill into liquids/solids with material loss.
-  for (int k = 0; k < n; k++) {
-    uint8_t e = emissionFor(g[k]);
-    if (e) seed(k, e);
+  for (int y = 0; y < rows; y++) {
+    int rb = y * cols, wy = lay->worldOffsetY + y;
+    for (int x = 0; x < cols; x++) {
+      int k = rb + x;
+      uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
+      if (e) seed(k, e);
+    }
   }
 
   for (size_t qi = 0; qi < lightQueue.size(); qi++) {
@@ -266,7 +270,8 @@ void projectCrossLayerLight(Layer* lay, Layer* crossLay) {
     if (transparentForLight(cg[k])) {
       v = (int)cl[k] - CROSS_LAYER_EMISSIVE_LOSS;
     } else {
-      v = (int)crossLayerEmissionFor(cg[k]);
+      int y = k / cols, x = k - y * cols;
+      v = (int)crossLayerEmissionFor(cg[k], crossLay->worldOffsetX + x, crossLay->worldOffsetY + y);
     }
     if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
       lay->light[k] = (uint8_t)v;

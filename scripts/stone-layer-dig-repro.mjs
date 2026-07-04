@@ -47,6 +47,28 @@ const stoneStats = (grid, x0, x1, y0 = 0, y1 = ROWS) => {
   return { n, minY, maxY };
 };
 
+const COMPONENT_MATS = new Set([
+  MAT.STONE, MAT.ICE, MAT.DRIFTWOOD, MAT.SANDSTONE, MAT.MOSS,
+  MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE, MAT.BRICK,
+  MAT.PINE_WOOD, MAT.CACTUS, MAT.MUSH_STEM, MAT.MUSH_CAP, MAT.VINE,
+  MAT.TNT, MAT.DEBRIS, MAT.CRYSTAL, MAT.MYCELIUM, MAT.MYCELIUM_SPORE,
+]);
+
+const countOneStepComponentDrops = (before, after, cols, rows) => {
+  let total = 0;
+  const byMat = new Map();
+  for (let y = 0; y < rows - 1; y++) for (let x = 0; x < cols; x++) {
+    const k = y * cols + x;
+    const m = before[k];
+    if (!COMPONENT_MATS.has(m)) continue;
+    if (after[k] !== m && before[k + cols] !== m && after[k + cols] === m) {
+      total++;
+      byMat.set(m, (byMat.get(m) || 0) + 1);
+    }
+  }
+  return { total, byMat };
+};
+
 const eraseDiscLayerViaPointer = (e, layer, x, y, r) => {
   const button = layer === 1 ? 2 : 0;
   e.setTool(T.eraser);
@@ -332,6 +354,26 @@ runRectScenario({ name: 'rect moat: pointer erase both layers', eraseOrder: [0, 
   dynScenario('dynamic: carve bg, settle, then carve fg (aligned)', e => cutA(e, 1), e => cutA(e, 0));
   dynScenario('dynamic: carve fg, settle, then carve bg (mismatched)', e => cutMis(e, 0), e => cutMis(e, 1));
   dynScenario('dynamic: carve bg, settle, then carve fg (mismatched)', e => cutMis(e, 1), e => cutMis(e, 0));
+}
+
+// GENERATED WORLD: after a downward stream, topology-dirty foreground cave
+// components overlap grounded background stone. Joint grounding must run before
+// moveRigidAssemblies; otherwise chunks visibly slough down for a few ticks before
+// background support catches them.
+{
+  console.log('generated world: streamed foreground stays adhered to background');
+  const C = 220, R = 160;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 153, infinite: true, sinksOn: false });
+  e.shiftWorldXY(0, 96);
+  let dropped = 0;
+  for (let i = 0; i < 8; i++) {
+    const before = e.getGrid().slice();
+    e.step(16 * (i + 1));
+    const r = countOneStepComponentDrops(before, e.getGrid(), C, R);
+    dropped += r.total;
+  }
+  check('streamed foreground components do not slough before cross-layer support', dropped === 0, `(one-step drops ${dropped})`);
+  e.destroy();
 }
 
 console.log(failures === 0 ? '\nno layer-detach failure reproduced' : `\n${failures} reproduced failure(s)`);

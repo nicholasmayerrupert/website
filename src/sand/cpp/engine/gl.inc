@@ -198,10 +198,10 @@ inline void glSolidDev(double dx0, double dy0, double w, double h) {
 }
 
 // Draw the visible window of one layer's texture at brightness `tint`. The
-// background passes gutter=0 (no internal grid — the foreground's gutter reveals
-// the darker background behind it) and tint<1; the foreground passes the real
-// gutter flag and tint=1. Both use the same snapped camera offset (flicker fix).
-void glDrawCells(GLuint tex, float tint, int gutter) {
+// background passes gutter=0 and opaqueAlpha=1 so rear-layer material alpha does
+// not show through foreground cells; the foreground passes the real gutter flag.
+// Both use the same snapped camera offset (flicker fix).
+void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha) {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   int visX0 = camCol, visY0 = camRow;
   int visX1 = imin(cols - 1, camCol + glViewCols + 1);  // +1 covers the sub-cell shift
@@ -212,6 +212,7 @@ void glDrawCells(GLuint tex, float tint, int gutter) {
   glUniform1i(glc->uMode, 0);
   glUniform1i(glc->uGutter, gutter);
   glUniform1f(glc->uTint, tint);
+  glUniform1i(glc->uOpaqueAlpha, opaqueAlpha);
   glUniform1f(glc->uCellDev, (float)glCellDev);
   glUniform2f(glc->uQuadDev, (float)devW, (float)devH);
   glUniform4f(glc->uTexRect, (float)visX0 / cols, (float)visY0 / rows,
@@ -414,8 +415,8 @@ int glRenderFrame(int forceFull) {
   glBindVertexArray(glc->vao);
   glActiveTexture(GL_TEXTURE0);
   glUniform1i(glc->uTex, 0);
-  glDrawCells(glTexBg, GL_BG_TINT, 0);            // background first (darker, no internal gutter)
-  glDrawCells(glTex, 1.0f, glGutterOn ? 1 : 0);   // foreground on top
+  glDrawCells(glTexBg, GL_BG_TINT, 0, 1);                  // background first (darker, opaque cells)
+  glDrawCells(glTex, 1.0f, glGutterOn ? 1 : 0, 0);         // foreground on top
   glDrawPlayers();
   glDrawItems();
   glDrawPreview();

@@ -12,6 +12,39 @@ await initSandWasm();
 const { check, done } = makeChecker('worldgen structures (Phase 3)');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
 
+function materialComponents(g, mat) {
+  const seen = new Uint8Array(g.length);
+  const comps = [];
+  const stack = [];
+  for (let i = 0; i < g.length; i++) {
+    if (seen[i] || g[i] !== mat) continue;
+    seen[i] = 1;
+    stack.length = 0;
+    stack.push(i);
+    let n = 0, minX = COLS, maxX = -1, minY = ROWS, maxY = -1, edge = false;
+    const colCounts = new Map();
+    while (stack.length) {
+      const k = stack.pop();
+      const x = k % COLS, y = (k / COLS) | 0;
+      n++;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      if (x === 0 || x === COLS - 1 || y === 0 || y === ROWS - 1) edge = true;
+      colCounts.set(x, (colCounts.get(x) || 0) + 1);
+      const ns = [];
+      if (x > 0) ns.push(k - 1);
+      if (x + 1 < COLS) ns.push(k + 1);
+      if (y > 0) ns.push(k - COLS);
+      if (y + 1 < ROWS) ns.push(k + COLS);
+      for (const nk of ns) if (!seen[nk] && g[nk] === mat) { seen[nk] = 1; stack.push(nk); }
+    }
+    comps.push({ n, minX, maxX, minY, maxY, width: maxX - minX + 1, height: maxY - minY + 1, edge, colCounts });
+  }
+  return comps;
+}
+const acidComponents = (g) => materialComponents(g, MAT.ACID);
+const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
+
 // --- ores + ruins actually generate while exploring ---
 {
   const tally = { ore: 0, brick: 0, moss: 0, acid: 0, salt: 0, lava: 0, crystal: 0, mycelium: 0, mushroom: 0, plant: 0, vine: 0 };
@@ -41,11 +74,13 @@ const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sin
   check(`ore veins generate (${tally.ore} cells)`, tally.ore > 500);
   check(`ruins (BRICK) generate (${tally.brick} cells)`, tally.brick > 30);
   check(`cave-wall MOSS generates (${tally.moss} cells)`, tally.moss > 30);
-  check(`crystal-acid basins generate acid and crystal (${tally.acid}/${tally.crystal})`, tally.acid > 20 && tally.crystal > tally.acid * 10);
-  check(`lava pits generate but stay rare (${tally.lava} cells)`, tally.lava > 10 && tally.lava < tally.crystal * 0.08);
+  check(`crystal caves generate acid basins (${tally.acid}/${tally.crystal})`, tally.acid > 4000 && tally.crystal > 5000);
+  check(`crystal caves contain salt piles (${tally.salt} cells)`, tally.salt > 800);
+  check(`lava pits generate but stay rarer than acid (${tally.lava} cells)`, tally.lava > 100 && tally.lava < tally.crystal * 0.08);
   check(`crystal caverns generate (${tally.crystal} cells)`, tally.crystal > 40);
   check(`mycelium mushroom caves generate (${tally.mycelium}/${tally.mushroom} cells)`, tally.mycelium > 40 && tally.mushroom > 20);
   check(`lush caves generate plants and vines (${tally.plant}/${tally.vine} cells)`, tally.plant > 40 && tally.vine > 40);
+  check(`crystal volume stays comparable to lush/mycelium caves (${tally.crystal} vs ${tally.mycelium + tally.mushroom + tally.plant + tally.vine})`, tally.crystal < tally.mycelium + tally.mushroom + tally.plant + tally.vine);
 }
 
 // --- crystal-acid basins keep acid off dissolvable stone at generation time ---
@@ -56,6 +91,8 @@ const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sin
     MAT.MYCELIUM_SPORE, MAT.DEBRIS,
   ]);
   let acid = 0, acidTouchCrystal = 0, acidOverCrystal = 0, acidTouchDissolvable = 0;
+  let acidBottomBoundary = 0, acidBottomCrystal = 0, acidSideBoundary = 0, acidSideCrystal = 0;
+  let roundedAcid = 0, flatSmearAcid = 0, basinComponents = 0, stoneBankComponents = 0;
   for (let depth = 0; depth < 3; depth++) {
     const e = mk();
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
@@ -69,14 +106,77 @@ const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sin
         if (ns.includes(MAT.CRYSTAL)) acidTouchCrystal++;
         if (g[k + COLS] === MAT.CRYSTAL) acidOverCrystal++;
         if (ns.some((m) => dissolvable.has(m))) acidTouchDissolvable++;
+        if (g[k + COLS] !== MAT.ACID) {
+          acidBottomBoundary++;
+          if (g[k + COLS] === MAT.CRYSTAL) acidBottomCrystal++;
+        }
+        for (const side of [g[k - 1], g[k + 1]]) {
+          if (side === MAT.ACID || side === MAT.EMPTY) continue;
+          acidSideBoundary++;
+          if (side === MAT.CRYSTAL) acidSideCrystal++;
+        }
+      }
+      for (const c of acidComponents(g)) {
+        if (c.edge || c.n < 12) continue;
+        const leftDepth = c.colCounts.get(c.minX) || 0;
+        const rightDepth = c.colCounts.get(c.maxX) || 0;
+        const centerDepth = c.colCounts.get((c.minX + c.maxX) >> 1) || 0;
+        const rounded = c.width >= 8 && c.height >= 3 && c.width / c.height <= 6.5
+          && centerDepth >= Math.max(leftDepth, rightDepth) + 2;
+        if (rounded) { roundedAcid += c.n; basinComponents++; }
+        if (c.width >= 8 && c.height <= 2) flatSmearAcid += c.n;
+        let leftStone = false, rightStone = false;
+        for (let yy = Math.max(1, c.minY - 2); yy <= Math.min(ROWS - 2, c.maxY + 3); yy++) {
+          for (let xx = Math.max(0, c.minX - 4); xx < c.minX; xx++) if (g[yy * COLS + xx] === MAT.STONE) leftStone = true;
+          for (let xx = c.maxX + 1; xx <= Math.min(COLS - 1, c.maxX + 4); xx++) if (g[yy * COLS + xx] === MAT.STONE) rightStone = true;
+        }
+        if (leftStone && rightStone) stoneBankComponents++;
       }
       e.shiftWorldXY(128, 0);
     }
     e.destroy();
   }
-  check(`acid pits are present (${acid} acid cells)`, acid > 40);
-  check(`acid basins are crystal-lined (${acidOverCrystal}/${acid} acid cells sit directly on crystal)`, acidOverCrystal > acid * 0.60 && acidTouchCrystal === acid);
+  check(`large acid pits are easy to find (${acid} acid cells)`, acid > 2000);
+  check(`acid basins have rounded depth (${roundedAcid}/${acid} acid cells in ${basinComponents} rounded components)`, roundedAcid > acid * 0.65 && basinComponents > 8);
+  check(`acid is not smeared into flat cave-floor streaks (${flatSmearAcid}/${acid} flat-streak cells)`, flatSmearAcid < acid * 0.08);
+  check(`acid basin bottoms are crystal-lined (${acidBottomCrystal}/${acidBottomBoundary})`, acidBottomBoundary > 0 && acidBottomCrystal === acidBottomBoundary);
+  check(`acid basin solid side walls are crystal (${acidSideCrystal}/${acidSideBoundary})`, acidSideBoundary > 0 && acidSideCrystal === acidSideBoundary);
+  check(`acid basin edges are grounded into stone (${stoneBankComponents}/${basinComponents})`, basinComponents > 0 && stoneBankComponents > basinComponents * 0.80);
+  check(`acid has substantial crystal contact (${acidTouchCrystal}/${acid} touch crystal, ${acidOverCrystal} sit directly on crystal)`, acidTouchCrystal > acid * 0.20 && acidOverCrystal > acid * 0.10);
   check(`acid does not start adjacent to dissolvable cave walls (${acidTouchDissolvable})`, acidTouchDissolvable === 0);
+}
+
+// --- lava pits are contained, not free-flowing sheets ---
+{
+  let lava = 0, lavaBottomBoundary = 0, lavaBottomStone = 0, lavaSideBoundary = 0, lavaSideStone = 0, lavaBasins = 0;
+  for (let depth = 0; depth < 3; depth++) {
+    const e = mk();
+    for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
+    for (let s = 0; s < 30; s++) {
+      const g = e.getGrid();
+      for (let y = 1; y < ROWS - 1; y++) for (let x = 1; x < COLS - 1; x++) {
+        const k = y * COLS + x;
+        if (g[k] !== MAT.LAVA) continue;
+        lava++;
+        if (g[k + COLS] !== MAT.LAVA) {
+          lavaBottomBoundary++;
+          if (g[k + COLS] === MAT.STONE) lavaBottomStone++;
+        }
+        for (const side of [g[k - 1], g[k + 1]]) {
+          if (side === MAT.LAVA || side === MAT.EMPTY) continue;
+          lavaSideBoundary++;
+          if (side === MAT.STONE) lavaSideStone++;
+        }
+      }
+      for (const c of lavaComponents(g)) if (!c.edge && c.n >= 10 && c.width >= 6 && c.height >= 3 && c.width / c.height <= 7.0) lavaBasins++;
+      e.shiftWorldXY(128, 0);
+    }
+    e.destroy();
+  }
+  check(`lava pits are present but rarer (${lava} lava cells)`, lava > 100 && lava < 2000);
+  check(`lava components are basin-shaped (${lavaBasins} basin components)`, lavaBasins >= 4);
+  check(`lava basin bottoms are stone-lined (${lavaBottomStone}/${lavaBottomBoundary})`, lavaBottomBoundary > 0 && lavaBottomStone === lavaBottomBoundary);
+  check(`lava basin solid side walls are stone (${lavaSideStone}/${lavaSideBoundary})`, lavaSideBoundary > 0 && lavaSideStone === lavaSideBoundary);
 }
 
 // --- a ruin region is byte-identical across streaming (seam determinism) ---

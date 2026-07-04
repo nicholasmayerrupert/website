@@ -14,7 +14,7 @@
   // soil depth, and tree density. Materials are the existing palette only.
   enum Biome : int { BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_DESERT = 2, BIOME_ROCKY = 3,
                      BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
-  enum CaveBiome : int { CAVE_NORMAL = 0, CAVE_LUSH = 1, CAVE_MYCELIUM = 2, CAVE_CRYSTAL = 3, CAVE_ACID = 4, CAVE_LAVA = 5 };
+  enum CaveBiome : int { CAVE_DEFAULT = 0, CAVE_CRYSTAL = 1, CAVE_MUSHROOM = 2, CAVE_LUSH = 3 };
   static const double SURFACE_FREQ, CAVE_FREQ, CAVE_THRESH, TREE_PROB;
   static const double BIOME_FREQ, POCKET_FREQ, WATER_POCKET_THRESH, OIL_POCKET_THRESH, LAVA_THRESH;
   static const double ORE_FREQ, ORE_THRESH;
@@ -83,21 +83,19 @@
     return genSurfaceAbs(worldX) + GEN_SKIN + soil + imax(10, (int)std::floor(rows * 0.04));
   }
   int genCaveBiomeAt(int worldX, int worldY) {
-    if (worldY < genCaveTopAbs(worldX) + 18 || worldY >= caveBottomAbs()) return CAVE_NORMAL;
+    if (worldY < genCaveTopAbs(worldX) + 18 || worldY >= caveBottomAbs()) return CAVE_DEFAULT;
     double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
     if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
-    double wx = worldX + (wfbm2(L->gCaveSeed ^ 0xB107u, worldX * 0.007, worldY * 0.006, 2, 0.5) - 0.5) * 42.0;
-    double wy = worldY + (wfbm2(L->gCaveSeed ^ 0xB108u, worldX * 0.006, worldY * 0.007, 2, 0.5) - 0.5) * 36.0;
-    double a = wfbm2(L->gCaveSeed ^ 0xB109u, wx * 0.0045, wy * 0.0055, 3, 0.5);
-    double b = wfbm2(L->gCaveSeed ^ 0xB10Au, wx * 0.0055, wy * 0.0040, 3, 0.5);
-    // Large low-frequency regions, with dangerous liquids biased deeper so fresh
-    // spawn-depth terrain stays inert.
-    if (depthFrac > 0.58 && a > 0.79 && b > 0.40) return CAVE_LAVA;
-    if (depthFrac > 0.48 && a < 0.14 && b > 0.48) return CAVE_ACID;
-    if (b > 0.74) return CAVE_CRYSTAL;
-    if (a > 0.64 && b < 0.58) return CAVE_MYCELIUM;
-    if (a < 0.43) return CAVE_LUSH;
-    return CAVE_NORMAL;
+    double wx = worldX + (wfbm2(L->gCaveSeed ^ 0xB107u, worldX * 0.0029, worldY * 0.0024, 2, 0.5) - 0.5) * 128.0;
+    double wy = worldY + (wfbm2(L->gCaveSeed ^ 0xB108u, worldX * 0.0023, worldY * 0.0029, 2, 0.5) - 0.5) * 112.0;
+    double pick = wfbm2(L->gCaveSeed ^ 0xB109u, wx * 0.00175, wy * 0.00205, 3, 0.5);
+    // Three broad cave biome families, plus a sparse default. Liquids are stamped
+    // as structures inside these regions, so adding another family later only
+    // requires adding a new enum case and feature branch.
+    if (pick < 0.10) return CAVE_DEFAULT;
+    if (pick < 0.40) return CAVE_CRYSTAL;
+    if (pick < 0.70) return CAVE_MUSHROOM;
+    return CAVE_LUSH;
   }
   // Caves combine Minecraft-style density fields: broad "cheese" voids plus
   // contour-line "spaghetti/noodle" tunnels. Terraria-like detail passes decorate
@@ -114,9 +112,9 @@
     double noodle = std::fabs(wfbm2(L->gCaveSeed ^ 0x7A6Eu, sx * CAVE_FREQ * 2.8, sy * CAVE_FREQ * 1.9, 1, 0.5) - 0.5);
     double shaft = std::fabs(wfbm2(L->gCaveSeed ^ 0x5A7Fu, sx * CAVE_FREQ * 0.80, sy * CAVE_FREQ * 2.20, 1, 0.5) - 0.5);
     double chamberThresh = 0.755 - depthFrac * 0.075 + bgBias * 3.0;
-    double spaghettiWidth = 0.055 + depthFrac * 0.020 - bgBias;
-    double noodleWidth = 0.026 + depthFrac * 0.008 - bgBias * 0.6;
-    double shaftWidth = 0.033 + depthFrac * 0.007 - bgBias * 0.8;
+    double spaghettiWidth = 0.075 + depthFrac * 0.026 - bgBias;
+    double noodleWidth = 0.044 + depthFrac * 0.014 - bgBias * 0.6;
+    double shaftWidth = 0.052 + depthFrac * 0.012 - bgBias * 0.8;
     return cheese > chamberThresh || spaghetti < spaghettiWidth || noodle < noodleWidth || shaft < shaftWidth;
   }
   bool genOpenCaveAt(int worldX, int worldY) {
@@ -208,10 +206,12 @@
     if (depth >= caveTop && worldY < caveBottomAbs() && genIsCaveWall(worldX, worldY)) {
       int caveBiome = genCaveBiomeAt(worldX, worldY);
       double detail = whash2(L->gCaveSeed ^ 0x305bu, worldX, worldY);
-      if (caveBiome == CAVE_LUSH && detail > 0.82) return MOSS;
-      if (caveBiome == CAVE_MYCELIUM && detail > 0.92) return MYCELIUM;
-      if (caveBiome == CAVE_CRYSTAL && detail > 0.88) return CRYSTAL;
-      if (caveBiome == CAVE_ACID && detail > 0.94) return CRYSTAL;
+      if (caveBiome == CAVE_LUSH && detail > 0.70) return MOSS;
+      if (caveBiome == CAVE_MUSHROOM) {
+        double tendril = std::fabs(wfbm2(L->gCaveSeed ^ 0x4d79u, worldX * 0.035, worldY * 0.050, 2, 0.5) - 0.5);
+        if (detail > 0.970 || (detail > 0.70 && tendril < 0.020)) return MYCELIUM;
+      }
+      if (caveBiome == CAVE_CRYSTAL && detail > 0.985) return CRYSTAL;
       double moss = wfbm2(L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
       if (moss > 0.74 && detail > 0.88) return MOSS;
     }
@@ -364,7 +364,7 @@
   void fillCaveFeatures(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (L->isBackground) return;
     uint32_t sseed = L->gCaveSeed ^ 0xF3A741u;
-    static const int FEATURE_LATTICE = 11, FEATURE_REACH = 24;
+    static const int FEATURE_LATTICE = 11, FEATURE_REACH = 30;
     int wx0 = L->worldOffsetX + colStart - FEATURE_REACH, wx1 = L->worldOffsetX + colEnd + FEATURE_REACH;
     int wy0 = L->worldOffsetY + rowStart - FEATURE_REACH, wy1 = L->worldOffsetY + rowEnd + FEATURE_REACH;
     int lxMin = floorDiv(wx0, FEATURE_LATTICE), lxMax = floorDiv(wx1, FEATURE_LATTICE);
@@ -383,82 +383,165 @@
       }
       return false;
     };
+    auto stampCrystalSpike = [&](int wx, int baseY, int dir, int ht, int baseRad) {
+      for (int i = 0; i < ht && genOpenCaveAt(wx, baseY + dir * i); i++) {
+        int rad = imax(0, baseRad - i / 3);
+        for (int dx = -rad; dx <= rad; dx++) {
+          if (std::abs(dx) * 2 + i > baseRad * 4 + ht / 3) continue;
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, baseY + dir * i, CRYSTAL);
+        }
+      }
+    };
+    auto stampSaltPile = [&](int wx, int floorY, int gx, int gy) {
+      int half = 2 + (int)(whash2(sseed ^ 0x611u, gx, gy) * 5);
+      int maxH = 2 + (int)(whash2(sseed ^ 0x612u, gx, gy) * 4);
+      for (int dx = -half; dx <= half; dx++) {
+        int px = wx + dx;
+        double falloff = 1.0 - (double)std::abs(dx) / (double)(half + 1);
+        int hgt = 1 + (int)std::floor(falloff * maxH);
+        for (int i = 0; i < hgt && genOpenCaveAt(px, floorY - i); i++) {
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY - i, SALT);
+        }
+      }
+    };
+    auto stampLavaBasin = [&](int wx, int floorY, int gx, int gy) {
+      int rx = 8 + (int)(whash2(sseed ^ 0x550u, gx, gy) * 8);
+      int ry = 4 + (int)(whash2(sseed ^ 0x551u, gx, gy) * 4);
+      for (int dx = -rx - 3; dx <= rx + 3; dx++) {
+        int px = wx + dx;
+        double ax = (double)std::abs(dx);
+        double nx = std::fmin(1.0, ax / (double)imax(1, rx));
+        double curve = std::sqrt(std::fmax(0.0, 1.0 - nx * nx));
+        int depth = 3 + (int)std::floor(curve * ry);
+        bool bank = ax > rx;
+        bool wall = ax >= rx - 2;
+        if (bank) {
+          for (int yy = floorY - 1; yy <= floorY + depth + 2; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, STONE, false);
+          continue;
+        }
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 1, STONE, false);
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth, STONE, false);
+        if (wall) {
+          for (int yy = floorY - 1; yy <= floorY + depth; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, STONE, false);
+        } else {
+          for (int yy = floorY; yy < floorY + depth; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, LAVA, false);
+        }
+      }
+    };
+    auto stampCrystalAcidBasin = [&](int wx, int floorY, int gx, int gy) {
+      int rx = 13 + (int)(whash2(sseed ^ 0x440u, gx, gy) * 11);
+      int ry = 5 + (int)(whash2(sseed ^ 0x442u, gx, gy) * 6);
+      for (int dx = -rx - 4; dx <= rx + 4; dx++) {
+        int px = wx + dx;
+        double ax = (double)std::abs(dx);
+        double nx = std::fmin(1.0, ax / (double)imax(1, rx));
+        double curve = std::sqrt(std::fmax(0.0, 1.0 - nx * nx));
+        int depth = 3 + (int)std::floor(curve * ry);
+        bool bank = ax > rx;
+        bool wall = ax >= rx - 2;
+        if (bank) {
+          for (int yy = floorY - 2; yy <= floorY + depth + 3; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, STONE, false);
+          continue;
+        }
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 2, STONE, false);
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 1, STONE, false);
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth, CRYSTAL, false);
+        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth - 1, CRYSTAL, false);
+        if (wall) {
+          for (int yy = floorY - 1; yy <= floorY + depth; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, CRYSTAL, false);
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + depth + 1, STONE, false);
+        } else {
+          for (int yy = floorY; yy < floorY + depth - 1; yy++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, ACID, false);
+        }
+      }
+    };
+    auto stampMyceliumTendril = [&](int wx, int startY, int gx, int gy) {
+      int len = 9 + (int)(whash2(sseed ^ 0x220u, gx, gy) * 20);
+      int dir = whash2(sseed ^ 0x221u, gx, gy) < 0.5 ? -1 : 1;
+      int px = wx, py = startY;
+      for (int i = 0; i < len; i++) {
+        if (genOpenCaveAt(px, py)) {
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, py, MYCELIUM);
+          if (whash2(sseed ^ 0x225u, px, py) > 0.72) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, py - 1, MYCELIUM);
+          if (whash2(sseed ^ 0x226u, px, py) > 0.82) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px - dir, py, MYCELIUM);
+        }
+        px += dir;
+        double step = whash2(sseed ^ 0x224u, gx * 31 + i, gy);
+        if (step < 0.24) py--;
+        else if (step > 0.78) py++;
+      }
+    };
     for (int gy = lyMin; gy <= lyMax; gy++) for (int gx = lxMin; gx <= lxMax; gx++) {
       int wx = gx * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x11u, gx, gy) * FEATURE_LATTICE);
       int wy = gy * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x22u, gx, gy) * FEATURE_LATTICE);
       int caveBiome = genCaveBiomeAt(wx, wy);
       double h = whash2(sseed, gx, gy);
+      double lavaH = whash2(sseed ^ 0x55AAu, gx, gy);
       int floorY = wy, ceilY = wy;
       bool hasFloor = findFloor(wx, wy, floorY), hasCeil = findCeiling(wx, wy, ceilY);
 
-      if (caveBiome == CAVE_LUSH) {
-        if (hasFloor && h < 0.70) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, h < 0.34 ? PLANT : MOSS);
-        if (hasCeil && h > 0.70) {
-          int len = 2 + (int)(whash2(sseed ^ 0x110u, gx, gy) * 8);
-          for (int i = 0; i < len && genOpenCaveAt(wx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, ceilY + i, VINE);
+      if (hasFloor && lavaH < (caveBiome == CAVE_DEFAULT ? 0.0050 : 0.0012)) {
+        stampLavaBasin(wx, floorY, gx, gy);
+        continue;
+      }
+
+      if (caveBiome == CAVE_CRYSTAL) {
+        if (hasFloor && h < 0.075) stampCrystalAcidBasin(wx, floorY, gx, gy);
+        else if (hasFloor && h < 0.34) stampSaltPile(wx, floorY, gx, gy);
+        else if ((hasFloor || hasCeil) && h < 0.62) {
+          bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x331u, gx, gy) < 0.68);
+          int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
+          int ht = 4 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 13);
+          stampCrystalSpike(wx, baseY, dir, ht, 1 + (int)(whash2(sseed ^ 0x332u, gx, gy) * 2));
         }
-        if (hasFloor && h > 0.93) {
-          int ht = 2 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 5);
-          for (int i = 0; i < ht && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, CRYSTAL);
-        }
-      } else if (caveBiome == CAVE_MYCELIUM) {
-        if (hasFloor && h < 0.78) {
-          int len = 3 + (int)(whash2(sseed ^ 0x220u, gx, gy) * 12);
-          int drift = (int)std::floor((whash2(sseed ^ 0x221u, gx, gy) - 0.5) * 8.0);
-          for (int i = 0; i < len; i++) {
-            int px = wx + (drift * i) / imax(1, len);
-            if (genOpenCaveAt(px, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY, MYCELIUM);
-          }
-        }
-        if (hasFloor && h > 0.82) {
-          int mh = 3 + (int)(whash2(sseed ^ 0x222u, gx, gy) * 5);
+      } else if (caveBiome == CAVE_MUSHROOM) {
+        if (hasFloor && h < 0.50) stampMyceliumTendril(wx, floorY, gx, gy);
+        if (hasCeil && h > 0.82) stampMyceliumTendril(wx, ceilY, gx ^ 0x31, gy ^ 0x17);
+        if (hasFloor && h > 0.60) {
+          int mh = 3 + (int)(whash2(sseed ^ 0x222u, gx, gy) * 7);
           for (int i = 0; i < mh && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, MUSH_STEM);
           int capY = floorY - mh;
-          for (int dx = -3; dx <= 3; dx++) if (std::abs(dx) <= 1 || whash2(sseed ^ 0x223u, wx + dx, capY) < 0.72) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
-        }
-      } else if (caveBiome == CAVE_CRYSTAL) {
-        if ((hasFloor || hasCeil) && h < 0.38) {
-          bool fromFloor = hasFloor && (!hasCeil || h < 0.24);
-          int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
-          int ht = 3 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 9);
-          for (int i = 0; i < ht && genOpenCaveAt(wx, baseY + dir * i); i++) {
-            int rad = i < 2 ? 1 : 0;
-            for (int dx = -rad; dx <= rad; dx++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, baseY + dir * i, CRYSTAL);
+          int capR = 2 + (int)(whash2(sseed ^ 0x223u, gx, gy) * 3);
+          for (int dx = -capR; dx <= capR; dx++) {
+            if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
           }
         }
-      } else if (caveBiome == CAVE_ACID) {
-        if (hasFloor && h < 0.060) {
-          int halfW = 5 + (int)(whash2(sseed ^ 0x440u, gx, gy) * 8);
-          for (int dx = -halfW - 2; dx <= halfW + 2; dx++) {
-            int px = wx + dx;
-            if (!genOpenCaveAt(px, floorY)) continue;
-            putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + 1, CRYSTAL, false);
-            if (std::abs(dx) >= halfW) {
-              for (int yy = floorY - 2; yy <= floorY; yy++) if (genOpenCaveAt(px, yy)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, yy, CRYSTAL);
-            } else {
-              if (!genOpenCaveAt(px - 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px - 1, floorY, CRYSTAL, false);
-              if (!genOpenCaveAt(px + 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px + 1, floorY, CRYSTAL, false);
-              if (!genOpenCaveAt(px, floorY - 1)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY - 1, CRYSTAL, false);
-              putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY, ACID);
-              if (whash2(sseed ^ 0x441u, px, floorY) < 0.04) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY + 2, SALT, false);
-            }
-          }
-        } else if ((hasFloor || hasCeil) && h > 0.78) {
-          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, hasFloor ? floorY : ceilY, CRYSTAL);
+        if ((hasFloor || hasCeil) && h > 0.935) {
+          int baseY = hasFloor ? floorY : ceilY;
+          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 4), 0);
         }
-      } else if (caveBiome == CAVE_LAVA) {
-        if (hasFloor && h < 0.075) {
-          int halfW = 6 + (int)(whash2(sseed ^ 0x550u, gx, gy) * 6);
-          for (int dx = -halfW; dx <= halfW; dx++) {
-            int px = wx + dx;
-            if (!genOpenCaveAt(px, floorY)) continue;
-            putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY, LAVA);
-            if (genOpenCaveAt(px, floorY - 1)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, floorY - 1, LAVA);
-          }
+      } else if (caveBiome == CAVE_LUSH) {
+        if (hasFloor && h < 0.88) {
+          putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, h < 0.56 ? PLANT : MOSS);
+          if (h < 0.38 && genOpenCaveAt(wx + 1, floorY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + 1, floorY, MOSS);
         }
-      } else if (hasFloor && h < 0.025) {
-        putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY, MOSS);
+        if (hasCeil && h > 0.42) {
+          int len = 3 + (int)(whash2(sseed ^ 0x110u, gx, gy) * 11);
+          for (int i = 0; i < len && genOpenCaveAt(wx, ceilY + i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, ceilY + i, VINE);
+        }
+        if (hasFloor && h > 0.80) {
+          int ht = 2 + (int)(whash2(sseed ^ 0x111u, gx, gy) * 5);
+          for (int i = 0; i < ht && genOpenCaveAt(wx, floorY - i); i++) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx, floorY - i, PLANT);
+        }
+        if ((hasFloor || hasCeil) && h > 0.935) {
+          int baseY = hasFloor ? floorY : ceilY;
+          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 4), 0);
+        }
       }
+    }
+    for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
+      int k = y * cols + x;
+      if (grid[k] != SALT && !isDissolvable(grid[k])) continue;
+      bool touchesAcid = (x > 0 && grid[k - 1] == ACID) || (x + 1 < cols && grid[k + 1] == ACID)
+                       || (y > 0 && grid[k - cols] == ACID) || (y + 1 < rows && grid[k + cols] == ACID);
+      if (touchesAcid) grid[k] = CRYSTAL;
+    }
+    for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
+      int k = y * cols + x;
+      if (grid[k] != ACID) continue;
+      if (y + 1 < rows && grid[k + cols] != ACID) grid[k + cols] = CRYSTAL;
+      if (x > 0 && grid[k - 1] != ACID && grid[k - 1] != EMPTY) grid[k - 1] = CRYSTAL;
+      if (x + 1 < cols && grid[k + 1] != ACID && grid[k + 1] != EMPTY) grid[k + 1] = CRYSTAL;
     }
   }
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {

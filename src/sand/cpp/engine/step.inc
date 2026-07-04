@@ -82,7 +82,8 @@
       return false;
     };
     double tJ0 = emscripten_get_now();
-    if (bgEnabled && (!cgBonds.empty() || layerRigidMarked(fg) || layerRigidMarked(bg))) {
+    bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
+    if (bgEnabled && (!cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
       computeGroundedBoth(); jointGroundReady = true;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);

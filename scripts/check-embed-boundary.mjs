@@ -16,6 +16,7 @@ const srcRoot = resolve(root, 'src');
 // pull in.
 const forbiddenPathPatterns = [
   /(^|\/)src\/sand\/react\//,
+  /(^|\/)src\/sand\/net\/server\//, // host/encode half is server+test-only
 ];
 const forbiddenBarePackages = [
   /^@vitejs\//,

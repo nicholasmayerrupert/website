@@ -2,7 +2,7 @@
 // dependency-free so they can be tested in Node. The real WebSocket client and
 // the host-authoritative loop build on these in Phase 5.
 
-import { decode, makeInput } from './protocol.js';
+import { decode, makeInput } from '../protocol.js';
 
 // Monotonic per-source sequence gate: accepts a strictly increasing seq and
 // drops anything reordered late or duplicated. This is what makes input/snapshot

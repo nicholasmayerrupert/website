@@ -5,9 +5,9 @@
 // and the browser client wire a transport around this; none of that logic lives
 // here, so it unit-tests in Node without a socket.
 
-import { decode, makeSnapshot, MSG, INPUT_BITS_MAX, TOOL_MAX } from './protocol.js';
-import { SequenceTracker } from './client.js';
-import { gridHashU8 } from './hash.js';
+import { decode, makeSnapshot, MSG, INPUT_BITS_MAX, TOOL_MAX } from '../protocol.js';
+import { SequenceTracker } from './sequencing.js';
+import { gridHashU8 } from '../hash.js';
 
 export class Host {
   constructor({ engine, roomId = 'local', maxPlayers = 8, maxInputRate = 90, inputBurst = 30, now = () => Date.now() } = {}) {

@@ -1,8 +1,6 @@
-// World replication helpers: bridge the engine's binary world snapshot/diff
-// (cpp/engine/netsync.inc) to the JSON protocol via base64, and apply incoming
-// world messages to a client engine. Isomorphic (Node + browser).
-
-import { makeWorld, makeDiff } from './protocol.js';
+// Client-side world replication: apply incoming world/diff messages to the
+// local render engine, plus the shared base64 helpers. The host-side encode
+// half lives in server/worldEncode.js so it never ships in the browser bundle.
 
 // base64 <-> Uint8Array, chunked so large snapshots don't overflow the call
 // stack (String.fromCharCode(...big) throws). Node uses Buffer when available.
@@ -20,16 +18,6 @@ export function b64ToBytes(s) {
   const u8 = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
   return u8;
-}
-
-// Host: build a full-world / diff message from the engine's current grid.
-export function encodeWorld(engine, tick) {
-  return makeWorld(tick, engine.cols, engine.rows, engine.gridHash(), bytesToB64(engine.serializeWorld()));
-}
-export function encodeDiff(engine, tick) {
-  const bytes = engine.serializeDiff();
-  if (bytes.length <= 2) return null; // header only -> no changed cells, skip
-  return makeDiff(tick, engine.gridHash(), bytesToB64(bytes));
 }
 
 // Client: apply a world / diff message. Returns whether the post-apply grid hash

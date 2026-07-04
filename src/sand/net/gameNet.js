@@ -12,7 +12,7 @@
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,
-  makeSelect, makeSize, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS,
+  makeSelect, makeSize, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS, ITEM_FIELDS,
 } from './protocol.js';
 import { applyWorldMessage, applyDiffMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
@@ -215,7 +215,6 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   // Players to render: clients read the smoothed snapshot entities (own player is
   // the responsive prediction when available).
   function getPlayersForRender() {
-    if (role !== 'client') return engineNow().getPlayers();
     const own = getOwnPlayer();
     const out = [];
     for (const [id, r] of remotes) {
@@ -225,7 +224,6 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     return out;
   }
   function getOwnPlayer() {
-    if (role !== 'client') return null;
     // predicted (responsive) state when available; else the raw snapshot entity.
     if (predictor) {
       const ps = predictor.renderState();
@@ -259,6 +257,6 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     set onStatus(fn) { onStatus = fn; },
     get clientId() { return clientId; },
     get worldReady() { return worldReady; },
-    get debug() { return { sent: dbgSent, ownPlayerId, role, connected, worldReady, items: itemsForRender.length / 7 }; },
+    get debug() { return { sent: dbgSent, ownPlayerId, role, connected, worldReady, items: itemsForRender.length / ITEM_FIELDS }; },
   };
 }

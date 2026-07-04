@@ -23,8 +23,6 @@ export const MSG = Object.freeze({
   ACT_MOVE: 'amove',    // client -> host: move/swap two inventory slots
   ACT_PICK: 'apick',    // client -> host: cursor pick/place/swap on a slot
   ACT_THROW: 'athrow',  // client -> host: throw the carried cursor stack out
-  PING: 'ping',
-  PONG: 'pong',
 });
 
 // Field bounds (must match the engine: PlayerInput is 7 bits, 12 tools).
@@ -83,8 +81,6 @@ export function makeDiff(tick, hash, data) {
   return { t: MSG.DIFF, tick: Math.trunc(tick), hash: hash >>> 0, data: String(data) };
 }
 export function makeResync(room, client) { return { t: MSG.RESYNC, room, client }; }
-export function makePing(client, time) { return { t: MSG.PING, client, time: Math.trunc(time) }; }
-export function makePong(client, time) { return { t: MSG.PONG, client, time: Math.trunc(time) }; }
 
 // ---- world-state replication beyond players (Phase 9) ----
 // Dropped items, packed flat as ITEM_FIELDS numbers each. `items` is an array of
@@ -147,8 +143,6 @@ export function decode(str) {
     case MSG.ACT_MOVE: return (isRoom(m.room) && isId(m.client) && isSlot(m.from) && isSlot(m.to)) ? m : null;
     case MSG.ACT_PICK: return (isRoom(m.room) && isId(m.client) && isSlot(m.slot) && isBit(m.half)) ? m : null;
     case MSG.ACT_THROW: return (isRoom(m.room) && isId(m.client) && isBit(m.whole)) ? m : null;
-    case MSG.PING:
-    case MSG.PONG: return (isId(m.client) && isNonNegInt(m.time)) ? m : null;
     default: return null;
   }
 }

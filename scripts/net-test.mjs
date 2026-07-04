@@ -3,12 +3,13 @@
 //   node scripts/net-test.mjs
 
 import {
-  MSG, encode, decode, makeJoin, makeLeave, makeInput, makeSnapshot, makePing, makePong,
+  MSG, encode, decode, makeJoin, makeLeave, makeInput, makeSnapshot,
   INPUT_BITS_MAX, TOOL_MAX,
 } from '../src/sand/net/protocol.js';
-import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/client.js';
-import { Host } from '../src/sand/net/host.js';
-import { encodeWorld, encodeDiff, applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
+import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/server/sequencing.js';
+import { Host } from '../src/sand/net/server/host.js';
+import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
+import { applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
 import { Predictor } from '../src/sand/net/predict.js';
 import { createGameNet } from '../src/sand/net/gameNet.js';
 import { startServer } from './dev-multiplayer-server.mjs';
@@ -70,13 +71,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('animation state preserved', d && d.players[0].animState === 2 && d.players[0].animFrame === 3 && d.players[1].animFrame === 1);
 }
 
-// 3. join/leave/ping/pong round trip.
+// 3. join/leave round trip.
 {
   console.log('control messages');
   check('join', rt(makeJoin('room', 4, 'Nick')).t === MSG.JOIN);
   check('leave', rt(makeLeave('room', 4)).t === MSG.LEAVE);
-  check('ping', rt(makePing(4, 1000)).t === MSG.PING);
-  check('pong', rt(makePong(4, 1000)).t === MSG.PONG);
 }
 
 // 4. malformed messages are rejected.

@@ -16,6 +16,7 @@
 
 import { createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { createGameNet } from '../net/gameNet';
+import { ITEM_FIELDS } from '../net/protocol.js';
 import { createParallaxBackground } from './parallaxBackground';
 import {
   BUTTON_BITS,
@@ -671,7 +672,7 @@ export function createSandGame(container, opts = {}) {
       playerCount: () => playersForRender().length,
       ownPlayer: () => (netClientReady() ? net.getOwnPlayer() : localPlayer()),
       // dropped-item count (client: from the server snapshot; else the engine).
-      items: () => (netClientReady() ? net.getItemsForRender().length / 7 : (engine ? engine.itemCount() : 0)),
+      items: () => (netClientReady() ? net.getItemsForRender().length / ITEM_FIELDS : (engine ? engine.itemCount() : 0)),
       ownInventory: () => (netClientReady() ? net.getOwnInventory() : (localPlayerId && engine ? engine.getInventory(localPlayerId) : null)),
       ownCursor: () => (netClientReady() ? net.getOwnCursor() : (localPlayerId && engine ? engine.getCursor(localPlayerId) : null)),
       // survival intents routed to the server (used by the mp e2e test).

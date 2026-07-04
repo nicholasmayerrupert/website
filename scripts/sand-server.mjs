@@ -13,9 +13,9 @@
 import { WebSocketServer } from 'ws';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/protocol.js';
-import { Host } from '../src/sand/net/host.js';
-import { encodeWorld, encodeDiff } from '../src/sand/net/worldSync.js';
-import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/stateSync.js';
+import { Host } from '../src/sand/net/server/host.js';
+import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
+import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 
 // Bounded shared arena (MVP): a fixed, non-streaming world buffer. Multiples of
 // the 32-cell render chunk; ~61k cells stays well under the engine's cell budget.

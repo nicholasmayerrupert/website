@@ -8,7 +8,7 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
 import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick } from '../src/sand/net/protocol.js';
-import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/stateSync.js';
+import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
 

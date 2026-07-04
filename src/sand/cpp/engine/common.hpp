@@ -2,6 +2,7 @@
 // Shared declarations for the WASM sand engine (ported from src/sand/*.js).
 #include <cstdint>
 #include <cstring>
+#include <climits>
 #include <cmath>
 #include <vector>
 #include <unordered_set>

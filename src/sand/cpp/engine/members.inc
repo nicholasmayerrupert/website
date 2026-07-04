@@ -35,8 +35,10 @@
     // remaining durability for the current held mine target. Not serialized.
     std::vector<uint32_t> mineDamage;
     // Render-only light values (0..255). Recomputed before full render; never
-    // serialized or used by simulation/checksum paths.
-    std::vector<uint8_t> light, skyLight, skyTopInput, skyDownValue;
+    // serialized or used by simulation/checksum paths. `lightBase` holds this
+    // layer's pre-cross-projection light so both layers' final light can be solved
+    // from one base pass each (projectCrossLayerLight reads the OTHER layer's base).
+    std::vector<uint8_t> light, lightBase, skyLight, skyTopInput, skyDownValue;
     std::vector<int32_t> skyDownDepth;
     std::unordered_map<int, int32_t> skyWorldReachY;
     int skyOffsetX = 0, skyOffsetY = 0;
@@ -105,7 +107,7 @@
       rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
       reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
       mineDamage.assign(n, 0);
-      light.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
+      light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
       skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
       skyWorldReachY.clear();
       skyOffsetX = skyOffsetY = 0; skyValid = false; skyDirty = true;
@@ -162,6 +164,9 @@
   int stepSerial = 0, tick = 0, perfDirtyChunks = 0, worldShiftCount = 0;
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
   double perfStepMs = 0;
+  // Present-path sub-phase timers (gl.inc glRenderFrame): the full-buffer lighting
+  // solve, the windowed pixel fill, and the windowed texture upload. Render-only.
+  double perfLightMs = 0, perfFillMs = 0, perfUploadMs = 0;
   double perfShiftBuffers = 0, perfShiftTranslate = 0, perfShiftRegister = 0, perfShiftFill = 0;
   // Predictive worldgen prefetch (worldgen.inc): amortize the shift's fillRect over
   // the off-screen frames before the boundary is crossed. Generates the upcoming

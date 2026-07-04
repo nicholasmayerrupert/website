@@ -70,6 +70,9 @@ export function initSandWasm() {
         groundingDiag: c('engine_grounding_diag', 'number', ['number', 'number']),
         perfStepMs: c('engine_perf_step_ms', 'number', ['number']),
         perfDirtyChunks: c('engine_perf_dirty_chunks', 'number', ['number']),
+        perfLightMs: c('engine_perf_light_ms', 'number', ['number']),
+        perfFillMs: c('engine_perf_fill_ms', 'number', ['number']),
+        perfUploadMs: c('engine_perf_upload_ms', 'number', ['number']),
         perfShiftBuffers: c('engine_perf_shift_buffers', 'number', ['number']),
         perfShiftTranslate: c('engine_perf_shift_translate', 'number', ['number']),
         perfShiftRegister: c('engine_perf_shift_register', 'number', ['number']),
@@ -389,7 +392,7 @@ export function createEngineWasm({
       mod._free(buf);
       return out;
     },
-    getPerf() { return { stepMs: M.perfStepMs(ptr), dirtyChunks: M.perfDirtyChunks(ptr), phases: {} }; },
+    getPerf() { return { stepMs: M.perfStepMs(ptr), dirtyChunks: M.perfDirtyChunks(ptr), lightMs: M.perfLightMs(ptr), fillMs: M.perfFillMs(ptr), uploadMs: M.perfUploadMs(ptr), phases: {} }; },
     getShiftPerf() { return { buffers: M.perfShiftBuffers(ptr), translate: M.perfShiftTranslate(ptr), register: M.perfShiftRegister(ptr), fill: M.perfShiftFill(ptr) }; },
     getStepPerf() { return { ground: M.perfStepGround(ptr), rigid: M.perfStepRigid(ptr), react: M.perfStepReact(ptr), carry: M.perfStepCarry(ptr), settle: M.perfStepSettle(ptr), tail: M.perfStepTail(ptr), joint: M.perfStepJoint(ptr), layers: M.perfStepLayers(ptr), cross: M.perfStepCross(ptr) }; },
     getTick() { return M.tick(ptr); },

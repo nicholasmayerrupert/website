@@ -220,6 +220,7 @@ const report = [
 ];
 if (result.flicker.dbg) report.push(`  dbg cam0x=${result.flicker.cam0x} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
 report.push(`  frame: avg ${result.perf.avgFrameMs}ms  p95 ${result.perf.p95FrameMs}ms  step ${result.perf.stepMs}ms  render ${result.perf.renderMs}ms  dirtyChunks ${result.perf.dirtyChunks}`);
+report.push(`  render CPU phases: light ${result.perf.lightMs ?? '-'}ms  fill ${result.perf.fillMs ?? '-'}ms  upload ${result.perf.uploadMs ?? '-'}ms`);
 
 if (updatePath) { writeFileSync(updatePath, JSON.stringify(result, null, 2)); report.push('', `updated baseline ${updatePath}`); }
 

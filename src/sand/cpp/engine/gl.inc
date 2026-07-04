@@ -23,6 +23,21 @@ double glCamX = 0, glCamY = 0;        // camera top-left in buffer cells (fracti
 int glCellDev = 1, glViewCols = 0, glViewRows = 0;
 int glGutterOn = 1, glSnapOff = 0;
 double glOffX = 0, glOffY = 0;        // snapped sub-cell present offset (device px)
+// Last presented window origin + world offset + skylight. The present path renders
+// only the VISIBLE window into the textures (off-screen texels are never sampled), so
+// it must re-fill whenever the sampled window moves — a whole-cell pan, a world shift,
+// or a skylight change — not just when the grid is dirty. INT_MIN forces the first frame.
+int glLastCamCol = INT_MIN, glLastCamRow = INT_MIN;
+int glLastWorldOffX = INT_MIN, glLastWorldOffY = INT_MIN;
+int glLastSkyLight = -1;
+// Lighting-recompute throttle. The full-buffer light solve is by far the costliest
+// part of the present path, so on a continuously-active scene it is re-solved at most
+// once every GL_LIGHT_THROTTLE_TICKS sim ticks and the (buffer-indexed, pan-invariant)
+// result is reused between — a barely-perceptible lag in dynamic light for a large
+// CPU saving. A world shift (light buffer misaligns), a skylight change, or a forced
+// full refresh always re-solve immediately. glLightTick is the tick of the last solve.
+static constexpr int GL_LIGHT_THROTTLE_TICKS = 2;
+int glLightTick = INT_MIN;
 int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
 bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
 std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own,animState,animFrame] per player
@@ -124,6 +139,32 @@ void glUploadRects(GLuint tex) {
     glPixelStorei(GL_UNPACK_SKIP_ROWS, y0);
     glTexSubImage2D(GL_TEXTURE_2D, 0, x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, L->renderPixels.data());
   }
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+}
+
+// The inclusive visible-cell rect the shader will sample this frame — IDENTICAL to
+// glDrawCells's window (the +1 covers the sub-cell pan shift). The present path fills
+// and uploads exactly this rect, so what is sampled is always freshly rendered.
+inline void glVisRect(int* x0, int* y0, int* x1, int* y1) {
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  *x0 = camCol < 0 ? 0 : camCol;
+  *y0 = camRow < 0 ? 0 : camRow;
+  *x1 = imin(cols - 1, camCol + glViewCols + 1);
+  *y1 = imin(rows - 1, camRow + glViewRows + 1);
+}
+// Upload just the inclusive [x0,y0..x1,y1] window of the active layer's renderPixels
+// into `tex` (same UNPACK skip/row-length trick as glUploadRects).
+void glUploadWindow(GLuint tex, int x0, int y0, int x1, int y1) {
+  int w = x1 - x0 + 1, h = y1 - y0 + 1;
+  if (w <= 0 || h <= 0) return;
+  glBindTexture(GL_TEXTURE_2D, tex);
+  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+  glPixelStorei(GL_UNPACK_ROW_LENGTH, cols);
+  glPixelStorei(GL_UNPACK_SKIP_PIXELS, x0);
+  glPixelStorei(GL_UNPACK_SKIP_ROWS, y0);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, L->renderPixels.data());
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
   glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
   glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
@@ -375,34 +416,60 @@ void glDrawPreview() {
   }
 }
 
-// Upload one layer's changed cells into its texture (per-layer dirty decision,
-// mirrors the old syncCellCanvas full-vs-rects choice).
-bool glUploadLayer(Layer* lay, GLuint tex, int forceFull) {
-  useLayer(lay);
-  buildDirtyRects();
-  int chunkTotal = chunkCols * chunkRows;
-  if (forceFull || L->dirtyRenderCount > 0) {
-    bool whole = RENDER_LIGHTING_ENABLED || forceFull || L->dirtyRenderCount > (int)(chunkTotal * GL_FULL_UPLOAD_DIRTY_RATIO);
-    if (whole) { renderFull(); glUploadFull(tex); }
-    else { renderDirtyRects(); glUploadRects(tex); }
-    memset(dirtyRender, 0, (size_t)chunkCols * chunkRows);
-    L->dirtyRenderCount = 0;
-    return true;
+// Render + upload ONLY the visible window into both layers' textures, then reset the
+// render-dirty flags. Gated to run when the grid changed, the skylight changed, or the
+// sampled window moved (whole-cell pan / world shift / forced refresh) — the last is
+// essential because off-screen texels are never sampled, so a pan that scrolls a new
+// cell into view must repaint that cell here. Lighting stays a FULL-buffer solve
+// (computeLightingBoth, once for both layers) so the windowed fill always reads valid,
+// buffer-indexed light; a pure pan reuses the existing light without re-solving.
+void glPresentWindow(int forceFull) {
+  useLayer(&fg); buildDirtyRects(); bool fgDirty = fg.dirtyRenderCount > 0;
+  useLayer(&bg); buildDirtyRects(); bool bgDirty = bg.dirtyRenderCount > 0;
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  bool worldShifted = fg.worldOffsetX != glLastWorldOffX || fg.worldOffsetY != glLastWorldOffY;
+  bool skyChanged = (int)renderSkyLight != glLastSkyLight;
+  bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged;
+  bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
+  if (!contentDirty && !windowMoved) return;
+
+  // Re-solve the full-buffer lighting only when content changed AND either the light is
+  // forced/invalidated (init/resize, world shift, day-night change) or the throttle
+  // window has elapsed; otherwise reuse the prior light (buffer-indexed, so still valid
+  // for the same buffer positions). A pure pan reuses lighting unconditionally.
+  bool lightForced = forceFull || worldShifted || skyChanged;
+  bool lightThrottleReady = tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
+  if (RENDER_LIGHTING_ENABLED && contentDirty && (lightForced || lightThrottleReady)) {
+    double t0 = emscripten_get_now();
+    computeLightingBoth();
+    glLightTick = tick;
+    perfLightMs = emscripten_get_now() - t0;
   }
-  return false;
+  int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
+  double tf = emscripten_get_now();
+  useLayer(&fg); fillRenderSpan(fg.grid, (uint32_t*)fg.renderPixels.data(), x0, y0, x1, y1);
+  useLayer(&bg); fillRenderSpan(bg.grid, (uint32_t*)bg.renderPixels.data(), x0, y0, x1, y1);
+  perfFillMs = emscripten_get_now() - tf;
+  double tu = emscripten_get_now();
+  useLayer(&fg); glUploadWindow(glTex, x0, y0, x1, y1);
+  useLayer(&bg); glUploadWindow(glTexBg, x0, y0, x1, y1);
+  perfUploadMs = emscripten_get_now() - tu;
+
+  useLayer(&fg); memset(dirtyRender, 0, (size_t)chunkCols * chunkRows); fg.dirtyRenderCount = 0;
+  useLayer(&bg); memset(dirtyRender, 0, (size_t)chunkCols * chunkRows); bg.dirtyRenderCount = 0;
+  glLastCamCol = camCol; glLastCamRow = camRow;
+  glLastWorldOffX = fg.worldOffsetX; glLastWorldOffY = fg.worldOffsetY;
+  glLastSkyLight = (int)renderSkyLight;
 }
 
-// One presented frame: upload both layers, then composite background (darker)
-// then foreground, then players + preview. forceFull forces a whole-buffer
-// upload (init/resize). Returns 1 if drawn.
+// One presented frame: window-upload both layers, then composite background (darker)
+// then foreground, then players + preview. forceFull forces a full-window refresh
+// (init/resize). Returns 1 if drawn.
 int glRenderFrame(int forceFull) {
   if (!glReady()) return 0;
   emscripten_webgl_make_context_current(glc->handle);
   glSyncCamera();
-  bool fgDirty = forceFull || fg.dirtyRenderCount > 0;
-  bool bgDirty = forceFull || bg.dirtyRenderCount > 0;
-  glUploadLayer(&fg, glTex, forceFull || (RENDER_LIGHTING_ENABLED && bgDirty));
-  glUploadLayer(&bg, glTexBg, forceFull || (RENDER_LIGHTING_ENABLED && fgDirty));
+  glPresentWindow(forceFull);
   useLayer(&fg); // preview/seed checks read the foreground grid
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
   glViewport(0, 0, glDevW, glDevH);

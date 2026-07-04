@@ -60,6 +60,9 @@ EMSCRIPTEN_KEEPALIVE void engine_set_sinks(Engine* e, int v) { e->sinksEnabled =
 EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->useLayer(&e->fg); e->registerSeededComponents(0, e->cols); }
 EMSCRIPTEN_KEEPALIVE double engine_perf_step_ms(Engine* e) { return e->perfStepMs; }
 EMSCRIPTEN_KEEPALIVE int engine_perf_dirty_chunks(Engine* e) { return e->perfDirtyChunks; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_light_ms(Engine* e) { return e->perfLightMs; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_fill_ms(Engine* e) { return e->perfFillMs; }
+EMSCRIPTEN_KEEPALIVE double engine_perf_upload_ms(Engine* e) { return e->perfUploadMs; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_shift_buffers(Engine* e) { return e->perfShiftBuffers; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_shift_translate(Engine* e) { return e->perfShiftTranslate; }
 EMSCRIPTEN_KEEPALIVE double engine_perf_shift_register(Engine* e) { return e->perfShiftRegister; }

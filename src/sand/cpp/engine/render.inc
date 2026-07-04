@@ -260,11 +260,15 @@ void computeLightingBase(Layer* lay) {
   }
 }
 
+// Projects `crossLay`'s light into `lay`. Reads crossLay->lightBase (the layer's
+// PRE-projection light) rather than crossLay->light, so both directions can be
+// projected from clean bases in one frame without the two calls contaminating each
+// other. Callers MUST snapshot crossLay->lightBase = crossLay->light before calling.
 void projectCrossLayerLight(Layer* lay, Layer* crossLay) {
   const int n = cols * rows;
   const uint8_t* g = lay->grid;
   const uint8_t* cg = crossLay->grid;
-  const uint8_t* cl = crossLay->light.data();
+  const uint8_t* cl = crossLay->lightBase.data();
   lightQueue.clear();
   lightQueue.reserve((size_t)n / 8);
   for (int k = 0; k < n; k++) {
@@ -302,7 +306,23 @@ void computeLighting(Layer* lay, Layer* crossLay = nullptr) {
   computeLightingBase(lay);
   if (!crossLay) return;
   computeLightingBase(crossLay);
+  crossLay->lightBase = crossLay->light;  // snapshot base for projectCrossLayerLight
   projectCrossLayerLight(lay, crossLay);
+}
+
+// Solve BOTH layers' final light in one coordinated pass (the GL present path).
+// Each layer's base is computed exactly once (vs. the ~4x of calling computeLighting
+// per layer), snapshotted into lightBase, then cross-projected. Matches the per-layer
+// computeLighting result exactly: the foreground receives cross-light from the
+// background only when bgEnabled, the background always receives it from the
+// foreground (mirrors the crossLay selection in renderFull()).
+void computeLightingBoth() {
+  computeLightingBase(&fg);
+  fg.lightBase = fg.light;
+  computeLightingBase(&bg);
+  bg.lightBase = bg.light;
+  if (bgEnabled) projectCrossLayerLight(&fg, &bg);  // fg <- bg base (only when bg is live)
+  projectCrossLayerLight(&bg, &fg);                 // bg <- fg base (always)
 }
 
 inline uint8_t renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) {

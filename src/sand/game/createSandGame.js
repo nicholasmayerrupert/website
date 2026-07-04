@@ -571,6 +571,9 @@ export function createSandGame(container, opts = {}) {
       return {
         stepMs: Number(perf.stepMs.toFixed(2)),
         renderMs: Number(perfRenderMs.toFixed(2)),
+        lightMs: Number((perf.lightMs || 0).toFixed(3)),
+        fillMs: Number((perf.fillMs || 0).toFixed(3)),
+        uploadMs: Number((perf.uploadMs || 0).toFixed(3)),
         avgFrameMs: Number(avg.toFixed(3)),
         p95FrameMs: Number(p95.toFixed(3)),
         samples: n,
@@ -902,6 +905,9 @@ export function createSandGame(container, opts = {}) {
       return {
         stepMs: perf.stepMs,
         renderMs: perfRenderMs,
+        lightMs: perf.lightMs || 0,
+        fillMs: perf.fillMs || 0,
+        uploadMs: perf.uploadMs || 0,
         avgFrameMs: avg,
         p95FrameMs: p95,
         dirtyChunks: perf.dirtyChunks,

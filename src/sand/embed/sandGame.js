@@ -198,6 +198,9 @@ function createPerfHud(root, game) {
   addRow('tps', 'tick/s');
   addRow('step', 'step ms');
   addRow('render', 'render ms');
+  addRow('light', 'light ms');
+  addRow('fill', 'fill ms');
+  addRow('upload', 'upload ms');
   addRow('frame', 'frame p95');
   addRow('dirty', 'dirty chunks');
   addRow('shifts', 'world shifts');
@@ -230,6 +233,9 @@ function createPerfHud(root, game) {
     rows.tps.textContent = tps.toFixed(0);
     rows.step.textContent = s.stepMs.toFixed(2);
     rows.render.textContent = s.renderMs.toFixed(2);
+    rows.light.textContent = (s.lightMs || 0).toFixed(2);
+    rows.fill.textContent = (s.fillMs || 0).toFixed(2);
+    rows.upload.textContent = (s.uploadMs || 0).toFixed(2);
     rows.frame.textContent = s.p95FrameMs.toFixed(2);
     rows.dirty.textContent = String(s.dirtyChunks);
     rows.shifts.textContent = String(s.worldShifts);

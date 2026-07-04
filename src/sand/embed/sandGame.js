@@ -24,7 +24,11 @@ import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 
 const HOST_CSS = `
-:host { position: absolute; inset: 0; display: block; pointer-events: none; }
+:host { position: absolute; inset: 0; display: block; pointer-events: none;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent; }
+/* Keep text-entry controls (search, multiplayer IP, etc.) selectable/editable. */
+input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 .sg-sim { position: absolute; inset: 0; overflow: hidden; }
 .sg-dpad { position: absolute; right: 8px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 68;
   display: grid; grid-template-columns: repeat(3, 28px); grid-template-rows: repeat(3, 28px); gap: 4px;

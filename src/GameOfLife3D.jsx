@@ -13,19 +13,23 @@ const EDITOR_CANVAS_SIZE = 256;
 const DEFAULT_SEED =
   "0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011";
 
-const makeEmptyLayer = (size) =>
-  Array.from({ length: size }, () => Array(size).fill(false));
+// A layer is a flat Uint8Array of size*size cells (1 = alive), indexed by
+// z * size + x — the same row-major layout the instance idxFor uses. Flat typed
+// arrays are far more cache-friendly to scan than nested boolean arrays, which
+// matters because updateInstances sweeps the whole volume every simulation step.
+const makeEmptyLayer = (size) => new Uint8Array(size * size);
 
 const makeEmptyCells = (size) =>
   Array.from({ length: GRID_HEIGHT }, () => makeEmptyLayer(size));
 
-const cloneLayer = (layer) => layer.map((row) => row.slice());
+const cloneLayer = (layer) => layer.slice();
 
-const binaryToLayer = (binarySeed, size) =>
-  binarySeed
-    .slice(0, size * size)
-    .match(new RegExp(`.{1,${size}}`, "g"))
-    .map((row) => row.split("").map((bit) => bit === "1"));
+const binaryToLayer = (binarySeed, size) => {
+  const layer = new Uint8Array(size * size);
+  const n = Math.min(binarySeed.length, size * size);
+  for (let i = 0; i < n; i++) if (binarySeed[i] === "1") layer[i] = 1;
+  return layer;
+};
 
 const mulberry32 = (seed) => {
   let t = seed >>> 0;
@@ -46,9 +50,9 @@ const textToLayer = (seedText, size) => {
   }
 
   const random = mulberry32(hash);
-  return Array.from({ length: size }, () =>
-    Array.from({ length: size }, () => random() > 0.62)
-  );
+  const layer = new Uint8Array(size * size);
+  for (let i = 0; i < layer.length; i++) if (random() > 0.62) layer[i] = 1;
+  return layer;
 };
 
 const seedToLayer = (seedText, size) => {
@@ -282,19 +286,19 @@ export default function GameOfLife3D({
           if (dx === 0 && dz === 0) continue;
           const nx = (x + dx + width) % width;
           const nz = (z + dz + depth) % depth;
-          if (layer[nz][nx]) count++;
+          if (layer[nz * width + nx]) count++;
         }
       }
       return count;
     };
 
     const nextGeneration = (current) => {
-      const next = Array.from({ length: depth }, () => Array(width).fill(false));
+      const next = new Uint8Array(width * depth);
       for (let z = 0; z < depth; z++) {
         for (let x = 0; x < width; x++) {
-          const alive = current[z][x];
+          const alive = current[z * width + x];
           const n = countLiveNeighbors(current, x, z);
-          next[z][x] = alive ? n === 2 || n === 3 : n === 3;
+          next[z * width + x] = (alive ? n === 2 || n === 3 : n === 3) ? 1 : 0;
         }
       }
       return next;
@@ -313,7 +317,7 @@ export default function GameOfLife3D({
       ctx.fillStyle = "#f8fafc";
       for (let z = 0; z < depth; z++) {
         for (let x = 0; x < width; x++) {
-          if (topLayer[z][x]) {
+          if (topLayer[z * width + x]) {
             ctx.fillRect(
               x * cellSize + 1,
               z * cellSize + 1,
@@ -343,15 +347,19 @@ export default function GameOfLife3D({
     };
 
     const updateInstances = () => {
+      // Write straight into the instanced mesh's backing Float32Array (16 floats
+      // per matrix) rather than via setMatrixAt(...).toArray, and scan flat typed
+      // layers — both cut per-step CPU so the 15/sec update doesn't spike frames.
+      const arr = instanced.instanceMatrix.array;
       let aliveCount = 0;
       for (let y = 0; y < height; y++) {
         const layer = cells[y];
         for (let z = 0; z < depth; z++) {
-          const row = layer[z];
+          const base = z * width;
           for (let x = 0; x < width; x++) {
-            if (row[x]) {
-              const srcIdx = idxFor(x, y, z);
-              instanced.setMatrixAt(aliveCount++, precomputed[srcIdx]);
+            if (layer[base + x]) {
+              arr.set(precomputed[idxFor(x, y, z)].elements, aliveCount * 16);
+              aliveCount++;
             }
           }
         }
@@ -370,8 +378,9 @@ export default function GameOfLife3D({
 
     const setTopCell = (x, z, alive) => {
       const topLayer = cells[cells.length - 1];
-      if (topLayer[z][x] === alive) return;
-      topLayer[z][x] = alive;
+      const v = alive ? 1 : 0;
+      if (topLayer[z * width + x] === v) return;
+      topLayer[z * width + x] = v;
       updateInstances();
       renderEditor();
       lastStepTime = performance.now();
@@ -394,6 +403,7 @@ export default function GameOfLife3D({
     renderEditor();
 
     let raf = 0;
+    let running = false;
     let lastStepTime = performance.now();
     let lastRenderTime = lastStepTime;
     let yaw = 0;
@@ -453,6 +463,7 @@ export default function GameOfLife3D({
     renderer.domElement.addEventListener("lostpointercapture", stopDragging);
 
     const animate = () => {
+      if (!running) return;
       raf = requestAnimationFrame(animate);
 
       const now = performance.now();
@@ -509,7 +520,40 @@ export default function GameOfLife3D({
       lastRenderTime = now;
     };
 
-    animate();
+    // Run the render loop ONLY while the canvas is on-screen and the tab is
+    // visible. Once mounted, About stays mounted (its LazySection never unmounts),
+    // so without this gate the WebGL loop would render at ~60fps forever even when
+    // scrolled far away. Restarting resets the step/render clocks so the sim and
+    // rotation don't fast-forward to "catch up" after being idle.
+    // DEV-only observability for the headless gate test (stripped from prod builds).
+    const markRunning = (v) => {
+      if (import.meta.env?.DEV && typeof window !== "undefined") window.__gol3dRunning = v;
+    };
+    const start = () => {
+      if (running) return;
+      running = true;
+      markRunning(true);
+      lastStepTime = lastRenderTime = performance.now();
+      raf = requestAnimationFrame(animate);
+    };
+    const stop = () => {
+      running = false;
+      markRunning(false);
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+    };
+    let onScreen = true;
+    const evaluateRun = () => {
+      if (onScreen && !document.hidden) start();
+      else stop();
+    };
+    const visibilityObserver = new IntersectionObserver((entries) => {
+      onScreen = entries.some((entry) => entry.isIntersecting);
+      evaluateRun();
+    });
+    visibilityObserver.observe(container);
+    document.addEventListener("visibilitychange", evaluateRun);
+    start(); // paint immediately; the observer corrects within a frame if off-screen
 
     const onResize = () => {
       const w = Math.max(1, container.clientWidth);
@@ -529,6 +573,8 @@ export default function GameOfLife3D({
       };
       cancelAnimationFrame(raf);
       ro.disconnect();
+      visibilityObserver.disconnect();
+      document.removeEventListener("visibilitychange", evaluateRun);
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointermove", onPointerMove);
       renderer.domElement.removeEventListener("pointerup", stopDragging);

@@ -11,23 +11,7 @@ import { gsap } from 'gsap';
 import ReactCardFlip from 'react-card-flip';
 import { ChessArt, SandSimArt, WildfireArt, LifeArt } from './ProjectArt';
 import './MagicBento.css';
-
-function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setPrefersReducedMotion(mq.matches);
-    const onChange = () => setPrefersReducedMotion(mq.matches);
-    if (mq.addEventListener) mq.addEventListener('change', onChange);
-    else mq.addListener(onChange);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', onChange);
-      else mq.removeListener(onChange);
-    };
-  }, []);
-  return prefersReducedMotion;
-}
+import { usePrefersReducedMotion } from './hooks/useMediaQuery';
 
 /* ---------- Snake backdrop (unchanged) ---------- */
 function SnakeBackdrop() {

@@ -1,7 +1,8 @@
 # Sand engine
 
-A falling-sand / cellular-automaton simulation that runs on the About section of
-the site. The simulation, **rendering (WebGL2 compositing)**, the **view camera**,
+A falling-sand / cellular-automaton simulation that runs in the home-page hero
+(creative mode, via `src/Hero.jsx`) and full-screen at `/game` (survival mode,
+via `src/GamePage.jsx`). The simulation, **rendering (WebGL2 compositing)**, the **view camera**,
 the **input policy**, tool/pointer semantics, and world streaming all run in C++
 compiled to WebAssembly. JavaScript is a thin browser shell: it sizes the canvas,
 runs the RAF/fixed-step loop, forwards raw DOM events (keys/pointer/resize) to the
@@ -84,7 +85,8 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 - `embed/toolPalette.js` — the framework-free tool palette (plain DOM + injected
   `<style>`, no Tailwind).
 - `react/SandGame.jsx` — a ~15-line React shim that mounts `<sand-game>` and
-  bridges its CustomEvent to a prop. `src/About.jsx` just renders `<SandGame>`.
+  bridges its CustomEvent to a prop. `src/Hero.jsx` renders `<SandGame>`;
+  `src/GamePage.jsx` uses the `<sand-game>` element directly.
 
 ## Building the C++
 
@@ -183,7 +185,7 @@ browser <sand-game> clients
   Offline, it is inert and the local browser engine runs single-player. Connected,
   it sends input/intents to `sand-server`, applies authoritative world diffs,
   predicts/reconciles only the local player, and renders server snapshots.
-- `scripts/dev-multiplayer-server.mjs` (`npm run mp:server`) — legacy/dev-only
+- `scripts/dev-multiplayer-server.mjs` — legacy/dev-only
   pure WebSocket relay. It tracks rooms and forwards messages; it does **not**
   simulate. Keep it for relay protocol tests and experiments, not as the main
   game authority.

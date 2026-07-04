@@ -5,8 +5,9 @@
 Nicholas Mayer-Rupert's personal website. React + Vite + Tailwind, deployed to
 Cloudflare via Wrangler (`npm run dev`, `npm run build`, `npm run deploy`).
 
-Its centerpiece is a **2D falling-sand simulation** rendered to a canvas on the
-About page. Most agent work happens there. The simulation, **WebGL2 rendering**,
+Its centerpiece is a **2D falling-sand simulation** rendered to a canvas in the
+home-page hero (creative) and at `/game` (survival). Most agent work happens
+there. The simulation, **WebGL2 rendering**,
 the **view camera**, the **input policy**, tool semantics, and world streaming are
 written in **C++ and compiled to WebAssembly**; JavaScript is a thin shell (sizes
 the canvas, runs the RAF/fixed-step loop, forwards raw DOM events, carries the net

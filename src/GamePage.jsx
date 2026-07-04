@@ -22,33 +22,15 @@
 //   • Haptic tap feedback and a small undo button, since misfires are common.
 // Until that exists, mobile stays gated to the message below.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import './sand/embed/sandGame'; // registers the <sand-game> custom element
+import { useMediaQuery } from './hooks/useMediaQuery';
 
 // Treat narrow viewports OR coarse-only pointers (phones/tablets) as "mobile".
-// matchMedia is read inside an effect (never during render) so SSR/first paint
-// is consistent, and we subscribe to changes so rotating / resizing updates it.
 const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.matchMedia) return;
-    const mq = window.matchMedia(MOBILE_QUERY);
-    const update = () => setIsMobile(mq.matches);
-    update();
-    if (mq.addEventListener) mq.addEventListener('change', update);
-    else mq.addListener(update);
-    return () => {
-      if (mq.removeEventListener) mq.removeEventListener('change', update);
-      else mq.removeListener(update);
-    };
-  }, []);
-  return isMobile;
-}
-
 export default function GamePage() {
-  const isMobile = useIsMobile();
+  const isMobile = useMediaQuery(MOBILE_QUERY);
 
   useEffect(() => {
     const prev = document.title;

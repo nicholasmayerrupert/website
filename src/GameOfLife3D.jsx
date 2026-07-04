@@ -270,11 +270,7 @@ export default function GameOfLife3D({
         for (let x = 0; x < width; x++) {
           const idx = idxFor(x, y, z);
           tmpPos.set(x - width / 2, y - height / 2, z - depth / 2);
-          precomputed[idx] = new THREE.Matrix4().compose(
-            tmpPos.clone(),
-            unitQuat,
-            unitScale
-          );
+          precomputed[idx] = new THREE.Matrix4().compose(tmpPos, unitQuat, unitScale);
         }
       }
     }
@@ -292,8 +288,9 @@ export default function GameOfLife3D({
       return count;
     };
 
-    const nextGeneration = (current) => {
-      const next = new Uint8Array(width * depth);
+    // `out` (the recycled bottom layer) avoids a fresh allocation per step.
+    const nextGeneration = (current, out) => {
+      const next = out && out !== current ? out : new Uint8Array(width * depth);
       for (let z = 0; z < depth; z++) {
         for (let x = 0; x < width; x++) {
           const alive = current[z * width + x];
@@ -486,8 +483,8 @@ export default function GameOfLife3D({
         stepsPerSecond > 0 &&
         now - lastStepTime >= 1000 / stepsPerSecond
       ) {
-        cells.shift();
-        const newTop = nextGeneration(cells[cells.length - 1]);
+        const recycled = cells.shift();
+        const newTop = nextGeneration(cells[cells.length - 1], recycled);
         cells.push(newTop);
         updateInstances();
         renderEditor();

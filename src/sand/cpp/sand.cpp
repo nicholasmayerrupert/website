@@ -45,22 +45,11 @@ struct Engine {
 // Out-of-line definitions of the Engine static constants.
 const double Engine::RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
 const double Engine::RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
-const double Engine::SURFACE_FREQ = 0.010;
-const double Engine::CAVE_FREQ = 0.01;            // ~5x larger caves (lower freq = bigger features)
-const double Engine::CAVE_THRESH = 0.66;
-const double Engine::TREE_PROB = 0.05;
-const double Engine::BIOME_FREQ = 0.004;          // ~250-cell-wide biome bands
-const double Engine::POCKET_FREQ = 0.06;          // underground liquid/lava pockets
-const double Engine::WATER_POCKET_THRESH = 0.80;   // pocket noise below this stays STONE (genPocketAt)
-const double Engine::LAVA_THRESH = 0.88;          // rare sealed bedrock lava chambers
-const double Engine::ORE_FREQ = 0.11;             // ore-vein noise wavelength (small clusters)
-const double Engine::ORE_THRESH = 0.80;           // ridged-noise cutoff -> sparse veins
-const int Engine::SURFACE_OCT = 5;
-const int Engine::GEN_SKIN = 1;
 const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
 // Out-of-line method bodies for the extracted subsystem classes (need Engine).
 #include "engine/netsync_impl.inc"
+#include "engine/terrain_impl.inc"
 
 #include "engine/abi.inc"

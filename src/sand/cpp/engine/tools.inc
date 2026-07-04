@@ -145,6 +145,47 @@
         break;
     }
   }
+  // Integer cell AABB of a player for build-exclusion tests (nullptr -> empty box,
+  // contains() always false).
+  struct PlayerCellBox { int x0 = 0, x1 = -1, y0 = 0, y1 = -1;
+    bool contains(int x, int y) const { return x >= x0 && x <= x1 && y >= y0 && y <= y1; } };
+  static PlayerCellBox playerCellBox(const Player* p) {
+    PlayerCellBox b;
+    if (p) { b.x0 = (int)std::floor(p->px); b.x1 = (int)std::floor(p->px + p->w - 1e-6); b.y0 = (int)std::floor(p->py); b.y1 = (int)std::floor(p->py + p->h - 1e-6); }
+    return b;
+  }
+  // Shared capped scan for the per-pixel placement/staging economy: walk `offs`
+  // (nearest-to-center-first) as (ox,oy) offsets from (cx,cy), skip out-of-bounds
+  // cells and the player's own AABB, and invoke act(k) until `cap` cells acted
+  // (act returns whether it consumed a cell). getOff maps an element to (ox,oy).
+  template <class Offs, class GetOff, class Act>
+  int cappedOffsetScan(int cx, int cy, const Offs& offs, GetOff getOff, int yMaxExcl, int cap, const Player* p, Act act) {
+    if (cap <= 0) return 0;
+    PlayerCellBox box = playerCellBox(p);
+    int done = 0;
+    for (const auto& o : offs) {
+      if (done >= cap) break;
+      std::pair<int, int> d = getOff(o);
+      int xx = cx + d.first, yy = cy + d.second;
+      if (yy <= 0 || yy >= yMaxExcl || xx <= 0 || xx >= cols - 1) continue;
+      if (p && box.contains(xx, yy)) continue; // don't build on the player
+      if (act(I(xx, yy))) done++;
+    }
+    return done;
+  }
+  // Interpolate a stroke from (x0,y0) to (x1,y1): invoke stamp(x,y) every
+  // `spacing` steps and once at the endpoint, stopping early when wantMore()
+  // says the budget is spent. A zero-length stroke stamps once.
+  template <class Stamp, class WantMore>
+  void strokeScan(int x0, int y0, int x1, int y1, int spacing, Stamp stamp, WantMore wantMore) {
+    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
+    if (steps == 0) { stamp(x0, y0); return; }
+    for (int i = 0; i <= steps && wantMore(); i += spacing) {
+      double t = (double)i / (double)steps;
+      stamp((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
+    }
+    if (wantMore()) stamp(x1, y1);
+  }
   // Per-pixel placement: write at most `maxCells` cells, NEAREST-TO-CENTER first, so
   // an inventory stack places exactly as many pixels as it can afford. Deterministic
   // (static distance-sorted offset order). Returns cells written. EMPTY erases (no cap).
@@ -154,48 +195,19 @@
   // up against yourself and hold to place continuously without trapping the body.
   int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr) {
     if (mat == EMPTY) return eraseDisc(cx, cy, radius);
-    if (maxCells <= 0) return 0;
-    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
-    if (p) { px0 = (int)std::floor(p->px); px1 = (int)std::floor(p->px + p->w - 1e-6); py0 = (int)std::floor(p->py); py1 = (int)std::floor(p->py + p->h - 1e-6); }
-    const std::vector<std::pair<int, int>>& offs = discOffsets(radius);
     bool comp = isComponentMaterial(mat);
-    std::unordered_set<int> cells; int placed = 0;
-    for (const auto& o : offs) {
-      if (placed >= maxCells) break;
-      int xx = cx + o.first, yy = cy + o.second;
-      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
-      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue; // don't build on the player
-      int k = I(xx, yy); if (grid[k] != EMPTY) continue;
-      grid[k] = mat; placed++;
-      if (comp) { markCellIndex(k); cells.insert(k); }
-    }
+    std::unordered_set<int> cells;
+    int placed = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, rows, maxCells, p,
+      [&](int k) { if (grid[k] != EMPTY) return false; grid[k] = mat; if (comp) { markCellIndex(k); cells.insert(k); } return true; });
     if (placed) { L->skyDirty = true; markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius); }
     if (comp) registerComponentCells(mat, cells);
     return placed;
   }
   int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr) {
-    if (maxCells <= 0) return 0;
-    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
-    if (p) {
-      px0 = (int)std::floor(p->px);
-      px1 = (int)std::floor(p->px + p->w - 1e-6);
-      py0 = (int)std::floor(p->py);
-      py1 = (int)std::floor(p->py + p->h - 1e-6);
-    }
     bool comp = isComponentMaterial(mat);
     std::unordered_set<int> cells;
-    int placed = 0;
-    for (const SurvivalFootprintCell& o : fp.cells) {
-      if (placed >= maxCells) break;
-      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
-      if (yy <= 0 || yy >= rows || xx <= 0 || xx >= cols - 1) continue;
-      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue;
-      int k = I(xx, yy);
-      if (grid[k] != EMPTY) continue;
-      grid[k] = mat;
-      placed++;
-      if (comp) { markCellIndex(k); cells.insert(k); }
-    }
+    int placed = cappedOffsetScan(cx, cy, fp.cells, [](const SurvivalFootprintCell& o) { return std::pair<int, int>((int)o.ox, (int)o.oy); }, rows, maxCells, p,
+      [&](int k) { if (grid[k] != EMPTY) return false; grid[k] = mat; if (comp) { markCellIndex(k); cells.insert(k); } return true; });
     if (placed) {
       int x0, y0, x1, y1;
       survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
@@ -426,52 +438,21 @@
   // draft, skipping the player's own AABB (so you don't build on yourself). Returns the
   // number staged — the caller consumes that many inventory units as the preview grows.
   int addDiscToDraftCapped(std::unordered_set<int>& d, int cx, int cy, int radius, int yLimit, int maxAdd, const Player* p) {
-    if (maxAdd <= 0) return 0;
-    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
-    if (p) { px0 = (int)std::floor(p->px); px1 = (int)std::floor(p->px + p->w - 1e-6); py0 = (int)std::floor(p->py); py1 = (int)std::floor(p->py + p->h - 1e-6); }
-    int added = 0;
-    const std::vector<std::pair<int, int>>& offs = discOffsets(radius);
-    for (const auto& o : offs) {
-      if (added >= maxAdd) break;
-      int xx = cx + o.first, yy = cy + o.second;
-      if (yy <= 0 || yy >= yLimit || xx <= 0 || xx >= cols - 1) continue;
-      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue; // don't build on the player
-      int k = I(xx, yy);
-      if (grid[k] == EMPTY && !d.count(k)) { d.insert(k); added++; }
-    }
+    int added = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, yLimit, maxAdd, p,
+      [&](int k) { if (grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
     if (added) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
     return added;
   }
   int addDiscStrokeToDraft(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, int radius, int yLimit) {
     int changed = 0;
-    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
-    int spacing = imax(1, radius);
-    if (steps == 0) return addDiscToDraft(d, x0, y0, radius, yLimit);
-    for (int i = 0; i <= steps; i += spacing) {
-      double t = (double)i / (double)steps;
-      changed |= addDiscToDraft(d, (int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t), radius, yLimit);
-    }
-    changed |= addDiscToDraft(d, x1, y1, radius, yLimit);
+    strokeScan(x0, y0, x1, y1, imax(1, radius),
+      [&](int x, int y) { changed |= addDiscToDraft(d, x, y, radius, yLimit); },
+      [] { return true; });
     return changed;
   }
   int addFootprintToDraftCapped(std::unordered_set<int>& d, int cx, int cy, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) {
-    if (maxAdd <= 0) return 0;
-    int px0 = 0, px1 = -1, py0 = 0, py1 = -1;
-    if (p) {
-      px0 = (int)std::floor(p->px);
-      px1 = (int)std::floor(p->px + p->w - 1e-6);
-      py0 = (int)std::floor(p->py);
-      py1 = (int)std::floor(p->py + p->h - 1e-6);
-    }
-    int added = 0;
-    for (const SurvivalFootprintCell& o : fp.cells) {
-      if (added >= maxAdd) break;
-      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
-      if (yy <= 0 || yy >= yLimit || xx <= 0 || xx >= cols - 1) continue;
-      if (p && xx >= px0 && xx <= px1 && yy >= py0 && yy <= py1) continue;
-      int k = I(xx, yy);
-      if (grid[k] == EMPTY && !d.count(k)) { d.insert(k); added++; }
-    }
+    int added = cappedOffsetScan(cx, cy, fp.cells, [](const SurvivalFootprintCell& o) { return std::pair<int, int>((int)o.ox, (int)o.oy); }, yLimit, maxAdd, p,
+      [&](int k) { if (grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
     if (added) {
       int x0, y0, x1, y1;
       survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
@@ -485,37 +466,17 @@
   int addFootprintStrokeToDraftCapped(std::unordered_set<int>& d, int x0, int y0, int x1, int y1, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) {
     if (maxAdd <= 0) return 0;
     int added = 0, remaining = maxAdd;
-    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
-    int spacing = footprintStrokeSpacing(fp);
-    auto stamp = [&](int x, int y) {
-      if (remaining <= 0) return;
-      int n = addFootprintToDraftCapped(d, x, y, fp, yLimit, remaining, p);
-      added += n; remaining -= n;
-    };
-    if (steps == 0) { stamp(x0, y0); return added; }
-    for (int i = 0; i <= steps && remaining > 0; i += spacing) {
-      double t = (double)i / (double)steps;
-      stamp((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
-    }
-    if (remaining > 0) stamp(x1, y1);
+    strokeScan(x0, y0, x1, y1, footprintStrokeSpacing(fp),
+      [&](int x, int y) { if (remaining <= 0) return; int n = addFootprintToDraftCapped(d, x, y, fp, yLimit, remaining, p); added += n; remaining -= n; },
+      [&] { return remaining > 0; });
     return added;
   }
   int placeMaterialAtFootprintStrokeCapped(int x0, int y0, int x1, int y1, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr) {
     if (maxCells <= 0) return 0;
     int placed = 0, remaining = maxCells;
-    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
-    int spacing = footprintStrokeSpacing(fp);
-    auto stamp = [&](int x, int y) {
-      if (remaining <= 0) return;
-      int n = placeMaterialAtFootprintCapped(x, y, fp, mat, remaining, p);
-      placed += n; remaining -= n;
-    };
-    if (steps == 0) { stamp(x0, y0); return placed; }
-    for (int i = 0; i <= steps && remaining > 0; i += spacing) {
-      double t = (double)i / (double)steps;
-      stamp((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
-    }
-    if (remaining > 0) stamp(x1, y1);
+    strokeScan(x0, y0, x1, y1, footprintStrokeSpacing(fp),
+      [&](int x, int y) { if (remaining <= 0) return; int n = placeMaterialAtFootprintCapped(x, y, fp, mat, remaining, p); placed += n; remaining -= n; },
+      [&] { return remaining > 0; });
     return placed;
   }
   // Brush radius for a creative material (preserves the historical per-material sizes;
@@ -741,7 +702,6 @@
     useLayer(toBg ? &bg : &fg);
     int rad = (creativeMode == CM_ERASE) ? BRUSH_ERASE : brushFor(creativeMaterial);
     int spacing = imax(1, rad);
-    int steps = imax(std::abs(x1 - x0), std::abs(y1 - y0));
     if (creativeMode == CM_ERASE) {
       std::vector<int> cells;
       int minX = imax(1, imin(x0, x1) - rad), minY = imax(1, imin(y0, y1) - rad);
@@ -760,13 +720,8 @@
         }
       }
       eraseStrokeCells(cells, minX, minY, maxX, maxY);
-    } else if (steps == 0) emitToolAt(x0, y0);
-    else {
-      for (int i = 0; i <= steps; i += spacing) {
-        double t = (double)i / steps;
-        emitToolAt((int)std::lround(x0 + (x1 - x0) * t), (int)std::lround(y0 + (y1 - y0) * t));
-      }
-      emitToolAt(x1, y1); // always include the endpoint
+    } else {
+      strokeScan(x0, y0, x1, y1, spacing, [&](int x, int y) { emitToolAt(x, y); }, [] { return true; });
     }
     if (toBg) useLayer(&fg);
   }

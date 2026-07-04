@@ -7,6 +7,11 @@
 // diff) and request a resync. The wire format is opaque to JS/protocol, so this
 // widening needs no changes there as long as host + client compute it the same.
 
+// Little-endian wire helpers (netBlob is the shared output buffer).
+inline void blobPush16(int v) { netBlob.push_back(v & 0xff); netBlob.push_back((v >> 8) & 0xff); }
+inline void blobPush32(uint32_t v) { blobPush16(v & 0xffff); blobPush16((v >> 16) & 0xffff); }
+static inline int readLE16(const uint8_t* buf, int p) { return (int)buf[p] | ((int)buf[p + 1] << 8); }
+
 // RLE-encode one grid into netBlob: repeated [u32 run][u8 value].
 void rleEncode(uint8_t* g) {
   size_t n = (size_t)cols * rows, i = 0;
@@ -14,9 +19,7 @@ void rleEncode(uint8_t* g) {
     uint8_t v = g[i];
     size_t j = i + 1;
     while (j < n && g[j] == v) j++;
-    uint32_t run = (uint32_t)(j - i);
-    netBlob.push_back(run & 0xff); netBlob.push_back((run >> 8) & 0xff);
-    netBlob.push_back((run >> 16) & 0xff); netBlob.push_back((run >> 24) & 0xff);
+    blobPush32((uint32_t)(j - i));
     netBlob.push_back(v);
     i = j;
   }
@@ -53,11 +56,10 @@ void applyWorld(const uint8_t* buf, int len) {
 void writeDiffLayer(Layer* lay) {
   useLayer(lay); buildDirtyRects();
   int rc = (int)(lay->dirtyRects.size() / 4);
-  netBlob.push_back(rc & 0xff); netBlob.push_back((rc >> 8) & 0xff);
+  blobPush16(rc);
   for (int r = 0; r < rc; r++) {
     int x0 = lay->dirtyRects[r * 4], y0 = lay->dirtyRects[r * 4 + 1], x1 = lay->dirtyRects[r * 4 + 2], y1 = lay->dirtyRects[r * 4 + 3];
-    auto pw = [&](int v) { netBlob.push_back(v & 0xff); netBlob.push_back((v >> 8) & 0xff); };
-    pw(x0); pw(y0); pw(x1); pw(y1);
+    blobPush16(x0); blobPush16(y0); blobPush16(x1); blobPush16(y1);
     for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) netBlob.push_back(lay->grid[y * cols + x]);
   }
 }
@@ -69,12 +71,12 @@ int serializeDiff() {
 }
 int readDiffLayer(const uint8_t* buf, int len, int p, Layer* lay) {
   if (p + 2 > len) return p;
-  int rc = (int)buf[p] | ((int)buf[p + 1] << 8); p += 2;
+  int rc = readLE16(buf, p); p += 2;
   useLayer(lay);
   for (int r = 0; r < rc; r++) {
     if (p + 8 > len) break;
-    auto rd = [&]() { int v = (int)buf[p] | ((int)buf[p + 1] << 8); p += 2; return v; };
-    int x0 = rd(), y0 = rd(), x1 = rd(), y1 = rd();
+    int x0 = readLE16(buf, p), y0 = readLE16(buf, p + 2), x1 = readLE16(buf, p + 4), y1 = readLE16(buf, p + 6);
+    p += 8;
     for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) { if (p >= len) return p; if (x >= 0 && x < cols && y >= 0 && y < rows) lay->grid[y * cols + x] = buf[p]; p++; }
     if (x1 > x0 && y1 > y0) markDirtyRect(x0, y0, x1 - 1, y1 - 1);
   }

@@ -59,8 +59,8 @@ inline uint8_t emissionForCell(uint8_t m, int wx, int wy) {
     case FIRE: return 245;
     case LAVA: return 230;
     case CRYSTAL: return (((wx * 17 + wy * 31) & 3) == 0) ? 132 : 0;
-    case GLOWBERRY: return 195;   // warm orange lantern
-    case GLOWSHROOM: return 190;  // cool blue biolume
+    case GLOWBERRY: return 98;   // warm orange lantern (soft)
+    case GLOWSHROOM: return 95;  // cool blue biolume (soft)
     case MYCELIUM_SPORE: return 112;
     case MYCELIUM: return (((wx * 13 + wy * 29) & 31) == 0) ? 58 : 0;
     default: return 0;

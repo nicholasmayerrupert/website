@@ -271,7 +271,7 @@
   int lastDraftCx = -1, lastDraftCy = -1;
   bool draftStrokeActive = false;
   std::vector<SurvivalFootprint> survivalFootprints;
-  std::vector<int32_t> survivalFootprintSnapshot; // packed SURVIVAL_FOOTPRINT_SNAP_FIELDS ints
+  std::vector<int32_t> survivalFootprintSnapshot; // packed FP_STRIDE ints
   // Cached center-first disc offsets per radius (placeMaterialAtCapped, per-pixel placement).
   std::unordered_map<int, std::vector<std::pair<int, int>>> discOffsetCache;
   std::vector<int> draftSnapshot;
@@ -293,13 +293,13 @@
   // ---- players (Terraria-like characters; physics in player.inc) ----
   std::vector<Player> players;
   int nextPlayerId = 1;
-  std::vector<float> playerSnapshot; // packed [PLAYER_SNAP_STRIDE] floats per player
+  std::vector<float> playerSnapshot; // packed [PS_STRIDE] floats per player
   // ---- dropped items + particles (entities; physics in items.inc) ----
   std::vector<Item> items;
   int nextItemId = 1;
-  std::vector<float> itemSnapshot;        // packed [ITEM_SNAP_STRIDE] floats per item
-  std::vector<float> invSnapshot;         // packed [INV_SNAP_STRIDE] floats per slot (one player)
-  std::vector<float> cursorSnap;          // packed [INV_SNAP_STRIDE] floats for the carried cursor stack
+  std::vector<float> itemSnapshot;        // packed [IS_STRIDE] floats per item
+  std::vector<float> invSnapshot;         // packed [IVS_STRIDE] floats per slot (one player)
+  std::vector<float> cursorSnap;          // packed [IVS_STRIDE] floats for the carried cursor stack
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
   // Cells destroyed by the last mineDamageDisc() call: (material, cellIndex). mineDisc
   // reads this to decide drops against the acting player's held tool (Phase C).

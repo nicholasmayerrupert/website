@@ -16,7 +16,7 @@
 //   tools.inc      brushes/drafts/seeds                  (tools.js)
 //   worldgen.inc   streaming infinite world              (worldgen + worldWindow)
 //   rigid.inc      free rigid bodies                     (rigid2d.js + rigidBodies.js)
-//   abi.inc        extern "C" exports consumed by engineWasm.js
+//   abi.inc        extern "C" exports consumed by wasmBridge/engineFactory.js
 //
 // Material ids MUST stay in lockstep with src/sand/materials.schema.json.
 

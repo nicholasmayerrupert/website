@@ -5,25 +5,17 @@
 // cannot live in the engine: viewport sizing budgets, fixed-step cadence, and
 // browser event normalization.
 
+import { TOOL } from '../wasmBridge/abi.generated.js';
+
 export const DEFAULT_TOOL = 'cube';
 
-// Legacy tool-name bridge for old attributes/tests/network packets. Creative UI
-// should prefer setCreativeMaterial(kind, value), which lets C++ route by material
-// kind instead of expanding this enum.
-export const TOOL_IDS = Object.freeze({
-  cube: 0,
-  sand: 1,
-  water: 2,
-  stone: 3,
-  oil: 4,
-  fire: 5,
-  acid: 6,
-  lava: 7,
-  ice: 8,
-  seed: 9,
-  driftwood: 10,
-  eraser: 11,
-});
+// Legacy tool-name bridge for old attributes/tests/network packets — ids come
+// from the generated ABI manifest. Creative UI should prefer
+// setCreativeMaterial(kind, value), which lets C++ route by material kind
+// instead of expanding this enum.
+export const TOOL_IDS = Object.freeze(
+  Object.fromEntries(Object.entries(TOOL).map(([name, id]) => [name.toLowerCase(), id])),
+);
 
 export const SIZING = Object.freeze({
   // Base CSS px per simulated cell (higher = more zoomed in / fewer cells). This

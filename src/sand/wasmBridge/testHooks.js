@@ -1,0 +1,66 @@
+// Test/diagnostic hooks for the sand engine — imported ONLY by scripts/ (tests
+// and benches), never by the browser bundle. The C ABI names carry an
+// engine_test_ prefix so the test surface is distinguishable from the
+// production API.
+//
+//   import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+//   const e = attachTestHooks(createEngineWasm({...}));
+//   e._bodyState(0); e.setGroundingDebug(true, false); ...
+
+import { _wasmInternals } from './engineFactory.js';
+
+let T = null; // lazily cwrapped test-ABI table
+function table() {
+  if (T) return T;
+  const M = _wasmInternals();
+  if (!M) throw new Error('initSandWasm() must resolve before attachTestHooks()');
+  const c = (name, ret, args) => M.mod.cwrap(name, ret, args);
+  T = {
+    mod: M.mod,
+    bodyCount: c('engine_test_body_count', 'number', ['number']),
+    bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
+    bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
+    bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
+    bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
+    setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
+    rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
+    rigidDepen: c('engine_test_rigid_depen', 'number', ['number']),
+    setGroundingDebug: c('engine_test_set_grounding_debug', null, ['number', 'number', 'number']),
+    groundingMismatches: c('engine_test_grounding_mismatches', 'number', ['number']),
+    groundingDiag: c('engine_test_grounding_diag', 'number', ['number', 'number']),
+    spawnParticle: c('engine_test_spawn_particle', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+  };
+  return T;
+}
+
+// Adds the test methods onto an engine handle (mutates + returns it).
+export function attachTestHooks(engine) {
+  const t = table();
+  const { mod } = t;
+  const ptr = engine.ptr;
+  engine._bodyCount = () => t.bodyCount(ptr);
+  engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
+  engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
+  engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
+  // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
+  engine._bodyState = (i) => {
+    const buf = mod._malloc(8 * 8);
+    const ok = t.bodyState(ptr, i | 0, buf);
+    if (!ok) { mod._free(buf); return null; }
+    const base = buf >> 3;
+    const s = {
+      px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
+      vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
+      nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
+    };
+    mod._free(buf);
+    return s;
+  };
+  engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
+  engine.getRigidDebug = () => ({ rejectedCells: t.rigidRejected(ptr), depenetrations: t.rigidDepen(ptr) });
+  engine.setGroundingDebug = (verify, forceFull) => t.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0);
+  engine.groundingMismatches = () => t.groundingMismatches(ptr);
+  engine.groundingDiag = () => ({ fast: t.groundingDiag(ptr, 0), edge: t.groundingDiag(ptr, 1), powder: t.groundingDiag(ptr, 2), cut: t.groundingDiag(ptr, 3), span: t.groundingDiag(ptr, 4) });
+  engine.spawnParticle = (material, px, py, vx = 0, vy = 0, life = 0) => t.spawnParticle(ptr, material | 0, px, py, vx, vy, life | 0);
+  return engine;
+}

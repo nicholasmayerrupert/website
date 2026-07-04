@@ -190,14 +190,14 @@
     }
   }
 
-  // Pack all items into itemSnapshot as flat float32 records (stride ITEM_SNAP_STRIDE).
+  // Pack all items into itemSnapshot as flat float32 records (stride IS_STRIDE).
   int buildItemSnapshot() {
-    itemSnapshot.assign(items.size() * ITEM_SNAP_STRIDE, 0.0f);
+    itemSnapshot.assign(items.size() * IS_STRIDE, 0.0f);
     for (size_t i = 0; i < items.size(); i++) {
       const Item& it = items[i];
-      float* o = itemSnapshot.data() + i * ITEM_SNAP_STRIDE;
-      o[0] = (float)it.id; o[1] = (float)it.kind; o[2] = (float)it.material; o[3] = (float)it.count;
-      o[4] = (float)it.px; o[5] = (float)it.py; o[6] = (float)it.life;
+      float* o = itemSnapshot.data() + i * IS_STRIDE;
+      o[IS_ID] = (float)it.id; o[IS_KIND] = (float)it.kind; o[IS_MATERIAL] = (float)it.material; o[IS_COUNT] = (float)it.count;
+      o[IS_X] = (float)it.px; o[IS_Y] = (float)it.py; o[IS_LIFE] = (float)it.life;
     }
     return (int)items.size();
   }

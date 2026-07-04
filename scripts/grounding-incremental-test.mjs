@@ -9,7 +9,10 @@
 //   2. CHECKSUM: run the same scenario twice — fast path vs forced-full-reflood —
 //      and assert the grid checksum matches at EVERY step (byte-identical behavior).
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 
 await initSandWasm();
 let failures = 0;

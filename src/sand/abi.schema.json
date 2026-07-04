@@ -1,0 +1,60 @@
+{
+  "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
+  "abiVersion": 1,
+  "structs": {
+    "playerSnapshot": {
+      "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
+      "cPrefix": "PS",
+      "fields": ["id", "active", "x", "y", "vx", "vy", "w", "h", "facing", "grounded", "tool", "aimX", "aimY", "health", "inputSeq", "alive", "jumpReady", "animState", "animFrame"]
+    },
+    "itemSnapshot": {
+      "$comment": "float32 records built by buildItemSnapshot (items.inc); also the external GL item layout (glSetItems) and the ITEMS wire message payload.",
+      "cPrefix": "IS",
+      "fields": ["id", "kind", "material", "count", "x", "y", "life"]
+    },
+    "inventorySlot": {
+      "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
+      "cPrefix": "IVS",
+      "fields": ["material", "isTool", "toolClass", "toolTier", "count", "selected"]
+    },
+    "survivalFootprint": {
+      "$comment": "int32 records built by buildSurvivalFootprintSnapshot (inventory.inc).",
+      "cPrefix": "FP",
+      "fields": ["id", "width", "height", "cellCount", "anchorX", "anchorY"]
+    },
+    "glPlayerExt": {
+      "$comment": "float32 records a multiplayer client packs for engine_gl_set_players (host-authoritative snapshot players).",
+      "cPrefix": "GLP",
+      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame"]
+    },
+    "perfSnapshot": {
+      "$comment": "double records written by engine_perf_snapshot (one batched call replacing the old 18 scalar perf getters).",
+      "cPrefix": "PF",
+      "fields": ["stepMs", "dirtyChunks", "lightMs", "fillMs", "uploadMs", "shiftBuffers", "shiftTranslate", "shiftRegister", "shiftFill", "stepGround", "stepRigid", "stepReact", "stepCarry", "stepSettle", "stepTail", "stepJoint", "stepLayers", "stepCross"]
+    }
+  },
+  "enums": {
+    "PlayerInput": {
+      "$comment": "Input bitmask (player.inc / the browser input layer / the net protocol).",
+      "cName": "PlayerInput",
+      "values": { "PI_LEFT": 1, "PI_RIGHT": 2, "PI_JUMP": 4, "PI_DOWN": 8, "PI_PRIMARY": 16, "PI_SECONDARY": 32, "PI_RUN": 64 }
+    },
+    "Tool": {
+      "$comment": "Legacy tool ids (tools.inc); the creative palette prefers setCreativeMaterial.",
+      "cName": "Tool",
+      "cType": "int",
+      "values": { "T_CUBE": 0, "T_SAND": 1, "T_WATER": 2, "T_STONE": 3, "T_OIL": 4, "T_FIRE": 5, "T_ACID": 6, "T_LAVA": 7, "T_ICE": 8, "T_SEED": 9, "T_DRIFTWOOD": 10, "T_ERASER": 11 }
+    },
+    "CreativeKind": {
+      "$comment": "What an engine_set_creative_material selection refers to.",
+      "cName": "CreativeKind",
+      "cType": "uint8_t",
+      "values": { "CK_MATERIAL": 0, "CK_SEED": 1, "CK_ERASER": 2, "CK_CUBE": 3 }
+    }
+  },
+  "constants": {
+    "$comment": "Shared scalar constants. INV_SLOTS must equal INV_HOTBAR + the grid size (asserted in common.hpp).",
+    "INV_HOTBAR": 9,
+    "INV_SLOTS": 36
+  }
+}

@@ -17,6 +17,12 @@
 // `npm run generate` after editing the schema.
 #include "materials.generated.hpp"
 
+// JS<->WASM ABI manifest — snapshot strides + named field offsets, shared
+// enums (PlayerInput/Tool/CreativeKind), INV_* constants, and ABI_VERSION.
+// Generated from src/sand/abi.schema.json; run `npm run generate:abi` after
+// editing it and bump abiVersion on any layout change.
+#include "abi.generated.hpp"
+
 // WebGL presentation: per-canvas context + shader program registry. The Engine
 // (gl.inc) uploads the CPU-generated pixel buffer into a texture and composites.
 #include "gl_shared.hpp"
@@ -54,10 +60,9 @@ static const float MYCELIUM_GROWTH_P = 0.34f;
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
 
-// Tool ids (mirror the JS tool-name -> int map in createSandGame). The engine
-// owns all tool policy: brush radii, which tool paints/erases/drafts/spawns,
-// the right-click eraser, draft lifecycle, seed placement, and emit throttling.
-enum Tool : int { T_CUBE = 0, T_SAND, T_WATER, T_STONE, T_OIL, T_FIRE, T_ACID, T_LAVA, T_ICE, T_SEED, T_DRIFTWOOD, T_ERASER };
+// Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool
+// policy: brush radii, which tool paints/erases/drafts/spawns, the right-click
+// eraser, draft lifecycle, seed placement, and emit throttling.
 
 // Held movement/pan keys forwarded from the browser (createSandGame maps the
 // physical keys onto these). The engine owns the camera + input policy now:
@@ -191,7 +196,7 @@ static const double IT_THROW_UP = -0.9;      // upward kick on a throw
 static const int    IT_THROW_PICKUP_DELAY = 40; // a thrown item ignores the magnet this long
 static const int    IT_PARTICLE_LIFE = 24;   // default mining-debris lifetime (steps)
 static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then item) evicted
-static const int    ITEM_SNAP_STRIDE = 7;    // id, kind, material, count, px, py, life
+// Item snapshot layout: IS_* offsets / IS_STRIDE in abi.generated.hpp.
 struct Item {
   int id = 0;
   uint8_t kind = IT_ITEM;
@@ -204,13 +209,10 @@ struct Item {
 };
 
 // ---- Player (Terraria-like character; simulated in C++, presented in JS) ----
-// Input is a normalized bitmask supplied by JS/network each step. Physics is
-// fully deterministic (no RNG) and runs at a fixed per-step timestep so a fixed
-// input stream replays identically — the foundation for multiplayer.
-enum PlayerInput : int {
-  PI_LEFT = 1, PI_RIGHT = 2, PI_JUMP = 4, PI_DOWN = 8,
-  PI_PRIMARY = 16, PI_SECONDARY = 32, PI_RUN = 64
-};
+// Input is a normalized bitmask (enum PlayerInput in abi.generated.hpp)
+// supplied by JS/network each step. Physics is fully deterministic (no RNG)
+// and runs at a fixed per-step timestep so a fixed input stream replays
+// identically — the foundation for multiplayer.
 // Player physics tunables (cells; velocities in cells per fixed step).
 static const int    PLAYER_W = 4, PLAYER_H = 8;
 static const double P_GRAVITY = 0.25, P_MAX_FALL = 6.0;
@@ -238,11 +240,10 @@ static const double P_LIQUID_RUN_MULT = 0.55, P_LIQUID_DRAG_X = 0.76, P_LIQUID_D
 // A fixed grid of stacks per player: the first INV_HOTBAR slots are the always-
 // visible hotbar; the rest are the openable grid. A slot holds either a material
 // stack (placeable) or a tool (mines; never stacks). count 0 = empty.
-static const int INV_HOTBAR = 9;
-static const int INV_GRID = 27;
-static const int INV_SLOTS = INV_HOTBAR + INV_GRID; // 36
+// INV_HOTBAR / INV_SLOTS live in abi.generated.hpp (shared with the JS HUD).
+static const int INV_GRID = INV_SLOTS - INV_HOTBAR; // 27
 static const int INV_STACK_MAX = 999;
-static const int INV_SNAP_STRIDE = 6; // material, isTool, toolClass, toolTier, count, selected
+// Inventory snapshot layout: IVS_* offsets / IVS_STRIDE in abi.generated.hpp.
 struct InvSlot {
   uint8_t material = 0;   // material id for a stack (0 when a tool or empty)
   uint8_t isTool = 0;     // 1 = a mining tool (class/tier below), not a placeable stack
@@ -262,7 +263,7 @@ struct SurvivalFootprint {
   int8_t anchorX = 0, anchorY = 0; // aimed cell maps to local mask cell (anchorX,anchorY)
   std::vector<SurvivalFootprintCell> cells; // deterministic center-first ordering
 };
-static const int SURVIVAL_FOOTPRINT_SNAP_FIELDS = 6; // id,width,height,cellCount,anchorX,anchorY
+// Footprint snapshot layout: FP_* offsets / FP_STRIDE in abi.generated.hpp.
 static const int SURVIVAL_FOOTPRINT_MAX_SIZE = 8;
 static const int SURVIVAL_FOOTPRINT_DEFAULT_ID = 2;  // 3x3 in the default preset list
 static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
@@ -272,8 +273,8 @@ static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
 // fixed per-material Tool enum. PAINT = powder/liquid/gas (continuous), DRAFT = a
 // component material drawn with a live preview then dropped on release.
 enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_MYCELIUM_SPORE, CM_ERASE, CM_CUBE };
-// What a creative palette selection refers to (engine_set_creative_material kind).
-enum CreativeKind : uint8_t { CK_MATERIAL = 0, CK_SEED, CK_ERASER, CK_CUBE };
+// enum CreativeKind (what engine_set_creative_material's kind refers to) lives
+// in abi.generated.hpp.
 
 // ---- Player sprite + animation (player.inc state pick; gl.inc per-pixel blit) ----
 // Deterministic: animState picked from physics at the end of integratePlayer, frame
@@ -378,8 +379,7 @@ struct Player {
   // Animation (computed at the end of integratePlayer; frame derived from tick).
   uint8_t animState = AS_IDLE, animFrame = 0;
 };
-// Player snapshot layout (float32 per field) shared with JS and the net layer.
-static const int PLAYER_SNAP_STRIDE = 19;
+// Player snapshot layout: PS_* offsets / PS_STRIDE in abi.generated.hpp.
 
 // Rigid tunables (rigid2d.js)
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;

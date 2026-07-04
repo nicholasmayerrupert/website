@@ -9,16 +9,14 @@
 
 import createSandModule from '../wasm/sandEngine.js';
 import { MAT } from '../materials.js';
+import { ABI_VERSION, OFF, STRIDES, INPUT } from './abi.generated.js';
 
 export { MAT };
+// Player input bitmask + snapshot layouts come from the generated ABI manifest
+// (abi.generated.js) — one schema edit changes both sides.
+export { INPUT };
 export const CHUNK_SIZE = 32;
 export const SEED_SIZE = 1;
-
-// Player input bitmask — mirrors `enum PlayerInput` in cpp/engine/common.hpp.
-// Shared by the browser input layer and the network protocol.
-export const INPUT = Object.freeze({
-  LEFT: 1, RIGHT: 2, JUMP: 4, DOWN: 8, PRIMARY: 16, SECONDARY: 32, RUN: 64,
-});
 
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns
@@ -28,6 +26,12 @@ export function initSandWasm() {
   if (!modPromise) {
     modPromise = createSandModule().then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
+      // Refuse a module whose compiled-in ABI version mismatches the JS
+      // manifest — the loud failure for a stale committed sandEngine.js.
+      const wasmAbi = c('engine_abi_version', 'number', [])();
+      if (wasmAbi !== ABI_VERSION) {
+        throw new Error(`sand wasm ABI version ${wasmAbi} != JS manifest ${ABI_VERSION} — rebuild the wasm (wasm/build.sh) or regenerate (npm run generate:abi)`);
+      }
       M = {
         mod,
         create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number']),
@@ -63,39 +67,13 @@ export function initSandWasm() {
         eraseDisc: c('engine_erase_disc', 'number', ['number', 'number', 'number', 'number']),
         placeMaterial: c('engine_place_material', 'number', ['number', 'number', 'number', 'number', 'number']),
         placeMaterialLayer: c('engine_place_material_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
-        setSinks: c('engine_set_sinks', null, ['number', 'number']),
         syncComponents: c('engine_sync_components', null, ['number']),
-        setGroundingDebug: c('engine_set_grounding_debug', null, ['number', 'number', 'number']),
-        groundingMismatches: c('engine_grounding_mismatches', 'number', ['number']),
-        groundingDiag: c('engine_grounding_diag', 'number', ['number', 'number']),
-        perfStepMs: c('engine_perf_step_ms', 'number', ['number']),
-        perfDirtyChunks: c('engine_perf_dirty_chunks', 'number', ['number']),
-        perfLightMs: c('engine_perf_light_ms', 'number', ['number']),
-        perfFillMs: c('engine_perf_fill_ms', 'number', ['number']),
-        perfUploadMs: c('engine_perf_upload_ms', 'number', ['number']),
-        perfShiftBuffers: c('engine_perf_shift_buffers', 'number', ['number']),
-        perfShiftTranslate: c('engine_perf_shift_translate', 'number', ['number']),
-        perfShiftRegister: c('engine_perf_shift_register', 'number', ['number']),
-        perfShiftFill: c('engine_perf_shift_fill', 'number', ['number']),
-        perfStepGround: c('engine_perf_step_ground', 'number', ['number']),
-        perfStepRigid: c('engine_perf_step_rigid', 'number', ['number']),
-        perfStepReact: c('engine_perf_step_react', 'number', ['number']),
-        perfStepCarry: c('engine_perf_step_carry', 'number', ['number']),
-        perfStepSettle: c('engine_perf_step_settle', 'number', ['number']),
-        perfStepTail: c('engine_perf_step_tail', 'number', ['number']),
-        perfStepJoint: c('engine_perf_step_joint', 'number', ['number']),
-        perfStepLayers: c('engine_perf_step_layers', 'number', ['number']),
-        perfStepCross: c('engine_perf_step_cross', 'number', ['number']),
+        perfSnapshot: c('engine_perf_snapshot', null, ['number', 'number']),
         tick: c('engine_tick', 'number', ['number']),
-        addStoneDraft: c('engine_add_stone_draft', 'number', ['number', 'number', 'number', 'number']),
-        addIceDraft: c('engine_add_ice_draft', 'number', ['number', 'number', 'number', 'number']),
-        finalizeStoneDraft: c('engine_finalize_stone_draft', null, ['number']),
-        finalizeIceDraft: c('engine_finalize_ice_draft', null, ['number']),
-        finalizeDriftwoodDraft: c('engine_finalize_driftwood_draft', null, ['number']),
-        clearStoneDraft: c('engine_clear_stone_draft', null, ['number']),
-        clearIceDraft: c('engine_clear_ice_draft', null, ['number']),
-        stoneDraftSnapshot: c('engine_stone_draft_snapshot', 'number', ['number']),
-        iceDraftSnapshot: c('engine_ice_draft_snapshot', 'number', ['number']),
+        addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
+        finalizeDraft: c('engine_finalize_draft', null, ['number', 'number']),
+        clearDraft: c('engine_clear_draft', null, ['number']),
+        draftSnapshot: c('engine_draft_snapshot', 'number', ['number']),
         draftPtr: c('engine_draft_ptr', 'number', ['number']),
         getSeedOrigin: c('engine_get_seed_origin', 'number', ['number', 'number', 'number', 'number']),
         canPlaceSeed: c('engine_can_place_seed', 'number', ['number', 'number', 'number']),
@@ -113,14 +91,6 @@ export function initSandWasm() {
         applyTool: c('engine_apply_tool', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         draftIsDriftwood: c('engine_draft_is_driftwood', 'number', ['number']),
         seedDraft: c('engine_seed_draft', 'number', ['number', 'number']),
-        bodyCount: c('engine_body_count', 'number', ['number']),
-        bodyBlocked: c('engine_body_blocked', 'number', ['number', 'number']),
-        bodyAwake: c('engine_body_awake', 'number', ['number', 'number']),
-        bodyMaterial: c('engine_body_material', 'number', ['number', 'number']),
-        bodyState: c('engine_body_state', 'number', ['number', 'number', 'number']),
-        setBodyMotion: c('engine_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
-        rigidRejected: c('engine_rigid_rejected', 'number', ['number']),
-        rigidDepen: c('engine_rigid_depen', 'number', ['number']),
         spawnPlayer: c('engine_spawn_player', 'number', ['number', 'number', 'number']),
         spawnPlayerSurface: c('engine_spawn_player_surface', 'number', ['number', 'number']),
         playerSurfaceSpawn: c('engine_player_surface_spawn', null, ['number', 'number', 'number']),
@@ -131,7 +101,6 @@ export function initSandWasm() {
         playerCount: c('engine_player_count', 'number', ['number']),
         playerSnapshot: c('engine_player_snapshot', 'number', ['number']),
         playerSnapshotPtr: c('engine_player_snapshot_ptr', 'number', ['number']),
-        playerSnapshotStride: c('engine_player_snapshot_stride', 'number', ['number']),
         playerActionCount: c('engine_player_action_count', 'number', ['number']),
         stepPlayerOnly: c('engine_step_player_only', null, ['number', 'number']),
         setPlayerTool: c('engine_set_player_tool', null, ['number', 'number', 'number', 'number']),
@@ -139,11 +108,9 @@ export function initSandWasm() {
         playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
         setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
-        spawnParticle: c('engine_spawn_particle', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         itemCount: c('engine_item_count', 'number', ['number']),
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
         itemSnapshotPtr: c('engine_item_snapshot_ptr', 'number', ['number']),
-        itemSnapshotStride: c('engine_item_snapshot_stride', 'number', ['number']),
         setSurvivalInventory: c('engine_set_survival_inventory', null, ['number', 'number']),
         seedStarterTools: c('engine_seed_starter_tools', null, ['number', 'number']),
         addToInventory: c('engine_add_to_inventory', 'number', ['number', 'number', 'number', 'number']),
@@ -153,12 +120,10 @@ export function initSandWasm() {
         selectedFootprint: c('engine_selected_footprint', 'number', ['number', 'number']),
         survivalFootprintSnapshot: c('engine_survival_footprint_snapshot', 'number', ['number']),
         survivalFootprintSnapshotPtr: c('engine_survival_footprint_snapshot_ptr', 'number', ['number']),
-        survivalFootprintSnapshotStride: c('engine_survival_footprint_snapshot_stride', 'number', ['number']),
         inventoryMove: c('engine_inventory_move', null, ['number', 'number', 'number', 'number']),
         placeFromSelected: c('engine_place_from_selected', 'number', ['number', 'number', 'number', 'number']),
         inventorySnapshot: c('engine_inventory_snapshot', 'number', ['number', 'number']),
         inventorySnapshotPtr: c('engine_inventory_snapshot_ptr', 'number', ['number']),
-        inventorySnapshotStride: c('engine_inventory_snapshot_stride', 'number', ['number']),
         inventoryCursorPick: c('engine_inventory_cursor_pick', null, ['number', 'number', 'number', 'number']),
         inventoryThrowFromCursor: c('engine_inventory_throw_from_cursor', 'number', ['number', 'number', 'number']),
         cursorSnapshot: c('engine_cursor_snapshot', 'number', ['number', 'number']),
@@ -180,8 +145,6 @@ export function initSandWasm() {
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
         glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
-        glPlayerExtStride: c('engine_gl_player_ext_stride', 'number', []),
-        glItemExtStride: c('engine_gl_item_ext_stride', 'number', []),
         glShift: c('engine_gl_shift', null, ['number', 'number']),
         glRenderFrame: c('engine_gl_render_frame', 'number', ['number', 'number']),
         glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
@@ -212,6 +175,9 @@ export function initSandWasm() {
 }
 
 export function isSandWasmReady() { return M !== null; }
+// Internal accessor for wasmBridge/testHooks.js (test-only cwraps live there,
+// out of the browser bundle). Not part of the public engine API.
+export function _wasmInternals() { return M; }
 
 // Create one engine instance. Requires initSandWasm() resolved.
 export function createEngineWasm({
@@ -228,8 +194,8 @@ export function createEngineWasm({
   const chunkRows = M.chunkRows(ptr);
   const cellCount = cols * rows;
   const renderStrides = Object.freeze({
-    player: M.glPlayerExtStride(),
-    item: M.glItemExtStride(),
+    player: STRIDES.glPlayerExt,
+    item: STRIDES.itemSnapshot,
   });
 
   // Fresh views each call: grid swaps every step; ALLOW_MEMORY_GROWTH can detach.
@@ -243,6 +209,7 @@ export function createEngineWasm({
   const seedDraftOut = mod._malloc(12);
   const glOffOut = mod._malloc(8);
   const camOut = mod._malloc(16); // 2 doubles: cameraGet / aimCell
+  const perfOut = mod._malloc(STRIDES.perfSnapshot * 8); // doubles for engine_perf_snapshot
   // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
@@ -260,15 +227,17 @@ export function createEngineWasm({
   // must fully consume one draft before requesting the other.
   const draftCells = (count) => (count ? new Int32Array(mod.HEAP32.buffer, M.draftPtr(ptr), count) : emptyRects);
 
-  // Decode one player from the packed snapshot at float offset o into `out`.
+  // Decode one player from the packed snapshot at float offset o into `out`
+  // (named offsets from the generated ABI manifest).
+  const P = OFF.playerSnapshot;
   const readPlayer = (f, o, out) => {
-    out.id = f[o] | 0; out.active = f[o + 1] === 1;
-    out.x = f[o + 2]; out.y = f[o + 3]; out.vx = f[o + 4]; out.vy = f[o + 5];
-    out.w = f[o + 6] | 0; out.h = f[o + 7] | 0; out.facing = f[o + 8] | 0;
-    out.grounded = f[o + 9] === 1; out.tool = f[o + 10] | 0;
-    out.aimX = f[o + 11]; out.aimY = f[o + 12]; out.health = f[o + 13] | 0;
-    out.inputSeq = f[o + 14] >>> 0; out.alive = f[o + 15] === 1; out.jumpReady = f[o + 16] === 1;
-    out.animState = f[o + 17] | 0; out.animFrame = f[o + 18] | 0;
+    out.id = f[o + P.id] | 0; out.active = f[o + P.active] === 1;
+    out.x = f[o + P.x]; out.y = f[o + P.y]; out.vx = f[o + P.vx]; out.vy = f[o + P.vy];
+    out.w = f[o + P.w] | 0; out.h = f[o + P.h] | 0; out.facing = f[o + P.facing] | 0;
+    out.grounded = f[o + P.grounded] === 1; out.tool = f[o + P.tool] | 0;
+    out.aimX = f[o + P.aimX]; out.aimY = f[o + P.aimY]; out.health = f[o + P.health] | 0;
+    out.inputSeq = f[o + P.inputSeq] >>> 0; out.alive = f[o + P.alive] === 1; out.jumpReady = f[o + P.jumpReady] === 1;
+    out.animState = f[o + P.animState] | 0; out.animFrame = f[o + P.animFrame] | 0;
     return out;
   };
 
@@ -409,26 +378,32 @@ export function createEngineWasm({
       mod._free(buf);
       return out;
     },
-    getPerf() { return { stepMs: M.perfStepMs(ptr), dirtyChunks: M.perfDirtyChunks(ptr), lightMs: M.perfLightMs(ptr), fillMs: M.perfFillMs(ptr), uploadMs: M.perfUploadMs(ptr), phases: {} }; },
-    getShiftPerf() { return { buffers: M.perfShiftBuffers(ptr), translate: M.perfShiftTranslate(ptr), register: M.perfShiftRegister(ptr), fill: M.perfShiftFill(ptr) }; },
-    getStepPerf() { return { ground: M.perfStepGround(ptr), rigid: M.perfStepRigid(ptr), react: M.perfStepReact(ptr), carry: M.perfStepCarry(ptr), settle: M.perfStepSettle(ptr), tail: M.perfStepTail(ptr), joint: M.perfStepJoint(ptr), layers: M.perfStepLayers(ptr), cross: M.perfStepCross(ptr) }; },
+    // One batched FFI read for all perf timers (PF layout from the manifest);
+    // the three views below slice it for their callers.
+    readPerf() {
+      M.perfSnapshot(ptr, perfOut);
+      const d = new Float64Array(mod.HEAPF64.buffer, perfOut, STRIDES.perfSnapshot);
+      const F = OFF.perfSnapshot;
+      return { d, F };
+    },
+    getPerf() { const { d, F } = this.readPerf(); return { stepMs: d[F.stepMs], dirtyChunks: d[F.dirtyChunks], lightMs: d[F.lightMs], fillMs: d[F.fillMs], uploadMs: d[F.uploadMs], phases: {} }; },
+    getShiftPerf() { const { d, F } = this.readPerf(); return { buffers: d[F.shiftBuffers], translate: d[F.shiftTranslate], register: d[F.shiftRegister], fill: d[F.shiftFill] }; },
+    getStepPerf() { const { d, F } = this.readPerf(); return { ground: d[F.stepGround], rigid: d[F.stepRigid], react: d[F.stepReact], carry: d[F.stepCarry], settle: d[F.stepSettle], tail: d[F.stepTail], joint: d[F.stepJoint], layers: d[F.stepLayers], cross: d[F.stepCross] }; },
     getTick() { return M.tick(ptr); },
     syncComponents() { M.syncComponents(ptr); },
-    setGroundingDebug(verify, forceFull) { M.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0); },
-    groundingMismatches() { return M.groundingMismatches(ptr); },
-    groundingDiag() { return { fast: M.groundingDiag(ptr, 0), edge: M.groundingDiag(ptr, 1), powder: M.groundingDiag(ptr, 2), cut: M.groundingDiag(ptr, 3), span: M.groundingDiag(ptr, 4) }; },
-    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); M.destroy(ptr); },
+    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
 
-    // Component drafts + seeds (Stage 3)
-    addDiscToStoneDraft(cx, cy, r) { return M.addStoneDraft(ptr, cx, cy, r) === 1; },
-    addDiscToIceDraft(cx, cy, r) { return M.addIceDraft(ptr, cx, cy, r) === 1; },
-    finalizeStoneDraft() { M.finalizeStoneDraft(ptr); },
-    finalizeIceDraft() { M.finalizeIceDraft(ptr); },
-    finalizeDriftwoodDraft() { M.finalizeDriftwoodDraft(ptr); },
-    clearStoneDraft() { M.clearStoneDraft(ptr); },
-    clearIceDraft() { M.clearIceDraft(ptr); },
-    getStoneDraftCells() { return draftCells(M.stoneDraftSnapshot(ptr)); },
-    getIceDraftCells() { return draftCells(M.iceDraftSnapshot(ptr)); },
+    // Component drafts + seeds. One material-parameterized draft set; the
+    // per-material method names remain for the tests/tools that use them.
+    addDiscToStoneDraft(cx, cy, r) { return M.addDraft(ptr, cx, cy, r, MAT.STONE) === 1; },
+    addDiscToIceDraft(cx, cy, r) { return M.addDraft(ptr, cx, cy, r, MAT.ICE) === 1; },
+    finalizeStoneDraft() { M.finalizeDraft(ptr, MAT.STONE); },
+    finalizeIceDraft() { M.finalizeDraft(ptr, MAT.ICE); },
+    finalizeDriftwoodDraft() { M.finalizeDraft(ptr, MAT.DRIFTWOOD); },
+    clearStoneDraft() { M.clearDraft(ptr); },
+    clearIceDraft() { M.clearDraft(ptr); },
+    getStoneDraftCells() { return draftCells(M.draftSnapshot(ptr)); },
+    getIceDraftCells() { return draftCells(M.draftSnapshot(ptr)); },
     getSeedOrigin(cx, cy) {
       if (M.getSeedOrigin(ptr, cx, cy, seedOut) !== 1) return null;
       const o = seedOut >> 2;
@@ -469,7 +444,6 @@ export function createEngineWasm({
     // Primitive bodies built engine-side (no coordinate array marshalling).
     spawnBox(cx, cy, halfW, halfH, material = MAT.RIGID) { M.spawnBox(ptr, cx, cy, halfW, halfH, material); },
     spawnDisc(cx, cy, radius, material = MAT.RIGID) { M.spawnDisc(ptr, cx, cy, radius, material); },
-    getRigidDebug() { return { rejectedCells: M.rigidRejected(ptr), depenetrations: M.rigidDepen(ptr) }; },
 
     // Players (Terraria-like characters; physics owned by the engine). JS only
     // collects input and reads snapshots to draw the overlay.
@@ -492,7 +466,7 @@ export function createEngineWasm({
     getPlayers() {
       const n = M.playerSnapshot(ptr);
       if (!n) return [];
-      const stride = M.playerSnapshotStride(ptr);
+      const stride = STRIDES.playerSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.playerSnapshotPtr(ptr), n * stride);
       const out = new Array(n);
       for (let i = 0; i < n; i++) out[i] = readPlayer(f, i * stride, {});
@@ -504,7 +478,7 @@ export function createEngineWasm({
     getPlayer(id, out) {
       const n = M.playerSnapshot(ptr);
       if (!n) return null;
-      const stride = M.playerSnapshotStride(ptr);
+      const stride = STRIDES.playerSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.playerSnapshotPtr(ptr), n * stride);
       for (let i = 0; i < n; i++) {
         const o = i * stride;
@@ -513,10 +487,9 @@ export function createEngineWasm({
       return null;
     },
 
-    // Dropped items + particles (entities; physics owned by the engine). spawnItem
-    // returns the new item id; spawnParticle is fire-and-forget cosmetic debris.
+    // Dropped items (entities; physics owned by the engine). spawnItem returns
+    // the new item id. Cosmetic particles are a test hook (wasmBridge/testHooks.js).
     spawnItem(material, count, px, py, vx = 0, vy = 0) { return M.spawnItem(ptr, material | 0, count | 0, px, py, vx, vy); },
-    spawnParticle(material, px, py, vx = 0, vy = 0, life = 0) { M.spawnParticle(ptr, material | 0, px, py, vx, vy, life | 0); },
     itemCount() { return M.itemCount(ptr); },
 
     // Survival inventory (authoritative in the engine). setSurvivalInventory routes
@@ -532,18 +505,19 @@ export function createEngineWasm({
     getSurvivalFootprints() {
       const n = M.survivalFootprintSnapshot(ptr);
       if (!n) return [];
-      const stride = M.survivalFootprintSnapshotStride(ptr);
+      const stride = STRIDES.survivalFootprint;
       const f = new Int32Array(mod.HEAP32.buffer, M.survivalFootprintSnapshotPtr(ptr), n * stride);
       const out = new Array(n);
+      const O = OFF.survivalFootprint;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
         out[i] = {
-          id: f[o] | 0,
-          width: f[o + 1] | 0,
-          height: f[o + 2] | 0,
-          cellCount: f[o + 3] | 0,
-          anchorX: f[o + 4] | 0,
-          anchorY: f[o + 5] | 0,
+          id: f[o + O.id] | 0,
+          width: f[o + O.width] | 0,
+          height: f[o + O.height] | 0,
+          cellCount: f[o + O.cellCount] | 0,
+          anchorX: f[o + O.anchorX] | 0,
+          anchorY: f[o + O.anchorY] | 0,
         };
       }
       return out;
@@ -557,8 +531,9 @@ export function createEngineWasm({
     throwFromCursor(id, whole) { return M.inventoryThrowFromCursor(ptr, id | 0, whole ? 1 : 0) === 1; },
     getCursor(id) {
       if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
-      const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), M.inventorySnapshotStride(ptr));
-      return { material: f[0] | 0, isTool: f[1] === 1, toolClass: f[2] | 0, toolTier: f[3] | 0, count: f[4] | 0 };
+      const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), STRIDES.inventorySlot);
+      const O = OFF.inventorySlot;
+      return { material: f[O.material] | 0, isTool: f[O.isTool] === 1, toolClass: f[O.toolClass] | 0, toolTier: f[O.toolTier] | 0, count: f[O.count] | 0 };
     },
     // Cheap change detector for the HUD: hash the packed snapshot (all fields
     // are int-valued) without building the 36 slot objects. Includes the
@@ -566,7 +541,7 @@ export function createEngineWasm({
     inventoryHash(id) {
       const n = M.inventorySnapshot(ptr, id | 0);
       if (!n) return 0;
-      const stride = M.inventorySnapshotStride(ptr);
+      const stride = STRIDES.inventorySlot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.inventorySnapshotPtr(ptr), n * stride);
       let h = 2166136261 >>> 0;
       for (let i = 0; i < f.length; i++) h = Math.imul(h ^ (f[i] | 0), 16777619) >>> 0;
@@ -575,14 +550,15 @@ export function createEngineWasm({
     getInventory(id) {
       const n = M.inventorySnapshot(ptr, id | 0);
       if (!n) return { slots: [], selected: 0, selectedFootprint: 0 };
-      const stride = M.inventorySnapshotStride(ptr);
+      const stride = STRIDES.inventorySlot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.inventorySnapshotPtr(ptr), n * stride);
       const slots = new Array(n);
       let selected = 0;
+      const O = OFF.inventorySlot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        slots[i] = { material: f[o] | 0, isTool: f[o + 1] === 1, toolClass: f[o + 2] | 0, toolTier: f[o + 3] | 0, count: f[o + 4] | 0 };
-        if (f[o + 5] === 1) selected = i;
+        slots[i] = { material: f[o + O.material] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0, count: f[o + O.count] | 0 };
+        if (f[o + O.selected] === 1) selected = i;
       }
       return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
     },
@@ -590,12 +566,13 @@ export function createEngineWasm({
     getItems() {
       const n = M.itemSnapshot(ptr);
       if (!n) return [];
-      const stride = M.itemSnapshotStride(ptr);
+      const stride = STRIDES.itemSnapshot;
       const f = new Float32Array(mod.HEAPF32.buffer, M.itemSnapshotPtr(ptr), n * stride);
       const out = new Array(n);
+      const O = OFF.itemSnapshot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        out[i] = { id: f[o] | 0, kind: f[o + 1] | 0, material: f[o + 2] | 0, count: f[o + 3] | 0, x: f[o + 4], y: f[o + 5], life: f[o + 6] | 0 };
+        out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0 };
       }
       return out;
     },
@@ -628,25 +605,9 @@ export function createEngineWasm({
     paintDiscLayer(layer, cx, cy, r, material, overwrite = false) { return M.paintDiscLayer(ptr, layer | 0, cx, cy, r, material, overwrite ? 1 : 0); },
     eraseDiscLayer(layer, cx, cy, r) { return M.eraseDiscLayer(ptr, layer | 0, cx, cy, r) > 0; },
     syncComponentsLayer(layer) { M.syncComponentsLayer(ptr, layer | 0); },
-    // test hooks
-    _bodyCount() { return M.bodyCount(ptr); },
-    _bodyBlocked(i) { return M.bodyBlocked(ptr, i); },
-    _bodyAwake(i) { return M.bodyAwake(ptr, i); },
-    _bodyMaterial(i) { return M.bodyMaterial(ptr, i); },
-    // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
-    _bodyState(i) {
-      const buf = mod._malloc(8 * 8);
-      const ok = M.bodyState(ptr, i | 0, buf);
-      if (!ok) { mod._free(buf); return null; }
-      const base = buf >> 3;
-      const s = {
-        px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
-        vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
-        nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
-      };
-      mod._free(buf);
-      return s;
-    },
-    _setBodyMotion(i, vx, vy, omega = 0) { return M.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0; },
+    // Test/diagnostic hooks (grounding debug, body pokes, particles) live in
+    // wasmBridge/testHooks.js — scripts call attachTestHooks(engine). The raw
+    // engine pointer is exposed for that module only.
+    ptr,
   };
 }

@@ -3,7 +3,10 @@
 // Covers the core behaviours: material conservation, rigid components, reactions,
 // plant growth, free rigid bodies, and edits persisting across a world shift.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;

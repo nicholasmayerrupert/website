@@ -1,10 +1,13 @@
-// Multiplayer wire protocol. Pure, transport-agnostic, and dependency-free so it
-// can be unit-tested in Node without a real network. Messages are JSON for the
-// MVP (Phase 6 may swap world diffs to a binary/RLE encoding). Every decode is
-// strictly validated and integer fields are preserved exactly — divergence here
-// would desync a host-authoritative session.
+// Multiplayer wire protocol. Pure and transport-agnostic so it can be
+// unit-tested in Node without a real network. Messages are JSON for the MVP
+// (a later phase may swap world diffs to a binary/RLE encoding). Every decode
+// is strictly validated and integer fields are preserved exactly — divergence
+// here would desync a host-authoritative session.
+
+import { INPUT, TOOL, INV_SLOTS, STRIDES } from '../wasmBridge/abi.generated.js';
 
 export const PROTOCOL_VERSION = 3;
+export { INV_SLOTS };
 
 export const MSG = Object.freeze({
   JOIN: 'join',
@@ -25,14 +28,13 @@ export const MSG = Object.freeze({
   ACT_THROW: 'athrow',  // client -> host: throw the carried cursor stack out
 });
 
-// Field bounds (must match the engine: PlayerInput is 7 bits, 12 tools).
-export const INPUT_BITS_MAX = 127;
-export const TOOL_MAX = 11;
+// Field bounds, derived from the generated ABI manifest so they can't drift
+// from the engine.
+export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 127
+export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
 const MAX_SNAPSHOT_PLAYERS = 64;
-// Inventory + item packing (must match the engine: INV_SLOTS, item snapshot).
-export const INV_SLOTS = 36;     // hotbar(9) + grid(27); inventory.inc
-export const ITEM_FIELDS = 7;    // [id,kind,material,count,x,y,life] per item
-export const INV_FIELDS = 5;     // [material,isTool,toolClass,toolTier,count] per slot
+export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life] per item
+export const INV_FIELDS = STRIDES.inventorySlot - 1;  // wire slots omit the `selected` flag (sent separately)
 const MAX_SNAPSHOT_ITEMS = 1024; // IT_MAX_ITEMS in items.inc
 
 const isInt = (v) => Number.isInteger(v);
@@ -127,8 +129,10 @@ export function decode(str) {
   try { m = JSON.parse(str); } catch { return null; }
   if (!m || typeof m !== 'object' || typeof m.t !== 'string') return null;
   switch (m.t) {
-    case MSG.JOIN: return (isRoom(m.room) && isId(m.client)) ? m : null;
-    case MSG.LEAVE: return (isRoom(m.room) && isId(m.client)) ? m : null;
+    // JOIN/LEAVE carry the protocol version; a version-skewed peer is rejected
+    // at decode so it desyncs loudly (join fails) instead of silently.
+    case MSG.JOIN: return (m.v === PROTOCOL_VERSION && isRoom(m.room) && isId(m.client)) ? m : null;
+    case MSG.LEAVE: return (m.v === PROTOCOL_VERSION && isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ASSIGN: return (isRoom(m.room) && isId(m.client) && isNonNegInt(m.player)) ? m : null;
     case MSG.INPUT: return validateInput(m);
     case MSG.SNAPSHOT: return validateSnapshot(m);

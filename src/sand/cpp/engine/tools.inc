@@ -48,16 +48,16 @@
   const SurvivalFootprint& getSurvivalFootprint(int id) const { return survivalFootprints[(size_t)clampSurvivalFootprintId(id)]; }
   const SurvivalFootprint& getSurvivalFootprint(const Player& p) const { return getSurvivalFootprint(p.selectedFootprint); }
   int buildSurvivalFootprintSnapshot() {
-    survivalFootprintSnapshot.assign((size_t)survivalFootprints.size() * SURVIVAL_FOOTPRINT_SNAP_FIELDS, 0);
+    survivalFootprintSnapshot.assign((size_t)survivalFootprints.size() * FP_STRIDE, 0);
     for (size_t i = 0; i < survivalFootprints.size(); i++) {
       const SurvivalFootprint& fp = survivalFootprints[i];
-      int32_t* o = survivalFootprintSnapshot.data() + i * SURVIVAL_FOOTPRINT_SNAP_FIELDS;
-      o[0] = fp.id;
-      o[1] = fp.width;
-      o[2] = fp.height;
-      o[3] = (int32_t)fp.cells.size();
-      o[4] = fp.anchorX;
-      o[5] = fp.anchorY;
+      int32_t* o = survivalFootprintSnapshot.data() + i * FP_STRIDE;
+      o[FP_ID] = fp.id;
+      o[FP_WIDTH] = fp.width;
+      o[FP_HEIGHT] = fp.height;
+      o[FP_CELL_COUNT] = (int32_t)fp.cells.size();
+      o[FP_ANCHOR_X] = fp.anchorX;
+      o[FP_ANCHOR_Y] = fp.anchorY;
     }
     return (int)survivalFootprints.size();
   }

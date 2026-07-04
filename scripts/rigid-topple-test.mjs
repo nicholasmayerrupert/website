@@ -15,7 +15,10 @@
 // The tip-speed bounds below are chosen to PASS the fixed engine and FAIL the
 // pre-fix engine (which took ~120-170 ticks to reach 45 deg in these scenes).
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 
 const COLS = 160, ROWS = 140, SEED = 0xC0FFEE;
 const STONE = 3, RIGID = 13;

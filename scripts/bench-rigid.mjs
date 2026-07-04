@@ -7,7 +7,10 @@
 // the median / p95 rigid-phase ms and total wall time so the swept-collision
 // changes can be compared against the prior implementation.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 
 const COLS = 240, ROWS = 180, SEED = 0xBEEF, STONE = 3;
 await initSandWasm();

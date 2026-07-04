@@ -6,6 +6,7 @@
 // createSandGame.js.
 
 import { SIZING, STEP_MS, TOOL_IDS } from './runtimeConfig';
+import { OFF } from '../wasmBridge/abi.generated.js';
 
 export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory }) {
   // Rolling perf samples for window.__sandPerf / perfStats()
@@ -72,14 +73,15 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     } else if (ctx.netClientReady()) {
       const ps = ctx.net.getPlayersForRender();
       const stride = engine.getRenderStrides().player;
+      const G = OFF.glPlayerExt;
       const floats = ps.length * stride;
       if (packScratch.length < floats) packScratch = new Float32Array(floats);
-      const packed = packScratch.subarray(0, floats); // [x,y,w,h,facing,own,animState,animFrame]
+      const packed = packScratch.subarray(0, floats);
       for (let i = 0; i < ps.length; i++) {
         const p = ps[i], o = i * stride;
-        packed[o] = p.x; packed[o + 1] = p.y; packed[o + 2] = p.w; packed[o + 3] = p.h;
-        packed[o + 4] = p.facing; packed[o + 5] = p.id === ctx.net.ownPlayerId ? 1 : 0;
-        packed[o + 6] = p.animState || 0; packed[o + 7] = p.animFrame || 0;
+        packed[o + G.x] = p.x; packed[o + G.y] = p.y; packed[o + G.w] = p.w; packed[o + G.h] = p.h;
+        packed[o + G.facing] = p.facing; packed[o + G.own] = p.id === ctx.net.ownPlayerId ? 1 : 0;
+        packed[o + G.animState] = p.animState || 0; packed[o + G.animFrame] = p.animFrame || 0;
       }
       engine.glSetPlayers(true, packed, ctx.net.ownPlayerId);
     } else {

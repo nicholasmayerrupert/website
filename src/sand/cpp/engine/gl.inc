@@ -41,10 +41,10 @@ int glLightTick = INT_MIN;
 int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
 bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
 std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own,animState,animFrame] per player
-static const int GL_EXT_STRIDE = 8;
+
 bool glUseExtItems = false;           // client renders dropped items from host snapshots
 std::vector<float> glExtItems;        // packed [id,kind,material,count,px,py,life] per item
-static const int GL_ITEM_STRIDE = 7;
+
 
 bool glReady() const { return glc != nullptr && glc->ready && glTex != 0; }
 
@@ -107,14 +107,14 @@ void glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = 
 void glSetPlayers(int useExternal, const float* data, int count, int ownId) {
   glOwnPlayerId = ownId;
   glUseExtPlayers = useExternal != 0;
-  if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GL_EXT_STRIDE);
+  if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GLP_STRIDE);
   else glExtPlayers.clear();
 }
 // Client items override: when external, glDrawItems draws these instead of the
 // engine's own (a client doesn't simulate the world, so it has no local items).
 void glSetItems(int useExternal, const float* data, int count) {
   glUseExtItems = useExternal != 0;
-  if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * GL_ITEM_STRIDE);
+  if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * IS_STRIDE);
   else glExtItems.clear();
 }
 
@@ -294,10 +294,10 @@ void glDrawPlayers() {
   glUniform1i(glc->uGutter, 0);
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   if (glUseExtPlayers) {
-    int n = (int)(glExtPlayers.size() / GL_EXT_STRIDE);
+    int n = (int)(glExtPlayers.size() / GLP_STRIDE);
     for (int i = 0; i < n; i++) {
-      const float* p = &glExtPlayers[(size_t)i * GL_EXT_STRIDE];
-      glDrawOnePlayer(p[0], p[1], (int)p[4], (int)p[6], (int)p[7], p[5] > 0.5f, camCol, camRow);
+      const float* p = &glExtPlayers[(size_t)i * GLP_STRIDE];
+      glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME], p[GLP_OWN] > 0.5f, camCol, camRow);
     }
   } else {
     for (auto& p : players) {
@@ -342,13 +342,13 @@ void glDrawOneItem(int id, int kind, int material, double px, double py, int lif
 void glDrawItems() {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   if (glUseExtItems) {
-    int n = (int)(glExtItems.size() / GL_ITEM_STRIDE);
+    int n = (int)(glExtItems.size() / IS_STRIDE);
     if (!n) return;
     glUniform1i(glc->uMode, 1);
     glUniform1i(glc->uGutter, 0);
     for (int i = 0; i < n; i++) {
-      const float* it = &glExtItems[(size_t)i * GL_ITEM_STRIDE];
-      glDrawOneItem((int)it[0], (int)it[1], (int)it[2], it[4], it[5], (int)it[6], camCol, camRow);
+      const float* it = &glExtItems[(size_t)i * IS_STRIDE];
+      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_MATERIAL], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
     }
     return;
   }

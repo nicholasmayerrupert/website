@@ -9,8 +9,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Fail fast if the generated material tables drift from materials.schema.json.
+# Fail fast if the generated material tables or ABI manifest drift from their schemas.
 node scripts/generate-materials.mjs --check
+node scripts/generate-abi.mjs --check
 
 OUT=src/sand/wasm/sandEngine.js
 

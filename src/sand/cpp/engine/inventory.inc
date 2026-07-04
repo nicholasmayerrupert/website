@@ -156,25 +156,25 @@
 
   // Pack the carried cursor stack (one slot record) for the HUD's floating item.
   int buildCursorSnapshot(int playerId) {
-    cursorSnap.assign(INV_SNAP_STRIDE, 0.0f);
+    cursorSnap.assign(IVS_STRIDE, 0.0f);
     Player* p = findPlayer(playerId); if (!p) return 0;
     InvSlot& s = p->cursor;
     float* o = cursorSnap.data();
-    o[0] = (float)s.material; o[1] = (float)s.isTool; o[2] = (float)s.toolClass;
-    o[3] = (float)s.toolTier; o[4] = (float)s.count; o[5] = 0.0f;
+    o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
+    o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = 0.0f;
     return s.count > 0 ? 1 : 0;
   }
 
   // Pack one player's inventory into invSnapshot for the JS HUD.
   int buildInventorySnapshot(int playerId) {
-    invSnapshot.assign((size_t)INV_SLOTS * INV_SNAP_STRIDE, 0.0f);
+    invSnapshot.assign((size_t)INV_SLOTS * IVS_STRIDE, 0.0f);
     Player* p = findPlayer(playerId);
     if (!p) return 0;
     for (int i = 0; i < INV_SLOTS; i++) {
       InvSlot& s = p->inv[i];
-      float* o = invSnapshot.data() + (size_t)i * INV_SNAP_STRIDE;
-      o[0] = (float)s.material; o[1] = (float)s.isTool; o[2] = (float)s.toolClass;
-      o[3] = (float)s.toolTier; o[4] = (float)s.count; o[5] = (i == p->selectedSlot) ? 1.0f : 0.0f;
+      float* o = invSnapshot.data() + (size_t)i * IVS_STRIDE;
+      o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
+      o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = (i == p->selectedSlot) ? 1.0f : 0.0f;
     }
     return INV_SLOTS;
   }

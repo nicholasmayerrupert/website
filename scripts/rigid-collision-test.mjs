@@ -9,7 +9,10 @@
 // buffer rim also acts as a wall so a body's own motion can't carry it off the
 // simulated window (where its raster is clipped away and it vanishes).
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 
 const COLS = 200, ROWS = 140, SEED = 0xC0FFEE, STONE = 3, RIGID = 13, DRIFTWOOD = 14;
 await initSandWasm();

@@ -5,6 +5,9 @@
 // snapshots, and apply multiplayer state. Gameplay policy belongs in the
 // subsystem files below, not in the bridge.
 extern "C" {
+// ABI version stamp (abi.generated.hpp). initSandWasm() refuses a module whose
+// version mismatches the JS manifest — catches a stale committed sandEngine.js.
+EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
 EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite) {
   Engine* e = new Engine(cols, rows, seed, sinks != 0);
   if (infinite) e->initInfinite(seed);
@@ -56,46 +59,53 @@ EMSCRIPTEN_KEEPALIVE int engine_place_material_layer(Engine* e, int layer, int c
   e->useLayer(&e->fg);
   return n;
 }
-EMSCRIPTEN_KEEPALIVE void engine_set_sinks(Engine* e, int v) { e->sinksEnabled = v != 0; }
 EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->useLayer(&e->fg); e->registerSeededComponents(0, e->cols); }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_ms(Engine* e) { return e->perfStepMs; }
-EMSCRIPTEN_KEEPALIVE int engine_perf_dirty_chunks(Engine* e) { return e->perfDirtyChunks; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_light_ms(Engine* e) { return e->perfLightMs; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_fill_ms(Engine* e) { return e->perfFillMs; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_upload_ms(Engine* e) { return e->perfUploadMs; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_shift_buffers(Engine* e) { return e->perfShiftBuffers; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_shift_translate(Engine* e) { return e->perfShiftTranslate; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_shift_register(Engine* e) { return e->perfShiftRegister; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_shift_fill(Engine* e) { return e->perfShiftFill; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_ground(Engine* e) { return e->perfStepGround; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_rigid(Engine* e) { return e->perfStepRigid; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_react(Engine* e) { return e->perfStepReact; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_carry(Engine* e) { return e->perfStepCarry; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_settle(Engine* e) { return e->perfStepSettle; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_tail(Engine* e) { return e->perfStepTail; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_joint(Engine* e) { return e->perfStepJoint; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_layers(Engine* e) { return e->perfStepLayers; }
-EMSCRIPTEN_KEEPALIVE double engine_perf_step_cross(Engine* e) { return e->perfStepCross; }
+// One batched perf read (PF_* offsets in abi.generated.hpp) replacing the old
+// 18 scalar getters — reading the timers is 1 FFI call instead of ~18.
+EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
+  out[PF_STEP_MS] = e->perfStepMs;
+  out[PF_DIRTY_CHUNKS] = (double)e->perfDirtyChunks;
+  out[PF_LIGHT_MS] = e->perfLightMs;
+  out[PF_FILL_MS] = e->perfFillMs;
+  out[PF_UPLOAD_MS] = e->perfUploadMs;
+  out[PF_SHIFT_BUFFERS] = e->perfShiftBuffers;
+  out[PF_SHIFT_TRANSLATE] = e->perfShiftTranslate;
+  out[PF_SHIFT_REGISTER] = e->perfShiftRegister;
+  out[PF_SHIFT_FILL] = e->perfShiftFill;
+  out[PF_STEP_GROUND] = e->perfStepGround;
+  out[PF_STEP_RIGID] = e->perfStepRigid;
+  out[PF_STEP_REACT] = e->perfStepReact;
+  out[PF_STEP_CARRY] = e->perfStepCarry;
+  out[PF_STEP_SETTLE] = e->perfStepSettle;
+  out[PF_STEP_TAIL] = e->perfStepTail;
+  out[PF_STEP_JOINT] = e->perfStepJoint;
+  out[PF_STEP_LAYERS] = e->perfStepLayers;
+  out[PF_STEP_CROSS] = e->perfStepCross;
+}
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
 // AND a full reflood every step and counts mismatches; forceFull=1 always refloods
 // (the byte-identical reference for the checksum test).
-EMSCRIPTEN_KEEPALIVE void engine_set_grounding_debug(Engine* e, int verify, int forceFull) { e->groundVerify = verify != 0; e->groundForceFull = forceFull != 0; }
-EMSCRIPTEN_KEEPALIVE double engine_grounding_mismatches(Engine* e) { return (double)e->groundMismatches; }
-EMSCRIPTEN_KEEPALIVE double engine_grounding_diag(Engine* e, int which) { return which == 0 ? (double)e->gbFast : which == 1 ? (double)e->gbEdge : which == 2 ? (double)e->gbPowder : which == 3 ? (double)e->gbCut : (double)e->gbSpan; }
+EMSCRIPTEN_KEEPALIVE void engine_test_set_grounding_debug(Engine* e, int verify, int forceFull) { e->groundVerify = verify != 0; e->groundForceFull = forceFull != 0; }
+EMSCRIPTEN_KEEPALIVE double engine_test_grounding_mismatches(Engine* e) { return (double)e->groundMismatches; }
+EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) { return which == 0 ? (double)e->gbFast : which == 1 ? (double)e->gbEdge : which == 2 ? (double)e->gbPowder : which == 3 ? (double)e->gbCut : (double)e->gbSpan; }
 
 // drafts / seed
-// Draft staging is now a SINGLE material-parameterized set; these legacy hooks set
-// draftMaterial and route through the unified draft + finalizeDraft (back-compat).
-EMSCRIPTEN_KEEPALIVE int engine_add_stone_draft(Engine* e, int cx, int cy, int r) { e->draftMaterial = STONE; return e->addDiscToDraft(e->draft, cx, cy, r, e->rows); }
-EMSCRIPTEN_KEEPALIVE int engine_add_ice_draft(Engine* e, int cx, int cy, int r) { e->draftMaterial = ICE; return e->addDiscToDraft(e->draft, cx, cy, r, e->rows - 1); }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_stone_draft(Engine* e) { e->draftMaterial = STONE; e->finalizeDraft(); e->draft.clear(); e->draftStrokeActive = false; }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_ice_draft(Engine* e) { e->draftMaterial = ICE; e->finalizeDraft(); e->draft.clear(); e->draftStrokeActive = false; }
-EMSCRIPTEN_KEEPALIVE void engine_finalize_driftwood_draft(Engine* e) { e->draftMaterial = DRIFTWOOD; e->finalizeDraft(); e->draft.clear(); e->draftStrokeActive = false; }
-EMSCRIPTEN_KEEPALIVE void engine_clear_stone_draft(Engine* e) { e->draft.clear(); e->draftStrokeActive = false; }
-EMSCRIPTEN_KEEPALIVE void engine_clear_ice_draft(Engine* e) { e->draft.clear(); e->draftStrokeActive = false; }
-EMSCRIPTEN_KEEPALIVE int engine_stone_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
-EMSCRIPTEN_KEEPALIVE int engine_ice_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
+// Draft staging is a SINGLE material-parameterized set. The old per-material
+// stone/ice hook pairs (byte-identical bodies) collapsed into these.
+// ICE keeps its historical one-row-shorter stage ceiling.
+EMSCRIPTEN_KEEPALIVE int engine_add_draft(Engine* e, int cx, int cy, int r, int mat) {
+  e->draftMaterial = (uint8_t)mat;
+  return e->addDiscToDraft(e->draft, cx, cy, r, mat == ICE ? e->rows - 1 : e->rows);
+}
+EMSCRIPTEN_KEEPALIVE void engine_finalize_draft(Engine* e, int mat) {
+  e->draftMaterial = (uint8_t)mat;
+  e->finalizeDraft();
+  e->draft.clear();
+  e->draftStrokeActive = false;
+}
+EMSCRIPTEN_KEEPALIVE void engine_clear_draft(Engine* e) { e->draft.clear(); e->draftStrokeActive = false; }
+EMSCRIPTEN_KEEPALIVE int engine_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
 EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->draftSnapshot.data(); }
 // Creative palette: select any material / seed species / eraser / cube (CreativeKind).
 EMSCRIPTEN_KEEPALIVE void engine_set_creative_material(Engine* e, int kind, int value) { e->setCreativeMaterial(kind, value); }
@@ -126,26 +136,26 @@ EMSCRIPTEN_KEEPALIVE void engine_spawn_body(Engine* e, int* xy, int count) {
 }
 EMSCRIPTEN_KEEPALIVE void engine_spawn_box(Engine* e, int cx, int cy, int halfW, int halfH, int material) { e->spawnBox(cx, cy, halfW, halfH, (uint8_t)material); }
 EMSCRIPTEN_KEEPALIVE void engine_spawn_disc(Engine* e, int cx, int cy, int radius, int material) { e->spawnDisc(cx, cy, radius, (uint8_t)material); }
-EMSCRIPTEN_KEEPALIVE int engine_body_count(Engine* e) { return (int)e->fg.bodies.size(); }
-EMSCRIPTEN_KEEPALIVE int engine_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
-EMSCRIPTEN_KEEPALIVE int engine_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
-EMSCRIPTEN_KEEPALIVE int engine_body_material(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->fg.bodies[i]->material : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_count(Engine* e) { return (int)e->fg.bodies.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_material(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->fg.bodies[i]->material : -1; }
 // Read continuous body pose/motion for tests/tools: [px,py,angle,vx,vy,omega,nPts,maxR].
-EMSCRIPTEN_KEEPALIVE int engine_body_state(Engine* e, int i, double* out) {
+EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];
   out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx; out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
   return 1;
 }
 // Set continuous body motion (test/tool hook): wakes the body.
-EMSCRIPTEN_KEEPALIVE int engine_set_body_motion(Engine* e, int i, double vx, double vy, double omega) {
+EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx, double vy, double omega) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   Body* b = e->fg.bodies[i];
   b->vx = vx; b->vy = vy; b->omega = omega; b->awake = true; b->stillTicks = 0;
   return 1;
 }
-EMSCRIPTEN_KEEPALIVE int engine_rigid_rejected(Engine* e) { return e->rigidRejectedCells; }
-EMSCRIPTEN_KEEPALIVE int engine_rigid_depen(Engine* e) { return e->rigidDepenetrations; }
+EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigidRejectedCells; }
+EMSCRIPTEN_KEEPALIVE int engine_test_rigid_depen(Engine* e) { return e->rigidDepenetrations; }
 
 // players (Terraria-like characters; physics in player.inc)
 EMSCRIPTEN_KEEPALIVE int engine_spawn_player(Engine* e, double x, double y) { return e->spawnPlayer(x, y); }
@@ -158,7 +168,6 @@ EMSCRIPTEN_KEEPALIVE void engine_set_player_input(Engine* e, int id, int inputBi
 EMSCRIPTEN_KEEPALIVE int engine_player_count(Engine* e) { return (int)e->players.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->buildPlayerSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->playerSnapshot.data(); }
-EMSCRIPTEN_KEEPALIVE int engine_player_snapshot_stride(Engine* e) { return PLAYER_SNAP_STRIDE; }
 EMSCRIPTEN_KEEPALIVE int engine_player_action_count(Engine* e) { return e->playerActionCount; }
 EMSCRIPTEN_KEEPALIVE void engine_step_player_only(Engine* e, int id) { e->stepPlayerOnly(id); }
 // Held mining tool (class/tier) — drives drop gating. Set directly here for tests;
@@ -176,11 +185,10 @@ EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, d
 // dropped items + particles (entities; physics in items.inc). spawn_item/_particle
 // are test/gameplay hooks; the snapshot lets JS draw or inspect them.
 EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) { return e->spawnItem((uint8_t)mat, count, px, py, vx, vy); }
-EMSCRIPTEN_KEEPALIVE void engine_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) { e->spawnParticle((uint8_t)mat, px, py, vx, vy, life); }
+EMSCRIPTEN_KEEPALIVE void engine_test_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) { e->spawnParticle((uint8_t)mat, px, py, vx, vy, life); }
 EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->items.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_item_snapshot(Engine* e) { return e->buildItemSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->itemSnapshot.data(); }
-EMSCRIPTEN_KEEPALIVE int engine_item_snapshot_stride(Engine* e) { return ITEM_SNAP_STRIDE; }
 
 // survival inventory (inventory.inc): authoritative per-player stacks. JS reads the
 // snapshot for the HUD and forwards slot-select / move / place intents.
@@ -193,12 +201,10 @@ EMSCRIPTEN_KEEPALIVE void engine_set_selected_footprint(Engine* e, int id, int f
 EMSCRIPTEN_KEEPALIVE int engine_selected_footprint(Engine* e, int id) { return e->selectedFootprintId(id); }
 EMSCRIPTEN_KEEPALIVE int engine_survival_footprint_snapshot(Engine* e) { return e->buildSurvivalFootprintSnapshot(); }
 EMSCRIPTEN_KEEPALIVE int32_t* engine_survival_footprint_snapshot_ptr(Engine* e) { return e->survivalFootprintSnapshot.data(); }
-EMSCRIPTEN_KEEPALIVE int engine_survival_footprint_snapshot_stride(Engine* e) { return SURVIVAL_FOOTPRINT_SNAP_FIELDS; }
 EMSCRIPTEN_KEEPALIVE void engine_inventory_move(Engine* e, int id, int from, int to) { e->moveSlot(id, from, to); }
 EMSCRIPTEN_KEEPALIVE int engine_place_from_selected(Engine* e, int id, int ax, int ay) { return e->placeFromSelected(id, ax, ay) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e->buildInventorySnapshot(id); }
 EMSCRIPTEN_KEEPALIVE float* engine_inventory_snapshot_ptr(Engine* e) { return e->invSnapshot.data(); }
-EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot_stride(Engine* e) { return INV_SNAP_STRIDE; }
 // Minecraft cursor model: pick/place/half + throw-out + the carried-stack snapshot.
 EMSCRIPTEN_KEEPALIVE void engine_inventory_cursor_pick(Engine* e, int id, int slot, int half) { e->cursorPick(id, slot, half); }
 EMSCRIPTEN_KEEPALIVE int engine_inventory_throw_from_cursor(Engine* e, int id, int whole) { return e->throwFromCursor(id, whole) ? 1 : 0; }
@@ -249,8 +255,6 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->g
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff) { e->glSetFlags(gutterOn, snapOff); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, float* data, int count, int ownId) { e->glSetPlayers(useExternal, data, count, ownId); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_items(Engine* e, int useExternal, float* data, int count) { e->glSetItems(useExternal, data, count); }
-EMSCRIPTEN_KEEPALIVE int engine_gl_player_ext_stride() { return Engine::GL_EXT_STRIDE; }
-EMSCRIPTEN_KEEPALIVE int engine_gl_item_ext_stride() { return Engine::GL_ITEM_STRIDE; }
 EMSCRIPTEN_KEEPALIVE void engine_gl_shift(Engine* e, int dx) { e->glShift(dx); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_render_frame(Engine* e, int forceFull) { return e->glRenderFrame(forceFull); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_get_offset(Engine* e, int* out) { e->glGetOffset(out); }

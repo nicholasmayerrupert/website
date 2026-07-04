@@ -3,7 +3,10 @@
 // eraser/cube. Driven through the engine's creative pointer state machine.
 // Run: node scripts/creative-place-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 

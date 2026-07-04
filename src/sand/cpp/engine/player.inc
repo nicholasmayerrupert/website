@@ -496,31 +496,31 @@ void setPlayerState(int id, double x, double y, double vx, double vy, int facing
 }
 
 // Pack all players into playerSnapshot as flat float32 records (stride
-// PLAYER_SNAP_STRIDE). JS reads this zero-copy to draw the player overlay.
+// PS_STRIDE). JS reads this zero-copy to draw the player overlay.
 int buildPlayerSnapshot() {
-  playerSnapshot.assign((size_t)players.size() * PLAYER_SNAP_STRIDE, 0.0f);
+  playerSnapshot.assign((size_t)players.size() * PS_STRIDE, 0.0f);
   for (size_t i = 0; i < players.size(); i++) {
     const Player& p = players[i];
-    float* o = playerSnapshot.data() + i * PLAYER_SNAP_STRIDE;
-    o[0]  = (float)p.id;
-    o[1]  = p.active ? 1.0f : 0.0f;
-    o[2]  = (float)p.px;
-    o[3]  = (float)p.py;
-    o[4]  = (float)p.vx;
-    o[5]  = (float)p.vy;
-    o[6]  = (float)p.w;
-    o[7]  = (float)p.h;
-    o[8]  = (float)p.facing;
-    o[9]  = p.grounded ? 1.0f : 0.0f;
-    o[10] = (float)p.selectedTool;
-    o[11] = (float)p.aimX;
-    o[12] = (float)p.aimY;
-    o[13] = (float)p.health;
-    o[14] = (float)p.inputSeq;
-    o[15] = p.alive ? 1.0f : 0.0f;
-    o[16] = p.jumpReady ? 1.0f : 0.0f; // hidden jump state, needed for reconciliation
-    o[17] = (float)p.animState;
-    o[18] = (float)p.animFrame;
+    float* o = playerSnapshot.data() + i * PS_STRIDE;
+    o[PS_ID]         = (float)p.id;
+    o[PS_ACTIVE]     = p.active ? 1.0f : 0.0f;
+    o[PS_X]          = (float)p.px;
+    o[PS_Y]          = (float)p.py;
+    o[PS_VX]         = (float)p.vx;
+    o[PS_VY]         = (float)p.vy;
+    o[PS_W]          = (float)p.w;
+    o[PS_H]          = (float)p.h;
+    o[PS_FACING]     = (float)p.facing;
+    o[PS_GROUNDED]   = p.grounded ? 1.0f : 0.0f;
+    o[PS_TOOL]       = (float)p.selectedTool;
+    o[PS_AIM_X]      = (float)p.aimX;
+    o[PS_AIM_Y]      = (float)p.aimY;
+    o[PS_HEALTH]     = (float)p.health;
+    o[PS_INPUT_SEQ]  = (float)p.inputSeq;
+    o[PS_ALIVE]      = p.alive ? 1.0f : 0.0f;
+    o[PS_JUMP_READY] = p.jumpReady ? 1.0f : 0.0f; // hidden jump state, needed for reconciliation
+    o[PS_ANIM_STATE] = (float)p.animState;
+    o[PS_ANIM_FRAME] = (float)p.animFrame;
   }
   return (int)players.size();
 }

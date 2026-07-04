@@ -12,10 +12,10 @@
 // place / swap / merge; clicks on the backdrop throw the carried stack out.
 
 import { MATERIALS } from '../materials.generated.js';
-import { INV_SLOTS } from '../net/protocol.js';
+import { INV_HOTBAR, INV_SLOTS } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
-const HOTBAR = 9; // mirrors INV_HOTBAR in cpp/engine/common.hpp
+const HOTBAR = INV_HOTBAR;
 const SLOTS = INV_SLOTS;
 
 // Per-material css color + name so a swatch matches the in-world pixel exactly.

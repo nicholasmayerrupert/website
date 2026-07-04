@@ -4,7 +4,10 @@
 // server dispatches them, and a live two-client server hands out the world +
 // inventory + acts on intents. Run: node scripts/server-roundtrip-test.mjs
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+// Every engine in this file gets the test hooks (grounding/body/particle pokes).
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
 import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick } from '../src/sand/net/protocol.js';

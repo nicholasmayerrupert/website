@@ -2,12 +2,24 @@
 # Build the C++ sand engine to a single self-contained ES module WASM.
 #
 #   source wasm/emenv.sh && wasm/build.sh
+#   source wasm/emenv.sh && wasm/build.sh --dev   # + SAND_INVARIANT_CHECKS
 #
 # Emits src/sand/wasm/sandEngine.js (wasm embedded via SINGLE_FILE so Vite and
 # Cloudflare need no special .wasm asset/MIME handling). The emitted file is
 # committed so `npm run build` never needs emcc.
+#
+# --dev compiles in the post-step invariant validator (aborts loudly on a
+# BODY-MATERIAL or component-cell violation). It writes the SAME output file so
+# the whole test suite exercises it — rebuild WITHOUT --dev before committing;
+# a dev artifact must never ship.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+DEV_FLAGS=()
+if [[ "${1:-}" == "--dev" ]]; then
+  DEV_FLAGS+=(-DSAND_INVARIANT_CHECKS)
+  echo "=== DEV BUILD (SAND_INVARIANT_CHECKS) — do NOT commit this artifact ==="
+fi
 
 # Fail fast if the generated material tables or ABI manifest drift from their schemas.
 node scripts/generate-materials.mjs --check
@@ -17,6 +29,7 @@ OUT=src/sand/wasm/sandEngine.js
 
 em++ \
   -O3 -std=c++20 \
+  ${DEV_FLAGS[@]+"${DEV_FLAGS[@]}"} \
   -s MODULARIZE=1 \
   -s EXPORT_ES6=1 \
   -s ENVIRONMENT=web,node \

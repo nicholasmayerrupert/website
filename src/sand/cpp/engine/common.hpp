@@ -1,6 +1,7 @@
 #pragma once
 // Shared declarations for the WASM sand engine (ported from src/sand/*.js).
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <climits>
 #include <cmath>
@@ -11,6 +12,7 @@
 #include <utility>
 #include <functional>
 #include <emscripten.h>
+#include <emscripten/console.h>
 
 // Material ids, kinds, and flat lookup tables — generated from
 // src/sand/materials.schema.json (the single source shared with JS). Run

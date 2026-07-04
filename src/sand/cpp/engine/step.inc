@@ -19,10 +19,16 @@
     double tG = emscripten_get_now(); perfStepGround = tG - t0;
     moveRigidAssemblies();
     moveBodies();
+#ifdef SAND_INVARIANT_CHECKS
+    validateInvariants("post-moveBodies");
+#endif
     double tR = emscripten_get_now(); perfStepRigid = tR - tG;
     growPlantComponents();
     growMyceliumComponents();
     applyReactions(); applyAcid(); applyLava(); applyIce(); applySalt(); applyExplosives();
+#ifdef SAND_INVARIANT_CHECKS
+    validateInvariants("post-reactions");
+#endif
     double tX = emscripten_get_now(); perfStepReact = tX - tR;
     prepareNextBuffer();
     // carry-forward component + body cells across the double buffer
@@ -105,6 +111,9 @@
     transferPass(fgA, bgA);
     perfStepCross = emscripten_get_now() - tX0;
     useLayer(&fg); // leave fg active for ABI/render/tool calls between steps
+#ifdef SAND_INVARIANT_CHECKS
+    validateInvariants("post-step");
+#endif
     perfStepMs = emscripten_get_now() - t0;
     return true;
   }

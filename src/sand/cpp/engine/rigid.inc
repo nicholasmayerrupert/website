@@ -562,7 +562,12 @@
     std::unordered_set<int> wasBody(cells.begin(), cells.end());
     for (int k : cells) bodyOwner[k] = -1;
     std::vector<int> kept; std::unordered_set<int> claimed;
-    for (Body* b : L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (!wasBody.count(k) || claimed.count(k)) return; bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
+    // Skip EMPTY cells: an erased cell (grid already cleared) can still fall
+    // under a rotated body's re-rasterization, and claiming it would leave a
+    // body-owned EMPTY cell until the next moveBodies stamp — a powder settling
+    // into it that step would then be wiped by the un-stamp (silent cell loss).
+    // Found by the SAND_INVARIANT_CHECKS post-step validator.
+    for (Body* b : L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * cols + x; if (!wasBody.count(k) || claimed.count(k) || grid[k] == EMPTY) return; bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
     for (int k : cells) if (!claimed.count(k)) { writeGridIndex(k, EMPTY); bodyOwner[k] = -1; }
     L->bodyCells = kept;
   }

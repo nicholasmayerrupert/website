@@ -313,9 +313,7 @@
   void finishBlasts(BlastBatch& bb) {
     if (!bb.any) return;
     finishErasedBodies(bb.dirtyBodies, L->bodyCells);
-    splitRigidAfterErase(L->stoneComponents, bb.erasedStone, L->nextStoneId, false);
-    splitRigidAfterErase(L->iceComponents, bb.erasedIce, L->nextIceId, true);
-    if (bb.erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    splitComponentsAfterDestroy(bb.erasedStone, bb.erasedIce, bb.erasedPlant);
     for (auto& pr : bb.tntAftermath) if (grid[pr.first] == EMPTY) { writeGridIndex(pr.first, pr.second); vacatedStamp[pr.first] = tick; }
     pushBlastGasesOutward(bb.gasShockwaves);
     int gasX0 = bb.minX - BLAST_GAS_SEARCH_CAP, gasY0 = bb.minY - BLAST_GAS_SEARCH_CAP;

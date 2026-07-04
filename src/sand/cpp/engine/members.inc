@@ -424,6 +424,53 @@
     return maxX >= minX;
   }
 
+
+#ifdef SAND_INVARIANT_CHECKS
+  // Dev-build post-step validator (wasm/build.sh --dev; NEVER commit a dev
+  // artifact). Aborts loudly when a structural invariant is broken instead of
+  // letting it surface later as flicker/invisible collision.
+  //
+  // KNOWN pre-existing violation (to fix in the rigid/components split): plain
+  // generated-terrain scenes can leave a stale stone-comp cell whose grid went
+  // EMPTY mid-move; a fluid then legally settles into it and check B fires with
+  // a liquid material (seen in the grounding/anim suites, post-moveBodies).
+  // Suspected in moveRigidAssemblies/translateAssembly bookkeeping.
+  //   A. BODY-MATERIAL: a body-owned cell (bodyOwner[k] != -1) must hold a
+  //      non-EMPTY material (the body stamps its real material into the grid).
+  //   B. COMPONENT-CELL: every component cell must hold a material of its
+  //      list's group, must not be body-owned, and must appear in exactly one
+  //      component (comp.cells dedup-by-construction).
+  void validateInvariants(const char* where) {
+    auto fail = [&](const char* what, int k, int mat, int extra) {
+      char buf[200];
+      snprintf(buf, sizeof(buf), "SAND INVARIANT VIOLATION [%s] %s at k=%d (x=%d,y=%d) mat=%d extra=%d", where, what, k, k % cols, k / cols, mat, extra);
+      emscripten_console_error(buf);
+      abort();
+    };
+    auto checkLayer = [&](Layer& lay) {
+      size_t n = (size_t)cols * rows;
+      for (size_t k = 0; k < n; k++)
+        if (lay.bodyOwner[k] != -1 && lay.grid[k] == EMPTY) fail("body-owned cell is EMPTY", (int)k, 0, lay.bodyOwner[k]);
+      lay.seenGen++;
+      auto checkList = [&](std::vector<Comp>& comps, uint8_t group, bool plant) {
+        for (Comp& c : comps) for (int k : c.cells) {
+          if (k < 0 || k >= (int)n) fail("component cell out of bounds", k, -1, 0);
+          uint8_t m0 = lay.grid[k];
+          if (plant ? !isPlantMaterial(m0) : componentGroupOf(m0) != group) fail("component cell material not in its group", k, m0, group);
+          if (lay.bodyOwner[k] != -1) fail("component cell is body-owned", k, m0, lay.bodyOwner[k]);
+          if (lay.seenStamp[k] == lay.seenGen) fail("cell in two components / duplicated", k, m0, 0);
+          lay.seenStamp[k] = lay.seenGen;
+        }
+      };
+      checkList(lay.stoneComponents, CG_STONE, false);
+      checkList(lay.iceComponents, CG_ICE, false);
+      checkList(lay.plantComponents, CG_PLANT, true);
+    };
+    checkLayer(fg);
+    checkLayer(bg);
+  }
+#endif
+
   // ---- dirty tracking (operates on the active layer via the mirrors) ----
   inline void markCellIndex(int k) {
     int y = k / cols, x = k - y * cols;

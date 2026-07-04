@@ -60,7 +60,12 @@ const seedToLayer = (seedText, size) => {
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
-export default function GameOfLife3D({ className, onManualRotateChange, hideChrome = false }) {
+export default function GameOfLife3D({
+  className,
+  onManualRotateChange,
+  onControlsOpenChange,
+  defaultControlsOpen,
+}) {
   const canvasHostRef = useRef(null);
   const editorCanvasRef = useRef(null);
   const speedRef = useRef(DEFAULT_STEPS_PER_SECOND);
@@ -79,6 +84,7 @@ export default function GameOfLife3D({ className, onManualRotateChange, hideChro
   const [speed, setSpeed] = useState(DEFAULT_STEPS_PER_SECOND);
   const [seedInput, setSeedInput] = useState(DEFAULT_SEED);
   const [controlsOpen, setControlsOpen] = useState(() => {
+    if (typeof defaultControlsOpen === "boolean") return defaultControlsOpen;
     if (typeof window === "undefined" || !window.matchMedia) return false;
     return window.matchMedia("(min-width: 768px)").matches;
   });
@@ -106,7 +112,8 @@ export default function GameOfLife3D({ className, onManualRotateChange, hideChro
 
   useEffect(() => {
     if (controlsOpen) simulationApiRef.current.renderEditor();
-  }, [controlsOpen]);
+    onControlsOpenChange?.(controlsOpen);
+  }, [controlsOpen, onControlsOpenChange]);
 
   const applySeed = (seedText = seedInput) => {
     seedRequestRef.current = seedToLayer(seedText, gridSize);
@@ -532,17 +539,6 @@ export default function GameOfLife3D({ className, onManualRotateChange, hideChro
       }
     };
   }, [gridSize]);
-
-  // Chromeless / background mode: render only the animated lattice, no seed
-  // editor, controls, or "Life" tab. Used when the automaton is an ambient
-  // backdrop and another surface owns the UI.
-  if (hideChrome) {
-    return (
-      <div className={`${className || ""} relative h-full w-full overflow-hidden`}>
-        <div ref={canvasHostRef} className="relative h-full min-h-0 w-full" />
-      </div>
-    );
-  }
 
   const interactiveClassName = (className || "")
     .replace(/\bpointer-events-none\b/g, "")

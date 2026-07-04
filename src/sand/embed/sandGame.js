@@ -44,6 +44,14 @@ const HOST_CSS = `
 .sg-dpad .left { grid-column: 1; grid-row: 2; }
 .sg-dpad .right { grid-column: 3; grid-row: 2; }
 .sg-dpad .down { grid-column: 2; grid-row: 3; }
+.sg-zoom { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 71;
+  display: flex; flex-direction: column; gap: 6px; pointer-events: auto; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sg-zoom button { width: 40px; height: 40px; border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
+  background: rgba(17,24,39,.5); color: #fff; font-size: 22px; line-height: 1; font-weight: 600; cursor: pointer;
+  backdrop-filter: blur(4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3);
+  -webkit-tap-highlight-color: transparent; }
+.sg-zoom button:active { background: rgba(255,255,255,.82); color: #000; }
 `;
 
 function createMobileDpad(root, game) {
@@ -92,6 +100,30 @@ function createMobileDpad(root, game) {
       wrap.remove();
     },
   };
+}
+
+// Mobile-only on-screen zoom control, sitting to the left of the creative palette.
+// Desktop uses the +/- keyboard shortcuts instead (createSandGame.onKeyDown).
+function createZoomButtons(root, game) {
+  const wrap = document.createElement('div');
+  wrap.className = 'sg-zoom';
+  wrap.setAttribute('aria-label', 'Zoom controls');
+  const mk = (label, aria, fn) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.setAttribute('aria-label', aria);
+    // Act on pointerdown and swallow it so the press never reaches the sim canvas
+    // (which would otherwise start placing/mining under the button).
+    b.addEventListener('pointerdown', (e) => { fn(); e.preventDefault(); e.stopPropagation(); });
+    for (const ev of ['pointerup', 'pointermove', 'click']) b.addEventListener(ev, (e) => e.stopPropagation());
+    wrap.appendChild(b);
+    return b;
+  };
+  mk('+', 'Zoom in', () => game.zoomIn());
+  mk('−', 'Zoom out', () => game.zoomOut());
+  root.appendChild(wrap);
+  return { destroy() { wrap.remove(); } };
 }
 
 function setPageScrollLocked(lock) {
@@ -191,6 +223,9 @@ class SandGameElement extends HTMLElement {
               }));
             },
           });
+          // Touch has no +/- keys, so give mobile an on-screen zoom control beside
+          // the palette (desktop zooms via the keyboard).
+          if (coarse) this._zoom = createZoomButtons(root, game);
         }
         // Default draw state: fine pointers are always draw-enabled. Coarse
         // pointers start off so touch pages can scroll until the user opts in.
@@ -212,8 +247,9 @@ class SandGameElement extends HTMLElement {
     this._sizeMenu?.destroy();
     this._mp?.destroy();
     this._dpad?.destroy();
+    this._zoom?.destroy();
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._dpad = null;
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._dpad = this._zoom = null;
     this._mounted = false;
   }
 

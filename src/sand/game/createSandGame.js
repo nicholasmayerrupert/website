@@ -127,6 +127,13 @@ export function createSandGame(container, opts = {}) {
   let dpr = 1, cellDev = SIZING.cellPx;
   let viewCols = 0, viewRows = 0;
   let stableCssSize = null;
+  // Runtime zoom: an index into SIZING.zoomSteps (a multiplier on the base cell
+  // size). Only the visible window scales with zoom — the sim buffer is sized for
+  // the most-zoomed-out step (SIZING.zoomSteps[0]) and stays constant, so changing
+  // zoom keeps the same world/player and takes fit()'s no-rebuild fast path.
+  let zoomIndex = SIZING.zoomDefaultIndex;
+  const zoomFactor = () => SIZING.zoomSteps[zoomIndex];
+  const minZoomFactor = () => SIZING.zoomSteps[0];
   // The camera lives in the engine (camera.inc). JS caches the last presented
   // position to detect movement (incl. sub-cell) and re-present.
   let lastCamX = NaN, lastCamY = NaN;
@@ -230,7 +237,7 @@ export function createSandGame(container, opts = {}) {
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
-    const sizing = computeViewportSizing(cssW, cssH, dpr);
+    const sizing = computeViewportSizing(cssW, cssH, dpr, SIZING, zoomFactor(), minZoomFactor());
     cellSize = sizing.cellSize;
     cellDev = sizing.cellDev;
     canvas.width = sizing.canvasW;
@@ -317,6 +324,26 @@ export function createSandGame(container, opts = {}) {
   watchDpr();
   const onVisualViewportResize = () => fit();
   window.visualViewport?.addEventListener?.('resize', onVisualViewportResize);
+
+  // ---- runtime zoom (view-only; the buffer is fixed, so no world rebuild) ----
+  // Re-fit at a new zoom index and keep the same world point centered (fit()'s fast
+  // path leaves the camera's top-left fixed, which would drift the view as the
+  // window resizes, so we recenter around the pre-zoom center).
+  const applyZoom = (nextIndex) => {
+    const clamped = Math.max(0, Math.min(SIZING.zoomSteps.length - 1, nextIndex | 0));
+    if (clamped === zoomIndex || !engine) return;
+    const cam = engine.getCam();
+    const centerX = cam.x + viewCols / 2;   // buffer-cell center BEFORE the zoom
+    const centerY = cam.y + viewRows / 2;
+    zoomIndex = clamped;
+    fit();                                    // buffer dims unchanged -> fast path (keeps the world)
+    engine.cameraSet(centerX - viewCols / 2, centerY - viewRows / 2); // recenter with new viewCols/Rows
+    lastCamX = NaN; lastCamY = NaN;
+    forceFullRender = true;
+    render(true);
+  };
+  const zoomBy = (delta) => applyZoom(zoomIndex + delta);
+  const resetZoom = () => applyZoom(SIZING.zoomDefaultIndex);
 
   // Pointer helpers. JS computes the canvas-relative CSS-px position + inside
   // flag and forwards them with the button state; the engine maps that to the
@@ -412,6 +439,11 @@ export function createSandGame(container, opts = {}) {
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
+    // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. View-only, so it never
+    // rebuilds the world. Handled before movement/hotbar keys ('0' is unused there).
+    if (key === '+' || key === '=') { zoomBy(1); e.preventDefault(); return; }
+    if (key === '-' || key === '_') { zoomBy(-1); e.preventDefault(); return; }
+    if (key === '0') { resetZoom(); e.preventDefault(); return; }
     // Survival inventory hotkeys (engine owns the selection policy): digits 1-9
     // pick a hotbar slot; E toggles the grid. Handled before the movement-key map.
     if (survival && engine && (localPlayerId || netClientReady())) {
@@ -834,6 +866,12 @@ export function createSandGame(container, opts = {}) {
       if (netClientReady()) return net.getOwnCursor();
       return localPlayerId && engine ? engine.getCursor(localPlayerId) : null;
     },
+    // Runtime zoom (view-only). Buttons/keys drive these; the buffer is fixed so
+    // the world/player survive a zoom change.
+    zoomIn() { zoomBy(1); },
+    zoomOut() { zoomBy(-1); },
+    resetZoom() { resetZoom(); },
+    getZoom() { return { index: zoomIndex, factor: zoomFactor(), count: SIZING.zoomSteps.length }; },
     // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).
     setCreativeMaterial(kind, value) { engine?.setCreativeMaterial(kind, value); },
     netJoin(url, room) { return netJoin(url, room); },

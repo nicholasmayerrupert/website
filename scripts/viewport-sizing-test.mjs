@@ -19,7 +19,21 @@ console.log('viewport sizing');
   const mobile = computeViewportSizing(390, 700, 3);
   const desktop = computeViewportSizing(900, 700, 1);
   check(`mobile uses a denser logical viewport (${mobile.viewCols} cols)`, mobile.viewCols >= 120 && mobile.viewCols <= 150);
-  check(`desktop remains near 4 CSS px per cell (${desktop.viewCols} cols)`, desktop.viewCols >= 220 && desktop.viewCols <= 228);
+  // Default desktop zoom is SIZING.cellPx (5) CSS px per cell: 900/5 ~= 180 cols.
+  check(`desktop defaults near 5 CSS px per cell (${desktop.viewCols} cols)`, desktop.viewCols >= 176 && desktop.viewCols <= 184);
+}
+
+{
+  // Runtime zoom: the visible window scales with the zoom factor, but the buffer
+  // dims stay pinned to the most-zoomed-out factor (minZoom) so the engine never
+  // rebuilds on a zoom change.
+  const zOut = SIZING.zoomSteps[0];
+  const zIn = SIZING.zoomSteps[SIZING.zoomSteps.length - 1];
+  const wide = computeViewportSizing(900, 700, 1, SIZING, zOut, zOut);
+  const tight = computeViewportSizing(900, 700, 1, SIZING, zIn, zOut);
+  check(`zoom in shows fewer cells than zoom out (${tight.viewCols} < ${wide.viewCols})`, tight.viewCols < wide.viewCols && tight.viewRows < wide.viewRows);
+  check(`buffer dims are identical across zoom (${tight.bufCols}x${tight.worldRows} == ${wide.bufCols}x${wide.worldRows})`, tight.bufCols === wide.bufCols && tight.worldRows === wide.worldRows);
+  check(`zoomed-in window still fits inside the buffer (${tight.viewCols} <= ${tight.bufCols})`, tight.viewCols <= tight.bufCols && tight.viewRows <= tight.worldRows);
 }
 
 {

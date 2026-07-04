@@ -26,7 +26,9 @@ export const TOOL_IDS = Object.freeze({
 });
 
 export const SIZING = Object.freeze({
-  cellPx: 4,
+  // Base CSS px per simulated cell (higher = more zoomed in / fewer cells). This
+  // is the DEFAULT zoom; zoomSteps multiplies it at runtime.
+  cellPx: 5,
   mobileCellPx: 3,
   mobileMaxCssWidth: 640,
   minViewportCols: 60,
@@ -40,6 +42,13 @@ export const SIZING = Object.freeze({
   bufferMarginCols: 128,
   bufferMaxCells: 520000,
   maxFrameDtMs: 50,
+  // Runtime zoom: multipliers on cellPx. Index zoomDefaultIndex is the default.
+  // The FIRST entry is the most zoomed OUT (fewest px/cell = most cells) and it
+  // alone sizes the simulation buffer, so changing zoom never rebuilds the world
+  // (the view window scales; the buffer stays put). Zoom-out is capped at [0] so
+  // that buffer stays modest.
+  zoomSteps: [0.8, 1.0, 1.3, 1.6, 2.0, 2.5],
+  zoomDefaultIndex: 1,
 });
 
 export const STEP_MS = 16;

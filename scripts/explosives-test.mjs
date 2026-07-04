@@ -206,7 +206,7 @@ function blastDamagesMaterial(name) {
   }
   check(`blast scattered cosmetic particles (items ${items0} -> peak)`, particlesSeen);
   check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
-  check(`blast always ejected generic DEBRIS chunks`, sawGenericDebris);
+  check(`blast can suppress default generic DEBRIS chunks`, !sawGenericDebris);
   for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle + bake
   check(`debris chunks baked back into static rubble (bodies now ${e._bodyCount()})`, e._bodyCount() <= 1);
   e.destroy();

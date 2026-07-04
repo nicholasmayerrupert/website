@@ -24,8 +24,10 @@
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().
-  static const int    BLAST_DEBRIS_CHUNKS = 2;    // physical rubble chunks ejected per blast
+  static const int    BLAST_DEBRIS_CHUNKS = 1;    // physical rubble chunks ejected per destroyed material source
+  static const int    BLAST_DEBRIS_SOURCE_TRIES = 2; // try the old fan positions, but stop after the smaller budget
   static const int    BLAST_FORCED_DEBRIS_CHUNKS = 1; // extra generic blast debris, even in open air
+  static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.50; // generic open-air debris spawns on half of blasts
   static const int    BLAST_DEBRIS_STEP_CAP = 5;  // max chunks a same-tick blast wave can add per layer
   static const int    BLAST_DEBRIS_CAP = 96;      // hard live-body solver ceiling; per-step cap keeps chains paced
   static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
@@ -194,10 +196,12 @@
     return cells;
   }
 
-  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb) {
-    for (int i = 0; i < count && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
+  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries = -1) {
+    if (tries < count) tries = count;
+    int spawned = 0;
+    for (int i = 0; i < tries && spawned < count && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
       double j = whash2(bseed, salt + i, 13);
-      int sx = sx0 + (i * 2 - (count - 1)) * 2;
+      int sx = sx0 + (i * 2 - (tries - 1)) * 2;
       std::vector<std::pair<int, int>> cells = blastBoxCells(sx, sy - 3, 1, 1);
       if (!blastBodyCandidateHasEscape(cells, debrisMat, false)) continue;
       Body* b = finishSpawn(cells, debrisMat);
@@ -206,6 +210,7 @@
       b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
       b->awake = true; b->stillTicks = 0;
       bb.debrisSpawned++;
+      spawned++;
     }
   }
 
@@ -293,14 +298,15 @@
       double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
       b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
     }
-    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
+    if (whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
+      spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
     // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
     // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
     // can't flood the body solver.
     for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
       uint8_t debrisMat = debrisSources[di].material;
       int src = debrisSources[di].cell, sy = src / cols, sx0 = src - sy * cols;
-      spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb);
+      spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, BLAST_DEBRIS_SOURCE_TRIES);
     }
   }
 

@@ -1,17 +1,17 @@
 {
-  "generatedAt": "2026-07-04T08:17:53.385Z",
+  "generatedAt": "2026-07-04T08:54:30.425Z",
   "output": {
     "path": "src/sand/wasm/sandEngine.js",
-    "bytes": 592492,
-    "sha256": "5b89a664fddd225906f99351257d9b7eae99bab03e46a0f827a3679d59b6b5ee",
-    "fnv1a": "0x68b7c98d"
+    "bytes": 592422,
+    "sha256": "552436b36521a089452217317168d2c98ebae1450a72ac6f73f557f876e5d894",
+    "fnv1a": "0x82953b40"
   },
   "source": {
-    "commit": "e87fe3e",
+    "commit": "d2b2c20",
     "dirty": true
   },
   "toolchain": {
-    "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.0 (afa15e0c56d1292e073c2c91bafc1d5e0cdf0dd3)",
-    "emccPath": "/home/debian/Nick/emsdk/upstream/emscripten/emcc"
+    "emcc": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 5.0.7-git",
+    "emccPath": "/opt/homebrew/bin/emcc"
   }
 }

@@ -60,6 +60,11 @@ static const float MYCELIUM_GROWTH_P = 0.34f;
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
 
+// Path-halving union-find over an index parent vector (shared by the grounding
+// bond union, joint groups, blob reconnects, and rigid sleep islands).
+static inline int ufFind(std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; }
+static inline void ufUnite(std::vector<int>& p, int a, int b) { int ra = ufFind(p, a), rb = ufFind(p, b); if (ra != rb) p[ra] = rb; }
+
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool
 // policy: brush radii, which tool paints/erases/drafts/spawns, the right-click
 // eraser, draft lifecycle, seed placement, and emit throttling.

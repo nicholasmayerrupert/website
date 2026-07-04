@@ -298,8 +298,6 @@
   void unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb) {
     int total = nf + nb;
     if ((int)cgCompStamp.size() < total) cgCompStamp.assign(total, 0);
-    auto find = [&](std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; };
-    auto unite = [&](std::vector<int>& p, int a, int b) { int ra = find(p, a), rb = find(p, b); if (ra != rb) p[ra] = rb; };
     int32_t gen = ++cgCompGen;
     cgWorkQueue.clear();
     auto seed = [&](Layer& lay, int offset, int count) {
@@ -323,8 +321,8 @@
         for (int oy = -1; oy <= 1; oy++) { int ny = y + oy; if (ny < 0 || ny >= rows) continue; int rb = ny * cols;
           for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox; if (nx < 0 || nx >= cols) continue;
             int nid = cc[rb + nx]; if (nid < 0 || nid >= layerCount) continue; int ngid = offset + nid;
-            unite(parent, gid, ngid);
-            if (groundParent) unite(*groundParent, gid, ngid);
+            ufUnite(parent, gid, ngid);
+            if (groundParent) ufUnite(*groundParent, gid, ngid);
             if (cgCompStamp[ngid] != gen) { cgCompStamp[ngid] = gen; cgWorkQueue.push_back(ngid); }
           }
         }
@@ -371,6 +369,18 @@
     }
   }
 
+  // Re-widen the settle band over cells that LOST grounding this pass (prev
+  // grounded, now not) so they start falling next step. Shared by the fast and
+  // full grounding paths.
+  void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev) {
+    const uint8_t* gr = lay.groundedCell.data(); const uint8_t* g = lay.grid;
+    int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
+    for (int y = 0; y < rows; y++) {
+      int rb = y * cols, mn = rmn[y], mx = rmx[y];
+      for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterialClass(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
+      rmn[y] = mn; rmx[y] = mx;
+    }
+  }
   void computeGroundedBoth() {
     cgPrevFg.assign(fg.groundedCell.begin(), fg.groundedCell.end());
     cgPrevBg.assign(bg.groundedCell.begin(), bg.groundedCell.end());
@@ -392,22 +402,13 @@
     // skip it, AND skip the two full-grid base snapshots (cgFgBase/cgBgBase) that
     // only directGroundSmall + the pair-overlap test read. fg.groundedCell is
     // untouched by bg's flood, so deferring those copies to the ungrounded path
-    // below is byte-identical to taking them here. Only wakeLost (re-waking cells
+    // below is byte-identical to taking them here. Only wakeCellsThatLostGrounding (re-waking cells
     // that lost grounding) still must run.
     bool anyUngrounded = false;
     for (int i = 0; i < nf && !anyUngrounded; i++) if (!compById(fg, i)->grounded) anyUngrounded = true;
     for (int i = 0; i < nb && !anyUngrounded; i++) if (!compById(bg, i)->grounded) anyUngrounded = true;
     if (!anyUngrounded) {
-      auto wakeLostQuick = [&](Layer& lay, const std::vector<uint8_t>& prev) {
-        const uint8_t* gr = lay.groundedCell.data(); const uint8_t* g = lay.grid;
-        int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
-        for (int y = 0; y < rows; y++) {
-          int rb = y * cols, mn = rmn[y], mx = rmx[y];
-          for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterialClass(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
-          rmn[y] = mn; rmx[y] = mx;
-        }
-      };
-      wakeLostQuick(fg, cgPrevFg); wakeLostQuick(bg, cgPrevBg);
+      wakeCellsThatLostGrounding(fg, cgPrevFg); wakeCellsThatLostGrounding(bg, cgPrevBg);
       useLayer(&fg);
       return;
     }
@@ -437,17 +438,8 @@
     for (int i = 0; i < nf && !anyUnsupported; i++) if (!compById(fg, i)->grounded) anyUnsupported = true;
     for (int i = 0; i < nb && !anyUnsupported; i++) if (!compById(bg, i)->grounded) anyUnsupported = true;
 
-    auto wakeLost = [&](Layer& lay, const std::vector<uint8_t>& prev) {
-      const uint8_t* gr = lay.groundedCell.data(); const uint8_t* g = lay.grid;
-      int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
-      for (int y = 0; y < rows; y++) {
-        int rb = y * cols, mn = rmn[y], mx = rmx[y];
-        for (int x = 0; x < cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && isRigidMaterialClass(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
-        rmn[y] = mn; rmx[y] = mx;
-      }
-    };
     if (!anyUnsupported) {
-      wakeLost(fg, cgPrevFg); wakeLost(bg, cgPrevBg);
+      wakeCellsThatLostGrounding(fg, cgPrevFg); wakeCellsThatLostGrounding(bg, cgPrevBg);
       useLayer(&fg);
       return;
     }
@@ -518,7 +510,7 @@
     }
 
     if (cgBonds.empty()) {
-      wakeLost(fg, cgPrevFg); wakeLost(bg, cgPrevBg);
+      wakeCellsThatLostGrounding(fg, cgPrevFg); wakeCellsThatLostGrounding(bg, cgPrevBg);
       useLayer(&fg);
       return;
     }
@@ -526,36 +518,34 @@
     std::vector<int>& parent = cgParent; std::vector<int>& groundParent = cgGroundParent;
     parent.assign(nf + nb, 0); groundParent.assign(nf + nb, 0);
     for (int i = 0; i < nf + nb; i++) parent[i] = groundParent[i] = i;
-    auto find = [&](std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; };
-    auto unite = [&](std::vector<int>& p, int a, int b) { int ra = find(p, a), rb = find(p, b); if (ra != rb) p[ra] = rb; };
     for (auto& b : cgBonds) {
-      unite(parent, b.fgComp, nf + b.bgComp);
-      if (b.supportsGround) unite(groundParent, b.fgComp, nf + b.bgComp);
+      ufUnite(parent, b.fgComp, nf + b.bgComp);
+      if (b.supportsGround) ufUnite(groundParent, b.fgComp, nf + b.bgComp);
     }
     // Same-layer adjacency: bounded walk from ungrounded bonded comps instead of
     // the old O(cols*rows) full-grid scan (the panning-perf regression).
     unionCrossBondedClusters(parent, &groundParent, nf, nb);
     std::vector<uint8_t> rootBonded(nf + nb, 0);
-    for (auto& b : cgBonds) rootBonded[find(parent, b.fgComp)] = 1;
+    for (auto& b : cgBonds) rootBonded[ufFind(parent, b.fgComp)] = 1;
     std::fill(fg.crossBondedComp.begin(), fg.crossBondedComp.end(), (uint8_t)0);
     std::fill(bg.crossBondedComp.begin(), bg.crossBondedComp.end(), (uint8_t)0);
-    for (int i = 0; i < nf; i++) if (rootBonded[find(parent, i)]) fg.crossBondedComp[i] = 1;
-    for (int i = 0; i < nb; i++) if (rootBonded[find(parent, nf + i)]) bg.crossBondedComp[i] = 1;
+    for (int i = 0; i < nf; i++) if (rootBonded[ufFind(parent, i)]) fg.crossBondedComp[i] = 1;
+    for (int i = 0; i < nb; i++) if (rootBonded[ufFind(parent, nf + i)]) bg.crossBondedComp[i] = 1;
     std::vector<uint8_t> rootGrounded(nf + nb, 0);
-    for (int i = 0; i < nf; i++) if (compById(fg, i)->grounded) rootGrounded[find(groundParent, i)] = 1;
-    for (int i = 0; i < nb; i++) if (compById(bg, i)->grounded) rootGrounded[find(groundParent, nf + i)] = 1;
-    for (int i = 0; i < nf; i++) if (fg.crossBondedComp[i] && rootGrounded[find(groundParent, i)]) {
+    for (int i = 0; i < nf; i++) if (compById(fg, i)->grounded) rootGrounded[ufFind(groundParent, i)] = 1;
+    for (int i = 0; i < nb; i++) if (compById(bg, i)->grounded) rootGrounded[ufFind(groundParent, nf + i)] = 1;
+    for (int i = 0; i < nf; i++) if (fg.crossBondedComp[i] && rootGrounded[ufFind(groundParent, i)]) {
       Comp* c = compById(fg, i); c->grounded = true;
       for (int k : c->cells) fg.groundedCell[k] = 1;
     }
-    for (int i = 0; i < nb; i++) if (bg.crossBondedComp[i] && rootGrounded[find(groundParent, nf + i)]) {
+    for (int i = 0; i < nb; i++) if (bg.crossBondedComp[i] && rootGrounded[ufFind(groundParent, nf + i)]) {
       Comp* c = compById(bg, i); c->grounded = true;
       for (int k : c->cells) bg.groundedCell[k] = 1;
     };
 
     // Re-wake whatever lost grounding this step (only the 1->0 transition;
     // already-ungrounded cells stay active from their own motion/edits).
-    wakeLost(fg, cgPrevFg); wakeLost(bg, cgPrevBg);
+    wakeCellsThatLostGrounding(fg, cgPrevFg); wakeCellsThatLostGrounding(bg, cgPrevBg);
     useLayer(&fg);
   }
 
@@ -584,11 +574,9 @@
     std::vector<int>& parent = cgParent;
     parent.assign(nf + nb, 0);
     for (int i = 0; i < nf + nb; i++) parent[i] = i;
-    auto find = [&](int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
-    auto unite = [&](int a, int b) { int ra = find(a), rb = find(b); if (ra != rb) parent[ra] = rb; };
     for (auto& b : cgBonds) {
       if (b.fgComp < 0 || b.fgComp >= nf || b.bgComp < 0 || b.bgComp >= nb) continue;
-      unite(b.fgComp, nf + b.bgComp);
+      ufUnite(parent, b.fgComp, nf + b.bgComp);
     }
     // Bounded same-layer union-find (replaces the old full-grid uniteLayerAdj),
     // seeded from ungrounded cross-bonded comps; operates on cgParent so the
@@ -598,11 +586,11 @@
     struct JointGroup { std::vector<int> fgComps, bgComps; bool grounded = false; int maxY = 0; };
     std::unordered_map<int, JointGroup> groups;
     for (int i = 0; i < nf; i++) if (i < (int)fg.crossBondedComp.size() && fg.crossBondedComp[i]) {
-      int r = find(i); JointGroup& g = groups[r]; g.fgComps.push_back(i);
+      int r = ufFind(parent, i); JointGroup& g = groups[r]; g.fgComps.push_back(i);
       Comp* c = compById(fg, i); if (c->grounded) g.grounded = true; if (c->yMax > g.maxY) g.maxY = c->yMax;
     }
     for (int i = 0; i < nb; i++) if (i < (int)bg.crossBondedComp.size() && bg.crossBondedComp[i]) {
-      int r = find(nf + i); JointGroup& g = groups[r]; g.bgComps.push_back(i);
+      int r = ufFind(parent, nf + i); JointGroup& g = groups[r]; g.bgComps.push_back(i);
       Comp* c = compById(bg, i); if (c->grounded) g.grounded = true; if (c->yMax > g.maxY) g.maxY = c->yMax;
     }
     std::vector<JointGroup*> order; order.reserve(groups.size());
@@ -762,14 +750,13 @@
     // union-find such a comp joined a grounded group and was skipped; this
     // reproduces that exactly while only scanning ungrounded cells.)
     std::vector<uint8_t> anchored(n, 0);
-    auto find = [&](int a) { while (parent[a] != a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
     for (int i = 0; i < n; i++) for (int k : all[i]->cells) {
       int y = k / cols, x = k - y * cols;
-      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows) continue; int gj = cellComp[ny * cols + nx]; if (gj >= 0) { int j = localOf[gj]; if (j >= 0) { int ri = find(i), rj = find(j); if (ri != rj) parent[ri] = rj; } else { anchored[i] = 1; } } }
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows) continue; int gj = cellComp[ny * cols + nx]; if (gj >= 0) { int j = localOf[gj]; if (j >= 0) { ufUnite(parent, i, j); } else { anchored[i] = 1; } } }
     }
     struct Group { std::vector<int> comps; bool grounded = false; int maxY = 0; };
     std::unordered_map<int, Group> groups;
-    for (int i = 0; i < n; i++) { int r = find(i); Group& g = groups[r]; g.comps.push_back(i); if (all[i]->grounded || anchored[i]) g.grounded = true; if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax; }
+    for (int i = 0; i < n; i++) { int r = ufFind(parent, i); Group& g = groups[r]; g.comps.push_back(i); if (all[i]->grounded || anchored[i]) g.grounded = true; if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax; }
     std::vector<Group*> order; order.reserve(groups.size());
     for (auto& kv : groups) order.push_back(&kv.second);
     std::sort(order.begin(), order.end(), [](Group* a, Group* b) { return a->maxY > b->maxY; });

@@ -371,11 +371,10 @@
       }
     }
     for (int bi = 0; bi < n; bi++) islandParent[bi] = bi;
-    std::function<int(int)> ifind = [&](int a) { while (islandParent[a] != a) { islandParent[a] = islandParent[islandParent[a]]; a = islandParent[a]; } return a; };
-    for (int ci = 0; ci < nc; ci++) { Contact& c = contacts[ci]; if (!c.b || !c.a->awake || !c.b->awake) continue; int ra = ifind(c.a->idx), rb = ifind(c.b->idx); if (ra != rb) islandParent[ra] = rb; }
+    for (int ci = 0; ci < nc; ci++) { Contact& c = contacts[ci]; if (!c.b || !c.a->awake || !c.b->awake) continue; ufUnite(islandParent, c.a->idx, c.b->idx); }
     for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
-    for (int bi = 0; bi < n; bi++) { Body* b = L->bodies[bi]; if (!b->awake) continue; int r = ifind(bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
-    for (int bi = 0; bi < n; bi++) { Body* b = L->bodies[bi]; if (!b->awake) continue; if (islandMinStill[ifind(bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
+    for (int bi = 0; bi < n; bi++) { Body* b = L->bodies[bi]; if (!b->awake) continue; int r = ufFind(islandParent, bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
+    for (int bi = 0; bi < n; bi++) { Body* b = L->bodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
   }
   template <class F> void forEachBodyCell(Body* b, F cb) {
     // Inverse rasterization: for each grid cell in the body's world AABB, map its

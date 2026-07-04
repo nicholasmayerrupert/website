@@ -135,8 +135,8 @@
         if (lavaBurns(right)) burnK = right; else if (lavaBurns(left)) burnK = left; else if (lavaBurns(down)) burnK = down; else if (lavaBurns(up)) burnK = up;
         if (burnK >= 0) { if (isPlantMaterial(grid[burnK])) plantBurned = true; writeGridIndex(burnK, FIRE); continue; }
         int liquidK = -1;
-        // Brine quenches lava like water/acid (saltwater boils too) -> steam + hardened stone.
-        auto quenches = [&](int q) { uint8_t m = grid[q]; return m == WATER || m == ACID || m == BRINE; };
+        // Flag-driven (quenchesLava: water/acid/brine) -> steam + hardened stone.
+        auto quenches = [&](int q) { return isLavaQuencher(grid[q]); };
         if (quenches(right)) liquidK = right; else if (quenches(left)) liquidK = left; else if (quenches(down)) liquidK = down; else if (quenches(up)) liquidK = up;
         if (liquidK >= 0) { writeGridIndex(liquidK, STEAM); writeGridIndex(k, STONE); hardened.insert(k); if (y > hardenedYMax) hardenedYMax = y; continue; }
         if (rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (grid[up] == EMPTY) airK = up; else if (grid[right] == EMPTY) airK = right; else if (grid[left] == EMPTY) airK = left; if (airK >= 0) writeGridIndex(airK, FIRE); }

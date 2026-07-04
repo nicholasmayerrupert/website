@@ -17,6 +17,10 @@ static const uint16_t MF_DISSOLVABLE = 1u << 1;
 static const uint16_t MF_RIGID = 1u << 2;
 static const uint16_t MF_BEARING = 1u << 3;
 static const uint16_t MF_PLANTFAMILY = 1u << 4;
+static const uint16_t MF_QUENCHESLAVA = 1u << 5;
+static const uint16_t MF_RELAXESGAPS = 1u << 6;
+static const uint16_t MF_PLANTWOOD = 1u << 7;
+static const uint16_t MF_PLANTLEAF = 1u << 8;
 
 static const int TABLE = 64;
 static const float    DENSITY[TABLE]        = {0, 1.6f, 1, 2.6f, 0.8f, 0, 0, 0.5f, 0.6f, 0.4f, 1.1f, 2.8f, 0.9f, 1.4f, 0.6f, 1.5f, 0.4f, 1.7f, 2, 2.3f, 0.9f, 2.7f, 2.8f, 2.6f, 3, 2.4f, 0.6f, 0.7f, 0.5f, 0.45f, 0.4f, 0, 1.5f, 1.05f, 1.2f, 1.6f, 2.4f, 2.5f, 1.2f, 1.1f, 0.4f, 0.45f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -25,7 +29,7 @@ static const float    MOBILITY[TABLE]       = {0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 1, 
 static const uint8_t  MAT_KIND[TABLE]       = {K_NONE, K_POWDER, K_LIQUID, K_COMPONENT, K_LIQUID, K_GAS, K_GAS, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_LIQUID, K_LIQUID, K_COMPONENT, K_FREE_RIGID, K_COMPONENT, K_POWDER, K_POWDER, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_GAS, K_POWDER, K_LIQUID, K_POWDER, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_COMPONENT, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE, K_NONE};
 // Broad gameplay class, trait flags, and seeded-component group per material.
 static const uint8_t  MAT_CLASS[TABLE]      = {MC_NONE, MC_SOLID, MC_LIQUID, MC_RIGID, MC_LIQUID, MC_GAS, MC_GAS, MC_RIGID, MC_RIGID, MC_RIGID, MC_LIQUID, MC_LIQUID, MC_RIGID, MC_RIGID, MC_RIGID, MC_SOLID, MC_SOLID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_GAS, MC_SOLID, MC_LIQUID, MC_SOLID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_RIGID, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE, MC_NONE};
-static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 0, 14, 1, 0, 0, 31, 31, 31, 0, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 31, 30, 30, 30, 23, 0, 8, 0, 9, 12, 14, 12, 14, 14, 22, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static const uint16_t MAT_FLAGS[TABLE]      = {0, 10, 96, 14, 65, 0, 0, 31, 159, 287, 96, 0, 12, 12, 31, 10, 8, 10, 14, 14, 14, 14, 14, 14, 14, 14, 159, 158, 158, 286, 23, 0, 8, 32, 9, 12, 14, 12, 14, 14, 22, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_NONE, CG_NONE, CG_NONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_ICE, CG_NONE, CG_PLANT, CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_STONE, CG_PLANT, CG_PLANT, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE, CG_NONE};
 // Mining gate: which tool class drops a material + the min tier required.
 static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -39,6 +43,9 @@ static const int MINING_PROGRESS_DIVISOR = 5;
 static const uint32_t MAT_COLOR[TABLE]      = {0x00000000u, 0x7978c8e6u, 0x66ffaa78u, 0xb3968c8cu, 0x8c1c4869u, 0xb8226cffu, 0x42ffe6d2u, 0xc7162e58u, 0xc2234c80u, 0xa354aa5bu, 0x8020ff80u, 0xc81050ffu, 0x90fff0c0u, 0xff8a725eu, 0xc26e7d8cu, 0xc8305278u, 0xe0faf2ebu, 0xd02a3a4au, 0xb34868b2u, 0xb382b4d2u, 0xb33e7856u, 0xb3466eafu, 0xb3788ca0u, 0xb3555050u, 0xb35aafc8u, 0xc8374696u, 0xc21e3a5au, 0xc23c7846u, 0xb0afc8d2u, 0xb83237b4u, 0xa32d6e3cu, 0x6030c8d8u, 0xe8f2f8f8u, 0x66c0c890u, 0xc84a4a52u, 0xc82838ccu, 0xb8424852u, 0xd8fff4e8u, 0xc8643255u, 0xdf96547du, 0xd81e9bffu, 0xc8ffd69bu, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {0, 7, 3, 8, 4, 0, 0, 5, 7, 9, 4, 0, 5, 6, 7, 7, 4, 5, 5, 7, 8, 8, 8, 8, 8, 4, 6, 6, 6, 8, 9, 0, 4, 3, 6, 4, 8, 7, 12, 8, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint8_t  DURABILITY[TABLE]     = {0, 2, 0, 8, 0, 0, 0, 2, 4, 2, 0, 0, 5, 10, 4, 2, 1, 2, 6, 6, 3, 10, 14, 9, 12, 12, 4, 3, 2, 2, 1, 0, 1, 0, 1, 3, 8, 10, 4, 5, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+// Baseline light emission per material (0 = dark); positional sparkle patterns
+// for CRYSTAL/MYCELIUM stay in render.inc (emissionForCell).
+static const uint8_t  MAT_EMISSION[TABLE]   = {0, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 132, 58, 112, 98, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint32_t PACKED_FIRE = 0xb8226cffu;
 static const uint32_t PACKED_FIRE_HOT = 0x9e50cdffu;
 static const uint32_t PACKED_LAVA_HOT = 0xc83090ffu;

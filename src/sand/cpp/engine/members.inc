@@ -361,6 +361,11 @@
   inline bool isPlantMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTFAMILY; }
   inline bool isDissolvable(uint8_t m) { return MAT_FLAGS[m] & MF_DISSOLVABLE; }
   inline bool isFlammable(uint8_t m) { return MAT_FLAGS[m] & MF_FLAMMABLE; }
+  inline bool isLavaQuencher(uint8_t m) { return MAT_FLAGS[m] & MF_QUENCHESLAVA; }
+  // Liquids that fill 1-cell gaps in a resting layer (relaxLiquidGaps). NOTE:
+  // deliberately excludes BRINE/LAVA today — adding the flag to a material
+  // changes settle behavior (and the bench checksum).
+  inline bool relaxesGaps(uint8_t m) { return MAT_FLAGS[m] & MF_RELAXESGAPS; }
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isBlastDamageable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
   inline bool isLooseMedium(uint8_t m) { return isLiquidMaterial(m) || isLooseSolidMaterial(m); }
@@ -380,8 +385,8 @@
   // species, so its trunk/leaf material is derived from its plantType (and vice
   // versa when re-registering streamed-in cells). DRIFTWOOD/VINE are neither, so
   // they never act as a growth source (driftwood stays non-growing as before).
-  inline bool isPlantWood(uint8_t m) { return m == WOOD || m == PINE_WOOD || m == CACTUS || m == MUSH_STEM; }
-  inline bool isPlantLeaf(uint8_t m) { return m == PLANT || m == MUSH_CAP; }
+  inline bool isPlantWood(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTWOOD; }
+  inline bool isPlantLeaf(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTLEAF; }
   inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : WOOD; }
   inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_MUSHROOM ? MUSH_CAP : PLANT; }
   inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : PT_OAK; }

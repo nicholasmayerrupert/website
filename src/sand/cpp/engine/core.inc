@@ -173,14 +173,14 @@
         int k = I(x, y); if (grid[k] != EMPTY) continue;
         if (grid[I(x, y + 1)] == EMPTY) continue;
         int aboveK = I(x, y - 1); uint8_t above = grid[aboveK];
-        if (above == WATER || above == ACID || above == OIL) { writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY); continue; }
+        if (relaxesGaps(above)) { writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY); continue; }
         // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
         // always migrates the same way — toward the layer's edge, where it vanishes.
         // A holey liquid layer (e.g. oil arriving at the surface in scattered spots)
         // thus coalesces into a solid, flat layer and SETTLES, instead of the random
         // fill shuffling the holes around forever (perpetual churn).
         static const int FILL_DIRS[2] = { -1, 1 };
-        for (int i = 0; i < 2; i++) { int dx = FILL_DIRS[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = grid[sk]; if (side != WATER && side != OIL && side != ACID) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (grid[k] != EMPTY) break; }
+        for (int i = 0; i < 2; i++) { int dx = FILL_DIRS[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = grid[sk]; if (!relaxesGaps(side)) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (grid[k] != EMPTY) break; }
       }
     }
   }

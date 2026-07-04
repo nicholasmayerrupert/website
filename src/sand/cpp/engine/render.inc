@@ -54,17 +54,14 @@ inline bool myceliumNoduleAt(int wx, int wy) {
 
 static constexpr uint8_t CROSS_LAYER_EMISSIVE_LOSS = 28;
 
+// Baseline emission strength comes from the schema (MAT_EMISSION); CRYSTAL and
+// MYCELIUM emit from sparse positional pockets rather than every cell.
 inline uint8_t emissionForCell(uint8_t m, int wx, int wy) {
-  switch (m) {
-    case FIRE: return 245;
-    case LAVA: return 230;
-    case CRYSTAL: return (((wx * 17 + wy * 31) & 3) == 0) ? 132 : 0;
-    case GLOWBERRY: return 98;   // warm orange lantern (soft)
-    case GLOWSHROOM: return 95;  // cool blue biolume (soft)
-    case MYCELIUM_SPORE: return 112;
-    case MYCELIUM: return (((wx * 13 + wy * 29) & 31) == 0) ? 58 : 0;
-    default: return 0;
-  }
+  uint8_t e = MAT_EMISSION[m];
+  if (!e) return 0;
+  if (m == CRYSTAL) return (((wx * 17 + wy * 31) & 3) == 0) ? e : 0;
+  if (m == MYCELIUM) return (((wx * 13 + wy * 29) & 31) == 0) ? e : 0;
+  return e;
 }
 
 inline uint8_t crossLayerEmissionFor(uint8_t m, int wx, int wy) {

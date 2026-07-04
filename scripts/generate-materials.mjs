@@ -194,6 +194,9 @@ static const int MINING_PROGRESS_DIVISOR = ${miningSpeed.progressDivisor};
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};
 static const uint8_t  DURABILITY[TABLE]     = {${col((m) => m.durability, u8)}};
+// Baseline light emission per material (0 = dark); positional sparkle patterns
+// for CRYSTAL/MYCELIUM stay in render.inc (emissionForCell).
+static const uint8_t  MAT_EMISSION[TABLE]   = {${col((m) => m.emission ?? 0, u8)}};
 ${cppAnimLines}
 `;
 

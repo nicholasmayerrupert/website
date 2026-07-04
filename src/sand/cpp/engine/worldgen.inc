@@ -213,7 +213,8 @@
       }
       // Crystal specks stud cave walls in EVERY biome (densest in the crystal
       // biome), so lone 1x1 crystals are common outside the salt caverns too.
-      double crystalCut = caveBiome == CAVE_CRYSTAL ? 0.955 : 0.975;
+      // The non-crystal caves glint noticeably more now, for a bit of ambient light.
+      double crystalCut = caveBiome == CAVE_CRYSTAL ? 0.955 : 0.966;
       if (detail > crystalCut) return CRYSTAL;
       double moss = wfbm2(L->gCaveSeed ^ 0x305au, worldX * 0.02, worldY * 0.02, 2, 0.5);
       if (moss > 0.74 && detail > 0.88) return MOSS;
@@ -327,7 +328,7 @@
   // STRUCT_REACH and clip with `put`, so a structure straddling a band seam is written
   // identically whether produced by one big fillRect or two band calls. fg only.
   static const int STRUCT_LATTICE = 56;  // world cells between candidate anchors
-  static const int STRUCT_REACH = 24;    // >= max (jitter + structure extent)
+  static const int STRUCT_REACH = 34;    // >= max (jitter + structure extent) across all archetypes
   static int floorDiv(int a, int b) { int q = a / b, r = a % b; if (r != 0 && ((r < 0) != (b < 0))) q--; return q; }
   void fillStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (L->isBackground) return;                       // fg only (matches trees)
@@ -341,23 +342,137 @@
     int wy0 = L->worldOffsetY + rowStart - STRUCT_REACH, wy1 = L->worldOffsetY + rowEnd + STRUCT_REACH;
     int lxMin = floorDiv(wx0, STRUCT_LATTICE), lxMax = floorDiv(wx1, STRUCT_LATTICE);
     int lyMin = floorDiv(wy0, STRUCT_LATTICE), lyMax = floorDiv(wy1, STRUCT_LATTICE);
+    auto h2 = [&](uint32_t salt, int a, int b) { return whash2(sseed ^ salt, a, b); };
+    // --- structure archetypes ------------------------------------------------
+    // Each stamps a self-contained ruin anchored at its top-left (ax,ay). All use
+    // only solid CG_STONE shells (BRICK/CRYSTAL/MOSS/MYCELIUM merge into the
+    // grounded terrain) plus CG_PLANT dressing attached the way the proven cave
+    // features attach it (stems/plants rise from the floor, vines hang from the
+    // top wall) so the whole thing generates inert. Interiors are carved EMPTY.
+    enum SKind { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_SHRINE, SK_FORGE, SK_OVERGROWN, SK_MUSHGROVE };
+    // A plain hollow brick house with a doorway (the original ruin).
+    auto stampHouse = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      int doorX = ax + 1 + (int)(h2(0xE5u, lx, ly) * (w - 4));
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        bool door = oy == h - 1 && ox >= doorX && ox <= doorX + 1;
+        put(ax + ox, ay + oy, (border && !door) ? BRICK : EMPTY);
+      }
+    };
+    // A sealed brick vault with an ore-hoard resting on the floor + a corner crystal.
+    auto stampVault = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        put(ax + ox, ay + oy, border ? BRICK : EMPTY);
+      }
+      int fy = ay + h - 2;
+      for (int ox = 2; ox < w - 2; ox++) {
+        double r = h2(0x7000u, ax + ox, ay);
+        uint8_t ore = r < 0.14 ? GOLD_ORE : r < 0.42 ? IRON_ORE : r < 0.72 ? COPPER_ORE : EMPTY;
+        if (ore != EMPTY) put(ax + ox, fy, ore);
+        if (r < 0.06) put(ax + ox, fy - 1, GOLD_ORE);   // taller heaps of treasure
+      }
+      put(ax + 2, fy, CRYSTAL); put(ax + w - 3, fy, CRYSTAL);
+    };
+    // An open pillared hall: brick floor + roof with regularly spaced columns.
+    auto stampColonnade = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      for (int oy = 1; oy < h - 1; oy++) for (int ox = 1; ox < w - 1; ox++) put(ax + ox, ay + oy, EMPTY);
+      for (int ox = 0; ox < w; ox++) { put(ax + ox, ay, BRICK); put(ax + ox, ay + h - 1, BRICK); }
+      for (int ox = 0; ox < w; ox += 3) for (int oy = 1; oy < h - 1; oy++) put(ax + ox, ay + oy, BRICK);
+      put(ax + w / 2, ay + h - 2, CRYSTAL);             // an altar crystal for light
+    };
+    // A stepped brick pyramid crowned with a crystal cluster (a crystal-cave shrine).
+    auto stampShrine = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      int base = ay + h - 1, steps = imin(w / 2, h - 1);
+      for (int s = 0; s <= steps; s++) for (int ox = s; ox < w - s; ox++) put(ax + ox, base - s, BRICK);
+      int topY = base - steps, cx = ax + w / 2;
+      int ch = 4 + (int)(h2(0x7100u, lx, ly) * 5);      // 4..8 crystal spire
+      for (int i = 0; i < ch; i++) { int rad = imax(0, 2 - i / 2); for (int dx = -rad; dx <= rad; dx++) put(cx + dx, topY - 1 - i, CRYSTAL); }
+      put(cx - 1, topY, CRYSTAL); put(cx + 1, topY, CRYSTAL);
+    };
+    // A brick smithy with a contained lava crucible glowing on the floor.
+    auto stampForge = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        put(ax + ox, ay + oy, border ? BRICK : EMPTY);
+      }
+      int cx = ax + w / 2, fy = ay + h - 1;             // crucible sits in the floor
+      for (int ox = cx - 2; ox <= cx + 2; ox++) { put(ox, fy, STONE); put(ox, fy - 1, LAVA); }
+      put(cx - 3, fy, STONE); put(cx - 3, fy - 1, STONE); // stone hearth fully contains the lava
+      put(cx + 3, fy, STONE); put(cx + 3, fy - 1, STONE);
+    };
+    // A crumbled, plant-choked ruin — the lush biome's signature structure.
+    auto stampOvergrown = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        if (border) put(ax + ox, ay + oy, h2(0x7200u, ax + ox, ay + oy) < 0.80 ? BRICK : EMPTY); // ~20% crumbled
+        else put(ax + ox, ay + oy, EMPTY);
+      }
+      for (int ox = 1; ox < w - 1; ox++) if (h2(0x7201u, ax + ox, ay) < 0.85) put(ax + ox, ay + h - 2, MOSS); // moss carpet
+      for (int ox = 1; ox < w - 1; ox++) if (h2(0x7202u, ax + ox, ay) < 0.45) {  // vines drape from the top wall
+        int vlen = 2 + (int)(h2(0x7203u, ax + ox, ay) * (h - 3));
+        for (int i = 1; i <= vlen && i < h - 1; i++) put(ax + ox, ay + i, VINE);
+      }
+      for (int ox = 2; ox < w - 2; ox++) if (h2(0x7204u, ax + ox, ay) < 0.32) {  // leafy plants sprout from the floor
+        int ph = 1 + (int)(h2(0x7205u, ax + ox, ay) * 3);
+        for (int i = 0; i < ph; i++) put(ax + ox, ay + h - 2 - i, PLANT);
+      }
+      if (h2(0x7206u, lx, ly) < 0.6) put(ax + 2, ay + h - 2, CRYSTAL); // a soft glow through the leaves
+    };
+    // A brick grotto sheltering a stand of giant mushrooms (the mushroom biome).
+    auto stampMushGrove = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        put(ax + ox, ay + oy, border ? BRICK : EMPTY);
+      }
+      for (int ox = 1; ox < w - 1; ox++) put(ax + ox, ay + h - 2, MYCELIUM); // fungal floor
+      for (int m = 0; m < 3; m++) {
+        int mx = ax + 3 + m * (w - 6) / 2;
+        if (h2(0x7300u + m, lx, ly) >= 0.72) continue;
+        int mh = 2 + (int)(h2(0x7301u, mx, ay) * 3);
+        for (int i = 0; i < mh; i++) put(mx, ay + h - 3 - i, MUSH_STEM);      // stem rises off the mycelium floor
+        int capY = ay + h - 3 - mh;
+        for (int dx = -2; dx <= 2; dx++) if (std::abs(dx) <= 1 || h2(0x7302u, mx + dx, capY) < 0.7) put(mx + dx, capY, MUSH_CAP);
+      }
+      put(ax + 2, ay + h - 3, CRYSTAL);
+    };
+
     for (int ly = lyMin; ly <= lyMax; ly++) for (int lx = lxMin; lx <= lxMax; lx++) {
       if (whash2(sseed, lx, ly) >= 0.18) continue;     // rare: a ruin at this anchor
       // jittered anchor + hashed size
       int ax = lx * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xA1u, lx, ly) * 6);
       int ay = ly * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xB2u, lx, ly) * 6);
-      int w = 11 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 7); // 11..17
+      int w = 12 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 8); // 12..19
       int h = 7 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 4);  // 7..10
+      // Pick an archetype, biased by the cave biome it sits in so a structure fits
+      // its surroundings (lush -> overgrown ruin, mushroom -> grove, crystal ->
+      // shrine); elsewhere a mix of the neutral kinds.
+      int caveBiome = genCaveBiomeAt(ax + w / 2, ay + h / 2);
+      double pick = whash2(sseed ^ 0x9001u, lx, ly);
+      int kind;
+      if (caveBiome == CAVE_LUSH && pick < 0.60) kind = SK_OVERGROWN;
+      else if (caveBiome == CAVE_MUSHROOM && pick < 0.55) kind = SK_MUSHGROVE;
+      else if (caveBiome == CAVE_CRYSTAL && pick < 0.55) kind = SK_SHRINE;
+      else {
+        static const SKind pool[] = { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_FORGE, SK_OVERGROWN, SK_SHRINE };
+        kind = pool[(int)(whash2(sseed ^ 0x9002u, lx, ly) * 6) % 6];
+      }
+      if (kind == SK_COLONNADE) w += 4;                // halls run wider
+      if (kind == SK_SHRINE) { w = 9 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 6); h = w / 2 + 3; }
       // Only underground in solid stone, above the sealed-liquid zone: keeps the
-      // carved interior away from loose soil (no avalanche) and from pockets.
+      // carved interior away from loose soil (no avalanche) and from pockets. The
+      // shrine also throws a crystal spire UP, so leave headroom above it too.
       int surfAbs = genSurfaceAbs(ax + w / 2);
       if (ay < surfAbs + 30) continue;
       if (ay + h > caveBottomAbs()) continue;
-      int doorX = ax + 1 + (int)(whash2(sseed ^ 0xE5u, lx, ly) * (w - 4)); // doorway in the bottom wall
-      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
-        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
-        bool door = oy == h - 1 && ox >= doorX && ox <= doorX + 1; // 2-wide doorway
-        put(ax + ox, ay + oy, (border && !door) ? BRICK : EMPTY);
+      switch (kind) {
+        case SK_HOUSE:     stampHouse(ax, ay, w, h, lx, ly); break;
+        case SK_VAULT:     stampVault(ax, ay, w, h, lx, ly); break;
+        case SK_COLONNADE: stampColonnade(ax, ay, w, h, lx, ly); break;
+        case SK_SHRINE:    stampShrine(ax, ay, w, h, lx, ly); break;
+        case SK_FORGE:     stampForge(ax, ay, w, h, lx, ly); break;
+        case SK_OVERGROWN: stampOvergrown(ax, ay, w, h, lx, ly); break;
+        case SK_MUSHGROVE: stampMushGrove(ax, ay, w, h, lx, ly); break;
       }
     }
   }
@@ -415,8 +530,12 @@
       }
     };
     auto stampLavaBasin = [&](int wx, int floorY, int gx, int gy) {
-      int rx = 8 + (int)(whash2(sseed ^ 0x550u, gx, gy) * 8);
-      int ry = 4 + (int)(whash2(sseed ^ 0x551u, gx, gy) * 4);
+      // Wide size spread: a squared roll skews toward many small glowing pools with
+      // the occasional big lake. Depth tracks width so the pool stays basin-shaped
+      // (never a flat lava streak) and stone-lined.
+      double lv = whash2(sseed ^ 0x550u, gx, gy);
+      int rx = 4 + (int)(lv * lv * 14);                                    // 4..17
+      int ry = 2 + (int)(whash2(sseed ^ 0x551u, gx, gy) * 4) + rx / 4;     // depth grows with width
       for (int dx = -rx - 3; dx <= rx + 3; dx++) {
         int px = wx + dx;
         double ax = (double)std::abs(dx);
@@ -439,8 +558,12 @@
       }
     };
     auto stampCrystalAcidBasin = [&](int wx, int floorY, int gx, int gy) {
-      int rx = 13 + (int)(whash2(sseed ^ 0x440u, gx, gy) * 11);
-      int ry = 5 + (int)(whash2(sseed ^ 0x442u, gx, gy) * 6);
+      // Much wider size spread than before: the product of two rolls skews toward
+      // small caustic ponds with rarer big lakes. Depth tracks width so even the
+      // wide basins stay rounded (never a flat acid smear).
+      double av = whash2(sseed ^ 0x440u, gx, gy), bv = whash2(sseed ^ 0x441u, gx, gy);
+      int rx = 4 + (int)(av * bv * 20);                                    // 4..24
+      int ry = 2 + (int)(whash2(sseed ^ 0x442u, gx, gy) * 5) + rx / 4;     // depth grows with width
       for (int dx = -rx - 4; dx <= rx + 4; dx++) {
         int px = wx + dx;
         double ax = (double)std::abs(dx);
@@ -490,21 +613,27 @@
       int floorY = wy, ceilY = wy;
       bool hasFloor = findFloor(wx, wy, floorY), hasCeil = findCeiling(wx, wy, ceilY);
 
-      if (hasFloor && lavaH < (caveBiome == CAVE_DEFAULT ? 0.0050 : 0.0012)) {
+      // Lava pools are the main light source in the caves that grow nothing
+      // luminous of their own: plain and (to a lesser extent) mushroom/lush caves
+      // get them far more often. Crystal caves stay lava-light — they glow already.
+      double lavaThr = caveBiome == CAVE_DEFAULT ? 0.0100
+                     : caveBiome == CAVE_CRYSTAL ? 0.0012
+                     : 0.0034;   // mushroom / lush: brighten them up
+      if (hasFloor && lavaH < lavaThr) {
         stampLavaBasin(wx, floorY, gx, gy);
         continue;
       }
 
       if (caveBiome == CAVE_CRYSTAL) {
-        if (hasFloor && h < 0.075) stampCrystalAcidBasin(wx, floorY, gx, gy);
+        if (hasFloor && h < 0.038) stampCrystalAcidBasin(wx, floorY, gx, gy);   // ~half as common as before
         else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
         else if ((hasFloor || hasCeil) && h < 0.44) {
           // GIANT crystal cluster: a tall central spike flanked by shorter ones,
           // fanned out for a dramatic geode look.
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x333u, gx, gy) < 0.70);
           int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
-          int bigH = 12 + (int)(whash2(sseed ^ 0x334u, gx, gy) * 16); // 12..27 tall
-          int bigR = 2 + (int)(whash2(sseed ^ 0x335u, gx, gy) * 3);   // 2..4 wide
+          int bigH = 8 + (int)(whash2(sseed ^ 0x334u, gx, gy) * 11); // 8..18 tall (smaller geodes)
+          int bigR = 2 + (int)(whash2(sseed ^ 0x335u, gx, gy) * 2);  // 2..3 wide
           stampCrystalSpike(wx, baseY, dir, bigH, bigR);
           stampCrystalSpike(wx - 2, baseY, dir, bigH * 2 / 3, imax(1, bigR - 1));
           stampCrystalSpike(wx + 2, baseY, dir, bigH * 3 / 4, imax(1, bigR - 1));
@@ -514,8 +643,8 @@
         else if ((hasFloor || hasCeil) && h < 0.74) {
           bool fromFloor = hasFloor && (!hasCeil || whash2(sseed ^ 0x331u, gx, gy) < 0.68);
           int baseY = fromFloor ? floorY : ceilY, dir = fromFloor ? -1 : 1;
-          int ht = 6 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 16); // taller regular spikes
-          stampCrystalSpike(wx, baseY, dir, ht, 1 + (int)(whash2(sseed ^ 0x332u, gx, gy) * 3));
+          int ht = 4 + (int)(whash2(sseed ^ 0x330u, gx, gy) * 10); // 4..13 regular spikes
+          stampCrystalSpike(wx, baseY, dir, ht, 1 + (int)(whash2(sseed ^ 0x332u, gx, gy) * 2));
         }
       } else if (caveBiome == CAVE_MUSHROOM) {
         if (hasFloor && h < 0.50) stampMyceliumTendril(wx, floorY, gx, gy);
@@ -529,7 +658,7 @@
             if (std::abs(dx) <= 1 || whash2(sseed ^ 0x224u, wx + dx, capY) < 0.78) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + dx, capY, MUSH_CAP);
           }
         }
-        if ((hasFloor || hasCeil) && h > 0.86) {   // 1x1 crystal specks — more common now
+        if ((hasFloor || hasCeil) && h > 0.76) {   // glinting crystal specks — brighten the fungal dark
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x227u, gx, gy) * 4), 0);
         }
@@ -562,14 +691,16 @@
           int crownY = floorY - ht + 1;
           for (int cdx = -1; cdx <= 1; cdx += 2) if (genOpenCaveAt(wx + cdx, crownY)) putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, wx + cdx, crownY, PLANT);
         }
-        if ((hasFloor || hasCeil) && h > 0.90) {   // occasional crystal accent
+        if ((hasFloor || hasCeil) && h > 0.82) {   // crystal accents scattered through the greenery
           int baseY = hasFloor ? floorY : ceilY;
           stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x112u, gx, gy) * 4), 0);
         }
-      } else {   // CAVE_DEFAULT: sparse mineral specks so plain caves still glint
-        if ((hasFloor || hasCeil) && h > 0.88) {
-          int baseY = hasFloor ? floorY : ceilY;
-          stampCrystalSpike(wx, baseY, hasFloor ? -1 : 1, 2 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 3), 0);
+      } else {   // CAVE_DEFAULT: the darkest caves — seed them with the most glinting minerals
+        if ((hasFloor || hasCeil) && h > 0.68) {
+          int baseY = hasFloor ? floorY : ceilY, dir = hasFloor ? -1 : 1;
+          // occasionally a small clustered spike, otherwise a lone glinting speck
+          if (h > 0.94) stampCrystalSpike(wx, baseY, dir, 3 + (int)(whash2(sseed ^ 0x229u, gx, gy) * 4), 1);
+          else stampCrystalSpike(wx, baseY, dir, 2 + (int)(whash2(sseed ^ 0x228u, gx, gy) * 3), 0);
         }
       }
     }

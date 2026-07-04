@@ -16,13 +16,24 @@ const EXPERIENCE = [
     org: 'Connection Lab',
     dates: 'May 2025 – July 2026',
     blurb:
-      'Shipped a production website end-to-end, from the REST API up through the client-side views that consumed it.',
+      'Built a comprehensive course-and-community platform end-to-end, spanning real-time chat, payments, and Zoom-powered live sessions.',
     points: [
-      'Designed REST APIs and wired them into server-rendered client views',
-      'Owned schema design, wrote migrations, and tuned slow queries',
+      'Built real-time chat with Socket.io, storing shared images on Amazon S3',
+      'Integrated Stripe to handle payments and checkout',
+      'Automated live sessions via the Zoom API, auto-creating meetings and syncing scheduling and attendance',
+      'Designed REST APIs, owned schema design and migrations, and tuned slow queries',
       'Implemented auth, input validation, and resilient error handling',
     ],
-    tags: ['JavaScript', 'Handlebars', 'Node.js', 'SQL'],
+    tags: [
+      'JavaScript',
+      'Handlebars',
+      'Node.js',
+      'Socket.io',
+      'Stripe',
+      'Zoom API',
+      'AWS S3',
+      'SQL',
+    ],
   },
 ];
 

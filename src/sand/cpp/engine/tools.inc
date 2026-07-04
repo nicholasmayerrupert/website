@@ -216,22 +216,42 @@
       if (da != db) return da < db; if (a.second != b.second) return a.second < b.second; return a.first < b.first; });
     return discOffsetCache.emplace(radius, std::move(offs)).first->second;
   }
+  // ---- shared destroy/erase plumbing ----
+  // Destroy the (non-EMPTY) cell at k with material m: a body cell routes to the
+  // body eraser, a static cell is classified for the component split and cleared.
+  // body-material invariant: body cells hold their real material; the body system
+  // erases them, the component-split system erases static cells.
+  void destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+                     std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
+    if (isBodyCell(k)) {
+      if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b;
+      if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; }
+    } else {
+      if (isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (isIceComponentMaterial(m)) erasedIce.push_back(k);
+      if (isPlantMaterial(m)) erasedPlant = true;
+      grid[k] = EMPTY;
+    }
+  }
+  // Component-split epilogue shared by every destroy path (eraser, stroke
+  // eraser, both mining paths).
+  void splitComponentsAfterDestroy(std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool erasedPlant) {
+    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
+    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
+    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+  }
   // Returns the NUMBER OF GRID CELLS cleared (non-EMPTY -> EMPTY). Body/draft-only
   // erases still mark dirty but don't count toward the cleared total.
   int eraseDisc(int cx, int cy, int radius) {
     std::vector<int> erasedStone, erasedIce, bodyCellList; bool erasedPlant = false; bool changed = false; int cleared = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy);
-      // body-material invariant: body cells hold their real material; the body system erases them, the component-split system erases static cells.
-      if (isBodyCell(k)) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } changed = true; }
-      else if (grid[k] != EMPTY) { if (isStoneComponentMaterial(grid[k])) erasedStone.push_back(k); else if (isIceComponentMaterial(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
+      if (isBodyCell(k)) { destroyCellAt(k, grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
+      else if (grid[k] != EMPTY) { destroyCellAt(k, grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
-    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
-    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
     return cleared;
   }
   // Batched eraser for continuous creative strokes: collect the whole swept brush
@@ -242,16 +262,13 @@
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false, changed = false; int cleared = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int k : cells) {
-      // body-material invariant: body cells hold their real material; the body system erases them, the component-split system erases static cells.
-      if (isBodyCell(k)) { if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } changed = true; }
-      else if (grid[k] != EMPTY) { if (isStoneComponentMaterial(grid[k])) erasedStone.push_back(k); else if (isIceComponentMaterial(grid[k])) erasedIce.push_back(k); if (isPlantMaterial(grid[k])) erasedPlant = true; grid[k] = EMPTY; changed = true; cleared++; }
+      if (isBodyCell(k)) { destroyCellAt(k, grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
+      else if (grid[k] != EMPTY) { destroyCellAt(k, grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
       if (draft.erase(k)) changed = true;
     }
     finishErasedBodies(dirtyBodies, L->bodyCells);
     if (changed) { L->skyDirty = true; markDirtyRect(x0, y0, x1, y1); }
-    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
-    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
-    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
     return cleared;
   }
   int clearMineDamageDisc(int cx, int cy, int radius) {
@@ -339,32 +356,38 @@
     useLayer(&fg);
     return best;
   }
+  // One mining hit on cell k (material m != EMPTY): apply damage scaled by the
+  // footprint area + tool speed; when the cell breaks, record the drop, destroy
+  // it (body-material invariant handled by destroyCellAt), and unstage it from
+  // the draft. Returns true when anything changed (it always does for m != EMPTY).
+  bool mineDamageCellStep(int k, uint8_t m, const Player& miner, bool scaledSpeed, uint32_t areaScale, uint32_t speedMultiplier,
+                          std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+                          std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
+    uint32_t dur = mineDurationFor(m, areaScale);
+    if (dur > 0) {
+      if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
+      L->mineDamageAny = true;
+      uint32_t power = minePowerFor(m, miner, scaledSpeed, speedMultiplier);
+      L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
+      if (L->mineDamage[k] > 0) return true;
+    }
+    lastMinedCells.push_back({m, k});
+    destroyCellAt(k, m, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
+    L->mineDamage[k] = 0;
+    draft.erase(k);
+    return true;
+  }
   int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed) {
     lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops
     std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
     std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
     for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= cols - 1) continue; int k = I(xx, yy); uint8_t m = grid[k]; if (m == EMPTY) { if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; } continue; }
-      uint32_t dur = mineDurationFor(m, 1);
-      if (dur > 0) {
-        if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
-        L->mineDamageAny = true;
-        uint32_t power = minePowerFor(m, miner, scaledSpeed);
-        L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
-        changed = 1;
-        if (L->mineDamage[k] > 0) continue;
-      }
-      // body-material invariant: mining a body cell drops its real material and removes it from the body; static cells split their component.
-      if (isBodyCell(k)) { lastMinedCells.push_back({m, k}); if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b; if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; } }
-      else { if (isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (isIceComponentMaterial(m)) erasedIce.push_back(k); if (isPlantMaterial(m)) erasedPlant = true; lastMinedCells.push_back({m, k}); grid[k] = EMPTY; }
-      L->mineDamage[k] = 0; changed = 1;
-      if (draft.erase(k)) changed = 1;
+      if (mineDamageCellStep(k, m, miner, scaledSpeed, 1, 1, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
     } }
     finishErasedBodies(dirtyBodies, L->bodyCells);
     if (!lastMinedCells.empty()) L->skyDirty = true;
     if (changed) markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
-    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
-    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
     return changed;
   }
   int mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed) {
@@ -381,29 +404,7 @@
         if (L->mineDamage[k]) { L->mineDamage[k] = 0; changed = 1; }
         continue;
       }
-      uint32_t dur = mineDurationFor(m, areaScale);
-      if (dur > 0) {
-        if (L->mineDamage[k] == 0 || L->mineDamage[k] > dur) L->mineDamage[k] = dur;
-        L->mineDamageAny = true;
-        uint32_t power = minePowerFor(m, miner, scaledSpeed, SURVIVAL_MINING_SPEED_MULTIPLIER);
-        L->mineDamage[k] = L->mineDamage[k] > power ? L->mineDamage[k] - power : 0;
-        changed = 1;
-        if (L->mineDamage[k] > 0) continue;
-      }
-      // body-material invariant: mining a body cell drops its real material and removes it from the body; static cells split their component.
-      if (isBodyCell(k)) {
-        lastMinedCells.push_back({m, k});
-        if (bodyById.empty()) for (Body* b : L->bodies) bodyById[b->id] = b;
-        if (!eraseBodyCellIndex(k, bodyById, dirtyBodies)) { grid[k] = EMPTY; bodyOwner[k] = -1; }
-      } else {
-        if (isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (isIceComponentMaterial(m)) erasedIce.push_back(k);
-        if (isPlantMaterial(m)) erasedPlant = true;
-        lastMinedCells.push_back({m, k});
-        grid[k] = EMPTY;
-      }
-      L->mineDamage[k] = 0;
-      changed = 1;
-      if (draft.erase(k)) changed = 1;
+      if (mineDamageCellStep(k, m, miner, scaledSpeed, areaScale, SURVIVAL_MINING_SPEED_MULTIPLIER, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
     }
     finishErasedBodies(dirtyBodies, L->bodyCells);
     if (changed) {
@@ -412,9 +413,7 @@
       if (!lastMinedCells.empty()) L->skyDirty = true;
       markDirtyRect(x0, y0, x1, y1);
     }
-    splitRigidAfterErase(L->stoneComponents, erasedStone, L->nextStoneId, false);
-    splitRigidAfterErase(L->iceComponents, erasedIce, L->nextIceId, true);
-    if (erasedPlant && !L->plantComponents.empty()) splitPlantAfterErase();
+    splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
     return changed;
   }
   int addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {

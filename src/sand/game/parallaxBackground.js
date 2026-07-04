@@ -8,8 +8,8 @@ const CLOUD_LIGHT = '#e6ece8';
 const RIDGE_FAR = '#31455b';
 const RIDGE_MID = '#263c44';
 const RIDGE_NEAR = '#1a2d2f';
-// A very dark grey ridge sitting well below the others: it fills the lower screen
-// so freshly-dug caves read against a dim rocky backdrop instead of flat sky.
+// A very dark grey ridge sitting low on the screen: a subtle dim rocky band behind
+// freshly-dug caves. Kept low/short so it reads as a distant floor, not a mountain.
 const RIDGE_DEEP = '#14171a';
 const HORIZON_RATIO = 0.36;
 const SURFACE_CAM_Y = -120;
@@ -143,16 +143,27 @@ export function createParallaxBackground(container) {
     }
   };
 
-  const draw = ({ camX = 0, camY = 0 } = {}) => {
+  // `scale` is the in-game zoom relative to the default (1 = default, >1 = zoomed
+  // in). The whole backdrop is drawn into a logical box of size (w/scale, h/scale)
+  // and then uniformly scaled to fill the canvas, so the mountains/clouds/stars and
+  // the pan rate grow and shrink in lockstep with the simulation — no desync. The
+  // horizon stays at a fixed fraction of the screen because it's a ratio of the
+  // logical height.
+  const draw = ({ camX = 0, camY = 0, scale = 1 } = {}) => {
     if (!canvas.width || !canvas.height) return;
+    const s = scale > 0 ? scale : 1;
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
-    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}`;
+    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}`;
     if (key === lastKey) return;
     lastKey = key;
 
-    const w = canvas.width;
-    const h = canvas.height;
+    // Logical drawing size: scaling it by `s` exactly fills the backing store, so
+    // there are never edge gaps (zoom-out draws a larger logical area, shrunk to fit).
+    const w = canvas.width / s;
+    const h = canvas.height / s;
+    ctx.setTransform(s, 0, 0, s, 0, 0);
+
     const horizon = Math.round(clamp(h * HORIZON_RATIO - backgroundDriftY(qy), -28, h - 36));
     const skyHeight = Math.max(0, horizon);
     const sky = ctx.createLinearGradient(0, 0, 0, h);
@@ -169,7 +180,10 @@ export function createParallaxBackground(container) {
     drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 8, 9, RIDGE_FAR, 3.2);
     drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 20, 13, RIDGE_MID, 7.9);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 34, 16, RIDGE_NEAR, 12.4);
-    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 58, 21, RIDGE_DEEP, 18.5);
+    // Dark backdrop band: pushed low (large base offset) and short (small amp) so
+    // it's a subtle distant floor behind caves, not a looming mountain.
+    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 96, 11, RIDGE_DEEP, 18.5);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 
   return {

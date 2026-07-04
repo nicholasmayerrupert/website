@@ -34,14 +34,26 @@ function fitCells(cssW, cssH, logicalCellPx, cfg) {
 // buffer is constant across zoom changes — the engine/world/player survive a zoom
 // (createSandGame's fit() takes its no-rebuild fast path). Defaults to `zoom` so
 // legacy 4-arg callers behave exactly as before.
-export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, minZoom = zoom) {
+//
+// `dprBaseline` is the devicePixelRatio captured at load. Browser page zoom (Ctrl
+// +/-) changes BOTH the CSS-px box AND dpr, roughly preserving cssPx*dpr (physical
+// pixels). Sizing the visible window off that physical-pixel width instead of raw
+// CSS px makes the sim IGNORE browser zoom entirely: only the container size and
+// the in-game zoom change how many cells are shown. Defaults to `dpr` (no
+// correction) so legacy callers/tests are unchanged.
+export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, minZoom = zoom, dprBaseline = dpr) {
   const safeDpr = dpr > 0 ? dpr : 1;
-  const base = cssW <= cfg.mobileMaxCssWidth ? cfg.mobileCellPx : cfg.cellPx;
+  const pageZoom = safeDpr / (dprBaseline > 0 ? dprBaseline : safeDpr); // 1 at load
+  // Zoom-corrected ("unzoomed") CSS box used only for choosing how many cells to
+  // show; the canvas backing store below still uses the REAL cssW*dpr.
+  const viewCssW = cssW * pageZoom;
+  const viewCssH = cssH * pageZoom;
+  const base = viewCssW <= cfg.mobileMaxCssWidth ? cfg.mobileCellPx : cfg.cellPx;
 
-  const { viewCols, viewRows } = fitCells(cssW, cssH, base * zoom, cfg);
+  const { viewCols, viewRows } = fitCells(viewCssW, viewCssH, base * zoom, cfg);
   // Buffer reference dims: the most-zoomed-out view, so bufCols/worldRows don't
   // change when only the zoom (not the container) changes.
-  const bufRef = fitCells(cssW, cssH, base * minZoom, cfg);
+  const bufRef = fitCells(viewCssW, viewCssH, base * minZoom, cfg);
 
   const canvasW = Math.max(1, Math.round(cssW * safeDpr));
   const canvasH = Math.max(1, Math.round(cssH * safeDpr));

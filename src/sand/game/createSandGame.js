@@ -134,6 +134,12 @@ export function createSandGame(container, opts = {}) {
   let zoomIndex = SIZING.zoomDefaultIndex;
   const zoomFactor = () => SIZING.zoomSteps[zoomIndex];
   const minZoomFactor = () => SIZING.zoomSteps[0];
+  // In-game zoom relative to the default step — drives the parallax backdrop scale
+  // so it grows/pans in lockstep with the sim (1 = default).
+  const bgZoomScale = () => zoomFactor() / SIZING.zoomSteps[SIZING.zoomDefaultIndex];
+  // devicePixelRatio at load. Browser page zoom later changes dpr (and the CSS box)
+  // together; we treat this as the "100%" baseline so the sim can ignore page zoom.
+  const baselineDpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
   // The camera lives in the engine (camera.inc). JS caches the last presented
   // position to detect movement (incl. sub-cell) and re-present.
   let lastCamX = NaN, lastCamY = NaN;
@@ -159,6 +165,7 @@ export function createSandGame(container, opts = {}) {
     return {
       camX: engine.getWorldOffsetX() + cam.x,
       camY: engine.getWorldOffsetY() + cam.y,
+      scale: bgZoomScale(),
     };
   };
 
@@ -223,21 +230,25 @@ export function createSandGame(container, opts = {}) {
 
   const fit = () => {
     const { width, height } = refreshBounds();
-    // CSS-px layout chooses the logical sand viewport. DPR only chooses the
-    // backing-store size and integer device-px cell size, so zoom/display scaling
-    // no longer changes how many simulated cells are visible.
+    // The visible cell count is chosen from the PHYSICAL-pixel box (cssW*dpr,
+    // corrected against the load-time dpr in computeViewportSizing), so neither the
+    // device pixel ratio nor browser page zoom changes how many cells are shown —
+    // only the container size and the in-game zoom do.
     dpr = window.devicePixelRatio || 1;
     stableCssSize = chooseStableCssSize(width, height, stableCssSize);
     const cssW = stableCssSize.width;
     const cssH = stableCssSize.height;
     canvas.style.width = '100%';
     canvas.style.height = '100%';
-    parallax.resize(cssW, cssH);
+    // Size the parallax off the same zoom-corrected box as the sim so it, too,
+    // ignores browser page zoom and stays in sync with the visible cells.
+    const pageZoom = dpr / (baselineDpr > 0 ? baselineDpr : dpr);
+    parallax.resize(cssW * pageZoom, cssH * pageZoom);
     parallax.draw(parallaxCamera());
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
-    const sizing = computeViewportSizing(cssW, cssH, dpr, SIZING, zoomFactor(), minZoomFactor());
+    const sizing = computeViewportSizing(cssW, cssH, dpr, SIZING, zoomFactor(), minZoomFactor(), baselineDpr);
     cellSize = sizing.cellSize;
     cellDev = sizing.cellDev;
     canvas.width = sizing.canvasW;

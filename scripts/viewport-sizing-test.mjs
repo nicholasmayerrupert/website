@@ -37,6 +37,17 @@ console.log('viewport sizing');
 }
 
 {
+  // Browser page zoom couples a CSS-px shrink with a dpr grow (cssPx*dpr ~ const).
+  // With the load dpr as the baseline, the visible cell window must NOT change.
+  const baseDpr = 1;
+  const load = computeViewportSizing(1200, 800, baseDpr, SIZING, 1, SIZING.zoomSteps[0], baseDpr);
+  const zoomedIn = computeViewportSizing(1200 / 1.5, 800 / 1.5, baseDpr * 1.5, SIZING, 1, SIZING.zoomSteps[0], baseDpr);
+  const zoomedOut = computeViewportSizing(1200 / 0.8, 800 / 0.8, baseDpr * 0.8, SIZING, 1, SIZING.zoomSteps[0], baseDpr);
+  check(`browser zoom-in keeps the same visible cells (${load.viewCols} == ${zoomedIn.viewCols})`, load.viewCols === zoomedIn.viewCols && load.viewRows === zoomedIn.viewRows);
+  check(`browser zoom-out keeps the same visible cells (${load.viewCols} == ${zoomedOut.viewCols})`, load.viewCols === zoomedOut.viewCols && load.viewRows === zoomedOut.viewRows);
+}
+
+{
   const prev = chooseStableCssSize(390, 700);
   const small = chooseStableCssSize(390, 735, prev);
   const large = chooseStableCssSize(390, 760, prev);

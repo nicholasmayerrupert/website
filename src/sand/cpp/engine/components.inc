@@ -820,6 +820,17 @@
         int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = cols; offs[3] = -cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -cols; offs[3] = cols; }
         int gridLen = cols * rows;
         auto plannedMaterialAt = [&](int k) -> uint8_t { return vacatedCells.count(k) ? EMPTY : grid[k]; };
+        // Bound the total volume-preserving liquid search for this one assembly move.
+        // Each displaced liquid cell BFS-floods the reachable liquid body to find a
+        // surface; for a large rigid slab sinking through a big ENCLOSED pool (e.g.
+        // acid/water quenching a lava lake into a sinking STONE island) that is
+        // O(displaced * poolArea) per step and froze the tick for seconds. Once the
+        // shared budget is spent, planLiquidChain fails over to planVacatedLiquidDump —
+        // the volume the slab just vacated directly above it, which is the natural
+        // destination for a fully-immersed slab anyway. Small slabs / shallow pools
+        // never approach the cap, so their realistic surface-seeking flow is unchanged.
+        const long LIQUID_PLAN_VISIT_BUDGET = 100000;
+        long liquidPlanVisits = 0;
         auto planLiquidChain = [&](uint8_t startMaterial, int startFrom) -> bool {
           size_t writeBase = liquidWrites.size();
           std::vector<int> claimed;
@@ -833,6 +844,7 @@
           for (int chain = 0; chain < TABLE + 2; chain++) {
             std::unordered_set<int> seen; std::vector<int> queue;
             auto canVisit = [&](int k) {
+              if (liquidPlanVisits >= LIQUID_PLAN_VISIT_BUDGET) return false; // budget spent -> stop flooding, fall back to vacated dump
               if (k < 0 || k >= gridLen || seen.count(k) || reserved.count(k)) return false;
               int y = k / cols, x = k - y * cols;
               if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
@@ -840,7 +852,7 @@
               uint8_t m = plannedMaterialAt(k);
               return m == EMPTY || isLiquidMaterial(m);
             };
-            auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); };
+            auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); liquidPlanVisits++; };
             for (int off : offs) enqueue(origin + off);
             for (size_t qi = 0; qi < queue.size();) {
               size_t levelEnd = queue.size();

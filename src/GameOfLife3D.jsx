@@ -62,7 +62,6 @@ const smoothstep = (t) => t * t * (3 - 2 * t);
 
 export default function GameOfLife3D({
   className,
-  onManualRotateChange,
   onControlsOpenChange,
   defaultControlsOpen,
 }) {
@@ -88,7 +87,6 @@ export default function GameOfLife3D({
     if (typeof window === "undefined" || !window.matchMedia) return false;
     return window.matchMedia("(min-width: 768px)").matches;
   });
-  const [manualRotateOn, setManualRotateOn] = useState(false);
   const [paused, setPaused] = useState(false);
   const [drawMode, setDrawMode] = useState("draw");
   const [gridSize, setGridSize] = useState(16);
@@ -105,10 +103,15 @@ export default function GameOfLife3D({
     seedInputRef.current = seedInput;
   }, [seedInput]);
 
+  // Drag-to-rotate is enabled only while the controls are open on desktop; on
+  // mobile it stays off so vertical scrolling isn't captured.
   useEffect(() => {
-    manualRotateRef.current = manualRotateOn;
-    onManualRotateChange?.(manualRotateOn);
-  }, [manualRotateOn, onManualRotateChange]);
+    const desktop =
+      typeof window !== "undefined" && window.matchMedia
+        ? window.matchMedia("(min-width: 768px)").matches
+        : false;
+    manualRotateRef.current = controlsOpen && desktop;
+  }, [controlsOpen]);
 
   useEffect(() => {
     if (controlsOpen) simulationApiRef.current.renderEditor();
@@ -709,11 +712,11 @@ export default function GameOfLife3D({
             aria-label="Game of Life simulation speed"
           />
 
-          <div className="mt-auto grid grid-cols-2 gap-1 pt-3">
+          <div className="mt-auto pt-3">
             <button
               type="button"
               onClick={togglePaused}
-              className={`rounded-md px-2 py-1.5 text-[9px] font-semibold transition sm:text-[10px] ${
+              className={`w-full rounded-md px-2 py-1.5 text-[9px] font-semibold transition sm:text-[10px] ${
                 paused
                   ? "bg-white/80 text-black hover:bg-white"
                   : "bg-white/10 text-white hover:bg-white/20"
@@ -721,18 +724,6 @@ export default function GameOfLife3D({
               aria-pressed={paused}
             >
               {paused ? "Resume" : "Pause"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setManualRotateOn((current) => !current)}
-              className={`rounded-md px-2 py-1.5 text-[9px] font-semibold transition sm:text-[10px] ${
-                manualRotateOn
-                  ? "bg-white/80 text-black hover:bg-white"
-                  : "bg-white/10 text-white hover:bg-white/20"
-              }`}
-              aria-pressed={manualRotateOn}
-            >
-              Rotate {manualRotateOn ? "On" : "Off"}
             </button>
           </div>
         </form>

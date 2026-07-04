@@ -42,7 +42,7 @@ void NetSync::applyWorld(const uint8_t* buf, int len) {
 // Diff per layer: [u16 rectCount] then per rect [u16 x0,y0,x1,y1][raw cells,
 // row-major]. x1/y1 EXCLUSIVE. fg section then bg section, concatenated.
 void NetSync::writeDiffLayer(bool background) {
-  Engine::Layer* lay = background ? &E.bg : &E.fg;
+  Layer* lay = background ? &E.bg : &E.fg;
   E.useLayer(lay); E.buildDirtyRects();
   int rc = (int)(lay->dirtyRects.size() / 4);
   blobPush16(rc);
@@ -59,7 +59,7 @@ int NetSync::serializeDiff() {
   return (int)blob.size();
 }
 int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background) {
-  Engine::Layer* lay = background ? &E.bg : &E.fg;
+  Layer* lay = background ? &E.bg : &E.fg;
   if (p + 2 > len) return p;
   int rc = readLE16(buf, p); p += 2;
   E.useLayer(lay);

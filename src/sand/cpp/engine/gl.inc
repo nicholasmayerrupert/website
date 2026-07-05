@@ -66,8 +66,8 @@ int glInit(const char* target) {
   mkTex(glTex2);
   glGenFramebuffers(1, &glReadFBO);
   glGenFramebuffers(1, &glDrawFBO);
-  useLayer(&fg); renderFull(); glUploadFull(glTex);
-  useLayer(&bg); renderFull(); glUploadFull(glTexBg);
+  useLayer(&fg); renderer.renderFull(); glUploadFull(glTex);
+  useLayer(&bg); renderer.renderFull(); glUploadFull(glTexBg);
   return 1;
 }
 
@@ -190,8 +190,8 @@ void glShift(int dx) {
   if (!dx || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (dx >= cols || -dx >= cols) {
-    useLayer(&fg); renderFull(); glUploadFull(glTex);
-    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
+    useLayer(&fg); renderer.renderFull(); glUploadFull(glTex);
+    useLayer(&bg); renderer.renderFull(); glUploadFull(glTexBg);
     return;
   }
   glShiftTex(glTex, dx);
@@ -216,8 +216,8 @@ void glShiftV(int dy) {
   if (!dy || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);
   if (dy >= rows || -dy >= rows) {
-    useLayer(&fg); renderFull(); glUploadFull(glTex);
-    useLayer(&bg); renderFull(); glUploadFull(glTexBg);
+    useLayer(&fg); renderer.renderFull(); glUploadFull(glTex);
+    useLayer(&bg); renderer.renderFull(); glUploadFull(glTexBg);
     return;
   }
   glShiftTexV(glTex, dy);
@@ -427,7 +427,7 @@ void glPresentWindow(int forceFull) {
   useLayer(&bg); buildDirtyRects(); bool bgDirty = bg.dirtyRenderCount > 0;
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   bool worldShifted = fg.worldOffsetX != glLastWorldOffX || fg.worldOffsetY != glLastWorldOffY;
-  bool skyChanged = (int)renderSkyLight != glLastSkyLight;
+  bool skyChanged = (int)renderer.renderSkyLight != glLastSkyLight;
   bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged;
   bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
   if (!contentDirty && !windowMoved) return;
@@ -438,16 +438,16 @@ void glPresentWindow(int forceFull) {
   // for the same buffer positions). A pure pan reuses lighting unconditionally.
   bool lightForced = forceFull || worldShifted || skyChanged;
   bool lightThrottleReady = tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
-  if (RENDER_LIGHTING_ENABLED && contentDirty && (lightForced || lightThrottleReady)) {
+  if (Renderer::RENDER_LIGHTING_ENABLED && contentDirty && (lightForced || lightThrottleReady)) {
     double t0 = emscripten_get_now();
-    computeLightingBoth();
+    renderer.computeLightingBoth();
     glLightTick = tick;
     perfLightMs = emscripten_get_now() - t0;
   }
   int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
   double tf = emscripten_get_now();
-  useLayer(&fg); fillRenderSpan(fg.grid, (uint32_t*)fg.renderPixels.data(), x0, y0, x1, y1);
-  useLayer(&bg); fillRenderSpan(bg.grid, (uint32_t*)bg.renderPixels.data(), x0, y0, x1, y1);
+  useLayer(&fg); renderer.fillRenderSpan(fg.grid, (uint32_t*)fg.renderPixels.data(), x0, y0, x1, y1);
+  useLayer(&bg); renderer.fillRenderSpan(bg.grid, (uint32_t*)bg.renderPixels.data(), x0, y0, x1, y1);
   perfFillMs = emscripten_get_now() - tf;
   double tu = emscripten_get_now();
   useLayer(&fg); glUploadWindow(glTex, x0, y0, x1, y1);
@@ -458,7 +458,7 @@ void glPresentWindow(int forceFull) {
   useLayer(&bg); memset(dirtyRender, 0, (size_t)chunkCols * chunkRows); bg.dirtyRenderCount = 0;
   glLastCamCol = camCol; glLastCamRow = camRow;
   glLastWorldOffX = fg.worldOffsetX; glLastWorldOffY = fg.worldOffsetY;
-  glLastSkyLight = (int)renderSkyLight;
+  glLastSkyLight = (int)renderer.renderSkyLight;
 }
 
 // One presented frame: window-upload both layers, then composite background (darker)

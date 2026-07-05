@@ -411,3 +411,5 @@ static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_
 #include "layer.hpp"
 // Deterministic terrain-query class (extracted in 5c; composed by Engine).
 #include "terrain.hpp"
+// Pixel generation + lighting class (extracted in 5c; composed by Engine).
+#include "renderer.hpp"

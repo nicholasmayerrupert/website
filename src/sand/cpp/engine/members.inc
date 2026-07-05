@@ -196,24 +196,9 @@
   // reads this to decide drops against the acting player's held tool (Phase C).
   std::vector<std::pair<uint8_t, int>> lastMinedCells;
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
-  // Renderer tables (material -> RGBA). Shared (layer-agnostic). Uses a SEPARATE
-  // rng so per-frame fire/steam flicker never perturbs the simulation.
-  uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
-  uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
-  uint32_t renderRngState = 0;
-  uint8_t renderSkyLight = 255;        // render-only day/night input; 255 = full day
-  std::vector<int> lightQueue;         // render-only flood-fill scratch
-
   inline double rand() {
     rngState = (rngState + 0x6d2b79f5u);
     uint32_t a = rngState;
-    uint32_t t = a ^ (a >> 15); t = t * (1u | a);
-    uint32_t t2 = t ^ (t >> 7); t = (t + (t2 * (61u | t))) ^ t;
-    return (double)(t ^ (t >> 14)) / 4294967296.0;
-  }
-  inline double renderRand() {
-    renderRngState = (renderRngState + 0x6d2b79f5u);
-    uint32_t a = renderRngState;
     uint32_t t = a ^ (a >> 15); t = t * (1u | a);
     uint32_t t2 = t ^ (t >> 7); t = (t + (t2 * (61u | t))) ^ t;
     return (double)(t ^ (t >> 14)) / 4294967296.0;
@@ -226,8 +211,7 @@
     fg.alloc(cols, rows, chunkCols, chunkRows);
     bg.alloc(cols, rows, chunkCols, chunkRows);
     useLayer(&fg);
-    renderRngState = seed ^ 0x9e3779b9u;
-    buildRenderTables();
+    renderer.init(seed); // render-only RNG + shade/noise tables (separate stream)
     initSurvivalFootprints();
   }
   ~Engine() { glDestroy(); }

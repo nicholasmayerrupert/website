@@ -51,5 +51,6 @@ const int Engine::DIRS_RF[2] = {1, -1};
 // Out-of-line method bodies for the extracted subsystem classes (need Engine).
 #include "engine/netsync_impl.inc"
 #include "engine/terrain_impl.inc"
+#include "engine/renderer_impl.inc"
 
 #include "engine/abi.inc"

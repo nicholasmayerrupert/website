@@ -28,7 +28,17 @@ void ComponentSystem::indexComponents() {
   };
   idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
 }
-void ComponentSystem::computeGrounded() {
+// Grounding is SEPARABLE (this is what makes the rigid part cacheable):
+//  - RIGID grounding never flows through loose cells: the vertical rule refuses
+//    loose-below -> rigid-above, and 8-adjacency requires rigid on both ends.
+//    So the rigid grounded-set depends ONLY on rigid cells + floor/edge seeds.
+//  - LOOSE grounding is strictly vertical: a loose cell is grounded iff the
+//    cell directly below it is grounded (any class), or it sits on the floor
+//    row, or on denser liquid. No loose cell grounds sideways.
+// computeGrounded = rigid flood (computeRigidGrounded) + loose overlay
+// (applyLooseOverlay). The union is byte-identical to the old single flood
+// (dev builds re-run the old algorithm and memcmp — see the parity block).
+void ComponentSystem::computeRigidGrounded() {
   // Hot flood: hoist the per-cell buffers into TRUE locals (register-bound;
   // uint8_t stores can't alias them, unlike the old Engine-member mirrors).
   Layer* const lay = E.L;
@@ -39,26 +49,14 @@ void ComponentSystem::computeGrounded() {
   std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
   std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
   indexComponents();
-  bool sawPowder = false;
-  auto canGroundAbove = [&](int below, int above) {
-    uint8_t upper = g[above];
-    if (!E.isBearingMaterial(upper)) return false;
-    uint8_t lower = g[below];
-    // Powders support other bearing loose cells and can settle rigid solids, but
-    // they never push a rigid solid upward. Rigid-on-powder is handled by
-    // moveRigidAssemblies with one-way granular support/displacement, not by
-    // marking the rigid component grounded at the powder surface.
-    if (E.isLooseSolidMaterial(lower) && E.isRigidMaterialClass(upper)) return false;
-    return true;
-  };
   int sp = 0;
   if (groundStackX.size() != (size_t)E.cols * E.rows) groundStackX.assign((size_t)E.cols * E.rows, 0);
   int32_t* gsx = groundStackX.data();
-  // groundCellAt records the cell's column x alongside k, so the DFS below never
+  // groundRigidAt records the cell's column x alongside k, so the DFS below never
   // recomputes k/E.cols (an integer division per popped rigid cell). Every caller
   // already knows x: the seeds iterate x, and a propagation target's column is
   // derived from its parent (the cell above shares x; an 8-neighbour is nx).
-  auto groundCellAt = [&](int k, int x) {
+  auto groundRigidAt = [&](int k, int x) {
     if (grounded[k]) return;
     grounded[k] = 1;
     int id = cc[k];
@@ -66,56 +64,159 @@ void ComponentSystem::computeGrounded() {
     gsx[sp] = x; gstack[sp++] = k;
   };
   int floorBase = (E.rows - 1) * E.cols;
-  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isBearingMaterial(g[k])) groundCellAt(k, x); }
+  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isRigidMaterialClass(g[k]) && E.isBearingMaterial(g[k])) groundRigidAt(k, x); }
   // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
   // UNLOADED world that may itself be grounded. A rigid cell touching such an edge is
   // assumed supported, so a structure whose real floor-contact has streamed off the
   // buffer does not spuriously fall (it reconnects when the region streams back in).
   if (lay->infinite) {
     for (int y = 1; y < E.rows; y++) {
-      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl])) groundCellAt(kl, 1);
-      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr])) groundCellAt(kr, E.cols - 2);
+      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl])) groundRigidAt(kl, 1);
+      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr])) groundRigidAt(kr, E.cols - 2);
     }
     int topBase = E.cols; // row y = 1
-    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k])) groundCellAt(k, x); }
-  }
-  for (int y = E.rows - 2; y > 0; y--) {
-    int rb = y * E.cols;
-    for (int x = 1; x < E.cols - 1; x++) {
-      int k = rb + x;
-      if (E.isLooseSolidMaterial(g[k])) {
-        sawPowder = true;
-        if (E.isLiquidMaterial(g[k + E.cols]) && DENSITY[g[k + E.cols]] >= DENSITY[g[k]]) groundCellAt(k, x);
-      }
-    }
+    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k])) groundRigidAt(k, x); }
   }
   int gridLen = E.cols * E.rows;
   while (sp > 0) {
     --sp; int k = gstack[sp], kx = gsx[sp];
+    // Vertical support at the border columns (x=0 / x=cols-1), where the
+    // 8-neighbour scan below is clamped: the old flood's vertical rule had no
+    // x guard, so a border floor column still grounds the stack above it.
+    // Everywhere else this is a subset of the 8-neighbour scan. The upper cell
+    // must be bearing (VINE/GLOWBERRY hang, they don't stack) — matching the
+    // old canGroundAbove; rigid-below never triggers its loose exception.
     int above = k - E.cols;
-    if (above >= 0 && !grounded[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
-    if (E.isRigidMaterialClass(g[k])) {
-      // Neighbour-row validity ny in [1, E.rows-1] <=> (k + oy*E.cols) in [E.cols, gridLen):
-      // a division-free restatement of the original `ny<=0 || ny>=E.rows` test.
-      for (int oy = -1; oy <= 1; oy++) {
-        int rb = k + oy * E.cols;
-        if (rb < E.cols || rb >= gridLen) continue;
-        for (int ox = -1; ox <= 1; ox++) {
-          if (!ox && !oy) continue;
-          int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
-          int nk = rb + ox;
-          if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundCellAt(nk, nx);
-        }
+    if (above >= 0 && !grounded[above] && E.isRigidMaterialClass(g[above]) && E.isBearingMaterial(g[above])) groundRigidAt(above, kx);
+    // Neighbour-row validity ny in [1, E.rows-1] <=> (k + oy*E.cols) in [E.cols, gridLen):
+    // a division-free restatement of the original `ny<=0 || ny>=E.rows` test.
+    for (int oy = -1; oy <= 1; oy++) {
+      int rb = k + oy * E.cols;
+      if (rb < E.cols || rb >= gridLen) continue;
+      for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
+        int nk = rb + ox;
+        if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundRigidAt(nk, nx);
       }
     }
   }
-  // The cache is now fresh. Stay "dirty" (force a full reflood next step too)
-  // while any powder is present: powder grounding (line above) depends on the
-  // liquid beneath it, and liquids move without routing through the component
-  // hooks that set groundDirty, so we can't safely skip the flood with powder
-  // around. Powder-free scenes (e.g. acid eating stone) go clean and can skip.
+}
+// Ground the loose (powder) cells on top of the rigid base: one bottom-up pass.
+// A loose cell is grounded iff the cell DIRECTLY below is grounded (chain roots
+// on grounded rigid, the floor, or lower loose links), or it is on the floor
+// row, or it rests on liquid at least as dense (the buoyant-support seed).
+// Loose cells never receive sideways/8-adjacent support and never ground a
+// rigid cell, so this pass is exactly the loose part of the old flood.
+// Also records groundSawPowder (same interior window as the old seed scan).
+void ComponentSystem::applyLooseOverlay() {
+  Layer* const lay = E.L;
+  const uint8_t* const g = lay->grid;
+  uint8_t* const grounded = lay->groundedCell.data();
+  bool sawPowder = false;
+  int floorBase = (E.rows - 1) * E.cols;
+  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isLooseSolidMaterial(g[k])) grounded[k] = 1; }
+  for (int y = E.rows - 2; y >= 0; y--) {
+    int rb = y * E.cols;
+    for (int x = 0; x < E.cols; x++) {
+      int k = rb + x;
+      if (!E.isLooseSolidMaterial(g[k])) continue;
+      bool interior = y >= 1 && x >= 1 && x <= E.cols - 2;
+      if (interior) sawPowder = true;
+      bool gnd = grounded[k + E.cols] != 0; // vertical chain (row y+1 is final)
+      if (!gnd && interior) { uint8_t below = g[k + E.cols]; gnd = E.isLiquidMaterial(below) && DENSITY[below] >= DENSITY[g[k]]; }
+      if (gnd) grounded[k] = 1;
+    }
+  }
   lay->groundSawPowder = sawPowder;
-  lay->groundDirty = sawPowder;
+}
+void ComponentSystem::computeGrounded() {
+  computeRigidGrounded();
+  applyLooseOverlay();
+  // Stay "dirty" (force a full reflood next step too) while any powder is
+  // present: powder grounding depends on the liquid beneath it, and liquids
+  // move without routing through the component hooks that set groundDirty, so
+  // we can't safely skip the flood with powder around. Powder-free scenes
+  // (e.g. acid eating stone) go clean and can skip.
+  E.L->groundDirty = E.L->groundSawPowder;
+#ifdef SAND_INVARIANT_CHECKS
+  {
+    // Parity probe: re-run the PRE-SPLIT single-flood algorithm and require a
+    // byte-identical grounded[] + identical comp flags. Runs on --dev builds only.
+    Layer* const lay = E.L;
+    const uint8_t* const g = lay->grid;
+    std::vector<uint8_t> nu(lay->groundedCell);
+    std::vector<uint8_t> nuFlags; nuFlags.reserve(cgComps.size());
+    for (Comp* c : cgComps) nuFlags.push_back(c->grounded ? 1 : 0);
+    uint8_t* const grounded = lay->groundedCell.data();
+    int32_t* const cc = lay->cellComp.data();
+    int32_t* const gstack = lay->groundStack.data();
+    std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
+    for (Comp* c : cgComps) c->grounded = false;
+    auto canGroundAbove = [&](int below, int above) {
+      uint8_t upper = g[above];
+      if (!E.isBearingMaterial(upper)) return false;
+      uint8_t lower = g[below];
+      if (E.isLooseSolidMaterial(lower) && E.isRigidMaterialClass(upper)) return false;
+      return true;
+    };
+    int sp = 0;
+    int32_t* gsx = groundStackX.data();
+    auto groundCellAt = [&](int k, int x) {
+      if (grounded[k]) return;
+      grounded[k] = 1;
+      int id = cc[k];
+      if (id >= 0) cgComps[id]->grounded = true;
+      gsx[sp] = x; gstack[sp++] = k;
+    };
+    int floorBase = (E.rows - 1) * E.cols;
+    for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isBearingMaterial(g[k])) groundCellAt(k, x); }
+    if (lay->infinite) {
+      for (int y = 1; y < E.rows; y++) {
+        int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl])) groundCellAt(kl, 1);
+        int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr])) groundCellAt(kr, E.cols - 2);
+      }
+      int topBase = E.cols;
+      for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k])) groundCellAt(k, x); }
+    }
+    for (int y = E.rows - 2; y > 0; y--) {
+      int rb = y * E.cols;
+      for (int x = 1; x < E.cols - 1; x++) {
+        int k = rb + x;
+        if (E.isLooseSolidMaterial(g[k]) && E.isLiquidMaterial(g[k + E.cols]) && DENSITY[g[k + E.cols]] >= DENSITY[g[k]]) groundCellAt(k, x);
+      }
+    }
+    int gridLen = E.cols * E.rows;
+    while (sp > 0) {
+      --sp; int k = gstack[sp], kx = gsx[sp];
+      int above = k - E.cols;
+      if (above >= 0 && !grounded[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
+      if (E.isRigidMaterialClass(g[k])) {
+        for (int oy = -1; oy <= 1; oy++) {
+          int rb = k + oy * E.cols;
+          if (rb < E.cols || rb >= gridLen) continue;
+          for (int ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
+            int nk = rb + ox;
+            if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundCellAt(nk, nx);
+          }
+        }
+      }
+    }
+    for (int k = 0; k < gridLen; k++) {
+      if (nu[k] != grounded[k]) {
+        char buf[160];
+        snprintf(buf, sizeof(buf), "GROUND SPLIT PARITY: k=%d (x=%d,y=%d) mat=%d split=%d ref=%d", k, k % E.cols, k / E.cols, (int)g[k], (int)nu[k], (int)grounded[k]);
+        emscripten_console_error(buf);
+        abort();
+      }
+    }
+    for (size_t i = 0; i < cgComps.size(); i++) {
+      if (nuFlags[i] != (cgComps[i]->grounded ? 1 : 0)) { emscripten_console_error("GROUND SPLIT PARITY: comp flag mismatch"); abort(); }
+    }
+  }
+#endif
 }
 
 // Incremental grounding for the common single-layer, powder-free case: the

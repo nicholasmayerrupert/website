@@ -58,6 +58,8 @@ class ComponentSystem {
   uint8_t floodTargetMat = 0; // set before a per-material stone flood
 
   void indexComponents();
+  void computeRigidGrounded();
+  void applyLooseOverlay();
   void computeGrounded();
   void incrementalGroundingRefresh();
   void ensureGroundedSingleLayer();

@@ -143,10 +143,6 @@
   // walk stays within the floating region instead of the whole terrain mass.
   std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
   int32_t cgCompGen = 0;
-  // Per-tree growth scratch: set at the top of each comp in growPlantComponents so
-  // the growth helpers emit the right species materials. OAK defaults keep the
-  // original behavior byte-identical.
-  uint8_t gGrowType = PT_OAK, gWoodMat = WOOD, gLeafMat = PLANT;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)

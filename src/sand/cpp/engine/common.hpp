@@ -427,3 +427,5 @@ static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_
 #include "reactions.hpp"
 // TNT / explosives class (extracted in 5e; composed by Engine).
 #include "explosives.hpp"
+// Plant + mycelium growth class (extracted in 5e; composed by Engine).
+#include "growth.hpp"

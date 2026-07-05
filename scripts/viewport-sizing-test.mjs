@@ -18,9 +18,10 @@ console.log('viewport sizing');
 {
   const mobile = computeViewportSizing(390, 700, 3);
   const desktop = computeViewportSizing(900, 700, 1);
-  check(`mobile uses a denser logical viewport (${mobile.viewCols} cols)`, mobile.viewCols >= 120 && mobile.viewCols <= 150);
-  // Default desktop zoom is SIZING.cellPx (5) CSS px per cell: 900/5 ~= 180 cols.
-  check(`desktop defaults near 5 CSS px per cell (${desktop.viewCols} cols)`, desktop.viewCols >= 176 && desktop.viewCols <= 184);
+  check(`mobile uses a denser logical viewport (${mobile.viewCols} cols)`, mobile.viewCols >= 116 && mobile.viewCols <= 124);
+  // Default desktop zoom is the most-zoomed-out step at SIZING.cellPx (5.5)
+  // CSS px per cell: 900/5.5 ~= 164 cols.
+  check(`desktop defaults near 5.5 CSS px per cell (${desktop.viewCols} cols)`, desktop.viewCols >= 160 && desktop.viewCols <= 168);
 }
 
 {

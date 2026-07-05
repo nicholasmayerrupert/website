@@ -19,6 +19,11 @@ class RigidBodySystem {
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
+  // Scratch for the per-body bottom-edge support probes (Phase 6): membership
+  // stamp + cell list replacing a per-call unordered_set (the probes only sum
+  // integer counters, so iteration order is irrelevant).
+  StampSet occStamp;
+  std::vector<int> occCells;
   // Erosion probabilities for body cells against lava/fire (match the static
   // reaction rates; were Engine statics defined in sand.cpp).
   static constexpr double RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P

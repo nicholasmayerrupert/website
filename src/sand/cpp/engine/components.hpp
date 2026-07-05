@@ -48,6 +48,13 @@ class ComponentSystem {
   std::vector<CrossLayerBond> cgBonds;
   std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
   int32_t cgCompGen = 0;
+  // Membership mirrors for the assembly-displacement planning path (Phase 6).
+  // The real unordered_sets are kept wherever their ITERATION order feeds cell
+  // writes or FP sums; these only replace the .count() hashing.
+  StampSet asmCells;                          // current assembly's cell set (translateAssembly / accumulateFaceContact)
+  StampSet trMoved, trVacated, trReserved, trSeen; // translateAssembly relocation planning
+  StampSet regCells, regOwnerStamp;           // registerRigidCells: input-set membership + lazy owner map validity
+  std::vector<int32_t> regOwnerVal;           // owner comp index, valid where regOwnerStamp.has(k)
   uint8_t floodTargetMat = 0; // set before a per-material stone flood
 
   void indexComponents();

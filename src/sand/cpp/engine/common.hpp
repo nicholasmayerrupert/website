@@ -67,6 +67,24 @@ static inline int imax(int a, int b) { return a > b ? a : b; }
 static inline int ufFind(std::vector<int>& p, int a) { while (p[a] != a) { p[a] = p[p[a]]; a = p[a]; } return a; }
 static inline void ufUnite(std::vector<int>& p, int a, int b) { int ra = ufFind(p, a), rb = ufFind(p, b); if (ra != rb) p[ra] = rb; }
 
+// Generation-stamped membership set over cell indices: O(1) add/has/remove and
+// O(1) clear (bump the generation). Replaces per-call unordered_set<int> hashing
+// on hot planning paths. MEMBERSHIP ONLY — it cannot be iterated, so any set
+// whose iteration order feeds cell writes or FP accumulation must stay a real
+// container (this can still mirror its membership tests).
+struct StampSet {
+  std::vector<int32_t> stamp;
+  int32_t gen = 0;
+  // Start a fresh (empty) set sized for `n` cells; call before each use.
+  void reset(size_t n) {
+    if (stamp.size() < n) stamp.assign(n, 0);
+    if (++gen == INT32_MAX) { std::fill(stamp.begin(), stamp.end(), 0); gen = 1; }
+  }
+  void add(int k) { stamp[k] = gen; }
+  bool has(int k) const { return stamp[k] == gen; }
+  void remove(int k) { stamp[k] = 0; }
+};
+
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool
 // policy: brush radii, which tool paints/erases/drafts/spawns, the right-click
 // eraser, draft lifecycle, seed placement, and emit throttling.

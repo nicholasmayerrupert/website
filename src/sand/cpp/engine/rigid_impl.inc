@@ -657,12 +657,14 @@ bool RigidBodySystem::bodySolidifies(uint8_t m) { return E.isStoneComponentMater
 // cell. (sleepingBodyHasSupport can't be reused: it clamps the AABB and so misses the
 // world-floor boundary, where stone/wood bodies legitimately come to rest.)
 bool RigidBodySystem::bodyFloatsOnMedium(Body* b) {
-  std::unordered_set<int> occ;
-  forEachBodyCell(b, [&](int x, int y) { occ.insert(y * E.cols + x); });
+  // occStamp/occCells replace a per-call unordered_set: the loop only sums
+  // integer counters, so visit order is irrelevant.
+  occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
+  forEachBodyCell(b, [&](int x, int y) { int k = y * E.cols + x; if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); } });
   int solidBelow = 0, mediumBelow = 0;
-  for (int k : occ) {
+  for (int k : occCells) {
     int y = k / E.cols, x = k - y * E.cols, bk = (y + 1) * E.cols + x;
-    if (occ.count(bk)) continue;                            // interior cell, not a bottom edge
+    if (y + 1 < E.rows && occStamp.has(bk)) continue;         // interior cell, not a bottom edge
     if (y + 1 >= E.rows) { solidBelow++; continue; }          // the world floor is solid support
     uint8_t m = E.L->grid[bk];
     if (E.isLiquidMaterial(m)) mediumBelow++;
@@ -671,12 +673,12 @@ bool RigidBodySystem::bodyFloatsOnMedium(Body* b) {
   return mediumBelow > 0 && mediumBelow > solidBelow;
 }
 bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
-  std::unordered_set<int> occ;
-  forEachBodyCell(b, [&](int x, int y) { occ.insert(y * E.cols + x); });
+  occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
+  forEachBodyCell(b, [&](int x, int y) { int k = y * E.cols + x; if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); } });
   int solidBelow = 0, mediumBelow = 0;
-  for (int k : occ) {
+  for (int k : occCells) {
     int y = k / E.cols, x = k - y * E.cols, bk = (y + 1) * E.cols + x;
-    if (occ.count(bk)) continue;
+    if (y + 1 < E.rows && occStamp.has(bk)) continue;
     if (y + 1 >= E.rows) { solidBelow++; continue; }
     uint8_t m = E.L->grid[bk];
     if (E.isBuoyantMedium(m)) mediumBelow++;

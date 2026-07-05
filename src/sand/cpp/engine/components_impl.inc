@@ -588,13 +588,21 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
 // (moveCrossLayerBondedAssemblies) — the latter accumulates over both layers
 // and ignores the `faces` total.
 void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c) {
+  // Iteration order of `cells` feeds the double accumulators below, so the set
+  // stays; only the per-neighbour membership test moves to the stamp mirror.
+  // The caller may pass a probe set shifted past the grid edge (motionDecision's
+  // `shifted`); OOB members are never the subject of an in-bounds .has(nk)
+  // query, so skipping their add preserves the old set semantics.
+  const int gridLen = E.cols * E.rows;
+  asmCells.reset((size_t)gridLen);
+  for (int k : cells) if (k >= 0 && k < gridLen) asmCells.add(k);
   for (int k : cells) {
     int y = k / E.cols, x = k - y * E.cols;
     const int offs[3] = { -1, 1, E.cols };
     for (int i = 0; i < 3; i++) {
       int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == E.cols ? 1 : 0);
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
-      if (cells.count(nk)) continue;
+      if (asmCells.has(nk)) continue;
       uint8_t m = g[nk];
       c.faces++;
       if (E.isLiquidMaterial(m)) {
@@ -784,13 +792,18 @@ void ComponentSystem::moveRigidAssemblies() {
 
   auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
     int dy = dir > 0 ? 1 : -1;
+    const int gridLen = E.cols * E.rows;
+    // Membership mirror of `cells` (iteration below stays on the set — its
+    // order feeds displaced/vacated order and thus every relocation write).
+    asmCells.reset((size_t)gridLen);
+    for (int k : cells) asmCells.add(k);
     auto componentDisplaceableForAssembly = [&](uint8_t m) {
       return m == EMPTY || E.isGasMaterial(m) || E.isBuoyantMedium(m);
     };
     for (int k : cells) {
       int leadK = k + dir; int leadY = leadK / E.cols;
       if (leadY < 1 || leadY >= E.rows) return false;
-      if (cells.count(leadK)) continue;
+      if (asmCells.has(leadK)) continue;
       uint8_t lead = E.L->grid[leadK];
       if (!componentDisplaceableForAssembly(lead)) return false;
     }
@@ -798,8 +811,9 @@ void ComponentSystem::moveRigidAssemblies() {
     std::vector<Disp> displaced; std::vector<int> vacated;
     for (int k : cells) {
       int leadK = k + dir; uint8_t lead = E.L->grid[leadK];
-      if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
-      if (!cells.count(k - dir)) vacated.push_back(k);
+      if (!asmCells.has(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
+      int trailK = k - dir; // may be out of bounds at the world edge (the old set .count was safe on any int; the stamp array is not)
+      if (trailK < 0 || trailK >= gridLen || !asmCells.has(trailK)) vacated.push_back(k);
     }
     int liquidDisplacedCount = 0, powderDisplacedCount = 0;
     for (auto& d : displaced) { if (E.isLiquidMaterial(d.material)) liquidDisplacedCount++; else if (E.isLooseSolidMaterial(d.material)) powderDisplacedCount++; }
@@ -813,17 +827,17 @@ void ComponentSystem::moveRigidAssemblies() {
     struct LiquidWrite { int target; uint8_t material; };
     std::vector<LiquidWrite> liquidWrites;
     std::vector<int> powderTargets;
-    std::unordered_set<int> reserved; // cells already claimed by liquid/powder relocation
+    trReserved.reset(gridLen); // cells already claimed by liquid/powder relocation (queried even when nothing is displaced)
     if (liquidDisplacedCount > 0 || powderDisplacedCount > 0) {
       // Cells the assembly is about to occupy — a spill target must not be one of
       // them. Built lazily here (only when liquid/powder is displaced) so a large
-      // slab falling through air/empty skips O(area) hash-set work/step.
-      std::unordered_set<int> movedCells;
-      for (int k : cells) movedCells.insert(k + dir);
-      std::unordered_set<int> vacatedCells(vacated.begin(), vacated.end());
+      // slab falling through air/empty skips the O(area) stamp fill per step.
+      trMoved.reset(gridLen);
+      for (int k : cells) trMoved.add(k + dir);
+      trVacated.reset(gridLen);
+      for (int k : vacated) trVacated.add(k);
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
-      int gridLen = E.cols * E.rows;
-      auto plannedMaterialAt = [&](int k) -> uint8_t { return vacatedCells.count(k) ? EMPTY : E.L->grid[k]; };
+      auto plannedMaterialAt = [&](int k) -> uint8_t { return trVacated.has(k) ? EMPTY : E.L->grid[k]; };
       // Bound the total volume-preserving liquid search for this one assembly move.
       // Each displaced liquid cell BFS-floods the reachable liquid body to find a
       // surface; for a large rigid slab sinking through a big ENCLOSED pool (e.g.
@@ -840,23 +854,23 @@ void ComponentSystem::moveRigidAssemblies() {
         std::vector<int> claimed;
         auto fail = [&]() {
           liquidWrites.resize(writeBase);
-          for (int k : claimed) reserved.erase(k);
+          for (int k : claimed) trReserved.remove(k);
           return false;
         };
         uint8_t moving = startMaterial;
         int origin = startFrom;
         for (int chain = 0; chain < TABLE + 2; chain++) {
-          std::unordered_set<int> seen; std::vector<int> queue;
+          trSeen.reset((size_t)gridLen); std::vector<int> queue;
           auto canVisit = [&](int k) {
             if (liquidPlanVisits >= LIQUID_PLAN_VISIT_BUDGET) return false; // budget spent -> stop flooding, fall back to vacated dump
-            if (k < 0 || k >= gridLen || seen.count(k) || reserved.count(k)) return false;
+            if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false;
             int y = k / E.cols, x = k - y * E.cols;
             if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false;
-            if (movedCells.count(k) || (cells.count(k) && !vacatedCells.count(k))) return false;
+            if (trMoved.has(k) || (asmCells.has(k) && !trVacated.has(k))) return false;
             uint8_t m = plannedMaterialAt(k);
             return m == EMPTY || E.isLiquidMaterial(m);
           };
-          auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); liquidPlanVisits++; };
+          auto enqueue = [&](int k) { if (!canVisit(k)) return; trSeen.add(k); queue.push_back(k); liquidPlanVisits++; };
           for (int off : offs) enqueue(origin + off);
           for (size_t qi = 0; qi < queue.size();) {
             size_t levelEnd = queue.size();
@@ -878,7 +892,7 @@ void ComponentSystem::moveRigidAssemblies() {
             if (target < 0) continue;
             uint8_t displacedLiquid = plannedMaterialAt(target);
             liquidWrites.push_back({target, moving});
-            reserved.insert(target);
+            trReserved.add(target);
             claimed.push_back(target);
             if (E.isLiquidMaterial(displacedLiquid)) {
               moving = displacedLiquid;
@@ -893,11 +907,11 @@ void ComponentSystem::moveRigidAssemblies() {
       };
       int vacatedRelocCursor = 0;
       auto planVacatedLiquidDump = [&](uint8_t material) {
-        while (vacatedRelocCursor < (int)vacated.size() && reserved.count(vacated[vacatedRelocCursor])) vacatedRelocCursor++;
+        while (vacatedRelocCursor < (int)vacated.size() && trReserved.has(vacated[vacatedRelocCursor])) vacatedRelocCursor++;
         if (vacatedRelocCursor >= (int)vacated.size()) return false;
         int target = vacated[vacatedRelocCursor++];
         liquidWrites.push_back({target, material});
-        reserved.insert(target);
+        trReserved.add(target);
         return true;
       };
       for (auto& d : displaced) {
@@ -907,13 +921,13 @@ void ComponentSystem::moveRigidAssemblies() {
 
       auto runPowderSpill = [&](int need, std::vector<int>& out) -> bool {
         if (need <= 0) return true;
-        std::unordered_set<int> seen; std::vector<int> queue;
-        auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || seen.count(k) || reserved.count(k)) return false; int y = k / E.cols, x = k - y * E.cols; if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false; if (movedCells.count(k) || (cells.count(k) && !vacatedCells.count(k))) return false; uint8_t m = plannedMaterialAt(k); return m == EMPTY || E.isLiquidMaterial(m) || E.isLooseSolidMaterial(m); };
-        auto enqueue = [&](int k) { if (!canVisit(k)) return; seen.insert(k); queue.push_back(k); };
+        trSeen.reset((size_t)gridLen); std::vector<int> queue;
+        auto canVisit = [&](int k) { if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false; int y = k / E.cols, x = k - y * E.cols; if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false; if (trMoved.has(k) || (asmCells.has(k) && !trVacated.has(k))) return false; uint8_t m = plannedMaterialAt(k); return m == EMPTY || E.isLiquidMaterial(m) || E.isLooseSolidMaterial(m); };
+        auto enqueue = [&](int k) { if (!canVisit(k)) return; trSeen.add(k); queue.push_back(k); };
         for (auto& d : displaced) { if (!E.isLooseSolidMaterial(d.material)) continue; for (int off : offs) enqueue(d.from + off); }
         for (size_t qi = 0; qi < queue.size() && (int)out.size() < need; qi++) {
           int k = queue[qi];
-          if (plannedMaterialAt(k) == EMPTY) { if (!reserved.count(k)) { reserved.insert(k); out.push_back(k); } continue; }
+          if (plannedMaterialAt(k) == EMPTY) { if (!trReserved.has(k)) { trReserved.add(k); out.push_back(k); } continue; }
           for (int off : offs) enqueue(k + off);
         }
         return (int)out.size() >= need;
@@ -958,7 +972,7 @@ void ComponentSystem::moveRigidAssemblies() {
     int di = 0, pi = 0;
     for (auto& d : displaced) {
       if (E.isLiquidMaterial(d.material)) continue;
-      while (di < (int)vacated.size() && (E.L->grid[vacated[di]] != EMPTY || reserved.count(vacated[di]))) di++;
+      while (di < (int)vacated.size() && (E.L->grid[vacated[di]] != EMPTY || trReserved.has(vacated[di]))) di++;
       if (E.isLooseSolidMaterial(d.material)) { E.writeGridIndex(powderTargets[pi++], d.material); if (di < (int)vacated.size()) di++; }
       else if (di < (int)vacated.size()) E.writeGridIndex(vacated[di++], d.material); // gas
     }
@@ -1123,17 +1137,27 @@ void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, u
   E.L->groundDirty = true; // adds rigid cells (lava harden / tool placement) -> full reflood
   // Find which existing components the new cells touch. Comp.cells is a vector
   // now, so a linear .count() per neighbor would be O(cells * comps * size); use
-  // a cell->component-index map built LAZILY (only once a same-material neighbor
-  // actually exists), keeping the common "placed in open space" case allocation-free.
+  // a cell->component-index stamp map built LAZILY (only once a same-material
+  // neighbor actually exists), keeping the common "placed in open space" case cheap.
+  // (`touchingIds` and the maps are membership-only; merge order comes from
+  // iterating `list` below, so the swap to stamps is order-neutral.)
+  const size_t gridLen = (size_t)(E.cols * E.rows);
+  regCells.reset(gridLen);
+  for (int k : cells) regCells.add(k);
   std::unordered_set<int> touchingIds;
-  std::unordered_map<int, int> owner; bool ownerBuilt = false;
+  bool ownerBuilt = false;
   for (int k : cells) {
     int y = k / E.cols, x = k - y * E.cols;
     for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
       if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!E.isInBounds(nx, ny)) continue; int nk = ny * E.cols + nx;
-      if (E.L->grid[nk] != mat || cells.count(nk)) continue;
-      if (!ownerBuilt) { for (size_t i = 0; i < list.size(); i++) for (int c : list[i].cells) owner[c] = (int)i; ownerBuilt = true; }
-      auto it = owner.find(nk); if (it != owner.end()) touchingIds.insert(list[it->second].id);
+      if (E.L->grid[nk] != mat || regCells.has(nk)) continue;
+      if (!ownerBuilt) {
+        regOwnerStamp.reset(gridLen);
+        if (regOwnerVal.size() < gridLen) regOwnerVal.resize(gridLen);
+        for (size_t i = 0; i < list.size(); i++) for (int c : list[i].cells) { regOwnerStamp.add(c); regOwnerVal[c] = (int32_t)i; }
+        ownerBuilt = true;
+      }
+      if (regOwnerStamp.has(nk)) touchingIds.insert(list[regOwnerVal[nk]].id);
     }
   }
   Comp newComp; newComp.id = nextId++; newComp.cells.assign(cells.begin(), cells.end()); newComp.yMax = yMax; newComp.cacheDirty = iceCache;

@@ -12,13 +12,13 @@
 // identical to before, so existing growth stays byte-identical.
 bool GrowthSystem::growStraight() { return gGrowType == PT_PINE || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM; }
 bool GrowthSystem::compHasSeed(Comp& comp) {
-  for (int k : comp.cells) if (E.grid[k] == SEED) return true;
+  for (int k : comp.cells) if (E.L->grid[k] == SEED) return true;
   return false;
 }
 bool GrowthSystem::findWaterTouching(Comp& comp, int count, std::vector<int>& picked) {
   std::vector<int> candidates; std::unordered_set<int> seen;
-  auto consider = [&](int nk) { if (E.grid[nk] != WATER || seen.count(nk)) return; seen.insert(nk); candidates.push_back(nk); };
-  for (int k : comp.cells) { uint8_t m = E.grid[k]; if (m != SEED && !E.isPlantWood(m)) continue; int x = k % E.cols, y = k / E.cols; if (x < E.cols - 2) consider(k + 1); if (x > 1) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 1) consider(k - E.cols); }
+  auto consider = [&](int nk) { if (E.L->grid[nk] != WATER || seen.count(nk)) return; seen.insert(nk); candidates.push_back(nk); };
+  for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (m != SEED && !E.isPlantWood(m)) continue; int x = k % E.cols, y = k / E.cols; if (x < E.cols - 2) consider(k + 1); if (x > 1) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 1) consider(k - E.cols); }
   if ((int)candidates.size() < count) return false;
   picked.clear();
   while ((int)picked.size() < count && !candidates.empty()) { int i = (int)(E.rand() * candidates.size()); picked.push_back(candidates[i]); candidates.erase(candidates.begin() + i); }
@@ -27,7 +27,7 @@ bool GrowthSystem::findWaterTouching(Comp& comp, int count, std::vector<int>& pi
 void GrowthSystem::refreshPlantCache(Comp& comp) {
   if (!comp.cacheDirty && !comp.woodCells.empty()) return; // approximates the JS guard
   comp.woodCells.clear(); comp.seedWoodCells.clear();
-  for (int k : comp.cells) { uint8_t m = E.grid[k]; if (E.isPlantWood(m)) { comp.woodCells.push_back(k); comp.seedWoodCells.push_back(k); } else if (m == SEED) comp.seedWoodCells.push_back(k); }
+  for (int k : comp.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { comp.woodCells.push_back(k); comp.seedWoodCells.push_back(k); } else if (m == SEED) comp.seedWoodCells.push_back(k); }
   auto byRow = [this](int a, int b) { return (a / E.cols) < (b / E.cols); };
   std::stable_sort(comp.woodCells.begin(), comp.woodCells.end(), byRow);
   std::stable_sort(comp.seedWoodCells.begin(), comp.seedWoodCells.end(), byRow);
@@ -44,12 +44,12 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
     if (straight) { cand[0][0] = x; cand[0][1] = y - 1; cand[1][0] = x - 1; cand[1][1] = y - 1; cand[2][0] = x + 1; cand[2][1] = y - 1; nc = 3; } // strongly vertical: pine/cactus/mushroom
     else if (branchReady && E.rand() < 0.55) { cand[0][0] = x + branchDir; cand[0][1] = y - 1; cand[1][0] = x + branchDir * 2; cand[1][1] = y - 1; cand[2][0] = x + branchDir; cand[2][1] = y; cand[3][0] = x; cand[3][1] = y - 1; cand[4][0] = x - branchDir; cand[4][1] = y - 1; nc = 5; }
     else { cand[0][0] = x; cand[0][1] = y - 1; cand[1][0] = x - 1; cand[1][1] = y - 1; cand[2][0] = x + 1; cand[2][1] = y - 1; cand[3][0] = x - 1; cand[3][1] = y; cand[4][0] = x + 1; cand[4][1] = y; nc = 5; }
-    for (int i = 0; i < nc; i++) { int tx = cand[i][0], ty = cand[i][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (E.grid[tk] == EMPTY && !reserved.count(tk)) return tk; }
+    for (int i = 0; i < nc; i++) { int tx = cand[i][0], ty = cand[i][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk; }
   }
   return -1;
 }
 bool GrowthSystem::addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved) {
-  if (k < 0 || k >= E.cols * E.rows || E.grid[k] != EMPTY || reserved.count(k)) return false;
+  if (k < 0 || k >= E.cols * E.rows || E.L->grid[k] != EMPTY || reserved.count(k)) return false;
   growth.push_back({k, gWoodMat}); reserved.insert(k); return true;
 }
 void GrowthSystem::thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved) {
@@ -72,7 +72,7 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     else if (gGrowType == PT_PINE) { int pc[11][2] = {{x - 1, y}, {x + 1, y}, {x - 1, y + 1}, {x + 1, y + 1}, {x - 2, y}, {x + 2, y}, {x - 2, y + 1}, {x + 2, y + 1}, {x, y + 1}, {x - 1, y - 1}, {x + 1, y - 1}}; std::memcpy(cand, pc, sizeof cand); } // lateral needles, keep the crown clear so the trunk runs up
     else if (gGrowType == PT_MUSHROOM) { int mc[11][2] = {{x, y - 1}, {x - 1, y - 1}, {x + 1, y - 1}, {x - 2, y - 1}, {x + 2, y - 1}, {x - 3, y - 1}, {x + 3, y - 1}, {x - 2, y}, {x + 2, y}, {x - 3, y}, {x + 3, y}}; std::memcpy(cand, mc, sizeof cand); } // wide flat cap
     int start = (int)(E.rand() * 11); int step = E.rand() < 0.5 ? 1 : -1;
-    for (int i = 0; i < 11; i++) { int idx = ((start + i * step) % 11 + 11) % 11; int tx = cand[idx][0], ty = cand[idx][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (E.grid[tk] == EMPTY && !reserved.count(tk)) return tk; }
+    for (int i = 0; i < 11; i++) { int idx = ((start + i * step) % 11 + 11) % 11; int tx = cand[idx][0], ty = cand[idx][1]; if (!E.isInBounds(tx, ty)) continue; int tk = E.I(tx, ty); if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk; }
   }
   return -1;
 }
@@ -115,7 +115,7 @@ void GrowthSystem::growPlantComponents() {
     if (growth.empty()) continue;
     for (int wk : waterCells) E.writeGridIndex(wk, EMPTY);
     // push_back (not a set insert) is safe: the EMPTY guard above means each targetK is written once, so no cell is added to comp.cells twice.
-    for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (E.grid[targetK] != EMPTY) continue; E.writeGridIndex(targetK, material); comp.cells.push_back(targetK); int y = targetK / E.cols; if (y > comp.yMax) comp.yMax = y; if (E.isPlantWood(material)) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
+    for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (E.L->grid[targetK] != EMPTY) continue; E.writeGridIndex(targetK, material); comp.cells.push_back(targetK); int y = targetK / E.cols; if (y > comp.yMax) comp.yMax = y; if (E.isPlantWood(material)) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
   }
 }
 
@@ -125,7 +125,7 @@ int GrowthSystem::myceliumNeighbourCount(int k) {
     if (!ox && !oy) continue;
     int nx = x + ox, ny = y + oy;
     if (!E.isInBounds(nx, ny)) continue;
-    if (E.isMyceliumMaterial(E.grid[E.I(nx, ny)])) n++;
+    if (E.isMyceliumMaterial(E.L->grid[E.I(nx, ny)])) n++;
   }
   return n;
 }
@@ -143,7 +143,7 @@ bool GrowthSystem::myceliumFindStoneTarget(Comp& comp, int& targetK) {
   for (int ci = 0; ci < (int)comp.cells.size(); ci++) {
     int idx = ((startCell + ci * step) % (int)comp.cells.size() + (int)comp.cells.size()) % (int)comp.cells.size();
     int source = comp.cells[idx];
-    if (!E.isMyceliumMaterial(E.grid[source])) continue;
+    if (!E.isMyceliumMaterial(E.L->grid[source])) continue;
     int sourceNeighbours = myceliumNeighbourCount(source);
     if (sourceNeighbours > (branch ? 2 : 1)) continue;
     int y = source / E.cols, x = source - y * E.cols;
@@ -153,7 +153,7 @@ bool GrowthSystem::myceliumFindStoneTarget(Comp& comp, int& targetK) {
       int nx = x + d[0], ny = y + d[1];
       if (!E.isInBounds(nx, ny)) continue;
       int nk = E.I(nx, ny);
-      if (E.isBodyCell(nk) || E.grid[nk] != STONE) continue;
+      if (E.isBodyCell(nk) || E.L->grid[nk] != STONE) continue;
       int targetNeighbours = myceliumNeighbourCount(nk);
       if (targetNeighbours > (branch ? 2 : 1)) continue;
       sawStone = true;
@@ -165,19 +165,19 @@ bool GrowthSystem::myceliumFindStoneTarget(Comp& comp, int& targetK) {
 }
 
 bool GrowthSystem::myceliumCompHasSpore(Comp& comp) {
-  for (int k : comp.cells) if (E.grid[k] == MYCELIUM_SPORE) return true;
+  for (int k : comp.cells) if (E.L->grid[k] == MYCELIUM_SPORE) return true;
   return false;
 }
 
 bool GrowthSystem::myceliumCompTouchesStone(Comp& comp) {
   for (int k : comp.cells) {
-    if (!E.isMyceliumMaterial(E.grid[k])) continue;
+    if (!E.isMyceliumMaterial(E.L->grid[k])) continue;
     int y = k / E.cols, x = k - y * E.cols;
     for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
       if (!ox && !oy) continue;
       int nx = x + ox, ny = y + oy;
       if (!E.isInBounds(nx, ny)) continue;
-      if (E.grid[E.I(nx, ny)] == STONE) return true;
+      if (E.L->grid[E.I(nx, ny)] == STONE) return true;
     }
   }
   return false;
@@ -223,7 +223,7 @@ void GrowthSystem::growMyceliumComponents() {
   std::vector<int> converted;
   converted.reserve(growth.size());
   for (const MycGrowth& g : growth) {
-    if (E.grid[g.targetK] != STONE || E.isBodyCell(g.targetK)) continue;
+    if (E.L->grid[g.targetK] != STONE || E.isBodyCell(g.targetK)) continue;
     E.writeGridIndex(g.targetK, MYCELIUM);
     converted.push_back(g.targetK);
   }
@@ -231,7 +231,7 @@ void GrowthSystem::growMyceliumComponents() {
 
   E.splitRigidAfterErase(E.L->stoneComponents, converted, E.L->nextStoneId, false);
   for (const MycGrowth& g : growth) {
-    if (E.grid[g.targetK] != MYCELIUM) continue;
+    if (E.L->grid[g.targetK] != MYCELIUM) continue;
     for (auto& comp : E.L->stoneComponents) {
       if (comp.id != g.compId) continue;
       if (std::find(comp.cells.begin(), comp.cells.end(), g.targetK) != comp.cells.end()) break;

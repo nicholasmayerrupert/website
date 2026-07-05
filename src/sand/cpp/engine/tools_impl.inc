@@ -123,7 +123,7 @@ bool ToolSystem::footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint&
   for (const SurvivalFootprintCell& o : fp.cells) {
     int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
     if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) continue;
-    if (E.grid[yy * E.cols + xx] != EMPTY) return true;
+    if (E.L->grid[yy * E.cols + xx] != EMPTY) return true;
   }
   return false;
 }
@@ -133,8 +133,8 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
   std::vector<int> erasedStone, erasedIce; bool erasedPlant = false;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   bool destroyedAny = false;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if ((overwrite || E.grid[k] == EMPTY) && E.grid[k] != material) {
-    uint8_t old = E.grid[k];
+  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if ((overwrite || E.L->grid[k] == EMPTY) && E.L->grid[k] != material) {
+    uint8_t old = E.L->grid[k];
     // Overwriting a component or body cell must free it from its owner first,
     // or the comp/body keeps an invisible phantom cell (the component-cell
     // destroy invariant — found by the --dev validator via overwrite paints).
@@ -142,7 +142,7 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
       destroyCellAt(k, old, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
       destroyedAny = true;
     }
-    E.grid[k] = material; changed++;
+    E.L->grid[k] = material; changed++;
   } } }
   if (destroyedAny) {
     E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
@@ -163,7 +163,7 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
   std::unordered_set<int> cells;
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue;
     for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue;
-      int k = E.I(xx, yy); if (E.grid[k] == EMPTY) { E.grid[k] = mat; E.markCellIndex(k); cells.insert(k); } } }
+      int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY) { E.L->grid[k] = mat; E.markCellIndex(k); cells.insert(k); } } }
   if (cells.empty()) return 0;
   E.L->skyDirty = true;
   E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
@@ -209,7 +209,7 @@ int ToolSystem::placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, i
   bool comp = E.isComponentMaterial(mat);
   std::unordered_set<int> cells;
   int placed = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, E.rows, maxCells, p,
-    [&](int k) { if (E.grid[k] != EMPTY) return false; E.grid[k] = mat; if (comp) { E.markCellIndex(k); cells.insert(k); } return true; });
+    [&](int k) { if (E.L->grid[k] != EMPTY) return false; E.L->grid[k] = mat; if (comp) { E.markCellIndex(k); cells.insert(k); } return true; });
   if (placed) { E.L->skyDirty = true; E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius); }
   if (comp) registerComponentCells(mat, cells);
   return placed;
@@ -218,7 +218,7 @@ int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFoo
   bool comp = E.isComponentMaterial(mat);
   std::unordered_set<int> cells;
   int placed = cappedOffsetScan(cx, cy, fp.cells, [](const SurvivalFootprintCell& o) { return std::pair<int, int>((int)o.ox, (int)o.oy); }, E.rows, maxCells, p,
-    [&](int k) { if (E.grid[k] != EMPTY) return false; E.grid[k] = mat; if (comp) { E.markCellIndex(k); cells.insert(k); } return true; });
+    [&](int k) { if (E.L->grid[k] != EMPTY) return false; E.L->grid[k] = mat; if (comp) { E.markCellIndex(k); cells.insert(k); } return true; });
   if (placed) {
     int x0, y0, x1, y1;
     survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
@@ -248,11 +248,11 @@ void ToolSystem::destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStone, 
                    std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
   if (E.isBodyCell(k)) {
     if (bodyById.empty()) for (Body* b : E.L->bodies) bodyById[b->id] = b;
-    if (!E.eraseBodyCellIndex(k, bodyById, dirtyBodies)) { E.grid[k] = EMPTY; E.bodyOwner[k] = -1; }
+    if (!E.eraseBodyCellIndex(k, bodyById, dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
   } else {
     if (E.isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (E.isIceComponentMaterial(m)) erasedIce.push_back(k);
     if (E.isPlantMaterial(m)) erasedPlant = true;
-    E.grid[k] = EMPTY;
+    E.L->grid[k] = EMPTY;
   }
 }
 // Component-split epilogue shared by every destroy path (eraser, stroke
@@ -268,8 +268,8 @@ int ToolSystem::eraseDisc(int cx, int cy, int radius) {
   std::vector<int> erasedStone, erasedIce, bodyCellList; bool erasedPlant = false; bool changed = false; int cleared = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy);
-    if (E.isBodyCell(k)) { destroyCellAt(k, E.grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
-    else if (E.grid[k] != EMPTY) { destroyCellAt(k, E.grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
+    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
+    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
     if (draft.erase(k)) changed = true;
   } }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
@@ -285,8 +285,8 @@ int ToolSystem::eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, 
   std::vector<int> erasedStone, erasedIce; bool erasedPlant = false, changed = false; int cleared = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   for (int k : cells) {
-    if (E.isBodyCell(k)) { destroyCellAt(k, E.grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
-    else if (E.grid[k] != EMPTY) { destroyCellAt(k, E.grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
+    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
+    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
     if (draft.erase(k)) changed = true;
   }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
@@ -345,7 +345,7 @@ double ToolSystem::playerMineProgress(int id) {
   auto consider = [&](int xx, int yy, uint32_t areaScale) {
     if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) return;
     int k = E.I(xx, yy);
-    uint8_t m = E.grid[k];
+    uint8_t m = E.L->grid[k];
     if (m == EMPTY || E.L->mineDamage[k] == 0) return;
     uint32_t dur = mineDurationFor(m, areaScale);
     if (dur == 0) return;
@@ -404,7 +404,7 @@ int ToolSystem::mineDamageDisc(int cx, int cy, int radius, const Player& miner, 
   lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops
   std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); uint8_t m = E.grid[k]; if (m == EMPTY) { if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; } continue; }
+  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); uint8_t m = E.L->grid[k]; if (m == EMPTY) { if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; } continue; }
     if (mineDamageCellStep(k, m, miner, scaledSpeed, 1, 1, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
   } }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
@@ -422,7 +422,7 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
     int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
     if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) continue;
     int k = E.I(xx, yy);
-    uint8_t m = E.grid[k];
+    uint8_t m = E.L->grid[k];
     if (m == EMPTY) {
       if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; }
       continue;
@@ -441,7 +441,7 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
 }
 int ToolSystem::addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {
   int changed = 0;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= yLimit) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if (E.grid[k] == EMPTY && !draft.count(k)) { draft.insert(k); changed = 1; } } }
+  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= yLimit) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY && !draft.count(k)) { draft.insert(k); changed = 1; } } }
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   return changed;
 }
@@ -450,7 +450,7 @@ int ToolSystem::addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, i
 // number staged — the caller consumes that many inventory units as the preview grows.
 int ToolSystem::addDiscToDraftCapped(std::unordered_set<int>& d, int cx, int cy, int radius, int yLimit, int maxAdd, const Player* p) {
   int added = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, yLimit, maxAdd, p,
-    [&](int k) { if (E.grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
+    [&](int k) { if (E.L->grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
   if (added) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   return added;
 }
@@ -463,7 +463,7 @@ int ToolSystem::addDiscStrokeToDraft(std::unordered_set<int>& d, int x0, int y0,
 }
 int ToolSystem::addFootprintToDraftCapped(std::unordered_set<int>& d, int cx, int cy, const SurvivalFootprint& fp, int yLimit, int maxAdd, const Player* p) {
   int added = cappedOffsetScan(cx, cy, fp.cells, [](const SurvivalFootprintCell& o) { return std::pair<int, int>((int)o.ox, (int)o.oy); }, yLimit, maxAdd, p,
-    [&](int k) { if (E.grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
+    [&](int k) { if (E.L->grid[k] != EMPTY || d.count(k)) return false; d.insert(k); return true; });
   if (added) {
     int x0, y0, x1, y1;
     survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
@@ -501,12 +501,12 @@ void ToolSystem::finalizeDraft() {
   if (draftMaterial == RIGID) {
     std::vector<std::pair<int, int>> cells;
     cells.reserve(draft.size());
-    for (int k : draft) if (E.grid[k] == EMPTY) cells.push_back({k % E.cols, k / E.cols});
+    for (int k : draft) if (E.L->grid[k] == EMPTY) cells.push_back({k % E.cols, k / E.cols});
     E.finishSpawn(cells, RIGID);
     return;
   }
   std::unordered_set<int> cells;
-  for (int k : draft) if (E.grid[k] == EMPTY) { E.grid[k] = draftMaterial; E.markCellIndex(k); cells.insert(k); }
+  for (int k : draft) if (E.L->grid[k] == EMPTY) { E.L->grid[k] = draftMaterial; E.markCellIndex(k); cells.insert(k); }
   if (!cells.empty()) E.L->skyDirty = true;
   registerComponentCells(draftMaterial, cells);
 }
@@ -518,7 +518,7 @@ bool ToolSystem::getSeedOrigin(int cx, int cy, int& x0, int& y0) {
 }
 bool ToolSystem::canPlaceSeedAt(int x0, int y0) {
   if (x0 <= 0 || y0 <= 0 || x0 + 1 >= E.cols || y0 + 1 > E.rows) return false;
-  return E.grid[E.I(x0, y0)] == EMPTY;
+  return E.L->grid[E.I(x0, y0)] == EMPTY;
 }
 bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_OAK); }
 // Place a seed of a given species. The comp carries the plantType so growth.inc
@@ -527,7 +527,7 @@ bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, P
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
   Comp c; c.id = E.L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
-  { int k = E.I(x0, y0); E.grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
+  { int k = E.I(x0, y0); E.L->grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
   E.L->plantComponents.push_back(std::move(c));
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
@@ -537,7 +537,7 @@ bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   if (!canPlaceSeedAt(x0, y0)) return false;
   Comp c; c.id = E.L->nextStoneId++; c.yMax = y0; c.age = 0; c.growing = true;
   int k = E.I(x0, y0);
-  E.grid[k] = MYCELIUM_SPORE;
+  E.L->grid[k] = MYCELIUM_SPORE;
   c.cells.push_back(k);
   E.L->stoneComponents.push_back(std::move(c));
   E.L->myceliumActive = true;
@@ -702,7 +702,7 @@ void ToolSystem::emitToolAt(int cx, int cy) {
   if (creativeMode == CM_ERASE) { eraseDisc(cx, cy, BRUSH_ERASE); return; }
   if (creativeMode != CM_PAINT) return;
   uint8_t m = creativeMaterial;
-  if (E.isLooseSolidMaterial(m) && E.grid[E.I(cx, cy)] != EMPTY) return; // don't stack powder on a filled cell
+  if (E.isLooseSolidMaterial(m) && E.L->grid[E.I(cx, cy)] != EMPTY) return; // don't stack powder on a filled cell
   paintDisc(cx, cy, brushFor(m), m, false);
 }
 // Apply the brush along the LINE from (x0,y0) to (x1,y1) on one layer, so a fast

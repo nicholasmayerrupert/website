@@ -404,13 +404,13 @@ bool RigidBodySystem::eraseLocalCell(Body* b, int idx) { if (idx < 0 || idx >= (
 // ---- rigidBodies.js layer ----
 bool RigidBodySystem::isBodyTerrain(int x, int y, double bodyDensity) {
   (void)bodyDensity;
-  int k = y * E.cols + x; uint8_t m = E.grid[k];
+  int k = y * E.cols + x; uint8_t m = E.L->grid[k];
   if (E.isBodyCell(k)) return false;                            // free bodies collide via body-vs-body, not as static terrain
   if (E.isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls; liquid buoys, powder supports one-way
   return E.isRigidMaterialClass(m);                             // stone/plant/ice-group solids incl. new ores & woods
 }
-double RigidBodySystem::buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.grid[y * E.cols + x]; return E.isLiquidMaterial(m) ? DENSITY[m] : 0; }
-double RigidBodySystem::granularMediumDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.grid[y * E.cols + x]; return E.isLooseSolidMaterial(m) ? DENSITY[m] : 0; }
+double RigidBodySystem::buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLiquidMaterial(m) ? DENSITY[m] : 0; }
+double RigidBodySystem::granularMediumDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLooseSolidMaterial(m) ? DENSITY[m] : 0; }
 // Any loose medium is relocatable: a body submerging into liquid or powder
 // displaces it (spilled around the body) rather than being blocked at the surface.
 // Only liquids provide upward buoyancy; powders can support, but only by
@@ -437,10 +437,10 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
   // exactly like water — instead of jamming against equal-density sand and heaping
   // into a local cone at the body's entry column.
   double curD = 0;
-  auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || E.isGasMaterial(m) || (E.isLiquidMaterial(m) && DENSITY[m] <= curD) || (E.isLooseSolidMaterial(m) && (E.groundedCell[k] != 1 || DENSITY[m] <= curD)); };
+  auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || E.isGasMaterial(m) || (E.isLiquidMaterial(m) && DENSITY[m] <= curD) || (E.isLooseSolidMaterial(m) && (E.L->groundedCell[k] != 1 || DENSITY[m] <= curD)); };
   int32_t reservedGen = ++E.L->seenGen;
   auto inFootprint = [&](int k) { return E.L->rigidSpillFootprint[k] == footprintGen; };
-  auto isDropTarget = [&](int k, uint8_t mat) { if (inFootprint(k) || E.L->rigidSpillReserved[k] == reservedGen || E.isBodyCell(k)) return false; uint8_t m = E.grid[k]; if (m == EMPTY) return true; return (E.isLiquidMaterial(m) || E.isGasMaterial(m) || E.isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
+  auto isDropTarget = [&](int k, uint8_t mat) { if (inFootprint(k) || E.L->rigidSpillReserved[k] == reservedGen || E.isBodyCell(k)) return false; uint8_t m = E.L->grid[k]; if (m == EMPTY) return true; return (E.isLiquidMaterial(m) || E.isGasMaterial(m) || E.isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
   // Footprint-edge seeds (used when a displaced cell's own neighbours are all
   // blocked). Permissive — any fluid/empty/gas/loose powder; canVisit re-filters
   // per displaced material once curD is set in the worklist loop below.
@@ -450,7 +450,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
   for (int k : sortedFootprint) for (int off : offs) {
     int nk = k + off; if (nk <= 0 || nk >= gridLen || E.L->seenStamp[nk] == edgeGen) continue;
     int y = nk / E.cols, x = nk - y * E.cols; if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) continue;
-    if (seedPassable(E.grid[nk], nk)) { E.L->seenStamp[nk] = edgeGen; footprintEdgeStarts.push_back(nk); }
+    if (seedPassable(E.L->grid[nk], nk)) { E.L->seenStamp[nk] = edgeGen; footprintEdgeStarts.push_back(nk); }
   }
   // Intentionally batch by material: each density/material group gets one
   // multi-source BFS instead of clearing a queue and searching once per displaced
@@ -476,7 +476,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
       auto canVisit = [&](int k) {
         if (k <= 0 || k >= gridLen || inFootprint(k) || E.L->rigidSpillReserved[k] == reservedGen || E.L->seenStamp[k] == seenGen) return false;
         int y = k / E.cols, x = k - y * E.cols;
-        return x > 0 && x < E.cols - 1 && y > 0 && y < E.rows && isPassable(E.grid[k], k);
+        return x > 0 && x < E.cols - 1 && y > 0 && y < E.rows && isPassable(E.L->grid[k], k);
       };
       auto enqueue = [&](int k) { if (!canVisit(k)) return; E.L->seenStamp[k] = seenGen; queue.push_back(k); };
       for (size_t di = gi; di < gj; di++) for (int off : offs) enqueue(pending[di].from + off);
@@ -491,7 +491,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
       int n = imin((int)targets.size(), need);
       for (int i = 0; i < n; i++) {
         int target = targets[i];
-        uint8_t evicted = E.grid[target];
+        uint8_t evicted = E.L->grid[target];
         if (evicted != EMPTY) nextPending.push_back({evicted, target});
         E.writeGridIndex(target, mat);
       }
@@ -502,17 +502,17 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
 }
 double RigidBodySystem::rigidErodeProbabilityAt(int k) {
   double p = 0; int x = k % E.cols, y = k / E.cols;
-  auto consider = [&](int nk) { uint8_t m = E.grid[nk]; if (m == ACID) p = std::fmax(p, ACID_DISSOLVE_P); else if (m == LAVA) p = std::fmax(p, RIGID_LAVA_ERODE_P); else if (m == FIRE) p = std::fmax(p, RIGID_FIRE_ERODE_P); };
+  auto consider = [&](int nk) { uint8_t m = E.L->grid[nk]; if (m == ACID) p = std::fmax(p, ACID_DISSOLVE_P); else if (m == LAVA) p = std::fmax(p, RIGID_LAVA_ERODE_P); else if (m == FIRE) p = std::fmax(p, RIGID_FIRE_ERODE_P); };
   if (x < E.cols - 1) consider(k + 1); if (x > 0) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 0) consider(k - E.cols);
   return p;
 }
 bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty) {
-  int id = E.bodyOwner[k]; if (id < 0) return false; // E.bodyOwner is authoritative (cell holds the body's real material, not RIGID)
+  int id = E.L->bodyOwner[k]; if (id < 0) return false; // E.L->bodyOwner is authoritative (cell holds the body's real material, not RIGID)
   auto it = bodyById.find(id); if (it == bodyById.end()) return false; Body* b = it->second;
   int y = k / E.cols, x = k - y * E.cols;
   int idx = localCellAt(b, x + 0.5, y + 0.5);
   if (idx < 0 || !eraseLocalCell(b, idx)) return false;
-  E.writeGridIndex(k, EMPTY); E.bodyOwner[k] = -1; dirty.insert(b); return true;
+  E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; dirty.insert(b); return true;
 }
 void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells) {
   if (dirty.empty()) { E.L->bodyCells = cells; return; }
@@ -525,7 +525,7 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::
   std::unordered_set<int> removedIds;
   for (Body* b : dirty) {
     std::vector<int> wc; // b's remaining world cells
-    for (int k : cells) if (E.bodyOwner[k] == b->id) wc.push_back(k); // body cells carry the body's real material; E.bodyOwner identifies them
+    for (int k : cells) if (E.L->bodyOwner[k] == b->id) wc.push_back(k); // body cells carry the body's real material; E.L->bodyOwner identifies them
     if (wc.empty()) { removedIds.insert(b->id); continue; }
     // flood (4-connected) into world-connected groups
     std::unordered_map<int, int> idxOf; for (size_t i = 0; i < wc.size(); i++) idxOf[wc[i]] = (int)i;
@@ -555,20 +555,20 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::
     E.L->bodies = std::move(keep);
   }
   // Re-assign ownership from scratch over the FORMER body cells. Body cells carry
-  // the body's real material now (not RIGID), so the old `E.grid[k] == RIGID` no longer
+  // the body's real material now (not RIGID), so the old `E.L->grid[k] == RIGID` no longer
   // identifies them — `wasBody` (the prior body-cell set) is the authoritative source,
   // and disambiguates a body cell from identical-looking static terrain of the same
   // material that the rebuilt footprint may overlap.
   std::unordered_set<int> wasBody(cells.begin(), cells.end());
-  for (int k : cells) E.bodyOwner[k] = -1;
+  for (int k : cells) E.L->bodyOwner[k] = -1;
   std::vector<int> kept; std::unordered_set<int> claimed;
   // Skip EMPTY cells: an erased cell (grid already cleared) can still fall
   // under a rotated body's re-rasterization, and claiming it would leave a
   // body-owned EMPTY cell until the next moveBodies stamp — a powder settling
   // into it that step would then be wiped by the un-stamp (silent cell loss).
   // Found by the SAND_INVARIANT_CHECKS post-step validator.
-  for (Body* b : E.L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * E.cols + x; if (!wasBody.count(k) || claimed.count(k) || E.grid[k] == EMPTY) return; E.bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
-  for (int k : cells) if (!claimed.count(k)) { E.writeGridIndex(k, EMPTY); E.bodyOwner[k] = -1; }
+  for (Body* b : E.L->bodies) forEachBodyCell(b, [&](int x, int y) { int k = y * E.cols + x; if (!wasBody.count(k) || claimed.count(k) || E.L->grid[k] == EMPTY) return; E.L->bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
+  for (int k : cells) if (!claimed.count(k)) { E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; }
   E.L->bodyCells = kept;
 }
 void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
@@ -580,7 +580,7 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
 }
 int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   int blocked = 0;
-  forEachBodyCell(b, [&](int x, int y) { int k = y * E.cols + x; if (E.bodyOwner[k] == b->id) return; uint8_t m = E.grid[k]; if (!canBodyOccupy(m, k, b->density)) blocked++; });
+  forEachBodyCell(b, [&](int x, int y) { int k = y * E.cols + x; if (E.L->bodyOwner[k] == b->id) return; uint8_t m = E.L->grid[k]; if (!canBodyOccupy(m, k, b->density)) blocked++; });
   return blocked;
 }
 // A sleeping body keeps its support if nudging it straight down by `probe`
@@ -595,8 +595,8 @@ bool RigidBodySystem::sleepingBodyHasSupport(Body* b, double probe) {
   bool supported = false;
   forEachBodyCell(b, [&](int x, int y) {
     if (supported) return;
-    int k = y * E.cols + x; uint8_t m = E.grid[k];
-    if (E.isBodyCell(k)) { if (E.bodyOwner[k] != b->id) supported = true; return; } // another body underneath counts as support; our own cells are ignored
+    int k = y * E.cols + x; uint8_t m = E.L->grid[k];
+    if (E.isBodyCell(k)) { if (E.L->bodyOwner[k] != b->id) supported = true; return; } // another body underneath counts as support; our own cells are ignored
     if (!canBodyOccupy(m, k, b->density)) supported = true; // solid terrain / another body
   });
   b->py = savedPy;
@@ -634,7 +634,7 @@ void RigidBodySystem::bakeBodyToGrid(Body* b) {
   std::unordered_set<int> baked; int yMax = 0;
   forEachBodyCell(b, [&](int x, int y) {
     int k = y * E.cols + x;
-    if (E.grid[k] != EMPTY && !E.componentDisplaceable(E.grid[k])) return; // never clobber solid terrain it came to rest against
+    if (E.L->grid[k] != EMPTY && !E.componentDisplaceable(E.L->grid[k])) return; // never clobber solid terrain it came to rest against
     E.writeGridIndex(k, b->material); baked.insert(k); if (y > yMax) yMax = y;
   });
   if (baked.empty()) return;
@@ -664,7 +664,7 @@ bool RigidBodySystem::bodyFloatsOnMedium(Body* b) {
     int y = k / E.cols, x = k - y * E.cols, bk = (y + 1) * E.cols + x;
     if (occ.count(bk)) continue;                            // interior cell, not a bottom edge
     if (y + 1 >= E.rows) { solidBelow++; continue; }          // the world floor is solid support
-    uint8_t m = E.grid[bk];
+    uint8_t m = E.L->grid[bk];
     if (E.isLiquidMaterial(m)) mediumBelow++;
     else if (m != EMPTY && !E.isGasMaterial(m)) solidBelow++; // terrain / another body's cell
   }
@@ -678,7 +678,7 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
     int y = k / E.cols, x = k - y * E.cols, bk = (y + 1) * E.cols + x;
     if (occ.count(bk)) continue;
     if (y + 1 >= E.rows) { solidBelow++; continue; }
-    uint8_t m = E.grid[bk];
+    uint8_t m = E.L->grid[bk];
     if (E.isBuoyantMedium(m)) mediumBelow++;
     else if (m != EMPTY && !E.isGasMaterial(m)) solidBelow++;
   }
@@ -701,7 +701,7 @@ void RigidBodySystem::moveBodies() {
   // other E.L->bodies still count as support; body-on-body stacks cascade (the
   // bottom body wakes and moves, then the contact solver wakes those above).
   for (Body* b : E.L->bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
-  for (int k : E.L->bodyCells) { if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY); E.bodyOwner[k] = -1; } // body-material invariant: body cells hold the body's real material; E.bodyOwner marks them
+  for (int k : E.L->bodyCells) { if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
   std::unordered_map<int, std::pair<double, double>> prePoses;
   for (Body* b : E.L->bodies) prePoses[b->id] = {b->px, b->py};
   rigidStep(1.0);
@@ -713,10 +713,10 @@ void RigidBodySystem::moveBodies() {
   for (Body* b : E.L->bodies) {
     auto& pb = perBody[b->id];
     forEachBodyCell(b, [&](int x, int y) {
-      int k = y * E.cols + x; if (E.bodyOwner[k] != -1) return; uint8_t m = E.grid[k];
+      int k = y * E.cols + x; if (E.L->bodyOwner[k] != -1) return; uint8_t m = E.L->grid[k];
       if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
       if (isBodyRelocatable(m, k, b->density)) pb.first.push_back({m, k});
-      E.writeGridIndex(k, b->material); E.bodyOwner[k] = b->id; cells.push_back(k); footprint.push_back(k); pb.second.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+      E.writeGridIndex(k, b->material); E.L->bodyOwner[k] = b->id; cells.push_back(k); footprint.push_back(k); pb.second.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
   {

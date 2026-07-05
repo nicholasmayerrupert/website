@@ -16,7 +16,7 @@ bool PlayerSystem::playerCellSolid(int x, int y) {
   if (y >= E.rows) return true;        // floor under the world
   if (y < 0) return false;           // open sky
   if (x < 0 || x >= E.cols) return false;
-  return isSolidForPlayer(E.grid[E.I(x, y)]);
+  return isSolidForPlayer(E.L->grid[E.I(x, y)]);
 }
 // Does the AABB at (px,py) with size (w,h) overlap any solid cell?
 bool PlayerSystem::playerBoxHits(double px, double py, int w, int h) {
@@ -162,7 +162,7 @@ void PlayerSystem::setPlayerInput(int id, int inputBits, double aimX, double aim
 // cells that are liquid; deterministic (pure grid sampling, no RNG).
 bool PlayerSystem::playerCellLiquid(int x, int y) {
   if (y < 0 || y >= E.rows || x < 0 || x >= E.cols) return false;
-  return E.isLiquidMaterial(E.grid[E.I(x, y)]);
+  return E.isLiquidMaterial(E.L->grid[E.I(x, y)]);
 }
 // Returns the liquid coverage (fraction of the player's AABB cells that are
 // liquid). Deterministic: pure grid sampling, no RNG.

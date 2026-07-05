@@ -38,8 +38,8 @@ int ExplosivesSystem::blastGasTarget(int sx, int sy, int cx, int cy, int radius,
   static const int OFFS[8][2] = {{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,1},{1,-1},{-1,-1}};
   while (qh < qt) {
     int k = E.L->groundStack[qh++];
-    if (!reservedTargets.count(k) && E.grid[k] == EMPTY) return k;
-    if (!reservedTargets.count(k) && !E.isGasMaterial(E.grid[k])) continue;
+    if (!reservedTargets.count(k) && E.L->grid[k] == EMPTY) return k;
+    if (!reservedTargets.count(k) && !E.isGasMaterial(E.L->grid[k])) continue;
     int y = k / E.cols, x = k - y * E.cols;
     for (auto& off : OFFS) enqueue(x + off[0], y + off[1]);
   }
@@ -59,7 +59,7 @@ void ExplosivesSystem::pushBlastGasesOutward(const std::vector<BlastWave>& waves
       for (int ox = -radius; ox <= radius; ox++) {
         int dd = ox * ox + oy * oy; if (dd > r2) continue;
         int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue;
-        int k = E.I(xx, yy); uint8_t m = E.grid[k]; if (!E.isGasMaterial(m)) continue;
+        int k = E.I(xx, yy); uint8_t m = E.L->grid[k]; if (!E.isGasMaterial(m)) continue;
         int deepness = r2 - dd;
         auto it = byCell.find(k);
         if (it == byCell.end() || deepness > it->second.dd) byCell[k] = {k, k, wi, deepness, m};
@@ -76,7 +76,7 @@ void ExplosivesSystem::pushBlastGasesOutward(const std::vector<BlastWave>& waves
 
   std::unordered_set<int> reservedTargets; reservedTargets.reserve(moves.size() * 2);
   for (auto& mv : moves) {
-    if (!E.isGasMaterial(E.grid[mv.k])) continue;
+    if (!E.isGasMaterial(E.L->grid[mv.k])) continue;
     const BlastWave& wave = waves[mv.wave];
     int y = mv.k / E.cols, x = mv.k - y * E.cols;
     int target = blastGasTarget(x, y, wave.cx, wave.cy, wave.radius, wave.seed, reservedTargets);
@@ -84,19 +84,19 @@ void ExplosivesSystem::pushBlastGasesOutward(const std::vector<BlastWave>& waves
     if (mv.target >= 0) reservedTargets.insert(mv.target);
   }
 
-  for (auto& mv : moves) if (E.isGasMaterial(E.grid[mv.k])) E.writeGridIndex(mv.k, EMPTY);
+  for (auto& mv : moves) if (E.isGasMaterial(E.L->grid[mv.k])) E.writeGridIndex(mv.k, EMPTY);
   for (auto& mv : moves) {
-    if (mv.target < 0 || E.grid[mv.target] != EMPTY) continue;
+    if (mv.target < 0 || E.L->grid[mv.target] != EMPTY) continue;
     E.writeGridIndex(mv.target, mv.material);
-    E.vacatedStamp[mv.target] = E.tick;
+    E.L->vacatedStamp[mv.target] = E.tick;
   }
 }
 
 void ExplosivesSystem::activateBlastRectNow(int x0, int y0, int x1, int y1) {
   x0 = imax(0, x0); x1 = imin(E.cols - 1, x1); y0 = imax(0, y0); y1 = imin(E.rows - 1, y1);
   for (int y = y0; y <= y1; y++) {
-    if (x0 < E.activeRowMin[y]) E.activeRowMin[y] = x0;
-    if (x1 > E.activeRowMax[y]) E.activeRowMax[y] = x1;
+    if (x0 < E.L->activeRowMin[y]) E.L->activeRowMin[y] = x0;
+    if (x1 > E.L->activeRowMax[y]) E.L->activeRowMax[y] = x1;
   }
 }
 
@@ -109,7 +109,7 @@ bool ExplosivesSystem::blastBodyCandidateHasEscape(const std::vector<std::pair<i
     if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) return false;
     int k = E.I(x, y);
     footprint.insert(k);
-    if (!footprintAlreadySolid && !E.canBodyOccupy(E.grid[k], k, density)) return false;
+    if (!footprintAlreadySolid && !E.canBodyOccupy(E.L->grid[k], k, density)) return false;
   }
   static const int OFFS[4] = {-1, 1, 0, 0};
   static const int YOFFS[4] = {0, 0, -1, 1};
@@ -120,7 +120,7 @@ bool ExplosivesSystem::blastBodyCandidateHasEscape(const std::vector<std::pair<i
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows - 1) continue;
       int nk = E.I(nx, ny);
       if (footprint.count(nk)) continue;
-      if (E.canBodyOccupy(E.grid[nk], nk, density)) return true;
+      if (E.canBodyOccupy(E.L->grid[nk], nk, density)) return true;
     }
   }
   return false;
@@ -176,14 +176,14 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     for (int ox = -radius; ox <= radius; ox++) {
       int dd = ox * ox + oy * oy; if (dd > r2) continue;
       int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue;
-      int k = E.I(xx, yy); uint8_t m = E.grid[k]; if (!E.isBlastDamageable(m)) continue;
+      int k = E.I(xx, yy); uint8_t m = E.L->grid[k]; if (!E.isBlastDamageable(m)) continue;
       double energy = power * (1.0 - std::sqrt((double)dd) / radius);
       if (energy < (double)DURABILITY[m]) continue; // too hard to blow up at this distance
       bool wasTnt = (m == TNT);
       if (wasTnt && dd > 0) {
         if (E.isBodyCell(k)) {
           if (!bb.bodyMapBuilt) { for (Body* b : E.L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
-          auto it = bb.bodyById.find(E.bodyOwner[k]);
+          auto it = bb.bodyById.find(E.L->bodyOwner[k]);
           Body* hitBody = it == bb.bodyById.end() ? nullptr : it->second;
           if (hitBody != sourceBody) {
             shortenTntBodyFuse(hitBody, TNT_CHAIN_FUSE);
@@ -202,7 +202,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
       // cell through the component-split system (see isBodyCell).
       if (E.isBodyCell(k)) {
         if (!bb.bodyMapBuilt) { for (Body* b : E.L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
-        if (!E.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) { E.grid[k] = EMPTY; E.bodyOwner[k] = -1; }
+        if (!E.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
       } else {
         // Track each destroyed solid material as a physical-rubble source (never
         // TNT — exploding TNT must be consumed, not scattered as live shrapnel).
@@ -211,7 +211,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
         if (group == CG_STONE) bb.erasedStone.push_back(k);
         else if (group == CG_ICE) bb.erasedIce.push_back(k);
         else if (group == CG_PLANT) bb.erasedPlant = true;
-        E.grid[k] = EMPTY;
+        E.L->grid[k] = EMPTY;
       }
       E.markCellIndex(k);
       // Cosmetic flecks of the destroyed material, flung outward (also how loose
@@ -255,7 +255,7 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
   if (!bb.any) return;
   E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells);
   E.splitComponentsAfterDestroy(bb.erasedStone, bb.erasedIce, bb.erasedPlant);
-  for (auto& pr : bb.tntAftermath) if (E.grid[pr.first] == EMPTY) { E.writeGridIndex(pr.first, pr.second); E.vacatedStamp[pr.first] = E.tick; }
+  for (auto& pr : bb.tntAftermath) if (E.L->grid[pr.first] == EMPTY) { E.writeGridIndex(pr.first, pr.second); E.L->vacatedStamp[pr.first] = E.tick; }
   pushBlastGasesOutward(bb.gasShockwaves);
   int gasX0 = bb.minX - BLAST_GAS_SEARCH_CAP, gasY0 = bb.minY - BLAST_GAS_SEARCH_CAP;
   int gasX1 = bb.maxX + BLAST_GAS_SEARCH_CAP, gasY1 = bb.maxY + BLAST_GAS_SEARCH_CAP;
@@ -306,9 +306,9 @@ void ExplosivesSystem::applyExplosives() {
   //    we need: its blast chains the rest via queueDetonation in carveBlast().
   std::unordered_map<int, Body*> bodyById; bool builtBodies = false;
   auto lightTnt = [&](int k) {
-    if (E.grid[k] != TNT) return;
+    if (E.L->grid[k] != TNT) return;
     if (E.isBodyCell(k)) {
-      int id = E.bodyOwner[k];
+      int id = E.L->bodyOwner[k];
       if (!builtBodies) { for (Body* b : E.L->bodies) bodyById[b->id] = b; builtBodies = true; }
       auto it = bodyById.find(id);
       if (it != bodyById.end() && it->second->fuseTicks == 0) it->second->fuseTicks = TNT_FUSE_TICKS;
@@ -317,7 +317,7 @@ void ExplosivesSystem::applyExplosives() {
   for (int y = 1; y < E.rows - 1; y++) {
     int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
     for (int x = minX; x <= maxX; x++) {
-      int k = E.I(x, y); uint8_t m = E.grid[k]; if (m != FIRE && m != LAVA) continue;
+      int k = E.I(x, y); uint8_t m = E.L->grid[k]; if (m != FIRE && m != LAVA) continue;
       lightTnt(k + 1); lightTnt(k - 1); lightTnt(k + E.cols); lightTnt(k - E.cols);
     }
   }
@@ -328,7 +328,7 @@ void ExplosivesSystem::applyExplosives() {
     for (auto& kv : E.L->pendingDetonations) if (--kv.second <= 0) fire.push_back(kv.first);
     std::sort(fire.begin(), fire.end());
     for (int cell : fire) {
-      if (cell >= 0 && cell < E.cols * E.rows && E.grid[cell] == TNT && !E.isBodyCell(cell))
+      if (cell >= 0 && cell < E.cols * E.rows && E.L->grid[cell] == TNT && !E.isBodyCell(cell))
         carveBlastAcrossLayers(cell % E.cols, cell / E.cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
     }
     for (int cell : fire) E.L->pendingDetonations.erase(cell);

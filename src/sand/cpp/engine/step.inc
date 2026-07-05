@@ -36,27 +36,27 @@
     prepareNextBuffer();
     // carry-forward component + body cells across the double buffer
     L->curCompCells.clear();
-    // Carry component cells forward in `next` keeping each cell's actual material
-    // (grid[k]) so stone-group ores and any future ice-group materials survive the
+    // Carry component cells forward in `L->next` keeping each cell's actual material
+    // (L->grid[k]) so stone-group ores and any future ice-group materials survive the
     // double-buffer swap instead of collapsing to STONE/ICE.
-    for (auto& comp : L->stoneComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (auto& comp : L->plantComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (auto& comp : L->iceComponents) for (int k : comp.cells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (int k : L->bodyCells) { next[k] = grid[k]; compOccStamp[k] = tick; L->curCompCells.push_back(k); } // body-material invariant: carry the body's real material, not RIGID
+    for (auto& comp : L->stoneComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+    for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); } // body-material invariant: carry the body's real material, not RIGID
     for (int k : L->prevCompCells) {
-      if (compOccStamp[k] == tick) continue;
-      if (grid[k] == EMPTY) { next[k] = EMPTY; markCellIndex(k); }
-      else if (!isRigidMaterialClass(grid[k]) && isRigidMaterialClass(next[k])) { next[k] = grid[k]; markCellIndex(k); }
+      if (L->compOccStamp[k] == tick) continue;
+      if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
+      else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
     }
     std::swap(L->prevCompCells, L->curCompCells);
     double tC = emscripten_get_now(); perfStepCarry = tC - tX;
 
-    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
-    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (isLooseSolidMaterial(grid[rb + x])) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (isLooseSolidMaterial(grid[rb + x])) settleSand(x, y, rb + x); } }
-    for (int y = rows - 1; y >= 0; y--) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
-    for (int y = 0; y < rows; y++) { int minX = activeRowMin[y], maxX = activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
+    for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
+    for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } }
+    for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
+    for (int y = 0; y < rows; y++) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
     double tS = emscripten_get_now(); perfStepSettle = tS - tC;
-    std::swap(grid, next); flushLayerGrids();
+    std::swap(L->grid, L->next);
     if ((tick & 1) == 0) relaxLiquidGaps();
     if (tick % 3 == 0) separateLooseByDensity();
     levelLiquidSurfaces();
@@ -68,7 +68,7 @@
     // Players advance every step (foreground only); their tool edits mark fg active.
     useLayer(&fg);
     updatePlayers();
-    updateItems(); // entities (dropped items/particles) advance even when the grid is inert
+    updateItems(); // entities (dropped items/particles) advance even when the L->grid is inert
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
     if (!fgA && !bgA) { useLayer(&fg); return !psys.players.empty() || !itemsys.items.empty(); }
     double t0 = emscripten_get_now();
@@ -256,7 +256,7 @@
     if (!canFall(to, x, y, m)) return false;
     if (swap) { to->grid[k] = m; from->grid[k] = dst; }
     else { to->grid[k] = m; from->grid[k] = EMPTY; }
-    // mark both layers dirty at (x,y) so render + net + next-step settle pick it up
+    // mark both layers dirty at (x,y) so render + net + L->next-step settle pick it up
     if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
     if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;
     return true;

@@ -7,43 +7,18 @@
   // tools, tick, RNG, render tables) stay on the Engine.
   //
   // To avoid threading a layer pointer through the hot settle path, the Engine
-  // keeps raw-pointer MIRRORS of every indexed per-cell buffer (`grid`, `next`,
-  // `vacatedStamp`, ...). `useLayer(lay)` repoints them at the active layer, so
+  // keeps raw-pointer MIRRORS of every indexed per-cell buffer (`L->grid`, `L->next`,
+  // `L->vacatedStamp`, ...). `useLayer(lay)` repoints them at the active layer, so
   // the thousands of `buf[k]` accesses in core/components/reactions/... are
   // unchanged. Collections + scalars live on `Layer` and are reached via `L->`.
   int cols, rows, chunkCols, chunkRows;
   Layer fg, bg;       // the two simulations
   Layer* L = &fg;     // active layer (the mirrors below point into it)
 
-  // ---- raw-pointer mirrors of the active layer's indexed buffers ----
-  // Repointed by useLayer(); the hot per-cell code indexes these unchanged.
-  uint8_t* grid = nullptr; uint8_t* next = nullptr;
-  uint8_t* dirtyRender = nullptr; uint8_t* groundedCell = nullptr; uint8_t* reactionFlags = nullptr;
-  int32_t* rowMarkMin = nullptr; int32_t* rowMarkMax = nullptr; int32_t* chunkStamp = nullptr;
-  int32_t* activeRowMin = nullptr; int32_t* activeRowMax = nullptr; int32_t* vacatedStamp = nullptr;
-  int32_t* cellComp = nullptr; int32_t* groundStack = nullptr; int32_t* compOccStamp = nullptr;
-  int32_t* reactionSteam = nullptr; int32_t* reactionFires = nullptr; int32_t* reactionIgnite = nullptr;
-  int32_t* bodyOwner = nullptr;
-
-  // Point the mirrors at `lay` and make it the active layer.
-  void useLayer(Layer* lay) {
-    L = lay;
-    grid = lay->grid; next = lay->next;
-    dirtyRender = lay->dirtyRender.data();
-    groundedCell = lay->groundedCell.data();
-    reactionFlags = lay->reactionFlags.data();
-    rowMarkMin = lay->rowMarkMin.data(); rowMarkMax = lay->rowMarkMax.data();
-    chunkStamp = lay->chunkStamp.data();
-    activeRowMin = lay->activeRowMin.data(); activeRowMax = lay->activeRowMax.data();
-    vacatedStamp = lay->vacatedStamp.data();
-    cellComp = lay->cellComp.data(); groundStack = lay->groundStack.data();
-    compOccStamp = lay->compOccStamp.data();
-    reactionSteam = lay->reactionSteam.data(); reactionFires = lay->reactionFires.data();
-    reactionIgnite = lay->reactionIgnite.data();
-    bodyOwner = lay->bodyOwner.data();
-  }
-  // Persist the (possibly swapped) current/next buffer identity back to the layer.
-  void flushLayerGrids() { L->grid = grid; L->next = next; }
+  // Make `lay` the active layer. The old raw-pointer mirrors of its indexed
+  // buffers are gone (5g): hot code reads through L-> (Layer::L->grid/L->next are
+  // already raw pointers; the vectors index directly).
+  void useLayer(Layer* lay) { L = lay; }
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
@@ -140,10 +115,10 @@
   inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
   inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
-  // Which rigid-component list a destroyed grid cell belongs to mirrors
+  // Which rigid-component list a destroyed L->grid cell belongs to mirrors
   // registerComponentCells' routing (CG_ICE -> ice, CG_PLANT -> plant via
   // isPlantMaterial, else stone). EVERY site that clears a component cell from the
-  // grid (erase, mine, acid) must feed it to splitRigidAfterErase via
+  // L->grid (erase, mine, acid) must feed it to splitRigidAfterErase via
   // componentGroupOf, or the body keeps an invisible cell that still
   // collides/grounds — sand floats on the hole and powders/liquids won't pass.
   // Keyed on group, not material id, so new ores/blocks (sandstone, brick, …)
@@ -163,9 +138,9 @@
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }
 
   // ===== BODY-MATERIAL INVARIANT (read this once; it explains the whole rewrite) =====
-  // A free rigid body stamps its REAL material into the grid (moveBodies), so a stone
+  // A free rigid body stamps its REAL material into the L->grid (moveBodies), so a stone
   // body's cells literally read STONE — they render, mine, and carry durability as
-  // stone for free. `bodyOwner[k] != -1`, i.e. isBodyCell(k), is what distinguishes a
+  // stone for free. `L->bodyOwner[k] != -1`, i.e. isBodyCell(k), is what distinguishes a
   // body-owned cell from identical-looking STATIC terrain.
   //   * Anything that just READS a cell's appearance/material (render, mining drops,
   //     durability) needs no change — material-identity is automatic.
@@ -181,14 +156,14 @@
   //     body until it actually beaches on solid terrain.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
-  inline bool isBodyCell(int k) { return bodyOwner[k] != -1; }
+  inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }
 
   // Clamped active-row settle band for row y (the [1, cols-2] interior). Returns
   // false when the row has no active cells — the per-row guard every reaction /
   // interior scan starts with.
   inline bool activeRowSpan(int y, int& minX, int& maxX) {
-    minX = imax(1, activeRowMin[y]);
-    maxX = imin(cols - 2, activeRowMax[y]);
+    minX = imax(1, L->activeRowMin[y]);
+    maxX = imin(cols - 2, L->activeRowMax[y]);
     return maxX >= minX;
   }
 
@@ -199,12 +174,12 @@
   // letting it surface later as flicker/invisible collision.
   //
   // KNOWN pre-existing violation (to fix in the rigid/components split): plain
-  // generated-terrain scenes can leave a stale stone-comp cell whose grid went
+  // generated-terrain scenes can leave a stale stone-comp cell whose L->grid went
   // EMPTY mid-move; a fluid then legally settles into it and check B fires with
   // a liquid material (seen in the grounding/anim suites, post-moveBodies).
   // Suspected in moveRigidAssemblies/translateAssembly bookkeeping.
-  //   A. BODY-MATERIAL: a body-owned cell (bodyOwner[k] != -1) must hold a
-  //      non-EMPTY material (the body stamps its real material into the grid).
+  //   A. BODY-MATERIAL: a body-owned cell (L->bodyOwner[k] != -1) must hold a
+  //      non-EMPTY material (the body stamps its real material into the L->grid).
   //   B. COMPONENT-CELL: every component cell must hold a material of its
   //      list's group, must not be body-owned, and must appear in exactly one
   //      component (comp.cells dedup-by-construction).
@@ -242,32 +217,32 @@
   // ---- dirty tracking (operates on the active layer via the mirrors) ----
   inline void markCellIndex(int k) {
     int y = k / cols, x = k - y * cols;
-    if (x < rowMarkMin[y]) rowMarkMin[y] = x;
-    if (x > rowMarkMax[y]) rowMarkMax[y] = x;
+    if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
+    if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
   }
   void markDirtyRect(int x0, int y0, int x1, int y1) {
     int mx0 = imax(0, x0), mx1 = imin(cols - 1, x1), my0 = imax(0, y0), my1 = imin(rows - 1, y1);
     for (int y = my0; y <= my1; y++) {
-      if (mx0 < rowMarkMin[y]) rowMarkMin[y] = mx0;
-      if (mx1 > rowMarkMax[y]) rowMarkMax[y] = mx1;
+      if (mx0 < L->rowMarkMin[y]) L->rowMarkMin[y] = mx0;
+      if (mx1 > L->rowMarkMax[y]) L->rowMarkMax[y] = mx1;
     }
   }
-  void markAllDirty() { for (int y = 0; y < rows; y++) { rowMarkMin[y] = 0; rowMarkMax[y] = cols - 1; } }
+  void markAllDirty() { for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; } }
   // Fully reset dirty tracking (row marks + render chunk flags) for the active layer.
   void clearAllDirty() {
-    for (int y = 0; y < rows; y++) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; }
-    memset(dirtyRender, 0, (size_t)chunkCols * chunkRows); L->dirtyRenderCount = 0;
+    for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1; }
+    memset(L->dirtyRender.data(), 0, (size_t)chunkCols * chunkRows); L->dirtyRenderCount = 0;
   }
   void foldRowMarksToRender() {
     for (int y = 0; y < rows; y++) {
-      int mn = rowMarkMin[y], mx = rowMarkMax[y];
+      int mn = L->rowMarkMin[y], mx = L->rowMarkMax[y];
       if (mx < mn) continue;
       int px0 = imax(0, mn - DIRTY_PAD_X), px1 = imin(cols - 1, mx + DIRTY_PAD_X);
       int py0 = imax(0, y - DIRTY_PAD_Y), py1 = imin(rows - 1, y + DIRTY_PAD_Y);
       int c0 = px0 >> CHUNK_SHIFT, c1 = px1 >> CHUNK_SHIFT, cy0 = py0 >> CHUNK_SHIFT, cy1 = py1 >> CHUNK_SHIFT;
       for (int cy = cy0; cy <= cy1; cy++) {
         int rb = cy * chunkCols;
-        for (int cx = c0; cx <= c1; cx++) { int ci = rb + cx; if (!dirtyRender[ci]) { dirtyRender[ci] = 1; L->dirtyRenderCount++; } }
+        for (int cx = c0; cx <= c1; cx++) { int ci = rb + cx; if (!L->dirtyRender[ci]) { L->dirtyRender[ci] = 1; L->dirtyRenderCount++; } }
       }
     }
   }
@@ -279,9 +254,9 @@
     for (int cy = 0; cy < chunkRows; cy++) {
       int cy0 = cy * CHUNK_SIZE, cy1 = imin(rows, cy0 + CHUNK_SIZE), rb = cy * chunkCols, cx = 0;
       while (cx < chunkCols) {
-        if (!dirtyRender[rb + cx]) { cx++; continue; }
+        if (!L->dirtyRender[rb + cx]) { cx++; continue; }
         int startCx = cx;
-        while (cx + 1 < chunkCols && dirtyRender[rb + cx + 1]) cx++;
+        while (cx + 1 < chunkCols && L->dirtyRender[rb + cx + 1]) cx++;
         int x0 = startCx * CHUNK_SIZE, x1 = imin(cols, (cx + 1) * CHUNK_SIZE);
         L->dirtyRects.push_back(x0); L->dirtyRects.push_back(cy0);
         L->dirtyRects.push_back(x1); L->dirtyRects.push_back(cy1);
@@ -294,50 +269,50 @@
       int k = kv.first;
       if (k < 0 || k >= cols * rows) continue;
       int y = k / cols, x = k - y * cols;
-      if (x < rowMarkMin[y]) rowMarkMin[y] = x;
-      if (x > rowMarkMax[y]) rowMarkMax[y] = x;
+      if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
+      if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
     }
     for (Body* b : L->bodies) if (b->material == TNT && b->fuseTicks > 0) {
       int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
-      if (x < rowMarkMin[y]) rowMarkMin[y] = x;
-      if (x > rowMarkMax[y]) rowMarkMax[y] = x;
+      if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
+      if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
     }
     foldRowMarksToRender();
-    for (int y = 0; y < rows; y++) { activeRowMin[y] = cols; activeRowMax[y] = -1; }
+    for (int y = 0; y < rows; y++) { L->activeRowMin[y] = cols; L->activeRowMax[y] = -1; }
     bool hasActive = false;
     for (int y = 0; y < rows; y++) {
-      int mn = rowMarkMin[y], mx = rowMarkMax[y];
+      int mn = L->rowMarkMin[y], mx = L->rowMarkMax[y];
       if (mx < mn) continue;
       hasActive = true;
-      rowMarkMin[y] = cols; rowMarkMax[y] = -1;
+      L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1;
       int px0 = imax(0, mn - DIRTY_PAD_X), px1 = imin(cols - 1, mx + DIRTY_PAD_X);
       int py0 = imax(0, y - DIRTY_PAD_Y), py1 = imin(rows - 1, y + DIRTY_PAD_Y);
-      for (int yy = py0; yy <= py1; yy++) { if (px0 < activeRowMin[yy]) activeRowMin[yy] = px0; if (px1 > activeRowMax[yy]) activeRowMax[yy] = px1; }
+      for (int yy = py0; yy <= py1; yy++) { if (px0 < L->activeRowMin[yy]) L->activeRowMin[yy] = px0; if (px1 > L->activeRowMax[yy]) L->activeRowMax[yy] = px1; }
     }
     if (!hasActive) return false;
     stepSerial++; perfDirtyChunks = 0;
     for (int y = 0; y < rows; y++) {
-      int mn = activeRowMin[y], mx = activeRowMax[y];
+      int mn = L->activeRowMin[y], mx = L->activeRowMax[y];
       if (mx < mn) continue;
       int rb = (y >> CHUNK_SHIFT) * chunkCols;
-      for (int cx = mn >> CHUNK_SHIFT, c1 = mx >> CHUNK_SHIFT; cx <= c1; cx++) { int ci = rb + cx; if (chunkStamp[ci] != stepSerial) { chunkStamp[ci] = stepSerial; perfDirtyChunks++; } }
+      for (int cx = mn >> CHUNK_SHIFT, c1 = mx >> CHUNK_SHIFT; cx <= c1; cx++) { int ci = rb + cx; if (L->chunkStamp[ci] != stepSerial) { L->chunkStamp[ci] = stepSerial; perfDirtyChunks++; } }
     }
     return true;
   }
   void prepareNextBuffer() {
     for (int y = 0; y < rows; y++) {
-      int rs = y * cols, minX = activeRowMin[y], maxX = activeRowMax[y];
-      if (maxX >= minX) memset(next + rs + minX, EMPTY, (size_t)(maxX - minX + 1));
+      int rs = y * cols, minX = L->activeRowMin[y], maxX = L->activeRowMax[y];
+      if (maxX >= minX) memset(L->next + rs + minX, EMPTY, (size_t)(maxX - minX + 1));
     }
   }
 
   // ---- cell helpers ----
-  inline bool emptyAt(int x, int y) { return x >= 0 && x < cols && y >= 0 && y < rows && grid[I(x, y)] == EMPTY && next[I(x, y)] == EMPTY; }
+  inline bool emptyAt(int x, int y) { return x >= 0 && x < cols && y >= 0 && y < rows && L->grid[I(x, y)] == EMPTY && L->next[I(x, y)] == EMPTY; }
   inline bool touchesGridEmpty(int k) {
     int x = k % cols, y = k / cols;
-    return (x > 1 && grid[k - 1] == EMPTY) || (x < cols - 2 && grid[k + 1] == EMPTY) ||
-           (y > 1 && grid[k - cols] == EMPTY) || (y < rows - 1 && grid[k + cols] == EMPTY);
+    return (x > 1 && L->grid[k - 1] == EMPTY) || (x < cols - 2 && L->grid[k + 1] == EMPTY) ||
+           (y > 1 && L->grid[k - cols] == EMPTY) || (y < rows - 1 && L->grid[k + cols] == EMPTY);
   }
   // A liquid only stays "active" if it has somewhere to FLOW — empty to a side or
   // below. Empty ABOVE (open sky over a flat surface) is NOT an escape: liquid
@@ -347,10 +322,10 @@
   // re-wakes normally when a neighbour changes (dirty padding covers the gap).
   inline bool liquidCanEscape(int k) {
     int x = k % cols, y = k / cols;
-    return (x > 1 && grid[k - 1] == EMPTY) || (x < cols - 2 && grid[k + 1] == EMPTY) ||
-           (y < rows - 1 && grid[k + cols] == EMPTY);
+    return (x > 1 && L->grid[k - 1] == EMPTY) || (x < cols - 2 && L->grid[k + 1] == EMPTY) ||
+           (y < rows - 1 && L->grid[k + cols] == EMPTY);
   }
-  // Is this surface cell next to an INTERNAL hole — a 1-wide empty gap in the liquid
+  // Is this surface cell L->next to an INTERNAL hole — a 1-wide empty gap in the liquid
   // layer with more of our liquid on its far side? Such a hole CAN be coalesced away
   // (relaxLiquidGaps migrates it to an edge); an OPEN edge (empty-empty beyond) or a
   // 1-lower neighbouring column (empty over liquid = a gentle slope) is NOT an
@@ -361,11 +336,11 @@
     // The hole must also have SUPPORT below it (non-empty) — that is the gap
     // relaxLiquidGaps actually fills. A hole with empty below is a rising bubble the
     // fall handles, not a coalesce target, and re-marking on it would spin forever.
-    if (x > 2 && grid[k - 1] == EMPTY && grid[k - 2] == m && grid[k - 1 + cols] != EMPTY) return true;
-    if (x < cols - 3 && grid[k + 1] == EMPTY && grid[k + 2] == m && grid[k + 1 + cols] != EMPTY) return true;
+    if (x > 2 && L->grid[k - 1] == EMPTY && L->grid[k - 2] == m && L->grid[k - 1 + cols] != EMPTY) return true;
+    if (x < cols - 3 && L->grid[k + 1] == EMPTY && L->grid[k + 2] == m && L->grid[k + 1 + cols] != EMPTY) return true;
     return false;
   }
-  inline void writeGridIndex(int k, uint8_t m) { if (grid[k] == m) return; grid[k] = m; markCellIndex(k); }
+  inline void writeGridIndex(int k, uint8_t m) { if (L->grid[k] == m) return; L->grid[k] = m; markCellIndex(k); }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
   inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }
   // True iff this cell still has a pending density swap with a neighbour — used to
@@ -381,46 +356,46 @@
   inline bool touchesUnstableLooseDensityInterface(int k, uint8_t m) {
     if (!isLooseDensityMaterial(m)) return false;
     int y = k / cols, x = k - y * cols;
-    if (y < rows - 1 && canDisplaceByLooseDensity(m, grid[k + cols])) return true;
-    if (y > 1 && canDisplaceByLooseDensity(grid[k - cols], m)) return true;
+    if (y < rows - 1 && canDisplaceByLooseDensity(m, L->grid[k + cols])) return true;
+    if (y > 1 && canDisplaceByLooseDensity(L->grid[k - cols], m)) return true;
     if (isLiquidMaterial(m)) {
       if (y > 1) {
-        if (x > 1 && isLiquidMaterial(grid[k - cols - 1]) && canDisplaceByLooseDensity(grid[k - cols - 1], m)) return true;
-        if (x < cols - 2 && isLiquidMaterial(grid[k - cols + 1]) && canDisplaceByLooseDensity(grid[k - cols + 1], m)) return true;
+        if (x > 1 && isLiquidMaterial(L->grid[k - cols - 1]) && canDisplaceByLooseDensity(L->grid[k - cols - 1], m)) return true;
+        if (x < cols - 2 && isLiquidMaterial(L->grid[k - cols + 1]) && canDisplaceByLooseDensity(L->grid[k - cols + 1], m)) return true;
       }
       if (y < rows - 1) {
-        if (x > 1 && isLiquidMaterial(grid[k + cols - 1]) && canDisplaceByLooseDensity(m, grid[k + cols - 1])) return true;
-        if (x < cols - 2 && isLiquidMaterial(grid[k + cols + 1]) && canDisplaceByLooseDensity(m, grid[k + cols + 1])) return true;
+        if (x > 1 && isLiquidMaterial(L->grid[k + cols - 1]) && canDisplaceByLooseDensity(m, L->grid[k + cols - 1])) return true;
+        if (x < cols - 2 && isLiquidMaterial(L->grid[k + cols + 1]) && canDisplaceByLooseDensity(m, L->grid[k + cols + 1])) return true;
       }
     }
     return false;
   }
   inline void writeNextIndex(int k, uint8_t m) {
-    if (next[k] == m) return;
-    next[k] = m;
-    if (grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
+    if (L->next[k] == m) return;
+    L->next[k] = m;
+    if (L->grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
   inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGasMaterial(d)) return true; return canDisplaceByLooseDensity(m, d); }
-  inline bool canEnterIndex(int k, uint8_t m) { return next[k] == EMPTY && (grid[k] == EMPTY || canDisplaceMaterial(m, grid[k])); }
+  inline bool canEnterIndex(int k, uint8_t m) { return L->next[k] == EMPTY && (L->grid[k] == EMPTY || canDisplaceMaterial(m, L->grid[k])); }
   inline bool canLiquidEnter(int x, int y, uint8_t m) { return x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), m); }
   inline bool supportsLiquid(uint8_t s, uint8_t m) { return s != EMPTY && s != m && !canDisplaceMaterial(m, s); }
   void moveMaterialInto(int fromK, int toK, uint8_t m) {
-    uint8_t displaced = grid[toK];
+    uint8_t displaced = L->grid[toK];
     writeNextIndex(toK, m);
-    vacatedStamp[fromK] = tick;
-    if (displaced != EMPTY && canDisplaceMaterial(m, displaced) && next[fromK] == EMPTY && vacatedStamp[toK] != tick) writeNextIndex(fromK, displaced);
+    L->vacatedStamp[fromK] = tick;
+    if (displaced != EMPTY && canDisplaceMaterial(m, displaced) && L->next[fromK] == EMPTY && L->vacatedStamp[toK] != tick) writeNextIndex(fromK, displaced);
   }
   inline void moveLiquidInto(int fromK, int x, int y, uint8_t m) { moveMaterialInto(fromK, I(x, y), m); }
   // Symmetric two-fluid density swap: the lighter liquid `m` at fromK rises to toK;
-  // the heavier liquid currently at toK sinks into fromK. Both writes go to next[] and
-  // stamp vacatedStamp so neither cell is re-consumed this tick (blocks the immediate
+  // the heavier liquid currently at toK sinks into fromK. Both writes go to L->next[] and
+  // stamp L->vacatedStamp so neither cell is re-consumed this tick (blocks the immediate
   // reverse swap = oscillation). Each swap strictly lowers gravitational PE, so a
   // two-fluid interface levels in finitely many swaps and then settles to inert.
   void moveDensitySwap(int fromK, int toK, uint8_t m) {
-    uint8_t heavier = grid[toK];
+    uint8_t heavier = L->grid[toK];
     writeNextIndex(toK, m);
     writeNextIndex(fromK, heavier);
-    vacatedStamp[fromK] = tick; vacatedStamp[toK] = tick;
+    L->vacatedStamp[fromK] = tick; L->vacatedStamp[toK] = tick;
   }
 
   static const int DIRS_LF[2];

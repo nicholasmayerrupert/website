@@ -408,8 +408,8 @@ void GLPresenter::glPresentWindow(int forceFull) {
   E.useLayer(&E.bg); glUploadWindow(glTexBg, x0, y0, x1, y1);
   E.perfUploadMs = emscripten_get_now() - tu;
 
-  E.useLayer(&E.fg); memset(E.dirtyRender, 0, (size_t)E.chunkCols * E.chunkRows); E.fg.dirtyRenderCount = 0;
-  E.useLayer(&E.bg); memset(E.dirtyRender, 0, (size_t)E.chunkCols * E.chunkRows); E.bg.dirtyRenderCount = 0;
+  E.useLayer(&E.fg); memset(E.L->dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows); E.fg.dirtyRenderCount = 0;
+  E.useLayer(&E.bg); memset(E.L->dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows); E.bg.dirtyRenderCount = 0;
   glLastCamCol = camCol; glLastCamRow = camRow;
   glLastWorldOffX = E.fg.worldOffsetX; glLastWorldOffY = E.fg.worldOffsetY;
   glLastSkyLight = (int)E.renderer.renderSkyLight;

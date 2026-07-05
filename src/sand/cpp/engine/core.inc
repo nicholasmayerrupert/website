@@ -17,41 +17,41 @@
   static const int LIQUID_FALL_CAP = 5;
   bool canLooseDensitySettleThisTick(uint8_t m) { float mob = MOBILITY[m]; return mob >= 1 || rand() < mob; }
   void settleLooseDensityInterface(int x, int y, int k) {
-    uint8_t m = grid[k];
-    if (!isLooseDensityMaterial(m) || next[k] != EMPTY) return;
+    uint8_t m = L->grid[k];
+    if (!isLooseDensityMaterial(m) || L->next[k] != EMPTY) return;
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
-    if (y + 1 < rows && canDisplaceByLooseDensity(m, grid[belowK]) && next[belowK] == EMPTY) { moveMaterialInto(k, belowK, m); return; }
+    if (y + 1 < rows && canDisplaceByLooseDensity(m, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue; int ik = belowK + dx; if (canDisplaceByLooseDensity(m, grid[ik]) && next[ik] == EMPTY) { moveMaterialInto(k, ik, m); return; } }
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue; int ik = belowK + dx; if (canDisplaceByLooseDensity(m, L->grid[ik]) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, m); return; } }
   }
   // Settle one POWDER cell. `self` is the actual powder material (SAND, DIRT,
   // SNOW, ...), so every new position keeps that material instead of becoming
   // SAND. The "packed" early-out checks for the SAME powder all around below.
   void settleSand(int x, int y, int k) {
-    if (next[k] != EMPTY) return;
-    uint8_t self = grid[k];
+    if (L->next[k] != EMPTY) return;
+    uint8_t self = L->grid[k];
     int belowK = k + cols;
-    if (y + 1 < rows && x > 0 && x < cols - 1 && grid[belowK] == self && grid[belowK - 1] == self && grid[belowK + 1] == self) { if (next[k] == EMPTY) next[k] = self; return; }
-    if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(belowK, self); return; }
-    if (y + 1 < rows && canDisplaceMaterial(self, grid[belowK]) && next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
+    if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
+    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(belowK, self); return; }
+    if (y + 1 < rows && canDisplaceMaterial(self, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
     int firstDx = rand() < 0.5 ? -1 : 1, secondDx = -firstDx;
     for (int i = 0; i < 2; i++) {
       int dx = i == 0 ? firstDx : secondDx; int nx = x + dx;
       if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
-      int ik = belowK + dx; uint8_t m = grid[ik];
-      if (m == EMPTY && next[ik] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(ik, self); return; }
-      if (canDisplaceMaterial(self, m) && next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
+      int ik = belowK + dx; uint8_t m = L->grid[ik];
+      if (m == EMPTY && L->next[ik] == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(ik, self); return; }
+      if (canDisplaceMaterial(self, m) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
     }
-    if (next[k] == EMPTY) writeNextIndex(k, self);
+    if (L->next[k] == EMPTY) writeNextIndex(k, self);
   }
   void settleLiquid(int x, int y, int k, uint8_t m) {
-    if (next[k] != EMPTY) return;
+    if (L->next[k] != EMPTY) return;
     int belowK = k + cols;
-    if (y + 1 < rows && x > 0 && x < cols - 1 && grid[k - 1] == m && grid[k + 1] == m) {
-      uint8_t below = grid[belowK], bl = grid[belowK - 1], br = grid[belowK + 1];
+    if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[k - 1] == m && L->grid[k + 1] == m) {
+      uint8_t below = L->grid[belowK], bl = L->grid[belowK - 1], br = L->grid[belowK + 1];
       if ((below == m && bl == m && br == m) || (supportsLiquid(below, m) && bl != EMPTY && !canDisplaceMaterial(m, bl) && br != EMPTY && !canDisplaceMaterial(m, br))) {
-        next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
+        L->next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
     // DENSITY RISE: a lighter liquid rises into a strictly-DENSER liquid directly
@@ -64,13 +64,13 @@
     // byte-identical. Runs before the side flow so buoyancy beats lateral spread.
     if (y > 1) {
       int aboveK = k - cols;
-      if (isLiquidMaterial(grid[aboveK]) && canDisplaceByLooseDensity(grid[aboveK], m) && next[aboveK] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, aboveK, m); return; }
+      if (isLiquidMaterial(L->grid[aboveK]) && canDisplaceByLooseDensity(L->grid[aboveK], m) && L->next[aboveK] == EMPTY && L->next[k] == EMPTY) { moveDensitySwap(k, aboveK, m); return; }
       int firstDx = ((x + y) & 1) ? 1 : -1;
-      for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquidMaterial(grid[uk]) && canDisplaceByLooseDensity(grid[uk], m) && next[uk] == EMPTY && next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
+      for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquidMaterial(L->grid[uk]) && canDisplaceByLooseDensity(L->grid[uk], m) && L->next[uk] == EMPTY && L->next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
     }
-    if (y + 1 < rows && grid[belowK] == EMPTY && next[belowK] == EMPTY) {
+    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) {
       // DENSITY-SCALED FALL: denser liquids drop more cells per tick. Walk straight
-      // down, stopping at the first cell that isn't free (free == both grid AND next
+      // down, stopping at the first cell that isn't free (free == both L->grid AND L->next
       // EMPTY, matching the single-step guard above and respecting the double buffer
       // so two cells can't claim the same destination), and move to the farthest free
       // cell. Only ever moves into EMPTY space strictly below, so a settled scene
@@ -82,27 +82,27 @@
       for (int s = 2; s <= maxFall; s++) {
         if (y + s >= rows) break;                       // bottom of buffer
         int nk = k + s * cols;
-        if (grid[nk] != EMPTY || next[nk] != EMPTY) break;
+        if (L->grid[nk] != EMPTY || L->next[nk] != EMPTY) break;
         dst = nk;
       }
-      vacatedStamp[k] = tick; writeNextIndex(dst, m);
+      L->vacatedStamp[k] = tick; writeNextIndex(dst, m);
       // A multi-cell jump moves the source >DIRTY_PAD_Y rows from the destination,
-      // so the vacated source/intermediate rows would fall outside next step's active
-      // band and prepareNextBuffer wouldn't blank their `next` slots — the double
+      // so the vacated source/intermediate rows would fall outside L->next step's active
+      // band and prepareNextBuffer wouldn't blank their `L->next` slots — the double
       // buffer then resurrects a stale value from 2 ticks ago as a ghost trail. Mark
       // the whole fall span dirty so those rows stay active and get blanked. (For a
       // single-cell fall dst==belowK and the existing pad already covers it.)
       if (dst != belowK) markDirtyRect(x, y, x, dst / cols);
       return;
     }
-    if (y + 1 < rows && canDisplaceMaterial(m, grid[belowK]) && next[belowK] == EMPTY) { moveLiquidInto(k, x, y + 1, m); return; }
+    if (y + 1 < rows && canDisplaceMaterial(m, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveLiquidInto(k, x, y + 1, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     for (int i = 0; i < 2; i++) {
       int dx = dirs[i]; int nx = x + dx, ny = y + 1;
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       int ik = I(nx, ny);
-      if (grid[ik] == EMPTY && next[ik] == EMPTY) { vacatedStamp[k] = tick; writeNextIndex(ik, m); return; }
-      if (canDisplaceMaterial(m, grid[ik]) && next[ik] == EMPTY) { moveLiquidInto(k, nx, ny, m); return; }
+      if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(ik, m); return; }
+      if (canDisplaceMaterial(m, L->grid[ik]) && L->next[ik] == EMPTY) { moveLiquidInto(k, nx, ny, m); return; }
     }
     int flow = 0, firstFlowDir = rand() < 0.5 ? 1 : -1;
     for (int dirIndex = 0; dirIndex < 2 && flow == 0; dirIndex++) {
@@ -118,12 +118,12 @@
     // material. This started as two-liquid leveling (water into oil); allowing powders
     // here lets pressured water/lava push light snow/sand aside, after which the normal
     // vertical density pass lifts the displaced powder above the denser liquid.
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int sk = k + dx; if (next[sk] == EMPTY && isLooseDensityMaterial(grid[sk]) && canDisplaceByLooseDensity(m, grid[sk])) { moveLiquidInto(k, nx, y, m); return; } }
-    if (y + 1 < rows && supportsLiquid(grid[belowK], m)) {
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int sk = k + dx; if (L->next[sk] == EMPTY && isLooseDensityMaterial(L->grid[sk]) && canDisplaceByLooseDensity(m, L->grid[sk])) { moveLiquidInto(k, nx, y, m); return; } }
+    if (y + 1 < rows && supportsLiquid(L->grid[belowK], m)) {
       int aboveK = k - cols;
-      bool hasAbove = (y > 1 && grid[aboveK] == m);
+      bool hasAbove = (y > 1 && L->grid[aboveK] == m);
       if (hasAbove) {
-        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int sideK = k + dx; if (x + dx <= 0 || x + dx >= cols - 1) continue; if (canEnterIndex(sideK, m) && supportsLiquid(grid[sideK + cols], m)) { moveMaterialInto(k, sideK, m); return; } }
+        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int sideK = k + dx; if (x + dx <= 0 || x + dx >= cols - 1) continue; if (canEnterIndex(sideK, m) && supportsLiquid(L->grid[sideK + cols], m)) { moveMaterialInto(k, sideK, m); return; } }
       }
       // Resting on support with no reachable lower opening (the flow scan above found
       // none) and no liquid stacked above. This cell cannot make downward progress, so
@@ -131,7 +131,7 @@
       // sideways across a flat floor just shuffles cells and churns the diff forever.
       // Go inert (re-wakes via dirty padding if a neighbour later opens a lower path).
       // PRESSURED cells (liquid above) keep the normal re-mark so columns still drain.
-      if (next[k] == EMPTY) { next[k] = m; if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) || adjacentInternalHole(k, m)) markCellIndex(k); }
+      if (L->next[k] == EMPTY) { L->next[k] = m; if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) || adjacentInternalHole(k, m)) markCellIndex(k); }
       return;
     }
     // Same-level sideways spread ONLY under pressure (liquid stacked directly
@@ -140,7 +140,7 @@
     // left/right forever. Pressured cells still equalize (and stay active);
     // free-surface cells go inert (re-wake via dirty padding on disturbance),
     // but keep the density-interface re-mark so liquids still separate by density.
-    bool pressured = (y > 1 && grid[k - cols] == m);
+    bool pressured = (y > 1 && L->grid[k - cols] == m);
     if (pressured) {
       // Equalize sideways ONLY toward a genuinely-lower surface: the target must be
       // open at this level AND have nothing of ours stacked directly above it. A gap
@@ -149,29 +149,29 @@
       // pinned at a ragged container bottom would otherwise shimmer left/right every
       // step forever (both flanking cells are pressured and swap the gap), never
       // settling — letting it rise to the free surface instead lets the body go inert.
-      for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (canLiquidEnter(nx, y, m) && !(grid[I(nx, y - 1)] == m)) { moveLiquidInto(k, nx, y, m); return; } }
+      for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (canLiquidEnter(nx, y, m) && !(L->grid[I(nx, y - 1)] == m)) { moveLiquidInto(k, nx, y, m); return; } }
       // Cannot usefully equalize: only stay active (re-mark) if a vertical fall can
       // still fill the gap beside us (liquid above the gap) — otherwise go inert so a
       // settled-but-imperfectly-packed body stops churning the per-step diff.
-      if (next[k] == EMPTY) {
-        next[k] = m;
+      if (L->next[k] == EMPTY) {
+        L->next[k] = m;
         bool fillableGap = false;
-        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (grid[I(nx, y)] == EMPTY && y > 1 && grid[I(nx, y - 1)] == m) { fillableGap = true; break; } }
+        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (L->grid[I(nx, y)] == EMPTY && y > 1 && L->grid[I(nx, y - 1)] == m) { fillableGap = true; break; } }
         if (fillableGap || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
       }
       return;
     }
-    if (next[k] == EMPTY) { next[k] = m; if (touchesUnstableLooseDensityInterface(k, m) || adjacentInternalHole(k, m)) markCellIndex(k); }
+    if (L->next[k] == EMPTY) { L->next[k] = m; if (touchesUnstableLooseDensityInterface(k, m) || adjacentInternalHole(k, m)) markCellIndex(k); }
   }
-  void settleLava(int x, int y, int k) { if (next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
+  void settleLava(int x, int y, int k) { if (L->next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
   void relaxLiquidGaps() {
     for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
       int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
       for (int x = start; x != end; x += stepX) {
-        int k = I(x, y); if (grid[k] != EMPTY) continue;
-        if (grid[I(x, y + 1)] == EMPTY) continue;
-        int aboveK = I(x, y - 1); uint8_t above = grid[aboveK];
+        int k = I(x, y); if (L->grid[k] != EMPTY) continue;
+        if (L->grid[I(x, y + 1)] == EMPTY) continue;
+        int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
         if (relaxesGaps(above)) { writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY); continue; }
         // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
         // always migrates the same way — toward the layer's edge, where it vanishes.
@@ -179,14 +179,14 @@
         // thus coalesces into a solid, flat layer and SETTLES, instead of the random
         // fill shuffling the holes around forever (perpetual churn).
         static const int FILL_DIRS[2] = { -1, 1 };
-        for (int i = 0; i < 2; i++) { int dx = FILL_DIRS[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = grid[sk]; if (!relaxesGaps(side)) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (grid[k] != EMPTY) break; }
+        for (int i = 0; i < 2; i++) { int dx = FILL_DIRS[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = L->grid[sk]; if (!relaxesGaps(side)) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (L->grid[k] != EMPTY) break; }
       }
     }
   }
   // Keep a wide free LIQUID-against-AIR surface flowing locally until it is nearly
   // level. The probe looks along a connected surface to see whether a side reaches a
   // column >=2px lower, but the actual move is only ONE adjacent sideways step into
-  // air. The next normal settle pass then lets that cell fall naturally. This avoids
+  // air. The L->next normal settle pass then lets that cell fall naturally. This avoids
   // both failure modes: a one-sided pile/ramp that goes inert too soon, and the old
   // non-local "flattening" jump that placed a cell directly at the distant low point.
   void levelLiquidSurfaces() {
@@ -197,12 +197,12 @@
       int lvl = y;
       for (int d = 1; d <= LIQUID_SURFACE_LOOKAHEAD; d++) {
         int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
-        uint8_t c = grid[I(cx, lvl)];
+        uint8_t c = L->grid[I(cx, lvl)];
         if (c == m) continue;                  // liquid at this level -> connected, surface >= lvl
         if (!surfacePassable(c, m)) break;     // wall / denser material at the level -> body ends
         int ny = lvl + 1;                      // air here -> this column is shorter; descend to its surface
-        while (ny < rows && surfacePassable(grid[I(cx, ny)], m)) ny++;
-        if (ny >= rows || grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
+        while (ny < rows && surfacePassable(L->grid[I(cx, ny)], m)) ny++;
+        if (ny >= rows || L->grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
         lvl = ny;
         if (lvl - y >= 2) return lvl - y;
       }
@@ -211,37 +211,37 @@
 
     for (int pass = 0; pass < LIQUID_SURFACE_FLOW_PASSES; pass++) {
       // Bottom-to-top plus stamping prevents same-tick cascades: a moved source or
-      // destination will not be consumed again until the next simulation tick.
+      // destination will not be consumed again until the L->next simulation tick.
       for (int y = rows - 2; y >= 1; y--) {
         int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
         bool ltr = ((y + pass + tick) & 1) == 0;
         int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
         for (int x = start; x != end; x += stepX) {
           int k = I(x, y);
-          uint8_t m = grid[k];
+          uint8_t m = L->grid[k];
           if (!isLiquidMaterial(m)) continue;
           if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
-          uint8_t above = grid[k - cols];
+          uint8_t above = L->grid[k - cols];
           if (above != EMPTY && !surfacePassable(above, m)) continue; // free air or lighter powder surface
-          if (grid[k + cols] == EMPTY) continue;     // falling cells are handled by the normal liquid settle pass
-          if (vacatedStamp[k] == tick || vacatedStamp[k + cols] == tick ||
-              vacatedStamp[k - 1] == tick || vacatedStamp[k + 1] == tick) continue;
+          if (L->grid[k + cols] == EMPTY) continue;     // falling cells are handled by the normal liquid settle pass
+          if (L->vacatedStamp[k] == tick || L->vacatedStamp[k + cols] == tick ||
+              L->vacatedStamp[k - 1] == tick || L->vacatedStamp[k + 1] == tick) continue;
 
           int leftK = k - 1, rightK = k + 1;
-          int leftDrop = (surfacePassable(grid[leftK], m) && vacatedStamp[leftK] != tick) ? lowerSurfaceDrop(x, y, m, -1) : 0;
-          int rightDrop = (surfacePassable(grid[rightK], m) && vacatedStamp[rightK] != tick) ? lowerSurfaceDrop(x, y, m, 1) : 0;
+          int leftDrop = (surfacePassable(L->grid[leftK], m) && L->vacatedStamp[leftK] != tick) ? lowerSurfaceDrop(x, y, m, -1) : 0;
+          int rightDrop = (surfacePassable(L->grid[rightK], m) && L->vacatedStamp[rightK] != tick) ? lowerSurfaceDrop(x, y, m, 1) : 0;
           if (leftDrop == 0 && rightDrop == 0) continue;
           int dir = 0;
           if (leftDrop > rightDrop) dir = -1;
           else if (rightDrop > leftDrop) dir = 1;
           else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
           int toK = k + dir;
-          if (!surfacePassable(grid[toK], m) || vacatedStamp[toK] == tick) continue;
-          uint8_t displaced = grid[toK];
+          if (!surfacePassable(L->grid[toK], m) || L->vacatedStamp[toK] == tick) continue;
+          uint8_t displaced = L->grid[toK];
           writeGridIndex(k, displaced);
           writeGridIndex(toK, m);
-          vacatedStamp[k] = tick;
-          vacatedStamp[toK] = tick;
+          L->vacatedStamp[k] = tick;
+          L->vacatedStamp[toK] = tick;
         }
       }
     }
@@ -253,7 +253,7 @@
       bool ltr = (y % 2) == 0; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
       for (int x = start; x != end; x += stepX) {
         if (((x + y) % 2) != parity) continue;
-        int k = I(x, y), belowK = k + cols; uint8_t upper = grid[k], lower = grid[belowK];
+        int k = I(x, y), belowK = k + cols; uint8_t upper = L->grid[k], lower = L->grid[belowK];
         if (canDisplaceByLooseDensity(upper, lower)) { writeGridIndex(belowK, upper); writeGridIndex(k, lower); }
       }
     }
@@ -262,8 +262,8 @@
   // `m` it is moving (not a hardcoded STEAM) so e.g. ACRID_SMOKE rises and
   // dissipates exactly like steam while keeping its own identity/colour.
   void riseSteam(int x, int y, int k, uint8_t m) {
-    if (next[k] != EMPTY) return;
-    if (vacatedStamp[k] == tick) { writeNextIndex(k, m); return; } // blast-shocked gas gets one visible frame before normal decay/motion
+    if (L->next[k] != EMPTY) return;
+    if (L->vacatedStamp[k] == tick) { writeNextIndex(k, m); return; } // blast-shocked gas gets one visible frame before normal decay/motion
     float decayP = STEAM_DECAY_P;
     if (m == ACRID_SMOKE) {
       decayP = ACRID_DECAY_P;
@@ -273,32 +273,32 @@
       // grounding reflood per step, so a trapped cloud is pure cost with no payoff.
       // Reads only (no extra RNG draw before the decay roll) so steam stays
       // byte-identical and non-acrid scenes are unaffected.
-      bool canVent = (y > 1 && grid[I(x, y - 1)] == EMPTY)
-                  || (x > 1 && grid[I(x - 1, y)] == EMPTY)
-                  || (x < cols - 1 && grid[I(x + 1, y)] == EMPTY)
-                  || (y > 1 && x > 1 && grid[I(x - 1, y - 1)] == EMPTY)
-                  || (y > 1 && x < cols - 1 && grid[I(x + 1, y - 1)] == EMPTY);
+      bool canVent = (y > 1 && L->grid[I(x, y - 1)] == EMPTY)
+                  || (x > 1 && L->grid[I(x - 1, y)] == EMPTY)
+                  || (x < cols - 1 && L->grid[I(x + 1, y)] == EMPTY)
+                  || (y > 1 && x > 1 && L->grid[I(x - 1, y - 1)] == EMPTY)
+                  || (y > 1 && x < cols - 1 && L->grid[I(x + 1, y - 1)] == EMPTY);
       if (!canVent) decayP = ACRID_TRAPPED_DECAY_P;
     }
     if (rand() < decayP || y <= 1) { markCellIndex(k); return; }
     int up = I(x, y - 1);
-    if (grid[up] == EMPTY && next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, m); return; }
+    if (L->grid[up] == EMPTY && L->next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (grid[ik] == EMPTY && next[ik] == EMPTY) { writeNextIndex(ik, m); return; } }
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeNextIndex(ik, m); return; } }
     if (rand() < 0.65) for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (emptyAt(x + dx, y)) { writeNextIndex(I(x + dx, y), m); return; } }
-    if (next[k] == EMPTY) writeNextIndex(k, m);
+    if (L->next[k] == EMPTY) writeNextIndex(k, m);
   }
   void riseFire(int x, int y, int k) {
-    if (next[k] != EMPTY) return;
-    if (vacatedStamp[k] == tick) { writeNextIndex(k, FIRE); return; } // keep explosion fire volume through the detonation step
+    if (L->next[k] != EMPTY) return;
+    if (L->vacatedStamp[k] == tick) { writeNextIndex(k, FIRE); return; } // keep explosion fire volume through the detonation step
     if (rand() < FIRE_DECAY_P || y <= 1) { markCellIndex(k); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    if (rand() < 0.36) { int up = I(x, y - 1); if (grid[up] == EMPTY && next[up] == EMPTY) { writeNextIndex(up, FIRE); return; } }
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = rand() < 0.55 ? y - 1 : y; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (grid[ik] == EMPTY && next[ik] == EMPTY) { writeNextIndex(ik, FIRE); return; } }
-    if (next[k] == EMPTY) writeNextIndex(k, FIRE);
+    if (rand() < 0.36) { int up = I(x, y - 1); if (L->grid[up] == EMPTY && L->next[up] == EMPTY) { writeNextIndex(up, FIRE); return; } }
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = rand() < 0.55 ? y - 1 : y; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeNextIndex(ik, FIRE); return; } }
+    if (L->next[k] == EMPTY) writeNextIndex(k, FIRE);
   }
   void drain(int xs, int xe, int y, float liquidP, float sandP) {
-    for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = grid[k]; float p = isLiquidMaterial(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndex(k, EMPTY); }
+    for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = L->grid[k]; float p = isLiquidMaterial(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndex(k, EMPTY); }
   }
   void applySideSinks() {
     if (!sinksEnabled || cols < 6) return;

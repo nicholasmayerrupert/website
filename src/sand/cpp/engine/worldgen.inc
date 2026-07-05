@@ -43,7 +43,7 @@
       int surf = surfAbsScratch[j + 1] - L->worldOffsetY;
       int slope = std::abs(surfAbsScratch[j + 2] - surfAbsScratch[j]);
       int biome = terrain.genBiomeAt(worldX); int soil = terrain.genSoilDepth(biome);
-      for (int y = rowStart; y < rowEnd; y++) grid[y * cols + lx] = terrain.genCellAt(worldX, surf, slope, biome, soil, y);
+      for (int y = rowStart; y < rowEnd; y++) L->grid[y * cols + lx] = terrain.genCellAt(worldX, surf, slope, biome, soil, y);
     }
   }
   // Trees (fg only) over already-generated terrain in the rect. Trees reach
@@ -51,7 +51,7 @@
   // trunks just outside it and canopies span band seams identically to one big call.
   void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (!L->isBackground) return;
-    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (grid[y * cols + lx] == EMPTY) grid[y * cols + lx] = m; };
+    auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (L->grid[y * cols + lx] == EMPTY) L->grid[y * cols + lx] = m; };
     const int TREE_REACH = 6;    // >= max canopy horizontal reach
     const int TREE_MAX_UP = 30;  // >= max trunk height + canopy upward reach
     for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
@@ -96,7 +96,7 @@
     auto put = [&](int wx, int wy, uint8_t m) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
-      grid[y * cols + lx] = m;                         // structures OVERWRITE terrain
+      L->grid[y * cols + lx] = m;                         // structures OVERWRITE terrain
     };
     uint32_t sseed = L->worldSeed ^ 0x57121314u;       // fg-only struct seed (shared is fine)
     int wx0 = L->worldOffsetX + colStart - STRUCT_REACH, wx1 = L->worldOffsetX + colEnd + STRUCT_REACH;
@@ -241,8 +241,8 @@
     int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
     if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
     int k = y * cols + lx;
-    if (requireEmpty && grid[k] != EMPTY) return;
-    grid[k] = m;
+    if (requireEmpty && L->grid[k] != EMPTY) return;
+    L->grid[k] = m;
   }
   // Foreground cave biomes. The terrain pass decides the cave shape; this pass
   // attaches biome detail to floors, ceilings and walls so features blend into the
@@ -482,25 +482,25 @@
     }
     for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
       int k = y * cols + x;
-      if (grid[k] != SALT && !isDissolvable(grid[k])) continue;
-      bool touchesAcid = (x > 0 && grid[k - 1] == ACID) || (x + 1 < cols && grid[k + 1] == ACID)
-                       || (y > 0 && grid[k - cols] == ACID) || (y + 1 < rows && grid[k + cols] == ACID);
-      if (touchesAcid) grid[k] = CRYSTAL;
+      if (L->grid[k] != SALT && !isDissolvable(L->grid[k])) continue;
+      bool touchesAcid = (x > 0 && L->grid[k - 1] == ACID) || (x + 1 < cols && L->grid[k + 1] == ACID)
+                       || (y > 0 && L->grid[k - cols] == ACID) || (y + 1 < rows && L->grid[k + cols] == ACID);
+      if (touchesAcid) L->grid[k] = CRYSTAL;
     }
     for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
       int k = y * cols + x;
-      if (grid[k] != ACID) continue;
-      if (y + 1 < rows && grid[k + cols] != ACID) grid[k + cols] = CRYSTAL;
-      if (x > 0 && grid[k - 1] != ACID && grid[k - 1] != EMPTY) grid[k - 1] = CRYSTAL;
-      if (x + 1 < cols && grid[k + 1] != ACID && grid[k + 1] != EMPTY) grid[k + 1] = CRYSTAL;
+      if (L->grid[k] != ACID) continue;
+      if (y + 1 < rows && L->grid[k + cols] != ACID) L->grid[k + cols] = CRYSTAL;
+      if (x > 0 && L->grid[k - 1] != ACID && L->grid[k - 1] != EMPTY) L->grid[k - 1] = CRYSTAL;
+      if (x + 1 < cols && L->grid[k + 1] != ACID && L->grid[k + 1] != EMPTY) L->grid[k + 1] = CRYSTAL;
     }
   }
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
-    for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; next[k] = grid[k]; }
+    for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; L->next[k] = L->grid[k]; }
   }
   // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd):
-  // terrain, then trees, then mirror into `next`. (Same order/output as before the
-  // split — terrain first, trees second, next-copy last.)
+  // terrain, then trees, then mirror into `L->next`. (Same order/output as before the
+  // split — terrain first, trees second, L->next-copy last.)
   void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
     fillStructures(colStart, colEnd, rowStart, rowEnd); // overwrite terrain before cave features / trees overlay
@@ -546,7 +546,7 @@
     if (dy > 0) { memmove(arr, arr + band, rest * 4); for (size_t i = rest; i < n; i++) arr[i] = fill; }
     else { memmove(arr + band, arr, rest * 4); for (size_t i = 0; i < band; i++) arr[i] = fill; }
   }
-  // Re-index every component after the grid slid by (dx,dy). One axis at a time:
+  // Re-index every component after the L->grid slid by (dx,dy). One axis at a time:
   // each cell's new (col,row) is (x-dx, y-dy); cells that slid off the buffer drop.
   void translateComponents(std::vector<Comp>& list, int dx, int dy) {
     size_t w = 0;
@@ -578,7 +578,7 @@
         int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
         auto& buf = L->tileStore[tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT)];
         if ((int)buf.size() != CHUNK_SIZE * CHUNK_SIZE) buf.resize((size_t)CHUNK_SIZE * CHUNK_SIZE);
-        for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, grid + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+        for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, L->grid + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
       }
   }
   bool csTilesAllPresent(int bx0, int by0, int w, int h) { // entering band, NEW offset
@@ -598,7 +598,7 @@
         auto it = L->tileStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT));
         if (it == L->tileStore.end()) continue;
         const uint8_t* buf = it->second.data();
-        for (int r = 0; r < CHUNK_SIZE; r++) { size_t d = (size_t)(ty + r) * cols + tx; memcpy(grid + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); memcpy(next + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); }
+        for (int r = 0; r < CHUNK_SIZE; r++) { size_t d = (size_t)(ty + r) * cols + tx; memcpy(L->grid + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); memcpy(L->next + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); }
       }
   }
   void csSaveBodiesLeaving(int bx0, int by0, int w, int h) { // CURRENT offset
@@ -655,7 +655,7 @@
       }
     return true;
   }
-  // Slice the prefetched band out of the scratch grid and store any tile not already
+  // Slice the prefetched band out of the scratch L->grid and store any tile not already
   // present (never clobber a saved/edited tile). Keyed by FUTURE absolute coords so
   // the shift's csLoadTiles (which uses the post-shift offset) finds them.
   void pfStoreTiles(Layer* Lx, int futOffX, int futOffY) {
@@ -669,14 +669,14 @@
         for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, pfGrid.data() + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
       }
   }
-  // Run one terrain slice for layer Lx into the scratch grid at the future offset.
-  // We retarget only L + grid + Lx's offset (NOT useLayer) and restore them: terrain
-  // gen reads L->* + grid + cols/rows only, never the other per-cell mirrors. Returns
+  // Run one terrain slice for layer Lx into the pfGrid scratch at the future offset.
+  // We retarget only L + L->grid + Lx's offset (NOT useLayer) and restore them: terrain
+  // gen reads L->* + L->grid + cols/rows only, never the other per-cell mirrors. Returns
   // true once the whole band's terrain is generated.
   bool pfTerrainStep(Layer* Lx, int futOffX, int futOffY) {
-    Layer* sL = L; uint8_t* sGrid = grid;
+    Layer* sL = L; uint8_t* sGrid = Lx->grid;
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
-    L = Lx; grid = pfGrid.data();
+    L = Lx; Lx->grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
     bool done;
     if (pfDx) {
@@ -689,14 +689,14 @@
       fillTerrain(0, cols, r0, r1); pfCursor += r1 - r0; done = pfCursor >= pfEh;
     }
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
-    grid = sGrid; L = sL;
+    Lx->grid = sGrid; L = sL;
     return done;
   }
   // Trees over the whole band (fg only), then slice the band into the tileStore.
   void pfFinalizeLayer(Layer* Lx, int futOffX, int futOffY) {
-    Layer* sL = L; uint8_t* sGrid = grid;
+    Layer* sL = L; uint8_t* sGrid = Lx->grid;
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
-    L = Lx; grid = pfGrid.data();
+    L = Lx; Lx->grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
     // Structures / cave features BEFORE trees and BEFORE pfStoreTiles, mirroring
     // fillRect's order, so a prefetched tile is byte-identical to the synchronous
@@ -705,7 +705,7 @@
     fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
-    grid = sGrid; L = sL;
+    Lx->grid = sGrid; L = sL;
     pfStoreTiles(Lx, futOffX, futOffY);
   }
   void pfStartTarget(int dx, int dy) {
@@ -778,7 +778,7 @@
       for (auto& it : itemsys.items) { it.px -= dx; it.py -= dy; if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it); }
       itemsys.items.swap(keep);
     }
-    remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the grid shift)
+    remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the L->grid shift)
     remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide
     useLayer(&fg); clearAllMineDamage();
     useLayer(&bg); clearAllMineDamage();
@@ -797,7 +797,7 @@
     // 1) clear body rasters so no body ghost is saved/memmoved (bodies persist via
     //    bodyStore + translate below). body-material invariant: body cells hold their
     //    real material now, so clear by isBodyCell, not by == RIGID.
-    for (int k : L->bodyCells) { if (isBodyCell(k)) { grid[k] = EMPTY; next[k] = EMPTY; } bodyOwner[k] = -1; }
+    for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
     L->bodyCells.clear();
     L->pendingDetonations.clear(); // lit-fuse cell indices are buffer-local; drop them on a shift (a rare lost fuse)
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
@@ -806,15 +806,15 @@
     // 3) slide the buffers + dirty marks.
     double _t = emscripten_get_now();
     if (dx) {
-      shiftRowMajorU8(grid, dx, EMPTY); shiftRowMajorU8(next, dx, EMPTY); shiftRowMajorI32(bodyOwner, dx, -1);
-      for (int y = 0; y < rows; y++) { if (rowMarkMax[y] < rowMarkMin[y]) continue; int mn = rowMarkMin[y] - dx, mx = rowMarkMax[y] - dx; if (mx < 0 || mn > cols - 1) { rowMarkMin[y] = cols; rowMarkMax[y] = -1; continue; } rowMarkMin[y] = mn < 0 ? 0 : mn; rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx; }
+      shiftRowMajorU8(L->grid, dx, EMPTY); shiftRowMajorU8(L->next, dx, EMPTY); shiftRowMajorI32(L->bodyOwner.data(), dx, -1);
+      for (int y = 0; y < rows; y++) { if (L->rowMarkMax[y] < L->rowMarkMin[y]) continue; int mn = L->rowMarkMin[y] - dx, mx = L->rowMarkMax[y] - dx; if (mx < 0 || mn > cols - 1) { L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1; continue; } L->rowMarkMin[y] = mn < 0 ? 0 : mn; L->rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx; }
     } else {
-      shiftBufV(grid, dy, EMPTY); shiftBufV(next, dy, EMPTY); shiftBufVI32(bodyOwner, dy, -1);
-      if (dy > 0) for (int y = 0; y < rows; y++) { int sy = y + dy; rowMarkMin[y] = sy < rows ? rowMarkMin[sy] : cols; rowMarkMax[y] = sy < rows ? rowMarkMax[sy] : -1; }
-      else for (int y = rows - 1; y >= 0; y--) { int sy = y + dy; rowMarkMin[y] = sy >= 0 ? rowMarkMin[sy] : cols; rowMarkMax[y] = sy >= 0 ? rowMarkMax[sy] : -1; }
+      shiftBufV(L->grid, dy, EMPTY); shiftBufV(L->next, dy, EMPTY); shiftBufVI32(L->bodyOwner.data(), dy, -1);
+      if (dy > 0) for (int y = 0; y < rows; y++) { int sy = y + dy; L->rowMarkMin[y] = sy < rows ? L->rowMarkMin[sy] : cols; L->rowMarkMax[y] = sy < rows ? L->rowMarkMax[sy] : -1; }
+      else for (int y = rows - 1; y >= 0; y--) { int sy = y + dy; L->rowMarkMin[y] = sy >= 0 ? L->rowMarkMin[sy] : cols; L->rowMarkMax[y] = sy >= 0 ? L->rowMarkMax[sy] : -1; }
     }
-    std::fill(compOccStamp, compOccStamp + (size_t)cols * rows, -1);
-    std::fill(vacatedStamp, vacatedStamp + (size_t)cols * rows, -1);
+    std::fill(L->compOccStamp.begin(), L->compOccStamp.end(), -1);
+    std::fill(L->vacatedStamp.begin(), L->vacatedStamp.end(), -1);
     perfShiftBuffers = emscripten_get_now() - _t;
     // 4) translate staying bodies; drop any fully off the buffer.
     { std::vector<Body*> keep; for (Body* b : L->bodies) { b->px -= dx; b->py -= dy; if (b->px > -b->maxR && b->px < cols + b->maxR && b->py > -b->maxR && b->py < rows + b->maxR) keep.push_back(b); else delete b; } L->bodies = std::move(keep); }
@@ -828,8 +828,8 @@
     csRestoreBodies(ex0, ey0, ew, eh);
     perfShiftFill = emscripten_get_now() - _t;
     // 6) mark the entering band active so it simulates.
-    if (dx) for (int y = 0; y < rows; y++) { if (ex0 < rowMarkMin[y]) rowMarkMin[y] = ex0; if (ex0 + s - 1 > rowMarkMax[y]) rowMarkMax[y] = ex0 + s - 1; }
-    else for (int y = ey0; y < ey0 + s; y++) { rowMarkMin[y] = 0; rowMarkMax[y] = cols - 1; }
+    if (dx) for (int y = 0; y < rows; y++) { if (ex0 < L->rowMarkMin[y]) L->rowMarkMin[y] = ex0; if (ex0 + s - 1 > L->rowMarkMax[y]) L->rowMarkMax[y] = ex0 + s - 1; }
+    else for (int y = ey0; y < ey0 + s; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; }
     // 7) re-index components, register the entering band.
     _t = emscripten_get_now();
     translateComponents(L->stoneComponents, dx, dy);

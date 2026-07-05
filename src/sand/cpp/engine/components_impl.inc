@@ -6,12 +6,14 @@
 // only through component membership, and unregistered component cells are
 // erased during cleanup. Tool placement, worldgen, growth, and world shifting
 // should route component writes through this subsystem and then sync/register.
-// Rebuild E.cellComp[] (cell -> component index), the cgComps index, and per-
+// Rebuild E.L->cellComp[] (cell -> component index), the cgComps index, and per-
 // component mean density. Shared by the full reflood (computeGrounded) and the
 // incremental refresh (incrementalGroundingRefresh). Resets each Comp's grounded
-// flag to false (the flood / refresh sets it back). Does NOT touch E.groundedCell[].
+// flag to false (the flood / refresh sets it back). Does NOT touch E.L->groundedCell[].
 // O(total component cells).
 void ComponentSystem::indexComponents() {
+  Layer* const lay = E.L;
+  int32_t* const cc = lay->cellComp.data();
   cgComps.clear();
   cgCompDensity.clear();
   auto idx = [&](std::vector<Comp>& list) {
@@ -20,21 +22,28 @@ void ComponentSystem::indexComponents() {
       int id = (int)cgComps.size();
       cgComps.push_back(&c);
       double sum = 0;
-      for (int k : c.cells) { E.cellComp[k] = id; sum += DENSITY[E.grid[k]]; }
+      for (int k : c.cells) { cc[k] = id; sum += DENSITY[lay->grid[k]]; }
       cgCompDensity.push_back(c.cells.empty() ? 0 : sum / c.cells.size());
     }
   };
-  idx(E.L->stoneComponents); idx(E.L->plantComponents); idx(E.L->iceComponents);
+  idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
 }
 void ComponentSystem::computeGrounded() {
-  std::fill(E.groundedCell, E.groundedCell + (size_t)E.cols * E.rows, (uint8_t)0);
-  std::fill(E.cellComp, E.cellComp + (size_t)E.cols * E.rows, -1);
+  // Hot flood: hoist the per-cell buffers into TRUE locals (register-bound;
+  // uint8_t stores can't alias them, unlike the old Engine-member mirrors).
+  Layer* const lay = E.L;
+  const uint8_t* const g = lay->grid;
+  uint8_t* const grounded = lay->groundedCell.data();
+  int32_t* const cc = lay->cellComp.data();
+  int32_t* const gstack = lay->groundStack.data();
+  std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
+  std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
   indexComponents();
   bool sawPowder = false;
   auto canGroundAbove = [&](int below, int above) {
-    uint8_t upper = E.grid[above];
+    uint8_t upper = g[above];
     if (!E.isBearingMaterial(upper)) return false;
-    uint8_t lower = E.grid[below];
+    uint8_t lower = g[below];
     // Powders support other bearing loose cells and can settle rigid solids, but
     // they never push a rigid solid upward. Rigid-on-powder is handled by
     // moveRigidAssemblies with one-way granular support/displacement, not by
@@ -50,42 +59,42 @@ void ComponentSystem::computeGrounded() {
   // already knows x: the seeds iterate x, and a propagation target's column is
   // derived from its parent (the cell above shares x; an 8-neighbour is nx).
   auto groundCellAt = [&](int k, int x) {
-    if (E.groundedCell[k]) return;
-    E.groundedCell[k] = 1;
-    int id = E.cellComp[k];
+    if (grounded[k]) return;
+    grounded[k] = 1;
+    int id = cc[k];
     if (id >= 0) cgComps[id]->grounded = true;
-    gsx[sp] = x; E.groundStack[sp++] = k;
+    gsx[sp] = x; gstack[sp++] = k;
   };
   int floorBase = (E.rows - 1) * E.cols;
-  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isBearingMaterial(E.grid[k])) groundCellAt(k, x); }
+  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isBearingMaterial(g[k])) groundCellAt(k, x); }
   // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
   // UNLOADED world that may itself be grounded. A rigid cell touching such an edge is
   // assumed supported, so a structure whose real floor-contact has streamed off the
   // buffer does not spuriously fall (it reconnects when the region streams back in).
-  if (E.L->infinite) {
+  if (lay->infinite) {
     for (int y = 1; y < E.rows; y++) {
-      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(E.grid[kl])) groundCellAt(kl, 1);
-      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(E.grid[kr])) groundCellAt(kr, E.cols - 2);
+      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl])) groundCellAt(kl, 1);
+      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr])) groundCellAt(kr, E.cols - 2);
     }
     int topBase = E.cols; // row y = 1
-    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(E.grid[k])) groundCellAt(k, x); }
+    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k])) groundCellAt(k, x); }
   }
   for (int y = E.rows - 2; y > 0; y--) {
     int rb = y * E.cols;
     for (int x = 1; x < E.cols - 1; x++) {
       int k = rb + x;
-      if (E.isLooseSolidMaterial(E.grid[k])) {
+      if (E.isLooseSolidMaterial(g[k])) {
         sawPowder = true;
-        if (E.isLiquidMaterial(E.grid[k + E.cols]) && DENSITY[E.grid[k + E.cols]] >= DENSITY[E.grid[k]]) groundCellAt(k, x);
+        if (E.isLiquidMaterial(g[k + E.cols]) && DENSITY[g[k + E.cols]] >= DENSITY[g[k]]) groundCellAt(k, x);
       }
     }
   }
   int gridLen = E.cols * E.rows;
   while (sp > 0) {
-    --sp; int k = E.groundStack[sp], kx = gsx[sp];
+    --sp; int k = gstack[sp], kx = gsx[sp];
     int above = k - E.cols;
-    if (above >= 0 && !E.groundedCell[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
-    if (E.isRigidMaterialClass(E.grid[k])) {
+    if (above >= 0 && !grounded[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
+    if (E.isRigidMaterialClass(g[k])) {
       // Neighbour-row validity ny in [1, E.rows-1] <=> (k + oy*E.cols) in [E.cols, gridLen):
       // a division-free restatement of the original `ny<=0 || ny>=E.rows` test.
       for (int oy = -1; oy <= 1; oy++) {
@@ -95,7 +104,7 @@ void ComponentSystem::computeGrounded() {
           if (!ox && !oy) continue;
           int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
           int nk = rb + ox;
-          if (!E.groundedCell[nk] && E.isRigidMaterialClass(E.grid[nk])) groundCellAt(nk, nx);
+          if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundCellAt(nk, nx);
         }
       }
     }
@@ -105,23 +114,23 @@ void ComponentSystem::computeGrounded() {
   // liquid beneath it, and liquids move without routing through the component
   // hooks that set groundDirty, so we can't safely skip the flood with powder
   // around. Powder-free scenes (e.g. acid eating stone) go clean and can skip.
-  E.L->groundSawPowder = sawPowder;
-  E.L->groundDirty = sawPowder;
+  lay->groundSawPowder = sawPowder;
+  lay->groundDirty = sawPowder;
 }
 
 // Incremental grounding for the common single-layer, powder-free case: the
-// expensive part of computeGrounded is the flood; everything else (E.cellComp +
+// expensive part of computeGrounded is the flood; everything else (lay->cellComp +
 // per-component density + grounded flags) is a cheap O(stone) linear pass. When
 // no removal disconnected anything (Layer::groundDirty stayed false), the cached
-// E.groundedCell[] is still the true grounded set (removed cells were patched to 0
+// grounded[] is still the true grounded set (removed cells were patched to 0
 // at the dissolve site), so we skip the flood entirely and only rebuild the
 // cheap bookkeeping, deriving each component's grounded flag from the cache.
-// Produces a byte-identical E.groundedCell[]/E.cellComp[] to a full reflood (verified).
+// Produces a byte-identical grounded[]/cc[] to a full reflood (verified).
 void ComponentSystem::incrementalGroundingRefresh() {
-  std::fill(E.cellComp, E.cellComp + (size_t)E.cols * E.rows, -1);
-  indexComponents();                       // rebuilds E.cellComp + cgCompDensity, resets grounded=false
+  std::fill(E.L->cellComp.begin(), E.L->cellComp.end(), -1);
+  indexComponents();                       // rebuilds E.L->cellComp + cgCompDensity, resets grounded=false
   for (Comp* c : cgComps) {                // a connected component is grounded iff ANY of its cells is
-    for (int k : c->cells) if (E.groundedCell[k]) { c->grounded = true; break; }
+    for (int k : c->cells) if (E.L->groundedCell[k]) { c->grounded = true; break; }
   }
 }
 
@@ -136,7 +145,7 @@ void ComponentSystem::ensureGroundedSingleLayer() {
   // no structural change (groundDirty), and no acid fast-path removal
   // (groundContentDirty). Every rigid mutation EITHER sets groundDirty or is the
   // acid fast-path removal (which sets groundContentDirty), so when all three are
-  // clear the cached E.cellComp[]/E.groundedCell[]/comp.grounded are byte-identical to a
+  // clear the cached E.L->cellComp[]/E.L->groundedCell[]/comp.grounded are byte-identical to a
   // fresh incremental refresh — re-running it (an O(all rigid cells) pass) is pure
   // waste. This is what keeps a big INERT rigid mass cheap: a resting acid pool held
   // in an ice tub, say, while acid bores stone elsewhere. The boring keeps the LAYER
@@ -149,11 +158,11 @@ void ComponentSystem::ensureGroundedSingleLayer() {
     return;
   }
   if (full) computeGrounded(); else incrementalGroundingRefresh();
-  gvGrounded.assign(E.groundedCell, E.groundedCell + (size_t)E.cols * E.rows);
-  gvCellComp.assign(E.cellComp, E.cellComp + (size_t)E.cols * E.rows);
+  gvGrounded.assign(E.L->groundedCell.begin(), E.L->groundedCell.end());
+  gvCellComp.assign(E.L->cellComp.begin(), E.L->cellComp.end());
   computeGrounded(); // the trusted reference; leaves the live arrays correct regardless
   for (size_t i = 0, n = (size_t)E.cols * E.rows; i < n; i++) {
-    if (gvGrounded[i] != E.groundedCell[i] || gvCellComp[i] != E.cellComp[i]) { groundMismatches++; break; }
+    if (gvGrounded[i] != E.L->groundedCell[i] || gvCellComp[i] != E.L->cellComp[i]) { groundMismatches++; break; }
   }
 }
 
@@ -169,7 +178,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
   // Early-exit means a genuine reconnection finds all boundary cells quickly, so the
   // cap only bounds the wasted work of a check that is going to FAIL (a real cut):
   // keep it modest so a failing check costs far less than the reflood it precedes.
-  int* q = E.groundStack; const int cap = 8000;
+  int* q = E.L->groundStack.data(); const int cap = 8000;
   int qh = 0, qt = 0;
   int need = (int)boundary.size(), found = 1; // boundary[0] is the BFS seed
   E.L->seenStamp[boundary[0]] = vis; q[qt++] = boundary[0];
@@ -183,7 +192,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
       int nk = ny * E.cols + nx;
       int32_t s = E.L->seenStamp[nk];
       if (s == vis || s == removedGen) continue;
-      if (!E.isRigidMaterialClass(E.grid[nk])) continue;
+      if (!E.isRigidMaterialClass(E.L->grid[nk])) continue;
       if (s == inN && ++found == need) return true; // all boundary cells reconnected -> not a cut (early out)
       E.L->seenStamp[nk] = vis; q[qt++] = nk;
     }
@@ -198,7 +207,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
 // clear of the edge/floor seed margin, (b) free of powder in its neighbourhood, and
 // (c) such that every surviving rigid neighbour of the blob reconnects to the others
 // without the blob. Then removing it disconnects nothing and the only grounding
-// change is the removed cells themselves. Does NOT patch E.groundedCell -- the caller
+// change is the removed cells themselves. Does NOT patch E.L->groundedCell -- the caller
 // (removalsKeepGroundingValid) patches once every component of the batch is cleared,
 // so a later failing component still leaves the cache untouched for the reflood.
 bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
@@ -225,7 +234,7 @@ bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
     for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
       if (!ox && !oy) continue;
       int nk = (ry + oy) * E.cols + (rx + ox);
-      uint8_t m = E.grid[nk];
+      uint8_t m = E.L->grid[nk];
       if (E.isLooseSolidMaterial(m)) { gbPowder++; return false; }
       if (E.isRigidMaterialClass(m) && E.L->seenStamp[nk] != gen && E.L->seenStamp[nk] != inN) { E.L->seenStamp[nk] = inN; cgBlobN.push_back(nk); }
     }
@@ -250,7 +259,7 @@ bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
 // locally around its own component using surviving material; disjoint components never
 // share that reroute. This lets a wide erosion front (e.g. a broad acid pool) split
 // into many small blobs that each fast-path, instead of the whole batch bailing on its
-// overall span. E.groundedCell stays a pure function of the grid -- verified byte-for-byte
+// overall span. E.L->groundedCell stays a pure function of the grid -- verified byte-for-byte
 // against a full reflood every step under groundVerify (see the grounding test).
 bool ComponentSystem::removalsKeepGroundingValid(const std::vector<int>& removed) {
   if (removed.empty()) return true;
@@ -264,20 +273,20 @@ bool ComponentSystem::removalsKeepGroundingValid(const std::vector<int>& removed
   for (int seed : removed) {
     if (E.L->seenStamp[seed] != present) continue; // already pulled into an earlier component
     cgRemovedComp.clear();
-    int qt = 0; E.groundStack[qt++] = seed; E.L->seenStamp[seed] = taken;
+    int qt = 0; E.L->groundStack[qt++] = seed; E.L->seenStamp[seed] = taken;
     for (int qh = 0; qh < qt; qh++) {
-      int cur = E.groundStack[qh]; cgRemovedComp.push_back(cur);
+      int cur = E.L->groundStack[qh]; cgRemovedComp.push_back(cur);
       int cy = cur / E.cols, cx = cur - cy * E.cols;
       for (int oy = -1; oy <= 1; oy++) { int ny = cy + oy; if (ny < 0 || ny >= E.rows) continue;
         for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = cx + ox; if (nx < 0 || nx >= E.cols) continue;
           int nk = ny * E.cols + nx;
-          if (E.L->seenStamp[nk] == present) { E.L->seenStamp[nk] = taken; E.groundStack[qt++] = nk; }
+          if (E.L->seenStamp[nk] == present) { E.L->seenStamp[nk] = taken; E.L->groundStack[qt++] = nk; }
         }
       }
     }
     if (!blobKeepsGroundingValid(cgRemovedComp)) return false; // a real cut/edge/powder/span -> reflood
   }
-  for (int k : removed) E.groundedCell[k] = 0; // every component safe: only the removed cells lose grounding
+  for (int k : removed) E.L->groundedCell[k] = 0; // every component safe: only the removed cells lose grounding
   return true;
 }
 
@@ -345,8 +354,8 @@ void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::ve
 // fast-path removal (groundContentDirty) AND a valid cache. Because computeGrounded
 // ends with groundDirty = sawPowder, a layer holding powder ALWAYS refloods; only a
 // powder-free, edit-free layer (the dry stone background during a pan) reuses. The
-// reused E.groundedCell/comp.grounded are byte-identical to a fresh flood (E.groundedCell
-// is a pure function of the grid; E.cellComp is written ONLY by grounding so it stays
+// reused E.L->groundedCell/comp.grounded are byte-identical to a fresh flood (E.L->groundedCell
+// is a pure function of the grid; E.L->cellComp is written ONLY by grounding so it stays
 // valid untouched between passes). This halves computeGroundedBoth's cost in the
 // common two-layer pan case (the bg flood was ~half the joint-grounding time).
 void ComponentSystem::groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache, bool& baseValid, std::vector<uint8_t>& gbCache) {
@@ -451,12 +460,16 @@ void ComponentSystem::computeGroundedBoth() {
   for (int i = 0; i < nb; i++) bgArea[i] = (int)compById(E.bg, i)->cells.size();
 
   std::unordered_map<int64_t, std::vector<int>> pairCells;
+  const int32_t* const bgCC = E.bg.cellComp.data();
+  const uint8_t* const bgG = E.bg.grid;
+  const int32_t* const fgCC = E.fg.cellComp.data();
+  const uint8_t* const fgG = E.fg.grid;
   for (int fi = 0; fi < nf; fi++) {
     Comp* fc = compById(E.fg, fi);
     if (fc->grounded) continue;
     for (int k : fc->cells) {
-      int bi = E.bg.cellComp[k];
-      if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(E.bg.grid[k])) continue;
+      int bi = bgCC[k];
+      if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(bgG[k])) continue;
       int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
       pairCells[key].push_back(k);
     }
@@ -465,8 +478,8 @@ void ComponentSystem::computeGroundedBoth() {
     Comp* bc = compById(E.bg, bi);
     if (bc->grounded) continue;
     for (int k : bc->cells) {
-      int fi = E.fg.cellComp[k];
-      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(E.fg.grid[k]) || !compById(E.fg, fi)->grounded) continue;
+      int fi = fgCC[k];
+      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k]) || !compById(E.fg, fi)->grounded) continue;
       int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
       pairCells[key].push_back(k);
     }
@@ -551,7 +564,7 @@ void ComponentSystem::computeGroundedBoth() {
   E.useLayer(&E.fg);
 }
 
-// Map a E.cellComp id (assigned by computeGrounded in stone|plant|ice order) back
+// Map a E.L->cellComp id (assigned by computeGrounded in stone|plant|ice order) back
 // to its Comp* in the SAME layer.
 Comp* ComponentSystem::compById(Layer& lay, int id) {
   size_t ns = lay.stoneComponents.size();
@@ -731,7 +744,7 @@ void ComponentSystem::moveRigidAssemblies() {
   // floods grounded-ness through rigid contact, so an ungrounded component is
   // never 8-connected to a grounded one. So we process only ungrounded
   // components here, making the whole pass O(ungrounded cells) instead of
-  // O(all stone) every step. `E.cellComp` (from computeGrounded) holds GLOBAL
+  // O(all stone) every step. `E.L->cellComp` (from computeGrounded) holds GLOBAL
   // comp indices in stone|plant|ice order; localOf maps those to our filtered
   // ungrounded `all` array (or -1 for grounded/none).
   int totalComps = (int)(E.L->stoneComponents.size() + E.L->plantComponents.size() + E.L->iceComponents.size());
@@ -756,7 +769,7 @@ void ComponentSystem::moveRigidAssemblies() {
   std::vector<uint8_t> anchored(n, 0);
   for (int i = 0; i < n; i++) for (int k : all[i]->cells) {
     int y = k / E.cols, x = k - y * E.cols;
-    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows) continue; int gj = E.cellComp[ny * E.cols + nx]; if (gj >= 0) { int j = localOf[gj]; if (j >= 0) { ufUnite(parent, i, j); } else { anchored[i] = 1; } } }
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows) continue; int gj = E.L->cellComp[ny * E.cols + nx]; if (gj >= 0) { int j = localOf[gj]; if (j >= 0) { ufUnite(parent, i, j); } else { anchored[i] = 1; } } }
   }
   struct Group { std::vector<int> comps; bool grounded = false; int maxY = 0; };
   std::unordered_map<int, Group> groups;
@@ -767,7 +780,7 @@ void ComponentSystem::moveRigidAssemblies() {
 
   // Read the live grid for stone-group and plant comps so a falling component
   // keeps its real material (ore stays ore, not STONE). Ice comps are pure ICE.
-  auto matOf = [&](int i, int k) -> uint8_t { return i < nStonePlant ? E.grid[k] : ICE; };
+  auto matOf = [&](int i, int k) -> uint8_t { return i < nStonePlant ? E.L->grid[k] : ICE; };
 
   auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
     int dy = dir > 0 ? 1 : -1;
@@ -778,13 +791,13 @@ void ComponentSystem::moveRigidAssemblies() {
       int leadK = k + dir; int leadY = leadK / E.cols;
       if (leadY < 1 || leadY >= E.rows) return false;
       if (cells.count(leadK)) continue;
-      uint8_t lead = E.grid[leadK];
+      uint8_t lead = E.L->grid[leadK];
       if (!componentDisplaceableForAssembly(lead)) return false;
     }
     struct Disp { uint8_t material; int from; };
     std::vector<Disp> displaced; std::vector<int> vacated;
     for (int k : cells) {
-      int leadK = k + dir; uint8_t lead = E.grid[leadK];
+      int leadK = k + dir; uint8_t lead = E.L->grid[leadK];
       if (!cells.count(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
       if (!cells.count(k - dir)) vacated.push_back(k);
     }
@@ -810,7 +823,7 @@ void ComponentSystem::moveRigidAssemblies() {
       std::unordered_set<int> vacatedCells(vacated.begin(), vacated.end());
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
       int gridLen = E.cols * E.rows;
-      auto plannedMaterialAt = [&](int k) -> uint8_t { return vacatedCells.count(k) ? EMPTY : E.grid[k]; };
+      auto plannedMaterialAt = [&](int k) -> uint8_t { return vacatedCells.count(k) ? EMPTY : E.L->grid[k]; };
       // Bound the total volume-preserving liquid search for this one assembly move.
       // Each displaced liquid cell BFS-floods the reachable liquid body to find a
       // surface; for a large rigid slab sinking through a big ENCLOSED pool (e.g.
@@ -945,7 +958,7 @@ void ComponentSystem::moveRigidAssemblies() {
     int di = 0, pi = 0;
     for (auto& d : displaced) {
       if (E.isLiquidMaterial(d.material)) continue;
-      while (di < (int)vacated.size() && (E.grid[vacated[di]] != EMPTY || reserved.count(vacated[di]))) di++;
+      while (di < (int)vacated.size() && (E.L->grid[vacated[di]] != EMPTY || reserved.count(vacated[di]))) di++;
       if (E.isLooseSolidMaterial(d.material)) { E.writeGridIndex(powderTargets[pi++], d.material); if (di < (int)vacated.size()) di++; }
       else if (di < (int)vacated.size()) E.writeGridIndex(vacated[di++], d.material); // gas
     }
@@ -974,7 +987,7 @@ void ComponentSystem::moveRigidAssemblies() {
 
   auto motionDecision = [&](std::unordered_set<int>& cells, double avgDensity) -> int {
     FaceContact c;
-    accumulateFaceContact(E.grid, cells, c);
+    accumulateFaceContact(E.L->grid, cells, c);
     bool powderSupports = false;
     if (c.powderFaces > 0) {
       double powderDensity = c.powderDensityArea / c.powderFaces;
@@ -1032,7 +1045,7 @@ void ComponentSystem::floodComponent(int sx, int sy, std::vector<int32_t>& seen,
       if (!ox && !oy) continue; int nx = x + ox, ny = y + oy;
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
       if (bounded && ((nx >> CHUNK_SHIFT) != bx || (ny >> CHUNK_SHIFT) != by)) continue;
-      int nk = ny * E.cols + nx; if (seen[nk] == gen || !(this->*matCheck)(E.grid[nk])) continue;
+      int nk = ny * E.cols + nx; if (seen[nk] == gen || !(this->*matCheck)(E.L->grid[nk])) continue;
       seen[nk] = gen; outCells.push_back(nk);
     }
   }
@@ -1064,9 +1077,9 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
     for (auto& comp : E.L->stoneComponents) for (int k : comp.cells) seen[k] = gen;
     for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components (skip both seeding and flood-merge)
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-      int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.grid[k]] != CG_STONE) continue;
+      int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_STONE) continue;
       std::vector<int> cells; int yMax;
-      floodTargetMat = E.grid[k];
+      floodTargetMat = E.L->grid[k];
       floodComponent(sx, sy, seen, gen, true, cells, yMax, &ComponentSystem::isFloodTargetMat);
       Comp c; c.id = E.L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax;
       c.growing = floodTargetMat == MYCELIUM_SPORE;
@@ -1081,13 +1094,13 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
     for (auto& comp : E.L->plantComponents) for (int k : comp.cells) seen[k] = gen;
     for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-      int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.grid[k]] != CG_PLANT) continue;
+      int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_PLANT) continue;
       std::vector<int> cells; int yMax;
       floodComponent(sx, sy, seen, gen, false, cells, yMax, &ComponentSystem::isPlantMat);
       Comp c; c.id = E.L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
       // Re-derive the species from the trunk material (so a streamed-in / restored
       // tree keeps its type — the cells ARE the persistence) and count generically.
-      for (int kk : cells) { uint8_t m = E.grid[kk]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) c.leafCount++; }
+      for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) c.leafCount++; }
       c.cells = std::move(cells); E.L->plantComponents.push_back(std::move(c));
     }
   }
@@ -1097,7 +1110,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
     for (auto& comp : E.L->iceComponents) for (int k : comp.cells) seen[k] = gen;
     for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
-      int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.grid[k]] != CG_ICE) continue;
+      int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_ICE) continue;
       std::vector<int> cells; int yMax;
       floodComponent(sx, sy, seen, gen, false, cells, yMax, &ComponentSystem::isIceGroup);
       Comp c; c.id = E.L->nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; E.L->iceComponents.push_back(std::move(c));
@@ -1118,7 +1131,7 @@ void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, u
     int y = k / E.cols, x = k - y * E.cols;
     for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
       if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!E.isInBounds(nx, ny)) continue; int nk = ny * E.cols + nx;
-      if (E.grid[nk] != mat || cells.count(nk)) continue;
+      if (E.L->grid[nk] != mat || cells.count(nk)) continue;
       if (!ownerBuilt) { for (size_t i = 0; i < list.size(); i++) for (int c : list[i].cells) owner[c] = (int)i; ownerBuilt = true; }
       auto it = owner.find(nk); if (it != owner.end()) touchingIds.insert(list[it->second].id);
     }
@@ -1144,7 +1157,7 @@ void ComponentSystem::registerPlantCells(uint8_t mat, std::unordered_set<int>& c
   registerRigidCells(E.L->plantComponents, E.L->nextPlantId, mat, cells, yMax, false);
   Comp& c = E.L->plantComponents.back();
   c.woodCount = 0; c.leafCount = 0; c.age = 0; c.growing = false; c.cacheDirty = true; c.plantType = PT_OAK;
-  for (int k : c.cells) { uint8_t m = E.grid[k]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) c.leafCount++; }
+  for (int k : c.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) c.leafCount++; }
 }
 
 // Split the freshly-placed `cells` into 8-connected groups and register each as
@@ -1190,7 +1203,7 @@ void ComponentSystem::splitPlantAfterErase() {
   std::vector<int> part;
   for (auto& comp : E.L->plantComponents) {
     int32_t remGen = ++E.L->seenGen;
-    for (int k : comp.cells) if (E.isPlantMaterial(E.grid[k])) seen[k] = remGen;
+    for (int k : comp.cells) if (E.isPlantMaterial(E.L->grid[k])) seen[k] = remGen;
     bool reused = false;
     for (int seed : comp.cells) {
       if (seen[seed] != remGen) continue;
@@ -1201,7 +1214,7 @@ void ComponentSystem::splitPlantAfterErase() {
       }
       Comp c; c.id = reused ? E.L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
       c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
-      for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.grid[k])) c.leafCount++; }
+      for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.L->grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) c.leafCount++; }
       c.cells = std::move(part); updated.push_back(std::move(c)); reused = true;
     }
   }

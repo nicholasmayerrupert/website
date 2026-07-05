@@ -15,11 +15,11 @@ int ItemSystem::itemCell(const Item& it) { int x = (int)std::floor(it.px), y = (
 bool ItemSystem::itemGridSolid(int x, int y) {
   if (y >= E.rows) return true;
   if (y < 0 || x < 0 || x >= E.cols) return false;
-  return E.isSolidForPlayer(E.grid[E.I(x, y)]);
+  return E.isSolidForPlayer(E.L->grid[E.I(x, y)]);
 }
 bool ItemSystem::itemCellLiquidAt(int x, int y) {
   if (y < 0 || y >= E.rows || x < 0 || x >= E.cols) return false;
-  return E.isLiquidMaterial(E.grid[E.I(x, y)]);
+  return E.isLiquidMaterial(E.L->grid[E.I(x, y)]);
 }
 
 // Fall vertically, stopping just above the first cell below that supports the item.
@@ -76,7 +76,7 @@ void ItemSystem::floatItem(Item& it) {
 bool ItemSystem::seedItemCanPlant(const Item& it, int& x, int& y) {
   if (it.kind != IT_ITEM || it.material != SEED || it.count == 0) return false;
   x = (int)std::floor(it.px); y = (int)std::floor(it.py);
-  if (!E.isInBounds(x, y) || E.grid[E.I(x, y)] != EMPTY) return false;
+  if (!E.isInBounds(x, y) || E.L->grid[E.I(x, y)] != EMPTY) return false;
   return itemCellLiquidAt(x, y + 1) || itemCellLiquidAt(x - 1, y) || itemCellLiquidAt(x + 1, y) || itemCellLiquidAt(x, y - 1);
 }
 // Nearest active/alive player center within IT_MAGNET_R of the item (or null).

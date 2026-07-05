@@ -293,7 +293,7 @@ bool PlayerSystem::playerUseTool(Player& p, int ax, int ay, Layer* layer) {
         E.spawnBox(ax, ay, CUBE_HALF, CUBE_HALF, RIGID); ok = true;
       }
       break;
-    default: break; // solids (stone/driftwood/ice) use the persistent E.draft in applyPlayerTools
+    default: break; // solids (stone/driftwood/ice) use the persistent E.tools.draft in applyPlayerTools
   }
   E.useLayer(&E.fg);
   return ok;
@@ -320,8 +320,8 @@ void PlayerSystem::resetPlayerMine(Player& p) {
   p.mineFootprint = -1;
 }
 void PlayerSystem::resolveMineDrops(Player& p) {
-  if (E.lastMinedCells.empty()) return;
-  for (auto& mc : E.lastMinedCells) {
+  if (E.tools.lastMinedCells.empty()) return;
+  for (auto& mc : E.tools.lastMinedCells) {
     uint8_t m = mc.first; int k = mc.second;
     int cxk = k % E.cols, cyk = k / E.cols;
     uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
@@ -381,32 +381,32 @@ bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed
   E.useLayer(&E.fg);
   return changed;
 }
-// ---- survival solids: the EXACT creative E.draft lifecycle, driven by a player ----
-// Begin a persistent solid E.draft into `btn`'s layer (0=fg LMB, 1=bg RMB) using the
-// player's own tool. This is the same engine E.draft state + live preview + finalize
+// ---- survival solids: the EXACT creative E.tools.draft lifecycle, driven by a player ----
+// Begin a persistent solid E.tools.draft into `btn`'s layer (0=fg LMB, 1=bg RMB) using the
+// player's own tool. This is the same engine E.tools.draft state + live preview + finalize
 // that creative mode uses (continueDrafts / finalize*Draft), so survival places
 // solids identically: hold to draw a previewed shape, release to drop ONE connected
 // piece (it stays if it lands on grounded terrain, falls as one body if mid-air).
 void PlayerSystem::playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
-  E.draftLayer = btn; E.draftOwner = p.id;
+  E.tools.draftLayer = btn; E.tools.draftOwner = p.id;
   E.useLayer(btn ? &E.bg : &E.fg);
-  E.drafting = true;
-  E.lastDraftCx = ax; E.lastDraftCy = ay; E.draftStrokeActive = true;
-  E.draftMaterial = (tool == T_ICE) ? ICE : (tool == T_DRIFTWOOD) ? DRIFTWOOD : STONE;
-  E.addDiscToDraft(E.draft, ax, ay, E.brushFor(E.draftMaterial), E.draftMaterial == ICE ? E.rows - 1 : E.rows);
+  E.tools.drafting = true;
+  E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
+  E.tools.draftMaterial = (tool == T_ICE) ? ICE : (tool == T_DRIFTWOOD) ? DRIFTWOOD : STONE;
+  E.addDiscToDraft(E.tools.draft, ax, ay, E.brushFor(E.tools.draftMaterial), E.tools.draftMaterial == ICE ? E.rows - 1 : E.rows);
   E.useLayer(&E.fg);
 }
-// Finalize the in-progress E.draft into its layer (one connected component) and clear.
+// Finalize the in-progress E.tools.draft into its layer (one connected component) and clear.
 void PlayerSystem::playerFinalizeSolidDraft() {
-  E.useLayer(E.draftLayer ? &E.bg : &E.fg);
-  if (E.drafting) { E.finalizeDraft(); E.drafting = false; E.draftStrokeActive = false; E.draft.clear(); }
-  E.draftOwner = -1;
+  E.useLayer(E.tools.draftLayer ? &E.bg : &E.fg);
+  if (E.tools.drafting) { E.finalizeDraft(); E.tools.drafting = false; E.tools.draftStrokeActive = false; E.tools.draft.clear(); }
+  E.tools.draftOwner = -1;
   E.useLayer(&E.fg);
 }
 // Per step: LMB (primary) acts on the FOREGROUND, RMB (secondary) on the BACKGROUND.
 // Eraser sweeps toward the cursor and fluids/sand paint — both repeat while held
 // (cooldown-throttled). Seed + cube fire once per press. Solids use the persistent
-// creative E.draft: begin on press, extend (preview) while held, finalize on release.
+// creative E.tools.draft: begin on press, extend (preview) while held, finalize on release.
 void PlayerSystem::applyPlayerTools() {
   for (auto& p : players) {
     // Survival inventory drives the controls (selected slot = mine-tool or place-
@@ -427,21 +427,21 @@ void PlayerSystem::applyPlayerTools() {
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
     bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
 
-    // --- finalize this player's solid E.draft when its owning button releases (or all
+    // --- finalize this player's solid E.tools.draft when its owning button releases (or all
     //     buttons are up) — independent of the currently selected tool ---
-    if (E.drafting && E.draftOwner == p.id) {
-      bool ownerReleased = (E.draftLayer == 1) ? secondaryFalling : primaryFalling;
+    if (E.tools.drafting && E.tools.draftOwner == p.id) {
+      bool ownerReleased = (E.tools.draftLayer == 1) ? secondaryFalling : primaryFalling;
       if (ownerReleased || (!primary && !secondary)) { playerFinalizeSolidDraft(); E.playerActionCount++; }
     }
 
-    // --- SOLIDS: begin / extend the persistent E.draft (creative parity) ---
+    // --- SOLIDS: begin / extend the persistent E.tools.draft (creative parity) ---
     if (isSolidTool(t)) {
       resetPlayerMine(p);
-      bool busy = E.drafting;
+      bool busy = E.tools.drafting;
       if (inReach && !busy && primaryRising) { playerBeginSolidDraft(p, t, ax, ay, 0); E.playerActionCount++; }
       else if (inReach && !busy && secondaryRising) { E.bgEnabled = true; playerBeginSolidDraft(p, t, ax, ay, 1); E.playerActionCount++; }
-      else if (inReach && busy && E.draftOwner == p.id && (primary || secondary)) E.continueDrafts(ax, ay); // extend + preview
-      else if (!inReach && busy && E.draftOwner == p.id) E.draftStrokeActive = false;
+      else if (inReach && busy && E.tools.draftOwner == p.id && (primary || secondary)) E.continueDrafts(ax, ay); // extend + preview
+      else if (!inReach && busy && E.tools.draftOwner == p.id) E.tools.draftStrokeActive = false;
       continue;
     }
 

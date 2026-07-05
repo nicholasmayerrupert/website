@@ -320,20 +320,20 @@ void GLPresenter::glDrawPreview() {
     glSolidDev((x - camCol) * glCellDev + glOffX, (y - camRow) * glCellDev + glOffY, glCellDev, glCellDev);
   };
   // Background drafts (RMB) read darker so they look like they're behind the world.
-  float df = (E.draftLayer == 1) ? GL_BG_TINT : 1.0f;
-  // The single component E.draft previews in its own material color (generalized from the
+  float df = (E.tools.draftLayer == 1) ? GL_BG_TINT : 1.0f;
+  // The single component E.tools.draft previews in its own material color (generalized from the
   // old stone/ice/driftwood-specific blocks — ANY component material now previews).
-  if (!E.draft.empty()) {
-    uint32_t c = MAT_COLOR[E.draftMaterial];
+  if (!E.tools.draft.empty()) {
+    uint32_t c = MAT_COLOR[E.tools.draftMaterial];
     float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
     glUniform4f(glc->uColor, df * r, df * g, df * b, 0.42f);
-    for (int k : E.draft) { int y = k / E.cols; cell(k - y * E.cols, y); }
+    for (int k : E.tools.draft) { int y = k / E.cols; cell(k - y * E.cols, y); }
   }
-  if (E.draftingSeed && E.hasSeedOrigin) {
-    bool valid = E.canPlaceSeedAt(E.seedOriginX, E.seedOriginY);
+  if (E.tools.draftingSeed && E.tools.hasSeedOrigin) {
+    bool valid = E.canPlaceSeedAt(E.tools.seedOriginX, E.tools.seedOriginY);
     if (valid) glUniform4f(glc->uColor, df * 120 / 255.0f, df * 190 / 255.0f, df * 100 / 255.0f, 0.32f);
     else       glUniform4f(glc->uColor, 255 / 255.0f, 80 / 255.0f, 80 / 255.0f, 0.24f);
-    cell(E.seedOriginX, E.seedOriginY); // a seed is a single cell
+    cell(E.tools.seedOriginX, E.tools.seedOriginY); // a seed is a single cell
   }
 
   // Survival: a "cursor" disc at the local player's aim shows where the tool will

@@ -95,18 +95,18 @@ EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) { r
 // stone/ice hook pairs (byte-identical bodies) collapsed into these.
 // ICE keeps its historical one-row-shorter stage ceiling.
 EMSCRIPTEN_KEEPALIVE int engine_add_draft(Engine* e, int cx, int cy, int r, int mat) {
-  e->draftMaterial = (uint8_t)mat;
-  return e->addDiscToDraft(e->draft, cx, cy, r, mat == ICE ? e->rows - 1 : e->rows);
+  e->tools.draftMaterial = (uint8_t)mat;
+  return e->addDiscToDraft(e->tools.draft, cx, cy, r, mat == ICE ? e->rows - 1 : e->rows);
 }
 EMSCRIPTEN_KEEPALIVE void engine_finalize_draft(Engine* e, int mat) {
-  e->draftMaterial = (uint8_t)mat;
+  e->tools.draftMaterial = (uint8_t)mat;
   e->finalizeDraft();
-  e->draft.clear();
-  e->draftStrokeActive = false;
+  e->tools.draft.clear();
+  e->tools.draftStrokeActive = false;
 }
-EMSCRIPTEN_KEEPALIVE void engine_clear_draft(Engine* e) { e->draft.clear(); e->draftStrokeActive = false; }
-EMSCRIPTEN_KEEPALIVE int engine_draft_snapshot(Engine* e) { e->draftSnapshot.assign(e->draft.begin(), e->draft.end()); return (int)e->draftSnapshot.size(); }
-EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->draftSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE void engine_clear_draft(Engine* e) { e->tools.draft.clear(); e->tools.draftStrokeActive = false; }
+EMSCRIPTEN_KEEPALIVE int engine_draft_snapshot(Engine* e) { e->tools.draftSnapshot.assign(e->tools.draft.begin(), e->tools.draft.end()); return (int)e->tools.draftSnapshot.size(); }
+EMSCRIPTEN_KEEPALIVE int* engine_draft_ptr(Engine* e) { return e->tools.draftSnapshot.data(); }
 // Creative palette: select any material / seed species / eraser / cube (CreativeKind).
 EMSCRIPTEN_KEEPALIVE void engine_set_creative_material(Engine* e, int kind, int value) { e->setCreativeMaterial(kind, value); }
 EMSCRIPTEN_KEEPALIVE int engine_get_seed_origin(Engine* e, int cx, int cy, int* out) { int x0, y0; if (!e->getSeedOrigin(cx, cy, x0, y0)) return 0; out[0] = x0; out[1] = y0; return 1; }
@@ -121,10 +121,10 @@ EMSCRIPTEN_KEEPALIVE int engine_pointer_draft(Engine* e, int cx, int cy) { retur
 EMSCRIPTEN_KEEPALIVE void engine_pointer_buttons(Engine* e, int buttons) { e->pointerButtons(buttons); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_up(Engine* e, int button) { return e->pointerUp(button); }
 EMSCRIPTEN_KEEPALIVE int engine_apply_tool(Engine* e, int cx, int cy, double now, int inside, int drawMode) { return e->applyTool(cx, cy, now, inside != 0, drawMode != 0); }
-EMSCRIPTEN_KEEPALIVE int engine_draft_is_driftwood(Engine* e) { return e->draftMaterial == DRIFTWOOD ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_draft_is_driftwood(Engine* e) { return e->tools.draftMaterial == DRIFTWOOD ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_seed_draft(Engine* e, int* out) {
-  if (!e->draftingSeed || !e->hasSeedOrigin) return 0;
-  out[0] = e->seedOriginX; out[1] = e->seedOriginY; out[2] = e->canPlaceSeedAt(e->seedOriginX, e->seedOriginY) ? 1 : 0;
+  if (!e->tools.draftingSeed || !e->tools.hasSeedOrigin) return 0;
+  out[0] = e->tools.seedOriginX; out[1] = e->tools.seedOriginY; out[2] = e->canPlaceSeedAt(e->tools.seedOriginX, e->tools.seedOriginY) ? 1 : 0;
   return 1;
 }
 
@@ -200,7 +200,7 @@ EMSCRIPTEN_KEEPALIVE void engine_cycle_selected_slot(Engine* e, int id, int delt
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_footprint(Engine* e, int id, int footprintId) { e->setSelectedFootprint(id, footprintId); }
 EMSCRIPTEN_KEEPALIVE int engine_selected_footprint(Engine* e, int id) { return e->selectedFootprintId(id); }
 EMSCRIPTEN_KEEPALIVE int engine_survival_footprint_snapshot(Engine* e) { return e->buildSurvivalFootprintSnapshot(); }
-EMSCRIPTEN_KEEPALIVE int32_t* engine_survival_footprint_snapshot_ptr(Engine* e) { return e->survivalFootprintSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int32_t* engine_survival_footprint_snapshot_ptr(Engine* e) { return e->tools.survivalFootprintSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_inventory_move(Engine* e, int id, int from, int to) { e->moveSlot(id, from, to); }
 EMSCRIPTEN_KEEPALIVE int engine_place_from_selected(Engine* e, int id, int ax, int ay) { return e->placeFromSelected(id, ax, ay) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_inventory_snapshot(Engine* e, int id) { return e->buildInventorySnapshot(id); }

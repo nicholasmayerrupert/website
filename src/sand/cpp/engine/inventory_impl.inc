@@ -193,7 +193,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (!p.active || !p.alive) {
     E.resetPlayerMine(p);
     resetPlayerPlaceStroke(p);
-    if (E.drafting && E.draftOwner == p.id) E.playerFinalizeSolidDraft();
+    if (E.tools.drafting && E.tools.draftOwner == p.id) E.playerFinalizeSolidDraft();
     p.prevInput = p.input; return;
   }
   if (p.toolCooldown > 0) p.toolCooldown--;
@@ -209,19 +209,19 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   InvSlot& sel = p.inv[p.selectedSlot];
   const SurvivalFootprint& fp = E.getSurvivalFootprint(p);
 
-  // (1) An active component E.draft this player owns takes over its originating
+  // (1) An active component E.tools.draft this player owns takes over its originating
   //     button: extend while held, materialize on release.
-  if (E.drafting && E.draftOwner == p.id) {
-    bool held = E.draftLayer ? secondary : primary;
+  if (E.tools.drafting && E.tools.draftOwner == p.id) {
+    bool held = E.tools.draftLayer ? secondary : primary;
     if (!held) { E.playerFinalizeSolidDraft(); E.playerActionCount++; }
-    else if (inReach && !sel.isTool && sel.count > 0 && sel.material == E.draftMaterial) {
-      E.useLayer(E.draftLayer ? &E.bg : &E.fg);
-      int sx = E.draftStrokeActive ? E.lastDraftCx : ax, sy = E.draftStrokeActive ? E.lastDraftCy : ay;
-      int added = E.addFootprintStrokeToDraftCapped(E.draft, sx, sy, ax, ay, fp, E.rows, sel.count, E.draftLayer ? nullptr : &p);
-      E.lastDraftCx = ax; E.lastDraftCy = ay; E.draftStrokeActive = true;
+    else if (inReach && !sel.isTool && sel.count > 0 && sel.material == E.tools.draftMaterial) {
+      E.useLayer(E.tools.draftLayer ? &E.bg : &E.fg);
+      int sx = E.tools.draftStrokeActive ? E.tools.lastDraftCx : ax, sy = E.tools.draftStrokeActive ? E.tools.lastDraftCy : ay;
+      int added = E.addFootprintStrokeToDraftCapped(E.tools.draft, sx, sy, ax, ay, fp, E.rows, sel.count, E.tools.draftLayer ? nullptr : &p);
+      E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
       if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
       E.useLayer(&E.fg);
-    } else if (!inReach) E.draftStrokeActive = false;
+    } else if (!inReach) E.tools.draftStrokeActive = false;
     return;
   }
 
@@ -252,14 +252,14 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       }
     }
   } else if (isComp) {
-    // begin a component E.draft on press (stage + consume the first disc immediately).
+    // begin a component E.tools.draft on press (stage + consume the first disc immediately).
     if (primaryRising || secondaryRising) {
       bool toBg = secondaryRising && !primaryRising;
       if (toBg) E.bgEnabled = true;
-      E.drafting = true; E.draftOwner = p.id; E.draftLayer = toBg ? 1 : 0; E.draftMaterial = sel.material;
-      E.lastDraftCx = ax; E.lastDraftCy = ay; E.draftStrokeActive = true;
+      E.tools.drafting = true; E.tools.draftOwner = p.id; E.tools.draftLayer = toBg ? 1 : 0; E.tools.draftMaterial = sel.material;
+      E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
       E.useLayer(toBg ? &E.bg : &E.fg);
-      int added = E.addFootprintToDraftCapped(E.draft, ax, ay, fp, E.rows, sel.count, toBg ? nullptr : &p);
+      int added = E.addFootprintToDraftCapped(E.tools.draft, ax, ay, fp, E.rows, sel.count, toBg ? nullptr : &p);
       if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
       E.useLayer(&E.fg);
       E.playerActionCount++;

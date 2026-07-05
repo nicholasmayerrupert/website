@@ -42,7 +42,7 @@
   // Returns 1 if a draft preview changed (draw mode only).
   int applyLocalInput(int playerId, double now, uint32_t seq) {
     if (cam.playModeOn) {
-      if (playerId) setPlayerInput(playerId, cam.localInputBits(), cam.aimCellX(), cam.aimCellY(), activeTool, seq);
+      if (playerId) setPlayerInput(playerId, cam.localInputBits(), cam.aimCellX(), cam.aimCellY(), tools.activeTool, seq);
       return 0;
     }
     return applyTool((int)cam.aimCellX(), (int)cam.aimCellY(), now, cam.pointerInside, cam.drawModeOn) ? 1 : 0;

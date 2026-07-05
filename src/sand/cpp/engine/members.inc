@@ -143,50 +143,13 @@
   // walk stays within the floating region instead of the whole terrain mass.
   std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
   int32_t cgCompGen = 0;
-  // ---- tool / pointer state (input policy ported from createSandGame) ----
-  int activeTool = T_CUBE;
-  bool lmbDown = false, rmbDown = false;
-  // The active draft (stone/ice/seed staging) targets this layer: 0 = foreground
-  // (LMB), 1 = background (RMB). The draft set is shared staging; finalize writes
-  // into the layer chosen here on pointerDown.
-  int draftLayer = 0;
   // Per-tree growth scratch: set at the top of each comp in growPlantComponents so
   // the growth helpers emit the right species materials. OAK defaults keep the
   // original behavior byte-identical.
   uint8_t gGrowType = PT_OAK, gWoodMat = WOOD, gLeafMat = PLANT;
-  int draftOwner = -1; // survival: id of the player who owns the in-progress solid draft (-1 = creative/none)
-  // A SINGLE component draft (any material), staged then dropped on release with a
-  // live preview. draftMaterial is the component being drawn (stone/ice/driftwood/ore/…).
-  std::unordered_set<int> draft;
-  uint8_t draftMaterial = STONE;
-  int lastDraftCx = -1, lastDraftCy = -1;
-  bool draftStrokeActive = false;
-  std::vector<SurvivalFootprint> survivalFootprints;
-  std::vector<int32_t> survivalFootprintSnapshot; // packed FP_STRIDE ints
-  // Cached center-first disc offsets per radius (placeMaterialAtCapped, per-pixel placement).
-  std::unordered_map<int, std::vector<std::pair<int, int>>> discOffsetCache;
-  std::vector<int> draftSnapshot;
-  bool drafting = false, draftingSeed = false;
-  // Creative brush: the searchable palette selects any material / seed species / eraser
-  // / cube; the pointer flow routes by mode rather than a fixed per-material Tool enum.
-  // Default is the cube (matches the palette's default selection).
-  uint8_t creativeMode = CM_CUBE, creativeMaterial = STONE, creativeSeed = PT_OAK;
-  // Material the CUBE tool spawns as a free rigid body. Defaults to RIGID (a permanent
-  // body, as before); selecting a stone/ice solid sets it so the cube spawns a body of
-  // that material — which bakes into a static component on rest (see bakeRestingBodies).
-  uint8_t cubeMaterial = RIGID;
-  bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
-  double lastEmitMs = -1e9;
-  // Continuous-paint/erase stroke tracking: interpolate the brush from the last emit
-  // cell to the current one so a fast mouse drag doesn't skip over gaps.
-  int lastEmitCx = -1, lastEmitCy = -1;
-  bool emitStrokeActive = false;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
-  // Cells destroyed by the last mineDamageDisc() call: (material, cellIndex). mineDisc
-  // reads this to decide drops against the acting player's held tool (Phase C).
-  std::vector<std::pair<uint8_t, int>> lastMinedCells;
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
   inline double rand() {
     rngState = (rngState + 0x6d2b79f5u);

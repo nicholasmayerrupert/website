@@ -38,6 +38,8 @@ class ExplosivesSystem {
   static constexpr double TNT_ACRID_FRAC = 0.70; // acrid smoke dominates the blast cloud
   static constexpr double TNT_STEAM_FRAC = 0.20; // plus some steam; the remaining 10% is fire
   static const int    BLAST_GAS_RING_DEPTH = 3; // fill the outer shell of each crater; no gas pathfinding
+  static constexpr double BLAST_GAS_INNER_KEEP = 0.22; // inner shell is mostly air
+  static constexpr double BLAST_GAS_OUTER_KEEP = 0.88; // rim stays visibly smoky
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).

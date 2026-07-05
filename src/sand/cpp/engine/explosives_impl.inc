@@ -23,6 +23,9 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves) 
         int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue;
         int k = E.I(xx, yy);
         if (E.L->grid[k] != EMPTY && !E.isGasMaterial(E.L->grid[k])) continue;
+        double shell = (std::sqrt((double)dd) - (double)inner) / (double)(radius - inner);
+        double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
+        if (whash2(wave.seed ^ 0x6C8E9CF5u, xx, yy) >= keepP) continue;
         double g = whash2(wave.seed ^ 0xA511E9B3u, xx, yy);
         uint8_t m = g < TNT_ACRID_FRAC ? ACRID_SMOKE : (g < TNT_ACRID_FRAC + TNT_STEAM_FRAC ? STEAM : FIRE);
         E.writeGridIndex(k, m);

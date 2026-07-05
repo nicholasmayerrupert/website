@@ -340,6 +340,26 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a single blast's gas shell is sparse, not a solid filled annulus ---
+{
+  const e = mk();
+  const cx = 70, cy = 55;
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  e.syncComponents();
+  let peakGas = 0, tntLeft = 1;
+  for (let i = 0; i < 80; i++) {
+    if (i < 3) e.placeMaterial(cx + 1, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    const g = e.getGrid();
+    peakGas = Math.max(peakGas, countAny(g, AFTERMATH));
+    tntLeft = count(g, MAT.TNT);
+    if (tntLeft === 0 && i > 35) break;
+  }
+  check(`single TNT blast consumed TNT (${tntLeft} left)`, tntLeft === 0);
+  check(`single TNT blast emitted a sparse gas shell (${peakGas} cells)`, peakGas > 150 && peakGas < 300);
+  e.destroy();
+}
+
 // --- one TNT blast damages the opposite layer and mirrors aftermath gas there ---
 {
   const e = mk();

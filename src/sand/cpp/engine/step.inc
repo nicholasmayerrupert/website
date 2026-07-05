@@ -15,7 +15,7 @@
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
     double t0 = emscripten_get_now();
-    if (!jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
+    if (!comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     double tG = emscripten_get_now(); perfStepGround = tG - t0;
     moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
@@ -77,8 +77,8 @@
     // front so solids in one layer support solids at the same cell in the other
     // (gated on bgEnabled -> single-layer scenes stay byte-identical). Each
     // stepLayer() then skips its own first computeGrounded().
-    jointGroundReady = false;
-    jointBondsInvalid = false;
+    comps.jointGroundReady = false;
+    comps.jointBondsInvalid = false;
     auto layerRigidMarked = [&](Layer& lay) {
       const uint8_t* g = lay.grid;
       for (int y = 0; y < rows; y++) {
@@ -92,8 +92,8 @@
     };
     double tJ0 = emscripten_get_now();
     bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
-    if (bgEnabled && (!cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
-      computeGroundedBoth(); jointGroundReady = true;
+    if (bgEnabled && (!comps.cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
+      computeGroundedBoth(); comps.jointGroundReady = true;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
@@ -103,7 +103,7 @@
     if (bgA) stepLayer(&bg);
     perfStepLayers = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
-    if (jointGroundReady && !jointBondsInvalid) {
+    if (comps.jointGroundReady && !comps.jointBondsInvalid) {
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("pre-crossmove");
 #endif
@@ -113,8 +113,8 @@
 #endif
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
-    } else if (jointBondsInvalid) {
-      cgBonds.clear();
+    } else if (comps.jointBondsInvalid) {
+      comps.cgBonds.clear();
     }
     crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);

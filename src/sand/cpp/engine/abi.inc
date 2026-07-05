@@ -86,9 +86,9 @@ EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
 // AND a full reflood every step and counts mismatches; forceFull=1 always refloods
 // (the byte-identical reference for the checksum test).
-EMSCRIPTEN_KEEPALIVE void engine_test_set_grounding_debug(Engine* e, int verify, int forceFull) { e->groundVerify = verify != 0; e->groundForceFull = forceFull != 0; }
-EMSCRIPTEN_KEEPALIVE double engine_test_grounding_mismatches(Engine* e) { return (double)e->groundMismatches; }
-EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) { return which == 0 ? (double)e->gbFast : which == 1 ? (double)e->gbEdge : which == 2 ? (double)e->gbPowder : which == 3 ? (double)e->gbCut : (double)e->gbSpan; }
+EMSCRIPTEN_KEEPALIVE void engine_test_set_grounding_debug(Engine* e, int verify, int forceFull) { e->comps.groundVerify = verify != 0; e->comps.groundForceFull = forceFull != 0; }
+EMSCRIPTEN_KEEPALIVE double engine_test_grounding_mismatches(Engine* e) { return (double)e->comps.groundMismatches; }
+EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) { return which == 0 ? (double)e->comps.gbFast : which == 1 ? (double)e->comps.gbEdge : which == 2 ? (double)e->comps.gbPowder : which == 3 ? (double)e->comps.gbCut : (double)e->comps.gbSpan; }
 
 // drafts / seed
 // Draft staging is a SINGLE material-parameterized set. The old per-material

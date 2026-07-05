@@ -60,5 +60,6 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/reactions_impl.inc"
 #include "engine/explosives_impl.inc"
 #include "engine/growth_impl.inc"
+#include "engine/components_impl.inc"
 
 #include "engine/abi.inc"

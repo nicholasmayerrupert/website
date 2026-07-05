@@ -100,10 +100,10 @@ void ReactionSystem::applyAcid() {
   if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false);
   if (dissolvedPlant) E.splitPlantAfterErase(); // sets groundDirty (plant grounding nuance)
   if (dissolvedStone || dissolvedIce) {
-    E.cgRemovedCells.clear();
-    E.cgRemovedCells.insert(E.cgRemovedCells.end(), erasedStone.begin(), erasedStone.end());
-    E.cgRemovedCells.insert(E.cgRemovedCells.end(), erasedIce.begin(), erasedIce.end());
-    if (!E.removalsKeepGroundingValid(E.cgRemovedCells)) {
+    E.comps.cgRemovedCells.clear();
+    E.comps.cgRemovedCells.insert(E.comps.cgRemovedCells.end(), erasedStone.begin(), erasedStone.end());
+    E.comps.cgRemovedCells.insert(E.comps.cgRemovedCells.end(), erasedIce.begin(), erasedIce.end());
+    if (!E.removalsKeepGroundingValid(E.comps.cgRemovedCells)) {
       E.L->groundDirty = true; // a real disconnect -> full reflood
     } else if (E.L->compsReshaped) {
       // Grounding still valid, but a comp split/vanished so the positional comp ids
@@ -116,7 +116,7 @@ void ReactionSystem::applyAcid() {
       // cache otherwise untouched, so the next grounding pass SKIPS entirely. This is
       // what stops acid boring bulk stone from re-indexing the whole layer (incl. a
       // big inert ice tub holding a separate acid pool) every dissolve step.
-      for (int k : E.cgRemovedCells) E.cellComp[k] = -1;
+      for (int k : E.comps.cgRemovedCells) E.cellComp[k] = -1;
     }
   }
 }

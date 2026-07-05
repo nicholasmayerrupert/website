@@ -82,67 +82,11 @@
   // front (computeGroundedBoth) so solids support solids across layers; this flag
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
-  bool jointGroundReady = false;
-  bool jointBondsInvalid = false;
-  // Reusable scratch for computeGroundedBoth() (sized to cols*rows once; avoids
-  // per-step heap churn in two-layer scenes). prev* = last step's grounding (for
-  // re-waking solids that lost support); *Base = each layer's independent grounding
-  // snapshot; cgVisited/cgStack/cgIsland = the per-island flood working set.
-  std::vector<uint8_t> cgPrevFg, cgPrevBg, cgFgBase, cgBgBase, cgVisited;
-  std::vector<int> cgStack, cgIsland;
-  // Parallel x-coordinate stack for computeGrounded's flood: stores each pushed
-  // cell's column so the DFS never recomputes k/cols (an integer division per popped
-  // rigid cell — the dominant grounding cost). Engine-level scratch (the flood runs
-  // one layer at a time), sized cols*rows lazily.
-  std::vector<int32_t> groundStackX;
-  // Per-layer BASE-grounding reuse cache (computeGroundedBoth). cgFgBase/cgBgBase hold
-  // each layer's independent (pre-cross-layer) groundedCell; cgFgGroundedBase/
-  // cgBgGroundedBase hold the matching per-component grounded flags (stone|plant|ice
-  // order). A powder-free, edit-free layer (the dry stone background while panning)
-  // reuses these instead of re-running its O(rigid cells) flood — byte-identical while
-  // the layer is unchanged. Valid iff cg*BaseValid (set after a full flood; groundDirty
-  // forces a refresh on any rigid change, incl. world shifts).
-  std::vector<uint8_t> cgFgGroundedBase, cgBgGroundedBase;
-  bool cgFgBaseValid = false, cgBgBaseValid = false;
-  // Shared scratch for the grounding flood: cgComps maps a component index (the
-  // value stored in cellComp[]) back to its Comp*, cgCompDensity holds each
-  // component's mean density. Rebuilt every grounding pass by indexComponents().
-  std::vector<Comp*> cgComps;
-  std::vector<double> cgCompDensity;
-  // ---- incremental grounding (single-layer only) ----
-  // computeGrounded() re-floods the whole grid every active step; that is the
-  // dominant cost when acid eats a large grounded stone mass. Grounding only
-  // CHANGES when rigid topology changes, so we keep groundedCell[] between steps
-  // and skip the flood when nothing relevant changed (Layer::groundDirty false).
-  // Acid removals that don't disconnect anything (cut-vertex check) keep the cache
-  // valid and just patch the removed cells. groundedCell[] is a pure function of
-  // the grid, so the cached result is byte-identical to a fresh reflood — verified
-  // below. Restricted to single-layer worlds; the cross-layer path always refloods.
-  bool groundVerify = false;     // debug: after each pass, also full-reflood and assert equality
-  bool groundForceFull = false;  // force a full reflood every step (the checksum-equality reference)
-  long groundMismatches = 0;     // count of verify failures (0 == fast path matched the reflood)
-  long gbEdge = 0, gbPowder = 0, gbCut = 0, gbSpan = 0, gbFast = 0; // diagnostic: removal-batch bail reasons
-  std::vector<uint8_t> gvGrounded;   // verifier snapshot of the fast-path groundedCell
-  std::vector<int32_t> gvCellComp;   // verifier snapshot of the fast-path cellComp
   std::vector<int> acidErasedStone, acidErasedIce; // reusable per-call scratch for applyAcid (avoids a heap alloc every acid step)
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
   std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
   std::vector<int> reactionSnowMelt;               // reusable per-call scratch for applyReactions (snow melted by fire -> water)
-  std::vector<int> cgRemovedCells;   // rigid cells removed this step, pending the cut-vertex check
-  std::vector<int> cgBlobN;          // surviving rigid neighbours of the removed blob (cut-vertex check)
-  std::vector<int> cgRemovedComp;    // one 8-connected component of the removed batch (partitioned cut-vertex check)
-  struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
-  std::vector<CrossLayerBond> cgBonds;
-  // Reusable scratch for the cross-bonded union-find (replaces the old O(grid)
-  // uniteLayerAdj): cgParent/cgGroundParent are the union-find arrays (size
-  // nf+nb), cgWorkQueue is the worklist, cgCompStamp marks enqueued comps
-  // (enqueued iff cgCompStamp[gid] == cgCompGen). Walking starts only from
-  // ungrounded cross-bonded comps; since computeGrounded floods grounding across
-  // 8-adjacency, an ungrounded comp is never 8-adjacent to a grounded one, so the
-  // walk stays within the floating region instead of the whole terrain mass.
-  std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
-  int32_t cgCompGen = 0;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)

@@ -23,6 +23,7 @@ export function installDevHooks(ctx, {
   window.__sandPerf = () => {
     const { avg, p95, samples } = perfFrameSummary();
     const perf = engine() ? engine().getPerf() : { stepMs: 0, dirtyChunks: 0 };
+    const catchup = ctx.catchupStats || {};
     return {
       stepMs: Number(perf.stepMs.toFixed(2)),
       renderMs: Number(ctx.perfRenderMs.toFixed(2)),
@@ -34,6 +35,11 @@ export function installDevHooks(ctx, {
       samples,
       dirtyChunks: perf.dirtyChunks,
       worldShifts: engine() ? engine().getWorldShiftCount() : 0,
+      catchupSteps: catchup.stepsThisFrame || 0,
+      catchupMaxSteps: catchup.maxSteps || 0,
+      catchupDebtMs: Number((catchup.debtMs || 0).toFixed(1)),
+      catchupDroppedMs: Number((catchup.droppedDebtMs || 0).toFixed(1)),
+      catchupClamped: !!catchup.clamped,
       wasmHeapMB: engine() ? Number((engine().getHeapBytes() / (1024 * 1024)).toFixed(1)) : 0,
       rows: ctx.rows,
       cols: ctx.cols,

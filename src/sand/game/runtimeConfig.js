@@ -37,8 +37,8 @@ export const SIZING = Object.freeze({
   // Fixed-timestep catch-up cap: the max number of STEP_MS sim steps the main loop
   // will run in a single frame to catch up on elapsed real time. Bounds the work a
   // long/heavy frame can trigger (no catch-up avalanche); past it the sim degrades to
-  // slow-motion instead of freezing. 5 * STEP_MS(16) = ~80ms of catch-up per frame.
-  maxCatchupSteps: 5,
+  // slow-motion instead of freezing. 2 * STEP_MS(16) = ~32ms of catch-up per frame.
+  maxCatchupSteps: 2,
   // Runtime zoom: multipliers on cellPx. Index zoomDefaultIndex is the default.
   // The FIRST entry is the most zoomed OUT (fewest px/cell = most cells) and it
   // alone sizes the simulation buffer, so changing zoom never rebuilds the world

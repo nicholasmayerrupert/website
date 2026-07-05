@@ -314,6 +314,7 @@ export function createSandGame(container, opts = {}) {
     perfStats() {
       const { avg, p95 } = loop.perfFrameSummary();
       const perf = ctx.engine ? ctx.engine.getPerf() : { stepMs: 0, dirtyChunks: 0 };
+      const catchup = ctx.catchupStats || {};
       return {
         stepMs: perf.stepMs,
         renderMs: ctx.perfRenderMs,
@@ -325,6 +326,11 @@ export function createSandGame(container, opts = {}) {
         dirtyChunks: perf.dirtyChunks,
         tick: ctx.engine ? ctx.engine.getTick() : 0,
         worldShifts: ctx.engine ? ctx.engine.getWorldShiftCount() : 0,
+        catchupSteps: catchup.stepsThisFrame || 0,
+        catchupMaxSteps: catchup.maxSteps || 0,
+        catchupDebtMs: catchup.debtMs || 0,
+        catchupDroppedMs: catchup.droppedDebtMs || 0,
+        catchupClamped: !!catchup.clamped,
         heapMB: ctx.engine ? ctx.engine.getHeapBytes() / (1024 * 1024) : 0,
         rows: ctx.rows,
         cols: ctx.cols,

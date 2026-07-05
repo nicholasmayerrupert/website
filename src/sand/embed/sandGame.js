@@ -203,6 +203,7 @@ function createPerfHud(root, game) {
   addRow('fill', 'fill ms');
   addRow('upload', 'upload ms');
   addRow('frame', 'frame p95');
+  addRow('catchup', 'catch-up');
   addRow('dirty', 'dirty chunks');
   addRow('shifts', 'world shifts');
   addRow('heap', 'heap MB');
@@ -238,6 +239,7 @@ function createPerfHud(root, game) {
     rows.fill.textContent = (s.fillMs || 0).toFixed(2);
     rows.upload.textContent = (s.uploadMs || 0).toFixed(2);
     rows.frame.textContent = s.p95FrameMs.toFixed(2);
+    rows.catchup.textContent = `${s.catchupSteps}/${s.catchupMaxSteps}${s.catchupClamped ? '*' : ''}`;
     rows.dirty.textContent = String(s.dirtyChunks);
     rows.shifts.textContent = String(s.worldShifts);
     rows.heap.textContent = s.heapMB.toFixed(1);

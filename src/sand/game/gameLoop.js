@@ -8,7 +8,23 @@
 import { SIZING, STEP_MS, TOOL_IDS } from './runtimeConfig';
 import { OFF } from '../wasmBridge/abi.generated.js';
 
+const DEFAULT_MAX_CATCHUP_STEPS = 2;
+const catchupStepCap = () => {
+  const n = Math.floor(Number(SIZING.maxCatchupSteps));
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_CATCHUP_STEPS;
+};
+
 export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory }) {
+  const maxCatchupSteps = catchupStepCap();
+  const maxCatchupDebtMs = STEP_MS * maxCatchupSteps;
+  ctx.catchupStats = {
+    maxSteps: maxCatchupSteps,
+    stepsThisFrame: 0,
+    debtMs: 0,
+    droppedDebtMs: 0,
+    clamped: false,
+  };
+
   // Rolling perf samples for window.__sandPerf / perfStats()
   const PERF_SAMPLES = 120;
   const perfStepSamples = new Float32Array(PERF_SAMPLES);
@@ -170,18 +186,30 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // net (the server is authoritative either way).
     let stepped = false;
     if (ctx.reduced && !ctx.netClientReady()) {
+      ctx.catchupStats = { maxSteps: maxCatchupSteps, stepsThisFrame: 0, debtMs: 0, droppedDebtMs: 0, clamped: false };
       lastStep = now; // no debt accrues while paused
     } else if (!ctx.testPaused) {
+      const debtMs = Math.max(0, now - lastStep);
+      let stepsThisFrame = 0;
+      let droppedDebtMs = 0;
+      let clamped = false;
       if (ctx.netClientReady()) {
-        if (now - lastStep >= STEP_MS) { doFixedStep(now); lastStep = now; }
+        if (debtMs >= STEP_MS) { doFixedStep(now); lastStep = now; stepsThisFrame = 1; }
       } else {
-        const maxDebt = STEP_MS * SIZING.maxCatchupSteps;
-        if (now - lastStep > maxDebt) lastStep = now - maxDebt;
+        if (debtMs > maxCatchupDebtMs) {
+          droppedDebtMs = debtMs - maxCatchupDebtMs;
+          clamped = true;
+          lastStep = now - maxCatchupDebtMs;
+        }
         while (now - lastStep >= STEP_MS) {
           if (doFixedStep(now)) stepped = true;
+          stepsThisFrame++;
           lastStep += STEP_MS;
         }
       }
+      ctx.catchupStats = { maxSteps: maxCatchupSteps, stepsThisFrame, debtMs, droppedDebtMs, clamped };
+    } else {
+      ctx.catchupStats = { maxSteps: maxCatchupSteps, stepsThisFrame: 0, debtMs: 0, droppedDebtMs: 0, clamped: false };
     }
 
     // Refresh the survival HUD: from the server's inventory when connected as a

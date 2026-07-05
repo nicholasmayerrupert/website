@@ -83,7 +83,7 @@ void RigidBodySystem::bodyNormalAt(Body* b, int idx, double wx, double wy, doubl
   double wx2 = nlx * b->cs - nly * b->sn, wy2 = nlx * b->sn + nly * b->cs;
   double inv = 1 / std::sqrt(wx2 * wx2 + wy2 * wy2); ox = wx2 * inv; oy = wy2 * inv;
 }
-void RigidBodySystem::resolveContact(Contact& c) {
+double RigidBodySystem::resolveContact(Contact& c) {
   Body* A = c.a; Body* B = c.b;
   double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
   double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
@@ -92,10 +92,12 @@ void RigidBodySystem::resolveContact(Contact& c) {
   double vn = rvx * c.nx + rvy * c.ny;
   double rnA = c.rax * c.ny - c.ray * c.nx, rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
   double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
+  double movedN = 0, movedT = 0;
   if (denom > 0) {
     double delta = -(1 + R_RESTITUTION) * vn / denom;
     double newJn = c.accJn + delta; if (newJn < 0) newJn = 0;
     double applied = newJn - c.accJn; c.accJn = newJn;
+    movedN = std::fabs(applied);
     double jx = applied * c.nx, jy = applied * c.ny;
     A->vx += jx * aInvM; A->vy += jy * aInvM; A->omega += aInvI * (c.rax * jy - c.ray * jx);
     if (B) { B->vx -= jx * bInvM; B->vy -= jy * bInvM; B->omega -= bInvI * (c.rbx * jy - c.rby * jx); }
@@ -110,28 +112,31 @@ void RigidBodySystem::resolveContact(Contact& c) {
     double maxF = R_FRICTION * c.accJn, delta = -vt / denomT;
     double newJt = c.accJt + delta; if (newJt > maxF) newJt = maxF; else if (newJt < -maxF) newJt = -maxF;
     double applied = newJt - c.accJt; c.accJt = newJt;
+    movedT = std::fabs(applied);
     double jx = applied * tx, jy = applied * ty;
     A->vx += jx * aInvM; A->vy += jy * aInvM; A->omega += aInvI * (c.rax * jy - c.ray * jx);
     if (B) { B->vx -= jx * bInvM; B->vy -= jy * bInvM; B->omega -= bInvI * (c.rbx * jy - c.rby * jx); }
   }
+  return movedN + movedT;
 }
-void RigidBodySystem::resolveBias(Contact& c) {
+double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - R_PEN_SLOP);
-  if (bias <= 0) return; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
+  if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
   double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
   double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
   if (B) { rvx -= B->pvx - B->pw * c.rby; rvy -= B->pvy + B->pw * c.rbx; }
-  double vn = rvx * c.nx + rvy * c.ny; if (vn >= bias) return;
+  double vn = rvx * c.nx + rvy * c.ny; if (vn >= bias) return 0;
   double rnA = c.rax * c.ny - c.ray * c.nx, rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
-  double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB; if (denom <= 0) return;
+  double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB; if (denom <= 0) return 0;
   double delta = (bias - vn) / denom;
   double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
   double applied = newJ - c.accBias; c.accBias = newJ;
   double jx = applied * c.nx, jy = applied * c.ny;
   A->pvx += jx * aInvM; A->pvy += jy * aInvM; A->pw += aInvI * (c.rax * jy - c.ray * jx);
   if (B) { B->pvx -= jx * bInvM; B->pvy -= jy * bInvM; B->pw -= bInvI * (c.rbx * jy - c.rby * jx); }
+  return std::fabs(applied);
 }
 void RigidBodySystem::wakeBody(Body* b) { b->awake = true; b->stillTicks = 0; }
 void RigidBodySystem::rigidStep(double tickDt) {
@@ -354,8 +359,25 @@ void RigidBodySystem::rigidStep(double tickDt) {
       reduceManifold(terrAcc, b, nullptr, 0, -1);
     }
     nc = (int)contacts.size();
-    for (int it = 0; it < R_SOLVER_ITERS; it++) { if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) resolveContact(contacts[ci]); else for (int ci = 0; ci < nc; ci++) resolveContact(contacts[ci]); }
-    for (int it = 0; it < R_SOLVER_ITERS; it++) { if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) resolveBias(contacts[ci]); else for (int ci = 0; ci < nc; ci++) resolveBias(contacts[ci]); }
+    // Adaptive iteration count: break as soon as a whole iteration applies zero
+    // impulse everywhere — a bitwise no-op, so every remaining iteration would
+    // be one too (bit-identical to always running R_SOLVER_ITERS). Measured on
+    // bench-rigid: ~12% of solves converge fully (mostly separating contacts);
+    // resting stacks genuinely use all 64 iterations (still ~3-25% of the first
+    // iteration's impulse at 64), so cutting the cap would trade stack/topple
+    // quality for little — deliberately not done.
+    for (int it = 0; it < R_SOLVER_ITERS; it++) {
+      double moved = 0;
+      if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveContact(contacts[ci]);
+      else for (int ci = 0; ci < nc; ci++) moved += resolveContact(contacts[ci]);
+      if (moved == 0.0) break;
+    }
+    for (int it = 0; it < R_SOLVER_ITERS; it++) {
+      double moved = 0;
+      if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveBias(contacts[ci]);
+      else for (int ci = 0; ci < nc; ci++) moved += resolveBias(contacts[ci]);
+      if (moved == 0.0) break;
+    }
     for (int bi = 0; bi < n; bi++) {
       Body* b = E.L->bodies[bi]; if (!b->awake) continue;
       b->px += (b->vx + b->pvx) * dt; b->py += (b->vy + b->pvy) * dt; b->angle += (b->omega + b->pw) * dt;

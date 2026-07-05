@@ -38,8 +38,12 @@ class RigidBodySystem {
   void terrainNormalAt(int cx, int cy, double bodyDensity, double& ox, double& oy);
   int insideBodyIndex(Body* b, double wx, double wy);
   void bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy);
-  void resolveContact(Contact& c);
-  void resolveBias(Contact& c);
+  // Return the total |impulse| applied, so the solver loops can early-exit the
+  // moment an iteration is a provable no-op (all-zero applied impulses leave
+  // every velocity bitwise unchanged, so every later iteration recomputes the
+  // same zeros — breaking there is bit-identical to running all iterations).
+  double resolveContact(Contact& c);
+  double resolveBias(Contact& c);
   void wakeBody(Body* b);
   void rigidStep(double tickDt);
   int localCellAt(Body* b, double wx, double wy);

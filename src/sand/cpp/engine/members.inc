@@ -186,8 +186,6 @@
   int nextPlayerId = 1;
   std::vector<float> playerSnapshot; // packed [PS_STRIDE] floats per player
   // ---- dropped items + particles (entities; physics in items.inc) ----
-  std::vector<float> invSnapshot;         // packed [IVS_STRIDE] floats per slot (one player)
-  std::vector<float> cursorSnap;          // packed [IVS_STRIDE] floats for the carried cursor stack
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
   // Cells destroyed by the last mineDamageDisc() call: (material, cellIndex). mineDisc
   // reads this to decide drops against the acting player's held tool (Phase C).

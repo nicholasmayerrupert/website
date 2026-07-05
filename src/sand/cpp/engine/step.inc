@@ -91,7 +91,13 @@
       return false;
     };
     double tJ0 = emscripten_get_now();
-    bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
+    // groundSawPowder keeps the joint pass running while powder is present:
+    // powder grounding tracks liquids that move outside the dirty hooks, and
+    // cross-layer support (directGroundSmall) must stay as fresh as it was when
+    // powder used to force groundDirty. The pass itself is cheap now that each
+    // layer's grounding reuses its rigid base (computeGrounded tiers).
+    bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty
+                         || fg.groundSawPowder || bg.groundSawPowder;
     if (bgEnabled && (!comps.cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
       computeGroundedBoth(); comps.jointGroundReady = true;
       fgA = fgA || layerActive(&fg);

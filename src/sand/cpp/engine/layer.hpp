@@ -60,6 +60,15 @@ struct Layer {
   // When it (and groundDirty/powder) are all clear, the cached grounding is still
   // the exact grounding of the current grid and the whole pass can be skipped.
   bool groundDirty = true, groundSawPowder = false, groundContentDirty = true;
+  // Rigid-grounding base cache (Perf 7b): groundedCell as of the last fresh
+  // computeRigidGrounded (R bits only, taken BEFORE the loose overlay) plus the
+  // comp grounded flags in stone|plant|ice order. computeGrounded reuses it
+  // (memcpy + overlay) when no rigid mutation is pending and the layer has no
+  // bodies (body stamps join rigid chains without routing through the hooks).
+  // The acid pure-bore path patches removed cells here like it patches
+  // groundedCell (removalsKeepGroundingValid).
+  std::vector<uint8_t> groundRigidBase, groundBaseFlags;
+  bool groundBaseValid = false;
   // Set by splitRigidAfterErase when an erase changes the component SET (a comp
   // splits into >1 piece or is fully removed), shifting the positional comp ids that
   // cellComp stores. The acid fast path clears it first, then uses it to decide
@@ -97,6 +106,7 @@ struct Layer {
     activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
     vacatedStamp.assign(n, -1);
     groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
+    groundRigidBase.clear(); groundBaseFlags.clear(); groundBaseValid = false;
     compOccStamp.assign(n, -1);
     seenStamp.assign(n, 0); seenGen = 0;
     rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);

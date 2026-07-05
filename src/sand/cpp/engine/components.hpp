@@ -30,9 +30,6 @@ class ComponentSystem {
   std::vector<int> cgStack, cgIsland;
   // Parallel x-coordinate stack for computeGrounded's flood.
   std::vector<int32_t> groundStackX;
-  // Per-layer BASE-grounding reuse cache; valid iff cg*BaseValid.
-  std::vector<uint8_t> cgFgGroundedBase, cgBgGroundedBase;
-  bool cgFgBaseValid = false, cgBgBaseValid = false;
   // cellComp index -> Comp* map + mean densities (rebuilt by indexComponents()).
   std::vector<Comp*> cgComps;
   std::vector<double> cgCompDensity;
@@ -68,7 +65,7 @@ class ComponentSystem {
   bool removalsKeepGroundingValid(const std::vector<int>& removed);
   int compCount(Layer& lay);
   void unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb);
-  void groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache, bool& baseValid, std::vector<uint8_t>& gbCache);
+  void groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache);
   void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev);
   void computeGroundedBoth();
   Comp* compById(Layer& lay, int id);

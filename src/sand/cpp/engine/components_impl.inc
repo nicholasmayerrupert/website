@@ -131,23 +131,60 @@ void ComponentSystem::applyLooseOverlay() {
   lay->groundSawPowder = sawPowder;
 }
 void ComponentSystem::computeGrounded() {
-  computeRigidGrounded();
+  Layer* const lay = E.L;
+  size_t totalComps = lay->stoneComponents.size() + lay->plantComponents.size() + lay->iceComponents.size();
+  // Reuse the rigid base when no rigid mutation is pending. The loose overlay
+  // is the only liquid-dependent part, so it is recomputed every pass; the
+  // rigid flood + indexComponents are skipped. Bodies stamp rigid material
+  // into the grid without routing through the dirty hooks, so any body in the
+  // layer disables reuse (moveBodies re-floods every step, as before).
+  bool reuse = !groundForceFull && lay->groundBaseValid && !lay->groundDirty
+               && lay->bodies.empty() && lay->bodyCells.empty()
+               && (lay->groundContentDirty || lay->groundBaseFlags.size() == totalComps);
+  if (reuse) {
+    std::copy(lay->groundRigidBase.begin(), lay->groundRigidBase.end(), lay->groundedCell.begin());
+    if (lay->groundContentDirty) {
+      // Comps reshaped but grounding stayed valid (the acid split path): the
+      // positional ids in cellComp shifted, so re-index and re-derive the comp
+      // flags from the (removal-patched) base, then refresh the flag snapshot.
+      incrementalGroundingRefresh();
+      lay->groundBaseFlags.clear();
+      auto push = [&](std::vector<Comp>& list) { for (auto& c : list) lay->groundBaseFlags.push_back(c.grounded ? 1 : 0); };
+      push(lay->stoneComponents); push(lay->plantComponents); push(lay->iceComponents);
+      lay->groundContentDirty = false;
+    } else {
+      size_t i = 0;
+      for (auto& c : lay->stoneComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+      for (auto& c : lay->plantComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+      for (auto& c : lay->iceComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+    }
+  } else {
+    computeRigidGrounded();
+    lay->groundRigidBase.assign(lay->groundedCell.begin(), lay->groundedCell.end());
+    lay->groundBaseFlags.clear();
+    auto push = [&](std::vector<Comp>& list) { for (auto& c : list) lay->groundBaseFlags.push_back(c.grounded ? 1 : 0); };
+    push(lay->stoneComponents); push(lay->plantComponents); push(lay->iceComponents);
+    lay->groundBaseValid = true;
+    lay->groundDirty = false;
+    lay->groundContentDirty = false;
+  }
   applyLooseOverlay();
-  // Stay "dirty" (force a full reflood next step too) while any powder is
-  // present: powder grounding depends on the liquid beneath it, and liquids
-  // move without routing through the component hooks that set groundDirty, so
-  // we can't safely skip the flood with powder around. Powder-free scenes
-  // (e.g. acid eating stone) go clean and can skip.
-  E.L->groundDirty = E.L->groundSawPowder;
 #ifdef SAND_INVARIANT_CHECKS
   {
-    // Parity probe: re-run the PRE-SPLIT single-flood algorithm and require a
-    // byte-identical grounded[] + identical comp flags. Runs on --dev builds only.
-    Layer* const lay = E.L;
+    // Parity probe: re-run the PRE-SPLIT single-flood algorithm from scratch
+    // (fresh index) and require byte-identical grounded[]/cellComp[]/comp
+    // flags. On cached passes this also proves the base cache is not stale.
     const uint8_t* const g = lay->grid;
     std::vector<uint8_t> nu(lay->groundedCell);
-    std::vector<uint8_t> nuFlags; nuFlags.reserve(cgComps.size());
-    for (Comp* c : cgComps) nuFlags.push_back(c->grounded ? 1 : 0);
+    std::vector<int32_t> nuCC(lay->cellComp);
+    std::vector<uint8_t> nuFlags; nuFlags.reserve(totalComps);
+    auto pushNu = [&](std::vector<Comp>& list) { for (auto& c : list) nuFlags.push_back(c.grounded ? 1 : 0); };
+    pushNu(lay->stoneComponents); pushNu(lay->plantComponents); pushNu(lay->iceComponents);
+    std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
+    indexComponents(); // fresh cgComps/cellComp for THIS layer (cached passes leave them stale)
+    for (size_t i2 = 0, n2 = (size_t)E.cols * E.rows; i2 < n2; i2++) {
+      if (nuCC[i2] != lay->cellComp[i2]) { emscripten_console_error("GROUND CACHE PARITY: cellComp mismatch"); abort(); }
+    }
     uint8_t* const grounded = lay->groundedCell.data();
     int32_t* const cc = lay->cellComp.data();
     int32_t* const gstack = lay->groundStack.data();
@@ -240,27 +277,21 @@ void ComponentSystem::incrementalGroundingRefresh() {
 // refresh, and when groundVerify is on, runs BOTH and asserts byte-equality so a
 // wrong fast path can never silently desync — it shows up as a test failure.
 void ComponentSystem::ensureGroundedSingleLayer() {
-  bool full = groundForceFull || E.bgEnabled || E.L->groundDirty;
-  // Skip the whole pass when nothing that affects grounding changed since the last
-  // one: powder-free (powder grounding tracks liquids outside the component hooks),
-  // no structural change (groundDirty), and no acid fast-path removal
-  // (groundContentDirty). Every rigid mutation EITHER sets groundDirty or is the
-  // acid fast-path removal (which sets groundContentDirty), so when all three are
-  // clear the cached E.L->cellComp[]/E.L->groundedCell[]/comp.grounded are byte-identical to a
-  // fresh incremental refresh — re-running it (an O(all rigid cells) pass) is pure
-  // waste. This is what keeps a big INERT rigid mass cheap: a resting acid pool held
-  // in an ice tub, say, while acid bores stone elsewhere. The boring keeps the LAYER
-  // active every step, but only the steps that actually edit rigid content pay the
-  // O(stone+ice) grounding cost; idle/non-dissolving steps reuse the cache for free.
-  if (!full && !groundVerify && !E.L->groundSawPowder && !E.L->groundContentDirty) return;
-  E.L->groundContentDirty = false;
-  if (!groundVerify) {
-    if (full) computeGrounded(); else incrementalGroundingRefresh();
-    return;
-  }
-  if (full) computeGrounded(); else incrementalGroundingRefresh();
+  // Skip the whole pass when nothing that affects grounding changed since the
+  // last one: powder-free (the loose overlay tracks liquids outside the
+  // component hooks, so powder needs a per-pass refresh), no structural change
+  // (groundDirty), and no acid fast-path removal (groundContentDirty). When all
+  // are clear the cached E.L->cellComp[]/groundedCell[]/comp.grounded are the
+  // exact grounding of the current grid. Otherwise run computeGrounded(),
+  // whose internal tiers do the cheapest valid thing (rigid-base reuse +
+  // overlay, incremental re-index, or a full flood).
+  bool needPass = groundForceFull || E.bgEnabled || E.L->groundDirty || E.L->groundContentDirty || E.L->groundSawPowder;
+  if (!needPass && !groundVerify) return;
+  if (!groundVerify) { computeGrounded(); return; }
+  computeGrounded(); // production path (cache tiers allowed)
   gvGrounded.assign(E.L->groundedCell.begin(), E.L->groundedCell.end());
   gvCellComp.assign(E.L->cellComp.begin(), E.L->cellComp.end());
+  E.L->groundBaseValid = false; // force the reference below to a real full flood
   computeGrounded(); // the trusted reference; leaves the live arrays correct regardless
   for (size_t i = 0, n = (size_t)E.cols * E.rows; i < n; i++) {
     if (gvGrounded[i] != E.L->groundedCell[i] || gvCellComp[i] != E.L->cellComp[i]) { groundMismatches++; break; }
@@ -387,7 +418,7 @@ bool ComponentSystem::removalsKeepGroundingValid(const std::vector<int>& removed
     }
     if (!blobKeepsGroundingValid(cgRemovedComp)) return false; // a real cut/edge/powder/span -> reflood
   }
-  for (int k : removed) E.L->groundedCell[k] = 0; // every component safe: only the removed cells lose grounding
+  for (int k : removed) { E.L->groundedCell[k] = 0; if (E.L->groundBaseValid) E.L->groundRigidBase[k] = 0; } // every component safe: only the removed cells lose grounding (patch the base cache too)
   return true;
 }
 
@@ -459,26 +490,14 @@ void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::ve
 // is a pure function of the grid; E.L->cellComp is written ONLY by grounding so it stays
 // valid untouched between passes). This halves computeGroundedBoth's cost in the
 // common two-layer pan case (the bg flood was ~half the joint-grounding time).
-void ComponentSystem::groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache, bool& baseValid, std::vector<uint8_t>& gbCache) {
+void ComponentSystem::groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache) {
+  // computeGrounded's internal tiers do the caching now (rigid-base reuse +
+  // per-pass loose overlay); this just snapshots the layer's INDEPENDENT
+  // grounding for the cross-layer machinery (directGroundSmall / pair scans,
+  // which read rigid-cell bits from it before any cross-layer patch lands).
   E.useLayer(lay);
-  int cc = (int)(lay->stoneComponents.size() + lay->plantComponents.size() + lay->iceComponents.size());
-  bool full = groundForceFull || lay->groundDirty || lay->groundContentDirty || !baseValid || (int)gbCache.size() != cc;
-  if (full) {
-    computeGrounded();
-    lay->groundContentDirty = false;
-    baseCache.assign(lay->groundedCell.begin(), lay->groundedCell.end());
-    gbCache.clear(); gbCache.reserve(cc);
-    for (auto& c : lay->stoneComponents) gbCache.push_back(c.grounded ? 1 : 0);
-    for (auto& c : lay->plantComponents) gbCache.push_back(c.grounded ? 1 : 0);
-    for (auto& c : lay->iceComponents) gbCache.push_back(c.grounded ? 1 : 0);
-    baseValid = true;
-  } else {
-    std::copy(baseCache.begin(), baseCache.end(), lay->groundedCell.begin());
-    size_t i = 0;
-    for (auto& c : lay->stoneComponents) c.grounded = gbCache[i++] != 0;
-    for (auto& c : lay->plantComponents) c.grounded = gbCache[i++] != 0;
-    for (auto& c : lay->iceComponents) c.grounded = gbCache[i++] != 0;
-  }
+  computeGrounded();
+  baseCache.assign(lay->groundedCell.begin(), lay->groundedCell.end());
 }
 
 // Re-widen the settle band over cells that LOST grounding this pass (prev
@@ -499,8 +518,8 @@ void ComponentSystem::computeGroundedBoth() {
   // Each layer's base grounding: full flood when its rigid topology changed, else a
   // cheap cache reuse. cgFgBase/cgBgBase are populated here (the cross-layer machinery
   // below reads them as the independent base snapshots).
-  groundLayerBase(&E.fg, cgFgBase, cgFgBaseValid, cgFgGroundedBase);
-  groundLayerBase(&E.bg, cgBgBase, cgBgBaseValid, cgBgGroundedBase);
+  groundLayerBase(&E.fg, cgFgBase);
+  groundLayerBase(&E.bg, cgBgBase);
 
   int nf = compCount(E.fg), nb = compCount(E.bg);
   E.fg.crossBondedComp.assign(nf, 0);

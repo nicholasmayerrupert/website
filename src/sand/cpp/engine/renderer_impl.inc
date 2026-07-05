@@ -92,15 +92,13 @@ void Renderer::remapSkyTopInput(Layer* lay) {
   lay->skyTopInput.swap(nextTop);
 }
 
-void Renderer::computeDirectSky(Layer* lay) {
+void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) {
   const int n = E.cols * E.rows;
   remapSkyTopInput(lay);
   if ((int)lay->skyLight.size() != n) lay->skyLight.assign(n, 0);
-  else std::fill(lay->skyLight.begin(), lay->skyLight.end(), 0);
+  else for (int y = ry0; y <= ry1; y++) { uint8_t* row = lay->skyLight.data() + y * E.cols; std::fill(row + rx0, row + rx1 + 1, (uint8_t)0); }
   if ((int)lay->skyDownDepth.size() != E.cols) lay->skyDownDepth.assign(E.cols, -1);
-  else std::fill(lay->skyDownDepth.begin(), lay->skyDownDepth.end(), -1);
   if ((int)lay->skyDownValue.size() != E.cols) lay->skyDownValue.assign(E.cols, 0);
-  else std::fill(lay->skyDownValue.begin(), lay->skyDownValue.end(), 0);
   const uint8_t* g = lay->grid;
   auto seedSkyOnly = [&](int k, uint8_t v) {
     if (v > lay->skyLight[k]) lay->skyLight[k] = v;
@@ -110,15 +108,19 @@ void Renderer::computeDirectSky(Layer* lay) {
   // side edges. This keeps open shafts and surface faces bright without making a
   // whole winding cave bright just because it has one surface connection. Infinite
   // worlds only start these rays from real outside-sky coordinates, so unloaded
-  // underground buffer edges do not become fake cave skylights.
-  for (int x = 0; x < E.cols; x++) {
+  // underground buffer edges do not become fake cave skylights. Rays always
+  // scan from the REAL buffer edge (transparency along the whole path matters);
+  // only the seeding is restricted to the solve region. Out-of-region columns
+  // keep their previous skyDownDepth/Value/reach entries (they are only read by
+  // the shift remap, and shifts force a full-region solve).
+  for (int x = rx0; x <= rx1; x++) {
     uint8_t topValue = lay->skyTopInput[x];
     if (topRayStartsInSky(lay, x) && renderSkyLight > topValue) topValue = renderSkyLight;
-    if (topValue <= LIGHT_AMBIENT) continue;
+    if (topValue <= LIGHT_AMBIENT) { lay->skyDownDepth[x] = -1; lay->skyDownValue[x] = 0; continue; }
     int deepest = -1;
     for (int y = 0; y < E.rows; y++) {
       int k = y * E.cols + x;
-      seedSkyOnly(k, topValue);
+      if (y >= ry0 && y <= ry1) seedSkyOnly(k, topValue);
       deepest = y;
       if (!transparentForLight(g[k])) break;
     }
@@ -131,18 +133,18 @@ void Renderer::computeDirectSky(Layer* lay) {
     if (blocked || it == lay->skyWorldReachY.end() || reach > it->second) lay->skyWorldReachY[worldX] = reach;
   }
   uint8_t edge = edgeSkyLight();
-  for (int y = 0; y < E.rows; y++) {
+  for (int y = ry0; y <= ry1; y++) {
     if (sideRayStartsInSky(lay, 0, y)) {
       for (int x = 0; x < E.cols; x++) {
         int k = y * E.cols + x;
-        seedSkyOnly(k, edge);
+        if (x >= rx0 && x <= rx1) seedSkyOnly(k, edge);
         if (!transparentForLight(g[k])) break;
       }
     }
     if (sideRayStartsInSky(lay, E.cols - 1, y)) {
       for (int x = E.cols - 1; x >= 0; x--) {
         int k = y * E.cols + x;
-        seedSkyOnly(k, edge);
+        if (x >= rx0 && x <= rx1) seedSkyOnly(k, edge);
         if (!transparentForLight(g[k])) break;
       }
     }
@@ -153,14 +155,14 @@ void Renderer::computeDirectSky(Layer* lay) {
   lay->skyDirty = false;
 }
 
-void Renderer::computeLightingBase(Layer* lay) {
+void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry1) {
   const int n = E.cols * E.rows;
   if ((int)lay->light.size() != n) lay->light.assign(n, LIGHT_AMBIENT);
-  else std::fill(lay->light.begin(), lay->light.end(), LIGHT_AMBIENT);
+  else for (int y = ry0; y <= ry1; y++) { uint8_t* row = lay->light.data() + y * E.cols; std::fill(row + rx0, row + rx1 + 1, LIGHT_AMBIENT); }
   lightQueue.clear();
   lightQueue.reserve((size_t)n / 4);
 
-  computeDirectSky(lay);
+  computeDirectSky(lay, rx0, ry0, rx1, ry1);
 
   const uint8_t* g = lay->grid;
   auto seed = [&](int k, uint8_t v) {
@@ -170,18 +172,24 @@ void Renderer::computeLightingBase(Layer* lay) {
     }
   };
 
-  for (int k = 0; k < n; k++) if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]);
+  for (int y = ry0; y <= ry1; y++) {
+    int rb = y * E.cols;
+    for (int x = rx0; x <= rx1; x++) { int k = rb + x; if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]); }
+  }
 
   // Then let sky and emissive sources spill into liquids/solids with material loss.
-  for (int y = 0; y < E.rows; y++) {
+  for (int y = ry0; y <= ry1; y++) {
     int rb = y * E.cols, wy = lay->worldOffsetY + y;
-    for (int x = 0; x < E.cols; x++) {
+    for (int x = rx0; x <= rx1; x++) {
       int k = rb + x;
       uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
       if (e) seed(k, e);
     }
   }
 
+  // Flood clamped to the region: the ring underestimates (its far sources are
+  // cut off), which cannot change any value inside the exact window (their
+  // real contribution there is <= ambient by the distance argument above).
   for (size_t qi = 0; qi < lightQueue.size(); qi++) {
     int k = lightQueue[qi];
     int cur = lay->light[k];
@@ -192,10 +200,10 @@ void Renderer::computeLightingBase(Layer* lay) {
       lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
       lightQueue.push_back(nk);
     };
-    if (x > 0) pushNeighbour(k - 1);
-    if (x + 1 < E.cols) pushNeighbour(k + 1);
-    if (y > 0) pushNeighbour(k - E.cols);
-    if (y + 1 < E.rows) pushNeighbour(k + E.cols);
+    if (x > rx0) pushNeighbour(k - 1);
+    if (x < rx1) pushNeighbour(k + 1);
+    if (y > ry0) pushNeighbour(k - E.cols);
+    if (y < ry1) pushNeighbour(k + E.cols);
   }
 }
 
@@ -203,24 +211,27 @@ void Renderer::computeLightingBase(Layer* lay) {
 // PRE-projection light) rather than crossLay->light, so both directions can be
 // projected from clean bases in one frame without the two calls contaminating each
 // other. Callers MUST snapshot crossLay->lightBase = crossLay->light before calling.
-void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay) {
+void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay, int rx0, int ry0, int rx1, int ry1) {
   const int n = E.cols * E.rows;
   const uint8_t* g = lay->grid;
   const uint8_t* cg = crossLay->grid;
   const uint8_t* cl = crossLay->lightBase.data();
   lightQueue.clear();
   lightQueue.reserve((size_t)n / 8);
-  for (int k = 0; k < n; k++) {
-    int v = 0;
-    if (transparentForLight(cg[k])) {
-      v = (int)cl[k] - CROSS_LAYER_EMISSIVE_LOSS;
-    } else {
-      int y = k / E.cols, x = k - y * E.cols;
-      v = (int)crossLayerEmissionFor(cg[k], crossLay->worldOffsetX + x, crossLay->worldOffsetY + y);
-    }
-    if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
-      lay->light[k] = (uint8_t)v;
-      if (transparentForLight(g[k])) lightQueue.push_back(k);
+  for (int y = ry0; y <= ry1; y++) {
+    int rb = y * E.cols;
+    for (int x = rx0; x <= rx1; x++) {
+      int k = rb + x;
+      int v = 0;
+      if (transparentForLight(cg[k])) {
+        v = (int)cl[k] - CROSS_LAYER_EMISSIVE_LOSS;
+      } else {
+        v = (int)crossLayerEmissionFor(cg[k], crossLay->worldOffsetX + x, crossLay->worldOffsetY + y);
+      }
+      if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
+        lay->light[k] = (uint8_t)v;
+        if (transparentForLight(g[k])) lightQueue.push_back(k);
+      }
     }
   }
 
@@ -234,19 +245,19 @@ void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay) {
       lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
       if (transparentForLight(g[nk])) lightQueue.push_back(nk);
     };
-    if (x > 0) pushNeighbour(k - 1);
-    if (x + 1 < E.cols) pushNeighbour(k + 1);
-    if (y > 0) pushNeighbour(k - E.cols);
-    if (y + 1 < E.rows) pushNeighbour(k + E.cols);
+    if (x > rx0) pushNeighbour(k - 1);
+    if (x < rx1) pushNeighbour(k + 1);
+    if (y > ry0) pushNeighbour(k - E.cols);
+    if (y < ry1) pushNeighbour(k + E.cols);
   }
 }
 
 void Renderer::computeLighting(Layer* lay, Layer* crossLay) {
-  computeLightingBase(lay);
+  computeLightingBase(lay, 0, 0, E.cols - 1, E.rows - 1);
   if (!crossLay) return;
-  computeLightingBase(crossLay);
+  computeLightingBase(crossLay, 0, 0, E.cols - 1, E.rows - 1);
   crossLay->lightBase = crossLay->light;  // snapshot base for projectCrossLayerLight
-  projectCrossLayerLight(lay, crossLay);
+  projectCrossLayerLight(lay, crossLay, 0, 0, E.cols - 1, E.rows - 1);
 }
 
 // Solve BOTH layers' final light in one coordinated pass (the GL present path).
@@ -255,13 +266,21 @@ void Renderer::computeLighting(Layer* lay, Layer* crossLay) {
 // computeLighting result exactly: the foreground receives cross-light from the
 // background only when E.bgEnabled, the background always receives it from the
 // foreground (mirrors the crossLay selection in renderFull()).
-void Renderer::computeLightingBoth() {
-  computeLightingBase(&E.fg);
-  E.fg.lightBase = E.fg.light;
-  computeLightingBase(&E.bg);
-  E.bg.lightBase = E.bg.light;
-  if (E.bgEnabled) projectCrossLayerLight(&E.fg, &E.bg);  // fg <- bg base (only when bg is live)
-  projectCrossLayerLight(&E.bg, &E.fg);                 // bg <- fg base (always)
+void Renderer::computeLightingBoth(int rx0, int ry0, int rx1, int ry1) {
+  const size_t n = (size_t)E.cols * E.rows;
+  auto snapshotBase = [&](Layer& lay) {
+    if (lay.lightBase.size() != n) { lay.lightBase = lay.light; return; }
+    for (int y = ry0; y <= ry1; y++) {
+      size_t off = (size_t)y * E.cols;
+      std::copy(lay.light.begin() + off + rx0, lay.light.begin() + off + rx1 + 1, lay.lightBase.begin() + off + rx0);
+    }
+  };
+  computeLightingBase(&E.fg, rx0, ry0, rx1, ry1);
+  snapshotBase(E.fg);
+  computeLightingBase(&E.bg, rx0, ry0, rx1, ry1);
+  snapshotBase(E.bg);
+  if (E.bgEnabled) projectCrossLayerLight(&E.fg, &E.bg, rx0, ry0, rx1, ry1);  // fg <- bg base (only when bg is live)
+  projectCrossLayerLight(&E.bg, &E.fg, rx0, ry0, rx1, ry1);                   // bg <- fg base (always)
 }
 
 uint8_t Renderer::renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) const {

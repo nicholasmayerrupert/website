@@ -373,9 +373,10 @@ void GLPresenter::glDrawPreview() {
 // render-dirty flags. Gated to run when the grid changed, the skylight changed, or the
 // sampled window moved (whole-cell pan / world shift / forced refresh) — the last is
 // essential because off-screen texels are never sampled, so a pan that scrolls a new
-// cell into view must repaint that cell here. Lighting stays a FULL-buffer solve
-// (computeLightingBoth, once for both layers) so the windowed fill always reads valid,
-// buffer-indexed light; a pure pan reuses the existing light without re-solving.
+// cell into view must repaint that cell here. Lighting solves the visible window +
+// margin (exact inside the window — see glpresenter.hpp); forced events (shift,
+// day-night, init) still solve the full buffer, and a pure pan re-solves only when
+// the window drifts outside the last solve's exact zone.
 void GLPresenter::glPresentWindow(int forceFull) {
   E.useLayer(&E.fg); E.buildDirtyRects(); bool fgDirty = E.fg.dirtyRenderCount > 0;
   E.useLayer(&E.bg); E.buildDirtyRects(); bool bgDirty = E.bg.dirtyRenderCount > 0;
@@ -385,20 +386,36 @@ void GLPresenter::glPresentWindow(int forceFull) {
   bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged;
   bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
   if (!contentDirty && !windowMoved) return;
-
-  // Re-solve the full-buffer lighting only when content changed AND either the light is
-  // forced/invalidated (init/resize, world shift, day-night change) or the throttle
-  // window has elapsed; otherwise reuse the prior light (buffer-indexed, so still valid
-  // for the same buffer positions). A pure pan reuses lighting unconditionally.
-  bool lightForced = forceFull || worldShifted || skyChanged;
-  bool lightThrottleReady = E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
-  if (Renderer::RENDER_LIGHTING_ENABLED && contentDirty && (lightForced || lightThrottleReady)) {
-    double t0 = emscripten_get_now();
-    E.renderer.computeLightingBoth();
-    glLightTick = E.tick;
-    E.perfLightMs = emscripten_get_now() - t0;
-  }
   int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
+
+  // Lighting policy: forced events (init/resize, world shift, day-night) solve
+  // the FULL buffer (keeps the sky shift-remap caches coherent buffer-wide).
+  // Content changes re-solve just the window+margin on the usual throttle. A
+  // window that drifts outside the last solve's exact zone re-solves
+  // immediately — those cells' light is stale or was only ring-approximate.
+  if (Renderer::RENDER_LIGHTING_ENABLED) {
+    bool lightForced = forceFull || worldShifted || skyChanged;
+    bool lightThrottleReady = E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
+    int ex0 = glLightX0 <= 0 ? 0 : glLightX0 + GL_LIGHT_EXACT_SHRINK;
+    int ey0 = glLightY0 <= 0 ? 0 : glLightY0 + GL_LIGHT_EXACT_SHRINK;
+    int ex1 = glLightX1 >= E.cols - 1 ? E.cols - 1 : glLightX1 - GL_LIGHT_EXACT_SHRINK;
+    int ey1 = glLightY1 >= E.rows - 1 ? E.rows - 1 : glLightY1 - GL_LIGHT_EXACT_SHRINK;
+    bool windowExposed = glLightX0 < 0 ||
+                         imax(0, x0 - 1) < ex0 || imax(0, y0 - 1) < ey0 ||
+                         imin(E.cols - 1, x1 + 1) > ex1 || imin(E.rows - 1, y1 + 1) > ey1;
+    if ((contentDirty && (lightForced || lightThrottleReady)) || windowExposed) {
+      double t0 = emscripten_get_now();
+      int lx0 = 0, ly0 = 0, lx1 = E.cols - 1, ly1 = E.rows - 1;
+      if (!lightForced) {
+        lx0 = imax(0, x0 - GL_LIGHT_WINDOW_MARGIN); ly0 = imax(0, y0 - GL_LIGHT_WINDOW_MARGIN);
+        lx1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN); ly1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
+      }
+      E.renderer.computeLightingBoth(lx0, ly0, lx1, ly1);
+      glLightX0 = lx0; glLightY0 = ly0; glLightX1 = lx1; glLightY1 = ly1;
+      glLightTick = E.tick;
+      E.perfLightMs = emscripten_get_now() - t0;
+    }
+  }
   double tf = emscripten_get_now();
   E.useLayer(&E.fg); E.renderer.fillRenderSpan(E.fg.grid, (uint32_t*)E.fg.renderPixels.data(), x0, y0, x1, y1);
   E.useLayer(&E.bg); E.renderer.fillRenderSpan(E.bg.grid, (uint32_t*)E.bg.renderPixels.data(), x0, y0, x1, y1);

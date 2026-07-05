@@ -130,7 +130,24 @@ bool ToolSystem::footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint&
 // Returns the NUMBER OF CELLS actually written (for the per-pixel inventory economy).
 int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) {
   int changed = 0;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if ((overwrite || E.grid[k] == EMPTY) && E.grid[k] != material) { E.grid[k] = material; changed++; } } }
+  std::vector<int> erasedStone, erasedIce; bool erasedPlant = false;
+  std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
+  bool destroyedAny = false;
+  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if ((overwrite || E.grid[k] == EMPTY) && E.grid[k] != material) {
+    uint8_t old = E.grid[k];
+    // Overwriting a component or body cell must free it from its owner first,
+    // or the comp/body keeps an invisible phantom cell (the component-cell
+    // destroy invariant — found by the --dev validator via overwrite paints).
+    if (old != EMPTY && (E.isComponentMaterial(old) || E.isBodyCell(k))) {
+      destroyCellAt(k, old, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
+      destroyedAny = true;
+    }
+    E.grid[k] = material; changed++;
+  } } }
+  if (destroyedAny) {
+    E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
+    splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
+  }
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   return changed;
 }

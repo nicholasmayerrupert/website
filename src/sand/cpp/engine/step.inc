@@ -18,6 +18,9 @@
     if (!jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     double tG = emscripten_get_now(); perfStepGround = tG - t0;
     moveRigidAssemblies();
+#ifdef SAND_INVARIANT_CHECKS
+    validateInvariants("post-assemblies");
+#endif
     moveBodies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-moveBodies");
@@ -101,7 +104,13 @@
     perfStepLayers = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
     if (jointGroundReady && !jointBondsInvalid) {
+#ifdef SAND_INVARIANT_CHECKS
+      validateInvariants("pre-crossmove");
+#endif
       moveCrossLayerBondedAssemblies();
+#ifdef SAND_INVARIANT_CHECKS
+      validateInvariants("post-crossmove");
+#endif
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     } else if (jointBondsInvalid) {
@@ -126,6 +135,13 @@
   // RNG and stay byte-identical to a one-layer build.
   void crossLayerReactions(bool fgA, bool bgA) {
     if (!bgEnabled) return;
+    // Cross-layer ignition must honor the same invariants as in-layer ignition
+    // (applyReactions): a burned PLANT cell must split its component (or the
+    // comp keeps a phantom cell — found by the --dev validator), and a
+    // flammable BODY cell is owned by erodeBodies, not in-place ignition
+    // (body-material invariant). The rand() draws stay UNCONDITIONAL so the
+    // shared stream is byte-identical to before; only the write is gated.
+    bool fgPlantBurned = false, bgPlantBurned = false;
     for (int y = 1; y < rows - 1; y++) {
       int mn = cols, mx = -1;
       if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
@@ -136,12 +152,21 @@
         int k = y * cols + x;
         uint8_t f = fg.grid[k], b = bg.grid[k];
         if (f == FIRE && isFlammable(b)) {
-          if (rand() < FIRE_CROSS_P) { bg.grid[k] = FIRE; if (x < bg.rowMarkMin[y]) bg.rowMarkMin[y] = x; if (x > bg.rowMarkMax[y]) bg.rowMarkMax[y] = x; }
+          if (rand() < FIRE_CROSS_P && bg.bodyOwner[k] == -1) {
+            if (isPlantMaterial(b)) bgPlantBurned = true;
+            bg.grid[k] = FIRE; if (x < bg.rowMarkMin[y]) bg.rowMarkMin[y] = x; if (x > bg.rowMarkMax[y]) bg.rowMarkMax[y] = x;
+          }
         } else if (b == FIRE && isFlammable(f)) {
-          if (rand() < FIRE_CROSS_P) { fg.grid[k] = FIRE; if (x < fg.rowMarkMin[y]) fg.rowMarkMin[y] = x; if (x > fg.rowMarkMax[y]) fg.rowMarkMax[y] = x; }
+          if (rand() < FIRE_CROSS_P && fg.bodyOwner[k] == -1) {
+            if (isPlantMaterial(f)) fgPlantBurned = true;
+            fg.grid[k] = FIRE; if (x < fg.rowMarkMin[y]) fg.rowMarkMin[y] = x; if (x > fg.rowMarkMax[y]) fg.rowMarkMax[y] = x;
+          }
         }
       }
     }
+    if (fgPlantBurned) { useLayer(&fg); splitPlantAfterErase(); }
+    if (bgPlantBurned) { useLayer(&bg); splitPlantAfterErase(); }
+    if (fgPlantBurned || bgPlantBurned) useLayer(&fg);
   }
 
   // ---- cross-layer transfer (RNG-free) ----

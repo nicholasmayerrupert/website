@@ -952,6 +952,25 @@
         else if (di < (int)vacated.size()) writeGridIndex(vacated[di++], d.material); // gas
       }
       for (auto& w : liquidWrites) writeGridIndex(w.target, w.material);
+#ifdef SAND_INVARIANT_CHECKS
+      {
+        // Dev probe: no relocation target may land inside ANY component's cells.
+        std::unordered_set<int> allCompCells;
+        for (auto& c : L->stoneComponents) for (int k : c.cells) allCompCells.insert(k);
+        for (auto& c : L->plantComponents) for (int k : c.cells) allCompCells.insert(k);
+        for (auto& c : L->iceComponents) for (int k : c.cells) allCompCells.insert(k);
+        auto probe = [&](int t, uint8_t m, const char* what) {
+          if (!allCompCells.count(t)) return;
+          char buf[200];
+          snprintf(buf, sizeof(buf), "TRANSLATE PROBE: %s wrote mat=%d into comp cell k=%d (x=%d,y=%d) dir=%d vacated=%d",
+                   what, (int)m, t, t % cols, t / cols, dir > 0 ? 1 : -1, (int)std::count(vacated.begin(), vacated.end(), t));
+          emscripten_console_error(buf);
+          abort();
+        };
+        for (auto& w : liquidWrites) probe(w.target, w.material, "liquidWrite");
+        for (size_t i2 = 0; i2 < powderTargets.size(); i2++) probe(powderTargets[i2], 0, "powderSpill");
+      }
+#endif
       return true;
     };
 

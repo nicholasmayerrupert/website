@@ -773,10 +773,10 @@
     for (auto& p : players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
     // Items are buffer-local entities like players: slide them by the same delta and
     // drop any that leave the loaded window (v1 — no off-buffer item persistence).
-    if (!items.empty()) {
-      std::vector<Item> keep; keep.reserve(items.size());
-      for (auto& it : items) { it.px -= dx; it.py -= dy; if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it); }
-      items.swap(keep);
+    if (!itemsys.items.empty()) {
+      std::vector<Item> keep; keep.reserve(itemsys.items.size());
+      for (auto& it : itemsys.items) { it.px -= dx; it.py -= dy; if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it); }
+      itemsys.items.swap(keep);
     }
     remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the grid shift)
     remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide

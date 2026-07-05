@@ -64,8 +64,8 @@ void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, in
   if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GLP_STRIDE);
   else glExtPlayers.clear();
 }
-// Client E.items override: when external, glDrawItems draws these instead of the
-// engine's own (a client doesn't simulate the world, so it has no local E.items).
+// Client E.itemsys.items override: when external, glDrawItems draws these instead of the
+// engine's own (a client doesn't simulate the world, so it has no local E.itemsys.items).
 void GLPresenter::glSetItems(int useExternal, const float* data, int count) {
   glUseExtItems = useExternal != 0;
   if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * IS_STRIDE);
@@ -261,12 +261,12 @@ void GLPresenter::glDrawPlayers() {
   }
 }
 
-// Dropped E.items + particles overlay, drawn after E.players (same world->screen
+// Dropped E.itemsys.items + particles overlay, drawn after E.players (same world->screen
 // transform). Each is a small rect centered on its cell at the material's color;
-// particles shrink/fade by remaining life. The engine draws from its own `E.items`
+// particles shrink/fade by remaining life. The engine draws from its own `E.itemsys.items`
 // vector — no JS state push, exactly like host-side player drawing.
-// Draw one dropped item/particle. Identical for engine-owned E.items and the
-// client's host-snapshot E.items, so id-keyed bob/glimmer stay in sync.
+// Draw one dropped item/particle. Identical for engine-owned E.itemsys.items and the
+// client's host-snapshot E.itemsys.items, so id-keyed bob/glimmer stay in sync.
 void GLPresenter::glDrawOneItem(int id, int kind, int material, double px, double py, int life,
                    int camCol, int camRow) {
   uint32_t c = MAT_COLOR[material];
@@ -306,10 +306,10 @@ void GLPresenter::glDrawItems() {
     }
     return;
   }
-  if (E.items.empty()) return;
+  if (E.itemsys.items.empty()) return;
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
-  for (auto& it : E.items) glDrawOneItem(it.id, it.kind, it.material, it.px, it.py, it.life, camCol, camRow);
+  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.material, it.px, it.py, it.life, camCol, camRow);
 }
 
 void GLPresenter::glDrawPreview() {

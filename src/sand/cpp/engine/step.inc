@@ -67,7 +67,7 @@
     updatePlayers();
     updateItems(); // entities (dropped items/particles) advance even when the grid is inert
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
-    if (!fgA && !bgA) { useLayer(&fg); return !players.empty() || !items.empty(); }
+    if (!fgA && !bgA) { useLayer(&fg); return !players.empty() || !itemsys.items.empty(); }
     double t0 = emscripten_get_now();
     tick++;
     // Cross-layer grounding: compute groundedness jointly over both layers up

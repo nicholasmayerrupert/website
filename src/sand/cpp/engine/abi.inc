@@ -186,9 +186,9 @@ EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, d
 // are test/gameplay hooks; the snapshot lets JS draw or inspect them.
 EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) { return e->spawnItem((uint8_t)mat, count, px, py, vx, vy); }
 EMSCRIPTEN_KEEPALIVE void engine_test_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) { e->spawnParticle((uint8_t)mat, px, py, vx, vy, life); }
-EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->items.size(); }
-EMSCRIPTEN_KEEPALIVE int engine_item_snapshot(Engine* e) { return e->buildItemSnapshot(); }
-EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->itemSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->itemsys.items.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_item_snapshot(Engine* e) { return e->itemsys.buildItemSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->itemsys.snapshot.data(); }
 
 // survival inventory (inventory.inc): authoritative per-player stacks. JS reads the
 // snapshot for the HUD and forwards slot-select / move / place intents.

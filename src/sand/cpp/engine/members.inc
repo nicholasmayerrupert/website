@@ -186,9 +186,6 @@
   int nextPlayerId = 1;
   std::vector<float> playerSnapshot; // packed [PS_STRIDE] floats per player
   // ---- dropped items + particles (entities; physics in items.inc) ----
-  std::vector<Item> items;
-  int nextItemId = 1;
-  std::vector<float> itemSnapshot;        // packed [IS_STRIDE] floats per item
   std::vector<float> invSnapshot;         // packed [IVS_STRIDE] floats per slot (one player)
   std::vector<float> cursorSnap;          // packed [IVS_STRIDE] floats for the carried cursor stack
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)

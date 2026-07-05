@@ -53,5 +53,6 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/terrain_impl.inc"
 #include "engine/renderer_impl.inc"
 #include "engine/glpresenter_impl.inc"
+#include "engine/items_impl.inc"
 
 #include "engine/abi.inc"

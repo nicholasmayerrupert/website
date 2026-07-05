@@ -14,16 +14,18 @@ the canvas, runs the RAF/fixed-step loop, forwards raw DOM events, carries the n
 transport). It ships as a framework-free `<sand-game>` Web Component
 (`src/sand/embed/`); a tiny React shim mounts it on this site. The engine runs
 **two fully-simulated layers** — foreground + a darker background (`struct Layer`
-in members.inc; the Engine keeps raw-pointer mirrors of the hot per-cell buffers
-and `useLayer()` repoints them). `step()` steps `fg` then `bg` under one tick, then
-a `transferPass()` moves stuck powders/liquids between layers. Right-click in
+in `cpp/engine/layer.hpp`; `useLayer()` repoints the Engine's active-layer
+pointer `L`). `step()` steps `fg` then `bg` under one tick, then a
+`transferPass()` moves stuck powders/liquids between layers. Every simulation
+subsystem is a named class (`engine/<name>.hpp` + `<name>_impl.inc`) composed
+by the Engine, which keeps only the coordinator role + the settle core. Right-click in
 creative paints into the background.
 `src/sand/README.md` is the authoritative map — read it before touching the sim.
 Quick orientation:
 
 | Path | What it is |
 | --- | --- |
-| `src/sand/cpp/` | The C++ engine. `sand.cpp` includes one `.inc` per subsystem (`core`, `components`, `reactions`, `growth`, `rigid`, `worldgen`, `tools`, `render`, `camera`, `gl`) + `common.hpp` (+ `gl_shared.hpp`). Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`). |
+| `src/sand/cpp/` | The C++ engine: fourteen subsystem classes (`engine/*.hpp` + `*_impl.inc`) composed by a coordinator Engine (`sand.cpp`, one unity TU). Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`); `wasm/build.sh --dev` adds the post-step invariant validator. |
 | `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation+render+camera handle. The grid + render pixels are zero-copy views into wasm memory. |
 | `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
 | `src/sand/game/createSandGame.js` | The thin browser shell: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events to the engine, and drives `engine.glRenderFrame()`/`streamWorld()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |

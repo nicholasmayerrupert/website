@@ -27,11 +27,11 @@ an empty same-cell target in the other layer only when it can keep rising there.
 The "can keep moving" rule prevents oscillation. Solids/components/bodies never
 transfer.
 
-Implementation: per-cell simulation state lives in `struct Layer` (members.inc);
-the Engine holds `fg`/`bg` + an active-layer pointer `L`, with raw-pointer mirrors
-of the hot indexed buffers so the settle hot path is layer-agnostic (`useLayer()`
-repoints them). `step()` runs `stepLayer(&fg)` then `stepLayer(&bg)` under one tick,
-then `transferPass()`. The foreground is stepped first so a single-layer scene
+Implementation: per-cell simulation state lives in `struct Layer` (layer.hpp);
+the Engine holds `fg`/`bg` + an active-layer pointer `L` (`useLayer()` just
+repoints `L`; the hot paths read `L->` directly, with true function-local
+pointer hoists in the flood/scan loops). `step()` runs `stepLayer(&fg)` then
+`stepLayer(&bg)` under one tick, then `transferPass()`. The foreground is stepped first so a single-layer scene
 (background empty/disabled) is byte-identical to a one-grid build. Networking
 (netsync.inc) serializes/hashes both grids in one opaque blob (no JS/protocol
 change). **Right-click** in creative draw mode paints the selected material into the
@@ -41,16 +41,27 @@ background (left-click stays foreground); survival-mode RMB-mining is unchanged.
 both) the per-step cost is roughly 2× a single layer. An idle background (settled
 terrain) is skipped, so a static scene costs about the same as one layer.
 
-  `cpp/engine/tools.inc`     brush/draft/seed primitives + the tool state machine
-  `cpp/engine/render.inc`    material -> RGBA pixel generation (grain + animation)
+  `cpp/engine/tools.hpp`     brush/draft/seed primitives + the tool state machine
+  `cpp/engine/renderer.hpp`  material -> RGBA pixel generation (grain + animation)
   `cpp/engine/materials.generated.hpp`  ids/kinds/tables, generated from the schema
 
 ## Files
 
-- `cpp/` — the C++ engine. `sand.cpp` pulls in one `.inc` file per subsystem
-  (`engine/core.inc`, `components.inc`, `reactions.inc`, `growth.inc`,
-  `rigid.inc`, `worldgen.inc`, `tools.inc`, `render.inc`, …) plus `common.hpp` for
-  the shared types and material tables.
+- `cpp/` — the C++ engine. Every simulation subsystem is a **named class**
+  composed by the Engine (fourteen: ViewCamera, NetSync, TerrainGen, Renderer,
+  GLPresenter, ItemSystem, InventorySystem, PlayerSystem, ToolSystem,
+  ReactionSystem, ExplosivesSystem, GrowthSystem, ComponentSystem,
+  RigidBodySystem). Each lives as `engine/<name>.hpp` (state + interface, with
+  an `Engine&` back-reference) plus `engine/<name>_impl.inc` (method bodies,
+  included from `sand.cpp` after the Engine definition — still one unity TU so
+  emcc's cross-inlining stays free). The Engine itself keeps only the
+  coordinator role: the two Layers, the shared sim RNG, the step pipeline
+  (`step.inc`), the per-cell settle core (`core.inc` — deliberately inline,
+  it IS the falling-sand engine's essence), worldgen streaming orchestration
+  (`worldgen.inc`), and thin composition/shim blocks per subsystem. The
+  JS<->WASM contract is generated from `abi.schema.json`
+  (`abi.generated.{hpp,js}`); `wasm/build.sh --dev` compiles in a post-step
+  invariant validator (aborts loudly on a broken component/body invariant).
   - `cpp/engine/gl_shared.hpp` + `gl.inc` — the WebGL2 compositor. `render.inc`
     still generates the cell pixels on the CPU; `gl.inc` uploads them into a
     `cols×rows` texture and draws the visible window (nearest upscale), the 1px

@@ -53,7 +53,6 @@
   }
 
   int stepSerial = 0, tick = 0, perfDirtyChunks = 0, worldShiftCount = 0;
-  int rigidRejectedCells = 0, rigidDepenetrations = 0;
   double perfStepMs = 0;
   // Present-path sub-phase timers (gl.inc glRenderFrame): the full-buffer lighting
   // solve, the windowed pixel fill, and the windowed texture upload. Render-only.

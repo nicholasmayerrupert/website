@@ -154,8 +154,8 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
   b->vx = vx; b->vy = vy; b->omega = omega; b->awake = true; b->stillTicks = 0;
   return 1;
 }
-EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigidRejectedCells; }
-EMSCRIPTEN_KEEPALIVE int engine_test_rigid_depen(Engine* e) { return e->rigidDepenetrations; }
+EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigid.rigidRejectedCells; }
+EMSCRIPTEN_KEEPALIVE int engine_test_rigid_depen(Engine* e) { return e->rigid.rigidDepenetrations; }
 
 // players (Terraria-like characters; physics in player.inc)
 EMSCRIPTEN_KEEPALIVE int engine_spawn_player(Engine* e, double x, double y) { return e->spawnPlayer(x, y); }

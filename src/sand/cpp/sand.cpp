@@ -43,8 +43,6 @@ struct Engine {
 };
 
 // Out-of-line definitions of the Engine static constants.
-const double Engine::RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
-const double Engine::RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
 const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
@@ -61,5 +59,6 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/explosives_impl.inc"
 #include "engine/growth_impl.inc"
 #include "engine/components_impl.inc"
+#include "engine/rigid_impl.inc"
 
 #include "engine/abi.inc"

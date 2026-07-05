@@ -1,7 +1,7 @@
   // Simulation tick orchestration.
   //
   // This file owns the top-level order: active-region prep, rigid/growth,
-  // reactions, loose-cell movement, cleanup, cross-layer transfer, players, and
+  // reactions, loose-cell movement, cleanup, cross-layer transfer, psys.players, and
   // dirty/perf bookkeeping. Local movement rules live in core.inc.
 
   // ---- step ----
@@ -67,7 +67,7 @@
     updatePlayers();
     updateItems(); // entities (dropped items/particles) advance even when the grid is inert
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
-    if (!fgA && !bgA) { useLayer(&fg); return !players.empty() || !itemsys.items.empty(); }
+    if (!fgA && !bgA) { useLayer(&fg); return !psys.players.empty() || !itemsys.items.empty(); }
     double t0 = emscripten_get_now();
     tick++;
     // Cross-layer grounding: compute groundedness jointly over both layers up

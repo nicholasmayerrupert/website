@@ -69,7 +69,7 @@
     resetPlayerMine(p);
   }
   void setSelectedFootprint(int id, int footprintId) { Player* p = findPlayer(id); if (p) setSelectedFootprint(*p, footprintId); }
-  int selectedFootprintId(int id) const { const Player* p = nullptr; for (const auto& pp : players) if (pp.id == id) { p = &pp; break; } return p ? clampSurvivalFootprintId(p->selectedFootprint) : 0; }
+  int selectedFootprintId(int id) const { const Player* p = nullptr; for (const auto& pp : psys.players) if (pp.id == id) { p = &pp; break; } return p ? clampSurvivalFootprintId(p->selectedFootprint) : 0; }
   int survivalFootprintCellCount(const Player& p) const { return (int)getSurvivalFootprint(p).cells.size(); }
   void survivalFootprintBounds(const SurvivalFootprint& fp, int cx, int cy, int& x0, int& y0, int& x1, int& y1) const {
     x0 = cx - fp.anchorX;

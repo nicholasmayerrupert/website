@@ -763,15 +763,15 @@
     if (dy) shiftWorld(0, dy);
     return dy;
   }
-  // Slide BOTH layers in lockstep with the shared camera; anchor players once.
+  // Slide BOTH layers in lockstep with the shared camera; anchor psys.players once.
   void shiftWorld(int dx, int dy) {
     if ((!dx && !dy) || !fg.infinite) return;
     worldShiftCount++;
     useLayer(&fg); shiftLayer(dx, dy);
     useLayer(&bg); shiftLayer(dx, dy);
     useLayer(&fg);
-    for (auto& p : players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
-    // Items are buffer-local entities like players: slide them by the same delta and
+    for (auto& p : psys.players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
+    // Items are buffer-local entities like psys.players: slide them by the same delta and
     // drop any that leave the loaded window (v1 — no off-buffer item persistence).
     if (!itemsys.items.empty()) {
       std::vector<Item> keep; keep.reserve(itemsys.items.size());
@@ -783,7 +783,7 @@
     useLayer(&fg); clearAllMineDamage();
     useLayer(&bg); clearAllMineDamage();
     useLayer(&fg);
-    for (auto& p : players) p.mineActive = false;
+    for (auto& p : psys.players) p.mineActive = false;
   }
   void shiftLayer(int dx, int dy) {
     if ((!dx && !dy) || !L->infinite) return;

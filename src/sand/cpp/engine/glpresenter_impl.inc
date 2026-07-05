@@ -254,14 +254,14 @@ void GLPresenter::glDrawPlayers() {
       glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME], p[GLP_OWN] > 0.5f, camCol, camRow);
     }
   } else {
-    for (auto& p : E.players) {
+    for (auto& p : E.psys.players) {
       if (!p.active) continue;
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.id == glOwnPlayerId, camCol, camRow);
     }
   }
 }
 
-// Dropped E.itemsys.items + particles overlay, drawn after E.players (same world->screen
+// Dropped E.itemsys.items + particles overlay, drawn after E.psys.players (same world->screen
 // transform). Each is a small rect centered on its cell at the material's color;
 // particles shrink/fade by remaining life. The engine draws from its own `E.itemsys.items`
 // vector — no JS state push, exactly like host-side player drawing.
@@ -341,7 +341,7 @@ void GLPresenter::glDrawPreview() {
   // eraser red. Faded when the aim is out of the player's reach.
   if (E.cam.playModeOn && glOwnPlayerId) {
     Player* lp = nullptr;
-    for (auto& pp : E.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
+    for (auto& pp : E.psys.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
     if (lp) {
       int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
       bool toBg = (E.cam.pointerBtns & 2) != 0;
@@ -416,7 +416,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
 }
 
 // One presented frame: window-upload both layers, then composite background (darker)
-// then foreground, then E.players + preview. forceFull forces a full-window refresh
+// then foreground, then E.psys.players + preview. forceFull forces a full-window refresh
 // (init/resize). Returns 1 if drawn.
 int GLPresenter::glRenderFrame(int forceFull) {
   if (!glReady()) return 0;

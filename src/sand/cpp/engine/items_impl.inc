@@ -82,7 +82,7 @@ bool ItemSystem::seedItemCanPlant(const Item& it, int& x, int& y) {
 // Nearest active/alive player center within IT_MAGNET_R of the item (or null).
 Player* ItemSystem::magnetTarget(const Item& it) {
   Player* best = nullptr; double bestD = IT_MAGNET_R * IT_MAGNET_R;
-  for (auto& p : E.players) {
+  for (auto& p : E.psys.players) {
     if (!p.active || !p.alive) continue;
     double dx = it.px - (p.px + p.w / 2.0), dy = it.py - (p.py + p.h / 2.0);
     double d = dx * dx + dy * dy;
@@ -178,11 +178,11 @@ void ItemSystem::updateItems() {
 // player goes to its inventory; absorbed items are zeroed and culled. The magnet
 // above feeds items into this radius. Particles never pick up. Pure distance math.
 void ItemSystem::pickupItems() {
-  if (E.players.empty() || items.empty()) return;
+  if (E.psys.players.empty() || items.empty()) return;
   for (auto& it : items) {
     if (it.kind != IT_ITEM || it.count == 0 || it.pickupDelay > 0) continue;
     Player* best = nullptr; double bestD = IT_PICKUP_R * IT_PICKUP_R;
-    for (auto& p : E.players) {
+    for (auto& p : E.psys.players) {
       if (!p.active || !p.alive) continue;
       double dx = it.px - (p.px + p.w / 2.0), dy = it.py - (p.py + p.h / 2.0);
       double d = dx * dx + dy * dy;

@@ -182,9 +182,6 @@
   int lastEmitCx = -1, lastEmitCy = -1;
   bool emitStrokeActive = false;
   // ---- players (Terraria-like characters; physics in player.inc) ----
-  std::vector<Player> players;
-  int nextPlayerId = 1;
-  std::vector<float> playerSnapshot; // packed [PS_STRIDE] floats per player
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
   // Cells destroyed by the last mineDamageDisc() call: (material, cellIndex). mineDisc

@@ -165,9 +165,9 @@ EMSCRIPTEN_KEEPALIVE int engine_player_width() { return PLAYER_W; }
 EMSCRIPTEN_KEEPALIVE int engine_player_height() { return PLAYER_H; }
 EMSCRIPTEN_KEEPALIVE void engine_remove_player(Engine* e, int id) { e->removePlayer(id); }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_input(Engine* e, int id, int inputBits, double aimX, double aimY, int selectedTool, int seq) { e->setPlayerInput(id, inputBits, aimX, aimY, selectedTool, (uint32_t)seq); }
-EMSCRIPTEN_KEEPALIVE int engine_player_count(Engine* e) { return (int)e->players.size(); }
-EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->buildPlayerSnapshot(); }
-EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->playerSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_player_count(Engine* e) { return (int)e->psys.players.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->psys.buildPlayerSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->psys.snapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_player_action_count(Engine* e) { return e->playerActionCount; }
 EMSCRIPTEN_KEEPALIVE void engine_step_player_only(Engine* e, int id) { e->stepPlayerOnly(id); }
 // Held mining tool (class/tier) — drives drop gating. Set directly here for tests;

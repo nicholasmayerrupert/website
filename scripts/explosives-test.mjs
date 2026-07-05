@@ -311,7 +311,7 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
-// --- each consumed TNT pixel emits one aftermath cell: mostly acrid smoke, some steam/fire ---
+// --- TNT emits a deterministic outer-ring gas cloud: mostly acrid smoke, some steam/fire ---
 {
   const e = mk();
   const cx = 70, half = 5, cy = ROWS - 2 - half;
@@ -332,11 +332,11 @@ function blastDamagesMaterial(name) {
   }
   check(`TNT block existed (${tnt0} cells)`, tnt0 === (half * 2 + 1) * (half * 2 + 1));
   check(`TNT block was consumed (${tntLeft} left)`, tntLeft === 0);
-  check(`open blast emitted a substantial aftermath cloud (peak ${peak.total} vs TNT ${tnt0})`, peak.total >= tnt0 * 0.6 && peak.total <= tnt0 + 20);
+  check(`open blast emitted a substantial ring gas cloud (peak ${peak.total} vs TNT ${tnt0})`, peak.total > tnt0 * 2);
   check(`blast emits a lot of acrid smoke (acrid ${peak.acrid}, steam ${peak.steam})`, peak.acrid > peak.steam * 2);
   check(`blast emits some steam (peak ${peak.steam})`, peak.steam > 7);
   check(`blast emits some fire (peak ${peak.fire})`, peak.fire > 10);
-  check(`blast shockwave pushes emitted gas outward (avg distance ${peakDist.avg.toFixed(1)})`, peakDist.avg > 14);
+  check(`blast ring emitted gas near the crater edge (avg distance ${peakDist.avg.toFixed(1)})`, peakDist.avg > 14);
   e.destroy();
 }
 
@@ -374,14 +374,14 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
-// --- gases inside a blast radius survive instead of being carved away ---
+// --- gases inside a blast radius are cleared and replaced by outer-ring gas ---
 {
   const e = mk();
   const cx = 70, top = 50;
   for (let y = top; y < ROWS; y++) for (let x = 30; x < 110; x++) e.placeMaterial(x, y, 0, MAT.SANDSTONE);
   e.placeMaterial(cx, top - 1, 0, MAT.TNT);
   e.syncComponents();
-  let survived = false, steamBeforeBlast = 0, steamDistBefore = 0, steamDistAfter = 0;
+  let replaced = false, steamBeforeBlast = 0, steamAfterBlast = 0, steamDistBefore = 0, gasDistAfter = 0, gasAfterBlast = 0;
   for (let i = 0; i < 80; i++) {
     e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE);
     if (i >= 24) {
@@ -394,11 +394,12 @@ function blastDamagesMaterial(name) {
     steamDistBefore = gasDistanceStats(e.getGrid(), cx, top - 1, [MAT.STEAM]).avg;
     e.step(i * 16);
     const tntLeft = count(e.getGrid(), MAT.TNT);
-    const steamNow = count(e.getGrid(), MAT.STEAM);
-    steamDistAfter = gasDistanceStats(e.getGrid(), cx, top - 1, [MAT.STEAM]).avg;
-    if (tntLeft === 0) { survived = steamNow >= steamBeforeBlast * 0.9 && steamDistAfter > steamDistBefore + 4; break; }
+    steamAfterBlast = count(e.getGrid(), MAT.STEAM);
+    gasAfterBlast = countAny(e.getGrid(), AFTERMATH);
+    gasDistAfter = gasDistanceStats(e.getGrid(), cx, top - 1).avg;
+    if (tntLeft === 0) { replaced = steamAfterBlast < steamBeforeBlast * 0.9 && gasAfterBlast > steamBeforeBlast && gasDistAfter > steamDistBefore + 4; break; }
   }
-  check(`gas survives and is pushed by TNT blast carving (steam ${steamBeforeBlast}, avg ${steamDistBefore.toFixed(1)} -> ${steamDistAfter.toFixed(1)})`, survived);
+  check(`blast clears interior gas and stamps an outer ring (steam ${steamBeforeBlast} -> ${steamAfterBlast}, gas ${gasAfterBlast}, avg ${steamDistBefore.toFixed(1)} -> ${gasDistAfter.toFixed(1)})`, replaced);
   e.destroy();
 }
 
@@ -424,6 +425,30 @@ function blastDamagesMaterial(name) {
   check(`large TNT chain staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
   check(`large TNT chain completed (${tntLeft} left)`, tntLeft === 0);
   check(`large TNT chain produced visible gas (peak ${peakGas})`, peakGas > 250);
+  e.destroy();
+}
+
+// --- blast-created fire must not start a second, full-fuse explosion wave afterward ---
+{
+  const C = 180, R = 140, side = 25;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  const x0 = 70, y0 = 70;
+  for (let y = y0; y < y0 + side; y++) for (let x = x0; x < x0 + side; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  e.syncComponents();
+  const tnt0 = count(e.getGrid(), MAT.TNT);
+  let last = tnt0;
+  const drops = [];
+  for (let i = 0; i < 130; i++) {
+    if (i < 3) e.placeMaterial(x0 + side + 2, y0 + 12, 1, MAT.FIRE);
+    e.step(i * 16);
+    const now = count(e.getGrid(), MAT.TNT);
+    if (now !== last) { drops.push({ step: i, before: last, after: now }); last = now; }
+  }
+  let maxPostChainGap = 0;
+  for (let i = 2; i < drops.length; i++) maxPostChainGap = Math.max(maxPostChainGap, drops[i].step - drops[i - 1].step);
+  check(`medium TNT block existed (${tnt0} cells)`, tnt0 === side * side);
+  check(`medium TNT chain completed (${last} left)`, last === 0);
+  check(`blast fire did not trigger a delayed full-fuse TNT tail (max gap ${maxPostChainGap})`, maxPostChainGap <= 8);
   e.destroy();
 }
 

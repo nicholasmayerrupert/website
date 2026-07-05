@@ -17,6 +17,8 @@ class ExplosivesSystem {
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
   static const int    TNT_CHAIN_FUSE = 4;    // a TNT caught in a blast chains this fast
   static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
+  static const int    TNT_CLUSTER_FAST_THRESHOLD = 128; // many same-tick static TNT fuses -> grouped crater reps
+  static const int    TNT_CLUSTER_BUCKET = 10; // representative spacing for dense TNT masses
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().
@@ -24,18 +26,18 @@ class ExplosivesSystem {
   static const int    BLAST_DEBRIS_SOURCE_TRIES = 2; // try the old fan positions, but stop after the smaller budget
   static const int    BLAST_FORCED_DEBRIS_CHUNKS = 1; // extra generic blast debris, even in open air
   static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.50; // generic open-air debris spawns on half of blasts
-  static const int    BLAST_DEBRIS_STEP_CAP = 5;  // max chunks a same-tick blast wave can add per layer
-  static const int    BLAST_DEBRIS_CAP = 96;      // hard live-body solver ceiling; per-step cap keeps chains paced
+  static const int    BLAST_DEBRIS_STEP_CAP = 3;  // max chunks a same-tick blast wave can add per layer
+  static const int    BLAST_DEBRIS_CAP = 64;      // hard live-body solver ceiling; per-step cap keeps chains paced
   static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
   static constexpr double BLAST_PARTICLE_SPEED = 2.6; // cosmetic fleck speed
   static const int    BLAST_PARTICLE_LIFE = 26;
   static const int    BLAST_PARTICLE_CAP = 48;    // hard cap on cosmetic flecks per step (steam carries the visual now)
   static constexpr double BLAST_PUSH = 3.0;       // outward shove given to nearby free bodies
-  static constexpr double TWO_PI = 6.283185307179586;
-  // TNT aftermath: each destroyed TNT cell leaves exactly one hot gas/fire cell.
+  // Blast gas: pre-existing gas inside the blast is cleared; fresh gas is stamped
+  // into the outer crater ring after all carving and component cleanup.
   static constexpr double TNT_ACRID_FRAC = 0.70; // acrid smoke dominates the blast cloud
   static constexpr double TNT_STEAM_FRAC = 0.20; // plus some steam; the remaining 10% is fire
-  static const int    BLAST_GAS_SEARCH_CAP = 96; // outward gas-shock search limit (cells beyond the blast rim)
+  static const int    BLAST_GAS_RING_DEPTH = 3; // fill the outer shell of each crater; no gas pathfinding
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
@@ -44,8 +46,10 @@ class ExplosivesSystem {
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
     bool erasedPlant = false;
-    std::vector<std::pair<int, uint8_t>> tntAftermath;
     std::vector<BlastWave> gasShockwaves;
+    std::vector<int32_t> blastEnergyStamp;
+    std::vector<float> blastBestEnergy;
+    int32_t blastEnergyGen = 1;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
@@ -58,12 +62,12 @@ class ExplosivesSystem {
   std::vector<std::pair<int, int>> blastBoxCells(int cx, int cy, int halfW, int halfH);
   void queueDetonation(int cell, int fuse);
   void shortenTntBodyFuse(Body* b, int fuse);
-  int blastGasTarget(int sx, int sy, int cx, int cy, int radius, uint32_t seed,
-                     const std::unordered_set<int>& reservedTargets);
-  void pushBlastGasesOutward(const std::vector<BlastWave>& waves);
+  void spawnBlastRingGases(const std::vector<BlastWave>& waves);
   void activateBlastRectNow(int x0, int y0, int x1, int y1);
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);
   void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries = -1);
+  bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
+  void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr);
   void finishBlasts(BlastBatch& bb);
   void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody = nullptr);

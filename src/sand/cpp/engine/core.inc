@@ -292,10 +292,15 @@
     if (L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) { writeNextIndex(k, FIRE); return; } // keep explosion fire volume through the detonation step
     if (rand() < FIRE_DECAY_P || y <= 1) { markCellIndex(k); return; }
+    int32_t blastGas = L->blastGasStamp[k];
+    auto writeFire = [&](int dst) {
+      writeNextIndex(dst, FIRE);
+      if (blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS) L->blastGasStamp[dst] = blastGas;
+    };
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    if (rand() < 0.36) { int up = I(x, y - 1); if (L->grid[up] == EMPTY && L->next[up] == EMPTY) { writeNextIndex(up, FIRE); return; } }
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = rand() < 0.55 ? y - 1 : y; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeNextIndex(ik, FIRE); return; } }
-    if (L->next[k] == EMPTY) writeNextIndex(k, FIRE);
+    if (rand() < 0.36) { int up = I(x, y - 1); if (L->grid[up] == EMPTY && L->next[up] == EMPTY) { writeFire(up); return; } }
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = rand() < 0.55 ? y - 1 : y; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeFire(ik); return; } }
+    if (L->next[k] == EMPTY) writeFire(k);
   }
   void drain(int xs, int xe, int y, float liquidP, float sandP) {
     for (int x = xs; x <= xe; x++) { int k = I(x, y); uint8_t m = L->grid[k]; float p = isLiquidMaterial(m) ? liquidP : (m == SAND ? sandP : 0); if (p && rand() < p) writeGridIndex(k, EMPTY); }

@@ -12,7 +12,7 @@ struct Layer {
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
-  std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp;
+  std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp, blastGasStamp;
   int dirtyRenderCount = 0;
   // per-cell sim scratch
   std::vector<uint8_t> groundedCell;
@@ -105,6 +105,7 @@ struct Layer {
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
     activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
     vacatedStamp.assign(n, -1);
+    blastGasStamp.assign(n, -1);
     groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
     groundRigidBase.clear(); groundBaseFlags.clear(); groundBaseValid = false;
     compOccStamp.assign(n, -1);

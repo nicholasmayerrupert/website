@@ -44,9 +44,8 @@ const EDUCATION = {
 };
 
 const SKILL_GROUPS = [
-  { label: 'Languages', items: ['C++', 'Python', 'JavaScript (ES6+)', 'SQL'] },
+  { label: 'Languages', items: ['C++', 'Python', 'Java', 'JavaScript (ES6+)', 'SQL'] },
   { label: 'Backend', items: ['REST APIs', 'Auth & sessions', 'Schema design'] },
-  { label: 'Databases', items: ['PostgreSQL', 'MySQL'] },
   { label: 'Tooling', items: ['Git', 'Node.js', 'Vite'] },
 ];
 

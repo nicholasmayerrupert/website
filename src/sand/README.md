@@ -146,6 +146,16 @@ In free-camera mode the classic pointer tools (drafts + held paint/erase) are
 used instead. Player tool policy (reach, cooldown, place-vs-mine, no building
 inside your own body) lives in `cpp/engine/player.inc`.
 
+### Zoom
+
+In-game zoom (`+`/`−`/`0`, or the mobile zoom buttons) is a continuous scale on
+logical cell size. The **loaded simulation window** (`cols×rows`) tracks the
+current view plus stream margins: zoom out grows the buffer (more cells, higher
+cost); zoom in shrinks it (cheaper `step`). World content survives via
+`engine.resizeLoadedWindow` (tile/body stores). There is no hard zoom-out floor
+— extreme zoom-out is allowed and will cost frames. Multiplayer clients keep the
+host buffer size; their zoom is view-only within that window.
+
 ## Testing
 
 ```

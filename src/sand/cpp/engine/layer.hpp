@@ -120,6 +120,23 @@ struct Layer {
     bodyOwner.assign(n, -1);
     renderPixels.assign(n * 4, 0);
   }
+  // Reallocate per-cell sim/render arrays for a new buffer size while PRESERVING
+  // tileStore/bodyStore/worldgen seeds/params (used by resizeLoadedWindow).
+  // Callers must have already persisted live buffer content into the stores and
+  // emptied bodies/components that were buffer-indexed.
+  void reallocSim(int newCols, int newRows, int newChunkCols, int newChunkRows) {
+    alloc(newCols, newRows, newChunkCols, newChunkRows);
+    stoneComponents.clear(); plantComponents.clear(); iceComponents.clear();
+    nextStoneId = nextPlantId = nextIceId = 1;
+    myceliumActive = false;
+    groundDirty = true; groundSawPowder = false; groundContentDirty = true;
+    groundBaseValid = false;
+    bodies.clear(); bodyCells.clear();
+    pendingDetonations.clear();
+    prevCompCells.clear(); curCompCells.clear();
+    mineDamageAny = false;
+    dirtyRenderCount = 0;
+  }
   ~Layer() {
     for (Body* b : bodies) delete b;
     for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first;

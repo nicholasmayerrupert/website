@@ -18,7 +18,7 @@ class ViewCamera {
   double camX = 0, camY = 0;            // top-left visible cell (buffer space, fractional)
   double camMaxX = 0, camMaxY = 0;      // travel bounds = buffer extent - visible window
   int viewportCols = 0, viewportRows = 0;
-  int cellDevPx = 1;                    // integer device px per cell (for the aim mapping)
+  double cellDevPx = 1;                 // device px per cell (fractional when zoomed out past 1 px/cell)
   double viewDpr = 1;
   double pointerCssX = -1, pointerCssY = -1; // last pointer, canvas-relative CSS px
   int pointerBtns = 0;                  // bit0 = LMB, bit1 = RMB
@@ -40,8 +40,8 @@ class ViewCamera {
 
   // Viewport + cell metrics, and the derived camera bounds (bufCols/bufRows are
   // the simulation buffer dims). Called from JS fit().
-  void setViewport(double dpr, int cellDev, int vCols, int vRows, int bufCols, int bufRows) {
-    viewDpr = dpr; cellDevPx = cellDev > 0 ? cellDev : 1;
+  void setViewport(double dpr, double cellDev, int vCols, int vRows, int bufCols, int bufRows) {
+    viewDpr = dpr; cellDevPx = cellDev > 0 ? cellDev : 1.0;
     viewportCols = vCols; viewportRows = vRows;
     setBounds(bufCols - vCols, bufRows - vRows);
   }

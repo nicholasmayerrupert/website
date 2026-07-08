@@ -29,6 +29,8 @@ EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }
 EMSCRIPTEN_KEEPALIVE int engine_step(Engine* e) { return e->step() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->fg.grid; }
 EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->fg.dirtyRenderCount; }
+EMSCRIPTEN_KEEPALIVE int engine_cols(Engine* e) { return e->cols; }
+EMSCRIPTEN_KEEPALIVE int engine_rows(Engine* e) { return e->rows; }
 EMSCRIPTEN_KEEPALIVE int engine_chunk_cols(Engine* e) { return e->chunkCols; }
 EMSCRIPTEN_KEEPALIVE int engine_chunk_rows(Engine* e) { return e->chunkRows; }
 // Dirty-rect generation (C++ owns the coalescing; JS reads the packed rects).
@@ -262,7 +264,9 @@ EMSCRIPTEN_KEEPALIVE int engine_gl_read_pixels(Engine* e, int x, int y, int w, i
 
 // View camera + input policy (camera.inc): the engine owns the view + input
 // semantics; JS forwards raw DOM events and drives the loop.
-EMSCRIPTEN_KEEPALIVE void engine_set_viewport(Engine* e, double dpr, int cellDev, int vCols, int vRows) { e->setViewport(dpr, cellDev, vCols, vRows); }
+EMSCRIPTEN_KEEPALIVE void engine_set_viewport(Engine* e, double dpr, double cellDev, int vCols, int vRows) { e->setViewport(dpr, cellDev, vCols, vRows); }
+// Grow/shrink the loaded sim window while keeping world content (tile/body stores).
+EMSCRIPTEN_KEEPALIVE int engine_resize_loaded_window(Engine* e, int newCols, int newRows) { return e->resizeLoadedWindow(newCols, newRows); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_set(Engine* e, double x, double y) { e->cameraSet(x, y); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_get(Engine* e, double* out) { out[0] = e->cam.camX; out[1] = e->cam.camY; }
 EMSCRIPTEN_KEEPALIVE int engine_camera_col_x(Engine* e) { return e->cameraColX(); }

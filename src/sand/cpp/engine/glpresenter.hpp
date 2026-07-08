@@ -23,7 +23,8 @@ class GLPresenter {
   static constexpr float GL_BG_TINT = 0.55f;
   int glDevW = 0, glDevH = 0;           // canvas backing-store size (device px)
   double glCamX = 0, glCamY = 0;        // camera top-left in buffer cells (fractional)
-  int glCellDev = 1, glViewCols = 0, glViewRows = 0;
+  double glCellDev = 1;                 // device px per cell (fractional when zoomed out past 1 px/cell)
+  int glViewCols = 0, glViewRows = 0;
   int glGutterOn = 1, glSnapOff = 0;
   double glOffX = 0, glOffY = 0;        // snapped sub-cell present offset (device px)
   // Last presented window origin + world offset + skylight. The present path renders
@@ -65,8 +66,10 @@ class GLPresenter {
   int glInit(const char* target);
   void glDestroy();
   void glResize(int devW, int devH);
-  void glSetCamera(double camX_, double camY_, int cellDev, int viewCols, int viewRows,
+  void glSetCamera(double camX_, double camY_, double cellDev, int viewCols, int viewRows,
                  int gutterOn, int snapOff);
+  // Rebuild cols×rows cell textures after a loaded-window resize (keeps the GL context).
+  void glRebuildCellTextures();
   void glSyncCamera();
   void glSetFlags(int gutterOn, int snapOff);
   void glSetPlayers(int useExternal, const float* data, int count, int ownId);

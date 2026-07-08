@@ -845,3 +845,114 @@
     if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * 4); for (int i = b + cols - dx; i < b + cols; i++) arr[i] = fill; }
     else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, (size_t)(cols - s) * 4); for (int i = b; i < b + s; i++) arr[i] = fill; } }
   }
+
+  // Grow/shrink the loaded simulation window while preserving world content via
+  // the tile/body stores. Keeps worldgen seeds/params (so terrain stays byte-
+  // identical for absolute coords), players, and items. Returns 1 if dims changed.
+  // Camera is re-anchored so the pre-resize world-space view center stays put.
+  int resizeLoadedWindow(int newCols, int newRows) {
+    if (!fg.infinite) return 0;
+    if (newCols < CHUNK_SIZE * 2 || newRows < CHUNK_SIZE * 2) return 0;
+    // Chunk-align (tile store requires whole tiles).
+    newCols = (newCols + CHUNK_SIZE - 1) & ~(CHUNK_SIZE - 1);
+    newRows = (newRows + CHUNK_SIZE - 1) & ~(CHUNK_SIZE - 1);
+    if (newCols == cols && newRows == rows) return 0;
+
+    // World-space point under the current view center (fallback: buffer center).
+    double vCols = cam.viewportCols > 0 ? (double)cam.viewportCols : (double)cols;
+    double vRows = cam.viewportRows > 0 ? (double)cam.viewportRows : (double)rows;
+    double worldCX = fg.worldOffsetX + cam.camX + vCols * 0.5;
+    double worldCY = fg.worldOffsetY + cam.camY + vRows * 0.5;
+
+    // Players / items in world space (shared offset across layers).
+    struct WEnt { double wx, wy; };
+    std::vector<WEnt> playerWorld; playerWorld.reserve(psys.players.size());
+    for (auto& p : psys.players) playerWorld.push_back({fg.worldOffsetX + p.px, fg.worldOffsetY + p.py});
+    std::vector<WEnt> itemWorld; itemWorld.reserve(itemsys.items.size());
+    for (auto& it : itemsys.items) itemWorld.push_back({fg.worldOffsetX + it.px, fg.worldOffsetY + it.py});
+
+    auto persistLayer = [&](Layer* lay) {
+      useLayer(lay);
+      // Drop body rasters so free-body cells don't pollute the tile save (bodies
+      // persist via bodyStore, same as shiftWorld).
+      for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+      L->bodyCells.clear();
+      L->pendingDetonations.clear();
+      csSaveBodiesLeaving(0, 0, cols, rows); // all bodies -> bodyStore (world keys)
+      csSaveTiles(0, 0, cols, rows);
+      // Components are buffer-indexed; drop and re-register after refill.
+      L->stoneComponents.clear(); L->plantComponents.clear(); L->iceComponents.clear();
+      L->nextStoneId = L->nextPlantId = L->nextIceId = 1;
+    };
+    persistLayer(&fg);
+    persistLayer(&bg);
+
+    // Cancel in-progress drafts/strokes (buffer indices would be meaningless).
+    tools.drafting = false; tools.draftingSeed = false; tools.draftStrokeActive = false;
+    tools.hasSeedOrigin = false; tools.emitStrokeActive = false;
+    tools.draft.clear();
+
+    int newOffX = ((int)std::floor(worldCX - newCols * 0.5)) & ~(CHUNK_SIZE - 1);
+    int newOffY = ((int)std::floor(worldCY - newRows * 0.5)) & ~(CHUNK_SIZE - 1);
+
+    cols = newCols; rows = newRows;
+    chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
+
+    // Keep worldgen amplitude/seeds (set at first init); only buffers resize.
+    fg.reallocSim(cols, rows, chunkCols, chunkRows);
+    bg.reallocSim(cols, rows, chunkCols, chunkRows);
+    fg.worldOffsetX = newOffX; fg.worldOffsetY = newOffY;
+    bg.worldOffsetX = newOffX; bg.worldOffsetY = newOffY;
+
+    auto refillLayer = [&](Layer* lay) {
+      useLayer(lay);
+      // Baseline generate then overlay saved tiles (same order as a shift miss).
+      fillRect(0, cols, 0, rows);
+      csLoadTiles(0, 0, cols, rows);
+      csRestoreBodies(0, 0, cols, rows);
+      registerSeededComponents(0, cols);
+      // Wake the whole window so settle re-activates after the rebuild.
+      for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; }
+      L->groundDirty = true; L->groundContentDirty = true; L->skyDirty = true; L->skyValid = false;
+    };
+    refillLayer(&fg);
+    refillLayer(&bg);
+    useLayer(&fg);
+
+    // Re-anchor entities into the new buffer.
+    for (size_t i = 0; i < psys.players.size(); i++) {
+      auto& p = psys.players[i];
+      p.px = playerWorld[i].wx - newOffX;
+      p.py = playerWorld[i].wy - newOffY;
+      p.aimX = p.px; p.aimY = p.py;
+      p.mineActive = false;
+    }
+    {
+      std::vector<Item> keep; keep.reserve(itemsys.items.size());
+      for (size_t i = 0; i < itemsys.items.size(); i++) {
+        auto it = itemsys.items[i];
+        it.px = itemWorld[i].wx - newOffX;
+        it.py = itemWorld[i].wy - newOffY;
+        if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it);
+      }
+      itemsys.items.swap(keep);
+    }
+
+    // Prefetch scratch matches the new dims; cancel any in-flight band.
+    pfDx = pfDy = 0; pfStage = PF_DONE; pfCursor = 0;
+    if ((int)pfGrid.size() != cols * rows) pfGrid.assign((size_t)cols * rows, EMPTY);
+
+    // GL textures are cols×rows — rebuild if a context is live.
+    glp.glRebuildCellTextures();
+
+    // Camera: same world center, new buffer/view metrics (viewport already set by JS).
+    cam.setBounds(cols - cam.viewportCols, rows - cam.viewportRows);
+    cam.set(worldCX - newOffX - vCols * 0.5, worldCY - newOffY - vRows * 0.5);
+
+    useLayer(&fg); markAllDirty();
+    useLayer(&bg); markAllDirty();
+    useLayer(&fg);
+    worldShiftCount++; // treat as a stream event for any counters/tests
+    return 1;
+  }

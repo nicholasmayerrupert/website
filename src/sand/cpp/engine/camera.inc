@@ -9,7 +9,7 @@
   void cameraSet(double x, double y) { cam.set(x, y); }
   int cameraColX() { return cam.colX(); }
   int cameraColY() { return cam.colY(); }
-  void setViewport(double dpr, int cellDev, int vCols, int vRows) { cam.setViewport(dpr, cellDev, vCols, vRows, cols, rows); }
+  void setViewport(double dpr, double cellDev, int vCols, int vRows) { cam.setViewport(dpr, cellDev, vCols, vRows, cols, rows); }
   void inputKey(int code, int down) { cam.inputKey(code, down); }
   void inputClearKeys() { cam.inputClearKeys(); }
   void inputPointer(double cssX, double cssY, int buttons, int inside) { cam.inputPointer(cssX, cssY, buttons, inside); }

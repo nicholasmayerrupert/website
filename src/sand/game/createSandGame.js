@@ -90,7 +90,8 @@ export function createSandGame(container, opts = {}) {
     cellSize: SIZING.cellPx, cellDev: SIZING.cellPx, dpr: 1,
     viewCols: 0, viewRows: 0,
     stableCssSize: null,
-    zoomIndex: SIZING.zoomDefaultIndex,
+    // Continuous zoom factor (1 = default density; >1 zoomed in; <1 zoomed out).
+    zoom: SIZING.zoomDefault ?? 1,
 
     // presentation (gameLoop)
     lastCamX: NaN, lastCamY: NaN,
@@ -123,11 +124,10 @@ export function createSandGame(container, opts = {}) {
     reduced: false,
 
     netClientReady: () => !!ctx.net && ctx.net.role === 'client' && ctx.net.connected && ctx.net.worldReady,
-    zoomFactor: () => SIZING.zoomSteps[ctx.zoomIndex],
-    minZoomFactor: () => SIZING.zoomSteps[0],
-    // In-game zoom relative to the default step — drives the parallax backdrop
+    zoomFactor: () => ctx.zoom,
+    // In-game zoom relative to the default — drives the parallax backdrop
     // scale so it grows/pans in lockstep with the sim (1 = default).
-    bgZoomScale: () => SIZING.zoomSteps[ctx.zoomIndex] / SIZING.zoomSteps[SIZING.zoomDefaultIndex],
+    bgZoomScale: () => ctx.zoom / (SIZING.zoomDefault || 1),
     fns: {},
   };
 
@@ -299,12 +299,19 @@ export function createSandGame(container, opts = {}) {
       if (ctx.netClientReady()) return ctx.net.getOwnCursor();
       return ctx.localPlayerId && ctx.engine ? ctx.engine.getCursor(ctx.localPlayerId) : null;
     },
-    // Runtime zoom (view-only). Buttons/keys drive these; the buffer is fixed
-    // so the world/player survive a zoom change.
+    // Runtime zoom. Buttons/keys drive these; the loaded sim window grows/shrinks
+    // with zoom (world content preserved via engine.resizeLoadedWindow).
     zoomIn() { lifecycle.zoomBy(1); },
     zoomOut() { lifecycle.zoomBy(-1); },
     resetZoom() { lifecycle.resetZoom(); },
-    getZoom() { return { index: ctx.zoomIndex, factor: ctx.zoomFactor(), count: SIZING.zoomSteps.length }; },
+    getZoom() {
+      return {
+        factor: ctx.zoomFactor(),
+        default: SIZING.zoomDefault ?? 1,
+        min: SIZING.zoomOutMin ?? 0.05,
+        max: SIZING.zoomInMax ?? 8,
+      };
+    },
     // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).
     setCreativeMaterial(kind, value) { ctx.engine?.setCreativeMaterial(kind, value); },
     // Live performance snapshot for the on-screen perf HUD (the /fps route).

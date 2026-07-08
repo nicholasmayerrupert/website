@@ -19,7 +19,7 @@ export const TOOL_IDS = Object.freeze(
 
 export const SIZING = Object.freeze({
   // Base CSS px per simulated cell (higher = more zoomed in / fewer cells). This
-  // is the DEFAULT zoom; zoomSteps multiplies it at runtime.
+  // is the DEFAULT zoom; `zoom` multiplies it at runtime.
   cellPx: 5.5,
   mobileCellPx: 3.25,
   mobileMaxCssWidth: 640,
@@ -27,11 +27,16 @@ export const SIZING = Object.freeze({
   minViewportRows: 28,
   viewportCellBucket: 4,
   stableHeightThresholdPx: 48,
+  // Soft advisory only — the view may exceed this when zoomed out (perf hit accepted).
   maxViewportCells: 130000,
   toolCollapseWidth: 1300,
   chunkSize: 32,
   worldHeightFactor: 2.5,
+  // Loaded sim window padding around the visible view (cells). Buffer grows/shrinks
+  // with the current zoom; these margins keep streaming/prefetch runway.
   bufferMarginCols: 128,
+  bufferMarginRows: 96,
+  // Soft advisory for total buffer cells (no hard clamp — extreme zoom-out is allowed).
   bufferMaxCells: 520000,
   maxFrameDtMs: 50,
   // Fixed-timestep catch-up cap: the max number of STEP_MS sim steps the main loop
@@ -39,13 +44,17 @@ export const SIZING = Object.freeze({
   // long/heavy frame can trigger (no catch-up avalanche); past it the sim degrades to
   // slow-motion instead of freezing. 2 * STEP_MS(16) = ~32ms of catch-up per frame.
   maxCatchupSteps: 2,
-  // Runtime zoom: multipliers on cellPx. Index zoomDefaultIndex is the default.
-  // The FIRST entry is the most zoomed OUT (fewest px/cell = most cells) and it
-  // alone sizes the simulation buffer, so changing zoom never rebuilds the world
-  // (the view window scales; the buffer stays put). Zoom-out is capped at [0] so
-  // that buffer stays modest.
-  zoomSteps: [1.0, 1.25, 1.55, 1.9, 2.35, 2.9],
-  zoomDefaultIndex: 0,
+  // Continuous zoom: multiplier on cellPx. 1 = default density; >1 = zoomed in
+  // (fewer, larger cells); <1 = zoomed out (more cells, larger sim buffer).
+  // No hard zoom-out floor — only a tiny epsilon to avoid division by zero.
+  zoomDefault: 1.0,
+  zoomInMax: 8,
+  zoomOutMin: 0.05,
+  zoomStepFactor: 1.15,
+  // Realloc the loaded window only when desired buffer dims change by this much
+  // (fraction of current size) or by at least one chunk — avoids thrashing on
+  // every +/- click while still tracking zoom for sim cost.
+  bufferResizeHysteresis: 0.12,
 });
 
 export const STEP_MS = 16;

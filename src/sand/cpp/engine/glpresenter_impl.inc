@@ -40,10 +40,10 @@ void GLPresenter::glDestroy() {
 
 void GLPresenter::glResize(int devW, int devH) { glDevW = devW; glDevH = devH; }
 
-void GLPresenter::glSetCamera(double camX_, double camY_, int cellDev, int viewCols, int viewRows,
+void GLPresenter::glSetCamera(double camX_, double camY_, double cellDev, int viewCols, int viewRows,
                  int gutterOn, int snapOff) {
   glCamX = camX_; glCamY = camY_;
-  glCellDev = cellDev > 0 ? cellDev : 1;
+  glCellDev = cellDev > 0 ? cellDev : 1.0;
   glViewCols = viewCols; glViewRows = viewRows;
   glGutterOn = gutterOn; glSnapOff = snapOff;
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
@@ -55,6 +55,31 @@ void GLPresenter::glSetCamera(double camX_, double camY_, int cellDev, int viewC
 // The camera moved into the engine in P2; the GL compositor reads it through
 // this each frame instead of JS passing it in.
 void GLPresenter::glSyncCamera() { glSetCamera(E.cam.camX, E.cam.camY, E.cam.cellDevPx, E.cam.viewportCols, E.cam.viewportRows, glGutterOn, glSnapOff); }
+
+// Recreate the cell textures at the engine's current cols×rows after a loaded-window
+// resize. The WebGL context stays on the canvas; only the per-engine textures change.
+void GLPresenter::glRebuildCellTextures() {
+  if (!glc || !glc->ready) return;
+  emscripten_webgl_make_context_current(glc->handle);
+  auto remake = [&](GLuint& t) {
+    if (t) glDeleteTextures(1, &t);
+    glGenTextures(1, &t);
+    glBindTexture(GL_TEXTURE_2D, t);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, E.cols, E.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  };
+  remake(glTex);
+  remake(glTexBg);
+  remake(glTex2);
+  glLastCamCol = glLastCamRow = INT_MIN;
+  glLastWorldOffX = glLastWorldOffY = INT_MIN;
+  glLastSkyLight = -1;
+  glLightTick = INT_MIN;
+  glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
+}
 // DEV A/B flags (flicker bench): toggle the gutter grid and offset snapping.
 void GLPresenter::glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = snapOff; }
 
@@ -453,7 +478,9 @@ int GLPresenter::glRenderFrame(int forceFull) {
   glActiveTexture(GL_TEXTURE0);
   glUniform1i(glc->uTex, 0);
   glDrawCells(glTexBg, GL_BG_TINT, 0, 1);                  // background first (darker, opaque cells)
-  glDrawCells(glTex, 1.0f, glGutterOn ? 1 : 0, 0);         // foreground on top
+  // Hide the 1px gutter when cells are tiny — a solid grid would wash out the scene.
+  int gutter = (glGutterOn && glCellDev >= 3.0) ? 1 : 0;
+  glDrawCells(glTex, 1.0f, gutter, 0);                     // foreground on top
   glDrawPlayers();
   glDrawItems();
   glDrawPreview();

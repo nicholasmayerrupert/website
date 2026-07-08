@@ -7,7 +7,7 @@
 
 import { createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { SIZING, TOOL_IDS } from './runtimeConfig';
-import { chooseStableCssSize, computeViewportSizing } from './viewportSizing';
+import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
 
 export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
   const { canvas, container, parallax } = ctx;
@@ -73,7 +73,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
-    const sizing = computeViewportSizing(cssW, cssH, ctx.dpr, SIZING, ctx.zoomFactor(), ctx.minZoomFactor(), ctx.baselineDpr);
+    const sizing = computeViewportSizing(cssW, cssH, ctx.dpr, SIZING, ctx.zoomFactor(), ctx.zoomFactor(), ctx.baselineDpr);
     ctx.cellSize = sizing.cellSize;
     ctx.cellDev = sizing.cellDev;
     canvas.width = sizing.canvasW;
@@ -85,20 +85,48 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
 
     // As a connected multiplayer client the simulation buffer is the SERVER's
     // (diffs are authored in its cols/rows); never rebuild it to window dims on
-    // resize — only resize the GL backing store + viewport (the pure-zoom path).
-    if (ctx.netClientReady() && ctx.engine) { bufCols = ctx.cols; worldRows = ctx.rows; }
+    // resize — only resize the GL backing store + viewport (view-only zoom).
+    // Clamp the visible window so it never exceeds the host buffer.
+    if (ctx.netClientReady() && ctx.engine) {
+      bufCols = ctx.cols;
+      worldRows = ctx.rows;
+      ctx.viewCols = Math.min(ctx.viewCols, ctx.cols);
+      ctx.viewRows = Math.min(ctx.viewRows, ctx.rows);
+    }
 
-    // The simulation buffer depends on logical CSS viewport cells, not on dpr.
-    // So a pure zoom/display-scale change keeps the same world and only
-    // repaints at the new device resolution.
-    if (ctx.engine && ctx.cols === bufCols && ctx.rows === worldRows) {
+    const applyViewOnly = () => {
+      // View must fit the live buffer (camera clamp / stream assume this).
+      ctx.viewCols = Math.min(ctx.viewCols, ctx.cols);
+      ctx.viewRows = Math.min(ctx.viewRows, ctx.rows);
       ctx.engine.glResize(canvas.width, canvas.height);
       ctx.engine.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
       parallax.draw(parallaxCamera());
       ctx.forceFullRender = true;
       ctx.previewDirty = false;
+    };
+
+    // Live engine, same desired buffer (or client pinned dims): pure view update.
+    if (ctx.engine && ctx.cols === bufCols && ctx.rows === worldRows) {
+      applyViewOnly();
       return;
     }
+
+    // Live local (non-client) engine: prefer world-preserving resize over destroy.
+    // Hysteresis may keep the old buffer — then fall through to view-only.
+    if (ctx.engine && !ctx.netClientReady()) {
+      if (shouldResizeBuffer(ctx.cols, ctx.rows, bufCols, worldRows, ctx.viewCols, ctx.viewRows, SIZING)) {
+        if (ctx.engine.resizeLoadedWindow(bufCols, worldRows)) {
+          ctx.cols = bufCols;
+          ctx.rows = worldRows;
+        }
+      }
+      applyViewOnly();
+      ctx.lastCamX = NaN;
+      ctx.lastCamY = NaN;
+      return;
+    }
+
+    // First build (or multiplayer client path that still needs a fresh engine).
     ctx.cols = bufCols;
     ctx.rows = worldRows;
 
@@ -133,32 +161,54 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     }
     ctx.cols = netCols;
     ctx.rows = netRows;
+    ctx.viewCols = Math.min(ctx.viewCols || netCols, netCols);
+    ctx.viewRows = Math.min(ctx.viewRows || netRows, netRows);
     const engine = buildEngine();
     ctx.localPlayerId = 0; // client: the server owns our player; render from snapshots
     engine.cameraSet((ctx.cols - ctx.viewCols) / 2, Math.max(0, (ctx.rows - ctx.viewRows) / 2));
     return engine;
   };
 
-  // ---- runtime zoom (view-only; the buffer is fixed, so no world rebuild) ----
-  // Re-fit at a new zoom index and keep the same world point centered (fit()'s
-  // fast path leaves the camera's top-left fixed, which would drift the view as
-  // the window resizes, so we recenter around the pre-zoom center).
-  const applyZoom = (nextIndex) => {
-    const clamped = Math.max(0, Math.min(SIZING.zoomSteps.length - 1, nextIndex | 0));
-    if (clamped === ctx.zoomIndex || !ctx.engine) return;
+  // ---- runtime zoom (view + loaded window; world preserved via resize) ----
+  // Re-fit at a new zoom factor and keep the same world point centered.
+  const clampZoom = (z) => {
+    const lo = SIZING.zoomOutMin ?? 0.05;
+    const hi = SIZING.zoomInMax ?? 8;
+    if (!(z > 0) || Number.isNaN(z)) return SIZING.zoomDefault ?? 1;
+    return Math.min(hi, Math.max(lo, z));
+  };
+
+  const applyZoom = (nextZoom) => {
+    const clamped = clampZoom(nextZoom);
+    if (!ctx.engine) return;
+    if (Math.abs(clamped - ctx.zoom) < 1e-9) return;
     const cam = ctx.engine.getCam();
-    const centerX = cam.x + ctx.viewCols / 2;   // buffer-cell center BEFORE the zoom
+    const centerX = cam.x + ctx.viewCols / 2;
     const centerY = cam.y + ctx.viewRows / 2;
-    ctx.zoomIndex = clamped;
-    fit();                                      // buffer dims unchanged -> fast path (keeps the world)
-    ctx.engine.cameraSet(centerX - ctx.viewCols / 2, centerY - ctx.viewRows / 2);
+    // Convert buffer-local center to world space before fit (resize may re-anchor).
+    const worldCX = ctx.engine.getWorldOffsetX() + centerX;
+    const worldCY = ctx.engine.getWorldOffsetY() + centerY;
+    ctx.zoom = clamped;
+    fit();
+    // After fit/resize, re-center on the same world point (resize already tries;
+    // this covers pure-view zoom and any path that left cam top-left fixed).
+    if (ctx.engine) {
+      const offX = ctx.engine.getWorldOffsetX();
+      const offY = ctx.engine.getWorldOffsetY();
+      ctx.engine.cameraSet(worldCX - offX - ctx.viewCols / 2, worldCY - offY - ctx.viewRows / 2);
+    }
     ctx.lastCamX = NaN;
     ctx.lastCamY = NaN;
     ctx.forceFullRender = true;
     ctx.fns.render?.(true);
   };
-  const zoomBy = (delta) => applyZoom(ctx.zoomIndex + delta);
-  const resetZoom = () => applyZoom(SIZING.zoomDefaultIndex);
+  // delta > 0 = zoom in (fewer cells). Multiplicative steps.
+  const zoomBy = (delta) => {
+    const f = SIZING.zoomStepFactor ?? 1.15;
+    const next = delta > 0 ? ctx.zoom * f : ctx.zoom / f;
+    applyZoom(next);
+  };
+  const resetZoom = () => applyZoom(SIZING.zoomDefault ?? 1);
 
   // Re-fit when devicePixelRatio changes (browser zoom). The ResizeObserver
   // only watches the CSS box, which is unchanged by zoom, so it wouldn't fire

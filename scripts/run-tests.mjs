@@ -44,6 +44,7 @@ const SUITES = [
   ['prefetch', 'prefetch-test.mjs'],
   ['render', 'render-noise-test.mjs'],
   ['viewport-sizing', 'viewport-sizing-test.mjs'],
+  ['resize-window', 'resize-window-test.mjs'],
   ['lighting', 'render-lighting-test.mjs'],
   ['stone-airgap', 'stone-airgap-test.mjs'],
   ['stone-layers', 'stone-layer-dig-repro.mjs'],

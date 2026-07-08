@@ -20,9 +20,126 @@ export const CHUNK_SIZE = 32;
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns
 let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTargets
+let resizableHeapPatched = false;
+
+// Chromium rejects TypedArray/ArrayBuffer arguments that sit on a *resizable*
+// ArrayBuffer. Emscripten's ALLOW_MEMORY_GROWTH heap is resizable, so GL calls
+// that upload from HEAPU8 (glShaderSource via TextDecoder, bufferData,
+// texImage2D, texSubImage2D, …) throw and glInit never finishes — blank scene.
+// Copy into a fixed buffer when needed. Idempotent; Safari/Node no-op if they
+// already accept resizable views.
+function fixedBufferArg(value) {
+  if (value == null) return value;
+  if (ArrayBuffer.isView(value)) {
+    if (value.buffer && value.buffer.resizable === true) {
+      const Ctor = value.constructor;
+      // Preserve the same TypedArray kind (Uint8Array, Float32Array, …).
+      const copy = new Ctor(value.length);
+      copy.set(value);
+      return copy;
+    }
+    return value;
+  }
+  if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer && value.resizable === true) {
+    return value.slice(0);
+  }
+  return value;
+}
+
+function patchResizableWasmHeapForBrowserGL() {
+  if (resizableHeapPatched) return;
+  resizableHeapPatched = true;
+
+  // 1) TextDecoder — emscripten UTF8ArrayToString → glShaderSource
+  if (typeof TextDecoder !== 'undefined') {
+    const proto = TextDecoder.prototype;
+    const original = proto.decode;
+    if (typeof original === 'function') {
+      proto.decode = function decodeResizableSafe(input, options) {
+        return original.call(this, fixedBufferArg(input), options);
+      };
+    }
+  }
+
+  // 2) WebGL buffer/texture uploads from HEAP views
+  const patchGLProto = (Proto) => {
+    if (!Proto || !Proto.prototype) return;
+    const p = Proto.prototype;
+
+    const wrapDataArg = (name, dataIndex) => {
+      const orig = p[name];
+      if (typeof orig !== 'function') return;
+      p[name] = function patchedGLMethod(...args) {
+        if (args.length > dataIndex) args[dataIndex] = fixedBufferArg(args[dataIndex]);
+        return orig.apply(this, args);
+      };
+    };
+
+    // bufferData(target, srcData|size, usage[, srcOffset[, length]])
+    // bufferSubData(target, offset, srcData[, srcOffset[, length]])
+    wrapDataArg('bufferData', 1);
+    wrapDataArg('bufferSubData', 2);
+
+    // texImage2D / texSubImage2D have many overloads; the pixels arg is last
+    // when provided as a TypedArray. Patch by scanning args for resizable views.
+    const wrapPixelsScan = (name) => {
+      const orig = p[name];
+      if (typeof orig !== 'function') return;
+      p[name] = function patchedTexMethod(...args) {
+        for (let i = 0; i < args.length; i++) {
+          if (ArrayBuffer.isView(args[i]) || (typeof ArrayBuffer !== 'undefined' && args[i] instanceof ArrayBuffer)) {
+            args[i] = fixedBufferArg(args[i]);
+          }
+        }
+        return orig.apply(this, args);
+      };
+    };
+    wrapPixelsScan('texImage2D');
+    wrapPixelsScan('texSubImage2D');
+    wrapPixelsScan('compressedTexImage2D');
+    wrapPixelsScan('compressedTexSubImage2D');
+
+    // readPixels writes INTO the view — copy dest, call, copy back.
+    {
+      const orig = p.readPixels;
+      if (typeof orig === 'function') {
+        p.readPixels = function patchedReadPixels(...args) {
+          const last = args.length - 1;
+          const dest = args[last];
+          if (ArrayBuffer.isView(dest) && dest.buffer && dest.buffer.resizable === true) {
+            const copy = fixedBufferArg(dest);
+            args[last] = copy;
+            const ret = orig.apply(this, args);
+            dest.set(copy);
+            return ret;
+          }
+          return orig.apply(this, args);
+        };
+      }
+    }
+
+    // Uniform matrix/vector uploads sometimes pass HEAPF32 views.
+    for (const name of Object.getOwnPropertyNames(p)) {
+      if (!/^uniform\d/.test(name) && !/^vertexAttrib\d/.test(name)) continue;
+      if (name.includes('Pointer')) continue; // pointer APIs take offsets, not views
+      const orig = p[name];
+      if (typeof orig !== 'function') continue;
+      p[name] = function patchedUniform(...args) {
+        for (let i = 0; i < args.length; i++) {
+          if (ArrayBuffer.isView(args[i])) args[i] = fixedBufferArg(args[i]);
+        }
+        return orig.apply(this, args);
+      };
+    }
+  };
+
+  if (typeof WebGLRenderingContext !== 'undefined') patchGLProto(WebGLRenderingContext);
+  if (typeof WebGL2RenderingContext !== 'undefined') patchGLProto(WebGL2RenderingContext);
+}
 
 export function initSandWasm() {
   if (!modPromise) {
+    patchResizableWasmHeapForBrowserGL();
     modPromise = createSandModule().then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
@@ -49,6 +166,8 @@ export function initSandWasm() {
         step: c('engine_step', 'number', ['number']),
         grid: c('engine_grid', 'number', ['number']),
         dirtyCount: c('engine_dirty_count', 'number', ['number']),
+        cols: c('engine_cols', 'number', ['number']),
+        rows: c('engine_rows', 'number', ['number']),
         chunkCols: c('engine_chunk_cols', 'number', ['number']),
         chunkRows: c('engine_chunk_rows', 'number', ['number']),
         buildDirtyRects: c('engine_build_dirty_rects', null, ['number']),
@@ -149,6 +268,7 @@ export function initSandWasm() {
         glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
         glReadPixels: c('engine_gl_read_pixels', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         setViewport: c('engine_set_viewport', null, ['number', 'number', 'number', 'number', 'number']),
+        resizeLoadedWindow: c('engine_resize_loaded_window', 'number', ['number', 'number', 'number']),
         cameraSet: c('engine_camera_set', null, ['number', 'number', 'number']),
         cameraGet: c('engine_camera_get', null, ['number', 'number']),
         cameraColX: c('engine_camera_col_x', 'number', ['number']),
@@ -189,18 +309,33 @@ export function createEngineWasm({
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
   const { mod } = M;
   const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0);
-  const chunkCols = M.chunkCols(ptr);
-  const chunkRows = M.chunkRows(ptr);
-  const cellCount = cols * rows;
+  // Live dims (mutable — resizeLoadedWindow can grow/shrink the buffer).
+  let liveCols = cols;
+  let liveRows = rows;
+  let liveChunkCols = M.chunkCols(ptr);
+  let liveChunkRows = M.chunkRows(ptr);
+  let cellCount = liveCols * liveRows;
   const renderStrides = Object.freeze({
     player: STRIDES.glPlayerExt,
     item: STRIDES.itemSnapshot,
   });
 
+  const refreshDims = () => {
+    liveCols = M.cols(ptr);
+    liveRows = M.rows(ptr);
+    liveChunkCols = M.chunkCols(ptr);
+    liveChunkRows = M.chunkRows(ptr);
+    cellCount = liveCols * liveRows;
+    api.cols = liveCols;
+    api.rows = liveRows;
+    api.chunkCols = liveChunkCols;
+    api.chunkRows = liveChunkRows;
+  };
+
   // Fresh views each call: grid swaps every step; ALLOW_MEMORY_GROWTH can detach.
   const gridView = () => new Uint8Array(mod.HEAPU8.buffer, M.grid(ptr), cellCount);
   const emptyRects = new Int32Array(0);
-  const chunkTotal = chunkCols * chunkRows;
+  const chunkTotal = () => liveChunkCols * liveChunkRows;
 
   // Scratch buffers in wasm memory: getSeedOrigin (2 ints), seedDraft (3 ints),
   // glGetOffset (2 ints).
@@ -240,11 +375,11 @@ export function createEngineWasm({
     return out;
   };
 
-  return {
-    cols,
-    rows,
-    chunkCols,
-    chunkRows,
+  const api = {
+    cols: liveCols,
+    rows: liveRows,
+    chunkCols: liveChunkCols,
+    chunkRows: liveChunkRows,
     step() { return M.step(ptr) === 1; },
     getGrid() { return gridView(); },
     // Build the coalesced dirty rects in C++ and hand back a zero-copy view.
@@ -255,7 +390,7 @@ export function createEngineWasm({
       M.buildDirtyRects(ptr);
       const rectCount = M.dirtyRectCount(ptr);
       const rects = rectCount ? new Int32Array(mod.HEAP32.buffer, M.dirtyRects(ptr), rectCount * 4) : emptyRects;
-      return { rects, rectCount, dirtyChunkCount: M.dirtyCount(ptr), chunkTotal };
+      return { rects, rectCount, dirtyChunkCount: M.dirtyCount(ptr), chunkTotal: chunkTotal() };
     },
     clearRenderDirty() { M.clearDirty(ptr); },
     // Material -> RGBA generation in C++. renderFull/renderDirtyRects write into
@@ -351,7 +486,13 @@ export function createEngineWasm({
     glGetOffset() { M.glGetOffset(ptr, glOffOut); const o = glOffOut >> 2; return { offX: mod.HEAP32[o], offY: mod.HEAP32[o + 1] }; },
 
     // ---- view camera + input policy (owned by the engine; camera.inc) ----
-    setViewport(dpr, cellDev, viewCols, viewRows) { M.setViewport(ptr, dpr, cellDev | 0, viewCols | 0, viewRows | 0); },
+    setViewport(dpr, cellDev, viewCols, viewRows) { M.setViewport(ptr, dpr, +cellDev, viewCols | 0, viewRows | 0); },
+    // Grow/shrink the loaded sim window while preserving world content. Returns true if dims changed.
+    resizeLoadedWindow(newCols, newRows) {
+      const ok = M.resizeLoadedWindow(ptr, newCols | 0, newRows | 0) === 1;
+      if (ok) refreshDims();
+      return ok;
+    },
     cameraSet(x, y) { M.cameraSet(ptr, x, y); },
     getCam() { M.cameraGet(ptr, camOut); const o = camOut >> 3; return { x: mod.HEAPF64[o], y: mod.HEAPF64[o + 1] }; },
     cameraColX() { return M.cameraColX(ptr); },
@@ -609,4 +750,5 @@ export function createEngineWasm({
     // engine pointer is exposed for that module only.
     ptr,
   };
+  return api;
 }

@@ -266,6 +266,67 @@ function floorMat(e, mat) {
   }
 }
 
+// --- 10. Anti-geyser: water dropped into a deep oil pool must not suck oil up
+//     to the free surface (BFS-to-EMPTY used to teleport displaced oil upward). ---
+{
+  console.log('\n10. water into oil: oil does not geyser to the surface');
+  const e = mk();
+  const L = 15, R = 60, floorY = ROWS - 3, oilTop = 25, oilBot = floorY - 1;
+  floorMat(e, MAT.STONE);
+  // Deep oil pool with open air above (free surface at oilTop).
+  fillRect(e, L, R, oilTop, oilBot, MAT.OIL);
+  // Water blob high above the oil — falls in and sinks.
+  fillRect(e, 32, 42, 6, 14, MAT.WATER);
+  const oil0 = count(e.getGrid(), MAT.OIL);
+  const water0 = count(e.getGrid(), MAT.WATER);
+  // Sample while water is actively sinking (not only at the end).
+  let maxOilAboveSurface = 0;
+  let minOilTop = oilTop;
+  let t = 0;
+  for (let i = 0; i < 120; i++) {
+    t += 16;
+    e.step(t);
+    const g = e.getGrid();
+    let oilAbove = 0, top = ROWS;
+    for (let y = 0; y < oilTop; y++) {
+      for (let x = L; x <= R; x++) {
+        const m = g[k(x, y)];
+        if (m === MAT.OIL) { oilAbove++; if (y < top) top = y; }
+      }
+    }
+    if (oilAbove > maxOilAboveSurface) maxOilAboveSurface = oilAbove;
+    if (top < minOilTop) minOilTop = top;
+  }
+  const oil1 = count(e.getGrid(), MAT.OIL);
+  const water1 = count(e.getGrid(), MAT.WATER);
+  check(`anti-geyser: oil conserved (${oil0} -> ${oil1})`, oil1 === oil0 && oil0 > 0);
+  check(`anti-geyser: water conserved (${water0} -> ${water1})`, water1 === water0 && water0 > 0);
+  // A few oil cells may wet the interface / fill 1-cell gaps, but the bulk of the
+  // pool must not teleport into the air column (old bug: dozens–hundreds of cells).
+  check(
+    `anti-geyser: oil above free surface stayed small (max ${maxOilAboveSurface}, highest y ${minOilTop})`,
+    maxOilAboveSurface <= 12,
+  );
+  // Water should have entered the oil body (1-cell-per-tick sink is slow; require
+  // a clear majority still not stranded in the air column above the pool).
+  {
+    const g = e.getGrid();
+    let waterInOil = 0, waterAbove = 0;
+    for (let y = 0; y <= oilBot; y++) {
+      for (let x = L; x <= R; x++) {
+        if (g[k(x, y)] !== MAT.WATER) continue;
+        if (y >= oilTop) waterInOil++;
+        else waterAbove++;
+      }
+    }
+    check(
+      `anti-geyser: water entered the oil (${waterInOil} in-pool, ${waterAbove} above)`,
+      waterInOil >= water0 * 0.3 && waterInOil > waterAbove,
+    );
+  }
+  e.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

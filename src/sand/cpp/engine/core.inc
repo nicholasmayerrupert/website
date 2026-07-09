@@ -82,10 +82,20 @@
         L->next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
-      // FALL / SINK: less-dense liquid is free volume (like air), but fall distance
-    // per tick is the SAME density-scaled cap as empty-air fall — not a near-
-    // infinite plunge (that looked like teleporting to the pool floor).
+    // FALL / SINK: less-dense liquid is free volume for a *single-cell* sink
+    // (local density exchange). Multi-cell freefall is EMPTY-only.
+    //
+    // Treating a deep oil column as air and landing many cells down made the
+    // denser's vacated source sit far above the displaced oil. resolve then
+    // BFS'd oil to free-surface empties (or restored into that high fallback)
+    // — the whole pool "sucked up" into the falling fluid like a geyser.
     if (y + 1 < rows && liquidColumnPassable(belowK, m)) {
+      uint8_t belowOcc = liquidOccupantAt(belowK);
+      if (belowOcc != EMPTY) {
+        // Lighter liquid or gas: one-cell claim only (swap / density-chain).
+        moveLiquidInto(k, x, y + 1, m);
+        return;
+      }
       int maxFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
       if (maxFall < 1) maxFall = 1;
       if (maxFall > LIQUID_FALL_CAP) maxFall = LIQUID_FALL_CAP;
@@ -93,22 +103,18 @@
       for (int s = 2; s <= maxFall; s++) {
         if (y + s >= rows) break;
         int nk = k + s * cols;
-        if (!liquidColumnPassable(nk, m)) break;
+        // Stop at anything non-empty — do not tunnel through lighter liquid.
+        if (liquidOccupantAt(nk) != EMPTY) break;
         dst = nk;
       }
-      uint8_t dstOcc = liquidOccupantAt(dst);
-      if (dstOcc == EMPTY) {
-        // Vacate source + write dest. Multi-cell jumps must dirty the full span:
-        // DIRTY_PAD_Y is only 2, but liquids fall up to LIQUID_FALL_CAP (5), so
-        // without this the vacated source/intermediate rows fall outside next
-        // step's active band, prepareNextBuffer skips them, and the double
-        // buffer resurrects stale water as a ghost trail (false "duplication").
-        vacateForNextMove(k);
-        writeNextIndex(dst, m);
-        if (dst != k) markMoveSpan(k, dst);
-      } else {
-        moveLiquidInto(k, x, dst / cols, m); // gas swap or lighter-liquid displace+enqueue
-      }
+      // Vacate source + write dest. Multi-cell jumps must dirty the full span:
+      // DIRTY_PAD_Y is only 2, but liquids fall up to LIQUID_FALL_CAP (5), so
+      // without this the vacated source/intermediate rows fall outside next
+      // step's active band, prepareNextBuffer skips them, and the double
+      // buffer resurrects stale water as a ghost trail (false "duplication").
+      vacateForNextMove(k);
+      writeNextIndex(dst, m);
+      if (dst != k) markMoveSpan(k, dst);
       return;
     }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
@@ -181,15 +187,19 @@
   void settleLava(int x, int y, int k) { if (L->next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
 
   // After liquid settle: place every lighter liquid that denser fluid displaced this
-  // tick. One multi-source BFS per material group per wave (not per cell). Target =
-  // nearest EMPTY/gas or strictly less-dense liquid; less-dense renews the chain.
+  // tick. One multi-source BFS per material group per wave (not per cell).
   //
-  // Volume conservation: each pending liquid owns a real free fallback (the denser's
-  // vacated source). Fallbacks are reserved so BFS cannot steal them as generic
-  // EMPTY targets. On chain, the lighter liquid inherits that fallback — never the
-  // overwritten target cell. Liquids that land in EMPTY/gas release their fallback
-  // into a spare pool for unplaced peers. Unplaced liquids restore into their own
-  // fallback, then spare free slots. No liquid is dropped when the pool is enclosed.
+  // Placement priority (anti-geyser):
+  //   1. Own fallback (denser's vacated source) — the natural 1-cell density swap.
+  //      Without this, BFS raced every displaced oil cell to free-surface EMPTY and
+  //      the pool "sucked" up into the falling water.
+  //   2. Nearest EMPTY/gas via BFS (only for liquids that lost their fallback).
+  //   3. Strictly less-dense liquid (chain continues).
+  //   4. Spare free slots released by peers that landed elsewhere.
+  //
+  // Volume conservation: each pending liquid owns a real free fallback. Fallbacks
+  // of unplaced liquids stay reserved so BFS cannot steal them. On chain, the
+  // lighter liquid inherits that fallback — never the overwritten target cell.
   void resolveLiquidDisplacements() {
     if (liquidDispPending.empty()) return;
     int gridLen = cols * rows;
@@ -198,6 +208,7 @@
     liquidDispPending.clear();
     std::vector<LiquidDisp> nextPending;
     std::vector<int> queue, targets, levelChain, levelEmpty, spareFree;
+    std::vector<char> usedFallback; // parallel to a material group during resolve
     // Bodies already finished this stepLayer; reuse rigidSpillReserved as a free
     // reserved-stamp buffer (separate gen from seenStamp).
     int32_t reservedGen = ++L->seenGen;
@@ -213,8 +224,11 @@
       if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY)
         L->rigidSpillReserved[fb] = reservedGen;
     };
-    // Exclusive free slots from denser vacates — protected for the whole resolve.
-    for (const auto& d : pending) reserveFallback(d.fallback);
+    auto placeAt = [&](int cell, uint8_t mat, int fromK) {
+      writeNextIndex(cell, mat);
+      markCellIndex(fromK);
+      markCellIndex(cell);
+    };
 
     for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
       std::sort(pending.begin(), pending.end(), [](const LiquidDisp& a, const LiquidDisp& b) {
@@ -223,15 +237,34 @@
         return a.from < b.from;
       });
       nextPending.clear();
+      // Reserve every fallback so BFS (for residual unplaced) cannot steal them.
+      for (const auto& d : pending) reserveFallback(d.fallback);
+
       for (size_t gi = 0; gi < pending.size();) {
         uint8_t mat = pending[gi].material;
         size_t gj = gi + 1;
         while (gj < pending.size() && pending[gj].material == mat) gj++;
         int need = (int)(gj - gi);
+        usedFallback.assign(need, 0);
+        spareFree.clear();
+
+        // Pass 1: natural density swap into own vacated denser source.
+        int remaining = need;
+        for (int i = 0; i < need; i++) {
+          int fb = pending[gi + i].fallback;
+          if (fb <= 0 || fb >= gridLen) continue;
+          if (plannedAt(fb) != EMPTY) continue;
+          // Claim exclusively (may already be reservedGen from reserveFallback).
+          L->rigidSpillReserved[fb] = reservedGen;
+          placeAt(fb, mat, pending[gi + i].from);
+          usedFallback[i] = 1;
+          remaining--;
+        }
+        if (remaining == 0) { gi = gj; continue; }
+
+        // Pass 2: BFS only for liquids that could not take their fallback.
         queue.clear(); targets.clear();
         int32_t seenGen = ++L->seenGen;
-        // Walk through reserved EMPTY fallbacks for connectivity, but never claim
-        // them as BFS targets (they stay exclusive restore slots).
         auto canVisit = [&](int k) {
           if (k <= 0 || k >= gridLen || L->seenStamp[k] == seenGen) return false;
           int y = k / cols, x = k - y * cols;
@@ -244,17 +277,20 @@
           L->seenStamp[k] = seenGen;
           queue.push_back(k);
         };
-        for (size_t di = gi; di < gj; di++) for (int off : offs) enqueue(pending[di].from + off);
+        for (int i = 0; i < need; i++) {
+          if (usedFallback[i]) continue;
+          for (int off : offs) enqueue(pending[gi + i].from + off);
+        }
 
-        int visitBudget = imin(gridLen, imax(LIQUID_DISP_VISIT_BASE, need * LIQUID_DISP_VISIT_PER));
+        int visitBudget = imin(gridLen, imax(LIQUID_DISP_VISIT_BASE, remaining * LIQUID_DISP_VISIT_PER));
         int visits = 0;
-        for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget;) {
+        for (size_t qi = 0; qi < queue.size() && (int)targets.size() < remaining && visits < visitBudget;) {
           size_t levelEnd = queue.size();
           levelChain.clear(); levelEmpty.clear();
           for (; qi < levelEnd && visits < visitBudget; qi++, visits++) {
             int k = queue[qi];
             if (L->rigidSpillReserved[k] == reservedGen) {
-              // Reserved free slot: expand through it, do not claim.
+              // Reserved free slot (someone's fallback): expand through, do not claim.
               for (int off : offs) enqueue(k + off);
               continue;
             }
@@ -263,52 +299,46 @@
             else if (isLiquidMaterial(p) && DENSITY[p] < DENSITY[mat]) levelChain.push_back(k);
             for (int off : offs) enqueue(k + off);
           }
-          // Prefer EMPTY/gas over chain at the same distance so we only continue the
-          // density chain when there is no free volume nearby (safer for mass).
+          // Prefer EMPTY/gas over chain at the same distance.
           for (int k : levelEmpty) {
-            if ((int)targets.size() >= need) break;
+            if ((int)targets.size() >= remaining) break;
             if (L->rigidSpillReserved[k] == reservedGen) continue;
             L->rigidSpillReserved[k] = reservedGen;
             targets.push_back(k);
           }
           for (int k : levelChain) {
-            if ((int)targets.size() >= need) break;
+            if ((int)targets.size() >= remaining) break;
             if (L->rigidSpillReserved[k] == reservedGen) continue;
             L->rigidSpillReserved[k] = reservedGen;
             targets.push_back(k);
           }
         }
 
-        int n = imin((int)targets.size(), need);
-        for (int i = 0; i < n; i++) {
-          int target = targets[i];
-          uint8_t prev = plannedAt(target);
+        int ti = 0;
+        for (int i = 0; i < need; i++) {
+          if (usedFallback[i]) continue;
           int fb = pending[gi + i].fallback;
-          if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) {
-            // Chain: inherit the real free fallback (never `target`, which we overwrite).
-            nextPending.push_back({prev, target, fb});
-            reserveFallback(fb);
-          } else if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
-            // Landed in EMPTY/gas — release exclusive fallback for unplaced peers.
-            L->rigidSpillReserved[fb] = reservedGen;
-            spareFree.push_back(fb);
+          if (ti < (int)targets.size()) {
+            int target = targets[ti++];
+            uint8_t prev = plannedAt(target);
+            if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) {
+              nextPending.push_back({prev, target, fb});
+              reserveFallback(fb);
+            } else if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
+              // BFS found other free volume; release own fallback for peers.
+              L->rigidSpillReserved[fb] = reservedGen;
+              spareFree.push_back(fb);
+            }
+            placeAt(target, mat, pending[gi + i].from);
+            if (fb > 0 && fb < gridLen) markCellIndex(fb);
+            usedFallback[i] = 1;
+            continue;
           }
-          writeNextIndex(target, mat);
-          // Far BFS landings can sit outside the denser's dirty pad. Ghosts only
-          // resurrect at *written/vacated* cells, so mark those endpoints — not the
-          // full from↔target bounding box (that would keep half the grid awake).
-          markCellIndex(pending[gi + i].from);
-          markCellIndex(target);
-          if (fb > 0 && fb < gridLen) markCellIndex(fb);
-        }
-        // Unplaced: own fallback first, then spare free slots from peers that landed.
-        for (int i = n; i < need; i++) {
-          int fb = pending[gi + i].fallback;
+          // Pass 3: restore into own fallback, then spare free slots.
           if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
             L->rigidSpillReserved[fb] = reservedGen;
-            writeNextIndex(fb, mat);
-            markCellIndex(pending[gi + i].from);
-            markCellIndex(fb);
+            placeAt(fb, mat, pending[gi + i].from);
+            usedFallback[i] = 1;
             continue;
           }
           while (!spareFree.empty()) {
@@ -316,9 +346,8 @@
             spareFree.pop_back();
             if (s > 0 && s < gridLen && plannedAt(s) == EMPTY) {
               L->rigidSpillReserved[s] = reservedGen;
-              writeNextIndex(s, mat);
-              markCellIndex(pending[gi + i].from);
-              markCellIndex(s);
+              placeAt(s, mat, pending[gi + i].from);
+              usedFallback[i] = 1;
               break;
             }
           }
@@ -326,7 +355,6 @@
         gi = gj;
       }
       pending.swap(nextPending);
-      for (const auto& d : pending) reserveFallback(d.fallback);
     }
     liquidDispPending.clear();
   }

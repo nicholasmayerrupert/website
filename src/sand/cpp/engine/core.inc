@@ -82,27 +82,18 @@
         L->next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
-    // FALL / SINK: treat less-dense liquid like air. Walk the column using the
-    // effective occupant (next[] if set) so denser fluid can plunge through a
-    // lighter body even after bottom-up settle wrote that lighter into next[].
-    // Empty-air fall is density-capped; through-lighter has a high cap so a whole
-    // inverted stack stratifies in bulk instead of 1-cell/row swaps.
+      // FALL / SINK: less-dense liquid is free volume (like air), but fall distance
+    // per tick is the SAME density-scaled cap as empty-air fall — not a near-
+    // infinite plunge (that looked like teleporting to the pool floor).
     if (y + 1 < rows && liquidColumnPassable(belowK, m)) {
-      int maxEmptyFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
-      if (maxEmptyFall < 1) maxEmptyFall = 1;
-      if (maxEmptyFall > LIQUID_FALL_CAP) maxEmptyFall = LIQUID_FALL_CAP;
+      int maxFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
+      if (maxFall < 1) maxFall = 1;
+      if (maxFall > LIQUID_FALL_CAP) maxFall = LIQUID_FALL_CAP;
       int dst = belowK;
-      int emptySteps = 0;
-      int maxSteps = imin(rows - y - 1, LIQUID_SINK_THROUGH_CAP);
-      for (int s = 1; s <= maxSteps; s++) {
+      for (int s = 2; s <= maxFall; s++) {
+        if (y + s >= rows) break;
         int nk = k + s * cols;
         if (!liquidColumnPassable(nk, m)) break;
-        uint8_t occ = liquidOccupantAt(nk);
-        bool throughLighter = isLiquidMaterial(occ) && canDisplaceByLooseDensity(m, occ);
-        if (!throughLighter) {
-          emptySteps++;
-          if (emptySteps > maxEmptyFall) break;
-        }
         dst = nk;
       }
       uint8_t dstOcc = liquidOccupantAt(dst);

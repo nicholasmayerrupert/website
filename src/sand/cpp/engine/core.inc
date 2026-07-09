@@ -177,8 +177,13 @@
   // After liquid settle: place every lighter liquid that denser fluid displaced this
   // tick. One multi-source BFS per material group per wave (not per cell). Target =
   // nearest EMPTY/gas or strictly less-dense liquid; less-dense renews the chain.
-  // Falls back to the denser's vacated source so volume is conserved when the pool
-  // is enclosed and the visit budget is spent.
+  //
+  // Volume conservation: each pending liquid owns a real free fallback (the denser's
+  // vacated source). Fallbacks are reserved so BFS cannot steal them as generic
+  // EMPTY targets. On chain, the lighter liquid inherits that fallback — never the
+  // overwritten target cell. Liquids that land in EMPTY/gas release their fallback
+  // into a spare pool for unplaced peers. Unplaced liquids restore into their own
+  // fallback, then spare free slots. No liquid is dropped when the pool is enclosed.
   void resolveLiquidDisplacements() {
     if (liquidDispPending.empty()) return;
     int gridLen = cols * rows;
@@ -186,7 +191,7 @@
     std::vector<LiquidDisp> pending = std::move(liquidDispPending);
     liquidDispPending.clear();
     std::vector<LiquidDisp> nextPending;
-    std::vector<int> queue, targets, levelChain, levelEmpty;
+    std::vector<int> queue, targets, levelChain, levelEmpty, spareFree;
     // Bodies already finished this stepLayer; reuse rigidSpillReserved as a free
     // reserved-stamp buffer (separate gen from seenStamp).
     int32_t reservedGen = ++L->seenGen;
@@ -198,6 +203,12 @@
       if (x >= L->activeRowMin[y] && x <= L->activeRowMax[y]) return L->next[k];
       return L->grid[k];
     };
+    auto reserveFallback = [&](int fb) {
+      if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY)
+        L->rigidSpillReserved[fb] = reservedGen;
+    };
+    // Exclusive free slots from denser vacates — protected for the whole resolve.
+    for (const auto& d : pending) reserveFallback(d.fallback);
 
     for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
       std::sort(pending.begin(), pending.end(), [](const LiquidDisp& a, const LiquidDisp& b) {
@@ -213,8 +224,10 @@
         int need = (int)(gj - gi);
         queue.clear(); targets.clear();
         int32_t seenGen = ++L->seenGen;
+        // Walk through reserved EMPTY fallbacks for connectivity, but never claim
+        // them as BFS targets (they stay exclusive restore slots).
         auto canVisit = [&](int k) {
-          if (k <= 0 || k >= gridLen || L->rigidSpillReserved[k] == reservedGen || L->seenStamp[k] == seenGen) return false;
+          if (k <= 0 || k >= gridLen || L->seenStamp[k] == seenGen) return false;
           int y = k / cols, x = k - y * cols;
           if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
           uint8_t p = plannedAt(k);
@@ -234,20 +247,25 @@
           levelChain.clear(); levelEmpty.clear();
           for (; qi < levelEnd && visits < visitBudget; qi++, visits++) {
             int k = queue[qi];
-            if (L->rigidSpillReserved[k] == reservedGen) continue;
+            if (L->rigidSpillReserved[k] == reservedGen) {
+              // Reserved free slot: expand through it, do not claim.
+              for (int off : offs) enqueue(k + off);
+              continue;
+            }
             uint8_t p = plannedAt(k);
-            if (isLiquidMaterial(p) && DENSITY[p] < DENSITY[mat]) levelChain.push_back(k);
-            else if (p == EMPTY || isGasMaterial(p)) levelEmpty.push_back(k);
+            if (p == EMPTY || isGasMaterial(p)) levelEmpty.push_back(k);
+            else if (isLiquidMaterial(p) && DENSITY[p] < DENSITY[mat]) levelChain.push_back(k);
             for (int off : offs) enqueue(k + off);
           }
-          // Prefer less-dense (chain continues) over EMPTY at the same distance.
-          for (int k : levelChain) {
+          // Prefer EMPTY/gas over chain at the same distance so we only continue the
+          // density chain when there is no free volume nearby (safer for mass).
+          for (int k : levelEmpty) {
             if ((int)targets.size() >= need) break;
             if (L->rigidSpillReserved[k] == reservedGen) continue;
             L->rigidSpillReserved[k] = reservedGen;
             targets.push_back(k);
           }
-          for (int k : levelEmpty) {
+          for (int k : levelChain) {
             if ((int)targets.size() >= need) break;
             if (L->rigidSpillReserved[k] == reservedGen) continue;
             L->rigidSpillReserved[k] = reservedGen;
@@ -259,20 +277,40 @@
         for (int i = 0; i < n; i++) {
           int target = targets[i];
           uint8_t prev = plannedAt(target);
-          if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) nextPending.push_back({prev, target, target});
+          int fb = pending[gi + i].fallback;
+          if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) {
+            // Chain: inherit the real free fallback (never `target`, which we overwrite).
+            nextPending.push_back({prev, target, fb});
+            reserveFallback(fb);
+          } else if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
+            // Landed in EMPTY/gas — release exclusive fallback for unplaced peers.
+            L->rigidSpillReserved[fb] = reservedGen;
+            spareFree.push_back(fb);
+          }
           writeNextIndex(target, mat);
         }
-        // Unplaced: restore into denser's vacated source when still free.
+        // Unplaced: own fallback first, then spare free slots from peers that landed.
         for (int i = n; i < need; i++) {
           int fb = pending[gi + i].fallback;
-          if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY && L->rigidSpillReserved[fb] != reservedGen) {
+          if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
             L->rigidSpillReserved[fb] = reservedGen;
             writeNextIndex(fb, mat);
+            continue;
+          }
+          while (!spareFree.empty()) {
+            int s = spareFree.back();
+            spareFree.pop_back();
+            if (s > 0 && s < gridLen && plannedAt(s) == EMPTY) {
+              L->rigidSpillReserved[s] = reservedGen;
+              writeNextIndex(s, mat);
+              break;
+            }
           }
         }
         gi = gj;
       }
       pending.swap(nextPending);
+      for (const auto& d : pending) reserveFallback(d.fallback);
     }
     liquidDispPending.clear();
   }

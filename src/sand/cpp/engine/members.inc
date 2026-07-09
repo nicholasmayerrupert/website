@@ -64,7 +64,8 @@
   // Liquid↔liquid density-chain displacement: denser liquid treats lighter liquid as
   // free volume for movement; the displaced lighter liquid is relocated after the
   // settle pass by a multi-source BFS (resolveLiquidDisplacements in core.inc).
-  // from = cell the lighter liquid occupied; fallback = denser's vacated source.
+  // from = cell the lighter liquid occupied; fallback = a real free cell (denser's
+  // vacated source), propagated through chains — never the overwritten target.
   struct LiquidDisp { uint8_t material; int from; int fallback; };
   std::vector<LiquidDisp> liquidDispPending;
   // ---- players (Terraria-like characters; physics in player.inc) ----

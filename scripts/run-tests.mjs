@@ -25,6 +25,7 @@ const SUITES = [
   ['throw', 'throw-test.mjs'],
   ['mat-flags', 'materials-flags-test.mjs'],
   ['mat-behavior', 'material-behavior-test.mjs'],
+  ['liquid-mass', 'liquid-mass-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
   ['structures', 'worldgen-structures-test.mjs'],
   ['flora', 'flora-test.mjs'],

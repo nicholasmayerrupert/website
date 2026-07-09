@@ -51,9 +51,13 @@
     std::swap(L->prevCompCells, L->curCompCells);
     double tC = emscripten_get_now(); perfStepCarry = tC - tX;
 
+    liquidDispPending.clear();
     for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
     for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } }
     for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
+    // Density-chain relocate liquids displaced by denser liquids this settle (before
+    // gas claims free cells and before the double-buffer swap commits next[]).
+    resolveLiquidDisplacements();
     for (int y = 0; y < rows; y++) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
     double tS = emscripten_get_now(); perfStepSettle = tS - tC;
     std::swap(L->grid, L->next);

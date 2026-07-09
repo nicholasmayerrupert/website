@@ -11,19 +11,35 @@
   // [1, LIQUID_FALL_CAP]). With the values below: OIL(0.8)->2, WATER(1.0)->3,
   // ACID(1.1)->3, LAVA(2.8)->8 capped to 5 — so density actually orders the
   // fall speed (lighter oil lags, heavier lava plummets). Defined here (NOT
-  // common.hpp) on purpose. Only moves a liquid into EMPTY space strictly below,
-  // so settled scenes (nothing empty below) are byte-identical to single-step.
+  // common.hpp) on purpose. Column free space is EMPTY/gas/less-dense liquid
+  // (liquidTreatsAsEmpty); only the landing cell is occupied (lighter liquid
+  // there is density-chain relocated). Single-fluid settled columns (nothing
+  // free below) still take 0 steps.
   static const int LIQUID_FALL_PER_DENSITY = 3;
   static const int LIQUID_FALL_CAP = 5;
   bool canLooseDensitySettleThisTick(uint8_t m) { float mob = MOBILITY[m]; return mob >= 1 || rand() < mob; }
   void settleLooseDensityInterface(int x, int y, int k) {
     uint8_t m = L->grid[k];
     if (!isLooseDensityMaterial(m) || L->next[k] != EMPTY) return;
+    if (L->vacatedStamp[k] == tick) return;
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
-    if (y + 1 < rows && canDisplaceByLooseDensity(m, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, m); return; }
+    // Liquid↔liquid density is handled by settleLiquid (deep sink through lighter
+    // fluid + multi-source BFS relocate). One-cell swaps here recreated the old
+    // row-by-row bubble-sort look. Keep this pass for powder↔powder / powder↔liquid.
+    auto trySink = [&](int ik) {
+      if (!canDisplaceByLooseDensity(m, L->grid[ik]) || L->next[ik] != EMPTY) return false;
+      if (isLiquidMaterial(m) && isLiquidMaterial(L->grid[ik])) return false;
+      moveMaterialInto(k, ik, m);
+      return true;
+    };
+    if (y + 1 < rows && trySink(belowK)) return;
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue; int ik = belowK + dx; if (canDisplaceByLooseDensity(m, L->grid[ik]) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, m); return; } }
+    for (int i = 0; i < 2; i++) {
+      int dx = dirs[i]; int nx = x + dx;
+      if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
+      if (trySink(belowK + dx)) return;
+    }
   }
   // Settle one POWDER cell. `self` is the actual powder material (SAND, DIRT,
   // SNOW, ...), so every new position keeps that material instead of becoming
@@ -47,62 +63,67 @@
   }
   void settleLiquid(int x, int y, int k, uint8_t m) {
     if (L->next[k] != EMPTY) return;
+    // Already moved this tick (e.g. denser liquid sank in settleLooseDensityInterface
+    // and enqueued a lighter liquid instead of swapping into the source). Without this
+    // guard the same grid cell is settled again and duplicates into a free next[].
+    if (L->vacatedStamp[k] == tick) return;
     int belowK = k + cols;
-    if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[k - 1] == m && L->grid[k + 1] == m) {
-      uint8_t below = L->grid[belowK], bl = L->grid[belowK - 1], br = L->grid[belowK + 1];
+    // Packed early-out must use effective occupancy (next / vacated), not raw grid[].
+    // Otherwise a denser cell above one that just sank still sees "solid pack of m"
+    // in grid and goes inert — killing same-tick cascade through a lighter pool and
+    // recreating the old row-by-row bubble.
+    // Also: do NOT early-out when a strictly lighter liquid is above (submerged denser
+    // free surface) — that cell still needs lateral equalize into the lighter body or
+    // a brine mound under water freezes into a permanent pyramid.
+    if (y + 1 < rows && x > 0 && x < cols - 1 && liquidOccupantAt(k - 1) == m && liquidOccupantAt(k + 1) == m
+        && !(y > 1 && isLiquidMaterial(L->grid[k - cols]) && canDisplaceByLooseDensity(m, L->grid[k - cols]))) {
+      uint8_t below = liquidOccupantAt(belowK), bl = liquidOccupantAt(belowK - 1), br = liquidOccupantAt(belowK + 1);
       if ((below == m && bl == m && br == m) || (supportsLiquid(below, m) && bl != EMPTY && !canDisplaceMaterial(m, bl) && br != EMPTY && !canDisplaceMaterial(m, br))) {
         L->next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
-    // DENSITY RISE: a lighter liquid rises into a strictly-DENSER liquid directly
-    // above or up-diagonally — the symmetric partner of the down/down-diagonal sink
-    // below. Together they LEVEL a two-fluid interface (a water mound under oil
-    // flattens as oil rises and water sinks) and, because each swap strictly lowers
-    // gravitational PE, the body CONVERGES and settles. Restricted to a liquid above
-    // (powder sorting is handled by settleSand). Deterministic parity direction (no
-    // rand) so single-fluid scenes — which never have a denser liquid above — are
-    // byte-identical. Runs before the side flow so buoyancy beats lateral spread.
-    if (y > 1) {
-      int aboveK = k - cols;
-      if (isLiquidMaterial(L->grid[aboveK]) && canDisplaceByLooseDensity(L->grid[aboveK], m) && L->next[aboveK] == EMPTY && L->next[k] == EMPTY) { moveDensitySwap(k, aboveK, m); return; }
-      int firstDx = ((x + y) & 1) ? 1 : -1;
-      for (int i = 0; i < 2; i++) { int dx = i == 0 ? firstDx : -firstDx; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int uk = aboveK + dx; if (isLiquidMaterial(L->grid[uk]) && canDisplaceByLooseDensity(L->grid[uk], m) && L->next[uk] == EMPTY && L->next[k] == EMPTY) { moveDensitySwap(k, uk, m); return; } }
-    }
-    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) {
-      // DENSITY-SCALED FALL: denser liquids drop more cells per tick. Walk straight
-      // down, stopping at the first cell that isn't free (free == both L->grid AND L->next
-      // EMPTY, matching the single-step guard above and respecting the double buffer
-      // so two cells can't claim the same destination), and move to the farthest free
-      // cell. Only ever moves into EMPTY space strictly below, so a settled scene
-      // (nothing empty below any liquid) takes 0 steps and is byte-identical to before.
-      int maxFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
-      if (maxFall < 1) maxFall = 1;
-      if (maxFall > LIQUID_FALL_CAP) maxFall = LIQUID_FALL_CAP;
+    // FALL / SINK: treat less-dense liquid like air. Walk the column using the
+    // effective occupant (next[] if set) so denser fluid can plunge through a
+    // lighter body even after bottom-up settle wrote that lighter into next[].
+    // Empty-air fall is density-capped; through-lighter has a high cap so a whole
+    // inverted stack stratifies in bulk instead of 1-cell/row swaps.
+    if (y + 1 < rows && liquidColumnPassable(belowK, m)) {
+      int maxEmptyFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
+      if (maxEmptyFall < 1) maxEmptyFall = 1;
+      if (maxEmptyFall > LIQUID_FALL_CAP) maxEmptyFall = LIQUID_FALL_CAP;
       int dst = belowK;
-      for (int s = 2; s <= maxFall; s++) {
-        if (y + s >= rows) break;                       // bottom of buffer
+      int emptySteps = 0;
+      int maxSteps = imin(rows - y - 1, LIQUID_SINK_THROUGH_CAP);
+      for (int s = 1; s <= maxSteps; s++) {
         int nk = k + s * cols;
-        if (L->grid[nk] != EMPTY || L->next[nk] != EMPTY) break;
+        if (!liquidColumnPassable(nk, m)) break;
+        uint8_t occ = liquidOccupantAt(nk);
+        bool throughLighter = isLiquidMaterial(occ) && canDisplaceByLooseDensity(m, occ);
+        if (!throughLighter) {
+          emptySteps++;
+          if (emptySteps > maxEmptyFall) break;
+        }
         dst = nk;
       }
-      L->vacatedStamp[k] = tick; writeNextIndex(dst, m);
-      // A multi-cell jump moves the source >DIRTY_PAD_Y rows from the destination,
-      // so the vacated source/intermediate rows would fall outside L->next step's active
-      // band and prepareNextBuffer wouldn't blank their `L->next` slots — the double
-      // buffer then resurrects a stale value from 2 ticks ago as a ghost trail. Mark
-      // the whole fall span dirty so those rows stay active and get blanked. (For a
-      // single-cell fall dst==belowK and the existing pad already covers it.)
+      uint8_t dstOcc = liquidOccupantAt(dst);
+      if (dstOcc == EMPTY) {
+        L->vacatedStamp[k] = tick; writeNextIndex(dst, m);
+      } else {
+        moveLiquidInto(k, x, dst / cols, m); // gas swap or lighter-liquid displace+enqueue
+      }
       if (dst != belowK) markDirtyRect(x, y, x, dst / cols);
       return;
     }
-    if (y + 1 < rows && canDisplaceMaterial(m, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveLiquidInto(k, x, y + 1, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     for (int i = 0; i < 2; i++) {
       int dx = dirs[i]; int nx = x + dx, ny = y + 1;
       if (nx <= 0 || nx >= cols - 1 || ny >= rows) continue;
       int ik = I(nx, ny);
-      if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(ik, m); return; }
-      if (canDisplaceMaterial(m, L->grid[ik]) && L->next[ik] == EMPTY) { moveLiquidInto(k, nx, ny, m); return; }
+      if (!liquidCanClaim(ik, m)) continue;
+      uint8_t occ = liquidOccupantAt(ik);
+      if (occ == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(ik, m); return; }
+      moveLiquidInto(k, nx, ny, m);
+      return;
     }
     int flow = 0, firstFlowDir = rand() < 0.5 ? 1 : -1;
     for (int dirIndex = 0; dirIndex < 2 && flow == 0; dirIndex++) {
@@ -114,49 +135,46 @@
       }
     }
     if (flow != 0) { int stepX = x + flow; if (canLiquidEnter(stepX, y, m)) { moveLiquidInto(k, stepX, y, m); return; } }
-    // LATERAL DENSITY SPREAD: push sideways into an adjacent strictly-LIGHTER loose
-    // material. This started as two-liquid leveling (water into oil); allowing powders
-    // here lets pressured water/lava push light snow/sand aside, after which the normal
-    // vertical density pass lifts the displaced powder above the denser liquid.
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; int sk = k + dx; if (L->next[sk] == EMPTY && isLooseDensityMaterial(L->grid[sk]) && canDisplaceByLooseDensity(m, L->grid[sk])) { moveLiquidInto(k, nx, y, m); return; } }
+    // LATERAL density push into lighter POWDER only. Lighter liquid is free volume
+    // for fall / free-surface leveling (levelLiquidSurfaces, drop>=2) — not for
+    // same-level flow (that PE-neutral swaps forever).
+    for (int i = 0; i < 2; i++) {
+      int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
+      int sk = k + dx;
+      if (!liquidCanClaim(sk, m)) continue;
+      uint8_t occ = liquidOccupantAt(sk);
+      if (!isLooseSolidMaterial(occ) || !canDisplaceByLooseDensity(m, occ)) continue;
+      moveLiquidInto(k, nx, y, m);
+      return;
+    }
     if (y + 1 < rows && supportsLiquid(L->grid[belowK], m)) {
-      int aboveK = k - cols;
-      bool hasAbove = (y > 1 && L->grid[aboveK] == m);
+      // Same material above OR lighter liquid above (submerged denser body).
+      bool hasAbove = liquidPressureAbove(k, m);
       if (hasAbove) {
         for (int i = 0; i < 2; i++) { int dx = dirs[i]; int sideK = k + dx; if (x + dx <= 0 || x + dx >= cols - 1) continue; if (canEnterIndex(sideK, m) && supportsLiquid(L->grid[sideK + cols], m)) { moveMaterialInto(k, sideK, m); return; } }
       }
-      // Resting on support with no reachable lower opening (the flow scan above found
-      // none) and no liquid stacked above. This cell cannot make downward progress, so
-      // a same-level empty neighbour is NOT a real escape: spreading a 1-deep puddle
-      // sideways across a flat floor just shuffles cells and churns the diff forever.
-      // Go inert (re-wakes via dirty padding if a neighbour later opens a lower path).
-      // PRESSURED cells (liquid above) keep the normal re-mark so columns still drain.
+      // Resting on support: same-level empty is only an escape when pressured.
+      // Free-surface leveling of denser mounds under lighter fluid is done by
+      // levelLiquidSurfaces (lighter liquid = air, drop>=2) — same as air pyramids.
       if (L->next[k] == EMPTY) { L->next[k] = m; if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) || adjacentInternalHole(k, m)) markCellIndex(k); }
       return;
     }
-    // Same-level sideways spread ONLY under pressure (liquid stacked directly
-    // above). A FREE surface cell (open above) does not slide into a same-level
-    // gap, so a ragged surface settles to a stable shape instead of shimmering
-    // left/right forever. Pressured cells still equalize (and stay active);
-    // free-surface cells go inert (re-wake via dirty padding on disturbance),
-    // but keep the density-interface re-mark so liquids still separate by density.
-    bool pressured = (y > 1 && L->grid[k - cols] == m);
+    // Same-level sideways into EMPTY under pressure (own liquid or lighter liquid
+    // above). Free air surface does not slide into same-level gaps (anti-shimmer).
+    bool pressured = liquidPressureAbove(k, m);
     if (pressured) {
-      // Equalize sideways ONLY toward a genuinely-lower surface: the target must be
-      // open at this level AND have nothing of ours stacked directly above it. A gap
-      // that has the same liquid right above is about to be filled by a vertical
-      // fall, so sliding into it merely chases the gap sideways. A sub-row air bubble
-      // pinned at a ragged container bottom would otherwise shimmer left/right every
-      // step forever (both flanking cells are pressured and swap the gap), never
-      // settling — letting it rise to the free surface instead lets the body go inert.
-      for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (canLiquidEnter(nx, y, m) && !(L->grid[I(nx, y - 1)] == m)) { moveLiquidInto(k, nx, y, m); return; } }
-      // Cannot usefully equalize: only stay active (re-mark) if a vertical fall can
-      // still fill the gap beside us (liquid above the gap) — otherwise go inert so a
-      // settled-but-imperfectly-packed body stops churning the per-step diff.
+      for (int i = 0; i < 2; i++) {
+        int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
+        if (canLiquidEnter(nx, y, m) && !(L->grid[I(nx, y - 1)] == m)) { moveLiquidInto(k, nx, y, m); return; }
+      }
       if (L->next[k] == EMPTY) {
         L->next[k] = m;
         bool fillableGap = false;
-        for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue; if (L->grid[I(nx, y)] == EMPTY && y > 1 && L->grid[I(nx, y - 1)] == m) { fillableGap = true; break; } }
+        for (int i = 0; i < 2; i++) {
+          int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
+          int sk = I(nx, y);
+          if (L->grid[sk] == EMPTY && y > 1 && liquidPressureAbove(sk, m)) { fillableGap = true; break; }
+        }
         if (fillableGap || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
       }
       return;
@@ -164,6 +182,110 @@
     if (L->next[k] == EMPTY) { L->next[k] = m; if (touchesUnstableLooseDensityInterface(k, m) || adjacentInternalHole(k, m)) markCellIndex(k); }
   }
   void settleLava(int x, int y, int k) { if (L->next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
+
+  // After liquid settle: place every lighter liquid that denser fluid displaced this
+  // tick. One multi-source BFS per material group per wave (not per cell). Target =
+  // nearest EMPTY/gas or strictly less-dense liquid; less-dense renews the chain.
+  // Falls back to the denser's vacated source so volume is conserved when the pool
+  // is enclosed and the visit budget is spent.
+  void resolveLiquidDisplacements() {
+    if (liquidDispPending.empty()) return;
+    int gridLen = cols * rows;
+    int offs[4] = { -1, 1, cols, -cols };
+    std::vector<LiquidDisp> pending = std::move(liquidDispPending);
+    liquidDispPending.clear();
+    std::vector<LiquidDisp> nextPending;
+    std::vector<int> queue, targets, levelChain, levelEmpty;
+    // Bodies already finished this stepLayer; reuse rigidSpillReserved as a free
+    // reserved-stamp buffer (separate gen from seenStamp).
+    int32_t reservedGen = ++L->seenGen;
+
+    auto plannedAt = [&](int k) -> uint8_t {
+      int y = k / cols, x = k - y * cols;
+      // Active rows were blanked then rewritten — next[] is authoritative there.
+      // Inactive rows keep stale next; grid is the committed state (unchanged).
+      if (x >= L->activeRowMin[y] && x <= L->activeRowMax[y]) return L->next[k];
+      return L->grid[k];
+    };
+
+    for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
+      std::sort(pending.begin(), pending.end(), [](const LiquidDisp& a, const LiquidDisp& b) {
+        if (DENSITY[a.material] != DENSITY[b.material]) return DENSITY[a.material] > DENSITY[b.material];
+        if (a.material != b.material) return a.material < b.material;
+        return a.from < b.from;
+      });
+      nextPending.clear();
+      for (size_t gi = 0; gi < pending.size();) {
+        uint8_t mat = pending[gi].material;
+        size_t gj = gi + 1;
+        while (gj < pending.size() && pending[gj].material == mat) gj++;
+        int need = (int)(gj - gi);
+        queue.clear(); targets.clear();
+        int32_t seenGen = ++L->seenGen;
+        auto canVisit = [&](int k) {
+          if (k <= 0 || k >= gridLen || L->rigidSpillReserved[k] == reservedGen || L->seenStamp[k] == seenGen) return false;
+          int y = k / cols, x = k - y * cols;
+          if (x <= 0 || x >= cols - 1 || y <= 0 || y >= rows) return false;
+          uint8_t p = plannedAt(k);
+          return p == EMPTY || isGasMaterial(p) || isLiquidMaterial(p);
+        };
+        auto enqueue = [&](int k) {
+          if (!canVisit(k)) return;
+          L->seenStamp[k] = seenGen;
+          queue.push_back(k);
+        };
+        for (size_t di = gi; di < gj; di++) for (int off : offs) enqueue(pending[di].from + off);
+
+        int visitBudget = imin(gridLen, imax(LIQUID_DISP_VISIT_BASE, need * LIQUID_DISP_VISIT_PER));
+        int visits = 0;
+        for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget;) {
+          size_t levelEnd = queue.size();
+          levelChain.clear(); levelEmpty.clear();
+          for (; qi < levelEnd && visits < visitBudget; qi++, visits++) {
+            int k = queue[qi];
+            if (L->rigidSpillReserved[k] == reservedGen) continue;
+            uint8_t p = plannedAt(k);
+            if (isLiquidMaterial(p) && DENSITY[p] < DENSITY[mat]) levelChain.push_back(k);
+            else if (p == EMPTY || isGasMaterial(p)) levelEmpty.push_back(k);
+            for (int off : offs) enqueue(k + off);
+          }
+          // Prefer less-dense (chain continues) over EMPTY at the same distance.
+          for (int k : levelChain) {
+            if ((int)targets.size() >= need) break;
+            if (L->rigidSpillReserved[k] == reservedGen) continue;
+            L->rigidSpillReserved[k] = reservedGen;
+            targets.push_back(k);
+          }
+          for (int k : levelEmpty) {
+            if ((int)targets.size() >= need) break;
+            if (L->rigidSpillReserved[k] == reservedGen) continue;
+            L->rigidSpillReserved[k] = reservedGen;
+            targets.push_back(k);
+          }
+        }
+
+        int n = imin((int)targets.size(), need);
+        for (int i = 0; i < n; i++) {
+          int target = targets[i];
+          uint8_t prev = plannedAt(target);
+          if (isLiquidMaterial(prev) && DENSITY[prev] < DENSITY[mat]) nextPending.push_back({prev, target, target});
+          writeNextIndex(target, mat);
+        }
+        // Unplaced: restore into denser's vacated source when still free.
+        for (int i = n; i < need; i++) {
+          int fb = pending[gi + i].fallback;
+          if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY && L->rigidSpillReserved[fb] != reservedGen) {
+            L->rigidSpillReserved[fb] = reservedGen;
+            writeNextIndex(fb, mat);
+          }
+        }
+        gi = gj;
+      }
+      pending.swap(nextPending);
+    }
+    liquidDispPending.clear();
+  }
+
   void relaxLiquidGaps() {
     for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
       int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
@@ -183,35 +305,38 @@
       }
     }
   }
-  // Keep a wide free LIQUID-against-AIR surface flowing locally until it is nearly
-  // level. The probe looks along a connected surface to see whether a side reaches a
-  // column >=2px lower, but the actual move is only ONE adjacent sideways step into
-  // air. The L->next normal settle pass then lets that cell fall naturally. This avoids
-  // both failure modes: a one-sided pile/ramp that goes inert too soon, and the old
-  // non-local "flattening" jump that placed a cell directly at the distant low point.
+  // Free-surface leveling — air and denser-under-lighter share one rule:
+  // free volume for denser m = EMPTY / lighter powder / strictly lighter liquid
+  // (lighter liquid = air). One sideways step only if the free surface drops by
+  // >=2px (same anti-shimmer as air pyramids). Flat free surfaces (drop 0/1)
+  // stay put and go inert. General same-level flow still does NOT treat lighter
+  // liquid as air (canEnterIndex) — only this free-surface solver does.
   void levelLiquidSurfaces() {
     auto surfacePassable = [&](uint8_t c, uint8_t m) {
-      return c == EMPTY || (isLooseSolidMaterial(c) && canDisplaceByLooseDensity(m, c));
+      return c == EMPTY
+          || (isLooseSolidMaterial(c) && canDisplaceByLooseDensity(m, c))
+          || (isLiquidMaterial(c) && canDisplaceByLooseDensity(m, c));
     };
-    auto lowerSurfaceDrop = [&](int x, int y, uint8_t m, int sgn) {
+    // needDrop: air/powder free volume uses 2 (classic). Stepping into lighter
+    // liquid uses 3 so mild residual free-surface scallops go inert instead of
+    // PE-swapping forever; tall denser mounds still see large drops and flatten.
+    auto lowerSurfaceDrop = [&](int x, int y, uint8_t m, int sgn, int needDrop) {
       int lvl = y;
       for (int d = 1; d <= LIQUID_SURFACE_LOOKAHEAD; d++) {
         int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
         uint8_t c = L->grid[I(cx, lvl)];
-        if (c == m) continue;                  // liquid at this level -> connected, surface >= lvl
-        if (!surfacePassable(c, m)) break;     // wall / denser material at the level -> body ends
-        int ny = lvl + 1;                      // air here -> this column is shorter; descend to its surface
+        if (c == m) continue;
+        if (!surfacePassable(c, m)) break;
+        int ny = lvl + 1;
         while (ny < rows && surfacePassable(L->grid[I(cx, ny)], m)) ny++;
-        if (ny >= rows || L->grid[I(cx, ny)] != m) break; // open drop or foreign material -> stop
+        if (ny >= rows || L->grid[I(cx, ny)] != m) break;
         lvl = ny;
-        if (lvl - y >= 2) return lvl - y;
+        if (lvl - y >= needDrop) return lvl - y;
       }
       return 0;
     };
 
     for (int pass = 0; pass < LIQUID_SURFACE_FLOW_PASSES; pass++) {
-      // Bottom-to-top plus stamping prevents same-tick cascades: a moved source or
-      // destination will not be consumed again until the L->next simulation tick.
       for (int y = rows - 2; y >= 1; y--) {
         int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
         bool ltr = ((y + pass + tick) & 1) == 0;
@@ -222,14 +347,21 @@
           if (!isLiquidMaterial(m)) continue;
           if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
           uint8_t above = L->grid[k - cols];
-          if (above != EMPTY && !surfacePassable(above, m)) continue; // free air or lighter powder surface
-          if (L->grid[k + cols] == EMPTY) continue;     // falling cells are handled by the normal liquid settle pass
+          // Free surface: air/powder, or lighter liquid above (submerged denser).
+          if (above != EMPTY && !surfacePassable(above, m)) continue;
+          if (L->grid[k + cols] == EMPTY) continue;
           if (L->vacatedStamp[k] == tick || L->vacatedStamp[k + cols] == tick ||
               L->vacatedStamp[k - 1] == tick || L->vacatedStamp[k + 1] == tick) continue;
 
           int leftK = k - 1, rightK = k + 1;
-          int leftDrop = (surfacePassable(L->grid[leftK], m) && L->vacatedStamp[leftK] != tick) ? lowerSurfaceDrop(x, y, m, -1) : 0;
-          int rightDrop = (surfacePassable(L->grid[rightK], m) && L->vacatedStamp[rightK] != tick) ? lowerSurfaceDrop(x, y, m, 1) : 0;
+          auto sideDrop = [&](int sideK, int sgn) {
+            if (!surfacePassable(L->grid[sideK], m) || L->vacatedStamp[sideK] == tick) return 0;
+            uint8_t side = L->grid[sideK];
+            int need = (isLiquidMaterial(side) && canDisplaceByLooseDensity(m, side)) ? 3 : 2;
+            return lowerSurfaceDrop(x, y, m, sgn, need);
+          };
+          int leftDrop = sideDrop(leftK, -1);
+          int rightDrop = sideDrop(rightK, 1);
           if (leftDrop == 0 && rightDrop == 0) continue;
           int dir = 0;
           if (leftDrop > rightDrop) dir = -1;
@@ -237,6 +369,9 @@
           else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
           int toK = k + dir;
           if (!surfacePassable(L->grid[toK], m) || L->vacatedStamp[toK] == tick) continue;
+          // drop>=2 already: PE-down free-surface reshape (same as air into empty).
+          // Swap is volume-safe; lighter liquid takes the denser free-surface cell and
+          // is pushed up by later density sink / free-surface water fill.
           uint8_t displaced = L->grid[toK];
           writeGridIndex(k, displaced);
           writeGridIndex(toK, m);
@@ -254,6 +389,8 @@
       for (int x = start; x != end; x += stepX) {
         if (((x + y) % 2) != parity) continue;
         int k = I(x, y), belowK = k + cols; uint8_t upper = L->grid[k], lower = L->grid[belowK];
+        // Liquid↔liquid: settleLiquid + density-chain BFS only (no checkerboard swaps).
+        if (isLiquidMaterial(upper) && isLiquidMaterial(lower)) continue;
         if (canDisplaceByLooseDensity(upper, lower)) { writeGridIndex(belowK, upper); writeGridIndex(k, lower); }
       }
     }

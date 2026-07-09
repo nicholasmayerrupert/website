@@ -61,6 +61,12 @@
   std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
   std::vector<int> reactionSnowMelt;               // reusable per-call scratch for applyReactions (snow melted by fire -> water)
+  // Liquid↔liquid density-chain displacement: denser liquid treats lighter liquid as
+  // free volume for movement; the displaced lighter liquid is relocated after the
+  // settle pass by a multi-source BFS (resolveLiquidDisplacements in core.inc).
+  // from = cell the lighter liquid occupied; fallback = denser's vacated source.
+  struct LiquidDisp { uint8_t material; int from; int fallback; };
+  std::vector<LiquidDisp> liquidDispPending;
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
@@ -105,9 +111,9 @@
   inline bool isDissolvable(uint8_t m) { return MAT_FLAGS[m] & MF_DISSOLVABLE; }
   inline bool isFlammable(uint8_t m) { return MAT_FLAGS[m] & MF_FLAMMABLE; }
   inline bool isLavaQuencher(uint8_t m) { return MAT_FLAGS[m] & MF_QUENCHESLAVA; }
-  // Liquids that fill 1-cell gaps in a resting layer (relaxLiquidGaps). NOTE:
-  // deliberately excludes BRINE/LAVA today — adding the flag to a material
-  // changes settle behavior (and the bench checksum).
+  // Liquids that fill 1-cell gaps in a resting layer (relaxLiquidGaps).
+  // LAVA still omits the flag (slow/thick); BRINE has it so submerged/free
+  // brine pools coalesce and go inert instead of shimmering on ragged holes.
   inline bool relaxesGaps(uint8_t m) { return MAT_FLAGS[m] & MF_RELAXESGAPS; }
   inline bool isBearingMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_BEARING; }
   inline bool isBlastDamageable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
@@ -331,6 +337,10 @@
   // 1-lower neighbouring column (empty over liquid = a gentle slope) is NOT an
   // internal hole, so a flat-but-ragged surface or a settled puddle still goes inert.
   inline bool adjacentInternalHole(int k, uint8_t m) {
+    // Only materials that participate in relaxLiquidGaps benefit from staying
+    // awake on an internal hole. BRINE (historically no relaxesGaps) would
+    // re-mark forever on a ragged free surface and never go inert.
+    if (!relaxesGaps(m)) return false;
     int x = k % cols, y = k / cols;
     if (y + 1 >= rows) return false;
     // The hole must also have SUPPORT below it (non-empty) — that is the gap
@@ -376,27 +386,77 @@
     if (L->grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
   inline bool canDisplaceMaterial(uint8_t m, uint8_t d) { if (isGasMaterial(d)) return true; return canDisplaceByLooseDensity(m, d); }
-  inline bool canEnterIndex(int k, uint8_t m) { return L->next[k] == EMPTY && (L->grid[k] == EMPTY || canDisplaceMaterial(m, L->grid[k])); }
+  // Free volume for liquid movement: EMPTY, gas, or a strictly less-dense liquid.
+  // Denser liquids path through lighter ones as if they were air; the lighter
+  // liquid is relocated by resolveLiquidDisplacements (not a local swap).
+  inline bool liquidTreatsAsEmpty(uint8_t m, uint8_t d) {
+    return d == EMPTY || isGasMaterial(d) || (isLiquidMaterial(d) && canDisplaceByLooseDensity(m, d));
+  }
+  // Effective occupant of k this tick for liquid claims. Prefers next[] (already
+  // settled writers) so denser fluid can still sink through lighter fluid that
+  // wrote itself into next bottom-up — without this, next!=EMPTY blocked all
+  // multi-cell sinks and left only 1-cell settleLooseDensityInterface swaps.
+  inline uint8_t liquidOccupantAt(int k) {
+    uint8_t n = L->next[k];
+    if (n != EMPTY) return n;
+    if (L->vacatedStamp[k] == tick) return EMPTY;
+    return L->grid[k];
+  }
+  // Fall-through: EMPTY/gas/lighter liquid (in next or grid) count as air.
+  inline bool liquidColumnPassable(int k, uint8_t m) {
+    return liquidTreatsAsEmpty(m, liquidOccupantAt(k));
+  }
+  // Land/claim for fall / down-diagonal / vertical sink: EMPTY, gas, or strictly
+  // lighter loose (liquid or powder).
+  inline bool liquidCanClaim(int k, uint8_t m) {
+    uint8_t o = liquidOccupantAt(k);
+    return o == EMPTY || canDisplaceMaterial(m, o);
+  }
+  // Same-level flow / enter: EMPTY or gas only. Lighter liquid is NOT air for
+  // lateral flow — treating it as enterable makes a flat water|oil contact
+  // swap forever (BFS relocates oil into the vacated hole = PE-neutral churn)
+  // and multi-fluid pools never go inert.
+  inline bool liquidCanFlowInto(int k, uint8_t m) {
+    (void)m;
+    uint8_t o = liquidOccupantAt(k);
+    return o == EMPTY || isGasMaterial(o);
+  }
+  inline bool canEnterIndex(int k, uint8_t m) {
+    if (isLiquidMaterial(m)) return liquidCanFlowInto(k, m);
+    return L->next[k] == EMPTY && (L->grid[k] == EMPTY || canDisplaceMaterial(m, L->grid[k]));
+  }
   inline bool canLiquidEnter(int x, int y, uint8_t m) { return x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), m); }
   inline bool supportsLiquid(uint8_t s, uint8_t m) { return s != EMPTY && s != m && !canDisplaceMaterial(m, s); }
+  // True if something stacks pressure on this liquid cell: more of the same
+  // material above, OR a strictly lighter liquid (e.g. water over brine). Without
+  // the latter, submerged denser fluid never equalizes sideways and freezes into
+  // a pyramid under the lighter layer.
+  inline bool liquidPressureAbove(int k, uint8_t m) {
+    int y = k / cols;
+    if (y <= 1) return false;
+    uint8_t a = L->grid[k - cols];
+    if (a == m) return true;
+    return isLiquidMaterial(a) && DENSITY[a] < DENSITY[m];
+  }
   void moveMaterialInto(int fromK, int toK, uint8_t m) {
-    uint8_t displaced = L->grid[toK];
+    // For liquids, displace the effective occupant (next if set, else grid) so a
+    // denser cell can overwrite a lighter liquid that already settled into next[].
+    uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
     writeNextIndex(toK, m);
     L->vacatedStamp[fromK] = tick;
-    if (displaced != EMPTY && canDisplaceMaterial(m, displaced) && L->next[fromK] == EMPTY && L->vacatedStamp[toK] != tick) writeNextIndex(fromK, displaced);
+    if (displaced == EMPTY || displaced == m || !canDisplaceMaterial(m, displaced)) return;
+    if (!isLiquidMaterial(m) && L->vacatedStamp[toK] == tick) return;
+    // Liquid→liquid: denser claims the cell; lighter is relocated by multi-source BFS
+    // after the settle pass (density chain). Do not swap into the source.
+    if (isLiquidMaterial(m) && isLiquidMaterial(displaced)) {
+      liquidDispPending.push_back({displaced, toK, fromK});
+      return;
+    }
+    // Powder/gas: only emit displacee if grid occupant is still present (not vacated).
+    if (L->vacatedStamp[toK] == tick) return;
+    if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
   }
   inline void moveLiquidInto(int fromK, int x, int y, uint8_t m) { moveMaterialInto(fromK, I(x, y), m); }
-  // Symmetric two-fluid density swap: the lighter liquid `m` at fromK rises to toK;
-  // the heavier liquid currently at toK sinks into fromK. Both writes go to L->next[] and
-  // stamp L->vacatedStamp so neither cell is re-consumed this tick (blocks the immediate
-  // reverse swap = oscillation). Each swap strictly lowers gravitational PE, so a
-  // two-fluid interface levels in finitely many swaps and then settles to inert.
-  void moveDensitySwap(int fromK, int toK, uint8_t m) {
-    uint8_t heavier = L->grid[toK];
-    writeNextIndex(toK, m);
-    writeNextIndex(fromK, heavier);
-    L->vacatedStamp[fromK] = tick; L->vacatedStamp[toK] = tick;
-  }
 
   static const int DIRS_LF[2];
   static const int DIRS_RF[2];

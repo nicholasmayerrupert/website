@@ -182,6 +182,14 @@ EMSCRIPTEN_KEEPALIVE int engine_player_mine(Engine* e, int id, int ax, int ay) {
   return (e->survivalInventory ? e->mineFootprint(*p, ax, ay, &e->fg) : e->mineDisc(*p, ax, ay, &e->fg)) ? 1 : 0;
 }
 EMSCRIPTEN_KEEPALIVE double engine_player_mine_progress(Engine* e, int id) { return e->playerMineProgress(id); }
+// Locked hold-mine origin for HUD overlays (progress bar). Returns 1 and writes
+// (mineX, mineY) into out[0..1] when the player has an active mine lock.
+EMSCRIPTEN_KEEPALIVE int engine_player_mine_target(Engine* e, int id, int* out) {
+  Player* p = e->findPlayer(id);
+  if (!p || !p->mineActive) return 0;
+  if (out) { out[0] = p->mineX; out[1] = p->mineY; }
+  return 1;
+}
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
 
 // dropped items + particles (entities; physics in items.inc). spawn_item/_particle

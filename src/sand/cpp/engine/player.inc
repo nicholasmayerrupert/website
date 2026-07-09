@@ -10,6 +10,7 @@
   void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq) { psys.setPlayerInput(id, inputBits, aimX, aimY, selectedTool, seq); }
   bool isSolidForPlayer(uint8_t m) { return psys.isSolidForPlayer(m); }
   void resetPlayerMine(Player& p) { psys.resetPlayerMine(p); }
+  bool mineFootprintHasContent(int cx, int cy, int footprintId, Layer* layer) { return psys.mineFootprintHasContent(cx, cy, footprintId, layer); }
   bool mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true) { return psys.mineDisc(p, ax, ay, layer, scaledSpeed); }
   bool mineFootprint(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true) { return psys.mineFootprint(p, ax, ay, layer, scaledSpeed); }
   bool mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed = true) { return psys.mineFootprintBoth(p, ax, ay, scaledSpeed); }

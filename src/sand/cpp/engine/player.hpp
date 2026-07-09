@@ -42,6 +42,9 @@ class PlayerSystem {
   bool isSolidTool(int t);
   void resetPlayerMine(Player& p);
   void resolveMineDrops(Player& p);
+  // True if the survival footprint at (cx,cy) still has at least one non-EMPTY
+  // cell in `layer` (or both layers when layer is null — dual-mine / RMB path).
+  bool mineFootprintHasContent(int cx, int cy, int footprintId, Layer* layer);
   bool mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true);
   bool mineFootprint(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed = true);
   bool mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed = true);

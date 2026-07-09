@@ -361,9 +361,10 @@ void GLPresenter::glDrawPreview() {
     cell(E.tools.seedOriginX, E.tools.seedOriginY); // a seed is a single cell
   }
 
-  // Survival: a "cursor" disc at the local player's aim shows where the tool will
-  // act and into which layer — LMB foreground (bright), RMB background (dim), the
-  // eraser red. Faded when the aim is out of the player's reach.
+  // Survival: a "cursor" footprint at the local player's aim shows where the tool
+  // will act and into which layer — LMB foreground (bright), RMB background (dim),
+  // dig/erase red. Faded when out of reach. While a hold-mine is locked, the
+  // overlay sticks to mineX/mineY (not the live aim) so it matches dig damage.
   if (E.cam.playModeOn && glOwnPlayerId) {
     Player* lp = nullptr;
     for (auto& pp : E.psys.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
@@ -376,6 +377,14 @@ void GLPresenter::glDrawPreview() {
         const InvSlot& sel = lp->inv[lp->selectedSlot];
         erasing = sel.isTool || sel.count <= 0;
         fp = &E.getSurvivalFootprint(*lp);
+        // Hold-lock: dig overlay tracks the locked origin, not the cursor.
+        if (erasing && lp->mineActive && lp->mineFootprint >= 0) {
+          ax = lp->mineX;
+          ay = lp->mineY;
+          // Dual-layer mine (RMB) stays on the locked footprint even if only LMB
+          // is reported in pointerBtns this frame; mineLayer 2 = both.
+          if (lp->mineLayer == 1) toBg = true;
+        }
       }
       double cxp = lp->px + lp->w / 2.0, cyp = lp->py + lp->h / 2.0;
       double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;

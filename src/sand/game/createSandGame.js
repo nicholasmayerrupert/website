@@ -161,13 +161,23 @@ export function createSandGame(container, opts = {}) {
       return;
     }
     const progress = ctx.engine.getPlayerMineProgress?.(ctx.localPlayerId) || 0;
-    if (progress <= 0) {
+    const target = ctx.engine.getPlayerMineTarget?.(ctx.localPlayerId);
+    if (progress <= 0 || !target) {
       mineProgress.style.display = 'none';
       return;
     }
+    // Anchor the pill to the locked mine cell (not the live cursor) so it stays
+    // put while the hold-lock digs one footprint.
+    const cam = ctx.engine.getCam();
+    const o = ctx.engine.glGetOffset?.() || { offX: 0, offY: 0 };
+    const camCol = Math.floor(cam.x), camRow = Math.floor(cam.y);
+    const dpr = ctx.dpr || 1;
+    const cellCss = ctx.cellDev / dpr;
+    const cellLeft = ((target.x - camCol) * ctx.cellDev + o.offX) / dpr;
+    const cellTop = ((target.y - camRow) * ctx.cellDev + o.offY) / dpr;
     const b = ctx.wrapBounds;
-    const x = Math.max(4, Math.min(b.right - b.left - 12, ctx.clientX - b.left + 14));
-    const y = Math.max(8, Math.min(b.bottom - b.top - 50, ctx.clientY - b.top - 20));
+    const x = Math.max(4, Math.min(b.right - b.left - 12, cellLeft + cellCss + 6));
+    const y = Math.max(8, Math.min(b.bottom - b.top - 50, cellTop + cellCss * 0.5 - 21));
     mineProgress.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     mineProgressFill.style.height = `${Math.round(progress * 100)}%`;
     mineProgress.style.display = 'block';

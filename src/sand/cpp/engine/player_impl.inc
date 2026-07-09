@@ -320,6 +320,28 @@ void PlayerSystem::resetPlayerMine(Player& p) {
   p.mineActive = false;
   p.mineFootprint = -1;
 }
+// Any non-EMPTY cell in the footprint counts as still-mineable (solids, powders,
+// liquids). Used to release a held mine-lock once the locked area is cleared.
+bool PlayerSystem::mineFootprintHasContent(int cx, int cy, int footprintId, Layer* layer) {
+  const SurvivalFootprint& fp = E.getSurvivalFootprint(E.clampSurvivalFootprintId(footprintId));
+  auto layerHas = [&](Layer* L) {
+    E.useLayer(L);
+    for (const SurvivalFootprintCell& o : fp.cells) {
+      int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
+      if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) continue;
+      if (E.L->grid[E.I(xx, yy)] != EMPTY) return true;
+    }
+    return false;
+  };
+  bool has = false;
+  if (!layer) {
+    has = layerHas(&E.fg) || layerHas(&E.bg);
+  } else {
+    has = layerHas(layer);
+  }
+  E.useLayer(&E.fg);
+  return has;
+}
 void PlayerSystem::resolveMineDrops(Player& p) {
   if (E.tools.lastMinedCells.empty()) return;
   for (auto& mc : E.tools.lastMinedCells) {
@@ -354,24 +376,43 @@ bool PlayerSystem::mineDisc(Player& p, int ax, int ay, Layer* layer, bool scaled
   E.useLayer(&E.fg);
   return changed;
 }
+// Survival hold-to-mine: lock the footprint origin on press and keep hitting that
+// same area while the button is held. Cursor motion does NOT retarget. The lock
+// releases when (1) the footprint has nothing left to mine in the target layer(s),
+// or (2) the caller stops invoking us (button released / out of reach).
 bool PlayerSystem::mineFootprint(Player& p, int ax, int ay, Layer* layer, bool scaledSpeed) {
   int layerId = layer == &E.bg ? 1 : 0;
   int footprintId = E.clampSurvivalFootprintId(p.selectedFootprint);
-  if (!p.mineActive || p.mineLayer != layerId || p.mineX != ax || p.mineY != ay || p.mineFootprint != footprintId) {
+  if (p.mineActive && p.mineLayer == layerId && p.mineFootprint == footprintId) {
+    ax = p.mineX;
+    ay = p.mineY;
+  } else {
     resetPlayerMine(p);
     p.mineActive = true; p.mineLayer = layerId; p.mineX = ax; p.mineY = ay; p.mineFootprint = footprintId;
+  }
+  if (!mineFootprintHasContent(ax, ay, footprintId, layer)) {
+    resetPlayerMine(p);
+    return false;
   }
   E.useLayer(layer);
   bool changed = E.mineDamageFootprint(ax, ay, E.getSurvivalFootprint(footprintId), p, scaledSpeed) != 0;
   resolveMineDrops(p);
   E.useLayer(&E.fg);
+  if (!mineFootprintHasContent(ax, ay, footprintId, layer)) resetPlayerMine(p);
   return changed;
 }
 bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed) {
   int footprintId = E.clampSurvivalFootprintId(p.selectedFootprint);
-  if (!p.mineActive || p.mineLayer != 2 || p.mineX != ax || p.mineY != ay || p.mineFootprint != footprintId) {
+  if (p.mineActive && p.mineLayer == 2 && p.mineFootprint == footprintId) {
+    ax = p.mineX;
+    ay = p.mineY;
+  } else {
     resetPlayerMine(p);
     p.mineActive = true; p.mineLayer = 2; p.mineX = ax; p.mineY = ay; p.mineFootprint = footprintId;
+  }
+  if (!mineFootprintHasContent(ax, ay, footprintId, nullptr)) {
+    resetPlayerMine(p);
+    return false;
   }
   const SurvivalFootprint& fp = E.getSurvivalFootprint(footprintId);
   E.useLayer(&E.fg);
@@ -382,6 +423,7 @@ bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed
   changed |= E.mineDamageFootprint(ax, ay, fp, p, scaledSpeed) != 0;
   resolveMineDrops(p);
   E.useLayer(&E.fg);
+  if (!mineFootprintHasContent(ax, ay, footprintId, nullptr)) resetPlayerMine(p);
   return changed;
 }
 // ---- survival solids: the EXACT creative E.tools.draft lifecycle, driven by a player ----

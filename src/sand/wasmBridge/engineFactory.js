@@ -240,6 +240,7 @@ export function initSandWasm() {
         setPlayerTool: c('engine_set_player_tool', null, ['number', 'number', 'number', 'number']),
         playerMine: c('engine_player_mine', 'number', ['number', 'number', 'number', 'number']),
         playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
+        playerMineTarget: c('engine_player_mine_target', 'number', ['number', 'number', 'number']),
         setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         itemCount: c('engine_item_count', 'number', ['number']),
@@ -741,6 +742,12 @@ export function createEngineWasm({
     setPlayerTool(id, toolClass, toolTier) { M.setPlayerTool(ptr, id, toolClass | 0, toolTier | 0); },
     playerMine(id, ax, ay) { return M.playerMine(ptr, id, ax, ay) === 1; },
     getPlayerMineProgress(id) { return Math.max(0, Math.min(1, M.playerMineProgress(ptr, id | 0) || 0)); },
+    // Locked hold-mine cell for HUD overlays; null when not actively mining.
+    getPlayerMineTarget(id) {
+      if (M.playerMineTarget(ptr, id | 0, glOffOut) !== 1) return null;
+      const o = glOffOut >> 2;
+      return { x: mod.HEAP32[o] | 0, y: mod.HEAP32[o + 1] | 0 };
+    },
     setPlayerState(id, { x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false }) {
       M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0, jumpReady ? 1 : 0);
     },

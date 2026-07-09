@@ -202,8 +202,11 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   p.prevInput = p.input;
   int ax = (int)std::floor(p.aimX), ay = (int)std::floor(p.aimY);
   double cxp = p.px + p.w / 2.0, cyp = p.py + p.h / 2.0;
-  double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
-  bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
+  auto inReachOf = [&](int tx, int ty) {
+    double dx = (tx + 0.5) - cxp, dy = (ty + 0.5) - cyp;
+    return dx * dx + dy * dy <= P_TOOL_REACH * P_TOOL_REACH;
+  };
+  bool aimInReach = inReachOf(ax, ay);
   InvSlot& sel = p.inv[p.selectedSlot];
   const SurvivalFootprint& fp = E.getSurvivalFootprint(p);
 
@@ -212,28 +215,34 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (E.tools.drafting && E.tools.draftOwner == p.id) {
     bool held = E.tools.draftLayer ? secondary : primary;
     if (!held) { E.playerFinalizeSolidDraft(); E.playerActionCount++; }
-    else if (inReach && !sel.isTool && sel.count > 0 && sel.material == E.tools.draftMaterial) {
+    else if (aimInReach && !sel.isTool && sel.count > 0 && sel.material == E.tools.draftMaterial) {
       E.useLayer(E.tools.draftLayer ? &E.bg : &E.fg);
       int sx = E.tools.draftStrokeActive ? E.tools.lastDraftCx : ax, sy = E.tools.draftStrokeActive ? E.tools.lastDraftCy : ay;
       int added = E.addFootprintStrokeToDraftCapped(E.tools.draft, sx, sy, ax, ay, fp, E.rows, sel.count, E.tools.draftLayer ? nullptr : &p);
       E.tools.lastDraftCx = ax; E.tools.lastDraftCy = ay; E.tools.draftStrokeActive = true;
       if (added > 0) { sel.count -= added; if (sel.count <= 0) sel = InvSlot(); }
       E.useLayer(&E.fg);
-    } else if (!inReach) E.tools.draftStrokeActive = false;
+    } else if (!aimInReach) E.tools.draftStrokeActive = false;
     return;
   }
 
   bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
   bool isSeed = !mineMode && sel.material == SEED;
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);
-  if ((!primary && !secondary) || !inReach) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  if (!primary && !secondary) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
 
   if (mineMode) {
     if (p.placeStrokeActive) return; // selected stack ran dry during this held placement stroke
+    // Hold-lock: while mining, reach is measured to the locked cell so the cursor
+    // can wander without cancelling. Leaving reach of the lock (or releasing) resets.
+    int reachX = p.mineActive ? p.mineX : ax, reachY = p.mineActive ? p.mineY : ay;
+    if (!inReachOf(reachX, reachY)) { E.resetPlayerMine(p); return; }
     bool acted = false;
     if (primary) acted |= E.mineFootprint(p, ax, ay, &E.fg);
     if (secondary && !primary) acted |= E.mineFootprintBoth(p, ax, ay);
     if (acted) E.playerActionCount++;
+  } else if (!aimInReach) {
+    E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return;
   } else if (isSeed) {
     E.resetPlayerMine(p);
     if ((primaryRising || secondaryRising) && sel.count > 0) {

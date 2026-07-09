@@ -43,7 +43,7 @@ function irregular(cx, cy) {
 const N = 60;
 let spawned = 0;
 const steps = 700;
-const rigidMs = [];
+const rigidMs = [], assemblyMs = [], bodyMs = [], stepMs = [];
 let t = 0;
 const t0 = Date.now();
 for (let i = 0; i < steps; i++) {
@@ -51,16 +51,27 @@ for (let i = 0; i < steps; i++) {
   if (spawned < N && i % 6 === 0) { const cells = irregular(ri(30, COLS - 40), ri(8, 30)); if (cells.length) { e.spawnBody(cells); spawned++; } }
   t += 16;
   e.step(t);
-  rigidMs.push(e.getStepPerf().rigid);
+  const p = e.getStepPerf();
+  rigidMs.push(p.rigid);
+  assemblyMs.push(p.assemblyUnionMs ?? 0);
+  bodyMs.push(p.bodyMs ?? 0);
+  stepMs.push(e.getPerf().stepMs);
 }
 const wall = Date.now() - t0;
 
-rigidMs.sort((a, b) => a - b);
-const p = (q) => rigidMs[Math.min(rigidMs.length - 1, Math.floor(rigidMs.length * q))];
-const sum = rigidMs.reduce((a, b) => a + b, 0);
+const sort = (a) => [...a].sort((x, y) => x - y);
+const pct = (s, q) => s[Math.min(s.length - 1, Math.floor(s.length * q))];
+const sum = (a) => a.reduce((x, y) => x + y, 0);
+const report = (label, arr) => {
+  const s = sort(arr);
+  console.log(`${label.padEnd(14)}: p50 ${pct(s, 0.5).toFixed(3)}  p95 ${pct(s, 0.95).toFixed(3)}  max ${s[s.length - 1].toFixed(3)}  mean ${(sum(s) / s.length).toFixed(3)}`);
+};
 console.log(`bodies spawned : ${spawned}, alive ${e._bodyCount()}`);
 console.log(`steps          : ${steps}`);
-console.log(`rigid ms       : p50 ${p(0.5).toFixed(3)}  p95 ${p(0.95).toFixed(3)}  max ${rigidMs[rigidMs.length - 1].toFixed(3)}  mean ${(sum / rigidMs.length).toFixed(3)}`);
-console.log(`total rigid ms : ${sum.toFixed(1)}`);
+report('rigid ms', rigidMs);
+report('  assembly', assemblyMs);
+report('  body', bodyMs);
+report('step wall', stepMs);
+console.log(`total rigid ms : ${sum(rigidMs).toFixed(1)}`);
 console.log(`wall clock     : ${wall} ms (${(wall / steps).toFixed(3)} ms/step incl. world)`);
 e.destroy();

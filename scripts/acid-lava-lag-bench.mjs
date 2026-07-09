@@ -31,22 +31,37 @@ function dropAcid(e) {
   for (let x = LX0 + 10; x <= LX1 - 10; x += 3) e.placeMaterial(x, y, 0, QUENCHER);
 }
 
+const f = (x, n = 2) => x.toFixed(n);
+const fmtPhases = (p) => [
+  `grounding=${f(p.groundingMs)}`, `xlayerG=${f(p.crossLayerGroundingMs)}`, `compIdx=${f(p.componentIndexMs)}`,
+  `assembly=${f(p.assemblyUnionMs)}`, `carry=${f(p.carryMs)}`, `body=${f(p.bodyMs)}`,
+  `sand=${f(p.sandMs)}`, `liquid=${f(p.liquidMs)}`, `gas=${f(p.gasMs)}`,
+  `react=${f(p.reactMs)}`, `tail=${f(p.tailMs)}`, `joint=${f(p.joint)}`, `layers=${f(p.layersMs)}`, `cross=${f(p.crossMs)}`,
+].join(' ');
+
 function measure(withAcid) {
   const e = fresh();
   buildLavaLake(e);
   for (let i = 0; i < WARM; i++) e.step((i + 1) * 16);
   const wall = [], ground = [], react = [];
-  let t = WARM * 16, worstStep = -1, worst = 0, worstP = null;
+  let t = WARM * 16, worstStep = -1, worst = 0, worstP = null, worstVol = null;
   for (let i = 0; i < STEPS; i++) {
     if (withAcid && i % 8 === 0) dropAcid(e);
     t += 16;
     const a = performance.now(); e.step(t); const dt = performance.now() - a; wall.push(dt);
     const p = e.getStepPerf();
-    ground.push(p.ground); react.push(p.react);
-    if (withAcid && dt > worst) { worst = dt; worstStep = i; worstP = p; }
-    if (withAcid && TRACE && dt > 30) console.log(`  step ${i}: ${f(dt)}ms rigid=${f(p.rigid)} react=${f(p.react)} ground=${f(p.ground)}`);
+    const vol = e.getPerf();
+    // ground/joint aliases cover total grounding cost (base floods + bond scan).
+    ground.push(p.joint ?? p.groundingMs ?? p.ground); react.push(p.reactMs ?? p.react);
+    if (withAcid && dt > worst) { worst = dt; worstStep = i; worstP = p; worstVol = vol; }
+    if (withAcid && TRACE && dt > 30) console.log(`  step ${i}: ${f(dt)}ms ${fmtPhases(p)}`);
   }
-  if (withAcid && worstP) console.log(`  worst step ${worstStep}: ${f(worst)}ms  ground=${f(worstP.ground)} rigid=${f(worstP.rigid)} react=${f(worstP.react)} carry=${f(worstP.carry)} settle=${f(worstP.settle)} tail=${f(worstP.tail)} joint=${f(worstP.joint)} layers=${f(worstP.layers)} cross=${f(worstP.cross)}`);
+  if (withAcid && worstP) {
+    console.log(`  worst step ${worstStep}: ${f(worst)}ms  ${fmtPhases(worstP)}`);
+    if (worstVol) {
+      console.log(`    volume: dirtyChunks=${worstVol.dirtyChunks} dirtyRows=${worstVol.dirtyRows} dirtyCells=${worstVol.dirtyCells} comps=${worstVol.componentCount} compCells=${worstVol.componentCellCount} xBonds=${worstVol.crossBondCount}`);
+    }
+  }
   e.destroy();
   const sum = (arr) => arr.reduce((s, v) => s + v, 0);
   const sorted = [...wall].sort((x, y) => x - y);
@@ -60,7 +75,6 @@ function measure(withAcid) {
   };
 }
 
-const f = (x, n = 2) => x.toFixed(n);
 console.log(`grid ${COLS}x${ROWS}, ${STEPS} steps (after ${WARM} warmup)\n`);
 const idle = measure(false);
 const acid = measure(true);

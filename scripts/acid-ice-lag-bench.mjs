@@ -5,9 +5,10 @@
 // ice tub on every dissolve step -> cost grows with tub size.
 //
 // Measures per-step time for (a) ice tub alone, (b) boring stone alone, (c) both, over
-// a range of tub sizes, and reports the GROUND-phase time (getStepPerf().ground) which
-// is the least noisy signal on a shared host. Run on the committed tree to see the
-// blowup, and after the fix to see it shrink (esp. for a NARROW bore).
+// a range of tub sizes, and reports total grounding cost (getStepPerf().joint =
+// groundingMs + crossLayerGroundingMs) which is the least noisy signal on a shared
+// host. Run on the committed tree to see the blowup, and after the fix to see it
+// shrink (esp. for a NARROW bore).
 //
 //   node scripts/acid-ice-lag-bench.mjs            (wide flat acid lake = worst case)
 //   node scripts/acid-ice-lag-bench.mjs --narrow   (narrow dropped-blob bore = typical)
@@ -41,28 +42,42 @@ function measure(build, boring) {
   build(e);
   for (let i = 0; i < WARM; i++) e.step((i + 1) * 16);
   if (boring) dropAcid(e);
-  const wall = [], ground = [];
+  const wall = [], ground = [], baseG = [], xlayerG = [], idx = [];
   let t = WARM * 16;
   for (let i = 0; i < STEPS; i++) {
     if (boring && i % 18 === 0) dropAcid(e);
     t += 16;
     const a = performance.now(); e.step(t); wall.push(performance.now() - a);
-    ground.push(e.getStepPerf().ground);
+    const p = e.getStepPerf();
+    // Total joint grounding (base floods + bond/UF); also track the fine split.
+    ground.push(p.joint ?? ((p.groundingMs || 0) + (p.crossLayerGroundingMs || 0)));
+    baseG.push(p.groundingMs ?? p.ground ?? 0);
+    xlayerG.push(p.crossLayerGroundingMs ?? 0);
+    idx.push(p.componentIndexMs ?? 0);
   }
   e.destroy();
   const sum = (arr) => arr.reduce((s, v) => s + v, 0);
   const sorted = [...wall].sort((x, y) => x - y);
-  return { wallMedian: sorted[sorted.length >> 1], groundTot: sum(ground), groundMean: sum(ground) / STEPS };
+  return {
+    wallMedian: sorted[sorted.length >> 1],
+    groundTot: sum(ground),
+    groundMean: sum(ground) / STEPS,
+    baseMean: sum(baseG) / STEPS,
+    xlayerMean: sum(xlayerG) / STEPS,
+    indexMean: sum(idx) / STEPS,
+  };
 }
 
 const f = (x, n = 3) => x.toFixed(n);
 console.log(`grid ${COLS}x${ROWS}, ${STEPS} steps (after ${WARM} warmup), front=${NARROW ? 'NARROW bore' : 'WIDE lake'}\n`);
-console.log('side  scenario       wallMed(ms)  groundTot(ms)  groundMean(ms)');
+console.log('side  scenario       wallMed  groundTot  groundMean  baseMean  xlayerMean  indexMean');
 for (const side of [0, 60, 90, 120, 150]) {
   const a = side > 0 ? measure((e) => buildIceTub(e, side), false) : null;
   const b = measure((e) => buildStoneSlab(e), true);
   const c = measure((e) => { buildIceTub(e, side); buildStoneSlab(e); }, true);
-  const row = (label, r) => console.log(`${String(side).padEnd(5)} ${label.padEnd(14)} ${f(r.wallMedian).padStart(8)}  ${f(r.groundTot).padStart(11)}  ${f(r.groundMean).padStart(12)}`);
+  const row = (label, r) => console.log(
+    `${String(side).padEnd(5)} ${label.padEnd(14)} ${f(r.wallMedian).padStart(7)}  ${f(r.groundTot).padStart(9)}  ${f(r.groundMean).padStart(10)}  ${f(r.baseMean).padStart(8)}  ${f(r.xlayerMean).padStart(10)}  ${f(r.indexMean).padStart(9)}`,
+  );
   if (a) row('a:ice', a);
   row('b:stone', b);
   row('c:both', c);

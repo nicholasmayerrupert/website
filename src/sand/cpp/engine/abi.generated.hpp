@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 1;
+static const int ABI_VERSION = 2;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -76,28 +76,37 @@ enum GlPlayerExtField : int {
 };
 static const int GLP_STRIDE = 8;
 
-// perfSnapshot: stepMs, dirtyChunks, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, stepGround, stepRigid, stepReact, stepCarry, stepSettle, stepTail, stepJoint, stepLayers, stepCross
+// perfSnapshot: stepMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs
 enum PerfSnapshotField : int {
   PF_STEP_MS = 0,
   PF_DIRTY_CHUNKS = 1,
-  PF_LIGHT_MS = 2,
-  PF_FILL_MS = 3,
-  PF_UPLOAD_MS = 4,
-  PF_SHIFT_BUFFERS = 5,
-  PF_SHIFT_TRANSLATE = 6,
-  PF_SHIFT_REGISTER = 7,
-  PF_SHIFT_FILL = 8,
-  PF_STEP_GROUND = 9,
-  PF_STEP_RIGID = 10,
-  PF_STEP_REACT = 11,
-  PF_STEP_CARRY = 12,
-  PF_STEP_SETTLE = 13,
-  PF_STEP_TAIL = 14,
-  PF_STEP_JOINT = 15,
-  PF_STEP_LAYERS = 16,
-  PF_STEP_CROSS = 17,
+  PF_DIRTY_ROWS = 2,
+  PF_DIRTY_CELLS = 3,
+  PF_COMPONENT_COUNT = 4,
+  PF_COMPONENT_CELL_COUNT = 5,
+  PF_CROSS_BOND_COUNT = 6,
+  PF_LIGHT_MS = 7,
+  PF_FILL_MS = 8,
+  PF_UPLOAD_MS = 9,
+  PF_SHIFT_BUFFERS = 10,
+  PF_SHIFT_TRANSLATE = 11,
+  PF_SHIFT_REGISTER = 12,
+  PF_SHIFT_FILL = 13,
+  PF_GROUNDING_MS = 14,
+  PF_CROSS_LAYER_GROUNDING_MS = 15,
+  PF_COMPONENT_INDEX_MS = 16,
+  PF_ASSEMBLY_UNION_MS = 17,
+  PF_CARRY_MS = 18,
+  PF_BODY_MS = 19,
+  PF_SAND_MS = 20,
+  PF_LIQUID_MS = 21,
+  PF_GAS_MS = 22,
+  PF_REACT_MS = 23,
+  PF_TAIL_MS = 24,
+  PF_LAYERS_MS = 25,
+  PF_CROSS_MS = 26,
 };
-static const int PF_STRIDE = 18;
+static const int PF_STRIDE = 27;
 
 enum PlayerInput : int {
   PI_LEFT = 1,

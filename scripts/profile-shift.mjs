@@ -53,12 +53,40 @@ console.log('step median ms at rest vs after big paint (cols=768 rows=320):');
   console.log(`  rest ${med(rest).toFixed(3)}  active ${med(active).toFixed(3)}`);
   e.destroy();
 }
+const FINE = [
+  'groundingMs', 'crossLayerGroundingMs', 'componentIndexMs',
+  'assemblyUnionMs', 'carryMs', 'bodyMs',
+  'sandMs', 'liquidMs', 'gasMs',
+  'reactMs', 'tailMs', 'layersMs', 'crossMs',
+];
+const sampleStepPhases = (e, n = 30) => {
+  const ph = Object.fromEntries([...FINE, 'joint', 'settle', 'rigid', 'total'].map((k) => [k, []]));
+  for (let i = 0; i < n; i++) {
+    e.step();
+    const p = e.getStepPerf();
+    const perf = e.getPerf();
+    for (const k of FINE) ph[k].push(p[k] ?? 0);
+    ph.joint.push(p.joint); ph.settle.push(p.settle); ph.rigid.push(p.rigid);
+    ph.total.push(perf.stepMs);
+  }
+  return ph;
+};
 console.log('step phase breakdown at rest (cols=768 rows=320, median over 30):');
 {
   const e = createEngineWasm({ cols: 768, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
   for (let i = 0; i < 200; i++) e.step();
-  const ph = { ground: [], rigid: [], react: [], carry: [], settle: [], tail: [], total: [] };
-  for (let i = 0; i < 30; i++) { e.step(); const p = e.getStepPerf(); for (const k of ['ground', 'rigid', 'react', 'carry', 'settle', 'tail']) ph[k].push(p[k]); ph.total.push(e.getPerf().stepMs); }
-  for (const k of ['ground', 'rigid', 'react', 'carry', 'settle', 'tail', 'total']) console.log(`  ${k}: ${med(ph[k]).toFixed(3)}`);
+  const ph = sampleStepPhases(e);
+  for (const k of [...FINE, 'joint', 'settle', 'rigid', 'total']) console.log(`  ${k}: ${med(ph[k]).toFixed(3)}`);
+  e.destroy();
+}
+console.log('step phase breakdown after big paint (cols=768 rows=320, median over 30):');
+{
+  const e = createEngineWasm({ cols: 768, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
+  for (let i = 0; i < 200; i++) e.step();
+  for (let i = 0; i < 80; i++) e.paintDisc(100 + (i % 50) * 10, 30, 6, 1, false);
+  const ph = sampleStepPhases(e);
+  for (const k of [...FINE, 'joint', 'settle', 'rigid', 'total']) console.log(`  ${k}: ${med(ph[k]).toFixed(3)}`);
+  const perf = (() => { e.step(); return e.getPerf(); })();
+  console.log(`  volume: dirtyChunks ${perf.dirtyChunks} dirtyRows ${perf.dirtyRows} dirtyCells ${perf.dirtyCells} comps ${perf.componentCount} compCells ${perf.componentCellCount} xBonds ${perf.crossBondCount}`);
   e.destroy();
 }

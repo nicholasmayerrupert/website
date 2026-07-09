@@ -52,10 +52,12 @@ is generated or restored from the chunk store.
 ## Benchmarks (run before/after any sim or render change)
 
 - **Engine** (headless, Node): `node scripts/bench-sand.mjs` prints p50/p95/p99 for
-  `step`, `shiftWorld` (cache miss/hit + phase breakdown), and `renderFull`, plus
-  a deterministic terrain checksum. Compare against a baseline with
+  `step`, fine `stepPhases` (grounding/carry/sand/liquid/react/…), step volume
+  counters, `shiftWorld` (cache miss/hit + phase breakdown), and `renderFull`,
+  plus a deterministic terrain checksum. Compare against a baseline with
   `node scripts/bench-sand.mjs --compare bench/baseline.json` (re-record with
-  `--update`). **Pure refactors must keep the checksum identical.**
+  `--update`; compare also prints phase p50 deltas). **Pure refactors must keep
+  the checksum identical.** See `src/sand/PERF.md` for phase ownership.
 - After a sim/render behavior or performance change is confirmed and before
   committing, rerun the relevant benchmark compare(s). If the compare reports that
   a committed baseline is stale and the change is intentional, update the

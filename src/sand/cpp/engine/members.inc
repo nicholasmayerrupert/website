@@ -27,7 +27,11 @@
     return false;
   }
 
-  int stepSerial = 0, tick = 0, perfDirtyChunks = 0, worldShiftCount = 0;
+  int stepSerial = 0, tick = 0, worldShiftCount = 0;
+  // Last-step volume counters (accumulated across both layers in beginStepDirty /
+  // end-of-step component scan). Zeroed at the start of each step().
+  int perfDirtyChunks = 0, perfDirtyRows = 0, perfDirtyCells = 0;
+  int perfComponentCount = 0, perfComponentCellCount = 0, perfCrossBondCount = 0;
   double perfStepMs = 0;
   // Present-path sub-phase timers (gl.inc glRenderFrame): the full-buffer lighting
   // solve, the windowed pixel fill, and the windowed texture upload. Render-only.
@@ -42,10 +46,21 @@
   int pfDx = 0, pfDy = 0, pfStage = PF_DONE, pfCursor = 0;
   int pfEx0 = 0, pfEy0 = 0, pfEw = 0, pfEh = 0; // entering band rect being prefetched
   int shiftFillHit = 0, shiftFillMiss = 0;      // per-layer shift: band cached vs fillRect fallback
-  double perfStepGround = 0, perfStepRigid = 0, perfStepReact = 0, perfStepCarry = 0, perfStepSettle = 0, perfStepTail = 0;
-  // step()-level phase timers (NOT inside stepLayer): the joint cross-layer grounding
-  // flood, the two stepLayer() calls combined, and the cross-layer reactions/transfer.
-  double perfStepJoint = 0, perfStepLayers = 0, perfStepCross = 0;
+  // Fine step-phase timers (ms). Dual-layer: ACCUMULATED across both stepLayer
+  // calls (+ joint/cross at step level). Zeroed at the start of each step().
+  double perfGroundingMs = 0;            // per-layer ensureGrounded + joint groundLayerBase
+  double perfCrossLayerGroundingMs = 0;  // joint bond scan + UF after base floods
+  double perfComponentIndexMs = 0;       // indexComponents() (inside grounding)
+  double perfAssemblyUnionMs = 0;        // moveRigidAssemblies + cross-layer assembly move
+  double perfCarryMs = 0;
+  double perfBodyMs = 0;                 // free rigid bodies (moveBodies)
+  double perfSandMs = 0;                 // density interface + settleSand
+  double perfLiquidMs = 0;               // liquids + density-chain relocate
+  double perfGasMs = 0;                  // fire/steam rise
+  double perfReactMs = 0;
+  double perfTailMs = 0;                 // swap + liquid relax/level/sinks
+  double perfLayersMs = 0;               // wall time of both stepLayer() calls
+  double perfCrossMs = 0;                // post-layer joint refresh + cross react/transfer
   bool sinksEnabled;
   uint32_t rngState;
   // Cross-layer transfer only runs once the background is "real" (has generated
@@ -299,12 +314,18 @@
       for (int yy = py0; yy <= py1; yy++) { if (px0 < L->activeRowMin[yy]) L->activeRowMin[yy] = px0; if (px1 > L->activeRowMax[yy]) L->activeRowMax[yy] = px1; }
     }
     if (!hasActive) return false;
-    stepSerial++; perfDirtyChunks = 0;
+    stepSerial++;
+    // Accumulate dirty volume for this layer (step() zeros the counters once).
     for (int y = 0; y < rows; y++) {
       int mn = L->activeRowMin[y], mx = L->activeRowMax[y];
       if (mx < mn) continue;
+      perfDirtyRows++;
+      perfDirtyCells += (mx - mn + 1);
       int rb = (y >> CHUNK_SHIFT) * chunkCols;
-      for (int cx = mn >> CHUNK_SHIFT, c1 = mx >> CHUNK_SHIFT; cx <= c1; cx++) { int ci = rb + cx; if (L->chunkStamp[ci] != stepSerial) { L->chunkStamp[ci] = stepSerial; perfDirtyChunks++; } }
+      for (int cx = mn >> CHUNK_SHIFT, c1 = mx >> CHUNK_SHIFT; cx <= c1; cx++) {
+        int ci = rb + cx;
+        if (L->chunkStamp[ci] != stepSerial) { L->chunkStamp[ci] = stepSerial; perfDirtyChunks++; }
+      }
     }
     return true;
   }

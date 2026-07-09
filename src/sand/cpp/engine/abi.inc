@@ -67,6 +67,11 @@ EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->useLayer(&e->fg
 EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_STEP_MS] = e->perfStepMs;
   out[PF_DIRTY_CHUNKS] = (double)e->perfDirtyChunks;
+  out[PF_DIRTY_ROWS] = (double)e->perfDirtyRows;
+  out[PF_DIRTY_CELLS] = (double)e->perfDirtyCells;
+  out[PF_COMPONENT_COUNT] = (double)e->perfComponentCount;
+  out[PF_COMPONENT_CELL_COUNT] = (double)e->perfComponentCellCount;
+  out[PF_CROSS_BOND_COUNT] = (double)e->perfCrossBondCount;
   out[PF_LIGHT_MS] = e->perfLightMs;
   out[PF_FILL_MS] = e->perfFillMs;
   out[PF_UPLOAD_MS] = e->perfUploadMs;
@@ -74,15 +79,19 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_SHIFT_TRANSLATE] = e->perfShiftTranslate;
   out[PF_SHIFT_REGISTER] = e->perfShiftRegister;
   out[PF_SHIFT_FILL] = e->perfShiftFill;
-  out[PF_STEP_GROUND] = e->perfStepGround;
-  out[PF_STEP_RIGID] = e->perfStepRigid;
-  out[PF_STEP_REACT] = e->perfStepReact;
-  out[PF_STEP_CARRY] = e->perfStepCarry;
-  out[PF_STEP_SETTLE] = e->perfStepSettle;
-  out[PF_STEP_TAIL] = e->perfStepTail;
-  out[PF_STEP_JOINT] = e->perfStepJoint;
-  out[PF_STEP_LAYERS] = e->perfStepLayers;
-  out[PF_STEP_CROSS] = e->perfStepCross;
+  out[PF_GROUNDING_MS] = e->perfGroundingMs;
+  out[PF_CROSS_LAYER_GROUNDING_MS] = e->perfCrossLayerGroundingMs;
+  out[PF_COMPONENT_INDEX_MS] = e->perfComponentIndexMs;
+  out[PF_ASSEMBLY_UNION_MS] = e->perfAssemblyUnionMs;
+  out[PF_CARRY_MS] = e->perfCarryMs;
+  out[PF_BODY_MS] = e->perfBodyMs;
+  out[PF_SAND_MS] = e->perfSandMs;
+  out[PF_LIQUID_MS] = e->perfLiquidMs;
+  out[PF_GAS_MS] = e->perfGasMs;
+  out[PF_REACT_MS] = e->perfReactMs;
+  out[PF_TAIL_MS] = e->perfTailMs;
+  out[PF_LAYERS_MS] = e->perfLayersMs;
+  out[PF_CROSS_MS] = e->perfCrossMs;
 }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path

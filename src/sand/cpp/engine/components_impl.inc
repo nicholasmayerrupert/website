@@ -12,6 +12,7 @@
 // flag to false (the flood / refresh sets it back). Does NOT touch E.L->groundedCell[].
 // O(total component cells).
 void ComponentSystem::indexComponents() {
+  double t0 = emscripten_get_now();
   Layer* const lay = E.L;
   int32_t* const cc = lay->cellComp.data();
   cgComps.clear();
@@ -27,6 +28,7 @@ void ComponentSystem::indexComponents() {
     }
   };
   idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
+  E.perfComponentIndexMs += emscripten_get_now() - t0;
 }
 // Grounding is SEPARABLE (this is what makes the rigid part cacheable):
 //  - RIGID grounding never flows through loose cells: the vertical rule refuses
@@ -620,6 +622,9 @@ void ComponentSystem::wakeCellsThatLostGrounding(Layer& lay, const std::vector<u
   for (int k : lay.bodyCells) wake(k);
 }
 void ComponentSystem::computeGroundedBoth() {
+  // Wall-time split: base floods -> groundingMs; bond scan + UF -> crossLayerGroundingMs.
+  // indexComponents inside base floods already accumulates componentIndexMs.
+  double tJoint0 = emscripten_get_now();
   // Snapshot prev grounded only when rigid grounding may change (wake needs the
   // 1->0 transition). A pure loose-overlay refresh cannot unground rigid cells.
   auto rigidMayChange = [](Layer& lay) {
@@ -671,6 +676,8 @@ void ComponentSystem::computeGroundedBoth() {
   // cheap cache reuse / full skip inside computeGrounded.
   groundLayerBase(&E.fg);
   groundLayerBase(&E.bg);
+  E.perfGroundingMs += emscripten_get_now() - tJoint0;
+  double tCross0 = emscripten_get_now();
 
   int nf = compCount(E.fg), nb = compCount(E.bg);
   E.fg.crossBondedComp.assign(nf, 0);
@@ -688,6 +695,7 @@ void ComponentSystem::computeGroundedBoth() {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
     if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
     E.useLayer(&E.fg);
+    E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
     return;
   }
 
@@ -729,6 +737,7 @@ void ComponentSystem::computeGroundedBoth() {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
     if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
     E.useLayer(&E.fg);
+    E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
     return;
   }
 
@@ -783,6 +792,7 @@ void ComponentSystem::computeGroundedBoth() {
   if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
   if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
   E.useLayer(&E.fg);
+  E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
 }
 
 // Map a E.L->cellComp id (assigned by computeGrounded in stone|plant|ice order) back

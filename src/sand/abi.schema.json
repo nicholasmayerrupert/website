@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
-  "abiVersion": 1,
+  "abiVersion": 2,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -28,9 +28,18 @@
       "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame"]
     },
     "perfSnapshot": {
-      "$comment": "double records written by engine_perf_snapshot (one batched call replacing the old 18 scalar perf getters).",
+      "$comment": "double records written by engine_perf_snapshot. Fine step phases accumulate across both layers; counts are totals for the last step. Bump abiVersion on layout change.",
       "cPrefix": "PF",
-      "fields": ["stepMs", "dirtyChunks", "lightMs", "fillMs", "uploadMs", "shiftBuffers", "shiftTranslate", "shiftRegister", "shiftFill", "stepGround", "stepRigid", "stepReact", "stepCarry", "stepSettle", "stepTail", "stepJoint", "stepLayers", "stepCross"]
+      "fields": [
+        "stepMs",
+        "dirtyChunks", "dirtyRows", "dirtyCells",
+        "componentCount", "componentCellCount", "crossBondCount",
+        "lightMs", "fillMs", "uploadMs",
+        "shiftBuffers", "shiftTranslate", "shiftRegister", "shiftFill",
+        "groundingMs", "crossLayerGroundingMs", "componentIndexMs", "assemblyUnionMs",
+        "carryMs", "bodyMs", "sandMs", "liquidMs", "gasMs",
+        "reactMs", "tailMs", "layersMs", "crossMs"
+      ]
     }
   },
   "enums": {

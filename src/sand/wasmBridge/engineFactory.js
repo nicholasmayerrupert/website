@@ -543,9 +543,80 @@ export function createEngineWasm({
       const F = OFF.perfSnapshot;
       return { d, F };
     },
-    getPerf() { const { d, F } = this.readPerf(); return { stepMs: d[F.stepMs], dirtyChunks: d[F.dirtyChunks], lightMs: d[F.lightMs], fillMs: d[F.fillMs], uploadMs: d[F.uploadMs], phases: {} }; },
+    getPerf() {
+      const { d, F } = this.readPerf();
+      return {
+        stepMs: d[F.stepMs],
+        dirtyChunks: d[F.dirtyChunks],
+        dirtyRows: d[F.dirtyRows],
+        dirtyCells: d[F.dirtyCells],
+        componentCount: d[F.componentCount],
+        componentCellCount: d[F.componentCellCount],
+        crossBondCount: d[F.crossBondCount],
+        lightMs: d[F.lightMs],
+        fillMs: d[F.fillMs],
+        uploadMs: d[F.uploadMs],
+        groundingMs: d[F.groundingMs],
+        crossLayerGroundingMs: d[F.crossLayerGroundingMs],
+        componentIndexMs: d[F.componentIndexMs],
+        assemblyUnionMs: d[F.assemblyUnionMs],
+        carryMs: d[F.carryMs],
+        bodyMs: d[F.bodyMs],
+        sandMs: d[F.sandMs],
+        liquidMs: d[F.liquidMs],
+        gasMs: d[F.gasMs],
+        reactMs: d[F.reactMs],
+        tailMs: d[F.tailMs],
+        layersMs: d[F.layersMs],
+        crossMs: d[F.crossMs],
+        phases: {},
+      };
+    },
     getShiftPerf() { const { d, F } = this.readPerf(); return { buffers: d[F.shiftBuffers], translate: d[F.shiftTranslate], register: d[F.shiftRegister], fill: d[F.shiftFill] }; },
-    getStepPerf() { const { d, F } = this.readPerf(); return { ground: d[F.stepGround], rigid: d[F.stepRigid], react: d[F.stepReact], carry: d[F.stepCarry], settle: d[F.stepSettle], tail: d[F.stepTail], joint: d[F.stepJoint], layers: d[F.stepLayers], cross: d[F.stepCross] }; },
+    // Fine phases + legacy aggregate aliases used by bench-sand / profile scripts.
+    // Fine keys are the source of truth; legacy keys are stable aliases so older
+    // benches keep working after the perfSnapshot v2 expansion.
+    getStepPerf() {
+      const { d, F } = this.readPerf();
+      const grounding = d[F.groundingMs];
+      const crossLayer = d[F.crossLayerGroundingMs];
+      const assembly = d[F.assemblyUnionMs];
+      const body = d[F.bodyMs];
+      const sand = d[F.sandMs];
+      const liquid = d[F.liquidMs];
+      const gas = d[F.gasMs];
+      const react = d[F.reactMs];
+      const carry = d[F.carryMs];
+      const tail = d[F.tailMs];
+      const layers = d[F.layersMs];
+      const cross = d[F.crossMs];
+      return {
+        groundingMs: grounding,
+        crossLayerGroundingMs: crossLayer,
+        componentIndexMs: d[F.componentIndexMs],
+        assemblyUnionMs: assembly,
+        carryMs: carry,
+        bodyMs: body,
+        sandMs: sand,
+        liquidMs: liquid,
+        gasMs: gas,
+        reactMs: react,
+        tailMs: tail,
+        layersMs: layers,
+        crossMs: cross,
+        // Legacy aggregates (acid-*, profile-shift, older baselines)
+        // joint ≈ full computeGroundedBoth wall (base floods + bond/UF work).
+        ground: grounding,
+        rigid: assembly + body,
+        react,
+        carry,
+        settle: sand + liquid + gas,
+        tail,
+        joint: grounding + crossLayer,
+        layers,
+        cross,
+      };
+    },
     getTick() { return M.tick(ptr); },
     syncComponents() { M.syncComponents(ptr); },
     destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },

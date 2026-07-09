@@ -14,25 +14,35 @@
   void stepLayer(Layer* layer) {
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
+    // Phase times ACCUMULATE (both layers). step() zeros them once per tick.
     double t0 = emscripten_get_now();
     if (!comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
-    double tG = emscripten_get_now(); perfStepGround = tG - t0;
+    perfGroundingMs += emscripten_get_now() - t0;
+
+    double tA = emscripten_get_now();
     moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-assemblies");
 #endif
+    perfAssemblyUnionMs += emscripten_get_now() - tA;
+
+    double tB = emscripten_get_now();
     moveBodies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-moveBodies");
 #endif
-    double tR = emscripten_get_now(); perfStepRigid = tR - tG;
+    perfBodyMs += emscripten_get_now() - tB;
+
+    double tR = emscripten_get_now();
     growPlantComponents();
     growMyceliumComponents();
     applyReactions(); applyAcid(); applyLava(); applyIce(); applySalt(); applyExplosives();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-reactions");
 #endif
-    double tX = emscripten_get_now(); perfStepReact = tX - tR;
+    perfReactMs += emscripten_get_now() - tR;
+
+    double tC = emscripten_get_now();
     prepareNextBuffer();
     // carry-forward component + body cells across the double buffer
     L->curCompCells.clear();
@@ -49,23 +59,32 @@
       else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
     }
     std::swap(L->prevCompCells, L->curCompCells);
-    double tC = emscripten_get_now(); perfStepCarry = tC - tX;
+    perfCarryMs += emscripten_get_now() - tC;
 
     liquidDispPending.clear();
+    double tS = emscripten_get_now();
     for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
     for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } }
+    perfSandMs += emscripten_get_now() - tS;
+
+    double tL = emscripten_get_now();
     for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
     // Density-chain relocate liquids displaced by denser liquids this settle (before
     // gas claims free cells and before the double-buffer swap commits next[]).
     resolveLiquidDisplacements();
+    perfLiquidMs += emscripten_get_now() - tL;
+
+    double tG = emscripten_get_now();
     for (int y = 0; y < rows; y++) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
-    double tS = emscripten_get_now(); perfStepSettle = tS - tC;
+    perfGasMs += emscripten_get_now() - tG;
+
+    double tT = emscripten_get_now();
     std::swap(L->grid, L->next);
     if ((tick & 1) == 0) relaxLiquidGaps();
     if (tick % 3 == 0) separateLooseByDensity();
     levelLiquidSurfaces();
     applySideSinks();
-    perfStepTail = emscripten_get_now() - tS;
+    perfTailMs += emscripten_get_now() - tT;
   }
 
   bool step() {
@@ -77,13 +96,19 @@
     if (!fgA && !bgA) { useLayer(&fg); return !psys.players.empty() || !itemsys.items.empty(); }
     double t0 = emscripten_get_now();
     tick++;
+    // Zero fine-phase timers + dirty volume (stepLayer / joint accumulate into these).
+    perfDirtyChunks = perfDirtyRows = perfDirtyCells = 0;
+    perfComponentCount = perfComponentCellCount = perfCrossBondCount = 0;
+    perfGroundingMs = perfCrossLayerGroundingMs = perfComponentIndexMs = 0;
+    perfAssemblyUnionMs = perfCarryMs = perfBodyMs = 0;
+    perfSandMs = perfLiquidMs = perfGasMs = 0;
+    perfReactMs = perfTailMs = perfLayersMs = perfCrossMs = 0;
     // Cross-layer grounding: compute groundedness jointly over both layers up
     // front so solids in one layer support solids at the same cell in the other
     // (gated on bgEnabled -> single-layer scenes stay byte-identical). Each
     // stepLayer() then skips its own first computeGrounded().
     comps.jointGroundReady = false;
     comps.jointBondsInvalid = false;
-    double tJ0 = emscripten_get_now();
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
     // stone/plant/ice or residual static powder exists. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
@@ -97,15 +122,16 @@
     bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
     bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
     if (bgEnabled && needJoint) {
+      // computeGroundedBoth splits its wall time into groundingMs (base floods)
+      // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).
       computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
-    perfStepJoint = emscripten_get_now() - tJ0;
     double tL0 = emscripten_get_now();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
     if (bgA) stepLayer(&bg);
-    perfStepLayers = emscripten_get_now() - tL0;
+    perfLayersMs = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
     // Cross-layer assembly motion needs up-to-date joint grounding. Acid/erase
     // mid-stepLayer dirties bonds (jointDirty) but deliberately leaves
@@ -117,7 +143,7 @@
     // until a dissolve-free step. Refresh joints when dirtied, then move.
     bool jointRefreshedAfterLayers = false;
     if (bgEnabled && (comps.jointDirty || comps.jointBondsInvalid)) {
-      computeGroundedBoth();
+      computeGroundedBoth(); // adds into grounding / crossLayer / componentIndex
       comps.jointGroundReady = true;
       comps.jointDirty = false;
       comps.jointBondsInvalid = false;
@@ -127,7 +153,9 @@
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("pre-crossmove");
 #endif
+      double tAsm = emscripten_get_now();
       moveCrossLayerBondedAssemblies();
+      perfAssemblyUnionMs += emscripten_get_now() - tAsm;
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("post-crossmove");
 #endif
@@ -136,15 +164,35 @@
       // Give them one catch-up fall. Cross-bonded ungrounded comps are handled by
       // moveCrossLayerBondedAssemblies above (and filtered out of this pass).
       if (jointRefreshedAfterLayers) {
+        double tA2 = emscripten_get_now();
         useLayer(&fg); moveRigidAssemblies();
         useLayer(&bg); moveRigidAssemblies();
+        perfAssemblyUnionMs += emscripten_get_now() - tA2;
       }
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
     crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);
-    perfStepCross = emscripten_get_now() - tX0;
+    perfCrossMs = emscripten_get_now() - tX0;
+    // End-of-step structural counts (cheap O(components), not O(grid)).
+    auto countComps = [&](Layer& lay) {
+      auto acc = [&](const std::vector<Comp>& list) {
+        perfComponentCount += (int)list.size();
+        for (const auto& c : list) perfComponentCellCount += (int)c.cells.size();
+      };
+      acc(lay.stoneComponents); acc(lay.plantComponents); acc(lay.iceComponents);
+    };
+    countComps(fg); countComps(bg);
+    // Live residual bonds, or (when cleared after all-grounded) count of comps
+    // still flagged cross-bonded this tick.
+    if (!comps.cgBonds.empty()) perfCrossBondCount = (int)comps.cgBonds.size();
+    else {
+      int n = 0;
+      for (uint8_t f : fg.crossBondedComp) if (f) n++;
+      for (uint8_t f : bg.crossBondedComp) if (f) n++;
+      perfCrossBondCount = n;
+    }
     useLayer(&fg); // leave fg active for ABI/render/tool calls between steps
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-step");

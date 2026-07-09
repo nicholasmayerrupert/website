@@ -48,19 +48,35 @@ actionable instead of just producing timing numbers.
 - `checksum`: deterministic terrain/simulation output. If it changes on a pure
   refactor, inspect `worldgen.inc`, generated material tables, and WASM rebuild
   provenance before updating the baseline.
-- `step`: total C++ simulation tick. The per-LAYER `stepPhases`
-  (`ground`/`rigid`/`react`/`carry`/`settle`/`tail`) only sum to a small fraction
-  of `step` and are OVERWRITTEN by the second layer, so most of `step` is invisible
-  there. The bench also prints `step()-level` phases that capture the rest:
-  `joint` = `computeGroundedBoth` (the cross-layer grounding flood — usually the
-  single largest cost in a two-layer world), `layers` = both `stepLayer` calls
-  combined (carry-dominated on dense terrain), `cross` = cross-layer
-  reactions/transfer. Narrow the owner: `joint` -> `components.inc`
-  (computeGrounded/computeGroundedBoth), `carry` -> the component carry in
-  `step.inc`, `ground`/`settle` -> `step.inc`, `react` -> `reactions.inc`,
-  `rigid` -> `rigid.inc`, `tail` -> dirty bookkeeping and cross-layer cleanup.
+- `step`: total C++ simulation tick wall time (`perfStepMs`).
+- **Fine `stepPhases` (primary — accumulate across both layers each tick):**
+
+  | Phase | What it is | Owner |
+  | --- | --- | --- |
+  | `groundingMs` | per-layer `ensureGrounded` + joint `groundLayerBase` floods | `components.inc` |
+  | `crossLayerGroundingMs` | joint bond scan + union-find after base floods | `components.inc` `computeGroundedBoth` |
+  | `componentIndexMs` | `indexComponents()` (nested inside grounding) | `components.inc` |
+  | `assemblyUnionMs` | `moveRigidAssemblies` + cross-layer assembly move | `rigid.inc` / `step.inc` |
+  | `carryMs` | component/body carry-forward across the double buffer | `step.inc` |
+  | `bodyMs` | free rigid bodies (`moveBodies`) | `rigid.inc` |
+  | `sandMs` | density interface + `settleSand` | `core.inc` |
+  | `liquidMs` | liquids + density-chain relocate | `core.inc` |
+  | `gasMs` | fire/steam rise | `core.inc` |
+  | `reactMs` | growth + reactions + acid/lava/ice/salt/explosives | `reactions.inc` / `growth.inc` |
+  | `tailMs` | buffer swap + liquid relax/level/sinks | `step.inc` |
+  | `layersMs` | wall time of both `stepLayer()` calls | `step.inc` |
+  | `crossMs` | post-layer joint refresh + cross react/transfer | `step.inc` |
+
+  `bench-sand.mjs` prints p50 for every fine phase and p95 for the usual hot
+  buckets; `--compare` also prints phase p50 deltas so a step regression is
+  immediately attributable. `getStepPerf()` still exposes **legacy aggregates**:
+  `joint` = `groundingMs + crossLayerGroundingMs`, `settle` = sand+liquid+gas,
+  `rigid` = assembly+body.
+- **`stepVolume` (why a phase is expensive):** `dirtyChunks` / `dirtyRows` /
+  `dirtyCells` (active region size), `componentCount` / `componentCellCount`,
+  `crossBondCount`. Available from `getPerf()` and in the bench JSON.
 - `renderFull`: CPU material-to-RGBA fill in `render.inc`; WebGL upload/composite
-  is covered better by browser pan benchmarks.
+  is covered better by browser pan benchmarks (`lightMs` / `fillMs` / `uploadMs`).
 - `shiftWorldMiss`: fresh terrain streaming. Inspect `worldgen.inc`, structure
   generation, component registration, and prefetch behavior.
 - `shiftWorldHit`: cached terrain restore. Inspect chunk-store restore,
@@ -68,6 +84,16 @@ actionable instead of just producing timing numbers.
 - `shiftPhases`: streaming internals. `translate` moves hot buffers,
   `register` rebuilds components, `buffers` shifts render/sim memory, `fill`
   generates or restores new bands.
+
+## Surfaces that expose the breakdown
+
+| Surface | How |
+| --- | --- |
+| Headless engine bench | `node scripts/bench-sand.mjs` — step/shift/render + fine phases + volume |
+| Headless shift profiler | `node scripts/profile-shift.mjs` — shift phases + rest/active fine step phases |
+| Browser pan bench | `node scripts/bench-pan.mjs` — frame + render phases + step phases via `__sandPerf` |
+| In-game HUD / `perfStats()` | `createSandGame` + embed perf HUD; same fine fields |
+| Spot acid/lava/ice benches | `acid-*-lag-bench.mjs` print fine phases on worst steps |
 
 ## Baseline Policy
 

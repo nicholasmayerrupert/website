@@ -11,12 +11,15 @@
 // Measures, over a simulated panning session, the per-operation cost
 // distribution (p50/p95/p99/max, in ms) for:
 //   - engine.step           (C++ step, measured inside wasm via emscripten_get_now)
+//   - stepPhases            fine per-step phase breakdown (grounding / carry / sand / …)
+//   - stepVolume            dirty rows/cells + component/bond counts that drive cost
 //   - shiftWorld (miss)     world streaming that has to generate fresh terrain
-//   - shiftWorld (hit)      world streaming that restores cached terrain
+//   - shiftWorld (hit)      world streaming that restores cached terrain (+ phase split)
 //   - renderFull            full-buffer material->RGBA fill in wasm (render hot path)
 //
 // The engine is deterministic for a fixed seed, so step/shift costs and the
 // terrain checksum are stable run-to-run (modulo CPU noise in the timings).
+// See src/sand/PERF.md for phase ownership when a metric regresses.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -116,16 +119,35 @@ const now = () => performance.now();
 
 await initSandWasm();
 
+// Fine step phases from getStepPerf() (perfSnapshot v2). Order is roughly the
+// pipeline order; componentIndexMs nests inside groundingMs.
+const STEP_PHASE_KEYS = [
+  'groundingMs', 'crossLayerGroundingMs', 'componentIndexMs',
+  'assemblyUnionMs', 'carryMs', 'bodyMs',
+  'sandMs', 'liquidMs', 'gasMs',
+  'reactMs', 'tailMs', 'layersMs', 'crossMs',
+  // Legacy aggregates (derived in getStepPerf) for older baselines / scripts.
+  'ground', 'rigid', 'react', 'carry', 'settle', 'tail', 'joint', 'layers', 'cross',
+];
+// Volume counters that explain *why* a phase is expensive (not just how long).
+const STEP_VOLUME_KEYS = [
+  'dirtyChunks', 'dirtyRows', 'dirtyCells',
+  'componentCount', 'componentCellCount', 'crossBondCount',
+];
+const SHIFT_PHASE_KEYS = ['buffers', 'translate', 'register', 'fill'];
+
 const emptySamples = () => ({
   stepMs: [], renderMs: [], shiftMissMs: [], shiftHitMs: [],
-  stepPhases: { ground: [], rigid: [], react: [], carry: [], settle: [], tail: [], joint: [], layers: [], cross: [] },
-  shiftPhases: { buffers: [], translate: [], register: [], fill: [] },
+  stepPhases: Object.fromEntries(STEP_PHASE_KEYS.map((k) => [k, []])),
+  stepVolume: Object.fromEntries(STEP_VOLUME_KEYS.map((k) => [k, []])),
+  shiftPhases: Object.fromEntries(SHIFT_PHASE_KEYS.map((k) => [k, []])),
   dirtyChunks: [], heapBytes: [], shiftHits: [], shiftMisses: [],
 });
 const addSamples = (to, from) => {
   for (const k of ['stepMs', 'renderMs', 'shiftMissMs', 'shiftHitMs', 'dirtyChunks', 'heapBytes', 'shiftHits', 'shiftMisses']) to[k].push(...from[k]);
-  for (const k of Object.keys(to.stepPhases)) to.stepPhases[k].push(...from.stepPhases[k]);
-  for (const k of Object.keys(to.shiftPhases)) to.shiftPhases[k].push(...from.shiftPhases[k]);
+  for (const k of STEP_PHASE_KEYS) to.stepPhases[k].push(...from.stepPhases[k]);
+  for (const k of STEP_VOLUME_KEYS) to.stepVolume[k].push(...from.stepVolume[k]);
+  for (const k of SHIFT_PHASE_KEYS) to.shiftPhases[k].push(...from.shiftPhases[k]);
 };
 const summarizeSamples = (samples) => ({
   step: summarize(samples.stepMs),
@@ -133,6 +155,7 @@ const summarizeSamples = (samples) => ({
   shiftWorldMiss: summarize(samples.shiftMissMs),
   shiftWorldHit: summarize(samples.shiftHitMs),
   stepPhases: Object.fromEntries(Object.entries(samples.stepPhases).map(([k, v]) => [k, summarize(v)])),
+  stepVolume: Object.fromEntries(Object.entries(samples.stepVolume).map(([k, v]) => [k, summarize(v)])),
   shiftPhases: Object.fromEntries(Object.entries(samples.shiftPhases).map(([k, v]) => [k, summarize(v)])),
   dirtyChunks: summarize(samples.dirtyChunks),
   heapBytes: summarize(samples.heapBytes),
@@ -210,7 +233,8 @@ function runScenario(name) {
     samples.stepMs.push(perf.stepMs);
     samples.dirtyChunks.push(perf.dirtyChunks);
     samples.heapBytes.push(e.getHeapBytes());
-    for (const k of Object.keys(samples.stepPhases)) samples.stepPhases[k].push(stepPerf[k]);
+    for (const k of STEP_PHASE_KEYS) samples.stepPhases[k].push(stepPerf[k] ?? 0);
+    for (const k of STEP_VOLUME_KEYS) samples.stepVolume[k].push(perf[k] ?? 0);
     if (!checksumOnly) {
       const t = now();
       e.renderFull();
@@ -293,6 +317,44 @@ const result = scenarioArg === 'all' ? {
 
 // --- report ---
 const fmt = (s) => `mean ${s.mean.toFixed(3)}  p50 ${s.p50.toFixed(3)}  p95 ${s.p95.toFixed(3)}  p99 ${s.p99.toFixed(3)}  max ${s.max.toFixed(3)}  (n=${s.n})`;
+const fmtP50 = (s) => (s ? s.p50.toFixed(3) : '-');
+// Fine keys printed as the actionable ms breakdown (legacy aggregates are secondary).
+const FINE_PHASE_KEYS = [
+  'groundingMs', 'crossLayerGroundingMs', 'componentIndexMs',
+  'assemblyUnionMs', 'carryMs', 'bodyMs',
+  'sandMs', 'liquidMs', 'gasMs',
+  'reactMs', 'tailMs', 'layersMs', 'crossMs',
+];
+const PHASE_HINTS = {
+  groundingMs: 'components.inc computeGrounded / groundLayerBase',
+  crossLayerGroundingMs: 'components.inc computeGroundedBoth bond scan + UF',
+  componentIndexMs: 'components.inc indexComponents (nested in grounding)',
+  assemblyUnionMs: 'rigid.inc moveRigidAssemblies + cross-layer assembly move',
+  carryMs: 'step.inc component/body carry-forward',
+  bodyMs: 'rigid.inc moveBodies',
+  sandMs: 'core.inc settleSand + density interface',
+  liquidMs: 'core.inc settleLiquid + density-chain relocate',
+  gasMs: 'core.inc riseFire / riseSteam',
+  reactMs: 'reactions.inc / explosives / growth',
+  tailMs: 'step.inc swap + liquid relax/level/sinks',
+  layersMs: 'step.inc both stepLayer() wall time',
+  crossMs: 'step.inc post-layer joint refresh + cross react/transfer',
+  joint: 'groundingMs + crossLayerGroundingMs (total joint grounding)',
+  settle: 'sandMs + liquidMs + gasMs',
+  rigid: 'assemblyUnionMs + bodyMs',
+  step: 'step.inc, reactions.inc, growth.inc, rigid.inc, player.inc',
+  renderFull: 'render.inc and material render tables',
+  shiftWorldMiss: 'worldgen.inc fresh-band generation and component registration',
+  shiftWorldHit: 'worldgen chunk store restore path and component translation',
+};
+function printPhaseLine(label, stp, keys) {
+  const parts = keys.map((k) => {
+    const s = stp[k];
+    if (!s) return null;
+    return `${k.replace(/Ms$/, '')} ${fmtP50(s)}`;
+  }).filter(Boolean);
+  console.log(`  ${label}: ${parts.join('  ')}`);
+}
 function printOne(r) {
   console.log(`\nsand engine benchmark:${r.scenario}  (${COLS}x${ROWS}, seed ${SEED.toString(16)})`);
   console.log(`  checksum 0x${r.checksum.toString(16)}${r.checksumStable ? '' : ' (UNSTABLE ACROSS REPEATS)'}  worldOffset ${r.worldOffsetX},${r.worldOffsetY}`);
@@ -307,10 +369,16 @@ function printOne(r) {
     console.log(`  shiftWorld miss ${fmt(r.shiftWorldMiss)}`);
     console.log(`  shiftWorld hit  ${fmt(r.shiftWorldHit)}`);
   }
-  const sp = r.shiftPhases, stp = r.stepPhases;
-  console.log(`  step phases (median ms): ground ${stp.ground.p50}  rigid ${stp.rigid.p50}  react ${stp.react.p50}  carry ${stp.carry.p50}  settle ${stp.settle.p50}  tail ${stp.tail.p50}`);
-  console.log(`  step()-level (median ms): joint ${stp.joint.p50}  layers(fg+bg) ${stp.layers.p50}  cross ${stp.cross.p50}  [joint mean ${stp.joint.mean} p95 ${stp.joint.p95}]`);
-  console.log(`  shift phases (median ms): translate ${sp.translate.p50}  register ${sp.register.p50}  buffers ${sp.buffers.p50}  fill ${sp.fill.p50}`);
+  const sp = r.shiftPhases, stp = r.stepPhases, vol = r.stepVolume || {};
+  // Primary: fine phase medians (what is consuming ms inside step).
+  printPhaseLine('step phases p50 (ms)', stp, FINE_PHASE_KEYS);
+  // p95 for the usually-dominant buckets so spikes are visible without a full dump.
+  const hot = ['groundingMs', 'crossLayerGroundingMs', 'carryMs', 'sandMs', 'liquidMs', 'reactMs', 'layersMs', 'crossMs'];
+  console.log(`  step phases p95 (ms): ${hot.map((k) => `${k.replace(/Ms$/, '')} ${stp[k] ? stp[k].p95.toFixed(3) : '-'}`).join('  ')}`);
+  // Legacy aggregates (still in JSON) for scripts that still think in old names.
+  console.log(`  step aggregates p50: joint ${fmtP50(stp.joint)}  settle ${fmtP50(stp.settle)}  rigid ${fmtP50(stp.rigid)}  [joint mean ${stp.joint?.mean ?? '-'} p95 ${stp.joint?.p95 ?? '-'}]`);
+  console.log(`  shift phases (median ms): translate ${fmtP50(sp.translate)}  register ${fmtP50(sp.register)}  buffers ${fmtP50(sp.buffers)}  fill ${fmtP50(sp.fill)}`);
+  console.log(`  volume p50: dirtyChunks ${fmtP50(vol.dirtyChunks ?? r.dirtyChunks)}  dirtyRows ${fmtP50(vol.dirtyRows)}  dirtyCells ${fmtP50(vol.dirtyCells)}  comps ${fmtP50(vol.componentCount)}  compCells ${fmtP50(vol.componentCellCount)}  xBonds ${fmtP50(vol.crossBondCount)}`);
   console.log(`  dirty chunks p95 ${r.dirtyChunks.p95}  heap ${(r.heapBytes.p50 / (1024 * 1024)).toFixed(1)}MB  shift fill hit/miss p50 ${r.shiftFill.hit.p50}/${r.shiftFill.miss.p50}`);
 }
 if (scenarioArg === 'all') for (const name of scenarioNames) printOne(result.scenarios[name]);
@@ -338,12 +406,6 @@ if (comparePath) {
     exit = 1;
   }
   const rows = checksumOnly ? [['step', 'mean']] : [['step', 'p99'], ['renderFull', 'p99'], ['shiftWorldMiss', 'p99'], ['shiftWorldHit', 'p99'], ['step', 'mean'], ['renderFull', 'mean']];
-  const hints = {
-    step: 'step.inc, reactions.inc, growth.inc, rigid.inc, player.inc',
-    renderFull: 'render.inc and material render tables',
-    shiftWorldMiss: 'worldgen.inc fresh-band generation and component registration',
-    shiftWorldHit: 'worldgen chunk store restore path and component translation',
-  };
   for (const [k, m] of rows) {
     if (!base[k] || !result[k]) continue;
     const b = base[k][m], r = result[k][m];
@@ -351,8 +413,51 @@ if (comparePath) {
     const tag = d > 15 ? ' REGRESSION' : d < -10 ? ' improved' : '';
     console.log(`  ${k}.${m}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
     if (d > 15) {
-      console.log(`    inspect: ${hints[k] || 'owning subsystem'}`);
+      console.log(`    inspect: ${PHASE_HINTS[k] || 'owning subsystem'}`);
       exit = 1;
+    }
+  }
+  // Fine phase + volume deltas: only compare fine keys (apples-to-apples). Old
+  // baselines used per-layer overwrite timers; fine phases now accumulate both
+  // layers, so legacy ground/carry/settle/react numbers are not comparable.
+  // Soft threshold only (does not fail the compare) — phase noise is higher
+  // than wall-time p99.
+  const basePh = base.stepPhases || {};
+  const resPh = result.stepPhases || {};
+  const phaseRows = FINE_PHASE_KEYS.filter((k) => basePh[k] && resPh[k]);
+  if (phaseRows.length) {
+    console.log('  step phase p50 deltas (informational):');
+    for (const k of phaseRows) {
+      const b = basePh[k].p50, r = resPh[k].p50;
+      const d = b ? ((r - b) / b) * 100 : (r ? 100 : 0);
+      const abs = r - b;
+      // Flag only when both relative and absolute look real (ms-scale work).
+      const tag = (d > 25 && abs > 0.15) ? '  << hot' : (d < -20 && abs < -0.15) ? '  cooler' : '';
+      console.log(`    ${k}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${abs >= 0 ? '+' : ''}${abs.toFixed(3)}ms, ${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
+      if (tag.includes('hot')) console.log(`      inspect: ${PHASE_HINTS[k] || k}`);
+    }
+  } else if (Object.keys(resPh).length) {
+    console.log('  step phase p50 (current run — baseline predates fine phases; re-record with --update to enable phase deltas):');
+    for (const k of FINE_PHASE_KEYS) {
+      if (!resPh[k]) continue;
+      console.log(`    ${k}: ${resPh[k].p50.toFixed(3)}`);
+    }
+  }
+  const baseVol = base.stepVolume || {};
+  const resVol = result.stepVolume || {};
+  const volRows = STEP_VOLUME_KEYS.filter((k) => baseVol[k] && resVol[k]);
+  if (volRows.length) {
+    console.log('  step volume p50 deltas (informational):');
+    for (const k of volRows) {
+      const b = baseVol[k].p50, r = resVol[k].p50;
+      const d = b ? ((r - b) / b) * 100 : (r ? 100 : 0);
+      console.log(`    ${k}: ${b.toFixed(1)} -> ${r.toFixed(1)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)`);
+    }
+  } else if (Object.keys(resVol).length) {
+    console.log('  step volume p50 (current run only — baseline has no stepVolume; re-record with --update):');
+    for (const k of STEP_VOLUME_KEYS) {
+      if (!resVol[k]) continue;
+      console.log(`    ${k}: ${resVol[k].p50.toFixed(1)}`);
     }
   }
 }

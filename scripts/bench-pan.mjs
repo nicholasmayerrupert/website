@@ -221,6 +221,35 @@ const report = [
 if (result.flicker.dbg) report.push(`  dbg cam0x=${result.flicker.cam0x} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
 report.push(`  frame: avg ${result.perf.avgFrameMs}ms  p95 ${result.perf.p95FrameMs}ms  step ${result.perf.stepMs}ms  render ${result.perf.renderMs}ms  dirtyChunks ${result.perf.dirtyChunks}`);
 report.push(`  render CPU phases: light ${result.perf.lightMs ?? '-'}ms  fill ${result.perf.fillMs ?? '-'}ms  upload ${result.perf.uploadMs ?? '-'}ms`);
+// Fine step breakdown (same fields as headless bench-sand / __sandPerf).
+const stepParts = [
+  ['grounding', result.perf.groundingMs],
+  ['xlayerG', result.perf.crossLayerGroundingMs],
+  ['compIdx', result.perf.componentIndexMs],
+  ['assembly', result.perf.assemblyUnionMs],
+  ['carry', result.perf.carryMs],
+  ['body', result.perf.bodyMs],
+  ['sand', result.perf.sandMs],
+  ['liquid', result.perf.liquidMs],
+  ['gas', result.perf.gasMs],
+  ['react', result.perf.reactMs],
+  ['tail', result.perf.tailMs],
+  ['layers', result.perf.layersMs],
+  ['cross', result.perf.crossMs],
+].filter(([, v]) => v != null);
+if (stepParts.length) {
+  report.push(`  step phases (ms): ${stepParts.map(([k, v]) => `${k} ${Number(v).toFixed(2)}`).join('  ')}`);
+}
+const volParts = [
+  ['dirtyRows', result.perf.dirtyRows],
+  ['dirtyCells', result.perf.dirtyCells],
+  ['comps', result.perf.componentCount],
+  ['compCells', result.perf.componentCellCount],
+  ['xBonds', result.perf.crossBondCount],
+].filter(([, v]) => v != null);
+if (volParts.length) {
+  report.push(`  step volume: ${volParts.map(([k, v]) => `${k} ${v}`).join('  ')}`);
+}
 
 if (updatePath) { writeFileSync(updatePath, JSON.stringify(result, null, 2)); report.push('', `updated baseline ${updatePath}`); }
 

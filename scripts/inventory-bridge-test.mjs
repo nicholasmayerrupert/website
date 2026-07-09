@@ -14,12 +14,12 @@ const e = createEngineWasm({ cols: 100, rows: 80, worldSeed: 1, sinksOn: false, 
 e.setSurvivalInventory(true);
 const id = e.spawnPlayer(40, 40);
 
-// getInventory shape + starter kit (wood pickaxe/axe/shovel; no hand slot; pickaxe selected).
+// getInventory shape + starter kit (single wood dig tool selected; no hand slot).
 const inv = e.getInventory(id);
 check(`getInventory returns 36 slots (${inv.slots.length})`, inv.slots.length === 36);
-check(`pickaxe slot selected by default (${inv.selected})`, inv.selected === 0);
-check('slot 0 is a wood pickaxe', inv.slots[0].isTool && inv.slots[0].toolClass === TC.pickaxe && inv.slots[0].toolTier === TT.wood);
-check('slot 1 is a wood axe', inv.slots[1].isTool && inv.slots[1].toolClass === TC.axe);
+check(`dig tool slot selected by default (${inv.selected})`, inv.selected === 0);
+check('slot 0 is a wood dig tool', inv.slots[0].isTool && inv.slots[0].toolClass === TC.dig && inv.slots[0].toolTier === TT.wood);
+check('slot 1 is empty (no axe/shovel kit)', !inv.slots[1].isTool && inv.slots[1].count === 0);
 check('slot 3 is empty (no hand slot)', inv.slots[3].count === 0);
 
 // setSelectedSlot round-trips.

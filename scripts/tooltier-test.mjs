@@ -14,10 +14,10 @@ const { check, done } = makeChecker('material tool classes/tiers (Phase A)');
 // (TABLE_SIZE is generated from the schema's tableSize — don't hardcode it).
 check(`MAT_TOOLCLASS has TABLE_SIZE entries (${MAT_TOOLCLASS.length}/${TABLE_SIZE})`, MAT_TOOLCLASS.length === TABLE_SIZE);
 check(`MAT_TOOLTIER has TABLE_SIZE entries (${MAT_TOOLTIER.length}/${TABLE_SIZE})`, MAT_TOOLTIER.length === TABLE_SIZE);
-check('mining speed tables cover every class/tier', TOOL_CLASS_SPEED.length === 25 && TOOL_TIER_SPEED.length === 5);
+check('mining speed tables cover every class/tier', TOOL_CLASS_SPEED.length === 36 && TOOL_TIER_SPEED.length === 5);
 
 // Enums exported for both sides.
-check('TC enum present', TC.none === 0 && TC.pickaxe === 1 && TC.axe === 2 && TC.shovel === 3 && TC.hand === 4);
+check('TC enum present', TC.none === 0 && TC.pickaxe === 1 && TC.axe === 2 && TC.shovel === 3 && TC.hand === 4 && TC.dig === 5);
 check('TT enum present', TT.hand === 0 && TT.wood === 1 && TT.stone === 2 && TT.iron === 3 && TT.gold === 4);
 
 // Class assignments: stone/ores -> pickaxe, plant family -> axe, soils -> shovel.
@@ -33,7 +33,11 @@ check(`STONE tier is wood (${tier('STONE')})`, tier('STONE') === TT.wood);
 check(`IRON_ORE tier is stone (${tier('IRON_ORE')})`, tier('IRON_ORE') === TT.stone);
 check(`GOLD_ORE tier is iron (${tier('GOLD_ORE')})`, tier('GOLD_ORE') === TT.iron);
 check(`DIRT tier is hand/0 (${tier('DIRT')})`, tier('DIRT') === TT.hand);
-check('correct classes are faster than wrong classes', TOOL_CLASS_SPEED[TC.pickaxe * 5 + TC.pickaxe] > TOOL_CLASS_SPEED[TC.shovel * 5 + TC.pickaxe]);
+const N = 6; // TOOL_CLASS_COUNT
+check('correct classes are faster than wrong classes', TOOL_CLASS_SPEED[TC.pickaxe * N + TC.pickaxe] > TOOL_CLASS_SPEED[TC.shovel * N + TC.pickaxe]);
+check('dig tool is flat across material classes',
+  TOOL_CLASS_SPEED[TC.dig * N + TC.pickaxe] === TOOL_CLASS_SPEED[TC.dig * N + TC.axe]
+  && TOOL_CLASS_SPEED[TC.dig * N + TC.axe] === TOOL_CLASS_SPEED[TC.dig * N + TC.shovel]);
 check('higher tiers increase mining power', TOOL_TIER_SPEED[TT.wood] < TOOL_TIER_SPEED[TT.stone] && TOOL_TIER_SPEED[TT.stone] < TOOL_TIER_SPEED[TT.iron]);
 
 // Non-droppable: liquids/gas/free-rigid never drop (class none).

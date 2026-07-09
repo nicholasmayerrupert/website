@@ -41,7 +41,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const d = rt(makeInventory(7, 3, slots, 4, 2));
   check('decodes to inventory', d && d.t === MSG.INVENTORY && d.player === 3 && d.selected === 4 && d.selectedFootprint === 2);
   check('flat length is 36*5', d && d.data.length === INV_SLOTS * INV_FIELDS);
-  check('slot 0 is the wood pickaxe', d && d.data[1] === 1 && d.data[2] === 1 && d.data[3] === 2);
+  check('slot 0 is a tool (isTool + class + tier)', d && d.data[1] === 1 && d.data[2] === 1 && d.data[3] === 2);
   check('slot 5 count preserved', d && d.data[5 * INV_FIELDS + 4] === 5);
 }
 

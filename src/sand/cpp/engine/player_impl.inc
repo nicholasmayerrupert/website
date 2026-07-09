@@ -301,7 +301,8 @@ bool PlayerSystem::playerUseTool(Player& p, int ax, int ay, Layer* layer) {
 bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t == T_ICE; }
 // Mine a single disc AT THE AIM CELL into `layer` (like every other tool: a disc at
 // the cursor, NOT a sweep emanating from the player). Each held-tool E.tick is one
-// hit; DURABILITY[] controls base hardness and held class/tier controls progress.
+// hit; DURABILITY[] controls base hardness and held class/tier controls progress
+// (dig ignores material type — flat class speed so only hardness + tier matter).
 void PlayerSystem::resetPlayerMine(Player& p) {
   if (!p.mineActive) return;
   auto clearLayer = [&](Layer* layer) {
@@ -332,6 +333,8 @@ void PlayerSystem::resolveMineDrops(Player& p) {
     } else if (E.isLiquidMaterial(m)) drop = true;
     else if (cls != TC_NONE) {
       if (tier == TT_HAND) drop = true;
+      // Dig is universal: any material class drops if the dig tool's tier is high enough.
+      else if (p.heldToolClass == TC_DIG && p.heldToolTier >= tier) drop = true;
       else if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
     }
     double j = whash2((uint32_t)E.tick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;

@@ -70,7 +70,7 @@ for (const [name, mat] of [['stone', MAT.STONE], ['sandstone', MAT.SANDSTONE], [
   for (let y = 44; y <= 46; y++) for (let x = 5; x <= 34; x++) e.placeMaterial(x, y, 0, MAT.COPPER_ORE);
   const id = e.spawnPlayer(20, 40); // standing just above the slab, in reach
   let t = run(e, 4);
-  e.setSelectedSlot(id, 0); // wood pickaxe (mines stone-group)
+  e.setSelectedSlot(id, 0); // wood dig tool
   const oreAtCol = () => { const g = e.getGrid(); let n = 0; for (let y = 44; y <= 46; y++) if (g[y * COLS + 20] === MAT.COPPER_ORE) n++; return n; };
   for (let pass = 0; pass < 60 && oreAtCol() > 0; pass++) {
     for (let y = 44; y <= 46; y++) { e.playerMine(id, 20, y); t = run(e, 1, t); }

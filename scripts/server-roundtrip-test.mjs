@@ -54,7 +54,7 @@ function survivalEngine() {
 // 2) inventory encoder round-trips slots + selected.
 {
   const e = survivalEngine();
-  const pid = e.spawnPlayer(50, FLOOR - 8); // seeds starter tools in slots 0-2
+  const pid = e.spawnPlayer(50, FLOOR - 8); // seeds starter dig tool in slot 0
   e.addToInventory(pid, MAT.STONE, 42);
   e.setSelectedSlot(pid, 4);
   e.setSelectedFootprint(pid, 3);
@@ -62,7 +62,7 @@ function survivalEngine() {
   check('inventory message decodes', m && m.t === MSG.INVENTORY && m.player === pid);
   check('selected slot preserved', m && m.selected === 4);
   check('selected footprint preserved', m && m.selectedFootprint === 3);
-  // slot 0 is the wood pickaxe (isTool, toolClass 1); compare against the engine.
+  // slot 0 is the wood dig tool; compare against the engine.
   const inv = e.getInventory(pid);
   check('slot 0 tool fields match engine', m && m.data[1] === (inv.slots[0].isTool ? 1 : 0) && m.data[2] === inv.slots[0].toolClass);
   // the stone we added is somewhere in the flat data with count 42.

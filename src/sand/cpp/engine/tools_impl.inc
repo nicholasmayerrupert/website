@@ -329,9 +329,13 @@ uint32_t ToolSystem::mineDurationFor(uint8_t m, uint32_t areaScale) const {
 uint32_t ToolSystem::minePowerFor(uint8_t m, const Player& miner, bool scaledSpeed, uint32_t speedMultiplier) const {
   uint32_t power = 16;
   if (scaledSpeed) {
-    uint8_t heldClass = miner.heldToolClass <= TC_HAND ? miner.heldToolClass : TC_HAND;
+    // Clamp to valid enum range (TOOL_CLASS_COUNT includes dig). Unknown classes
+    // fall back to hand so a stale net packet can't OOB the speed table.
+    uint8_t heldClass = miner.heldToolClass < TOOL_CLASS_COUNT ? miner.heldToolClass : TC_HAND;
     uint8_t heldTier = miner.heldToolTier <= TT_GOLD ? miner.heldToolTier : TT_GOLD;
-    uint8_t mineClass = MAT_TOOLCLASS[m] <= TC_HAND ? MAT_TOOLCLASS[m] : TC_NONE;
+    uint8_t mineClass = MAT_TOOLCLASS[m] < TOOL_CLASS_COUNT ? MAT_TOOLCLASS[m] : TC_NONE;
+    // Dig is a universal tool: classPercent row is flat, so only DURABILITY
+    // (via mineDurationFor) and tool tier affect dig time — not material type.
     power = (uint32_t)TOOL_CLASS_SPEED[heldClass * TOOL_CLASS_COUNT + mineClass] * TOOL_TIER_SPEED[heldTier] * 16u / (10000u * MINING_PROGRESS_DIVISOR);
     if (power == 0) power = 1;
     power *= imax(1, (int)speedMultiplier);

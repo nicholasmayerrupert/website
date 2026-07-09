@@ -9,7 +9,7 @@ enum MaterialClass : uint8_t { MC_NONE = 0, MC_GAS = 1, MC_SOLID = 2, MC_RIGID =
 // Seeded-component groups: which list a material registers into.
 enum CGroup : uint8_t { CG_NONE = 0, CG_STONE = 1, CG_PLANT = 2, CG_ICE = 3 };
 // Mining tool classes + tiers (drives MAT_TOOLCLASS / MAT_TOOLTIER drop gating).
-enum ToolClass : uint8_t { TC_NONE = 0, TC_PICKAXE = 1, TC_AXE = 2, TC_SHOVEL = 3, TC_HAND = 4 };
+enum ToolClass : uint8_t { TC_NONE = 0, TC_PICKAXE = 1, TC_AXE = 2, TC_SHOVEL = 3, TC_HAND = 4, TC_DIG = 5 };
 enum ToolTier : uint8_t { TT_HAND = 0, TT_WOOD = 1, TT_STONE = 2, TT_IRON = 3, TT_GOLD = 4 };
 // Behavior-flag bits packed into MAT_FLAGS[]. Predicates AND against these.
 static const uint16_t MF_FLAMMABLE = 1u << 0;
@@ -35,8 +35,8 @@ static const uint8_t  MAT_CGROUP[TABLE]     = {CG_NONE, CG_NONE, CG_NONE, CG_STO
 static const uint8_t  MAT_TOOLCLASS[TABLE]  = {0, 3, 0, 1, 0, 0, 0, 2, 2, 2, 0, 0, 1, 0, 2, 3, 3, 3, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 0, 3, 0, 3, 1, 1, 1, 1, 1, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint8_t  MAT_TOOLTIER[TABLE]   = {0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 // Mining speed percentages: held-class x preferred-class matrix, then held tier.
-static const int TOOL_CLASS_COUNT = 5;
-static const uint8_t  TOOL_CLASS_SPEED[25] = {100, 35, 35, 35, 50, 100, 255, 35, 35, 35, 100, 35, 100, 35, 35, 100, 35, 35, 100, 35, 100, 25, 25, 60, 100};
+static const int TOOL_CLASS_COUNT = 6;
+static const uint8_t  TOOL_CLASS_SPEED[36] = {100, 35, 35, 35, 50, 35, 100, 255, 35, 35, 35, 35, 100, 35, 100, 35, 35, 35, 100, 35, 35, 100, 35, 35, 100, 25, 25, 60, 100, 35, 100, 100, 100, 100, 100, 100};
 static const uint8_t  TOOL_TIER_SPEED[5] = {50, 100, 135, 175, 210};
 static const int MINING_PROGRESS_DIVISOR = 5;
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).

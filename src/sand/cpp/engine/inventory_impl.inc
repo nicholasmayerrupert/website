@@ -7,17 +7,15 @@
 // move / place intents. Mining drops feed addToInventory (items.inc pickup); the
 // selected slot drives the held tool (mining) or the placed material (building).
 
-// Reset a player's inventory to the survival starter kit: a wood pickaxe/axe/shovel
-// in the first hotbar slots, pickaxe selected. There is NO hand slot — an empty (or
-// material) slot means the bare hand (setSelectedSlot resolves that to TC_HAND).
+// Reset a player's inventory to the survival starter kit: a single wood dig tool
+// in hotbar slot 0 (selected). There is NO hand slot — an empty (or material)
+// slot means the bare hand (setSelectedSlot resolves that to TC_HAND).
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
   p.selectedFootprint = E.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
   auto tool = [&](int i, uint8_t cls, uint8_t tier) { p.inv[i].isTool = 1; p.inv[i].toolClass = cls; p.inv[i].toolTier = tier; p.inv[i].count = 1; };
-  tool(0, TC_PICKAXE, TT_WOOD);
-  tool(1, TC_AXE, TT_WOOD);
-  tool(2, TC_SHOVEL, TT_WOOD);
+  tool(0, TC_DIG, TT_WOOD);
   setSelectedSlot(p, 0);
 }
 void InventorySystem::seedStarterTools(int id) { Player* p = E.findPlayer(id); if (p) seedStarterTools(*p); }

@@ -43,8 +43,18 @@ const ironPickStone = hitsToBreak(MAT.STONE, TC.pickaxe, TT.iron);
 check(`stone pickaxe beats wood tier (${stonePickStone} < ${woodPickStone})`, stonePickStone < woodPickStone);
 check(`iron pickaxe beats stone tier (${ironPickStone} < ${stonePickStone})`, ironPickStone < stonePickStone);
 
-// Exercise the real survival path: starter inventory selection + held input +
-// engine steps. Wrong tools and hand must still break stone, just more slowly.
+// Dig tool: flat class speed — stone/sand/wood take hits proportional to durability only.
+const digStone = hitsToBreak(MAT.STONE, TC.dig, TT.wood);
+const digSand = hitsToBreak(MAT.SAND, TC.dig, TT.wood);
+const digWood = hitsToBreak(MAT.WOOD, TC.dig, TT.wood);
+check(`dig tool: stone harder than sand (${digStone} > ${digSand})`, digStone > digSand);
+check(`dig tool: wood between sand and stone (${digSand} < ${digWood} && ${digWood} < ${digStone})`, digSand < digWood && digWood < digStone);
+// Same hardness materials dig at the same rate regardless of preferred tool class.
+const digDirt = hitsToBreak(MAT.DIRT, TC.dig, TT.wood); // durability 2, shovel-class
+check(`dig tool ignores material type at equal hardness (sand=${digSand}, dirt=${digDirt})`, digSand === digDirt);
+
+// Exercise the real survival path: starter dig tool + held input + engine steps.
+// Bare hand (empty slot) still breaks stone, just more slowly.
 function survivalStepsToBreakStone(slot) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
   for (let x = 30; x < 90; x++) for (let y = 70; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
@@ -64,12 +74,10 @@ function survivalStepsToBreakStone(slot) {
   return { steps, broke };
 }
 
-const survivalPick = survivalStepsToBreakStone(0);
-const survivalAxe = survivalStepsToBreakStone(1);
+const survivalDig = survivalStepsToBreakStone(0);
 const survivalHand = survivalStepsToBreakStone(3);
-check(`inventory pickaxe is faster on stone (${survivalPick.steps} < ${survivalAxe.steps})`, survivalPick.broke && survivalPick.steps < survivalAxe.steps);
-check(`wrong inventory tool still breaks stone (${survivalAxe.steps} steps)`, survivalAxe.broke);
-check(`bare hand still breaks stone (${survivalHand.steps} steps)`, survivalHand.broke);
+check(`inventory dig tool breaks stone (${survivalDig.steps} steps)`, survivalDig.broke);
+check(`bare hand still breaks stone, slower (${survivalHand.steps} > ${survivalDig.steps})`, survivalHand.broke && survivalHand.steps > survivalDig.steps);
 
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

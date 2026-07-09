@@ -26,29 +26,30 @@ for (const m of MATERIALS) {
   NAME[m.id] = m.name;
 }
 // Tool names/tier letters by ToolClass id (mirrors enum ToolClass: 1 pick, 2 axe,
-// 3 shovel). There is no hand tool anymore — the bare hand is implicit (empty slot).
-const TOOL_NAME = { 1: 'Pickaxe', 2: 'Axe', 3: 'Shovel' };
+// 3 shovel, 5 dig). There is no hand tool item — bare hand is an empty slot.
+const TOOL_NAME = { 1: 'Pickaxe', 2: 'Axe', 3: 'Shovel', 5: 'Dig' };
 const TIER = ['', 'W', 'S', 'I', 'G'];
 const TIER_NAME = ['', 'Wood', 'Stone', 'Iron', 'Gold'];
 
-// Tool icons as simple 12x12 pixel art (replacing the old single-letter glyphs).
-// 'H' = wooden handle, 'M' = metal head (tinted by tier), '.'/' ' = empty. Rendered
-// as a crisp SVG so it scales to any slot size without blur.
+// Tool icons as simple 12x12 pixel art. 'H' = wooden handle, 'M' = metal head
+// (tinted by tier), '.' = empty. Rendered as crisp SVG so it scales without blur.
+// Dig (and pickaxe): diagonal pick — solid head top-right, wood shaft bottom-left.
+const PICKAXE_ART = [
+  '............',
+  '..MMMMMM....',
+  '...MMMMMM...',
+  '....MMMMMM..',
+  '.....MM.MM..',
+  '.....HH..M..',
+  '....HH......',
+  '...HH.......',
+  '..HH........',
+  '.HH.........',
+  '............',
+  '............',
+];
 const TOOL_ART = {
-  1: [ // pickaxe — spiked head over a vertical handle
-    '............',
-    '..M......M..',
-    '.MMM....MMM.',
-    '.MMMMMMMMMM.',
-    '..MMMMMMMM..',
-    '.....MM.....',
-    '.....HH.....',
-    '.....HH.....',
-    '.....HH.....',
-    '.....HH.....',
-    '.....HH.....',
-    '............',
-  ],
+  1: PICKAXE_ART, // legacy pickaxe class (same silhouette)
   2: [ // axe — blade on the left, handle down the right
     '............',
     '...MMM......',
@@ -77,6 +78,7 @@ const TOOL_ART = {
     '....MMMM....',
     '............',
   ],
+  5: PICKAXE_ART, // dig — universal dig tool, pickaxe look
 };
 const TOOL_HANDLE = '#9b6a39'; // wood
 // Metal-head tint indexed by toolTier (0 = generic, 1 wood, 2 stone, 3 iron, 4 gold).

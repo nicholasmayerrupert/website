@@ -28,27 +28,35 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
   return r;
 }
 
-// 1) Right tool + tier: pickaxe (wood) on stone -> stone drops.
+// 1) Dig tool + tier: dig (wood) on stone -> stone drops (universal class match).
 {
-  const r = mineBlob(MAT.STONE, TC.pickaxe, TT.wood);
-  check(`pickaxe mines stone into stone drops (${r.drops})`, r.drops > 0);
+  const r = mineBlob(MAT.STONE, TC.dig, TT.wood);
+  check(`dig tool mines stone into stone drops (${r.drops})`, r.drops > 0);
   check('stone block is destroyed', r.centerEmpty);
 }
 
-// 2) Wrong class: shovel on stone -> destroyed, no stone drop.
+// 1b) Dig also drops axe-class and shovel-class materials.
+{
+  const wood = mineBlob(MAT.WOOD, TC.dig, TT.wood);
+  check(`dig tool drops wood (${wood.drops})`, wood.drops > 0);
+  const dirt = mineBlob(MAT.DIRT, TC.dig, TT.wood);
+  check(`dig tool drops dirt (${dirt.drops})`, dirt.drops > 0);
+}
+
+// 2) Wrong specialized class: shovel on stone -> destroyed, no stone drop.
 {
   const r = mineBlob(MAT.STONE, TC.shovel, TT.wood);
   check('shovel still breaks the stone', r.centerEmpty);
   check(`shovel yields no stone drop (${r.drops})`, r.drops === 0);
 }
 
-// 3) Too-low tier: pickaxe (stone tier) on gold ore -> no drop; iron tier -> drops.
+// 3) Too-low tier: dig (stone tier) on gold ore -> no drop; iron tier -> drops.
 {
-  const low = mineBlob(MAT.GOLD_ORE, TC.pickaxe, TT.stone);
-  check('low-tier pickaxe breaks gold ore', low.centerEmpty);
-  check(`low-tier pickaxe yields no gold drop (${low.drops})`, low.drops === 0);
-  const ok = mineBlob(MAT.GOLD_ORE, TC.pickaxe, TT.iron);
-  check(`iron-tier pickaxe drops gold ore (${ok.drops})`, ok.drops > 0);
+  const low = mineBlob(MAT.GOLD_ORE, TC.dig, TT.stone);
+  check('low-tier dig tool breaks gold ore', low.centerEmpty);
+  check(`low-tier dig tool yields no gold drop (${low.drops})`, low.drops === 0);
+  const ok = mineBlob(MAT.GOLD_ORE, TC.dig, TT.iron);
+  check(`iron-tier dig tool drops gold ore (${ok.drops})`, ok.drops > 0);
 }
 
 // 4) Bare hand: drops loose soils (dirt), but not stone.
@@ -90,8 +98,8 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
 
 // 5) Determinism: an identical mining script produces identical grid + item counts.
 {
-  const a = mineBlob(MAT.STONE, TC.pickaxe, TT.wood);
-  const b = mineBlob(MAT.STONE, TC.pickaxe, TT.wood);
+  const a = mineBlob(MAT.STONE, TC.dig, TT.wood);
+  const b = mineBlob(MAT.STONE, TC.dig, TT.wood);
   check(`mining is deterministic (hash ${a.hash === b.hash ? 'match' : 'DIFFER'}, items ${a.itemCount}/${b.itemCount})`, a.hash === b.hash && a.itemCount === b.itemCount && a.drops === b.drops);
 }
 

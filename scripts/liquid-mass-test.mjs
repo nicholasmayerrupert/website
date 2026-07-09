@@ -327,6 +327,38 @@ function floorMat(e, mat) {
   e.destroy();
 }
 
+// --- 11. Light powder on denser liquid must not be eaten. Liquid→powder swaps
+//     used to re-claim powder parked in next[] and drop it on vacatedStamp
+//     (snow on water slowly vanished; sand denser than water was fine). ---
+{
+  console.log('\n11. light powder floats on denser liquid (no mass loss)');
+  {
+    const e = mk();
+    floorMat(e, MAT.STONE);
+    fillRect(e, 20, 55, 35, ROWS - 3, MAT.WATER);
+    fillRect(e, 25, 50, 28, 34, MAT.SNOW); // snow on top of water
+    runConserve(e, [MAT.SNOW, MAT.WATER], 250, 'snow on water');
+    e.destroy();
+  }
+  {
+    const e = mk();
+    floorMat(e, MAT.STONE);
+    fillRect(e, 25, 50, 35, 42, MAT.SNOW); // snow bed
+    fillRect(e, 20, 55, 20, 34, MAT.WATER); // water dumped on snow
+    runConserve(e, [MAT.SNOW, MAT.WATER], 250, 'water on snow');
+    e.destroy();
+  }
+  {
+    // Sand is denser than water — still must conserve (control / no regression).
+    const e = mk();
+    floorMat(e, MAT.STONE);
+    fillRect(e, 20, 55, 35, ROWS - 3, MAT.WATER);
+    fillRect(e, 25, 50, 28, 34, MAT.SAND);
+    runConserve(e, [MAT.SAND, MAT.WATER], 250, 'sand on water');
+    e.destroy();
+  }
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

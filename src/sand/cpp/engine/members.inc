@@ -451,10 +451,12 @@
   }
   // Land/claim for fall / down-diagonal / vertical sink: EMPTY, claimable gas,
   // or strictly lighter loose (liquid or powder).
+  // Gas/powder already written into next[] this tick are parked displacees —
+  // do not re-claim them (cascade would drop mass on vacatedStamp / overwrite).
   inline bool liquidCanClaim(int k, uint8_t m) {
     uint8_t n = L->next[k];
     if (n != EMPTY) {
-      if (isGasMaterial(n)) return false; // parked bubble
+      if (isGasMaterial(n) || isLooseSolidMaterial(n)) return false; // parked bubble/grain
       return canDisplaceMaterial(m, n);
     }
     if (L->vacatedStamp[k] == tick) return true;
@@ -507,16 +509,17 @@
       liquidDispPending.push_back({displaced, toK, fromK});
       return;
     }
-    // Gas: bubble into the mover's vacated source (one cell). Claim checks only
-    // allow grid-native gas, so a lower swap that parked gas in next[fromK] is
-    // not re-claimed by the cell above — bubbles rise ~1 cell/tick instead of
-    // teleporting to the free surface. Always relocate: gas is never a vacated
-    // powder ghost, and dropping it made acrid smoke vanish under liquid.
-    if (isGasMaterial(displaced)) {
+    // Gas / lighter powder: swap into the mover's vacated source (one cell).
+    // Claim checks only allow grid-native gas/powder, so a lower liquid swap that
+    // parked the displacee in next[fromK] is not re-claimed by the cell above —
+    // bubbles/grains rise ~1 cell/tick instead of cascading. Always relocate:
+    // the vacatedStamp[toK] powder guard below is for powder→powder ghosts and
+    // would drop liquid-displaced snow/steam (water "eats" snow).
+    if (isGasMaterial(displaced) || isLooseSolidMaterial(displaced)) {
       if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
       return;
     }
-    // Powder: only emit displacee if grid occupant is still present (not vacated).
+    // Other displacees (should be rare): only emit if grid occupant still present.
     if (L->vacatedStamp[toK] == tick) return;
     if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
   }

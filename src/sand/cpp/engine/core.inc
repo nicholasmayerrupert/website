@@ -217,15 +217,15 @@
     auto plannedAt = [&](int k) -> uint8_t {
       int y = k / cols, x = k - y * cols;
       // Active rows were blanked then rewritten — next[] is authoritative there
-      // for materials that already settled. Gas rises AFTER this resolve pass, so
-      // a blanked next[] still leaves grid gas occupying the cell; treat it as
-      // present so BFS does not place liquid on top of unmoved smoke/steam.
+      // for materials that already settled. Gas rises AFTER this resolve pass;
+      // powder may still sit only in grid if no sink claimed it. Treat both as
+      // present so BFS does not place liquid on unmoved smoke/snow.
       if (x >= L->activeRowMin[y] && x <= L->activeRowMax[y]) {
         uint8_t n = L->next[k];
         if (n != EMPTY) return n;
         if (L->vacatedStamp[k] == tick) return EMPTY;
         uint8_t g = L->grid[k];
-        if (isGasMaterial(g)) return g;
+        if (isGasMaterial(g) || isLooseSolidMaterial(g)) return g;
         return EMPTY;
       }
       return L->grid[k];

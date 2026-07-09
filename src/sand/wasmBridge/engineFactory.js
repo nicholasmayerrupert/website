@@ -99,14 +99,30 @@ function patchResizableWasmHeapForBrowserGL() {
     wrapPixelsScan('compressedTexImage2D');
     wrapPixelsScan('compressedTexSubImage2D');
 
-    // readPixels writes INTO the view — copy dest, call, copy back.
+    // readPixels writes INTO the view. Chromium rejects the WebGL2
+    // (dstData, dstOffset) form when dstData is a resizable heap (Emscripten's
+    // growable memory). Subarray form is fine; heap+offset is not. Copy into a
+    // fixed buffer, call, then write back.
     {
       const orig = p.readPixels;
       if (typeof orig === 'function') {
         p.readPixels = function patchedReadPixels(...args) {
+          // WebGL2: (x, y, w, h, format, type, dstData, dstOffset)
+          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && args[6].buffer?.resizable === true) {
+            const heap = args[6];
+            const offset = args[7] | 0;
+            const w = args[2] | 0, h = args[3] | 0;
+            // Engine always reads RGBA/UNSIGNED_BYTE; size is w*h*4 elements.
+            const tmp = new Uint8Array(Math.max(0, w * h * 4));
+            const ret = orig.call(this, args[0], args[1], w, h, args[4], args[5], tmp);
+            // dstOffset is an element index into the typed array (not a byte offset).
+            heap.set(tmp, offset);
+            return ret;
+          }
+          // WebGL1 / view form: (…, pixels)
           const last = args.length - 1;
           const dest = args[last];
-          if (ArrayBuffer.isView(dest) && dest.buffer && dest.buffer.resizable === true) {
+          if (ArrayBuffer.isView(dest) && dest.buffer?.resizable === true) {
             const copy = fixedBufferArg(dest);
             args[last] = copy;
             const ret = orig.apply(this, args);

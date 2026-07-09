@@ -276,8 +276,8 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('both mutual blocks reached the floor', fg[k(30, ROWS - 1)] === MAT.STONE && bg[k(30, ROWS - 1)] === MAT.STONE);
 }
 
-// 14. Component-bond support: a small connected overlap patch can transmit real
-//     support, but it is not the old brittle 50% total-overlap rule.
+// 14. Component-bond support: any same-(x,y) rigid contact transmits support.
+//     A small connected overlap patch holds a large block on the other layer.
 {
   console.log('cross-layer support: connected contact patch supports large fg block');
   const e = mk();
@@ -290,24 +290,23 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('large fg block stayed supported by small connected patch', after.n === before.n && after.minY === before.minY, `(top ${before.minY} -> ${after.minY}, cells ${before.n}->${after.n})`);
 }
 
-// 15. A one-cell accidental overlap is below the bond threshold and cannot hold
-//     up a large unsupported component.
+// 15. A single contact cell is enough: if either piece is supported, both are.
+//     (Old size/fraction heuristics used to drop large blocks on 1-cell overlap.)
 {
-  console.log('cross-layer support: one-cell overlap does not support a large block');
+  console.log('cross-layer support: one-cell overlap supports a large block');
   const e = mk();
   e.setBgEnabled(true);
   rect(e, 0, 30, 40, 30, 40);
   rect(e, 1, 29, 30, 30, ROWS); // grounded path outside the fg block
   e.paintDiscLayer(1, 30, 30, 0, MAT.STONE, true); e.syncComponentsLayer(1); // one supported overlap cell
   const before = bbox(e.getGrid(), 30, 40, 30, 45);
-  step(e, 30);
-  const after = bbox(e.getGrid(), 30, 45, 30, ROWS);
-  check('large fg block fell despite one-cell overlap', after.minY > before.minY + 2, `(top ${before.minY} -> ${after.minY})`);
+  step(e, 80);
+  const after = bbox(e.getGrid(), 30, 40, 30, 45);
+  check('large fg block stayed supported by one-cell overlap', after.n === before.n && after.minY === before.minY, `(top ${before.minY} -> ${after.minY}, cells ${before.n}->${after.n})`);
 }
 
 // 15b. A tiny (1-3 cell) fg chunk fully backed by grounded background solid stays
-//      supported: the bond floor is capped at the chunk's own size, so it bonds
-//      instead of falling (fails on the old fixed MIN_CELLS=4 floor).
+//      supported via any-contact cross-layer bonds.
 {
   console.log('cross-layer support: tiny fg chunk supported by grounded bg behind it');
   const e = mk();
@@ -318,6 +317,214 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   step(e, 60);
   const after = bbox(e.getGrid(), 28, 33, 18, 30);
   check('tiny fg chunk stayed supported by grounded bg', after.n === before.n && after.minY === before.minY, `(top ${before.minY} -> ${after.minY}, cells ${before.n}->${after.n})`);
+}
+
+// 15c. User repro: long background stone held by a ONE-CELL foreground contact;
+//      acid (or erase) eats the background FAR from the intersection. Any contact
+//      must keep the whole beam supported — the old MIN_CELLS/AREA_FRAC heuristics
+//      dropped large pieces when the overlap patch was small.
+{
+  console.log('cross-layer support: far-side dissolve keeps one-cell-supported bg beam');
+  const e = mk();
+  e.setBgEnabled(true);
+  // Grounded fg pillar top meets the beam at exactly one cell (12,45).
+  // Beam is y in [42,46); pillar starts at y=45 so co-occupation is only (12,45).
+  rect(e, 0, 12, 13, 45, ROWS);
+  rect(e, 1, 12, 45, 42, 46); // long 33×4 beam
+  const before = bbox(e.getGridBg(), 12, 45, 42, 46);
+  step(e, 30);
+  const settled = bbox(e.getGridBg(), 12, 45, 42, 46);
+  check('bg beam starts supported by one-cell fg contact', settled.n === before.n && settled.minY === before.minY,
+    `(top ${before.minY} -> ${settled.minY}, cells ${before.n}->${settled.n})`);
+  // Deterministic far-side carve (same topology change acid produces, without RNG):
+  // erase the right end of the beam, well away from x=12 contact.
+  for (let y = 42; y < 46; y++) for (let x = 38; x < 45; x++) e.eraseDiscLayer(1, x, y, 0);
+  step(e, 80);
+  const afterErase = bbox(e.getGridBg(), 12, 38, 42, 50);
+  check('bg beam stayed up after far-side erase', afterErase.n > 15 && afterErase.minY <= settled.minY + 1,
+    `(top ${settled.minY} -> ${afterErase.minY}, cells ${afterErase.n})`);
+  // Acid also at the far end of whatever remains — contact must still hold.
+  for (let i = 0; i < 12; i++) e.paintDiscLayer(1, 36, 41, 1, MAT.ACID, true);
+  step(e, 300);
+  const afterAcid = bbox(e.getGridBg(), 12, 38, 42, 55);
+  check('bg beam still present after far-side acid', afterAcid.n > 10, `(cells ${afterAcid.n})`);
+  check('bg beam did not fall through after far-side acid', afterAcid.minY <= settled.minY + 1,
+    `(top ${settled.minY} -> ${afterAcid.minY})`);
+}
+
+// 15d. Control for 15c: without the foreground pillar the same beam falls.
+{
+  console.log('cross-layer support: unsupported bg beam falls (control)');
+  const e = mk();
+  e.setBgEnabled(true);
+  rect(e, 1, 12, 45, 42, 46);
+  const before = bbox(e.getGridBg(), 12, 45, 42, 46);
+  step(e, 120);
+  const after = bbox(e.getGridBg(), 12, 45, 42, ROWS);
+  check('unsupported bg beam fell', after.minY > before.minY + 4, `(top ${before.minY} -> ${after.minY})`);
+}
+
+// 15f. Dual-layer stone that loses support must fall smoothly (~1 cell/step),
+//      even while acid is still dissolving cells. Regression for the stutter
+//      where jointBondsInvalid skipped moveCrossLayer every acid step while
+//      jointGroundReady+crossBonded blocked single-layer move — freezes then
+//      lurches.
+{
+  console.log('cross-layer support: dual-layer slab falls smoothly after acid cuts support');
+  const C = 80, R = 60;
+  const e = createEngineWasm({ cols: C, rows: R, infinite: false, sinksOn: false, worldSeed: 1 });
+  e.setBgEnabled(true);
+  const kk = (x, y) => y * C + x;
+  // Floor both layers.
+  for (let y = R - 3; y < R; y++) for (let x = 0; x < C; x++) {
+    e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  // Dual-layer slab at y=20..27, held by a dual-layer pillar at x=10..14 down to floor.
+  for (let y = 20; y < 28; y++) for (let x = 20; x < 50; x++) {
+    e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  for (let y = 28; y < R - 3; y++) for (let x = 10; x < 15; x++) {
+    e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  // Connect pillar to slab.
+  for (let y = 20; y < 28; y++) for (let x = 10; x < 20; x++) {
+    e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  e.syncComponentsLayer(0); e.syncComponentsLayer(1);
+  step(e, 30);
+  const slabTop = () => {
+    const g = e.getGrid();
+    let minY = R;
+    for (let y = 0; y < R - 3; y++) for (let x = 20; x < 50; x++) if (g[kk(x, y)] === MAT.STONE && y < minY) minY = y;
+    return minY;
+  };
+  const t0 = slabTop();
+  check('dual-layer slab starts supported', t0 === 20, `(top ${t0})`);
+  // Cut the pillar with continuous acid (both layers) so support dies while acid is active.
+  for (let i = 0; i < 500; i++) {
+    if (i % 2 === 0) {
+      e.paintDiscLayer(0, 12, 35, 2, MAT.ACID, true);
+      e.paintDiscLayer(1, 12, 35, 2, MAT.ACID, true);
+    }
+    e.step(16 * (i + 1));
+  }
+  const t1 = slabTop();
+  check('dual-layer slab fell after pillar cut', t1 > t0 + 8, `(top ${t0} -> ${t1})`);
+
+  // Fresh scene: instantaneous pillar erase, measure fall cadence.
+  // While falling, keep acid active nearby (jointDirty every few steps) — the
+  // stutter bug skipped moveCrossLayer on every acid step.
+  const e2 = createEngineWasm({ cols: C, rows: R, infinite: false, sinksOn: false, worldSeed: 2 });
+  e2.setBgEnabled(true);
+  for (let y = R - 3; y < R; y++) for (let x = 0; x < C; x++) {
+    e2.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e2.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  for (let y = 15; y < 25; y++) for (let x = 25; x < 55; x++) {
+    e2.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e2.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  for (let y = 25; y < R - 3; y++) for (let x = 30; x < 35; x++) {
+    e2.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+    e2.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  }
+  e2.syncComponentsLayer(0); e2.syncComponentsLayer(1);
+  step(e2, 20);
+  for (let y = 25; y < R - 3; y++) for (let x = 30; x < 35; x++) {
+    e2.eraseDiscLayer(0, x, y, 0);
+    e2.eraseDiscLayer(1, x, y, 0);
+  }
+  const top2 = () => {
+    const g = e2.getGrid();
+    let minY = R;
+    for (let y = 0; y < R - 3; y++) for (let x = 25; x < 55; x++) if (g[kk(x, y)] === MAT.STONE && y < minY) minY = y;
+    return minY;
+  };
+  let prev = top2();
+  const deltas = [];
+  for (let i = 0; i < 40; i++) {
+    // Acid off to the side (not eating the slab top, which would fake stalls).
+    if (i % 2 === 0) {
+      e2.paintDiscLayer(0, 10, 40, 2, MAT.ACID, true);
+      e2.paintDiscLayer(1, 10, 40, 2, MAT.ACID, true);
+    }
+    e2.step(16 * (i + 1));
+    const t = top2();
+    deltas.push(t - prev);
+    prev = t;
+    if (t >= R - 6) break; // near floor
+  }
+  // Mid-air prefix: stop at the first zero after we've already dropped several cells.
+  let dropped = 0;
+  const air = [];
+  for (const d of deltas) {
+    if (d === 0 && dropped >= 10) break;
+    air.push(d);
+    dropped += d;
+  }
+  const stallSteps = air.filter((d) => d === 0).length;
+  const multiDrops = air.filter((d) => d > 1).length;
+  check('dual-layer free-fall made progress', dropped >= 15, `(cells dropped ${dropped}, airSteps ${air.length})`);
+  check('dual-layer free-fall ~1 cell/step (no freezes)', stallSteps <= 1, `(zero-delta steps ${stallSteps}, deltas ${air.slice(0, 24).join(',')})`);
+  check('dual-layer free-fall not lurching', multiDrops <= 2, `(multi-cell steps ${multiDrops})`);
+  e2.destroy();
+  e.destroy();
+}
+
+// 15e. User repro: FG 5×100 grounded beam + BG 5×100 with only 3 columns of
+//      horizontal co-occupation. Continuous acid drip in the MIDDLE of the BG
+//      must NOT creep the whole beam down.
+//
+// Two failure modes this locks:
+//  1) acid pure-bore cleared cgBonds without jointDirty → joint pass skipped
+//  2) acid transfers into FG (empty cells / floor), FG dissolve cleared
+//     jointGroundReady mid-step → BG stepLayer re-ran single-layer grounding
+//     and dropped the beam one cell per tick until overlap was lost.
+// Real play has terrain/floor in FG, so (2) is the dominant path — test with a floor.
+{
+  console.log('cross-layer support: mid-beam acid does not drop 3-col-overlap bg slab');
+  const C = 220, R = 80;
+  const e = createEngineWasm({ cols: C, rows: R, infinite: false, sinksOn: false, worldSeed: 1 });
+  e.setBgEnabled(true);
+  const kk = (x, y) => y * C + x;
+  const bgTop = () => {
+    const g = e.getGridBg();
+    let minY = R, n = 0;
+    // Only the elevated slab (above the floor band).
+    for (let y = 0; y < 50; y++) for (let x = 117; x < 217; x++) if (g[kk(x, y)] === MAT.STONE) { n++; if (y < minY) minY = y; }
+    return { minY, n };
+  };
+  // FG floor (so transferred acid has somewhere to pool / dissolve — the real-play path).
+  for (let y = 50; y < R; y++) for (let x = 0; x < C; x++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  // FG 100×5 at y=30..34, connected to the floor by a thin column far from overlap.
+  for (let y = 30; y < 35; y++) for (let x = 20; x < 120; x++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  for (let y = 35; y < 50; y++) for (let x = 25; x < 28; x++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  // BG 100×5; overlap only x=117,118,119 (3 columns × 5 rows).
+  for (let y = 30; y < 35; y++) for (let x = 117; x < 217; x++) e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(1);
+  step(e, 40);
+  const settled = bgTop();
+  check('bg slab starts supported (3-col overlap)', settled.minY === 30 && settled.n === 500, `(top ${settled.minY}, n ${settled.n})`);
+  // Continuous acid drip mid-BG (x=167), far from the x=117..119 contact.
+  // Acid transfers into empty FG cells and pools on the FG floor — that used to
+  // clear jointGroundReady mid-step before BG moved.
+  for (let i = 0; i < 400; i++) {
+    if (i % 3 === 0) e.paintDiscLayer(1, 167, 28, 1, MAT.ACID, true);
+    e.step(16 * (i + 1));
+  }
+  const after = bgTop();
+  // May lose cells to acid, but the slab must not creep down / free-fall.
+  check('bg slab still at original height after mid-beam acid', after.minY === settled.minY,
+    `(top ${settled.minY} -> ${after.minY}, n ${settled.n}->${after.n})`);
+  check('bg slab mostly intact (not free-fallen to floor)', after.n > 300 && after.minY < 40,
+    `(n ${after.n}, top ${after.minY})`);
+  e.destroy();
 }
 
 // 16. Dynamic carve order: the first-carved layer can go inactive while held by

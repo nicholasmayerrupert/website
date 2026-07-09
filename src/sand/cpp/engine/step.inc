@@ -97,13 +97,15 @@
     double tJ0 = emscripten_get_now();
     // groundSawPowder keeps the joint pass running while powder is present:
     // powder grounding tracks liquids that move outside the dirty hooks, and
-    // cross-layer support (directGroundSmall) must stay as fresh as it was when
-    // powder used to force groundDirty. The pass itself is cheap now that each
-    // layer's grounding reuses its rigid base (computeGrounded tiers).
+    // cross-layer support bonds must stay as fresh as they were when powder used
+    // to force groundDirty. jointDirty covers acid pure-bore / erase that
+    // invalidates bonds without setting groundDirty (see ComponentSystem::jointDirty).
+    // The pass itself is cheap now that each layer's grounding reuses its rigid
+    // base (computeGrounded tiers).
     bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty
                          || fg.groundSawPowder || bg.groundSawPowder;
-    if (bgEnabled && (!comps.cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
-      computeGroundedBoth(); comps.jointGroundReady = true;
+    if (bgEnabled && (comps.jointDirty || !comps.cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
+      computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
@@ -113,7 +115,23 @@
     if (bgA) stepLayer(&bg);
     perfStepLayers = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();
-    if (comps.jointGroundReady && !comps.jointBondsInvalid) {
+    // Cross-layer assembly motion needs up-to-date joint grounding. Acid/erase
+    // mid-stepLayer dirties bonds (jointDirty) but deliberately leaves
+    // jointGroundReady set so the second layer doesn't single-layer-drop while
+    // still supported. That means this tick's start-of-step grounded flags can
+    // be stale after reactions: a dual-layer chunk that lost its support would
+    // skip moveRigidAssemblies (still marked cross-bonded + grounded) AND skip
+    // moveCrossLayerBondedAssemblies (jointBondsInvalid) — stuttering or freezing
+    // until a dissolve-free step. Refresh joints when dirtied, then move.
+    bool jointRefreshedAfterLayers = false;
+    if (bgEnabled && (comps.jointDirty || comps.jointBondsInvalid)) {
+      computeGroundedBoth();
+      comps.jointGroundReady = true;
+      comps.jointDirty = false;
+      comps.jointBondsInvalid = false;
+      jointRefreshedAfterLayers = true;
+    }
+    if (comps.jointGroundReady) {
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("pre-crossmove");
 #endif
@@ -121,10 +139,16 @@
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("post-crossmove");
 #endif
+      // After a post-reaction recompute, comps that lost support and are NOT
+      // cross-bonded were still "grounded" during stepLayer's moveRigidAssemblies.
+      // Give them one catch-up fall. Cross-bonded ungrounded comps are handled by
+      // moveCrossLayerBondedAssemblies above (and filtered out of this pass).
+      if (jointRefreshedAfterLayers) {
+        useLayer(&fg); moveRigidAssemblies();
+        useLayer(&bg); moveRigidAssemblies();
+      }
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
-    } else if (comps.jointBondsInvalid) {
-      comps.cgBonds.clear();
     }
     crossLayerReactions(fgA, bgA);
     transferPass(fgA, bgA);

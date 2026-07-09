@@ -474,11 +474,12 @@ void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::ve
 }
 
 // Cross-layer grounding (runs once per step when the background is live). Each
-// layer is grounded independently first; cross-layer contact then creates
-// transient component bonds only when a connected overlap patch is large enough.
-// A bonded assembly is grounded only if one member has ordinary same-layer/floor
-// support. Unsupported overlaps therefore fall together instead of pinning each
-// other, and tiny accidental overlaps do not transmit support.
+// layer is grounded independently first; any same-(x,y) rigid-rigid co-occupation
+// between components then creates a transient cross-layer bond. Support is
+// transitive across bonds: if either bonded component is base-grounded (floor /
+// edge / powder-on-liquid), every component in the groundParent cluster is
+// grounded. Unsupported bonded clusters fall together instead of pinning each
+// other mid-air. A single contact cell is enough — no size / fraction heuristics.
 // Produce one layer's BASE grounding (independent of the cross-layer step), either
 // by a full flood or by reusing the cached base from a prior flood. The reuse path
 // is taken only when the layer's rigid topology is provably unchanged: groundDirty
@@ -490,14 +491,12 @@ void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::ve
 // is a pure function of the grid; E.L->cellComp is written ONLY by grounding so it stays
 // valid untouched between passes). This halves computeGroundedBoth's cost in the
 // common two-layer pan case (the bg flood was ~half the joint-grounding time).
-void ComponentSystem::groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache) {
-  // computeGrounded's internal tiers do the caching now (rigid-base reuse +
-  // per-pass loose overlay); this just snapshots the layer's INDEPENDENT
-  // grounding for the cross-layer machinery (directGroundSmall / pair scans,
-  // which read rigid-cell bits from it before any cross-layer patch lands).
+void ComponentSystem::groundLayerBase(Layer* lay) {
+  // computeGrounded's internal tiers do the caching (rigid-base reuse +
+  // per-pass loose overlay). Result is the layer's INDEPENDENT grounding;
+  // computeGroundedBoth may then patch cross-layer support on top.
   E.useLayer(lay);
   computeGrounded();
-  baseCache.assign(lay->groundedCell.begin(), lay->groundedCell.end());
 }
 
 // Re-widen the settle band over cells that LOST grounding this pass (prev
@@ -516,10 +515,9 @@ void ComponentSystem::computeGroundedBoth() {
   cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
   cgPrevBg.assign(E.bg.groundedCell.begin(), E.bg.groundedCell.end());
   // Each layer's base grounding: full flood when its rigid topology changed, else a
-  // cheap cache reuse. cgFgBase/cgBgBase are populated here (the cross-layer machinery
-  // below reads them as the independent base snapshots).
-  groundLayerBase(&E.fg, cgFgBase);
-  groundLayerBase(&E.bg, cgBgBase);
+  // cheap cache reuse inside computeGrounded.
+  groundLayerBase(&E.fg);
+  groundLayerBase(&E.bg);
 
   int nf = compCount(E.fg), nb = compCount(E.bg);
   E.fg.crossBondedComp.assign(nf, 0);
@@ -527,14 +525,9 @@ void ComponentSystem::computeGroundedBoth() {
   cgBonds.clear();
 
   // Common settled-terrain case: every component already grounded by its own
-  // layer's flood. Then the whole cross-layer machinery below is provably a no-op
-  // — directGroundSmall only ever touches UNGROUNDED comps, and with none
-  // ungrounded no bond patch can form (a bond needs an ungrounded endpoint). So
-  // skip it, AND skip the two full-grid base snapshots (cgFgBase/cgBgBase) that
-  // only directGroundSmall + the pair-overlap test read. E.fg.groundedCell is
-  // untouched by bg's flood, so deferring those copies to the ungrounded path
-  // below is byte-identical to taking them here. Only wakeCellsThatLostGrounding (re-waking cells
-  // that lost grounding) still must run.
+  // layer's flood. Cross-layer bonds only matter when at least one component is
+  // still ungrounded (a bond needs an ungrounded endpoint to change anything).
+  // Only wakeCellsThatLostGrounding still must run in the all-grounded case.
   bool anyUngrounded = false;
   for (int i = 0; i < nf && !anyUngrounded; i++) if (!compById(E.fg, i)->grounded) anyUngrounded = true;
   for (int i = 0; i < nb && !anyUngrounded; i++) if (!compById(E.bg, i)->grounded) anyUngrounded = true;
@@ -543,55 +536,29 @@ void ComponentSystem::computeGroundedBoth() {
     E.useLayer(&E.fg);
     return;
   }
-  // cgFgBase/cgBgBase already hold each layer's base grounding (groundLayerBase).
 
-  // Tiny (< MIN_CELLS) chunks can never reach the bond patch threshold, so a
-  // 1-3 cell stone bit in front of solid background used to fall. They also
-  // don't need the coupled-assembly move machinery (they just shouldn't fall) —
-  // routing them through bonds made churny terrain re-run that machinery every
-  // step. Instead ground a tiny ungrounded comp directly when a majority of its
-  // cells are backed by GROUNDED other-layer rigid. Uses the independent base
-  // grounding snapshots (cgFgBase/cgBgBase) so it never chains or lets two
-  // ungrounded chunks float on each other; cheap (O(tiny-comp cells)).
-  auto directGroundSmall = [&](Layer& lay, int count, const std::vector<uint8_t>& otherBase, const uint8_t* otherGrid) {
-    for (int i = 0; i < count; i++) {
-      Comp* c = compById(lay, i);
-      if (c->grounded || (int)c->cells.size() >= CROSS_LAYER_BOND_MIN_CELLS) continue;
-      int backed = 0;
-      for (int k : c->cells) if (otherBase[k] && E.isRigidMaterialClass(otherGrid[k])) backed++;
-      if (backed * 2 >= (int)c->cells.size()) { c->grounded = true; for (int k : c->cells) lay.groundedCell[k] = 1; }
-    }
-  };
-  directGroundSmall(E.fg, nf, cgBgBase, E.bg.grid);
-  directGroundSmall(E.bg, nb, cgFgBase, E.fg.grid);
-
-  bool anyUnsupported = false;
-  for (int i = 0; i < nf && !anyUnsupported; i++) if (!compById(E.fg, i)->grounded) anyUnsupported = true;
-  for (int i = 0; i < nb && !anyUnsupported; i++) if (!compById(E.bg, i)->grounded) anyUnsupported = true;
-
-  if (!anyUnsupported) {
-    wakeCellsThatLostGrounding(E.fg, cgPrevFg); wakeCellsThatLostGrounding(E.bg, cgPrevBg);
-    E.useLayer(&E.fg);
-    return;
-  }
-
-  std::vector<int> fgArea(nf, 0), bgArea(nb, 0);
-  for (int i = 0; i < nf; i++) fgArea[i] = (int)compById(E.fg, i)->cells.size();
-  for (int i = 0; i < nb; i++) bgArea[i] = (int)compById(E.bg, i)->cells.size();
-
-  std::unordered_map<int64_t, std::vector<int>> pairCells;
+  // Bond any fg/bg component pair that co-occupies at least one cell. Scan only
+  // ungrounded endpoints (a fully base-grounded pair needs no bond). One cell of
+  // contact is enough to transmit support; no patch-size / area-fraction gate.
   const int32_t* const bgCC = E.bg.cellComp.data();
   const uint8_t* const bgG = E.bg.grid;
   const int32_t* const fgCC = E.fg.cellComp.data();
   const uint8_t* const fgG = E.fg.grid;
+  std::unordered_set<int64_t> pairSeen;
+  auto bondPair = [&](int fi, int bi) {
+    int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
+    if (!pairSeen.insert(key).second) return;
+    cgBonds.push_back({fi, bi, true});
+    E.fg.crossBondedComp[fi] = 1;
+    E.bg.crossBondedComp[bi] = 1;
+  };
   for (int fi = 0; fi < nf; fi++) {
     Comp* fc = compById(E.fg, fi);
     if (fc->grounded) continue;
     for (int k : fc->cells) {
       int bi = bgCC[k];
       if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(bgG[k])) continue;
-      int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
-      pairCells[key].push_back(k);
+      bondPair(fi, bi);
     }
   }
   for (int bi = 0; bi < nb; bi++) {
@@ -599,48 +566,8 @@ void ComponentSystem::computeGroundedBoth() {
     if (bc->grounded) continue;
     for (int k : bc->cells) {
       int fi = fgCC[k];
-      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k]) || !compById(E.fg, fi)->grounded) continue;
-      int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
-      pairCells[key].push_back(k);
-    }
-  }
-
-  // Largest-connected-overlap test, stamp-flooded (no per-pair hash sets): a cell
-  // of this pair's overlap is "present" iff seen[k] == gen; consuming it sets 0.
-  std::vector<int32_t>& seen = E.fg.seenStamp;
-  std::vector<int>& stack = cgStack;
-  for (auto& kv : pairCells) {
-    int fi = (int)(kv.first >> 32), bi = (int)(uint32_t)kv.first;
-    int required = imax(CROSS_LAYER_BOND_MIN_CELLS, (int)std::ceil(CROSS_LAYER_BOND_AREA_FRAC * (double)imin(fgArea[fi], bgArea[bi])));
-    if ((int)kv.second.size() < required) continue;
-    int32_t gen = ++E.fg.seenGen;
-    for (int k : kv.second) seen[k] = gen;
-    int largest = 0;
-    for (int start : kv.second) {
-      if (seen[start] != gen) continue;
-      seen[start] = 0; stack.clear(); stack.push_back(start);
-      int patch = 0;
-      while (!stack.empty()) {
-        int k = stack.back(); stack.pop_back(); patch++;
-        int y = k / E.cols, x = k - y * E.cols;
-        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-          if (!ox && !oy) continue;
-          int nx = x + ox, ny = y + oy;
-          if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
-          int nk = ny * E.cols + nx;
-          if (seen[nk] == gen) { seen[nk] = 0; stack.push_back(nk); }
-        }
-      }
-      if (patch > largest) largest = patch;
-    }
-    if (largest >= required) {
-      cgBonds.push_back({fi, bi, true});
-      E.fg.crossBondedComp[fi] = 1;
-      E.bg.crossBondedComp[bi] = 1;
-    } else if (largest > 0 && !compById(E.fg, fi)->grounded && !compById(E.bg, bi)->grounded) {
-      cgBonds.push_back({fi, bi, false});
-      E.fg.crossBondedComp[fi] = 1;
-      E.bg.crossBondedComp[bi] = 1;
+      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k])) continue;
+      bondPair(fi, bi);
     }
   }
 
@@ -655,7 +582,9 @@ void ComponentSystem::computeGroundedBoth() {
   for (int i = 0; i < nf + nb; i++) parent[i] = groundParent[i] = i;
   for (auto& b : cgBonds) {
     ufUnite(parent, b.fgComp, nf + b.bgComp);
-    if (b.supportsGround) ufUnite(groundParent, b.fgComp, nf + b.bgComp);
+    // Every contact bond transmits support: if either endpoint (or any same-layer
+    // neighbour united below) is base-grounded, the whole cluster is grounded.
+    ufUnite(groundParent, b.fgComp, nf + b.bgComp);
   }
   // Same-layer adjacency: bounded walk from ungrounded bonded comps instead of
   // the old O(E.cols*E.rows) full-grid scan (the panning-perf regression).
@@ -1340,7 +1269,11 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
 
 // split a plant-family component list keeping only cells still of plant material
 void ComponentSystem::splitPlantAfterErase() {
-  if (jointGroundReady) { jointBondsInvalid = true; jointGroundReady = false; }
+  // Dirty joints for the NEXT step, but leave jointGroundReady set: clearing it
+  // mid-step lets the other layer's stepLayer re-run single-layer grounding and
+  // drop cross-supported stone before this tick finishes (acid often transfers
+  // to the opposite layer and dissolves there first).
+  if (E.bgEnabled) { jointBondsInvalid = true; jointDirty = true; }
   E.L->groundDirty = true; // plant cells removed/split -> full reflood
   std::vector<Comp> updated;
   std::vector<int32_t>& seen = E.L->seenStamp;
@@ -1370,7 +1303,14 @@ void ComponentSystem::splitPlantAfterErase() {
 // cut-vertex check (noteAcidRemovals) to keep the grounding cache valid when a
 // dissolve doesn't disconnect anything.
 void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty) {
-  if (jointGroundReady && !erased.empty()) { jointBondsInvalid = true; jointGroundReady = false; }
+  // Dirty joints for the NEXT step when bg is live. Even acid pure-bore
+  // (markGroundDirty=false) must force a recompute — but do NOT clear
+  // jointGroundReady mid-step. step() grounds jointly, then stepLayer(fg) then
+  // stepLayer(bg). Acid transferred into the first layer can dissolve there and
+  // used to clear jointGroundReady before the second layer moved; that layer
+  // then ran ensureGroundedSingleLayer (no cross-support) and crept down one
+  // cell per dissolve until co-occupation was lost and it free-fell.
+  if (E.bgEnabled && !erased.empty()) { jointBondsInvalid = true; jointDirty = true; }
   if (markGroundDirty && !erased.empty()) E.L->groundDirty = true;
   if (erased.empty() || list.empty()) return;
   std::vector<int32_t>& seen = E.L->seenStamp;

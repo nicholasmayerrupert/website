@@ -25,8 +25,17 @@ class ComponentSystem {
   // ---- grounding cache + scratch (moved off the Engine) ----
   bool jointGroundReady = false;
   bool jointBondsInvalid = false;
+  // Sticky: bonds were invalidated (acid/erase/split) and computeGroundedBoth
+  // must run on the next step even if the acid pure-bore path left groundDirty
+  // and groundContentDirty false and cleared cgBonds. Without this, the joint
+  // pass can skip, ensureGroundedSingleLayer re-grounds without cross-layer
+  // support, and a held beam creeps down one cell at a time until co-occupation
+  // is lost and it free-falls.
+  // NOTE: invalidation must NOT clear jointGroundReady mid-step — the other
+  // layer may still need this tick's joint grounded flags for moveRigidAssemblies.
+  bool jointDirty = false;
   // Reusable scratch for computeGroundedBoth() (sized to cols*rows once).
-  std::vector<uint8_t> cgPrevFg, cgPrevBg, cgFgBase, cgBgBase, cgVisited;
+  std::vector<uint8_t> cgPrevFg, cgPrevBg, cgVisited;
   std::vector<int> cgStack, cgIsland;
   // Parallel x-coordinate stack for computeGrounded's flood.
   std::vector<int32_t> groundStackX;
@@ -65,7 +74,7 @@ class ComponentSystem {
   bool removalsKeepGroundingValid(const std::vector<int>& removed);
   int compCount(Layer& lay);
   void unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb);
-  void groundLayerBase(Layer* lay, std::vector<uint8_t>& baseCache);
+  void groundLayerBase(Layer* lay);
   void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev);
   void computeGroundedBoth();
   Comp* compById(Layer& lay, int id);

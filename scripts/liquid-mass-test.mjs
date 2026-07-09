@@ -197,6 +197,75 @@ function runConserve(e, mats, steps, label) {
   e.destroy();
 }
 
+// Stone floor for non-acid liquids. Acid uses ICE (non-dissolvable) so
+// volume isn't eaten by dissolve+decay; water must not use ICE (freezes).
+function floorMat(e, mat) {
+  for (let x = 5; x < COLS - 5; x++) e.paintDisc(x, ROWS - 2, 0, mat, true);
+  e.syncComponents();
+}
+
+// --- 8. Free-fall through empty space: multi-cell liquid falls must not ghost-
+//     duplicate via stale double-buffer cells outside the dirty pad. ---
+{
+  console.log('\n8. free-fall through empty (no count increase)');
+  const cases = [
+    [MAT.WATER, MAT.STONE],
+    [MAT.OIL, MAT.STONE],
+    [MAT.BRINE, MAT.STONE],
+    [MAT.ACID, MAT.ICE],
+  ];
+  for (const [mat, floor] of cases) {
+    const e = mk();
+    floorMat(e, floor);
+    // Compact blob from high so multi-cell density-scaled fall engages.
+    fillRect(e, 30, 40, 4, 12, mat);
+    const name = Object.keys(MAT).find((n) => MAT[n] === mat) || String(mat);
+    runConserve(e, [mat], 100, `free-fall ${name}`);
+    e.destroy();
+  }
+}
+
+// --- 9. Free-fall / sink through another fluid (density chain + multi-cell). ---
+{
+  console.log('\n9. fall/sink through another fluid (no count increase)');
+  // denser into lighter
+  {
+    const e = mk();
+    floorMat(e, MAT.STONE);
+    fillRect(e, 20, 55, 35, ROWS - 3, MAT.OIL);   // deep oil pool
+    fillRect(e, 28, 42, 6, 16, MAT.WATER);          // water blob above, must sink
+    runConserve(e, [MAT.WATER, MAT.OIL], 100, 'water through oil');
+    e.destroy();
+  }
+  {
+    const e = mk();
+    floorMat(e, MAT.STONE);
+    fillRect(e, 20, 55, 35, ROWS - 3, MAT.WATER);
+    fillRect(e, 28, 42, 6, 16, MAT.BRINE);
+    runConserve(e, [MAT.BRINE, MAT.WATER], 100, 'brine through water');
+    e.destroy();
+  }
+  {
+    const e = mk();
+    floorMat(e, MAT.ICE);
+    fillRect(e, 20, 55, 35, ROWS - 3, MAT.OIL);
+    fillRect(e, 28, 42, 6, 16, MAT.ACID);
+    runConserve(e, [MAT.ACID, MAT.OIL], 100, 'acid through oil');
+    e.destroy();
+  }
+  // Columns falling side-by-side in empty air (no acid — would need ICE floor,
+  // which freezes water). Separate free-fall ACID case covers acid.
+  {
+    const e = mk();
+    floorMat(e, MAT.STONE);
+    fillRect(e, 12, 16, 3, 10, MAT.WATER);
+    fillRect(e, 28, 32, 3, 10, MAT.OIL);
+    fillRect(e, 44, 48, 3, 10, MAT.BRINE);
+    runConserve(e, [MAT.WATER, MAT.OIL, MAT.BRINE], 100, 'three liquids free-fall');
+    e.destroy();
+  }
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

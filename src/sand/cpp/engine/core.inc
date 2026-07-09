@@ -49,14 +49,14 @@
     uint8_t self = L->grid[k];
     int belowK = k + cols;
     if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
-    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(belowK, self); return; }
+    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) { vacateForNextMove(k); writeNextIndex(belowK, self); return; }
     if (y + 1 < rows && canDisplaceMaterial(self, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
     int firstDx = rand() < 0.5 ? -1 : 1, secondDx = -firstDx;
     for (int i = 0; i < 2; i++) {
       int dx = i == 0 ? firstDx : secondDx; int nx = x + dx;
       if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
       int ik = belowK + dx; uint8_t m = L->grid[ik];
-      if (m == EMPTY && L->next[ik] == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(ik, self); return; }
+      if (m == EMPTY && L->next[ik] == EMPTY) { vacateForNextMove(k); writeNextIndex(ik, self); return; }
       if (canDisplaceMaterial(self, m) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
     }
     if (L->next[k] == EMPTY) writeNextIndex(k, self);
@@ -98,11 +98,17 @@
       }
       uint8_t dstOcc = liquidOccupantAt(dst);
       if (dstOcc == EMPTY) {
-        L->vacatedStamp[k] = tick; writeNextIndex(dst, m);
+        // Vacate source + write dest. Multi-cell jumps must dirty the full span:
+        // DIRTY_PAD_Y is only 2, but liquids fall up to LIQUID_FALL_CAP (5), so
+        // without this the vacated source/intermediate rows fall outside next
+        // step's active band, prepareNextBuffer skips them, and the double
+        // buffer resurrects stale water as a ghost trail (false "duplication").
+        vacateForNextMove(k);
+        writeNextIndex(dst, m);
+        if (dst != k) markMoveSpan(k, dst);
       } else {
         moveLiquidInto(k, x, dst / cols, m); // gas swap or lighter-liquid displace+enqueue
       }
-      if (dst != belowK) markDirtyRect(x, y, x, dst / cols);
       return;
     }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
@@ -112,7 +118,7 @@
       int ik = I(nx, ny);
       if (!liquidCanClaim(ik, m)) continue;
       uint8_t occ = liquidOccupantAt(ik);
-      if (occ == EMPTY) { L->vacatedStamp[k] = tick; writeNextIndex(ik, m); return; }
+      if (occ == EMPTY) { vacateForNextMove(k); writeNextIndex(ik, m); return; }
       moveLiquidInto(k, nx, ny, m);
       return;
     }
@@ -288,6 +294,12 @@
             spareFree.push_back(fb);
           }
           writeNextIndex(target, mat);
+          // Far BFS landings can sit outside the denser's dirty pad. Ghosts only
+          // resurrect at *written/vacated* cells, so mark those endpoints — not the
+          // full from↔target bounding box (that would keep half the grid awake).
+          markCellIndex(pending[gi + i].from);
+          markCellIndex(target);
+          if (fb > 0 && fb < gridLen) markCellIndex(fb);
         }
         // Unplaced: own fallback first, then spare free slots from peers that landed.
         for (int i = n; i < need; i++) {
@@ -295,6 +307,8 @@
           if (fb > 0 && fb < gridLen && plannedAt(fb) == EMPTY) {
             L->rigidSpillReserved[fb] = reservedGen;
             writeNextIndex(fb, mat);
+            markCellIndex(pending[gi + i].from);
+            markCellIndex(fb);
             continue;
           }
           while (!spareFree.empty()) {
@@ -303,6 +317,8 @@
             if (s > 0 && s < gridLen && plannedAt(s) == EMPTY) {
               L->rigidSpillReserved[s] = reservedGen;
               writeNextIndex(s, mat);
+              markCellIndex(pending[gi + i].from);
+              markCellIndex(s);
               break;
             }
           }

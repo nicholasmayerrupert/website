@@ -381,8 +381,31 @@
     }
     return false;
   }
+  // Stamp source vacated for this tick AND mark it dirty. Vacate alone is not
+  // enough: prepareNextBuffer only blanks active rows, and a multi-cell liquid
+  // fall can leave the source outside the destination's DIRTY_PAD_Y band next
+  // step. Unblanked next[source] then resurrects a 2-tick-old value as a ghost
+  // trail (looks like fluid duplication while falling).
+  inline void vacateForNextMove(int fromK) {
+    L->vacatedStamp[fromK] = tick;
+    markCellIndex(fromK);
+  }
+  // Mark every cell on a vertical/horizontal move span dirty so intermediate
+  // rows stay in the active band and get blanked next prepareNextBuffer.
+  inline void markMoveSpan(int fromK, int toK) {
+    int fy = fromK / cols, fx = fromK - fy * cols;
+    int ty = toK / cols, tx = toK - ty * cols;
+    if (fx == tx && fy == ty) { markCellIndex(fromK); return; }
+    markDirtyRect(imin(fx, tx), imin(fy, ty), imax(fx, tx), imax(fy, ty));
+  }
   inline void writeNextIndex(int k, uint8_t m) {
-    if (L->next[k] == m) return;
+    // Even when next[] already holds m (stale double-buffer residue), still mark
+    // if the committed grid differs — otherwise a reclaim that early-outs here
+    // leaves the vacated source without a dirty mark and ghosts can return.
+    if (L->next[k] == m) {
+      if (L->grid[k] != m) markCellIndex(k);
+      return;
+    }
     L->next[k] = m;
     if (L->grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }
@@ -444,7 +467,10 @@
     // denser cell can overwrite a lighter liquid that already settled into next[].
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
     writeNextIndex(toK, m);
-    L->vacatedStamp[fromK] = tick;
+    vacateForNextMove(fromK);
+    // Multi-cell liquid sinks (and any sparse jump) must dirty the full span so
+    // vacated/intermediate rows stay blankable across the double buffer.
+    if (fromK != toK) markMoveSpan(fromK, toK);
     if (displaced == EMPTY || displaced == m || !canDisplaceMaterial(m, displaced)) return;
     if (!isLiquidMaterial(m) && L->vacatedStamp[toK] == tick) return;
     // Liquid→liquid: denser claims the cell; lighter is relocated by multi-source BFS

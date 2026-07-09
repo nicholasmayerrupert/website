@@ -242,11 +242,13 @@ struct Item {
 // identically — the foundation for multiplayer.
 // Player physics tunables (cells; velocities in cells per fixed step).
 static const int    PLAYER_W = 4, PLAYER_H = 8;
-// Gravity is deliberately soft (half a classic platformer 0.25) so falls feel
-// floaty at sand-cell scale. Move/run caps are ~2/3 of the old values.
-static const double P_GRAVITY = 0.125, P_MAX_FALL = 6.0;
-static const double P_MOVE_ACCEL = 0.28, P_MAX_RUN = 0.70, P_RUN_MULT = 1.7;
-static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.8;
+// Gravity is deliberately soft so falls feel floaty at sand-cell scale.
+// Move/run caps are ~2/3 of the original platformer values.
+static const double P_GRAVITY = 0.078125, P_MAX_FALL = 6.0;
+// Speed was cut ~33% from 0.42/1.05; restored half that cut → mid-way boost.
+static const double P_MOVE_ACCEL = 0.35, P_MAX_RUN = 0.875, P_RUN_MULT = 1.7;
+// Jump height ~ v^2/(2g); √0.75 keeps height ~25% lower at current gravity.
+static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.035;
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)

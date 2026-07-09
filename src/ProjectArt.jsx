@@ -49,13 +49,6 @@ export function ChessArt() {
           <stop offset="0%" stopColor="#4a1d85" />
           <stop offset="100%" stopColor="#1c0638" />
         </linearGradient>
-        <filter id="chess-glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="3" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
       </defs>
 
       <rect width="400" height="300" fill="url(#chess-bg)" />
@@ -80,7 +73,7 @@ export function ChessArt() {
       </g>
       <g fill="#d9b8ff">
         {[[40, 60], [70, 40], [95, 75], [60, 95], [330, 200], [355, 178], [372, 212], [342, 226]].map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="2" className="pa-pulse" style={{ animationDelay: `${i * 0.4}s` }} />
+          <circle key={i} cx={x} cy={y} r="2" opacity={0.55 + (i % 3) * 0.12} />
         ))}
       </g>
 
@@ -93,8 +86,8 @@ export function ChessArt() {
       <rect x="142" y="240" width="128" height="15" rx="7" fill="#160433" stroke="#6d28d9" strokeWidth="1" />
       <line x1="152" y1="241.5" x2="260" y2="241.5" stroke="rgba(217,184,255,0.35)" strokeWidth="1" />
 
-      {/* the pawn */}
-      <g filter="url(#chess-glow)">
+      {/* the pawn — soft rim via stroke; no SVG blur filter (expensive under CSS anim). */}
+      <g>
         <circle
           cx="205"
           cy="92"
@@ -148,19 +141,19 @@ export function ChessArt() {
       </g>
       <g fill="#ffd166">
         {traceNodes.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="2.2" className="pa-pulse" style={{ animationDelay: `${(i % 5) * 0.5}s` }} />
+          <circle key={i} cx={x} cy={y} r="2.2" className={i % 3 === 0 ? 'pa-pulse' : undefined} style={i % 3 === 0 ? { animationDelay: `${(i % 5) * 0.5}s` } : undefined} opacity={i % 3 === 0 ? 1 : 0.75} />
         ))}
       </g>
 
       {/* a thought forming */}
-      <circle cx="235" cy="58" r="2" fill="#d9b8ff" className="pa-twinkle" />
-      <circle cx="252" cy="46" r="3" fill="#d9b8ff" className="pa-twinkle" style={{ animationDelay: '0.5s' }} />
-      <circle cx="270" cy="36" r="4" fill="#d9b8ff" className="pa-twinkle" style={{ animationDelay: '1s' }} />
+      <circle cx="235" cy="58" r="2" fill="#d9b8ff" opacity="0.7" />
+      <circle cx="252" cy="46" r="3" fill="#d9b8ff" opacity="0.85" />
+      <circle cx="270" cy="36" r="4" fill="#d9b8ff" className="pa-twinkle" />
       <Sparkle x={290} y={24} s={9} fill="#ffd166" className="pa-twinkle" style={{ animationDelay: '1.5s' }} />
 
-      <Sparkle x={70} y={198} s={6} fill="#d9b8ff" className="pa-twinkle" style={{ animationDelay: '0.8s' }} />
+      <Sparkle x={70} y={198} s={6} fill="#d9b8ff" opacity={0.7} />
       <Sparkle x={332} y={70} s={8} fill="#d9b8ff" className="pa-twinkle" style={{ animationDelay: '2s' }} />
-      <Sparkle x={110} y={66} s={5} fill="#ffd166" className="pa-twinkle" style={{ animationDelay: '2.6s' }} />
+      <Sparkle x={110} y={66} s={5} fill="#ffd166" opacity={0.8} />
     </svg>
   );
 }
@@ -239,8 +232,7 @@ const BG_SAND_CELLS = [
 
 const FALLING_GRAINS = [
   { x: 5, y: 0, fill: '#ffd166', delay: 0 },
-  { x: 10, y: 1, fill: '#3ce0ff', delay: 0.25 },
-  { x: 12, y: 2, fill: '#ff7b2f', delay: 0.9 },
+  { x: 10, y: 1, fill: '#3ce0ff', delay: 0.9 },
 ];
 
 const sandCellX = (c) => SAND_GRID.x + c * (SAND_GRID.size + SAND_GRID.gap);
@@ -391,8 +383,8 @@ export function SandSimArt() {
       </g>
 
       <Sparkle x={52} y={64} s={6} fill="#3ce0ff" className="pa-twinkle" style={{ animationDelay: '0.4s' }} />
-      <Sparkle x={346} y={78} s={8} fill="#7ef2d0" className="pa-twinkle" style={{ animationDelay: '1.2s' }} />
-      <Sparkle x={62} y={238} s={7} fill="#d9b8ff" className="pa-twinkle" style={{ animationDelay: '2s' }} />
+      <Sparkle x={346} y={78} s={8} fill="#7ef2d0" opacity={0.75} />
+      <Sparkle x={62} y={238} s={7} fill="#d9b8ff" opacity={0.7} />
       <Sparkle x={350} y={250} s={5} fill="#ffd166" className="pa-twinkle" style={{ animationDelay: '2.6s' }} />
     </svg>
   );
@@ -414,19 +406,15 @@ function Conifer({ x, y, h, fill, opacity = 1 }) {
 }
 
 const EMBERS = [
-  { x: 272, y: 212, r: 2.2, delay: 0, dur: 3.2 },
-  { x: 288, y: 200, r: 1.6, delay: 0.7, dur: 3.8 },
-  { x: 305, y: 216, r: 2, delay: 1.4, dur: 3 },
-  { x: 296, y: 190, r: 1.4, delay: 2.1, dur: 4.2 },
-  { x: 280, y: 224, r: 1.8, delay: 2.8, dur: 3.5 },
-  { x: 314, y: 204, r: 1.5, delay: 1, dur: 3.9 },
-  { x: 196, y: 232, r: 1.6, delay: 0.4, dur: 3.6 },
-  { x: 206, y: 226, r: 1.3, delay: 1.9, dur: 3.1 },
+  { x: 272, y: 212, r: 2.2, delay: 0, dur: 3.6 },
+  { x: 305, y: 216, r: 2, delay: 1.2, dur: 3.4 },
+  { x: 288, y: 200, r: 1.6, delay: 2.2, dur: 4 },
+  { x: 196, y: 232, r: 1.6, delay: 0.8, dur: 3.8 },
 ];
 
 const FIRE_STARS = [
   [30, 30], [74, 18], [128, 42], [182, 22], [232, 38],
-  [262, 16], [310, 30], [368, 22], [388, 60], [54, 64], [152, 60],
+  [310, 30], [368, 22], [54, 64],
 ];
 
 export function WildfireArt() {
@@ -447,21 +435,22 @@ export function WildfireArt() {
           <stop offset="0%" stopColor="rgba(255,179,71,0.35)" />
           <stop offset="100%" stopColor="rgba(255,179,71,0)" />
         </linearGradient>
-        <filter id="fire-glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="3" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
       </defs>
 
       <rect width="400" height="300" fill="url(#fire-sky)" />
 
-      {/* stars */}
+      {/* stars — mostly static; one twinkles for life */}
       <g fill="#d9b8ff">
         {FIRE_STARS.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 1.4 : 0.9} className="pa-twinkle" style={{ animationDelay: `${i * 0.45}s` }} />
+          <circle
+            key={i}
+            cx={x}
+            cy={y}
+            r={i % 3 === 0 ? 1.4 : 0.9}
+            opacity={0.45 + (i % 4) * 0.12}
+            className={i === 0 || i === 4 ? 'pa-twinkle' : undefined}
+            style={i === 0 || i === 4 ? { animationDelay: `${i * 0.45}s` } : undefined}
+          />
         ))}
       </g>
 
@@ -499,13 +488,13 @@ export function WildfireArt() {
       <Conifer x={340} y={250} h={48} fill="#0e051f" />
 
       {/* small flame on the burning tree */}
-      <g className="pa-flicker" filter="url(#fire-glow)">
+      <g className="pa-flicker">
         <path d="M 204 232 C 196 226 194 216 199 209 C 202 205 202 200 200 196 C 207 201 210 208 209 213 C 212 210 213 205 212 201 C 217 209 216 222 209 229 C 207 231 206 232 204 232 Z" fill="#ff9d3f" />
         <path d="M 204 229 C 199 225 198 219 201 214 C 203 211 203 208 202 205 C 207 209 209 215 207 219 C 210 222 208 227 204 229 Z" fill="#ffe08a" />
       </g>
 
-      {/* the main fire */}
-      <g className="pa-flicker" style={{ animationDuration: '1.1s' }} filter="url(#fire-glow)">
+      {/* the main fire — CSS scale only (no SVG blur) */}
+      <g className="pa-flicker" style={{ animationDuration: '1.1s' }}>
         <path
           d="M 290 244
              C 262 232 256 206 266 188
@@ -579,7 +568,7 @@ export function WildfireArt() {
         <polyline points="38,108 56,100 72,104 88,88 104,90 120,74 136,78 150,62" fill="none" stroke="#ffb347" strokeWidth="1.6" />
         <line x1="38" y1="106" x2="150" y2="64" stroke="#ff7b2f" strokeWidth="1" strokeDasharray="4 4" opacity="0.55" />
         {[[56, 100], [88, 88], [120, 74], [150, 62]].map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="2.4" fill="#ffe08a" className="pa-pulse" style={{ animationDelay: `${i * 0.6}s` }} />
+          <circle key={i} cx={x} cy={y} r="2.4" fill="#ffe08a" className={i === 3 ? 'pa-pulse' : undefined} opacity={i === 3 ? 1 : 0.85} />
         ))}
       </g>
     </svg>
@@ -597,14 +586,14 @@ const isoPt = (c, r, layer) => ({
 });
 const pts = (list) => list.map((p) => `${p.x},${p.y}`).join(' ');
 
-function IsoCube({ c, r, layer, top, left, right, glow, className, style, opacity = 1 }) {
+function IsoCube({ c, r, layer, top, left, right, className, style, opacity = 1 }) {
   const p00 = isoPt(c, r, layer);
   const p10 = isoPt(c + 1, r, layer);
   const p11 = isoPt(c + 1, r + 1, layer);
   const p01 = isoPt(c, r + 1, layer);
   const d = ISO.ch;
   return (
-    <g className={className} style={style} filter={glow} opacity={opacity}>
+    <g className={className} style={style} opacity={opacity}>
       <polygon points={pts([p01, p11, { x: p11.x, y: p11.y + d }, { x: p01.x, y: p01.y + d }])} fill={left} />
       <polygon points={pts([p10, p11, { x: p11.x, y: p11.y + d }, { x: p10.x, y: p10.y + d }])} fill={right} />
       <polygon points={pts([p00, p10, p11, p01])} fill={top} stroke="rgba(255,255,255,0.15)" strokeWidth="0.6" />
@@ -671,21 +660,14 @@ export function LifeArt() {
           <stop offset="60%" stopColor="#0c0521" />
           <stop offset="100%" stopColor="#060010" />
         </radialGradient>
-        <filter id="life-glow" x="-60%" y="-60%" width="220%" height="220%">
-          <feGaussianBlur stdDeviation="2.5" result="b" />
-          <feMerge>
-            <feMergeNode in="b" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
       </defs>
 
       <rect width="400" height="300" fill="url(#life-bg)" />
 
-      {/* background plus-marks */}
+      {/* background plus-marks (static) */}
       <g stroke="#4b3f7a" strokeWidth="1" opacity="0.5">
         {[[44, 52], [356, 64], [34, 244], [368, 236], [330, 150], [60, 150]].map(([x, y], i) => (
-          <g key={i} className="pa-twinkle" style={{ animationDelay: `${i * 0.7}s` }}>
+          <g key={i}>
             <line x1={x - 4} y1={y} x2={x + 4} y2={y} />
             <line x1={x} y1={y - 4} x2={x} y2={y + 4} />
           </g>
@@ -724,21 +706,19 @@ export function LifeArt() {
                 layer={layer}
                 {...colors}
                 opacity={opacity}
-                glow={isTop ? 'url(#life-glow)' : undefined}
-                className={isTop ? (i === ordered.length - 1 ? 'pa-pop' : 'pa-pulse') : undefined}
-                style={isTop ? { animationDelay: `${i * 0.35}s` } : undefined}
+                className={isTop && i === ordered.length - 1 ? 'pa-pop' : undefined}
               />
             ))}
           </g>
         );
       })}
 
-      {/* scan plane sweeping up through the generations */}
-      <polygon points={scanPlate} fill="rgba(94,234,212,0.08)" stroke="rgba(94,234,212,0.3)" strokeWidth="1" className="pa-rise" />
+      {/* faint scan plane — static (animated rise was a continuous layer repaint) */}
+      <polygon points={scanPlate} fill="rgba(94,234,212,0.06)" stroke="rgba(94,234,212,0.22)" strokeWidth="1" opacity="0.85" />
 
       <Sparkle x={320} y={84} s={7} fill="#5eead4" className="pa-twinkle" style={{ animationDelay: '1.4s' }} />
-      <Sparkle x={96} y={92} s={5} fill="#9d6bff" className="pa-twinkle" style={{ animationDelay: '2.4s' }} />
-      <Sparkle x={336} y={216} s={6} fill="#9d6bff" className="pa-twinkle" style={{ animationDelay: '0.5s' }} />
+      <Sparkle x={96} y={92} s={5} fill="#9d6bff" opacity={0.75} />
+      <Sparkle x={336} y={216} s={6} fill="#9d6bff" opacity={0.7} />
     </svg>
   );
 }

@@ -35,18 +35,17 @@
   background: var(--background-dark);
   font-weight: 300;
   overflow: hidden;
-  transition: all 0.3s ease;
-  isolation: isolate;               /* new: separate stacking context so z-index is predictable */
-
-  --glow-x: 50%;
-  --glow-y: 50%;
-  --glow-intensity: 0;
-  --glow-radius: 200px;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  isolation: isolate;
+  contain: layout paint style;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
 }
 
 .card:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  border-color: rgba(132, 0, 255, 0.45);
 }
 
 /* ----- Face media & dim sheet ----- */
@@ -57,7 +56,13 @@
   pointer-events: none;
   display: grid;
   place-items: center;
-  contain: paint;       /* keeps the blur from messing with siblings' stacking */
+  contain: paint;
+}
+
+/* Back face: solid panel, no second SVG art mount. */
+.card-media--static {
+  background:
+    radial-gradient(ellipse at 50% 40%, #1a0a36 0%, #0a0318 55%, #060010 100%);
 }
 
 .card-media .card-dim {
@@ -66,23 +71,19 @@
   z-index: 1;
   opacity: 0;
   transition: opacity 180ms ease;
-  background: rgba(0, 0, 0, 0.66);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.72);
   pointer-events: none;
 }
 .card-media .card-dim.is-on { opacity: 1; }
 
-/* Flip faces */
+/* Flip faces — keep 3d for the flip, but avoid permanent will-change. */
 .card-flip__container {
   position: relative;
-  z-index: 5;                 /* higher than the blur layer */
+  z-index: 5;
   height: 100%;
   width: 100%;
   perspective: 1000px;
   transform-style: preserve-3d;
-  will-change: transform;
-  transform: translateZ(0);  /* force own compositor layer */
 }
 
 .card-face {
@@ -152,60 +153,13 @@
 /* Reset any old "bento showcase" spanning rules */
 .card-grid > .card { grid-column: auto !important; grid-row: auto !important; }
 
-/* Border glow effect */
-.card--border-glow::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 6px;
-  background: radial-gradient(
-    var(--glow-radius) circle at var(--glow-x) var(--glow-y),
-    rgba(132, 0, 255, calc(var(--glow-intensity) * 0.8)) 0%,
-    rgba(132, 0, 255, calc(var(--glow-intensity) * 0.4)) 30%,
-    transparent 60%
-  );
-  border-radius: inherit;
-  mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  mask-composite: subtract;
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  pointer-events: none;
-  transition: opacity 0.3s ease;
-  z-index: 1;
-}
-.card--border-glow:hover::after { opacity: 1; }
+/* Static border glow on hover (no JS spotlight / CSS var thrashing). */
 .card--border-glow:hover {
   box-shadow:
     0 4px 20px rgba(46, 24, 78, 0.4),
-    0 0 30px var(--purple-glow);
+    0 0 28px var(--purple-glow);
 }
 
-/* Particles */
 .particle-container { position: relative; overflow: hidden; }
-.particle::before {
-  content: '';
-  position: absolute;
-  top: -2px; left: -2px; right: -2px; bottom: -2px;
-  background: rgba(132, 0, 255, 0.2);
-  border-radius: 50%;
-  z-index: -1;
-}
-.particle-container:hover {
-  box-shadow:
-    0 4px 20px rgba(46, 24, 78, 0.2),
-    0 0 30px var(--purple-glow);
-}
-
-/* Global spotlight */
-.global-spotlight {
-  mix-blend-mode: screen;
-  will-change: transform, opacity;
-  z-index: 200 !important;
-  pointer-events: none;
-}
 
 .bento-section { position: relative; user-select: none; }

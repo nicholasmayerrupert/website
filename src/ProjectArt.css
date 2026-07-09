@@ -78,43 +78,69 @@
   50% { transform: translateX(-8px); }
 }
 
-/* ---------- classes ---------- */
+/* ---------- classes ----------
+   Animations only run while `.bento-section--active` (section on-screen).
+   Off-screen: animation-play-state: paused freezes paint cost. */
 .pa-spin-slow {
   transform-box: fill-box;
   transform-origin: center;
   animation: pa-spin 42s linear infinite;
+  animation-play-state: paused;
 }
 .pa-spin-rev {
   transform-box: fill-box;
   transform-origin: center;
   animation: pa-spin-rev 28s linear infinite;
+  animation-play-state: paused;
 }
-.pa-twinkle { animation: pa-twinkle 3.2s ease-in-out infinite; }
-.pa-pulse { animation: pa-pulse 2.4s ease-in-out infinite; }
-.pa-float { animation: pa-float 5s ease-in-out infinite; }
+.pa-twinkle { animation: pa-twinkle 3.2s ease-in-out infinite; animation-play-state: paused; }
+.pa-pulse { animation: pa-pulse 2.4s ease-in-out infinite; animation-play-state: paused; }
+.pa-float { animation: pa-float 5s ease-in-out infinite; animation-play-state: paused; }
 .pa-flicker {
   transform-box: fill-box;
   transform-origin: 50% 100%;
-  animation: pa-flicker 0.9s ease-in-out infinite;
+  animation: pa-flicker 1.15s ease-in-out infinite;
+  animation-play-state: paused;
 }
-.pa-ember { animation: pa-ember 3.4s ease-out infinite; }
-.pa-scan { animation: pa-scan 4.2s ease-in-out infinite; }
-.pa-ants { animation: pa-ants 1.6s linear infinite; }
-.pa-dash { animation: pa-dash 6s linear infinite; }
+.pa-ember { animation: pa-ember 3.4s ease-out infinite; animation-play-state: paused; }
+.pa-scan { animation: pa-scan 4.2s ease-in-out infinite; animation-play-state: paused; }
+.pa-ants { animation: pa-ants 2.4s linear infinite; animation-play-state: paused; }
+.pa-dash { animation: pa-dash 6s linear infinite; animation-play-state: paused; }
 .pa-sway {
   transform-box: fill-box;
   transform-origin: 50% 100%;
   animation: pa-sway 6s ease-in-out infinite;
+  animation-play-state: paused;
 }
-.pa-rise { animation: pa-rise 6.5s ease-in-out infinite; }
+.pa-rise { animation: pa-rise 6.5s ease-in-out infinite; animation-play-state: paused; }
 .pa-pop {
   transform-box: fill-box;
   transform-origin: center;
   animation: pa-pop 2.8s ease-in-out infinite;
+  animation-play-state: paused;
 }
-.pa-blink { animation: pa-blink 1.1s step-end infinite; }
-.pa-sand-fall { animation: pa-sand-fall 2.8s linear infinite; }
-.pa-pan-drift { animation: pa-pan-drift 5.2s ease-in-out infinite; }
+.pa-blink { animation: pa-blink 1.1s step-end infinite; animation-play-state: paused; }
+.pa-sand-fall { animation: pa-sand-fall 2.8s linear infinite; animation-play-state: paused; }
+.pa-pan-drift { animation: pa-pan-drift 5.2s ease-in-out infinite; animation-play-state: paused; }
+
+.bento-section--active .pa-spin-slow,
+.bento-section--active .pa-spin-rev,
+.bento-section--active .pa-twinkle,
+.bento-section--active .pa-pulse,
+.bento-section--active .pa-float,
+.bento-section--active .pa-flicker,
+.bento-section--active .pa-ember,
+.bento-section--active .pa-scan,
+.bento-section--active .pa-ants,
+.bento-section--active .pa-dash,
+.bento-section--active .pa-sway,
+.bento-section--active .pa-rise,
+.bento-section--active .pa-pop,
+.bento-section--active .pa-blink,
+.bento-section--active .pa-sand-fall,
+.bento-section--active .pa-pan-drift {
+  animation-play-state: running;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .project-art *,

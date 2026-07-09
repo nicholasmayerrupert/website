@@ -46,6 +46,19 @@ void ComponentSystem::computeRigidGrounded() {
   uint8_t* const grounded = lay->groundedCell.data();
   int32_t* const cc = lay->cellComp.data();
   int32_t* const gstack = lay->groundStack.data();
+  // Stream-aware path: grounding caches were shifted with the grid in shiftLayer.
+  // Start from the shifted rigid base, clear the entering band + buffer-edge seed
+  // columns/rows (edge support is buffer-relative), then run the normal seed DFS.
+  // The DFS is still O(grounded rigid) but we avoid wiping and re-touching the
+  // whole window when the shifted base is already correct for floor-connected bulk.
+  // groundForceFull always takes the classic full-zero path (equivalence tests).
+  // Stream band markers are recorded for diagnostics / future band-limit work.
+  // Post-stream always full-zeros then floods: edge seeds are buffer-relative, so
+  // a shifted base can leave stale grounded=1 when edge-only support is lost.
+  // (Caches are still shifted in shiftLayer so loose overlay can localize after
+  // the rigid pass and so we keep the seam metadata.)
+  (void)lay->groundStreamX0; (void)lay->groundStreamY0;
+  lay->groundStreamX0 = lay->groundStreamX1 = lay->groundStreamY0 = lay->groundStreamY1 = -1;
   std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
   std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
   indexComponents();
@@ -109,24 +122,53 @@ void ComponentSystem::computeRigidGrounded() {
 // Loose cells never receive sideways/8-adjacent support and never ground a
 // rigid cell, so this pass is exactly the loose part of the old flood.
 // Also records groundSawPowder (same interior window as the old seed scan).
+//
+// Ground the loose (powder) cells on top of the rigid base: one bottom-up pass.
+// A loose cell is grounded iff the cell DIRECTLY below is grounded (chain roots
+// on grounded rigid, the floor, or lower loose links), or it is on the floor
+// row, or it rests on liquid at least as dense (the buoyant-support seed).
+// Loose cells never receive sideways/8-adjacent support and never ground a
+// rigid cell, so this pass is exactly the loose part of the old flood.
+// Also records groundSawPowder (same interior window as the old seed scan).
+//
+// When looseDirtyX* is a proper subset of columns, only those columns are
+// walked. Callers that memcpied the rigid base must set the span to full width
+// (all loose bits were zeroed). Column-local dirt from write paths enables the
+// tight span on pure only-loose frames that clear non-dirty columns themselves
+// — today the reuse path always full-width memcpys for joint-patch identity.
 void ComponentSystem::applyLooseOverlay() {
   Layer* const lay = E.L;
   const uint8_t* const g = lay->grid;
   uint8_t* const grounded = lay->groundedCell.data();
   bool sawPowder = false;
-  int floorBase = (E.rows - 1) * E.cols;
-  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isLooseSolidMaterial(g[k])) grounded[k] = 1; }
-  for (int y = E.rows - 2; y >= 0; y--) {
-    int rb = y * E.cols;
-    for (int x = 0; x < E.cols; x++) {
-      int k = rb + x;
+  const int cols = E.cols, rows = E.rows;
+  // Prefer sparse dirty-column bitset; fall back to bbox span; then full width.
+  const bool useBits = !lay->looseDirtyFull && (int)lay->looseDirtyCol.size() == cols;
+  int x0 = 0, x1 = cols - 1;
+  if (!useBits && lay->looseDirtyX1 >= lay->looseDirtyX0) {
+    x0 = lay->looseDirtyX0 < 0 ? 0 : lay->looseDirtyX0;
+    x1 = lay->looseDirtyX1 >= cols ? cols - 1 : lay->looseDirtyX1;
+  }
+  auto overlayCol = [&](int x) {
+    int kFloor = (rows - 1) * cols + x;
+    if (E.isLooseSolidMaterial(g[kFloor])) grounded[kFloor] = 1;
+    for (int y = rows - 2; y >= 0; y--) {
+      int k = y * cols + x;
       if (!E.isLooseSolidMaterial(g[k])) continue;
-      bool interior = y >= 1 && x >= 1 && x <= E.cols - 2;
+      bool interior = y >= 1 && x >= 1 && x <= cols - 2;
       if (interior) sawPowder = true;
-      bool gnd = grounded[k + E.cols] != 0; // vertical chain (row y+1 is final)
-      if (!gnd && interior) { uint8_t below = g[k + E.cols]; gnd = E.isLiquidMaterial(below) && DENSITY[below] >= DENSITY[g[k]]; }
+      bool gnd = grounded[k + cols] != 0;
+      if (!gnd && interior) {
+        uint8_t below = g[k + cols];
+        gnd = E.isLiquidMaterial(below) && DENSITY[below] >= DENSITY[g[k]];
+      }
       if (gnd) grounded[k] = 1;
     }
+  };
+  if (useBits) {
+    for (int x = 0; x < cols; x++) if (lay->looseDirtyCol[x]) overlayCol(x);
+  } else {
+    for (int x = x0; x <= x1; x++) overlayCol(x);
   }
   lay->groundSawPowder = sawPowder;
 }
@@ -150,23 +192,65 @@ void ComponentSystem::computeGrounded() {
                && lay->bodies.empty() && lay->bodyCells.empty()
                && (lay->groundContentDirty || lay->groundBaseFlags.size() == totalComps);
   if (reuse) {
-    if (!lay->groundRigidBase.empty())
-      std::memcpy(lay->groundedCell.data(), lay->groundRigidBase.data(), lay->groundRigidBase.size());
     if (lay->groundContentDirty) {
       // Comps reshaped but grounding stayed valid (the acid split path): the
       // positional ids in cellComp shifted, so re-index and re-derive the comp
       // flags from the (removal-patched) base, then refresh the flag snapshot.
+      if (!lay->groundRigidBase.empty())
+        std::memcpy(lay->groundedCell.data(), lay->groundRigidBase.data(), lay->groundRigidBase.size());
       incrementalGroundingRefresh();
       lay->groundBaseFlags.clear();
       auto push = [&](std::vector<Comp>& list) { for (auto& c : list) lay->groundBaseFlags.push_back(c.grounded ? 1 : 0); };
       push(lay->stoneComponents); push(lay->plantComponents); push(lay->iceComponents);
       lay->groundContentDirty = false;
+      lay->looseDirtyFull = true;
+      lay->looseDirtyX0 = 0; lay->looseDirtyX1 = E.cols - 1;
+    } else if (!lay->groundRigidBase.empty()) {
+      // Pure loose refresh, pure-perf identity with full base memcpy:
+      // 1) restore base grounded flags for every comp
+      // 2) clear cells of base-ungrounded comps (drops joint patches that a
+      //    full memcpy would drop — bonds re-apply in computeGroundedBoth)
+      // 3) for dirty columns only, copy rigid base (zeros loose there)
+      // 4) re-overlay only those columns (non-dirty columns keep prior loose)
+      size_t i = 0;
+      for (auto& c : lay->stoneComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+      for (auto& c : lay->plantComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+      for (auto& c : lay->iceComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+      uint8_t* const grounded = lay->groundedCell.data();
+      const uint8_t* const base = lay->groundRigidBase.data();
+      auto clearUngrounded = [&](std::vector<Comp>& list) {
+        for (auto& c : list) if (!c.grounded) for (int k : c.cells) grounded[k] = 0;
+      };
+      clearUngrounded(lay->stoneComponents);
+      clearUngrounded(lay->plantComponents);
+      clearUngrounded(lay->iceComponents);
+      const int cols = E.cols, rows = E.rows;
+      const bool useBits = !lay->looseDirtyFull && (int)lay->looseDirtyCol.size() == cols;
+      auto copyBaseCol = [&](int x) {
+        for (int y = 0; y < rows; y++) {
+          int k = y * cols + x;
+          grounded[k] = base[k];
+        }
+      };
+      if (useBits) {
+        for (int x = 0; x < cols; x++) if (lay->looseDirtyCol[x]) copyBaseCol(x);
+      } else {
+        int x0 = 0, x1 = cols - 1;
+        if (lay->looseDirtyX1 >= lay->looseDirtyX0) {
+          x0 = lay->looseDirtyX0 < 0 ? 0 : lay->looseDirtyX0;
+          x1 = lay->looseDirtyX1 >= cols ? cols - 1 : lay->looseDirtyX1;
+        }
+        for (int x = x0; x <= x1; x++) copyBaseCol(x);
+      }
     } else {
       size_t i = 0;
       for (auto& c : lay->stoneComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
       for (auto& c : lay->plantComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
       for (auto& c : lay->iceComponents) c.grounded = lay->groundBaseFlags[i++] != 0;
+      lay->looseDirtyFull = true;
+      lay->looseDirtyX0 = 0; lay->looseDirtyX1 = E.cols - 1;
     }
+    lay->groundBaseReplay = false;
   } else {
     computeRigidGrounded();
     lay->groundRigidBase.assign(lay->groundedCell.begin(), lay->groundedCell.end());
@@ -176,9 +260,16 @@ void ComponentSystem::computeGrounded() {
     lay->groundBaseValid = true;
     lay->groundDirty = false;
     lay->groundContentDirty = false;
+    lay->groundBaseReplay = false;
+    lay->looseDirtyFull = true;
+    lay->looseDirtyX0 = 0; lay->looseDirtyX1 = E.cols - 1;
   }
   applyLooseOverlay();
   lay->looseGroundDirty = false;
+  lay->looseDirtyX0 = 0; lay->looseDirtyX1 = -1;
+  lay->looseDirtyFull = false;
+  if ((int)lay->looseDirtyCol.size() == E.cols)
+    std::fill(lay->looseDirtyCol.begin(), lay->looseDirtyCol.end(), (uint8_t)0);
 #ifdef SAND_INVARIANT_CHECKS
   {
     // Parity probe: re-run the PRE-SPLIT single-flood algorithm from scratch
@@ -535,6 +626,43 @@ void ComponentSystem::computeGroundedBoth() {
     return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
            || !lay.bodies.empty() || !lay.bodyCells.empty();
   };
+  // Joint may have stamped cross-layer support into groundedCell on a prior pass.
+  // Dirty layer full-refloods; clean layer must not early-return with stale joint
+  // patches — force a base-replay (memcpy groundRigidBase + full loose overlay)
+  // which is byte-identical to a full flood when that layer's rigid topology is
+  // unchanged, without a second rigid DFS.
+  // Wipe joint patches on a clean layer by stamping rigid cells from groundRigidBase
+  // (leave loose bits alone — topology unchanged so prior overlay is still valid).
+  // Byte-identical to a full base memcpy + re-overlay when loose is stable.
+  auto wipeJointPatchesKeepLoose = [&](Layer& lay) {
+    if (!lay.groundBaseValid || lay.groundRigidBase.empty()
+        || (int)lay.groundBaseFlags.size() != (int)(lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size())) {
+      lay.groundDirty = true;
+      return;
+    }
+    const uint8_t* const g = lay.grid;
+    const uint8_t* const base = lay.groundRigidBase.data();
+    uint8_t* const grounded = lay.groundedCell.data();
+    const int n = E.cols * E.rows;
+    for (int k = 0; k < n; k++) {
+      if (E.isRigidMaterialClass(g[k])) grounded[k] = base[k];
+    }
+    size_t i = 0;
+    for (auto& c : lay.stoneComponents) c.grounded = lay.groundBaseFlags[i++] != 0;
+    for (auto& c : lay.plantComponents) c.grounded = lay.groundBaseFlags[i++] != 0;
+    for (auto& c : lay.iceComponents) c.grounded = lay.groundBaseFlags[i++] != 0;
+  };
+  {
+    bool rf = rigidMayChange(E.fg), rb = rigidMayChange(E.bg);
+    if (rf || rb) {
+      if (rf) E.fg.groundDirty = true;
+      else if (!E.fg.looseGroundDirty && !E.fg.groundContentDirty) wipeJointPatchesKeepLoose(E.fg);
+      else { E.fg.looseGroundDirty = true; E.fg.looseDirtyFull = true; E.fg.looseDirtyX0 = 0; E.fg.looseDirtyX1 = E.cols - 1; }
+      if (rb) E.bg.groundDirty = true;
+      else if (!E.bg.looseGroundDirty && !E.bg.groundContentDirty) wipeJointPatchesKeepLoose(E.bg);
+      else { E.bg.looseGroundDirty = true; E.bg.looseDirtyFull = true; E.bg.looseDirtyX0 = 0; E.bg.looseDirtyX1 = E.cols - 1; }
+    }
+  }
   bool prevFg = rigidMayChange(E.fg);
   bool prevBg = rigidMayChange(E.bg);
   if (prevFg) cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
@@ -632,7 +760,21 @@ void ComponentSystem::computeGroundedBoth() {
   for (int i = 0; i < nb; i++) if (E.bg.crossBondedComp[i] && rootGrounded[ufFind(groundParent, nf + i)]) {
     Comp* c = compById(E.bg, i); c->grounded = true;
     for (int k : c->cells) E.bg.groundedCell[k] = 1;
-  };
+  }
+
+  // Idle-structure release: once every component is grounded (base or via bonds),
+  // drop the transient bond list so step() can skip joint next tick. Support is
+  // already stamped into groundedCell/comp.grounded; topology/jointDirty will
+  // force a re-joint if bonds can break. Leaving bonds would force joint every
+  // step and (historically) re-dirty both layers even when nothing moved.
+  bool stillUngrounded = false;
+  for (int i = 0; i < nf && !stillUngrounded; i++) if (!compById(E.fg, i)->grounded) stillUngrounded = true;
+  for (int i = 0; i < nb && !stillUngrounded; i++) if (!compById(E.bg, i)->grounded) stillUngrounded = true;
+  if (!stillUngrounded) {
+    cgBonds.clear();
+    std::fill(E.fg.crossBondedComp.begin(), E.fg.crossBondedComp.end(), (uint8_t)0);
+    std::fill(E.bg.crossBondedComp.begin(), E.bg.crossBondedComp.end(), (uint8_t)0);
+  }
 
   // Re-wake whatever lost grounding this step (only the 1->0 transition;
   // already-ungrounded cells stay active from their own motion/edits).
@@ -701,7 +843,8 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
 void ComponentSystem::moveCrossLayerBondedAssemblies() {
   int nf = compCount(E.fg), nb = compCount(E.bg);
   if (cgBonds.empty() || nf == 0 || nb == 0) return;
-  E.fg.groundDirty = true; E.bg.groundDirty = true; // cross-layer assembly may move -> reflood both
+  // Do NOT pre-dirty both layers: a fully-grounded (or blocked) bonded cluster
+  // may run this path without relocating anything. Dirt only when a group moves.
   std::vector<int>& parent = cgParent;
   parent.assign(nf + nb, 0);
   for (int i = 0; i < nf + nb; i++) parent[i] = i;
@@ -822,6 +965,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (!planLayerMove(E.fg, fgCells, fgReloc) || !planLayerMove(E.bg, bgCells, bgReloc)) continue;
     applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgReloc);
     applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgReloc);
+    // Assembly relocated: both layers need a full joint re-flood next step.
+    E.fg.groundDirty = true; E.bg.groundDirty = true;
   }
   E.useLayer(&E.fg);
 }

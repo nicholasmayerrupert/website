@@ -65,6 +65,23 @@ struct Layer {
   // grounding of the current grid and the whole pass can be skipped.
   bool groundDirty = true, groundSawPowder = false, groundContentDirty = true;
   bool looseGroundDirty = true;
+  // Inclusive column span of powder/liquid writes since the last overlay.
+  // looseDirtyX1 < looseDirtyX0 means "unknown / full width" when looseGroundDirty.
+  int looseDirtyX0 = 0, looseDirtyX1 = -1;
+  // Sparse dirty columns (bitset). When non-empty and not "full", only these
+  // columns need base-copy + loose overlay on a pure only-loose refresh.
+  // looseDirtyFull forces every column (unknown write site / post-rigid flood).
+  std::vector<uint8_t> looseDirtyCol;
+  bool looseDirtyFull = true;
+  // Per-column count of loose-solid + liquid cells (optional sparse skip aid).
+  std::vector<int32_t> looseColCount;
+  // After a world stream, grounding caches are shifted with the grid and only the
+  // entering band (+ edge seams) must be re-seeded. -1 => no stream band (full).
+  int groundStreamX0 = -1, groundStreamX1 = -1; // half-open [x0,x1) when x0 >= 0
+  int groundStreamY0 = -1, groundStreamY1 = -1; // half-open [y0,y1) when y0 >= 0
+  // When the peer layer is rigid-dirty, this layer replays groundRigidBase (drop
+  // joint patches) without a full rigid DFS.
+  bool groundBaseReplay = false;
   // Rigid-grounding base cache (Perf 7b): groundedCell as of the last fresh
   // computeRigidGrounded (R bits only, taken BEFORE the loose overlay) plus the
   // comp grounded flags in stone|plant|ice order. computeGrounded reuses it
@@ -113,6 +130,10 @@ struct Layer {
     blastGasStamp.assign(n, -1);
     groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
     groundRigidBase.clear(); groundBaseFlags.clear(); groundBaseValid = false;
+    looseDirtyX0 = 0; looseDirtyX1 = -1;
+    looseDirtyCol.assign(cols, 0); looseDirtyFull = true;
+    looseColCount.assign(cols, 0);
+    groundStreamX0 = groundStreamX1 = groundStreamY0 = groundStreamY1 = -1;
     compOccStamp.assign(n, -1);
     seenStamp.assign(n, 0); seenGen = 0;
     rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
@@ -135,7 +156,9 @@ struct Layer {
     nextStoneId = nextPlantId = nextIceId = 1;
     myceliumActive = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;
-    looseGroundDirty = true;
+    looseGroundDirty = true; looseDirtyX0 = 0; looseDirtyX1 = -1;
+    looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;
+    groundStreamX0 = groundStreamX1 = groundStreamY0 = groundStreamY1 = -1;
     groundBaseValid = false;
     bodies.clear(); bodyCells.clear();
     pendingDetonations.clear();

@@ -202,5 +202,162 @@ function buildScript(seed) {
   a.destroy(); b.destroy(); v.destroy();
 }
 
+// ---------------------------------------------------------------------------
+// 6. JOINT-IDLE SKIP: dual-layer structure that settles, then idles many steps,
+//    then is edited / given falling loose material. Optimized path must match
+//    forced-full joint on grids every step. Locks the idle-structure joint gate
+//    (no always-on joint solely because stone exists in marked rows).
+{
+  console.log('joint-idle skip: settled dual-layer structure matches forced-full every step');
+  const sumBoth = (e) => {
+    const fg = e.getGrid(), bg = e.getGridBg ? e.getGridBg() : null;
+    let h = 0;
+    for (let i = 0; i < fg.length; i++) h = (h * 31 + fg[i]) >>> 0;
+    if (bg) for (let i = 0; i < bg.length; i++) h = (h * 31 + bg[i]) >>> 0;
+    return h;
+  };
+  // Dual-layer place via shipped placeMaterial (layer 0|1).
+  const mk = (forceFull) => {
+    const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 29, sinksOn: false, bgEnabled: true });
+    e.setGroundingDebug(false, forceFull);
+    if (typeof e.setBgEnabled === 'function') e.setBgEnabled(true);
+    return e;
+  };
+  const paintBoth = (e, x, y, r, m, layer /* 0|1|both */) => {
+    if (layer === 0 || layer === 'both' || layer == null) {
+      if (typeof e.placeMaterial === 'function') e.placeMaterial(x, y, r, m, 0);
+      else e.paintDisc(x, y, r, m, true);
+    }
+    if (layer === 1 || layer === 'both' || layer == null) {
+      if (typeof e.placeMaterial === 'function') e.placeMaterial(x, y, r, m, 1);
+      else if (typeof e.paintDiscBg === 'function') e.paintDiscBg(x, y, r, m, true);
+    }
+  };
+  const buildDualPlace = (e) => {
+    for (let x = 0; x < COLS; x++) {
+      paintBoth(e, x, ROWS - 1, 0, STONE, 'both');
+    }
+    for (let y = ROWS - 50; y < ROWS - 1; y++) {
+      for (let x = 40; x < 55; x++) paintBoth(e, x, y, 0, STONE, 'both');
+    }
+    for (let y = ROWS - 52; y < ROWS - 48; y++) {
+      for (let x = 40; x < 100; x++) paintBoth(e, x, y, 0, STONE, 0);
+    }
+    for (let y = ROWS - 48; y < ROWS - 1; y++) {
+      for (let x = 90; x < 100; x++) paintBoth(e, x, y, 0, STONE, 1);
+    }
+    e.syncComponents();
+  };
+  const a = mk(false);
+  const b = mk(true);
+  buildDualPlace(a); buildDualPlace(b);
+  let t = 0, diverged = -1, steps = 0;
+  // Settle structure
+  for (let i = 0; i < 40; i++) {
+    t += 16; a.step(t); b.step(t); steps++;
+    if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+  }
+  // Idle many steps — joint must be skippable without desync vs forced-full
+  if (diverged < 0) {
+    for (let i = 0; i < 160; i++) {
+      t += 16; a.step(t); b.step(t); steps++;
+      if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+    }
+  }
+  // Erode part of the bg support post, then idle again — joint must re-run and stay correct
+  if (diverged < 0) {
+    for (let y = ROWS - 40; y < ROWS - 10; y++) {
+      for (let x = 90; x < 100; x++) {
+        if (typeof a.placeMaterial === 'function') {
+          a.placeMaterial(x, y, 0, EMPTY, 1);
+          b.placeMaterial(x, y, 0, EMPTY, 1);
+        }
+      }
+    }
+    a.syncComponents(); b.syncComponents();
+    for (let i = 0; i < 120; i++) {
+      t += 16; a.step(t); b.step(t); steps++;
+      if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+    }
+  }
+  // Drop loose sand onto the structure
+  if (diverged < 0) {
+    for (let x = 50; x < 80; x++) {
+      paintBoth(a, x, 20, 2, SAND, 0);
+      paintBoth(b, x, 20, 2, SAND, 0);
+    }
+    for (let i = 0; i < 100; i++) {
+      t += 16; a.step(t); b.step(t); steps++;
+      if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+    }
+  }
+  check(`joint-idle grids identical across ${steps} steps (first divergence: ${diverged})`, diverged === -1);
+
+  // VERIFY mode: grounded arrays match forced full under idle + edit
+  const v = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 31, sinksOn: false, bgEnabled: true });
+  v.setGroundingDebug(true, false);
+  if (typeof v.setBgEnabled === 'function') v.setBgEnabled(true);
+  buildDualPlace(v);
+  t = 0;
+  for (let i = 0; i < 50; i++) { t += 16; v.step(t); }
+  for (let i = 0; i < 80; i++) { t += 16; v.step(t); }
+  for (let x = 50; x < 70; x++) paintBoth(v, x, 15, 3, SAND, 0);
+  for (let i = 0; i < 60; i++) { t += 16; v.step(t); }
+  check(`joint-idle dual-layer grounding mismatches (${v.groundingMismatches()})`, v.groundingMismatches() === 0);
+  a.destroy(); b.destroy(); v.destroy();
+}
+
+// ---------------------------------------------------------------------------
+// 7. LOCALIZED LOOSE OVERLAY + STREAM: dual-layer world with streaming and local
+//    powder motion must stay grid-identical to forced-full. Locks column-local
+//    only-loose refresh (and that stream still refloods correctly).
+{
+  console.log('stream+loose overlay: optimized matches forced-full across shifts');
+  const sumBoth = (e) => {
+    const fg = e.getGrid(), bg = e.getGridBg ? e.getGridBg() : null;
+    let h = 0;
+    for (let i = 0; i < fg.length; i++) h = (h * 31 + fg[i]) >>> 0;
+    if (bg) for (let i = 0; i < bg.length; i++) h = (h * 31 + bg[i]) >>> 0;
+    return h;
+  };
+  const mk = (forceFull) => {
+    const e = createEngineWasm({
+      cols: 128, rows: 96, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true, bgEnabled: true,
+    });
+    e.setGroundingDebug(false, forceFull);
+    if (typeof e.setBgEnabled === 'function') e.setBgEnabled(true);
+    return e;
+  };
+  const a = mk(false), b = mk(true);
+  // Seed some loose motion, step, shift, drop more sand, step.
+  for (let i = 0; i < 20; i++) {
+    a.paintDisc(30 + (i % 10) * 4, 20 + (i % 5), 2, SAND, true);
+    b.paintDisc(30 + (i % 10) * 4, 20 + (i % 5), 2, SAND, true);
+  }
+  let t = 0, diverged = -1, steps = 0;
+  for (let i = 0; i < 40; i++) {
+    t += 16; a.step(t); b.step(t); steps++;
+    if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+  }
+  if (diverged < 0 && typeof a.shiftWorld === 'function') {
+    a.shiftWorld(32); b.shiftWorld(32);
+    for (let i = 0; i < 24; i++) {
+      t += 16; a.step(t); b.step(t); steps++;
+      if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+    }
+    a.shiftWorld(-32); b.shiftWorld(-32);
+    for (let i = 0; i < 16; i++) {
+      a.paintDisc(40 + i, 15, 2, SAND, true);
+      b.paintDisc(40 + i, 15, 2, SAND, true);
+    }
+    for (let i = 0; i < 40; i++) {
+      t += 16; a.step(t); b.step(t); steps++;
+      if (sumBoth(a) !== sumBoth(b)) { diverged = steps; break; }
+    }
+  }
+  check(`stream+loose grids identical across ${steps} steps (first divergence: ${diverged})`, diverged === -1);
+  a.destroy(); b.destroy();
+}
+
 console.log(failures ? `\n${failures} checks FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

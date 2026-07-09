@@ -83,28 +83,19 @@
     // stepLayer() then skips its own first computeGrounded().
     comps.jointGroundReady = false;
     comps.jointBondsInvalid = false;
-    auto layerRigidMarked = [&](Layer& lay) {
-      const uint8_t* g = lay.grid;
-      for (int y = 0; y < rows; y++) {
-        int mn = lay.rowMarkMin[y], mx = lay.rowMarkMax[y];
-        if (mx < mn) continue;
-        mn = imax(0, mn); mx = imin(cols - 1, mx);
-        int rb = y * cols;
-        for (int x = mn; x <= mx; x++) if (isRigidMaterialClass(g[rb + x])) return true;
-      }
-      return false;
-    };
     double tJ0 = emscripten_get_now();
-    // looseGroundDirty (powder/liquid wrote) replaces the old groundSawPowder
-    // always-on gate: static powder on settled terrain no longer forces a joint
-    // pass every step. jointDirty covers acid pure-bore / erase that invalidates
-    // bonds without setting groundDirty (see ComponentSystem::jointDirty).
-    bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty
-                         || fg.looseGroundDirty || bg.looseGroundDirty;
-    // Short-circuit before layerRigidMarked (full marked-row scan) when topology/bonds
-    // already force a joint pass.
-    bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || topologyDirty;
-    if (!needJoint) needJoint = layerRigidMarked(fg) || layerRigidMarked(bg);
+    // Idle-structure skip: do NOT force a joint pass just because marked rows hold
+    // stone/plant/ice or residual static powder exists. Joint runs when:
+    //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
+    //   - residual cgBonds: ungrounded cross-bonded clusters still need joint motion
+    //   - rigidDirty: rigid topology or acid content change on either layer
+    //   - looseDirty: powder/liquid wrote (loose overlay is joint-ordered for
+    //     dual-layer determinism — both layers refresh before either stepLayer)
+    // Settled dual-layer terrain (no dirty bits, no live bonds) skips joint and
+    // reuses the previous groundedCell (including cross-layer support patches).
+    bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
+    bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
+    bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
     if (bgEnabled && needJoint) {
       computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
@@ -292,8 +283,16 @@
     if (swap) { to->grid[k] = m; from->grid[k] = dst; }
     else { to->grid[k] = m; from->grid[k] = EMPTY; }
     // Cross-layer powder/liquid motion invalidates both layers' loose overlays.
-    from->looseGroundDirty = true;
-    to->looseGroundDirty = true;
+    auto touchLoose = [&](Layer* lay) {
+      lay->looseGroundDirty = true;
+      if ((int)lay->looseDirtyCol.size() == cols) lay->looseDirtyCol[x] = 1;
+      if (lay->looseDirtyX1 < lay->looseDirtyX0) { lay->looseDirtyX0 = x; lay->looseDirtyX1 = x; }
+      else {
+        if (x < lay->looseDirtyX0) lay->looseDirtyX0 = x;
+        if (x > lay->looseDirtyX1) lay->looseDirtyX1 = x;
+      }
+    };
+    touchLoose(from); touchLoose(to);
     // mark both layers dirty at (x,y) so render + net + L->next-step settle pick it up
     if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
     if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;

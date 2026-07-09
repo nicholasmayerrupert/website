@@ -36,6 +36,7 @@ const SUITES = [
   ['rigidmat', 'rigidmat-test.mjs'],
   ['explosives', 'explosives-test.mjs'],
   ['grounding', 'grounding-incremental-test.mjs'],
+  ['pure-perf', 'pure-perf-checksum-test.mjs'],
   ['players', 'player-test.mjs'],
   ['anim', 'player-anim-test.mjs'],
   ['net', 'net-test.mjs'],

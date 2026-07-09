@@ -81,10 +81,11 @@ actionable instead of just producing timing numbers.
 
 ## Grounding cost map (the dominant `step` cost in two-layer worlds)
 
-`computeGroundedBoth` (`joint`) runs ~every active step because the soil-mantle
-powder keeps `groundDirty` set (a powder layer always refloods — powder grounding
-depends on liquids that move outside the component hooks). It is two full
-`computeGrounded` floods. Within one flood the cost splits ~setup/seed/DFS; the
+`computeGroundedBoth` (`joint`) is the usual dominant `step` cost in two-layer
+worlds. It no longer runs on purely idle settled structure (see idle-structure
+joint skip below); remaining cost is mostly post-stream refloods and loose
+overlay refreshes when powder/liquid actually writes. A full joint is two
+`computeGrounded` floods plus optional cross-layer bonds. Within one flood the
 8-neighbour rigid DFS dominates (it touches every grounded rigid cell once).
 
 Optimizations already landed (all byte-identical to a full reflood — verified by
@@ -113,6 +114,22 @@ Landed (byte-identical, pan-stream checksum stable):
   topology cannot change (loose-only refresh).
 - **Render fill**: `fillRenderSpan` short-circuits `EMPTY` cells (dominant open
   sky/caves) before noise/light work — pixel-identical for EMPTY.
+- **Sparse only-loose columns + dual peer patch-wipe**: powder/liquid writes
+  mark dirty columns (`looseDirtyCol` bitset). On pure only-loose refresh,
+  only dirty columns re-copy rigid base + re-overlay; ungrounded comps clear
+  joint patches so bonds re-apply. When one layer is rigid-dirty, the clean
+  peer stamps rigid cells from `groundRigidBase` (drops joint patches) without
+  a second full DFS. Multi-scenario pure-perf checksums preserved. Guarded by
+  `scripts/grounding-incremental-test.mjs` §5–§7.
+- **Idle-structure joint skip**: `step()` no longer forces `computeGroundedBoth`
+  just because marked rows contain stone/plant/ice. Joint runs only on
+  `jointDirty`, residual ungrounded `cgBonds`, rigid topology dirt, or loose
+  writes. When every component is grounded (base or via bonds), `cgBonds` is
+  cleared so the next idle tick can skip; `moveCrossLayerBondedAssemblies`
+  dirties layers only when a group actually moves. When either layer needs a
+  rigid recompute, both bases re-flood so prior joint patches cannot
+  re-transmit support. Guarded by `scripts/grounding-incremental-test.mjs` §6
+  (joint-idle) + layer/xlayer fall suites.
 
 Future opportunities (NOT yet done — each needs byte-exact verification):
 

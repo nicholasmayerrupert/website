@@ -354,17 +354,48 @@
   }
   // Powder/liquid motion (or replace) invalidates the loose grounding overlay.
   // Rigid topology uses groundDirty/groundContentDirty separately.
+  inline bool isLooseOverlayMat(uint8_t m) {
+    return isLooseSolidMaterial(m) || isLiquidMaterial(m);
+  }
+  inline void noteLooseDirtyCol(int x) {
+    if (x < 0 || x >= cols) return;
+    if ((int)L->looseDirtyCol.size() != cols) L->looseDirtyCol.assign(cols, 0);
+    L->looseDirtyCol[x] = 1;
+    if (!L->looseGroundDirty || L->looseDirtyX1 < L->looseDirtyX0) {
+      L->looseDirtyX0 = x; L->looseDirtyX1 = x;
+    } else {
+      if (x < L->looseDirtyX0) L->looseDirtyX0 = x;
+      if (x > L->looseDirtyX1) L->looseDirtyX1 = x;
+    }
+    L->looseGroundDirty = true;
+  }
+  inline void noteLooseDirtyFull() {
+    L->looseGroundDirty = true;
+    L->looseDirtyFull = true;
+    L->looseDirtyX0 = 0; L->looseDirtyX1 = cols - 1;
+  }
   inline void noteLooseGroundTouch(uint8_t m) {
-    if (isLooseSolidMaterial(m) || isLiquidMaterial(m)) L->looseGroundDirty = true;
+    if (isLooseOverlayMat(m)) noteLooseDirtyFull();
   }
   inline void noteLooseGroundTouch2(uint8_t a, uint8_t b) {
-    if (isLooseSolidMaterial(a) || isLiquidMaterial(a) || isLooseSolidMaterial(b) || isLiquidMaterial(b))
-      L->looseGroundDirty = true;
+    if (isLooseOverlayMat(a) || isLooseOverlayMat(b)) noteLooseDirtyFull();
+  }
+  inline void noteLooseGroundTouch2At(int k, uint8_t a, uint8_t b) {
+    if (isLooseOverlayMat(a) || isLooseOverlayMat(b))
+      noteLooseDirtyCol(k - (k / cols) * cols);
+  }
+  // Keep looseColCount in sync with LIVE grid[] (not next[]).
+  inline void adjustLooseColCount(int x, uint8_t oldM, uint8_t newM) {
+    if (x < 0 || x >= cols || (int)L->looseColCount.size() != cols) return;
+    if (isLooseOverlayMat(oldM)) L->looseColCount[x]--;
+    if (isLooseOverlayMat(newM)) L->looseColCount[x]++;
   }
   inline void writeGridIndex(int k, uint8_t m) {
     if (k < 0 || k >= cols * rows) return;
     if (L->grid[k] == m) return;
-    noteLooseGroundTouch2(L->grid[k], m);
+    int x = k - (k / cols) * cols;
+    noteLooseGroundTouch2At(k, L->grid[k], m);
+    adjustLooseColCount(x, L->grid[k], m);
     L->grid[k] = m;
     markCellIndex(k);
   }
@@ -403,7 +434,7 @@
   // step. Unblanked next[source] then resurrects a 2-tick-old value as a ghost
   // trail (looks like fluid duplication while falling).
   inline void vacateForNextMove(int fromK) {
-    noteLooseGroundTouch(L->grid[fromK]);
+    noteLooseGroundTouch2At(fromK, L->grid[fromK], EMPTY);
     L->vacatedStamp[fromK] = tick;
     markCellIndex(fromK);
   }
@@ -421,13 +452,13 @@
     // leaves the vacated source without a dirty mark and ghosts can return.
     if (L->next[k] == m) {
       if (L->grid[k] != m) {
-        noteLooseGroundTouch2(L->grid[k], m);
+        noteLooseGroundTouch2At(k, L->grid[k], m);
         markCellIndex(k);
       }
       return;
     }
-    noteLooseGroundTouch2(L->grid[k], m);
-    noteLooseGroundTouch(L->next[k]); // vacating/replacing prior next material
+    noteLooseGroundTouch2At(k, L->grid[k], m);
+    noteLooseGroundTouch2At(k, L->next[k], EMPTY); // vacating/replacing prior next material
     L->next[k] = m;
     if (L->grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }

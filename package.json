@@ -48,6 +48,7 @@
     "test:rigidmat": "node scripts/rigidmat-test.mjs",
     "test:explosives": "node scripts/explosives-test.mjs",
     "test:grounding": "node scripts/grounding-incremental-test.mjs",
+    "test:pure-perf": "node scripts/pure-perf-checksum-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
     "test:zoom-e2e": "node scripts/zoom-e2e.mjs",
     "test:mp-e2e": "node scripts/mp-e2e.mjs",

@@ -157,5 +157,50 @@ function buildScript(seed) {
   v.destroy();
 }
 
+// ---------------------------------------------------------------------------
+// 5. LOOSE-STATIC SKIP: powder/liquid sitting still must not change outcomes vs a
+//    forced full reflood every step. This locks the looseGroundDirty gate (powder
+//    presence alone no longer forces joint/overlay work) — a wrong dirty signal
+//    would desync free-body support / buoyancy and the grid checksum.
+{
+  console.log('loose-static skip: settled powder/liquid matches forced-full every step');
+  const sum = (e) => { const g = e.getGrid(); let h = 0; for (let i = 0; i < g.length; i++) h = (h * 31 + g[i]) >>> 0; return h; };
+  const buildLoose = (e) => {
+    for (let x = 0; x < COLS; x++) e.paintDisc(x, ROWS - 1, 0, STONE, true);
+    for (let y = ROWS - 40; y < ROWS - 1; y++) for (let x = 20; x < COLS - 20; x++) e.paintDisc(x, y, 0, STONE, true);
+    e.syncComponents();
+    // soil-like powder cap + a small water puddle that settles
+    for (let x = 30; x < COLS - 30; x++) e.paintDisc(x, ROWS - 41, 0, SAND, true);
+    for (let y = ROWS - 50; y < ROWS - 42; y++) for (let x = 60; x < 90; x++) e.paintDisc(x, y, 0, WATER, true);
+  };
+  const a = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 19, sinksOn: false, bgEnabled: true });
+  const b = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 19, sinksOn: false, bgEnabled: true });
+  a.setGroundingDebug(false, false);
+  b.setGroundingDebug(false, true);
+  buildLoose(a); buildLoose(b);
+  let t = 0, diverged = -1, steps = 0;
+  // Settle, then many idle steps (the skip path), then a sand drop + more idle.
+  for (let i = 0; i < 80; i++) { t += 16; a.step(t); b.step(t); steps++; if (sum(a) !== sum(b)) { diverged = steps; break; } }
+  if (diverged < 0) {
+    for (let i = 0; i < 120; i++) { t += 16; a.step(t); b.step(t); steps++; if (sum(a) !== sum(b)) { diverged = steps; break; } }
+  }
+  if (diverged < 0) {
+    a.paintDisc(80, 20, 4, SAND, true);
+    b.paintDisc(80, 20, 4, SAND, true);
+    for (let i = 0; i < 100; i++) { t += 16; a.step(t); b.step(t); steps++; if (sum(a) !== sum(b)) { diverged = steps; break; } }
+  }
+  check(`loose-static grids identical across ${steps} steps (first divergence: ${diverged})`, diverged === -1);
+  // Dual-layer verify: grounded arrays still match a forced full path under powder load.
+  const v = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 23, sinksOn: false, bgEnabled: true });
+  v.setGroundingDebug(true, false);
+  buildLoose(v);
+  t = 0;
+  for (let i = 0; i < 60; i++) { t += 16; v.step(t); }
+  v.paintDisc(70, 15, 5, SAND, true);
+  for (let i = 0; i < 40; i++) { t += 16; v.step(t); }
+  check(`loose-static dual-layer grounding mismatches (${v.groundingMismatches()})`, v.groundingMismatches() === 0);
+  a.destroy(); b.destroy(); v.destroy();
+}
+
 console.log(failures ? `\n${failures} checks FAILED` : '\nall checks passed');
 process.exit(failures ? 1 : 0);

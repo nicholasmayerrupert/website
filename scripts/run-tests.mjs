@@ -46,7 +46,7 @@ const SUITES = [
   ['prefetch', 'prefetch-test.mjs'],
   ['render', 'render-noise-test.mjs'],
   ['viewport-sizing', 'viewport-sizing-test.mjs'],
-  ['resize-window', 'resize-window-test.mjs'],
+  // resize-window-test.mjs is not in scripts/ (entry removed; re-add when the suite lands)
   ['lighting', 'render-lighting-test.mjs'],
   ['stone-airgap', 'stone-airgap-test.mjs'],
   ['stone-layers', 'stone-layer-dig-repro.mjs'],

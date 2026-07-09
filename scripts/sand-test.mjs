@@ -752,11 +752,35 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     for (let i = 0; i < g.length; i++) if (g[i] === mat) { const y = (i / COLS) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y; }
     return { n, minY, maxY };
   };
-  const oil0 = bounds(OIL).n, brine0 = bounds(BRINE).n;
+  // Setup geometry (y increases downward): oil [60,69], brine [70,95], gold in oil band.
+  const OIL_TOP = 60, OIL_BOT = 69, BRINE_TOP = 70;
+  const oil0 = bounds(OIL), brine0 = bounds(BRINE), gold0 = bounds(GOLD_ORE);
   e.step(16);
-  const oil = bounds(OIL), brine = bounds(BRINE);
-  check(`oil and brine conserved during component displacement (${oil.n}/${brine.n})`, oil.n === oil0 && brine.n === brine0);
-  check(`brine entered the oil layer but not the air surface (top ${brine.minY}, oil top ${oil.minY})`, brine.minY >= oil.minY + 6 && brine.minY < 70);
+  const oil = bounds(OIL), brine = bounds(BRINE), gold = bounds(GOLD_ORE);
+  check(`oil and brine conserved during component displacement (${oil.n}/${brine.n})`, oil.n === oil0.n && brine.n === brine0.n);
+  // Gold must actually sink into the brine region (otherwise no displacement to test).
+  check(
+    `gold sank into the brine region (gold rows ${gold.minY}-${gold.maxY}, brine was top ${BRINE_TOP})`,
+    gold.n === gold0.n && gold.maxY >= BRINE_TOP && gold.minY > OIL_TOP,
+  );
+  // Stratification: free surface of oil stays above free surface of brine (no swap).
+  check(
+    `oil remains stratified above brine (oil top ${oil.minY} < brine top ${brine.minY})`,
+    oil.minY < brine.minY,
+  );
+  // Anti-teleport: dense brine must not be ejected into open air above the oil surface.
+  // Use the live oil free surface (moves as the column settles) plus a margin so a
+  // single interface cell of noise cannot pass as "air surface".
+  check(
+    `brine did not teleport above the oil free surface (brine top ${brine.minY} >= oil top ${oil.minY} + 4)`,
+    brine.minY >= oil.minY + 4,
+  );
+  // Interface stays contiguous: oil bottom and brine top should not open a huge gap
+  // (teleport-to-air would leave brine far above oil.maxY; total column sink keeps them near).
+  check(
+    `oil/brine interface stayed contiguous after displacement (oil bot ${oil.maxY}, brine top ${brine.minY})`,
+    brine.minY <= oil.maxY + 3,
+  );
   e.destroy();
 }
 

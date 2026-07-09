@@ -82,9 +82,11 @@ struct StampSet {
     if (stamp.size() < n) stamp.assign(n, 0);
     if (++gen == INT32_MAX) { std::fill(stamp.begin(), stamp.end(), 0); gen = 1; }
   }
-  void add(int k) { stamp[k] = gen; }
-  bool has(int k) const { return stamp[k] == gen; }
-  void remove(int k) { stamp[k] = 0; }
+  // Bounds-checked: assembly probe sets may briefly hold OOB cell indices near
+  // the floor/ceiling; treating those as non-members avoids WASM OOB traps.
+  void add(int k) { if ((unsigned)k < stamp.size()) stamp[k] = gen; }
+  bool has(int k) const { return (unsigned)k < stamp.size() && stamp[k] == gen; }
+  void remove(int k) { if ((unsigned)k < stamp.size()) stamp[k] = 0; }
 };
 
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool

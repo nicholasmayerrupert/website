@@ -223,6 +223,7 @@
 
   // ---- dirty tracking (operates on the active layer via the mirrors) ----
   inline void markCellIndex(int k) {
+    if (k < 0 || k >= cols * rows) return;
     int y = k / cols, x = k - y * cols;
     if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
     if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
@@ -351,7 +352,22 @@
     if (x < cols - 3 && L->grid[k + 1] == EMPTY && L->grid[k + 2] == m && L->grid[k + 1 + cols] != EMPTY) return true;
     return false;
   }
-  inline void writeGridIndex(int k, uint8_t m) { if (L->grid[k] == m) return; L->grid[k] = m; markCellIndex(k); }
+  // Powder/liquid motion (or replace) invalidates the loose grounding overlay.
+  // Rigid topology uses groundDirty/groundContentDirty separately.
+  inline void noteLooseGroundTouch(uint8_t m) {
+    if (isLooseSolidMaterial(m) || isLiquidMaterial(m)) L->looseGroundDirty = true;
+  }
+  inline void noteLooseGroundTouch2(uint8_t a, uint8_t b) {
+    if (isLooseSolidMaterial(a) || isLiquidMaterial(a) || isLooseSolidMaterial(b) || isLiquidMaterial(b))
+      L->looseGroundDirty = true;
+  }
+  inline void writeGridIndex(int k, uint8_t m) {
+    if (k < 0 || k >= cols * rows) return;
+    if (L->grid[k] == m) return;
+    noteLooseGroundTouch2(L->grid[k], m);
+    L->grid[k] = m;
+    markCellIndex(k);
+  }
   inline bool isLooseDensityMaterial(uint8_t m) { return DENSITY_SORTED[m] == 1; }
   inline bool canDisplaceByLooseDensity(uint8_t m, uint8_t d) { return isLooseDensityMaterial(m) && isLooseDensityMaterial(d) && DENSITY[m] > DENSITY[d]; }
   // True iff this cell still has a pending density swap with a neighbour — used to
@@ -387,6 +403,7 @@
   // step. Unblanked next[source] then resurrects a 2-tick-old value as a ghost
   // trail (looks like fluid duplication while falling).
   inline void vacateForNextMove(int fromK) {
+    noteLooseGroundTouch(L->grid[fromK]);
     L->vacatedStamp[fromK] = tick;
     markCellIndex(fromK);
   }
@@ -403,9 +420,14 @@
     // if the committed grid differs — otherwise a reclaim that early-outs here
     // leaves the vacated source without a dirty mark and ghosts can return.
     if (L->next[k] == m) {
-      if (L->grid[k] != m) markCellIndex(k);
+      if (L->grid[k] != m) {
+        noteLooseGroundTouch2(L->grid[k], m);
+        markCellIndex(k);
+      }
       return;
     }
+    noteLooseGroundTouch2(L->grid[k], m);
+    noteLooseGroundTouch(L->next[k]); // vacating/replacing prior next material
     L->next[k] = m;
     if (L->grid[k] != m || m == FIRE || m == STEAM || (isLiquidMaterial(m) && liquidCanEscape(k)) || touchesUnstableLooseDensityInterface(k, m)) markCellIndex(k);
   }

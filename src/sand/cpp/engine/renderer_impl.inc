@@ -321,6 +321,7 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
   // E.cols*E.rows array, so eliding the load also removes a cache stream from the hot
   // fill. The damaged uint32_t* is only dereferenced on the rare path.
   const uint32_t* dmg = E.L->mineDamageAny ? E.L->mineDamage.data() : nullptr;
+  const uint8_t* light = RENDER_LIGHTING_ENABLED ? E.L->light.data() : nullptr;
   for (int y = y0; y <= y1; y++) {
     int rowBase = y * E.cols;
     int wy = woY + y;
@@ -329,6 +330,8 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
     for (int x = x0; x <= x1; x++, wx++) {
       int k = rowBase + x;
       uint8_t m = g[k];
+      // EMPTY is the dominant cell in open sky / caves — skip noise/light work.
+      if (m == EMPTY) { p[k] = 0; continue; }
       uint32_t c = renderVariants[((int)m << 3) + noiseRow[wx & 63]];
       if (dmg) {
         uint32_t rem = dmg[k];
@@ -349,7 +352,7 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       }
       else if (m == GLOWBERRY) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWBERRY_CORE; }
       else if (m == GLOWSHROOM) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWSHROOM_CORE; }
-      if (RENDER_LIGHTING_ENABLED) c = applyLight(c, renderLightForCell(E.L->light.data(), k, x, y, m));
+      if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
       p[k] = c;
     }
   }

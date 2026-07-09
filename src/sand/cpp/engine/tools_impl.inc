@@ -142,6 +142,7 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
       destroyCellAt(k, old, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
       destroyedAny = true;
     }
+    E.noteLooseGroundTouch2(old, material);
     E.L->grid[k] = material; changed++;
   } } }
   if (destroyedAny) {
@@ -246,6 +247,7 @@ const std::vector<std::pair<int, int>>& ToolSystem::discOffsets(int radius) {
 // erases them, the component-split system erases static cells.
 void ToolSystem::destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
                    std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
+  E.noteLooseGroundTouch(m);
   if (E.isBodyCell(k)) {
     if (bodyById.empty()) for (Body* b : E.L->bodies) bodyById[b->id] = b;
     if (!E.eraseBodyCellIndex(k, bodyById, dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }

@@ -173,6 +173,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
         E.markCellIndex(k);
         continue;
       }
+      E.noteLooseGroundTouch(m);
       if (!E.isBlastDamageable(m)) continue;
       if (energy < (double)DURABILITY[m]) continue; // too hard to blow up at this distance
       bool wasTnt = (m == TNT);

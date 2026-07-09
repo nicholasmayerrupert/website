@@ -26,13 +26,18 @@ reflood". `ensureGroundedSingleLayer()` (the single-layer dispatch; the cross-la
 `computeGroundedBoth` path always refloods) picks:
 
 - **Full reflood** (`computeGrounded`) when `groundDirty` — set by any component
-  add / move / split / growth / sync, and kept set while any powder is present
-  (powder grounding depends on liquids that don't route through the component hooks).
-- **Incremental refresh** (`incrementalGroundingRefresh`) otherwise: rebuilds the cheap
-  bookkeeping (`cellComp`, per-component density, and each component's `grounded` flag
-  *derived from the cached `groundedCell`*) and skips the expensive flood. `comp.grounded`
-  is recomputed every step from the cache, so there is no stale-flag coupling with
+  add / move / split / growth / sync.
+- **Loose overlay refresh** when only `looseGroundDirty` is set — a powder or liquid
+  cell changed since the last overlay. Powder *presence* alone no longer forces a
+  pass (that was the old `groundSawPowder` always-on gate).
+- **Incremental refresh** (`incrementalGroundingRefresh`) for acid pure-bore
+  `groundContentDirty`: rebuilds the cheap bookkeeping (`cellComp`, per-component
+  density, and each component's `grounded` flag *derived from the cached
+  `groundedCell`*) and skips the expensive flood. `comp.grounded` is recomputed
+  every step from the cache, so there is no stale-flag coupling with
   `splitRigidAfterErase`.
+- **Full skip** when `groundDirty`, `groundContentDirty`, and `looseGroundDirty`
+  are all clear (and the rigid base is valid): cached grounding is exact.
 
 The win on the hot path comes from **acid removals**. When acid dissolves stone, instead
 of forcing a reflood, `removalsKeepGroundingValid()` partitions the step's removed cells

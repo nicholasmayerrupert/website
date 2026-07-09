@@ -45,18 +45,21 @@ const stressRng = (seed) => {
 };
 function stampGeneratedTerrainTntStrokes(e, cols, rows, seed, layer = 0) {
   const r = stressRng(seed);
+  const clampX = (v) => Math.max(2, Math.min(cols - 3, v));
+  const clampY = (v) => Math.max(2, Math.min(rows - 3, v));
   for (let s = 0; s < 14; s++) {
-    let x = Math.floor(20 + r() * 80);
-    let y = Math.floor(e.worldSurfaceAt(e.getWorldOffsetX() + x) - 45 - r() * 50);
+    let x = clampX(Math.floor(20 + r() * 80));
+    // Keep stroke origins inside the loaded buffer (surface - N can go negative).
+    let y = clampY(Math.floor(e.worldSurfaceAt(e.getWorldOffsetX() + x) - 45 - r() * 50));
     const segments = 8 + Math.floor(r() * 10);
     for (let i = 0; i < segments; i++) {
-      const nx = Math.max(2, Math.min(cols - 3, x + Math.floor(20 + r() * 65)));
+      const nx = clampX(x + Math.floor(20 + r() * 65));
       const surf = e.worldSurfaceAt(e.getWorldOffsetX() + nx);
-      const ny = Math.max(2, Math.min(rows - 3, Math.floor(surf - 15 - r() * 80)));
+      const ny = clampY(Math.floor(surf - 15 - r() * 80));
       const steps = Math.max(Math.abs(nx - x), Math.abs(ny - y));
       for (let t = 0; t <= steps; t += 3) {
         const a = steps ? t / steps : 0;
-        e.placeMaterial(Math.round(x + (nx - x) * a), Math.round(y + (ny - y) * a), 2, MAT.TNT, layer);
+        e.placeMaterial(clampX(Math.round(x + (nx - x) * a)), clampY(Math.round(y + (ny - y) * a)), 2, MAT.TNT, layer);
       }
       x = nx; y = ny;
     }

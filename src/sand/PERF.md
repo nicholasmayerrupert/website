@@ -100,19 +100,33 @@ Optimizations already landed (all byte-identical to a full reflood — verified 
   powder-free layer) — `groundDirty`/`groundContentDirty` gate it exactly like the
   single-layer incremental path.
 
+Landed (byte-identical, pan-stream checksum stable):
+
+- **Powder-aware grounding skip (`looseGroundDirty`)**: powder/liquid *presence*
+  no longer forces a joint/overlay every step. Writes via `writeGridIndex` /
+  `writeNextIndex` / `vacateForNextMove` / tools / transfer / blasts set
+  `Layer::looseGroundDirty`; a fully stable layer early-outs `computeGrounded`,
+  and `step()`'s joint gate uses `looseGroundDirty` instead of `groundSawPowder`.
+  Guarded by `scripts/grounding-incremental-test.mjs` §5 (loose-static skip).
+- **Cheaper joint bookkeeping**: `wakeCellsThatLostGrounding` iterates component/
+  body cells only (not the full grid); `cgPrev*` snapshots are skipped when rigid
+  topology cannot change (loose-only refresh).
+- **Render fill**: `fillRenderSpan` short-circuits `EMPTY` cells (dominant open
+  sky/caves) before noise/light work — pixel-identical for EMPTY.
+
 Future opportunities (NOT yet done — each needs byte-exact verification):
 
-- Powder-aware incremental grounding: a layer reflood is only needed when a loose
-  cell actually MOVED, not merely exists. Measured potential is modest on an active
-  pan (~7-28% of passes are loose-static) and large for idle/building scenes, but it
-  needs a robust "loose changed" signal covering EVERY loose grid write (settle,
-  reactions, transfer, tools, worldgen) — fragile for a multiplayer-authoritative
-  engine, so deferred.
 - Active-region component carry: the `carry` phase re-touches every component cell
   (all terrain) each step; only cells in the active region need re-stamping. A naive
   active-region scan is NOT byte-identical because the old `prevCompCells` cleanup
   also re-wakes cells that leave component-hood (so loose material falls into
-  freshly-erased holes); a correct version must replicate that wake.
+  freshly-erased holes); a correct version must replicate that wake. (A
+  next==grid skip was tried and changed the pan-stream checksum — left out.)
+- In-place loose overlay without `groundRigidBase` memcpy (needs explicit 0/1
+  writes for ungrounded powder); attempted and changed pan-stream checksum —
+  needs more investigation before landing.
+- Shift `groundedCell`/`groundRigidBase` with the grid so post-stream joint can
+  flood only the entering band instead of the full window.
 
 ## Baseline History
 

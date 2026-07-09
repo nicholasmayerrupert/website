@@ -914,7 +914,8 @@
       registerSeededComponents(0, cols);
       // Wake the whole window so settle re-activates after the rebuild.
       for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; }
-      L->groundDirty = true; L->groundContentDirty = true; L->skyDirty = true; L->skyValid = false;
+      L->groundDirty = true; L->groundContentDirty = true; L->looseGroundDirty = true;
+      L->skyDirty = true; L->skyValid = false;
     };
     refillLayer(&fg);
     refillLayer(&bg);

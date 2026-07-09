@@ -51,15 +51,20 @@ struct Layer {
   bool myceliumActive = false;
   // Incremental-grounding cache state (see members near cgComps). groundDirty
   // true => the next grounding pass must be a full reflood; it is set true by any
-  // component add/move/split/growth/sync and stays true while powder is present
-  // (powder grounding depends on liquids that don't route through these hooks).
-  // groundSawPowder records whether the last full reflood saw any powder.
+  // component add/move/split/growth/sync.
+  // groundSawPowder records whether the last overlay saw any powder (diagnostics /
+  // legacy gates; the hot path no longer refloods solely because powder exists).
   // groundContentDirty: a rigid component change that did NOT set groundDirty (the
   // acid fast-path removal) happened since the last grounding pass, so the cached
   // cellComp/groundedCell must be refreshed even though no full reflood is forced.
-  // When it (and groundDirty/powder) are all clear, the cached grounding is still
-  // the exact grounding of the current grid and the whole pass can be skipped.
+  // looseGroundDirty: a powder or liquid cell changed since the last successful
+  // overlay. Powder grounding depends on the cell below (rigid / denser liquid), so
+  // only loose/liquid motion invalidates the overlay — not the mere presence of
+  // powder. When groundDirty, groundContentDirty, and looseGroundDirty are all
+  // clear (and the rigid base is valid), the cached grounding is the exact
+  // grounding of the current grid and the whole pass can be skipped.
   bool groundDirty = true, groundSawPowder = false, groundContentDirty = true;
+  bool looseGroundDirty = true;
   // Rigid-grounding base cache (Perf 7b): groundedCell as of the last fresh
   // computeRigidGrounded (R bits only, taken BEFORE the loose overlay) plus the
   // comp grounded flags in stone|plant|ice order. computeGrounded reuses it
@@ -130,6 +135,7 @@ struct Layer {
     nextStoneId = nextPlantId = nextIceId = 1;
     myceliumActive = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;
+    looseGroundDirty = true;
     groundBaseValid = false;
     bodies.clear(); bodyCells.clear();
     pendingDetonations.clear();

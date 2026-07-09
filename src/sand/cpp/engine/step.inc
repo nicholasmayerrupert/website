@@ -95,16 +95,17 @@
       return false;
     };
     double tJ0 = emscripten_get_now();
-    // groundSawPowder keeps the joint pass running while powder is present:
-    // powder grounding tracks liquids that move outside the dirty hooks, and
-    // cross-layer support bonds must stay as fresh as they were when powder used
-    // to force groundDirty. jointDirty covers acid pure-bore / erase that
-    // invalidates bonds without setting groundDirty (see ComponentSystem::jointDirty).
-    // The pass itself is cheap now that each layer's grounding reuses its rigid
-    // base (computeGrounded tiers).
+    // looseGroundDirty (powder/liquid wrote) replaces the old groundSawPowder
+    // always-on gate: static powder on settled terrain no longer forces a joint
+    // pass every step. jointDirty covers acid pure-bore / erase that invalidates
+    // bonds without setting groundDirty (see ComponentSystem::jointDirty).
     bool topologyDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty
-                         || fg.groundSawPowder || bg.groundSawPowder;
-    if (bgEnabled && (comps.jointDirty || !comps.cgBonds.empty() || topologyDirty || layerRigidMarked(fg) || layerRigidMarked(bg))) {
+                         || fg.looseGroundDirty || bg.looseGroundDirty;
+    // Short-circuit before layerRigidMarked (full marked-row scan) when topology/bonds
+    // already force a joint pass.
+    bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || topologyDirty;
+    if (!needJoint) needJoint = layerRigidMarked(fg) || layerRigidMarked(bg);
+    if (bgEnabled && needJoint) {
       computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
@@ -290,6 +291,9 @@
     if (!canFall(to, x, y, m)) return false;
     if (swap) { to->grid[k] = m; from->grid[k] = dst; }
     else { to->grid[k] = m; from->grid[k] = EMPTY; }
+    // Cross-layer powder/liquid motion invalidates both layers' loose overlays.
+    from->looseGroundDirty = true;
+    to->looseGroundDirty = true;
     // mark both layers dirty at (x,y) so render + net + L->next-step settle pick it up
     if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
     if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;

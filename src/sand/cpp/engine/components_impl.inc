@@ -133,16 +133,25 @@ void ComponentSystem::applyLooseOverlay() {
 void ComponentSystem::computeGrounded() {
   Layer* const lay = E.L;
   size_t totalComps = lay->stoneComponents.size() + lay->plantComponents.size() + lay->iceComponents.size();
+  // Fully stable: rigid base + last loose overlay still match the live grid.
+  // Powder's mere presence does NOT force a pass — only looseGroundDirty (a
+  // powder/liquid write since the last successful overlay) does.
+  if (!groundForceFull && lay->groundBaseValid && !lay->groundDirty && !lay->groundContentDirty
+      && !lay->looseGroundDirty && lay->bodies.empty() && lay->bodyCells.empty()
+      && lay->groundBaseFlags.size() == totalComps) {
+    return;
+  }
   // Reuse the rigid base when no rigid mutation is pending. The loose overlay
-  // is the only liquid-dependent part, so it is recomputed every pass; the
-  // rigid flood + indexComponents are skipped. Bodies stamp rigid material
+  // is the only liquid-dependent part, so it is recomputed when loose moved;
+  // the rigid flood + indexComponents are skipped. Bodies stamp rigid material
   // into the grid without routing through the dirty hooks, so any body in the
   // layer disables reuse (moveBodies re-floods every step, as before).
   bool reuse = !groundForceFull && lay->groundBaseValid && !lay->groundDirty
                && lay->bodies.empty() && lay->bodyCells.empty()
                && (lay->groundContentDirty || lay->groundBaseFlags.size() == totalComps);
   if (reuse) {
-    std::copy(lay->groundRigidBase.begin(), lay->groundRigidBase.end(), lay->groundedCell.begin());
+    if (!lay->groundRigidBase.empty())
+      std::memcpy(lay->groundedCell.data(), lay->groundRigidBase.data(), lay->groundRigidBase.size());
     if (lay->groundContentDirty) {
       // Comps reshaped but grounding stayed valid (the acid split path): the
       // positional ids in cellComp shifted, so re-index and re-derive the comp
@@ -169,6 +178,7 @@ void ComponentSystem::computeGrounded() {
     lay->groundContentDirty = false;
   }
   applyLooseOverlay();
+  lay->looseGroundDirty = false;
 #ifdef SAND_INVARIANT_CHECKS
   {
     // Parity probe: re-run the PRE-SPLIT single-flood algorithm from scratch
@@ -278,14 +288,13 @@ void ComponentSystem::incrementalGroundingRefresh() {
 // wrong fast path can never silently desync — it shows up as a test failure.
 void ComponentSystem::ensureGroundedSingleLayer() {
   // Skip the whole pass when nothing that affects grounding changed since the
-  // last one: powder-free (the loose overlay tracks liquids outside the
-  // component hooks, so powder needs a per-pass refresh), no structural change
-  // (groundDirty), and no acid fast-path removal (groundContentDirty). When all
-  // are clear the cached E.L->cellComp[]/groundedCell[]/comp.grounded are the
-  // exact grounding of the current grid. Otherwise run computeGrounded(),
-  // whose internal tiers do the cheapest valid thing (rigid-base reuse +
-  // overlay, incremental re-index, or a full flood).
-  bool needPass = groundForceFull || E.bgEnabled || E.L->groundDirty || E.L->groundContentDirty || E.L->groundSawPowder;
+  // last one: no loose/liquid motion (looseGroundDirty), no structural change
+  // (groundDirty), and no acid fast-path removal (groundContentDirty). Powder
+  // sitting still no longer forces a per-pass refresh. When all are clear the
+  // cached E.L->cellComp[]/groundedCell[]/comp.grounded are the exact grounding
+  // of the current grid. Otherwise run computeGrounded(), whose internal tiers
+  // do the cheapest valid thing (skip / rigid-base reuse + overlay / full flood).
+  bool needPass = groundForceFull || E.bgEnabled || E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
   if (!needPass && !groundVerify) return;
   if (!groundVerify) { computeGrounded(); return; }
   computeGrounded(); // production path (cache tiers allowed)
@@ -503,19 +512,35 @@ void ComponentSystem::groundLayerBase(Layer* lay) {
 // grounded, now not) so they start falling next step. Shared by the fast and
 // full grounding paths.
 void ComponentSystem::wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev) {
-  const uint8_t* gr = lay.groundedCell.data(); const uint8_t* g = lay.grid;
+  // Only rigid component/body cells can lose structural grounding. Scanning the
+  // full grid was O(cols*rows) per layer per joint pass; the component lists are
+  // the same set of candidates (unregistered rigid cells are erased each step).
+  const uint8_t* gr = lay.groundedCell.data();
   int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
-  for (int y = 0; y < E.rows; y++) {
-    int rb = y * E.cols, mn = rmn[y], mx = rmx[y];
-    for (int x = 0; x < E.cols; x++) { int k = rb + x; if (prev[k] && !gr[k] && E.isRigidMaterialClass(g[k])) { if (x < mn) mn = x; if (x > mx) mx = x; } }
-    rmn[y] = mn; rmx[y] = mx;
-  }
+  auto wake = [&](int k) {
+    if (!prev[k] || gr[k]) return;
+    int y = k / E.cols, x = k - y * E.cols;
+    if (x < rmn[y]) rmn[y] = x;
+    if (x > rmx[y]) rmx[y] = x;
+  };
+  for (auto& c : lay.stoneComponents) for (int k : c.cells) wake(k);
+  for (auto& c : lay.plantComponents) for (int k : c.cells) wake(k);
+  for (auto& c : lay.iceComponents) for (int k : c.cells) wake(k);
+  for (int k : lay.bodyCells) wake(k);
 }
 void ComponentSystem::computeGroundedBoth() {
-  cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
-  cgPrevBg.assign(E.bg.groundedCell.begin(), E.bg.groundedCell.end());
+  // Snapshot prev grounded only when rigid grounding may change (wake needs the
+  // 1->0 transition). A pure loose-overlay refresh cannot unground rigid cells.
+  auto rigidMayChange = [](Layer& lay) {
+    return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
+           || !lay.bodies.empty() || !lay.bodyCells.empty();
+  };
+  bool prevFg = rigidMayChange(E.fg);
+  bool prevBg = rigidMayChange(E.bg);
+  if (prevFg) cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
+  if (prevBg) cgPrevBg.assign(E.bg.groundedCell.begin(), E.bg.groundedCell.end());
   // Each layer's base grounding: full flood when its rigid topology changed, else a
-  // cheap cache reuse inside computeGrounded.
+  // cheap cache reuse / full skip inside computeGrounded.
   groundLayerBase(&E.fg);
   groundLayerBase(&E.bg);
 
@@ -532,7 +557,8 @@ void ComponentSystem::computeGroundedBoth() {
   for (int i = 0; i < nf && !anyUngrounded; i++) if (!compById(E.fg, i)->grounded) anyUngrounded = true;
   for (int i = 0; i < nb && !anyUngrounded; i++) if (!compById(E.bg, i)->grounded) anyUngrounded = true;
   if (!anyUngrounded) {
-    wakeCellsThatLostGrounding(E.fg, cgPrevFg); wakeCellsThatLostGrounding(E.bg, cgPrevBg);
+    if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
+    if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
     E.useLayer(&E.fg);
     return;
   }
@@ -572,7 +598,8 @@ void ComponentSystem::computeGroundedBoth() {
   }
 
   if (cgBonds.empty()) {
-    wakeCellsThatLostGrounding(E.fg, cgPrevFg); wakeCellsThatLostGrounding(E.bg, cgPrevBg);
+    if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
+    if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
     E.useLayer(&E.fg);
     return;
   }
@@ -609,7 +636,10 @@ void ComponentSystem::computeGroundedBoth() {
 
   // Re-wake whatever lost grounding this step (only the 1->0 transition;
   // already-ungrounded cells stay active from their own motion/edits).
-  wakeCellsThatLostGrounding(E.fg, cgPrevFg); wakeCellsThatLostGrounding(E.bg, cgPrevBg);
+  // Cross-layer bond support only ADDS grounding (never clears base-grounded
+  // cells), so the prev snapshot from before groundLayerBase is still correct.
+  if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
+  if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
   E.useLayer(&E.fg);
 }
 
@@ -640,18 +670,19 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
   // Iteration order of `cells` feeds the double accumulators below, so the set
   // stays; only the per-neighbour membership test moves to the stamp mirror.
   // The caller may pass a probe set shifted past the grid edge (motionDecision's
-  // `shifted`); OOB members are never the subject of an in-bounds .has(nk)
-  // query, so skipping their add preserves the old set semantics.
+  // `shifted`); OOB members must be skipped entirely — even computing x/y from a
+  // negative k and calling asmCells.has(nk) is a memory-safety hazard.
   const int gridLen = E.cols * E.rows;
   asmCells.reset((size_t)gridLen);
   for (int k : cells) if (k >= 0 && k < gridLen) asmCells.add(k);
   for (int k : cells) {
+    if (k < 0 || k >= gridLen) continue;
     int y = k / E.cols, x = k - y * E.cols;
     const int offs[3] = { -1, 1, E.cols };
     for (int i = 0; i < 3; i++) {
       int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == E.cols ? 1 : 0);
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
-      if (asmCells.has(nk)) continue;
+      if (nk < 0 || nk >= gridLen || asmCells.has(nk)) continue;
       uint8_t m = g[nk];
       c.faces++;
       if (E.isLiquidMaterial(m)) {
@@ -825,8 +856,20 @@ void ComponentSystem::moveRigidAssemblies() {
   // reproduces that exactly while only scanning ungrounded cells.)
   std::vector<uint8_t> anchored(n, 0);
   for (int i = 0; i < n; i++) for (int k : all[i]->cells) {
+    if (k < 0 || k >= E.cols * E.rows) continue;
     int y = k / E.cols, x = k - y * E.cols;
-    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows) continue; int gj = E.L->cellComp[ny * E.cols + nx]; if (gj >= 0) { int j = localOf[gj]; if (j >= 0) { ufUnite(parent, i, j); } else { anchored[i] = 1; } } }
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      int nx = x + ox, ny = y + oy;
+      if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows) continue;
+      int gj = E.L->cellComp[ny * E.cols + nx];
+      // cellComp can lag a re-index if a prior erase split comps without a full
+      // flood; never index localOf with a stale id (WASM OOB / segfault).
+      if (gj < 0 || gj >= totalComps) continue;
+      int j = localOf[gj];
+      if (j >= 0) ufUnite(parent, i, j);
+      else anchored[i] = 1;
+    }
   }
   struct Group { std::vector<int> comps; bool grounded = false; int maxY = 0; };
   std::unordered_map<int, Group> groups;
@@ -1086,7 +1129,15 @@ void ComponentSystem::moveRigidAssemblies() {
     if (decision == 0) continue;
     std::unordered_set<int> shifted; shifted.reserve(cells.size());
     int dirK = decision > 0 ? E.cols : -E.cols;
-    for (int k : cells) shifted.insert(k + dirK);
+    const int gridLen = E.cols * E.rows;
+    bool shiftInBounds = true;
+    for (int k : cells) {
+      int nk = k + dirK;
+      if (nk < 0 || nk >= gridLen) { shiftInBounds = false; break; }
+      shifted.insert(nk);
+    }
+    // Out-of-buffer probe (assembly already against floor/ceiling): cannot move.
+    if (!shiftInBounds) continue;
     // If a one-cell move would immediately ask for the opposite move, the
     // assembly is already straddling buoyant equilibrium. Hold it there instead
     // of producing a deterministic up/down two-cycle.

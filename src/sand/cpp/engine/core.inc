@@ -193,7 +193,8 @@
   //   1. Own fallback (denser's vacated source) — the natural 1-cell density swap.
   //      Without this, BFS raced every displaced oil cell to free-surface EMPTY and
   //      the pool "sucked" up into the falling water.
-  //   2. Nearest EMPTY/gas via BFS (only for liquids that lost their fallback).
+  //   2. Nearest EMPTY via BFS (only for liquids that lost their fallback; gas is
+  //      pathable but not claimed — bubble swaps go through moveMaterialInto).
   //   3. Strictly less-dense liquid (chain continues).
   //   4. Spare free slots released by peers that landed elsewhere.
   //
@@ -215,9 +216,18 @@
 
     auto plannedAt = [&](int k) -> uint8_t {
       int y = k / cols, x = k - y * cols;
-      // Active rows were blanked then rewritten — next[] is authoritative there.
-      // Inactive rows keep stale next; grid is the committed state (unchanged).
-      if (x >= L->activeRowMin[y] && x <= L->activeRowMax[y]) return L->next[k];
+      // Active rows were blanked then rewritten — next[] is authoritative there
+      // for materials that already settled. Gas rises AFTER this resolve pass, so
+      // a blanked next[] still leaves grid gas occupying the cell; treat it as
+      // present so BFS does not place liquid on top of unmoved smoke/steam.
+      if (x >= L->activeRowMin[y] && x <= L->activeRowMax[y]) {
+        uint8_t n = L->next[k];
+        if (n != EMPTY) return n;
+        if (L->vacatedStamp[k] == tick) return EMPTY;
+        uint8_t g = L->grid[k];
+        if (isGasMaterial(g)) return g;
+        return EMPTY;
+      }
       return L->grid[k];
     };
     auto reserveFallback = [&](int fb) {
@@ -295,11 +305,14 @@
               continue;
             }
             uint8_t p = plannedAt(k);
-            if (p == EMPTY || isGasMaterial(p)) levelEmpty.push_back(k);
+            // Claim true EMPTY only. Gas is free volume for pathing (canVisit) but
+            // not a placement target — overwriting smoke/steam here destroyed it
+            // without a bubble swap (moveMaterialInto is the only gas-safe claim).
+            if (p == EMPTY) levelEmpty.push_back(k);
             else if (isLiquidMaterial(p) && DENSITY[p] < DENSITY[mat]) levelChain.push_back(k);
             for (int off : offs) enqueue(k + off);
           }
-          // Prefer EMPTY/gas over chain at the same distance.
+          // Prefer EMPTY over chain at the same distance.
           for (int k : levelEmpty) {
             if ((int)targets.size() >= remaining) break;
             if (L->rigidSpillReserved[k] == reservedGen) continue;

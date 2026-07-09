@@ -413,37 +413,65 @@
   // Free volume for liquid movement: EMPTY, gas, or a strictly less-dense liquid.
   // Denser liquids path through lighter ones as if they were air; the lighter
   // liquid is relocated by resolveLiquidDisplacements (not a local swap).
+  //
+  // Gas is free volume only once per tick — the gas still sitting in grid[k]
+  // with next empty. Gas already written into next[k] this tick is a rising
+  // bubble parked for the rest of the settle pass. Claiming that again would
+  // cascade-swap it to the free surface in one step (looks like teleporting).
   inline bool liquidTreatsAsEmpty(uint8_t m, uint8_t d) {
     return d == EMPTY || isGasMaterial(d) || (isLiquidMaterial(d) && canDisplaceByLooseDensity(m, d));
+  }
+  // True when liquid may claim the gas at k this tick (grid-native, not yet moved).
+  inline bool liquidGasClaimableAt(int k) {
+    return L->next[k] == EMPTY && L->vacatedStamp[k] != tick && isGasMaterial(L->grid[k]);
   }
   // Effective occupant of k this tick for liquid claims. Prefers next[] (already
   // settled writers) so denser fluid can still sink through lighter fluid that
   // wrote itself into next bottom-up — without this, next!=EMPTY blocked all
   // multi-cell sinks and left only 1-cell settleLooseDensityInterface swaps.
+  // Parked rising gas in next[] is reported as itself but is NOT free volume
+  // (see liquidColumnPassable / liquidCanClaim) so the bubble rises 1 cell/tick.
   inline uint8_t liquidOccupantAt(int k) {
     uint8_t n = L->next[k];
     if (n != EMPTY) return n;
     if (L->vacatedStamp[k] == tick) return EMPTY;
     return L->grid[k];
   }
-  // Fall-through: EMPTY/gas/lighter liquid (in next or grid) count as air.
+  // Fall-through: EMPTY / claimable gas / lighter liquid count as air.
+  // Gas already parked in next[] blocks further fall this tick.
   inline bool liquidColumnPassable(int k, uint8_t m) {
-    return liquidTreatsAsEmpty(m, liquidOccupantAt(k));
+    uint8_t n = L->next[k];
+    if (n != EMPTY) {
+      if (isGasMaterial(n)) return false; // rising bubble — one step/tick
+      return isLiquidMaterial(n) && canDisplaceByLooseDensity(m, n);
+    }
+    if (L->vacatedStamp[k] == tick) return true;
+    uint8_t g = L->grid[k];
+    return g == EMPTY || isGasMaterial(g) || (isLiquidMaterial(g) && canDisplaceByLooseDensity(m, g));
   }
-  // Land/claim for fall / down-diagonal / vertical sink: EMPTY, gas, or strictly
-  // lighter loose (liquid or powder).
+  // Land/claim for fall / down-diagonal / vertical sink: EMPTY, claimable gas,
+  // or strictly lighter loose (liquid or powder).
   inline bool liquidCanClaim(int k, uint8_t m) {
-    uint8_t o = liquidOccupantAt(k);
-    return o == EMPTY || canDisplaceMaterial(m, o);
+    uint8_t n = L->next[k];
+    if (n != EMPTY) {
+      if (isGasMaterial(n)) return false; // parked bubble
+      return canDisplaceMaterial(m, n);
+    }
+    if (L->vacatedStamp[k] == tick) return true;
+    uint8_t g = L->grid[k];
+    return g == EMPTY || isGasMaterial(g) || canDisplaceMaterial(m, g);
   }
-  // Same-level flow / enter: EMPTY or gas only. Lighter liquid is NOT air for
-  // lateral flow — treating it as enterable makes a flat water|oil contact
-  // swap forever (BFS relocates oil into the vacated hole = PE-neutral churn)
-  // and multi-fluid pools never go inert.
+  // Same-level flow / enter: EMPTY or claimable gas only. Lighter liquid is NOT
+  // air for lateral flow — treating it as enterable makes a flat water|oil
+  // contact swap forever (BFS relocates oil into the vacated hole = PE-neutral
+  // churn) and multi-fluid pools never go inert. Parked next[] gas is blocked.
   inline bool liquidCanFlowInto(int k, uint8_t m) {
     (void)m;
-    uint8_t o = liquidOccupantAt(k);
-    return o == EMPTY || isGasMaterial(o);
+    uint8_t n = L->next[k];
+    if (n != EMPTY) return false;
+    if (L->vacatedStamp[k] == tick) return true;
+    uint8_t g = L->grid[k];
+    return g == EMPTY || isGasMaterial(g);
   }
   inline bool canEnterIndex(int k, uint8_t m) {
     if (isLiquidMaterial(m)) return liquidCanFlowInto(k, m);
@@ -479,7 +507,16 @@
       liquidDispPending.push_back({displaced, toK, fromK});
       return;
     }
-    // Powder/gas: only emit displacee if grid occupant is still present (not vacated).
+    // Gas: bubble into the mover's vacated source (one cell). Claim checks only
+    // allow grid-native gas, so a lower swap that parked gas in next[fromK] is
+    // not re-claimed by the cell above — bubbles rise ~1 cell/tick instead of
+    // teleporting to the free surface. Always relocate: gas is never a vacated
+    // powder ghost, and dropping it made acrid smoke vanish under liquid.
+    if (isGasMaterial(displaced)) {
+      if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
+      return;
+    }
+    // Powder: only emit displacee if grid occupant is still present (not vacated).
     if (L->vacatedStamp[toK] == tick) return;
     if (L->next[fromK] == EMPTY) writeNextIndex(fromK, displaced);
   }

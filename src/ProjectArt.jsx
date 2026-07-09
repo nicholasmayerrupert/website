@@ -691,14 +691,13 @@ export function LifeArt() {
         );
       })}
 
-      {/* generations, bottom (oldest) to top (current) */}
+      {/* generations, bottom (oldest) to top (current) — static cubes; motion is the scan. */}
       {LIFE_LAYERS.map(({ layer, cells, colors, opacity }) => {
         const ordered = [...cells].sort((a, b) => a[0] + a[1] - (b[0] + b[1]));
-        const isTop = layer === 2;
         return (
           <g key={layer}>
             <IsoPlate layer={layer} stroke="#6d5aa8" opacity={0.2 + layer * 0.12} />
-            {ordered.map(([c, r], i) => (
+            {ordered.map(([c, r]) => (
               <IsoCube
                 key={`${c}-${r}`}
                 c={c}
@@ -706,15 +705,20 @@ export function LifeArt() {
                 layer={layer}
                 {...colors}
                 opacity={opacity}
-                className={isTop && i === ordered.length - 1 ? 'pa-pop' : undefined}
               />
             ))}
           </g>
         );
       })}
 
-      {/* faint scan plane — static (animated rise was a continuous layer repaint) */}
-      <polygon points={scanPlate} fill="rgba(94,234,212,0.06)" stroke="rgba(94,234,212,0.22)" strokeWidth="1" opacity="0.85" />
+      {/* scan plane sweeping up through the generations */}
+      <polygon
+        points={scanPlate}
+        fill="rgba(94,234,212,0.08)"
+        stroke="rgba(94,234,212,0.3)"
+        strokeWidth="1"
+        className="pa-rise"
+      />
 
       <Sparkle x={320} y={84} s={7} fill="#5eead4" className="pa-twinkle" style={{ animationDelay: '1.4s' }} />
       <Sparkle x={96} y={92} s={5} fill="#9d6bff" opacity={0.75} />

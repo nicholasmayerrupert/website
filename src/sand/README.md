@@ -5,7 +5,7 @@ A falling-sand / cellular-automaton simulation that runs in the home-page hero
 via `src/GamePage.jsx`). The simulation, **rendering (WebGL2 compositing)**, the **view camera**,
 the **input policy**, tool/pointer semantics, and world streaming all run in C++
 compiled to WebAssembly. JavaScript is a thin browser shell: it sizes the canvas,
-runs the RAF/fixed-step loop, forwards raw DOM events (keys/pointer/resize) to the
+runs the RAF with separate actor/world clocks, forwards raw DOM events (keys/pointer/resize) to the
 engine, and carries the WebSocket multiplayer transport. It no longer touches
 pixels or owns the camera. The whole thing ships as a framework-free
 `<sand-game>` Web Component; a tiny React wrapper mounts that element on this site.
@@ -69,7 +69,7 @@ terrain) is skipped, so a static scene costs about the same as one layer.
     offset is snapped to whole device px here (the flicker fix). A world shift
     slides the texture with `glBlitFramebuffer` instead of repainting.
   - `cpp/engine/camera.inc` — the view camera (pan/bounds/follow), the
-    pointer→aim-cell mapping, the player input bitmask, and the per-frame pan /
+    pointer→aim-cell mapping, the player input bitmask, and the fixed-tick pan /
     world-stream drivers. JS just forwards held keys + the pointer.
 - `wasm/` — `build.sh` compiles `cpp/` to `sandEngine.js` (a single self-contained
   ES module with the wasm embedded; built with WebGL2/`FULL_ES3`) and writes
@@ -85,8 +85,8 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 - `MATERIAL_MODEL.md` — explains material IDs, classes, kinds, flags, component
   groups, and free-body ownership.
 - `game/createSandGame.js` — the framework-agnostic browser shell. It creates the
-  canvas, hands it to the engine for a WebGL2 context, runs the RAF/fixed-step
-  loop, forwards DOM events (`engine.inputKey/inputPointer/...`), drives
+  canvas, hands it to the engine for a WebGL2 context, runs the 60 Hz actor clock
+  plus the no-catch-up world gate, forwards DOM events (`engine.inputKey/inputPointer/...`), drives
   `engine.glRenderFrame()` and `engine.streamWorld()`, and carries the net
   transport. No pixels, no camera math, no React.
 - `embed/sandGame.js` — the `<sand-game>` Web Component: a shadow root holding the
@@ -120,8 +120,10 @@ and presented in JS. JS only collects a normalized input bitmask (`INPUT.*` in
 snapshots to draw an overlay. Physics is a deterministic fixed-timestep AABB
 platformer (gravity, run/friction, edge-triggered jump, sub-cell-stepped
 collision against solids/powders). Liquids remain pass-through cells but apply
-drag, a capped fall speed, and jump/up swimming while submerged. Players advance
-every `step()`, even when the grid is static, and stay world-anchored across streaming
+drag, a capped fall speed, and jump/up swimming while submerged. Players and
+items advance through `stepActors()` on a deterministic 60 Hz clock even when the
+cellular world falls below 60 TPS; `stepWorld()` never catches up missed sand
+ticks. The legacy `step()` composes both phases for tests/embedders. Players stay world-anchored across streaming
 shifts. Determinism (no RNG) is what lets a fixed input stream replay identically
 — the basis for server-authoritative multiplayer.
 

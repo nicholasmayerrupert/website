@@ -84,14 +84,14 @@ class ViewCamera {
     return b;
   }
 
-  // Free-camera pan from held keys, scaled by real frame time. No-op in play
-  // mode (the keys drive the player there and the camera follows it).
-  void panFrame(double frameDtMs) {
+  // Free-camera pan from held keys on the shared deterministic 60 Hz actor clock.
+  // No-op in play mode (the keys drive the player there and the camera follows it).
+  void panTick() {
     if (playModeOn) return;
     int px = (int)((heldKeys >> IK_RIGHT) & 1) - (int)((heldKeys >> IK_LEFT) & 1);
     int py = (int)((heldKeys >> IK_DOWN) & 1) - (int)((heldKeys >> IK_UP) & 1);
     if (!px && !py) return;
-    double dist = CAM_PAN_CELLS_PER_SEC * (frameDtMs / 1000.0);
+    double dist = CAM_PAN_CELLS_PER_SEC / 60.0;
     panBy((px > 0 ? 1 : (px < 0 ? -1 : 0)) * dist, (py > 0 ? 1 : (py < 0 ? -1 : 0)) * dist);
   }
   // Glide the camera toward a target center (the followed player's center). JS

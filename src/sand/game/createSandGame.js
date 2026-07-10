@@ -331,9 +331,10 @@ export function createSandGame(container, opts = {}) {
     perfStats() {
       const { avg, p95 } = loop.perfFrameSummary();
       const perf = ctx.engine ? ctx.engine.getPerf() : { stepMs: 0, dirtyChunks: 0 };
-      const catchup = ctx.catchupStats || {};
+      const timing = ctx.timingStats || {};
       return {
         stepMs: perf.stepMs,
+        actorMs: perf.actorMs || 0,
         renderMs: ctx.perfRenderMs,
         lightMs: perf.lightMs || 0,
         fillMs: perf.fillMs || 0,
@@ -360,12 +361,13 @@ export function createSandGame(container, opts = {}) {
         componentCellCount: perf.componentCellCount || 0,
         crossBondCount: perf.crossBondCount || 0,
         tick: ctx.engine ? ctx.engine.getTick() : 0,
+        actorTick: ctx.engine ? ctx.engine.getActorTick() : 0,
+        worldTick: ctx.engine ? ctx.engine.getTick() : 0,
         worldShifts: ctx.engine ? ctx.engine.getWorldShiftCount() : 0,
-        catchupSteps: catchup.stepsThisFrame || 0,
-        catchupMaxSteps: catchup.maxSteps || 0,
-        catchupDebtMs: catchup.debtMs || 0,
-        catchupDroppedMs: catchup.droppedDebtMs || 0,
-        catchupClamped: !!catchup.clamped,
+        actorSteps: timing.actorSteps || 0,
+        actorDebtMs: timing.actorDebtMs || 0,
+        actorDroppedMs: timing.actorDroppedMs || 0,
+        worldStepped: !!timing.worldStepped,
         heapMB: ctx.engine ? ctx.engine.getHeapBytes() / (1024 * 1024) : 0,
         rows: ctx.rows,
         cols: ctx.cols,

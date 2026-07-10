@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 2;
+static const int ABI_VERSION = 3;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -76,37 +76,38 @@ enum GlPlayerExtField : int {
 };
 static const int GLP_STRIDE = 8;
 
-// perfSnapshot: stepMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs
+// perfSnapshot: stepMs, actorMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs
 enum PerfSnapshotField : int {
   PF_STEP_MS = 0,
-  PF_DIRTY_CHUNKS = 1,
-  PF_DIRTY_ROWS = 2,
-  PF_DIRTY_CELLS = 3,
-  PF_COMPONENT_COUNT = 4,
-  PF_COMPONENT_CELL_COUNT = 5,
-  PF_CROSS_BOND_COUNT = 6,
-  PF_LIGHT_MS = 7,
-  PF_FILL_MS = 8,
-  PF_UPLOAD_MS = 9,
-  PF_SHIFT_BUFFERS = 10,
-  PF_SHIFT_TRANSLATE = 11,
-  PF_SHIFT_REGISTER = 12,
-  PF_SHIFT_FILL = 13,
-  PF_GROUNDING_MS = 14,
-  PF_CROSS_LAYER_GROUNDING_MS = 15,
-  PF_COMPONENT_INDEX_MS = 16,
-  PF_ASSEMBLY_UNION_MS = 17,
-  PF_CARRY_MS = 18,
-  PF_BODY_MS = 19,
-  PF_SAND_MS = 20,
-  PF_LIQUID_MS = 21,
-  PF_GAS_MS = 22,
-  PF_REACT_MS = 23,
-  PF_TAIL_MS = 24,
-  PF_LAYERS_MS = 25,
-  PF_CROSS_MS = 26,
+  PF_ACTOR_MS = 1,
+  PF_DIRTY_CHUNKS = 2,
+  PF_DIRTY_ROWS = 3,
+  PF_DIRTY_CELLS = 4,
+  PF_COMPONENT_COUNT = 5,
+  PF_COMPONENT_CELL_COUNT = 6,
+  PF_CROSS_BOND_COUNT = 7,
+  PF_LIGHT_MS = 8,
+  PF_FILL_MS = 9,
+  PF_UPLOAD_MS = 10,
+  PF_SHIFT_BUFFERS = 11,
+  PF_SHIFT_TRANSLATE = 12,
+  PF_SHIFT_REGISTER = 13,
+  PF_SHIFT_FILL = 14,
+  PF_GROUNDING_MS = 15,
+  PF_CROSS_LAYER_GROUNDING_MS = 16,
+  PF_COMPONENT_INDEX_MS = 17,
+  PF_ASSEMBLY_UNION_MS = 18,
+  PF_CARRY_MS = 19,
+  PF_BODY_MS = 20,
+  PF_SAND_MS = 21,
+  PF_LIQUID_MS = 22,
+  PF_GAS_MS = 23,
+  PF_REACT_MS = 24,
+  PF_TAIL_MS = 25,
+  PF_LAYERS_MS = 26,
+  PF_CROSS_MS = 27,
 };
-static const int PF_STRIDE = 27;
+static const int PF_STRIDE = 28;
 
 enum PlayerInput : int {
   PI_LEFT = 1,

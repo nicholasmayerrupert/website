@@ -196,7 +196,9 @@ function createPerfHud(root, game) {
     rows[key] = v;
   };
   addRow('fps', 'fps');
-  addRow('tps', 'tick/s');
+  addRow('actorTps', 'actor/s');
+  addRow('worldTps', 'world/s');
+  addRow('actor', 'actor ms');
   addRow('step', 'step ms');
   addRow('render', 'render ms');
   addRow('light', 'light ms');
@@ -214,7 +216,7 @@ function createPerfHud(root, game) {
   addRow('react', 'react ms');
   addRow('tail', 'tail ms');
   addRow('frame', 'frame p95');
-  addRow('catchup', 'catch-up');
+  addRow('timing', 'actor debt');
   addRow('dirty', 'dirty chunks');
   addRow('dirtyRows', 'dirty rows');
   addRow('dirtyCells', 'dirty cells');
@@ -230,7 +232,8 @@ function createPerfHud(root, game) {
   let raf = 0;
   let frames = 0;
   let winStart = performance.now();
-  let lastTick = null;
+  let lastActorTick = null;
+  let lastWorldTick = null;
   const tick = () => {
     raf = requestAnimationFrame(tick);
     frames++;
@@ -239,17 +242,22 @@ function createPerfHud(root, game) {
     if (dt < 500) return;
     const s = game.perfStats ? game.perfStats() : null;
     const fps = (frames * 1000) / dt;
-    let tps = 0;
+    let actorTps = 0;
+    let worldTps = 0;
     if (s) {
-      if (lastTick !== null) tps = ((s.tick - lastTick) * 1000) / dt;
-      lastTick = s.tick;
+      if (lastActorTick !== null) actorTps = ((s.actorTick - lastActorTick) * 1000) / dt;
+      if (lastWorldTick !== null) worldTps = ((s.worldTick - lastWorldTick) * 1000) / dt;
+      lastActorTick = s.actorTick;
+      lastWorldTick = s.worldTick;
     }
     frames = 0;
     winStart = now;
     if (!s) return;
     const f2 = (v) => (v || 0).toFixed(2);
     rows.fps.textContent = fps.toFixed(0);
-    rows.tps.textContent = tps.toFixed(0);
+    rows.actorTps.textContent = actorTps.toFixed(0);
+    rows.worldTps.textContent = worldTps.toFixed(0);
+    rows.actor.textContent = f2(s.actorMs);
     rows.step.textContent = f2(s.stepMs);
     rows.render.textContent = f2(s.renderMs);
     rows.light.textContent = f2(s.lightMs);
@@ -267,7 +275,7 @@ function createPerfHud(root, game) {
     rows.react.textContent = f2(s.reactMs);
     rows.tail.textContent = f2(s.tailMs);
     rows.frame.textContent = f2(s.p95FrameMs);
-    rows.catchup.textContent = `${s.catchupSteps}/${s.catchupMaxSteps}${s.catchupClamped ? '*' : ''}`;
+    rows.timing.textContent = `${f2(s.actorDebtMs)} / ${f2(s.actorDroppedMs)}`;
     rows.dirty.textContent = String(s.dirtyChunks || 0);
     rows.dirtyRows.textContent = String(s.dirtyRows || 0);
     rows.dirtyCells.textContent = String(s.dirtyCells || 0);
@@ -277,7 +285,7 @@ function createPerfHud(root, game) {
     rows.shifts.textContent = String(s.worldShifts);
     rows.heap.textContent = s.heapMB.toFixed(1);
     rows.grid.textContent = `${s.cols}×${s.rows}`;
-    rows.tick.textContent = String(s.tick);
+    rows.tick.textContent = `${s.actorTick}/${s.worldTick}`;
   };
   raf = requestAnimationFrame(tick);
 

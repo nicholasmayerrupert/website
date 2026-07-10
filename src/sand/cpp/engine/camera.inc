@@ -18,7 +18,7 @@
   double aimCellX() { return cam.aimCellX(); }
   double aimCellY() { return cam.aimCellY(); }
   int localInputBits() { return cam.localInputBits(); }
-  void cameraPanFrame(double frameDtMs) { cam.panFrame(frameDtMs); }
+  void cameraPanTick() { cam.panTick(); }
   void cameraFollowTo(double cx, double cy) { cam.followTo(cx, cy); }
 
   // ---- cross-system drivers (Engine-level orchestration; NOT camera math) ----

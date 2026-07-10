@@ -180,6 +180,8 @@ export function initSandWasm() {
         worldSurfaceAt: c('engine_world_surface_at', 'number', ['number', 'number']),
         destroy: c('engine_destroy', null, ['number']),
         step: c('engine_step', 'number', ['number']),
+        stepActors: c('engine_step_actors', 'number', ['number']),
+        stepWorld: c('engine_step_world', 'number', ['number']),
         grid: c('engine_grid', 'number', ['number']),
         dirtyCount: c('engine_dirty_count', 'number', ['number']),
         cols: c('engine_cols', 'number', ['number']),
@@ -204,6 +206,8 @@ export function initSandWasm() {
         syncComponents: c('engine_sync_components', null, ['number']),
         perfSnapshot: c('engine_perf_snapshot', null, ['number', 'number']),
         tick: c('engine_tick', 'number', ['number']),
+        actorTick: c('engine_actor_tick', 'number', ['number']),
+        setActorTick: c('engine_set_actor_tick', null, ['number', 'number']),
         addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
         finalizeDraft: c('engine_finalize_draft', null, ['number', 'number']),
         clearDraft: c('engine_clear_draft', null, ['number']),
@@ -289,7 +293,7 @@ export function initSandWasm() {
         cameraSet: c('engine_camera_set', null, ['number', 'number', 'number']),
         cameraGet: c('engine_camera_get', null, ['number', 'number']),
         cameraColX: c('engine_camera_col_x', 'number', ['number']),
-        cameraPanFrame: c('engine_camera_pan_frame', null, ['number', 'number']),
+        cameraPanTick: c('engine_camera_pan_tick', null, ['number']),
         cameraFollowTo: c('engine_camera_follow_to', null, ['number', 'number', 'number']),
         streamWorld: c('engine_stream_world', 'number', ['number']),
         inputKey: c('engine_input_key', null, ['number', 'number', 'number']),
@@ -398,6 +402,8 @@ export function createEngineWasm({
     chunkCols: liveChunkCols,
     chunkRows: liveChunkRows,
     step() { return M.step(ptr) === 1; },
+    stepActors() { return M.stepActors(ptr) === 1; },
+    stepWorld() { return M.stepWorld(ptr) === 1; },
     getGrid() { return gridView(); },
     // Build the coalesced dirty rects in C++ and hand back a zero-copy view.
     // buildDirtyRects may grow wasm memory (its rect vector), so the HEAP32
@@ -513,7 +519,7 @@ export function createEngineWasm({
     cameraSet(x, y) { M.cameraSet(ptr, x, y); },
     getCam() { M.cameraGet(ptr, camOut); const o = camOut >> 3; return { x: mod.HEAPF64[o], y: mod.HEAPF64[o + 1] }; },
     cameraColX() { return M.cameraColX(ptr); },
-    cameraPanFrame(frameDtMs) { M.cameraPanFrame(ptr, frameDtMs); },
+    cameraPanTick() { M.cameraPanTick(ptr); },
     cameraFollowTo(cx, cy) { M.cameraFollowTo(ptr, cx, cy); },
     streamWorld() { return M.streamWorld(ptr); },
     inputKey(code, down) { M.inputKey(ptr, code | 0, down ? 1 : 0); },
@@ -547,6 +553,7 @@ export function createEngineWasm({
       const { d, F } = this.readPerf();
       return {
         stepMs: d[F.stepMs],
+        actorMs: d[F.actorMs],
         dirtyChunks: d[F.dirtyChunks],
         dirtyRows: d[F.dirtyRows],
         dirtyCells: d[F.dirtyCells],
@@ -618,6 +625,8 @@ export function createEngineWasm({
       };
     },
     getTick() { return M.tick(ptr); },
+    getActorTick() { return M.actorTick(ptr); },
+    syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
     destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
 

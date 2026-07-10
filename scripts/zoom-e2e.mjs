@@ -55,7 +55,7 @@ try {
   const zin = await info();
   check(`zoom in reduces visible cells (${base.viewCols} -> ${zin.viewCols})`, zin.viewCols < base.viewCols && zin.viewRows < base.viewRows);
   check(`zoom in enlarges device cell size (${base.cellDev} -> ${zin.cellDev})`, zin.cellDev > base.cellDev);
-  check(`zoom in does NOT rebuild the buffer (${zin.cols}x${zin.rows})`, zin.cols === base.cols && zin.rows === base.rows);
+  check(`zoom in shrinks the loaded buffer (${base.cols}x${base.rows} -> ${zin.cols}x${zin.rows})`, zin.cols <= base.cols && zin.rows <= base.rows);
 
   // Reset with 0.
   await page.keyboard.press('0');
@@ -63,12 +63,12 @@ try {
   const reset = await info();
   check(`0 resets to default view (${reset.viewCols} == ${base.viewCols})`, reset.viewCols === base.viewCols && reset.viewRows === base.viewRows);
 
-  // Zoom OUT from default: more visible cells (capped), buffer still unchanged.
+  // Zoom OUT from default: more visible cells and a larger loaded buffer.
   await page.keyboard.press('-');
   await page.waitForTimeout(120);
   const zout = await info();
   check(`zoom out increases visible cells (${base.viewCols} -> ${zout.viewCols})`, zout.viewCols > base.viewCols && zout.viewRows > base.viewRows);
-  check(`zoom out does NOT rebuild the buffer (${zout.cols}x${zout.rows})`, zout.cols === base.cols && zout.rows === base.rows);
+  check(`zoom out grows the loaded buffer (${base.cols}x${base.rows} -> ${zout.cols}x${zout.rows})`, zout.cols >= base.cols && zout.rows >= base.rows);
   check(`visible window always fits the buffer (${zout.viewCols} <= ${zout.cols})`, zout.viewCols <= zout.cols && zout.viewRows <= zout.rows);
 
   // Engine kept simulating throughout (player still present in survival).

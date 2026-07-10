@@ -311,7 +311,7 @@ enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_MYCELIUM_SPORE
 
 // ---- Player sprite + animation (player.inc state pick; gl.inc per-pixel blit) ----
 // Deterministic: animState picked from physics at the end of integratePlayer, frame
-// derived from the shared `tick`, so prediction/replay reproduce the same frame.
+// derived from the actor tick, so prediction/replay reproduce the same frame.
 enum AnimState : uint8_t { AS_IDLE = 0, AS_WALK, AS_RUN, AS_RISE, AS_FALL, AS_WADE, AS_SWIM, AS_COUNT };
 static const double AS_MOVE_EPS = 0.10;            // |vx| below -> idle
 static const double AS_RUN_SPEED = P_MAX_RUN * 0.95; // run only past ~walk top speed
@@ -409,7 +409,7 @@ struct Player {
   uint8_t placeStrokeMaterial = EMPTY;
   // The stack currently "held on the cursor" (Minecraft-style pick/place/throw). 0 = empty.
   InvSlot cursor;
-  // Animation (computed at the end of integratePlayer; frame derived from tick).
+  // Animation (computed at the end of integratePlayer; frame derived from actorTick).
   uint8_t animState = AS_IDLE, animFrame = 0;
 };
 // Player snapshot layout: PS_* offsets / PS_STRIDE in abi.generated.hpp.

@@ -27,6 +27,8 @@ EMSCRIPTEN_KEEPALIVE int engine_world_offset_y(Engine* e) { return e->fg.worldOf
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->genSurfaceAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }
 EMSCRIPTEN_KEEPALIVE int engine_step(Engine* e) { return e->step() ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_step_actors(Engine* e) { return e->stepActors() ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_step_world(Engine* e) { return e->stepWorld() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid(Engine* e) { return e->fg.grid; }
 EMSCRIPTEN_KEEPALIVE int engine_dirty_count(Engine* e) { return e->fg.dirtyRenderCount; }
 EMSCRIPTEN_KEEPALIVE int engine_cols(Engine* e) { return e->cols; }
@@ -66,6 +68,7 @@ EMSCRIPTEN_KEEPALIVE void engine_sync_components(Engine* e) { e->useLayer(&e->fg
 // 18 scalar getters — reading the timers is 1 FFI call instead of ~18.
 EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_STEP_MS] = e->perfStepMs;
+  out[PF_ACTOR_MS] = e->perfActorMs;
   out[PF_DIRTY_CHUNKS] = (double)e->perfDirtyChunks;
   out[PF_DIRTY_ROWS] = (double)e->perfDirtyRows;
   out[PF_DIRTY_CELLS] = (double)e->perfDirtyCells;
@@ -94,6 +97,8 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_CROSS_MS] = e->perfCrossMs;
 }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
+EMSCRIPTEN_KEEPALIVE int engine_actor_tick(Engine* e) { return e->actorTick; }
+EMSCRIPTEN_KEEPALIVE void engine_set_actor_tick(Engine* e, int tick) { e->actorTick = tick < 0 ? 0 : tick; }
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
 // AND a full reflood every step and counts mismatches; forceFull=1 always refloods
 // (the byte-identical reference for the checksum test).
@@ -295,7 +300,7 @@ EMSCRIPTEN_KEEPALIVE int engine_resize_loaded_window(Engine* e, int newCols, int
 EMSCRIPTEN_KEEPALIVE void engine_camera_set(Engine* e, double x, double y) { e->cameraSet(x, y); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_get(Engine* e, double* out) { out[0] = e->cam.camX; out[1] = e->cam.camY; }
 EMSCRIPTEN_KEEPALIVE int engine_camera_col_x(Engine* e) { return e->cameraColX(); }
-EMSCRIPTEN_KEEPALIVE void engine_camera_pan_frame(Engine* e, double frameDtMs) { e->cameraPanFrame(frameDtMs); }
+EMSCRIPTEN_KEEPALIVE void engine_camera_pan_tick(Engine* e) { e->cameraPanTick(); }
 EMSCRIPTEN_KEEPALIVE void engine_camera_follow_to(Engine* e, double cx, double cy) { e->cameraFollowTo(cx, cy); }
 EMSCRIPTEN_KEEPALIVE int engine_stream_world(Engine* e) { return e->streamWorld(); }
 EMSCRIPTEN_KEEPALIVE void engine_input_key(Engine* e, int code, int down) { e->inputKey(code, down); }

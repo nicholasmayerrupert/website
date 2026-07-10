@@ -87,13 +87,22 @@
     perfTailMs += emscripten_get_now() - tT;
   }
 
-  bool step() {
-    // Players advance every step (foreground only); their tool edits mark fg active.
+  // Real-time entities advance on their own cheap deterministic clock. This is
+  // deliberately the extension point for future enemy/AI systems: add their
+  // update beside players/items without coupling them to the cellular world.
+  bool stepActors() {
+    double t0 = emscripten_get_now();
     useLayer(&fg);
     updatePlayers();
-    updateItems(); // entities (dropped items/particles) advance even when the L->grid is inert
+    updateItems();
+    actorTick++;
+    perfActorMs = emscripten_get_now() - t0;
+    return !psys.players.empty() || !itemsys.items.empty();
+  }
+
+  bool stepWorld() {
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
-    if (!fgA && !bgA) { useLayer(&fg); return !psys.players.empty() || !itemsys.items.empty(); }
+    if (!fgA && !bgA) { useLayer(&fg); perfStepMs = 0; return false; }
     double t0 = emscripten_get_now();
     tick++;
     // Zero fine-phase timers + dirty volume (stepLayer / joint accumulate into these).
@@ -202,6 +211,14 @@
 #endif
     perfStepMs = emscripten_get_now() - t0;
     return true;
+  }
+
+  // Compatibility path for deterministic tests, benches, and embedders that
+  // intentionally advance actors and world in lockstep.
+  bool step() {
+    bool actors = stepActors();
+    bool world = stepWorld();
+    return actors || world;
   }
 
   // ---- cross-layer fire (uses the shared RNG) ----

@@ -38,12 +38,6 @@ export const SIZING = Object.freeze({
   bufferMarginRows: 96,
   // Soft advisory for total buffer cells (no hard clamp — extreme zoom-out is allowed).
   bufferMaxCells: 520000,
-  maxFrameDtMs: 50,
-  // Fixed-timestep catch-up cap: the max number of STEP_MS sim steps the main loop
-  // will run in a single frame to catch up on elapsed real time. Bounds the work a
-  // long/heavy frame can trigger (no catch-up avalanche); past it the sim degrades to
-  // slow-motion instead of freezing. 2 * STEP_MS(16) = ~32ms of catch-up per frame.
-  maxCatchupSteps: 2,
   // Continuous zoom: multiplier on cellPx. 1 = default density; >1 = zoomed in
   // (fewer, larger cells); <1 = zoomed out (more cells, larger sim buffer).
   // No hard zoom-out floor — only a tiny epsilon to avoid division by zero.

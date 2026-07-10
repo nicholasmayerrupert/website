@@ -29,12 +29,13 @@ export class Predictor {
   // Authoritative correction: `authState` is the host's state for our player and
   // `ackedSeq` the last input seq the host processed. Reorders are ignored.
   // Returns the post-correction error (cells) the smoother will absorb.
-  reconcile(authState, ackedSeq) {
+  reconcile(authState, ackedSeq, actorTick = 0) {
     if (ackedSeq < this.lastAck) return 0; // stale/reordered correction -> ignore
     this.lastAck = ackedSeq;
     const before = this.engine.getPlayer(this.id);
     // drop acknowledged inputs, snap to authority, replay the rest.
     this.pending = this.pending.filter((e) => e.seq > ackedSeq);
+    this.engine.syncActorTick(actorTick);
     this.engine.setPlayerState(this.id, authState);
     for (const e of this.pending) {
       this.engine.setPlayerInput(this.id, { ...e.input, seq: e.seq });

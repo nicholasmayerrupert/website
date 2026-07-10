@@ -16,6 +16,7 @@ import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/p
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
 
 // Bounded shared arena (MVP): a fixed, non-streaming world buffer. Multiples of
 // the 32-cell render chunk; ~61k cells stays well under the engine's cell budget.
@@ -24,7 +25,6 @@ const STEP_MS = 16;            // fixed sim step (matches the browser STEP_MS)
 const SNAPSHOT_INTERVAL = 3;   // steps between player-snapshot broadcasts (~20Hz)
 const ITEMS_INTERVAL = 6;      // steps between dropped-item broadcasts (~10Hz)
 const MAX_PLAYERS = 8;
-const CATCHUP_CAP_MS = 250;    // never simulate more than this much after a stall
 
 export async function startSandServer(opts = {}) {
   const cfg = { ...DEFAULTS, ...opts };
@@ -62,14 +62,14 @@ export async function startSandServer(opts = {}) {
           // The joiner gets its authoritative id, the full world, and an initial
           // items/inventory/cursor fill so its HUD + scene are correct immediately.
           sendTo(ws, encode(makeAssign(cfg.room, cid, pid)));
-          sendTo(ws, encode(encodeWorld(engine, host.tick)));
-          sendTo(ws, encode(encodeItems(engine, host.tick)));
-          sendTo(ws, encode(encodeInventory(engine, host.tick, pid)));
-          sendTo(ws, encode(encodeCursor(engine, host.tick, pid)));
+          sendTo(ws, encode(encodeWorld(engine, host.worldTick)));
+          sendTo(ws, encode(encodeItems(engine, host.actorTick)));
+          sendTo(ws, encode(encodeInventory(engine, host.actorTick, pid)));
+          sendTo(ws, encode(encodeCursor(engine, host.actorTick, pid)));
           break;
         }
         case MSG.INPUT: host.receive(m); break; // movement + place/mine (rate-limited, validated)
-        case MSG.RESYNC: sendTo(ws, encode(encodeWorld(engine, host.tick))); break;
+        case MSG.RESYNC: sendTo(ws, encode(encodeWorld(engine, host.worldTick))); break;
         case MSG.ACT_SELECT: { const p = host.playerIdFor(cid); if (p) engine.setSelectedSlot(p, m.slot); break; }
         case MSG.ACT_SIZE: { const p = host.playerIdFor(cid); if (p) engine.setSelectedFootprint(p, m.footprint); break; }
         case MSG.ACT_MOVE: { const p = host.playerIdFor(cid); if (p) engine.inventoryMove(p, m.from, m.to); break; }
@@ -84,14 +84,10 @@ export async function startSandServer(opts = {}) {
   });
 
   let sinceSnap = 0, sinceItems = 0;
-  function stepOnce(now) {
-    host.step(now);
-    const t = host.tick;
+  function stepActorsOnce(now) {
+    host.stepActors(now);
+    const t = host.actorTick;
     if (peers.size > 0) {
-      // World diffs go out every step (dirty marks reset below, so a lower rate
-      // would drop changes). Empty diffs are skipped.
-      const d = encodeDiff(engine, t);
-      if (d) broadcast(encode(d));
       if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcast(encode(makeSnapshot(t, engine.getPlayers(), null))); }
       if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcast(encode(encodeItems(engine, t))); }
       // Per-player inventory + cursor, only when that player's inventory changed
@@ -105,21 +101,41 @@ export async function startSandServer(opts = {}) {
         }
       }
     }
+  }
+
+  function stepWorldOnce() {
+    host.stepWorld();
+    if (peers.size > 0) {
+      // Actor edits and cellular changes accumulate in the same dirty set and
+      // leave together after this single world phase.
+      const d = encodeDiff(engine, host.worldTick);
+      if (d) broadcast(encode(d));
+    }
     // The server never renders, so nothing else clears the per-step render-dirty
     // marks the diff reads — reset them here so the next diff is just that step.
     engine.resetDirty();
   }
 
-  // Fixed-timestep loop with a drift accumulator + catch-up cap (no rAF in Node).
-  let acc = 0, last = Date.now();
-  const timer = setInterval(() => {
-    const now = Date.now();
-    acc += now - last; last = now;
-    if (acc > CATCHUP_CAP_MS) acc = CATCHUP_CAP_MS;
-    let steps = 0;
-    while (acc >= STEP_MS && steps < 8) { stepOnce(now); acc -= STEP_MS; steps++; }
-  }, STEP_MS);
-  if (timer.unref) timer.unref(); // don't keep the process alive purely for the loop in tests
+  function stepOnce(now) {
+    stepActorsOnce(now);
+    stepWorldOnce();
+  }
+
+  // Actors repay small timing debt at 60 Hz; the expensive world is attempted
+  // exactly once per turn. The next turn accounts for work time but never queues
+  // missed world ticks.
+  const actorClock = createFixedRateClock({ now: Date.now() });
+  let timer = null;
+  const runLoop = () => {
+    const started = Date.now();
+    actorClock.advance(started, () => stepActorsOnce(started));
+    stepWorldOnce();
+    const delay = Math.max(0, STEP_MS - (Date.now() - started));
+    timer = setTimeout(runLoop, delay);
+    timer.unref?.();
+  };
+  timer = setTimeout(runLoop, STEP_MS);
+  timer.unref?.(); // don't keep the process alive purely for the loop in tests
 
   return {
     wss,
@@ -131,7 +147,7 @@ export async function startSandServer(opts = {}) {
     seed: cfg.seed >>> 0,
     peerCount: () => peers.size,
     step: stepOnce, // tests can drive the sim deterministically
-    close: () => new Promise((resolve) => { clearInterval(timer); wss.close(() => { try { engine.destroy(); } catch { /* already gone */ } resolve(); }); }),
+    close: () => new Promise((resolve) => { clearTimeout(timer); wss.close(() => { try { engine.destroy(); } catch { /* already gone */ } resolve(); }); }),
   };
 }
 

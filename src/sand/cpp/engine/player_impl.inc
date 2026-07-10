@@ -239,7 +239,8 @@ void PlayerSystem::integratePlayer(Player& p) {
 
   // ---- animation state (deterministic; reuses the fluid sample computed above) ----
   // Priority: liquid overrides airborne overrides grounded-move overrides idle. The
-  // frame is a pure function of the shared `E.tick`, so prediction/replay stay in sync.
+  // frame is a pure function of the actor clock, so world slowdowns do not slow
+  // animation and prediction/replay stay in sync.
   double spd = std::fabs(p.vx);
   uint8_t as;
   if (swimming) as = AS_SWIM;
@@ -249,7 +250,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   else if (spd >= AS_MOVE_EPS) as = AS_WALK;
   else as = AS_IDLE;
   p.animState = as;
-  p.animFrame = (uint8_t)(((uint32_t)E.tick / ANIM_T[as]) % ANIM_N[as]);
+  p.animFrame = (uint8_t)(((uint32_t)E.actorTick / ANIM_T[as]) % ANIM_N[as]);
 }
 
 // ---- player-mediated tool use (Terraria-like dig/build) ----
@@ -300,7 +301,7 @@ bool PlayerSystem::playerUseTool(Player& p, int ax, int ay, Layer* layer) {
 }
 bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t == T_ICE; }
 // Mine a single disc AT THE AIM CELL into `layer` (like every other tool: a disc at
-// the cursor, NOT a sweep emanating from the player). Each held-tool E.tick is one
+// the cursor, NOT a sweep emanating from the player). Each held-tool actor tick is one
 // hit; DURABILITY[] controls base hardness and held class/tier controls progress
 // (dig ignores material type — flat class speed so only hardness + tier matter).
 void PlayerSystem::resetPlayerMine(Player& p) {
@@ -350,7 +351,7 @@ void PlayerSystem::resolveMineDrops(Player& p) {
     uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
     bool drop = false;
     if (E.isPlantLeaf(m)) {
-      double r = whash2(((uint32_t)E.tick ^ 0x51ED5EEDu), cxk, cyk);
+      double r = whash2(((uint32_t)E.actorTick ^ 0x51ED5EEDu), cxk, cyk);
       if (r < LEAF_SEED_DROP_P) E.spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35);
     } else if (E.isLiquidMaterial(m)) drop = true;
     else if (cls != TC_NONE) {
@@ -359,7 +360,7 @@ void PlayerSystem::resolveMineDrops(Player& p) {
       else if (p.heldToolClass == TC_DIG && p.heldToolTier >= tier) drop = true;
       else if (p.heldToolClass == cls && p.heldToolTier >= tier) drop = true;
     }
-    double j = whash2((uint32_t)E.tick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;
+    double j = whash2((uint32_t)E.actorTick * 2654435761u + (uint32_t)k, cxk, cyk) - 0.5;
     if (drop) E.spawnItem(m, 1, cxk + 0.5, cyk + 0.5, j * 0.4, -0.4);
     E.spawnParticle(m, cxk + 0.5, cyk + 0.5, j * 0.8, -0.6, IT_PARTICLE_LIFE);
   }
@@ -529,6 +530,7 @@ void PlayerSystem::updatePlayers() {
 void PlayerSystem::stepPlayerOnly(int id) {
   Player* p = findPlayer(id);
   if (p && p->active && p->alive) integratePlayer(*p);
+  E.actorTick++;
 }
 // Snap a player to an authoritative state (reconciliation), before replaying its
 // unacknowledged inputs.

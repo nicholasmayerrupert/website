@@ -23,10 +23,11 @@ export function installDevHooks(ctx, {
   window.__sandPerf = () => {
     const { avg, p95, samples } = perfFrameSummary();
     const perf = engine() ? engine().getPerf() : { stepMs: 0, dirtyChunks: 0 };
-    const catchup = ctx.catchupStats || {};
+    const timing = ctx.timingStats || {};
     const ms = (v) => Number((v || 0).toFixed(3));
     return {
       stepMs: Number((perf.stepMs || 0).toFixed(2)),
+      actorMs: Number((perf.actorMs || 0).toFixed(2)),
       renderMs: Number(ctx.perfRenderMs.toFixed(2)),
       lightMs: ms(perf.lightMs),
       fillMs: ms(perf.fillMs),
@@ -54,11 +55,12 @@ export function installDevHooks(ctx, {
       componentCellCount: perf.componentCellCount || 0,
       crossBondCount: perf.crossBondCount || 0,
       worldShifts: engine() ? engine().getWorldShiftCount() : 0,
-      catchupSteps: catchup.stepsThisFrame || 0,
-      catchupMaxSteps: catchup.maxSteps || 0,
-      catchupDebtMs: Number((catchup.debtMs || 0).toFixed(1)),
-      catchupDroppedMs: Number((catchup.droppedDebtMs || 0).toFixed(1)),
-      catchupClamped: !!catchup.clamped,
+      actorTick: engine() ? engine().getActorTick() : 0,
+      worldTick: engine() ? engine().getTick() : 0,
+      actorSteps: timing.actorSteps || 0,
+      actorDebtMs: Number((timing.actorDebtMs || 0).toFixed(1)),
+      actorDroppedMs: Number((timing.actorDroppedMs || 0).toFixed(1)),
+      worldStepped: !!timing.worldStepped,
       wasmHeapMB: engine() ? Number((engine().getHeapBytes() / (1024 * 1024)).toFixed(1)) : 0,
       rows: ctx.rows,
       cols: ctx.cols,
@@ -108,6 +110,7 @@ export function installDevHooks(ctx, {
     setTool(name) { ctx.currentToolName = name; engine()?.setTool(TOOL_IDS[name] ?? 0); },
     setDrawMode(v) { ctx.drawModeOn = !!v; engine()?.setDrawMode(ctx.drawModeOn); },
     addInventory(material, count) { return ctx.localPlayerId && engine() ? engine().addToInventory(ctx.localPlayerId, material | 0, count | 0) : false; },
+    getInventory() { return ctx.localPlayerId && engine() ? engine().getInventory(ctx.localPlayerId) : { slots: [], selected: 0 }; },
     selectSlot(i) { if (ctx.localPlayerId) engine()?.setSelectedSlot(ctx.localPlayerId, i | 0); },
     actionCount() { return engine() ? engine().getPlayerActionCount() : 0; },
     // device-px center of the local player (for aiming real mouse events)

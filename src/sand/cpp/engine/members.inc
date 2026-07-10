@@ -27,12 +27,12 @@
     return false;
   }
 
-  int stepSerial = 0, tick = 0, worldShiftCount = 0;
+  int stepSerial = 0, tick = 0, actorTick = 0, worldShiftCount = 0;
   // Last-step volume counters (accumulated across both layers in beginStepDirty /
   // end-of-step component scan). Zeroed at the start of each step().
   int perfDirtyChunks = 0, perfDirtyRows = 0, perfDirtyCells = 0;
   int perfComponentCount = 0, perfComponentCellCount = 0, perfCrossBondCount = 0;
-  double perfStepMs = 0;
+  double perfStepMs = 0, perfActorMs = 0;
   // Present-path sub-phase timers (gl.inc glRenderFrame): the full-buffer lighting
   // solve, the windowed pixel fill, and the windowed texture upload. Render-only.
   double perfLightMs = 0, perfFillMs = 0, perfUploadMs = 0;

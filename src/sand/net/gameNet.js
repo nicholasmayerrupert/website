@@ -111,7 +111,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
         ingestSnapshot(m);
         if (ownPlayerId) {
           const op = m.players.find((p) => p.id === ownPlayerId);
-          if (op) reconcilePredictor(op);
+          if (op) reconcilePredictor(op, m.tick);
         }
         break;
       }
@@ -141,10 +141,10 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
 
   // Snap our local prediction to the server's authoritative own-player and replay
   // unacknowledged inputs (lazily spawns the prediction player).
-  function reconcilePredictor(op) {
+  function reconcilePredictor(op, actorTick) {
     const e = engineNow();
     if (!predictor) { predId = e.spawnPlayer(op.x, op.y); predictor = new Predictor(e, predId); }
-    predictor.reconcile({ x: op.x, y: op.y, vx: op.vx, vy: op.vy, facing: op.facing, grounded: !!op.grounded, jumpReady: !!op.jr }, op.seq >>> 0);
+    predictor.reconcile({ x: op.x, y: op.y, vx: op.vx, vy: op.vy, facing: op.facing, grounded: !!op.grounded, jumpReady: !!op.jr }, op.seq >>> 0, actorTick);
   }
 
   function ingestSnapshot(m) {

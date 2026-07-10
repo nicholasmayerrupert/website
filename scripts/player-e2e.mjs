@@ -140,7 +140,9 @@ try {
   const PI_PRIMARY = 16;
   const stoneAim = await page.evaluate(() => {
     const t = window.__sandTest;
-    t.addInventory(3, 99); t.selectSlot(3); document.activeElement?.blur?.(); // STONE = 3
+    t.addInventory(3, 99); // STONE = 3
+    const stoneSlot = t.getInventory().slots.findIndex((s) => !s.isTool && s.material === 3 && s.count > 0);
+    t.selectSlot(stoneSlot); document.activeElement?.blur?.();
     const p = t.getPlayer(), ax = Math.floor(p.x), ay = Math.floor(p.y);
     return { ...window.__sandTestCellScreenPoint(Math.floor(p.x + p.w + 4), Math.floor(p.y + 2)), solid0: t.solidCount(ax - 40, ay - 30, ax + 40, ay + 30) };
   });

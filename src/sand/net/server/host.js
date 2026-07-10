@@ -19,7 +19,8 @@ export class Host {
     this.inputBurst = inputBurst;     // max burst tokens
     this.now = now;                   // injectable clock (tests)
     this.clients = new Map();   // clientId -> { playerId, tracker, tokens, lastInput }
-    this.tick = 0;
+    this.actorTick = engine.getActorTick?.() || 0;
+    this.worldTick = engine.getTick?.() || 0;
     this.droppedInputs = 0;     // diagnostics (rate-limited / invalid)
   }
 
@@ -79,12 +80,31 @@ export class Host {
     return true;
   }
 
-  step(now = this.tick * 16) { this.engine.step(now); this.tick++; return this.tick; }
+  stepActors(now = this.actorTick * 16) {
+    this.engine.stepActors(now);
+    this.actorTick = this.engine.getActorTick();
+    return this.actorTick;
+  }
+
+  stepWorld() {
+    this.engine.stepWorld();
+    this.worldTick = this.engine.getTick();
+    return this.worldTick;
+  }
+
+  // Compatibility path used by deterministic host tests.
+  step(now = this.actorTick * 16) {
+    this.stepActors(now);
+    this.stepWorld();
+    return this.actorTick;
+  }
+
+  get tick() { return this.actorTick; }
 
   // Authoritative snapshot of all players. `withHash` includes a world hash so
   // clients can detect divergence / request a resync (Phase 6).
   snapshot({ withHash = false } = {}) {
     const hash = withHash ? gridHashU8(this.engine.getGrid()) : null;
-    return makeSnapshot(this.tick, this.engine.getPlayers(), hash);
+    return makeSnapshot(this.actorTick, this.engine.getPlayers(), hash);
   }
 }

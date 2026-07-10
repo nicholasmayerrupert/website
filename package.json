@@ -14,6 +14,7 @@
     "deploy": "npm run build && wrangler deploy",
     "test:sand": "node scripts/sand-test.mjs",
     "test:players": "node scripts/player-test.mjs",
+    "test:timing": "node scripts/timing-test.mjs",
     "test:anim": "node scripts/player-anim-test.mjs",
     "test:net": "node scripts/net-test.mjs",
     "test:net-protocol": "node scripts/net-protocol-test.mjs",

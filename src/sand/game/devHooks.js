@@ -23,10 +23,11 @@ export function installDevHooks(ctx, {
   window.__sandPerf = () => {
     const { avg, p95, samples } = perfFrameSummary();
     const perf = engine() ? engine().getPerf() : { stepMs: 0, dirtyChunks: 0 };
+    const workerState = ctx.worldWorker?.state;
     const timing = ctx.timingStats || {};
     const ms = (v) => Number((v || 0).toFixed(3));
     return {
-      stepMs: Number((perf.stepMs || 0).toFixed(2)),
+      stepMs: Number(((workerState?.stepMs ?? perf.stepMs) || 0).toFixed(2)),
       actorMs: Number((perf.actorMs || 0).toFixed(2)),
       renderMs: Number(ctx.perfRenderMs.toFixed(2)),
       lightMs: ms(perf.lightMs),
@@ -56,7 +57,13 @@ export function installDevHooks(ctx, {
       crossBondCount: perf.crossBondCount || 0,
       worldShifts: engine() ? engine().getWorldShiftCount() : 0,
       actorTick: engine() ? engine().getActorTick() : 0,
-      worldTick: engine() ? engine().getTick() : 0,
+      worldTick: workerState?.worldTick ?? (engine() ? engine().getTick() : 0),
+      worldTps: workerState?.worldTps || 0,
+      workerControls: workerState?.controlsReceived || 0,
+      workerEdges: workerState?.edgesProcessed || 0,
+      workerToolWrites: workerState?.toolWrites || 0,
+      mirrorApplyMs: workerState?.mirrorApplyMs || 0,
+      mirrorPacketBytes: workerState?.packetBytes || 0,
       actorSteps: timing.actorSteps || 0,
       actorDebtMs: Number((timing.actorDebtMs || 0).toFixed(1)),
       actorDroppedMs: Number((timing.actorDroppedMs || 0).toFixed(1)),
@@ -107,8 +114,20 @@ export function installDevHooks(ctx, {
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (g[y * ctx.cols + x] !== 0) n++;
       return n;
     },
-    setTool(name) { ctx.currentToolName = name; engine()?.setTool(TOOL_IDS[name] ?? 0); },
-    setDrawMode(v) { ctx.drawModeOn = !!v; engine()?.setDrawMode(ctx.drawModeOn); },
+    materialCount(material, x0 = 0, y0 = 0, x1 = ctx.cols, y1 = ctx.rows) {
+      if (!engine()) return 0;
+      const g = engine().getGrid();
+      let n = 0;
+      for (let y = Math.max(0, y0); y < Math.min(ctx.rows, y1); y++) {
+        for (let x = Math.max(0, x0); x < Math.min(ctx.cols, x1); x++) if (g[y * ctx.cols + x] === material) n++;
+      }
+      return n;
+    },
+    draftCount() { return engine()?.getStoneDraftCells().length || 0; },
+    setTool(name) { ctx.currentToolName = name; engine()?.setTool(TOOL_IDS[name] ?? 0); ctx.worldWorker?.config({ tool: TOOL_IDS[name] ?? 0 }); },
+    setDrawMode(v) { ctx.drawModeOn = !!v; engine()?.setDrawMode(ctx.drawModeOn); ctx.worldWorker?.config({ drawMode: ctx.drawModeOn }); },
+    setCreativeMaterial(kind, value) { engine()?.setCreativeMaterial(kind, value); ctx.worldWorker?.config({ creativeKind: kind | 0, creativeValue: value | 0 }); },
+    setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },
     addInventory(material, count) { return ctx.localPlayerId && engine() ? engine().addToInventory(ctx.localPlayerId, material | 0, count | 0) : false; },
     getInventory() { return ctx.localPlayerId && engine() ? engine().getInventory(ctx.localPlayerId) : { slots: [], selected: 0 }; },
     selectSlot(i) { if (ctx.localPlayerId) engine()?.setSelectedSlot(ctx.localPlayerId, i | 0); },

@@ -43,7 +43,8 @@ function rel(path) {
 
 function resolveModule(fromFile, spec) {
   if (!spec.startsWith('.') && !spec.startsWith('/')) return { bare: spec };
-  const base = spec.startsWith('/') ? resolve(root, spec.slice(1)) : resolve(dirname(fromFile), spec);
+  const pathSpec = spec.split(/[?#]/, 1)[0];
+  const base = pathSpec.startsWith('/') ? resolve(root, pathSpec.slice(1)) : resolve(dirname(fromFile), pathSpec);
   const candidates = [
     base,
     `${base}.js`,

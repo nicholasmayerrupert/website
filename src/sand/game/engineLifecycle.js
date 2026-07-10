@@ -118,6 +118,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
         if (ctx.engine.resizeLoadedWindow(bufCols, worldRows)) {
           ctx.cols = bufCols;
           ctx.rows = worldRows;
+          ctx.worldWorker?.resize(ctx.cols, ctx.rows);
         }
       }
       applyViewOnly();

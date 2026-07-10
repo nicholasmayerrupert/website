@@ -142,12 +142,10 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   // RAF; creative tools remain world-bound while survival tools live with actors.
   const doWorldStep = (now) => {
     const engine = ctx.engine;
-    if (!engine || ctx.netClientReady()) return false;
+    if (!engine || ctx.netClientReady() || ctx.worldWorker) return false;
     engine.streamWorld();
     if (!ctx.playMode && engine.applyLocalInput(ctx.localPlayerId, now, ++ctx.inputSeq)) ctx.previewDirty = true;
-    const changed = engine.stepWorld();
-    if (changed) samplePerf();
-    return changed;
+    return engine.stepWorld();
   };
 
   // Compatibility hook for deterministic browser tests: one actor tick followed
@@ -163,6 +161,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   const clockStart = performance.now();
   const actorClock = createFixedRateClock({ now: clockStart });
   const worldGate = createNoCatchupGate({ stepMs: STEP_MS, now: clockStart });
+  let workerPaused = null;
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
 
@@ -171,9 +170,14 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     if (ctx.clientX >= 0 && ctx.clientY >= 0) updatePointer(ctx.clientX, ctx.clientY);
 
     let actorChanged = false;
-    let worldChanged = false;
+    let worldChanged = ctx.worldWorker?.applyPending() || false;
     let worldStepped = false;
     let timing = { steps: 0, debtMs: 0, droppedDebtMs: 0 };
+    const pauseWorker = ctx.testPaused || (ctx.reduced && !ctx.netClientReady());
+    if (ctx.worldWorker && pauseWorker !== workerPaused) {
+      workerPaused = pauseWorker;
+      ctx.worldWorker.config({ paused: pauseWorker });
+    }
     if (ctx.testPaused) {
       actorClock.reset(now);
       worldGate.reset(now);
@@ -184,7 +188,8 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
       worldGate.reset(now);
     } else {
       timing = actorClock.advance(now, () => { if (doActorStep(now)) actorChanged = true; });
-      if (ctx.netClientReady()) {
+      ctx.worldWorker?.updateControl();
+      if (ctx.netClientReady() || ctx.worldWorker) {
         worldGate.reset(now);
       } else if (worldGate.take(now)) {
         worldStepped = true;
@@ -222,7 +227,10 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // A connected client animates remote players from snapshots even when its
     // own grid is static, so keep presenting. previewDirty forces a present
     // when a fresh draft overlay appears with no camera/step change.
-    if (stepped || camMoved || ctx.previewDirty || ctx.netClientReady()) render(false);
+    if (stepped || camMoved || ctx.previewDirty || ctx.netClientReady()) {
+      render(false);
+      samplePerf();
+    }
   };
 
   const start = () => { raf = requestAnimationFrame(loop); };

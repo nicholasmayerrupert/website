@@ -46,6 +46,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     updatePointer(e.clientX, e.clientY);
     if (ctx.playMode) { if (ctx.engine) ctx.previewDirty = true; return; } // re-present so the aim cursor follows
     if (!ctx.drawModeOn || !ctx.engine) return;
+    if (ctx.worldWorker) return; // worker owns creative draft/tool state
     if (ctx.inside && ctx.engine.pointerDraftAtAim()) ctx.previewDirty = true;
   };
   const onTouchMove = (e) => {
@@ -53,6 +54,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (!e.touches || e.touches.length === 0) return;
     const t = e.touches[0];
     updatePointer(t.clientX, t.clientY);
+    if (ctx.worldWorker) return;
     if (ctx.inside && ctx.engine.pointerDraftAtAim()) ctx.previewDirty = true;
   };
 
@@ -72,6 +74,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (!ctx.inside) return;
     if (e.button === 0 || e.button === 2) {
       if (ctx.playMode) { ctx.previewDirty = true; e.preventDefault(); return; } // player builds/mines via input bits
+      if (ctx.worldWorker) { ctx.worldWorker.edge('down', e.button); e.preventDefault(); return; }
       if (ctx.engine.pointerDownAtAim(e.button)) ctx.previewDirty = true;
       e.preventDefault();
     }
@@ -83,6 +86,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     // buttons stay latched until their own pointerup (or blur/cancel).
     ctx.mouseButtons &= ~(BUTTON_BITS[e.button] || 0);
     updatePointer(e.clientX, e.clientY);
+    if (!ctx.playMode && ctx.worldWorker) {
+      ctx.worldWorker.edge('up', e.button);
+      e.preventDefault();
+      return;
+    }
     ctx.engine.pointerButtons(ctx.mouseButtons); // clears RMB/LMB when no buttons remain
     if (ctx.engine.pointerUp(e.button)) ctx.previewDirty = true;
   };

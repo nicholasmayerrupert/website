@@ -272,8 +272,13 @@ export function initSandWasm() {
         netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
         applyWorld: c('engine_apply_world', null, ['number', 'number', 'number']),
         applyDiff: c('engine_apply_diff', null, ['number', 'number', 'number']),
+        applyWorldMirror: c('engine_apply_world_mirror', null, ['number', 'number', 'number']),
+        applyDiffMirror: c('engine_apply_diff_mirror', null, ['number', 'number', 'number']),
+        setMirrorWorldOffset: c('engine_set_mirror_world_offset', null, ['number', 'number', 'number']),
+        setMirrorDraft: c('engine_set_mirror_draft', null, ['number', 'number', 'number', 'number']),
         gridHash: c('engine_grid_hash', 'number', ['number']),
         clearAllDirty: c('engine_clear_all_dirty', null, ['number']),
+        clearReplicaDirty: c('engine_clear_replica_dirty', null, ['number']),
         gridBg: c('engine_grid_bg', 'number', ['number']),
         setBgEnabled: c('engine_set_bg_enabled', null, ['number', 'number']),
         paintDiscLayer: c('engine_paint_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
@@ -368,6 +373,7 @@ export function createEngineWasm({
   // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
+  let mirrorDraftPtr = 0, mirrorDraftCap = 0;
   const glScratch = (floats) => {
     if (floats > glScratchCap) {
       if (glScratchPtr) mod._free(glScratchPtr);
@@ -628,7 +634,7 @@ export function createEngineWasm({
     getActorTick() { return M.actorTick(ptr); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
-    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
+    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
 
     // Component drafts + seeds. One material-parameterized draft set; the
     // per-material method names remain for the tests/tools that use them.
@@ -839,8 +845,33 @@ export function createEngineWasm({
     serializeDiff() { const n = M.serializeDiff(ptr); return new Uint8Array(mod.HEAPU8.buffer, M.netBlobPtr(ptr), n).slice(); },
     applyWorld(bytes) { const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyWorld(ptr, buf, bytes.length); mod._free(buf); },
     applyDiff(bytes) { if (!bytes.length) return; const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyDiff(ptr, buf, bytes.length); mod._free(buf); },
+    applyWorldMirror(bytes, worldOffsetX, worldOffsetY) {
+      const buf = mod._malloc(bytes.length);
+      mod.HEAPU8.set(bytes, buf);
+      M.setMirrorWorldOffset(ptr, worldOffsetX | 0, worldOffsetY | 0);
+      M.applyWorldMirror(ptr, buf, bytes.length);
+      mod._free(buf);
+    },
+    applyDiffMirror(bytes) {
+      if (!bytes.length) return;
+      const buf = mod._malloc(bytes.length);
+      mod.HEAPU8.set(bytes, buf);
+      M.applyDiffMirror(ptr, buf, bytes.length);
+      mod._free(buf);
+    },
+    setMirrorDraft(cells, material = 0) {
+      const n = cells?.length || 0;
+      if (n > mirrorDraftCap) {
+        if (mirrorDraftPtr) mod._free(mirrorDraftPtr);
+        mirrorDraftCap = Math.max(n, mirrorDraftCap * 2, 64);
+        mirrorDraftPtr = mod._malloc(mirrorDraftCap * 4);
+      }
+      if (n) mod.HEAP32.set(cells, mirrorDraftPtr >> 2);
+      M.setMirrorDraft(ptr, mirrorDraftPtr, n, material | 0);
+    },
     gridHash() { return M.gridHash(ptr) >>> 0; },
     resetDirty() { M.clearAllDirty(ptr); },
+    consumeReplicaDirty() { M.clearReplicaDirty(ptr); },
 
     // ---- two-layer access (background = layer 1) ----
     getGridBg() { return new Uint8Array(mod.HEAPU8.buffer, M.gridBg(ptr), cellCount); },

@@ -24,6 +24,8 @@ class NetSync {
   int serializeDiff();
   void applyWorld(const uint8_t* buf, int len);
   void applyDiff(const uint8_t* buf, int len);
+  void applyWorldMirror(const uint8_t* buf, int len);
+  void applyDiffMirror(const uint8_t* buf, int len);
   uint32_t gridHashFNV();
 
  private:

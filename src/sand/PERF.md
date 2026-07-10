@@ -9,7 +9,11 @@ actionable instead of just producing timing numbers.
   spawn placement, tool policy, material rendering, WebGL compositing, camera
   behavior, and deterministic net snapshots.
 - JavaScript owns DOM lifecycle, canvas sizing, browser event normalization,
-  reduced-motion handling, WebSocket transport, and framework/embed wrappers.
+  reduced-motion handling, worker/WebSocket transport, and framework/embed wrappers.
+- Offline creative mode uses two WASM engines: the worker owns mutable world
+  state, while the main thread owns a render-only mirror. Replication is bounded
+  to one acknowledged packet in flight, so a slow renderer cannot build an
+  unbounded diff queue or feed timing debt back into world simulation.
 - If a benchmark regression points at gameplay, rendering, camera, terrain,
   components, or materials, prefer moving the decision into C++ rather than adding
   another JS mirror.

@@ -39,6 +39,20 @@ void NetSync::applyWorld(const uint8_t* buf, int len) {
   E.useLayer(&E.fg);
 }
 
+// Presentation mirrors do not simulate their cellular world, so rebuilding all
+// component topology after every packet is wasted main-thread work. Keep only
+// the render/lighting dirty state required by WebGL and actor collision reads.
+void NetSync::applyWorldMirror(const uint8_t* buf, int len) {
+  int p = rleDecode(buf, len, 0, E.fg.grid);
+  rleDecode(buf, len, p, E.bg.grid);
+  E.fg.skyWorldReachY.clear(); E.fg.skyValid = false; E.fg.skyDirty = true;
+  E.bg.skyWorldReachY.clear(); E.bg.skyValid = false; E.bg.skyDirty = true;
+  E.useLayer(&E.fg); E.markAllDirty();
+  E.useLayer(&E.bg); E.markAllDirty();
+  E.bgEnabled = true;
+  E.useLayer(&E.fg);
+}
+
 // Diff per layer: [u16 rectCount] then per rect [u16 x0,y0,x1,y1][raw cells,
 // row-major]. x1/y1 EXCLUSIVE. fg section then bg section, concatenated.
 void NetSync::writeDiffLayer(bool background) {
@@ -79,6 +93,15 @@ void NetSync::applyDiff(const uint8_t* buf, int len) {
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.useLayer(&E.fg); E.registerSeededComponents(0, E.cols);
   E.useLayer(&E.bg); E.registerSeededComponents(0, E.cols);
+  E.useLayer(&E.fg);
+}
+
+void NetSync::applyDiffMirror(const uint8_t* buf, int len) {
+  if (len < 2) return;
+  int p = readDiffLayer(buf, len, 0, false);
+  readDiffLayer(buf, len, p, true);
+  E.fg.skyDirty = true; E.bg.skyDirty = true;
+  E.bgEnabled = true;
   E.useLayer(&E.fg);
 }
 

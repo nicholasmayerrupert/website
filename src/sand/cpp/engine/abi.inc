@@ -241,8 +241,31 @@ EMSCRIPTEN_KEEPALIVE int engine_serialize_diff(Engine* e) { return e->net.serial
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->net.blob.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_apply_world(Engine* e, uint8_t* buf, int len) { e->net.applyWorld(buf, len); }
 EMSCRIPTEN_KEEPALIVE void engine_apply_diff(Engine* e, uint8_t* buf, int len) { e->net.applyDiff(buf, len); }
+EMSCRIPTEN_KEEPALIVE void engine_apply_world_mirror(Engine* e, uint8_t* buf, int len) { e->net.applyWorldMirror(buf, len); }
+EMSCRIPTEN_KEEPALIVE void engine_apply_diff_mirror(Engine* e, uint8_t* buf, int len) { e->net.applyDiffMirror(buf, len); }
+EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y) {
+  e->fg.worldOffsetX = e->bg.worldOffsetX = x;
+  e->fg.worldOffsetY = e->bg.worldOffsetY = y;
+  e->fg.skyWorldReachY.clear(); e->bg.skyWorldReachY.clear();
+  e->fg.skyDirty = e->bg.skyDirty = true;
+}
+EMSCRIPTEN_KEEPALIVE void engine_set_mirror_draft(Engine* e, int* cells, int count, int material) {
+  e->tools.draft.clear();
+  for (int i = 0; i < count; i++) {
+    int k = cells[i];
+    if (k >= 0 && k < e->cols * e->rows) e->tools.draft.insert(k);
+  }
+  e->tools.draftMaterial = (uint8_t)material;
+}
 EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->net.gridHashFNV(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->useLayer(&e->fg); e->clearAllDirty(); e->useLayer(&e->bg); e->clearAllDirty(); e->useLayer(&e->fg); }
+// A replication consumer has copied the current dirty rectangles. Clear only
+// the accumulated packet/render chunks: rowMarkMin/Max are also the cellular
+// scheduler's next-active regions and must survive until beginStepDirty().
+EMSCRIPTEN_KEEPALIVE void engine_clear_replica_dirty(Engine* e) {
+  memset(e->fg.dirtyRender.data(), 0, e->fg.dirtyRender.size()); e->fg.dirtyRenderCount = 0;
+  memset(e->bg.dirtyRender.data(), 0, e->bg.dirtyRender.size()); e->bg.dirtyRenderCount = 0;
+}
 
 // ---- two-layer access (background = layer 1) ----
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid_bg(Engine* e) { return e->bg.grid; }

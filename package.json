@@ -54,6 +54,7 @@
     "test:pure-perf": "node scripts/pure-perf-checksum-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
     "test:zoom-e2e": "node scripts/zoom-e2e.mjs",
+    "test:worker-e2e": "node scripts/worker-e2e.mjs",
     "test:mp-e2e": "node scripts/mp-e2e.mjs",
     "test": "node scripts/run-tests.mjs",
     "test:all": "npm run test && npm run build",

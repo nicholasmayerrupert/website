@@ -34,6 +34,7 @@ import { createInputBindings } from './inputBindings';
 import { createGameLoop } from './gameLoop';
 import { createNetGlue } from './netGlue';
 import { installDevHooks } from './devHooks';
+import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -105,6 +106,9 @@ export function createSandGame(container, opts = {}) {
     drawModeOn: false,
     playMode: survival,
     localPlayerId: 0,
+    worldWorker: null,
+    creativeKind: 0,
+    creativeValue: 0,
     inputSeq: 0,
     lastInvHash: -1, // last pushed offline-inventory hash (HUD dirty check)
 
@@ -237,6 +241,10 @@ export function createSandGame(container, opts = {}) {
 
   // --- Boot: size + build the engine, then start listening and looping. ---
   lifecycle.fit();
+  if (!survival && typeof Worker !== 'undefined') {
+    ctx.worldWorker = createWorldWorkerClient(ctx);
+    ctx.worldWorker.init({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue, tool: TOOL_IDS[ctx.currentToolName] ?? 0 });
+  }
   const ro = new ResizeObserver(lifecycle.fit);
   ro.observe(container);
   lifecycle.watchDpr();
@@ -255,6 +263,8 @@ export function createSandGame(container, opts = {}) {
     lifecycle.unwatchDpr();
     window.visualViewport?.removeEventListener?.('resize', onVisualViewportResize);
     ctx.net?.disconnect();
+    ctx.worldWorker?.destroy();
+    ctx.worldWorker = null;
     if (ctx.engine && ctx.engine.destroy) ctx.engine.destroy();
     parallax.destroy();
     inputs.detach();
@@ -267,8 +277,8 @@ export function createSandGame(container, opts = {}) {
   };
 
   return {
-    setTool(id) { ctx.currentToolName = id; ctx.engine?.setTool(TOOL_IDS[id] ?? 0); },
-    setDrawMode(on) { ctx.drawModeOn = !!on; ctx.engine?.setDrawMode(ctx.drawModeOn); },
+    setTool(id) { ctx.currentToolName = id; ctx.engine?.setTool(TOOL_IDS[id] ?? 0); ctx.worldWorker?.config({ tool: TOOL_IDS[id] ?? 0 }); },
+    setDrawMode(on) { ctx.drawModeOn = !!on; ctx.engine?.setDrawMode(ctx.drawModeOn); ctx.worldWorker?.config({ drawMode: ctx.drawModeOn }); },
     getDrawMode() { return ctx.drawModeOn; },
     setPlayMode(on) { ctx.playMode = !!on; ctx.engine?.setPlayMode(ctx.playMode); },
     getPlayMode() { return ctx.playMode; },
@@ -323,7 +333,12 @@ export function createSandGame(container, opts = {}) {
       };
     },
     // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).
-    setCreativeMaterial(kind, value) { ctx.engine?.setCreativeMaterial(kind, value); },
+    setCreativeMaterial(kind, value) {
+      ctx.creativeKind = kind | 0;
+      ctx.creativeValue = value | 0;
+      ctx.engine?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
+      ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
+    },
     // Live performance snapshot for the on-screen perf HUD (the /fps route).
     // Mirrors the DEV-only window.__sandPerf but is always available. fps/
     // tickrate are left to the caller to derive from wall-clock deltas of
@@ -331,9 +346,10 @@ export function createSandGame(container, opts = {}) {
     perfStats() {
       const { avg, p95 } = loop.perfFrameSummary();
       const perf = ctx.engine ? ctx.engine.getPerf() : { stepMs: 0, dirtyChunks: 0 };
+      const workerState = ctx.worldWorker?.state;
       const timing = ctx.timingStats || {};
       return {
-        stepMs: perf.stepMs,
+        stepMs: workerState?.stepMs ?? perf.stepMs,
         actorMs: perf.actorMs || 0,
         renderMs: ctx.perfRenderMs,
         lightMs: perf.lightMs || 0,
@@ -362,7 +378,8 @@ export function createSandGame(container, opts = {}) {
         crossBondCount: perf.crossBondCount || 0,
         tick: ctx.engine ? ctx.engine.getTick() : 0,
         actorTick: ctx.engine ? ctx.engine.getActorTick() : 0,
-        worldTick: ctx.engine ? ctx.engine.getTick() : 0,
+        worldTick: workerState?.worldTick ?? (ctx.engine ? ctx.engine.getTick() : 0),
+        worldTps: workerState?.worldTps ?? 0,
         worldShifts: ctx.engine ? ctx.engine.getWorldShiftCount() : 0,
         actorSteps: timing.actorSteps || 0,
         actorDebtMs: timing.actorDebtMs || 0,

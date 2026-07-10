@@ -719,7 +719,17 @@ void RigidBodySystem::bakeRestingBodies() {
 }
 void RigidBodySystem::moveBodies() {
   if (E.L->bodies.empty() && E.L->bodyCells.empty()) return;
-  E.computeGrounded();
+  // Sleeping-body support probes footprint geometry (sleepingBodyHasSupport), not
+  // groundedCell. A single-layer computeGrounded() re-flood peels dual-layer joint
+  // stamps; if the next tick then skips joint, co-supported terrain sloughs off.
+  // Preserve stamps when joint already ran this tick OR a prior joint closure is
+  // still valid (free bodies do not alter static co-occupation).
+  if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
+    // joint stamps intact; body wake probes do not need a re-flood
+  } else {
+    E.computeGrounded();
+    if (E.bgEnabled) E.comps.jointDirty = true;
+  }
   // Wake any sleeping body whose support crumbled away since it slept, so it
   // falls instead of floating. Checked before the grid cells are cleared so
   // other E.L->bodies still count as support; body-on-body stacks cascade (the

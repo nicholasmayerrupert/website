@@ -45,6 +45,7 @@ const SUITES = [
   ['layer', 'layer-test.mjs'],
   ['stacked-logs', 'stacked-logs-test.mjs'],
   ['xlayer-fall', 'xlayer-bonded-fall-test.mjs'],
+  ['rigid-spawn-joint', 'rigid-spawn-joint-repro.mjs'],
   ['prefetch', 'prefetch-test.mjs'],
   ['render', 'render-noise-test.mjs'],
   ['viewport-sizing', 'viewport-sizing-test.mjs'],

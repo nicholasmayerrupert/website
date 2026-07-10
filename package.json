@@ -47,6 +47,7 @@
     "test:rigid-collision": "node scripts/rigid-collision-test.mjs",
     "test:rigid-topple": "node scripts/rigid-topple-test.mjs",
     "test:rigidmat": "node scripts/rigidmat-test.mjs",
+    "test:rigid-spawn-joint": "node scripts/rigid-spawn-joint-repro.mjs",
     "test:explosives": "node scripts/explosives-test.mjs",
     "test:grounding": "node scripts/grounding-incremental-test.mjs",
     "test:pure-perf": "node scripts/pure-perf-checksum-test.mjs",

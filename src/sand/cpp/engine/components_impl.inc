@@ -429,6 +429,17 @@ void ComponentSystem::ensureGroundedSingleLayer() {
   // cached E.L->cellComp[]/groundedCell[]/comp.grounded are the exact grounding
   // of the current grid. Otherwise run computeGrounded(), whose internal tiers
   // do the cheapest valid thing (skip / rigid-base reuse + overlay / full flood).
+  //
+  // Dual-layer + valid joint: never single-layer re-flood rigid. That peels
+  // cross-support stamps (free-body frames often hit this path when step()
+  // skipped computeGroundedBoth). Loose-only dirt refreshes in place.
+  if (!groundForceFull && E.bgEnabled && jointSupportValid
+      && !E.L->groundDirty && !E.L->groundContentDirty) {
+    if (!groundVerify) {
+      refreshLooseOverlayPreservingJoint(E.L);
+      return;
+    }
+  }
   bool needPass = groundForceFull || E.bgEnabled || E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
   if (!needPass && !groundVerify) return;
   if (!groundVerify) { computeGrounded(); return; }

@@ -26,6 +26,7 @@ Single-layer grounding is unchanged (cell flood + incremental cache).
 | Bond persistence (`sgBondsValid`) | Skips O(ungrounded) bond scan on pure-loose re-entry |
 | Pure-bore joint restore only for base-grounded terrain | Hanging dual-layer comps (joint-stamped, base-ungrounded) keep `jointDirty` so multi-log acid cannot creep |
 | Peer wake on joint rebuild | Snapshot both layers when joint stamps may drop; peel joint patches on bond-only invalidation |
+| Free-body joint keep | Free bodies do not force joint. `moveBodies` + `ensureGroundedSingleLayer` preserve stamps when `jointSupportValid` / `jointGroundReady` so spawn/cube cannot peel co-support without paying full joint every body frame |
 
 **Measured** (pan-stream, `--repeat 5` vs `bench/baseline.json`): step.mean about **−4.5%**, pure-perf checksums unchanged. Joint wall time remains ~5.1–5.3 ms p50 (timer mostly in `groundingMs` after bond work moved out of `crossLayerGroundingMs`).
 
@@ -63,4 +64,5 @@ Single-layer grounding is unchanged (cell flood + incremental cache).
 - `npm run test:grounding`
 - `npm run test:pure-perf`
 - `npm run test:xlayer-fall` / `test:stone-layers` / `test:component-erase`
+- `npm run test:rigid-spawn-joint` (generated world: free-body spawn must not slough FG)
 - `node scripts/bench-sand.mjs --compare bench/baseline.json`

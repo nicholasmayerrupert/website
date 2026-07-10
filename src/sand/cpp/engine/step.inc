@@ -116,6 +116,9 @@
     //   - rigidDirty: rigid topology or acid content change on either layer
     //   - looseDirty: powder/liquid wrote (loose overlay is joint-ordered for
     //     dual-layer determinism — both layers refresh before either stepLayer)
+    // Free bodies do NOT force joint: they do not change static co-occupation.
+    // moveBodies / ensureGroundedSingleLayer preserve joint stamps when
+    // jointSupportValid so a cube spawn cannot peel FG/BG support.
     // Settled dual-layer terrain (no dirty bits, no live bonds) skips joint and
     // reuses the previous groundedCell (including cross-layer support patches).
     bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;

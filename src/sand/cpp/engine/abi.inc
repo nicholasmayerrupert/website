@@ -249,6 +249,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y
   e->fg.skyWorldReachY.clear(); e->bg.skyWorldReachY.clear();
   e->fg.skyDirty = e->bg.skyDirty = true;
 }
+EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_tick(Engine* e, int tick) { e->tick = tick; }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_draft(Engine* e, int* cells, int count, int material) {
   e->tools.draft.clear();
   for (int i = 0; i < count; i++) {

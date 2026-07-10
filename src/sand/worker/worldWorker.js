@@ -164,10 +164,12 @@ self.onmessage = async ({ data }) => {
     });
     engine.setPlayMode(false);
     engine.setDrawMode(!!data.drawMode);
-    engine.setTool(data.tool | 0);
     creativeKind = data.creativeKind | 0;
     creativeValue = data.creativeValue | 0;
     engine.setCreativeMaterial(creativeKind, creativeValue);
+    // Preserve the selected startup tool. The initial creative selection is an
+    // EMPTY placeholder until the palette emits a real material selection.
+    engine.setTool(data.tool | 0);
     epoch = 1; sequence = 0; awaitingAck = false; control = null; edges = []; workerButtons = 0;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
     postFull('init');

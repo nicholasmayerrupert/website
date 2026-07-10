@@ -95,6 +95,7 @@ export function createWorldWorkerClient(ctx) {
       } else {
         ctx.engine.applyDiffMirror(bytes);
       }
+      ctx.engine.setMirrorWorldTick(packet.worldTick);
       worker.postMessage({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
       state = { ...state, mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length };
       changed = true;

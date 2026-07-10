@@ -58,6 +58,7 @@ export function installDevHooks(ctx, {
       worldShifts: engine() ? engine().getWorldShiftCount() : 0,
       actorTick: engine() ? engine().getActorTick() : 0,
       worldTick: workerState?.worldTick ?? (engine() ? engine().getTick() : 0),
+      mirrorWorldTick: engine() ? engine().getTick() : 0,
       worldTps: workerState?.worldTps || 0,
       workerControls: workerState?.controlsReceived || 0,
       workerEdges: workerState?.edgesProcessed || 0,

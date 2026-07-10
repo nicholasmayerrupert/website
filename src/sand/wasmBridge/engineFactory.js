@@ -275,6 +275,7 @@ export function initSandWasm() {
         applyWorldMirror: c('engine_apply_world_mirror', null, ['number', 'number', 'number']),
         applyDiffMirror: c('engine_apply_diff_mirror', null, ['number', 'number', 'number']),
         setMirrorWorldOffset: c('engine_set_mirror_world_offset', null, ['number', 'number', 'number']),
+        setMirrorWorldTick: c('engine_set_mirror_world_tick', null, ['number', 'number']),
         setMirrorDraft: c('engine_set_mirror_draft', null, ['number', 'number', 'number', 'number']),
         gridHash: c('engine_grid_hash', 'number', ['number']),
         clearAllDirty: c('engine_clear_all_dirty', null, ['number']),
@@ -859,6 +860,7 @@ export function createEngineWasm({
       M.applyDiffMirror(ptr, buf, bytes.length);
       mod._free(buf);
     },
+    setMirrorWorldTick(tick) { M.setMirrorWorldTick(ptr, tick | 0); },
     setMirrorDraft(cells, material = 0) {
       const n = cells?.length || 0;
       if (n > mirrorDraftCap) {

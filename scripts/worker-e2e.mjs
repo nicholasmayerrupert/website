@@ -50,7 +50,6 @@ try {
     const t = window.__sandTest;
     t.setPlayMode(false);
     t.setDrawMode(true);
-    t.setCreativeMaterial(0, 1); // SAND
     const info = t.info();
     const rect = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main').getBoundingClientRect();
     const localX = Math.floor(rect.width * 0.5);
@@ -58,6 +57,12 @@ try {
     const [cx, cy] = t.cellAt(localX, localY);
     return { x: rect.left + localX, y: rect.top + localY, cx, cy, before: t.materialCount(1) };
   });
+  const defaultRigidBefore = await page.evaluate(() => window.__sandTest.materialCount(13));
+  await page.mouse.click(target.x, target.y);
+  await page.waitForTimeout(300);
+  const defaultRigidAfter = await page.evaluate(() => window.__sandTest.materialCount(13));
+  check('default creative cube survives worker initialization', defaultRigidAfter > defaultRigidBefore, `${defaultRigidBefore} -> ${defaultRigidAfter}`);
+  await page.evaluate(() => window.__sandTest.setCreativeMaterial(0, 1)); // SAND
   await page.mouse.move(target.x, target.y);
   await page.mouse.down({ button: 'left' });
   await page.waitForTimeout(350);
@@ -70,6 +75,8 @@ try {
   await page.waitForTimeout(350);
   const fallingHash1 = await page.evaluate(() => window.__sandTest.gridHash());
   check('world keeps advancing after a replication packet is consumed', fallingHash1 !== fallingHash0, `${fallingHash0} -> ${fallingHash1}`);
+  const clocks = await page.evaluate(() => { const p = window.__sandPerf(); return [p.mirrorWorldTick, p.worldTick]; });
+  check('render mirror follows the worker world clock for live lighting', clocks[0] === clocks[1] && clocks[0] > 0, `${clocks[0]} / ${clocks[1]}`);
 
   // Component drafts are non-grid state, so verify their explicit preview mirror
   // and the worker-owned finalize edge separately.
@@ -86,6 +93,15 @@ try {
   const stoneAfter = await page.evaluate(() => window.__sandTest.materialCount(3));
   check('worker draft preview is mirrored to WebGL state', draftCount > 0, `${draftCount} cells`);
   check('worker release finalizes the connected component', stoneAfter > stoneBefore, `${stoneBefore} -> ${stoneAfter}`);
+
+  const cubeStoneBefore = await page.evaluate(() => {
+    window.__sandTest.setCreativeMaterial(3, 0); // CUBE
+    return window.__sandTest.materialCount(3); // last body-capable selection was STONE
+  });
+  await page.mouse.click(target.x, target.y);
+  await page.waitForTimeout(350);
+  const cubeStoneAfter = await page.evaluate(() => window.__sandTest.materialCount(3));
+  check('worker cube placement reaches the render mirror', cubeStoneAfter > cubeStoneBefore, `${cubeStoneBefore} -> ${cubeStoneAfter}`);
 
   // Put the camera at the loaded-window edge and verify the worker streams and
   // re-anchors the main mirror without changing the absolute camera location.

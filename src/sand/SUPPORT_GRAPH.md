@@ -24,6 +24,8 @@ Single-layer grounding is unchanged (cell flood + incremental cache).
 | Drop unused `cgCompDensity` sum in `indexComponents` | Less work per flood/index (density never read by motion) |
 | Flood uses local `MAT_CLASS` / `MAT_FLAGS` pointers + `memset` | Slightly tighter rigid DFS |
 | Bond persistence (`sgBondsValid`) | Skips O(ungrounded) bond scan on pure-loose re-entry |
+| Pure-bore joint restore only for base-grounded terrain | Hanging dual-layer comps (joint-stamped, base-ungrounded) keep `jointDirty` so multi-log acid cannot creep |
+| Peer wake on joint rebuild | Snapshot both layers when joint stamps may drop; peel joint patches on bond-only invalidation |
 
 **Measured** (pan-stream, `--repeat 5` vs `bench/baseline.json`): step.mean about **−4.5%**, pure-perf checksums unchanged. Joint wall time remains ~5.1–5.3 ms p50 (timer mostly in `groundingMs` after bond work moved out of `crossLayerGroundingMs`).
 

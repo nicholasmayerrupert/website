@@ -727,30 +727,39 @@ void ComponentSystem::computeGroundedBoth() {
     for (auto& c : lay.plantComponents) c.grounded = lay.groundBaseFlags[i++] != 0;
     for (auto& c : lay.iceComponents) c.grounded = lay.groundBaseFlags[i++] != 0;
   };
-  {
-    bool rf = rigidMayChange(E.fg), rb = rigidMayChange(E.bg);
-    // A cached sleeping pass deliberately kept joint patches in place. If a
-    // later mutation requires a real joint rebuild, clear both layers fully once
-    // before returning to the classic path.
-    if (jointSupportSleeping) {
-      E.fg.groundDirty = true;
-      E.bg.groundDirty = true;
-      rf = rb = true;
-      jointSupportSleeping = false;
-    }
-    if (rf || rb) {
-      if (rf) E.fg.groundDirty = true;
-      else if (!E.fg.looseGroundDirty && !E.fg.groundContentDirty) wipeJointPatchesKeepLoose(E.fg);
-      else { E.fg.looseGroundDirty = true; E.fg.looseDirtyFull = true; E.fg.looseDirtyX0 = 0; E.fg.looseDirtyX1 = E.cols - 1; }
-      if (rb) E.bg.groundDirty = true;
-      else if (!E.bg.looseGroundDirty && !E.bg.groundContentDirty) wipeJointPatchesKeepLoose(E.bg);
-      else { E.bg.looseGroundDirty = true; E.bg.looseDirtyFull = true; E.bg.looseDirtyX0 = 0; E.bg.looseDirtyX1 = E.cols - 1; }
-    }
+  bool rf = rigidMayChange(E.fg), rb = rigidMayChange(E.bg);
+  // A cached sleeping pass deliberately kept joint patches in place. If a
+  // later mutation requires a real joint rebuild, clear both layers fully once
+  // before returning to the classic path.
+  if (jointSupportSleeping) {
+    E.fg.groundDirty = true;
+    E.bg.groundDirty = true;
+    rf = rb = true;
+    jointSupportSleeping = false;
   }
-  bool prevFg = rigidMayChange(E.fg);
-  bool prevBg = rigidMayChange(E.bg);
+  // jointDirty / jointBondsInvalid: co-occupation may have changed without
+  // either layer's rigid-base dirt (erase/acid on one layer's contact cells).
+  // Peel joint stamps from BOTH layers so the bond scan starts from independent
+  // bases — otherwise the "clean" peer keeps stale grounded=1 forever.
+  bool jointInv = jointDirty || jointBondsInvalid;
+  // Wake snapshots BEFORE wipe/flood: a joint rebuild can drop joint-stamped
+  // support on EITHER layer even when that layer's rigid topology is unchanged
+  // (peer wipe / bond loss). Snapshot whenever we already had a joint closure
+  // or either base may change — missing the peer was the "BG freezes mid-air
+  // after FG contact erase" bug (ungrounded but never woken into moveRigidAssemblies).
+  bool prevFg = jointSupportValid || rf || jointInv;
+  bool prevBg = jointSupportValid || rb || jointInv;
   if (prevFg) cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
   if (prevBg) cgPrevBg.assign(E.bg.groundedCell.begin(), E.bg.groundedCell.end());
+  if (rf || rb || jointInv) {
+    auto prepLayer = [&](Layer& lay, bool rigidDirty) {
+      if (rigidDirty) lay.groundDirty = true;
+      else if (!lay.looseGroundDirty && !lay.groundContentDirty) wipeJointPatchesKeepLoose(lay);
+      else { lay.looseGroundDirty = true; lay.looseDirtyFull = true; lay.looseDirtyX0 = 0; lay.looseDirtyX1 = E.cols - 1; }
+    };
+    prepLayer(E.fg, rf);
+    prepLayer(E.bg, rb);
+  }
   // Each layer's base grounding: full flood when its rigid topology changed, else a
   // cheap cache reuse / full skip inside computeGrounded.
   groundLayerBase(&E.fg);

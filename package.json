@@ -19,6 +19,7 @@
     "test:net-protocol": "node scripts/net-protocol-test.mjs",
     "test:server": "node scripts/server-roundtrip-test.mjs",
     "test:layer": "node scripts/layer-test.mjs",
+    "test:stacked-logs": "node scripts/stacked-logs-test.mjs",
     "test:xlayer-fall": "node scripts/xlayer-bonded-fall-test.mjs",
     "test:stone-layers": "node scripts/stone-layer-dig-repro.mjs",
     "test:stone-airgap": "node scripts/stone-airgap-test.mjs",

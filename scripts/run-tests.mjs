@@ -43,6 +43,7 @@ const SUITES = [
   ['net-protocol', 'net-protocol-test.mjs'],
   ['server', 'server-roundtrip-test.mjs'],
   ['layer', 'layer-test.mjs'],
+  ['stacked-logs', 'stacked-logs-test.mjs'],
   ['xlayer-fall', 'xlayer-bonded-fall-test.mjs'],
   ['prefetch', 'prefetch-test.mjs'],
   ['render', 'render-noise-test.mjs'],

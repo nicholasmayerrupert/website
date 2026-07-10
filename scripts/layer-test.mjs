@@ -527,6 +527,47 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   e.destroy();
 }
 
+// 15g. Erasing ALL FG co-occupation cells must wake the BG beam to fall on the
+//      next joint rebuild — not leave it frozen mid-air until something else
+//      dirties the background. Regression for joint-sleep peer-wake: FG-only
+//      rigid dirt wiped BG joint stamps but skipped wakeCellsThatLostGrounding
+//      on BG because rigidMayChange(bg) was false.
+{
+  console.log('cross-layer support: erase FG contact wakes unsupported bg beam');
+  const C = 220, R = 80;
+  const e = createEngineWasm({ cols: C, rows: R, infinite: false, sinksOn: false, worldSeed: 1 });
+  e.setBgEnabled(true);
+  const kk = (x, y) => y * C + x;
+  const bgTop = () => {
+    const g = e.getGridBg();
+    let minY = R, n = 0;
+    for (let y = 0; y < 50; y++) for (let x = 115; x < 215; x++) if (g[kk(x, y)] === MAT.STONE) {
+      n++; if (y < minY) minY = y;
+    }
+    return { minY, n };
+  };
+  for (let y = 50; y < R; y++) for (let x = 0; x < C; x++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  for (let y = 30; y < 35; y++) for (let x = 20; x < 120; x++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  for (let y = 35; y < 50; y++) for (let x = 25; x < 28; x++) e.paintDiscLayer(0, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  for (let y = 30; y < 35; y++) for (let x = 115; x < 215; x++) e.paintDiscLayer(1, x, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(1);
+  step(e, 40);
+  const settled = bgTop();
+  check('bg beam starts supported before contact erase', settled.minY === 30 && settled.n === 500,
+    `(top ${settled.minY}, n ${settled.n})`);
+  // Remove every FG cell in the 5×5 co-occupation patch; leave BG untouched.
+  for (let y = 30; y < 35; y++) for (let x = 115; x < 120; x++) e.eraseDiscLayer(0, x, y, 0);
+  step(e, 8);
+  const after = bgTop();
+  check('bg beam falls within a few steps after FG contact erase', after.minY > settled.minY + 2,
+    `(top ${settled.minY} -> ${after.minY})`);
+  check('bg beam still has most of its stone while falling', after.n > 400,
+    `(n ${after.n})`);
+  e.destroy();
+}
+
 // 16. Dynamic carve order: the first-carved layer can go inactive while held by
 //     the other layer; when the second support is removed, both layers must move
 //     on that same tick.

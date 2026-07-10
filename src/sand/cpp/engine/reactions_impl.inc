@@ -153,11 +153,32 @@ void ReactionSystem::applyAcid() {
     }
   }
   if (pureBore && !crossBondMayBreak && E.comps.jointSupportValid && !E.comps.jointSleepBlocked) {
-    // splitRigidAfterErase conservatively invalidates every joint. The surviving
-    // overlap above proves this component-pair edge still exists, while
-    // removalsKeepGroundingValid proved the same-layer base stayed exact.
-    E.comps.jointDirty = jointWasDirty;
-    E.comps.jointBondsInvalid = jointBondsWereInvalid;
+    // Only preserve the sleeping joint when NO component depends on cross-layer
+    // stamps (every currently-grounded comp is also base-grounded). Hanging dual-
+    // layer structures (BG beam held only by co-occupation with FG) keep base
+    // flags ungrounded while c.grounded is joint-stamped — pure-bore must NOT
+    // clear jointDirty there, or multi-log scenes creep one cell per dissolve
+    // while co-occupation still exists (sleep skips re-joint; stamps go stale).
+    auto dependsOnJoint = [](Layer& lay) {
+      if (!lay.groundBaseValid) return true;
+      size_t n = lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size();
+      if (lay.groundBaseFlags.size() != n) return true;
+      size_t i = 0;
+      auto scan = [&](std::vector<Comp>& list) {
+        for (auto& c : list) {
+          if (c.grounded && !lay.groundBaseFlags[i]) return true;
+          i++;
+        }
+        return false;
+      };
+      return scan(lay.stoneComponents) || scan(lay.plantComponents) || scan(lay.iceComponents);
+    };
+    if (!dependsOnJoint(E.fg) && !dependsOnJoint(E.bg)) {
+      // splitRigidAfterErase conservatively invalidates every joint. Surviving
+      // overlap + base-only support prove the closure is still exact for terrain.
+      E.comps.jointDirty = jointWasDirty;
+      E.comps.jointBondsInvalid = jointBondsWereInvalid;
+    }
   }
 }
 void ReactionSystem::applyLava() {

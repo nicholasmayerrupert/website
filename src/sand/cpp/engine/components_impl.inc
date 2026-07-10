@@ -174,6 +174,45 @@ void ComponentSystem::applyLooseOverlay() {
   }
   lay->groundSawPowder = sawPowder;
 }
+
+// Refresh the column-local loose overlay without disturbing rigid support bits
+// previously added by computeGroundedBoth. Rigid topology and base grounding are
+// independent of loose cells, so a pure powder/liquid write cannot invalidate
+// the cached cross-layer closure. This is the sleeping-structure path: settled,
+// fully-supported components stay asleep while dirty loose columns wake.
+void ComponentSystem::refreshLooseOverlayPreservingJoint(Layer* lay) {
+  if (!lay->looseGroundDirty) return;
+  E.useLayer(lay);
+  const uint8_t* const g = lay->grid;
+  uint8_t* const grounded = lay->groundedCell.data();
+  const int cols = E.cols, rows = E.rows;
+  const bool useBits = !lay->looseDirtyFull && (int)lay->looseDirtyCol.size() == cols;
+  auto clearLooseCol = [&](int x) {
+    for (int y = 0; y < rows; y++) {
+      int k = y * cols + x;
+      // Keep rigid joint patches exactly as stamped. Everything else in a dirty
+      // column is rebuilt by applyLooseOverlay from a clean zero.
+      if (!E.isRigidMaterialClass(g[k])) grounded[k] = 0;
+    }
+  };
+  if (useBits) {
+    for (int x = 0; x < cols; x++) if (lay->looseDirtyCol[x]) clearLooseCol(x);
+  } else {
+    int x0 = 0, x1 = cols - 1;
+    if (lay->looseDirtyX1 >= lay->looseDirtyX0) {
+      x0 = lay->looseDirtyX0 < 0 ? 0 : lay->looseDirtyX0;
+      x1 = lay->looseDirtyX1 >= cols ? cols - 1 : lay->looseDirtyX1;
+    }
+    for (int x = x0; x <= x1; x++) clearLooseCol(x);
+  }
+  applyLooseOverlay();
+  lay->looseGroundDirty = false;
+  lay->looseDirtyX0 = 0; lay->looseDirtyX1 = -1;
+  lay->looseDirtyFull = false;
+  if ((int)lay->looseDirtyCol.size() == cols)
+    std::fill(lay->looseDirtyCol.begin(), lay->looseDirtyCol.end(), (uint8_t)0);
+}
+
 void ComponentSystem::computeGrounded() {
   Layer* const lay = E.L;
   size_t totalComps = lay->stoneComponents.size() + lay->plantComponents.size() + lay->iceComponents.size();
@@ -273,10 +312,13 @@ void ComponentSystem::computeGrounded() {
   if ((int)lay->looseDirtyCol.size() == E.cols)
     std::fill(lay->looseDirtyCol.begin(), lay->looseDirtyCol.end(), (uint8_t)0);
 #ifdef SAND_INVARIANT_CHECKS
-  {
+  if (!jointSupportValid) {
     // Parity probe: re-run the PRE-SPLIT single-flood algorithm from scratch
     // (fresh index) and require byte-identical grounded[]/cellComp[]/comp
     // flags. On cached passes this also proves the base cache is not stale.
+    // A live joint closure may legitimately contain cross-layer support patches,
+    // which this single-layer reference cannot reproduce; joint-cache parity is
+    // instead covered by the forced-full grounding verification suite.
     const uint8_t* const g = lay->grid;
     std::vector<uint8_t> nu(lay->groundedCell);
     std::vector<int32_t> nuCC(lay->cellComp);
@@ -631,6 +673,34 @@ void ComponentSystem::computeGroundedBoth() {
     return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
            || !lay.bodies.empty() || !lay.bodyCells.empty();
   };
+  auto structureCanSelfActivate = [](Layer& lay) {
+    if (lay.myceliumActive) return true;
+    for (const auto& c : lay.plantComponents) if (c.growing) return true;
+    return false;
+  };
+  if (structureCanSelfActivate(E.fg) || structureCanSelfActivate(E.bg)) {
+    // Runtime-grown structures have deterministic transition order tied to the
+    // classic per-tick joint rebuild. Once observed, keep this engine on that
+    // path; ordinary generated terrain never sets this flag. Free bodies only
+    // suppress sleeping while they actually exist (via rigidMayChange below).
+    jointSleepBlocked = true;
+  }
+  // Pure loose motion cannot alter rigid base grounding, component adjacency, or
+  // cross-layer co-occupation. When no unsupported bond groups remain, preserve
+  // the settled joint closure and rebuild only dirty loose columns. Residual
+  // bonded assemblies keep the classic rebuild: its grouping/order participates
+  // in deterministic component motion even when cell topology is unchanged.
+  if (!groundForceFull && !jointSleepBlocked && jointSupportValid && cgBonds.empty()
+      && !jointDirty && !jointBondsInvalid
+      && !structureCanSelfActivate(E.fg) && !structureCanSelfActivate(E.bg)
+      && !rigidMayChange(E.fg) && !rigidMayChange(E.bg)) {
+    refreshLooseOverlayPreservingJoint(&E.fg);
+    refreshLooseOverlayPreservingJoint(&E.bg);
+    E.useLayer(&E.fg);
+    jointSupportSleeping = true;
+    E.perfGroundingMs += emscripten_get_now() - tJoint0;
+    return;
+  }
   // Joint may have stamped cross-layer support into groundedCell on a prior pass.
   // Dirty layer full-refloods; clean layer must not early-return with stale joint
   // patches — force a base-replay (memcpy groundRigidBase + full loose overlay)
@@ -659,6 +729,15 @@ void ComponentSystem::computeGroundedBoth() {
   };
   {
     bool rf = rigidMayChange(E.fg), rb = rigidMayChange(E.bg);
+    // A cached sleeping pass deliberately kept joint patches in place. If a
+    // later mutation requires a real joint rebuild, clear both layers fully once
+    // before returning to the classic path.
+    if (jointSupportSleeping) {
+      E.fg.groundDirty = true;
+      E.bg.groundDirty = true;
+      rf = rb = true;
+      jointSupportSleeping = false;
+    }
     if (rf || rb) {
       if (rf) E.fg.groundDirty = true;
       else if (!E.fg.looseGroundDirty && !E.fg.groundContentDirty) wipeJointPatchesKeepLoose(E.fg);
@@ -695,6 +774,8 @@ void ComponentSystem::computeGroundedBoth() {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
     if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
     E.useLayer(&E.fg);
+    jointSupportValid = true;
+    jointSupportSleeping = false;
     E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
     return;
   }
@@ -737,6 +818,8 @@ void ComponentSystem::computeGroundedBoth() {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
     if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
     E.useLayer(&E.fg);
+    jointSupportValid = true;
+    jointSupportSleeping = false;
     E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
     return;
   }
@@ -792,6 +875,8 @@ void ComponentSystem::computeGroundedBoth() {
   if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
   if (prevBg) wakeCellsThatLostGrounding(E.bg, cgPrevBg);
   E.useLayer(&E.fg);
+  jointSupportValid = true;
+  jointSupportSleeping = false;
   E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
 }
 

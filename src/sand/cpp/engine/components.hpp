@@ -25,6 +25,13 @@ class ComponentSystem {
   // ---- grounding cache + scratch (moved off the Engine) ----
   bool jointGroundReady = false;
   bool jointBondsInvalid = false;
+  // Persistent validity of the settled rigid joint-support closure currently
+  // stamped into both layers. With no residual unsupported bonds, loose motion
+  // cannot change this closure (loose cells do not ground rigid cells), so
+  // pure-loose ticks refresh dirty columns without rebuilding the joint graph.
+  bool jointSupportValid = false;
+  bool jointSupportSleeping = false;
+  bool jointSleepBlocked = false;
   // Sticky: bonds were invalidated (acid/erase/split) and computeGroundedBoth
   // must run on the next step even if the acid pure-bore path left groundDirty
   // and groundContentDirty false and cleared cgBonds. Without this, the joint
@@ -66,6 +73,7 @@ class ComponentSystem {
   void indexComponents();
   void computeRigidGrounded();
   void applyLooseOverlay();
+  void refreshLooseOverlayPreservingJoint(Layer* lay);
   void computeGrounded();
   void incrementalGroundingRefresh();
   void ensureGroundedSingleLayer();

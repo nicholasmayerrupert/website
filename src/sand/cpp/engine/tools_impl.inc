@@ -176,6 +176,7 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
 // and the generalized creative draft finalize so they all register identically.
 void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& cells) {
   if (cells.empty()) return;
+  if (mat == SEED || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
   switch (MAT_CGROUP[mat]) {
     case CG_ICE:  E.registerRigidCellsSplit(E.L->iceComponents, E.L->nextIceId, mat, cells, true); break;
     case CG_PLANT:
@@ -532,6 +533,9 @@ bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, P
 // the type so it survives streaming.
 bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   if (!canPlaceSeedAt(x0, y0)) return false;
+  // Growth runs before joint grounding and can finish a newly placed seed in
+  // that first tick. Latch here so the sleeping path cannot miss the transient.
+  E.comps.jointSleepBlocked = true;
   Comp c; c.id = E.L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
   { int k = E.I(x0, y0); E.L->grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
   E.L->plantComponents.push_back(std::move(c));
@@ -541,6 +545,7 @@ bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
 }
 bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   if (!canPlaceSeedAt(x0, y0)) return false;
+  E.comps.jointSleepBlocked = true;
   Comp c; c.id = E.L->nextStoneId++; c.yMax = y0; c.age = 0; c.growing = true;
   int k = E.I(x0, y0);
   E.L->grid[k] = MYCELIUM_SPORE;

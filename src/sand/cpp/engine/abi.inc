@@ -241,7 +241,15 @@ EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->useLayer(&e->fg
 
 // ---- two-layer access (background = layer 1) ----
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_grid_bg(Engine* e) { return e->bg.grid; }
-EMSCRIPTEN_KEEPALIVE void engine_set_bg_enabled(Engine* e, int on) { e->bgEnabled = on != 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_bg_enabled(Engine* e, int on) {
+  bool enabled = on != 0;
+  if (e->bgEnabled != enabled) {
+    e->comps.jointSupportValid = false;
+    e->comps.jointSupportSleeping = false;
+    if (enabled) e->comps.jointDirty = true;
+  }
+  e->bgEnabled = enabled;
+}
 // Paint a disc into a specific layer (0=fg, 1=bg). Enables the background on bg paint.
 EMSCRIPTEN_KEEPALIVE int engine_paint_disc_layer(Engine* e, int layer, int cx, int cy, int r, int mat, int ow) {
   e->useLayer(layer ? &e->bg : &e->fg);

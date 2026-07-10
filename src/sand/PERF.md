@@ -156,6 +156,16 @@ Landed (byte-identical, pan-stream checksum stable):
   rigid recompute, both bases re-flood so prior joint patches cannot
   re-transmit support. Guarded by `scripts/grounding-incremental-test.mjs` §6
   (joint-idle) + layer/xlayer fall suites.
+- **Sleeping settled joint-support closure**: with no residual unsupported bonds,
+  pure powder/liquid motion now refreshes only dirty loose columns and preserves
+  the last rigid cross-layer support result. Loose cells never ground rigid cells,
+  so they cannot change rigid islands, component adjacency, or cross-layer
+  co-occupation. Engines that have hosted growing plants/mycelium stay on the
+  classic deterministic path; residual bonded assemblies, rigid edits, acid
+  dissolves that sever a component pair's last overlap, streaming, live bodies,
+  and forced verification also rebuild the graph. A safe acid bore scans the
+  smaller touched component for another overlap and retains the sleeping closure
+  when that cross-layer edge provably survives.
 
 Future opportunities (NOT yet done — each needs byte-exact verification):
 

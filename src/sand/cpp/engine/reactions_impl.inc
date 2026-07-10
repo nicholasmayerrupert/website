@@ -58,8 +58,37 @@ void ReactionSystem::applyReactions() {
 }
 void ReactionSystem::applyAcid() {
   bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false;
+  bool jointWasDirty = E.comps.jointDirty, jointBondsWereInvalid = E.comps.jointBondsInvalid;
+  bool crossBondMayBreak = false;
   std::vector<int>& erasedStone = E.acidErasedStone; std::vector<int>& erasedIce = E.acidErasedIce;
   erasedStone.clear(); erasedIce.clear();
+  // A pure acid bore can preserve the sleeping joint closure when the removed
+  // cell was not the last co-occupation contact between its component pair.
+  // Scan the smaller component and stop on the first surviving overlap; bulk
+  // terrain usually finds one almost immediately.
+  auto removalMayBreakCrossBond = [&](int target) {
+    if (!E.bgEnabled || !E.comps.jointSupportValid || E.comps.jointSleepBlocked) return true;
+    Layer& own = *E.L;
+    Layer& peer = E.L == &E.fg ? E.bg : E.fg;
+    if (!E.isRigidMaterialClass(peer.grid[target])) return false;
+    int ownId = own.cellComp[target], peerId = peer.cellComp[target];
+    int ownN = E.compCount(own), peerN = E.compCount(peer);
+    if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN) return true;
+    Comp* ownComp = E.comps.compById(own, ownId);
+    Comp* peerComp = E.comps.compById(peer, peerId);
+    if (ownComp->cells.size() <= peerComp->cells.size()) {
+      for (int q : ownComp->cells) {
+        if (q == target || !E.isRigidMaterialClass(own.grid[q])) continue;
+        if (peer.cellComp[q] == peerId && E.isRigidMaterialClass(peer.grid[q])) return false;
+      }
+    } else {
+      for (int q : peerComp->cells) {
+        if (q == target || !E.isRigidMaterialClass(peer.grid[q])) continue;
+        if (own.cellComp[q] == ownId && E.isRigidMaterialClass(own.grid[q])) return false;
+      }
+    }
+    return true;
+  };
   for (int y = 1; y < E.rows - 1; y++) {
     int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
     for (int x = minX; x <= maxX; x++) {
@@ -82,6 +111,8 @@ void ReactionSystem::applyAcid() {
       if (acidEats(a)) target = a; else if (acidEats(b)) target = b; else if (acidEats(c)) target = c; else if (acidEats(d)) target = d;
       if (target < 0) continue;
       uint8_t tm = E.L->grid[target];
+      if ((E.isStoneComponentMaterial(tm) || E.isIceComponentMaterial(tm))
+          && removalMayBreakCrossBond(target)) crossBondMayBreak = true;
       if (E.isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (E.isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (E.isPlantMaterial(tm)) dissolvedPlant = true;
       // Dissolving releases acrid smoke (a yellow gas that rises/dissipates like
       // steam) from the dissolved cell ~half the time; otherwise it leaves space.
@@ -99,6 +130,7 @@ void ReactionSystem::applyAcid() {
   if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false, false);
   if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false);
   if (dissolvedPlant) E.splitPlantAfterErase(); // sets groundDirty (plant grounding nuance)
+  bool pureBore = false;
   if (dissolvedStone || dissolvedIce) {
     E.comps.cgRemovedCells.clear();
     E.comps.cgRemovedCells.insert(E.comps.cgRemovedCells.end(), erasedStone.begin(), erasedStone.end());
@@ -117,7 +149,15 @@ void ReactionSystem::applyAcid() {
       // what stops acid boring bulk stone from re-indexing the whole layer (incl. a
       // big inert ice tub holding a separate acid pool) every dissolve step.
       for (int k : E.comps.cgRemovedCells) E.L->cellComp[k] = -1;
+      pureBore = !dissolvedPlant;
     }
+  }
+  if (pureBore && !crossBondMayBreak && E.comps.jointSupportValid && !E.comps.jointSleepBlocked) {
+    // splitRigidAfterErase conservatively invalidates every joint. The surviving
+    // overlap above proves this component-pair edge still exists, while
+    // removalsKeepGroundingValid proved the same-layer base stayed exact.
+    E.comps.jointDirty = jointWasDirty;
+    E.comps.jointBondsInvalid = jointBondsWereInvalid;
   }
 }
 void ReactionSystem::applyLava() {

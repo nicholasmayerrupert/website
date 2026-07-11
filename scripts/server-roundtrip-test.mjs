@@ -34,7 +34,7 @@ function survivalEngine() {
   const id = e.spawnItem(MAT.WOOD, 3, 40.5, FLOOR - 4, 0, 0);
   const m = decode(encode(encodeItems(e, 0)));
   check('items message decodes', m && m.t === MSG.ITEMS);
-  check('one dropped item replicated', m && m.data.length === 7);
+  check('one dropped item replicated', m && m.data.length === 8);
   check('item id/material/count preserved', m && m.data[0] === id && m.data[2] === MAT.WOOD && m.data[3] === 3);
   check('item x position preserved', m && m.data[4] === 40.5);
   e.destroy();
@@ -47,7 +47,7 @@ function survivalEngine() {
   e.spawnParticle(MAT.STONE, 40, FLOOR - 4, 0, 0, 20);
   e.spawnItem(MAT.WOOD, 1, 41, FLOOR - 4, 0, 0);
   const m = decode(encode(encodeItems(e, 0)));
-  check('only the dropped item is sent, particle filtered', m && m.data.length === 7);
+  check('only the dropped item is sent, particle filtered', m && m.data.length === 8);
   e.destroy();
 }
 
@@ -67,7 +67,7 @@ function survivalEngine() {
   check('slot 0 tool fields match engine', m && m.data[1] === (inv.slots[0].isTool ? 1 : 0) && m.data[2] === inv.slots[0].toolClass);
   // the stone we added is somewhere in the flat data with count 42.
   let foundStone = false;
-  for (let i = 0; i < m.data.length; i += 5) if (m.data[i] === MAT.STONE && m.data[i + 4] === 42) foundStone = true;
+  for (let i = 0; i < m.data.length; i += 6) if (m.data[i] === MAT.STONE && m.data[i + 4] === 42) foundStone = true;
   check('added stone stack (42) present in flat data', foundStone);
   e.destroy();
 }
@@ -136,7 +136,7 @@ function survivalEngine() {
     const assignA = last(ai, MSG.ASSIGN), worldA = last(ai, MSG.WORLD), invA = last(ai, MSG.INVENTORY);
     check('client A got an authoritative player id', assignA && assignA.player > 0);
     check('client A got the full world at server dims', worldA && worldA.cols === 128 && worldA.rows === 96);
-    check('client A got an initial inventory', invA && invA.data.length === 36 * 5);
+    check('client A got an initial inventory', invA && invA.data.length === 36 * 6);
     check('client B also got a world + inventory', last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY));
 
     // snapshots list both players.

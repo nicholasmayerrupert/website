@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
-  "abiVersion": 3,
+  "abiVersion": 4,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -10,12 +10,12 @@
     "itemSnapshot": {
       "$comment": "float32 records built by buildItemSnapshot (items.inc); also the external GL item layout (glSetItems) and the ITEMS wire message payload.",
       "cPrefix": "IS",
-      "fields": ["id", "kind", "material", "count", "x", "y", "life"]
+      "fields": ["id", "kind", "material", "count", "x", "y", "life", "plantType"]
     },
     "inventorySlot": {
       "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
       "cPrefix": "IVS",
-      "fields": ["material", "isTool", "toolClass", "toolTier", "count", "selected"]
+      "fields": ["material", "isTool", "toolClass", "toolTier", "count", "plantType", "selected"]
     },
     "survivalFootprint": {
       "$comment": "int32 records built by buildSurvivalFootprintSnapshot (inventory.inc).",

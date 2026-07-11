@@ -777,7 +777,7 @@ export function createEngineWasm({
       if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
       const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), STRIDES.inventorySlot);
       const O = OFF.inventorySlot;
-      return { material: f[O.material] | 0, isTool: f[O.isTool] === 1, toolClass: f[O.toolClass] | 0, toolTier: f[O.toolTier] | 0, count: f[O.count] | 0 };
+      return { material: f[O.material] | 0, isTool: f[O.isTool] === 1, toolClass: f[O.toolClass] | 0, toolTier: f[O.toolTier] | 0, count: f[O.count] | 0, plantType: f[O.plantType] | 0 };
     },
     // Cheap change detector for the HUD: hash the packed snapshot (all fields
     // are int-valued) without building the 36 slot objects. Includes the
@@ -801,7 +801,7 @@ export function createEngineWasm({
       const O = OFF.inventorySlot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        slots[i] = { material: f[o + O.material] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0, count: f[o + O.count] | 0 };
+        slots[i] = { material: f[o + O.material] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0, count: f[o + O.count] | 0, plantType: f[o + O.plantType] | 0 };
         if (f[o + O.selected] === 1) selected = i;
       }
       return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
@@ -816,7 +816,7 @@ export function createEngineWasm({
       const O = OFF.itemSnapshot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0 };
+        out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0, plantType: f[o + O.plantType] | 0 };
       }
       return out;
     },

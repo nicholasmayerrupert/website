@@ -98,16 +98,17 @@ void ItemSystem::ensureItemCapacity() {
   for (size_t i = 0; i < items.size(); i++) if (items[i].kind == IT_PARTICLE) { items.erase(items.begin() + i); return; }
   for (size_t i = 0; i < items.size(); i++) if (items[i].kind == IT_ITEM) { items.erase(items.begin() + i); return; }
 }
-int ItemSystem::spawnItem(uint8_t mat, int count, double px, double py, double vx, double vy) {
+int ItemSystem::spawnItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType) {
   ensureItemCapacity();
   Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.material = mat;
+  it.plantType = plantType;
   it.count = (uint8_t)(count < 1 ? 1 : (count > 255 ? 255 : count));
   it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = IT_PICKUP_DELAY;
   items.push_back(it); return it.id;
 }
 // Thrown items get a longer pickup delay so they escape the magnet before homing back.
-int ItemSystem::throwItem(uint8_t mat, int count, double px, double py, double vx, double vy) {
-  int id = spawnItem(mat, count, px, py, vx, vy);
+int ItemSystem::throwItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType) {
+  int id = spawnItem(mat, count, px, py, vx, vy, plantType);
   items.back().pickupDelay = IT_THROW_PICKUP_DELAY;
   return id;
 }
@@ -165,7 +166,7 @@ void ItemSystem::updateItems() {
     unburyItem(it);
     floatItem(it);
     int px, py;
-    if (seedItemCanPlant(it, px, py) && E.placeSeedAt(px, py)) {
+    if (seedItemCanPlant(it, px, py) && E.placeSeedAtTyped(px, py, it.plantType)) {
       if (--it.count > 0) it.pickupDelay = IT_PICKUP_DELAY;
     }
   }
@@ -188,7 +189,7 @@ void ItemSystem::pickupItems() {
       double d = dx * dx + dy * dy;
       if (d <= bestD) { bestD = d; best = &p; }
     }
-    if (best && E.addToInventory(*best, it.material, it.count)) it.count = 0;
+    if (best && E.addToInventory(*best, it.material, it.count, it.plantType)) it.count = 0;
   }
 }
 
@@ -200,6 +201,7 @@ int ItemSystem::buildItemSnapshot() {
     float* o = snapshot.data() + i * IS_STRIDE;
     o[IS_ID] = (float)it.id; o[IS_KIND] = (float)it.kind; o[IS_MATERIAL] = (float)it.material; o[IS_COUNT] = (float)it.count;
     o[IS_X] = (float)it.px; o[IS_Y] = (float)it.py; o[IS_LIFE] = (float)it.life;
+    o[IS_PLANT_TYPE] = (float)it.plantType;
   }
   return (int)items.size();
 }

@@ -49,24 +49,24 @@ void InventorySystem::cycleSelectedSlot(int id, int delta) {
 // Add `count` of `mat` to a player's inventory: top off matching stacks first, then
 // fill empty slots. Returns false (and adds nothing more) if it cannot all fit, so
 // the caller can leave the remainder in the world (no silent loss).
-bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count) {
+bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType) {
   if (count <= 0) return true;
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
     InvSlot& s = p.inv[i];
-    if (!s.isTool && s.count > 0 && s.material == mat && s.count < INV_STACK_MAX) {
+    if (!s.isTool && s.count > 0 && s.material == mat && (mat != SEED || s.plantType == plantType) && s.count < INV_STACK_MAX) {
       int add = imin(count, INV_STACK_MAX - s.count); s.count += add; count -= add;
     }
   }
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
     InvSlot& s = p.inv[i];
     if (!s.isTool && s.count == 0) {
-      s.material = mat; s.toolClass = 0; s.toolTier = 0;
+      s.material = mat; s.toolClass = 0; s.toolTier = 0; s.plantType = plantType;
       int add = imin(count, INV_STACK_MAX); s.count = add; count -= add;
     }
   }
   return count <= 0;
 }
-bool InventorySystem::addToInventory(int id, uint8_t mat, int count) { Player* p = E.findPlayer(id); return p ? addToInventory(*p, mat, count) : false; }
+bool InventorySystem::addToInventory(int id, uint8_t mat, int count, uint8_t plantType) { Player* p = E.findPlayer(id); return p ? addToInventory(*p, mat, count, plantType) : false; }
 
 // Place the selected slot's material at the aim cell, capped at how many units the
 // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
@@ -105,7 +105,7 @@ bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.
 void InventorySystem::moveSlot(Player& p, int from, int to) {
   if (from < 0 || from >= INV_SLOTS || to < 0 || to >= INV_SLOTS || from == to) return;
   InvSlot& a = p.inv[from]; InvSlot& b = p.inv[to];
-  if (!a.isTool && !b.isTool && a.count > 0 && b.count > 0 && a.material == b.material) {
+  if (!a.isTool && !b.isTool && a.count > 0 && b.count > 0 && a.material == b.material && (a.material != SEED || a.plantType == b.plantType)) {
     int mv = imin(a.count, INV_STACK_MAX - b.count); b.count += mv; a.count -= mv;
     if (a.count <= 0) a = InvSlot();
     return;
@@ -129,7 +129,7 @@ void InventorySystem::cursorPick(Player& p, int slot, bool half) {
   } else if (sEmpty) {
     if (half) { s = c; s.count = 1; if (--c.count <= 0) c = InvSlot(); }
     else { s = c; c = InvSlot(); }
-  } else if (!c.isTool && !s.isTool && c.material == s.material) { // merge same material
+  } else if (!c.isTool && !s.isTool && c.material == s.material && (c.material != SEED || c.plantType == s.plantType)) { // merge same material/species
     int room = INV_STACK_MAX - s.count;
     int mv = half ? imin(1, imin(room, c.count)) : imin(room, c.count);
     s.count += mv; c.count -= mv; if (c.count <= 0) c = InvSlot();
@@ -148,7 +148,7 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   if (c.count <= 0 || c.isTool || c.material == EMPTY) return false;
   int n = whole ? imin(c.count, 255) : 1;
   double sx = p.px + p.w / 2.0 + p.facing * 1.5, sy = p.py + p.h / 2.0;
-  E.throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED, IT_THROW_UP);
+  E.throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED, IT_THROW_UP, c.plantType);
   c.count -= n; if (c.count <= 0) c = InvSlot();
   return true;
 }
@@ -162,6 +162,7 @@ int InventorySystem::buildCursorSnapshot(int playerId) {
   float* o = cursorSnap.data();
   o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
   o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = 0.0f;
+  o[IVS_PLANT_TYPE] = (float)s.plantType;
   return s.count > 0 ? 1 : 0;
 }
 
@@ -175,6 +176,7 @@ int InventorySystem::buildInventorySnapshot(int playerId) {
     float* o = invSnapshot.data() + (size_t)i * IVS_STRIDE;
     o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
     o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = (i == p->selectedSlot) ? 1.0f : 0.0f;
+    o[IVS_PLANT_TYPE] = (float)s.plantType;
   }
   return INV_SLOTS;
 }
@@ -250,7 +252,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       if (toBg) E.bgEnabled = true;
       int x0, y0;
       E.useLayer(toBg ? &E.bg : &E.fg);
-      bool placed = E.getSeedOrigin(ax, ay, x0, y0) && E.placeSeedAt(x0, y0);
+      bool placed = E.getSeedOrigin(ax, ay, x0, y0) && E.placeSeedAtTyped(x0, y0, sel.plantType);
       E.useLayer(&E.fg);
       if (placed) {
         sel.count--;

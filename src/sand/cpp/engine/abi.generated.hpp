@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 3;
+static const int ABI_VERSION = 4;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -29,7 +29,7 @@ enum PlayerSnapshotField : int {
 };
 static const int PS_STRIDE = 19;
 
-// itemSnapshot: id, kind, material, count, x, y, life
+// itemSnapshot: id, kind, material, count, x, y, life, plantType
 enum ItemSnapshotField : int {
   IS_ID = 0,
   IS_KIND = 1,
@@ -38,19 +38,21 @@ enum ItemSnapshotField : int {
   IS_X = 4,
   IS_Y = 5,
   IS_LIFE = 6,
+  IS_PLANT_TYPE = 7,
 };
-static const int IS_STRIDE = 7;
+static const int IS_STRIDE = 8;
 
-// inventorySlot: material, isTool, toolClass, toolTier, count, selected
+// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, selected
 enum InventorySlotField : int {
   IVS_MATERIAL = 0,
   IVS_IS_TOOL = 1,
   IVS_TOOL_CLASS = 2,
   IVS_TOOL_TIER = 3,
   IVS_COUNT = 4,
-  IVS_SELECTED = 5,
+  IVS_PLANT_TYPE = 5,
+  IVS_SELECTED = 6,
 };
-static const int IVS_STRIDE = 6;
+static const int IVS_STRIDE = 7;
 
 // survivalFootprint: id, width, height, cellCount, anchorX, anchorY
 enum SurvivalFootprintField : int {

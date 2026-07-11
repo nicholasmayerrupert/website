@@ -6,7 +6,7 @@
 
 import { INPUT, TOOL, INV_SLOTS, STRIDES } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -33,7 +33,7 @@ export const MSG = Object.freeze({
 export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 127
 export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
 const MAX_SNAPSHOT_PLAYERS = 64;
-export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life] per item
+export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life,plantType] per item
 export const INV_FIELDS = STRIDES.inventorySlot - 1;  // wire slots omit the `selected` flag (sent separately)
 const MAX_SNAPSHOT_ITEMS = 1024; // IT_MAX_ITEMS in items.inc
 
@@ -86,7 +86,7 @@ export function makeResync(room, client) { return { t: MSG.RESYNC, room, client 
 
 // ---- world-state replication beyond players (Phase 9) ----
 // Dropped items, packed flat as ITEM_FIELDS numbers each. `items` is an array of
-// { id, kind, material, count, x, y, life } (the engine's getItems() shape); the
+// { id, kind, material, count, x, y, life, plantType } (the engine's getItems() shape); the
 // caller filters which kinds to send (cosmetic particles are usually dropped).
 export function makeItems(tick, items) {
   const data = new Array(items.length * ITEM_FIELDS);
@@ -94,17 +94,19 @@ export function makeItems(tick, items) {
     const it = items[i], o = i * ITEM_FIELDS;
     data[o] = it.id | 0; data[o + 1] = it.kind | 0; data[o + 2] = it.material | 0;
     data[o + 3] = it.count | 0; data[o + 4] = it.x; data[o + 5] = it.y; data[o + 6] = it.life | 0;
+    data[o + 7] = it.plantType | 0;
   }
   return { t: MSG.ITEMS, tick: Math.trunc(tick), data };
 }
 // One player's authoritative inventory. `slots` is the getInventory() slots array
-// ({material,isTool,toolClass,toolTier,count}); `selected` is the hotbar index.
+// ({material,isTool,toolClass,toolTier,count,plantType}); `selected` is the hotbar index.
 export function makeInventory(tick, player, slots, selected, selectedFootprint = 0) {
   const data = new Array(slots.length * INV_FIELDS);
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i], o = i * INV_FIELDS;
     data[o] = s.material | 0; data[o + 1] = s.isTool ? 1 : 0;
     data[o + 2] = s.toolClass | 0; data[o + 3] = s.toolTier | 0; data[o + 4] = s.count | 0;
+    data[o + 5] = s.plantType | 0;
   }
   return { t: MSG.INVENTORY, tick: Math.trunc(tick), player: player | 0, data, selected: selected | 0, selectedFootprint: selectedFootprint | 0 };
 }
@@ -112,7 +114,7 @@ export function makeInventory(tick, player, slots, selected, selectedFootprint =
 export function makeCursor(tick, player, cur) {
   return {
     t: MSG.CURSOR, tick: Math.trunc(tick), player: player | 0,
-    cur: cur ? { material: cur.material | 0, isTool: cur.isTool ? 1 : 0, toolClass: cur.toolClass | 0, toolTier: cur.toolTier | 0, count: cur.count | 0 } : null,
+    cur: cur ? { material: cur.material | 0, isTool: cur.isTool ? 1 : 0, toolClass: cur.toolClass | 0, toolTier: cur.toolTier | 0, count: cur.count | 0, plantType: cur.plantType | 0 } : null,
   };
 }
 

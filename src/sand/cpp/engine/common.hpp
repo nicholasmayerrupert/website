@@ -231,6 +231,7 @@ struct Item {
   uint8_t kind = IT_ITEM;
   uint8_t material = 0;
   uint8_t count = 1;       // stack carried by this dropped item (merged at pickup)
+  uint8_t plantType = PT_OAK; // species carried by SEED items
   double px = 0, py = 0;   // buffer-local cell coords (a point), +y down
   double vx = 0, vy = 0;   // cells per step
   int life = 0;            // PARTICLE: steps remaining
@@ -282,6 +283,7 @@ struct InvSlot {
   uint8_t isTool = 0;     // 1 = a mining tool (class/tier below), not a placeable stack
   uint8_t toolClass = 0;  // ToolClass when isTool
   uint8_t toolTier = 0;   // ToolTier when isTool
+  uint8_t plantType = PT_OAK; // species carried by SEED stacks
   int count = 0;          // stack size (tools = 1); 0 = empty
 };
 // Survival tool footprints are engine-defined shape masks. v1 ships square presets,

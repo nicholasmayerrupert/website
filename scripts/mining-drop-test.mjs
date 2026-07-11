@@ -80,19 +80,20 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
   check(`oil is collectible too (${oil.drops})`, oil.drops > 0);
 }
 
-// 4c) Leaves do not drop themselves with normal tools; they have a small
-// deterministic chance to drop seed items.
+// 4c) The universal dig tool harvests leaves, with a small deterministic chance
+// for a species-tagged seed instead of the leaf.
 {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 3, sinksOn: false, infinite: false });
   const id = e.spawnPlayer(40, 40);
-  e.setPlayerTool(id, TC.hand, TT.hand);
+  e.setPlayerTool(id, TC.dig, TT.wood);
   e.placeMaterial(60, 50, 5, MAT.PLANT);
   for (let i = 0; i < 200; i++) e.playerMine(id, 60, 50);
   const items = e.getItems();
   const leafDrops = items.filter((it) => it.kind === 0 && it.material === MAT.PLANT).length;
   const seedDrops = items.filter((it) => it.kind === 0 && it.material === MAT.SEED).length;
-  check(`leaves drop seeds sometimes (${seedDrops})`, seedDrops > 0);
-  check(`leaves do not drop leaf items (${leafDrops})`, leafDrops === 0);
+  check(`dig-harvested leaves usually drop leaf items (${leafDrops})`, leafDrops > seedDrops);
+  check(`dig-harvested leaves sometimes drop seeds (${seedDrops})`, seedDrops > 0);
+  check('mined oak seeds retain their species', items.filter((it) => it.kind === 0 && it.material === MAT.SEED).every((it) => it.plantType === 0));
   e.destroy();
 }
 

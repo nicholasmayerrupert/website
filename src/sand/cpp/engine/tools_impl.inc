@@ -401,7 +401,11 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
     E.L->mineDamage[k] = E.L->mineDamage[k] > power ? E.L->mineDamage[k] - power : 0;
     if (E.L->mineDamage[k] > 0) return true;
   }
-  lastMinedCells.push_back({m, k});
+  uint8_t pt = PT_OAK;
+  if (E.isPlantLeaf(m)) for (const Comp& c : E.L->plantComponents) {
+    if (std::find(c.cells.begin(), c.cells.end(), k) != c.cells.end()) { pt = c.plantType; break; }
+  }
+  lastMinedCells.push_back({m, k, pt});
   destroyCellAt(k, m, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
   E.L->mineDamage[k] = 0;
   draft.erase(k);

@@ -346,13 +346,14 @@ bool PlayerSystem::mineFootprintHasContent(int cx, int cy, int footprintId, Laye
 void PlayerSystem::resolveMineDrops(Player& p) {
   if (E.tools.lastMinedCells.empty()) return;
   for (auto& mc : E.tools.lastMinedCells) {
-    uint8_t m = mc.first; int k = mc.second;
+    uint8_t m = mc.material; int k = mc.cell;
     int cxk = k % E.cols, cyk = k / E.cols;
     uint8_t cls = MAT_TOOLCLASS[m], tier = MAT_TOOLTIER[m];
     bool drop = false;
-    if (E.isPlantLeaf(m)) {
+    if (E.isPlantLeaf(m) && p.heldToolClass == TC_DIG) {
       double r = whash2(((uint32_t)E.actorTick ^ 0x51ED5EEDu), cxk, cyk);
-      if (r < LEAF_SEED_DROP_P) E.spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35);
+      if (r < LEAF_SEED_DROP_P) E.spawnItem(SEED, 1, cxk + 0.5, cyk + 0.5, 0, -0.35, mc.plantType);
+      else drop = true;
     } else if (E.isLiquidMaterial(m)) drop = true;
     else if (cls != TC_NONE) {
       if (tier == TT_HAND) drop = true;

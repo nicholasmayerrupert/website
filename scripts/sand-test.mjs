@@ -56,6 +56,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 {
   console.log('edge-supported components (infinite)');
   const e = mk({ infinite: true });
+  e.setBgEnabled(false); // isolate streamed-edge support from background tree cross-bonds
   const EDGE_X0 = 1, EDGE_X1 = 13;   // leftmost column x=1 touches the streamed edge
   const FREE_X0 = 40, FREE_X1 = 52;  // open space, touches no edge
   // Place both blocks in empty sky, comfortably above the generated surface (see #5).

@@ -21,8 +21,8 @@ class InventorySystem {
   void setSelectedSlot(Player& p, int slot);
   void setSelectedSlot(int id, int slot);
   void cycleSelectedSlot(int id, int delta);
-  bool addToInventory(Player& p, uint8_t mat, int count);
-  bool addToInventory(int id, uint8_t mat, int count);
+  bool addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType = PT_OAK);
+  bool addToInventory(int id, uint8_t mat, int count, uint8_t plantType = PT_OAK);
   bool placeFromSelected(Player& p, int ax, int ay, Layer* layer);
   bool placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer);
   bool placeFromSelected(int id, int ax, int ay);

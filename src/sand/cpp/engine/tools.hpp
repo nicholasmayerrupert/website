@@ -33,7 +33,8 @@ class ToolSystem {
   int lastEmitCx = -1, lastEmitCy = -1; // continuous-paint stroke interpolation
   bool emitStrokeActive = false;
   // Cells destroyed by the last mineDamage call: (material, cellIndex) -> drops.
-  std::vector<std::pair<uint8_t, int>> lastMinedCells;
+  struct MinedCell { uint8_t material; int cell; uint8_t plantType; };
+  std::vector<MinedCell> lastMinedCells;
 
   // Integer cell AABB of a player for build-exclusion tests (nullptr -> empty box,
   // contains() always false).

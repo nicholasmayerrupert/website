@@ -16,21 +16,22 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 3', PROTOCOL_VERSION === 3);
+  check('PROTOCOL_VERSION is 4', PROTOCOL_VERSION === 4);
 }
 
 // 1. items snapshot round trip + exactness (mixed item/particle, neg coords).
 {
   console.log('items round trip');
   const items = [
-    { id: 5, kind: 0, material: 7, count: 3, x: 10.5, y: -4.25, life: 0 },
-    { id: 9, kind: 1, material: 2, count: 1, x: 200.75, y: 119, life: 12 },
+    { id: 5, kind: 0, material: 7, count: 3, x: 10.5, y: -4.25, life: 0, plantType: 2 },
+    { id: 9, kind: 1, material: 2, count: 1, x: 200.75, y: 119, life: 12, plantType: 0 },
   ];
   const d = rt(makeItems(42, items));
   check('decodes to items', d && d.t === MSG.ITEMS && d.tick === 42);
   check('flat length matches', d && d.data.length === items.length * ITEM_FIELDS);
   check('first item fields preserved', d && d.data[0] === 5 && d.data[1] === 0 && d.data[2] === 7 && d.data[3] === 3 && d.data[4] === 10.5 && d.data[5] === -4.25 && d.data[6] === 0);
-  check('second item fields preserved', d && d.data[7] === 9 && d.data[8] === 1 && d.data[11] === 200.75 && d.data[13] === 12);
+  check('seed species preserved', d && d.data[7] === 2);
+  check('second item fields preserved', d && d.data[ITEM_FIELDS] === 9 && d.data[ITEM_FIELDS + 1] === 1 && d.data[ITEM_FIELDS + 4] === 200.75 && d.data[ITEM_FIELDS + 6] === 12);
   check('empty items allowed', rt(makeItems(0, [])).data.length === 0);
 }
 
@@ -40,7 +41,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const slots = Array.from({ length: INV_SLOTS }, (_, i) => ({ material: i, isTool: i === 0, toolClass: i === 0 ? 1 : 0, toolTier: i === 0 ? 2 : 0, count: i }));
   const d = rt(makeInventory(7, 3, slots, 4, 2));
   check('decodes to inventory', d && d.t === MSG.INVENTORY && d.player === 3 && d.selected === 4 && d.selectedFootprint === 2);
-  check('flat length is 36*5', d && d.data.length === INV_SLOTS * INV_FIELDS);
+  check('flat inventory length matches ABI', d && d.data.length === INV_SLOTS * INV_FIELDS);
   check('slot 0 is a tool (isTool + class + tier)', d && d.data[1] === 1 && d.data[2] === 1 && d.data[3] === 2);
   check('slot 5 count preserved', d && d.data[5 * INV_FIELDS + 4] === 5);
 }
@@ -67,7 +68,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 5. malformed messages are rejected (strict validation; a desync vector).
 {
   console.log('reject malformed');
-  check('items bad length (not multiple of 7)', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 2, 3] })) === null);
+  check('items bad record length', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 2, 3] })) === null);
   check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 0, 0, 1, Number.NaN, 0, 0] })) === null);
   check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: [1.5, 0, 0, 1, 0, 0, 0] })) === null);
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);

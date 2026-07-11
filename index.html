@@ -11,6 +11,41 @@
       content="Portfolio website for Nicholas Mayer-Rupert, a computer science student and software developer."
     />
     <title>Nicholas Mayer-Rupert</title>
+    <script>
+      // A failed module graph otherwise leaves React's root completely blank.
+      // Retry one navigation with a cache-busting URL, then show a useful error
+      // instead of trapping the visitor in an invisible reload loop.
+      (() => {
+        const retryKey = 'portfolio-startup-retry';
+        const recover = () => {
+          try {
+            if (!sessionStorage.getItem(retryKey)) {
+              sessionStorage.setItem(retryKey, '1');
+              const url = new URL(location.href);
+              url.searchParams.set('_startup', Date.now());
+              location.replace(url);
+              return;
+            }
+          } catch {}
+          const root = document.getElementById('root');
+          if (root && !root.hasChildNodes()) {
+            root.textContent = 'The site failed to load. Please refresh once.';
+            root.style.cssText = 'padding:2rem;color:#fff;background:#222;min-height:100vh;font:16px system-ui';
+          }
+        };
+        addEventListener('error', (event) => {
+          if (event.target && event.target.tagName === 'SCRIPT') recover();
+        }, true);
+        addEventListener('unhandledrejection', recover);
+        setTimeout(() => {
+          const root = document.getElementById('root');
+          if (root && !root.hasChildNodes()) recover();
+          else {
+            try { sessionStorage.removeItem(retryKey); } catch {}
+          }
+        }, 8000);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

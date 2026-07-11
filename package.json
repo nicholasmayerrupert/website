@@ -11,7 +11,7 @@
     "build": "npm run generate:check && vite build",
     "build:embed": "node scripts/check-embed-boundary.mjs && vite build --config vite.config.embed.js",
     "preview": "vite preview",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run build && wrangler deploy --config cloudflare/wrangler.jsonc",
     "test:sand": "node scripts/sand-test.mjs",
     "test:players": "node scripts/player-test.mjs",
     "test:timing": "node scripts/timing-test.mjs",

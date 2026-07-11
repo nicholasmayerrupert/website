@@ -57,37 +57,57 @@ void ReactionSystem::applyReactions() {
   if (plantBurned) E.splitPlantAfterErase();
 }
 void ReactionSystem::applyAcid() {
+  bool reactNow = E.tick % ACID_REACT_INTERVAL == 0;
   bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false;
   bool jointWasDirty = E.comps.jointDirty, jointBondsWereInvalid = E.comps.jointBondsInvalid;
   bool crossBondMayBreak = false;
   std::vector<int>& erasedStone = E.acidErasedStone; std::vector<int>& erasedIce = E.acidErasedIce;
+  std::vector<int64_t>& crossPairs = E.acidCrossPairs;
   erasedStone.clear(); erasedIce.clear();
-  // A pure acid bore can preserve the sleeping joint closure when the removed
-  // cell was not the last co-occupation contact between its component pair.
-  // Scan the smaller component and stop on the first surviving overlap; bulk
-  // terrain usually finds one almost immediately.
-  auto removalMayBreakCrossBond = [&](int target) {
-    if (!E.bgEnabled || !E.comps.jointSupportValid || E.comps.jointSleepBlocked) return true;
+  crossPairs.clear();
+  // A pure acid bore can preserve the sleeping joint closure when the batch did
+  // not remove the last co-occupation contact between a component pair. Record
+  // each touched pair while dissolving, then scan its smaller component ONCE
+  // against the final post-batch grid instead of once per removed cell.
+  auto noteTouchedCrossBond = [&](int target) {
+    if (!E.bgEnabled) return;
+    if (!E.comps.jointSupportValid || E.comps.jointSleepBlocked) { crossBondMayBreak = true; return; }
     Layer& own = *E.L;
     Layer& peer = E.L == &E.fg ? E.bg : E.fg;
-    if (!E.isRigidMaterialClass(peer.grid[target])) return false;
+    if (!E.isRigidMaterialClass(peer.grid[target])) return;
     int ownId = own.cellComp[target], peerId = peer.cellComp[target];
     int ownN = E.compCount(own), peerN = E.compCount(peer);
-    if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN) return true;
+    if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN) { crossBondMayBreak = true; return; }
+    // Fire/growth earlier in this reaction phase may have reshaped component
+    // lists after cellComp was indexed. Never use a merely in-range stale id to
+    // preserve a sleeping joint; fall back to the conservative rebuild.
+    Comp* ownComp = E.comps.compById(own, ownId);
+    Comp* peerComp = E.comps.compById(peer, peerId);
+    if (std::find(ownComp->cells.begin(), ownComp->cells.end(), target) == ownComp->cells.end()
+        || std::find(peerComp->cells.begin(), peerComp->cells.end(), target) == peerComp->cells.end()) {
+      crossBondMayBreak = true; return;
+    }
+    int64_t key = ((int64_t)ownId << 32) | (uint32_t)peerId;
+    if (std::find(crossPairs.begin(), crossPairs.end(), key) == crossPairs.end()) crossPairs.push_back(key);
+  };
+  auto touchedCrossBondSurvives = [&](int64_t key) {
+    Layer& own = *E.L;
+    Layer& peer = E.L == &E.fg ? E.bg : E.fg;
+    int ownId = (int)(key >> 32), peerId = (int)(uint32_t)key;
     Comp* ownComp = E.comps.compById(own, ownId);
     Comp* peerComp = E.comps.compById(peer, peerId);
     if (ownComp->cells.size() <= peerComp->cells.size()) {
       for (int q : ownComp->cells) {
-        if (q == target || !E.isRigidMaterialClass(own.grid[q])) continue;
-        if (peer.cellComp[q] == peerId && E.isRigidMaterialClass(peer.grid[q])) return false;
+        if (!E.isRigidMaterialClass(own.grid[q])) continue;
+        if (peer.cellComp[q] == peerId && E.isRigidMaterialClass(peer.grid[q])) return true;
       }
     } else {
       for (int q : peerComp->cells) {
-        if (q == target || !E.isRigidMaterialClass(peer.grid[q])) continue;
-        if (own.cellComp[q] == ownId && E.isRigidMaterialClass(own.grid[q])) return false;
+        if (!E.isRigidMaterialClass(peer.grid[q])) continue;
+        if (own.cellComp[q] == ownId && E.isRigidMaterialClass(own.grid[q])) return true;
       }
     }
-    return true;
+    return false;
   };
   for (int y = 1; y < E.rows - 1; y++) {
     int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
@@ -105,14 +125,14 @@ void ReactionSystem::applyAcid() {
       // a little (acid "settles in stone"). Re-marking ends naturally once no
       // dissolvable neighbour remains or the acid decays.
       E.markCellIndex(k);
-      if (E.rand() >= ACID_DISSOLVE_P) continue;
+      if (!reactNow) continue;
+      if (E.rand() >= ACID_BATCH_DISSOLVE_P) continue;
       bool hf = E.rand() < 0.5; int a = hf ? right : down, b = hf ? left : up, c = hf ? down : right, d = hf ? up : left;
       int target = -1;
       if (acidEats(a)) target = a; else if (acidEats(b)) target = b; else if (acidEats(c)) target = c; else if (acidEats(d)) target = d;
       if (target < 0) continue;
       uint8_t tm = E.L->grid[target];
-      if ((E.isStoneComponentMaterial(tm) || E.isIceComponentMaterial(tm))
-          && removalMayBreakCrossBond(target)) crossBondMayBreak = true;
+      if (E.isStoneComponentMaterial(tm) || E.isIceComponentMaterial(tm)) noteTouchedCrossBond(target);
       if (E.isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (E.isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (E.isPlantMaterial(tm)) dissolvedPlant = true;
       // Dissolving releases acrid smoke (a yellow gas that rises/dissipates like
       // steam) from the dissolved cell ~half the time; otherwise it leaves space.
@@ -121,14 +141,21 @@ void ReactionSystem::applyAcid() {
       if (E.rand() < ACID_DECAY_P) E.writeGridIndex(k, EMPTY);
     }
   }
+  if (!crossBondMayBreak) for (int64_t pair : crossPairs) {
+    if (!touchedCrossBondSurvives(pair)) { crossBondMayBreak = true; break; }
+  }
   // Pass markGroundDirty=false and decide grounding ourselves: a dissolve that
   // doesn't disconnect anything (the common case of acid boring through bulk
   // stone) keeps the grounding cache valid and skips the full-grid reflood that
   // otherwise dominates the cost. removalsKeepGroundingValid patches the removed
   // cells when safe; any disconnect / seed / powder case forces a reflood.
   E.L->compsReshaped = false; // splitRigidAfterErase sets this if the comp SET changes
-  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false, false);
-  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false);
+  // cellComp is exact at reaction time. Use it to avoid re-scanning every rigid
+  // cell in the layer just to discover which one or two components acid touched.
+  // Capture the ice offset before the stone list can split and change its size.
+  int iceIndexOffset = (int)(E.L->stoneComponents.size() + E.L->plantComponents.size());
+  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false, false, 0);
+  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false, iceIndexOffset);
   if (dissolvedPlant) E.splitPlantAfterErase(); // sets groundDirty (plant grounding nuance)
   bool pureBore = false;
   if (dissolvedStone || dissolvedIce) {

@@ -1613,7 +1613,7 @@ void ComponentSystem::splitPlantAfterErase() {
 // full grounding reflood next pass. Acid passes false and instead runs its own
 // cut-vertex check (noteAcidRemovals) to keep the grounding cache valid when a
 // dissolve doesn't disconnect anything.
-void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty) {
+void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty, int indexedOffset) {
   // Dirty joints for the NEXT step when bg is live. Even acid pure-bore
   // (markGroundDirty=false) must force a recompute — but do NOT clear
   // jointGroundReady mid-step. step() grounds jointly, then stepLayer(fg) then
@@ -1627,9 +1627,28 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
   std::vector<int32_t>& seen = E.L->seenStamp;
   int32_t erasedGen = ++E.L->seenGen;
   for (int k : erased) seen[k] = erasedGen;
-  std::vector<Comp> updated;
-  std::vector<int> survivors, part;
-  for (auto& comp : list) {
+  std::vector<uint8_t>& touchedByIndex = splitTouched;
+  touchedByIndex.clear();
+  if (indexedOffset >= 0) {
+    touchedByIndex.assign(list.size(), 0);
+    for (int k : erased) {
+      int ci = E.L->cellComp[k] - indexedOffset;
+      // Reactions earlier in this tick can reshape a list after grounding. The
+      // positional cache is then stale; validate membership and retain the old
+      // full-scan fallback for that uncommon case.
+      if (ci < 0 || ci >= (int)list.size()
+          || std::find(list[ci].cells.begin(), list[ci].cells.end(), k) == list[ci].cells.end()) {
+        touchedByIndex.clear(); break;
+      }
+      touchedByIndex[ci] = 1;
+    }
+  }
+  std::vector<Comp>& updated = splitUpdated; updated.clear(); updated.reserve(list.size() + erased.size());
+  std::vector<int>& survivors = splitSurvivors;
+  std::vector<int>& part = splitPart;
+  for (size_t compIndex = 0; compIndex < list.size(); compIndex++) {
+    auto& comp = list[compIndex];
+    if (!touchedByIndex.empty() && !touchedByIndex[compIndex]) { updated.push_back(std::move(comp)); continue; }
     bool touched = false;
     survivors.clear(); survivors.reserve(comp.cells.size());
     for (int k : comp.cells) { if (seen[k] == erasedGen) touched = true; else survivors.push_back(k); }
@@ -1652,5 +1671,6 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       reused = true;
     }
   }
-  list = std::move(updated);
+  list.swap(updated);
+  updated.clear();
 }

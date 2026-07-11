@@ -47,7 +47,15 @@ static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 
 static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
 static const float FIRE_CROSS_P = 0.18f;
-static const float ACID_DISSOLVE_P = 0.12f, ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
+// Acid flows + renews enclosed-cell activity every tick, but resolves static
+// terrain corrosion in short batches. The batch chance is deliberately higher
+// than the stationary 1-(1-.12)^3 probability: fixed-seed gameplay calibration
+// keeps cut depth close to the old cadence before moving acid escapes, while
+// component split/joint work is still paid only once every three ticks. Free
+// rigid-body erosion keeps the original per-tick ACID_DISSOLVE_P below.
+static const int ACID_REACT_INTERVAL = 3;
+static const float ACID_DISSOLVE_P = 0.12f, ACID_BATCH_DISSOLVE_P = 0.75f;
+static const float ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
 static const float ACRID_SMOKE_P = 0.5f; // chance a dissolved cell emits acrid smoke instead of leaving empty space
 // Acrid smoke is wispier and shorter-lived than steam so a big acid burn doesn't
 // leave a long-lived gas cloud that keeps the layer active (each active step pays a

@@ -72,6 +72,7 @@
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   std::vector<int> acidErasedStone, acidErasedIce; // reusable per-call scratch for applyAcid (avoids a heap alloc every acid step)
+  std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
   std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce

@@ -1,13 +1,14 @@
-// Locks multi-scenario pure-perf grid checksums (pan-stream, liquid-active,
-// components-active). Fails if a "perf" change alters sim identity.
+// Locks multi-scenario simulation checksums (pan-stream, liquid-active,
+// components-active). Intentional behavior changes update these values; pure
+// refactors must leave them untouched.
 // Run: node scripts/pure-perf-checksum-test.mjs  (also via npm test:pure-perf)
 
 import { execFileSync } from 'node:child_process';
 
 const EXPECTED = {
-  'pan-stream': 0x0fc4277b,
-  'liquid-active': 0x49182711,
-  'components-active': 0x5ea3a5a9,
+  'pan-stream': 0xe17f8e54,
+  'liquid-active': 0xd0070903,
+  'components-active': 0x7f056391,
 };
 
 const out = execFileSync(process.execPath, ['scripts/bench-sand.mjs', '--scenario', 'all', '--checksum-only'], {

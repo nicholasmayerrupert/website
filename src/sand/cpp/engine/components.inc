@@ -14,7 +14,7 @@
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, bool iceCache) { comps.registerRigidCellsSplit(list, nextId, mat, cells, iceCache); }
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) { comps.registerPlantCells(mat, cells, yMax); }
   void splitPlantAfterErase() { comps.splitPlantAfterErase(); }
-  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true) { comps.splitRigidAfterErase(list, erased, nextId, iceCache, markGroundDirty); }
+  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1) { comps.splitRigidAfterErase(list, erased, nextId, iceCache, markGroundDirty, indexedOffset); }
   int compCount(Layer& lay) { return comps.compCount(lay); }
   Comp* compById(Layer& lay, int id) { return comps.compById(lay, id); }
   void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev) { comps.wakeCellsThatLostGrounding(lay, prev); }

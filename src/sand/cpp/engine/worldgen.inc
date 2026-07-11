@@ -822,7 +822,10 @@
   }
   void pfStartTarget(int dx, int dy) {
     pfDx = dx; pfDy = dy; pfCursor = 0;
-    if ((int)pfGrid.size() != cols * rows) pfGrid.assign((size_t)cols * rows, EMPTY);
+    if ((int)pfGrid.size() != cols * rows) {
+      if ((size_t)cols * rows < pfGrid.size()) std::vector<uint8_t>().swap(pfGrid);
+      pfGrid.assign((size_t)cols * rows, EMPTY);
+    }
     pfBand(dx, dy, pfEx0, pfEy0, pfEw, pfEh);
     int futOffX = fg.worldOffsetX + dx, futOffY = fg.worldOffsetY + dy; // fg/bg share one offset
     bool cached = pfBandCached(&fg, futOffX, futOffY) && (!bgEnabled || pfBandCached(&bg, futOffX, futOffY));

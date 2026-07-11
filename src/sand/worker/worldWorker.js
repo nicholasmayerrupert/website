@@ -24,6 +24,7 @@ let lastStatsPost = 0;
 let controlsReceived = 0;
 let edgesProcessed = 0;
 let toolWrites = 0;
+let resizeId = 0;
 
 const postBytes = (message, bytes) => {
   const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -54,6 +55,7 @@ function postFull(reason) {
   engine.consumeReplicaDirty();
   postBytes({
     type: 'full', epoch, sequence, reason,
+    resizeId,
     cols: engine.cols, rows: engine.rows,
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     worldTick: engine.getTick(), perf: perf(),
@@ -170,7 +172,7 @@ self.onmessage = async ({ data }) => {
     // Preserve the selected startup tool. The initial creative selection is an
     // EMPTY placeholder until the palette emits a real material selection.
     engine.setTool(data.tool | 0);
-    epoch = 1; sequence = 0; awaitingAck = false; control = null; edges = []; workerButtons = 0;
+    epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
     postFull('init');
     schedule();
@@ -196,11 +198,12 @@ self.onmessage = async ({ data }) => {
     }
   } else if (data.type === 'resize') {
     awaitingAck = false;
+    resizeId = data.resizeId | 0;
     if (engine.resizeLoadedWindow(data.cols | 0, data.rows | 0)) {
       epoch++;
       sequence = 0;
       postFull('resize');
-    }
+    } else postFull('resize');
   } else if (data.type === 'destroy') {
     clearTimeout(timer);
     engine.destroy();

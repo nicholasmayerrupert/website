@@ -95,7 +95,40 @@ function patchResizableWasmHeapForBrowserGL() {
       };
     };
     wrapPixelsScan('texImage2D');
-    wrapPixelsScan('texSubImage2D');
+    // Emscripten's WebGL2 upload overload passes (HEAPU8, srcOffset). Copying
+    // that view wholesale copies the entire WASM heap, so one extreme zoom made
+    // every later upload copy hundreds of MB even after the grid shrank. The
+    // engine uploads RGBA/UNSIGNED_BYTE; retain only the prefix reachable through
+    // its current UNPACK_ROW_LENGTH/SKIP_* state and keep the same overload.
+    {
+      const orig = p.texSubImage2D;
+      if (typeof orig === 'function') {
+        p.texSubImage2D = function patchedTexSubImage2D(...args) {
+          const heap = args[8];
+          const srcOffset = args[9] | 0;
+          if (args.length >= 10 && ArrayBuffer.isView(heap) && heap.buffer?.resizable === true
+              && args[6] === 0x1908 && args[7] === 0x1401) { // RGBA / UNSIGNED_BYTE
+            const width = args[4] | 0, height = args[5] | 0;
+            const rowLength = this.getParameter(0x0CF2) || width; // UNPACK_ROW_LENGTH
+            const skipRows = this.getParameter(0x0CF3) | 0;
+            const skipPixels = this.getParameter(0x0CF4) | 0;
+            const pixels = Math.max(0, (skipRows + height - 1) * rowLength + skipPixels + width);
+            const count = Math.min(heap.length - srcOffset, pixels * 4);
+            const fixed = new Uint8Array(Math.max(0, count));
+            fixed.set(heap.subarray(srcOffset, srcOffset + count));
+            args[8] = fixed;
+            args[9] = 0;
+            return orig.apply(this, args);
+          }
+          for (let i = 0; i < args.length; i++) {
+            if (ArrayBuffer.isView(args[i]) || (typeof ArrayBuffer !== 'undefined' && args[i] instanceof ArrayBuffer)) {
+              args[i] = fixedBufferArg(args[i]);
+            }
+          }
+          return orig.apply(this, args);
+        };
+      }
+    }
     wrapPixelsScan('compressedTexImage2D');
     wrapPixelsScan('compressedTexSubImage2D');
 

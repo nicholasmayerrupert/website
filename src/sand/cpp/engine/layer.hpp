@@ -151,6 +151,26 @@ struct Layer {
   // Callers must have already persisted live buffer content into the stores and
   // emptied bodies/components that were buffer-indexed.
   void reallocSim(int newCols, int newRows, int newChunkCols, int newChunkRows) {
+    const size_t newN = (size_t)newCols * newRows;
+    if (newN < gridA.size()) {
+      // assign()/clear() preserve vector capacity. After an extreme zoom-out that
+      // kept every old per-cell allocation alive even though hot loops used the
+      // smaller logical size, leaving hundreds of MB resident. Swap only on the
+      // shrink path; growth still reuses capacity normally.
+      auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
+      release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
+      release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
+      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(blastGasStamp);
+      release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
+      release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
+      release(prevCompCells); release(curCompCells); release(bodyCells);
+      release(reactionFlags); release(reactionSteam); release(reactionFires); release(reactionIgnite);
+      release(mineDamage); release(light); release(lightBase); release(skyLight);
+      release(skyTopInput); release(skyDownValue); release(skyDownDepth);
+      release(stoneComponents); release(plantComponents); release(iceComponents);
+      release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
+      release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
+    }
     alloc(newCols, newRows, newChunkCols, newChunkRows);
     stoneComponents.clear(); plantComponents.clear(); iceComponents.clear();
     nextStoneId = nextPlantId = nextIceId = 1;
@@ -171,4 +191,3 @@ struct Layer {
     for (auto& kv : bodyStore) for (auto& e : kv.second) delete e.first;
   }
 };
-

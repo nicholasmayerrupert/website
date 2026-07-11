@@ -62,7 +62,7 @@ function Chip({ children }) {
 
 function SectionLabel({ children }) {
   return (
-    <h4 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-300/80">
+    <h4 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#d9b3ff]/80">
       {children}
     </h4>
   );
@@ -137,7 +137,7 @@ export default function About() {
               <button
                 type="button"
                 onClick={() => setDetailsOpen(true)}
-                className="pointer-events-auto group inline-flex items-center gap-2.5 rounded-full bg-emerald-400/90 px-7 py-3.5 text-sm font-semibold text-black shadow-lg shadow-emerald-500/25 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-dark"
+                className="pointer-events-auto group inline-flex items-center gap-2.5 rounded-full bg-[#8400ff]/90 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[#8400ff]/25 transition hover:bg-[#a94dff] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#d9b3ff]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-dark"
               >
                 Explore my experience
                 <span className="transition-transform duration-300 group-hover:translate-x-0.5">
@@ -207,11 +207,11 @@ export default function About() {
             <div className="mt-4 space-y-8">
               {EXPERIENCE.map((job) => (
                 <article key={job.role} className="relative pl-7">
-                  <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-4 ring-emerald-400/15" />
+                  <span className="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full bg-[#8400ff] ring-4 ring-[#8400ff]/15" />
                   <span className="absolute bottom-0 left-[4px] top-6 w-px bg-gradient-to-b from-white/15 to-transparent" />
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                     <h5 className="text-lg font-semibold text-white">{job.role}</h5>
-                    <span className="text-sm font-medium text-emerald-200/70">
+                    <span className="text-sm font-medium text-[#d9b3ff]/70">
                       {job.org}
                     </span>
                   </div>
@@ -227,7 +227,7 @@ export default function About() {
                     <ul className="mt-4 space-y-2">
                       {job.points.map((pt) => (
                         <li key={pt} className="flex gap-2.5 text-[14px] leading-relaxed text-white/70">
-                          <span aria-hidden="true" className="mt-2 h-1 w-1 shrink-0 rounded-full bg-emerald-300/70" />
+                          <span aria-hidden="true" className="mt-2 h-1 w-1 shrink-0 rounded-full bg-[#d9b3ff]/70" />
                           <span>{pt}</span>
                         </li>
                       ))}

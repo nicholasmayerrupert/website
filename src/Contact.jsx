@@ -328,7 +328,7 @@ const Contact = () => {
                 rel="noopener noreferrer"
                 className="bg-gray-900 rounded-lg shadow-md p-6 flex flex-col items-center hover:bg-gray-800 transition duration-300"
               >
-                <div className="text-blue-600 mb-4">{item.icon}</div>
+                <div className="text-[#8400ff] mb-4">{item.icon}</div>
                 <h3 className="text-xl font-semibold text-white">{item.label}</h3>
               </a>
             ))}

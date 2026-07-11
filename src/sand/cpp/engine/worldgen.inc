@@ -327,6 +327,7 @@
   void fillOceanFlora(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (!L->isBackground) return;
     auto put = [&](int wx, int wy, uint8_t m) {
+      if (wy < L->gSeaRow) return; // ocean flora never breaches the water surface
       int x = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
       int k = y * cols + x; if (L->grid[k] == WATER || L->grid[k] == EMPTY) L->grid[k] = m;

@@ -83,6 +83,24 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
   check(`crystal volume stays comparable to lush/mycelium caves (${tally.crystal} vs ${tally.mycelium + tally.mushroom + tally.plant + tally.vine})`, tally.crystal < tally.mycelium + tally.mushroom + tally.plant + tally.vine);
 }
 
+// --- ocean flora stays submerged: background VINE/GLOWBERRY only comes from
+// fillOceanFlora, so its foreground counterpart must still be generated water.
+{
+  const e = mk();
+  let flora = 0, exposed = 0;
+  for (let band = 0; band < 100; band++) {
+    const fg = e.getGrid(), bg = e.getGridBg();
+    for (let k = 0; k < bg.length; k++) {
+      if (bg[k] !== MAT.VINE && bg[k] !== MAT.GLOWBERRY) continue;
+      flora++;
+      if (fg[k] !== MAT.WATER) exposed++;
+    }
+    e.shiftWorldXY(128, 0);
+  }
+  check(`ocean kelp and glowberries remain underwater (${flora} cells, ${exposed} exposed)`, flora > 0 && exposed === 0);
+  e.destroy();
+}
+
 // --- crystal-acid basins keep acid off dissolvable stone at generation time ---
 {
   const dissolvable = new Set([

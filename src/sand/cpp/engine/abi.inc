@@ -246,7 +246,8 @@ EMSCRIPTEN_KEEPALIVE void engine_apply_diff_mirror(Engine* e, uint8_t* buf, int 
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y) {
   e->fg.worldOffsetX = e->bg.worldOffsetX = x;
   e->fg.worldOffsetY = e->bg.worldOffsetY = y;
-  e->fg.skyWorldReachY.clear(); e->bg.skyWorldReachY.clear();
+  // Keep skyOffset*/skyDown/skyWorldReachY at their previous absolute anchor;
+  // the next mirror lighting solve uses them to remap off-screen sky shafts.
   e->fg.skyDirty = e->bg.skyDirty = true;
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_tick(Engine* e, int tick) { e->tick = tick; }

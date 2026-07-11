@@ -45,8 +45,13 @@ void NetSync::applyWorld(const uint8_t* buf, int len) {
 void NetSync::applyWorldMirror(const uint8_t* buf, int len) {
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
-  E.fg.skyWorldReachY.clear(); E.fg.skyValid = false; E.fg.skyDirty = true;
-  E.bg.skyWorldReachY.clear(); E.bg.skyValid = false; E.bg.skyDirty = true;
+  // Preserve absolute-world skylight reach across worker streaming snapshots.
+  // A deep buffer's top edge is underground and cannot rediscover that an
+  // off-screen vertical shaft reaches the surface. computeDirectSky remaps the
+  // previous skyDown/reach cache from skyOffset* into the new world offset.
+  // Fresh/resized mirror engines already begin with skyValid=false and no cache.
+  E.fg.skyDirty = true;
+  E.bg.skyDirty = true;
   E.useLayer(&E.fg); E.markAllDirty();
   E.useLayer(&E.bg); E.markAllDirty();
   E.bgEnabled = true;

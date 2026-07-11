@@ -294,6 +294,25 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   e.destroy();
 }
 
+// A render-only worker mirror must preserve the same absolute sky provenance
+// when each vertical stream arrives as a full snapshot rather than shiftWorld.
+{
+  const source = mkInfinite();
+  const mirror = mkInfinite();
+  for (let i = 0; i < 6; i++) {
+    fillStone(source, 8, 0, 87, 95);
+    carve(source, 45, 0, 50, 95);
+    mirror.applyWorldMirror(source.serializeWorld(), source.getWorldOffsetX(), source.getWorldOffsetY());
+    mirror.renderFull();
+    if (i < 5) source.shiftWorldXY(0, 32);
+  }
+  const shaftFace = brightness(mirror, 44, 70);
+  const sealed = brightness(mirror, 20, 70);
+  check(`streamed worker mirror keeps off-screen shaft skylight (${shaftFace.toFixed(1)} > ${sealed.toFixed(1)})`, shaftFace > sealed + 35);
+  source.destroy();
+  mirror.destroy();
+}
+
 // The same streamed shaft stays lit while returning upward through saved chunks.
 {
   const e = mkInfinite();

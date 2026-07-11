@@ -126,11 +126,11 @@ export default function About() {
             </h2>
 
             <p className="mx-auto mt-6 max-w-xl text-pretty text-base leading-relaxed text-white/75 sm:text-lg">
-              I&apos;m Nicholas, a software engineer and computer-science
-              graduate drawn to systems that move. The lattice drifting behind
-              this text is a three-dimensional cellular automaton; the falling
-              sand on the home page is a physics engine I wrote in C++ and
-              compiled to WebAssembly.
+              I&apos;m Nicholas, a software engineer and computer science
+              graduate. I like systems that move. The lattice behind this text
+              is a three-dimensional cellular automaton; the falling sand on
+              the home page is a physics engine I wrote in C++ and compiled to
+              WebAssembly.
             </p>
 
             <div className="mt-9 flex flex-col items-center gap-4">

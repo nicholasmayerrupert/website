@@ -46,39 +46,76 @@
       for (int y = rowStart; y < rowEnd; y++) L->grid[y * cols + lx] = terrain.genCellAt(worldX, surf, slope, biome, soil, y);
     }
   }
-  // Trees (fg only) over already-generated terrain in the rect. Trees reach
+  // Trees are background silhouettes over already-generated terrain. Trees reach
   // TREE_REACH cols outside the rect (clipped by `put`), so a band re-evaluates the
   // trunks just outside it and canopies span band seams identically to one big call.
   void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (!L->isBackground) return;
     auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (L->grid[y * cols + lx] == EMPTY) L->grid[y * cols + lx] = m; };
-    const int TREE_REACH = 6;    // >= max canopy horizontal reach
-    const int TREE_MAX_UP = 30;  // >= max trunk height + canopy upward reach
+    const int TREE_REACH = 11;   // >= max canopy / branch horizontal reach
+    const int TREE_MAX_UP = 42;  // >= max trunk height + canopy upward reach
     for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
       int worldX = L->worldOffsetX + lx; int surf = terrain.genSurfaceAt(worldX);
       if (surf + 2 < rowStart || surf - TREE_MAX_UP >= rowEnd) continue; // footprint misses the rect
+      // Leave a clean skyline around deterministic villages. Besides making the
+      // settlement readable, this prevents background tree components from
+      // overlapping the foreground buildings across simulation layers.
+      bool nearVillage = false; int vq = worldX / 360; if (worldX < 0 && worldX % 360) vq--;
+      uint32_t villageSeed = L->worldSeed ^ 0x57121314u;
+      for (int v = vq - 1; v <= vq + 1; v++) if (whash1(villageSeed ^ 0xA11A6Eu, v) <= 0.58) {
+        int vc = v * 360 + 70 + (int)(whash1(villageSeed ^ 0xA11A6Fu, v) * 210);
+        if (std::abs(worldX - vc) < 184) { nearVillage = true; break; }
+      }
+      if (nearVillage) continue;
       if (!terrain.genTreeAt(worldX, surf)) continue;
       int biome = terrain.genBiomeAt(worldX);
       uint8_t pt = terrain.pickTreeType(biome, worldX);
       uint8_t wood = plantWoodMat(pt), leaf = plantLeafMat(pt);
       double hr = whash1(L->gTreeSeed + 1, worldX);
-      int h = pt == PT_PINE ? 12 + (int)(hr * 7)      // tall conifer
-            : pt == PT_BUSH ? 3 + (int)(hr * 3)       // low shrub
-            : pt == PT_CACTUS ? 6 + (int)(hr * 5)     // medium column
-            : pt == PT_WILLOW ? 8 + (int)(hr * 6)
-            : 6 + (int)(hr * 8);                      // oak
+      int h = pt == PT_PINE ? 20 + (int)(hr * 12)     // towering conifer
+            : pt == PT_BUSH ? 4 + (int)(hr * 4)       // low shrub
+            : pt == PT_CACTUS ? 9 + (int)(hr * 8)     // tall branching cactus
+            : pt == PT_WILLOW ? 15 + (int)(hr * 9)
+            : 13 + (int)(hr * 12);                    // mature oak
       int top = surf - h;
       for (int y = top; y < surf; y++) put(lx, y, wood); // trunk
       if (pt == PT_CACTUS) {                            // arms, no foliage
         int armY = top + 2 + (int)(whash1(L->gTreeSeed ^ 0x3a3au, worldX) * imax(1, h - 4));
         put(lx - 1, armY, wood); put(lx - 2, armY, wood); put(lx - 2, armY - 1, wood);
         put(lx + 1, armY + 2, wood); put(lx + 2, armY + 2, wood); put(lx + 2, armY + 1, wood);
-      } else if (pt == PT_PINE) {                       // conical needles, narrowing upward
-        for (int oy = 0; oy <= 6; oy++) { int wRad = (oy + 1) / 2; for (int ox = -wRad; ox <= wRad; ox++) put(lx + ox, top + oy, leaf); }
-      } else if (pt == PT_WILLOW) {                     // wide, drooping
-        for (int oy = -3; oy <= 3; oy++) for (int ox = -4; ox <= 4; ox++) { if (ox * ox + (oy < 0 ? oy * oy : 0) > 14) continue; put(lx + ox, top + oy, leaf); }
-      } else {                                          // oak / bush round canopy
-        for (int oy = -4; oy <= 1; oy++) for (int ox = -3; ox <= 3; ox++) { if (ox * ox + oy * oy > 11) continue; put(lx + ox, top + oy, leaf); }
+      } else if (pt == PT_PINE) {                       // tapered, ragged evergreen crown
+        int crownH = h - 4;
+        for (int oy = -2; oy < crownH; oy++) {
+          double t = (double)(oy + 2) / (double)imax(1, crownH + 1);
+          int rad = 1 + (int)std::floor(t * 7.0);
+          // Subtle tiering breaks the cone edge without producing flat shelves.
+          if (oy > 2 && oy % 5 == 0) rad = imin(8, rad + 2);
+          for (int ox = -rad; ox <= rad; ox++) {
+            double edge = whash2(L->gTreeSeed ^ 0x91A3u, worldX + ox, oy);
+            if (std::abs(ox) <= rad - 2 || edge > 0.28) put(lx + ox, top + oy, leaf);
+            if (std::abs(ox) < rad && oy % 4 != 1 && edge > 0.18) put(lx + ox, top + oy + 1, leaf);
+          }
+        }
+      } else if (pt == PT_WILLOW) {                     // clustered crown + soft, irregular droops
+        for (int cx : {-6, -3, 0, 3, 6}) {
+          int cy = -2 + (std::abs(cx) / 3) + (int)(whash2(L->gTreeSeed ^ 0x7711u, worldX, cx) * 3);
+          int rr = 4 + (std::abs(cx) < 4 ? 1 : 0);
+          for (int oy = -rr; oy <= rr; oy++) for (int ox = -rr; ox <= rr; ox++)
+            if (ox * ox + oy * oy <= rr * rr + 2) put(lx + cx + ox, top + cy + oy, leaf);
+          int drop = 2 + (int)(whash2(L->gTreeSeed ^ 0x7712u, worldX, cx) * 5);
+          int sway = whash2(L->gTreeSeed ^ 0x7713u, worldX, cx) < 0.5 ? -1 : 1;
+          for (int i = 1; i <= drop; i++) { put(lx + cx + (i > drop / 2 ? sway : 0), top + cy + rr + i, leaf); if (i < drop - 1) put(lx + cx + 1, top + cy + rr + i, leaf); }
+        }
+        for (int side : {-1, 1}) { int len = 4 + (int)(hr * 3); for (int i = 1; i <= len; i++) put(lx + side * i, top + 2 - i / 3, wood); }
+      } else {                                          // oak / bush: forked limbs and cloud canopy
+        int rad = pt == PT_BUSH ? 4 : 8;
+        if (pt != PT_BUSH) for (int side : {-1, 1}) {
+          int len = 4 + (int)(whash1(L->gTreeSeed ^ (side < 0 ? 0x81u : 0x82u), worldX) * 4);
+          int by = top + 4 + (side < 0 ? 1 : 0);
+          for (int i = 1; i <= len; i++) { put(lx + side * i, by - i / 3, wood); if (i > len / 2) put(lx + side * i, by - i / 3 - 1, leaf); }
+        }
+        for (int cy = -4; cy <= 2; cy += 3) for (int cx = -rad + 2; cx <= rad - 2; cx += 4)
+          for (int oy = -3; oy <= 3; oy++) for (int ox = -3; ox <= 3; ox++) if (ox * ox + oy * oy <= 10) put(lx + cx, top + cy + oy, leaf);
       }
     }
   }
@@ -89,10 +126,9 @@
   // STRUCT_REACH and clip with `put`, so a structure straddling a band seam is written
   // identically whether produced by one big fillRect or two band calls. fg only.
   static const int STRUCT_LATTICE = 56;  // world cells between candidate anchors
-  static const int STRUCT_REACH = 34;    // >= max (jitter + structure extent) across all archetypes
+  static const int STRUCT_REACH = 192;   // includes wide surface village clusters
   static int floorDiv(int a, int b) { int q = a / b, r = a % b; if (r != 0 && ((r < 0) != (b < 0))) q--; return q; }
   void fillStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
-    if (L->isBackground) return;                       // fg only (matches trees)
     auto put = [&](int wx, int wy, uint8_t m) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
@@ -104,6 +140,54 @@
     int lxMin = floorDiv(wx0, STRUCT_LATTICE), lxMax = floorDiv(wx1, STRUCT_LATTICE);
     int lyMin = floorDiv(wy0, STRUCT_LATTICE), lyMax = floorDiv(wy1, STRUCT_LATTICE);
     auto h2 = [&](uint32_t salt, int a, int b) { return whash2(sseed ^ salt, a, b); };
+    // Surface villages: a deterministic chain of cottages, paths, wells and a
+    // taller meeting hall. Foundations follow the local ground so settlements
+    // feel embedded in the landscape rather than pasted across it.
+    static const int VILLAGE_LATTICE = 360;
+    int vxMin = floorDiv(wx0, VILLAGE_LATTICE), vxMax = floorDiv(wx1, VILLAGE_LATTICE);
+    auto stampCottage = [&](int cx, int ordinal, bool hall) {
+      int w = hall ? 43 : 32 + (ordinal % 3) * 3, h = hall ? 27 : 21 + (ordinal & 1) * 2;
+      int ground = terrain.genSurfaceAbs(cx), left = cx - w / 2;
+      if (ground >= L->gSeaRow || terrain.genBiomeAt(cx) == BIOME_ROCKY) return;
+      int lo = ground, hi = ground;
+      for (int x = left; x <= left + w; x++) { int sy = terrain.genSurfaceAbs(x); lo = imin(lo, sy); hi = imax(hi, sy); }
+      if (hi - lo > 5) return;
+      int floorY = lo - 1, wallTop = floorY - h, roofH = hall ? 11 : 9;
+      const int DOOR_CLEARANCE = PLAYER_H + 3; // 11 cells: comfortably taller than the 8-cell player
+      uint8_t wall = terrain.genBiomeAt(cx) == BIOME_DESERT ? SANDSTONE : BRICK;
+      for (int x = left; x <= left + w; x++) {
+        for (int y = wallTop; y <= floorY; y++) {
+          bool edge = x == left || x == left + w || y == wallTop || y == floorY;
+          bool sidePassage = (x == left || x == left + w) && y >= floorY - DOOR_CLEARANCE + 1;
+          bool door = x >= cx - 3 && x <= cx + 3 && y >= floorY - DOOR_CLEARANCE + 1;
+          if (L->isBackground) put(x, y, wall); // dim, solid room backdrop behind the facade
+          else put(x, y, edge && !sidePassage && !door ? wall : EMPTY);
+        }
+        for (int y = floorY + 1; y <= terrain.genSurfaceAbs(x); y++) put(x, y, BRICK);
+      }
+      // A solid pitched roof, not just an outline. The background copy gives it
+      // depth; the foreground copy makes the roof genuinely mineable/walkable.
+      for (int ry = 0; ry <= roofH; ry++) for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
+      if (!L->isBackground) {
+        for (int wy : {wallTop + 6, wallTop + 7, wallTop + 8, wallTop + 9}) for (int wx : {left + 7, left + w - 7}) put(wx, wy, CRYSTAL);
+        // Interior beams and a low sill add depth without blocking the walk-through.
+        for (int y = wallTop + 2; y < floorY - DOOR_CLEARANCE; y++) put(cx, y, wall);
+        for (int x = left + 5; x <= left + w - 5; x++) if (x < cx - 4 || x > cx + 4) put(x, floorY - DOOR_CLEARANCE - 1, wall);
+        if (hall) { for (int y = wallTop - roofH - 6; y < wallTop - roofH; y++) put(left + 5, y, BRICK); put(left + 5, wallTop - roofH - 6, FIRE); }
+      }
+    };
+    for (int vx = vxMin; vx <= vxMax; vx++) {
+      if (whash1(sseed ^ 0xA11A6Eu, vx) > 0.58) continue;
+      int center = vx * VILLAGE_LATTICE + 70 + (int)(whash1(sseed ^ 0xA11A6Fu, vx) * 210);
+      if (terrain.genSurfaceAbs(center) >= L->gSeaRow) continue;
+      int count = 3 + (int)(whash1(sseed ^ 0xA11A70u, vx) * 3);
+      for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 56, i, i == count / 2);
+      int wellX = center + count * 28 + 10, wellY = terrain.genSurfaceAbs(wellX) - 1;
+      for (int dx = -3; dx <= 3; dx++) { put(wellX + dx, wellY, BRICK); if (std::abs(dx) == 3) for (int dy = 1; dy <= 5; dy++) put(wellX + dx, wellY - dy, BRICK); }
+      for (int dx = -2; dx <= 2; dx++) put(wellX + dx, wellY - 5, BRICK);
+      put(wellX, wellY - 1, WATER); put(wellX, wellY - 2, WATER);
+    }
+    if (L->isBackground) return;                       // villages have backdrops; caves/ruins stay fg-only
     // --- structure archetypes ------------------------------------------------
     // Each stamps a self-contained ruin anchored at its top-left (ax,ay). All use
     // only solid CG_STONE shells (BRICK/CRYSTAL/MOSS/MYCELIUM merge into the
@@ -234,6 +318,31 @@
         case SK_FORGE:     stampForge(ax, ay, w, h, lx, ly); break;
         case SK_OVERGROWN: stampOvergrown(ax, ay, w, h, lx, ly); break;
         case SK_MUSHGROVE: stampMushGrove(ax, ay, w, h, lx, ly); break;
+      }
+    }
+  }
+  // Deterministic ocean gardens rooted in the background seabed. VINE is used as
+  // flexible kelp, with leafy forks and occasional luminous berries attached to
+  // the stalk so every generated plant cell belongs to a grounded component.
+  void fillOceanFlora(int colStart, int colEnd, int rowStart, int rowEnd) {
+    if (!L->isBackground) return;
+    auto put = [&](int wx, int wy, uint8_t m) {
+      int x = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
+      if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
+      int k = y * cols + x; if (L->grid[k] == WATER || L->grid[k] == EMPTY) L->grid[k] = m;
+    };
+    const int REACH = 5;
+    for (int x = colStart - REACH; x < colEnd + REACH; x++) {
+      int wx = L->worldOffsetX + x, surfAbs = terrain.genSurfaceAbs(wx);
+      if (surfAbs <= L->gSeaRow + 3) continue;
+      double spawn = whash1(L->worldSeed ^ 0x5EA9EEDu, wx);
+      if (spawn > 0.115) continue;
+      int height = 4 + (int)(whash1(L->worldSeed ^ 0x5EA9EEEu, wx) * imin(18, imax(5, surfAbs - L->gSeaRow - 1)));
+      for (int i = 1; i <= height; i++) {
+        int sway = i > height / 2 && whash2(L->worldSeed ^ 0x5EA9EEFu, wx, i) > 0.72 ? (i & 1 ? 1 : -1) : 0;
+        put(wx + sway, surfAbs - i, VINE);
+        if (i > 2 && i % 4 == 0) put(wx + (i & 4 ? 1 : -1), surfAbs - i, PLANT);
+        if (i > 3 && whash2(L->worldSeed ^ 0x610BEEu, wx, i) > 0.91) put(wx + (i & 1 ? 1 : -1), surfAbs - i + 1, GLOWBERRY);
       }
     }
   }
@@ -505,6 +614,7 @@
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
     fillStructures(colStart, colEnd, rowStart, rowEnd); // overwrite terrain before cave features / trees overlay
     fillCaveFeatures(colStart, colEnd, rowStart, rowEnd);
+    fillOceanFlora(colStart, colEnd, rowStart, rowEnd);
     fillTrees(colStart, colEnd, rowStart, rowEnd);
     copyGridToNext(colStart, colEnd, rowStart, rowEnd);
   }
@@ -692,7 +802,7 @@
     Lx->grid = sGrid; L = sL;
     return done;
   }
-  // Trees over the whole band (fg only), then slice the band into the tileStore.
+  // Trees over the whole background band, then slice the band into the tileStore.
   void pfFinalizeLayer(Layer* Lx, int futOffX, int futOffY) {
     Layer* sL = L; uint8_t* sGrid = Lx->grid;
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
@@ -703,6 +813,7 @@
     // fillRect tile.
     fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    fillOceanFlora(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
     Lx->grid = sGrid; L = sL;

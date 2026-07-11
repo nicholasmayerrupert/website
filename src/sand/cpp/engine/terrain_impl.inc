@@ -15,18 +15,30 @@ int TerrainGen::genBiomeAt(int worldX) {
   if (n < 0.30) return t < 0.5 ? BIOME_PLAINS : BIOME_FOREST;
   if (n < 0.42) return t < 0.45 ? BIOME_FOREST : BIOME_JUNGLE;
   if (n < 0.54) return t < 0.5 ? BIOME_DESERT : BIOME_SWAMP;
-  if (n < 0.66) return BIOME_DESERT;
-  if (n < 0.80) return t < 0.5 ? BIOME_TUNDRA : BIOME_ROCKY;
-  return BIOME_ROCKY;
+  if (n < 0.64) return BIOME_DESERT;
+  if (n < 0.82) return t < 0.58 ? BIOME_TUNDRA : BIOME_FOREST;
+  if (n < 0.92) return t < 0.52 ? BIOME_TUNDRA : BIOME_ROCKY;
+  return BIOME_ROCKY; // bare-stone country is now a rare high-climate extreme
 }
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
 int TerrainGen::genSurfaceAbs(int worldX) {
+  // A very-low-frequency continental silhouette gives the world long mountain
+  // ranges and broad ocean basins. Mid-frequency hills ride on top, while a
+  // softly gated ridged field raises dramatic highlands without introducing a
+  // hard step where the discrete surface biome changes.
+  double continental = wfbm2(E.L->worldSeed ^ 0xC0171E57u, worldX * SURFACE_FREQ * 0.12, 7.3, 4, 0.52);
   double n = wfbm2(E.L->worldSeed, worldX * SURFACE_FREQ, 0.5, SURFACE_OCT, 0.5);
-  double hills = wfbm2(E.L->worldSeed ^ 0x9e3779b9u, worldX * SURFACE_FREQ * 0.22, 3.1, 4, 0.5);
-  double cuts = wridged2(E.L->worldSeed ^ 0xA5116Eu, worldX * SURFACE_FREQ * 1.35, 11.0, 2, 0.55);
-  double amp = E.L->gSurfAmp * (0.75 + hills * 0.6);
-  return (int)std::lround(-(n - 0.5) * 2 * amp + (cuts - 0.45) * E.L->gSurfAmp * 0.22);
+  double hills = wfbm2(E.L->worldSeed ^ 0x9e3779b9u, worldX * SURFACE_FREQ * 0.27, 3.1, 4, 0.5);
+  double ridges = wridged2(E.L->worldSeed ^ 0x61D6E5u, worldX * SURFACE_FREQ * 0.42, 17.0, 3, 0.52);
+  double cuts = wridged2(E.L->worldSeed ^ 0xA5116Eu, worldX * SURFACE_FREQ * 1.55, 11.0, 2, 0.55);
+  double highland = std::fmax(0.0, (continental - 0.53) / 0.30);
+  if (highland > 1.0) highland = 1.0;
+  double amp = E.L->gSurfAmp * (0.68 + hills * 0.55 + highland * 0.42);
+  double macro = -(continental - 0.5) * E.L->gSurfAmp * 1.55;
+  double peaks = -highland * ridges * E.L->gSurfAmp * 0.70;
+  return (int)std::lround(macro - (n - 0.5) * 2 * amp + peaks
+                        + (cuts - 0.45) * E.L->gSurfAmp * 0.18);
 }
 // Terrain top as a BUFFER row in the current window (may be <0 or >=E.rows when the
 // surface has scrolled off; genCellAt's `y < surf` test handles that as all-sky /
@@ -158,7 +170,7 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
     // above the terrain: a valley below the sea row floods with water (a flat,
     // contained ocean that settles); the foreground holds the water, the
     // background is a solid wall behind it. Otherwise it's open sky.
-    if (y >= sea) return E.L->isBackground ? STONE : WATER;
+    if (y >= sea) return WATER; // water continues into the background instead of an opaque stone wall
     return EMPTY;
   }
   int depth = y - surf;
@@ -229,7 +241,7 @@ uint8_t TerrainGen::pickTreeType(int biome, int worldX) {
   switch (biome) {
     case BIOME_DESERT: return PT_CACTUS;
     case BIOME_TUNDRA: return PT_PINE;
-    case BIOME_SWAMP:  return PT_WILLOW;
+    case BIOME_SWAMP:  return r < 0.72 ? PT_OAK : PT_BUSH; // avoid sparse willow skeletons in generated scenery
     case BIOME_FOREST: return r < 0.5 ? PT_PINE : PT_OAK;
     case BIOME_JUNGLE: return r < 0.35 ? PT_BUSH : PT_OAK;
     default:           return r < 0.25 ? PT_BUSH : PT_OAK; // plains

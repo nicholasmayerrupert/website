@@ -22,11 +22,11 @@ class TerrainGen {
   explicit TerrainGen(Engine& e) : E(e) {}
 
   // Generator tunables (values were Engine statics defined in sand.cpp).
-  static constexpr double SURFACE_FREQ = 0.010;
+  static constexpr double SURFACE_FREQ = 0.008;
   static constexpr double CAVE_FREQ = 0.01;    // ~5x larger caves (lower freq = bigger features)
   static constexpr double CAVE_THRESH = 0.66;
   static constexpr double TREE_PROB = 0.05;
-  static constexpr double BIOME_FREQ = 0.004;  // ~250-cell-wide biome bands
+  static constexpr double BIOME_FREQ = 0.0025; // broad climate regions with smaller moisture pockets
   static constexpr double POCKET_FREQ = 0.06;  // underground liquid/lava pockets
   static constexpr double WATER_POCKET_THRESH = 0.80; // pocket noise below this stays STONE (genPocketAt)
   static constexpr double LAVA_THRESH = 0.88;  // rare sealed bedrock lava chambers

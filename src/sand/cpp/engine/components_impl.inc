@@ -933,6 +933,7 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
   const int gridLen = E.cols * E.rows;
   asmCells.reset((size_t)gridLen);
   for (int k : cells) if (k >= 0 && k < gridLen) asmCells.add(k);
+  std::vector<int> airFaces;
   for (int k : cells) {
     if (k < 0 || k >= gridLen) continue;
     int y = k / E.cols, x = k - y * E.cols;
@@ -956,18 +957,47 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
         c.powderDensityArea += DENSITY[m];
         if (offs[i] == E.cols) c.bottomPowderFaces++;
       } else if (m == EMPTY || E.isGasMaterial(m)) {
-        // A cavity inside the liquid wake is not surface exposure. Count air
-        // only when this face can see vertically through empty/gas to the top.
-        int ak = nk;
-        for (;;) {
-          uint8_t am = g[ak];
-          if (planned) { auto it = planned->find(ak); if (it != planned->end()) am = it->second; }
-          if (am != EMPTY && !E.isGasMaterial(am)) break;
-          if (ak < E.cols * 2) { c.openAirFaces++; break; }
-          ak -= E.cols;
-        }
+        airFaces.push_back(nk);
       }
     }
+  }
+
+  // Open-air visibility only affects buoyancy. In particular, dry plant
+  // fragments produced by fire must not raycast to the top of the world from
+  // every exposed face. When liquid is present, cache vertical runs so a wide
+  // or irregular floating assembly resolves each visited cell once per probe.
+  if (c.liquidFaces == 0 || airFaces.empty()) return;
+  std::unordered_map<int, uint8_t> openAir;
+  openAir.reserve(airFaces.size() * 2);
+  std::vector<int> path;
+  path.reserve((size_t)E.rows);
+  for (int start : airFaces) {
+    int ak = start;
+    bool visible = false;
+    path.clear();
+    for (;;) {
+      auto cached = openAir.find(ak);
+      if (cached != openAir.end()) {
+        visible = cached->second != 0;
+        break;
+      }
+      uint8_t am = g[ak];
+      if (planned) {
+        auto it = planned->find(ak);
+        if (it != planned->end()) am = it->second;
+      }
+      if (am != EMPTY && !E.isGasMaterial(am)) break;
+      path.push_back(ak);
+      if (ak < E.cols * 2) {
+        visible = true;
+        break;
+      }
+      ak -= E.cols;
+    }
+    const uint8_t result = visible ? 1 : 0;
+    for (int pathK : path) openAir.emplace(pathK, result);
+    openAir.emplace(ak, result);
+    if (visible) c.openAirFaces++;
   }
 }
 

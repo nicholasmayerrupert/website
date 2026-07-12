@@ -64,6 +64,7 @@
     "sand:doctor": "node scripts/sand-doctor.mjs",
     "bench:eraser": "node scripts/bench-eraser.mjs",
     "bench:sand": "node scripts/bench-sand.mjs",
+    "bench:fire-plant": "node scripts/bench-fire-plant.mjs",
     "bench:sand:compare": "node scripts/bench-sand.mjs --compare bench/baseline.json",
     "bench:pan": "node scripts/bench-pan.mjs",
     "bench:pan:compare": "node scripts/bench-pan.mjs --compare bench/pan-baseline.json",

@@ -125,7 +125,36 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
-// 3c. Acrid smoke that is boxed in (can't vent) dissolves quickly instead of
+// 3c. Fire cutting a broad plant component creates many dry rigid fragments.
+// They must keep burning and settling without making buoyancy's open-air probe
+// part of the dry-component hot path.
+{
+  console.log('fire burns through a fragmented plant component');
+  const e = mk();
+  for (let x = 35; x <= 165; x++) {
+    for (let y = 45; y <= 49; y++) e.paintDisc(x, y, 0, MAT.WOOD, true);
+    if (x % 4 !== 0) for (let y = 50; y <= 82; y++) e.paintDisc(x, y, 0, MAT.PLANT, true);
+  }
+  e.syncComponents();
+  const plantCount = () => {
+    const c = counts(e.getGrid());
+    return c[MAT.WOOD] + c[MAT.PLANT] + c[MAT.SEED] + c[MAT.DRIFTWOOD];
+  };
+  const before = plantCount();
+  let peakFire = 0, t = 0;
+  for (let s = 0; s < 240; s++) {
+    if (s < 100) for (let x = 35; x <= 165; x += 2) e.paintDisc(x, 47, 0, MAT.FIRE, true);
+    t += 16;
+    e.step(t);
+    peakFire = Math.max(peakFire, counts(e.getGrid())[MAT.FIRE]);
+  }
+  const after = plantCount();
+  check(`fragmented plant ignited (peak fire ${peakFire})`, peakFire > 20);
+  check(`fire consumed the fragmented plant (${before} -> ${after})`, after < before - 100);
+  e.destroy();
+}
+
+// 3d. Acrid smoke that is boxed in (can't vent) dissolves quickly instead of
 //     churning up through fluid forever — a trapped cloud keeps the layer active,
 //     and an active layer pays a full grounding reflood every step, so a long-lived
 //     trapped cloud is pure cost. A sealed pocket of acrid must clear fast.

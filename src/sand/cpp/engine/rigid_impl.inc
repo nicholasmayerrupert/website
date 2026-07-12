@@ -659,6 +659,9 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, do
     minX = imin(minX, x); minY = imin(minY, y); maxX = imax(maxX, x); maxY = imax(maxY, y);
   });
   if (raster.empty()) return true;
+  auto broadOverlaps = [&](double ax, double ay, int aw, int ah) {
+    return ax < maxX + 1 && ax + aw > minX && ay < maxY + 1 && ay + ah > minY;
+  };
   auto overlaps = [&](double ax, double ay, int aw, int ah) {
     double ax1 = ax + aw, ay1 = ay + ah;
     for (const auto& cell : raster)
@@ -667,8 +670,7 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, do
   };
   double dx = b->px - prePx, dy = b->py - prePy;
   int preferred = std::fabs(dx) >= std::fabs(dy) ? (dx >= 0 ? 1 : 0) : (dy >= 0 ? 3 : 2); // L,R,U,D = 0..3
-  auto pushOne = [&](double& ax, double& ay, int aw, int ah, double& avx, double& avy, bool player) {
-    if (!overlaps(ax, ay, aw, ah)) return true;
+  auto pushOverlapping = [&](double& ax, double& ay, int aw, int ah, double& avx, double& avy, bool player) {
     struct Candidate { double x, y, dist; int side; } c[4] = {
       {(double)minX - aw - 1e-4, ay, std::fabs(ax - ((double)minX - aw - 1e-4)), 0},
       {(double)maxX + 1 + 1e-4, ay, std::fabs(((double)maxX + 1 + 1e-4) - ax), 1},
@@ -690,30 +692,34 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, do
     }
     return false;
   };
-  std::vector<std::array<double, 4>> playerPoses, creaturePoses;
-  playerPoses.reserve(E.psys.players.size()); creaturePoses.reserve(E.creatures.creatures.size());
-  for (const Player& p : E.psys.players) playerPoses.push_back({p.px, p.py, p.vx, p.vy});
-  for (const Creature& c : E.creatures.creatures) creaturePoses.push_back({c.wx, c.wy, c.vx, c.vy});
+  struct ActorPose { size_t index; double x, y, vx, vy; };
+  std::vector<ActorPose> playerPoses, creaturePoses;
   auto stopAndRestore = [&]() {
-    for (size_t i = 0; i < E.psys.players.size(); i++) {
-      Player& p = E.psys.players[i]; p.px = playerPoses[i][0]; p.py = playerPoses[i][1]; p.vx = playerPoses[i][2]; p.vy = playerPoses[i][3];
+    for (const ActorPose& pose : playerPoses) {
+      Player& p = E.psys.players[pose.index]; p.px = pose.x; p.py = pose.y; p.vx = pose.vx; p.vy = pose.vy;
     }
-    for (size_t i = 0; i < E.creatures.creatures.size(); i++) {
-      Creature& c = E.creatures.creatures[i]; c.wx = creaturePoses[i][0]; c.wy = creaturePoses[i][1]; c.vx = creaturePoses[i][2]; c.vy = creaturePoses[i][3];
+    for (const ActorPose& pose : creaturePoses) {
+      Creature& c = E.creatures.creatures[pose.index]; c.wx = pose.x; c.wy = pose.y; c.vx = pose.vx; c.vy = pose.vy;
     }
     b->px = prePx; b->py = prePy; b->angle = preAngle; b->vx = b->vy = b->omega = 0; b->awake = true; b->stillTicks = 0;
   };
-  for (Player& p : E.psys.players) {
+  for (size_t i = 0; i < E.psys.players.size(); i++) {
+    Player& p = E.psys.players[i];
     if (!p.active || !p.alive) continue;
-    if (!pushOne(p.px, p.py, p.w, p.h, p.vx, p.vy, true)) {
+    if (!broadOverlaps(p.px, p.py, p.w, p.h) || !overlaps(p.px, p.py, p.w, p.h)) continue;
+    playerPoses.push_back({i, p.px, p.py, p.vx, p.vy});
+    if (!pushOverlapping(p.px, p.py, p.w, p.h, p.vx, p.vy, true)) {
       stopAndRestore(); return false;
     }
   }
-  for (Creature& c : E.creatures.creatures) {
+  for (size_t i = 0; i < E.creatures.creatures.size(); i++) {
+    Creature& c = E.creatures.creatures[i];
     if (!c.alive) continue;
     const CreatureSpecies& s = E.creatures.species(c);
     double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
-    if (!pushOne(x, y, s.w, s.h, c.vx, c.vy, false)) {
+    if (!broadOverlaps(x, y, s.w, s.h) || !overlaps(x, y, s.w, s.h)) continue;
+    creaturePoses.push_back({i, c.wx, c.wy, c.vx, c.vy});
+    if (!pushOverlapping(x, y, s.w, s.h, c.vx, c.vy, false)) {
       stopAndRestore(); return false;
     }
     c.wx = E.fg.worldOffsetX + x; c.wy = E.fg.worldOffsetY + y;

@@ -270,7 +270,7 @@ for (const dt of [16, 8, 33, 50]) {
   console.log('rigid body pushes a creature');
   const e = mk();
   stoneRect(e, 0, 130, COLS - 1, ROWS - 1); e.syncComponents();
-  e.setCreaturesEnabled(true);
+  e.setCreatureRuntime(true, false);
   const creature = e.spawnCreature(3, 104, 127); // hare on the floor
   const body = e._bodyCount();
   e.spawnBox(94, 126, 4, 4, RIGID);

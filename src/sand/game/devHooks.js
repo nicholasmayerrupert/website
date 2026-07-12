@@ -6,6 +6,7 @@
 
 import { ITEM_FIELDS } from '../net/protocol.js';
 import { TOOL_IDS } from './runtimeConfig';
+import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 
 export function installDevHooks(ctx, {
   render,
@@ -107,7 +108,7 @@ export function installDevHooks(ctx, {
       if (p && engine()) { engine().setPlayerState(p.id, { ...p, ...state }); render(false); }
     },
     getCreatures() { return engine() ? engine().getCreatures() : []; },
-    setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); engine()?.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes); render(false); },
+    setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); applyCreatureRuntimePolicy(ctx); render(false); },
     setSkyLight(v) { engine()?.setSkyLight(v | 0); render(true); },
     actorLight(x, y, w, h) { return engine()?.glActorLight(x, y, w, h) ?? 1; },
     renderedPlayers() { return playersForRender(); },
@@ -138,6 +139,7 @@ export function installDevHooks(ctx, {
     setCreativeMaterial(kind, value) {
       ctx.creativeKind = kind | 0; ctx.creativeValue = value | 0;
       engine()?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
+      applyCreatureRuntimePolicy(ctx);
       ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
     },
     setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },

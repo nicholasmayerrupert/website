@@ -81,8 +81,11 @@ try {
   await game.locator('.sg-opt', { hasText: 'Fox Spawn Egg' }).click();
   await page.mouse.click(target.x, target.y);
   await page.waitForFunction((n) => window.__sandTest.getCreatures().filter((c) => c.species === 2).length > n, foxBefore);
-  const foxAfter = await page.evaluate(() => window.__sandTest.getCreatures().filter((c) => c.species === 2).length);
-  check('creative palette egg click spawns a visible actor', foxAfter === foxBefore + 1, `${foxBefore} -> ${foxAfter}`);
+  const foxAfter = await page.evaluate(() => {
+    const foxes = window.__sandTest.getCreatures().filter((c) => c.species === 2);
+    return { count: foxes.length, creature: foxes[foxes.length - 1] };
+  });
+  check('creative palette egg click spawns a visible actor', foxAfter.count === foxBefore + 1, `${foxBefore} -> ${foxAfter.count}`);
   check('creative eggs do not enable natural population spawning',
     await page.evaluate(() => window.__sandTest.getCreatures().length) === 1);
 
@@ -94,6 +97,9 @@ try {
   await page.waitForTimeout(350);
   const after = await page.evaluate(() => window.__sandTest.materialCount(1));
   check('worker-owned creative paint reaches the render mirror', after > target.before, `${target.before} -> ${after}`);
+  const movedFox = await page.evaluate((id) => window.__sandTest.getCreatures().find((c) => c.id === id), foxAfter.creature.id);
+  check('egg-spawned creature keeps simulating after selecting another tool',
+    movedFox && Math.hypot(movedFox.x - foxAfter.creature.x, movedFox.y - foxAfter.creature.y) > 0.1);
   if (after <= target.before) console.log('  worker input debug', await page.evaluate(() => window.__sandPerf()));
   const fallingHash0 = await page.evaluate(() => window.__sandTest.gridHash());
   await page.waitForTimeout(350);

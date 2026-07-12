@@ -132,7 +132,8 @@ class CreatureSystem {
   int spawnCreatureNatural(uint8_t speciesId, double wx, double wy);
   bool spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt);
   void spawnRegion(uint8_t speciesId, int regionX, int regionY);
-  void updatePopulation();
+  void maintainPopulation();
+  void updateNaturalPopulation();
   void acquireTarget(Creature& c);
   bool targetPoint(const Creature& c, double& tx, double& ty, Creature** prey, Player** player);
   void steerAquatic(Creature& c);

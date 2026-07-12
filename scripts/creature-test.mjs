@@ -29,7 +29,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   e.setCreativeMaterial(CREATIVE_KIND.CREATURE, CREATURE.BIRD);
   for (let i = 0; i < 10; i++) e.pointerDown(80 + i * 10, 40, 0);
   check('manual spawns can exceed the natural mob cap', e.getCreatures().length === 10);
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, true);
   e.spawnPlayerAtSurface(224);
   e.stepActors();
   check('high manual population pauses natural spawning', e.getCreatures().length === 10);
@@ -42,7 +42,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const e = mk();
   // Consume the one-time population seed before creating this isolated test
   // pool, so the confinement assertion is not also a predator/prey scenario.
-  e.setSurvivalInventory(true); e.stepActors();
+  e.setCreatureRuntime(true, true); e.stepActors();
   waterBox(e, 20, 25, 130, 70);
   const ids = [];
   for (let i = 0; i < 12; i++) ids.push(e.spawnCreature(CREATURE.MINNOW, 35 + i * 3, 42));
@@ -65,7 +65,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const e = mk(); waterBox(e, 10, 20, 150, 80);
   const prey = e.spawnCreature(CREATURE.MINNOW, 90, 45);
   const predator = e.spawnCreature(CREATURE.PIKE, 35, 44);
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, false);
   const startGap = Math.abs(byId(e, prey).x - byId(e, predator).x);
   let closest = startGap, damaged = false;
   for (let i = 0; i < 300; i++) {
@@ -88,7 +88,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const id = e.spawnCreature(CREATURE.MINNOW, 40, 24);
   const start = byId(e, id);
   for (let y = 20; y < 32; y++) for (let x = 34; x < 56; x++) e.eraseDisc(x, y, 0);
-  e.setCreaturesEnabled(true);
+  e.setCreatureRuntime(true, false);
   actors(e, 90);
   const landed = byId(e, id);
   check(`beached fish falls normally (${start?.y.toFixed(1)} -> ${landed?.y.toFixed(1)})`,
@@ -114,7 +114,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const buriedBefore = byId(e, buriedId).health, standingBefore = byId(e, standingId).health;
   for (let y = 88; y < 92; y++) for (let x = 50; x < 57; x++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
-  e.setCreaturesEnabled(true);
+  e.setCreatureRuntime(true, false);
   actors(e, 120);
   const buried = byId(e, buriedId), standing = byId(e, standingId);
   check(`engulfed creature takes gradual solid damage (${buriedBefore} -> ${buried?.health})`,
@@ -139,7 +139,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
 // normal surface player on the first actor tick, in their actual habitats.
 {
   const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, true);
   const playerId = e.spawnPlayerAtSurface(224), player = e.getPlayer(playerId);
   e.stepActors();
   const initial = e.getCreatures();
@@ -184,7 +184,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   let established = 0;
   for (let seed = 1; seed <= 8; seed++) {
     const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: seed, sinksOn: false, infinite: true });
-    e.setSurvivalInventory(true);
+    e.setCreatureRuntime(true, true);
     e.spawnPlayerAtSurface(224);
     actors(e, 4800);
     const ids = new Set(e.getCreatures().filter((c) => c.alive).map((c) => c.species));
@@ -201,7 +201,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const e = mk(); stoneFloor(e, 92);
   const player = e.spawnPlayer(72, 84);
   e.spawnCreature(CREATURE.FOX, 68, 88);
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, false);
   let respawned = false;
   for (let i = 0; i < 2400; i++) {
     e.stepActors();
@@ -222,7 +222,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const e = mk(); stoneFloor(e, 92);
   const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
   const player = e.spawnPlayer(72, 84);
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, false);
   actors(e, 360);
   check('surface enemy remains active while pursuing', !!byId(e, fox));
   check(`surface enemy damages its player target (health ${e.getPlayer(player)?.health})`, (e.getPlayer(player)?.health ?? 100) < 100);
@@ -234,7 +234,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const e = mk(); stoneFloor(e, 92);
   const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
   const player = e.spawnPlayer(95, 84);
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, false);
   actors(e, 80);
   const walked = byId(e, fox);
   check(`walking creature tracks player on land (x ${walked?.x.toFixed(1)})`, walked && walked.x > 45);
@@ -258,7 +258,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const c = byId(e, id);
   check('streaming keeps creature identity', c?.id === id);
   check(`absolute pose remaps to new local window (${x0?.toFixed(1)} -> ${c?.x.toFixed(1)})`, c && Math.abs(c.x - (x0 - 32)) < 0.01);
-  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, false);
   e.shiftWorldXY(128, 0); e.stepActors();
   e.shiftWorldXY(128, 0); e.stepActors();
   check('off-window creature hibernates out of the active snapshot', !byId(e, id));

@@ -224,9 +224,11 @@ EMSCRIPTEN_KEEPALIVE float* engine_creature_snapshot_ptr(Engine* e) { return e->
 
 // survival inventory (inventory.inc): authoritative per-player stacks. JS reads the
 // snapshot for the HUD and forwards slot-select / move / place intents.
-EMSCRIPTEN_KEEPALIVE void engine_set_survival_inventory(Engine* e, int on) { e->survivalInventory = on != 0; e->creaturesEnabled = on != 0; e->creatureNaturalSpawning = on != 0; }
-EMSCRIPTEN_KEEPALIVE void engine_set_creatures_enabled(Engine* e, int on) { e->creaturesEnabled = on != 0; e->creatureNaturalSpawning = on != 0; }
-EMSCRIPTEN_KEEPALIVE void engine_set_creature_simulation_enabled(Engine* e, int on) { e->creaturesEnabled = on != 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_survival_inventory(Engine* e, int on) { e->survivalInventory = on != 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_creature_runtime(Engine* e, int simulate, int naturalSpawn) {
+  e->creaturesEnabled = simulate != 0;
+  e->creatureNaturalSpawning = e->creaturesEnabled && naturalSpawn != 0;
+}
 EMSCRIPTEN_KEEPALIVE void engine_seed_starter_tools(Engine* e, int id) { e->seedStarterTools(id); }
 EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) { return e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_slot(Engine* e, int id, int slot) { e->setSelectedSlot(id, slot); }

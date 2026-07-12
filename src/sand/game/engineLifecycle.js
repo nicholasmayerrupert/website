@@ -7,7 +7,7 @@
 
 import { createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { SIZING, TOOL_IDS } from './runtimeConfig';
-import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
+import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
 
 export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
@@ -50,8 +50,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     e.setDrawMode(ctx.drawModeOn);
     e.glSetFlags(ctx.gutterOn, ctx.snapOff);
     e.glSetDebugHitboxes(ctx.debugHitboxes);
-    e.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes);
-    if (!ctx.survival && !ctx.debugHitboxes && ctx.creativeKind === CREATIVE_KIND.CREATURE) e.setCreatureSimulationEnabled(true);
+    applyCreatureRuntimePolicy(ctx, e);
     if (ctx.survival) e.setSurvivalInventory(true);  // mining->drops->inventory
     ctx.forceFullRender = true;
     ctx.previewDirty = false;

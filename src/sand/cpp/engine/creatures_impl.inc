@@ -228,7 +228,7 @@ void CreatureSystem::spawnRegion(uint8_t speciesId, int regionX, int regionY) {
   for (int i = 0; i < count; i++) spawnCandidate(speciesId, regionX, regionY, (uint32_t)i * 1013u);
 }
 
-void CreatureSystem::updatePopulation() {
+void CreatureSystem::maintainPopulation() {
   const int HIBERNATE_REGION = 128;
   auto regionKey = [&](int rx, int ry) {
     return ((uint64_t)(uint32_t)rx << 32) | (uint32_t)ry;
@@ -266,7 +266,9 @@ void CreatureSystem::updatePopulation() {
     bucket.resize(keep);
     if (bucket.empty()) dormantRegions.erase(it);
   }
+}
 
+void CreatureSystem::updateNaturalPopulation() {
   for (uint8_t sid = 0; sid < CS_COUNT; sid++) {
     const CreatureSpawnRule& r = CREATURE_SPECIES[sid].spawn;
     if (r.mode == CSM_CONTINUOUS) {
@@ -473,7 +475,8 @@ void CreatureSystem::attackTarget(Creature& c) {
 
 void CreatureSystem::updateCreatures() {
   if (!E.creaturesEnabled) return;
-  if (E.creatureNaturalSpawning) updatePopulation();
+  maintainPopulation();
+  if (E.creatureNaturalSpawning) updateNaturalPopulation();
   for (Creature& c : creatures) {
     if (!c.alive) { c.deathTicks--; continue; }
     if (c.health <= 0) { c.health = 0; c.alive = false; c.deathTicks = 18; continue; }

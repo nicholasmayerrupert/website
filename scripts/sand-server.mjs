@@ -34,6 +34,7 @@ export async function startSandServer(opts = {}) {
     emittersOn: false, sinksOn: false,
   });
   engine.setSurvivalInventory(true); // mining -> drops -> inventory; spawnPlayer seeds the starter kit
+  engine.setCreatureRuntime(true, true);
   engine.setPlayMode(true);
   const host = new Host({ engine, roomId: cfg.room, maxPlayers: MAX_PLAYERS });
 

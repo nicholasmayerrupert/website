@@ -34,8 +34,8 @@ import { createInputBindings } from './inputBindings';
 import { createGameLoop } from './gameLoop';
 import { createNetGlue } from './netGlue';
 import { installDevHooks } from './devHooks';
+import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
-import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -113,6 +113,7 @@ export function createSandGame(container, opts = {}) {
     worldWorker: null,
     creativeKind: 0,
     creativeValue: 0,
+    creatureSimulationRequested: false,
     inputSeq: 0,
     lastInvHash: -1, // last pushed offline-inventory hash (HUD dirty check)
 
@@ -289,9 +290,7 @@ export function createSandGame(container, opts = {}) {
     setDebugHitboxes(on) {
       ctx.debugHitboxes = !!on;
       ctx.engine?.glSetDebugHitboxes(ctx.debugHitboxes);
-      ctx.engine?.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes);
-      if (!ctx.survival && !ctx.debugHitboxes && ctx.creativeKind === CREATIVE_KIND.CREATURE)
-        ctx.engine?.setCreatureSimulationEnabled(true);
+      applyCreatureRuntimePolicy(ctx);
     },
     inputKey(code, on) { ctx.engine?.inputKey(code | 0, on ? 1 : 0); },
     // Survival inventory intents. When connected as a client they go to the
@@ -348,7 +347,7 @@ export function createSandGame(container, opts = {}) {
       ctx.creativeKind = kind | 0;
       ctx.creativeValue = value | 0;
       ctx.engine?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
-      if (ctx.creativeKind === CREATIVE_KIND.CREATURE) ctx.engine?.setCreatureSimulationEnabled(true);
+      applyCreatureRuntimePolicy(ctx);
       ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
     },
     // Live performance snapshot for the on-screen perf HUD (the /fps route).

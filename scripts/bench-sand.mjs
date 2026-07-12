@@ -183,6 +183,7 @@ function setupScenario(e, name) {
   }
   if (name === 'survival-actions') {
     e.setSurvivalInventory(true);
+    e.setCreatureRuntime(true, true);
     ctx.playerId = e.spawnPlayerAtSurface(Math.floor(COLS / 2));
     e.addToInventory(ctx.playerId, 1, 999); // sand
     e.addToInventory(ctx.playerId, 3, 999); // stone

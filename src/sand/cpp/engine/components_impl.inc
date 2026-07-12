@@ -806,13 +806,18 @@ void ComponentSystem::computeGroundedBoth() {
     return;
   }
 
-  // Bond any fg/bg component pair that co-occupies at least one cell. Scan only
-  // ungrounded endpoints (a fully base-grounded pair needs no bond). One cell of
-  // contact is enough to transmit support; no patch-size / area-fraction gate.
+  // Bond compatible fg/bg component pairs that co-occupy at least one cell.
+  // Ice bonds only to ice: otherwise an iceberg passing over invisible grounded
+  // background terrain becomes structurally anchored and bypasses buoyancy.
+  // Scan only ungrounded endpoints (a fully base-grounded pair needs no bond).
+  // One compatible contact cell is enough to transmit support.
   const int32_t* const bgCC = E.bg.cellComp.data();
   const uint8_t* const bgG = E.bg.grid;
   const int32_t* const fgCC = E.fg.cellComp.data();
   const uint8_t* const fgG = E.fg.grid;
+  auto bondCompatibleAt = [&](int k) {
+    return E.isIceComponentMaterial(fgG[k]) == E.isIceComponentMaterial(bgG[k]);
+  };
   std::unordered_set<int64_t> pairSeen;
   auto bondPair = [&](int fi, int bi) {
     int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
@@ -826,7 +831,7 @@ void ComponentSystem::computeGroundedBoth() {
     if (fc->grounded) continue;
     for (int k : fc->cells) {
       int bi = bgCC[k];
-      if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(bgG[k])) continue;
+      if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(bgG[k]) || !bondCompatibleAt(k)) continue;
       bondPair(fi, bi);
     }
   }
@@ -835,7 +840,7 @@ void ComponentSystem::computeGroundedBoth() {
     if (bc->grounded) continue;
     for (int k : bc->cells) {
       int fi = fgCC[k];
-      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k])) continue;
+      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k]) || !bondCompatibleAt(k)) continue;
       bondPair(fi, bi);
     }
   }
@@ -930,10 +935,11 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
 // concave iceberg O(face * grid area). Row sets preserve spatial matching while
 // bounding a lookup to O(rows * log(face)); erasing the winner keeps targets
 // unique without another grid search.
-int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY,
+int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
                                           std::vector<std::set<int>>& vacatedByRow) {
   int sourceY = source / E.cols, sourceX = source - sourceY * E.cols;
-  int firstY = dir > 0 ? imax(1, minTargetY) : imax(sourceY + 1, minTargetY);
+  int firstY = dir > 0 ? imax(1, minTargetY)
+                       : (sourceSideOnly ? imax(sourceY + 1, minTargetY) : imax(1, minTargetY));
   int lastY = dir > 0 ? sourceY - 1 : E.rows - 1;
   int best = -1, bestDist = INT_MAX;
   for (int y = firstY; y <= lastY; y++) {
@@ -1074,9 +1080,11 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
     openAir.emplace(ak, result);
     if (visible) c.openAirFaces++;
   }
+
 }
 
-int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, double avgDensity) {
+int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, double solidMass) {
+  double avgDensity = solidMass / cellCount;
   bool powderSupports = false;
   if (c.powderFaces > 0) {
     double powderDensity = c.powderDensityArea / c.powderFaces;
@@ -1084,16 +1092,22 @@ int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, doub
   }
   if (c.liquidFaces > 0) {
     double liquidDensity = c.liquidDensityArea / c.liquidFaces;
-    // A lighter assembly with liquid beneath it and no path from its exposed
-    // faces to open air is still submerged. Empty wake cavities do not count as
-    // emergence and must not reverse buoyancy.
+    // A completely submerged body's displaced volume is its full cell volume,
+    // so Archimedes reduces exactly to the density comparison here. This also
+    // avoids making the result depend on how many boundary faces a sparse shape
+    // happens to expose.
     if (c.bottomLiquidFaces > 0 && c.openAirFaces == 0
         && avgDensity < liquidDensity - 1e-6) return -1;
-    double weight = cellCount * avgDensity;
-    double imbalance = c.displacedLiquidMass - weight;
-    double band = std::fmax(0.5, std::sqrt((double)cellCount) * 0.25);
-    if (imbalance > band && c.bottomLiquidFaces > 0) return -1;
-    if (c.bottomLiquidFaces > 0 && imbalance >= -band) return 0;
+    // In cell units g is common to both terms, so the net vertical force is
+    // displaced-liquid mass minus solid mass.
+    double netForce = c.displacedLiquidMass - solidMass;
+    // The free surface is resolved only to whole cells. Its unknown position
+    // within the raster row is represented by the half-cell underside term in
+    // accumulateFaceContact. Treat half of one neighbouring liquid cell's mass
+    // as the corresponding numerical equilibrium tolerance.
+    double rasterEquilibriumBand = 0.5 * liquidDensity;
+    if (netForce > rasterEquilibriumBand + 1e-6 && c.bottomLiquidFaces > 0) return -1;
+    if (c.bottomLiquidFaces > 0 && netForce >= -rasterEquilibriumBand - 1e-6) return 0;
     return powderSupports ? 0 : 1;
   }
   if (powderSupports) return 0;
@@ -1187,7 +1201,12 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     });
     for (const auto& p : pending) {
       int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
-      int target = nearestVacatedTarget(p.source, dir, minTargetY, vacatedByRow);
+      int target = nearestVacatedTarget(p.source, dir, minTargetY, true, vacatedByRow);
+      // The contact floor is a preference, not a hard capacity limit. Concave
+      // assemblies can have several vertical runs and fewer trailing vacancies
+      // below the median contact row than displaced leading-face cells. Use the
+      // remaining upper vacancies before declaring an otherwise valid rise pinned.
+      if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, vacatedByRow);
       if (target < 0) return false;
       trReserved.add(target);
       plan.relocate.push_back({target, p.material});
@@ -1223,14 +1242,13 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
     collect(E.fg, g->fgComps, fgCells, fgMats);
     collect(E.bg, g->bgComps, bgCells, bgMats);
-    double sum = 0; int n = 0;
-    for (auto& cm : fgMats) { sum += DENSITY[cm.m]; n++; }
-    for (auto& cm : bgMats) { sum += DENSITY[cm.m]; n++; }
-    double density = n ? sum / n : 0;
+    double sum = 0;
+    for (auto& cm : fgMats) sum += DENSITY[cm.m];
+    for (auto& cm : bgMats) sum += DENSITY[cm.m];
     FaceContact before;
     accumulateFaceContact(E.fg.grid, fgCells, before);
     accumulateFaceContact(E.bg.grid, bgCells, before);
-    int decision = motionDecision(before, fgCells.size() + bgCells.size(), density);
+    int decision = motionDecision(before, fgCells.size() + bgCells.size(), sum);
     if (decision == 0) continue;
     int dir = decision > 0 ? E.cols : -E.cols;
     // A joint moves only when both layer-local halves can execute the same plan.
@@ -1238,7 +1256,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     FaceContact after;
     accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials);
     accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials);
-    if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), density) == -decision) continue;
+    if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), sum) == -decision) continue;
     applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir);
     applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir);
     int8_t moveDir = dir < 0 ? -1 : 1;
@@ -1307,7 +1325,7 @@ void ComponentSystem::moveRigidAssemblies() {
   auto matOf = [&](int i, int k) -> uint8_t { return i < nStonePlant ? E.L->grid[k] : ICE; };
 
   auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir,
-                               int decision, double avgDensity) -> bool {
+                               int decision, double solidMass, bool fullySubmerged) -> bool {
     int dy = dir > 0 ? 1 : -1;
     bool hasIce = false;
     for (int ci : grp->comps) if (ci >= nStonePlant) { hasIce = true; break; }
@@ -1440,22 +1458,24 @@ void ComponentSystem::moveRigidAssemblies() {
         }
       }
       auto planVacatedLiquidDump = [&](uint8_t material, int source) {
-        int target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], vacatedByRow);
+        int target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], true, vacatedByRow);
+        if (target < 0 && minLiquidTargetY[material] > 0)
+          target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], false, vacatedByRow);
         if (target < 0) return false;
         liquidWrites.push_back({target, material});
         trReserved.add(target);
         return true;
       };
+      std::vector<uint8_t> liquidPlaced(displaced.size(), 0);
       // A descending wide face can displace hundreds of same-material cells.
       // Resolve external free volume with one multi-source BFS per material;
       // per-cell searches exhausted the shared budget and dumped the
       // remainder into distant top-wake vacancies. Mixed-liquid chains and
       // genuinely enclosed residuals continue through the exact fallback below.
-      std::vector<uint8_t> liquidPlaced(displaced.size(), 0);
       if (dir > 0 && liquidDisplacedCount > 0) {
         std::vector<int> indices;
         for (int i = 0; i < (int)displaced.size(); i++) {
-          if (E.isLiquidMaterial(displaced[i].material)) indices.push_back(i);
+          if (E.isLiquidMaterial(displaced[i].material) && !liquidPlaced[i]) indices.push_back(i);
         }
         std::sort(indices.begin(), indices.end(), [&](int a, int b) {
           uint8_t am = displaced[a].material, bm = displaced[b].material;
@@ -1504,6 +1524,7 @@ void ComponentSystem::moveRigidAssemblies() {
           gi = gj;
         }
       }
+      bool exactRiseFallback = false;
       for (int di = 0; di < (int)displaced.size(); di++) {
         auto& d = displaced[di];
         if (!E.isLiquidMaterial(d.material)) continue;
@@ -1515,7 +1536,29 @@ void ComponentSystem::moveRigidAssemblies() {
         bool placed = dir < 0
           ? (planVacatedLiquidDump(d.material, d.from) || planLiquidChain(d.material, d.from))
           : (planLiquidChain(d.material, d.from) || (!hasIce && planVacatedLiquidDump(d.material, d.from)));
-        if (!placed) return false;
+        if (!placed) {
+          if (dir < 0 && fullySubmerged) { exactRiseFallback = true; break; }
+          return false;
+        }
+      }
+      if (exactRiseFallback) {
+        // Greedy spatial matching can consume another vertical run's only
+        // vacancy and falsely pin a sparse or concave rising body. Roll the
+        // incomplete plan back and use the guaranteed bijection: each vertical
+        // solid run has exactly one leading liquid cell and one trailing cell.
+        liquidWrites.clear();
+        trReserved.reset(gridLen);
+        std::fill(liquidPlaced.begin(), liquidPlaced.end(), 0);
+        for (int i = 0; i < (int)displaced.size(); i++) {
+          const auto& d = displaced[i];
+          if (!E.isLiquidMaterial(d.material)) continue;
+          int target = d.from - dir;
+          while (target - dir >= 0 && target - dir < gridLen && asmCells.has(target - dir)) target -= dir;
+          if (!trVacated.has(target) || trReserved.has(target)) return false;
+          liquidWrites.push_back({target, d.material});
+          trReserved.add(target);
+          liquidPlaced[i] = 1;
+        }
       }
 
       auto runPowderSpill = [&](int need, std::vector<int>& out) -> bool {
@@ -1552,7 +1595,7 @@ void ComponentSystem::moveRigidAssemblies() {
     }
     FaceContact postMove;
     accumulateFaceContact(E.L->grid, shifted, postMove, &planned);
-    if (motionDecision(postMove, shifted.size(), avgDensity) == -decision) return false;
+    if (motionDecision(postMove, shifted.size(), solidMass) == -decision) return false;
 
     struct Move { Comp* comp; bool isPlant; std::vector<std::pair<int, uint8_t>> mats; int wood, leaf; };
     std::vector<Move> moves;
@@ -1641,13 +1684,13 @@ void ComponentSystem::moveRigidAssemblies() {
         weight += d;
       }
     }
-    double avgDensity = weight / cells.size();
     FaceContact current;
     accumulateFaceContact(E.L->grid, cells, current);
-    int decision = motionDecision(current, cells.size(), avgDensity);
+    int decision = motionDecision(current, cells.size(), weight);
     if (decision == 0) continue;
     int dirK = decision > 0 ? E.cols : -E.cols;
-    translateAssembly(grp, cells, dirK, decision, avgDensity);
+    bool fullySubmerged = current.liquidFaces > 0 && current.openAirFaces == 0;
+    translateAssembly(grp, cells, dirK, decision, weight, fullySubmerged);
   }
 }
 

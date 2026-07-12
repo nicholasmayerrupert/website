@@ -113,6 +113,83 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 2d. Splitting a concave iceberg creates several leading/trailing vertical
+//     runs. Its displaced brine must use every trailing vacancy when the
+//     preferred below-source matching lacks enough capacity; otherwise the
+//     detached submerged half is permanently pinned.
+{
+  console.log('concave iceberg fragment rises immediately after an underwater split');
+  const e = mk();
+  e.setBgEnabled(false);
+  const floorY = 112;
+  for (let y = 15; y <= floorY; y++) { e.paintDisc(12, y, 0, MAT.BRICK, true); e.paintDisc(188, y, 0, MAT.BRICK, true); }
+  for (let x = 12; x <= 188; x++) e.paintDisc(x, floorY, 0, MAT.BRICK, true);
+  e.syncComponents();
+  for (let y = 25; y < floorY; y++) for (let x = 13; x < 188; x++) e.paintDisc(x, y, 0, MAT.BRINE, true);
+  for (let y = 32; y <= 37; y++) for (let x = 13; x <= 82; x++) e.paintDisc(x, y, 0, MAT.ICE, true);
+  for (let y = 37; y <= 55; y++) for (let x = 78; x <= 82; x++) e.paintDisc(x, y, 0, MAT.ICE, true);
+  let seed = 1, x = 80, y = 55;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let i = 0; i < 180; i++) {
+    e.paintDisc(x, y, 1, MAT.ICE, true);
+    const turn = random();
+    if (turn < 0.38) y = Math.min(88, y + 1);
+    else if (turn < 0.48) y = Math.max(55, y - 1);
+    else x = Math.max(25, Math.min(135, x + (random() < 0.5 ? -1 : 1)));
+  }
+  e.syncComponents();
+  for (let cutY = 45; cutY <= 51; cutY++) for (let cutX = 15; cutX < 185; cutX++) e.eraseDisc(cutX, cutY, 0);
+  const iceStats = () => {
+    const grid = e.getGrid(); let n = 0, maxY = -1;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === MAT.ICE) { n++; maxY = Math.max(maxY, (i / COLS) | 0); }
+    return { n, maxY };
+  };
+  const before = iceStats();
+  run(3, e);
+  const after = iceStats();
+  check(`split concave fragment responded to buoyancy (bottom ${before.maxY} -> ${after.maxY})`,
+    before.n === after.n && after.maxY <= before.maxY - 3);
+  e.destroy();
+}
+
+// 2e. A fully submerged sparse/tendril-shaped iceberg has the same density as
+//     a compact one and must rise on its first tick. Greedy global vacancy
+//     matching used to reject this geometry until enough of it was erased.
+{
+  console.log('fully submerged sparse iceberg is shape-independently buoyant');
+  const e = mk();
+  e.setBgEnabled(false);
+  const floorY = 112;
+  for (let y = 10; y <= floorY; y++) { e.paintDisc(8, y, 0, MAT.BRICK, true); e.paintDisc(191, y, 0, MAT.BRICK, true); }
+  for (let x = 8; x <= 191; x++) e.paintDisc(x, floorY, 0, MAT.BRICK, true);
+  e.syncComponents();
+  for (let y = 18; y < floorY; y++) for (let x = 9; x < 191; x++) e.paintDisc(x, y, 0, MAT.BRINE, true);
+  let seed = 1, x = 100, y = 45;
+  const cells = new Set();
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  for (let i = 0; i < 180; i++) {
+    cells.add(`${x},${y}`);
+    if (random() < 0.18) { cells.add(`${x + 1},${y}`); cells.add(`${x},${y + 1}`); }
+    const turn = random();
+    if (turn < 0.42) y = Math.min(96, y + 1);
+    else if (turn < 0.55) y = Math.max(35, y - 1);
+    else x = Math.max(60, Math.min(140, x + (random() < 0.5 ? -1 : 1)));
+  }
+  for (const cell of cells) { const [cx, cy] = cell.split(',').map(Number); e.paintDisc(cx, cy, 0, MAT.ICE, true); }
+  e.syncComponents();
+  const iceCells = () => {
+    const out = []; const grid = e.getGrid();
+    for (let i = 0; i < grid.length; i++) if (grid[i] === MAT.ICE) out.push(i);
+    return out;
+  };
+  const before = iceCells(), expected = new Set(before.map((k) => k - COLS));
+  run(1, e);
+  const after = iceCells();
+  check(`sparse submerged iceberg rose intact on its first tick (${before.length} cells)`,
+    after.length === before.length && after.every((k) => expected.has(k)));
+  e.destroy();
+}
+
 // 3. fire next to water makes steam.
 {
   console.log('reactions');

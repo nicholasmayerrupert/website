@@ -755,6 +755,44 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   e.destroy();
 }
 
+// 20b. Background terrain is visually behind foreground ice, not an anchor for
+//      it. Mixed ice/stone co-occupation must not suppress foreground buoyancy;
+//      same-material ice/ice bonding remains covered by the test above.
+{
+  console.log('foreground ice floats past grounded background terrain');
+  const C = 100, R0 = 110;
+  const e = createEngineWasm({ cols: C, rows: R0, infinite: false, sinksOn: false });
+  e.setBgEnabled(true);
+  const L = 12, R = 88, floorY = 98;
+  const fillRect = (layer, mat, x0, x1, y0, y1) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.paintDiscLayer(layer, x, y, 0, mat, true);
+  };
+  for (const layer of [0, 1]) {
+    fillRect(layer, MAT.BRICK, L, L, 12, floorY);
+    fillRect(layer, MAT.BRICK, R, R, 12, floorY);
+    fillRect(layer, MAT.BRICK, L, R, floorY, floorY);
+    e.syncComponentsLayer(layer);
+    fillRect(layer, MAT.BRINE, L + 1, R - 1, 24, floorY - 1);
+  }
+  // Grounded only in the background, directly behind the foreground iceberg.
+  fillRect(1, MAT.BRICK, 50, 50, 65, floorY);
+  e.syncComponentsLayer(1);
+  fillRect(0, MAT.ICE, 27, 73, 65, 75);
+  e.syncComponentsLayer(0);
+  const iceTop = () => {
+    const grid = e.getGrid(); let top = R0, n = 0;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === MAT.ICE) { top = Math.min(top, (i / C) | 0); n++; }
+    return { top, n };
+  };
+  const before = iceTop();
+  step(e, 180);
+  const after = iceTop();
+  check('foreground ice ignored grounded background stone and rose',
+    before.n === 517 && after.n === before.n && after.top < before.top - 20,
+    `(top ${before.top} -> ${after.top}, cells ${after.n})`);
+  e.destroy();
+}
+
 // 21. Large slanted solids displace many liquid cells at once. The displaced
 //     oil/brine must be allowed to occupy the cells vacated by the descending
 //     solid; otherwise a dense diagonal stone slab can pin at the liquid

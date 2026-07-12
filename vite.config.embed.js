@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
 
 // Bundles the <sand-game> Web Component into ONE self-contained, drop-in ES file
 // (dist-embed/sand-game.js). The WASM engine is already embedded (SINGLE_FILE),
@@ -10,7 +11,15 @@ import { defineConfig } from 'vite';
 //   <script type="module" src="sand-game.js"></script>  <sand-game></sand-game>
 export default defineConfig({
   define: { 'import.meta.env.DEV': 'false' },
+  resolve: {
+    alias: [{
+      find: './moduleSelector.js',
+      replacement: fileURLToPath(new URL('./src/sand/wasmBridge/moduleSelectorFallback.js', import.meta.url)),
+    }],
+  },
+  worker: { format: 'es' },
   build: {
+    target: 'esnext',
     outDir: 'dist-embed',
     emptyOutDir: true,
     copyPublicDir: false, // drop-in is a single file; don't copy public/ assets

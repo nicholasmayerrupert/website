@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-12T23:01:30.428Z",
+  "generatedAt": "2026-07-12T23:54:21.565Z",
   "output": {
     "path": "src/sand/wasm/sandEngine.js",
     "bytes": 678931,
@@ -7,7 +7,7 @@
     "fnv1a": "0xbfc8bade"
   },
   "source": {
-    "commit": "a6ee71c",
+    "commit": "b84c5e2",
     "dirty": true
   },
   "toolchain": {

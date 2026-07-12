@@ -74,9 +74,13 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   - `cpp/engine/camera.inc` — the view camera (pan/bounds/follow), the
     pointer→aim-cell mapping, the player input bitmask, and the fixed-tick pan /
     world-stream drivers. JS just forwards held keys + the pointer.
-- `wasm/` — `build.sh` compiles `cpp/` to `sandEngine.js` (a single self-contained
-  ES module with the wasm embedded; built with WebGL2/`FULL_ES3`) and writes
-  `src/sand/wasm/build-info.json` provenance. The output is committed, so a
+- `wasm/` — `build.sh` compiles `cpp/` to the fallback `sandEngine.js` and the
+  pthread-enabled `sandEngineThreaded.js` (self-contained ES modules with wasm
+  embedded; built with WebGL2/`FULL_ES3`). The site serves COOP/COEP headers and
+  selects the threaded module when cross-origin isolated; third-party embeds
+  retain the fallback. The threaded engine owns a persistent three-worker pool
+  and fills pixels in four non-adjacent checkerboard chunk waves. The build also
+  writes `src/sand/wasm/build-info.json` provenance. Outputs are committed, so a
   normal `npm run build` never needs the C++ toolchain.
 - `wasmBridge/engineFactory.js` — loads the wasm module and exposes `createEngineWasm()`, the
   simulation+render+camera handle. Call `initSandWasm()` once and wait for it

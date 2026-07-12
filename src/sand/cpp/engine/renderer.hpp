@@ -35,6 +35,9 @@ class Renderer {
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
+#ifdef __EMSCRIPTEN_PTHREADS__
+  uint32_t renderFrameSalt = 0;
+#endif
   uint8_t renderSkyLight = 255;       // render-only day/night input; 255 = full day
   std::vector<int> lightQueue;        // render-only flood-fill scratch
 

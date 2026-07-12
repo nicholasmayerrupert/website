@@ -25,10 +25,12 @@ fi
 node scripts/generate-materials.mjs --check
 node scripts/generate-abi.mjs --check
 
-OUT=src/sand/wasm/sandEngine.js
-
+build_engine() {
+local OUT="$1"
+shift
 em++ \
   -O3 -std=c++20 \
+  "$@" \
   ${DEV_FLAGS[@]+"${DEV_FLAGS[@]}"} \
   -s MODULARIZE=1 \
   -s EXPORT_ES6=1 \
@@ -47,5 +49,16 @@ em++ \
   src/sand/cpp/sand.cpp \
   -o "$OUT"
 
-node scripts/write-wasm-build-info.mjs "$OUT"
 echo "built $OUT ($(wc -c < "$OUT") bytes)"
+}
+
+build_engine src/sand/wasm/sandEngine.js
+node scripts/write-wasm-build-info.mjs src/sand/wasm/sandEngine.js
+
+# Browsers that are cross-origin isolated load this build. The engine owns a
+# persistent Emscripten pthread pool; non-isolated embeds retain the ordinary
+# single-thread module above.
+build_engine src/sand/wasm/sandEngineThreaded.js \
+  -pthread \
+  -s PTHREAD_POOL_SIZE=4 \
+  -s PTHREAD_POOL_SIZE_STRICT=0

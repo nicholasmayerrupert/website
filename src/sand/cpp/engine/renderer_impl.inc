@@ -343,8 +343,16 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           }
         }
       }
+#ifdef __EMSCRIPTEN_PTHREADS__
+      // Animated grain is cell-addressed rather than consuming a shared stream,
+      // so independent checkerboard chunks can be filled concurrently.
+      uint32_t anim = renderCellHash(wx ^ (int)renderFrameSalt, wy + (int)(renderFrameSalt * 17u));
+      if (m == STEAM) { if ((anim & 0xffffu) <= 11796u) c = 0; }
+      else if (m == FIRE) { if ((anim & 0xffffu) < 22938u) c = PACKED_FIRE_HOT; }
+#else
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
+#endif
       else if (m == LAVA) { if (((wx * 17 + wy * 31) & 7) == 0) c = PACKED_LAVA_HOT; }
       else if (m == CRYSTAL) { if ((renderCellHash(wx, wy) & 7u) == 0u) c = PACKED_CRYSTAL_CORE; }
       else if (m == MYCELIUM || m == MYCELIUM_SPORE) {
@@ -364,7 +372,17 @@ void Renderer::renderFull() {
     Layer* crossLay = (E.L == &E.bg) ? &E.fg : ((E.L == &E.fg && E.bgEnabled) ? &E.bg : nullptr);
     computeLighting(E.L, crossLay);
   }
-  fillRenderSpan(E.L->grid, (uint32_t*)E.L->renderPixels.data(), 0, 0, E.cols - 1, E.rows - 1);
+  uint8_t* g = E.L->grid;
+  uint32_t* p = (uint32_t*)E.L->renderPixels.data();
+#ifdef __EMSCRIPTEN_PTHREADS__
+  renderFrameSalt++;
+  E.forEachCheckerboardChunk([&](int cx, int cy) {
+    int x0 = cx * CHUNK_SIZE, y0 = cy * CHUNK_SIZE;
+    fillRenderSpan(g, p, x0, y0, imin(E.cols - 1, x0 + CHUNK_SIZE - 1), imin(E.rows - 1, y0 + CHUNK_SIZE - 1));
+  });
+#else
+  fillRenderSpan(g, p, 0, 0, E.cols - 1, E.rows - 1);
+#endif
 }
 
 // Refill only the active layer's coalesced dirty rects. Rects are [x0,y0,x1,y1)

@@ -14,6 +14,9 @@
   int cols, rows, chunkCols, chunkRows;
   Layer fg, bg;       // the two simulations
   Layer* L = &fg;     // active layer (the mirrors below point into it)
+#ifdef __EMSCRIPTEN_PTHREADS__
+  CheckerboardPool chunkPool;
+#endif
 
   // Make `lay` the active layer. The old raw-pointer mirrors of its indexed
   // buffers are gone (5g): hot code reads through L-> (Layer::L->grid/L->next are
@@ -98,6 +101,25 @@
     return (double)(t ^ (t >> 14)) / 4294967296.0;
   }
   inline int I(int x, int y) { return y * cols + x; }
+
+#ifdef __EMSCRIPTEN_PTHREADS__
+  // Execute spatially independent chunks in four checkerboard waves. Adjacent
+  // chunks never run in the same wave, leaving a full CHUNK_SIZE guard band for
+  // cell rules that inspect or write across their own edge. The ordinary WASM
+  // build uses the exact same order serially; the pthread build distributes the
+  // chunks in each wave over Emscripten's fixed worker pool.
+  template <typename Fn>
+  void forEachCheckerboardChunk(Fn&& fn) {
+    const int count = chunkCols * chunkRows;
+    for (int color = 0; color < 4; color++) {
+      chunkPool.parallelFor(count, [&](int ci) {
+        int cy = ci / chunkCols, cx = ci - cy * chunkCols;
+        if (((cx & 1) | ((cy & 1) << 1)) != color) return;
+        fn(cx, cy);
+      });
+    }
+  }
+#endif
 
   Engine(int c, int r, uint32_t seed, bool sinks) : cols(c), rows(r), sinksEnabled(sinks), rngState(seed) {
     chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;

@@ -7,7 +7,7 @@
 // zero-copy as a HEAPU8 subarray (re-derived each call: the grid pointer swaps
 // every step and the heap can move on growth).
 
-import createSandModule from '../wasm/sandEngine.js';
+import { selectSandModule } from './moduleSelector.js';
 import { MAT } from '../materials.js';
 import { ABI_VERSION, OFF, STRIDES, INPUT } from './abi.generated.js';
 
@@ -21,6 +21,7 @@ let modPromise = null;
 let M = null; // resolved module + cwrapped fns
 let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTargets
 let resizableHeapPatched = false;
+let wasmThreadsEnabled = false;
 
 // Chromium rejects TypedArray/ArrayBuffer arguments that sit on a *resizable*
 // ArrayBuffer. Emscripten's ALLOW_MEMORY_GROWTH heap is resizable, so GL calls
@@ -189,7 +190,9 @@ function patchResizableWasmHeapForBrowserGL() {
 export function initSandWasm() {
   if (!modPromise) {
     patchResizableWasmHeapForBrowserGL();
-    modPromise = createSandModule().then((mod) => {
+    const selected = selectSandModule();
+    wasmThreadsEnabled = selected.threaded;
+    modPromise = selected.promise.then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
       // manifest — the loud failure for a stale committed sandEngine.js.
@@ -980,6 +983,7 @@ export function createEngineWasm({
     // wasmBridge/testHooks.js — scripts call attachTestHooks(engine). The raw
     // engine pointer is exposed for that module only.
     ptr,
+    wasmThreadsEnabled,
   };
   return api;
 }

@@ -14,6 +14,12 @@ actionable instead of just producing timing numbers.
   state, while the main thread owns a render-only mirror. Replication is bounded
   to one acknowledged packet in flight, so a slow renderer cannot build an
   unbounded diff queue or feed timing debt back into world simulation.
+- The first pthread/checkerboard stage parallelizes full material-to-RGBA fill
+  in the cross-origin-isolated site build. Cell movement remains serial: its
+  shared simulation RNG, dirty-row bounds, and liquid displacement queue must
+  become task-local before the same scheduler can safely own settle chunks.
+  Current profiles are dominated by lighting and cross-layer grounding, not the
+  already-cheap sand/liquid passes.
 - If a benchmark regression points at gameplay, rendering, camera, terrain,
   components, or materials, prefer moving the decision into C++ rather than adding
   another JS mirror.

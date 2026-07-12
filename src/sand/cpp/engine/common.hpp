@@ -15,6 +15,12 @@
 #include <functional>
 #include <emscripten.h>
 #include <emscripten/console.h>
+#ifdef __EMSCRIPTEN_PTHREADS__
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#endif
 
 // Material ids, kinds, and flat lookup tables — generated from
 // src/sand/materials.schema.json (the single source shared with JS). Run
@@ -97,6 +103,69 @@ struct StampSet {
   void add(int k) { if ((unsigned)k < stamp.size()) stamp[k] = gen; }
   bool has(int k) const { return (unsigned)k < stamp.size() && stamp[k] == gen; }
   void remove(int k) { if ((unsigned)k < stamp.size()) stamp[k] = 0; }
+};
+
+// Persistent workers used by the checkerboard scheduler. Emscripten satisfies
+// these std::threads from PTHREAD_POOL_SIZE, avoiding per-frame worker creation.
+// The calling thread participates, then waits at one barrier per color wave.
+class CheckerboardPool {
+#ifdef __EMSCRIPTEN_PTHREADS__
+  std::vector<std::thread> workers;
+  std::mutex mutex;
+  std::condition_variable startCv, doneCv;
+  std::function<void(int)> job;
+  std::atomic<int> next{0};
+  int limit = 0, remaining = 0;
+  uint64_t generation = 0;
+  bool stopping = false;
+
+  void workerLoop() {
+    uint64_t seen = 0;
+    for (;;) {
+      std::unique_lock<std::mutex> lock(mutex);
+      startCv.wait(lock, [&] { return stopping || generation != seen; });
+      if (stopping) return;
+      seen = generation;
+      lock.unlock();
+      for (;;) { int i = next.fetch_add(1, std::memory_order_relaxed); if (i >= limit) break; job(i); }
+      lock.lock();
+      if (--remaining == 0) doneCv.notify_one();
+    }
+  }
+#endif
+
+ public:
+  CheckerboardPool() {
+#ifdef __EMSCRIPTEN_PTHREADS__
+    for (int i = 0; i < 3; i++) workers.emplace_back([this] { workerLoop(); });
+#endif
+  }
+  ~CheckerboardPool() {
+#ifdef __EMSCRIPTEN_PTHREADS__
+    { std::lock_guard<std::mutex> lock(mutex); stopping = true; generation++; }
+    startCv.notify_all();
+    for (auto& worker : workers) worker.join();
+#endif
+  }
+  template <typename Fn>
+  void parallelFor(int count, Fn&& fn) {
+#ifdef __EMSCRIPTEN_PTHREADS__
+    if (count >= 8 && !workers.empty()) {
+      {
+        std::lock_guard<std::mutex> lock(mutex);
+        job = std::forward<Fn>(fn); limit = count; next.store(0, std::memory_order_relaxed);
+        remaining = (int)workers.size(); generation++;
+      }
+      startCv.notify_all();
+      for (;;) { int i = next.fetch_add(1, std::memory_order_relaxed); if (i >= limit) break; job(i); }
+      std::unique_lock<std::mutex> lock(mutex);
+      doneCv.wait(lock, [&] { return remaining == 0; });
+      job = nullptr;
+      return;
+    }
+#endif
+    for (int i = 0; i < count; i++) fn(i);
+  }
 };
 
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool

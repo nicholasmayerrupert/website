@@ -19,6 +19,9 @@ const stoneFloor = (e, top) => {
 };
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
+check('roster is exactly two water, two land, two cave, and one bird species',
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD');
+
 // Water-only locomotion and local population cap.
 {
   const e = mk();
@@ -29,7 +32,7 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
   const ids = [];
   for (let i = 0; i < 12; i++) ids.push(e.spawnCreature(CREATURE.MINNOW, 35 + i * 3, 42));
   const accepted = ids.filter(Boolean);
-  check(`density cap rejects excess fish (${accepted.length}/12 accepted)`, accepted.length === 3);
+  check(`density cap rejects excess fish (${accepted.length}/12 accepted)`, accepted.length === 2);
   actors(e, 240);
   const grid = e.getGrid();
   const fish = e.getCreatures().filter((c) => accepted.includes(c.id) && c.alive);
@@ -62,6 +65,49 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
   e.destroy();
 }
 
+// Fish outside viable water fall under gravity and kick around on the ground
+// instead of freezing at their last swimming pose.
+{
+  const e = mk(); stoneFloor(e, 92);
+  waterBox(e, 34, 20, 56, 32);
+  const id = e.spawnCreature(CREATURE.MINNOW, 40, 24);
+  const start = byId(e, id);
+  for (let y = 20; y < 32; y++) for (let x = 34; x < 56; x++) e.eraseDisc(x, y, 0);
+  e.setCreaturesEnabled(true);
+  actors(e, 90);
+  const landed = byId(e, id);
+  check(`beached fish falls normally (${start?.y.toFixed(1)} -> ${landed?.y.toFixed(1)})`,
+    landed && landed.y > start.y + 40);
+  const landedX = landed?.x ?? 0;
+  let kickedUp = false;
+  for (let i = 0; i < 120; i++) {
+    e.stepActors();
+    const fish = byId(e, id);
+    if (fish?.vy < -0.2) kickedUp = true;
+  }
+  const flopped = byId(e, id);
+  check('beached fish flops after landing', kickedUp && flopped && Math.abs(flopped.x - landedX) > 0.1);
+  e.destroy();
+}
+
+// Blocking material inside the AABB causes slow burial damage; ordinary floor
+// contact remains harmless because the supporting cells sit below the body.
+{
+  const e = mk(); stoneFloor(e, 92);
+  const buriedId = e.spawnCreature(CREATURE.FOX, 50, 88);
+  const standingId = e.spawnCreature(CREATURE.HARE, 100, 89);
+  const buriedBefore = byId(e, buriedId).health, standingBefore = byId(e, standingId).health;
+  for (let y = 88; y < 92; y++) for (let x = 50; x < 57; x++) e.addDiscToStoneDraft(x, y, 0);
+  e.finalizeStoneDraft();
+  e.setCreaturesEnabled(true);
+  actors(e, 120);
+  const buried = byId(e, buriedId), standing = byId(e, standingId);
+  check(`engulfed creature takes gradual solid damage (${buriedBefore} -> ${buried?.health})`,
+    buried && buried.health < buriedBefore && buried.health >= buriedBefore - 5);
+  check('standing on solid ground does not cause burial damage', standing?.health === standingBefore);
+  e.destroy();
+}
+
 // Hitbox damage changes health and respects the short hurt cooldown.
 {
   const e = mk(); waterBox(e, 20, 20, 100, 70);
@@ -82,15 +128,21 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
   const playerId = e.spawnPlayerAtSurface(224), player = e.getPlayer(playerId);
   e.stepActors();
   const initial = e.getCreatures();
+  const fox = initial.find((c) => c.species === CREATURE.FOX);
   const hare = initial.find((c) => c.species === CREATURE.HARE);
   const crawler = initial.find((c) => c.species === CREATURE.CRAWLER);
+  const mole = initial.find((c) => c.species === CREATURE.MOLE);
   const bird = initial.find((c) => c.species === CREATURE.BIRD);
   const surfaceAt = (c) => e.worldSurfaceAt(e.getWorldOffsetX() + Math.floor(c.x + c.w / 2));
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
-  check('land creature spawns immediately near the visible player', hare && distFromPlayer(hare) <= 72);
+  check('both land creatures spawn near the visible player', fox && hare && distFromPlayer(hare) <= 72);
   check(`land creature stands on generated terrain (y ${hare?.y.toFixed(1)})`, hare && Math.abs(hare.y + hare.h - surfaceAt(hare)) <= 4);
-  check('cave creature spawns in a loaded underground cavity', crawler && crawler.y > surfaceAt(crawler) + 10);
-  check('bird spawns immediately in visible open sky', bird && distFromPlayer(bird) <= 78 && bird.y + bird.h < surfaceAt(bird) - 8);
+  check('both cave creatures spawn in loaded underground cavities', crawler && mole &&
+    crawler.y > surfaceAt(crawler) + 10 && mole.y > surfaceAt(mole) + 10);
+  const birdDistance = bird ? distFromPlayer(bird) : Infinity;
+  const birdClearance = bird ? surfaceAt(bird) - (bird.y + bird.h) : -Infinity;
+  check(`bird spawns in visible open sky (distance ${birdDistance.toFixed(1)}, clearance ${birdClearance.toFixed(1)})`,
+    bird && birdDistance <= 128 && birdClearance > 8);
   const birdStart = bird ? { x: bird.x, y: bird.y, frame: bird.animFrame } : null;
   actors(e, 6);
   const birdAnimated = bird && byId(e, bird.id);
@@ -104,9 +156,9 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
   const later = e.getCreatures();
   const count = (species) => later.filter((c) => c.species === species && c.alive).length;
   const active = later.filter((c) => c.alive).length;
-  check(`continuous spawning remains capped (newt ${count(CREATURE.NEWT)}, hare ${count(CREATURE.HARE)}, crawler ${count(CREATURE.CRAWLER)}, bird ${count(CREATURE.BIRD)})`,
-    count(CREATURE.NEWT) <= 2 && count(CREATURE.HARE) <= 3 && count(CREATURE.CRAWLER) <= 2 && count(CREATURE.BIRD) <= 3);
-  check(`loaded population has a hard mixed-species cap (${active}/12)`, active <= 12);
+  check(`continuous spawning remains capped (fox ${count(CREATURE.FOX)}, hare ${count(CREATURE.HARE)}, crawler ${count(CREATURE.CRAWLER)}, mole ${count(CREATURE.MOLE)}, bird ${count(CREATURE.BIRD)})`,
+    count(CREATURE.FOX) <= 1 && count(CREATURE.HARE) <= 2 && count(CREATURE.CRAWLER) <= 1 && count(CREATURE.MOLE) <= 1 && count(CREATURE.BIRD) <= 2);
+  check(`loaded population has a hard mixed-species cap (${active}/8)`, active <= 8);
   e.destroy();
 }
 
@@ -121,10 +173,10 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
     e.spawnPlayerAtSurface(224);
     actors(e, 4800);
     const ids = new Set(e.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    if ([CREATURE.HARE, CREATURE.CRAWLER, CREATURE.BIRD].every((id) => ids.has(id))) established++;
+    if ([CREATURE.FOX, CREATURE.HARE, CREATURE.CRAWLER, CREATURE.MOLE, CREATURE.BIRD].every((id) => ids.has(id))) established++;
     e.destroy();
   }
-  check(`land/cave/air populations establish across world seeds (${established}/8)`, established === 8);
+  check(`both land/cave populations and birds establish across world seeds (${established}/8)`, established === 8);
 }
 
 // Lethal contact damage must never leave the player silently disabled. The
@@ -133,7 +185,7 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 {
   const e = mk(); stoneFloor(e, 92);
   const player = e.spawnPlayer(72, 84);
-  e.spawnCreature(CREATURE.NEWT, 68, 89);
+  e.spawnCreature(CREATURE.FOX, 68, 88);
   e.setSurvivalInventory(true);
   let respawned = false;
   for (let i = 0; i < 2400; i++) {
@@ -153,29 +205,29 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 // Surface enemy selects the nearest player and applies contact damage.
 {
   const e = mk(); stoneFloor(e, 92);
-  const newt = e.spawnCreature(CREATURE.NEWT, 42, 89);
+  const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
   const player = e.spawnPlayer(72, 84);
   e.setSurvivalInventory(true);
   actors(e, 360);
-  check('surface enemy remains active while pursuing', !!byId(e, newt));
+  check('surface enemy remains active while pursuing', !!byId(e, fox));
   check(`surface enemy damages its player target (health ${e.getPlayer(player)?.health})`, (e.getPlayer(player)?.health ?? 100) < 100);
   e.destroy();
 }
 
-// Amphibious newt walks on solid terrain, then gains vertical swim steering when flooded.
+// Fox walks on solid terrain, then gains vertical swim steering when flooded.
 {
   const e = mk(); stoneFloor(e, 92);
-  const newt = e.spawnCreature(CREATURE.NEWT, 42, 89);
+  const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
   const player = e.spawnPlayer(95, 84);
   e.setSurvivalInventory(true);
   actors(e, 80);
-  const walked = byId(e, newt);
+  const walked = byId(e, fox);
   check(`walking creature tracks player on land (x ${walked?.x.toFixed(1)})`, walked && walked.x > 45);
   waterBox(e, 20, 68, 125, 92);
   // Put the target higher in the pool so vertical steering is unambiguous.
   e.setPlayerState(player, { x: 92, y: 70, vx: 0, vy: 0, facing: -1 });
   let maxSwimVy = 0;
-  for (let i = 0; i < 80; i++) { e.stepActors(); const c = byId(e, newt); if (c) maxSwimVy = Math.max(maxSwimVy, Math.abs(c.vy)); }
+  for (let i = 0; i < 80; i++) { e.stepActors(); const c = byId(e, fox); if (c) maxSwimVy = Math.max(maxSwimVy, Math.abs(c.vy)); }
   check(`walking creature switches to swimming in liquid (|vy| ${maxSwimVy.toFixed(3)})`, maxSwimVy > 0.05);
   e.destroy();
 }

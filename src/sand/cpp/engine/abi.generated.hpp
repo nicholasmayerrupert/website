@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 6;
+static const int ABI_VERSION = 7;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -164,10 +164,11 @@ enum CreativeKind : uint8_t {
 enum CreatureSpeciesAbi : int {
   CREATURE_MINNOW = 0,
   CREATURE_PIKE = 1,
-  CREATURE_NEWT = 2,
+  CREATURE_FOX = 2,
   CREATURE_HARE = 3,
   CREATURE_CRAWLER = 4,
-  CREATURE_BIRD = 5,
+  CREATURE_MOLE = 5,
+  CREATURE_BIRD = 6,
 };
 
 static const int INV_HOTBAR = 9;

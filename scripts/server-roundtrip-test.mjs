@@ -31,10 +31,10 @@ function survivalEngine() {
 // 1c) creatures replicate the same health/hitbox state the renderer consumes.
 {
   const e = survivalEngine();
-  const id = e.spawnCreature(CREATURE.NEWT, 35, FLOOR - 3);
+  const id = e.spawnCreature(CREATURE.FOX, 35, FLOOR - 4);
   const m = decode(encode(encodeCreatures(e, 0)));
   check('creatures message decodes', m && m.t === MSG.CREATURES);
-  check('creature id/species/health replicated', m && m.data[0] === id && m.data[1] === CREATURE.NEWT && m.data[9] === 42);
+  check('creature id/species/health replicated', m && m.data[0] === id && m.data[1] === CREATURE.FOX && m.data[9] === 42);
   e.destroy();
 }
 

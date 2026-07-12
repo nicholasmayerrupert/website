@@ -17,6 +17,18 @@ bool CreatureSystem::boxHitsSolid(double wx, double wy, int w, int h) const {
   return false;
 }
 
+double CreatureSystem::blockingCoverage(double wx, double wy, int w, int h) const {
+  int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
+  int y0 = (int)std::floor(wy - E.fg.worldOffsetY), y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
+  int total = 0, blocked = 0;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    total++;
+    if (y >= E.rows) blocked++;
+    else if (x >= 0 && x < E.cols && y >= 0 && E.isBlockingForPlayer(E.fg.grid[E.I(x, y)])) blocked++;
+  }
+  return total ? (double)blocked / total : 0;
+}
+
 double CreatureSystem::fluidCoverage(double wx, double wy, int w, int h) const {
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
   int y0 = (int)std::floor(wy - E.fg.worldOffsetY), y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
@@ -340,6 +352,35 @@ void CreatureSystem::moveAquatic(Creature& c) {
   if (!tryAxis(c.wy, c.vy, false)) c.vy *= -0.45;
 }
 
+void CreatureSystem::moveBeachedAquatic(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  // Out of viable water, fish become ordinary gravity-driven bodies. Grounded
+  // fish periodically kick in a seeded direction; this can carry them down a
+  // bank and back into water without consuming the simulation RNG stream.
+  c.vy = std::min(2.4, c.vy + 0.075);
+  c.vx *= c.grounded ? 0.82 : 0.995;
+  int flopPeriod = 32 + (c.id % 17);
+  if (c.grounded && ((E.actorTick + c.id * 11) % flopPeriod) == 0) {
+    double kick = 0.20 + whash1(E.fg.worldSeed ^ 0xF10F00u, c.id + E.actorTick) * 0.18;
+    c.facing = whash1(E.fg.worldSeed ^ 0xF10F11u, c.id + E.actorTick) < 0.5 ? -1 : 1;
+    c.vx = c.facing * kick;
+    c.vy = -0.58 - whash1(E.fg.worldSeed ^ 0xF10F22u, c.id + E.actorTick) * 0.28;
+  }
+  auto moveAxis = [&](double& pos, double delta, bool xAxis) {
+    double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
+    while (moved < mag - 1e-6) {
+      double step = std::min(0.25, mag - moved), nx = c.wx, ny = c.wy;
+      if (xAxis) nx = pos + dir * step; else ny = pos + dir * step;
+      if (boxHitsSolid(nx, ny, s.w, s.h)) return false;
+      pos += dir * step; moved += step;
+    }
+    return true;
+  };
+  if (!moveAxis(c.wx, c.vx, true)) c.vx *= -0.25;
+  if (!moveAxis(c.wy, c.vy, false)) c.vy = 0;
+  c.grounded = boxHitsSolid(c.wx, c.wy + 0.12, s.w, s.h);
+}
+
 void CreatureSystem::moveAmphibious(Creature& c) {
   const CreatureSpecies& s = species(c);
   double wet = fluidCoverage(c.wx, c.wy, s.w, s.h);
@@ -437,12 +478,38 @@ void CreatureSystem::updateCreatures() {
     if (c.scanCooldown > 0) c.scanCooldown--; else acquireTarget(c);
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;
-    if (species(c).locomotion == CL_AQUATIC) { steerAquatic(c); moveAquatic(c); }
+    if (species(c).locomotion == CL_AQUATIC) {
+      if (fluidCoverage(c.wx, c.wy, species(c).w, species(c).h) >= species(c).fluidThreshold) {
+        c.grounded = false;
+        steerAquatic(c);
+        moveAquatic(c);
+      } else moveBeachedAquatic(c);
+    }
     else if (species(c).locomotion == CL_FLYING) moveFlying(c);
     else moveAmphibious(c);
+    // Terrain can settle or be placed through an entity after movement. Mere
+    // floor contact is outside the AABB and harmless; sustained burial over at
+    // least half the body deals one point every half-second at 60 actor Hz.
+    if (((E.actorTick + c.id * 7) % 30) == 0 &&
+        blockingCoverage(c.wx, c.wy, species(c).w, species(c).h) >= 0.5) c.health--;
     attackTarget(c);
-    int frameTicks = c.species == CS_BIRD ? 5 : c.species == CS_HARE ? 7 : 10;
-    c.animFrame = (uint8_t)(((E.actorTick / frameTicks) + c.id) & 1);
+    // Four authored poses per species. Tie pose selection to locomotion where
+    // it matters so feet, wings, and body arcs describe the actual movement
+    // instead of every creature sharing the same two-frame global blink.
+    if (c.species == CS_BIRD) {
+      c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
+    } else if (c.species == CS_HARE) {
+      if (c.vy < -0.18) c.animFrame = 1;       // launch: long rear-leg extension
+      else if (c.vy > 0.18) c.animFrame = 3;  // descent: forelegs reach for ground
+      else if (!c.grounded) c.animFrame = 2;  // compact silhouette at the apex
+      else c.animFrame = 0;                   // settled crouch
+    } else if (species(c).locomotion == CL_AQUATIC) {
+      int cadence = std::fabs(c.vx) + std::fabs(c.vy) > 0.42 ? 3 : 5;
+      c.animFrame = (uint8_t)(((E.actorTick / cadence) + c.id) & 3);
+    } else {
+      bool moving = std::fabs(c.vx) > 0.035;
+      c.animFrame = moving ? (uint8_t)(((E.actorTick / 5) + c.id) & 3) : 0;
+    }
   }
 }
 

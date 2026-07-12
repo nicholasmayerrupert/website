@@ -48,7 +48,7 @@ try {
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return species.has(3) && species.has(4) && species.has(5);
+    return [2, 3, 4, 5, 6].every((id) => species.has(id));
   }, null, { timeout: 12000 });
 
   console.log('/fps creature presentation');
@@ -59,16 +59,16 @@ try {
     return { creatures, debugAttr: host.hasAttribute('debug-hitboxes'), hud };
   });
   const species = new Set(initial.creatures.map((c) => c.species));
-  check(`land hare spawned (${initial.creatures.filter((c) => c.species === 3).length})`, species.has(3));
-  check(`cave crawler spawned (${initial.creatures.filter((c) => c.species === 4).length})`, species.has(4));
-  check(`bird spawned (${initial.creatures.filter((c) => c.species === 5).length})`, species.has(5));
+  check('fox and hare spawned', species.has(2) && species.has(3));
+  check('crawler and mole spawned', species.has(4) && species.has(5));
+  check(`bird spawned (${initial.creatures.filter((c) => c.species === 6).length})`, species.has(6));
   check('/fps enables debug hitboxes', initial.debugAttr);
   check('/fps HUD reports creatures', initial.hud.includes('creatures'));
 
   // Freeze world/actor updates so the only pixel difference is the hitbox
   // overlay. Recenter on each habitat species before probing its AABB.
   await page.evaluate(() => window.__sandTest.setPaused(true));
-  for (const [id, name] of [[3, 'hare'], [4, 'crawler'], [5, 'bird']]) {
+  for (const [id, name] of [[2, 'fox'], [3, 'hare'], [4, 'crawler'], [5, 'mole'], [6, 'bird']]) {
     const result = await page.evaluate((speciesId) => {
       const T = window.__sandTest;
       const c = T.getCreatures().find((x) => x.alive && x.species === speciesId);
@@ -97,7 +97,7 @@ try {
   // probe measures the sprite itself without terrain pixels contaminating it.
   const actorLight = await page.evaluate(() => {
     const T = window.__sandTest;
-    const c = T.getCreatures().find((x) => x.alive && x.species === 5);
+    const c = T.getCreatures().find((x) => x.alive && x.species === 6);
     const info = T.info();
     T.setCam(c.x + c.w / 2 - info.viewCols / 2, c.y + c.h / 2 - info.viewRows / 2);
     T.setHitboxes(false);
@@ -123,7 +123,7 @@ try {
   const bird0 = await page.evaluate(() => {
     window.__sandTest.setHitboxes(true);
     window.__sandTest.setPaused(false);
-    const c = window.__sandTest.getCreatures().find((x) => x.alive && x.species === 5);
+    const c = window.__sandTest.getCreatures().find((x) => x.alive && x.species === 6);
     const off = window.__sandTest.worldOffset();
     return { ...c, worldX: c.x + off.x, worldY: c.y + off.y };
   });
@@ -138,7 +138,7 @@ try {
     return { ...c, worldX: c.x + off.x, worldY: c.y + off.y };
   }, bird0.id);
   const moved = Math.hypot(bird1.worldX - bird0.worldX, bird1.worldY - bird0.worldY);
-  check('bird animation advances', bird1.animFrame === 0 || bird1.animFrame === 1);
+  check('bird animation advances through a four-pose cycle', bird1.animFrame >= 0 && bird1.animFrame < 4);
   check(`bird flies (${moved.toFixed(2)} cells)`, moved > 0.1);
 
   if (pngPath) {
@@ -159,7 +159,7 @@ try {
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return species.has(3) && species.has(4) && species.has(5);
+    return [2, 3, 4, 5, 6].every((id) => species.has(id));
   }, null, { timeout: 12000 });
   const survival = await page.evaluate(() => {
     const T = window.__sandTest, info = T.info(), player = T.getPlayer(), cam = T.getCam();
@@ -185,20 +185,20 @@ try {
     const population = T.getCreatures().filter((c) => c.alive);
     return {
       species: population.map((c) => c.species),
-      hareVisible: visible(3), birdVisible: visible(5),
-      passiveOutsideInnerHalf: population.filter((c) => c.species === 3 || c.species === 5).every(outsideInnerHalf),
+      hareVisible: visible(3), birdVisible: visible(6),
+      passiveOutsideInnerHalf: population.filter((c) => c.species === 3 || c.species === 6).every(outsideInnerHalf),
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
   });
   console.log('\n/game creature spawning');
-  check('survival spawns land, cave, and bird populations', [3, 4, 5].every((id) => survival.species.includes(id)));
+  check('survival spawns both land, both cave, and bird populations', [2, 3, 4, 5, 6].every((id) => survival.species.includes(id)));
   check('survival hare is in the camera view', survival.hareVisible);
   check('survival bird is in the camera view', survival.birdVisible);
   check('creatures spawn beyond the halfway point to the screen edge', survival.passiveOutsideInnerHalf);
   check('hitboxes remain an /fps diagnostic', !survival.debugAttr);
   const playerLight = await page.evaluate(() => {
     const T = window.__sandTest, info = T.info();
-    const bird = T.getCreatures().find((c) => c.alive && c.species === 5);
+    const bird = T.getCreatures().find((c) => c.alive && c.species === 6);
     const cave = T.getCreatures().find((c) => c.alive && c.species === 4);
     const actorContrast = (withActor, background) => {
       let sum = 0;

@@ -161,11 +161,11 @@ inside your own body) lives in `cpp/engine/player.inc`.
 Survival mode and the `/fps` diagnostics route have non-grid creatures simulated by `CreatureSystem`
 (`cpp/engine/creatures.hpp` + `creatures_impl.inc`) on the same deterministic
 actor clock as players and items. The species exercise reusable habitat and
-locomotion combinations: minnows (water/brine-only wandering), pike
-(aquatic predators that select the nearest prey creature, then a submerged
-player), newts (surface enemies that walk and switch to swimming when
-submerged), hares (hopping land animals), crawlers (hostile cave walkers), and
-birds (airborne wanderers that avoid solids and liquids).
+locomotion combinations across a deliberately small seven-species roster:
+minnows and pike in water; foxes and hares on land; crawlers and moles in caves;
+and one bird species in the air. Pike select the nearest prey creature and then
+a submerged player, foxes and crawlers pursue players, and the ambient species
+wander within their habitat.
 
 Each creature owns an AABB, health, velocity, facing, target id/type, attack and
 hurt cooldowns, and an absolute-world pose. Absolute coordinates make creatures
@@ -185,7 +185,7 @@ Focus-based spawns also exclude the inner half of the current view: along the
 candidate's direction, it must be beyond the halfway point from the player to
 that screen edge (in addition to the species' fixed minimum distance).
 
-Sprites are original two-frame pixel grids drawn by the C++ WebGL compositor,
+Sprites are original four-pose pixel grids drawn by the C++ WebGL compositor,
 with a health bar shown after damage. Player and creature sprite colors sample
 the same computed foreground light field as nearby world cells. Survival mining
 also checks creature hitboxes. Lethal contact damage returns the player to the

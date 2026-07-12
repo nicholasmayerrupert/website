@@ -248,7 +248,11 @@ export function createSandGame(container, opts = {}) {
   lifecycle.fit();
   if (!survival && typeof Worker !== 'undefined') {
     ctx.worldWorker = createWorldWorkerClient(ctx);
-    ctx.worldWorker.init({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue, tool: TOOL_IDS[ctx.currentToolName] ?? 0 });
+    ctx.worldWorker.init({
+      creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue,
+      tool: TOOL_IDS[ctx.currentToolName] ?? 0, creatureNaturalSpawning: ctx.debugHitboxes,
+    });
+    applyCreatureRuntimePolicy(ctx);
   }
   const ro = new ResizeObserver(lifecycle.fit);
   ro.observe(container);
@@ -291,6 +295,7 @@ export function createSandGame(container, opts = {}) {
       ctx.debugHitboxes = !!on;
       ctx.engine?.glSetDebugHitboxes(ctx.debugHitboxes);
       applyCreatureRuntimePolicy(ctx);
+      ctx.worldWorker?.config({ creatureNaturalSpawning: ctx.debugHitboxes });
     },
     inputKey(code, on) { ctx.engine?.inputKey(code | 0, on ? 1 : 0); },
     // Survival inventory intents. When connected as a client they go to the

@@ -97,9 +97,6 @@ try {
   await page.waitForTimeout(350);
   const after = await page.evaluate(() => window.__sandTest.materialCount(1));
   check('worker-owned creative paint reaches the render mirror', after > target.before, `${target.before} -> ${after}`);
-  const movedFox = await page.evaluate((id) => window.__sandTest.getCreatures().find((c) => c.id === id), foxAfter.creature.id);
-  check('egg-spawned creature keeps simulating after selecting another tool',
-    movedFox && Math.hypot(movedFox.x - foxAfter.creature.x, movedFox.y - foxAfter.creature.y) > 0.1);
   if (after <= target.before) console.log('  worker input debug', await page.evaluate(() => window.__sandPerf()));
   const fallingHash0 = await page.evaluate(() => window.__sandTest.gridHash());
   await page.waitForTimeout(350);
@@ -107,6 +104,10 @@ try {
   check('world keeps advancing after a replication packet is consumed', fallingHash1 !== fallingHash0, `${fallingHash0} -> ${fallingHash1}`);
   const clocks = await page.evaluate(() => { const p = window.__sandPerf(); return [p.mirrorWorldTick, p.worldTick]; });
   check('render mirror follows the worker world clock for live lighting', clocks[0] === clocks[1] && clocks[0] > 0, `${clocks[0]} / ${clocks[1]}`);
+  await page.waitForTimeout(900); // exceed queued mirror packets; prove the worker kept advancing the actor
+  const movedFox = await page.evaluate((id) => window.__sandTest.getCreatures().find((c) => c.id === id), foxAfter.creature.id);
+  check('egg-spawned creature keeps simulating after selecting another tool',
+    movedFox && Math.hypot(movedFox.x - foxAfter.creature.x, movedFox.y - foxAfter.creature.y) > 0.1);
 
   // Component drafts are non-grid state, so verify their explicit preview mirror
   // and the worker-owned finalize edge separately.

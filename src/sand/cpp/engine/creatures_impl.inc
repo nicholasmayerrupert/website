@@ -423,6 +423,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
 
 void CreatureSystem::moveFlying(Creature& c) {
   const CreatureSpecies& s = species(c);
+  const bool submerged = fluidCoverage(c.wx, c.wy, s.w, s.h) > 0;
   double tx = 0, ty = 0;
   bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   double phase = (E.actorTick + c.id * 43) * 0.025;
@@ -430,7 +431,8 @@ void CreatureSystem::moveFlying(Creature& c) {
   double desiredY = hasTarget ? ty - (c.wy + s.h * 0.5) : std::sin(phase * 0.71 + c.id) * 0.55;
   int surface = E.terrain.genSurfaceAbs((int)std::floor(c.wx + s.w * 0.5));
   double altitude = surface - (c.wy + s.h);
-  if (altitude < 8) desiredY = -1;
+  if (submerged) { desiredX *= 0.25; desiredY = -1; }
+  else if (altitude < 8) desiredY = -1;
   else if (altitude > 52) desiredY = 1;
   double d = std::sqrt(desiredX * desiredX + desiredY * desiredY); if (d < 1e-6) d = 1;
   desiredX = desiredX / d * s.swimSpeed; desiredY = desiredY / d * s.swimSpeed;
@@ -442,7 +444,9 @@ void CreatureSystem::moveFlying(Creature& c) {
     while (moved < mag - 1e-6) {
       double step = std::min(0.25, mag - moved), nx = c.wx, ny = c.wy;
       if (xAxis) nx = pos + dir * step; else ny = pos + dir * step;
-      if (boxHitsSolid(nx, ny, s.w, s.h) || boxTouchesLiquid(nx, ny, s.w, s.h)) return false;
+      // Water is an entry barrier for a flying bird, but not an exit barrier.
+      // If water engulfs one, let it climb through the fluid until clear.
+      if (boxHitsSolid(nx, ny, s.w, s.h) || (!submerged && boxTouchesLiquid(nx, ny, s.w, s.h))) return false;
       pos += dir * step; moved += step;
     }
     return true;

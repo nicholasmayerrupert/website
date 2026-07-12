@@ -288,6 +288,7 @@ export function initSandWasm() {
         creatureCount: c('engine_creature_count', 'number', ['number']),
         creatureSnapshot: c('engine_creature_snapshot', 'number', ['number']),
         creatureSnapshotPtr: c('engine_creature_snapshot_ptr', 'number', ['number']),
+        setMirrorCreatures: c('engine_set_mirror_creatures', null, ['number', 'number', 'number', 'number', 'number']),
         setSurvivalInventory: c('engine_set_survival_inventory', null, ['number', 'number']),
         setCreatureRuntime: c('engine_set_creature_runtime', null, ['number', 'number', 'number']),
         seedStarterTools: c('engine_seed_starter_tools', null, ['number', 'number']),
@@ -417,7 +418,7 @@ export function createEngineWasm({
   // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
-  let mirrorDraftPtr = 0, mirrorDraftCap = 0;
+  let mirrorDraftPtr = 0, mirrorDraftCap = 0, mirrorCreaturePtr = 0, mirrorCreatureCap = 0;
   const glScratch = (floats) => {
     if (floats > glScratchCap) {
       if (glScratchPtr) mod._free(glScratchPtr);
@@ -691,7 +692,7 @@ export function createEngineWasm({
     getActorTick() { return M.actorTick(ptr); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
-    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
+    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
 
     // Component drafts + seeds. One material-parameterized draft set; the
     // per-material method names remain for the tests/tools that use them.
@@ -897,6 +898,22 @@ export function createEngineWasm({
         };
       }
       return out;
+    },
+    getCreatureSnapshotData() {
+      const n = M.creatureSnapshot(ptr);
+      if (!n) return new Float32Array();
+      return Float32Array.from(new Float32Array(mod.HEAPF32.buffer, M.creatureSnapshotPtr(ptr), n * STRIDES.creatureSnapshot));
+    },
+    setMirrorCreatures(data, sourceOffsetX, sourceOffsetY) {
+      const values = data instanceof Float32Array ? data : new Float32Array(data || 0);
+      if (values.length % STRIDES.creatureSnapshot) throw new Error('invalid creature mirror snapshot');
+      if (values.length > mirrorCreatureCap) {
+        if (mirrorCreaturePtr) mod._free(mirrorCreaturePtr);
+        mirrorCreatureCap = Math.max(values.length, mirrorCreatureCap * 2, STRIDES.creatureSnapshot * 8);
+        mirrorCreaturePtr = mod._malloc(mirrorCreatureCap * 4);
+      }
+      if (values.length) mod.HEAPF32.set(values, mirrorCreaturePtr >> 2);
+      M.setMirrorCreatures(ptr, mirrorCreaturePtr, values.length / STRIDES.creatureSnapshot, sourceOffsetX | 0, sourceOffsetY | 0);
     },
     getPlayerActionCount() { return M.playerActionCount(ptr); },
     // Prediction: step one player's physics without the world sim; snap a player

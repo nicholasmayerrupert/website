@@ -22,6 +22,20 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 check('roster is exactly two water, two land, two cave, and one bird species',
   Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD');
 
+// A bird may be engulfed by newly placed/falling water. Water blocks normal
+// flight entry, but a submerged bird must climb back through it instead of
+// bouncing forever inside the same wet cells.
+{
+  const e = mk();
+  const bird = e.spawnCreature(CREATURE.BIRD, 70, 42);
+  waterBox(e, 55, 30, 90, 70);
+  e.setCreatureRuntime(true, false);
+  actors(e, 180);
+  const escaped = byId(e, bird);
+  check(`submerged bird escapes above water (y ${escaped?.y.toFixed(1)})`, escaped && escaped.y + escaped.h < 31);
+  e.destroy();
+}
+
 // Manual/scripted creatures count toward the population, but are not rejected
 // by it. Once they take the active count to the cap, natural spawning pauses.
 {

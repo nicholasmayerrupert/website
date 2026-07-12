@@ -7,8 +7,8 @@ the **input policy**, tool/pointer semantics, and world streaming all run in C++
 compiled to WebAssembly. JavaScript is a thin browser shell: it sizes the canvas,
 runs the RAF with separate actor/world clocks, forwards raw DOM events (keys/pointer/resize) to the
 engine, and carries worker/WebSocket transport. In offline creative mode a
-dedicated worker owns cellular simulation, streaming, and tool writes; the main
-thread keeps a render-only WASM mirror and applies one backpressured diff per RAF.
+  dedicated worker owns cellular simulation, creative creatures, streaming, and tool writes; the main
+  thread keeps a render-only WASM mirror and applies backpressured world diffs plus creature snapshots.
 It no longer touches
 pixels or owns the camera. The whole thing ships as a framework-free
 `<sand-game>` Web Component; a tiny React wrapper mounts that element on this site.
@@ -95,7 +95,8 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 - `worker/` — the offline creative world runner and its main-thread client. The
   worker sends a full RLE snapshot only for initialization, resize, or streaming;
   ordinary turns send accumulated diffs with one packet in flight. The main
-  render mirror deliberately skips component reconstruction. Survival actors and
+  render mirror deliberately skips component reconstruction; creative creatures
+  run beside rigid bodies in the worker and mirror compact render records. Survival actors and
   multiplayer remain on their existing authoritative paths.
 - `embed/sandGame.js` — the `<sand-game>` Web Component: a shadow root holding the
   sim canvas + the vanilla palette. Drop-in for any page (`<script type=module>` +
@@ -158,9 +159,10 @@ inside your own body) lives in `cpp/engine/player.inc`.
 
 ## Creatures
 
-Survival mode and the `/fps` diagnostics route have non-grid creatures simulated by `CreatureSystem`
-(`cpp/engine/creatures.hpp` + `creatures_impl.inc`) on the same deterministic
-actor clock as players and items. The species exercise reusable habitat and
+Non-grid creatures are simulated by `CreatureSystem` (`cpp/engine/creatures.hpp`
++ `creatures_impl.inc`). Survival uses the main deterministic actor clock beside
+players and items; offline creative uses the world worker so creatures and rigid
+bodies share one physics instance, then mirrors creature render records. The species exercise reusable habitat and
 locomotion combinations across a deliberately small seven-species roster:
 minnows and pike in water; foxes and hares on land; crawlers and moles in caves;
 and one bird species in the air. Pike select the nearest prey creature and then

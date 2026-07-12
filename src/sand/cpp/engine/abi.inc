@@ -221,6 +221,20 @@ EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int ra
 EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_creature_snapshot(Engine* e) { return e->creatures.buildCreatureSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_creature_snapshot_ptr(Engine* e) { return e->creatures.snapshot.data(); }
+EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, int count, int sourceOffsetX, int sourceOffsetY) {
+  e->creatures.creatures.clear();
+  e->creatures.creatures.reserve(imax(0, count));
+  for (int i = 0; i < count; i++) {
+    const float* in = data + i * CSN_STRIDE;
+    int species = (int)in[CSN_SPECIES]; if (species < 0 || species >= CS_COUNT) continue;
+    Creature c;
+    c.id = (int)in[CSN_ID]; c.species = (uint8_t)species;
+    c.wx = sourceOffsetX + in[CSN_X]; c.wy = sourceOffsetY + in[CSN_Y];
+    c.vx = in[CSN_VX]; c.vy = in[CSN_VY]; c.facing = (int)in[CSN_FACING];
+    c.health = (int)in[CSN_HEALTH]; c.alive = in[CSN_ALIVE] != 0; c.animFrame = (uint8_t)in[CSN_ANIM_FRAME];
+    e->creatures.creatures.push_back(c);
+  }
+}
 
 // survival inventory (inventory.inc): authoritative per-player stacks. JS reads the
 // snapshot for the HUD and forwards slot-select / move / place intents.

@@ -1,4 +1,5 @@
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
+import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
 
 const WORLD_STEP_MS = 16;
 const STREAM_MARGIN = 40;
@@ -12,6 +13,8 @@ let control = null;
 let edges = [];
 let creativeKind = 0;
 let creativeValue = 0;
+let creatureNaturalSpawning = false;
+let creatureSimulationRequested = false;
 let workerButtons = 0;
 let paused = false;
 let draftRevision = 0;
@@ -25,6 +28,7 @@ let controlsReceived = 0;
 let edgesProcessed = 0;
 let toolWrites = 0;
 let resizeId = 0;
+let mirroredCreatures = false;
 
 const postBytes = (message, bytes) => {
   const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -46,6 +50,21 @@ function postDraft() {
   lastDraftSignature = signature;
   const data = cells.buffer;
   self.postMessage({ type: 'draft', epoch, revision: ++draftRevision, material: creativeValue, data }, [data]);
+}
+
+function postCreatures() {
+  const creatures = engine.getCreatureSnapshotData();
+  if (!creatures.length && !mirroredCreatures) return;
+  mirroredCreatures = creatures.length > 0;
+  const data = creatures.buffer;
+  self.postMessage({
+    type: 'creatures', worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(), data,
+  }, [data]);
+}
+
+function applyCreatureRuntime() {
+  if (creativeKind === CREATIVE_KIND.CREATURE) creatureSimulationRequested = true;
+  engine.setCreatureRuntime(creatureNaturalSpawning || creatureSimulationRequested, creatureNaturalSpawning);
 }
 
 function postFull(reason) {
@@ -135,6 +154,7 @@ function run() {
   // The DEV delay hook isolates scheduling without burning a browser CPU core;
   // normal production turns always execute the real WASM world step here.
   if (artificialDelayMs <= 0) engine.stepWorld();
+  engine.stepActors();
   lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
   rateSteps++;
   if (started - lastStatsPost >= 250) {
@@ -142,6 +162,7 @@ function run() {
     self.postMessage({ type: 'stats', worldTick: engine.getTick(), perf: perf(), epoch, sequence });
   }
   postDraft();
+  postCreatures();
   if (shifted) {
     epoch++;
     sequence = 0;
@@ -168,11 +189,14 @@ self.onmessage = async ({ data }) => {
     engine.setDrawMode(!!data.drawMode);
     creativeKind = data.creativeKind | 0;
     creativeValue = data.creativeValue | 0;
+    creatureNaturalSpawning = !!data.creatureNaturalSpawning;
+    creatureSimulationRequested = false;
     engine.setCreativeMaterial(creativeKind, creativeValue);
+    applyCreatureRuntime();
     // Preserve the selected startup tool. The initial creative selection is an
     // EMPTY placeholder until the palette emits a real material selection.
     engine.setTool(data.tool | 0);
-    epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0;
+    epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
     postFull('init');
     schedule();
@@ -196,6 +220,8 @@ self.onmessage = async ({ data }) => {
       creativeValue = data.creativeValue | 0;
       engine.setCreativeMaterial(creativeKind, creativeValue);
     }
+    if (data.creatureNaturalSpawning !== undefined) creatureNaturalSpawning = !!data.creatureNaturalSpawning;
+    if (data.creativeKind !== undefined || data.creatureNaturalSpawning !== undefined) applyCreatureRuntime();
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;

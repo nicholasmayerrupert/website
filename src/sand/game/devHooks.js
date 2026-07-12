@@ -108,7 +108,7 @@ export function installDevHooks(ctx, {
       if (p && engine()) { engine().setPlayerState(p.id, { ...p, ...state }); render(false); }
     },
     getCreatures() { return engine() ? engine().getCreatures() : []; },
-    setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); applyCreatureRuntimePolicy(ctx); render(false); },
+    setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); applyCreatureRuntimePolicy(ctx); ctx.worldWorker?.config({ creatureNaturalSpawning: ctx.debugHitboxes }); render(false); },
     setSkyLight(v) { engine()?.setSkyLight(v | 0); render(true); },
     actorLight(x, y, w, h) { return engine()?.glActorLight(x, y, w, h) ?? 1; },
     renderedPlayers() { return playersForRender(); },

@@ -4,6 +4,7 @@ export function createWorldWorkerClient(ctx) {
   const worker = new WorldWorker();
   let pending = null;
   let pendingDraft = null;
+  let pendingCreatures = null;
   let lastControl = '';
   let resizeTimer = 0;
   let resizeId = 0;
@@ -30,6 +31,8 @@ export function createWorldWorkerClient(ctx) {
       };
     } else if (data.type === 'draft') {
       pendingDraft = data;
+    } else if (data.type === 'creatures') {
+      pendingCreatures = data;
     } else if (data.type === 'stats') {
       state = {
         ...state, worldTick: data.worldTick ?? state.worldTick,
@@ -50,10 +53,10 @@ export function createWorldWorkerClient(ctx) {
   };
 
   const api = {
-    init({ creativeKind = 0, creativeValue = 0, tool = 0 } = {}) {
+    init({ creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false } = {}) {
       worker.postMessage({
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-        drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue,
+        drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning,
       });
     },
     updateControl() {
@@ -96,6 +99,11 @@ export function createWorldWorkerClient(ctx) {
         ctx.engine?.setMirrorDraft(cells, pendingDraft.material);
         pendingDraft = null;
         ctx.previewDirty = true;
+        changed = true;
+      }
+      if (pendingCreatures && ctx.engine) {
+        ctx.engine.setMirrorCreatures(new Float32Array(pendingCreatures.data), pendingCreatures.worldOffsetX, pendingCreatures.worldOffsetY);
+        pendingCreatures = null;
         changed = true;
       }
       if (!pending || !ctx.engine) return changed;

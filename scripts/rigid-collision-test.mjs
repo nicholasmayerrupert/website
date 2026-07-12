@@ -277,7 +277,74 @@ for (const dt of [16, 8, 33, 50]) {
   e._setBodyMotion(body, 2.5, 0, 0);
   run(e, 18);
   const c = e.getCreatures().find((x) => x.id === creature);
-  check(`moving body pushed creature sideways (x ${c?.x.toFixed(2)})`, c && c.x > 106);
+  const pushedBody = e._bodyState(body);
+  check(`moving body kept creature ahead of its leading face (body ${pushedBody?.px.toFixed(2)}, creature ${c?.x.toFixed(2)})`,
+    c && pushedBody && c.x >= pushedBody.px + 1.9);
+  e.destroy();
+}
+
+// Contact resolution uses the cells touching the actor, not the body's global
+// bounds. An L shape's long remote leg must not teleport a creature to the far
+// side when its short horizontal arm lands on it.
+{
+  console.log('irregular falling body nudges rather than launches a creature');
+  const e = mk();
+  const creature = e.spawnCreature(6, 104, 60); // bird held in open air; world-only steps below
+  const cells = hbarCells(80, 40, 31);
+  for (let y = 41; y <= 78; y++) cells.push([80, y]);
+  const body = e._bodyCount();
+  e.spawnBody(cells);
+  e._setBodyMotion(body, 0, 2.5, 0);
+  run(e, 8);
+  const c = e.getCreatures().find((x) => x.id === creature);
+  check(`contact-local push stays small (y ${c?.y.toFixed(2)})`, c && c.y > 60 && c.y < 75);
+  e.destroy();
+}
+
+// A creature pinned against terrain stays in the crush overlap. It must not be
+// ejected through an unrelated free side; the normal engulfment damage owns the
+// resulting suffocation.
+{
+  console.log('pinned creature is crushed instead of teleported');
+  const e = mk();
+  stoneRect(e, 0, 130, COLS - 1, ROWS - 1);
+  stoneRect(e, 113, 105, 116, 129); e.syncComponents();
+  e.setCreatureRuntime(true, false);
+  const creature = e.spawnCreature(3, 107, 127);
+  const body = e._bodyCount();
+  e.spawnBox(98, 126, 4, 4, RIGID);
+  e._setBodyMotion(body, 2.5, 0, 0);
+  run(e, 8);
+  const pinned = e.getCreatures().find((x) => x.id === creature);
+  const healthBefore = pinned?.health;
+  for (let i = 0; i < 140; i++) e.stepActors();
+  const crushed = e.getCreatures().find((x) => x.id === creature);
+  check(`pinned creature was not ejected vertically (y ${pinned?.y.toFixed(2)})`, pinned && pinned.y > 125);
+  check(`pinned creature suffocates in the overlap (${healthBefore} -> ${crushed?.health})`,
+    crushed && crushed.health < healthBefore);
+  e.destroy();
+}
+
+// True head-on case: drop a body onto a creature standing on a solid floor and
+// interleave world/actor clocks exactly like the creative worker. The impact
+// velocity remains downward even after the floor solver removes final motion.
+{
+  console.log('body dropped on a creature crushes it in place');
+  const e = mk();
+  stoneRect(e, 0, 130, COLS - 1, ROWS - 1);
+  stoneRect(e, 102, 96, 103, 129); stoneRect(e, 111, 96, 112, 129); e.syncComponents();
+  e.setCreatureRuntime(true, false);
+  const creature = e.spawnCreature(2, 104, 126); // fox standing on the floor
+  e.spawnBox(104, 106, 7, 5, RIGID);
+  let t = 0, maxDx = 0;
+  for (let i = 0; i < 90; i++) {
+    t += 16; e.step(t); e.stepActors();
+    const c = e.getCreatures().find((x) => x.id === creature);
+    if (c) maxDx = Math.max(maxDx, Math.abs(c.x - 104));
+  }
+  const crushed = e.getCreatures().find((x) => x.id === creature);
+  check(`head-on impact does not eject creature sideways (max dx ${maxDx.toFixed(2)})`, maxDx < 1.0);
+  check(`head-on impact suffocates creature in place (health ${crushed?.health})`, crushed && crushed.health < 42);
   e.destroy();
 }
 

@@ -87,6 +87,32 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// 2c. Infinite-world edge support keeps streamed terrain stable, but must not
+//     ground buoyant ice. Large hand-built icebergs commonly extend through a
+//     loaded-window edge; they must continue floating while still edge-connected.
+{
+  console.log('edge-spanning iceberg remains buoyant (infinite)');
+  const e = mk({ infinite: true });
+  e.setBgEnabled(false);
+  const wallX = 100, floorY = 110;
+  for (let y = 20; y <= floorY; y++) e.paintDisc(wallX, y, 0, MAT.BRICK, true);
+  for (let x = 1; x <= wallX; x++) e.paintDisc(x, floorY, 0, MAT.BRICK, true);
+  e.syncComponents();
+  for (let y = 35; y < floorY; y++) for (let x = 1; x < wallX; x++) e.paintDisc(x, y, 0, MAT.BRINE, true);
+  for (let y = 80; y <= 86; y++) for (let x = 1; x <= 40; x++) e.paintDisc(x, y, 0, MAT.ICE, true);
+  e.syncComponents();
+  const iceTop = () => {
+    const g = e.getGrid(); let top = ROWS, n = 0;
+    for (let i = 0; i < g.length; i++) if (g[i] === MAT.ICE) { top = Math.min(top, (i / COLS) | 0); n++; }
+    return { top, n };
+  };
+  const before = iceTop();
+  run(200, e);
+  const after = iceTop();
+  check(`edge-spanning iceberg rose (top ${before.top} -> ${after.top})`, before.n === 280 && after.n === before.n && after.top < before.top - 8);
+  e.destroy();
+}
+
 // 3. fire next to water makes steam.
 {
   console.log('reactions');

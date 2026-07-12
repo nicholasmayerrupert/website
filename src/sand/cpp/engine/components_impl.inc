@@ -81,16 +81,18 @@ void ComponentSystem::computeRigidGrounded() {
   int floorBase = (E.rows - 1) * E.cols;
   for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isRigidMaterialClass(g[k]) && E.isBearingMaterial(g[k])) groundRigidAt(k, x); }
   // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
-  // UNLOADED world that may itself be grounded. A rigid cell touching such an edge is
-  // assumed supported, so a structure whose real floor-contact has streamed off the
-  // buffer does not spuriously fall (it reconnects when the region streams back in).
+  // UNLOADED world that may itself be grounded. A non-ice rigid cell touching such an
+  // edge is assumed supported, so terrain whose real floor-contact has streamed off
+  // the buffer does not spuriously fall. Ice must remain mobile: large icebergs often
+  // span a loaded-window edge, and grounding the edge cell disables buoyancy for the
+  // whole connected iceberg (even after most of it is erased).
   if (lay->infinite) {
     for (int y = 1; y < E.rows; y++) {
-      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl])) groundRigidAt(kl, 1);
-      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr])) groundRigidAt(kr, E.cols - 2);
+      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl]) && !E.isIceComponentMaterial(g[kl])) groundRigidAt(kl, 1);
+      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) groundRigidAt(kr, E.cols - 2);
     }
     int topBase = E.cols; // row y = 1
-    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k])) groundRigidAt(k, x); }
+    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k]) && !E.isIceComponentMaterial(g[k])) groundRigidAt(k, x); }
   }
   int gridLen = E.cols * E.rows;
   while (sp > 0) {
@@ -112,6 +114,9 @@ void ComponentSystem::computeRigidGrounded() {
         if (!ox && !oy) continue;
         int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
         int nk = rb + ox;
+        // x=0/cols-1 are artificial infinite-world sentinel walls. They keep
+        // media in the loaded window, but must not anchor an adjacent iceberg.
+        if (lay->infinite && (kx == 0 || kx == E.cols - 1) && E.isIceComponentMaterial(g[nk])) continue;
         if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundRigidAt(nk, nx);
       }
     }
@@ -355,11 +360,11 @@ void ComponentSystem::computeGrounded() {
     for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isBearingMaterial(g[k])) groundCellAt(k, x); }
     if (lay->infinite) {
       for (int y = 1; y < E.rows; y++) {
-        int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl])) groundCellAt(kl, 1);
-        int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr])) groundCellAt(kr, E.cols - 2);
+        int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl]) && !E.isIceComponentMaterial(g[kl])) groundCellAt(kl, 1);
+        int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) groundCellAt(kr, E.cols - 2);
       }
       int topBase = E.cols;
-      for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k])) groundCellAt(k, x); }
+      for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k]) && !E.isIceComponentMaterial(g[k])) groundCellAt(k, x); }
     }
     for (int y = E.rows - 2; y > 0; y--) {
       int rb = y * E.cols;
@@ -381,6 +386,7 @@ void ComponentSystem::computeGrounded() {
             if (!ox && !oy) continue;
             int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
             int nk = rb + ox;
+            if (lay->infinite && (kx == 0 || kx == E.cols - 1) && E.isIceComponentMaterial(g[nk])) continue;
             if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundCellAt(nk, nx);
           }
         }

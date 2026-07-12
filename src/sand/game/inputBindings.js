@@ -6,8 +6,10 @@
 // createSandGame.js. attach()/detach() bind and unbind every listener.
 
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
+import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
 
 export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onToggleInventory, onToggleFootprintMenu }) {
+  const mainOwnsCreativeTool = () => ctx.creativeKind === CREATIVE_KIND.CREATURE;
   // ctx.mouseButtons: bit 0 = LMB, bit 1 = RMB (drives player primary/secondary).
   // It is the AUTHORITATIVE held-button state and it is owned by the
   // pointerdown/pointerup EDGES, not by per-move `e.buttons`. Real
@@ -74,7 +76,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (!ctx.inside) return;
     if (e.button === 0 || e.button === 2) {
       if (ctx.playMode) { ctx.previewDirty = true; e.preventDefault(); return; } // player builds/mines via input bits
-      if (ctx.worldWorker) { ctx.worldWorker.edge('down', e.button); e.preventDefault(); return; }
+      if (ctx.worldWorker && !mainOwnsCreativeTool()) { ctx.worldWorker.edge('down', e.button); e.preventDefault(); return; }
       if (ctx.engine.pointerDownAtAim(e.button)) ctx.previewDirty = true;
       e.preventDefault();
     }
@@ -86,7 +88,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     // buttons stay latched until their own pointerup (or blur/cancel).
     ctx.mouseButtons &= ~(BUTTON_BITS[e.button] || 0);
     updatePointer(e.clientX, e.clientY);
-    if (!ctx.playMode && ctx.worldWorker) {
+    if (!ctx.playMode && ctx.worldWorker && !mainOwnsCreativeTool()) {
       ctx.worldWorker.edge('up', e.button);
       e.preventDefault();
       return;

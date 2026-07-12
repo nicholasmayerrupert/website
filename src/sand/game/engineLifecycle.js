@@ -7,6 +7,7 @@
 
 import { createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { SIZING, TOOL_IDS } from './runtimeConfig';
+import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
 import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
 
 export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
@@ -43,12 +44,14 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     e.glInit(canvas);                                // WebGL2 context on our canvas
     e.glResize(canvas.width, canvas.height);
     e.setTool(TOOL_IDS[ctx.currentToolName] ?? 0);   // re-apply the selected tool
+    e.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
     e.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
     e.setPlayMode(ctx.playMode);
     e.setDrawMode(ctx.drawModeOn);
     e.glSetFlags(ctx.gutterOn, ctx.snapOff);
     e.glSetDebugHitboxes(ctx.debugHitboxes);
     e.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes);
+    if (!ctx.survival && !ctx.debugHitboxes && ctx.creativeKind === CREATIVE_KIND.CREATURE) e.setCreatureSimulationEnabled(true);
     if (ctx.survival) e.setSurvivalInventory(true);  // mining->drops->inventory
     ctx.forceFullRender = true;
     ctx.previewDirty = false;

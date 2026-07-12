@@ -135,7 +135,11 @@ export function installDevHooks(ctx, {
     draftCount() { return engine()?.getStoneDraftCells().length || 0; },
     setTool(name) { ctx.currentToolName = name; engine()?.setTool(TOOL_IDS[name] ?? 0); ctx.worldWorker?.config({ tool: TOOL_IDS[name] ?? 0 }); },
     setDrawMode(v) { ctx.drawModeOn = !!v; engine()?.setDrawMode(ctx.drawModeOn); ctx.worldWorker?.config({ drawMode: ctx.drawModeOn }); },
-    setCreativeMaterial(kind, value) { engine()?.setCreativeMaterial(kind, value); ctx.worldWorker?.config({ creativeKind: kind | 0, creativeValue: value | 0 }); },
+    setCreativeMaterial(kind, value) {
+      ctx.creativeKind = kind | 0; ctx.creativeValue = value | 0;
+      engine()?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
+      ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
+    },
     setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },
     addInventory(material, count) { return ctx.localPlayerId && engine() ? engine().addToInventory(ctx.localPlayerId, material | 0, count | 0) : false; },
     getInventory() { return ctx.localPlayerId && engine() ? engine().getInventory(ctx.localPlayerId) : { slots: [], selected: 0 }; },

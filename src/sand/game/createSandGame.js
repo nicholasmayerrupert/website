@@ -35,6 +35,7 @@ import { createGameLoop } from './gameLoop';
 import { createNetGlue } from './netGlue';
 import { installDevHooks } from './devHooks';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
+import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -285,7 +286,13 @@ export function createSandGame(container, opts = {}) {
     getDrawMode() { return ctx.drawModeOn; },
     setPlayMode(on) { ctx.playMode = !!on; ctx.engine?.setPlayMode(ctx.playMode); },
     getPlayMode() { return ctx.playMode; },
-    setDebugHitboxes(on) { ctx.debugHitboxes = !!on; ctx.engine?.glSetDebugHitboxes(ctx.debugHitboxes); ctx.engine?.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes); },
+    setDebugHitboxes(on) {
+      ctx.debugHitboxes = !!on;
+      ctx.engine?.glSetDebugHitboxes(ctx.debugHitboxes);
+      ctx.engine?.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes);
+      if (!ctx.survival && !ctx.debugHitboxes && ctx.creativeKind === CREATIVE_KIND.CREATURE)
+        ctx.engine?.setCreatureSimulationEnabled(true);
+    },
     inputKey(code, on) { ctx.engine?.inputKey(code | 0, on ? 1 : 0); },
     // Survival inventory intents. When connected as a client they go to the
     // authoritative server; offline they apply to the local engine.
@@ -336,11 +343,12 @@ export function createSandGame(container, opts = {}) {
         max: SIZING.zoomInMax ?? 8,
       };
     },
-    // Creative palette selection (kind: 0=material,1=seed,2=eraser,3=cube).
+    // Creative palette selection (material/seed/eraser/cube/creature).
     setCreativeMaterial(kind, value) {
       ctx.creativeKind = kind | 0;
       ctx.creativeValue = value | 0;
       ctx.engine?.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
+      if (ctx.creativeKind === CREATIVE_KIND.CREATURE) ctx.engine?.setCreatureSimulationEnabled(true);
       ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
     },
     // Live performance snapshot for the on-screen perf HUD (the /fps route).

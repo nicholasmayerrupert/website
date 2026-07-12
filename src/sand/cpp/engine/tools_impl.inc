@@ -614,6 +614,9 @@ void ToolSystem::setCreativeMaterial(int kind, int value) {
     case CK_SEED: creativeMode = CM_SEED; creativeSeed = (uint8_t)value; break;
     case CK_ERASER: creativeMode = CM_ERASE; break;
     case CK_CUBE: creativeMode = CM_CUBE; break;
+    case CK_CREATURE:
+      if (value >= 0 && value < CS_COUNT) { creativeMode = CM_CREATURE; creativeCreature = (uint8_t)value; }
+      break;
   }
 }
 
@@ -683,6 +686,13 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
     case CM_SEED:
     case CM_MYCELIUM_SPORE: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
     case CM_CUBE: E.spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial); break; // RIGID by default; a selected stone/ice/TNT solid spawns a material body that bakes/explodes
+    case CM_CREATURE: {
+      const CreatureSpecies& s = CREATURE_SPECIES[creativeCreature];
+      double wx = E.fg.worldOffsetX + cx - s.w * 0.5;
+      double wy = E.fg.worldOffsetY + cy - s.h * 0.5;
+      E.creatures.spawnCreature(creativeCreature, wx, wy, false);
+      break;
+    }
     default: break;
   }
   E.useLayer(&E.fg);

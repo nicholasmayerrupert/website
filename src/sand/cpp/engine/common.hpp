@@ -5,6 +5,7 @@
 #include <cstring>
 #include <climits>
 #include <cmath>
+#include <array>
 #include <vector>
 #include <unordered_set>
 #include <unordered_map>
@@ -319,7 +320,7 @@ static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
 // any seed species, the eraser, or the cube; the brush routes by mode rather than a
 // fixed per-material Tool enum. PAINT = powder/liquid/gas (continuous), DRAFT = a
 // component material drawn with a live preview then dropped on release.
-enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_MYCELIUM_SPORE, CM_ERASE, CM_CUBE };
+enum CreativeMode : uint8_t { CM_PAINT = 0, CM_DRAFT, CM_SEED, CM_MYCELIUM_SPORE, CM_ERASE, CM_CUBE, CM_CREATURE };
 // enum CreativeKind (what engine_set_creative_material's kind refers to) lives
 // in abi.generated.hpp.
 

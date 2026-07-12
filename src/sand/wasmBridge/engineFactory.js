@@ -290,6 +290,7 @@ export function initSandWasm() {
         creatureSnapshotPtr: c('engine_creature_snapshot_ptr', 'number', ['number']),
         setSurvivalInventory: c('engine_set_survival_inventory', null, ['number', 'number']),
         setCreaturesEnabled: c('engine_set_creatures_enabled', null, ['number', 'number']),
+        setCreatureSimulationEnabled: c('engine_set_creature_simulation_enabled', null, ['number', 'number']),
         seedStarterTools: c('engine_seed_starter_tools', null, ['number', 'number']),
         addToInventory: c('engine_add_to_inventory', 'number', ['number', 'number', 'number', 'number']),
         setSelectedSlot: c('engine_set_selected_slot', null, ['number', 'number', 'number']),
@@ -800,6 +801,7 @@ export function createEngineWasm({
     // the HUD; the rest forward slot intents.
     setSurvivalInventory(on) { M.setSurvivalInventory(ptr, on ? 1 : 0); },
     setCreaturesEnabled(on) { M.setCreaturesEnabled(ptr, on ? 1 : 0); },
+    setCreatureSimulationEnabled(on) { M.setCreatureSimulationEnabled(ptr, on ? 1 : 0); },
     seedStarterTools(id) { M.seedStarterTools(ptr, id | 0); },
     addToInventory(id, material, count) { return M.addToInventory(ptr, id | 0, material | 0, count | 0) === 1; },
     setSelectedSlot(id, slot) { M.setSelectedSlot(ptr, id | 0, slot | 0); },

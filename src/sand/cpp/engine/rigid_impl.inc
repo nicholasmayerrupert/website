@@ -645,6 +645,81 @@ bool RigidBodySystem::depenetrateBodyRaster(Body* b, double prePx, double prePy,
   for (double lift = st; lift <= maxLift + 1e-9; lift += st) { b->py = newPy - lift; if (bodyFootprintBlocked(b) <= tol) { if (b->vy > 0) b->vy = 0; b->awake = true; b->stillTicks = 0; return true; } }
   b->px = newPx; b->py = newPy; b->angle = newAngle; return false;
 }
+
+// Free bodies are grid entities while players/creatures are AABBs, so the rigid
+// solver cannot see them as ordinary contacts. Resolve body->actor overlap here,
+// while body cells are temporarily absent from the grid: push in the body's
+// travel direction, then try the shortest free side. If terrain pins the actor
+// on every side, restore the body to its pre-step pose instead of tunnelling.
+bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, double preAngle) {
+  int minX = E.cols, minY = E.rows, maxX = -1, maxY = -1;
+  std::vector<std::pair<int, int>> raster;
+  forEachBodyCell(b, [&](int x, int y) {
+    raster.push_back({x, y});
+    minX = imin(minX, x); minY = imin(minY, y); maxX = imax(maxX, x); maxY = imax(maxY, y);
+  });
+  if (raster.empty()) return true;
+  auto overlaps = [&](double ax, double ay, int aw, int ah) {
+    double ax1 = ax + aw, ay1 = ay + ah;
+    for (const auto& cell : raster)
+      if (ax < cell.first + 1 && ax1 > cell.first && ay < cell.second + 1 && ay1 > cell.second) return true;
+    return false;
+  };
+  double dx = b->px - prePx, dy = b->py - prePy;
+  int preferred = std::fabs(dx) >= std::fabs(dy) ? (dx >= 0 ? 1 : 0) : (dy >= 0 ? 3 : 2); // L,R,U,D = 0..3
+  auto pushOne = [&](double& ax, double& ay, int aw, int ah, double& avx, double& avy, bool player) {
+    if (!overlaps(ax, ay, aw, ah)) return true;
+    struct Candidate { double x, y, dist; int side; } c[4] = {
+      {(double)minX - aw - 1e-4, ay, std::fabs(ax - ((double)minX - aw - 1e-4)), 0},
+      {(double)maxX + 1 + 1e-4, ay, std::fabs(((double)maxX + 1 + 1e-4) - ax), 1},
+      {ax, (double)minY - ah - 1e-4, std::fabs(ay - ((double)minY - ah - 1e-4)), 2},
+      {ax, (double)maxY + 1 + 1e-4, std::fabs(((double)maxY + 1 + 1e-4) - ay), 3},
+    };
+    int order[4] = {preferred, 0, 1, 2}; int n = 1;
+    for (int side = 0; side < 4; side++) if (side != preferred) order[n++] = side;
+    std::stable_sort(order + 1, order + 4, [&](int a, int z) { return c[a].dist < c[z].dist; });
+    for (int oi = 0; oi < 4; oi++) {
+      Candidate& q = c[order[oi]];
+      bool blocked = player ? E.psys.playerBoxHits(q.x, q.y, aw, ah)
+                            : E.creatures.boxHitsSolid(E.fg.worldOffsetX + q.x, E.fg.worldOffsetY + q.y, aw, ah);
+      if (blocked || overlaps(q.x, q.y, aw, ah)) continue;
+      ax = q.x; ay = q.y;
+      if (q.side == 0 || q.side == 1) avx = b->vx;
+      else avy = b->vy;
+      return true;
+    }
+    return false;
+  };
+  std::vector<std::array<double, 4>> playerPoses, creaturePoses;
+  playerPoses.reserve(E.psys.players.size()); creaturePoses.reserve(E.creatures.creatures.size());
+  for (const Player& p : E.psys.players) playerPoses.push_back({p.px, p.py, p.vx, p.vy});
+  for (const Creature& c : E.creatures.creatures) creaturePoses.push_back({c.wx, c.wy, c.vx, c.vy});
+  auto stopAndRestore = [&]() {
+    for (size_t i = 0; i < E.psys.players.size(); i++) {
+      Player& p = E.psys.players[i]; p.px = playerPoses[i][0]; p.py = playerPoses[i][1]; p.vx = playerPoses[i][2]; p.vy = playerPoses[i][3];
+    }
+    for (size_t i = 0; i < E.creatures.creatures.size(); i++) {
+      Creature& c = E.creatures.creatures[i]; c.wx = creaturePoses[i][0]; c.wy = creaturePoses[i][1]; c.vx = creaturePoses[i][2]; c.vy = creaturePoses[i][3];
+    }
+    b->px = prePx; b->py = prePy; b->angle = preAngle; b->vx = b->vy = b->omega = 0; b->awake = true; b->stillTicks = 0;
+  };
+  for (Player& p : E.psys.players) {
+    if (!p.active || !p.alive) continue;
+    if (!pushOne(p.px, p.py, p.w, p.h, p.vx, p.vy, true)) {
+      stopAndRestore(); return false;
+    }
+  }
+  for (Creature& c : E.creatures.creatures) {
+    if (!c.alive) continue;
+    const CreatureSpecies& s = E.creatures.species(c);
+    double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
+    if (!pushOne(x, y, s.w, s.h, c.vx, c.vy, false)) {
+      stopAndRestore(); return false;
+    }
+    c.wx = E.fg.worldOffsetX + x; c.wy = E.fg.worldOffsetY + y;
+  }
+  return true;
+}
 // ===== Body material identity & solidify-on-rest =====
 // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
 // real material into the grid; when a NON-RIGID body sleeps it bakes into a normal
@@ -736,11 +811,16 @@ void RigidBodySystem::moveBodies() {
   // bottom body wakes and moves, then the contact solver wakes those above).
   for (Body* b : E.L->bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
   for (int k : E.L->bodyCells) { if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
-  std::unordered_map<int, std::pair<double, double>> prePoses;
-  for (Body* b : E.L->bodies) prePoses[b->id] = {b->px, b->py};
+  std::unordered_map<int, std::array<double, 3>> prePoses;
+  for (Body* b : E.L->bodies) prePoses[b->id] = {b->px, b->py, b->angle};
   rigidStep(1.0);
   rigidRejectedCells = 0; rigidDepenetrations = 0;
-  for (Body* b : E.L->bodies) { auto it = prePoses.find(b->id); bool hp = it != prePoses.end(); double ppx = hp ? it->second.first : 0, ppy = hp ? it->second.second : 0; if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++; }
+  for (Body* b : E.L->bodies) {
+    auto it = prePoses.find(b->id); bool hp = it != prePoses.end();
+    double ppx = hp ? it->second[0] : 0, ppy = hp ? it->second[1] : 0, ppa = hp ? it->second[2] : 0;
+    if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++;
+    if (hp && E.L == &E.fg) pushActorsFromBody(b, ppx, ppy, ppa);
+  }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies into a static component (after depenetrate, which may re-wake it)
   std::vector<int> cells, footprint;
   std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;

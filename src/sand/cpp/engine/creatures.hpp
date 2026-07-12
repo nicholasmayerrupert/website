@@ -113,7 +113,7 @@ class CreatureSystem {
   std::unordered_set<uint64_t> spawnedRegions;
   std::vector<float> snapshot;
   int nextCreatureId = 1;
-  static constexpr int MAX_LOADED_CREATURES = 8;
+  static constexpr int NATURAL_MOB_CAP = 8;
   static constexpr int MIXED_DENSITY_RADIUS = 96;
   static constexpr int MIXED_DENSITY_CAP = 3;
 
@@ -128,7 +128,8 @@ class CreatureSystem {
   int localDensityAll(double wx, double wy, int radius) const;
   bool farEnoughFromPlayers(double wx, double wy, int minDistance) const;
   bool spawnNearFocus(uint8_t speciesId, uint32_t salt);
-  int spawnCreature(uint8_t speciesId, double wx, double wy);
+  int spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat = true);
+  int spawnCreatureNatural(uint8_t speciesId, double wx, double wy);
   bool spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt);
   void spawnRegion(uint8_t speciesId, int regionX, int regionY);
   void updatePopulation();

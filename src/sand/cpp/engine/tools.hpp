@@ -26,7 +26,7 @@ class ToolSystem {
   std::unordered_map<int, std::vector<std::pair<int, int>>> discOffsetCache; // center-first disc offsets per radius
   std::vector<int> draftSnapshot;
   bool drafting = false, draftingSeed = false;
-  uint8_t creativeMode = CM_CUBE, creativeMaterial = STONE, creativeSeed = PT_OAK;
+  uint8_t creativeMode = CM_CUBE, creativeMaterial = STONE, creativeSeed = PT_OAK, creativeCreature = CS_MINNOW;
   uint8_t cubeMaterial = RIGID;  // material the CUBE tool spawns as a free body
   bool hasSeedOrigin = false; int seedOriginX = 0, seedOriginY = 0;
   double lastEmitMs = -1e9;

@@ -185,7 +185,12 @@ Focus-based spawns also exclude the inner half of the current view: along the
 candidate's direction, it must be beyond the halfway point from the player to
 that screen edge (in addition to the species' fixed minimum distance).
 
-Sprites are original four-pose pixel grids drawn by the C++ WebGL compositor,
+Creative mode lists one spawn egg for each species at the bottom of its palette;
+using an egg creates that creature at the pointed world position. Spawn eggs and
+other explicit creation paths are never rejected by population caps; their mobs
+still count toward the active total, pausing only further natural spawning.
+Sprites are
+original four-pose pixel grids drawn by the C++ WebGL compositor,
 with a health bar shown after damage. Player and creature sprite colors sample
 the same computed foreground light field as nearby world cells. Survival mining
 also checks creature hitboxes. Lethal contact damage returns the player to the

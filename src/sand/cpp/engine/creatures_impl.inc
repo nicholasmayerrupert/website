@@ -166,24 +166,32 @@ bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
     Creature probe; probe.species = speciesId; probe.wx = wx; probe.wy = wy;
     if (!inLoadedWindow(probe, 0) || !boxFitsHabitat(speciesId, wx, wy)) continue;
     if (!outsideInnerHalf(wx + s.w * 0.5, wy + s.h * 0.5)) continue;
-    if (spawnCreature(speciesId, wx, wy)) return true;
+    if (spawnCreatureNatural(speciesId, wx, wy)) return true;
   }
   return false;
 }
 
-int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy) {
-  if (speciesId >= CS_COUNT || !boxFitsHabitat(speciesId, wx, wy)) return 0;
-  const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
-  int active = 0, activeOfSpecies = 0;
-  for (const Creature& c : creatures) if (c.alive) { active++; if (c.species == speciesId) activeOfSpecies++; }
-  if (active >= MAX_LOADED_CREATURES || activeOfSpecies >= r.maxActive ||
-      localDensity(speciesId, wx, wy, r.densityRadius) >= r.densityCap ||
-      localDensityAll(wx, wy, MIXED_DENSITY_RADIUS) >= MIXED_DENSITY_CAP) return 0;
+int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat) {
+  if (speciesId >= CS_COUNT || (requireHabitat && !boxFitsHabitat(speciesId, wx, wy))) return 0;
   Creature c; c.id = nextCreatureId++; c.species = speciesId; c.wx = wx; c.wy = wy;
   c.health = CREATURE_SPECIES[speciesId].maxHealth;
   c.facing = whash1(E.fg.worldSeed ^ 0xC4EA7u, c.id) < 0.5 ? -1 : 1;
   creatures.push_back(c);
   return c.id;
+}
+
+// Population policy belongs only to natural spawning. Eggs and future scripted,
+// summoned, or quest spawns call spawnCreature directly; they still contribute
+// to these counts, so a high manual population pauses further natural births.
+int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy) {
+  if (speciesId >= CS_COUNT || !boxFitsHabitat(speciesId, wx, wy)) return 0;
+  const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
+  int active = 0, activeOfSpecies = 0;
+  for (const Creature& c : creatures) if (c.alive) { active++; if (c.species == speciesId) activeOfSpecies++; }
+  if (active >= NATURAL_MOB_CAP || activeOfSpecies >= r.maxActive ||
+      localDensity(speciesId, wx, wy, r.densityRadius) >= r.densityCap ||
+      localDensityAll(wx, wy, MIXED_DENSITY_RADIUS) >= MIXED_DENSITY_CAP) return 0;
+  return spawnCreature(speciesId, wx, wy, false);
 }
 
 bool CreatureSystem::spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt) {
@@ -202,7 +210,7 @@ bool CreatureSystem::spawnCandidate(uint8_t speciesId, int regionX, int regionY,
     else wy = regionY * r.regionSize + 4 + ry * (r.regionSize - s.h - 8);
     Creature probe; probe.species = speciesId; probe.wx = wx; probe.wy = wy;
     if (!inLoadedWindow(probe, 0) || !farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, r.minPlayerDistance)) continue;
-    if (spawnCreature(speciesId, wx, wy)) return true;
+    if (spawnCreatureNatural(speciesId, wx, wy)) return true;
   }
   return false;
 }
@@ -226,7 +234,8 @@ void CreatureSystem::updatePopulation() {
     return ((uint64_t)(uint32_t)rx << 32) | (uint32_t)ry;
   };
   // Hibernate off-window entities. They retain absolute pose/health and restore
-  // when their area is loaded again, while active simulation stays hard-bounded.
+  // when their area is loaded again. Restoration is not a new spawn and is never
+  // rejected by the natural population cap.
   size_t w = 0;
   for (size_t i = 0; i < creatures.size(); i++) {
     if (!creatures[i].alive && creatures[i].deathTicks <= 0) continue;
@@ -251,14 +260,7 @@ void CreatureSystem::updatePopulation() {
     auto it = dormantRegions.find(regionKey(rx, ry)); if (it == dormantRegions.end()) continue;
     std::vector<Creature>& bucket = it->second; size_t keep = 0;
     for (size_t i = 0; i < bucket.size(); i++) {
-      const CreatureSpawnRule& r = species(bucket[i]).spawn;
-      int activeOfSpecies = 0;
-      for (const Creature& c : creatures) if (c.alive && c.species == bucket[i].species) activeOfSpecies++;
-      int active = 0; for (const Creature& c : creatures) if (c.alive) active++;
-      bool capacity = active < MAX_LOADED_CREATURES && activeOfSpecies < r.maxActive &&
-                      localDensity(bucket[i].species, bucket[i].wx, bucket[i].wy, r.densityRadius) < r.densityCap &&
-                      localDensityAll(bucket[i].wx, bucket[i].wy, MIXED_DENSITY_RADIUS) < MIXED_DENSITY_CAP;
-      if (inLoadedWindow(bucket[i], 24) && capacity) creatures.push_back(bucket[i]);
+      if (inLoadedWindow(bucket[i], 24)) creatures.push_back(bucket[i]);
       else { if (keep != i) bucket[keep] = bucket[i]; keep++; }
     }
     bucket.resize(keep);
@@ -471,7 +473,7 @@ void CreatureSystem::attackTarget(Creature& c) {
 
 void CreatureSystem::updateCreatures() {
   if (!E.creaturesEnabled) return;
-  updatePopulation();
+  if (E.creatureNaturalSpawning) updatePopulation();
   for (Creature& c : creatures) {
     if (!c.alive) { c.deathTicks--; continue; }
     if (c.health <= 0) { c.health = 0; c.alive = false; c.deathTicks = 18; continue; }

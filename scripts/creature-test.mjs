@@ -2,7 +2,7 @@
 // prey tracking, amphibious locomotion, density caps, and streaming coordinates.
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
-import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import { CREATIVE_KIND, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -22,7 +22,22 @@ const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 check('roster is exactly two water, two land, two cave, and one bird species',
   Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD');
 
-// Water-only locomotion and local population cap.
+// Manual/scripted creatures count toward the population, but are not rejected
+// by it. Once they take the active count to the cap, natural spawning pauses.
+{
+  const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: 0xCA9, sinksOn: false, infinite: true });
+  e.setCreativeMaterial(CREATIVE_KIND.CREATURE, CREATURE.BIRD);
+  for (let i = 0; i < 10; i++) e.pointerDown(80 + i * 10, 40, 0);
+  check('manual spawns can exceed the natural mob cap', e.getCreatures().length === 10);
+  e.setSurvivalInventory(true);
+  e.spawnPlayerAtSurface(224);
+  e.stepActors();
+  check('high manual population pauses natural spawning', e.getCreatures().length === 10);
+  e.destroy();
+}
+
+// Direct creation (eggs/scripts) bypasses natural population limits while
+// retaining the species' requested habitat check.
 {
   const e = mk();
   // Consume the one-time population seed before creating this isolated test
@@ -32,7 +47,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const ids = [];
   for (let i = 0; i < 12; i++) ids.push(e.spawnCreature(CREATURE.MINNOW, 35 + i * 3, 42));
   const accepted = ids.filter(Boolean);
-  check(`density cap rejects excess fish (${accepted.length}/12 accepted)`, accepted.length === 2);
+  check(`manual creation bypasses the natural fish cap (${accepted.length}/12 accepted)`, accepted.length === 12);
   actors(e, 240);
   const grid = e.getGrid();
   const fish = e.getCreatures().filter((c) => accepted.includes(c.id) && c.alive);

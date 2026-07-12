@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
-  "abiVersion": 7,
+  "abiVersion": 8,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -69,7 +69,7 @@
       "cType": "uint8_t",
       "jsName": "CREATIVE_KIND",
       "jsPrefix": "CK",
-      "values": { "CK_MATERIAL": 0, "CK_SEED": 1, "CK_ERASER": 2, "CK_CUBE": 3 }
+      "values": { "CK_MATERIAL": 0, "CK_SEED": 1, "CK_ERASER": 2, "CK_CUBE": 3, "CK_CREATURE": 4 }
     },
     "CreatureSpecies": {
       "$comment": "Creature species ids used by snapshots, test hooks, and the network renderer.",

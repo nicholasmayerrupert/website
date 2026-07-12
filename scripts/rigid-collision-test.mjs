@@ -249,6 +249,38 @@ for (const dt of [16, 8, 33, 50]) {
   }
 }
 
+// 7b. Foreground free bodies push non-grid actors instead of stamping through
+// them. Exercise players and creatures independently so either actor system can
+// regress without the other hiding it.
+{
+  console.log('rigid body pushes a player');
+  const e = mk();
+  stoneRect(e, 0, 130, COLS - 1, ROWS - 1); e.syncComponents();
+  const player = e.spawnPlayer(104, 122);
+  const body = e._bodyCount();
+  e.spawnBox(94, 126, 4, 4, RIGID);
+  e._setBodyMotion(body, 2.5, 0, 0);
+  run(e, 18);
+  const p = e.getPlayer(player);
+  check(`moving body pushed player sideways (x ${p.x.toFixed(2)})`, p.x > 106);
+  e.destroy();
+}
+
+{
+  console.log('rigid body pushes a creature');
+  const e = mk();
+  stoneRect(e, 0, 130, COLS - 1, ROWS - 1); e.syncComponents();
+  e.setCreaturesEnabled(true);
+  const creature = e.spawnCreature(3, 104, 127); // hare on the floor
+  const body = e._bodyCount();
+  e.spawnBox(94, 126, 4, 4, RIGID);
+  e._setBodyMotion(body, 2.5, 0, 0);
+  run(e, 18);
+  const c = e.getCreatures().find((x) => x.id === creature);
+  check(`moving body pushed creature sideways (x ${c?.x.toFixed(2)})`, c && c.x > 106);
+  e.destroy();
+}
+
 // 8. Buoyancy: a body lighter than the fluid part-submerges and floats (it no
 //    longer rests on top of a denser fluid as if it were solid); a body denser
 //    than the fluid sinks through to the floor. Fluid mass is conserved.

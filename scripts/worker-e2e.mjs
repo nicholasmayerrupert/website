@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
+import { dirname, join } from 'node:path';
 
 const PORT = 5198;
 const baseURL = `http://localhost:${PORT}`;
@@ -9,10 +10,17 @@ const check = (label, ok, detail = '') => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` (${detail})` : ''}`);
 };
 
-const server = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT)], {
+const NPM = process.platform === 'win32' ? process.execPath : 'npm';
+const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
+const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT)], {
   cwd: new URL('..', import.meta.url), stdio: 'ignore', detached: true,
 });
-const killServer = () => { try { process.kill(-server.pid, 'SIGTERM'); } catch {} };
+const killServer = () => {
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
+    else process.kill(-server.pid, 'SIGTERM');
+  } catch {}
+};
 
 async function waitForServer() {
   const until = Date.now() + 60000;
@@ -62,6 +70,22 @@ try {
   await page.waitForTimeout(300);
   const defaultRigidAfter = await page.evaluate(() => window.__sandTest.materialCount(13));
   check('default creative cube survives worker initialization', defaultRigidAfter > defaultRigidBefore, `${defaultRigidBefore} -> ${defaultRigidAfter}`);
+
+  // Creature eggs are actor tools, not grid writes. Select one through the real
+  // palette and click the canvas; the main actor-owning mirror must receive it
+  // even though ordinary creative tools remain worker-owned.
+  const foxBefore = await page.evaluate(() => window.__sandTest.getCreatures().filter((c) => c.species === 2).length);
+  const game = page.locator('sand-game');
+  await game.locator('.sg-expand').click();
+  await game.locator('.sg-search').fill('fox spawn egg');
+  await game.locator('.sg-opt', { hasText: 'Fox Spawn Egg' }).click();
+  await page.mouse.click(target.x, target.y);
+  await page.waitForFunction((n) => window.__sandTest.getCreatures().filter((c) => c.species === 2).length > n, foxBefore);
+  const foxAfter = await page.evaluate(() => window.__sandTest.getCreatures().filter((c) => c.species === 2).length);
+  check('creative palette egg click spawns a visible actor', foxAfter === foxBefore + 1, `${foxBefore} -> ${foxAfter}`);
+  check('creative eggs do not enable natural population spawning',
+    await page.evaluate(() => window.__sandTest.getCreatures().length) === 1);
+
   await page.evaluate(() => window.__sandTest.setCreativeMaterial(0, 1)); // SAND
   await page.mouse.move(target.x, target.y);
   await page.mouse.down({ button: 'left' });

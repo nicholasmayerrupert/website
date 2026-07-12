@@ -1,6 +1,7 @@
 // Phase C: the creative palette can spawn ANY material (components draft with a live
 // preview then finalize; powders/liquids paint), place a seed for any species, and the
-// eraser/cube. Driven through the engine's creative pointer state machine.
+// eraser/cube, and creature spawn eggs. Driven through the engine's creative
+// pointer state machine.
 // Run: node scripts/creative-place-test.mjs
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
@@ -8,9 +9,10 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 // Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
+import { CREATIVE_KIND as CK, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import { buildEntries } from '../src/sand/embed/toolPalette.js';
 import { makeChecker } from './sand-test-util.mjs';
 
-const CK = { MATERIAL: 0, SEED: 1, ERASER: 2, CUBE: 3 };
 const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5 };
 const COLS = 100, ROWS = 80;
 await initSandWasm();
@@ -22,6 +24,11 @@ const hasCell = (cells, x, y) => {
   for (const c of cells) if (c === k) return true;
   return false;
 };
+
+const menuTail = buildEntries().slice(-7);
+check('creative menu ends with all seven creature spawn eggs',
+  menuTail.length === 7 && menuTail.every((entry, i) =>
+    entry.kind === CK.CREATURE && entry.value === i && entry.label.endsWith('Spawn Egg')));
 
 // 1) Any COMPONENT material drafts with a live preview, then finalizes into the grid.
 {
@@ -111,6 +118,29 @@ const hasCell = (cells, x, y) => {
   for (let x = 51; x <= 55; x++) e.pointerDraft(x, 40);
   e.pointerUp(0);
   check('rigid material finalized as one free rigid body', e._bodyCount() === 1);
+  e.destroy();
+}
+
+// Creature eggs spawn every species at the clicked world position without
+// requiring its natural habitat (a beached fish then uses its flop physics).
+for (const [name, species] of Object.entries(CREATURE)) {
+  const e = mk();
+  e.setCreativeMaterial(CK.CREATURE, species);
+  e.pointerDown(50, 30, 0);
+  const creatures = e.getCreatures();
+  check(`${name.toLowerCase()} spawn egg creates its creature`,
+    creatures.length === 1 && creatures[0].species === species &&
+    Math.abs(creatures[0].x + creatures[0].w / 2 - 50) < 0.01 &&
+    Math.abs(creatures[0].y + creatures[0].h / 2 - 30) < 0.01);
+  e.destroy();
+}
+
+{
+  const e = mk();
+  e.setCreativeMaterial(CK.CREATURE, CREATURE.FOX);
+  for (let i = 0; i < 12; i++) e.pointerDown(20 + i * 5, 30, 0);
+  check('manual eggs bypass natural species and global mob caps',
+    e.getCreatures().filter((c) => c.species === CREATURE.FOX).length === 12);
   e.destroy();
 }
 

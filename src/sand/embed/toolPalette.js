@@ -7,7 +7,7 @@
 //
 // To keep it small the palette is COLLAPSED by default: it shows only a compact
 // bar (the selected swatch + name, an Expand button, and the Draw On/Off toggle).
-// The full ~38-entry searchable grid is built lazily and only mounted while
+// The full searchable grid is built lazily and only mounted while
 // expanded, so the heavy list never takes space (or DOM) until the user asks for
 // it. Picking an entry collapses back to the bar.
 //
@@ -17,16 +17,20 @@
 //   CK_SEED     = 1  -> value = species index (0..5)
 //   CK_ERASER   = 2  -> value = 0
 //   CK_CUBE     = 3  -> value = 0
-// Entries: every MATERIALS row except EMPTY, one seed per plant species, plus an
-// eraser and a tumbling rigid cube. The default selection is the Cube.
+//   CK_CREATURE = 4  -> value = creature species id
+// Entries: every MATERIALS row except EMPTY, one seed per plant species, an
+// eraser, a tumbling rigid cube, then all seven creature spawn eggs. The default
+// selection is the Cube.
 
-import { MATERIALS } from '../materials.generated';
+import { MATERIALS } from '../materials.generated.js';
+import { CREATURE } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
 const CK_MATERIAL = 0;
 const CK_SEED = 1;
 const CK_ERASER = 2;
 const CK_CUBE = 3;
+const CK_CREATURE = 4;
 
 // Species order mirrors the engine's seed-species indices.
 const SEED_SPECIES = ['Oak', 'Pine', 'Willow', 'Cactus', 'Mushroom', 'Bush'];
@@ -34,6 +38,19 @@ const SEED_SPECIES = ['Oak', 'Pine', 'Willow', 'Cactus', 'Mushroom', 'Bush'];
 const SEED_SWATCH = 'rgb(120,190,100)';
 const ERASER_SWATCH = 'rgb(254,205,211)';
 const CUBE_SWATCH = 'rgb(214,211,209)';
+
+// Kept separate from the material/tool list so these always form the final
+// seven entries in the creative menu. Layered gradients make the compact
+// swatches read as patterned eggs without adding image assets.
+const CREATURE_EGGS = [
+  ['Minnow', CREATURE.MINNOW, '#9de2c9', '#256f89'],
+  ['Pike', CREATURE.PIKE, '#97bc5c', '#2e5b3a'],
+  ['Fox', CREATURE.FOX, '#f49a46', '#7b3420'],
+  ['Hare', CREATURE.HARE, '#edcfa6', '#835e48'],
+  ['Crawler', CREATURE.CRAWLER, '#9f6ea9', '#3d2b4c'],
+  ['Mole', CREATURE.MOLE, '#ba997e', '#4b3b3a'],
+  ['Bird', CREATURE.BIRD, '#aedaf0', '#3663a0'],
+];
 
 // Most-used builders float to the top of the list so they aren't buried under
 // the long tail of exotic materials. Matched against the lowercased entry label.
@@ -45,7 +62,7 @@ const PRIORITY_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'crystal', 'water',
 // string used as the swatch background. Entries are then reordered so the common
 // builders in PRIORITY_LABELS lead, in that exact order, with everything else
 // following in its natural order.
-function buildEntries() {
+export function buildEntries() {
   const entries = [];
   for (const m of MATERIALS) {
     if (m.id === 0) continue; // EMPTY
@@ -79,7 +96,15 @@ function buildEntries() {
     if (hit) lead.push(hit);
   }
   const rest = entries.filter((e) => !lead.includes(e));
-  return [...lead, ...rest];
+  const eggs = CREATURE_EGGS.map(([name, value, light, dark]) => ({
+    key: `creature-${value}`,
+    label: `${name} Spawn Egg`,
+    color: `radial-gradient(circle at 35% 28%, #fff 0 7%, ${dark} 8% 18%, ${light} 19% 61%, ${dark} 62% 72%, ${light} 73%)`,
+    kind: CK_CREATURE,
+    value,
+    egg: true,
+  }));
+  return [...lead, ...rest, ...eggs];
 }
 
 const STYLE = `
@@ -126,6 +151,7 @@ const STYLE = `
 .sg-opt .sg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sg-swatch { width: 26px; height: 26px; flex: none; border-radius: 6px;
   border: 1px solid rgba(255,255,255,.18); box-shadow: inset 2px 2px 0 rgba(255,255,255,.14); }
+.sg-swatch.egg { width: 22px; margin: 0 2px; border-radius: 50% 50% 46% 46% / 58% 58% 42% 42%; }
 .sg-empty { padding: 10px 6px; font-size: 12px; color: #9ca3af; text-align: center; }
 .sg-toggle { border-radius: 6px; padding: 4px 8px; font-size: 10px; font-weight: 600; border: 0; cursor: pointer;
   background: rgba(255,255,255,.1); color: #fff; }
@@ -136,9 +162,9 @@ const STYLE = `
 
 // Decorative color swatch for an entry (a flat rounded square in the entry's
 // color).
-function renderSwatch(color) {
+function renderSwatch(color, egg = false) {
   const sw = document.createElement('span');
-  sw.className = 'sg-swatch';
+  sw.className = `sg-swatch${egg ? ' egg' : ''}`;
   sw.style.background = color;
   return sw;
 }
@@ -186,7 +212,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, sh
   const current = document.createElement('button');
   current.type = 'button';
   current.className = 'sg-current';
-  const currentSwatch = renderSwatch(selected.color);
+  const currentSwatch = renderSwatch(selected.color, selected.egg);
   const currentName = document.createElement('span');
   currentName.className = 'sg-name';
   current.append(currentSwatch, currentName);
@@ -209,8 +235,8 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, sh
   const search = document.createElement('input');
   search.type = 'text';
   search.className = 'sg-search';
-  search.placeholder = 'Search materials…';
-  search.setAttribute('aria-label', 'Search spawnable materials');
+  search.placeholder = 'Search materials or creatures…';
+  search.setAttribute('aria-label', 'Search spawnable materials and creatures');
   search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); renderList(); });
 
   const list = document.createElement('div');
@@ -257,6 +283,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, sh
     wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'}`;
     current.className = `sg-current${locked ? ' locked' : ''}`;
     current.disabled = locked;
+    currentSwatch.className = `sg-swatch${selected.egg ? ' egg' : ''}`;
     currentSwatch.style.background = selected.color;
     currentName.textContent = selected.label;
     current.title = `Selected: ${selected.label} — click to ${expanded ? 'collapse' : 'change'}`;
@@ -292,7 +319,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, sh
       const lbl = document.createElement('span');
       lbl.className = 'sg-name';
       lbl.textContent = e.label;
-      opt.append(renderSwatch(e.color), lbl);
+      opt.append(renderSwatch(e.color, e.egg), lbl);
       opt.addEventListener('click', () => pick(e));
       list.appendChild(opt);
     }

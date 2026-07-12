@@ -20,6 +20,7 @@
     perfGroundingMs += emscripten_get_now() - t0;
 
     double tA = emscripten_get_now();
+    L->assemblyRelocatedCells.clear();
     moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-assemblies");
@@ -57,6 +58,15 @@
       if (L->compOccStamp[k] == tick) continue;
       if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
       else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
+    }
+    // Component displacement already moved these media once in the live grid.
+    // Carry them through the freshly blanked next buffer and stamp them so the
+    // loose pass cannot move the same volume a second time this tick.
+    for (int k : L->assemblyRelocatedCells) {
+      uint8_t m = L->grid[k];
+      if (m == EMPTY || isRigidMaterialClass(m)) continue;
+      L->next[k] = m;
+      L->vacatedStamp[k] = tick;
     }
     std::swap(L->prevCompCells, L->curCompCells);
     perfCarryMs += emscripten_get_now() - tC;

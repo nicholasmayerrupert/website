@@ -674,17 +674,15 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('seeded irregular cut slabs fell with identical displacement', ok, `(${details.join(', ')})`);
 }
 
-// 20. A solid load in one layer must affect a buoyant component in the other
-//     layer at the foreground/background boundary. This mirrors same-layer
-//     stone-on-ice in an oil/brine stack: once the stone overlaps the bg ice, the
-//     bonded assembly should continue descending instead of pinning at the layer
-//     boundary.
+// 20. Fully overlapping ice is a normal cross-layer joint. A large irregular
+//     raft must use combined buoyancy, rise in lockstep, and settle without a
+//     one-cell alternating shimmer.
 {
-  console.log('cross-layer solid load sinks buoyant ice at layer boundary');
-  const C = 200, R0 = 128;
+  console.log('bonded cross-layer ice rises and settles in lockstep');
+  const C = 100, R0 = 110;
   const e = createEngineWasm({ cols: C, rows: R0, infinite: false, sinksOn: false });
   e.setBgEnabled(true);
-  const L = 35, R = 165, top = 28, floorY = 105;
+  const L = 12, R = 88, top = 12, floorY = 98;
   const fillRect = (layer, mat, x0, x1, y0, y1) => {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.paintDiscLayer(layer, x, y, 0, mat, true);
   };
@@ -694,27 +692,42 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
     return { n, minY, maxY };
   };
   for (const layer of [0, 1]) {
-    fillRect(layer, MAT.BRICK, L, L, top, floorY + 2);
-    fillRect(layer, MAT.BRICK, R, R, top, floorY + 2);
+    fillRect(layer, MAT.BRICK, L, L, top, floorY);
+    fillRect(layer, MAT.BRICK, R, R, top, floorY);
     fillRect(layer, MAT.BRICK, L, R, floorY, floorY);
     e.syncComponentsLayer(layer);
-    fillRect(layer, MAT.BRINE, L + 1, R - 1, floorY - 42, floorY - 1);
-    fillRect(layer, MAT.OIL, L + 1, R - 1, floorY - 72, floorY - 43);
+    fillRect(layer, MAT.BRINE, L + 1, R - 1, 24, floorY - 1);
+    fillRect(layer, MAT.ICE, 27, 73, 65, 68);
+    for (let x = 30; x <= 70; x++) fillRect(layer, MAT.ICE, x, x, 69, 69 + ((x * 5) % 4));
+    for (let y = 69; y <= 88; y++) {
+      const cx = 50 + Math.round(Math.sin(y * 0.8) * 2);
+      fillRect(layer, MAT.ICE, cx - 2, cx + 2, y, y);
+    }
+    e.syncComponentsLayer(layer);
   }
-  step(e, 40);
-  fillRect(1, MAT.ICE, 92, 108, 58, 74);
-  e.syncComponentsLayer(1);
-  step(e, 300);
-  const iceBefore = matBounds(e.getGridBg(), MAT.ICE);
-  fillRect(0, MAT.STONE, 98, 102, iceBefore.minY - 4, iceBefore.minY - 1);
-  e.syncComponentsLayer(0);
-  const stoneBefore = matBounds(e.getGrid(), MAT.STONE);
-  step(e, 250);
-  const stone = matBounds(e.getGrid(), MAT.STONE);
-  const ice = matBounds(e.getGridBg(), MAT.ICE);
-  check('fg stone was placed above bg ice', stoneBefore.n === 20 && iceBefore.n > 0);
-  check('cross-layer stone load descended with bg ice', stone.maxY > stoneBefore.maxY + 4 && ice.maxY > iceBefore.maxY + 4,
-    `(stone ${stoneBefore.minY}-${stoneBefore.maxY} -> ${stone.minY}-${stone.maxY}, ice ${iceBefore.minY}-${iceBefore.maxY} -> ${ice.minY}-${ice.maxY})`);
+  const fgBefore = matBounds(e.getGrid(), MAT.ICE), bgBefore = matBounds(e.getGridBg(), MAT.ICE);
+  const ys = [fgBefore.minY]; let aligned = fgBefore.minY === bgBefore.minY && fgBefore.maxY === bgBefore.maxY;
+  let t = 0;
+  for (let i = 0; i < 600; i++) {
+    t += 16; e.step(t);
+    const fg = matBounds(e.getGrid(), MAT.ICE), bg = matBounds(e.getGridBg(), MAT.ICE);
+    ys.push(fg.minY);
+    if (fg.n !== bg.n || fg.minY !== bg.minY || fg.maxY !== bg.maxY) aligned = false;
+  }
+  const fgIce = matBounds(e.getGrid(), MAT.ICE), bgIce = matBounds(e.getGridBg(), MAT.ICE);
+  let reversals = 0, lastDir = 0;
+  for (let i = 1; i < ys.length; i++) {
+    const dir = Math.sign(ys[i] - ys[i - 1]);
+    if (dir && lastDir && dir !== lastDir) reversals++;
+    if (dir) lastDir = dir;
+  }
+  const tail = ys.slice(-120);
+  check('bonded ice started aligned and non-empty', fgBefore.minY === bgBefore.minY && fgBefore.n > 0);
+  check('bonded ice rose toward the surface', fgIce.minY < fgBefore.minY - 20,
+    `(fg ${fgBefore.minY}-${fgBefore.maxY} -> ${fgIce.minY}-${fgIce.maxY})`);
+  check('bonded ice stayed aligned across both layers', aligned && fgIce.n === bgIce.n);
+  check(`bonded ice never reversed vertically (${reversals} reversals)`, reversals === 0);
+  check(`bonded ice settled on one final row (${new Set(tail).size} tail rows)`, new Set(tail).size === 1);
   e.destroy();
 }
 

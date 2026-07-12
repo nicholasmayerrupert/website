@@ -24,6 +24,9 @@ struct Layer {
   // must be live at the same time as a BFS seen set, so they use separate stamps.
   std::vector<int32_t> rigidSpillFootprint, rigidSpillReserved;
   std::vector<int> prevCompCells, curCompCells, bodyCells;
+  // Loose/gas cells relocated by static-component motion before prepareNextBuffer.
+  // They are carried once into next[] and skipped by the loose pass that tick.
+  std::vector<int> assemblyRelocatedCells;
   std::vector<uint8_t> reactionFlags;
   std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
   // Transient survival mining damage. 0 = no active damage; otherwise the
@@ -160,7 +163,7 @@ struct Layer {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
-      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(blastGasStamp);
+      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
       release(prevCompCells); release(curCompCells); release(bodyCells);

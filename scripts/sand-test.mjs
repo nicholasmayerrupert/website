@@ -642,6 +642,93 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// A fully submerged ice component must rise. The reverse-direction anti-jitter
+// probe must see the liquid that the planned move restores into vacated cells,
+// not the component's stale pre-move ICE cells.
+{
+  console.log('fully submerged ice rises through water');
+  const STONE = 3, WATER = 2, ICE = 12;
+  const e = mk();
+  const L = 45, R = 155, top = 18, floorY = 106;
+  for (let y = top; y <= floorY; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = L + 1; x < R; x++) for (let y = 35; y < floorY; y++) e.paintDisc(x, y, 0, WATER, true);
+  run(40, e);
+  for (let y = 82; y <= 88; y++) for (let x = 97; x <= 103; x++) e.paintDisc(x, y, 0, ICE, true);
+  e.syncComponents();
+  const iceTop = () => {
+    const g = e.getGrid(); let y0 = ROWS;
+    for (let i = 0; i < g.length; i++) if (g[i] === ICE) y0 = Math.min(y0, (i / COLS) | 0);
+    return y0;
+  };
+  const before = iceTop();
+  const ys = [before];
+  for (let i = 0; i < 400; i++) { e.step(16 * (i + 1)); ys.push(iceTop()); }
+  const after = ys.at(-1);
+  let reversals = 0, lastDir = 0; const reversalAt = [];
+  for (let i = 1; i < ys.length; i++) {
+    const dir = Math.sign(ys[i] - ys[i - 1]);
+    if (dir && lastDir && dir !== lastDir) { reversals++; reversalAt.push(`${i}:${ys[i - 1]}->${ys[i]}`); }
+    if (dir) lastDir = dir;
+  }
+  check(`submerged ice rose (top row ${before} -> ${after})`, before === 82 && after < before - 8);
+  check(`rising ice settled without up/down shimmer (${reversals} reversals)`, reversals === 0);
+  e.destroy();
+}
+
+// A wide, uneven raft with a deep appendage exercises multiple disconnected
+// vertical runs and many simultaneous liquid relocation targets. This is the
+// shape class that used to alternate one row up/down while fully submerged.
+{
+  console.log('irregular submerged ice rises and settles without shimmer');
+  const STONE = 3, ICE = 12, BRINE = 33;
+  const e = mk();
+  const L = 35, R = 165, top = 16, floorY = 108;
+  for (let y = top; y <= floorY; y++) { e.paintDisc(L, y, 0, STONE, true); e.paintDisc(R, y, 0, STONE, true); }
+  for (let x = L; x <= R; x++) e.paintDisc(x, floorY, 0, STONE, true);
+  e.syncComponents();
+  for (let x = 55; x <= 145; x++) for (let y = 70; y <= 73; y++) e.addDiscToIceDraft(x, y, 0);
+  for (let x = 58; x <= 142; x++) for (let y = 74; y <= 74 + ((x * 7) % 4); y++) e.addDiscToIceDraft(x, y, 0);
+  for (let y = 74; y <= 98; y++) {
+    const cx = 100 + Math.round(Math.sin(y * 0.7) * 3);
+    for (let x = cx - 2; x <= cx + 2; x++) e.addDiscToIceDraft(x, y, 0);
+  }
+  for (let x = 86; x <= 114; x++) e.addDiscToIceDraft(x, 84 + Math.abs(x - 100) % 3, 0);
+  e.finalizeIceDraft();
+  const staged = e.getGrid();
+  for (let x = L + 1; x < R; x++) for (let y = 27; y < floorY; y++) {
+    if (staged[y * COLS + x] === 0) e.paintDisc(x, y, 0, BRINE, true);
+  }
+  const iceTop = () => {
+    const g = e.getGrid(); let y0 = ROWS, n = 0;
+    for (let i = 0; i < g.length; i++) if (g[i] === ICE) { y0 = Math.min(y0, (i / COLS) | 0); n++; }
+    return { y: y0, n };
+  };
+  const before = iceTop(), g0 = e.getGrid();
+  let faces = 0, wetFaces = 0, bottomWet = 0;
+  for (let k = 0; k < g0.length; k++) if (g0[k] === ICE) {
+    for (const off of [-1, 1, COLS]) if (g0[k + off] !== ICE) {
+      faces++; if (g0[k + off] === BRINE) { wetFaces++; if (off === COLS) bottomWet++; }
+    }
+  }
+  check(`irregular ice starts fully wetted (${wetFaces}/${faces}, bottom ${bottomWet})`, wetFaces === faces && bottomWet > 0);
+  const ys = [before.y];
+  for (let i = 0; i < 700; i++) { e.step(16 * (i + 1)); ys.push(iceTop().y); }
+  const after = iceTop();
+  let reversals = 0, lastDir = 0; const reversalAt = [];
+  for (let i = 1; i < ys.length; i++) {
+    const dir = Math.sign(ys[i] - ys[i - 1]);
+    if (dir && lastDir && dir !== lastDir) { reversals++; reversalAt.push(`${i}:${ys[i - 1]}->${ys[i]}`); }
+    if (dir) lastDir = dir;
+  }
+  const tail = ys.slice(-120);
+  check(`irregular ice rose toward the surface (top ${before.y} -> ${after.y}, best ${Math.min(...ys)})`, after.n === before.n && after.y < before.y - 20);
+  check(`irregular ice never reversed vertically (${reversals} reversals${reversalAt.length ? ` at ${reversalAt.join(',')}` : ''})`, reversals === 0);
+  check(`irregular ice reached a stable row (${new Set(tail).size} tail rows)`, new Set(tail).size === 1);
+  e.destroy();
+}
+
 // Ice density sits between oil and brine. It should find a buoyant row between
 // them without entering a deterministic one-cell up/down cycle while the two
 // liquids are still leveling.

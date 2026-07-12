@@ -923,7 +923,8 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
 // buoyancy decision (moveRigidAssemblies) and the cross-layer descend decision
 // (moveCrossLayerBondedAssemblies) — the latter accumulates over both layers
 // and ignores the `faces` total.
-void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c) {
+void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c,
+                                            const std::unordered_map<int, uint8_t>* planned) {
   // Iteration order of `cells` feeds the double accumulators below, so the set
   // stays; only the per-neighbour membership test moves to the stamp mirror.
   // The caller may pass a probe set shifted past the grid edge (motionDecision's
@@ -941,6 +942,10 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
       if (nk < 0 || nk >= gridLen || asmCells.has(nk)) continue;
       uint8_t m = g[nk];
+      if (planned) {
+        auto it = planned->find(nk);
+        if (it != planned->end()) m = it->second;
+      }
       c.faces++;
       if (E.isLiquidMaterial(m)) {
         c.liquidFaces++;
@@ -950,9 +955,45 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
         c.powderFaces++;
         c.powderDensityArea += DENSITY[m];
         if (offs[i] == E.cols) c.bottomPowderFaces++;
+      } else if (m == EMPTY || E.isGasMaterial(m)) {
+        // A cavity inside the liquid wake is not surface exposure. Count air
+        // only when this face can see vertically through empty/gas to the top.
+        int ak = nk;
+        for (;;) {
+          uint8_t am = g[ak];
+          if (planned) { auto it = planned->find(ak); if (it != planned->end()) am = it->second; }
+          if (am != EMPTY && !E.isGasMaterial(am)) break;
+          if (ak < E.cols * 2) { c.openAirFaces++; break; }
+          ak -= E.cols;
+        }
       }
     }
   }
+}
+
+int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, double avgDensity) {
+  bool powderSupports = false;
+  if (c.powderFaces > 0) {
+    double powderDensity = c.powderDensityArea / c.powderFaces;
+    powderSupports = c.bottomPowderFaces > 0 && avgDensity <= powderDensity + 1e-6;
+  }
+  if (c.liquidFaces > 0) {
+    double liquidDensity = c.liquidDensityArea / c.liquidFaces;
+    if (avgDensity > liquidDensity + 1e-6) return powderSupports ? 0 : 1;
+    // A lighter assembly with liquid beneath it and no path from its exposed
+    // faces to open air is still submerged. Empty wake cavities do not count as
+    // emergence and must not reverse buoyancy.
+    if (c.bottomLiquidFaces > 0 && c.openAirFaces == 0
+        && avgDensity < liquidDensity - 1e-6) return -1;
+    double targetFaces = c.faces > 0 ? c.faces * (avgDensity / liquidDensity) : 0;
+    double imbalance = c.liquidFaces - targetFaces;
+    double band = std::fmax(1.0, std::sqrt((double)cellCount) * 0.25);
+    if (imbalance > band && c.bottomLiquidFaces > 0) return -1;
+    if (c.bottomLiquidFaces > 0 && imbalance >= -band) return 0;
+    return powderSupports ? 0 : 1;
+  }
+  if (powderSupports) return 0;
+  return 1;
 }
 
 void ComponentSystem::moveCrossLayerBondedAssemblies() {
@@ -996,64 +1037,48 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
     }
   };
-  auto crossLayerShouldDescend = [&](double density, const std::unordered_set<int>& fCells, const std::unordered_set<int>& bCells) {
-    FaceContact c;
-    accumulateFaceContact(E.fg.grid, fCells, c);
-    accumulateFaceContact(E.bg.grid, bCells, c);
-    if (c.liquidFaces > 0) {
-      double liquidDensity = c.liquidDensityArea / c.liquidFaces;
-      if (density > liquidDensity + 1e-6) return true;
-      return c.bottomLiquidFaces == 0;
-    }
-    if (c.powderFaces > 0) {
-      double powderDensity = c.powderDensityArea / c.powderFaces;
-      if (density > powderDensity + 1e-6) return true;
-      return c.bottomPowderFaces == 0;
-    }
-    return true;
+  struct LayerMovePlan {
+    std::vector<std::pair<int, uint8_t>> relocate;
+    std::unordered_set<int> shifted;
+    std::unordered_map<int, uint8_t> materials;
   };
-
-  // Plan a one-cell descent of `own` in `lay`. An assembly descends into EMPTY
-  // (or its own) cells, and - after the joint side/bottom contact decision says
-  // it should sink - shoves aside powder/liquid directly beneath its shell
-  // instead of being pinned by it. Liquid above the shell is ignored by this
-  // downward-only cross-layer decision.
-  // Displaced contents are relocated into the cells the assembly vacates (its
-  // per-column tops); if they can't fit there, we decline the move (status quo).
-  // Gas is simply overrun (it dissipates), matching translateAssembly.
-  auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own,
-                           std::vector<std::pair<int, uint8_t>>& relocate) -> bool {
-    relocate.clear();
+  // Build the exact one-cell result for one half of a joint assembly. The same
+  // plan feeds both the post-move buoyancy probe and the eventual writes, so the
+  // anti-jitter decision cannot observe a different world from the mover.
+  auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, int dir,
+                           LayerMovePlan& plan) -> bool {
+    plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
+    std::vector<int> vacated;
     for (int k : own) {
-      int nk = k + E.cols, ny = nk / E.cols;
-      if (ny < 1 || ny >= E.rows) return false;
+      int nk = k + dir;
+      if (nk < E.cols || nk >= E.cols * E.rows) return false;
       if (own.count(nk)) continue;
-      uint8_t below = lay.grid[nk];
-      if (below == EMPTY || E.isGasMaterial(below)) continue;
-      bool displaceable = E.isBuoyantMedium(below);
-      if (!displaceable) return false;
-      relocate.push_back({0, below}); // dest cell assigned below (after vacated cells are known)
+      uint8_t lead = lay.grid[nk];
+      if (lead == EMPTY || E.isGasMaterial(lead)) continue;
+      if (!E.isBuoyantMedium(lead)) return false;
+      plan.relocate.push_back({0, lead});
     }
-    // Vacated cells (own cells with no own cell above) become empty after the move
-    // and receive the displaced material. Count must cover every displaced cell.
-    int slots = 0;
-    for (int k : own) if (!own.count(k - E.cols)) slots++;
-    if ((int)relocate.size() > slots) return false;
-    int ri = 0;
-    for (int k : own) { if (ri >= (int)relocate.size()) break; if (!own.count(k - E.cols)) relocate[ri++].first = k; }
+    for (int k : own) if (!own.count(k - dir)) vacated.push_back(k);
+    if (plan.relocate.size() > vacated.size()) return false;
+    for (size_t i = 0; i < plan.relocate.size(); i++) plan.relocate[i].first = vacated[i];
+    plan.shifted.reserve(own.size()); plan.materials.reserve(own.size() * 2 + plan.relocate.size());
+    for (int k : own) plan.materials[k] = EMPTY;
+    for (int k : own) { plan.shifted.insert(k + dir); plan.materials[k + dir] = lay.grid[k]; }
+    for (auto& r : plan.relocate) plan.materials[r.first] = r.second;
     return true;
   };
-  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells, const std::vector<CellMat>& mats, const std::vector<std::pair<int, uint8_t>>& relocate) {
+  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells,
+                        const std::vector<CellMat>& mats, const LayerMovePlan& plan, int dir) {
     E.useLayer(&lay);
-    for (int k : cells) if (!cells.count(k - E.cols)) E.writeGridIndex(k, EMPTY);
-    for (auto& cm : mats) E.writeGridIndex(cm.k + E.cols, cm.m);
-    for (auto& r : relocate) E.writeGridIndex(r.first, r.second); // displaced contents into vacated tops
+    for (int k : cells) E.writeGridIndex(k, EMPTY);
+    for (auto& cm : mats) E.writeGridIndex(cm.k + dir, cm.m);
+    for (auto& r : plan.relocate) E.writeGridIndex(r.first, r.second);
     for (int id : ids) {
       Comp* c = compById(lay, id);
       bool isPlant = compIdIsPlant(lay, id);
       int wood = 0, leaf = 0, ym = 0;
       for (int& k : c->cells) {
-        k += E.cols;
+        k += dir;
         int y = k / E.cols; if (y > ym) ym = y;
         if (isPlant) { uint8_t m = lay.grid[k]; if (E.isPlantWood(m)) wood++; else if (E.isPlantLeaf(m)) leaf++; }
       }
@@ -1062,24 +1087,39 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     }
   };
 
-  std::vector<std::pair<int, uint8_t>> fgReloc, bgReloc;
+  LayerMovePlan fgPlan, bgPlan;
   for (JointGroup* g : order) {
     if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
     collect(E.fg, g->fgComps, fgCells, fgMats);
     collect(E.bg, g->bgComps, bgCells, bgMats);
-    // Mean density of the whole bonded assembly (both layers) is passed through
-    // for parity with the single-layer movement API; loose media are displaced
-    // generally and liquid buoyancy is resolved in the per-layer assembly path.
     double sum = 0; int n = 0;
     for (auto& cm : fgMats) { sum += DENSITY[cm.m]; n++; }
     for (auto& cm : bgMats) { sum += DENSITY[cm.m]; n++; }
     double density = n ? sum / n : 0;
-    // Both layers must be able to descend (the assembly moves as one unit); if
-    // either is blocked by non-displaceable material, the assembly stays put.
-    if (!crossLayerShouldDescend(density, fgCells, bgCells)) continue;
-    if (!planLayerMove(E.fg, fgCells, fgReloc) || !planLayerMove(E.bg, bgCells, bgReloc)) continue;
-    applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgReloc);
-    applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgReloc);
+    FaceContact before;
+    accumulateFaceContact(E.fg.grid, fgCells, before);
+    accumulateFaceContact(E.bg.grid, bgCells, before);
+    int decision = motionDecision(before, fgCells.size() + bgCells.size(), density);
+    if (decision > 0 && before.openAirFaces > 0 && before.bottomLiquidFaces > 0
+        && before.liquidFaces > 0 && density < before.liquidDensityArea / before.liquidFaces - 1e-6) {
+      bool rose = false;
+      for (int id : g->fgComps) rose = rose || compById(E.fg, id)->buoyancyDirection < 0;
+      for (int id : g->bgComps) rose = rose || compById(E.bg, id)->buoyancyDirection < 0;
+      if (rose) continue;
+    }
+    if (decision == 0) continue;
+    int dir = decision > 0 ? E.cols : -E.cols;
+    // A joint moves only when both layer-local halves can execute the same plan.
+    if (!planLayerMove(E.fg, fgCells, dir, fgPlan) || !planLayerMove(E.bg, bgCells, dir, bgPlan)) continue;
+    FaceContact after;
+    accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials);
+    accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials);
+    if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), density) == -decision) continue;
+    applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir);
+    applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir);
+    int8_t moveDir = dir < 0 ? -1 : 1;
+    for (int id : g->fgComps) compById(E.fg, id)->buoyancyDirection = moveDir;
+    for (int id : g->bgComps) compById(E.bg, id)->buoyancyDirection = moveDir;
     // Assembly relocated: both layers need a full joint re-flood next step.
     E.fg.groundDirty = true; E.bg.groundDirty = true;
   }
@@ -1142,7 +1182,8 @@ void ComponentSystem::moveRigidAssemblies() {
   // keeps its real material (ore stays ore, not STONE). Ice comps are pure ICE.
   auto matOf = [&](int i, int k) -> uint8_t { return i < nStonePlant ? E.L->grid[k] : ICE; };
 
-  auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir) -> bool {
+  auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir,
+                               int decision, double avgDensity) -> bool {
     int dy = dir > 0 ? 1 : -1;
     const int gridLen = E.cols * E.rows;
     // Membership mirror of `cells` (iteration below stays on the set — its
@@ -1268,7 +1309,14 @@ void ComponentSystem::moveRigidAssemblies() {
       };
       for (auto& d : displaced) {
         if (!E.isLiquidMaterial(d.material)) continue;
-        if (!planLiquidChain(d.material, d.from) && !planVacatedLiquidDump(d.material)) return false;
+        // A rising submerged assembly leaves volume directly beneath itself;
+        // fill that trailing volume first so it does not create an artificial
+        // cavity and immediately fall back. A descending assembly keeps the
+        // surface-seeking density chain, with vacated volume as its fallback.
+        bool placed = dir < 0
+          ? (planVacatedLiquidDump(d.material) || planLiquidChain(d.material, d.from))
+          : (planLiquidChain(d.material, d.from) || planVacatedLiquidDump(d.material));
+        if (!placed) return false;
       }
 
       auto runPowderSpill = [&](int need, std::vector<int>& out) -> bool {
@@ -1286,6 +1334,27 @@ void ComponentSystem::moveRigidAssemblies() {
       };
       if (!runPowderSpill(powderDisplacedCount, powderTargets)) return false;
     }
+    // Materialize the exact post-translation overlay before mutating the grid.
+    // The equilibrium probe reads this same plan (including liquid-chain and
+    // powder spill targets), eliminating stale-grid and approximate-vacated-cell
+    // disagreements for irregular submerged assemblies.
+    std::unordered_map<int, uint8_t> planned;
+    planned.reserve(cells.size() * 2 + liquidWrites.size() + powderTargets.size());
+    std::unordered_set<int> shifted; shifted.reserve(cells.size());
+    for (int k : cells) planned[k] = EMPTY;
+    for (int ci : grp->comps) for (int k : all[ci]->cells) {
+      shifted.insert(k + dir);
+      planned[k + dir] = matOf(ci, k);
+    }
+    for (auto& w : liquidWrites) planned[w.target] = w.material;
+    int plannedPowder = 0;
+    for (auto& d : displaced) if (E.isLooseSolidMaterial(d.material)) {
+      planned[powderTargets[plannedPowder++]] = d.material;
+    }
+    FaceContact postMove;
+    accumulateFaceContact(E.L->grid, shifted, postMove, &planned);
+    if (motionDecision(postMove, shifted.size(), avgDensity) == -decision) return false;
+
     struct Move { Comp* comp; bool isPlant; std::vector<std::pair<int, uint8_t>> mats; int wood, leaf; };
     std::vector<Move> moves;
     for (int ci : grp->comps) {
@@ -1325,10 +1394,14 @@ void ComponentSystem::moveRigidAssemblies() {
     for (auto& d : displaced) {
       if (E.isLiquidMaterial(d.material)) continue;
       while (di < (int)vacated.size() && (E.L->grid[vacated[di]] != EMPTY || trReserved.has(vacated[di]))) di++;
-      if (E.isLooseSolidMaterial(d.material)) { E.writeGridIndex(powderTargets[pi++], d.material); if (di < (int)vacated.size()) di++; }
-      else if (di < (int)vacated.size()) E.writeGridIndex(vacated[di++], d.material); // gas
+      if (E.isLooseSolidMaterial(d.material)) {
+        int target = powderTargets[pi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
+        if (di < (int)vacated.size()) di++;
+      } else if (di < (int)vacated.size()) {
+        int target = vacated[di++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target); // gas
+      }
     }
-    for (auto& w : liquidWrites) E.writeGridIndex(w.target, w.material);
+    for (auto& w : liquidWrites) { E.writeGridIndex(w.target, w.material); E.L->assemblyRelocatedCells.push_back(w.target); }
 #ifdef SAND_INVARIANT_CHECKS
     {
       // Dev probe: no relocation target may land inside ANY component's cells.
@@ -1348,29 +1421,9 @@ void ComponentSystem::moveRigidAssemblies() {
       for (size_t i2 = 0; i2 < powderTargets.size(); i2++) probe(powderTargets[i2], 0, "powderSpill");
     }
 #endif
+    int8_t moveDir = dir < 0 ? -1 : 1;
+    for (int ci : grp->comps) all[ci]->buoyancyDirection = moveDir;
     return true;
-  };
-
-  auto motionDecision = [&](std::unordered_set<int>& cells, double avgDensity) -> int {
-    FaceContact c;
-    accumulateFaceContact(E.L->grid, cells, c);
-    bool powderSupports = false;
-    if (c.powderFaces > 0) {
-      double powderDensity = c.powderDensityArea / c.powderFaces;
-      powderSupports = c.bottomPowderFaces > 0 && avgDensity <= powderDensity + 1e-6;
-    }
-    if (c.liquidFaces > 0) {
-      double liquidDensity = c.liquidDensityArea / c.liquidFaces;
-      if (avgDensity > liquidDensity + 1e-6) return powderSupports ? 0 : 1;
-      double targetFaces = c.faces > 0 ? c.faces * (avgDensity / liquidDensity) : 0;
-      double imbalance = c.liquidFaces - targetFaces;
-      double band = std::fmax(1.0, std::sqrt((double)cells.size()) * 0.25);
-      if (imbalance > band && c.bottomLiquidFaces > 0) return -1;
-      if (c.bottomLiquidFaces > 0 && imbalance >= -band) return 0;
-      return powderSupports ? 0 : 1;
-    }
-    if (powderSupports) return 0; // one-way granular support, never lift
-    return 1;
   };
 
   for (Group* grp : order) {
@@ -1385,24 +1438,18 @@ void ComponentSystem::moveRigidAssemblies() {
       }
     }
     double avgDensity = weight / cells.size();
-    int decision = motionDecision(cells, avgDensity);
-    if (decision == 0) continue;
-    std::unordered_set<int> shifted; shifted.reserve(cells.size());
-    int dirK = decision > 0 ? E.cols : -E.cols;
-    const int gridLen = E.cols * E.rows;
-    bool shiftInBounds = true;
-    for (int k : cells) {
-      int nk = k + dirK;
-      if (nk < 0 || nk >= gridLen) { shiftInBounds = false; break; }
-      shifted.insert(nk);
+    FaceContact current;
+    accumulateFaceContact(E.L->grid, cells, current);
+    int decision = motionDecision(current, cells.size(), avgDensity);
+    if (decision > 0 && current.openAirFaces > 0 && current.bottomLiquidFaces > 0
+        && current.liquidFaces > 0 && avgDensity < current.liquidDensityArea / current.liquidFaces - 1e-6) {
+      bool rose = false;
+      for (int ci : grp->comps) rose = rose || all[ci]->buoyancyDirection < 0;
+      if (rose) continue;
     }
-    // Out-of-buffer probe (assembly already against floor/ceiling): cannot move.
-    if (!shiftInBounds) continue;
-    // If a one-cell move would immediately ask for the opposite move, the
-    // assembly is already straddling buoyant equilibrium. Hold it there instead
-    // of producing a deterministic up/down two-cycle.
-    if (motionDecision(shifted, avgDensity) == -decision) continue;
-    translateAssembly(grp, cells, dirK);
+    if (decision == 0) continue;
+    int dirK = decision > 0 ? E.cols : -E.cols;
+    translateAssembly(grp, cells, dirK, decision, avgDensity);
   }
 }
 

@@ -13,7 +13,7 @@ struct Engine;
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
 // purpose: top liquid never creates support/lift).
 struct FaceContact {
-  int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0;
+  int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
   double liquidDensityArea = 0, powderDensityArea = 0;
 };
 
@@ -90,7 +90,9 @@ class ComponentSystem {
   void computeGroundedBoth();
   Comp* compById(Layer& lay, int id);
   bool compIdIsPlant(Layer& lay, int id);
-  void accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c);
+  void accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c,
+                             const std::unordered_map<int, uint8_t>* planned = nullptr);
+  int motionDecision(const FaceContact& c, size_t cellCount, double avgDensity);
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();
   bool isFloodTargetMat(uint8_t m);

@@ -168,6 +168,9 @@ struct Comp {
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
   bool grounded = false;
+  // Last committed vertical component move. A prior buoyant rise supplies
+  // surface hysteresis while liquid still supports the underside.
+  int8_t buoyancyDirection = 0;
   // Only SEEDED plants actively grow. Worldgen-stamped trees (and restored/streamed
   // comps) are inert scenery (growing=false) so they never self-activate the sim.
   // Cleared once a growing plant reaches its species' size cap.

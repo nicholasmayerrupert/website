@@ -1,0 +1,141 @@
+#pragma once
+// Material-aware creatures: deterministic AI, AABB physics/combat, population
+// policy, and snapshots. Creature positions are ABSOLUTE world cells, unlike
+// players/items, so a streaming shift never changes their identity or pose.
+
+struct Engine;
+
+enum CreatureSpeciesId : uint8_t { CS_MINNOW = 0, CS_PIKE, CS_NEWT, CS_HARE, CS_CRAWLER, CS_BIRD, CS_COUNT };
+enum CreatureLocomotion : uint8_t { CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING };
+enum CreatureTarget : uint8_t { CT_NONE = 0, CT_PLAYER = 1, CT_PREY = 2 };
+enum CreatureSpawnMode : uint8_t { CSM_REGION = 0, CSM_CONTINUOUS };
+enum CreatureHabitat : uint8_t { CH_WATER = 0, CH_SURFACE, CH_CAVE, CH_AIR };
+
+struct CreatureSpawnRule {
+  CreatureSpawnMode mode;
+  CreatureHabitat habitat;
+  int regionSize;
+  int maxPerRegion;
+  int maxActive;
+  int densityRadius;
+  int densityCap;
+  int intervalTicks;
+  double chance;
+  int minPlayerDistance;
+  int maxPlayerDistance;
+};
+
+struct CreatureSpecies {
+  const char* name;
+  CreatureLocomotion locomotion;
+  int w, h, maxHealth;
+  double walkSpeed, swimSpeed, accel, gravity, jumpSpeed;
+  double fluidThreshold, sightRange, attackRange;
+  int damage, attackCooldown, scanInterval;
+  int hopPeriod;
+  uint8_t targetMask;
+  uint32_t preyMask;
+  bool hostile;
+  CreatureSpawnRule spawn;
+};
+
+// One compact, centralized species table. Changing movement/combat/spawn cadence
+// or switching between region-time and continuous spawning is a data edit here.
+static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
+  {.name="minnow", .locomotion=CL_AQUATIC, .w=4, .h=2, .maxHealth=18,
+   .walkSpeed=0, .swimSpeed=0.34, .accel=0.055, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0.70, .sightRange=34, .attackRange=0,
+   .damage=0, .attackCooldown=18, .scanInterval=18, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_CONTINUOUS, CH_WATER, 160, 2, 6, 84, 3, 360, 0.65, 20, 82}},
+  {.name="pike", .locomotion=CL_AQUATIC, .w=7, .h=3, .maxHealth=55,
+   .walkSpeed=0, .swimSpeed=0.48, .accel=0.070, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0.64, .sightRange=58, .attackRange=0.6,
+   .damage=12, .attackCooldown=14, .scanInterval=14, .hopPeriod=0,
+   .targetMask=(uint8_t)(CT_PREY | CT_PLAYER), .preyMask=(1u << CS_MINNOW), .hostile=true,
+   .spawn={CSM_CONTINUOUS, CH_WATER, 224, 1, 2, 130, 1, 720, 0.45, 28, 96}},
+  {.name="newt", .locomotion=CL_AMPHIBIOUS, .w=6, .h=3, .maxHealth=42,
+   .walkSpeed=0.30, .swimSpeed=0.38, .accel=0.060, .gravity=0.075, .jumpSpeed=1.15,
+   .fluidThreshold=0.28, .sightRange=62, .attackRange=0.5,
+   .damage=7, .attackCooldown=16, .scanInterval=16, .hopPeriod=0,
+   .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 192, 1, 2, 96, 1, 600, 0.50, 28, 78}},
+  {.name="hare", .locomotion=CL_AMPHIBIOUS, .w=5, .h=3, .maxHealth=24,
+   .walkSpeed=0.34, .swimSpeed=0.30, .accel=0.070, .gravity=0.075, .jumpSpeed=1.30,
+   .fluidThreshold=0.30, .sightRange=44, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=20, .hopPeriod=46,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 160, 1, 3, 88, 2, 480, 0.65, 22, 68}},
+  {.name="crawler", .locomotion=CL_AMPHIBIOUS, .w=7, .h=3, .maxHealth=48,
+   .walkSpeed=0.25, .swimSpeed=0.22, .accel=0.052, .gravity=0.075, .jumpSpeed=0.95,
+   .fluidThreshold=0.34, .sightRange=70, .attackRange=0.7,
+   .damage=8, .attackCooldown=20, .scanInterval=18, .hopPeriod=0,
+   .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 160, 1, 2, 104, 1, 660, 0.50, 30, 112}},
+  {.name="bird", .locomotion=CL_FLYING, .w=5, .h=3, .maxHealth=20,
+   .walkSpeed=0, .swimSpeed=0.50, .accel=0.060, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0, .sightRange=54, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=20, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_CONTINUOUS, CH_AIR, 176, 1, 3, 96, 2, 540, 0.60, 20, 72}},
+};
+
+struct Creature {
+  int id = 0;
+  uint8_t species = CS_MINNOW;
+  bool alive = true;
+  double wx = 0, wy = 0; // absolute-world AABB top-left (+y down)
+  double vx = 0, vy = 0;
+  int health = 1;
+  int facing = 1;
+  bool grounded = false;
+  uint8_t targetKind = CT_NONE;
+  int targetId = 0;
+  int scanCooldown = 0, attackCooldown = 0, hurtCooldown = 0;
+  int deathTicks = 0;
+  uint8_t animFrame = 0;
+};
+
+class CreatureSystem {
+ public:
+  explicit CreatureSystem(Engine& e) : E(e) {}
+
+  std::vector<Creature> creatures;
+  // Hibernation is bucketed by absolute 128-cell region, so restoring a window
+  // touches only nearby buckets instead of scanning all previously explored life.
+  std::unordered_map<uint64_t, std::vector<Creature>> dormantRegions;
+  std::unordered_set<uint64_t> spawnedRegions;
+  std::vector<float> snapshot;
+  int nextCreatureId = 1;
+  static constexpr int MAX_LOADED_CREATURES = 12;
+  static constexpr int MIXED_DENSITY_RADIUS = 96;
+  static constexpr int MIXED_DENSITY_CAP = 5;
+
+  const CreatureSpecies& species(const Creature& c) const { return CREATURE_SPECIES[c.species]; }
+  bool inLoadedWindow(const Creature& c, int margin = 0) const;
+  bool boxHitsSolid(double wx, double wy, int w, int h) const;
+  double fluidCoverage(double wx, double wy, int w, int h) const;
+  bool boxTouchesLiquid(double wx, double wy, int w, int h) const;
+  bool boxFitsHabitat(uint8_t speciesId, double wx, double wy) const;
+  int localDensity(uint8_t speciesId, double wx, double wy, int radius) const;
+  int localDensityAll(double wx, double wy, int radius) const;
+  bool farEnoughFromPlayers(double wx, double wy, int minDistance) const;
+  bool spawnNearFocus(uint8_t speciesId, uint32_t salt);
+  int spawnCreature(uint8_t speciesId, double wx, double wy);
+  bool spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt);
+  void spawnRegion(uint8_t speciesId, int regionX, int regionY);
+  void updatePopulation();
+  void acquireTarget(Creature& c);
+  bool targetPoint(const Creature& c, double& tx, double& ty, Creature** prey, Player** player);
+  void steerAquatic(Creature& c);
+  void moveAquatic(Creature& c);
+  void moveAmphibious(Creature& c);
+  void moveFlying(Creature& c);
+  void attackTarget(Creature& c);
+  void updateCreatures();
+  bool damageAtPoint(int x, int y, int radius, int damage);
+  int buildCreatureSnapshot();
+
+ private:
+  Engine& E;
+};

@@ -91,7 +91,7 @@ class ComponentSystem {
   void computeGroundedBoth();
   Comp* compById(Layer& lay, int id);
   bool compIdIsPlant(Layer& lay, int id);
-  int nearestVacatedTarget(int source, int dir, int gridLen, int minTargetY);
+  int nearestVacatedTarget(int source, int dir, int minTargetY, std::vector<std::set<int>>& vacatedByRow);
   void accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c,
                              const std::unordered_map<int, uint8_t>* planned = nullptr);
   int motionDecision(const FaceContact& c, size_t cellCount, double avgDensity);

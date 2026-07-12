@@ -919,40 +919,39 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
 }
 
 // Match a displaced leading-face cell to the nearest unclaimed trailing-face
-// vacancy by spatial grid distance. The old unordered cursor and component-graph
-// distance could pair opposite ends of an irregular iceberg and eject submerged
-// liquid from a dry branch. Queue order only breaks equal-distance ties and is
-// deterministic.
-int ComponentSystem::nearestVacatedTarget(int source, int dir, int gridLen, int minTargetY) {
-  int seed = source - dir;
-  if (seed < 0 || seed >= gridLen || !asmCells.has(seed)) return -1;
-  trSeen.reset((size_t)gridLen);
-  std::vector<int> queue;
-  queue.reserve(64);
-  trSeen.add(seed);
-  queue.push_back(seed);
-  for (size_t qi = 0; qi < queue.size(); qi++) {
-    int k = queue[qi];
-    // A fallback is trailing only if it lies behind the displaced source along
-    // the motion axis. This prevents a rising iceberg from routing deep liquid
-    // into a geometrically nearby branch that is higher than the source.
-    int targetY = k / E.cols, sourceY = source / E.cols;
-    bool trailsSource = dir > 0 ? (targetY < sourceY) : (targetY > sourceY);
-    int y = k / E.cols, x = k - y * E.cols;
-    if (trVacated.has(k) && !trReserved.has(k) && trailsSource && targetY >= minTargetY) return k;
-    const int ox[4] = { 0, -1, 1, 0 };
-    const int oyStep = dir > 0 ? -1 : 1;
-    const int oy[4] = { oyStep, 0, 0, -oyStep };
-    for (int i = 0; i < 4; i++) {
-      int nx = x + ox[i], ny = y + oy[i];
-      if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
-      int nk = ny * E.cols + nx;
-      if (trSeen.has(nk)) continue;
-      trSeen.add(nk);
-      queue.push_back(nk);
-    }
+// vacancy by Manhattan distance. Only trailing candidates are indexed: the old
+// BFS flooded up to the entire grid once per displaced cell, making a wide or
+// concave iceberg O(face * grid area). Row sets preserve spatial matching while
+// bounding a lookup to O(rows * log(face)); erasing the winner keeps targets
+// unique without another grid search.
+int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY,
+                                          std::vector<std::set<int>>& vacatedByRow) {
+  int sourceY = source / E.cols, sourceX = source - sourceY * E.cols;
+  int firstY = dir > 0 ? imax(1, minTargetY) : imax(sourceY + 1, minTargetY);
+  int lastY = dir > 0 ? sourceY - 1 : E.rows - 1;
+  int best = -1, bestDist = INT_MAX;
+  for (int y = firstY; y <= lastY; y++) {
+    auto& xs = vacatedByRow[y];
+    if (xs.empty()) continue;
+    int dy = std::abs(y - sourceY);
+    if (dy > bestDist) continue;
+    auto consider = [&](std::set<int>::iterator it) {
+      if (it == xs.end()) return;
+      int dist = dy + std::abs(*it - sourceX);
+      int k = y * E.cols + *it;
+      int bestY = best < 0 ? -1 : best / E.cols;
+      bool earlierBfsTie = best >= 0 && (dir > 0 ? y < bestY : y > bestY);
+      if (dist < bestDist || (dist == bestDist && (earlierBfsTie || (y == bestY && k < best)))) {
+        best = k; bestDist = dist;
+      }
+    };
+    auto right = xs.lower_bound(sourceX);
+    consider(right);
+    if (right != xs.begin()) consider(std::prev(right));
   }
-  return -1;
+  if (best < 0) return -1;
+  vacatedByRow[best / E.cols].erase(best % E.cols);
+  return best;
 }
 
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
@@ -1167,6 +1166,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     trReserved.reset((size_t)gridLen);
     for (int k : own) asmCells.add(k);
     for (int k : vacated) trVacated.add(k);
+    std::vector<std::set<int>> vacatedByRow(E.rows);
+    for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
     std::unordered_map<uint8_t, std::vector<int>> sourceRows;
     for (const auto& p : pending) sourceRows[p.material].push_back(p.source / E.cols);
     std::unordered_map<uint8_t, int> contactFloorRow;
@@ -1180,7 +1181,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     });
     for (const auto& p : pending) {
       int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
-      int target = nearestVacatedTarget(p.source, dir, gridLen, minTargetY);
+      int target = nearestVacatedTarget(p.source, dir, minTargetY, vacatedByRow);
       if (target < 0) return false;
       trReserved.add(target);
       plan.relocate.push_back({target, p.material});
@@ -1348,6 +1349,8 @@ void ComponentSystem::moveRigidAssemblies() {
       for (int k : cells) trMoved.add(k + dir);
       trVacated.reset(gridLen);
       for (int k : vacated) trVacated.add(k);
+      std::vector<std::set<int>> vacatedByRow(E.rows);
+      for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
       auto plannedMaterialAt = [&](int k) -> uint8_t { return trVacated.has(k) ? EMPTY : E.L->grid[k]; };
       // Bound the total volume-preserving liquid search for this one assembly move.
@@ -1431,7 +1434,7 @@ void ComponentSystem::moveRigidAssemblies() {
         }
       }
       auto planVacatedLiquidDump = [&](uint8_t material, int source) {
-        int target = nearestVacatedTarget(source, dir, gridLen, minLiquidTargetY[material]);
+        int target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], vacatedByRow);
         if (target < 0) return false;
         liquidWrites.push_back({target, material});
         trReserved.add(target);

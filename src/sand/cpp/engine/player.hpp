@@ -30,6 +30,7 @@ class PlayerSystem {
   int spawnPlayer(double x, double y);
   void playerSurfaceSpawn(int col, double* out);
   int spawnPlayerAtSurface(int col);
+  void respawnPlayer(Player& p);
   Player* findPlayer(int id);
   void removePlayer(int id);
   void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq);

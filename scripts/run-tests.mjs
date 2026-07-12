@@ -17,6 +17,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SUITES = [
   ['tooltier', 'tooltier-test.mjs'],
   ['items', 'item-test.mjs'],
+  ['creatures', 'creature-test.mjs'],
   ['mining', 'mining-drop-test.mjs'],
   ['mining-speed', 'mining-speed-test.mjs'],
   ['mine-lock', 'mine-lock-test.mjs'],

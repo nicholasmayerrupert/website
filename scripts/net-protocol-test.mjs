@@ -4,9 +4,9 @@
 //   node scripts/net-protocol-test.mjs
 
 import {
-  MSG, encode, decode, makeItems, makeInventory, makeCursor,
+  MSG, encode, decode, makeItems, makeCreatures, makeInventory, makeCursor,
   makeSelect, makeSize, makeMove, makePick, makeThrow,
-  INV_SLOTS, ITEM_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
+  INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
 } from '../src/sand/net/protocol.js';
 
 let failures = 0;
@@ -16,7 +16,18 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 4', PROTOCOL_VERSION === 4);
+  check('PROTOCOL_VERSION is 6', PROTOCOL_VERSION === 6);
+}
+
+// Creature actor snapshot round trip + bounds.
+{
+  console.log('creatures round trip');
+  const creatures = [{ id: 7, species: 1, x: 22.5, y: -3.25, vx: 0.4, vy: -0.1, w: 7, h: 3, facing: -1, health: 41, maxHealth: 55, alive: true, animFrame: 1 }];
+  const d = rt(makeCreatures(43, creatures));
+  check('decodes to creatures', d && d.t === MSG.CREATURES && d.tick === 43);
+  check('creature flat length matches ABI', d && d.data.length === CREATURE_FIELDS);
+  check('creature pose/health preserved', d && d.data[0] === 7 && d.data[1] === 1 && d.data[2] === 22.5 && d.data[3] === -3.25 && d.data[9] === 41 && d.data[11] === 1);
+  check('empty creatures allowed', rt(makeCreatures(0, [])).data.length === 0);
 }
 
 // 1. items snapshot round trip + exactness (mixed item/particle, neg coords).
@@ -72,6 +83,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 0, 0, 1, Number.NaN, 0, 0] })) === null);
   check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: [1.5, 0, 0, 1, 0, 0, 0] })) === null);
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);
+  check('creatures bad record length', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 2, 3] })) === null);
+  check('creatures NaN coord', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 0, Number.NaN, 0, 0, 0, 4, 2, 1, 10, 10, 1, 0] })) === null);
   check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0, selectedFootprint: 0 })) === null);
   check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS, selectedFootprint: 0 })) === null);
   check('inventory footprint required', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: 0 })) === null);
@@ -89,6 +102,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   console.log('resource bounds');
   const huge = new Array((1024 + 1) * ITEM_FIELDS).fill(0);
   check('over-cap item snapshot rejected', decode(JSON.stringify({ t: 'items', tick: 0, data: huge })) === null);
+  const hugeCreatures = new Array((128 + 1) * CREATURE_FIELDS).fill(0);
+  check('over-cap creature snapshot rejected', decode(JSON.stringify({ t: 'creatures', tick: 0, data: hugeCreatures })) === null);
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

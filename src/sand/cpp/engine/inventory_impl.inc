@@ -240,6 +240,12 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
     int reachX = p.mineActive ? p.mineX : ax, reachY = p.mineActive ? p.mineY : ay;
     if (!inReachOf(reachX, reachY)) { E.resetPlayerMine(p); return; }
     bool acted = false;
+    // Creatures are hitbox entities, not grid cells. Route the same held mining
+    // action through their health before resolving terrain; hurtCooldown keeps a
+    // 60 Hz held button from becoming an accidental one-frame kill.
+    int hitRadius = imax(fp.width, fp.height) / 2 + 1;
+    int hitDamage = 7 + (int)p.heldToolTier * 4;
+    acted |= E.damageCreaturesAt(ax, ay, hitRadius, hitDamage);
     if (primary) acted |= E.mineFootprint(p, ax, ay, &E.fg);
     if (secondary && !primary) acted |= E.mineFootprintBoth(p, ax, ay);
     if (acted) E.playerActionCount++;

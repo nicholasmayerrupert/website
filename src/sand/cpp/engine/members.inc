@@ -87,6 +87,7 @@
   // ---- players (Terraria-like characters; physics in player.inc) ----
   // ---- dropped items + particles (entities; physics in items.inc) ----
   bool survivalInventory = false;         // survival mining->drops->inventory (set from JS)
+  bool creaturesEnabled = false;          // survival, or explicit /fps creature/debug mode
   int playerActionCount = 0;         // total player tool actions fired (debug/test)
   inline double rand() {
     rngState = (rngState + 0x6d2b79f5u);

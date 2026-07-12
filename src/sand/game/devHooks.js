@@ -102,6 +102,14 @@ export function installDevHooks(ctx, {
     getPlayMode() { return ctx.playMode; },
     getPlayer() { return localPlayer(); },
     getPlayers() { return engine() ? engine().getPlayers() : []; },
+    setPlayerState(state) {
+      const p = localPlayer();
+      if (p && engine()) { engine().setPlayerState(p.id, { ...p, ...state }); render(false); }
+    },
+    getCreatures() { return engine() ? engine().getCreatures() : []; },
+    setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); engine()?.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes); render(false); },
+    setSkyLight(v) { engine()?.setSkyLight(v | 0); render(true); },
+    actorLight(x, y, w, h) { return engine()?.glActorLight(x, y, w, h) ?? 1; },
     renderedPlayers() { return playersForRender(); },
     localInput() { return currentLocalInput(); },
     heldKeys() { return engine() ? engine().getHeldKeys() : 0; },

@@ -403,6 +403,7 @@ struct Player {
   bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
+  int hurtCooldown = 0; // contact-damage immunity; also protects a fresh respawn
   int toolCooldown = 0; // steps remaining before this player can act again
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
@@ -449,6 +450,8 @@ static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_
 #include "terrain.hpp"
 // Pixel generation + lighting class (extracted in 5c; composed by Engine).
 #include "renderer.hpp"
+// Material-aware non-player actors (AI, combat, spawning, world persistence).
+#include "creatures.hpp"
 // WebGL compositor class (extracted in 5c; composed by Engine).
 #include "glpresenter.hpp"
 // Dropped items + particles class (extracted in 5d; composed by Engine).

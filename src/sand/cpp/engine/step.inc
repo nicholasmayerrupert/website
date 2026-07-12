@@ -89,15 +89,16 @@
 
   // Real-time entities advance on their own cheap deterministic clock. This is
   // deliberately the extension point for future enemy/AI systems: add their
-  // update beside players/items without coupling them to the cellular world.
+  // Creature AI updates beside players/items without coupling it to the cellular world.
   bool stepActors() {
     double t0 = emscripten_get_now();
     useLayer(&fg);
     updatePlayers();
     updateItems();
+    updateCreatures();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
-    return !psys.players.empty() || !itemsys.items.empty();
+    return !psys.players.empty() || !itemsys.items.empty() || !creatures.creatures.empty();
   }
 
   bool stepWorld() {

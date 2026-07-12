@@ -38,6 +38,7 @@ struct Engine {
 #include "engine/gl.inc"
 #include "engine/player.inc"
 #include "engine/items.inc"
+#include "engine/creatures.inc"
 #include "engine/inventory.inc"
 #include "engine/netsync.inc"
 };
@@ -54,6 +55,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/items_impl.inc"
 #include "engine/inventory_impl.inc"
 #include "engine/player_impl.inc"
+#include "engine/creatures_impl.inc"
 #include "engine/tools_impl.inc"
 #include "engine/reactions_impl.inc"
 #include "engine/explosives_impl.inc"

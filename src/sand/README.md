@@ -51,8 +51,8 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 ## Files
 
 - `cpp/` — the C++ engine. Every simulation subsystem is a **named class**
-  composed by the Engine (fourteen: ViewCamera, NetSync, TerrainGen, Renderer,
-  GLPresenter, ItemSystem, InventorySystem, PlayerSystem, ToolSystem,
+  composed by the Engine (fifteen: ViewCamera, NetSync, TerrainGen, Renderer,
+  GLPresenter, ItemSystem, InventorySystem, PlayerSystem, CreatureSystem, ToolSystem,
   ReactionSystem, ExplosivesSystem, GrowthSystem, ComponentSystem,
   RigidBodySystem). Each lives as `engine/<name>.hpp` (state + interface, with
   an `Engine&` back-reference) plus `engine/<name>_impl.inc` (method bodies,
@@ -156,6 +156,45 @@ In free-camera mode the classic pointer tools (drafts + held paint/erase) are
 used instead. Player tool policy (reach, cooldown, place-vs-mine, no building
 inside your own body) lives in `cpp/engine/player.inc`.
 
+## Creatures
+
+Survival mode and the `/fps` diagnostics route have non-grid creatures simulated by `CreatureSystem`
+(`cpp/engine/creatures.hpp` + `creatures_impl.inc`) on the same deterministic
+actor clock as players and items. The species exercise reusable habitat and
+locomotion combinations: minnows (water/brine-only wandering), pike
+(aquatic predators that select the nearest prey creature, then a submerged
+player), newts (surface enemies that walk and switch to swimming when
+submerged), hares (hopping land animals), crawlers (hostile cave walkers), and
+birds (airborne wanderers that avoid solids and liquids).
+
+Each creature owns an AABB, health, velocity, facing, target id/type, attack and
+hurt cooldowns, and an absolute-world pose. Absolute coordinates make creatures
+stable across streaming shifts; off-window creatures hibernate and restore
+without consuming actor time. `CREATURE_SPECIES` is the single table for
+movement, sensing, combat, and `CreatureSpawnRule`. A spawn rule selects
+region-time or continuous spawning and controls cadence, probability, habitat,
+global active cap, local density radius/cap, and a min/max player distance band.
+Continuous populations search the valid habitat around a live player, or around
+the camera on `/fps`, so successful spawns appear in the loaded neighborhood
+instead of elsewhere in the world buffer. The first valid representative seeds
+immediately; replenishment is deliberately slow and is bounded by per-species,
+same-species local, mixed-species local, and loaded-window caps. Region activation
+remains available, is deterministic, and is recorded so revisiting a chunk cannot
+duplicate its population.
+Focus-based spawns also exclude the inner half of the current view: along the
+candidate's direction, it must be beyond the halfway point from the player to
+that screen edge (in addition to the species' fixed minimum distance).
+
+Sprites are original two-frame pixel grids drawn by the C++ WebGL compositor,
+with a health bar shown after damage. Player and creature sprite colors sample
+the same computed foreground light field as nearby world cells. Survival mining
+also checks creature hitboxes. Lethal contact damage returns the player to the
+surface with brief spawn protection instead of leaving an invisible, disabled
+actor. `/fps` enables hitbox outlines (cyan players, gold passive creatures, red
+hostile creatures) and includes the active creature count in its HUD.
+Multiplayer hosts replicate packed creature snapshots; clients render those
+authoritative records without running creature AI locally.
+
 ### Zoom
 
 In-game zoom (`+`/`−`/`0`, or the mobile zoom buttons) is a continuous scale on
@@ -169,9 +208,11 @@ host buffer size; their zoom is view-only within that window.
 ## Testing
 
 ```
-npm run test          # sand + players + net protocol (headless, CI-friendly)
+npm run test          # sand + players + creatures + net protocol (headless, CI-friendly)
 npm run test:sand     # node scripts/sand-test.mjs
 npm run test:players  # node scripts/player-test.mjs
+npm run test:creatures # node scripts/creature-test.mjs
+npm run test:creatures-e2e # /fps spawn, animation, visibility, and hitbox pixels
 npm run test:net      # node scripts/net-test.mjs
 npm run test:e2e      # node scripts/player-e2e.mjs (headless Chromium gameplay)
 npm run test:all      # npm run test && npm run build
@@ -208,7 +249,7 @@ browser <sand-game> clients
 - `scripts/sand-server.mjs` (`npm run sand:server`) — the authoritative headless
   server. It loads the WASM engine, owns the world, spawns one player per client,
   applies movement/tool/inventory intents, steps on a fixed timer, and broadcasts
-  world diffs plus player/item/inventory snapshots. Browsers are pure clients.
+  world diffs plus player/creature/item/inventory snapshots. Browsers are pure clients.
 - `src/sand/net/host.js` — transport-free authority logic shared by the server and
   tests: player assignment, per-client input sequencing/rate limiting, validation,
   stepping, and snapshot creation.

@@ -1,7 +1,7 @@
 // Authoritative headless multiplayer server for the sand game. Unlike the old
 // relay (dev-multiplayer-server.mjs, where the first browser peer secretly ran
 // the engine), THIS process IS the authority: it loads the WASM engine, runs the
-// real fixed-step simulation, and serializes world + players + items + inventory
+// real fixed-step simulation, and serializes world + players + creatures + items + inventory
 // + cursor down to every connected browser. Browsers are always pure clients —
 // they connect by IP:port, send input + survival intents, and render what the
 // server sends. The "host" is simply whoever runs this and also joins from a tab.
@@ -15,7 +15,7 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
-import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodeItems, encodeCreatures, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
 
 // Bounded shared arena (MVP): a fixed, non-streaming world buffer. Multiples of
@@ -64,6 +64,7 @@ export async function startSandServer(opts = {}) {
           sendTo(ws, encode(makeAssign(cfg.room, cid, pid)));
           sendTo(ws, encode(encodeWorld(engine, host.worldTick)));
           sendTo(ws, encode(encodeItems(engine, host.actorTick)));
+          sendTo(ws, encode(encodeCreatures(engine, host.actorTick)));
           sendTo(ws, encode(encodeInventory(engine, host.actorTick, pid)));
           sendTo(ws, encode(encodeCursor(engine, host.actorTick, pid)));
           break;
@@ -83,13 +84,14 @@ export async function startSandServer(opts = {}) {
     ws.on('error', cleanup);
   });
 
-  let sinceSnap = 0, sinceItems = 0;
+  let sinceSnap = 0, sinceItems = 0, sinceCreatures = 0;
   function stepActorsOnce(now) {
     host.stepActors(now);
     const t = host.actorTick;
     if (peers.size > 0) {
       if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcast(encode(makeSnapshot(t, engine.getPlayers(), null))); }
       if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcast(encode(encodeItems(engine, t))); }
+      if (++sinceCreatures >= SNAPSHOT_INTERVAL) { sinceCreatures = 0; broadcast(encode(encodeCreatures(engine, t))); }
       // Per-player inventory + cursor, only when that player's inventory changed
       // (idle players cost zero inventory bandwidth).
       for (const p of peers.values()) {

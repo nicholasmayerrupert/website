@@ -60,8 +60,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('snapshot round trip');
   const players = [
-    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, inputSeq: 9, animState: 2, animFrame: 3 },
-    { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, inputSeq: 0, animState: 0, animFrame: 1 },
+    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3 },
+    { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, alive: true, inputSeq: 0, animState: 0, animFrame: 1 },
   ];
   const d = rt(makeSnapshot(123, players, 0xdeadbeef));
   check('decodes to snapshot', d && d.t === MSG.SNAPSHOT && d.tick === 123);
@@ -69,6 +69,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('two players, positions intact', d && d.players.length === 2 && d.players[0].x === 10.5 && d.players[0].y === 20.25 && d.players[1].id === 2);
   check('grounded normalized to 0/1', d && d.players[0].grounded === 1 && d.players[1].grounded === 0);
   check('animation state preserved', d && d.players[0].animState === 2 && d.players[0].animFrame === 3 && d.players[1].animFrame === 1);
+  check('alive state preserved', d && d.players[0].alive === 1 && d.players[1].alive === 1);
 }
 
 // 3. join/leave round trip.

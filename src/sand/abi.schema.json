@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
-  "abiVersion": 4,
+  "abiVersion": 6,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -11,6 +11,11 @@
       "$comment": "float32 records built by buildItemSnapshot (items.inc); also the external GL item layout (glSetItems) and the ITEMS wire message payload.",
       "cPrefix": "IS",
       "fields": ["id", "kind", "material", "count", "x", "y", "life", "plantType"]
+    },
+    "creatureSnapshot": {
+      "$comment": "float32 creature records built by CreatureSystem; also used by the external GL renderer and CREATURES wire message.",
+      "cPrefix": "CSN",
+      "fields": ["id", "species", "x", "y", "vx", "vy", "w", "h", "facing", "health", "maxHealth", "alive", "animFrame"]
     },
     "inventorySlot": {
       "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
@@ -46,19 +51,40 @@
     "PlayerInput": {
       "$comment": "Input bitmask (player.inc / the browser input layer / the net protocol).",
       "cName": "PlayerInput",
+      "jsName": "INPUT",
+      "jsPrefix": "PI",
       "values": { "PI_LEFT": 1, "PI_RIGHT": 2, "PI_JUMP": 4, "PI_DOWN": 8, "PI_PRIMARY": 16, "PI_SECONDARY": 32, "PI_RUN": 64 }
     },
     "Tool": {
       "$comment": "Legacy tool ids (tools.inc); the creative palette prefers setCreativeMaterial.",
       "cName": "Tool",
       "cType": "int",
+      "jsName": "TOOL",
+      "jsPrefix": "T",
       "values": { "T_CUBE": 0, "T_SAND": 1, "T_WATER": 2, "T_STONE": 3, "T_OIL": 4, "T_FIRE": 5, "T_ACID": 6, "T_LAVA": 7, "T_ICE": 8, "T_SEED": 9, "T_DRIFTWOOD": 10, "T_ERASER": 11 }
     },
     "CreativeKind": {
       "$comment": "What an engine_set_creative_material selection refers to.",
       "cName": "CreativeKind",
       "cType": "uint8_t",
+      "jsName": "CREATIVE_KIND",
+      "jsPrefix": "CK",
       "values": { "CK_MATERIAL": 0, "CK_SEED": 1, "CK_ERASER": 2, "CK_CUBE": 3 }
+    },
+    "CreatureSpecies": {
+      "$comment": "Creature species ids used by snapshots, test hooks, and the network renderer.",
+      "cName": "CreatureSpeciesAbi",
+      "cType": "int",
+      "jsName": "CREATURE",
+      "jsPrefix": "CREATURE",
+      "values": {
+        "CREATURE_MINNOW": 0,
+        "CREATURE_PIKE": 1,
+        "CREATURE_NEWT": 2,
+        "CREATURE_HARE": 3,
+        "CREATURE_CRAWLER": 4,
+        "CREATURE_BIRD": 5
+      }
     }
   },
   "constants": {

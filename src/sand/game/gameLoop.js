@@ -59,7 +59,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   // The engine owns the whole compositing pipeline: it reads its own camera
   // (camera.inc), uploads the cells whose contents changed (dirty-rect
   // glTexSubImage2D), nearest-upscales the visible window onto the canvas,
-  // draws the 1px gutter grid, the player overlay, and the draft preview — all
+  // draws the 1px gutter grid, actor overlays, and the draft preview — all
   // in C++/WebGL. JS only hands it the player set to draw. The sub-cell pan
   // offset is snapped to whole device px inside the engine (the documented
   // bright-block-flicker fix); the snap/gutter A/B flags live there too.
@@ -94,6 +94,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // Dropped items: a client draws the server's authoritative items; host/local
     // (and single-player) draws the engine's own (null = engine-owned).
     engine.glSetItems(ctx.netClientReady() ? ctx.net.getItemsForRender() : null);
+    engine.glSetCreatures(ctx.netClientReady() ? ctx.net.getCreaturesForRender() : null);
     engine.glRenderFrame(full || ctx.forceFullRender);
     ctx.forceFullRender = false;
     ctx.previewDirty = false;

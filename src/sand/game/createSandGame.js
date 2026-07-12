@@ -45,6 +45,9 @@ export function createSandGame(container, opts = {}) {
     // tools, camera follows. 'creative': free camera (WASD pans the infinite
     // world), draw tools place/erase anywhere with no reach limit, no character.
     mode = 'survival',
+    // /fps enables engine-owned creature actors plus AABB outlines while
+    // retaining creative controls and the performance HUD.
+    debugHitboxes = false,
     // Survival inventory hooks: onInventory(snapshot) feeds the HUD when it
     // changes; onToggleInventory() opens/closes the grid (the E key). The
     // inventory itself is authoritative in the engine — these only move
@@ -75,7 +78,7 @@ export function createSandGame(container, opts = {}) {
   // fields are grouped by owner. ctx.fns holds late-bound cross-module calls
   // (set after the owning module is created). ---
   const ctx = {
-    container, canvas, parallax, survival,
+    container, canvas, parallax, survival, debugHitboxes: !!debugHitboxes,
     // One seed per mount so resizing regenerates the *same* infinite world.
     worldSeed: (Math.random() * 4294967296) >>> 0,
     // devicePixelRatio at load. Browser page zoom later changes dpr (and the
@@ -282,6 +285,7 @@ export function createSandGame(container, opts = {}) {
     getDrawMode() { return ctx.drawModeOn; },
     setPlayMode(on) { ctx.playMode = !!on; ctx.engine?.setPlayMode(ctx.playMode); },
     getPlayMode() { return ctx.playMode; },
+    setDebugHitboxes(on) { ctx.debugHitboxes = !!on; ctx.engine?.glSetDebugHitboxes(ctx.debugHitboxes); ctx.engine?.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes); },
     inputKey(code, on) { ctx.engine?.inputKey(code | 0, on ? 1 : 0); },
     // Survival inventory intents. When connected as a client they go to the
     // authoritative server; offline they apply to the local engine.
@@ -376,6 +380,7 @@ export function createSandGame(container, opts = {}) {
         componentCount: perf.componentCount || 0,
         componentCellCount: perf.componentCellCount || 0,
         crossBondCount: perf.crossBondCount || 0,
+        creatureCount: ctx.engine ? ctx.engine.creatureCount() : 0,
         tick: ctx.engine ? ctx.engine.getTick() : 0,
         actorTick: ctx.engine ? ctx.engine.getActorTick() : 0,
         worldTick: workerState?.worldTick ?? (ctx.engine ? ctx.engine.getTick() : 0),

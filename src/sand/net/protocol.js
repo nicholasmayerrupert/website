@@ -4,9 +4,9 @@
 // is strictly validated and integer fields are preserved exactly — divergence
 // here would desync a host-authoritative session.
 
-import { INPUT, TOOL, INV_SLOTS, STRIDES } from '../wasmBridge/abi.generated.js';
+import { INPUT, TOOL, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 6;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -19,6 +19,7 @@ export const MSG = Object.freeze({
   DIFF: 'diff',         // host -> client: changed cells (base64)
   RESYNC: 'resync',     // client -> host: request a full world snapshot
   ITEMS: 'items',       // host -> client: dropped-item entities (packed)
+  CREATURES: 'creatures', // host -> client: material-aware actors (packed)
   INVENTORY: 'inv',     // host -> client: one player's authoritative inventory
   CURSOR: 'cursor',     // host -> client: one player's carried cursor stack
   ACT_SELECT: 'aselect',// client -> host: select a hotbar slot
@@ -34,8 +35,10 @@ export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); /
 export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
 const MAX_SNAPSHOT_PLAYERS = 64;
 export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life,plantType] per item
+export const CREATURE_FIELDS = STRIDES.creatureSnapshot;
 export const INV_FIELDS = STRIDES.inventorySlot - 1;  // wire slots omit the `selected` flag (sent separately)
 const MAX_SNAPSHOT_ITEMS = 1024; // IT_MAX_ITEMS in items.inc
+const MAX_SNAPSHOT_CREATURES = 128;
 
 const isInt = (v) => Number.isInteger(v);
 const isNonNegInt = (v) => isInt(v) && v >= 0;
@@ -71,7 +74,8 @@ export function makeSnapshot(tick, players, hash = null) {
     players: players.map((p) => ({
       id: p.id | 0, x: p.x, y: p.y, vx: p.vx ?? 0, vy: p.vy ?? 0,
       facing: p.facing | 0, grounded: p.grounded ? 1 : 0, jr: p.jumpReady ? 1 : 0,
-      tool: p.tool | 0, health: p.health | 0, seq: (p.inputSeq ?? p.seq ?? 0) >>> 0,
+      tool: p.tool | 0, health: p.health | 0, alive: p.alive === false ? 0 : 1,
+      seq: (p.inputSeq ?? p.seq ?? 0) >>> 0,
       animState: p.animState | 0, animFrame: p.animFrame | 0,
     })),
   };
@@ -97,6 +101,18 @@ export function makeItems(tick, items) {
     data[o + 7] = it.plantType | 0;
   }
   return { t: MSG.ITEMS, tick: Math.trunc(tick), data };
+}
+export function makeCreatures(tick, creatures) {
+  const O = OFF.creatureSnapshot, data = new Array(creatures.length * CREATURE_FIELDS);
+  for (let i = 0; i < creatures.length; i++) {
+    const c = creatures[i], o = i * CREATURE_FIELDS;
+    data[o + O.id] = c.id | 0; data[o + O.species] = c.species | 0;
+    data[o + O.x] = c.x; data[o + O.y] = c.y; data[o + O.vx] = c.vx; data[o + O.vy] = c.vy;
+    data[o + O.w] = c.w | 0; data[o + O.h] = c.h | 0; data[o + O.facing] = c.facing | 0;
+    data[o + O.health] = c.health | 0; data[o + O.maxHealth] = c.maxHealth | 0;
+    data[o + O.alive] = c.alive ? 1 : 0; data[o + O.animFrame] = c.animFrame | 0;
+  }
+  return { t: MSG.CREATURES, tick: Math.trunc(tick), data };
 }
 // One player's authoritative inventory. `slots` is the getInventory() slots array
 // ({material,isTool,toolClass,toolTier,count,plantType}); `selected` is the hotbar index.
@@ -142,6 +158,7 @@ export function decode(str) {
     case MSG.DIFF: return (isNonNegInt(m.tick) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.RESYNC: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ITEMS: return validateItems(m);
+    case MSG.CREATURES: return validateCreatures(m);
     case MSG.INVENTORY: return validateInventory(m);
     case MSG.CURSOR: return validateCursor(m);
     case MSG.ACT_SELECT: return (isRoom(m.room) && isId(m.client) && isSlot(m.slot)) ? m : null;
@@ -163,6 +180,17 @@ function validateItems(m) {
     const f = i % ITEM_FIELDS;
     // fields 4,5 are x,y (any finite); the rest are integers.
     if (f === 4 || f === 5) { if (!isFiniteNum(m.data[i])) return null; }
+    else if (!isInt(m.data[i])) return null;
+  }
+  return m;
+}
+function validateCreatures(m) {
+  if (!isNonNegInt(m.tick) || !Array.isArray(m.data)) return null;
+  if (m.data.length % CREATURE_FIELDS !== 0 || m.data.length > MAX_SNAPSHOT_CREATURES * CREATURE_FIELDS) return null;
+  const O = OFF.creatureSnapshot;
+  for (let i = 0; i < m.data.length; i++) {
+    const f = i % CREATURE_FIELDS;
+    if (f === O.x || f === O.y || f === O.vx || f === O.vy) { if (!isFiniteNum(m.data[i])) return null; }
     else if (!isInt(m.data[i])) return null;
   }
   return m;
@@ -203,6 +231,7 @@ function validateSnapshot(m) {
     if (!p || !isNonNegInt(p.id)) return null;
     if (!isFiniteNum(p.x) || !isFiniteNum(p.y) || !isFiniteNum(p.vx) || !isFiniteNum(p.vy)) return null;
     if (!isInt(p.facing) || !isNonNegInt(p.tool) || !isNonNegInt(p.seq)) return null;
+    if (!isNonNegInt(p.health) || !isBit(p.alive)) return null;
     if (!isNonNegInt(p.animState) || !isNonNegInt(p.animFrame)) return null;
   }
   return m;

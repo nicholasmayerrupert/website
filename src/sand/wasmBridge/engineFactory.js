@@ -283,7 +283,13 @@ export function initSandWasm() {
         itemCount: c('engine_item_count', 'number', ['number']),
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
         itemSnapshotPtr: c('engine_item_snapshot_ptr', 'number', ['number']),
+        spawnCreature: c('engine_spawn_creature', 'number', ['number', 'number', 'number', 'number']),
+        damageCreatures: c('engine_damage_creatures', 'number', ['number', 'number', 'number', 'number', 'number']),
+        creatureCount: c('engine_creature_count', 'number', ['number']),
+        creatureSnapshot: c('engine_creature_snapshot', 'number', ['number']),
+        creatureSnapshotPtr: c('engine_creature_snapshot_ptr', 'number', ['number']),
         setSurvivalInventory: c('engine_set_survival_inventory', null, ['number', 'number']),
+        setCreaturesEnabled: c('engine_set_creatures_enabled', null, ['number', 'number']),
         seedStarterTools: c('engine_seed_starter_tools', null, ['number', 'number']),
         addToInventory: c('engine_add_to_inventory', 'number', ['number', 'number', 'number', 'number']),
         setSelectedSlot: c('engine_set_selected_slot', null, ['number', 'number', 'number']),
@@ -321,12 +327,15 @@ export function initSandWasm() {
         glInit: c('engine_gl_init', 'number', ['number', 'string']),
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
+        glSetDebugHitboxes: c('engine_gl_set_debug_hitboxes', null, ['number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
         glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
+        glSetCreatures: c('engine_gl_set_creatures', null, ['number', 'number', 'number', 'number']),
         glShift: c('engine_gl_shift', null, ['number', 'number']),
         glRenderFrame: c('engine_gl_render_frame', 'number', ['number', 'number']),
         glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
         glReadPixels: c('engine_gl_read_pixels', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
+        glActorLight: c('engine_gl_actor_light', 'number', ['number', 'number', 'number', 'number', 'number']),
         setViewport: c('engine_set_viewport', null, ['number', 'number', 'number', 'number', 'number']),
         resizeLoadedWindow: c('engine_resize_loaded_window', 'number', ['number', 'number', 'number']),
         cameraSet: c('engine_camera_set', null, ['number', 'number', 'number']),
@@ -378,6 +387,7 @@ export function createEngineWasm({
   const renderStrides = Object.freeze({
     player: STRIDES.glPlayerExt,
     item: STRIDES.itemSnapshot,
+    creature: STRIDES.creatureSnapshot,
   });
 
   const refreshDims = () => {
@@ -512,6 +522,7 @@ export function createEngineWasm({
       return M.glInit(ptr, key) === 1;
     },
     glResize(devW, devH) { M.glResize(ptr, devW, devH); },
+    glActorLight(x, y, w, h) { return M.glActorLight(ptr, x, y, w | 0, h | 0); },
     // Players to overlay. Host/local draws the engine's own players (own = the
     // local id, blue). A client passes a packed [x,y,w,h,facing,own] Float32Array
     // of host-authoritative snapshot players.
@@ -542,8 +553,20 @@ export function createEngineWasm({
       mod.HEAPF32.set(packed, buf >> 2);
       M.glSetItems(ptr, 1, buf, (len / renderStrides.item) | 0);
     },
+    // Authoritative creature overlay. null selects engine-owned single-player
+    // creatures; a Float32Array selects a server snapshot (including empty).
+    glSetCreatures(packed) {
+      if (packed === null || packed === undefined) { M.glSetCreatures(ptr, 0, 0, 0); return; }
+      const len = packed.length;
+      if (!len) { M.glSetCreatures(ptr, 1, 0, 0); return; }
+      if (len % renderStrides.creature !== 0) throw new Error(`external creature buffer length ${len} is not divisible by stride ${renderStrides.creature}`);
+      const buf = glScratch(len);
+      mod.HEAPF32.set(packed, buf >> 2);
+      M.glSetCreatures(ptr, 1, buf, (len / renderStrides.creature) | 0);
+    },
     getRenderStrides() { return renderStrides; },
     glSetFlags(gutterOn, snapOff) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0); },
+    glSetDebugHitboxes(on) { M.glSetDebugHitboxes(ptr, on ? 1 : 0); },
     glShift(dx) { M.glShift(ptr, dx); },
     glRenderFrame(forceFull) { return M.glRenderFrame(ptr, forceFull ? 1 : 0) === 1; },
     glGetOffset() { M.glGetOffset(ptr, glOffOut); const o = glOffOut >> 2; return { offX: mod.HEAP32[o], offY: mod.HEAP32[o + 1] }; },
@@ -768,11 +791,15 @@ export function createEngineWasm({
     // the new item id. Cosmetic particles are a test hook (wasmBridge/testHooks.js).
     spawnItem(material, count, px, py, vx = 0, vy = 0) { return M.spawnItem(ptr, material | 0, count | 0, px, py, vx, vy); },
     itemCount() { return M.itemCount(ptr); },
+    spawnCreature(species, worldX, worldY) { return M.spawnCreature(ptr, species | 0, worldX, worldY); },
+    damageCreatures(x, y, radius, damage) { return M.damageCreatures(ptr, x | 0, y | 0, radius | 0, damage | 0) === 1; },
+    creatureCount() { return M.creatureCount(ptr); },
 
     // Survival inventory (authoritative in the engine). setSurvivalInventory routes
     // player controls through the hotbar; getInventory reads a packed snapshot for
     // the HUD; the rest forward slot intents.
     setSurvivalInventory(on) { M.setSurvivalInventory(ptr, on ? 1 : 0); },
+    setCreaturesEnabled(on) { M.setCreaturesEnabled(ptr, on ? 1 : 0); },
     seedStarterTools(id) { M.seedStarterTools(ptr, id | 0); },
     addToInventory(id, material, count) { return M.addToInventory(ptr, id | 0, material | 0, count | 0) === 1; },
     setSelectedSlot(id, slot) { M.setSelectedSlot(ptr, id | 0, slot | 0); },
@@ -850,6 +877,24 @@ export function createEngineWasm({
       for (let i = 0; i < n; i++) {
         const o = i * stride;
         out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0, plantType: f[o + O.plantType] | 0 };
+      }
+      return out;
+    },
+    getCreatures() {
+      const n = M.creatureSnapshot(ptr);
+      if (!n) return [];
+      const stride = STRIDES.creatureSnapshot;
+      const f = new Float32Array(mod.HEAPF32.buffer, M.creatureSnapshotPtr(ptr), n * stride);
+      const out = new Array(n), O = OFF.creatureSnapshot;
+      for (let i = 0; i < n; i++) {
+        const o = i * stride;
+        out[i] = {
+          id: f[o + O.id] | 0, species: f[o + O.species] | 0,
+          x: f[o + O.x], y: f[o + O.y], vx: f[o + O.vx], vy: f[o + O.vy],
+          w: f[o + O.w] | 0, h: f[o + O.h] | 0, facing: f[o + O.facing] | 0,
+          health: f[o + O.health] | 0, maxHealth: f[o + O.maxHealth] | 0,
+          alive: f[o + O.alive] === 1, animFrame: f[o + O.animFrame] | 0,
+        };
       }
       return out;
     },

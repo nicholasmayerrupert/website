@@ -2,7 +2,7 @@
 // WebGL presentation (the engine's compositor) — extracted from the Engine in
 // 5c. Uploads the CPU-generated cell pixel buffer (Renderer) into cols x rows
 // textures and draws the visible window as one nearest-neighbour upscaled
-// quad, plus the 1px gutter grid, the player/item overlays, and the draft
+// quad, plus the 1px gutter grid, the player/creature/item overlays, and the draft
 // preview. The context + program live per-canvas (gl_shared.hpp); the textures
 // + FBOs here are per-engine and rebuilt on resize. Parity notes (snapped
 // sub-cell offset = the documented flicker fix) live with the methods in
@@ -26,6 +26,7 @@ class GLPresenter {
   double glCellDev = 1;                 // device px per cell (fractional when zoomed out past 1 px/cell)
   int glViewCols = 0, glViewRows = 0;
   int glGutterOn = 1, glSnapOff = 0;
+  bool glDebugHitboxes = false;
   double glOffX = 0, glOffY = 0;        // snapped sub-cell present offset (device px)
   // Last presented window origin + world offset + skylight. The present path renders
   // only the VISIBLE window into the textures (off-screen texels are never sampled), so
@@ -59,8 +60,8 @@ class GLPresenter {
 
   bool glUseExtItems = false;           // client renders dropped items from host snapshots
   std::vector<float> glExtItems;        // packed [id,kind,material,count,px,py,life] per item
-
-
+  bool glUseExtCreatures = false;       // client renders authoritative creatures
+  std::vector<float> glExtCreatures;    // packed creatureSnapshot records
 
   bool glReady() const;
   int glInit(const char* target);
@@ -72,8 +73,10 @@ class GLPresenter {
   void glRebuildCellTextures();
   void glSyncCamera();
   void glSetFlags(int gutterOn, int snapOff);
+  void glSetDebugHitboxes(int on);
   void glSetPlayers(int useExternal, const float* data, int count, int ownId);
   void glSetItems(int useExternal, const float* data, int count);
+  void glSetCreatures(int useExternal, const float* data, int count);
   void glUploadFull(GLuint tex);
   void glUploadRects(GLuint tex);
   void glVisRect(int* x0, int* y0, int* x1, int* y1);
@@ -84,13 +87,18 @@ class GLPresenter {
   void glShiftV(int dy);
   void glSetClip(double dx0, double dy0, double dx1, double dy1);
   void glSolidDev(double dx0, double dy0, double w, double h);
+  void glDrawHitbox(double px, double py, int w, int h, float r, float g, float b, int camCol, int camRow);
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
+  float glActorLight(double px, double py, int w, int h) const;
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
-                     bool own, int camCol, int camRow);
+                     bool own, float light, int camCol, int camRow);
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int material, double px, double py, int life,
                    int camCol, int camRow);
   void glDrawItems();
+  void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,
+                         int alive, int animFrame, float light, int camCol, int camRow);
+  void glDrawCreatures();
   void glDrawPreview();
   void glPresentWindow(int forceFull);
   int glRenderFrame(int forceFull);

@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 4;
+static const int ABI_VERSION = 6;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -41,6 +41,24 @@ enum ItemSnapshotField : int {
   IS_PLANT_TYPE = 7,
 };
 static const int IS_STRIDE = 8;
+
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame
+enum CreatureSnapshotField : int {
+  CSN_ID = 0,
+  CSN_SPECIES = 1,
+  CSN_X = 2,
+  CSN_Y = 3,
+  CSN_VX = 4,
+  CSN_VY = 5,
+  CSN_W = 6,
+  CSN_H = 7,
+  CSN_FACING = 8,
+  CSN_HEALTH = 9,
+  CSN_MAX_HEALTH = 10,
+  CSN_ALIVE = 11,
+  CSN_ANIM_FRAME = 12,
+};
+static const int CSN_STRIDE = 13;
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, selected
 enum InventorySlotField : int {
@@ -141,6 +159,15 @@ enum CreativeKind : uint8_t {
   CK_SEED = 1,
   CK_ERASER = 2,
   CK_CUBE = 3,
+};
+
+enum CreatureSpeciesAbi : int {
+  CREATURE_MINNOW = 0,
+  CREATURE_PIKE = 1,
+  CREATURE_NEWT = 2,
+  CREATURE_HARE = 3,
+  CREATURE_CRAWLER = 4,
+  CREATURE_BIRD = 5,
 };
 
 static const int INV_HOTBAR = 9;

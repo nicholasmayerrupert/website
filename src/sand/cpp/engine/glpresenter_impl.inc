@@ -82,6 +82,7 @@ void GLPresenter::glRebuildCellTextures() {
 }
 // DEV A/B flags (flicker bench): toggle the gutter grid and offset snapping.
 void GLPresenter::glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = snapOff; }
+void GLPresenter::glSetDebugHitboxes(int on) { glDebugHitboxes = on != 0; }
 
 void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, int ownId) {
   glOwnPlayerId = ownId;
@@ -95,6 +96,11 @@ void GLPresenter::glSetItems(int useExternal, const float* data, int count) {
   glUseExtItems = useExternal != 0;
   if (glUseExtItems) glExtItems.assign(data, data + (size_t)count * IS_STRIDE);
   else glExtItems.clear();
+}
+void GLPresenter::glSetCreatures(int useExternal, const float* data, int count) {
+  glUseExtCreatures = useExternal != 0;
+  if (glUseExtCreatures && data && count > 0) glExtCreatures.assign(data, data + (size_t)count * CSN_STRIDE);
+  else glExtCreatures.clear();
 }
 
 // ---- texture uploads (active layer's renderPixels -> the given texture) ----
@@ -217,6 +223,17 @@ void GLPresenter::glSolidDev(double dx0, double dy0, double w, double h) {
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
+void GLPresenter::glDrawHitbox(double px, double py, int w, int h, float r, float g, float b, int camCol, int camRow) {
+  if (!glDebugHitboxes) return;
+  double x = (px - camCol) * glCellDev + glOffX;
+  double y = (py - camRow) * glCellDev + glOffY;
+  double ww = w * glCellDev, hh = h * glCellDev;
+  double line = std::max(1.0, glCellDev * 0.22);
+  glUniform4f(glc->uColor, r, g, b, 0.92f);
+  glSolidDev(x, y, ww, line); glSolidDev(x, y + hh - line, ww, line);
+  glSolidDev(x, y, line, hh); glSolidDev(x + ww - line, y, line, hh);
+}
+
 // Draw the visible window of one layer's texture at brightness `tint`. The
 // background passes gutter=0 and opaqueAlpha=1 so rear-layer material alpha does
 // not show through foreground cells; the foreground passes the real gutter flag.
@@ -246,8 +263,18 @@ void GLPresenter::glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlph
 // one world cell). The sprite is anchored at AABB offset (-1,-2) cells so the feet
 // plant on the surface and the body centers on the 4-wide hitbox; mirrored when
 // facing left. A subtle own/other tint distinguishes the local player.
+float GLPresenter::glActorLight(double px, double py, int w, int h) const {
+  if (!Renderer::RENDER_LIGHTING_ENABLED || E.fg.light.empty()) return 1.0f;
+  int x0 = imax(0, (int)std::floor(px)), x1 = imin(E.cols - 1, (int)std::floor(px + w - 1e-6));
+  int y0 = imax(0, (int)std::floor(py)), y1 = imin(E.rows - 1, (int)std::floor(py + h - 1e-6));
+  if (x1 < x0 || y1 < y0) return Renderer::LIGHT_AMBIENT / 255.0f;
+  int sum = 0, count = 0;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) { sum += E.fg.light[E.I(x, y)]; count++; }
+  return count ? (float)sum / (255.0f * count) : Renderer::LIGHT_AMBIENT / 255.0f;
+}
+
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
-                     bool own, int camCol, int camRow) {
+                     bool own, float light, int camCol, int camRow) {
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
@@ -262,7 +289,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       const float* col = SPR_PAL[idx];
       float tr = col[0], tg = col[1], tb = col[2];
       if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
-      glUniform4f(glc->uColor, tr, tg, tb, col[3]);
+      glUniform4f(glc->uColor, tr * light, tg * light, tb * light, col[3]);
       glSolidDev(sprX + cc * cell, sprY + r * cell, cell, cell);
     }
   }
@@ -276,12 +303,15 @@ void GLPresenter::glDrawPlayers() {
     int n = (int)(glExtPlayers.size() / GLP_STRIDE);
     for (int i = 0; i < n; i++) {
       const float* p = &glExtPlayers[(size_t)i * GLP_STRIDE];
-      glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME], p[GLP_OWN] > 0.5f, camCol, camRow);
+      float light = glActorLight(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H]);
+      glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME], p[GLP_OWN] > 0.5f, light, camCol, camRow);
+      glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
     for (auto& p : E.psys.players) {
-      if (!p.active) continue;
-      glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.id == glOwnPlayerId, camCol, camRow);
+      if (!p.active || !p.alive) continue;
+      glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.id == glOwnPlayerId, glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
+      glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
 }
@@ -335,6 +365,75 @@ void GLPresenter::glDrawItems() {
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
   for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.material, it.px, it.py, it.life, camCol, camRow);
+}
+
+// Original pixel sprites authored for this renderer. Digits index the small
+// per-species palettes below; frames use a tail/leg offset for readable motion.
+void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int facing, int health, int maxHealth,
+                    int alive, int animFrame, float light, int camCol, int camRow) {
+  static const float pal[CS_COUNT][5][4] = {
+    {{0,0,0,0},{18/255.f,35/255.f,48/255.f,1},{83/255.f,181/255.f,192/255.f,1},{144/255.f,225/255.f,201/255.f,1},{240/255.f,226/255.f,128/255.f,1}},
+    {{0,0,0,0},{25/255.f,29/255.f,31/255.f,1},{64/255.f,126/255.f,85/255.f,1},{127/255.f,173/255.f,92/255.f,1},{234/255.f,207/255.f,91/255.f,1}},
+    {{0,0,0,0},{35/255.f,25/255.f,42/255.f,1},{151/255.f,82/255.f,141/255.f,1},{217/255.f,133/255.f,142/255.f,1},{244/255.f,194/255.f,122/255.f,1}},
+    {{0,0,0,0},{34/255.f,25/255.f,31/255.f,1},{181/255.f,141/255.f,110/255.f,1},{231/255.f,199/255.f,157/255.f,1},{245/255.f,105/255.f,116/255.f,1}},
+    {{0,0,0,0},{24/255.f,22/255.f,30/255.f,1},{83/255.f,55/255.f,101/255.f,1},{145/255.f,91/255.f,151/255.f,1},{104/255.f,224/255.f,183/255.f,1}},
+    {{0,0,0,0},{27/255.f,29/255.f,43/255.f,1},{79/255.f,137/255.f,210/255.f,1},{159/255.f,207/255.f,238/255.f,1},{250/255.f,184/255.f,80/255.f,1}},
+  };
+  static const char* const grids[CS_COUNT][2][5] = {
+    {{"000000000","011220000","122234400","011220000","000000000"},
+     {"000000000","001122000","112234400","001122000","000000000"}},
+    {{"000111000","011222110","122233344","011222110","000111000"},
+     {"001110000","112221100","222333444","112221100","001110000"}},
+    {{"000110000","011221100","122333440","011221100","010001000"},
+     {"000110000","011221100","122333440","011221100","001010000"}},
+    {{"000110000","001120000","011223300","122233440","010001000"},
+     {"001100000","001120000","011223300","122233440","001010000"}},
+    {{"001111100","012222210","123333321","010101010","100000001"},
+     {"001111100","012222210","123333321","101010101","010000010"}},
+    {{"010000010","012000210","001223400","000112000","000010000"},
+     {"000000000","001111000","012223400","110221100","010000010"}},
+  };
+  if (speciesId < 0 || speciesId >= CS_COUNT) return;
+  const int sw = 9, sh = 5;
+  double cell = glCellDev;
+  double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
+  double sy = (py - camRow) * cell + glOffY - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
+  int frame = animFrame & 1;
+  for (int r = 0; r < sh; r++) for (int c = 0; c < sw; c++) {
+    int idx = grids[speciesId][frame][r][c] - '0'; if (idx <= 0 || idx >= 5) continue;
+    int cc = facing >= 0 ? c : sw - 1 - c; const float* col = pal[speciesId][idx];
+    float fade = alive ? 1.0f : 0.55f;
+    glUniform4f(glc->uColor, col[0] * fade * light, col[1] * fade * light, col[2] * fade * light, col[3]);
+    glSolidDev(sx + cc * cell, sy + r * cell, cell, cell);
+  }
+  // A compact health bar appears only after damage (or during death), keeping
+  // ambient creatures visually quiet while still making health legible.
+  if (maxHealth > 0 && health < maxHealth) {
+    double bw = sw * 0.72 * cell, bh = std::max(1.0, cell * 0.45), bx = sx + (sw * cell - bw) * 0.5, by = sy - cell;
+    glUniform4f(glc->uColor, 28/255.f, 19/255.f, 24/255.f, 0.90f); glSolidDev(bx, by, bw, bh);
+    double frac = std::max(0.0, std::min(1.0, health / (double)maxHealth));
+    glUniform4f(glc->uColor, 224/255.f, 70/255.f, 78/255.f, 0.95f); glSolidDev(bx, by, bw * frac, bh);
+  }
+  glDrawHitbox(px, py, CREATURE_SPECIES[speciesId].w, CREATURE_SPECIES[speciesId].h,
+               1.0f, CREATURE_SPECIES[speciesId].hostile ? 0.24f : 0.88f, 0.20f, camCol, camRow);
+}
+
+void GLPresenter::glDrawCreatures() {
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
+  if (glUseExtCreatures) {
+    int n = (int)(glExtCreatures.size() / CSN_STRIDE);
+    for (int i = 0; i < n; i++) { const float* c = &glExtCreatures[(size_t)i * CSN_STRIDE];
+      glDrawOneCreature((int)c[CSN_SPECIES], c[CSN_X], c[CSN_Y], (int)c[CSN_FACING], (int)c[CSN_HEALTH],
+                        (int)c[CSN_MAX_HEALTH], (int)c[CSN_ALIVE], (int)c[CSN_ANIM_FRAME],
+                        glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow);
+    }
+  } else for (const Creature& c : E.creatures.creatures) {
+    const CreatureSpecies& s = E.creatures.species(c);
+    glDrawOneCreature(c.species, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, c.facing, c.health,
+                      s.maxHealth, c.alive ? 1 : 0, c.animFrame,
+                      glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h), camCol, camRow);
+  }
 }
 
 void GLPresenter::glDrawPreview() {
@@ -490,6 +589,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   // Hide the 1px gutter when cells are tiny — a solid grid would wash out the scene.
   int gutter = (glGutterOn && glCellDev >= 3.0) ? 1 : 0;
   glDrawCells(glTex, 1.0f, gutter, 0);                     // foreground on top
+  glDrawCreatures();
   glDrawPlayers();
   glDrawItems();
   glDrawPreview();

@@ -5,7 +5,7 @@ actionable instead of just producing timing numbers.
 
 ## What Owns What
 
-- C++/WASM owns simulation, terrain generation, world streaming, player physics,
+- C++/WASM owns simulation, terrain generation, world streaming, player/creature physics,
   spawn placement, tool policy, material rendering, WebGL compositing, camera
   behavior, and deterministic net snapshots.
 - JavaScript owns DOM lifecycle, canvas sizing, browser event normalization,
@@ -53,6 +53,9 @@ actionable instead of just producing timing numbers.
   refactor, inspect `worldgen.inc`, generated material tables, and WASM rebuild
   provenance before updating the baseline.
 - `step`: total C++ simulation tick wall time (`perfStepMs`).
+- `actorMs`: players, items, and active creatures. Creature target scans are
+  interval-gated and active populations are bounded by species/global and local
+  density caps; hibernating off-window creatures do not enter this phase.
 - **Fine `stepPhases` (primary — accumulate across both layers each tick):**
 
   | Phase | What it is | Owner |

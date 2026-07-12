@@ -138,6 +138,16 @@ int PlayerSystem::spawnPlayerAtSurface(int col) {
   playerSurfaceSpawn(col, out);
   return spawnPlayer(out[0], out[1]);
 }
+void PlayerSystem::respawnPlayer(Player& p) {
+  double out[2];
+  int col = (int)std::lround(p.px + p.w * 0.5);
+  playerSurfaceSpawn(std::max(PLAYER_W, std::min(E.cols - PLAYER_W - 1, col)), out);
+  p.px = out[0]; p.py = out[1]; p.vx = p.vy = 0;
+  p.health = 100; p.alive = true; p.grounded = false; p.jumpReady = false;
+  p.hurtCooldown = 120;
+  resetPlayerMine(p); p.placeStrokeActive = false; p.prevInput = p.input;
+  if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
+}
 Player* PlayerSystem::findPlayer(int id) {
   for (auto& p : players) if (p.id == id) return &p;
   return nullptr;
@@ -503,6 +513,7 @@ void PlayerSystem::applyPlayerTools() {
     if (!inReach) { resetPlayerMine(p); continue; }
     if (t != T_ERASER) resetPlayerMine(p);
     bool acted = false;
+    if (t == T_ERASER) acted |= E.damageCreaturesAt(ax, ay, P_MINE_R + 1, 14);
     if (doPrimary) {
       if (t == T_ERASER) acted |= mineDisc(p, ax, ay, &E.fg, false);
       else acted |= playerUseTool(p, ax, ay, &E.fg);
@@ -520,7 +531,10 @@ void PlayerSystem::applyPlayerTools() {
 }
 
 void PlayerSystem::updatePlayers() {
-  for (auto& p : players) if (p.active && p.alive) integratePlayer(p);
+  for (auto& p : players) {
+    if (p.hurtCooldown > 0) p.hurtCooldown--;
+    if (p.active && p.alive) integratePlayer(p);
+  }
   applyPlayerTools();
 }
 

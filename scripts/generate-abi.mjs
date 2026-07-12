@@ -63,8 +63,10 @@ for (const [name, s] of Object.entries(structs)) {
 }
 js += '});\n\n';
 for (const [name, e] of Object.entries(enums)) {
-  const strip = (k) => k.replace(/^(PI|T|CK)_/, '');
-  js += `export const ${name === 'PlayerInput' ? 'INPUT' : name === 'Tool' ? 'TOOL' : 'CREATIVE_KIND'} = Object.freeze({ ${Object.entries(e.values).map(([k, v]) => `${strip(k)}: ${v}`).join(', ')} });\n`;
+  const jsName = e.jsName || name.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase();
+  const prefix = e.jsPrefix ? new RegExp(`^${e.jsPrefix}_`) : null;
+  const strip = (k) => prefix ? k.replace(prefix, '') : k;
+  js += `export const ${jsName} = Object.freeze({ ${Object.entries(e.values).map(([k, v]) => `${strip(k)}: ${v}`).join(', ')} });\n`;
 }
 js += '\n';
 for (const [k, v] of Object.entries(constants)) {

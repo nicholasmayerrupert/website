@@ -10,8 +10,9 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
+import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick } from '../src/sand/net/protocol.js';
-import { encodeItems, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodeItems, encodeCreatures, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -25,6 +26,16 @@ function survivalEngine() {
   for (let x = 5; x < COLS - 5; x++) for (let y = FLOOR; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
   return e;
+}
+
+// 1c) creatures replicate the same health/hitbox state the renderer consumes.
+{
+  const e = survivalEngine();
+  const id = e.spawnCreature(CREATURE.NEWT, 35, FLOOR - 3);
+  const m = decode(encode(encodeCreatures(e, 0)));
+  check('creatures message decodes', m && m.t === MSG.CREATURES);
+  check('creature id/species/health replicated', m && m.data[0] === id && m.data[1] === CREATURE.NEWT && m.data[9] === 42);
+  e.destroy();
 }
 
 // 1) items encoder round-trips id/material/count/position through the wire.
@@ -137,6 +148,7 @@ function survivalEngine() {
     check('client A got an authoritative player id', assignA && assignA.player > 0);
     check('client A got the full world at server dims', worldA && worldA.cols === 128 && worldA.rows === 96);
     check('client A got an initial inventory', invA && invA.data.length === 36 * 6);
+    check('client A got an initial creature snapshot', last(ai, MSG.CREATURES) !== null);
     check('client B also got a world + inventory', last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY));
 
     // snapshots list both players.

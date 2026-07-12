@@ -10,7 +10,7 @@
 
 import React, { useEffect, useRef } from 'react';
 
-export function SandGame({ initialTool = 'cube', mode = 'survival', onDrawModeChange, perfHud = false }) {
+export function SandGame({ initialTool = 'cube', mode = 'survival', onDrawModeChange, perfHud = false, debugHitboxes = false }) {
   const ref = useRef(null);
   useEffect(() => {
     import('../embed/sandGame'); // registers the <sand-game> custom element (idempotent)
@@ -23,5 +23,5 @@ export function SandGame({ initialTool = 'cube', mode = 'survival', onDrawModeCh
 
   // `perf-hud` is a presence attribute read once when the element mounts, so it
   // must be set before connectedCallback — pass it inline (undefined omits it).
-  return <sand-game ref={ref} initial-tool={initialTool} mode={mode} perf-hud={perfHud ? '' : undefined} />;
+  return <sand-game ref={ref} initial-tool={initialTool} mode={mode} perf-hud={perfHud ? '' : undefined} debug-hitboxes={debugHitboxes ? '' : undefined} />;
 }

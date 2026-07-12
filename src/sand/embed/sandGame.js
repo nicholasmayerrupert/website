@@ -223,6 +223,7 @@ function createPerfHud(root, game) {
   addRow('comps', 'components');
   addRow('compCells', 'comp cells');
   addRow('xBonds', 'cross bonds');
+  addRow('creatures', 'creatures');
   addRow('shifts', 'world shifts');
   addRow('heap', 'heap MB');
   addRow('grid', 'grid');
@@ -282,6 +283,7 @@ function createPerfHud(root, game) {
     rows.comps.textContent = String(s.componentCount || 0);
     rows.compCells.textContent = String(s.componentCellCount || 0);
     rows.xBonds.textContent = String(s.crossBondCount || 0);
+    rows.creatures.textContent = String(s.creatureCount || 0);
     rows.shifts.textContent = String(s.worldShifts);
     rows.heap.textContent = s.heapMB.toFixed(1);
     rows.grid.textContent = `${s.cols}×${s.rows}`;
@@ -333,6 +335,7 @@ class SandGameElement extends HTMLElement {
     // 'survival' (default): player character + reach-limited tools, camera
     // follows. 'creative': free camera, draw anywhere, no character.
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
+    const debugHitboxes = this.hasAttribute('debug-hitboxes');
     let cancelled = false;
 
     initSandWasm()
@@ -341,6 +344,7 @@ class SandGameElement extends HTMLElement {
         const game = createSandGame(sim, {
           initialTool,
           mode,
+          debugHitboxes,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
           // Survival inventory HUD wiring (the engine owns the inventory state).
           onInventory: (inv) => {

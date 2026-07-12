@@ -12,7 +12,7 @@
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,
-  makeSelect, makeSize, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS, ITEM_FIELDS,
+  makeSelect, makeSize, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS, ITEM_FIELDS, CREATURE_FIELDS,
 } from './protocol.js';
 import { applyWorldMessage, applyDiffMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
@@ -34,6 +34,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const inQueue = [];              // inbound decoded messages, drained each step
   const remotes = new Map();       // render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty,animState,animFrame }
   let itemsForRender = new Float32Array(0); // packed [id,kind,material,count,x,y,life] from the server
+  let creaturesForRender = new Float32Array(0);
   const invByPlayer = new Map();   // player id -> { slots, selected, selectedFootprint } (server-authoritative)
   const curByPlayer = new Map();   // player id -> carried cursor stack (or null)
   let invDirty = false;            // our own inventory changed since last read (HUD pull)
@@ -48,7 +49,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     ownPlayerId = 0; inputSeq = 0; worldReady = false;
     predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
-    itemsForRender = new Float32Array(0);
+    itemsForRender = new Float32Array(0); creaturesForRender = new Float32Array(0);
     invByPlayer.clear(); curByPlayer.clear(); invDirty = false;
     setStatus(status);
   }
@@ -111,7 +112,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
         ingestSnapshot(m);
         if (ownPlayerId) {
           const op = m.players.find((p) => p.id === ownPlayerId);
-          if (op) reconcilePredictor(op, m.tick);
+          if (op?.alive) reconcilePredictor(op, m.tick);
         }
         break;
       }
@@ -133,6 +134,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
         break;
       }
       case MSG.ITEMS: ingestItems(m); break;
+      case MSG.CREATURES: ingestCreatures(m); break;
       case MSG.INVENTORY: ingestInventory(m); break;
       case MSG.CURSOR: ingestCursor(m); break;
       default: break;
@@ -156,8 +158,10 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       if (!r) { r = { x: p.x, y: p.y, w: size.w, h: size.h }; remotes.set(p.id, r); }
       r.tx = p.x; r.ty = p.y; r.vx = p.vx; r.vy = p.vy;
       r.facing = p.facing; r.grounded = !!p.grounded; r.tool = p.tool; r.seq = p.seq;
+      r.health = p.health | 0; r.alive = p.alive !== 0;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;
+      if (p.id === ownPlayerId && !r.alive) { predictor = null; predId = 0; }
     }
     for (const id of [...remotes.keys()]) if (!seen.has(id)) remotes.delete(id); // left
   }
@@ -167,6 +171,10 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     // Reuse the buffer when the length matches (steady state between pickups).
     if (itemsForRender.length === m.data.length) itemsForRender.set(m.data);
     else itemsForRender = Float32Array.from(m.data);
+  }
+  function ingestCreatures(m) {
+    if (creaturesForRender.length === m.data.length) creaturesForRender.set(m.data);
+    else creaturesForRender = Float32Array.from(m.data);
   }
   function ingestInventory(m) {
     const slots = new Array(INV_SLOTS);
@@ -218,6 +226,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     const own = getOwnPlayer();
     const out = [];
     for (const [id, r] of remotes) {
+      if (!r.alive) continue;
       if (id === ownPlayerId && own) { out.push({ id, x: own.x, y: own.y, w: own.w, h: own.h, facing: own.facing, grounded: own.grounded, tool: r.tool ?? 0, animState: own.animState | 0, animFrame: own.animFrame | 0 }); continue; }
       out.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded, tool: r.tool ?? 0, animState: r.animState | 0, animFrame: r.animFrame | 0 });
     }
@@ -225,6 +234,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   }
   function getOwnPlayer() {
     // predicted (responsive) state when available; else the raw snapshot entity.
+    const authoritative = remotes.get(ownPlayerId);
+    if (authoritative && !authoritative.alive) return null;
     if (predictor) {
       const ps = predictor.renderState();
       if (ps) {
@@ -238,6 +249,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
 
   // Server-authoritative dropped items for the renderer (empty when none).
   function getItemsForRender() { return itemsForRender; }
+  function getCreaturesForRender() { return creaturesForRender; }
   // Our own inventory / cursor from the server (null until the first arrives).
   function getOwnInventory() { return invByPlayer.get(ownPlayerId) || null; }
   function getOwnCursor() { return curByPlayer.get(ownPlayerId) ?? null; }
@@ -247,7 +259,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   return {
     joinRoom, disconnect, update,
     getPlayersForRender, getOwnPlayer,
-    getItemsForRender, getOwnInventory, getOwnCursor, consumeInventoryDirty,
+    getItemsForRender, getCreaturesForRender, getOwnInventory, getOwnCursor, consumeInventoryDirty,
     sendSelect, sendSize, sendMove, sendPick, sendThrow,
     get role() { return role; },
     get connected() { return connected; },
@@ -257,6 +269,6 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     set onStatus(fn) { onStatus = fn; },
     get clientId() { return clientId; },
     get worldReady() { return worldReady; },
-    get debug() { return { sent: dbgSent, ownPlayerId, role, connected, worldReady, items: itemsForRender.length / ITEM_FIELDS }; },
+    get debug() { return { sent: dbgSent, ownPlayerId, role, connected, worldReady, items: itemsForRender.length / ITEM_FIELDS, creatures: creaturesForRender.length / CREATURE_FIELDS }; },
   };
 }

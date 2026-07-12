@@ -214,9 +214,18 @@ EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->itemsys.i
 EMSCRIPTEN_KEEPALIVE int engine_item_snapshot(Engine* e) { return e->itemsys.buildItemSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->itemsys.snapshot.data(); }
 
+// Material-aware creatures. The spawn/damage entries are intentionally small
+// gameplay/test hooks; ordinary population is owned by CreatureSystem rules.
+EMSCRIPTEN_KEEPALIVE int engine_spawn_creature(Engine* e, int species, double worldX, double worldY) { return e->creatures.spawnCreature((uint8_t)species, worldX, worldY); }
+EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int radius, int damage) { return e->damageCreaturesAt(x, y, radius, damage) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }
+EMSCRIPTEN_KEEPALIVE int engine_creature_snapshot(Engine* e) { return e->creatures.buildCreatureSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_creature_snapshot_ptr(Engine* e) { return e->creatures.snapshot.data(); }
+
 // survival inventory (inventory.inc): authoritative per-player stacks. JS reads the
 // snapshot for the HUD and forwards slot-select / move / place intents.
-EMSCRIPTEN_KEEPALIVE void engine_set_survival_inventory(Engine* e, int on) { e->survivalInventory = on != 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_survival_inventory(Engine* e, int on) { e->survivalInventory = on != 0; e->creaturesEnabled = on != 0; }
+EMSCRIPTEN_KEEPALIVE void engine_set_creatures_enabled(Engine* e, int on) { e->creaturesEnabled = on != 0; }
 EMSCRIPTEN_KEEPALIVE void engine_seed_starter_tools(Engine* e, int id) { e->seedStarterTools(id); }
 EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) { return e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_slot(Engine* e, int id, int slot) { e->setSelectedSlot(id, slot); }
@@ -310,12 +319,15 @@ EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {
 EMSCRIPTEN_KEEPALIVE int engine_gl_init(Engine* e, const char* target) { return e->glp.glInit(target); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->glp.glResize(devW, devH); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff) { e->glp.glSetFlags(gutterOn, snapOff); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_debug_hitboxes(Engine* e, int on) { e->glp.glSetDebugHitboxes(on); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, float* data, int count, int ownId) { e->glp.glSetPlayers(useExternal, data, count, ownId); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_items(Engine* e, int useExternal, float* data, int count) { e->glp.glSetItems(useExternal, data, count); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_creatures(Engine* e, int useExternal, float* data, int count) { e->glp.glSetCreatures(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_shift(Engine* e, int dx) { e->glShift(dx); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_render_frame(Engine* e, int forceFull) { return e->glp.glRenderFrame(forceFull); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_get_offset(Engine* e, int* out) { e->glp.glGetOffset(out); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_read_pixels(Engine* e, int x, int y, int w, int h, uint8_t* out) { return e->glp.glReadback(x, y, w, h, out); }
+EMSCRIPTEN_KEEPALIVE float engine_gl_actor_light(Engine* e, double x, double y, int w, int h) { return e->glp.glActorLight(x, y, w, h); }
 
 // View camera + input policy (camera.inc): the engine owns the view + input
 // semantics; JS forwards raw DOM events and drives the loop.

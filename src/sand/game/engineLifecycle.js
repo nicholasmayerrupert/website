@@ -47,6 +47,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     e.setPlayMode(ctx.playMode);
     e.setDrawMode(ctx.drawModeOn);
     e.glSetFlags(ctx.gutterOn, ctx.snapOff);
+    e.glSetDebugHitboxes(ctx.debugHitboxes);
+    e.setCreaturesEnabled(ctx.survival || ctx.debugHitboxes);
     if (ctx.survival) e.setSurvivalInventory(true);  // mining->drops->inventory
     ctx.forceFullRender = true;
     ctx.previewDirty = false;

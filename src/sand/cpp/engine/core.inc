@@ -215,6 +215,7 @@
     int32_t reservedGen = ++L->seenGen;
 
     auto plannedAt = [&](int k) -> uint8_t {
+      if (L->assemblyWakeStamp[k] == tick) return STONE;
       int y = k / cols, x = k - y * cols;
       // Active rows were blanked then rewritten — next[] is authoritative there
       // for materials that already settled. Gas rises AFTER this resolve pass;
@@ -377,7 +378,7 @@
       int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
       for (int x = start; x != end; x += stepX) {
-        int k = I(x, y); if (L->grid[k] != EMPTY) continue;
+        int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
         if (L->grid[I(x, y + 1)] == EMPTY) continue;
         int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
         if (relaxesGaps(above)) { writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY); continue; }
@@ -410,7 +411,8 @@
       int lvl = y;
       for (int d = 1; d <= LIQUID_SURFACE_LOOKAHEAD; d++) {
         int cx = x + sgn * d; if (cx <= 0 || cx >= cols - 1) break;
-        uint8_t c = L->grid[I(cx, lvl)];
+        int ck = I(cx, lvl); if (L->assemblyWakeStamp[ck] == tick) break;
+        uint8_t c = L->grid[ck];
         if (c == m) continue;
         if (!surfacePassable(c, m)) break;
         int ny = lvl + 1;
@@ -441,7 +443,7 @@
 
           int leftK = k - 1, rightK = k + 1;
           auto sideDrop = [&](int sideK, int sgn) {
-            if (!surfacePassable(L->grid[sideK], m) || L->vacatedStamp[sideK] == tick) return 0;
+            if (!surfacePassable(L->grid[sideK], m) || L->vacatedStamp[sideK] == tick || L->assemblyWakeStamp[sideK] == tick) return 0;
             uint8_t side = L->grid[sideK];
             int need = (isLiquidMaterial(side) && canDisplaceByLooseDensity(m, side)) ? 3 : 2;
             return lowerSurfaceDrop(x, y, m, sgn, need);
@@ -454,7 +456,7 @@
           else if (rightDrop > leftDrop) dir = 1;
           else dir = ((x + y + tick + pass) & 1) ? 1 : -1;
           int toK = k + dir;
-          if (!surfacePassable(L->grid[toK], m) || L->vacatedStamp[toK] == tick) continue;
+          if (!surfacePassable(L->grid[toK], m) || L->vacatedStamp[toK] == tick || L->assemblyWakeStamp[toK] == tick) continue;
           // drop>=2 already: PE-down free-surface reshape (same as air into empty).
           // Swap is volume-safe; lighter liquid takes the denser free-surface cell and
           // is pushed up by later density sink / free-surface water fill.

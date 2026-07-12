@@ -930,6 +930,7 @@
     }
     std::fill(L->compOccStamp.begin(), L->compOccStamp.end(), -1);
     std::fill(L->vacatedStamp.begin(), L->vacatedStamp.end(), -1);
+    std::fill(L->assemblyWakeStamp.begin(), L->assemblyWakeStamp.end(), -1);
     perfShiftBuffers = emscripten_get_now() - _t;
     // 4) translate staying bodies; drop any fully off the buffer.
     { std::vector<Body*> keep; for (Body* b : L->bodies) { b->px -= dx; b->py -= dy; if (b->px > -b->maxR && b->px < cols + b->maxR && b->py > -b->maxR && b->py < rows + b->maxR) keep.push_back(b); else delete b; } L->bodies = std::move(keep); }

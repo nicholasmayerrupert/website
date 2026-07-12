@@ -706,11 +706,34 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
     e.syncComponentsLayer(layer);
   }
   const fgBefore = matBounds(e.getGrid(), MAT.ICE), bgBefore = matBounds(e.getGridBg(), MAT.ICE);
+  const reservoirSurface = (grid) => {
+    const tops = [];
+    for (let x = L + 1; x < R; x++) {
+      let hasIce = false, topY = R0;
+      for (let y = 1; y < floorY; y++) {
+        const m = grid[y * C + x];
+        if (m === MAT.ICE) hasIce = true;
+        if (m === MAT.BRINE) topY = Math.min(topY, y);
+      }
+      if (!hasIce && topY < R0) tops.push(topY);
+    }
+    tops.sort((a, b) => a - b);
+    return tops[(tops.length / 2) | 0];
+  };
   const ys = [fgBefore.minY]; let aligned = fgBefore.minY === bgBefore.minY && fgBefore.maxY === bgBefore.maxY;
+  let eruptedBrine = 0;
   let t = 0;
   for (let i = 0; i < 600; i++) {
+    const previousFg = Uint8Array.from(e.getGrid()), previousBg = Uint8Array.from(e.getGridBg());
+    const fgSurface = reservoirSurface(previousFg), bgSurface = reservoirSurface(previousBg);
     t += 16; e.step(t);
-    const fg = matBounds(e.getGrid(), MAT.ICE), bg = matBounds(e.getGridBg(), MAT.ICE);
+    const currentFg = e.getGrid(), currentBg = e.getGridBg();
+    for (let k = 0; k < currentFg.length; k++) {
+      const y = (k / C) | 0;
+      if (previousFg[k] === MAT.ICE && currentFg[k] === MAT.BRINE && y < fgSurface - 1) eruptedBrine++;
+      if (previousBg[k] === MAT.ICE && currentBg[k] === MAT.BRINE && y < bgSurface - 1) eruptedBrine++;
+    }
+    const fg = matBounds(currentFg, MAT.ICE), bg = matBounds(currentBg, MAT.ICE);
     ys.push(fg.minY);
     if (fg.n !== bg.n || fg.minY !== bg.minY || fg.maxY !== bg.maxY) aligned = false;
   }
@@ -726,6 +749,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('bonded ice rose toward the surface', fgIce.minY < fgBefore.minY - 20,
     `(fg ${fgBefore.minY}-${fgBefore.maxY} -> ${fgIce.minY}-${fgIce.maxY})`);
   check('bonded ice stayed aligned across both layers', aligned && fgIce.n === bgIce.n);
+  check(`bonded ice does not flood its top wake (${eruptedBrine} edge cells across both layers)`, eruptedBrine <= 32);
   check(`bonded ice corrections remain finite (${reversals} reversals)`, reversals <= 10);
   check(`bonded ice settled on one final row (${new Set(tail).size} tail rows)`, new Set(tail).size === 1);
   e.destroy();

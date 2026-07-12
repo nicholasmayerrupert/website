@@ -918,6 +918,43 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
   return id < (int)lay.plantComponents.size();
 }
 
+// Match a displaced leading-face cell to the nearest unclaimed trailing-face
+// vacancy by spatial grid distance. The old unordered cursor and component-graph
+// distance could pair opposite ends of an irregular iceberg and eject submerged
+// liquid from a dry branch. Queue order only breaks equal-distance ties and is
+// deterministic.
+int ComponentSystem::nearestVacatedTarget(int source, int dir, int gridLen, int minTargetY) {
+  int seed = source - dir;
+  if (seed < 0 || seed >= gridLen || !asmCells.has(seed)) return -1;
+  trSeen.reset((size_t)gridLen);
+  std::vector<int> queue;
+  queue.reserve(64);
+  trSeen.add(seed);
+  queue.push_back(seed);
+  for (size_t qi = 0; qi < queue.size(); qi++) {
+    int k = queue[qi];
+    // A fallback is trailing only if it lies behind the displaced source along
+    // the motion axis. This prevents a rising iceberg from routing deep liquid
+    // into a geometrically nearby branch that is higher than the source.
+    int targetY = k / E.cols, sourceY = source / E.cols;
+    bool trailsSource = dir > 0 ? (targetY < sourceY) : (targetY > sourceY);
+    int y = k / E.cols, x = k - y * E.cols;
+    if (trVacated.has(k) && !trReserved.has(k) && trailsSource && targetY >= minTargetY) return k;
+    const int ox[4] = { 0, -1, 1, 0 };
+    const int oyStep = dir > 0 ? -1 : 1;
+    const int oy[4] = { oyStep, 0, 0, -oyStep };
+    for (int i = 0; i < 4; i++) {
+      int nx = x + ox[i], ny = y + oy[i];
+      if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
+      int nk = ny * E.cols + nx;
+      if (trSeen.has(nk)) continue;
+      trSeen.add(nk);
+      queue.push_back(nk);
+    }
+  }
+  return -1;
+}
+
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
 // purpose: top liquid never creates support/lift). Shared by the single-layer
 // buoyancy decision (moveRigidAssemblies) and the cross-layer descend decision
@@ -1110,6 +1147,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, int dir,
                            LayerMovePlan& plan) -> bool {
     plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
+    struct PendingRelocate { int source; uint8_t material; };
+    std::vector<PendingRelocate> pending;
     std::vector<int> vacated;
     for (int k : own) {
       int nk = k + dir;
@@ -1118,11 +1157,34 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       uint8_t lead = lay.grid[nk];
       if (lead == EMPTY || E.isGasMaterial(lead)) continue;
       if (!E.isBuoyantMedium(lead)) return false;
-      plan.relocate.push_back({0, lead});
+      pending.push_back({nk, lead});
     }
     for (int k : own) if (!own.count(k - dir)) vacated.push_back(k);
-    if (plan.relocate.size() > vacated.size()) return false;
-    for (size_t i = 0; i < plan.relocate.size(); i++) plan.relocate[i].first = vacated[i];
+    if (pending.size() > vacated.size()) return false;
+    const int gridLen = E.cols * E.rows;
+    asmCells.reset((size_t)gridLen);
+    trVacated.reset((size_t)gridLen);
+    trReserved.reset((size_t)gridLen);
+    for (int k : own) asmCells.add(k);
+    for (int k : vacated) trVacated.add(k);
+    std::unordered_map<uint8_t, std::vector<int>> sourceRows;
+    for (const auto& p : pending) sourceRows[p.material].push_back(p.source / E.cols);
+    std::unordered_map<uint8_t, int> contactFloorRow;
+    for (auto& entry : sourceRows) {
+      auto& rows = entry.second;
+      std::sort(rows.begin(), rows.end());
+      contactFloorRow[entry.first] = rows[(rows.size() * 3) / 4];
+    }
+    std::sort(pending.begin(), pending.end(), [](const PendingRelocate& a, const PendingRelocate& b) {
+      return a.source < b.source;
+    });
+    for (const auto& p : pending) {
+      int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
+      int target = nearestVacatedTarget(p.source, dir, gridLen, minTargetY);
+      if (target < 0) return false;
+      trReserved.add(target);
+      plan.relocate.push_back({target, p.material});
+    }
     plan.shifted.reserve(own.size()); plan.materials.reserve(own.size() * 2 + plan.relocate.size());
     for (int k : own) plan.materials[k] = EMPTY;
     for (int k : own) { plan.shifted.insert(k + dir); plan.materials[k + dir] = lay.grid[k]; }
@@ -1240,6 +1302,8 @@ void ComponentSystem::moveRigidAssemblies() {
   auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir,
                                int decision, double avgDensity) -> bool {
     int dy = dir > 0 ? 1 : -1;
+    bool hasIce = false;
+    for (int ci : grp->comps) if (ci >= nStonePlant) { hasIce = true; break; }
     const int gridLen = E.cols * E.rows;
     // Membership mirror of `cells` (iteration below stays on the set — its
     // order feeds displaced/vacated order and thus every relocation write).
@@ -1314,7 +1378,10 @@ void ComponentSystem::moveRigidAssemblies() {
             if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false;
             int y = k / E.cols, x = k - y * E.cols;
             if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false;
-            if (trMoved.has(k) || (asmCells.has(k) && !trVacated.has(k))) return false;
+            // Search the external fluid domain. Vacated component cells are
+            // reserved fallback volume, not shortcuts or surface targets;
+            // traversing them makes displaced liquid erupt through the top wake.
+            if (trMoved.has(k) || asmCells.has(k)) return false;
             uint8_t m = plannedMaterialAt(k);
             return m == EMPTY || E.isLiquidMaterial(m);
           };
@@ -1353,24 +1420,92 @@ void ComponentSystem::moveRigidAssemblies() {
         }
         return fail();
       };
-      int vacatedRelocCursor = 0;
-      auto planVacatedLiquidDump = [&](uint8_t material) {
-        while (vacatedRelocCursor < (int)vacated.size() && trReserved.has(vacated[vacatedRelocCursor])) vacatedRelocCursor++;
-        if (vacatedRelocCursor >= (int)vacated.size()) return false;
-        int target = vacated[vacatedRelocCursor++];
+      std::array<int, TABLE> minLiquidTargetY{};
+      if (dir < 0) {
+        std::array<std::vector<int>, TABLE> sourceRows;
+        for (const auto& d : displaced) if (E.isLiquidMaterial(d.material)) sourceRows[d.material].push_back(d.from / E.cols);
+        for (int m = 0; m < TABLE; m++) if (!sourceRows[m].empty()) {
+          auto& rows = sourceRows[m];
+          std::sort(rows.begin(), rows.end());
+          minLiquidTargetY[m] = rows[rows.size() / 2];
+        }
+      }
+      auto planVacatedLiquidDump = [&](uint8_t material, int source) {
+        int target = nearestVacatedTarget(source, dir, gridLen, minLiquidTargetY[material]);
+        if (target < 0) return false;
         liquidWrites.push_back({target, material});
         trReserved.add(target);
         return true;
       };
-      for (auto& d : displaced) {
+      // A descending wide face can displace hundreds of same-material cells.
+      // Resolve external free volume with one multi-source BFS per material;
+      // per-cell searches exhausted the shared budget and dumped the
+      // remainder into distant top-wake vacancies. Mixed-liquid chains and
+      // genuinely enclosed residuals continue through the exact fallback below.
+      std::vector<uint8_t> liquidPlaced(displaced.size(), 0);
+      if (dir > 0 && liquidDisplacedCount > 0) {
+        std::vector<int> indices;
+        for (int i = 0; i < (int)displaced.size(); i++) {
+          if (E.isLiquidMaterial(displaced[i].material)) indices.push_back(i);
+        }
+        std::sort(indices.begin(), indices.end(), [&](int a, int b) {
+          uint8_t am = displaced[a].material, bm = displaced[b].material;
+          if (DENSITY[am] != DENSITY[bm]) return DENSITY[am] > DENSITY[bm];
+          if (am != bm) return am < bm;
+          return displaced[a].from < displaced[b].from;
+        });
+        for (size_t gi = 0; gi < indices.size();) {
+          uint8_t material = displaced[indices[gi]].material;
+          size_t gj = gi + 1;
+          while (gj < indices.size() && displaced[indices[gj]].material == material) gj++;
+          int need = (int)(gj - gi);
+          trSeen.reset((size_t)gridLen);
+          std::vector<int> queue, targets;
+          auto canVisit = [&](int k) {
+            if (k < 0 || k >= gridLen || trSeen.has(k) || trReserved.has(k)) return false;
+            int y = k / E.cols, x = k - y * E.cols;
+            if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false;
+            if (trMoved.has(k) || asmCells.has(k)) return false;
+            uint8_t m = plannedMaterialAt(k);
+            return m == EMPTY || m == material;
+          };
+          auto enqueue = [&](int k) { if (!canVisit(k)) return; trSeen.add(k); queue.push_back(k); };
+          for (size_t i = gi; i < gj; i++) for (int off : offs) enqueue(displaced[indices[i]].from + off);
+          int visitBudget = imin(gridLen, imax(4096, need * 128));
+          int visits = 0;
+          for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget;) {
+            size_t levelEnd = queue.size();
+            for (; qi < levelEnd && visits < visitBudget; qi++, visits++) {
+              int k = queue[qi];
+              uint8_t m = plannedMaterialAt(k);
+              if (m == EMPTY && !trReserved.has(k)) {
+                trReserved.add(k);
+                targets.push_back(k);
+                if ((int)targets.size() >= need) break;
+              }
+              for (int off : offs) enqueue(k + off);
+            }
+          }
+          int placed = imin(need, (int)targets.size());
+          for (int i = 0; i < placed; i++) {
+            int di = indices[gi + i];
+            liquidWrites.push_back({targets[i], displaced[di].material});
+            liquidPlaced[di] = 1;
+          }
+          gi = gj;
+        }
+      }
+      for (int di = 0; di < (int)displaced.size(); di++) {
+        auto& d = displaced[di];
         if (!E.isLiquidMaterial(d.material)) continue;
+        if (liquidPlaced[di]) continue;
         // A rising submerged assembly leaves volume directly beneath itself;
         // fill that trailing volume first so it does not create an artificial
         // cavity and immediately fall back. A descending assembly keeps the
         // surface-seeking density chain, with vacated volume as its fallback.
         bool placed = dir < 0
-          ? (planVacatedLiquidDump(d.material) || planLiquidChain(d.material, d.from))
-          : (planLiquidChain(d.material, d.from) || planVacatedLiquidDump(d.material));
+          ? (planVacatedLiquidDump(d.material, d.from) || planLiquidChain(d.material, d.from))
+          : (planLiquidChain(d.material, d.from) || (!hasIce && planVacatedLiquidDump(d.material, d.from)));
         if (!placed) return false;
       }
 
@@ -1437,6 +1572,11 @@ void ComponentSystem::moveRigidAssemblies() {
       mv.comp->yMax = imax(0, imin(E.rows - 1, mv.comp->yMax + dy));
       if (mv.isPlant) { mv.comp->woodCount = mv.wood; mv.comp->leafCount = mv.leaf; mv.comp->cacheDirty = true; }
     }
+    // The loose pass and surface leveler run later this tick. Keep genuinely
+    // empty trailing cells unavailable until the next tick so displaced liquid
+    // placed outside the footprint cannot immediately sweep back through the
+    // iceberg's top wake after the relocation planner has finished.
+    if (hasIce) for (int k : vacated) E.L->assemblyWakeStamp[k] = E.tick;
     for (auto& pr : movedFuses) {
       auto it = E.L->pendingDetonations.find(pr.first);
       if (it == E.L->pendingDetonations.end() || pr.second < it->second) E.L->pendingDetonations[pr.first] = pr.second;

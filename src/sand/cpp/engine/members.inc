@@ -516,6 +516,7 @@
   // Fall-through: EMPTY / claimable gas / lighter liquid count as air.
   // Gas already parked in next[] blocks further fall this tick.
   inline bool liquidColumnPassable(int k, uint8_t m) {
+    if (L->assemblyWakeStamp[k] == tick) return false;
     uint8_t n = L->next[k];
     if (n != EMPTY) {
       if (isGasMaterial(n)) return false; // rising bubble — one step/tick
@@ -530,6 +531,7 @@
   // Gas/powder already written into next[] this tick are parked displacees —
   // do not re-claim them (cascade would drop mass on vacatedStamp / overwrite).
   inline bool liquidCanClaim(int k, uint8_t m) {
+    if (L->assemblyWakeStamp[k] == tick) return false;
     uint8_t n = L->next[k];
     if (n != EMPTY) {
       if (isGasMaterial(n) || isLooseSolidMaterial(n)) return false; // parked bubble/grain
@@ -545,6 +547,7 @@
   // churn) and multi-fluid pools never go inert. Parked next[] gas is blocked.
   inline bool liquidCanFlowInto(int k, uint8_t m) {
     (void)m;
+    if (L->assemblyWakeStamp[k] == tick) return false;
     uint8_t n = L->next[k];
     if (n != EMPTY) return false;
     if (L->vacatedStamp[k] == tick) return true;

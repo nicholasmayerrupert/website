@@ -12,7 +12,7 @@ struct Layer {
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
-  std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp, blastGasStamp;
+  std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp, assemblyWakeStamp, blastGasStamp;
   int dirtyRenderCount = 0;
   // per-cell sim scratch
   std::vector<uint8_t> groundedCell;
@@ -130,6 +130,7 @@ struct Layer {
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
     activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
     vacatedStamp.assign(n, -1);
+    assemblyWakeStamp.assign(n, -1);
     blastGasStamp.assign(n, -1);
     groundedCell.assign(n, 0); cellComp.assign(n, -1); groundStack.assign(n, 0);
     groundRigidBase.clear(); groundBaseFlags.clear(); groundBaseValid = false;
@@ -163,7 +164,7 @@ struct Layer {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
-      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(blastGasStamp); release(assemblyRelocatedCells);
+      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
       release(prevCompCells); release(curCompCells); release(bodyCells);

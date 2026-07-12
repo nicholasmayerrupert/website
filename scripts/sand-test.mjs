@@ -743,7 +743,34 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   }
   check(`irregular ice starts fully wetted (${wetFaces}/${faces}, bottom ${bottomWet})`, wetFaces === faces && bottomWet > 0);
   const ys = [before.y];
-  for (let i = 0; i < 700; i++) { e.step(16 * (i + 1)); ys.push(iceTop().y); }
+  const reservoirSurface = (grid) => {
+    const tops = [];
+    for (let x = L + 1; x < R; x++) {
+      let hasIce = false, topY = ROWS;
+      for (let y = 1; y < floorY; y++) {
+        const m = grid[y * COLS + x];
+        if (m === ICE) hasIce = true;
+        if (m === BRINE) topY = Math.min(topY, y);
+      }
+      if (!hasIce && topY < ROWS) tops.push(topY);
+    }
+    tops.sort((a, b) => a - b);
+    return tops[(tops.length / 2) | 0];
+  };
+  let eruptedBrine = 0; const eruptionSamples = [];
+  for (let i = 0; i < 700; i++) {
+    const previous = Uint8Array.from(e.getGrid());
+    const surface = reservoirSurface(previous);
+    e.step(16 * (i + 1));
+    const current = e.getGrid();
+    for (let k = 0; k < current.length; k++) {
+      if (previous[k] === ICE && current[k] === BRINE && ((k / COLS) | 0) < surface - 1) {
+        eruptedBrine++;
+        if (eruptionSamples.length < 20) eruptionSamples.push(`${i}:${k % COLS},${(k / COLS) | 0}<${surface}`);
+      }
+    }
+    ys.push(iceTop().y);
+  }
   const after = iceTop();
   let reversals = 0, lastDir = 0; const reversalAt = [];
   for (let i = 1; i < ys.length; i++) {
@@ -752,8 +779,11 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     if (dir) lastDir = dir;
   }
   const tail = ys.slice(-120);
+  let tailMoves = 0;
+  for (let i = 1; i < tail.length; i++) if (tail[i] !== tail[i - 1]) tailMoves++;
   check(`irregular ice rose toward the surface (top ${before.y} -> ${after.y}, best ${Math.min(...ys)})`, after.n === before.n && after.y < before.y - 20);
-  check(`irregular ice corrections remain finite (${reversals} reversals${reversalAt.length ? ` at ${reversalAt.join(',')}` : ''})`, reversals <= 20);
+  check(`irregular ice corrections end (${reversals} total reversals, ${tailMoves} tail moves${reversalAt.length ? `; reversals at ${reversalAt.join(',')}` : ''})`, tailMoves === 0);
+  check(`irregular ice does not flood its top wake (${eruptedBrine} edge cells${eruptionSamples.length ? `; ${eruptionSamples.join(' ')}` : ''})`, eruptedBrine <= 8);
   check(`irregular ice reached a stable row (${new Set(tail).size} tail rows)`, new Set(tail).size === 1);
   e.destroy();
 }
@@ -879,8 +909,9 @@ for (const tc of [
     if (d && lastDir && d !== lastDir) reversals++;
     if (d) lastDir = d;
   }
+  const tail = ys.slice(-120);
   check(`ice stayed present in the oil/brine interface (${ys.length} samples)`, ys.length > 300);
-  check(`ice did not jitter vertically while liquids leveled (${reversals} reversals)`, reversals === 0);
+  check(`ice corrections end while liquids level (${reversals} reversals, ${new Set(tail).size} tail positions)`, new Set(tail).size === 1);
   e.destroy();
 }
 

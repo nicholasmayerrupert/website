@@ -15,6 +15,7 @@ struct Engine;
 struct FaceContact {
   int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
   double liquidDensityArea = 0, powderDensityArea = 0;
+  double displacedArea = 0, displacedLiquidMass = 0;
 };
 
 

@@ -933,6 +933,14 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
   const int gridLen = E.cols * E.rows;
   asmCells.reset((size_t)gridLen);
   for (int k : cells) if (k >= 0 && k < gridLen) asmCells.add(k);
+  auto materialAt = [&](int k) {
+    uint8_t m = g[k];
+    if (planned) {
+      auto it = planned->find(k);
+      if (it != planned->end()) m = it->second;
+    }
+    return m;
+  };
   std::vector<int> airFaces;
   for (int k : cells) {
     if (k < 0 || k >= gridLen) continue;
@@ -942,11 +950,7 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
       int nk = k + offs[i], nx = x + (offs[i] == -1 ? -1 : offs[i] == 1 ? 1 : 0), ny = y + (offs[i] == E.cols ? 1 : 0);
       if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
       if (nk < 0 || nk >= gridLen || asmCells.has(nk)) continue;
-      uint8_t m = g[nk];
-      if (planned) {
-        auto it = planned->find(nk);
-        if (it != planned->end()) m = it->second;
-      }
+      uint8_t m = materialAt(nk);
       c.faces++;
       if (E.isLiquidMaterial(m)) {
         c.liquidFaces++;
@@ -959,6 +963,39 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
       } else if (m == EMPTY || E.isGasMaterial(m)) {
         airFaces.push_back(nk);
       }
+    }
+  }
+
+  // Buoyancy is displaced liquid mass, not wetted-perimeter fraction. For each
+  // horizontal run of assembly cells, liquid at either end means the whole run
+  // occupies that liquid level. An underside-only contact contributes half a
+  // cell, placing the discrete waterline on the boundary between grid rows.
+  // This remains O(area) and is invariant to long horizontal/diagonal geometry.
+  if (c.liquidFaces > 0) for (int start : cells) {
+    if (start < 0 || start >= gridLen) continue;
+    int y = start / E.cols, x = start - y * E.cols;
+    if (x <= 0 || x >= E.cols - 1 || (x > 1 && asmCells.has(start - 1))) continue;
+    int end = start;
+    while ((end - y * E.cols) < E.cols - 2 && asmCells.has(end + 1)) end++;
+    int runLength = end - start + 1;
+    double sideDensity = 0;
+    int liquidSides = 0;
+    uint8_t left = materialAt(start - 1), right = materialAt(end + 1);
+    if (E.isLiquidMaterial(left)) { sideDensity += DENSITY[left]; liquidSides++; }
+    if (E.isLiquidMaterial(right)) { sideDensity += DENSITY[right]; liquidSides++; }
+    if (liquidSides > 0) {
+      double density = sideDensity / liquidSides;
+      c.displacedArea += runLength;
+      c.displacedLiquidMass += runLength * density;
+      continue;
+    }
+    for (int k = start; k <= end; k++) {
+      int below = k + E.cols;
+      if (below >= gridLen || asmCells.has(below)) continue;
+      uint8_t m = materialAt(below);
+      if (!E.isLiquidMaterial(m)) continue;
+      c.displacedArea += 0.5;
+      c.displacedLiquidMass += 0.5 * DENSITY[m];
     }
   }
 
@@ -981,11 +1018,7 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
         visible = cached->second != 0;
         break;
       }
-      uint8_t am = g[ak];
-      if (planned) {
-        auto it = planned->find(ak);
-        if (it != planned->end()) am = it->second;
-      }
+      uint8_t am = materialAt(ak);
       if (am != EMPTY && !E.isGasMaterial(am)) break;
       path.push_back(ak);
       if (ak < E.cols * 2) {
@@ -1009,15 +1042,14 @@ int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, doub
   }
   if (c.liquidFaces > 0) {
     double liquidDensity = c.liquidDensityArea / c.liquidFaces;
-    if (avgDensity > liquidDensity + 1e-6) return powderSupports ? 0 : 1;
     // A lighter assembly with liquid beneath it and no path from its exposed
     // faces to open air is still submerged. Empty wake cavities do not count as
     // emergence and must not reverse buoyancy.
     if (c.bottomLiquidFaces > 0 && c.openAirFaces == 0
         && avgDensity < liquidDensity - 1e-6) return -1;
-    double targetFaces = c.faces > 0 ? c.faces * (avgDensity / liquidDensity) : 0;
-    double imbalance = c.liquidFaces - targetFaces;
-    double band = std::fmax(1.0, std::sqrt((double)cellCount) * 0.25);
+    double weight = cellCount * avgDensity;
+    double imbalance = c.displacedLiquidMass - weight;
+    double band = std::fmax(0.5, std::sqrt((double)cellCount) * 0.25);
     if (imbalance > band && c.bottomLiquidFaces > 0) return -1;
     if (c.bottomLiquidFaces > 0 && imbalance >= -band) return 0;
     return powderSupports ? 0 : 1;
@@ -1130,13 +1162,6 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     accumulateFaceContact(E.fg.grid, fgCells, before);
     accumulateFaceContact(E.bg.grid, bgCells, before);
     int decision = motionDecision(before, fgCells.size() + bgCells.size(), density);
-    if (decision > 0 && before.openAirFaces > 0 && before.bottomLiquidFaces > 0
-        && before.liquidFaces > 0 && density < before.liquidDensityArea / before.liquidFaces - 1e-6) {
-      bool rose = false;
-      for (int id : g->fgComps) rose = rose || compById(E.fg, id)->buoyancyDirection < 0;
-      for (int id : g->bgComps) rose = rose || compById(E.bg, id)->buoyancyDirection < 0;
-      if (rose) continue;
-    }
     if (decision == 0) continue;
     int dir = decision > 0 ? E.cols : -E.cols;
     // A joint moves only when both layer-local halves can execute the same plan.
@@ -1471,12 +1496,6 @@ void ComponentSystem::moveRigidAssemblies() {
     FaceContact current;
     accumulateFaceContact(E.L->grid, cells, current);
     int decision = motionDecision(current, cells.size(), avgDensity);
-    if (decision > 0 && current.openAirFaces > 0 && current.bottomLiquidFaces > 0
-        && current.liquidFaces > 0 && avgDensity < current.liquidDensityArea / current.liquidFaces - 1e-6) {
-      bool rose = false;
-      for (int ci : grp->comps) rose = rose || all[ci]->buoyancyDirection < 0;
-      if (rose) continue;
-    }
     if (decision == 0) continue;
     int dirK = decision > 0 ? E.cols : -E.cols;
     translateAssembly(grp, cells, dirK, decision, avgDensity);

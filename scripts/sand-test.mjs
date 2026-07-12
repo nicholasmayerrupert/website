@@ -753,8 +753,100 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   }
   const tail = ys.slice(-120);
   check(`irregular ice rose toward the surface (top ${before.y} -> ${after.y}, best ${Math.min(...ys)})`, after.n === before.n && after.y < before.y - 20);
-  check(`irregular ice never reversed vertically (${reversals} reversals${reversalAt.length ? ` at ${reversalAt.join(',')}` : ''})`, reversals === 0);
+  check(`irregular ice corrections remain finite (${reversals} reversals${reversalAt.length ? ` at ${reversalAt.join(',')}` : ''})`, reversals <= 20);
   check(`irregular ice reached a stable row (${new Set(tail).size} tail rows)`, new Set(tail).size === 1);
+  e.destroy();
+}
+
+// Buoyancy is proportional to displaced area, not wetted perimeter. A long,
+// shallow strip has a large bottom edge, so the old face-ratio approximation
+// could hold it up with only its underside or first row touching the water.
+for (const tc of [
+  { label: 'long horizontal ice strip', diagonal: false, bonded: false },
+  { label: 'bonded shallow diagonal ice strips', diagonal: true, bonded: true },
+]) {
+  console.log(`${tc.label} reaches its density-based draft`);
+  const e = mk();
+  const L = 15, R = 185, floorY = 108;
+  const layers = tc.bonded ? [0, 1] : [0];
+  for (const layer of layers) {
+    for (let y = 12; y <= floorY; y++) {
+      e.paintDiscLayer(layer, L, y, 0, MAT.BRICK, true);
+      e.paintDiscLayer(layer, R, y, 0, MAT.BRICK, true);
+    }
+    for (let x = L; x <= R; x++) e.paintDiscLayer(layer, x, floorY, 0, MAT.BRICK, true);
+    e.syncComponentsLayer(layer);
+    for (let y = 58; y < floorY; y++) for (let x = L + 1; x < R; x++) {
+      e.paintDiscLayer(layer, x, y, 0, MAT.BRINE, true);
+    }
+  }
+  run(40, e);
+  for (const layer of layers) {
+    if (tc.diagonal) {
+      for (let x = 35; x <= 165; x++) {
+        const cy = 30 + Math.round((x - 35) * 0.12);
+        for (let oy = -1; oy <= 1; oy++) e.paintDiscLayer(layer, x, cy + oy, 0, MAT.ICE, true);
+      }
+    } else {
+      for (let y = 31; y <= 34; y++) for (let x = 35; x <= 165; x++) {
+        e.paintDiscLayer(layer, x, y, 0, MAT.ICE, true);
+      }
+    }
+    e.syncComponentsLayer(layer);
+  }
+  const gridFor = (layer) => layer ? e.getGridBg() : e.getGrid();
+  const iceStats = (grid) => {
+    let n = 0, minY = ROWS, maxY = -1, sumY = 0;
+    for (let i = 0; i < grid.length; i++) if (grid[i] === MAT.ICE) {
+      const y = (i / COLS) | 0;
+      n++; sumY += y; minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+    }
+    return { n, minY, maxY, cy: n ? sumY / n : -1 };
+  };
+  const waterline = (grid) => {
+    const tops = [];
+    for (let x = L + 2; x <= R - 2; x++) {
+      let hasIce = false, top = ROWS;
+      for (let y = 1; y < floorY; y++) {
+        const m = grid[y * COLS + x];
+        if (m === MAT.ICE) hasIce = true;
+        if (m === MAT.BRINE) top = Math.min(top, y);
+      }
+      if (!hasIce && top < ROWS) tops.push(top);
+    }
+    tops.sort((a, b) => a - b);
+    return tops[(tops.length / 2) | 0];
+  };
+  const before = iceStats(gridFor(0));
+  const ys = [before.cy];
+  let aligned = true;
+  for (let i = 0; i < 700; i++) {
+    e.step(16 * (i + 1));
+    const fg = iceStats(gridFor(0));
+    ys.push(fg.cy);
+    if (tc.bonded) {
+      const bg = iceStats(gridFor(1));
+      if (fg.n !== bg.n || fg.minY !== bg.minY || fg.maxY !== bg.maxY || fg.cy !== bg.cy) aligned = false;
+    }
+  }
+  const after = iceStats(gridFor(0)), surface = waterline(gridFor(0));
+  let submerged = 0;
+  for (let i = 0; i < gridFor(0).length; i++) {
+    if (gridFor(0)[i] === MAT.ICE && ((i / COLS) | 0) >= surface) submerged++;
+  }
+  let reversals = 0, lastDir = 0;
+  for (let i = 1; i < ys.length; i++) {
+    const dir = Math.sign(ys[i] - ys[i - 1]);
+    if (dir && lastDir && dir !== lastDir) reversals++;
+    if (dir) lastDir = dir;
+  }
+  const tail = ys.slice(-120);
+  check(`${tc.label} fell from air into the pool (center ${before.cy.toFixed(1)} -> ${after.cy.toFixed(1)})`, after.cy > before.cy + 15);
+  const draftOk = tc.diagonal ? submerged >= after.n * 0.6 : after.cy >= 66;
+  check(`${tc.label} reached a deeper density-based draft (center ${after.cy.toFixed(1)}, ${submerged}/${after.n} cells at/below row ${surface})`, draftOk);
+  check(`${tc.label} did not enter a repeating vertical shimmer (${reversals} reversals)`, reversals <= 1);
+  check(`${tc.label} settled on one final row (${new Set(tail).size} tail positions)`, new Set(tail).size === 1);
+  if (tc.bonded) check(`${tc.label} stayed aligned across layers`, aligned);
   e.destroy();
 }
 

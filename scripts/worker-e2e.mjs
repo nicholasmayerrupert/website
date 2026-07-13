@@ -63,7 +63,7 @@ try {
     const localX = Math.floor(rect.width * 0.5);
     const localY = Math.floor(rect.height * 0.18);
     const [cx, cy] = t.cellAt(localX, localY);
-    return { x: rect.left + localX, y: rect.top + localY, cx, cy, before: t.materialCount(1) };
+    return { x: rect.left + localX, y: rect.top + localY, cx, cy, before: t.materialCountBoth(1) };
   });
   const defaultRigidBefore = await page.evaluate(() => window.__sandTest.materialCount(13));
   await page.mouse.click(target.x, target.y);
@@ -94,8 +94,9 @@ try {
   await page.mouse.down({ button: 'left' });
   await page.waitForTimeout(350);
   await page.mouse.up({ button: 'left' });
+  await page.waitForFunction(() => window.__sandPerf().workerEdges >= 6);
   await page.waitForTimeout(350);
-  const after = await page.evaluate(() => window.__sandTest.materialCount(1));
+  const after = await page.evaluate(() => window.__sandTest.materialCountBoth(1));
   check('worker-owned creative paint reaches the render mirror', after > target.before, `${target.before} -> ${after}`);
   if (after <= target.before) console.log('  worker input debug', await page.evaluate(() => window.__sandPerf()));
   const fallingHash0 = await page.evaluate(() => window.__sandTest.gridHash());

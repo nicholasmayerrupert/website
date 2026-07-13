@@ -78,10 +78,11 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   pthread-enabled `sandEngineThreaded.js` (self-contained ES modules with wasm
   embedded; built with WebGL2/`FULL_ES3`). The site serves COOP/COEP headers and
   selects the threaded module when cross-origin isolated; third-party embeds
-  retain the fallback. The threaded engine owns a persistent three-worker pool
-  and fills pixels in four non-adjacent checkerboard chunk waves. It also runs
-  deterministic component carry and component-adjacency cache construction on
-  the pool; both the main renderer and creative world worker select this build
+  retain the fallback. The threaded engine owns an adaptive persistent pool
+  (`hardwareConcurrency - 2`, capped at seven workers; the caller participates)
+  and parallelizes visible/full pixel fill, movement/reaction candidate discovery,
+  loose-support columns, component indexing/carry, component-adjacency construction,
+  static rigid grounding, and world snapshot/diff encoding. Both the main renderer and creative world worker select this build
   when cross-origin isolated. The build also
   writes `src/sand/wasm/build-info.json` provenance. Outputs are committed, so a
   normal `npm run build` never needs the C++ toolchain.

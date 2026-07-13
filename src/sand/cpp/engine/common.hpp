@@ -18,6 +18,7 @@
 #ifdef __EMSCRIPTEN_PTHREADS__
 #include <atomic>
 #include <condition_variable>
+#include <emscripten/threading.h>
 #include <mutex>
 #include <thread>
 #endif
@@ -108,7 +109,9 @@ struct StampSet {
 // Persistent workers used by the checkerboard scheduler. Emscripten satisfies
 // these std::threads from PTHREAD_POOL_SIZE, avoiding per-frame worker creation.
 // The calling thread participates, then waits at one barrier per color wave.
-class CheckerboardPool {
+class ParallelPool {
+  int statsCalls = 0, statsTasks = 0;
+  double statsWallMs = 0, statsWaitMs = 0;
 #ifdef __EMSCRIPTEN_PTHREADS__
   std::vector<std::thread> workers;
   std::mutex mutex;
@@ -116,17 +119,20 @@ class CheckerboardPool {
   std::function<void(int)> job;
   std::atomic<int> next{0};
   int limit = 0, remaining = 0;
+  int activeWorkers = 0;
   uint64_t generation = 0;
   bool stopping = false;
 
-  void workerLoop() {
+  void workerLoop(int workerId) {
     uint64_t seen = 0;
     for (;;) {
       std::unique_lock<std::mutex> lock(mutex);
       startCv.wait(lock, [&] { return stopping || generation != seen; });
       if (stopping) return;
       seen = generation;
+      bool active = workerId < activeWorkers;
       lock.unlock();
+      if (!active) continue;
       for (;;) { int i = next.fetch_add(1, std::memory_order_relaxed); if (i >= limit) break; job(i); }
       lock.lock();
       if (--remaining == 0) doneCv.notify_one();
@@ -135,12 +141,18 @@ class CheckerboardPool {
 #endif
 
  public:
-  CheckerboardPool() {
+  ParallelPool() {
 #ifdef __EMSCRIPTEN_PTHREADS__
-    for (int i = 0; i < 3; i++) workers.emplace_back([this] { workerLoop(); });
+    // Leave one logical core to the browser/UI and use this calling thread as
+    // one simulation lane. The Emscripten build prewarms the same number of
+    // pthread workers, capped to avoid excessive per-worker stack memory on
+    // high-core-count machines.
+    int count = imax(0, imin(7, emscripten_num_logical_cores() - 2));
+    activeWorkers = count;
+    for (int i = 0; i < count; i++) workers.emplace_back([this, i] { workerLoop(i); });
 #endif
   }
-  ~CheckerboardPool() {
+  ~ParallelPool() {
 #ifdef __EMSCRIPTEN_PTHREADS__
     { std::lock_guard<std::mutex> lock(mutex); stopping = true; generation++; }
     startCv.notify_all();
@@ -150,22 +162,51 @@ class CheckerboardPool {
   template <typename Fn>
   void parallelFor(int count, Fn&& fn) {
 #ifdef __EMSCRIPTEN_PTHREADS__
-    if (count >= 8 && !workers.empty()) {
+    // Two tasks per participating lane amortizes the wake + barrier cost and
+    // gives the shared atomic cursor enough work to balance uneven chunks.
+    int lanes = activeWorkers + 1;
+    if (count >= imax(8, lanes * 2) && activeWorkers > 0) {
+      double started = emscripten_get_now();
       {
         std::lock_guard<std::mutex> lock(mutex);
         job = std::forward<Fn>(fn); limit = count; next.store(0, std::memory_order_relaxed);
-        remaining = (int)workers.size(); generation++;
+        remaining = activeWorkers; generation++;
       }
       startCv.notify_all();
       for (;;) { int i = next.fetch_add(1, std::memory_order_relaxed); if (i >= limit) break; job(i); }
+      double callerDone = emscripten_get_now();
       std::unique_lock<std::mutex> lock(mutex);
       doneCv.wait(lock, [&] { return remaining == 0; });
       job = nullptr;
+      double finished = emscripten_get_now();
+      statsCalls++; statsTasks += count;
+      statsWallMs += finished - started;
+      statsWaitMs += finished - callerDone;
       return;
     }
 #endif
     for (int i = 0; i < count; i++) fn(i);
   }
+  int workerCount() const {
+#ifdef __EMSCRIPTEN_PTHREADS__
+    return activeWorkers;
+#else
+    return 0;
+#endif
+  }
+  void setWorkerCount(int count) {
+#ifdef __EMSCRIPTEN_PTHREADS__
+    std::lock_guard<std::mutex> lock(mutex);
+    activeWorkers = imax(0, imin((int)workers.size(), count));
+#else
+    (void)count;
+#endif
+  }
+  void resetStats() { statsCalls = statsTasks = 0; statsWallMs = statsWaitMs = 0; }
+  int parallelCalls() const { return statsCalls; }
+  int parallelTasks() const { return statsTasks; }
+  double parallelWallMs() const { return statsWallMs; }
+  double parallelWaitMs() const { return statsWaitMs; }
 };
 
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool

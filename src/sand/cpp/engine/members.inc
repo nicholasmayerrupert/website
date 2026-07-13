@@ -15,10 +15,14 @@
   Layer fg, bg;       // the two simulations
   Layer* L = &fg;     // active layer (the mirrors below point into it)
 #ifdef __EMSCRIPTEN_PTHREADS__
-  CheckerboardPool chunkPool;
+  ParallelPool chunkPool;
   std::vector<Comp*> carryComps;
   std::vector<size_t> carryOffsets;
   std::vector<std::vector<uint64_t>> adjChunkPairs;
+  // Per-row movement candidates are gathered concurrently, then concatenated
+  // in the legacy traversal order so settle RNG and checksums stay identical.
+  std::vector<std::vector<int>> densityRows, sandRows, liquidRows, gasRows;
+  std::vector<std::vector<int>> reactionRows;
 #endif
 
   // Make `lay` the active layer. The old raw-pointer mirrors of its indexed

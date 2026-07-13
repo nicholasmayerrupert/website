@@ -14,8 +14,14 @@ actionable instead of just producing timing numbers.
   state, while the main thread owns a render-only mirror. Replication is bounded
   to one acknowledged packet in flight, so a slow renderer cannot build an
   unbounded diff queue or feed timing debt back into world simulation.
-- The first pthread/checkerboard stage parallelizes full material-to-RGBA fill
-  in the cross-origin-isolated site build. Cell movement remains serial: its
+- The pthread build uses an adaptive persistent pool (`hardwareConcurrency - 2`,
+  capped at seven workers, plus the caller). It parallelizes visible/full
+  material-to-RGBA fill, candidate discovery, loose-support columns, component
+  indexing/carry/adjacency, static rigid grounding through the component
+  graph, and full/diff world serialization. Full snapshots scan RLE rows in
+  parallel and merge runs in wire order; dirty rectangles copy into pre-sized,
+  disjoint byte ranges.
+  Cell movement remains serial: its
   shared simulation RNG, dirty-row bounds, and liquid displacement queue must
   become task-local before the same scheduler can safely own settle chunks.
   Current profiles are dominated by lighting and cross-layer grounding, not the

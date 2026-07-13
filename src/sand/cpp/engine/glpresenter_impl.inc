@@ -593,8 +593,26 @@ void GLPresenter::glPresentWindow(int forceFull) {
     }
   }
   double tf = emscripten_get_now();
-  E.useLayer(&E.fg); E.renderer.fillRenderSpan(E.fg.grid, (uint32_t*)E.fg.renderPixels.data(), x0, y0, x1, y1);
-  E.useLayer(&E.bg); E.renderer.fillRenderSpan(E.bg.grid, (uint32_t*)E.bg.renderPixels.data(), x0, y0, x1, y1);
+  auto fillLayer = [&](Layer& lay) {
+    E.useLayer(&lay);
+#ifdef __EMSCRIPTEN_PTHREADS__
+    // Unlike simulation, render chunks only read grid/light state and write
+    // disjoint pixel spans, so every visible chunk can run in one wave.
+    int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
+    int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
+    int cw = cx1 - cx0 + 1, count = cw * (cy1 - cy0 + 1);
+    E.chunkPool.parallelFor(count, [&](int i) {
+      int cy = cy0 + i / cw, cx = cx0 + i % cw;
+      int tx0 = imax(x0, cx * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
+      int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
+      E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
+    });
+#else
+    E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), x0, y0, x1, y1);
+#endif
+  };
+  fillLayer(E.fg);
+  fillLayer(E.bg);
   E.perfFillMs = emscripten_get_now() - tf;
   double tu = emscripten_get_now();
   E.useLayer(&E.fg); glUploadWindow(glTex, x0, y0, x1, y1);

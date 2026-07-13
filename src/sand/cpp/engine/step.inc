@@ -98,6 +98,39 @@
     // four repeated full-span scans is substantially cheaper than probing every
     // cell separately for density, powder, liquid, and gas.
     activeDensityCells.clear(); activeSandCells.clear(); activeLiquidCells.clear(); activeGasCells.clear();
+#ifdef __EMSCRIPTEN_PTHREADS__
+    densityRows.resize(rows); sandRows.resize(rows); liquidRows.resize(rows); gasRows.resize(rows);
+    chunkPool.parallelFor(rows, [&](int y) {
+      auto& density = densityRows[y]; auto& sand = sandRows[y];
+      auto& liquid = liquidRows[y]; auto& gas = gasRows[y];
+      density.clear(); sand.clear(); liquid.clear(); gas.clear();
+      int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) return;
+      int rb = y * cols; bool ltr = (y & 1) == 0;
+      auto gather = [&](int x) {
+        int k = rb + x; uint8_t m = L->grid[k];
+        if (isLooseDensityMaterial(m)) density.push_back(k);
+        if (isLooseSolidMaterial(m)) sand.push_back(k);
+        if (isLiquidMaterial(m)) liquid.push_back(k);
+        if (isGasMaterial(m)) gas.push_back(k);
+      };
+      if (ltr) for (int x = minX; x <= maxX; x++) gather(x);
+      else for (int x = maxX; x >= minX; x--) gather(x);
+    });
+    size_t densityN = 0, sandN = 0, liquidN = 0, gasN = 0;
+    for (int y = 0; y < rows; y++) {
+      densityN += densityRows[y].size(); sandN += sandRows[y].size();
+      liquidN += liquidRows[y].size(); gasN += gasRows[y].size();
+    }
+    activeDensityCells.reserve(densityN); activeSandCells.reserve(sandN);
+    activeLiquidCells.reserve(liquidN); activeGasCells.reserve(gasN);
+    for (int y = rows - 1; y >= 0; y--) {
+      activeDensityCells.insert(activeDensityCells.end(), densityRows[y].begin(), densityRows[y].end());
+      activeSandCells.insert(activeSandCells.end(), sandRows[y].begin(), sandRows[y].end());
+      activeLiquidCells.insert(activeLiquidCells.end(), liquidRows[y].begin(), liquidRows[y].end());
+    }
+    for (int y = 0; y < rows; y++)
+      activeGasCells.insert(activeGasCells.end(), gasRows[y].begin(), gasRows[y].end());
+#else
     for (int y = rows - 1; y >= 0; y--) {
       int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue;
       int rb = y * cols; bool ltr = (y & 1) == 0;
@@ -107,6 +140,7 @@
       activeGasCells.insert(activeGasCells.end(), activeGasRow.rbegin(), activeGasRow.rend());
     }
     std::reverse(activeGasCells.begin(), activeGasCells.end());
+#endif
 
     liquidDispPending.clear();
     double tS = emscripten_get_now();
@@ -152,6 +186,9 @@
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
     if (!fgA && !bgA) { useLayer(&fg); perfStepMs = 0; return false; }
     double t0 = emscripten_get_now();
+#ifdef __EMSCRIPTEN_PTHREADS__
+    chunkPool.resetStats();
+#endif
     tick++;
     // Zero fine-phase timers + dirty volume (stepLayer / joint accumulate into these).
     perfDirtyChunks = perfDirtyRows = perfDirtyCells = 0;

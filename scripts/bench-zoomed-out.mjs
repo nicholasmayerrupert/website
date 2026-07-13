@@ -11,15 +11,31 @@ import { chromium } from 'playwright';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? Number(args[i + 1]) : fallback; };
+const stringFlag = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? String(args[i + 1]) : fallback; };
 const hasFlag = (name) => args.includes(name);
 const targetCols = flag('--cols', 1120), targetRows = flag('--rows', 1056);
+const requestedThreads = flag('--threads', NaN);
+const selectedCase = stringFlag('--case', 'default');
+if (!['default', 'pan', 'water', 'fire', 'acid', 'all'].includes(selectedCase)) throw new Error(`unknown --case ${selectedCase}`);
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', '5181', '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
 });
-const cleanup = async (browser) => {
-  await browser?.close().catch(() => {});
+const cleanup = async (browser, page) => {
+  // Let <sand-game> terminate its outer worker and nested pthreads before
+  // closing Chromium. Abrupt browser.close() can otherwise wait indefinitely
+  // on a worker blocked in a pthread barrier.
+  await page?.evaluate(() => document.querySelector('sand-game')?.remove()).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  await Promise.race([
+    page?.close({ runBeforeUnload: false }).catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 2000)),
+  ]);
+  await Promise.race([
+    browser?.close().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 5000)),
+  ]);
   if (process.platform === 'win32' && server.pid) spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
   else server.kill('SIGKILL');
 };
@@ -34,21 +50,35 @@ const summarize = (samples) => {
   const first = samples[0], last = samples[samples.length - 1];
   const measuredTps = first && last && last.at > first.at ? (last.worldTick - first.worldTick) * 1000 / (last.at - first.at) : 0;
   const writes = first && last ? (last.workerToolWrites || 0) - (first.workerToolWrites || 0) : 0;
-  return { tps: +measuredTps.toFixed(2), reportedTps: +median(values('worldTps')).toFixed(2), stepMs: median(values('stepMs')), frameMs: median(values('avgFrameMs')), toolWrites: writes, toolWritesTotal: last?.workerToolWrites || 0 };
+  return {
+    tps: +measuredTps.toFixed(2), reportedTps: +median(values('worldTps')).toFixed(2),
+    stepMs: median(values('stepMs')), frameMs: median(values('avgFrameMs')),
+    renderMs: median(values('renderMs')), lightMs: median(values('lightMs')),
+    fillMs: median(values('fillMs')), uploadMs: median(values('uploadMs')),
+    mirrorApplyMs: median(values('mirrorApplyMs')),
+    threads: median(values('workerThreadWorkers')) + 1,
+    parallelMs: median(values('workerParallelWallMs')),
+    parallelWaitMs: median(values('workerParallelWaitMs')),
+    toolWrites: writes, toolWritesTotal: last?.workerToolWrites || 0,
+  };
 };
 
-let browser;
+let browser, page, failure = null;
 try {
   await waitForServer();
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, reducedMotion: 'no-preference' });
-  const page = await context.newPage();
+  page = await context.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   const preparePage = async (reload = false) => {
     if (reload) await page.reload({ waitUntil: 'networkidle' });
-    else await page.goto('http://localhost:5181/fps', { waitUntil: 'networkidle' });
+    else {
+      const query = new URLSearchParams();
+      if (Number.isFinite(requestedThreads)) query.set('sandThreads', requestedThreads | 0);
+      await page.goto(`http://localhost:5181/fps${query.size ? `?${query}` : ''}`, { waitUntil: 'networkidle' });
+    }
     await page.waitForFunction(() => window.__sandTest?.info().cols > 0 && window.__sandPerf?.().worldTick > 0, null, { timeout: 60000 });
     for (let i = 0; i < 40; i++) {
       const current = await page.evaluate(() => window.__sandTest.info());
@@ -66,36 +96,48 @@ try {
     while (Date.now() < end) { out.push({ ...(await page.evaluate(() => window.__sandPerf())), at: Date.now() }); await page.waitForTimeout(250); }
     return out;
   };
-  await page.keyboard.down('d');
-  const pan = await sampleFor(5000);
-  await page.keyboard.up('d');
-
-  await page.evaluate(() => {
-    const { cols, rows } = window.__sandTest.info();
-    // Several separated reservoirs keep a broad liquid frontier active without
-    // depending on synthetic pointer timing or the palette DOM.
-    for (let i = 0; i < 20; i++) window.__sandTest.paintWorker(2, Math.floor(cols * (0.25 + (i % 5) * 0.1)), Math.floor(rows * (0.12 + Math.floor(i / 5) * 0.035)), 10);
-  });
-  const water = await sampleFor(7000);
-
   console.log(`zoomed-out browser benchmark (${info.cols}x${info.rows}, target ${targetCols}x${targetRows})`);
-  console.log('  pan   ', summarize(pan));
-  const waterSummary = summarize(water);
-  console.log('  water ', waterSummary);
-  if (waterSummary.toolWritesTotal <= 0) throw new Error('water stroke produced no worker tool writes');
-  if (hasFlag('--reactions')) {
-    info = await preparePage(true);
-    await page.evaluate(() => window.__sandTest.seedWorkerReaction(5, 1200, 0));
-    await page.waitForTimeout(250);
-    const fire = await sampleFor(7000);
-    console.log('  fire  ', summarize(fire));
-    info = await preparePage(true);
-    await page.evaluate(() => window.__sandTest.seedWorkerReaction(10, 2400, 0));
-    await page.waitForTimeout(250);
-    const acid = await sampleFor(7000);
-    console.log('  acid  ', summarize(acid));
+  if (selectedCase === 'default' || selectedCase === 'pan' || selectedCase === 'all') {
+    await page.keyboard.down('d');
+    const pan = await sampleFor(5000);
+    await page.keyboard.up('d');
+    console.log('  pan   ', summarize(pan));
+  }
+  if (selectedCase === 'default' || selectedCase === 'water' || selectedCase === 'all') {
+    await page.evaluate(() => {
+      const { cols, rows } = window.__sandTest.info();
+      // Several separated reservoirs keep a broad liquid frontier active without
+      // depending on synthetic pointer timing or the palette DOM.
+      for (let i = 0; i < 20; i++) window.__sandTest.paintWorker(2, Math.floor(cols * (0.25 + (i % 5) * 0.1)), Math.floor(rows * (0.12 + Math.floor(i / 5) * 0.035)), 10);
+    });
+    const waterSummary = summarize(await sampleFor(7000));
+    console.log('  water ', waterSummary);
+    if (waterSummary.toolWritesTotal <= 0) throw new Error('water stroke produced no worker tool writes');
+  }
+  if (hasFlag('--reactions') || selectedCase === 'fire' || selectedCase === 'acid' || selectedCase === 'all') {
+    if (selectedCase === 'fire' || selectedCase === 'acid' || selectedCase === 'all') info = await preparePage(true);
+    if (selectedCase !== 'acid') {
+      await page.evaluate(() => window.__sandTest.seedWorkerReaction(5, 1200, 0));
+      await page.waitForTimeout(250);
+      console.log('  fire  ', summarize(await sampleFor(7000)));
+    }
+    if (selectedCase !== 'fire') {
+      info = await preparePage(true);
+      await page.evaluate(() => window.__sandTest.seedWorkerReaction(10, 2400, 0));
+      await page.waitForTimeout(250);
+      const acid = summarize(await sampleFor(7000));
+      console.log('  acid  ', acid);
+      if (acid.toolWritesTotal <= 0) throw new Error('acid injection produced no worker tool writes');
+    }
   }
   if (errors.length) throw new Error(`browser errors:\n${errors.join('\n')}`);
+} catch (error) {
+  failure = error;
 } finally {
-  await cleanup(browser);
+  await cleanup(browser, page);
 }
+if (failure) console.error(failure);
+// Nested Emscripten pthread workers can leave Playwright transport handles open
+// after Chromium has been force-closed. This is a standalone benchmark CLI, so
+// finish with the scenario's explicit status after cleanup.
+process.exit(failure ? 1 : 0);

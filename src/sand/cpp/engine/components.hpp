@@ -62,6 +62,7 @@ class ComponentSystem {
   std::vector<CrossLayerBond> cgBonds;
   std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
   std::vector<int32_t> cgBondSeenFg, cgBondSeenBg;
+  std::vector<std::vector<int>> cgBondCandidatesFg, cgBondCandidatesBg;
   int32_t cgCompGen = 0;
   // Membership mirrors for the assembly-displacement planning path (Phase 6).
   // The real unordered_sets are kept wherever their ITERATION order feeds cell

@@ -41,6 +41,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
       sinksOn: false, // taps/sinks are obsolete in the streaming world
     });
     ctx.engine = e;
+    e.setThreadWorkers(ctx.mainThreadWorkers);
     e.glInit(canvas);                                // WebGL2 context on our canvas
     e.glResize(canvas.width, canvas.height);
     e.setTool(TOOL_IDS[ctx.currentToolName] ?? 0);   // re-apply the selected tool

@@ -17,6 +17,19 @@ void ComponentSystem::indexComponents() {
   int32_t* const cc = lay->cellComp.data();
   cgComps.clear();
   cgCompDensity.clear();
+#ifdef __EMSCRIPTEN_PTHREADS__
+  auto queue = [&](std::vector<Comp>& list) {
+    for (auto& c : list) { c.grounded = false; cgComps.push_back(&c); }
+  };
+  queue(lay->stoneComponents); queue(lay->plantComponents); queue(lay->iceComponents);
+  cgCompDensity.resize(cgComps.size());
+  E.chunkPool.parallelFor((int)cgComps.size(), [&](int id) {
+    Comp& c = *cgComps[id];
+    double sum = 0;
+    for (int k : c.cells) { cc[k] = id; sum += DENSITY[lay->grid[k]]; }
+    cgCompDensity[id] = c.cells.empty() ? 0 : sum / c.cells.size();
+  });
+#else
   auto idx = [&](std::vector<Comp>& list) {
     for (auto& c : list) {
       c.grounded = false;
@@ -28,6 +41,7 @@ void ComponentSystem::indexComponents() {
     }
   };
   idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
+#endif
   lay->compAdjPairs.clear();
   if (cgComps.size() > 1) {
     // Four forward neighbours cover 8-connectivity exactly once. Duplicate
@@ -110,6 +124,52 @@ void ComponentSystem::computeRigidGrounded() {
   std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
   std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
   indexComponents();
+#ifdef __EMSCRIPTEN_PTHREADS__
+  // Static registered rigid cells are already partitioned into exact connected
+  // components, and indexComponents cached every 8-neighbour edge between
+  // components. Ground the much smaller component graph, then stamp cells in
+  // parallel. Live free bodies are not represented in that graph and retain
+  // the classic cell flood below.
+  if (!groundForceFull && lay->bodies.empty() && lay->bodyCells.empty()) {
+    int nc = (int)cgComps.size();
+    std::vector<int> parent(nc), seeded(nc, 0);
+    for (int i = 0; i < nc; i++) parent[i] = i;
+    for (uint64_t edge : lay->compAdjPairs)
+      ufUnite(parent, (int)(edge >> 32), (int)(uint32_t)edge);
+    auto seedCell = [&](int k) {
+      int id = lay->cellComp[k];
+      if (id >= 0) seeded[ufFind(parent, id)] = 1;
+    };
+    int floorBase = (E.rows - 1) * E.cols;
+    for (int x = 0; x < E.cols; x++) {
+      int k = floorBase + x;
+      if (E.isRigidMaterialClass(g[k]) && E.isBearingMaterial(g[k])) seedCell(k);
+    }
+    if (lay->infinite) {
+      for (int y = 1; y < E.rows; y++) {
+        int kl = y * E.cols + 1;
+        if (E.isRigidMaterialClass(g[kl]) && !E.isIceComponentMaterial(g[kl])) seedCell(kl);
+        int kr = y * E.cols + E.cols - 2;
+        if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) seedCell(kr);
+      }
+      int topBase = E.cols;
+      for (int x = 1; x < E.cols - 1; x++) {
+        int k = topBase + x;
+        if (E.isRigidMaterialClass(g[k]) && !E.isIceComponentMaterial(g[k])) seedCell(k);
+      }
+    }
+    // Union may have attached a seeded root beneath another root after it was
+    // marked; fold seeds once more onto canonical roots before stamping.
+    for (int i = 0; i < nc; i++) if (seeded[i]) seeded[ufFind(parent, i)] = 1;
+    for (int i = 0; i < nc; i++) parent[i] = ufFind(parent, i);
+    E.chunkPool.parallelFor(nc, [&](int id) {
+      Comp& c = *cgComps[id];
+      c.grounded = seeded[parent[id]] != 0;
+      if (c.grounded) for (int k : c.cells) grounded[k] = 1;
+    });
+    return;
+  }
+#endif
   int sp = 0;
   if (groundStackX.size() != (size_t)E.cols * E.rows) groundStackX.assign((size_t)E.cols * E.rows, 0);
   int32_t* gsx = groundStackX.data();
@@ -193,7 +253,11 @@ void ComponentSystem::applyLooseOverlay() {
   Layer* const lay = E.L;
   const uint8_t* const g = lay->grid;
   uint8_t* const grounded = lay->groundedCell.data();
+#ifdef __EMSCRIPTEN_PTHREADS__
+  std::atomic<bool> sawPowder{false};
+#else
   bool sawPowder = false;
+#endif
   const int cols = E.cols, rows = E.rows;
   // Prefer sparse dirty-column bitset; fall back to bbox span; then full width.
   const bool useBits = !lay->looseDirtyFull && (int)lay->looseDirtyCol.size() == cols;
@@ -209,7 +273,13 @@ void ComponentSystem::applyLooseOverlay() {
       int k = y * cols + x;
       if (!E.isLooseSolidMaterial(g[k])) continue;
       bool interior = y >= 1 && x >= 1 && x <= cols - 2;
-      if (interior) sawPowder = true;
+      if (interior) {
+#ifdef __EMSCRIPTEN_PTHREADS__
+        sawPowder.store(true, std::memory_order_relaxed);
+#else
+        sawPowder = true;
+#endif
+      }
       bool gnd = grounded[k + cols] != 0;
       if (!gnd && interior) {
         uint8_t below = g[k + cols];
@@ -218,12 +288,18 @@ void ComponentSystem::applyLooseOverlay() {
       if (gnd) grounded[k] = 1;
     }
   };
+#ifdef __EMSCRIPTEN_PTHREADS__
+  if (useBits) E.chunkPool.parallelFor(cols, [&](int x) { if (lay->looseDirtyCol[x]) overlayCol(x); });
+  else E.chunkPool.parallelFor(x1 - x0 + 1, [&](int i) { overlayCol(x0 + i); });
+  lay->groundSawPowder = sawPowder.load(std::memory_order_relaxed);
+#else
   if (useBits) {
     for (int x = 0; x < cols; x++) if (lay->looseDirtyCol[x]) overlayCol(x);
   } else {
     for (int x = x0; x <= x1; x++) overlayCol(x);
   }
   lay->groundSawPowder = sawPowder;
+#endif
 }
 
 // Refresh the column-local loose overlay without disturbing rigid support bits
@@ -246,16 +322,21 @@ void ComponentSystem::refreshLooseOverlayPreservingJoint(Layer* lay) {
       if (!E.isRigidMaterialClass(g[k])) grounded[k] = 0;
     }
   };
+  int x0 = 0, x1 = cols - 1;
+  if (!useBits && lay->looseDirtyX1 >= lay->looseDirtyX0) {
+    x0 = lay->looseDirtyX0 < 0 ? 0 : lay->looseDirtyX0;
+    x1 = lay->looseDirtyX1 >= cols ? cols - 1 : lay->looseDirtyX1;
+  }
+#ifdef __EMSCRIPTEN_PTHREADS__
+  if (useBits) E.chunkPool.parallelFor(cols, [&](int x) { if (lay->looseDirtyCol[x]) clearLooseCol(x); });
+  else E.chunkPool.parallelFor(x1 - x0 + 1, [&](int i) { clearLooseCol(x0 + i); });
+#else
   if (useBits) {
     for (int x = 0; x < cols; x++) if (lay->looseDirtyCol[x]) clearLooseCol(x);
   } else {
-    int x0 = 0, x1 = cols - 1;
-    if (lay->looseDirtyX1 >= lay->looseDirtyX0) {
-      x0 = lay->looseDirtyX0 < 0 ? 0 : lay->looseDirtyX0;
-      x1 = lay->looseDirtyX1 >= cols ? cols - 1 : lay->looseDirtyX1;
-    }
     for (int x = x0; x <= x1; x++) clearLooseCol(x);
   }
+#endif
   applyLooseOverlay();
   lay->looseGroundDirty = false;
   lay->looseDirtyX0 = 0; lay->looseDirtyX1 = -1;
@@ -847,6 +928,31 @@ void ComponentSystem::computeGroundedBoth() {
     E.fg.crossBondedComp[fi] = 1;
     E.bg.crossBondedComp[bi] = 1;
   };
+#ifdef __EMSCRIPTEN_PTHREADS__
+  cgBondCandidatesFg.resize(nf);
+  E.chunkPool.parallelFor(nf, [&](int fi) {
+    auto& out = cgBondCandidatesFg[fi]; out.clear();
+    Comp* fc = compById(E.fg, fi); if (fc->grounded) return;
+    for (int k : fc->cells) {
+      int bi = bgCC[k];
+      if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(bgG[k]) || !bondCompatibleAt(k)) continue;
+      if (std::find(out.begin(), out.end(), bi) == out.end()) out.push_back(bi);
+    }
+  });
+  for (int fi = 0; fi < nf; fi++) for (int bi : cgBondCandidatesFg[fi]) bondPair(fi, bi);
+  cgBondCandidatesBg.resize(nb);
+  E.chunkPool.parallelFor(nb, [&](int bi) {
+    auto& out = cgBondCandidatesBg[bi]; out.clear();
+    Comp* bc = compById(E.bg, bi); if (bc->grounded) return;
+    for (int k : bc->cells) {
+      int fi = fgCC[k];
+      if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k]) || !bondCompatibleAt(k)) continue;
+      if (!compById(E.fg, fi)->grounded || std::find(out.begin(), out.end(), fi) != out.end()) continue;
+      out.push_back(fi);
+    }
+  });
+  for (int bi = 0; bi < nb; bi++) for (int fi : cgBondCandidatesBg[bi]) bondPair(fi, bi);
+#else
   cgBondSeenBg.assign(nb, -1);
   for (int fi = 0; fi < nf; fi++) {
     Comp* fc = compById(E.fg, fi);
@@ -866,12 +972,12 @@ void ComponentSystem::computeGroundedBoth() {
     for (int k : bc->cells) {
       int fi = fgCC[k];
       if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k]) || !bondCompatibleAt(k)) continue;
-      // Ungrounded foreground endpoints were already emitted by the first loop.
       if (!compById(E.fg, fi)->grounded || cgBondSeenFg[fi] == bi) continue;
       cgBondSeenFg[fi] = bi;
       bondPair(fi, bi);
     }
   }
+#endif
 
   if (cgBonds.empty()) {
     if (prevFg) wakeCellsThatLostGrounding(E.fg, cgPrevFg);
@@ -904,6 +1010,21 @@ void ComponentSystem::computeGroundedBoth() {
   std::vector<uint8_t> rootGrounded(nf + nb, 0);
   for (int i = 0; i < nf; i++) if (compById(E.fg, i)->grounded) rootGrounded[ufFind(groundParent, i)] = 1;
   for (int i = 0; i < nb; i++) if (compById(E.bg, i)->grounded) rootGrounded[ufFind(groundParent, nf + i)] = 1;
+#ifdef __EMSCRIPTEN_PTHREADS__
+  for (int i = 0; i < nf + nb; i++) groundParent[i] = ufFind(groundParent, i);
+  E.chunkPool.parallelFor(nf + nb, [&](int i) {
+    if (i < nf) {
+      if (!E.fg.crossBondedComp[i] || !rootGrounded[groundParent[i]]) return;
+      Comp* c = compById(E.fg, i); c->grounded = true;
+      for (int k : c->cells) E.fg.groundedCell[k] = 1;
+    } else {
+      int bi = i - nf;
+      if (!E.bg.crossBondedComp[bi] || !rootGrounded[groundParent[i]]) return;
+      Comp* c = compById(E.bg, bi); c->grounded = true;
+      for (int k : c->cells) E.bg.groundedCell[k] = 1;
+    }
+  });
+#else
   for (int i = 0; i < nf; i++) if (E.fg.crossBondedComp[i] && rootGrounded[ufFind(groundParent, i)]) {
     Comp* c = compById(E.fg, i); c->grounded = true;
     for (int k : c->cells) E.fg.groundedCell[k] = 1;
@@ -912,6 +1033,7 @@ void ComponentSystem::computeGroundedBoth() {
     Comp* c = compById(E.bg, i); c->grounded = true;
     for (int k : c->cells) E.bg.groundedCell[k] = 1;
   }
+#endif
 
   // Idle-structure release: once every component is grounded (base or via bonds),
   // drop the transient bond list so step() can skip joint next tick. Support is

@@ -56,7 +56,16 @@ const postBytes = (message, bytes) => {
 
 function perf() {
   const elapsed = Math.max(1, performance.now() - rateStart);
-  return { worldTps: rateSteps * 1000 / elapsed, stepMs: lastStepMs, controlsReceived, edgesProcessed, toolWrites };
+  const parallel = engine?.getPerf?.() || {};
+  return {
+    worldTps: rateSteps * 1000 / elapsed, stepMs: lastStepMs,
+    controlsReceived, edgesProcessed, toolWrites,
+    threadWorkers: parallel.threadWorkers || 0,
+    parallelCalls: parallel.parallelCalls || 0,
+    parallelTasks: parallel.parallelTasks || 0,
+    parallelWallMs: parallel.parallelWallMs || 0,
+    parallelWaitMs: parallel.parallelWaitMs || 0,
+  };
 }
 
 function postDraft() {
@@ -204,6 +213,7 @@ self.onmessage = async ({ data }) => {
       cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
       infinite: true, sinksOn: false,
     });
+    engine.setThreadWorkers(data.threadWorkers | 0);
     engine.setPlayMode(false);
     engine.setDrawMode(!!data.drawMode);
     creativeKind = data.creativeKind | 0;
@@ -258,5 +268,7 @@ self.onmessage = async ({ data }) => {
     clearTimeout(timer);
     engine.destroy();
     engine = null;
+    self.postMessage({ type: 'destroyed' });
+    self.close();
   }
 };

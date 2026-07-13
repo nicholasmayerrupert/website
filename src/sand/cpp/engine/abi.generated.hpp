@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 8;
+static const int ABI_VERSION = 9;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -96,7 +96,7 @@ enum GlPlayerExtField : int {
 };
 static const int GLP_STRIDE = 8;
 
-// perfSnapshot: stepMs, actorMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs
+// perfSnapshot: stepMs, actorMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs, threadWorkers, parallelCalls, parallelTasks, parallelWallMs, parallelWaitMs
 enum PerfSnapshotField : int {
   PF_STEP_MS = 0,
   PF_ACTOR_MS = 1,
@@ -126,8 +126,13 @@ enum PerfSnapshotField : int {
   PF_TAIL_MS = 25,
   PF_LAYERS_MS = 26,
   PF_CROSS_MS = 27,
+  PF_THREAD_WORKERS = 28,
+  PF_PARALLEL_CALLS = 29,
+  PF_PARALLEL_TASKS = 30,
+  PF_PARALLEL_WALL_MS = 31,
+  PF_PARALLEL_WAIT_MS = 32,
 };
-static const int PF_STRIDE = 28;
+static const int PF_STRIDE = 33;
 
 enum PlayerInput : int {
   PI_LEFT = 1,

@@ -19,6 +19,13 @@ class NetSync {
   explicit NetSync(Engine& e) : E(e) {}
 
   std::vector<uint8_t> blob; // snapshot / diff serialization scratch (ABI reads it)
+  std::vector<size_t> diffRectOffsets;
+#ifdef __EMSCRIPTEN_PTHREADS__
+  struct RleRun { uint32_t count; uint8_t value; };
+  struct DecodeRun { size_t offset; uint32_t count; uint8_t value; };
+  std::vector<std::vector<RleRun>> rleRows;
+  std::vector<DecodeRun> decodeRuns;
+#endif
 
   int serializeWorld();
   int serializeDiff();

@@ -9,6 +9,7 @@ export function createWorldWorkerClient(ctx) {
   let resizeTimer = 0;
   let resizeId = 0;
   let awaitingResizeId = 0;
+  let destroyTimer = 0;
   let state = { ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0 };
 
   worker.onmessage = ({ data }) => {
@@ -25,17 +26,21 @@ export function createWorldWorkerClient(ctx) {
       // A full snapshot supersedes an obsolete diff during resize/streaming.
       if (!pending || data.type === 'full' || data.epoch >= pending.epoch) pending = data;
       state = {
-        ...state, ready: true, worldTick: data.worldTick || state.worldTick,
+        ...state, ...data.perf, ready: true, worldTick: data.worldTick || state.worldTick,
         worldTps: data.perf?.worldTps || state.worldTps,
         stepMs: data.perf?.stepMs || 0, epoch: data.epoch, sequence: data.sequence,
       };
+    } else if (data.type === 'destroyed') {
+      clearTimeout(destroyTimer);
+      destroyTimer = 0;
+      worker.terminate();
     } else if (data.type === 'draft') {
       pendingDraft = data;
     } else if (data.type === 'creatures') {
       pendingCreatures = data;
     } else if (data.type === 'stats') {
       state = {
-        ...state, worldTick: data.worldTick ?? state.worldTick,
+        ...state, ...data.perf, worldTick: data.worldTick ?? state.worldTick,
         worldTps: data.perf?.worldTps ?? state.worldTps,
         stepMs: data.perf?.stepMs ?? state.stepMs,
         controlsReceived: data.perf?.controlsReceived ?? state.controlsReceived,
@@ -53,10 +58,10 @@ export function createWorldWorkerClient(ctx) {
   };
 
   const api = {
-    init({ creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false } = {}) {
+    init({ creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false, threadWorkers = 0 } = {}) {
       worker.postMessage({
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-        drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning,
+        drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning, threadWorkers,
       });
     },
     updateControl() {
@@ -138,10 +143,17 @@ export function createWorldWorkerClient(ctx) {
       changed = true;
       return changed;
     },
-    destroy() { clearTimeout(resizeTimer); worker.postMessage({ type: 'destroy' }); worker.terminate(); },
+    destroy() {
+      clearTimeout(resizeTimer);
+      worker.postMessage({ type: 'destroy' });
+      // Give C++ time to join its persistent pthreads. Forced termination is a
+      // last resort for a crashed/unresponsive worker, not the normal path.
+      destroyTimer = setTimeout(() => worker.terminate(), 1500);
+    },
     get state() { return state; },
   };
   worker.onerror = (event) => {
+    clearTimeout(destroyTimer);
     console.error('sand world worker failed', event.message || event);
     worker.terminate();
     if (ctx.worldWorker === api) ctx.worldWorker = null; // safe main-thread fallback

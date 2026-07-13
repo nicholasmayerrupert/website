@@ -52,6 +52,7 @@
     "test:rigid-spawn-joint": "node scripts/rigid-spawn-joint-repro.mjs",
     "test:explosives": "node scripts/explosives-test.mjs",
     "test:grounding": "node scripts/grounding-incremental-test.mjs",
+    "test:grounding:threaded": "node --import ./scripts/threaded-test-preload.mjs scripts/grounding-incremental-test.mjs",
     "test:pure-perf": "node scripts/pure-perf-checksum-test.mjs",
     "test:e2e": "node scripts/player-e2e.mjs",
     "test:creatures-e2e": "node scripts/creature-e2e.mjs",
@@ -73,6 +74,7 @@
     "bench:acid-lava": "node scripts/acid-lava-lag-bench.mjs",
     "bench:prefetch": "node scripts/bench-prefetch.mjs",
     "bench:profile-shift": "node scripts/profile-shift.mjs",
+    "bench:zoom": "node scripts/bench-zoomed-out.mjs",
     "check:embed": "node scripts/check-embed-boundary.mjs"
   },
   "dependencies": {

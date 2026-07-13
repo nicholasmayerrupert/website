@@ -2,6 +2,33 @@
 
 // RLE-encode one grid into blob: repeated [u32 run][u8 value].
 void NetSync::rleEncode(const uint8_t* g) {
+#ifdef __EMSCRIPTEN_PTHREADS__
+  rleRows.resize(E.rows);
+  E.chunkPool.parallelFor(E.rows, [&](int y) {
+    auto& out = rleRows[y]; out.clear();
+    size_t i = (size_t)y * E.cols, end = i + E.cols;
+    while (i < end) {
+      uint8_t v = g[i];
+      size_t j = i + 1;
+      while (j < end && g[j] == v) j++;
+      out.push_back({(uint32_t)(j - i), v});
+      i = j;
+    }
+  });
+  size_t runCount = 0;
+  for (const auto& row : rleRows) runCount += row.size();
+  blob.reserve(blob.size() + runCount * 5);
+  RleRun merged{0, 0};
+  auto flush = [&] {
+    if (!merged.count) return;
+    blobPush32(merged.count); blob.push_back(merged.value);
+  };
+  for (const auto& row : rleRows) for (const RleRun& run : row) {
+    if (merged.count && merged.value == run.value) merged.count += run.count;
+    else { flush(); merged = run; }
+  }
+  flush();
+#else
   size_t n = (size_t)E.cols * E.rows, i = 0;
   while (i < n) {
     uint8_t v = g[i];
@@ -11,6 +38,7 @@ void NetSync::rleEncode(const uint8_t* g) {
     blob.push_back(v);
     i = j;
   }
+#endif
 }
 int NetSync::serializeWorld() {
   blob.clear();
@@ -22,11 +50,26 @@ int NetSync::serializeWorld() {
 // the new p (start of the next grid's stream).
 int NetSync::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
   size_t idx = 0, n = (size_t)E.cols * E.rows;
+#ifdef __EMSCRIPTEN_PTHREADS__
+  decodeRuns.clear();
+  while (p + 5 <= len && idx < n) {
+    uint32_t run = (uint32_t)buf[p] | ((uint32_t)buf[p + 1] << 8) | ((uint32_t)buf[p + 2] << 16) | ((uint32_t)buf[p + 3] << 24);
+    uint8_t v = buf[p + 4]; p += 5;
+    uint32_t clamped = (uint32_t)std::min<size_t>(run, n - idx);
+    if (clamped) decodeRuns.push_back({idx, clamped, v});
+    idx += clamped;
+  }
+  E.chunkPool.parallelFor((int)decodeRuns.size(), [&](int i) {
+    const DecodeRun& run = decodeRuns[i];
+    std::memset(g + run.offset, run.value, run.count);
+  });
+#else
   while (p + 5 <= len && idx < n) {
     uint32_t run = (uint32_t)buf[p] | ((uint32_t)buf[p + 1] << 8) | ((uint32_t)buf[p + 2] << 16) | ((uint32_t)buf[p + 3] << 24);
     uint8_t v = buf[p + 4]; p += 5;
     for (uint32_t k = 0; k < run && idx < n; k++) g[idx++] = v;
   }
+#endif
   return p;
 }
 void NetSync::applyWorld(const uint8_t* buf, int len) {
@@ -64,17 +107,31 @@ void NetSync::writeDiffLayer(bool background) {
   Layer* lay = background ? &E.bg : &E.fg;
   E.useLayer(lay); E.buildDirtyRects();
   int rc = (int)(lay->dirtyRects.size() / 4);
-  blobPush16(rc);
+  size_t section = blob.size(), cursor = section + 2;
+  diffRectOffsets.resize(rc);
   for (int r = 0; r < rc; r++) {
     int x0 = lay->dirtyRects[r * 4], y0 = lay->dirtyRects[r * 4 + 1], x1 = lay->dirtyRects[r * 4 + 2], y1 = lay->dirtyRects[r * 4 + 3];
-    blobPush16(x0); blobPush16(y0); blobPush16(x1); blobPush16(y1);
-    size_t width = (size_t)(x1 - x0);
-    for (int y = y0; y < y1; y++) {
-      size_t out = blob.size();
-      blob.resize(out + width);
-      std::memcpy(blob.data() + out, lay->grid + y * E.cols + x0, width);
-    }
+    diffRectOffsets[r] = cursor;
+    cursor += 8 + (size_t)(x1 - x0) * (y1 - y0);
   }
+  blob.resize(cursor);
+  auto put16 = [&](size_t p, int v) { blob[p] = v & 0xff; blob[p + 1] = (v >> 8) & 0xff; };
+  put16(section, rc);
+  auto writeRect = [&](int r) {
+    int x0 = lay->dirtyRects[r * 4], y0 = lay->dirtyRects[r * 4 + 1], x1 = lay->dirtyRects[r * 4 + 2], y1 = lay->dirtyRects[r * 4 + 3];
+    size_t p = diffRectOffsets[r];
+    put16(p, x0); put16(p + 2, y0); put16(p + 4, x1); put16(p + 6, y1);
+    size_t width = (size_t)(x1 - x0), out = p + 8;
+    for (int y = y0; y < y1; y++) {
+      std::memcpy(blob.data() + out, lay->grid + y * E.cols + x0, width);
+      out += width;
+    }
+  };
+#ifdef __EMSCRIPTEN_PTHREADS__
+  E.chunkPool.parallelFor(rc, writeRect);
+#else
+  for (int r = 0; r < rc; r++) writeRect(r);
+#endif
 }
 int NetSync::serializeDiff() {
   blob.clear();

@@ -64,6 +64,12 @@ export function installDevHooks(ctx, {
       workerControls: workerState?.controlsReceived || 0,
       workerEdges: workerState?.edgesProcessed || 0,
       workerToolWrites: workerState?.toolWrites || 0,
+      workerThreadWorkers: workerState?.threadWorkers || 0,
+      workerParallelCalls: workerState?.parallelCalls || 0,
+      workerParallelTasks: workerState?.parallelTasks || 0,
+      workerParallelWallMs: ms(workerState?.parallelWallMs),
+      workerParallelWaitMs: ms(workerState?.parallelWaitMs),
+      renderThreadWorkers: perf.threadWorkers || 0,
       mirrorApplyMs: workerState?.mirrorApplyMs || 0,
       mirrorPacketBytes: workerState?.packetBytes || 0,
       actorSteps: timing.actorSteps || 0,
@@ -131,6 +137,13 @@ export function installDevHooks(ctx, {
       for (let y = Math.max(0, y0); y < Math.min(ctx.rows, y1); y++) {
         for (let x = Math.max(0, x0); x < Math.min(ctx.cols, x1); x++) if (g[y * ctx.cols + x] === material) n++;
       }
+      return n;
+    },
+    materialCountBoth(material) {
+      if (!engine()) return 0;
+      const fg = engine().getGrid(), bg = engine().getGridBg();
+      let n = 0;
+      for (let i = 0; i < fg.length; i++) n += (fg[i] === material) + (bg[i] === material);
       return n;
     },
     draftCount() { return engine()?.getStoneDraftCells().length || 0; },

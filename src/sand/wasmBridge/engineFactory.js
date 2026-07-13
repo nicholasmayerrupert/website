@@ -244,6 +244,7 @@ export function initSandWasm() {
         tick: c('engine_tick', 'number', ['number']),
         actorTick: c('engine_actor_tick', 'number', ['number']),
         setActorTick: c('engine_set_actor_tick', null, ['number', 'number']),
+        setThreadWorkers: c('engine_set_thread_workers', null, ['number', 'number']),
         addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
         finalizeDraft: c('engine_finalize_draft', null, ['number', 'number']),
         clearDraft: c('engine_clear_draft', null, ['number']),
@@ -388,6 +389,15 @@ export function createEngineWasm({
   let liveChunkCols = M.chunkCols(ptr);
   let liveChunkRows = M.chunkRows(ptr);
   let cellCount = liveCols * liveRows;
+  const wasmView = (Ctor, byteOffset, length, label) => {
+    const buffer = mod.HEAPU8.buffer;
+    const bytes = length * Ctor.BYTES_PER_ELEMENT;
+    if (!Number.isSafeInteger(byteOffset) || !Number.isSafeInteger(length)
+        || byteOffset < 0 || length < 0 || byteOffset + bytes > buffer.byteLength) {
+      throw new RangeError(`${label}: invalid WASM view offset=${byteOffset} length=${length} bytes=${bytes} heap=${buffer.byteLength}`);
+    }
+    return new Ctor(buffer, byteOffset, length);
+  };
   const renderStrides = Object.freeze({
     player: STRIDES.glPlayerExt,
     item: STRIDES.itemSnapshot,
@@ -643,6 +653,11 @@ export function createEngineWasm({
         tailMs: d[F.tailMs],
         layersMs: d[F.layersMs],
         crossMs: d[F.crossMs],
+        threadWorkers: d[F.threadWorkers],
+        parallelCalls: d[F.parallelCalls],
+        parallelTasks: d[F.parallelTasks],
+        parallelWallMs: d[F.parallelWallMs],
+        parallelWaitMs: d[F.parallelWaitMs],
         phases: {},
       };
     },
@@ -693,6 +708,7 @@ export function createEngineWasm({
     },
     getTick() { return M.tick(ptr); },
     getActorTick() { return M.actorTick(ptr); },
+    setThreadWorkers(count) { M.setThreadWorkers(ptr, Math.max(0, count | 0)); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
     destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
@@ -940,8 +956,8 @@ export function createEngineWasm({
     // World replication (Phase 6). serialize* return a COPY of the bytes (the
     // blob is re-derived each call; copy so callers can hold it). apply* take a
     // Uint8Array and write it into wasm memory. gridHash detects divergence.
-    serializeWorld() { const n = M.serializeWorld(ptr); return new Uint8Array(mod.HEAPU8.buffer, M.netBlobPtr(ptr), n).slice(); },
-    serializeDiff() { const n = M.serializeDiff(ptr); return new Uint8Array(mod.HEAPU8.buffer, M.netBlobPtr(ptr), n).slice(); },
+    serializeWorld() { const n = M.serializeWorld(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeWorld').slice(); },
+    serializeDiff() { const n = M.serializeDiff(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeDiff').slice(); },
     applyWorld(bytes) { const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyWorld(ptr, buf, bytes.length); mod._free(buf); },
     applyDiff(bytes) { if (!bytes.length) return; const buf = mod._malloc(bytes.length); mod.HEAPU8.set(bytes, buf); M.applyDiff(ptr, buf, bytes.length); mod._free(buf); },
     applyWorldMirror(bytes, worldOffsetX, worldOffsetY) {

@@ -41,6 +41,9 @@ class Renderer {
 #endif
   uint8_t renderSkyLight = 255;       // render-only day/night input; 255 = full day
   std::vector<int> lightQueue;        // render-only flood-fill scratch
+#ifdef __EMSCRIPTEN_PTHREADS__
+  std::vector<std::vector<int>> lightSeedRows;
+#endif
 
   void init(uint32_t seed) { renderRngState = seed ^ 0x9e3779b9u; buildRenderTables(); }
   inline double renderRand() {

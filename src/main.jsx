@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react'
+import React, { Suspense, lazy, useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
 
@@ -13,8 +13,16 @@ const GamePage = lazy(() => import('./GamePage.jsx'))
 const path = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') : ''
 const isGame = path === '/game'
 
+function BootSignal() {
+  useEffect(() => {
+    window.dispatchEvent(new Event('portfolio:booted'))
+  }, [])
+  return null
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <Suspense fallback={null}>
     {isGame ? <GamePage /> : <App />}
+    <BootSignal />
   </Suspense>,
 )

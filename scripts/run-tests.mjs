@@ -15,6 +15,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // Same order as the old `&&` chain in package.json. Order matters only for
 // human diffing of runs; suites are independent.
 const SUITES = [
+  ['deployment', 'deployment-cache-test.mjs'],
   ['tooltier', 'tooltier-test.mjs'],
   ['items', 'item-test.mjs'],
   ['creatures', 'creature-test.mjs'],

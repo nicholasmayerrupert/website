@@ -32,14 +32,6 @@ const CK_ERASER = 2;
 const CK_CUBE = 3;
 const CK_CREATURE = 4;
 
-const TIME_PRESETS = Object.freeze([
-  { label: 'Auto', phase: null, tone: 'auto' },
-  { label: 'Dawn', phase: 0.25, tone: 'dawn' },
-  { label: 'Noon', phase: 0.50, tone: 'noon' },
-  { label: 'Dusk', phase: 0.75, tone: 'dusk' },
-  { label: 'Night', phase: 0, tone: 'night' },
-]);
-
 // Species order mirrors the engine's seed-species indices.
 const SEED_SPECIES = ['Oak', 'Pine', 'Willow', 'Cactus', 'Mushroom', 'Bush'];
 
@@ -175,16 +167,31 @@ const STYLE = `
 .sg-toggle:hover { background: rgba(255,255,255,.2); }
 .sg-toggle.on { background: rgba(255,255,255,.8); color: #000; }
 .sg-toggle.on:hover { background: #fff; }
-.sg-time { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
-  border-radius: 6px; padding: 5px 8px; font-size: 10px; font-weight: 600; border: 1px solid rgba(255,255,255,.14);
-  background: rgba(255,255,255,.08); color: #fff; cursor: pointer; touch-action: manipulation; }
-.sg-time:hover { background: rgba(255,255,255,.16); }
+.sg-time { width: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 3px;
+  border-radius: 6px; padding: 4px 7px 5px; font-size: 10px; font-weight: 600; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.08); color: #fff; }
+.sg-time-head { display: flex; align-items: center; min-width: 0; gap: 6px; }
 .sg-time-icon { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 1px solid rgba(255,255,255,.35);
   background: linear-gradient(90deg, #dceaf0 50%, #283548 50%); box-shadow: 0 0 6px rgba(220,234,240,.3); }
 .sg-time.dawn .sg-time-icon { background: linear-gradient(#f5c28d 48%, #9a5965 52%); box-shadow: 0 0 7px rgba(245,194,141,.45); }
 .sg-time.noon .sg-time-icon { background: #ffe39a; box-shadow: 0 0 7px rgba(255,227,154,.65); }
 .sg-time.dusk .sg-time-icon { background: linear-gradient(#cf795d 48%, #472c4c 52%); box-shadow: 0 0 7px rgba(207,121,93,.45); }
 .sg-time.night .sg-time-icon { background: #f4fbff; box-shadow: 0 0 7px rgba(223,244,255,.55); }
+.sg-time-value { min-width: 0; flex: 1 1 auto; white-space: nowrap; color: #f3f4f6; font-variant-numeric: tabular-nums; }
+.sg-time-auto { flex: none; border: 0; border-radius: 4px; padding: 2px 5px; font: inherit; color: #d1d5db;
+  background: rgba(255,255,255,.08); cursor: pointer; touch-action: manipulation; }
+.sg-time-auto:hover { background: rgba(255,255,255,.18); color: #fff; }
+.sg-time-auto.active { background: rgba(255,255,255,.78); color: #111827; }
+.sg-time-range { width: 100%; height: 14px; margin: 0; padding: 0; appearance: none; -webkit-appearance: none;
+  background: transparent; cursor: pointer; touch-action: pan-x; }
+.sg-time-range::-webkit-slider-runnable-track { height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg, #172033, #e6a075 25%, #ffe39a 50%, #cf795d 75%, #172033); }
+.sg-time-range::-webkit-slider-thumb { width: 14px; height: 14px; margin-top: -5px; border: 1px solid rgba(255,255,255,.85);
+  border-radius: 50%; appearance: none; -webkit-appearance: none; background: #f8fafc; box-shadow: 0 2px 5px rgba(0,0,0,.45); }
+.sg-time-range::-moz-range-track { height: 4px; border: 0; border-radius: 999px;
+  background: linear-gradient(90deg, #172033, #e6a075 25%, #ffe39a 50%, #cf795d 75%, #172033); }
+.sg-time-range::-moz-range-thumb { width: 14px; height: 14px; border: 1px solid rgba(255,255,255,.85);
+  border-radius: 50%; background: #f8fafc; box-shadow: 0 2px 5px rgba(0,0,0,.45); }
 @media (prefers-reduced-motion: reduce) {
   .sg-current .sg-name.scrolling .sg-name-track { animation: none; }
 }
@@ -199,7 +206,22 @@ function renderSwatch(color, egg = false) {
   return sw;
 }
 
-export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, showDrawToggle = true } = {}) {
+const normalizeTimePhase = (phase) => ((phase % 1) + 1) % 1;
+const timeTone = (phase) => {
+  if (phase < 0.125 || phase >= 0.875) return 'night';
+  if (phase < 0.375) return 'dawn';
+  if (phase < 0.625) return 'noon';
+  return 'dusk';
+};
+const formatTime = (phase) => {
+  const totalMinutes = Math.round(normalizeTimePhase(phase) * 24 * 60) % (24 * 60);
+  const hour24 = Math.floor(totalMinutes / 60);
+  const minute = String(totalMinutes % 60).padStart(2, '0');
+  const hour12 = hour24 % 12 || 12;
+  return `${hour12}:${minute} ${hour24 < 12 ? 'AM' : 'PM'}`;
+};
+
+export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, getTimeState, showDrawToggle = true } = {}) {
   injectStyleOnce(root, 'data-sand-palette', STYLE);
 
   const entries = buildEntries();
@@ -211,7 +233,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let expanded = false;
   let collapsedWidth = 0;
   let nameMotionFrame = 0;
-  let timePreset = 0;
+  let timeAuto = true;
+  let timePhase = 0.25;
+  let timeApplyTimer = 0;
+  let timePollTimer = 0;
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-palette side';
@@ -291,29 +316,61 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     col.appendChild(toggle);
   }
 
-  const timeButton = document.createElement('button');
-  timeButton.type = 'button';
-  timeButton.className = 'sg-time auto';
-  timeButton.setAttribute('aria-label', 'Change time of day');
+  const timeControl = document.createElement('div');
+  timeControl.className = 'sg-time dawn';
+  const timeHead = document.createElement('div');
+  timeHead.className = 'sg-time-head';
   const timeIcon = document.createElement('span');
   timeIcon.className = 'sg-time-icon';
   timeIcon.setAttribute('aria-hidden', 'true');
-  const timeLabel = document.createElement('span');
-  timeButton.append(timeIcon, timeLabel);
-  timeButton.addEventListener('click', () => {
-    timePreset = (timePreset + 1) % TIME_PRESETS.length;
-    const preset = TIME_PRESETS[timePreset];
-    onSetTime?.(preset.phase);
-    renderState();
+  const timeValue = document.createElement('span');
+  timeValue.className = 'sg-time-value';
+  const timeAutoButton = document.createElement('button');
+  timeAutoButton.type = 'button';
+  timeAutoButton.className = 'sg-time-auto active';
+  timeAutoButton.textContent = 'Auto';
+  const timeRange = document.createElement('input');
+  timeRange.type = 'range';
+  timeRange.className = 'sg-time-range';
+  timeRange.min = '0';
+  timeRange.max = '0.999';
+  timeRange.step = '0.001';
+  timeRange.setAttribute('aria-label', 'Time of day');
+  timeHead.append(timeIcon, timeValue, timeAutoButton);
+  timeControl.append(timeHead, timeRange);
+
+  const flushTimePhase = () => {
+    clearTimeout(timeApplyTimer);
+    timeApplyTimer = 0;
+    onSetTime?.(timePhase);
+  };
+  const queueTimePhase = () => {
+    clearTimeout(timeApplyTimer);
+    timeApplyTimer = setTimeout(flushTimePhase, 90);
+  };
+  timeRange.addEventListener('input', () => {
+    timeAuto = false;
+    timePhase = normalizeTimePhase(Number(timeRange.value));
+    renderTimeState();
+    queueTimePhase();
   });
-  col.appendChild(timeButton);
+  timeRange.addEventListener('change', flushTimePhase);
+  timeAutoButton.addEventListener('click', () => {
+    // A queued drag sample must never fire after Auto and pin the light again.
+    clearTimeout(timeApplyTimer);
+    timeApplyTimer = 0;
+    timeAuto = true;
+    onSetTime?.(null);
+    syncTimeState();
+  });
+  col.appendChild(timeControl);
 
   function setExpanded(next) {
     const changed = expanded !== !!next;
     expanded = !!next;
     if (expanded) {
       // Keep search + materials above the compact controls in both layouts.
-      const controls = toggle || timeButton;
+      const controls = toggle || timeControl;
       col.insertBefore(search, controls);
       col.insertBefore(list, controls);
       renderList();
@@ -335,11 +392,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       toggle.className = `sg-toggle${drawOn ? ' on' : ''}`;
       toggle.title = drawOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation';
     }
-    const preset = TIME_PRESETS[timePreset];
-    timeLabel.textContent = `Time: ${preset.label}`;
-    timeButton.className = `sg-time ${preset.tone}`;
-    timeButton.dataset.phase = preset.phase === null ? 'auto' : String(preset.phase);
-    timeButton.title = preset.phase === null ? 'Following the automatic ten-minute cycle' : `${preset.label} — click for the next time`;
+    renderTimeState();
     const locked = !canSelectMaterial();
     wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'} ${expanded ? 'expanded' : 'collapsed'}`;
     wrap.style.width = !expanded && collapsedWidth ? `${collapsedWidth}px` : '';
@@ -354,6 +407,27 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     expandBtn.disabled = locked;
     expandBtn.title = locked ? 'Turn Draw On to select materials' : '';
     scheduleNameMotion();
+  }
+
+  function renderTimeState() {
+    const label = formatTime(timePhase);
+    timeControl.className = `sg-time ${timeTone(timePhase)}`;
+    timeControl.dataset.mode = timeAuto ? 'auto' : 'manual';
+    timeControl.dataset.phase = String(timePhase);
+    timeValue.textContent = label;
+    timeRange.value = String(Math.min(0.999, timePhase));
+    timeRange.setAttribute('aria-valuetext', label);
+    timeAutoButton.className = `sg-time-auto${timeAuto ? ' active' : ''}`;
+    timeAutoButton.title = timeAuto ? 'Following the automatic ten-minute cycle' : 'Resume the automatic ten-minute cycle';
+  }
+
+  function syncTimeState() {
+    if (timeApplyTimer) return;
+    const state = getTimeState?.();
+    if (!state || !Number.isFinite(state.phase)) return;
+    timeAuto = !state.overridden;
+    timePhase = normalizeTimePhase(state.phase);
+    renderTimeState();
   }
 
   function scheduleNameMotion() {
@@ -403,6 +477,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   }
 
   root.appendChild(wrap);
+  syncTimeState();
   renderState();
   // Freeze the collapsed control at the exact width of its default Cube state.
   // Longer material names pan inside the label viewport instead of moving the
@@ -412,6 +487,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   scheduleNameMotion();
   // Emit the initial selection so the engine starts on the cube.
   onSelectCreative?.({ kind: selected.kind, value: selected.value });
+  timePollTimer = setInterval(syncTimeState, 500);
 
   return {
     el: wrap,
@@ -421,6 +497,11 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       else renderState();
     },
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
-    destroy() { cancelAnimationFrame(nameMotionFrame); wrap.remove(); },
+    destroy() {
+      cancelAnimationFrame(nameMotionFrame);
+      clearTimeout(timeApplyTimer);
+      clearInterval(timePollTimer);
+      wrap.remove();
+    },
   };
 }

@@ -2,6 +2,7 @@ export const DAY_CYCLE_MS = 10 * 60 * 1000;
 export const DAY_VISUAL_STEP_MS = 250;
 export const NIGHT_SKY_LIGHT = 88;
 export const NOON_SKY_LIGHT = 255;
+export const DEFAULT_DAY_PHASE = 0.25;
 
 const TAU = Math.PI * 2;
 
@@ -18,7 +19,7 @@ export function normalizeDayPhase(phase) {
 }
 
 export function dayPhaseAt(elapsedMs) {
-  return normalizeDayPhase(Math.max(0, elapsedMs) / DAY_CYCLE_MS);
+  return normalizeDayPhase(DEFAULT_DAY_PHASE + Math.max(0, elapsedMs) / DAY_CYCLE_MS);
 }
 
 function quantizeSkyLight(value) {
@@ -32,7 +33,9 @@ export function sampleDayNight(phase) {
   // moonlit until the sun is genuinely above the horizon makes dawn/dusk
   // dramatic without ever turning the outside world completely black.
   const solar = 0.5 - 0.5 * Math.cos(TAU * p);
-  const daylight = smoothstep(0.35, 1, solar);
+  // Sunrise/sunset should read clearly brighter than midnight, not as a tiny
+  // step above moonlight. At the horizon (solar=0.5) this yields ~156/255.
+  const daylight = smoothstep(0.12, 1, solar);
   const rawSkyLight = NIGHT_SKY_LIGHT + (NOON_SKY_LIGHT - NIGHT_SKY_LIGHT) * daylight;
 
   let starOpacity = 0;

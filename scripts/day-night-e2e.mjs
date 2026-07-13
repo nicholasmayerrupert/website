@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
+import { NOON_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const PORT = 5188;
@@ -83,23 +84,67 @@ try {
 
   await page.evaluate(() => window.__sandTest.clearDayPhase());
   const desktopTime = page.locator('sand-game').locator('.sg-time');
-  check('creative desktop palette exposes the automatic time control', await desktopTime.textContent() === 'Time: Auto');
-  await desktopTime.click();
-  const desktopDawn = await page.evaluate(() => window.__sandTest.getDayNight());
-  check('desktop time control selects dawn', desktopDawn.overridden && Math.abs(desktopDawn.phase - 0.25) < 1e-6 && await desktopTime.textContent() === 'Time: Dawn');
-  for (let i = 0; i < 4; i++) await desktopTime.click();
+  const desktopRange = desktopTime.locator('.sg-time-range');
+  const desktopAutoButton = desktopTime.locator('.sg-time-auto');
+  check('creative desktop palette exposes the automatic time slider',
+    await desktopTime.getAttribute('data-mode') === 'auto' && await desktopRange.isVisible());
+  await desktopRange.evaluate((el) => {
+    el.value = '0.5';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForFunction(() => {
+    const state = window.__sandTest.getDayNight();
+    return state.overridden && Math.abs(state.phase - 0.5) < 1e-6;
+  });
+  check('desktop slider selects a continuous manual phase',
+    await desktopTime.getAttribute('data-mode') === 'manual' && await desktopTime.locator('.sg-time-value').textContent() === '12:00 PM');
+
+  // Reproduce the old failure: several drag samples are queued, then Auto is
+  // selected before the throttle fires. No delayed noon sample may pin the
+  // renderer after the live dawn phase has been restored.
+  await desktopRange.evaluate((el) => {
+    for (const value of ['0.2', '0.8', '0.5']) {
+      el.value = value;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  });
+  await desktopAutoButton.click();
+  await page.waitForTimeout(180);
   const desktopAuto = await page.evaluate(() => window.__sandTest.getDayNight());
-  check('desktop time control returns to the live cycle', !desktopAuto.overridden && await desktopTime.textContent() === 'Time: Auto');
+  check('Auto cancels queued slider work and cannot leave noon light stuck',
+    !desktopAuto.overridden && desktopAuto.skyLight < NOON_SKY_LIGHT &&
+    await desktopTime.getAttribute('data-mode') === 'auto');
 
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const mobilePage = await mobileContext.newPage();
   await mobilePage.goto(URL, { waitUntil: 'domcontentloaded' });
   await mobilePage.waitForFunction(() => window.__sandTest?.info().cols > 0, null, { timeout: 60000 });
   const mobileTime = mobilePage.locator('sand-game').locator('.sg-time');
-  check('creative mobile palette exposes the same fitted time control', await mobileTime.isVisible() && await mobileTime.textContent() === 'Time: Auto');
-  await mobileTime.tap();
-  const mobileDawn = await mobilePage.evaluate(() => window.__sandTest.getDayNight());
-  check('mobile time control selects dawn', mobileDawn.overridden && Math.abs(mobileDawn.phase - 0.25) < 1e-6 && await mobileTime.textContent() === 'Time: Dawn');
+  const mobileRange = mobileTime.locator('.sg-time-range');
+  check('creative mobile palette exposes the same fitted time slider',
+    await mobileTime.isVisible() && await mobileTime.getAttribute('data-mode') === 'auto');
+  await mobileRange.evaluate((el) => {
+    el.value = '0.75';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await mobilePage.waitForFunction(() => {
+    const state = window.__sandTest.getDayNight();
+    return state.overridden && Math.abs(state.phase - 0.75) < 1e-6;
+  });
+  check('mobile slider selects dusk', await mobileTime.locator('.sg-time-value').textContent() === '6:00 PM');
+  const alignment = await mobilePage.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    const center = (selector) => {
+      const rect = root.querySelector(selector).getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    };
+    const palette = center('.sg-palette');
+    return { zoom: center('.sg-zoom') - palette, stick: center('.sg-stick') - palette };
+  });
+  check(`mobile side controls align with the taller center palette (${alignment.zoom.toFixed(1)}px/${alignment.stick.toFixed(1)}px)`,
+    Math.abs(alignment.zoom) <= 20 && Math.abs(alignment.stick) <= 20);
   await mobileContext.close();
 } finally {
   await browser?.close().catch(() => {});

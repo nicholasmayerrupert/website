@@ -34,7 +34,7 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 /* When mobile drawing is armed, make the simulation the gesture target and
    tell the browser that drags belong to the canvas, not page scrolling. */
 .sg-sim.draw-on { pointer-events: auto; touch-action: none; overscroll-behavior: none; }
-.sg-stick { position: absolute; right: 10px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 68;
+.sg-stick { position: absolute; right: 10px; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); z-index: 68;
   width: 104px; height: 104px; border-radius: 50%; pointer-events: auto; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
   background: rgba(17,24,39,.3); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px);
@@ -44,7 +44,7 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
 .sg-stick.sg-hidden, .sg-zoom.sg-hidden { display: none; }
-.sg-zoom { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 71;
+.sg-zoom { position: absolute; left: 12px; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); z-index: 71;
   display: flex; align-items: stretch; gap: 8px; pointer-events: auto; touch-action: manipulation;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .sg-zoom-stack { display: flex; flex-direction: column; gap: 6px; }
@@ -438,6 +438,7 @@ class SandGameElement extends HTMLElement {
               if (phase === null) game.clearDayPhase();
               else game.setDayPhase(phase);
             },
+            getTimeState: () => game.getDayNight(),
             onExpandedChange: (expanded) => {
               if (!coarse) return;
               this._stick?.setHidden(expanded);

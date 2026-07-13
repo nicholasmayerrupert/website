@@ -1,5 +1,6 @@
 import {
   DAY_CYCLE_MS,
+  DEFAULT_DAY_PHASE,
   NIGHT_SKY_LIGHT,
   NOON_SKY_LIGHT,
   dayPhaseAt,
@@ -12,10 +13,11 @@ const { check, done } = makeChecker('day/night cycle');
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 check('full cycle is ten real-time minutes', DAY_CYCLE_MS === 600000);
-check('clock maps midnight/sunrise/noon/sunset',
-  close(dayPhaseAt(0), 0) && close(dayPhaseAt(150000), 0.25) &&
-  close(dayPhaseAt(300000), 0.5) && close(dayPhaseAt(450000), 0.75));
-check('clock wraps exactly after one cycle', close(dayPhaseAt(DAY_CYCLE_MS), 0));
+check('clock starts at dawn and maps noon/sunset/midnight',
+  DEFAULT_DAY_PHASE === 0.25 && close(dayPhaseAt(0), 0.25) &&
+  close(dayPhaseAt(150000), 0.5) && close(dayPhaseAt(300000), 0.75) &&
+  close(dayPhaseAt(450000), 0));
+check('clock wraps exactly after one cycle', close(dayPhaseAt(DAY_CYCLE_MS), DEFAULT_DAY_PHASE));
 
 const midnight = sampleDayNight(0);
 const sunrise = sampleDayNight(0.25);
@@ -30,6 +32,8 @@ check('noon has full skylight, no stars, and the sun at its apex',
 check('sun and moon meet their opposite horizons at sunrise/sunset',
   sunrise.sunVisible && sunrise.moonVisible && close(sunrise.sunProgress, 0) && close(sunrise.moonProgress, 1) &&
   sunset.sunVisible && sunset.moonVisible && close(sunset.sunProgress, 1) && close(sunset.moonProgress, 0));
+check('dawn and dusk terrain are visibly brighter than midnight',
+  sunrise.skyLight >= midnight.skyLight + 60 && sunset.skyLight >= midnight.skyLight + 60);
 
 check('the existing midnight palette is unchanged', JSON.stringify(paletteForPhase(0)) === JSON.stringify({
   skyTop: '#111827', skyMid: '#1f3b57', skyLow: '#4a6b72',

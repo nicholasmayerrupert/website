@@ -11,6 +11,7 @@ import { createFixedRateClock } from '../timing/fixedRateClock.js';
 import {
   DAY_CYCLE_MS,
   DAY_VISUAL_STEP_MS,
+  DEFAULT_DAY_PHASE,
   dayPhaseAt,
   normalizeDayPhase,
   sampleDayNight,
@@ -19,18 +20,21 @@ import {
 export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory }) {
   ctx.timingStats = { actorSteps: 0, actorDebtMs: 0, actorDroppedMs: 0, worldStepped: false };
 
-  // Presentation-only wall clock: every mount begins at the existing midnight
-  // look. Phase is derived directly from elapsed time, so a backgrounded tab
+  // Presentation-only wall clock: every mount begins at dawn. Phase is derived
+  // directly from elapsed time, so a backgrounded tab
   // jumps to the correct point on return instead of replaying missed frames.
   const dayCycleStart = performance.now();
   let dayVisualBucket = 0;
-  ctx.dayNight = sampleDayNight(0);
+  ctx.dayNight = sampleDayNight(DEFAULT_DAY_PHASE);
   ctx.dayVisualKey = 0;
 
   const applyDayPhase = (phase, visualKey) => {
     ctx.dayNight = sampleDayNight(phase);
     ctx.dayVisualKey = visualKey;
-    if (ctx.engine && ctx.appliedSkyLight !== ctx.dayNight.skyLight) {
+    if (ctx.engine) {
+      // Always resend the sampled value. This keeps rapid manual changes and
+      // Auto resumption from trusting a stale JS cache; the C++ presenter still
+      // compares against its last value and skips redundant lighting solves.
       ctx.engine.setSkyLight(ctx.dayNight.skyLight);
       ctx.appliedSkyLight = ctx.dayNight.skyLight;
     }

@@ -176,12 +176,10 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   int depth = y - surf;
   int worldY = E.L->worldOffsetY + y;             // absolute depth for the cave/underworld zones
   bool underwater = surf > sea;
-  // The FOREGROUND has the rich loose strata (skin + dirt/sand mantle). The
-  // BACKGROUND skips them — a dry solid backdrop, no loose soil to churn.
-  if (!E.L->isBackground) {
-    if (depth < GEN_SKIN) return genSkinMat(biome, slope, underwater);
-    if (depth < GEN_SKIN + soil) return underwater ? STONE : genSoilMat(biome, depth - GEN_SKIN, soil); // solid under oceans
-  }
+  // Both layers share the visible skin + soil mantle. Matching strata prevent
+  // gaps in foreground dirt/sand from exposing an unrelated stone backdrop.
+  if (depth < GEN_SKIN) return genSkinMat(biome, slope, underwater);
+  if (depth < GEN_SKIN + soil) return underwater ? STONE : genSoilMat(biome, depth - GEN_SKIN, soil); // solid under oceans
   // A thick solid stone buffer separates the loose soil (and any ocean floor)
   // from the cave zone, so generated sand never rests directly over a cave and
   // oceans can't drain into one (both churn the cross-layer transfer forever).

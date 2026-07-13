@@ -21,7 +21,8 @@ The engine simulates **two** independent grids — a foreground (`fg`) and a
 background (`bg`) — both fully simulated (powder/liquid/gas settling, stone/plant/
 ice components, fire/acid/lava/ice reactions, plant growth, free rigid bodies, and
 generated terrain). They are a "2-deep" world: both layers generate from the SAME
-seed, so the solid surface lines up and stays stable, and they diverge once you
+seed, so the surface skin and soil mantle line up and stay stable, while deeper
+background terrain remains solid behind foreground caves. They diverge once you
 dig/edit one of them. The background renders **behind** the foreground, **darker**
 (empty foreground cells are transparent, so it shows through gaps/dug holes).
 

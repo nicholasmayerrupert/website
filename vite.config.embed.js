@@ -12,10 +12,16 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig({
   define: { 'import.meta.env.DEV': 'false' },
   resolve: {
-    alias: [{
-      find: './moduleSelector.js',
-      replacement: fileURLToPath(new URL('./src/sand/wasmBridge/moduleSelectorFallback.js', import.meta.url)),
-    }],
+    alias: [
+      {
+        find: './moduleSelector.js',
+        replacement: fileURLToPath(new URL('./src/sand/wasmBridge/moduleSelectorFallback.js', import.meta.url)),
+      },
+      {
+        find: './worldWorkerConstructor.js',
+        replacement: fileURLToPath(new URL('./src/sand/worker/worldWorkerConstructorInline.js', import.meta.url)),
+      },
+    ],
   },
   worker: { format: 'es' },
   build: {

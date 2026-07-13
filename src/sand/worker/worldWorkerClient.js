@@ -1,4 +1,4 @@
-import WorldWorker from './worldWorker.js?worker&inline';
+import WorldWorker from './worldWorkerConstructor.js';
 
 export function createWorldWorkerClient(ctx) {
   const worker = new WorldWorker();

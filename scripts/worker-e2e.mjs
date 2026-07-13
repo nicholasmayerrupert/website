@@ -204,6 +204,21 @@ try {
   await mobile.waitForFunction(() => window.__sandTest && window.__sandPerf && window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
   const mobileGame = mobile.locator('sand-game');
   await mobileGame.locator('.sg-toggle').tap(); // Draw On
+  const cubePaletteWidth = await mobileGame.locator('.sg-palette').evaluate((palette) => palette.getBoundingClientRect().width);
+  await mobileGame.locator('.sg-expand').tap();
+  await mobileGame.locator('.sg-opt', { hasText: 'mycelium_spore' }).tap();
+  const longNameUi = await mobileGame.locator('.sg-palette').evaluate((palette) => {
+    const name = palette.querySelector('.sg-current .sg-name');
+    const track = name.querySelector('.sg-name-track');
+    return {
+      width: palette.getBoundingClientRect().width,
+      overflows: track.scrollWidth > name.clientWidth,
+      scrolling: name.classList.contains('scrolling'),
+    };
+  });
+  check('long mobile material names keep the Cube control width', Math.abs(longNameUi.width - cubePaletteWidth) < 1,
+    `${cubePaletteWidth.toFixed(0)} -> ${longNameUi.width.toFixed(0)}`);
+  check('long selected material name pans inside its fixed viewport', longNameUi.overflows && longNameUi.scrolling);
   const controls = await mobileGame.locator('.sg-zoom').evaluate((wrap) => {
     const zoom = wrap.querySelector('.sg-zoom-stack').getBoundingClientRect();
     const layer = wrap.querySelector('.sg-layer').getBoundingClientRect();
@@ -251,13 +266,11 @@ try {
   const cdp = await mobileContext.newCDPSession(mobile);
   const touchX = listBox.x + listBox.width / 2;
   const touchStartY = listBox.y + listBox.height * 0.78;
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: touchX, y: touchStartY }] });
-  for (let i = 1; i <= 5; i++) {
-    await cdp.send('Input.dispatchTouchEvent', {
-      type: 'touchMove', touchPoints: [{ x: touchX, y: touchStartY - i * 24 }],
-    });
-  }
-  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  // Ask Chromium's compositor to perform a native touch scroll. The old test's
+  // zero-duration pointer burst only exercised the removed JS drag shim.
+  await cdp.send('Input.synthesizeScrollGesture', {
+    x: touchX, y: touchStartY, yDistance: -120, speed: 600, gestureSourceType: 'touch',
+  });
   await mobile.waitForTimeout(250);
   const scrollTop = await mobileGame.locator('.sg-list').evaluate((list) => list.scrollTop);
   check('mobile swipe scrolls the material list', scrollTop > 20, `scrollTop ${scrollTop.toFixed(0)}`);

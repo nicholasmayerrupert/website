@@ -47,6 +47,9 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     ctx.engine = e;
     e.setThreadWorkers(ctx.mainThreadWorkers);
     e.glInit(canvas);                                // WebGL2 context on our canvas
+    const gl = canvas.getContext('webgl2');
+    const maxTextureSize = gl?.getParameter(gl.MAX_TEXTURE_SIZE);
+    if (Number.isFinite(maxTextureSize) && maxTextureSize > 0) ctx.maxTextureSize = maxTextureSize;
     e.glResize(canvas.width, canvas.height);
     e.setTool(TOOL_IDS[ctx.currentToolName] ?? 0);   // re-apply the selected tool
     e.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
@@ -82,7 +85,10 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     // Decide UI placement based on available horizontal space
     onLayoutChange?.({ uiAtBottom: width < SIZING.toolCollapseWidth });
 
-    const sizing = computeViewportSizing(cssW, cssH, ctx.dpr, SIZING, ctx.zoomFactor(), ctx.zoomFactor(), ctx.baselineDpr);
+    const sizing = computeViewportSizing(
+      cssW, cssH, ctx.dpr, SIZING, ctx.zoomFactor(), ctx.zoomFactor(), ctx.baselineDpr, ctx.maxTextureSize,
+    );
+    ctx.zoom = sizing.zoom;
     ctx.cellSize = sizing.cellSize;
     ctx.cellDev = sizing.cellDev;
     canvas.width = sizing.canvasW;
@@ -208,13 +214,29 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     ctx.forceFullRender = true;
     ctx.fns.render?.(true);
   };
-  // delta > 0 = zoom in (fewer cells). Multiplicative steps.
+  // delta > 0 = zoom in (fewer cells). Multiplicative steps. Coalesce key
+  // repeat / rapid mobile taps so one gesture performs one loaded-window +
+  // three-texture resize; allocating every intermediate size can temporarily
+  // exhaust Chrome's GPU resources even when the final size is legal.
+  let zoomTimer = 0;
+  let queuedZoom = ctx.zoom;
   const zoomBy = (delta) => {
     const f = SIZING.zoomStepFactor ?? 1.15;
-    const next = delta > 0 ? ctx.zoom * f : ctx.zoom / f;
-    applyZoom(next);
+    const base = zoomTimer ? queuedZoom : ctx.zoom;
+    queuedZoom = delta > 0 ? base * f : base / f;
+    clearTimeout(zoomTimer);
+    zoomTimer = setTimeout(() => {
+      zoomTimer = 0;
+      applyZoom(queuedZoom);
+      queuedZoom = ctx.zoom;
+    }, 100);
   };
-  const resetZoom = () => applyZoom(SIZING.zoomDefault ?? 1);
+  const resetZoom = () => {
+    clearTimeout(zoomTimer);
+    zoomTimer = 0;
+    queuedZoom = SIZING.zoomDefault ?? 1;
+    applyZoom(queuedZoom);
+  };
 
   // Re-fit when devicePixelRatio changes (browser zoom). The ResizeObserver
   // only watches the CSS box, which is unchanged by zoom, so it wouldn't fire
@@ -228,7 +250,12 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     mqDpr = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
     mqDpr.addEventListener?.('change', onDprChange);
   }
-  const unwatchDpr = () => { mqDpr?.removeEventListener?.('change', onDprChange); mqDpr = null; };
+  const unwatchDpr = () => {
+    mqDpr?.removeEventListener?.('change', onDprChange);
+    mqDpr = null;
+    clearTimeout(zoomTimer);
+    zoomTimer = 0;
+  };
 
   return {
     refreshBounds,

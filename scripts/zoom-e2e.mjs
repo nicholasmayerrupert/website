@@ -1,13 +1,13 @@
-// Headless browser test for the runtime zoom (view-only). Boots Vite, opens the
-// game, and asserts that +/- change the visible cell window while the simulation
-// BUFFER (cols/rows) stays constant — i.e. zoom never rebuilds the world — and
-// that 0 resets to the default. Mirrors scripts/player-e2e.mjs's harness.
+// Headless browser test for runtime zoom. Boots Vite, checks that +/- resize the
+// visible and loaded windows without losing the world, then drives zoom far past
+// its safe floor and verifies that both WebGL layers keep rendering.
 //
 //   node scripts/zoom-e2e.mjs
 
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
+import { SIZING } from '../src/sand/game/runtimeConfig.js';
 
 const PORT = 5182;
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
@@ -42,11 +42,13 @@ try {
   const page = await context.newPage();
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.info && window.__sandTest.info().viewCols > 0, null, { timeout: 30000 });
+  await page.waitForFunction(() => !!window.__sandTest.getPlayer?.(), null, { timeout: 30000 });
   await page.evaluate(() => document.activeElement?.blur?.());
 
   const info = () => page.evaluate(() => window.__sandTest.info());
   const base = await info();
   console.log(`base view ${base.viewCols}x${base.viewRows}, buffer ${base.cols}x${base.rows}, cellDev ${base.cellDev}`);
+  check(`WebGL texture limit detected (${base.maxTextureSize})`, base.maxTextureSize >= 2048);
 
   // Zoom IN twice: fewer visible cells, bigger device cells, buffer unchanged.
   await page.keyboard.press('=');
@@ -74,6 +76,33 @@ try {
   // Engine kept simulating throughout (player still present in survival).
   const alive = await page.evaluate(() => !!window.__sandTest.getPlayer?.());
   check('world/player survived the zoom changes', alive);
+
+  // Keep zooming out far past the former failure point. Fitting must stop at a
+  // renderable texture/memory budget and the composited canvas must stay alive.
+  for (let i = 0; i < 24; i++) await page.keyboard.press('-');
+  await page.waitForTimeout(1200);
+  const extreme = await info();
+  const rendered = await page.evaluate(() => {
+    const t = window.__sandTest, i = t.info();
+    // A narrow full-height strip crosses both transparent sky and opaque terrain.
+    const pixels = t.readPixels(Math.floor(i.canvasW / 2) - 8, 0, 16, i.canvasH);
+    for (let p = 3; p < pixels.length; p += 4) if (pixels[p] > 0) return true;
+    return false;
+  });
+  if (!rendered) console.log('  extreme debug', await page.evaluate(() => {
+    const t = window.__sandTest, canvas = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main');
+    const gl = canvas.getContext('webgl2');
+    return {
+      info: t.info(), cam: t.getCam(), offset: t.worldOffset(), player: t.getPlayer(),
+      fgStone: t.materialCount(3), bgStone: t.materialCountBg(3), contextLost: gl.isContextLost(), glError: gl.getError(),
+      perf: window.__sandPerf(),
+    };
+  }));
+  check(`extreme zoom respects GPU dimensions (${extreme.cols}x${extreme.rows} <= ${extreme.maxTextureSize})`,
+    extreme.cols <= extreme.maxTextureSize && extreme.rows <= extreme.maxTextureSize);
+  check(`extreme zoom respects the cell-memory ceiling (${extreme.cols * extreme.rows})`,
+    extreme.cols * extreme.rows <= SIZING.bufferHardMaxCells);
+  check('foreground/background compositor still renders after extreme zoom', rendered);
 } catch (e) {
   console.error(e);
   failures++;

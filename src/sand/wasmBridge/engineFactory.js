@@ -23,6 +23,7 @@ let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTarget
 let resizableHeapPatched = false;
 let wasmThreadsEnabled = false;
 let wasmThreadPoolCapacity = 0;
+let wasmInitialHeapBytes = 0;
 
 function configuredThreadWorkers() {
   const configured = Number(globalThis.__sandPthreadPoolSize);
@@ -43,6 +44,19 @@ function needsFixedBuffer(value) {
   const buffer = ArrayBuffer.isView(value) ? value.buffer : value;
   return buffer?.resizable === true
     || (webkitSharedViewsNeedCopy && typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer);
+}
+
+// Chromium accepts SharedArrayBuffer views for WebGL at the module's initial
+// heap size, but the WebGL2 typed-array+offset overload can reject the expanded
+// threaded WASM heap with INVALID_OPERATION. Keep the default zero-copy path;
+// copy only after memory growth, and only for APIs that have shown this issue.
+function isGrownSharedWasmHeap(value) {
+  const buffer = ArrayBuffer.isView(value) ? value.buffer : value;
+  const safeSharedBytes = Math.max(wasmInitialHeapBytes, 64 * 1024 * 1024);
+  return wasmInitialHeapBytes > 0
+    && typeof SharedArrayBuffer !== 'undefined'
+    && buffer instanceof SharedArrayBuffer
+    && buffer.byteLength > safeSharedBytes;
 }
 
 function isBufferArg(value) {
@@ -134,7 +148,7 @@ function patchResizableWasmHeapForBrowserGL() {
         p.texSubImage2D = function patchedTexSubImage2D(...args) {
           const heap = args[8];
           const srcOffset = args[9] | 0;
-          if (args.length >= 10 && ArrayBuffer.isView(heap) && needsFixedBuffer(heap)
+          if (args.length >= 10 && ArrayBuffer.isView(heap) && (needsFixedBuffer(heap) || isGrownSharedWasmHeap(heap))
               && args[6] === 0x1908 && args[7] === 0x1401) { // RGBA / UNSIGNED_BYTE
             const width = args[4] | 0, height = args[5] | 0;
             const rowLength = this.getParameter(0x0CF2) || width; // UNPACK_ROW_LENGTH
@@ -167,7 +181,7 @@ function patchResizableWasmHeapForBrowserGL() {
       if (typeof orig === 'function') {
         p.readPixels = function patchedReadPixels(...args) {
           // WebGL2: (x, y, w, h, format, type, dstData, dstOffset)
-          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && needsFixedBuffer(args[6])) {
+          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && (needsFixedBuffer(args[6]) || isGrownSharedWasmHeap(args[6]))) {
             const heap = args[6];
             const offset = args[7] | 0;
             const w = args[2] | 0, h = args[3] | 0;
@@ -227,6 +241,7 @@ export function initSandWasm() {
         })
       : selected.promise;
     modPromise = selectedPromise.then((mod) => {
+      wasmInitialHeapBytes = mod.HEAPU8.byteLength;
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
       // manifest — the loud failure for a stale committed sandEngine.js.

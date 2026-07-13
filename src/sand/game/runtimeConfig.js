@@ -36,11 +36,16 @@ export const SIZING = Object.freeze({
   // with the current zoom; these margins keep streaming/prefetch runway.
   bufferMarginCols: 128,
   bufferMarginRows: 96,
-  // Soft advisory for total buffer cells (no hard clamp — extreme zoom-out is allowed).
+  // Soft threshold for reducing vertical off-screen depth at extreme zoom.
   bufferMaxCells: 520000,
+  // Hard render/simulation safety ceiling. Three RGBA cell textures plus both
+  // simulated layers and their scratch fields can exhaust browser/GPU memory
+  // well before MAX_TEXTURE_SIZE is reached.
+  bufferHardMaxCells: 1200000,
   // Continuous zoom: multiplier on cellPx. 1 = default density; >1 = zoomed in
   // (fewer, larger cells); <1 = zoomed out (more cells, larger sim buffer).
-  // No hard zoom-out floor — only a tiny epsilon to avoid division by zero.
+  // The numeric range is broad; viewport fitting raises the effective floor
+  // when the device texture/memory budget would otherwise be exceeded.
   zoomDefault: 1.0,
   zoomInMax: 8,
   zoomOutMin: 0.05,

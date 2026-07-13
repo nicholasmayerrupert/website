@@ -112,7 +112,7 @@ const STYLE = `
   background: rgba(17,24,39,.3); border-radius: 8px; padding: 8px; backdrop-filter: blur(4px);
   box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); pointer-events: auto; max-width: calc(100vw - 1.5rem);
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+  -webkit-tap-highlight-color: transparent; touch-action: auto; }
 .sg-palette.side { left: 16px; top: 50%; transform: translateY(-50%); }
 .sg-palette.bottom { bottom: 12px; left: 50%; transform: translateX(-50%); }
 .sg-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
@@ -122,13 +122,21 @@ const STYLE = `
 .sg-bar { display: flex; align-items: center; gap: 6px; }
 .sg-current { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto;
   border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); border-radius: 6px;
-  padding: 5px 7px; font-size: 12px; line-height: 1.15; color: #f3f4f6; cursor: pointer; overflow: hidden; }
+  padding: 5px 7px; font-size: 12px; line-height: 1.15; color: #f3f4f6; cursor: pointer; overflow: hidden;
+  touch-action: manipulation; }
 .sg-current:hover { background: rgba(255,255,255,.12); }
 .sg-current.locked { opacity: .55; cursor: not-allowed; }
 .sg-current.locked:hover { background: rgba(255,255,255,.06); }
-.sg-current .sg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg-current .sg-name { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; }
+.sg-current .sg-name-track { display: inline-block; white-space: nowrap; }
+.sg-current .sg-name.scrolling .sg-name-track { animation: sg-name-pan 3.6s ease-in-out infinite alternate; }
+@keyframes sg-name-pan {
+  0%, 18% { transform: translateX(0); }
+  82%, 100% { transform: translateX(var(--sg-name-shift)); }
+}
 .sg-expand { flex: none; border-radius: 6px; padding: 5px 9px; font-size: 11px; font-weight: 600;
-  border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.1); color: #fff; cursor: pointer; }
+  border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.1); color: #fff; cursor: pointer;
+  touch-action: manipulation; }
 .sg-expand:hover { background: rgba(255,255,255,.2); }
 .sg-expand.locked { opacity: .55; cursor: not-allowed; }
 .sg-expand.locked:hover { background: rgba(255,255,255,.1); }
@@ -139,8 +147,8 @@ const STYLE = `
 .sg-search::placeholder { color: #9ca3af; }
 .sg-search:focus { border-color: rgba(255,255,255,.4); }
 .sg-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; width: 220px;
-  max-width: calc(100vw - 2.5rem); max-height: 240px; overflow-y: auto; scroll-behavior: smooth;
-  overscroll-behavior: contain; touch-action: none; -webkit-overflow-scrolling: touch;
+  max-width: calc(100vw - 2.5rem); max-height: 240px; overflow-y: auto;
+  overscroll-behavior-y: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch;
   padding: 2px; border-radius: 6px; background: rgba(3,7,18,.35); }
 .sg-palette.bottom .sg-list { grid-template-columns: repeat(3, 1fr); width: 340px; max-height: 200px; }
 .sg-opt { display: flex; align-items: center; gap: 7px;
@@ -155,10 +163,13 @@ const STYLE = `
 .sg-swatch.egg { width: 22px; margin: 0 2px; border-radius: 50% 50% 46% 46% / 58% 58% 42% 42%; }
 .sg-empty { padding: 10px 6px; font-size: 12px; color: #9ca3af; text-align: center; }
 .sg-toggle { border-radius: 6px; padding: 4px 8px; font-size: 10px; font-weight: 600; border: 0; cursor: pointer;
-  background: rgba(255,255,255,.1); color: #fff; }
+  background: rgba(255,255,255,.1); color: #fff; touch-action: manipulation; }
 .sg-toggle:hover { background: rgba(255,255,255,.2); }
 .sg-toggle.on { background: rgba(255,255,255,.8); color: #000; }
 .sg-toggle.on:hover { background: #fff; }
+@media (prefers-reduced-motion: reduce) {
+  .sg-current .sg-name.scrolling .sg-name-track { animation: none; }
+}
 `;
 
 // Decorative color swatch for an entry (a flat rounded square in the entry's
@@ -180,6 +191,8 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let drawOn = false;
   let atBottom = false;
   let expanded = false;
+  let collapsedWidth = 0;
+  let nameMotionFrame = 0;
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-palette side';
@@ -216,6 +229,9 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   const currentSwatch = renderSwatch(selected.color, selected.egg);
   const currentName = document.createElement('span');
   currentName.className = 'sg-name';
+  const currentNameTrack = document.createElement('span');
+  currentNameTrack.className = 'sg-name-track';
+  currentName.appendChild(currentNameTrack);
   current.append(currentSwatch, currentName);
   const canSelectMaterial = () => !showDrawToggle || drawOn;
   const toggleExpandedFromButton = () => {
@@ -242,38 +258,6 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
 
   const list = document.createElement('div');
   list.className = 'sg-list';
-  let scrollPointer = null;
-  let scrollStartY = 0;
-  let scrollStartTop = 0;
-  let suppressListClick = false;
-  list.addEventListener('pointerdown', (e) => {
-    if (e.pointerType !== 'touch') return;
-    scrollPointer = e.pointerId;
-    scrollStartY = e.clientY;
-    scrollStartTop = list.scrollTop;
-    suppressListClick = false;
-    list.setPointerCapture?.(e.pointerId);
-  });
-  list.addEventListener('pointermove', (e) => {
-    if (e.pointerId !== scrollPointer) return;
-    const delta = scrollStartY - e.clientY;
-    if (Math.abs(delta) > 4) suppressListClick = true;
-    list.scrollTop = scrollStartTop + delta;
-    e.preventDefault();
-  }, { passive: false });
-  const finishListScroll = (e) => {
-    if (e.pointerId !== scrollPointer) return;
-    scrollPointer = null;
-    try { list.releasePointerCapture?.(e.pointerId); } catch { /* capture already gone */ }
-  };
-  list.addEventListener('pointerup', finishListScroll);
-  list.addEventListener('pointercancel', finishListScroll);
-  list.addEventListener('click', (e) => {
-    if (!suppressListClick) return;
-    suppressListClick = false;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }, true);
 
   const toggle = showDrawToggle ? document.createElement('button') : null;
   if (toggle) {
@@ -315,17 +299,33 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       toggle.title = drawOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation';
     }
     const locked = !canSelectMaterial();
-    wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'}`;
+    wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'} ${expanded ? 'expanded' : 'collapsed'}`;
+    wrap.style.width = !expanded && collapsedWidth ? `${collapsedWidth}px` : '';
     current.className = `sg-current${locked ? ' locked' : ''}`;
     current.disabled = locked;
     currentSwatch.className = `sg-swatch${selected.egg ? ' egg' : ''}`;
     currentSwatch.style.background = selected.color;
-    currentName.textContent = selected.label;
+    currentNameTrack.textContent = selected.label;
     current.title = `Selected: ${selected.label} — click to ${expanded ? 'collapse' : 'change'}`;
     expandBtn.textContent = expanded ? 'Close' : 'Expand';
     expandBtn.className = `sg-expand${locked ? ' locked' : ''}`;
     expandBtn.disabled = locked;
     expandBtn.title = locked ? 'Turn Draw On to select materials' : '';
+    scheduleNameMotion();
+  }
+
+  function scheduleNameMotion() {
+    cancelAnimationFrame(nameMotionFrame);
+    nameMotionFrame = requestAnimationFrame(() => {
+      currentName.classList.remove('scrolling');
+      currentName.style.removeProperty('--sg-name-shift');
+      if (expanded) return;
+      const overflow = currentNameTrack.scrollWidth - currentName.clientWidth;
+      if (overflow > 1) {
+        currentName.style.setProperty('--sg-name-shift', `${-overflow}px`);
+        currentName.classList.add('scrolling');
+      }
+    });
   }
 
   function pick(entry) {
@@ -362,6 +362,12 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
 
   root.appendChild(wrap);
   renderState();
+  // Freeze the collapsed control at the exact width of its default Cube state.
+  // Longer material names pan inside the label viewport instead of moving the
+  // mobile control group or stealing canvas space.
+  collapsedWidth = Math.ceil(wrap.getBoundingClientRect().width);
+  wrap.style.width = `${collapsedWidth}px`;
+  scheduleNameMotion();
   // Emit the initial selection so the engine starts on the cube.
   onSelectCreative?.({ kind: selected.kind, value: selected.value });
 
@@ -373,6 +379,6 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       else renderState();
     },
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
-    destroy() { wrap.remove(); },
+    destroy() { cancelAnimationFrame(nameMotionFrame); wrap.remove(); },
   };
 }

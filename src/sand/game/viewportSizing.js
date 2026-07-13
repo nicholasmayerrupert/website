@@ -14,7 +14,6 @@ export function chooseStableCssSize(rawWidth, rawHeight, prev = null, cfg = SIZI
 }
 
 // How many simulated cells fill the CSS box at a given logical cell size.
-// No hard max-cell clamp: extreme zoom-out is allowed (perf hit accepted).
 function fitCells(cssW, cssH, logicalCellPx, cfg) {
   const bucket = cfg.viewportCellBucket || 1;
   const px = Math.max(1e-6, logicalCellPx);
@@ -37,7 +36,7 @@ function fitCells(cssW, cssH, logicalCellPx, cfg) {
 //
 // The 6th argument was previously `minZoom` (buffer pinned to most-zoomed-out).
 // It is ignored when present so old call sites keep working.
-export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _minZoomIgnored = zoom, dprBaseline = dpr) {
+export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _minZoomIgnored = zoom, dprBaseline = dpr, maxBufferDimension = 0) {
   const safeDpr = dpr > 0 ? dpr : 1;
   const pageZoom = safeDpr / (dprBaseline > 0 ? dprBaseline : safeDpr); // 1 at load
   // Zoom-corrected ("unzoomed") CSS box used only for choosing how many cells to
@@ -46,7 +45,54 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
   const viewCssH = cssH * pageZoom;
   const base = viewCssW <= cfg.mobileMaxCssWidth ? cfg.mobileCellPx : cfg.cellPx;
 
-  const { viewCols, viewRows } = fitCells(viewCssW, viewCssH, base * zoom, cfg);
+  const chunkSize = cfg.chunkSize || 32;
+  const marginCols = cfg.bufferMarginCols ?? 128;
+  const marginRows = cfg.bufferMarginRows ?? 96;
+  const sizeAtZoom = (candidateZoom) => {
+    const view = fitCells(viewCssW, viewCssH, base * candidateZoom, cfg);
+    let bufCols = roundChunks(view.viewCols + marginCols * 2, chunkSize);
+    let heightFactor = cfg.worldHeightFactor ?? 2.5;
+    let worldRows = roundChunks(
+      Math.max(view.viewRows + marginRows * 2, Math.round(view.viewRows * heightFactor)),
+      chunkSize,
+    );
+    const softMax = cfg.bufferMaxCells ?? 0;
+    if (softMax > 0) {
+      while (bufCols * worldRows > softMax * 4 && heightFactor > 1) {
+        heightFactor -= 0.25;
+        worldRows = roundChunks(
+          Math.max(view.viewRows + marginRows * 2, Math.round(view.viewRows * heightFactor)),
+          chunkSize,
+        );
+      }
+    }
+    return { ...view, bufCols, worldRows };
+  };
+
+  let effectiveZoom = Math.max(1e-6, zoom);
+  let fitted = sizeAtZoom(effectiveZoom);
+  const textureLimit = Math.floor(maxBufferDimension / chunkSize) * chunkSize;
+  const hardCellLimit = cfg.bufferHardMaxCells ?? 0;
+  // Each layer is one cols x rows WebGL texture. Stop zooming out before either
+  // dimension exceeds the device limit or the total cell state exhausts memory;
+  // otherwise foreground/background allocation fails one layer at a time.
+  if (textureLimit >= chunkSize || hardCellLimit > 0) {
+    const exceedsLimit = () =>
+      (textureLimit >= chunkSize && (fitted.bufCols > textureLimit || fitted.worldRows > textureLimit)) ||
+      (hardCellLimit > 0 && fitted.bufCols * fitted.worldRows > hardCellLimit);
+    for (let i = 0; i < 8 && exceedsLimit(); i++) {
+      const dimensionScale = textureLimit >= chunkSize
+        ? Math.max(fitted.bufCols / textureLimit, fitted.worldRows / textureLimit)
+        : 1;
+      const areaScale = hardCellLimit > 0
+        ? Math.sqrt((fitted.bufCols * fitted.worldRows) / hardCellLimit)
+        : 1;
+      const scale = Math.max(dimensionScale, areaScale);
+      effectiveZoom *= Math.max(1.01, scale * 1.002);
+      fitted = sizeAtZoom(effectiveZoom);
+    }
+  }
+  const { viewCols, viewRows, bufCols, worldRows } = fitted;
 
   const canvasW = Math.max(1, Math.round(cssW * safeDpr));
   const canvasH = Math.max(1, Math.round(cssH * safeDpr));
@@ -62,29 +108,6 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
   }
   const cellSize = cssW / viewCols;
 
-  const chunkSize = cfg.chunkSize || 32;
-  const marginCols = cfg.bufferMarginCols ?? 128;
-  const marginRows = cfg.bufferMarginRows ?? 96;
-  // Loaded window tracks the current view + stream margins (chunk-aligned).
-  let bufCols = roundChunks(viewCols + marginCols * 2, chunkSize);
-  let heightFactor = cfg.worldHeightFactor ?? 2.5;
-  let worldRows = roundChunks(
-    Math.max(viewRows + marginRows * 2, Math.round(viewRows * heightFactor)),
-    chunkSize,
-  );
-  // Soft shrink of vertical extent only when the buffer is enormous — never
-  // below the view + margins, so the camera always fits.
-  const softMax = cfg.bufferMaxCells ?? 0;
-  if (softMax > 0) {
-    while (bufCols * worldRows > softMax * 4 && heightFactor > 1) {
-      heightFactor -= 0.25;
-      worldRows = roundChunks(
-        Math.max(viewRows + marginRows * 2, Math.round(viewRows * heightFactor)),
-        chunkSize,
-      );
-    }
-  }
-
   return {
     cssW,
     cssH,
@@ -97,6 +120,7 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
     viewRows,
     bufCols,
     worldRows,
+    zoom: effectiveZoom,
   };
 }
 

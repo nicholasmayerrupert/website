@@ -235,9 +235,11 @@ In-game zoom (`+`/`−`/`0`, or the mobile zoom buttons) is a continuous scale o
 logical cell size. The **loaded simulation window** (`cols×rows`) tracks the
 current view plus stream margins: zoom out grows the buffer (more cells, higher
 cost); zoom in shrinks it (cheaper `step`). World content survives via
-`engine.resizeLoadedWindow` (tile/body stores). There is no hard zoom-out floor
-— extreme zoom-out is allowed and will cost frames. Multiplayer clients keep the
-host buffer size; their zoom is view-only within that window.
+`engine.resizeLoadedWindow` (tile/body stores). The effective zoom-out floor is
+device-aware: fitting stops before either WebGL's texture-dimension limit or the
+runtime's cell-memory ceiling, rather than allowing layer textures to fail.
+Multiplayer clients keep the host buffer size; their zoom is view-only within
+that window.
 
 On touch devices, the adjacent `FG`/`BG` control selects the layer used by canvas
 taps. `FG` sends the normal primary action; `BG` sends the secondary action, so

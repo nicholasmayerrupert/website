@@ -97,6 +97,9 @@ export function createSandGame(container, opts = {}) {
     // devicePixelRatio at load. Browser page zoom later changes dpr (and the
     // CSS box) together; this is the "100%" baseline so the sim ignores page zoom.
     baselineDpr: (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
+    // WebGL2 guarantees at least 2048. The actual device limit replaces this
+    // conservative bootstrap value as soon as the renderer creates its context.
+    maxTextureSize: 2048,
 
     // engine + buffer/view dimensions (engineLifecycle). cols/rows are the
     // BUFFER (world) dims; viewCols/viewRows the visible window. cellSize is

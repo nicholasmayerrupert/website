@@ -56,6 +56,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   };
   const onTouchMove = (e) => {
     if (!ctx.drawModeOn || !ctx.engine) return;
+    // Palette/HUD touches also bubble to window through the shadow root. Only
+    // cancel a gesture that actually began on the simulation surface; otherwise
+    // native overflow scrolling inside the mobile material list is disabled.
+    const path = e.composedPath?.();
+    if (path && !path.includes(ctx.container)) return;
     if (!e.touches || e.touches.length === 0) return;
     const t = e.touches[0];
     updatePointer(t.clientX, t.clientY);

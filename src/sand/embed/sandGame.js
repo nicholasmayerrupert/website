@@ -34,7 +34,7 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 /* When mobile drawing is armed, make the simulation the gesture target and
    tell the browser that drags belong to the canvas, not page scrolling. */
 .sg-sim.draw-on { pointer-events: auto; touch-action: none; overscroll-behavior: none; }
-.sg-stick { position: absolute; right: 10px; bottom: calc(40px + env(safe-area-inset-bottom, 0px)); z-index: 68;
+.sg-stick { position: absolute; right: 10px; bottom: calc(26px + env(safe-area-inset-bottom, 0px)); z-index: 68;
   width: 104px; height: 104px; border-radius: 50%; pointer-events: auto; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
   background: rgba(17,24,39,.3); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px);
@@ -44,25 +44,31 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
 .sg-stick.sg-hidden, .sg-zoom.sg-hidden { display: none; }
-.sg-zoom { position: absolute; left: 12px; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); z-index: 71;
-  display: flex; align-items: stretch; gap: 8px; pointer-events: auto; touch-action: manipulation;
+.sg-zoom { position: absolute; left: 12px; bottom: calc(36px + env(safe-area-inset-bottom, 0px)); z-index: 71;
+  display: grid; grid-template: "zoom-in layer" 40px "zoom-out draw" 40px / 40px 40px; gap: 6px;
+  pointer-events: auto; touch-action: manipulation;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-.sg-zoom-stack { display: flex; flex-direction: column; gap: 6px; }
 .sg-zoom button { width: 40px; height: 40px; border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
   background: rgba(17,24,39,.5); color: #fff; font-size: 22px; line-height: 1; font-weight: 600; cursor: pointer;
   backdrop-filter: blur(4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3);
   -webkit-tap-highlight-color: transparent; }
 .sg-zoom button:active { background: rgba(255,255,255,.82); color: #000; }
-.sg-zoom .sg-layer { width: 52px; height: auto; padding: 8px 5px; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 7px; font-size: 11px; line-height: 1.1; letter-spacing: .05em; }
-.sg-layer-icon { position: relative; width: 25px; height: 22px; }
-.sg-layer-icon::before, .sg-layer-icon::after { content: ''; position: absolute; width: 17px; height: 14px;
+.sg-zoom-in { grid-area: zoom-in; }
+.sg-zoom-out { grid-area: zoom-out; }
+.sg-zoom .sg-layer, .sg-zoom .sg-draw { padding: 3px 2px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 3px; font-size: 8px; line-height: 1; letter-spacing: .04em; }
+.sg-layer { grid-area: layer; }
+.sg-draw { grid-area: draw; }
+.sg-layer-icon { position: relative; width: 20px; height: 16px; }
+.sg-layer-icon::before, .sg-layer-icon::after { content: ''; position: absolute; width: 13px; height: 10px;
   border: 1px solid rgba(255,255,255,.72); border-radius: 3px; transition: background .15s, transform .15s; }
 .sg-layer-icon::before { left: 1px; top: 1px; background: rgba(255,255,255,.75); }
 .sg-layer-icon::after { right: 1px; bottom: 1px; background: rgba(17,24,39,.82); }
 .sg-layer.bg .sg-layer-icon::before { background: rgba(17,24,39,.82); }
 .sg-layer.bg .sg-layer-icon::after { background: rgba(255,255,255,.75); }
 .sg-layer.bg { background: rgba(75,85,99,.78); border-color: rgba(255,255,255,.42); }
+.sg-draw-icon { font-size: 15px; line-height: 13px; }
+.sg-draw.on { background: rgba(255,255,255,.82); border-color: rgba(255,255,255,.72); color: #111827; }
 .sg-perf { position: absolute; top: 64px; right: 12px; z-index: 72; pointer-events: none;
   min-width: 150px; padding: 8px 10px; border-radius: 8px; font-size: 11px; line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e5e7eb;
@@ -159,29 +165,27 @@ function createMobileJoystick(root, game) {
   };
 }
 
-// Mobile-only view controls: zoom plus a foreground/background tap-layer toggle.
+// Mobile-only canvas controls: zoom, tap layer, and draw/scroll mode.
 // Desktop uses +/- and normal left/right clicks instead.
-function createZoomButtons(root, game) {
+function createZoomButtons(root, game, onToggleDrawMode) {
   const wrap = document.createElement('div');
   wrap.className = 'sg-zoom';
-  wrap.setAttribute('aria-label', 'View and placement controls');
-  const zoomStack = document.createElement('div');
-  zoomStack.className = 'sg-zoom-stack';
-  const mk = (label, aria, fn) => {
+  wrap.setAttribute('aria-label', 'View, placement, and interaction controls');
+  const mk = (label, className, aria, fn) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = label;
+    b.className = className;
     b.setAttribute('aria-label', aria);
     // Act on pointerdown and swallow it so the press never reaches the sim canvas
     // (which would otherwise start placing/mining under the button).
     b.addEventListener('pointerdown', (e) => { fn(); e.preventDefault(); e.stopPropagation(); });
     for (const ev of ['pointerup', 'pointermove', 'click']) b.addEventListener(ev, (e) => e.stopPropagation());
-    zoomStack.appendChild(b);
+    wrap.appendChild(b);
     return b;
   };
-  mk('+', 'Zoom in', () => game.zoomIn());
-  mk('−', 'Zoom out', () => game.zoomOut());
-  wrap.appendChild(zoomStack);
+  mk('+', 'sg-zoom-in', 'Zoom in', () => game.zoomIn());
+  mk('−', 'sg-zoom-out', 'Zoom out', () => game.zoomOut());
 
   const layer = document.createElement('button');
   layer.type = 'button';
@@ -206,8 +210,35 @@ function createZoomButtons(root, game) {
   });
   for (const ev of ['pointerup', 'pointermove', 'click']) layer.addEventListener(ev, (e) => e.stopPropagation());
   wrap.appendChild(layer);
+
+  const draw = document.createElement('button');
+  draw.type = 'button';
+  draw.className = 'sg-draw';
+  const drawIcon = document.createElement('span');
+  drawIcon.className = 'sg-draw-icon';
+  const drawText = document.createElement('span');
+  draw.append(drawIcon, drawText);
+  let drawOn = false;
+  const renderDraw = () => {
+    draw.classList.toggle('on', drawOn);
+    drawIcon.textContent = drawOn ? '✎' : '↕';
+    drawText.textContent = drawOn ? 'DRAW' : 'SCROLL';
+    draw.setAttribute('aria-label', `Interaction mode: ${drawOn ? 'draw' : 'scroll'}`);
+    draw.setAttribute('aria-pressed', String(drawOn));
+  };
+  draw.addEventListener('pointerdown', (e) => {
+    drawOn = !drawOn;
+    renderDraw();
+    onToggleDrawMode?.(drawOn);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  for (const ev of ['pointerup', 'pointermove', 'click']) draw.addEventListener(ev, (e) => e.stopPropagation());
+  renderDraw();
+  wrap.appendChild(draw);
   root.appendChild(wrap);
   return {
+    setDrawMode(on) { drawOn = !!on; renderDraw(); },
     setHidden(hidden) {
       wrap.classList.toggle('sg-hidden', !!hidden);
       wrap.setAttribute('aria-hidden', String(!!hidden));
@@ -431,8 +462,21 @@ class SandGameElement extends HTMLElement {
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
+          const applyDrawMode = (on) => {
+            game.setDrawMode(on);
+            this._palette?.setDrawMode(on);
+            this._zoom?.setDrawMode(on);
+            if (coarse) {
+              sim.classList.toggle('draw-on', on);
+              setPageScrollLocked(on);
+            }
+            this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
+              detail: { on }, bubbles: true, composed: true,
+            }));
+          };
           this._palette = createToolPalette(root, {
-            showDrawToggle: coarse,
+            showDrawToggle: false,
+            requireDrawMode: coarse,
             onSelectCreative: ({ kind, value }) => game.setCreativeMaterial(kind, value),
             onSetTime: (phase) => {
               if (phase === null) game.clearDayPhase();
@@ -444,20 +488,10 @@ class SandGameElement extends HTMLElement {
               this._stick?.setHidden(expanded);
               this._zoom?.setHidden(expanded);
             },
-            onToggleDrawMode: (on) => {
-              game.setDrawMode(on);
-              if (coarse) {
-                sim.classList.toggle('draw-on', on);
-                setPageScrollLocked(on);
-              }
-              this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
-                detail: { on }, bubbles: true, composed: true,
-              }));
-            },
           });
           // Touch has no +/- keys, so give mobile an on-screen zoom control beside
           // the palette (desktop zooms via the keyboard).
-          if (coarse) this._zoom = createZoomButtons(root, game);
+          if (coarse) this._zoom = createZoomButtons(root, game, applyDrawMode);
         }
         // Default draw state: fine pointers are always draw-enabled. Coarse
         // pointers start off so touch pages can scroll until the user opts in.
@@ -465,6 +499,7 @@ class SandGameElement extends HTMLElement {
         game.setDrawMode(drawDefault);
         sim.classList.toggle('draw-on', coarse && drawDefault);
         this._palette?.setDrawMode(drawDefault);
+        this._zoom?.setDrawMode(drawDefault);
         if (coarse) this._stick = createMobileJoystick(root, game);
         // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).
         if (this.hasAttribute('perf-hud')) this._perfHud = createPerfHud(root, game);

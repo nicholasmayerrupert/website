@@ -36,7 +36,7 @@ const Hero = () => {
 
       {/* Fades: above simulation, below text */}
       <div className="pointer-events-none absolute top-0 left-0 w-full h-[18svh] md:h-[20vh] bg-gradient-to-b from-[#121212] to-transparent z-10" />
-      <div className="pointer-events-none absolute bottom-0 left-0 w-full h-[18svh] md:h-[20vh] bg-gradient-to-t from-[#121212] to-transparent z-10" />
+      <div className="pointer-events-none absolute bottom-0 left-0 w-full h-[8svh] md:h-[10vh] bg-gradient-to-t from-[#121212] to-transparent z-10" />
     </section>
   );
 };

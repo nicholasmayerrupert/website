@@ -244,7 +244,9 @@ that window.
 On touch devices, the adjacent `FG`/`BG` control selects the layer used by canvas
 taps. `FG` sends the normal primary action; `BG` sends the secondary action, so
 placement and erasing target the darker background layer. Mouse left/right clicks
-remain unchanged on hybrid devices.
+remain unchanged on hybrid devices. The same compact 2x2 utility pad contains a
+`SCROLL`/`DRAW` mode control, leaving the center palette focused on material and
+time selection.
 
 ### Day/night
 

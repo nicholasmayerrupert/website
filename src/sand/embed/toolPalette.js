@@ -221,7 +221,7 @@ const formatTime = (phase) => {
   return `${hour12}:${minute} ${hour24 < 12 ? 'AM' : 'PM'}`;
 };
 
-export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, getTimeState, showDrawToggle = true } = {}) {
+export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, getTimeState, showDrawToggle = true, requireDrawMode = showDrawToggle } = {}) {
   injectStyleOnce(root, 'data-sand-palette', STYLE);
 
   const entries = buildEntries();
@@ -277,7 +277,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   currentNameTrack.className = 'sg-name-track';
   currentName.appendChild(currentNameTrack);
   current.append(currentSwatch, currentName);
-  const canSelectMaterial = () => !showDrawToggle || drawOn;
+  const canSelectMaterial = () => !requireDrawMode || drawOn;
   const toggleExpandedFromButton = () => {
     if (!canSelectMaterial()) return;
     setExpanded(!expanded);

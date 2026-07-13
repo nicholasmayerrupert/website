@@ -203,7 +203,7 @@ try {
   await mobile.goto(baseURL, { waitUntil: 'networkidle' });
   await mobile.waitForFunction(() => window.__sandTest && window.__sandPerf && window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
   const mobileGame = mobile.locator('sand-game');
-  await mobileGame.locator('.sg-toggle').tap(); // Draw On
+  await mobileGame.locator('.sg-draw').tap(); // Scroll -> Draw
   const cubePaletteWidth = await mobileGame.locator('.sg-palette').evaluate((palette) => palette.getBoundingClientRect().width);
   await mobileGame.locator('.sg-expand').tap();
   await mobileGame.locator('.sg-opt', { hasText: 'mycelium_spore' }).tap();
@@ -220,11 +220,19 @@ try {
     `${cubePaletteWidth.toFixed(0)} -> ${longNameUi.width.toFixed(0)}`);
   check('long selected material name pans inside its fixed viewport', longNameUi.overflows && longNameUi.scrolling);
   const controls = await mobileGame.locator('.sg-zoom').evaluate((wrap) => {
-    const zoom = wrap.querySelector('.sg-zoom-stack').getBoundingClientRect();
+    const zoomIn = wrap.querySelector('.sg-zoom-in').getBoundingClientRect();
+    const zoomOut = wrap.querySelector('.sg-zoom-out').getBoundingClientRect();
     const layer = wrap.querySelector('.sg-layer').getBoundingClientRect();
-    return { spaced: layer.left >= zoom.right + 6, layerLabel: wrap.querySelector('.sg-layer').textContent.trim() };
+    const draw = wrap.querySelector('.sg-draw').getBoundingClientRect();
+    return {
+      grid: layer.left >= zoomIn.right + 5 && draw.left >= zoomOut.right + 5 &&
+        zoomOut.top >= zoomIn.bottom + 5 && draw.top >= layer.bottom + 5,
+      layerLabel: wrap.querySelector('.sg-layer').textContent.trim(),
+      drawLabel: wrap.querySelector('.sg-draw').textContent.trim(),
+    };
   });
-  check('mobile layer toggle is spaced to the right of zoom', controls.spaced && controls.layerLabel === 'FG');
+  check('mobile utility controls form the compact 2x2 grid',
+    controls.grid && controls.layerLabel === 'FG' && controls.drawLabel === '✎DRAW');
   const mobileTarget = await mobile.evaluate(() => {
     window.__sandTest.setCreativeMaterial(0, 3); // STONE
     const rect = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main').getBoundingClientRect();

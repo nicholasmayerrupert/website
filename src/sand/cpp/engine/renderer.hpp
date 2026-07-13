@@ -28,7 +28,9 @@ class Renderer {
   explicit Renderer(Engine& e) : E(e) {}
 
   static constexpr bool RENDER_LIGHTING_ENABLED = true;
-  static constexpr uint8_t LIGHT_AMBIENT = 35;
+  // Keep unlit caves readable, but dark enough that nearby light sources carry
+  // visibly stronger contrast.
+  static constexpr uint8_t LIGHT_AMBIENT = 20;
   static constexpr uint8_t CROSS_LAYER_EMISSIVE_LOSS = 28;
 
   // Renderer tables (material -> RGBA). Shared (layer-agnostic).
@@ -99,10 +101,10 @@ class Renderer {
   bool sideRayStartsInSky(Layer* lay, int x, int y);
   bool directSkyCurrent(Layer* lay) const;
   // Lighting solves take an inclusive cell region [rx0,ry0..rx1,ry1]. Light
-  // influence dies within (255 - LIGHT_AMBIENT) / minLoss = 55 cells of its
+  // influence dies within ceil((255 - LIGHT_AMBIENT) / minLoss) = 59 cells of its
   // source (min loss 4/cell through air) and the cross-layer projection is
   // cell-to-cell, so a solve over window+margin is EXACT inside the window
-  // for any margin > 56 (+1 for the face-lit neighbour ring). Values in the
+  // for any margin > 60 (+1 for the face-lit neighbour ring). Values in the
   // margin ring may underestimate (their far sources are cut off) — they are
   // never sampled. The GL present path solves the visible window + margin;
   // shifts/day-night/canvas renderFull still solve the full buffer.

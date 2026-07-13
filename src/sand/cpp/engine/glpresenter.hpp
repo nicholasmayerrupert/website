@@ -44,15 +44,15 @@ class GLPresenter {
   static constexpr int GL_LIGHT_THROTTLE_TICKS = 2;
   int glLightTick = INT_MIN;
   // Windowed lighting (Perf 7c): throttled solves cover only the visible
-  // window + GL_LIGHT_WINDOW_MARGIN. Light influence dies within 55 cells of
-  // its source (min loss 4/cell, 255 -> ambient 35) and the cross-layer
+  // window + GL_LIGHT_WINDOW_MARGIN. Light influence dies within 59 cells of
+  // its source (min loss 4/cell, 255 -> ambient 20) and the cross-layer
   // projection is cell-to-cell, so values within the last solve region shrunk
-  // by GL_LIGHT_EXACT_SHRINK (56 + the face-lit neighbour ring) are exactly
+  // by GL_LIGHT_EXACT_SHRINK (60 + the face-lit neighbour ring) are exactly
   // the full-solve values. When the window (+1) drifts outside that exact
   // zone, a re-solve is forced (throttle bypassed). Shifts/day-night/init
   // still solve the full buffer so the sky shift-remap caches stay coherent.
   static constexpr int GL_LIGHT_WINDOW_MARGIN = 72;
-  static constexpr int GL_LIGHT_EXACT_SHRINK = 57;
+  static constexpr int GL_LIGHT_EXACT_SHRINK = 61;
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1; // last solve region (-1 = never solved)
   int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
   bool glUseExtPlayers = false;         // client renders remote players from JS snapshots

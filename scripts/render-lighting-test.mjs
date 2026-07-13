@@ -77,6 +77,7 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   const surface = brightness(e, 40, 8);
   const caveFloor = brightness(e, 45, 62);
   check(`sealed cave wall is dark (${caveFloor.toFixed(1)} < ${surface.toFixed(1)})`, caveFloor + 45 < surface);
+  check(`unlit cave keeps a dramatic ambient floor (${caveFloor.toFixed(1)} < 15)`, caveFloor < 15);
   e.destroy();
 }
 

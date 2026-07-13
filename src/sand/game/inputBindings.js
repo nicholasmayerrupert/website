@@ -162,6 +162,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   };
   const onBlur = () => {
     ctx.engine?.inputClearKeys();  // avoid keys "sticking" on focus loss
+    ctx.stickX = ctx.stickY = 0;
+    ctx.engine?.inputStick(0, 0);
     ctx.mouseButtons = 0;          // and avoid a button "sticking" if focus is lost mid-press
     ctx.engine?.pointerButtons(0);
     updatePointer(ctx.clientX, ctx.clientY); // push the cleared state so PI_PRIMARY drops -> draft finalizes

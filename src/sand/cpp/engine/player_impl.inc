@@ -156,10 +156,20 @@ void PlayerSystem::removePlayer(int id) {
   for (size_t i = 0; i < players.size(); i++)
     if (players[i].id == id) { players.erase(players.begin() + i); return; }
 }
-void PlayerSystem::setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq) {
+void PlayerSystem::setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq,
+                                  double moveX, double moveY) {
   Player* p = findPlayer(id);
   if (!p) return;
   p->input = inputBits;
+  p->analogInput = std::isfinite(moveX) && std::isfinite(moveY);
+  if (p->analogInput) {
+    double mag = std::hypot(moveX, moveY);
+    if (mag > 1.0) { moveX /= mag; moveY /= mag; }
+    p->inputX = std::max(-1.0, std::min(1.0, moveX));
+    p->inputY = std::max(-1.0, std::min(1.0, moveY));
+  } else {
+    p->inputX = p->inputY = 0;
+  }
   p->aimX = aimX; p->aimY = aimY;
   p->selectedTool = selectedTool;
   p->inputSeq = seq;
@@ -192,6 +202,8 @@ double PlayerSystem::samplePlayerFluidCoverage(const Player& p) {
 void PlayerSystem::integratePlayer(Player& p) {
   if (!p.active) return;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
+  double moveX = p.analogInput ? p.inputX : ((right ? 1.0 : 0.0) - (left ? 1.0 : 0.0));
+  double moveStrength = std::fabs(moveX);
   bool run = (p.input & PI_RUN) != 0;
   bool wantJump = (p.input & PI_JUMP) != 0;
   // Two coverage thresholds: past MIN he's "in liquid" (drag + slow sink + slower
@@ -200,14 +212,17 @@ void PlayerSystem::integratePlayer(Player& p) {
   bool inLiquid = fluidCoverage >= P_LIQUID_MIN_COVERAGE;
   bool swimming = fluidCoverage >= P_LIQUID_SWIM_COVERAGE;
   double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0);
+  if (p.analogInput) maxRun *= moveStrength;
   if (inLiquid) maxRun *= P_LIQUID_RUN_MULT;
 
   // horizontal accel / friction
-  if (left == right) { // none or both -> decelerate
+  if (moveStrength < 1e-6) {
     p.vx *= (p.grounded ? P_GROUND_FRICTION : P_AIR_FRICTION);
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
-  } else if (right) { p.vx += P_MOVE_ACCEL; p.facing = 1; }
-  else              { p.vx -= P_MOVE_ACCEL; p.facing = -1; }
+  } else {
+    p.vx += P_MOVE_ACCEL * moveX;
+    p.facing = moveX > 0 ? 1 : -1;
+  }
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;
   if (inLiquid) {

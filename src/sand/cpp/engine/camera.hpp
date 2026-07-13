@@ -24,6 +24,7 @@ class ViewCamera {
   int pointerBtns = 0;                  // bit0 = LMB, bit1 = RMB
   bool pointerInside = false;
   uint32_t heldKeys = 0;                // bitmask over InputKey
+  double stickX = 0, stickY = 0;        // normalized analog thumbstick vector
   bool playModeOn = true;               // WASD drive the player (camera follows) vs. free-cam
   bool drawModeOn = false;              // drawing into the sim (mouse = player primary/secondary)
 
@@ -52,6 +53,14 @@ class ViewCamera {
     if (down) heldKeys |= (1u << code); else heldKeys &= ~(1u << code);
   }
   void inputClearKeys() { heldKeys = 0; }
+  void inputStick(double x, double y) {
+    if (!std::isfinite(x) || !std::isfinite(y)) { stickX = stickY = 0; return; }
+    double mag = std::hypot(x, y);
+    if (mag > 1.0) { x /= mag; y /= mag; }
+    stickX = std::max(-1.0, std::min(1.0, x));
+    stickY = std::max(-1.0, std::min(1.0, y));
+  }
+  bool stickActive() const { return std::fabs(stickX) > 1e-6 || std::fabs(stickY) > 1e-6; }
   void inputPointer(double cssX, double cssY, int buttons, int inside) {
     pointerCssX = cssX; pointerCssY = cssY; pointerBtns = buttons; pointerInside = inside != 0;
   }
@@ -73,6 +82,12 @@ class ViewCamera {
     if (heldKeys & ((1u << IK_UP) | (1u << IK_SPACE))) b |= PI_JUMP;
     if (heldKeys & (1u << IK_DOWN)) b |= PI_DOWN;
     if (heldKeys & (1u << IK_SHIFT)) b |= PI_RUN;
+    if (stickX < -1e-6) b |= PI_LEFT;
+    if (stickX >  1e-6) b |= PI_RIGHT;
+    // Platformer vertical input remains jump/crouch, with a deliberate tilt
+    // threshold so a mostly-horizontal analog move does not jump accidentally.
+    if (stickY < -0.35) b |= PI_JUMP;
+    if (stickY >  0.35) b |= PI_DOWN;
     // Survival aims/places with the mouse whenever the cursor is over the
     // canvas — no "Draw" toggle gating (the fullscreen game has no page to
     // scroll). The player only acts while a button is held, so always-aim just
@@ -88,6 +103,11 @@ class ViewCamera {
   // No-op in play mode (the keys drive the player there and the camera follows it).
   void panTick() {
     if (playModeOn) return;
+    if (stickActive()) {
+      double dist = CAM_PAN_CELLS_PER_SEC / 60.0;
+      panBy(stickX * dist, stickY * dist);
+      return;
+    }
     int px = (int)((heldKeys >> IK_RIGHT) & 1) - (int)((heldKeys >> IK_LEFT) & 1);
     int py = (int)((heldKeys >> IK_DOWN) & 1) - (int)((heldKeys >> IK_UP) & 1);
     if (!px && !py) return;

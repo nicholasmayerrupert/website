@@ -54,6 +54,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const d = rt(m);
   check('decodes to input', d && d.t === MSG.INPUT);
   check('fields preserved', d && d.room === 'r1' && d.client === 7 && d.player === 3 && d.tick === 42 && d.seq === 5 && d.bits === (INPUT.RIGHT | INPUT.JUMP) && d.aimX === 120 && d.aimY === -8 && d.tool === 6);
+  const analog = rt(makeInput({ room: 'r1', client: 7, player: 3, tick: 43, seq: 6, bits: INPUT.RIGHT, aimX: 0, aimY: 0, tool: 0, moveX: 0.3, moveY: -0.4 }));
+  check('analog vector preserved', analog && analog.moveX === 0.3 && analog.moveY === -0.4);
 }
 
 // 2. snapshot round trip.
@@ -88,6 +90,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('input bits out of range', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: INPUT_BITS_MAX + 1, aimX: 0, aimY: 0, tool: 0 })) === null);
   check('input tool out of range', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: TOOL_MAX + 1 })) === null);
   check('input non-int aim', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 1.5, aimY: 0, tool: 0 })) === null);
+  check('input rejects incomplete analog vector', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: 0, moveX: 0.5 })) === null);
+  check('input rejects oversized analog vector', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: 0, moveX: 1, moveY: 1 })) === null);
   check('snapshot bad player', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: -1 }] })) === null);
   check('snapshot missing anim rejected', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: 1, x: 0, y: 0, vx: 0, vy: 0, facing: 1, tool: 0, seq: 0 }] })) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);

@@ -306,7 +306,7 @@ export function initSandWasm() {
         playerWidth: c('engine_player_width', 'number', []),
         playerHeight: c('engine_player_height', 'number', []),
         removePlayer: c('engine_remove_player', null, ['number', 'number']),
-        setPlayerInput: c('engine_set_player_input', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        setPlayerInput: c('engine_set_player_input', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         playerCount: c('engine_player_count', 'number', ['number']),
         playerSnapshot: c('engine_player_snapshot', 'number', ['number']),
         playerSnapshotPtr: c('engine_player_snapshot_ptr', 'number', ['number']),
@@ -385,6 +385,7 @@ export function initSandWasm() {
         streamWorld: c('engine_stream_world', 'number', ['number']),
         inputKey: c('engine_input_key', null, ['number', 'number', 'number']),
         inputClearKeys: c('engine_input_clear_keys', null, ['number']),
+        inputStick: c('engine_input_stick', null, ['number', 'number', 'number']),
         heldKeys: c('engine_held_keys', 'number', ['number']),
         inputPointer: c('engine_input_pointer', null, ['number', 'number', 'number', 'number', 'number']),
         setPlayMode: c('engine_set_play_mode', null, ['number', 'number']),
@@ -638,6 +639,7 @@ export function createEngineWasm({
     streamWorld() { return M.streamWorld(ptr); },
     inputKey(code, down) { M.inputKey(ptr, code | 0, down ? 1 : 0); },
     inputClearKeys() { M.inputClearKeys(ptr); },
+    inputStick(x, y) { M.inputStick(ptr, +x || 0, +y || 0); },
     getHeldKeys() { return M.heldKeys(ptr); },
     inputPointer(cssX, cssY, buttons, inside) { M.inputPointer(ptr, cssX, cssY, buttons | 0, inside ? 1 : 0); },
     setPlayMode(on) { M.setPlayMode(ptr, on ? 1 : 0); },
@@ -813,9 +815,10 @@ export function createEngineWasm({
     },
     getPlayerSize() { return { w: M.playerWidth(), h: M.playerHeight() }; },
     removePlayer(id) { M.removePlayer(ptr, id); },
-    // input: { bits, aimX, aimY, tool, seq }
-    setPlayerInput(id, { bits = 0, aimX = 0, aimY = 0, tool = 0, seq = 0 } = {}) {
-      M.setPlayerInput(ptr, id, bits | 0, aimX, aimY, tool | 0, seq | 0);
+    // input: { bits, aimX, aimY, tool, seq, moveX?, moveY? }
+    setPlayerInput(id, { bits = 0, aimX = 0, aimY = 0, tool = 0, seq = 0, moveX = NaN, moveY = NaN } = {}) {
+      M.setPlayerInput(ptr, id, bits | 0, aimX, aimY, tool | 0, seq | 0,
+        Number.isFinite(moveX) ? moveX : NaN, Number.isFinite(moveY) ? moveY : NaN);
     },
     playerCount() { return M.playerCount(ptr); },
     // Rebuild + read the packed player snapshot zero-copy (re-derived: the build

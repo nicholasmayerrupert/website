@@ -6,7 +6,7 @@
 
 import { INPUT, TOOL, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -58,14 +58,20 @@ export function makeLeave(room, client) {
 export function makeAssign(room, client, player) {
   return { t: MSG.ASSIGN, room, client, player: player | 0 };
 }
-export function makeInput({ room, client, player, tick, seq, bits, aimX, aimY, tool }) {
-  return {
+export function makeInput({ room, client, player, tick, seq, bits, aimX, aimY, tool, moveX, moveY }) {
+  const msg = {
     t: MSG.INPUT, room, client, player,
     tick: Math.trunc(tick), seq: Math.trunc(seq),
     bits: bits & INPUT_BITS_MAX,
     aimX: Math.trunc(aimX), aimY: Math.trunc(aimY),
     tool: tool | 0,
   };
+  if (Number.isFinite(moveX) && Number.isFinite(moveY)) {
+    const mag = Math.hypot(moveX, moveY);
+    msg.moveX = mag > 1 ? moveX / mag : moveX;
+    msg.moveY = mag > 1 ? moveY / mag : moveY;
+  }
+  return msg;
 }
 export function makeSnapshot(tick, players, hash = null) {
   return {
@@ -220,6 +226,9 @@ function validateInput(m) {
   if (!isNonNegInt(m.bits) || m.bits > INPUT_BITS_MAX) return null;
   if (!isInt(m.aimX) || !isInt(m.aimY)) return null;
   if (!isNonNegInt(m.tool) || m.tool > TOOL_MAX) return null;
+  const hasMoveX = m.moveX !== undefined, hasMoveY = m.moveY !== undefined;
+  if (hasMoveX !== hasMoveY) return null;
+  if (hasMoveX && (!isFiniteNum(m.moveX) || !isFiniteNum(m.moveY) || Math.hypot(m.moveX, m.moveY) > 1.000001)) return null;
   return m;
 }
 

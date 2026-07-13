@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 9;
+static const int ABI_VERSION = 10;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {

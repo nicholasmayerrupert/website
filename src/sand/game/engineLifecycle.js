@@ -53,6 +53,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     e.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
     e.setPlayMode(ctx.playMode);
     e.setDrawMode(ctx.drawModeOn);
+    e.inputStick(ctx.stickX, ctx.stickY);
     e.glSetFlags(ctx.gutterOn, ctx.snapOff);
     e.glSetDebugHitboxes(ctx.debugHitboxes);
     applyCreatureRuntimePolicy(ctx, e);

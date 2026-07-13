@@ -197,7 +197,9 @@ EMSCRIPTEN_KEEPALIVE void engine_player_surface_spawn(Engine* e, int col, double
 EMSCRIPTEN_KEEPALIVE int engine_player_width() { return PLAYER_W; }
 EMSCRIPTEN_KEEPALIVE int engine_player_height() { return PLAYER_H; }
 EMSCRIPTEN_KEEPALIVE void engine_remove_player(Engine* e, int id) { e->removePlayer(id); }
-EMSCRIPTEN_KEEPALIVE void engine_set_player_input(Engine* e, int id, int inputBits, double aimX, double aimY, int selectedTool, int seq) { e->setPlayerInput(id, inputBits, aimX, aimY, selectedTool, (uint32_t)seq); }
+EMSCRIPTEN_KEEPALIVE void engine_set_player_input(Engine* e, int id, int inputBits, double aimX, double aimY, int selectedTool, int seq, double moveX, double moveY) {
+  e->setPlayerInput(id, inputBits, aimX, aimY, selectedTool, (uint32_t)seq, moveX, moveY);
+}
 EMSCRIPTEN_KEEPALIVE int engine_player_count(Engine* e) { return (int)e->psys.players.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_player_snapshot(Engine* e) { return e->psys.buildPlayerSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_player_snapshot_ptr(Engine* e) { return e->psys.snapshot.data(); }
@@ -376,6 +378,7 @@ EMSCRIPTEN_KEEPALIVE void engine_camera_follow_to(Engine* e, double cx, double c
 EMSCRIPTEN_KEEPALIVE int engine_stream_world(Engine* e) { return e->streamWorld(); }
 EMSCRIPTEN_KEEPALIVE void engine_input_key(Engine* e, int code, int down) { e->inputKey(code, down); }
 EMSCRIPTEN_KEEPALIVE void engine_input_clear_keys(Engine* e) { e->inputClearKeys(); }
+EMSCRIPTEN_KEEPALIVE void engine_input_stick(Engine* e, double x, double y) { e->inputStick(x, y); }
 EMSCRIPTEN_KEEPALIVE int engine_held_keys(Engine* e) { return (int)e->cam.heldKeys; }
 EMSCRIPTEN_KEEPALIVE void engine_input_pointer(Engine* e, double cssX, double cssY, int buttons, int inside) { e->inputPointer(cssX, cssY, buttons, inside); }
 EMSCRIPTEN_KEEPALIVE void engine_set_play_mode(Engine* e, int on) { e->setPlayModeOn(on); }

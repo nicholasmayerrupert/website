@@ -35,11 +35,11 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
    tell the browser that drags belong to the canvas, not page scrolling. */
 .sg-sim.draw-on { pointer-events: auto; touch-action: none; overscroll-behavior: none; }
 .sg-stick { position: absolute; right: 10px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 68;
-  width: 118px; height: 118px; border-radius: 50%; pointer-events: auto; touch-action: none;
+  width: 104px; height: 104px; border-radius: 50%; pointer-events: auto; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
   background: rgba(17,24,39,.3); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); backdrop-filter: blur(4px);
   border: 1px solid rgba(255,255,255,.14); }
-.sg-stick .sg-knob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+.sg-stick .sg-knob { position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px;
   border-radius: 50%; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.5);
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
@@ -62,13 +62,11 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .sg-perf .sg-perf-row span:last-child { color: #fff; font-variant-numeric: tabular-nums; }
 `;
 
-// Mobile-only analog thumbstick. Maps the knob offset to the same four movement
-// keys the d-pad drove (left=0, right=1, up=2, down=3), engaging a direction once
-// the stick passes a per-axis deadzone. Diagonals fall out naturally by holding
-// two keys at once, matching how WASD/arrows behave on desktop.
+// Mobile-only analog thumbstick. Its radial position is forwarded as a continuous
+// normalized vector: angle is unrestricted and speed ramps from zero just outside
+// the center deadzone to full speed at the rim.
 function createMobileJoystick(root, game) {
-  const CODE = { left: 0, right: 1, up: 2, down: 3 };
-  const DEADZONE = 0.32; // fraction of max travel before an axis engages
+  const DEADZONE = 0.14;
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-stick';
@@ -77,18 +75,8 @@ function createMobileJoystick(root, game) {
   knob.className = 'sg-knob';
   wrap.appendChild(knob);
 
-  const held = { 0: false, 1: false, 2: false, 3: false };
   let pointerId = null;
-  let maxTravel = 33; // recomputed from real geometry on each press
-
-  const setDir = (code, on) => {
-    if (held[code] === on) return;
-    held[code] = on;
-    game.inputKey(code, on);
-  };
-  const releaseAll = () => {
-    for (const code of [CODE.left, CODE.right, CODE.up, CODE.down]) setDir(code, false);
-  };
+  let maxTravel = 29; // recomputed from real geometry on each press
 
   const apply = (dx, dy) => {
     // Clamp the knob inside the ring, then map its position to the axes.
@@ -97,12 +85,10 @@ function createMobileJoystick(root, game) {
     const kx = dx * scale;
     const ky = dy * scale;
     knob.style.transform = `translate(${kx}px, ${ky}px)`;
-    const nx = kx / maxTravel;
-    const ny = ky / maxTravel;
-    setDir(CODE.left, nx < -DEADZONE);
-    setDir(CODE.right, nx > DEADZONE);
-    setDir(CODE.up, ny < -DEADZONE);
-    setDir(CODE.down, ny > DEADZONE);
+    const radial = Math.min(1, dist / maxTravel);
+    const strength = radial <= DEADZONE ? 0 : (radial - DEADZONE) / (1 - DEADZONE);
+    if (dist > 0 && strength > 0) game.inputStick((dx / dist) * strength, (dy / dist) * strength);
+    else game.inputStick(0, 0);
   };
 
   const fromCenter = (e) => {
@@ -130,7 +116,7 @@ function createMobileJoystick(root, game) {
     pointerId = null;
     wrap.classList.remove('active');
     knob.style.transform = 'translate(0px, 0px)';
-    releaseAll();
+    game.inputStick(0, 0);
     try { wrap.releasePointerCapture?.(e.pointerId); } catch { /* capture already gone */ }
     e.preventDefault();
     e.stopPropagation();
@@ -145,7 +131,7 @@ function createMobileJoystick(root, game) {
   root.appendChild(wrap);
   return {
     destroy() {
-      releaseAll();
+      game.inputStick(0, 0);
       wrap.remove();
     },
   };
@@ -425,12 +411,13 @@ class SandGameElement extends HTMLElement {
 
   disconnectedCallback() {
     this._cancel?.();
+    // Release analog input while its engine is still alive.
+    this._stick?.destroy();
     this._game?.destroy();
     this._palette?.destroy();
     this._hud?.destroy();
     this._sizeMenu?.destroy();
     this._mp?.destroy();
-    this._stick?.destroy();
     this._zoom?.destroy();
     this._perfHud?.destroy();
     setPageScrollLocked(false);

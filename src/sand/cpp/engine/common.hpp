@@ -513,6 +513,8 @@ struct Player {
   int selectedTool = T_ERASER;
   double aimX = 0, aimY = 0; // cell coords of the aim/cursor
   int input = 0;
+  double inputX = 0, inputY = 0; // normalized analog move; ignored when analogInput is false
+  bool analogInput = false;
   int prevInput = 0;       // last step's input bits (for single-shot edge detection)
   bool jumpReady = false;  // armed (grounded + jump released); persists so a press isn't lost to a 1-frame grounded flicker
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)

@@ -146,7 +146,46 @@ const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);
   e.destroy();
 }
 
-// 8. a fixed input stream with a fixed seed produces a stable final position.
+// 8. analog camera input preserves arbitrary direction and stops on release.
+{
+  console.log('analog camera pan');
+  const e = mk({ infinite: false });
+  e.setViewport(1, 1, 80, 20);
+  e.setPlayMode(false);
+  e.cameraSet(50, 30);
+  e.inputStick(0.3, 0.4);
+  for (let i = 0; i < 60; i++) e.cameraPanTick();
+  const moved = e.getCam();
+  check(`analog angle preserved (${moved.x.toFixed(2)},${moved.y.toFixed(2)})`, approxEqual(moved.x, 80, 0.01) && approxEqual(moved.y, 70, 0.01));
+  e.inputStick(0, 0);
+  e.cameraPanTick();
+  const stopped = e.getCam();
+  check('released analog camera stops', stopped.x === moved.x && stopped.y === moved.y);
+  e.destroy();
+}
+
+// 9. analog horizontal strength scales player acceleration and top speed.
+{
+  console.log('analog player speed');
+  const runAt = (strength) => {
+    const e = mk();
+    stoneFloor(e, 30, 190, 90);
+    const id = e.spawnPlayer(80, 80);
+    runSteps(e, 30);
+    for (let i = 0; i < 30; i++) {
+      e.setPlayerInput(id, { bits: INPUT.RIGHT, moveX: strength, moveY: 0 });
+      e.step(16 * i);
+    }
+    const p = e.getPlayer(id);
+    e.destroy();
+    return p;
+  };
+  const near = runAt(0.3), edge = runAt(1);
+  check(`near-center stick moves slowly (vx ${near.vx.toFixed(3)})`, near.vx > 0.05 && near.vx < 0.35);
+  check(`edge stick is faster (${near.vx.toFixed(3)} -> ${edge.vx.toFixed(3)})`, edge.vx > near.vx * 2);
+}
+
+// 10. a fixed input stream with a fixed seed produces a stable final position.
 {
   console.log('determinism');
   const inputs = [];
@@ -171,7 +210,7 @@ const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);
   check('final velocities stable', a.vx === b.vx && a.vy === b.vy);
 }
 
-// 9. removing a player and re-spawning does not corrupt wrapper state.
+// 11. removing a player and re-spawning does not corrupt wrapper state.
 {
   console.log('remove / respawn');
   const e = mk();

@@ -12,6 +12,7 @@
   void setViewport(double dpr, double cellDev, int vCols, int vRows) { cam.setViewport(dpr, cellDev, vCols, vRows, cols, rows); }
   void inputKey(int code, int down) { cam.inputKey(code, down); }
   void inputClearKeys() { cam.inputClearKeys(); }
+  void inputStick(double x, double y) { cam.inputStick(x, y); }
   void inputPointer(double cssX, double cssY, int buttons, int inside) { cam.inputPointer(cssX, cssY, buttons, inside); }
   void setPlayModeOn(int on) { cam.setPlayModeOn(on); }
   void setDrawModeOn(int on) { cam.setDrawModeOn(on); }
@@ -42,7 +43,9 @@
   // Returns 1 if a draft preview changed (draw mode only).
   int applyLocalInput(int playerId, double now, uint32_t seq) {
     if (cam.playModeOn) {
-      if (playerId) setPlayerInput(playerId, cam.localInputBits(), cam.aimCellX(), cam.aimCellY(), tools.activeTool, seq);
+      if (playerId) setPlayerInput(playerId, cam.localInputBits(), cam.aimCellX(), cam.aimCellY(), tools.activeTool, seq,
+                                   cam.stickActive() ? cam.stickX : NAN,
+                                   cam.stickActive() ? cam.stickY : NAN);
       return 0;
     }
     return applyTool((int)cam.aimCellX(), (int)cam.aimCellY(), now, cam.pointerInside, cam.drawModeOn) ? 1 : 0;

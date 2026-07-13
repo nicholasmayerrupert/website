@@ -40,7 +40,12 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   // The net layer sends this to the host.
   const currentLocalInput = () => {
     const a = ctx.engine ? ctx.engine.getAim() : { x: 0, y: 0 };
-    return { bits: ctx.engine ? ctx.engine.localInputBits() : 0, aimX: a.x, aimY: a.y, tool: TOOL_IDS[ctx.currentToolName] ?? 0 };
+    const input = { bits: ctx.engine ? ctx.engine.localInputBits() : 0, aimX: a.x, aimY: a.y, tool: TOOL_IDS[ctx.currentToolName] ?? 0 };
+    if (Math.abs(ctx.stickX) > 1e-6 || Math.abs(ctx.stickY) > 1e-6) {
+      input.moveX = ctx.stickX;
+      input.moveY = ctx.stickY;
+    }
+    return input;
   };
   // Glide the camera toward the followed player's center (clamp + lerp in C++).
   // On a client the followed player is our host-authoritative snapshot entity.

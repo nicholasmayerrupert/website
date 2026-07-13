@@ -172,6 +172,11 @@ to the engine to draw (`engine.glSetPlayers`).
 | `Shift` | run |
 | mouse + `Draw` toggle | aim; LMB uses the selected tool, RMB mines — player-mediated, reach-limited (≤18 cells) and cooldown-throttled |
 
+On coarse-pointer devices, the thumbstick sends a continuous analog vector. In
+creative mode this gives unrestricted pan direction and radial speed control; in
+survival its horizontal strength controls walking speed while upward/downward
+tilt retains the platformer's jump/crouch semantics.
+
 In free-camera mode the classic pointer tools (drafts + held paint/erase) are
 used instead. Player tool policy (reach, cooldown, place-vs-mine, no building
 inside your own body) lives in `cpp/engine/player.inc`.

@@ -7,7 +7,10 @@
   int spawnPlayerAtSurface(int col) { return psys.spawnPlayerAtSurface(col); }
   void playerSurfaceSpawn(int col, double* out) { psys.playerSurfaceSpawn(col, out); }
   void removePlayer(int id) { psys.removePlayer(id); }
-  void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq) { psys.setPlayerInput(id, inputBits, aimX, aimY, selectedTool, seq); }
+  void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq,
+                      double moveX = NAN, double moveY = NAN) {
+    psys.setPlayerInput(id, inputBits, aimX, aimY, selectedTool, seq, moveX, moveY);
+  }
   bool isSolidForPlayer(uint8_t m) { return psys.isSolidForPlayer(m); }
   void resetPlayerMine(Player& p) { psys.resetPlayerMine(p); }
   bool mineFootprintHasContent(int cx, int cy, int footprintId, Layer* layer) { return psys.mineFootprintHasContent(cx, cy, footprintId, layer); }

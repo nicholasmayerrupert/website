@@ -33,7 +33,8 @@ class PlayerSystem {
   void respawnPlayer(Player& p);
   Player* findPlayer(int id);
   void removePlayer(int id);
-  void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq);
+  void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq,
+                      double moveX, double moveY);
   bool playerCellLiquid(int x, int y);
   double samplePlayerFluidCoverage(const Player& p);
   void integratePlayer(Player& p);

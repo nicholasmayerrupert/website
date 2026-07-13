@@ -207,7 +207,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     }
     // send local input to the server AND predict it locally (immediate, no lag).
     const inp = getLocalInput();
-    send(makeInput({ room, client: clientId, player: ownPlayerId, tick: inputSeq, seq: inputSeq, bits: inp.bits, aimX: inp.aimX, aimY: inp.aimY, tool: inp.tool }));
+    send(makeInput({ room, client: clientId, player: ownPlayerId, tick: inputSeq, seq: inputSeq, bits: inp.bits, aimX: inp.aimX, aimY: inp.aimY, tool: inp.tool, moveX: inp.moveX, moveY: inp.moveY }));
     if (predictor) predictor.predict(inputSeq, inp);
     if (inp.bits) dbgSent++;
     inputSeq++;

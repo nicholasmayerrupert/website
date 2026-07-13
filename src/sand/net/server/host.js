@@ -66,7 +66,9 @@ export class Host {
     // Defense in depth: never trust a peer's fields even post-decode.
     if (!Number.isInteger(m.bits) || m.bits < 0 || m.bits > INPUT_BITS_MAX ||
         !Number.isInteger(m.tool) || m.tool < 0 || m.tool > TOOL_MAX ||
-        !Number.isFinite(m.aimX) || !Number.isFinite(m.aimY)) { this.droppedInputs++; return false; }
+        !Number.isFinite(m.aimX) || !Number.isFinite(m.aimY) ||
+        ((m.moveX !== undefined) !== (m.moveY !== undefined)) ||
+        (m.moveX !== undefined && (!Number.isFinite(m.moveX) || !Number.isFinite(m.moveY) || Math.hypot(m.moveX, m.moveY) > 1.000001))) { this.droppedInputs++; return false; }
     // Per-client rate limit (token bucket): a flood is dropped, not simulated.
     const t = this.now();
     c.tokens = Math.min(this.inputBurst, c.tokens + ((t - c.lastInput) / 1000) * this.maxInputRate);
@@ -76,7 +78,10 @@ export class Host {
     // Clamp the aim into the buffer (+small margin); reach is enforced in C++.
     const aimX = Math.max(-1, Math.min(this.engine.cols, m.aimX | 0));
     const aimY = Math.max(-1, Math.min(this.engine.rows, m.aimY | 0));
-    this.engine.setPlayerInput(c.playerId, { bits: m.bits & INPUT_BITS_MAX, aimX, aimY, tool: m.tool, seq: m.seq });
+    this.engine.setPlayerInput(c.playerId, {
+      bits: m.bits & INPUT_BITS_MAX, aimX, aimY, tool: m.tool, seq: m.seq,
+      moveX: m.moveX, moveY: m.moveY,
+    });
     return true;
   }
 

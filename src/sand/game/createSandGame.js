@@ -133,6 +133,7 @@ export function createSandGame(container, opts = {}) {
     clientX: -1, clientY: -1, px: -1, py: -1,
     inside: false,
     mouseButtons: 0,
+    stickX: 0, stickY: 0,
     wrapBounds: { left: 0, right: 0, top: 0, bottom: 0 },
 
     // DEV A/B flags (flicker bench)
@@ -311,6 +312,15 @@ export function createSandGame(container, opts = {}) {
       ctx.worldWorker?.config({ creatureNaturalSpawning: ctx.debugHitboxes });
     },
     inputKey(code, on) { ctx.engine?.inputKey(code | 0, on ? 1 : 0); },
+    inputStick(x, y) {
+      x = Number.isFinite(x) ? x : 0;
+      y = Number.isFinite(y) ? y : 0;
+      const mag = Math.hypot(x, y);
+      if (mag > 1) { x /= mag; y /= mag; }
+      ctx.stickX = x;
+      ctx.stickY = y;
+      ctx.engine?.inputStick(x, y);
+    },
     // Survival inventory intents. When connected as a client they go to the
     // authoritative server; offline they apply to the local engine.
     isSurvival() { return survival; },

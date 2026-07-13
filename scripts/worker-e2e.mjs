@@ -148,6 +148,28 @@ try {
   check('worker owns horizontal streaming', stream1.offX !== stream0.offX, `${stream0.offX} -> ${stream1.offX}`);
   check('stream snapshot preserves absolute camera position', Math.abs(stream1.absX - stream0.absX) < 2, `${stream0.absX.toFixed(1)} -> ${stream1.absX.toFixed(1)}`);
 
+  // Runtime/browser zoom can fire several fits before the debounced worker
+  // resize. A larger control viewport must never make the old worker stream on
+  // every turn or let its snapshot displace the preserved world-space center.
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.waitForFunction(() => window.__sandTest && window.__sandPerf && window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
+  const zoomCenter0 = await page.evaluate(() => {
+    const t = window.__sandTest, info = t.info(), cam = t.getCam(), off = t.worldOffset();
+    return { x: off.x + cam.x + info.viewCols / 2, y: off.y + cam.y + info.viewRows / 2 };
+  });
+  for (let i = 0; i < 8; i++) {
+    await page.keyboard.press('-');
+    await page.waitForTimeout(25);
+  }
+  await page.waitForTimeout(1200);
+  const zoomCenter1 = await page.evaluate(() => {
+    const t = window.__sandTest, info = t.info(), cam = t.getCam(), off = t.worldOffset();
+    return { x: off.x + cam.x + info.viewCols / 2, y: off.y + cam.y + info.viewRows / 2 };
+  });
+  check('rapid zoom keeps the worker mirror on the same world center',
+    Math.abs(zoomCenter1.x - zoomCenter0.x) < 2 && Math.abs(zoomCenter1.y - zoomCenter0.y) < 2,
+    `${zoomCenter0.x.toFixed(1)},${zoomCenter0.y.toFixed(1)} -> ${zoomCenter1.x.toFixed(1)},${zoomCenter1.y.toFixed(1)}`);
+
   // Force each worker world turn over budget. The main thread should continue
   // receiving ~60 RAF callbacks and pan the camera on its actor clock while the
   // worker naturally drops below 60 TPS.

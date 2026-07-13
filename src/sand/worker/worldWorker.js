@@ -128,6 +128,12 @@ function toLocal(worldX, worldY) {
 
 function streamForControl() {
   if (!control) return false;
+  // A viewport must fit inside the loaded window before edge streaming has a
+  // meaningful answer. This also makes the worker robust to a resize/control
+  // message reordering: an oversized view otherwise satisfies an edge test on
+  // every world turn and races the world offset away from the camera.
+  if (control.viewCols + STREAM_MARGIN * 2 > engine.cols ||
+      control.viewRows + STREAM_MARGIN * 2 > engine.rows) return false;
   const localX = Math.floor(control.camWorldX - engine.getWorldOffsetX());
   const dx = engine.maybeShiftWorld(localX, control.viewCols, STREAM_MARGIN);
   const localY = Math.floor(control.camWorldY - engine.getWorldOffsetY());
@@ -262,6 +268,9 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;
+    // The last control describes the pre-resize viewport. Wait for a fresh one
+    // from the main thread after it accepts this full snapshot.
+    control = null;
     if (engine.resizeLoadedWindow(data.cols | 0, data.rows | 0)) {
       epoch++;
       sequence = 0;

@@ -22,7 +22,11 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
   const parallaxCamera = (cam = ctx.engine?.getCam()) => {
     if (!ctx.engine || !cam) return undefined;
     return {
-      camX: ctx.engine.getWorldOffsetX() + cam.x,
+      // Anchor horizontal parallax to the view center. Runtime zoom preserves
+      // this world point while moving the top-left camera by half the changing
+      // viewport width; using that top-left value made the backdrop appear to
+      // race sideways even though the camera center had not moved.
+      camX: ctx.engine.getWorldOffsetX() + cam.x + ctx.viewCols * 0.5,
       camY: ctx.engine.getWorldOffsetY() + cam.y,
       scale: ctx.bgZoomScale(),
     };

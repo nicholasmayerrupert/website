@@ -66,7 +66,11 @@ export function createWorldWorkerClient(ctx) {
     },
     updateControl() {
       const e = ctx.engine;
-      if (!e) return;
+      // fit() resizes the render mirror immediately but deliberately debounces
+      // the expensive worker resize. Do not describe the new, larger viewport
+      // to the worker while it still owns the old buffer: every edge would look
+      // crossed and it could stream once per tick until the resize arrives.
+      if (!e || awaitingResizeId) return;
       const p = worldPoint();
       const cam = e.getCam();
       const message = {

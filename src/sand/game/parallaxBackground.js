@@ -51,7 +51,7 @@ function drawDither(ctx, w, h, horizon) {
 }
 
 function drawStars(ctx, w, horizon, camX, camY) {
-  const offX = Math.floor(camX * 0.025);
+  const offX = Math.floor(camX * 0.025 - w * 0.5);
   const offY = Math.floor(backgroundDriftY(camY) * 0.2);
   const period = 240;
   const start = Math.floor((offX - 16) / period) * period;
@@ -76,7 +76,7 @@ function drawCloud(ctx, x, y, size, color) {
 }
 
 function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period) {
-  const offX = camX * depth;
+  const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
   const start = Math.floor((offX - 40) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
@@ -98,7 +98,7 @@ function ridgeY(worldX, base, amp, seed) {
 }
 
 function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed) {
-  const offX = camX * depth;
+  const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -143,6 +143,9 @@ export function createParallaxBackground(container) {
     }
   };
 
+  // `camX` is the absolute world coordinate at the horizontal center of the
+  // viewport. Each layer subtracts half its logical width from the parallax
+  // offset, keeping that center anchored while zoom changes the visible span.
   // `scale` is the in-game zoom relative to the default (1 = default, >1 = zoomed
   // in). The whole backdrop is drawn into a logical box of size (w/scale, h/scale)
   // and then uniformly scaled to fill the canvas, so the mountains/clouds/stars and

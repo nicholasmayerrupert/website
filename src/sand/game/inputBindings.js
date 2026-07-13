@@ -54,6 +54,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (!e.touches || e.touches.length === 0) return;
     const t = e.touches[0];
     updatePointer(t.clientX, t.clientY);
+    // `overflow: hidden` alone is not a reliable gesture cancel on mobile
+    // Chrome (an already-recognized pan can keep moving the page). The
+    // non-passive listener plus the simulation's touch-action:none makes a
+    // Draw On drag exclusively simulation input.
+    if (ctx.inside && e.cancelable) e.preventDefault();
     if (ctx.worldWorker) return;
     if (ctx.inside && ctx.engine.pointerDraftAtAim()) ctx.previewDirty = true;
   };
@@ -187,7 +192,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
 
   const attach = () => {
     window.addEventListener('pointermove', onPointerMove, { passive: true });
-    window.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
     if (ctx.survival) window.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointerup', onPointerUp);

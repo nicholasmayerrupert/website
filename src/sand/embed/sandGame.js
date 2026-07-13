@@ -31,6 +31,9 @@ const HOST_CSS = `
 /* Keep text-entry controls (search, multiplayer IP, etc.) selectable/editable. */
 input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 .sg-sim { position: absolute; inset: 0; overflow: hidden; }
+/* When mobile drawing is armed, make the simulation the gesture target and
+   tell the browser that drags belong to the canvas, not page scrolling. */
+.sg-sim.draw-on { pointer-events: auto; touch-action: none; overscroll-behavior: none; }
 .sg-stick { position: absolute; right: 10px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 68;
   width: 118px; height: 118px; border-radius: 50%; pointer-events: auto; touch-action: none;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
@@ -392,7 +395,10 @@ class SandGameElement extends HTMLElement {
             onSelectCreative: ({ kind, value }) => game.setCreativeMaterial(kind, value),
             onToggleDrawMode: (on) => {
               game.setDrawMode(on);
-              if (coarse) setPageScrollLocked(on);
+              if (coarse) {
+                sim.classList.toggle('draw-on', on);
+                setPageScrollLocked(on);
+              }
               this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
                 detail: { on }, bubbles: true, composed: true,
               }));
@@ -406,6 +412,7 @@ class SandGameElement extends HTMLElement {
         // pointers start off so touch pages can scroll until the user opts in.
         const drawDefault = !coarse;
         game.setDrawMode(drawDefault);
+        sim.classList.toggle('draw-on', coarse && drawDefault);
         this._palette?.setDrawMode(drawDefault);
         if (coarse) this._stick = createMobileJoystick(root, game);
         // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).

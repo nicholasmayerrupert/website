@@ -20,6 +20,18 @@ actionable instead of just producing timing numbers.
   become task-local before the same scheduler can safely own settle chunks.
   Current profiles are dominated by lighting and cross-layer grounding, not the
   already-cheap sand/liquid passes.
+- Extreme-zoom structural adjacency is cached with `cellComp`: `indexComponents`
+  rebuilds a sorted component-edge list only when topology is re-indexed, and
+  ordinary joint passes union that list instead of walking every component cell
+  and eight neighbours. The pthread build constructs the cache by chunks and
+  also carries component cells into the double buffer with fixed deterministic
+  offsets. Creative world workers select pthread WASM through
+  `globalThis.crossOriginIsolated`, not a window-only check.
+- Above 900k loaded cells, component grounding/assembly motion runs on alternating
+  world ticks (30 Hz at a healthy 60 TPS); loose materials, reactions, tools, and
+  actors keep their normal cadence. Free rigid bodies disable the deferral. This
+  prevents background terrain assemblies from starving a large active liquid
+  frontier; topology edits are reconciled at most one world tick later.
 - If a benchmark regression points at gameplay, rendering, camera, terrain,
   components, or materials, prefer moving the decision into C++ rather than adding
   another JS mirror.

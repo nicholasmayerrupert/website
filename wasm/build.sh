@@ -55,6 +55,14 @@ echo "built $OUT ($(wc -c < "$OUT") bytes)"
 build_engine src/sand/wasm/sandEngine.js
 node scripts/write-wasm-build-info.mjs src/sand/wasm/sandEngine.js
 
+# Headless invariant tests load the fallback module. Keep the committed threaded
+# artifact on its last production build: Binaryen's O3 pthread+invariant pass is
+# substantially larger and has proved unstable on the local toolchain.
+if (( ${#DEV_FLAGS[@]} )); then
+  echo "kept existing production src/sand/wasm/sandEngineThreaded.js"
+  exit 0
+fi
+
 # Browsers that are cross-origin isolated load this build. The engine owns a
 # persistent Emscripten pthread pool; non-isolated embeds retain the ordinary
 # single-thread module above.

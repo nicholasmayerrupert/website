@@ -37,8 +37,10 @@ const repeat = Math.max(1, Number(flag('--repeat') || 1) | 0);
 const checksumOnly = hasFlag('--checksum-only');
 const scenarioArg = flag('--scenario') || 'pan-stream';
 
-// --- config (mirrors a ~1080p viewport buffer; see createSandGame fit()) ---
-const COLS = 768, ROWS = 320, SEED = 0xC0FFEE;
+// --- config (defaults mirror a ~1080p viewport buffer; override for zoom sweeps) ---
+const COLS = Math.max(64, Number(flag('--cols') || 768) | 0);
+const ROWS = Math.max(64, Number(flag('--rows') || 320) | 0);
+const SEED = 0xC0FFEE;
 const SHIFT_COLS = 128;        // matches game streaming
 const WARMUP_STEPS = 120;
 const SHIFTS_EACH_WAY = 16;    // distinct shift bursts to sample

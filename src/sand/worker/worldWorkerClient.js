@@ -79,6 +79,14 @@ export function createWorldWorkerClient(ctx) {
     edge(kind, button) {
       worker.postMessage({ type: 'edge', kind, button: button | 0, buttons: ctx.mouseButtons | 0, ...worldPoint() });
     },
+    testPaintDisc(material, localX, localY, radius) {
+      const e = ctx.engine;
+      if (!e) return;
+      worker.postMessage({
+        type: 'test-paint-disc', material: material | 0, radius: radius | 0,
+        worldX: e.getWorldOffsetX() + (localX | 0), worldY: e.getWorldOffsetY() + (localY | 0),
+      });
+    },
     config(config) { worker.postMessage({ type: 'config', ...config }); },
     resize(cols, rows) {
       pending = null;

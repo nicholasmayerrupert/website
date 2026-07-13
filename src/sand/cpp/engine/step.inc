@@ -16,12 +16,12 @@
     if (!beginStepDirty()) return; // nothing active in this layer this step
     // Phase times ACCUMULATE (both layers). step() zeros them once per tick.
     double t0 = emscripten_get_now();
-    if (!comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
+    if (!deferStructureThisTick && !comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     perfGroundingMs += emscripten_get_now() - t0;
 
     double tA = emscripten_get_now();
     L->assemblyRelocatedCells.clear();
-    moveRigidAssemblies();
+    if (!deferStructureThisTick) moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-assemblies");
 #endif
@@ -50,10 +50,31 @@
     // Carry component cells forward in `L->next` keeping each cell's actual material
     // (L->grid[k]) so stone-group ores and any future ice-group materials survive the
     // double-buffer swap instead of collapsing to STONE/ICE.
+#ifdef __EMSCRIPTEN_PTHREADS__
+    carryComps.clear(); carryOffsets.clear();
+    carryComps.reserve(L->stoneComponents.size() + L->plantComponents.size() + L->iceComponents.size());
+    carryOffsets.reserve(carryComps.capacity());
+    size_t carryCount = 0;
+    auto queueCarry = [&](std::vector<Comp>& list) {
+      for (auto& comp : list) { carryComps.push_back(&comp); carryOffsets.push_back(carryCount); carryCount += comp.cells.size(); }
+    };
+    queueCarry(L->stoneComponents); queueCarry(L->plantComponents); queueCarry(L->iceComponents);
+    size_t bodyCarryBase = carryCount;
+    carryCount += L->bodyCells.size();
+    L->curCompCells.resize(carryCount);
+    chunkPool.parallelFor((int)carryComps.size(), [&](int ci) {
+      Comp& comp = *carryComps[ci]; size_t out = carryOffsets[ci];
+      for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[out++] = k; }
+    });
+    chunkPool.parallelFor((int)L->bodyCells.size(), [&](int i) {
+      int k = L->bodyCells[i]; L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[bodyCarryBase + i] = k;
+    });
+#else
     for (auto& comp : L->stoneComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
     for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); } // body-material invariant: carry the body's real material, not RIGID
+#endif
     for (int k : L->prevCompCells) {
       if (L->compOccStamp[k] == tick) continue;
       if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
@@ -129,6 +150,9 @@
     // stepLayer() then skips its own first computeGrounded().
     comps.jointGroundReady = false;
     comps.jointBondsInvalid = false;
+    deferStructureThisTick = (int64_t)cols * rows > 900000
+      && comps.jointSupportValid && fg.bodies.empty() && bg.bodies.empty()
+      && (tick & 1) != 0;
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
     // stone/plant/ice or residual static powder exists. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
@@ -144,12 +168,23 @@
     bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
     bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
     bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
-    if (bgEnabled && needJoint) {
+    // At extreme zoom, a large generated window can contain thousands of
+    // residual bonded terrain assemblies. Re-solving and moving that structural
+    // graph at 60 Hz starves the much more visible loose-material simulation.
+    // Residual structure runs at 30 Hz above 900k cells; a topology edit on a
+    // deferred tick is reconciled on the next structural tick (one world tick
+    // later). Loose overlays still refresh every tick.
+    if (bgEnabled && needJoint && !deferStructureThisTick) {
       // computeGroundedBoth splits its wall time into groundingMs (base floods)
       // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).
       computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
+    }
+    if (deferStructureThisTick) {
+      comps.refreshLooseOverlayPreservingJoint(&fg);
+      comps.refreshLooseOverlayPreservingJoint(&bg);
+      useLayer(&fg);
     }
     double tL0 = emscripten_get_now();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
@@ -165,7 +200,7 @@
     // moveCrossLayerBondedAssemblies (jointBondsInvalid) — stuttering or freezing
     // until a dissolve-free step. Refresh joints when dirtied, then move.
     bool jointRefreshedAfterLayers = false;
-    if (bgEnabled && (comps.jointDirty || comps.jointBondsInvalid)) {
+    if (bgEnabled && !deferStructureThisTick && (comps.jointDirty || comps.jointBondsInvalid)) {
       computeGroundedBoth(); // adds into grounding / crossLayer / componentIndex
       comps.jointGroundReady = true;
       comps.jointDirty = false;

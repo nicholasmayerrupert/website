@@ -28,6 +28,52 @@ void ComponentSystem::indexComponents() {
     }
   };
   idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
+  lay->compAdjPairs.clear();
+  if (cgComps.size() > 1) {
+    // Four forward neighbours cover 8-connectivity exactly once. Duplicate
+    // component edges are collapsed now, when topology changes, rather than in
+    // every cross-layer grounding pass triggered by moving loose material.
+    const int cols = E.cols, rows = E.rows;
+    auto scanRect = [&](std::vector<uint64_t>& out, int x0, int y0, int x1, int y1) {
+      for (int y = imax(0, y0); y < imin(rows, y1); y++) {
+        int rb = y * cols;
+        for (int x = imax(0, x0); x < imin(cols, x1); x++) {
+          int a = cc[rb + x]; if (a < 0) continue;
+          const int nx[4] = { x + 1, x - 1, x, x + 1 };
+          const int ny[4] = { y, y + 1, y + 1, y + 1 };
+          for (int ni = 0; ni < 4; ni++) {
+            if (nx[ni] < 0 || nx[ni] >= cols || ny[ni] < 0 || ny[ni] >= rows) continue;
+            int nk = ny[ni] * cols + nx[ni];
+            int b = cc[nk]; if (b < 0 || b == a) continue;
+            // Infinite-world sentinel columns may support ordinary terrain but
+            // must never anchor icebergs touching the loaded-window edge.
+            if (lay->infinite && (x == 0 || x == cols - 1 || nx[ni] == 0 || nx[ni] == cols - 1)
+                && (E.isIceComponentMaterial(lay->grid[rb + x]) || E.isIceComponentMaterial(lay->grid[nk]))) continue;
+            uint32_t lo = (uint32_t)(a < b ? a : b), hi = (uint32_t)(a < b ? b : a);
+            out.push_back(((uint64_t)lo << 32) | hi);
+          }
+        }
+      }
+    };
+#ifdef __EMSCRIPTEN_PTHREADS__
+    int chunks = E.chunkCols * E.chunkRows;
+    E.adjChunkPairs.resize(chunks);
+    E.chunkPool.parallelFor(chunks, [&](int ci) {
+      auto& out = E.adjChunkPairs[ci]; out.clear();
+      int cy = ci / E.chunkCols, cx = ci - cy * E.chunkCols;
+      scanRect(out, cx * CHUNK_SIZE, cy * CHUNK_SIZE,
+               imin(cols, (cx + 1) * CHUNK_SIZE), imin(rows, (cy + 1) * CHUNK_SIZE));
+    });
+    size_t pairCount = 0;
+    for (auto& pairs : E.adjChunkPairs) pairCount += pairs.size();
+    lay->compAdjPairs.reserve(pairCount);
+    for (auto& pairs : E.adjChunkPairs) lay->compAdjPairs.insert(lay->compAdjPairs.end(), pairs.begin(), pairs.end());
+#else
+    scanRect(lay->compAdjPairs, 0, 0, cols, rows);
+#endif
+    std::sort(lay->compAdjPairs.begin(), lay->compAdjPairs.end());
+    lay->compAdjPairs.erase(std::unique(lay->compAdjPairs.begin(), lay->compAdjPairs.end()), lay->compAdjPairs.end());
+  }
   E.perfComponentIndexMs += emscripten_get_now() - t0;
 }
 // Grounding is SEPARABLE (this is what makes the rigid part cacheable):
@@ -600,38 +646,17 @@ int ComponentSystem::compCount(Layer& lay) { return (int)(lay.stoneComponents.si
 // its class grounded; whether its same-layer neighbours get marked cross-bonded
 // is unobservable (grounded comps never move and are skipped everywhere).
 void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::vector<int>* groundParent, int nf, int nb) {
-  int total = nf + nb;
-  if ((int)cgCompStamp.size() < total) cgCompStamp.assign(total, 0);
-  int32_t gen = ++cgCompGen;
-  cgWorkQueue.clear();
-  auto seed = [&](Layer& lay, int offset, int count) {
-    for (int i = 0; i < count; i++) {
-      if (i >= (int)lay.crossBondedComp.size() || !lay.crossBondedComp[i]) continue;
-      if (compById(lay, i)->grounded) continue;
-      int gid = offset + i;
-      if (cgCompStamp[gid] == gen) continue;
-      cgCompStamp[gid] = gen; cgWorkQueue.push_back(gid);
+  auto uniteCached = [&](Layer& lay, int offset, int count) {
+    for (uint64_t packed : lay.compAdjPairs) {
+      int a = (int)(packed >> 32), b = (int)(uint32_t)packed;
+      if (a < 0 || b < 0 || a >= count || b >= count) continue;
+      int ag = offset + a, bg = offset + b;
+      ufUnite(parent, ag, bg);
+      if (groundParent) ufUnite(*groundParent, ag, bg);
     }
   };
-  seed(E.fg, 0, nf); seed(E.bg, nf, nb);
-  for (size_t qi = 0; qi < cgWorkQueue.size(); qi++) {
-    int gid = cgWorkQueue[qi];
-    bool isFg = gid < nf; Layer& lay = isFg ? E.fg : E.bg; int offset = isFg ? 0 : nf;
-    int layerCount = isFg ? nf : nb;
-    Comp* c = compById(lay, gid - offset);
-    const int32_t* cc = lay.cellComp.data();
-    for (int k : c->cells) {
-      int y = k / E.cols, x = k - y * E.cols;
-      for (int oy = -1; oy <= 1; oy++) { int ny = y + oy; if (ny < 0 || ny >= E.rows) continue; int rb = ny * E.cols;
-        for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox; if (nx < 0 || nx >= E.cols) continue;
-          int nid = cc[rb + nx]; if (nid < 0 || nid >= layerCount) continue; int ngid = offset + nid;
-          ufUnite(parent, gid, ngid);
-          if (groundParent) ufUnite(*groundParent, gid, ngid);
-          if (cgCompStamp[ngid] != gen) { cgCompStamp[ngid] = gen; cgWorkQueue.push_back(ngid); }
-        }
-      }
-    }
-  }
+  uniteCached(E.fg, 0, nf);
+  uniteCached(E.bg, nf, nb);
 }
 
 // Cross-layer grounding (runs once per step when the background is live). Each
@@ -818,29 +843,33 @@ void ComponentSystem::computeGroundedBoth() {
   auto bondCompatibleAt = [&](int k) {
     return E.isIceComponentMaterial(fgG[k]) == E.isIceComponentMaterial(bgG[k]);
   };
-  std::unordered_set<int64_t> pairSeen;
   auto bondPair = [&](int fi, int bi) {
-    int64_t key = ((int64_t)fi << 32) | (uint32_t)bi;
-    if (!pairSeen.insert(key).second) return;
     cgBonds.push_back({fi, bi, true});
     E.fg.crossBondedComp[fi] = 1;
     E.bg.crossBondedComp[bi] = 1;
   };
+  cgBondSeenBg.assign(nb, -1);
   for (int fi = 0; fi < nf; fi++) {
     Comp* fc = compById(E.fg, fi);
     if (fc->grounded) continue;
     for (int k : fc->cells) {
       int bi = bgCC[k];
       if (bi < 0 || bi >= nb || !E.isRigidMaterialClass(bgG[k]) || !bondCompatibleAt(k)) continue;
+      if (cgBondSeenBg[bi] == fi) continue;
+      cgBondSeenBg[bi] = fi;
       bondPair(fi, bi);
     }
   }
+  cgBondSeenFg.assign(nf, -1);
   for (int bi = 0; bi < nb; bi++) {
     Comp* bc = compById(E.bg, bi);
     if (bc->grounded) continue;
     for (int k : bc->cells) {
       int fi = fgCC[k];
       if (fi < 0 || fi >= nf || !E.isRigidMaterialClass(fgG[k]) || !bondCompatibleAt(k)) continue;
+      // Ungrounded foreground endpoints were already emitted by the first loop.
+      if (!compById(E.fg, fi)->grounded || cgBondSeenFg[fi] == bi) continue;
+      cgBondSeenFg[fi] = bi;
       bondPair(fi, bi);
     }
   }

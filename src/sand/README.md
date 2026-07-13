@@ -79,9 +79,15 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   embedded; built with WebGL2/`FULL_ES3`). The site serves COOP/COEP headers and
   selects the threaded module when cross-origin isolated; third-party embeds
   retain the fallback. The threaded engine owns a persistent three-worker pool
-  and fills pixels in four non-adjacent checkerboard chunk waves. The build also
+  and fills pixels in four non-adjacent checkerboard chunk waves. It also runs
+  deterministic component carry and component-adjacency cache construction on
+  the pool; both the main renderer and creative world worker select this build
+  when cross-origin isolated. The build also
   writes `src/sand/wasm/build-info.json` provenance. Outputs are committed, so a
   normal `npm run build` never needs the C++ toolchain.
+  At extreme zoom (>900k loaded cells), grid-aligned component grounding and
+  assembly motion use a deterministic 30 Hz structural cadence while loose
+  materials, reactions, tools, and actors retain their normal clocks.
 - `wasmBridge/engineFactory.js` — loads the wasm module and exposes `createEngineWasm()`, the
   simulation+render+camera handle. Call `initSandWasm()` once and wait for it
   before creating an engine. The grid lives in wasm memory (zero-copy view).

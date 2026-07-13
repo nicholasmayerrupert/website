@@ -16,6 +16,9 @@
   Layer* L = &fg;     // active layer (the mirrors below point into it)
 #ifdef __EMSCRIPTEN_PTHREADS__
   CheckerboardPool chunkPool;
+  std::vector<Comp*> carryComps;
+  std::vector<size_t> carryOffsets;
+  std::vector<std::vector<uint64_t>> adjChunkPairs;
 #endif
 
   // Make `lay` the active layer. The old raw-pointer mirrors of its indexed
@@ -70,6 +73,7 @@
   // terrain or placed material). An empty/untouched background does not interact,
   // so a pure single-layer scene (e.g. the headless tests) is byte-identical.
   bool bgEnabled = false;
+  bool deferStructureThisTick = false;
   // When bgEnabled, step() runs ONE joint grounding flood over both layers up
   // front (computeGroundedBoth) so solids support solids across layers; this flag
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first

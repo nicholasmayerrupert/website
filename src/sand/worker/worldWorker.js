@@ -222,6 +222,9 @@ self.onmessage = async ({ data }) => {
     }
     if (data.creatureNaturalSpawning !== undefined) creatureNaturalSpawning = !!data.creatureNaturalSpawning;
     if (data.creativeKind !== undefined || data.creatureNaturalSpawning !== undefined) applyCreatureRuntime();
+  } else if (data.type === 'test-paint-disc') {
+    const p = toLocal(data.worldX, data.worldY);
+    if (engine.paintDisc(p.x, p.y, Math.max(1, data.radius | 0), data.material | 0, false)) toolWrites++;
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;

@@ -101,6 +101,10 @@ struct Layer {
   // changed) or just a cheap cellComp patch of the removed cells (a pure bore).
   bool compsReshaped = false;
   std::vector<uint8_t> crossBondedComp;
+  // Cached 8-neighbour adjacency between component ids (packed min/max ids).
+  // Rebuilt with cellComp in indexComponents; joint grounding reuses it instead
+  // of re-walking every component cell on every loose-material tick.
+  std::vector<uint64_t> compAdjPairs;
   // free rigid bodies + ownership
   std::vector<Body*> bodies; int nextBodyId = 1;
   std::vector<int32_t> bodyOwner;
@@ -174,6 +178,7 @@ struct Layer {
       release(stoneComponents); release(plantComponents); release(iceComponents);
       release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
       release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
+      release(compAdjPairs);
     }
     alloc(newCols, newRows, newChunkCols, newChunkRows);
     stoneComponents.clear(); plantComponents.clear(); iceComponents.clear();

@@ -16,6 +16,7 @@ export default {
     // SharedArrayBuffer passed in by Emscripten.
     headers.set('cross-origin-opener-policy', 'same-origin');
     headers.set('cross-origin-embedder-policy', 'require-corp');
+    headers.set('cross-origin-resource-policy', 'same-origin');
     if (isHtml) headers.set('cache-control', 'no-store');
     return new Response(response.body, {
       status: response.status,

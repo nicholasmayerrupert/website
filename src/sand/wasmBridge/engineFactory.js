@@ -22,17 +22,44 @@ let M = null; // resolved module + cwrapped fns
 let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTargets
 let resizableHeapPatched = false;
 let wasmThreadsEnabled = false;
+let wasmThreadPoolCapacity = 0;
 
-// Chromium rejects TypedArray/ArrayBuffer arguments that sit on a *resizable*
-// ArrayBuffer. Emscripten's ALLOW_MEMORY_GROWTH heap is resizable, so GL calls
-// that upload from HEAPU8 (glShaderSource via TextDecoder, bufferData,
-// texImage2D, texSubImage2D, …) throw and glInit never finishes — blank scene.
-// Copy into a fixed buffer when needed. Idempotent; Safari/Node no-op if they
-// already accept resizable views.
+function configuredThreadWorkers() {
+  const configured = Number(globalThis.__sandPthreadPoolSize);
+  return Number.isFinite(configured)
+    ? Math.max(0, Math.min(7, configured | 0))
+    : Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
+}
+
+// Chromium rejects views on a resizable ArrayBuffer; WebKit rejects WebGL views
+// on the threaded module's SharedArrayBuffer. Copy those WASM backings into an
+// ordinary fixed ArrayBuffer before browser APIs see them. Chromium accepts
+// shared views, so do not make its hot texture uploads pay for Safari's copy.
+const webkitSharedViewsNeedCopy = typeof navigator !== 'undefined'
+  && /AppleWebKit/.test(navigator.userAgent)
+  && !/(Chrome|Chromium|Edg|OPR)/.test(navigator.userAgent);
+
+function needsFixedBuffer(value) {
+  const buffer = ArrayBuffer.isView(value) ? value.buffer : value;
+  return buffer?.resizable === true
+    || (webkitSharedViewsNeedCopy && typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer);
+}
+
+function isBufferArg(value) {
+  return ArrayBuffer.isView(value)
+    || (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer)
+    || (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer);
+}
+
 function fixedBufferArg(value) {
   if (value == null) return value;
   if (ArrayBuffer.isView(value)) {
-    if (value.buffer && value.buffer.resizable === true) {
+    if (needsFixedBuffer(value)) {
+      if (typeof DataView !== 'undefined' && value instanceof DataView) {
+        const bytes = new Uint8Array(value.byteLength);
+        bytes.set(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+        return new DataView(bytes.buffer);
+      }
       const Ctor = value.constructor;
       // Preserve the same TypedArray kind (Uint8Array, Float32Array, …).
       const copy = new Ctor(value.length);
@@ -41,8 +68,10 @@ function fixedBufferArg(value) {
     }
     return value;
   }
-  if (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer && value.resizable === true) {
-    return value.slice(0);
+  if (needsFixedBuffer(value)) {
+    const copy = new Uint8Array(value.byteLength);
+    copy.set(new Uint8Array(value));
+    return copy.buffer;
   }
   return value;
 }
@@ -82,15 +111,13 @@ function patchResizableWasmHeapForBrowserGL() {
     wrapDataArg('bufferSubData', 2);
 
     // texImage2D / texSubImage2D have many overloads; the pixels arg is last
-    // when provided as a TypedArray. Patch by scanning args for resizable views.
+    // when provided as a TypedArray. Patch by scanning args for WASM-backed views.
     const wrapPixelsScan = (name) => {
       const orig = p[name];
       if (typeof orig !== 'function') return;
       p[name] = function patchedTexMethod(...args) {
         for (let i = 0; i < args.length; i++) {
-          if (ArrayBuffer.isView(args[i]) || (typeof ArrayBuffer !== 'undefined' && args[i] instanceof ArrayBuffer)) {
-            args[i] = fixedBufferArg(args[i]);
-          }
+          if (isBufferArg(args[i])) args[i] = fixedBufferArg(args[i]);
         }
         return orig.apply(this, args);
       };
@@ -107,7 +134,7 @@ function patchResizableWasmHeapForBrowserGL() {
         p.texSubImage2D = function patchedTexSubImage2D(...args) {
           const heap = args[8];
           const srcOffset = args[9] | 0;
-          if (args.length >= 10 && ArrayBuffer.isView(heap) && heap.buffer?.resizable === true
+          if (args.length >= 10 && ArrayBuffer.isView(heap) && needsFixedBuffer(heap)
               && args[6] === 0x1908 && args[7] === 0x1401) { // RGBA / UNSIGNED_BYTE
             const width = args[4] | 0, height = args[5] | 0;
             const rowLength = this.getParameter(0x0CF2) || width; // UNPACK_ROW_LENGTH
@@ -122,9 +149,7 @@ function patchResizableWasmHeapForBrowserGL() {
             return orig.apply(this, args);
           }
           for (let i = 0; i < args.length; i++) {
-            if (ArrayBuffer.isView(args[i]) || (typeof ArrayBuffer !== 'undefined' && args[i] instanceof ArrayBuffer)) {
-              args[i] = fixedBufferArg(args[i]);
-            }
+            if (isBufferArg(args[i])) args[i] = fixedBufferArg(args[i]);
           }
           return orig.apply(this, args);
         };
@@ -142,7 +167,7 @@ function patchResizableWasmHeapForBrowserGL() {
       if (typeof orig === 'function') {
         p.readPixels = function patchedReadPixels(...args) {
           // WebGL2: (x, y, w, h, format, type, dstData, dstOffset)
-          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && args[6].buffer?.resizable === true) {
+          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && needsFixedBuffer(args[6])) {
             const heap = args[6];
             const offset = args[7] | 0;
             const w = args[2] | 0, h = args[3] | 0;
@@ -156,7 +181,7 @@ function patchResizableWasmHeapForBrowserGL() {
           // WebGL1 / view form: (…, pixels)
           const last = args.length - 1;
           const dest = args[last];
-          if (ArrayBuffer.isView(dest) && dest.buffer?.resizable === true) {
+          if (ArrayBuffer.isView(dest) && needsFixedBuffer(dest)) {
             const copy = fixedBufferArg(dest);
             args[last] = copy;
             const ret = orig.apply(this, args);
@@ -192,7 +217,16 @@ export function initSandWasm() {
     patchResizableWasmHeapForBrowserGL();
     const selected = selectSandModule();
     wasmThreadsEnabled = selected.threaded;
-    modPromise = selected.promise.then((mod) => {
+    wasmThreadPoolCapacity = selected.threaded ? configuredThreadWorkers() : 0;
+    const selectedPromise = selected.threaded
+      ? selected.promise.catch((error) => {
+          console.warn('sand: threaded WASM failed to initialize; using the single-thread fallback', error);
+          wasmThreadsEnabled = false;
+          wasmThreadPoolCapacity = 0;
+          return selected.fallback();
+        })
+      : selected.promise;
+    modPromise = selectedPromise.then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
       // manifest — the loud failure for a stale committed sandEngine.js.
@@ -383,6 +417,9 @@ export function createEngineWasm({
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
   const { mod } = M;
   const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0);
+  // ParallelPool creates std::threads lazily, after the module's matching
+  // browser-worker pool has been prewarmed.
+  M.setThreadWorkers(ptr, Math.min(wasmThreadPoolCapacity, configuredThreadWorkers()));
   // Live dims (mutable — resizeLoadedWindow can grow/shrink the buffer).
   let liveCols = cols;
   let liveRows = rows;
@@ -708,7 +745,7 @@ export function createEngineWasm({
     },
     getTick() { return M.tick(ptr); },
     getActorTick() { return M.actorTick(ptr); },
-    setThreadWorkers(count) { M.setThreadWorkers(ptr, Math.max(0, count | 0)); },
+    setThreadWorkers(count) { M.setThreadWorkers(ptr, Math.min(wasmThreadPoolCapacity, Math.max(0, count | 0))); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
     destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
@@ -1000,6 +1037,7 @@ export function createEngineWasm({
     // engine pointer is exposed for that module only.
     ptr,
     wasmThreadsEnabled,
+    wasmThreadPoolCapacity,
   };
   return api;
 }

@@ -68,5 +68,5 @@ fi
 # single-thread module above.
 build_engine src/sand/wasm/sandEngineThreaded.js \
   -pthread \
-  -s 'PTHREAD_POOL_SIZE=Math.max(0,Math.min(7,(globalThis.navigator?.hardwareConcurrency||4)-2))' \
+  -s 'PTHREAD_POOL_SIZE=Math.max(0,Math.min(7,globalThis.__sandPthreadPoolSize??((globalThis.navigator?.hardwareConcurrency||4)-2)))' \
   -s PTHREAD_POOL_SIZE_STRICT=0

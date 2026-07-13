@@ -207,6 +207,9 @@ self.onmessage = async ({ data }) => {
   if (!data) return;
   if (data.type === 'init') {
     clearTimeout(timer);
+    // moduleSelector imports the threaded build lazily from initSandWasm(); set
+    // this realm's prewarm size first so it receives only the worker-side share.
+    globalThis.__sandPthreadPoolSize = Math.max(0, data.threadWorkers | 0);
     await initSandWasm();
     engine?.destroy();
     engine = createEngineWasm({

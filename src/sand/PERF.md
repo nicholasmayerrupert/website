@@ -15,7 +15,9 @@ actionable instead of just producing timing numbers.
   to one acknowledged packet in flight, so a slow renderer cannot build an
   unbounded diff queue or feed timing debt back into world simulation.
 - The pthread build uses an adaptive persistent pool (`hardwareConcurrency - 2`,
-  capped at seven workers, plus the caller). It parallelizes visible/full
+  capped at seven workers, plus the caller). Creative mode partitions that
+  budget before the main and world-worker modules prewarm their pools. It
+  parallelizes visible/full
   material-to-RGBA fill, candidate discovery, loose-support columns, component
   indexing/carry/adjacency, static rigid grounding through the component
   graph, and full/diff world serialization. Full snapshots scan RLE rows in

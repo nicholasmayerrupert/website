@@ -37,6 +37,16 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 
+export function computeThreadWorkerBudgets(survival) {
+  const hardwareWorkers = Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
+  const threadParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('sandThreads') : null;
+  const threadOverride = threadParam === null ? NaN : Number(threadParam);
+  const requestedWorkers = Number.isFinite(threadOverride) ? Math.max(0, Math.min(7, (threadOverride | 0) - 1)) : null;
+  const mainThreadWorkers = requestedWorkers ?? (survival ? hardwareWorkers : Math.floor(hardwareWorkers / 2));
+  const worldThreadWorkers = requestedWorkers ?? Math.max(0, hardwareWorkers - mainThreadWorkers);
+  return { mainThreadWorkers, worldThreadWorkers };
+}
+
 export function createSandGame(container, opts = {}) {
   const {
     initialTool = DEFAULT_TOOL,
@@ -58,12 +68,7 @@ export function createSandGame(container, opts = {}) {
     onToggleFootprintMenu = null,
   } = opts;
   const survival = mode === 'survival';
-  const hardwareWorkers = Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
-  const threadParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('sandThreads') : null;
-  const threadOverride = threadParam === null ? NaN : Number(threadParam);
-  const requestedWorkers = Number.isFinite(threadOverride) ? Math.max(0, Math.min(7, (threadOverride | 0) - 1)) : null;
-  const mainThreadWorkers = requestedWorkers ?? (survival ? hardwareWorkers : Math.floor(hardwareWorkers / 2));
-  const worldThreadWorkers = requestedWorkers ?? Math.max(0, hardwareWorkers - mainThreadWorkers);
+  const { mainThreadWorkers, worldThreadWorkers } = computeThreadWorkerBudgets(survival);
 
   // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
   // context on it and composites everything (engine.glRenderFrame). ---

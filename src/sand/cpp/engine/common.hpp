@@ -141,17 +141,7 @@ class ParallelPool {
 #endif
 
  public:
-  ParallelPool() {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    // Leave one logical core to the browser/UI and use this calling thread as
-    // one simulation lane. The Emscripten build prewarms the same number of
-    // pthread workers, capped to avoid excessive per-worker stack memory on
-    // high-core-count machines.
-    int count = imax(0, imin(7, emscripten_num_logical_cores() - 2));
-    activeWorkers = count;
-    for (int i = 0; i < count; i++) workers.emplace_back([this, i] { workerLoop(i); });
-#endif
-  }
+  ParallelPool() = default;
   ~ParallelPool() {
 #ifdef __EMSCRIPTEN_PTHREADS__
     { std::lock_guard<std::mutex> lock(mutex); stopping = true; generation++; }
@@ -196,8 +186,17 @@ class ParallelPool {
   }
   void setWorkerCount(int count) {
 #ifdef __EMSCRIPTEN_PTHREADS__
+    const int capacity = imax(0, imin(7, emscripten_num_logical_cores() - 2));
+    const int target = imax(0, imin(capacity, count));
+    // Engine construction happens before JS supplies its main/worker share.
+    // Claim only that many prewarmed Emscripten workers instead of eagerly
+    // creating a full std::thread pool in every module instance.
+    while ((int)workers.size() < target) {
+      int workerId = (int)workers.size();
+      workers.emplace_back([this, workerId] { workerLoop(workerId); });
+    }
     std::lock_guard<std::mutex> lock(mutex);
-    activeWorkers = imax(0, imin((int)workers.size(), count));
+    activeWorkers = target;
 #else
     (void)count;
 #endif

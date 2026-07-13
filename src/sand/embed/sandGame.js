@@ -17,7 +17,7 @@
 // vanilla, another framework) can listen.
 
 import { initSandWasm } from '../wasmBridge/engineFactory.js';
-import { createSandGame } from '../game/createSandGame';
+import { computeThreadWorkerBudgets, createSandGame } from '../game/createSandGame';
 import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
@@ -337,6 +337,11 @@ class SandGameElement extends HTMLElement {
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
     let cancelled = false;
+
+    // The threaded module prewarms its browser-worker pool during init. Publish
+    // this engine's share before init so creative's render mirror and world
+    // worker do not each allocate the full hardware budget.
+    globalThis.__sandPthreadPoolSize = computeThreadWorkerBudgets(mode === 'survival').mainThreadWorkers;
 
     initSandWasm()
       .then(() => {

@@ -72,22 +72,12 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
   let effectiveZoom = Math.max(1e-6, zoom);
   let fitted = sizeAtZoom(effectiveZoom);
   const textureLimit = Math.floor(maxBufferDimension / chunkSize) * chunkSize;
-  const hardCellLimit = cfg.bufferHardMaxCells ?? 0;
-  // Each layer is one cols x rows WebGL texture. Stop zooming out before either
-  // dimension exceeds the device limit or the total cell state exhausts memory;
-  // otherwise foreground/background allocation fails one layer at a time.
-  if (textureLimit >= chunkSize || hardCellLimit > 0) {
-    const exceedsLimit = () =>
-      (textureLimit >= chunkSize && (fitted.bufCols > textureLimit || fitted.worldRows > textureLimit)) ||
-      (hardCellLimit > 0 && fitted.bufCols * fitted.worldRows > hardCellLimit);
+  // Each layer is one cols x rows WebGL texture. Stop zooming out only when a
+  // dimension would exceed the device's actual texture limit.
+  if (textureLimit >= chunkSize) {
+    const exceedsLimit = () => fitted.bufCols > textureLimit || fitted.worldRows > textureLimit;
     for (let i = 0; i < 8 && exceedsLimit(); i++) {
-      const dimensionScale = textureLimit >= chunkSize
-        ? Math.max(fitted.bufCols / textureLimit, fitted.worldRows / textureLimit)
-        : 1;
-      const areaScale = hardCellLimit > 0
-        ? Math.sqrt((fitted.bufCols * fitted.worldRows) / hardCellLimit)
-        : 1;
-      const scale = Math.max(dimensionScale, areaScale);
+      const scale = Math.max(fitted.bufCols / textureLimit, fitted.worldRows / textureLimit);
       effectiveZoom *= Math.max(1.01, scale * 1.002);
       fitted = sizeAtZoom(effectiveZoom);
     }

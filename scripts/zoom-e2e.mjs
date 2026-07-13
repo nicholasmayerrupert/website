@@ -7,7 +7,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
-import { SIZING } from '../src/sand/game/runtimeConfig.js';
 
 const PORT = 5182;
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
@@ -100,8 +99,8 @@ try {
   }));
   check(`extreme zoom respects GPU dimensions (${extreme.cols}x${extreme.rows} <= ${extreme.maxTextureSize})`,
     extreme.cols <= extreme.maxTextureSize && extreme.rows <= extreme.maxTextureSize);
-  check(`extreme zoom respects the cell-memory ceiling (${extreme.cols * extreme.rows})`,
-    extreme.cols * extreme.rows <= SIZING.bufferHardMaxCells);
+  check(`extreme zoom exceeds the former fixed cell ceiling (${extreme.cols * extreme.rows})`,
+    extreme.cols * extreme.rows > 1200000);
   check('foreground/background compositor still renders after extreme zoom', rendered);
 } catch (e) {
   console.error(e);

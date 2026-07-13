@@ -236,8 +236,8 @@ logical cell size. The **loaded simulation window** (`cols×rows`) tracks the
 current view plus stream margins: zoom out grows the buffer (more cells, higher
 cost); zoom in shrinks it (cheaper `step`). World content survives via
 `engine.resizeLoadedWindow` (tile/body stores). The effective zoom-out floor is
-device-aware: fitting stops before either WebGL's texture-dimension limit or the
-runtime's cell-memory ceiling, rather than allowing layer textures to fail.
+device-aware: fitting stops only before WebGL's texture-dimension limit, rather
+than imposing a fixed total-cell ceiling on capable hardware.
 Multiplayer clients keep the host buffer size; their zoom is view-only within
 that window.
 

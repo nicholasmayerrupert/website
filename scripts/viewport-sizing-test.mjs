@@ -57,9 +57,8 @@ console.log('viewport sizing');
 {
   // Extreme zoom-out is allowed (no hard maxViewportCells floor).
   const far = computeViewportSizing(900, 700, 1, SIZING, 0.1);
-  const uncapped = computeViewportSizing(900, 700, 1, { ...SIZING, bufferHardMaxCells: 0 }, 0.1);
   check(`extreme zoom-out can exceed old maxViewportCells (${far.viewCols * far.viewRows})`, far.viewCols * far.viewRows > SIZING.maxViewportCells);
-  check(`fractional cellDev remains supported below one device px (${uncapped.cellDev})`, uncapped.cellDev < 1);
+  check(`fractional cellDev remains supported below one device px (${far.cellDev})`, far.cellDev < 1);
   check(`buffer dimensions stay chunk-aligned (${far.bufCols}x${far.worldRows})`, far.bufCols % SIZING.chunkSize === 0 && far.worldRows % SIZING.chunkSize === 0);
 }
 
@@ -68,8 +67,8 @@ console.log('viewport sizing');
   const capped = computeViewportSizing(2560, 1440, 1, SIZING, 0.05, 0.05, 1, textureLimit);
   check(`GPU-limited zoom keeps both texture dimensions renderable (${capped.bufCols}x${capped.worldRows})`,
     capped.bufCols <= textureLimit && capped.worldRows <= textureLimit);
-  check(`GPU-limited zoom keeps total cell memory bounded (${capped.bufCols * capped.worldRows})`,
-    capped.bufCols * capped.worldRows <= SIZING.bufferHardMaxCells);
+  check(`GPU-limited zoom has no fixed total-cell ceiling (${capped.bufCols * capped.worldRows})`,
+    capped.bufCols * capped.worldRows > 1200000);
   check(`GPU-limited zoom reports its effective floor (${capped.zoom.toFixed(3)} > 0.05)`, capped.zoom > 0.05);
   check('GPU-limited visible window still fits inside the buffer',
     capped.viewCols <= capped.bufCols && capped.viewRows <= capped.worldRows);

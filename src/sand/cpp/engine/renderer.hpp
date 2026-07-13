@@ -33,6 +33,7 @@ class Renderer {
 
   // Renderer tables (material -> RGBA). Shared (layer-agnostic).
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
+  uint32_t renderAlphaMask[TABLE];     // schema transparency converted to packed ABGR alpha
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
 #ifdef __EMSCRIPTEN_PTHREADS__

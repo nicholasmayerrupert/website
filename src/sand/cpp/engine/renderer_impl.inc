@@ -295,7 +295,10 @@ uint8_t Renderer::renderLightForCell(const uint8_t* light, int k, int x, int y, 
 
 void Renderer::buildRenderTables() {
   for (int m = 0; m < TABLE; m++) {
-    uint32_t base = MAT_COLOR[m];
+    int alpha = (int)std::lround((1.0f - MAT_TRANSPARENCY[m]) * 255.0f);
+    if (alpha < 0) alpha = 0; else if (alpha > 255) alpha = 255;
+    renderAlphaMask[m] = (uint32_t)alpha << 24;
+    uint32_t base = (MAT_COLOR[m] & 0x00ffffffu) | renderAlphaMask[m];
     int amp = MAT_TEXTURE_AMP[m];
     for (int i = 0; i < 8; i++) {
       double t = (double)i / 7.0 * 2.0 - 1.0; // -1..1
@@ -361,6 +364,7 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       else if (m == GLOWBERRY) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWBERRY_CORE; }
       else if (m == GLOWSHROOM) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWSHROOM_CORE; }
       if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
+      c = (c & 0x00ffffffu) | renderAlphaMask[m];
       p[k] = c;
     }
   }

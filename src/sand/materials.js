@@ -12,7 +12,9 @@
 // own generated tables (materials.generated.hpp) from the same schema.
 //
 // renderAnim drives per-frame shimmer/flicker; 'none' = static grain.
-// color is packed ABGR (0xAABBGGRR) over the little-endian RGBA ImageData view.
+// color is packed ABGR (0xAABBGGRR) over the little-endian RGBA ImageData view;
+// its alpha byte is legacy data. `transparency` explicitly controls rendering
+// (0 = opaque, 1 = invisible).
 // density 0 = weightless (air/gas). looseSorted marks materials that participate
 // in density-sorted loose settling (powders + flowing liquids). mobility is the
 // per-tick chance a loose material attempts to move (lava < 1 = viscous).

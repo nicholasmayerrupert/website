@@ -8,7 +8,7 @@
 // silently change which materials are flammable/rigid/etc.
 
 import { MAT } from '../src/sand/materials.js';
-import { MATERIALS, KIND, MAT_CLASS, MAT_FLAGS, MAT_CGROUP, MC, MF, CG } from '../src/sand/materials.generated.js';
+import { MATERIALS, KIND, MAT_CLASS, MAT_FLAGS, MAT_CGROUP, MAT_TRANSPARENCY, MC, MF, CG } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('materials flags/componentGroup round-trip');
@@ -86,6 +86,9 @@ const CLASS_EXPECTED = {
   ],
 };
 const liveIds = new Set(MATERIALS.map((m) => m.id));
+check('transparency table covers every material slot', MAT_TRANSPARENCY.length >= Math.max(...liveIds) + 1);
+check('material transparency is normalized', MATERIALS.every((m) => m.transparency >= 0 && m.transparency <= 1 && MAT_TRANSPARENCY[m.id] === m.transparency));
+check('selected liquids and vapors are explicitly translucent', [2, 6, 10, 31, 33].every((id) => MAT_TRANSPARENCY[id] > 0 && MAT_TRANSPARENCY[id] < 1));
 let oneClassOk = true;
 for (const m of MATERIALS) {
   const cls = MAT_CLASS[m.id];

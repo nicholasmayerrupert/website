@@ -46,6 +46,7 @@ for (const m of materials) {
   if (!('toolClass' in m)) throw new Error(`material ${m.name} missing toolClass`);
   if (!(m.toolClass in toolClasses)) throw new Error(`material ${m.name} has unknown toolClass ${m.toolClass}`);
   if (!('toolTier' in m) || !Number.isInteger(m.toolTier) || m.toolTier < 0 || m.toolTier > maxToolTier) throw new Error(`material ${m.name} has invalid toolTier ${m.toolTier}`);
+  if ('transparency' in m && (!Number.isFinite(m.transparency) || m.transparency < 0 || m.transparency > 1)) throw new Error(`material ${m.name} has invalid transparency ${m.transparency}`);
   byId[m.id] = m;
 }
 
@@ -77,7 +78,7 @@ const animKeys = Object.keys(animColors).filter((k) => !k.startsWith('$'));
 const jsKindLines = Object.entries(kinds).map(([k, v]) => `  ${k}: ${v},`).join('\n');
 const jsClassLines = Object.entries(materialClasses).map(([k, v]) => `  ${k.toUpperCase()}: ${v},`).join('\n');
 const jsMatLines = materials
-  .map((m) => `  { id: ${m.id}, name: '${m.name}', kind: KIND.${m.kind}, materialClass: MC.${m.materialClass.toUpperCase()}, density: ${m.density}, looseSorted: ${m.looseSorted}, mobility: ${m.mobility}, color: ${m.color}, textureAmp: ${m.textureAmp}, durability: ${m.durability}, renderAnim: '${m.renderAnim}' },`)
+  .map((m) => `  { id: ${m.id}, name: '${m.name}', kind: KIND.${m.kind}, materialClass: MC.${m.materialClass.toUpperCase()}, density: ${m.density}, looseSorted: ${m.looseSorted}, mobility: ${m.mobility}, transparency: ${m.transparency ?? 0}, color: ${m.color}, textureAmp: ${m.textureAmp}, durability: ${m.durability}, renderAnim: '${m.renderAnim}' },`)
   .join('\n');
 const jsAnimLines = animKeys.map((k) => `export const ${k} = ${animColors[k]};`).join('\n');
 const jsFlagLines = Object.entries(flagBits).map(([k, v]) => `  ${k}: ${1 << v},`).join('\n');
@@ -128,6 +129,7 @@ ${jsMatLines}
 export const MAT_CLASS = [${jsArr((m) => materialClasses[m.materialClass])}];
 export const MAT_FLAGS = [${jsArr(flagMask)}];
 export const MAT_CGROUP = [${jsArr((m) => componentGroups[m.componentGroup])}];
+export const MAT_TRANSPARENCY = [${jsArr((m) => m.transparency ?? 0)}];
 
 // Mining gate tables: which tool class drops a material and the min tier required.
 export const MAT_TOOLCLASS = [${jsArr((m) => toolClasses[m.toolClass])}];
@@ -182,6 +184,8 @@ static const uint8_t  MAT_KIND[TABLE]       = {${materials.length ? col((m) => m
 static const uint8_t  MAT_CLASS[TABLE]      = {${materials.length ? col((m) => m, classVal) : ''}};
 static const uint16_t MAT_FLAGS[TABLE]      = {${col((m) => flagMask(m), u8)}};
 static const uint8_t  MAT_CGROUP[TABLE]     = {${materials.length ? col((m) => m, cgroupVal) : ''}};
+// Render transparency: 0 = opaque, 1 = invisible. Packed color alpha is ignored.
+static const float    MAT_TRANSPARENCY[TABLE]= {${col((m) => m.transparency ?? 0, fnum)}};
 // Mining gate: which tool class drops a material + the min tier required.
 static const uint8_t  MAT_TOOLCLASS[TABLE]  = {${col((m) => toolClasses[m.toolClass], u8)}};
 static const uint8_t  MAT_TOOLTIER[TABLE]   = {${col((m) => m.toolTier, u8)}};

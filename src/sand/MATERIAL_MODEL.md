@@ -37,6 +37,13 @@ settling/update path currently handles the cell: `NONE`, `POWDER`, `LIQUID`,
 Keep `kind` until the movement dispatch is fully migrated; do not treat it as the
 general gameplay category when `materialClass` and `flags` are more explicit.
 
+### transparency
+
+`transparency` is render-only and ranges from `0` (opaque) to `1` (invisible).
+It defaults to `0`; the generated `MAT_TRANSPARENCY` table is the renderer's
+source of truth. The alpha byte embedded in legacy packed `color` values is not
+used for material opacity.
+
 ### flags
 
 `flags` are extra traits that cut across classes and IDs:

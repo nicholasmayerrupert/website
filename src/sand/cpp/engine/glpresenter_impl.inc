@@ -235,8 +235,9 @@ void GLPresenter::glDrawHitbox(double px, double py, int w, int h, float r, floa
 }
 
 // Draw the visible window of one layer's texture at brightness `tint`. The
-// background passes gutter=0 and opaqueAlpha=1 so rear-layer material alpha does
-// not show through foreground cells; the foreground passes the real gutter flag.
+// The background is forced opaque; the foreground honors per-material schema
+// transparency. EMPTY foreground texels and the 1px gutter cuts reveal the
+// background normally.
 // Both use the same snapped camera offset (flicker fix).
 void GLPresenter::glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha) {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
@@ -630,7 +631,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   glDrawCells(glTexBg, GL_BG_TINT, 0, 1);                  // background first (darker, opaque cells)
   // Hide the 1px gutter when cells are tiny — a solid grid would wash out the scene.
   int gutter = (glGutterOn && glCellDev >= 3.0) ? 1 : 0;
-  glDrawCells(glTex, 1.0f, gutter, 0);                     // foreground on top
+  glDrawCells(glTex, 1.0f, gutter, 0);                     // schema transparency; empty/gutter reveal bg
   glDrawCreatures();
   glDrawPlayers();
   glDrawItems();

@@ -3,6 +3,7 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import { NIGHT_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 96, ROWS = 96;
@@ -361,16 +362,21 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   e.destroy();
 }
 
-// Sky brightness is render-only and quantized for future day/night control.
+// Sky brightness is render-only. The day/night cycle keeps genuine moonlight
+// at midnight rather than dropping exposed terrain to the cave ambient floor.
 {
   const e = mk();
   fillStone(e, 16, 8, 79, 88);
   e.renderFull();
   const day = brightness(e, 32, 8);
-  e.setSkyLight(128);
+  e.setSkyLight(NIGHT_SKY_LIGHT);
   e.renderFull();
-  const dim = brightness(e, 32, 8);
-  check(`sky brightness can be lowered without changing terrain (${dim.toFixed(1)} < ${day.toFixed(1)})`, dim < day - 35 && e.getGrid()[k(32, 8)] === MAT.STONE);
+  const moonlit = brightness(e, 32, 8);
+  e.setSkyLight(0);
+  e.renderFull();
+  const dark = brightness(e, 32, 8);
+  check(`moonlight is dimmer than noon without changing terrain (${moonlit.toFixed(1)} < ${day.toFixed(1)})`, moonlit < day - 35 && e.getGrid()[k(32, 8)] === MAT.STONE);
+  check(`midnight remains brighter than zero-skylight darkness (${moonlit.toFixed(1)} > ${dark.toFixed(1)})`, moonlit > dark + 20);
   e.destroy();
 }
 

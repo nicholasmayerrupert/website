@@ -1,16 +1,27 @@
+import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
+
 const PIXEL_SCALE = 4;
 
-const SKY_TOP = '#111827';
-const SKY_MID = '#1f3b57';
-const SKY_LOW = '#4a6b72';
-const CLOUD_DARK = '#b8c7ca';
-const CLOUD_LIGHT = '#e6ece8';
-const RIDGE_FAR = '#31455b';
-const RIDGE_MID = '#263c44';
-const RIDGE_NEAR = '#1a2d2f';
-// A very dark grey ridge sitting low on the screen: a subtle dim rocky band behind
-// freshly-dug caves. Kept low/short so it reads as a distant floor, not a mountain.
-const RIDGE_DEEP = '#14171a';
+const NIGHT = Object.freeze({
+  skyTop: '#111827', skyMid: '#1f3b57', skyLow: '#4a6b72',
+  cloudDark: '#b8c7ca', cloudLight: '#e6ece8',
+  ridgeFar: '#31455b', ridgeMid: '#263c44', ridgeNear: '#1a2d2f', ridgeDeep: '#14171a',
+});
+const DAWN = Object.freeze({
+  skyTop: '#25233f', skyMid: '#8a5362', skyLow: '#d58a68',
+  cloudDark: '#c19a9e', cloudLight: '#ead0b2',
+  ridgeFar: '#625b6c', ridgeMid: '#4c4c56', ridgeNear: '#343b40', ridgeDeep: '#1b1f22',
+});
+const NOON = Object.freeze({
+  skyTop: '#5d9dca', skyMid: '#8fc2d5', skyLow: '#c8d8c9',
+  cloudDark: '#d8dedc', cloudLight: '#f4f2e8',
+  ridgeFar: '#738f98', ridgeMid: '#587579', ridgeNear: '#3d5958', ridgeDeep: '#242a2b',
+});
+const DUSK = Object.freeze({
+  skyTop: '#2e243f', skyMid: '#8f4d5c', skyLow: '#cf795d',
+  cloudDark: '#bd8d95', cloudLight: '#e8c4a8',
+  ridgeFar: '#665667', ridgeMid: '#504750', ridgeNear: '#37383e', ridgeDeep: '#1c1e22',
+});
 const HORIZON_RATIO = 0.36;
 const SURFACE_CAM_Y = -120;
 const MAX_VERTICAL_DRIFT_UP = 18;
@@ -31,6 +42,34 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function smooth01(value) {
+  const t = clamp(value, 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function mixColor(a, b, t) {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const av = Number.parseInt(a.slice(1), 16);
+  const bv = Number.parseInt(b.slice(1), 16);
+  const channel = (shift) => Math.round(((av >> shift) & 255) + (((bv >> shift) & 255) - ((av >> shift) & 255)) * t);
+  return `#${((channel(16) << 16) | (channel(8) << 8) | channel(0)).toString(16).padStart(6, '0')}`;
+}
+
+function mixPalette(a, b, t) {
+  const out = {};
+  for (const key of Object.keys(NIGHT)) out[key] = mixColor(a[key], b[key], t);
+  return out;
+}
+
+export function paletteForPhase(phase) {
+  const p = normalizeDayPhase(phase);
+  if (p < 0.25) return mixPalette(NIGHT, DAWN, smooth01(p / 0.25));
+  if (p < 0.50) return mixPalette(DAWN, NOON, smooth01((p - 0.25) / 0.25));
+  if (p < 0.75) return mixPalette(NOON, DUSK, smooth01((p - 0.50) / 0.25));
+  return mixPalette(DUSK, NIGHT, smooth01((p - 0.75) / 0.25));
+}
+
 function backgroundDriftY(camY) {
   return clamp((camY - SURFACE_CAM_Y) * 0.55, -MAX_VERTICAL_DRIFT_UP, MAX_VERTICAL_DRIFT_DOWN);
 }
@@ -40,8 +79,8 @@ function fillRect(ctx, x, y, w, h, color) {
   ctx.fillRect(Math.round(x), Math.round(y), Math.ceil(w), Math.ceil(h));
 }
 
-function drawDither(ctx, w, h, horizon) {
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
+function drawDither(ctx, w, h, horizon, daylight) {
+  ctx.fillStyle = `rgba(255,255,255,${0.05 - daylight * 0.025})`;
   for (let y = 0; y < horizon; y += 9) {
     const row = Math.floor(y / 9);
     for (let x = (row & 1) * 7; x < w; x += 14) {
@@ -50,7 +89,9 @@ function drawDither(ctx, w, h, horizon) {
   }
 }
 
-function drawStars(ctx, w, horizon, camX, camY) {
+function drawStars(ctx, w, horizon, camX, camY, opacity) {
+  if (opacity <= 0) return;
+  ctx.globalAlpha = opacity;
   const offX = Math.floor(camX * 0.025 - w * 0.5);
   const offY = Math.floor(backgroundDriftY(camY) * 0.2);
   const period = 240;
@@ -65,6 +106,55 @@ function drawStars(ctx, w, horizon, camX, camY) {
       ctx.fillRect(x, y, 1, 1);
       if (rand01(seed + 31) > 0.93) ctx.fillRect(x + 1, y, 1, 1);
     }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawPixelOrb(ctx, x, y, color, detail, rays = false) {
+  const px = Math.round(x), py = Math.round(y);
+  ctx.fillStyle = color;
+  ctx.fillRect(px - 3, py - 2, 7, 5);
+  ctx.fillRect(px - 2, py - 3, 5, 7);
+  if (rays) {
+    ctx.fillRect(px - 5, py, 1, 1); ctx.fillRect(px + 5, py, 1, 1);
+    ctx.fillRect(px, py - 5, 1, 1); ctx.fillRect(px, py + 5, 1, 1);
+  } else {
+    ctx.fillStyle = detail;
+    ctx.fillRect(px - 1, py - 2, 2, 1);
+    ctx.fillRect(px + 1, py + 1, 1, 2);
+    ctx.fillRect(px - 2, py + 1, 1, 1);
+  }
+}
+
+function drawPixelMoon(ctx, x, y) {
+  const px = Math.round(x), py = Math.round(y);
+  ctx.globalAlpha = 0.22;
+  ctx.fillStyle = '#dff4ff';
+  ctx.fillRect(px - 6, py - 4, 13, 9);
+  ctx.fillRect(px - 4, py - 6, 9, 13);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#f4fbff';
+  ctx.fillRect(px - 5, py - 3, 11, 7);
+  ctx.fillRect(px - 3, py - 5, 7, 11);
+  ctx.fillRect(px - 4, py - 4, 9, 9);
+  ctx.fillStyle = '#b8cad1';
+  ctx.fillRect(px - 2, py - 3, 2, 2);
+  ctx.fillRect(px + 2, py, 2, 3);
+  ctx.fillRect(px - 3, py + 2, 2, 1);
+}
+
+function drawCelestialBodies(ctx, w, horizon, dayNight) {
+  const arcHeight = Math.max(12, horizon * 0.68);
+  // The centered site navigation occupies the geometric apex of the sky.
+  // Bias the visible arc left so noon/midnight bodies remain unobstructed.
+  const orbitX = (t) => w * (0.04 + 0.56 * t);
+  if (dayNight.sunVisible) {
+    const t = dayNight.sunProgress;
+    drawPixelOrb(ctx, orbitX(t), horizon - Math.sin(Math.PI * t) * arcHeight, '#ffe39a', '#ffe39a', true);
+  }
+  if (dayNight.moonVisible) {
+    const t = dayNight.moonProgress;
+    drawPixelMoon(ctx, orbitX(t), horizon - Math.sin(Math.PI * t) * arcHeight);
   }
 }
 
@@ -152,12 +242,12 @@ export function createParallaxBackground(container) {
   // the pan rate grow and shrink in lockstep with the simulation — no desync. The
   // horizon stays at a fixed fraction of the screen because it's a ratio of the
   // logical height.
-  const draw = ({ camX = 0, camY = 0, scale = 1 } = {}) => {
+  const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0 } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
-    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}`;
+    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}:${dayVisualKey}`;
     if (key === lastKey) return;
     lastKey = key;
 
@@ -169,23 +259,27 @@ export function createParallaxBackground(container) {
 
     const horizon = Math.round(clamp(h * HORIZON_RATIO - backgroundDriftY(qy), -28, h - 36));
     const skyHeight = Math.max(0, horizon);
+    const palette = paletteForPhase(dayNight.phase);
     const sky = ctx.createLinearGradient(0, 0, 0, h);
-    sky.addColorStop(0, SKY_TOP);
-    sky.addColorStop(0.48, SKY_MID);
-    sky.addColorStop(1, SKY_LOW);
+    sky.addColorStop(0, palette.skyTop);
+    sky.addColorStop(0.48, palette.skyMid);
+    sky.addColorStop(1, palette.skyLow);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
-    drawDither(ctx, w, h, skyHeight);
-    drawStars(ctx, w, skyHeight, qx, qy);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, CLOUD_DARK, 1, 170);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, CLOUD_LIGHT, 2, 210);
-    drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 8, 9, RIDGE_FAR, 3.2);
-    drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 20, 13, RIDGE_MID, 7.9);
-    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 34, 16, RIDGE_NEAR, 12.4);
+    drawDither(ctx, w, h, skyHeight, dayNight.daylight);
+    drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
+    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170);
+    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210);
+    // Celestial bodies stay legible even when a deterministic cloud happens to
+    // cross the same low-resolution tile.
+    drawCelestialBodies(ctx, w, skyHeight, dayNight);
+    drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 8, 9, palette.ridgeFar, 3.2);
+    drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 20, 13, palette.ridgeMid, 7.9);
+    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 34, 16, palette.ridgeNear, 12.4);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
-    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 96, 11, RIDGE_DEEP, 18.5);
+    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 96, 11, palette.ridgeDeep, 18.5);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

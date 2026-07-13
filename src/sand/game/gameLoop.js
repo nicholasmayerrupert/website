@@ -8,9 +8,56 @@
 import { TOOL_IDS } from './runtimeConfig';
 import { OFF } from '../wasmBridge/abi.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
+import {
+  DAY_CYCLE_MS,
+  DAY_VISUAL_STEP_MS,
+  dayPhaseAt,
+  normalizeDayPhase,
+  sampleDayNight,
+} from './dayNightCycle.js';
 
 export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory }) {
   ctx.timingStats = { actorSteps: 0, actorDebtMs: 0, actorDroppedMs: 0, worldStepped: false };
+
+  // Presentation-only wall clock: every mount begins at the existing midnight
+  // look. Phase is derived directly from elapsed time, so a backgrounded tab
+  // jumps to the correct point on return instead of replaying missed frames.
+  const dayCycleStart = performance.now();
+  let dayVisualBucket = 0;
+  ctx.dayNight = sampleDayNight(0);
+  ctx.dayVisualKey = 0;
+
+  const applyDayPhase = (phase, visualKey) => {
+    ctx.dayNight = sampleDayNight(phase);
+    ctx.dayVisualKey = visualKey;
+    if (ctx.engine && ctx.appliedSkyLight !== ctx.dayNight.skyLight) {
+      ctx.engine.setSkyLight(ctx.dayNight.skyLight);
+      ctx.appliedSkyLight = ctx.dayNight.skyLight;
+    }
+    return true;
+  };
+
+  const updateDayNight = (now) => {
+    if (ctx.testPaused || ctx.reduced || ctx.dayPhaseOverride !== null) return false;
+    const elapsed = Math.max(0, now - dayCycleStart);
+    const bucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
+    if (bucket === dayVisualBucket) return false;
+    dayVisualBucket = bucket;
+    return applyDayPhase(dayPhaseAt(elapsed), bucket);
+  };
+
+  const setDayPhase = (phase) => {
+    const p = normalizeDayPhase(phase);
+    ctx.dayPhaseOverride = p;
+    return applyDayPhase(p, `forced:${p.toFixed(6)}`);
+  };
+
+  const clearDayPhase = () => {
+    ctx.dayPhaseOverride = null;
+    const elapsed = Math.max(0, performance.now() - dayCycleStart);
+    dayVisualBucket = Math.floor(elapsed / DAY_VISUAL_STEP_MS);
+    return applyDayPhase(dayPhaseAt(elapsed), dayVisualBucket);
+  };
 
   // Rolling perf samples for window.__sandPerf / perfStats()
   const PERF_SAMPLES = 120;
@@ -152,6 +199,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   let workerPaused = null;
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
+    const dayChanged = updateDayNight(now);
 
     // Keep the engine's pointer fresh as the page scrolls under a static cursor
     // (re-derives inside/aim from the new canvas bounds).
@@ -203,7 +251,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // A connected client animates remote players from snapshots even when its
     // own grid is static, so keep presenting. previewDirty forces a present
     // when a fresh draft overlay appears with no camera/step change.
-    if (stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || !!ctx.worldWorker) {
+    if (dayChanged || stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || !!ctx.worldWorker) {
       render(false);
       samplePerf();
     }
@@ -220,6 +268,9 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     followCamera,
     playersForRender,
     perfFrameSummary,
+    setDayPhase,
+    clearDayPhase,
+    getDayNight: () => ({ ...ctx.dayNight, cycleMs: DAY_CYCLE_MS, overridden: ctx.dayPhaseOverride !== null }),
     start,
     stop,
   };

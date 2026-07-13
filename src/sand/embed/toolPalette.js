@@ -32,6 +32,14 @@ const CK_ERASER = 2;
 const CK_CUBE = 3;
 const CK_CREATURE = 4;
 
+const TIME_PRESETS = Object.freeze([
+  { label: 'Auto', phase: null, tone: 'auto' },
+  { label: 'Dawn', phase: 0.25, tone: 'dawn' },
+  { label: 'Noon', phase: 0.50, tone: 'noon' },
+  { label: 'Dusk', phase: 0.75, tone: 'dusk' },
+  { label: 'Night', phase: 0, tone: 'night' },
+]);
+
 // Species order mirrors the engine's seed-species indices.
 const SEED_SPECIES = ['Oak', 'Pine', 'Willow', 'Cactus', 'Mushroom', 'Bush'];
 
@@ -167,6 +175,16 @@ const STYLE = `
 .sg-toggle:hover { background: rgba(255,255,255,.2); }
 .sg-toggle.on { background: rgba(255,255,255,.8); color: #000; }
 .sg-toggle.on:hover { background: #fff; }
+.sg-time { width: 100%; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 7px;
+  border-radius: 6px; padding: 5px 8px; font-size: 10px; font-weight: 600; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.08); color: #fff; cursor: pointer; touch-action: manipulation; }
+.sg-time:hover { background: rgba(255,255,255,.16); }
+.sg-time-icon { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 1px solid rgba(255,255,255,.35);
+  background: linear-gradient(90deg, #dceaf0 50%, #283548 50%); box-shadow: 0 0 6px rgba(220,234,240,.3); }
+.sg-time.dawn .sg-time-icon { background: linear-gradient(#f5c28d 48%, #9a5965 52%); box-shadow: 0 0 7px rgba(245,194,141,.45); }
+.sg-time.noon .sg-time-icon { background: #ffe39a; box-shadow: 0 0 7px rgba(255,227,154,.65); }
+.sg-time.dusk .sg-time-icon { background: linear-gradient(#cf795d 48%, #472c4c 52%); box-shadow: 0 0 7px rgba(207,121,93,.45); }
+.sg-time.night .sg-time-icon { background: #f4fbff; box-shadow: 0 0 7px rgba(223,244,255,.55); }
 @media (prefers-reduced-motion: reduce) {
   .sg-current .sg-name.scrolling .sg-name-track { animation: none; }
 }
@@ -181,7 +199,7 @@ function renderSwatch(color, egg = false) {
   return sw;
 }
 
-export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, showDrawToggle = true } = {}) {
+export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, onExpandedChange, onSetTime, showDrawToggle = true } = {}) {
   injectStyleOnce(root, 'data-sand-palette', STYLE);
 
   const entries = buildEntries();
@@ -193,6 +211,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let expanded = false;
   let collapsedWidth = 0;
   let nameMotionFrame = 0;
+  let timePreset = 0;
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-palette side';
@@ -272,13 +291,31 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     col.appendChild(toggle);
   }
 
+  const timeButton = document.createElement('button');
+  timeButton.type = 'button';
+  timeButton.className = 'sg-time auto';
+  timeButton.setAttribute('aria-label', 'Change time of day');
+  const timeIcon = document.createElement('span');
+  timeIcon.className = 'sg-time-icon';
+  timeIcon.setAttribute('aria-hidden', 'true');
+  const timeLabel = document.createElement('span');
+  timeButton.append(timeIcon, timeLabel);
+  timeButton.addEventListener('click', () => {
+    timePreset = (timePreset + 1) % TIME_PRESETS.length;
+    const preset = TIME_PRESETS[timePreset];
+    onSetTime?.(preset.phase);
+    renderState();
+  });
+  col.appendChild(timeButton);
+
   function setExpanded(next) {
     const changed = expanded !== !!next;
     expanded = !!next;
     if (expanded) {
-      // Mount search + list above the Draw toggle when it exists.
-      col.insertBefore(search, toggle);
-      col.insertBefore(list, toggle);
+      // Keep search + materials above the compact controls in both layouts.
+      const controls = toggle || timeButton;
+      col.insertBefore(search, controls);
+      col.insertBefore(list, controls);
       renderList();
       if (!showDrawToggle) search.focus();
     } else {
@@ -298,6 +335,11 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       toggle.className = `sg-toggle${drawOn ? ' on' : ''}`;
       toggle.title = drawOn ? 'Disable drawing so the page scrolls normally' : 'Enable drawing in the physics simulation';
     }
+    const preset = TIME_PRESETS[timePreset];
+    timeLabel.textContent = `Time: ${preset.label}`;
+    timeButton.className = `sg-time ${preset.tone}`;
+    timeButton.dataset.phase = preset.phase === null ? 'auto' : String(preset.phase);
+    timeButton.title = preset.phase === null ? 'Following the automatic ten-minute cycle' : `${preset.label} — click for the next time`;
     const locked = !canSelectMaterial();
     wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'} ${expanded ? 'expanded' : 'collapsed'}`;
     wrap.style.width = !expanded && collapsedWidth ? `${collapsedWidth}px` : '';

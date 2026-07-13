@@ -246,6 +246,20 @@ taps. `FG` sends the normal primary action; `BG` sends the secondary action, so
 placement and erasing target the darker background layer. Mouse left/right clicks
 remain unchanged on hybrid devices.
 
+### Day/night
+
+Every creative and survival presentation runs a render-only ten-minute day/night
+cycle: midnight at mount, sunrise at 2:30, noon at 5:00, sunset at 7:30, then
+midnight again at 10:00. The parallax sky, stars, clouds, mountains, sun, and moon
+share that clock. Exposed terrain uses the renderer's existing skylight input,
+from bright moonlight at night to full light at noon; caves and material emission
+keep their independent lighting behavior. The cycle does not affect simulation,
+creature AI, reactions, or networking.
+
+Creative's palette has a compact `Time` button on desktop and mobile. It cycles
+through Dawn, Noon, Dusk, Night, and back to Auto; presets hold that phase until
+Auto resumes the wall-clock cycle.
+
 ## Testing
 
 ```

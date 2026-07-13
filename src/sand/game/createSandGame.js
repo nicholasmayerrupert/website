@@ -118,6 +118,12 @@ export function createSandGame(container, opts = {}) {
     forceFullRender: true,
     previewDirty: false,
     perfRenderMs: 0,
+    // Render-only day/night state is initialized by gameLoop before the first
+    // engine build. Engine recreation reapplies its current quantized skylight.
+    dayNight: null,
+    dayVisualKey: 0,
+    dayPhaseOverride: null,
+    appliedSkyLight: -1,
 
     // mode + player. Tool name is kept only so it can be re-sent to a
     // recreated engine; all tool policy lives in C++.
@@ -299,6 +305,9 @@ export function createSandGame(container, opts = {}) {
       playersForRender: loop.playersForRender,
       currentLocalInput: loop.currentLocalInput,
       perfFrameSummary: loop.perfFrameSummary,
+      setDayPhase: loop.setDayPhase,
+      clearDayPhase: loop.clearDayPhase,
+      getDayNight: loop.getDayNight,
       netJoin: netGlue.netJoin,
       netDisconnect: netGlue.netDisconnect,
       netStatus: netGlue.netStatus,
@@ -412,6 +421,9 @@ export function createSandGame(container, opts = {}) {
         max: SIZING.zoomInMax ?? 8,
       };
     },
+    setDayPhase(phase) { loop.setDayPhase(phase); loop.render(true); },
+    clearDayPhase() { loop.clearDayPhase(); loop.render(true); },
+    getDayNight() { return loop.getDayNight(); },
     // Creative palette selection (material/seed/eraser/cube/creature).
     setCreativeMaterial(kind, value) {
       ctx.creativeKind = kind | 0;

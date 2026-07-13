@@ -434,6 +434,10 @@ class SandGameElement extends HTMLElement {
           this._palette = createToolPalette(root, {
             showDrawToggle: coarse,
             onSelectCreative: ({ kind, value }) => game.setCreativeMaterial(kind, value),
+            onSetTime: (phase) => {
+              if (phase === null) game.clearDayPhase();
+              else game.setDayPhase(phase);
+            },
             onExpandedChange: (expanded) => {
               if (!coarse) return;
               this._stick?.setHidden(expanded);

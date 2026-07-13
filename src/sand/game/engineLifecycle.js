@@ -9,6 +9,7 @@ import { createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { SIZING, TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
+import { NIGHT_SKY_LIGHT } from './dayNightCycle.js';
 
 export function createEngineLifecycle(ctx, { onLayoutChange }) {
   const { canvas, container, parallax } = ctx;
@@ -29,6 +30,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       camX: ctx.engine.getWorldOffsetX() + cam.x + ctx.viewCols * 0.5,
       camY: ctx.engine.getWorldOffsetY() + cam.y,
       scale: ctx.bgZoomScale(),
+      dayNight: ctx.dayNight,
+      dayVisualKey: ctx.dayVisualKey,
     };
   };
 
@@ -51,6 +54,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     const maxTextureSize = gl?.getParameter(gl.MAX_TEXTURE_SIZE);
     if (Number.isFinite(maxTextureSize) && maxTextureSize > 0) ctx.maxTextureSize = maxTextureSize;
     e.glResize(canvas.width, canvas.height);
+    e.setSkyLight(ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT);
+    ctx.appliedSkyLight = ctx.dayNight?.skyLight ?? NIGHT_SKY_LIGHT;
     e.setTool(TOOL_IDS[ctx.currentToolName] ?? 0);   // re-apply the selected tool
     e.setCreativeMaterial(ctx.creativeKind, ctx.creativeValue);
     e.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);

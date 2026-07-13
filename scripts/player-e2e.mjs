@@ -8,7 +8,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const PORT = 5180;
 const INPUT_JUMP = 4; // PI_JUMP bit (mirrors enum PlayerInput / INPUT.JUMP)
@@ -43,7 +43,7 @@ const waitForServer = () => new Promise((resolve, reject) => {
   server.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
 });
 
-let browser;
+let browser, webkitBrowser;
 try {
   await waitForServer();
   browser = await chromium.launch();
@@ -138,11 +138,14 @@ try {
   // solid draft finalizes after a single chunk and never extends), and releasing
   // must drop a connected stone piece into the world.
   const PI_PRIMARY = 16;
+  await page.evaluate(() => window.__sandTest.addInventory(3, 99)); // STONE = 3
+  await page.waitForFunction(() => window.__sandTest.getInventory().slots.some((s) => !s.isTool && s.material === 3 && s.count > 0));
+  const stoneSlot = await page.evaluate(() => window.__sandTest.getInventory().slots.findIndex((s) => !s.isTool && s.material === 3 && s.count > 0));
+  await page.evaluate((slot) => window.__sandTest.selectSlot(slot), stoneSlot);
+  await page.waitForFunction((slot) => window.__sandTest.getInventory().selected === slot, stoneSlot);
   const stoneAim = await page.evaluate(() => {
     const t = window.__sandTest;
-    t.addInventory(3, 99); // STONE = 3
-    const stoneSlot = t.getInventory().slots.findIndex((s) => !s.isTool && s.material === 3 && s.count > 0);
-    t.selectSlot(stoneSlot); document.activeElement?.blur?.();
+    document.activeElement?.blur?.();
     const p = t.getPlayer(), ax = Math.floor(p.x), ay = Math.floor(p.y);
     return { ...window.__sandTestCellScreenPoint(Math.floor(p.x + p.w + 4), Math.floor(p.y + 2)), solid0: t.solidCount(ax - 40, ay - 30, ax + 40, ay + 30) };
   });
@@ -210,11 +213,27 @@ try {
   const cy = followInfo.py - (followInfo.camY + followInfo.viewRows / 2);
   check(`camera follows player (off-center ${cx.toFixed(1)},${cy.toFixed(1)})`, Math.abs(cx) < followInfo.viewCols * 0.35 && Math.abs(cy) < followInfo.viewRows * 0.45);
 
+  console.log('WebKit worker-authority smoke');
+  webkitBrowser = await webkit.launch();
+  const webkitPage = await webkitBrowser.newPage({ viewport: { width: 900, height: 650 } });
+  await webkitPage.goto(`${baseURL}game`, { waitUntil: 'load' });
+  await webkitPage.waitForFunction(() => window.__sandTest?.getPlayer?.() && window.__sandPerf?.().worldTps > 0, null, { timeout: 30000 });
+  const webkitBefore = await webkitPage.evaluate(() => window.__sandTest.getPlayer());
+  await webkitPage.keyboard.down('d');
+  await webkitPage.waitForTimeout(300);
+  await webkitPage.keyboard.up('d');
+  const webkitAfter = await webkitPage.evaluate(() => window.__sandTest.getPlayer());
+  check('WebKit receives a worker-authoritative survival player', !!webkitBefore && !!webkitAfter);
+  check('WebKit forwards movement input through the worker authority', webkitAfter.facing === 1);
+  await webkitBrowser.close();
+  webkitBrowser = null;
+
   await browser.close();
 } catch (err) {
   console.error('e2e error:', err.message);
   failures++;
 } finally {
+  if (webkitBrowser) await webkitBrowser.close().catch(() => {});
   if (browser) await browser.close().catch(() => {});
   killServer();
 }

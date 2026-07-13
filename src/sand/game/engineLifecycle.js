@@ -10,7 +10,7 @@ import { SIZING, TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
 
-export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
+export function createEngineLifecycle(ctx, { onLayoutChange }) {
   const { canvas, container, parallax } = ctx;
 
   const refreshBounds = () => {
@@ -57,7 +57,6 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     e.glSetFlags(ctx.gutterOn, ctx.snapOff);
     e.glSetDebugHitboxes(ctx.debugHitboxes);
     applyCreatureRuntimePolicy(ctx, e);
-    if (ctx.survival) e.setSurvivalInventory(true);  // mining->drops->inventory
     ctx.forceFullRender = true;
     ctx.previewDirty = false;
     return e;
@@ -144,14 +143,10 @@ export function createEngineLifecycle(ctx, { onLayoutChange, onInventory }) {
     const engine = buildEngine();
     const spawnCol = Math.floor(ctx.cols / 2);
     const spawnRow = engine.worldSurfaceAt(engine.getWorldOffsetX() + spawnCol);
-    // Spawn the local player on the surface in survival mode (unless a client,
-    // where the host owns it — it gets removed and re-rendered from snapshots
-    // when joining). Creative mode has no character.
-    if (ctx.survival && !ctx.netClientReady()) {
-      ctx.localPlayerId = engine.spawnPlayerAtSurface(spawnCol);
-      onInventory?.(engine.getInventory(ctx.localPlayerId)); // initial HUD fill
-      ctx.lastInvHash = engine.inventoryHash(ctx.localPlayerId);
-    }
+    // The browser engine is always a presentation replica. Offline players are
+    // spawned by the local authority worker; multiplayer players live on the
+    // headless server. The mirror only creates a prediction body after the
+    // first authoritative player snapshot arrives.
     // Start centered horizontally, with roughly one third of the view underground.
     engine.cameraSet((ctx.cols - ctx.viewCols) / 2, spawnRow - Math.floor(ctx.viewRows * (2 / 3)));
     parallax.draw(parallaxCamera());

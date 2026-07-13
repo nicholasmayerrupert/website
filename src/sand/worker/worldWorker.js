@@ -2,6 +2,7 @@ import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
 import { MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
+import { createFixedRateClock } from '../timing/fixedRateClock.js';
 
 const WORLD_STEP_MS = 16;
 const STREAM_MARGIN = 40;
@@ -31,6 +32,12 @@ let edgesProcessed = 0;
 let toolWrites = 0;
 let resizeId = 0;
 let mirroredCreatures = false;
+let survival = false;
+let localPlayerId = 0;
+let latestInput = null;
+let actorClock = null;
+let lastInventoryHash = -1;
+let lastItemsActorTick = -6;
 
 function seedReactionInterface(material, cap, phase) {
   const grid = engine.getGrid(), cols = engine.cols, rows = engine.rows;
@@ -58,7 +65,10 @@ function perf() {
   const elapsed = Math.max(1, performance.now() - rateStart);
   const parallel = engine?.getPerf?.() || {};
   return {
-    worldTps: rateSteps * 1000 / elapsed, stepMs: lastStepMs,
+    worldTps: rateSteps * 1000 / elapsed, stepMs: lastStepMs, actorMs: parallel.actorMs || 0,
+    actorTick: engine?.getActorTick?.() || 0,
+    creatureCount: engine?.creatureCount?.() || 0,
+    itemCount: engine?.itemCount?.() || 0,
     controlsReceived, edgesProcessed, toolWrites,
     threadWorkers: parallel.threadWorkers || 0,
     parallelCalls: parallel.parallelCalls || 0,
@@ -72,12 +82,14 @@ function postDraft() {
   const view = engine.getStoneDraftCells();
   const cells = Int32Array.from(view);
   // Avoid transferring the same preview every world tick while the pointer is still.
-  let signature = `${creativeValue}:${cells.length}`;
+  const inv = cells.length && survival && localPlayerId ? engine.getInventory(localPlayerId) : null;
+  const material = inv?.slots?.[inv.selected]?.material ?? creativeValue;
+  let signature = `${material}:${cells.length}`;
   for (let i = 0; i < cells.length; i++) signature += `:${cells[i]}`;
   if (signature === lastDraftSignature) return;
   lastDraftSignature = signature;
   const data = cells.buffer;
-  self.postMessage({ type: 'draft', epoch, revision: ++draftRevision, material: creativeValue, data }, [data]);
+  self.postMessage({ type: 'draft', epoch, revision: ++draftRevision, material, data }, [data]);
 }
 
 function postCreatures() {
@@ -88,6 +100,29 @@ function postCreatures() {
   self.postMessage({
     type: 'creatures', worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(), data,
   }, [data]);
+}
+
+function postActors(force = false) {
+  if (!survival || !localPlayerId) return;
+  const players = engine.getPlayers();
+  const inventoryHash = engine.inventoryHash(localPlayerId);
+  const inventoryChanged = force || inventoryHash !== lastInventoryHash;
+  if (inventoryChanged) lastInventoryHash = inventoryHash;
+  const actorTick = engine.getActorTick();
+  const itemsChanged = force || actorTick - lastItemsActorTick >= 6;
+  const items = itemsChanged ? engine.getItems().filter((item) => item.kind === 0) : undefined;
+  if (itemsChanged) lastItemsActorTick = actorTick;
+  const player = players.find((candidate) => candidate.id === localPlayerId) || null;
+  self.postMessage({
+    type: 'actors', epoch, actorTick, localPlayerId, players,
+    mineProgress: engine.getPlayerMineProgress(localPlayerId),
+    mineTarget: engine.getPlayerMineTarget(localPlayerId),
+    actionCount: engine.getPlayerActionCount(),
+    inventory: inventoryChanged ? engine.getInventory(localPlayerId) : undefined,
+    cursor: inventoryChanged ? engine.getCursor(localPlayerId) : undefined,
+    items,
+    ackSeq: player?.inputSeq ?? 0,
+  });
 }
 
 function applyCreatureRuntime() {
@@ -161,7 +196,7 @@ function applyEdges() {
 }
 
 function applyContinuous(now) {
-  if (!control) return;
+  if (survival || !control) return;
   const released = workerButtons & ~(control.buttons | 0);
   if (released & 1) engine.pointerUp(0);
   if (released & 2) engine.pointerUp(2);
@@ -180,15 +215,24 @@ function schedule(delay = WORLD_STEP_MS) {
 function run() {
   if (!engine) return;
   const started = performance.now();
-  if (paused) { schedule(WORLD_STEP_MS); return; }
+  if (paused) { actorClock?.reset(started); schedule(WORLD_STEP_MS); return; }
   const shifted = streamForControl();
-  applyEdges();
-  applyContinuous(started);
+  if (!survival) {
+    applyEdges();
+    applyContinuous(started);
+  }
   const stepStart = performance.now();
+  actorClock?.advance(started, () => {
+    if (survival && latestInput && localPlayerId) {
+      const aimX = Math.floor(latestInput.worldAimX - engine.getWorldOffsetX());
+      const aimY = Math.floor(latestInput.worldAimY - engine.getWorldOffsetY());
+      engine.setPlayerInput(localPlayerId, { ...latestInput, aimX, aimY });
+    }
+    engine.stepActors();
+  });
   // The DEV delay hook isolates scheduling without burning a browser CPU core;
   // normal production turns always execute the real WASM world step here.
   if (artificialDelayMs <= 0) engine.stepWorld();
-  engine.stepActors();
   lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
   rateSteps++;
   if (started - lastStatsPost >= 250) {
@@ -197,6 +241,7 @@ function run() {
   }
   postDraft();
   postCreatures();
+  postActors();
   if (shifted) {
     epoch++;
     sequence = 0;
@@ -216,27 +261,41 @@ self.onmessage = async ({ data }) => {
     // moduleSelector imports the threaded build lazily from initSandWasm(); set
     // this realm's prewarm size first so it receives only the worker-side share.
     globalThis.__sandPthreadPoolSize = Math.max(0, data.threadWorkers | 0);
-    await initSandWasm();
+    globalThis.__sandForceSingleThread = !!data.forceSingleThread;
+    try {
+      await initSandWasm();
+    } catch (error) {
+      self.postMessage({ type: 'error', phase: 'init', message: error?.message || String(error) });
+      return;
+    }
     engine?.destroy();
     engine = createEngineWasm({
       cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
       infinite: true, sinksOn: false,
     });
     engine.setThreadWorkers(data.threadWorkers | 0);
-    engine.setPlayMode(false);
+    survival = !!data.survival;
+    engine.setPlayMode(survival);
+    engine.setSurvivalInventory(survival);
     engine.setDrawMode(!!data.drawMode);
     creativeKind = data.creativeKind | 0;
     creativeValue = data.creativeValue | 0;
     creatureNaturalSpawning = !!data.creatureNaturalSpawning;
     creatureSimulationRequested = false;
     engine.setCreativeMaterial(creativeKind, creativeValue);
-    applyCreatureRuntime();
+    if (survival) engine.setCreatureRuntime(true, true);
+    else applyCreatureRuntime();
     // Preserve the selected startup tool. The initial creative selection is an
     // EMPTY placeholder until the palette emits a real material selection.
     engine.setTool(data.tool | 0);
+    localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
+    latestInput = null;
+    actorClock = createFixedRateClock({ now: performance.now() });
+    lastInventoryHash = -1; lastItemsActorTick = -6;
     epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
     postFull('init');
+    postActors(true);
     schedule();
     return;
   }
@@ -246,6 +305,24 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'control') {
     controlsReceived++;
     control = data;
+  } else if (data.type === 'input') {
+    latestInput = data.input || null;
+  } else if (data.type === 'intent' && survival && localPlayerId) {
+    switch (data.intent) {
+      case 'select': engine.setSelectedSlot(localPlayerId, data.slot | 0); break;
+      case 'size': engine.setSelectedFootprint(localPlayerId, data.footprint | 0); break;
+      case 'move': engine.inventoryMove(localPlayerId, data.from | 0, data.to | 0); break;
+      case 'pick': engine.inventoryCursorPick(localPlayerId, data.slot | 0, !!data.half); break;
+      case 'throw': engine.throwFromCursor(localPlayerId, !!data.whole); break;
+      case 'add': engine.addToInventory(localPlayerId, data.material | 0, data.count | 0); break;
+      case 'set-player-state': {
+        const player = engine.getPlayer(localPlayerId);
+        if (player) engine.setPlayerState(localPlayerId, { ...player, ...(data.state || {}) });
+        break;
+      }
+      default: break;
+    }
+    postActors(true);
   } else if (data.type === 'edge') {
     edges.push(data);
   } else if (data.type === 'config') {
@@ -259,7 +336,7 @@ self.onmessage = async ({ data }) => {
       engine.setCreativeMaterial(creativeKind, creativeValue);
     }
     if (data.creatureNaturalSpawning !== undefined) creatureNaturalSpawning = !!data.creatureNaturalSpawning;
-    if (data.creativeKind !== undefined || data.creatureNaturalSpawning !== undefined) applyCreatureRuntime();
+    if (!survival && (data.creativeKind !== undefined || data.creatureNaturalSpawning !== undefined)) applyCreatureRuntime();
   } else if (data.type === 'test-paint-disc') {
     const p = toLocal(data.worldX, data.worldY);
     if (engine.paintDisc(p.x, p.y, Math.max(1, data.radius | 0), data.material | 0, false)) toolWrites++;

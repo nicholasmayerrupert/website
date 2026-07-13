@@ -29,7 +29,7 @@ export function installDevHooks(ctx, {
     const ms = (v) => Number((v || 0).toFixed(3));
     return {
       stepMs: Number(((workerState?.stepMs ?? perf.stepMs) || 0).toFixed(2)),
-      actorMs: Number((perf.actorMs || 0).toFixed(2)),
+      actorMs: Number(((workerState?.actorMs ?? perf.actorMs) || 0).toFixed(2)),
       renderMs: Number(ctx.perfRenderMs.toFixed(2)),
       lightMs: ms(perf.lightMs),
       fillMs: ms(perf.fillMs),
@@ -57,7 +57,7 @@ export function installDevHooks(ctx, {
       componentCellCount: perf.componentCellCount || 0,
       crossBondCount: perf.crossBondCount || 0,
       worldShifts: engine() ? engine().getWorldShiftCount() : 0,
-      actorTick: engine() ? engine().getActorTick() : 0,
+      actorTick: workerState?.actorTick ?? (engine() ? engine().getActorTick() : 0),
       worldTick: workerState?.worldTick ?? (engine() ? engine().getTick() : 0),
       mirrorWorldTick: engine() ? engine().getTick() : 0,
       worldTps: workerState?.worldTps || 0,
@@ -108,10 +108,10 @@ export function installDevHooks(ctx, {
     setPlayMode(v) { ctx.playMode = !!v; engine()?.setPlayMode(ctx.playMode); },
     getPlayMode() { return ctx.playMode; },
     getPlayer() { return localPlayer(); },
-    getPlayers() { return engine() ? engine().getPlayers() : []; },
+    getPlayers() { return playersForRender(); },
     setPlayerState(state) {
       const p = localPlayer();
-      if (p && engine()) { engine().setPlayerState(p.id, { ...p, ...state }); render(false); }
+      if (p) ctx.worldWorker?.intent('set-player-state', { state: { ...p, ...state } });
     },
     getCreatures() { return engine() ? engine().getCreatures() : []; },
     setHitboxes(v) { ctx.debugHitboxes = !!v; engine()?.glSetDebugHitboxes(ctx.debugHitboxes); applyCreatureRuntimePolicy(ctx); ctx.worldWorker?.config({ creatureNaturalSpawning: ctx.debugHitboxes }); render(false); },
@@ -139,6 +139,13 @@ export function installDevHooks(ctx, {
       }
       return n;
     },
+    materialCountBg(material) {
+      if (!engine()) return 0;
+      const grid = engine().getGridBg();
+      let n = 0;
+      for (let i = 0; i < grid.length; i++) if (grid[i] === material) n++;
+      return n;
+    },
     materialCountBoth(material) {
       if (!engine()) return 0;
       const fg = engine().getGrid(), bg = engine().getGridBg();
@@ -158,10 +165,10 @@ export function installDevHooks(ctx, {
     setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },
     paintWorker(material, x, y, radius = 8) { ctx.worldWorker?.testPaintDisc(material, x, y, radius); },
     seedWorkerReaction(material, cap = 600, phase = 0) { ctx.worldWorker?.testSeedReaction(material, cap, phase); },
-    addInventory(material, count) { return ctx.localPlayerId && engine() ? engine().addToInventory(ctx.localPlayerId, material | 0, count | 0) : false; },
-    getInventory() { return ctx.localPlayerId && engine() ? engine().getInventory(ctx.localPlayerId) : { slots: [], selected: 0 }; },
-    selectSlot(i) { if (ctx.localPlayerId) engine()?.setSelectedSlot(ctx.localPlayerId, i | 0); },
-    actionCount() { return engine() ? engine().getPlayerActionCount() : 0; },
+    addInventory(material, count) { ctx.worldWorker?.intent('add', { material: material | 0, count: count | 0 }); return true; },
+    getInventory() { return ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory() || { slots: [], selected: 0 }; },
+    selectSlot(i) { if (ctx.netClientReady()) ctx.net.sendSelect(i | 0); else ctx.worldWorker?.intent('select', { slot: i | 0 }); },
+    actionCount() { return ctx.worldWorker?.getActionCount() || 0; },
     // device-px center of the local player (for aiming real mouse events)
     playerScreen() {
       const p = localPlayer();
@@ -184,10 +191,10 @@ export function installDevHooks(ctx, {
     players: () => playersForRender(),
     playerCount: () => playersForRender().length,
     ownPlayer: () => (ctx.netClientReady() ? ctx.net.getOwnPlayer() : localPlayer()),
-    // dropped-item count (client: from the server snapshot; else the engine).
-    items: () => (ctx.netClientReady() ? ctx.net.getItemsForRender().length / ITEM_FIELDS : (ctx.engine ? ctx.engine.itemCount() : 0)),
-    ownInventory: () => (ctx.netClientReady() ? ctx.net.getOwnInventory() : (ctx.localPlayerId && ctx.engine ? ctx.engine.getInventory(ctx.localPlayerId) : null)),
-    ownCursor: () => (ctx.netClientReady() ? ctx.net.getOwnCursor() : (ctx.localPlayerId && ctx.engine ? ctx.engine.getCursor(ctx.localPlayerId) : null)),
+    // Dropped-item count from whichever authority currently owns the world.
+    items: () => (ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || []).length / ITEM_FIELDS,
+    ownInventory: () => (ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory() || null),
+    ownCursor: () => (ctx.netClientReady() ? ctx.net.getOwnCursor() : ctx.worldWorker?.getCursor() || null),
     // survival intents routed to the server (used by the mp e2e test).
     select: (slot) => ctx.net.sendSelect(slot),
     pick: (slot, half) => ctx.net.sendPick(slot, half),

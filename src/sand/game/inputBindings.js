@@ -25,6 +25,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   // so identical state doesn't need an FFI call. A recreated engine (resize)
   // starts with pointer state unset, hence the sentEngine check.
   let sentPX = NaN, sentPY = NaN, sentButtons = -1, sentInside = null, sentEngine = null;
+  const logicalButton = (e) => e.pointerType === 'touch' && e.button === 0 ? ctx.touchButton : e.button;
+  const logicalButtons = (e) => {
+    if (e.pointerType !== 'touch' || ctx.touchButton !== 2 || !(e.buttons & 1)) return e.buttons;
+    return (e.buttons & ~1) | BUTTON_BITS[2];
+  };
   const updatePointer = (cx, cy) => {
     ctx.clientX = cx;
     ctx.clientY = cy;
@@ -42,7 +47,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   const onPointerMove = (e) => {
     // Only ADD buttons a move reports as newly pressed; a held button is
     // released solely by pointerup/pointercancel/blur (see above).
-    ctx.mouseButtons |= e.buttons;
+    ctx.mouseButtons |= logicalButtons(e);
     updatePointer(e.clientX, e.clientY);
     if (ctx.playMode) { if (ctx.engine) ctx.previewDirty = true; return; } // re-present so the aim cursor follows
     if (!ctx.drawModeOn || !ctx.engine) return;
@@ -74,13 +79,14 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     // Authoritative press edge: latch this button's bit (plus any other buttons
     // the event reports already down). The latch is what keeps PI_PRIMARY held
     // across steps even if later moves momentarily report buttons==0.
-    ctx.mouseButtons |= e.buttons | (BUTTON_BITS[e.button] || 0);
+    const button = logicalButton(e);
+    ctx.mouseButtons |= logicalButtons(e) | (BUTTON_BITS[button] || 0);
     updatePointer(e.clientX, e.clientY);
     if (!ctx.inside) return;
-    if (e.button === 0 || e.button === 2) {
+    if (button === 0 || button === 2) {
       if (ctx.playMode) { ctx.previewDirty = true; e.preventDefault(); return; } // player builds/mines via input bits
-      if (ctx.worldWorker) { ctx.worldWorker.edge('down', e.button); e.preventDefault(); return; }
-      if (ctx.engine.pointerDownAtAim(e.button)) ctx.previewDirty = true;
+      if (ctx.worldWorker) { ctx.worldWorker.edge('down', button); e.preventDefault(); return; }
+      if (ctx.engine.pointerDownAtAim(button)) ctx.previewDirty = true;
       e.preventDefault();
     }
   };
@@ -89,15 +95,16 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (!ctx.engine) return;
     // Authoritative release edge: drop only the released button's bit. Other
     // buttons stay latched until their own pointerup (or blur/cancel).
-    ctx.mouseButtons &= ~(BUTTON_BITS[e.button] || 0);
+    const button = logicalButton(e);
+    ctx.mouseButtons &= ~(BUTTON_BITS[button] || 0);
     updatePointer(e.clientX, e.clientY);
     if (!ctx.playMode && ctx.worldWorker) {
-      ctx.worldWorker.edge('up', e.button);
+      ctx.worldWorker.edge('up', button);
       e.preventDefault();
       return;
     }
     ctx.engine.pointerButtons(ctx.mouseButtons); // clears RMB/LMB when no buttons remain
-    if (ctx.engine.pointerUp(e.button)) ctx.previewDirty = true;
+    if (ctx.engine.pointerUp(button)) ctx.previewDirty = true;
   };
 
   const onContextMenu = (e) => {
@@ -144,7 +151,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
       if (key >= '1' && key <= '9') {
         const slot = +key - 1;
         if (ctx.netClientReady()) ctx.net.sendSelect(slot);
-        else ctx.engine.setSelectedSlot(ctx.localPlayerId, slot);
+        else ctx.worldWorker?.intent('select', { slot });
         e.preventDefault();
         return;
       }
@@ -171,7 +178,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   // Pointer capture can be revoked (e.g. an OS gesture); treat it as a release
   // so a held button can never get stranded latched.
   const onPointerCancel = (e) => {
-    ctx.mouseButtons &= ~(BUTTON_BITS[e.button] || 0);
+    const button = logicalButton(e);
+    ctx.mouseButtons &= ~(BUTTON_BITS[button] || 0);
     if (e.button < 0) ctx.mouseButtons = 0; // pointercancel has no button -> clear all
     updatePointer(e.clientX, e.clientY);
     ctx.engine?.pointerButtons(ctx.mouseButtons);
@@ -187,8 +195,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
       e.preventDefault();
       return;
     }
-    if (!ctx.localPlayerId) return;
-    ctx.engine.cycleSelectedSlot(ctx.localPlayerId, e.deltaY > 0 ? 1 : -1);
+    const inv = ctx.worldWorker?.getInventory();
+    if (!inv) return;
+    ctx.worldWorker.intent('select', { slot: (inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9 });
     e.preventDefault();
   };
 

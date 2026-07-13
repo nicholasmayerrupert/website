@@ -14,7 +14,7 @@
 //
 //   engineLifecycle.js  viewport fit, engine construction/wiring, zoom, DPR watch
 //   inputBindings.js    window pointer/keyboard/wheel listeners
-//   gameLoop.js         render, fixed-step simulation, RAF loop, perf samples
+//   gameLoop.js         render, input/prediction clock, RAF loop, perf samples
 //   netGlue.js          multiplayer join/disconnect/status (gameNet lives on ctx.net)
 //   devHooks.js         DEV-only window.__sandPerf/__sandTest/__sandNet
 //
@@ -25,7 +25,7 @@
 // Browser-side tunables live in runtimeConfig.js. The simulation, rendering,
 // camera (pan/follow/bounds), pointer→aim mapping, player physics, tool policy,
 // and terrain all live in the C++ engine (cpp/engine/); JS forwards raw events
-// and drives the RAF/fixed-step loop.
+// and drives the presentation RAF and input/prediction clock.
 
 import { BUTTON_BITS, DEFAULT_TOOL, SIZING, TOOL_IDS } from './runtimeConfig';
 import { createParallaxBackground } from './parallaxBackground';
@@ -37,12 +37,12 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 
-export function computeThreadWorkerBudgets(survival) {
+export function computeThreadWorkerBudgets() {
   const hardwareWorkers = Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
   const threadParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('sandThreads') : null;
   const threadOverride = threadParam === null ? NaN : Number(threadParam);
   const requestedWorkers = Number.isFinite(threadOverride) ? Math.max(0, Math.min(7, (threadOverride | 0) - 1)) : null;
-  const mainThreadWorkers = requestedWorkers ?? (survival ? hardwareWorkers : Math.floor(hardwareWorkers / 2));
+  const mainThreadWorkers = requestedWorkers ?? Math.floor(hardwareWorkers / 2);
   const worldThreadWorkers = requestedWorkers ?? Math.max(0, hardwareWorkers - mainThreadWorkers);
   return { mainThreadWorkers, worldThreadWorkers };
 }
@@ -68,7 +68,7 @@ export function createSandGame(container, opts = {}) {
     onToggleFootprintMenu = null,
   } = opts;
   const survival = mode === 'survival';
-  const { mainThreadWorkers, worldThreadWorkers } = computeThreadWorkerBudgets(survival);
+  const { mainThreadWorkers, worldThreadWorkers } = computeThreadWorkerBudgets();
 
   // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
   // context on it and composites everything (engine.glRenderFrame). ---
@@ -127,12 +127,12 @@ export function createSandGame(container, opts = {}) {
     creativeValue: 0,
     creatureSimulationRequested: false,
     inputSeq: 0,
-    lastInvHash: -1, // last pushed offline-inventory hash (HUD dirty check)
 
     // pointer (inputBindings; see the mouseButtons ownership comment there)
     clientX: -1, clientY: -1, px: -1, py: -1,
     inside: false,
     mouseButtons: 0,
+    touchButton: 0,
     stickX: 0, stickY: 0,
     wrapBounds: { left: 0, right: 0, top: 0, bottom: 0 },
 
@@ -151,6 +151,47 @@ export function createSandGame(container, opts = {}) {
     // scale so it grows/pans in lockstep with the sim (1 = default).
     bgZoomScale: () => ctx.zoom / (SIZING.zoomDefault || 1),
     fns: {},
+  };
+
+  ctx.startLocalAuthority = () => {
+    if (ctx.worldWorker || !ctx.engine) return ctx.worldWorker;
+    if (typeof Worker === 'undefined') {
+      ctx.setAuthorityError?.('This browser cannot start the simulation worker.');
+      return null;
+    }
+    const authority = createWorldWorkerClient(ctx);
+    ctx.worldWorker = authority;
+    authority.init({
+      survival,
+      creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue,
+      tool: TOOL_IDS[ctx.currentToolName] ?? 0,
+      creatureNaturalSpawning: ctx.debugHitboxes,
+      threadWorkers: ctx.worldThreadWorkers,
+    });
+    applyCreatureRuntimePolicy(ctx);
+    return authority;
+  };
+  ctx.stopLocalAuthority = () => {
+    const authority = ctx.worldWorker;
+    ctx.worldWorker = null;
+    authority?.destroy();
+  };
+
+  const authorityFailure = document.createElement('div');
+  authorityFailure.style.cssText = 'position:absolute;inset:0;z-index:80;display:none;place-items:center;background:rgba(10,12,16,.86);color:#fff;text-align:center;padding:24px;font:600 15px/1.4 system-ui,sans-serif';
+  const authorityFailurePanel = document.createElement('div');
+  const authorityFailureText = document.createElement('div');
+  const authorityRetry = document.createElement('button');
+  authorityRetry.type = 'button';
+  authorityRetry.textContent = 'Retry';
+  authorityRetry.style.cssText = 'margin-top:14px;border:0;border-radius:999px;padding:9px 18px;font:700 14px system-ui,sans-serif;cursor:pointer';
+  authorityRetry.addEventListener('click', () => ctx.worldWorker?.retry());
+  authorityFailurePanel.append(authorityFailureText, authorityRetry);
+  authorityFailure.appendChild(authorityFailurePanel);
+  container.appendChild(authorityFailure);
+  ctx.setAuthorityError = (message) => {
+    authorityFailureText.textContent = message || '';
+    authorityFailure.style.display = message ? 'grid' : 'none';
   };
 
   // Mining-progress pill (a tiny DOM overlay next to the cursor).
@@ -182,8 +223,12 @@ export function createSandGame(container, opts = {}) {
       mineProgress.style.display = 'none';
       return;
     }
-    const progress = ctx.engine.getPlayerMineProgress?.(ctx.localPlayerId) || 0;
-    const target = ctx.engine.getPlayerMineTarget?.(ctx.localPlayerId);
+    const progress = ctx.netClientReady()
+      ? ctx.engine.getPlayerMineProgress?.(ctx.localPlayerId) || 0
+      : ctx.worldWorker?.getMineProgress() || 0;
+    const target = ctx.netClientReady()
+      ? ctx.engine.getPlayerMineTarget?.(ctx.localPlayerId)
+      : ctx.worldWorker?.getMineTarget();
     if (progress <= 0 || !target) {
       mineProgress.style.display = 'none';
       return;
@@ -220,7 +265,7 @@ export function createSandGame(container, opts = {}) {
   }
 
   // --- Compose the modules (order matters only for the initial fit/attach). ---
-  const lifecycle = createEngineLifecycle(ctx, { onLayoutChange, onInventory });
+  const lifecycle = createEngineLifecycle(ctx, { onLayoutChange });
   const inputs = createInputBindings(ctx, {
     refreshBounds: lifecycle.refreshBounds,
     zoomBy: lifecycle.zoomBy,
@@ -259,15 +304,7 @@ export function createSandGame(container, opts = {}) {
 
   // --- Boot: size + build the engine, then start listening and looping. ---
   lifecycle.fit();
-  if (!survival && typeof Worker !== 'undefined') {
-    ctx.worldWorker = createWorldWorkerClient(ctx);
-    ctx.worldWorker.init({
-      creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue,
-      tool: TOOL_IDS[ctx.currentToolName] ?? 0, creatureNaturalSpawning: ctx.debugHitboxes,
-      threadWorkers: ctx.worldThreadWorkers,
-    });
-    applyCreatureRuntimePolicy(ctx);
-  }
+  ctx.startLocalAuthority();
   const ro = new ResizeObserver(lifecycle.fit);
   ro.observe(container);
   lifecycle.watchDpr();
@@ -282,12 +319,12 @@ export function createSandGame(container, opts = {}) {
     destroyed = true;
     loop.stop();
     mineProgress.remove();
+    authorityFailure.remove();
     ro.disconnect();
     lifecycle.unwatchDpr();
     window.visualViewport?.removeEventListener?.('resize', onVisualViewportResize);
     ctx.net?.disconnect();
-    ctx.worldWorker?.destroy();
-    ctx.worldWorker = null;
+    ctx.stopLocalAuthority();
     if (ctx.engine && ctx.engine.destroy) ctx.engine.destroy();
     parallax.destroy();
     inputs.detach();
@@ -321,41 +358,43 @@ export function createSandGame(container, opts = {}) {
       ctx.stickY = y;
       ctx.engine?.inputStick(x, y);
     },
+    // Mobile creative taps normally act as LMB (foreground). The on-screen
+    // layer toggle switches touch pointers to RMB (background); real mice keep
+    // their native buttons on hybrid devices.
+    setTouchLayer(background) { ctx.touchButton = background ? 2 : 0; },
+    getTouchLayer() { return ctx.touchButton === 2 ? 'background' : 'foreground'; },
     // Survival inventory intents. When connected as a client they go to the
-    // authoritative server; offline they apply to the local engine.
+    // authoritative server; offline they go to the local authority worker.
     isSurvival() { return survival; },
     selectSlot(i) {
       if (ctx.netClientReady()) ctx.net.sendSelect(i | 0);
-      else if (ctx.localPlayerId) ctx.engine?.setSelectedSlot(ctx.localPlayerId, i | 0);
+      else ctx.worldWorker?.intent('select', { slot: i | 0 });
     },
     setSelectedFootprint(i) {
       if (ctx.netClientReady()) ctx.net.sendSize(i | 0);
-      else if (ctx.localPlayerId && ctx.engine) {
-        ctx.engine.setSelectedFootprint(ctx.localPlayerId, i | 0);
-        onInventory?.(ctx.engine.getInventory(ctx.localPlayerId));
-      }
+      else ctx.worldWorker?.intent('size', { footprint: i | 0 });
     },
     getSurvivalFootprints() { return ctx.engine?.getSurvivalFootprints?.() || []; },
     moveSlot(from, to) {
       if (ctx.netClientReady()) ctx.net.sendMove(from | 0, to | 0);
-      else if (ctx.localPlayerId) ctx.engine?.inventoryMove(ctx.localPlayerId, from | 0, to | 0);
+      else ctx.worldWorker?.intent('move', { from: from | 0, to: to | 0 });
     },
     getInventory() {
       if (ctx.netClientReady()) return ctx.net.getOwnInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
-      return ctx.localPlayerId && ctx.engine ? ctx.engine.getInventory(ctx.localPlayerId) : { slots: [], selected: 0, selectedFootprint: 0 };
+      return ctx.worldWorker?.getInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
     },
     // Minecraft cursor model (carried stack) + throw-out (facing direction).
     cursorPick(slot, half) {
       if (ctx.netClientReady()) ctx.net.sendPick(slot | 0, half);
-      else if (ctx.localPlayerId) ctx.engine?.inventoryCursorPick(ctx.localPlayerId, slot | 0, half);
+      else ctx.worldWorker?.intent('pick', { slot: slot | 0, half: !!half });
     },
     throwFromCursor(whole) {
       if (ctx.netClientReady()) ctx.net.sendThrow(whole);
-      else if (ctx.localPlayerId) ctx.engine?.throwFromCursor(ctx.localPlayerId, whole);
+      else ctx.worldWorker?.intent('throw', { whole: !!whole });
     },
     getCursor() {
       if (ctx.netClientReady()) return ctx.net.getOwnCursor();
-      return ctx.localPlayerId && ctx.engine ? ctx.engine.getCursor(ctx.localPlayerId) : null;
+      return ctx.worldWorker?.getCursor() || null;
     },
     // Runtime zoom. Buttons/keys drive these; the loaded sim window grows/shrinks
     // with zoom (world content preserved via engine.resizeLoadedWindow).
@@ -389,7 +428,7 @@ export function createSandGame(container, opts = {}) {
       const timing = ctx.timingStats || {};
       return {
         stepMs: workerState?.stepMs ?? perf.stepMs,
-        actorMs: perf.actorMs || 0,
+        actorMs: workerState?.actorMs ?? perf.actorMs ?? 0,
         renderMs: ctx.perfRenderMs,
         lightMs: perf.lightMs || 0,
         fillMs: perf.fillMs || 0,
@@ -415,9 +454,9 @@ export function createSandGame(container, opts = {}) {
         componentCount: perf.componentCount || 0,
         componentCellCount: perf.componentCellCount || 0,
         crossBondCount: perf.crossBondCount || 0,
-        creatureCount: ctx.engine ? ctx.engine.creatureCount() : 0,
+        creatureCount: workerState?.creatureCount ?? (ctx.engine ? ctx.engine.creatureCount() : 0),
         tick: ctx.engine ? ctx.engine.getTick() : 0,
-        actorTick: ctx.engine ? ctx.engine.getActorTick() : 0,
+        actorTick: workerState?.actorTick ?? (ctx.engine ? ctx.engine.getActorTick() : 0),
         worldTick: workerState?.worldTick ?? (ctx.engine ? ctx.engine.getTick() : 0),
         worldTps: workerState?.worldTps ?? 0,
         worldShifts: ctx.engine ? ctx.engine.getWorldShiftCount() : 0,

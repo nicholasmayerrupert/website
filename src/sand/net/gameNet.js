@@ -6,9 +6,8 @@
 // input + intents, applies the world diffs into a (server-dimensioned) local
 // engine for rendering, and predicts its own player for zero-lag movement.
 //
-// When OFFLINE (not connected) this layer is inert — net.update() returns
-// immediately and the browser engine runs locally + authoritatively (single
-// player), unchanged.
+// When offline this layer is inert. The shared local worker authority supplies
+// the same world/actor snapshot contract instead.
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,

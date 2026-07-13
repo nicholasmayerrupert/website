@@ -5,12 +5,14 @@ A falling-sand / cellular-automaton simulation that runs in the home-page hero
 via `src/GamePage.jsx`). The simulation, **rendering (WebGL2 compositing)**, the **view camera**,
 the **input policy**, tool/pointer semantics, and world streaming all run in C++
 compiled to WebAssembly. JavaScript is a thin browser shell: it sizes the canvas,
-runs the RAF with separate actor/world clocks, forwards raw DOM events (keys/pointer/resize) to the
-engine, and carries worker/WebSocket transport. In offline creative mode a
-  dedicated worker owns cellular simulation, creative creatures, streaming, and tool writes; the main
-  thread keeps a render-only WASM mirror and applies backpressured world diffs plus creature snapshots.
-It no longer touches
-pixels or owns the camera. The whole thing ships as a framework-free
+runs the presentation RAF and input/prediction clock, forwards raw DOM events
+(keys/pointer/resize) to the engine, and carries worker/WebSocket transport. In
+every offline mode a dedicated
+worker owns the authoritative cellular world, actors, streaming, tools, and
+inventory. The main thread keeps a presentation WASM mirror, applies
+backpressured world diffs and actor snapshots, and predicts only the local
+survival player's physics. JavaScript never touches pixels or owns the camera.
+The whole thing ships as a framework-free
 `<sand-game>` Web Component; a tiny React wrapper mounts that element on this site.
 
 ## Two layers (foreground + background)
@@ -83,11 +85,11 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   blocks Vite's nested pthread bootstrap; production Safari remains threaded.
   The threaded engine owns an adaptive persistent pool
   (`hardwareConcurrency - 2`, capped at seven workers; the caller participates).
-  Creative mode partitions that budget before module initialization, so the
-  render mirror and world worker prewarm only their assigned shares. The pool
+  Offline play partitions that budget before module initialization, so the
+  render mirror and authority worker prewarm only their assigned shares. The pool
   parallelizes visible/full pixel fill, movement/reaction candidate discovery,
   loose-support columns, component indexing/carry, component-adjacency construction,
-  static rigid grounding, and world snapshot/diff encoding. Both the main renderer and creative world worker select this build
+  static rigid grounding, and world snapshot/diff encoding. Both the main renderer and local authority worker select this build
   when cross-origin isolated. The build also
   writes `src/sand/wasm/build-info.json` provenance. Outputs are committed, so a
   normal `npm run build` never needs the C++ toolchain.
@@ -107,16 +109,17 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 - `MATERIAL_MODEL.md` — explains material IDs, classes, kinds, flags, component
   groups, and free-body ownership.
 - `game/createSandGame.js` — the framework-agnostic browser shell. It creates the
-  canvas, hands it to the engine for a WebGL2 context, runs the 60 Hz actor clock
-  plus the no-catch-up world gate, forwards DOM events (`engine.inputKey/inputPointer/...`), drives
-  `engine.glRenderFrame()` and `engine.streamWorld()`, and carries the net
-  transport. No pixels, no camera math, no React.
-- `worker/` — the offline creative world runner and its main-thread client. The
+  canvas, hands it to the mirror engine for a WebGL2 context, runs the input and
+  prediction clock, forwards DOM events (`engine.inputKey/inputPointer/...`),
+  drives `engine.glRenderFrame()`, and carries authority transport. No pixels,
+  no camera math, no React.
+- `worker/` — the shared offline authority runner and its main-thread replica client. The
   worker sends a full RLE snapshot only for initialization, resize, or streaming;
   ordinary turns send accumulated diffs with one packet in flight. The main
-  render mirror deliberately skips component reconstruction; creative creatures
-  run beside rigid bodies in the worker and mirror compact render records. Survival actors and
-  multiplayer remain on their existing authoritative paths.
+  presentation mirror deliberately skips component reconstruction. Creative and
+  survival actors run beside rigid bodies in the worker and mirror compact render
+  records. Multiplayer swaps the worker authority for the headless server while
+  retaining the same replica/prediction presentation path.
 - `embed/sandGame.js` — the `<sand-game>` Web Component: a shadow root holding the
   sim canvas + the vanilla palette. Drop-in for any page (`<script type=module>` +
   the tag); draw-mode changes are a `sand:drawmodechange` CustomEvent.
@@ -184,9 +187,9 @@ inside your own body) lives in `cpp/engine/player.inc`.
 ## Creatures
 
 Non-grid creatures are simulated by `CreatureSystem` (`cpp/engine/creatures.hpp`
-+ `creatures_impl.inc`). Survival uses the main deterministic actor clock beside
-players and items; offline creative uses the world worker so creatures and rigid
-bodies share one physics instance, then mirrors creature render records. The species exercise reusable habitat and
++ `creatures_impl.inc`). Offline survival and creative both use the authority
+worker so creatures, players, items, rigid bodies, and cells share one physics
+instance, then mirror creature render records. The species exercise reusable habitat and
 locomotion combinations across a deliberately small seven-species roster:
 minnows and pike in water; foxes and hares on land; crawlers and moles in caves;
 and one bird species in the air. Pike select the nearest prey creature and then
@@ -235,6 +238,11 @@ cost); zoom in shrinks it (cheaper `step`). World content survives via
 `engine.resizeLoadedWindow` (tile/body stores). There is no hard zoom-out floor
 — extreme zoom-out is allowed and will cost frames. Multiplayer clients keep the
 host buffer size; their zoom is view-only within that window.
+
+On touch devices, the adjacent `FG`/`BG` control selects the layer used by canvas
+taps. `FG` sends the normal primary action; `BG` sends the secondary action, so
+placement and erasing target the darker background layer. Mouse left/right clicks
+remain unchanged on hybrid devices.
 
 ## Testing
 

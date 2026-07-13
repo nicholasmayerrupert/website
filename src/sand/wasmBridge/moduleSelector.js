@@ -8,6 +8,7 @@ export function selectSandModule() {
   // threaded; localhost uses the reliable single-thread module in both realms.
   const threaded = globalThis.crossOriginIsolated === true
     && typeof SharedArrayBuffer !== 'undefined'
+    && globalThis.__sandForceSingleThread !== true
     && !(import.meta.env?.DEV && webkit);
   return {
     threaded,

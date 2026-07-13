@@ -44,13 +44,24 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
 .sg-zoom { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 71;
-  display: flex; flex-direction: column; gap: 6px; pointer-events: auto; touch-action: manipulation;
+  display: flex; align-items: stretch; gap: 8px; pointer-events: auto; touch-action: manipulation;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.sg-zoom-stack { display: flex; flex-direction: column; gap: 6px; }
 .sg-zoom button { width: 40px; height: 40px; border: 1px solid rgba(255,255,255,.22); border-radius: 10px;
   background: rgba(17,24,39,.5); color: #fff; font-size: 22px; line-height: 1; font-weight: 600; cursor: pointer;
   backdrop-filter: blur(4px); box-shadow: 0 10px 15px -3px rgba(0,0,0,.3);
   -webkit-tap-highlight-color: transparent; }
 .sg-zoom button:active { background: rgba(255,255,255,.82); color: #000; }
+.sg-zoom .sg-layer { width: 52px; height: auto; padding: 8px 5px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 7px; font-size: 11px; line-height: 1.1; letter-spacing: .05em; }
+.sg-layer-icon { position: relative; width: 25px; height: 22px; }
+.sg-layer-icon::before, .sg-layer-icon::after { content: ''; position: absolute; width: 17px; height: 14px;
+  border: 1px solid rgba(255,255,255,.72); border-radius: 3px; transition: background .15s, transform .15s; }
+.sg-layer-icon::before { left: 1px; top: 1px; background: rgba(255,255,255,.75); }
+.sg-layer-icon::after { right: 1px; bottom: 1px; background: rgba(17,24,39,.82); }
+.sg-layer.bg .sg-layer-icon::before { background: rgba(17,24,39,.82); }
+.sg-layer.bg .sg-layer-icon::after { background: rgba(255,255,255,.75); }
+.sg-layer.bg { background: rgba(75,85,99,.78); border-color: rgba(255,255,255,.42); }
 .sg-perf { position: absolute; top: 64px; right: 12px; z-index: 72; pointer-events: none;
   min-width: 150px; padding: 8px 10px; border-radius: 8px; font-size: 11px; line-height: 1.5;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #e5e7eb;
@@ -137,12 +148,14 @@ function createMobileJoystick(root, game) {
   };
 }
 
-// Mobile-only on-screen zoom control, sitting to the left of the creative palette.
-// Desktop uses the +/- keyboard shortcuts instead (createSandGame.onKeyDown).
+// Mobile-only view controls: zoom plus a foreground/background tap-layer toggle.
+// Desktop uses +/- and normal left/right clicks instead.
 function createZoomButtons(root, game) {
   const wrap = document.createElement('div');
   wrap.className = 'sg-zoom';
-  wrap.setAttribute('aria-label', 'Zoom controls');
+  wrap.setAttribute('aria-label', 'View and placement controls');
+  const zoomStack = document.createElement('div');
+  zoomStack.className = 'sg-zoom-stack';
   const mk = (label, aria, fn) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -152,11 +165,36 @@ function createZoomButtons(root, game) {
     // (which would otherwise start placing/mining under the button).
     b.addEventListener('pointerdown', (e) => { fn(); e.preventDefault(); e.stopPropagation(); });
     for (const ev of ['pointerup', 'pointermove', 'click']) b.addEventListener(ev, (e) => e.stopPropagation());
-    wrap.appendChild(b);
+    zoomStack.appendChild(b);
     return b;
   };
   mk('+', 'Zoom in', () => game.zoomIn());
   mk('−', 'Zoom out', () => game.zoomOut());
+  wrap.appendChild(zoomStack);
+
+  const layer = document.createElement('button');
+  layer.type = 'button';
+  layer.className = 'sg-layer';
+  layer.setAttribute('aria-label', 'Tap layer: foreground');
+  layer.setAttribute('aria-pressed', 'false');
+  const layerIcon = document.createElement('span');
+  layerIcon.className = 'sg-layer-icon';
+  const layerText = document.createElement('span');
+  layerText.textContent = 'FG';
+  layer.append(layerIcon, layerText);
+  let background = false;
+  layer.addEventListener('pointerdown', (e) => {
+    background = !background;
+    game.setTouchLayer(background);
+    layer.classList.toggle('bg', background);
+    layerText.textContent = background ? 'BG' : 'FG';
+    layer.setAttribute('aria-label', `Tap layer: ${background ? 'background' : 'foreground'}`);
+    layer.setAttribute('aria-pressed', String(background));
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  for (const ev of ['pointerup', 'pointermove', 'click']) layer.addEventListener(ev, (e) => e.stopPropagation());
+  wrap.appendChild(layer);
   root.appendChild(wrap);
   return { destroy() { wrap.remove(); } };
 }
@@ -328,9 +366,9 @@ class SandGameElement extends HTMLElement {
     let cancelled = false;
 
     // The threaded module prewarms its browser-worker pool during init. Publish
-    // this engine's share before init so creative's render mirror and world
-    // worker do not each allocate the full hardware budget.
-    globalThis.__sandPthreadPoolSize = computeThreadWorkerBudgets(mode === 'survival').mainThreadWorkers;
+    // this engine's share before init so the presentation mirror and local
+    // authority worker do not each allocate the full hardware budget.
+    globalThis.__sandPthreadPoolSize = computeThreadWorkerBudgets().mainThreadWorkers;
 
     initSandWasm()
       .then(() => {

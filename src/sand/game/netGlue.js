@@ -27,7 +27,7 @@ export function createNetGlue(ctx, { fit, rebuildEngineForDims, currentLocalInpu
     // (the client engine was sized to the server's bounded arena). Forcing a
     // dims mismatch makes fit() take the full-rebuild path, which respawns the
     // player.
-    if (ctx.survival) { ctx.cols = 0; ctx.rows = 0; fit(); }
+    if (ctx.survival) { ctx.cols = 0; ctx.rows = 0; fit(); ctx.startLocalAuthority?.(); }
   };
   const netStatus = () => ({
     role: ctx.net.role,

@@ -1,18 +1,35 @@
 import WorldWorker from './worldWorkerConstructor.js';
+import { Predictor } from '../net/predict.js';
+import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 
 export function createWorldWorkerClient(ctx) {
-  const worker = new WorldWorker();
+  let worker = new WorldWorker();
+  let initOptions = null;
+  let retryCount = 0;
   let pending = null;
   let pendingDraft = null;
   let pendingCreatures = null;
+  let pendingActors = null;
   let lastControl = '';
   let resizeTimer = 0;
   let resizeId = 0;
   let awaitingResizeId = 0;
   let destroyTimer = 0;
+  let predictor = null;
+  let predictorEngine = null;
+  let predictorPlayerId = 0;
+  let authoritativePlayerId = 0;
+  let players = [];
+  let inventory = null;
+  let cursor = null;
+  let inventoryDirty = false;
+  let items = new Float32Array(0);
+  let mineProgress = 0;
+  let mineTarget = null;
+  let actionCount = 0;
   let state = { ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0 };
 
-  worker.onmessage = ({ data }) => {
+  const handleMessage = ({ data }) => {
     if (!data) return;
     if (data.type === 'full' || data.type === 'diff') {
       // Runtime zoom can emit many buffer sizes in quick succession. While the
@@ -38,6 +55,15 @@ export function createWorldWorkerClient(ctx) {
       pendingDraft = data;
     } else if (data.type === 'creatures') {
       pendingCreatures = data;
+    } else if (data.type === 'actors') {
+      // Actor poses are latest-wins, but revision-gated inventory/items must
+      // survive if a newer pose packet arrives before the next browser frame.
+      pendingActors = {
+        ...data,
+        inventory: data.inventory !== undefined ? data.inventory : pendingActors?.inventory,
+        cursor: data.inventory !== undefined ? data.cursor : pendingActors?.cursor,
+        items: data.items !== undefined ? data.items : pendingActors?.items,
+      };
     } else if (data.type === 'stats') {
       state = {
         ...state, ...data.perf, worldTick: data.worldTick ?? state.worldTick,
@@ -47,6 +73,8 @@ export function createWorldWorkerClient(ctx) {
         edgesProcessed: data.perf?.edgesProcessed ?? state.edgesProcessed,
         toolWrites: data.perf?.toolWrites ?? state.toolWrites,
       };
+    } else if (data.type === 'error') {
+      handleError(new Error(data.message || 'simulation worker failed'));
     }
   };
 
@@ -58,10 +86,11 @@ export function createWorldWorkerClient(ctx) {
   };
 
   const api = {
-    init({ creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false, threadWorkers = 0 } = {}) {
+    init({ survival = false, creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false, threadWorkers = 0 } = {}) {
+      initOptions = { survival, creativeKind, creativeValue, tool, creatureNaturalSpawning, threadWorkers };
       worker.postMessage({
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-        drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning, threadWorkers,
+        survival, drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning, threadWorkers,
       });
     },
     updateControl() {
@@ -88,6 +117,18 @@ export function createWorldWorkerClient(ctx) {
     edge(kind, button) {
       worker.postMessage({ type: 'edge', kind, button: button | 0, buttons: ctx.mouseButtons | 0, ...worldPoint() });
     },
+    sendInput(input, seq) {
+      const e = ctx.engine;
+      if (!e) return;
+      const normalized = {
+        ...input, seq: seq >>> 0,
+        worldAimX: e.getWorldOffsetX() + (input.aimX | 0),
+        worldAimY: e.getWorldOffsetY() + (input.aimY | 0),
+      };
+      worker.postMessage({ type: 'input', input: normalized });
+      if (predictor && predictorEngine === e) predictor.predict(seq >>> 0, input);
+    },
+    intent(intent, fields = {}) { worker.postMessage({ type: 'intent', intent, ...fields }); },
     testPaintDisc(material, localX, localY, radius) {
       const e = ctx.engine;
       if (!e) return;
@@ -126,41 +167,127 @@ export function createWorldWorkerClient(ctx) {
         pendingCreatures = null;
         changed = true;
       }
-      if (!pending || !ctx.engine) return changed;
-      const packet = pending;
-      pending = null;
-      const bytes = new Uint8Array(packet.data);
-      const applyStarted = performance.now();
-      if (packet.type === 'full') {
-        const cam = ctx.engine.getCam();
-        const worldCamX = ctx.engine.getWorldOffsetX() + cam.x;
-        const worldCamY = ctx.engine.getWorldOffsetY() + cam.y;
-        ctx.engine.applyWorldMirror(bytes, packet.worldOffsetX, packet.worldOffsetY);
-        ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
-        ctx.forceFullRender = true;
-      } else {
-        ctx.engine.applyDiffMirror(bytes);
+      if (pending && ctx.engine) {
+        const packet = pending;
+        pending = null;
+        const bytes = new Uint8Array(packet.data);
+        const applyStarted = performance.now();
+        if (packet.type === 'full') {
+          const cam = ctx.engine.getCam();
+          const worldCamX = ctx.engine.getWorldOffsetX() + cam.x;
+          const worldCamY = ctx.engine.getWorldOffsetY() + cam.y;
+          ctx.engine.applyWorldMirror(bytes, packet.worldOffsetX, packet.worldOffsetY);
+          ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
+          ctx.forceFullRender = true;
+        } else {
+          ctx.engine.applyDiffMirror(bytes);
+        }
+        ctx.engine.setMirrorWorldTick(packet.worldTick);
+        worker.postMessage({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
+        state = { ...state, mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length };
+        changed = true;
       }
-      ctx.engine.setMirrorWorldTick(packet.worldTick);
-      worker.postMessage({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
-      state = { ...state, mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length };
-      changed = true;
+      if (pendingActors && ctx.engine) {
+        const packet = pendingActors;
+        pendingActors = null;
+        authoritativePlayerId = packet.localPlayerId | 0;
+        players = packet.players || [];
+        const own = players.find((p) => p.id === authoritativePlayerId) || null;
+        if (own) {
+          if (!predictor || predictorEngine !== ctx.engine) {
+            predictorPlayerId = ctx.engine.spawnPlayer(own.x, own.y);
+            predictor = new Predictor(ctx.engine, predictorPlayerId);
+            predictorEngine = ctx.engine;
+          }
+          predictor.reconcile(own, packet.ackSeq >>> 0, packet.actorTick | 0);
+          ctx.localPlayerId = authoritativePlayerId;
+        }
+        if (packet.inventory !== undefined) { inventory = packet.inventory; inventoryDirty = true; }
+        if (packet.cursor !== undefined) cursor = packet.cursor;
+        if (packet.items !== undefined) {
+          const O = OFF.itemSnapshot;
+          items = new Float32Array(packet.items.length * STRIDES.itemSnapshot);
+          for (let i = 0; i < packet.items.length; i++) {
+            const item = packet.items[i], o = i * STRIDES.itemSnapshot;
+            items[o + O.id] = item.id; items[o + O.kind] = item.kind; items[o + O.material] = item.material;
+            items[o + O.count] = item.count; items[o + O.x] = item.x; items[o + O.y] = item.y;
+            items[o + O.life] = item.life; items[o + O.plantType] = item.plantType || 0;
+          }
+        }
+        mineProgress = packet.mineProgress || 0;
+        mineTarget = packet.mineTarget || null;
+        actionCount = packet.actionCount | 0;
+        state = { ...state, actorTick: packet.actorTick | 0 };
+        changed = true;
+      }
       return changed;
     },
     destroy() {
       clearTimeout(resizeTimer);
-      worker.postMessage({ type: 'destroy' });
+      try { worker.postMessage({ type: 'destroy' }); }
+      catch { worker.terminate(); return; }
       // Give C++ time to join its persistent pthreads. Forced termination is a
       // last resort for a crashed/unresponsive worker, not the normal path.
       destroyTimer = setTimeout(() => worker.terminate(), 1500);
     },
     get state() { return state; },
+    getOwnPlayer() {
+      const own = players.find((p) => p.id === authoritativePlayerId) || null;
+      const predicted = predictor?.renderState();
+      return predicted && own ? { ...own, ...predicted, id: authoritativePlayerId } : own;
+    },
+    getPlayersForRender() {
+      const own = this.getOwnPlayer();
+      return players.filter((p) => p.active !== false && p.alive !== false).map((p) => p.id === authoritativePlayerId && own ? own : p);
+    },
+    getItemsForRender() { return items; },
+    getInventory() { return inventory; },
+    getCursor() { return cursor; },
+    consumeInventoryDirty() { const dirty = inventoryDirty; inventoryDirty = false; return dirty; },
+    getMineProgress() { return mineProgress; },
+    getMineTarget() { return mineTarget; },
+    getActionCount() { return actionCount; },
+    get ownPlayerId() { return authoritativePlayerId; },
+    retry() {
+      retryCount = 0;
+      ctx.setAuthorityError?.(null);
+      restartWorker(true);
+    },
   };
-  worker.onerror = (event) => {
+  const handleError = (event) => {
     clearTimeout(destroyTimer);
     console.error('sand world worker failed', event.message || event);
     worker.terminate();
-    if (ctx.worldWorker === api) ctx.worldWorker = null; // safe main-thread fallback
+    if (!state.ready && retryCount === 0) {
+      retryCount++;
+      restartWorker(true);
+      return;
+    }
+    ctx.setAuthorityError?.('The simulation worker could not continue.');
   };
+  const bindWorker = () => {
+    worker.onmessage = handleMessage;
+    worker.onerror = handleError;
+  };
+  const restartWorker = (forceSingleThread) => {
+    try { worker.terminate(); } catch { /* already stopped */ }
+    if (predictorEngine && predictorPlayerId) {
+      try { predictorEngine.removePlayer(predictorPlayerId); } catch { /* mirror was rebuilt */ }
+    }
+    pending = pendingDraft = pendingCreatures = pendingActors = null;
+    predictor = predictorEngine = null;
+    predictorPlayerId = authoritativePlayerId = 0;
+    players = []; inventory = cursor = null; items = new Float32Array(0);
+    inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
+    ctx.localPlayerId = 0;
+    worker = new WorldWorker();
+    state = { ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0 };
+    bindWorker();
+    if (initOptions) worker.postMessage({
+      type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
+      ...initOptions, drawMode: ctx.drawModeOn, forceSingleThread: !!forceSingleThread,
+    });
+  };
+  bindWorker();
   return api;
 }

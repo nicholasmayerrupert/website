@@ -31,7 +31,7 @@ async function waitForServer() {
   throw new Error('dev server timeout');
 }
 
-let browser;
+let browser, mobileContext;
 try {
   await waitForServer();
   browser = await chromium.launch({ headless: true });
@@ -191,10 +191,55 @@ try {
   check('stress hook reduced worker world TPS', result.perf.worldTps < 55, `${result.perf.worldTps.toFixed(1)} TPS`);
   check('creative camera keeps moving while world is slow', result.camX > cam0 + 50, `${cam0.toFixed(1)} -> ${result.camX.toFixed(1)}`);
   await page.evaluate(() => window.__sandTest.setWorldDelay(0));
+
+  // Mobile taps use the compact FG/BG control beside zoom to choose whether
+  // they behave like left-click or right-click. Exercise real touch pointers so
+  // desktop mouse semantics cannot accidentally satisfy this check.
+  mobileContext = await browser.newContext({
+    viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true,
+    reducedMotion: 'no-preference',
+  });
+  const mobile = await mobileContext.newPage();
+  await mobile.goto(baseURL, { waitUntil: 'networkidle' });
+  await mobile.waitForFunction(() => window.__sandTest && window.__sandPerf && window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
+  const mobileGame = mobile.locator('sand-game');
+  await mobileGame.locator('.sg-toggle').tap(); // Draw On
+  const controls = await mobileGame.locator('.sg-zoom').evaluate((wrap) => {
+    const zoom = wrap.querySelector('.sg-zoom-stack').getBoundingClientRect();
+    const layer = wrap.querySelector('.sg-layer').getBoundingClientRect();
+    return { spaced: layer.left >= zoom.right + 6, layerLabel: wrap.querySelector('.sg-layer').textContent.trim() };
+  });
+  check('mobile layer toggle is spaced to the right of zoom', controls.spaced && controls.layerLabel === 'FG');
+  const mobileTarget = await mobile.evaluate(() => {
+    window.__sandTest.setCreativeMaterial(0, 3); // STONE
+    const rect = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main').getBoundingClientRect();
+    return {
+      x: rect.left + rect.width * 0.58, y: rect.top + rect.height * 0.18,
+      fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3),
+    };
+  });
+  await mobile.touchscreen.tap(mobileTarget.x, mobileTarget.y);
+  await mobile.waitForFunction((before) => window.__sandTest.materialCount(3) > before, mobileTarget.fg);
+  const foregroundTap = await mobile.evaluate(() => ({ fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3) }));
+  check('mobile FG tap writes to the foreground', foregroundTap.fg > mobileTarget.fg && foregroundTap.bg === mobileTarget.bg);
+
+  await mobileGame.locator('.sg-layer').tap();
+  const layerState = await mobileGame.locator('.sg-layer').evaluate((button) => ({
+    text: button.textContent.trim(), pressed: button.getAttribute('aria-pressed'),
+  }));
+  await mobile.touchscreen.tap(mobileTarget.x + 34, mobileTarget.y);
+  await mobile.waitForFunction((before) => window.__sandTest.materialCountBg(3) > before, foregroundTap.bg);
+  const backgroundTap = await mobile.evaluate(() => ({ fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3) }));
+  check('mobile layer toggle reports the background state', layerState.text === 'BG' && layerState.pressed === 'true');
+  check('mobile BG tap writes to the background', backgroundTap.bg > foregroundTap.bg && backgroundTap.fg === foregroundTap.fg,
+    `fg ${foregroundTap.fg} -> ${backgroundTap.fg}, bg ${foregroundTap.bg} -> ${backgroundTap.bg}`);
+  await mobileContext.close();
+  mobileContext = null;
 } catch (error) {
   console.error(error);
   failures++;
 } finally {
+  await mobileContext?.close().catch(() => {});
   await browser?.close();
   killServer();
 }

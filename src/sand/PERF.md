@@ -10,12 +10,13 @@ actionable instead of just producing timing numbers.
   behavior, and deterministic net snapshots.
 - JavaScript owns DOM lifecycle, canvas sizing, browser event normalization,
   reduced-motion handling, worker/WebSocket transport, and framework/embed wrappers.
-- Offline creative mode uses two WASM engines: the worker owns mutable world
-  state, while the main thread owns a render-only mirror. Replication is bounded
+- Offline creative and survival use two WASM engines: the worker owns mutable
+  world and actor state, while the main thread owns a presentation/prediction
+  mirror. Replication is bounded
   to one acknowledged packet in flight, so a slow renderer cannot build an
   unbounded diff queue or feed timing debt back into world simulation.
 - The pthread build uses an adaptive persistent pool (`hardwareConcurrency - 2`,
-  capped at seven workers, plus the caller). Creative mode partitions that
+  capped at seven workers, plus the caller). Offline play partitions that
   budget before the main and world-worker modules prewarm their pools. It
   parallelizes visible/full
   material-to-RGBA fill, candidate discovery, loose-support columns, component

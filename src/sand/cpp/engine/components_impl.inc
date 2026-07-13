@@ -771,12 +771,11 @@ void ComponentSystem::computeGroundedBoth() {
   };
   bool rf = rigidMayChange(E.fg), rb = rigidMayChange(E.bg);
   // A cached sleeping pass deliberately kept joint patches in place. If a
-  // later mutation requires a real joint rebuild, clear both layers fully once
-  // before returning to the classic path.
+  // later mutation requires a real joint rebuild, the dirty layer refloods and
+  // the clean peer restores its independent rigid-base snapshot below. The old
+  // both-dirty fallback doubled fire/acid grounding cost at extreme zoom even
+  // when only one layer changed.
   if (jointSupportSleeping) {
-    E.fg.groundDirty = true;
-    E.bg.groundDirty = true;
-    rf = rb = true;
     jointSupportSleeping = false;
   }
   // jointDirty / jointBondsInvalid: co-occupation may have changed without
@@ -1896,17 +1895,30 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
 }
 
 // split a plant-family component list keeping only cells still of plant material
-void ComponentSystem::splitPlantAfterErase() {
+void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty) {
   // Dirty joints for the NEXT step, but leave jointGroundReady set: clearing it
   // mid-step lets the other layer's stepLayer re-run single-layer grounding and
   // drop cross-supported stone before this tick finishes (acid often transfers
   // to the opposite layer and dissolves there first).
   if (E.bgEnabled) { jointBondsInvalid = true; jointDirty = true; }
-  E.L->groundDirty = true; // plant cells removed/split -> full reflood
+  if (markGroundDirty) E.L->groundDirty = true;
   std::vector<Comp> updated;
   std::vector<int32_t>& seen = E.L->seenStamp;
   std::vector<int> part;
-  for (auto& comp : E.L->plantComponents) {
+  std::vector<uint8_t>& touchedByIndex = splitTouched;
+  touchedByIndex.clear();
+  if (erased && indexedOffset >= 0) {
+    touchedByIndex.assign(E.L->plantComponents.size(), 0);
+    for (int k : *erased) {
+      int ci = E.L->cellComp[k] - indexedOffset;
+      if (ci < 0 || ci >= (int)E.L->plantComponents.size()) { touchedByIndex.clear(); break; }
+      touchedByIndex[ci] = 1;
+    }
+  }
+  updated.reserve(E.L->plantComponents.size() + (erased ? erased->size() : 0));
+  for (size_t compIndex = 0; compIndex < E.L->plantComponents.size(); compIndex++) {
+    auto& comp = E.L->plantComponents[compIndex];
+    if (!touchedByIndex.empty() && !touchedByIndex[compIndex]) { updated.push_back(std::move(comp)); continue; }
     int32_t remGen = ++E.L->seenGen;
     for (int k : comp.cells) if (E.isPlantMaterial(E.L->grid[k])) seen[k] = remGen;
     bool reused = false;
@@ -1917,14 +1929,35 @@ void ComponentSystem::splitPlantAfterErase() {
         int cur = part[qi]; int y = cur / E.cols, x = cur - y * E.cols;
         for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) { if (!ox && !oy) continue; int nx = x + ox, ny = y + oy; if (!E.isInBounds(nx, ny)) continue; int nk = ny * E.cols + nx; if (seen[nk] == remGen) { seen[nk] = 0; part.push_back(nk); } }
       }
+      if (reused) E.L->compsReshaped = true;
       Comp c; c.id = reused ? E.L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
       c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
       for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.L->grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) c.leafCount++; }
       c.cells = std::move(part); updated.push_back(std::move(c)); reused = true;
     }
+    if (!reused) E.L->compsReshaped = true;
   }
   E.L->plantComponents = std::move(updated);
 }
+
+// Fire and acid usually nibble leaves or an exposed face without disconnecting
+// any surviving support. Keep that common case local: split only components
+// named by the exact cellComp index, prove the removed blobs are not cuts, patch
+// the cached cells, and request only an index refresh. Real cuts retain the full
+// grounding reflood.
+void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedExact) {
+  if (erased.empty()) return;
+  int plantOffset = (int)E.L->stoneComponents.size();
+  E.L->compsReshaped = false;
+  splitPlantAfterErase(&erased, indexedExact ? plantOffset : -1, false);
+  if (!indexedExact || !removalsKeepGroundingValid(erased)) {
+    E.L->groundDirty = true;
+    return;
+  }
+  for (int k : erased) E.L->cellComp[k] = -1;
+  E.L->groundContentDirty = true;
+}
+
 // split stone/ice after erase: remove erased cells, re-flood
 // markGroundDirty=true (the default, used by tools-erase and ice-melt) forces a
 // full grounding reflood next pass. Acid passes false and instead runs its own
@@ -1950,11 +1983,9 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     touchedByIndex.assign(list.size(), 0);
     for (int k : erased) {
       int ci = E.L->cellComp[k] - indexedOffset;
-      // Reactions earlier in this tick can reshape a list after grounding. The
-      // positional cache is then stale; validate membership and retain the old
-      // full-scan fallback for that uncommon case.
-      if (ci < 0 || ci >= (int)list.size()
-          || std::find(list[ci].cells.begin(), list[ci].cells.end(), k) == list[ci].cells.end()) {
+      // A non-negative indexedOffset is the caller's guarantee that cellComp is
+      // current. Stale reaction-time indexes use -1 and retain the full scan.
+      if (ci < 0 || ci >= (int)list.size()) {
         touchedByIndex.clear(); break;
       }
       touchedByIndex[ci] = 1;

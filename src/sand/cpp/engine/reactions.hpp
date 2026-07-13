@@ -14,6 +14,7 @@ class ReactionSystem {
  public:
   explicit ReactionSystem(Engine& e) : E(e) {}
 
+  void prepareActiveLists();
   void applyReactions();
   void applyAcid();
   void applyLava();

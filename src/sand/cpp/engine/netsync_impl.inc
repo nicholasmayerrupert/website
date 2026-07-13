@@ -68,7 +68,12 @@ void NetSync::writeDiffLayer(bool background) {
   for (int r = 0; r < rc; r++) {
     int x0 = lay->dirtyRects[r * 4], y0 = lay->dirtyRects[r * 4 + 1], x1 = lay->dirtyRects[r * 4 + 2], y1 = lay->dirtyRects[r * 4 + 3];
     blobPush16(x0); blobPush16(y0); blobPush16(x1); blobPush16(y1);
-    for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) blob.push_back(lay->grid[y * E.cols + x]);
+    size_t width = (size_t)(x1 - x0);
+    for (int y = y0; y < y1; y++) {
+      size_t out = blob.size();
+      blob.resize(out + width);
+      std::memcpy(blob.data() + out, lay->grid + y * E.cols + x0, width);
+    }
   }
 }
 int NetSync::serializeDiff() {
@@ -86,7 +91,14 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background) 
     if (p + 8 > len) break;
     int x0 = readLE16(buf, p), y0 = readLE16(buf, p + 2), x1 = readLE16(buf, p + 4), y1 = readLE16(buf, p + 6);
     p += 8;
-    for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) { if (p >= len) return p; if (x >= 0 && x < E.cols && y >= 0 && y < E.rows) lay->grid[y * E.cols + x] = buf[p]; p++; }
+    int width = x1 - x0;
+    if (width < 0 || y1 < y0) return p;
+    bool validRect = x0 >= 0 && x1 <= E.cols && y0 >= 0 && y1 <= E.rows;
+    for (int y = y0; y < y1; y++) {
+      if (p + width > len) return p;
+      if (validRect) std::memcpy(lay->grid + y * E.cols + x0, buf + p, (size_t)width);
+      p += width;
+    }
     if (x1 > x0 && y1 > y0) E.markDirtyRect(x0, y0, x1 - 1, y1 - 1);
   }
   return p;

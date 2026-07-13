@@ -32,6 +32,14 @@ actionable instead of just producing timing numbers.
   actors keep their normal cadence. Free rigid bodies disable the deferral. This
   prevents background terrain assemblies from starving a large active liquid
   frontier; topology edits are reconciled at most one world tick later.
+- Reaction-heavy active bands are classified once per layer: water/fire/acid/
+  lava/salt retain their original ordered phases, while loose-density, powder,
+  liquid, and gas movement reuse deterministic candidate lists instead of each
+  scanning a mostly rigid million-cell band. Fire and acid pass exact erased-cell
+  lists to the component splitter, so untouched plant components are moved through
+  unchanged. Cross-layer transfer rejects empty/rigid pairs before neighbour probes.
+- Creative mirror diffs copy validated rows with bulk `memcpy`; the wire format is
+  unchanged, but large acid/fire dirty rectangles avoid byte-at-a-time encode/apply.
 - If a benchmark regression points at gameplay, rendering, camera, terrain,
   components, or materials, prefer moving the decision into C++ rather than adding
   another JS mirror.
@@ -51,6 +59,10 @@ actionable instead of just producing timing numbers.
   inventory/player input, components, liquids, or net snapshots.
 - `node scripts/bench-pan.mjs --compare bench/pan-baseline.json`: browser/WebGL
   pan, cursor mapping, frame-time, and flicker check.
+- `node scripts/bench-reactions.mjs`: deterministic 1000x1000 fire-on-plants and
+  acid-on-terrain stress cases, including fine phase timings and checksums.
+- `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions`:
+  isolated real-browser worker runs for pan, water, fire, and acid.
 
 ## Engine Scenarios
 

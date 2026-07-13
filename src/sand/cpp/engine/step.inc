@@ -37,6 +37,7 @@
     double tR = emscripten_get_now();
     growPlantComponents();
     growMyceliumComponents();
+    prepareReactionLists();
     applyReactions(); applyAcid(); applyLava(); applyIce(); applySalt(); applyExplosives();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-reactions");
@@ -92,21 +93,36 @@
     std::swap(L->prevCompCells, L->curCompCells);
     perfCarryMs += emscripten_get_now() - tC;
 
+    // Build movement candidates once in the exact order each settle pass used
+    // to discover them. Zoomed-out active bands are mostly empty/rigid; avoiding
+    // four repeated full-span scans is substantially cheaper than probing every
+    // cell separately for density, powder, liquid, and gas.
+    activeDensityCells.clear(); activeSandCells.clear(); activeLiquidCells.clear(); activeGasCells.clear();
+    for (int y = rows - 1; y >= 0; y--) {
+      int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue;
+      int rb = y * cols; bool ltr = (y & 1) == 0;
+      activeGasRow.clear();
+      auto gather = [&](int x) { int k = rb + x; uint8_t m = L->grid[k]; if (isLooseDensityMaterial(m)) activeDensityCells.push_back(k); if (isLooseSolidMaterial(m)) activeSandCells.push_back(k); if (isLiquidMaterial(m)) activeLiquidCells.push_back(k); if (isGasMaterial(m)) activeGasRow.push_back(k); };
+      if (ltr) for (int x = minX; x <= maxX; x++) gather(x); else for (int x = maxX; x >= minX; x--) gather(x);
+      activeGasCells.insert(activeGasCells.end(), activeGasRow.rbegin(), activeGasRow.rend());
+    }
+    std::reverse(activeGasCells.begin(), activeGasCells.end());
+
     liquidDispPending.clear();
     double tS = emscripten_get_now();
-    for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) settleLooseDensityInterface(x, y, rb + x); else for (int x = maxX; x >= minX; x--) settleLooseDensityInterface(x, y, rb + x); }
-    for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } else for (int x = maxX; x >= minX; x--) { if (isLooseSolidMaterial(L->grid[rb + x])) settleSand(x, y, rb + x); } }
+    for (int k : activeDensityCells) { int y = k / cols; settleLooseDensityInterface(k - y * cols, y, k); }
+    for (int k : activeSandCells) { int y = k / cols; if (isLooseSolidMaterial(L->grid[k])) settleSand(k - y * cols, y, k); }
     perfSandMs += emscripten_get_now() - tS;
 
     double tL = emscripten_get_now();
-    for (int y = rows - 1; y >= 0; y--) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isLiquidMaterial(m)) continue; if (m == LAVA) settleLava(x, y, rb + x); else settleLiquid(x, y, rb + x, m); } }
+    for (int k : activeLiquidCells) { uint8_t m = L->grid[k]; if (!isLiquidMaterial(m)) continue; int y = k / cols, x = k - y * cols; if (m == LAVA) settleLava(x, y, k); else settleLiquid(x, y, k, m); }
     // Density-chain relocate liquids displaced by denser liquids this settle (before
     // gas claims free cells and before the double-buffer swap commits next[]).
     resolveLiquidDisplacements();
     perfLiquidMs += emscripten_get_now() - tL;
 
     double tG = emscripten_get_now();
-    for (int y = 0; y < rows; y++) { int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue; int rb = y * cols; bool ltr = (y & 1) == 0; if (ltr) for (int x = minX; x <= maxX; x++) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } else for (int x = maxX; x >= minX; x--) { uint8_t m = L->grid[rb + x]; if (!isGasMaterial(m)) continue; if (m == FIRE) riseFire(x, y, rb + x); else riseSteam(x, y, rb + x, m); } }
+    for (int k : activeGasCells) { uint8_t m = L->grid[k]; if (!isGasMaterial(m)) continue; int y = k / cols, x = k - y * cols; if (m == FIRE) riseFire(x, y, k); else riseSteam(x, y, k, m); }
     perfGasMs += emscripten_get_now() - tG;
 
     double tT = emscripten_get_now();
@@ -281,7 +297,9 @@
     // flammable BODY cell is owned by erodeBodies, not in-place ignition
     // (body-material invariant). The rand() draws stay UNCONDITIONAL so the
     // shared stream is byte-identical to before; only the write is gated.
-    bool fgPlantBurned = false, bgPlantBurned = false;
+    bool fgIndexExact = fg.groundBaseValid && !fg.groundDirty && !fg.groundContentDirty;
+    bool bgIndexExact = bg.groundBaseValid && !bg.groundDirty && !bg.groundContentDirty;
+    crossFireErasedFg.clear(); crossFireErasedBg.clear();
     for (int y = 1; y < rows - 1; y++) {
       int mn = cols, mx = -1;
       if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
@@ -293,20 +311,20 @@
         uint8_t f = fg.grid[k], b = bg.grid[k];
         if (f == FIRE && isFlammable(b)) {
           if (rand() < FIRE_CROSS_P && bg.bodyOwner[k] == -1) {
-            if (isPlantMaterial(b)) bgPlantBurned = true;
+            if (isPlantMaterial(b)) crossFireErasedBg.push_back(k);
             bg.grid[k] = FIRE; if (x < bg.rowMarkMin[y]) bg.rowMarkMin[y] = x; if (x > bg.rowMarkMax[y]) bg.rowMarkMax[y] = x;
           }
         } else if (b == FIRE && isFlammable(f)) {
           if (rand() < FIRE_CROSS_P && fg.bodyOwner[k] == -1) {
-            if (isPlantMaterial(f)) fgPlantBurned = true;
+            if (isPlantMaterial(f)) crossFireErasedFg.push_back(k);
             fg.grid[k] = FIRE; if (x < fg.rowMarkMin[y]) fg.rowMarkMin[y] = x; if (x > fg.rowMarkMax[y]) fg.rowMarkMax[y] = x;
           }
         }
       }
     }
-    if (fgPlantBurned) { useLayer(&fg); splitPlantAfterErase(); }
-    if (bgPlantBurned) { useLayer(&bg); splitPlantAfterErase(); }
-    if (fgPlantBurned || bgPlantBurned) useLayer(&fg);
+    if (!crossFireErasedFg.empty()) { useLayer(&fg); finishPlantErosion(crossFireErasedFg, fgIndexExact); }
+    if (!crossFireErasedBg.empty()) { useLayer(&bg); finishPlantErosion(crossFireErasedBg, bgIndexExact); }
+    if (!crossFireErasedFg.empty() || !crossFireErasedBg.empty()) useLayer(&fg);
   }
 
   // ---- cross-layer transfer (RNG-free) ----
@@ -421,7 +439,15 @@
       if (mx < mn) continue;
       mn = imax(0, mn); mx = imin(cols - 1, mx);
       bool ltr = (y & 1) == 0;
-      if (ltr) for (int x = mn; x <= mx; x++) { int k = y * cols + x; if (!tryTransfer(&fg, &bg, x, y, k)) tryTransfer(&bg, &fg, x, y, k); }
-      else for (int x = mx; x >= mn; x--) { int k = y * cols + x; if (!tryTransfer(&fg, &bg, x, y, k)) tryTransfer(&bg, &fg, x, y, k); }
+      auto transferAt = [&](int x) {
+        int k = y * cols + x;
+        uint8_t f = fg.grid[k], b = bg.grid[k];
+        // Empty/rigid pairs dominate zoomed-out terrain and can never transfer.
+        // Reject them before two tryTransfer calls and their neighbour probes.
+        if (!isGasMaterial(f) && !isLooseMedium(f) && !isGasMaterial(b) && !isLooseMedium(b)) return;
+        if (!tryTransfer(&fg, &bg, x, y, k)) tryTransfer(&bg, &fg, x, y, k);
+      };
+      if (ltr) for (int x = mn; x <= mx; x++) transferAt(x);
+      else for (int x = mx; x >= mn; x--) transferAt(x);
     }
   }

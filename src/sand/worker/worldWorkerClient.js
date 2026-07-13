@@ -87,6 +87,9 @@ export function createWorldWorkerClient(ctx) {
         worldX: e.getWorldOffsetX() + (localX | 0), worldY: e.getWorldOffsetY() + (localY | 0),
       });
     },
+    testSeedReaction(material, cap = 600, phase = 0) {
+      worker.postMessage({ type: 'test-seed-reaction', material: material | 0, cap: cap | 0, phase: phase | 0 });
+    },
     config(config) { worker.postMessage({ type: 'config', ...config }); },
     resize(cols, rows) {
       pending = null;

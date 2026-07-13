@@ -5,24 +5,43 @@
 // Runs after growth/rigid movement inside each layer step. This file owns
 // local transformations such as water/fire steam, ignition, freezing/melting,
 // acid erosion, and lava cooling. It should not own broad movement order.
-void ReactionSystem::applyReactions() {
-  int steamCount = 0, fireCount = 0, igniteCount = 0; bool plantBurned = false;
-  int igniteCap = E.cols * E.rows;
-  std::vector<int>& snowMelt = E.reactionSnowMelt; snowMelt.clear();
+void ReactionSystem::prepareActiveLists() {
+  E.activeWaterCells.clear(); E.activeFireCells.clear(); E.activeAcidCells.clear();
+  E.activeLavaCells.clear(); E.activeSaltCells.clear();
   for (int y = 1; y < E.rows; y++) {
     int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
+    int rb = y * E.cols;
     for (int x = minX; x <= maxX; x++) {
-      int k = E.I(x, y); if (E.L->grid[k] != WATER) continue;
+      int k = rb + x;
+      switch (E.L->grid[k]) {
+        case WATER: E.activeWaterCells.push_back(k); break;
+        case FIRE: E.activeFireCells.push_back(k); break;
+        case ACID: if (y < E.rows - 1) E.activeAcidCells.push_back(k); break;
+        case LAVA: if (y < E.rows - 1) E.activeLavaCells.push_back(k); break;
+        case SALT: if (y < E.rows - 1) E.activeSaltCells.push_back(k); break;
+        default: break;
+      }
+    }
+  }
+}
+
+void ReactionSystem::applyReactions() {
+  int steamCount = 0, fireCount = 0, igniteCount = 0;
+  bool plantIndexExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
+  std::vector<int>& erasedPlant = E.reactionErasedPlant; erasedPlant.clear();
+  int igniteCap = E.cols * E.rows;
+  std::vector<int>& snowMelt = E.reactionSnowMelt; snowMelt.clear();
+  for (int k : E.activeWaterCells) {
+      if (E.L->grid[k] != WATER) continue;
+      int y = k / E.cols;
       int nk = E.L->grid[k + 1] == FIRE ? k + 1 : (E.L->grid[k - 1] == FIRE ? k - 1 : -1);
       if (nk < 0 && y < E.rows - 1 && E.L->grid[k + E.cols] == FIRE) nk = k + E.cols;
       if (nk < 0 && E.L->grid[k - E.cols] == FIRE) nk = k - E.cols;
       if (nk >= 0) { E.L->reactionSteam[steamCount++] = k; if (!E.L->reactionFlags[nk]) { E.L->reactionFlags[nk] = 1; E.L->reactionFires[fireCount++] = nk; } }
-    }
   }
-  for (int y = 1; y < E.rows; y++) {
-    int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
-    for (int x = minX; x <= maxX; x++) {
-      int k = E.I(x, y); if (E.L->grid[k] != FIRE || E.L->reactionFlags[k]) continue;
+  for (int k : E.activeFireCells) {
+      if (E.L->grid[k] != FIRE || E.L->reactionFlags[k]) continue;
+      int y = k / E.cols;
       int neigh[4]; int nn; if (y < E.rows - 1) { neigh[0] = k + 1; neigh[1] = k - 1; neigh[2] = k + E.cols; neigh[3] = k - E.cols; nn = 4; } else { neigh[0] = k + 1; neigh[1] = k - 1; neigh[2] = k - E.cols; nn = 3; }
       for (int ni = 0; ni < nn; ni++) {
         int nk = neigh[ni];
@@ -48,22 +67,23 @@ void ReactionSystem::applyReactions() {
         // mushrooms) and lets any flammable powder/liquid catch the same way oil does.
         else if (!E.isBodyCell(nk) && E.isFlammable(E.L->grid[nk]) && E.rand() < PLANT_IGNITE_P) { if (igniteCount < igniteCap) E.L->reactionIgnite[igniteCount++] = nk; } // body-material invariant: a flammable body disintegrates via erodeBodies, not in-place ignition
       }
-    }
   }
   for (int i = 0; i < fireCount; i++) { int k = E.L->reactionFires[i]; if (E.L->grid[k] == FIRE) E.writeGridIndex(k, EMPTY); E.L->reactionFlags[k] = 0; }
   for (int i = 0; i < steamCount; i++) { int k = E.L->reactionSteam[i]; if (E.L->grid[k] == WATER) E.writeGridIndex(k, STEAM); }
   for (size_t i = 0; i < snowMelt.size(); i++) { int k = snowMelt[i]; if (E.L->grid[k] == SNOW) E.writeGridIndex(k, WATER); }
-  for (int i = 0; i < igniteCount; i++) { int k = E.L->reactionIgnite[i]; if (!E.isBodyCell(k) && E.isFlammable(E.L->grid[k])) { plantBurned = plantBurned || E.isPlantMaterial(E.L->grid[k]); E.writeGridIndex(k, FIRE); } }
-  if (plantBurned) E.splitPlantAfterErase();
+  for (int i = 0; i < igniteCount; i++) { int k = E.L->reactionIgnite[i]; if (!E.isBodyCell(k) && E.isFlammable(E.L->grid[k])) { if (E.isPlantMaterial(E.L->grid[k])) erasedPlant.push_back(k); E.writeGridIndex(k, FIRE); } }
+  E.finishPlantErosion(erasedPlant, plantIndexExact);
 }
 void ReactionSystem::applyAcid() {
   bool reactNow = E.tick % ACID_REACT_INTERVAL == 0;
   bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false;
+  bool cellCompExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
   bool jointWasDirty = E.comps.jointDirty, jointBondsWereInvalid = E.comps.jointBondsInvalid;
   bool crossBondMayBreak = false;
   std::vector<int>& erasedStone = E.acidErasedStone; std::vector<int>& erasedIce = E.acidErasedIce;
   std::vector<int64_t>& crossPairs = E.acidCrossPairs;
-  erasedStone.clear(); erasedIce.clear();
+  std::vector<int>& erasedPlant = E.reactionErasedPlant;
+  erasedStone.clear(); erasedIce.clear(); erasedPlant.clear();
   crossPairs.clear();
   // A pure acid bore can preserve the sleeping joint closure when the batch did
   // not remove the last co-occupation contact between a component pair. Record
@@ -74,19 +94,11 @@ void ReactionSystem::applyAcid() {
     if (!E.comps.jointSupportValid || E.comps.jointSleepBlocked) { crossBondMayBreak = true; return; }
     Layer& own = *E.L;
     Layer& peer = E.L == &E.fg ? E.bg : E.fg;
+    if (!cellCompExact || own.groundDirty || own.groundContentDirty || peer.groundDirty || peer.groundContentDirty) { crossBondMayBreak = true; return; }
     if (!E.isRigidMaterialClass(peer.grid[target])) return;
     int ownId = own.cellComp[target], peerId = peer.cellComp[target];
     int ownN = E.compCount(own), peerN = E.compCount(peer);
     if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN) { crossBondMayBreak = true; return; }
-    // Fire/growth earlier in this reaction phase may have reshaped component
-    // lists after cellComp was indexed. Never use a merely in-range stale id to
-    // preserve a sleeping joint; fall back to the conservative rebuild.
-    Comp* ownComp = E.comps.compById(own, ownId);
-    Comp* peerComp = E.comps.compById(peer, peerId);
-    if (std::find(ownComp->cells.begin(), ownComp->cells.end(), target) == ownComp->cells.end()
-        || std::find(peerComp->cells.begin(), peerComp->cells.end(), target) == peerComp->cells.end()) {
-      crossBondMayBreak = true; return;
-    }
     int64_t key = ((int64_t)ownId << 32) | (uint32_t)peerId;
     if (std::find(crossPairs.begin(), crossPairs.end(), key) == crossPairs.end()) crossPairs.push_back(key);
   };
@@ -109,10 +121,8 @@ void ReactionSystem::applyAcid() {
     }
     return false;
   };
-  for (int y = 1; y < E.rows - 1; y++) {
-    int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
-    for (int x = minX; x <= maxX; x++) {
-      int k = E.I(x, y); if (E.L->grid[k] != ACID) continue;
+  for (int k : E.activeAcidCells) {
+      if (E.L->grid[k] != ACID) continue;
       int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
       // body-material invariant: a stone body cell IS dissolvable material, but acid
       // on free-body cells is owned by the body-erosion path (erodeBodies), so skip them here.
@@ -133,13 +143,12 @@ void ReactionSystem::applyAcid() {
       if (target < 0) continue;
       uint8_t tm = E.L->grid[target];
       if (E.isStoneComponentMaterial(tm) || E.isIceComponentMaterial(tm)) noteTouchedCrossBond(target);
-      if (E.isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (E.isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (E.isPlantMaterial(tm)) dissolvedPlant = true;
+      if (E.isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (E.isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (E.isPlantMaterial(tm)) { erasedPlant.push_back(target); dissolvedPlant = true; }
       // Dissolving releases acrid smoke (a yellow gas that rises/dissipates like
       // steam) from the dissolved cell ~half the time; otherwise it leaves space.
       if (E.rand() < ACRID_SMOKE_P) { E.writeGridIndex(target, ACRID_SMOKE); E.markCellIndex(target); }
       else E.writeGridIndex(target, EMPTY);
       if (E.rand() < ACID_DECAY_P) E.writeGridIndex(k, EMPTY);
-    }
   }
   if (!crossBondMayBreak) for (int64_t pair : crossPairs) {
     if (!touchedCrossBondSurvives(pair)) { crossBondMayBreak = true; break; }
@@ -154,9 +163,9 @@ void ReactionSystem::applyAcid() {
   // cell in the layer just to discover which one or two components acid touched.
   // Capture the ice offset before the stone list can split and change its size.
   int iceIndexOffset = (int)(E.L->stoneComponents.size() + E.L->plantComponents.size());
-  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false, false, 0);
-  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false, iceIndexOffset);
-  if (dissolvedPlant) E.splitPlantAfterErase(); // sets groundDirty (plant grounding nuance)
+  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false, false, cellCompExact ? 0 : -1);
+  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false, cellCompExact ? iceIndexOffset : -1);
+  if (dissolvedPlant) E.finishPlantErosion(erasedPlant, cellCompExact && !dissolvedStone && !dissolvedIce);
   bool pureBore = false;
   if (dissolvedStone || dissolvedIce) {
     E.comps.cgRemovedCells.clear();
@@ -211,10 +220,9 @@ void ReactionSystem::applyAcid() {
 void ReactionSystem::applyLava() {
   std::unordered_set<int>& hardened = E.lavaHardenedScratch; hardened.clear();
   int hardenedYMax = 0; bool plantBurned = false;
-  for (int y = 1; y < E.rows - 1; y++) {
-    int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
-    for (int x = minX; x <= maxX; x++) {
-      int k = E.I(x, y); if (E.L->grid[k] != LAVA) continue;
+  for (int k : E.activeLavaCells) {
+      if (E.L->grid[k] != LAVA) continue;
+      int y = k / E.cols;
       int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
       int snowK = -1;
       if (E.L->grid[right] == SNOW) snowK = right; else if (E.L->grid[left] == SNOW) snowK = left; else if (E.L->grid[down] == SNOW) snowK = down; else if (E.L->grid[up] == SNOW) snowK = up;
@@ -230,7 +238,6 @@ void ReactionSystem::applyLava() {
       if (quenches(right)) liquidK = right; else if (quenches(left)) liquidK = left; else if (quenches(down)) liquidK = down; else if (quenches(up)) liquidK = up;
       if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE); hardened.insert(k); if (y > hardenedYMax) hardenedYMax = y; continue; }
       if (E.rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (E.L->grid[up] == EMPTY) airK = up; else if (E.L->grid[right] == EMPTY) airK = right; else if (E.L->grid[left] == EMPTY) airK = left; if (airK >= 0) E.writeGridIndex(airK, FIRE); }
-    }
   }
   if (!hardened.empty()) E.registerRigidCells(E.L->stoneComponents, E.L->nextStoneId, STONE, hardened, hardenedYMax, false);
   if (plantBurned) E.splitPlantAfterErase();
@@ -274,10 +281,8 @@ void ReactionSystem::applyIce() {
 // existing checksums are unchanged. Each grain salinates only itself + one
 // neighbour, so a pinch of salt makes a little brine — no runaway ocean conversion.
 void ReactionSystem::applySalt() {
-  for (int y = 1; y < E.rows - 1; y++) {
-    int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
-    for (int x = minX; x <= maxX; x++) {
-      int k = E.I(x, y); if (E.L->grid[k] != SALT) continue;
+  for (int k : E.activeSaltCells) {
+      if (E.L->grid[k] != SALT) continue;
       int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
       int waterK = -1;
       if (E.L->grid[right] == WATER) waterK = right; else if (E.L->grid[left] == WATER) waterK = left; else if (E.L->grid[down] == WATER) waterK = down; else if (E.L->grid[up] == WATER) waterK = up;
@@ -290,6 +295,5 @@ void ReactionSystem::applySalt() {
       int snowK = -1;
       if (E.L->grid[right] == SNOW) snowK = right; else if (E.L->grid[left] == SNOW) snowK = left; else if (E.L->grid[down] == SNOW) snowK = down; else if (E.L->grid[up] == SNOW) snowK = up;
       if (snowK >= 0) { E.writeGridIndex(snowK, BRINE); E.writeGridIndex(k, BRINE); }
-    }
   }
 }

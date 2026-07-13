@@ -11,6 +11,7 @@ import { chromium } from 'playwright';
 
 const args = process.argv.slice(2);
 const flag = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? Number(args[i + 1]) : fallback; };
+const hasFlag = (name) => args.includes(name);
 const targetCols = flag('--cols', 1120), targetRows = flag('--rows', 1056);
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
@@ -45,17 +46,20 @@ try {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  await page.goto('http://localhost:5181/fps', { waitUntil: 'networkidle' });
-  await page.waitForFunction(() => window.__sandTest?.info().cols > 0 && window.__sandPerf?.().worldTick > 0, null, { timeout: 60000 });
-
-  for (let i = 0; i < 40; i++) {
-    const info = await page.evaluate(() => window.__sandTest.info());
-    if (info.cols >= targetCols && info.rows >= targetRows) break;
-    await page.keyboard.press('-');
-    await page.waitForTimeout(180);
-  }
-  await page.waitForTimeout(3000);
-  const info = await page.evaluate(() => window.__sandTest.info());
+  const preparePage = async (reload = false) => {
+    if (reload) await page.reload({ waitUntil: 'networkidle' });
+    else await page.goto('http://localhost:5181/fps', { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => window.__sandTest?.info().cols > 0 && window.__sandPerf?.().worldTick > 0, null, { timeout: 60000 });
+    for (let i = 0; i < 40; i++) {
+      const current = await page.evaluate(() => window.__sandTest.info());
+      if (current.cols >= targetCols && current.rows >= targetRows) break;
+      await page.keyboard.press('-');
+      await page.waitForTimeout(180);
+    }
+    await page.waitForTimeout(3000);
+    return page.evaluate(() => window.__sandTest.info());
+  };
+  let info = await preparePage();
 
   const sampleFor = async (ms) => {
     const out = [], end = Date.now() + ms;
@@ -79,6 +83,18 @@ try {
   const waterSummary = summarize(water);
   console.log('  water ', waterSummary);
   if (waterSummary.toolWritesTotal <= 0) throw new Error('water stroke produced no worker tool writes');
+  if (hasFlag('--reactions')) {
+    info = await preparePage(true);
+    await page.evaluate(() => window.__sandTest.seedWorkerReaction(5, 1200, 0));
+    await page.waitForTimeout(250);
+    const fire = await sampleFor(7000);
+    console.log('  fire  ', summarize(fire));
+    info = await preparePage(true);
+    await page.evaluate(() => window.__sandTest.seedWorkerReaction(10, 2400, 0));
+    await page.waitForTimeout(250);
+    const acid = await sampleFor(7000);
+    console.log('  acid  ', summarize(acid));
+  }
   if (errors.length) throw new Error(`browser errors:\n${errors.join('\n')}`);
 } finally {
   await cleanup(browser);

@@ -78,7 +78,10 @@
   // front (computeGroundedBoth) so solids support solids across layers; this flag
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
-  std::vector<int> acidErasedStone, acidErasedIce; // reusable per-call scratch for applyAcid (avoids a heap alloc every acid step)
+  std::vector<int> acidErasedStone, acidErasedIce, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
+  std::vector<int> crossFireErasedFg, crossFireErasedBg;
+  std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells;
+  std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
   std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
   std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava

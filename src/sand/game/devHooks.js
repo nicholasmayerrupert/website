@@ -144,6 +144,7 @@ export function installDevHooks(ctx, {
     },
     setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },
     paintWorker(material, x, y, radius = 8) { ctx.worldWorker?.testPaintDisc(material, x, y, radius); },
+    seedWorkerReaction(material, cap = 600, phase = 0) { ctx.worldWorker?.testSeedReaction(material, cap, phase); },
     addInventory(material, count) { return ctx.localPlayerId && engine() ? engine().addToInventory(ctx.localPlayerId, material | 0, count | 0) : false; },
     getInventory() { return ctx.localPlayerId && engine() ? engine().getInventory(ctx.localPlayerId) : { slots: [], selected: 0 }; },
     selectSlot(i) { if (ctx.localPlayerId) engine()?.setSelectedSlot(ctx.localPlayerId, i | 0); },

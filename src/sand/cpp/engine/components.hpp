@@ -108,7 +108,8 @@ class ComponentSystem {
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax);
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);
-  void splitPlantAfterErase();
+  void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true);
+  void finishPlantErosion(std::vector<int>& erased, bool indexedExact);
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1);
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 

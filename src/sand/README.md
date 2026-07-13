@@ -87,7 +87,10 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   normal `npm run build` never needs the C++ toolchain.
   At extreme zoom (>900k loaded cells), grid-aligned component grounding and
   assembly motion use a deterministic 30 Hz structural cadence while loose
-  materials, reactions, tools, and actors retain their normal clocks.
+  materials, reactions, tools, and actors retain their normal clocks. Reaction
+  and movement passes build ordered active-material candidates once instead of
+  repeatedly scanning mostly rigid spans; fire/acid split only touched plant
+  components, and worker mirror diffs use bulk row copies.
 - `wasmBridge/engineFactory.js` — loads the wasm module and exposes `createEngineWasm()`, the
   simulation+render+camera handle. Call `initSandWasm()` once and wait for it
   before creating an engine. The grid lives in wasm memory (zero-copy view).

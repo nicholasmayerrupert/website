@@ -13,7 +13,8 @@
   void registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache) { comps.registerRigidCells(list, nextId, mat, cells, yMax, iceCache); }
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, bool iceCache) { comps.registerRigidCellsSplit(list, nextId, mat, cells, iceCache); }
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) { comps.registerPlantCells(mat, cells, yMax); }
-  void splitPlantAfterErase() { comps.splitPlantAfterErase(); }
+  void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true) { comps.splitPlantAfterErase(erased, indexedOffset, markGroundDirty); }
+  void finishPlantErosion(std::vector<int>& erased, bool indexedExact) { comps.finishPlantErosion(erased, indexedExact); }
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1) { comps.splitRigidAfterErase(list, erased, nextId, iceCache, markGroundDirty, indexedOffset); }
   int compCount(Layer& lay) { return comps.compCount(lay); }
   Comp* compById(Layer& lay, int id) { return comps.compById(lay, id); }

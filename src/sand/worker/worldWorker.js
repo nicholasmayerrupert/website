@@ -1,5 +1,7 @@
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
+import { MAT_FLAGS, MF } from '../materials.generated.js';
+import { MAT } from '../materials.js';
 
 const WORLD_STEP_MS = 16;
 const STREAM_MARGIN = 40;
@@ -29,6 +31,23 @@ let edgesProcessed = 0;
 let toolWrites = 0;
 let resizeId = 0;
 let mirroredCreatures = false;
+
+function seedReactionInterface(material, cap, phase) {
+  const grid = engine.getGrid(), cols = engine.cols, rows = engine.rows;
+  const sourceFlag = material === MAT.FIRE ? MF.flammable : MF.dissolvable;
+  let count = 0;
+  const yStart = 2 + ((phase | 0) * 97) % Math.max(1, rows - 4);
+  for (let yo = 0; yo < rows - 4 && count < cap; yo++) {
+    const y = 2 + ((yStart - 2 + yo) % (rows - 4)), rb = y * cols;
+    for (let x = 2 + (((phase | 0) * 53 + y * 7) % 11); x < cols - 2 && count < cap; x += 11) {
+      const k = rb + x;
+      if (grid[k] !== MAT.EMPTY) continue;
+      if (![k - 1, k + 1, k - cols, k + cols].some((q) => (MAT_FLAGS[grid[q]] & sourceFlag) !== 0)) continue;
+      if (engine.paintDisc(x, y, 0, material, false)) count++;
+    }
+  }
+  toolWrites += count;
+}
 
 const postBytes = (message, bytes) => {
   const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -225,6 +244,8 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'test-paint-disc') {
     const p = toLocal(data.worldX, data.worldY);
     if (engine.paintDisc(p.x, p.y, Math.max(1, data.radius | 0), data.material | 0, false)) toolWrites++;
+  } else if (data.type === 'test-seed-reaction') {
+    seedReactionInterface(data.material | 0, Math.max(1, data.cap | 0), data.phase | 0);
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;

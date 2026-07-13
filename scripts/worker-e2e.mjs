@@ -233,6 +233,45 @@ try {
   check('mobile layer toggle reports the background state', layerState.text === 'BG' && layerState.pressed === 'true');
   check('mobile BG tap writes to the background', backgroundTap.bg > foregroundTap.bg && backgroundTap.fg === foregroundTap.fg,
     `fg ${foregroundTap.fg} -> ${backgroundTap.fg}, bg ${foregroundTap.bg} -> ${backgroundTap.bg}`);
+
+  await mobileGame.locator('.sg-expand').tap();
+  const openUi = await mobileGame.evaluate((host) => {
+    const root = host.shadowRoot;
+    const list = root.querySelector('.sg-list');
+    return {
+      joystickHidden: getComputedStyle(root.querySelector('.sg-stick')).display === 'none',
+      controlsHidden: getComputedStyle(root.querySelector('.sg-zoom')).display === 'none',
+      scrollable: list.scrollHeight > list.clientHeight,
+    };
+  });
+  check('expanded mobile palette hides joystick and left controls', openUi.joystickHidden && openUi.controlsHidden);
+  check('expanded mobile material list has scrollable overflow', openUi.scrollable);
+
+  const listBox = await mobileGame.locator('.sg-list').boundingBox();
+  const cdp = await mobileContext.newCDPSession(mobile);
+  const touchX = listBox.x + listBox.width / 2;
+  const touchStartY = listBox.y + listBox.height * 0.78;
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: touchX, y: touchStartY }] });
+  for (let i = 1; i <= 5; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove', touchPoints: [{ x: touchX, y: touchStartY - i * 24 }],
+    });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await mobile.waitForTimeout(250);
+  const scrollTop = await mobileGame.locator('.sg-list').evaluate((list) => list.scrollTop);
+  check('mobile swipe scrolls the material list', scrollTop > 20, `scrollTop ${scrollTop.toFixed(0)}`);
+
+  await mobileGame.locator('.sg-opt', { hasText: 'water' }).first().tap();
+  await mobileGame.locator('.sg-list').waitFor({ state: 'detached' });
+  const closedUi = await mobileGame.evaluate((host) => {
+    const root = host.shadowRoot;
+    return {
+      joystickVisible: getComputedStyle(root.querySelector('.sg-stick')).display !== 'none',
+      controlsVisible: getComputedStyle(root.querySelector('.sg-zoom')).display !== 'none',
+    };
+  });
+  check('selecting a mobile material restores joystick and left controls', closedUi.joystickVisible && closedUi.controlsVisible);
   await mobileContext.close();
   mobileContext = null;
 } catch (error) {

@@ -43,6 +43,7 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   border-radius: 50%; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.5);
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
+.sg-stick.sg-hidden, .sg-zoom.sg-hidden { display: none; }
 .sg-zoom { position: absolute; left: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 71;
   display: flex; align-items: stretch; gap: 8px; pointer-events: auto; touch-action: manipulation;
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
@@ -141,6 +142,16 @@ function createMobileJoystick(root, game) {
 
   root.appendChild(wrap);
   return {
+    setHidden(hidden) {
+      wrap.classList.toggle('sg-hidden', !!hidden);
+      wrap.setAttribute('aria-hidden', String(!!hidden));
+      if (hidden) {
+        pointerId = null;
+        wrap.classList.remove('active');
+        knob.style.transform = 'translate(0px, 0px)';
+        game.inputStick(0, 0);
+      }
+    },
     destroy() {
       game.inputStick(0, 0);
       wrap.remove();
@@ -196,7 +207,13 @@ function createZoomButtons(root, game) {
   for (const ev of ['pointerup', 'pointermove', 'click']) layer.addEventListener(ev, (e) => e.stopPropagation());
   wrap.appendChild(layer);
   root.appendChild(wrap);
-  return { destroy() { wrap.remove(); } };
+  return {
+    setHidden(hidden) {
+      wrap.classList.toggle('sg-hidden', !!hidden);
+      wrap.setAttribute('aria-hidden', String(!!hidden));
+    },
+    destroy() { wrap.remove(); },
+  };
 }
 
 // Live performance overlay (the /fps route). A tiny top-right panel that polls
@@ -417,6 +434,11 @@ class SandGameElement extends HTMLElement {
           this._palette = createToolPalette(root, {
             showDrawToggle: coarse,
             onSelectCreative: ({ kind, value }) => game.setCreativeMaterial(kind, value),
+            onExpandedChange: (expanded) => {
+              if (!coarse) return;
+              this._stick?.setHidden(expanded);
+              this._zoom?.setHidden(expanded);
+            },
             onToggleDrawMode: (on) => {
               game.setDrawMode(on);
               if (coarse) {

@@ -63,6 +63,8 @@ the element instead.
   terrain streaming, spawn placement, and inventory state.
 - Touch/coarse-pointer devices start with draw mode off so the host page can
   scroll. Fine-pointer survival starts draw-enabled for immediate play.
+- While the mobile creative material picker is expanded, movement and view
+  controls hide; the material grid itself accepts vertical touch scrolling.
 
 ## Multiplayer
 

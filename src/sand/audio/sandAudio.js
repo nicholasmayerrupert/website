@@ -10,7 +10,7 @@ import { loadAudioAssets } from './audioAssets.js';
 
 const STORAGE_KEY = 'sand-audio-muted';
 const AMBIENCE = Object.freeze({ WATER: 0, FIRE: 1, LAVA: 2, ACID: 3 });
-const AMBIENCE_VOLUME = [0.018, 0.15, 0.028, 0.014];
+const AMBIENCE_VOLUME = [0, 0.15, 0, 0];
 const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 190,
   [SOUND_EVENT.FUSE]: 95,
@@ -315,10 +315,8 @@ export function createSandAudio() {
     const pan = spatial.pan;
     const pitch = 0.88 + ((material * 37) % 17) / 50;
     if (type === SOUND_EVENT.EXPLOSION) {
-      const samples = recordedAssets && [recordedAssets.tntFirework, recordedAssets.tntSlam, recordedAssets.tntDeep];
-      const sample = samples?.[Math.min(2, Math.floor(variation * 3))];
-      playSample({ buffer: sample, gain: Math.min(0.72, gain * (0.36 + variation * 0.16)),
-        pan, rate: 0.82 + variation * 0.28 });
+      playSample({ buffer: recordedAssets?.tntExplosion,
+        gain: Math.min(0.72, gain * 0.44), pan, rate: 0.98 + variation * 0.04 });
     } else if (type === SOUND_EVENT.FUSE) {
       playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {

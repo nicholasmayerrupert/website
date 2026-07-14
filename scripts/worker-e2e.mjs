@@ -203,10 +203,43 @@ try {
   await mobile.goto(baseURL, { waitUntil: 'networkidle' });
   await mobile.waitForFunction(() => window.__sandTest && window.__sandPerf && window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
   const mobileGame = mobile.locator('sand-game');
-  await mobileGame.locator('.sg-draw').tap(); // Scroll -> Draw
+  const restingUi = await mobileGame.evaluate((host) => {
+    const root = host.shadowRoot;
+    const visible = (selector) => getComputedStyle(root.querySelector(selector)).display !== 'none';
+    return {
+      start: visible('.sg-start'), palette: visible('.sg-palette'),
+      joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
+    };
+  });
+  check('mobile creative rests behind only the START control',
+    restingUi.start && !restingUi.palette && !restingUi.joystick && !restingUi.controls);
+  await mobileGame.locator('.sg-start').tap();
+  const startedUi = await mobileGame.evaluate((host) => {
+    const root = host.shadowRoot;
+    const visible = (selector) => getComputedStyle(root.querySelector(selector)).display !== 'none';
+    return {
+      start: visible('.sg-start'), palette: visible('.sg-palette'),
+      joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
+    };
+  });
+  check('START reveals the full mobile creative controls',
+    !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls);
   const cubePaletteWidth = await mobileGame.locator('.sg-palette').evaluate((palette) => palette.getBoundingClientRect().width);
   await mobileGame.locator('.sg-expand').tap();
+  const selectorFocus = await mobileGame.evaluate((host) => {
+    const root = host.shadowRoot;
+    const search = root.querySelector('.sg-search');
+    return {
+      autoFocused: root.activeElement === search,
+      fontSize: parseFloat(getComputedStyle(search).fontSize),
+      scale: window.visualViewport?.scale || 1,
+    };
+  });
+  check('opening the mobile material selector does not focus or zoom the page',
+    !selectorFocus.autoFocused && selectorFocus.fontSize >= 16 && Math.abs(selectorFocus.scale - 1) < 0.01,
+    `focus ${selectorFocus.autoFocused}, ${selectorFocus.fontSize}px, scale ${selectorFocus.scale}`);
   await mobileGame.locator('.sg-opt', { hasText: 'mycelium_spore' }).tap();
+  await mobileGame.locator('.sg-current .sg-name.scrolling').waitFor();
   const longNameUi = await mobileGame.locator('.sg-palette').evaluate((palette) => {
     const name = palette.querySelector('.sg-current .sg-name');
     const track = name.querySelector('.sg-name-track');
@@ -232,7 +265,7 @@ try {
     };
   });
   check('mobile utility controls form the compact 2x2 grid',
-    controls.grid && controls.layerLabel === 'FG' && controls.drawLabel === '✎DRAW');
+    controls.grid && controls.layerLabel === 'FG' && controls.drawLabel === '↕SCROLL');
   const mobileTarget = await mobile.evaluate(() => {
     window.__sandTest.setCreativeMaterial(0, 3); // STONE
     const rect = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main').getBoundingClientRect();
@@ -293,6 +326,18 @@ try {
     };
   });
   check('selecting a mobile material restores joystick and left controls', closedUi.joystickVisible && closedUi.controlsVisible);
+  await mobileGame.locator('.sg-draw').tap();
+  const returnedUi = await mobileGame.evaluate((host) => {
+    const root = host.shadowRoot;
+    const visible = (selector) => getComputedStyle(root.querySelector(selector)).display !== 'none';
+    return {
+      start: visible('.sg-start'), palette: visible('.sg-palette'),
+      joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
+    };
+  });
+  check('SCROLL returns mobile creative to the START-only state',
+    returnedUi.start && !returnedUi.palette && !returnedUi.joystick && !returnedUi.controls,
+    JSON.stringify(returnedUi));
   await mobileContext.close();
   mobileContext = null;
 } catch (error) {

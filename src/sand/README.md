@@ -242,12 +242,17 @@ than imposing a fixed total-cell ceiling on capable hardware.
 Multiplayer clients keep the host buffer size; their zoom is view-only within
 that window.
 
-On touch devices, the adjacent `FG`/`BG` control selects the layer used by canvas
+On touch devices, creative mode rests behind one large bottom `START` button so
+the page remains uncluttered and scrollable. Starting reveals the palette, time,
+joystick, and compact utility pad; its `SCROLL` action returns to the resting
+state. The adjacent `FG`/`BG` control selects the layer used by canvas
 taps. `FG` sends the normal primary action; `BG` sends the secondary action, so
 placement and erasing target the darker background layer. Mouse left/right clicks
 remain unchanged on hybrid devices. The same compact 2x2 utility pad contains a
-`SCROLL`/`DRAW` mode control, leaving the center palette focused on material and
-time selection.
+`SCROLL` action, leaving the center palette focused on material and time
+selection. Opening the material selector does not focus its search field on
+touch devices, avoiding browser page zoom; tapping search explicitly still opens
+the keyboard at a mobile-safe text size.
 
 ### Day/night
 

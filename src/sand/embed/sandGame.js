@@ -43,7 +43,14 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   border-radius: 50%; background: rgba(255,255,255,.24); border: 1px solid rgba(255,255,255,.5);
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
-.sg-stick.sg-hidden, .sg-zoom.sg-hidden { display: none; }
+.sg-stick.sg-hidden, .sg-zoom.sg-hidden, .sg-start.sg-hidden { display: none; }
+.sg-start { position: absolute; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 72;
+  width: min(72vw, 320px); height: 56px; transform: translateX(-50%); pointer-events: auto; touch-action: manipulation;
+  border: 1px solid rgba(255,255,255,.32); border-radius: 16px; background: rgba(17,24,39,.62); color: #fff;
+  font: 700 15px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .12em; cursor: pointer;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(6px); box-shadow: 0 12px 24px -8px rgba(0,0,0,.55); }
+.sg-start:active { background: rgba(255,255,255,.86); color: #111827; }
 .sg-zoom { position: absolute; left: 12px; bottom: calc(36px + env(safe-area-inset-bottom, 0px)); z-index: 71;
   display: grid; grid-template: "zoom-in layer" 40px "zoom-out draw" 40px / 40px 40px; gap: 6px;
   pointer-events: auto; touch-action: manipulation;
@@ -221,19 +228,19 @@ function createZoomButtons(root, game, onToggleDrawMode) {
   let drawOn = false;
   const renderDraw = () => {
     draw.classList.toggle('on', drawOn);
-    drawIcon.textContent = drawOn ? '✎' : '↕';
-    drawText.textContent = drawOn ? 'DRAW' : 'SCROLL';
-    draw.setAttribute('aria-label', `Interaction mode: ${drawOn ? 'draw' : 'scroll'}`);
+    drawIcon.textContent = drawOn ? '↕' : '✎';
+    drawText.textContent = drawOn ? 'SCROLL' : 'DRAW';
+    draw.setAttribute('aria-label', drawOn ? 'Switch to page scrolling' : 'Start drawing');
     draw.setAttribute('aria-pressed', String(drawOn));
   };
-  draw.addEventListener('pointerdown', (e) => {
+  draw.addEventListener('click', (e) => {
     drawOn = !drawOn;
     renderDraw();
     onToggleDrawMode?.(drawOn);
     e.preventDefault();
     e.stopPropagation();
   });
-  for (const ev of ['pointerup', 'pointermove', 'click']) draw.addEventListener(ev, (e) => e.stopPropagation());
+  for (const ev of ['pointerdown', 'pointerup', 'pointermove']) draw.addEventListener(ev, (e) => e.stopPropagation());
   renderDraw();
   wrap.appendChild(draw);
   root.appendChild(wrap);
@@ -244,6 +251,32 @@ function createZoomButtons(root, game, onToggleDrawMode) {
       wrap.setAttribute('aria-hidden', String(!!hidden));
     },
     destroy() { wrap.remove(); },
+  };
+}
+
+// Mobile creative mode stays visually quiet until the visitor explicitly arms
+// drawing. This is the only interactive control in that resting state.
+function createMobileStartButton(root, onStart) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'sg-start';
+  button.textContent = 'START';
+  button.setAttribute('aria-label', 'Start drawing in the sand simulation');
+  button.addEventListener('click', (e) => {
+    onStart?.();
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  for (const ev of ['pointerdown', 'pointerup', 'pointermove']) {
+    button.addEventListener(ev, (e) => e.stopPropagation());
+  }
+  root.appendChild(button);
+  return {
+    setHidden(hidden) {
+      button.classList.toggle('sg-hidden', !!hidden);
+      button.setAttribute('aria-hidden', String(!!hidden));
+    },
+    destroy() { button.remove(); },
   };
 }
 
@@ -437,6 +470,7 @@ class SandGameElement extends HTMLElement {
         this._game = game;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&
           window.matchMedia('(pointer: coarse)').matches;
+        let syncMobileCreativeUi = () => {};
         if (mode === 'survival') {
           // Survival uses the inventory HUD (hotbar + openable grid) with the full
           // Minecraft cursor model. All state is authoritative in the engine; the HUD
@@ -462,16 +496,28 @@ class SandGameElement extends HTMLElement {
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
+          let drawModeOn = !coarse;
+          let paletteExpanded = false;
+          syncMobileCreativeUi = () => {
+            if (!coarse) return;
+            const controlsHidden = !drawModeOn || paletteExpanded;
+            this._start?.setHidden(drawModeOn);
+            this._palette?.setHidden(!drawModeOn);
+            this._stick?.setHidden(controlsHidden);
+            this._zoom?.setHidden(controlsHidden);
+          };
           const applyDrawMode = (on) => {
-            game.setDrawMode(on);
-            this._palette?.setDrawMode(on);
-            this._zoom?.setDrawMode(on);
+            drawModeOn = !!on;
+            game.setDrawMode(drawModeOn);
+            this._palette?.setDrawMode(drawModeOn);
+            this._zoom?.setDrawMode(drawModeOn);
             if (coarse) {
-              sim.classList.toggle('draw-on', on);
-              setPageScrollLocked(on);
+              sim.classList.toggle('draw-on', drawModeOn);
+              setPageScrollLocked(drawModeOn);
             }
+            syncMobileCreativeUi();
             this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
-              detail: { on }, bubbles: true, composed: true,
+              detail: { on: drawModeOn }, bubbles: true, composed: true,
             }));
           };
           this._palette = createToolPalette(root, {
@@ -485,13 +531,16 @@ class SandGameElement extends HTMLElement {
             getTimeState: () => game.getDayNight(),
             onExpandedChange: (expanded) => {
               if (!coarse) return;
-              this._stick?.setHidden(expanded);
-              this._zoom?.setHidden(expanded);
+              paletteExpanded = expanded;
+              syncMobileCreativeUi();
             },
           });
           // Touch has no +/- keys, so give mobile an on-screen zoom control beside
           // the palette (desktop zooms via the keyboard).
-          if (coarse) this._zoom = createZoomButtons(root, game, applyDrawMode);
+          if (coarse) {
+            this._zoom = createZoomButtons(root, game, applyDrawMode);
+            this._start = createMobileStartButton(root, () => applyDrawMode(true));
+          }
         }
         // Default draw state: fine pointers are always draw-enabled. Coarse
         // pointers start off so touch pages can scroll until the user opts in.
@@ -501,6 +550,7 @@ class SandGameElement extends HTMLElement {
         this._palette?.setDrawMode(drawDefault);
         this._zoom?.setDrawMode(drawDefault);
         if (coarse) this._stick = createMobileJoystick(root, game);
+        syncMobileCreativeUi();
         // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).
         if (this.hasAttribute('perf-hud')) this._perfHud = createPerfHud(root, game);
       })
@@ -519,9 +569,10 @@ class SandGameElement extends HTMLElement {
     this._sizeMenu?.destroy();
     this._mp?.destroy();
     this._zoom?.destroy();
+    this._start?.destroy();
     this._perfHud?.destroy();
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = this._perfHud = null;
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = null;
     this._mounted = false;
   }
 

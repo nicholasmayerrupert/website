@@ -115,6 +115,7 @@ const STYLE = `
   -webkit-tap-highlight-color: transparent; touch-action: auto; }
 .sg-palette.side { left: 16px; top: 50%; transform: translateY(-50%); }
 .sg-palette.bottom { bottom: 12px; left: 50%; transform: translateX(-50%); }
+.sg-palette[hidden] { display: none; }
 .sg-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .sg-cap { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #d1d5db; }
 
@@ -194,6 +195,10 @@ const STYLE = `
   border-radius: 50%; background: #f8fafc; box-shadow: 0 2px 5px rgba(0,0,0,.45); }
 @media (prefers-reduced-motion: reduce) {
   .sg-current .sg-name.scrolling .sg-name-track { animation: none; }
+}
+@media (pointer: coarse) {
+  /* Mobile browsers magnify focused form controls whose text is below 16px. */
+  .sg-search { font-size: 16px; }
 }
 `;
 
@@ -374,7 +379,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       col.insertBefore(search, controls);
       col.insertBefore(list, controls);
       renderList();
-      if (!showDrawToggle) search.focus();
+      // Fine pointers benefit from immediate typing. On touch, focusing here
+      // opens the keyboard and can zoom the whole page as soon as the selector
+      // is tapped, so wait for an explicit tap in the search field instead.
+      if (!showDrawToggle && !requireDrawMode) search.focus();
     } else {
       query = '';
       search.value = '';
@@ -495,6 +503,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       drawOn = !!on;
       if (!drawOn && expanded) setExpanded(false);
       else renderState();
+    },
+    setHidden(hidden) {
+      wrap.hidden = !!hidden;
+      wrap.setAttribute('aria-hidden', String(!!hidden));
     },
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
     destroy() {

@@ -120,7 +120,9 @@ try {
   const mobilePage = await mobileContext.newPage();
   await mobilePage.goto(URL, { waitUntil: 'domcontentloaded' });
   await mobilePage.waitForFunction(() => window.__sandTest?.info().cols > 0, null, { timeout: 60000 });
-  const mobileTime = mobilePage.locator('sand-game').locator('.sg-time');
+  const mobileGame = mobilePage.locator('sand-game');
+  await mobileGame.locator('.sg-start').tap();
+  const mobileTime = mobileGame.locator('.sg-time');
   const mobileRange = mobileTime.locator('.sg-time-range');
   check('creative mobile palette exposes the same fitted time slider',
     await mobileTime.isVisible() && await mobileTime.getAttribute('data-mode') === 'auto');

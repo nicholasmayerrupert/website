@@ -61,8 +61,10 @@ the element instead.
   WebSocket transport.
 - C++/WASM owns simulation, rendering, camera policy, player physics, tools,
   terrain streaming, spawn placement, and inventory state.
-- Touch/coarse-pointer devices start with draw mode off so the host page can
-  scroll. Fine-pointer survival starts draw-enabled for immediate play.
+- Touch/coarse-pointer creative mode starts with draw mode off and shows only a
+  bottom `START` button so the host page can scroll. Starting reveals the normal
+  controls; choosing `SCROLL` hides them again. Fine-pointer survival starts
+  draw-enabled for immediate play.
 - While the mobile creative material picker is expanded, movement and view
   controls hide; the material grid itself accepts vertical touch scrolling.
 

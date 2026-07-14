@@ -652,6 +652,10 @@ body {
     gap: 48px;
   }
 
+  .toolbox__heading {
+    text-align: center;
+  }
+
   .toolbox__groups {
     grid-template-columns: 1fr;
   }

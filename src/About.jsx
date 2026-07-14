@@ -23,7 +23,7 @@ export default function About() {
       <div className="portfolio-shell">
         <header className="portfolio-intro portfolio-reveal">
           <p className="portfolio-eyebrow">About</p>
-          <h2>I code.</h2>
+          <h2>I code</h2>
           <p className="portfolio-lede">
             I&apos;m Nicholas, a software engineer who enjoys working on systems
             and web applications. I like learning how things work, solving

@@ -104,7 +104,7 @@ export default function TileGrid() {
         <header className="projects-header portfolio-reveal">
           <div>
             <p className="portfolio-eyebrow">Selected work</p>
-            <h2>Things I&apos;ve built.</h2>
+            <h2>Things I&apos;ve built</h2>
           </div>
         </header>
 

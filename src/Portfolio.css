@@ -652,7 +652,7 @@ body {
     gap: 48px;
   }
 
-  .toolbox__heading {
+  .toolbox__heading h3 {
     text-align: center;
   }
 

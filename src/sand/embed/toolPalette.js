@@ -199,6 +199,7 @@ const STYLE = `
   border: 1px solid transparent; background: rgba(255,255,255,.035); border-radius: 5px; padding: 5px;
   text-align: left; font: inherit; font-size: 9px; line-height: 1.2; text-transform: uppercase; color: #dbe4ef;
   cursor: pointer; overflow: hidden; transition: background .12s ease, border-color .12s ease, transform .12s ease; }
+.sg-opt[hidden] { display: none; }
 .sg-palette.expanded .sg-opt { animation: sg-option-in .18s cubic-bezier(.2,.8,.2,1) both;
   animation-delay: min(calc(var(--sg-index) * 9ms), 150ms); }
 @keyframes sg-option-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }

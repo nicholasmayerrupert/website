@@ -40,6 +40,7 @@ struct Layer {
   std::vector<int32_t> skyDownDepth;
   std::unordered_map<int, int32_t> skyWorldReachY;
   int skyOffsetX = 0, skyOffsetY = 0;
+  int skyInputLevel = -1;
   bool skyValid = false, skyDirty = true;
   // Conservative "this layer might have nonzero mineDamage" flag: set true the
   // moment any cell is damaged, cleared only when the whole array is zeroed
@@ -150,7 +151,7 @@ struct Layer {
     light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
     skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
     skyWorldReachY.clear();
-    skyOffsetX = skyOffsetY = 0; skyValid = false; skyDirty = true;
+    skyOffsetX = skyOffsetY = 0; skyInputLevel = -1; skyValid = false; skyDirty = true;
     bodyOwner.assign(n, -1);
     renderPixels.assign(n * 4, 0);
   }

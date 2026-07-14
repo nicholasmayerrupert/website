@@ -47,6 +47,7 @@ bool Renderer::sideRayStartsInSky(Layer* lay, int x, int y) {
 bool Renderer::directSkyCurrent(Layer* lay) const {
   int n = E.cols * E.rows;
   return lay->skyValid && !lay->skyDirty && lay->skyOffsetX == lay->worldOffsetX && lay->skyOffsetY == lay->worldOffsetY &&
+         lay->skyInputLevel == (int)renderSkyLight &&
          (int)lay->skyLight.size() == n && (int)lay->skyDownDepth.size() == E.cols && (int)lay->skyDownValue.size() == E.cols;
 }
 
@@ -60,7 +61,8 @@ void Renderer::remapSkyTopInput(Layer* lay) {
     std::fill(lay->skyTopInput.begin(), lay->skyTopInput.end(), 0);
     return;
   }
-  if (lay->skyOffsetX == lay->worldOffsetX && lay->skyOffsetY == lay->worldOffsetY) return;
+  if (lay->skyOffsetX == lay->worldOffsetX && lay->skyOffsetY == lay->worldOffsetY &&
+      lay->skyInputLevel == (int)renderSkyLight) return;
   std::vector<uint8_t> nextTop((size_t)E.cols, 0);
   const uint8_t* g = lay->grid;
   for (int x = 0; x < E.cols; x++) {
@@ -79,7 +81,11 @@ void Renderer::remapSkyTopInput(Layer* lay) {
               if (!transparentForLight(g[y * E.cols + x])) { clearToKnownLit = false; break; }
             }
             if (clearToKnownLit) {
-              nextTop[x] = lay->skyDownValue[oldX];
+              // skyDownDepth is geometric provenance: it proves that this
+              // buffer top connects to real sky outside the loaded window.
+              // Its cached value may be from a different day/night phase, so
+              // always apply the current render-only skylight intensity.
+              nextTop[x] = renderSkyLight;
               continue;
             }
           }
@@ -173,6 +179,7 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
 #endif
   lay->skyOffsetX = lay->worldOffsetX;
   lay->skyOffsetY = lay->worldOffsetY;
+  lay->skyInputLevel = (int)renderSkyLight;
   lay->skyValid = true;
   lay->skyDirty = false;
 }

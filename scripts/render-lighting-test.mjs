@@ -3,7 +3,7 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
-import { NIGHT_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
+import { NIGHT_SKY_LIGHT, NOON_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 96, ROWS = 96;
@@ -311,6 +311,16 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   const shaftFace = brightness(mirror, 44, 70);
   const sealed = brightness(mirror, 20, 70);
   check(`streamed worker mirror keeps off-screen shaft skylight (${shaftFace.toFixed(1)} > ${sealed.toFixed(1)})`, shaftFace > sealed + 35);
+  mirror.setSkyLight(NIGHT_SKY_LIGHT);
+  mirror.renderFull();
+  const nightShaftFace = brightness(mirror, 44, 70);
+  mirror.setSkyLight(NOON_SKY_LIGHT);
+  mirror.renderFull();
+  const restoredShaftFace = brightness(mirror, 44, 70);
+  check(`streamed worker mirror follows night instead of retaining cached daylight (${nightShaftFace.toFixed(1)} < ${shaftFace.toFixed(1)})`,
+    nightShaftFace < shaftFace - 35);
+  check(`streamed worker mirror restores daylight through the same cached shaft (${restoredShaftFace.toFixed(1)} ~= ${shaftFace.toFixed(1)})`,
+    Math.abs(restoredShaftFace - shaftFace) < 10);
   source.destroy();
   mirror.destroy();
 }

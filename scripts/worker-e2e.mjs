@@ -78,6 +78,26 @@ try {
   const game = page.locator('sand-game');
   await game.locator('.sg-expand').click();
   const stableOption = await game.locator('.sg-opt').first().elementHandle();
+  const mainLabels = await game.locator('.sg-opt:not([hidden]) .sg-name').allTextContents();
+  check('creative Main folder begins with the ten featured picks',
+    mainLabels.slice(0, 10).join(',') === 'cube,eraser,rigid,stone,water,acid,lava,tnt,seed,sand',
+    mainLabels.slice(0, 10).join(','));
+  check('creative Main folder contains the complete catalog', mainLabels.length === 57, `${mainLabels.length} entries`);
+  check('creative Main folder keeps all spawn eggs at the bottom',
+    mainLabels.slice(-7).every((label) => label.endsWith('Spawn Egg')), mainLabels.slice(-7).join(','));
+  check('creative picker exposes all seven material folders', await game.locator('.sg-section').count() === 7);
+  await game.locator('.sg-section', { hasText: 'Terrain' }).click();
+  const terrainLabels = await game.locator('.sg-opt:not([hidden]) .sg-name').allTextContents();
+  check('folder selection shows its catalog while keeping featured entries available there',
+    terrainLabels.includes('sand') && terrainLabels.includes('stone') && terrainLabels.includes('copper_ore')
+      && !terrainLabels.includes('cube') && !terrainLabels.includes('water'));
+  await game.locator('.sg-section', { hasText: 'Flora' }).click();
+  const seedIconUrls = await game.locator('.sg-opt:not([hidden])').evaluateAll((options) => options
+    .filter((option) => / Seed$/.test(option.querySelector('.sg-name')?.textContent || ''))
+    .map((option) => option.querySelector('canvas').toDataURL()));
+  check('all six species seeds render as distinct pixel icons',
+    seedIconUrls.length === 6 && new Set(seedIconUrls).size === 6, `${new Set(seedIconUrls).size}/${seedIconUrls.length}`);
+  await game.locator('.sg-section', { hasText: 'Main' }).click();
   await game.locator('.sg-search').fill('fox spawn egg');
   await game.locator('.sg-opt', { hasText: 'Fox Spawn Egg' }).click();
   check('desktop material picker stays open after selection',
@@ -333,7 +353,9 @@ try {
   check('opening the mobile material selector does not focus or zoom the page',
     !selectorFocus.autoFocused && selectorFocus.fontSize >= 16 && Math.abs(selectorFocus.scale - 1) < 0.01,
     `focus ${selectorFocus.autoFocused}, ${selectorFocus.fontSize}px, scale ${selectorFocus.scale}`);
+  await mobileGame.locator('.sg-section', { hasText: 'Flora' }).tap();
   await mobileGame.locator('.sg-opt', { hasText: 'mycelium_spore' }).tap();
+  await mobileGame.locator('.sg-list').waitFor({ state: 'detached' });
   await mobileGame.locator('.sg-current .sg-name.scrolling').waitFor();
   const longNameUi = await mobileGame.locator('.sg-palette').evaluate((palette) => {
     const name = palette.querySelector('.sg-current .sg-name');
@@ -411,6 +433,7 @@ try {
   const scrollTop = await mobileGame.locator('.sg-list').evaluate((list) => list.scrollTop);
   check('mobile swipe scrolls the material list', scrollTop > 20, `scrollTop ${scrollTop.toFixed(0)}`);
 
+  await mobileGame.locator('.sg-section', { hasText: 'Fluids' }).tap();
   await mobileGame.locator('.sg-opt', { hasText: 'water' }).first().tap();
   await mobileGame.locator('.sg-list').waitFor({ state: 'detached' });
   const closedUi = await mobileGame.evaluate((host) => {

@@ -29,6 +29,10 @@ const menuTail = buildEntries().slice(-7);
 check('creative menu ends with all seven creature spawn eggs',
   menuTail.length === 7 && menuTail.every((entry, i) =>
     entry.kind === CK.CREATURE && entry.value === i && entry.label.endsWith('Spawn Egg')));
+const seedEntries = buildEntries().filter((entry) => entry.kind === CK.SEED);
+check('all six species seeds have distinct creative-menu pixel icons',
+  seedEntries.length === 6 && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === 6
+    && new Set(seedEntries.map((entry) => entry.seedColors.join('/'))).size === 6);
 
 // 1) Any COMPONENT material drafts with a live preview, then finalizes into the grid.
 {

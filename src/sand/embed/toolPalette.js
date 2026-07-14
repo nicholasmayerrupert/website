@@ -32,10 +32,29 @@ const CK_ERASER = 2;
 const CK_CUBE = 3;
 const CK_CREATURE = 4;
 
-// Species order mirrors the engine's seed-species indices.
-const SEED_SPECIES = ['Oak', 'Pine', 'Willow', 'Cactus', 'Mushroom', 'Bush'];
+// Species order mirrors the engine's seed-species indices. Each 9x9 pattern is
+// intentionally distinct at menu size instead of presenting six green squares.
+const SEED_SPECIES = [
+  { name: 'Oak', colors: ['#d59a5f', '#78472d'], pixels: [
+    '.........', '...222...', '..21112..', '..21112..', '..11111..', '...111...', '...121...', '....2....', '.........',
+  ] },
+  { name: 'Pine', colors: ['#72b878', '#315b46'], pixels: [
+    '....2....', '...121...', '...121...', '..11211..', '..11211..', '.1112111.', '...121...', '....2....', '.........',
+  ] },
+  { name: 'Willow', colors: ['#b7d983', '#527047'], pixels: [
+    '...111...', '..11211..', '.1112111.', '.1122211.', '..12221..', '...121...', '...121...', '....2....', '.........',
+  ] },
+  { name: 'Cactus', colors: ['#63c77a', '#28653f'], pixels: [
+    '.........', '...222...', '..21112..', '..12121..', '..21112..', '..12121..', '..21112..', '...222...', '.........',
+  ] },
+  { name: 'Mushroom', colors: ['#d56a85', '#f0d6b5'], pixels: [
+    '.........', '...111...', '..11111..', '.1121211.', '.1111111.', '...222...', '...222...', '..22222..', '.........',
+  ] },
+  { name: 'Bush', colors: ['#70b764', '#bd5c82'], pixels: [
+    '.........', '..12121..', '.1121211.', '.2111112.', '.1212121.', '..11111..', '...121...', '....2....', '.........',
+  ] },
+];
 
-const SEED_SWATCH = 'rgb(120,190,100)';
 const ERASER_SWATCH = 'rgb(254,205,211)';
 const CUBE_SWATCH = 'rgb(214,211,209)';
 
@@ -52,16 +71,46 @@ const CREATURE_EGGS = [
   ['Bird', CREATURE.BIRD, '#aedaf0', '#3663a0'],
 ];
 
-// Most-used builders float to the top of the list so they aren't buried under
-// the long tail of exotic materials. Matched against the lowercased entry label.
-const PRIORITY_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'crystal', 'water', 'lava', 'acid', 'tnt', 'oil', 'brine', 'seed', 'mycelium_spore', 'glowberry', 'glowshroom'];
+// Main contains the complete catalog, with this useful set pinned first. The
+// remainder is curated roughly from unusual/reactive to ordinary building
+// material; creature eggs are appended separately so they always stay last.
+const FEATURED_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'water', 'acid', 'lava', 'tnt', 'seed', 'sand'];
+const MAIN_TAIL_LABELS = [
+  'fire', 'oil', 'gunpowder', 'crystal', 'mycelium_spore', 'mycelium', 'glowberry', 'glowshroom',
+  'brine', 'steam', 'acrid_smoke', 'ice',
+  'oak seed', 'pine seed', 'willow seed', 'cactus seed', 'mushroom seed', 'bush seed',
+  'grass', 'dirt', 'snow', 'mud', 'salt', 'gold_ore', 'iron_ore', 'copper_ore', 'coal_ore',
+  'brick', 'clay', 'sandstone', 'moss', 'wood', 'pine_wood', 'cactus', 'mush_cap', 'mush_stem',
+  'vine', 'plant', 'driftwood', 'debris',
+];
+const MAIN_ORDER_LABELS = [...FEATURED_LABELS, ...MAIN_TAIL_LABELS];
+
+const PALETTE_SECTIONS = [
+  { id: 'main', label: 'Main', accent: '#f6c56f', all: true },
+  { id: 'tools', label: 'Tools', accent: '#cbd5e1', labels: ['cube', 'eraser', 'rigid'] },
+  { id: 'terrain', label: 'Terrain', accent: '#c99a6b', labels: [
+    'sand', 'stone', 'dirt', 'snow', 'mud', 'clay', 'sandstone', 'copper_ore', 'iron_ore',
+    'coal_ore', 'gold_ore', 'brick', 'salt', 'debris', 'crystal',
+  ] },
+  { id: 'fluids', label: 'Fluids', accent: '#70bfff', labels: ['water', 'oil', 'acid', 'lava', 'ice', 'steam', 'brine'] },
+  { id: 'flora', label: 'Flora', accent: '#7dd88a', labels: [
+    'seed', 'wood', 'plant', 'driftwood', 'moss', 'pine_wood', 'cactus', 'mush_stem',
+    'mush_cap', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
+  ], kinds: [CK_SEED] },
+  { id: 'reactions', label: 'Reactions', accent: '#ff856c', labels: [
+    'fire', 'steam', 'oil', 'acid', 'lava', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
+  ] },
+  { id: 'creatures', label: 'Creatures', accent: '#c99cff', kinds: [CK_CREATURE] },
+];
+
+const entryInSection = (entry, section) =>
+  section.all || section.labels?.includes(entry.label) || section.kinds?.includes(entry.kind);
 
 
 // Build the full entry list: materials (minus EMPTY), 6 seeds, eraser, cube.
 // Each entry is { key, label, color, kind, value } where `color` is a css color
-// string used as the swatch background. Entries are then reordered so the common
-// builders in PRIORITY_LABELS lead, in that exact order, with everything else
-// following in its natural order.
+// string used as the swatch background. Entries are then reordered into Main's
+// curated order; any future materials not yet ranked follow in schema order.
 export function buildEntries() {
   const entries = [];
   for (const m of MATERIALS) {
@@ -76,29 +125,27 @@ export function buildEntries() {
       value: m.id,
     });
   }
-  SEED_SPECIES.forEach((name, i) => {
+  SEED_SPECIES.forEach(({ name, colors, pixels }, i) => {
     entries.push({
       key: `seed-${i}`,
       label: `${name} Seed`,
-      color: SEED_SWATCH,
-      textureAmp: 7,
+      color: colors[0],
+      seedColors: colors,
+      seedPixels: pixels,
       kind: CK_SEED,
       value: i,
     });
   });
-  // Labels are lowercase to match the materials above (m.name.toLowerCase()) so
-  // they display consistently AND match the lowercased search query / the
-  // lowercase PRIORITY_LABELS lookup (otherwise 'cube' never leads and neither
-  // tool can be found by typing its name).
+  // Tool labels stay lowercase to match material labels and search queries.
   entries.push({ key: 'eraser', label: 'eraser', color: ERASER_SWATCH, textureAmp: 0, kind: CK_ERASER, value: 0 });
   entries.push({ key: 'cube', label: 'cube', color: CUBE_SWATCH, textureAmp: 8, kind: CK_CUBE, value: 0 });
 
-  const lead = [];
-  for (const want of PRIORITY_LABELS) {
-    const hit = entries.find((e) => e.label === want);
-    if (hit) lead.push(hit);
+  const ordered = [];
+  for (const want of MAIN_ORDER_LABELS) {
+    const hit = entries.find((e) => e.label.toLowerCase() === want);
+    if (hit) ordered.push(hit);
   }
-  const rest = entries.filter((e) => !lead.includes(e));
+  const rest = entries.filter((e) => !ordered.includes(e));
   const eggs = CREATURE_EGGS.map(([name, value, light, dark]) => ({
     key: `creature-${value}`,
     label: `${name} Spawn Egg`,
@@ -108,7 +155,7 @@ export function buildEntries() {
     value,
     egg: true,
   }));
-  return [...lead, ...rest, ...eggs];
+  return [...ordered, ...rest, ...eggs];
 }
 
 const STYLE = `
@@ -175,6 +222,22 @@ const STYLE = `
   -webkit-touch-callout: default; }
 .sg-search::placeholder { color: #94a3b8; }
 .sg-search:focus { border-color: rgba(255,255,255,.48); box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+.sg-sections { display: flex; gap: 4px; width: 224px; max-width: calc(100vw - 2.5rem); padding: 1px 1px 3px;
+  overflow-x: auto; overscroll-behavior-x: contain; touch-action: pan-x; scrollbar-width: none; }
+.sg-sections::-webkit-scrollbar { display: none; }
+.sg-section { --sg-accent: #cbd5e1; display: flex; flex: 0 0 auto; align-items: center; gap: 5px; min-height: 27px;
+  border: 1px solid rgba(255,255,255,.12); border-radius: 5px; padding: 4px 6px; background: rgba(255,255,255,.035);
+  color: #aebbc9; font: inherit; font-size: 8px; line-height: 1; text-transform: uppercase; cursor: pointer;
+  touch-action: manipulation; transition: color .12s ease, border-color .12s ease, background .12s ease; }
+.sg-section:hover { color: #fff; border-color: rgba(255,255,255,.28); background: rgba(255,255,255,.08); }
+.sg-section.active { color: #fff; border-color: var(--sg-accent); background: rgba(255,255,255,.1); }
+.sg-folder { position: relative; width: 13px; height: 9px; flex: none; box-sizing: border-box; margin-top: 2px;
+  border: 1px solid currentColor; background: var(--sg-accent); box-shadow: inset 0 0 0 3px rgba(5,10,18,.58); }
+.sg-folder::before { content: ''; position: absolute; left: -1px; top: -4px; width: 6px; height: 4px; box-sizing: border-box;
+  border: 1px solid currentColor; border-bottom: 0; background: var(--sg-accent); }
+.sg-list-head { display: flex; align-items: baseline; justify-content: space-between; min-height: 11px; padding: 0 2px;
+  color: #e5edf6; font-size: 8px; text-transform: uppercase; letter-spacing: .11em; }
+.sg-list-count { color: #8391a3; font-variant-numeric: tabular-nums; }
 .sg-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 224px;
   max-width: calc(100vw - 2.5rem); max-height: 240px; overflow-y: auto; overscroll-behavior-y: contain;
   touch-action: pan-y; -webkit-overflow-scrolling: touch; padding: 1px 3px 1px 1px;
@@ -186,7 +249,8 @@ const STYLE = `
 .sg-palette.bottom.expanded .sg-dropdown { transform: translate(-50%, 0) scale(1); animation-name: sg-dropdown-mobile-in; }
 .sg-palette.bottom.closing .sg-dropdown { animation-name: sg-dropdown-mobile-out; }
 .sg-palette.bottom .sg-list { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(340px, calc(100vw - 2.5rem));
-  max-height: min(42svh, 280px); }
+  max-height: min(34svh, 230px); }
+.sg-palette.bottom .sg-sections { width: min(340px, calc(100vw - 2.5rem)); }
 @keyframes sg-dropdown-mobile-in {
   from { opacity: 0; transform: translate(-50%, 7px) scale(.985); }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
@@ -279,11 +343,22 @@ const pixelNoise = (seed, x, y) => {
 // blocks unrelated to the world renderer.
 function paintSwatch(sw, entry) {
   const ctx = sw.getContext('2d');
+  ctx.clearRect(0, 0, 9, 9);
+  if (entry.seedPixels) {
+    for (let y = 0; y < 9; y++) {
+      for (let x = 0; x < 9; x++) {
+        const colorIndex = Number(entry.seedPixels[y][x]) - 1;
+        if (colorIndex < 0) continue;
+        ctx.fillStyle = entry.seedColors[colorIndex];
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+    return;
+  }
   const seed = hashText(entry.key);
   const base = colorChannels(entry.eggColors?.[0] || entry.color);
   const dark = colorChannels(entry.eggColors?.[1] || entry.color);
   const amp = entry.textureAmp ?? 6;
-  ctx.clearRect(0, 0, 9, 9);
   for (let y = 0; y < 9; y++) {
     for (let x = 0; x < 9; x++) {
       const noise = pixelNoise(seed, x, y);
@@ -334,6 +409,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   // Default selection is the Cube (the engine starts on the cube too).
   let selected = entries.find((e) => e.kind === CK_CUBE) || entries[0];
   let query = '';
+  let activeSection = PALETTE_SECTIONS[0];
   let drawOn = false;
   let atBottom = false;
   let expanded = false;
@@ -416,7 +492,11 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   search.className = 'sg-search';
   search.placeholder = 'Search materials or creatures…';
   search.setAttribute('aria-label', 'Search spawnable materials and creatures');
-  search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); renderList(); });
+  search.addEventListener('input', () => {
+    query = search.value.trim().toLowerCase();
+    list.scrollTop = 0;
+    renderList();
+  });
   search.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') setExpanded(false);
   });
@@ -424,7 +504,46 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   const list = document.createElement('div');
   list.className = 'sg-list';
   list.setAttribute('role', 'listbox');
-  dropdownShell.append(search, list);
+  const sections = document.createElement('div');
+  sections.className = 'sg-sections';
+  sections.setAttribute('role', 'tablist');
+  sections.setAttribute('aria-label', 'Material folders');
+  const sectionButtons = new Map();
+  for (const section of PALETTE_SECTIONS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `sg-section${section === activeSection ? ' active' : ''}`;
+    button.style.setProperty('--sg-accent', section.accent);
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(section === activeSection));
+    button.setAttribute('aria-label', `${section.label} materials`);
+    const icon = document.createElement('span');
+    icon.className = 'sg-folder';
+    icon.setAttribute('aria-hidden', 'true');
+    const label = document.createElement('span');
+    label.textContent = section.label;
+    button.append(icon, label);
+    button.addEventListener('click', () => {
+      activeSection = section;
+      query = '';
+      search.value = '';
+      list.scrollTop = 0;
+      renderList();
+      sections.scrollTo({
+        left: button.offsetLeft - (sections.clientWidth - button.offsetWidth) / 2,
+        behavior: 'smooth',
+      });
+    });
+    sectionButtons.set(section.id, button);
+    sections.appendChild(button);
+  }
+  const listHead = document.createElement('div');
+  listHead.className = 'sg-list-head';
+  const listTitle = document.createElement('span');
+  const listCount = document.createElement('span');
+  listCount.className = 'sg-list-count';
+  listHead.append(listTitle, listCount);
+  dropdownShell.append(search, sections, listHead, list);
   const optionByKey = new Map();
   const empty = document.createElement('div');
   empty.className = 'sg-empty';
@@ -640,10 +759,20 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     buildListOnce();
     let shown = 0;
     for (const entry of entries) {
-      const visible = !query || entry.label.toLowerCase().includes(query);
+      const visible = query
+        ? entry.label.toLowerCase().includes(query)
+        : entryInSection(entry, activeSection);
       optionByKey.get(entry.key).hidden = !visible;
       if (visible) shown++;
     }
+    for (const section of PALETTE_SECTIONS) {
+      const button = sectionButtons.get(section.id);
+      const active = !query && section === activeSection;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    }
+    listTitle.textContent = query ? 'Search results' : activeSection.label;
+    listCount.textContent = String(shown).padStart(2, '0');
     empty.hidden = shown !== 0;
   }
 

@@ -303,6 +303,10 @@ absolute world coordinates.
 
 The creative material field opens an animated, searchable dropdown whose 9×9
 pixel samples reuse each material's generated base color and texture amplitude.
+Main contains the full catalog, with the most useful tools and materials pinned
+first and creature eggs grouped at the bottom. Tools, Terrain, Fluids, Flora,
+Reactions, and Creatures provide shorter filtered folders. The six plant species
+use distinct 9×9 seed icons. Search spans every folder.
 Desktop keeps the dropdown open for repeated picks until it is explicitly
 closed; mobile closes after a pick, while its joystick and utility pad remain
 available throughout selection.

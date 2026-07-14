@@ -602,12 +602,11 @@ body {
     text-align: left;
   }
 
-  .portfolio-intro h2 {
-    font-size: clamp(50px, 15vw, 78px);
-  }
-
   .portfolio-intro h2,
-  .projects-header h2 {
+  .toolbox__heading h3,
+  .projects-header h2,
+  .contact-stage__content h2 {
+    font-size: clamp(45px, 14vw, 64px);
     text-align: center;
   }
 
@@ -690,10 +689,6 @@ body {
 }
 
 @media (max-width: 480px) {
-  .portfolio-intro h2 {
-    font-size: clamp(45px, 14vw, 64px);
-  }
-
   .career-card {
     min-height: 365px;
   }
@@ -727,10 +722,6 @@ body {
 
   .contact-stage__content {
     padding-inline: 18px;
-  }
-
-  .contact-stage__content h2 {
-    font-size: clamp(46px, 14vw, 66px);
   }
 
   .contact-email {

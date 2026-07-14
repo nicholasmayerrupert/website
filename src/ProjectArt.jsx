@@ -195,44 +195,71 @@ function glyphRow({ y, widths, hot }, rowIdx) {
    2b. PIXEL SAND SIMULATION - streamed terrain, two layers, falling cells
    ===================================================================== */
 const SAND_GRID = {
-  x: 104,
-  y: 74,
-  size: 13,
+  x: 48,
+  y: 60,
+  size: 23,
   gap: 1,
-  cols: 15,
-  rows: 10,
+  cols: 36,
+  rows: 11,
 };
 
-const SAND_CELLS = [
-  [0, 7, '#6f3db7', 0.44], [1, 7, '#6f3db7', 0.54], [2, 7, '#6f3db7', 0.58], [3, 7, '#8b5cf6', 0.7],
-  [4, 6, '#8b5cf6', 0.78], [5, 6, '#8b5cf6', 0.82], [6, 6, '#6f3db7', 0.66], [7, 7, '#6f3db7', 0.58],
-  [8, 7, '#6f3db7', 0.52], [9, 7, '#6f3db7', 0.5], [10, 6, '#8b5cf6', 0.74], [11, 6, '#8b5cf6', 0.72],
-  [12, 7, '#6f3db7', 0.52], [13, 7, '#6f3db7', 0.48], [14, 7, '#6f3db7', 0.42],
-  [0, 8, '#2b1749', 0.72], [1, 8, '#2b1749', 0.8], [2, 8, '#38205d', 0.88], [3, 8, '#3e2468', 0.94],
-  [4, 8, '#4b2b7a', 0.96], [5, 8, '#4b2b7a', 0.96], [6, 8, '#3e2468', 0.9], [7, 8, '#2b1749', 0.76],
-  [10, 8, '#38205d', 0.86], [11, 8, '#3e2468', 0.88], [12, 8, '#2b1749', 0.78], [13, 8, '#2b1749', 0.74], [14, 8, '#24133e', 0.68],
-  [0, 9, '#160a28', 0.92], [1, 9, '#160a28', 0.94], [2, 9, '#21123a', 0.96], [3, 9, '#21123a', 0.98],
-  [4, 9, '#24133e', 0.98], [5, 9, '#24133e', 0.98], [6, 9, '#21123a', 0.96], [7, 9, '#160a28', 0.92],
-  [8, 9, '#160a28', 0.88], [9, 9, '#21123a', 0.94], [10, 9, '#21123a', 0.96], [11, 9, '#24133e', 0.96],
-  [12, 9, '#21123a', 0.92], [13, 9, '#160a28', 0.9], [14, 9, '#160a28', 0.86],
-  [5, 2, '#ffd166', 1], [5, 3, '#ffd166', 0.96], [5, 4, '#f59e0b', 0.9],
-  [4, 5, '#f59e0b', 0.95], [5, 5, '#fbbf24', 1], [6, 5, '#ffd166', 0.92],
-  [4, 6, '#f59e0b', 0.92], [5, 6, '#fbbf24', 0.98], [6, 6, '#f59e0b', 0.86],
-  [9, 3, '#3ce0ff', 0.86], [10, 3, '#3ce0ff', 0.74], [9, 4, '#38bdf8', 0.9],
-  [10, 4, '#38bdf8', 0.82], [11, 4, '#38bdf8', 0.64], [9, 5, '#3ce0ff', 0.74], [10, 5, '#38bdf8', 0.78],
-  [12, 5, '#ff7b2f', 0.9], [12, 6, '#ff9d3f', 0.95], [13, 6, '#ffe08a', 0.86],
-  [2, 5, '#5eead4', 0.72], [2, 6, '#34d399', 0.64], [3, 6, '#5eead4', 0.7],
+const SAND_TERRAIN_PROFILE = [
+  8, 8, 7, 7, 6, 6, 7, 7, 8, 8, 9, 9,
+  9, 9, 9, 9, 9, 9, 9, 8, 8, 7, 7, 7,
+  8, 8, 7, 7, 6, 6, 6, 7, 7, 8, 8, 8,
 ];
 
-const BG_SAND_CELLS = [
-  [1, 5, '#35205b', 0.36], [2, 5, '#35205b', 0.34], [3, 5, '#35205b', 0.32], [4, 5, '#4a2a75', 0.32],
-  [5, 5, '#4a2a75', 0.3], [6, 5, '#35205b', 0.3], [7, 6, '#35205b', 0.32], [8, 6, '#35205b', 0.34],
-  [9, 6, '#4a2a75', 0.32], [10, 6, '#4a2a75', 0.3], [11, 6, '#35205b', 0.28], [12, 6, '#35205b', 0.28],
+const terrainColor = (column, row, surface) => {
+  if (row >= 10) return column % 3 === 0 ? '#343744' : '#404451';
+  if (row >= 9) return column % 2 === 0 ? '#4d4658' : '#554a5c';
+  if (column < 10) return row === surface ? '#f0c45b' : '#a96f48';
+  if (column >= 27) return row === surface ? '#67ad58' : '#83583f';
+  return row === surface ? '#8f6a9e' : '#69516f';
+};
+
+const SAND_CELLS = SAND_TERRAIN_PROFILE.flatMap((surface, column) =>
+  Array.from({ length: SAND_GRID.rows - surface }, (_, offset) => {
+    const row = surface + offset;
+    return [column, row, terrainColor(column, row, surface), 1];
+  }),
+);
+
+const WATER_CELLS = Array.from({ length: 9 }, (_, columnOffset) =>
+  Array.from({ length: 3 }, (_, rowOffset) => [
+    10 + columnOffset,
+    6 + rowOffset,
+    rowOffset === 0 ? '#55c8ef' : '#2797d0',
+    0.78 + rowOffset * 0.08,
+  ]),
+).flat();
+
+const FEATURE_CELLS = [
+  [4, 3, '#f4cf69', 1], [4, 4, '#edb94d', 1], [4, 5, '#e8a83e', 1],
+  [3, 5, '#f4cf69', 1], [5, 5, '#f4cf69', 1],
+  [22, 5, '#f04444', 1], [23, 5, '#e23838', 1], [22, 6, '#c62f37', 1], [23, 6, '#b82732', 1],
+  [22, 4, '#ffb347', 0.94], [23, 3, '#ffd166', 0.96], [24, 4, '#ff7438', 0.9],
+  [29, 3, '#805c3f', 1], [29, 4, '#805c3f', 1], [29, 5, '#805c3f', 1],
+  [28, 2, '#66b85b', 0.96], [29, 2, '#72c466', 1], [30, 2, '#66b85b', 0.96],
+  [27, 3, '#5fae55', 0.9], [28, 3, '#72c466', 1], [30, 3, '#72c466', 1], [31, 3, '#5fae55', 0.9],
+  [32, 4, '#aeb4c2', 1], [33, 4, '#8e95a5', 1], [32, 5, '#9299a8', 1], [33, 5, '#747c8d', 1],
 ];
+
+const BG_SAND_CELLS = SAND_TERRAIN_PROFILE.flatMap((surface, column) => {
+  const backgroundSurface = Math.max(5, surface - 2 - (column % 5 === 0 ? 1 : 0));
+  return Array.from({ length: 2 }, (_, offset) => [
+    column,
+    backgroundSurface + offset,
+    offset === 0 ? '#554a7e' : '#393653',
+    0.28 + offset * 0.08,
+  ]);
+});
 
 const FALLING_GRAINS = [
-  { x: 5, y: 0, fill: '#ffd166', delay: 0 },
-  { x: 10, y: 1, fill: '#3ce0ff', delay: 0.9 },
+  { x: 3, y: 0, fill: '#f4cf69', delay: 0 },
+  { x: 5, y: 1, fill: '#edb94d', delay: 1.2 },
+  { x: 14, y: 0, fill: '#55c8ef', delay: 0.6 },
+  { x: 16, y: 1, fill: '#2797d0', delay: 1.8 },
+  { x: 32, y: 0, fill: '#aeb4c2', delay: 0.35 },
 ];
 
 const sandCellX = (c) => SAND_GRID.x + c * (SAND_GRID.size + SAND_GRID.gap);
@@ -245,7 +272,7 @@ function SandCell({ c, r, fill, opacity = 1, className, style }) {
       y={sandCellY(r)}
       width={SAND_GRID.size}
       height={SAND_GRID.size}
-      rx="1.5"
+      rx="1"
       fill={fill}
       opacity={opacity}
       className={className}
@@ -269,68 +296,82 @@ export function SandSimArt() {
   }
 
   return (
-    <svg className="project-art project-art--sand" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <svg className="project-art project-art--sand" viewBox="0 0 960 350" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
-        <radialGradient id="sand-bg" cx="50%" cy="45%" r="80%">
-          <stop offset="0%" stopColor="#121044" />
-          <stop offset="58%" stopColor="#0d0623" />
-          <stop offset="100%" stopColor="#060010" />
-        </radialGradient>
+        <linearGradient id="sand-bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#11182b" />
+          <stop offset="52%" stopColor="#17102d" />
+          <stop offset="100%" stopColor="#090711" />
+        </linearGradient>
+        <linearGradient id="sand-sky" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#18243f" />
+          <stop offset="58%" stopColor="#1e2940" />
+          <stop offset="100%" stopColor="#3c3145" />
+        </linearGradient>
         <linearGradient id="sand-horizon" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="rgba(255,209,102,0.08)" />
-          <stop offset="42%" stopColor="rgba(60,224,255,0.18)" />
-          <stop offset="100%" stopColor="rgba(157,107,255,0.08)" />
+          <stop offset="0%" stopColor="rgba(240,196,91,0.06)" />
+          <stop offset="46%" stopColor="rgba(85,200,239,0.26)" />
+          <stop offset="100%" stopColor="rgba(103,173,88,0.08)" />
         </linearGradient>
         <linearGradient id="sand-beam" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="rgba(60,224,255,0)" />
-          <stop offset="50%" stopColor="rgba(60,224,255,0.48)" />
-          <stop offset="100%" stopColor="rgba(60,224,255,0)" />
+          <stop offset="0%" stopColor="rgba(127,214,255,0)" />
+          <stop offset="50%" stopColor="rgba(127,214,255,0.34)" />
+          <stop offset="100%" stopColor="rgba(127,214,255,0)" />
         </linearGradient>
-        <pattern id="sand-dots" width="20" height="20" patternUnits="userSpaceOnUse">
-          <circle cx="2" cy="2" r="1" fill="#6b5fa8" />
+        <pattern id="sand-dots" width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="2" r="1" fill="#7e78a4" />
         </pattern>
         <clipPath id="sand-clip">
-          <rect x={SAND_GRID.x} y={SAND_GRID.y} width={gridWidth} height={gridHeight} rx="6" />
+          <rect x={SAND_GRID.x} y={SAND_GRID.y} width={gridWidth} height={gridHeight} rx="5" />
         </clipPath>
       </defs>
 
-      <rect width="400" height="300" fill="url(#sand-bg)" />
-      <rect width="400" height="300" fill="url(#sand-dots)" opacity="0.18" />
+      <rect width="960" height="350" fill="url(#sand-bg)" />
+      <rect width="960" height="350" fill="url(#sand-dots)" opacity="0.13" />
+      <circle cx="788" cy="50" r="142" fill="rgba(111,130,255,0.09)" />
+      <circle cx="170" cy="285" r="185" fill="rgba(211,105,255,0.06)" />
 
-      <g fill="none" stroke="#6d5aa8" strokeWidth="0.8" opacity="0.24">
-        <path d="M 18 214 C 70 188 116 208 164 182 C 220 152 276 180 354 150" />
-        <path d="M 42 236 C 94 214 132 228 180 206 C 248 174 302 202 382 174" />
-        <path d="M 72 58 L 96 38 L 122 68 L 96 96 Z M 96 38 L 96 96" />
-        <path d="M 318 210 L 346 190 L 370 220 L 336 238 Z" />
-      </g>
-      <g fill="#d9b8ff">
-        {[[72, 58], [96, 38], [122, 68], [96, 96], [318, 210], [346, 190], [370, 220], [336, 238]].map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="1.8" />
-        ))}
-      </g>
-
-      <g>
-        <rect x="83" y="56" width="236" height="172" rx="13" fill="#08051a" stroke="#463a72" strokeWidth="1.2" opacity="0.96" />
-        <rect x="95" y="66" width="214" height="151" rx="9" fill="#0b0820" stroke="rgba(60,224,255,0.22)" strokeWidth="1" />
-      </g>
+      <rect x="22" y="20" width="916" height="310" rx="17" fill="#080a11" stroke="#45485e" strokeWidth="1.3" />
+      <rect x="23" y="21" width="914" height="35" rx="16" fill="#141621" />
+      <path d="M23 56H937" stroke="#393c4f" strokeWidth="1" />
+      <circle cx="43" cy="38" r="4" fill="#ff6b6b" />
+      <circle cx="57" cy="38" r="4" fill="#ffd166" />
+      <circle cx="71" cy="38" r="4" fill="#62d98b" />
+      <text x="91" y="42" fill="#aeb4c2" fontSize="10" fontWeight="650" letterSpacing="1.5">SAND ENGINE</text>
+      <text x="913" y="42" fill="#7f86a0" fontSize="9" textAnchor="end" letterSpacing="1.2">FG + BG · LIVE</text>
 
       <g clipPath="url(#sand-clip)">
-        <rect x={SAND_GRID.x} y={SAND_GRID.y} width={gridWidth} height={gridHeight} fill="#060010" />
-        <rect x={SAND_GRID.x} y="136" width={gridWidth} height="1.5" fill="url(#sand-horizon)" />
-        <g className="pa-pan-drift" opacity="0.62">
+        <rect x={SAND_GRID.x} y={SAND_GRID.y} width={gridWidth} height={gridHeight} fill="url(#sand-sky)" />
+        <g fill="#dce9ff">
+          {[[74, 80], [148, 104], [238, 78], [356, 92], [468, 76], [588, 103], [714, 82], [842, 98]].map(([x, y], i) => (
+            <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 1.8 : 1.2} opacity={0.28 + (i % 3) * 0.13} />
+          ))}
+        </g>
+        <circle cx="805" cy="104" r="24" fill="#d9e6ff" opacity="0.75" />
+        <circle cx="795" cy="96" r="24" fill="#202b43" opacity="0.9" />
+        <path d="M48 178 L138 112 L222 171 L320 102 L418 176 L522 121 L638 182 L742 116 L911 183 V250 H48Z" fill="#283249" opacity="0.88" />
+        <path d="M48 208 L148 156 L252 208 L368 145 L482 210 L602 164 L716 207 L818 154 L911 198 V260 H48Z" fill="#313646" opacity="0.92" />
+        <rect x={SAND_GRID.x} y="201" width={gridWidth} height="2" fill="url(#sand-horizon)" />
+        <g className="pa-pan-drift">
           {BG_SAND_CELLS.map(([c, r, fill, opacity], i) => (
             <SandCell key={`bg${i}`} c={c} r={r} fill={fill} opacity={opacity} />
           ))}
         </g>
-        <g stroke="#1f173a" strokeWidth="0.45" opacity="0.72">{gridLines}</g>
-        {SAND_CELLS.map(([c, r, fill, opacity]) => (
+        <g stroke="#182033" strokeWidth="0.5" opacity="0.48">{gridLines}</g>
+        {SAND_CELLS.map(([c, r, fill, opacity], i) => (
           <SandCell
-            key={`fg${c}-${r}-${fill}`}
+            key={`fg${i}`}
             c={c}
             r={r}
             fill={fill}
             opacity={opacity}
           />
+        ))}
+        {WATER_CELLS.map(([c, r, fill, opacity], i) => (
+          <SandCell key={`water${i}`} c={c} r={r} fill={fill} opacity={opacity} />
+        ))}
+        {FEATURE_CELLS.map(([c, r, fill, opacity], i) => (
+          <SandCell key={`feature${i}`} c={c} r={r} fill={fill} opacity={opacity} />
         ))}
         {FALLING_GRAINS.map(({ x, y, fill, delay }, i) => (
           <SandCell
@@ -343,7 +384,7 @@ export function SandSimArt() {
             style={{ animationDelay: `${delay}s` }}
           />
         ))}
-        <rect x={SAND_GRID.x} y="70" width={gridWidth} height="18" fill="url(#sand-beam)" className="pa-scan" opacity="0.7" />
+        <rect x={SAND_GRID.x} y="64" width={gridWidth} height="20" fill="url(#sand-beam)" className="pa-scan" opacity="0.6" />
       </g>
 
       <rect
@@ -351,41 +392,25 @@ export function SandSimArt() {
         y={SAND_GRID.y - 2}
         width={gridWidth + 4}
         height={gridHeight + 4}
-        rx="8"
-        fill="rgba(60,224,255,0.04)"
-        stroke="#3ce0ff"
-        strokeWidth="1.4"
-        strokeDasharray="6 7"
+        rx="7"
+        fill="rgba(127,214,255,0.025)"
+        stroke="#7fd6ff"
+        strokeWidth="1.2"
+        strokeDasharray="8 9"
         className="pa-ants"
       />
-      <g stroke="#3ce0ff" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.9">
-        <path d="M 102 92 L 102 72 L 122 72" />
-        <path d="M 292 72 L 312 72 L 312 92" />
-        <path d="M 312 192 L 312 212 L 292 212" />
-        <path d="M 122 212 L 102 212 L 102 192" />
+      <g stroke="#a2e4ff" strokeWidth="3" fill="none" strokeLinecap="round" opacity="0.86">
+        <path d="M 48 80 L 48 60 L 68 60" />
+        <path d="M 891 60 L 911 60 L 911 80" />
+        <path d="M 911 303 L 911 323 L 891 323" />
+        <path d="M 68 323 L 48 323 L 48 303" />
       </g>
-
-      <path d="M 266 46 C 244 56 228 74 220 100" fill="none" stroke="#ffd166" strokeWidth="1.3" strokeDasharray="5 7" opacity="0.58" className="pa-dash" />
-      <polygon points="260,42 274,40 268,53" fill="#ffd166" opacity="0.78" />
-      <g className="pa-float">
-        <circle cx="222" cy="94" r="12" fill="none" stroke="#ffd166" strokeWidth="1.3" opacity="0.7" />
-        <line x1="222" y1="78" x2="222" y2="86" stroke="#ffd166" strokeWidth="1.3" />
-        <line x1="222" y1="102" x2="222" y2="110" stroke="#ffd166" strokeWidth="1.3" />
-        <line x1="206" y1="94" x2="214" y2="94" stroke="#ffd166" strokeWidth="1.3" />
-        <line x1="230" y1="94" x2="238" y2="94" stroke="#ffd166" strokeWidth="1.3" />
+      <g className="pa-float" fill="none" stroke="#f4cf69" strokeWidth="1.5" opacity="0.78">
+        <circle cx="144" cy="104" r="13" />
+        <path d="M144 83V92 M144 116V125 M123 104H132 M156 104H165" />
       </g>
-
-      <g fill="none" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M 72 144 C 54 156 54 184 72 196" stroke="#7ef2d0" strokeWidth="1.5" opacity="0.55" />
-        <path d="M 72 196 L 64 193 M 72 196 L 70 187" stroke="#7ef2d0" strokeWidth="1.5" opacity="0.55" />
-        <path d="M 328 144 C 346 156 346 184 328 196" stroke="#9d6bff" strokeWidth="1.5" opacity="0.5" />
-        <path d="M 328 196 L 336 193 M 328 196 L 330 187" stroke="#9d6bff" strokeWidth="1.5" opacity="0.5" />
-      </g>
-
-      <Sparkle x={52} y={64} s={6} fill="#3ce0ff" className="pa-twinkle" style={{ animationDelay: '0.4s' }} />
-      <Sparkle x={346} y={78} s={8} fill="#7ef2d0" opacity={0.75} />
-      <Sparkle x={62} y={238} s={7} fill="#d9b8ff" opacity={0.7} />
-      <Sparkle x={350} y={250} s={5} fill="#ffd166" className="pa-twinkle" style={{ animationDelay: '2.6s' }} />
+      <Sparkle x={99} y={91} s={7} fill="#7fd6ff" className="pa-twinkle" style={{ animationDelay: '0.4s' }} />
+      <Sparkle x={861} y={102} s={8} fill="#8ee29b" className="pa-twinkle" style={{ animationDelay: '2s' }} />
     </svg>
   );
 }

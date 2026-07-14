@@ -308,6 +308,7 @@ body {
 
 .project-card--wide {
   grid-column: span 12;
+  min-height: 760px;
 }
 
 .project-card--half {

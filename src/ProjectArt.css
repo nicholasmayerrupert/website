@@ -71,7 +71,7 @@
 @keyframes pa-sand-fall {
   0% { transform: translateY(-24px); opacity: 0; }
   18% { opacity: 1; }
-  100% { transform: translateY(72px); opacity: 0; }
+  100% { transform: translateY(132px); opacity: 0; }
 }
 @keyframes pa-pan-drift {
   0%, 100% { transform: translateX(0); }

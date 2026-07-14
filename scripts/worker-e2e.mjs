@@ -79,6 +79,9 @@ try {
   await game.locator('.sg-expand').click();
   await game.locator('.sg-search').fill('fox spawn egg');
   await game.locator('.sg-opt', { hasText: 'Fox Spawn Egg' }).click();
+  check('desktop material picker stays open after selection',
+    await game.locator('.sg-palette').evaluate((palette) => palette.classList.contains('expanded')));
+  await game.locator('.sg-expand').click();
   await page.mouse.click(target.x, target.y);
   await page.waitForFunction((n) => window.__sandTest.getCreatures().filter((c) => c.species === 2).length > n, foxBefore);
   const foxAfter = await page.evaluate(() => {

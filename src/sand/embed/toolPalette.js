@@ -6,10 +6,10 @@
 // wires those into the runtime.
 //
 // To keep it small the palette is COLLAPSED by default: it shows only a compact
-// bar (the selected swatch + name, an Expand button, and the Draw On/Off toggle).
-// The full searchable grid is built lazily and only mounted while
-// expanded, so the heavy list never takes space (or DOM) until the user asks for
-// it. Picking an entry collapses back to the bar.
+// bar (the selected pixel sample + name, a dropdown button, and the Draw On/Off
+// toggle). The searchable grid is built lazily and mounted only while expanded.
+// It stays open after desktop selections for fast iteration; mobile selections
+// close it to return the limited screen space to the canvas controls.
 //
 // Every entry resolves to a creative pick {kind, value} matching the engine's
 // CreativeKind enum (consumed by game.setCreativeMaterial):
@@ -70,6 +70,8 @@ export function buildEntries() {
       key: `mat-${m.id}`,
       label: m.name.toLowerCase(),
       color: packedToRgb(m.color),
+      textureAmp: m.textureAmp,
+      animated: m.renderAnim !== 'none',
       kind: CK_MATERIAL,
       value: m.id,
     });
@@ -79,6 +81,7 @@ export function buildEntries() {
       key: `seed-${i}`,
       label: `${name} Seed`,
       color: SEED_SWATCH,
+      textureAmp: 7,
       kind: CK_SEED,
       value: i,
     });
@@ -87,8 +90,8 @@ export function buildEntries() {
   // they display consistently AND match the lowercased search query / the
   // lowercase PRIORITY_LABELS lookup (otherwise 'cube' never leads and neither
   // tool can be found by typing its name).
-  entries.push({ key: 'eraser', label: 'eraser', color: ERASER_SWATCH, kind: CK_ERASER, value: 0 });
-  entries.push({ key: 'cube', label: 'cube', color: CUBE_SWATCH, kind: CK_CUBE, value: 0 });
+  entries.push({ key: 'eraser', label: 'eraser', color: ERASER_SWATCH, textureAmp: 0, kind: CK_ERASER, value: 0 });
+  entries.push({ key: 'cube', label: 'cube', color: CUBE_SWATCH, textureAmp: 8, kind: CK_CUBE, value: 0 });
 
   const lead = [];
   for (const want of PRIORITY_LABELS) {
@@ -100,6 +103,7 @@ export function buildEntries() {
     key: `creature-${value}`,
     label: `${name} Spawn Egg`,
     color: `radial-gradient(circle at 35% 28%, #fff 0 7%, ${dark} 8% 18%, ${light} 19% 61%, ${dark} 62% 72%, ${light} 73%)`,
+    eggColors: [light, dark],
     kind: CK_CREATURE,
     value,
     egg: true,
@@ -108,61 +112,96 @@ export function buildEntries() {
 }
 
 const STYLE = `
-.sg-palette { position: absolute; z-index: 70; box-sizing: border-box; font-family: ui-sans-serif, system-ui, sans-serif;
-  background: rgba(17,24,39,.3); border-radius: 8px; padding: 8px; backdrop-filter: blur(4px);
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); pointer-events: auto; max-width: calc(100vw - 1.5rem);
-  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+.sg-palette { position: absolute; z-index: 70; box-sizing: border-box;
+  font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Roboto Mono", "Courier New", monospace;
+  font-weight: 700; letter-spacing: .035em; text-rendering: geometricPrecision;
+  -webkit-font-smoothing: none; font-smooth: never;
+  background: rgba(12,18,28,.52); border: 1px solid rgba(255,255,255,.13); border-radius: 9px; padding: 8px;
+  backdrop-filter: blur(7px); box-shadow: 0 12px 26px -8px rgba(0,0,0,.58); pointer-events: auto;
+  max-width: calc(100vw - 1.5rem); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent; touch-action: auto; }
 .sg-palette.side { left: 16px; top: 50%; transform: translateY(-50%); }
 .sg-palette.bottom { bottom: 12px; left: 50%; transform: translateX(-50%); }
 .sg-palette[hidden] { display: none; }
 .sg-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.sg-cap { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #d1d5db; }
+.sg-cap { display: block; font-size: 9px; text-transform: uppercase; letter-spacing: .12em; color: #cbd5e1; }
 
-/* Collapsed bar: selected entry preview + expand control, side by side. */
-.sg-bar { display: flex; align-items: center; gap: 6px; }
+/* Compact selected-material field with a separate pixel-arrow close control. */
+.sg-bar { display: flex; align-items: stretch; gap: 5px; }
 .sg-current { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto;
-  border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.06); border-radius: 6px;
-  padding: 5px 7px; font-size: 12px; line-height: 1.15; color: #f3f4f6; cursor: pointer; overflow: hidden;
-  touch-action: manipulation; }
-.sg-current:hover { background: rgba(255,255,255,.12); }
+  border: 1px solid rgba(255,255,255,.19); background: rgba(255,255,255,.07); border-radius: 6px;
+  padding: 5px 7px; font: inherit; font-size: 10px; line-height: 1.15; text-transform: uppercase; color: #f8fafc;
+  cursor: pointer; overflow: hidden; touch-action: manipulation; transition: background .14s ease, border-color .14s ease; }
+.sg-current:hover { background: rgba(255,255,255,.13); border-color: rgba(255,255,255,.3); }
 .sg-current.locked { opacity: .55; cursor: not-allowed; }
-.sg-current.locked:hover { background: rgba(255,255,255,.06); }
+.sg-current.locked:hover { background: rgba(255,255,255,.07); }
 .sg-current .sg-name { min-width: 0; flex: 1 1 auto; white-space: nowrap; overflow: hidden; }
 .sg-current .sg-name-track { display: inline-block; white-space: nowrap; }
-.sg-current .sg-name.scrolling .sg-name-track { animation: sg-name-pan 3.6s ease-in-out infinite alternate; }
+.sg-current .sg-name.scrolling .sg-name-track { animation: sg-name-pan 3.6s steps(24, end) infinite alternate; }
 @keyframes sg-name-pan {
   0%, 18% { transform: translateX(0); }
   82%, 100% { transform: translateX(var(--sg-name-shift)); }
 }
-.sg-expand { flex: none; border-radius: 6px; padding: 5px 9px; font-size: 11px; font-weight: 600;
-  border: 1px solid rgba(255,255,255,.18); background: rgba(255,255,255,.1); color: #fff; cursor: pointer;
-  touch-action: manipulation; }
-.sg-expand:hover { background: rgba(255,255,255,.2); }
+.sg-expand { position: relative; flex: none; width: 31px; min-height: 31px; border-radius: 6px; padding: 0;
+  border: 1px solid rgba(255,255,255,.19); background: rgba(255,255,255,.09); color: #fff; cursor: pointer;
+  touch-action: manipulation; transition: background .14s ease, border-color .14s ease; }
+.sg-expand::before { content: ''; position: absolute; left: 10px; top: 10px; width: 9px; height: 9px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg);
+  transition: transform .2s steps(4, end), top .2s steps(4, end); }
+.sg-palette.expanded .sg-expand::before { top: 13px; transform: rotate(225deg); }
+.sg-expand:hover { background: rgba(255,255,255,.19); border-color: rgba(255,255,255,.32); }
 .sg-expand.locked { opacity: .55; cursor: not-allowed; }
-.sg-expand.locked:hover { background: rgba(255,255,255,.1); }
 
-.sg-search { width: 100%; box-sizing: border-box; border-radius: 6px; padding: 6px 8px; font-size: 13px;
-  border: 1px solid rgba(255,255,255,.18); background: rgba(3,7,18,.6); color: #fff; outline: none;
-  user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
-.sg-search::placeholder { color: #9ca3af; }
-.sg-search:focus { border-color: rgba(255,255,255,.4); }
-.sg-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; width: 220px;
-  max-width: calc(100vw - 2.5rem); max-height: 240px; overflow-y: auto;
-  overscroll-behavior-y: contain; touch-action: pan-y; -webkit-overflow-scrolling: touch;
-  padding: 2px; border-radius: 6px; background: rgba(3,7,18,.35); }
-.sg-palette.bottom .sg-list { grid-template-columns: repeat(3, 1fr); width: 340px; max-height: 200px; }
-.sg-opt { display: flex; align-items: center; gap: 7px;
-  border: 1px solid transparent; background: rgba(255,255,255,.04); border-radius: 6px; padding: 6px;
-  text-align: left; font-size: 12px; line-height: 1.15; color: #e5e7eb; cursor: pointer; overflow: hidden;
-  min-height: 38px; }
-.sg-opt:hover { background: rgba(255,255,255,.1); }
-.sg-opt.active { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.35); color: #fff; }
-.sg-opt .sg-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sg-swatch { width: 26px; height: 26px; flex: none; border-radius: 6px;
-  border: 1px solid rgba(255,255,255,.18); box-shadow: inset 2px 2px 0 rgba(255,255,255,.14); }
-.sg-swatch.egg { width: 22px; margin: 0 2px; border-radius: 50% 50% 46% 46% / 58% 58% 42% 42%; }
-.sg-empty { padding: 10px 6px; font-size: 12px; color: #9ca3af; text-align: center; }
+/* The material list is a true dropdown. It remains open on desktop until the
+   field/arrow is pressed again; mobile selection closes it after the pick. */
+.sg-dropdown { transform-origin: top left; opacity: 0; transform: translateY(-7px) scale(.985);
+  transition: opacity .15s ease, transform .2s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+.sg-palette.expanded .sg-dropdown { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto;
+  animation: sg-dropdown-in .22s cubic-bezier(.2,.8,.2,1) both; }
+.sg-dropdown-shell { display: flex; flex-direction: column; gap: 6px; padding: 6px;
+  border: 1px solid rgba(255,255,255,.15); border-radius: 7px; background: rgba(5,10,18,.82);
+  box-shadow: 0 14px 30px -10px rgba(0,0,0,.72); backdrop-filter: blur(9px); overflow: hidden; }
+@keyframes sg-dropdown-in {
+  from { opacity: 0; transform: translateY(-7px) scale(.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.sg-search { width: 100%; box-sizing: border-box; border-radius: 5px; padding: 7px 8px; font: inherit;
+  font-size: 10px; text-transform: uppercase; letter-spacing: .05em; border: 1px solid rgba(255,255,255,.18);
+  background: rgba(3,7,18,.72); color: #fff; outline: none; user-select: text; -webkit-user-select: text;
+  -webkit-touch-callout: default; }
+.sg-search::placeholder { color: #94a3b8; }
+.sg-search:focus { border-color: rgba(255,255,255,.48); box-shadow: 0 0 0 1px rgba(255,255,255,.08); }
+.sg-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: 224px;
+  max-width: calc(100vw - 2.5rem); max-height: 240px; overflow-y: auto; overscroll-behavior-y: contain;
+  touch-action: pan-y; -webkit-overflow-scrolling: touch; padding: 1px 3px 1px 1px;
+  scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.34) transparent; }
+.sg-list::-webkit-scrollbar { width: 5px; }
+.sg-list::-webkit-scrollbar-thumb { border-radius: 0; background: rgba(255,255,255,.3); }
+.sg-palette.bottom .sg-dropdown { position: absolute; left: 50%; bottom: calc(100% + 8px); transform-origin: bottom center;
+  transform: translate(-50%, 7px) scale(.985); }
+.sg-palette.bottom.expanded .sg-dropdown { transform: translate(-50%, 0) scale(1); animation-name: sg-dropdown-mobile-in; }
+.sg-palette.bottom .sg-list { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(340px, calc(100vw - 2.5rem));
+  max-height: min(42svh, 280px); }
+@keyframes sg-dropdown-mobile-in {
+  from { opacity: 0; transform: translate(-50%, 7px) scale(.985); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+.sg-opt { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 39px;
+  border: 1px solid transparent; background: rgba(255,255,255,.035); border-radius: 5px; padding: 5px;
+  text-align: left; font: inherit; font-size: 9px; line-height: 1.2; text-transform: uppercase; color: #dbe4ef;
+  cursor: pointer; overflow: hidden; transition: background .12s ease, border-color .12s ease, transform .12s ease; }
+.sg-palette.expanded .sg-opt { animation: sg-option-in .18s cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: min(calc(var(--sg-index) * 9ms), 150ms); }
+@keyframes sg-option-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
+.sg-opt:hover { background: rgba(255,255,255,.1); transform: translateY(-1px); }
+.sg-opt.active { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.42); color: #fff; }
+.sg-opt .sg-name { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sg-swatch { width: 27px; height: 27px; flex: none; border-radius: 2px; border: 1px solid rgba(255,255,255,.28);
+  background: #111827; image-rendering: pixelated; image-rendering: crisp-edges; box-shadow: 2px 2px 0 rgba(0,0,0,.32); }
+.sg-swatch.animated { animation: sg-pixel-glow 1.15s steps(2, end) infinite alternate; }
+@keyframes sg-pixel-glow { from { filter: brightness(.92); } to { filter: brightness(1.18); } }
+.sg-empty { grid-column: 1 / -1; padding: 12px 6px; font-size: 9px; color: #94a3b8; text-align: center;
+  text-transform: uppercase; }
 .sg-toggle { border-radius: 6px; padding: 4px 8px; font-size: 10px; font-weight: 600; border: 0; cursor: pointer;
   background: rgba(255,255,255,.1); color: #fff; touch-action: manipulation; }
 .sg-toggle:hover { background: rgba(255,255,255,.2); }
@@ -194,7 +233,9 @@ const STYLE = `
 .sg-time-range::-moz-range-thumb { width: 14px; height: 14px; border: 1px solid rgba(255,255,255,.85);
   border-radius: 50%; background: #f8fafc; box-shadow: 0 2px 5px rgba(0,0,0,.45); }
 @media (prefers-reduced-motion: reduce) {
-  .sg-current .sg-name.scrolling .sg-name-track { animation: none; }
+  .sg-current .sg-name.scrolling .sg-name-track, .sg-palette.expanded .sg-dropdown,
+  .sg-palette.expanded .sg-opt, .sg-swatch.animated { animation: none; }
+  .sg-dropdown, .sg-expand::before { transition: none; }
 }
 @media (pointer: coarse) {
   /* Mobile browsers magnify focused form controls whose text is below 16px. */
@@ -202,12 +243,61 @@ const STYLE = `
 }
 `;
 
-// Decorative color swatch for an entry (a flat rounded square in the entry's
-// color).
-function renderSwatch(color, egg = false) {
-  const sw = document.createElement('span');
-  sw.className = `sg-swatch${egg ? ' egg' : ''}`;
-  sw.style.background = color;
+const clampByte = (v) => Math.max(0, Math.min(255, Math.round(v)));
+const colorChannels = (color) => {
+  if (color.startsWith('#')) {
+    const n = Number.parseInt(color.slice(1), 16);
+    return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+  }
+  const channels = color.match(/\d+/g)?.map(Number);
+  return channels?.slice(0, 3) || [148, 163, 184];
+};
+const hashText = (text) => {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+};
+const pixelNoise = (seed, x, y) => {
+  let h = seed ^ Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return (h ^ (h >>> 16)) >>> 0;
+};
+
+// A true 9x9 material sample. The stable per-entry hash gives each icon the
+// same cell-like grain on every render instead of presenting materials as flat
+// blocks unrelated to the world renderer.
+function paintSwatch(sw, entry) {
+  const ctx = sw.getContext('2d');
+  const seed = hashText(entry.key);
+  const base = colorChannels(entry.eggColors?.[0] || entry.color);
+  const dark = colorChannels(entry.eggColors?.[1] || entry.color);
+  const amp = entry.textureAmp ?? 6;
+  ctx.clearRect(0, 0, 9, 9);
+  for (let y = 0; y < 9; y++) {
+    for (let x = 0; x < 9; x++) {
+      const noise = pixelNoise(seed, x, y);
+      if (entry.egg) {
+        const nx = (x - 4) / (y < 3 ? 2.65 : 3.45);
+        const ny = (y - 4.2) / 4.35;
+        if (nx * nx + ny * ny > 1) continue;
+      }
+      if (entry.kind === CK_ERASER && (x + y) % 2 === 0) continue;
+      let rgb = base;
+      if (entry.egg && noise % 7 < 2) rgb = dark;
+      const jitter = (((noise >>> 8) & 7) - 3.5) * (amp / 3.5);
+      ctx.fillStyle = `rgb(${clampByte(rgb[0] + jitter)},${clampByte(rgb[1] + jitter)},${clampByte(rgb[2] + jitter)})`;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+function renderSwatch(entry) {
+  const sw = document.createElement('canvas');
+  sw.width = 9;
+  sw.height = 9;
+  sw.className = `sg-swatch${entry.animated ? ' animated' : ''}`;
+  sw.setAttribute('aria-hidden', 'true');
+  paintSwatch(sw, entry);
   return sw;
 }
 
@@ -238,6 +328,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let expanded = false;
   let collapsedWidth = 0;
   let nameMotionFrame = 0;
+  let dropdownRemoveTimer = 0;
   let timeAuto = true;
   let timePhase = 0.25;
   let timeApplyTimer = 0;
@@ -275,7 +366,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   const current = document.createElement('button');
   current.type = 'button';
   current.className = 'sg-current';
-  const currentSwatch = renderSwatch(selected.color, selected.egg);
+  const currentSwatch = renderSwatch(selected);
   const currentName = document.createElement('span');
   currentName.className = 'sg-name';
   const currentNameTrack = document.createElement('span');
@@ -292,21 +383,36 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   const expandBtn = document.createElement('button');
   expandBtn.type = 'button';
   expandBtn.className = 'sg-expand';
+  expandBtn.setAttribute('aria-label', 'Open material picker');
   expandBtn.addEventListener('click', toggleExpandedFromButton);
 
   bar.append(current, expandBtn);
   col.appendChild(bar);
 
-  // --- Expanded panel: search + scrollable list (mounted only when open) ----
+  // --- Animated dropdown: search + scrollable material list -----------------
+  const dropdown = document.createElement('div');
+  dropdown.className = 'sg-dropdown';
+  dropdown.id = `sg-materials-${Math.random().toString(36).slice(2)}`;
+  const dropdownShell = document.createElement('div');
+  dropdownShell.className = 'sg-dropdown-shell';
+  dropdown.appendChild(dropdownShell);
+
   const search = document.createElement('input');
   search.type = 'text';
   search.className = 'sg-search';
   search.placeholder = 'Search materials or creatures…';
   search.setAttribute('aria-label', 'Search spawnable materials and creatures');
   search.addEventListener('input', () => { query = search.value.trim().toLowerCase(); renderList(); });
+  search.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setExpanded(false);
+  });
 
   const list = document.createElement('div');
   list.className = 'sg-list';
+  list.setAttribute('role', 'listbox');
+  dropdownShell.append(search, list);
+  current.setAttribute('aria-controls', dropdown.id);
+  expandBtn.setAttribute('aria-controls', dropdown.id);
 
   const toggle = showDrawToggle ? document.createElement('button') : null;
   if (toggle) {
@@ -373,11 +479,14 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   function setExpanded(next) {
     const changed = expanded !== !!next;
     expanded = !!next;
+    clearTimeout(dropdownRemoveTimer);
+    dropdownRemoveTimer = 0;
     if (expanded) {
-      // Keep search + materials above the compact controls in both layouts.
+      // Keep the dropdown before the compact controls. Mobile positions this
+      // node above the fixed center bar so opening it never moves the controls.
       const controls = toggle || timeControl;
-      col.insertBefore(search, controls);
-      col.insertBefore(list, controls);
+      col.insertBefore(dropdown, controls);
+      dropdown.inert = false;
       renderList();
       // Fine pointers benefit from immediate typing. On touch, focusing here
       // opens the keyboard and can zoom the whole page as soon as the selector
@@ -386,9 +495,14 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     } else {
       query = '';
       search.value = '';
-      search.remove();
-      list.remove();
-      list.replaceChildren();
+      dropdown.inert = true;
+      // Leave the pixels in place for the closing transition, then return to
+      // the lazy-DOM footprint once the animation is over.
+      dropdownRemoveTimer = setTimeout(() => {
+        dropdown.remove();
+        list.replaceChildren();
+        dropdownRemoveTimer = 0;
+      }, 220);
     }
     renderState();
     if (changed) onExpandedChange?.(expanded);
@@ -406,14 +520,17 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     wrap.style.width = !expanded && collapsedWidth ? `${collapsedWidth}px` : '';
     current.className = `sg-current${locked ? ' locked' : ''}`;
     current.disabled = locked;
-    currentSwatch.className = `sg-swatch${selected.egg ? ' egg' : ''}`;
-    currentSwatch.style.background = selected.color;
+    currentSwatch.className = `sg-swatch${selected.animated ? ' animated' : ''}`;
+    paintSwatch(currentSwatch, selected);
     currentNameTrack.textContent = selected.label;
     current.title = `Selected: ${selected.label} — click to ${expanded ? 'collapse' : 'change'}`;
-    expandBtn.textContent = expanded ? 'Close' : 'Expand';
     expandBtn.className = `sg-expand${locked ? ' locked' : ''}`;
     expandBtn.disabled = locked;
-    expandBtn.title = locked ? 'Turn Draw On to select materials' : '';
+    expandBtn.setAttribute('aria-label', expanded ? 'Close material picker' : 'Open material picker');
+    current.setAttribute('aria-expanded', String(expanded));
+    expandBtn.setAttribute('aria-expanded', String(expanded));
+    dropdown.setAttribute('aria-hidden', String(!expanded));
+    expandBtn.title = locked ? 'Turn Draw On to select materials' : (expanded ? 'Close materials' : 'Open materials');
     scheduleNameMotion();
   }
 
@@ -456,8 +573,13 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     if (!canSelectMaterial()) return;
     selected = entry;
     onSelectCreative?.({ kind: entry.kind, value: entry.value });
-    // Collapsing after a pick keeps the footprint small.
-    setExpanded(false);
+    // Desktop is a working tray: it stays open for rapid material changes and
+    // closes only when asked. Mobile restores the canvas controls after a pick.
+    if (atBottom) setExpanded(false);
+    else {
+      renderState();
+      renderList();
+    }
   }
 
   function renderList() {
@@ -470,18 +592,21 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       list.appendChild(none);
       return;
     }
-    for (const e of shown) {
+    shown.forEach((e, index) => {
       const opt = document.createElement('button');
       opt.type = 'button';
       opt.className = `sg-opt${e.key === selected.key ? ' active' : ''}`;
       opt.title = e.label;
+      opt.setAttribute('role', 'option');
+      opt.setAttribute('aria-selected', String(e.key === selected.key));
+      opt.style.setProperty('--sg-index', String(index));
       const lbl = document.createElement('span');
       lbl.className = 'sg-name';
       lbl.textContent = e.label;
-      opt.append(renderSwatch(e.color, e.egg), lbl);
+      opt.append(renderSwatch(e), lbl);
       opt.addEventListener('click', () => pick(e));
       list.appendChild(opt);
-    }
+    });
   }
 
   root.appendChild(wrap);
@@ -511,6 +636,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     setLayout(uiAtBottom) { atBottom = !!uiAtBottom; renderState(); if (expanded) renderList(); },
     destroy() {
       cancelAnimationFrame(nameMotionFrame);
+      clearTimeout(dropdownRemoveTimer);
       clearTimeout(timeApplyTimer);
       clearInterval(timePollTimer);
       wrap.remove();

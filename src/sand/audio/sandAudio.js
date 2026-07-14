@@ -192,7 +192,11 @@ export function createSandAudio() {
     if (context || destroyed || typeof window === 'undefined') return context;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return null;
-    context = new AudioContext({ latencyHint: 'interactive' });
+    // Older WebKit builds expose AudioContext but reject constructor options.
+    // Fall back to the optionless form so iOS Safari and iOS Chrome can still
+    // create the graph from the user's first gesture.
+    try { context = new AudioContext({ latencyHint: 'interactive' }); }
+    catch { context = new AudioContext(); }
     master = context.createGain();
     master.gain.value = 0;
     const compressor = context.createDynamicsCompressor();
@@ -245,10 +249,17 @@ export function createSandAudio() {
   };
 
   const unlock = async () => {
-    const ctx = init();
-    if (!ctx || destroyed) return false;
     try {
-      if (ctx.state === 'suspended') await ctx.resume();
+      // iOS defaults Web Audio to an ambient session, which the hardware silent
+      // switch mutes in Safari and every iOS browser. Treat opted-in game audio
+      // as media playback when the Audio Session API is available.
+      if (typeof navigator !== 'undefined' && navigator.audioSession)
+        navigator.audioSession.type = 'playback';
+      const ctx = init();
+      if (!ctx || destroyed) return false;
+      // WebKit also exposes a non-standard `interrupted` state after an audio
+      // session interruption. It needs the same resume attempt as `suspended`.
+      if (ctx.state !== 'running' && ctx.state !== 'closed') await ctx.resume();
       applyMaster();
       return ctx.state === 'running';
     } catch { return false; }
@@ -380,7 +391,7 @@ export function createSandAudio() {
       holdMovementVoice('sand', strength, spatial, { volume: 0.105,
         rate: 0.94 + variation * 0.12, hold: 0.3, attack: 0.085, release: 0.22 });
     } else if (type === SOUND_EVENT.ACID_DISSOLVE) {
-      holdMovementVoice('acid', strength, spatial, { volume: 0.11,
+      holdMovementVoice('acid', strength, spatial, { volume: 0.09,
         rate: 0.96 + variation * 0.12, hold: 0.42, attack: 0.095, release: 0.3 });
     }
   };
@@ -436,6 +447,7 @@ export function createSandAudio() {
   const onVisibility = () => {
     hidden = document.hidden;
     applyMaster();
+    if (!hidden) unlock();
   };
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility);
 

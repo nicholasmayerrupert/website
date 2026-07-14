@@ -551,6 +551,9 @@ class SandGameElement extends HTMLElement {
             drawModeOn = !!on;
             game.setDrawMode(drawModeOn);
             game.setAudioEnabled(drawModeOn);
+            // START/DRAW is a trusted mobile click. Unlock after enabling so
+            // mobile WebKit does not consume the gesture on a silent graph.
+            if (drawModeOn) game.unlockAudio();
             this._palette?.setDrawMode(drawModeOn);
             this._zoom?.setDrawMode(drawModeOn);
             if (coarse) {

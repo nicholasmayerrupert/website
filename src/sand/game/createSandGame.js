@@ -330,8 +330,12 @@ export function createSandGame(container, opts = {}) {
   // unlock hook central and idempotent so Safari can also recover after an
   // interruption on the next ordinary tap/key without UI-specific workarounds.
   const unlockAudio = () => { audio.unlock(); };
-  window.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true });
-  window.addEventListener('keydown', unlockAudio, { capture: true, passive: true });
+  const audioGestureOptions = { capture: true, passive: true };
+  window.addEventListener('pointerdown', unlockAudio, audioGestureOptions);
+  window.addEventListener('touchend', unlockAudio, audioGestureOptions);
+  window.addEventListener('click', unlockAudio, audioGestureOptions);
+  window.addEventListener('keydown', unlockAudio, audioGestureOptions);
+  window.addEventListener('pageshow', unlockAudio, audioGestureOptions);
   loop.start();
 
   let destroyed = false;
@@ -340,7 +344,10 @@ export function createSandGame(container, opts = {}) {
     destroyed = true;
     loop.stop();
     window.removeEventListener('pointerdown', unlockAudio, { capture: true });
+    window.removeEventListener('touchend', unlockAudio, { capture: true });
+    window.removeEventListener('click', unlockAudio, { capture: true });
     window.removeEventListener('keydown', unlockAudio, { capture: true });
+    window.removeEventListener('pageshow', unlockAudio, { capture: true });
     mineProgress.remove();
     authorityFailure.remove();
     ro.disconnect();

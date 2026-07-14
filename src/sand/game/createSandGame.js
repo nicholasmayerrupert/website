@@ -320,6 +320,7 @@ export function createSandGame(container, opts = {}) {
   const ro = new ResizeObserver(lifecycle.fit);
   ro.observe(container);
   lifecycle.watchDpr();
+  lifecycle.watchContext();
   const onVisualViewportResize = () => lifecycle.fit();
   window.visualViewport?.addEventListener?.('resize', onVisualViewportResize);
   inputs.attach();
@@ -334,6 +335,7 @@ export function createSandGame(container, opts = {}) {
     authorityFailure.remove();
     ro.disconnect();
     lifecycle.unwatchDpr();
+    lifecycle.unwatchContext();
     window.visualViewport?.removeEventListener?.('resize', onVisualViewportResize);
     ctx.net?.disconnect();
     ctx.stopLocalAuthority();

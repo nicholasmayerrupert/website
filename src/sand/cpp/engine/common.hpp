@@ -40,6 +40,16 @@
 
 // Tunables (mirror engine.js)
 static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5;
+// Runtime storage profiles. The browser presentation mirror never advances the
+// cellular simulation, while the authority worker never creates a GL context.
+// Keeping those roles explicit avoids allocating both halves of the engine in
+// both WASM instances at large zoom levels. Full remains the default for tests,
+// servers, and embedders that simulate and render in one Engine.
+enum EngineStorageRole : uint8_t {
+  ESR_FULL = 0,
+  ESR_PRESENTATION = 1,
+  ESR_AUTHORITY = 2,
+};
 static const int   MAX_WATER_FLOW = 10;
 // Surface levelling stays local: look ahead only to decide whether a side leads to
 // a meaningfully lower connected surface, then move one cell sideways. Two passes

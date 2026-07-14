@@ -7,6 +7,7 @@
 // hot indexed buffers (see members.inc).
 
 struct Layer {
+  EngineStorageRole storageRole = ESR_FULL;
   // double buffer + the "current"/"next" pointers (alternate each step)
   std::vector<uint8_t> gridA, gridB; uint8_t* grid = nullptr; uint8_t* next = nullptr;
   // dirty tracking (per-layer active region)
@@ -134,12 +135,27 @@ struct Layer {
   // render pixels for this layer (cols*rows*4 RGBA)
   std::vector<uint8_t> renderPixels;
 
-  void alloc(int cols, int rows, int chunkCols, int chunkRows) {
+  void alloc(int cols, int rows, int chunkCols, int chunkRows, EngineStorageRole role = ESR_FULL) {
+    storageRole = role;
     size_t n = (size_t)cols * rows;
-    gridA.assign(n, EMPTY); gridB.assign(n, EMPTY);
-    grid = gridA.data(); next = gridB.data();
+    gridA.assign(n, EMPTY);
+    grid = gridA.data();
     dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
     rowMarkMin.assign(rows, cols); rowMarkMax.assign(rows, -1);
+
+    // A presentation mirror receives authoritative grids and only performs
+    // camera collision queries, lighting, pixel fill, and GL compositing. Point
+    // next at the read-only grid as a defensive fallback for shared query code;
+    // presentation code never swaps or writes the cellular next buffer.
+    if (role == ESR_PRESENTATION) {
+      gridB.clear(); next = grid;
+      light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
+      skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
+      renderPixels.assign(n * 4, 0);
+      return;
+    }
+
+    gridB.assign(n, EMPTY); next = gridB.data();
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
     activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
     vacatedStamp.assign(n, -1);
@@ -156,12 +172,14 @@ struct Layer {
     rigidSpillFootprint.assign(n, 0); rigidSpillReserved.assign(n, 0);
     reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
     mineDamage.assign(n, 0);
-    light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
-    skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
+    bodyOwner.assign(n, -1);
+    if (role != ESR_AUTHORITY) {
+      light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
+      skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
+      renderPixels.assign(n * 4, 0);
+    }
     skyWorldReachY.clear();
     skyOffsetX = skyOffsetY = 0; skyInputLevel = -1; skyValid = false; skyDirty = true;
-    bodyOwner.assign(n, -1);
-    renderPixels.assign(n * 4, 0);
   }
   // Reallocate per-cell sim/render arrays for a new buffer size while PRESERVING
   // tileStore/bodyStore/worldgen seeds/params (used by resizeLoadedWindow).
@@ -189,7 +207,7 @@ struct Layer {
       release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
       release(compAdjPairs);
     }
-    alloc(newCols, newRows, newChunkCols, newChunkRows);
+    alloc(newCols, newRows, newChunkCols, newChunkRows, storageRole);
     stoneComponents.clear(); plantComponents.clear(); iceComponents.clear();
     nextStoneId = nextPlantId = nextIceId = 1;
     myceliumActive = false;
@@ -203,6 +221,41 @@ struct Layer {
     prevCompCells.clear(); curCompCells.clear();
     mineDamageAny = false;
     dirtyRenderCount = 0;
+  }
+  // Resize a presentation-only layer while preserving every overlapping
+  // absolute-world cell. Newly exposed space stays transparent until the
+  // authority's full snapshot arrives; the already-visible world never blanks
+  // during that handoff.
+  void resizePresentation(int oldCols, int oldRows, int newCols, int newRows,
+                          int newChunkCols, int newChunkRows,
+                          int oldOffX, int oldOffY, int newOffX, int newOffY) {
+    std::vector<uint8_t> oldGrid = std::move(gridA);
+    gridA.assign((size_t)newCols * newRows, EMPTY);
+    int wx0 = imax(oldOffX, newOffX), wy0 = imax(oldOffY, newOffY);
+    int wx1 = imin(oldOffX + oldCols, newOffX + newCols);
+    int wy1 = imin(oldOffY + oldRows, newOffY + newRows);
+    if (wx1 > wx0 && wy1 > wy0) {
+      size_t width = (size_t)(wx1 - wx0);
+      for (int wy = wy0; wy < wy1; wy++) {
+        size_t src = (size_t)(wy - oldOffY) * oldCols + (wx0 - oldOffX);
+        size_t dst = (size_t)(wy - newOffY) * newCols + (wx0 - newOffX);
+        memcpy(gridA.data() + dst, oldGrid.data() + src, width);
+      }
+    }
+    gridB.clear(); grid = gridA.data(); next = grid;
+    size_t n = (size_t)newCols * newRows;
+    if (n < light.size()) {
+      auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
+      release(dirtyRender); release(dirtyRects); release(rowMarkMin); release(rowMarkMax);
+      release(light); release(lightBase); release(skyLight); release(skyTopInput);
+      release(skyDownValue); release(skyDownDepth); release(renderPixels);
+    }
+    dirtyRender.assign((size_t)newChunkCols * newChunkRows, 0);
+    dirtyRects.clear(); rowMarkMin.assign(newRows, newCols); rowMarkMax.assign(newRows, -1);
+    light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(newCols, 0);
+    skyDownValue.assign(newCols, 0); skyDownDepth.assign(newCols, -1);
+    renderPixels.assign(n * 4, 0);
+    skyDirty = true; skyValid = false; dirtyRenderCount = 0;
   }
   ~Layer() {
     for (Body* b : bodies) delete b;

@@ -250,7 +250,13 @@ continue updating during that handoff so a held mobile brush follows camera
 motion; only world streaming pauses until the two buffers have matching
 dimensions. A stream snapshot that was overtaken by a fast camera move is
 acknowledged without presentation, then replaced by the worker's next snapshot
-around the latest camera position.
+around the current camera. To keep large Safari zooms within browser memory, the
+two WASM engines use different storage profiles: the presentation mirror keeps
+only grids, lighting, and render pixels, while the authority keeps simulation
+state but no render-only buffers. Texture resizes allocate and validate a complete
+replacement set before releasing the live textures, so a failed device allocation
+leaves the current rendered world intact. If the browser still resets the WebGL
+context, the runtime clears held movement and rebuilds the compositor on restore.
 
 On touch devices, creative mode rests behind one large bottom `START` button so
 the page remains uncluttered and scrollable. Starting reveals the palette, time,

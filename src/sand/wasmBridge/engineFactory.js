@@ -251,7 +251,7 @@ export function initSandWasm() {
       }
       M = {
         mod,
-        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number']),
+        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
         shiftWorld: c('engine_shift_world', null, ['number', 'number']),
         shiftWorldXY: c('engine_shift_world_xy', null, ['number', 'number', 'number']),
         maybeShiftWorld: c('engine_maybe_shift_world', 'number', ['number', 'number', 'number', 'number']),
@@ -379,6 +379,7 @@ export function initSandWasm() {
         eraseDiscLayer: c('engine_erase_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number']),
         syncComponentsLayer: c('engine_sync_components_layer', null, ['number', 'number']),
         glInit: c('engine_gl_init', 'number', ['number', 'string']),
+        glRestore: c('engine_gl_restore', 'number', ['number']),
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
         glSetDebugHitboxes: c('engine_gl_set_debug_hitboxes', null, ['number', 'number']),
@@ -429,11 +430,13 @@ export function createEngineWasm({
   rows,
   sinksOn = true,
   infinite = false,
+  storageRole = 'full',
   worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
   const { mod } = M;
-  const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0);
+  const role = storageRole === 'presentation' ? 1 : (storageRole === 'authority' ? 2 : 0);
+  const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role);
   // ParallelPool creates std::threads lazily, after the module's matching
   // browser-worker pool has been prewarmed.
   M.setThreadWorkers(ptr, Math.min(wasmThreadPoolCapacity, configuredThreadWorkers()));
@@ -589,6 +592,7 @@ export function createEngineWasm({
       }
       return M.glInit(ptr, key) === 1;
     },
+    glRestore() { return M.glRestore(ptr) === 1; },
     glResize(devW, devH) { M.glResize(ptr, devW, devH); },
     glActorLight(x, y, w, h) { return M.glActorLight(ptr, x, y, w | 0, h | 0); },
     // Players to overlay. Host/local draws the engine's own players (own = the

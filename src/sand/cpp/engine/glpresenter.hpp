@@ -74,12 +74,17 @@ class GLPresenter {
 
   bool glReady() const;
   int glInit(const char* target);
+  int glRestore();
   void glDestroy();
   void glResize(int devW, int devH);
   void glSetCamera(double camX_, double camY_, double cellDev, int viewCols, int viewRows,
                  int gutterOn, int snapOff);
-  // Rebuild cols×rows cell textures after a loaded-window resize (keeps the GL context).
-  void glRebuildCellTextures();
+  // Transactionally rebuild both layer textures for a loaded-window resize.
+  // The shift scratch texture is lazy because presentation mirrors never use it
+  // in ordinary play. New textures are validated before the old set is released,
+  // so a device-memory failure leaves the current renderer intact instead of
+  // producing a blank canvas. A headless engine succeeds without allocating.
+  int glRebuildCellTextures(int texCols, int texRows);
   void glSyncCamera();
   void glSetFlags(int gutterOn, int snapOff);
   void glSetDebugHitboxes(int on);

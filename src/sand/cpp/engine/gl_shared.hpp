@@ -140,6 +140,19 @@ inline void buildProgram(Ctx& c) {
   glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 }
 
+// A restored WebGL context keeps its Emscripten handle but loses every GL
+// object. Rebuild the context-global program/quad in place so Engine pointers
+// held by the browser shell remain valid across a device reset.
+inline bool restoreProgram(Ctx& c) {
+  c.prog = c.vbo = c.vao = 0;
+  c.uClipRect = c.uTexRect = c.uQuadDev = c.uTex = -1;
+  c.uCellDev = c.uGutter = c.uMode = c.uColor = c.uTint = c.uOpaqueAlpha = -1;
+  c.ready = false;
+  buildProgram(c);
+  c.ready = c.prog != 0;
+  return c.ready;
+}
+
 // Create-or-get the context for `target` (a canvas selector, resolved through
 // emscripten's specialHTMLTargets so it works inside a shadow root), make it
 // current, and ensure the shader program is built. Returns nullptr on failure.

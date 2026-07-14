@@ -3,16 +3,18 @@
 // its safe floor and verifies that both WebGL layers keep rendering.
 //
 //   node scripts/zoom-e2e.mjs
+//   BROWSER=webkit node scripts/zoom-e2e.mjs
 
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { chromium } from 'playwright';
+import { chromium, webkit } from 'playwright';
 
 const PORT = 5182;
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
 let failures = 0;
+const browserType = process.env.BROWSER === 'webkit' ? webkit : chromium;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
 const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
@@ -36,7 +38,7 @@ const waitForServer = () => new Promise((resolve, reject) => {
 let browser;
 try {
   await waitForServer();
-  browser = await chromium.launch();
+  browser = await browserType.launch();
   const context = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1200, height: 800 } });
   const page = await context.newPage();
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
@@ -76,8 +78,31 @@ try {
   const alive = await page.evaluate(() => !!window.__sandTest.getPlayer?.());
   check('world/player survived the zoom changes', alive);
 
-  // Keep zooming out far past the former failure point. Fitting must stop at a
-  // renderable texture/memory budget and the composited canvas must stay alive.
+  // Safari may reset WebGL under memory pressure. Exercise the same browser
+  // event path deliberately: held movement must clear, and both layer textures
+  // plus the compositor must be rebuilt when the context returns.
+  const recovery = await page.evaluate(async () => {
+    const canvas = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main');
+    const gl = canvas.getContext('webgl2');
+    const ext = gl.getExtension('WEBGL_lose_context');
+    if (!ext) return { supported: false };
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+    const restored = new Promise((resolve) => canvas.addEventListener('webglcontextrestored', resolve, { once: true }));
+    ext.loseContext();
+    setTimeout(() => ext.restoreContext(), 100);
+    await restored;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const i = window.__sandTest.info();
+    const pixels = window.__sandTest.readPixels(Math.floor(i.canvasW / 2) - 8, 0, 16, i.canvasH);
+    let rendered = false;
+    for (let p = 3; p < pixels.length; p += 4) if (pixels[p] > 0) { rendered = true; break; }
+    return { supported: true, heldKeys: window.__sandTest.heldKeys(), contextLost: gl.isContextLost(), rendered };
+  });
+  check('WebGL context restore clears held movement and redraws the world',
+    !recovery.supported || (!recovery.contextLost && recovery.heldKeys === 0 && recovery.rendered));
+
+  // Keep zooming out far past the former failure point. Fitting may stop only
+  // at the device's texture-dimension limit; the composited canvas must stay alive.
   for (let i = 0; i < 24; i++) await page.keyboard.press('-');
   await page.waitForTimeout(1200);
   const extreme = await info();

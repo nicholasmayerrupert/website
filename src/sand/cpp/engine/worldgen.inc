@@ -621,7 +621,7 @@
   }
   // layerSalt distinguishes the per-layer subsurface seeds (caves + pockets) while
   // leaving the surface seed shared. fg passes 0, bg passes 1 (+ isBackground).
-  void initInfiniteLayer(uint32_t seed, uint32_t layerSalt, bool background) {
+  void initInfiniteLayerState(uint32_t seed, uint32_t layerSalt, bool background) {
     L->infinite = true; L->isBackground = background; L->worldSeed = seed;
     L->gSurfAmp = imax(20, (int)std::floor(rows * 0.17));
     L->gSurfBase = imax(8, (int)std::floor(rows * 0.22));
@@ -632,12 +632,25 @@
     L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
     L->worldOffsetX = (-(cols / 2)) & ~(CHUNK_SIZE - 1);   // tile-aligned origin (2D tile store needs alignment)
     L->worldOffsetY = (-L->gSurfBase) & ~(CHUNK_SIZE - 1); // surface centre (worldY=0) ~gSurfBase down the buffer
+  }
+  void initInfiniteLayer(uint32_t seed, uint32_t layerSalt, bool background) {
+    initInfiniteLayerState(seed, layerSalt, background);
     fillRect(0, cols, 0, rows);
     registerSeededComponents(0, cols);
   }
   void initInfinite(uint32_t seed) {
     useLayer(&fg); initInfiniteLayer(seed, 0, false); // foreground: caves carved for traversal
     useLayer(&bg); initInfiniteLayer(seed, 1, true);  // background: more-solid backdrop
+    bgEnabled = true;
+    useLayer(&fg);
+  }
+  // The browser mirror receives its actual cells from the authority worker. It
+  // still needs deterministic terrain metadata for the initial camera surface,
+  // but generating a duplicate world would require all simulation scratch and
+  // defeat the presentation storage profile.
+  void initInfinitePresentation(uint32_t seed) {
+    useLayer(&fg); initInfiniteLayerState(seed, 0, false);
+    useLayer(&bg); initInfiniteLayerState(seed, 1, true);
     bgEnabled = true;
     useLayer(&fg);
   }
@@ -974,6 +987,11 @@
     newRows = (newRows + CHUNK_SIZE - 1) & ~(CHUNK_SIZE - 1);
     if (newCols == cols && newRows == rows) return 0;
 
+    // Validate the complete replacement texture set before touching either the
+    // live world or the old GL textures. MAX_TEXTURE_SIZE only constrains a
+    // dimension; this catches the lower real memory limit on mobile Safari.
+    if (!glp.glRebuildCellTextures(newCols, newRows)) return 0;
+
     // World-space point under the current view center (fallback: buffer center).
     double vCols = cam.viewportCols > 0 ? (double)cam.viewportCols : (double)cols;
     double vRows = cam.viewportRows > 0 ? (double)cam.viewportRows : (double)rows;
@@ -986,6 +1004,43 @@
     for (auto& p : psys.players) playerWorld.push_back({fg.worldOffsetX + p.px, fg.worldOffsetY + p.py});
     std::vector<WEnt> itemWorld; itemWorld.reserve(itemsys.items.size());
     for (auto& it : itemsys.items) itemWorld.push_back({fg.worldOffsetX + it.px, fg.worldOffsetY + it.py});
+
+    // Presentation mirrors have no simulation/component/tile state to persist
+    // or regenerate. Resize only their compact cell+lighting+pixel storage and
+    // wait for the worker's authoritative full snapshot.
+    if (storageRole == ESR_PRESENTATION) {
+      int newOffX = ((int)std::floor(worldCX - newCols * 0.5)) & ~(CHUNK_SIZE - 1);
+      int newOffY = ((int)std::floor(worldCY - newRows * 0.5)) & ~(CHUNK_SIZE - 1);
+      int oldCols = cols, oldRows = rows;
+      int oldOffX = fg.worldOffsetX, oldOffY = fg.worldOffsetY;
+      cols = newCols; rows = newRows;
+      chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;
+      chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
+      fg.resizePresentation(oldCols, oldRows, cols, rows, chunkCols, chunkRows,
+                            oldOffX, oldOffY, newOffX, newOffY);
+      bg.resizePresentation(oldCols, oldRows, cols, rows, chunkCols, chunkRows,
+                            oldOffX, oldOffY, newOffX, newOffY);
+      fg.worldOffsetX = bg.worldOffsetX = newOffX;
+      fg.worldOffsetY = bg.worldOffsetY = newOffY;
+      fg.skyDirty = bg.skyDirty = true;
+      fg.skyValid = bg.skyValid = false;
+      for (size_t i = 0; i < psys.players.size(); i++) {
+        auto& p = psys.players[i];
+        p.px = playerWorld[i].wx - newOffX; p.py = playerWorld[i].wy - newOffY;
+        p.aimX = p.px; p.aimY = p.py; p.mineActive = false;
+      }
+      for (size_t i = 0; i < itemsys.items.size(); i++) {
+        itemsys.items[i].px = itemWorld[i].wx - newOffX;
+        itemsys.items[i].py = itemWorld[i].wy - newOffY;
+      }
+      cam.setBounds(cols - cam.viewportCols, rows - cam.viewportRows);
+      cam.set(worldCX - newOffX - vCols * 0.5, worldCY - newOffY - vRows * 0.5);
+      useLayer(&fg); markAllDirty();
+      useLayer(&bg); markAllDirty();
+      useLayer(&fg);
+      worldShiftCount++;
+      return 1;
+    }
 
     auto persistLayer = [&](Layer* lay) {
       useLayer(lay);
@@ -1059,9 +1114,6 @@
     // Prefetch scratch matches the new dims; cancel any in-flight band.
     pfDx = pfDy = 0; pfStage = PF_DONE; pfCursor = 0;
     if ((int)pfGrid.size() != cols * rows) pfGrid.assign((size_t)cols * rows, EMPTY);
-
-    // GL textures are cols×rows — rebuild if a context is live.
-    glp.glRebuildCellTextures();
 
     // Camera: same world center, new buffer/view metrics (viewport already set by JS).
     cam.setBounds(cols - cam.viewportCols, rows - cam.viewportRows);

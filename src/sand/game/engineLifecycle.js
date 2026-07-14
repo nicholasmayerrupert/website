@@ -44,6 +44,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       cols: ctx.cols,
       rows: ctx.rows,
       infinite: true,
+      storageRole: 'presentation',
       worldSeed: ctx.worldSeed,
       sinksOn: false, // taps/sinks are obsolete in the streaming world
     });
@@ -263,6 +264,38 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     zoomTimer = 0;
   };
 
+  const onContextLost = (event) => {
+    // Asking WebGL to restore is safe because all context-owned objects are
+    // rebuilt below. Clear every held input immediately so a lost canvas can
+    // never leave the camera/player racing while Safari recovers the device.
+    event.preventDefault();
+    ctx.stickX = ctx.stickY = 0;
+    ctx.mouseButtons = 0;
+    ctx.engine?.inputClearKeys();
+    ctx.engine?.inputStick(0, 0);
+    ctx.engine?.pointerButtons(0);
+    ctx.engine?.inputPointer(ctx.px, ctx.py, 0, ctx.inside);
+    ctx.forceFullRender = true;
+  };
+  const onContextRestored = () => {
+    const engine = ctx.engine;
+    if (!engine?.glRestore()) return;
+    engine.glResize(canvas.width, canvas.height);
+    engine.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
+    engine.glSetFlags(ctx.gutterOn, ctx.snapOff);
+    engine.glSetDebugHitboxes(ctx.debugHitboxes);
+    ctx.forceFullRender = true;
+    ctx.fns.render?.(true);
+  };
+  const watchContext = () => {
+    canvas.addEventListener('webglcontextlost', onContextLost);
+    canvas.addEventListener('webglcontextrestored', onContextRestored);
+  };
+  const unwatchContext = () => {
+    canvas.removeEventListener('webglcontextlost', onContextLost);
+    canvas.removeEventListener('webglcontextrestored', onContextRestored);
+  };
+
   return {
     refreshBounds,
     parallaxCamera,
@@ -274,5 +307,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     resetZoom,
     watchDpr,
     unwatchDpr,
+    watchContext,
+    unwatchContext,
   };
 }

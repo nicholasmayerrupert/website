@@ -2,26 +2,65 @@
 
 bool GLPresenter::glReady() const { return glc != nullptr && glc->ready && glTex != 0; }
 
+static bool glAllocateCellTexture(GLuint& texture, int cols, int rows) {
+  texture = 0;
+  for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; i++) {} // discard unrelated earlier errors
+  glGenTextures(1, &texture);
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, cols, rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  if (glGetError() == GL_NO_ERROR) return true;
+  if (texture) glDeleteTextures(1, &texture);
+  texture = 0;
+  return false;
+}
+
 int GLPresenter::glInit(const char* target) {
   glc = sandgl::acquire(target);
   if (!glc) return 0;
   emscripten_webgl_make_context_current(glc->handle);
-  auto mkTex = [&](GLuint& t) {
-    glGenTextures(1, &t);
-    glBindTexture(GL_TEXTURE_2D, t);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, E.cols, E.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-  };
-  mkTex(glTex);
-  mkTex(glTexBg);
-  mkTex(glTex2);
+  if (!glAllocateCellTexture(glTex, E.cols, E.rows) ||
+      !glAllocateCellTexture(glTexBg, E.cols, E.rows)) {
+    if (glTex) glDeleteTextures(1, &glTex);
+    if (glTexBg) glDeleteTextures(1, &glTexBg);
+    if (glTex2) glDeleteTextures(1, &glTex2);
+    glTex = glTexBg = glTex2 = 0;
+    glc = nullptr;
+    return 0;
+  }
   glGenFramebuffers(1, &glReadFBO);
   glGenFramebuffers(1, &glDrawFBO);
   E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
   E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+  return 1;
+}
+
+int GLPresenter::glRestore() {
+  if (!glc) return 0;
+  emscripten_webgl_make_context_current(glc->handle);
+  if (!sandgl::restoreProgram(*glc)) return 0;
+
+  // The old names became invalid when the context was lost; do not delete them.
+  glTex = glTexBg = glTex2 = glReadFBO = glDrawFBO = 0;
+  if (!glAllocateCellTexture(glTex, E.cols, E.rows) ||
+      !glAllocateCellTexture(glTexBg, E.cols, E.rows)) {
+    if (glTex) glDeleteTextures(1, &glTex);
+    if (glTexBg) glDeleteTextures(1, &glTexBg);
+    glTex = glTexBg = 0;
+    return 0;
+  }
+  glGenFramebuffers(1, &glReadFBO);
+  glGenFramebuffers(1, &glDrawFBO);
+  glLastCamCol = glLastCamRow = INT_MIN;
+  glLastWorldOffX = glLastWorldOffY = INT_MIN;
+  glLastSkyLight = glLightTick = INT_MIN;
+  glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
+  E.useLayer(&E.fg); E.markAllDirty();
+  E.useLayer(&E.bg); E.markAllDirty();
+  E.useLayer(&E.fg);
   return 1;
 }
 
@@ -58,27 +97,26 @@ void GLPresenter::glSyncCamera() { glSetCamera(E.cam.camX, E.cam.camY, E.cam.cel
 
 // Recreate the cell textures at the engine's current cols×rows after a loaded-window
 // resize. The WebGL context stays on the canvas; only the per-engine textures change.
-void GLPresenter::glRebuildCellTextures() {
-  if (!glc || !glc->ready) return;
+int GLPresenter::glRebuildCellTextures(int texCols, int texRows) {
+  if (!glc || !glc->ready) return 1;
   emscripten_webgl_make_context_current(glc->handle);
-  auto remake = [&](GLuint& t) {
-    if (t) glDeleteTextures(1, &t);
-    glGenTextures(1, &t);
-    glBindTexture(GL_TEXTURE_2D, t);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, E.cols, E.rows, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-  };
-  remake(glTex);
-  remake(glTexBg);
-  remake(glTex2);
+  GLuint nextFg = 0, nextBg = 0;
+  if (!glAllocateCellTexture(nextFg, texCols, texRows) ||
+      !glAllocateCellTexture(nextBg, texCols, texRows)) {
+    if (nextFg) glDeleteTextures(1, &nextFg);
+    if (nextBg) glDeleteTextures(1, &nextBg);
+    return 0;
+  }
+  if (glTex) glDeleteTextures(1, &glTex);
+  if (glTexBg) glDeleteTextures(1, &glTexBg);
+  if (glTex2) glDeleteTextures(1, &glTex2);
+  glTex = nextFg; glTexBg = nextBg; glTex2 = 0;
   glLastCamCol = glLastCamRow = INT_MIN;
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
   glLastSkyLight = -1;
   glLightTick = INT_MIN;
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
+  return 1;
 }
 // DEV A/B flags (flicker bench): toggle the gutter grid and offset snapping.
 void GLPresenter::glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = snapOff; }
@@ -187,6 +225,15 @@ void GLPresenter::glShift(int dx) {
     E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
     return;
   }
+  // The browser mirror receives already-shifted authority snapshots, so this
+  // full-size scratch texture is not needed during ordinary play. Allocate it
+  // only for the direct stream path (tests/standalone engines); if a constrained
+  // device cannot provide it, the next present sees the changed world offset
+  // and safely refills the visible window instead.
+  if (!glTex2 && !glAllocateCellTexture(glTex2, E.cols, E.rows)) {
+    glLastWorldOffX = glLastWorldOffY = INT_MIN;
+    return;
+  }
   glShiftTex(glTex, dx);
   glShiftTex(glTexBg, dx);
 }
@@ -211,6 +258,10 @@ void GLPresenter::glShiftV(int dy) {
   if (dy >= E.rows || -dy >= E.rows) {
     E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
     E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+    return;
+  }
+  if (!glTex2 && !glAllocateCellTexture(glTex2, E.cols, E.rows)) {
+    glLastWorldOffX = glLastWorldOffY = INT_MIN;
     return;
   }
   glShiftTexV(glTex, dy);

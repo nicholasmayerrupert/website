@@ -1,10 +1,11 @@
   // Engine-owned state and two simulation layers.
   //
   // The engine simulates two independent grids: a foreground (`fg`) and a
-  // background (`bg`). Each `Layer` holds ALL the per-cell simulation state
+  // background (`bg`). Each `Layer` owns the per-cell state for its storage role
   // (grids, dirty tracking, components, rigid bodies, chunk store, terrain,
-  // render pixels). The shared subsystems (camera, GL, networking, players,
-  // tools, tick, RNG, render tables) stay on the Engine.
+  // render pixels). Presentation and authority storage roles omit the half they
+  // never use. The shared subsystems (camera, GL, networking, players, tools,
+  // tick, RNG, render tables) stay on the Engine.
   //
   // To avoid threading a layer pointer through the hot settle path, the Engine
   // keeps raw-pointer MIRRORS of every indexed per-cell buffer (`L->grid`, `L->next`,
@@ -12,6 +13,7 @@
   // the thousands of `buf[k]` accesses in core/components/reactions/... are
   // unchanged. Collections + scalars live on `Layer` and are reached via `L->`.
   int cols, rows, chunkCols, chunkRows;
+  EngineStorageRole storageRole;
   Layer fg, bg;       // the two simulations
   Layer* L = &fg;     // active layer (the mirrors below point into it)
 #ifdef __EMSCRIPTEN_PTHREADS__
@@ -132,11 +134,12 @@
   }
 #endif
 
-  Engine(int c, int r, uint32_t seed, bool sinks) : cols(c), rows(r), sinksEnabled(sinks), rngState(seed) {
+  Engine(int c, int r, uint32_t seed, bool sinks, EngineStorageRole role = ESR_FULL)
+      : cols(c), rows(r), storageRole(role), sinksEnabled(sinks), rngState(seed) {
     chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;
     chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    fg.alloc(cols, rows, chunkCols, chunkRows);
-    bg.alloc(cols, rows, chunkCols, chunkRows);
+    fg.alloc(cols, rows, chunkCols, chunkRows, storageRole);
+    bg.alloc(cols, rows, chunkCols, chunkRows, storageRole);
     useLayer(&fg);
     renderer.init(seed); // render-only RNG + shade/noise tables (separate stream)
     initSurvivalFootprints();

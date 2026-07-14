@@ -271,7 +271,7 @@ self.onmessage = async ({ data }) => {
     engine?.destroy();
     engine = createEngineWasm({
       cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
-      infinite: true, sinksOn: false,
+      infinite: true, sinksOn: false, storageRole: 'authority',
     });
     engine.setThreadWorkers(data.threadWorkers | 0);
     survival = !!data.survival;

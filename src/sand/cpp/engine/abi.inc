@@ -8,9 +8,14 @@ extern "C" {
 // ABI version stamp (abi.generated.hpp). initSandWasm() refuses a module whose
 // version mismatches the JS manifest — catches a stale committed sandEngine.js.
 EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
-EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite) {
-  Engine* e = new Engine(cols, rows, seed, sinks != 0);
-  if (infinite) e->initInfinite(seed);
+EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite, int storageRole) {
+  EngineStorageRole role = storageRole == ESR_PRESENTATION ? ESR_PRESENTATION
+                         : (storageRole == ESR_AUTHORITY ? ESR_AUTHORITY : ESR_FULL);
+  Engine* e = new Engine(cols, rows, seed, sinks != 0, role);
+  if (infinite) {
+    if (role == ESR_PRESENTATION) e->initInfinitePresentation(seed);
+    else e->initInfinite(seed);
+  }
   e->markAllDirty();
   return e;
 }
@@ -379,6 +384,7 @@ EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {
 // JS creates the canvas, registers it as a context target, and drives one
 // glRenderFrame per presented frame.
 EMSCRIPTEN_KEEPALIVE int engine_gl_init(Engine* e, const char* target) { return e->glp.glInit(target); }
+EMSCRIPTEN_KEEPALIVE int engine_gl_restore(Engine* e) { return e->glp.glRestore(); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->glp.glResize(devW, devH); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff) { e->glp.glSetFlags(gutterOn, snapOff); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_debug_hitboxes(Engine* e, int on) { e->glp.glSetDebugHitboxes(on); }

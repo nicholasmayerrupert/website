@@ -606,6 +606,11 @@ body {
     font-size: clamp(50px, 15vw, 78px);
   }
 
+  .portfolio-intro h2,
+  .projects-header h2 {
+    text-align: center;
+  }
+
   .portfolio-lede {
     margin-inline: 0;
     text-wrap: pretty;

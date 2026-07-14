@@ -4,10 +4,11 @@
 //   node scripts/net-protocol-test.mjs
 
 import {
-  MSG, encode, decode, makeItems, makeCreatures, makeInventory, makeCursor,
+  MSG, encode, decode, makeItems, makeCreatures, makeSounds, makeInventory, makeCursor,
   makeSelect, makeSize, makeMove, makePick, makeThrow,
-  INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
+  INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, SOUND_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
 } from '../src/sand/net/protocol.js';
+import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
@@ -16,7 +17,19 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 7', PROTOCOL_VERSION === 7);
+  check('PROTOCOL_VERSION is 8', PROTOCOL_VERSION === 8);
+}
+
+// Semantic sound records round trip without exposing browser audio details.
+{
+  console.log('sounds round trip');
+  const packed = [SOUND_EVENT.EXPLOSION, -12.5, 44.25, 1.75, 7, 0];
+  const d = rt(makeSounds(45, packed));
+  check('decodes to sounds', d && d.t === MSG.SOUNDS && d.tick === 45);
+  check('sound record matches ABI stride', d && d.data.length === SOUND_FIELDS);
+  check('position/intensity preserved', d && d.data[1] === -12.5 && d.data[2] === 44.25 && d.data[3] === 1.75);
+  check('semantic fields preserved', d && d.data[0] === SOUND_EVENT.EXPLOSION && d.data[4] === 7 && d.data[5] === 0);
+  check('empty sound batch allowed', rt(makeSounds(0, [])).data.length === 0);
 }
 
 // Creature actor snapshot round trip + bounds.
@@ -85,6 +98,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);
   check('creatures bad record length', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 2, 3] })) === null);
   check('creatures NaN coord', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 0, Number.NaN, 0, 0, 0, 4, 2, 1, 10, 10, 1, 0] })) === null);
+  check('sounds bad record length', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [1, 2, 3] })) === null);
+  check('sounds NaN intensity', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, Number.NaN, 0, 0] })) === null);
+  check('sounds non-int semantic field', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0.5, 1, 2, 1, 0, 0] })) === null);
+  check('sounds unknown event type', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [999, 1, 2, 1, 0, 0] })) === null);
+  check('sounds invalid layer', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, 1, 0, 2] })) === null);
   check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0, selectedFootprint: 0 })) === null);
   check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS, selectedFootprint: 0 })) === null);
   check('inventory footprint required', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: 0 })) === null);
@@ -104,6 +122,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('over-cap item snapshot rejected', decode(JSON.stringify({ t: 'items', tick: 0, data: huge })) === null);
   const hugeCreatures = new Array((128 + 1) * CREATURE_FIELDS).fill(0);
   check('over-cap creature snapshot rejected', decode(JSON.stringify({ t: 'creatures', tick: 0, data: hugeCreatures })) === null);
+  const hugeSounds = new Array((192 + 1) * SOUND_FIELDS).fill(0);
+  check('over-cap sound snapshot rejected', decode(JSON.stringify({ t: 'sounds', tick: 0, data: hugeSounds })) === null);
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

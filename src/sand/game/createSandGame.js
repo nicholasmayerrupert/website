@@ -36,6 +36,7 @@ import { createNetGlue } from './netGlue';
 import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
+import { createSandAudio } from '../audio/sandAudio.js';
 
 export function computeThreadWorkerBudgets() {
   const hardwareWorkers = Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
@@ -73,6 +74,7 @@ export function createSandGame(container, opts = {}) {
   // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
   // context on it and composites everything (engine.glRenderFrame). ---
   const parallax = createParallaxBackground(container);
+  const audio = createSandAudio();
 
   const canvas = document.createElement('canvas');
   canvas.id = 'sand-main'; // stable selector for the headless pan/flicker bench
@@ -90,7 +92,7 @@ export function createSandGame(container, opts = {}) {
   // fields are grouped by owner. ctx.fns holds late-bound cross-module calls
   // (set after the owning module is created). ---
   const ctx = {
-    container, canvas, parallax, survival, debugHitboxes: !!debugHitboxes,
+    container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
     mainThreadWorkers, worldThreadWorkers,
     // One seed per mount so resizing regenerates the *same* infinite world.
     worldSeed: (Math.random() * 4294967296) >>> 0,
@@ -324,6 +326,12 @@ export function createSandGame(container, opts = {}) {
   const onVisualViewportResize = () => lifecycle.fit();
   window.visualViewport?.addEventListener?.('resize', onVisualViewportResize);
   inputs.attach();
+  // AudioContext startup is browser-gated behind user activation. Keep the
+  // unlock hook central and idempotent so Safari can also recover after an
+  // interruption on the next ordinary tap/key without UI-specific workarounds.
+  const unlockAudio = () => { audio.unlock(); };
+  window.addEventListener('pointerdown', unlockAudio, { capture: true, passive: true });
+  window.addEventListener('keydown', unlockAudio, { capture: true, passive: true });
   loop.start();
 
   let destroyed = false;
@@ -331,6 +339,8 @@ export function createSandGame(container, opts = {}) {
     if (destroyed) return;
     destroyed = true;
     loop.stop();
+    window.removeEventListener('pointerdown', unlockAudio, { capture: true });
+    window.removeEventListener('keydown', unlockAudio, { capture: true });
     mineProgress.remove();
     authorityFailure.remove();
     ro.disconnect();
@@ -341,6 +351,7 @@ export function createSandGame(container, opts = {}) {
     ctx.stopLocalAuthority();
     if (ctx.engine && ctx.engine.destroy) ctx.engine.destroy();
     parallax.destroy();
+    audio.destroy();
     inputs.detach();
     if (mqReduced && onReducedChange) {
       mqReduced.removeEventListener?.('change', onReducedChange);
@@ -428,6 +439,11 @@ export function createSandGame(container, opts = {}) {
     setDayPhase(phase) { loop.setDayPhase(phase); loop.render(false); },
     clearDayPhase() { loop.clearDayPhase(); loop.render(false); },
     getDayNight() { return loop.getDayNight(); },
+    setAudioEnabled(on) { audio.setEnabled(!!on); },
+    setAudioMuted(on) { audio.setMuted(!!on); },
+    toggleAudioMuted() { return audio.toggleMuted(); },
+    unlockAudio() { return audio.unlock(); },
+    getAudioState() { return { enabled: audio.enabled, muted: audio.muted, ready: audio.ready }; },
     // Creative palette selection (material/seed/eraser/cube/creature).
     setCreativeMaterial(kind, value) {
       ctx.creativeKind = kind | 0;

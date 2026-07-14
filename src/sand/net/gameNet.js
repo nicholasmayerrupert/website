@@ -34,6 +34,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const remotes = new Map();       // render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty,animState,animFrame }
   let itemsForRender = new Float32Array(0); // packed [id,kind,material,count,x,y,life] from the server
   let creaturesForRender = new Float32Array(0);
+  let soundBatches = [];
   const invByPlayer = new Map();   // player id -> { slots, selected, selectedFootprint } (server-authoritative)
   const curByPlayer = new Map();   // player id -> carried cursor stack (or null)
   let invDirty = false;            // our own inventory changed since last read (HUD pull)
@@ -48,7 +49,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     ownPlayerId = 0; inputSeq = 0; worldReady = false;
     predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
-    itemsForRender = new Float32Array(0); creaturesForRender = new Float32Array(0);
+    itemsForRender = new Float32Array(0); creaturesForRender = new Float32Array(0); soundBatches = [];
     invByPlayer.clear(); curByPlayer.clear(); invDirty = false;
     setStatus(status);
   }
@@ -134,6 +135,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       }
       case MSG.ITEMS: ingestItems(m); break;
       case MSG.CREATURES: ingestCreatures(m); break;
+      case MSG.SOUNDS: soundBatches.push(Float32Array.from(m.data)); break;
       case MSG.INVENTORY: ingestInventory(m); break;
       case MSG.CURSOR: ingestCursor(m); break;
       default: break;
@@ -249,6 +251,17 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   // Server-authoritative dropped items for the renderer (empty when none).
   function getItemsForRender() { return itemsForRender; }
   function getCreaturesForRender() { return creaturesForRender; }
+  function consumeSoundEvents() {
+    if (!soundBatches.length) return new Float32Array(0);
+    if (soundBatches.length === 1) return soundBatches.shift();
+    let length = 0;
+    for (const batch of soundBatches) length += batch.length;
+    const joined = new Float32Array(length);
+    let offset = 0;
+    for (const batch of soundBatches) { joined.set(batch, offset); offset += batch.length; }
+    soundBatches = [];
+    return joined;
+  }
   // Our own inventory / cursor from the server (null until the first arrives).
   function getOwnInventory() { return invByPlayer.get(ownPlayerId) || null; }
   function getOwnCursor() { return curByPlayer.get(ownPlayerId) ?? null; }
@@ -258,7 +271,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   return {
     joinRoom, disconnect, update,
     getPlayersForRender, getOwnPlayer,
-    getItemsForRender, getCreaturesForRender, getOwnInventory, getOwnCursor, consumeInventoryDirty,
+    getItemsForRender, getCreaturesForRender, consumeSoundEvents, getOwnInventory, getOwnCursor, consumeInventoryDirty,
     sendSelect, sendSize, sendMove, sendPick, sendThrow,
     get role() { return role; },
     get connected() { return connected; },

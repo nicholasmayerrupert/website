@@ -125,6 +125,13 @@ function postActors(force = false) {
   });
 }
 
+function postSounds() {
+  const sounds = engine.drainSoundEvents();
+  if (!sounds.length) return;
+  const data = sounds.buffer;
+  self.postMessage({ type: 'sounds', epoch, data }, [data]);
+}
+
 function applyCreatureRuntime() {
   if (creativeKind === CREATIVE_KIND.CREATURE) creatureSimulationRequested = true;
   engine.setCreatureRuntime(creatureNaturalSpawning || creatureSimulationRequested, creatureNaturalSpawning);
@@ -233,6 +240,7 @@ function run() {
   // The DEV delay hook isolates scheduling without burning a browser CPU core;
   // normal production turns always execute the real WASM world step here.
   if (artificialDelayMs <= 0) engine.stepWorld();
+  postSounds();
   lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
   rateSteps++;
   if (started - lastStatsPost >= 250) {

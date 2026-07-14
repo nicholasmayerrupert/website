@@ -10,9 +10,9 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
-import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import { CREATIVE_KIND, CREATURE, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick } from '../src/sand/net/protocol.js';
-import { encodeItems, encodeCreatures, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodeItems, encodeCreatures, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -26,6 +26,18 @@ function survivalEngine() {
   for (let x = 5; x < COLS - 5; x++) for (let y = FLOOR; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
   return e;
+}
+
+// Semantic audio uses the same authority -> validated wire path as other state.
+{
+  const e = survivalEngine();
+  e.setCreativeMaterial(CREATIVE_KIND.CUBE, 0);
+  e.pointerDown(32, 24, 0);
+  const m = decode(encode(encodeSounds(e, 1)));
+  check('sound message decodes through server state sync', m && m.t === MSG.SOUNDS);
+  check('server preserves semantic placement event', m && m.data[0] === SOUND_EVENT.PLACE);
+  check('sound encoder drains authority events', encodeSounds(e, 2) === null);
+  e.destroy();
 }
 
 // 1c) creatures replicate the same health/hitbox state the renderer consumes.

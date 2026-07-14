@@ -18,6 +18,7 @@
     "test:anim": "node scripts/player-anim-test.mjs",
     "test:net": "node scripts/net-test.mjs",
     "test:net-protocol": "node scripts/net-protocol-test.mjs",
+    "test:audio": "node scripts/audio-test.mjs",
     "test:server": "node scripts/server-roundtrip-test.mjs",
     "test:layer": "node scripts/layer-test.mjs",
     "test:stacked-logs": "node scripts/stacked-logs-test.mjs",

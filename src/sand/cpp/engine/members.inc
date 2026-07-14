@@ -616,6 +616,14 @@
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
     writeNextIndex(toK, m);
     vacateForNextMove(fromK);
+    if (isLiquidMaterial(m)) {
+      int fromY = fromK / cols, toY = toK / cols;
+      if (toY > fromY) audio.noteFluidFall(m, toK - toY * cols, toY, toY - fromY);
+    } else if (isLooseSolidMaterial(m) && fromK != toK) {
+      int toY = toK / cols;
+      audio.notePowderMove(m, toK - toY * cols, toY,
+                           std::max(1, std::abs(toK - fromK) / cols));
+    }
     // Multi-cell liquid sinks (and any sparse jump) must dirty the full span so
     // vacated/intermediate rows stay blankable across the double buffer.
     if (fromK != toK) markMoveSpan(fromK, toK);

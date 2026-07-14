@@ -49,14 +49,14 @@
     uint8_t self = L->grid[k];
     int belowK = k + cols;
     if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
-    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) { vacateForNextMove(k); writeNextIndex(belowK, self); return; }
+    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) { vacateForNextMove(k); writeNextIndex(belowK, self); audio.notePowderMove(self, x, y + 1); return; }
     if (y + 1 < rows && canDisplaceMaterial(self, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
     int firstDx = rand() < 0.5 ? -1 : 1, secondDx = -firstDx;
     for (int i = 0; i < 2; i++) {
       int dx = i == 0 ? firstDx : secondDx; int nx = x + dx;
       if (nx <= 0 || nx >= cols - 1 || y + 1 >= rows) continue;
       int ik = belowK + dx; uint8_t m = L->grid[ik];
-      if (m == EMPTY && L->next[ik] == EMPTY) { vacateForNextMove(k); writeNextIndex(ik, self); return; }
+      if (m == EMPTY && L->next[ik] == EMPTY) { vacateForNextMove(k); writeNextIndex(ik, self); audio.notePowderMove(self, nx, y + 1); return; }
       if (canDisplaceMaterial(self, m) && L->next[ik] == EMPTY) { moveMaterialInto(k, ik, self); return; }
     }
     if (L->next[k] == EMPTY) writeNextIndex(k, self);
@@ -114,6 +114,7 @@
       // buffer resurrects stale water as a ghost trail (false "duplication").
       vacateForNextMove(k);
       writeNextIndex(dst, m);
+      audio.noteFluidFall(m, dst % cols, dst / cols, (dst - k) / cols);
       if (dst != k) markMoveSpan(k, dst);
       return;
     }
@@ -124,7 +125,11 @@
       int ik = I(nx, ny);
       if (!liquidCanClaim(ik, m)) continue;
       uint8_t occ = liquidOccupantAt(ik);
-      if (occ == EMPTY) { vacateForNextMove(k); writeNextIndex(ik, m); return; }
+      if (occ == EMPTY) {
+        vacateForNextMove(k); writeNextIndex(ik, m);
+        audio.noteFluidFall(m, nx, ny, 1);
+        return;
+      }
       moveLiquidInto(k, nx, ny, m);
       return;
     }

@@ -365,7 +365,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
         bool softImpact = actorSweepOverlap[A->idx] || (B && actorSweepOverlap[B->idx]);
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
-        contacts.push_back({A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth, targetVn, 0, 0, 0});
+        contacts.push_back({A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
+                            std::max(0.0, -impactVn), targetVn, 0, 0, 0});
         if (p->depth > A->maxDepth) A->maxDepth = p->depth;
         if (B && p->depth > B->maxDepth) B->maxDepth = p->depth;
       };
@@ -397,6 +398,11 @@ void RigidBodySystem::rigidStep(double tickDt) {
       reduceManifold(terrAcc, b, nullptr, 0, -1);
     }
     nc = (int)contacts.size();
+    for (const Contact& contact : contacts) {
+      if (contact.impactSpeed < 0.28) continue;
+      E.audio.emit(SE_IMPACT, contact.a->px, contact.a->py,
+                   std::min(1.8, 0.25 + contact.impactSpeed * 0.55), contact.a->material);
+    }
     // Adaptive iteration count: break as soon as a whole iteration applies zero
     // impulse everywhere — a bitwise no-op, so every remaining iteration would
     // be one too (bit-identical to always running R_SOLVER_ITERS). Measured on
@@ -648,7 +654,15 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
   if (cells.empty()) { E.L->bodyCells = cells; return; }
   std::unordered_map<int, Body*> bodyById; for (Body* b : E.L->bodies) bodyById[b->id] = b;
   std::unordered_set<Body*> dirty;
-  for (int k : cells) { double p = rigidErodeProbabilityAt(k); if (p <= 0 || E.rand() >= p) continue; eraseBodyCellIndex(k, bodyById, dirty); }
+  for (int k : cells) {
+    double p = rigidErodeProbabilityAt(k); if (p <= 0 || E.rand() >= p) continue;
+    int x = k % E.cols, y = k / E.cols;
+    bool byAcid = (x < E.cols - 1 && E.L->grid[k + 1] == ACID)
+               || (x > 0 && E.L->grid[k - 1] == ACID)
+               || (y < E.rows - 1 && E.L->grid[k + E.cols] == ACID)
+               || (y > 0 && E.L->grid[k - E.cols] == ACID);
+    if (eraseBodyCellIndex(k, bodyById, dirty) && byAcid) E.audio.noteAcidDissolve(x, y);
+  }
   finishErasedBodies(dirty, cells);
 }
 int RigidBodySystem::bodyFootprintBlocked(Body* b) {

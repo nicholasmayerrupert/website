@@ -24,6 +24,7 @@
 
 struct Engine {
 #include "engine/members.inc"
+#include "engine/audio.inc"
 #include "engine/core.inc"
 #include "engine/step.inc"
 #include "engine/components.inc"
@@ -62,5 +63,6 @@ const int Engine::DIRS_RF[2] = {1, -1};
 #include "engine/growth_impl.inc"
 #include "engine/components_impl.inc"
 #include "engine/rigid_impl.inc"
+#include "engine/audio_impl.inc"
 
 #include "engine/abi.inc"

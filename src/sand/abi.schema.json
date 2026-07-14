@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
-  "abiVersion": 11,
+  "abiVersion": 14,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -31,6 +31,11 @@
       "$comment": "float32 records a multiplayer client packs for engine_gl_set_players (host-authoritative snapshot players).",
       "cPrefix": "GLP",
       "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame"]
+    },
+    "soundEvent": {
+      "$comment": "float32 semantic audio events drained from the authoritative engine. Coordinates are absolute world cells so streaming cannot move a queued sound.",
+      "cPrefix": "SND",
+      "fields": ["type", "x", "y", "intensity", "material", "layer"]
     },
     "perfSnapshot": {
       "$comment": "double records written by engine_perf_snapshot. Fine step phases accumulate across both layers; counts are totals for the last step. Bump abiVersion on layout change.",
@@ -86,6 +91,29 @@
         "CREATURE_CRAWLER": 4,
         "CREATURE_MOLE": 5,
         "CREATURE_BIRD": 6
+      }
+    },
+    "SoundEventType": {
+      "$comment": "Semantic game sounds. The engine reports what happened; the browser audio mixer owns synthesis, spatialization, and voice policy.",
+      "cName": "SoundEventType",
+      "cType": "uint8_t",
+      "jsName": "SOUND_EVENT",
+      "jsPrefix": "SE",
+      "values": {
+        "SE_EXPLOSION": 0,
+        "SE_FUSE": 1,
+        "SE_IMPACT": 2,
+        "SE_JUMP": 3,
+        "SE_LAND": 4,
+        "SE_PLACE": 5,
+        "SE_BREAK": 6,
+        "SE_PICKUP": 7,
+        "SE_HURT": 8,
+        "SE_CREATURE": 9,
+        "SE_FLUID_FALL": 10,
+        "SE_POWDER_MOVE": 11,
+        "SE_SOLID_LAND": 12,
+        "SE_ACID_DISSOLVE": 13
       }
     }
   },

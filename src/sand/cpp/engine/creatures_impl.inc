@@ -471,6 +471,7 @@ void CreatureSystem::attackTarget(Creature& c) {
     if (hit && player->hurtCooldown <= 0) {
       player->health -= s.damage;
       player->hurtCooldown = 30;
+      E.audio.emit(SE_HURT, player->px + player->w * 0.5, player->py + player->h * 0.5, 0.8, EMPTY, 0);
       if (player->health <= 0) E.psys.respawnPlayer(*player);
     }
   }
@@ -531,7 +532,11 @@ bool CreatureSystem::damageAtPoint(int x, int y, int radius, int damage) {
     double nx = std::max(c.wx, std::min(wx, c.wx + s.w));
     double ny = std::max(c.wy, std::min(wy, c.wy + s.h));
     double dx = wx - nx, dy = wy - ny;
-    if (dx * dx + dy * dy <= r2) { c.health -= damage; c.hurtCooldown = 7; hit = true; }
+    if (dx * dx + dy * dy <= r2) {
+      c.health -= damage; c.hurtCooldown = 7; hit = true;
+      E.audio.emit(SE_CREATURE, c.wx - E.fg.worldOffsetX + s.w * 0.5,
+                   c.wy - E.fg.worldOffsetY + s.h * 0.5, 0.65, c.species, 0);
+    }
   }
   return hit;
 }

@@ -201,6 +201,7 @@ double PlayerSystem::samplePlayerFluidCoverage(const Player& p) {
 
 void PlayerSystem::integratePlayer(Player& p) {
   if (!p.active) return;
+  bool wasGrounded = p.grounded;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
   double moveX = p.analogInput ? p.inputX : ((right ? 1.0 : 0.0) - (left ? 1.0 : 0.0));
   double moveStrength = std::fabs(moveX);
@@ -238,7 +239,10 @@ void PlayerSystem::integratePlayer(Player& p) {
   int bury = buryDepth(p);
   bool canJump = bury <= P_BURY_JUMP_MAX && (p.grounded || bury > 0);
   if (canJump && !wantJump) p.jumpReady = true;
-  if (!swimming && wantJump && canJump && p.jumpReady) { p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false; }
+  if (!swimming && wantJump && canJump && p.jumpReady) {
+    p.vy = -P_JUMP_VEL; p.grounded = false; p.jumpReady = false;
+    E.audio.emit(SE_JUMP, p.px + p.w * 0.5, p.py + p.h, 0.8, EMPTY, 0);
+  }
 
   // horizontal move
   if (tryMoveX(p, p.vx, bury)) p.vx = 0;
@@ -256,11 +260,14 @@ void PlayerSystem::integratePlayer(Player& p) {
     p.vy += P_GRAVITY;
     if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;
   }
+  double impactVy = p.vy;
   if (tryMoveY(p, p.vy)) p.vy = 0;
   // grounded := stable downward-edge contact (solid directly under the feet) OR
   // buried — flicker-free vs. the old "was the down-move blocked" test.
   int feetRow = (int)std::floor(p.py + p.h - 1e-6);
   p.grounded = rowSolid(p.px, p.w, feetRow + 1) || buryDepth(p) > 0;
+  if (!wasGrounded && p.grounded && !inLiquid && impactVy > 0.28)
+    E.audio.emit(SE_LAND, p.px + p.w * 0.5, p.py + p.h, std::min(1.5, impactVy / P_MAX_FALL + 0.25), EMPTY, 0);
 
   // ---- animation state (deterministic; reuses the fluid sample computed above) ----
   // Priority: liquid overrides airborne overrides grounded-move overrides idle. The
@@ -303,6 +310,7 @@ bool PlayerSystem::playerBuildOverlapsSelf(Player& p, int ax, int ay, int r) {
 // the foreground collides with the player, so the no-self-overlap rule (which
 // would block building on yourself) applies to foreground builds only.
 bool PlayerSystem::playerUseTool(Player& p, int ax, int ay, Layer* layer) {
+  int layerId = layer == &E.bg ? 1 : 0;
   E.useLayer(layer);
   bool checkSelf = (layer == &E.fg);
   bool ok = false;
@@ -322,6 +330,7 @@ bool PlayerSystem::playerUseTool(Player& p, int ax, int ay, Layer* layer) {
     default: break; // solids (stone/driftwood/ice) use the persistent E.tools.draft in applyPlayerTools
   }
   E.useLayer(&E.fg);
+  if (ok) E.audio.emit(SE_PLACE, ax, ay, 0.55, toolMaterial(p.selectedTool), layerId);
   return ok;
 }
 bool PlayerSystem::isSolidTool(int t) { return t == T_STONE || t == T_DRIFTWOOD || t == T_ICE; }
@@ -370,6 +379,9 @@ bool PlayerSystem::mineFootprintHasContent(int cx, int cy, int footprintId, Laye
 }
 void PlayerSystem::resolveMineDrops(Player& p) {
   if (E.tools.lastMinedCells.empty()) return;
+  const auto first = E.tools.lastMinedCells.front();
+  E.audio.emit(SE_BREAK, first.cell % E.cols, first.cell / E.cols,
+               std::min(1.5, 0.35 + E.tools.lastMinedCells.size() * 0.08), first.material);
   for (auto& mc : E.tools.lastMinedCells) {
     uint8_t m = mc.material; int k = mc.cell;
     int cxk = k % E.cols, cyk = k / E.cols;
@@ -470,10 +482,14 @@ void PlayerSystem::playerBeginSolidDraft(Player& p, int tool, int ax, int ay, in
 }
 // Finalize the in-progress E.tools.draft into its layer (one connected component) and clear.
 void PlayerSystem::playerFinalizeSolidDraft() {
+  int layer = E.tools.draftLayer;
+  uint8_t material = E.tools.draftMaterial;
+  int x = E.tools.lastDraftCx, y = E.tools.lastDraftCy;
   E.useLayer(E.tools.draftLayer ? &E.bg : &E.fg);
   if (E.tools.drafting) { E.finalizeDraft(); E.tools.drafting = false; E.tools.draftStrokeActive = false; E.tools.draft.clear(); }
   E.tools.draftOwner = -1;
   E.useLayer(&E.fg);
+  E.audio.emit(SE_PLACE, x, y, 0.9, material, layer);
 }
 // Per step: LMB (primary) acts on the FOREGROUND, RMB (secondary) on the BACKGROUND.
 // Eraser sweeps toward the cursor and fluids/sand paint — both repeat while held

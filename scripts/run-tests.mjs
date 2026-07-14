@@ -44,6 +44,7 @@ const SUITES = [
   ['anim', 'player-anim-test.mjs'],
   ['net', 'net-test.mjs'],
   ['net-protocol', 'net-protocol-test.mjs'],
+  ['audio', 'audio-test.mjs'],
   ['server', 'server-roundtrip-test.mjs'],
   ['layer', 'layer-test.mjs'],
   ['stacked-logs', 'stacked-logs-test.mjs'],

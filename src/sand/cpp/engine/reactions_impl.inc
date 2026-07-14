@@ -167,6 +167,7 @@ void ReactionSystem::applyAcid() {
       if (acidEats(a)) target = a; else if (acidEats(b)) target = b; else if (acidEats(c)) target = c; else if (acidEats(d)) target = d;
       if (target < 0) continue;
       uint8_t tm = E.L->grid[target];
+      E.audio.noteAcidDissolve(target % E.cols, target / E.cols);
       if (E.isStoneComponentMaterial(tm) || E.isIceComponentMaterial(tm)) noteTouchedCrossBond(target);
       if (E.isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (E.isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (E.isPlantMaterial(tm)) { erasedPlant.push_back(target); dissolvedPlant = true; }
       // Dissolving releases acrid smoke (a yellow gas that rises/dissipates like

@@ -4,9 +4,9 @@
 // is strictly validated and integer fields are preserved exactly — divergence
 // here would desync a host-authoritative session.
 
-import { INPUT, TOOL, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
+import { INPUT, TOOL, SOUND_EVENT, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -20,6 +20,7 @@ export const MSG = Object.freeze({
   RESYNC: 'resync',     // client -> host: request a full world snapshot
   ITEMS: 'items',       // host -> client: dropped-item entities (packed)
   CREATURES: 'creatures', // host -> client: material-aware actors (packed)
+  SOUNDS: 'sounds',     // host -> client: semantic positional sound events (packed)
   INVENTORY: 'inv',     // host -> client: one player's authoritative inventory
   CURSOR: 'cursor',     // host -> client: one player's carried cursor stack
   ACT_SELECT: 'aselect',// client -> host: select a hotbar slot
@@ -33,12 +34,15 @@ export const MSG = Object.freeze({
 // from the engine.
 export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 127
 export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
+const SOUND_EVENT_MAX = Math.max(...Object.values(SOUND_EVENT));
 const MAX_SNAPSHOT_PLAYERS = 64;
 export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life,plantType] per item
 export const CREATURE_FIELDS = STRIDES.creatureSnapshot;
+export const SOUND_FIELDS = STRIDES.soundEvent;
 export const INV_FIELDS = STRIDES.inventorySlot - 1;  // wire slots omit the `selected` flag (sent separately)
 const MAX_SNAPSHOT_ITEMS = 1024; // IT_MAX_ITEMS in items.inc
 const MAX_SNAPSHOT_CREATURES = 128;
+const MAX_SOUND_EVENTS = 192;
 
 const isInt = (v) => Number.isInteger(v);
 const isNonNegInt = (v) => isInt(v) && v >= 0;
@@ -120,6 +124,9 @@ export function makeCreatures(tick, creatures) {
   }
   return { t: MSG.CREATURES, tick: Math.trunc(tick), data };
 }
+export function makeSounds(tick, events) {
+  return { t: MSG.SOUNDS, tick: Math.trunc(tick), data: Array.from(events) };
+}
 // One player's authoritative inventory. `slots` is the getInventory() slots array
 // ({material,isTool,toolClass,toolTier,count,plantType}); `selected` is the hotbar index.
 export function makeInventory(tick, player, slots, selected, selectedFootprint = 0) {
@@ -165,6 +172,7 @@ export function decode(str) {
     case MSG.RESYNC: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ITEMS: return validateItems(m);
     case MSG.CREATURES: return validateCreatures(m);
+    case MSG.SOUNDS: return validateSounds(m);
     case MSG.INVENTORY: return validateInventory(m);
     case MSG.CURSOR: return validateCursor(m);
     case MSG.ACT_SELECT: return (isRoom(m.room) && isId(m.client) && isSlot(m.slot)) ? m : null;
@@ -198,6 +206,21 @@ function validateCreatures(m) {
     const f = i % CREATURE_FIELDS;
     if (f === O.x || f === O.y || f === O.vx || f === O.vy) { if (!isFiniteNum(m.data[i])) return null; }
     else if (!isInt(m.data[i])) return null;
+  }
+  return m;
+}
+function validateSounds(m) {
+  if (!isNonNegInt(m.tick) || !Array.isArray(m.data)) return null;
+  if (m.data.length % SOUND_FIELDS !== 0 || m.data.length > MAX_SOUND_EVENTS * SOUND_FIELDS) return null;
+  const O = OFF.soundEvent;
+  for (let i = 0; i < m.data.length; i++) {
+    const field = i % SOUND_FIELDS;
+    if (field === O.x || field === O.y || field === O.intensity) {
+      if (!isFiniteNum(m.data[i])) return null;
+    } else if (!isInt(m.data[i])) return null;
+    else if (field === O.type && (m.data[i] < 0 || m.data[i] > SOUND_EVENT_MAX)) return null;
+    else if (field === O.material && (m.data[i] < 0 || m.data[i] > 255)) return null;
+    else if (field === O.layer && !isBit(m.data[i])) return null;
   }
   return m;
 }

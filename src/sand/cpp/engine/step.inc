@@ -14,6 +14,7 @@
   void stepLayer(Layer* layer) {
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
+    audio.beginRegionalPass();
     // Phase times ACCUMULATE (both layers). step() zeros them once per tick.
     double t0 = emscripten_get_now();
     if (!deferStructureThisTick && !comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
@@ -166,6 +167,7 @@
     levelLiquidSurfaces();
     applySideSinks();
     perfTailMs += emscripten_get_now() - tT;
+    audio.flushRegionalPass();
   }
 
   // Real-time entities advance on their own cheap deterministic clock. This is

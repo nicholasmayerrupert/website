@@ -267,6 +267,9 @@ export function initSandWasm() {
         step: c('engine_step', 'number', ['number']),
         stepActors: c('engine_step_actors', 'number', ['number']),
         stepWorld: c('engine_step_world', 'number', ['number']),
+        soundEventSnapshot: c('engine_sound_event_snapshot', 'number', ['number']),
+        soundEventSnapshotPtr: c('engine_sound_event_snapshot_ptr', 'number', ['number']),
+        audioAmbience: c('engine_audio_ambience', null, ['number', 'number', 'number', 'number', 'number']),
         grid: c('engine_grid', 'number', ['number']),
         dirtyCount: c('engine_dirty_count', 'number', ['number']),
         cols: c('engine_cols', 'number', ['number']),
@@ -485,6 +488,7 @@ export function createEngineWasm({
   const glOffOut = mod._malloc(8);
   const camOut = mod._malloc(16); // 2 doubles: cameraGet / aimCell
   const perfOut = mod._malloc(STRIDES.perfSnapshot * 8); // doubles for engine_perf_snapshot
+  const ambienceOut = mod._malloc(12 * 4); // 4 groups × [amount, worldX, worldY]
   // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
@@ -525,6 +529,15 @@ export function createEngineWasm({
     step() { return M.step(ptr) === 1; },
     stepActors() { return M.stepActors(ptr) === 1; },
     stepWorld() { return M.stepWorld(ptr) === 1; },
+    drainSoundEvents() {
+      const count = M.soundEventSnapshot(ptr);
+      if (!count) return new Float32Array(0);
+      return new Float32Array(mod.HEAPF32.buffer, M.soundEventSnapshotPtr(ptr), count * STRIDES.soundEvent).slice();
+    },
+    sampleAmbience(x, y, radius = 64) {
+      M.audioAmbience(ptr, x, y, radius | 0, ambienceOut);
+      return new Float32Array(mod.HEAPF32.buffer, ambienceOut, 12).slice();
+    },
     getGrid() { return gridView(); },
     // Build the coalesced dirty rects in C++ and hand back a zero-copy view.
     // buildDirtyRects may grow wasm memory (its rect vector), so the HEAP32
@@ -781,7 +794,7 @@ export function createEngineWasm({
     setThreadWorkers(count) { M.setThreadWorkers(ptr, Math.min(wasmThreadPoolCapacity, Math.max(0, count | 0))); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
-    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); M.destroy(ptr); },
+    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); mod._free(ambienceOut); M.destroy(ptr); },
 
     // Component drafts + seeds. One material-parameterized draft set; the
     // per-material method names remain for the tests/tools that use them.

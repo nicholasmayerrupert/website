@@ -336,7 +336,7 @@ struct Contact {
   // Separating speed captured from the contact's initial impact. Keeping this
   // target fixed lets sequential impulses preserve a small rebound instead of
   // damping it back to zero over later solver iterations.
-  double targetVn;
+  double impactSpeed, targetVn;
   double accJn, accJt, accBias;
 };
 
@@ -607,3 +607,5 @@ static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_
 #include "components.hpp"
 // Free rigid bodies class (extracted in 5f; composed by Engine).
 #include "rigid.hpp"
+// Semantic sound events + nearby ambience sampling (browser synthesis stays in JS).
+#include "audio.hpp"

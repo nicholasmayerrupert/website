@@ -1432,12 +1432,25 @@ void ComponentSystem::moveRigidAssemblies() {
   std::vector<Comp*> all;
   std::vector<int> localOf(totalComps, -1);
   int gi = 0;
-  auto addList = [&](std::vector<Comp>& list) {
-    for (auto& c : list) { if (!c.grounded && (!jointGroundReady || gi >= (int)E.L->crossBondedComp.size() || !E.L->crossBondedComp[gi])) { localOf[gi] = (int)all.size(); all.push_back(&c); } gi++; }
+  auto addList = [&](std::vector<Comp>& list, bool ice) {
+    for (auto& c : list) {
+      if (c.grounded && c.buoyancyDirection > 0 && !c.cells.empty()) {
+        double x = 0, y = 0;
+        for (int k : c.cells) { x += k % E.cols; y += k / E.cols; }
+        E.audio.emit(SE_SOLID_LAND, x / c.cells.size(), y / c.cells.size(),
+                     std::min(1.6, 0.28 + std::sqrt((double)c.cells.size()) * 0.065),
+                     ice ? ICE : E.L->grid[c.cells[0]]);
+        c.buoyancyDirection = 0;
+      }
+      if (!c.grounded && (!jointGroundReady || gi >= (int)E.L->crossBondedComp.size() || !E.L->crossBondedComp[gi])) {
+        localOf[gi] = (int)all.size(); all.push_back(&c);
+      }
+      gi++;
+    }
   };
-  addList(E.L->stoneComponents); int nStone = (int)all.size();
-  addList(E.L->plantComponents); int nStonePlant = (int)all.size();
-  addList(E.L->iceComponents);
+  addList(E.L->stoneComponents, false); int nStone = (int)all.size();
+  addList(E.L->plantComponents, false); int nStonePlant = (int)all.size();
+  addList(E.L->iceComponents, true);
   int n = (int)all.size();
   if (n == 0) return; // everything is grounded (settled) -> nothing to move
   for (auto* comp : all) { int ym = 0; for (int k : comp->cells) { int y = k / E.cols; if (y > ym) ym = y; } comp->yMax = ym; }
@@ -1480,6 +1493,18 @@ void ComponentSystem::moveRigidAssemblies() {
     bool hasIce = false;
     for (int ci : grp->comps) if (ci >= nStonePlant) { hasIce = true; break; }
     const int gridLen = E.cols * E.rows;
+    auto emitBlockedLanding = [&]() {
+      bool wasFalling = decision > 0;
+      for (int ci : grp->comps) wasFalling = wasFalling && all[ci]->buoyancyDirection > 0;
+      if (!wasFalling || cells.empty()) return;
+      double x = 0, y = 0;
+      for (int k : cells) { x += k % E.cols; y += k / E.cols; }
+      int ci = grp->comps[0], k = all[ci]->cells[0];
+      E.audio.emit(SE_SOLID_LAND, x / cells.size(), y / cells.size(),
+                   std::min(1.6, 0.28 + std::sqrt((double)cells.size()) * 0.065),
+                   matOf(ci, k));
+      for (int groupCi : grp->comps) all[groupCi]->buoyancyDirection = 0;
+    };
     // Membership mirror of `cells` (iteration below stays on the set — its
     // order feeds displaced/vacated order and thus every relocation write).
     asmCells.reset((size_t)gridLen);
@@ -1489,10 +1514,10 @@ void ComponentSystem::moveRigidAssemblies() {
     };
     for (int k : cells) {
       int leadK = k + dir; int leadY = leadK / E.cols;
-      if (leadY < 1 || leadY >= E.rows) return false;
+      if (leadY < 1 || leadY >= E.rows) { emitBlockedLanding(); return false; }
       if (asmCells.has(leadK)) continue;
       uint8_t lead = E.L->grid[leadK];
-      if (!componentDisplaceableForAssembly(lead)) return false;
+      if (!componentDisplaceableForAssembly(lead)) { emitBlockedLanding(); return false; }
     }
     struct Disp { uint8_t material; int from; };
     std::vector<Disp> displaced; std::vector<int> vacated;
@@ -1745,7 +1770,29 @@ void ComponentSystem::moveRigidAssemblies() {
     }
     FaceContact postMove;
     accumulateFaceContact(E.L->grid, shifted, postMove, &planned);
-    if (motionDecision(postMove, shifted.size(), solidMass) == -decision) return false;
+    int postDecision = motionDecision(postMove, shifted.size(), solidMass);
+    if (postDecision == -decision) return false;
+    bool landed = false;
+    if (decision > 0 && postDecision == 0) {
+      for (int k : shifted) {
+        int below = k + E.cols;
+        if (below >= gridLen || shifted.count(below)) continue;
+        auto it = planned.find(below);
+        uint8_t support = it == planned.end() ? E.L->grid[below] : it->second;
+        if (support != EMPTY && !E.isGasMaterial(support) && !E.isLiquidMaterial(support)) {
+          landed = true;
+          break;
+        }
+      }
+    }
+    double landX = 0, landY = 0;
+    for (int k : shifted) { landX += k % E.cols; landY += k / E.cols; }
+    if (!shifted.empty()) { landX /= shifted.size(); landY /= shifted.size(); }
+    uint8_t landMaterial = EMPTY;
+    if (!grp->comps.empty() && !all[grp->comps[0]]->cells.empty()) {
+      int ci = grp->comps[0], k = all[ci]->cells[0];
+      landMaterial = matOf(ci, k);
+    }
 
     struct Move { Comp* comp; bool isPlant; std::vector<std::pair<int, uint8_t>> mats; int wood, leaf; };
     std::vector<Move> moves;
@@ -1818,8 +1865,11 @@ void ComponentSystem::moveRigidAssemblies() {
       for (size_t i2 = 0; i2 < powderTargets.size(); i2++) probe(powderTargets[i2], 0, "powderSpill");
     }
 #endif
-    int8_t moveDir = dir < 0 ? -1 : 1;
+    int8_t moveDir = landed ? 0 : (dir < 0 ? -1 : 1);
     for (int ci : grp->comps) all[ci]->buoyancyDirection = moveDir;
+    if (landed) E.audio.emit(SE_SOLID_LAND, landX, landY,
+                             std::min(1.6, 0.28 + std::sqrt((double)shifted.size()) * 0.065),
+                             landMaterial);
     return true;
   };
 

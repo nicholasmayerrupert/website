@@ -12,11 +12,17 @@ void ExplosivesSystem::buildTntStencil() {
 
 void ExplosivesSystem::queueDetonation(int cell, int fuse) {
   auto& pd = E.L->pendingDetonations;
-  if (!pd.count(cell)) pd[cell] = fuse;
+  if (!pd.count(cell)) {
+    pd[cell] = fuse;
+    E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
+  }
 }
 void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse) {
   if (!b || b->material != TNT) return;
-  if (b->fuseTicks <= 0 || b->fuseTicks > fuse) b->fuseTicks = fuse;
+  if (b->fuseTicks <= 0 || b->fuseTicks > fuse) {
+    b->fuseTicks = fuse;
+    E.audio.emit(SE_FUSE, b->px, b->py, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
+  }
   b->awake = true; b->stillTicks = 0;
 }
 
@@ -283,6 +289,7 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
 
 void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody) {
   Layer* src = E.L;
+  E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), TNT, src == &E.bg ? 1 : 0);
   carveBlast(cx, cy, radius, power, bb, sourceBody);
   if (!E.bgEnabled || !otherBb) return;
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
@@ -331,7 +338,7 @@ void ExplosivesSystem::applyExplosives() {
       int id = E.L->bodyOwner[k];
       if (!builtBodies) { for (Body* b : E.L->bodies) bodyById[b->id] = b; builtBodies = true; }
       auto it = bodyById.find(id);
-      if (it != bodyById.end() && it->second->fuseTicks == 0) it->second->fuseTicks = TNT_FUSE_TICKS;
+      if (it != bodyById.end() && it->second->fuseTicks == 0) shortenTntBodyFuse(it->second, TNT_FUSE_TICKS);
     } else queueDetonation(k, TNT_FUSE_TICKS);
   };
   auto scanHeat = [&](auto&& visit) {

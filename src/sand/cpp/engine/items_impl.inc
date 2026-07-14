@@ -189,7 +189,10 @@ void ItemSystem::pickupItems() {
       double d = dx * dx + dy * dy;
       if (d <= bestD) { bestD = d; best = &p; }
     }
-    if (best && E.addToInventory(*best, it.material, it.count, it.plantType)) it.count = 0;
+    if (best && E.addToInventory(*best, it.material, it.count, it.plantType)) {
+      E.audio.emit(SE_PICKUP, it.px, it.py, std::min(1.2, 0.5 + it.count * 0.04), it.material, 0);
+      it.count = 0;
+    }
   }
 }
 

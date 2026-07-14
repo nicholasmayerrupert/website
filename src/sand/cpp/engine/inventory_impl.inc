@@ -83,7 +83,9 @@ bool InventorySystem::placeFromSelected(Player& p, int ax, int ay, Layer* layer)
   int placed = E.placeMaterialAtFootprintCapped(ax, ay, E.getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
   E.useLayer(&E.fg);
   if (placed <= 0) return false;
+  uint8_t placedMaterial = s.material;
   s.count -= placed; if (s.count <= 0) s = InvSlot();
+  E.audio.emit(SE_PLACE, ax, ay, std::min(1.25, 0.35 + placed * 0.04), placedMaterial, foreground ? 0 : 1);
   return true;
 }
 bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer) {
@@ -95,7 +97,9 @@ bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1,
   int placed = E.placeMaterialAtFootprintStrokeCapped(x0, y0, x1, y1, E.getSurvivalFootprint(p), s.material, s.count, foreground ? &p : nullptr);
   E.useLayer(&E.fg);
   if (placed <= 0) return false;
+  uint8_t placedMaterial = s.material;
   s.count -= placed; if (s.count <= 0) s = InvSlot();
+  E.audio.emit(SE_PLACE, x1, y1, std::min(1.25, 0.3 + placed * 0.025), placedMaterial, foreground ? 0 : 1);
   return true;
 }
 bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.findPlayer(id); return p ? placeFromSelected(*p, ax, ay, &E.fg) : false; }
@@ -261,6 +265,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
       bool placed = E.getSeedOrigin(ax, ay, x0, y0) && E.placeSeedAtTyped(x0, y0, sel.plantType);
       E.useLayer(&E.fg);
       if (placed) {
+        E.audio.emit(SE_PLACE, x0, y0, 0.6, SEED, toBg ? 1 : 0);
         sel.count--;
         if (sel.count <= 0) sel = InvSlot();
         E.playerActionCount++;

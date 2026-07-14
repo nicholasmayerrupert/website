@@ -41,6 +41,11 @@ try {
   await page.goto(baseURL, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => window.__sandTest && window.__sandPerf, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
+  const desktopAudioUi = await page.locator('sand-game').evaluate((host) => ({
+    buttons: host.shadowRoot.querySelectorAll('.sg-sound').length,
+    enabled: host._game.getAudioState().enabled,
+  }));
+  check('desktop exposes one enabled sound control', desktopAudioUi.buttons === 1 && desktopAudioUi.enabled);
   const countRaf = (ms) => page.evaluate((duration) => new Promise((resolve) => {
     let n = 0;
     const started = performance.now();
@@ -238,10 +243,14 @@ try {
     return {
       start: visible('.sg-start'), palette: visible('.sg-palette'),
       joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
+      soundButtons: root.querySelectorAll('.sg-sound').length,
+      audioEnabled: host._game.getAudioState().enabled,
     };
   });
   check('mobile creative rests behind only the START control',
     restingUi.start && !restingUi.palette && !restingUi.joystick && !restingUi.controls);
+  check('resting mobile creative has no mute UI and audio is disabled',
+    restingUi.soundButtons === 0 && !restingUi.audioEnabled);
   await mobileGame.locator('.sg-start').tap();
   const startedUi = await mobileGame.evaluate((host) => {
     const root = host.shadowRoot;
@@ -249,10 +258,11 @@ try {
     return {
       start: visible('.sg-start'), palette: visible('.sg-palette'),
       joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
+      audioEnabled: host._game.getAudioState().enabled,
     };
   });
   check('START reveals the full mobile creative controls',
-    !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls);
+    !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls && startedUi.audioEnabled);
 
   // Reproduce the real failure: move to a buffer corner, then start a second
   // zoom after the first mirror resize but before its authority resize settles.
@@ -451,10 +461,11 @@ try {
     return {
       start: visible('.sg-start'), palette: visible('.sg-palette'),
       joystick: visible('.sg-stick'), controls: visible('.sg-zoom'),
+      audioEnabled: host._game.getAudioState().enabled,
     };
   });
   check('SCROLL returns mobile creative to the START-only state',
-    returnedUi.start && !returnedUi.palette && !returnedUi.joystick && !returnedUi.controls,
+    returnedUi.start && !returnedUi.palette && !returnedUi.joystick && !returnedUi.controls && !returnedUi.audioEnabled,
     JSON.stringify(returnedUi));
   await mobileContext.close();
   mobileContext = null;

@@ -112,6 +112,21 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     ? ctx.net.getPlayersForRender()
     : ctx.worldWorker?.getPlayersForRender() || [];
 
+  const audioListener = () => {
+    const engine = ctx.engine;
+    if (!engine) return null;
+    const player = ctx.survival ? localPlayer() : null;
+    const cam = engine.getCam();
+    const x = player ? player.x + player.w * 0.5 : cam.x + ctx.viewCols * 0.5;
+    const y = player ? player.y + player.h * 0.5 : cam.y + ctx.viewRows * 0.5;
+    return {
+      localX: x, localY: y,
+      x: engine.getWorldOffsetX() + x,
+      y: engine.getWorldOffsetY() + y,
+      viewWidth: ctx.viewCols,
+    };
+  };
+
   // ---- present one frame ----
   // The engine owns the whole compositing pipeline: it reads its own camera
   // (camera.inc), uploads the cells whose contents changed (dirty-rect
@@ -213,6 +228,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   const clockStart = performance.now();
   const actorClock = createFixedRateClock({ now: clockStart });
   let workerPaused = null;
+  let lastAmbienceSample = -Infinity;
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     const dayChanged = updateDayNight(now);
@@ -246,6 +262,21 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
       worldStepped: false,
     };
     const stepped = actorChanged || worldChanged;
+
+    // Events are authority-owned and consumed exactly once. Continuous beds are
+    // a cheap fixed-radius presentation query at 8 Hz, independent of zoom and
+    // total grid size.
+    const listener = audioListener();
+    if (listener) {
+      const soundEvents = ctx.netClientReady()
+        ? ctx.net.consumeSoundEvents()
+        : ctx.worldWorker?.consumeSoundEvents();
+      if (soundEvents?.length) ctx.audio.playEvents(soundEvents, listener);
+      if (ctx.audio.enabled && !ctx.audio.muted && now - lastAmbienceSample >= 125) {
+        lastAmbienceSample = now;
+        ctx.audio.updateAmbience(ctx.engine.sampleAmbience(listener.localX, listener.localY, 64), listener);
+      }
+    }
 
     // Refresh the survival HUD from the active authority only when its inventory
     // revision changes: the server in multiplayer, otherwise the local worker.

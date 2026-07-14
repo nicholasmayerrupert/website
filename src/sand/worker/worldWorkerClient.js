@@ -10,6 +10,7 @@ export function createWorldWorkerClient(ctx) {
   let pendingDraft = null;
   let pendingCreatures = null;
   let pendingActors = null;
+  let pendingSounds = [];
   let lastControl = '';
   let resizeTimer = 0;
   let resizeId = 0;
@@ -68,6 +69,8 @@ export function createWorldWorkerClient(ctx) {
         cursor: data.inventory !== undefined ? data.cursor : pendingActors?.cursor,
         items: data.items !== undefined ? data.items : pendingActors?.items,
       };
+    } else if (data.type === 'sounds') {
+      if (!data.epoch || data.epoch === state.epoch) pendingSounds.push(new Float32Array(data.data));
     } else if (data.type === 'stats') {
       state = {
         ...state, ...data.perf, worldTick: data.worldTick ?? state.worldTick,
@@ -277,6 +280,17 @@ export function createWorldWorkerClient(ctx) {
     getMineProgress() { return mineProgress; },
     getMineTarget() { return mineTarget; },
     getActionCount() { return actionCount; },
+    consumeSoundEvents() {
+      if (!pendingSounds.length) return new Float32Array(0);
+      if (pendingSounds.length === 1) return pendingSounds.shift();
+      let length = 0;
+      for (const batch of pendingSounds) length += batch.length;
+      const joined = new Float32Array(length);
+      let offset = 0;
+      for (const batch of pendingSounds) { joined.set(batch, offset); offset += batch.length; }
+      pendingSounds = [];
+      return joined;
+    },
     get ownPlayerId() { return authoritativePlayerId; },
     retry() {
       retryCount = 0;
@@ -305,6 +319,7 @@ export function createWorldWorkerClient(ctx) {
       try { predictorEngine.removePlayer(predictorPlayerId); } catch { /* mirror was rebuilt */ }
     }
     pending = pendingDraft = pendingCreatures = pendingActors = null;
+    pendingSounds = [];
     predictor = predictorEngine = null;
     predictorPlayerId = authoritativePlayerId = 0;
     players = []; inventory = cursor = null; items = new Float32Array(0);

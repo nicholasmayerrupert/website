@@ -685,12 +685,16 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
       break;
     case CM_SEED:
     case CM_MYCELIUM_SPORE: draftingSeed = true; changed |= updateSeedDraft(cx, cy); break;
-    case CM_CUBE: E.spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial); break; // RIGID by default; a selected stone/ice/TNT solid spawns a material body that bakes/explodes
+    case CM_CUBE:
+      if (E.spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial))
+        E.audio.emit(SE_PLACE, cx, cy, 1.0, cubeMaterial, toBg ? 1 : 0);
+      break; // RIGID by default; a selected stone/ice/TNT solid spawns a material body that bakes/explodes
     case CM_CREATURE: {
       const CreatureSpecies& s = CREATURE_SPECIES[creativeCreature];
       double wx = E.fg.worldOffsetX + cx - s.w * 0.5;
       double wy = E.fg.worldOffsetY + cy - s.h * 0.5;
       E.creatures.spawnCreature(creativeCreature, wx, wy, false);
+      E.audio.emit(SE_CREATURE, cx, cy, 0.55, creativeCreature, toBg ? 1 : 0);
       break;
     }
     default: break;
@@ -711,11 +715,18 @@ int ToolSystem::pointerUp(int button) {
   if (!ownerReleased) return 0;
   int changed = 0;
   E.useLayer(draftLayer ? &E.bg : &E.fg);
-  if (drafting) { finalizeDraft(); drafting = false; draftStrokeActive = false; draft.clear(); changed = 1; }
+  if (drafting) {
+    uint8_t placedMaterial = draftMaterial;
+    finalizeDraft(); drafting = false; draftStrokeActive = false; draft.clear(); changed = 1;
+    E.audio.emit(SE_PLACE, lastDraftCx, lastDraftCy, 0.9, placedMaterial, draftLayer);
+  }
   if (draftingSeed) {
     if (hasSeedOrigin) {
-      if (creativeMode == CM_MYCELIUM_SPORE) placeMyceliumSporeAt(seedOriginX, seedOriginY);
-      else placeSeedAtTyped(seedOriginX, seedOriginY, creativeSeed);
+      bool placed = creativeMode == CM_MYCELIUM_SPORE
+        ? placeMyceliumSporeAt(seedOriginX, seedOriginY)
+        : placeSeedAtTyped(seedOriginX, seedOriginY, creativeSeed);
+      if (placed) E.audio.emit(SE_PLACE, seedOriginX, seedOriginY, 0.6,
+                               creativeMode == CM_MYCELIUM_SPORE ? MYCELIUM_SPORE : SEED, draftLayer);
     }
     draftingSeed = false; hasSeedOrigin = false; changed = 1;
   }
@@ -774,6 +785,10 @@ void ToolSystem::emitHeldTool(int cx, int cy, double now, bool inside, bool draw
   int sx = emitStrokeActive ? lastEmitCx : cx, sy = emitStrokeActive ? lastEmitCy : cy;
   if (lmbDown) emitStrokeLayer(sx, sy, cx, cy, false);
   if (rmbDown) { E.bgEnabled = true; emitStrokeLayer(sx, sy, cx, cy, true); }
+  uint8_t eventType = creativeMode == CM_ERASE ? SE_BREAK : SE_PLACE;
+  uint8_t eventMaterial = creativeMode == CM_ERASE ? EMPTY : creativeMaterial;
+  if (lmbDown) E.audio.emit(eventType, cx, cy, 0.35, eventMaterial, 0);
+  if (rmbDown) E.audio.emit(eventType, cx, cy, 0.28, eventMaterial, 1);
   lastEmitCx = cx; lastEmitCy = cy; emitStrokeActive = true;
   lastEmitMs = now;
 }

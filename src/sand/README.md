@@ -54,10 +54,10 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 ## Files
 
 - `cpp/` — the C++ engine. Every simulation subsystem is a **named class**
-  composed by the Engine (fifteen: ViewCamera, NetSync, TerrainGen, Renderer,
+  composed by the Engine (sixteen: ViewCamera, NetSync, TerrainGen, Renderer,
   GLPresenter, ItemSystem, InventorySystem, PlayerSystem, CreatureSystem, ToolSystem,
   ReactionSystem, ExplosivesSystem, GrowthSystem, ComponentSystem,
-  RigidBodySystem). Each lives as `engine/<name>.hpp` (state + interface, with
+  RigidBodySystem, AudioSystem). Each lives as `engine/<name>.hpp` (state + interface, with
   an `Engine&` back-reference) plus `engine/<name>_impl.inc` (method bodies,
   included from `sand.cpp` after the Engine definition — still one unity TU so
   emcc's cross-inlining stays free). The Engine itself keeps only the
@@ -114,6 +114,18 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   prediction clock, forwards DOM events (`engine.inputKey/inputPointer/...`),
   drives `engine.glRenderFrame()`, and carries authority transport. No pixels,
   no camera math, no React.
+- `audio/sandAudio.js` — the sole Web Audio boundary. Authority engines emit a
+  bounded packed stream of semantic events (place, break, impact, explosion,
+  movement, reactions, player, pickup, and creature events) through `AudioSystem`;
+  workers and the multiplayer protocol transport that stream unchanged. The
+  browser mixer owns recorded sample beds, procedural accents, spatialization,
+  cooldowns, voice limits, ambience, activation, visibility, and mute state.
+  Recorded assets and their CC0 provenance live under `audio/assets/`. Nearby water/fire/lava/acid ambience
+  is sampled from the presentation mirror at 8 Hz with a fixed-radius scan, so
+  audio work does not grow with world size or zoom. Downward liquid movement,
+  powder movement, and acid dissolution are aggregated into at most 24 regional
+  events per layer and tick. Fluid/powder events hold smooth loop voices rather
+  than retriggering one-shots; lateral surface flow does not produce falling-water events.
 - `worker/` — the shared offline authority runner and its main-thread replica client. The
   worker sends a full RLE snapshot only for initialization, resize, or streaming;
   ordinary turns send accumulated diffs with one packet in flight. The main
@@ -269,6 +281,10 @@ remain unchanged on hybrid devices. The same compact 2x2 utility pad contains a
 selection. Opening the material selector does not focus its search field on
 touch devices, avoiding browser page zoom; tapping search explicitly still opens
 the keyboard at a mobile-safe text size.
+
+Sound starts on the first browser gesture. Desktop has a persistent mute control;
+mobile has no extra sound button, and creative sound fades out whenever `SCROLL`
+returns the game to its resting state. Hiding the page also silences the mixer.
 
 ### Day/night
 

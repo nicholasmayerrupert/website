@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 11;
+static const int ABI_VERSION = 14;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
 enum PlayerSnapshotField : int {
@@ -96,6 +96,17 @@ enum GlPlayerExtField : int {
 };
 static const int GLP_STRIDE = 8;
 
+// soundEvent: type, x, y, intensity, material, layer
+enum SoundEventField : int {
+  SND_TYPE = 0,
+  SND_X = 1,
+  SND_Y = 2,
+  SND_INTENSITY = 3,
+  SND_MATERIAL = 4,
+  SND_LAYER = 5,
+};
+static const int SND_STRIDE = 6;
+
 // perfSnapshot: stepMs, actorMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs, threadWorkers, parallelCalls, parallelTasks, parallelWallMs, parallelWaitMs
 enum PerfSnapshotField : int {
   PF_STEP_MS = 0,
@@ -175,6 +186,23 @@ enum CreatureSpeciesAbi : int {
   CREATURE_CRAWLER = 4,
   CREATURE_MOLE = 5,
   CREATURE_BIRD = 6,
+};
+
+enum SoundEventType : uint8_t {
+  SE_EXPLOSION = 0,
+  SE_FUSE = 1,
+  SE_IMPACT = 2,
+  SE_JUMP = 3,
+  SE_LAND = 4,
+  SE_PLACE = 5,
+  SE_BREAK = 6,
+  SE_PICKUP = 7,
+  SE_HURT = 8,
+  SE_CREATURE = 9,
+  SE_FLUID_FALL = 10,
+  SE_POWDER_MOVE = 11,
+  SE_SOLID_LAND = 12,
+  SE_ACID_DISSOLVE = 13,
 };
 
 static const int INV_HOTBAR = 9;

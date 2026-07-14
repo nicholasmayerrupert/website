@@ -15,7 +15,7 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
-import { encodeItems, encodeCreatures, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodeItems, encodeCreatures, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
 
 // Bounded shared arena (MVP): a fixed, non-streaming world buffer. Multiples of
@@ -113,6 +113,11 @@ export async function startSandServer(opts = {}) {
       // leave together after this single world phase.
       const d = encodeDiff(engine, host.worldTick);
       if (d) broadcast(encode(d));
+      const sounds = encodeSounds(engine, host.actorTick);
+      if (sounds) broadcast(encode(sounds));
+    } else {
+      // Do not retain authority events forever when nobody is listening.
+      engine.drainSoundEvents();
     }
     // The server never renders, so nothing else clears the per-step render-dirty
     // marks the diff reads — reset them here so the next diff is just that step.

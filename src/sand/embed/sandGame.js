@@ -44,6 +44,18 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
 .sg-stick.sg-hidden, .sg-zoom.sg-hidden, .sg-start.sg-hidden { display: none; }
+.sg-sound { position: absolute; right: 14px; bottom: 14px; z-index: 72; display: flex; align-items: center; gap: 7px;
+  height: 36px; padding: 0 11px; border: 1px solid rgba(255,255,255,.2); border-radius: 9px;
+  background: rgba(17,24,39,.5); color: #fff; pointer-events: auto; cursor: pointer; touch-action: manipulation;
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .09em;
+  backdrop-filter: blur(5px); box-shadow: 0 10px 18px -7px rgba(0,0,0,.48); }
+.sg-sound:hover { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.34); }
+.sg-sound-icon { position: relative; width: 14px; height: 14px; flex: none; }
+.sg-sound-icon::before { content: ''; position: absolute; left: 0; top: 4px; width: 5px; height: 6px;
+  border-radius: 1px; background: currentColor; box-shadow: 4px -3px 0 -1px currentColor, 4px 3px 0 -1px currentColor; }
+.sg-sound-icon::after { content: '))'; position: absolute; left: 7px; top: 1px; font: 700 9px/12px ui-monospace, monospace; letter-spacing: -3px; }
+.sg-sound.muted { color: rgba(255,255,255,.55); }
+.sg-sound.muted .sg-sound-icon::after { content: '×'; left: 8px; top: 1px; font-size: 12px; letter-spacing: 0; }
 .sg-start { position: absolute; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 72;
   width: min(72vw, 320px); height: 56px; transform: translateX(-50%); pointer-events: auto; touch-action: manipulation;
   border: 1px solid rgba(255,255,255,.32); border-radius: 16px; background: rgba(17,24,39,.62); color: #fff;
@@ -280,6 +292,36 @@ function createMobileStartButton(root, onStart) {
   };
 }
 
+function createDesktopSoundButton(root, game) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'sg-sound';
+  const icon = document.createElement('span');
+  icon.className = 'sg-sound-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  const label = document.createElement('span');
+  label.textContent = 'SOUND';
+  button.append(icon, label);
+  const render = () => {
+    const muted = game.getAudioState().muted;
+    button.classList.toggle('muted', muted);
+    button.setAttribute('aria-label', muted ? 'Turn sound on' : 'Mute sound');
+    button.setAttribute('aria-pressed', String(muted));
+  };
+  button.addEventListener('click', (event) => {
+    game.unlockAudio();
+    game.toggleAudioMuted();
+    render();
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  for (const event of ['pointerdown', 'pointerup', 'pointermove'])
+    button.addEventListener(event, (e) => e.stopPropagation());
+  render();
+  root.appendChild(button);
+  return { destroy() { button.remove(); } };
+}
+
 // Live performance overlay (the /fps route). A tiny top-right panel that polls
 // game.perfStats() and derives fps (its own rAF cadence) + tickrate (sim-step
 // delta) over a rolling ~500ms window. Read-only, pointer-events: none.
@@ -508,6 +550,7 @@ class SandGameElement extends HTMLElement {
           const applyDrawMode = (on) => {
             drawModeOn = !!on;
             game.setDrawMode(drawModeOn);
+            game.setAudioEnabled(drawModeOn);
             this._palette?.setDrawMode(drawModeOn);
             this._zoom?.setDrawMode(drawModeOn);
             if (coarse) {
@@ -540,10 +583,12 @@ class SandGameElement extends HTMLElement {
         // pointers start off so touch pages can scroll until the user opts in.
         const drawDefault = !coarse;
         game.setDrawMode(drawDefault);
+        game.setAudioEnabled(!coarse || mode === 'survival' || drawDefault);
         sim.classList.toggle('draw-on', coarse && drawDefault);
         this._palette?.setDrawMode(drawDefault);
         this._zoom?.setDrawMode(drawDefault);
         if (coarse) this._stick = createMobileJoystick(root, game);
+        else this._sound = createDesktopSoundButton(root, game);
         syncMobileCreativeUi();
         // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).
         if (this.hasAttribute('perf-hud')) this._perfHud = createPerfHud(root, game);
@@ -565,8 +610,9 @@ class SandGameElement extends HTMLElement {
     this._zoom?.destroy();
     this._start?.destroy();
     this._perfHud?.destroy();
+    this._sound?.destroy();
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = null;
+    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = null;
     this._mounted = false;
   }
 

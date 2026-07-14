@@ -225,52 +225,88 @@ try {
   check('START reveals the full mobile creative controls',
     !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls);
 
-  // The render mirror resizes immediately on zoom while the authority worker
-  // follows after a short debounce. Camera/pointer controls must still be sent
-  // during that handoff; otherwise a held brush remains pinned to its last
-  // authority-world coordinate while the visible camera keeps moving.
-  const mobileZoomBase = await mobile.evaluate(() => ({
-    cols: window.__sandTest.info().cols,
-    resizeControls: window.__sandPerf().workerResizeControls,
-  }));
-  for (let i = 0; i < 4; i++) {
-    await mobileGame.locator('.sg-zoom-out').tap();
-    await mobile.waitForTimeout(20);
-  }
-  await mobile.waitForFunction((base) => {
-    const perf = window.__sandPerf();
-    return window.__sandTest.info().cols > base.cols && perf.workerResizePending;
-  }, mobileZoomBase, { timeout: 10000 });
-  const resizeAim = await mobile.evaluate(() => {
-    const host = document.querySelector('sand-game');
-    const rect = host.getBoundingClientRect();
-    window.dispatchEvent(new PointerEvent('pointermove', {
-      bubbles: true, pointerType: 'touch', pointerId: 91, buttons: 0,
-      clientX: rect.left + rect.width * 0.62,
-      clientY: rect.top + rect.height * 0.34,
-    }));
-    const t = window.__sandTest;
-    const cam = t.getCam();
-    t.setCam(cam.x + 48, cam.y + 24);
-    const off = t.worldOffset(), input = t.localInput();
-    const expectedX = off.x + input.aimX, expectedY = off.y + input.aimY;
+  // Reproduce the real failure: move to a buffer corner, then start a second
+  // zoom after the first mirror resize but before its authority resize settles.
+  // The returned full snapshot must use the visible world center, not the
+  // authority engine's otherwise-unused startup camera.
+  const mobileZoomBase = await mobile.evaluate(() => {
+    const t = window.__sandTest, info = t.info();
+    t.setPlayMode(false);
+    t.setDrawMode(true);
+    t.setCreativeMaterial(3, 0); // default RIGID cube
+    t.setCam(info.cols - info.viewCols - 1, info.rows - info.viewRows - 1);
     t.flushAuthorityControl();
-    const perf = window.__sandPerf();
+    const cam = t.getCam(), off = t.worldOffset();
     return {
-      expectedX, expectedY,
-      actualX: perf.workerControlWorldX, actualY: perf.workerControlWorldY,
-      resizeControls: perf.workerResizeControls,
+      cols: info.cols, viewCols: info.viewCols,
+      centerX: off.x + cam.x + info.viewCols / 2,
+      centerY: off.y + cam.y + info.viewRows / 2,
     };
   });
-  check('mobile placement aim follows the camera while zoom resize is pending',
-    resizeAim.resizeControls > mobileZoomBase.resizeControls &&
-      Math.abs(resizeAim.actualX - resizeAim.expectedX) < 1 &&
-      Math.abs(resizeAim.actualY - resizeAim.expectedY) < 1,
-    `${resizeAim.actualX},${resizeAim.actualY} / ${resizeAim.expectedX},${resizeAim.expectedY}`);
-  await mobile.waitForFunction(() => !window.__sandPerf().workerResizePending, null, { timeout: 30000 });
-  for (let i = 0; i < 4; i++) {
+  await mobileGame.locator('.sg-zoom-out').tap();
+  await mobile.waitForTimeout(130);
+  await mobileGame.locator('.sg-zoom-out').tap();
+  await mobile.waitForFunction((base) => {
+    const info = window.__sandTest.info();
+    return info.viewCols >= base.viewCols * 1.25 && !window.__sandPerf().workerResizePending;
+  }, mobileZoomBase, { timeout: 30000 });
+  const mobileZoomed = await mobile.evaluate(() => {
+    const t = window.__sandTest, info = t.info(), cam = t.getCam(), off = t.worldOffset();
+    return {
+      centerX: off.x + cam.x + info.viewCols / 2,
+      centerY: off.y + cam.y + info.viewRows / 2,
+    };
+  });
+  check('second mobile zoom-out preserves the camera world center',
+    Math.abs(mobileZoomed.centerX - mobileZoomBase.centerX) < 1 &&
+      Math.abs(mobileZoomed.centerY - mobileZoomBase.centerY) < 1,
+    `${mobileZoomBase.centerX},${mobileZoomBase.centerY} -> ${mobileZoomed.centerX},${mobileZoomed.centerY}`);
+
+  // Place at one screen point, move the camera, and tap that same point again.
+  // Both real touch placements must land in their distinct world-X bands.
+  await mobile.evaluate(() => {
+    const t = window.__sandTest, cam = t.getCam();
+    t.setCam(cam.x, 0); // expose empty sky so both free cubes can spawn
+    t.flushAuthorityControl();
+  });
+  await mobile.waitForTimeout(700);
+  const mobileCanvas = await mobileGame.locator('#sand-main').boundingBox();
+  const tapX = mobileCanvas.x + mobileCanvas.width * 0.58;
+  const tapY = mobileCanvas.y + mobileCanvas.height * 0.22;
+  const worldAimAtTap = () => mobile.evaluate(([x, y]) => {
+    const t = window.__sandTest;
+    const rect = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main').getBoundingClientRect();
+    const [localX, localY] = t.cellAt(x - rect.left, y - rect.top);
+    const off = t.worldOffset();
+    return { x: off.x + localX, y: off.y + localY };
+  }, [tapX, tapY]);
+  const rigidBandCount = (worldX) => mobile.evaluate((x) => {
+    const t = window.__sandTest, info = t.info(), off = t.worldOffset();
+    const localX = Math.floor(x - off.x);
+    return t.materialCount(13, localX - 25, 0, localX + 26, info.rows);
+  }, worldX);
+  const aim1 = await worldAimAtTap();
+  const before1 = await rigidBandCount(aim1.x);
+  await mobile.touchscreen.tap(tapX, tapY);
+  await mobile.waitForTimeout(700);
+  const after1 = await rigidBandCount(aim1.x);
+  await mobile.evaluate(() => {
+    const t = window.__sandTest, cam = t.getCam();
+    t.setCam(cam.x + 70, cam.y);
+  });
+  await mobile.waitForTimeout(700);
+  const aim2 = await worldAimAtTap();
+  const before2 = await rigidBandCount(aim2.x);
+  await mobile.touchscreen.tap(tapX, tapY);
+  await mobile.waitForTimeout(900);
+  const after2 = await rigidBandCount(aim2.x);
+  check('mobile placement follows the moved camera after zoom-out',
+    aim2.x > aim1.x + 50 && after1 > before1 && after2 > before2,
+    `aim ${aim1.x} -> ${aim2.x}; cells ${before1}->${after1}, ${before2}->${after2}`);
+
+  for (let i = 0; i < 2; i++) {
     await mobileGame.locator('.sg-zoom-in').tap();
-    await mobile.waitForTimeout(20);
+    await mobile.waitForTimeout(130);
   }
   await mobile.waitForFunction((base) => window.__sandTest.info().cols <= base.cols && !window.__sandPerf().workerResizePending,
     mobileZoomBase, { timeout: 30000 });

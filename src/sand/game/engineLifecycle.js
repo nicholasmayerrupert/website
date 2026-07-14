@@ -71,6 +71,14 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
   };
 
   const fit = () => {
+    // ResizeObserver/visualViewport fits can interleave with the delayed mobile
+    // zoom action. Anchor every fit, not just explicit zoom, so neither a new
+    // viewport nor the authority resize snapshot can move the visible world.
+    const before = ctx.engine?.getCam();
+    const worldCenter = before ? {
+      x: ctx.engine.getWorldOffsetX() + before.x + ctx.viewCols * 0.5,
+      y: ctx.engine.getWorldOffsetY() + before.y + ctx.viewRows * 0.5,
+    } : null;
     const { width, height } = refreshBounds();
     // The visible cell count is chosen from the PHYSICAL-pixel box (cssW*dpr,
     // corrected against the load-time dpr in computeViewportSizing), so neither
@@ -120,6 +128,12 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       ctx.viewRows = Math.min(ctx.viewRows, ctx.rows);
       ctx.engine.glResize(canvas.width, canvas.height);
       ctx.engine.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
+      if (worldCenter) {
+        ctx.engine.cameraSet(
+          worldCenter.x - ctx.engine.getWorldOffsetX() - ctx.viewCols * 0.5,
+          worldCenter.y - ctx.engine.getWorldOffsetY() - ctx.viewRows * 0.5,
+        );
+      }
       parallax.draw(parallaxCamera());
       ctx.forceFullRender = true;
       ctx.previewDirty = false;
@@ -138,7 +152,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
         if (ctx.engine.resizeLoadedWindow(bufCols, worldRows)) {
           ctx.cols = bufCols;
           ctx.rows = worldRows;
-          ctx.worldWorker?.resize(ctx.cols, ctx.rows);
+          ctx.worldWorker?.resize(ctx.cols, ctx.rows, worldCenter);
         }
       }
       applyViewOnly();
@@ -199,21 +213,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     const clamped = clampZoom(nextZoom);
     if (!ctx.engine) return;
     if (Math.abs(clamped - ctx.zoom) < 1e-9) return;
-    const cam = ctx.engine.getCam();
-    const centerX = cam.x + ctx.viewCols / 2;
-    const centerY = cam.y + ctx.viewRows / 2;
-    // Convert buffer-local center to world space before fit (resize may re-anchor).
-    const worldCX = ctx.engine.getWorldOffsetX() + centerX;
-    const worldCY = ctx.engine.getWorldOffsetY() + centerY;
     ctx.zoom = clamped;
     fit();
-    // After fit/resize, re-center on the same world point (resize already tries;
-    // this covers pure-view zoom and any path that left cam top-left fixed).
-    if (ctx.engine) {
-      const offX = ctx.engine.getWorldOffsetX();
-      const offY = ctx.engine.getWorldOffsetY();
-      ctx.engine.cameraSet(worldCX - offX - ctx.viewCols / 2, worldCY - offY - ctx.viewRows / 2);
-    }
     ctx.lastCamX = NaN;
     ctx.lastCamY = NaN;
     ctx.forceFullRender = true;

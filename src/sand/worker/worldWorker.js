@@ -345,6 +345,17 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;
+    // The authority does not render, so its internal camera normally remains at
+    // startup. Give resizeLoadedWindow the presentation's exact world center;
+    // otherwise its full snapshot can be re-anchored around that stale camera
+    // and clamp the visible mirror after a second mobile zoom.
+    if (Number.isFinite(data.worldCenterX) && Number.isFinite(data.worldCenterY)) {
+      engine.setViewport(1, 1, 1, 1);
+      engine.cameraSet(
+        data.worldCenterX - engine.getWorldOffsetX() - 0.5,
+        data.worldCenterY - engine.getWorldOffsetY() - 0.5,
+      );
+    }
     // The last control describes the pre-resize viewport. Wait for a fresh one
     // from the main thread after it accepts this full snapshot.
     control = null;

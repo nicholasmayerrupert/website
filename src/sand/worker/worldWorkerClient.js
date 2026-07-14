@@ -154,7 +154,7 @@ export function createWorldWorkerClient(ctx) {
       worker.postMessage({ type: 'test-seed-reaction', material: material | 0, cap: cap | 0, phase: phase | 0 });
     },
     config(config) { worker.postMessage({ type: 'config', ...config }); },
-    resize(cols, rows) {
+    resize(cols, rows, worldCenter) {
       pending = null;
       lastControl = '';
       awaitingResizeId = ++resizeId;
@@ -164,7 +164,10 @@ export function createWorldWorkerClient(ctx) {
       // the worker. Send only the settled zoom size.
       resizeTimer = setTimeout(() => {
         resizeTimer = 0;
-        worker.postMessage({ type: 'resize', cols: cols | 0, rows: rows | 0, resizeId: awaitingResizeId });
+        worker.postMessage({
+          type: 'resize', cols: cols | 0, rows: rows | 0, resizeId: awaitingResizeId,
+          worldCenterX: worldCenter?.x, worldCenterY: worldCenter?.y,
+        });
       }, 150);
     },
     applyPending() {
@@ -190,16 +193,29 @@ export function createWorldWorkerClient(ctx) {
           const cam = ctx.engine.getCam();
           const worldCamX = ctx.engine.getWorldOffsetX() + cam.x;
           const worldCamY = ctx.engine.getWorldOffsetY() + cam.y;
-          ctx.engine.applyWorldMirror(bytes, packet.worldOffsetX, packet.worldOffsetY);
-          ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
-          ctx.forceFullRender = true;
+          const containsView = worldCamX >= packet.worldOffsetX && worldCamY >= packet.worldOffsetY &&
+            worldCamX + ctx.viewCols <= packet.worldOffsetX + packet.cols &&
+            worldCamY + ctx.viewRows <= packet.worldOffsetY + packet.rows;
+          // A fast camera move can overtake one already-posted stream snapshot.
+          // Applying a window that no longer contains the visible view would
+          // clamp the camera and permanently lose its world center. Ack it and
+          // let the worker's next turn stream around the latest control instead.
+          if (packet.reason === 'stream' && !containsView) {
+            state = { ...state, droppedStaleStreams: (state.droppedStaleStreams || 0) + 1 };
+          } else {
+            ctx.engine.applyWorldMirror(bytes, packet.worldOffsetX, packet.worldOffsetY);
+            ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
+            ctx.engine.setMirrorWorldTick(packet.worldTick);
+            ctx.forceFullRender = true;
+            changed = true;
+          }
         } else {
           ctx.engine.applyDiffMirror(bytes);
+          ctx.engine.setMirrorWorldTick(packet.worldTick);
+          changed = true;
         }
-        ctx.engine.setMirrorWorldTick(packet.worldTick);
         worker.postMessage({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
         state = { ...state, mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length };
-        changed = true;
       }
       if (pendingActors && ctx.engine) {
         const packet = pendingActors;

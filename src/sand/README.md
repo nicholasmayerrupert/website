@@ -243,9 +243,14 @@ Multiplayer clients keep the host buffer size; their zoom is view-only within
 that window.
 
 Offline zoom resizes the presentation mirror immediately and coalesces the more
-expensive authority-worker resize. Pointer world coordinates continue updating
-during that handoff so a held mobile brush follows camera motion; only world
-streaming pauses until the two buffers have matching dimensions.
+expensive authority-worker resize. Every viewport fit preserves the same
+world-space center, and that center is sent with the resize so the worker's full
+snapshot cannot re-anchor the presentation camera. Pointer world coordinates
+continue updating during that handoff so a held mobile brush follows camera
+motion; only world streaming pauses until the two buffers have matching
+dimensions. A stream snapshot that was overtaken by a fast camera move is
+acknowledged without presentation, then replaced by the worker's next snapshot
+around the latest camera position.
 
 On touch devices, creative mode rests behind one large bottom `START` button so
 the page remains uncluttered and scrollable. Starting reveals the palette, time,

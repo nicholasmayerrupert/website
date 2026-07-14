@@ -38,9 +38,9 @@ class Renderer {
   uint32_t renderAlphaMask[TABLE];     // schema transparency converted to packed ABGR alpha
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
-#ifdef __EMSCRIPTEN_PTHREADS__
+  // Shared render-only animation clock. The GL presenter sets this from a
+  // wall-clock cadence; headless renderFull() advances it explicitly.
   uint32_t renderFrameSalt = 0;
-#endif
   uint8_t renderSkyLight = 255;       // render-only day/night input; 255 = full day
   std::vector<int> lightQueue;        // render-only flood-fill scratch
 #ifdef __EMSCRIPTEN_PTHREADS__
@@ -116,7 +116,7 @@ class Renderer {
   void computeLightingBoth(int rx0, int ry0, int rx1, int ry1);
   uint8_t renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) const;
   void buildRenderTables();
-  void fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1);
+  bool fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1);
   void renderFull();
   void renderDirtyRects();
 

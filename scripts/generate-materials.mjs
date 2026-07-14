@@ -19,9 +19,10 @@ const jsPath = resolve(root, 'src/sand/materials.generated.js');
 const hppPath = resolve(root, 'src/sand/cpp/engine/materials.generated.hpp');
 
 const schema = JSON.parse(readFileSync(schemaPath, 'utf8'));
-const { tableSize, kinds, materialClasses, flagBits, componentGroups, toolClasses, toolTiers, miningSpeed, materials, animColors } = schema;
+const { tableSize, kinds, materialClasses, renderAnims, flagBits, componentGroups, toolClasses, toolTiers, miningSpeed, materials, animColors } = schema;
 
 if (!materialClasses) throw new Error('schema must define materialClasses');
+if (!renderAnims || renderAnims.none !== 0) throw new Error('schema must define renderAnims with none = 0');
 if (!flagBits || !componentGroups) throw new Error('schema must define flagBits and componentGroups');
 if (!toolClasses || !toolTiers) throw new Error('schema must define toolClasses and toolTiers');
 const toolClassCount = Math.max(...Object.values(toolClasses)) + 1;
@@ -39,6 +40,7 @@ for (const m of materials) {
   if (!(m.kind in kinds)) throw new Error(`material ${m.name} has unknown kind ${m.kind}`);
   if (!('materialClass' in m)) throw new Error(`material ${m.name} missing materialClass`);
   if (!(m.materialClass in materialClasses)) throw new Error(`material ${m.name} has unknown materialClass ${m.materialClass}`);
+  if (!(m.renderAnim in renderAnims)) throw new Error(`material ${m.name} has unknown renderAnim ${m.renderAnim}`);
   if (!('componentGroup' in m)) throw new Error(`material ${m.name} missing componentGroup`);
   if (!(m.componentGroup in componentGroups)) throw new Error(`material ${m.name} has unknown componentGroup ${m.componentGroup}`);
   if (!('flags' in m)) throw new Error(`material ${m.name} missing flags`);
@@ -77,6 +79,7 @@ const animKeys = Object.keys(animColors).filter((k) => !k.startsWith('$'));
 // ---------------- JS ----------------
 const jsKindLines = Object.entries(kinds).map(([k, v]) => `  ${k}: ${v},`).join('\n');
 const jsClassLines = Object.entries(materialClasses).map(([k, v]) => `  ${k.toUpperCase()}: ${v},`).join('\n');
+const jsRenderAnimLines = Object.entries(renderAnims).map(([k, v]) => `  ${k.toUpperCase()}: ${v},`).join('\n');
 const jsMatLines = materials
   .map((m) => `  { id: ${m.id}, name: '${m.name}', kind: KIND.${m.kind}, materialClass: MC.${m.materialClass.toUpperCase()}, density: ${m.density}, looseSorted: ${m.looseSorted}, mobility: ${m.mobility}, transparency: ${m.transparency ?? 0}, color: ${m.color}, textureAmp: ${m.textureAmp}, durability: ${m.durability}, renderAnim: '${m.renderAnim}' },`)
   .join('\n');
@@ -98,6 +101,11 @@ ${jsKindLines}
 // Broad gameplay/physics class (mirrors C++ enum MaterialClass / MC_*).
 export const MC = {
 ${jsClassLines}
+};
+
+// Render-only texture animation type (mirrors C++ enum RenderAnim / RA_*).
+export const RA = {
+${jsRenderAnimLines}
 };
 
 // Behavior-flag bitmasks (mirrors C++ MF_* constants). OR together per material.
@@ -130,6 +138,7 @@ export const MAT_CLASS = [${jsArr((m) => materialClasses[m.materialClass])}];
 export const MAT_FLAGS = [${jsArr(flagMask)}];
 export const MAT_CGROUP = [${jsArr((m) => componentGroups[m.componentGroup])}];
 export const MAT_TRANSPARENCY = [${jsArr((m) => m.transparency ?? 0)}];
+export const MAT_RENDER_ANIM = [${jsArr((m) => renderAnims[m.renderAnim])}];
 
 // Mining gate tables: which tool class drops a material and the min tier required.
 export const MAT_TOOLCLASS = [${jsArr((m) => toolClasses[m.toolClass])}];
@@ -146,6 +155,7 @@ ${jsAnimLines}
 const cppEnumMat = materials.map((m) => `${m.name} = ${m.id}`).join(', ');
 const cppEnumKind = Object.entries(kinds).map(([k, v]) => `K_${k} = ${v}`).join(', ');
 const cppEnumClass = Object.entries(materialClasses).map(([k, v]) => `MC_${k.toUpperCase()} = ${v}`).join(', ');
+const cppEnumRenderAnim = Object.entries(renderAnims).map(([k, v]) => `RA_${k.toUpperCase()} = ${v}`).join(', ');
 const col = (pick, fmt = (v) => v) => {
   const out = [];
   for (let i = 0; i < tableSize; i++) out.push(fmt(byId[i] ? pick(byId[i]) : null));
@@ -167,6 +177,7 @@ ${BANNER('C++ header')}
 enum Mat : uint8_t { ${cppEnumMat} };
 enum Kind : uint8_t { ${cppEnumKind} };
 enum MaterialClass : uint8_t { ${cppEnumClass} };
+enum RenderAnim : uint8_t { ${cppEnumRenderAnim} };
 // Seeded-component groups: which list a material registers into.
 enum CGroup : uint8_t { ${cppEnumCGroup} };
 // Mining tool classes + tiers (drives MAT_TOOLCLASS / MAT_TOOLTIER drop gating).
@@ -197,6 +208,7 @@ static const int MINING_PROGRESS_DIVISOR = ${miningSpeed.progressDivisor};
 // Renderer tables (consumed once C++ owns material-to-RGBA generation).
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};
+static const uint8_t  MAT_RENDER_ANIM[TABLE] = {${col((m) => renderAnims[m.renderAnim], u8)}};
 static const uint8_t  DURABILITY[TABLE]     = {${col((m) => m.durability, u8)}};
 // Baseline light emission per material (0 = dark); positional sparkle patterns
 // for CRYSTAL/MYCELIUM stay in render.inc (emissionForCell).

@@ -63,7 +63,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     e.setPlayMode(ctx.playMode);
     e.setDrawMode(ctx.drawModeOn);
     e.inputStick(ctx.stickX, ctx.stickY);
-    e.glSetFlags(ctx.gutterOn, ctx.snapOff);
+    e.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.reduced);
     e.glSetDebugHitboxes(ctx.debugHitboxes);
     applyCreatureRuntimePolicy(ctx, e);
     ctx.forceFullRender = true;
@@ -282,7 +282,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     if (!engine?.glRestore()) return;
     engine.glResize(canvas.width, canvas.height);
     engine.setViewport(ctx.dpr, ctx.cellDev, ctx.viewCols, ctx.viewRows);
-    engine.glSetFlags(ctx.gutterOn, ctx.snapOff);
+    engine.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.reduced);
     engine.glSetDebugHitboxes(ctx.debugHitboxes);
     ctx.forceFullRender = true;
     ctx.fns.render?.(true);

@@ -386,7 +386,7 @@ EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {
 EMSCRIPTEN_KEEPALIVE int engine_gl_init(Engine* e, const char* target) { return e->glp.glInit(target); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_restore(Engine* e) { return e->glp.glRestore(); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->glp.glResize(devW, devH); }
-EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff) { e->glp.glSetFlags(gutterOn, snapOff); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff, int animationPaused) { e->glp.glSetFlags(gutterOn, snapOff, animationPaused); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_debug_hitboxes(Engine* e, int on) { e->glp.glSetDebugHitboxes(on); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, float* data, int count, int ownId) { e->glp.glSetPlayers(useExternal, data, count, ownId); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_survival_preview(Engine* e, int on, int footprint, int erasing, int locked, int x, int y) { e->glp.glSetSurvivalPreview(on, footprint, erasing, locked, x, y); }

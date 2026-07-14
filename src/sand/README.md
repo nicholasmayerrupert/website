@@ -289,6 +289,18 @@ is coalesced to one update per animation frame so the sky tracks the thumb while
 avoiding redundant lighting solves, and resuming Auto cancels any queued manual
 update.
 
+### Material texture animation
+
+`renderAnim` in `materials.schema.json` is the single source for render-only
+texture animation. The generated C++ `MAT_RENDER_ANIM` table drives stationary
+shimmer for fire, steam/smoke, water/brine, oil, acid, and lava identically in
+threaded and fallback builds. Each material derives its own shimmer speed from a
+shared 12 Hz wall-clock cadence; animation never wakes a settled simulation cell
+or triggers a lighting solve. The WebGL presenter
+tracks animation presence per visible chunk, then refills and uploads only those
+chunks between ordinary world updates; static terrain grain remains locked to
+absolute world coordinates.
+
 The creative material field opens an animated, searchable dropdown whose 9×9
 pixel samples reuse each material's generated base color and texture amplitude.
 Desktop keeps the dropdown open for repeated picks until it is explicitly

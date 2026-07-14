@@ -130,6 +130,9 @@ actionable instead of just producing timing numbers.
   `crossBondCount`. Available from `getPerf()` and in the bench JSON.
 - `renderFull`: CPU material-to-RGBA fill in `render.inc`; WebGL upload/composite
   is covered better by browser pan benchmarks (`lightMs` / `fillMs` / `uploadMs`).
+  Settled animated materials use a separate 12 Hz present clock: only visible
+  chunks whose last fill found `MAT_RENDER_ANIM != RA_NONE` are refilled and
+  uploaded, with no lighting solve or simulation dirty mark.
 - `shiftWorldMiss`: fresh terrain streaming. Inspect `worldgen.inc`, structure
   generation, component registration, and prefetch behavior.
 - `shiftWorldHit`: cached terrain restore. Inspect chunk-store restore,

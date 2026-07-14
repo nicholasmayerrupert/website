@@ -381,7 +381,7 @@ export function initSandWasm() {
         glInit: c('engine_gl_init', 'number', ['number', 'string']),
         glRestore: c('engine_gl_restore', 'number', ['number']),
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
-        glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
+        glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number', 'number']),
         glSetDebugHitboxes: c('engine_gl_set_debug_hitboxes', null, ['number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
         glSetSurvivalPreview: c('engine_gl_set_survival_preview', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
@@ -648,7 +648,7 @@ export function createEngineWasm({
       M.glSetCreatures(ptr, 1, buf, (len / renderStrides.creature) | 0);
     },
     getRenderStrides() { return renderStrides; },
-    glSetFlags(gutterOn, snapOff) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0); },
+    glSetFlags(gutterOn, snapOff, animationPaused = false) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0, animationPaused ? 1 : 0); },
     glSetDebugHitboxes(on) { M.glSetDebugHitboxes(ptr, on ? 1 : 0); },
     glShift(dx) { M.glShift(ptr, dx); },
     glRenderFrame(forceFull) { return M.glRenderFrame(ptr, forceFull ? 1 : 0) === 1; },

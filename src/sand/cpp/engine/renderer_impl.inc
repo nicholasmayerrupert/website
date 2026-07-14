@@ -10,8 +10,8 @@
 // makes the grain visibly "reapply" on a vertical shift, because WORLD_SHIFT_ROWS
 // (96) is not a multiple of the 64-tile, so the slid texture and the re-rendered
 // cells would disagree on the tile phase. It is identical on the full and per-rect
-// paths. Steam shimmers (random skip), fire flickers, and lava has stable molten
-// patches.
+// paths. MAT_RENDER_ANIM selects a render-only moving texture; simulation state and
+// the lighting solve remain untouched.
 //
 // JS owns the camera/presentation; it calls render_full or render_dirty_rects,
 // then uploads renderPixels (putImageData) and blits with drawImage.
@@ -366,7 +366,7 @@ void Renderer::buildRenderTables() {
 
 // Fill `out` (RGBA over uint32) for an INCLUSIVE cell rect [x0,x1] x [y0,y1] from
 // `g` (a layer's grid). Parameterized so it serves either layer's renderPixels.
-void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1) {
+bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1) {
   // Index the noise/sparkle by absolute world coords so the grain is locked to the
   // terrain, not the buffer. worldOffset is 0 for bounded worlds (no-op there);
   // for infinite worlds it advances per shift. `& 63`/`& 7` stay in range for
@@ -378,6 +378,24 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
   // fill. The damaged uint32_t* is only dereferenced on the rare path.
   const uint32_t* dmg = E.L->mineDamageAny ? E.L->mineDamage.data() : nullptr;
   const uint8_t* light = RENDER_LIGHTING_ENABLED ? E.L->light.data() : nullptr;
+  const int frame = (int)(renderFrameSalt & 0x7fffffffu);
+  bool hasAnimated = false;
+  auto shimmerPhase = [&](uint8_t animKind) {
+    // The 12 Hz presentation clock stays shared; each texture chooses how many
+    // frames it holds a shimmer step. Nothing is translated through world space.
+    if (animKind == RA_STEAM || animKind == RA_ACID) return frame / 2;
+    if (animKind == RA_SMOKE) return frame / 3;
+    if (animKind == RA_WATER) return frame / 4;
+    if (animKind == RA_OIL) return frame / 6;
+    if (animKind == RA_LAVA) return frame / 8;
+    return frame; // fire
+  };
+  auto shimmerAt = [&](int wx, int wy, int phase) {
+    // A fixed per-cell phase offset makes brightness pulse in place instead of
+    // making the noise field crawl diagonally. Triangle wave: 0..7..0.
+    int t = (phase + (int)((renderCellHash(wx, wy) >> 8) & 15u)) & 15;
+    return (uint8_t)(t < 8 ? t : 15 - t);
+  };
   for (int y = y0; y <= y1; y++) {
     int rowBase = y * E.cols;
     int wy = woY + y;
@@ -388,7 +406,14 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       uint8_t m = g[k];
       // EMPTY is the dominant cell in open sky / caves — skip noise/light work.
       if (m == EMPTY) { p[k] = 0; continue; }
-      uint32_t c = renderVariants[((int)m << 3) + noiseRow[wx & 63]];
+      uint8_t animKind = MAT_RENDER_ANIM[m];
+      hasAnimated = hasAnimated || animKind != RA_NONE;
+      uint8_t shade = noiseRow[wx & 63];
+      uint8_t shimmer = animKind == RA_NONE ? 0 : shimmerAt(wx, wy, shimmerPhase(animKind));
+      if (animKind == RA_WATER) shade = (uint8_t)(((int)shade * 2 + shimmer) / 3);
+      else if (animKind == RA_OIL) shade = (uint8_t)(((int)shade * 3 + shimmer) / 4);
+      else if (animKind == RA_ACID) shade = (uint8_t)(((int)shade + shimmer) / 2);
+      uint32_t c = renderVariants[((int)m << 3) + shade];
       if (dmg) {
         uint32_t rem = dmg[k];
         if (rem > 0) {
@@ -399,28 +424,29 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           }
         }
       }
-#ifdef __EMSCRIPTEN_PTHREADS__
-      // Animated grain is cell-addressed rather than consuming a shared stream,
-      // so independent checkerboard chunks can be filled concurrently.
-      uint32_t anim = renderCellHash(wx ^ (int)renderFrameSalt, wy + (int)(renderFrameSalt * 17u));
-      if (m == STEAM) { if ((anim & 0xffffu) <= 11796u) c = 0; }
-      else if (m == FIRE) { if ((anim & 0xffffu) < 22938u) c = PACKED_FIRE_HOT; }
-#else
-      if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
-      else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
-#endif
-      else if (m == LAVA) {
-        // Blend overlapping samples from the existing world-locked noise tile.
-        // Neighbouring cells share most of these samples, producing irregular
-        // molten patches instead of the old modulo pattern's diagonal stripes.
+      bool hidden = false;
+      if (animKind == RA_FIRE) {
+        if (shimmer >= 5) c = PACKED_FIRE_HOT;
+      } else if (animKind == RA_STEAM || animKind == RA_SMOKE) {
+        hidden = shimmer <= (animKind == RA_SMOKE ? 1 : 0);
+        c = jitterShade(c, ((int)shimmer - 3) * 2);
+      } else if (animKind == RA_WATER) {
+        if (shade >= 6) c = jitterShade(c, 4);
+      } else if (animKind == RA_OIL) {
+        if (shade >= 6) c = jitterShade(c, 3);
+      } else if (animKind == RA_ACID) {
+        if (shade == 7) c = jitterShade(c, 11);
+      } else if (animKind == RA_LAVA) {
+        // Keep the molten patches fixed in world space and pulse their brightness.
+        // The material itself can still flow; its texture no longer slides over it.
         int nx = wx & 63, ny = wy & 63;
         int molten = (int)renderNoise[(ny << 6) + nx] * 2
                    + (int)renderNoise[(ny << 6) + ((nx - 1) & 63)]
                    + (int)renderNoise[(ny << 6) + ((nx + 1) & 63)]
                    + (int)renderNoise[(((ny - 1) & 63) << 6) + nx]
                    + (int)renderNoise[(((ny + 1) & 63) << 6) + nx];
-        if (molten >= 31) c = PACKED_LAVA_HOT;
-        else if (molten >= 25) c = PACKED_LAVA_WARM;
+        if (molten >= 31) c = shimmer >= 2 ? PACKED_LAVA_HOT : PACKED_LAVA_WARM;
+        else if (molten >= 25) c = shimmer == 7 ? PACKED_LAVA_HOT : PACKED_LAVA_WARM;
       }
       else if (m == CRYSTAL) { if ((renderCellHash(wx, wy) & 7u) == 0u) c = PACKED_CRYSTAL_CORE; }
       else if (m == MYCELIUM || m == MYCELIUM_SPORE) {
@@ -428,11 +454,13 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       }
       else if (m == GLOWBERRY) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWBERRY_CORE; }
       else if (m == GLOWSHROOM) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWSHROOM_CORE; }
+      if (hidden) { p[k] = 0; continue; }
       if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
       c = (c & 0x00ffffffu) | renderAlphaMask[m];
       p[k] = c;
     }
   }
+  return hasAnimated;
 }
 
 // Render the ACTIVE layer (L) into its own renderPixels.
@@ -443,8 +471,8 @@ void Renderer::renderFull() {
   }
   uint8_t* g = E.L->grid;
   uint32_t* p = (uint32_t*)E.L->renderPixels.data();
-#ifdef __EMSCRIPTEN_PTHREADS__
   renderFrameSalt++;
+#ifdef __EMSCRIPTEN_PTHREADS__
   E.forEachCheckerboardChunk([&](int cx, int cy) {
     int x0 = cx * CHUNK_SIZE, y0 = cy * CHUNK_SIZE;
     fillRenderSpan(g, p, x0, y0, imin(E.cols - 1, x0 + CHUNK_SIZE - 1), imin(E.rows - 1, y0 + CHUNK_SIZE - 1));

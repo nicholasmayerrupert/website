@@ -99,10 +99,10 @@ export function installDevHooks(ctx, {
     // 2D world offset, to verify a world shift is seamless on screen.
     streamWorldTest() { if (engine()) { engine().streamWorld(); render(false); } },
     worldOffset() { return engine() ? { x: engine().getWorldOffsetX(), y: engine().getWorldOffsetY() } : { x: 0, y: 0 }; },
-    setPaused(v) { ctx.testPaused = !!v; }, // freeze the sim so the flicker probe sees only pan changes
-    setGutter(v) { ctx.gutterOn = !!v; engine()?.glSetFlags(ctx.gutterOn, ctx.snapOff); render(false); },
+    setPaused(v) { ctx.testPaused = !!v; engine()?.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.testPaused || ctx.reduced); }, // freeze simulation + render-only animation
+    setGutter(v) { ctx.gutterOn = !!v; engine()?.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.testPaused || ctx.reduced); render(false); },
     off() { return engine() ? engine().glGetOffset() : { offX: 0, offY: 0 }; },
-    setSnap(v) { ctx.snapOff = !v; engine()?.glSetFlags(ctx.gutterOn, ctx.snapOff); render(false); },
+    setSnap(v) { ctx.snapOff = !v; engine()?.glSetFlags(ctx.gutterOn, ctx.snapOff, ctx.testPaused || ctx.reduced); render(false); },
     info() { return { cols: ctx.cols, rows: ctx.rows, cellSize: ctx.cellSize, cellDev: ctx.cellDev, viewCols: ctx.viewCols, viewRows: ctx.viewRows, dpr: window.devicePixelRatio || 1, canvasW: ctx.canvas.width, canvasH: ctx.canvas.height, maxTextureSize: ctx.maxTextureSize }; },
     // cursor (canvas-relative CSS px) -> cell, same mapping as the real input path
     cellAt(pxCss, pyCss) { const cam = engine() ? engine().getCam() : { x: 0, y: 0 }; return [Math.floor(cam.x + (pxCss * ctx.dpr) / ctx.cellDev), Math.floor(cam.y + (pyCss * ctx.dpr) / ctx.cellDev)]; },

@@ -27,6 +27,53 @@ const check = (name, cond, extra = '') => { console.log(`  ${cond ? 'ok  ' : 'FA
 await initSandWasm();
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
 
+console.log('schema-driven animated textures');
+{
+  const animated = ['FIRE', 'STEAM', 'ACRID_SMOKE', 'WATER', 'OIL', 'ACID', 'LAVA', 'BRINE'];
+  for (const name of animated) {
+    const e = createEngineWasm({ cols: 64, rows: 64, worldSeed: SEED, sinksOn: false, infinite: false });
+    e.getGrid().fill(MAT[name]);
+    e.renderFull();
+    const first = new Uint32Array(e.getRenderPixels().slice().buffer);
+    let changed = 0;
+    // Slow materials intentionally shimmer only every few 12 Hz presentation frames.
+    for (let frame = 0; frame < 12 && changed === 0; frame++) {
+      e.renderFull();
+      const next = new Uint32Array(e.getRenderPixels().slice().buffer);
+      for (let i = 0; i < first.length; i++) if (first[i] !== next[i]) changed++;
+    }
+    check(`${name.toLowerCase()} texture advances`, changed > first.length * 0.01, `(${changed}/${first.length} cells changed)`);
+    e.destroy();
+  }
+  const e = createEngineWasm({ cols: 64, rows: 64, worldSeed: SEED, sinksOn: false, infinite: false });
+  e.getGrid().fill(MAT.STONE);
+  e.renderFull(); const first = new Uint32Array(e.getRenderPixels().slice().buffer);
+  e.renderFull(); const next = new Uint32Array(e.getRenderPixels().slice().buffer);
+  let changed = 0;
+  for (let i = 0; i < first.length; i++) if (first[i] !== next[i]) changed++;
+  check('non-animated terrain remains world-locked', changed === 0, `(${changed} cells changed)`);
+  e.destroy();
+}
+
+console.log('stationary shimmer');
+{
+  const size = 64;
+  const e = createEngineWasm({ cols: size, rows: size, worldSeed: SEED, sinksOn: false, infinite: false });
+  e.getGrid().fill(MAT.WATER);
+  e.renderFull();
+  const before = new Uint32Array(e.getRenderPixels().slice().buffer);
+  for (let i = 0; i < 16; i++) e.renderFull();
+  const after = new Uint32Array(e.getRenderPixels().slice().buffer);
+  let unchanged = 0, changed = 0;
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] === after[i]) unchanged++;
+    else changed++;
+  }
+  check('water shimmers in place instead of replacing the whole texture', changed > size && unchanged > size,
+    `(${changed} changed, ${unchanged} retained)`);
+  e.destroy();
+}
+
 console.log('lava texture');
 {
   const size = 64;
@@ -68,9 +115,8 @@ function shiftDownOnce(e) {
 }
 
 // renderFull twice and return a Uint32 copy of the pixels PLUS a per-cell "stable"
-// mask. Steam/fire use renderRand() per render so they differ between the two
-// passes -> flagged unstable and excluded (they SHOULD flicker). Static terrain and
-// the position-deterministic lava sparkle are stable and get compared strictly.
+// mask. Animated materials can differ between passes and are excluded. Static
+// terrain remains keyed to absolute world position and is compared strictly.
 function renderStable(e) {
   e.renderFull(); const a = new Uint32Array(e.getRenderPixels().slice().buffer);
   e.renderFull(); const b = new Uint32Array(e.getRenderPixels().slice().buffer);

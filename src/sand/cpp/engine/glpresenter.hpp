@@ -35,6 +35,14 @@ class GLPresenter {
   int glLastCamCol = INT_MIN, glLastCamRow = INT_MIN;
   int glLastWorldOffX = INT_MIN, glLastWorldOffY = INT_MIN;
   int glLastSkyLight = -1;
+  // Render-only material animation runs on a low, pixel-art-friendly cadence.
+  // Chunk flags are learned while filling the visible window, so a settled scene
+  // repaints only chunks that actually contain animated cells.
+  static constexpr double GL_ANIM_FRAME_MS = 1000.0 / 12.0;
+  uint32_t glLastAnimFrame = UINT32_MAX;
+  bool glVisibleAnimated = false;
+  bool glAnimationPaused = false;
+  std::vector<uint8_t> glAnimatedFg, glAnimatedBg;
   // Lighting-recompute throttle. The full-buffer light solve is by far the costliest
   // part of the present path, so on a continuously-active scene it is re-solved at most
   // once every GL_LIGHT_THROTTLE_TICKS sim ticks and the (buffer-indexed, pan-invariant)
@@ -86,7 +94,7 @@ class GLPresenter {
   // producing a blank canvas. A headless engine succeeds without allocating.
   int glRebuildCellTextures(int texCols, int texRows);
   void glSyncCamera();
-  void glSetFlags(int gutterOn, int snapOff);
+  void glSetFlags(int gutterOn, int snapOff, int animationPaused);
   void glSetDebugHitboxes(int on);
   void glSetPlayers(int useExternal, const float* data, int count, int ownId);
   void glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y);

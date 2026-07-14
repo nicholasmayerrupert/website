@@ -57,6 +57,8 @@ int GLPresenter::glRestore() {
   glLastCamCol = glLastCamRow = INT_MIN;
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
   glLastSkyLight = glLightTick = INT_MIN;
+  glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
+  glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
   E.useLayer(&E.fg); E.markAllDirty();
   E.useLayer(&E.bg); E.markAllDirty();
@@ -115,11 +117,17 @@ int GLPresenter::glRebuildCellTextures(int texCols, int texRows) {
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
   glLastSkyLight = -1;
   glLightTick = INT_MIN;
+  glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
+  glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
   return 1;
 }
 // DEV A/B flags (flicker bench): toggle the gutter grid and offset snapping.
-void GLPresenter::glSetFlags(int gutterOn, int snapOff) { glGutterOn = gutterOn; glSnapOff = snapOff; }
+void GLPresenter::glSetFlags(int gutterOn, int snapOff, int animationPaused) {
+  glGutterOn = gutterOn;
+  glSnapOff = snapOff;
+  glAnimationPaused = animationPaused != 0;
+}
 void GLPresenter::glSetDebugHitboxes(int on) { glDebugHitboxes = on != 0; }
 
 void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, int ownId) {
@@ -628,7 +636,13 @@ void GLPresenter::glPresentWindow(int forceFull) {
   bool skyChanged = (int)E.renderer.renderSkyLight != glLastSkyLight;
   bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged;
   bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
-  if (!contentDirty && !windowMoved) return;
+  // Threaded Emscripten can expose an epoch-sized monotonic origin. Narrowing
+  // now/frameMs directly to signed int freezes at INT_MIN, so reduce through a
+  // safe 64-bit frame counter and keep only the wrapping low 32 bits.
+  uint32_t wallAnimFrame = (uint32_t)(uint64_t)std::floor(emscripten_get_now() / GL_ANIM_FRAME_MS);
+  uint32_t animFrame = glAnimationPaused && glLastAnimFrame != UINT32_MAX ? glLastAnimFrame : wallAnimFrame;
+  bool animationDue = !glAnimationPaused && glVisibleAnimated && animFrame != glLastAnimFrame;
+  if (!contentDirty && !windowMoved && !animationDue) return;
   int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
 
   // Lighting policy: forced events (init/resize, world shift, day-night) solve
@@ -659,31 +673,70 @@ void GLPresenter::glPresentWindow(int forceFull) {
       E.perfLightMs = emscripten_get_now() - t0;
     }
   }
-  double tf = emscripten_get_now();
-  auto fillLayer = [&](Layer& lay) {
+  E.renderer.renderFrameSalt = animFrame;
+  int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
+  int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
+  int cw = cx1 - cx0 + 1, count = cw * (cy1 - cy0 + 1);
+  auto fillLayer = [&](Layer& lay, std::vector<uint8_t>& animatedChunks, bool animatedOnly) {
     E.useLayer(&lay);
+    size_t chunkTotal = (size_t)E.chunkCols * E.chunkRows;
+    if (animatedChunks.size() != chunkTotal) animatedChunks.assign(chunkTotal, 0);
+    std::atomic<bool> anyAnimated{false};
 #ifdef __EMSCRIPTEN_PTHREADS__
     // Unlike simulation, render chunks only read grid/light state and write
     // disjoint pixel spans, so every visible chunk can run in one wave.
-    int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
-    int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
-    int cw = cx1 - cx0 + 1, count = cw * (cy1 - cy0 + 1);
     E.chunkPool.parallelFor(count, [&](int i) {
       int cy = cy0 + i / cw, cx = cx0 + i % cw;
+      int ci = cy * E.chunkCols + cx;
+      if (animatedOnly && !animatedChunks[ci]) return;
       int tx0 = imax(x0, cx * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
       int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
-      E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
+      bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
+      if (!animatedOnly) animatedChunks[ci] = found ? 1 : 0;
+      if (found) anyAnimated.store(true, std::memory_order_relaxed);
     });
 #else
-    E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), x0, y0, x1, y1);
+    for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++) {
+      int ci = cy * E.chunkCols + cx;
+      if (animatedOnly && !animatedChunks[ci]) continue;
+      int tx0 = imax(x0, cx * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
+      int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
+      bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
+      if (!animatedOnly) animatedChunks[ci] = found ? 1 : 0;
+      if (found) anyAnimated.store(true, std::memory_order_relaxed);
+    }
 #endif
+    return anyAnimated.load(std::memory_order_relaxed);
   };
-  fillLayer(E.fg);
-  fillLayer(E.bg);
+  auto uploadAnimated = [&](Layer& lay, GLuint tex, const std::vector<uint8_t>& animatedChunks) {
+    E.useLayer(&lay);
+    for (int cy = cy0; cy <= cy1; cy++) {
+      int cx = cx0;
+      while (cx <= cx1) {
+        while (cx <= cx1 && !animatedChunks[cy * E.chunkCols + cx]) cx++;
+        if (cx > cx1) break;
+        int run0 = cx;
+        while (cx + 1 <= cx1 && animatedChunks[cy * E.chunkCols + cx + 1]) cx++;
+        int tx0 = imax(x0, run0 * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
+        int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
+        glUploadWindow(tex, tx0, ty0, tx1, ty1);
+        cx++;
+      }
+    }
+  };
+  double tf = emscripten_get_now();
+  bool fgAnimated = fillLayer(E.fg, glAnimatedFg, !contentDirty && !windowMoved);
+  bool bgAnimated = fillLayer(E.bg, glAnimatedBg, !contentDirty && !windowMoved);
   E.perfFillMs = emscripten_get_now() - tf;
   double tu = emscripten_get_now();
-  E.useLayer(&E.fg); glUploadWindow(glTex, x0, y0, x1, y1);
-  E.useLayer(&E.bg); glUploadWindow(glTexBg, x0, y0, x1, y1);
+  if (contentDirty || windowMoved) {
+    E.useLayer(&E.fg); glUploadWindow(glTex, x0, y0, x1, y1);
+    E.useLayer(&E.bg); glUploadWindow(glTexBg, x0, y0, x1, y1);
+    glVisibleAnimated = fgAnimated || bgAnimated;
+  } else {
+    uploadAnimated(E.fg, glTex, glAnimatedFg);
+    uploadAnimated(E.bg, glTexBg, glAnimatedBg);
+  }
   E.perfUploadMs = emscripten_get_now() - tu;
 
   E.useLayer(&E.fg); memset(E.L->dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows); E.fg.dirtyRenderCount = 0;
@@ -691,6 +744,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   glLastCamCol = camCol; glLastCamRow = camRow;
   glLastWorldOffX = E.fg.worldOffsetX; glLastWorldOffY = E.fg.worldOffsetY;
   glLastSkyLight = (int)E.renderer.renderSkyLight;
+  glLastAnimFrame = animFrame;
 }
 
 // One presented frame: window-upload both layers, then composite background (darker)

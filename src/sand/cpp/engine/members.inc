@@ -84,7 +84,7 @@
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   std::vector<int> acidErasedStone, acidErasedIce, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
   std::vector<int> crossFireErasedFg, crossFireErasedBg;
-  std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells;
+  std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
   std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
@@ -451,8 +451,10 @@
     if (k < 0 || k >= cols * rows) return;
     if (L->grid[k] == m) return;
     int x = k - (k / cols) * cols;
-    noteLooseGroundTouch2At(k, L->grid[k], m);
-    adjustLooseColCount(x, L->grid[k], m);
+    uint8_t old = L->grid[k];
+    noteLooseGroundTouch2At(k, old, m);
+    adjustLooseColCount(x, old, m);
+    if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;
     L->grid[k] = m;
     markCellIndex(k);
   }

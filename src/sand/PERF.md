@@ -68,6 +68,8 @@ actionable instead of just producing timing numbers.
   inventory/player input, components, liquids, or net snapshots.
 - `node scripts/bench-pan.mjs --compare bench/pan-baseline.json`: browser/WebGL
   pan, cursor mapping, frame-time, and flicker check.
+- `npm run bench:tnt`: focused deterministic TNT benchmark covering cold/steady
+  open-air, dual-layer, buried-component, and 25x25/49x49 chain costs.
 - `node scripts/bench-reactions.mjs`: deterministic 1000x1000 fire-on-plants and
   acid-on-terrain stress cases, including fine phase timings and checksums.
 - `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions`:

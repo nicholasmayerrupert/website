@@ -2017,7 +2017,73 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
 }
 
 // split a plant-family component list keeping only cells still of plant material
-void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty) {
+bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors) {
+  if (erased.empty() || survivors.empty()) return false;
+  const int SPAN = 128, MARGIN = 8, CAP = 8000;
+  splitMembers.reset((size_t)E.cols * E.rows);
+  for (int k : survivors) splitMembers.add(k);
+  int32_t present = ++E.L->seenGen;
+  for (int k : erased) E.L->seenStamp[k] = present;
+  int32_t taken = ++E.L->seenGen;
+  for (int seed : erased) {
+    if (E.L->seenStamp[seed] != present) continue;
+    splitBlob.clear();
+    int qh = 0, qt = 0;
+    E.L->groundStack[qt++] = seed; E.L->seenStamp[seed] = taken;
+    int bx0 = E.cols, by0 = E.rows, bx1 = -1, by1 = -1;
+    while (qh < qt) {
+      int cur = E.L->groundStack[qh++]; splitBlob.push_back(cur);
+      int cy = cur / E.cols, cx = cur - cy * E.cols;
+      bx0 = imin(bx0, cx); bx1 = imax(bx1, cx); by0 = imin(by0, cy); by1 = imax(by1, cy);
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = cx + ox, ny = cy + oy;
+        if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+        int nk = ny * E.cols + nx;
+        if (E.L->seenStamp[nk] == present) { E.L->seenStamp[nk] = taken; E.L->groundStack[qt++] = nk; }
+      }
+    }
+    if (bx1 - bx0 > SPAN || by1 - by0 > SPAN) return false;
+    int32_t boundaryGen = ++E.L->seenGen;
+    splitBoundary.clear();
+    for (int cur : splitBlob) {
+      int cy = cur / E.cols, cx = cur - cy * E.cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = cx + ox, ny = cy + oy;
+        if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+        int nk = ny * E.cols + nx;
+        if (splitMembers.has(nk) && E.L->seenStamp[nk] != boundaryGen) {
+          E.L->seenStamp[nk] = boundaryGen; splitBoundary.push_back(nk);
+        }
+      }
+    }
+    if (splitBoundary.size() <= 1) continue;
+    int x0 = imax(0, bx0 - MARGIN), x1 = imin(E.cols - 1, bx1 + MARGIN);
+    int y0 = imax(0, by0 - MARGIN), y1 = imin(E.rows - 1, by1 + MARGIN);
+    int32_t visited = ++E.L->seenGen;
+    qh = 0; qt = 0;
+    int found = 1, need = (int)splitBoundary.size();
+    E.L->groundStack[qt++] = splitBoundary[0]; E.L->seenStamp[splitBoundary[0]] = visited;
+    while (qh < qt && found < need) {
+      if (qt >= CAP) return false;
+      int cur = E.L->groundStack[qh++]; int cy = cur / E.cols, cx = cur - cy * E.cols;
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = cx + ox, ny = cy + oy;
+        if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
+        int nk = ny * E.cols + nx;
+        if (!splitMembers.has(nk) || E.L->seenStamp[nk] == visited) continue;
+        if (E.L->seenStamp[nk] == boundaryGen) found++;
+        E.L->seenStamp[nk] = visited; E.L->groundStack[qt++] = nk;
+      }
+    }
+    if (found != need) return false;
+  }
+  return true;
+}
+
+void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty, bool localConnectivityFastPath) {
   // Dirty joints for the NEXT step, but leave jointGroundReady set: clearing it
   // mid-step lets the other layer's stepLayer re-run single-layer grounding and
   // drop cross-supported stone before this tick finishes (acid often transfers
@@ -2041,6 +2107,19 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
   for (size_t compIndex = 0; compIndex < E.L->plantComponents.size(); compIndex++) {
     auto& comp = E.L->plantComponents[compIndex];
     if (!touchedByIndex.empty() && !touchedByIndex[compIndex]) { updated.push_back(std::move(comp)); continue; }
+    if (localConnectivityFastPath && erased) {
+      splitSurvivors.clear(); splitErased.clear();
+      for (int k : comp.cells) {
+        if (E.isPlantMaterial(E.L->grid[k])) splitSurvivors.push_back(k);
+        else splitErased.push_back(k);
+      }
+      if (splitErased.empty()) { updated.push_back(std::move(comp)); continue; }
+      if (comp.grounded && componentRemovalLocallyConnected(splitErased, splitSurvivors)) {
+        comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true;
+        for (int k : comp.cells) { int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(E.L->grid[k])) comp.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) comp.leafCount++; }
+        updated.push_back(std::move(comp)); continue;
+      }
+    }
     int32_t remGen = ++E.L->seenGen;
     for (int k : comp.cells) if (E.isPlantMaterial(E.L->grid[k])) seen[k] = remGen;
     bool reused = false;
@@ -2085,7 +2164,7 @@ void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedE
 // full grounding reflood next pass. Acid passes false and instead runs its own
 // cut-vertex check (noteAcidRemovals) to keep the grounding cache valid when a
 // dissolve doesn't disconnect anything.
-void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty, int indexedOffset) {
+void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty, int indexedOffset, bool localConnectivityFastPath) {
   // Dirty joints for the NEXT step when bg is live. Even acid pure-bore
   // (markGroundDirty=false) must force a recompute — but do NOT clear
   // jointGroundReady mid-step. step() grounds jointly, then stepLayer(fg) then
@@ -2097,8 +2176,8 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
   if (markGroundDirty && !erased.empty()) E.L->groundDirty = true;
   if (erased.empty() || list.empty()) return;
   std::vector<int32_t>& seen = E.L->seenStamp;
-  int32_t erasedGen = ++E.L->seenGen;
-  for (int k : erased) seen[k] = erasedGen;
+  splitRemovedSet.reset((size_t)E.cols * E.rows);
+  for (int k : erased) splitRemovedSet.add(k);
   std::vector<uint8_t>& touchedByIndex = splitTouched;
   touchedByIndex.clear();
   if (indexedOffset >= 0) {
@@ -2120,10 +2199,16 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     auto& comp = list[compIndex];
     if (!touchedByIndex.empty() && !touchedByIndex[compIndex]) { updated.push_back(std::move(comp)); continue; }
     bool touched = false;
-    survivors.clear(); survivors.reserve(comp.cells.size());
-    for (int k : comp.cells) { if (seen[k] == erasedGen) touched = true; else survivors.push_back(k); }
+    std::vector<int>& removedCells = splitErased;
+    survivors.clear(); survivors.reserve(comp.cells.size()); removedCells.clear();
+    for (int k : comp.cells) { if (splitRemovedSet.has(k)) { touched = true; removedCells.push_back(k); } else survivors.push_back(k); }
     if (!touched) { updated.push_back(std::move(comp)); continue; }
     if (survivors.empty()) { E.L->compsReshaped = true; continue; } // comp fully erased -> ids shift
+    if (localConnectivityFastPath && comp.grounded && componentRemovalLocallyConnected(removedCells, survivors)) {
+      comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
+      for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
+      updated.push_back(std::move(comp)); continue;
+    }
     int32_t remGen = ++E.L->seenGen;
     for (int k : survivors) seen[k] = remGen;
     bool reused = false;

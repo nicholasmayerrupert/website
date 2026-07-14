@@ -13,6 +13,10 @@ struct Layer {
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
   std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp, assemblyWakeStamp, blastGasStamp;
+  // Persistent best-energy scratch for a same-tick blast batch. Membership uses
+  // seenStamp/seenGen, so a batch clears in O(1) instead of allocating + zeroing
+  // two full-window arrays on every detonation tick.
+  std::vector<float> blastBestEnergy;
   int dirtyRenderCount = 0;
   // per-cell sim scratch
   std::vector<uint8_t> groundedCell;
@@ -29,6 +33,10 @@ struct Layer {
   std::vector<int> assemblyRelocatedCells;
   std::vector<uint8_t> reactionFlags;
   std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
+  // Set when a reaction creates new heat after prepareActiveLists. Existing heat
+  // may disappear safely (the candidate is rechecked); newly-created heat needs
+  // the legacy ordered active-span scan so TNT can still ignite that same tick.
+  bool heatAddedAfterPrepare = false;
   // Transient survival mining damage. 0 = no active damage; otherwise the
   // remaining durability for the current held mine target. Not serialized.
   std::vector<uint32_t> mineDamage;
@@ -169,7 +177,7 @@ struct Layer {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
-      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
+      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(blastBestEnergy); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
       release(prevCompCells); release(curCompCells); release(bodyCells);

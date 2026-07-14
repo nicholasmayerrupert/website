@@ -409,7 +409,10 @@ hardcoded id list, decides who reacts.
   bodies of the destroyed material that bake back into terrain), shoves nearby free
   bodies, and chains adjacent TNT. Each consumed TNT cell releases one aftermath
   cell: mostly acrid smoke, some steam, and a little fire. Works the same whether
-  the TNT is a placed solid or a free TNT body.
+  the TNT is a placed solid or a free TNT body. The fixed-radius crater and gas
+  shell reuse one ordered stencil, overlapping blasts use generation-stamped
+  per-layer energy scratch, and bulk-terrain craters locally prove connectivity
+  before falling back to a full component split.
 
 ## Rigid bodies that are real material (`rigid.inc` + the BODY-MATERIAL INVARIANT)
 

@@ -12,7 +12,7 @@ struct Engine;
 
 class ExplosivesSystem {
  public:
-  explicit ExplosivesSystem(Engine& e) : E(e) {}
+  explicit ExplosivesSystem(Engine& e) : E(e) { buildTntStencil(); }
 
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
   static const int    TNT_CHAIN_FUSE = 4;    // a TNT caught in a blast chains this fast
@@ -43,15 +43,15 @@ class ExplosivesSystem {
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
+  struct BlastOffset { int16_t ox, oy; int32_t dd; double dist; };
   struct BlastWave { int cx, cy, radius; uint32_t seed; };
   struct BlastDebrisSource { uint8_t material; int cell; };
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
-    bool erasedPlant = false;
+    std::vector<int> erasedPlant;
     std::vector<BlastWave> gasShockwaves;
-    std::vector<int32_t> blastEnergyStamp;
-    std::vector<float> blastBestEnergy;
-    int32_t blastEnergyGen = 1;
+    Layer* energyLayer = nullptr;
+    int32_t blastEnergyGen = 0;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
@@ -79,4 +79,6 @@ class ExplosivesSystem {
 
  private:
   Engine& E;
+  std::vector<BlastOffset> tntStencil;
+  void buildTntStencil();
 };

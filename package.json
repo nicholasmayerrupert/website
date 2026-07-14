@@ -74,6 +74,7 @@
     "bench:pan": "node scripts/bench-pan.mjs",
     "bench:pan:compare": "node scripts/bench-pan.mjs --compare bench/pan-baseline.json",
     "bench:rigid": "node scripts/bench-rigid.mjs",
+    "bench:tnt": "node scripts/bench-tnt.mjs",
     "bench:acid-ice": "node scripts/acid-ice-lag-bench.mjs",
     "bench:acid-lava": "node scripts/acid-lava-lag-bench.mjs",
     "bench:prefetch": "node scripts/bench-prefetch.mjs",

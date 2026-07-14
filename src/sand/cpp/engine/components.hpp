@@ -72,7 +72,8 @@ class ComponentSystem {
   StampSet regCells, regOwnerStamp;           // registerRigidCells: input-set membership + lazy owner map validity
   std::vector<int32_t> regOwnerVal;           // owner comp index, valid where regOwnerStamp.has(k)
   std::vector<uint8_t> splitTouched;           // acid split: indexed touched-component mask
-  std::vector<int> splitSurvivors, splitPart;  // splitRigidAfterErase reusable queues
+  StampSet splitMembers, splitRemovedSet;      // local no-cut proof + batch erased membership
+  std::vector<int> splitSurvivors, splitErased, splitBlob, splitPart, splitBoundary; // split + local-proof reusable queues
   std::vector<Comp> splitUpdated;              // avoids rebuilding list capacity per bite
   uint8_t floodTargetMat = 0; // set before a per-material stone flood
 
@@ -109,9 +110,10 @@ class ComponentSystem {
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax);
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);
-  void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true);
+  bool componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors);
+  void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false);
   void finishPlantErosion(std::vector<int>& erased, bool indexedExact);
-  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1);
+  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1, bool localConnectivityFastPath = false);
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 
  private:

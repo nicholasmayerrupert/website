@@ -1,0 +1,124 @@
+// Focused TNT benchmark: detonation spikes, buried-component repair, dual-layer
+// duplication, and staged chain cost. Timed regions contain engine.step() only;
+// setup, grid hashing, and TNT counting are deliberately outside them.
+import { performance } from 'node:perf_hooks';
+import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { MAT } from '../src/sand/materials.js';
+
+const REPEAT = Math.max(2, Number(process.env.REPEAT || 3) | 0);
+const SCENARIO = process.env.SCENARIO || 'all';
+const SEED = 0xC0FFEE;
+
+await initSandWasm();
+
+function countMaterial(grid, material) {
+  let count = 0;
+  for (const cell of grid) if (cell === material) count++;
+  return count;
+}
+
+function hashGrid(hash, grid) {
+  for (const cell of grid) {
+    hash ^= cell;
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash;
+}
+
+function summary(values) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const at = (q) => sorted[Math.floor((sorted.length - 1) * q)];
+  return {
+    mean: values.reduce((sum, value) => sum + value, 0) / values.length,
+    p50: at(0.50),
+    p95: at(0.95),
+    max: sorted[sorted.length - 1],
+  };
+}
+
+function runScenario({ name, cols, rows, side = 1, buried = false, bg = false, steps }) {
+  const engine = createEngineWasm({ cols, rows, worldSeed: SEED, sinksOn: false, infinite: false });
+  engine.setBgEnabled(bg);
+  const cx = cols >> 1;
+  const cy = buried ? 92 : rows >> 1;
+  const x0 = cx - (side >> 1);
+  const y0 = cy - (side >> 1);
+
+  if (buried) {
+    for (let y = cy + 1; y < rows; y++)
+      for (let x = 20; x < cols - 20; x++) engine.placeMaterial(x, y, 0, MAT.STONE);
+  }
+  for (let y = y0; y < y0 + side; y++)
+    for (let x = x0; x < x0 + side; x++) engine.placeMaterial(x, y, 0, MAT.TNT);
+  engine.syncComponentsLayer(0);
+  if (bg) engine.syncComponentsLayer(1);
+
+  const initialTnt = countMaterial(engine.getGrid(), MAT.TNT);
+  let previousTnt = initialTnt;
+  let firstBlast = -1;
+  let completed = -1;
+  let rollingHash = 2166136261 >>> 0;
+  const records = [];
+
+  for (let step = 0; step < steps; step++) {
+    if (step < 3) {
+      const igniteX = side === 1 ? cx + 1 : x0 + side + 1;
+      engine.placeMaterial(igniteX, cy, 1, MAT.FIRE);
+    }
+    const started = performance.now();
+    engine.step(step * 16);
+    const wallMs = performance.now() - started;
+    const perf = engine.getStepPerf();
+    const tnt = countMaterial(engine.getGrid(), MAT.TNT);
+    if (firstBlast < 0 && tnt < previousTnt) firstBlast = step;
+    if (completed < 0 && tnt === 0) completed = step;
+    previousTnt = tnt;
+    rollingHash = hashGrid(rollingHash, engine.getGrid());
+    if (bg) rollingHash = hashGrid(rollingHash, engine.getGridBg());
+    records.push({ step, wallMs, reactMs: perf.reactMs, tnt });
+  }
+
+  const blastRecords = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= (completed >= 0 ? completed : firstBlast));
+  const peak = blastRecords.reduce((best, record) => record.reactMs > best.reactMs ? record : best, blastRecords[0]);
+  engine.destroy();
+  return {
+    name,
+    initialTnt,
+    firstBlast,
+    completed,
+    rollingHash,
+    peakReactMs: peak.reactMs,
+    peakWallMs: peak.wallMs,
+    waveReactMs: blastRecords.reduce((sum, record) => sum + record.reactMs, 0),
+    waveWallMs: blastRecords.reduce((sum, record) => sum + record.wallMs, 0),
+  };
+}
+
+const scenarios = [
+  { name: 'single-open', cols: 512, rows: 256, steps: 40 },
+  { name: 'single-open-dual-layer', cols: 512, rows: 256, bg: true, steps: 40 },
+  { name: 'single-buried-stone', cols: 384, rows: 224, buried: true, steps: 40 },
+  { name: 'chain-25x25', cols: 260, rows: 220, side: 25, steps: 70 },
+  { name: 'chain-49x49', cols: 260, rows: 220, side: 49, steps: 90 },
+];
+
+// Warm lazy WASM/runtime paths before collecting samples.
+runScenario({ name: 'warmup', cols: 96, rows: 80, steps: 35 });
+
+console.log(`TNT benchmark (${REPEAT} repeats; fallback WASM)`);
+for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name === SCENARIO)) {
+  const runs = [];
+  for (let repeat = 0; repeat < REPEAT; repeat++) runs.push(runScenario(scenario));
+  const hashes = [...new Set(runs.map(({ rollingHash }) => rollingHash.toString(16).padStart(8, '0')))];
+  const peakReact = summary(runs.map(({ peakReactMs }) => peakReactMs));
+  const peakWall = summary(runs.map(({ peakWallMs }) => peakWallMs));
+  const waveReact = summary(runs.map(({ waveReactMs }) => waveReactMs));
+  const waveWall = summary(runs.map(({ waveWallMs }) => waveWallMs));
+  const first = runs[0];
+  console.log(`\n${scenario.name}: TNT ${first.initialTnt}, wave ${first.firstBlast}..${first.completed}, hash ${hashes.join(',')}${hashes.length === 1 ? '' : ' UNSTABLE'}`);
+  console.log(`  cold wave   react ${first.waveReactMs.toFixed(3)}  wall ${first.waveWallMs.toFixed(3)} ms`);
+  console.log(`  peak react  p50 ${peakReact.p50.toFixed(3)}  p95 ${peakReact.p95.toFixed(3)}  mean ${peakReact.mean.toFixed(3)} ms`);
+  console.log(`  peak wall   p50 ${peakWall.p50.toFixed(3)}  p95 ${peakWall.p95.toFixed(3)}  mean ${peakWall.mean.toFixed(3)} ms`);
+  console.log(`  wave react  p50 ${waveReact.p50.toFixed(3)}  p95 ${waveReact.p95.toFixed(3)}  mean ${waveReact.mean.toFixed(3)} ms`);
+  console.log(`  wave wall   p50 ${waveWall.p50.toFixed(3)}  p95 ${waveWall.p95.toFixed(3)}  mean ${waveWall.mean.toFixed(3)} ms`);
+}

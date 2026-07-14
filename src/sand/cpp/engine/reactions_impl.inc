@@ -7,7 +7,8 @@
 // acid erosion, and lava cooling. It should not own broad movement order.
 void ReactionSystem::prepareActiveLists() {
   E.activeWaterCells.clear(); E.activeFireCells.clear(); E.activeAcidCells.clear();
-  E.activeLavaCells.clear(); E.activeSaltCells.clear();
+  E.activeLavaCells.clear(); E.activeSaltCells.clear(); E.activeHeatCells.clear();
+  E.L->heatAddedAfterPrepare = false;
 #ifdef __EMSCRIPTEN_PTHREADS__
   E.reactionRows.resize(E.rows);
   E.chunkPool.parallelFor(E.rows - 1, [&](int i) {
@@ -23,9 +24,9 @@ void ReactionSystem::prepareActiveLists() {
   for (int y = 1; y < E.rows; y++) for (int k : E.reactionRows[y]) {
     switch (E.L->grid[k]) {
       case WATER: E.activeWaterCells.push_back(k); break;
-      case FIRE: E.activeFireCells.push_back(k); break;
+      case FIRE: E.activeFireCells.push_back(k); if (k < (E.rows - 1) * E.cols) E.activeHeatCells.push_back(k); break;
       case ACID: E.activeAcidCells.push_back(k); break;
-      case LAVA: E.activeLavaCells.push_back(k); break;
+      case LAVA: E.activeLavaCells.push_back(k); E.activeHeatCells.push_back(k); break;
       case SALT: E.activeSaltCells.push_back(k); break;
       default: break;
     }
@@ -38,9 +39,9 @@ void ReactionSystem::prepareActiveLists() {
       int k = rb + x;
       switch (E.L->grid[k]) {
         case WATER: E.activeWaterCells.push_back(k); break;
-        case FIRE: E.activeFireCells.push_back(k); break;
+        case FIRE: E.activeFireCells.push_back(k); if (y < E.rows - 1) E.activeHeatCells.push_back(k); break;
         case ACID: if (y < E.rows - 1) E.activeAcidCells.push_back(k); break;
-        case LAVA: if (y < E.rows - 1) E.activeLavaCells.push_back(k); break;
+        case LAVA: if (y < E.rows - 1) { E.activeLavaCells.push_back(k); E.activeHeatCells.push_back(k); } break;
         case SALT: if (y < E.rows - 1) E.activeSaltCells.push_back(k); break;
         default: break;
       }

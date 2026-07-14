@@ -330,7 +330,15 @@ struct Body {
   double omegaPre = 0;
   bool hadContact = false; double maxDepth = 0; int idx = 0;
 };
-struct Contact { Body* a; Body* b; double rax, ray, rbx, rby, nx, ny, depth, accJn, accJt, accBias; };
+struct Contact {
+  Body* a; Body* b;
+  double rax, ray, rbx, rby, nx, ny, depth;
+  // Separating speed captured from the contact's initial impact. Keeping this
+  // target fixed lets sequential impulses preserve a small rebound instead of
+  // damping it back to zero over later solver iterations.
+  double targetVn;
+  double accJn, accJt, accBias;
+};
 
 // ---- Dropped items + cosmetic particles (items.inc) ----
 // A lightweight NON-GRID entity. IT_ITEM = a dropped material the player can pick
@@ -558,7 +566,8 @@ static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20
 // stability + earlier contact), and a sample's per-substep relative path is
 // marched in steps no larger than R_SWEEP_STEP cells looking for first impact.
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
-static const double R_RESTITUTION = 0, R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
+static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
+static const double R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6, R_LIQUID_DRAG = 0.12, R_LIQUID_ANG_DRAG = 0.1;
 static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;
 static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG * 8;

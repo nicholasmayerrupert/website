@@ -79,6 +79,69 @@ for (const dt of [16, 8, 33, 50]) {
   e.destroy();
 }
 
+// 1b. Meaningful impacts rebound slightly, while a body placed into a gentle
+// resting contact does not. This guards both halves of thresholded restitution:
+// a fixed impact target must survive all solver iterations, and gravity-scale
+// contacts must still settle without jitter.
+{
+  console.log('thresholded restitution gives impacts a restrained bounce');
+  const e = mk();
+  const floorY = 110;
+  stoneRect(e, 0, floorY, COLS - 1, ROWS - 1);
+  e.syncComponents();
+  const idx = e._bodyCount();
+  e.spawnBox(100, 78, 4, 4, RIGID);
+  e._setBodyMotion(idx, 0, 2.0, 0);
+  let t = 0, minVy = 0;
+  for (let i = 0; i < 80; i++) {
+    t += 16;
+    e.step(t);
+    minVy = Math.min(minVy, e._bodyState(idx).vy);
+  }
+  check(`fast impact rebounds subtly (min vy ${minVy.toFixed(3)})`, minVy < -0.1 && minVy > -0.4);
+  e.destroy();
+}
+{
+  console.log('gentle resting contact does not bounce');
+  const e = mk();
+  const floorY = 110;
+  stoneRect(e, 0, floorY, COLS - 1, ROWS - 1);
+  e.syncComponents();
+  const idx = e._bodyCount();
+  e.spawnBox(100, 106, 4, 4, RIGID);
+  e._setBodyMotion(idx, 0, 0.1, 0);
+  let t = 0, minVy = 0;
+  for (let i = 0; i < 120; i++) {
+    t += 16;
+    e.step(t);
+    minVy = Math.min(minVy, e._bodyState(idx).vy);
+  }
+  const s = e._bodyState(idx);
+  check(`gentle contact never rebounds (min vy ${minVy.toFixed(3)})`, minVy > -0.02);
+  check(`gentle contact settles (|vy| ${Math.abs(s.vy).toFixed(3)})`, Math.abs(s.vy) < 0.01);
+  e.destroy();
+}
+{
+  console.log('cube-on-cube impact has a visible but restrained bounce');
+  const e = mk();
+  const floorY = 110;
+  stoneRect(e, 0, floorY, COLS - 1, ROWS - 1);
+  e.syncComponents();
+  e.spawnBox(100, 106, 4, 4, RIGID);
+  run(e, 120);
+  const top = e._bodyCount();
+  e.spawnBox(100, 78, 4, 4, RIGID);
+  e._setBodyMotion(top, 0, 2.0, 0);
+  let t = 120 * 16, minVy = 0;
+  for (let i = 0; i < 80; i++) {
+    t += 16;
+    e.step(t);
+    minVy = Math.min(minVy, e._bodyState(top).vy);
+  }
+  check(`supported cube rebounds visibly (min vy ${minVy.toFixed(3)})`, minVy < -0.35 && minVy > -0.7);
+  e.destroy();
+}
+
 // 2. Off-centre landing: the vertical bar lands near the bridge end. It must not
 //    tunnel and must not be flung sideways by a bogus diagonal normal.
 {

@@ -94,7 +94,7 @@ double RigidBodySystem::resolveContact(Contact& c) {
   double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
   double movedN = 0, movedT = 0;
   if (denom > 0) {
-    double delta = -(1 + R_RESTITUTION) * vn / denom;
+    double delta = (c.targetVn - vn) / denom;
     double newJn = c.accJn + delta; if (newJn < 0) newJn = 0;
     double applied = newJn - c.accJn; c.accJn = newJn;
     movedN = std::fabs(applied);
@@ -157,6 +157,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   maxPointSpeed += R_GRAVITY * tickDt;
   int substeps = (int)std::ceil(maxPointSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
   std::vector<Contact> contacts; int nc = 0;
+  std::vector<uint8_t> actorSweepOverlap(n, 0);
   struct PenPt { double wx, wy, nx, ny, depth; int bk; };
   std::vector<PenPt> penAcc, terrAcc;
   double wpx, wpy, nx_, ny_;
@@ -227,6 +228,30 @@ void RigidBodySystem::rigidStep(double tickDt) {
       double m = b->sweepMargin;
       b->aabbX0 = x0 - m; b->aabbY0 = y0 - m; b->aabbX1 = x1 + m; b->aabbY1 = y1 + m;
       b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
+    }
+    // Players and creatures are pushed after the grid-body solve rather than
+    // represented as impulse bodies. Treat one inside this substep's swept AABB
+    // as a soft impact that absorbs restitution; otherwise a body can rebound
+    // from the terrain behind an actor before the established push/crush path
+    // gets to resolve their overlap.
+    std::fill(actorSweepOverlap.begin(), actorSweepOverlap.end(), 0);
+    if (E.L == &E.fg && (!E.psys.players.empty() || !E.creatures.creatures.empty())) {
+      auto overlapsAabb = [](Body* b, double x, double y, int w, int h) {
+        return x < b->aabbX1 && x + w > b->aabbX0 && y < b->aabbY1 && y + h > b->aabbY0;
+      };
+      for (int bi = 0; bi < n; bi++) {
+        Body* b = E.L->bodies[bi];
+        for (const Player& p : E.psys.players) {
+          if (p.active && p.alive && overlapsAabb(b, p.px, p.py, p.w, p.h)) { actorSweepOverlap[bi] = 1; break; }
+        }
+        if (actorSweepOverlap[bi]) continue;
+        for (const Creature& c : E.creatures.creatures) {
+          if (!c.alive) continue;
+          const CreatureSpecies& s = E.creatures.species(c);
+          double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
+          if (overlapsAabb(b, x, y, s.w, s.h)) { actorSweepOverlap[bi] = 1; break; }
+        }
+      }
     }
     contacts.clear();
     // Penetration depth of a point that is already inside target T, measured by
@@ -330,7 +355,20 @@ void RigidBodySystem::rigidStep(double tickDt) {
         tx[bk] = -Ny[bk]; ty[bk] = Nx[bk]; loP[bk] = 1e18; hiP[bk] = -1e18;
       }
       for (auto& p : acc) { int bk = p.bk; double pr = p.wx * tx[bk] + p.wy * ty[bk]; if (pr < loP[bk]) { loP[bk] = pr; lo[bk] = &p; } if (pr > hiP[bk]) { hiP[bk] = pr; hi[bk] = &p; } }
-      auto push = [&](PenPt* p, int bk) { if (!p) return; contacts.push_back({A, B, p->wx - A->px, p->wy - A->py, B ? p->wx - B->px : 0, B ? p->wy - B->py : 0, Nx[bk], Ny[bk], p->depth, 0, 0, 0}); if (p->depth > A->maxDepth) A->maxDepth = p->depth; if (B && p->depth > B->maxDepth) B->maxDepth = p->depth; };
+      auto push = [&](PenPt* p, int bk) {
+        if (!p) return;
+        double rax = p->wx - A->px, ray = p->wy - A->py;
+        double rbx = B ? p->wx - B->px : 0, rby = B ? p->wy - B->py : 0;
+        double rvx = A->vx - A->omega * ray, rvy = A->vy + A->omega * rax;
+        if (B) { rvx -= B->vx - B->omega * rby; rvy -= B->vy + B->omega * rbx; }
+        double impactVn = rvx * Nx[bk] + rvy * Ny[bk];
+        bool softImpact = actorSweepOverlap[A->idx] || (B && actorSweepOverlap[B->idx]);
+        double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
+        double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
+        contacts.push_back({A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth, targetVn, 0, 0, 0});
+        if (p->depth > A->maxDepth) A->maxDepth = p->depth;
+        if (B && p->depth > B->maxDepth) B->maxDepth = p->depth;
+      };
       for (int bk = 0; bk < 8; bk++) { if (!cnt[bk]) continue; push(lo[bk], bk); if (hi[bk] != lo[bk]) push(hi[bk], bk); }
       A->hadContact = true; if (B) B->hadContact = true;
     };

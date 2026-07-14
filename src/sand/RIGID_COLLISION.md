@@ -47,6 +47,18 @@ The previous body↔body path had four compounding defects:
 - **Contact skin.** Surfaces touch within `R_CONTACT_SKIN` (0.1 cell): the sweep
   marches an extra skin distance so resting contacts are detected before deep
   overlap (stable rest, minimal visible penetration, no visible float).
+- **Thresholded impact restitution.** A contact closing faster than 0.35
+  cell/tick captures a fixed separating-speed target at 10% of its initial
+  impact speed against terrain and 18% between bodies. The modestly stronger
+  body target keeps a cube-on-cube rebound visible after the two bodies share
+  the impulse; unsupported bodies still exchange momentum rather than acting
+  like immovable walls. Capturing the target once is important: applying a restitution
+  factor to the live velocity on every sequential-impulse iteration would wash
+  the rebound back toward zero. Slower contacts target zero normal speed, so
+  stacks, gravity contacts, and sleeping bodies remain stable rather than
+  jittering. Actors use a separate post-solve push/crush path, so an actor inside
+  the body's swept bounds suppresses terrain restitution for that substep: the
+  soft impact absorbs the bounce and preserves pinned/crushing behavior.
 - **Bucketed manifold.** Samples are grouped by quantized normal direction (8
   sectors) so materially different faces stay separate instead of averaging into
   one diagonal normal; within a bucket the two tangential extremes are kept so a
@@ -105,7 +117,8 @@ The previous body↔body path had four compounding defects:
   gently bob, which drag keeps stable (negligible cost for a few bodies).
 
 Constants live in `common.hpp`: `R_SAFE_SUBSTEP` 0.5, `R_MAX_SUBSTEPS` 10,
-`R_CONTACT_SKIN` 0.1, `R_SWEEP_STEP` 0.4, `R_LIQUID_DRAG` 0.12,
+`R_CONTACT_SKIN` 0.1, `R_SWEEP_STEP` 0.4, `R_TERRAIN_RESTITUTION` 0.1,
+`R_BODY_RESTITUTION` 0.18, `R_BOUNCE_MIN_SPEED` 0.35, `R_LIQUID_DRAG` 0.12, and
 `R_LIQUID_ANG_DRAG` 0.1.
 
 ## Tests

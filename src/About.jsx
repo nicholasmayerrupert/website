@@ -1,16 +1,18 @@
 import React from 'react';
 
-const TOOLBOX = [
-  'C++',
-  'WebAssembly',
-  'JavaScript',
-  'React',
-  'Node.js',
-  'Python',
-  'Java',
-  'SQL',
-  'WebGL',
-  'Cloudflare',
+const SKILL_GROUPS = [
+  {
+    label: 'Languages',
+    items: ['C++', 'JavaScript', 'Python', 'Java', 'SQL'],
+  },
+  {
+    label: 'Web & backend',
+    items: ['React', 'Node.js', 'REST APIs', 'WebSocket', 'Cloudflare'],
+  },
+  {
+    label: 'Systems & graphics',
+    items: ['WebAssembly', 'WebGL', 'Three.js', 'Git'],
+  },
 ];
 
 export default function About() {
@@ -71,14 +73,25 @@ export default function About() {
           </article>
         </div>
 
-        <div className="toolbox portfolio-reveal">
-          <p>Built with</p>
-          <div className="toolbox__items" aria-label="Technical skills">
-            {TOOLBOX.map((item) => (
-              <span key={item}>{item}</span>
+        <section className="toolbox portfolio-reveal" aria-labelledby="skills-heading">
+          <div className="toolbox__heading">
+            <p className="portfolio-eyebrow">Skills</p>
+            <h3 id="skills-heading">Tools I use</h3>
+          </div>
+
+          <div className="toolbox__groups">
+            {SKILL_GROUPS.map((group) => (
+              <article key={group.label}>
+                <h4>{group.label}</h4>
+                <ul>
+                  {group.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </article>
             ))}
           </div>
-        </div>
+        </section>
       </div>
     </section>
   );

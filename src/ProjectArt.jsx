@@ -1,8 +1,7 @@
 // src/ProjectArt.jsx
 // Hand-crafted SVG artwork for the project cards (replaces the stock Lottie files).
-// Each scene is drawn in a 400x300 viewBox (matches the 4:3 card) and fills the
-// card edge-to-edge. Animation is pure CSS (see ProjectArt.css) and is disabled
-// under prefers-reduced-motion.
+// Each scene fills its project card edge-to-edge. Animation is pure CSS (see
+// ProjectArt.css) and is disabled under prefers-reduced-motion.
 
 import React from 'react';
 import './ProjectArt.css';
@@ -14,146 +13,133 @@ function Sparkle({ x, y, s, fill, className, style, opacity = 1 }) {
 }
 
 /* =====================================================================
-   1. LLM CHESS COACH — a knight wired with circuitry, orbited by rings
+   1. LLM CHESS COACH — board analysis, engine lines, coaching feedback
    ===================================================================== */
 export function ChessArt() {
-  // Perspective checkerboard floor: a rotated/flattened grid of squares.
-  const floor = [];
-  for (let i = 0; i < 6; i++) {
-    for (let j = 0; j < 6; j++) {
-      if ((i + j) % 2 === 0) {
-        floor.push(<rect key={`f${i}-${j}`} x={-78 + i * 26} y={-78 + j * 26} width="26" height="26" fill="#b366ff" />);
-      }
+  const boardX = 49;
+  const boardY = 52;
+  const cell = 25;
+  const squares = [];
+  for (let rank = 0; rank < 8; rank++) {
+    for (let file = 0; file < 8; file++) {
+      squares.push(
+        <rect
+          key={`${file}-${rank}`}
+          x={boardX + file * cell}
+          y={boardY + rank * cell}
+          width={cell}
+          height={cell}
+          fill={(file + rank) % 2 === 0 ? '#d8cce2' : '#6a5279'}
+        />,
+      );
     }
   }
 
-  const traceNodes = [
-    [205, 92], [205, 120], [205, 146], [205, 178], [205, 212],
-    [190, 162], [184, 192], [220, 170], [226, 198],
+  const pieces = [
+    ['♜', 0, 0, 'black'], ['♛', 3, 0, 'black'], ['♜', 5, 0, 'black'], ['♚', 6, 0, 'black'],
+    ['♟', 0, 1, 'black'], ['♟', 1, 1, 'black'], ['♟', 2, 1, 'black'], ['♟', 3, 2, 'black'],
+    ['♟', 5, 1, 'black'], ['♟', 6, 1, 'black'], ['♟', 7, 1, 'black'],
+    ['♞', 2, 2, 'black'], ['♝', 2, 3, 'black'], ['♞', 5, 2, 'black'],
+    ['♙', 0, 6, 'white'], ['♙', 1, 6, 'white'], ['♙', 2, 6, 'white'], ['♙', 3, 4, 'white'],
+    ['♙', 5, 6, 'white'], ['♙', 6, 6, 'white'], ['♙', 7, 6, 'white'],
+    ['♘', 2, 5, 'white'], ['♗', 2, 4, 'white'], ['♘', 5, 5, 'white'],
+    ['♖', 0, 7, 'white'], ['♕', 3, 7, 'white'], ['♖', 5, 7, 'white'], ['♔', 6, 7, 'white'],
   ];
 
   return (
-    <svg className="project-art" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <svg className="project-art project-art--chess" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
       <defs>
-        <radialGradient id="chess-bg" cx="50%" cy="42%" r="75%">
-          <stop offset="0%" stopColor="#2a0a4a" />
-          <stop offset="55%" stopColor="#140428" />
-          <stop offset="100%" stopColor="#060010" />
+        <radialGradient id="chess-bg" cx="45%" cy="44%" r="78%">
+          <stop offset="0%" stopColor="#382151" />
+          <stop offset="52%" stopColor="#171025" />
+          <stop offset="100%" stopColor="#07080e" />
         </radialGradient>
-        <linearGradient id="chess-piece" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#3c0d73" />
-          <stop offset="55%" stopColor="#220747" />
-          <stop offset="100%" stopColor="#12022a" />
+        <linearGradient id="chess-panel" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#281936" stopOpacity="0.96" />
+          <stop offset="100%" stopColor="#11131d" stopOpacity="0.96" />
         </linearGradient>
-        <linearGradient id="chess-base" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#4a1d85" />
-          <stop offset="100%" stopColor="#1c0638" />
+        <linearGradient id="chess-eval" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#f5eefe" />
+          <stop offset="100%" stopColor="#bca4d5" />
         </linearGradient>
       </defs>
 
       <rect width="400" height="300" fill="url(#chess-bg)" />
+      <circle cx="117" cy="145" r="135" fill="#a65df5" opacity="0.08" />
+      <circle cx="351" cy="218" r="118" fill="#3a9bf0" opacity="0.07" />
 
-      {/* perspective board floor */}
-      <g opacity="0.12" transform="translate(200 312) scale(1.7 0.72) rotate(45)">{floor}</g>
+      <g className="pa-spin-slow" fill="none" strokeLinecap="round">
+        <circle cx="150" cy="151" r="133" stroke="#bd87ef" strokeWidth="0.9" strokeDasharray="4 13" opacity="0.32" />
+        <path d="M40 79 A138 138 0 0 1 278 61" stroke="#ffd166" strokeWidth="1.2" strokeDasharray="20 34" opacity="0.23" />
+      </g>
 
-      {/* orbital rings */}
-      <g className="pa-spin-slow">
-        <circle cx="205" cy="150" r="98" fill="none" stroke="rgba(179,102,255,0.3)" strokeWidth="1" strokeDasharray="4 11" />
+      <g stroke="#ba82e8" strokeWidth="1" fill="none" opacity="0.38">
+        <path d="M255 42 L290 26 L321 44 L356 23 L389 47" />
+        <path d="M244 252 L278 268 L311 247 L347 269 L389 242" />
+        <path d="M292 26 L301 74 M356 23 L345 89 M311 247 L320 201 M347 269 L353 224" />
       </g>
-      <g className="pa-spin-rev">
-        <path d="M 205 52 A 98 98 0 0 1 303 150" fill="none" stroke="rgba(255,209,102,0.35)" strokeWidth="1.4" />
-        <path d="M 205 248 A 98 98 0 0 1 107 150" fill="none" stroke="rgba(255,209,102,0.35)" strokeWidth="1.4" />
-      </g>
-      <circle cx="205" cy="150" r="112" fill="none" stroke="rgba(179,102,255,0.12)" strokeWidth="1" />
-
-      {/* neural constellations in the corners */}
-      <g stroke="rgba(179,102,255,0.3)" strokeWidth="0.8" fill="none">
-        <path d="M 40 60 L 70 40 L 95 75 L 60 95 Z M 70 40 L 60 95" />
-        <path d="M 330 200 L 355 178 L 372 212 L 342 226 Z" />
-      </g>
-      <g fill="#d9b8ff">
-        {[[40, 60], [70, 40], [95, 75], [60, 95], [330, 200], [355, 178], [372, 212], [342, 226]].map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="2" opacity={0.55 + (i % 3) * 0.12} />
+      <g fill="#dfbcff">
+        {[[255, 42], [290, 26], [321, 44], [356, 23], [389, 47], [244, 252], [278, 268], [311, 247], [347, 269], [389, 242]].map(([x, y], i) => (
+          <circle key={i} cx={x} cy={y} r={i % 3 === 0 ? 2.5 : 1.8} opacity={0.48 + (i % 3) * 0.14} className={i % 4 === 0 ? 'pa-pulse' : undefined} />
         ))}
       </g>
 
-      {/* planned-move arrow on the board */}
-      <path d="M 96 236 C 76 196 96 160 138 148" fill="none" stroke="#ffd166" strokeWidth="1.6" strokeDasharray="5 7" opacity="0.55" className="pa-dash" />
-      <polygon points="150,146 136,141 138,153" fill="#ffd166" opacity="0.7" />
+      <rect x="22" y="18" width="144" height="25" rx="12.5" fill="#21142f" stroke="#664485" />
+      <circle cx="37" cy="30.5" r="3" fill="#7cebb6" className="pa-pulse" />
+      <text x="48" y="34" fill="#e5d4f1" fontSize="9" fontWeight="700" letterSpacing="1.1">ENGINE COACH</text>
+      <text x="376" y="32" fill="#a589b9" fontSize="7.5" fontWeight="650" textAnchor="end" letterSpacing="0.9">18 PLY SEARCH</text>
 
-      {/* pedestal */}
-      <path d="M 160 226 L 252 226 L 260 240 L 152 240 Z" fill="url(#chess-base)" stroke="#6d28d9" strokeWidth="1" opacity="0.95" />
-      <rect x="142" y="240" width="128" height="15" rx="7" fill="#160433" stroke="#6d28d9" strokeWidth="1" />
-      <line x1="152" y1="241.5" x2="260" y2="241.5" stroke="rgba(217,184,255,0.35)" strokeWidth="1" />
+      <g transform="rotate(-2 149 152)">
+        <rect x={boardX - 8} y={boardY - 8} width="216" height="216" rx="13" fill="#0a0910" stroke="#9b70ba" strokeWidth="1.4" opacity="0.96" />
+        <rect x="32" y={boardY} width="7" height="200" rx="3.5" fill="url(#chess-eval)" />
+        <path d={`M32 ${boardY}H39V${boardY + 57}H32Z`} fill="#292132" />
+        <text x="35.5" y={boardY + 214} fill="#a9f0c1" fontSize="8" fontWeight="700" textAnchor="middle">+0.8</text>
 
-      {/* the pawn — soft rim via stroke; no SVG blur filter (expensive under CSS anim). */}
-      <g>
-        <circle
-          cx="205"
-          cy="92"
-          r="25"
-          fill="url(#chess-piece)"
-          stroke="#c084fc"
-          strokeWidth="2"
-        />
-        <path
-          d="M 178 124
-             C 178 116 184 111 192 111
-             L 218 111
-             C 226 111 232 116 232 124
-             C 232 132 226 137 218 137
-             L 192 137
-             C 184 137 178 132 178 124
-             Z"
-          fill="url(#chess-base)"
-          stroke="#c084fc"
-          strokeWidth="2"
-        />
-        <path
-          d="M 187 135
-             C 181 158 168 185 164 218
-             L 246 218
-             C 242 185 229 158 223 135
-             Z"
-          fill="url(#chess-piece)"
-          stroke="#c084fc"
-          strokeWidth="2"
-        />
-        <path
-          d="M 171 218
-             C 171 207 180 200 192 200
-             L 218 200
-             C 230 200 239 207 239 218
-             Z"
-          fill="url(#chess-base)"
-          stroke="#c084fc"
-          strokeWidth="2"
-        />
+        <rect x={boardX - 1} y={boardY - 1} width="202" height="202" rx="4" fill="#0c0b12" stroke="#d0a6eb" strokeWidth="1.4" />
+        <g>{squares}</g>
+        <rect x={boardX + 3 * cell} y={boardY + 4 * cell} width={cell} height={cell} fill="#ffd166" opacity="0.56" />
+        <rect x={boardX + 2 * cell} y={boardY + 5 * cell} width={cell} height={cell} fill="#7af0c4" opacity="0.52" className="pa-pulse" />
+
+        <g fontFamily="Georgia, 'Times New Roman', serif" fontSize="22" textAnchor="middle">
+          {pieces.map(([piece, file, rank, side], i) => (
+            <text
+              key={i}
+              x={boardX + file * cell + cell / 2}
+              y={boardY + rank * cell + 20}
+              fill={side === 'white' ? '#fffdf7' : '#23202b'}
+              stroke={side === 'white' ? '#4b4255' : '#eadff0'}
+              strokeWidth={side === 'white' ? 0.45 : 0.65}
+              paintOrder="stroke"
+            >
+              {piece}
+            </text>
+          ))}
+        </g>
+
+        <path d="M111 190 C112 169 121 151 136 142" fill="none" stroke="#7af0c4" strokeWidth="4.5" strokeLinecap="round" opacity="0.96" />
+        <polygon points="138,141 128,141 135,150" fill="#7af0c4" />
       </g>
 
-      {/* circuitry running through the piece */}
-      <g fill="none" stroke="#d9b8ff" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.58">
-        <path d="M 205 92 L 205 212" />
-        <path d="M 205 146 L 190 162" />
-        <path d="M 205 178 L 184 192" />
-        <path d="M 205 156 L 220 170" />
-        <path d="M 205 184 L 226 198" />
-      </g>
-      <g fill="#ffd166">
-        {traceNodes.map(([x, y], i) => (
-          <circle key={i} cx={x} cy={y} r="2.2" className={i % 3 === 0 ? 'pa-pulse' : undefined} style={i % 3 === 0 ? { animationDelay: `${(i % 5) * 0.5}s` } : undefined} opacity={i % 3 === 0 ? 1 : 0.75} />
-        ))}
-      </g>
+      <rect x="267" y="65" width="111" height="136" rx="16" fill="url(#chess-panel)" stroke="#8561a2" strokeWidth="1.2" />
+      <text x="281" y="86" fill="#b397c8" fontSize="7.5" fontWeight="700" letterSpacing="1">BEST LINE</text>
+      <text x="281" y="116" fill="#fff9ff" fontSize="22" fontWeight="700">Nxd5</text>
+      <text x="364" y="115" fill="#91efb1" fontSize="10" fontWeight="700" textAnchor="end">+0.82</text>
+      <path d="M280 128H365" stroke="#503c5f" />
+      <text x="281" y="147" fill="#9f86b2" fontSize="7.5" fontWeight="650">ALTERNATIVES</text>
+      <rect x="280" y="157" width="39" height="23" rx="11.5" fill="#2e213a" />
+      <text x="299.5" y="172" fill="#d9cbe3" fontSize="8.5" fontWeight="650" textAnchor="middle">O-O</text>
+      <rect x="324" y="157" width="41" height="23" rx="11.5" fill="#2e213a" />
+      <text x="344.5" y="172" fill="#d9cbe3" fontSize="8.5" fontWeight="650" textAnchor="middle">Qc2</text>
+      <text x="281" y="191" fill="#7e6c8d" fontSize="7">1.2M positions searched</text>
 
-      {/* a thought forming */}
-      <circle cx="235" cy="58" r="2" fill="#d9b8ff" opacity="0.7" />
-      <circle cx="252" cy="46" r="3" fill="#d9b8ff" opacity="0.85" />
-      <circle cx="270" cy="36" r="4" fill="#d9b8ff" className="pa-twinkle" />
-      <Sparkle x={290} y={24} s={9} fill="#ffd166" className="pa-twinkle" style={{ animationDelay: '1.5s' }} />
+      <rect x="267" y="213" width="111" height="50" rx="14" fill="#192a25" stroke="#4b8b70" strokeWidth="1.2" />
+      <circle cx="281" cy="229" r="3.5" fill="#7aefb1" className="pa-pulse" />
+      <text x="291" y="232" fill="#cdf7dc" fontSize="9" fontWeight="700">Strong move</text>
+      <text x="281" y="248" fill="#8eaa9d" fontSize="7.5">Wins control of the centre</text>
 
-      <Sparkle x={70} y={198} s={6} fill="#d9b8ff" opacity={0.7} />
-      <Sparkle x={332} y={70} s={8} fill="#d9b8ff" className="pa-twinkle" style={{ animationDelay: '2s' }} />
-      <Sparkle x={110} y={66} s={5} fill="#ffd166" opacity={0.8} />
+      <text x="337" y="294" fill="#d8b6ef" fontFamily="Georgia, serif" fontSize="54" textAnchor="middle" opacity="0.08">♞</text>
+      <Sparkle x={20} y={72} s={6} fill="#d6a6ff" className="pa-twinkle" style={{ animationDelay: '0.6s' }} />
+      <Sparkle x={384} y={91} s={7} fill="#ffd166" className="pa-twinkle" style={{ animationDelay: '2.1s' }} opacity={0.75} />
     </svg>
   );
 }

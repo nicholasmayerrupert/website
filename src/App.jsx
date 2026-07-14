@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import NavBar from './NavBar';
 import Hero from './Hero';
+import './Portfolio.css';
 
 const About = lazy(() => import('./About'));
 const TileGrid = lazy(() => import('./TileGrid'));

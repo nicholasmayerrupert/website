@@ -1,6 +1,6 @@
 /* src/ProjectArt.css
    Shared animation classes for the hand-drawn project card artwork.
-   All classes are prefixed pa- to avoid collisions with MagicBento styles. */
+   All classes are prefixed pa- to avoid collisions with portfolio styles. */
 
 .project-art {
   position: absolute;

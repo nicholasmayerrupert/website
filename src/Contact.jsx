@@ -265,29 +265,26 @@ function PongOverlay() {
     };
   }, []);
 
-    return (
+  return (
     <div
-        ref={overlayRef}
-        className="absolute inset-0 z-30 pointer-events-none" // <-- ignore clicks by default
-        aria-hidden="false"
+      ref={overlayRef}
+      className="pong-layer"
+      aria-hidden="false"
     >
-        <canvas
+      <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none select-none"
+        className="pong-layer__canvas"
         role="img"
         aria-label="Pong overlay"
-        />
-        {/* Left control strip only (captures touch/mouse) */}
-        <div
+      />
+      <div
         ref={ctrlRef}
-        className="absolute inset-y-0 left-0 pointer-events-auto touch-none select-none
-                    w-24 sm:w-40 md:w-56 lg:w-64" // <-- much narrower than 65%
+        className="pong-layer__control"
         style={{ touchAction: 'none', WebkitUserSelect: 'none' }}
         aria-hidden="true"
-        />
+      />
     </div>
-    );
-
+  );
 }
 
 
@@ -307,39 +304,45 @@ const Contact = () => {
   ];
 
   return (
-    <div className="relative bg-dark py-12 overflow-hidden">
-      {/* Falling-sand background */}
-      <PongOverlay />
+    <section className="portfolio-section contact-section">
+      <div className="portfolio-shell">
+        <div className="contact-stage portfolio-reveal">
+          <PongOverlay />
 
+          <div className="contact-stage__content">
+            <p className="portfolio-eyebrow">Get in touch</p>
+            <h2>Want to work together?</h2>
 
+            <a className="contact-email" href="mailto:njmrme@gmail.com">
+              <span>Start a conversation</span>
+              <strong>njmrme@gmail.com</strong>
+              <span className="contact-email__arrow" aria-hidden="true">↗</span>
+            </a>
 
-
-      {/* Foreground content */}
-      <div className="relative z-10 container mx-auto">
-        <h2 className="text-4xl font-bold mb-8 text-center text-white">Contact Me</h2>
-
-        <div className="flex justify-center">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
-            {contactItems.map((item, index) => (
-              <a
-                key={index}
-                href={item.link}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="bg-gray-900 rounded-lg shadow-md p-6 flex flex-col items-center hover:bg-gray-800 transition duration-300"
-              >
-                <div className="text-[#8400ff] mb-4">{item.icon}</div>
-                <h3 className="text-xl font-semibold text-white">{item.label}</h3>
-              </a>
-            ))}
+            <div className="contact-links" aria-label="Social links">
+              {contactItems.map((item) => (
+                <a
+                  key={item.label}
+                  href={item.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                  <span aria-hidden="true">↗</span>
+                </a>
+              ))}
+            </div>
           </div>
+
         </div>
 
-        <div className="mt-8 text-center">
-          <p className="text-white">Email: njmrme@gmail.com</p>
-        </div>
+        <footer className="site-footer">
+          <span>© 2026 Nicholas Mayer-Rupert</span>
+          <a href="#home">Back to top ↑</a>
+        </footer>
       </div>
-    </div>
+    </section>
   );
 };
 

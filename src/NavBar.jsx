@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 
 const NAV_ITEMS = [
   { label: 'HOME', href: '#home' },
-  { label: 'SKILLS', href: '#skills' },
-  { label: 'PROJECTS', href: '#projects' },
+  { label: 'ABOUT', href: '#skills' },
+  { label: 'WORK', href: '#projects' },
   { label: 'CONTACT', href: '#contact' },
 ];
 

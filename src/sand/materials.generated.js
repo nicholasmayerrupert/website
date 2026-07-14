@@ -127,6 +127,7 @@ export const MINING_PROGRESS_DIVISOR = 5;
 // Animation-only packed ABGR colors the renderer swaps in per-frame.
 export const PACKED_FIRE = 0xb8226cff;
 export const PACKED_FIRE_HOT = 0x9e50cdff;
+export const PACKED_LAVA_WARM = 0xc81870ff;
 export const PACKED_LAVA_HOT = 0xc83090ff;
 export const PACKED_CRYSTAL_CORE = 0xf0fffdf8;
 export const PACKED_MYCELIUM_NODULE = 0xeadc7db4;

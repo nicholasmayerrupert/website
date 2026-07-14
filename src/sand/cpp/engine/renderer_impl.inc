@@ -10,7 +10,8 @@
 // makes the grain visibly "reapply" on a vertical shift, because WORLD_SHIFT_ROWS
 // (96) is not a multiple of the 64-tile, so the slid texture and the re-rendered
 // cells would disagree on the tile phase. It is identical on the full and per-rect
-// paths. Steam shimmers (random skip), fire flickers, lava sparkles.
+// paths. Steam shimmers (random skip), fire flickers, and lava has stable molten
+// patches.
 //
 // JS owns the camera/presentation; it calls render_full or render_dirty_rects,
 // then uploads renderPixels (putImageData) and blits with drawImage.
@@ -408,7 +409,19 @@ void Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       if (m == STEAM) { if (renderRand() <= 0.18) c = 0; }
       else if (m == FIRE) { if (renderRand() < 0.35) c = PACKED_FIRE_HOT; }
 #endif
-      else if (m == LAVA) { if (((wx * 17 + wy * 31) & 7) == 0) c = PACKED_LAVA_HOT; }
+      else if (m == LAVA) {
+        // Blend overlapping samples from the existing world-locked noise tile.
+        // Neighbouring cells share most of these samples, producing irregular
+        // molten patches instead of the old modulo pattern's diagonal stripes.
+        int nx = wx & 63, ny = wy & 63;
+        int molten = (int)renderNoise[(ny << 6) + nx] * 2
+                   + (int)renderNoise[(ny << 6) + ((nx - 1) & 63)]
+                   + (int)renderNoise[(ny << 6) + ((nx + 1) & 63)]
+                   + (int)renderNoise[(((ny - 1) & 63) << 6) + nx]
+                   + (int)renderNoise[(((ny + 1) & 63) << 6) + nx];
+        if (molten >= 31) c = PACKED_LAVA_HOT;
+        else if (molten >= 25) c = PACKED_LAVA_WARM;
+      }
       else if (m == CRYSTAL) { if ((renderCellHash(wx, wy) & 7u) == 0u) c = PACKED_CRYSTAL_CORE; }
       else if (m == MYCELIUM || m == MYCELIUM_SPORE) {
         if (m == MYCELIUM_SPORE || myceliumNoduleAt(wx, wy)) c = PACKED_MYCELIUM_NODULE;

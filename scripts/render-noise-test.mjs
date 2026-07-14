@@ -16,6 +16,7 @@
 // Run: node scripts/render-noise-test.mjs   (also part of `npm test`)
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { MAT } from '../src/sand/materials.js';
 
 const COLS = 256, ROWS = 256, SEED = 0xBEEF77; // chunk-aligned (multiples of 32)
 const VISR = 96, MARGIN = 40;                  // MARGIN matches CAM_SHIFT_EDGE_MARGIN
@@ -25,6 +26,35 @@ const check = (name, cond, extra = '') => { console.log(`  ${cond ? 'ok  ' : 'FA
 
 await initSandWasm();
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
+
+console.log('lava texture');
+{
+  const size = 64;
+  const e = createEngineWasm({ cols: size, rows: size, worldSeed: SEED, sinksOn: false, infinite: false });
+  e.getGrid().fill(MAT.LAVA);
+  e.renderFull();
+  const px = new Uint32Array(e.getRenderPixels().slice().buffer);
+  const colors = new Map();
+  for (const c of px) colors.set(c, (colors.get(c) || 0) + 1);
+  check('lava uses a layered molten palette', colors.size >= 3, `(${colors.size} colors)`);
+
+  // A modulo stripe makes nearly every highlighted cell continue along the same
+  // diagonal. The mottled texture should have varied local directions instead.
+  const base = [...colors].sort((a, b) => b[1] - a[1])[0][0];
+  let highlighted = 0, diagonalContinuation = 0, orthogonalNeighbour = 0;
+  for (let y = 1; y < size - 1; y++) for (let x = 1; x < size - 1; x++) {
+    const k = y * size + x;
+    if (px[k] === base) continue;
+    highlighted++;
+    if (px[k - size - 1] !== base || px[k + size + 1] !== base) diagonalContinuation++;
+    if (px[k - 1] !== base || px[k + 1] !== base || px[k - size] !== base || px[k + size] !== base) orthogonalNeighbour++;
+  }
+  check('lava highlights form local patches', highlighted > 0 && orthogonalNeighbour / highlighted > 0.55,
+    `(${orthogonalNeighbour}/${highlighted} touch orthogonally)`);
+  check('lava highlights do not resolve into diagonal stripes', highlighted > 0 && diagonalContinuation / highlighted < 0.85,
+    `(${diagonalContinuation}/${highlighted} continue diagonally)`);
+  e.destroy();
+}
 
 // Pan DOWN until one vertical world-shift fires; return its dy (>0) or 0 if none.
 function shiftDownOnce(e) {

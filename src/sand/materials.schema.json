@@ -117,6 +117,7 @@
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",
     "PACKED_FIRE": "0xb8226cff",
     "PACKED_FIRE_HOT": "0x9e50cdff",
+    "PACKED_LAVA_WARM": "0xc81870ff",
     "PACKED_LAVA_HOT": "0xc83090ff",
     "PACKED_CRYSTAL_CORE": "0xf0fffdf8",
     "PACKED_MYCELIUM_NODULE": "0xeadc7db4",

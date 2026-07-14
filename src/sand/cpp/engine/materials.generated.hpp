@@ -50,6 +50,7 @@ static const uint8_t  DURABILITY[TABLE]     = {0, 2, 0, 8, 0, 0, 0, 2, 4, 2, 0, 
 static const uint8_t  MAT_EMISSION[TABLE]   = {0, 0, 0, 0, 0, 245, 0, 0, 0, 0, 0, 230, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 132, 58, 112, 98, 95, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static const uint32_t PACKED_FIRE = 0xb8226cffu;
 static const uint32_t PACKED_FIRE_HOT = 0x9e50cdffu;
+static const uint32_t PACKED_LAVA_WARM = 0xc81870ffu;
 static const uint32_t PACKED_LAVA_HOT = 0xc83090ffu;
 static const uint32_t PACKED_CRYSTAL_CORE = 0xf0fffdf8u;
 static const uint32_t PACKED_MYCELIUM_NODULE = 0xeadc7db4u;

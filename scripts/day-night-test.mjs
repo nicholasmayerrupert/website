@@ -8,7 +8,7 @@ import {
   dayPhaseAt,
   sampleDayNight,
 } from '../src/sand/game/dayNightCycle.js';
-import { paletteForPhase } from '../src/sand/game/parallaxBackground.js';
+import { cloudCycleOffset, paletteForPhase } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('day/night cycle');
@@ -62,6 +62,10 @@ check('skylight stays moonlit and bounded', bounded);
 check('terrain skylight uses four-point performance steps', quantized);
 check('cycle joins smoothly at midnight',
   Math.abs(sampleDayNight(0.999999).rawSkyLight - sampleDayNight(0.000001).rawSkyLight) < 0.001);
+check('cloud travel is phase-driven and loops exactly once per day',
+  close(cloudCycleOffset(0.25, 170), 170) &&
+  close(cloudCycleOffset(0.5, 170), 340) &&
+  close(cloudCycleOffset(0, 170), cloudCycleOffset(1, 170)));
 
 const failures = done();
 process.exit(failures === 0 ? 0 : 1);

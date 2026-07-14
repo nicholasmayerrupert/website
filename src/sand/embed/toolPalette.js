@@ -342,7 +342,8 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let dropdownRemoveTimer = 0;
   let timeAuto = true;
   let timePhase = 0.25;
-  let timeApplyTimer = 0;
+  let timeApplyFrame = 0;
+  let lastAppliedTimePhase = NaN;
   let timePollTimer = 0;
 
   const wrap = document.createElement('div');
@@ -468,13 +469,15 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   timeControl.append(timeHead, timeRange);
 
   const flushTimePhase = () => {
-    clearTimeout(timeApplyTimer);
-    timeApplyTimer = 0;
+    cancelAnimationFrame(timeApplyFrame);
+    timeApplyFrame = 0;
+    if (timeAuto || timePhase === lastAppliedTimePhase) return;
+    lastAppliedTimePhase = timePhase;
     onSetTime?.(timePhase);
   };
   const queueTimePhase = () => {
-    clearTimeout(timeApplyTimer);
-    timeApplyTimer = setTimeout(flushTimePhase, 90);
+    if (timeApplyFrame) return;
+    timeApplyFrame = requestAnimationFrame(flushTimePhase);
   };
   timeRange.addEventListener('input', () => {
     timeAuto = false;
@@ -485,9 +488,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   timeRange.addEventListener('change', flushTimePhase);
   timeAutoButton.addEventListener('click', () => {
     // A queued drag sample must never fire after Auto and pin the light again.
-    clearTimeout(timeApplyTimer);
-    timeApplyTimer = 0;
+    cancelAnimationFrame(timeApplyFrame);
+    timeApplyFrame = 0;
     timeAuto = true;
+    lastAppliedTimePhase = NaN;
     onSetTime?.(null);
     syncTimeState();
   });
@@ -565,7 +569,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   }
 
   function syncTimeState() {
-    if (timeApplyTimer) return;
+    if (timeApplyFrame) return;
     const state = getTimeState?.();
     if (!state || !Number.isFinite(state.phase)) return;
     timeAuto = !state.overridden;
@@ -670,7 +674,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     destroy() {
       cancelAnimationFrame(nameMotionFrame);
       clearTimeout(dropdownRemoveTimer);
-      clearTimeout(timeApplyTimer);
+      cancelAnimationFrame(timeApplyFrame);
       clearInterval(timePollTimer);
       wrap.remove();
     },

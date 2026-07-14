@@ -270,7 +270,8 @@ Every creative and survival presentation runs a render-only ten-minute day/night
 cycle: dawn at mount, noon at 2:30, dusk around 5:30, midnight at 7:30, then dawn
 again at 10:00. The sun remains above the horizon for six minutes, and the sky
 passes through orange before pink at sunset (reversed at sunrise). Stars, textured
-parallax mountains, the sun, and moon share that clock; clouds drift independently.
+parallax mountains, the sun, moon, and clouds share that clock; scrubbing creative
+time moves the entire sky together.
 Exposed terrain uses the renderer's existing skylight input,
 from bright moonlight at night to full light at noon; caves and material emission
 keep their independent lighting behavior. The cycle does not affect simulation,
@@ -278,8 +279,9 @@ creature AI, reactions, or networking.
 
 Creative's palette has a compact time slider on desktop and mobile. Dragging it
 holds any chosen phase; `Auto` resumes the wall-clock cycle. Rapid slider input
-is coalesced so lighting solves stay responsive, and resuming Auto cancels any
-queued manual update.
+is coalesced to one update per animation frame so the sky tracks the thumb while
+avoiding redundant lighting solves, and resuming Auto cancels any queued manual
+update.
 
 The creative material field opens an animated, searchable dropdown whose 9×9
 pixel samples reuse each material's generated base color and texture amplitude.

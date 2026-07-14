@@ -122,7 +122,6 @@ export function createSandGame(container, opts = {}) {
     // engine build. Engine recreation reapplies its current quantized skylight.
     dayNight: null,
     dayVisualKey: 0,
-    backgroundMotionMs: 0,
     dayPhaseOverride: null,
     appliedSkyLight: -1,
 
@@ -422,8 +421,10 @@ export function createSandGame(container, opts = {}) {
         max: SIZING.zoomInMax ?? 8,
       };
     },
-    setDayPhase(phase) { loop.setDayPhase(phase); loop.render(true); },
-    clearDayPhase() { loop.clearDayPhase(); loop.render(true); },
+    // The presenter detects quantized skylight changes itself. Phase-only
+    // scrubs redraw the parallax sky without forcing cell-texture rebuilds.
+    setDayPhase(phase) { loop.setDayPhase(phase); loop.render(false); },
+    clearDayPhase() { loop.clearDayPhase(); loop.render(false); },
     getDayNight() { return loop.getDayNight(); },
     // Creative palette selection (material/seed/eraser/cube/creature).
     setCreativeMaterial(kind, value) {

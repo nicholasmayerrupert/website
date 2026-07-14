@@ -26,6 +26,7 @@ const HORIZON_RATIO = 0.36;
 const SURFACE_CAM_Y = -120;
 const MAX_VERTICAL_DRIFT_UP = 18;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
+const CLOUD_CYCLE_TILES = 4;
 
 function hash(n) {
   let x = n | 0;
@@ -170,14 +171,22 @@ function drawCloud(ctx, x, y, size, color) {
   fillRect(ctx, x + size * 5, y + size, size * 2, size * 3, color);
 }
 
-function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period, motionMs) {
-  const drift = (motionMs / 1000) * (0.75 + depth * 4.5);
+export function cloudCycleOffset(phase, period) {
+  return normalizeDayPhase(phase) * period * CLOUD_CYCLE_TILES;
+}
+
+function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period, phase) {
+  const drift = cloudCycleOffset(phase, period);
   const offX = camX * depth - w * 0.5 - drift;
   const offY = backgroundDriftY(camY) * depth;
   const start = Math.floor((offX - 40) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
     for (let i = 0; i < count; i++) {
-      const seed = tile * 43 + i * 593;
+      // The cloud field repeats after exactly four tiles, matching its travel
+      // over a day so midnight joins dawn without a visible position jump.
+      const tileIndex = Math.round(tile / period);
+      const cycleTile = ((tileIndex % CLOUD_CYCLE_TILES) + CLOUD_CYCLE_TILES) % CLOUD_CYCLE_TILES;
+      const seed = cycleTile * 1847 + i * 593;
       const size = 2 + Math.floor(rand01(seed + 2) * 2);
       const x = tile + rand01(seed) * period - offX;
       const y = 10 + rand01(seed + 1) * Math.max(16, horizon * 0.34) - offY;
@@ -303,13 +312,12 @@ export function createParallaxBackground(container) {
   // the pan rate grow and shrink in lockstep with the simulation — no desync. The
   // horizon stays at a fixed fraction of the screen because it's a ratio of the
   // logical height.
-  const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0, motionMs = 0 } = {}) => {
+  const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0 } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
-    const motionKey = Math.floor(motionMs / 100);
-    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}:${dayVisualKey}:${motionKey}`;
+    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}:${dayVisualKey}`;
     if (key === lastKey) return;
     lastKey = key;
 
@@ -334,8 +342,8 @@ export function createParallaxBackground(container) {
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
     drawCelestialBodies(ctx, w, skyHeight, dayNight);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, motionMs);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, motionMs);
+    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
+    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
     drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 9, 13, palette.ridgeFar, 3.2, palette.skyLow, 1);
     drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 24, 17, palette.ridgeMid, 7.9, palette.skyLow, 2);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 43, 21, palette.ridgeNear, 12.4, palette.skyLow, 3);

@@ -32,7 +32,6 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       scale: ctx.bgZoomScale(),
       dayNight: ctx.dayNight,
       dayVisualKey: ctx.dayVisualKey,
-      motionMs: ctx.backgroundMotionMs,
     };
   };
 

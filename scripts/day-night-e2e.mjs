@@ -93,7 +93,12 @@ try {
   const cloudFrameA = await backgroundHash();
   await page.waitForTimeout(1300);
   const cloudFrameB = await backgroundHash();
-  check('clouds drift while time and camera are held still', cloudFrameA !== cloudFrameB);
+  check('clouds hold still when manual time and camera are held still', cloudFrameA === cloudFrameB);
+  await page.evaluate(() => window.__sandTest.setDayPhase(0.62));
+  const cloudFrameC = await backgroundHash();
+  await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
+  const cloudFrameA2 = await backgroundHash();
+  check('clouds move with manual time and return deterministically', cloudFrameC !== cloudFrameA && cloudFrameA2 === cloudFrameA);
 
   await page.evaluate(() => window.__sandTest.clearDayPhase());
   const desktopTime = page.locator('sand-game').locator('.sg-time');
@@ -114,9 +119,27 @@ try {
   check('desktop slider selects a continuous manual phase',
     await desktopTime.getAttribute('data-mode') === 'manual' && await desktopTime.locator('.sg-time-value').textContent() === '12:00 PM');
 
+  const liveInput = await desktopRange.evaluate(async (el) => {
+    el.value = '0.63';
+    const started = performance.now();
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    let frames = 0;
+    while (frames < 8) {
+      await new Promise(requestAnimationFrame);
+      frames++;
+      const state = window.__sandTest.getDayNight();
+      if (state.overridden && Math.abs(state.phase - 0.63) < 1e-6) {
+        return { frames, elapsed: performance.now() - started };
+      }
+    }
+    return { frames, elapsed: performance.now() - started };
+  });
+  check(`desktop slider applies during drag (${liveInput.frames} frame, ${liveInput.elapsed.toFixed(1)}ms)`,
+    liveInput.frames <= 2 && liveInput.elapsed < 80);
+
   // Reproduce the old failure: several drag samples are queued, then Auto is
-  // selected before the throttle fires. No delayed noon sample may pin the
-  // renderer after the live dawn phase has been restored.
+  // selected before the animation-frame update. No delayed noon sample may pin
+  // the renderer after the live dawn phase has been restored.
   await desktopRange.evaluate((el) => {
     for (const value of ['0.2', '0.8', '0.5']) {
       el.value = value;

@@ -213,9 +213,9 @@ function renderSwatch(color, egg = false) {
 
 const normalizeTimePhase = (phase) => ((phase % 1) + 1) % 1;
 const timeTone = (phase) => {
-  if (phase < 0.125 || phase >= 0.875) return 'night';
-  if (phase < 0.375) return 'dawn';
-  if (phase < 0.625) return 'noon';
+  if (phase < 0.12 || phase >= 0.88) return 'night';
+  if (phase < 0.38) return 'dawn';
+  if (phase < 0.62) return 'noon';
   return 'dusk';
 };
 const formatTime = (phase) => {

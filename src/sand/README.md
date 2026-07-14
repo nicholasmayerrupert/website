@@ -267,9 +267,11 @@ the keyboard at a mobile-safe text size.
 ### Day/night
 
 Every creative and survival presentation runs a render-only ten-minute day/night
-cycle: dawn at mount, noon at 2:30, dusk at 5:00, midnight at 7:30, then dawn
-again at 10:00. The parallax sky, stars, clouds, mountains, sun, and moon
-share that clock. Exposed terrain uses the renderer's existing skylight input,
+cycle: dawn at mount, noon at 2:30, dusk around 5:30, midnight at 7:30, then dawn
+again at 10:00. The sun remains above the horizon for six minutes, and the sky
+passes through orange before pink at sunset (reversed at sunrise). Stars, textured
+parallax mountains, the sun, and moon share that clock; clouds drift independently.
+Exposed terrain uses the renderer's existing skylight input,
 from bright moonlight at night to full light at noon; caves and material emission
 keep their independent lighting behavior. The cycle does not affect simulation,
 creature AI, reactions, or networking.

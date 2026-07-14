@@ -383,6 +383,7 @@ export function initSandWasm() {
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number']),
         glSetDebugHitboxes: c('engine_gl_set_debug_hitboxes', null, ['number', 'number']),
         glSetPlayers: c('engine_gl_set_players', null, ['number', 'number', 'number', 'number', 'number']),
+        glSetSurvivalPreview: c('engine_gl_set_survival_preview', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
         glSetCreatures: c('engine_gl_set_creatures', null, ['number', 'number', 'number', 'number']),
         glShift: c('engine_gl_shift', null, ['number', 'number']),
@@ -607,6 +608,17 @@ export function createEngineWasm({
       } else {
         M.glSetPlayers(ptr, 0, 0, 0, ownId | 0);
       }
+    },
+    glSetSurvivalPreview(on, footprint, erasing, target = null) {
+      M.glSetSurvivalPreview(
+        ptr,
+        on ? 1 : 0,
+        footprint | 0,
+        erasing ? 1 : 0,
+        target ? 1 : 0,
+        target?.x | 0,
+        target?.y | 0,
+      );
     },
     // Dropped items to overlay. Host/local draws the engine's own items. A client
     // passes a packed [id,kind,material,count,x,y,life] Float32Array of the host's

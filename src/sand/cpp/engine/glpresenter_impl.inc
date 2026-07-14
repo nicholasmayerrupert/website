@@ -90,6 +90,14 @@ void GLPresenter::glSetPlayers(int useExternal, const float* data, int count, in
   if (glUseExtPlayers) glExtPlayers.assign(data, data + (size_t)count * GLP_STRIDE);
   else glExtPlayers.clear();
 }
+void GLPresenter::glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y) {
+  glSurvivalPreviewOn = on != 0;
+  glSurvivalPreviewFootprint = E.clampSurvivalFootprintId(footprint);
+  glSurvivalPreviewErasing = erasing != 0;
+  glSurvivalPreviewLocked = locked != 0;
+  glSurvivalPreviewX = x;
+  glSurvivalPreviewY = y;
+}
 // Client E.itemsys.items override: when external, glDrawItems draws these instead of the
 // engine's own (a client doesn't simulate the world, so it has no local E.itemsys.items).
 void GLPresenter::glSetItems(int useExternal, const float* data, int count) {
@@ -510,12 +518,20 @@ void GLPresenter::glDrawPreview() {
   if (E.cam.playModeOn && glOwnPlayerId) {
     Player* lp = nullptr;
     for (auto& pp : E.psys.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
+    // External snapshots use the authority's player id, while the sole local
+    // Player is a prediction body with its own replica id. It still owns the
+    // live aim and is therefore the correct hover-preview anchor.
+    if (!lp && glUseExtPlayers) for (auto& pp : E.psys.players) if (pp.active) { lp = &pp; break; }
     if (lp) {
       int ax = (int)std::floor(lp->aimX), ay = (int)std::floor(lp->aimY);
       bool toBg = (E.cam.pointerBtns & 2) != 0;
       bool erasing = (lp->selectedTool == T_ERASER);
       const SurvivalFootprint* fp = nullptr;
-      if (E.survivalInventory) {
+      if (glSurvivalPreviewOn) {
+        erasing = glSurvivalPreviewErasing;
+        fp = &E.getSurvivalFootprint(glSurvivalPreviewFootprint);
+        if (glSurvivalPreviewLocked) { ax = glSurvivalPreviewX; ay = glSurvivalPreviewY; }
+      } else if (E.survivalInventory) {
         const InvSlot& sel = lp->inv[lp->selectedSlot];
         erasing = sel.isTool || sel.count <= 0;
         fp = &E.getSurvivalFootprint(*lp);

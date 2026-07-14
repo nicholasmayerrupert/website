@@ -3,6 +3,8 @@ import {
   DEFAULT_DAY_PHASE,
   NIGHT_SKY_LIGHT,
   NOON_SKY_LIGHT,
+  SUNRISE_PHASE,
+  SUNSET_PHASE,
   dayPhaseAt,
   sampleDayNight,
 } from '../src/sand/game/dayNightCycle.js';
@@ -20,9 +22,9 @@ check('clock starts at dawn and maps noon/sunset/midnight',
 check('clock wraps exactly after one cycle', close(dayPhaseAt(DAY_CYCLE_MS), DEFAULT_DAY_PHASE));
 
 const midnight = sampleDayNight(0);
-const sunrise = sampleDayNight(0.25);
+const sunrise = sampleDayNight(SUNRISE_PHASE);
 const noon = sampleDayNight(0.5);
-const sunset = sampleDayNight(0.75);
+const sunset = sampleDayNight(SUNSET_PHASE);
 check('midnight has moonlight, stars, and the moon at its apex',
   midnight.skyLight === NIGHT_SKY_LIGHT && midnight.starOpacity === 1 &&
   midnight.moonVisible && close(midnight.moonProgress, 0.5) && !midnight.sunVisible);
@@ -32,6 +34,8 @@ check('noon has full skylight, no stars, and the sun at its apex',
 check('sun and moon meet their opposite horizons at sunrise/sunset',
   sunrise.sunVisible && sunrise.moonVisible && close(sunrise.sunProgress, 0) && close(sunrise.moonProgress, 1) &&
   sunset.sunVisible && sunset.moonVisible && close(sunset.sunProgress, 1) && close(sunset.moonProgress, 0));
+check('daylight is extended to six minutes of the ten-minute cycle',
+  close(SUNRISE_PHASE, 0.20) && close(SUNSET_PHASE, 0.80));
 check('dawn and dusk terrain are visibly brighter than midnight',
   sunrise.skyLight >= midnight.skyLight + 60 && sunset.skyLight >= midnight.skyLight + 60);
 
@@ -45,6 +49,8 @@ check('day palette reaches the intended noon colors', JSON.stringify(paletteForP
   cloudDark: '#d8dedc', cloudLight: '#f4f2e8',
   ridgeFar: '#738f98', ridgeMid: '#587579', ridgeNear: '#3d5958', ridgeDeep: '#242a2b',
 }));
+check('sunset transitions from blue through orange before pink',
+  paletteForPhase(0.72).skyLow === '#f0a05f' && paletteForPhase(0.80).skyLow === '#e27d83');
 
 let bounded = true, quantized = true;
 for (let i = 0; i <= 1000; i++) {

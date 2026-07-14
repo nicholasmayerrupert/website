@@ -58,6 +58,15 @@ class GLPresenter {
   bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
   std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own,animState,animFrame] per player
 
+  // The authority owns survival inventory/tool state, while this engine is only
+  // a presentation replica. Keep the tiny hover-preview state explicit instead
+  // of guessing it from the predictor's deliberately inventory-free Player.
+  bool glSurvivalPreviewOn = false;
+  int glSurvivalPreviewFootprint = SURVIVAL_FOOTPRINT_DEFAULT_ID;
+  bool glSurvivalPreviewErasing = true;
+  bool glSurvivalPreviewLocked = false;
+  int glSurvivalPreviewX = 0, glSurvivalPreviewY = 0;
+
   bool glUseExtItems = false;           // client renders dropped items from host snapshots
   std::vector<float> glExtItems;        // packed [id,kind,material,count,px,py,life] per item
   bool glUseExtCreatures = false;       // client renders authoritative creatures
@@ -75,6 +84,7 @@ class GLPresenter {
   void glSetFlags(int gutterOn, int snapOff);
   void glSetDebugHitboxes(int on);
   void glSetPlayers(int useExternal, const float* data, int count, int ownId);
+  void glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y);
   void glSetItems(int useExternal, const float* data, int count);
   void glSetCreatures(int useExternal, const float* data, int count);
   void glUploadFull(GLuint tex);

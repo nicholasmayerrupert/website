@@ -7,20 +7,20 @@ const NIGHT = Object.freeze({
   cloudDark: '#b8c7ca', cloudLight: '#e6ece8',
   ridgeFar: '#31455b', ridgeMid: '#263c44', ridgeNear: '#1a2d2f', ridgeDeep: '#14171a',
 });
-const DAWN = Object.freeze({
-  skyTop: '#25233f', skyMid: '#8a5362', skyLow: '#d58a68',
-  cloudDark: '#c19a9e', cloudLight: '#ead0b2',
-  ridgeFar: '#625b6c', ridgeMid: '#4c4c56', ridgeNear: '#343b40', ridgeDeep: '#1b1f22',
+const TWILIGHT = Object.freeze({
+  skyTop: '#352b50', skyMid: '#a6536c', skyLow: '#e27d83',
+  cloudDark: '#bc8e9d', cloudLight: '#edc4b4',
+  ridgeFar: '#6b586c', ridgeMid: '#514651', ridgeNear: '#37383f', ridgeDeep: '#1c1e22',
+});
+const GOLDEN = Object.freeze({
+  skyTop: '#4f7595', skyMid: '#d17a52', skyLow: '#f0a05f',
+  cloudDark: '#c5a28e', cloudLight: '#f5d5aa',
+  ridgeFar: '#7b6c68', ridgeMid: '#625955', ridgeNear: '#454845', ridgeDeep: '#252525',
 });
 const NOON = Object.freeze({
   skyTop: '#5d9dca', skyMid: '#8fc2d5', skyLow: '#c8d8c9',
   cloudDark: '#d8dedc', cloudLight: '#f4f2e8',
   ridgeFar: '#738f98', ridgeMid: '#587579', ridgeNear: '#3d5958', ridgeDeep: '#242a2b',
-});
-const DUSK = Object.freeze({
-  skyTop: '#2e243f', skyMid: '#8f4d5c', skyLow: '#cf795d',
-  cloudDark: '#bd8d95', cloudLight: '#e8c4a8',
-  ridgeFar: '#665667', ridgeMid: '#504750', ridgeNear: '#37383e', ridgeDeep: '#1c1e22',
 });
 const HORIZON_RATIO = 0.36;
 const SURFACE_CAM_Y = -120;
@@ -64,10 +64,15 @@ function mixPalette(a, b, t) {
 
 export function paletteForPhase(phase) {
   const p = normalizeDayPhase(phase);
-  if (p < 0.25) return mixPalette(NIGHT, DAWN, smooth01(p / 0.25));
-  if (p < 0.50) return mixPalette(DAWN, NOON, smooth01((p - 0.25) / 0.25));
-  if (p < 0.75) return mixPalette(NOON, DUSK, smooth01((p - 0.50) / 0.25));
-  return mixPalette(DUSK, NIGHT, smooth01((p - 0.75) / 0.25));
+  if (p < 0.12) return NIGHT;
+  if (p < 0.20) return mixPalette(NIGHT, TWILIGHT, smooth01((p - 0.12) / 0.08));
+  if (p < 0.30) return mixPalette(TWILIGHT, GOLDEN, smooth01((p - 0.20) / 0.10));
+  if (p < 0.38) return mixPalette(GOLDEN, NOON, smooth01((p - 0.30) / 0.08));
+  if (p < 0.62) return NOON;
+  if (p < 0.72) return mixPalette(NOON, GOLDEN, smooth01((p - 0.62) / 0.10));
+  if (p < 0.80) return mixPalette(GOLDEN, TWILIGHT, smooth01((p - 0.72) / 0.08));
+  if (p < 0.90) return mixPalette(TWILIGHT, NIGHT, smooth01((p - 0.80) / 0.10));
+  return NIGHT;
 }
 
 function backgroundDriftY(camY) {
@@ -165,8 +170,9 @@ function drawCloud(ctx, x, y, size, color) {
   fillRect(ctx, x + size * 5, y + size, size * 2, size * 3, color);
 }
 
-function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period) {
-  const offX = camX * depth - w * 0.5;
+function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period, motionMs) {
+  const drift = (motionMs / 1000) * (0.75 + depth * 4.5);
+  const offX = camX * depth - w * 0.5 - drift;
   const offY = backgroundDriftY(camY) * depth;
   const start = Math.floor((offX - 40) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
@@ -181,24 +187,79 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
 }
 
 function ridgeY(worldX, base, amp, seed) {
-  const a = Math.sin(worldX * 0.045 + seed) * amp;
-  const b = Math.sin(worldX * 0.017 + seed * 1.7) * amp * 0.65;
-  const c = Math.sin(worldX * 0.009 + seed * 2.9) * amp * 0.85;
-  return base + a + b + c;
+  const broad = Math.pow(Math.abs(Math.sin(worldX * 0.0105 + seed)), 1.7);
+  const shoulder = Math.pow(Math.abs(Math.sin(worldX * 0.022 + seed * 1.9)), 1.35);
+  const brokenEdge = Math.sin(worldX * 0.063 + seed * 3.1) * amp * 0.12;
+  return base + amp * 0.72 - broad * amp * 1.35 - shoulder * amp * 0.48 + brokenEdge;
 }
 
-function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed) {
+function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
+  const surfaceY = (x) => Math.round(ridgeY(x + offX, base - offY, amp, seed));
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(0, h);
   for (let x = 0; x <= w + 4; x += 4) {
-    ctx.lineTo(x, Math.round(ridgeY(x + offX, base - offY, amp, seed)));
+    ctx.lineTo(x, surfaceY(x));
   }
   ctx.lineTo(w + 4, h);
   ctx.closePath();
   ctx.fill();
+
+  ctx.save();
+  ctx.clip();
+
+  // A narrow crest light separates overlapping silhouettes while preserving
+  // the intentionally hard pixel edge.
+  ctx.strokeStyle = mixColor(color, skyLow, 0.34);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0; x <= w + 4; x += 4) {
+    const y = surfaceY(x) + 1;
+    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Alternating faces give each ridge structure as the camera pans.
+  const facetPeriod = 48 + detail * 12;
+  const firstFacet = Math.floor((offX - facetPeriod) / facetPeriod) * facetPeriod;
+  for (let worldX = firstFacet; worldX < offX + w + facetPeriod; worldX += facetPeriod) {
+    const x = worldX - offX;
+    const peakY = surfaceY(x);
+    const width = facetPeriod * (0.55 + rand01(worldX + seed * 101) * 0.3);
+    ctx.globalAlpha = 0.13 + detail * 0.025;
+    ctx.fillStyle = rand01(worldX + seed * 37) > 0.5 ? '#071116' : '#000000';
+    ctx.beginPath();
+    ctx.moveTo(x, peakY);
+    ctx.lineTo(x + width, peakY + amp * 1.5);
+    ctx.lineTo(x + width * 0.55, h);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = mixColor(color, skyLow, 0.52);
+    ctx.beginPath();
+    ctx.moveTo(x, peakY + 1);
+    ctx.lineTo(x - width * 0.28, peakY + amp * 0.62);
+    ctx.lineTo(x + width * 0.12, peakY + amp * 0.34);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Sparse deterministic ledges add texture without animated noise.
+  ctx.globalAlpha = 0.16 + detail * 0.025;
+  ctx.fillStyle = mixColor(color, skyLow, 0.58);
+  const textureStep = Math.max(12, 22 - detail * 2);
+  const firstMark = Math.floor((offX - textureStep) / textureStep) * textureStep;
+  for (let worldX = firstMark; worldX < offX + w + textureStep; worldX += textureStep) {
+    const x = Math.round(worldX - offX);
+    const y = surfaceY(x) + 5 + Math.floor(rand01(worldX + seed * 211) * (amp * 1.8 + 8));
+    const length = 2 + Math.floor(rand01(worldX + seed * 307) * (3 + detail));
+    ctx.fillRect(x, y, length, 1);
+    if (detail > 1 && rand01(worldX + seed * 401) > 0.6) ctx.fillRect(x + length - 1, y + 1, 1, 2);
+  }
+  ctx.restore();
 }
 
 export function createParallaxBackground(container) {
@@ -242,12 +303,13 @@ export function createParallaxBackground(container) {
   // the pan rate grow and shrink in lockstep with the simulation — no desync. The
   // horizon stays at a fixed fraction of the screen because it's a ratio of the
   // logical height.
-  const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0 } = {}) => {
+  const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0, motionMs = 0 } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;
     const qx = Math.round(camX * 4) / 4;
     const qy = Math.round(camY * 4) / 4;
-    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}:${dayVisualKey}`;
+    const motionKey = Math.floor(motionMs / 100);
+    const key = `${canvas.width}:${canvas.height}:${qx}:${qy}:${s.toFixed(3)}:${dayVisualKey}:${motionKey}`;
     if (key === lastKey) return;
     lastKey = key;
 
@@ -269,17 +331,17 @@ export function createParallaxBackground(container) {
 
     drawDither(ctx, w, h, skyHeight, dayNight.daylight);
     drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170);
-    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210);
+    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, motionMs);
+    drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, motionMs);
     // Celestial bodies stay legible even when a deterministic cloud happens to
     // cross the same low-resolution tile.
     drawCelestialBodies(ctx, w, skyHeight, dayNight);
-    drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 8, 9, palette.ridgeFar, 3.2);
-    drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 20, 13, palette.ridgeMid, 7.9);
-    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 34, 16, palette.ridgeNear, 12.4);
+    drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 9, 13, palette.ridgeFar, 3.2, palette.skyLow, 1);
+    drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 24, 17, palette.ridgeMid, 7.9, palette.skyLow, 2);
+    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 43, 21, palette.ridgeNear, 12.4, palette.skyLow, 3);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
-    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 96, 11, palette.ridgeDeep, 18.5);
+    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

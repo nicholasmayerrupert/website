@@ -25,6 +25,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   // jumps to the correct point on return instead of replaying missed frames.
   const dayCycleStart = performance.now();
   let dayVisualBucket = 0;
+  let backgroundMotionBucket = 0;
   ctx.dayNight = sampleDayNight(DEFAULT_DAY_PHASE);
   ctx.dayVisualKey = 0;
 
@@ -147,6 +148,18 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
       }
       engine.glSetPlayers(true, packed, ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0);
     }
+    // The authority owns inventory selection and mining lock state. Send only
+    // the resulting presentation facts to the mirror so its hover footprint
+    // matches the size/tool that will actually act on the world.
+    if (ctx.survival) {
+      const inventory = ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory();
+      const selected = inventory?.slots?.[inventory.selected];
+      const erasing = !selected || selected.isTool || selected.count <= 0;
+      const mineTarget = ctx.netClientReady() ? null : ctx.worldWorker?.getMineTarget();
+      engine.glSetSurvivalPreview(true, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
+    } else {
+      engine.glSetSurvivalPreview(false, 0, false, null);
+    }
     // Dropped items: a client draws the server's authoritative items; host/local
     // (and single-player) draws the engine's own (null = engine-owned).
     engine.glSetItems(ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || null);
@@ -204,6 +217,12 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     const dayChanged = updateDayNight(now);
+    const nextMotionBucket = Math.floor(now / 100);
+    const backgroundMoved = nextMotionBucket !== backgroundMotionBucket;
+    if (backgroundMoved) {
+      backgroundMotionBucket = nextMotionBucket;
+      ctx.backgroundMotionMs = now;
+    }
 
     // Keep the engine's pointer fresh as the page scrolls under a static cursor
     // (re-derives inside/aim from the new canvas bounds).
@@ -255,7 +274,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // A connected client animates remote players from snapshots even when its
     // own grid is static, so keep presenting. previewDirty forces a present
     // when a fresh draft overlay appears with no camera/step change.
-    if (dayChanged || stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || !!ctx.worldWorker) {
+    if (dayChanged || backgroundMoved || stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || !!ctx.worldWorker) {
       render(false);
       samplePerf();
     }

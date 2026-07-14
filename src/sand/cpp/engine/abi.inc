@@ -383,6 +383,7 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->g
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff) { e->glp.glSetFlags(gutterOn, snapOff); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_debug_hitboxes(Engine* e, int on) { e->glp.glSetDebugHitboxes(on); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, float* data, int count, int ownId) { e->glp.glSetPlayers(useExternal, data, count, ownId); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_survival_preview(Engine* e, int on, int footprint, int erasing, int locked, int x, int y) { e->glp.glSetSurvivalPreview(on, footprint, erasing, locked, x, y); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_items(Engine* e, int useExternal, float* data, int count) { e->glp.glSetItems(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_creatures(Engine* e, int useExternal, float* data, int count) { e->glp.glSetCreatures(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_shift(Engine* e, int dx) { e->glShift(dx); }

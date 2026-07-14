@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
-import { NOON_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
+import { NOON_SKY_LIGHT, SUNRISE_PHASE, SUNSET_PHASE } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const PORT = 5188;
@@ -70,9 +70,9 @@ try {
   }, phase);
 
   const midnight = await sample(0);
-  const sunrise = await sample(0.25);
+  const sunrise = await sample(SUNRISE_PHASE);
   const noon = await sample(0.5);
-  const sunset = await sample(0.75);
+  const sunset = await sample(SUNSET_PHASE);
 
   check(`night stars render and disappear by noon (${midnight.stars} -> ${noon.stars})`, midnight.stars > 8 && noon.stars === 0);
   check(`moon and sun render in their respective skies (${midnight.moon}, ${noon.sun})`, midnight.moon > 10 && noon.sun > 10);
@@ -82,10 +82,24 @@ try {
     sunrise.state.starOpacity > 0 && sunrise.state.starOpacity < 1 && sunset.state.starOpacity > 0 && sunset.state.starOpacity < 1 &&
     sunrise.state.sunVisible && sunrise.state.moonVisible && sunset.state.sunVisible && sunset.state.moonVisible);
 
+  await page.evaluate(() => window.__sandTest.setDayPhase(0.5));
+  const backgroundHash = () => page.evaluate(() => {
+    const bg = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');
+    const pixels = bg.getContext('2d').getImageData(0, 0, bg.width, bg.height).data;
+    let hash = 2166136261;
+    for (let i = 0; i < pixels.length; i += 16) hash = Math.imul(hash ^ pixels[i], 16777619);
+    return hash >>> 0;
+  });
+  const cloudFrameA = await backgroundHash();
+  await page.waitForTimeout(1300);
+  const cloudFrameB = await backgroundHash();
+  check('clouds drift while time and camera are held still', cloudFrameA !== cloudFrameB);
+
   await page.evaluate(() => window.__sandTest.clearDayPhase());
   const desktopTime = page.locator('sand-game').locator('.sg-time');
   const desktopRange = desktopTime.locator('.sg-time-range');
   const desktopAutoButton = desktopTime.locator('.sg-time-auto');
+  await page.waitForFunction(() => document.querySelector('sand-game')?.shadowRoot?.querySelector('.sg-time')?.dataset.mode === 'auto');
   check('creative desktop palette exposes the automatic time slider',
     await desktopTime.getAttribute('data-mode') === 'auto' && await desktopRange.isVisible());
   await desktopRange.evaluate((el) => {

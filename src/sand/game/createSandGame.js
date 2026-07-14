@@ -122,6 +122,7 @@ export function createSandGame(container, opts = {}) {
     // engine build. Engine recreation reapplies its current quantized skylight.
     dayNight: null,
     dayVisualKey: 0,
+    backgroundMotionMs: 0,
     dayPhaseOverride: null,
     appliedSkyLight: -1,
 

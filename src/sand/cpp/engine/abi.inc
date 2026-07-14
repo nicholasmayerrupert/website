@@ -189,6 +189,32 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigid.rigidRejectedCells; }
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_depen(Engine* e) { return e->rigid.rigidDepenetrations; }
+// Synthetic spill probe for outlet-locality regression tests. The rectangle is
+// stamped as one body and `source` is treated as loose material displaced from
+// inside it; return the selected exterior target index.
+EMSCRIPTEN_KEEPALIVE int engine_test_rigid_spill_probe(Engine* e, int sourceX, int sourceY,
+                                                       int x0, int y0, int x1, int y1, int material) {
+  e->useLayer(&e->fg);
+  if (!e->isInBounds(sourceX, sourceY) || x0 < 1 || y0 < 1 || x1 >= e->cols - 1 || y1 >= e->rows ||
+      sourceX < x0 || sourceX > x1 || sourceY < y0 || sourceY > y1) return -1;
+  const int bodyId = INT_MAX;
+  const int32_t footprintGen = ++e->fg.seenGen;
+  std::vector<int> footprint;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    int k = y * e->cols + x;
+    e->writeGridIndex(k, RIGID);
+    e->fg.bodyOwner[k] = bodyId;
+    e->fg.rigidSpillFootprint[k] = footprintGen;
+    footprint.push_back(k);
+  }
+  std::vector<Disp> displaced{{(uint8_t)material, sourceY * e->cols + sourceX}};
+  e->rigid.spillDisplacedBodyMaterial(displaced, footprint, footprintGen, bodyId, DENSITY[RIGID]);
+  for (int k = 0; k < e->cols * e->rows; k++) {
+    int y = k / e->cols, x = k - y * e->cols;
+    if ((x < x0 || x > x1 || y < y0 || y > y1) && e->fg.grid[k] == material) return k;
+  }
+  return -1;
+}
 
 // players (Terraria-like characters; physics in player.inc)
 EMSCRIPTEN_KEEPALIVE int engine_spawn_player(Engine* e, double x, double y) { return e->spawnPlayer(x, y); }

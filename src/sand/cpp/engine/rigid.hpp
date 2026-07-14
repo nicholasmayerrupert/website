@@ -53,7 +53,7 @@ class RigidBodySystem {
   double granularMediumDensityAt(int x, int y);
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity);
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity);
-  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, double bodyDensity);
+  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, int bodyId, double bodyDensity);
   double rigidErodeProbabilityAt(int k);
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty);
   void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells);

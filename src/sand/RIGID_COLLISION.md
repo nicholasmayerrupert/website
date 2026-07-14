@@ -96,6 +96,10 @@ The previous body↔body path had four compounding defects:
   body's — so a dense fluid (lava) shoved aside by a lighter body percolates
   through its own pool to the free surface rather than being silently dropped when
   it is boxed in by more of itself (the old per-body test lost volume mid-plunge).
+  The distance search begins at every displaced source and may traverse that
+  body's own raster as distance-only space, so a source enclosed by a rotated
+  footprint exits at the nearest boundary instead of being routed through the
+  first exposed tip. Other bodies remain barriers.
   Floating bodies
   have no solid contact so they never latch the sleep gate — they stay awake and
   gently bob, which drag keeps stable (negligible cost for a few bodies).
@@ -111,7 +115,8 @@ on horizontal bridge over a gap (centred + off-centre, at several dt groupings),
 off-centre impact producing an ~upward normal (peak |vx| stays ~0.05, near-zero
 rotation), fast thin projectile vs a thin wall, rotating-bar endpoint strike,
 two concave hand-drawn bodies keeping their occupancy shape, a thin body resting
-on another for 1200+ ticks without sinking/drifting, and determinism. New test
+on another for 1200+ ticks without sinking/drifting, nearest-outlet displacement
+from inside a rigid footprint, and determinism. New test
 ABI: `engine_body_state` / `engine_set_body_motion` (`_bodyState`,
 `_setBodyMotion`).
 

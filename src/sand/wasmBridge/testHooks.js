@@ -25,6 +25,7 @@ function table() {
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
     rigidDepen: c('engine_test_rigid_depen', 'number', ['number']),
+    rigidSpillProbe: c('engine_test_rigid_spill_probe', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
     setGroundingDebug: c('engine_test_set_grounding_debug', null, ['number', 'number', 'number']),
     groundingMismatches: c('engine_test_grounding_mismatches', 'number', ['number']),
     groundingDiag: c('engine_test_grounding_diag', 'number', ['number', 'number']),
@@ -58,6 +59,8 @@ export function attachTestHooks(engine) {
   };
   engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
   engine.getRigidDebug = () => ({ rejectedCells: t.rigidRejected(ptr), depenetrations: t.rigidDepen(ptr) });
+  engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
+    t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);
   engine.setGroundingDebug = (verify, forceFull) => t.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0);
   engine.groundingMismatches = () => t.groundingMismatches(ptr);
   engine.groundingDiag = () => ({ fast: t.groundingDiag(ptr, 0), edge: t.groundingDiag(ptr, 1), powder: t.groundingDiag(ptr, 2), cut: t.groundingDiag(ptr, 3), span: t.groundingDiag(ptr, 4) });

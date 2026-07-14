@@ -31,6 +31,21 @@ const vbarCells = (cx, yTop, len) => { const c = []; for (let y = 0; y < len; y+
 const hbarCells = (xLeft, cy, len) => { const c = []; for (let x = 0; x < len; x++) c.push([xLeft + x, cy]); return c; };
 const rigidBottom = (g) => { let b = -1; for (let i = 0; i < g.length; i++) if (g[i] === RIGID) b = Math.max(b, (i / COLS) | 0); return b; };
 
+// A displaced source enclosed by a newly rasterized body must search through
+// that body for distance and leave at the nearest exterior cell. The old spill
+// BFS ignored enclosed sources and fell back to the first row-major footprint
+// edge, teleporting the grain to the far left/top tip.
+{
+  console.log('enclosed rigid displacement uses the nearest outlet');
+  const e = mk();
+  const sx = 100, sy = 60, x0 = 80, y0 = 55, x1 = 120, y1 = 65;
+  const target = e._rigidSpillProbe(sx, sy, x0, y0, x1, y1, 1);
+  const tx = target % COLS, ty = (target / COLS) | 0;
+  const distance = target < 0 ? Infinity : Math.abs(tx - sx) + Math.abs(ty - sy);
+  check(`enclosed sand exited at minimum distance (${distance} == 6)`, distance === 6);
+  e.destroy();
+}
+
 // ---------------------------------------------------------------------------
 // Two horizontal pillars with an open gap between them, a thin horizontal bar
 // bridging across the top resting on the pillars, and a thin vertical bar

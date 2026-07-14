@@ -441,7 +441,7 @@ bool RigidBodySystem::isBodyRelocatable(uint8_t m, int k, double bodyDensity) { 
 // Gases (fire/steam/acrid smoke/…) never support or block a body — it sweeps
 // through them and they vanish on commit.
 bool RigidBodySystem::canBodyOccupy(uint8_t m, int k, double bodyDensity) { return m == EMPTY || E.isGasMaterial(m) || isBodyRelocatable(m, k, bodyDensity); }
-void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, double bodyDensity) {
+void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, int bodyId, double bodyDensity) {
   if (displaced.empty()) return;
   (void)bodyDensity;
   // Spread displaced fluid sideways and downward before upward (lateral, down,
@@ -462,6 +462,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
   auto isPassable = [&](uint8_t m, int k) { return m == EMPTY || E.isGasMaterial(m) || (E.isLiquidMaterial(m) && DENSITY[m] <= curD) || (E.isLooseSolidMaterial(m) && (E.L->groundedCell[k] != 1 || DENSITY[m] <= curD)); };
   int32_t reservedGen = ++E.L->seenGen;
   auto inFootprint = [&](int k) { return E.L->rigidSpillFootprint[k] == footprintGen; };
+  auto inOwnFootprint = [&](int k) { return inFootprint(k) && E.L->bodyOwner[k] == bodyId; };
   auto isDropTarget = [&](int k, uint8_t mat) { if (inFootprint(k) || E.L->rigidSpillReserved[k] == reservedGen || E.isBodyCell(k)) return false; uint8_t m = E.L->grid[k]; if (m == EMPTY) return true; return (E.isLiquidMaterial(m) || E.isGasMaterial(m) || E.isLooseSolidMaterial(m)) && DENSITY[m] < DENSITY[mat]; };
   // Footprint-edge seeds (used when a displaced cell's own neighbours are all
   // blocked). Permissive — any fluid/empty/gas/loose powder; canVisit re-filters
@@ -496,12 +497,24 @@ void RigidBodySystem::spillDisplacedBodyMaterial(std::vector<Disp>& displaced, c
       queue.clear(); targets.clear();
       int32_t seenGen = ++E.L->seenGen;
       auto canVisit = [&](int k) {
-        if (k <= 0 || k >= gridLen || inFootprint(k) || E.L->rigidSpillReserved[k] == reservedGen || E.L->seenStamp[k] == seenGen) return false;
+        if (k <= 0 || k >= gridLen || E.L->rigidSpillReserved[k] == reservedGen || E.L->seenStamp[k] == seenGen) return false;
         int y = k / E.cols, x = k - y * E.cols;
-        return x > 0 && x < E.cols - 1 && y > 0 && y < E.rows && isPassable(E.L->grid[k], k);
+        if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return false;
+        // A displaced cell can be enclosed by the body's newly rasterized
+        // footprint (most often after rotation). Traverse this body's cells for
+        // distance only so every source reaches its nearest exterior outlet;
+        // other bodies remain barriers and isDropTarget still rejects all body
+        // cells. Seeding only exterior neighbours let one exposed tip route the
+        // entire batch through itself.
+        if (inFootprint(k)) return inOwnFootprint(k);
+        return isPassable(E.L->grid[k], k);
       };
       auto enqueue = [&](int k) { if (!canVisit(k)) return; E.L->seenStamp[k] = seenGen; queue.push_back(k); };
-      for (size_t di = gi; di < gj; di++) for (int off : offs) enqueue(pending[di].from + off);
+      for (size_t di = gi; di < gj; di++) {
+        int from = pending[di].from;
+        if (inOwnFootprint(from)) enqueue(from);
+        else for (int off : offs) enqueue(from + off); // density-chain eviction outside the body
+      }
       if (queue.empty()) for (int nk : footprintEdgeStarts) enqueue(nk);
       int visitBudget = imin(gridLen, imax(4096, need * 128));
       int visits = 0;
@@ -862,7 +875,7 @@ void RigidBodySystem::moveBodies() {
   for (int k : footprint) E.L->rigidSpillFootprint[k] = footprintGen;
   for (Body* b : E.L->bodies) {
     auto it = perBody.find(b->id);
-    if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, it->second.second, footprintGen, b->density);
+    if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, it->second.second, footprintGen, b->id, b->density);
   }
   erodeBodies(cells);
 }

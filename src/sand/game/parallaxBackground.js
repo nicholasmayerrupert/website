@@ -331,11 +331,11 @@ export function createParallaxBackground(container) {
 
     drawDither(ctx, w, h, skyHeight, dayNight.daylight);
     drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
+    // Celestial bodies belong behind the weather: either cloud layer may pass
+    // over and partially occlude the sun or moon as it drifts.
+    drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, motionMs);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, motionMs);
-    // Celestial bodies stay legible even when a deterministic cloud happens to
-    // cross the same low-resolution tile.
-    drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 9, 13, palette.ridgeFar, 3.2, palette.skyLow, 1);
     drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 24, 17, palette.ridgeMid, 7.9, palette.skyLow, 2);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 43, 21, palette.ridgeNear, 12.4, palette.skyLow, 3);

@@ -77,11 +77,17 @@ try {
   const foxBefore = await page.evaluate(() => window.__sandTest.getCreatures().filter((c) => c.species === 2).length);
   const game = page.locator('sand-game');
   await game.locator('.sg-expand').click();
+  const stableOption = await game.locator('.sg-opt').first().elementHandle();
   await game.locator('.sg-search').fill('fox spawn egg');
   await game.locator('.sg-opt', { hasText: 'Fox Spawn Egg' }).click();
   check('desktop material picker stays open after selection',
     await game.locator('.sg-palette').evaluate((palette) => palette.classList.contains('expanded')));
+  check('desktop material selection preserves existing option nodes',
+    await stableOption.evaluate((option) => option.isConnected));
   await game.locator('.sg-expand').click();
+  check('desktop material picker runs its closing animation',
+    await game.locator('.sg-palette').evaluate((palette) => palette.classList.contains('closing')));
+  await game.locator('.sg-dropdown').waitFor({ state: 'detached' });
   await page.mouse.click(target.x, target.y);
   await page.waitForFunction((n) => window.__sandTest.getCreatures().filter((c) => c.species === 2).length > n, foxBefore);
   const foxAfter = await page.evaluate(() => {
@@ -384,12 +390,12 @@ try {
     const root = host.shadowRoot;
     const list = root.querySelector('.sg-list');
     return {
-      joystickHidden: getComputedStyle(root.querySelector('.sg-stick')).display === 'none',
-      controlsHidden: getComputedStyle(root.querySelector('.sg-zoom')).display === 'none',
+      joystickVisible: getComputedStyle(root.querySelector('.sg-stick')).display !== 'none',
+      controlsVisible: getComputedStyle(root.querySelector('.sg-zoom')).display !== 'none',
       scrollable: list.scrollHeight > list.clientHeight,
     };
   });
-  check('expanded mobile palette hides joystick and left controls', openUi.joystickHidden && openUi.controlsHidden);
+  check('expanded mobile palette keeps joystick and left controls visible', openUi.joystickVisible && openUi.controlsVisible);
   check('expanded mobile material list has scrollable overflow', openUi.scrollable);
 
   const listBox = await mobileGame.locator('.sg-list').boundingBox();
@@ -414,7 +420,7 @@ try {
       controlsVisible: getComputedStyle(root.querySelector('.sg-zoom')).display !== 'none',
     };
   });
-  check('selecting a mobile material restores joystick and left controls', closedUi.joystickVisible && closedUi.controlsVisible);
+  check('mobile controls remain visible after selecting a material', closedUi.joystickVisible && closedUi.controlsVisible);
   await mobileGame.locator('.sg-draw').tap();
   const returnedUi = await mobileGame.evaluate((host) => {
     const root = host.shadowRoot;

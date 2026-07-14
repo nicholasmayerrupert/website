@@ -284,7 +284,8 @@ queued manual update.
 The creative material field opens an animated, searchable dropdown whose 9×9
 pixel samples reuse each material's generated base color and texture amplitude.
 Desktop keeps the dropdown open for repeated picks until it is explicitly
-closed; mobile closes after a pick and restores the joystick and utility pad.
+closed; mobile closes after a pick, while its joystick and utility pad remain
+available throughout selection.
 
 ## Testing
 

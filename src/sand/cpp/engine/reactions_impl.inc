@@ -97,7 +97,7 @@ void ReactionSystem::applyReactions() {
   for (int i = 0; i < steamCount; i++) { int k = E.L->reactionSteam[i]; if (E.L->grid[k] == WATER) E.writeGridIndex(k, STEAM); }
   for (size_t i = 0; i < snowMelt.size(); i++) { int k = snowMelt[i]; if (E.L->grid[k] == SNOW) E.writeGridIndex(k, WATER); }
   for (int i = 0; i < igniteCount; i++) { int k = E.L->reactionIgnite[i]; if (!E.isBodyCell(k) && E.isFlammable(E.L->grid[k])) { if (E.isPlantMaterial(E.L->grid[k])) erasedPlant.push_back(k); E.writeGridIndex(k, FIRE); } }
-  E.finishPlantErosion(erasedPlant, plantIndexExact);
+  E.finishPlantErosion(erasedPlant, plantIndexExact, true);
 }
 void ReactionSystem::applyAcid() {
   bool reactNow = E.tick % ACID_REACT_INTERVAL == 0;

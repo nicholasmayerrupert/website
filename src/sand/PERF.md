@@ -47,6 +47,11 @@ actionable instead of just producing timing numbers.
   scanning a mostly rigid million-cell band. Fire and acid pass exact erased-cell
   lists to the component splitter, so untouched plant components are moved through
   unchanged. Cross-layer transfer rejects empty/rigid pairs before neighbour probes.
+- Fire-cut plant components use the local connectivity proof for ordinary face/
+  leaf erosion, and defer a fire-only joint-graph rebuild to the next world tick.
+  This avoids doing two full dual-layer grounding solves in one tick while keeping
+  component membership exact; a newly unsupported burned fragment may remain held
+  for one extra simulation tick. Acid and tool cuts retain immediate reconciliation.
 - Creative mirror diffs copy validated rows with bulk `memcpy`; the wire format is
   unchanged, but large acid/fire dirty rectangles avoid byte-at-a-time encode/apply.
 - If a benchmark regression points at gameplay, rendering, camera, terrain,

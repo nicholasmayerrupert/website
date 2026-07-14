@@ -65,8 +65,8 @@ the element instead.
   bottom `START` button so the host page can scroll. Starting reveals the normal
   controls; choosing `SCROLL` hides them again. Fine-pointer survival starts
   draw-enabled for immediate play.
-- While the mobile creative material picker is expanded, movement and view
-  controls hide; the material grid itself accepts vertical touch scrolling.
+- The mobile creative material picker accepts vertical touch scrolling while
+  the movement and view controls remain available around it.
 
 ## Multiplayer
 

@@ -154,16 +154,20 @@ const STYLE = `
 
 /* The material list is a true dropdown. It remains open on desktop until the
    field/arrow is pressed again; mobile selection closes it after the pick. */
-.sg-dropdown { transform-origin: top left; opacity: 0; transform: translateY(-7px) scale(.985);
-  transition: opacity .15s ease, transform .2s cubic-bezier(.2,.8,.2,1); pointer-events: none; }
+.sg-dropdown { transform-origin: top left; opacity: 0; transform: translateY(-7px) scale(.985); pointer-events: none; }
 .sg-palette.expanded .sg-dropdown { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto;
   animation: sg-dropdown-in .22s cubic-bezier(.2,.8,.2,1) both; }
+.sg-palette.closing .sg-dropdown { animation: sg-dropdown-out .2s cubic-bezier(.4,0,1,1) both; }
 .sg-dropdown-shell { display: flex; flex-direction: column; gap: 6px; padding: 6px;
   border: 1px solid rgba(255,255,255,.15); border-radius: 7px; background: rgba(5,10,18,.82);
   box-shadow: 0 14px 30px -10px rgba(0,0,0,.72); backdrop-filter: blur(9px); overflow: hidden; }
 @keyframes sg-dropdown-in {
   from { opacity: 0; transform: translateY(-7px) scale(.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes sg-dropdown-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(-5px) scale(.975); }
 }
 .sg-search { width: 100%; box-sizing: border-box; border-radius: 5px; padding: 7px 8px; font: inherit;
   font-size: 10px; text-transform: uppercase; letter-spacing: .05em; border: 1px solid rgba(255,255,255,.18);
@@ -180,11 +184,16 @@ const STYLE = `
 .sg-palette.bottom .sg-dropdown { position: absolute; left: 50%; bottom: calc(100% + 8px); transform-origin: bottom center;
   transform: translate(-50%, 7px) scale(.985); }
 .sg-palette.bottom.expanded .sg-dropdown { transform: translate(-50%, 0) scale(1); animation-name: sg-dropdown-mobile-in; }
+.sg-palette.bottom.closing .sg-dropdown { animation-name: sg-dropdown-mobile-out; }
 .sg-palette.bottom .sg-list { grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(340px, calc(100vw - 2.5rem));
   max-height: min(42svh, 280px); }
 @keyframes sg-dropdown-mobile-in {
   from { opacity: 0; transform: translate(-50%, 7px) scale(.985); }
   to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+@keyframes sg-dropdown-mobile-out {
+  from { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  to { opacity: 0; transform: translate(-50%, 5px) scale(.975); }
 }
 .sg-opt { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 39px;
   border: 1px solid transparent; background: rgba(255,255,255,.035); border-radius: 5px; padding: 5px;
@@ -234,8 +243,9 @@ const STYLE = `
   border-radius: 50%; background: #f8fafc; box-shadow: 0 2px 5px rgba(0,0,0,.45); }
 @media (prefers-reduced-motion: reduce) {
   .sg-current .sg-name.scrolling .sg-name-track, .sg-palette.expanded .sg-dropdown,
+  .sg-palette.closing .sg-dropdown,
   .sg-palette.expanded .sg-opt, .sg-swatch.animated { animation: none; }
-  .sg-dropdown, .sg-expand::before { transition: none; }
+  .sg-expand::before { transition: none; }
 }
 @media (pointer: coarse) {
   /* Mobile browsers magnify focused form controls whose text is below 16px. */
@@ -326,6 +336,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let drawOn = false;
   let atBottom = false;
   let expanded = false;
+  let closing = false;
   let collapsedWidth = 0;
   let nameMotionFrame = 0;
   let dropdownRemoveTimer = 0;
@@ -371,6 +382,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   currentName.className = 'sg-name';
   const currentNameTrack = document.createElement('span');
   currentNameTrack.className = 'sg-name-track';
+  currentNameTrack.textContent = selected.label;
   currentName.appendChild(currentNameTrack);
   current.append(currentSwatch, currentName);
   const canSelectMaterial = () => !requireDrawMode || drawOn;
@@ -411,6 +423,11 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   list.className = 'sg-list';
   list.setAttribute('role', 'listbox');
   dropdownShell.append(search, list);
+  const optionByKey = new Map();
+  const empty = document.createElement('div');
+  empty.className = 'sg-empty';
+  empty.textContent = 'No matches';
+  empty.hidden = true;
   current.setAttribute('aria-controls', dropdown.id);
   expandBtn.setAttribute('aria-controls', dropdown.id);
 
@@ -482,6 +499,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     clearTimeout(dropdownRemoveTimer);
     dropdownRemoveTimer = 0;
     if (expanded) {
+      closing = false;
       // Keep the dropdown before the compact controls. Mobile positions this
       // node above the fixed center bar so opening it never moves the controls.
       const controls = toggle || timeControl;
@@ -496,13 +514,16 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       query = '';
       search.value = '';
       dropdown.inert = true;
-      // Leave the pixels in place for the closing transition, then return to
-      // the lazy-DOM footprint once the animation is over.
+      closing = dropdown.isConnected;
+      // Keep the stable option nodes alive through the close animation. Only
+      // the dropdown itself is detached afterward; reopening reuses the same
+      // buttons and canvases instead of repainting the entire material tray.
       dropdownRemoveTimer = setTimeout(() => {
         dropdown.remove();
-        list.replaceChildren();
+        closing = false;
         dropdownRemoveTimer = 0;
-      }, 220);
+        renderState();
+      }, 210);
     }
     renderState();
     if (changed) onExpandedChange?.(expanded);
@@ -516,13 +537,10 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
     }
     renderTimeState();
     const locked = !canSelectMaterial();
-    wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'} ${expanded ? 'expanded' : 'collapsed'}`;
-    wrap.style.width = !expanded && collapsedWidth ? `${collapsedWidth}px` : '';
+    wrap.className = `sg-palette ${atBottom ? 'bottom' : 'side'} ${expanded ? 'expanded' : 'collapsed'}${closing ? ' closing' : ''}`;
+    wrap.style.width = !expanded && !closing && collapsedWidth ? `${collapsedWidth}px` : '';
     current.className = `sg-current${locked ? ' locked' : ''}`;
     current.disabled = locked;
-    currentSwatch.className = `sg-swatch${selected.animated ? ' animated' : ''}`;
-    paintSwatch(currentSwatch, selected);
-    currentNameTrack.textContent = selected.label;
     current.title = `Selected: ${selected.label} — click to ${expanded ? 'collapse' : 'change'}`;
     expandBtn.className = `sg-expand${locked ? ' locked' : ''}`;
     expandBtn.disabled = locked;
@@ -571,28 +589,30 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
 
   function pick(entry) {
     if (!canSelectMaterial()) return;
+    const previous = selected;
     selected = entry;
+    currentSwatch.className = `sg-swatch${selected.animated ? ' animated' : ''}`;
+    paintSwatch(currentSwatch, selected);
+    currentNameTrack.textContent = selected.label;
+    for (const candidate of [previous, selected]) {
+      const opt = optionByKey.get(candidate.key);
+      if (!opt) continue;
+      const active = candidate.key === selected.key;
+      opt.classList.toggle('active', active);
+      opt.setAttribute('aria-selected', String(active));
+    }
     onSelectCreative?.({ kind: entry.kind, value: entry.value });
     // Desktop is a working tray: it stays open for rapid material changes and
-    // closes only when asked. Mobile restores the canvas controls after a pick.
+    // closes only when asked. Mobile closes the tray after a pick.
     if (atBottom) setExpanded(false);
     else {
       renderState();
-      renderList();
     }
   }
 
-  function renderList() {
-    list.replaceChildren();
-    const shown = query ? entries.filter((e) => e.label.toLowerCase().includes(query)) : entries;
-    if (shown.length === 0) {
-      const none = document.createElement('div');
-      none.className = 'sg-empty';
-      none.textContent = 'No matches';
-      list.appendChild(none);
-      return;
-    }
-    shown.forEach((e, index) => {
+  function buildListOnce() {
+    if (optionByKey.size) return;
+    entries.forEach((e, index) => {
       const opt = document.createElement('button');
       opt.type = 'button';
       opt.className = `sg-opt${e.key === selected.key ? ' active' : ''}`;
@@ -605,8 +625,21 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
       lbl.textContent = e.label;
       opt.append(renderSwatch(e), lbl);
       opt.addEventListener('click', () => pick(e));
+      optionByKey.set(e.key, opt);
       list.appendChild(opt);
     });
+    list.appendChild(empty);
+  }
+
+  function renderList() {
+    buildListOnce();
+    let shown = 0;
+    for (const entry of entries) {
+      const visible = !query || entry.label.toLowerCase().includes(query);
+      optionByKey.get(entry.key).hidden = !visible;
+      if (visible) shown++;
+    }
+    empty.hidden = shown !== 0;
   }
 
   root.appendChild(wrap);

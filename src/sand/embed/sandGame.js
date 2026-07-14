@@ -497,10 +497,9 @@ class SandGameElement extends HTMLElement {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
           let drawModeOn = !coarse;
-          let paletteExpanded = false;
           syncMobileCreativeUi = () => {
             if (!coarse) return;
-            const controlsHidden = !drawModeOn || paletteExpanded;
+            const controlsHidden = !drawModeOn;
             this._start?.setHidden(drawModeOn);
             this._palette?.setHidden(!drawModeOn);
             this._stick?.setHidden(controlsHidden);
@@ -529,11 +528,6 @@ class SandGameElement extends HTMLElement {
               else game.setDayPhase(phase);
             },
             getTimeState: () => game.getDayNight(),
-            onExpandedChange: (expanded) => {
-              if (!coarse) return;
-              paletteExpanded = expanded;
-              syncMobileCreativeUi();
-            },
           });
           // Touch has no +/- keys, so give mobile an on-screen zoom control beside
           // the palette (desktop zooms via the keyboard).

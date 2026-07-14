@@ -2083,12 +2083,15 @@ bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& e
   return true;
 }
 
-void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty, bool localConnectivityFastPath) {
+void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty, bool localConnectivityFastPath, bool deferJointRefresh) {
   // Dirty joints for the NEXT step, but leave jointGroundReady set: clearing it
   // mid-step lets the other layer's stepLayer re-run single-layer grounding and
   // drop cross-supported stone before this tick finishes (acid often transfers
   // to the opposite layer and dissolves there first).
-  if (E.bgEnabled) { jointBondsInvalid = true; jointDirty = true; }
+  if (E.bgEnabled) {
+    if (deferJointRefresh) jointDirtyDeferred = true;
+    else { jointBondsInvalid = true; jointDirty = true; }
+  }
   if (markGroundDirty) E.L->groundDirty = true;
   std::vector<Comp> updated;
   std::vector<int32_t>& seen = E.L->seenStamp;
@@ -2141,16 +2144,16 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
   E.L->plantComponents = std::move(updated);
 }
 
-// Fire and acid usually nibble leaves or an exposed face without disconnecting
-// any surviving support. Keep that common case local: split only components
-// named by the exact cellComp index, prove the removed blobs are not cuts, patch
-// the cached cells, and request only an index refresh. Real cuts retain the full
-// grounding reflood.
-void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedExact) {
+// Fire usually nibbles leaves or an exposed face without disconnecting any
+// surviving support. Keep that common case local: split only components named
+// by the exact cellComp index, prove the removed blobs are not cuts, patch the
+// cached cells, and request only an index refresh. Acid retains its established
+// split order; real cuts on either path retain the full grounding reflood.
+void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedExact, bool deferJointRefresh) {
   if (erased.empty()) return;
   int plantOffset = (int)E.L->stoneComponents.size();
   E.L->compsReshaped = false;
-  splitPlantAfterErase(&erased, indexedExact ? plantOffset : -1, false);
+  splitPlantAfterErase(&erased, indexedExact ? plantOffset : -1, false, deferJointRefresh, deferJointRefresh);
   if (!indexedExact || !removalsKeepGroundingValid(erased)) {
     E.L->groundDirty = true;
     return;

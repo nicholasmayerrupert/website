@@ -26,6 +26,9 @@ class ComponentSystem {
   // ---- grounding cache + scratch (moved off the Engine) ----
   bool jointGroundReady = false;
   bool jointBondsInvalid = false;
+  // Fire completes component membership cleanup immediately, but may defer the
+  // expensive joint-graph rebuild to the start of the next tick.
+  bool jointDirtyDeferred = false;
   // Persistent validity of the settled rigid joint-support closure currently
   // stamped into both layers. With no residual unsupported bonds, loose motion
   // cannot change this closure (loose cells do not ground rigid cells), so
@@ -111,8 +114,8 @@ class ComponentSystem {
   void registerRigidCellsSplit(std::vector<Comp>& list, int& nextId, uint8_t mat,
                                std::unordered_set<int>& cells, bool iceCache);
   bool componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors);
-  void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false);
-  void finishPlantErosion(std::vector<int>& erased, bool indexedExact);
+  void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false, bool deferJointRefresh = false);
+  void finishPlantErosion(std::vector<int>& erased, bool indexedExact, bool deferJointRefresh = false);
   void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1, bool localConnectivityFastPath = false);
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 

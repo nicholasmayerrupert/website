@@ -203,6 +203,10 @@
     // stepLayer() then skips its own first computeGrounded().
     comps.jointGroundReady = false;
     comps.jointBondsInvalid = false;
+    if (comps.jointDirtyDeferred) {
+      comps.jointDirty = true;
+      comps.jointDirtyDeferred = false;
+    }
     deferStructureThisTick = (int64_t)cols * rows > 900000
       && comps.jointSupportValid && fg.bodies.empty() && bg.bodies.empty()
       && (tick & 1) != 0;
@@ -258,9 +262,10 @@
       comps.jointGroundReady = true;
       comps.jointDirty = false;
       comps.jointBondsInvalid = false;
+      comps.jointDirtyDeferred = false;
       jointRefreshedAfterLayers = true;
     }
-    if (comps.jointGroundReady) {
+    if (comps.jointGroundReady && !comps.jointDirtyDeferred) {
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("pre-crossmove");
 #endif
@@ -359,8 +364,8 @@
         }
       }
     }
-    if (!crossFireErasedFg.empty()) { useLayer(&fg); finishPlantErosion(crossFireErasedFg, fgIndexExact); }
-    if (!crossFireErasedBg.empty()) { useLayer(&bg); finishPlantErosion(crossFireErasedBg, bgIndexExact); }
+    if (!crossFireErasedFg.empty()) { useLayer(&fg); finishPlantErosion(crossFireErasedFg, fgIndexExact, true); }
+    if (!crossFireErasedBg.empty()) { useLayer(&bg); finishPlantErosion(crossFireErasedBg, bgIndexExact, true); }
     if (!crossFireErasedFg.empty() || !crossFireErasedBg.empty()) useLayer(&fg);
   }
 

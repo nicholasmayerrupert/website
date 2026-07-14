@@ -65,6 +65,10 @@ export function installDevHooks(ctx, {
       mirrorWorldTick: engine() ? engine().getTick() : 0,
       worldTps: workerState?.worldTps || 0,
       workerControls: workerState?.controlsReceived || 0,
+      workerResizePending: !!workerState?.resizePending,
+      workerResizeControls: workerState?.resizeControlsSent || 0,
+      workerControlWorldX: workerState?.controlWorldX || 0,
+      workerControlWorldY: workerState?.controlWorldY || 0,
       workerEdges: workerState?.edgesProcessed || 0,
       workerToolWrites: workerState?.toolWrites || 0,
       workerThreadWorkers: workerState?.threadWorkers || 0,
@@ -169,6 +173,7 @@ export function installDevHooks(ctx, {
       ctx.worldWorker?.config({ creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue });
     },
     setWorldDelay(ms) { ctx.worldWorker?.config({ artificialDelayMs: +ms || 0 }); },
+    flushAuthorityControl() { ctx.worldWorker?.updateControl(); },
     paintWorker(material, x, y, radius = 8) { ctx.worldWorker?.testPaintDisc(material, x, y, radius); },
     seedWorkerReaction(material, cap = 600, phase = 0) { ctx.worldWorker?.testSeedReaction(material, cap, phase); },
     addInventory(material, count) { ctx.worldWorker?.intent('add', { material: material | 0, count: count | 0 }); return true; },

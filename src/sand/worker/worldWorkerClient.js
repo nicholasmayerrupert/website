@@ -27,7 +27,10 @@ export function createWorldWorkerClient(ctx) {
   let mineProgress = 0;
   let mineTarget = null;
   let actionCount = 0;
-  let state = { ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0 };
+  let state = {
+    ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
+    resizePending: false, resizeControlsSent: 0, controlWorldX: 0, controlWorldY: 0,
+  };
 
   const handleMessage = ({ data }) => {
     if (!data) return;
@@ -46,6 +49,7 @@ export function createWorldWorkerClient(ctx) {
         ...state, ...data.perf, ready: true, worldTick: data.worldTick || state.worldTick,
         worldTps: data.perf?.worldTps || state.worldTps,
         stepMs: data.perf?.stepMs || 0, epoch: data.epoch, sequence: data.sequence,
+        resizePending: !!awaitingResizeId,
       };
     } else if (data.type === 'destroyed') {
       clearTimeout(destroyTimer);
@@ -96,10 +100,11 @@ export function createWorldWorkerClient(ctx) {
     updateControl() {
       const e = ctx.engine;
       // fit() resizes the render mirror immediately but deliberately debounces
-      // the expensive worker resize. Do not describe the new, larger viewport
-      // to the worker while it still owns the old buffer: every edge would look
-      // crossed and it could stream once per tick until the resize arrives.
-      if (!e || awaitingResizeId) return;
+      // the expensive worker resize. Pointer/world coordinates must keep flowing
+      // during that window so drawing follows a moving camera; only STREAMING is
+      // suspended until the worker owns the new buffer dimensions.
+      if (!e) return;
+      const resizePending = !!awaitingResizeId;
       const p = worldPoint();
       const cam = e.getCam();
       const message = {
@@ -108,10 +113,18 @@ export function createWorldWorkerClient(ctx) {
         camWorldX: e.getWorldOffsetX() + cam.x,
         camWorldY: e.getWorldOffsetY() + cam.y,
         viewCols: ctx.viewCols, viewRows: ctx.viewRows,
+        suspendStreaming: resizePending,
       };
       const signature = Object.values(message).join('|');
       if (signature === lastControl) return;
       lastControl = signature;
+      state = {
+        ...state,
+        resizePending,
+        resizeControlsSent: (state.resizeControlsSent || 0) + (resizePending ? 1 : 0),
+        controlWorldX: p.worldX,
+        controlWorldY: p.worldY,
+      };
       worker.postMessage(message);
     },
     edge(kind, button) {
@@ -145,6 +158,7 @@ export function createWorldWorkerClient(ctx) {
       pending = null;
       lastControl = '';
       awaitingResizeId = ++resizeId;
+      state = { ...state, resizePending: true };
       clearTimeout(resizeTimer);
       // Key repeat/mobile taps otherwise queue every huge intermediate resize in
       // the worker. Send only the settled zoom size.
@@ -281,7 +295,10 @@ export function createWorldWorkerClient(ctx) {
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
     ctx.localPlayerId = 0;
     worker = new WorldWorker();
-    state = { ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0 };
+    state = {
+      ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
+      resizePending: false, resizeControlsSent: 0, controlWorldX: 0, controlWorldY: 0,
+    };
     bindWorker();
     if (initOptions) worker.postMessage({
       type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,

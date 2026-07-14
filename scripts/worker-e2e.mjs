@@ -224,6 +224,56 @@ try {
   });
   check('START reveals the full mobile creative controls',
     !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls);
+
+  // The render mirror resizes immediately on zoom while the authority worker
+  // follows after a short debounce. Camera/pointer controls must still be sent
+  // during that handoff; otherwise a held brush remains pinned to its last
+  // authority-world coordinate while the visible camera keeps moving.
+  const mobileZoomBase = await mobile.evaluate(() => ({
+    cols: window.__sandTest.info().cols,
+    resizeControls: window.__sandPerf().workerResizeControls,
+  }));
+  for (let i = 0; i < 4; i++) {
+    await mobileGame.locator('.sg-zoom-out').tap();
+    await mobile.waitForTimeout(20);
+  }
+  await mobile.waitForFunction((base) => {
+    const perf = window.__sandPerf();
+    return window.__sandTest.info().cols > base.cols && perf.workerResizePending;
+  }, mobileZoomBase, { timeout: 10000 });
+  const resizeAim = await mobile.evaluate(() => {
+    const host = document.querySelector('sand-game');
+    const rect = host.getBoundingClientRect();
+    window.dispatchEvent(new PointerEvent('pointermove', {
+      bubbles: true, pointerType: 'touch', pointerId: 91, buttons: 0,
+      clientX: rect.left + rect.width * 0.62,
+      clientY: rect.top + rect.height * 0.34,
+    }));
+    const t = window.__sandTest;
+    const cam = t.getCam();
+    t.setCam(cam.x + 48, cam.y + 24);
+    const off = t.worldOffset(), input = t.localInput();
+    const expectedX = off.x + input.aimX, expectedY = off.y + input.aimY;
+    t.flushAuthorityControl();
+    const perf = window.__sandPerf();
+    return {
+      expectedX, expectedY,
+      actualX: perf.workerControlWorldX, actualY: perf.workerControlWorldY,
+      resizeControls: perf.workerResizeControls,
+    };
+  });
+  check('mobile placement aim follows the camera while zoom resize is pending',
+    resizeAim.resizeControls > mobileZoomBase.resizeControls &&
+      Math.abs(resizeAim.actualX - resizeAim.expectedX) < 1 &&
+      Math.abs(resizeAim.actualY - resizeAim.expectedY) < 1,
+    `${resizeAim.actualX},${resizeAim.actualY} / ${resizeAim.expectedX},${resizeAim.expectedY}`);
+  await mobile.waitForFunction(() => !window.__sandPerf().workerResizePending, null, { timeout: 30000 });
+  for (let i = 0; i < 4; i++) {
+    await mobileGame.locator('.sg-zoom-in').tap();
+    await mobile.waitForTimeout(20);
+  }
+  await mobile.waitForFunction((base) => window.__sandTest.info().cols <= base.cols && !window.__sandPerf().workerResizePending,
+    mobileZoomBase, { timeout: 30000 });
   const cubePaletteWidth = await mobileGame.locator('.sg-palette').evaluate((palette) => palette.getBoundingClientRect().width);
   await mobileGame.locator('.sg-expand').tap();
   const selectorFocus = await mobileGame.evaluate((host) => {

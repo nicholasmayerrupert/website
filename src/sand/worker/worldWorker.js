@@ -162,7 +162,7 @@ function toLocal(worldX, worldY) {
 }
 
 function streamForControl() {
-  if (!control) return false;
+  if (!control || control.suspendStreaming) return false;
   // A viewport must fit inside the loaded window before edge streaming has a
   // meaningful answer. This also makes the worker robust to a resize/control
   // message reordering: an oversized view otherwise satisfies an edge test on

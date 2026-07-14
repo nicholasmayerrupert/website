@@ -56,8 +56,8 @@ uint8_t TerrainGen::genSkinMat(int biome, int slope, bool underwater) {
     case BIOME_ROCKY:  return STONE;
     case BIOME_DESERT: return SAND;
     case BIOME_TUNDRA: return SNOW;            // snow blanket over the dirt mantle
-    case BIOME_SWAMP:  return slope <= 2 ? PLANT : MUD;
-    default:           return slope <= 2 ? PLANT : SAND; // plains/forest/jungle: grass on gentle, sand on steeps
+    case BIOME_SWAMP:  return slope <= 2 ? GRASS : MUD;
+    default:           return slope <= 2 ? GRASS : SAND; // plains/forest/jungle: grass on gentle, sand on steeps
   }
 }
 // Material of the loose mantle between the skin and the deep stone (was a literal

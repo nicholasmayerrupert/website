@@ -139,7 +139,7 @@ function blastDamagesMaterial(name) {
   const damageNames = [
     'WOOD', 'PINE_WOOD', 'DRIFTWOOD', 'PLANT', 'VINE', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP',
     'STONE', 'BRICK', 'COPPER_ORE', 'IRON_ORE', 'COAL_ORE', 'GOLD_ORE', 'DEBRIS', 'ICE',
-    'SAND', 'DIRT', 'SNOW', 'GUNPOWDER',
+    'SAND', 'DIRT', 'SNOW', 'GRASS', 'GUNPOWDER',
   ];
   for (const name of damageNames) {
     const r = blastDamagesMaterial(name);

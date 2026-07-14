@@ -1,6 +1,6 @@
 // Behavior of the Phase-1 materials: they reuse existing physics with no engine
 // edits beyond the schema. Verifies that
-//   - new POWDERs (DIRT/SNOW/MUD) fall and SETTLE TO INERT (no churn), like SAND;
+//   - new POWDERs (DIRT/SNOW/MUD/GRASS) fall and SETTLE TO INERT (no churn), like SAND;
 //   - new stone-group COMPONENTs (ores/brick) GROUND like STONE when supported;
 //   - a falling stone-group component KEEPS ITS MATERIAL (ore stays ore, not STONE)
 //     — the matOf fix in moveRigidAssemblies.
@@ -21,7 +21,7 @@ const maxRow = (g, m) => { let r = -1; for (let i = 0; i < g.length; i++) if (g[
 const fillDisc = (e, cx, cy, r, mat) => e.placeMaterial(cx, cy, r, mat);
 
 // --- new powders fall and settle to inert (no shimmer) ---
-for (const name of ['DIRT', 'SNOW', 'MUD']) {
+for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   const e = mk();
   const mat = MAT[name];
   fillDisc(e, COLS / 2, 18, 7, mat);

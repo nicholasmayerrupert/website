@@ -110,7 +110,8 @@
     { "id": 39, "name": "MYCELIUM_SPORE","kind": "COMPONENT","materialClass": "rigid","density": 1.1, "looseSorted": false, "mobility": 0,    "color": "0xdf96547d", "toolClass": "pickaxe", "toolTier": 1, "textureAmp": 8, "durability": 5, "emission": 112,  "renderAnim": "none",  "componentGroup": "stone", "flags": ["dissolvable", "rigid", "bearing"] },
 
     { "id": 40, "name": "GLOWBERRY", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xd81e9bff", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 1, "emission": 98, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "plantFamily"] },
-    { "id": 41, "name": "GLOWSHROOM","kind": "COMPONENT", "materialClass": "rigid", "density": 0.45,"looseSorted": false, "mobility": 0, "color": "0xc8ffd69b", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2, "emission": 95, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] }
+    { "id": 41, "name": "GLOWSHROOM","kind": "COMPONENT", "materialClass": "rigid", "density": 0.45,"looseSorted": false, "mobility": 0, "color": "0xc8ffd69b", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2, "emission": 95, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
+    { "id": 42, "name": "GRASS",     "kind": "POWDER",    "materialClass": "solid", "density": 1.4, "looseSorted": true,  "mobility": 1.0, "color": "0xc854aa5b", "toolClass": "shovel", "toolTier": 0, "textureAmp": 9, "durability": 2, "renderAnim": "none", "componentGroup": "none", "flags": ["flammable", "dissolvable", "bearing"] }
   ],
   "animColors": {
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",

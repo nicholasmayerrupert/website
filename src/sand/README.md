@@ -398,6 +398,9 @@ hardcoded id list, decides who reacts.
 - **Oil**: flammable; a fire front whooshes along connected oil.
 - **Gunpowder**: a fast fuse — catches on any flame with no roll and the burn front
   races through every adjacent grain, so a trail/pile deflagrates in a couple steps.
+- **Grass**: a green loose solid used for plains, forest, jungle, and gentle swamp
+  surfaces. It settles like other powders while tree foliage remains component-backed
+  `PLANT`.
 - **Acid**: bores through any `dissolvable` material (most solids), emitting acrid
   smoke ~half the time; decays as it works.
 - **Lava**: ignites `flammable` neighbours; quenches against `WATER`/`ACID`/`BRINE`

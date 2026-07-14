@@ -26,7 +26,7 @@ const tier = (n) => MAT_TOOLTIER[MAT[n]];
 check(`STONE is pickaxe (${cls('STONE')})`, cls('STONE') === TC.pickaxe);
 check(`COPPER_ORE/IRON_ORE/GOLD_ORE are pickaxe`, cls('COPPER_ORE') === TC.pickaxe && cls('IRON_ORE') === TC.pickaxe && cls('GOLD_ORE') === TC.pickaxe);
 check(`WOOD/PINE_WOOD/CACTUS are axe`, cls('WOOD') === TC.axe && cls('PINE_WOOD') === TC.axe && cls('CACTUS') === TC.axe);
-check(`DIRT/SAND/SNOW/MUD are shovel`, cls('DIRT') === TC.shovel && cls('SAND') === TC.shovel && cls('SNOW') === TC.shovel && cls('MUD') === TC.shovel);
+check(`DIRT/SAND/SNOW/MUD/GRASS are shovel`, cls('DIRT') === TC.shovel && cls('SAND') === TC.shovel && cls('SNOW') === TC.shovel && cls('MUD') === TC.shovel && cls('GRASS') === TC.shovel);
 
 // Tier ladder: common stone is wood-tier, iron needs stone, gold needs iron.
 check(`STONE tier is wood (${tier('STONE')})`, tier('STONE') === TT.wood);

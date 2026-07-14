@@ -945,7 +945,8 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
 }
 
 // Worldgen trees spawn in the BACKGROUND only. Tree trunks are WOOD (the only
-// worldgen WOOD source; surface grass is PLANT, so count WOOD to isolate trees).
+// worldgen WOOD source; surface grass has its own loose material, so count WOOD
+// to isolate trees).
 // Manual placement is a separate path and is unaffected.
 {
   console.log('worldgen: trees only in the background');

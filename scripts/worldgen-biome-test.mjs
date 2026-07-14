@@ -34,7 +34,7 @@ const scan = () => {
     for (let y = surfY; y < Math.min(ROWS, surfY + 8); y++) {
       const k = y * COLS + x, m = g[k];
       if (m === MAT.DIRT) sawDirtMantle = true;
-      if (m === MAT.SAND || m === MAT.DIRT || m === MAT.MUD || m === MAT.SNOW) {
+      if (m === MAT.SAND || m === MAT.DIRT || m === MAT.MUD || m === MAT.SNOW || m === MAT.GRASS) {
         if (bg[k] === m) matchedBackgroundStrata++;
         else mismatchedBackgroundStrata++;
       }
@@ -47,6 +47,7 @@ for (let i = 0; i < 40; i++) { e.shiftWorldXY(128, 0); scan(); }
 // Multiple biomes produce multiple skin materials; tundra's SNOW in particular.
 const named = [...skins].map((m) => Object.keys(MAT).find((k) => MAT[k] === m));
 check(`several biome skins generate (${named.sort().join(', ')})`, skins.size >= 3);
+check('plains/forest GRASS skin appears', skins.has(MAT.GRASS));
 check('tundra SNOW skin appears', skins.has(MAT.SNOW));
 check('a new soil material (DIRT mantle) is generated under grass', sawDirtMantle);
 check(`background matches exposed loose surface strata (${matchedBackgroundStrata} cells)`,

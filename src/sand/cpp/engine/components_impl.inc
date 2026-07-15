@@ -1155,9 +1155,10 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
         c.liquidDensityArea += DENSITY[m];
         if (offs[i] == E.cols) c.bottomLiquidFaces++;
       } else if (E.isLooseSolidMaterial(m)) {
-        c.powderFaces++;
-        c.powderDensityArea += DENSITY[m];
-        if (offs[i] == E.cols) c.bottomPowderFaces++;
+        if (offs[i] == E.cols) {
+          c.bottomPowderFaces++;
+          c.bottomPowderDensityArea += DENSITY[m];
+        }
       } else if (m == EMPTY || E.isGasMaterial(m)) {
         airFaces.push_back(nk);
       }
@@ -1235,11 +1236,11 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
 
 int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, double solidMass) {
   double avgDensity = solidMass / cellCount;
-  bool powderSupports = false;
-  if (c.powderFaces > 0) {
-    double powderDensity = c.powderDensityArea / c.powderFaces;
-    powderSupports = c.bottomPowderFaces > 0 && avgDensity <= powderDensity + 1e-6;
-  }
+  // Granular support is finite bearing capacity, not buoyancy: only downward
+  // contact contributes, and the entire assembly's mass loads that footprint.
+  // Side-buried sand therefore cannot lift or pin an overloaded solid.
+  bool powderSupports = c.bottomPowderFaces > 0
+    && solidMass <= c.bottomPowderDensityArea * GRANULAR_BEARING_DEPTH + 1e-6;
   if (c.liquidFaces > 0) {
     double liquidDensity = c.liquidDensityArea / c.liquidFaces;
     // A completely submerged body's displaced volume is its full cell volume,

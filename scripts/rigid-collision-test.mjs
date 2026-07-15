@@ -530,9 +530,9 @@ for (const dt of [16, 8, 33, 50]) {
   check(`acrid smoke supports a body no more than steam does (${acridBot} ~= ${steamBot})`, Math.abs(acridBot - steamBot) <= 2);
 }
 
-// 9c. Powders are one-way support for solids. Heavy bodies/assemblies sink through
-//     them to the floor; lighter bodies settle into the grains without being pushed
-//     upward. Displaced powder is relocated volume-preservingly by the spill BFS
+// 9c. Powders provide finite one-way support for solids. Heavy bodies/assemblies
+//     and sufficiently concentrated light loads sink through them to the floor;
+//     grains never push a solid upward. Displaced powder is relocated by the spill BFS
 //     (spread out to the free surface) instead of being deleted or piled in a column
 //     on the solid's back.
 //     Checked for BOTH a free rigid body and a painted static assembly — the two paths
@@ -585,9 +585,10 @@ for (const dt of [16, 8, 33, 50]) {
     check(`displaced sand raised the surface (surf ${surf1} < initial ${surf0})`, surf1 < surf0);
     e.destroy();
   }
-  { // A light, tall driftwood body settles in dense sand. Powders can stop its
-    //   descent, but never lift it upward; once sleeping it bakes into a component.
-    console.log('a light driftwood tower settles in dense sand');
+  { // A light but very tall driftwood body overloads its narrow footprint. Once
+    //   the free body sleeps and bakes, the component keeps sinking under the
+    //   full tower load instead of being supported by material density alone.
+    console.log('a concentrated driftwood tower sinks through dense sand');
     const e = mk();
     buildSandPool(e);
     run(e, 200);
@@ -595,7 +596,7 @@ for (const dt of [16, 8, 33, 50]) {
     e.spawnBox(100, 30, 4, 24, DRIFTWOOD);                       // DRIFTWOOD density 0.6 < SAND 1.6
     run(e, 900);
     const bot = matBottom(e, DRIFTWOOD), n = matCount(e, DRIFTWOOD), surf1 = surfaceY(e);
-    check(`driftwood tower settled into sand without reaching the floor (bottom ${bot})`, bot > yTop + 8 && bot < floorY - 30);
+    check(`concentrated driftwood tower sank to the pool floor (bottom ${bot})`, bot >= floorY - 4);
     check(`driftwood tower solidified after settling (${e._bodyCount()} bodies, ${n} cells)`, e._bodyCount() === idx && n >= 360);
     check(`displaced sand raised around the tower (surface ${surf1} < initial ${surf0})`, surf1 < surf0);
     e.destroy();

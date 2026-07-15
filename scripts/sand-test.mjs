@@ -751,6 +751,41 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Granular support is load-per-footprint, not buoyancy. A short wood block can
+// rest on sand, while much more of the same light material concentrated over the
+// same eight-cell footprint must overload it and sink. Sand can resist downward
+// motion, but never pushes either block back upward.
+{
+  console.log('sand support depends on solid load per footprint');
+  const SAND = 1, WOOD = 8;
+  const runWoodLoad = (height) => {
+    const e = mk();
+    for (let x = 25; x < 95; x++) for (let y = 65; y < ROWS; y++) e.paintDisc(x, y, 0, SAND, true);
+    for (let y = 55 - height; y < 55; y++) for (let x = 56; x < 64; x++) e.paintDisc(x, y, 0, WOOD, true);
+    e.syncComponents();
+    const bounds = () => {
+      const g = e.getGrid(); let minY = ROWS, maxY = -1, n = 0;
+      for (let i = 0; i < g.length; i++) if (g[i] === WOOD) {
+        const y = (i / COLS) | 0; n++; if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      return { minY, maxY, n };
+    };
+    run(500, e);
+    const settled = bounds();
+    run(120, e);
+    const later = bounds();
+    e.destroy();
+    return { settled, later };
+  };
+  const small = runWoodLoad(8), large = runWoodLoad(30);
+  check(`small wood load stayed on the sand surface (rows ${small.later.minY}-${small.later.maxY})`,
+    small.later.n === 64 && small.later.minY > 55 && small.later.maxY < 70);
+  check(`large concentrated wood load sank through the sand (rows ${large.later.minY}-${large.later.maxY})`,
+    large.later.n === 240 && large.later.minY > 65 && large.later.maxY >= ROWS - 2);
+  check(`sand never pushed either wood load upward`,
+    small.later.minY >= small.settled.minY && large.later.minY >= large.settled.minY);
+}
+
 // Liquid falling onto the TOP of a light component must not count as buoyant
 // immersion. Only side/bottom wetted area can lift an ungrounded solid.
 {

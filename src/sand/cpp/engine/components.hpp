@@ -13,8 +13,8 @@ struct Engine;
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
 // purpose: top liquid never creates support/lift).
 struct FaceContact {
-  int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, powderFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
-  double liquidDensityArea = 0, powderDensityArea = 0;
+  int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
+  double liquidDensityArea = 0, bottomPowderDensityArea = 0;
   double displacedArea = 0, displacedLiquidMass = 0;
 };
 
@@ -22,6 +22,11 @@ struct FaceContact {
 class ComponentSystem {
  public:
   explicit ComponentSystem(Engine& e) : E(e) {}
+
+  // One downward powder-contact cell bears this many cell-depths of material
+  // at the powder's density. This keeps small light solids on the surface while
+  // allowing a tall/concentrated load to overload the same footprint.
+  static constexpr double GRANULAR_BEARING_DEPTH = 5.0;
 
   // ---- grounding cache + scratch (moved off the Engine) ----
   bool jointGroundReady = false;

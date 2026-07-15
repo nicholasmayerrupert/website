@@ -385,6 +385,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
     // frames it holds a shimmer step. Nothing is translated through world space.
     if (animKind == RA_STEAM || animKind == RA_ACID) return frame / 2;
     if (animKind == RA_SMOKE) return frame / 3;
+    if (animKind == RA_METHANE) return frame / 5;
     if (animKind == RA_WATER) return frame / 4;
     if (animKind == RA_OIL) return frame / 6;
     if (animKind == RA_LAVA) return frame / 8;
@@ -414,6 +415,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       else if (animKind == RA_OIL) shade = (uint8_t)(((int)shade * 3 + shimmer) / 4);
       else if (animKind == RA_ACID) shade = (uint8_t)(((int)shade + shimmer) / 2);
       uint32_t c = renderVariants[((int)m << 3) + shade];
+      uint32_t alphaMask = renderAlphaMask[m];
       if (dmg) {
         uint32_t rem = dmg[k];
         if (rem > 0) {
@@ -424,12 +426,16 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
           }
         }
       }
-      bool hidden = false;
       if (animKind == RA_FIRE) {
         if (shimmer >= 5) c = PACKED_FIRE_HOT;
       } else if (animKind == RA_STEAM || animKind == RA_SMOKE) {
-        hidden = shimmer <= (animKind == RA_SMOKE ? 1 : 0);
         c = jitterShade(c, ((int)shimmer - 3) * 2);
+      } else if (animKind == RA_METHANE) {
+        // Pulse opacity rather than only RGB: at methane's low base opacity, small
+        // brightness shifts are hard to see. The 48..104 alpha range stays visibly
+        // present and translucent at every phase, without recreating air holes.
+        alphaMask = (uint32_t)(48 + shimmer * 8) << 24;
+        c = jitterShade(c, ((int)shimmer - 3) * 3);
       } else if (animKind == RA_WATER) {
         if (shade >= 6) c = jitterShade(c, 4);
       } else if (animKind == RA_OIL) {
@@ -454,9 +460,8 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
       }
       else if (m == GLOWBERRY) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWBERRY_CORE; }
       else if (m == GLOWSHROOM) { if ((renderCellHash(wx, wy) & 3u) == 0u) c = PACKED_GLOWSHROOM_CORE; }
-      if (hidden) { p[k] = 0; continue; }
       if (light) c = applyLight(c, renderLightForCell(light, k, x, y, m));
-      c = (c & 0x00ffffffu) | renderAlphaMask[m];
+      c = (c & 0x00ffffffu) | alphaMask;
       p[k] = c;
     }
   }

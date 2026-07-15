@@ -488,9 +488,8 @@
       }
     }
   }
-  // Shared rise/dissipate behaviour for buoyant gases. Writes the SAME material
-  // `m` it is moving (not a hardcoded STEAM) so e.g. ACRID_SMOKE rises and
-  // dissipates exactly like steam while keeping its own identity/colour.
+  // Shared buoyant-gas movement. Writes the SAME material `m` it is moving (not
+  // hardcoded STEAM); acrid smoke has faster decay, while methane is persistent.
   void riseSteam(int x, int y, int k, uint8_t m) {
     if (L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) { writeNextIndex(k, m); return; } // blast-shocked gas gets one visible frame before normal decay/motion
@@ -510,12 +509,33 @@
                   || (y > 1 && x < cols - 1 && L->grid[I(x + 1, y - 1)] == EMPTY);
       if (!canVent) decayP = ACRID_TRAPPED_DECAY_P;
     }
-    if (rand() < decayP || y <= 1) { markCellIndex(k); return; }
+    if ((m != METHANE && rand() < decayP) || y <= 1) { markCellIndex(k); return; }
     int up = I(x, y - 1);
     if (L->grid[up] == EMPTY && L->next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, m); return; }
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
     for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeNextIndex(ik, m); return; } }
-    if (rand() < 0.65) for (int i = 0; i < 2; i++) { int dx = dirs[i]; if (emptyAt(x + dx, y)) { writeNextIndex(I(x + dx, y), m); return; } }
+    auto methaneRouteLeadsUp = [&](int dx) {
+      // Reverse of liquid surface flow: methane only walks a flat ceiling when
+      // that corridor leads to higher empty volume. A closed level pocket therefore
+      // settles instead of diffusing left/right forever, while a side tunnel to an
+      // upper chamber still vents naturally.
+      static const int LOOKAHEAD = 24;
+      for (int d = 1; d <= LOOKAHEAD; d++) {
+        int nx = x + dx * d;
+        if (nx <= 0 || nx >= cols - 1) return false;
+        int nk = I(nx, y); uint8_t along = L->grid[nk];
+        if (along != EMPTY && along != METHANE) return false;
+        if (y > 1 && L->grid[nk - cols] == EMPTY) return true;
+      }
+      return false;
+    };
+    bool trySide = m == METHANE ? true : rand() < 0.65;
+    if (trySide) for (int i = 0; i < 2; i++) {
+      int dx = dirs[i];
+      if (emptyAt(x + dx, y) && (m != METHANE || methaneRouteLeadsUp(dx))) {
+        writeNextIndex(I(x + dx, y), m); return;
+      }
+    }
     if (L->next[k] == EMPTY) writeNextIndex(k, m);
   }
   void riseFire(int x, int y, int k) {

@@ -20,6 +20,14 @@ class ExplosivesSystem {
   static const int    TNT_CLUSTER_FAST_THRESHOLD = 16; // merge even modest same-tick fronts before stencils overlap heavily
   static const int    TNT_CLUSTER_BUCKET = 14; // representative spacing; blast radii still overlap into one continuous front
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
+  static const int    METHANE_BLAST_RADIUS = 16; // one-third broader pressure flash, still smaller than TNT
+  static constexpr double METHANE_BLAST_POWER = 14.0; // fractures a wider stone shell; hard ores survive
+  static const int    METHANE_BLAST_MIN_CELLS = 10;
+  static const int    METHANE_BLAST_CELLS_PER_FRONT = 48;
+  static const int    METHANE_BLAST_REP_SPACING = 12;
+  static const int    METHANE_BLAST_FRONT_CAP = 8;
+  static const int    METHANE_DEBRIS_STEP_CAP = 10; // actual surrounding material only; never generic DEBRIS
+  static const int    METHANE_DEBRIS_SOURCE_TRIES = 5; // extra launch candidates make carved rubble more likely to escape
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().
   static const int    BLAST_DEBRIS_CHUNKS = 1;    // physical rubble chunks ejected per destroyed material source
@@ -27,6 +35,7 @@ class ExplosivesSystem {
   static const int    BLAST_FORCED_DEBRIS_CHUNKS = 1; // extra generic blast debris, even in open air
   static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.50; // generic open-air debris spawns on half of blasts
   static const int    BLAST_DEBRIS_STEP_CAP = 3;  // max chunks a same-tick blast wave can add per layer
+  static const int    BLAST_DEBRIS_SAMPLE_SIDE = 3; // fixed spatial buckets; no growing candidate list in large craters
   static const int    BLAST_DEBRIS_CAP = 64;      // hard live-body solver ceiling; per-step cap keeps chains paced
   static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
   static constexpr double BLAST_PARTICLE_SPEED = 2.6; // cosmetic fleck speed
@@ -55,7 +64,7 @@ class ExplosivesSystem {
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
-    int particles = 0, debrisSpawned = 0;
+    int particles = 0, debrisSpawned = 0, debrisStepCap = BLAST_DEBRIS_STEP_CAP;
     bool any = false;
   };
 
@@ -70,9 +79,9 @@ class ExplosivesSystem {
   void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries = -1);
   bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
   void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb);
-  void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr);
+  void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT);
   void finishBlasts(BlastBatch& bb);
-  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody = nullptr);
+  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT);
   void finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb);
   void detonate(int cx, int cy, int radius, double power);
   void applyExplosives();

@@ -74,7 +74,7 @@ check('all other materials are componentGroup none', noneOk);
 // material ids and below traits/component storage.
 const CLASS_EXPECTED = {
   NONE: ['EMPTY'],
-  GAS: ['FIRE', 'STEAM', 'ACRID_SMOKE'],
+  GAS: ['FIRE', 'STEAM', 'ACRID_SMOKE', 'METHANE'],
   LIQUID: ['WATER', 'OIL', 'ACID', 'LAVA', 'BRINE'],
   SOLID: ['SAND', 'DIRT', 'SNOW', 'MUD', 'SALT', 'GUNPOWDER', 'GRASS'],
   RIGID: [
@@ -88,7 +88,7 @@ const CLASS_EXPECTED = {
 const liveIds = new Set(MATERIALS.map((m) => m.id));
 check('transparency table covers every material slot', MAT_TRANSPARENCY.length >= Math.max(...liveIds) + 1);
 check('material transparency is normalized', MATERIALS.every((m) => m.transparency >= 0 && m.transparency <= 1 && MAT_TRANSPARENCY[m.id] === m.transparency));
-check('selected liquids and vapors are explicitly translucent', [2, 6, 10, 31, 33].every((id) => MAT_TRANSPARENCY[id] > 0 && MAT_TRANSPARENCY[id] < 1));
+check('selected liquids and vapors are explicitly translucent', [2, 6, 10, 31, 33, 43].every((id) => MAT_TRANSPARENCY[id] > 0 && MAT_TRANSPARENCY[id] < 1));
 let oneClassOk = true;
 for (const m of MATERIALS) {
   const cls = MAT_CLASS[m.id];

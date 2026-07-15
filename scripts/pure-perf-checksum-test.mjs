@@ -6,9 +6,9 @@
 import { execFileSync } from 'node:child_process';
 
 const EXPECTED = {
-  'pan-stream': 0x1da6d838,
-  'liquid-active': 0xa0a4a226,
-  'components-active': 0x5c8c447c,
+  'pan-stream': 0x806333e8,
+  'liquid-active': 0x099f0728,
+  'components-active': 0x430aa27c,
 };
 
 const out = execFileSync(process.execPath, ['scripts/bench-sand.mjs', '--scenario', 'all', '--checksum-only'], {

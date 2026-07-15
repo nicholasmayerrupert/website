@@ -26,7 +26,8 @@
     "water": 4,
     "oil": 5,
     "acid": 6,
-    "lava": 7
+    "lava": 7,
+    "methane": 8
   },
   "$flagDoc": "Bit index per behavior flag. flammable: ignites near fire/lava. dissolvable: acid eats it. rigid: a solid that grounds via rigid contact + is moved by moveRigidAssemblies. bearing: supports loose material above it (rigid ∪ sand-like powders). plantFamily: belongs to the growable plant-component family (flooded unbounded; fire-split).",
   "flagBits": {
@@ -122,7 +123,8 @@
 
     { "id": 40, "name": "GLOWBERRY", "kind": "COMPONENT", "materialClass": "rigid", "density": 0.4, "looseSorted": false, "mobility": 0, "color": "0xd81e9bff", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 1, "emission": 98, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "plantFamily"] },
     { "id": 41, "name": "GLOWSHROOM","kind": "COMPONENT", "materialClass": "rigid", "density": 0.45,"looseSorted": false, "mobility": 0, "color": "0xc8ffd69b", "toolClass": "axe", "toolTier": 0, "textureAmp": 8, "durability": 2, "emission": 95, "renderAnim": "none", "componentGroup": "plant", "flags": ["dissolvable", "rigid", "bearing", "plantFamily"] },
-    { "id": 42, "name": "GRASS",     "kind": "POWDER",    "materialClass": "solid", "density": 1.4, "looseSorted": true,  "mobility": 1.0, "color": "0xc854aa5b", "toolClass": "shovel", "toolTier": 0, "textureAmp": 9, "durability": 2, "renderAnim": "none", "componentGroup": "none", "flags": ["flammable", "dissolvable", "bearing"] }
+    { "id": 42, "name": "GRASS",     "kind": "POWDER",    "materialClass": "solid", "density": 1.4, "looseSorted": true,  "mobility": 1.0, "color": "0xc854aa5b", "toolClass": "shovel", "toolTier": 0, "textureAmp": 9, "durability": 2, "renderAnim": "none", "componentGroup": "none", "flags": ["flammable", "dissolvable", "bearing"] },
+    { "id": 43, "name": "METHANE",   "kind": "GAS",       "materialClass": "gas",   "density": 0,   "looseSorted": false, "mobility": 0,   "transparency": 0.70, "color": "0x609bd296", "toolClass": "none", "toolTier": 0, "textureAmp": 0, "durability": 0, "renderAnim": "methane", "componentGroup": "none", "flags": [] }
   ],
   "animColors": {
     "$comment": "Animation-only ABGR colors (not base material colors); the renderer swaps these in per-frame. PACKED_FIRE duplicates FIRE's base color.",

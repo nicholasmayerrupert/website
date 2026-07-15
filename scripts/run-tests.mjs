@@ -38,6 +38,7 @@ const SUITES = [
   ['rigid-topple', 'rigid-topple-test.mjs'],
   ['rigidmat', 'rigidmat-test.mjs'],
   ['explosives', 'explosives-test.mjs'],
+  ['methane', 'methane-test.mjs'],
   ['grounding', 'grounding-incremental-test.mjs'],
   ['pure-perf', 'pure-perf-checksum-test.mjs'],
   ['timing', 'timing-test.mjs'],

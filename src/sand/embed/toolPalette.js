@@ -76,7 +76,7 @@ const CREATURE_EGGS = [
 // material; creature eggs are appended separately so they always stay last.
 const FEATURED_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'water', 'acid', 'lava', 'tnt', 'seed', 'sand'];
 const MAIN_TAIL_LABELS = [
-  'fire', 'oil', 'gunpowder', 'crystal', 'mycelium_spore', 'mycelium', 'glowberry', 'glowshroom',
+  'fire', 'methane', 'oil', 'gunpowder', 'crystal', 'mycelium_spore', 'mycelium', 'glowberry', 'glowshroom',
   'brine', 'steam', 'acrid_smoke', 'ice',
   'oak seed', 'pine seed', 'willow seed', 'cactus seed', 'mushroom seed', 'bush seed',
   'grass', 'dirt', 'snow', 'mud', 'salt', 'gold_ore', 'iron_ore', 'copper_ore', 'coal_ore',
@@ -98,7 +98,7 @@ const PALETTE_SECTIONS = [
     'mush_cap', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
   ], kinds: [CK_SEED] },
   { id: 'reactions', label: 'Reactions', accent: '#ff856c', labels: [
-    'fire', 'steam', 'oil', 'acid', 'lava', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
+    'fire', 'steam', 'methane', 'oil', 'acid', 'lava', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
   ] },
   { id: 'creatures', label: 'Creatures', accent: '#c99cff', kinds: [CK_CREATURE] },
 ];

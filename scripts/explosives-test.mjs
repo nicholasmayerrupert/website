@@ -201,17 +201,23 @@ function blastDamagesMaterial(name) {
   e.placeMaterial(70, 49, 0, MAT.TNT);
   e.syncComponents();
   const items0 = e.itemCount();
-  let maxBodies = 0, particlesSeen = false;
+  let maxBodies = 0, maxStoneBodies = 0, particlesSeen = false;
   let sawGenericDebris = false;
   for (let i = 0; i < 60; i++) {
     e.placeMaterial(71, 49, 1, MAT.FIRE);
     e.step(i * 16);
     maxBodies = Math.max(maxBodies, e._bodyCount());
-    for (let b = 0; b < e._bodyCount(); b++) if (e._bodyMaterial(b) === MAT.DEBRIS) sawGenericDebris = true;
+    let stoneBodies = 0;
+    for (let b = 0; b < e._bodyCount(); b++) {
+      if (e._bodyMaterial(b) === MAT.DEBRIS) sawGenericDebris = true;
+      if (e._bodyMaterial(b) === MAT.STONE) stoneBodies++;
+    }
+    maxStoneBodies = Math.max(maxStoneBodies, stoneBodies);
     if (e.itemCount() > items0 + 5) particlesSeen = true;
   }
   check(`blast scattered cosmetic particles (items ${items0} -> peak)`, particlesSeen);
   check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
+  check(`stone blast fills its bounded real-stone sample budget (peak ${maxStoneBodies})`, maxStoneBodies >= 3);
   check(`blast can suppress default generic DEBRIS chunks`, !sawGenericDebris);
   for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle + bake
   check(`debris chunks baked back into static rubble (bodies now ${e._bodyCount()})`, e._bodyCount() <= 1);
@@ -301,19 +307,23 @@ function blastDamagesMaterial(name) {
   // Grounded plant-family solids still need physical rubble from destroyed cells.
   const e = mk();
   for (let y = 68; y < ROWS; y++) for (let x = 48; x < 92; x++) e.placeMaterial(x, y, 0, MAT.WOOD);
-  for (let y = 68; y < ROWS; y++) for (let x = 48; x < 58; x++) e.placeMaterial(x, y, 0, MAT.STONE);
+  for (let y = 60; y < ROWS; y++) for (let x = 60; x < 65; x++) e.placeMaterial(x, y, 0, MAT.STONE);
   e.placeMaterial(70, 67, 0, MAT.TNT);
   e.syncComponents();
   let peakBodies = 0;
-  let sawWoodBody = false;
+  let sawWoodBody = false, sawStoneBody = false;
   for (let i = 0; i < 90; i++) {
     e.placeMaterial(71, 67, 1, MAT.FIRE);
     e.step(i * 16);
     peakBodies = Math.max(peakBodies, e._bodyCount());
-    for (let b = 0; b < e._bodyCount(); b++) if (e._bodyMaterial(b) === MAT.WOOD) sawWoodBody = true;
+    for (let b = 0; b < e._bodyCount(); b++) {
+      if (e._bodyMaterial(b) === MAT.WOOD) sawWoodBody = true;
+      if (e._bodyMaterial(b) === MAT.STONE) sawStoneBody = true;
+    }
   }
   check(`mixed grounded blast emitted physical rubble (peak bodies ${peakBodies})`, peakBodies > 0);
   check(`mixed grounded blast emitted WOOD rubble specifically`, sawWoodBody);
+  check(`mixed grounded blast emitted STONE rubble specifically`, sawStoneBody);
   e.destroy();
 }
 

@@ -401,6 +401,22 @@
         }
       }
     };
+    auto stampMethanePocket = [&](int wx, int ceilY, int gx, int gy) {
+      // A shallow lens attached to the cave ceiling. The generic gas pass lets it
+      // spread into nearby high points afterward; generation only supplies a
+      // deterministic, seam-safe initial pocket.
+      int rx = 6 + (int)(whash2(sseed ^ 0x6A50u, gx, gy) * 8);
+      int depth = 2 + (int)(whash2(sseed ^ 0x6A51u, gx, gy) * 2);
+      for (int dy = 0; dy < depth; dy++) {
+        double t = (double)dy / (double)depth;
+        int half = imax(1, (int)std::floor(rx * std::sqrt(1.0 - t * t)));
+        for (int dx = -half; dx <= half; dx++) {
+          int px = wx + dx, py = ceilY + dy;
+          if (terrain.genOpenCaveAt(px, py))
+            putCaveFeatureCell(colStart, colEnd, rowStart, rowEnd, px, py, METHANE);
+        }
+      }
+    };
     auto stampLavaBasin = [&](int wx, int floorY, int gx, int gy) {
       // Wide size spread: a squared roll skews toward many small glowing pools with
       // the occasional big lake. Depth tracks width so the pool stays basin-shaped
@@ -493,6 +509,18 @@
                      : 0.0034;   // mushroom / lush: brighten them up
       if (hasFloor && lavaH < lavaThr) {
         stampLavaBasin(wx, floorY, gx, gy);
+        continue;
+      }
+
+      // Rare ceiling pockets make otherwise-dark caves hazardous. Mushroom caves
+      // are richest; crystal caves are nearly methane-free. Keeping this sparse
+      // avoids filling every generated window with permanently active gas.
+      double methaneH = whash2(sseed ^ 0x6A52u, gx, gy);
+      double methaneThr = caveBiome == CAVE_MUSHROOM ? 0.009
+                          : caveBiome == CAVE_DEFAULT ? 0.006
+                          : caveBiome == CAVE_LUSH ? 0.002 : 0.001;
+      if (hasCeil && methaneH < methaneThr) {
+        stampMethanePocket(wx, ceilY, gx, gy);
         continue;
       }
 

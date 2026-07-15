@@ -42,7 +42,8 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves) 
         double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
         if (whash2(wave.seed ^ 0x6C8E9CF5u, xx, yy) >= keepP) return;
         double g = whash2(wave.seed ^ 0xA511E9B3u, xx, yy);
-        uint8_t m = g < TNT_ACRID_FRAC ? ACRID_SMOKE : (g < TNT_ACRID_FRAC + TNT_STEAM_FRAC ? STEAM : FIRE);
+        uint8_t m = g < TNT_ACRID_FRAC ? ACRID_SMOKE
+                  : (g < TNT_ACRID_FRAC + TNT_STEAM_FRAC ? STEAM : FIRE);
         E.writeGridIndex(k, m);
         E.L->vacatedStamp[k] = E.tick;
         E.L->blastGasStamp[k] = E.tick;
@@ -105,16 +106,38 @@ std::vector<std::pair<int, int>> ExplosivesSystem::blastBoxCells(int cx, int cy,
 
 void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries) {
   if (tries < count) tries = count;
+  double dx = (double)cx - sx0, dy = (double)cy - sy;
+  double dl = std::sqrt(dx * dx + dy * dy);
+  bool sourcedFromWall = dl > 0.5;
+  double nx = sourcedFromWall ? dx / dl : 0.0;
+  double ny = sourcedFromWall ? dy / dl : -1.0;
+  double tx = -ny, ty = nx;
+  static const int TANGENT[5] = {0, -2, 2, -4, 4};
   int spawned = 0;
-  for (int i = 0; i < tries && spawned < count && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
+  for (int i = 0; i < tries && spawned < count && bb.debrisSpawned < bb.debrisStepCap && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
     double j = whash2(bseed, salt + i, 13);
-    int sx = sx0 + (i * 2 - (tries - 1)) * 2;
-    std::vector<std::pair<int, int>> cells = blastBoxCells(sx, sy - 3, 1, 1);
+    int sx, spawnY;
+    if (sourcedFromWall) {
+      int tangent = TANGENT[i % 5];
+      int inset = 3 + i / 5;
+      sx = (int)std::lround(sx0 + nx * inset + tx * tangent);
+      spawnY = (int)std::lround(sy + ny * inset + ty * tangent);
+    } else {
+      sx = sx0 + (i * 2 - (tries - 1)) * 2;
+      spawnY = sy - 3;
+    }
+    std::vector<std::pair<int, int>> cells = blastBoxCells(sx, spawnY, 1, 1);
     if (!blastBodyCandidateHasEscape(cells, debrisMat, false)) continue;
     Body* b = E.finishSpawn(cells, debrisMat);
     if (!b) continue;
-    b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
-    b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
+    if (sourcedFromWall) {
+      double speed = BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
+      b->vx = nx * speed + tx * (j - 0.5);
+      b->vy = ny * speed + ty * (j - 0.5) - 0.35;
+    } else {
+      b->vx = (double)(sx - cx) * 0.16 + (j - 0.5);
+      b->vy = -BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
+    }
     b->awake = true; b->stillTicks = 0;
     bb.debrisSpawned++;
     spawned++;
@@ -171,8 +194,9 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
 // exceeds the blast energy there: energy = power*(1 - d/radius). Soft blocks
 // (sand/dirt) are cleared almost to the rim; hard ones (iron ore) only near centre.
 // Destruction is component-safe and body-aware, reusing the eraser/mining primitives.
-void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody) {
+void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody, uint8_t explosiveMaterial) {
   bb.any = true;
+  if (explosiveMaterial == METHANE) bb.debrisStepCap = METHANE_DEBRIS_STEP_CAP;
   if (cx - radius < bb.minX) bb.minX = cx - radius;
   if (cy - radius < bb.minY) bb.minY = cy - radius;
   if (cx + radius > bb.maxX) bb.maxX = cx + radius;
@@ -197,8 +221,12 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     if (E.isRigidMaterialClass(E.L->grid[E.I(x, y)])) blockedRim++;
   }
   bool enclosed = blockedRim >= 6;
-  uint8_t debrisSeen[TABLE]; std::fill(debrisSeen, debrisSeen + TABLE, (uint8_t)0);
-  std::vector<BlastDebrisSource> debrisSources;
+  static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
+  int debrisSampleCells[TABLE * SAMPLE_COUNT];
+  int debrisSampleDist[TABLE * SAMPLE_COUNT];
+  uint16_t debrisSampleMask[TABLE];
+  uint64_t debrisMaterialMask = 0;
+  int sampleThird = imax(1, radius / 3);
   auto carveCell = [&](int ox, int oy, int dd, double dist) {
       int yy = cy + oy; if (yy <= 0 || yy >= E.rows) return;
       int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) return;
@@ -239,9 +267,27 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
         if (!bb.bodyMapBuilt) { for (Body* b : E.L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
         if (!E.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
       } else {
-        // Track each destroyed solid material as a physical-rubble source (never
-        // TNT — exploding TNT must be consumed, not scattered as live shrapnel).
-        if (m != TNT && E.isRigidMaterialClass(m) && !debrisSeen[m]) { debrisSeen[m] = 1; debrisSources.push_back({m, k}); }
+        // Keep one central candidate per material in each of nine fixed spatial
+        // buckets. This lets a large stone wall fill the existing rubble budget
+        // instead of collapsing to one sample, without a growing per-cell list.
+        // TNT itself is never scattered as live shrapnel.
+        if (m != TNT && E.isRigidMaterialClass(m)) {
+          int bx = ox < -sampleThird ? 0 : (ox > sampleThird ? 2 : 1);
+          int by = oy < -sampleThird ? 0 : (oy > sampleThird ? 2 : 1);
+          int bucket = by * BLAST_DEBRIS_SAMPLE_SIDE + bx;
+          uint64_t materialBit = 1ull << m;
+          if (!(debrisMaterialMask & materialBit)) {
+            debrisMaterialMask |= materialBit;
+            debrisSampleMask[m] = 0;
+          }
+          uint16_t bucketBit = (uint16_t)(1u << bucket);
+          int sample = (int)m * SAMPLE_COUNT + bucket;
+          if (!(debrisSampleMask[m] & bucketBit) || dd < debrisSampleDist[sample]) {
+            debrisSampleMask[m] |= bucketBit;
+            debrisSampleCells[sample] = k;
+            debrisSampleDist[sample] = dd;
+          }
+        }
         uint8_t group = E.componentGroupOf(m);
         if (group == CG_STONE) bb.erasedStone.push_back(k);
         else if (group == CG_ICE) bb.erasedIce.push_back(k);
@@ -267,6 +313,35 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
       if (dd <= r2) carveCell(ox, oy, dd, std::sqrt((double)dd));
     }
   }
+  int localDebrisCap = enclosed && explosiveMaterial != METHANE
+                     ? 0
+                     : bb.debrisStepCap;
+  int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
+  std::vector<BlastDebrisSource> debrisSources;
+  debrisSources.reserve((size_t)sourceLimit);
+  uint8_t firstSample[TABLE];
+  // Give each destroyed material one representative before taking repeats.
+  for (int m = 0; m < TABLE && (int)debrisSources.size() < sourceLimit; m++) {
+    if (!(debrisMaterialMask & (1ull << m))) continue;
+    int best = -1;
+    for (int s = 0; s < SAMPLE_COUNT; s++) {
+      int sample = m * SAMPLE_COUNT + s;
+      if ((debrisSampleMask[m] & (1u << s)) && (best < 0 || debrisSampleDist[sample] < debrisSampleDist[m * SAMPLE_COUNT + best])) best = s;
+    }
+    if (best >= 0) {
+      firstSample[m] = (uint8_t)best;
+      debrisSources.push_back({(uint8_t)m, debrisSampleCells[m * SAMPLE_COUNT + best]});
+    }
+  }
+  // Then distribute repeated samples spatially. The vector can never exceed the
+  // already-existing per-step body budget (3 TNT / 10 methane).
+  for (int s = 0; s < SAMPLE_COUNT && (int)debrisSources.size() < sourceLimit; s++)
+    for (int m = 0; m < TABLE && (int)debrisSources.size() < sourceLimit; m++) {
+      if (!(debrisMaterialMask & (1ull << m))) continue;
+      int sample = m * SAMPLE_COUNT + s;
+      if (s != firstSample[m] && (debrisSampleMask[m] & (1u << s)))
+        debrisSources.push_back({(uint8_t)m, debrisSampleCells[sample]});
+    }
   // Shockwave: shove nearby free bodies outward and wake them.
   for (Body* b : E.L->bodies) {
     double ddx = b->px - cx, ddy = b->py - cy, bd = std::sqrt(ddx * ddx + ddy * ddy);
@@ -274,15 +349,18 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
     b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
   }
-  if (!enclosed && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
+  // TNT can contribute a small generic blast fragment in open air. Methane owns
+  // no solid material, so it may only throw rubble carved from its surroundings.
+  if (explosiveMaterial != METHANE && !enclosed && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
     spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
   // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
   // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
   // can't flood the body solver.
-  for (size_t di = 0; !enclosed && di < debrisSources.size() && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
+  for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < localDebrisCap && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
     uint8_t debrisMat = debrisSources[di].material;
     int src = debrisSources[di].cell, sy = src / E.cols, sx0 = src - sy * E.cols;
-    spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, BLAST_DEBRIS_SOURCE_TRIES);
+    int tries = explosiveMaterial == METHANE ? METHANE_DEBRIS_SOURCE_TRIES : BLAST_DEBRIS_SOURCE_TRIES;
+    spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, tries);
   }
 }
 
@@ -322,14 +400,14 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
 }
 
-void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody) {
+void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody, uint8_t explosiveMaterial) {
   Layer* src = E.L;
-  E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), TNT, src == &E.bg ? 1 : 0);
-  carveBlast(cx, cy, radius, power, bb, sourceBody);
+  E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), explosiveMaterial, src == &E.bg ? 1 : 0);
+  carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial);
   if (!E.bgEnabled || !otherBb) return;
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
   E.useLayer(other);
-  carveBlast(cx, cy, radius, power, *otherBb, nullptr);
+  carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial);
   E.useLayer(src);
 }
 
@@ -392,6 +470,49 @@ void ExplosivesSystem::applyExplosives() {
       lightTnt(k, k + 1); lightTnt(k, k - 1); lightTnt(k, k + E.cols); lightTnt(k, k - E.cols);
   });
   BlastBatch bb, otherBb;
+
+  // Methane is a volume hazard, not thousands of tiny TNT cells. A heat contact
+  // consumes each connected pocket in one deterministic flood, turns the uncarved
+  // volume into a sheet of flame, and chooses only a few spatially-separated blast
+  // fronts. Work is O(pocket cells) plus a hard-capped eight weak stencils, so a
+  // giant painted cloud stays fast while still flashing across its full shape.
+  auto igniteMethanePocket = [&](int seed) {
+    if (seed < 0 || seed >= E.cols * E.rows || E.L->grid[seed] != METHANE) return;
+    std::vector<int> queue, reps;
+    queue.reserve(256); reps.reserve(METHANE_BLAST_FRONT_CAP * 2);
+    std::unordered_set<int> repBuckets;
+    queue.push_back(seed); E.writeGridIndex(seed, FIRE);
+    for (size_t qi = 0; qi < queue.size(); qi++) {
+      int k = queue[qi], y = k / E.cols, x = k - y * E.cols;
+      int bucket = (y / METHANE_BLAST_REP_SPACING) * ((E.cols + METHANE_BLAST_REP_SPACING - 1) / METHANE_BLAST_REP_SPACING)
+                 + x / METHANE_BLAST_REP_SPACING;
+      if (repBuckets.insert(bucket).second) reps.push_back(k);
+      auto visit = [&](int nk) {
+        if (E.L->grid[nk] != METHANE) return;
+        E.writeGridIndex(nk, FIRE); queue.push_back(nk);
+      };
+      if (x > 0) visit(k - 1); if (x + 1 < E.cols) visit(k + 1);
+      if (y > 0) visit(k - E.cols); if (y + 1 < E.rows) visit(k + E.cols);
+    }
+    if ((int)queue.size() < METHANE_BLAST_MIN_CELLS) return;
+    int fronts = imin(METHANE_BLAST_FRONT_CAP,
+                      imax(1, (int)queue.size() / METHANE_BLAST_CELLS_PER_FRONT));
+    fronts = imin(fronts, (int)reps.size());
+    for (int i = 0; i < fronts; i++) {
+      int cell = reps[(size_t)i * reps.size() / fronts];
+      carveBlastAcrossLayers(cell % E.cols, cell / E.cols,
+                            METHANE_BLAST_RADIUS, METHANE_BLAST_POWER,
+                            bb, &otherBb, nullptr, METHANE);
+    }
+  };
+  scanHeat([&](int k) {
+    int y = k / E.cols, x = k - y * E.cols;
+    if (x + 1 < E.cols) igniteMethanePocket(k + 1);
+    if (x > 0) igniteMethanePocket(k - 1);
+    if (y + 1 < E.rows) igniteMethanePocket(k + E.cols);
+    if (y > 0) igniteMethanePocket(k - E.cols);
+  });
+
   // 2) Tick static fuses; carve the expired ones in deterministic (sorted) order.
   if (!E.L->pendingDetonations.empty()) {
     std::vector<int> fire;

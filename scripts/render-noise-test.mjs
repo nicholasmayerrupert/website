@@ -29,7 +29,7 @@ const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sin
 
 console.log('schema-driven animated textures');
 {
-  const animated = ['FIRE', 'STEAM', 'ACRID_SMOKE', 'WATER', 'OIL', 'ACID', 'LAVA', 'BRINE'];
+  const animated = ['FIRE', 'STEAM', 'ACRID_SMOKE', 'METHANE', 'WATER', 'OIL', 'ACID', 'LAVA', 'BRINE'];
   for (const name of animated) {
     const e = createEngineWasm({ cols: 64, rows: 64, worldSeed: SEED, sinksOn: false, infinite: false });
     e.getGrid().fill(MAT[name]);
@@ -53,6 +53,27 @@ console.log('schema-driven animated textures');
   for (let i = 0; i < first.length; i++) if (first[i] !== next[i]) changed++;
   check('non-animated terrain remains world-locked', changed === 0, `(${changed} cells changed)`);
   e.destroy();
+
+  for (const name of ['FIRE', 'STEAM', 'ACRID_SMOKE', 'METHANE']) {
+    const gas = createEngineWasm({ cols: 64, rows: 64, worldSeed: SEED, sinksOn: false, infinite: false });
+    gas.getGrid().fill(MAT[name]);
+    let hidden = 0, minAlpha = 255, maxAlpha = 0;
+    for (let frame = 0; frame < 20; frame++) {
+      gas.renderFull();
+      const px = new Uint32Array(gas.getRenderPixels().slice().buffer);
+      for (const c of px) {
+        if (c === 0) hidden++;
+        const alpha = c >>> 24;
+        if (alpha < minAlpha) minAlpha = alpha;
+        if (alpha > maxAlpha) maxAlpha = alpha;
+      }
+    }
+    check(`${name.toLowerCase()} shimmer never creates invisible air holes`, hidden === 0, `(${hidden} hidden samples)`);
+    if (name === 'METHANE') check('methane shimmer has a clear translucent opacity pulse',
+      minAlpha > 0 && maxAlpha < 255 && maxAlpha - minAlpha >= 40,
+      `(alpha ${minAlpha}..${maxAlpha})`);
+    gas.destroy();
+  }
 }
 
 console.log('stationary shimmer');

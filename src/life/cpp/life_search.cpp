@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <deque>
 #include <functional>
 #include <memory>
 #include <string>
@@ -129,6 +130,13 @@ struct ReverseNode {
   Board state;
   std::vector<Lit> blockers;
   bool hadParent = false;
+  uint64_t attemptStartConflicts = 0;
+  uint64_t softConflictBudget = 0;
+};
+
+struct ReverseTask {
+  std::vector<ReverseNode> path;
+  int baseDepth = 0;
 };
 
 class SearchEngine {
@@ -154,7 +162,7 @@ class SearchEngine {
     return count;
   }
 
-  void startReverse(const uint8_t* cells, int maximumDepth, uint64_t seed) {
+  void startReverse(const uint8_t* cells, int maximumDepth, int branchConflictBudget, uint64_t seed) {
     reverseSolver = std::make_unique<Solver>();
     reverseSolver->random_seed = static_cast<double>((seed % 1000003ULL) + 1ULL);
     reverseSolver->random_var_freq = 0.02;
@@ -172,8 +180,12 @@ class SearchEngine {
         if (cells[y * size + x]) target.rows[y] |= 1ULL << x;
       }
     }
+    reverseInitialBranchBudget = static_cast<uint64_t>(
+        std::clamp(branchConflictBudget, 1000, 1000000000));
     reversePath.clear();
-    reversePath.push_back({target, {}, false});
+    reversePath.push_back({target, {}, false, reverseSolver->conflicts, reverseInitialBranchBudget});
+    reverseTaskBaseDepth = 0;
+    deferredTasks.clear();
     bestPath.clear();
     bestPath.push_back(target);
     reverseMaxDepth = std::max(0, maximumDepth);
@@ -182,6 +194,8 @@ class SearchEngine {
     reverseCyclePrunes = 0;
     reverseGoeLeaves = 0;
     reverseDepthCuts = 0;
+    reverseDeferrals = 0;
+    reverseTaskResumes = 0;
     reverseStatus = 1;
     reverseRunning = true;
     soupRunning = false;
@@ -206,6 +220,9 @@ class SearchEngine {
     reverseSolver->setConfBudget(std::clamp(conflictBudget, 10, 1000000));
     const Minisat::lbool answer = reverseSolver->solveLimited(assumptions);
     if (answer == l_Undef) {
+      if (reverseSolver->conflicts - node.attemptStartConflicts >= node.softConflictBudget) {
+        deferCurrentNode();
+      }
       reverseStatus = 1;
       return reverseStatus;
     }
@@ -227,11 +244,12 @@ class SearchEngine {
 
     if (onCurrentPath(parent)) {
       ++reverseCyclePrunes;
+      node.attemptStartConflicts = reverseSolver->conflicts;
       reverseStatus = 1;
       return reverseStatus;
     }
 
-    reversePath.push_back({std::move(parent), {}, false});
+    reversePath.push_back({std::move(parent), {}, false, reverseSolver->conflicts, reverseInitialBranchBudget});
     if (reversePath.size() > bestPath.size()) {
       bestPath.clear();
       bestPath.reserve(reversePath.size());
@@ -278,10 +296,15 @@ class SearchEngine {
   uint64_t reverseCyclePrunes = 0;
   uint64_t reverseGoeLeaves = 0;
   uint64_t reverseDepthCuts = 0;
+  uint64_t reverseDeferrals = 0;
+  uint64_t reverseTaskResumes = 0;
+  uint64_t reverseInitialBranchBudget = 250000;
+  int reverseTaskBaseDepth = 0;
   std::unique_ptr<Solver> reverseSolver;
   std::vector<Var> predVars;
   std::vector<Var> outputVars;
   std::vector<ReverseNode> reversePath;
+  std::deque<ReverseTask> deferredTasks;
   std::vector<Board> bestPath;
   std::vector<uint8_t> scratch;
 
@@ -459,14 +482,66 @@ class SearchEngine {
     return false;
   }
 
-  void backtrack() {
-    if (reversePath.size() <= 1) {
+  bool resumeDeferredTask() {
+    if (deferredTasks.empty()) return false;
+    ReverseTask task = std::move(deferredTasks.front());
+    deferredTasks.pop_front();
+    reversePath = std::move(task.path);
+    reverseTaskBaseDepth = task.baseDepth;
+    if (!reversePath.empty()) reversePath.back().attemptStartConflicts = reverseSolver->conflicts;
+    ++reverseTaskResumes;
+    reverseStatus = 1;
+    return true;
+  }
+
+  void finishCurrentTask() {
+    reversePath.clear();
+    if (!resumeDeferredTask()) {
       reverseRunning = false;
       reverseStatus = 2;
+    }
+  }
+
+  void deferCurrentNode() {
+    const int depth = static_cast<int>(reversePath.size()) - 1;
+    ReverseTask deferred{reversePath, depth};
+    // Ancestors are retained only for cycle detection and display; this task
+    // will never search above its base, so their growing blocker lists are dead weight.
+    for (int i = 0; i < depth; ++i) deferred.path[i].blockers.clear();
+    ReverseNode& deferredNode = deferred.path.back();
+    deferredNode.softConflictBudget = std::min<uint64_t>(
+        deferredNode.softConflictBudget * 2ULL, 1000000000ULL);
+    deferredNode.attemptStartConflicts = reverseSolver->conflicts;
+    deferredTasks.push_back(std::move(deferred));
+    ++reverseDeferrals;
+
+    if (depth <= reverseTaskBaseDepth) {
+      finishCurrentTask();
+      return;
+    }
+
+    reversePath.pop_back();
+    ++reverseBacktracks;
+    reversePath.back().attemptStartConflicts = reverseSolver->conflicts;
+
+    // Do not let a stream of fresh siblings starve older hard subtrees. Move
+    // the active task to the back of the queue every fourth deferral.
+    if (reverseDeferrals % 4 == 0 && !deferredTasks.empty()) {
+      deferredTasks.push_back({std::move(reversePath), reverseTaskBaseDepth});
+      resumeDeferredTask();
+    }
+    reverseStatus = 1;
+  }
+
+  void backtrack() {
+    const int depth = static_cast<int>(reversePath.size()) - 1;
+    if (depth <= reverseTaskBaseDepth) {
+      finishCurrentTask();
       return;
     }
     reversePath.pop_back();
     ++reverseBacktracks;
+    reversePath.back().attemptStartConflicts = reverseSolver->conflicts;
     reverseStatus = 1;
   }
 };
@@ -533,9 +608,9 @@ LIFE_EXPORT const uint8_t* life_soup_result_cells(uintptr_t handle, int index) {
 }
 
 LIFE_EXPORT void life_start_reverse(uintptr_t handle, const uint8_t* cells, int maxDepth,
-                                    uint32_t seedLow, uint32_t seedHigh) {
+                                    int branchConflictBudget, uint32_t seedLow, uint32_t seedHigh) {
   if (SearchEngine* engine = asEngine(handle)) {
-    engine->startReverse(cells, maxDepth, joinSeed(seedLow, seedHigh));
+    engine->startReverse(cells, maxDepth, branchConflictBudget, joinSeed(seedLow, seedHigh));
   }
 }
 
@@ -592,6 +667,34 @@ LIFE_EXPORT double life_reverse_depth_cuts(uintptr_t handle) {
 LIFE_EXPORT double life_reverse_conflicts(uintptr_t handle) {
   SearchEngine* engine = asEngine(handle);
   return engine && engine->reverseSolver ? static_cast<double>(engine->reverseSolver->conflicts) : 0;
+}
+
+LIFE_EXPORT double life_reverse_node_conflicts(uintptr_t handle) {
+  SearchEngine* engine = asEngine(handle);
+  if (!engine || !engine->reverseSolver || engine->reversePath.empty()) return 0;
+  return static_cast<double>(engine->reverseSolver->conflicts -
+                             engine->reversePath.back().attemptStartConflicts);
+}
+
+LIFE_EXPORT double life_reverse_node_budget(uintptr_t handle) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && !engine->reversePath.empty()
+      ? static_cast<double>(engine->reversePath.back().softConflictBudget) : 0;
+}
+
+LIFE_EXPORT double life_reverse_deferrals(uintptr_t handle) {
+  SearchEngine* engine = asEngine(handle);
+  return engine ? static_cast<double>(engine->reverseDeferrals) : 0;
+}
+
+LIFE_EXPORT double life_reverse_deferred_count(uintptr_t handle) {
+  SearchEngine* engine = asEngine(handle);
+  return engine ? static_cast<double>(engine->deferredTasks.size()) : 0;
+}
+
+LIFE_EXPORT double life_reverse_task_resumes(uintptr_t handle) {
+  SearchEngine* engine = asEngine(handle);
+  return engine ? static_cast<double>(engine->reverseTaskResumes) : 0;
 }
 
 LIFE_EXPORT void life_step(int size, const uint8_t* input, uint8_t* output) {

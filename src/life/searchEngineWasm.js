@@ -23,7 +23,7 @@ export async function createLifeSearchEngine(size) {
     soupResultLifetime: fn(module, 'life_soup_result_lifetime', 'number', ['number', 'number']),
     soupResultReason: fn(module, 'life_soup_result_reason', 'number', ['number', 'number']),
     soupResultCells: fn(module, 'life_soup_result_cells', 'number', ['number', 'number']),
-    startReverse: fn(module, 'life_start_reverse', null, ['number', 'number', 'number', 'number', 'number']),
+    startReverse: fn(module, 'life_start_reverse', null, ['number', 'number', 'number', 'number', 'number', 'number']),
     reversePump: fn(module, 'life_reverse_pump', 'number', ['number', 'number']),
     reverseStatus: fn(module, 'life_reverse_status', 'number', ['number']),
     reverseCurrentDepth: fn(module, 'life_reverse_current_depth', 'number', ['number']),
@@ -35,6 +35,11 @@ export async function createLifeSearchEngine(size) {
     reverseGoeLeaves: fn(module, 'life_reverse_goe_leaves', 'number', ['number']),
     reverseDepthCuts: fn(module, 'life_reverse_depth_cuts', 'number', ['number']),
     reverseConflicts: fn(module, 'life_reverse_conflicts', 'number', ['number']),
+    reverseNodeConflicts: fn(module, 'life_reverse_node_conflicts', 'number', ['number']),
+    reverseNodeBudget: fn(module, 'life_reverse_node_budget', 'number', ['number']),
+    reverseDeferrals: fn(module, 'life_reverse_deferrals', 'number', ['number']),
+    reverseDeferredCount: fn(module, 'life_reverse_deferred_count', 'number', ['number']),
+    reverseTaskResumes: fn(module, 'life_reverse_task_resumes', 'number', ['number']),
     step: fn(module, 'life_step', null, ['number', 'number', 'number']),
     measureLifetime: fn(module, 'life_measure_lifetime', 'number', ['number', 'number', 'number']),
   };
@@ -66,11 +71,11 @@ export async function createLifeSearchEngine(size) {
       }
       return { searched: api.soupsSearched(handle), results };
     },
-    startReverse(cells, { maxDepth, seed }) {
+    startReverse(cells, { maxDepth, branchBudget = 250000, seed }) {
       const pointer = module._malloc(cellCount);
       module.HEAPU8.set(cells, pointer);
       const [low, high] = splitSeed(seed);
-      api.startReverse(handle, pointer, maxDepth, low, high);
+      api.startReverse(handle, pointer, maxDepth, branchBudget, low, high);
       module._free(pointer);
     },
     pumpReverse(conflictBudget) { return api.reversePump(handle, conflictBudget); },
@@ -86,6 +91,11 @@ export async function createLifeSearchEngine(size) {
         goeLeaves: api.reverseGoeLeaves(handle),
         depthCuts: api.reverseDepthCuts(handle),
         conflicts: api.reverseConflicts(handle),
+        nodeConflicts: api.reverseNodeConflicts(handle),
+        nodeBudget: api.reverseNodeBudget(handle),
+        deferrals: api.reverseDeferrals(handle),
+        deferred: api.reverseDeferredCount(handle),
+        taskResumes: api.reverseTaskResumes(handle),
       };
       if (includeBest) {
         snapshot.layers = Array.from({ length: bestLength }, (_, index) =>

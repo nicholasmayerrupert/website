@@ -107,6 +107,7 @@ self.onmessage = async ({ data }) => {
       settings = data;
       engine.startReverse(new Uint8Array(data.cells), {
         maxDepth: data.maxDepth,
+        branchBudget: data.branchBudget,
         seed: hashSeed(data.seed),
       });
       mode = 'reverse';

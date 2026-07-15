@@ -95,6 +95,39 @@ exact.stop();
 assert.equal(exact.reverseSnapshot().status, 1, 'stopped reverse work remains unknown');
 exact.destroy();
 
+// A difficult child must not monopolize depth-first search. Once its soft
+// budget is spent, queue it and return to the target to try another parent.
+const fair = await createLifeSearchEngine(16);
+let fairSeed = 0x12345679;
+const knownParent = new Uint8Array(16 * 16);
+for (let i = 0; i < knownParent.length; i++) {
+  fairSeed = (Math.imul(fairSeed, 1664525) + 1013904223) >>> 0;
+  knownParent[i] = (fairSeed >>> 28) < 1 ? 1 : 0;
+}
+fair.startReverse(fair.step(knownParent), { maxDepth: 0, branchBudget: 1000, seed: 99n });
+let fairSnapshot;
+for (let i = 0; i < 20; i++) {
+  fair.pumpReverse(1000);
+  fairSnapshot = fair.reverseSnapshot();
+  if (fairSnapshot.deferrals > 0) break;
+}
+assert.ok(fairSnapshot.deferrals > 0, 'hard reverse branch is deferred');
+assert.ok(fairSnapshot.deferred > 0, 'deferred branch remains queued and unknown');
+const parentsBeforeSibling = fairSnapshot.parents;
+for (let i = 0; i < 20 && fairSnapshot.parents === parentsBeforeSibling; i++) {
+  fair.pumpReverse(1000);
+  fairSnapshot = fair.reverseSnapshot();
+}
+assert.ok(fairSnapshot.parents > parentsBeforeSibling, 'search returns to a sibling after deferral');
+assert.equal(fairSnapshot.goeLeaves, 0, 'deferred unknown branch is not called a Garden of Eden');
+for (let i = 0; i < 30 && fairSnapshot.taskResumes === 0; i++) {
+  fair.pumpReverse(1000);
+  fairSnapshot = fair.reverseSnapshot();
+}
+assert.ok(fairSnapshot.taskResumes > 0, 'older deferred work is eventually resumed');
+assert.ok(fairSnapshot.nodeBudget >= 2000, 'resumed work receives a larger budget');
+fair.destroy();
+
 // Lifetime is the number of unique non-empty states before empty/repeat/horizon.
 const lifetimeEngine = await createLifeSearchEngine(8);
 const empty = new Uint8Array(64);
@@ -122,4 +155,4 @@ assert.deepEqual(
 );
 lifetimeEngine.destroy();
 
-console.log(`life search: forward equivalence, all 512 reverse states (${gardens} GoE), lifetime, and determinism passed`);
+console.log(`life search: forward equivalence, all 512 reverse states (${gardens} GoE), fair reverse scheduling, lifetime, and determinism passed`);

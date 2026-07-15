@@ -112,6 +112,7 @@ export default function GameOfLife3D({
     maxDepth: 0,
     seed: "reverse-1",
     conflictBudget: 2000,
+    branchBudget: 250000,
   });
   const [reverseProgress, setReverseProgress] = useState({
     currentDepth: 0,
@@ -122,6 +123,11 @@ export default function GameOfLife3D({
     goeLeaves: 0,
     depthCuts: 0,
     conflicts: 0,
+    nodeConflicts: 0,
+    nodeBudget: 0,
+    deferrals: 0,
+    deferred: 0,
+    taskResumes: 0,
     elapsedMs: 0,
     status: 0,
   });
@@ -172,7 +178,9 @@ export default function GameOfLife3D({
     setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
     setReverseProgress({
       currentDepth: 0, bestDepth: 0, parents: 0, backtracks: 0,
-      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0, elapsedMs: 0, status: 0,
+      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0,
+      nodeConflicts: 0, nodeBudget: 0, deferrals: 0, deferred: 0, taskResumes: 0,
+      elapsedMs: 0, status: 0,
     });
   }, [gridSize]);
 
@@ -264,7 +272,9 @@ export default function GameOfLife3D({
     setSearchError("");
     setReverseProgress({
       currentDepth: 0, bestDepth: 0, parents: 0, backtracks: 0,
-      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0, elapsedMs: 0, status: 1,
+      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0,
+      nodeConflicts: 0, nodeBudget: reverseSettings.branchBudget,
+      deferrals: 0, deferred: 0, taskResumes: 0, elapsedMs: 0, status: 1,
     });
     ensureSearchClient()?.startReverse({ size: gridSize, cells, ...reverseSettings });
   };
@@ -902,11 +912,12 @@ export default function GameOfLife3D({
 
           {activeTab === "reverse" && (
             <div className="mt-3 flex min-h-0 flex-1 flex-col text-[10px]">
-              <p className="m-0 text-[9px] leading-snug text-white/55">Exact toroidal predecessor search. Cycles are pruned on the current path; unknown work is never called a Garden of Eden.</p>
+              <p className="m-0 text-[9px] leading-snug text-white/55">Exact toroidal predecessor search. Hard branches are deferred and revisited with larger budgets; unknown work is never called a Garden of Eden.</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <label className="text-white/65">Max depth (0 = ∞)<input type="number" min="0" max="100000" value={reverseSettings.maxDepth} onChange={(event) => updateReverseSetting("maxDepth", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">SAT quantum<input type="number" min="10" max="1000000" value={reverseSettings.conflictBudget} onChange={(event) => updateReverseSetting("conflictBudget", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="col-span-2 text-white/65">Search seed<input type="text" value={reverseSettings.seed} onChange={(event) => updateReverseSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Branch budget<input type="number" min="1000" max="1000000000" value={reverseSettings.branchBudget} onChange={(event) => updateReverseSetting("branchBudget", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Solve quantum<input type="number" min="10" max="1000000" value={reverseSettings.conflictBudget} onChange={(event) => updateReverseSetting("conflictBudget", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Search seed<input type="text" value={reverseSettings.seed} onChange={(event) => updateReverseSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-1">
                 <button type="button" onClick={startReverseSearch} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold text-black">{searchMode === "reverse" ? "Restart" : "Start from top"}</button>
@@ -920,11 +931,14 @@ export default function GameOfLife3D({
                 <span>Cycle prunes</span><strong className="text-right text-white">{Math.round(reverseProgress.cyclePrunes).toLocaleString()}</strong>
                 <span>GoE leaves proved</span><strong className="text-right text-white">{Math.round(reverseProgress.goeLeaves).toLocaleString()}</strong>
                 <span>Depth-limit cuts</span><strong className="text-right text-white">{Math.round(reverseProgress.depthCuts).toLocaleString()}</strong>
-                <span>SAT conflicts</span><strong className="text-right text-white">{Math.round(reverseProgress.conflicts).toLocaleString()}</strong>
+                <span>Current branch work</span><strong className="text-right text-white">{Math.round(reverseProgress.nodeConflicts).toLocaleString()} / {Math.round(reverseProgress.nodeBudget).toLocaleString()}</strong>
+                <span>Queued / deferrals</span><strong className="text-right text-white">{Math.round(reverseProgress.deferred).toLocaleString()} / {Math.round(reverseProgress.deferrals).toLocaleString()}</strong>
+                <span>Task resumes</span><strong className="text-right text-white">{Math.round(reverseProgress.taskResumes).toLocaleString()}</strong>
+                <span>Total SAT conflicts</span><strong className="text-right text-white">{Math.round(reverseProgress.conflicts).toLocaleString()}</strong>
               </div>
               <p className="mt-2 text-[9px] text-white/45">
                 {searchMode === "reverse"
-                  ? "Searching and auto-showing each deeper chain…"
+                  ? "Exploring branches; difficult ones are queued and retried with more time…"
                   : reverseProgress.status === 2 && reverseProgress.bestDepth === 0 && reverseProgress.goeLeaves > 0
                     ? "The target has no predecessor: proven Garden of Eden."
                     : reverseProgress.status === 2

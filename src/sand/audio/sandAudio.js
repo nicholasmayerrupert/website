@@ -386,10 +386,10 @@ export function createSandAudio() {
       const lava = material === MAT.LAVA;
       const oil = material === MAT.OIL;
       if (lava) {
-        holdMovementVoice('lava', strength, spatial, { volume: 0.115,
+        holdMovementVoice('lava', strength, spatial, { volume: 0.13,
           rate: 0.88 + variation * 0.16, hold: 0.38, attack: 0.11, release: 0.34 });
       } else {
-        holdMovementVoice('water', strength, spatial, { volume: oil ? 0.075 : 0.1,
+        holdMovementVoice('water', strength, spatial, { volume: oil ? 0.085 : 0.115,
           rate: oil ? 0.8 : 0.95 + variation * 0.09, hold: 0.34, attack: 0.09, release: 0.25 });
       }
     } else if (type === SOUND_EVENT.POWDER_MOVE) {

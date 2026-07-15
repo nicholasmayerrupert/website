@@ -8,9 +8,12 @@ here so the asset history stays auditable.
   https://freesound.org/people/nicoproson/sounds/627070/
 - `water-flow.wav`: “Water Stream.wav” by metaepitome —
   https://freesound.org/people/metaepitome/sounds/181320/
-- `tnt-mid-explosion.mp3`: “fireworks” by loganzsound —
-  https://freesound.org/people/loganzsound/sounds/774236/
+- `tnt-deep-boom.mp3`: “Deep Boom” by Za-Games —
+  https://freesound.org/people/Za-Games/sounds/539968/
+- `tnt-large-explosion.mp3`: “Explosion large” by SamsterBirdies —
+  https://freesound.org/people/SamsterBirdies/sounds/587886/
 
 Edits: trimmed, filtered, loudness-normalized, resampled, and (for the movement
-beds) crossfaded into seamless mono loops. The TNT recording was shortened and
-faded so chain reactions retain space between individual bursts.
+beds) crossfaded into seamless mono loops. The TNT recordings were shortened,
+level-matched, and faded so chain reactions retain space between individual
+bursts.

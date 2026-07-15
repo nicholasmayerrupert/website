@@ -5,7 +5,8 @@
 const ASSET_URLS = Object.freeze({
   sandFlow: new URL('./assets/sand-flow.wav', import.meta.url).href,
   waterFlow: new URL('./assets/water-flow.wav', import.meta.url).href,
-  tntExplosion: new URL('./assets/tnt-mid-explosion.mp3', import.meta.url).href,
+  tntDeepBoom: new URL('./assets/tnt-deep-boom.mp3', import.meta.url).href,
+  tntLargeExplosion: new URL('./assets/tnt-large-explosion.mp3', import.meta.url).href,
 });
 
 export async function loadAudioAssets(context) {

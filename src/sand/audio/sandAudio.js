@@ -326,8 +326,12 @@ export function createSandAudio() {
     const pan = spatial.pan;
     const pitch = 0.88 + ((material * 37) % 17) / 50;
     if (type === SOUND_EVENT.EXPLOSION) {
-      playSample({ buffer: recordedAssets?.tntExplosion,
-        gain: Math.min(0.72, gain * 0.44), pan, rate: 0.98 + variation * 0.04 });
+      const variant = Math.min(1, Math.floor(variation * 2));
+      const rateVariation = (variation * 2) % 1;
+      const buffer = variant === 0 ? recordedAssets?.tntDeepBoom
+        : recordedAssets?.tntLargeExplosion;
+      playSample({ buffer,
+        gain: Math.min(0.72, gain * 0.44), pan, rate: 0.88 + rateVariation * 0.06 });
     } else if (type === SOUND_EVENT.FUSE) {
       playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {

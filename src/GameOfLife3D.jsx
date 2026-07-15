@@ -61,18 +61,6 @@ const seedToLayer = (seedText, size) => {
   return textToLayer(seedText, size);
 };
 
-const parseSquareBinarySeed = (seedText) => {
-  const binary = seedText.replace(/[^01]/g, "");
-  const size = Math.sqrt(binary.length);
-  if (!binary.length || !Number.isInteger(size)) {
-    throw new Error("The binary seed length must be a non-zero perfect square.");
-  }
-  if (size < 8 || size > 64) {
-    throw new Error("The inferred board must be between 8×8 and 64×64.");
-  }
-  return { binary, size, cells: binaryToLayer(binary, size) };
-};
-
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const smoothstep = (t) => t * t * (3 - 2 * t);
 
@@ -120,49 +108,12 @@ export default function GameOfLife3D({
     leaderboardSize: 10,
   });
   const [soupProgress, setSoupProgress] = useState({ searched: 0, elapsedMs: 0, results: [] });
-  const [reverseSettings, setReverseSettings] = useState(() => ({
-    verificationHorizon: 5000,
-    maxOffset: 4,
-    attemptBudget: 250000,
-    quantum: 20000,
-    workers: Math.min(8, Math.max(1,
-      typeof navigator === "undefined" ? 4 : (navigator.hardwareConcurrency || 4) - 1)),
-    seed: "extend-1",
-  }));
-  const [reverseResult, setReverseResult] = useState(null);
-  const [reverseProgress, setReverseProgress] = useState({
-    jobs: 0,
-    conflicts: 0,
-    rejected: 0,
-    workers: 0,
-    inputLifetime: 0,
-    elapsedMs: 0,
-  });
-
   const handleSearchMessage = (message) => {
     if (message.type === "started") {
       setSearchMode(message.mode);
       setSearchError("");
     } else if (message.type === "soup-progress") {
       setSoupProgress(message);
-    } else if (message.type === "reverse-progress") {
-      setReverseProgress((current) => ({ ...current, ...message, layers: undefined }));
-      if (message.layers?.length) {
-        setPaused(true);
-        simulationApiRef.current.replaceHistory(message.layers);
-      }
-      if (!message.running) setSearchMode(null);
-    } else if (message.type === "extension-progress") {
-      setReverseProgress(message);
-    } else if (message.type === "extension-result") {
-      const cells = new Uint8Array(message.cells);
-      setReverseProgress(message);
-      setReverseResult({
-        ...message,
-        cells,
-        binary: Array.from(cells, (cell) => cell ? "1" : "0").join(""),
-      });
-      setSearchMode(null);
     } else if (message.type === "stopped") {
       setSearchMode(null);
     } else if (message.type === "error") {
@@ -194,8 +145,6 @@ export default function GameOfLife3D({
     setSearchMode(null);
     setSearchError("");
     setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
-    setReverseProgress({ jobs: 0, conflicts: 0, rejected: 0, workers: 0, inputLifetime: 0, elapsedMs: 0 });
-    setReverseResult(null);
   }, [gridSize]);
 
   useEffect(() => {
@@ -264,39 +213,10 @@ export default function GameOfLife3D({
     setSearchError("");
   };
 
-  const resetReverseSearch = () => {
-    stopSearch();
-    setReverseProgress({ jobs: 0, conflicts: 0, rejected: 0, workers: 0, inputLifetime: 0, elapsedMs: 0 });
-    setReverseResult(null);
-    setSearchError("");
-  };
-
   const startSoupSearch = () => {
     setSearchError("");
     setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
     ensureSearchClient()?.startSoup({ size: gridSize, ...soupSettings });
-  };
-
-  const startReverseSearch = () => {
-    try {
-      const { binary, size, cells } = parseSquareBinarySeed(seedInput);
-      setSeedInput(binary);
-      setSearchError("");
-      setReverseResult(null);
-      setReverseProgress({ jobs: 0, conflicts: 0, rejected: 0, workers: reverseSettings.workers, inputLifetime: 0, elapsedMs: 0 });
-      ensureSearchClient()?.startExtension({ size, cells, ...reverseSettings });
-    } catch (error) {
-      setSearchError(error?.message || "Invalid binary seed");
-    }
-  };
-
-  const loadReverseResult = () => {
-    if (!reverseResult) return;
-    setSeedInput(reverseResult.binary);
-    seedInputRef.current = reverseResult.binary;
-    seedRequestRef.current = reverseResult.cells.slice();
-    setGridSize(Math.sqrt(reverseResult.binary.length));
-    setActiveTab("simulate");
   };
 
   const loadSoupResult = (cells) => {
@@ -309,10 +229,6 @@ export default function GameOfLife3D({
 
   const updateSoupSetting = (key, value) => {
     setSoupSettings((current) => ({ ...current, [key]: value }));
-  };
-
-  const updateReverseSetting = (key, value) => {
-    setReverseSettings((current) => ({ ...current, [key]: value }));
   };
 
   const paintFromPointer = (event) => {
@@ -379,7 +295,10 @@ export default function GameOfLife3D({
       powerPreference: "high-performance",
     });
     renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
-    renderer.setSize(clientWidth, clientHeight);
+    renderer.setSize(clientWidth, clientHeight, false);
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.display = "block";
     renderer.domElement.style.cursor = "grab";
     container.appendChild(renderer.domElement);
 
@@ -772,10 +691,6 @@ export default function GameOfLife3D({
   const interactiveClassName = (className || "")
     .replace(/\bpointer-events-none\b/g, "")
     .trim();
-  const reverseBinaryLength = seedInput.replace(/[^01]/g, "").length;
-  const reverseInferredSize = Math.sqrt(reverseBinaryLength);
-  const reverseHasSquareInput = reverseBinaryLength > 0 && Number.isInteger(reverseInferredSize);
-
   return (
     <div
       className={`${interactiveClassName} relative h-full w-full overflow-hidden pointer-events-auto ${
@@ -817,8 +732,8 @@ export default function GameOfLife3D({
             </button>
           </div>
 
-          <div className="mt-2 grid grid-cols-3 gap-1" role="tablist" aria-label="Game of Life tools">
-            {[["simulate", "Simulate"], ["soup", "Soup"], ["reverse", "Reverse"]].map(([id, label]) => (
+          <div className="mt-2 grid grid-cols-2 gap-1" role="tablist" aria-label="Game of Life tools">
+            {[["simulate", "Simulate"], ["soup", "Soup"]].map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -933,54 +848,6 @@ export default function GameOfLife3D({
             </div>
           )}
 
-          {activeTab === "reverse" && (
-            <div className="mt-3 flex min-h-0 flex-1 flex-col text-[10px]">
-              <p className="m-0 text-[9px] leading-snug text-white/55">Runs bounded SAT jobs in parallel for a longer seed that joins the exact same trajectory. Hard formulas are abandoned and rotated; no Garden-of-Eden proof is required.</p>
-              <label className="mt-3 flex items-center justify-between text-white/65">
-                <span>Binary input</span>
-                <span className={reverseHasSquareInput ? "text-white/45" : "text-amber-200/80"}>
-                  {reverseHasSquareInput ? `${reverseBinaryLength} bits → ${reverseInferredSize}×${reverseInferredSize}` : `${reverseBinaryLength} bits → not square`}
-                </span>
-              </label>
-              <textarea value={seedInput} onChange={(event) => setSeedInput(event.target.value)} className="mt-1 h-16 w-full resize-none rounded border border-white/15 bg-gray-950/45 p-1.5 font-mono text-[9px] leading-tight text-white" spellCheck="false" aria-label="Binary seed" />
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <label className="text-white/65">Workers<input type="number" min="1" max="8" value={reverseSettings.workers} onChange={(event) => updateReverseSetting("workers", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">Max merge offset<input type="number" min="0" max="15" value={reverseSettings.maxOffset} onChange={(event) => updateReverseSetting("maxOffset", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">Job conflict budget<input type="number" min="1000" max="10000000" value={reverseSettings.attemptBudget} onChange={(event) => updateReverseSetting("attemptBudget", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">Solve quantum<input type="number" min="10" max="1000000" value={reverseSettings.quantum} onChange={(event) => updateReverseSetting("quantum", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">Verify horizon<input type="number" min="10" max="100000" value={reverseSettings.verificationHorizon} onChange={(event) => updateReverseSetting("verificationHorizon", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">Search seed<input type="text" value={reverseSettings.seed} onChange={(event) => updateReverseSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-              </div>
-              <div className="mt-3 grid grid-cols-3 gap-1">
-                <button type="button" onClick={startReverseSearch} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold text-black">{searchMode === "extension" ? "Restart" : "Search"}</button>
-                <button type="button" onClick={stopSearch} disabled={!searchMode} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white disabled:opacity-35">Stop</button>
-                <button type="button" onClick={resetReverseSearch} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white">Clear</button>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-1 rounded-md bg-black/20 p-2 text-white/65">
-                <span>Workers</span><strong className="text-right text-white">{reverseProgress.workers || 0}</strong>
-                <span>SAT jobs started</span><strong className="text-right text-white">{Math.round(reverseProgress.jobs || 0).toLocaleString()}</strong>
-                <span>Total conflicts</span><strong className="text-right text-white">{Math.round(reverseProgress.conflicts || 0).toLocaleString()}</strong>
-                <span>Current offset / depth</span><strong className="text-right text-white">{reverseProgress.mergeOffset || 0} / {reverseProgress.depth || 1}</strong>
-                <span>Current job</span><strong className="text-right text-white">{Math.round(reverseProgress.jobConflicts || 0).toLocaleString()} / {Math.round(reverseProgress.jobBudget || 0).toLocaleString()}</strong>
-                <span>Models rejected</span><strong className="text-right text-white">{Math.round(reverseProgress.rejected || 0).toLocaleString()}</strong>
-                <span>Input lifetime</span><strong className="text-right text-white">{Math.round(reverseProgress.inputLifetime || 0).toLocaleString()}</strong>
-              </div>
-              {reverseResult && (
-                <div className="mt-3 rounded-md bg-emerald-300/10 p-2">
-                  <div className="flex items-center justify-between gap-2 text-emerald-100">
-                    <strong>Verified +{reverseResult.longerBy} generations</strong>
-                    <span>joins at input t={reverseResult.mergeOffset}</span>
-                  </div>
-                  <textarea readOnly value={reverseResult.binary} className="mt-2 h-16 w-full resize-none rounded border border-emerald-200/20 bg-black/25 p-1.5 font-mono text-[9px] leading-tight text-white" aria-label="Binary output" />
-                  <div className="mt-2 grid grid-cols-2 gap-1">
-                    <button type="button" onClick={() => navigator.clipboard?.writeText(reverseResult.binary)} className="rounded bg-white/10 px-2 py-1.5 font-semibold text-white">Copy output</button>
-                    <button type="button" onClick={loadReverseResult} className="rounded bg-white/80 px-2 py-1.5 font-semibold text-black">Load output</button>
-                  </div>
-                </div>
-              )}
-              <p className="mt-2 text-[9px] text-white/45">{searchMode === "extension" ? "Trying independent bounded SAT formulas; difficult jobs rotate instead of blocking the portfolio." : reverseResult ? "Output verified by forward simulation." : reverseProgress.jobs > 0 ? "Stopped without a witness; this makes no impossibility claim." : "Ready."}</p>
-            </div>
-          )}
         </form>
       )}
     </div>

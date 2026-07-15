@@ -57,19 +57,24 @@ try {
   assert.ok(soups > 0, 'soup worker reports completed soups');
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
 
-  await page.getByRole('tab', { name: 'Reverse' }).click();
-  await page.getByLabel('Binary seed').fill('0'.repeat(64));
-  await page.getByLabel('Workers').fill('1');
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
-  const jobs = await waitForValue(page, 'SAT jobs started', (value) => value > 0);
-  assert.ok(jobs > 0, 'extension portfolio reports a SAT job');
-  await page.getByText(/^Verified \+/).waitFor({ timeout: 10000 });
-  assert.equal((await page.getByLabel('Binary output').inputValue()).length, 64, 'output preserves board size');
-
   await page.getByRole('tab', { name: 'Simulate' }).click();
   assert.equal(await page.getByLabel('Editable top layer of the Game of Life simulation').count(), 1);
+  await page.getByRole('button', { name: 'Close Game of Life controls' }).click();
+  const canvasSizing = await page.getByRole('button', { name: 'Open Game of Life controls' }).evaluate((button) => {
+    const host = button.parentElement?.firstElementChild;
+    const canvas = host?.firstElementChild;
+    return {
+      canvasWidth: canvas?.getBoundingClientRect().width || 0,
+      hostWidth: host?.getBoundingClientRect().width || 0,
+    };
+  });
+  assert.ok(canvasSizing.hostWidth > 0, '3D canvas host has a width');
+  assert.ok(
+    Math.abs(canvasSizing.canvasWidth - canvasSizing.hostWidth) < 1,
+    '3D canvas expands back to the full host width after closing controls'
+  );
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`);
-  console.log(`life search e2e: ${soups} soups and a verified SAT extension observed`);
+  console.log(`life soup search e2e: ${soups} soups observed`);
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

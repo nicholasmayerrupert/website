@@ -21,18 +21,6 @@ function referenceStep(cells, size) {
   return out;
 }
 
-function boardFromBits(bits, size) {
-  const cells = new Uint8Array(size * size);
-  for (let i = 0; i < cells.length; i++) cells[i] = (bits >> i) & 1;
-  return cells;
-}
-
-function bitsFromBoard(cells) {
-  let bits = 0;
-  for (let i = 0; i < cells.length; i++) bits |= cells[i] << i;
-  return bits;
-}
-
 function equalBoard(actual, expected, label) {
   assert.deepEqual(Array.from(actual), Array.from(expected), label);
 }
@@ -52,82 +40,6 @@ for (const size of [8, 17, 32, 64]) {
   engine.destroy();
 }
 
-// Exhaustively establish the predecessor relation for every 3x3 torus, then
-// compare the exact SAT answer and verify every returned model in forward time.
-const size = 3;
-const predecessorExists = new Uint8Array(1 << (size * size));
-for (let predecessor = 0; predecessor < predecessorExists.length; predecessor++) {
-  predecessorExists[bitsFromBoard(referenceStep(boardFromBits(predecessor, size), size))] = 1;
-}
-const exact = await createLifeSearchEngine(size);
-let gardens = 0;
-for (let targetBits = 0; targetBits < predecessorExists.length; targetBits++) {
-  const target = boardFromBits(targetBits, size);
-  exact.startReverse(target, { maxDepth: 1, seed: 7n });
-  let snapshot;
-  for (let attempts = 0; attempts < 100; attempts++) {
-    exact.pumpReverse(1000000);
-    snapshot = exact.reverseSnapshot(true);
-    if (snapshot.parents > 0 || snapshot.status === 2) break;
-  }
-  assert.ok(snapshot.parents > 0 || snapshot.status === 2, `solver resolved target ${targetBits}`);
-  assert.equal(snapshot.parents > 0, Boolean(predecessorExists[targetBits]), `predecessor existence ${targetBits}`);
-  if (snapshot.bestDepth > 0) {
-    equalBoard(exact.step(snapshot.layers[0]), target, `returned predecessor ${targetBits}`);
-  } else if (snapshot.parents > 0) {
-    equalBoard(exact.step(target), target, `cycle predecessor ${targetBits}`);
-  } else {
-    gardens++;
-    assert.equal(snapshot.goeLeaves, 1, `Garden of Eden proof ${targetBits}`);
-  }
-}
-assert.ok(gardens > 0, '3x3 torus includes at least one Garden of Eden');
-
-// A stopped limited search stays unknown, while a depth cap is recorded as a cut.
-const blinker = new Uint8Array(size * size);
-blinker[3] = blinker[4] = blinker[5] = 1;
-exact.startReverse(referenceStep(blinker, size), { maxDepth: 1, seed: 11n });
-for (let i = 0; i < 10 && exact.reverseSnapshot().bestDepth < 1; i++) exact.pumpReverse(100000);
-exact.pumpReverse(100000);
-assert.ok(exact.reverseSnapshot().depthCuts >= 1, 'maximum depth produces a recorded cut');
-exact.startReverse(referenceStep(blinker, size), { maxDepth: 0, seed: 11n });
-exact.stop();
-assert.equal(exact.reverseSnapshot().status, 1, 'stopped reverse work remains unknown');
-exact.destroy();
-
-// A difficult child must not monopolize depth-first search. Once its soft
-// budget is spent, queue it and return to the target to try another parent.
-const fair = await createLifeSearchEngine(16);
-let fairSeed = 0x12345679;
-const knownParent = new Uint8Array(16 * 16);
-for (let i = 0; i < knownParent.length; i++) {
-  fairSeed = (Math.imul(fairSeed, 1664525) + 1013904223) >>> 0;
-  knownParent[i] = (fairSeed >>> 28) < 1 ? 1 : 0;
-}
-fair.startReverse(fair.step(knownParent), { maxDepth: 0, branchBudget: 1000, seed: 99n });
-let fairSnapshot;
-for (let i = 0; i < 20; i++) {
-  fair.pumpReverse(1000);
-  fairSnapshot = fair.reverseSnapshot();
-  if (fairSnapshot.deferrals > 0) break;
-}
-assert.ok(fairSnapshot.deferrals > 0, 'hard reverse branch is deferred');
-assert.ok(fairSnapshot.deferred > 0, 'deferred branch remains queued and unknown');
-const parentsBeforeSibling = fairSnapshot.parents;
-for (let i = 0; i < 20 && fairSnapshot.parents === parentsBeforeSibling; i++) {
-  fair.pumpReverse(1000);
-  fairSnapshot = fair.reverseSnapshot();
-}
-assert.ok(fairSnapshot.parents > parentsBeforeSibling, 'search returns to a sibling after deferral');
-assert.equal(fairSnapshot.goeLeaves, 0, 'deferred unknown branch is not called a Garden of Eden');
-for (let i = 0; i < 30 && fairSnapshot.taskResumes === 0; i++) {
-  fair.pumpReverse(1000);
-  fairSnapshot = fair.reverseSnapshot();
-}
-assert.ok(fairSnapshot.taskResumes > 0, 'older deferred work is eventually resumed');
-assert.ok(fairSnapshot.nodeBudget >= 2000, 'resumed work receives a larger budget');
-fair.destroy();
-
 // Lifetime is the number of unique non-empty states before empty/repeat/horizon.
 const lifetimeEngine = await createLifeSearchEngine(8);
 const empty = new Uint8Array(64);
@@ -139,27 +51,6 @@ const oscillator = new Uint8Array(64);
 oscillator[3 * 8 + 2] = oscillator[3 * 8 + 3] = oscillator[3 * 8 + 4] = 1;
 assert.deepEqual(lifetimeEngine.measureLifetime(oscillator, 100), { lifetime: 2, reason: 2 });
 assert.deepEqual(lifetimeEngine.measureLifetime(oscillator, 1), { lifetime: 1, reason: 3 });
-
-// Bounded extension SAT returns a fixed-depth witness. A non-empty predecessor
-// of empty is one tick longer than the excluded empty input.
-lifetimeEngine.startExtension(empty, empty, { depth: 1, seed: 42n });
-let extension;
-for (let i = 0; i < 100; i++) {
-  lifetimeEngine.pumpExtension(10000);
-  extension = lifetimeEngine.extensionSnapshot(true);
-  if (extension.status !== 1) break;
-}
-assert.equal(extension.status, 2, 'extension witness is found');
-assert.notDeepEqual(Array.from(extension.cells), Array.from(empty), 'extension differs from input');
-equalBoard(lifetimeEngine.step(extension.cells), empty, 'extension witness rejoins exact future');
-lifetimeEngine.startExtension(empty, empty, { depth: 2, seed: 43n });
-for (let i = 0; i < 100; i++) {
-  lifetimeEngine.pumpExtension(10000);
-  extension = lifetimeEngine.extensionSnapshot(true);
-  if (extension.status !== 1) break;
-}
-assert.equal(extension.status, 2, 'multi-step extension witness is found');
-equalBoard(lifetimeEngine.step(lifetimeEngine.step(extension.cells)), empty, 'multi-step SAT chain is exact');
 
 const soupConfig = { density: 37.5, horizon: 200, seed: 123456789n, leaderboardSize: 5 };
 lifetimeEngine.startSoup(soupConfig);
@@ -176,4 +67,4 @@ assert.deepEqual(
 );
 lifetimeEngine.destroy();
 
-console.log(`life search: forward equivalence, all 512 reverse states (${gardens} GoE), fair scheduling, extension witness, lifetime, and determinism passed`);
+console.log('life soup search: forward equivalence, lifetime, and determinism passed');

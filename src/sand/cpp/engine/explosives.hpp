@@ -15,10 +15,10 @@ class ExplosivesSystem {
   explicit ExplosivesSystem(Engine& e) : E(e) { buildTntStencil(); }
 
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
-  static const int    TNT_CHAIN_FUSE = 4;    // a TNT caught in a blast chains this fast
+  static const int    TNT_CHAIN_FUSE = 1;    // one-tick rolling front: staged, without idle structural frames
   static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
-  static const int    TNT_CLUSTER_FAST_THRESHOLD = 128; // many same-tick static TNT fuses -> grouped crater reps
-  static const int    TNT_CLUSTER_BUCKET = 10; // representative spacing for dense TNT masses
+  static const int    TNT_CLUSTER_FAST_THRESHOLD = 16; // merge even modest same-tick fronts before stencils overlap heavily
+  static const int    TNT_CLUSTER_BUCKET = 14; // representative spacing; blast radii still overlap into one continuous front
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
   // whash2 (the same rand-free hash the item drops use), never rand().

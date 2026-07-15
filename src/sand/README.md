@@ -473,7 +473,12 @@ hardcoded id list, decides who reacts.
   detonates a **`DURABILITY`-gated crater** — soft blocks blow up from farther out
   than hard ones. The blast scatters cosmetic particles, ejects rubble chunks (free
   bodies of the destroyed material that bake back into terrain), shoves nearby free
-  bodies, and chains adjacent TNT. Each consumed TNT cell releases one aftermath
+  bodies, and chains adjacent TNT. Chained masses advance as a one-tick rolling
+  front (an imminently exploding component skips that tick's assembly move);
+  nearby same-tick detonations merge into overlapping spatial blast fronts
+  instead of repeating a crater for every TNT cell. Fully enclosed blasts favor
+  material flecks over short-lived rigid chunks, avoiding an expensive body solve
+  for rubble hidden inside the smoke. Each consumed TNT cell releases one aftermath
   cell: mostly acrid smoke, some steam, and a little fire. Works the same whether
   the TNT is a placed solid or a free TNT body. The fixed-radius crater and gas
   shell reuse one ordered stencil, overlapping blasts use generation-stamped

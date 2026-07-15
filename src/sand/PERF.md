@@ -75,7 +75,8 @@ actionable instead of just producing timing numbers.
   pan, cursor mapping, frame-time, and flicker check.
 - `npm run bench:tnt`: focused deterministic TNT benchmark covering cold/steady
   open-air, dual-layer, buried-component, enclosed-cave, and 25x25/49x49 chain
-  costs, including the five settling ticks after each blast.
+  costs, including the five settling ticks after each blast and their fine phase
+  totals (plus the number and largest size of rolling chain fronts).
 - `node scripts/bench-reactions.mjs`: deterministic 1000x1000 fire-on-plants and
   acid-on-terrain stress cases, including fine phase timings and checksums.
 - `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions`:

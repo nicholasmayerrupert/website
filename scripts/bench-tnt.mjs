@@ -8,6 +8,10 @@ import { MAT } from '../src/sand/materials.js';
 const REPEAT = Math.max(2, Number(process.env.REPEAT || 3) | 0);
 const SCENARIO = process.env.SCENARIO || 'all';
 const SEED = 0xC0FFEE;
+const PHASE_KEYS = [
+  'groundingMs', 'componentIndexMs', 'assemblyUnionMs', 'carryMs', 'bodyMs',
+  'sandMs', 'liquidMs', 'gasMs', 'reactMs', 'tailMs', 'crossMs',
+];
 
 await initSandWasm();
 
@@ -72,20 +76,33 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
       engine.placeMaterial(igniteX, cy, 1, MAT.FIRE);
     }
     const started = performance.now();
-    engine.step(step * 16);
+    const active = engine.step(step * 16);
     const wallMs = performance.now() - started;
-    const perf = engine.getStepPerf();
+    // An idle engine returns false without replacing the previous perf snapshot.
+    // Treat that tick as zero work instead of repeating the last active phases.
+    const worldActive = active && engine.getPerf().stepMs > 0;
+    const perf = worldActive ? engine.getStepPerf() : {};
     const tnt = countMaterial(engine.getGrid(), MAT.TNT);
     if (firstBlast < 0 && tnt < previousTnt) firstBlast = step;
     if (completed < 0 && tnt === 0) completed = step;
     previousTnt = tnt;
     rollingHash = hashGrid(rollingHash, engine.getGrid());
     if (bg) rollingHash = hashGrid(rollingHash, engine.getGridBg());
-    records.push({ step, wallMs, reactMs: perf.reactMs, tnt });
+    records.push({ step, wallMs, perf, reactMs: perf.reactMs || 0, tnt });
   }
 
   const blastRecords = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= (completed >= 0 ? completed : firstBlast));
   const blastAndAftermath = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= firstBlast + 5);
+  let priorTnt = initialTnt;
+  const detonationDrops = [];
+  for (const record of records) {
+    if (record.tnt < priorTnt) detonationDrops.push(priorTnt - record.tnt);
+    priorTnt = record.tnt;
+  }
+  const aftermathPhases = Object.fromEntries(PHASE_KEYS.map((key) => [
+    key,
+    blastAndAftermath.reduce((sum, record) => sum + (record.perf[key] || 0), 0),
+  ]));
   const peak = blastRecords.reduce((best, record) => record.reactMs > best.reactMs ? record : best, blastRecords[0]);
   engine.destroy();
   return {
@@ -99,6 +116,9 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     waveReactMs: blastRecords.reduce((sum, record) => sum + record.reactMs, 0),
     waveWallMs: blastRecords.reduce((sum, record) => sum + record.wallMs, 0),
     blastAndAftermathWallMs: blastAndAftermath.reduce((sum, record) => sum + record.wallMs, 0),
+    aftermathPhases,
+    detonationSteps: detonationDrops.length,
+    maxDetonationDrop: Math.max(0, ...detonationDrops),
   };
 }
 
@@ -125,6 +145,12 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   const waveWall = summary(runs.map(({ waveWallMs }) => waveWallMs));
   const blastAndAftermathWall = summary(runs.map(({ blastAndAftermathWallMs }) => blastAndAftermathWallMs));
   const first = runs[0];
+  const phaseSummary = PHASE_KEYS
+    .map((key) => [key.replace(/Ms$/, ''), summary(runs.map(({ aftermathPhases }) => aftermathPhases[key])).p50])
+    .filter(([, value]) => value >= 0.05)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => `${key} ${value.toFixed(3)}`)
+    .join('  ');
   console.log(`\n${scenario.name}: TNT ${first.initialTnt}, wave ${first.firstBlast}..${first.completed}, hash ${hashes.join(',')}${hashes.length === 1 ? '' : ' UNSTABLE'}`);
   console.log(`  cold wave   react ${first.waveReactMs.toFixed(3)}  wall ${first.waveWallMs.toFixed(3)} ms`);
   console.log(`  peak react  p50 ${peakReact.p50.toFixed(3)}  p95 ${peakReact.p95.toFixed(3)}  mean ${peakReact.mean.toFixed(3)} ms`);
@@ -132,4 +158,6 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  wave react  p50 ${waveReact.p50.toFixed(3)}  p95 ${waveReact.p95.toFixed(3)}  mean ${waveReact.mean.toFixed(3)} ms`);
   console.log(`  wave wall   p50 ${waveWall.p50.toFixed(3)}  p95 ${waveWall.p95.toFixed(3)}  mean ${waveWall.mean.toFixed(3)} ms`);
   console.log(`  blast +5   p50 ${blastAndAftermathWall.p50.toFixed(3)}  p95 ${blastAndAftermathWall.p95.toFixed(3)}  mean ${blastAndAftermathWall.mean.toFixed(3)} ms`);
+  console.log(`  front steps ${first.detonationSteps}  max cells ${first.maxDetonationDrop}`);
+  console.log(`  +5 phases  ${phaseSummary}`);
 }

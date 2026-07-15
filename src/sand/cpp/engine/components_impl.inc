@@ -1431,6 +1431,14 @@ void ComponentSystem::moveRigidAssemblies() {
   if (totalComps == 0) return;
   std::vector<Comp*> all;
   std::vector<int> localOf(totalComps, -1);
+  std::vector<uint8_t> imminentTnt(totalComps, 0);
+  for (const auto& fuse : E.L->pendingDetonations) {
+    if (fuse.second > ExplosivesSystem::TNT_CHAIN_FUSE) continue;
+    int k = fuse.first;
+    if (k < 0 || k >= E.cols * E.rows) continue;
+    int comp = E.L->cellComp[k];
+    if (comp >= 0 && comp < totalComps) imminentTnt[comp] = 1;
+  }
   int gi = 0;
   auto addList = [&](std::vector<Comp>& list, bool ice) {
     for (auto& c : list) {
@@ -1442,7 +1450,13 @@ void ComponentSystem::moveRigidAssemblies() {
                      ice ? ICE : E.L->grid[c.cells[0]]);
         c.buoyancyDirection = 0;
       }
-      if (!c.grounded && (!jointGroundReady || gi >= (int)E.L->crossBondedComp.size() || !E.L->crossBondedComp[gi])) {
+      // A TNT component touched by a chain front is due to explode in this same
+      // tick's reaction pass. Do not spend the much larger assembly planner on
+      // translating and spilling media around a shape that is about to vanish;
+      // it also keeps the one-tick front spatially coherent. The normal 28-tick
+      // fuse remains fully physical and continues falling until the blast reaches it.
+      if (!c.grounded && !imminentTnt[gi]
+          && (!jointGroundReady || gi >= (int)E.L->crossBondedComp.size() || !E.L->crossBondedComp[gi])) {
         localOf[gi] = (int)all.size(); all.push_back(&c);
       }
       gi++;

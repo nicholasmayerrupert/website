@@ -180,6 +180,23 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   int r2 = radius * radius;
   uint32_t bseed = (uint32_t)E.tick * 2654435761u ^ (uint32_t)(cy * E.cols + cx); // per-blast deterministic seed
   bb.gasShockwaves.push_back({cx, cy, radius, bseed});
+  // Tiny physical chunks are expensive in a sealed cavern: they wake the full
+  // rigid-body/grounding path against the enclosing terrain, yet are hidden by
+  // the smoke and flecks. Eight pre-carve rim probes distinguish a sealed blast
+  // from open air or a surface/buried blast without searching for an escape path.
+  // The crater, shockwave, gas shell, and cosmetic material particles are unchanged.
+  int diag = (radius * 181 + 128) >> 8; // radius / sqrt(2), integer and deterministic
+  const int rim[8][2] = {
+    {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius},
+    {diag, diag}, {diag, -diag}, {-diag, diag}, {-diag, -diag},
+  };
+  int blockedRim = 0;
+  for (const auto& p : rim) {
+    int x = cx + p[0], y = cy + p[1];
+    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) { blockedRim++; continue; }
+    if (E.isRigidMaterialClass(E.L->grid[E.I(x, y)])) blockedRim++;
+  }
+  bool enclosed = blockedRim >= 6;
   uint8_t debrisSeen[TABLE]; std::fill(debrisSeen, debrisSeen + TABLE, (uint8_t)0);
   std::vector<BlastDebrisSource> debrisSources;
   auto carveCell = [&](int ox, int oy, int dd, double dist) {
@@ -257,12 +274,12 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
     b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
   }
-  if (whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
+  if (!enclosed && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
     spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
   // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
   // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
   // can't flood the body solver.
-  for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
+  for (size_t di = 0; !enclosed && di < debrisSources.size() && bb.debrisSpawned < BLAST_DEBRIS_STEP_CAP && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
     uint8_t debrisMat = debrisSources[di].material;
     int src = debrisSources[di].cell, sy = src / E.cols, sx0 = src - sy * E.cols;
     spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, BLAST_DEBRIS_SOURCE_TRIES);

@@ -396,7 +396,7 @@ export function createSandAudio() {
       holdMovementVoice('sand', strength, spatial, { volume: 0.105,
         rate: 0.94 + variation * 0.12, hold: 0.3, attack: 0.085, release: 0.22 });
     } else if (type === SOUND_EVENT.ACID_DISSOLVE) {
-      holdMovementVoice('acid', strength, spatial, { volume: 0.09,
+      holdMovementVoice('acid', strength, spatial, { volume: 0.07,
         rate: 0.96 + variation * 0.12, hold: 0.42, attack: 0.095, release: 0.3 });
     }
   };

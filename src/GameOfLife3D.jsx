@@ -1,9 +1,9 @@
 // src/GameOfLife3D.jsx
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { createLifeSearchClient } from "./life/createLifeSearchClient.js";
 
 const GRID_HEIGHT = 30;
-const GRID_SIZE_OPTIONS = [16, 32, 64];
 const DEFAULT_STEPS_PER_SECOND = 15;
 const AUTO_ROTATION_RESUME_MS = 6000;
 const DRAG_ROTATION_SCALE = 0.008;
@@ -80,9 +80,12 @@ export default function GameOfLife3D({
   const seedInputRef = useRef(DEFAULT_SEED);
   const simulationApiRef = useRef({
     clearTopLayer: () => {},
+    getTopLayer: () => new Uint8Array(0),
     renderEditor: () => {},
+    replaceHistory: () => {},
     setTopCell: () => {},
   });
+  const searchClientRef = useRef(null);
 
   const [speed, setSpeed] = useState(DEFAULT_STEPS_PER_SECOND);
   const [seedInput, setSeedInput] = useState(DEFAULT_SEED);
@@ -94,6 +97,73 @@ export default function GameOfLife3D({
   const [paused, setPaused] = useState(false);
   const [drawMode, setDrawMode] = useState("draw");
   const [gridSize, setGridSize] = useState(16);
+  const [activeTab, setActiveTab] = useState("simulate");
+  const [searchMode, setSearchMode] = useState(null);
+  const [searchError, setSearchError] = useState("");
+  const [soupSettings, setSoupSettings] = useState({
+    density: 37.5,
+    horizon: 5000,
+    seed: "soup-1",
+    batchSize: 32,
+    leaderboardSize: 10,
+  });
+  const [soupProgress, setSoupProgress] = useState({ searched: 0, elapsedMs: 0, results: [] });
+  const [reverseSettings, setReverseSettings] = useState({
+    maxDepth: 0,
+    seed: "reverse-1",
+    conflictBudget: 2000,
+  });
+  const [reverseProgress, setReverseProgress] = useState({
+    currentDepth: 0,
+    bestDepth: 0,
+    parents: 0,
+    backtracks: 0,
+    cyclePrunes: 0,
+    goeLeaves: 0,
+    depthCuts: 0,
+    conflicts: 0,
+    elapsedMs: 0,
+    status: 0,
+  });
+
+  useEffect(() => {
+    const client = createLifeSearchClient((message) => {
+      if (message.type === "started") {
+        setSearchMode(message.mode);
+        setSearchError("");
+      } else if (message.type === "soup-progress") {
+        setSoupProgress(message);
+      } else if (message.type === "reverse-progress") {
+        setReverseProgress((current) => ({ ...current, ...message, layers: undefined }));
+        if (message.layers?.length) {
+          setPaused(true);
+          simulationApiRef.current.replaceHistory(message.layers);
+        }
+        if (!message.running) setSearchMode(null);
+      } else if (message.type === "stopped") {
+        setSearchMode(null);
+      } else if (message.type === "error") {
+        setSearchMode(null);
+        setSearchError(message.message || "Search failed");
+      }
+    });
+    searchClientRef.current = client;
+    return () => {
+      client.destroy();
+      searchClientRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    searchClientRef.current?.stop();
+    setSearchMode(null);
+    setSearchError("");
+    setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
+    setReverseProgress({
+      currentDepth: 0, bestDepth: 0, parents: 0, backtracks: 0,
+      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0, elapsedMs: 0, status: 0,
+    });
+  }, [gridSize]);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -122,6 +192,10 @@ export default function GameOfLife3D({
     onControlsOpenChange?.(controlsOpen);
   }, [controlsOpen, onControlsOpenChange]);
 
+  useEffect(() => {
+    if (activeTab === "simulate") simulationApiRef.current.renderEditor();
+  }, [activeTab]);
+
   const applySeed = (seedText = seedInput) => {
     seedRequestRef.current = seedToLayer(seedText, gridSize);
   };
@@ -147,6 +221,57 @@ export default function GameOfLife3D({
 
   const clearTopLayer = () => {
     simulationApiRef.current.clearTopLayer();
+  };
+
+  const stopSearch = () => searchClientRef.current?.stop();
+
+  const resetSoupSearch = () => {
+    stopSearch();
+    setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
+    setSearchError("");
+  };
+
+  const resetReverseSearch = () => {
+    stopSearch();
+    setReverseProgress({
+      currentDepth: 0, bestDepth: 0, parents: 0, backtracks: 0,
+      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0, elapsedMs: 0, status: 0,
+    });
+    setSearchError("");
+  };
+
+  const startSoupSearch = () => {
+    setSearchError("");
+    setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
+    searchClientRef.current?.startSoup({ size: gridSize, ...soupSettings });
+  };
+
+  const startReverseSearch = () => {
+    const cells = simulationApiRef.current.getTopLayer();
+    if (cells.length !== gridSize * gridSize) return;
+    setPaused(true);
+    setSearchError("");
+    setReverseProgress({
+      currentDepth: 0, bestDepth: 0, parents: 0, backtracks: 0,
+      cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0, elapsedMs: 0, status: 1,
+    });
+    searchClientRef.current?.startReverse({ size: gridSize, cells, ...reverseSettings });
+  };
+
+  const loadSoupResult = (cells) => {
+    const layer = new Uint8Array(cells);
+    const binary = Array.from(layer, (cell) => cell ? "1" : "0").join("");
+    setSeedInput(binary);
+    seedRequestRef.current = layer;
+    setActiveTab("simulate");
+  };
+
+  const updateSoupSetting = (key, value) => {
+    setSoupSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateReverseSetting = (key, value) => {
+    setReverseSettings((current) => ({ ...current, [key]: value }));
   };
 
   const paintFromPointer = (event) => {
@@ -390,9 +515,24 @@ export default function GameOfLife3D({
       lastStepTime = performance.now();
     };
 
+    const replaceHistory = (layers) => {
+      const history = layers
+        .slice(-height)
+        .map((layer) => cloneLayer(layer));
+      cells = [
+        ...Array.from({ length: height - history.length }, () => makeEmptyLayer(gridSize)),
+        ...history,
+      ];
+      updateInstances();
+      renderEditor();
+      lastStepTime = performance.now();
+    };
+
     simulationApiRef.current = {
       clearTopLayer: clearTopLayerOnly,
+      getTopLayer: () => cloneLayer(cells[cells.length - 1]),
       renderEditor,
+      replaceHistory,
       setTopCell,
     };
 
@@ -565,7 +705,9 @@ export default function GameOfLife3D({
     return () => {
       simulationApiRef.current = {
         clearTopLayer: () => {},
+        getTopLayer: () => new Uint8Array(0),
         renderEditor: () => {},
+        replaceHistory: () => {},
         setTopCell: () => {},
       };
       cancelAnimationFrame(raf);
@@ -614,12 +756,12 @@ export default function GameOfLife3D({
           className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-y-auto rounded-lg border border-white/15 bg-gray-900/75 p-3 text-white shadow-2xl backdrop-blur-md md:static md:h-full md:rounded-none md:border-y-0 md:border-r-0 md:border-l md:bg-gray-900/55"
           onSubmit={(event) => {
             event.preventDefault();
-            applySeed();
+            if (activeTab === "simulate") applySeed();
           }}
         >
           <div className="flex items-center justify-between gap-2">
             <label className="text-[10px] font-semibold uppercase tracking-wide text-white/70">
-              Seed
+              Life lab
             </label>
             <button
               type="button"
@@ -631,144 +773,157 @@ export default function GameOfLife3D({
             </button>
           </div>
 
-          <textarea
-            value={seedInput}
-            onChange={(event) => setSeedInput(event.target.value)}
-            className="mt-1 h-14 w-full resize-none rounded-md border border-white/15 bg-gray-950/45 p-1.5 font-mono text-[9px] leading-tight text-white outline-none focus:border-white/45 sm:h-16 sm:text-[10px]"
-            spellCheck="false"
-            aria-label="Game of Life seed"
-          />
-
-          <div className="mt-1.5 grid grid-cols-3 gap-1">
-            <button
-              type="submit"
-              className="rounded-md bg-white/80 px-1.5 py-1 text-[9px] font-semibold text-black transition hover:bg-white sm:text-[10px]"
-            >
-              Apply
-            </button>
-            <button
-              type="button"
-              onClick={randomizeSeed}
-              className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20 sm:text-[10px]"
-            >
-              Rand
-            </button>
-            <button
-              type="button"
-              onClick={resetDefaultSeed}
-              className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20 sm:text-[10px]"
-            >
-              Reset
-            </button>
-          </div>
-
-          <div className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
-            <span>Size</span>
-            <span>{gridSize}x{gridSize}</span>
-          </div>
-          <div className="mt-1 grid grid-cols-3 gap-1">
-            {GRID_SIZE_OPTIONS.map((option) => (
+          <div className="mt-2 grid grid-cols-3 gap-1" role="tablist" aria-label="Game of Life tools">
+            {[["simulate", "Simulate"], ["soup", "Soup"], ["reverse", "Reverse"]].map(([id, label]) => (
               <button
-                key={option}
+                key={id}
                 type="button"
-                onClick={() => {
-                  seedRequestRef.current = null;
-                  setGridSize(option);
-                }}
-                className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
-                  gridSize === option
-                    ? "bg-white/80 text-black hover:bg-white"
-                    : "bg-white/10 text-white hover:bg-white/20"
-                }`}
-                aria-pressed={gridSize === option}
+                role="tab"
+                aria-selected={activeTab === id}
+                onClick={() => setActiveTab(id)}
+                className={`rounded-md px-1 py-1.5 text-[9px] font-semibold transition ${activeTab === id ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`}
               >
-                {option}
+                {label}
               </button>
             ))}
           </div>
 
-          <div className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
-            <span>Top layer</span>
-            <span>{paused ? "Paused" : "Live"}</span>
-          </div>
-
-          <canvas
-            ref={editorCanvasRef}
-            width={EDITOR_CANVAS_SIZE}
-            height={EDITOR_CANVAS_SIZE}
-            className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] md:max-h-none md:max-w-none md:self-auto"
-            aria-label="Editable top layer of the Game of Life simulation"
-            onContextMenu={(event) => event.preventDefault()}
-            onPointerDown={onEditorPointerDown}
-            onPointerMove={onEditorPointerMove}
-            onPointerUp={onEditorPointerEnd}
-            onPointerCancel={onEditorPointerEnd}
-            onLostPointerCapture={onEditorPointerEnd}
-          />
-
-          <div className="mt-2 grid grid-cols-3 gap-1">
-            <button
-              type="button"
-              onClick={() => setDrawMode("draw")}
-              className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
-                drawMode === "draw"
-                  ? "bg-white/80 text-black hover:bg-white"
-                  : "bg-white/10 text-white hover:bg-white/20"
-              }`}
-              aria-pressed={drawMode === "draw"}
-            >
-              Draw
-            </button>
-            <button
-              type="button"
-              onClick={() => setDrawMode("erase")}
-              className={`rounded-md px-1.5 py-1 text-[9px] font-semibold transition sm:text-[10px] ${
-                drawMode === "erase"
-                  ? "bg-white/80 text-black hover:bg-white"
-                  : "bg-white/10 text-white hover:bg-white/20"
-              }`}
-              aria-pressed={drawMode === "erase"}
-            >
-              Erase
-            </button>
-            <button
-              type="button"
-              onClick={clearTopLayer}
-              className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20 sm:text-[10px]"
-            >
-              Clear
-            </button>
-          </div>
-
           <label className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
-            <span>Speed</span>
-            <span>{speed}/s</span>
+            <span>Board</span>
+            <span>{gridSize}x{gridSize}</span>
           </label>
           <input
             type="range"
-            min="1"
-            max="30"
+            min="8"
+            max="64"
             step="1"
-            value={speed}
-            onChange={(event) => setSpeed(Number(event.target.value))}
+            value={gridSize}
+            onChange={(event) => {
+              seedRequestRef.current = null;
+              setGridSize(Number(event.target.value));
+            }}
             className="mt-1 w-full accent-white"
-            aria-label="Game of Life simulation speed"
+            aria-label="Game of Life board size"
           />
 
-          <div className="mt-auto pt-3">
-            <button
-              type="button"
-              onClick={togglePaused}
-              className={`w-full rounded-md px-2 py-1.5 text-[9px] font-semibold transition sm:text-[10px] ${
-                paused
-                  ? "bg-white/80 text-black hover:bg-white"
-                  : "bg-white/10 text-white hover:bg-white/20"
-              }`}
-              aria-pressed={paused}
-            >
-              {paused ? "Resume" : "Pause"}
-            </button>
-          </div>
+          {searchError && (
+            <p className="mt-2 rounded bg-red-400/15 p-1.5 text-[9px] leading-tight text-red-100" role="alert">
+              {searchError}
+            </p>
+          )}
+
+          {activeTab === "simulate" && (
+            <>
+              <label className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-white/70">Seed</label>
+              <textarea
+                value={seedInput}
+                onChange={(event) => setSeedInput(event.target.value)}
+                className="mt-1 h-14 w-full resize-none rounded-md border border-white/15 bg-gray-950/45 p-1.5 font-mono text-[9px] leading-tight text-white outline-none focus:border-white/45 sm:h-16 sm:text-[10px]"
+                spellCheck="false"
+                aria-label="Game of Life seed"
+              />
+              <div className="mt-1.5 grid grid-cols-3 gap-1">
+                <button type="submit" className="rounded-md bg-white/80 px-1.5 py-1 text-[9px] font-semibold text-black transition hover:bg-white">Apply</button>
+                <button type="button" onClick={randomizeSeed} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Rand</button>
+                <button type="button" onClick={resetDefaultSeed} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Reset</button>
+              </div>
+              <div className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+                <span>Top layer</span><span>{paused ? "Paused" : "Live"}</span>
+              </div>
+              <canvas
+                ref={editorCanvasRef}
+                width={EDITOR_CANVAS_SIZE}
+                height={EDITOR_CANVAS_SIZE}
+                className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] md:max-h-none md:max-w-none md:self-auto"
+                aria-label="Editable top layer of the Game of Life simulation"
+                onContextMenu={(event) => event.preventDefault()}
+                onPointerDown={onEditorPointerDown}
+                onPointerMove={onEditorPointerMove}
+                onPointerUp={onEditorPointerEnd}
+                onPointerCancel={onEditorPointerEnd}
+                onLostPointerCapture={onEditorPointerEnd}
+              />
+              <div className="mt-2 grid grid-cols-3 gap-1">
+                {["draw", "erase"].map((mode) => (
+                  <button key={mode} type="button" onClick={() => setDrawMode(mode)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold capitalize transition ${drawMode === mode ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={drawMode === mode}>{mode}</button>
+                ))}
+                <button type="button" onClick={clearTopLayer} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Clear</button>
+              </div>
+              <label className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+                <span>Speed</span><span>{speed}/s</span>
+              </label>
+              <input type="range" min="1" max="30" step="1" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="mt-1 w-full accent-white" aria-label="Game of Life simulation speed" />
+              <div className="mt-auto pt-3">
+                <button type="button" onClick={togglePaused} className={`w-full rounded-md px-2 py-1.5 text-[9px] font-semibold transition ${paused ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={paused}>{paused ? "Resume" : "Pause"}</button>
+              </div>
+            </>
+          )}
+
+          {activeTab === "soup" && (
+            <div className="mt-3 flex min-h-0 flex-1 flex-col text-[10px]">
+              <p className="m-0 text-[9px] leading-snug text-white/55">Ranks distinct, non-empty generations before extinction or an exact repeat.</p>
+              <label className="mt-3 flex justify-between font-semibold uppercase tracking-wide text-white/70"><span>Density</span><span>{soupSettings.density}%</span></label>
+              <input type="range" min="1" max="99" step="0.5" value={soupSettings.density} onChange={(event) => updateSoupSetting("density", Number(event.target.value))} className="mt-1 w-full accent-white" />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="text-white/65">Generation horizon<input type="number" min="1" max="100000" value={soupSettings.horizon} onChange={(event) => updateSoupSetting("horizon", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Batch size<input type="number" min="1" max="10000" value={soupSettings.batchSize} onChange={(event) => updateSoupSetting("batchSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">RNG seed<input type="text" value={soupSettings.seed} onChange={(event) => updateSoupSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Leaderboard<input type="number" min="1" max="100" value={soupSettings.leaderboardSize} onChange={(event) => updateSoupSetting("leaderboardSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-1">
+                <button type="button" onClick={startSoupSearch} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold text-black">{searchMode === "soup" ? "Restart" : "Start"}</button>
+                <button type="button" onClick={stopSearch} disabled={!searchMode} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white disabled:opacity-35">Stop</button>
+                <button type="button" onClick={resetSoupSearch} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white">Reset</button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-black/20 p-2 text-white/65">
+                <span>Soups</span><strong className="text-right text-white">{Math.round(soupProgress.searched || 0).toLocaleString()}</strong>
+                <span>Rate</span><strong className="text-right text-white">{soupProgress.elapsedMs ? Math.round(soupProgress.searched * 1000 / soupProgress.elapsedMs).toLocaleString() : 0}/s</strong>
+              </div>
+              <div className="mt-2 space-y-1 overflow-y-auto">
+                {(soupProgress.results || []).map((result, index) => (
+                  <button key={`${result.lifetime}-${index}`} type="button" onClick={() => loadSoupResult(result.cells)} className="flex w-full items-center justify-between rounded bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/15">
+                    <span>#{index + 1}</span><strong>{result.reason === 3 ? "≥" : ""}{result.lifetime.toLocaleString()} gen</strong><span className="text-white/45">{result.reason === 1 ? "empty" : result.reason === 2 ? "repeat" : "open"}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "reverse" && (
+            <div className="mt-3 flex min-h-0 flex-1 flex-col text-[10px]">
+              <p className="m-0 text-[9px] leading-snug text-white/55">Exact toroidal predecessor search. Cycles are pruned on the current path; unknown work is never called a Garden of Eden.</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <label className="text-white/65">Max depth (0 = ∞)<input type="number" min="0" max="100000" value={reverseSettings.maxDepth} onChange={(event) => updateReverseSetting("maxDepth", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">SAT quantum<input type="number" min="10" max="1000000" value={reverseSettings.conflictBudget} onChange={(event) => updateReverseSetting("conflictBudget", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="col-span-2 text-white/65">Search seed<input type="text" value={reverseSettings.seed} onChange={(event) => updateReverseSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-1">
+                <button type="button" onClick={startReverseSearch} className="rounded-md bg-white/80 px-2 py-1.5 font-semibold text-black">{searchMode === "reverse" ? "Restart" : "Start from top"}</button>
+                <button type="button" onClick={stopSearch} disabled={!searchMode} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white disabled:opacity-35">Stop</button>
+                <button type="button" onClick={resetReverseSearch} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white">Reset</button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-x-2 gap-y-1 rounded-md bg-black/20 p-2 text-white/65">
+                <span>Current depth</span><strong className="text-right text-white">{reverseProgress.currentDepth}</strong>
+                <span>Deepest chain</span><strong className="text-right text-white">{reverseProgress.bestDepth}</strong>
+                <span>Parents / backtracks</span><strong className="text-right text-white">{Math.round(reverseProgress.parents).toLocaleString()} / {Math.round(reverseProgress.backtracks).toLocaleString()}</strong>
+                <span>Cycle prunes</span><strong className="text-right text-white">{Math.round(reverseProgress.cyclePrunes).toLocaleString()}</strong>
+                <span>GoE leaves proved</span><strong className="text-right text-white">{Math.round(reverseProgress.goeLeaves).toLocaleString()}</strong>
+                <span>Depth-limit cuts</span><strong className="text-right text-white">{Math.round(reverseProgress.depthCuts).toLocaleString()}</strong>
+                <span>SAT conflicts</span><strong className="text-right text-white">{Math.round(reverseProgress.conflicts).toLocaleString()}</strong>
+              </div>
+              <p className="mt-2 text-[9px] text-white/45">
+                {searchMode === "reverse"
+                  ? "Searching and auto-showing each deeper chain…"
+                  : reverseProgress.status === 2 && reverseProgress.bestDepth === 0 && reverseProgress.goeLeaves > 0
+                    ? "The target has no predecessor: proven Garden of Eden."
+                    : reverseProgress.status === 2
+                      ? "The bounded ancestry search is exactly exhausted."
+                      : reverseProgress.status === 1
+                        ? "Stopped; unexplored branches remain unknown."
+                        : "Ready."}
+              </p>
+            </div>
+          )}
         </form>
       )}
     </div>

@@ -8,6 +8,8 @@ here so the asset history stays auditable.
   https://freesound.org/people/nicoproson/sounds/627070/
 - `water-flow.wav`: “Water Stream.wav” by metaepitome —
   https://freesound.org/people/metaepitome/sounds/181320/
+- `tnt-deep-explosion.mp3`: “Deep Explosion” by Kodack —
+  https://freesound.org/people/Kodack/sounds/258195/
 - `tnt-deep-boom.mp3`: “Deep Boom” by Za-Games —
   https://freesound.org/people/Za-Games/sounds/539968/
 - `tnt-large-explosion.mp3`: “Explosion large” by SamsterBirdies —

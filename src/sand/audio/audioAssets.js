@@ -5,6 +5,7 @@
 const ASSET_URLS = Object.freeze({
   sandFlow: new URL('./assets/sand-flow.wav', import.meta.url).href,
   waterFlow: new URL('./assets/water-flow.wav', import.meta.url).href,
+  tntDeepExplosion: new URL('./assets/tnt-deep-explosion.mp3', import.meta.url).href,
   tntDeepBoom: new URL('./assets/tnt-deep-boom.mp3', import.meta.url).href,
   tntLargeExplosion: new URL('./assets/tnt-large-explosion.mp3', import.meta.url).href,
 });

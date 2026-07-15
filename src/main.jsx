@@ -1,6 +1,5 @@
 import React, { Suspense, lazy, useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
-import { preloadThreadedSandModule } from './sand/wasmBridge/moduleSelector.js'
 import './index.css'
 
 const path = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') : ''
@@ -13,7 +12,6 @@ const isGame = path === '/game'
 // App instead of waiting for App -> Hero -> useEffect.
 const pageModule = isGame ? import('./GamePage.jsx') : import('./App.jsx')
 if (!isGame) void import('./sand/embed/sandGame.js')
-preloadThreadedSandModule()
 const Page = lazy(() => pageModule)
 
 function BootSignal() {

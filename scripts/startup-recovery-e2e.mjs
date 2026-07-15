@@ -82,25 +82,6 @@ for (const [name, browserType, device] of [
   await browser.close();
 }
 
-{
-  const beforeDocuments = initialDocuments;
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await page.route(/\/assets\/sandEngineThreaded-[^/]+\.js$/, (route) => route.abort('failed'));
-  await page.goto(`${baseURL}?_startup=preload-test`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(
-    () => !!document.querySelector('sand-game')?.shadowRoot?.querySelector('#sand-main'),
-    null,
-    { timeout: 30000 },
-  );
-  check('failed threaded preload boots the fallback engine', true);
-  check('failed threaded preload does not reload the document', initialDocuments - beforeDocuments === 1,
-    `${initialDocuments - beforeDocuments} documents`);
-  await context.close();
-  await browser.close();
-}
-
 await new Promise((resolve) => server.close(resolve));
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

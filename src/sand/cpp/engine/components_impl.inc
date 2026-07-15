@@ -1324,8 +1324,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       if (nk < E.cols || nk >= E.cols * E.rows) return false;
       if (own.count(nk)) continue;
       uint8_t lead = lay.grid[nk];
-      if (lead == EMPTY || E.isGasMaterial(lead)) continue;
-      if (!E.isBuoyantMedium(lead)) return false;
+      if (lead == EMPTY) continue;
+      if (!E.isGasMaterial(lead) && !E.isBuoyantMedium(lead)) return false;
       pending.push_back({nk, lead});
     }
     for (int k : own) if (!own.count(k - dir)) vacated.push_back(k);
@@ -1535,19 +1535,23 @@ void ComponentSystem::moveRigidAssemblies() {
     // The cells the assembly vacates are valid free volume for this planning
     // step; large slanted solids otherwise need too many distant surface cells
     // and can pin in full liquid stacks. Powders use a spill BFS to nearby free
-    // room. GAS keeps the original vacated-cell dump.
+    // room. Gas swaps into the same vertical run's trailing vacancy whenever
+    // possible, then falls back to the nearest remaining trailing cell.
     struct LiquidWrite { int target; uint8_t material; };
     std::vector<LiquidWrite> liquidWrites;
     std::vector<int> powderTargets;
-    trReserved.reset(gridLen); // cells already claimed by liquid/powder relocation (queried even when nothing is displaced)
+    std::vector<int> gasTargets;
+    trReserved.reset(gridLen); // cells already claimed by loose-material relocation
+    if (!displaced.empty()) {
+      trVacated.reset(gridLen);
+      for (int k : vacated) trVacated.add(k);
+    }
     if (liquidDisplacedCount > 0 || powderDisplacedCount > 0) {
       // Cells the assembly is about to occupy — a spill target must not be one of
       // them. Built lazily here (only when liquid/powder is displaced) so a large
       // slab falling through air/empty skips the O(area) stamp fill per step.
       trMoved.reset(gridLen);
       for (int k : cells) trMoved.add(k + dir);
-      trVacated.reset(gridLen);
-      for (int k : vacated) trVacated.add(k);
       std::vector<std::set<int>> vacatedByRow(E.rows);
       for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
@@ -1751,6 +1755,37 @@ void ComponentSystem::moveRigidAssemblies() {
       };
       if (!runPowderSpill(powderDisplacedCount, powderTargets)) return false;
     }
+    // Every leading gas cell has an exact trailing partner on the same vertical
+    // run of the assembly. Preserve that local swap first; only use a nearest
+    // unclaimed vacancy when a liquid fallback already reserved the partner.
+    bool gasFallback = false;
+    for (int i = 0; i < (int)displaced.size(); i++) {
+      const auto& d = displaced[i];
+      if (!E.isGasMaterial(d.material)) continue;
+      int target = d.from - dir;
+      while (target - dir >= 0 && target - dir < gridLen && asmCells.has(target - dir)) target -= dir;
+      if (trVacated.has(target) && !trReserved.has(target)) {
+        trReserved.add(target);
+        gasTargets.push_back(target);
+      } else {
+        gasTargets.push_back(-1);
+        gasFallback = true;
+      }
+    }
+    if (gasFallback) {
+      std::vector<std::set<int>> vacatedByRow(E.rows);
+      for (int k : vacated) if (!trReserved.has(k)) vacatedByRow[k / E.cols].insert(k % E.cols);
+      int gasIndex = 0;
+      for (const auto& d : displaced) {
+        if (!E.isGasMaterial(d.material)) continue;
+        if (gasTargets[gasIndex] >= 0) { gasIndex++; continue; }
+        int target = nearestVacatedTarget(d.from, dir, 0, true, vacatedByRow);
+        if (target < 0) target = nearestVacatedTarget(d.from, dir, 0, false, vacatedByRow);
+        if (target < 0) return false;
+        trReserved.add(target);
+        gasTargets[gasIndex++] = target;
+      }
+    }
     // Materialize the exact post-translation overlay before mutating the grid.
     // The equilibrium probe reads this same plan (including liquid-chain and
     // powder spill targets), eliminating stale-grid and approximate-vacated-cell
@@ -1767,6 +1802,10 @@ void ComponentSystem::moveRigidAssemblies() {
     int plannedPowder = 0;
     for (auto& d : displaced) if (E.isLooseSolidMaterial(d.material)) {
       planned[powderTargets[plannedPowder++]] = d.material;
+    }
+    int plannedGas = 0;
+    for (auto& d : displaced) if (E.isGasMaterial(d.material)) {
+      planned[gasTargets[plannedGas++]] = d.material;
     }
     FaceContact postMove;
     accumulateFaceContact(E.L->grid, shifted, postMove, &planned);
@@ -1830,19 +1869,14 @@ void ComponentSystem::moveRigidAssemblies() {
       auto it = E.L->pendingDetonations.find(pr.first);
       if (it == E.L->pendingDetonations.end() || pr.second < it->second) E.L->pendingDetonations[pr.first] = pr.second;
     }
-    // Relocate every displaced cell: liquids use liquidWrites, powders -> powderTargets,
-    // gas -> the vacated-cell dump. A powder STILL advances the
-    // shared vacated cursor (without writing there) so gas keeps landing in
-    // byte-identical cells while the powder goes to its spill target instead.
-    int di = 0, pi = 0;
+    // Relocate every displaced cell using the plan above.
+    int pi = 0, gi = 0;
     for (auto& d : displaced) {
       if (E.isLiquidMaterial(d.material)) continue;
-      while (di < (int)vacated.size() && (E.L->grid[vacated[di]] != EMPTY || trReserved.has(vacated[di]))) di++;
       if (E.isLooseSolidMaterial(d.material)) {
         int target = powderTargets[pi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
-        if (di < (int)vacated.size()) di++;
-      } else if (di < (int)vacated.size()) {
-        int target = vacated[di++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target); // gas
+      } else {
+        int target = gasTargets[gi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
       }
     }
     for (auto& w : liquidWrites) { E.writeGridIndex(w.target, w.material); E.L->assemblyRelocatedCells.push_back(w.target); }

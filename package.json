@@ -23,6 +23,7 @@
     "test:layer": "node scripts/layer-test.mjs",
     "test:stacked-logs": "node scripts/stacked-logs-test.mjs",
     "test:xlayer-fall": "node scripts/xlayer-bonded-fall-test.mjs",
+    "test:component-gas": "node scripts/component-gas-displacement-test.mjs",
     "test:stone-layers": "node scripts/stone-layer-dig-repro.mjs",
     "test:stone-airgap": "node scripts/stone-airgap-test.mjs",
     "test:component-erase": "node scripts/component-erase-test.mjs",

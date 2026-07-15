@@ -126,32 +126,43 @@ export default function GameOfLife3D({
     status: 0,
   });
 
-  useEffect(() => {
-    const client = createLifeSearchClient((message) => {
-      if (message.type === "started") {
-        setSearchMode(message.mode);
-        setSearchError("");
-      } else if (message.type === "soup-progress") {
-        setSoupProgress(message);
-      } else if (message.type === "reverse-progress") {
-        setReverseProgress((current) => ({ ...current, ...message, layers: undefined }));
-        if (message.layers?.length) {
-          setPaused(true);
-          simulationApiRef.current.replaceHistory(message.layers);
-        }
-        if (!message.running) setSearchMode(null);
-      } else if (message.type === "stopped") {
-        setSearchMode(null);
-      } else if (message.type === "error") {
-        setSearchMode(null);
-        setSearchError(message.message || "Search failed");
+  const handleSearchMessage = (message) => {
+    if (message.type === "started") {
+      setSearchMode(message.mode);
+      setSearchError("");
+    } else if (message.type === "soup-progress") {
+      setSoupProgress(message);
+    } else if (message.type === "reverse-progress") {
+      setReverseProgress((current) => ({ ...current, ...message, layers: undefined }));
+      if (message.layers?.length) {
+        setPaused(true);
+        simulationApiRef.current.replaceHistory(message.layers);
       }
-    });
-    searchClientRef.current = client;
-    return () => {
-      client.destroy();
-      searchClientRef.current = null;
-    };
+      if (!message.running) setSearchMode(null);
+    } else if (message.type === "stopped") {
+      setSearchMode(null);
+    } else if (message.type === "error") {
+      setSearchMode(null);
+      setSearchError(message.message || "Search failed");
+    }
+  };
+
+  const ensureSearchClient = () => {
+    if (searchClientRef.current) return searchClientRef.current;
+    try {
+      const client = createLifeSearchClient(handleSearchMessage);
+      searchClientRef.current = client;
+      return client;
+    } catch (error) {
+      setSearchMode(null);
+      setSearchError(error?.message || "Unable to start the Life search worker");
+      return null;
+    }
+  };
+
+  useEffect(() => () => {
+    searchClientRef.current?.destroy();
+    searchClientRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -243,7 +254,7 @@ export default function GameOfLife3D({
   const startSoupSearch = () => {
     setSearchError("");
     setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
-    searchClientRef.current?.startSoup({ size: gridSize, ...soupSettings });
+    ensureSearchClient()?.startSoup({ size: gridSize, ...soupSettings });
   };
 
   const startReverseSearch = () => {
@@ -255,7 +266,7 @@ export default function GameOfLife3D({
       currentDepth: 0, bestDepth: 0, parents: 0, backtracks: 0,
       cyclePrunes: 0, goeLeaves: 0, depthCuts: 0, conflicts: 0, elapsedMs: 0, status: 1,
     });
-    searchClientRef.current?.startReverse({ size: gridSize, cells, ...reverseSettings });
+    ensureSearchClient()?.startReverse({ size: gridSize, cells, ...reverseSettings });
   };
 
   const loadSoupResult = (cells) => {

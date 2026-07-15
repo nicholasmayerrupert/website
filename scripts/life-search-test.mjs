@@ -140,6 +140,16 @@ oscillator[3 * 8 + 2] = oscillator[3 * 8 + 3] = oscillator[3 * 8 + 4] = 1;
 assert.deepEqual(lifetimeEngine.measureLifetime(oscillator, 100), { lifetime: 2, reason: 2 });
 assert.deepEqual(lifetimeEngine.measureLifetime(oscillator, 1), { lifetime: 1, reason: 3 });
 
+// Extension search returns only a seed whose longer prefix merges into the
+// exact reference trajectory. A single live cell is one tick before empty.
+lifetimeEngine.startExtension(empty, { horizon: 100, maxFlips: 1, seed: 42n });
+lifetimeEngine.pumpExtension(1);
+const extension = lifetimeEngine.extensionSnapshot(true);
+assert.equal(extension.status, 2, 'extension witness is found');
+assert.equal(extension.mergeCandidateTime, 1, 'candidate takes one generation to merge');
+assert.equal(extension.mergeReferenceTime, 0, 'candidate merges at the input seed');
+equalBoard(lifetimeEngine.step(extension.cells), empty, 'extension witness rejoins exact future');
+
 const soupConfig = { density: 37.5, horizon: 200, seed: 123456789n, leaderboardSize: 5 };
 lifetimeEngine.startSoup(soupConfig);
 lifetimeEngine.pumpSoup(25);
@@ -155,4 +165,4 @@ assert.deepEqual(
 );
 lifetimeEngine.destroy();
 
-console.log(`life search: forward equivalence, all 512 reverse states (${gardens} GoE), fair reverse scheduling, lifetime, and determinism passed`);
+console.log(`life search: forward equivalence, all 512 reverse states (${gardens} GoE), fair scheduling, extension witness, lifetime, and determinism passed`);

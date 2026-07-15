@@ -47,6 +47,16 @@ function postProgress(force = false) {
       elapsedMs: now - startedAt,
       running: summary.status === 1,
     }, transfer);
+  } else if (mode === 'extension') {
+    const snapshot = engine.extensionSnapshot(true);
+    const message = {
+      type: snapshot.status === 2 ? 'extension-result' : 'extension-progress',
+      ...snapshot,
+      elapsedMs: now - startedAt,
+      running: snapshot.status === 1,
+    };
+    const transfer = snapshot.cells ? [snapshot.cells.buffer] : [];
+    self.postMessage(message, transfer);
   }
 }
 
@@ -60,6 +70,13 @@ function pump(token) {
     engine.pumpSoup(settings.batchSize);
     postProgress();
     schedulePump(token);
+    return;
+  }
+  if (mode === 'extension') {
+    const status = engine.pumpExtension(settings.batchSize);
+    postProgress(status !== 1);
+    if (status === 1) schedulePump(token);
+    else mode = null;
     return;
   }
   const status = engine.pumpReverse(settings.conflictBudget);
@@ -112,6 +129,22 @@ self.onmessage = async ({ data }) => {
       });
       mode = 'reverse';
       lastBestDepth = -1;
+      startedAt = lastProgressAt = performance.now();
+      self.postMessage({ type: 'started', mode });
+      postProgress(true);
+      schedulePump(runToken);
+      return;
+    }
+    if (data.type === 'start-extension') {
+      runToken++;
+      await replaceEngine(data.size);
+      settings = data;
+      engine.startExtension(new Uint8Array(data.cells), {
+        horizon: data.horizon,
+        maxFlips: data.maxFlips,
+        seed: hashSeed(data.seed),
+      });
+      mode = 'extension';
       startedAt = lastProgressAt = performance.now();
       self.postMessage({ type: 'started', mode });
       postProgress(true);

@@ -16,6 +16,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // human diffing of runs; suites are independent.
 const SUITES = [
   ['deployment', 'deployment-cache-test.mjs'],
+  ['life-search', 'life-search-test.mjs'],
   ['tooltier', 'tooltier-test.mjs'],
   ['items', 'item-test.mjs'],
   ['creatures', 'creature-test.mjs'],

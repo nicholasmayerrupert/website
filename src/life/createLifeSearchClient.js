@@ -17,9 +17,10 @@ export function createLifeSearchClient(onMessage) {
   const aggregateExtensionProgress = (message, workerIndex) => {
     extensionProgress[workerIndex] = message;
     const totals = extensionProgress.reduce((summary, progress) => ({
-      attempts: summary.attempts + (progress?.attempts || 0),
-      steps: summary.steps + (progress?.steps || 0),
-    }), { attempts: 0, steps: 0 });
+      jobs: summary.jobs + (progress?.jobs || 0),
+      conflicts: summary.conflicts + (progress?.conflicts || 0),
+      rejected: summary.rejected + (progress?.rejected || 0),
+    }), { jobs: 0, conflicts: 0, rejected: 0 });
     return { ...message, ...totals, workers: extensionWorkers.length };
   };
 
@@ -75,6 +76,8 @@ export function createLifeSearchClient(onMessage) {
           type: 'start-extension',
           ...settings,
           seed: `${settings.seed}:${index}`,
+          workerIndex: index,
+          workerCount,
           cells: cells.buffer,
         }, [cells.buffer]);
       }

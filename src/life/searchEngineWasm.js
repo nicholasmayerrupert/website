@@ -43,12 +43,10 @@ export async function createLifeSearchEngine(size) {
     startExtension: fn(module, 'life_start_extension', null, ['number', 'number', 'number', 'number', 'number', 'number']),
     extensionPump: fn(module, 'life_extension_pump', 'number', ['number', 'number']),
     extensionStatus: fn(module, 'life_extension_status', 'number', ['number']),
-    extensionAttempts: fn(module, 'life_extension_attempts', 'number', ['number']),
-    extensionSteps: fn(module, 'life_extension_steps', 'number', ['number']),
-    extensionReferenceLength: fn(module, 'life_extension_reference_length', 'number', ['number']),
-    extensionMergeCandidateTime: fn(module, 'life_extension_merge_candidate_time', 'number', ['number']),
-    extensionMergeReferenceTime: fn(module, 'life_extension_merge_reference_time', 'number', ['number']),
+    extensionConflicts: fn(module, 'life_extension_conflicts', 'number', ['number']),
+    extensionRejected: fn(module, 'life_extension_rejected', 'number', ['number']),
     extensionResultCells: fn(module, 'life_extension_result_cells', 'number', ['number']),
+    extensionRejectResult: fn(module, 'life_extension_reject_result', null, ['number']),
     step: fn(module, 'life_step', null, ['number', 'number', 'number']),
     measureLifetime: fn(module, 'life_measure_lifetime', 'number', ['number', 'number', 'number']),
   };
@@ -112,28 +110,29 @@ export async function createLifeSearchEngine(size) {
       }
       return snapshot;
     },
-    startExtension(cells, { horizon, maxFlips, seed }) {
-      const pointer = module._malloc(cellCount);
-      module.HEAPU8.set(cells, pointer);
+    startExtension(targetCells, excludedCells, { depth, seed }) {
+      const targetPointer = module._malloc(cellCount);
+      const excludedPointer = module._malloc(cellCount);
+      module.HEAPU8.set(targetCells, targetPointer);
+      module.HEAPU8.set(excludedCells, excludedPointer);
       const [low, high] = splitSeed(seed);
-      api.startExtension(handle, pointer, horizon, maxFlips, low, high);
-      module._free(pointer);
+      api.startExtension(handle, targetPointer, excludedPointer, depth, low, high);
+      module._free(targetPointer);
+      module._free(excludedPointer);
     },
-    pumpExtension(batchSize) { return api.extensionPump(handle, batchSize); },
+    pumpExtension(conflictBudget) { return api.extensionPump(handle, conflictBudget); },
     extensionSnapshot(includeResult = false) {
       const snapshot = {
         status: api.extensionStatus(handle),
-        attempts: api.extensionAttempts(handle),
-        steps: api.extensionSteps(handle),
-        referenceLength: api.extensionReferenceLength(handle),
-        mergeCandidateTime: api.extensionMergeCandidateTime(handle),
-        mergeReferenceTime: api.extensionMergeReferenceTime(handle),
+        conflicts: api.extensionConflicts(handle),
+        rejected: api.extensionRejected(handle),
       };
       if (includeResult && snapshot.status === 2) {
         snapshot.cells = copyCells(api.extensionResultCells(handle));
       }
       return snapshot;
     },
+    rejectExtensionResult() { api.extensionRejectResult(handle); },
     step(cells) {
       const input = module._malloc(cellCount);
       const output = module._malloc(cellCount);

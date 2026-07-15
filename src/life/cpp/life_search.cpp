@@ -174,7 +174,7 @@ class SearchEngine {
     outputVars.reserve(size * size);
     for (int i = 0; i < size * size; ++i) predVars.push_back(reverseSolver->newVar());
     for (int i = 0; i < size * size; ++i) outputVars.push_back(reverseSolver->newVar());
-    encodeLifeTransition();
+    encodeLifeTransition(predVars, outputVars);
 
     Board target{std::vector<uint64_t>(size, 0)};
     for (int y = 0; y < size; ++y) {
@@ -205,43 +205,42 @@ class SearchEngine {
     soupRunning = false;
   }
 
-  void startExtension(const uint8_t* cells, int horizon, int maximumFlips, uint64_t seed) {
-    extensionInput = Board{std::vector<uint64_t>(size, 0)};
-    for (int i = 0; i < size * size; ++i) {
-      if (cells[i]) extensionInput.rows[i / size] |= 1ULL << (i % size);
-    }
-    extensionHorizon = std::clamp(horizon, 10, 100000);
-    extensionMaxFlips = std::clamp(maximumFlips, 1, std::min(size * size, 64));
-    extensionRng = std::make_unique<Random64>(seed);
-    extensionReference.clear();
-    extensionReferenceByHash.clear();
+  void startExtension(const uint8_t* targetCells, const uint8_t* excludedCells,
+                      int transitionDepth, uint64_t seed) {
+    reverseSolver = std::make_unique<Solver>();
+    reverseSolver->random_seed = static_cast<double>((seed % 1000003ULL) + 1ULL);
+    reverseSolver->random_var_freq = 0.01 + static_cast<double>(seed % 10ULL) * 0.01;
+    reverseSolver->rnd_init_act = true;
+    Random64 polarityRng(seed ^ 0x9e3779b97f4a7c15ULL);
 
-    Board current = extensionInput;
-    while (static_cast<int>(extensionReference.size()) < extensionHorizon) {
-      const uint64_t hash = boardHash(current);
-      bool repeated = false;
-      auto found = extensionReferenceByHash.find(hash);
-      if (found != extensionReferenceByHash.end()) {
-        for (int index : found->second) {
-          if (extensionReference[index] == current) {
-            repeated = true;
-            break;
-          }
-        }
+    extensionDepth = std::clamp(transitionDepth, 1, 16);
+    extensionLayers.assign(extensionDepth + 1, {});
+    for (std::vector<Var>& layer : extensionLayers) {
+      layer.reserve(size * size);
+      for (int i = 0; i < size * size; ++i) {
+        layer.push_back(reverseSolver->newVar((polarityRng.next() & 1ULL) != 0));
       }
-      if (repeated) break;
-      const int index = static_cast<int>(extensionReference.size());
-      extensionReferenceByHash[hash].push_back(index);
-      extensionReference.push_back(current);
-      if (stepper.empty(current)) break;
-      current = stepper.step(current);
     }
+    for (int depth = 0; depth < extensionDepth; ++depth) {
+      encodeLifeTransition(extensionLayers[depth], extensionLayers[depth + 1]);
+    }
+
+    const std::vector<Var>& targetVars = extensionLayers.back();
+    for (int i = 0; i < size * size; ++i) {
+      const Lit target = mkLit(targetVars[i]);
+      addClause({targetCells[i] ? target : ~target});
+    }
+
+    std::vector<Lit> differsFromInput;
+    differsFromInput.reserve(size * size);
+    for (int i = 0; i < size * size; ++i) {
+      const Lit candidate = mkLit(extensionLayers.front()[i]);
+      differsFromInput.push_back(excludedCells[i] ? ~candidate : candidate);
+    }
+    addClause(differsFromInput);
 
     extensionResult = Board{std::vector<uint64_t>(size, 0)};
-    extensionAttempts = 0;
-    extensionSteps = 0;
-    extensionMergeCandidateTime = 0;
-    extensionMergeReferenceTime = 0;
+    extensionRejected = 0;
     extensionStatus = 1;
     extensionRunning = true;
     reverseRunning = false;
@@ -249,11 +248,42 @@ class SearchEngine {
     soupRunning = false;
   }
 
-  int pumpExtension(int batchSize) {
-    if (!extensionRunning || !extensionRng) return extensionStatus;
-    const int count = std::clamp(batchSize, 1, 1000);
-    for (int i = 0; i < count && extensionRunning; ++i) evaluateExtensionCandidate();
+  int pumpExtension(int conflictBudget) {
+    if (!extensionRunning || !reverseSolver) return extensionStatus;
+    Minisat::vec<Lit> assumptions;
+    reverseSolver->setConfBudget(std::clamp(conflictBudget, 10, 1000000));
+    const Minisat::lbool answer = reverseSolver->solveLimited(assumptions);
+    if (answer == l_Undef) return extensionStatus;
+    if (answer == l_False) {
+      extensionRunning = false;
+      extensionStatus = 3;
+      return extensionStatus;
+    }
+
+    extensionResult = Board{std::vector<uint64_t>(size, 0)};
+    for (int i = 0; i < size * size; ++i) {
+      if (reverseSolver->modelValue(extensionLayers.front()[i]) == l_True) {
+        extensionResult.rows[i / size] |= 1ULL << (i % size);
+      }
+    }
+    extensionRunning = false;
+    extensionStatus = 2;
     return extensionStatus;
+  }
+
+  void rejectExtensionResult() {
+    if (extensionStatus != 2 || !reverseSolver || extensionLayers.empty()) return;
+    std::vector<Lit> blocker;
+    blocker.reserve(size * size);
+    for (int i = 0; i < size * size; ++i) {
+      const Lit candidate = mkLit(extensionLayers.front()[i]);
+      const bool alive = (extensionResult.rows[i / size] >> (i % size)) & 1ULL;
+      blocker.push_back(alive ? ~candidate : candidate);
+    }
+    addClause(blocker);
+    ++extensionRejected;
+    extensionRunning = true;
+    extensionStatus = 1;
   }
 
   int pumpReverse(int conflictBudget) {
@@ -363,24 +393,17 @@ class SearchEngine {
   uint64_t reverseInitialBranchBudget = 250000;
   int reverseTaskBaseDepth = 0;
   bool extensionRunning = false;
-  int extensionStatus = 0;  // 0 idle, 1 running, 2 found
-  int extensionHorizon = 5000;
-  int extensionMaxFlips = 8;
-  uint64_t extensionAttempts = 0;
-  uint64_t extensionSteps = 0;
-  int extensionMergeCandidateTime = 0;
-  int extensionMergeReferenceTime = 0;
-  std::unique_ptr<Random64> extensionRng;
+  int extensionStatus = 0;  // 0 idle, 1 running, 2 found, 3 unsatisfiable
+  int extensionDepth = 1;
+  uint64_t extensionRejected = 0;
   std::unique_ptr<Solver> reverseSolver;
   std::vector<Var> predVars;
   std::vector<Var> outputVars;
   std::vector<ReverseNode> reversePath;
   std::deque<ReverseTask> deferredTasks;
   std::vector<Board> bestPath;
-  Board extensionInput;
   Board extensionResult;
-  std::vector<Board> extensionReference;
-  std::unordered_map<uint64_t, std::vector<int>> extensionReferenceByHash;
+  std::vector<std::vector<Var>> extensionLayers;
   std::vector<uint8_t> scratch;
 
  private:
@@ -400,71 +423,6 @@ class SearchEngine {
       }
     }
     return board;
-  }
-
-  void evaluateExtensionCandidate() {
-    Board candidate = extensionInput;
-    if ((extensionAttempts & 1ULL) != 0 && extensionReference.size() > 1) {
-      const int earlyWindow = std::min<int>(64, extensionReference.size());
-      candidate = extensionReference[extensionRng->next() % earlyWindow];
-    }
-    uint64_t random = extensionRng->next();
-    int flips = 1;
-    while (flips < extensionMaxFlips && (random & 3ULL) == 0) {
-      ++flips;
-      random >>= 2;
-    }
-    if ((extensionAttempts & 15ULL) == 15ULL) {
-      flips = 1 + static_cast<int>(extensionRng->next() % extensionMaxFlips);
-    }
-
-    std::vector<int> flipped;
-    flipped.reserve(flips);
-    while (static_cast<int>(flipped.size()) < flips) {
-      const int cell = static_cast<int>(extensionRng->next() % (size * size));
-      if (std::find(flipped.begin(), flipped.end(), cell) != flipped.end()) continue;
-      flipped.push_back(cell);
-      candidate.rows[cell / size] ^= 1ULL << (cell % size);
-    }
-    ++extensionAttempts;
-
-    Board current = candidate;
-    std::vector<Board> history;
-    history.reserve(std::min(extensionHorizon, 4096));
-    std::unordered_map<uint64_t, std::vector<int>> seen;
-    for (int candidateTime = 0; candidateTime < extensionHorizon; ++candidateTime) {
-      const uint64_t hash = boardHash(current);
-      auto reference = extensionReferenceByHash.find(hash);
-      if (reference != extensionReferenceByHash.end()) {
-        for (int referenceTime : reference->second) {
-          if (extensionReference[referenceTime] != current) continue;
-          if (candidateTime > referenceTime) {
-            extensionResult = std::move(candidate);
-            extensionMergeCandidateTime = candidateTime;
-            extensionMergeReferenceTime = referenceTime;
-            extensionStatus = 2;
-            extensionRunning = false;
-          }
-          return;
-        }
-      }
-
-      bool repeated = false;
-      auto prior = seen.find(hash);
-      if (prior != seen.end()) {
-        for (int index : prior->second) {
-          if (history[index] == current) {
-            repeated = true;
-            break;
-          }
-        }
-      }
-      if (repeated || stepper.empty(current)) return;
-      seen[hash].push_back(static_cast<int>(history.size()));
-      history.push_back(current);
-      current = stepper.step(current);
-      ++extensionSteps;
-    }
   }
 
   void evaluateSoup(Board seed) {
@@ -561,11 +519,12 @@ class SearchEngine {
     return {sum, carry};
   }
 
-  void encodeCell(int x, int y) {
+  void encodeCell(int x, int y, const std::vector<Var>& inputVars,
+                  const std::vector<Var>& resultVars) {
     auto pred = [&](int dx, int dy) {
       const int px = (x + dx + size) % size;
       const int py = (y + dy + size) % size;
-      return mkLit(predVars[py * size + px]);
+      return mkLit(inputVars[py * size + px]);
     };
     const Lit center = pred(0, 0);
     const Lit n0 = pred(-1, -1), n1 = pred(0, -1), n2 = pred(1, -1);
@@ -589,7 +548,7 @@ class SearchEngine {
     addClause({~center, aliveTerm});
     addClause({~aliveTerm, bit0, center});
 
-    const Lit output = mkLit(outputVars[y * size + x]);
+    const Lit output = mkLit(resultVars[y * size + x]);
     addClause({~output, ~bit3});
     addClause({~output, ~bit2});
     addClause({~output, bit1});
@@ -597,9 +556,10 @@ class SearchEngine {
     addClause({output, bit3, bit2, ~bit1, ~aliveTerm});
   }
 
-  void encodeLifeTransition() {
+  void encodeLifeTransition(const std::vector<Var>& inputVars,
+                            const std::vector<Var>& resultVars) {
     for (int y = 0; y < size; ++y) {
-      for (int x = 0; x < size; ++x) encodeCell(x, y);
+      for (int x = 0; x < size; ++x) encodeCell(x, y, inputVars, resultVars);
     }
   }
 
@@ -837,17 +797,18 @@ LIFE_EXPORT double life_reverse_task_resumes(uintptr_t handle) {
   return engine ? static_cast<double>(engine->reverseTaskResumes) : 0;
 }
 
-LIFE_EXPORT void life_start_extension(uintptr_t handle, const uint8_t* cells,
-                                      int horizon, int maximumFlips,
+LIFE_EXPORT void life_start_extension(uintptr_t handle, const uint8_t* targetCells,
+                                      const uint8_t* excludedCells, int transitionDepth,
                                       uint32_t seedLow, uint32_t seedHigh) {
   if (SearchEngine* engine = asEngine(handle)) {
-    engine->startExtension(cells, horizon, maximumFlips, joinSeed(seedLow, seedHigh));
+    engine->startExtension(targetCells, excludedCells, transitionDepth,
+                           joinSeed(seedLow, seedHigh));
   }
 }
 
-LIFE_EXPORT int life_extension_pump(uintptr_t handle, int batchSize) {
+LIFE_EXPORT int life_extension_pump(uintptr_t handle, int conflictBudget) {
   SearchEngine* engine = asEngine(handle);
-  return engine ? engine->pumpExtension(batchSize) : 0;
+  return engine ? engine->pumpExtension(conflictBudget) : 0;
 }
 
 LIFE_EXPORT int life_extension_status(uintptr_t handle) {
@@ -855,34 +816,23 @@ LIFE_EXPORT int life_extension_status(uintptr_t handle) {
   return engine ? engine->extensionStatus : 0;
 }
 
-LIFE_EXPORT double life_extension_attempts(uintptr_t handle) {
+LIFE_EXPORT double life_extension_conflicts(uintptr_t handle) {
   SearchEngine* engine = asEngine(handle);
-  return engine ? static_cast<double>(engine->extensionAttempts) : 0;
+  return engine && engine->reverseSolver ? static_cast<double>(engine->reverseSolver->conflicts) : 0;
 }
 
-LIFE_EXPORT double life_extension_steps(uintptr_t handle) {
+LIFE_EXPORT double life_extension_rejected(uintptr_t handle) {
   SearchEngine* engine = asEngine(handle);
-  return engine ? static_cast<double>(engine->extensionSteps) : 0;
-}
-
-LIFE_EXPORT int life_extension_reference_length(uintptr_t handle) {
-  SearchEngine* engine = asEngine(handle);
-  return engine ? static_cast<int>(engine->extensionReference.size()) : 0;
-}
-
-LIFE_EXPORT int life_extension_merge_candidate_time(uintptr_t handle) {
-  SearchEngine* engine = asEngine(handle);
-  return engine ? engine->extensionMergeCandidateTime : 0;
-}
-
-LIFE_EXPORT int life_extension_merge_reference_time(uintptr_t handle) {
-  SearchEngine* engine = asEngine(handle);
-  return engine ? engine->extensionMergeReferenceTime : 0;
+  return engine ? static_cast<double>(engine->extensionRejected) : 0;
 }
 
 LIFE_EXPORT const uint8_t* life_extension_result_cells(uintptr_t handle) {
   SearchEngine* engine = asEngine(handle);
   return engine ? engine->extensionResultCells() : nullptr;
+}
+
+LIFE_EXPORT void life_extension_reject_result(uintptr_t handle) {
+  if (SearchEngine* engine = asEngine(handle)) engine->rejectExtensionResult();
 }
 
 LIFE_EXPORT void life_step(int size, const uint8_t* input, uint8_t* output) {

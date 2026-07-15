@@ -7,6 +7,16 @@ let startedAt = 0;
 let lastProgressAt = 0;
 let lastBestDepth = -1;
 let settings = null;
+let extensionInput = null;
+let extensionTarget = null;
+let extensionJobIndex = 0;
+let extensionJobs = 0;
+let extensionConflicts = 0;
+let extensionRejected = 0;
+let extensionOffset = 0;
+let extensionDepth = 1;
+let extensionJobBudget = 0;
+let extensionInputLifetime = null;
 
 const hashSeed = (value) => {
   const text = String(value || 'life-search');
@@ -21,6 +31,51 @@ const hashSeed = (value) => {
 async function replaceEngine(size) {
   engine?.destroy();
   engine = await createLifeSearchEngine(size);
+}
+
+const equalCells = (left, right) =>
+  left.length === right.length && left.every((cell, index) => cell === right[index]);
+
+function startNextExtensionJob() {
+  const memorySafeOffset = Math.max(0, Math.floor(8192 / (settings.size * settings.size)) - 1);
+  const maxOffset = Math.max(0, Math.min(15, memorySafeOffset, Math.round(settings.maxOffset || 0)));
+  const portfolioWidth = maxOffset + 1;
+  const round = Math.floor(extensionJobIndex / portfolioWidth);
+  const baseBudget = Math.max(1000, Math.min(10000000, Math.round(settings.attemptBudget || 250000)));
+  extensionOffset = extensionJobIndex % portfolioWidth;
+  extensionDepth = extensionOffset + 1;
+  const escalation = settings.workerIndex === 0
+    ? 2 ** Math.min(3, Math.floor(round / 2))
+    : 1;
+  extensionJobBudget = Math.min(
+    baseBudget * escalation,
+    baseBudget * 8,
+  );
+  extensionTarget = extensionInput.slice();
+  for (let i = 0; i < extensionOffset; i++) extensionTarget = engine.step(extensionTarget);
+  engine.startExtension(extensionTarget, extensionInput, {
+    depth: extensionDepth,
+    seed: hashSeed(`${settings.seed}:${extensionJobIndex}`),
+  });
+  extensionJobIndex += settings.workerCount;
+  extensionJobs++;
+}
+
+function extensionMessage(snapshot, type = 'extension-progress') {
+  return {
+    type,
+    status: snapshot.status,
+    jobs: extensionJobs,
+    conflicts: extensionConflicts + snapshot.conflicts,
+    rejected: extensionRejected + snapshot.rejected,
+    jobConflicts: snapshot.conflicts,
+    jobBudget: extensionJobBudget,
+    mergeOffset: extensionOffset,
+    depth: extensionDepth,
+    inputLifetime: extensionInputLifetime?.lifetime || 0,
+    elapsedMs: performance.now() - startedAt,
+    running: mode === 'extension',
+  };
 }
 
 function postProgress(force = false) {
@@ -48,15 +103,7 @@ function postProgress(force = false) {
       running: summary.status === 1,
     }, transfer);
   } else if (mode === 'extension') {
-    const snapshot = engine.extensionSnapshot(true);
-    const message = {
-      type: snapshot.status === 2 ? 'extension-result' : 'extension-progress',
-      ...snapshot,
-      elapsedMs: now - startedAt,
-      running: snapshot.status === 1,
-    };
-    const transfer = snapshot.cells ? [snapshot.cells.buffer] : [];
-    self.postMessage(message, transfer);
+    self.postMessage(extensionMessage(engine.extensionSnapshot(false)));
   }
 }
 
@@ -73,10 +120,40 @@ function pump(token) {
     return;
   }
   if (mode === 'extension') {
-    const status = engine.pumpExtension(settings.batchSize);
-    postProgress(status !== 1);
-    if (status === 1) schedulePump(token);
-    else mode = null;
+    const quantum = Math.max(10, Math.min(1000000, Math.round(settings.quantum || 20000)));
+    const status = engine.pumpExtension(quantum);
+    let snapshot = engine.extensionSnapshot(status === 2);
+    if (status === 2) {
+      let evolved = snapshot.cells;
+      for (let i = 0; i < extensionDepth; i++) evolved = engine.step(evolved);
+      const candidateLifetime = engine.measureLifetime(snapshot.cells, settings.verificationHorizon);
+      const verified = equalCells(evolved, extensionTarget)
+        && candidateLifetime.reason !== 3
+        && candidateLifetime.lifetime > extensionInputLifetime.lifetime;
+      if (verified) {
+        const message = {
+          ...extensionMessage(snapshot, 'extension-result'),
+          cells: snapshot.cells,
+          candidateLifetime: candidateLifetime.lifetime,
+          longerBy: candidateLifetime.lifetime - extensionInputLifetime.lifetime,
+        };
+        mode = null;
+        message.running = false;
+        self.postMessage(message, [snapshot.cells.buffer]);
+        return;
+      }
+      engine.rejectExtensionResult();
+      snapshot = engine.extensionSnapshot(false);
+    }
+    if (status === 3 || snapshot.conflicts >= extensionJobBudget || snapshot.rejected >= 100) {
+      extensionConflicts += snapshot.conflicts;
+      extensionRejected += snapshot.rejected;
+      startNextExtensionJob();
+      postProgress(true);
+    } else {
+      postProgress();
+    }
+    schedulePump(token);
     return;
   }
   const status = engine.pumpReverse(settings.conflictBudget);
@@ -139,13 +216,18 @@ self.onmessage = async ({ data }) => {
       runToken++;
       await replaceEngine(data.size);
       settings = data;
-      engine.startExtension(new Uint8Array(data.cells), {
-        horizon: data.horizon,
-        maxFlips: data.maxFlips,
-        seed: hashSeed(data.seed),
-      });
+      extensionInput = new Uint8Array(data.cells);
+      extensionJobIndex = data.workerIndex;
+      extensionJobs = 0;
+      extensionConflicts = 0;
+      extensionRejected = 0;
+      extensionInputLifetime = engine.measureLifetime(extensionInput, data.verificationHorizon);
+      if (extensionInputLifetime.reason === 3) {
+        throw new Error('Forward verification horizon is too short for this input');
+      }
       mode = 'extension';
       startedAt = lastProgressAt = performance.now();
+      startNextExtensionJob();
       self.postMessage({ type: 'started', mode });
       postProgress(true);
       schedulePump(runToken);

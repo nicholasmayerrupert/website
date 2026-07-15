@@ -58,15 +58,18 @@ try {
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
 
   await page.getByRole('tab', { name: 'Reverse' }).click();
-  await page.getByRole('button', { name: 'Start from top', exact: true }).click();
-  const conflicts = await waitForValue(page, 'SAT conflicts', (value) => value > 0);
-  assert.ok(conflicts > 0, 'reverse worker reports SAT work');
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.getByLabel('Binary seed').fill('0'.repeat(64));
+  await page.getByLabel('Workers').fill('1');
+  await page.getByRole('button', { name: 'Search', exact: true }).click();
+  const jobs = await waitForValue(page, 'SAT jobs started', (value) => value > 0);
+  assert.ok(jobs > 0, 'extension portfolio reports a SAT job');
+  await page.getByText(/^Verified \+/).waitFor({ timeout: 10000 });
+  assert.equal((await page.getByLabel('Binary output').inputValue()).length, 64, 'output preserves board size');
 
   await page.getByRole('tab', { name: 'Simulate' }).click();
   assert.equal(await page.getByLabel('Editable top layer of the Game of Life simulation').count(), 1);
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`);
-  console.log(`life search e2e: ${soups} soups and ${conflicts} SAT conflicts observed`);
+  console.log(`life search e2e: ${soups} soups and a verified SAT extension observed`);
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

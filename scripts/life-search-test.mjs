@@ -140,15 +140,26 @@ oscillator[3 * 8 + 2] = oscillator[3 * 8 + 3] = oscillator[3 * 8 + 4] = 1;
 assert.deepEqual(lifetimeEngine.measureLifetime(oscillator, 100), { lifetime: 2, reason: 2 });
 assert.deepEqual(lifetimeEngine.measureLifetime(oscillator, 1), { lifetime: 1, reason: 3 });
 
-// Extension search returns only a seed whose longer prefix merges into the
-// exact reference trajectory. A single live cell is one tick before empty.
-lifetimeEngine.startExtension(empty, { horizon: 100, maxFlips: 1, seed: 42n });
-lifetimeEngine.pumpExtension(1);
-const extension = lifetimeEngine.extensionSnapshot(true);
+// Bounded extension SAT returns a fixed-depth witness. A non-empty predecessor
+// of empty is one tick longer than the excluded empty input.
+lifetimeEngine.startExtension(empty, empty, { depth: 1, seed: 42n });
+let extension;
+for (let i = 0; i < 100; i++) {
+  lifetimeEngine.pumpExtension(10000);
+  extension = lifetimeEngine.extensionSnapshot(true);
+  if (extension.status !== 1) break;
+}
 assert.equal(extension.status, 2, 'extension witness is found');
-assert.equal(extension.mergeCandidateTime, 1, 'candidate takes one generation to merge');
-assert.equal(extension.mergeReferenceTime, 0, 'candidate merges at the input seed');
+assert.notDeepEqual(Array.from(extension.cells), Array.from(empty), 'extension differs from input');
 equalBoard(lifetimeEngine.step(extension.cells), empty, 'extension witness rejoins exact future');
+lifetimeEngine.startExtension(empty, empty, { depth: 2, seed: 43n });
+for (let i = 0; i < 100; i++) {
+  lifetimeEngine.pumpExtension(10000);
+  extension = lifetimeEngine.extensionSnapshot(true);
+  if (extension.status !== 1) break;
+}
+assert.equal(extension.status, 2, 'multi-step extension witness is found');
+equalBoard(lifetimeEngine.step(lifetimeEngine.step(extension.cells)), empty, 'multi-step SAT chain is exact');
 
 const soupConfig = { density: 37.5, horizon: 200, seed: 123456789n, leaderboardSize: 5 };
 lifetimeEngine.startSoup(soupConfig);

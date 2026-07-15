@@ -36,7 +36,7 @@ function summary(values) {
   };
 }
 
-function runScenario({ name, cols, rows, side = 1, buried = false, bg = false, steps }) {
+function runScenario({ name, cols, rows, side = 1, buried = false, cave = false, bg = false, steps }) {
   const engine = createEngineWasm({ cols, rows, worldSeed: SEED, sinksOn: false, infinite: false });
   engine.setBgEnabled(bg);
   const cx = cols >> 1;
@@ -44,7 +44,13 @@ function runScenario({ name, cols, rows, side = 1, buried = false, bg = false, s
   const x0 = cx - (side >> 1);
   const y0 = cy - (side >> 1);
 
-  if (buried) {
+  if (cave) {
+    // Setup is outside the timed region. A single bulk paint plus the final sync
+    // builds the same enclosed, grounded component without tens of thousands of
+    // JS->Wasm placement calls dominating benchmark runtime.
+    engine.paintDisc(cx, cy, Math.max(cols, rows), MAT.STONE, true);
+    engine.eraseDisc(cx, cy, 10);
+  } else if (buried) {
     for (let y = cy + 1; y < rows; y++)
       for (let x = 20; x < cols - 20; x++) engine.placeMaterial(x, y, 0, MAT.STONE);
   }
@@ -79,6 +85,7 @@ function runScenario({ name, cols, rows, side = 1, buried = false, bg = false, s
   }
 
   const blastRecords = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= (completed >= 0 ? completed : firstBlast));
+  const blastAndAftermath = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= firstBlast + 5);
   const peak = blastRecords.reduce((best, record) => record.reactMs > best.reactMs ? record : best, blastRecords[0]);
   engine.destroy();
   return {
@@ -91,6 +98,7 @@ function runScenario({ name, cols, rows, side = 1, buried = false, bg = false, s
     peakWallMs: peak.wallMs,
     waveReactMs: blastRecords.reduce((sum, record) => sum + record.reactMs, 0),
     waveWallMs: blastRecords.reduce((sum, record) => sum + record.wallMs, 0),
+    blastAndAftermathWallMs: blastAndAftermath.reduce((sum, record) => sum + record.wallMs, 0),
   };
 }
 
@@ -98,6 +106,7 @@ const scenarios = [
   { name: 'single-open', cols: 512, rows: 256, steps: 40 },
   { name: 'single-open-dual-layer', cols: 512, rows: 256, bg: true, steps: 40 },
   { name: 'single-buried-stone', cols: 384, rows: 224, buried: true, steps: 40 },
+  { name: 'single-cave-stone', cols: 384, rows: 224, cave: true, steps: 40 },
   { name: 'chain-25x25', cols: 260, rows: 220, side: 25, steps: 70 },
   { name: 'chain-49x49', cols: 260, rows: 220, side: 49, steps: 90 },
 ];
@@ -114,6 +123,7 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   const peakWall = summary(runs.map(({ peakWallMs }) => peakWallMs));
   const waveReact = summary(runs.map(({ waveReactMs }) => waveReactMs));
   const waveWall = summary(runs.map(({ waveWallMs }) => waveWallMs));
+  const blastAndAftermathWall = summary(runs.map(({ blastAndAftermathWallMs }) => blastAndAftermathWallMs));
   const first = runs[0];
   console.log(`\n${scenario.name}: TNT ${first.initialTnt}, wave ${first.firstBlast}..${first.completed}, hash ${hashes.join(',')}${hashes.length === 1 ? '' : ' UNSTABLE'}`);
   console.log(`  cold wave   react ${first.waveReactMs.toFixed(3)}  wall ${first.waveWallMs.toFixed(3)} ms`);
@@ -121,4 +131,5 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  peak wall   p50 ${peakWall.p50.toFixed(3)}  p95 ${peakWall.p95.toFixed(3)}  mean ${peakWall.mean.toFixed(3)} ms`);
   console.log(`  wave react  p50 ${waveReact.p50.toFixed(3)}  p95 ${waveReact.p95.toFixed(3)}  mean ${waveReact.mean.toFixed(3)} ms`);
   console.log(`  wave wall   p50 ${waveWall.p50.toFixed(3)}  p95 ${waveWall.p95.toFixed(3)}  mean ${waveWall.mean.toFixed(3)} ms`);
+  console.log(`  blast +5   p50 ${blastAndAftermathWall.p50.toFixed(3)}  p95 ${blastAndAftermathWall.p95.toFixed(3)}  mean ${blastAndAftermathWall.mean.toFixed(3)} ms`);
 }

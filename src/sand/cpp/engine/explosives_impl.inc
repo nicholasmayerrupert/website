@@ -279,9 +279,27 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
   allErased.insert(allErased.end(), bb.erasedPlant.begin(), bb.erasedPlant.end());
   bool indexesExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
   bool localConnectivityFastPath = indexesExact && E.removalsKeepGroundingValid(allErased);
-  E.splitRigidAfterErase(E.L->stoneComponents, bb.erasedStone, E.L->nextStoneId, false, true, -1, localConnectivityFastPath);
-  E.splitRigidAfterErase(E.L->iceComponents, bb.erasedIce, E.L->nextIceId, true, true, -1, localConnectivityFastPath);
-  if (!bb.erasedPlant.empty() && !E.L->plantComponents.empty()) E.splitPlantAfterErase(&bb.erasedPlant, -1, true, localConnectivityFastPath);
+  // The pre-blast cellComp index still names the touched components exactly.
+  // Preserve its offsets before any split can resize a preceding list.
+  int plantIndexOffset = (int)E.L->stoneComponents.size();
+  int iceIndexOffset = plantIndexOffset + (int)E.L->plantComponents.size();
+  E.L->compsReshaped = false;
+  E.splitRigidAfterErase(E.L->stoneComponents, bb.erasedStone, E.L->nextStoneId, false, false,
+                         indexesExact ? 0 : -1, localConnectivityFastPath);
+  E.splitRigidAfterErase(E.L->iceComponents, bb.erasedIce, E.L->nextIceId, true, false,
+                         indexesExact ? iceIndexOffset : -1, localConnectivityFastPath);
+  if (!bb.erasedPlant.empty() && !E.L->plantComponents.empty())
+    E.splitPlantAfterErase(&bb.erasedPlant, indexesExact ? plantIndexOffset : -1, false, localConnectivityFastPath);
+  if (!localConnectivityFastPath) {
+    E.L->groundDirty = true;
+  } else if (E.L->compsReshaped) {
+    E.L->groundContentDirty = true;
+  } else {
+    // Every touched component kept its position and grounded flag. The local
+    // proof already patched the rigid grounding base, so only the erased index
+    // entries need clearing; the next tick can skip grounding altogether.
+    for (int k : allErased) E.L->cellComp[k] = -1;
+  }
   spawnBlastRingGases(bb.gasShockwaves);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);

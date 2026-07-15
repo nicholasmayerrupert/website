@@ -2067,11 +2067,18 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
 }
 
 // split a plant-family component list keeping only cells still of plant material
-bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors) {
+bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors, int indexedComp) {
   if (erased.empty() || survivors.empty()) return false;
   const int SPAN = 128, MARGIN = 8, CAP = 8000;
-  splitMembers.reset((size_t)E.cols * E.rows);
-  for (int k : survivors) splitMembers.add(k);
+  if (indexedComp < 0) {
+    splitMembers.reset((size_t)E.cols * E.rows);
+    for (int k : survivors) splitMembers.add(k);
+  }
+  auto isMember = [&](int k) {
+    return indexedComp >= 0
+      ? E.L->cellComp[k] == indexedComp && E.isComponentMaterial(E.L->grid[k])
+      : splitMembers.has(k);
+  };
   int32_t present = ++E.L->seenGen;
   for (int k : erased) E.L->seenStamp[k] = present;
   int32_t taken = ++E.L->seenGen;
@@ -2103,7 +2110,7 @@ bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& e
         int nx = cx + ox, ny = cy + oy;
         if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
         int nk = ny * E.cols + nx;
-        if (splitMembers.has(nk) && E.L->seenStamp[nk] != boundaryGen) {
+        if (isMember(nk) && E.L->seenStamp[nk] != boundaryGen) {
           E.L->seenStamp[nk] = boundaryGen; splitBoundary.push_back(nk);
         }
       }
@@ -2123,7 +2130,7 @@ bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& e
         int nx = cx + ox, ny = cy + oy;
         if (nx < x0 || nx > x1 || ny < y0 || ny > y1) continue;
         int nk = ny * E.cols + nx;
-        if (!splitMembers.has(nk) || E.L->seenStamp[nk] == visited) continue;
+        if (!isMember(nk) || E.L->seenStamp[nk] == visited) continue;
         if (E.L->seenStamp[nk] == boundaryGen) found++;
         E.L->seenStamp[nk] = visited; E.L->groundStack[qt++] = nk;
       }
@@ -2167,11 +2174,16 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
         else splitErased.push_back(k);
       }
       if (splitErased.empty()) { updated.push_back(std::move(comp)); continue; }
-      if (comp.grounded && componentRemovalLocallyConnected(splitErased, splitSurvivors)) {
+      if (comp.grounded && componentRemovalLocallyConnected(splitErased, splitSurvivors,
+                                                             indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1)) {
         comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true;
         for (int k : comp.cells) { int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(E.L->grid[k])) comp.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) comp.leafCount++; }
         updated.push_back(std::move(comp)); continue;
       }
+      // The caller requested the cache-preserving path, but this component needs
+      // a real rebuild. Even if it remains one piece, its positional metadata and
+      // grounded flag must be refreshed before the cache can be reused.
+      E.L->compsReshaped = true;
     }
     int32_t remGen = ++E.L->seenGen;
     for (int k : comp.cells) if (E.isPlantMaterial(E.L->grid[k])) seen[k] = remGen;
@@ -2257,11 +2269,13 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     for (int k : comp.cells) { if (splitRemovedSet.has(k)) { touched = true; removedCells.push_back(k); } else survivors.push_back(k); }
     if (!touched) { updated.push_back(std::move(comp)); continue; }
     if (survivors.empty()) { E.L->compsReshaped = true; continue; } // comp fully erased -> ids shift
-    if (localConnectivityFastPath && comp.grounded && componentRemovalLocallyConnected(removedCells, survivors)) {
+    if (localConnectivityFastPath && comp.grounded && componentRemovalLocallyConnected(removedCells, survivors,
+                                                                                       indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1)) {
       comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
       for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
       updated.push_back(std::move(comp)); continue;
     }
+    if (localConnectivityFastPath) E.L->compsReshaped = true;
     int32_t remGen = ++E.L->seenGen;
     for (int k : survivors) seen[k] = remGen;
     bool reused = false;

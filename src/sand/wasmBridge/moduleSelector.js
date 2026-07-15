@@ -1,4 +1,7 @@
-import createSandModule from '../wasm/sandEngine.js';
+function createFallbackModule() {
+  return import('../wasm/sandEngine.js')
+    .then(({ default: createSandModule }) => createSandModule());
+}
 
 export function selectSandModule() {
   const ua = globalThis.navigator?.userAgent || '';
@@ -12,9 +15,9 @@ export function selectSandModule() {
     && !(import.meta.env?.DEV && webkit);
   return {
     threaded,
-    fallback: createSandModule,
+    fallback: createFallbackModule,
     promise: threaded
       ? import('../wasm/sandEngineThreaded.js').then(({ default: createThreadedModule }) => createThreadedModule())
-      : createSandModule(),
+      : createFallbackModule(),
   };
 }

@@ -121,7 +121,7 @@ export const MATERIALS = [
   { id: 40, name: 'GLOWBERRY', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xd81e9bff, textureAmp: 8, durability: 1, renderAnim: 'none' },
   { id: 41, name: 'GLOWSHROOM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.45, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8ffd69b, textureAmp: 8, durability: 2, renderAnim: 'none' },
   { id: 42, name: 'GRASS', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.4, looseSorted: true, mobility: 1, transparency: 0, color: 0xc854aa5b, textureAmp: 9, durability: 2, renderAnim: 'none' },
-  { id: 43, name: 'METHANE', kind: KIND.GAS, materialClass: MC.GAS, density: 0, looseSorted: false, mobility: 0, transparency: 0.7, color: 0x609bd296, textureAmp: 0, durability: 0, renderAnim: 'methane' },
+  { id: 43, name: 'METHANE', kind: KIND.GAS, materialClass: MC.GAS, density: 0.4, looseSorted: false, mobility: 0, transparency: 0.7, color: 0x609bd296, textureAmp: 0, durability: 0, renderAnim: 'methane' },
 ];
 
 // Flat lookup tables indexed by material id (empty slots = 0), mirroring the C++

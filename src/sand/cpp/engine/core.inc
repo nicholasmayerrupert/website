@@ -488,6 +488,27 @@
       }
     }
   }
+  // Move a light gas upward into empty volume or exchange it with a heavier gas.
+  // The upper row has already run in the gas pass: if it stayed, park that gas in
+  // the source; if it moved away, simply claim the cell. This keeps each gas to
+  // one cell of movement per tick and conserves persistent methane volume.
+  bool canRiseGasInto(int toK, uint8_t m) {
+    uint8_t upper = L->grid[toK], parked = L->next[toK];
+    if (upper == EMPTY) return parked == EMPTY;
+    return canGasRiseThrough(m, upper) && (parked == EMPTY || parked == upper);
+  }
+  bool tryRiseGasInto(int fromK, int toK, uint8_t m) {
+    if (!canRiseGasInto(toK, m)) return false;
+    uint8_t upper = L->grid[toK];
+    if (upper == EMPTY) {
+      writeNextIndex(toK, m);
+      return true;
+    }
+    uint8_t parked = L->next[toK];
+    writeNextIndex(toK, m);
+    if (parked == upper) writeNextIndex(fromK, upper);
+    return true;
+  }
   // Shared buoyant-gas movement. Writes the SAME material `m` it is moving (not
   // hardcoded STEAM); acrid smoke has faster decay, while methane is persistent.
   void riseSteam(int x, int y, int k, uint8_t m) {
@@ -502,18 +523,19 @@
       // grounding reflood per step, so a trapped cloud is pure cost with no payoff.
       // Reads only (no extra RNG draw before the decay roll) so steam stays
       // byte-identical and non-acrid scenes are unaffected.
-      bool canVent = (y > 1 && L->grid[I(x, y - 1)] == EMPTY)
-                  || (x > 1 && L->grid[I(x - 1, y)] == EMPTY)
-                  || (x < cols - 1 && L->grid[I(x + 1, y)] == EMPTY)
-                  || (y > 1 && x > 1 && L->grid[I(x - 1, y - 1)] == EMPTY)
-                  || (y > 1 && x < cols - 1 && L->grid[I(x + 1, y - 1)] == EMPTY);
+      auto ventsInto = [&](int vk) { uint8_t v = L->grid[vk]; return v == EMPTY || canGasRiseThrough(m, v); };
+      bool canVent = (y > 1 && ventsInto(I(x, y - 1)))
+                  || (x > 1 && ventsInto(I(x - 1, y)))
+                  || (x < cols - 1 && ventsInto(I(x + 1, y)))
+                  || (y > 1 && x > 1 && ventsInto(I(x - 1, y - 1)))
+                  || (y > 1 && x < cols - 1 && ventsInto(I(x + 1, y - 1)));
       if (!canVent) decayP = ACRID_TRAPPED_DECAY_P;
     }
     if ((m != METHANE && rand() < decayP) || y <= 1) { markCellIndex(k); return; }
     int up = I(x, y - 1);
-    if (L->grid[up] == EMPTY && L->next[up] == EMPTY && rand() < 0.72) { writeNextIndex(up, m); return; }
+    if (canRiseGasInto(up, m) && rand() < 0.72 && tryRiseGasInto(k, up, m)) return;
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeNextIndex(ik, m); return; } }
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = y - 1; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (tryRiseGasInto(k, ik, m)) return; }
     auto methaneRouteLeadsUp = [&](int dx) {
       // Reverse of liquid surface flow: methane only walks a flat ceiling when
       // that corridor leads to higher empty volume. A closed level pocket therefore
@@ -547,9 +569,14 @@
       writeNextIndex(dst, FIRE);
       if (blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS) L->blastGasStamp[dst] = blastGas;
     };
+    auto moveFire = [&](int dst) {
+      if (!tryRiseGasInto(k, dst, FIRE)) return false;
+      if (blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS) L->blastGasStamp[dst] = blastGas;
+      return true;
+    };
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
-    if (rand() < 0.36) { int up = I(x, y - 1); if (L->grid[up] == EMPTY && L->next[up] == EMPTY) { writeFire(up); return; } }
-    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = rand() < 0.55 ? y - 1 : y; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (L->grid[ik] == EMPTY && L->next[ik] == EMPTY) { writeFire(ik); return; } }
+    if (rand() < 0.36) { int up = I(x, y - 1); if (moveFire(up)) return; }
+    for (int i = 0; i < 2; i++) { int dx = dirs[i]; int nx = x + dx, ny = rand() < 0.55 ? y - 1 : y; if (!isInBounds(nx, ny)) continue; int ik = I(nx, ny); if (moveFire(ik)) return; }
     if (L->next[k] == EMPTY) writeFire(k);
   }
   void drain(int xs, int xe, int y, float liquidP, float sandP) {

@@ -8,6 +8,11 @@ import { makeChecker } from './sand-test-util.mjs';
 await initSandWasm();
 const { check, done } = makeChecker('methane');
 const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return n; };
+const countRect = (g, cols, m, x0, y0, x1, y1) => {
+  let n = 0;
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (g[y * cols + x] === m) n++;
+  return n;
+};
 const mk = (cols = 160, rows = 120, infinite = false) =>
   attachTestHooks(createEngineWasmRaw({ cols, rows, worldSeed: 0xC0FFEE, sinksOn: false, infinite }));
 
@@ -26,6 +31,30 @@ const mk = (cols = 160, rows = 120, infinite = false) =>
   const after = count(e.getGrid(), MAT.METHANE);
   check(`sealed methane does not decay (${before} -> ${after})`, before > 500 && after === before);
   check(`sealed methane settles and lets the layer sleep (tick ${settledAt})`, settledAt > 0 && settledAt < 360);
+  e.destroy();
+}
+
+// Steam and smoke are lighter than methane, so they exchange upward through a
+// packed methane layer instead of treating it as a solid ceiling.
+for (const [name, gas] of [['steam', MAT.STEAM], ['acrid smoke', MAT.ACRID_SMOKE]]) {
+  const e = mk();
+  const x0 = 51, x1 = 78, ceiling = 30, split = 45, floor = 61;
+  for (let x = x0 - 1; x <= x1 + 1; x++) {
+    e.placeMaterial(x, ceiling, 0, MAT.STONE);
+    e.placeMaterial(x, floor, 0, MAT.STONE);
+  }
+  for (let y = ceiling; y <= floor; y++) {
+    e.placeMaterial(x0 - 1, y, 0, MAT.STONE);
+    e.placeMaterial(x1 + 1, y, 0, MAT.STONE);
+  }
+  for (let y = ceiling + 1; y <= split; y++) for (let x = x0; x <= x1; x++) e.placeMaterial(x, y, 0, MAT.METHANE);
+  for (let y = split + 1; y < floor; y++) for (let x = x0; x <= x1; x++) e.placeMaterial(x, y, 0, gas);
+  e.syncComponents();
+  for (let i = 0; i < 6; i++) e.stepWorld();
+  const grid = e.getGrid();
+  const lighterAbove = countRect(grid, 160, gas, x0, ceiling + 1, x1, split);
+  const methaneBelow = countRect(grid, 160, MAT.METHANE, x0, split + 1, x1, floor - 1);
+  check(`${name} rises through heavier methane (${lighterAbove} above, ${methaneBelow} methane below)`, lighterAbove > 0 && methaneBelow > 0);
   e.destroy();
 }
 

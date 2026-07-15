@@ -153,6 +153,9 @@
   // need only a schema entry.
   inline bool isEmptyMaterial(uint8_t m) { return m == EMPTY || MAT_CLASS[m] == MC_NONE; }
   inline bool isGasMaterial(uint8_t m) { return MAT_CLASS[m] == MC_GAS; }
+  inline bool canGasRiseThrough(uint8_t rising, uint8_t upper) {
+    return isGasMaterial(rising) && isGasMaterial(upper) && DENSITY[rising] < DENSITY[upper];
+  }
   inline bool isLiquidMaterial(uint8_t m) { return MAT_CLASS[m] == MC_LIQUID; }
   inline bool isLooseSolidMaterial(uint8_t m) { return MAT_CLASS[m] == MC_SOLID; }
   inline bool isRigidMaterialClass(uint8_t m) { return MAT_CLASS[m] == MC_RIGID; }

@@ -122,8 +122,8 @@ export default function TileGrid() {
             </div>
             <div className="life-showcase__story">
               <p>
-                Conway&apos;s Game of Life rendered in 3D, with each generation
-                stacked as a new layer.
+                Conway&apos;s Game of Life on a finite 16×16 torus, with each
+                generation stacked as a new 3D layer.
               </p>
               <div className="life-showcase__stats" aria-label="Rare seed statistics">
                 <span><strong>5,024</strong> frame loop</span>

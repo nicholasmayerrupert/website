@@ -76,7 +76,10 @@ actionable instead of just producing timing numbers.
 - `npm run bench:tnt`: focused deterministic TNT benchmark covering cold/steady
   open-air, dual-layer, buried-component, enclosed-cave, and 25x25/49x49 chain
   costs, including the five settling ticks after each blast and their fine phase
-  totals (plus the number and largest size of rolling chain fronts).
+  totals and the full post-blast tail by phase (plus the number and largest size
+  of rolling chain fronts). Awake rigid-body motion reuses the layer's initial
+  grounding result unless assemblies/loose support dirtied it; this avoids a
+  second full-grid flood on every transient TNT-rubble flight tick.
 - `node scripts/bench-reactions.mjs`: deterministic 1000x1000 fire-on-plants and
   acid-on-terrain stress cases, including fine phase timings and checksums.
 - `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions`:

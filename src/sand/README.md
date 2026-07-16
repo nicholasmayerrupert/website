@@ -485,11 +485,14 @@ hardcoded id list, decides who reacts.
   per-layer energy scratch, and bulk-terrain craters locally prove connectivity
   before falling back to a full component split. Debris discovery stops sampling
   later overlapping craters as soon as the layer's bounded rubble budget is full;
-  TNT emits at most two physical chunks per layer and tick while prioritizing one
+  TNT emits at most three physical chunks per layer and tick while prioritizing one
   representative of each destroyed material before repeats. When every active
   body is one of these tiny, short-lived chunks, collision solving uses 16
   iterations instead of the 64 needed by persistent structural stacks; the full
-  solver returns immediately if any ordinary body is present.
+  64-iteration path is selected immediately if any ordinary body is present. Body motion also
+  reuses the grounding pass already performed at the start of the layer unless
+  assembly motion, loose support, or a sleeping-body wake check actually requires
+  a refresh; long rubble flights no longer repeat a full-grid flood every tick.
 
 ## Rigid bodies that are real material (`rigid.inc` + the BODY-MATERIAL INVARIANT)
 

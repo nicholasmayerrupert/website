@@ -106,6 +106,10 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     key,
     blastAndAftermath.reduce((sum, record) => sum + (record.perf[key] || 0), 0),
   ]));
+  const tailPhases = Object.fromEntries(PHASE_KEYS.map((key) => [
+    key,
+    blastTail.reduce((sum, record) => sum + (record.perf[key] || 0), 0),
+  ]));
   const peak = blastRecords.reduce((best, record) => record.reactMs > best.reactMs ? record : best, blastRecords[0]);
   engine.destroy();
   return {
@@ -123,6 +127,7 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     blastTailBodyMs: blastTail.reduce((sum, record) => sum + (record.perf.bodyMs || 0), 0),
     peakBodies: Math.max(0, ...blastTail.map(({ bodies }) => bodies)),
     aftermathPhases,
+    tailPhases,
     detonationSteps: detonationDrops.length,
     maxDetonationDrop: Math.max(0, ...detonationDrops),
   };
@@ -160,6 +165,12 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
     .sort((a, b) => b[1] - a[1])
     .map(([key, value]) => `${key} ${value.toFixed(3)}`)
     .join('  ');
+  const tailPhaseSummary = PHASE_KEYS
+    .map((key) => [key.replace(/Ms$/, ''), summary(runs.map(({ tailPhases }) => tailPhases[key])).p50])
+    .filter(([, value]) => value >= 0.10)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => `${key} ${value.toFixed(3)}`)
+    .join('  ');
   console.log(`\n${scenario.name}: TNT ${first.initialTnt}, wave ${first.firstBlast}..${first.completed}, hash ${hashes.join(',')}${hashes.length === 1 ? '' : ' UNSTABLE'}`);
   console.log(`  cold wave   react ${first.waveReactMs.toFixed(3)}  wall ${first.waveWallMs.toFixed(3)} ms`);
   console.log(`  peak react  p50 ${peakReact.p50.toFixed(3)}  p95 ${peakReact.p95.toFixed(3)}  mean ${peakReact.mean.toFixed(3)} ms`);
@@ -171,4 +182,5 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  rubble     peak ${first.peakBodies} bodies`);
   console.log(`  front steps ${first.detonationSteps}  max cells ${first.maxDetonationDrop}`);
   console.log(`  +5 phases  ${phaseSummary}`);
+  console.log(`  tail phases ${tailPhaseSummary}`);
 }

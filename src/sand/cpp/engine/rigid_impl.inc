@@ -873,16 +873,24 @@ void RigidBodySystem::bakeRestingBodies() {
 }
 void RigidBodySystem::moveBodies() {
   if (E.L->bodies.empty() && E.L->bodyCells.empty()) return;
-  // Sleeping-body support probes footprint geometry (sleepingBodyHasSupport), not
-  // groundedCell. A single-layer computeGrounded() re-flood peels dual-layer joint
-  // stamps; if the next tick then skips joint, co-supported terrain sloughs off.
-  // Preserve stamps when joint already ran this tick OR a prior joint closure is
-  // still valid (free bodies do not alter static co-occupation).
-  if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
-    // joint stamps intact; body wake probes do not need a re-flood
-  } else {
-    E.computeGrounded();
-    if (E.bgEnabled) E.comps.jointDirty = true;
+  // stepLayer already grounded the live grid before assembly motion. Repeat that
+  // full-grid work only if an assembly/loose-support change dirtied it afterward,
+  // or if a sleeping body needs its support revalidated. This matters for blast
+  // rubble: a long TNT chain otherwise paid two grounding floods on every flight
+  // tick even though its handful of awake chunks cannot need a wake probe.
+  // A single-layer computeGrounded() re-flood peels dual-layer joint stamps; if
+  // the next tick then skips joint, co-supported terrain sloughs off. Preserve
+  // stamps when joint already ran this tick OR a prior joint closure is valid.
+  bool hasSleepingBody = false;
+  for (Body* b : E.L->bodies) if (!b->awake) { hasSleepingBody = true; break; }
+  bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
+  if (hasSleepingBody || needsGroundRefresh) {
+    if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
+      // joint stamps intact; body wake probes do not need a re-flood
+    } else {
+      E.computeGrounded();
+      if (E.bgEnabled) E.comps.jointDirty = true;
+    }
   }
   // Wake any sleeping body whose support crumbled away since it slept, so it
   // falls instead of floating. Checked before the grid cells are cleared so

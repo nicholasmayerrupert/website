@@ -217,7 +217,7 @@ function blastDamagesMaterial(name) {
   }
   check(`blast scattered cosmetic particles (items ${items0} -> peak)`, particlesSeen);
   check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
-  check(`stone blast fills its bounded real-stone sample budget (peak ${maxStoneBodies})`, maxStoneBodies >= 2);
+  check(`stone blast fills its bounded real-stone sample budget (peak ${maxStoneBodies})`, maxStoneBodies >= 3);
   check(`blast can suppress default generic DEBRIS chunks`, !sawGenericDebris);
   for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle + bake
   check(`debris chunks baked back into static rubble (bodies now ${e._bodyCount()})`, e._bodyCount() <= 1);
@@ -461,6 +461,37 @@ function blastDamagesMaterial(name) {
   check(`large TNT chain staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
   check(`large TNT chain completed (${tntLeft} left)`, tntLeft === 0);
   check(`large TNT chain produced visible gas (peak ${peakGas})`, peakGas > 250);
+  e.destroy();
+}
+
+// --- a long chain embedded in grounded terrain completes while repeatedly cutting components ---
+{
+  const C = 260, R = 220, side = 49;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  const cx = C >> 1, cy = 92;
+  const x0 = cx - (side >> 1), y0 = cy - (side >> 1);
+  // Place TNT first so the following non-overwriting terrain fill surrounds its
+  // lower half instead of preventing those TNT cells from being written.
+  for (let y = y0; y < y0 + side; y++) for (let x = x0; x < x0 + side; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  for (let y = cy + 1; y < R; y++) for (let x = 20; x < C - 20; x++) e.placeMaterial(x, y, 0, MAT.STONE);
+  e.syncComponents();
+  const tnt0 = count(e.getGrid(), MAT.TNT);
+  let peakBodies = 0, peakStoneBodies = 0, tntLeft = tnt0, firstDropLeft = -1;
+  for (let i = 0; i < 90; i++) {
+    if (i < 3) e.placeMaterial(x0 + side + 1, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    tntLeft = count(e.getGrid(), MAT.TNT);
+    if (firstDropLeft < 0 && tntLeft < tnt0) firstDropLeft = tntLeft;
+    peakBodies = Math.max(peakBodies, e._bodyCount());
+    let stoneBodies = 0;
+    for (let b = 0; b < e._bodyCount(); b++) if (e._bodyMaterial(b) === MAT.STONE) stoneBodies++;
+    peakStoneBodies = Math.max(peakStoneBodies, stoneBodies);
+  }
+  check(`terrain-embedded long TNT chain existed (${tnt0} cells)`, tnt0 === side * side);
+  check(`terrain-embedded long TNT chain stayed staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
+  check(`terrain-embedded long TNT chain completed (${tntLeft} left)`, tntLeft === 0);
+  check(`terrain-embedded long TNT chain emitted its three-piece stone rubble budget (peak ${peakStoneBodies})`, peakStoneBodies >= 3);
+  check(`terrain-embedded long TNT chain kept rubble bounded (peak ${peakBodies})`, peakBodies <= 64);
   e.destroy();
 }
 

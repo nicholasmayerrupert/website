@@ -10,8 +10,9 @@ const DRAG_ROTATION_SCALE = 0.008;
 const PITCH_RESET_DURATION_MS = 2800;
 const MAX_MANUAL_PITCH = Math.PI * 0.42;
 const EDITOR_CANVAS_SIZE = 256;
+// Previous default seed: 0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011
 const DEFAULT_SEED =
-  "0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011";
+  "0000000000000000000000000000001000000100000000000000100000000000000100000000000000000000000000010000000100000010000000100000000000100100001000000000010001000000000100001000000000010000001010000111001000000000010000000000011010001000000000000000000010000000";
 
 // A layer is a flat Uint8Array of size*size cells (1 = alive), indexed by
 // z * size + x — the same row-major layout the instance idxFor uses. Flat typed
@@ -820,7 +821,9 @@ export default function GameOfLife3D({
 
           {activeTab === "soup" && (
             <div className="mt-3 flex min-h-0 flex-1 flex-col text-[10px]">
-              <p className="m-0 text-[9px] leading-snug text-white/55">Ranks distinct, non-empty generations before extinction or an exact repeat.</p>
+              <p className="m-0 text-[9px] leading-snug text-white/55">
+                Generates random starting boards and ranks their distinct, non-empty generations before extinction or an exact repeat.
+              </p>
               <label className="mt-3 flex justify-between font-semibold uppercase tracking-wide text-white/70"><span>Density</span><span>{soupSettings.density}%</span></label>
               <input type="range" min="1" max="99" step="0.5" value={soupSettings.density} onChange={(event) => updateSoupSetting("density", Number(event.target.value))} className="mt-1 w-full accent-white" />
               <div className="mt-3 grid grid-cols-2 gap-2">

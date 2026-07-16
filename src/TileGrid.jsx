@@ -120,11 +120,22 @@ export default function TileGrid() {
               <p className="portfolio-eyebrow">Three.js · Cellular automata</p>
               <h3>Game of Life, in 3D.</h3>
             </div>
-            <p>
-              Conway&apos;s Game of Life rendered in 3D, with each generation
-              stacked as a new layer. Open <strong>Life</strong> to change the
-              starting grid.
-            </p>
+            <div className="life-showcase__story">
+              <p>
+                Conway&apos;s Game of Life rendered in 3D, with each generation
+                stacked as a new layer.
+              </p>
+              <div className="life-showcase__stats" aria-label="Rare seed statistics">
+                <span><strong>5,024</strong> frame loop</span>
+                <span><strong>Nearly 6&sigma;</strong> longevity</span>
+              </div>
+              <p className="life-showcase__discovery">
+                After searching hundreds of millions of random 16×16 soups,
+                this is the only non-trivial loop I&apos;ve ever found—and my only
+                seed to exceed 1,800 generations. It enters this cycle after
+                just three transient frames.
+              </p>
+            </div>
           </div>
 
           <div className="life-showcase__stage">

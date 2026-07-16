@@ -156,6 +156,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
   }
   maxPointSpeed += R_GRAVITY * tickDt;
   int substeps = (int)std::ceil(maxPointSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
+  int solverIters = R_BLAST_DEBRIS_SOLVER_ITERS;
+  for (Body* b : E.L->bodies) if (!b->blastDebris) { solverIters = R_SOLVER_ITERS; break; }
   std::vector<Contact> contacts; int nc = 0;
   std::vector<uint8_t> actorSweepOverlap(n, 0);
   struct PenPt { double wx, wy, nx, ny, depth; int bk; };
@@ -403,20 +405,18 @@ void RigidBodySystem::rigidStep(double tickDt) {
       E.audio.emit(SE_IMPACT, contact.a->px, contact.a->py,
                    std::min(1.8, 0.25 + contact.impactSpeed * 0.55), contact.a->material);
     }
-    // Adaptive iteration count: break as soon as a whole iteration applies zero
-    // impulse everywhere — a bitwise no-op, so every remaining iteration would
-    // be one too (bit-identical to always running R_SOLVER_ITERS). Measured on
-    // bench-rigid: ~12% of solves converge fully (mostly separating contacts);
-    // resting stacks genuinely use all 64 iterations (still ~3-25% of the first
-    // iteration's impulse at 64), so cutting the cap would trade stack/topple
-    // quality for little — deliberately not done.
-    for (int it = 0; it < R_SOLVER_ITERS; it++) {
+    // Break as soon as a whole iteration applies zero impulse everywhere.
+    // General bodies retain the full 64-iteration cap because structural stacks
+    // genuinely use it. A scene containing only tiny, short-lived blast rubble
+    // uses the smaller cap above; those chunks bake instead of becoming lasting
+    // structural stacks.
+    for (int it = 0; it < solverIters; it++) {
       double moved = 0;
       if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveContact(contacts[ci]);
       else for (int ci = 0; ci < nc; ci++) moved += resolveContact(contacts[ci]);
       if (moved == 0.0) break;
     }
-    for (int it = 0; it < R_SOLVER_ITERS; it++) {
+    for (int it = 0; it < solverIters; it++) {
       double moved = 0;
       if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveBias(contacts[ci]);
       else for (int ci = 0; ci < nc; ci++) moved += resolveBias(contacts[ci]);

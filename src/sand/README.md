@@ -483,7 +483,13 @@ hardcoded id list, decides who reacts.
   the TNT is a placed solid or a free TNT body. The fixed-radius crater and gas
   shell reuse one ordered stencil, overlapping blasts use generation-stamped
   per-layer energy scratch, and bulk-terrain craters locally prove connectivity
-  before falling back to a full component split.
+  before falling back to a full component split. Debris discovery stops sampling
+  later overlapping craters as soon as the layer's bounded rubble budget is full;
+  TNT emits at most two physical chunks per layer and tick while prioritizing one
+  representative of each destroyed material before repeats. When every active
+  body is one of these tiny, short-lived chunks, collision solving uses 16
+  iterations instead of the 64 needed by persistent structural stacks; the full
+  solver returns immediately if any ordinary body is present.
 
 ## Rigid bodies that are real material (`rigid.inc` + the BODY-MATERIAL INVARIANT)
 

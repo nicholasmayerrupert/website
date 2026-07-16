@@ -308,6 +308,7 @@ struct Body {
   double vx = 0, vy = 0, omega = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
+  bool blastDebris = false; // tiny explosion rubble; never a persistent structural body
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
@@ -562,6 +563,7 @@ struct Player {
 // Rigid tunables (rigid2d.js)
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is
 // marched in steps no larger than R_SWEEP_STEP cells looking for first impact.

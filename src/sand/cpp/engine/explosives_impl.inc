@@ -130,6 +130,7 @@ void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8
     if (!blastBodyCandidateHasEscape(cells, debrisMat, false)) continue;
     Body* b = E.finishSpawn(cells, debrisMat);
     if (!b) continue;
+    b->blastDebris = true;
     if (sourcedFromWall) {
       double speed = BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
       b->vx = nx * speed + tx * (j - 0.5);
@@ -221,6 +222,10 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     if (E.isRigidMaterialClass(E.L->grid[E.I(x, y)])) blockedRim++;
   }
   bool enclosed = blockedRim >= 6;
+  int localDebrisCap = enclosed && explosiveMaterial != METHANE
+                     ? 0
+                     : bb.debrisStepCap;
+  int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
   static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
   int debrisSampleCells[TABLE * SAMPLE_COUNT];
   int debrisSampleDist[TABLE * SAMPLE_COUNT];
@@ -271,7 +276,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
         // buckets. This lets a large stone wall fill the existing rubble budget
         // instead of collapsing to one sample, without a growing per-cell list.
         // TNT itself is never scattered as live shrapnel.
-        if (m != TNT && E.isRigidMaterialClass(m)) {
+        if (m != TNT && sourceLimit > 0 && E.isRigidMaterialClass(m)) {
           int bx = ox < -sampleThird ? 0 : (ox > sampleThird ? 2 : 1);
           int by = oy < -sampleThird ? 0 : (oy > sampleThird ? 2 : 1);
           int bucket = by * BLAST_DEBRIS_SAMPLE_SIDE + bx;
@@ -313,10 +318,6 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
       if (dd <= r2) carveCell(ox, oy, dd, std::sqrt((double)dd));
     }
   }
-  int localDebrisCap = enclosed && explosiveMaterial != METHANE
-                     ? 0
-                     : bb.debrisStepCap;
-  int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
   std::vector<BlastDebrisSource> debrisSources;
   debrisSources.reserve((size_t)sourceLimit);
   uint8_t firstSample[TABLE];
@@ -349,10 +350,6 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
     b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
   }
-  // TNT can contribute a small generic blast fragment in open air. Methane owns
-  // no solid material, so it may only throw rubble carved from its surroundings.
-  if (explosiveMaterial != METHANE && !enclosed && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
-    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
   // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
   // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
   // can't flood the body solver.
@@ -362,6 +359,11 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     int tries = explosiveMaterial == METHANE ? METHANE_DEBRIS_SOURCE_TRIES : BLAST_DEBRIS_SOURCE_TRIES;
     spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, tries);
   }
+  // Actual destroyed materials own the bounded budget first. TNT may contribute
+  // a generic open-air fragment only when a slot remains; methane owns no solid
+  // material and therefore never creates generic DEBRIS.
+  if (explosiveMaterial != METHANE && !enclosed && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
+    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
 }
 
 void ExplosivesSystem::finishBlasts(BlastBatch& bb) {

@@ -1264,6 +1264,25 @@ for (const tc of [
   e.destroy();
 }
 
+// Disconnected lava cells can quench in the same reaction batch. They must become
+// separate stone components: a grounded fragment must not pin a floating one.
+{
+  console.log('disconnected lava quench fragments fall independently');
+  const e = mk();
+  const x = 60, floorY = 100, floatingY = 20;
+  for (let y = floorY; y < ROWS; y++) for (let xx = 0; xx < COLS; xx++) e.paintDisc(xx, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  for (const y of [floatingY, floorY - 1]) {
+    e.paintDisc(x, y, 0, MAT.LAVA, true);
+    e.paintDisc(x + 1, y, 0, MAT.WATER, true);
+  }
+  run(20, e);
+  let floatingStoneY = ROWS;
+  for (let y = 0; y < floorY; y++) if (e.getGrid()[y * COLS + x] === MAT.STONE) { floatingStoneY = y; break; }
+  check(`floating quenched stone fell independently (row ${floatingY} -> ${floatingStoneY})`, floatingStoneY > floatingY + 10);
+  e.destroy();
+}
+
 // A pressured reservoir released through a dam breach must not duplicate liquid.
 // This specifically exercises the surface leveller during a "tidal wave" case:
 // a tall wall of liquid with a lot of liquid behind it drains into an empty basin.

@@ -245,7 +245,7 @@ void ReactionSystem::applyAcid() {
 }
 void ReactionSystem::applyLava() {
   std::unordered_set<int>& hardened = E.lavaHardenedScratch; hardened.clear();
-  int hardenedYMax = 0; bool plantBurned = false;
+  bool plantBurned = false;
   for (int k : E.activeLavaCells) {
       if (E.L->grid[k] != LAVA) continue;
       int y = k / E.cols;
@@ -262,10 +262,10 @@ void ReactionSystem::applyLava() {
       // Flag-driven (quenchesLava: water/acid/brine) -> steam + hardened stone.
       auto quenches = [&](int q) { return E.isLavaQuencher(E.L->grid[q]); };
       if (quenches(right)) liquidK = right; else if (quenches(left)) liquidK = left; else if (quenches(down)) liquidK = down; else if (quenches(up)) liquidK = up;
-      if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE); hardened.insert(k); if (y > hardenedYMax) hardenedYMax = y; continue; }
+      if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE); hardened.insert(k); continue; }
       if (E.rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (E.L->grid[up] == EMPTY) airK = up; else if (E.L->grid[right] == EMPTY) airK = right; else if (E.L->grid[left] == EMPTY) airK = left; if (airK >= 0) E.writeGridIndex(airK, FIRE); }
   }
-  if (!hardened.empty()) E.registerRigidCells(E.L->stoneComponents, E.L->nextStoneId, STONE, hardened, hardenedYMax, false);
+  if (!hardened.empty()) E.registerRigidCellsSplit(E.L->stoneComponents, E.L->nextStoneId, STONE, hardened, false);
   if (plantBurned) E.splitPlantAfterErase();
 }
 void ReactionSystem::applyIce() {

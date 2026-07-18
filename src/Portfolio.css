@@ -177,27 +177,6 @@ body {
   opacity: 0.67;
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.52);
-  font-size: 12px;
-  font-weight: 650;
-  white-space: nowrap;
-  backdrop-filter: blur(12px);
-}
-
-.status-pill > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #27a846;
-  box-shadow: 0 0 0 4px rgba(39, 168, 70, 0.12);
-}
-
 .life-showcase {
   margin-top: 18px;
 }

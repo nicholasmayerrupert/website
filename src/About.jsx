@@ -35,9 +35,6 @@ export default function About() {
           <article className="career-card career-card--light career-card--wide">
             <div className="career-card__topline">
               <span className="career-card__label">Current role</span>
-              <span className="status-pill">
-                <span aria-hidden="true" /> Current
-              </span>
             </div>
             <div>
               <p className="career-card__company">Mastercard</p>
@@ -55,8 +52,11 @@ export default function About() {
               <p className="career-card__company">Connection Lab · 2025—2026</p>
               <h3>Full-stack SWE intern</h3>
               <p>
-                Worked on a course and community platform with real-time chat,
-                Stripe payments, Zoom sessions, authentication, and APIs.
+                Built and maintained two full-stack products: a participant and
+                facilitator platform with check-ins, cohort chat, progress
+                visualizations, moderation, and admin tools; plus a registration
+                system coordinating deferred Stripe payments, Zoom enrollment,
+                calendar invites, and reminders.
               </p>
             </div>
           </article>

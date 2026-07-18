@@ -81,10 +81,6 @@ function checkFile(path) {
       if (relFile === 'src/sand/wasm/sandEngine.js' && resolved.bare === 'node:module') {
         continue;
       }
-      if (relFile === 'src/sand/wasm/sandEngineThreaded.js'
-          && (resolved.bare === 'node:module' || resolved.bare === 'node:worker_threads')) {
-        continue;
-      }
       if (forbiddenBarePackages.some((pattern) => pattern.test(resolved.bare))) {
         failures.push(`${relFile}: forbidden package import "${resolved.bare}"`);
       } else {

@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches a stale committed sandEngine.js immediately.",
-  "abiVersion": 14,
+  "abiVersion": 15,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -48,8 +48,7 @@
         "shiftBuffers", "shiftTranslate", "shiftRegister", "shiftFill",
         "groundingMs", "crossLayerGroundingMs", "componentIndexMs", "assemblyUnionMs",
         "carryMs", "bodyMs", "sandMs", "liquidMs", "gasMs",
-        "reactMs", "tailMs", "layersMs", "crossMs",
-        "threadWorkers", "parallelCalls", "parallelTasks", "parallelWallMs", "parallelWaitMs"
+        "reactMs", "tailMs", "layersMs", "crossMs"
       ]
     }
   },

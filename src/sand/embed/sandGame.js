@@ -17,7 +17,7 @@
 // vanilla, another framework) can listen.
 
 import { initSandWasm } from '../wasmBridge/engineFactory.js';
-import { computeThreadWorkerBudgets, createSandGame } from '../game/createSandGame';
+import { createSandGame } from '../game/createSandGame';
 import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
@@ -356,7 +356,6 @@ function createPerfHud(root, game) {
   addRow('upload', 'upload ms');
   addRow('mirrorApply', 'mirror apply');
   addRow('packet', 'packet KB');
-  addRow('threads', 'threads w/r');
   addRow('grounding', 'grounding ms');
   addRow('xlayerG', 'x-layer ground');
   addRow('compIdx', 'comp index ms');
@@ -421,7 +420,6 @@ function createPerfHud(root, game) {
     rows.upload.textContent = f2(s.uploadMs);
     rows.mirrorApply.textContent = f2(s.mirrorApplyMs);
     rows.packet.textContent = ((s.mirrorPacketBytes || 0) / 1024).toFixed(1);
-    rows.threads.textContent = `${s.workerThreadWorkers || 0}/${s.renderThreadWorkers || 0}`;
     rows.grounding.textContent = f2(s.groundingMs);
     rows.xlayerG.textContent = f2(s.crossLayerGroundingMs);
     rows.compIdx.textContent = f2(s.componentIndexMs);
@@ -497,11 +495,6 @@ class SandGameElement extends HTMLElement {
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
     let cancelled = false;
-
-    // The threaded module prewarms its browser-worker pool during init. Publish
-    // this engine's share before init so the presentation mirror and local
-    // authority worker do not each allocate the full hardware budget.
-    globalThis.__sandPthreadPoolSize = computeThreadWorkerBudgets().mainThreadWorkers;
 
     initSandWasm()
       .then(() => {

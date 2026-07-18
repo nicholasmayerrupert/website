@@ -637,9 +637,8 @@ void GLPresenter::glPresentWindow(int forceFull) {
   bool skyChanged = (int)E.renderer.renderSkyLight != glLastSkyLight;
   bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged;
   bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
-  // Threaded Emscripten can expose an epoch-sized monotonic origin. Narrowing
-  // now/frameMs directly to signed int freezes at INT_MIN, so reduce through a
-  // safe 64-bit frame counter and keep only the wrapping low 32 bits.
+  // Reduce the monotonic clock through a safe 64-bit frame counter and keep only
+  // the wrapping low 32 bits.
   uint32_t wallAnimFrame = (uint32_t)(uint64_t)std::floor(emscripten_get_now() / GL_ANIM_FRAME_MS);
   uint32_t animFrame = glAnimationPaused && glLastAnimFrame != UINT32_MAX ? glLastAnimFrame : wallAnimFrame;
   bool animationDue = !glAnimationPaused && glVisibleAnimated && animFrame != glLastAnimFrame;
@@ -688,19 +687,6 @@ void GLPresenter::glPresentWindow(int forceFull) {
     E.useLayer(&lay);
     size_t chunkTotal = (size_t)E.chunkCols * E.chunkRows;
     if (animatedChunks.size() != chunkTotal) animatedChunks.assign(chunkTotal, 0);
-#ifdef __EMSCRIPTEN_PTHREADS__
-    // Unlike simulation, render chunks only read grid/light state and write
-    // disjoint pixel spans, so every visible chunk can run in one wave.
-    E.chunkPool.parallelFor(count, [&](int i) {
-      int cy = cy0 + i / cw, cx = cx0 + i % cw;
-      int ci = cy * E.chunkCols + cx;
-      if (!fullWindowRefresh && !lay.dirtyRender[ci] && !(animationDue && animatedChunks[ci])) return;
-      int tx0 = imax(x0, cx * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
-      int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
-      bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
-      animatedChunks[ci] = found ? 1 : 0;
-    });
-#else
     for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++) {
       int ci = cy * E.chunkCols + cx;
       if (!fullWindowRefresh && !lay.dirtyRender[ci] && !(animationDue && animatedChunks[ci])) continue;
@@ -709,7 +695,6 @@ void GLPresenter::glPresentWindow(int forceFull) {
       bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
       animatedChunks[ci] = found ? 1 : 0;
     }
-#endif
     for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++)
       if (animatedChunks[cy * E.chunkCols + cx]) return true;
     return false;

@@ -12,16 +12,8 @@
 #include <set>
 #include <algorithm>
 #include <utility>
-#include <functional>
 #include <emscripten.h>
 #include <emscripten/console.h>
-#ifdef __EMSCRIPTEN_PTHREADS__
-#include <atomic>
-#include <condition_variable>
-#include <emscripten/threading.h>
-#include <mutex>
-#include <thread>
-#endif
 
 // Material ids, kinds, and flat lookup tables — generated from
 // src/sand/materials.schema.json (the single source shared with JS). Run
@@ -114,108 +106,6 @@ struct StampSet {
   void add(int k) { if ((unsigned)k < stamp.size()) stamp[k] = gen; }
   bool has(int k) const { return (unsigned)k < stamp.size() && stamp[k] == gen; }
   void remove(int k) { if ((unsigned)k < stamp.size()) stamp[k] = 0; }
-};
-
-// Persistent workers used by the checkerboard scheduler. Emscripten satisfies
-// these std::threads from PTHREAD_POOL_SIZE, avoiding per-frame worker creation.
-// The calling thread participates, then waits at one barrier per color wave.
-class ParallelPool {
-  int statsCalls = 0, statsTasks = 0;
-  double statsWallMs = 0, statsWaitMs = 0;
-#ifdef __EMSCRIPTEN_PTHREADS__
-  std::vector<std::thread> workers;
-  std::mutex mutex;
-  std::condition_variable startCv, doneCv;
-  std::function<void(int)> job;
-  std::atomic<int> next{0};
-  int limit = 0, remaining = 0;
-  int activeWorkers = 0;
-  uint64_t generation = 0;
-  bool stopping = false;
-
-  void workerLoop(int workerId) {
-    uint64_t seen = 0;
-    for (;;) {
-      std::unique_lock<std::mutex> lock(mutex);
-      startCv.wait(lock, [&] { return stopping || generation != seen; });
-      if (stopping) return;
-      seen = generation;
-      bool active = workerId < activeWorkers;
-      lock.unlock();
-      if (!active) continue;
-      for (;;) { int i = next.fetch_add(1, std::memory_order_relaxed); if (i >= limit) break; job(i); }
-      lock.lock();
-      if (--remaining == 0) doneCv.notify_one();
-    }
-  }
-#endif
-
- public:
-  ParallelPool() = default;
-  ~ParallelPool() {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    { std::lock_guard<std::mutex> lock(mutex); stopping = true; generation++; }
-    startCv.notify_all();
-    for (auto& worker : workers) worker.join();
-#endif
-  }
-  template <typename Fn>
-  void parallelFor(int count, Fn&& fn) {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    // Two tasks per participating lane amortizes the wake + barrier cost and
-    // gives the shared atomic cursor enough work to balance uneven chunks.
-    int lanes = activeWorkers + 1;
-    if (count >= imax(8, lanes * 2) && activeWorkers > 0) {
-      double started = emscripten_get_now();
-      {
-        std::lock_guard<std::mutex> lock(mutex);
-        job = std::forward<Fn>(fn); limit = count; next.store(0, std::memory_order_relaxed);
-        remaining = activeWorkers; generation++;
-      }
-      startCv.notify_all();
-      for (;;) { int i = next.fetch_add(1, std::memory_order_relaxed); if (i >= limit) break; job(i); }
-      double callerDone = emscripten_get_now();
-      std::unique_lock<std::mutex> lock(mutex);
-      doneCv.wait(lock, [&] { return remaining == 0; });
-      job = nullptr;
-      double finished = emscripten_get_now();
-      statsCalls++; statsTasks += count;
-      statsWallMs += finished - started;
-      statsWaitMs += finished - callerDone;
-      return;
-    }
-#endif
-    for (int i = 0; i < count; i++) fn(i);
-  }
-  int workerCount() const {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    return activeWorkers;
-#else
-    return 0;
-#endif
-  }
-  void setWorkerCount(int count) {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    const int capacity = imax(0, imin(7, emscripten_num_logical_cores() - 2));
-    const int target = imax(0, imin(capacity, count));
-    // Engine construction happens before JS supplies its main/worker share.
-    // Claim only that many prewarmed Emscripten workers instead of eagerly
-    // creating a full std::thread pool in every module instance.
-    while ((int)workers.size() < target) {
-      int workerId = (int)workers.size();
-      workers.emplace_back([this, workerId] { workerLoop(workerId); });
-    }
-    std::lock_guard<std::mutex> lock(mutex);
-    activeWorkers = target;
-#else
-    (void)count;
-#endif
-  }
-  void resetStats() { statsCalls = statsTasks = 0; statsWallMs = statsWaitMs = 0; }
-  int parallelCalls() const { return statsCalls; }
-  int parallelTasks() const { return statsTasks; }
-  double parallelWallMs() const { return statsWallMs; }
-  double parallelWaitMs() const { return statsWaitMs; }
 };
 
 // Tool ids live in abi.generated.hpp (enum Tool). The engine owns all tool

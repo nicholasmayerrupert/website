@@ -14,10 +14,6 @@ export default defineConfig({
   resolve: {
     alias: [
       {
-        find: './moduleSelector.js',
-        replacement: fileURLToPath(new URL('./src/sand/wasmBridge/moduleSelectorFallback.js', import.meta.url)),
-      },
-      {
         find: './worldWorkerConstructor.js',
         replacement: fileURLToPath(new URL('./src/sand/worker/worldWorkerConstructorInline.js', import.meta.url)),
       },

@@ -10,12 +10,6 @@ export default {
     const isAsset = new URL(request.url).pathname.startsWith('/assets/');
 
     const headers = new Headers(response.headers);
-    // Pthread module workers must receive COEP themselves; putting it only on
-    // index.html isolates the page but leaves every worker unable to use the
-    // SharedArrayBuffer passed in by Emscripten.
-    headers.set('cross-origin-opener-policy', 'same-origin');
-    headers.set('cross-origin-embedder-policy', 'require-corp');
-    headers.set('cross-origin-resource-policy', 'same-origin');
     if (isHtml || !response.ok) headers.set('cache-control', 'no-store');
     else if (isAsset) headers.set('cache-control', 'public, max-age=31556952, immutable');
 

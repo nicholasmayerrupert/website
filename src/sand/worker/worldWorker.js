@@ -71,11 +71,6 @@ function perf() {
     creatureCount: engine?.creatureCount?.() || 0,
     itemCount: engine?.itemCount?.() || 0,
     controlsReceived, edgesProcessed, toolWrites,
-    threadWorkers: parallel.threadWorkers || 0,
-    parallelCalls: parallel.parallelCalls || 0,
-    parallelTasks: parallel.parallelTasks || 0,
-    parallelWallMs: parallel.parallelWallMs || 0,
-    parallelWaitMs: parallel.parallelWaitMs || 0,
   };
 }
 
@@ -277,10 +272,6 @@ self.onmessage = async ({ data }) => {
   if (!data) return;
   if (data.type === 'init') {
     clearTimeout(timer);
-    // moduleSelector imports the threaded build lazily from initSandWasm(); set
-    // this realm's prewarm size first so it receives only the worker-side share.
-    globalThis.__sandPthreadPoolSize = Math.max(0, data.threadWorkers | 0);
-    globalThis.__sandForceSingleThread = !!data.forceSingleThread;
     try {
       await initSandWasm();
     } catch (error) {
@@ -292,7 +283,6 @@ self.onmessage = async ({ data }) => {
       cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
       infinite: true, sinksOn: false, storageRole: 'authority',
     });
-    engine.setThreadWorkers(data.threadWorkers | 0);
     survival = !!data.survival;
     engine.setPlayMode(survival);
     engine.setSurvivalInventory(survival);

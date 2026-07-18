@@ -104,11 +104,7 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
   remapSkyTopInput(lay);
   if ((int)lay->skyLight.size() != n) lay->skyLight.assign(n, 0);
   else {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    E.chunkPool.parallelFor(ry1 - ry0 + 1, [&](int i) { uint8_t* row = lay->skyLight.data() + (ry0 + i) * E.cols; std::fill(row + rx0, row + rx1 + 1, (uint8_t)0); });
-#else
     for (int y = ry0; y <= ry1; y++) { uint8_t* row = lay->skyLight.data() + y * E.cols; std::fill(row + rx0, row + rx1 + 1, (uint8_t)0); }
-#endif
   }
   if ((int)lay->skyDownDepth.size() != E.cols) lay->skyDownDepth.assign(E.cols, -1);
   if ((int)lay->skyDownValue.size() != E.cols) lay->skyDownValue.assign(E.cols, 0);
@@ -140,13 +136,8 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
     lay->skyDownDepth[x] = deepest;
     lay->skyDownValue[x] = topValue;
   };
-#ifdef __EMSCRIPTEN_PTHREADS__
-  E.chunkPool.parallelFor(rx1 - rx0 + 1, [&](int i) { castTopRay(rx0 + i); });
-#else
   for (int x = rx0; x <= rx1; x++) castTopRay(x);
-#endif
-  // The rays are independent; update the shared sparse reach map after their
-  // barrier so worker threads never mutate an unordered_map concurrently.
+  // Update the sparse reach map after casting the rays.
   for (int x = rx0; x <= rx1; x++) {
     int deepest = lay->skyDownDepth[x];
     if (deepest < 0) continue;
@@ -173,11 +164,7 @@ void Renderer::computeDirectSky(Layer* lay, int rx0, int ry0, int rx1, int ry1) 
       }
     }
   };
-#ifdef __EMSCRIPTEN_PTHREADS__
-  E.chunkPool.parallelFor(ry1 - ry0 + 1, [&](int i) { castSideRays(ry0 + i); });
-#else
   for (int y = ry0; y <= ry1; y++) castSideRays(y);
-#endif
   lay->skyOffsetX = lay->worldOffsetX;
   lay->skyOffsetY = lay->worldOffsetY;
   lay->skyInputLevel = (int)renderSkyLight;
@@ -189,11 +176,7 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
   const int n = E.cols * E.rows;
   if ((int)lay->light.size() != n) lay->light.assign(n, LIGHT_AMBIENT);
   else {
-#ifdef __EMSCRIPTEN_PTHREADS__
-    E.chunkPool.parallelFor(ry1 - ry0 + 1, [&](int i) { uint8_t* row = lay->light.data() + (ry0 + i) * E.cols; std::fill(row + rx0, row + rx1 + 1, LIGHT_AMBIENT); });
-#else
     for (int y = ry0; y <= ry1; y++) { uint8_t* row = lay->light.data() + y * E.cols; std::fill(row + rx0, row + rx1 + 1, LIGHT_AMBIENT); }
-#endif
   }
   lightQueue.clear();
   lightQueue.reserve((size_t)n / 4);
@@ -210,21 +193,6 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
 
   // Seed sky and emissive cells by rows, then concatenate in the original
   // row-major order before the ordered flood.
-#ifdef __EMSCRIPTEN_PTHREADS__
-  lightSeedRows.resize(E.rows);
-  E.chunkPool.parallelFor(ry1 - ry0 + 1, [&](int i) {
-    int y = ry0 + i, rb = y * E.cols, wy = lay->worldOffsetY + y;
-    auto& out = lightSeedRows[y]; out.clear();
-    for (int x = rx0; x <= rx1; x++) {
-      int k = rb + x;
-      uint8_t v = lay->skyLight[k];
-      uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
-      if (e > v) v = e;
-      if (v > lay->light[k]) { lay->light[k] = v; out.push_back(k); }
-    }
-  });
-  for (int y = ry0; y <= ry1; y++) lightQueue.insert(lightQueue.end(), lightSeedRows[y].begin(), lightSeedRows[y].end());
-#else
   for (int y = ry0; y <= ry1; y++) {
     int rb = y * E.cols;
     for (int x = rx0; x <= rx1; x++) { int k = rb + x; if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]); }
@@ -238,7 +206,6 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
       if (e) seed(k, e);
     }
   }
-#endif
 
   // Flood clamped to the region: the ring underestimates (its far sources are
   // cut off), which cannot change any value inside the exact window (their
@@ -373,7 +340,7 @@ bool Renderer::fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, i
   // negative offsets too (two's-complement low bits == value mod 64/8).
   int woX = E.L->worldOffsetX, woY = E.L->worldOffsetY;
   // Skip the per-cell mineDamage load + crack-shading branch entirely unless this
-  // layer actually has live mining damage (almost never). mineDamage is a parallel
+  // layer actually has live mining damage (almost never). mineDamage is a matching
   // E.cols*E.rows array, so eliding the load also removes a cache stream from the hot
   // fill. The damaged uint32_t* is only dereferenced on the rare path.
   const uint32_t* dmg = E.L->mineDamageAny ? E.L->mineDamage.data() : nullptr;
@@ -477,14 +444,7 @@ void Renderer::renderFull() {
   uint8_t* g = E.L->grid;
   uint32_t* p = (uint32_t*)E.L->renderPixels.data();
   renderFrameSalt++;
-#ifdef __EMSCRIPTEN_PTHREADS__
-  E.forEachCheckerboardChunk([&](int cx, int cy) {
-    int x0 = cx * CHUNK_SIZE, y0 = cy * CHUNK_SIZE;
-    fillRenderSpan(g, p, x0, y0, imin(E.cols - 1, x0 + CHUNK_SIZE - 1), imin(E.rows - 1, y0 + CHUNK_SIZE - 1));
-  });
-#else
   fillRenderSpan(g, p, 0, 0, E.cols - 1, E.rows - 1);
-#endif
 }
 
 // Refill only the active layer's coalesced dirty rects. Rects are [x0,y0,x1,y1)

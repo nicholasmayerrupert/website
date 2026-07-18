@@ -9,29 +9,6 @@ void ReactionSystem::prepareActiveLists() {
   E.activeWaterCells.clear(); E.activeFireCells.clear(); E.activeAcidCells.clear();
   E.activeLavaCells.clear(); E.activeSaltCells.clear(); E.activeHeatCells.clear();
   E.L->heatAddedAfterPrepare = false;
-#ifdef __EMSCRIPTEN_PTHREADS__
-  E.reactionRows.resize(E.rows);
-  E.chunkPool.parallelFor(E.rows - 1, [&](int i) {
-    int y = i + 1;
-    auto& cells = E.reactionRows[y]; cells.clear();
-    int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) return;
-    int rb = y * E.cols;
-    for (int x = minX; x <= maxX; x++) {
-      int k = rb + x; uint8_t m = E.L->grid[k];
-      if (m == WATER || m == FIRE || ((m == ACID || m == LAVA || m == SALT) && y < E.rows - 1)) cells.push_back(k);
-    }
-  });
-  for (int y = 1; y < E.rows; y++) for (int k : E.reactionRows[y]) {
-    switch (E.L->grid[k]) {
-      case WATER: E.activeWaterCells.push_back(k); break;
-      case FIRE: E.activeFireCells.push_back(k); if (k < (E.rows - 1) * E.cols) E.activeHeatCells.push_back(k); break;
-      case ACID: E.activeAcidCells.push_back(k); break;
-      case LAVA: E.activeLavaCells.push_back(k); E.activeHeatCells.push_back(k); break;
-      case SALT: E.activeSaltCells.push_back(k); break;
-      default: break;
-    }
-  }
-#else
   for (int y = 1; y < E.rows; y++) {
     int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
     int rb = y * E.cols;
@@ -47,7 +24,6 @@ void ReactionSystem::prepareActiveLists() {
       }
     }
   }
-#endif
 }
 
 void ReactionSystem::applyReactions() {

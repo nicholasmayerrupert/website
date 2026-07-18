@@ -15,27 +15,10 @@ actionable instead of just producing timing numbers.
   mirror. Replication is bounded
   to one acknowledged packet in flight, so a slow renderer cannot build an
   unbounded diff queue or feed timing debt back into world simulation.
-- The pthread build uses an adaptive persistent pool (`hardwareConcurrency - 2`,
-  capped at seven workers, plus the caller). Offline play partitions that
-  budget before the main and world-worker modules prewarm their pools. It
-  parallelizes visible/full
-  material-to-RGBA fill, candidate discovery, loose-support columns, component
-  indexing/carry/adjacency, static rigid grounding through the component
-  graph, and full/diff world serialization. Full snapshots scan RLE rows in
-  parallel and merge runs in wire order; dirty rectangles copy into pre-sized,
-  disjoint byte ranges.
-  Cell movement remains serial: its
-  shared simulation RNG, dirty-row bounds, and liquid displacement queue must
-  become task-local before the same scheduler can safely own settle chunks.
-  Current profiles are dominated by lighting and cross-layer grounding, not the
-  already-cheap sand/liquid passes.
 - Extreme-zoom structural adjacency is cached with `cellComp`: `indexComponents`
   rebuilds a sorted component-edge list only when topology is re-indexed, and
   ordinary joint passes union that list instead of walking every component cell
-  and eight neighbours. The pthread build constructs the cache by chunks and
-  also carries component cells into the double buffer with fixed deterministic
-  offsets. Creative world workers select pthread WASM through
-  `globalThis.crossOriginIsolated`, not a window-only check.
+  and eight neighbours.
 - Above 900k loaded cells, component grounding/assembly motion runs on alternating
   world ticks (30 Hz at a healthy 60 TPS); loose materials, reactions, tools, and
   actors keep their normal cadence. Free rigid bodies disable the deferral. This

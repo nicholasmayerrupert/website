@@ -105,27 +105,10 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_TAIL_MS] = e->perfTailMs;
   out[PF_LAYERS_MS] = e->perfLayersMs;
   out[PF_CROSS_MS] = e->perfCrossMs;
-#ifdef __EMSCRIPTEN_PTHREADS__
-  out[PF_THREAD_WORKERS] = (double)e->chunkPool.workerCount();
-  out[PF_PARALLEL_CALLS] = (double)e->chunkPool.parallelCalls();
-  out[PF_PARALLEL_TASKS] = (double)e->chunkPool.parallelTasks();
-  out[PF_PARALLEL_WALL_MS] = e->chunkPool.parallelWallMs();
-  out[PF_PARALLEL_WAIT_MS] = e->chunkPool.parallelWaitMs();
-#else
-  out[PF_THREAD_WORKERS] = out[PF_PARALLEL_CALLS] = out[PF_PARALLEL_TASKS] = 0;
-  out[PF_PARALLEL_WALL_MS] = out[PF_PARALLEL_WAIT_MS] = 0;
-#endif
 }
 EMSCRIPTEN_KEEPALIVE int engine_tick(Engine* e) { return e->tick; }
 EMSCRIPTEN_KEEPALIVE int engine_actor_tick(Engine* e) { return e->actorTick; }
 EMSCRIPTEN_KEEPALIVE void engine_set_actor_tick(Engine* e, int tick) { e->actorTick = tick < 0 ? 0 : tick; }
-EMSCRIPTEN_KEEPALIVE void engine_set_thread_workers(Engine* e, int count) {
-#ifdef __EMSCRIPTEN_PTHREADS__
-  e->chunkPool.setWorkerCount(count);
-#else
-  (void)e; (void)count;
-#endif
-}
 // Incremental-grounding controls (testing/diagnostics). verify=1 runs the fast path
 // AND a full reflood every step and counts mismatches; forceFull=1 always refloods
 // (the byte-identical reference for the checksum test).

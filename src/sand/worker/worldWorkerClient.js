@@ -93,11 +93,11 @@ export function createWorldWorkerClient(ctx) {
   };
 
   const api = {
-    init({ survival = false, creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false, threadWorkers = 0 } = {}) {
-      initOptions = { survival, creativeKind, creativeValue, tool, creatureNaturalSpawning, threadWorkers };
+    init({ survival = false, creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false } = {}) {
+      initOptions = { survival, creativeKind, creativeValue, tool, creatureNaturalSpawning };
       worker.postMessage({
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-        survival, drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning, threadWorkers,
+        survival, drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning,
       });
     },
     updateControl() {
@@ -262,8 +262,8 @@ export function createWorldWorkerClient(ctx) {
       clearTimeout(resizeTimer);
       try { worker.postMessage({ type: 'destroy' }); }
       catch { worker.terminate(); return; }
-      // Give C++ time to join its persistent pthreads. Forced termination is a
-      // last resort for a crashed/unresponsive worker, not the normal path.
+      // Give the worker time to tear down cleanly. Forced termination is a last
+      // resort for a crashed/unresponsive worker, not the normal path.
       destroyTimer = setTimeout(() => worker.terminate(), 1500);
     },
     get state() { return state; },
@@ -298,7 +298,7 @@ export function createWorldWorkerClient(ctx) {
     retry() {
       retryCount = 0;
       ctx.setAuthorityError?.(null);
-      restartWorker(true);
+      restartWorker();
     },
   };
   const handleError = (event) => {
@@ -307,7 +307,7 @@ export function createWorldWorkerClient(ctx) {
     worker.terminate();
     if (!state.ready && retryCount === 0) {
       retryCount++;
-      restartWorker(true);
+      restartWorker();
       return;
     }
     ctx.setAuthorityError?.('The simulation worker could not continue.');
@@ -316,7 +316,7 @@ export function createWorldWorkerClient(ctx) {
     worker.onmessage = handleMessage;
     worker.onerror = handleError;
   };
-  const restartWorker = (forceSingleThread) => {
+  const restartWorker = () => {
     try { worker.terminate(); } catch { /* already stopped */ }
     if (predictorEngine && predictorPlayerId) {
       try { predictorEngine.removePlayer(predictorPlayerId); } catch { /* mirror was rebuilt */ }
@@ -336,7 +336,7 @@ export function createWorldWorkerClient(ctx) {
     bindWorker();
     if (initOptions) worker.postMessage({
       type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-      ...initOptions, drawMode: ctx.drawModeOn, forceSingleThread: !!forceSingleThread,
+      ...initOptions, drawMode: ctx.drawModeOn,
     });
   };
   bindWorker();

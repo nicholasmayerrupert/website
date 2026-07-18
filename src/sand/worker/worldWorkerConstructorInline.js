@@ -1,5 +1,5 @@
 import WorldWorker from './worldWorker.js?worker&inline';
 
-// The drop-in embed remains one self-contained file. Its WASM selector is
-// already aliased to the non-threaded module, so the blob has no child import.
+// The drop-in embed remains one self-contained file, so the worker has no child
+// import to resolve from its blob URL.
 export default WorldWorker;

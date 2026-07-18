@@ -38,16 +38,6 @@ import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
 
-export function computeThreadWorkerBudgets() {
-  const hardwareWorkers = Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
-  const threadParam = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('sandThreads') : null;
-  const threadOverride = threadParam === null ? NaN : Number(threadParam);
-  const requestedWorkers = Number.isFinite(threadOverride) ? Math.max(0, Math.min(7, (threadOverride | 0) - 1)) : null;
-  const mainThreadWorkers = requestedWorkers ?? Math.floor(hardwareWorkers / 2);
-  const worldThreadWorkers = requestedWorkers ?? Math.max(0, hardwareWorkers - mainThreadWorkers);
-  return { mainThreadWorkers, worldThreadWorkers };
-}
-
 export function createSandGame(container, opts = {}) {
   const {
     initialTool = DEFAULT_TOOL,
@@ -69,7 +59,6 @@ export function createSandGame(container, opts = {}) {
     onToggleFootprintMenu = null,
   } = opts;
   const survival = mode === 'survival';
-  const { mainThreadWorkers, worldThreadWorkers } = computeThreadWorkerBudgets();
 
   // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
   // context on it and composites everything (engine.glRenderFrame). ---
@@ -93,7 +82,6 @@ export function createSandGame(container, opts = {}) {
   // (set after the owning module is created). ---
   const ctx = {
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
-    mainThreadWorkers, worldThreadWorkers,
     // One seed per mount so resizing regenerates the *same* infinite world.
     worldSeed: (Math.random() * 4294967296) >>> 0,
     // devicePixelRatio at load. Browser page zoom later changes dpr (and the
@@ -177,7 +165,6 @@ export function createSandGame(container, opts = {}) {
       creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue,
       tool: TOOL_IDS[ctx.currentToolName] ?? 0,
       creatureNaturalSpawning: ctx.debugHitboxes,
-      threadWorkers: ctx.worldThreadWorkers,
     });
     applyCreatureRuntimePolicy(ctx);
     return authority;
@@ -506,8 +493,6 @@ export function createSandGame(container, opts = {}) {
         crossBondCount: authorityPerf.crossBondCount || 0,
         mirrorApplyMs: workerState?.mirrorApplyMs || 0,
         mirrorPacketBytes: workerState?.packetBytes || 0,
-        workerThreadWorkers: workerState?.threadWorkers || 0,
-        renderThreadWorkers: perf.threadWorkers || 0,
         creatureCount: workerState?.creatureCount ?? (ctx.engine ? ctx.engine.creatureCount() : 0),
         tick: ctx.engine ? ctx.engine.getTick() : 0,
         actorTick: workerState?.actorTick ?? (ctx.engine ? ctx.engine.getActorTick() : 0),

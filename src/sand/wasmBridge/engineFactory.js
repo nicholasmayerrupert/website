@@ -7,7 +7,7 @@
 // zero-copy as a HEAPU8 subarray (re-derived each call: the grid pointer swaps
 // every step and the heap can move on growth).
 
-import { selectSandModule } from './moduleSelector.js';
+import createSandModule from '../wasm/sandEngine.js';
 import { MAT } from '../materials.js';
 import { ABI_VERSION, OFF, STRIDES, INPUT } from './abi.generated.js';
 
@@ -21,48 +21,19 @@ let modPromise = null;
 let M = null; // resolved module + cwrapped fns
 let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTargets
 let resizableHeapPatched = false;
-let wasmThreadsEnabled = false;
-let wasmThreadPoolCapacity = 0;
-let wasmInitialHeapBytes = 0;
-
-function configuredThreadWorkers() {
-  const configured = Number(globalThis.__sandPthreadPoolSize);
-  return Number.isFinite(configured)
-    ? Math.max(0, Math.min(7, configured | 0))
-    : Math.max(0, Math.min(7, ((globalThis.navigator?.hardwareConcurrency || 4) | 0) - 2));
-}
 
 // Chromium rejects views on a resizable ArrayBuffer; WebKit rejects WebGL views
-// on the threaded module's SharedArrayBuffer. Copy those WASM backings into an
-// ordinary fixed ArrayBuffer before browser APIs see them. Chromium accepts
-// shared views, so do not make its hot texture uploads pay for Safari's copy.
-const webkitSharedViewsNeedCopy = typeof navigator !== 'undefined'
-  && /AppleWebKit/.test(navigator.userAgent)
-  && !/(Chrome|Chromium|Edg|OPR)/.test(navigator.userAgent);
+// backed by growable WASM memory. Copy those backings into an ordinary fixed
+// ArrayBuffer before browser APIs see them.
 
 function needsFixedBuffer(value) {
   const buffer = ArrayBuffer.isView(value) ? value.buffer : value;
-  return buffer?.resizable === true
-    || (webkitSharedViewsNeedCopy && typeof SharedArrayBuffer !== 'undefined' && buffer instanceof SharedArrayBuffer);
-}
-
-// Chromium accepts SharedArrayBuffer views for WebGL at the module's initial
-// heap size, but the WebGL2 typed-array+offset overload can reject the expanded
-// threaded WASM heap with INVALID_OPERATION. Keep the default zero-copy path;
-// copy only after memory growth, and only for APIs that have shown this issue.
-function isGrownSharedWasmHeap(value) {
-  const buffer = ArrayBuffer.isView(value) ? value.buffer : value;
-  const safeSharedBytes = Math.max(wasmInitialHeapBytes, 64 * 1024 * 1024);
-  return wasmInitialHeapBytes > 0
-    && typeof SharedArrayBuffer !== 'undefined'
-    && buffer instanceof SharedArrayBuffer
-    && buffer.byteLength > safeSharedBytes;
+  return buffer?.resizable === true;
 }
 
 function isBufferArg(value) {
   return ArrayBuffer.isView(value)
-    || (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer)
-    || (typeof SharedArrayBuffer !== 'undefined' && value instanceof SharedArrayBuffer);
+    || (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer);
 }
 
 function fixedBufferArg(value) {
@@ -148,7 +119,7 @@ function patchResizableWasmHeapForBrowserGL() {
         p.texSubImage2D = function patchedTexSubImage2D(...args) {
           const heap = args[8];
           const srcOffset = args[9] | 0;
-          if (args.length >= 10 && ArrayBuffer.isView(heap) && (needsFixedBuffer(heap) || isGrownSharedWasmHeap(heap))
+          if (args.length >= 10 && ArrayBuffer.isView(heap) && needsFixedBuffer(heap)
               && args[6] === 0x1908 && args[7] === 0x1401) { // RGBA / UNSIGNED_BYTE
             const width = args[4] | 0, height = args[5] | 0;
             const rowLength = this.getParameter(0x0CF2) || width; // UNPACK_ROW_LENGTH
@@ -181,7 +152,7 @@ function patchResizableWasmHeapForBrowserGL() {
       if (typeof orig === 'function') {
         p.readPixels = function patchedReadPixels(...args) {
           // WebGL2: (x, y, w, h, format, type, dstData, dstOffset)
-          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && (needsFixedBuffer(args[6]) || isGrownSharedWasmHeap(args[6]))) {
+          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && needsFixedBuffer(args[6])) {
             const heap = args[6];
             const offset = args[7] | 0;
             const w = args[2] | 0, h = args[3] | 0;
@@ -229,19 +200,7 @@ function patchResizableWasmHeapForBrowserGL() {
 export function initSandWasm() {
   if (!modPromise) {
     patchResizableWasmHeapForBrowserGL();
-    const selected = selectSandModule();
-    wasmThreadsEnabled = selected.threaded;
-    wasmThreadPoolCapacity = selected.threaded ? configuredThreadWorkers() : 0;
-    const selectedPromise = selected.threaded
-      ? selected.promise.catch((error) => {
-          console.warn('sand: threaded WASM failed to initialize; using the single-thread fallback', error);
-          wasmThreadsEnabled = false;
-          wasmThreadPoolCapacity = 0;
-          return selected.fallback();
-        })
-      : selected.promise;
-    modPromise = selectedPromise.then((mod) => {
-      wasmInitialHeapBytes = mod.HEAPU8.byteLength;
+    modPromise = createSandModule().then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
       // manifest — the loud failure for a stale committed sandEngine.js.
@@ -296,7 +255,6 @@ export function initSandWasm() {
         tick: c('engine_tick', 'number', ['number']),
         actorTick: c('engine_actor_tick', 'number', ['number']),
         setActorTick: c('engine_set_actor_tick', null, ['number', 'number']),
-        setThreadWorkers: c('engine_set_thread_workers', null, ['number', 'number']),
         addDraft: c('engine_add_draft', 'number', ['number', 'number', 'number', 'number', 'number']),
         finalizeDraft: c('engine_finalize_draft', null, ['number', 'number']),
         clearDraft: c('engine_clear_draft', null, ['number']),
@@ -440,9 +398,6 @@ export function createEngineWasm({
   const { mod } = M;
   const role = storageRole === 'presentation' ? 1 : (storageRole === 'authority' ? 2 : 0);
   const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role);
-  // ParallelPool creates std::threads lazily, after the module's matching
-  // browser-worker pool has been prewarmed.
-  M.setThreadWorkers(ptr, Math.min(wasmThreadPoolCapacity, configuredThreadWorkers()));
   // Live dims (mutable — resizeLoadedWindow can grow/shrink the buffer).
   let liveCols = cols;
   let liveRows = rows;
@@ -736,11 +691,6 @@ export function createEngineWasm({
         tailMs: d[F.tailMs],
         layersMs: d[F.layersMs],
         crossMs: d[F.crossMs],
-        threadWorkers: d[F.threadWorkers],
-        parallelCalls: d[F.parallelCalls],
-        parallelTasks: d[F.parallelTasks],
-        parallelWallMs: d[F.parallelWallMs],
-        parallelWaitMs: d[F.parallelWaitMs],
         phases: {},
       };
     },
@@ -791,7 +741,6 @@ export function createEngineWasm({
     },
     getTick() { return M.tick(ptr); },
     getActorTick() { return M.actorTick(ptr); },
-    setThreadWorkers(count) { M.setThreadWorkers(ptr, Math.min(wasmThreadPoolCapacity, Math.max(0, count | 0))); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
     destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); mod._free(ambienceOut); M.destroy(ptr); },
@@ -1083,8 +1032,6 @@ export function createEngineWasm({
     // wasmBridge/testHooks.js — scripts call attachTestHooks(engine). The raw
     // engine pointer is exposed for that module only.
     ptr,
-    wasmThreadsEnabled,
-    wasmThreadPoolCapacity,
   };
   return api;
 }

@@ -70,38 +70,13 @@
             L->next[k] = L->grid[k];
         }
       };
-#ifdef __EMSCRIPTEN_PTHREADS__
-      chunkPool.parallelFor(rows, [&](int y) { carryRigidRow(y); });
-#else
       for (int y = 0; y < rows; y++) carryRigidRow(y);
-#endif
     } else {
       L->curCompCells.clear();
-#ifdef __EMSCRIPTEN_PTHREADS__
-      carryComps.clear(); carryOffsets.clear();
-      carryComps.reserve(L->stoneComponents.size() + L->plantComponents.size() + L->iceComponents.size());
-      carryOffsets.reserve(carryComps.capacity());
-      size_t carryCount = 0;
-      auto queueCarry = [&](std::vector<Comp>& list) {
-        for (auto& comp : list) { carryComps.push_back(&comp); carryOffsets.push_back(carryCount); carryCount += comp.cells.size(); }
-      };
-      queueCarry(L->stoneComponents); queueCarry(L->plantComponents); queueCarry(L->iceComponents);
-      size_t bodyCarryBase = carryCount;
-      carryCount += L->bodyCells.size();
-      L->curCompCells.resize(carryCount);
-      chunkPool.parallelFor((int)carryComps.size(), [&](int ci) {
-        Comp& comp = *carryComps[ci]; size_t out = carryOffsets[ci];
-        for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[out++] = k; }
-      });
-      chunkPool.parallelFor((int)L->bodyCells.size(), [&](int i) {
-        int k = L->bodyCells[i]; L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[bodyCarryBase + i] = k;
-      });
-#else
       for (auto& comp : L->stoneComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-#endif
       for (int k : L->prevCompCells) {
         if (L->compOccStamp[k] == tick) continue;
         if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
@@ -126,39 +101,6 @@
     // four repeated full-span scans is substantially cheaper than probing every
     // cell separately for density, powder, liquid, and gas.
     activeDensityCells.clear(); activeSandCells.clear(); activeLiquidCells.clear(); activeGasCells.clear();
-#ifdef __EMSCRIPTEN_PTHREADS__
-    densityRows.resize(rows); sandRows.resize(rows); liquidRows.resize(rows); gasRows.resize(rows);
-    chunkPool.parallelFor(rows, [&](int y) {
-      auto& density = densityRows[y]; auto& sand = sandRows[y];
-      auto& liquid = liquidRows[y]; auto& gas = gasRows[y];
-      density.clear(); sand.clear(); liquid.clear(); gas.clear();
-      int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) return;
-      int rb = y * cols; bool ltr = (y & 1) == 0;
-      auto gather = [&](int x) {
-        int k = rb + x; uint8_t m = L->grid[k];
-        if (isLooseDensityMaterial(m)) density.push_back(k);
-        if (isLooseSolidMaterial(m)) sand.push_back(k);
-        if (isLiquidMaterial(m)) liquid.push_back(k);
-        if (isGasMaterial(m)) gas.push_back(k);
-      };
-      if (ltr) for (int x = minX; x <= maxX; x++) gather(x);
-      else for (int x = maxX; x >= minX; x--) gather(x);
-    });
-    size_t densityN = 0, sandN = 0, liquidN = 0, gasN = 0;
-    for (int y = 0; y < rows; y++) {
-      densityN += densityRows[y].size(); sandN += sandRows[y].size();
-      liquidN += liquidRows[y].size(); gasN += gasRows[y].size();
-    }
-    activeDensityCells.reserve(densityN); activeSandCells.reserve(sandN);
-    activeLiquidCells.reserve(liquidN); activeGasCells.reserve(gasN);
-    for (int y = rows - 1; y >= 0; y--) {
-      activeDensityCells.insert(activeDensityCells.end(), densityRows[y].begin(), densityRows[y].end());
-      activeSandCells.insert(activeSandCells.end(), sandRows[y].begin(), sandRows[y].end());
-      activeLiquidCells.insert(activeLiquidCells.end(), liquidRows[y].begin(), liquidRows[y].end());
-    }
-    for (int y = 0; y < rows; y++)
-      activeGasCells.insert(activeGasCells.end(), gasRows[y].begin(), gasRows[y].end());
-#else
     for (int y = rows - 1; y >= 0; y--) {
       int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue;
       int rb = y * cols; bool ltr = (y & 1) == 0;
@@ -168,7 +110,6 @@
       activeGasCells.insert(activeGasCells.end(), activeGasRow.rbegin(), activeGasRow.rend());
     }
     std::reverse(activeGasCells.begin(), activeGasCells.end());
-#endif
 
     liquidDispPending.clear();
     double tS = emscripten_get_now();
@@ -215,9 +156,6 @@
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
     if (!fgA && !bgA) { useLayer(&fg); perfStepMs = 0; return false; }
     double t0 = emscripten_get_now();
-#ifdef __EMSCRIPTEN_PTHREADS__
-    chunkPool.resetStats();
-#endif
     tick++;
     // Zero fine-phase timers + dirty volume (stepLayer / joint accumulate into these).
     perfDirtyChunks = perfDirtyRows = perfDirtyCells = 0;

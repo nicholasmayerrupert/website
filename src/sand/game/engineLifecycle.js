@@ -49,7 +49,6 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       sinksOn: false, // taps/sinks are obsolete in the streaming world
     });
     ctx.engine = e;
-    e.setThreadWorkers(ctx.mainThreadWorkers);
     e.glInit(canvas);                                // WebGL2 context on our canvas
     const gl = canvas.getContext('webgl2');
     const maxTextureSize = gl?.getParameter(gl.MAX_TEXTURE_SIZE);

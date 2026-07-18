@@ -34,10 +34,10 @@ check('HTML is never stored by the browser', page.headers.get('cache-control') =
 
 const asset = await get('/assets/index-abc123.js');
 check('fingerprinted assets are immutable', asset.headers.get('cache-control') === 'public, max-age=31556952, immutable', asset.headers.get('cache-control'));
-check('asset responses retain cross-origin isolation',
-  asset.headers.get('cross-origin-opener-policy') === 'same-origin'
-  && asset.headers.get('cross-origin-embedder-policy') === 'require-corp'
-  && asset.headers.get('cross-origin-resource-policy') === 'same-origin');
+check('asset responses do not force cross-origin isolation',
+  asset.headers.get('cross-origin-opener-policy') === null
+  && asset.headers.get('cross-origin-embedder-policy') === null
+  && asset.headers.get('cross-origin-resource-policy') === null);
 
 const missing = await get('/assets/removed-build.js');
 check('missing old deployment asset is a real 404', missing.status === 404, String(missing.status));

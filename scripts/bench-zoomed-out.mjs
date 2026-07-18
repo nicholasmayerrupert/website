@@ -1,5 +1,5 @@
 // Browser benchmark for the expensive extreme-zoom workload. It exercises the
-// real creative world worker (including nested WASM pthreads), pans, then paints
+// real creative world worker, pans, then paints
 // water while reporting sustained world TPS and worker step latency.
 //
 //   node scripts/bench-zoomed-out.mjs
@@ -14,7 +14,6 @@ const flag = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ?
 const stringFlag = (name, fallback) => { const i = args.indexOf(name); return i >= 0 ? String(args[i + 1]) : fallback; };
 const hasFlag = (name) => args.includes(name);
 const targetCols = flag('--cols', 1120), targetRows = flag('--rows', 1056);
-const requestedThreads = flag('--threads', NaN);
 const selectedCase = stringFlag('--case', 'default');
 if (!['default', 'pan', 'water', 'fire', 'acid', 'all'].includes(selectedCase)) throw new Error(`unknown --case ${selectedCase}`);
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
@@ -23,9 +22,7 @@ const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', '5181', '-
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
 });
 const cleanup = async (browser, page) => {
-  // Let <sand-game> terminate its outer worker and nested pthreads before
-  // closing Chromium. Abrupt browser.close() can otherwise wait indefinitely
-  // on a worker blocked in a pthread barrier.
+  // Let <sand-game> terminate its worker before closing Chromium.
   await page?.evaluate(() => document.querySelector('sand-game')?.remove()).catch(() => {});
   await new Promise((resolve) => setTimeout(resolve, 250));
   await Promise.race([
@@ -56,9 +53,6 @@ const summarize = (samples) => {
     renderMs: median(values('renderMs')), lightMs: median(values('lightMs')),
     fillMs: median(values('fillMs')), uploadMs: median(values('uploadMs')),
     mirrorApplyMs: median(values('mirrorApplyMs')),
-    threads: median(values('workerThreadWorkers')) + 1,
-    parallelMs: median(values('workerParallelWallMs')),
-    parallelWaitMs: median(values('workerParallelWaitMs')),
     toolWrites: writes, toolWritesTotal: last?.workerToolWrites || 0,
   };
 };
@@ -76,7 +70,6 @@ try {
     if (reload) await page.reload({ waitUntil: 'networkidle' });
     else {
       const query = new URLSearchParams();
-      if (Number.isFinite(requestedThreads)) query.set('sandThreads', requestedThreads | 0);
       await page.goto(`http://localhost:5181/fps${query.size ? `?${query}` : ''}`, { waitUntil: 'networkidle' });
     }
     await page.waitForFunction(() => window.__sandTest?.info().cols > 0 && window.__sandPerf?.().worldTick > 0, null, { timeout: 60000 });
@@ -137,7 +130,6 @@ try {
   await cleanup(browser, page);
 }
 if (failure) console.error(failure);
-// Nested Emscripten pthread workers can leave Playwright transport handles open
-// after Chromium has been force-closed. This is a standalone benchmark CLI, so
-// finish with the scenario's explicit status after cleanup.
+// This is a standalone benchmark CLI, so finish with the scenario's explicit
+// status after cleanup.
 process.exit(failure ? 1 : 0);

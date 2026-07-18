@@ -77,23 +77,12 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   - `cpp/engine/camera.inc` — the view camera (pan/bounds/follow), the
     pointer→aim-cell mapping, the player input bitmask, and the fixed-tick pan /
     world-stream drivers. JS just forwards held keys + the pointer.
-- `wasm/` — `build.sh` compiles `cpp/` to the fallback `sandEngine.js` and the
-  pthread-enabled `sandEngineThreaded.js` (self-contained ES modules with wasm
-  embedded; built with WebGL2/`FULL_ES3`). The site serves COOP/COEP headers and
-  selects the threaded module when cross-origin isolated; third-party embeds
-  retain the fallback, and a threaded initialization failure retries there. The
-  Safari/WebKit Vite-development path also uses the fallback because WebKit
-  blocks Vite's nested pthread bootstrap; production Safari remains threaded.
-  The threaded engine owns an adaptive persistent pool
-  (`hardwareConcurrency - 2`, capped at seven workers; the caller participates).
-  Offline play partitions that budget before module initialization, so the
-  render mirror and authority worker prewarm only their assigned shares. The pool
-  parallelizes visible/full pixel fill, movement/reaction candidate discovery,
-  loose-support columns, component indexing/carry, component-adjacency construction,
-  static rigid grounding, and world snapshot/diff encoding. Both the main renderer and local authority worker select this build
-  when cross-origin isolated. The build also
-  writes `src/sand/wasm/build-info.json` provenance. Outputs are committed, so a
-  normal `npm run build` never needs the C++ toolchain.
+- `wasm/` — `build.sh` compiles `cpp/` to the self-contained ES module
+  `sandEngine.js` (WASM embedded; built with WebGL2/`FULL_ES3`). The same
+  single-threaded module runs in the presentation realm and the authority
+  worker. The build also writes `src/sand/wasm/build-info.json` provenance.
+  Outputs are committed, so a normal `npm run build` never needs the C++
+  toolchain.
   At extreme zoom (>900k loaded cells), grid-aligned component grounding and
   assembly motion use a deterministic 30 Hz structural cadence while loose
   materials, reactions, tools, and actors retain their normal clocks. Reaction
@@ -309,10 +298,9 @@ update.
 
 `renderAnim` in `materials.schema.json` is the single source for render-only
 texture animation. The generated C++ `MAT_RENDER_ANIM` table drives stationary
-shimmer for fire, steam/smoke, water/brine, oil, acid, and lava identically in
-threaded and fallback builds. Each material derives its own shimmer speed from a
-shared 12 Hz wall-clock cadence; animation never wakes a settled simulation cell
-or triggers a lighting solve. The WebGL presenter
+shimmer for fire, steam/smoke, water/brine, oil, acid, and lava. Each material
+derives its own shimmer speed from a shared 12 Hz wall-clock cadence; animation
+never wakes a settled simulation cell or triggers a lighting solve. The WebGL presenter
 tracks animation presence per visible chunk, then refills and uploads only those
 chunks between ordinary world updates; static terrain grain remains locked to
 absolute world coordinates.

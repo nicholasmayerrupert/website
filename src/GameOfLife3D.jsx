@@ -1137,7 +1137,6 @@ export default function GameOfLife3D({
                     className="mt-1 aspect-square w-full max-h-[min(72vw,18rem)] max-w-[min(72vw,18rem)] self-center touch-none rounded-md border border-white/15 bg-gray-950/25 min-[801px]:h-auto min-[801px]:max-h-64 min-[801px]:w-64 min-[801px]:max-w-full"
                     aria-label="Editable toroidal view of the current Game of Life layer"
                   />
-                  <p className="m-0 mt-1.5 text-center text-[9px] leading-tight text-white/45">Click a cell to edit. Drag to rotate.</p>
                   <div className="mt-2 grid grid-cols-3 gap-1">
                     {["draw", "erase"].map((mode) => (
                       <button key={mode} type="button" onClick={() => setDrawMode(mode)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold capitalize transition ${drawMode === mode ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={drawMode === mode}>{mode}</button>

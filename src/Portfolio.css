@@ -278,10 +278,6 @@ body {
   transition: opacity 240ms ease;
 }
 
-.life-showcase--active .life-showcase__copy {
-  opacity: 0.38;
-}
-
 .toolbox {
   display: grid;
   grid-template-columns: minmax(220px, 0.8fr) 2fr;

@@ -72,8 +72,11 @@ export default function GameOfLife3D({
 }) {
   const canvasHostRef = useRef(null);
   const editorCanvasRef = useRef(null);
+  const toroidalCanvasRef = useRef(null);
+  const renderToroidalLayerRef = useRef(() => {});
   const speedRef = useRef(DEFAULT_STEPS_PER_SECOND);
   const pausedRef = useRef(false);
+  const drawModeRef = useRef("draw");
   const seedRequestRef = useRef(null);
   const manualRotateRef = useRef(false);
   const resumeStepResetRef = useRef(false);
@@ -98,6 +101,7 @@ export default function GameOfLife3D({
   const [paused, setPaused] = useState(false);
   const [drawMode, setDrawMode] = useState("draw");
   const [gridSize, setGridSize] = useState(16);
+  const [layerView, setLayerView] = useState("toroidal");
   const [activeTab, setActiveTab] = useState("simulate");
   const [searchMode, setSearchMode] = useState(null);
   const [searchError, setSearchError] = useState("");
@@ -157,6 +161,10 @@ export default function GameOfLife3D({
   }, [paused]);
 
   useEffect(() => {
+    drawModeRef.current = drawMode;
+  }, [drawMode]);
+
+  useEffect(() => {
     seedInputRef.current = seedInput;
   }, [seedInput]);
 
@@ -177,7 +185,7 @@ export default function GameOfLife3D({
 
   useEffect(() => {
     if (activeTab === "simulate") simulationApiRef.current.renderEditor();
-  }, [activeTab]);
+  }, [activeTab, layerView]);
 
   const applySeed = (seedText = seedInput) => {
     seedRequestRef.current = seedToLayer(seedText, gridSize);
@@ -388,12 +396,14 @@ export default function GameOfLife3D({
     };
 
     const renderEditor = () => {
+      const topLayer = cells[cells.length - 1];
+      renderToroidalLayerRef.current(topLayer);
+
       const canvas = editorCanvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       const cellSize = EDITOR_CANVAS_SIZE / width;
-      const topLayer = cells[cells.length - 1];
 
       ctx.clearRect(0, 0, EDITOR_CANVAS_SIZE, EDITOR_CANVAS_SIZE);
 
@@ -689,13 +699,303 @@ export default function GameOfLife3D({
     };
   }, [gridSize]);
 
+  useEffect(() => {
+    if (!controlsOpen || activeTab !== "simulate" || layerView !== "toroidal") {
+      renderToroidalLayerRef.current = () => {};
+      return undefined;
+    }
+
+    const canvas = toroidalCanvasRef.current;
+    if (!canvas) return undefined;
+    const context = canvas.getContext("2d");
+    if (!context) return undefined;
+
+    const majorRadius = 1.65;
+    const minorRadius = 0.72;
+    const defaultTilt = -Math.PI * 0.26;
+    const autoRotationSpeed = 0.00018;
+    const cameraDistance = 7;
+    let currentLayer = new Uint8Array(gridSize * gridSize);
+    let rotation = -0.25;
+    let tilt = defaultTilt;
+    let tiltCos = Math.cos(tilt);
+    let tiltSin = Math.sin(tilt);
+    let viewWidth = EDITOR_CANVAS_SIZE;
+    let viewHeight = EDITOR_CANVAS_SIZE;
+    let hitTiles = [];
+    let pointerInteraction = null;
+    let autoRotationResumeAt = 0;
+    let resumeTransition = null;
+    let autoRotationAtFullSpeed = true;
+
+    const setTilt = (value) => {
+      tilt = value;
+      tiltCos = Math.cos(tilt);
+      tiltSin = Math.sin(tilt);
+    };
+
+    const pointOnTorus = (u, v) => {
+      const ringRadius = majorRadius + minorRadius * Math.cos(v);
+      const x = ringRadius * Math.cos(u);
+      const y = ringRadius * Math.sin(u);
+      const z = minorRadius * Math.sin(v);
+      return {
+        x,
+        y: y * tiltCos - z * tiltSin,
+        z: y * tiltSin + z * tiltCos,
+      };
+    };
+
+    const project = (point, scale) => {
+      const perspective = cameraDistance / (cameraDistance - point.z);
+      return {
+        x: viewWidth * 0.5 + point.x * scale * perspective,
+        y: viewHeight * 0.5 - point.y * scale * perspective,
+      };
+    };
+
+    const drawToroid = () => {
+      context.clearRect(0, 0, viewWidth, viewHeight);
+      const scale = Math.min(viewWidth, viewHeight) * 0.195;
+      const angleStep = (Math.PI * 2) / gridSize;
+      const tiles = [];
+
+      for (let z = 0; z < gridSize; z++) {
+        const v0 = z * angleStep;
+        const v1 = (z + 1) * angleStep;
+        for (let x = 0; x < gridSize; x++) {
+          const u0 = x * angleStep + rotation;
+          const u1 = (x + 1) * angleStep + rotation;
+          const corners = [
+            pointOnTorus(u0, v0),
+            pointOnTorus(u1, v0),
+            pointOnTorus(u1, v1),
+            pointOnTorus(u0, v1),
+          ];
+          const centerU = (x + 0.5) * angleStep + rotation;
+          const centerV = (z + 0.5) * angleStep;
+          const normalY = Math.cos(centerV) * Math.sin(centerU);
+          const normalZ = Math.sin(centerV);
+          const tiltedNormalZ = normalY * tiltSin + normalZ * tiltCos;
+          tiles.push({
+            alive: currentLayer[z * gridSize + x],
+            brightness: clamp(0.64 + tiltedNormalZ * 0.28, 0.38, 0.92),
+            corners,
+            depth: corners.reduce((sum, corner) => sum + corner.z, 0) * 0.25,
+            x,
+            z,
+          });
+        }
+      }
+
+      tiles.sort((a, b) => a.depth - b.depth);
+      context.lineJoin = "round";
+      context.lineWidth = gridSize > 40 ? 0.35 : 0.65;
+      for (const tile of tiles) {
+        tile.screenCorners = tile.corners.map((corner) => project(corner, scale));
+        const first = tile.screenCorners[0];
+        context.beginPath();
+        context.moveTo(first.x, first.y);
+        for (let i = 1; i < tile.screenCorners.length; i++) {
+          const corner = tile.screenCorners[i];
+          context.lineTo(corner.x, corner.y);
+        }
+        context.closePath();
+        const level = Math.round((tile.alive ? 255 : 30) * tile.brightness);
+        context.fillStyle = `rgb(${level}, ${level}, ${tile.alive ? level : Math.round(level * 1.35)})`;
+        context.strokeStyle = tile.alive ? "rgba(255,255,255,0.55)" : "rgba(100,116,139,0.52)";
+        context.fill();
+        context.stroke();
+      }
+      hitTiles = tiles;
+    };
+
+    const renderLayer = (layer) => {
+      if (layer?.length !== gridSize * gridSize) return;
+      currentLayer = layer.slice();
+    };
+    renderToroidalLayerRef.current = renderLayer;
+    renderLayer(simulationApiRef.current.getTopLayer());
+
+    const resize = () => {
+      viewWidth = Math.max(1, canvas.clientWidth);
+      viewHeight = Math.max(1, canvas.clientHeight);
+      const pixelRatio = Math.min(1.5, window.devicePixelRatio || 1);
+      canvas.width = Math.round(viewWidth * pixelRatio);
+      canvas.height = Math.round(viewHeight * pixelRatio);
+      context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      drawToroid();
+    };
+    resize();
+    const resizeObserver = new ResizeObserver(resize);
+    resizeObserver.observe(canvas);
+
+    const pointerPosition = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: ((event.clientX - rect.left) / Math.max(1, rect.width)) * viewWidth,
+        y: ((event.clientY - rect.top) / Math.max(1, rect.height)) * viewHeight,
+      };
+    };
+
+    const pointInPolygon = (point, polygon) => {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const a = polygon[i];
+        const b = polygon[j];
+        if (
+          (a.y > point.y) !== (b.y > point.y) &&
+          point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x
+        ) {
+          inside = !inside;
+        }
+      }
+      return inside;
+    };
+
+    const cellAtPoint = (point) => {
+      for (let i = hitTiles.length - 1; i >= 0; i--) {
+        const tile = hitTiles[i];
+        if (pointInPolygon(point, tile.screenCorners)) return tile;
+      }
+      return null;
+    };
+
+    const onToroidPointerDown = (event) => {
+      const point = pointerPosition(event);
+      pointerInteraction = {
+        pointerId: event.pointerId,
+        startX: point.x,
+        startY: point.y,
+        lastX: point.x,
+        lastY: point.y,
+        dragging: false,
+        erase:
+          drawModeRef.current === "erase" ||
+          event.button === 2 ||
+          event.altKey ||
+          event.shiftKey,
+      };
+      autoRotationResumeAt = Infinity;
+      resumeTransition = null;
+      autoRotationAtFullSpeed = false;
+      canvas.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+    };
+
+    const onToroidPointerMove = (event) => {
+      if (!pointerInteraction || pointerInteraction.pointerId !== event.pointerId) return;
+      const point = pointerPosition(event);
+      const totalDistance = Math.hypot(
+        point.x - pointerInteraction.startX,
+        point.y - pointerInteraction.startY
+      );
+      if (totalDistance > 5) pointerInteraction.dragging = true;
+      if (pointerInteraction.dragging) {
+        rotation += (point.x - pointerInteraction.lastX) * 0.012;
+        setTilt(tilt + (point.y - pointerInteraction.lastY) * 0.008);
+        canvas.style.cursor = "grabbing";
+        drawToroid();
+      }
+      pointerInteraction.lastX = point.x;
+      pointerInteraction.lastY = point.y;
+      event.preventDefault();
+    };
+
+    const finishToroidPointer = (event, editCell) => {
+      if (!pointerInteraction || pointerInteraction.pointerId !== event.pointerId) return;
+      const interaction = pointerInteraction;
+      pointerInteraction = null;
+      if (editCell && !interaction.dragging) {
+        const tile = cellAtPoint(pointerPosition(event));
+        if (tile) simulationApiRef.current.setTopCell(tile.x, tile.z, !interaction.erase);
+      }
+      autoRotationResumeAt = performance.now() + AUTO_ROTATION_RESUME_MS;
+      canvas.style.cursor = "grab";
+      try {
+        canvas.releasePointerCapture?.(event.pointerId);
+      } catch (_) {
+        // Pointer capture may already be released by the browser.
+      }
+      event.preventDefault();
+    };
+
+    const onToroidPointerUp = (event) => finishToroidPointer(event, true);
+    const onToroidPointerCancel = (event) => finishToroidPointer(event, false);
+    const onToroidContextMenu = (event) => event.preventDefault();
+    canvas.style.cursor = "grab";
+    canvas.addEventListener("pointerdown", onToroidPointerDown);
+    canvas.addEventListener("pointermove", onToroidPointerMove);
+    canvas.addEventListener("pointerup", onToroidPointerUp);
+    canvas.addEventListener("pointercancel", onToroidPointerCancel);
+    canvas.addEventListener("lostpointercapture", onToroidPointerCancel);
+    canvas.addEventListener("contextmenu", onToroidContextMenu);
+
+    let raf = 0;
+    let lastTime = performance.now();
+    let lastDrawTime = lastTime;
+    const frameInterval = 1000 / (gridSize > 40 ? 15 : 30);
+    const animateToroid = (now) => {
+      const dt = Math.min(50, now - lastTime);
+      lastTime = now;
+      if (!pointerInteraction && now >= autoRotationResumeAt) {
+        if (!autoRotationAtFullSpeed) {
+          if (!resumeTransition) {
+            const fullTurn = Math.PI * 2;
+            resumeTransition = {
+              startTime: now,
+              startTilt: tilt,
+              targetTilt:
+                defaultTilt + Math.round((tilt - defaultTilt) / fullTurn) * fullTurn,
+            };
+          }
+          const progress = clamp(
+            (now - resumeTransition.startTime) / PITCH_RESET_DURATION_MS,
+            0,
+            1
+          );
+          const eased = smoothstep(progress);
+          setTilt(
+            resumeTransition.startTilt +
+              (resumeTransition.targetTilt - resumeTransition.startTilt) * eased
+          );
+          rotation += dt * autoRotationSpeed * eased;
+          if (progress === 1) {
+            autoRotationAtFullSpeed = true;
+            resumeTransition = null;
+          }
+        } else {
+          rotation += dt * autoRotationSpeed;
+        }
+      }
+      if (now - lastDrawTime >= frameInterval) {
+        drawToroid();
+        lastDrawTime = now;
+      }
+      raf = requestAnimationFrame(animateToroid);
+    };
+    raf = requestAnimationFrame(animateToroid);
+
+    return () => {
+      renderToroidalLayerRef.current = () => {};
+      cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
+      canvas.removeEventListener("pointerdown", onToroidPointerDown);
+      canvas.removeEventListener("pointermove", onToroidPointerMove);
+      canvas.removeEventListener("pointerup", onToroidPointerUp);
+      canvas.removeEventListener("pointercancel", onToroidPointerCancel);
+      canvas.removeEventListener("lostpointercapture", onToroidPointerCancel);
+      canvas.removeEventListener("contextmenu", onToroidContextMenu);
+    };
+  }, [activeTab, controlsOpen, gridSize, layerView]);
+
   const interactiveClassName = (className || "")
     .replace(/\bpointer-events-none\b/g, "")
     .trim();
   return (
     <div
       className={`${interactiveClassName} relative h-full w-full overflow-hidden pointer-events-auto ${
-        controlsOpen ? "md:grid md:grid-cols-[minmax(0,1fr)_18rem]" : ""
+        controlsOpen ? "md:grid md:grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,21rem)]" : ""
       }`}
     >
       <div ref={canvasHostRef} className="relative h-full min-h-0 w-full" />
@@ -713,7 +1013,7 @@ export default function GameOfLife3D({
 
       {controlsOpen && (
         <form
-          className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-y-auto rounded-lg border border-white/15 bg-gray-900/75 p-3 text-white shadow-2xl backdrop-blur-md md:static md:h-full md:rounded-none md:border-y-0 md:border-r-0 md:border-l md:bg-gray-900/55"
+          className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-white/10 bg-[#101014]/90 p-3 text-white shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl md:static md:m-3 md:ml-0 md:h-auto md:self-stretch md:rounded-[24px] md:border md:bg-[#101014]/72 md:shadow-[0_16px_48px_rgba(0,0,0,0.22)]"
           onSubmit={(event) => {
             event.preventDefault();
             if (activeTab === "simulate") applySeed();
@@ -748,7 +1048,7 @@ export default function GameOfLife3D({
             ))}
           </div>
 
-          <label className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+          <label className="mt-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
             <span>Board</span>
             <span>{gridSize}x{gridSize}</span>
           </label>
@@ -774,11 +1074,11 @@ export default function GameOfLife3D({
 
           {activeTab === "simulate" && (
             <>
-              <label className="mt-3 text-[10px] font-semibold uppercase tracking-wide text-white/70">Seed</label>
+              <label className="mt-2 text-[10px] font-semibold uppercase tracking-wide text-white/70">Seed</label>
               <textarea
                 value={seedInput}
                 onChange={(event) => setSeedInput(event.target.value)}
-                className="mt-1 h-14 w-full resize-none rounded-md border border-white/15 bg-gray-950/45 p-1.5 font-mono text-[9px] leading-tight text-white outline-none focus:border-white/45 sm:h-16 sm:text-[10px]"
+                className="mt-1 h-12 w-full resize-none rounded-md border border-white/15 bg-gray-950/45 p-1.5 font-mono text-[9px] leading-tight text-white outline-none focus:border-white/45 sm:text-[10px]"
                 spellCheck="false"
                 aria-label="Game of Life seed"
               />
@@ -787,29 +1087,62 @@ export default function GameOfLife3D({
                 <button type="button" onClick={randomizeSeed} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Rand</button>
                 <button type="button" onClick={resetDefaultSeed} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Reset</button>
               </div>
-              <div className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
-                <span>Top layer</span><span>{paused ? "Paused" : "Live"}</span>
-              </div>
-              <canvas
-                ref={editorCanvasRef}
-                width={EDITOR_CANVAS_SIZE}
-                height={EDITOR_CANVAS_SIZE}
-                className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] md:max-h-none md:max-w-none md:self-auto"
-                aria-label="Editable top layer of the Game of Life simulation"
-                onContextMenu={(event) => event.preventDefault()}
-                onPointerDown={onEditorPointerDown}
-                onPointerMove={onEditorPointerMove}
-                onPointerUp={onEditorPointerEnd}
-                onPointerCancel={onEditorPointerEnd}
-                onLostPointerCapture={onEditorPointerEnd}
-              />
-              <div className="mt-2 grid grid-cols-3 gap-1">
-                {["draw", "erase"].map((mode) => (
-                  <button key={mode} type="button" onClick={() => setDrawMode(mode)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold capitalize transition ${drawMode === mode ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={drawMode === mode}>{mode}</button>
+              <div className="mt-2 grid grid-cols-2 gap-1" role="tablist" aria-label="Current layer view">
+                {[["toroidal", "Toroidal view"], ["2d", "2D view"]].map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    aria-selected={layerView === id}
+                    onClick={() => setLayerView(id)}
+                    className={`rounded-md px-1 py-1.5 text-[9px] font-semibold transition ${layerView === id ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`}
+                  >
+                    {label}
+                  </button>
                 ))}
-                <button type="button" onClick={clearTopLayer} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Clear</button>
               </div>
-              <label className="mt-3 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
+              <div className="mt-1 text-right text-[9px] font-semibold uppercase tracking-wide text-white/45">{paused ? "Paused" : "Live"}</div>
+              {layerView === "2d" ? (
+                <>
+                  <canvas
+                    ref={editorCanvasRef}
+                    width={EDITOR_CANVAS_SIZE}
+                    height={EDITOR_CANVAS_SIZE}
+                    className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] md:h-auto md:max-h-64 md:w-64 md:max-w-full"
+                    aria-label="Editable current layer of the Game of Life simulation"
+                    onContextMenu={(event) => event.preventDefault()}
+                    onPointerDown={onEditorPointerDown}
+                    onPointerMove={onEditorPointerMove}
+                    onPointerUp={onEditorPointerEnd}
+                    onPointerCancel={onEditorPointerEnd}
+                    onLostPointerCapture={onEditorPointerEnd}
+                  />
+                  <div className="mt-2 grid grid-cols-3 gap-1">
+                    {["draw", "erase"].map((mode) => (
+                      <button key={mode} type="button" onClick={() => setDrawMode(mode)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold capitalize transition ${drawMode === mode ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={drawMode === mode}>{mode}</button>
+                    ))}
+                    <button type="button" onClick={clearTopLayer} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Clear</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <canvas
+                    ref={toroidalCanvasRef}
+                    width={EDITOR_CANVAS_SIZE}
+                    height={EDITOR_CANVAS_SIZE}
+                    className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-gray-950/25 md:h-auto md:max-h-64 md:w-64 md:max-w-full"
+                    aria-label="Editable toroidal view of the current Game of Life layer"
+                  />
+                  <p className="m-0 mt-1.5 text-center text-[9px] leading-tight text-white/45">Click a cell to edit. Drag to rotate.</p>
+                  <div className="mt-2 grid grid-cols-3 gap-1">
+                    {["draw", "erase"].map((mode) => (
+                      <button key={mode} type="button" onClick={() => setDrawMode(mode)} className={`rounded-md px-1.5 py-1 text-[9px] font-semibold capitalize transition ${drawMode === mode ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={drawMode === mode}>{mode}</button>
+                    ))}
+                    <button type="button" onClick={clearTopLayer} className="rounded-md bg-white/10 px-1.5 py-1 text-[9px] font-semibold text-white transition hover:bg-white/20">Clear</button>
+                  </div>
+                </>
+              )}
+              <label className="mt-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
                 <span>Speed</span><span>{speed}/s</span>
               </label>
               <input type="range" min="1" max="30" step="1" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="mt-1 w-full accent-white" aria-label="Game of Life simulation speed" />

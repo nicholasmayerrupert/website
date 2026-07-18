@@ -78,7 +78,6 @@ function ProjectCard({ project }) {
 export default function TileGrid() {
   const sectionRef = useRef(null);
   const [artActive, setArtActive] = useState(false);
-  const [lifeActive, setLifeActive] = useState(false);
 
   useEffect(() => {
     const el = sectionRef.current;
@@ -114,7 +113,7 @@ export default function TileGrid() {
           ))}
         </div>
 
-        <article className={`life-showcase portfolio-reveal${lifeActive ? ' life-showcase--active' : ''}`}>
+        <article className="life-showcase portfolio-reveal">
           <div className="life-showcase__copy">
             <div>
               <p className="portfolio-eyebrow">Three.js · Cellular automata</p>
@@ -141,8 +140,7 @@ export default function TileGrid() {
           <div className="life-showcase__stage">
             <GameOfLife3D
               className="h-full w-full"
-              defaultControlsOpen={false}
-              onControlsOpenChange={setLifeActive}
+              defaultControlsOpen
             />
           </div>
         </article>

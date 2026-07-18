@@ -1107,6 +1107,7 @@ export default function GameOfLife3D({
               {layerView === "2d" ? (
                 <>
                   <canvas
+                    key="life-layer-2d"
                     ref={editorCanvasRef}
                     width={EDITOR_CANVAS_SIZE}
                     height={EDITOR_CANVAS_SIZE}
@@ -1129,6 +1130,7 @@ export default function GameOfLife3D({
               ) : (
                 <>
                   <canvas
+                    key="life-layer-toroidal"
                     ref={toroidalCanvasRef}
                     width={EDITOR_CANVAS_SIZE}
                     height={EDITOR_CANVAS_SIZE}

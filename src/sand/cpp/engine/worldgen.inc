@@ -956,6 +956,7 @@
     for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
     L->bodyCells.clear();
     L->pendingDetonations.clear(); // lit-fuse cell indices are buffer-local; drop them on a shift (a rare lost fuse)
+    L->blastLocalCarryTicks = 0;
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
     csSaveBodiesLeaving(lx0, ly0, lw, lh);
     csSaveTiles(lx0, ly0, lw, lh);
@@ -1077,6 +1078,7 @@
       for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
       L->bodyCells.clear();
       L->pendingDetonations.clear();
+      L->blastLocalCarryTicks = 0;
       csSaveBodiesLeaving(0, 0, cols, rows); // all bodies -> bodyStore (world keys)
       csSaveTiles(0, 0, cols, rows);
       // Components are buffer-indexed; drop and re-register after refill.

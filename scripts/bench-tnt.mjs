@@ -56,6 +56,10 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     // JS->Wasm placement calls dominating benchmark runtime.
     engine.paintDisc(cx, cy, Math.max(cols, rows), MAT.STONE, true);
     engine.eraseDisc(cx, cy, 10);
+    // Real play keeps a fully simulated, more-solid background behind many
+    // foreground caves. Include it when this scenario enables both layers so
+    // the benchmark catches joint-grounding invalidation on a cave blast.
+    if (bg) engine.paintDiscLayer(1, cx, cy, Math.max(cols, rows), MAT.STONE, true);
   } else if (buried) {
     for (let y = cy + 1; y < rows; y++)
       for (let x = 20; x < cols - 20; x++) engine.placeMaterial(x, y, 0, MAT.STONE);
@@ -138,6 +142,7 @@ const scenarios = [
   { name: 'single-open-dual-layer', cols: 512, rows: 256, bg: true, steps: 40 },
   { name: 'single-buried-stone', cols: 384, rows: 224, buried: true, steps: 40 },
   { name: 'single-cave-stone', cols: 384, rows: 224, cave: true, steps: 40 },
+  { name: 'single-cave-stone-dual-layer', cols: 384, rows: 224, cave: true, bg: true, steps: 40 },
   { name: 'chain-25x25', cols: 260, rows: 220, side: 25, steps: 70 },
   { name: 'chain-49x49', cols: 260, rows: 220, side: 49, steps: 90 },
   { name: 'chain-49-wide-stone-bed', cols: 260, rows: 220, side: 49, buried: true, steps: 90 },

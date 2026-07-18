@@ -279,8 +279,16 @@ void ReactionSystem::applyIce() {
     for (size_t ci = 0; ci < iceN; ci++) {
       int k = comp.cells[ci];
       if (E.L->grid[k] != ICE) continue;
+      int y = k / E.cols, x = k - y * E.cols;
       int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
-      uint8_t rm = E.L->grid[right], lm = E.L->grid[left], dm = E.L->grid[down], um = E.L->grid[up];
+      // A floating ice component can legitimately settle on the last row. Keep
+      // its reaction probes inside the grid; an unchecked floor `down` read could
+      // alias unrelated WASM memory and, when that byte looked like WATER, append
+      // an out-of-bounds ICE cell nondeterministically.
+      uint8_t rm = x + 1 < E.cols ? E.L->grid[right] : EMPTY;
+      uint8_t lm = x > 0 ? E.L->grid[left] : EMPTY;
+      uint8_t dm = y + 1 < E.rows ? E.L->grid[down] : EMPTY;
+      uint8_t um = y > 0 ? E.L->grid[up] : EMPTY;
       if (rm == FIRE || rm == LAVA || lm == FIRE || lm == LAVA || dm == FIRE || dm == LAVA || um == FIRE || um == LAVA) { E.writeGridIndex(k, WATER); meltedCells.push_back(k); melted = true; continue; }
       // Salt de-ices: ice touching a salt grain melts to BRINE (not water), and the
       // grain is spent (also -> brine). Brine never refreezes because the freeze

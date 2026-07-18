@@ -397,6 +397,8 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
     // entries need clearing; the next tick can skip grounding altogether.
     for (int k : allErased) E.L->cellComp[k] = -1;
   }
+  bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;
+  if (bb.structurePreserved) E.L->blastLocalCarryTicks = imax(E.L->blastLocalCarryTicks, 6);
   spawnBlastRingGases(bb.gasShockwaves);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
@@ -415,6 +417,8 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
 
 void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   Layer* src = E.L;
+  bool jointDirtyBefore = E.comps.jointDirty;
+  bool jointBondsInvalidBefore = E.comps.jointBondsInvalid;
   if (E.bgEnabled && otherBb) {
     Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
     E.useLayer(other);
@@ -422,6 +426,28 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
     E.useLayer(src);
   }
   finishBlasts(bb);
+  // A settled cave crater commonly removes only a trailing, isolated TNT
+  // component and locally bores two still-grounded terrain components. The
+  // per-layer proofs above leave every surviving positional component id and
+  // grounded bit exact. In that case the generic erase hook's joint invalidation
+  // is unnecessary: there are no live residual bonds to repair, and the only
+  // positional-cache change is truncating now-dead trailing entries.
+  bool otherPreserved = !E.bgEnabled || !otherBb || !otherBb->any || otherBb->structurePreserved;
+  if (E.bgEnabled && bb.structurePreserved && otherPreserved
+      && E.comps.jointSupportValid && E.comps.cgBonds.empty()) {
+    auto trimTrailingCaches = [&](Layer& lay) {
+      size_t count = lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size();
+      if (lay.groundBaseFlags.size() > count) lay.groundBaseFlags.resize(count);
+      if (lay.crossBondedComp.size() > count) lay.crossBondedComp.resize(count);
+      lay.compAdjPairs.erase(std::remove_if(lay.compAdjPairs.begin(), lay.compAdjPairs.end(), [&](uint64_t packed) {
+        return (size_t)(packed >> 32) >= count || (size_t)(uint32_t)packed >= count;
+      }), lay.compAdjPairs.end());
+    };
+    trimTrailingCaches(E.fg);
+    trimTrailingCaches(E.bg);
+    E.comps.jointDirty = jointDirtyBefore;
+    E.comps.jointBondsInvalid = jointBondsInvalidBefore;
+  }
 }
 
 // Single-blast convenience wrapper (one crater, its own finalize).

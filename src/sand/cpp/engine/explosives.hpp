@@ -65,7 +65,7 @@ class ExplosivesSystem {
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
     int particles = 0, debrisSpawned = 0, debrisStepCap = BLAST_DEBRIS_STEP_CAP;
-    bool any = false;
+    bool any = false, structurePreserved = false;
   };
 
   // Schedule a detonation at a cell (no-op if one is already pending there, so a fuse

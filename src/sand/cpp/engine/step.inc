@@ -47,41 +47,69 @@
 
     double tC = emscripten_get_now();
     prepareNextBuffer();
-    // carry-forward component + body cells across the double buffer
-    L->curCompCells.clear();
-    // Carry component cells forward in `L->next` keeping each cell's actual material
-    // (L->grid[k]) so stone-group ores and any future ice-group materials survive the
-    // double-buffer swap instead of collapsing to STONE/ICE.
+    // A rigid/gas-only tick can synchronize just the active/marked union. Loose
+    // grounding and density motion retain the established full component carry:
+    // their sparse dirty-column cache is order-sensitive, and the full path is
+    // already a small fraction of those heavier settling ticks. This keeps a
+    // million-cell cave blast local without changing loose-material behavior.
+    bool localRigidCarry = L->blastLocalCarryTicks > 0
+      && !L->looseGroundDirty && L->assemblyRelocatedCells.empty();
+    if (localRigidCarry) {
+      auto carryRigidRow = [&](int y) {
+        int minX = L->activeRowMin[y], maxX = L->activeRowMax[y];
+        if (L->rowMarkMax[y] >= L->rowMarkMin[y]) {
+          minX = imin(minX, L->rowMarkMin[y]);
+          maxX = imax(maxX, L->rowMarkMax[y]);
+        }
+        minX = imax(0, minX); maxX = imin(cols - 1, maxX);
+        if (maxX < minX) return;
+        int rb = y * cols;
+        for (int x = minX; x <= maxX; x++) {
+          int k = rb + x;
+          if (isRigidMaterialClass(L->grid[k]) || isRigidMaterialClass(L->next[k]))
+            L->next[k] = L->grid[k];
+        }
+      };
 #ifdef __EMSCRIPTEN_PTHREADS__
-    carryComps.clear(); carryOffsets.clear();
-    carryComps.reserve(L->stoneComponents.size() + L->plantComponents.size() + L->iceComponents.size());
-    carryOffsets.reserve(carryComps.capacity());
-    size_t carryCount = 0;
-    auto queueCarry = [&](std::vector<Comp>& list) {
-      for (auto& comp : list) { carryComps.push_back(&comp); carryOffsets.push_back(carryCount); carryCount += comp.cells.size(); }
-    };
-    queueCarry(L->stoneComponents); queueCarry(L->plantComponents); queueCarry(L->iceComponents);
-    size_t bodyCarryBase = carryCount;
-    carryCount += L->bodyCells.size();
-    L->curCompCells.resize(carryCount);
-    chunkPool.parallelFor((int)carryComps.size(), [&](int ci) {
-      Comp& comp = *carryComps[ci]; size_t out = carryOffsets[ci];
-      for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[out++] = k; }
-    });
-    chunkPool.parallelFor((int)L->bodyCells.size(), [&](int i) {
-      int k = L->bodyCells[i]; L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[bodyCarryBase + i] = k;
-    });
+      chunkPool.parallelFor(rows, [&](int y) { carryRigidRow(y); });
 #else
-    for (auto& comp : L->stoneComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-    for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); } // body-material invariant: carry the body's real material, not RIGID
+      for (int y = 0; y < rows; y++) carryRigidRow(y);
 #endif
-    for (int k : L->prevCompCells) {
-      if (L->compOccStamp[k] == tick) continue;
-      if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
-      else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
+    } else {
+      L->curCompCells.clear();
+#ifdef __EMSCRIPTEN_PTHREADS__
+      carryComps.clear(); carryOffsets.clear();
+      carryComps.reserve(L->stoneComponents.size() + L->plantComponents.size() + L->iceComponents.size());
+      carryOffsets.reserve(carryComps.capacity());
+      size_t carryCount = 0;
+      auto queueCarry = [&](std::vector<Comp>& list) {
+        for (auto& comp : list) { carryComps.push_back(&comp); carryOffsets.push_back(carryCount); carryCount += comp.cells.size(); }
+      };
+      queueCarry(L->stoneComponents); queueCarry(L->plantComponents); queueCarry(L->iceComponents);
+      size_t bodyCarryBase = carryCount;
+      carryCount += L->bodyCells.size();
+      L->curCompCells.resize(carryCount);
+      chunkPool.parallelFor((int)carryComps.size(), [&](int ci) {
+        Comp& comp = *carryComps[ci]; size_t out = carryOffsets[ci];
+        for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[out++] = k; }
+      });
+      chunkPool.parallelFor((int)L->bodyCells.size(), [&](int i) {
+        int k = L->bodyCells[i]; L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells[bodyCarryBase + i] = k;
+      });
+#else
+      for (auto& comp : L->stoneComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+#endif
+      for (int k : L->prevCompCells) {
+        if (L->compOccStamp[k] == tick) continue;
+        if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
+        else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
+      }
+      std::swap(L->prevCompCells, L->curCompCells);
     }
+    if (L->blastLocalCarryTicks > 0) L->blastLocalCarryTicks--;
     // Component displacement already moved these media once in the live grid.
     // Carry them through the freshly blanked next buffer and stamp them so the
     // loose pass cannot move the same volume a second time this tick.
@@ -91,7 +119,6 @@
       L->next[k] = m;
       L->vacatedStamp[k] = tick;
     }
-    std::swap(L->prevCompCells, L->curCompCells);
     perfCarryMs += emscripten_get_now() - tC;
 
     // Build movement candidates once in the exact order each settle pass used

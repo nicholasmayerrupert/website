@@ -19,7 +19,7 @@ void ComponentSystem::indexComponents() {
   cgCompDensity.clear();
 #ifdef __EMSCRIPTEN_PTHREADS__
   auto queue = [&](std::vector<Comp>& list) {
-    for (auto& c : list) { c.grounded = false; cgComps.push_back(&c); }
+    for (auto& c : list) { c.grounded = c.cells.empty(); cgComps.push_back(&c); }
   };
   queue(lay->stoneComponents); queue(lay->plantComponents); queue(lay->iceComponents);
   cgCompDensity.resize(cgComps.size());
@@ -32,7 +32,7 @@ void ComponentSystem::indexComponents() {
 #else
   auto idx = [&](std::vector<Comp>& list) {
     for (auto& c : list) {
-      c.grounded = false;
+      c.grounded = c.cells.empty();
       int id = (int)cgComps.size();
       cgComps.push_back(&c);
       double sum = 0;
@@ -466,7 +466,7 @@ void ComponentSystem::computeGrounded() {
     int32_t* const cc = lay->cellComp.data();
     int32_t* const gstack = lay->groundStack.data();
     std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
-    for (Comp* c : cgComps) c->grounded = false;
+    for (Comp* c : cgComps) c->grounded = c->cells.empty();
     auto canGroundAbove = [&](int below, int above) {
       uint8_t upper = g[above];
       if (!E.isBearingMaterial(upper)) return false;
@@ -522,7 +522,8 @@ void ComponentSystem::computeGrounded() {
     for (int k = 0; k < gridLen; k++) {
       if (nu[k] != grounded[k]) {
         char buf[160];
-        snprintf(buf, sizeof(buf), "GROUND SPLIT PARITY: k=%d (x=%d,y=%d) mat=%d split=%d ref=%d", k, k % E.cols, k / E.cols, (int)g[k], (int)nu[k], (int)grounded[k]);
+        snprintf(buf, sizeof(buf), "GROUND SPLIT PARITY: k=%d (x=%d,y=%d) mat=%d split=%d ref=%d",
+                 k, k % E.cols, k / E.cols, (int)g[k], (int)nu[k], (int)grounded[k]);
         emscripten_console_error(buf);
         abort();
       }
@@ -2309,17 +2310,50 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
   std::vector<Comp>& updated = splitUpdated; updated.clear(); updated.reserve(list.size() + erased.size());
   std::vector<int>& survivors = splitSurvivors;
   std::vector<int>& part = splitPart;
+  bool removedBefore = false;
   for (size_t compIndex = 0; compIndex < list.size(); compIndex++) {
     auto& comp = list[compIndex];
-    if (!touchedByIndex.empty() && !touchedByIndex[compIndex]) { updated.push_back(std::move(comp)); continue; }
+    if (!touchedByIndex.empty() && !touchedByIndex[compIndex]) {
+      if (removedBefore) E.L->compsReshaped = true;
+      updated.push_back(std::move(comp)); continue;
+    }
     bool touched = false;
     std::vector<int>& removedCells = splitErased;
     survivors.clear(); survivors.reserve(comp.cells.size()); removedCells.clear();
     for (int k : comp.cells) { if (splitRemovedSet.has(k)) { touched = true; removedCells.push_back(k); } else survivors.push_back(k); }
-    if (!touched) { updated.push_back(std::move(comp)); continue; }
-    if (survivors.empty()) { E.L->compsReshaped = true; continue; } // comp fully erased -> ids shift
-    if (localConnectivityFastPath && comp.grounded && componentRemovalLocallyConnected(removedCells, survivors,
-                                                                                       indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1)) {
+    if (!touched) {
+      if (removedBefore) E.L->compsReshaped = true;
+      updated.push_back(std::move(comp)); continue;
+    }
+    // On an exact, locally-proven blast removal, retain an empty grounded slot
+    // instead of compacting the positional component array. Cave terrain is
+    // registered in many adjacent chunks, so deleting one isolated TNT slot
+    // otherwise shifts and re-indexes almost the entire loaded world. Empty slots
+    // are inert, survive future index rebuilds as grounded no-ops, and disappear
+    // naturally on the next full component sync/world stream.
+    if (survivors.empty() && localConnectivityFastPath && indexedOffset >= 0) {
+      int dead = indexedOffset + (int)compIndex;
+      comp.cells.clear(); comp.yMax = 0; comp.grounded = true; comp.cacheDirty = iceCache;
+      if (dead >= 0 && dead < (int)E.L->groundBaseFlags.size()) E.L->groundBaseFlags[dead] = 1;
+      if (dead >= 0 && dead < (int)E.L->crossBondedComp.size()) E.L->crossBondedComp[dead] = 0;
+      E.L->compAdjPairs.erase(std::remove_if(E.L->compAdjPairs.begin(), E.L->compAdjPairs.end(), [&](uint64_t packed) {
+        return (int)(packed >> 32) == dead || (int)(uint32_t)packed == dead;
+      }), E.L->compAdjPairs.end());
+      updated.push_back(std::move(comp));
+      continue;
+    }
+    // Outside that exact fast path, compact normally and invalidate only if a
+    // later positional component really shifts.
+    if (survivors.empty()) { removedBefore = true; continue; }
+    if (removedBefore) E.L->compsReshaped = true;
+    // removalsKeepGroundingValid already proved every boundary of the whole
+    // erased batch reconnects through surviving rigid material. Generated cave
+    // terrain is deliberately partitioned into many adjacent components, so a
+    // per-component-only reconnect test can falsely fail at large window sizes
+    // even though the surrounding rigid graph is unchanged. Keep the touched
+    // grounded slot and filter its cells; adjacent component unions preserve the
+    // same global structural group.
+    if (localConnectivityFastPath && comp.grounded) {
       comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
       for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
       updated.push_back(std::move(comp)); continue;
@@ -2341,6 +2375,12 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       c.cells = std::move(part); updated.push_back(std::move(c));
       reused = true;
     }
+  }
+  if (removedBefore) {
+    bool laterGroupSurvives = (&list == &E.L->stoneComponents)
+      ? (!E.L->plantComponents.empty() || !E.L->iceComponents.empty())
+      : (&list == &E.L->plantComponents) ? !E.L->iceComponents.empty() : false;
+    if (laterGroupSurvives) E.L->compsReshaped = true;
   }
   list.swap(updated);
   updated.clear();

@@ -54,7 +54,7 @@ export default function About() {
               <p>
                 Built and maintained two full-stack products: a participant and
                 facilitator platform with check-ins, cohort chat, progress
-                visualizations, moderation, and admin tools; plus a registration
+                visualizations, moderation, and admin tools, and a registration
                 system coordinating deferred Stripe payments, Zoom enrollment,
                 calendar invites, and reminders.
               </p>

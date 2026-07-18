@@ -17,7 +17,8 @@ class ExplosivesSystem {
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
   static const int    TNT_CHAIN_FUSE = 1;    // one-tick rolling front: staged, without idle structural frames
   static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
-  static const int    TNT_CLUSTER_FAST_THRESHOLD = 16; // merge even modest same-tick fronts before stencils overlap heavily
+  static const int    TNT_CLUSTER_FAST_THRESHOLD = 4;  // merge compact brush-sized fronts while keeping the one-tick chain cadence
+  static const int    TNT_COMPACT_FRONT_CELLS = 13;    // one creative click: render as one pulse, not one crater per cell
   static const int    TNT_CLUSTER_BUCKET = 14; // representative spacing; blast radii still overlap into one continuous front
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   static const int    METHANE_BLAST_RADIUS = 16; // one-third broader pressure flash, still smaller than TNT
@@ -71,8 +72,8 @@ class ExplosivesSystem {
     bool any = false, structurePreserved = false, crossSupportUncertain = false;
   };
 
-  // Schedule a detonation at a cell (no-op if one is already pending there, so a fuse
-  // is never shortened by re-ignition).
+  // Schedule a detonation at a cell, shortening an existing fuse only when the new
+  // front is sooner (ordinary heat re-ignition still leaves the fuse unchanged).
   std::vector<std::pair<int, int>> blastBoxCells(int cx, int cy, int halfW, int halfH);
   void queueDetonation(int cell, int fuse);
   void shortenTntBodyFuse(Body* b, int fuse);

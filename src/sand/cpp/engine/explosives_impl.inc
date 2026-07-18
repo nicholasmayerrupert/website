@@ -12,8 +12,12 @@ void ExplosivesSystem::buildTntStencil() {
 
 void ExplosivesSystem::queueDetonation(int cell, int fuse) {
   auto& pd = E.L->pendingDetonations;
-  if (!pd.count(cell)) {
+  auto it = pd.find(cell);
+  if (it == pd.end()) {
     pd[cell] = fuse;
+    E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
+  } else if (fuse < it->second) {
+    it->second = fuse;
     E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
   }
 }
@@ -237,15 +241,19 @@ bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
 
 void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb) {
   if (cells.empty()) return;
-  int bucketCols = (E.cols + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
-  int bucketRows = (E.rows + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
-  std::vector<int> repByBucket((size_t)bucketCols * bucketRows, -1);
   std::vector<int> reps;
-  reps.reserve(cells.size() / 16 + 1);
-  for (int cell : cells) {
-    int y = cell / E.cols, x = cell - y * E.cols;
-    int bi = (y / TNT_CLUSTER_BUCKET) * bucketCols + (x / TNT_CLUSTER_BUCKET);
-    if (repByBucket[bi] < 0) { repByBucket[bi] = cell; reps.push_back(cell); }
+  if ((int)cells.size() <= TNT_COMPACT_FRONT_CELLS) {
+    reps.push_back(cells[cells.size() / 2]);
+  } else {
+    int bucketCols = (E.cols + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
+    int bucketRows = (E.rows + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
+    std::vector<int> repByBucket((size_t)bucketCols * bucketRows, -1);
+    reps.reserve(cells.size() / 16 + 1);
+    for (int cell : cells) {
+      int y = cell / E.cols, x = cell - y * E.cols;
+      int bi = (y / TNT_CLUSTER_BUCKET) * bucketCols + (x / TNT_CLUSTER_BUCKET);
+      if (repByBucket[bi] < 0) { repByBucket[bi] = cell; reps.push_back(cell); }
+    }
   }
 
   bb.any = true;

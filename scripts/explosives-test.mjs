@@ -8,6 +8,7 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 // Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
+import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 140, ROWS = 110, SEED = 0xC0FFEE;
@@ -158,6 +159,55 @@ function blastDamagesMaterial(name) {
   for (let i = 0; i < 200; i++) { e.placeMaterial(28, y, 1, MAT.FIRE); e.step(i * 16); if (count(e.getGrid(), MAT.TNT) === 0) break; } // light the left end from the side
   check(`TNT line existed (${tnt0})`, tnt0 > 30);
   check(`a single spark chained the whole TNT line (0 left)`, count(e.getGrid(), MAT.TNT) === 0);
+  e.destroy();
+}
+
+// --- a compact creative-placement diamond keeps two pretty pulses, not 13 craters ---
+{
+  const e = mk();
+  const cx = 70, cy = 30;
+  for (let oy = -2; oy <= 2; oy++) {
+    const half = 2 - Math.abs(oy);
+    for (let ox = -half; ox <= half; ox++) e.placeMaterial(cx + ox, cy + oy, 0, MAT.TNT);
+  }
+  e.syncComponents();
+  const tnt0 = count(e.getGrid(), MAT.TNT);
+  e.placeMaterial(cx, cy + 3, 1, MAT.FIRE);
+  const pulseIntensity = [];
+  let firstDrop = -1, completed = -1;
+  for (let i = 0; i < 60; i++) {
+    e.step(i * 16);
+    const now = count(e.getGrid(), MAT.TNT);
+    if (firstDrop < 0 && now < tnt0) firstDrop = i;
+    if (completed < 0 && now === 0) completed = i;
+    const sounds = e.drainSoundEvents();
+    for (let s = 0; s < sounds.length; s += 6)
+      if (sounds[s] === SOUND_EVENT.EXPLOSION) pulseIntensity.push(sounds[s + 3]);
+  }
+  check(`creative TNT diamond existed (${tnt0} cells)`, tnt0 === 13);
+  check(`creative TNT diamond retained a two-tick chain (${firstDrop} -> ${completed})`, completed - firstDrop === 1);
+  check(`creative TNT diamond emitted two compact blast fronts (${pulseIntensity.length})`,
+        pulseIntensity.length === 2 && pulseIntensity.every((v) => v <= 1.01));
+  e.destroy();
+}
+
+// --- a blast front shortens an already-lit static fuse instead of leaving a late tail ---
+{
+  const e = mk();
+  const y = ROWS - 2, left = 50, right = 62;
+  e.placeMaterial(left, y, 0, MAT.TNT);
+  e.placeMaterial(right, y, 0, MAT.TNT);
+  e.syncComponents();
+  let firstDrop = -1, completed = -1;
+  for (let i = 0; i < 60; i++) {
+    if (i === 0) e.placeMaterial(left - 1, y, 1, MAT.FIRE);
+    if (i === 8) e.placeMaterial(right + 1, y, 1, MAT.FIRE);
+    e.step(i * 16);
+    const now = count(e.getGrid(), MAT.TNT);
+    if (firstDrop < 0 && now < 2) firstDrop = i;
+    if (completed < 0 && now === 0) completed = i;
+  }
+  check(`blast front shortened the later static fuse (${firstDrop} -> ${completed})`, completed - firstDrop === 1);
   e.destroy();
 }
 

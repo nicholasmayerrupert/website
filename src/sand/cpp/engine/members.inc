@@ -236,12 +236,6 @@
   // Dev-build post-step validator (wasm/build.sh --dev; NEVER commit a dev
   // artifact). Aborts loudly when a structural invariant is broken instead of
   // letting it surface later as flicker/invisible collision.
-  //
-  // KNOWN pre-existing violation (to fix in the rigid/components split): plain
-  // generated-terrain scenes can leave a stale stone-comp cell whose L->grid went
-  // EMPTY mid-move; a fluid then legally settles into it and check B fires with
-  // a liquid material (seen in the grounding/anim suites, post-moveBodies).
-  // Suspected in moveRigidAssemblies/translateAssembly bookkeeping.
   //   A. BODY-MATERIAL: a body-owned cell (L->bodyOwner[k] != -1) must hold a
   //      non-EMPTY material (the body stamps its real material into the L->grid).
   //   B. COMPONENT-CELL: every component cell must hold a material of its

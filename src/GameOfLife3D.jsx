@@ -72,6 +72,7 @@ export default function GameOfLife3D({
   intro,
   labDetails,
 }) {
+  const lifeRootRef = useRef(null);
   const canvasHostRef = useRef(null);
   const editorCanvasRef = useRef(null);
   const toroidalCanvasRef = useRef(null);
@@ -620,11 +621,11 @@ export default function GameOfLife3D({
       lastRenderTime = now;
     };
 
-    // Run the render loop ONLY while the canvas is on-screen and the tab is
-    // visible. Once mounted, About stays mounted (its LazySection never unmounts),
-    // so without this gate the WebGL loop would render at ~60fps forever even when
-    // scrolled far away. Restarting resets the step/render clocks so the sim and
-    // rotation don't fast-forward to "catch up" after being idle.
+    // Run the shared simulation/render loop while either Life card is on-screen
+    // and the tab is visible. On mobile the lab stacks below the 3D canvas, so
+    // observing only `container` would freeze the visible torus as soon as the 3D
+    // card scrolled away. Restarting resets the step/render clocks so the sim and
+    // rotation don't fast-forward to "catch up" after the whole showcase is idle.
     // DEV-only observability for the headless gate test (stripped from prod builds).
     const markRunning = (v) => {
       if (import.meta.env?.DEV && typeof window !== "undefined") window.__gol3dRunning = v;
@@ -651,7 +652,7 @@ export default function GameOfLife3D({
       onScreen = entries.some((entry) => entry.isIntersecting);
       evaluateRun();
     });
-    visibilityObserver.observe(container);
+    visibilityObserver.observe(lifeRootRef.current || container);
     document.addEventListener("visibilitychange", evaluateRun);
     start(); // paint immediately; the observer corrects within a frame if off-screen
 
@@ -986,6 +987,7 @@ export default function GameOfLife3D({
     .trim();
   return (
     <div
+      ref={lifeRootRef}
       className={`${interactiveClassName} relative w-full pointer-events-auto ${
         controlsOpen
           ? "grid h-auto grid-cols-1 gap-[18px] overflow-visible min-[801px]:h-full min-[801px]:grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,21rem)]"

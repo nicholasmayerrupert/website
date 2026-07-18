@@ -476,9 +476,10 @@ hardcoded id list, decides who reacts.
   bodies, and chains adjacent TNT. Chained masses advance as a one-tick rolling
   front (an imminently exploding component skips that tick's assembly move);
   nearby same-tick detonations merge into overlapping spatial blast fronts
-  instead of repeating a crater for every TNT cell. Fully enclosed blasts favor
-  material flecks over short-lived rigid chunks, avoiding an expensive body solve
-  for rubble hidden inside the smoke. Each consumed TNT cell releases one aftermath
+  instead of repeating a crater for every TNT cell. Physical rubble is never
+  suppressed merely because either layer encloses the blast; every candidate still
+  needs local escape space and remains subject to the strict per-step/body caps.
+  Each consumed TNT cell releases one aftermath
   cell: mostly acrid smoke, some steam, and a little fire. Works the same whether
   the TNT is a placed solid or a free TNT body. The fixed-radius crater and gas
   shell reuse one ordered stencil, overlapping blasts use generation-stamped

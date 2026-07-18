@@ -162,22 +162,6 @@ bool ExplosivesSystem::blastEnergyDominated(BlastBatch& bb, int k, double energy
   return false;
 }
 
-bool ExplosivesSystem::blastEnclosed(int cx, int cy, int radius, Layer* peer) {
-  int diag = (radius * 181 + 128) >> 8; // radius / sqrt(2), integer and deterministic
-  const int rim[8][2] = {
-    {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius},
-    {diag, diag}, {diag, -diag}, {-diag, diag}, {-diag, -diag},
-  };
-  int blockedRim = 0;
-  for (const auto& p : rim) {
-    int x = cx + p[0], y = cy + p[1];
-    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) { blockedRim++; continue; }
-    int k = E.I(x, y);
-    if (E.isRigidMaterialClass(E.L->grid[k]) || (peer && E.isRigidMaterialClass(peer->grid[k]))) blockedRim++;
-  }
-  return blockedRim >= 6;
-}
-
 void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
   if (!E.bgEnabled || !E.comps.jointSupportValid || E.comps.jointSleepBlocked) return;
   Layer* own = E.L;
@@ -292,15 +276,9 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   int r2 = radius * radius;
   uint32_t bseed = (uint32_t)E.tick * 2654435761u ^ (uint32_t)(cy * E.cols + cx); // per-blast deterministic seed
   bb.gasShockwaves.push_back({cx, cy, radius, bseed});
-  // Tiny physical chunks are expensive in a sealed cavern: they wake the full
-  // rigid-body/grounding path against the enclosing terrain, yet are hidden by
-  // the smoke and flecks. Eight pre-carve rim probes distinguish a sealed blast
-  // from open air or a surface/buried blast without searching for an escape path.
-  // The crater, shockwave, gas shell, and cosmetic material particles are unchanged.
-  bool enclosed = blastEnclosed(cx, cy, radius);
-  int localDebrisCap = enclosed && explosiveMaterial != METHANE
-                     ? 0
-                     : bb.debrisStepCap;
+  // Physical chunks remain bounded and each candidate must have an escape path,
+  // but enclosing foreground/background terrain does not suppress the budget.
+  int localDebrisCap = bb.debrisStepCap;
   int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
   static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
   int debrisSampleCells[TABLE * SAMPLE_COUNT];
@@ -437,9 +415,9 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, tries);
   }
   // Actual destroyed materials own the bounded budget first. TNT may contribute
-  // a generic open-air fragment only when a slot remains; methane owns no solid
+  // a generic fragment only when a slot remains; methane owns no solid
   // material and therefore never creates generic DEBRIS.
-  if (explosiveMaterial != METHANE && !enclosed && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
+  if (explosiveMaterial != METHANE && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
     spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
 }
 
@@ -487,14 +465,6 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
 
 void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody, uint8_t explosiveMaterial) {
   Layer* src = E.L;
-  // Judge enclosure before either layer is carved. Looking at one layer at a
-  // time makes the foreground crater hide the solid background from its paired
-  // blast, and later fronts in a cave start emitting invisible rubble bodies.
-  // A direction blocked in either depth is blocked in the combined 2-deep world.
-  if (E.bgEnabled && otherBb && explosiveMaterial != METHANE) {
-    Layer* other = src == &E.fg ? &E.bg : &E.fg;
-    if (blastEnclosed(cx, cy, radius, other)) bb.debrisStepCap = otherBb->debrisStepCap = 0;
-  }
   E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), explosiveMaterial, src == &E.bg ? 1 : 0);
   carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial);
   if (!E.bgEnabled || !otherBb) return;

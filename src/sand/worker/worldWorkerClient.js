@@ -131,7 +131,10 @@ export function createWorldWorkerClient(ctx) {
       worker.postMessage(message);
     },
     edge(kind, button) {
-      worker.postMessage({ type: 'edge', kind, button: button | 0, buttons: ctx.mouseButtons | 0, ...worldPoint() });
+      worker.postMessage({
+        type: 'edge', kind, button: button | 0, buttons: ctx.mouseButtons | 0,
+        inside: ctx.inside, drawMode: ctx.drawModeOn, ...worldPoint(),
+      });
     },
     sendInput(input, seq) {
       const e = ctx.engine;

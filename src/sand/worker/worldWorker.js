@@ -188,16 +188,26 @@ function applyEdges() {
   for (const edge of edges) {
     edgesProcessed++;
     const p = toLocal(edge.worldX, edge.worldY);
+    // An edge is a complete pointer sample, while `control` may still describe
+    // the previous RAF (or the previous touch). Keep the continuous state in
+    // lockstep with the edge before applying it, otherwise this same world turn
+    // can start a draft at the new press and immediately extend it back to the
+    // stale control point.
+    if (control) {
+      control.worldX = edge.worldX;
+      control.worldY = edge.worldY;
+      control.buttons = edge.buttons | 0;
+      control.inside = !!edge.inside;
+      control.drawMode = !!edge.drawMode;
+    }
     if (edge.kind === 'down') {
       workerButtons |= edge.button === 2 ? 2 : 1;
-      if (control) control.buttons = edge.buttons | 0;
       engine.pointerDown(p.x, p.y, edge.button);
     }
     else {
       engine.pointerDraft(p.x, p.y);
       engine.pointerUp(edge.button);
       workerButtons &= ~(edge.button === 2 ? 2 : 1);
-      if (control) control.buttons = edge.buttons | 0;
     }
   }
   edges = [];

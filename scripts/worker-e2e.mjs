@@ -401,10 +401,48 @@ try {
       fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3),
     };
   });
+
+  // A pointer edge can reach the authority worker before the next RAF control
+  // sample. Hold the main thread after dispatching touch-down so the worker is
+  // forced to pair that new edge with the old control sample. The draft must
+  // begin only at the new contact, never interpolate back to the stale point.
+  await mobile.evaluate(({ oldX, oldY, newX, newY }) => {
+    const t = window.__sandTest;
+    const canvas = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main');
+    const fire = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, composed: true, cancelable: true, pointerType: 'touch',
+      pointerId: 91, isPrimary: true, button: 0, buttons, clientX: x, clientY: y,
+    }));
+    fire('pointermove', oldX, oldY, 0);
+    t.flushAuthorityControl();
+    fire('pointerdown', newX, newY, 1);
+    const until = performance.now() + 180;
+    while (performance.now() < until) { /* keep RAF from refreshing control */ }
+  }, {
+    oldX: mobileTarget.x - 110, oldY: mobileTarget.y + 170,
+    newX: mobileTarget.x + 70, newY: mobileTarget.y,
+  });
+  await mobile.waitForTimeout(100);
+  const freshTouchDraftCount = await mobile.evaluate(() => window.__sandTest.draftCount());
+  await mobile.evaluate(({ x, y }) => {
+    const canvas = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main');
+    canvas.dispatchEvent(new PointerEvent('pointerup', {
+      bubbles: true, composed: true, cancelable: true, pointerType: 'touch',
+      pointerId: 91, isPrimary: true, button: 0, buttons: 0, clientX: x, clientY: y,
+    }));
+  }, { x: mobileTarget.x + 70, y: mobileTarget.y });
+  await mobile.waitForTimeout(250);
+  check('a fresh mobile touch does not connect to the previous pointer position',
+    freshTouchDraftCount > 0 && freshTouchDraftCount < 100,
+    `${freshTouchDraftCount} draft cells`);
+
+  const afterFreshTouch = await mobile.evaluate(() => ({
+    fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3),
+  }));
   await mobile.touchscreen.tap(mobileTarget.x, mobileTarget.y);
-  await mobile.waitForFunction((before) => window.__sandTest.materialCount(3) > before, mobileTarget.fg);
+  await mobile.waitForFunction((before) => window.__sandTest.materialCount(3) > before, afterFreshTouch.fg);
   const foregroundTap = await mobile.evaluate(() => ({ fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3) }));
-  check('mobile FG tap writes to the foreground', foregroundTap.fg > mobileTarget.fg && foregroundTap.bg === mobileTarget.bg);
+  check('mobile FG tap writes to the foreground', foregroundTap.fg > afterFreshTouch.fg && foregroundTap.bg === afterFreshTouch.bg);
 
   await mobileGame.locator('.sg-layer').tap();
   const layerState = await mobileGame.locator('.sg-layer').evaluate((button) => ({

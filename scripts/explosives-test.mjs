@@ -19,6 +19,7 @@ const GAS = new Set([MAT.FIRE, MAT.STEAM, MAT.ACRID_SMOKE]);
 const AFTERMATH = [MAT.ACRID_SMOKE, MAT.STEAM, MAT.FIRE];
 const carvedInBox = (g, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; const v = g[y * COLS + x]; if (v === MAT.EMPTY || GAS.has(v)) n++; } return n; };
 const countInBox = (g, mat, cx, cy, r) => { let n = 0; for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) { if (x < 0 || x >= COLS || y < 0 || y >= ROWS) continue; if (g[y * COLS + x] === mat) n++; } return n; };
+const topRow = (g, mat, cols = COLS) => { for (let k = 0; k < g.length; k++) if (g[k] === mat) return Math.floor(k / cols); return -1; };
 const countAny = (g, mats) => { let n = 0; for (const v of g) if (mats.includes(v)) n++; return n; };
 const aftermathStats = (g) => ({
   acrid: count(g, MAT.ACRID_SMOKE),
@@ -407,6 +408,75 @@ function blastDamagesMaterial(name) {
   check(`cross-layer TNT blast carved foreground stone (${fgStone0} -> ${fgStone1})`, fgStone1 < fgStone0);
   check(`cross-layer TNT blast carved background stone (${bgStone0} -> ${bgStone1})`, bgStone1 < bgStone0);
   check(`cross-layer TNT blast emitted gas in both layers (fg ${fgGas}, bg ${bgGas})`, fgGas > 0 && bgGas > 0);
+  e.destroy();
+}
+
+// --- removing the last cross-layer contact must invalidate a sleeping support closure ---
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 70, cy = 45;
+  // A thick floating foreground plate reconnects around its crater. Its only
+  // support is the narrow background pillar co-occupying the plate's bottom;
+  // the blast removes that contact without severing the foreground plate.
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  for (let y = 28; y <= 48; y++) for (let x = 30; x <= 110; x++) {
+    if (x === cx + 1 && y === cy) continue;
+    e.placeMaterial(x, y, 0, MAT.STONE);
+  }
+  for (let y = 45; y < ROWS; y++) for (let x = cx - 2; x <= cx + 2; x++) e.placeMaterial(x, y, 0, MAT.STONE, 1);
+  e.syncComponentsLayer(0);
+  e.syncComponentsLayer(1);
+  for (let i = 0; i < 8; i++) e.step(i * 16); // settle and enter the cached joint-support path
+  const before = topRow(e.getGrid(), MAT.STONE);
+  let detonated = false;
+  for (let i = 8; i < 100; i++) {
+    if (i < 12) e.placeMaterial(cx + 1, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) === 0) { detonated = true; break; }
+  }
+  for (let i = 100; i < 135; i++) e.step(i * 16);
+  const after = topRow(e.getGrid(), MAT.STONE);
+  let overlap = 0;
+  for (let k = 0; k < e.getGrid().length; k++) if (e.getGrid()[k] === MAT.STONE && e.getGridBg()[k] === MAT.STONE) overlap++;
+  check(`cross-layer support-cut blast detonated`, detonated);
+  check(`plate falls after TNT removes its last background contact (top ${before} -> ${after}, overlap ${overlap})`, after > before + 4);
+  e.destroy();
+}
+
+// --- a locally-safe blast may reconnect through another component, but a later cut must still split it ---
+{
+  const e = mk();
+  const cx = 60, cy = 55;
+  // STONE is chunk-bounded, so the U in x<64 is one component while the
+  // blast-resistant IRON_ORE bridge across the chunk seam is another. TNT cuts
+  // the U's left connection; the iron bridge keeps the global graph grounded.
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  for (let x = 30; x < 64; x++) for (let y = 39; y <= 43; y++) e.placeMaterial(x, y, 0, MAT.STONE);
+  for (let x = 30; x < 64; x++) for (let y = 67; y <= 71; y++) e.placeMaterial(x, y, 0, MAT.STONE);
+  for (let x = 57; x < 64; x++) for (let y = 39; y <= 71; y++) {
+    if (x === cx + 1 && y === cy) continue;
+    e.placeMaterial(x, y, 0, MAT.STONE);
+  }
+  for (let x = 34; x <= 38; x++) for (let y = 67; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);
+  for (let x = 64; x <= 67; x++) for (let y = 39; y <= 71; y++) e.placeMaterial(x, y, 0, MAT.IRON_ORE);
+  e.syncComponents();
+  for (let i = 0; i < 8; i++) e.step(i * 16);
+  const fast0 = e.groundingDiag().fast;
+  let detonated = false;
+  for (let i = 8; i < 90; i++) {
+    if (i < 12) e.placeMaterial(cx + 1, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) === 0) { detonated = true; break; }
+  }
+  const heldTop = topRow(e.getGrid(), MAT.STONE);
+  const fast1 = e.groundingDiag().fast;
+  for (let y = 39; y <= 71; y++) for (let x = 64; x <= 67; x++) e.eraseDisc(x, y, 0);
+  for (let i = 90; i < 130; i++) e.step(i * 16);
+  const releasedTop = topRow(e.getGrid(), MAT.STONE);
+  check(`alternate-component reconnect blast detonated`, detonated);
+  check(`alternate-component reconnect used the local grounding proof (${fast0} -> ${fast1})`, fast1 > fast0);
+  check(`deferred split releases the upper piece after its alternate bridge is cut (top ${heldTop} -> ${releasedTop})`, releasedTop > heldTop + 4);
   e.destroy();
 }
 

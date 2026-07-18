@@ -55,17 +55,20 @@ class ExplosivesSystem {
   struct BlastOffset { int16_t ox, oy; int32_t dd; double dist; };
   struct BlastWave { int cx, cy, radius; uint32_t seed; };
   struct BlastDebrisSource { uint8_t material; int cell; };
+  struct BlastCrossPair { int ownId, peerId; uint8_t dependentMask; };
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
     std::vector<int> erasedPlant;
+    std::vector<BlastCrossPair> touchedCrossPairs;
     std::vector<BlastWave> gasShockwaves;
+    Layer* structuralLayer = nullptr;
     Layer* energyLayer = nullptr;
     int32_t blastEnergyGen = 0;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
     int particles = 0, debrisSpawned = 0, debrisStepCap = BLAST_DEBRIS_STEP_CAP;
-    bool any = false, structurePreserved = false;
+    bool any = false, structurePreserved = false, crossSupportUncertain = false;
   };
 
   // Schedule a detonation at a cell (no-op if one is already pending there, so a fuse
@@ -78,6 +81,8 @@ class ExplosivesSystem {
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);
   void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries = -1);
   bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
+  void noteCrossSupportRemoval(int k, BlastBatch& bb);
+  bool touchedCrossSupportSurvives(const BlastBatch& bb);
   void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT);
   void finishBlasts(BlastBatch& bb);

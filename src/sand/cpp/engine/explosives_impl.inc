@@ -158,6 +158,67 @@ bool ExplosivesSystem::blastEnergyDominated(BlastBatch& bb, int k, double energy
   return false;
 }
 
+void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
+  if (!E.bgEnabled || !E.comps.jointSupportValid || E.comps.jointSleepBlocked) return;
+  Layer* own = E.L;
+  Layer* peer = own == &E.fg ? &E.bg : &E.fg;
+  if (!E.isRigidMaterialClass(own->grid[k]) || !E.isRigidMaterialClass(peer->grid[k])) return;
+  if (E.isIceComponentMaterial(own->grid[k]) != E.isIceComponentMaterial(peer->grid[k])) return;
+  int ownId = own->cellComp[k], peerId = peer->cellComp[k];
+  int ownN = E.compCount(*own), peerN = E.compCount(*peer);
+  if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN
+      || own->groundBaseFlags.size() != (size_t)ownN
+      || peer->groundBaseFlags.size() != (size_t)peerN) {
+    bb.crossSupportUncertain = true;
+    return;
+  }
+  // Independently grounded endpoints do not depend on this contact. Generated
+  // cave terrain overwhelmingly exits here, keeping its blast path unchanged.
+  uint8_t dependentMask = (own->groundBaseFlags[ownId] ? 0 : 1)
+                        | (peer->groundBaseFlags[peerId] ? 0 : 2);
+  if (!dependentMask) return;
+  bb.structuralLayer = own;
+  for (auto& pair : bb.touchedCrossPairs) if (pair.ownId == ownId && pair.peerId == peerId) {
+    pair.dependentMask |= dependentMask;
+    return;
+  }
+  bb.touchedCrossPairs.push_back({ownId, peerId, dependentMask});
+}
+
+bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
+  if (bb.crossSupportUncertain) return false;
+  if (bb.touchedCrossPairs.empty()) return true;
+  if (!bb.structuralLayer) return false;
+  Layer& own = *bb.structuralLayer;
+  Layer& peer = bb.structuralLayer == &E.fg ? E.bg : E.fg;
+  int ownN = E.compCount(own), peerN = E.compCount(peer);
+  for (const BlastCrossPair& pair : bb.touchedCrossPairs) {
+    int ownId = pair.ownId, peerId = pair.peerId;
+    if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN) return false;
+    Comp* a = E.compById(own, ownId);
+    Comp* b = E.compById(peer, peerId);
+    bool survives = false;
+    if (a->cells.size() <= b->cells.size()) {
+      for (int q : a->cells) if (E.isRigidMaterialClass(own.grid[q])
+          && peer.cellComp[q] == peerId && E.isRigidMaterialClass(peer.grid[q])
+          && E.isIceComponentMaterial(own.grid[q]) == E.isIceComponentMaterial(peer.grid[q])) { survives = true; break; }
+    } else {
+      for (int q : b->cells) if (E.isRigidMaterialClass(peer.grid[q])
+          && own.cellComp[q] == ownId && E.isRigidMaterialClass(own.grid[q])
+          && E.isIceComponentMaterial(own.grid[q]) == E.isIceComponentMaterial(peer.grid[q])) { survives = true; break; }
+    }
+    if (!survives) {
+      // Losing a contact matters only while at least one endpoint that depended
+      // on it survived the blast. Cave TNT itself is commonly supported by the
+      // solid background; once that TNT component is gone, rebuilding the whole
+      // joint closure would repair nothing.
+      if ((pair.dependentMask & 1) && !a->cells.empty()) return false;
+      if ((pair.dependentMask & 2) && !b->cells.empty()) return false;
+    }
+  }
+  return true;
+}
+
 void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb) {
   if (cells.empty()) return;
   int bucketCols = (E.cols + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
@@ -180,6 +241,7 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
     if (x + TNT_BLAST_RADIUS > bb.maxX) bb.maxX = x + TNT_BLAST_RADIUS;
     if (y + TNT_BLAST_RADIUS > bb.maxY) bb.maxY = y + TNT_BLAST_RADIUS;
     bb.erasedStone.push_back(cell);
+    noteCrossSupportRemoval(cell, bb);
     E.L->grid[cell] = EMPTY;
     E.markCellIndex(cell);
   }
@@ -294,6 +356,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
           }
         }
         uint8_t group = E.componentGroupOf(m);
+        if (group != CG_NONE) noteCrossSupportRemoval(k, bb);
         if (group == CG_STONE) bb.erasedStone.push_back(k);
         else if (group == CG_ICE) bb.erasedIce.push_back(k);
         else if (group == CG_PLANT) bb.erasedPlant.push_back(k);
@@ -398,6 +461,10 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
     for (int k : allErased) E.L->cellComp[k] = -1;
   }
   bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;
+  if (E.L->componentTombstones >= 256) {
+    E.L->groundDirty = true;
+    bb.structurePreserved = false;
+  }
   if (bb.structurePreserved) E.L->blastLocalCarryTicks = imax(E.L->blastLocalCarryTicks, 6);
   spawnBlastRingGases(bb.gasShockwaves);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);
@@ -430,10 +497,13 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   // component and locally bores two still-grounded terrain components. The
   // per-layer proofs above leave every surviving positional component id and
   // grounded bit exact. In that case the generic erase hook's joint invalidation
-  // is unnecessary: there are no live residual bonds to repair, and the only
-  // positional-cache change is truncating now-dead trailing entries.
+  // is unnecessary when every touched support contact either survives or has no
+  // surviving dependent endpoint; the remaining cache change is only trimming
+  // now-dead trailing entries.
   bool otherPreserved = !E.bgEnabled || !otherBb || !otherBb->any || otherBb->structurePreserved;
-  if (E.bgEnabled && bb.structurePreserved && otherPreserved
+  bool crossSupportPreserved = touchedCrossSupportSurvives(bb)
+    && (!otherBb || touchedCrossSupportSurvives(*otherBb));
+  if (E.bgEnabled && bb.structurePreserved && otherPreserved && crossSupportPreserved
       && E.comps.jointSupportValid && E.comps.cgBonds.empty()) {
     auto trimTrailingCaches = [&](Layer& lay) {
       size_t count = lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size();

@@ -345,8 +345,62 @@ void ComponentSystem::refreshLooseOverlayPreservingJoint(Layer* lay) {
     std::fill(lay->looseDirtyCol.begin(), lay->looseDirtyCol.end(), (uint8_t)0);
 }
 
+void ComponentSystem::normalizeDeferredConnectivity() {
+  Layer* const lay = E.L;
+  if (lay->deferredStoneSplitIds.empty() && lay->deferredIceSplitIds.empty()
+      && lay->componentTombstones == 0) return;
+  auto normalize = [&](std::vector<Comp>& list, std::vector<int>& ids, int& nextId,
+                       uint8_t group, bool iceCache) {
+    std::vector<Comp> updated;
+    updated.reserve(list.size());
+    for (auto& comp : list) {
+      if (comp.cells.empty()) continue; // compact deferred empty positional slots
+      if (std::find(ids.begin(), ids.end(), comp.id) == ids.end()) {
+        updated.push_back(std::move(comp));
+        continue;
+      }
+      int32_t gen = ++lay->seenGen;
+      for (int k : comp.cells)
+        if (k >= 0 && k < E.cols * E.rows && E.componentGroupOf(lay->grid[k]) == group)
+          lay->seenStamp[k] = gen;
+      bool reused = false;
+      for (int seed : comp.cells) {
+        if (seed < 0 || seed >= E.cols * E.rows || lay->seenStamp[seed] != gen) continue;
+        splitPart.clear(); splitPart.push_back(seed); lay->seenStamp[seed] = 0;
+        for (size_t qi = 0; qi < splitPart.size(); qi++) {
+          int cur = splitPart[qi], y = cur / E.cols, x = cur - y * E.cols;
+          for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+            if (!ox && !oy) continue;
+            int nx = x + ox, ny = y + oy;
+            if (!E.isInBounds(nx, ny)) continue;
+            int nk = ny * E.cols + nx;
+            if (lay->seenStamp[nk] == gen) { lay->seenStamp[nk] = 0; splitPart.push_back(nk); }
+          }
+        }
+        Comp c;
+        c.id = reused ? nextId++ : comp.id;
+        c.plantType = comp.plantType; c.age = comp.age; c.growing = comp.growing;
+        c.buoyancyDirection = comp.buoyancyDirection; c.cacheDirty = iceCache || comp.cacheDirty;
+        c.cells = std::move(splitPart); c.yMax = 0;
+        for (int k : c.cells) c.yMax = imax(c.yMax, k / E.cols);
+        updated.push_back(std::move(c));
+        reused = true;
+      }
+    }
+    list.swap(updated);
+    ids.clear();
+  };
+  normalize(lay->stoneComponents, lay->deferredStoneSplitIds, lay->nextStoneId, CG_STONE, false);
+  normalize(lay->iceComponents, lay->deferredIceSplitIds, lay->nextIceId, CG_ICE, true);
+  lay->componentTombstones = 0;
+}
+
 void ComponentSystem::computeGrounded() {
   Layer* const lay = E.L;
+  // Deferred pieces are equivalent only while the global topology remains
+  // proven unchanged. A real rigid reflood is the exact point where that proof
+  // expires, so normalize the few tagged logical components before re-indexing.
+  if (lay->groundDirty) normalizeDeferredConnectivity();
   size_t totalComps = lay->stoneComponents.size() + lay->plantComponents.size() + lay->iceComponents.size();
   // Fully stable: rigid base + last loose overlay still match the live grid.
   // Powder's mere presence does NOT force a pass — only looseGroundDirty (a
@@ -2340,6 +2394,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
         return (int)(packed >> 32) == dead || (int)(uint32_t)packed == dead;
       }), E.L->compAdjPairs.end());
       updated.push_back(std::move(comp));
+      E.L->componentTombstones++;
       continue;
     }
     // Outside that exact fast path, compact normally and invalidate only if a
@@ -2354,6 +2409,8 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     // grounded slot and filter its cells; adjacent component unions preserve the
     // same global structural group.
     if (localConnectivityFastPath && comp.grounded) {
+      std::vector<int>& deferred = iceCache ? E.L->deferredIceSplitIds : E.L->deferredStoneSplitIds;
+      if (std::find(deferred.begin(), deferred.end(), comp.id) == deferred.end()) deferred.push_back(comp.id);
       comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
       for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
       updated.push_back(std::move(comp)); continue;

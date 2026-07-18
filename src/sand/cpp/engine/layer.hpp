@@ -114,6 +114,13 @@ struct Layer {
   // whether a dissolve that kept grounding valid needs a full re-index (structure
   // changed) or just a cheap cellComp patch of the removed cells (a pure bore).
   bool compsReshaped = false;
+  // A locally-safe bore can leave one positional Comp represented by multiple
+  // pieces that are still connected through neighbouring components. That is
+  // physically equivalent while the global rigid graph is unchanged. Remember
+  // the stable logical ids and split them before the next true topology reflood,
+  // when that external route may cease to exist.
+  std::vector<int> deferredStoneSplitIds, deferredIceSplitIds;
+  int componentTombstones = 0;
   std::vector<uint8_t> crossBondedComp;
   // Cached 8-neighbour adjacency between component ids (packed min/max ids).
   // Rebuilt with cellComp in indexComponents; joint grounding reuses it instead
@@ -207,12 +214,14 @@ struct Layer {
       release(mineDamage); release(light); release(lightBase); release(skyLight);
       release(skyTopInput); release(skyDownValue); release(skyDownDepth);
       release(stoneComponents); release(plantComponents); release(iceComponents);
+      release(deferredStoneSplitIds); release(deferredIceSplitIds);
       release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
       release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
       release(compAdjPairs);
     }
     alloc(newCols, newRows, newChunkCols, newChunkRows, storageRole);
     stoneComponents.clear(); plantComponents.clear(); iceComponents.clear();
+    deferredStoneSplitIds.clear(); deferredIceSplitIds.clear(); componentTombstones = 0;
     nextStoneId = nextPlantId = nextIceId = 1;
     myceliumActive = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;

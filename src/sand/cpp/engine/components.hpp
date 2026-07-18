@@ -89,6 +89,7 @@ class ComponentSystem {
   void computeRigidGrounded();
   void applyLooseOverlay();
   void refreshLooseOverlayPreservingJoint(Layer* lay);
+  void normalizeDeferredConnectivity();
   void computeGrounded();
   void incrementalGroundingRefresh();
   void ensureGroundedSingleLayer();

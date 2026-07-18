@@ -200,9 +200,11 @@ body {
 
 .life-showcase {
   margin-top: 18px;
+}
+
+.life-showcase__visual {
   border: 1px solid var(--portfolio-line);
   border-radius: 36px;
-  overflow: hidden;
   background:
     radial-gradient(circle at 50% 65%, rgba(77, 61, 147, 0.23), transparent 46%),
     #0c0c0f;
@@ -212,8 +214,9 @@ body {
 .life-showcase__copy {
   display: grid;
   grid-template-columns: 1.25fr 0.75fr;
-  gap: 60px;
-  align-items: end;
+  column-gap: 60px;
+  row-gap: 24px;
+  align-items: start;
   padding: clamp(30px, 5vw, 64px) clamp(28px, 5vw, 64px) 0;
 }
 
@@ -224,6 +227,10 @@ body {
   font-weight: 650;
   letter-spacing: -0.055em;
   line-height: 0.98;
+}
+
+.life-showcase__heading {
+  grid-column: 1 / -1;
 }
 
 .life-showcase__story {
@@ -267,13 +274,35 @@ body {
   text-transform: none;
 }
 
-.life-showcase__story .life-showcase__discovery {
+.life-lab__details {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.life-lab__details p {
+  margin: 0;
+  color: var(--portfolio-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.life-lab__details .life-showcase__discovery {
   color: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
+}
+
+@media (min-width: 801px) {
+  .life-showcase__heading h3 {
+    max-width: none;
+    font-size: clamp(42px, 5.2vw, 76px);
+    white-space: nowrap;
+  }
 }
 
 .life-showcase__stage {
-  height: clamp(500px, 62vw, 720px);
+  height: clamp(760px, 58vw, 840px);
   min-height: 0;
   transition: opacity 240ms ease;
 }
@@ -665,6 +694,10 @@ body {
   }
 
   .life-showcase {
+    border-radius: 0;
+  }
+
+  .life-showcase__visual {
     border-radius: 28px;
   }
 
@@ -677,8 +710,8 @@ body {
   }
 
   .life-showcase__stage {
-    height: min(650px, 76svh);
-    min-height: 480px;
+    height: auto;
+    min-height: 0;
   }
 
   .toolbox {
@@ -734,7 +767,7 @@ body {
   }
 
   .life-showcase__stage {
-    height: 560px;
+    height: auto;
   }
 
   .project-card {

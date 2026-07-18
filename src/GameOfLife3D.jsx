@@ -69,13 +69,15 @@ export default function GameOfLife3D({
   className,
   onControlsOpenChange,
   defaultControlsOpen,
+  intro,
+  labDetails,
 }) {
   const canvasHostRef = useRef(null);
   const editorCanvasRef = useRef(null);
   const toroidalCanvasRef = useRef(null);
   const renderToroidalLayerRef = useRef(() => {});
   const speedRef = useRef(DEFAULT_STEPS_PER_SECOND);
-  const pausedRef = useRef(false);
+  const previousSpeedRef = useRef(DEFAULT_STEPS_PER_SECOND);
   const drawModeRef = useRef("draw");
   const seedRequestRef = useRef(null);
   const manualRotateRef = useRef(false);
@@ -98,7 +100,6 @@ export default function GameOfLife3D({
     if (typeof window === "undefined" || !window.matchMedia) return false;
     return window.matchMedia("(min-width: 768px)").matches;
   });
-  const [paused, setPaused] = useState(false);
   const [drawMode, setDrawMode] = useState("draw");
   const [gridSize, setGridSize] = useState(16);
   const [layerView, setLayerView] = useState("toroidal");
@@ -153,12 +154,12 @@ export default function GameOfLife3D({
   }, [gridSize]);
 
   useEffect(() => {
+    if (previousSpeedRef.current === 0 && speed > 0) {
+      resumeStepResetRef.current = true;
+    }
     speedRef.current = speed;
+    previousSpeedRef.current = speed;
   }, [speed]);
-
-  useEffect(() => {
-    pausedRef.current = paused;
-  }, [paused]);
 
   useEffect(() => {
     drawModeRef.current = drawMode;
@@ -200,14 +201,6 @@ export default function GameOfLife3D({
     const randomSeed = `random-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setSeedInput(randomSeed);
     seedRequestRef.current = seedToLayer(randomSeed, gridSize);
-  };
-
-  const togglePaused = () => {
-    setPaused((current) => {
-      const next = !current;
-      if (current && !next) resumeStepResetRef.current = true;
-      return next;
-    });
   };
 
   const clearTopLayer = () => {
@@ -590,7 +583,6 @@ export default function GameOfLife3D({
 
       const stepsPerSecond = speedRef.current;
       if (
-        !pausedRef.current &&
         stepsPerSecond > 0 &&
         now - lastStepTime >= 1000 / stepsPerSecond
       ) {
@@ -994,11 +986,19 @@ export default function GameOfLife3D({
     .trim();
   return (
     <div
-      className={`${interactiveClassName} relative h-full w-full overflow-hidden pointer-events-auto ${
-        controlsOpen ? "md:grid md:grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,21rem)]" : ""
+      className={`${interactiveClassName} relative w-full pointer-events-auto ${
+        controlsOpen
+          ? "grid h-auto grid-cols-1 gap-[18px] overflow-visible min-[801px]:h-full min-[801px]:grid-cols-[minmax(0,1fr)_clamp(18rem,22vw,21rem)]"
+          : "h-full overflow-hidden"
       }`}
     >
-      <div ref={canvasHostRef} className="relative h-full min-h-0 w-full" />
+      <section className="life-showcase__visual flex min-w-0 flex-col overflow-hidden min-[801px]:h-full">
+        {intro}
+        <div
+          ref={canvasHostRef}
+          className="relative h-[min(650px,76svh)] min-h-[480px] w-full shrink-0 min-[801px]:h-auto min-[801px]:min-h-0 min-[801px]:flex-1"
+        />
+      </section>
 
       {!controlsOpen && (
         <button
@@ -1013,7 +1013,7 @@ export default function GameOfLife3D({
 
       {controlsOpen && (
         <form
-          className="pointer-events-auto absolute inset-x-3 bottom-3 top-3 z-20 flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-white/10 bg-[#101014]/90 p-3 text-white shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl md:static md:m-3 md:ml-0 md:h-auto md:self-stretch md:rounded-[24px] md:border md:bg-[#101014]/72 md:shadow-[0_16px_48px_rgba(0,0,0,0.22)]"
+          className="pointer-events-auto relative z-20 flex min-h-0 flex-col rounded-[28px] border border-white/10 bg-[#101014]/90 p-3 text-white shadow-[0_20px_60px_rgba(0,0,0,0.28)] backdrop-blur-xl min-[801px]:h-auto min-[801px]:self-stretch min-[801px]:overflow-y-auto min-[801px]:rounded-[36px] min-[801px]:bg-[#101014]/72 min-[801px]:shadow-[0_16px_48px_rgba(0,0,0,0.22)]"
           onSubmit={(event) => {
             event.preventDefault();
             if (activeTab === "simulate") applySeed();
@@ -1101,14 +1101,14 @@ export default function GameOfLife3D({
                   </button>
                 ))}
               </div>
-              <div className="mt-1 text-right text-[9px] font-semibold uppercase tracking-wide text-white/45">{paused ? "Paused" : "Live"}</div>
+              <div className="mt-1 text-right text-[9px] font-semibold uppercase tracking-wide text-white/45">{speed === 0 ? "Paused" : "Live"}</div>
               {layerView === "2d" ? (
                 <>
                   <canvas
                     ref={editorCanvasRef}
                     width={EDITOR_CANVAS_SIZE}
                     height={EDITOR_CANVAS_SIZE}
-                    className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] md:h-auto md:max-h-64 md:w-64 md:max-w-full"
+                    className="mt-1 aspect-square w-full max-h-[min(72vw,18rem)] max-w-[min(72vw,18rem)] self-center touch-none rounded-md border border-white/15 bg-transparent [image-rendering:pixelated] min-[801px]:h-auto min-[801px]:max-h-64 min-[801px]:w-64 min-[801px]:max-w-full"
                     aria-label="Editable current layer of the Game of Life simulation"
                     onContextMenu={(event) => event.preventDefault()}
                     onPointerDown={onEditorPointerDown}
@@ -1130,7 +1130,7 @@ export default function GameOfLife3D({
                     ref={toroidalCanvasRef}
                     width={EDITOR_CANVAS_SIZE}
                     height={EDITOR_CANVAS_SIZE}
-                    className="mt-1 aspect-square w-full max-h-[30svh] max-w-[30svh] self-center touch-none rounded-md border border-white/15 bg-gray-950/25 md:h-auto md:max-h-64 md:w-64 md:max-w-full"
+                    className="mt-1 aspect-square w-full max-h-[min(72vw,18rem)] max-w-[min(72vw,18rem)] self-center touch-none rounded-md border border-white/15 bg-gray-950/25 min-[801px]:h-auto min-[801px]:max-h-64 min-[801px]:w-64 min-[801px]:max-w-full"
                     aria-label="Editable toroidal view of the current Game of Life layer"
                   />
                   <p className="m-0 mt-1.5 text-center text-[9px] leading-tight text-white/45">Click a cell to edit. Drag to rotate.</p>
@@ -1143,12 +1143,10 @@ export default function GameOfLife3D({
                 </>
               )}
               <label className="mt-2 flex items-center justify-between text-[10px] font-semibold uppercase tracking-wide text-white/70">
-                <span>Speed</span><span>{speed}/s</span>
+                <span>Speed</span><span>{speed === 0 ? "Paused" : `${speed}/s`}</span>
               </label>
-              <input type="range" min="1" max="30" step="1" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="mt-1 w-full accent-white" aria-label="Game of Life simulation speed" />
-              <div className="mt-auto pt-3">
-                <button type="button" onClick={togglePaused} className={`w-full rounded-md px-2 py-1.5 text-[9px] font-semibold transition ${paused ? "bg-white/80 text-black" : "bg-white/10 text-white hover:bg-white/20"}`} aria-pressed={paused}>{paused ? "Resume" : "Pause"}</button>
-              </div>
+              <input type="range" min="0" max="30" step="1" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="mt-1 w-full accent-white" aria-label="Game of Life simulation speed" aria-valuetext={speed === 0 ? "Paused" : `${speed} generations per second`} />
+              {labDetails}
             </>
           )}
 

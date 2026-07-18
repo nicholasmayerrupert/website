@@ -74,8 +74,9 @@ actionable instead of just producing timing numbers.
 - `node scripts/bench-pan.mjs --compare bench/pan-baseline.json`: browser/WebGL
   pan, cursor mapping, frame-time, and flicker check.
 - `npm run bench:tnt`: focused deterministic TNT benchmark covering cold/steady
-  open-air, dual-layer, buried-component, enclosed-cave, and 25x25/49x49 chain
-  costs, including the five settling ticks after each blast and their fine phase
+  open-air, dual-layer, buried-component, enclosed-cave, 25x25/49x49 open
+  chains, and a 79x79 two-layer cave chain, including the five settling ticks
+  after each blast and their fine phase
   totals and the full post-blast tail by phase (plus the number and largest size
   of rolling chain fronts). Awake rigid-body motion reuses the layer's initial
   grounding result unless assemblies/loose support dirtied it; this avoids a

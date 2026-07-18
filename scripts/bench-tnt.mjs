@@ -42,7 +42,7 @@ function summary(values) {
   };
 }
 
-function runScenario({ name, cols, rows, side = 1, buried = false, cave = false, bg = false, steps }) {
+function runScenario({ name, cols, rows, side = 1, buried = false, cave = false, caveRadius = 10, bg = false, steps }) {
   const engine = createEngineWasm({ cols, rows, worldSeed: SEED, sinksOn: false, infinite: false });
   engine.setBgEnabled(bg);
   const cx = cols >> 1;
@@ -55,7 +55,7 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     // builds the same enclosed, grounded component without tens of thousands of
     // JS->Wasm placement calls dominating benchmark runtime.
     engine.paintDisc(cx, cy, Math.max(cols, rows), MAT.STONE, true);
-    engine.eraseDisc(cx, cy, 10);
+    engine.eraseDisc(cx, cy, caveRadius);
     // Real play keeps a fully simulated, more-solid background behind many
     // foreground caves. Include it when this scenario enables both layers so
     // the benchmark catches joint-grounding invalidation on a cave blast.
@@ -146,6 +146,7 @@ const scenarios = [
   { name: 'chain-25x25', cols: 260, rows: 220, side: 25, steps: 70 },
   { name: 'chain-49x49', cols: 260, rows: 220, side: 49, steps: 90 },
   { name: 'chain-49-wide-stone-bed', cols: 260, rows: 220, side: 49, buried: true, steps: 90 },
+  { name: 'chain-79-cave-dual-layer', cols: 640, rows: 384, side: 79, cave: true, caveRadius: 47, bg: true, steps: 100 },
 ];
 
 // Warm lazy WASM/runtime paths before collecting samples.

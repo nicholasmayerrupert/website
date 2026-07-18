@@ -158,6 +158,22 @@ bool ExplosivesSystem::blastEnergyDominated(BlastBatch& bb, int k, double energy
   return false;
 }
 
+bool ExplosivesSystem::blastEnclosed(int cx, int cy, int radius, Layer* peer) {
+  int diag = (radius * 181 + 128) >> 8; // radius / sqrt(2), integer and deterministic
+  const int rim[8][2] = {
+    {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius},
+    {diag, diag}, {diag, -diag}, {-diag, diag}, {-diag, -diag},
+  };
+  int blockedRim = 0;
+  for (const auto& p : rim) {
+    int x = cx + p[0], y = cy + p[1];
+    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) { blockedRim++; continue; }
+    int k = E.I(x, y);
+    if (E.isRigidMaterialClass(E.L->grid[k]) || (peer && E.isRigidMaterialClass(peer->grid[k]))) blockedRim++;
+  }
+  return blockedRim >= 6;
+}
+
 void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
   if (!E.bgEnabled || !E.comps.jointSupportValid || E.comps.jointSleepBlocked) return;
   Layer* own = E.L;
@@ -257,7 +273,8 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
 // exceeds the blast energy there: energy = power*(1 - d/radius). Soft blocks
 // (sand/dirt) are cleared almost to the rim; hard ones (iron ore) only near centre.
 // Destruction is component-safe and body-aware, reusing the eraser/mining primitives.
-void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody, uint8_t explosiveMaterial) {
+void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody,
+                                 uint8_t explosiveMaterial) {
   bb.any = true;
   if (explosiveMaterial == METHANE) bb.debrisStepCap = METHANE_DEBRIS_STEP_CAP;
   if (cx - radius < bb.minX) bb.minX = cx - radius;
@@ -272,18 +289,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   // the smoke and flecks. Eight pre-carve rim probes distinguish a sealed blast
   // from open air or a surface/buried blast without searching for an escape path.
   // The crater, shockwave, gas shell, and cosmetic material particles are unchanged.
-  int diag = (radius * 181 + 128) >> 8; // radius / sqrt(2), integer and deterministic
-  const int rim[8][2] = {
-    {radius, 0}, {-radius, 0}, {0, radius}, {0, -radius},
-    {diag, diag}, {diag, -diag}, {-diag, diag}, {-diag, -diag},
-  };
-  int blockedRim = 0;
-  for (const auto& p : rim) {
-    int x = cx + p[0], y = cy + p[1];
-    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) { blockedRim++; continue; }
-    if (E.isRigidMaterialClass(E.L->grid[E.I(x, y)])) blockedRim++;
-  }
-  bool enclosed = blockedRim >= 6;
+  bool enclosed = blastEnclosed(cx, cy, radius);
   int localDebrisCap = enclosed && explosiveMaterial != METHANE
                      ? 0
                      : bb.debrisStepCap;
@@ -473,6 +479,14 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
 
 void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody, uint8_t explosiveMaterial) {
   Layer* src = E.L;
+  // Judge enclosure before either layer is carved. Looking at one layer at a
+  // time makes the foreground crater hide the solid background from its paired
+  // blast, and later fronts in a cave start emitting invisible rubble bodies.
+  // A direction blocked in either depth is blocked in the combined 2-deep world.
+  if (E.bgEnabled && otherBb && explosiveMaterial != METHANE) {
+    Layer* other = src == &E.fg ? &E.bg : &E.fg;
+    if (blastEnclosed(cx, cy, radius, other)) bb.debrisStepCap = otherBb->debrisStepCap = 0;
+  }
   E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), explosiveMaterial, src == &E.bg ? 1 : 0);
   carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial);
   if (!E.bgEnabled || !otherBb) return;

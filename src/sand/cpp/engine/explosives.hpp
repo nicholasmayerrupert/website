@@ -81,10 +81,12 @@ class ExplosivesSystem {
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);
   void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries = -1);
   bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
+  bool blastEnclosed(int cx, int cy, int radius, Layer* peer = nullptr);
   void noteCrossSupportRemoval(int k, BlastBatch& bb);
   bool touchedCrossSupportSurvives(const BlastBatch& bb);
   void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb);
-  void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT);
+  void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr,
+                  uint8_t explosiveMaterial = TNT);
   void finishBlasts(BlastBatch& bb);
   void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT);
   void finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb);

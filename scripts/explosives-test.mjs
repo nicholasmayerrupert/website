@@ -240,6 +240,28 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 {
+  // Foreground air backed by solid background is still an enclosed 2-deep cave.
+  // Judge both layers before either crater is carved so the foreground half does
+  // not emit hidden generic rubble while its paired background half is solid.
+  const e = mk();
+  e.setBgEnabled(true);
+  const cx = 70, cy = 55;
+  e.paintDiscLayer(1, cx, cy, Math.max(COLS, ROWS), MAT.STONE, true);
+  e.placeMaterial(cx, cy, 0, MAT.TNT);
+  e.syncComponentsLayer(0);
+  e.syncComponentsLayer(1);
+  let peakBodies = 0, detonated = false;
+  for (let i = 0; i < 80; i++) {
+    if (i < 3) e.placeMaterial(cx + 1, cy, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) === 0) detonated = true;
+    if (detonated) peakBodies = Math.max(peakBodies, e._bodyCount());
+  }
+  check(`background-backed cave TNT detonated`, detonated);
+  check(`background-backed cave suppressed hidden foreground rubble (peak bodies ${peakBodies})`, peakBodies === 0);
+  e.destroy();
+}
+{
   // Fully enclosed TNT uses cheap material flecks instead of waking a physical
   // rubble body that is hidden inside the smoke and enclosing component.
   const e = mk();

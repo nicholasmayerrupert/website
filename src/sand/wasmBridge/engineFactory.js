@@ -1,5 +1,5 @@
 // The falling-sand engine, backed by the C++ core in cpp/sand.cpp (compiled to
-// wasm/sandEngine.js). createEngineWasm() returns the simulation handle the game
+// wasm/sandEngine.{js,wasm}). createEngineWasm() returns the simulation handle the game
 // runtime drives.
 //
 // The wasm module is instantiated ONCE via initSandWasm(); createEngineWasm() is
@@ -203,7 +203,7 @@ export function initSandWasm() {
     modPromise = createSandModule().then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
-      // manifest — the loud failure for a stale committed sandEngine.js.
+      // manifest — the loud failure for stale committed sandEngine artifacts.
       const wasmAbi = c('engine_abi_version', 'number', [])();
       if (wasmAbi !== ABI_VERSION) {
         throw new Error(`sand wasm ABI version ${wasmAbi} != JS manifest ${ABI_VERSION} — rebuild the wasm (wasm/build.sh) or regenerate (npm run generate:abi)`);

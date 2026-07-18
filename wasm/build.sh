@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Build the C++ sand engine to a single self-contained ES module WASM.
+# Build the C++ sand engine to an ES module plus an external WASM binary.
 #
 #   source wasm/emenv.sh && wasm/build.sh
 #   source wasm/emenv.sh && wasm/build.sh --dev   # + SAND_INVARIANT_CHECKS
 #
-# Emits src/sand/wasm/sandEngine.js (WASM embedded via SINGLE_FILE so Vite and
-# Cloudflare need no special .wasm asset/MIME handling). The emitted file is
-# committed so `npm run build` never needs emcc.
+# Emits committed src/sand/wasm/sandEngine.{js,wasm}. Keeping the binary external
+# lets browsers stream-compile it and lets the presentation realm and authority
+# worker reuse the same fingerprinted Vite asset on a cold visit.
 #
 # --dev compiles in the post-step invariant validator (aborts loudly on a
 # BODY-MATERIAL or component-cell violation). It writes the SAME output file so
@@ -35,7 +35,6 @@ em++ \
   -s MODULARIZE=1 \
   -s EXPORT_ES6=1 \
   -s ENVIRONMENT=web,node \
-  -s SINGLE_FILE=1 \
   -s ALLOW_MEMORY_GROWTH=1 \
   -s INITIAL_MEMORY=33554432 \
   -s EXPORT_NAME=createSandModule \
@@ -49,7 +48,8 @@ em++ \
   src/sand/cpp/sand.cpp \
   -o "$OUT"
 
-echo "built $OUT ($(wc -c < "$OUT") bytes)"
+local WASM_OUT="${OUT%.js}.wasm"
+echo "built $OUT ($(wc -c < "$OUT") bytes) + $WASM_OUT ($(wc -c < "$WASM_OUT") bytes)"
 }
 
 build_engine src/sand/wasm/sandEngine.js

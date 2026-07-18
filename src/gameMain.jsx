@@ -1,11 +1,7 @@
 import React, { useEffect } from 'react'
 import ReactDOM from 'react-dom/client'
 import './index.css'
-import App from './App.jsx'
-
-// Start the hero engine alongside the statically imported portfolio entry,
-// rather than waiting for App -> Hero -> useEffect. /game has its own HTML entry.
-void import('./sand/embed/sandGame.js')
+import GamePage from './GamePage.jsx'
 
 function BootSignal() {
   useEffect(() => {
@@ -16,7 +12,7 @@ function BootSignal() {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <>
-    <App />
+    <GamePage />
     <BootSignal />
   </>,
 )

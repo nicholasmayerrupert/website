@@ -6,7 +6,7 @@
 // subsystem files below, not in the bridge.
 extern "C" {
 // ABI version stamp (abi.generated.hpp). initSandWasm() refuses a module whose
-// version mismatches the JS manifest — catches a stale committed sandEngine.js.
+// version mismatches the JS manifest — catches stale committed sandEngine artifacts.
 EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
 EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite, int storageRole) {
   EngineStorageRole role = storageRole == ESR_PRESENTATION ? ESR_PRESENTATION

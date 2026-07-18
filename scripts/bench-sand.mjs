@@ -98,12 +98,18 @@ const gitMeta = () => {
   return { commit, dirty };
 };
 const wasmMeta = () => {
-  const path = 'src/sand/wasm/sandEngine.js';
+  const loaderPath = 'src/sand/wasm/sandEngine.js';
+  const path = 'src/sand/wasm/sandEngine.wasm';
   const st = statSync(path);
   return {
     path,
     bytes: st.size,
     fnv1a: fileHash(path),
+    loader: {
+      path: loaderPath,
+      bytes: statSync(loaderPath).size,
+      fnv1a: fileHash(loaderPath),
+    },
     emcc: safeExec('emcc', ['--version'])?.split('\n')[0] || null,
     emccPath: safeExec('which', ['emcc']),
     buildInfo: readJson('src/sand/wasm/build-info.json'),

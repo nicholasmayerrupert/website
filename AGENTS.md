@@ -25,7 +25,7 @@ Quick orientation:
 
 | Path | What it is |
 | --- | --- |
-| `src/sand/cpp/` | The C++ engine: fourteen subsystem classes (`engine/*.hpp` + `*_impl.inc`) composed by a coordinator Engine (`sand.cpp`, one unity TU). Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.js`); `wasm/build.sh --dev` adds the post-step invariant validator. |
+| `src/sand/cpp/` | The C++ engine: fourteen subsystem classes (`engine/*.hpp` + `*_impl.inc`) composed by a coordinator Engine (`sand.cpp`, one unity TU). Rebuild with `source wasm/emenv.sh && wasm/build.sh` (emits the committed `src/sand/wasm/sandEngine.{js,wasm}`); `wasm/build.sh --dev` adds the post-step invariant validator. |
 | `src/sand/engineWasm.js` | Loads the wasm module; `createEngineWasm()` is the simulation+render+camera handle. The grid + render pixels are zero-copy views into wasm memory. |
 | `src/sand/materials.schema.json` | Single source of truth for materials; `npm run generate` emits `materials.generated.{js,hpp}` (the build fails if they're stale). `materials.js` re-exports it + derives `MAT`. |
 | `src/sand/game/createSandGame.js` | The thin browser shell: creates the canvas, runs the RAF/fixed-step loop, forwards DOM events to the engine, and drives `engine.glRenderFrame()`/`streamWorld()`. The engine owns rendering, the camera, input policy, tool policy, and the world-shift decision. |

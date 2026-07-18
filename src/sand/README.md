@@ -77,10 +77,11 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   - `cpp/engine/camera.inc` — the view camera (pan/bounds/follow), the
     pointer→aim-cell mapping, the player input bitmask, and the fixed-tick pan /
     world-stream drivers. JS just forwards held keys + the pointer.
-- `wasm/` — `build.sh` compiles `cpp/` to the self-contained ES module
-  `sandEngine.js` (WASM embedded; built with WebGL2/`FULL_ES3`). The same
-  single-threaded module runs in the presentation realm and the authority
-  worker. The build also writes `src/sand/wasm/build-info.json` provenance.
+- `wasm/` — `build.sh` compiles `cpp/` to the Emscripten loader
+  `sandEngine.js` plus the external `sandEngine.wasm` binary (built with
+  WebGL2/`FULL_ES3`). Vite fingerprints the binary once; the same single-threaded
+  module runs in the presentation realm and the authority worker, which reuse
+  that asset URL. The build also writes `src/sand/wasm/build-info.json` provenance.
   Outputs are committed, so a normal `npm run build` never needs the C++
   toolchain.
   At extreme zoom (>900k loaded cells), grid-aligned component grounding and
@@ -138,10 +139,10 @@ You only need this if you change anything under `cpp/`:
 
 ```
 source wasm/emenv.sh   # puts emcc on PATH (Emscripten SDK under ~/Nick/emsdk)
-wasm/build.sh          # regenerates src/sand/wasm/sandEngine.js
+wasm/build.sh          # regenerates src/sand/wasm/sandEngine.{js,wasm}
 ```
 
-The build also writes `src/sand/wasm/build-info.json` with output hashes, source
+The build also writes `src/sand/wasm/build-info.json` with both output hashes, source
 commit/dirty state, and Emscripten identity. `npm run sand:doctor` reports it.
 
 ## Players

@@ -1,4 +1,4 @@
-// Write provenance for the generated single-file sand WASM module.
+// Write provenance for the generated sand loader and external WASM binary.
 
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -7,14 +7,18 @@ import { dirname, relative } from 'node:path';
 
 const outPath = process.argv[2] || 'src/sand/wasm/sandEngine.js';
 const infoPath = process.argv[3] || `${dirname(outPath)}/build-info.json`;
+const wasmPath = outPath.replace(/\.js$/, '.wasm');
 const generatedPaths = new Set([
   'src/sand/wasm/sandEngine.js',
+  'src/sand/wasm/sandEngine.wasm',
   'src/sand/wasm/build-info.json',
 ]);
 const sourcePathPrefixes = [
   'src/sand/cpp/',
   'src/sand/materials.schema.json',
   'src/sand/materials.generated.js',
+  'wasm/build.sh',
+  'scripts/write-wasm-build-info.mjs',
 ];
 
 const safeExec = (cmd, argv = []) => {
@@ -34,16 +38,20 @@ const fnv1a = (bytes) => {
   return h >>> 0;
 };
 
-const bytes = readFileSync(outPath);
 const root = safeExec('git', ['rev-parse', '--show-toplevel']) || process.cwd();
-const info = {
-  generatedAt: new Date().toISOString(),
-  output: {
-    path: relative(root, outPath).split('\\').join('/'),
-    bytes: statSync(outPath).size,
+const artifactInfo = (path) => {
+  const bytes = readFileSync(path);
+  return {
+    path: relative(root, path).split('\\').join('/'),
+    bytes: statSync(path).size,
     sha256: createHash('sha256').update(bytes).digest('hex'),
     fnv1a: `0x${fnv1a(bytes).toString(16)}`,
-  },
+  };
+};
+const info = {
+  generatedAt: new Date().toISOString(),
+  output: artifactInfo(outPath),
+  wasm: artifactInfo(wasmPath),
   source: {
     commit: safeExec('git', ['rev-parse', '--short', 'HEAD']),
     dirty: gitDirty(),

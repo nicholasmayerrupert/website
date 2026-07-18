@@ -4,10 +4,19 @@
 // the browser cache instead of being revalidated against the new manifest.
 export default {
   async fetch(request, env) {
-    const response = await env.ASSETS.fetch(request);
+    const url = new URL(request.url);
+    // /game has its own Vite HTML entry. Resolve it internally so visitors keep
+    // the canonical extensionless URL without paying for a redirect round trip.
+    let assetRequest = request;
+    if (url.pathname === '/game') {
+      const assetUrl = new URL(request.url);
+      assetUrl.pathname = '/game/';
+      assetRequest = new Request(assetUrl, request);
+    }
+    const response = await env.ASSETS.fetch(assetRequest);
     const type = response.headers.get('content-type') || '';
     const isHtml = type.includes('text/html');
-    const isAsset = new URL(request.url).pathname.startsWith('/assets/');
+    const isAsset = url.pathname.startsWith('/assets/');
 
     const headers = new Headers(response.headers);
     if (isHtml || !response.ok) headers.set('cache-control', 'no-store');

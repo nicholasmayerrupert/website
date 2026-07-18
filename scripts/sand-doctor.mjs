@@ -24,7 +24,8 @@ const readJson = (path) => {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 };
 
-const wasmPath = 'src/sand/wasm/sandEngine.js';
+const loaderPath = 'src/sand/wasm/sandEngine.js';
+const wasmPath = 'src/sand/wasm/sandEngine.wasm';
 const wasmInfoPath = 'src/sand/wasm/build-info.json';
 const baselinePath = 'bench/baseline.json';
 const tmpJson = join(tmpdir(), `sand-doctor-${Date.now()}.json`);
@@ -40,6 +41,7 @@ try { benchResult = JSON.parse(readFileSync(tmpJson, 'utf8')); } catch { /* benc
 let baseline = null;
 try { baseline = JSON.parse(readFileSync(baselinePath, 'utf8')); } catch { /* missing baseline */ }
 
+const loaderStat = statSync(loaderPath);
 const wasmStat = statSync(wasmPath);
 const wasmInfo = readJson(wasmInfoPath);
 const checksumMatches = benchResult && baseline && benchResult.checksum === baseline.checksum;
@@ -48,10 +50,12 @@ console.log('\nsand doctor');
 console.log(`  git: ${gitCommit || 'unknown'}${gitDirty ? ' dirty' : ' clean'}`);
 console.log(`  emcc: ${emccPath || 'not found'}`);
 console.log(`  materials: ${status(materialCheck.status === 0)}${materialCheck.status === 0 ? '' : ` (${(materialCheck.stderr || materialCheck.stdout).trim()})`}`);
-console.log(`  wasm: ${wasmStat.size} bytes  fnv ${fmtHex(fileHash(wasmPath))}`);
+console.log(`  wasm loader: ${loaderStat.size} bytes  fnv ${fmtHex(fileHash(loaderPath))}`);
+console.log(`  wasm binary: ${wasmStat.size} bytes  fnv ${fmtHex(fileHash(wasmPath))}`);
 if (wasmInfo) {
   console.log(`  wasm build-info: ${wasmInfo.source?.commit || 'unknown'}${wasmInfo.source?.dirty ? ' dirty' : ' clean'}  ${wasmInfo.toolchain?.emcc || 'emcc unknown'}`);
-  if (wasmInfo.output?.bytes !== wasmStat.size) console.log(`  wasm build-info size: FAIL (${wasmInfo.output?.bytes} recorded)`);
+  if (wasmInfo.output?.bytes !== loaderStat.size) console.log(`  wasm loader build-info size: FAIL (${wasmInfo.output?.bytes} recorded)`);
+  if (wasmInfo.wasm?.bytes !== wasmStat.size) console.log(`  wasm binary build-info size: FAIL (${wasmInfo.wasm?.bytes} recorded)`);
 } else {
   console.log('  wasm build-info: missing (run source wasm/emenv.sh && wasm/build.sh)');
 }

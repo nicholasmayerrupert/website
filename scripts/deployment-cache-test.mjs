@@ -7,15 +7,24 @@ const check = (label, ok, detail = '') => {
 };
 
 const html = '<!doctype html><div id="root"></div>';
+const gameHtml = '<!doctype html><title>Sand Game</title><div id="root"></div>';
+let lastAssetPath = '';
 const env = {
   ASSETS: {
     async fetch(request) {
       const path = new URL(request.url).pathname;
+      lastAssetPath = path;
       if (path === '/') {
         return new Response(html, { headers: { 'content-type': 'text/html', 'cache-control': 'public, max-age=0, must-revalidate' } });
       }
+      if (path === '/game/') {
+        return new Response(gameHtml, { headers: { 'content-type': 'text/html' } });
+      }
       if (path === '/assets/index-abc123.js') {
         return new Response('export default true', { headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate' } });
+      }
+      if (path === '/assets/sandEngine-abc123.wasm') {
+        return new Response(new Uint8Array([0, 97, 115, 109]), { headers: { 'content-type': 'application/wasm' } });
       }
       if (path === '/favicon.svg') {
         return new Response('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
@@ -38,6 +47,15 @@ check('asset responses do not force cross-origin isolation',
   asset.headers.get('cross-origin-opener-policy') === null
   && asset.headers.get('cross-origin-embedder-policy') === null
   && asset.headers.get('cross-origin-resource-policy') === null);
+
+const wasm = await get('/assets/sandEngine-abc123.wasm');
+check('fingerprinted WASM is immutable', wasm.headers.get('cache-control') === 'public, max-age=31556952, immutable', wasm.headers.get('cache-control'));
+check('WASM keeps its streaming MIME type', wasm.headers.get('content-type') === 'application/wasm', wasm.headers.get('content-type'));
+
+const game = await get('/game');
+check('/game resolves its dedicated HTML entry without a redirect', game.status === 200 && (await game.text()).includes('Sand Game'));
+check('/game is internally resolved as /game/', lastAssetPath === '/game/', lastAssetPath);
+check('/game HTML is never stored by the browser', game.headers.get('cache-control') === 'no-store', game.headers.get('cache-control'));
 
 const missing = await get('/assets/removed-build.js');
 check('missing old deployment asset is a real 404', missing.status === 404, String(missing.status));

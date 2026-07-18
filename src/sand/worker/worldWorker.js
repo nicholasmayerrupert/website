@@ -65,6 +65,7 @@ function perf() {
   const elapsed = Math.max(1, performance.now() - rateStart);
   const parallel = engine?.getPerf?.() || {};
   return {
+    ...parallel,
     worldTps: rateSteps * 1000 / elapsed, stepMs: lastStepMs, actorMs: parallel.actorMs || 0,
     actorTick: engine?.getActorTick?.() || 0,
     creatureCount: engine?.creatureCount?.() || 0,

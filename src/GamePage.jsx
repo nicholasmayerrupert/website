@@ -28,6 +28,8 @@ import { useMediaQuery } from './hooks/useMediaQuery';
 
 // Treat narrow viewports OR coarse-only pointers (phones/tablets) as "mobile".
 const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
+const PERF_GAME = typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).has('perf');
 
 export default function GamePage() {
   const isMobile = useMediaQuery(MOBILE_QUERY);
@@ -63,7 +65,7 @@ export default function GamePage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-dark">
-      <sand-game mode="survival" initial-tool="stone" />
+      <sand-game mode="survival" initial-tool="stone" perf-hud={PERF_GAME ? '' : undefined} />
 
       {/* Back to the portfolio */}
       <a

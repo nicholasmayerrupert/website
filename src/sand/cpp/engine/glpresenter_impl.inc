@@ -629,6 +629,7 @@ void GLPresenter::glDrawPreview() {
 // day-night, init) still solve the full buffer, and a pure pan re-solves only when
 // the window drifts outside the last solve's exact zone.
 void GLPresenter::glPresentWindow(int forceFull) {
+  E.perfLightMs = E.perfFillMs = E.perfUploadMs = 0;
   E.useLayer(&E.fg); E.buildDirtyRects(); bool fgDirty = E.fg.dirtyRenderCount > 0;
   E.useLayer(&E.bg); E.buildDirtyRects(); bool bgDirty = E.bg.dirtyRenderCount > 0;
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
@@ -650,6 +651,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   // Content changes re-solve just the window+margin on the usual throttle. A
   // window that drifts outside the last solve's exact zone re-solves
   // immediately — those cells' light is stale or was only ring-approximate.
+  bool lightUpdated = false;
   if (Renderer::RENDER_LIGHTING_ENABLED) {
     bool lightForced = forceFull || worldShifted || skyChanged;
     bool lightThrottleReady = E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
@@ -671,52 +673,60 @@ void GLPresenter::glPresentWindow(int forceFull) {
       glLightX0 = lx0; glLightY0 = ly0; glLightX1 = lx1; glLightY1 = ly1;
       glLightTick = E.tick;
       E.perfLightMs = emscripten_get_now() - t0;
+      lightUpdated = true;
     }
   }
+  // A lighting solve can change every visible pixel, and a moved window exposes
+  // texels that may never have been filled. Ordinary grid diffs between lighting
+  // solves only affect their dirty chunks, so keep those updates incremental.
+  bool fullWindowRefresh = windowMoved || lightUpdated;
   E.renderer.renderFrameSalt = animFrame;
   int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
   int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
   int cw = cx1 - cx0 + 1, count = cw * (cy1 - cy0 + 1);
-  auto fillLayer = [&](Layer& lay, std::vector<uint8_t>& animatedChunks, bool animatedOnly) {
+  auto fillLayer = [&](Layer& lay, std::vector<uint8_t>& animatedChunks) {
     E.useLayer(&lay);
     size_t chunkTotal = (size_t)E.chunkCols * E.chunkRows;
     if (animatedChunks.size() != chunkTotal) animatedChunks.assign(chunkTotal, 0);
-    std::atomic<bool> anyAnimated{false};
 #ifdef __EMSCRIPTEN_PTHREADS__
     // Unlike simulation, render chunks only read grid/light state and write
     // disjoint pixel spans, so every visible chunk can run in one wave.
     E.chunkPool.parallelFor(count, [&](int i) {
       int cy = cy0 + i / cw, cx = cx0 + i % cw;
       int ci = cy * E.chunkCols + cx;
-      if (animatedOnly && !animatedChunks[ci]) return;
+      if (!fullWindowRefresh && !lay.dirtyRender[ci] && !(animationDue && animatedChunks[ci])) return;
       int tx0 = imax(x0, cx * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
       int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
       bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
-      if (!animatedOnly) animatedChunks[ci] = found ? 1 : 0;
-      if (found) anyAnimated.store(true, std::memory_order_relaxed);
+      animatedChunks[ci] = found ? 1 : 0;
     });
 #else
     for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++) {
       int ci = cy * E.chunkCols + cx;
-      if (animatedOnly && !animatedChunks[ci]) continue;
+      if (!fullWindowRefresh && !lay.dirtyRender[ci] && !(animationDue && animatedChunks[ci])) continue;
       int tx0 = imax(x0, cx * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
       int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
       bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
-      if (!animatedOnly) animatedChunks[ci] = found ? 1 : 0;
-      if (found) anyAnimated.store(true, std::memory_order_relaxed);
+      animatedChunks[ci] = found ? 1 : 0;
     }
 #endif
-    return anyAnimated.load(std::memory_order_relaxed);
+    for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++)
+      if (animatedChunks[cy * E.chunkCols + cx]) return true;
+    return false;
   };
-  auto uploadAnimated = [&](Layer& lay, GLuint tex, const std::vector<uint8_t>& animatedChunks) {
+  auto uploadChanged = [&](Layer& lay, GLuint tex, const std::vector<uint8_t>& animatedChunks) {
     E.useLayer(&lay);
     for (int cy = cy0; cy <= cy1; cy++) {
       int cx = cx0;
       while (cx <= cx1) {
-        while (cx <= cx1 && !animatedChunks[cy * E.chunkCols + cx]) cx++;
+        auto changed = [&](int x) {
+          int ci = cy * E.chunkCols + x;
+          return lay.dirtyRender[ci] || (animationDue && animatedChunks[ci]);
+        };
+        while (cx <= cx1 && !changed(cx)) cx++;
         if (cx > cx1) break;
         int run0 = cx;
-        while (cx + 1 <= cx1 && animatedChunks[cy * E.chunkCols + cx + 1]) cx++;
+        while (cx + 1 <= cx1 && changed(cx + 1)) cx++;
         int tx0 = imax(x0, run0 * CHUNK_SIZE), ty0 = imax(y0, cy * CHUNK_SIZE);
         int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
         glUploadWindow(tex, tx0, ty0, tx1, ty1);
@@ -725,22 +735,33 @@ void GLPresenter::glPresentWindow(int forceFull) {
     }
   };
   double tf = emscripten_get_now();
-  bool fgAnimated = fillLayer(E.fg, glAnimatedFg, !contentDirty && !windowMoved);
-  bool bgAnimated = fillLayer(E.bg, glAnimatedBg, !contentDirty && !windowMoved);
+  bool fgAnimated = fillLayer(E.fg, glAnimatedFg);
+  bool bgAnimated = fillLayer(E.bg, glAnimatedBg);
   E.perfFillMs = emscripten_get_now() - tf;
   double tu = emscripten_get_now();
-  if (contentDirty || windowMoved) {
+  if (fullWindowRefresh) {
     E.useLayer(&E.fg); glUploadWindow(glTex, x0, y0, x1, y1);
     E.useLayer(&E.bg); glUploadWindow(glTexBg, x0, y0, x1, y1);
-    glVisibleAnimated = fgAnimated || bgAnimated;
   } else {
-    uploadAnimated(E.fg, glTex, glAnimatedFg);
-    uploadAnimated(E.bg, glTexBg, glAnimatedBg);
+    uploadChanged(E.fg, glTex, glAnimatedFg);
+    uploadChanged(E.bg, glTexBg, glAnimatedBg);
   }
+  glVisibleAnimated = fgAnimated || bgAnimated;
   E.perfUploadMs = emscripten_get_now() - tu;
 
-  E.useLayer(&E.fg); memset(E.L->dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows); E.fg.dirtyRenderCount = 0;
-  E.useLayer(&E.bg); memset(E.L->dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows); E.bg.dirtyRenderCount = 0;
+  auto clearPresentedDirty = [&](Layer& lay) {
+    E.useLayer(&lay);
+    memset(lay.dirtyRender.data(), 0, (size_t)E.chunkCols * E.chunkRows);
+    lay.dirtyRenderCount = 0;
+    // Authority/full engines retain row marks for beginStepDirty's scheduler.
+    // A presentation replica never steps cells, so retaining them would make
+    // buildDirtyRects re-promote every historical diff on every later frame.
+    if (E.storageRole == ESR_PRESENTATION) {
+      for (int y = 0; y < E.rows; y++) { lay.rowMarkMin[y] = E.cols; lay.rowMarkMax[y] = -1; }
+    }
+  };
+  clearPresentedDirty(E.fg);
+  clearPresentedDirty(E.bg);
   glLastCamCol = camCol; glLastCamRow = camRow;
   glLastWorldOffX = E.fg.worldOffsetX; glLastWorldOffY = E.fg.worldOffsetY;
   glLastSkyLight = (int)E.renderer.renderSkyLight;

@@ -65,21 +65,23 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
 
   // Rolling perf samples for window.__sandPerf / perfStats()
   const PERF_SAMPLES = 120;
-  const perfStepSamples = new Float32Array(PERF_SAMPLES);
-  const perfActorSamples = new Float32Array(PERF_SAMPLES);
-  const perfRenderSamples = new Float32Array(PERF_SAMPLES);
+  const perfRafSamples = new Float32Array(PERF_SAMPLES);
   let perfSampleIdx = 0;
   let perfSampleCount = 0;
-  // avg + p95 of the sampled step+render frame cost (shared by both perf surfaces).
+  let lastRafNow = 0;
+  let currentRafMs = 0;
+  const perfPeaks = {
+    rafMs: 0, stepMs: 0, renderMs: 0, lightMs: 0, fillMs: 0, uploadMs: 0,
+  };
+  // Actual requestAnimationFrame interval, rather than adding the authority
+  // worker's concurrent step time to main-thread render time.
   const perfFrameSummary = () => {
     const n = perfSampleCount;
     if (!n) return { avg: 0, p95: 0, samples: 0 };
-    const sums = [];
-    for (let i = 0; i < n; i++) sums.push(perfActorSamples[i] + perfStepSamples[i] + perfRenderSamples[i]);
-    sums.sort((a, b) => a - b);
+    const frames = Array.from(perfRafSamples.subarray(0, n)).sort((a, b) => a - b);
     return {
-      avg: sums.reduce((a, b) => a + b, 0) / n,
-      p95: sums[Math.min(n - 1, Math.floor(n * 0.95))],
+      avg: frames.reduce((a, b) => a + b, 0) / n,
+      p95: frames[Math.min(n - 1, Math.floor(n * 0.95))],
       samples: n,
     };
   };
@@ -192,11 +194,16 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     const engine = ctx.engine;
     if (!engine) return;
     const perf = engine.getPerf();
-    perfActorSamples[perfSampleIdx] = perf.actorMs || 0;
-    perfStepSamples[perfSampleIdx] = perf.stepMs || 0;
-    perfRenderSamples[perfSampleIdx] = ctx.perfRenderMs;
+    const authorityPerf = ctx.worldWorker?.state || perf;
+    perfRafSamples[perfSampleIdx] = currentRafMs;
     perfSampleIdx = (perfSampleIdx + 1) % PERF_SAMPLES;
     if (perfSampleCount < PERF_SAMPLES) perfSampleCount++;
+    perfPeaks.rafMs = Math.max(perfPeaks.rafMs, currentRafMs);
+    perfPeaks.stepMs = Math.max(perfPeaks.stepMs, authorityPerf.stepMs || 0);
+    perfPeaks.renderMs = Math.max(perfPeaks.renderMs, ctx.perfRenderMs || 0);
+    perfPeaks.lightMs = Math.max(perfPeaks.lightMs, perf.lightMs || 0);
+    perfPeaks.fillMs = Math.max(perfPeaks.fillMs, perf.fillMs || 0);
+    perfPeaks.uploadMs = Math.max(perfPeaks.uploadMs, perf.uploadMs || 0);
   };
 
   // The browser never advances authoritative actors or cells. Its fixed clock
@@ -231,6 +238,11 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   let lastAmbienceSample = -Infinity;
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
+    const rafDelta = lastRafNow ? now - lastRafNow : 0;
+    // Ignore tab suspension / debugger pauses; real slow frames below 100 ms
+    // remain captured, including the reported ~25 ms TNT dip.
+    currentRafMs = rafDelta > 0 && rafDelta < 100 ? rafDelta : 0;
+    lastRafNow = now;
     const dayChanged = updateDayNight(now);
 
     // Keep the engine's pointer fresh as the page scrolls under a static cursor
@@ -315,6 +327,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     followCamera,
     playersForRender,
     perfFrameSummary,
+    perfPeaks: () => ({ ...perfPeaks }),
     setDayPhase,
     clearDayPhase,
     getDayNight: () => ({ ...ctx.dayNight, cycleMs: DAY_CYCLE_MS, overridden: ctx.dayPhaseOverride !== null }),

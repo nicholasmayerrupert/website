@@ -354,6 +354,9 @@ function createPerfHud(root, game) {
   addRow('light', 'light ms');
   addRow('fill', 'fill ms');
   addRow('upload', 'upload ms');
+  addRow('mirrorApply', 'mirror apply');
+  addRow('packet', 'packet KB');
+  addRow('threads', 'threads w/r');
   addRow('grounding', 'grounding ms');
   addRow('xlayerG', 'x-layer ground');
   addRow('compIdx', 'comp index ms');
@@ -366,6 +369,8 @@ function createPerfHud(root, game) {
   addRow('react', 'react ms');
   addRow('tail', 'tail ms');
   addRow('frame', 'frame p95');
+  addRow('peakFrame', 'peak raf/step');
+  addRow('peakRender', 'peak render/l/f/u');
   addRow('timing', 'actor debt');
   addRow('dirty', 'dirty chunks');
   addRow('dirtyRows', 'dirty rows');
@@ -414,6 +419,9 @@ function createPerfHud(root, game) {
     rows.light.textContent = f2(s.lightMs);
     rows.fill.textContent = f2(s.fillMs);
     rows.upload.textContent = f2(s.uploadMs);
+    rows.mirrorApply.textContent = f2(s.mirrorApplyMs);
+    rows.packet.textContent = ((s.mirrorPacketBytes || 0) / 1024).toFixed(1);
+    rows.threads.textContent = `${s.workerThreadWorkers || 0}/${s.renderThreadWorkers || 0}`;
     rows.grounding.textContent = f2(s.groundingMs);
     rows.xlayerG.textContent = f2(s.crossLayerGroundingMs);
     rows.compIdx.textContent = f2(s.componentIndexMs);
@@ -426,6 +434,8 @@ function createPerfHud(root, game) {
     rows.react.textContent = f2(s.reactMs);
     rows.tail.textContent = f2(s.tailMs);
     rows.frame.textContent = f2(s.p95FrameMs);
+    rows.peakFrame.textContent = `${f2(s.peakRafMs)} / ${f2(s.peakStepMs)}`;
+    rows.peakRender.textContent = `${f2(s.peakRenderMs)} / ${f2(s.peakLightMs)} / ${f2(s.peakFillMs)} / ${f2(s.peakUploadMs)}`;
     rows.timing.textContent = `${f2(s.actorDebtMs)} / ${f2(s.actorDroppedMs)}`;
     rows.dirty.textContent = String(s.dirtyChunks || 0);
     rows.dirtyRows.textContent = String(s.dirtyRows || 0);

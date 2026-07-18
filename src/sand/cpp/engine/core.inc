@@ -379,6 +379,16 @@
   }
 
   void relaxLiquidGaps() {
+    // Candidate discovery already scanned the active band. A blast-only band has
+    // no liquid to relax, but used to pay two more full-span scans here. Preserve
+    // the per-active-row RNG draws so this remains byte-identical to the old path.
+    if (activeLiquidCells.empty()) {
+      for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
+        int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
+        (void)rand();
+      }
+      return;
+    }
     for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
       int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
@@ -404,6 +414,9 @@
   // stay put and go inert. General same-level flow still does NOT treat lighter
   // liquid as air (canEnterIndex) — only this free-surface solver does.
   void levelLiquidSurfaces() {
+    // The active candidate scan is authoritative for this tick. Avoid two full
+    // active-span passes for gas/empty blast aftermath when no liquid exists.
+    if (activeLiquidCells.empty()) return;
     auto surfacePassable = [&](uint8_t c, uint8_t m) {
       return c == EMPTY
           || (isLooseSolidMaterial(c) && canDisplaceByLooseDensity(m, c))
@@ -476,6 +489,8 @@
   }
   void separateLooseByDensity() {
     int parity = rand() < 0.5 ? 0 : 1;
+    // Keep the RNG draw above for deterministic parity with the former scan.
+    if (activeDensityCells.empty()) return;
     for (int y = 1; y < rows - 1; y++) {
       int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
       bool ltr = (y % 2) == 0; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;

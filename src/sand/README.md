@@ -310,8 +310,9 @@ The creative material field opens an animated, searchable dropdown whose 9×9
 pixel samples reuse each material's generated base color and texture amplitude.
 Main contains the full catalog, with the most useful tools and materials pinned
 first and creature eggs grouped at the bottom. Tools, Terrain, Fluids, Flora,
-Reactions, and Creatures provide shorter filtered folders. The six plant species
-use distinct 9×9 seed icons. Search spans every folder.
+Reactions, and Creatures provide shorter filtered folders. The seven plant species
+use distinct 9×9 seed icons; vine seeds grow downward and can bud emissive
+glowberries. Search spans every folder.
 Desktop keeps the dropdown open for repeated picks until it is explicitly
 closed; mobile closes after a pick, while its joystick and utility pad remain
 available throughout selection.
@@ -457,7 +458,7 @@ hardcoded id list, decides who reacts.
   melts `ICE`/`SNOW` → brine on contact (the grain is spent).
 - **Brine**: flows like water but is **freeze-immune** (the ice-freeze reaction only
   targets `WATER`), so salted meltwater never re-ices; still boils off on lava, and
-  won't nourish plants (trees drink `WATER`), so saltwater kills crops.
+  remains distinct from fresh water. Seed growth currently has no water requirement.
 - **TNT** (`explosives.inc`): lit by fire/lava (or a gunpowder fuse), it fuses then
   detonates a **`DURABILITY`-gated crater** — soft blocks blow up from farther out
   than hard ones. The blast scatters cosmetic particles, ejects rubble chunks (free

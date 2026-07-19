@@ -82,7 +82,7 @@ const CLASS_EXPECTED = {
     'CRYSTAL', 'MYCELIUM', 'MYCELIUM_SPORE',
     'ICE', 'RIGID', 'TNT',
     'SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
-    'GLOWBERRY', 'GLOWSHROOM',
+    'GLOWBERRY', 'GLOWSHROOM', 'PINE_NEEDLES', 'WILLOW_LEAF', 'BUSH_LEAF',
   ],
 };
 const liveIds = new Set(MATERIALS.map((m) => m.id));
@@ -121,7 +121,8 @@ check('every gas is non-blocking and not blast-damageable', MATERIALS.every((m) 
 check('every liquid is non-rigid and not component-registered', MATERIALS.every((m) => !isLiquid(m.id) || (!isRigid(m.id) && MAT_CGROUP[m.id] === CG.none)));
 check('every loose solid is solid class and componentGroup none', MATERIALS.every((m) => !isLooseSolid(m.id) || (MAT_CLASS[m.id] === MC.SOLID && MAT_CGROUP[m.id] === CG.none)));
 check('every plant/wood material is rigid class and plant componentGroup',
-  ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE']
+  ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
+    'GLOWBERRY', 'PINE_NEEDLES', 'WILLOW_LEAF', 'BUSH_LEAF']
     .every((n) => isRigid(MAT[n]) && MAT_CGROUP[MAT[n]] === CG.plant));
 check('class table agrees with legacy kind buckets for gas/liquid/powder routing',
   MATERIALS.every((m) =>

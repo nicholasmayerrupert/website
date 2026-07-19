@@ -1,7 +1,8 @@
 #pragma once
-// Plant + mycelium growth (extracted from the Engine in 5e). Trees drink
-// adjacent WATER and grow species-shaped wood/leaves; mycelium creeps over
-// stone. Owns the per-tree growth scratch (species material selectors set at
+// Plant + mycelium growth (extracted from the Engine in 5e). The dormant tree
+// water-consumption path is retained in growth_impl.inc, but seeds currently
+// grow dry. Mycelium creeps over stone. Owns the per-tree growth scratch
+// (species material selectors set at
 // the top of each comp walk). DETERMINISM: heavy shared-rand() user — call
 // order is part of the sim contract. Method bodies live in growth_impl.inc.
 
@@ -19,6 +20,7 @@ class GrowthSystem {
   bool growStraight();
   bool compHasSeed(Comp& comp);
   bool findWaterTouching(Comp& comp, int count, std::vector<int>& picked);
+  uint32_t plantGrowthSignature(Comp& comp);
   void refreshPlantCache(Comp& comp);
   int tryGrowWood(Comp& comp, std::unordered_set<int>& reserved);
   bool addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved);

@@ -162,13 +162,14 @@
   // Flora-type material classification: which plant-family materials act as a tree
   // trunk vs foliage, and the species<->material mapping. A plant comp is a single
   // species, so its trunk/leaf material is derived from its plantType (and vice
-  // versa when re-registering streamed-in cells). DRIFTWOOD/VINE are neither, so
-  // they never act as a growth source (driftwood stays non-growing as before).
+  // versa when re-registering streamed-in cells). DRIFTWOOD is neither, so it
+  // never acts as a growth source (driftwood stays non-growing as before).
   inline bool isPlantWood(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTWOOD; }
   inline bool isPlantLeaf(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTLEAF; }
-  inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : WOOD; }
-  inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_MUSHROOM ? MUSH_CAP : PLANT; }
-  inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : PT_OAK; }
+  inline uint8_t plantWoodMat(uint8_t pt) { return pt == PT_PINE ? PINE_WOOD : pt == PT_CACTUS ? CACTUS : pt == PT_MUSHROOM ? MUSH_STEM : pt == PT_VINE ? VINE : WOOD; }
+  inline uint8_t plantLeafMat(uint8_t pt) { return pt == PT_PINE ? PINE_NEEDLES : pt == PT_WILLOW ? WILLOW_LEAF : pt == PT_MUSHROOM ? MUSH_CAP : pt == PT_BUSH ? BUSH_LEAF : pt == PT_VINE ? GLOWBERRY : PLANT; }
+  inline uint8_t plantTypeFromWood(uint8_t m) { return m == PINE_WOOD ? PT_PINE : m == CACTUS ? PT_CACTUS : m == MUSH_STEM ? PT_MUSHROOM : m == VINE ? PT_VINE : PT_OAK; }
+  inline uint8_t plantTypeFromLeaf(uint8_t m) { return m == PINE_NEEDLES ? PT_PINE : m == WILLOW_LEAF ? PT_WILLOW : m == MUSH_CAP ? PT_MUSHROOM : m == BUSH_LEAF ? PT_BUSH : m == GLOWBERRY ? PT_VINE : PT_OAK; }
   inline bool isMyceliumMaterial(uint8_t m) { return m == MYCELIUM || m == MYCELIUM_SPORE; }
   inline bool componentDisplaceable(uint8_t m) { return m == EMPTY || m == SAND || isLiquidMaterial(m) || isGasMaterial(m); }
   inline bool isInBounds(int x, int y) { return x > 0 && x < cols - 1 && y > 0 && y < rows; }

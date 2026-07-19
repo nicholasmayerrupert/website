@@ -14,7 +14,7 @@
 // Every entry resolves to a creative pick {kind, value} matching the engine's
 // CreativeKind enum (consumed by game.setCreativeMaterial):
 //   CK_MATERIAL = 0  -> value = material id
-//   CK_SEED     = 1  -> value = species index (0..5)
+//   CK_SEED     = 1  -> value = species index (0..6)
 //   CK_ERASER   = 2  -> value = 0
 //   CK_CUBE     = 3  -> value = 0
 //   CK_CREATURE = 4  -> value = creature species id
@@ -33,7 +33,7 @@ const CK_CUBE = 3;
 const CK_CREATURE = 4;
 
 // Species order mirrors the engine's seed-species indices. Each 9x9 pattern is
-// intentionally distinct at menu size instead of presenting six green squares.
+// intentionally distinct at menu size instead of presenting seven green squares.
 const SEED_SPECIES = [
   { name: 'Oak', colors: ['#d59a5f', '#78472d'], pixels: [
     '.........', '...222...', '..21112..', '..21112..', '..11111..', '...111...', '...121...', '....2....', '.........',
@@ -52,6 +52,9 @@ const SEED_SPECIES = [
   ] },
   { name: 'Bush', colors: ['#70b764', '#bd5c82'], pixels: [
     '.........', '..12121..', '.1121211.', '.2111112.', '.1212121.', '..11111..', '...121...', '....2....', '.........',
+  ] },
+  { name: 'Vine', colors: ['#69b84c', '#ffb833'], pixels: [
+    '....1....', '...111...', '....1....', '...11....', '...12....', '..11.....', '..1......', '.21......', '.........',
   ] },
 ];
 
@@ -78,9 +81,9 @@ const FEATURED_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'water', 'acid', 'l
 const MAIN_TAIL_LABELS = [
   'fire', 'methane', 'oil', 'gunpowder', 'crystal', 'mycelium_spore', 'mycelium', 'glowberry', 'glowshroom',
   'brine', 'steam', 'acrid_smoke', 'ice',
-  'oak seed', 'pine seed', 'willow seed', 'cactus seed', 'mushroom seed', 'bush seed',
+  'oak seed', 'pine seed', 'willow seed', 'cactus seed', 'mushroom seed', 'bush seed', 'vine seed',
   'grass', 'dirt', 'snow', 'mud', 'salt', 'gold_ore', 'iron_ore', 'copper_ore', 'coal_ore',
-  'brick', 'clay', 'sandstone', 'moss', 'wood', 'pine_wood', 'cactus', 'mush_cap', 'mush_stem',
+  'brick', 'clay', 'sandstone', 'moss', 'wood', 'pine_wood', 'pine_needles', 'willow_leaf', 'bush_leaf', 'cactus', 'mush_cap', 'mush_stem',
   'vine', 'plant', 'driftwood', 'debris',
 ];
 const MAIN_ORDER_LABELS = [...FEATURED_LABELS, ...MAIN_TAIL_LABELS];
@@ -95,7 +98,7 @@ const PALETTE_SECTIONS = [
   { id: 'fluids', label: 'Fluids', accent: '#70bfff', labels: ['water', 'oil', 'acid', 'lava', 'ice', 'steam', 'brine'] },
   { id: 'flora', label: 'Flora', accent: '#7dd88a', labels: [
     'seed', 'wood', 'plant', 'driftwood', 'moss', 'pine_wood', 'cactus', 'mush_stem',
-    'mush_cap', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
+    'mush_cap', 'pine_needles', 'willow_leaf', 'bush_leaf', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
   ], kinds: [CK_SEED] },
   { id: 'reactions', label: 'Reactions', accent: '#ff856c', labels: [
     'fire', 'steam', 'methane', 'oil', 'acid', 'lava', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
@@ -107,7 +110,7 @@ const entryInSection = (entry, section) =>
   section.all || section.labels?.includes(entry.label) || section.kinds?.includes(entry.kind);
 
 
-// Build the full entry list: materials (minus EMPTY), 6 seeds, eraser, cube.
+// Build the full entry list: materials (minus EMPTY), 7 seeds, eraser, cube.
 // Each entry is { key, label, color, kind, value } where `color` is a css color
 // string used as the swatch background. Entries are then reordered into Main's
 // curated order; any future materials not yet ranked follow in schema order.

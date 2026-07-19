@@ -1930,7 +1930,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       Comp c; c.id = E.L->nextPlantId++; c.yMax = yMax; c.age = 0; c.cacheDirty = true;
       // Re-derive the species from the trunk material (so a streamed-in / restored
       // tree keeps its type — the cells ARE the persistence) and count generically.
-      for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) c.leafCount++; }
+      for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) { c.leafCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromLeaf(m); } }
       c.cells = std::move(cells); E.L->plantComponents.push_back(std::move(c));
     }
   }
@@ -1997,7 +1997,7 @@ void ComponentSystem::registerPlantCells(uint8_t mat, std::unordered_set<int>& c
   registerRigidCells(E.L->plantComponents, E.L->nextPlantId, mat, cells, yMax, false);
   Comp& c = E.L->plantComponents.back();
   c.woodCount = 0; c.leafCount = 0; c.age = 0; c.growing = false; c.cacheDirty = true; c.plantType = PT_OAK;
-  for (int k : c.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) c.leafCount++; }
+  for (int k : c.cells) { uint8_t m = E.L->grid[k]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) { c.leafCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromLeaf(m); } }
 }
 
 // Split the freshly-placed `cells` into 8-connected groups and register each as

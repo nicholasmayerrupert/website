@@ -87,7 +87,7 @@ try {
   check('creative Main folder begins with the ten featured picks',
     mainLabels.slice(0, 10).join(',') === 'cube,eraser,rigid,stone,water,acid,lava,tnt,seed,sand',
     mainLabels.slice(0, 10).join(','));
-  check('creative Main folder contains the complete catalog', mainLabels.length === 57, `${mainLabels.length} entries`);
+  check('creative Main folder contains the complete catalog', mainLabels.length === 62, `${mainLabels.length} entries`);
   check('creative Main folder keeps all spawn eggs at the bottom',
     mainLabels.slice(-7).every((label) => label.endsWith('Spawn Egg')), mainLabels.slice(-7).join(','));
   check('creative picker exposes all seven material folders', await game.locator('.sg-section').count() === 7);
@@ -100,8 +100,8 @@ try {
   const seedIconUrls = await game.locator('.sg-opt:not([hidden])').evaluateAll((options) => options
     .filter((option) => / Seed$/.test(option.querySelector('.sg-name')?.textContent || ''))
     .map((option) => option.querySelector('canvas').toDataURL()));
-  check('all six species seeds render as distinct pixel icons',
-    seedIconUrls.length === 6 && new Set(seedIconUrls).size === 6, `${new Set(seedIconUrls).size}/${seedIconUrls.length}`);
+  check('all seven species seeds render as distinct pixel icons',
+    seedIconUrls.length === 7 && new Set(seedIconUrls).size === 7, `${new Set(seedIconUrls).size}/${seedIconUrls.length}`);
   await game.locator('.sg-section', { hasText: 'Main' }).click();
   await game.locator('.sg-search').fill('fox spawn egg');
   await game.locator('.sg-opt', { hasText: 'Fox Spawn Egg' }).click();
@@ -249,6 +249,7 @@ try {
   });
   check('mobile creative rests behind only the START control',
     restingUi.start && !restingUi.palette && !restingUi.joystick && !restingUi.controls);
+  check('mobile navbar is visible before START', await mobile.locator('[data-site-navbar]').isVisible());
   check('resting mobile creative has no mute UI and audio is disabled',
     restingUi.soundButtons === 0 && !restingUi.audioEnabled);
   await mobileGame.locator('.sg-start').tap();
@@ -263,6 +264,7 @@ try {
   });
   check('START reveals the full mobile creative controls',
     !startedUi.start && startedUi.palette && startedUi.joystick && startedUi.controls && startedUi.audioEnabled);
+  check('START hides the mobile navbar', !(await mobile.locator('[data-site-navbar]').isVisible()));
 
   // Reproduce the real failure: move to a buffer corner, then start a second
   // zoom after the first mirror resize but before its authority resize settles.

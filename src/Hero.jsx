@@ -7,13 +7,17 @@ import { SandGame } from "./sand/react/SandGame";
 const PERF_ROUTE = typeof window !== 'undefined' &&
   window.location.pathname.replace(/\/+$/, '') === '/fps';
 
-const Hero = () => {
+const Hero = ({ onDrawModeChange }) => {
   const [drawModeActive, setDrawModeActive] = useState(false);
+  const handleDrawModeChange = (active) => {
+    setDrawModeActive(active);
+    onDrawModeChange?.(active);
+  };
 
   return (
     <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       <div className="absolute inset-0 z-10">
-        <SandGame mode="creative" onDrawModeChange={setDrawModeActive} perfHud={PERF_ROUTE} debugHitboxes={PERF_ROUTE} />
+        <SandGame mode="creative" onDrawModeChange={handleDrawModeChange} perfHud={PERF_ROUTE} debugHitboxes={PERF_ROUTE} />
       </div>
 
       {/* Text block */}

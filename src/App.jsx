@@ -42,10 +42,12 @@ function LazySection({ id, minHeight = '100svh', children }) {
 }
 
 const App = () => {
+  const [sandActive, setSandActive] = useState(false);
+
   return (
     <div className="relative h-screen w-full">
-      <NavBar />
-      <div id="home"><Hero/></div>
+      <NavBar mobileHidden={sandActive} />
+      <div id="home"><Hero onDrawModeChange={setSandActive}/></div>
       <LazySection id="skills"><About/></LazySection>
       <LazySection id="projects"><TileGrid/></LazySection>
       <LazySection id="contact" minHeight="50svh"><Contact/></LazySection>

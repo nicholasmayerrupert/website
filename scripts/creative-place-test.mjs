@@ -13,7 +13,7 @@ import { CREATIVE_KIND as CK, CREATURE } from '../src/sand/wasmBridge/abi.genera
 import { buildEntries } from '../src/sand/embed/toolPalette.js';
 import { makeChecker } from './sand-test-util.mjs';
 
-const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5 };
+const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6 };
 const COLS = 100, ROWS = 80;
 await initSandWasm();
 const { check, done } = makeChecker('creative spawn-everything (Phase C)');
@@ -30,9 +30,9 @@ check('creative menu ends with all seven creature spawn eggs',
   menuTail.length === 7 && menuTail.every((entry, i) =>
     entry.kind === CK.CREATURE && entry.value === i && entry.label.endsWith('Spawn Egg')));
 const seedEntries = buildEntries().filter((entry) => entry.kind === CK.SEED);
-check('all six species seeds have distinct creative-menu pixel icons',
-  seedEntries.length === 6 && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === 6
-    && new Set(seedEntries.map((entry) => entry.seedColors.join('/'))).size === 6);
+check('all seven species seeds have distinct creative-menu pixel icons',
+  seedEntries.length === 7 && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === 7
+    && new Set(seedEntries.map((entry) => entry.seedColors.join('/'))).size === 7);
 
 // 1) Any COMPONENT material drafts with a live preview, then finalizes into the grid.
 {

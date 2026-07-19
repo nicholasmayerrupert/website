@@ -1,6 +1,5 @@
-// Phase 4 flora: per-species trees grow with distinct rules/materials. PT_OAK is
-// the original behavior. Cactus/mushroom grow WITHOUT water (desert/cave); each
-// species is made of its own wood/leaf material so the type survives streaming.
+// Per-species flora grow without water and use distinct silhouettes/materials.
+// Vines descend and produce emissive glowberries.
 // Run: node scripts/flora-test.mjs
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
@@ -8,14 +7,16 @@ import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 160, ROWS = 120;
-const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5 };
+const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6 };
 await initSandWasm();
 const { check, done } = makeChecker('flora types (Phase 4)');
 
-const LEAF = new Set([MAT.PLANT, MAT.MUSH_CAP]);
-const PLANTISH = new Set([MAT.SEED, MAT.WOOD, MAT.PLANT, MAT.PINE_WOOD, MAT.CACTUS, MAT.MUSH_STEM, MAT.MUSH_CAP, MAT.VINE]);
+const LEAF = new Set([MAT.PLANT, MAT.PINE_NEEDLES, MAT.WILLOW_LEAF, MAT.BUSH_LEAF, MAT.MUSH_CAP, MAT.GLOWBERRY]);
+const WOOD = new Set([MAT.WOOD, MAT.PINE_WOOD, MAT.CACTUS, MAT.MUSH_STEM, MAT.VINE]);
+const PLANTISH = new Set([MAT.SEED, ...WOOD, ...LEAF]);
 
-// Grow one seeded tree on a stone floor; water it unless it's a dry species.
+// Grow one seeded tree on a stone floor. `water` is retained so this harness can
+// still exercise the dormant water path if the growth requirement is restored.
 // `worldSeed` varies so species shape can be measured across RNG streams (a single
 // seed can occasionally flip oak/willow width by a cell).
 function grow(type, water, steps = 1100, worldSeed = 7) {
@@ -27,13 +28,17 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
   for (let s = 0; s < steps; s++) { if (water && s % 15 === 0) e.paintDisc(70, 86, 2, MAT.WATER, false); t += 16; e.step(t); }
   const g = e.getGrid();
   const cnt = {}; let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1, leaves = 0;
-  let leafBelowWood = 0, leafAboveWood = 0, woodCells = 0;
+  let leafBelowWood = 0, leafAboveWood = 0, woodCells = 0, woodMinX = 1e9, woodMaxX = -1;
+  const woodRowMin = Array(ROWS).fill(1e9), woodRowMax = Array(ROWS).fill(-1);
   // First pass: wood top (min Y — smaller y is up).
   let woodMinY = 1e9;
   for (let i = 0; i < g.length; i++) {
-    if (g[i] === MAT.WOOD || g[i] === MAT.PINE_WOOD) {
+    if (WOOD.has(g[i])) {
       const y = (i / COLS) | 0;
       if (y < woodMinY) woodMinY = y;
+      const x = i % COLS;
+      woodMinX = Math.min(woodMinX, x); woodMaxX = Math.max(woodMaxX, x);
+      woodRowMin[y] = Math.min(woodRowMin[y], x); woodRowMax[y] = Math.max(woodRowMax[y], x);
       woodCells++;
     }
   }
@@ -47,56 +52,87 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
       // Adjacent leaf contacts on wood cells measure droop (willow leaf candidates bias y+1).
       const up = y > 0 ? g[(y - 1) * COLS + x] : 0;
       const down = y + 1 < ROWS ? g[(y + 1) * COLS + x] : 0;
-      if (up === MAT.WOOD || up === MAT.PINE_WOOD) leafBelowWood++; // leaf is below a wood cell
-      if (down === MAT.WOOD || down === MAT.PINE_WOOD) leafAboveWood++; // leaf is above a wood cell
+      if (WOOD.has(up)) leafBelowWood++; // leaf is below a wood cell
+      if (WOOD.has(down)) leafAboveWood++; // leaf is above a wood cell
     }
   }
   e.destroy();
+  const branchWidths = woodRowMin.flatMap((x, y) => woodRowMax[y] - x >= 2 ? [woodRowMax[y] - x + 1] : []);
   return {
     cnt, leaves, w: maxX - minX + 1, h: maxY - minY + 1,
-    leafBelowWood, leafAboveWood, woodCells, woodMinY,
+    leafBelowWood, leafAboveWood, woodCells, woodMinY, woodW: woodMaxX - woodMinX + 1,
+    branchRows: branchWidths.length, branchWidths,
   };
 }
 
-const oak = grow(PT.OAK, true);
-check(`oak grows wood + foliage (${oak.cnt[MAT.WOOD]}w ${oak.cnt[MAT.PLANT]}l)`, oak.cnt[MAT.WOOD] > 10 && oak.cnt[MAT.PLANT] > 10);
+const oak = grow(PT.OAK, false);
+check(`oak grows WITHOUT water (${oak.cnt[MAT.WOOD]}w ${oak.cnt[MAT.PLANT]}l)`, oak.cnt[MAT.WOOD] > 10 && oak.cnt[MAT.PLANT] > 10);
 
-const pine = grow(PT.PINE, true);
-check(`pine is its own wood (PINE_WOOD ${pine.cnt[MAT.PINE_WOOD] || 0})`, (pine.cnt[MAT.PINE_WOOD] || 0) > 10);
-check(`pine grows tall & narrow (h ${pine.h} > w ${pine.w})`, pine.h > pine.w * 2);
+const pine = grow(PT.PINE, false);
+check(`pine grows WITHOUT water as PINE_WOOD (${pine.cnt[MAT.PINE_WOOD] || 0})`, (pine.cnt[MAT.PINE_WOOD] || 0) > 10);
+check(`pine has a substantial distinct needle canopy (${pine.cnt[MAT.PINE_NEEDLES] || 0})`, (pine.cnt[MAT.PINE_NEEDLES] || 0) >= 220 && !pine.cnt[MAT.PLANT]);
+check(`pine grows a broad, irregular branch skeleton (${pine.woodW}w skeleton; ${pine.w}w x ${pine.h}h overall)`, pine.woodW >= 12 && pine.w >= 16 && pine.h > pine.w);
+const youngPine = grow(PT.PINE, false, 60, 7);
+check(`pine starts foliage while its skeleton is young (${youngPine.woodCells} wood, ${youngPine.leaves} needles)`, youngPine.woodCells < pine.woodCells && youngPine.leaves >= 8);
 
-const willow = grow(PT.WILLOW, true);
-check(`willow grows wood + foliage (${willow.cnt[MAT.WOOD] || 0}w ${willow.cnt[MAT.PLANT] || 0}l)`,
-  (willow.cnt[MAT.WOOD] || 0) > 8 && (willow.cnt[MAT.PLANT] || 0) > 8);
-// Willow foliage candidates bias downward (y+1/y+2). Across several growth RNG
-// streams the canopy is also narrower than oak on average (single-seed width can
-// tie or flip by a cell — seed 7 is one such case: willow 13 vs oak 12).
+const willow = grow(PT.WILLOW, false);
+check(`willow grows WITHOUT water with distinct foliage (${willow.cnt[MAT.WOOD] || 0}w ${willow.cnt[MAT.WILLOW_LEAF] || 0}l)`,
+  (willow.cnt[MAT.WOOD] || 0) > 8 && (willow.cnt[MAT.WILLOW_LEAF] || 0) > 8 && !willow.cnt[MAT.PLANT]);
+// Willow uses a deliberately smaller, thinner wood skeleton than oak and grows
+// long leaf curtains below its lateral limbs.
 const SHAPE_SEEDS = [7, 11, 13, 17, 19, 23, 29, 31];
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
-const oakWidths = SHAPE_SEEDS.map((s) => grow(PT.OAK, true, 1100, s).w);
-const willowWidths = SHAPE_SEEDS.map((s) => grow(PT.WILLOW, true, 1100, s).w);
-const oakMeanW = mean(oakWidths);
-const willowMeanW = mean(willowWidths);
+const oaks = SHAPE_SEEDS.map((s) => grow(PT.OAK, false, 1100, s));
+const willows = SHAPE_SEEDS.map((s) => grow(PT.WILLOW, false, 1100, s));
+const pines = SHAPE_SEEDS.map((s) => grow(PT.PINE, false, 1100, s));
+const oakMeanWood = mean(oaks.map((tree) => tree.woodCells));
+const willowMeanWood = mean(willows.map((tree) => tree.woodCells));
 check(
-  `willow canopy is narrower than oak on average (mean w ${willowMeanW.toFixed(1)} < oak ${oakMeanW.toFixed(1)}; samples willow=[${willowWidths}] oak=[${oakWidths}])`,
-  willowMeanW < oakMeanW,
+  `willow skeleton stays lighter than oak (mean wood ${willowMeanWood.toFixed(1)} < oak ${oakMeanWood.toFixed(1)})`,
+  willowMeanWood < oakMeanWood * 0.75,
 );
-// Droop: willow should put at least as much foliage under wood as over it
-// (oak prefers crown-up candidates). Measured on the default seed stream.
+const pineShapes = new Set(pines.map((tree) => `${tree.woodCells}/${tree.woodW}/${tree.branchRows}`));
+const willowShapes = new Set(willows.map((tree) => `${tree.woodCells}/${tree.woodW}/${tree.branchRows}`));
+check(`pine branch frequency/length varies across seeds (${pineShapes.size}/${SHAPE_SEEDS.length} distinct skeletons)`, pineShapes.size >= 6);
+check(`willow branch frequency/length varies across seeds (${willowShapes.size}/${SHAPE_SEEDS.length} distinct skeletons)`, willowShapes.size >= 6);
 check(
-  `willow foliage droops (leaf-below-wood ${willow.leafBelowWood} >= leaf-above-wood ${willow.leafAboveWood})`,
-  willow.leafBelowWood >= willow.leafAboveWood,
+  `willow has wide arched limbs and hanging foliage (${willow.woodW}w skeleton; leaf-below ${willow.leafBelowWood} vs above ${willow.leafAboveWood})`,
+  willow.woodW >= 15 && willow.leafBelowWood > willow.leafAboveWood * 1.4,
 );
+const youngWillow = grow(PT.WILLOW, false, 60, 7);
+check(`willow starts curtains while its skeleton is young (${youngWillow.woodCells} wood, ${youngWillow.leaves} leaves)`, youngWillow.woodCells < willow.woodCells && youngWillow.leaves >= 5);
 
-const bush = grow(PT.BUSH, true);
-check(`bush stays short & leafy (h ${bush.h}, leaves ${bush.leaves})`, bush.h < oak.h / 2 && bush.leaves > 0);
+const bush = grow(PT.BUSH, false);
+check(`bush grows WITHOUT water and stays short (h ${bush.h}, leaves ${bush.cnt[MAT.BUSH_LEAF] || 0})`, bush.h < oak.h / 2 && (bush.cnt[MAT.BUSH_LEAF] || 0) > 0);
 
 const cactus = grow(PT.CACTUS, false); // NO water
 check(`cactus grows WITHOUT water as CACTUS (${cactus.cnt[MAT.CACTUS] || 0})`, (cactus.cnt[MAT.CACTUS] || 0) > 8);
 check(`cactus has zero foliage (leaves ${cactus.leaves})`, cactus.leaves === 0);
+check(`cactus grows a branching silhouette (${cactus.w}w x ${cactus.h}h)`, cactus.w >= 4 && cactus.h > cactus.w * 2);
 
 const mush = grow(PT.MUSHROOM, false); // NO water
 check(`mushroom grows WITHOUT water: stem + cap (${mush.cnt[MAT.MUSH_STEM] || 0} stem, ${mush.cnt[MAT.MUSH_CAP] || 0} cap)`, (mush.cnt[MAT.MUSH_STEM] || 0) > 4 && (mush.cnt[MAT.MUSH_CAP] || 0) > 4);
+check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_CAP] || 0} cap)`, mush.w >= 9 && (mush.cnt[MAT.MUSH_CAP] || 0) >= 20);
+
+// A vine seed hangs from a grounded ceiling, grows downward, then buds berries.
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 19, sinksOn: false, infinite: false });
+  for (let x = 20; x < 140; x++) e.addDiscToStoneDraft(x, 20, 0);
+  for (let y = 20; y < ROWS; y++) e.addDiscToStoneDraft(20, y, 0);
+  e.finalizeStoneDraft();
+  e.placeSeedTyped(70, 21, PT.VINE);
+  let t = 0;
+  for (let s = 0; s < 1100; s++) { t += 16; e.step(t); }
+  let vine = 0, berries = 0, minY = ROWS, maxY = 0;
+  const g = e.getGrid();
+  for (let i = 0; i < g.length; i++) {
+    if (g[i] === MAT.VINE) { vine++; minY = Math.min(minY, (i / COLS) | 0); maxY = Math.max(maxY, (i / COLS) | 0); }
+    if (g[i] === MAT.GLOWBERRY) berries++;
+  }
+  check(`vine grows downward (${vine} cells, y ${minY}..${maxY})`, vine >= 25 && maxY - minY >= 20);
+  check(`vine grows glowberries (${berries})`, berries >= 3);
+  e.destroy();
+}
 
 // Generic wood placement should stay inert. Trees only grow while connected to a seed.
 {

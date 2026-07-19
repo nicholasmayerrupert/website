@@ -164,7 +164,7 @@ static double wridged2(uint32_t seed, double x, double y, int octaves, double ga
 
 // Flora species — drives growth rules + which wood/leaf material a tree is made of.
 // 0 = OAK = the original behavior, so existing/un-typed plant comps are unchanged.
-enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROOM, PT_BUSH };
+enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROOM, PT_BUSH, PT_VINE };
 
 struct Comp {
   int id = 0;

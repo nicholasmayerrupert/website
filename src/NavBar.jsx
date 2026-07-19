@@ -7,7 +7,7 @@ const NAV_ITEMS = [
   { label: 'CONTACT', href: '#contact' },
 ];
 
-const NavBar = () => {
+const NavBar = ({ mobileHidden = false }) => {
   const [activeHref, setActiveHref] = useState(NAV_ITEMS[0].href);
 
   useEffect(() => {
@@ -29,7 +29,7 @@ const NavBar = () => {
   };
 
   return (
-    <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50">
+    <div data-site-navbar className={`fixed top-2 left-1/2 -translate-x-1/2 z-50 ${mobileHidden ? 'hidden md:block' : ''}`}>
       <div className="flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.04] px-3 py-2 backdrop-blur-xl shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
         {NAV_ITEMS.map((item) => (
           <a

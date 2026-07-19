@@ -57,6 +57,9 @@ bool CreatureSystem::boxFitsHabitat(uint8_t speciesId, double wx, double wy) con
   if (boxHitsSolid(wx, wy, s.w, s.h)) return false;
   if (s.spawn.habitat == CH_WATER) return fluidCoverage(wx, wy, s.w, s.h) >= s.fluidThreshold;
   if (s.spawn.habitat == CH_AIR) return !boxTouchesLiquid(wx, wy, s.w, s.h);
+  // Walkers need dry footing, not merely a solid floor under a flooded body.
+  // This also prevents natural surface/cave spawns from starting underwater.
+  if (fluidCoverage(wx, wy, s.w, s.h) >= s.fluidThreshold) return false;
   int footY = (int)std::floor(wy - E.fg.worldOffsetY + s.h + 0.05);
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + s.w - 1e-6);
   bool floor = false;
@@ -319,6 +322,49 @@ bool CreatureSystem::targetPoint(const Creature& c, double& tx, double& ty, Crea
   return false;
 }
 
+// Find a nearby position that satisfies this species' actual spawn habitat.
+// The expanding deterministic scan favors the closest horizontal escape, while
+// checking every vertical cell lets walkers find sloped banks and cave floors.
+// Results are cached on the creature; this scan normally runs only twice/second.
+bool CreatureSystem::findNearbyHabitat(const Creature& c, int maxRadius, double& tx, double& ty) const {
+  const CreatureSpecies& s = species(c);
+  int bx = (int)std::floor(c.wx), by = (int)std::floor(c.wy);
+  auto accepts = [&](int x, int y) {
+    if (x < E.fg.worldOffsetX || x + s.w > E.fg.worldOffsetX + E.cols ||
+        y < E.fg.worldOffsetY || y + s.h > E.fg.worldOffsetY + E.rows) return false;
+    if (!boxFitsHabitat(c.species, x, y)) return false;
+    tx = x + s.w * 0.5; ty = y + s.h * 0.5;
+    return true;
+  };
+  for (int radius = 2; radius <= maxRadius; radius += 2) {
+    int vertical = std::min(maxRadius, radius + 12);
+    for (int side = 0; side < 2; side++) {
+      int dir = side == 0 ? (c.facing >= 0 ? 1 : -1) : (c.facing >= 0 ? -1 : 1);
+      int x = bx + dir * radius;
+      for (int d = 0; d <= vertical; d++) {
+        if (accepts(x, by - d)) return true;
+        if (d && accepts(x, by + d)) return true;
+      }
+    }
+    // Aquatic habitat may be directly above or below a beached fish rather
+    // than beyond a shoreline, so sample the horizontal edges of the ring too.
+    if (s.spawn.habitat == CH_WATER) for (int d = 0; d <= radius; d += 2) {
+      for (int side = 0; side < 2; side++) {
+        int x = bx + (side ? -d : d);
+        if (accepts(x, by - radius) || accepts(x, by + radius)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+void CreatureSystem::refreshWander(Creature& c) {
+  if (c.wanderTicks > 0) { c.wanderTicks--; return; }
+  uint32_t salt = (uint32_t)c.id * 0x9e3779b9u ^ (uint32_t)E.actorTick;
+  c.wanderDir = whash1(E.fg.worldSeed ^ 0xA11CE51u, (int)salt) < 0.5 ? -1 : 1;
+  c.wanderTicks = 90 + (int)(whash1(E.fg.worldSeed ^ 0xA11CE77u, (int)salt) * 150);
+}
+
 void CreatureSystem::steerAquatic(Creature& c) {
   const CreatureSpecies& s = species(c);
   double tx = 0, ty = 0; Creature* prey = nullptr; Player* player = nullptr;
@@ -361,12 +407,22 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
   // Out of viable water, fish become ordinary gravity-driven bodies. Grounded
   // fish periodically kick in a seeded direction; this can carry them down a
   // bank and back into water without consuming the simulation RNG stream.
+  if (c.habitatScanCooldown > 0) c.habitatScanCooldown--;
+  if (c.habitatScanCooldown <= 0) {
+    if (!c.hasHabitatGoal || !boxFitsHabitat(c.species, c.habitatX - s.w * 0.5, c.habitatY - s.h * 0.5))
+      c.hasHabitatGoal = findNearbyHabitat(c, 56, c.habitatX, c.habitatY);
+    c.habitatScanCooldown = 30;
+  }
+  refreshWander(c);
+  double desiredX = c.hasHabitatGoal ? (c.habitatX > c.wx + s.w * 0.5 ? 0.24 : -0.24)
+                                     : c.wanderDir * 0.12;
+  c.vx += std::max(-0.025, std::min(0.025, desiredX - c.vx));
   c.vy = std::min(2.4, c.vy + 0.075);
-  c.vx *= c.grounded ? 0.82 : 0.995;
+  c.vx *= c.grounded ? 0.90 : 0.995;
   int flopPeriod = 32 + (c.id % 17);
   if (c.grounded && ((E.actorTick + c.id * 11) % flopPeriod) == 0) {
     double kick = 0.20 + whash1(E.fg.worldSeed ^ 0xF10F00u, c.id + E.actorTick) * 0.18;
-    c.facing = whash1(E.fg.worldSeed ^ 0xF10F11u, c.id + E.actorTick) < 0.5 ? -1 : 1;
+    c.facing = c.hasHabitatGoal ? (c.habitatX > c.wx + s.w * 0.5 ? 1 : -1) : c.wanderDir;
     c.vx = c.facing * kick;
     c.vy = -0.58 - whash1(E.fg.worldSeed ^ 0xF10F22u, c.id + E.actorTick) * 0.28;
   }
@@ -390,14 +446,37 @@ void CreatureSystem::moveAmphibious(Creature& c) {
   double wet = fluidCoverage(c.wx, c.wy, s.w, s.h);
   double tx = 0, ty = 0; bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   if (wet >= s.fluidThreshold) {
-    double dx = hasTarget ? tx - (c.wx + s.w * 0.5) : std::sin((E.actorTick + c.id * 29) * 0.025);
-    double dy = hasTarget ? ty - (c.wy + s.h * 0.5) : std::cos((E.actorTick + c.id * 17) * 0.021);
+    if (c.habitatScanCooldown > 0) c.habitatScanCooldown--;
+    if (c.habitatScanCooldown <= 0) {
+      if (!c.hasHabitatGoal || !boxFitsHabitat(c.species, c.habitatX - s.w * 0.5, c.habitatY - s.h * 0.5))
+        c.hasHabitatGoal = findNearbyHabitat(c, 64, c.habitatX, c.habitatY);
+      c.habitatScanCooldown = 30;
+    }
+    refreshWander(c);
+    // Dry footing outranks hunting while submerged. Without a visible bank,
+    // keep swimming upward and laterally instead of circling in deep water.
+    double dx = c.hasHabitatGoal ? c.habitatX - (c.wx + s.w * 0.5) : c.wanderDir;
+    double dy = c.hasHabitatGoal ? c.habitatY - (c.wy + s.h * 0.5) : -0.85;
     double d = std::sqrt(dx * dx + dy * dy); if (d < 1e-6) d = 1;
     c.vx += std::max(-s.accel, std::min(s.accel, dx / d * s.swimSpeed - c.vx));
     c.vy += std::max(-s.accel, std::min(s.accel, dy / d * s.swimSpeed - c.vy));
   } else {
+    c.hasHabitatGoal = false;
+    c.habitatScanCooldown = 0;
+    refreshWander(c);
+    double avoidX = 0, avoidD2 = s.sightRange * s.sightRange;
+    bool avoidsPlayer = false;
+    if (!hasTarget && !s.hostile) for (const Player& p : E.psys.players) {
+      if (!p.active || !p.alive) continue;
+      double px = E.fg.worldOffsetX + p.px + p.w * 0.5;
+      double py = E.fg.worldOffsetY + p.py + p.h * 0.5;
+      double dx = px - (c.wx + s.w * 0.5), dy = py - (c.wy + s.h * 0.5);
+      double d2 = dx * dx + dy * dy;
+      if (d2 < avoidD2) { avoidD2 = d2; avoidX = px; avoidsPlayer = true; }
+    }
     double wish = hasTarget ? (tx > c.wx + s.w * 0.5 ? s.walkSpeed : -s.walkSpeed)
-                            : (std::sin((E.actorTick + c.id * 37) * 0.012) > 0 ? s.walkSpeed * 0.45 : -s.walkSpeed * 0.45);
+                            : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
+                            : c.wanderDir * s.walkSpeed * 0.62;
     c.vx += std::max(-s.accel, std::min(s.accel, wish - c.vx));
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
     c.vy += s.gravity; if (c.vy > 2.4) c.vy = 2.4;
@@ -413,9 +492,29 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     }
     return true;
   };
+  double startX = c.wx, startY = c.wy;
   if (!moveAxis(c.wx, c.vx, true)) {
-    if (wet < s.fluidThreshold && c.grounded) c.vy = -s.jumpSpeed;
-    c.vx = 0;
+    // Wide walkers meet a rising bank with their front edge before their feet
+    // are dry. Step over a one-cell lip; for a taller bank, kick upward while
+    // still swimming so the next tick approaches above the blocking cell.
+    double blockedX = c.wx;
+    bool climbed = false;
+    if (c.hasHabitatGoal || wet < s.fluidThreshold) for (double lift = 0.25; lift <= 1.25; lift += 0.25) {
+      c.wx = startX; c.wy = startY - lift;
+      if (boxHitsSolid(c.wx, c.wy, s.w, s.h)) break;
+      if (moveAxis(c.wx, c.vx, true)) { climbed = true; break; }
+    }
+    if (!climbed) {
+      c.wx = blockedX; c.wy = startY;
+      bool supported = c.grounded || boxHitsSolid(c.wx, c.wy + 0.35, s.w, s.h);
+      if ((wet < s.fluidThreshold && supported) || c.hasHabitatGoal)
+        c.vy = std::min(c.vy, -s.jumpSpeed * (c.hasHabitatGoal ? 0.85 : 1.0));
+      if (!hasTarget && wet < s.fluidThreshold) {
+        c.wanderDir = c.facing > 0 ? -1 : 1;
+        c.wanderTicks = 75;
+      }
+      c.vx = 0;
+    }
   }
   if (!moveAxis(c.wy, c.vy, false)) c.vy = 0;
   c.grounded = boxHitsSolid(c.wx, c.wy + 0.12, s.w, s.h);
@@ -490,6 +589,8 @@ void CreatureSystem::updateCreatures() {
     if (c.hurtCooldown > 0) c.hurtCooldown--;
     if (species(c).locomotion == CL_AQUATIC) {
       if (fluidCoverage(c.wx, c.wy, species(c).w, species(c).h) >= species(c).fluidThreshold) {
+        c.hasHabitatGoal = false;
+        c.habitatScanCooldown = 0;
         c.grounded = false;
         steerAquatic(c);
         moveAquatic(c);

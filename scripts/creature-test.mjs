@@ -243,7 +243,7 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   e.destroy();
 }
 
-// Fox walks on solid terrain, then gains vertical swim steering when flooded.
+// Fox walks on solid terrain, then actively swims when flooded.
 {
   const e = mk(); stoneFloor(e, 92);
   const fox = e.spawnCreature(CREATURE.FOX, 42, 88);
@@ -253,11 +253,74 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const walked = byId(e, fox);
   check(`walking creature tracks player on land (x ${walked?.x.toFixed(1)})`, walked && walked.x > 45);
   waterBox(e, 20, 68, 125, 92);
-  // Put the target higher in the pool so vertical steering is unambiguous.
+  // A submerged land animal now prioritizes a dry bank over this target.
   e.setPlayerState(player, { x: 92, y: 70, vx: 0, vy: 0, facing: -1 });
-  let maxSwimVy = 0;
-  for (let i = 0; i < 80; i++) { e.stepActors(); const c = byId(e, fox); if (c) maxSwimVy = Math.max(maxSwimVy, Math.abs(c.vy)); }
-  check(`walking creature switches to swimming in liquid (|vy| ${maxSwimVy.toFixed(3)})`, maxSwimVy > 0.05);
+  let maxSwimSpeed = 0;
+  for (let i = 0; i < 80; i++) { e.stepActors(); const c = byId(e, fox); if (c) maxSwimSpeed = Math.max(maxSwimSpeed, Math.hypot(c.vx, c.vy)); }
+  check(`walking creature switches to swimming in liquid (speed ${maxSwimSpeed.toFixed(3)})`, maxSwimSpeed > 0.05);
+  e.destroy();
+}
+
+// Ambient walkers keep a direction long enough to explore, and a land animal
+// engulfed by water prioritizes nearby dry footing over aimless swim circles.
+{
+  const e = mk(); stoneFloor(e, 100);
+  const fox = e.spawnCreature(CREATURE.FOX, 75, 96);
+  e.setCreatureRuntime(true, false);
+  let minX = byId(e, fox).x, maxX = minX;
+  for (let i = 0; i < 240; i++) {
+    e.stepActors();
+    const c = byId(e, fox);
+    if (c) { minX = Math.min(minX, c.x); maxX = Math.max(maxX, c.x); }
+  }
+  check(`untargeted land creature explores the floor (span ${(maxX - minX).toFixed(1)})`, maxX - minX > 20);
+  e.destroy();
+}
+
+{
+  const e = mk(); stoneFloor(e, 100);
+  const hare = e.spawnCreature(CREATURE.HARE, 72, 97);
+  e.spawnPlayer(92, 92);
+  e.setCreatureRuntime(true, false);
+  actors(e, 90);
+  check('passive land creature avoids a nearby player', byId(e, hare)?.x < 65);
+  e.destroy();
+}
+
+{
+  const e = mk(); stoneFloor(e, 100);
+  const swimmer = e.spawnCreature(CREATURE.FOX, 75, 96);
+  waterBox(e, 40, 68, 120, 100);
+  e.setCreatureRuntime(true, false);
+  let reachedBank = false;
+  for (let i = 0; i < 600; i++) {
+    e.stepActors();
+    const wetFox = byId(e, swimmer);
+    if (wetFox && (wetFox.x < 36 || wetFox.x > 117)) { reachedBank = true; break; }
+  }
+  check('submerged land creature finds a nearby dry bank', reachedBank);
+  e.destroy();
+}
+
+// A rising shoreline blocks the front of a wide hitbox before the body becomes
+// dry. Habitat seeking must scramble upward instead of pushing forever at it.
+{
+  const e = mk();
+  for (let x = 4; x < COLS - 4; x++) {
+    const top = x < 70 ? 100 : Math.max(72, 100 - Math.floor((x - 70) / 2));
+    for (let y = top; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  }
+  e.finalizeStoneDraft();
+  const fox = e.spawnCreature(CREATURE.FOX, 48, 96);
+  waterBox(e, 4, 68, 74, 100);
+  e.setCreatureRuntime(true, false);
+  let climbedBank = false;
+  for (let i = 0; i < 900; i++) {
+    e.stepActors();
+    const c = byId(e, fox);
+    if (c && c.x > 78 && c.y + c.h < 99) { climbedBank = true; break; }
+  }
+  check('submerged land creature climbs a stepped shoreline', climbedBank);
   e.destroy();
 }
 

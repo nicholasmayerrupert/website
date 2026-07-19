@@ -99,6 +99,10 @@ struct Creature {
   int targetId = 0;
   int scanCooldown = 0, attackCooldown = 0, hurtCooldown = 0;
   int deathTicks = 0;
+  int wanderDir = 0, wanderTicks = 0;
+  int habitatScanCooldown = 0;
+  double habitatX = 0, habitatY = 0;
+  bool hasHabitatGoal = false;
   uint8_t animFrame = 0;
 };
 
@@ -136,6 +140,8 @@ class CreatureSystem {
   void updateNaturalPopulation();
   void acquireTarget(Creature& c);
   bool targetPoint(const Creature& c, double& tx, double& ty, Creature** prey, Player** player);
+  bool findNearbyHabitat(const Creature& c, int maxRadius, double& tx, double& ty) const;
+  void refreshWander(Creature& c);
   void steerAquatic(Creature& c);
   void moveAquatic(Creature& c);
   void moveBeachedAquatic(Creature& c);

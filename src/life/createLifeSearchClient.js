@@ -1,6 +1,6 @@
 import LifeSearchWorker from './lifeSearchWorkerConstructor.js';
 
-const clampWorkers = (value) => Math.max(1, Math.min(64, Math.round(value) || 1));
+const normalizeWorkers = (value) => Math.max(1, Math.round(value) || 1);
 
 export function createLifeSearchClient(onMessage) {
   let workers = [];
@@ -8,12 +8,16 @@ export function createLifeSearchClient(onMessage) {
   let runToken = 0;
   let startedAt = 0;
   let leaderboardSize = 10;
+  let progressTimer = null;
+  let lastProgressAt = 0;
 
   const stopPool = (notify) => {
     runToken++;
     for (const worker of workers) worker.terminate();
     workers = [];
     progress = [];
+    clearTimeout(progressTimer);
+    progressTimer = null;
     if (notify) onMessage({ type: 'stopped' });
   };
 
@@ -45,6 +49,17 @@ export function createLifeSearchClient(onMessage) {
     };
   };
 
+  const scheduleProgress = () => {
+    if (progressTimer !== null) return;
+    const delay = Math.max(0, 100 - (performance.now() - lastProgressAt));
+    progressTimer = setTimeout(() => {
+      progressTimer = null;
+      if (!workers.length) return;
+      lastProgressAt = performance.now();
+      onMessage(aggregateProgress());
+    }, delay);
+  };
+
   const failRun = (message) => {
     stopPool(false);
     onMessage({ type: 'error', message });
@@ -54,10 +69,11 @@ export function createLifeSearchClient(onMessage) {
     startSoup(settings) {
       stopPool(false);
       const token = runToken;
-      const workerCount = clampWorkers(settings.workers);
+      const workerCount = normalizeWorkers(settings.workers);
       leaderboardSize = Math.max(1, Math.min(100, Math.round(settings.leaderboardSize) || 10));
       progress = Array.from({ length: workerCount }, () => null);
       startedAt = performance.now();
+      lastProgressAt = 0;
 
       for (let index = 0; index < workerCount; index++) {
         const worker = new LifeSearchWorker();
@@ -70,7 +86,7 @@ export function createLifeSearchClient(onMessage) {
           }
           if (data.type !== 'soup-progress') return;
           progress[index] = data;
-          onMessage(aggregateProgress());
+          scheduleProgress();
         };
         worker.onerror = (event) => {
           if (token !== runToken) return;
@@ -81,6 +97,8 @@ export function createLifeSearchClient(onMessage) {
           type: 'start-soup',
           ...settings,
           seed: index === 0 ? settings.seed : `${settings.seed}:${index}`,
+          progressIntervalMs: Math.max(100, workerCount * 50),
+          progressPhase: index / workerCount,
         });
       }
       onMessage({ type: 'started', mode: 'soup' });

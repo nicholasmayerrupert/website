@@ -23,14 +23,18 @@ async function replaceEngine(size) {
 
 function postProgress(force = false) {
   const now = performance.now();
-  if (!engine || (!force && now - lastProgressAt < 100)) return;
+  const interval = Math.max(100, settings?.progressIntervalMs || 100);
+  if (!engine || (!force && now - lastProgressAt < interval)) return;
   lastProgressAt = now;
+  const snapshot = engine.soupSnapshot();
+  const transfer = [...snapshot.results, ...snapshot.loops]
+    .map((result) => result.cells.buffer);
   self.postMessage({
     type: 'soup-progress',
-    ...engine.soupSnapshot(),
+    ...snapshot,
     elapsedMs: now - startedAt,
     running: true,
-  });
+  }, transfer);
 }
 
 function pump(token) {
@@ -66,7 +70,10 @@ self.onmessage = async ({ data }) => {
         seed: hashSeed(data.seed),
         leaderboardSize: data.leaderboardSize,
       });
-      startedAt = lastProgressAt = performance.now();
+      startedAt = performance.now();
+      const interval = Math.max(100, data.progressIntervalMs || 100);
+      const phase = Math.max(0, Math.min(1, data.progressPhase || 0));
+      lastProgressAt = startedAt - interval * phase;
       self.postMessage({ type: 'started', mode: 'soup' });
       pump(runToken);
     }

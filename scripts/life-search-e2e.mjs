@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
 const port = 4187;
+const requestedWorkers = Math.max(1, Number(process.env.LIFE_TEST_WORKERS || 9) | 0);
+const holdMs = Math.max(0, Number(process.env.LIFE_TEST_HOLD_MS || 0) | 0);
 const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port)], {
   cwd: new URL('..', import.meta.url),
   stdio: 'ignore',
@@ -50,15 +52,17 @@ try {
   await page.getByLabel('Game of Life board size').fill('8');
 
   await page.getByRole('tab', { name: 'Soup' }).click();
-  await page.getByLabel('Workers').fill('9');
+  assert.equal(await page.getByLabel('Workers').getAttribute('max'), null, 'worker input has no upper cap');
+  await page.getByLabel('Workers').fill(String(requestedWorkers));
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   const soups = await waitForValue(page, 'Soups', (value) => value > 0);
   assert.ok(soups > 0, 'soup worker reports completed soups');
   const workers = await page.getByText('Workers', { exact: true }).last().evaluate((element) =>
     Number(element.nextElementSibling?.textContent || 0));
-  assert.equal(workers, 9, 'soup progress supports and aggregates more than eight workers');
+  assert.equal(workers, requestedWorkers, 'soup progress uses the requested uncapped worker count');
   assert.equal(await page.getByText('Length', { exact: true }).count(), 1);
   assert.equal(await page.getByText('Repeat period', { exact: true }).count(), 1);
+  if (holdMs) await page.waitForTimeout(holdMs);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
 
   await page.getByRole('tab', { name: 'Simulate' }).click();

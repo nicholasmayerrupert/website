@@ -11,8 +11,9 @@ search lives here and runs in a dedicated Web Worker.
   pumps bounded batches. `createLifeSearchClient.js` runs a configurable pool of
   independent workers, merges their length and non-trivial-period leaderboards,
   and terminates the pool immediately for Stop or Restart. The automatic default
-  leaves one logical CPU free and caps itself at eight; the manual control accepts
-  1–64 workers.
+  leaves one logical CPU free and caps itself at eight; the manual control has no
+  software ceiling. Worker reports are staggered by pool size and merged into at
+  most ten UI refreshes per second so large pools do not flood the main thread.
 - `wasm/lifeSearch.js` is committed so normal Vite builds do not require
   Emscripten. Rebuild it with `npm run build:life`; `npm run build` rejects stale
   output.

@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 import { createLifeSearchEngine } from '../src/life/searchEngineWasm.js';
 
 const engine = await createLifeSearchEngine(16);
-engine.startSoup({ density: 37.5, horizon: 1000, seed: 0x5eedn, leaderboardSize: 10 });
+engine.startSoup({ density: 37.5, horizon: 0, seed: 0x5eedn, leaderboardSize: 10 });
 const soupStart = performance.now();
 engine.pumpSoup(1000);
 const soupMs = performance.now() - soupStart;
@@ -16,6 +16,7 @@ console.log(JSON.stringify({
   soups: soup.searched,
   soupsPerSecond: Math.round(soup.searched * 1000 / soupMs),
   bestLifetime: best.lifetime,
+  bestPeriod: soup.loops[0]?.period || 0,
   leaderboardChecksum: checksum.toString(16).padStart(8, '0'),
 }, null, 2));
 engine.destroy();

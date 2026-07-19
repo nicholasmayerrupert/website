@@ -10,9 +10,11 @@ const DRAG_ROTATION_SCALE = 0.008;
 const PITCH_RESET_DURATION_MS = 2800;
 const MAX_MANUAL_PITCH = Math.PI * 0.42;
 const EDITOR_CANVAS_SIZE = 256;
+const DEFAULT_LIFE_SEARCH_WORKERS = Math.min(8, Math.max(1,
+  (typeof navigator === "undefined" ? 4 : navigator.hardwareConcurrency || 4) - 1));
 // Previous default seed: 0111001100100110001100100011011101111100000001001100010110101000100001110100010001000001101101000100000000000100011110000101011110001001000101100011000110110110111100100000101111011001000000100001001100000000000100101011010011110000100011101100100101010011
 const DEFAULT_SEED =
-  "0000000000000000000000000000001000000100000000000000100000000000000100000000000000000000000000010000000100000010000000100000000000100100001000000000010001000000000100001000000000010000001010000111001000000000010000000000011010001000000000000000000010000000";
+  "0110101100010101111001100001110000000001001001000000110100000001110000010100001010110010001110100001010010011011001110000010101001100110111001111110000000010001101000110010000001001001000100000010101010010010110001010101101101011010000000011111000010010010";
 
 // A layer is a flat Uint8Array of size*size cells (1 = alive), indexed by
 // z * size + x — the same row-major layout the instance idxFor uses. Flat typed
@@ -109,12 +111,13 @@ export default function GameOfLife3D({
   const [searchError, setSearchError] = useState("");
   const [soupSettings, setSoupSettings] = useState({
     density: 37.5,
-    horizon: 5000,
+    horizon: 0,
     seed: "soup-1",
     batchSize: 32,
     leaderboardSize: 10,
+    workers: DEFAULT_LIFE_SEARCH_WORKERS,
   });
-  const [soupProgress, setSoupProgress] = useState({ searched: 0, elapsedMs: 0, results: [] });
+  const [soupProgress, setSoupProgress] = useState({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
   const handleSearchMessage = (message) => {
     if (message.type === "started") {
       setSearchMode(message.mode);
@@ -151,7 +154,7 @@ export default function GameOfLife3D({
     searchClientRef.current?.stop();
     setSearchMode(null);
     setSearchError("");
-    setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
+    setSoupProgress({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
   }, [gridSize]);
 
   useEffect(() => {
@@ -212,13 +215,13 @@ export default function GameOfLife3D({
 
   const resetSoupSearch = () => {
     stopSearch();
-    setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
+    setSoupProgress({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
     setSearchError("");
   };
 
   const startSoupSearch = () => {
     setSearchError("");
-    setSoupProgress({ searched: 0, elapsedMs: 0, results: [] });
+    setSoupProgress({ searched: 0, workers: 0, elapsedMs: 0, results: [], loops: [] });
     ensureSearchClient()?.startSoup({ size: gridSize, ...soupSettings });
   };
 
@@ -1156,12 +1159,13 @@ export default function GameOfLife3D({
           {activeTab === "soup" && (
             <div className="mt-3 flex min-h-0 flex-1 flex-col text-[10px]">
               <p className="m-0 text-[9px] leading-snug text-white/55">
-                Generates random starting boards and ranks their distinct, non-empty generations before extinction or an exact repeat.
+                Generates random boards in parallel. Length stops at extinction or the first exact repeat; non-trivial repeats are also ranked by period.
               </p>
               <label className="mt-3 flex justify-between font-semibold uppercase tracking-wide text-white/70"><span>Density</span><span>{soupSettings.density}%</span></label>
               <input type="range" min="1" max="99" step="0.5" value={soupSettings.density} onChange={(event) => updateSoupSetting("density", Number(event.target.value))} className="mt-1 w-full accent-white" />
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <label className="text-white/65">Generation horizon<input type="number" min="1" max="100000" value={soupSettings.horizon} onChange={(event) => updateSoupSetting("horizon", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Max generations (0=∞)<input type="number" min="0" value={soupSettings.horizon} onChange={(event) => updateSoupSetting("horizon", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Workers<input type="number" min="1" max="64" value={soupSettings.workers} onChange={(event) => updateSoupSetting("workers", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
                 <label className="text-white/65">Batch size<input type="number" min="1" max="10000" value={soupSettings.batchSize} onChange={(event) => updateSoupSetting("batchSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
                 <label className="text-white/65">RNG seed<input type="text" value={soupSettings.seed} onChange={(event) => updateSoupSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
                 <label className="text-white/65">Leaderboard<input type="number" min="1" max="100" value={soupSettings.leaderboardSize} onChange={(event) => updateSoupSetting("leaderboardSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
@@ -1172,15 +1176,28 @@ export default function GameOfLife3D({
                 <button type="button" onClick={resetSoupSearch} className="rounded-md bg-white/10 px-2 py-1.5 font-semibold text-white">Reset</button>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-black/20 p-2 text-white/65">
+                <span>Workers</span><strong className="text-right text-white">{soupProgress.workers || 0}</strong>
                 <span>Soups</span><strong className="text-right text-white">{Math.round(soupProgress.searched || 0).toLocaleString()}</strong>
                 <span>Rate</span><strong className="text-right text-white">{soupProgress.elapsedMs ? Math.round(soupProgress.searched * 1000 / soupProgress.elapsedMs).toLocaleString() : 0}/s</strong>
               </div>
-              <div className="mt-2 space-y-1 overflow-y-auto">
+              <div className="mt-2 overflow-y-auto">
+                <p className="mb-1 mt-0 font-semibold uppercase tracking-wide text-white/55">Length</p>
+                <div className="space-y-1">
                 {(soupProgress.results || []).map((result, index) => (
-                  <button key={`${result.lifetime}-${index}`} type="button" onClick={() => loadSoupResult(result.cells)} className="flex w-full items-center justify-between rounded bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/15">
+                  <button key={`${result.workerIndex}-${result.serial}-${index}`} type="button" onClick={() => loadSoupResult(result.cells)} className="flex w-full items-center justify-between rounded bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/15">
                     <span>#{index + 1}</span><strong>{result.reason === 3 ? "≥" : ""}{result.lifetime.toLocaleString()} gen</strong><span className="text-white/45">{result.reason === 1 ? "empty" : result.reason === 2 ? "repeat" : "open"}</span>
                   </button>
                 ))}
+                </div>
+                <p className="mb-1 mt-3 font-semibold uppercase tracking-wide text-white/55">Repeat period</p>
+                <div className="space-y-1">
+                  {(soupProgress.loops || []).map((result, index) => (
+                    <button key={`${result.workerIndex}-${result.serial}-${index}`} type="button" onClick={() => loadSoupResult(result.cells)} className="flex w-full items-center justify-between rounded bg-white/5 px-2 py-1.5 text-left transition hover:bg-white/15">
+                      <span>#{index + 1}</span><strong>{result.period.toLocaleString()} period</strong><span className="text-white/45">{result.lifetime.toLocaleString()} gen</span>
+                    </button>
+                  ))}
+                  {!(soupProgress.loops || []).length && <p className="m-0 rounded bg-white/[0.03] px-2 py-1.5 text-white/35">No period above 2 found yet.</p>}
+                </div>
               </div>
             </div>
           )}

@@ -134,13 +134,12 @@ export default function TileGrid() {
                   </p>
                   <div className="life-showcase__stats" aria-label="Rare seed statistics">
                     <span><strong>5,024</strong> frame loop</span>
-                    <span><strong>Nearly 6&sigma;</strong> longevity</span>
+                    <span><strong>5,200</strong> generations</span>
                   </div>
                   <p className="life-showcase__discovery">
                     After searching hundreds of millions of random 16×16 soups,
-                    this is the only non-trivial loop I&apos;ve ever found—and my only
-                    seed to exceed 1,800 generations. It enters this cycle after
-                    just three transient frames.
+                    this is the only non-trivial attractor I&apos;ve found. This seed
+                    reaches its 5,024-frame cycle after 176 transient generations.
                   </p>
                 </div>
               )}

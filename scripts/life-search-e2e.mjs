@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 
 const port = 4187;
-const server = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(port)], {
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port)], {
   cwd: new URL('..', import.meta.url),
   stdio: 'ignore',
 });
@@ -44,25 +44,30 @@ try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle' });
+  await page.goto(`http://127.0.0.1:${port}/#projects`, { waitUntil: 'networkidle' });
 
-  const open = page.getByRole('button', { name: 'Open Game of Life controls' });
-  await open.scrollIntoViewIfNeeded();
-  await open.click();
+  await page.getByLabel('Game of Life board size').scrollIntoViewIfNeeded();
   await page.getByLabel('Game of Life board size').fill('8');
 
   await page.getByRole('tab', { name: 'Soup' }).click();
+  await page.getByLabel('Workers').fill('9');
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   const soups = await waitForValue(page, 'Soups', (value) => value > 0);
   assert.ok(soups > 0, 'soup worker reports completed soups');
+  const workers = await page.getByText('Workers', { exact: true }).last().evaluate((element) =>
+    Number(element.nextElementSibling?.textContent || 0));
+  assert.equal(workers, 9, 'soup progress supports and aggregates more than eight workers');
+  assert.equal(await page.getByText('Length', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('Repeat period', { exact: true }).count(), 1);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
 
   await page.getByRole('tab', { name: 'Simulate' }).click();
-  assert.equal(await page.getByLabel('Editable top layer of the Game of Life simulation').count(), 1);
+  assert.equal(await page.getByLabel('Editable toroidal view of the current Game of Life layer').count(), 1);
   await page.getByRole('button', { name: 'Close Game of Life controls' }).click();
+  await page.waitForTimeout(100);
   const canvasSizing = await page.getByRole('button', { name: 'Open Game of Life controls' }).evaluate((button) => {
-    const host = button.parentElement?.firstElementChild;
-    const canvas = host?.firstElementChild;
+    const canvas = button.parentElement?.querySelector('canvas');
+    const host = canvas?.parentElement;
     return {
       canvasWidth: canvas?.getBoundingClientRect().width || 0,
       hostWidth: host?.getBoundingClientRect().width || 0,
@@ -74,7 +79,7 @@ try {
     '3D canvas expands back to the full host width after closing controls'
   );
   assert.deepEqual(errors, [], `page errors: ${errors.join('; ')}`);
-  console.log(`life soup search e2e: ${soups} soups observed`);
+  console.log(`life soup search e2e: ${soups} soups observed across ${workers} workers`);
 } finally {
   await browser?.close();
   server.kill('SIGTERM');

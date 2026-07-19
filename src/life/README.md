@@ -3,10 +3,16 @@
 The Life showcase keeps its Three.js renderer in `GameOfLife3D.jsx`. CPU-heavy
 search lives here and runs in a dedicated Web Worker.
 
-- `cpp/life_search.cpp` implements bit-packed Conway B3/S23 evolution and
-  transient soup scoring on a finite toroidal board.
+- `cpp/life_search.cpp` implements bit-packed Conway B3/S23 evolution and exact,
+  constant-memory orbit scoring on a finite toroidal board. A zero generation
+  horizon searches until extinction or a repeat; positive horizons are optional
+  safety limits. Results track both first-repeat length and repeat period.
 - `searchEngineWasm.js` is the typed JavaScript wrapper; `lifeSearchWorker.js`
-  pumps bounded batches so Stop and progress messages remain responsive.
+  pumps bounded batches. `createLifeSearchClient.js` runs a configurable pool of
+  independent workers, merges their length and non-trivial-period leaderboards,
+  and terminates the pool immediately for Stop or Restart. The automatic default
+  leaves one logical CPU free and caps itself at eight; the manual control accepts
+  1–64 workers.
 - `wasm/lifeSearch.js` is committed so normal Vite builds do not require
   Emscripten. Rebuild it with `npm run build:life`; `npm run build` rejects stale
   output.

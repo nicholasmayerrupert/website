@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -25,15 +24,6 @@ uint64_t mix64(uint64_t x) {
   x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
   x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
   return x ^ (x >> 31);
-}
-
-uint64_t boardHash(const Board& board) {
-  uint64_t hash = 0xcbf29ce484222325ULL;
-  for (uint64_t row : board.rows) {
-    hash ^= mix64(row + hash);
-    hash *= 0x100000001b3ULL;
-  }
-  return hash;
 }
 
 class Random64 {
@@ -116,10 +106,54 @@ class LifeStepper {
 
 struct SoupResult {
   Board seed;
-  int lifetime = 0;
+  uint64_t lifetime = 0;
+  uint64_t transient = 0;
+  uint64_t period = 0;
   int reason = 0;  // 1 empty, 2 repeated, 3 horizon
   uint64_t serial = 0;
 };
+
+struct OrbitResult {
+  uint64_t lifetime = 0;
+  uint64_t transient = 0;
+  uint64_t period = 0;
+  int reason = 0;
+};
+
+OrbitResult measureOrbit(const LifeStepper& stepper, const Board& seed,
+                         uint64_t horizon) {
+  if (stepper.empty(seed)) return {0, 0, 0, 1};
+
+  Board tortoise = stepper.step(seed);
+  Board hare = stepper.step(stepper.step(seed));
+  uint64_t generation = 1;
+  while (tortoise != hare && (horizon == 0 || generation < horizon)) {
+    if (stepper.empty(tortoise)) return {generation, 0, 0, 1};
+    tortoise = stepper.step(tortoise);
+    hare = stepper.step(stepper.step(hare));
+    ++generation;
+  }
+  if (stepper.empty(tortoise)) return {generation, 0, 0, 1};
+  if (tortoise != hare) return {horizon, 0, 0, 3};
+
+  uint64_t transient = 0;
+  tortoise = seed;
+  while (tortoise != hare) {
+    tortoise = stepper.step(tortoise);
+    hare = stepper.step(hare);
+    ++transient;
+  }
+
+  uint64_t period = 1;
+  hare = stepper.step(tortoise);
+  while (tortoise != hare) {
+    hare = stepper.step(hare);
+    ++period;
+  }
+  const uint64_t lifetime = transient + period;
+  if (horizon != 0 && lifetime > horizon) return {horizon, 0, 0, 3};
+  return {lifetime, transient, period, 2};
+}
 
 class SearchEngine {
  public:
@@ -131,10 +165,11 @@ class SearchEngine {
   void startSoup(int densityBasisPoints, int horizon, uint64_t seed,
                  int leaderboardSize) {
     soupDensity = std::clamp(densityBasisPoints, 1, 9999);
-    soupHorizon = std::clamp(horizon, 1, 100000);
+    soupHorizon = horizon > 0 ? static_cast<uint64_t>(horizon) : 0;
     soupLeaderboardSize = std::clamp(leaderboardSize, 1, 100);
     soupRng = std::make_unique<Random64>(seed);
     soupResults.clear();
+    soupLoopResults.clear();
     soupsSearched = 0;
     soupRunning = true;
   }
@@ -154,15 +189,22 @@ class SearchEngine {
     return scratch.data();
   }
 
+  const uint8_t* soupLoopResultCells(int index) {
+    if (index < 0 || index >= static_cast<int>(soupLoopResults.size())) return nullptr;
+    fillScratch(soupLoopResults[index].seed);
+    return scratch.data();
+  }
+
   int size;
   LifeStepper stepper;
   bool soupRunning = false;
   int soupDensity = 3750;
-  int soupHorizon = 5000;
+  uint64_t soupHorizon = 0;
   int soupLeaderboardSize = 10;
   uint64_t soupsSearched = 0;
   std::unique_ptr<Random64> soupRng;
   std::vector<SoupResult> soupResults;
+  std::vector<SoupResult> soupLoopResults;
 
  private:
   std::vector<uint8_t> scratch;
@@ -189,38 +231,10 @@ class SearchEngine {
   }
 
   void evaluateSoup(Board seed) {
-    Board current = seed;
-    int reason = 3;
-    int lifetime = 0;
-    std::vector<Board> history;
-    history.reserve(std::min(soupHorizon, 4096));
-    std::unordered_map<uint64_t, std::vector<int>> seen;
-
-    while (lifetime < soupHorizon && !stepper.empty(current)) {
-      const uint64_t hash = boardHash(current);
-      bool repeated = false;
-      auto found = seen.find(hash);
-      if (found != seen.end()) {
-        for (int index : found->second) {
-          if (history[index] == current) {
-            repeated = true;
-            break;
-          }
-        }
-      }
-      if (repeated) {
-        reason = 2;
-        break;
-      }
-      seen[hash].push_back(static_cast<int>(history.size()));
-      history.push_back(current);
-      ++lifetime;
-      current = stepper.step(current);
-    }
-    if (stepper.empty(current)) reason = 1;
-    else if (lifetime >= soupHorizon) reason = 3;
-
-    soupResults.push_back({std::move(seed), lifetime, reason, soupsSearched++});
+    const OrbitResult orbit = measureOrbit(stepper, seed, soupHorizon);
+    const uint64_t serial = soupsSearched++;
+    soupResults.push_back(
+        {seed, orbit.lifetime, orbit.transient, orbit.period, orbit.reason, serial});
     std::stable_sort(
         soupResults.begin(), soupResults.end(),
         [](const SoupResult& left, const SoupResult& right) {
@@ -229,6 +243,20 @@ class SearchEngine {
         });
     if (static_cast<int>(soupResults.size()) > soupLeaderboardSize) {
       soupResults.resize(soupLeaderboardSize);
+    }
+
+    if (orbit.reason != 2 || orbit.period <= 2) return;
+    soupLoopResults.push_back(
+        {std::move(seed), orbit.lifetime, orbit.transient, orbit.period, orbit.reason, serial});
+    std::stable_sort(
+        soupLoopResults.begin(), soupLoopResults.end(),
+        [](const SoupResult& left, const SoupResult& right) {
+          if (left.period != right.period) return left.period > right.period;
+          if (left.lifetime != right.lifetime) return left.lifetime > right.lifetime;
+          return left.serial < right.serial;
+        });
+    if (static_cast<int>(soupLoopResults.size()) > soupLeaderboardSize) {
+      soupLoopResults.resize(soupLeaderboardSize);
     }
   }
 };
@@ -289,10 +317,31 @@ LIFE_EXPORT int life_soup_result_count(uintptr_t handle) {
   return engine ? static_cast<int>(engine->soupResults.size()) : 0;
 }
 
-LIFE_EXPORT int life_soup_result_lifetime(uintptr_t handle, int index) {
+LIFE_EXPORT double life_soup_result_lifetime(uintptr_t handle, int index) {
   SearchEngine* engine = asEngine(handle);
   return engine && index >= 0 && index < static_cast<int>(engine->soupResults.size())
-      ? engine->soupResults[index].lifetime
+      ? static_cast<double>(engine->soupResults[index].lifetime)
+      : 0;
+}
+
+LIFE_EXPORT double life_soup_result_transient(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupResults.size())
+      ? static_cast<double>(engine->soupResults[index].transient)
+      : 0;
+}
+
+LIFE_EXPORT double life_soup_result_period(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupResults.size())
+      ? static_cast<double>(engine->soupResults[index].period)
+      : 0;
+}
+
+LIFE_EXPORT double life_soup_result_serial(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupResults.size())
+      ? static_cast<double>(engine->soupResults[index].serial)
       : 0;
 }
 
@@ -306,6 +355,44 @@ LIFE_EXPORT int life_soup_result_reason(uintptr_t handle, int index) {
 LIFE_EXPORT const uint8_t* life_soup_result_cells(uintptr_t handle, int index) {
   SearchEngine* engine = asEngine(handle);
   return engine ? engine->soupResultCells(index) : nullptr;
+}
+
+LIFE_EXPORT int life_soup_loop_result_count(uintptr_t handle) {
+  SearchEngine* engine = asEngine(handle);
+  return engine ? static_cast<int>(engine->soupLoopResults.size()) : 0;
+}
+
+LIFE_EXPORT double life_soup_loop_result_lifetime(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupLoopResults.size())
+      ? static_cast<double>(engine->soupLoopResults[index].lifetime)
+      : 0;
+}
+
+LIFE_EXPORT double life_soup_loop_result_transient(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupLoopResults.size())
+      ? static_cast<double>(engine->soupLoopResults[index].transient)
+      : 0;
+}
+
+LIFE_EXPORT double life_soup_loop_result_period(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupLoopResults.size())
+      ? static_cast<double>(engine->soupLoopResults[index].period)
+      : 0;
+}
+
+LIFE_EXPORT double life_soup_loop_result_serial(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine && index >= 0 && index < static_cast<int>(engine->soupLoopResults.size())
+      ? static_cast<double>(engine->soupLoopResults[index].serial)
+      : 0;
+}
+
+LIFE_EXPORT const uint8_t* life_soup_loop_result_cells(uintptr_t handle, int index) {
+  SearchEngine* engine = asEngine(handle);
+  return engine ? engine->soupLoopResultCells(index) : nullptr;
 }
 
 LIFE_EXPORT void life_step(int size, const uint8_t* input, uint8_t* output) {
@@ -322,37 +409,24 @@ LIFE_EXPORT void life_step(int size, const uint8_t* input, uint8_t* output) {
 LIFE_EXPORT int life_measure_lifetime(int size, const uint8_t* input,
                                       int horizon) {
   size = std::clamp(size, 3, 64);
-  horizon = std::clamp(horizon, 1, 100000);
-  Board current = boardFromCells(size, input);
   LifeStepper stepper(size);
-  std::vector<Board> history;
-  std::unordered_map<uint64_t, std::vector<int>> seen;
-  int lifetime = 0;
-  int reason = 3;
-  while (lifetime < horizon && !stepper.empty(current)) {
-    const uint64_t hash = boardHash(current);
-    bool repeated = false;
-    auto found = seen.find(hash);
-    if (found != seen.end()) {
-      for (int index : found->second) {
-        if (history[index] == current) {
-          repeated = true;
-          break;
-        }
-      }
-    }
-    if (repeated) {
-      reason = 2;
-      break;
-    }
-    seen[hash].push_back(static_cast<int>(history.size()));
-    history.push_back(current);
-    ++lifetime;
-    current = stepper.step(current);
-  }
-  if (stepper.empty(current)) reason = 1;
-  else if (lifetime >= horizon) reason = 3;
-  return (lifetime << 2) | reason;
+  const OrbitResult orbit =
+      measureOrbit(stepper, boardFromCells(size, input), horizon > 0 ? horizon : 0);
+  return (static_cast<int>(orbit.lifetime) << 2) | orbit.reason;
+}
+
+LIFE_EXPORT double life_measure_period(int size, const uint8_t* input,
+                                       int horizon) {
+  size = std::clamp(size, 3, 64);
+  return static_cast<double>(measureOrbit(
+      LifeStepper(size), boardFromCells(size, input), horizon > 0 ? horizon : 0).period);
+}
+
+LIFE_EXPORT double life_measure_transient(int size, const uint8_t* input,
+                                          int horizon) {
+  size = std::clamp(size, 3, 64);
+  return static_cast<double>(measureOrbit(
+      LifeStepper(size), boardFromCells(size, input), horizon > 0 ? horizon : 0).transient);
 }
 
 }  // extern "C"

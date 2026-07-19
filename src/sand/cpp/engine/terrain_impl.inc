@@ -239,7 +239,7 @@ uint8_t TerrainGen::pickTreeType(int biome, int worldX) {
   switch (biome) {
     case BIOME_DESERT: return PT_CACTUS;
     case BIOME_TUNDRA: return PT_PINE;
-    case BIOME_SWAMP:  return r < 0.72 ? PT_OAK : PT_BUSH; // avoid sparse willow skeletons in generated scenery
+    case BIOME_SWAMP:  return r < 0.48 ? PT_WILLOW : r < 0.82 ? PT_OAK : PT_BUSH;
     case BIOME_FOREST: return r < 0.5 ? PT_PINE : PT_OAK;
     case BIOME_JUNGLE: return r < 0.35 ? PT_BUSH : PT_OAK;
     default:           return r < 0.25 ? PT_BUSH : PT_OAK; // plains

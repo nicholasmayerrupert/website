@@ -52,7 +52,7 @@
   void fillTrees(int colStart, int colEnd, int rowStart, int rowEnd) {
     if (!L->isBackground) return;
     auto put = [&](int lx, int y, uint8_t m) { if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return; if (L->grid[y * cols + lx] == EMPTY) L->grid[y * cols + lx] = m; };
-    const int TREE_REACH = 11;   // >= max canopy / branch horizontal reach
+    const int TREE_REACH = 13;   // >= max canopy / branch horizontal reach
     const int TREE_MAX_UP = 42;  // >= max trunk height + canopy upward reach
     for (int lx = colStart - TREE_REACH; lx < colEnd + TREE_REACH; lx++) {
       int worldX = L->worldOffsetX + lx; int surf = terrain.genSurfaceAt(worldX);
@@ -72,41 +72,85 @@
       uint8_t pt = terrain.pickTreeType(biome, worldX);
       uint8_t wood = plantWoodMat(pt), leaf = plantLeafMat(pt);
       double hr = whash1(L->gTreeSeed + 1, worldX);
-      int h = pt == PT_PINE ? 20 + (int)(hr * 12)     // towering conifer
+      int h = pt == PT_PINE ? 23 + (int)(hr * 13)     // towering conifer
             : pt == PT_BUSH ? 4 + (int)(hr * 4)       // low shrub
             : pt == PT_CACTUS ? 9 + (int)(hr * 8)     // tall branching cactus
-            : pt == PT_WILLOW ? 15 + (int)(hr * 9)
+            : pt == PT_WILLOW ? 18 + (int)(hr * 10)
             : 13 + (int)(hr * 12);                    // mature oak
       int top = surf - h;
-      for (int y = top; y < surf; y++) put(lx, y, wood); // trunk
+      auto trunkXAtHeight = [&](int height) {
+        if (pt != PT_PINE && pt != PT_WILLOW) return lx;
+        int drift = 0, maxDrift = pt == PT_PINE ? 2 : 3;
+        for (int band = 0; band < height / 4; band++) {
+          double turn = whash2(L->gTreeSeed ^ 0x54A1u, worldX, band);
+          if (turn < 0.27) drift--;
+          else if (turn > 0.73) drift++;
+          drift = imax(-maxDrift, imin(maxDrift, drift));
+        }
+        return lx + drift;
+      };
+      for (int y = top; y < surf; y++) {
+        int height = surf - y, center = trunkXAtHeight(height), radius = 0;
+        if (pt == PT_PINE) radius = height <= 5 ? 2 : height <= 15 ? 1 : 0;
+        else if (pt == PT_WILLOW) radius = height <= 6 ? 2 : height <= 14 ? 1 : 0;
+        for (int ox = -radius; ox <= radius; ox++) put(center + ox, y, wood);
+      }
       if (pt == PT_CACTUS) {                            // arms, no foliage
         int armY = top + 2 + (int)(whash1(L->gTreeSeed ^ 0x3a3au, worldX) * imax(1, h - 4));
         put(lx - 1, armY, wood); put(lx - 2, armY, wood); put(lx - 2, armY - 1, wood);
         put(lx + 1, armY + 2, wood); put(lx + 2, armY + 2, wood); put(lx + 2, armY + 1, wood);
       } else if (pt == PT_PINE) {                       // tapered, ragged evergreen crown
+        int level = 4 + (int)(whash1(L->gTreeSeed ^ 0x91A0u, worldX) * 3);
+        for (int tier = 0; tier < 9 && level < h - 1; tier++) {
+          int baseX = trunkXAtHeight(level), baseY = surf - level;
+          int baseReach = 3 + (h - level) * 5 / h;
+          for (int side : {-1, 1}) {
+            double shape = whash2(L->gTreeSeed ^ 0x91A1u, worldX + side, tier);
+            int reach = imax(2, baseReach + (int)(shape * 4) - 2);
+            if (shape < 0.10) continue;
+            for (int i = 1; i <= reach; i++) {
+              int droop = i > reach * 2 / 3 ? (i - reach * 2 / 3 + 1) / 2 : 0;
+              put(baseX + side * i, baseY + droop, wood);
+            }
+          }
+          level += 3 + (int)(whash2(L->gTreeSeed ^ 0x91A2u, worldX, tier) * 3);
+        }
         int crownH = h - 4;
         for (int oy = -2; oy < crownH; oy++) {
+          int y = top + oy, crownX = trunkXAtHeight(surf - y);
           double t = (double)(oy + 2) / (double)imax(1, crownH + 1);
           int rad = 1 + (int)std::floor(t * 7.0);
           // Subtle tiering breaks the cone edge without producing flat shelves.
           if (oy > 2 && oy % 5 == 0) rad = imin(8, rad + 2);
           for (int ox = -rad; ox <= rad; ox++) {
             double edge = whash2(L->gTreeSeed ^ 0x91A3u, worldX + ox, oy);
-            if (std::abs(ox) <= rad - 2 || edge > 0.28) put(lx + ox, top + oy, leaf);
-            if (std::abs(ox) < rad && oy % 4 != 1 && edge > 0.18) put(lx + ox, top + oy + 1, leaf);
+            if (std::abs(ox) <= rad - 2 || edge > 0.28) put(crownX + ox, y, leaf);
+            if (std::abs(ox) < rad && oy % 4 != 1 && edge > 0.18) put(crownX + ox, y + 1, leaf);
           }
         }
       } else if (pt == PT_WILLOW) {                     // clustered crown + soft, irregular droops
+        int crownX = trunkXAtHeight(h);
+        for (int tier = 0; tier < 3; tier++) for (int side : {-1, 1}) {
+          double shape = whash2(L->gTreeSeed ^ 0x7714u, worldX + side, tier);
+          if (shape < 0.08) continue;
+          int level = h - 3 - tier * 3 + (shape > 0.66 ? 1 : 0);
+          int baseX = trunkXAtHeight(level), baseY = surf - level;
+          int len = 5 + (int)(whash2(L->gTreeSeed ^ 0x7715u, worldX + side, tier) * 5);
+          for (int i = 1; i <= len; i++) {
+            int lift = imin(2, (i + 1) / 3);
+            int sag = i > len * 2 / 3 ? (i - len * 2 / 3 + 1) / 2 : 0;
+            put(baseX + side * i, baseY - lift + sag, wood);
+          }
+        }
         for (int cx : {-6, -3, 0, 3, 6}) {
           int cy = -2 + (std::abs(cx) / 3) + (int)(whash2(L->gTreeSeed ^ 0x7711u, worldX, cx) * 3);
           int rr = 4 + (std::abs(cx) < 4 ? 1 : 0);
           for (int oy = -rr; oy <= rr; oy++) for (int ox = -rr; ox <= rr; ox++)
-            if (ox * ox + oy * oy <= rr * rr + 2) put(lx + cx + ox, top + cy + oy, leaf);
+            if (ox * ox + oy * oy <= rr * rr + 2) put(crownX + cx + ox, top + cy + oy, leaf);
           int drop = 2 + (int)(whash2(L->gTreeSeed ^ 0x7712u, worldX, cx) * 5);
           int sway = whash2(L->gTreeSeed ^ 0x7713u, worldX, cx) < 0.5 ? -1 : 1;
-          for (int i = 1; i <= drop; i++) { put(lx + cx + (i > drop / 2 ? sway : 0), top + cy + rr + i, leaf); if (i < drop - 1) put(lx + cx + 1, top + cy + rr + i, leaf); }
+          for (int i = 1; i <= drop; i++) { put(crownX + cx + (i > drop / 2 ? sway : 0), top + cy + rr + i, leaf); if (i < drop - 1) put(crownX + cx + 1, top + cy + rr + i, leaf); }
         }
-        for (int side : {-1, 1}) { int len = 4 + (int)(hr * 3); for (int i = 1; i <= len; i++) put(lx + side * i, top + 2 - i / 3, wood); }
       } else {                                          // oak / bush: forked limbs and cloud canopy
         int rad = pt == PT_BUSH ? 4 : 8;
         if (pt != PT_BUSH) for (int side : {-1, 1}) {

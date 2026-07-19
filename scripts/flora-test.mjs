@@ -29,6 +29,7 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
   const g = e.getGrid();
   const cnt = {}; let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1, leaves = 0;
   let leafBelowWood = 0, leafAboveWood = 0, woodCells = 0, woodMinX = 1e9, woodMaxX = -1;
+  let plantCells = 0, seedIndex = -1;
   const woodRowMin = Array(ROWS).fill(1e9), woodRowMax = Array(ROWS).fill(-1);
   // First pass: wood top (min Y — smaller y is up).
   let woodMinY = 1e9;
@@ -45,6 +46,8 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
   for (let i = 0; i < g.length; i++) {
     if (!PLANTISH.has(g[i])) continue;
     const x = i % COLS, y = (i / COLS) | 0;
+    plantCells++;
+    if (g[i] === MAT.SEED) seedIndex = i;
     minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y);
     cnt[g[i]] = (cnt[g[i]] || 0) + 1;
     if (LEAF.has(g[i])) {
@@ -56,12 +59,41 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
       if (WOOD.has(down)) leafAboveWood++; // leaf is above a wood cell
     }
   }
-  e.destroy();
   const branchWidths = woodRowMin.flatMap((x, y) => woodRowMax[y] - x >= 2 ? [woodRowMax[y] - x + 1] : []);
+  let thickTrunkRows = 0;
+  for (let y = 73; y < 88; y++) {
+    let longest = 0, run = 0;
+    for (let x = 65; x <= 75; x++) {
+      if (WOOD.has(g[y * COLS + x])) { run++; longest = Math.max(longest, run); }
+      else run = 0;
+    }
+    if (longest >= 2) thickTrunkRows++;
+  }
+  const seen = new Uint8Array(g.length), stack = seedIndex >= 0 ? [seedIndex] : [];
+  let connectedCells = 0;
+  if (seedIndex >= 0) seen[seedIndex] = 1;
+  while (stack.length) {
+    const i = stack.pop(), x = i % COLS, y = (i / COLS) | 0;
+    connectedCells++;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      const nx = x + ox, ny = y + oy;
+      if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+      const ni = ny * COLS + nx;
+      if (!seen[ni] && PLANTISH.has(g[ni])) { seen[ni] = 1; stack.push(ni); }
+    }
+  }
+  let disconnectedWood = 0, disconnectedLeaves = 0;
+  for (let i = 0; i < g.length; i++) if (PLANTISH.has(g[i]) && !seen[i]) {
+    if (WOOD.has(g[i])) disconnectedWood++;
+    else disconnectedLeaves++;
+  }
+  e.destroy();
   return {
     cnt, leaves, w: maxX - minX + 1, h: maxY - minY + 1,
     leafBelowWood, leafAboveWood, woodCells, woodMinY, woodW: woodMaxX - woodMinX + 1,
-    branchRows: branchWidths.length, branchWidths,
+    branchRows: branchWidths.length, branchWidths, thickTrunkRows,
+    disconnectedCells: plantCells - connectedCells, disconnectedWood, disconnectedLeaves,
   };
 }
 
@@ -72,6 +104,8 @@ const pine = grow(PT.PINE, false);
 check(`pine grows WITHOUT water as PINE_WOOD (${pine.cnt[MAT.PINE_WOOD] || 0})`, (pine.cnt[MAT.PINE_WOOD] || 0) > 10);
 check(`pine has a substantial distinct needle canopy (${pine.cnt[MAT.PINE_NEEDLES] || 0})`, (pine.cnt[MAT.PINE_NEEDLES] || 0) >= 220 && !pine.cnt[MAT.PLANT]);
 check(`pine grows a broad, irregular branch skeleton (${pine.woodW}w skeleton; ${pine.w}w x ${pine.h}h overall)`, pine.woodW >= 12 && pine.w >= 16 && pine.h > pine.w);
+check(`pine grows taller (${pine.h} cells tall)`, pine.h >= 36);
+check(`pine has a tapered multi-cell trunk (${pine.thickTrunkRows} thick lower rows)`, pine.thickTrunkRows >= 8);
 const youngPine = grow(PT.PINE, false, 60, 7);
 check(`pine starts foliage while its skeleton is young (${youngPine.woodCells} wood, ${youngPine.leaves} needles)`, youngPine.woodCells < pine.woodCells && youngPine.leaves >= 8);
 
@@ -80,7 +114,7 @@ check(`willow grows WITHOUT water with distinct foliage (${willow.cnt[MAT.WOOD] 
   (willow.cnt[MAT.WOOD] || 0) > 8 && (willow.cnt[MAT.WILLOW_LEAF] || 0) > 8 && !willow.cnt[MAT.PLANT]);
 // Willow uses a deliberately smaller, thinner wood skeleton than oak and grows
 // long leaf curtains below its lateral limbs.
-const SHAPE_SEEDS = [7, 11, 13, 17, 19, 23, 29, 31];
+const SHAPE_SEEDS = [7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67];
 const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
 const oaks = SHAPE_SEEDS.map((s) => grow(PT.OAK, false, 1100, s));
 const willows = SHAPE_SEEDS.map((s) => grow(PT.WILLOW, false, 1100, s));
@@ -95,10 +129,13 @@ const pineShapes = new Set(pines.map((tree) => `${tree.woodCells}/${tree.woodW}/
 const willowShapes = new Set(willows.map((tree) => `${tree.woodCells}/${tree.woodW}/${tree.branchRows}`));
 check(`pine branch frequency/length varies across seeds (${pineShapes.size}/${SHAPE_SEEDS.length} distinct skeletons)`, pineShapes.size >= 6);
 check(`willow branch frequency/length varies across seeds (${willowShapes.size}/${SHAPE_SEEDS.length} distinct skeletons)`, willowShapes.size >= 6);
+check(`willow growth stays connected to its seed (${willows.map((tree) => `${tree.disconnectedWood}w+${tree.disconnectedLeaves}l`).join('/')})`, willows.every((tree) => tree.disconnectedCells === 0));
 check(
   `willow has wide arched limbs and hanging foliage (${willow.woodW}w skeleton; leaf-below ${willow.leafBelowWood} vs above ${willow.leafAboveWood})`,
   willow.woodW >= 15 && willow.leafBelowWood > willow.leafAboveWood * 1.4,
 );
+check(`willow has a substantial multi-cell trunk (${willow.thickTrunkRows} thick lower rows)`, willow.thickTrunkRows >= 8);
+check(`willow grows taller (${willow.h} cells tall)`, willow.h >= 30);
 const youngWillow = grow(PT.WILLOW, false, 60, 7);
 check(`willow starts curtains while its skeleton is young (${youngWillow.woodCells} wood, ${youngWillow.leaves} leaves)`, youngWillow.woodCells < willow.woodCells && youngWillow.leaves >= 5);
 
@@ -167,13 +204,17 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 // Worldgen produces typed flora (trees are stamped into the background layer).
 {
   const e = createEngineWasm({ cols: 220, rows: 160, worldSeed: 0xBED, sinksOn: false, infinite: true });
-  const woods = new Set();
+  const woods = new Set(); let willowLeaves = 0;
   for (let i = 0; i < 40; i++) {
     const g = e.getGridBg();
-    for (const v of g) if (v === MAT.WOOD || v === MAT.PINE_WOOD || v === MAT.CACTUS) woods.add(v);
+    for (const v of g) {
+      if (v === MAT.WOOD || v === MAT.PINE_WOOD || v === MAT.CACTUS) woods.add(v);
+      if (v === MAT.WILLOW_LEAF) willowLeaves++;
+    }
     e.shiftWorldXY(128, 0);
   }
   check(`worldgen stamps multiple tree species (${[...woods].length} wood types)`, woods.size >= 2);
+  check(`worldgen restores willow silhouettes to swamps (${willowLeaves} leaves sampled)`, willowLeaves > 0);
   e.destroy();
 }
 

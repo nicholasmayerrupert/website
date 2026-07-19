@@ -1897,6 +1897,8 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
   // Reused generation-stamped scratch (allocated once in Layer::alloc): a cell
   // is "seen" iff seenStamp[k] == gen. Each of the three blocks bumps gen, so
   // the "clear" between materials costs O(1) instead of zeroing E.cols*E.rows.
+  // New cells also seed prevCompCells: if a freshly generated/restored component
+  // moves on its first tick, carry must clear its old footprint from next[].
   std::vector<int32_t>& seen = E.L->seenStamp;
   // STONE group (chunk-bounded). Each same-id region floods as its own island,
   // so a vein of ore inside stone is a distinct component (and stays a distinct
@@ -1911,6 +1913,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       std::vector<int> cells; int yMax;
       floodTargetMat = E.L->grid[k];
       floodComponent(sx, sy, seen, gen, true, cells, yMax, &ComponentSystem::isFloodTargetMat);
+      E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
       Comp c; c.id = E.L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax;
       c.growing = floodTargetMat == MYCELIUM_SPORE;
       if (c.growing) E.L->myceliumActive = true;
@@ -1931,6 +1934,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       // Re-derive the species from the trunk material (so a streamed-in / restored
       // tree keeps its type — the cells ARE the persistence) and count generically.
       for (int kk : cells) { uint8_t m = E.L->grid[kk]; if (E.isPlantWood(m)) { c.woodCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromWood(m); } else if (E.isPlantLeaf(m)) { c.leafCount++; if (c.plantType == PT_OAK) c.plantType = E.plantTypeFromLeaf(m); } }
+      E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
       c.cells = std::move(cells); E.L->plantComponents.push_back(std::move(c));
     }
   }
@@ -1943,6 +1947,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_ICE) continue;
       std::vector<int> cells; int yMax;
       floodComponent(sx, sy, seen, gen, false, cells, yMax, &ComponentSystem::isIceGroup);
+      E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
       Comp c; c.id = E.L->nextIceId++; c.cells = std::move(cells); c.yMax = yMax; c.cacheDirty = true; E.L->iceComponents.push_back(std::move(c));
     }
   }

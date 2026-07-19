@@ -153,6 +153,30 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('diff: hashes match after fg+bg edits', a.gridHash() === b.gridHash(), `(${a.gridHash()} vs ${b.gridHash()})`);
 }
 
+// 6b. A presentation mirror receives only per-tick dirty chunks. Falling tree
+// tips must not be left behind when the authority's ping-pong grids converge.
+{
+  console.log('presentation diff: falling worldgen trees clear vacated tips');
+  const opts = { cols: 160, rows: 100, worldSeed: 168, sinksOn: false, infinite: true };
+  const host = createEngineWasm({ ...opts, storageRole: 'authority' });
+  const mirror = createEngineWasm({ ...opts, storageRole: 'presentation' });
+  mirror.applyWorldMirror(host.serializeWorld(), host.getWorldOffsetX(), host.getWorldOffsetY());
+  host.consumeReplicaDirty(); mirror.resetDirty();
+  let mismatch = null;
+  for (let i = 0; i < 20 && !mismatch; i++) {
+    host.step(16 * (i + 1));
+    mirror.applyDiffMirror(host.serializeDiff());
+    host.consumeReplicaDirty();
+    const grids = [[host.getGrid(), mirror.getGrid(), 'fg'], [host.getGridBg(), mirror.getGridBg(), 'bg']];
+    for (const [authoritative, presented, layer] of grids) {
+      const cell = authoritative.findIndex((v, k0) => v !== presented[k0]);
+      if (cell >= 0) { mismatch = { tick: i + 1, layer, cell, authoritative: authoritative[cell], presented: presented[cell] }; break; }
+    }
+  }
+  check('falling tree diffs keep the presentation grid synchronized', mismatch === null, mismatch && `(${JSON.stringify(mismatch)})`);
+  host.destroy(); mirror.destroy();
+}
+
 // 7. RMB paints into the background; LMB into the foreground.
 {
   console.log('RMB -> background, LMB -> foreground');

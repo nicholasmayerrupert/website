@@ -1421,184 +1421,24 @@ void ComponentSystem::moveRigidAssemblies() {
   // keeps its real material (ore stays ore, not STONE). Ice comps are pure ICE.
   auto matOf = [&](int i, int k) -> uint8_t { return i < nStonePlant ? E.L->grid[k] : ICE; };
 
-  struct RelocatedCell { int target; uint8_t material; };
-  struct AssemblyMovePlan {
-    int dir = 0;
-    bool landed = false;
-    std::vector<int> vacated;
-    std::vector<RelocatedCell> relocated;
-  };
-  auto groupHasIce = [&](Group* grp) {
-    for (int ci : grp->comps) if (ci >= nStonePlant) return true;
-    return false;
-  };
-
-  // The only successful-move mutation path. Planners describe geometry and
-  // displaced media; all position-indexed engine state is translated here.
-  auto applyAssemblyMove = [&](Group* grp, const auto& sourceCells, const AssemblyMovePlan& plan) {
-    const int dy = plan.dir > 0 ? 1 : -1;
-    struct ComponentMove {
-      Comp* comp;
-      bool isPlant;
-      std::vector<std::pair<int, uint8_t>> materials;
-      int wood;
-      int leaf;
+  auto translateAssembly = [&](Group* grp, std::unordered_set<int>& cells, int dir,
+                               int decision, double solidMass, bool fullySubmerged) -> bool {
+    int dy = dir > 0 ? 1 : -1;
+    bool hasIce = false;
+    for (int ci : grp->comps) if (ci >= nStonePlant) { hasIce = true; break; }
+    const int gridLen = E.cols * E.rows;
+    auto emitBlockedLanding = [&]() {
+      bool wasFalling = decision > 0;
+      for (int ci : grp->comps) wasFalling = wasFalling && all[ci]->buoyancyDirection > 0;
+      if (!wasFalling || cells.empty()) return;
+      double x = 0, y = 0;
+      for (int k : cells) { x += k % E.cols; y += k / E.cols; }
+      int ci = grp->comps[0], k = all[ci]->cells[0];
+      E.audio.emit(SE_SOLID_LAND, x / cells.size(), y / cells.size(),
+                   std::min(1.6, 0.28 + std::sqrt((double)cells.size()) * 0.065),
+                   matOf(ci, k));
+      for (int groupCi : grp->comps) all[groupCi]->buoyancyDirection = 0;
     };
-    std::vector<ComponentMove> moves;
-    moves.reserve(grp->comps.size());
-    for (int ci : grp->comps) {
-      Comp* comp = all[ci];
-      bool isPlant = ci >= nStone && ci < nStonePlant;
-      std::vector<std::pair<int, uint8_t>> materials;
-      materials.reserve(comp->cells.size());
-      int wood = 0, leaf = 0;
-      for (int k : comp->cells) {
-        uint8_t m = matOf(ci, k);
-        materials.push_back({k + plan.dir, m});
-        if (isPlant) {
-          if (E.isPlantWood(m)) wood++;
-          else if (E.isPlantLeaf(m)) leaf++;
-        }
-      }
-      moves.push_back({comp, isPlant, std::move(materials), wood, leaf});
-    }
-
-    std::vector<std::pair<int, int>> movedFuses;
-    if (!E.L->pendingDetonations.empty()) {
-      movedFuses.reserve(E.L->pendingDetonations.size());
-      for (int k : sourceCells) {
-        auto it = E.L->pendingDetonations.find(k);
-        if (it == E.L->pendingDetonations.end()) continue;
-        movedFuses.push_back({k + plan.dir, it->second});
-        E.L->pendingDetonations.erase(it);
-      }
-    }
-
-    double landX = 0, landY = 0;
-    uint8_t landMaterial = EMPTY;
-    if (plan.landed) {
-      for (int k : sourceCells) {
-        int moved = k + plan.dir;
-        landX += moved % E.cols;
-        landY += moved / E.cols;
-      }
-      landX /= sourceCells.size();
-      landY /= sourceCells.size();
-      if (!grp->comps.empty() && !all[grp->comps[0]]->cells.empty()) {
-        int ci = grp->comps[0];
-        landMaterial = matOf(ci, all[ci]->cells[0]);
-      }
-    }
-
-    E.L->groundDirty = true;
-    for (int k : sourceCells) E.writeGridIndex(k, EMPTY);
-    for (auto& move : moves) {
-      std::vector<int> newCells;
-      newCells.reserve(move.materials.size());
-      for (auto& cell : move.materials) {
-        E.writeGridIndex(cell.first, cell.second);
-        newCells.push_back(cell.first);
-      }
-      move.comp->cells = std::move(newCells);
-      move.comp->yMax = imax(0, imin(E.rows - 1, move.comp->yMax + dy));
-      move.comp->buoyancyDirection = plan.landed ? 0 : (plan.dir < 0 ? -1 : 1);
-      if (move.isPlant) {
-        move.comp->woodCount = move.wood;
-        move.comp->leafCount = move.leaf;
-        move.comp->cacheDirty = true;
-      }
-    }
-    // The loose pass and surface leveler run later this tick. Keep genuinely
-    // empty trailing cells unavailable until the next tick so displaced liquid
-    // cannot immediately sweep back through a moving iceberg's top wake.
-    if (groupHasIce(grp)) for (int k : plan.vacated) E.L->assemblyWakeStamp[k] = E.tick;
-    for (auto& fuse : movedFuses) {
-      auto it = E.L->pendingDetonations.find(fuse.first);
-      if (it == E.L->pendingDetonations.end() || fuse.second < it->second)
-        E.L->pendingDetonations[fuse.first] = fuse.second;
-    }
-    for (const auto& cell : plan.relocated) {
-      E.writeGridIndex(cell.target, cell.material);
-      E.L->assemblyRelocatedCells.push_back(cell.target);
-    }
-#ifdef SAND_INVARIANT_CHECKS
-    {
-      std::unordered_set<int> allCompCells;
-      for (auto& c : E.L->stoneComponents) for (int k : c.cells) allCompCells.insert(k);
-      for (auto& c : E.L->plantComponents) for (int k : c.cells) allCompCells.insert(k);
-      for (auto& c : E.L->iceComponents) for (int k : c.cells) allCompCells.insert(k);
-      for (const auto& cell : plan.relocated) if (allCompCells.count(cell.target)) {
-        char buf[200];
-        snprintf(buf, sizeof(buf), "TRANSLATE PROBE: relocated mat=%d into comp cell k=%d (x=%d,y=%d) dir=%d vacated=%d",
-                 (int)cell.material, cell.target, cell.target % E.cols, cell.target / E.cols,
-                 plan.dir > 0 ? 1 : -1,
-                 (int)std::count(plan.vacated.begin(), plan.vacated.end(), cell.target));
-        emscripten_console_error(buf);
-        abort();
-      }
-    }
-#endif
-    if (plan.landed)
-      E.audio.emit(SE_SOLID_LAND, landX, landY,
-                   std::min(1.6, 0.28 + std::sqrt((double)sourceCells.size()) * 0.065),
-                   landMaterial);
-  };
-
-  auto applyBlockedLanding = [&](Group* grp, const std::unordered_set<int>& cells, int decision) {
-    bool wasFalling = decision > 0;
-    for (int ci : grp->comps) wasFalling = wasFalling && all[ci]->buoyancyDirection > 0;
-    if (!wasFalling || cells.empty()) return;
-    double x = 0, y = 0;
-    for (int k : cells) { x += k % E.cols; y += k / E.cols; }
-    int ci = grp->comps[0], k = all[ci]->cells[0];
-    E.audio.emit(SE_SOLID_LAND, x / cells.size(), y / cells.size(),
-                 std::min(1.6, 0.28 + std::sqrt((double)cells.size()) * 0.065),
-                 matOf(ci, k));
-    for (int groupCi : grp->comps) all[groupCi]->buoyancyDirection = 0;
-  };
-
-  // Pure cheap planner. It also collects the group's cells so the coordinator
-  // can reuse them if it must continue into the general planner.
-  auto tryPlanFreeDescent = [&](Group* grp, std::vector<int>& cells, AssemblyMovePlan& plan) -> bool {
-    const int gridLen = E.cols * E.rows;
-    asmCells.reset((size_t)gridLen);
-    for (int ci : grp->comps) for (int k : all[ci]->cells) {
-      cells.push_back(k);
-      asmCells.add(k);
-    }
-    if (cells.empty()) return false;
-
-    plan.dir = E.cols;
-    for (int k : cells) {
-      int lead = k + E.cols;
-      if (lead >= gridLen) return false;
-      if (!asmCells.has(lead)) {
-        uint8_t material = E.L->grid[lead];
-        if (material != EMPTY && !E.isGasMaterial(material)) return false;
-        int after = lead + E.cols;
-        if (after >= gridLen) return false;
-        uint8_t below = E.L->grid[after];
-        if (below != EMPTY && !E.isGasMaterial(below)) return false;
-        if (E.isGasMaterial(material)) {
-          int target = k;
-          while (target - E.cols >= 0 && asmCells.has(target - E.cols)) target -= E.cols;
-          plan.relocated.push_back({target, material});
-        }
-      }
-      int trail = k - E.cols;
-      if (trail < 0 || !asmCells.has(trail)) plan.vacated.push_back(k);
-    }
-    return true;
-  };
-
-  auto planGeneralMove = [&](Group* grp, const std::unordered_set<int>& cells, int dir,
-                             int decision, double solidMass, bool fullySubmerged,
-                             AssemblyMovePlan& plan, bool& blockedLanding) -> bool {
-    bool hasIce = groupHasIce(grp);
-    const int gridLen = E.cols * E.rows;
-    plan.dir = dir;
-    auto& vacated = plan.vacated;
-    blockedLanding = false;
     // Membership mirror of `cells` (iteration below stays on the set — its
     // order feeds displaced/vacated order and thus every relocation write).
     asmCells.reset((size_t)gridLen);
@@ -1608,13 +1448,13 @@ void ComponentSystem::moveRigidAssemblies() {
     };
     for (int k : cells) {
       int leadK = k + dir; int leadY = leadK / E.cols;
-      if (leadY < 1 || leadY >= E.rows) { blockedLanding = true; return false; }
+      if (leadY < 1 || leadY >= E.rows) { emitBlockedLanding(); return false; }
       if (asmCells.has(leadK)) continue;
       uint8_t lead = E.L->grid[leadK];
-      if (!componentDisplaceableForAssembly(lead)) { blockedLanding = true; return false; }
+      if (!componentDisplaceableForAssembly(lead)) { emitBlockedLanding(); return false; }
     }
     struct Disp { uint8_t material; int from; };
-    std::vector<Disp> displaced;
+    std::vector<Disp> displaced; std::vector<int> vacated;
     for (int k : cells) {
       int leadK = k + dir; uint8_t lead = E.L->grid[leadK];
       if (!asmCells.has(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
@@ -1918,58 +1758,107 @@ void ComponentSystem::moveRigidAssemblies() {
         }
       }
     }
-    plan.landed = landed;
-    // Preserve the established relocation write order in the shared plan.
+    double landX = 0, landY = 0;
+    for (int k : shifted) { landX += k % E.cols; landY += k / E.cols; }
+    if (!shifted.empty()) { landX /= shifted.size(); landY /= shifted.size(); }
+    uint8_t landMaterial = EMPTY;
+    if (!grp->comps.empty() && !all[grp->comps[0]]->cells.empty()) {
+      int ci = grp->comps[0], k = all[ci]->cells[0];
+      landMaterial = matOf(ci, k);
+    }
+
+    struct Move { Comp* comp; bool isPlant; std::vector<std::pair<int, uint8_t>> mats; int wood, leaf; };
+    std::vector<Move> moves;
+    for (int ci : grp->comps) {
+      Comp* comp = all[ci]; bool isPlant = ci >= nStone && ci < nStonePlant;
+      std::vector<std::pair<int, uint8_t>> mats; int wood = 0, leaf = 0;
+      for (int k : comp->cells) { uint8_t m = matOf(ci, k); mats.push_back({k + dir, m}); if (isPlant) { if (E.isPlantWood(m)) wood++; else if (E.isPlantLeaf(m)) leaf++; } }
+      moves.push_back({comp, isPlant, std::move(mats), wood, leaf});
+    }
+    std::vector<std::pair<int, int>> movedFuses;
+    if (!E.L->pendingDetonations.empty()) {
+      movedFuses.reserve(E.L->pendingDetonations.size());
+      for (int k : cells) {
+        auto it = E.L->pendingDetonations.find(k);
+        if (it == E.L->pendingDetonations.end()) continue;
+        movedFuses.push_back({k + dir, it->second});
+        E.L->pendingDetonations.erase(it);
+      }
+    }
+    E.L->groundDirty = true; // an assembly is relocating -> grounding changes -> full reflood
+    for (int k : cells) E.writeGridIndex(k, EMPTY);
+    for (auto& mv : moves) {
+      std::vector<int> newCells; newCells.reserve(mv.mats.size());
+      for (auto& pr : mv.mats) { E.writeGridIndex(pr.first, pr.second); newCells.push_back(pr.first); } // mats are distinct (k+dir over distinct k)
+      mv.comp->cells = std::move(newCells);
+      mv.comp->yMax = imax(0, imin(E.rows - 1, mv.comp->yMax + dy));
+      if (mv.isPlant) { mv.comp->woodCount = mv.wood; mv.comp->leafCount = mv.leaf; mv.comp->cacheDirty = true; }
+    }
+    // The loose pass and surface leveler run later this tick. Keep genuinely
+    // empty trailing cells unavailable until the next tick so displaced liquid
+    // placed outside the footprint cannot immediately sweep back through the
+    // iceberg's top wake after the relocation planner has finished.
+    if (hasIce) for (int k : vacated) E.L->assemblyWakeStamp[k] = E.tick;
+    for (auto& pr : movedFuses) {
+      auto it = E.L->pendingDetonations.find(pr.first);
+      if (it == E.L->pendingDetonations.end() || pr.second < it->second) E.L->pendingDetonations[pr.first] = pr.second;
+    }
+    // Relocate every displaced cell using the plan above.
     int pi = 0, gi = 0;
     for (auto& d : displaced) {
       if (E.isLiquidMaterial(d.material)) continue;
       if (E.isLooseSolidMaterial(d.material)) {
-        plan.relocated.push_back({powderTargets[pi++], d.material});
+        int target = powderTargets[pi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
       } else {
-        plan.relocated.push_back({gasTargets[gi++], d.material});
+        int target = gasTargets[gi++]; E.writeGridIndex(target, d.material); E.L->assemblyRelocatedCells.push_back(target);
       }
     }
-    for (auto& write : liquidWrites) plan.relocated.push_back({write.target, write.material});
+    for (auto& w : liquidWrites) { E.writeGridIndex(w.target, w.material); E.L->assemblyRelocatedCells.push_back(w.target); }
+#ifdef SAND_INVARIANT_CHECKS
+    {
+      // Dev probe: no relocation target may land inside ANY component's cells.
+      std::unordered_set<int> allCompCells;
+      for (auto& c : E.L->stoneComponents) for (int k : c.cells) allCompCells.insert(k);
+      for (auto& c : E.L->plantComponents) for (int k : c.cells) allCompCells.insert(k);
+      for (auto& c : E.L->iceComponents) for (int k : c.cells) allCompCells.insert(k);
+      auto probe = [&](int t, uint8_t m, const char* what) {
+        if (!allCompCells.count(t)) return;
+        char buf[200];
+        snprintf(buf, sizeof(buf), "TRANSLATE PROBE: %s wrote mat=%d into comp cell k=%d (x=%d,y=%d) dir=%d vacated=%d",
+                 what, (int)m, t, t % E.cols, t / E.cols, dir > 0 ? 1 : -1, (int)std::count(vacated.begin(), vacated.end(), t));
+        emscripten_console_error(buf);
+        abort();
+      };
+      for (auto& w : liquidWrites) probe(w.target, w.material, "liquidWrite");
+      for (size_t i2 = 0; i2 < powderTargets.size(); i2++) probe(powderTargets[i2], 0, "powderSpill");
+    }
+#endif
+    int8_t moveDir = landed ? 0 : (dir < 0 ? -1 : 1);
+    for (int ci : grp->comps) all[ci]->buoyancyDirection = moveDir;
+    if (landed) E.audio.emit(SE_SOLID_LAND, landX, landY,
+                             std::min(1.6, 0.28 + std::sqrt((double)shifted.size()) * 0.065),
+                             landMaterial);
     return true;
-  };
-
-  // The single entry point for a movable group. The cheap proof runs before
-  // any hash containers or contact data are built; only its failure pays for
-  // the general buoyancy/media planner.
-  auto translateAssembly = [&](Group* grp) {
-    std::vector<int> sourceCells;
-    AssemblyMovePlan plan;
-    bool freeDescent = tryPlanFreeDescent(grp, sourceCells, plan);
-    if (freeDescent) {
-      applyAssemblyMove(grp, sourceCells, plan);
-      return;
-    }
-    if (sourceCells.empty()) return;
-
-    std::unordered_set<int> cells;
-    for (int k : sourceCells) cells.insert(k);
-    double weight = 0;
-    for (int ci : grp->comps) for (int k : all[ci]->cells) weight += DENSITY[matOf(ci, k)];
-    FaceContact current;
-    accumulateFaceContact(E.L->grid, cells, current);
-    int decision = motionDecision(current, cells.size(), weight);
-    if (decision == 0) return;
-
-    AssemblyMovePlan generalPlan;
-    bool blockedLanding = false;
-    int dir = decision > 0 ? E.cols : -E.cols;
-    bool fullySubmerged = current.liquidFaces > 0 && current.openAirFaces == 0;
-    if (planGeneralMove(grp, cells, dir, decision, weight, fullySubmerged,
-                        generalPlan, blockedLanding)) {
-      applyAssemblyMove(grp, cells, generalPlan);
-    } else if (blockedLanding) {
-      applyBlockedLanding(grp, cells, decision);
-    }
   };
 
   for (Group* grp : order) {
     if (grp->grounded) continue;
-    translateAssembly(grp);
+    std::unordered_set<int> cells;
+    for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
+    double weight = 0;
+    for (int ci : grp->comps) {
+      for (int k : all[ci]->cells) {
+        double d = DENSITY[matOf(ci, k)];
+        weight += d;
+      }
+    }
+    FaceContact current;
+    accumulateFaceContact(E.L->grid, cells, current);
+    int decision = motionDecision(current, cells.size(), weight);
+    if (decision == 0) continue;
+    int dirK = decision > 0 ? E.cols : -E.cols;
+    bool fullySubmerged = current.liquidFaces > 0 && current.openAirFaces == 0;
+    translateAssembly(grp, cells, dirK, decision, weight, fullySubmerged);
   }
 }
 

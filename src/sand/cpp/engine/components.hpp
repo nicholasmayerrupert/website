@@ -72,11 +72,12 @@ class ComponentSystem {
   std::vector<int32_t> cgBondSeenFg, cgBondSeenBg;
   std::vector<std::vector<int>> cgBondCandidatesFg, cgBondCandidatesBg;
   int32_t cgCompGen = 0;
-  // Membership mirrors for the assembly-displacement planning path (Phase 6).
-  // The real unordered_sets are kept wherever their ITERATION order feeds cell
-  // writes or FP sums; these only replace the .count() hashing.
+  // Dense scratch for the assembly-displacement planning path (Phase 6).
+  // Flat vectors preserve established iteration order; stamps provide O(1)
+  // membership and material-overlay lookup without per-move hash tables.
   StampSet asmCells;                          // current assembly's cell set (translateAssembly / accumulateFaceContact)
   StampSet trMoved, trVacated, trReserved, trSeen; // translateAssembly relocation planning
+  std::vector<uint8_t> trPlannedMaterial;     // dense material overlay, valid where trSeen is stamped
   StampSet regCells, regOwnerStamp;           // registerRigidCells: input-set membership + lazy owner map validity
   std::vector<int32_t> regOwnerVal;           // owner comp index, valid where regOwnerStamp.has(k)
   std::vector<uint8_t> splitTouched;           // acid split: indexed touched-component mask
@@ -105,8 +106,19 @@ class ComponentSystem {
   bool compIdIsPlant(Layer& lay, int id);
   int nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
                            std::vector<std::set<int>>& vacatedByRow);
+  template <class Cells>
+  void accumulateFaceContactImpl(const uint8_t* g, const Cells& cells, FaceContact& c,
+                                 const std::unordered_map<int, uint8_t>* planned,
+                                 const StampSet* densePlanned,
+                                 const std::vector<uint8_t>* denseMaterial);
   void accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c,
-                             const std::unordered_map<int, uint8_t>* planned = nullptr);
+                             const std::unordered_map<int, uint8_t>* planned = nullptr,
+                             const StampSet* densePlanned = nullptr,
+                             const std::vector<uint8_t>* denseMaterial = nullptr);
+  void accumulateFaceContact(const uint8_t* g, const std::vector<int>& cells, FaceContact& c,
+                             const std::unordered_map<int, uint8_t>* planned = nullptr,
+                             const StampSet* densePlanned = nullptr,
+                             const std::vector<uint8_t>* denseMaterial = nullptr);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();

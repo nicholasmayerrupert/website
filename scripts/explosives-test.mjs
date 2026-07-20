@@ -635,6 +635,47 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a large falling component pushes movable blast rubble instead of pausing ---
+// The blast fan's exact shapes/velocities are intentionally random-looking. A
+// directly spawned stone-body stack exercises the same body-owned grid collision
+// in a deterministic arrangement: without the push path the 101px plate stalls
+// when the upper body's raster catches its underside.
+{
+  const C = 180, R = 260;
+  const run = (crossLayer) => {
+    const e = createEngineWasm({ cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: false });
+    e.setBgEnabled(crossLayer);
+    for (let layer = 0; layer <= (crossLayer ? 1 : 0); layer++) {
+      for (let y = 10; y <= 110; y++) for (let x = 30; x <= 130; x++) {
+        const marker = layer === 0 && x >= 45 && x <= 49 && y >= 20 && y <= 24;
+        e.placeMaterial(x, y, 0, marker ? MAT.IRON_ORE : MAT.STONE, layer);
+      }
+      e.syncComponentsLayer(layer);
+    }
+    e.spawnBox(80, 122, 4, 2, MAT.STONE);
+    e.spawnBox(80, 126, 4, 2, MAT.STONE);
+    e.step(0); // stamp the free bodies into the live grid
+    e._setBodyMotion(0, 0, 0, 0);
+    e._setBodyMotion(1, 0, 0, 0);
+    const markerTop = () => topRow(e.getGrid(), MAT.IRON_ORE, C);
+    let previous = markerTop();
+    const deltas = [];
+    for (let i = 0; i < 24; i++) {
+      e.step((i + 1) * 16);
+      const next = markerTop();
+      deltas.push(next - previous);
+      previous = next;
+    }
+    e.destroy();
+    return deltas;
+  };
+  for (const crossLayer of [false, true]) {
+    const deltas = run(crossLayer);
+    check(`large ${crossLayer ? 'cross-layer ' : ''}falling plate continuously pushes movable rigid-rubble stack (${deltas.join('')})`,
+          deltas.every((delta) => delta === 1));
+  }
+}
+
 // --- blast-created fire must not start a second, full-fuse explosion wave afterward ---
 {
   const C = 180, R = 140, side = 25;

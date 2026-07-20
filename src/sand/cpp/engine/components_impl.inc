@@ -1234,8 +1234,11 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   // plan feeds both the post-move buoyancy probe and the eventual writes, so the
   // anti-jitter decision cannot observe a different world from the mover.
   auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, int dir,
-                           LayerMovePlan& plan) -> bool {
+                           const AssemblyBodyPush& bodyPush, LayerMovePlan& plan) -> bool {
     plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
+    auto materialAt = [&](int k) -> uint8_t {
+      return bodyPush.vacated.count(k) ? EMPTY : lay.grid[k];
+    };
     struct PendingRelocate { int source; uint8_t material; };
     std::vector<PendingRelocate> pending;
     std::vector<int> vacated;
@@ -1243,7 +1246,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       int nk = k + dir;
       if (nk < E.cols || nk >= E.cols * E.rows) return false;
       if (own.count(nk)) continue;
-      uint8_t lead = lay.grid[nk];
+      uint8_t lead = materialAt(nk);
       if (lead == EMPTY) continue;
       if (!E.isGasMaterial(lead) && !E.isBuoyantMedium(lead)) return false;
       pending.push_back({nk, lead});
@@ -1282,6 +1285,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       plan.relocate.push_back({target, p.material});
     }
     plan.shifted.reserve(own.size()); plan.materials.reserve(own.size() * 2 + plan.relocate.size());
+    for (auto& entry : bodyPush.overlay) plan.materials[entry.first] = entry.second;
     for (int k : own) plan.materials[k] = EMPTY;
     for (int k : own) { plan.shifted.insert(k + dir); plan.materials[k + dir] = lay.grid[k]; }
     for (auto& r : plan.relocate) plan.materials[r.first] = r.second;
@@ -1321,12 +1325,22 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     int decision = motionDecision(before, fgCells.size() + bgCells.size(), sum);
     if (decision == 0) continue;
     int dir = decision > 0 ? E.cols : -E.cols;
+    AssemblyBodyPush fgBodyPush, bgBodyPush;
+    E.useLayer(&E.fg);
+    bool fgPushable = E.planAssemblyBodyPush(fgCells, dir, fgBodyPush);
+    E.useLayer(&E.bg);
+    bool bgPushable = E.planAssemblyBodyPush(bgCells, dir, bgBodyPush);
+    E.useLayer(&E.fg);
+    if (!fgPushable || !bgPushable) continue;
     // A joint moves only when both layer-local halves can execute the same plan.
-    if (!planLayerMove(E.fg, fgCells, dir, fgPlan) || !planLayerMove(E.bg, bgCells, dir, bgPlan)) continue;
+    if (!planLayerMove(E.fg, fgCells, dir, fgBodyPush, fgPlan)
+        || !planLayerMove(E.bg, bgCells, dir, bgBodyPush, bgPlan)) continue;
     FaceContact after;
     accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials);
     accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials);
     if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), sum) == -decision) continue;
+    E.applyAssemblyBodyPush(fgBodyPush);
+    E.applyAssemblyBodyPush(bgBodyPush);
     applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir);
     applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir);
     int8_t moveDir = dir < 0 ? -1 : 1;
@@ -1443,6 +1457,11 @@ void ComponentSystem::moveRigidAssemblies() {
     // order feeds displaced/vacated order and thus every relocation write).
     asmCells.reset((size_t)gridLen);
     for (int k : cells) asmCells.add(k);
+    AssemblyBodyPush bodyPush;
+    if (!E.planAssemblyBodyPush(cells, dir, bodyPush)) { emitBlockedLanding(); return false; }
+    auto materialAt = [&](int k) -> uint8_t {
+      return bodyPush.vacated.count(k) ? EMPTY : E.L->grid[k];
+    };
     auto componentDisplaceableForAssembly = [&](uint8_t m) {
       return m == EMPTY || E.isGasMaterial(m) || E.isBuoyantMedium(m);
     };
@@ -1450,13 +1469,13 @@ void ComponentSystem::moveRigidAssemblies() {
       int leadK = k + dir; int leadY = leadK / E.cols;
       if (leadY < 1 || leadY >= E.rows) { emitBlockedLanding(); return false; }
       if (asmCells.has(leadK)) continue;
-      uint8_t lead = E.L->grid[leadK];
+      uint8_t lead = materialAt(leadK);
       if (!componentDisplaceableForAssembly(lead)) { emitBlockedLanding(); return false; }
     }
     struct Disp { uint8_t material; int from; };
     std::vector<Disp> displaced; std::vector<int> vacated;
     for (int k : cells) {
-      int leadK = k + dir; uint8_t lead = E.L->grid[leadK];
+      int leadK = k + dir; uint8_t lead = materialAt(leadK);
       if (!asmCells.has(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
       int trailK = k - dir; // may be out of bounds at the world edge (the old set .count was safe on any int; the stamp array is not)
       if (trailK < 0 || trailK >= gridLen || !asmCells.has(trailK)) vacated.push_back(k);
@@ -1489,7 +1508,7 @@ void ComponentSystem::moveRigidAssemblies() {
       std::vector<std::set<int>> vacatedByRow(E.rows);
       for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
-      auto plannedMaterialAt = [&](int k) -> uint8_t { return trVacated.has(k) ? EMPTY : E.L->grid[k]; };
+      auto plannedMaterialAt = [&](int k) -> uint8_t { return trVacated.has(k) ? EMPTY : materialAt(k); };
       // Bound the total volume-preserving liquid search for this one assembly move.
       // Each displaced liquid cell BFS-floods the reachable liquid body to find a
       // surface; for a large rigid slab sinking through a big ENCLOSED pool (e.g.
@@ -1727,6 +1746,7 @@ void ComponentSystem::moveRigidAssemblies() {
     std::unordered_map<int, uint8_t> planned;
     planned.reserve(cells.size() * 2 + liquidWrites.size() + powderTargets.size());
     std::unordered_set<int> shifted; shifted.reserve(cells.size());
+    for (auto& entry : bodyPush.overlay) planned[entry.first] = entry.second;
     for (int k : cells) planned[k] = EMPTY;
     for (int ci : grp->comps) for (int k : all[ci]->cells) {
       shifted.insert(k + dir);
@@ -1752,7 +1772,8 @@ void ComponentSystem::moveRigidAssemblies() {
         if (below >= gridLen || shifted.count(below)) continue;
         auto it = planned.find(below);
         uint8_t support = it == planned.end() ? E.L->grid[below] : it->second;
-        if (support != EMPTY && !E.isGasMaterial(support) && !E.isLiquidMaterial(support)) {
+        if (support != EMPTY && !E.isGasMaterial(support) && !E.isLiquidMaterial(support)
+            && !bodyPush.occupied.count(below)) {
           landed = true;
           break;
         }
@@ -1785,6 +1806,7 @@ void ComponentSystem::moveRigidAssemblies() {
         E.L->pendingDetonations.erase(it);
       }
     }
+    E.applyAssemblyBodyPush(bodyPush);
     E.L->groundDirty = true; // an assembly is relocating -> grounding changes -> full reflood
     for (int k : cells) E.writeGridIndex(k, EMPTY);
     for (auto& mv : moves) {

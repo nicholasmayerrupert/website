@@ -13,6 +13,21 @@ struct Engine;
 // One displaced loose cell (material + source index) pending relocation.
 struct Disp { uint8_t material; int from; };
 
+// Exact one-cell translation of the free-body stack in front of a descending
+// static assembly. Planning is read-only so the component mover can finish all
+// of its normal displacement/buoyancy checks before either side is mutated.
+struct AssemblyBodyPush {
+  Layer* layer = nullptr;
+  std::vector<Body*> bodies;
+  std::vector<int> oldCells;
+  std::vector<int> newCells;
+  std::vector<int> owners;
+  std::unordered_set<int> vacated;
+  std::unordered_set<int> occupied;
+  std::unordered_map<int, uint8_t> overlay;
+  bool empty() const { return bodies.empty(); }
+};
+
 class RigidBodySystem {
  public:
   explicit RigidBodySystem(Engine& e) : E(e) {}
@@ -68,6 +83,9 @@ class RigidBodySystem {
   bool bodyFloatsOnMedium(Body* b);
   bool bodyHasLooseSupport(Body* b);
   void bakeRestingBodies();
+  bool planAssemblyBodyPush(const std::unordered_set<int>& assemblyCells, int dir,
+                            AssemblyBodyPush& plan);
+  void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material);
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells);

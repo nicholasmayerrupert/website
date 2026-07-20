@@ -939,6 +939,123 @@ void RigidBodySystem::moveBodies() {
   }
   erodeBodies(cells);
 }
+
+bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemblyCells,
+                                           int dir, AssemblyBodyPush& plan) {
+  plan = AssemblyBodyPush{};
+  plan.layer = E.L;
+  // Components only push with gravity. Rising/floating components still treat
+  // rigid bodies as ordinary solid blockers.
+  if (dir != E.cols || E.L->bodies.empty() || E.L->bodyCells.empty()) return true;
+
+  std::unordered_map<int, Body*> byId;
+  byId.reserve(E.L->bodies.size() * 2);
+  for (Body* b : E.L->bodies) byId[b->id] = b;
+
+  std::unordered_map<int, std::vector<int>> cellsById;
+  cellsById.reserve(E.L->bodies.size() * 2);
+  for (int k : E.L->bodyCells) {
+    if (k < 0 || k >= E.cols * E.rows) continue;
+    int id = E.L->bodyOwner[k];
+    if (id >= 0 && byId.count(id)) cellsById[id].push_back(k);
+  }
+
+  std::unordered_set<int> selected;
+  std::vector<int> queue;
+  for (int k : assemblyCells) {
+    int lead = k + dir;
+    if (lead < 0 || lead >= E.cols * E.rows) continue;
+    int id = E.L->bodyOwner[lead];
+    if (id >= 0 && selected.insert(id).second) queue.push_back(id);
+  }
+  if (queue.empty()) return true;
+
+  // A body may be resting on another body. Move the entire downward stack or
+  // none of it; otherwise the first body would simply overwrite/pin the next.
+  for (size_t qi = 0; qi < queue.size(); qi++) {
+    int id = queue[qi];
+    auto bodyIt = byId.find(id);
+    auto cellsIt = cellsById.find(id);
+    if (bodyIt == byId.end() || cellsIt == cellsById.end() || cellsIt->second.empty()) return false;
+    for (int k : cellsIt->second) {
+      int nk = k + dir;
+      if (nk < E.cols || nk >= E.cols * E.rows) return false;
+      int nextId = E.L->bodyOwner[nk];
+      if (nextId >= 0 && selected.insert(nextId).second) queue.push_back(nextId);
+    }
+  }
+
+  for (Body* b : E.L->bodies) if (selected.count(b->id)) plan.bodies.push_back(b);
+  for (int k : E.L->bodyCells) {
+    if (k < 0 || k >= E.cols * E.rows) continue;
+    int id = E.L->bodyOwner[k];
+    if (!selected.count(id)) continue;
+    plan.oldCells.push_back(k);
+    plan.newCells.push_back(k + dir);
+    plan.owners.push_back(id);
+    plan.vacated.insert(k);
+  }
+  if (plan.oldCells.empty()) return false;
+
+  for (size_t i = 0; i < plan.newCells.size(); i++) {
+    int nk = plan.newCells[i];
+    if (nk < E.cols || nk >= E.cols * E.rows || assemblyCells.count(nk)) return false;
+    int owner = E.L->bodyOwner[nk];
+    if (owner >= 0) {
+      if (!selected.count(owner)) return false;
+    } else {
+      uint8_t m = E.L->grid[nk];
+      if (m != EMPTY && !E.isGasMaterial(m)) return false;
+    }
+    plan.occupied.insert(nk);
+  }
+
+  for (int k : plan.oldCells) plan.overlay[k] = EMPTY;
+  for (size_t i = 0; i < plan.newCells.size(); i++) {
+    Body* b = byId[plan.owners[i]];
+    plan.overlay[plan.newCells[i]] = b->material;
+  }
+  return true;
+}
+
+void RigidBodySystem::applyAssemblyBodyPush(AssemblyBodyPush& plan) {
+  if (plan.empty()) return;
+  Layer* previous = E.L;
+  E.useLayer(plan.layer);
+  std::unordered_set<int> selected;
+  selected.reserve(plan.bodies.size() * 2);
+  for (Body* b : plan.bodies) selected.insert(b->id);
+
+  std::vector<int> kept;
+  kept.reserve(E.L->bodyCells.size());
+  for (int k : E.L->bodyCells) {
+    int owner = (k >= 0 && k < E.cols * E.rows) ? E.L->bodyOwner[k] : -1;
+    if (!selected.count(owner)) kept.push_back(k);
+  }
+  for (int k : plan.oldCells) {
+    if (E.L->bodyOwner[k] >= 0 && selected.count(E.L->bodyOwner[k])) {
+      E.writeGridIndex(k, EMPTY);
+      E.L->bodyOwner[k] = -1;
+    }
+  }
+  for (Body* b : plan.bodies) {
+    b->py += 1.0;
+    if (b->vy < 0) b->vy = 0;
+    wakeBody(b);
+  }
+  for (size_t i = 0; i < plan.newCells.size(); i++) {
+    int k = plan.newCells[i], id = plan.owners[i];
+    Body* b = nullptr;
+    for (Body* candidate : plan.bodies) if (candidate->id == id) { b = candidate; break; }
+    if (!b) continue;
+    E.writeGridIndex(k, b->material);
+    E.L->bodyOwner[k] = id;
+    kept.push_back(k);
+  }
+  E.L->bodyCells = std::move(kept);
+  E.useLayer(previous);
+}
+
 Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material) {
   Body* b = spawnBodyImpl(cells, material, DENSITY[material]);
   if (b && !cells.empty()) { int minX = E.cols - 1, minY = E.rows - 1, maxX = 0, maxY = 0; for (auto& c : cells) { if (c.first < minX) minX = c.first; if (c.first > maxX) maxX = c.first; if (c.second < minY) minY = c.second; if (c.second > maxY) maxY = c.second; } E.markDirtyRect(minX, minY, maxX, maxY); }

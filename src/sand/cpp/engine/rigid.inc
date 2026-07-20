@@ -3,6 +3,8 @@
   // call sites unchanged.
   RigidBodySystem rigid{*this};
   void moveBodies() { rigid.moveBodies(); }
+  bool planAssemblyBodyPush(const std::unordered_set<int>& assemblyCells, int dir, AssemblyBodyPush& plan) { return rigid.planAssemblyBodyPush(assemblyCells, dir, plan); }
+  void applyAssemblyBodyPush(AssemblyBodyPush& plan) { rigid.applyAssemblyBodyPush(plan); }
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells) { return rigid.spawnBody(cells); }
   Body* spawnBox(int cx, int cy, int halfW, int halfH, uint8_t material) { return rigid.spawnBox(cx, cy, halfW, halfH, material); }
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material) { return rigid.spawnDisc(cx, cy, radius, material); }

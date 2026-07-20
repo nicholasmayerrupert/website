@@ -191,6 +191,32 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- an unsupported rolling TNT front must not pin adjacent terrain ---
+{
+  const e = mk();
+  const y = 39;
+  // The iron shelf begins grounded through its left pillar. The first blast
+  // cuts that pillar while leaving a long, one-tick TNT front along the shelf's
+  // upper face. The still-visible TNT keeps its staggered fuse, but because the
+  // whole assembly is now unsupported it must not be mistaken for a ground
+  // anchor merely because the mover defers imminent TNT until the reaction pass.
+  for (let yy = 40; yy <= 50; yy++) for (let x = 30; x <= 110; x++) e.placeMaterial(x, yy, 0, MAT.IRON_ORE);
+  for (let yy = 40; yy < ROWS; yy++) for (let x = 25; x <= 30; x++) e.placeMaterial(x, yy, 0, MAT.STONE);
+  for (let x = 30; x <= 110; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  e.syncComponents();
+  const probe = 105;
+  let firstDrop = -1;
+  for (let i = 0; i < 100; i++) {
+    if (i < 4) e.placeMaterial(28, y, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) < 81) { firstDrop = i; break; }
+  }
+  check(`unsupported rolling front began detonating`, firstDrop >= 0 && count(e.getGrid(), MAT.TNT) > 0);
+  e.step((firstDrop + 1) * 16);
+  check(`imminent TNT does not falsely anchor adjacent iron`, e.getGrid()[40 * COLS + probe] !== MAT.IRON_ORE);
+  e.destroy();
+}
+
 // --- a blast front shortens an already-lit static fuse instead of leaving a late tail ---
 {
   const e = mk();

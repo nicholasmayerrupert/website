@@ -1235,90 +1235,123 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   for (auto& kv : groups) order.push_back(&kv.second);
   std::sort(order.begin(), order.end(), [](JointGroup* a, JointGroup* b) { return a->maxY > b->maxY; });
 
-  std::unordered_set<int> fgCells, bgCells;
-  struct CellMat { int k; uint8_t m; };
-  std::vector<CellMat> fgMats, bgMats;
-  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::unordered_set<int>& cells, std::vector<CellMat>& mats) {
-    cells.clear(); mats.clear();
+  // A cell belongs to exactly one component in a layer, so concatenating a
+  // group's component vectors is already unique. Dense stamps handle the hot
+  // membership probes below; no parallel hash set or material copy is needed.
+  std::vector<int> fgCells, bgCells;
+  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::vector<int>& cells) {
+    cells.clear();
     for (int id : ids) {
       Comp* c = compById(lay, id);
-      for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
+      cells.insert(cells.end(), c->cells.begin(), c->cells.end());
     }
   };
   struct LayerMovePlan {
     std::vector<std::pair<int, uint8_t>> relocate;
-    std::unordered_set<int> shifted;
-    std::unordered_map<int, uint8_t> materials;
+    std::vector<std::pair<int, uint8_t>> writes;
+    std::vector<int> shifted;
   };
   // Build the exact one-cell result for one half of a joint assembly. The same
   // plan feeds both the post-move buoyancy probe and the eventual writes, so the
   // anti-jitter decision cannot observe a different world from the mover.
-  auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, int dir,
-                           LayerMovePlan& plan) -> bool {
-    plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
+  auto planLayerMove = [&](Layer& lay, const std::vector<int>& own, int dir,
+                           LayerMovePlan& plan, FaceContact& after) -> bool {
+    plan.relocate.clear(); plan.writes.clear(); plan.shifted.clear();
     struct PendingRelocate { int source; uint8_t material; };
     std::vector<PendingRelocate> pending;
     std::vector<int> vacated;
+    const int gridLen = E.cols * E.rows;
+    asmCells.reset((size_t)gridLen);
+    for (int k : own) asmCells.add(k);
     for (int k : own) {
       int nk = k + dir;
-      if (nk < E.cols || nk >= E.cols * E.rows) return false;
-      if (own.count(nk)) continue;
+      if (nk < E.cols || nk >= gridLen) return false;
+      if (asmCells.has(nk)) continue;
       uint8_t lead = lay.grid[nk];
       if (lead == EMPTY) continue;
       if (!E.isGasMaterial(lead) && !E.isBuoyantMedium(lead)) return false;
       pending.push_back({nk, lead});
     }
-    for (int k : own) if (!own.count(k - dir)) vacated.push_back(k);
+    for (int k : own) if (!asmCells.has(k - dir)) vacated.push_back(k);
     if (pending.size() > vacated.size()) return false;
-    const int gridLen = E.cols * E.rows;
-    asmCells.reset((size_t)gridLen);
-    trVacated.reset((size_t)gridLen);
-    trReserved.reset((size_t)gridLen);
-    for (int k : own) asmCells.add(k);
-    for (int k : vacated) trVacated.add(k);
-    std::vector<std::set<int>> vacatedByRow(E.rows);
-    for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
-    std::unordered_map<uint8_t, std::vector<int>> sourceRows;
-    for (const auto& p : pending) sourceRows[p.material].push_back(p.source / E.cols);
-    std::unordered_map<uint8_t, int> contactFloorRow;
-    for (auto& entry : sourceRows) {
-      auto& rows = entry.second;
-      std::sort(rows.begin(), rows.end());
-      contactFloorRow[entry.first] = rows[(rows.size() * 3) / 4];
+    if (!pending.empty()) {
+      trVacated.reset((size_t)gridLen);
+      trReserved.reset((size_t)gridLen);
+      for (int k : vacated) trVacated.add(k);
+      std::vector<std::set<int>> vacatedByRow(E.rows);
+      for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
+      std::unordered_map<uint8_t, std::vector<int>> sourceRows;
+      for (const auto& p : pending) sourceRows[p.material].push_back(p.source / E.cols);
+      std::unordered_map<uint8_t, int> contactFloorRow;
+      for (auto& entry : sourceRows) {
+        auto& rows = entry.second;
+        std::sort(rows.begin(), rows.end());
+        contactFloorRow[entry.first] = rows[(rows.size() * 3) / 4];
+      }
+      std::sort(pending.begin(), pending.end(), [](const PendingRelocate& a, const PendingRelocate& b) {
+        return a.source < b.source;
+      });
+      for (const auto& p : pending) {
+        int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
+        int target = nearestVacatedTarget(p.source, dir, minTargetY, true, vacatedByRow);
+        // The contact floor is a preference, not a hard capacity limit. Concave
+        // assemblies can have several vertical runs and fewer trailing vacancies
+        // below the median contact row than displaced leading-face cells. Use the
+        // remaining upper vacancies before declaring an otherwise valid rise pinned.
+        if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, vacatedByRow);
+        if (target < 0) return false;
+        trReserved.add(target);
+        plan.relocate.push_back({target, p.material});
+      }
     }
-    std::sort(pending.begin(), pending.end(), [](const PendingRelocate& a, const PendingRelocate& b) {
-      return a.source < b.source;
-    });
-    for (const auto& p : pending) {
-      int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
-      int target = nearestVacatedTarget(p.source, dir, minTargetY, true, vacatedByRow);
-      // The contact floor is a preference, not a hard capacity limit. Concave
-      // assemblies can have several vertical runs and fewer trailing vacancies
-      // below the median contact row than displaced leading-face cells. Use the
-      // remaining upper vacancies before declaring an otherwise valid rise pinned.
-      if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, vacatedByRow);
-      if (target < 0) return false;
-      trReserved.add(target);
-      plan.relocate.push_back({target, p.material});
+
+    // Materialize the final overlay in generation-stamped dense scratch.
+    // Shifted cells stay in the component-list order used above, so movement
+    // and contact accumulation share one explicit deterministic ordering.
+    if ((int)trPlannedMaterial.size() < gridLen) trPlannedMaterial.resize(gridLen);
+    trSeen.reset((size_t)gridLen);
+    trMoved.reset((size_t)gridLen);
+    std::vector<int> touched;
+    touched.reserve(own.size() * 2 + plan.relocate.size());
+    auto setPlanned = [&](int k, uint8_t material) {
+      if (!trMoved.has(k)) { trMoved.add(k); touched.push_back(k); }
+      trSeen.add(k);
+      trPlannedMaterial[k] = material;
+    };
+    plan.shifted.reserve(own.size());
+    for (int k : own) setPlanned(k, EMPTY);
+    for (int k : own) {
+      int moved = k + dir;
+      plan.shifted.push_back(moved);
+      setPlanned(moved, lay.grid[k]);
     }
-    plan.shifted.reserve(own.size()); plan.materials.reserve(own.size() * 2 + plan.relocate.size());
-    for (int k : own) plan.materials[k] = EMPTY;
-    for (int k : own) { plan.shifted.insert(k + dir); plan.materials[k + dir] = lay.grid[k]; }
-    for (auto& r : plan.relocate) plan.materials[r.first] = r.second;
+    for (auto& r : plan.relocate) setPlanned(r.first, r.second);
+    accumulateFaceContact(lay.grid, plan.shifted, after, nullptr, &trSeen, &trPlannedMaterial);
+
+    // A one-cell translation leaves most of a large uniform assembly unchanged.
+    // Commit only net material changes instead of clearing and rewriting its
+    // entire interior. Scheduler row marks are preserved separately below.
+    plan.writes.reserve(touched.size());
+    for (int k : touched) {
+      uint8_t material = trPlannedMaterial[k];
+      if (lay.grid[k] != material) plan.writes.push_back({k, material});
+    }
     return true;
   };
-  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells,
-                        const std::vector<CellMat>& mats, const LayerMovePlan& plan, int dir) {
+  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const LayerMovePlan& plan, int dir) {
     E.useLayer(&lay);
-    for (int k : cells) E.writeGridIndex(k, EMPTY);
-    for (auto& cm : mats) E.writeGridIndex(cm.k + dir, cm.m);
-    for (auto& r : plan.relocate) E.writeGridIndex(r.first, r.second);
+    for (auto& write : plan.writes) E.writeGridIndex(write.first, write.second);
     for (int id : ids) {
       Comp* c = compById(lay, id);
       bool isPlant = compIdIsPlant(lay, id);
       int wood = 0, leaf = 0, ym = 0;
       for (int& k : c->cells) {
+        // Preserve the active-row footprint of the former clear-and-rewrite
+        // move. The loose-material scheduler consumes these row marks even
+        // when a uniform interior cell has the same material after shifting.
+        E.markCellIndex(k);
         k += dir;
+        E.markCellIndex(k);
         int y = k / E.cols; if (y > ym) ym = y;
         if (isPlant) { uint8_t m = lay.grid[k]; if (E.isPlantWood(m)) wood++; else if (E.isPlantLeaf(m)) leaf++; }
       }
@@ -1330,11 +1363,11 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   LayerMovePlan fgPlan, bgPlan;
   for (JointGroup* g : order) {
     if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
-    collect(E.fg, g->fgComps, fgCells, fgMats);
-    collect(E.bg, g->bgComps, bgCells, bgMats);
+    collect(E.fg, g->fgComps, fgCells);
+    collect(E.bg, g->bgComps, bgCells);
     double sum = 0;
-    for (auto& cm : fgMats) sum += DENSITY[cm.m];
-    for (auto& cm : bgMats) sum += DENSITY[cm.m];
+    for (int k : fgCells) sum += DENSITY[E.fg.grid[k]];
+    for (int k : bgCells) sum += DENSITY[E.bg.grid[k]];
     FaceContact before;
     accumulateFaceContact(E.fg.grid, fgCells, before);
     accumulateFaceContact(E.bg.grid, bgCells, before);
@@ -1342,13 +1375,12 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (decision == 0) continue;
     int dir = decision > 0 ? E.cols : -E.cols;
     // A joint moves only when both layer-local halves can execute the same plan.
-    if (!planLayerMove(E.fg, fgCells, dir, fgPlan) || !planLayerMove(E.bg, bgCells, dir, bgPlan)) continue;
     FaceContact after;
-    accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials);
-    accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials);
+    if (!planLayerMove(E.fg, fgCells, dir, fgPlan, after)
+        || !planLayerMove(E.bg, bgCells, dir, bgPlan, after)) continue;
     if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), sum) == -decision) continue;
-    applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir);
-    applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir);
+    applyLayer(E.fg, g->fgComps, fgPlan, dir);
+    applyLayer(E.bg, g->bgComps, bgPlan, dir);
     int8_t moveDir = dir < 0 ? -1 : 1;
     for (int id : g->fgComps) compById(E.fg, id)->buoyancyDirection = moveDir;
     for (int id : g->bgComps) compById(E.bg, id)->buoyancyDirection = moveDir;
@@ -1427,7 +1459,11 @@ void ComponentSystem::moveRigidAssemblies() {
       if (gj < 0 || gj >= totalComps) continue;
       int j = localOf[gj];
       if (j >= 0) ufUnite(parent, i, j);
-      else anchored[i] = 1;
+      // Imminent TNT is omitted only so its one-tick chain front stays spatially
+      // coherent until the reaction pass. It is not grounded support: treating
+      // that temporary omission like every other omitted component pins adjacent
+      // detached terrain for one tick per blast wave.
+      else if (!imminentTnt[gj]) anchored[i] = 1;
     }
   }
   struct Group { std::vector<int> comps; bool grounded = false; int maxY = 0; };

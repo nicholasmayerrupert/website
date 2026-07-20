@@ -174,9 +174,6 @@
       comps.jointDirty = true;
       comps.jointDirtyDeferred = false;
     }
-    deferStructureThisTick = (int64_t)cols * rows > 900000
-      && comps.jointSupportValid && fg.bodies.empty() && bg.bodies.empty()
-      && (tick & 1) != 0;
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
     // stone/plant/ice or residual static powder exists. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
@@ -191,13 +188,17 @@
     // reuses the previous groundedCell (including cross-layer support patches).
     bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
     bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
-    bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
+    bool structureActive = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty;
+    bool needJoint = structureActive || looseDirty;
     // At extreme zoom, a large generated window can contain thousands of
-    // residual bonded terrain assemblies. Re-solving and moving that structural
-    // graph at 60 Hz starves the much more visible loose-material simulation.
-    // Residual structure runs at 30 Hz above 900k cells; a topology edit on a
-    // deferred tick is reconciled on the next structural tick (one world tick
-    // later). Loose overlays still refresh every tick.
+    // settled components. Skip their structural pass on alternate ticks only
+    // while the structure is genuinely idle. A topology edit or a residual
+    // ungrounded bond keeps structural motion at 60 Hz; otherwise a TNT-released
+    // island visibly stops on every deferred tick. Loose overlays still refresh
+    // every tick while idle structure is deferred.
+    deferStructureThisTick = (int64_t)cols * rows > 900000
+      && comps.jointSupportValid && fg.bodies.empty() && bg.bodies.empty()
+      && !structureActive && (tick & 1) != 0;
     if (bgEnabled && needJoint && !deferStructureThisTick) {
       // computeGroundedBoth splits its wall time into groundingMs (base floods)
       // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).

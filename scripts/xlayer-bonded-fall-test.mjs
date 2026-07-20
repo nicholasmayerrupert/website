@@ -59,6 +59,37 @@ for (let y = 0; y < ROWS - 1; y++) for (let x = 0; x < COLS; x++) if (g2[y * COL
 check(`grounded ring stays put (top stone row ${topRow} ~ ${ROWS - 8})`, topRow <= ROWS - 7);
 e2.destroy();
 
+// Above 900k loaded cells the engine may halve truly idle structural work. A
+// support cut must permanently leave that idle path: otherwise the released
+// island loses its wake marks on a deferred tick and freezes or falls at 30 Hz.
+// This isolates the post-TNT structural state without blast debris keeping the
+// body list non-empty and accidentally masking the throttle.
+{
+  const bigCols = 960, bigRows = 960;
+  const big = createEngineWasm({ cols: bigCols, rows: bigRows, worldSeed: 1, sinksOn: false, infinite: false });
+  big.setBgEnabled(true);
+  for (let y = 300; y <= 320; y++) for (let x = 440; x <= 520; x++) big.placeMaterial(x, y, 0, MAT.STONE);
+  for (let y = 320; y < bigRows; y++) for (let x = 420; x <= 424; x++) big.placeMaterial(x, y, 0, MAT.STONE, 1);
+  for (let y = 316; y <= 320; y++) for (let x = 420; x <= 445; x++) big.placeMaterial(x, y, 0, MAT.STONE, 1);
+  big.syncComponentsLayer(0);
+  big.syncComponentsLayer(1);
+  let bigTime = 0;
+  for (let i = 0; i < 8; i++) { bigTime += 16; big.step(bigTime); }
+  for (let y = 312; y <= 324; y++) for (let x = 436; x <= 447; x++) big.eraseDiscLayer(1, x, y, 0);
+  const topRows = [];
+  for (let i = 0; i < 24; i++) {
+    bigTime += 16;
+    big.step(bigTime);
+    const grid = big.getGrid();
+    let top = bigRows;
+    for (let k = 0; k < grid.length; k++) if (grid[k] === MAT.STONE) { top = Math.floor(k / bigCols); break; }
+    topRows.push(top);
+  }
+  const deltas = topRows.slice(1).map((top, i) => top - topRows[i]);
+  check(`large-window support cut falls every tick (deltas ${deltas.join(',')})`, deltas.every((delta) => delta === 1));
+  big.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

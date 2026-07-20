@@ -163,8 +163,10 @@ static double wridged2(uint32_t seed, double x, double y, int octaves, double ga
 }
 
 // Flora species — drives growth rules + which wood/leaf material a tree is made of.
-// 0 = OAK = the original behavior, so existing/un-typed plant comps are unchanged.
-enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROOM, PT_BUSH, PT_VINE };
+// Keep the seven palette ids stable. PT_STANDARD is the plain SEED material's
+// original growth path; it lives outside that 0..6 palette range so Oak can have
+// a distinct silhouette without renumbering saved/networked species.
+enum PlantType : uint8_t { PT_OAK = 0, PT_PINE, PT_WILLOW, PT_CACTUS, PT_MUSHROOM, PT_BUSH, PT_VINE, PT_STANDARD };
 
 struct Comp {
   int id = 0;

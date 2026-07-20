@@ -7,9 +7,8 @@
 // registration and grounding remain in components.inc.
 // Trees grow as plant components. The SPECIES (comp.plantType) selects the trunk
 // and foliage MATERIAL (gWoodMat/gLeafMat, set per-comp in growPlantComponents)
-// and shape biases. PT_OAK = the original behavior: with gWoodMat=WOOD,
-// gLeafMat=PLANT and no straight/droop bias, every branch + E.rand() call below is
-// identical to before, so existing growth stays byte-identical.
+// and shape biases. PT_STANDARD keeps the plain SEED material's original random
+// branching, while explicit oak seeds grow a tall leader and broad crown.
 bool GrowthSystem::growStraight() { return gGrowType == PT_PINE || gGrowType == PT_WILLOW || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE; }
 bool GrowthSystem::compHasSeed(Comp& comp) {
   for (int k : comp.cells) if (E.L->grid[k] == SEED) return true;
@@ -29,6 +28,7 @@ static inline uint32_t plantGrowthTrait(uint32_t signature, uint32_t slot) {
   x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
   return x;
 }
+static inline int oakTargetHeight(uint32_t signature) { return 40 + (int)(plantGrowthTrait(signature, 0) % 9u); }
 uint32_t GrowthSystem::plantGrowthSignature(Comp& comp) {
   int seed = comp.cells.empty() ? 0 : comp.cells.front();
   for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
@@ -65,6 +65,94 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
     }
     return -1;
   }
+  if (gGrowType == PT_OAK && !sources.empty()) {
+    // Oaks establish a tall, gently wandering leader, then fork through the
+    // upper third. The stable plan makes each tree distinct without letting
+    // early random branches consume the trunk's height budget.
+    int seed = sources.back();
+    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
+    uint32_t signature = plantGrowthSignature(comp);
+    int targetHeight = oakTargetHeight(signature);
+    auto trunkXAt = [&](int height) {
+      int drift = 0;
+      for (int band = 0; band < height / 6; band++) {
+        uint32_t turn = plantGrowthTrait(signature, 70 + band);
+        if (turn % 9u < 2u) drift--;
+        else if (turn % 9u > 6u) drift++;
+        drift = imax(-2, imin(2, drift));
+      }
+      return seedX + drift;
+    };
+    auto trunkWoodXAt = [&](int height) {
+      int centerX = trunkXAt(height), y = seedY - height;
+      const int offsets[3] = {0, -1, 1};
+      for (int dx : offsets) {
+        int x = centerX + dx;
+        if (E.isInBounds(x, y) && E.L->grid[E.I(x, y)] == gWoodMat) return x;
+      }
+      return centerX;
+    };
+    int leaderHeight = 0;
+    for (int height = 1; height <= targetHeight; height++) {
+      int y = seedY - height, centerX = trunkXAt(height);
+      if (!E.isInBounds(centerX, y) || E.L->grid[E.I(centerX, y)] != gWoodMat) break;
+      leaderHeight = height;
+    }
+    auto growLeader = [&]() -> int {
+      int nextHeight = leaderHeight + 1, centerX = trunkXAt(nextHeight);
+      int previousX = trunkXAt(leaderHeight);
+      int away = centerX >= previousX ? 1 : -1;
+      int cand[3][2] = {{centerX, seedY - nextHeight}, {centerX - away, seedY - nextHeight}, {centerX + away, seedY - nextHeight}};
+      for (int i = 0; i < 3; i++) {
+        int tx = cand[i][0], ty = cand[i][1];
+        if (!E.isInBounds(tx, ty)) continue;
+        int tk = E.I(tx, ty);
+        if (i == 0 && reserved.count(tk)) return -1;
+        if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
+      }
+      return -1;
+    };
+    if (leaderHeight < targetHeight && (leaderHeight < 16 || E.rand() < 0.72)) {
+      int leader = growLeader();
+      if (leader >= 0) return leader;
+    }
+
+    struct OakBranch { int level, left, right, leftRise, rightRise; } branches[5];
+    int branchCount = 0;
+    for (int bi = 0; bi < 5; bi++) {
+      int level = targetHeight - 14 + bi * 3 + (int)(plantGrowthTrait(signature, 10 + bi) % 3u) - 1;
+      if (level < 12 || level >= targetHeight) continue;
+      OakBranch& b = branches[branchCount++]; b.level = level;
+      b.left = 6 + (int)(plantGrowthTrait(signature, 30 + bi * 4) % 6u);
+      b.right = 6 + (int)(plantGrowthTrait(signature, 31 + bi * 4) % 6u);
+      b.leftRise = 2 + (int)(plantGrowthTrait(signature, 32 + bi * 4) % 3u);
+      b.rightRise = 2 + (int)(plantGrowthTrait(signature, 33 + bi * 4) % 3u);
+    }
+    int start = branchCount ? (int)(E.rand() * branchCount) % branchCount : 0;
+    for (int bi = 0; bi < branchCount; bi++) {
+      OakBranch& b = branches[(start + bi) % branchCount];
+      if (b.level > leaderHeight) continue;
+      int firstSide = E.rand() < 0.5 ? 0 : 1;
+      for (int si = 0; si < 2; si++) {
+        int side = si ? 1 - firstSide : firstSide;
+        int dir = side ? 1 : -1, reach = side ? b.right : b.left;
+        int rise = imin(side ? b.rightRise : b.leftRise, targetHeight - b.level);
+        int baseX = trunkWoodXAt(b.level), baseY = seedY - b.level;
+        for (int d = 1; d <= reach; d++) {
+          int lift = (d * rise + reach - 1) / reach;
+          int tx = baseX + dir * d, ty = baseY - lift;
+          if (!E.isInBounds(tx, ty)) break;
+          int tk = E.I(tx, ty);
+          if (E.L->grid[tk] == gWoodMat || reserved.count(tk)) continue;
+          if (E.L->grid[tk] == EMPTY) return tk;
+          break;
+        }
+      }
+    }
+    if (leaderHeight < targetHeight) return growLeader();
+    return -1;
+  }
   if ((gGrowType == PT_PINE || gGrowType == PT_WILLOW) && !sources.empty()) {
     // Pines and willows keep a recognizable leader, but it wanders gradually
     // like the oak's organic trunk instead of growing up a ruler-straight line.
@@ -77,7 +165,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
     uint32_t signature = plantGrowthSignature(comp);
     int targetHeight = gGrowType == PT_PINE
       ? 28 + (int)(plantGrowthTrait(signature, 0) % 10u)
-      : 23 + (int)(plantGrowthTrait(signature, 0) % 9u);
+      : 40 + (int)(plantGrowthTrait(signature, 0) % 9u);
     auto trunkXAt = [&](int height) {
       int drift = 0, maxDrift = gGrowType == PT_PINE ? 2 : 3;
       for (int band = 0; band < height / 4; band++) {
@@ -126,7 +214,7 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
       }
       return -1;
     };
-    if (leaderHeight < targetHeight && (comp.woodCount < 10 || E.rand() < (gGrowType == PT_PINE ? 0.40 : 0.48))) {
+    if (leaderHeight < targetHeight && (comp.woodCount < 10 || E.rand() < (gGrowType == PT_PINE ? 0.40 : 0.62))) {
       int leader = growLeader();
       if (leader >= 0) return leader;
     }
@@ -181,24 +269,19 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
         }
       }
     } else {
-      // Willow limbs use irregular spacing and independently-sized sides. Their
-      // paths lift near the trunk, then sag at different rates before the tip.
-      struct WillowBranch { int level, left, right, leftDrop, rightDrop, leftAttach, rightAttach; } branches[7];
-      int branchCount = 0, level = 3 + (int)(plantGrowthTrait(signature, 10) % 3u);
-      while (branchCount < 7) {
-        level += 3 + (int)(plantGrowthTrait(signature, 11 + branchCount) % 4u);
-        if (level > targetHeight) break;
-        WillowBranch& b = branches[branchCount]; b.level = level;
-        uint32_t lt = plantGrowthTrait(signature, 50 + branchCount * 5);
-        uint32_t rt = plantGrowthTrait(signature, 51 + branchCount * 5);
-        b.left = 3 + (int)(lt % 7u); b.right = 3 + (int)(rt % 7u);
-        if ((lt / 11u) % 100u < 10u) b.left = 0;
-        if ((rt / 11u) % 100u < 10u) b.right = 0;
-        b.leftDrop = 1 + (int)(plantGrowthTrait(signature, 52 + branchCount * 5) % 4u);
-        b.rightDrop = 1 + (int)(plantGrowthTrait(signature, 53 + branchCount * 5) % 4u);
-        b.leftAttach = (int)(plantGrowthTrait(signature, 54 + branchCount * 5) % 3u) - 1;
-        b.rightAttach = (int)(plantGrowthTrait(signature, 55 + branchCount * 5) % 3u) - 1;
-        branchCount++;
+      // A willow carries a handful of long limbs high on its leader. Foliage
+      // later hangs from this upper scaffold instead of budding along the lower
+      // trunk like a sapling-shaped column.
+      struct WillowBranch { int level, left, right, leftDrop, rightDrop; } branches[5];
+      int branchCount = 0;
+      for (int bi = 0; bi < 5; bi++) {
+        int level = targetHeight - 18 + bi * 4 + (int)(plantGrowthTrait(signature, 10 + bi) % 3u) - 1;
+        if (level < targetHeight / 2 || level >= targetHeight) continue;
+        WillowBranch& b = branches[branchCount++]; b.level = level;
+        b.left = 7 + (int)(plantGrowthTrait(signature, 50 + bi * 4) % 6u);
+        b.right = 7 + (int)(plantGrowthTrait(signature, 51 + bi * 4) % 6u);
+        b.leftDrop = 1 + (int)(plantGrowthTrait(signature, 52 + bi * 4) % 3u);
+        b.rightDrop = 1 + (int)(plantGrowthTrait(signature, 53 + bi * 4) % 3u);
       }
       int start = branchCount ? (int)(E.rand() * branchCount) % branchCount : 0;
       for (int bi = 0; bi < branchCount; bi++) {
@@ -209,14 +292,13 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
           int side = si ? 1 - firstSide : firstSide;
           int dir = side ? 1 : -1, reach = side ? b.right : b.left;
           if (reach <= 0) continue;
-          int attach = side ? b.rightAttach : b.leftAttach;
-          int branchLevel = imax(3, imin(targetHeight, b.level + attach));
+          int branchLevel = b.level;
           if (branchLevel > leaderHeight) continue;
           int baseX = trunkWoodXAt(branchLevel), baseY = seedY - branchLevel;
           bool branchComplete = true;
           for (int d = 1; d <= reach; d++) {
-            int lift = d >= 2 ? 1 : 0;
-            int droop = d > reach / 2 ? (d - reach / 2 + 1) / 2 : 0;
+            int lift = imin(3, (d + 1) / 3);
+            int droop = d > reach * 2 / 3 ? (d - reach * 2 / 3 + 1) / 2 : 0;
             int tx = baseX + dir * d, ty = baseY - lift + droop;
             if (!E.isInBounds(tx, ty)) { branchComplete = false; break; }
             int tk = E.I(tx, ty);
@@ -226,8 +308,8 @@ int GrowthSystem::tryGrowWood(Comp& comp, std::unordered_set<int>& reserved) {
           }
           if (!branchComplete) continue;
           int tipX = baseX + dir * reach;
-          int tipLift = reach >= 2 ? 1 : 0;
-          int tipCurve = reach > reach / 2 ? (reach - reach / 2 + 1) / 2 : 0;
+          int tipLift = imin(3, (reach + 1) / 3);
+          int tipCurve = reach > reach * 2 / 3 ? (reach - reach * 2 / 3 + 1) / 2 : 0;
           int tipY = baseY - tipLift + tipCurve, tipDrop = side ? b.rightDrop : b.leftDrop;
           for (int drop = 1; drop <= tipDrop; drop++) {
             if (!E.isInBounds(tipX, tipY + drop)) break;
@@ -281,7 +363,7 @@ bool GrowthSystem::addWoodIfOpen(int k, std::vector<std::pair<int, uint8_t>>& gr
 }
 void GrowthSystem::thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<int, uint8_t>>& growth, std::unordered_set<int>& reserved) {
   if (gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE) return;
-  if (gGrowType == PT_PINE || gGrowType == PT_WILLOW) {
+  if (gGrowType == PT_OAK || gGrowType == PT_PINE || gGrowType == PT_WILLOW) {
     // Only thicken a newly-extended leader, never a lateral limb. A broad,
     // irregular base tapers to a single-cell crown so pines and willows gain the
     // oak's visual weight without losing their characteristic outlines.
@@ -289,14 +371,15 @@ void GrowthSystem::thickenTrunkAround(int k, Comp& comp, std::vector<std::pair<i
     for (int ck : comp.cells) if (E.L->grid[ck] == SEED) { seed = ck; break; }
     int seedY = seed / E.cols, y = k / E.cols, x = k - y * E.cols;
     int currentTopY = comp.woodCells.empty() ? seedY : comp.woodCells.front() / E.cols;
-    int height = seedY - y, thickHeight = gGrowType == PT_PINE ? 19 : 17;
+    int height = seedY - y, thickHeight = gGrowType == PT_OAK ? 23 : gGrowType == PT_PINE ? 19 : 24;
     if (y >= currentTopY || height > thickHeight) return;
     int firstDir = E.rand() < 0.5 ? -1 : 1;
     auto addSide = [&](int tx) { return E.isInBounds(tx, y) && addWoodIfOpen(E.I(tx, y), growth, reserved); };
     addSide(x + firstDir);
-    float oppositeP = gGrowType == PT_PINE ? 0.78f : 0.88f;
+    float oppositeP = gGrowType == PT_OAK ? 0.94f : gGrowType == PT_PINE ? 0.78f : 0.88f;
     if (E.rand() < oppositeP) addSide(x - firstDir);
-    if (height <= 5 && E.rand() < 0.55f) addSide(x + firstDir * 2);
+    float wideBaseP = gGrowType == PT_OAK ? 0.78f : 0.55f;
+    if (height <= (gGrowType == PT_OAK ? 8 : 5) && E.rand() < wideBaseP) addSide(x + firstDir * 2);
     return;
   }
   if (comp.woodCount >= TRUNK_THICKEN_UNTIL_WOOD || E.rand() > TRUNK_SIDE_FILL_P) return;
@@ -346,9 +429,12 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     // Grow vertical curtains beneath the willow's lateral wood. Continuing
     // through existing leaves lengthens individual strands instead of packing
     // a generic round canopy around the trunk.
-    int seedX = comp.woodCells.back() % E.cols;
-    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seedX = k % E.cols; break; }
+    int seed = comp.woodCells.back();
+    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
     uint32_t signature = plantGrowthSignature(comp);
+    int targetHeight = 40 + (int)(plantGrowthTrait(signature, 0) % 9u);
+    int branchSourceY = seedY - targetHeight / 2;
     int start = (int)(E.rand() * comp.woodCells.size()) % comp.woodCells.size();
     int step = E.rand() < 0.5 ? 1 : -1;
     if (E.rand() < 0.18) {
@@ -358,11 +444,13 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
       for (int ci = 0; ci < (int)comp.woodCells.size(); ci++) {
         int source = comp.woodCells[((start + ci * step) % comp.woodCells.size() + comp.woodCells.size()) % comp.woodCells.size()];
         int y = source / E.cols, x = source - y * E.cols;
+        if (y > branchSourceY) continue;
         if (std::abs(x - seedX) < 2 && y > crownY + 7) continue;
         int cand[8][2] = {{x - 1, y}, {x + 1, y}, {x - 1, y - 1}, {x + 1, y - 1}, {x, y - 1}, {x - 1, y + 1}, {x + 1, y + 1}, {x, y + 1}};
         int first = (int)(E.rand() * 8.0) % 8;
         for (int i = 0; i < 8; i++) {
           int tx = cand[(first + i) % 8][0], ty = cand[(first + i) % 8][1];
+          if (ty > branchSourceY + 1) continue;
           if (!E.isInBounds(tx, ty)) continue;
           int tk = E.I(tx, ty);
           if (E.L->grid[tk] == EMPTY && !reserved.count(tk)) return tk;
@@ -372,12 +460,13 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     for (int ci = 0; ci < (int)comp.woodCells.size(); ci++) {
       int source = comp.woodCells[((start + ci * step) % comp.woodCells.size() + comp.woodCells.size()) % comp.woodCells.size()];
       int y = source / E.cols, x = source - y * E.cols;
+      if (y > branchSourceY) continue;
       int outward = std::abs(x - seedX);
-      if (outward < 2) continue;
+      if (outward < 6) continue;
       uint32_t strand = plantGrowthTrait(signature,
         (uint32_t)(E.L->worldOffsetX + x) * 31u + (uint32_t)(E.L->worldOffsetY + y) * 17u);
       if (strand % 13u == 0u) continue; // small gaps keep neighboring curtains from merging into a wall
-      int maxDrop = imin(10, 3 + (int)(strand % 7u) + outward / 5);
+      int maxDrop = imin(18, 7 + (int)(strand % 9u) + outward / 4);
       int sway = (int)((strand >> 8) % 3u) - 1;
       for (int drop = 1; drop <= maxDrop; drop++) {
         int tx = x + (drop > maxDrop / 2 ? sway : 0), ty = y + drop;
@@ -420,6 +509,42 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
     }
     return -1;
   }
+  if (gGrowType == PT_OAK) {
+    // Fill an irregular oval around the leader and upper forks. Growing only
+    // from existing crown cells keeps every addition connected while producing
+    // one large, dense green crown instead of leaves scattered down the trunk.
+    int seed = comp.cells.front();
+    for (int k : comp.cells) if (E.L->grid[k] == SEED) { seed = k; break; }
+    int seedY = seed / E.cols, seedX = seed - seedY * E.cols;
+    uint32_t signature = plantGrowthSignature(comp);
+    int targetHeight = oakTargetHeight(signature);
+    int radiusX = 16 + (int)(plantGrowthTrait(signature, 4) % 3u);
+    int radiusY = 10 + (int)(plantGrowthTrait(signature, 5) % 3u);
+    int centerX = seedX, centerY = seedY - targetHeight + 3;
+    std::vector<int> candidates; std::unordered_set<int> seen;
+    const int dirs[8][2] = {{-1,-1},{0,-1},{1,-1},{-1,0},{1,0},{-1,1},{0,1},{1,1}};
+    for (int source : comp.cells) {
+      uint8_t sourceMat = E.L->grid[source];
+      if (sourceMat != gWoodMat && sourceMat != gLeafMat) continue;
+      int y = source / E.cols, x = source - y * E.cols;
+      if (y > centerY + radiusY + 1) continue;
+      for (auto& dir : dirs) {
+        int tx = x + dir[0], ty = y + dir[1];
+        if (!E.isInBounds(tx, ty)) continue;
+        int dx = tx - centerX, dy = ty - centerY;
+        int shape = dx * dx * radiusY * radiusY + dy * dy * radiusX * radiusX;
+        int limit = radiusX * radiusX * radiusY * radiusY;
+        if (shape > limit) continue;
+        uint32_t edge = plantGrowthTrait(signature, (uint32_t)(tx + E.L->worldOffsetX) * 31u + (uint32_t)(ty + E.L->worldOffsetY) * 17u);
+        if (shape * 100 > limit * 76 && edge % 100u < 24u) continue;
+        int tk = E.I(tx, ty);
+        if (E.L->grid[tk] != EMPTY || reserved.count(tk) || !seen.insert(tk).second) continue;
+        candidates.push_back(tk);
+      }
+    }
+    if (candidates.empty()) return -1;
+    return candidates[(int)(E.rand() * candidates.size()) % candidates.size()];
+  }
   for (int source : comp.woodCells) {
     int y = source / E.cols, x = source - y * E.cols;
     int cand[11][2] = {{x, y - 1}, {x - 1, y}, {x + 1, y}, {x - 1, y - 1}, {x + 1, y - 1}, {x - 2, y}, {x + 2, y}, {x - 2, y - 1}, {x + 2, y - 1}, {x - 3, y}, {x + 3, y}};
@@ -436,12 +561,12 @@ void GrowthSystem::growPlantComponents() {
     if (!comp.growing) continue;                          // worldgen/restored trees are inert scenery
     if (!compHasSeed(comp)) { comp.growing = false; continue; }
     E.L->groundDirty = true; // an actively-growing plant may add cells this step -> full reflood
-    // species materials + per-type caps (OAK keeps the original literals).
+    // Species materials + per-type caps. PT_STANDARD keeps the original caps.
     gGrowType = comp.plantType; gWoodMat = E.plantWoodMat(gGrowType); gLeafMat = E.plantLeafMat(gGrowType);
     uint32_t growthSignature = plantGrowthSignature(comp);
-    int maxWood = gGrowType == PT_BUSH ? 14 : gGrowType == PT_MUSHROOM ? 13 : gGrowType == PT_CACTUS ? 34 : gGrowType == PT_VINE ? 40 : gGrowType == PT_PINE ? 104 + (int)(plantGrowthTrait(growthSignature, 2) % 30u) : gGrowType == PT_WILLOW ? 76 + (int)(plantGrowthTrait(growthSignature, 2) % 19u) : MAX_WOOD_CELLS;
-    int maxLeaf = gGrowType == PT_MUSHROOM ? 28 : gGrowType == PT_BUSH ? 38 : gGrowType == PT_VINE ? 9 : gGrowType == PT_PINE ? 230 + (int)(plantGrowthTrait(growthSignature, 3) % 81u) : gGrowType == PT_WILLOW ? 105 + (int)(plantGrowthTrait(growthSignature, 3) % 31u) : MAX_LEAF_CELLS;
-    int leafStart = gGrowType == PT_MUSHROOM ? 11 : gGrowType == PT_BUSH ? 3 : gGrowType == PT_VINE ? 8 : (gGrowType == PT_PINE || gGrowType == PT_WILLOW) ? 5 : 6;
+    int maxWood = gGrowType == PT_BUSH ? 14 : gGrowType == PT_MUSHROOM ? 13 : gGrowType == PT_CACTUS ? 34 : gGrowType == PT_VINE ? 40 : gGrowType == PT_OAK ? 220 + (int)(plantGrowthTrait(growthSignature, 2) % 31u) : gGrowType == PT_PINE ? 104 + (int)(plantGrowthTrait(growthSignature, 2) % 30u) : gGrowType == PT_WILLOW ? 205 + (int)(plantGrowthTrait(growthSignature, 2) % 31u) : MAX_WOOD_CELLS;
+    int maxLeaf = gGrowType == PT_MUSHROOM ? 28 : gGrowType == PT_BUSH ? 38 : gGrowType == PT_VINE ? 9 : gGrowType == PT_OAK ? 480 + (int)(plantGrowthTrait(growthSignature, 3) % 71u) : gGrowType == PT_PINE ? 230 + (int)(plantGrowthTrait(growthSignature, 3) % 81u) : gGrowType == PT_WILLOW ? 240 + (int)(plantGrowthTrait(growthSignature, 3) % 61u) : MAX_LEAF_CELLS;
+    int leafStart = gGrowType == PT_MUSHROOM ? 11 : gGrowType == PT_BUSH ? 3 : gGrowType == PT_VINE ? 8 : gGrowType == PT_OAK ? 36 : (gGrowType == PT_PINE || gGrowType == PT_WILLOW) ? 5 : 6;
     bool leaves = gGrowType != PT_CACTUS;                  // cactus has no foliage
     // Water requirement intentionally disabled for every seed. Restore the old
     // species gate below to make normal trees/bushes drink again; the complete
@@ -460,7 +585,7 @@ void GrowthSystem::growPlantComponents() {
     if (E.rand() > GROWTH_P) continue;
     std::vector<std::pair<int, uint8_t>> growth; std::unordered_set<int> reserved;
     bool variedTree = gGrowType == PT_PINE || gGrowType == PT_WILLOW;
-    bool finishStemFirst = gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE;
+    bool finishStemFirst = gGrowType == PT_OAK || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE;
     bool shouldGrowWood = comp.woodCount < maxWood && (finishStemFirst || comp.woodCount < leafStart || E.rand() > (variedTree ? 0.44 : LEAF_GROWTH_P));
     bool woodBlocked = false;
     if (shouldGrowWood) {

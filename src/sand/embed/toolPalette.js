@@ -14,7 +14,7 @@
 // Every entry resolves to a creative pick {kind, value} matching the engine's
 // CreativeKind enum (consumed by game.setCreativeMaterial):
 //   CK_MATERIAL = 0  -> value = material id
-//   CK_SEED     = 1  -> value = species index (0..6)
+//   CK_SEED     = 1  -> value = species id (0..6; plain material SEED uses 7)
 //   CK_ERASER   = 2  -> value = 0
 //   CK_CUBE     = 3  -> value = 0
 //   CK_CREATURE = 4  -> value = creature species id
@@ -47,13 +47,13 @@ const SEED_SPECIES = [
   { name: 'Cactus', colors: ['#63c77a', '#28653f'], pixels: [
     '.........', '...222...', '..21112..', '..12121..', '..21112..', '..12121..', '..21112..', '...222...', '.........',
   ] },
-  { name: 'Mushroom', colors: ['#d56a85', '#f0d6b5'], pixels: [
+  { name: 'Mushroom', colors: ['#aaa79f', '#77736c'], pixels: [
     '.........', '...111...', '..11111..', '.1121211.', '.1111111.', '...222...', '...222...', '..22222..', '.........',
   ] },
   { name: 'Bush', colors: ['#70b764', '#bd5c82'], pixels: [
     '.........', '..12121..', '.1121211.', '.2111112.', '.1212121.', '..11111..', '...121...', '....2....', '.........',
   ] },
-  { name: 'Vine', colors: ['#69b84c', '#ffb833'], pixels: [
+  { name: 'Vine', colors: ['#315b26', '#203f1a'], pixels: [
     '....1....', '...111...', '....1....', '...11....', '...12....', '..11.....', '..1......', '.21......', '.........',
   ] },
 ];

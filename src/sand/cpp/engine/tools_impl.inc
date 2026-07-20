@@ -531,7 +531,7 @@ bool ToolSystem::canPlaceSeedAt(int x0, int y0) {
   if (x0 <= 0 || y0 <= 0 || x0 + 1 >= E.cols || y0 + 1 > E.rows) return false;
   return E.L->grid[E.I(x0, y0)] == EMPTY;
 }
-bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_OAK); }
+bool ToolSystem::placeSeedAt(int x0, int y0) { return placeSeedAtTyped(x0, y0, PT_STANDARD); }
 // Place a seed of a given species. The comp carries the plantType so growth.inc
 // dispatches the right shape/material; the grown wood material then re-encodes
 // the type so it survives streaming.
@@ -577,7 +577,7 @@ void ToolSystem::setTool(int tool) {
   switch (tool) {
     case T_ERASER: creativeMode = CM_ERASE; break;
     case T_CUBE: creativeMode = CM_CUBE; break;
-    case T_SEED: creativeMode = CM_SEED; creativeSeed = PT_OAK; break;
+    case T_SEED: creativeMode = CM_SEED; creativeSeed = PT_STANDARD; break;
     case T_STONE: creativeMode = CM_DRAFT; draftMaterial = STONE; break;
     case T_ICE: creativeMode = CM_DRAFT; draftMaterial = ICE; break;
     case T_DRIFTWOOD: creativeMode = CM_DRAFT; draftMaterial = DRIFTWOOD; break;
@@ -598,7 +598,7 @@ void ToolSystem::setCreativeMaterial(int kind, int value) {
       uint8_t m = (uint8_t)value;
       if (m == EMPTY) creativeMode = CM_ERASE;
       else if (m == RIGID) { creativeMode = CM_DRAFT; draftMaterial = RIGID; creativeMaterial = m; }
-      else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_OAK; creativeMaterial = m; }
+      else if (m == SEED) { creativeMode = CM_SEED; creativeSeed = PT_STANDARD; creativeMaterial = m; }
       else if (m == MYCELIUM_SPORE) { creativeMode = CM_MYCELIUM_SPORE; creativeMaterial = m; }
       else if (E.isComponentMaterial(m)) { creativeMode = CM_DRAFT; draftMaterial = m; creativeMaterial = m; }
       else { creativeMode = CM_PAINT; creativeMaterial = m; }

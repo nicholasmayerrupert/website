@@ -311,8 +311,9 @@ pixel samples reuse each material's generated base color and texture amplitude.
 Main contains the full catalog, with the most useful tools and materials pinned
 first and creature eggs grouped at the bottom. Tools, Terrain, Fluids, Flora,
 Reactions, and Creatures provide shorter filtered folders. The seven plant species
-use distinct 9×9 seed icons; vine seeds grow downward and can bud emissive
-glowberries. Search spans every folder.
+use distinct 9×9 seed icons; Oak Seed grows a tall trunk with a broad green crown,
+while the plain Seed material retains the original branching growth. Vine seeds
+grow downward and can bud emissive glowberries. Search spans every folder.
 Desktop keeps the dropdown open for repeated picks until it is explicitly
 closed; mobile closes after a pick, while its joystick and utility pad remain
 available throughout selection.

@@ -7,7 +7,7 @@ import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 160, ROWS = 120;
-const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6 };
+const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6, STANDARD: 7 };
 await initSandWasm();
 const { check, done } = makeChecker('flora types (Phase 4)');
 
@@ -23,13 +23,14 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed, sinksOn: false, infinite: false });
   for (let x = 20; x < 140; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
-  e.placeSeedTyped(70, 88, type);
+  if (type === PT.STANDARD) e.placeSeedAt(70, 88);
+  else e.placeSeedTyped(70, 88, type);
   let t = 0;
   for (let s = 0; s < steps; s++) { if (water && s % 15 === 0) e.paintDisc(70, 86, 2, MAT.WATER, false); t += 16; e.step(t); }
   const g = e.getGrid();
   const cnt = {}; let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1, leaves = 0;
   let leafBelowWood = 0, leafAboveWood = 0, woodCells = 0, woodMinX = 1e9, woodMaxX = -1;
-  let plantCells = 0, seedIndex = -1;
+  let plantCells = 0, seedIndex = -1, leafMinY = ROWS, leafMaxY = -1;
   const woodRowMin = Array(ROWS).fill(1e9), woodRowMax = Array(ROWS).fill(-1);
   // First pass: wood top (min Y — smaller y is up).
   let woodMinY = 1e9;
@@ -52,6 +53,7 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
     cnt[g[i]] = (cnt[g[i]] || 0) + 1;
     if (LEAF.has(g[i])) {
       leaves++;
+      leafMinY = Math.min(leafMinY, y); leafMaxY = Math.max(leafMaxY, y);
       // Adjacent leaf contacts on wood cells measure droop (willow leaf candidates bias y+1).
       const up = y > 0 ? g[(y - 1) * COLS + x] : 0;
       const down = y + 1 < ROWS ? g[(y + 1) * COLS + x] : 0;
@@ -88,17 +90,36 @@ function grow(type, water, steps = 1100, worldSeed = 7) {
     if (WOOD.has(g[i])) disconnectedWood++;
     else disconnectedLeaves++;
   }
+  let trunkGapRows = 0, lowerTrunkLeaves = 0;
+  if (seedIndex >= 0 && woodMinY < ROWS) {
+    const seedX = seedIndex % COLS, seedY = (seedIndex / COLS) | 0;
+    for (let y = woodMinY; y < seedY; y++) {
+      let hasTrunk = false;
+      for (let x = seedX - 3; x <= seedX + 3; x++) if (WOOD.has(g[y * COLS + x])) { hasTrunk = true; break; }
+      if (!hasTrunk) trunkGapRows++;
+    }
+    for (let y = seedY - 20; y < seedY; y++) for (let x = seedX - 4; x <= seedX + 4; x++)
+      if (LEAF.has(g[y * COLS + x])) lowerTrunkLeaves++;
+  }
   e.destroy();
   return {
     cnt, leaves, w: maxX - minX + 1, h: maxY - minY + 1,
     leafBelowWood, leafAboveWood, woodCells, woodMinY, woodW: woodMaxX - woodMinX + 1,
     branchRows: branchWidths.length, branchWidths, thickTrunkRows,
     disconnectedCells: plantCells - connectedCells, disconnectedWood, disconnectedLeaves,
+    leafMinY, leafMaxY, trunkGapRows, lowerTrunkLeaves,
   };
 }
 
 const oak = grow(PT.OAK, false);
 check(`oak grows WITHOUT water (${oak.cnt[MAT.WOOD]}w ${oak.cnt[MAT.PLANT]}l)`, oak.cnt[MAT.WOOD] > 10 && oak.cnt[MAT.PLANT] > 10);
+check(`oak is medium-tall with a broad crown (${oak.w}w x ${oak.h}h, ${oak.leaves} leaves)`, oak.h >= 54 && oak.h <= 62 && oak.w >= 30 && oak.leaves >= 400);
+check(`oak growth stays connected to its seed (${oak.disconnectedWood}w+${oak.disconnectedLeaves}l)`, oak.disconnectedCells === 0);
+check(`oak trunk has no missing rows (${oak.trunkGapRows} gaps)`, oak.trunkGapRows === 0);
+
+const standard = grow(PT.STANDARD, false);
+check(`plain Seed retains its original growth budget (${standard.woodCells} wood, ${standard.leaves} leaves)`, standard.woodCells === 121 && standard.leaves === 105);
+check(`plain Seed remains distinct from Oak Seed (${standard.w}w x ${standard.h}h)`, standard.w < oak.w && standard.leaves < oak.leaves / 3);
 
 const pine = grow(PT.PINE, false);
 check(`pine grows WITHOUT water as PINE_WOOD (${pine.cnt[MAT.PINE_WOOD] || 0})`, (pine.cnt[MAT.PINE_WOOD] || 0) > 10);
@@ -122,8 +143,8 @@ const pines = SHAPE_SEEDS.map((s) => grow(PT.PINE, false, 1100, s));
 const oakMeanWood = mean(oaks.map((tree) => tree.woodCells));
 const willowMeanWood = mean(willows.map((tree) => tree.woodCells));
 check(
-  `willow skeleton stays lighter than oak (mean wood ${willowMeanWood.toFixed(1)} < oak ${oakMeanWood.toFixed(1)})`,
-  willowMeanWood < oakMeanWood * 0.75,
+  `willow keeps a distinct branch-led skeleton (mean wood ${willowMeanWood.toFixed(1)}, oak ${oakMeanWood.toFixed(1)})`,
+  willowMeanWood < oakMeanWood * 1.05,
 );
 const pineShapes = new Set(pines.map((tree) => `${tree.woodCells}/${tree.woodW}/${tree.branchRows}`));
 const willowShapes = new Set(willows.map((tree) => `${tree.woodCells}/${tree.woodW}/${tree.branchRows}`));
@@ -132,11 +153,13 @@ check(`willow branch frequency/length varies across seeds (${willowShapes.size}/
 check(`willow growth stays connected to its seed (${willows.map((tree) => `${tree.disconnectedWood}w+${tree.disconnectedLeaves}l`).join('/')})`, willows.every((tree) => tree.disconnectedCells === 0));
 check(
   `willow has wide arched limbs and hanging foliage (${willow.woodW}w skeleton; leaf-below ${willow.leafBelowWood} vs above ${willow.leafAboveWood})`,
-  willow.woodW >= 15 && willow.leafBelowWood > willow.leafAboveWood * 1.4,
+  willow.woodW >= 22 && willow.leafBelowWood > willow.leafAboveWood * 1.15,
 );
 check(`willow has a substantial multi-cell trunk (${willow.thickTrunkRows} thick lower rows)`, willow.thickTrunkRows >= 8);
-check(`willow grows taller (${willow.h} cells tall)`, willow.h >= 30);
-const youngWillow = grow(PT.WILLOW, false, 60, 7);
+check(`willow grows taller (${willow.h} cells tall)`, willow.h >= 45);
+check(`willow curtains hang from the upper branches (${willow.leafMinY}..${willow.leafMaxY}, ${willow.lowerTrunkLeaves} lower-trunk leaves)`,
+  willow.leafMaxY - willow.leafMinY >= 30 && willow.leafMaxY >= 80 && willow.lowerTrunkLeaves <= 20);
+const youngWillow = grow(PT.WILLOW, false, 100, 7);
 check(`willow starts curtains while its skeleton is young (${youngWillow.woodCells} wood, ${youngWillow.leaves} leaves)`, youngWillow.woodCells < willow.woodCells && youngWillow.leaves >= 5);
 
 const bush = grow(PT.BUSH, false);

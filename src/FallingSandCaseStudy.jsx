@@ -1,43 +1,119 @@
 import React, { useEffect } from 'react';
 import { SandSimArt } from './ProjectArt';
 
-const ENGINE_AREAS = [
+const FACTS = [
+  ['Engine', 'C++ compiled to WebAssembly'],
+  ['Renderer', 'WebGL2 compositor'],
+  ['World model', 'Two material grids'],
+  ['Authority', 'Web Worker or Node host'],
+  ['Subsystems', '18 composed C++ systems'],
+  ['WASM binary', '640,886 bytes'],
+];
+
+const PIPELINE = [
   {
-    number: '01',
-    title: 'One engine, two complete worlds',
-    copy: 'Foreground and background are independently simulated grids. Powders, liquids, gases, reactions, components, lighting, and generated terrain all run in both layers, with deliberate transfer rules between them.',
+    title: 'Browser input',
+    detail: 'JavaScript forwards raw keyboard, pointer, resize, and network events.',
   },
   {
-    number: '02',
-    title: 'Components instead of painted pixels',
-    copy: 'Stone, plants, ice, and structures retain connected-component identity. They can detach, collide as rigid bodies, break apart, and settle back into terrain without becoming visual-only props.',
+    title: 'Authority worker',
+    detail: 'The worker advances actors and the cellular world on separate fixed clocks.',
   },
   {
-    number: '03',
-    title: 'A world larger than the viewport',
-    copy: 'The loaded window streams horizontally through a procedural landscape. Chunk storage preserves edits and bodies while the camera moves, so digging into a mountain remains meaningful after leaving and returning.',
+    title: 'C++ engine',
+    detail: 'Simulation, tools, camera policy, components, and streaming run in WebAssembly.',
   },
   {
-    number: '04',
-    title: 'Determinism as a design constraint',
-    copy: 'Fixed input streams produce reproducible engine state. Checksums protect optimization work from accidental behavior changes and provide the foundation for prediction and server-authoritative multiplayer.',
+    title: 'Presentation mirror',
+    detail: 'The main thread applies compact world diffs and sends dirty regions to WebGL2.',
   },
 ];
 
-const METRICS = [
-  ['2', 'fully simulated layers'],
-  ['18', 'composed engine subsystems'],
-  ['640 KB', 'production WASM binary'],
-  ['9 / 9', 'TNT scenarios checksum-stable'],
+const TECHNICAL_AREAS = [
+  {
+    title: 'Materials and cell state',
+    copy: (
+      <>
+        Each layer stores a grid of material IDs plus simulation state such as
+        velocity, lifetime, and sleep information. Material identity and flags
+        are generated from <code>materials.schema.json</code>. Powders, liquids,
+        and gases use the ordinary cell update paths.
+      </>
+    ),
+  },
+  {
+    title: 'Components and rigid bodies',
+    copy: (
+      <>
+        Stone, plants, wood, and ice are registered as connected components rather
+        than independent pixels. Unsupported components can detach into rigid
+        bodies. A body stamps its real material into the grid while moving and can
+        register as a static component again after settling.
+      </>
+    ),
+  },
+  {
+    title: 'Foreground and background',
+    copy: (
+      <>
+        The engine owns foreground and background <code>Layer</code> instances.
+        A step processes both layers, then runs a transfer pass for blocked powder,
+        liquid, or gas cells. Solids remain in their original layer. Both layers
+        use the same terrain seed but diverge after editing.
+      </>
+    ),
+  },
+  {
+    title: 'World streaming',
+    copy: (
+      <>
+        Only a window around the camera is loaded. Near an edge, the window shifts
+        and the newly exposed band is generated or restored from the chunk store.
+        Components, bodies, creatures, and items retain absolute-world positions,
+        while their local coordinates are remapped into the new window.
+      </>
+    ),
+  },
+  {
+    title: 'Rendering and camera',
+    copy: (
+      <>
+        C++ generates material pixels and owns the camera and pointer-to-cell
+        mapping. The WebGL2 presenter uploads dirty texture regions and draws the
+        visible window, lighting, previews, players, creatures, and items. A world
+        shift moves the existing texture with a framebuffer blit before filling
+        the new band.
+      </>
+    ),
+  },
+  {
+    title: 'Offline and network authority',
+    copy: (
+      <>
+        Offline play uses a worker-owned authority and a main-thread presentation
+        mirror. Multiplayer replaces the worker with a Node host using the same
+        C++ engine. Clients submit inputs and inventory intents; the authority
+        returns ordered diffs and actor snapshots. Only the local player is
+        predicted.
+      </>
+    ),
+  },
 ];
 
-function Arrow() {
+const LIMITS = [
+  'Two active layers cost roughly twice as much as one; a settled background is skipped.',
+  'Multiplayer peers currently need the same loaded-buffer dimensions, so widely separated exploration is not supported.',
+  'The survival page is desktop-only while its touch controls are still incomplete.',
+  'Offline play keeps an authority engine in a worker and a smaller presentation engine on the main thread, trading memory for responsiveness.',
+];
+
+function ExternalArrow() {
   return <span aria-hidden="true">↗</span>;
 }
 
 export default function FallingSandCaseStudy() {
   useEffect(() => {
-    document.title = 'Falling Sand Engineering Case Study — Nicholas Mayer-Rupert';
+    document.title = 'Falling Sand Engine — Nicholas Mayer-Rupert';
   }, []);
 
   return (
@@ -46,144 +122,162 @@ export default function FallingSandCaseStudy() {
         <a className="case-nav__home" href="/">Nicholas Mayer-Rupert</a>
         <div className="case-nav__links">
           <a href="/Nicholas-Mayer-Rupert-Resume.pdf">Résumé</a>
-          <a className="case-button case-button--small" href="/game">Play the game <Arrow /></a>
+          <a href="/game">Run the game</a>
         </div>
       </nav>
 
       <header className="case-hero">
-        <p className="case-eyebrow">Engineering case study · C++ / WebAssembly / WebGL2</p>
-        <h1>Falling Sand,<br /><span>built from the particles up.</span></h1>
+        <p className="case-kicker">Implementation notes</p>
+        <h1>Falling Sand engine</h1>
         <p className="case-hero__lede">
-          A procedural sandbox and survival game whose simulation, rendering,
-          camera, tools, and world streaming are written in C++ and compiled to
-          WebAssembly.
+          A two-layer cellular simulation with procedural terrain, connected
+          components, rigid bodies, creatures, and survival mechanics. The engine
+          is written in C++, compiled to WebAssembly, and presented with WebGL2.
         </p>
-        <div className="case-hero__actions">
-          <a className="case-button" href="/game">Play survival <Arrow /></a>
-          <a className="case-button case-button--ghost" href="https://github.com/nicholasmayerrupert/website/tree/master/src/sand" target="_blank" rel="noopener noreferrer">
-            Explore the source <Arrow />
+        <div className="case-actions">
+          <a className="case-link case-link--primary" href="/game">Run the game</a>
+          <a className="case-link" href="https://github.com/nicholasmayerrupert/website/tree/master/src/sand" target="_blank" rel="noopener noreferrer">
+            Source code <ExternalArrow />
+          </a>
+          <a className="case-link" href="https://github.com/nicholasmayerrupert/website/blob/master/src/sand/README.md" target="_blank" rel="noopener noreferrer">
+            Engine documentation <ExternalArrow />
           </a>
         </div>
 
-        <div className="case-hero__art bento-section--active" aria-label="Illustration of the two-layer sand engine">
+        <div className="case-hero__art" aria-label="Illustration of the two-layer sand engine">
           <SandSimArt />
         </div>
       </header>
 
-      <section className="case-summary" aria-labelledby="overview-heading">
-        <p className="case-eyebrow">The project</p>
+      <section className="case-section case-overview" aria-labelledby="overview-heading">
+        <div className="case-section__label">Overview</div>
+        <div className="case-section__content">
+          <h2 id="overview-heading">Scope and ownership</h2>
+          <p>
+            React mounts a framework-free <code>&lt;sand-game&gt;</code> custom
+            element. JavaScript sizes the canvas, schedules frames, forwards raw
+            events, and carries worker or WebSocket messages. It does not update
+            cells, calculate camera movement, or generate render pixels.
+          </p>
+          <p>
+            The C++ engine owns the grid simulation, actor physics, material and
+            tool rules, camera, world shifts, inventory, crafting, audio events,
+            and WebGL2 presentation. The same compiled module runs in the browser
+            presentation realm, the offline authority worker, and the multiplayer
+            server.
+          </p>
+
+          <dl className="case-facts">
+            {FACTS.map(([term, detail]) => (
+              <div key={term}>
+                <dt>{term}</dt>
+                <dd>{detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <section className="case-section" aria-labelledby="pipeline-heading">
+        <div className="case-section__label">Runtime</div>
+        <div className="case-section__content">
+          <h2 id="pipeline-heading">Update and presentation pipeline</h2>
+          <p>
+            Ordinary offline frames follow this path. The authority sends one
+            backpressured world packet at a time; the mirror acknowledges a packet
+            before the next diff is emitted.
+          </p>
+          <ol className="case-pipeline">
+            {PIPELINE.map((step, index) => (
+              <li key={step.title}>
+                <span>{String(index + 1).padStart(2, '0')}</span>
+                <h3>{step.title}</h3>
+                <p>{step.detail}</p>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section className="case-section" aria-labelledby="model-heading">
+        <div className="case-section__label">Implementation</div>
+        <div className="case-section__content">
+          <h2 id="model-heading">Simulation model</h2>
+          <div className="case-technical-grid">
+            {TECHNICAL_AREAS.map((area) => (
+              <article key={area.title}>
+                <h3>{area.title}</h3>
+                <p>{area.copy}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="case-section" aria-labelledby="performance-heading">
+        <div className="case-section__label">Example optimization</div>
+        <div className="case-section__content">
+          <h2 id="performance-heading">Dense TNT chains in enclosed terrain</h2>
+          <p>
+            A focused benchmark detonates a 79-cell TNT chain inside foreground
+            and background cave mass. Five changes were measured independently:
+            precomputed blast energy, a separate gas-shell stencil, one-lookup fuse
+            insertion, avoiding a copied erase list, and stopping debris discovery
+            after its fixed budget is full.
+          </p>
+          <p>
+            Two other changes were removed because ablation showed no benefit. A
+            shorter blast carry lifetime was also rejected because it changed the
+            rolling checksum.
+          </p>
+
+          <dl className="case-benchmark">
+            <div><dt>Before</dt><dd>9.902 ms</dd></div>
+            <div><dt>After</dt><dd>8.960 ms</dd></div>
+            <div><dt>Reaction change</dt><dd>−9.5%</dd></div>
+            <div><dt>Scenario hashes</dt><dd>9 / 9 exact</dd></div>
+          </dl>
+          <p className="case-note">
+            Values are p50 reaction time from the focused cave benchmark. They
+            describe this machine and scenario, not a general frame-rate claim.
+          </p>
+        </div>
+      </section>
+
+      <section className="case-section" aria-labelledby="verification-heading">
+        <div className="case-section__label">Verification</div>
+        <div className="case-section__content">
+          <h2 id="verification-heading">Determinism and tests</h2>
+          <p>
+            Pure performance changes are expected to preserve exact checksums.
+            The test suite covers material conservation, reactions, component
+            grounding, rigid collision, world shifts, player physics, inventory,
+            creatures, networking, and rendering invariants. Development WASM
+            builds can also run a post-step ownership validator.
+          </p>
+          <pre className="case-code"><code>{`npm test
+node scripts/bench-sand.mjs --compare bench/baseline.json
+node scripts/bench-tnt.mjs
+(cd src/sand/cpp && source wasm/emenv.sh && wasm/build.sh --dev)`}</code></pre>
+        </div>
+      </section>
+
+      <section className="case-section" aria-labelledby="limits-heading">
+        <div className="case-section__label">Current limits</div>
+        <div className="case-section__content">
+          <h2 id="limits-heading">Known tradeoffs</h2>
+          <ul className="case-limits">
+            {LIMITS.map((limit) => <li key={limit}>{limit}</li>)}
+          </ul>
+        </div>
+      </section>
+
+      <section className="case-run">
         <div>
-          <h2 id="overview-heading">A browser game that treats the browser like a systems platform.</h2>
-          <p>
-            The first version was a small cellular automaton. It grew into an
-            infinite, horizontally streamed world with structural components,
-            rigid bodies, creatures, survival progression, lighting, sound,
-            and multiplayer. React only places the framework-free
-            <code>&lt;sand-game&gt;</code> element; the engine owns the behavior.
-          </p>
+          <h2>Run the current build</h2>
+          <p>Survival mode requires a desktop browser with a mouse and keyboard.</p>
         </div>
-      </section>
-
-      <section className="case-metrics" aria-label="Project metrics">
-        {METRICS.map(([value, label]) => (
-          <div key={label}>
-            <strong>{value}</strong>
-            <span>{label}</span>
-          </div>
-        ))}
-      </section>
-
-      <section className="case-architecture" aria-labelledby="architecture-heading">
-        <div className="case-section-heading">
-          <p className="case-eyebrow">Architecture</p>
-          <h2 id="architecture-heading">Thin shell, authoritative engine.</h2>
-          <p>
-            Offline play uses the same authority-and-replica shape as multiplayer.
-            A worker owns the world; the main thread presents a compact mirror and
-            predicts only the local player.
-          </p>
-        </div>
-
-        <div className="architecture-flow" role="img" aria-label="Browser input flows to a worker authority and C++ WebAssembly engine, then compact differences return to the WebGL2 presenter">
-          <div className="architecture-node architecture-node--browser">
-            <span>Browser shell</span>
-            <strong>Input · audio · transport</strong>
-          </div>
-          <span className="architecture-arrow" aria-hidden="true">→</span>
-          <div className="architecture-node architecture-node--worker">
-            <span>Worker authority</span>
-            <strong>World · actors · inventory</strong>
-          </div>
-          <span className="architecture-arrow" aria-hidden="true">→</span>
-          <div className="architecture-node architecture-node--engine">
-            <span>C++ / WebAssembly</span>
-            <strong>Simulation · camera · policy</strong>
-          </div>
-          <span className="architecture-arrow architecture-arrow--return" aria-hidden="true">↓</span>
-          <div className="architecture-node architecture-node--presenter">
-            <span>Presentation mirror</span>
-            <strong>World diffs · WebGL2</strong>
-          </div>
-        </div>
-      </section>
-
-      <section className="case-engineering" aria-labelledby="engineering-heading">
-        <div className="case-section-heading">
-          <p className="case-eyebrow">Engineering decisions</p>
-          <h2 id="engineering-heading">The difficult parts became the architecture.</h2>
-        </div>
-        <div className="case-engineering__grid">
-          {ENGINE_AREAS.map((area) => (
-            <article key={area.number}>
-              <span>{area.number}</span>
-              <h3>{area.title}</h3>
-              <p>{area.copy}</p>
-            </article>
-          ))}
-        </div>
-      </section>
-
-      <section className="case-performance" aria-labelledby="performance-heading">
-        <div className="case-performance__copy">
-          <p className="case-eyebrow">Performance without behavioral drift</p>
-          <h2 id="performance-heading">Measure, isolate, verify.</h2>
-          <p>
-            Engine work is benchmarked before and after. Deterministic terrain and
-            scenario checksums make it possible to reject fast-looking changes
-            that subtly alter the world.
-          </p>
-        </div>
-        <div className="case-performance__result">
-          <strong>9.5%</strong>
-          <span>faster dense-cave TNT reaction pass</span>
-          <p>Five independently ablated optimizations retained. Every scenario hash remained exact.</p>
-        </div>
-      </section>
-
-      <section className="case-lessons" aria-labelledby="lessons-heading">
-        <p className="case-eyebrow">What I learned</p>
-        <div>
-          <h2 id="lessons-heading">Performance is easier to trust when correctness is measurable.</h2>
-          <p>
-            The most valuable work was rarely a clever inner loop in isolation.
-            It was defining ownership, making state transitions observable, and
-            building tests strong enough to simplify hot paths confidently.
-          </p>
-          <p>
-            The result is both a game and a long-running systems laboratory: new
-            mechanics exercise the same component, streaming, rendering, and
-            networking boundaries instead of bypassing them.
-          </p>
-        </div>
-      </section>
-
-      <section className="case-cta">
-        <p className="case-eyebrow">Try it yourself</p>
-        <h2>Dig, build, and break the world.</h2>
-        <div>
-          <a className="case-button" href="/game">Play the game <Arrow /></a>
-          <a className="case-button case-button--ghost" href="/">Return to portfolio</a>
-        </div>
+        <a className="case-link case-link--primary" href="/game">Open /game</a>
       </section>
 
       <footer className="case-footer">

@@ -10,6 +10,8 @@
     "generate:check": "node scripts/generate-materials.mjs --check && node scripts/generate-abi.mjs --check",
     "build": "npm run generate:check && npm run check:life-wasm && vite build",
     "build:life": "source wasm/emenv.sh && wasm/build-life.sh",
+    "build:resume": "node scripts/resume.mjs",
+    "check:resume": "node scripts/resume.mjs --check",
     "check:life-wasm": "node scripts/life-wasm-build-info.mjs",
     "build:embed": "node scripts/check-embed-boundary.mjs && vite build --config vite.config.embed.js",
     "preview": "vite preview",

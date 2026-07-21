@@ -328,7 +328,14 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // A connected client animates remote players from snapshots even when its
     // own grid is static, so keep presenting. previewDirty forces a present
     // when a fresh draft overlay appears with no camera/step change.
-    if (dayChanged || stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || !!ctx.worldWorker) {
+    // The local authority's first full snapshot is the first useful cell frame.
+    // Until it exists, the parallax canvas is already visible; presenting the
+    // empty mirror would perform a full lighting/upload pass that is immediately
+    // discarded and can monopolize the page during cold-history restoration.
+    const localAuthorityReady = !!ctx.worldWorker?.state?.ready;
+    const presentationReady = !ctx.worldWorker || localAuthorityReady || ctx.netClientReady();
+    if (presentationReady &&
+        (dayChanged || stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || localAuthorityReady)) {
       render(false);
       samplePerf();
     }

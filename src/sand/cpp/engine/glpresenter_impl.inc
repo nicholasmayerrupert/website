@@ -33,8 +33,16 @@ int GLPresenter::glInit(const char* target) {
   }
   glGenFramebuffers(1, &glReadFBO);
   glGenFramebuffers(1, &glDrawFBO);
-  E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
-  E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+  // A presentation mirror starts empty and receives its real cells from the
+  // authority worker. WebGL zero-initializes new textures, so lighting and
+  // uploading both empty layers here only blocks page startup; the first
+  // authoritative present fills the visible window below.
+  if (E.storageRole != ESR_PRESENTATION) {
+    E.useLayer(&E.fg); E.renderer.renderFull(); glUploadFull(glTex);
+    E.useLayer(&E.bg); E.renderer.renderFull(); glUploadFull(glTexBg);
+  } else {
+    glCheapFirstPresent = true;
+  }
   return 1;
 }
 
@@ -60,6 +68,7 @@ int GLPresenter::glRestore() {
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
   glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
+  glCheapFirstPresent = false;
   E.useLayer(&E.fg); E.markAllDirty();
   E.useLayer(&E.bg); E.markAllDirty();
   E.useLayer(&E.fg);
@@ -696,9 +705,9 @@ void GLPresenter::glDrawPreview() {
 // sampled window moved (whole-cell pan / world shift / forced refresh) — the last is
 // essential because off-screen texels are never sampled, so a pan that scrolls a new
 // cell into view must repaint that cell here. Lighting solves the visible window +
-// margin (exact inside the window — see glpresenter.hpp); forced events (shift,
-// day-night, init) still solve the full buffer, and a pure pan re-solves only when
-// the window drifts outside the last solve's exact zone.
+// margin (exact inside the window — see glpresenter.hpp); forced events after
+// startup (shift/day-night/texture rebuild) still solve the full buffer, and a
+// pure pan re-solves only when the window drifts outside the last solve's exact zone.
 void GLPresenter::glPresentWindow(int forceFull) {
   E.perfLightMs = E.perfFillMs = E.perfUploadMs = 0;
   E.useLayer(&E.fg); E.buildDirtyRects(); bool fgDirty = E.fg.dirtyRenderCount > 0;
@@ -716,15 +725,16 @@ void GLPresenter::glPresentWindow(int forceFull) {
   if (!contentDirty && !windowMoved && !animationDue) return;
   int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
 
-  // Lighting policy: forced events (init/resize, world shift, day-night) solve
-  // the FULL buffer (keeps the sky shift-remap caches coherent buffer-wide).
-  // Content changes re-solve just the window+margin on the usual throttle. A
-  // window that drifts outside the last solve's exact zone re-solves
-  // immediately — those cells' light is stale or was only ring-approximate.
+  // Lighting policy: resize, world shift, and day-night changes solve the FULL
+  // buffer (keeps the sky shift-remap caches coherent buffer-wide). The very
+  // first authoritative frame has no cache to preserve, so solve only its
+  // window+margin; newly exposed cells are solved on demand as the view moves.
+  // Ordinary content changes use the same regional path on the usual throttle.
   bool lightUpdated = false;
   if (Renderer::RENDER_LIGHTING_ENABLED) {
-    bool lightForced = forceFull || worldShifted || skyChanged;
-    bool lightThrottleReady = E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
+    bool firstPresent = glCheapFirstPresent;
+    bool lightForced = !firstPresent && (forceFull || worldShifted || skyChanged);
+    bool lightThrottleReady = glLightTick == INT_MIN || E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
     int ex0 = glLightX0 <= 0 ? 0 : glLightX0 + GL_LIGHT_EXACT_SHRINK;
     int ey0 = glLightY0 <= 0 ? 0 : glLightY0 + GL_LIGHT_EXACT_SHRINK;
     int ex1 = glLightX1 >= E.cols - 1 ? E.cols - 1 : glLightX1 - GL_LIGHT_EXACT_SHRINK;
@@ -822,6 +832,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   glLastWorldOffX = E.fg.worldOffsetX; glLastWorldOffY = E.fg.worldOffsetY;
   glLastSkyLight = (int)E.renderer.renderSkyLight;
   glLastAnimFrame = animFrame;
+  glCheapFirstPresent = false;
 }
 
 // One presented frame: window-upload both layers, then composite background (darker)

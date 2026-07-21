@@ -35,6 +35,10 @@ class GLPresenter {
   int glLastCamCol = INT_MIN, glLastCamRow = INT_MIN;
   int glLastWorldOffX = INT_MIN, glLastWorldOffY = INT_MIN;
   int glLastSkyLight = -1;
+  // Only a brand-new presentation mirror may use the cheap regional first
+  // solve. Texture rebuilds after real content exists retain the full-refresh
+  // lighting contract even though they also reset the last-window sentinels.
+  bool glCheapFirstPresent = false;
   // Render-only material animation runs on a low, pixel-art-friendly cadence.
   // Chunk flags are learned while filling the visible window, so a settled scene
   // repaints only chunks that actually contain animated cells.
@@ -47,8 +51,9 @@ class GLPresenter {
   // part of the present path, so on a continuously-active scene it is re-solved at most
   // once every GL_LIGHT_THROTTLE_TICKS sim ticks and the (buffer-indexed, pan-invariant)
   // result is reused between — a barely-perceptible lag in dynamic light for a large
-  // CPU saving. A world shift (light buffer misaligns), a skylight change, or a forced
-  // full refresh always re-solve immediately. glLightTick is the tick of the last solve.
+  // CPU saving. After the first presentation, a world shift (light buffer
+  // misaligns), a skylight change, or a forced full refresh always re-solves
+  // immediately. glLightTick is the tick of the last solve.
   static constexpr int GL_LIGHT_THROTTLE_TICKS = 2;
   int glLightTick = INT_MIN;
   // Windowed lighting (Perf 7c): throttled solves cover only the visible
@@ -57,8 +62,9 @@ class GLPresenter {
   // projection is cell-to-cell, so values within the last solve region shrunk
   // by GL_LIGHT_EXACT_SHRINK (60 + the face-lit neighbour ring) are exactly
   // the full-solve values. When the window (+1) drifts outside that exact
-  // zone, a re-solve is forced (throttle bypassed). Shifts/day-night/init
-  // still solve the full buffer so the sky shift-remap caches stay coherent.
+  // zone, a re-solve is forced (throttle bypassed). The initial presentation
+  // solves its visible window + margin; later shifts/day-night changes solve
+  // the full buffer so the sky shift-remap caches stay coherent.
   static constexpr int GL_LIGHT_WINDOW_MARGIN = 72;
   static constexpr int GL_LIGHT_EXACT_SHRINK = 61;
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1; // last solve region (-1 = never solved)

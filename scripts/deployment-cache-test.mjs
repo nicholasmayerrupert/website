@@ -43,7 +43,8 @@ console.log('deployment cache policy');
 
 const get = (path) => worker.fetch(new Request(`https://example.com${path}`), env);
 const page = await get('/');
-check('HTML is never stored by the browser', page.headers.get('cache-control') === 'no-store', page.headers.get('cache-control'));
+check('HTML is revalidated but remains eligible for history restoration',
+  page.headers.get('cache-control') === 'no-cache', page.headers.get('cache-control'));
 
 const asset = await get('/assets/index-abc123.js');
 check('fingerprinted assets are immutable', asset.headers.get('cache-control') === 'public, max-age=31556952, immutable', asset.headers.get('cache-control'));
@@ -59,15 +60,16 @@ check('WASM keeps its streaming MIME type', wasm.headers.get('content-type') ===
 const game = await get('/game');
 check('/game resolves its dedicated HTML entry without a redirect', game.status === 200 && (await game.text()).includes('Sand Game'));
 check('/game is internally resolved as /game/', lastAssetPath === '/game/', lastAssetPath);
-check('/game HTML is never stored by the browser', game.headers.get('cache-control') === 'no-store', game.headers.get('cache-control'));
+check('/game HTML is revalidated but remains eligible for history restoration',
+  game.headers.get('cache-control') === 'no-cache', game.headers.get('cache-control'));
 
 const caseStudy = await get('/work/falling-sand');
 check('/work/falling-sand resolves its dedicated HTML entry without a redirect',
   caseStudy.status === 200 && (await caseStudy.text()).includes('Falling Sand Engineering Case Study'));
 check('/work/falling-sand is internally resolved with a trailing slash',
   lastAssetPath === '/work/falling-sand/', lastAssetPath);
-check('/work/falling-sand HTML is never stored by the browser',
-  caseStudy.headers.get('cache-control') === 'no-store', caseStudy.headers.get('cache-control'));
+check('/work/falling-sand HTML is revalidated but remains eligible for history restoration',
+  caseStudy.headers.get('cache-control') === 'no-cache', caseStudy.headers.get('cache-control'));
 
 const missing = await get('/assets/removed-build.js');
 check('missing old deployment asset is a real 404', missing.status === 404, String(missing.status));

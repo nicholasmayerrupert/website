@@ -333,33 +333,6 @@ body {
   font: 13px/1.75 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.case-limits {
-  margin: 34px 0 0;
-  padding: 0;
-  border-top: 1px solid var(--case-line);
-  list-style: none;
-}
-
-.case-limits li {
-  position: relative;
-  padding: 18px 0 18px 26px;
-  border-bottom: 1px solid var(--case-line);
-  color: var(--case-muted);
-  font-size: 15px;
-  line-height: 1.6;
-}
-
-.case-limits li::before {
-  position: absolute;
-  top: 25px;
-  left: 2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #707783;
-  content: '';
-}
-
 .case-run {
   margin-top: 16px;
   padding: 38px 40px;

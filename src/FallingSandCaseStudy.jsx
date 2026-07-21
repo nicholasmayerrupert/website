@@ -100,13 +100,6 @@ const TECHNICAL_AREAS = [
   },
 ];
 
-const LIMITS = [
-  'Two active layers cost roughly twice as much as one; a settled background is skipped.',
-  'Multiplayer peers currently need the same loaded-buffer dimensions, so widely separated exploration is not supported.',
-  'The survival page is desktop-only while its touch controls are still incomplete.',
-  'Offline play keeps an authority engine in a worker and a smaller presentation engine on the main thread, trading memory for responsiveness.',
-];
-
 function ExternalArrow() {
   return <span aria-hidden="true">↗</span>;
 }
@@ -238,8 +231,7 @@ export default function FallingSandCaseStudy() {
             <div><dt>Scenario hashes</dt><dd>9 / 9 exact</dd></div>
           </dl>
           <p className="case-note">
-            Values are p50 reaction time from the focused cave benchmark. They
-            describe this machine and scenario, not a general frame-rate claim.
+            Values are p50 reaction time from the focused cave benchmark.
           </p>
         </div>
       </section>
@@ -259,16 +251,6 @@ export default function FallingSandCaseStudy() {
 node scripts/bench-sand.mjs --compare bench/baseline.json
 node scripts/bench-tnt.mjs
 (cd src/sand/cpp && source wasm/emenv.sh && wasm/build.sh --dev)`}</code></pre>
-        </div>
-      </section>
-
-      <section className="case-section" aria-labelledby="limits-heading">
-        <div className="case-section__label">Current limits</div>
-        <div className="case-section__content">
-          <h2 id="limits-heading">Known tradeoffs</h2>
-          <ul className="case-limits">
-            {LIMITS.map((limit) => <li key={limit}>{limit}</li>)}
-          </ul>
         </div>
       </section>
 

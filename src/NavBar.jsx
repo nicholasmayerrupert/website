@@ -5,7 +5,7 @@ const NAV_ITEMS = [
   { label: 'ABOUT', href: '#skills', section: true },
   { label: 'WORK', href: '#projects', section: true },
   { label: 'CONTACT', href: '#contact', section: true },
-  { label: 'RESUME', shortLabel: 'CV', href: '/Nicholas-Mayer-Rupert-Resume.pdf', external: true },
+  { label: 'RESUME', href: '/Nicholas-Mayer-Rupert-Resume.pdf', external: true },
 ];
 
 const NavBar = ({ mobileHidden = false }) => {
@@ -51,7 +51,7 @@ const NavBar = ({ mobileHidden = false }) => {
   };
 
   return (
-    <div data-site-navbar className={`fixed left-1/2 top-2 z-50 w-[calc(100%-1rem)] -translate-x-1/2 sm:w-auto ${mobileHidden ? 'hidden md:block' : ''}`}>
+    <div data-site-navbar className={`fixed left-1/2 top-2 z-50 w-fit max-w-[calc(100%-1rem)] -translate-x-1/2 ${mobileHidden ? 'hidden md:block' : ''}`}>
       <div className="flex items-center justify-center gap-0.5 rounded-full border border-white/20 bg-white/[0.04] px-1.5 py-2 shadow-[0_12px_40px_rgba(0,0,0,0.35)] backdrop-blur-xl sm:gap-2 sm:px-3">
         {NAV_ITEMS.map((item) => (
           <a
@@ -61,15 +61,13 @@ const NavBar = ({ mobileHidden = false }) => {
             target={item.external ? '_blank' : undefined}
             rel={item.external ? 'noopener noreferrer' : undefined}
             aria-current={item.section && activeHref === item.href ? 'location' : undefined}
-            className={`rounded-full px-2.5 py-2 text-[11px] font-medium transition sm:px-4 sm:text-sm ${
+            className={`rounded-full px-2 py-2 text-[11px] font-medium transition sm:px-4 sm:text-sm ${
               activeHref === item.href
                 ? 'bg-white/70 text-black shadow-lg'
                 : 'text-white/70 hover:text-white/90 hover:bg-white/10'
             }`}
           >
-            {item.shortLabel ? (
-              <><span className="sm:hidden">{item.shortLabel}</span><span className="hidden sm:inline">{item.label}</span></>
-            ) : item.label}
+            {item.label}
           </a>
         ))}
       </div>

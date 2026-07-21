@@ -569,13 +569,31 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     double drawY = alive ? sy + r * cell : corpseBase - (sh - r) * pixelH;
     glSolidDev(sx + cc * cell, drawY, cell, pixelH);
   }
-  // A compact health bar appears only after damage (or during death), keeping
-  // ambient creatures visually quiet while still making health legible.
+  // A segmented, hard-edged health bar appears only after damage (or during
+  // death), matching the survival HUD without adding noise to ambient mobs.
   if (maxHealth > 0 && health < maxHealth) {
-    double bw = sw * 0.72 * cell, bh = std::max(1.0, cell * 0.45), bx = sx + (sw * cell - bw) * 0.5, by = sy - cell;
-    glUniform4f(glc->uColor, 28/255.f, 19/255.f, 24/255.f, 0.90f); glSolidDev(bx, by, bw, bh);
     double frac = std::max(0.0, std::min(1.0, health / (double)maxHealth));
-    glUniform4f(glc->uColor, 224/255.f, 70/255.f, 78/255.f, 0.95f); glSolidDev(bx, by, bw * frac, bh);
+    const int segments = 10;
+    double border = std::max(1.0, cell * 0.22);
+    double bw = sw * 0.78 * cell, bh = std::max(4.0, cell * 1.15);
+    double bx = sx + (sw * cell - bw) * 0.5, by = sy - bh - cell * 0.45;
+    glUniform4f(glc->uColor, 9/255.f, 11/255.f, 14/255.f, 0.96f);
+    glSolidDev(bx, by, bw, bh);
+    double innerX = bx + border, innerY = by + border;
+    double innerW = std::max(1.0, bw - border * 2.0), innerH = std::max(1.0, bh - border * 2.0);
+    double gap = std::min(std::max(0.25, cell * 0.14), innerW / (segments * 2.0));
+    double segW = (innerW - gap * (segments - 1)) / segments;
+    for (int i = 0; i < segments; i++) {
+      double amount = std::max(0.0, std::min(1.0, frac * segments - i));
+      double x = innerX + i * (segW + gap);
+      glUniform4f(glc->uColor, 60/255.f, 37/255.f, 39/255.f, 0.96f);
+      glSolidDev(x, innerY, segW, innerH);
+      if (amount <= 0.0) continue;
+      glUniform4f(glc->uColor, 217/255.f, 72/255.f, 72/255.f, 1.0f);
+      glSolidDev(x, innerY, segW * amount, innerH);
+      glUniform4f(glc->uColor, 240/255.f, 120/255.f, 104/255.f, 1.0f);
+      glSolidDev(x, innerY, segW * amount, std::max(1.0, innerH * 0.28));
+    }
   }
   glDrawHitbox(px, py, CREATURE_SPECIES[speciesId].w, CREATURE_SPECIES[speciesId].h,
                1.0f, CREATURE_SPECIES[speciesId].hostile ? 0.24f : 0.88f, 0.20f, camCol, camRow);

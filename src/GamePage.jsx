@@ -77,10 +77,13 @@ export default function GamePage() {
 
       {/* Controls hint */}
       <div className="pointer-events-none absolute left-1/2 top-3 z-[80] -translate-x-1/2 border-2 border-black bg-[#252b31] px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-white/75 shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.4)] sm:text-xs">
-        <span className="font-semibold text-white/90">WASD</span> move ·{' '}
-        <span className="font-semibold text-white/90">Space</span> jump ·{' '}
-        <span className="font-semibold text-[#f0d465]">E</span> inventory + craft ·{' '}
-        LMB use / charge · RMB alternate layer
+        <div className="mb-1 text-[#f0d465]">Survival · work in progress</div>
+        <div className="whitespace-nowrap">
+          <span className="font-semibold text-white/90">WASD</span> move ·{' '}
+          <span className="font-semibold text-white/90">Space</span> jump ·{' '}
+          <span className="font-semibold text-[#f0d465]">E</span> inventory + craft ·{' '}
+          LMB use / charge · RMB alternate layer
+        </div>
       </div>
     </div>
   );

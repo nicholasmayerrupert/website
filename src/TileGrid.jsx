@@ -10,8 +10,8 @@ const PROJECTS = [
     description:
       'A two-layer falling-sand simulation with rigid bodies, lighting, creatures, and procedural terrain.',
     detail: 'The engine powering this site',
-    href: '#home',
-    cta: 'Play above',
+    href: '/game',
+    cta: 'Play survival',
     size: 'project-card--wide',
   },
   {

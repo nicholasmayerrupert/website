@@ -1,6 +1,7 @@
 import WorldWorker from './worldWorkerConstructor.js';
 import { Predictor } from '../net/predict.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
+import { mergePlayerPrediction } from './playerPresentation.js';
 
 export function createWorldWorkerClient(ctx) {
   let worker = new WorldWorker();
@@ -286,7 +287,7 @@ export function createWorldWorkerClient(ctx) {
     getOwnPlayer() {
       const own = players.find((p) => p.id === authoritativePlayerId) || null;
       const predicted = own?.alive === false ? null : predictor?.renderState();
-      return predicted && own ? { ...own, ...predicted, id: authoritativePlayerId } : own;
+      return mergePlayerPrediction(own, predicted, authoritativePlayerId);
     },
     getPlayersForRender() {
       const own = this.getOwnPlayer();

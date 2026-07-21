@@ -251,7 +251,7 @@ other explicit creation paths are never rejected by population caps; their mobs
 still count toward the active total, pausing only further natural spawning.
 Sprites are
 original four-pose pixel grids drawn by the C++ WebGL compositor,
-with a health bar shown after damage. Player and creature sprite colors sample
+with a segmented block health bar shown after damage. Player and creature sprite colors sample
 the same computed foreground light field as nearby world cells. Survival mining
 also checks creature hitboxes. Lethal damage enters the shared delayed/manual
 respawn flow described above. `/fps` enables hitbox outlines (cyan players, gold passive creatures, red

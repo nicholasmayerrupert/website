@@ -6,6 +6,7 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import { MAT } from '../src/sand/materials.js';
 import { TT } from '../src/sand/materials.generated.js';
 import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
+import { mergePlayerPrediction } from '../src/sand/worker/playerPresentation.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -14,6 +15,21 @@ const { check, done } = makeChecker('inventory bridge (Phase E)');
 const e = createEngineWasm({ cols: 100, rows: 80, worldSeed: 1, sinksOn: false, infinite: false });
 e.setSurvivalInventory(true);
 const id = e.spawnPlayer(40, 40);
+
+// Local prediction may smooth movement, but must never replace survival state
+// from the worker snapshot (the HUD reads this merged presentation record).
+const authoritative = {
+  id, x: 10, y: 20, health: 63, alive: true, deathTicks: 12,
+  respawnReady: false, bowCharge: 0.8, heldItemKind: ITEM_KIND.BOW,
+};
+const predicted = {
+  x: 11.5, y: 19.5, vx: 2, vy: -1, health: 100, alive: true,
+  deathTicks: 0, respawnReady: false, bowCharge: 0, heldItemKind: 0,
+};
+const presented = mergePlayerPrediction(authoritative, predicted, id);
+check('prediction supplies responsive player position', presented.x === 11.5 && presented.y === 19.5);
+check('worker health remains authoritative for the HUD', presented.health === 63);
+check('worker bow/death state survives prediction', presented.bowCharge === 0.8 && presented.heldItemKind === ITEM_KIND.BOW && presented.deathTicks === 12);
 
 // Fresh survival inventories are empty: slot 0 is the implicit bare hand.
 const inv = e.getInventory(id);

@@ -8,8 +8,10 @@ const STYLE = `
 .survival-vitals-label { margin:0 0 5px 2px; letter-spacing:.14em; }
 .survival-health { display:grid; grid-template-columns:repeat(10,14px); gap:2px; padding:4px;
   background:#171b20; border:2px solid #090b0e; box-shadow:inset 0 0 0 2px #3d4650,4px 4px 0 rgba(0,0,0,.3); }
-.survival-heart { width:14px; height:12px; box-sizing:border-box; background:#3c2527; border:2px solid #261619; }
-.survival-heart.full { background:#d94848; border-color:#7b1d2a; box-shadow:inset 2px 2px 0 #f07868; }
+.survival-heart { position:relative; width:14px; height:12px; box-sizing:border-box; overflow:hidden;
+  background:#3c2527; border:2px solid #261619; }
+.survival-heart::before { content:''; position:absolute; inset:0 auto 0 0; width:var(--fill,0%);
+  background:#d94848; box-shadow:inset 2px 2px 0 #f07868; }
 .survival-charge { display:none; margin-top:7px; padding:4px; background:#171b20; border:2px solid #090b0e;
   grid-template-columns:repeat(12,10px); gap:2px; box-shadow:inset 0 0 0 2px #3d4650; }
 .survival-charge.show { display:grid; }
@@ -36,6 +38,8 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   const label = document.createElement('div');
   label.className = 'survival-vitals-label'; label.textContent = 'HEALTH';
   const health = document.createElement('div'); health.className = 'survival-health';
+  health.setAttribute('role', 'meter'); health.setAttribute('aria-label', 'Player health');
+  health.setAttribute('aria-valuemin', '0'); health.setAttribute('aria-valuemax', '100');
   const hearts = Array.from({ length: 10 }, () => {
     const el = document.createElement('i'); el.className = 'survival-heart'; health.appendChild(el); return el;
   });
@@ -65,8 +69,11 @@ export function createSurvivalStatus(root, { respawn } = {}) {
 
   const update = (player) => {
     const hp = Math.max(0, Math.min(100, player?.health ?? 100));
-    const full = Math.ceil(hp / 10);
-    for (let i = 0; i < hearts.length; i++) hearts[i].classList.toggle('full', i < full);
+    for (let i = 0; i < hearts.length; i++) {
+      const fill = Math.max(0, Math.min(10, hp - i * 10)) * 10;
+      hearts[i].style.setProperty('--fill', `${fill}%`);
+    }
+    health.setAttribute('aria-valuenow', String(hp));
     label.textContent = `HEALTH  ${hp}`;
     const bow = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BOW;
     const level = Math.round(Math.max(0, Math.min(1, player?.bowCharge || 0)) * chargeCells.length);

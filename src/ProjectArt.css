@@ -79,7 +79,7 @@
 }
 
 /* ---------- classes ----------
-   Animations only run while `.bento-section--active` (section on-screen).
+   Animations only run while `.project-art-active` (art is on-screen).
    Off-screen: animation-play-state: paused freezes paint cost. */
 .pa-spin-slow {
   transform-box: fill-box;
@@ -123,22 +123,22 @@
 .pa-sand-fall { animation: pa-sand-fall 2.8s linear infinite; animation-play-state: paused; }
 .pa-pan-drift { animation: pa-pan-drift 5.2s ease-in-out infinite; animation-play-state: paused; }
 
-.bento-section--active .pa-spin-slow,
-.bento-section--active .pa-spin-rev,
-.bento-section--active .pa-twinkle,
-.bento-section--active .pa-pulse,
-.bento-section--active .pa-float,
-.bento-section--active .pa-flicker,
-.bento-section--active .pa-ember,
-.bento-section--active .pa-scan,
-.bento-section--active .pa-ants,
-.bento-section--active .pa-dash,
-.bento-section--active .pa-sway,
-.bento-section--active .pa-rise,
-.bento-section--active .pa-pop,
-.bento-section--active .pa-blink,
-.bento-section--active .pa-sand-fall,
-.bento-section--active .pa-pan-drift {
+.project-art-active .pa-spin-slow,
+.project-art-active .pa-spin-rev,
+.project-art-active .pa-twinkle,
+.project-art-active .pa-pulse,
+.project-art-active .pa-float,
+.project-art-active .pa-flicker,
+.project-art-active .pa-ember,
+.project-art-active .pa-scan,
+.project-art-active .pa-ants,
+.project-art-active .pa-dash,
+.project-art-active .pa-sway,
+.project-art-active .pa-rise,
+.project-art-active .pa-pop,
+.project-art-active .pa-blink,
+.project-art-active .pa-sand-fall,
+.project-art-active .pa-pan-drift {
   animation-play-state: running;
 }
 

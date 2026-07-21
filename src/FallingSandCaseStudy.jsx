@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { SandSimArt } from './ProjectArt';
 
 const FACTS = [
@@ -105,8 +105,25 @@ function ExternalArrow() {
 }
 
 export default function FallingSandCaseStudy() {
+  const artRef = useRef(null);
+  const [artActive, setArtActive] = useState(false);
+
   useEffect(() => {
     document.title = 'Falling Sand Engine — Nicholas Mayer-Rupert';
+  }, []);
+
+  useEffect(() => {
+    const art = artRef.current;
+    if (!art || typeof IntersectionObserver === 'undefined') {
+      setArtActive(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setArtActive(entry.isIntersecting),
+      { rootMargin: '100px 0px' },
+    );
+    observer.observe(art);
+    return () => observer.disconnect();
   }, []);
 
   return (
@@ -137,7 +154,11 @@ export default function FallingSandCaseStudy() {
           </a>
         </div>
 
-        <div className="case-hero__art" aria-label="Illustration of the two-layer sand engine">
+        <div
+          ref={artRef}
+          className={`case-hero__art${artActive ? ' project-art-active' : ''}`}
+          aria-label="Illustration of the two-layer sand engine"
+        >
           <SandSimArt />
         </div>
       </header>

@@ -96,7 +96,7 @@ export default function TileGrid() {
   return (
     <section
       ref={sectionRef}
-      className={`portfolio-section projects-section bento-section${artActive ? ' bento-section--active' : ''}`}
+      className={`portfolio-section projects-section bento-section${artActive ? ' project-art-active' : ''}`}
     >
       <div className="portfolio-glow portfolio-glow--blue" aria-hidden="true" />
       <div className="portfolio-shell">

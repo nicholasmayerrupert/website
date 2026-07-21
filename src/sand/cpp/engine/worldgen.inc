@@ -978,6 +978,11 @@
       for (auto& it : itemsys.items) { it.px -= dx; it.py -= dy; if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it); }
       itemsys.items.swap(keep);
     }
+    if (!projectiles.projectiles.empty()) {
+      std::vector<Projectile> keep; keep.reserve(projectiles.projectiles.size());
+      for (auto arrow : projectiles.projectiles) { arrow.px -= dx; arrow.py -= dy; if (arrow.px >= 0 && arrow.px < cols && arrow.py >= 0 && arrow.py < rows) keep.push_back(arrow); }
+      projectiles.projectiles.swap(keep);
+    }
     remapDraftsForShift(dx, dy); // pin in-progress solid drafts to their world location (mirrors the L->grid shift)
     remapEmitStrokeForShift(dx, dy); // keep held paint/erase strokes from sweeping across the buffer slide
     useLayer(&fg); clearAllMineDamage();
@@ -1077,6 +1082,8 @@
     for (auto& p : psys.players) playerWorld.push_back({fg.worldOffsetX + p.px, fg.worldOffsetY + p.py});
     std::vector<WEnt> itemWorld; itemWorld.reserve(itemsys.items.size());
     for (auto& it : itemsys.items) itemWorld.push_back({fg.worldOffsetX + it.px, fg.worldOffsetY + it.py});
+    std::vector<WEnt> projectileWorld; projectileWorld.reserve(projectiles.projectiles.size());
+    for (auto& arrow : projectiles.projectiles) projectileWorld.push_back({fg.worldOffsetX + arrow.px, fg.worldOffsetY + arrow.py});
 
     // Presentation mirrors have no simulation/component/tile state to persist
     // or regenerate. Resize only their compact cell+lighting+pixel storage and
@@ -1105,6 +1112,10 @@
       for (size_t i = 0; i < itemsys.items.size(); i++) {
         itemsys.items[i].px = itemWorld[i].wx - newOffX;
         itemsys.items[i].py = itemWorld[i].wy - newOffY;
+      }
+      for (size_t i = 0; i < projectiles.projectiles.size(); i++) {
+        projectiles.projectiles[i].px = projectileWorld[i].wx - newOffX;
+        projectiles.projectiles[i].py = projectileWorld[i].wy - newOffY;
       }
       cam.setBounds(cols - cam.viewportCols, rows - cam.viewportRows);
       cam.set(worldCX - newOffX - vCols * 0.5, worldCY - newOffY - vRows * 0.5);
@@ -1184,6 +1195,14 @@
         if (it.px >= 0 && it.px < cols && it.py >= 0 && it.py < rows) keep.push_back(it);
       }
       itemsys.items.swap(keep);
+    }
+    {
+      std::vector<Projectile> keep; keep.reserve(projectiles.projectiles.size());
+      for (size_t i = 0; i < projectiles.projectiles.size(); i++) {
+        auto arrow = projectiles.projectiles[i]; arrow.px = projectileWorld[i].wx - newOffX; arrow.py = projectileWorld[i].wy - newOffY;
+        if (arrow.px >= 0 && arrow.px < cols && arrow.py >= 0 && arrow.py < rows) keep.push_back(arrow);
+      }
+      projectiles.projectiles.swap(keep);
     }
 
     // Prefetch scratch matches the new dims; cancel any in-flight band.

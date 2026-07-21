@@ -54,8 +54,9 @@ terrain) is skipped, so a static scene costs about the same as one layer.
 ## Files
 
 - `cpp/` — the C++ engine. Every simulation subsystem is a **named class**
-  composed by the Engine (sixteen: ViewCamera, NetSync, TerrainGen, Renderer,
-  GLPresenter, ItemSystem, InventorySystem, PlayerSystem, CreatureSystem, ToolSystem,
+  composed by the Engine (eighteen: ViewCamera, NetSync, TerrainGen, Renderer,
+  GLPresenter, ItemSystem, InventorySystem, CraftingSystem, ProjectileSystem,
+  PlayerSystem, CreatureSystem, ToolSystem,
   ReactionSystem, ExplosivesSystem, GrowthSystem, ComponentSystem,
   RigidBodySystem, AudioSystem). Each lives as `engine/<name>.hpp` (state + interface, with
   an `Engine&` back-reference) plus `engine/<name>_impl.inc` (method bodies,
@@ -176,7 +177,10 @@ to the engine to draw (`engine.glSetPlayers`).
 | `W` / `↑` / `Space` | jump (only when grounded) |
 | `S` / `↓` | down / crouch (placeholder) |
 | `Shift` | run |
-| mouse + `Draw` toggle | aim; LMB uses the selected tool, RMB mines — player-mediated, reach-limited (≤18 cells) and cooldown-throttled |
+| `1`–`9` / wheel | select a hotbar slot (`Hand` when empty) |
+| `E` | open inventory and crafting |
+| `Q` | choose the square mining/placement footprint |
+| mouse | aim; LMB uses the selected stack, bare hand, Mining Tool, or bow; RMB mines both layers or places into the background |
 
 On coarse-pointer devices, the thumbstick sends a continuous analog vector. In
 creative mode this gives unrestricted pan direction and radial speed control; in
@@ -186,6 +190,30 @@ tilt retains the platformer's jump/crouch semantics.
 In free-camera mode the classic pointer tools (drafts + held paint/erase) are
 used instead. Player tool policy (reach, cooldown, place-vs-mine, no building
 inside your own body) lives in `cpp/engine/player.inc`.
+
+### Survival progression
+
+Survival players begin with an empty inventory and harvest hand-tier materials
+with their bare hand. Crafting is inventory-only (no workbench): the engine owns
+the recipe catalog and performs each craft atomically. Recipes include one
+universal tiered Mining Tool (wood/stone/iron/gold), a bow, arrows, brick, and
+TNT. There are deliberately no pickaxe/axe/shovel item distinctions. The blocky
+inventory window shows crafting beside the backpack; `Shift`-clicking a recipe
+crafts as many as ingredients and inventory space allow.
+
+Holding LMB with a selected bow charges it; release consumes one arrow and fires
+a swept, gravity-affected projectile that damages creatures and stops on terrain.
+The charge meter appears only while drawing the bow.
+
+Players have 100 health. Creature contact, hard falls, lava, acid, fire, and
+prolonged burial deal damage; health regenerates after five damage-free seconds
+outside hazards. Death leaves a visible corpse and drops every inventory and
+cursor stack as normal pickup entities. After a three-second delay the death
+overlay enables manual respawn via its button or `Enter`; respawn restores full
+health and brief protection but does not restore the dropped inventory. These
+rules live in `PlayerSystem`, while `CraftingSystem` and `ProjectileSystem` own
+their respective policies. Worker and multiplayer paths transport only intents
+and authoritative snapshots.
 
 ## Creatures
 
@@ -225,9 +253,8 @@ Sprites are
 original four-pose pixel grids drawn by the C++ WebGL compositor,
 with a health bar shown after damage. Player and creature sprite colors sample
 the same computed foreground light field as nearby world cells. Survival mining
-also checks creature hitboxes. Lethal contact damage returns the player to the
-surface with brief spawn protection instead of leaving an invisible, disabled
-actor. `/fps` enables hitbox outlines (cyan players, gold passive creatures, red
+also checks creature hitboxes. Lethal damage enters the shared delayed/manual
+respawn flow described above. `/fps` enables hitbox outlines (cyan players, gold passive creatures, red
 hostile creatures) and includes the active creature count in its HUD.
 Multiplayer hosts replicate packed creature snapshots; clients render those
 authoritative records without running creature AI locally.
@@ -324,6 +351,7 @@ available throughout selection.
 npm run test          # sand + players + creatures + net protocol (headless, CI-friendly)
 npm run test:sand     # node scripts/sand-test.mjs
 npm run test:players  # node scripts/player-test.mjs
+npm run test:survival-upgrade # crafting, bow/projectiles, death/drop/respawn
 npm run test:creatures # node scripts/creature-test.mjs
 npm run test:creatures-e2e # /fps spawn, animation, visibility, and hitbox pixels
 npm run test:net      # node scripts/net-test.mjs
@@ -341,8 +369,9 @@ not in the required `npm run test` chain (it needs a browser), but is CI-runnabl
 The networking layer lives in `src/sand/net/` and is transport-agnostic so it
 unit-tests in Node (`test:net`) with no real socket:
 
-- `protocol.js` — the JSON wire format (`input`/`snapshot`/`join`/`leave`/
-  `ping`/`pong`), strict decode/validation, and message builders. Integer fields
+- `protocol.js` — the JSON wire format for joining, input/inventory/crafting/
+  respawn intents, and world/player/creature/item/projectile snapshots, with
+  strict decode/validation and message builders. Integer fields
   are preserved exactly; out-of-range/malformed messages decode to `null`.
 - `client.js` — `SequenceTracker` (drops reordered-late/duplicate packets),
   `InputSequencer`, and `applyInputStream` (reduces a lossy/shuffled input stream

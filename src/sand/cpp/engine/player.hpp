@@ -31,6 +31,10 @@ class PlayerSystem {
   void playerSurfaceSpawn(int col, double* out);
   int spawnPlayerAtSurface(int col);
   void respawnPlayer(Player& p);
+  bool requestRespawn(int id);
+  void damagePlayer(Player& p, int damage, int cooldown = 30);
+  void killPlayer(Player& p);
+  void updatePlayerVitals(Player& p);
   Player* findPlayer(int id);
   void removePlayer(int id);
   void setPlayerInput(int id, int inputBits, double aimX, double aimY, int selectedTool, uint32_t seq,

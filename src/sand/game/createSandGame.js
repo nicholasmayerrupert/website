@@ -55,6 +55,7 @@ export function createSandGame(container, opts = {}) {
     // inventory itself is authoritative in the engine — these only move
     // snapshots out and intents in.
     onInventory = null,
+    onPlayerState = null,
     onToggleInventory = null,
     onToggleFootprintMenu = null,
   } = opts;
@@ -195,12 +196,12 @@ export function createSandGame(container, opts = {}) {
   // Mining-progress pill (a tiny DOM overlay next to the cursor).
   const mineProgress = document.createElement('div');
   mineProgress.style.position = 'absolute';
-  mineProgress.style.width = '5px';
+  mineProgress.style.width = '7px';
   mineProgress.style.height = '42px';
-  mineProgress.style.border = '1px solid rgba(255,255,255,.55)';
-  mineProgress.style.borderRadius = '999px';
-  mineProgress.style.background = 'rgba(3,7,18,.58)';
-  mineProgress.style.boxShadow = '0 6px 14px rgba(0,0,0,.35)';
+  mineProgress.style.border = '2px solid #090b0e';
+  mineProgress.style.borderRadius = '0';
+  mineProgress.style.background = '#252b31';
+  mineProgress.style.boxShadow = 'inset 0 0 0 1px #59636c,3px 3px 0 rgba(0,0,0,.35)';
   mineProgress.style.pointerEvents = 'none';
   mineProgress.style.zIndex = '69';
   mineProgress.style.overflow = 'hidden';
@@ -211,8 +212,7 @@ export function createSandGame(container, opts = {}) {
   mineProgressFill.style.right = '0';
   mineProgressFill.style.bottom = '0';
   mineProgressFill.style.height = '0%';
-  mineProgressFill.style.background = '#f8fafc';
-  mineProgressFill.style.boxShadow = '0 0 8px rgba(248,250,252,.85)';
+  mineProgressFill.style.background = '#f0d465';
   mineProgress.appendChild(mineProgressFill);
   container.appendChild(mineProgress);
 
@@ -277,6 +277,7 @@ export function createSandGame(container, opts = {}) {
     updatePointer: inputs.updatePointer,
     updateMineProgress,
     onInventory,
+    onPlayerState,
   });
   ctx.fns.render = loop.render;
   const netGlue = createNetGlue(ctx, {
@@ -414,6 +415,15 @@ export function createSandGame(container, opts = {}) {
     getCursor() {
       if (ctx.netClientReady()) return ctx.net.getOwnCursor();
       return ctx.worldWorker?.getCursor() || null;
+    },
+    getCraftingRecipes() { return ctx.engine?.getCraftingRecipes?.() || []; },
+    craft(recipe, max = false) {
+      if (ctx.netClientReady()) ctx.net.sendCraft(recipe | 0, max);
+      else ctx.worldWorker?.intent('craft', { recipe: recipe | 0, max: !!max });
+    },
+    respawn() {
+      if (ctx.netClientReady()) ctx.net.sendRespawn();
+      else ctx.worldWorker?.intent('respawn');
     },
     // Runtime zoom. Buttons/keys drive these; the loaded sim window grows/shrinks
     // with zoom (world content preserved via engine.resizeLoadedWindow).

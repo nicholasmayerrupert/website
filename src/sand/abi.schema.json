@@ -1,16 +1,16 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 15,
+  "abiVersion": 16,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
       "cPrefix": "PS",
-      "fields": ["id", "active", "x", "y", "vx", "vy", "w", "h", "facing", "grounded", "tool", "aimX", "aimY", "health", "inputSeq", "alive", "jumpReady", "animState", "animFrame"]
+      "fields": ["id", "active", "x", "y", "vx", "vy", "w", "h", "facing", "grounded", "tool", "aimX", "aimY", "health", "inputSeq", "alive", "jumpReady", "animState", "animFrame", "deathTicks", "respawnReady", "bowCharge", "heldItemKind"]
     },
     "itemSnapshot": {
       "$comment": "float32 records built by buildItemSnapshot (items.inc); also the external GL item layout (glSetItems) and the ITEMS wire message payload.",
       "cPrefix": "IS",
-      "fields": ["id", "kind", "material", "count", "x", "y", "life", "plantType"]
+      "fields": ["id", "kind", "material", "count", "x", "y", "life", "plantType", "itemKind", "isTool", "toolClass", "toolTier"]
     },
     "creatureSnapshot": {
       "$comment": "float32 creature records built by CreatureSystem; also used by the external GL renderer and CREATURES wire message.",
@@ -20,7 +20,22 @@
     "inventorySlot": {
       "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
       "cPrefix": "IVS",
-      "fields": ["material", "isTool", "toolClass", "toolTier", "count", "plantType", "selected"]
+      "fields": ["material", "isTool", "toolClass", "toolTier", "count", "plantType", "itemKind", "selected"]
+    },
+    "projectileSnapshot": {
+      "$comment": "float32 arrow records used by the authority, network, and external GL renderer.",
+      "cPrefix": "PRS",
+      "fields": ["id", "owner", "x", "y", "vx", "vy", "charge"]
+    },
+    "craftingRecipe": {
+      "$comment": "int32 recipe headers; ingredientStart/count index craftingIngredient records.",
+      "cPrefix": "CR",
+      "fields": ["id", "outputKind", "outputMaterial", "outputTier", "outputCount", "ingredientStart", "ingredientCount"]
+    },
+    "craftingIngredient": {
+      "$comment": "int32 recipe ingredients: kind selects exact material or material flag.",
+      "cPrefix": "CI",
+      "fields": ["kind", "value", "count"]
     },
     "survivalFootprint": {
       "$comment": "int32 records built by buildSurvivalFootprintSnapshot (inventory.inc).",
@@ -30,7 +45,7 @@
     "glPlayerExt": {
       "$comment": "float32 records a multiplayer client packs for engine_gl_set_players (host-authoritative snapshot players).",
       "cPrefix": "GLP",
-      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame"]
+      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame", "alive", "heldItemKind", "bowCharge"]
     },
     "soundEvent": {
       "$comment": "float32 semantic audio events drained from the authoritative engine. Coordinates are absolute world cells so streaming cannot move a queued sound.",
@@ -59,6 +74,22 @@
       "jsName": "INPUT",
       "jsPrefix": "PI",
       "values": { "PI_LEFT": 1, "PI_RIGHT": 2, "PI_JUMP": 4, "PI_DOWN": 8, "PI_PRIMARY": 16, "PI_SECONDARY": 32, "PI_RUN": 64 }
+    },
+    "InventoryItemKind": {
+      "$comment": "Inventory/world-drop stack identity. Empty stacks are represented by count=0.",
+      "cName": "InventoryItemKind",
+      "cType": "uint8_t",
+      "jsName": "ITEM_KIND",
+      "jsPrefix": "IK",
+      "values": { "IK_MATERIAL": 0, "IK_MINING_TOOL": 1, "IK_BOW": 2, "IK_ARROW": 3 }
+    },
+    "CraftIngredientKind": {
+      "$comment": "How a crafting ingredient value is interpreted.",
+      "cName": "CraftIngredientKind",
+      "cType": "uint8_t",
+      "jsName": "CRAFT_INGREDIENT",
+      "jsPrefix": "CIK",
+      "values": { "CIK_MATERIAL": 0, "CIK_MATERIAL_FLAG": 1 }
     },
     "Tool": {
       "$comment": "Legacy tool ids (tools.inc); the creative palette prefers setCreativeMaterial.",
@@ -112,7 +143,12 @@
         "SE_FLUID_FALL": 10,
         "SE_POWDER_MOVE": 11,
         "SE_SOLID_LAND": 12,
-        "SE_ACID_DISSOLVE": 13
+        "SE_ACID_DISSOLVE": 13,
+        "SE_CRAFT": 14,
+        "SE_BOW": 15,
+        "SE_ARROW_HIT": 16,
+        "SE_DEATH": 17,
+        "SE_RESPAWN": 18
       }
     }
   },

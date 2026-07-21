@@ -11,7 +11,8 @@
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,
-  makeSelect, makeSize, makeMove, makePick, makeThrow, INV_SLOTS, INV_FIELDS, ITEM_FIELDS, CREATURE_FIELDS,
+  makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
+  INV_SLOTS, INV_FIELDS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS,
 } from './protocol.js';
 import { applyWorldMessage, applyDiffMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
@@ -34,6 +35,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const remotes = new Map();       // render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty,animState,animFrame }
   let itemsForRender = new Float32Array(0); // packed [id,kind,material,count,x,y,life] from the server
   let creaturesForRender = new Float32Array(0);
+  let projectilesForRender = new Float32Array(0);
   let soundBatches = [];
   const invByPlayer = new Map();   // player id -> { slots, selected, selectedFootprint } (server-authoritative)
   const curByPlayer = new Map();   // player id -> carried cursor stack (or null)
@@ -49,7 +51,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     ownPlayerId = 0; inputSeq = 0; worldReady = false;
     predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
-    itemsForRender = new Float32Array(0); creaturesForRender = new Float32Array(0); soundBatches = [];
+    itemsForRender = new Float32Array(0); creaturesForRender = new Float32Array(0);
+    projectilesForRender = new Float32Array(0); soundBatches = [];
     invByPlayer.clear(); curByPlayer.clear(); invDirty = false;
     setStatus(status);
   }
@@ -135,6 +138,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       }
       case MSG.ITEMS: ingestItems(m); break;
       case MSG.CREATURES: ingestCreatures(m); break;
+      case MSG.PROJECTILES: ingestProjectiles(m); break;
       case MSG.SOUNDS: soundBatches.push(Float32Array.from(m.data)); break;
       case MSG.INVENTORY: ingestInventory(m); break;
       case MSG.CURSOR: ingestCursor(m); break;
@@ -146,7 +150,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   // unacknowledged inputs (lazily spawns the prediction player).
   function reconcilePredictor(op, actorTick) {
     const e = engineNow();
-    if (!predictor) { predId = e.spawnPlayer(op.x, op.y); predictor = new Predictor(e, predId); }
+    if (!predictor) { if (!predId) predId = e.spawnPlayer(op.x, op.y); predictor = new Predictor(e, predId); }
     predictor.reconcile({ x: op.x, y: op.y, vx: op.vx, vy: op.vy, facing: op.facing, grounded: !!op.grounded, jumpReady: !!op.jr }, op.seq >>> 0, actorTick);
   }
 
@@ -160,9 +164,13 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       r.tx = p.x; r.ty = p.y; r.vx = p.vx; r.vy = p.vy;
       r.facing = p.facing; r.grounded = !!p.grounded; r.tool = p.tool; r.seq = p.seq;
       r.health = p.health | 0; r.alive = p.alive !== 0;
+      r.deathTicks = p.deathTicks | 0; r.respawnReady = p.respawnReady !== 0;
+      r.bowCharge = p.bowCharge; r.heldItemKind = p.heldItemKind | 0;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;
-      if (p.id === ownPlayerId && !r.alive) { predictor = null; predId = 0; }
+      if (p.id === ownPlayerId && !r.alive) {
+        predictor = null;
+      }
     }
     for (const id of [...remotes.keys()]) if (!seen.has(id)) remotes.delete(id); // left
   }
@@ -177,18 +185,22 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     if (creaturesForRender.length === m.data.length) creaturesForRender.set(m.data);
     else creaturesForRender = Float32Array.from(m.data);
   }
+  function ingestProjectiles(m) {
+    if (projectilesForRender.length === m.data.length) projectilesForRender.set(m.data);
+    else projectilesForRender = Float32Array.from(m.data);
+  }
   function ingestInventory(m) {
     const slots = new Array(INV_SLOTS);
     for (let i = 0; i < INV_SLOTS; i++) {
       const o = i * INV_FIELDS;
-      slots[i] = { material: m.data[o] | 0, isTool: m.data[o + 1] === 1, toolClass: m.data[o + 2] | 0, toolTier: m.data[o + 3] | 0, count: m.data[o + 4] | 0 };
+      slots[i] = { material: m.data[o] | 0, isTool: m.data[o + 1] === 1, toolClass: m.data[o + 2] | 0, toolTier: m.data[o + 3] | 0, count: m.data[o + 4] | 0, plantType: m.data[o + 5] | 0, itemKind: m.data[o + 6] | 0 };
     }
     invByPlayer.set(m.player, { slots, selected: m.selected | 0, selectedFootprint: m.selectedFootprint | 0 });
     if (m.player === ownPlayerId) invDirty = true;
   }
   function ingestCursor(m) {
     const c = m.cur;
-    curByPlayer.set(m.player, c ? { material: c.material | 0, isTool: c.isTool === 1, toolClass: c.toolClass | 0, toolTier: c.toolTier | 0, count: c.count | 0 } : null);
+    curByPlayer.set(m.player, c ? { material: c.material | 0, isTool: c.isTool === 1, toolClass: c.toolClass | 0, toolTier: c.toolTier | 0, count: c.count | 0, plantType: c.plantType | 0, itemKind: c.itemKind | 0 } : null);
   }
 
   // Called once per fixed step from the game loop.
@@ -220,6 +232,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const sendMove = (from, to) => send(makeMove(room, clientId, from | 0, to | 0));
   const sendPick = (slot, half) => send(makePick(room, clientId, slot | 0, half));
   const sendThrow = (whole) => send(makeThrow(room, clientId, whole));
+  const sendCraft = (recipe, max = false) => send(makeCraft(room, clientId, recipe | 0, max));
+  const sendRespawn = () => send(makeRespawn(room, clientId));
 
   // Players to render: clients read the smoothed snapshot entities (own player is
   // the responsive prediction when available).
@@ -227,30 +241,30 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     const own = getOwnPlayer();
     const out = [];
     for (const [id, r] of remotes) {
-      if (!r.alive) continue;
-      if (id === ownPlayerId && own) { out.push({ id, x: own.x, y: own.y, w: own.w, h: own.h, facing: own.facing, grounded: own.grounded, tool: r.tool ?? 0, animState: own.animState | 0, animFrame: own.animFrame | 0 }); continue; }
-      out.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded, tool: r.tool ?? 0, animState: r.animState | 0, animFrame: r.animFrame | 0 });
+      if (id === ownPlayerId && own) { out.push({ ...r, ...own, id, tool: r.tool ?? 0 }); continue; }
+      out.push({ id, ...r });
     }
     return out;
   }
   function getOwnPlayer() {
     // predicted (responsive) state when available; else the raw snapshot entity.
     const authoritative = remotes.get(ownPlayerId);
-    if (authoritative && !authoritative.alive) return null;
+    if (authoritative && !authoritative.alive) return { id: ownPlayerId, ...authoritative };
     if (predictor) {
       const ps = predictor.renderState();
       if (ps) {
         const size = fallbackPlayerSize(engineNow());
-        return { id: ownPlayerId, x: ps.x, y: ps.y, w: ps.w ?? size.w, h: ps.h ?? size.h, facing: ps.facing, grounded: ps.grounded };
+        return { ...authoritative, id: ownPlayerId, x: ps.x, y: ps.y, w: ps.w ?? size.w, h: ps.h ?? size.h, facing: ps.facing, grounded: ps.grounded };
       }
     }
     const r = remotes.get(ownPlayerId);
-    return r ? { id: ownPlayerId, x: r.x, y: r.y, w: r.w, h: r.h, facing: r.facing ?? 1, grounded: r.grounded } : null;
+    return r ? { id: ownPlayerId, ...r } : null;
   }
 
   // Server-authoritative dropped items for the renderer (empty when none).
   function getItemsForRender() { return itemsForRender; }
   function getCreaturesForRender() { return creaturesForRender; }
+  function getProjectilesForRender() { return projectilesForRender; }
   function consumeSoundEvents() {
     if (!soundBatches.length) return new Float32Array(0);
     if (soundBatches.length === 1) return soundBatches.shift();
@@ -271,8 +285,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   return {
     joinRoom, disconnect, update,
     getPlayersForRender, getOwnPlayer,
-    getItemsForRender, getCreaturesForRender, consumeSoundEvents, getOwnInventory, getOwnCursor, consumeInventoryDirty,
-    sendSelect, sendSize, sendMove, sendPick, sendThrow,
+    getItemsForRender, getCreaturesForRender, getProjectilesForRender, consumeSoundEvents, getOwnInventory, getOwnCursor, consumeInventoryDirty,
+    sendSelect, sendSize, sendMove, sendPick, sendThrow, sendCraft, sendRespawn,
     get role() { return role; },
     get connected() { return connected; },
     get ownPlayerId() { return ownPlayerId; },
@@ -281,6 +295,6 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     set onStatus(fn) { onStatus = fn; },
     get clientId() { return clientId; },
     get worldReady() { return worldReady; },
-    get debug() { return { sent: dbgSent, ownPlayerId, role, connected, worldReady, items: itemsForRender.length / ITEM_FIELDS, creatures: creaturesForRender.length / CREATURE_FIELDS }; },
+    get debug() { return { sent: dbgSent, ownPlayerId, role, connected, worldReady, items: itemsForRender.length / ITEM_FIELDS, creatures: creaturesForRender.length / CREATURE_FIELDS, projectiles: projectilesForRender.length / PROJECTILE_FIELDS }; },
   };
 }

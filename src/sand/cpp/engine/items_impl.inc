@@ -74,7 +74,7 @@ void ItemSystem::floatItem(Item& it) {
   if (it.vy > 0 && itemCellLiquidAt(x, (int)std::floor(it.py) + 1)) it.vy = 0; // resting on the surface
 }
 bool ItemSystem::seedItemCanPlant(const Item& it, int& x, int& y) {
-  if (it.kind != IT_ITEM || it.material != SEED || it.count == 0) return false;
+  if (it.kind != IT_ITEM || it.itemKind != IK_MATERIAL || it.material != SEED || it.count == 0) return false;
   x = (int)std::floor(it.px); y = (int)std::floor(it.py);
   if (!E.isInBounds(x, y) || E.L->grid[E.I(x, y)] != EMPTY) return false;
   return itemCellLiquidAt(x, y + 1) || itemCellLiquidAt(x - 1, y) || itemCellLiquidAt(x + 1, y) || itemCellLiquidAt(x, y - 1);
@@ -99,11 +99,15 @@ void ItemSystem::ensureItemCapacity() {
   for (size_t i = 0; i < items.size(); i++) if (items[i].kind == IT_ITEM) { items.erase(items.begin() + i); return; }
 }
 int ItemSystem::spawnItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType) {
+  InvSlot stack; stack.itemKind = IK_MATERIAL; stack.material = mat; stack.count = count; stack.plantType = plantType;
+  return spawnStack(stack, px, py, vx, vy, IT_PICKUP_DELAY);
+}
+int ItemSystem::spawnStack(const InvSlot& stack, double px, double py, double vx, double vy, int delay) {
   ensureItemCapacity();
-  Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.material = mat;
-  it.plantType = plantType;
-  it.count = (uint8_t)(count < 1 ? 1 : (count > 255 ? 255 : count));
-  it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = IT_PICKUP_DELAY;
+  Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.itemKind = stack.itemKind; it.material = stack.material;
+  it.isTool = stack.isTool; it.toolClass = stack.toolClass; it.toolTier = stack.toolTier; it.plantType = stack.plantType;
+  it.count = std::max(1, std::min(INV_STACK_MAX, stack.count));
+  it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = std::max(0, delay);
   items.push_back(it); return it.id;
 }
 // Thrown items get a longer pickup delay so they escape the magnet before homing back.
@@ -189,7 +193,9 @@ void ItemSystem::pickupItems() {
       double d = dx * dx + dy * dy;
       if (d <= bestD) { bestD = d; best = &p; }
     }
-    if (best && E.addToInventory(*best, it.material, it.count, it.plantType)) {
+    InvSlot stack; stack.itemKind = it.itemKind; stack.material = it.material; stack.isTool = it.isTool;
+    stack.toolClass = it.toolClass; stack.toolTier = it.toolTier; stack.plantType = it.plantType; stack.count = it.count;
+    if (best && E.inv.addStack(*best, stack)) {
       E.audio.emit(SE_PICKUP, it.px, it.py, std::min(1.2, 0.5 + it.count * 0.04), it.material, 0);
       it.count = 0;
     }
@@ -205,6 +211,8 @@ int ItemSystem::buildItemSnapshot() {
     o[IS_ID] = (float)it.id; o[IS_KIND] = (float)it.kind; o[IS_MATERIAL] = (float)it.material; o[IS_COUNT] = (float)it.count;
     o[IS_X] = (float)it.px; o[IS_Y] = (float)it.py; o[IS_LIFE] = (float)it.life;
     o[IS_PLANT_TYPE] = (float)it.plantType;
+    o[IS_ITEM_KIND] = (float)it.itemKind; o[IS_IS_TOOL] = (float)it.isTool;
+    o[IS_TOOL_CLASS] = (float)it.toolClass; o[IS_TOOL_TIER] = (float)it.toolTier;
   }
   return (int)items.size();
 }

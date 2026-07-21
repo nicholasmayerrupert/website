@@ -5,7 +5,6 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
-import { TC, TT } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, FLOOR = 60;
@@ -54,8 +53,8 @@ const hasDraftCell = (cells, x, y) => {
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  // Fill every non-tool slot (35 of them; dig tool occupies slot 0) with stone at max stack.
-  e.addToInventory(id, MAT.STONE, 999 * 35);
+  // Fresh inventories are empty, so all 36 slots can be filled.
+  e.addToInventory(id, MAT.STONE, 999 * 36);
   const full = e.addToInventory(id, MAT.GOLD_ORE, 1);
   check('a full inventory rejects a new material', full === false);
   // And a world item near the player is NOT absorbed when the inventory is full.
@@ -65,20 +64,22 @@ const hasDraftCell = (cells, x, y) => {
   e.destroy();
 }
 
-// 4) Starter kit + empty-slot-is-hand: dig tool (slot 0) drops stone; an EMPTY slot
-//    mines by hand and drops no stone.
+// 4) Empty spawn + crafting: bare hand gathers wood, then a crafted universal
+//    mining tool can harvest tiered stone while an empty slot cannot.
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8); // far from the mined block (no auto-pickup)
-  const kit = e.getInventory(id);
+  let kit = e.getInventory(id);
   const footprints = e.getSurvivalFootprints();
-  check('starter kit is a single wood dig tool in slot 0',
-    kit.slots[0].isTool && kit.slots[0].toolClass === TC.dig && kit.slots[0].toolTier === TT.wood
-    && kit.slots[1].count === 0 && kit.slots[2].count === 0);
+  check('fresh survival inventory starts empty', kit.slots.every((slot) => slot.count === 0));
   check('survival sizes run 1x1 through 8x8 with 3x3 default',
     footprints.length === 8 && footprints[0].width === 1 && footprints[7].width === 8 && kit.selectedFootprint === 2);
+  e.addToInventory(id, MAT.WOOD, 24);
+  check('24 wood crafts one wood mining tool', e.craft(id, 0) === 1);
+  kit = e.getInventory(id);
+  const toolSlot = kit.slots.findIndex((slot) => slot.isTool);
   e.placeMaterial(60, 50, 2, MAT.STONE);
-  e.setSelectedSlot(id, 0); // wood dig tool
+  e.setSelectedSlot(id, toolSlot);
   e.setSelectedFootprint(id, 0); // 1x1 isolates the drop-gate behavior under test
   for (let i = 0; i < 60; i++) e.playerMine(id, 60, 50);
   const withDig = e.getItems().filter((it) => it.kind === 0 && it.material === MAT.STONE).length;
@@ -200,7 +201,9 @@ const hasDraftCell = (cells, x, y) => {
   const mineTicks = (footprintId) => {
     const e = survivalEngine();
     const id = e.spawnPlayer(10, FLOOR - 8);
-    e.setSelectedSlot(id, 0); // wood dig tool
+    e.addToInventory(id, MAT.WOOD, 24);
+    e.craft(id, 0);
+    e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((slot) => slot.isTool));
     e.setSelectedFootprint(id, footprintId);
     e.placeMaterial(60, 50, 2, MAT.STONE);
     let ticks = 0;
@@ -276,7 +279,9 @@ const hasDraftCell = (cells, x, y) => {
   e.addToInventory(id, MAT.WATER, 1);
   e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.WATER && s.count > 0));
   const bgWaterBefore = e.getGridBg().reduce((a, v) => a + (v === MAT.WATER), 0);
-  e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 54.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
+  // Keep this clear of the seed's first growth cells so it tests routing, not
+  // immediate plant/water interaction.
+  e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 58.5, aimY: FLOOR - 6 + 0.5, seq: ++seq }); t += 16; e.step(t);
   const bgWaterAfter = e.getGridBg().reduce((a, v) => a + (v === MAT.WATER), 0);
   check(`RMB survival loose material places in background (${bgWaterBefore} -> ${bgWaterAfter})`, bgWaterAfter > bgWaterBefore);
   e.destroy();

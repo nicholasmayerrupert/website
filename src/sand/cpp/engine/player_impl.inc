@@ -120,7 +120,7 @@ int PlayerSystem::spawnPlayer(double x, double y) {
   p.px = x; p.py = y;
   p.aimX = x; p.aimY = y;
   players.push_back(p);
-  if (E.survivalInventory) E.seedStarterTools(players.back()); // survival spawns with the starter kit
+  if (E.survivalInventory) E.seedStarterTools(players.back()); // survival spawns empty; slot 0 is the bare hand
   return p.id;
 }
 void PlayerSystem::playerSurfaceSpawn(int col, double* out) {
@@ -144,9 +144,49 @@ void PlayerSystem::respawnPlayer(Player& p) {
   playerSurfaceSpawn(std::max(PLAYER_W, std::min(E.cols - PLAYER_W - 1, col)), out);
   p.px = out[0]; p.py = out[1]; p.vx = p.vy = 0;
   p.health = 100; p.alive = true; p.grounded = false; p.jumpReady = false;
+  p.deathTicks = 0; p.buriedTicks = 0; p.bowChargeTicks = 0; p.lastDamageTick = E.actorTick;
   p.hurtCooldown = 120;
   resetPlayerMine(p); p.placeStrokeActive = false; p.prevInput = p.input;
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
+  E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
+}
+bool PlayerSystem::requestRespawn(int id) {
+  Player* p = findPlayer(id);
+  if (!p || p->alive || p->deathTicks < 180) return false;
+  respawnPlayer(*p); return true;
+}
+void PlayerSystem::killPlayer(Player& p) {
+  if (!p.alive) return;
+  p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
+  resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
+  if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
+  E.inv.dropAll(p);
+  E.audio.emit(SE_DEATH, p.px + p.w * .5, p.py + p.h * .5, 1.0, EMPTY);
+}
+void PlayerSystem::damagePlayer(Player& p, int damage, int cooldown) {
+  if (!p.active || !p.alive || damage <= 0 || p.hurtCooldown > 0) return;
+  p.health -= damage; p.hurtCooldown = cooldown; p.lastDamageTick = E.actorTick;
+  E.audio.emit(SE_HURT, p.px + p.w * .5, p.py + p.h * .5, std::min(1.2, .45 + damage / 30.0), EMPTY);
+  if (p.health <= 0) killPlayer(p);
+}
+void PlayerSystem::updatePlayerVitals(Player& p) {
+  if (!p.alive) { p.deathTicks++; return; }
+  int x0 = imax(0, (int)std::floor(p.px)), x1 = imin(E.cols - 1, (int)std::floor(p.px + p.w - 1e-6));
+  int y0 = imax(0, (int)std::floor(p.py)), y1 = imin(E.rows - 1, (int)std::floor(p.py + p.h - 1e-6));
+  int cells = 0, blocked = 0; bool fire = false, acid = false, lava = false;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    uint8_t m = E.fg.grid[E.I(x, y)]; cells++; blocked += E.isBlockingForPlayer(m) ? 1 : 0;
+    fire |= m == FIRE; acid |= m == ACID; lava |= m == LAVA;
+  }
+  if (cells > 0 && blocked * 2 >= cells) p.buriedTicks++; else p.buriedTicks = 0;
+  if (p.landingImpact > 3.0) damagePlayer(p, imin(45, (int)std::floor((p.landingImpact - 3.0) * 15.0)), 12);
+  p.landingImpact = 0;
+  if (lava && E.actorTick % 15 == 0) damagePlayer(p, 15, 15);
+  else if (acid && E.actorTick % 20 == 0) damagePlayer(p, 8, 20);
+  else if (fire && E.actorTick % 30 == 0) damagePlayer(p, 4, 30);
+  else if (p.buriedTicks >= 120 && E.actorTick % 30 == 0) damagePlayer(p, 2, 30);
+  bool hazard = fire || acid || lava || p.buriedTicks >= 120;
+  if (!hazard && p.health < 100 && E.actorTick - p.lastDamageTick >= 300 && E.actorTick % 30 == 0) p.health++;
 }
 Player* PlayerSystem::findPlayer(int id) {
   for (auto& p : players) if (p.id == id) return &p;
@@ -266,6 +306,7 @@ void PlayerSystem::integratePlayer(Player& p) {
   // buried — flicker-free vs. the old "was the down-move blocked" test.
   int feetRow = (int)std::floor(p.py + p.h - 1e-6);
   p.grounded = rowSolid(p.px, p.w, feetRow + 1) || buryDepth(p) > 0;
+  if (!wasGrounded && p.grounded && !inLiquid) p.landingImpact = impactVy;
   if (!wasGrounded && p.grounded && !inLiquid && impactVy > 0.28)
     E.audio.emit(SE_LAND, p.px + p.w * 0.5, p.py + p.h, std::min(1.5, impactVy / P_MAX_FALL + 0.25), EMPTY, 0);
 
@@ -565,6 +606,7 @@ void PlayerSystem::updatePlayers() {
   for (auto& p : players) {
     if (p.hurtCooldown > 0) p.hurtCooldown--;
     if (p.active && p.alive) integratePlayer(p);
+    if (p.active) updatePlayerVitals(p);
   }
   applyPlayerTools();
 }
@@ -613,6 +655,10 @@ int PlayerSystem::buildPlayerSnapshot() {
     o[PS_JUMP_READY] = p.jumpReady ? 1.0f : 0.0f; // hidden jump state, needed for reconciliation
     o[PS_ANIM_STATE] = (float)p.animState;
     o[PS_ANIM_FRAME] = (float)p.animFrame;
+    o[PS_DEATH_TICKS] = (float)p.deathTicks;
+    o[PS_RESPAWN_READY] = (!p.alive && p.deathTicks >= 180) ? 1.0f : 0.0f;
+    o[PS_BOW_CHARGE] = (float)(p.bowChargeTicks / (double)BOW_CHARGE_MAX);
+    const InvSlot& held = p.inv[p.selectedSlot]; o[PS_HELD_ITEM_KIND] = held.count > 0 ? (float)held.itemKind : (float)IK_MATERIAL;
   }
   return (int)players.size();
 }

@@ -302,6 +302,8 @@ export function initSandWasm() {
         creatureCount: c('engine_creature_count', 'number', ['number']),
         creatureSnapshot: c('engine_creature_snapshot', 'number', ['number']),
         creatureSnapshotPtr: c('engine_creature_snapshot_ptr', 'number', ['number']),
+        projectileSnapshot: c('engine_projectile_snapshot', 'number', ['number']),
+        projectileSnapshotPtr: c('engine_projectile_snapshot_ptr', 'number', ['number']),
         setMirrorCreatures: c('engine_set_mirror_creatures', null, ['number', 'number', 'number', 'number', 'number']),
         setSurvivalInventory: c('engine_set_survival_inventory', null, ['number', 'number']),
         setCreatureRuntime: c('engine_set_creature_runtime', null, ['number', 'number', 'number']),
@@ -321,6 +323,12 @@ export function initSandWasm() {
         inventoryThrowFromCursor: c('engine_inventory_throw_from_cursor', 'number', ['number', 'number', 'number']),
         cursorSnapshot: c('engine_cursor_snapshot', 'number', ['number', 'number']),
         cursorSnapshotPtr: c('engine_cursor_snapshot_ptr', 'number', ['number']),
+        craftRecipe: c('engine_craft_recipe', 'number', ['number', 'number', 'number', 'number']),
+        craftingRecipeSnapshot: c('engine_crafting_recipe_snapshot', 'number', ['number']),
+        craftingRecipeSnapshotPtr: c('engine_crafting_recipe_snapshot_ptr', 'number', ['number']),
+        craftingIngredientSnapshot: c('engine_crafting_ingredient_snapshot', 'number', ['number']),
+        craftingIngredientSnapshotPtr: c('engine_crafting_ingredient_snapshot_ptr', 'number', ['number']),
+        respawnPlayer: c('engine_respawn_player', 'number', ['number', 'number']),
         serializeWorld: c('engine_serialize_world', 'number', ['number']),
         serializeDiff: c('engine_serialize_diff', 'number', ['number']),
         netBlobPtr: c('engine_net_blob_ptr', 'number', ['number']),
@@ -348,6 +356,7 @@ export function initSandWasm() {
         glSetSurvivalPreview: c('engine_gl_set_survival_preview', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         glSetItems: c('engine_gl_set_items', null, ['number', 'number', 'number', 'number']),
         glSetCreatures: c('engine_gl_set_creatures', null, ['number', 'number', 'number', 'number']),
+        glSetProjectiles: c('engine_gl_set_projectiles', null, ['number', 'number', 'number', 'number']),
         glShift: c('engine_gl_shift', null, ['number', 'number']),
         glRenderFrame: c('engine_gl_render_frame', 'number', ['number', 'number']),
         glGetOffset: c('engine_gl_get_offset', null, ['number', 'number']),
@@ -413,11 +422,12 @@ export function createEngineWasm({
     }
     return new Ctor(buffer, byteOffset, length);
   };
-  const renderStrides = Object.freeze({
-    player: STRIDES.glPlayerExt,
-    item: STRIDES.itemSnapshot,
-    creature: STRIDES.creatureSnapshot,
-  });
+const renderStrides = Object.freeze({
+  player: STRIDES.glPlayerExt,
+  item: STRIDES.itemSnapshot,
+  creature: STRIDES.creatureSnapshot,
+  projectile: STRIDES.projectileSnapshot,
+});
 
   const refreshDims = () => {
     liveCols = M.cols(ptr);
@@ -473,6 +483,8 @@ export function createEngineWasm({
     out.aimX = f[o + P.aimX]; out.aimY = f[o + P.aimY]; out.health = f[o + P.health] | 0;
     out.inputSeq = f[o + P.inputSeq] >>> 0; out.alive = f[o + P.alive] === 1; out.jumpReady = f[o + P.jumpReady] === 1;
     out.animState = f[o + P.animState] | 0; out.animFrame = f[o + P.animFrame] | 0;
+    out.deathTicks = f[o + P.deathTicks] | 0; out.respawnReady = f[o + P.respawnReady] === 1;
+    out.bowCharge = f[o + P.bowCharge]; out.heldItemKind = f[o + P.heldItemKind] | 0;
     return out;
   };
 
@@ -614,6 +626,14 @@ export function createEngineWasm({
       const buf = glScratch(len);
       mod.HEAPF32.set(packed, buf >> 2);
       M.glSetCreatures(ptr, 1, buf, (len / renderStrides.creature) | 0);
+    },
+    glSetProjectiles(packed) {
+      if (packed === null || packed === undefined) { M.glSetProjectiles(ptr, 0, 0, 0); return; }
+      const len = packed.length;
+      if (!len) { M.glSetProjectiles(ptr, 1, 0, 0); return; }
+      if (len % renderStrides.projectile !== 0) throw new Error(`external projectile buffer length ${len} is not divisible by stride ${renderStrides.projectile}`);
+      const buf = glScratch(len); mod.HEAPF32.set(packed, buf >> 2);
+      M.glSetProjectiles(ptr, 1, buf, (len / renderStrides.projectile) | 0);
     },
     getRenderStrides() { return renderStrides; },
     glSetFlags(gutterOn, snapOff, animationPaused = false) { M.glSetFlags(ptr, gutterOn ? 1 : 0, snapOff ? 1 : 0, animationPaused ? 1 : 0); },
@@ -890,7 +910,7 @@ export function createEngineWasm({
       if (M.cursorSnapshot(ptr, id | 0) !== 1) return null;
       const f = new Float32Array(mod.HEAPF32.buffer, M.cursorSnapshotPtr(ptr), STRIDES.inventorySlot);
       const O = OFF.inventorySlot;
-      return { material: f[O.material] | 0, isTool: f[O.isTool] === 1, toolClass: f[O.toolClass] | 0, toolTier: f[O.toolTier] | 0, count: f[O.count] | 0, plantType: f[O.plantType] | 0 };
+      return { material: f[O.material] | 0, isTool: f[O.isTool] === 1, toolClass: f[O.toolClass] | 0, toolTier: f[O.toolTier] | 0, count: f[O.count] | 0, plantType: f[O.plantType] | 0, itemKind: f[O.itemKind] | 0 };
     },
     // Cheap change detector for the HUD: hash the packed snapshot (all fields
     // are int-valued) without building the 36 slot objects. Includes the
@@ -914,10 +934,27 @@ export function createEngineWasm({
       const O = OFF.inventorySlot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        slots[i] = { material: f[o + O.material] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0, count: f[o + O.count] | 0, plantType: f[o + O.plantType] | 0 };
+        slots[i] = { material: f[o + O.material] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0, count: f[o + O.count] | 0, plantType: f[o + O.plantType] | 0, itemKind: f[o + O.itemKind] | 0 };
         if (f[o + O.selected] === 1) selected = i;
       }
       return { slots, selected, selectedFootprint: this.getSelectedFootprint(id) };
+    },
+    craft(id, recipeId, craftMax = false) { return M.craftRecipe(ptr, id | 0, recipeId | 0, craftMax ? 1 : 0) | 0; },
+    respawnPlayer(id) { return M.respawnPlayer(ptr, id | 0) === 1; },
+    getCraftingRecipes() {
+      const nr = M.craftingRecipeSnapshot(ptr), ni = M.craftingIngredientSnapshot(ptr);
+      const rf = new Int32Array(mod.HEAP32.buffer, M.craftingRecipeSnapshotPtr(ptr), nr * STRIDES.craftingRecipe);
+      const inf = new Int32Array(mod.HEAP32.buffer, M.craftingIngredientSnapshotPtr(ptr), ni * STRIDES.craftingIngredient);
+      const R = OFF.craftingRecipe, I = OFF.craftingIngredient, out = new Array(nr);
+      for (let n = 0; n < nr; n++) {
+        const o = n * STRIDES.craftingRecipe, ingredients = [];
+        for (let j = 0; j < rf[o + R.ingredientCount]; j++) {
+          const q = (rf[o + R.ingredientStart] + j) * STRIDES.craftingIngredient;
+          ingredients.push({ kind: inf[q + I.kind] | 0, value: inf[q + I.value] | 0, count: inf[q + I.count] | 0 });
+        }
+        out[n] = { id: rf[o + R.id] | 0, outputKind: rf[o + R.outputKind] | 0, outputMaterial: rf[o + R.outputMaterial] | 0, outputTier: rf[o + R.outputTier] | 0, outputCount: rf[o + R.outputCount] | 0, ingredients };
+      }
+      return out;
     },
     // Rebuild + read the packed item snapshot zero-copy. Returns plain item objects.
     getItems() {
@@ -929,9 +966,20 @@ export function createEngineWasm({
       const O = OFF.itemSnapshot;
       for (let i = 0; i < n; i++) {
         const o = i * stride;
-        out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0, plantType: f[o + O.plantType] | 0 };
+        out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0, plantType: f[o + O.plantType] | 0, itemKind: f[o + O.itemKind] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0 };
       }
       return out;
+    },
+    getProjectiles() {
+      const n = M.projectileSnapshot(ptr); if (!n) return [];
+      const f = new Float32Array(mod.HEAPF32.buffer, M.projectileSnapshotPtr(ptr), n * STRIDES.projectileSnapshot);
+      const O = OFF.projectileSnapshot, out = new Array(n);
+      for (let i = 0; i < n; i++) { const o = i * STRIDES.projectileSnapshot; out[i] = { id:f[o+O.id]|0, owner:f[o+O.owner]|0, x:f[o+O.x], y:f[o+O.y], vx:f[o+O.vx], vy:f[o+O.vy], charge:f[o+O.charge] }; }
+      return out;
+    },
+    getProjectileSnapshotData() {
+      const n = M.projectileSnapshot(ptr); if (!n) return new Float32Array();
+      return Float32Array.from(new Float32Array(mod.HEAPF32.buffer, M.projectileSnapshotPtr(ptr), n * STRIDES.projectileSnapshot));
     },
     getCreatures() {
       const n = M.creatureSnapshot(ptr);

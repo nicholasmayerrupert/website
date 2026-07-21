@@ -262,13 +262,24 @@ static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then 
 struct Item {
   int id = 0;
   uint8_t kind = IT_ITEM;
+  uint8_t itemKind = IK_MATERIAL;
   uint8_t material = 0;
-  uint8_t count = 1;       // stack carried by this dropped item (merged at pickup)
+  uint8_t isTool = 0, toolClass = 0, toolTier = 0;
+  int count = 1;           // stack carried by this dropped item (merged at pickup)
   uint8_t plantType = PT_OAK; // species carried by SEED items
   double px = 0, py = 0;   // buffer-local cell coords (a point), +y down
   double vx = 0, vy = 0;   // cells per step
   int life = 0;            // PARTICLE: steps remaining
   int pickupDelay = 0;     // ITEM: steps before it can be vacuumed (and homed)
+};
+
+// Bow arrows are lightweight actor-clock entities. They never write the grid;
+// terrain collision only retires the projectile and emits debris/audio.
+static const int PROJECTILE_MAX = 256, ARROW_LIFE = 180, BOW_CHARGE_MAX = 48;
+static const double ARROW_GRAVITY = 0.04, ARROW_SWEEP_STEP = 0.25;
+struct Projectile {
+  int id = 0, owner = 0, life = ARROW_LIFE;
+  double px = 0, py = 0, vx = 0, vy = 0, charge = 0;
 };
 
 // ---- Player (Terraria-like character; simulated in C++, presented in JS) ----
@@ -312,6 +323,7 @@ static const int INV_GRID = INV_SLOTS - INV_HOTBAR; // 27
 static const int INV_STACK_MAX = 999;
 // Inventory snapshot layout: IVS_* offsets / IVS_STRIDE in abi.generated.hpp.
 struct InvSlot {
+  uint8_t itemKind = IK_MATERIAL;
   uint8_t material = 0;   // material id for a stack (0 when a tool or empty)
   uint8_t isTool = 0;     // 1 = a mining tool (class/tier below), not a placeable stack
   uint8_t toolClass = 0;  // ToolClass when isTool
@@ -431,6 +443,11 @@ struct Player {
   uint32_t inputSeq = 0;   // last applied input sequence (multiplayer)
   int health = 100;
   int hurtCooldown = 0; // contact-damage immunity; also protects a fresh respawn
+  int lastDamageTick = -1000000;
+  int deathTicks = 0;
+  int buriedTicks = 0;
+  int bowChargeTicks = 0;
+  double landingImpact = 0;
   int toolCooldown = 0; // steps remaining before this player can act again
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
@@ -487,6 +504,9 @@ static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_
 #include "items.hpp"
 // Survival inventory policy class (extracted in 5d; composed by Engine).
 #include "inventory.hpp"
+// Survival recipes and bow-arrow actor policy.
+#include "crafting.hpp"
+#include "projectiles.hpp"
 // Player characters class (extracted in 5d; composed by Engine).
 #include "player.hpp"
 // Tool semantics class (extracted in 5d; composed by Engine).

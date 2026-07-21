@@ -156,6 +156,11 @@ void GLPresenter::glSetCreatures(int useExternal, const float* data, int count) 
   if (glUseExtCreatures && data && count > 0) glExtCreatures.assign(data, data + (size_t)count * CSN_STRIDE);
   else glExtCreatures.clear();
 }
+void GLPresenter::glSetProjectiles(int useExternal, const float* data, int count) {
+  glUseExtProjectiles = useExternal != 0;
+  if (glUseExtProjectiles && data && count > 0) glExtProjectiles.assign(data, data + (size_t)count * PRS_STRIDE);
+  else glExtProjectiles.clear();
+}
 
 // ---- texture uploads (active layer's renderPixels -> the given texture) ----
 void GLPresenter::glUploadFull(GLuint tex) {
@@ -342,7 +347,7 @@ float GLPresenter::glActorLight(double px, double py, int w, int h) const {
 }
 
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
-                     bool own, float light, int camCol, int camRow) {
+                     bool alive, int heldItemKind, double bowCharge, bool own, float light, int camCol, int camRow) {
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
@@ -358,8 +363,17 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       float tr = col[0], tg = col[1], tb = col[2];
       if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
       glUniform4f(glc->uColor, tr * light, tg * light, tb * light, col[3]);
-      glSolidDev(sprX + cc * cell, sprY + r * cell, cell, cell);
+      double drawY = alive ? sprY + r * cell : sprY + (SPR_H - 2) * cell + (r / 4) * cell * .45;
+      glSolidDev(sprX + cc * cell, drawY, cell, alive ? cell : cell * .45);
     }
+  }
+  if (alive && heldItemKind == IK_BOW) {
+    double bx = sprX + (facing > 0 ? SPR_W + .3 : -1.3) * cell, by = sprY + 3.2 * cell;
+    glUniform4f(glc->uColor, .55f * light, .31f * light, .14f * light, 1);
+    glSolidDev(bx, by, cell * .45, cell * 4.4);
+    glUniform4f(glc->uColor, .88f * light, .86f * light, .72f * light, 1);
+    double pull = std::max(0.0, std::min(1.0, bowCharge)) * cell;
+    glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
   }
 }
 
@@ -372,13 +386,16 @@ void GLPresenter::glDrawPlayers() {
     for (int i = 0; i < n; i++) {
       const float* p = &glExtPlayers[(size_t)i * GLP_STRIDE];
       float light = glActorLight(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H]);
-      glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME], p[GLP_OWN] > 0.5f, light, camCol, camRow);
+      glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME],
+                      p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE], p[GLP_OWN] > 0.5f, light, camCol, camRow);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
     for (auto& p : E.psys.players) {
-      if (!p.active || !p.alive) continue;
-      glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.id == glOwnPlayerId, glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
+      if (!p.active) continue;
+      const InvSlot& held = p.inv[p.selectedSlot];
+      glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
+                      p.bowChargeTicks / (double)BOW_CHARGE_MAX, p.id == glOwnPlayerId, glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
@@ -390,9 +407,12 @@ void GLPresenter::glDrawPlayers() {
 // vector — no JS state push, exactly like host-side player drawing.
 // Draw one dropped item/particle. Identical for engine-owned E.itemsys.items and the
 // client's host-snapshot E.itemsys.items, so id-keyed bob/glimmer stay in sync.
-void GLPresenter::glDrawOneItem(int id, int kind, int material, double px, double py, int life,
+void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
                    int camCol, int camRow) {
-  uint32_t c = MAT_COLOR[material];
+  uint32_t c = itemKind == IK_MATERIAL ? MAT_COLOR[material]
+             : itemKind == IK_ARROW ? 0xffd6c49au
+             : itemKind == IK_BOW ? 0xff4b6b9bu
+             : (tier == TT_GOLD ? 0xff34c7f2u : tier == TT_IRON ? 0xffe4e0d8u : tier == TT_STONE ? 0xff8f969eu : 0xff447ab0u);
   float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
   float baseA = ((c >> 24) & 0xff) / 255.0f;
   float a = (kind == IT_PARTICLE) ? baseA * (float)life / (float)IT_PARTICLE_LIFE : baseA;
@@ -413,6 +433,17 @@ void GLPresenter::glDrawOneItem(int id, int kind, int material, double px, doubl
   // py) so a resting item never sinks into the surface. x uses the float point.
   double cx = (px - camCol) * glCellDev + glOffX;
   double cy = (py - szCells * 0.5 + bob - camRow) * glCellDev + glOffY;
+  if (kind == IT_ITEM && itemKind == IK_ARROW) {
+    glSolidDev(cx - sz * .62, cy - sz * .12, sz * 1.05, sz * .24);
+    glSolidDev(cx + sz * .24, cy - sz * .30, sz * .38, sz * .60);
+    return;
+  }
+  if (kind == IT_ITEM && itemKind == IK_BOW) {
+    glSolidDev(cx - sz * .42, cy - sz * .45, sz * .22, sz * .90);
+    glSolidDev(cx - sz * .20, cy - sz * .42, sz * .38, sz * .18);
+    glSolidDev(cx - sz * .20, cy + sz * .24, sz * .38, sz * .18);
+    return;
+  }
   glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
 }
 
@@ -425,14 +456,36 @@ void GLPresenter::glDrawItems() {
     glUniform1i(glc->uGutter, 0);
     for (int i = 0; i < n; i++) {
       const float* it = &glExtItems[(size_t)i * IS_STRIDE];
-      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_MATERIAL], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
+      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_ITEM_KIND], (int)it[IS_MATERIAL], (int)it[IS_TOOL_TIER], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
     }
     return;
   }
   if (E.itemsys.items.empty()) return;
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
-  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.material, it.px, it.py, it.life, camCol, camRow);
+  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.itemKind, it.material, it.toolTier, it.px, it.py, it.life, camCol, camRow);
+}
+
+void GLPresenter::glDrawProjectiles() {
+  const std::vector<float>* external = glUseExtProjectiles ? &glExtProjectiles : nullptr;
+  int n = external ? (int)(external->size() / PRS_STRIDE) : (int)E.projectiles.projectiles.size();
+  if (!n) return;
+  glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
+  int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
+  for (int i = 0; i < n; i++) {
+    double x, y, vx, vy;
+    if (external) { const float* p = external->data() + i * PRS_STRIDE; x=p[PRS_X]; y=p[PRS_Y]; vx=p[PRS_VX]; vy=p[PRS_VY]; }
+    else { const Projectile& p=E.projectiles.projectiles[i]; x=p.px; y=p.py; vx=p.vx; vy=p.vy; }
+    double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
+    double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
+    glUniform4f(glc->uColor, .62f, .39f, .19f, 1);
+    for (int s = 1; s <= 5; s++) {
+      double px = cx - nx * s * glCellDev * .42, py = cy - ny * s * glCellDev * .42;
+      glSolidDev(px - glCellDev * .15, py - glCellDev * .15, glCellDev * .30, glCellDev * .30);
+    }
+    glUniform4f(glc->uColor, .88f, .87f, .80f, 1);
+    glSolidDev(cx - glCellDev * .28, cy - glCellDev * .28, glCellDev * .56, glCellDev * .56);
+  }
 }
 
 // Original pixel sprites authored for this renderer. Each animal has a 13x7
@@ -779,6 +832,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   glDrawCells(glTex, 1.0f, gutter, 0);                     // schema transparency; empty/gutter reveal bg
   glDrawCreatures();
   glDrawPlayers();
+  glDrawProjectiles();
   glDrawItems();
   glDrawPreview();
   return 1;

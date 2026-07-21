@@ -259,6 +259,8 @@ EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int ra
 EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_creature_snapshot(Engine* e) { return e->creatures.buildCreatureSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_creature_snapshot_ptr(Engine* e) { return e->creatures.snapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_projectile_snapshot(Engine* e) { return e->projectiles.buildSnapshot(); }
+EMSCRIPTEN_KEEPALIVE float* engine_projectile_snapshot_ptr(Engine* e) { return e->projectiles.snapshot.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, int count, int sourceOffsetX, int sourceOffsetY) {
   e->creatures.creatures.clear();
   e->creatures.creatures.reserve(imax(0, count));
@@ -298,6 +300,12 @@ EMSCRIPTEN_KEEPALIVE void engine_inventory_cursor_pick(Engine* e, int id, int sl
 EMSCRIPTEN_KEEPALIVE int engine_inventory_throw_from_cursor(Engine* e, int id, int whole) { return e->throwFromCursor(id, whole) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_cursor_snapshot(Engine* e, int id) { return e->buildCursorSnapshot(id); }
 EMSCRIPTEN_KEEPALIVE float* engine_cursor_snapshot_ptr(Engine* e) { return e->inv.cursorSnap.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_craft_recipe(Engine* e, int playerId, int recipeId, int craftMax) { return e->craftRecipe(playerId, recipeId, craftMax != 0); }
+EMSCRIPTEN_KEEPALIVE int engine_crafting_recipe_snapshot(Engine* e) { return e->crafting.buildRecipeSnapshot(); }
+EMSCRIPTEN_KEEPALIVE int32_t* engine_crafting_recipe_snapshot_ptr(Engine* e) { return e->crafting.recipeSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_crafting_ingredient_snapshot(Engine* e) { return e->crafting.buildIngredientSnapshot(); }
+EMSCRIPTEN_KEEPALIVE int32_t* engine_crafting_ingredient_snapshot_ptr(Engine* e) { return e->crafting.ingredientSnapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_respawn_player(Engine* e, int playerId) { return e->psys.requestRespawn(playerId) ? 1 : 0; }
 
 // world replication (Phase 6): serialize/apply full snapshots + dirty diffs.
 EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->net.serializeWorld(); }
@@ -380,6 +388,7 @@ EMSCRIPTEN_KEEPALIVE void engine_gl_set_players(Engine* e, int useExternal, floa
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_survival_preview(Engine* e, int on, int footprint, int erasing, int locked, int x, int y) { e->glp.glSetSurvivalPreview(on, footprint, erasing, locked, x, y); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_items(Engine* e, int useExternal, float* data, int count) { e->glp.glSetItems(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_creatures(Engine* e, int useExternal, float* data, int count) { e->glp.glSetCreatures(useExternal, data, count); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_set_projectiles(Engine* e, int useExternal, float* data, int count) { e->glp.glSetProjectiles(useExternal, data, count); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_shift(Engine* e, int dx) { e->glShift(dx); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_render_frame(Engine* e, int forceFull) { return e->glp.glRenderFrame(forceFull); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_get_offset(Engine* e, int* out) { e->glp.glGetOffset(out); }

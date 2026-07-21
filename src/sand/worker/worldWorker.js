@@ -117,6 +117,7 @@ function postActors(force = false) {
     inventory: inventoryChanged ? engine.getInventory(localPlayerId) : undefined,
     cursor: inventoryChanged ? engine.getCursor(localPlayerId) : undefined,
     items,
+    projectiles: engine.getProjectiles(),
     ackSeq: player?.inputSeq ?? 0,
   });
 }
@@ -323,6 +324,8 @@ self.onmessage = async ({ data }) => {
       case 'move': engine.inventoryMove(localPlayerId, data.from | 0, data.to | 0); break;
       case 'pick': engine.inventoryCursorPick(localPlayerId, data.slot | 0, !!data.half); break;
       case 'throw': engine.throwFromCursor(localPlayerId, !!data.whole); break;
+      case 'craft': engine.craft(localPlayerId, data.recipe | 0, !!data.max); break;
+      case 'respawn': engine.respawnPlayer(localPlayerId); break;
       case 'add': engine.addToInventory(localPlayerId, data.material | 0, data.count | 0); break;
       case 'set-player-state': {
         const player = engine.getPlayer(localPlayerId);

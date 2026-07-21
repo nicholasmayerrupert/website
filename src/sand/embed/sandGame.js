@@ -21,6 +21,7 @@ import { createSandGame } from '../game/createSandGame';
 import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
+import { createSurvivalStatus } from './survivalStatus';
 import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 
@@ -509,6 +510,7 @@ class SandGameElement extends HTMLElement {
             this._hud?.update(inv);
             this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint);
           },
+          onPlayerState: (player) => this._status?.update(player),
           onToggleInventory: () => this._hud?.toggleOpen(),
           onToggleFootprintMenu: () => this._sizeMenu?.toggleOpen(),
         });
@@ -525,7 +527,10 @@ class SandGameElement extends HTMLElement {
             cursorPick: (slot, half) => game.cursorPick(slot, half),
             throwFromCursor: (whole) => game.throwFromCursor(whole),
             getCursor: () => game.getCursor(),
+            recipes: game.getCraftingRecipes(),
+            craft: (recipe, max) => game.craft(recipe, max),
           });
+          this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
           this._sizeMenu = createFootprintMenu(root, {
             selectFootprint: (id) => game.setSelectedFootprint(id),
           });
@@ -611,6 +616,7 @@ class SandGameElement extends HTMLElement {
     this._game?.destroy();
     this._palette?.destroy();
     this._hud?.destroy();
+    this._status?.destroy();
     this._sizeMenu?.destroy();
     this._mp?.destroy();
     this._zoom?.destroy();
@@ -618,7 +624,7 @@ class SandGameElement extends HTMLElement {
     this._perfHud?.destroy();
     this._sound?.destroy();
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = null;
+    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = null;
     this._mounted = false;
   }
 

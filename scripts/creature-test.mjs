@@ -208,25 +208,28 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   check(`both land/cave populations and birds establish across world seeds (${established}/8)`, established === 8);
 }
 
-// Lethal contact damage must never leave the player silently disabled. The
-// current death policy immediately returns them to the surface with spawn
-// protection, preserving their inventory and input-capable actor identity.
+// Lethal contact enters the explicit death state. Respawn is rejected during
+// the three-second delay, then restores the same input-capable actor identity.
 {
   const e = mk(); stoneFloor(e, 92);
   const player = e.spawnPlayer(72, 84);
   e.spawnCreature(CREATURE.FOX, 68, 88);
   e.setCreatureRuntime(true, false);
-  let respawned = false;
+  let died = false;
   for (let i = 0; i < 2400; i++) {
     e.stepActors();
     const p = e.getPlayer(player);
-    if (p?.health === 100 && i > 300 && p.y < 84) { respawned = true; break; }
+    if (p?.alive === false) { died = true; break; }
   }
+  const rejectedEarly = !e.respawnPlayer(player);
+  actors(e, 180);
+  const ready = e.getPlayer(player)?.respawnReady;
+  const respawned = e.respawnPlayer(player);
   const before = e.getPlayer(player)?.x;
   e.setPlayerInput(player, { bits: 2, aimX: 72, aimY: 88, tool: 0, seq: 1 });
   actors(e, 30);
   const after = e.getPlayer(player);
-  check('lethal creature damage automatically returns the player to play', respawned && after?.alive);
+  check('lethal creature damage enters delayed manual death', died && rejectedEarly && ready && respawned && after?.alive);
   check('respawned player still accepts movement input', after && after.x > before);
   e.destroy();
 }

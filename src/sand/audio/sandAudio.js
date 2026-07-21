@@ -26,6 +26,11 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.POWDER_MOVE]: 115,
   [SOUND_EVENT.SOLID_LAND]: 100,
   [SOUND_EVENT.ACID_DISSOLVE]: 120,
+  [SOUND_EVENT.CRAFT]: 60,
+  [SOUND_EVENT.BOW]: 80,
+  [SOUND_EVENT.ARROW_HIT]: 95,
+  [SOUND_EVENT.DEATH]: 100,
+  [SOUND_EVENT.RESPAWN]: 80,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -42,6 +47,11 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.POWDER_MOVE]: 80,
   [SOUND_EVENT.SOLID_LAND]: 72,
   [SOUND_EVENT.ACID_DISSOLVE]: 115,
+  [SOUND_EVENT.CRAFT]: 55,
+  [SOUND_EVENT.BOW]: 45,
+  [SOUND_EVENT.ARROW_HIT]: 40,
+  [SOUND_EVENT.DEATH]: 250,
+  [SOUND_EVENT.RESPAWN]: 150,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -398,6 +408,18 @@ export function createSandAudio() {
     } else if (type === SOUND_EVENT.ACID_DISSOLVE) {
       holdMovementVoice('acid', strength, spatial, { volume: 0.07,
         rate: 0.96 + variation * 0.12, hold: 0.42, attack: 0.095, release: 0.3 });
+    } else if (type === SOUND_EVENT.CRAFT) {
+      playTone({ from: 430, to: 690, duration: 0.09, gain: gain * 0.16, pan, wave: 'square' });
+      playTone({ from: 620, to: 880, duration: 0.1, gain: gain * 0.11, pan, wave: 'triangle', delay: 0.06 });
+    } else if (type === SOUND_EVENT.BOW) {
+      playNoise({ duration: 0.09, gain: gain * 0.18, pan, frequency: 1550, type: 'bandpass', q: 1.1, rate: 1.35 });
+      playTone({ from: 240, to: 115, duration: 0.13, gain: gain * 0.13, pan, wave: 'triangle' });
+    } else if (type === SOUND_EVENT.ARROW_HIT) {
+      playNoise({ duration: 0.12, gain: gain * 0.3, pan, frequency: 1150, type: 'bandpass', q: 0.8, rate: 1.1 });
+    } else if (type === SOUND_EVENT.DEATH) {
+      playTone({ from: 210, to: 58, duration: 0.5, gain: gain * 0.25, pan, wave: 'sawtooth' });
+    } else if (type === SOUND_EVENT.RESPAWN) {
+      playTone({ from: 210, to: 520, duration: 0.24, gain: gain * 0.18, pan, wave: 'triangle' });
     }
   };
 

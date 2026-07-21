@@ -1,6 +1,6 @@
 // Fullscreen survival sand game at /game. The player character moves with WASD,
-// jumps with Space, and uses reach-limited/cooldown tools (mine with RMB, place
-// with the selected material via LMB) — the camera follows. It's the same
+// jumps with Space, and uses reach-limited survival actions from the selected
+// inventory slot — the camera follows. It's the same
 // <sand-game> Web Component as the About background, in survival mode, given the
 // whole viewport.
 //
@@ -70,16 +70,17 @@ export default function GamePage() {
       {/* Back to the portfolio */}
       <a
         href="/"
-        className="pointer-events-auto absolute left-3 top-3 z-[80] rounded-full border border-white/20 bg-black/45 px-3 py-1.5 text-sm font-medium text-white/85 backdrop-blur hover:bg-black/65 hover:text-white"
+        className="pointer-events-auto absolute left-3 top-3 z-[80] border-2 border-black bg-[#252b31] px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-white shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.4)] hover:text-[#f0d465]"
       >
         ← back to site
       </a>
 
       {/* Controls hint */}
-      <div className="pointer-events-none absolute left-1/2 top-3 z-[80] -translate-x-1/2 rounded-full border border-white/15 bg-black/45 px-4 py-1.5 text-center text-xs text-white/75 backdrop-blur sm:text-sm">
+      <div className="pointer-events-none absolute left-1/2 top-3 z-[80] -translate-x-1/2 border-2 border-black bg-[#252b31] px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-white/75 shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.4)] sm:text-xs">
         <span className="font-semibold text-white/90">WASD</span> move ·{' '}
         <span className="font-semibold text-white/90">Space</span> jump ·{' '}
-        click to mine / build (LMB places, RMB mines) · pick a material on the left
+        <span className="font-semibold text-[#f0d465]">E</span> inventory + craft ·{' '}
+        LMB use / charge · RMB alternate layer
       </div>
     </div>
   );

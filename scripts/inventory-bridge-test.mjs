@@ -4,7 +4,8 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
-import { TC, TT } from '../src/sand/materials.generated.js';
+import { TT } from '../src/sand/materials.generated.js';
+import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -14,13 +15,19 @@ const e = createEngineWasm({ cols: 100, rows: 80, worldSeed: 1, sinksOn: false, 
 e.setSurvivalInventory(true);
 const id = e.spawnPlayer(40, 40);
 
-// getInventory shape + starter kit (single wood dig tool selected; no hand slot).
+// Fresh survival inventories are empty: slot 0 is the implicit bare hand.
 const inv = e.getInventory(id);
 check(`getInventory returns 36 slots (${inv.slots.length})`, inv.slots.length === 36);
-check(`dig tool slot selected by default (${inv.selected})`, inv.selected === 0);
-check('slot 0 is a wood dig tool', inv.slots[0].isTool && inv.slots[0].toolClass === TC.dig && inv.slots[0].toolTier === TT.wood);
+check(`bare-hand slot selected by default (${inv.selected})`, inv.selected === 0);
+check('slot 0 starts empty', !inv.slots[0].isTool && inv.slots[0].count === 0);
 check('slot 1 is empty (no axe/shovel kit)', !inv.slots[1].isTool && inv.slots[1].count === 0);
 check('slot 3 is empty (no hand slot)', inv.slots[3].count === 0);
+
+// The universal mining tool is crafted, not granted as a specialized starter.
+e.addToInventory(id, MAT.WOOD, 24);
+check('wood mining tool recipe crafts once', e.craft(id, 0) === 1);
+const crafted = e.getInventory(id).slots.find((s) => s.itemKind === ITEM_KIND.MINING_TOOL);
+check('crafted tool is the universal wood tier', crafted?.isTool && crafted.toolTier === TT.wood);
 
 // setSelectedSlot round-trips.
 e.setSelectedSlot(id, 3);

@@ -23,6 +23,9 @@ class InventorySystem {
   void cycleSelectedSlot(int id, int delta);
   bool addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType = PT_OAK);
   bool addToInventory(int id, uint8_t mat, int count, uint8_t plantType = PT_OAK);
+  bool addStack(Player& p, const InvSlot& stack);
+  bool addStack(int id, const InvSlot& stack);
+  static bool sameStack(const InvSlot& a, const InvSlot& b);
   bool placeFromSelected(Player& p, int ax, int ay, Layer* layer);
   bool placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer);
   bool placeFromSelected(int id, int ax, int ay);
@@ -32,6 +35,7 @@ class InventorySystem {
   void cursorPick(int id, int slot, int half);
   bool throwFromCursor(Player& p, bool whole);
   bool throwFromCursor(int id, int whole);
+  void dropAll(Player& p);
   int buildCursorSnapshot(int playerId);
   int buildInventorySnapshot(int playerId);
   void applyInventoryPlayer(Player& p);

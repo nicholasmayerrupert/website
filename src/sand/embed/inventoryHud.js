@@ -11,8 +11,9 @@
 // While the grid is open the carried item follows the pointer and clicks pick /
 // place / swap / merge; clicks on the backdrop throw the carried stack out.
 
-import { MATERIALS } from '../materials.generated.js';
-import { INV_HOTBAR, INV_SLOTS } from '../wasmBridge/abi.generated.js';
+import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
+import { MAT } from '../materials.js';
+import { CRAFT_INGREDIENT, ITEM_KIND, INV_HOTBAR, INV_SLOTS } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
 const HOTBAR = INV_HOTBAR;
@@ -27,7 +28,7 @@ for (const m of MATERIALS) {
 }
 // Tool names/tier letters by ToolClass id (mirrors enum ToolClass: 1 pick, 2 axe,
 // 3 shovel, 5 dig). There is no hand tool item — bare hand is an empty slot.
-const TOOL_NAME = { 1: 'Pickaxe', 2: 'Axe', 3: 'Shovel', 5: 'Dig' };
+const TOOL_NAME = { 1: 'Mining Tool', 2: 'Mining Tool', 3: 'Mining Tool', 5: 'Mining Tool' };
 const TIER = ['', 'W', 'S', 'I', 'G'];
 const TIER_NAME = ['', 'Wood', 'Stone', 'Iron', 'Gold'];
 
@@ -121,42 +122,85 @@ function toolIcon(toolClass, toolTier, sizePx) {
   return icon.cloneNode(true);
 }
 
+const SPECIAL_ART = {
+  [ITEM_KIND.BOW]: [
+    '...WW.......','..WW.S......','.WW..S......','WW...S......','W....S......','W.....S.....',
+    'W.....S.....','W....S......','WW...S......','.WW..S......','..WW.S......','...WW.......',
+  ],
+  [ITEM_KIND.ARROW]: [
+    '............','.........M..','..........M.','...........M','HHHHHHHHMMMM','HHHHHHHHMMMM',
+    'HHHHHHHHMMMM','HHHHHHHHMMMM','...........M','..........M.','.........M..','............',
+  ],
+};
+function specialIcon(kind, sizePx) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 12 12'); svg.setAttribute('width', String(sizePx)); svg.setAttribute('height', String(sizePx));
+  svg.setAttribute('shape-rendering', 'crispEdges'); svg.style.display = 'block';
+  const grid = SPECIAL_ART[kind] || [];
+  for (let r = 0; r < grid.length; r++) for (let c = 0; c < grid[r].length; c++) {
+    const ch = grid[r][c]; if (ch === '.') continue;
+    const rect = document.createElementNS(SVG_NS, 'rect'); rect.setAttribute('x', String(c)); rect.setAttribute('y', String(r));
+    rect.setAttribute('width', '1.02'); rect.setAttribute('height', '1.02');
+    rect.setAttribute('fill', ch === 'S' ? '#e4e0d5' : ch === 'M' ? '#c9d0d6' : '#9b6a39'); svg.appendChild(rect);
+  }
+  return svg;
+}
+
 const STYLE = `
 .inv-backdrop { position: fixed; inset: 0; z-index: 71; display: none;
-  background: rgba(0,0,0,.45); pointer-events: auto; }
+  background: rgba(0,0,0,.55); pointer-events: auto; }
 .inv-backdrop.open { display: block; }
 .inv-hud { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 72;
   display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
-  font-family: ui-sans-serif, system-ui, sans-serif; max-width: calc(100vw - 1rem); }
-.inv-grid { display: none; grid-template-columns: repeat(9, 1fr); gap: 4px; padding: 8px; pointer-events: auto;
-  background: rgba(3,7,18,.82); border: 1px solid rgba(255,255,255,.15); border-radius: 8px;
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,.5); backdrop-filter: blur(4px); }
-.inv-hud.open .inv-grid { display: grid; }
+  font-family: ui-monospace,"SFMono-Regular",Menlo,monospace; max-width: calc(100vw - 1rem); }
+.inv-modal { display:none; grid-template-columns:auto minmax(190px,250px); gap:8px; align-items:stretch; pointer-events:auto; }
+.inv-hud.open .inv-modal { display:grid; }
+.inv-grid { display:grid; grid-template-columns: repeat(9, 1fr); gap: 4px; padding: 10px; align-content:center;
+  background:#252b31; border:3px solid #0a0c0f; border-radius:0;
+  box-shadow:inset 0 0 0 2px #59636c,6px 6px 0 rgba(0,0,0,.45); }
 .inv-bar { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; padding: 6px; pointer-events: auto;
-  background: rgba(17,24,39,.42); border-radius: 8px; backdrop-filter: blur(4px);
-  box-shadow: 0 10px 15px -3px rgba(0,0,0,.3); }
-.inv-slot { position: relative; width: 40px; height: 40px; box-sizing: border-box; border-radius: 6px;
-  border: 1px solid rgba(255,255,255,.16); background: rgba(10,14,22,.55); cursor: pointer;
+  background:#252b31; border:3px solid #0a0c0f; border-radius:0;
+  box-shadow:inset 0 0 0 2px #59636c,5px 5px 0 rgba(0,0,0,.35); }
+.inv-slot { position: relative; width: 40px; height: 40px; box-sizing: border-box; border-radius:0;
+  border:2px solid #0d1013; background:#161a1e; box-shadow:inset 2px 2px 0 #3c444b; cursor:pointer;
   display: flex; align-items: center; justify-content: center; overflow: hidden; user-select: none; }
-.inv-slot:hover { border-color: rgba(255,255,255,.4); }
-.inv-slot.selected { border-color: #fde68a; box-shadow: 0 0 0 2px rgba(253,230,138,.55) inset; }
-.inv-swatch { width: 26px; height: 26px; border-radius: 4px; box-shadow: inset 2px 2px 0 rgba(255,255,255,.18); }
+.inv-slot:hover { border-color:#9ba5ae; }
+.inv-slot.selected { border-color:#f0d465; box-shadow:inset 2px 2px 0 #fff1a0,0 0 0 1px #17140a; }
+.inv-swatch { width:26px; height:26px; border-radius:0; box-shadow:inset 3px 3px 0 rgba(255,255,255,.18),inset -3px -3px 0 rgba(0,0,0,.2); }
 .inv-count { position: absolute; right: 2px; bottom: 1px; font-size: 11px; font-weight: 700; color: #fff;
   text-shadow: 0 1px 2px #000, 0 0 2px #000; pointer-events: none; }
 .inv-num { position: absolute; left: 3px; top: 1px; font-size: 9px; font-weight: 700; color: rgba(255,255,255,.6);
   text-shadow: 0 1px 2px #000; pointer-events: none; }
 .inv-tier { position: absolute; right: 2px; bottom: 1px; font-size: 9px; font-weight: 700; color: #cbd5e1;
   text-shadow: 0 1px 2px #000; pointer-events: none; }
-.inv-hint { font-size: 10px; color: rgba(229,231,235,.7); text-shadow: 0 1px 2px #000; }
+.inv-hint { font-size:10px; color:rgba(229,231,235,.75); text-shadow:2px 2px 0 #000; letter-spacing:.04em; }
 .inv-hud.open .inv-hint { color: rgba(229,231,235,.95); }
-.inv-toast { position: relative; pointer-events: none; padding: 3px 10px; border-radius: 999px;
+.inv-toast { position: relative; pointer-events: none; padding:5px 10px; border-radius:0; border:2px solid #090b0e;
   background: rgba(3,7,18,.78); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.2;
   text-shadow: 0 1px 2px #000; box-shadow: 0 4px 6px -1px rgba(0,0,0,.4);
   opacity: 0; transition: opacity .4s ease; }
 .inv-toast.show { opacity: 1; transition: none; }
+.craft-panel { min-width:190px; max-height:210px; overflow:auto; padding:9px; color:#fff; background:#252b31;
+  border:3px solid #0a0c0f; box-shadow:inset 0 0 0 2px #59636c,6px 6px 0 rgba(0,0,0,.45); }
+.craft-title { margin:1px 2px 8px; font-size:11px; letter-spacing:.16em; color:#f0d465; }
+.craft-list { display:grid; gap:6px; }
+.craft-recipe { display:grid; grid-template-columns:34px 1fr auto; gap:7px; align-items:center; padding:6px;
+  border:2px solid #0c0e11; border-radius:0; background:#171b20; color:#fff; text-align:left; cursor:pointer;
+  box-shadow:inset 2px 2px 0 #3f474f; font:700 10px/1.15 ui-monospace,monospace; }
+.craft-recipe:hover:not(:disabled) { border-color:#e5ca63; background:#2c322f; }
+.craft-recipe:disabled { color:#777f87; cursor:default; filter:saturate(.4); }
+.craft-output { width:30px; height:30px; display:grid; place-items:center; background:#0e1114; border:2px solid #08090b; }
+.craft-name,.craft-cost { display:block; }.craft-name { color:inherit; }.craft-cost { margin-top:3px; color:#aeb5bc; font-size:8px; font-weight:600; }
+.craft-recipe:disabled .craft-cost { color:#686f76; }.craft-count { color:#f0d465; font-size:9px; }
+@media (max-width:720px) {
+  .inv-modal { grid-template-columns:1fr; max-height:62vh; overflow:auto; }
+  .craft-panel { max-height:155px; }
+  .inv-slot { width:34px; height:34px; }
+}
+@media (max-width:380px) { .inv-slot { width:30px; height:30px; } .inv-grid { gap:2px; padding:6px; } .inv-bar { gap:2px; padding:4px; } }
 `;
 
-export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor } = {}) {
+export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor, recipes = [], craft } = {}) {
   injectStyleOnce(root, 'data-sand-inventory', STYLE);
 
   let open = false;
@@ -189,17 +233,22 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
 
   const grid = document.createElement('div');
   grid.className = 'inv-grid';
+  const modal = document.createElement('div'); modal.className = 'inv-modal';
+  const craftPanel = document.createElement('div'); craftPanel.className = 'craft-panel';
+  const craftTitle = document.createElement('div'); craftTitle.className = 'craft-title'; craftTitle.textContent = 'CRAFTING';
+  const craftList = document.createElement('div'); craftList.className = 'craft-list';
+  craftPanel.append(craftTitle, craftList); modal.append(grid, craftPanel);
   const bar = document.createElement('div');
   bar.className = 'inv-bar';
   const hint = document.createElement('div');
   hint.className = 'inv-hint';
-  hint.textContent = 'E — inventory · Q — size · 1–9 / scroll — select';
+  hint.textContent = 'E — inventory + crafting · Q — size · 1–9 / scroll — select';
   // Minecraft-style "selected item name" label: fades in above the hotbar on a
   // selection change, then fades out after ~2s. Sits between the grid and the bar so
   // it reads as floating just above the hotbar.
   const toast = document.createElement('div');
   toast.className = 'inv-toast';
-  hud.append(grid, toast, bar, hint);
+  hud.append(modal, toast, bar, hint);
 
   // The carried stack, rendered as a small floating swatch/chip that follows the
   // pointer while the grid is open. It is appended to document.body (NOT the shadow
@@ -240,7 +289,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // swatch+count or a tool chip. Returns nothing; mutates `el`.
   function renderStack(el, s) {
     if (!s) return;
-    if (s.isTool) {
+    if (s.itemKind === ITEM_KIND.BOW || s.itemKind === ITEM_KIND.ARROW) {
+      el.appendChild(specialIcon(s.itemKind, 28));
+      if (s.count > 1) { const c = document.createElement('span'); c.className = 'inv-count'; c.textContent = String(s.count); el.appendChild(c); }
+    } else if (s.isTool || s.itemKind === ITEM_KIND.MINING_TOOL) {
       el.appendChild(toolIcon(s.toolClass, s.toolTier, 28));
       if (s.toolTier > 0) {
         const t = document.createElement('span'); t.className = 'inv-tier';
@@ -264,7 +316,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // renderStack's swatch/count + tool-chip layout, just self-styled.
   function renderCursorInline(s) {
     if (!s) return;
-    if (s.isTool) {
+    if (s.itemKind === ITEM_KIND.BOW || s.itemKind === ITEM_KIND.ARROW) {
+      cursorItem.appendChild(specialIcon(s.itemKind, 30));
+    } else if (s.isTool || s.itemKind === ITEM_KIND.MINING_TOOL) {
       cursorItem.appendChild(toolIcon(s.toolClass, s.toolTier, 30));
       if (s.toolTier > 0) {
         const t = document.createElement('span');
@@ -390,6 +444,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // materials, "Hand" for an empty slot (the implicit bare hand).
   const slotName = (s) => {
     if (!s) return 'Hand';
+    if (s.itemKind === ITEM_KIND.BOW) return 'Bow';
+    if (s.itemKind === ITEM_KIND.ARROW) return 'Arrow';
     if (s.isTool) return `${TIER_NAME[s.toolTier] || ''} ${TOOL_NAME[s.toolClass] || 'Tool'}`.trim();
     if (s.count > 0) return (NAME[s.material] || '').toLowerCase();
     return 'Hand';
@@ -409,6 +465,43 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // actually changed (selection highlight is a cheap class toggle either way).
   const slotSig = new Array(SLOTS).fill(null);
 
+  const recipeName = (r) => {
+    if (r.outputKind === ITEM_KIND.MINING_TOOL) return `${TIER_NAME[r.outputTier] || ''} Mining Tool`.trim();
+    if (r.outputKind === ITEM_KIND.BOW) return 'Bow';
+    if (r.outputKind === ITEM_KIND.ARROW) return `${r.outputCount} Arrows`;
+    return `${r.outputCount > 1 ? `${r.outputCount} ` : ''}${NAME[r.outputMaterial] || 'Material'}`;
+  };
+  const ingredientName = (ingredient) => {
+    if (ingredient.kind === CRAFT_INGREDIENT.MATERIAL) return NAME[ingredient.value] || 'Material';
+    if (ingredient.value === MF.plantWood) return 'Wood';
+    if (ingredient.value === MF.plantLeaf) return 'Fiber';
+    return 'Material';
+  };
+  const available = (inv, ingredient) => (inv?.slots || []).reduce((sum, slot) => {
+    if (!slot?.count || slot.itemKind !== ITEM_KIND.MATERIAL) return sum;
+    if (ingredient.kind === CRAFT_INGREDIENT.MATERIAL) return sum + (slot.material === ingredient.value ? slot.count : 0);
+    if (ingredient.value === MF.plantWood)
+      return sum + (slot.material === MAT.DRIFTWOOD || (MAT_FLAGS[slot.material] & MF.plantWood) !== 0 ? slot.count : 0);
+    if (ingredient.value === MF.plantLeaf)
+      return sum + (slot.material === MAT.VINE || (MAT_FLAGS[slot.material] & MF.plantLeaf) !== 0 ? slot.count : 0);
+    return sum + ((MAT_FLAGS[slot.material] & ingredient.value) !== 0 ? slot.count : 0);
+  }, 0);
+  const recipeEls = recipes.map((recipe) => {
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'craft-recipe';
+    const output = document.createElement('span'); output.className = 'craft-output';
+    renderStack(output, { itemKind: recipe.outputKind, material: recipe.outputMaterial, toolClass: 5, toolTier: recipe.outputTier, isTool: recipe.outputKind === ITEM_KIND.MINING_TOOL, count: recipe.outputCount });
+    const text = document.createElement('span');
+    const name = document.createElement('span'); name.className = 'craft-name'; name.textContent = recipeName(recipe);
+    const cost = document.createElement('span'); cost.className = 'craft-cost';
+    cost.textContent = recipe.ingredients.map((i) => `${i.count} ${ingredientName(i)}`).join(' + ');
+    text.append(name, cost);
+    const count = document.createElement('span'); count.className = 'craft-count'; count.textContent = 'MAKE';
+    button.append(output, text, count);
+    button.addEventListener('click', (event) => craft?.(recipe.id, event.shiftKey));
+    craftList.appendChild(button);
+    return { recipe, button, count };
+  });
+
   function update(inv) {
     if (inv && inv.slots) {
       const sel = inv.selected;
@@ -419,7 +512,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         if (!el) continue;
         const s = inv.slots[i] || { material: 0, isTool: false, count: 0 };
         el.classList.toggle('selected', i === inv.selected);
-        const sig = `${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
+        const sig = `${s.itemKind | 0}:${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
         if (sig === slotSig[i]) continue;
         slotSig[i] = sig;
         el.replaceChildren();
@@ -428,13 +521,20 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
           n.textContent = String(i + 1); el.appendChild(n);
         }
         renderStack(el, s);
-        if (s.isTool) {
+        if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
+        else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;
+        else if (s.isTool) {
           el.title = `${TIER_NAME[s.toolTier] || ''} ${TOOL_NAME[s.toolClass] || 'Tool'}`.trim();
         } else if (s.count > 0) {
           el.title = `${(NAME[s.material] || '').toLowerCase()} ×${s.count}`;
         } else {
           el.title = '';
         }
+      }
+      for (const row of recipeEls) {
+        const can = row.recipe.ingredients.every((ingredient) => available(inv, ingredient) >= ingredient.count);
+        row.button.disabled = !can;
+        row.count.textContent = can ? 'MAKE' : 'NEED';
       }
     }
     refreshCursor();

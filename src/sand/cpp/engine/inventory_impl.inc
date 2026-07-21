@@ -7,15 +7,12 @@
 // move / place intents. Mining drops feed addToInventory (items.inc pickup); the
 // selected slot drives the held tool (mining) or the placed material (building).
 
-// Reset a player's inventory to the survival starter kit: a single wood dig tool
-// in hotbar slot 0 (selected). There is NO hand slot — an empty (or material)
-// slot means the bare hand (setSelectedSlot resolves that to TC_HAND).
+// Fresh survival players start empty. An empty slot is the bare hand; the first
+// Mining Tool is crafted from hand-harvestable wood.
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
   p.selectedFootprint = E.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
-  auto tool = [&](int i, uint8_t cls, uint8_t tier) { p.inv[i].isTool = 1; p.inv[i].toolClass = cls; p.inv[i].toolTier = tier; p.inv[i].count = 1; };
-  tool(0, TC_DIG, TT_WOOD);
   setSelectedSlot(p, 0);
 }
 void InventorySystem::seedStarterTools(int id) { Player* p = E.findPlayer(id); if (p) seedStarterTools(*p); }
@@ -34,7 +31,8 @@ void InventorySystem::setSelectedSlot(Player& p, int slot) {
   resetPlayerPlaceStroke(p);
   E.resetPlayerMine(p);
   InvSlot& s = p.inv[slot];
-  if (s.isTool) { p.heldToolClass = s.toolClass; p.heldToolTier = s.toolTier; }
+  p.bowChargeTicks = 0;
+  if (s.itemKind == IK_MINING_TOOL && s.count > 0) { p.heldToolClass = TC_DIG; p.heldToolTier = s.toolTier; }
   else { p.heldToolClass = TC_HAND; p.heldToolTier = TT_HAND; }
 }
 void InventorySystem::setSelectedSlot(int id, int slot) { Player* p = E.findPlayer(id); if (p) setSelectedSlot(*p, slot); }
@@ -50,30 +48,47 @@ void InventorySystem::cycleSelectedSlot(int id, int delta) {
 // fill empty slots. Returns false (and adds nothing more) if it cannot all fit, so
 // the caller can leave the remainder in the world (no silent loss).
 bool InventorySystem::addToInventory(Player& p, uint8_t mat, int count, uint8_t plantType) {
+  InvSlot stack; stack.itemKind = IK_MATERIAL; stack.material = mat;
+  stack.plantType = plantType; stack.count = count;
+  return addStack(p, stack);
+}
+bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
+  if (a.count <= 0 || b.count <= 0 || a.itemKind != b.itemKind) return false;
+  if (a.itemKind == IK_MATERIAL) return a.material == b.material && (a.material != SEED || a.plantType == b.plantType);
+  if (a.itemKind == IK_ARROW) return true;
+  return false; // tools and bows are intentionally non-stackable
+}
+bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
+  Player trial = p;
+  int count = incoming.count;
   if (count <= 0) return true;
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
-    InvSlot& s = p.inv[i];
-    if (!s.isTool && s.count > 0 && s.material == mat && (mat != SEED || s.plantType == plantType) && s.count < INV_STACK_MAX) {
+    InvSlot& s = trial.inv[i];
+    if (sameStack(s, incoming) && s.count < INV_STACK_MAX) {
       int add = imin(count, INV_STACK_MAX - s.count); s.count += add; count -= add;
     }
   }
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
-    InvSlot& s = p.inv[i];
-    if (!s.isTool && s.count == 0) {
-      s.material = mat; s.toolClass = 0; s.toolTier = 0; s.plantType = plantType;
-      int add = imin(count, INV_STACK_MAX); s.count = add; count -= add;
+    InvSlot& s = trial.inv[i];
+    if (s.count == 0) {
+      s = incoming;
+      int limit = (incoming.itemKind == IK_MINING_TOOL || incoming.itemKind == IK_BOW) ? 1 : INV_STACK_MAX;
+      int add = imin(count, limit); s.count = add; count -= add;
     }
   }
-  return count <= 0;
+  if (count > 0) return false;
+  p = trial;
+  return true;
 }
 bool InventorySystem::addToInventory(int id, uint8_t mat, int count, uint8_t plantType) { Player* p = E.findPlayer(id); return p ? addToInventory(*p, mat, count, plantType) : false; }
+bool InventorySystem::addStack(int id, const InvSlot& stack) { Player* p = E.findPlayer(id); return p ? addStack(*p, stack) : false; }
 
 // Place the selected slot's material at the aim cell, capped at how many units the
 // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
 // Tools/empty/self-overlap place nothing.
 bool InventorySystem::placeFromSelected(Player& p, int ax, int ay, Layer* layer) {
   InvSlot& s = p.inv[p.selectedSlot];
-  if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
+  if (s.itemKind != IK_MATERIAL || s.isTool || s.count <= 0 || s.material == EMPTY) return false;
   // Don't reject the whole build when the disc grazes the player — place only the
   // cells outside the body (passing &p), so building against yourself still works
   // and holding keeps placing as the loose material flows/settles away.
@@ -90,7 +105,7 @@ bool InventorySystem::placeFromSelected(Player& p, int ax, int ay, Layer* layer)
 }
 bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1, int y1, Layer* layer) {
   InvSlot& s = p.inv[p.selectedSlot];
-  if (s.isTool || s.count <= 0 || s.material == EMPTY) return false;
+  if (s.itemKind != IK_MATERIAL || s.isTool || s.count <= 0 || s.material == EMPTY) return false;
   bool foreground = layer == &E.fg;
   if (!foreground) E.bgEnabled = true;
   E.useLayer(layer);
@@ -109,7 +124,7 @@ bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.
 void InventorySystem::moveSlot(Player& p, int from, int to) {
   if (from < 0 || from >= INV_SLOTS || to < 0 || to >= INV_SLOTS || from == to) return;
   InvSlot& a = p.inv[from]; InvSlot& b = p.inv[to];
-  if (!a.isTool && !b.isTool && a.count > 0 && b.count > 0 && a.material == b.material && (a.material != SEED || a.plantType == b.plantType)) {
+  if (sameStack(a, b)) {
     int mv = imin(a.count, INV_STACK_MAX - b.count); b.count += mv; a.count -= mv;
     if (a.count <= 0) a = InvSlot();
     return;
@@ -133,7 +148,7 @@ void InventorySystem::cursorPick(Player& p, int slot, bool half) {
   } else if (sEmpty) {
     if (half) { s = c; s.count = 1; if (--c.count <= 0) c = InvSlot(); }
     else { s = c; c = InvSlot(); }
-  } else if (!c.isTool && !s.isTool && c.material == s.material && (c.material != SEED || c.plantType == s.plantType)) { // merge same material/species
+  } else if (sameStack(c, s)) { // merge same material/species/ammo
     int room = INV_STACK_MAX - s.count;
     int mv = half ? imin(1, imin(room, c.count)) : imin(room, c.count);
     s.count += mv; c.count -= mv; if (c.count <= 0) c = InvSlot();
@@ -149,14 +164,28 @@ void InventorySystem::cursorPick(int id, int slot, int half) { Player* p = E.fin
 // magnet briefly so it doesn't fly straight back. Returns true if anything was thrown.
 bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   InvSlot& c = p.cursor;
-  if (c.count <= 0 || c.isTool || c.material == EMPTY) return false;
-  int n = whole ? imin(c.count, 255) : 1;
+  if (c.count <= 0 || c.itemKind != IK_MATERIAL || c.isTool || c.material == EMPTY) return false;
+  int n = whole ? c.count : 1;
   double sx = p.px + p.w / 2.0 + p.facing * 1.5, sy = p.py + p.h / 2.0;
   E.throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED, IT_THROW_UP, c.plantType);
   c.count -= n; if (c.count <= 0) c = InvSlot();
   return true;
 }
 bool InventorySystem::throwFromCursor(int id, int whole) { Player* p = E.findPlayer(id); return p ? throwFromCursor(*p, whole != 0) : false; }
+
+void InventorySystem::dropAll(Player& p) {
+  int ordinal = 0;
+  auto drop = [&](InvSlot& s) {
+    if (s.count <= 0) return;
+    double a = ordinal++ * 2.399963229728653; // deterministic golden-angle scatter
+    E.itemsys.spawnStack(s, p.px + p.w * 0.5, p.py + p.h * 0.45,
+                         std::cos(a) * 1.35, -0.75 - std::fabs(std::sin(a)) * 0.8, 180);
+    s = InvSlot();
+  };
+  for (int i = 0; i < INV_SLOTS; i++) drop(p.inv[i]);
+  drop(p.cursor);
+  setSelectedSlot(p, 0);
+}
 
 // Pack the carried cursor stack (one slot record) for the HUD's floating item.
 int InventorySystem::buildCursorSnapshot(int playerId) {
@@ -167,6 +196,7 @@ int InventorySystem::buildCursorSnapshot(int playerId) {
   o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
   o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = 0.0f;
   o[IVS_PLANT_TYPE] = (float)s.plantType;
+  o[IVS_ITEM_KIND] = (float)s.itemKind;
   return s.count > 0 ? 1 : 0;
 }
 
@@ -181,6 +211,7 @@ int InventorySystem::buildInventorySnapshot(int playerId) {
     o[IVS_MATERIAL] = (float)s.material; o[IVS_IS_TOOL] = (float)s.isTool; o[IVS_TOOL_CLASS] = (float)s.toolClass;
     o[IVS_TOOL_TIER] = (float)s.toolTier; o[IVS_COUNT] = (float)s.count; o[IVS_SELECTED] = (i == p->selectedSlot) ? 1.0f : 0.0f;
     o[IVS_PLANT_TYPE] = (float)s.plantType;
+    o[IVS_ITEM_KIND] = (float)s.itemKind;
   }
   return INV_SLOTS;
 }
@@ -232,8 +263,10 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
     return;
   }
 
-  bool mineMode = sel.isTool || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
-  bool isSeed = !mineMode && sel.material == SEED;
+  bool mineMode = sel.itemKind == IK_MINING_TOOL || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
+  if (sel.itemKind == IK_BOW) { E.projectiles.applyBowInput(p, prev); return; }
+  if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
+  bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && sel.material == SEED;
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);
   if (!primary && !secondary) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
 

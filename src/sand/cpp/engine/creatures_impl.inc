@@ -567,12 +567,7 @@ void CreatureSystem::attackTarget(Creature& c) {
   if (prey) { const CreatureSpecies& ps = species(*prey); hit = inMeleeRange(prey->wx, prey->wy, ps.w, ps.h); if (hit) prey->health -= s.damage; }
   if (player) {
     hit = inMeleeRange(E.fg.worldOffsetX + player->px, E.fg.worldOffsetY + player->py, player->w, player->h);
-    if (hit && player->hurtCooldown <= 0) {
-      player->health -= s.damage;
-      player->hurtCooldown = 30;
-      E.audio.emit(SE_HURT, player->px + player->w * 0.5, player->py + player->h * 0.5, 0.8, EMPTY, 0);
-      if (player->health <= 0) E.psys.respawnPlayer(*player);
-    }
+    if (hit) E.psys.damagePlayer(*player, s.damage, 30);
   }
   if (hit) c.attackCooldown = s.attackCooldown;
 }

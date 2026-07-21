@@ -79,6 +79,8 @@ class GLPresenter {
   std::vector<float> glExtItems;        // packed [id,kind,material,count,px,py,life] per item
   bool glUseExtCreatures = false;       // client renders authoritative creatures
   std::vector<float> glExtCreatures;    // packed creatureSnapshot records
+  bool glUseExtProjectiles = false;
+  std::vector<float> glExtProjectiles;
 
   bool glReady() const;
   int glInit(const char* target);
@@ -100,6 +102,7 @@ class GLPresenter {
   void glSetSurvivalPreview(int on, int footprint, int erasing, int locked, int x, int y);
   void glSetItems(int useExternal, const float* data, int count);
   void glSetCreatures(int useExternal, const float* data, int count);
+  void glSetProjectiles(int useExternal, const float* data, int count);
   void glUploadFull(GLuint tex);
   void glUploadRects(GLuint tex);
   void glVisRect(int* x0, int* y0, int* x1, int* y1);
@@ -114,11 +117,12 @@ class GLPresenter {
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
   float glActorLight(double px, double py, int w, int h) const;
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
-                     bool own, float light, int camCol, int camRow);
+                     bool alive, int heldItemKind, double bowCharge, bool own, float light, int camCol, int camRow);
   void glDrawPlayers();
-  void glDrawOneItem(int id, int kind, int material, double px, double py, int life,
+  void glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
                    int camCol, int camRow);
   void glDrawItems();
+  void glDrawProjectiles();
   void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,
                          int alive, int animFrame, float light, int camCol, int camRow);
   void glDrawCreatures();

@@ -25,6 +25,7 @@ export function createWorldWorkerClient(ctx) {
   let cursor = null;
   let inventoryDirty = false;
   let items = new Float32Array(0);
+  let projectiles = new Float32Array(0);
   let mineProgress = 0;
   let mineTarget = null;
   let actionCount = 0;
@@ -229,13 +230,16 @@ export function createWorldWorkerClient(ctx) {
         authoritativePlayerId = packet.localPlayerId | 0;
         players = packet.players || [];
         const own = players.find((p) => p.id === authoritativePlayerId) || null;
-        if (own) {
+        if (own?.alive !== false) {
           if (!predictor || predictorEngine !== ctx.engine) {
-            predictorPlayerId = ctx.engine.spawnPlayer(own.x, own.y);
+            if (!predictorPlayerId || predictorEngine !== ctx.engine) predictorPlayerId = ctx.engine.spawnPlayer(own.x, own.y);
             predictor = new Predictor(ctx.engine, predictorPlayerId);
             predictorEngine = ctx.engine;
           }
           predictor.reconcile(own, packet.ackSeq >>> 0, packet.actorTick | 0);
+          ctx.localPlayerId = authoritativePlayerId;
+        } else if (own) {
+          predictor = null;
           ctx.localPlayerId = authoritativePlayerId;
         }
         if (packet.inventory !== undefined) { inventory = packet.inventory; inventoryDirty = true; }
@@ -248,6 +252,18 @@ export function createWorldWorkerClient(ctx) {
             items[o + O.id] = item.id; items[o + O.kind] = item.kind; items[o + O.material] = item.material;
             items[o + O.count] = item.count; items[o + O.x] = item.x; items[o + O.y] = item.y;
             items[o + O.life] = item.life; items[o + O.plantType] = item.plantType || 0;
+            items[o + O.itemKind] = item.itemKind || 0; items[o + O.isTool] = item.isTool ? 1 : 0;
+            items[o + O.toolClass] = item.toolClass || 0; items[o + O.toolTier] = item.toolTier || 0;
+          }
+        }
+        if (packet.projectiles !== undefined) {
+          const O = OFF.projectileSnapshot;
+          projectiles = new Float32Array(packet.projectiles.length * STRIDES.projectileSnapshot);
+          for (let i = 0; i < packet.projectiles.length; i++) {
+            const arrow = packet.projectiles[i], o = i * STRIDES.projectileSnapshot;
+            projectiles[o + O.id] = arrow.id; projectiles[o + O.owner] = arrow.owner;
+            projectiles[o + O.x] = arrow.x; projectiles[o + O.y] = arrow.y;
+            projectiles[o + O.vx] = arrow.vx; projectiles[o + O.vy] = arrow.vy; projectiles[o + O.charge] = arrow.charge;
           }
         }
         mineProgress = packet.mineProgress || 0;
@@ -269,14 +285,15 @@ export function createWorldWorkerClient(ctx) {
     get state() { return state; },
     getOwnPlayer() {
       const own = players.find((p) => p.id === authoritativePlayerId) || null;
-      const predicted = predictor?.renderState();
+      const predicted = own?.alive === false ? null : predictor?.renderState();
       return predicted && own ? { ...own, ...predicted, id: authoritativePlayerId } : own;
     },
     getPlayersForRender() {
       const own = this.getOwnPlayer();
-      return players.filter((p) => p.active !== false && p.alive !== false).map((p) => p.id === authoritativePlayerId && own ? own : p);
+      return players.filter((p) => p.active !== false).map((p) => p.id === authoritativePlayerId && own ? own : p);
     },
     getItemsForRender() { return items; },
+    getProjectilesForRender() { return projectiles; },
     getInventory() { return inventory; },
     getCursor() { return cursor; },
     consumeInventoryDirty() { const dirty = inventoryDirty; inventoryDirty = false; return dirty; },
@@ -325,7 +342,7 @@ export function createWorldWorkerClient(ctx) {
     pendingSounds = [];
     predictor = predictorEngine = null;
     predictorPlayerId = authoritativePlayerId = 0;
-    players = []; inventory = cursor = null; items = new Float32Array(0);
+    players = []; inventory = cursor = null; items = new Float32Array(0); projectiles = new Float32Array(0);
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
     ctx.localPlayerId = 0;
     worker = new WorldWorker();

@@ -145,11 +145,12 @@
     double t0 = emscripten_get_now();
     useLayer(&fg);
     updatePlayers();
+    updateProjectiles();
     updateItems();
     updateCreatures();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
-    return !psys.players.empty() || !itemsys.items.empty() || !creatures.creatures.empty();
+    return !psys.players.empty() || !projectiles.projectiles.empty() || !itemsys.items.empty() || !creatures.creatures.empty();
   }
 
   bool stepWorld() {

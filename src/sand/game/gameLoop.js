@@ -6,7 +6,7 @@
 // createSandGame.js.
 
 import { TOOL_IDS } from './runtimeConfig';
-import { OFF } from '../wasmBridge/abi.generated.js';
+import { ITEM_KIND, OFF } from '../wasmBridge/abi.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
 import {
   DAY_CYCLE_MS,
@@ -17,7 +17,7 @@ import {
   sampleDayNight,
 } from './dayNightCycle.js';
 
-export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory }) {
+export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory, onPlayerState }) {
   ctx.timingStats = { actorSteps: 0, actorDebtMs: 0, actorDroppedMs: 0, worldStepped: false };
 
   // Presentation-only wall clock: every mount begins at dawn. Phase is derived
@@ -161,6 +161,8 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
         const ownId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0;
         packed[o + G.facing] = p.facing; packed[o + G.own] = p.id === ownId ? 1 : 0;
         packed[o + G.animState] = p.animState || 0; packed[o + G.animFrame] = p.animFrame || 0;
+        packed[o + G.alive] = p.alive === false ? 0 : 1;
+        packed[o + G.heldItemKind] = p.heldItemKind || 0; packed[o + G.bowCharge] = p.bowCharge || 0;
       }
       engine.glSetPlayers(true, packed, ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0);
     }
@@ -169,16 +171,19 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // matches the size/tool that will actually act on the world.
     if (ctx.survival) {
       const inventory = ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory();
+      const ownPlayer = localPlayer();
       const selected = inventory?.slots?.[inventory.selected];
-      const erasing = !selected || selected.isTool || selected.count <= 0;
+      const erasing = !selected || selected.itemKind === ITEM_KIND.MINING_TOOL || selected.count <= 0;
       const mineTarget = ctx.netClientReady() ? null : ctx.worldWorker?.getMineTarget();
-      engine.glSetSurvivalPreview(true, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
+      const usable = !selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL;
+      engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
     } else {
       engine.glSetSurvivalPreview(false, 0, false, null);
     }
     // Dropped items: a client draws the server's authoritative items; host/local
     // (and single-player) draws the engine's own (null = engine-owned).
     engine.glSetItems(ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || null);
+    engine.glSetProjectiles(ctx.netClientReady() ? ctx.net.getProjectilesForRender() : ctx.worldWorker?.getProjectilesForRender() || null);
     engine.glSetCreatures(ctx.netClientReady() ? ctx.net.getCreaturesForRender() : null);
     engine.glRenderFrame(full || ctx.forceFullRender);
     ctx.forceFullRender = false;
@@ -236,6 +241,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   const actorClock = createFixedRateClock({ now: clockStart });
   let workerPaused = null;
   let lastAmbienceSample = -Infinity;
+  let lastPlayerStateSignature = '';
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
     const rafDelta = lastRafNow ? now - lastRafNow : 0;
@@ -298,6 +304,14 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
       } else if (ctx.worldWorker?.consumeInventoryDirty()) {
         const inv = ctx.worldWorker.getInventory();
         if (inv) onInventory(inv);
+      }
+    }
+    if (ctx.survival && onPlayerState) {
+      const player = localPlayer();
+      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}` : '';
+      if (signature !== lastPlayerStateSignature) {
+        lastPlayerStateSignature = signature;
+        onPlayerState(player);
       }
     }
     updateMineProgress();

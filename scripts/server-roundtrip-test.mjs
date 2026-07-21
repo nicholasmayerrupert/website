@@ -11,7 +11,7 @@ const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
 import { CREATIVE_KIND, CREATURE, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
-import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick } from '../src/sand/net/protocol.js';
+import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS } from '../src/sand/net/protocol.js';
 import { encodeItems, encodeCreatures, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
@@ -57,7 +57,7 @@ function survivalEngine() {
   const id = e.spawnItem(MAT.WOOD, 3, 40.5, FLOOR - 4, 0, 0);
   const m = decode(encode(encodeItems(e, 0)));
   check('items message decodes', m && m.t === MSG.ITEMS);
-  check('one dropped item replicated', m && m.data.length === 8);
+  check('one dropped item replicated', m && m.data.length === ITEM_FIELDS);
   check('item id/material/count preserved', m && m.data[0] === id && m.data[2] === MAT.WOOD && m.data[3] === 3);
   check('item x position preserved', m && m.data[4] === 40.5);
   e.destroy();
@@ -70,14 +70,14 @@ function survivalEngine() {
   e.spawnParticle(MAT.STONE, 40, FLOOR - 4, 0, 0, 20);
   e.spawnItem(MAT.WOOD, 1, 41, FLOOR - 4, 0, 0);
   const m = decode(encode(encodeItems(e, 0)));
-  check('only the dropped item is sent, particle filtered', m && m.data.length === 8);
+  check('only the dropped item is sent, particle filtered', m && m.data.length === ITEM_FIELDS);
   e.destroy();
 }
 
 // 2) inventory encoder round-trips slots + selected.
 {
   const e = survivalEngine();
-  const pid = e.spawnPlayer(50, FLOOR - 8); // seeds starter dig tool in slot 0
+  const pid = e.spawnPlayer(50, FLOOR - 8);
   e.addToInventory(pid, MAT.STONE, 42);
   e.setSelectedSlot(pid, 4);
   e.setSelectedFootprint(pid, 3);
@@ -85,12 +85,12 @@ function survivalEngine() {
   check('inventory message decodes', m && m.t === MSG.INVENTORY && m.player === pid);
   check('selected slot preserved', m && m.selected === 4);
   check('selected footprint preserved', m && m.selectedFootprint === 3);
-  // slot 0 is the wood dig tool; compare against the engine.
+  // Slot fields exactly mirror the engine, including the empty bare-hand slot.
   const inv = e.getInventory(pid);
   check('slot 0 tool fields match engine', m && m.data[1] === (inv.slots[0].isTool ? 1 : 0) && m.data[2] === inv.slots[0].toolClass);
   // the stone we added is somewhere in the flat data with count 42.
   let foundStone = false;
-  for (let i = 0; i < m.data.length; i += 6) if (m.data[i] === MAT.STONE && m.data[i + 4] === 42) foundStone = true;
+  for (let i = 0; i < m.data.length; i += INV_FIELDS) if (m.data[i] === MAT.STONE && m.data[i + 4] === 42) foundStone = true;
   check('added stone stack (42) present in flat data', foundStone);
   e.destroy();
 }
@@ -100,6 +100,7 @@ function survivalEngine() {
   const e = survivalEngine();
   const pid = e.spawnPlayer(50, FLOOR - 8);
   check('cursor empty initially', decode(encode(encodeCursor(e, 0, pid))).cur === null);
+  e.addToInventory(pid, MAT.WOOD, 3);
   e.inventoryCursorPick(pid, 0, false); // lift the whole slot-0 stack onto the cursor
   const m = decode(encode(encodeCursor(e, 0, pid)));
   check('cursor carries a stack after pick', m && m.cur !== null);
@@ -110,6 +111,7 @@ function survivalEngine() {
 {
   const e = survivalEngine();
   const pid = e.spawnPlayer(50, FLOOR - 8);
+  e.addToInventory(pid, MAT.WOOD, 3);
   const r0 = inventoryRevision(e, pid);
   const r0b = inventoryRevision(e, pid);
   check('revision stable when nothing changes', r0 === r0b);
@@ -128,6 +130,7 @@ function survivalEngine() {
 {
   const e = survivalEngine();
   const pid = e.spawnPlayer(50, FLOOR - 8);
+  e.addToInventory(pid, MAT.WOOD, 3);
   // simulate server's ACT_SELECT dispatch
   const sel = decode(encode(makeSelect('r', 'c', 6)));
   e.setSelectedSlot(pid, sel.slot);
@@ -159,7 +162,7 @@ function survivalEngine() {
     const assignA = last(ai, MSG.ASSIGN), worldA = last(ai, MSG.WORLD), invA = last(ai, MSG.INVENTORY);
     check('client A got an authoritative player id', assignA && assignA.player > 0);
     check('client A got the full world at server dims', worldA && worldA.cols === 128 && worldA.rows === 96);
-    check('client A got an initial inventory', invA && invA.data.length === 36 * 6);
+    check('client A got an initial inventory', invA && invA.data.length === 36 * INV_FIELDS);
     check('client A got an initial creature snapshot', last(ai, MSG.CREATURES) !== null);
     check('client B also got a world + inventory', last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY));
 
@@ -178,7 +181,9 @@ function survivalEngine() {
     const invSize = last(ai, MSG.INVENTORY);
     check('ACT_SIZE reflected in A inventory broadcast', invSize && invSize.selectedFootprint === 4);
 
-    // ACT_PICK from A -> the server sends a non-null cursor for A.
+    // Put a stack in A's authoritative inventory, then ACT_PICK sends it to the cursor.
+    srv.engine.addToInventory(assignA.player, MAT.WOOD, 3);
+    await wait(80);
     a.send(encode(makePick('r', 'A', 0, false))); await wait(120);
     check('ACT_PICK reflected in A cursor broadcast', last(ai, MSG.CURSOR)?.cur != null);
 

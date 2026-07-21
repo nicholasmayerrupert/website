@@ -53,14 +53,20 @@ check(`dig tool: wood between sand and stone (${digSand} < ${digWood} && ${digWo
 const digDirt = hitsToBreak(MAT.DIRT, TC.dig, TT.wood); // durability 2, shovel-class
 check(`dig tool ignores material type at equal hardness (sand=${digSand}, dirt=${digDirt})`, digSand === digDirt);
 
-// Exercise the real survival path: starter dig tool + held input + engine steps.
+// Exercise the real survival path: crafted Mining Tool + held input + engine steps.
 // Bare hand (empty slot) still breaks stone, just more slowly.
-function survivalStepsToBreakStone(slot) {
+function survivalStepsToBreakStone(useTool) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
   for (let x = 30; x < 90; x++) for (let y = 70; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
   e.setSurvivalInventory(true);
   const id = e.spawnPlayer(55, 62);
+  let slot = 3;
+  if (useTool) {
+    e.addToInventory(id, MAT.WOOD, 24);
+    e.craft(id, 0);
+    slot = e.getInventory(id).slots.findIndex((candidate) => candidate.isTool);
+  }
   e.setSelectedSlot(id, slot);
   e.setSelectedFootprint(id, 0); // isolate tool-class speed from area scaling
   let steps = 0;
@@ -74,8 +80,8 @@ function survivalStepsToBreakStone(slot) {
   return { steps, broke };
 }
 
-const survivalDig = survivalStepsToBreakStone(0);
-const survivalHand = survivalStepsToBreakStone(3);
+const survivalDig = survivalStepsToBreakStone(true);
+const survivalHand = survivalStepsToBreakStone(false);
 check(`inventory dig tool breaks stone (${survivalDig.steps} steps)`, survivalDig.broke);
 check(`bare hand still breaks stone, slower (${survivalHand.steps} > ${survivalDig.steps})`, survivalHand.broke && survivalHand.steps > survivalDig.steps);
 

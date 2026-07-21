@@ -4,18 +4,18 @@ const STYLE = `
 .fp-backdrop { position: fixed; inset: 0; z-index: 73; display: none; pointer-events: auto; }
 .fp-backdrop.open { display: block; }
 .fp-wrap { position: absolute; right: 14px; bottom: 14px; z-index: 74; pointer-events: none;
-  font-family: ui-sans-serif, system-ui, sans-serif; }
-.fp-panel { display: none; width: 196px; padding: 10px; border-radius: 8px;
-  background: rgba(3,7,18,.84); border: 1px solid rgba(255,255,255,.14);
-  box-shadow: 0 18px 28px -10px rgba(0,0,0,.55); backdrop-filter: blur(4px);
+  font-family: ui-monospace,"SFMono-Regular",Menlo,monospace; }
+.fp-panel { display: none; width: 196px; padding: 10px; border-radius:0;
+  background:#252b31; border:3px solid #0a0c0f;
+  box-shadow:inset 0 0 0 2px #59636c,6px 6px 0 rgba(0,0,0,.45);
   pointer-events: auto; }
 .fp-panel.open { display: block; }
-.fp-head { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 0; color: rgba(226,232,240,.8); }
+.fp-head { margin:0 0 8px; font-size:10px; font-weight:800; letter-spacing:.12em; color:#f0d465; }
 .fp-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
-.fp-btn { min-height: 34px; border: 1px solid rgba(255,255,255,.12); border-radius: 6px;
-  background: rgba(15,23,42,.72); color: #e2e8f0; font-size: 13px; font-weight: 700; cursor: pointer; }
-.fp-btn:hover { border-color: rgba(255,255,255,.35); background: rgba(30,41,59,.86); }
-.fp-btn.sel { border-color: #93c5fd; box-shadow: inset 0 0 0 1px rgba(147,197,253,.45); background: rgba(30,41,59,.95); color: #eff6ff; }
+.fp-btn { min-height:34px; border:2px solid #0d1013; border-radius:0;
+  background:#161a1e; box-shadow:inset 2px 2px 0 #3c444b; color:#e2e8f0; font:800 12px ui-monospace,monospace; cursor:pointer; }
+.fp-btn:hover { border-color:#9ba5ae; background:#22282d; }
+.fp-btn.sel { border-color:#f0d465; box-shadow:inset 2px 2px 0 #fff1a0; color:#fff7c4; }
 `;
 
 export function createFootprintMenu(root, { selectFootprint } = {}) {
@@ -37,7 +37,7 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
 
   const head = document.createElement('div');
   head.className = 'fp-head';
-  head.textContent = 'Mining / Place Size';
+  head.textContent = 'TOOL SIZE';
 
   const list = document.createElement('div');
   list.className = 'fp-list';

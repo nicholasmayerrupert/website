@@ -15,7 +15,7 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
-import { encodeItems, encodeCreatures, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
 
 // Bounded shared arena (MVP): a fixed, non-streaming world buffer. Multiples of
@@ -33,7 +33,7 @@ export async function startSandServer(opts = {}) {
     cols: cfg.cols, rows: cfg.rows, infinite: true, worldSeed: cfg.seed >>> 0,
     emittersOn: false, sinksOn: false,
   });
-  engine.setSurvivalInventory(true); // mining -> drops -> inventory; spawnPlayer seeds the starter kit
+  engine.setSurvivalInventory(true); // mining -> drops -> inventory; new players begin with bare hands
   engine.setCreatureRuntime(true, true);
   engine.setPlayMode(true);
   const host = new Host({ engine, roomId: cfg.room, maxPlayers: MAX_PLAYERS });
@@ -66,6 +66,7 @@ export async function startSandServer(opts = {}) {
           sendTo(ws, encode(encodeWorld(engine, host.worldTick)));
           sendTo(ws, encode(encodeItems(engine, host.actorTick)));
           sendTo(ws, encode(encodeCreatures(engine, host.actorTick)));
+          sendTo(ws, encode(encodeProjectiles(engine, host.actorTick)));
           sendTo(ws, encode(encodeInventory(engine, host.actorTick, pid)));
           sendTo(ws, encode(encodeCursor(engine, host.actorTick, pid)));
           break;
@@ -77,6 +78,8 @@ export async function startSandServer(opts = {}) {
         case MSG.ACT_MOVE: { const p = host.playerIdFor(cid); if (p) engine.inventoryMove(p, m.from, m.to); break; }
         case MSG.ACT_PICK: { const p = host.playerIdFor(cid); if (p) engine.inventoryCursorPick(p, m.slot, m.half); break; }
         case MSG.ACT_THROW: { const p = host.playerIdFor(cid); if (p) engine.throwFromCursor(p, m.whole); break; }
+        case MSG.ACT_CRAFT: { const p = host.playerIdFor(cid); if (p) engine.craft(p, m.recipe, m.max); break; }
+        case MSG.ACT_RESPAWN: { const p = host.playerIdFor(cid); if (p) engine.respawnPlayer(p); break; }
         case MSG.LEAVE: cleanup(); break;
         default: break;
       }
@@ -92,7 +95,11 @@ export async function startSandServer(opts = {}) {
     if (peers.size > 0) {
       if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcast(encode(makeSnapshot(t, engine.getPlayers(), null))); }
       if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcast(encode(encodeItems(engine, t))); }
-      if (++sinceCreatures >= SNAPSHOT_INTERVAL) { sinceCreatures = 0; broadcast(encode(encodeCreatures(engine, t))); }
+      if (++sinceCreatures >= SNAPSHOT_INTERVAL) {
+        sinceCreatures = 0;
+        broadcast(encode(encodeCreatures(engine, t)));
+        broadcast(encode(encodeProjectiles(engine, t)));
+      }
       // Per-player inventory + cursor, only when that player's inventory changed
       // (idle players cost zero inventory bandwidth).
       for (const p of peers.values()) {

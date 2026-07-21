@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 15;
+static const int ABI_VERSION = 16;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -26,10 +26,14 @@ enum PlayerSnapshotField : int {
   PS_JUMP_READY = 16,
   PS_ANIM_STATE = 17,
   PS_ANIM_FRAME = 18,
+  PS_DEATH_TICKS = 19,
+  PS_RESPAWN_READY = 20,
+  PS_BOW_CHARGE = 21,
+  PS_HELD_ITEM_KIND = 22,
 };
-static const int PS_STRIDE = 19;
+static const int PS_STRIDE = 23;
 
-// itemSnapshot: id, kind, material, count, x, y, life, plantType
+// itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier
 enum ItemSnapshotField : int {
   IS_ID = 0,
   IS_KIND = 1,
@@ -39,8 +43,12 @@ enum ItemSnapshotField : int {
   IS_Y = 5,
   IS_LIFE = 6,
   IS_PLANT_TYPE = 7,
+  IS_ITEM_KIND = 8,
+  IS_IS_TOOL = 9,
+  IS_TOOL_CLASS = 10,
+  IS_TOOL_TIER = 11,
 };
-static const int IS_STRIDE = 8;
+static const int IS_STRIDE = 12;
 
 // creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame
 enum CreatureSnapshotField : int {
@@ -60,7 +68,7 @@ enum CreatureSnapshotField : int {
 };
 static const int CSN_STRIDE = 13;
 
-// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, selected
+// inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected
 enum InventorySlotField : int {
   IVS_MATERIAL = 0,
   IVS_IS_TOOL = 1,
@@ -68,9 +76,42 @@ enum InventorySlotField : int {
   IVS_TOOL_TIER = 3,
   IVS_COUNT = 4,
   IVS_PLANT_TYPE = 5,
-  IVS_SELECTED = 6,
+  IVS_ITEM_KIND = 6,
+  IVS_SELECTED = 7,
 };
-static const int IVS_STRIDE = 7;
+static const int IVS_STRIDE = 8;
+
+// projectileSnapshot: id, owner, x, y, vx, vy, charge
+enum ProjectileSnapshotField : int {
+  PRS_ID = 0,
+  PRS_OWNER = 1,
+  PRS_X = 2,
+  PRS_Y = 3,
+  PRS_VX = 4,
+  PRS_VY = 5,
+  PRS_CHARGE = 6,
+};
+static const int PRS_STRIDE = 7;
+
+// craftingRecipe: id, outputKind, outputMaterial, outputTier, outputCount, ingredientStart, ingredientCount
+enum CraftingRecipeField : int {
+  CR_ID = 0,
+  CR_OUTPUT_KIND = 1,
+  CR_OUTPUT_MATERIAL = 2,
+  CR_OUTPUT_TIER = 3,
+  CR_OUTPUT_COUNT = 4,
+  CR_INGREDIENT_START = 5,
+  CR_INGREDIENT_COUNT = 6,
+};
+static const int CR_STRIDE = 7;
+
+// craftingIngredient: kind, value, count
+enum CraftingIngredientField : int {
+  CI_KIND = 0,
+  CI_VALUE = 1,
+  CI_COUNT = 2,
+};
+static const int CI_STRIDE = 3;
 
 // survivalFootprint: id, width, height, cellCount, anchorX, anchorY
 enum SurvivalFootprintField : int {
@@ -83,7 +124,7 @@ enum SurvivalFootprintField : int {
 };
 static const int FP_STRIDE = 6;
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -93,8 +134,11 @@ enum GlPlayerExtField : int {
   GLP_OWN = 5,
   GLP_ANIM_STATE = 6,
   GLP_ANIM_FRAME = 7,
+  GLP_ALIVE = 8,
+  GLP_HELD_ITEM_KIND = 9,
+  GLP_BOW_CHARGE = 10,
 };
-static const int GLP_STRIDE = 8;
+static const int GLP_STRIDE = 11;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -150,6 +194,18 @@ enum PlayerInput : int {
   PI_RUN = 64,
 };
 
+enum InventoryItemKind : uint8_t {
+  IK_MATERIAL = 0,
+  IK_MINING_TOOL = 1,
+  IK_BOW = 2,
+  IK_ARROW = 3,
+};
+
+enum CraftIngredientKind : uint8_t {
+  CIK_MATERIAL = 0,
+  CIK_MATERIAL_FLAG = 1,
+};
+
 enum Tool : int {
   T_CUBE = 0,
   T_SAND = 1,
@@ -198,6 +254,11 @@ enum SoundEventType : uint8_t {
   SE_POWDER_MOVE = 11,
   SE_SOLID_LAND = 12,
   SE_ACID_DISSOLVE = 13,
+  SE_CRAFT = 14,
+  SE_BOW = 15,
+  SE_ARROW_HIT = 16,
+  SE_DEATH = 17,
+  SE_RESPAWN = 18,
 };
 
 static const int INV_HOTBAR = 9;

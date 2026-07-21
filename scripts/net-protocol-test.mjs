@@ -4,9 +4,9 @@
 //   node scripts/net-protocol-test.mjs
 
 import {
-  MSG, encode, decode, makeItems, makeCreatures, makeSounds, makeInventory, makeCursor,
-  makeSelect, makeSize, makeMove, makePick, makeThrow,
-  INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, SOUND_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
+  MSG, encode, decode, makeItems, makeCreatures, makeProjectiles, makeSounds, makeInventory, makeCursor,
+  makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
+  INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS, SOUND_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
 } from '../src/sand/net/protocol.js';
 import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 
@@ -17,7 +17,13 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 8', PROTOCOL_VERSION === 8);
+  check('PROTOCOL_VERSION is 9', PROTOCOL_VERSION === 9);
+}
+
+{
+  console.log('projectiles round trip');
+  const d = rt(makeProjectiles(4, [{ id: 2, owner: 7, x: 1.5, y: 2.5, vx: 4, vy: -1, charge: 0.75 }]));
+  check('arrow record matches ABI and preserves charge', d?.t === MSG.PROJECTILES && d.data.length === PROJECTILE_FIELDS && d.data[6] === 0.75);
 }
 
 // Semantic sound records round trip without exposing browser audio details.
@@ -87,6 +93,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('move', (() => { const d = rt(makeMove('r', 'c', 9, 35)); return d.from === 9 && d.to === 35; })());
   check('pick half', (() => { const d = rt(makePick('r', 'c', 4, true)); return d.slot === 4 && d.half === 1; })());
   check('throw whole', rt(makeThrow('r', 'c', true)).whole === 1);
+  check('craft max', (() => { const d = rt(makeCraft('r', 'c', 4, true)); return d.recipe === 4 && d.max === 1; })());
+  check('respawn', rt(makeRespawn('r', 'c')).t === MSG.ACT_RESPAWN);
 }
 
 // 5. malformed messages are rejected (strict validation; a desync vector).

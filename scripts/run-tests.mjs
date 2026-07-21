@@ -24,6 +24,7 @@ const SUITES = [
   ['mining-speed', 'mining-speed-test.mjs'],
   ['mine-lock', 'mine-lock-test.mjs'],
   ['inventory', 'inventory-test.mjs'],
+  ['survival-upgrade', 'survival-upgrade-test.mjs'],
   ['inv-bridge', 'inventory-bridge-test.mjs'],
   ['creative', 'creative-place-test.mjs'],
   ['throw', 'throw-test.mjs'],

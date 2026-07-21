@@ -318,12 +318,20 @@ export function createSandGame(container, opts = {}) {
   // unlock hook central and idempotent so Safari can also recover after an
   // interruption on the next ordinary tap/key without UI-specific workarounds.
   const unlockAudio = () => { audio.unlock(); };
+  const restorePresentation = () => {
+    unlockAudio();
+    // A BFCache restore does not consistently deliver a resize or a fresh RAF
+    // before the old GPU surface is shown. Refit and redraw synchronously so a
+    // retained page never exposes a cleared canvas while presentation resumes.
+    lifecycle.fit();
+    loop.render(true);
+  };
   const audioGestureOptions = { capture: true, passive: true };
   window.addEventListener('pointerdown', unlockAudio, audioGestureOptions);
   window.addEventListener('touchend', unlockAudio, audioGestureOptions);
   window.addEventListener('click', unlockAudio, audioGestureOptions);
   window.addEventListener('keydown', unlockAudio, audioGestureOptions);
-  window.addEventListener('pageshow', unlockAudio, audioGestureOptions);
+  window.addEventListener('pageshow', restorePresentation, audioGestureOptions);
   loop.start();
 
   let destroyed = false;
@@ -335,7 +343,7 @@ export function createSandGame(container, opts = {}) {
     window.removeEventListener('touchend', unlockAudio, { capture: true });
     window.removeEventListener('click', unlockAudio, { capture: true });
     window.removeEventListener('keydown', unlockAudio, { capture: true });
-    window.removeEventListener('pageshow', unlockAudio, { capture: true });
+    window.removeEventListener('pageshow', restorePresentation, { capture: true });
     mineProgress.remove();
     authorityFailure.remove();
     ro.disconnect();

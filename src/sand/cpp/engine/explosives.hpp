@@ -53,7 +53,8 @@ class ExplosivesSystem {
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
-  struct BlastOffset { int16_t ox, oy; int32_t dd; double dist; };
+  struct BlastOffset { int16_t ox, oy; int32_t dd; double dist, tntEnergy; };
+  struct BlastGasOffset { int16_t ox, oy; double keepP; };
   struct BlastWave { int cx, cy, radius; uint32_t seed; };
   struct BlastDebrisSource { uint8_t material; int cell; };
   struct BlastCrossPair { int ownId, peerId; uint8_t dependentMask; };
@@ -96,5 +97,6 @@ class ExplosivesSystem {
  private:
   Engine& E;
   std::vector<BlastOffset> tntStencil;
+  std::vector<BlastGasOffset> tntGasStencil;
   void buildTntStencil();
 };

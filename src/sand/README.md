@@ -501,8 +501,11 @@ hardcoded id list, decides who reacts.
   needs local escape space and remains subject to the strict per-step/body caps.
   Each consumed TNT cell releases one aftermath
   cell: mostly acrid smoke, some steam, and a little fire. Works the same whether
-  the TNT is a placed solid or a free TNT body. The fixed-radius crater and gas
-  shell reuse one ordered stencil, overlapping blasts use generation-stamped
+  the TNT is a placed solid or a free TNT body. The fixed-radius crater caches its
+  distance and energy, while the outer gas shell uses a separate precomputed,
+  row-major stencil, so repeated fronts avoid attenuation work and the gas pass
+  never revisits the crater interior.
+  Overlapping blasts use generation-stamped
   per-layer energy scratch, and bulk-terrain craters locally prove connectivity
   before falling back to a full component split. Debris discovery stops sampling
   later overlapping craters as soon as the layer's bounded rubble budget is full;

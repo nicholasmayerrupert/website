@@ -2,19 +2,30 @@
 
 void ExplosivesSystem::buildTntStencil() {
   int r2 = TNT_BLAST_RADIUS * TNT_BLAST_RADIUS;
+  int inner = imax(1, TNT_BLAST_RADIUS - BLAST_GAS_RING_DEPTH);
+  int inner2 = inner * inner;
   tntStencil.reserve((size_t)(TNT_BLAST_RADIUS * 2 + 1) * (TNT_BLAST_RADIUS * 2 + 1));
+  tntGasStencil.reserve((size_t)(TNT_BLAST_RADIUS * 2 + 1) * BLAST_GAS_RING_DEPTH * 4);
   for (int oy = -TNT_BLAST_RADIUS; oy <= TNT_BLAST_RADIUS; oy++)
     for (int ox = -TNT_BLAST_RADIUS; ox <= TNT_BLAST_RADIUS; ox++) {
       int dd = ox * ox + oy * oy;
-      if (dd <= r2) tntStencil.push_back({(int16_t)ox, (int16_t)oy, dd, std::sqrt((double)dd)});
+      if (dd > r2) continue;
+      double dist = std::sqrt((double)dd);
+      double energy = TNT_BLAST_POWER * (1.0 - dist / TNT_BLAST_RADIUS);
+      tntStencil.push_back({(int16_t)ox, (int16_t)oy, dd, dist, energy});
+      if (dd >= inner2) {
+        double shell = (dist - (double)inner) / (double)(TNT_BLAST_RADIUS - inner);
+        double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
+        tntGasStencil.push_back({(int16_t)ox, (int16_t)oy, keepP});
+      }
     }
 }
 
 void ExplosivesSystem::queueDetonation(int cell, int fuse) {
   auto& pd = E.L->pendingDetonations;
-  auto it = pd.find(cell);
-  if (it == pd.end()) {
-    pd[cell] = fuse;
+  auto inserted = pd.emplace(cell, fuse);
+  auto it = inserted.first;
+  if (inserted.second) {
     E.audio.emit(SE_FUSE, cell % E.cols, cell / E.cols, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
   } else if (fuse < it->second) {
     it->second = fuse;
@@ -36,14 +47,11 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves) 
     int r2 = radius * radius;
     int inner = imax(1, radius - BLAST_GAS_RING_DEPTH);
     int inner2 = inner * inner;
-    auto stamp = [&](int ox, int oy, int dd, double dist) {
-        if (dd < inner2 || dd > r2) return;
+    auto stamp = [&](int ox, int oy, double keepP) {
         int yy = cy + oy; if (yy <= 0 || yy >= E.rows) return;
         int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) return;
         int k = E.I(xx, yy);
         if (E.L->grid[k] != EMPTY && !E.isGasMaterial(E.L->grid[k])) return;
-        double shell = (dist - (double)inner) / (double)(radius - inner);
-        double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
         if (whash2(wave.seed ^ 0x6C8E9CF5u, xx, yy) >= keepP) return;
         double g = whash2(wave.seed ^ 0xA511E9B3u, xx, yy);
         uint8_t m = g < TNT_ACRID_FRAC ? ACRID_SMOKE
@@ -53,11 +61,15 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves) 
         E.L->blastGasStamp[k] = E.tick;
     };
     if (radius == TNT_BLAST_RADIUS) {
-      for (const BlastOffset& o : tntStencil) stamp(o.ox, o.oy, o.dd, o.dist);
+      for (const BlastGasOffset& o : tntGasStencil) stamp(o.ox, o.oy, o.keepP);
     } else {
       for (int oy = -radius; oy <= radius; oy++) for (int ox = -radius; ox <= radius; ox++) {
         int dd = ox * ox + oy * oy;
-        if (dd <= r2) stamp(ox, oy, dd, std::sqrt((double)dd));
+        if (dd < inner2 || dd > r2) continue;
+        double dist = std::sqrt((double)dd);
+        double shell = (dist - (double)inner) / (double)(radius - inner);
+        double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
+        stamp(ox, oy, keepP);
       }
     }
   }
@@ -286,11 +298,10 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   uint16_t debrisSampleMask[TABLE];
   uint64_t debrisMaterialMask = 0;
   int sampleThird = imax(1, radius / 3);
-  auto carveCell = [&](int ox, int oy, int dd, double dist) {
+  auto carveCell = [&](int ox, int oy, int dd, double dist, double energy) {
       int yy = cy + oy; if (yy <= 0 || yy >= E.rows) return;
       int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) return;
       int k = E.I(xx, yy);
-      double energy = power * (1.0 - dist / radius);
       if (blastEnergyDominated(bb, k, energy)) return;
       uint8_t m = E.L->grid[k];
       if (E.isGasMaterial(m)) {
@@ -366,11 +377,19 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
       }
   };
   if (radius == TNT_BLAST_RADIUS) {
-    for (const BlastOffset& o : tntStencil) carveCell(o.ox, o.oy, o.dd, o.dist);
+    if (power == TNT_BLAST_POWER) {
+      for (const BlastOffset& o : tntStencil) carveCell(o.ox, o.oy, o.dd, o.dist, o.tntEnergy);
+    } else {
+      for (const BlastOffset& o : tntStencil)
+        carveCell(o.ox, o.oy, o.dd, o.dist, power * (1.0 - o.dist / radius));
+    }
   } else {
     for (int oy = -radius; oy <= radius; oy++) for (int ox = -radius; ox <= radius; ox++) {
       int dd = ox * ox + oy * oy;
-      if (dd <= r2) carveCell(ox, oy, dd, std::sqrt((double)dd));
+      if (dd <= r2) {
+        double dist = std::sqrt((double)dd);
+        carveCell(ox, oy, dd, dist, power * (1.0 - dist / radius));
+      }
     }
   }
   std::vector<BlastDebrisSource> debrisSources;
@@ -417,7 +436,8 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   // Actual destroyed materials own the bounded budget first. TNT may contribute
   // a generic fragment only when a slot remains; methane owns no solid
   // material and therefore never creates generic DEBRIS.
-  if (explosiveMaterial != METHANE && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
+  if (explosiveMaterial != METHANE && bb.debrisSpawned < localDebrisCap
+      && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
     spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
 }
 
@@ -425,12 +445,19 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
   if (!bb.any) return;
   E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells);
   std::vector<int> allErased;
-  allErased.reserve(bb.erasedStone.size() + bb.erasedIce.size() + bb.erasedPlant.size());
-  allErased.insert(allErased.end(), bb.erasedStone.begin(), bb.erasedStone.end());
-  allErased.insert(allErased.end(), bb.erasedIce.begin(), bb.erasedIce.end());
-  allErased.insert(allErased.end(), bb.erasedPlant.begin(), bb.erasedPlant.end());
+  const std::vector<int>* erased = nullptr;
+  if (bb.erasedIce.empty() && bb.erasedPlant.empty()) erased = &bb.erasedStone;
+  else if (bb.erasedStone.empty() && bb.erasedPlant.empty()) erased = &bb.erasedIce;
+  else if (bb.erasedStone.empty() && bb.erasedIce.empty()) erased = &bb.erasedPlant;
+  else {
+    allErased.reserve(bb.erasedStone.size() + bb.erasedIce.size() + bb.erasedPlant.size());
+    allErased.insert(allErased.end(), bb.erasedStone.begin(), bb.erasedStone.end());
+    allErased.insert(allErased.end(), bb.erasedIce.begin(), bb.erasedIce.end());
+    allErased.insert(allErased.end(), bb.erasedPlant.begin(), bb.erasedPlant.end());
+    erased = &allErased;
+  }
   bool indexesExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
-  bool localConnectivityFastPath = indexesExact && E.removalsKeepGroundingValid(allErased);
+  bool localConnectivityFastPath = indexesExact && E.removalsKeepGroundingValid(*erased);
   // The pre-blast cellComp index still names the touched components exactly.
   // Preserve its offsets before any split can resize a preceding list.
   int plantIndexOffset = (int)E.L->stoneComponents.size();
@@ -450,7 +477,7 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
     // Every touched component kept its position and grounded flag. The local
     // proof already patched the rigid grounding base, so only the erased index
     // entries need clearing; the next tick can skip grounding altogether.
-    for (int k : allErased) E.L->cellComp[k] = -1;
+    for (int k : *erased) E.L->cellComp[k] = -1;
   }
   bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;
   if (E.L->componentTombstones >= 256) {

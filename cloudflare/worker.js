@@ -5,12 +5,15 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    // /game has its own Vite HTML entry. Resolve it internally so visitors keep
-    // the canonical extensionless URL without paying for a redirect round trip.
+    // Dedicated Vite HTML entries resolve internally so visitors keep canonical
+    // extensionless URLs without paying for redirect round trips.
     let assetRequest = request;
-    if (url.pathname === '/game') {
+    const entryPath = url.pathname === '/game' ? '/game/'
+      : url.pathname === '/work/falling-sand' ? '/work/falling-sand/'
+      : null;
+    if (entryPath) {
       const assetUrl = new URL(request.url);
-      assetUrl.pathname = '/game/';
+      assetUrl.pathname = entryPath;
       assetRequest = new Request(assetUrl, request);
     }
     const response = await env.ASSETS.fetch(assetRequest);

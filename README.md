@@ -20,10 +20,13 @@ npm run deploy   # build and deploy to Cloudflare
 
 - `src/` — the React app. `App.jsx` wires up the pages and each section
   (`Hero`, `About`, `Contact`, …) is its own component.
+- `work/falling-sand/` — the dedicated Falling Sand engineering case-study
+  entry; its React view lives in `src/FallingSandCaseStudy.jsx`.
+- `resume/` — editable LaTeX résumé source; the generated one-page PDF is
+  committed under `public/`.
 - `src/sand/` — the sand game: a C++/WebAssembly simulation + renderer + camera,
   a thin JS shell, and the `<sand-game>` Web Component (`src/sand/embed/`). See
   its [README](src/sand/README.md) to work on it.
 - `scripts/` — headless test suites, benchmarks, and the authoritative
   multiplayer server (`npm run sand:server`). `npm run test` runs everything.
-
 

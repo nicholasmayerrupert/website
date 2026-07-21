@@ -35,6 +35,7 @@
     "test:prefetch": "node scripts/prefetch-test.mjs",
     "test:render": "node scripts/render-noise-test.mjs",
     "test:viewport-sizing": "node scripts/viewport-sizing-test.mjs",
+    "test:viewport-pause": "node scripts/viewport-pause-test.mjs",
     "test:day-night": "node scripts/day-night-test.mjs",
     "test:day-night-e2e": "node scripts/day-night-e2e.mjs",
     "test:deployment": "node scripts/deployment-cache-test.mjs",

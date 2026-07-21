@@ -5,7 +5,7 @@
 // All mutable runtime state lives on the shared `ctx` object owned by
 // createSandGame.js.
 
-import { TOOL_IDS } from './runtimeConfig';
+import { TOOL_IDS } from './runtimeConfig.js';
 import { ITEM_KIND, OFF } from '../wasmBridge/abi.generated.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
 import {
@@ -240,9 +240,13 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   const clockStart = performance.now();
   const actorClock = createFixedRateClock({ now: clockStart });
   let workerPaused = null;
+  let running = false;
+  let viewportPaused = false;
   let lastAmbienceSample = -Infinity;
   let lastPlayerStateSignature = '';
+  const shouldPauseWorker = () => ctx.testPaused || (ctx.reduced && !ctx.netClientReady());
   const loop = (now) => {
+    if (!running || viewportPaused) return;
     raf = requestAnimationFrame(loop);
     const rafDelta = lastRafNow ? now - lastRafNow : 0;
     // Ignore tab suspension / debugger pauses; real slow frames below 100 ms
@@ -258,7 +262,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     let actorChanged = false;
     let worldChanged = !ctx.netClientReady() && (ctx.worldWorker?.applyPending() || false);
     let timing = { steps: 0, debtMs: 0, droppedDebtMs: 0 };
-    const pauseWorker = ctx.testPaused || (ctx.reduced && !ctx.netClientReady());
+    const pauseWorker = shouldPauseWorker();
     if (ctx.worldWorker && pauseWorker !== workerPaused) {
       workerPaused = pauseWorker;
       ctx.worldWorker.config({ paused: pauseWorker });
@@ -330,8 +334,38 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     }
   };
 
-  const start = () => { raf = requestAnimationFrame(loop); };
-  const stop = () => cancelAnimationFrame(raf);
+  const start = () => {
+    if (running) return;
+    running = true;
+    if (!viewportPaused) raf = requestAnimationFrame(loop);
+  };
+  const stop = () => {
+    running = false;
+    cancelAnimationFrame(raf);
+  };
+  const setViewportPaused = (paused) => {
+    const next = !!paused;
+    if (next === viewportPaused) return;
+    viewportPaused = next;
+    const now = performance.now();
+    actorClock.reset(now);
+    lastRafNow = 0;
+    if (next) {
+      cancelAnimationFrame(raf);
+      if (ctx.worldWorker && workerPaused !== true) {
+        workerPaused = true;
+        ctx.worldWorker.config({ paused: true });
+      }
+    } else if (running) {
+      // Restore the ordinary reduced-motion/test policy before doing any work.
+      // Resetting the fixed clock prevents the offscreen interval from becoming
+      // simulation debt.
+      const pauseWorker = shouldPauseWorker();
+      workerPaused = pauseWorker;
+      ctx.worldWorker?.config({ paused: pauseWorker });
+      raf = requestAnimationFrame(loop);
+    }
+  };
 
   return {
     render,
@@ -345,6 +379,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     setDayPhase,
     clearDayPhase,
     getDayNight: () => ({ ...ctx.dayNight, cycleMs: DAY_CYCLE_MS, overridden: ctx.dayPhaseOverride !== null }),
+    setViewportPaused,
     start,
     stop,
   };

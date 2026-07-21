@@ -43,6 +43,7 @@ const SUITES = [
   ['grounding', 'grounding-incremental-test.mjs'],
   ['pure-perf', 'pure-perf-checksum-test.mjs'],
   ['timing', 'timing-test.mjs'],
+  ['viewport-pause', 'viewport-pause-test.mjs'],
   ['players', 'player-test.mjs'],
   ['anim', 'player-anim-test.mjs'],
   ['net', 'net-test.mjs'],

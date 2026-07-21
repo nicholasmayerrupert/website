@@ -1,0 +1,141 @@
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+
+\ifdefined\XeTeXversion
+\else
+\input{glyphtounicode}
+\pdfgentounicode=1
+\fi
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{
+\vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+\newcommand{\resumeItem}[1]{
+\item\small{
+{#1 \vspace{-2pt}}
+}
+}
+
+\newcommand{\resumeSubheading}[4]{
+\vspace{-2pt}\item
+\begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+\textbf{#1} & #2 \\
+\small #3 & #4 \\
+\end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+\item
+\begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+\small #1 & #2 \\
+\end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.15in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+\begin{document}
+
+\begin{center}
+\textbf{\Huge \scshape Nicholas Mayer-Rupert} \\ \vspace{1pt}
+\normalsize 604-445-0890 $|$ \href{mailto:njmrme@gmail.com}{\underline{njmrme@gmail.com}} $|$
+\href{https://www.linkedin.com/in/nicholas-mayer-rupert/}{\underline{linkedin.com/in/nicholas-mayer-rupert/}}
+ $|$ \href{https://nicholasmayerrupert.com}{\underline{nicholasmayerrupert.com}}
+\end{center}
+
+\section{Education}
+\resumeSubHeadingListStart
+\resumeSubheading
+{Simon Fraser University}{Vancouver, BC}
+{Bachelor of Science in Computer Science}{Sep 2022 -- Jun 2026}
+\resumeSubHeadingListEnd
+
+\section{Skills}
+\begin{itemize}[leftmargin=0.15in, label={}]
+\small{\item{
+\textbf{Languages}{: Java, C++, Python, JavaScript, TypeScript, SQL} \\
+\textbf{Back end}{: Node.js, Spring Boot, Fastify, PostgreSQL, Firebase, WebSocket} \\
+\textbf{Front end}{: React, Tailwind CSS, Three.js, WebGL2, Mapbox GL} \\
+\textbf{Systems \& other}{: WebAssembly, Git, Cloudflare, OAuth2, Twilio, CSV/ETL}
+}}
+\end{itemize}
+
+\section{Experience}
+\resumeSubHeadingListStart
+\resumeSubheading
+{Mastercard}{}
+{Software Engineer I}{Aug 2026 -- Present}
+
+\resumeSubheading
+{Connection Lab}{Hybrid -- Vancouver}
+{Full-Stack Developer Intern}{May 2025 -- Dec 2025}
+\resumeItemListStart
+\resumeItem{Shipped a Node.js and PostgreSQL platform for cohort wellness with invite-based signup, de-duplicated check-ins, threaded comments, progress visualizations, moderation, and admin tools.}
+\resumeItem{Built an inline-CRUD facilitator dashboard with cross-table search across organizations, cohorts, participants, check-ins, and comments.}
+\resumeItem{Migrated operational data from Airtable to PostgreSQL and implemented email reset, Google Sign-In, and role-based access.}
+\resumeItem{Implemented replies and SMS notifications with quiet hours and per-user limits.}
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+
+\section{Projects}
+\resumeSubHeadingListStart
+
+\resumeProjectHeading
+{\textbf{Falling Sand Engine} $|$ \emph{C++, WebAssembly, WebGL2, React}}{2026 -- Present}
+\resumeItemListStart
+\resumeItem{Built a two-layer falling-sand simulation with procedural infinite terrain, rigid bodies, lighting, creatures, survival progression, and multiplayer.}
+\resumeItem{Moved simulation, rendering, camera, input policy, tools, and streaming into a composed C++ engine compiled to WebAssembly; React mounts a framework-free web component.}
+\resumeItem{Designed a worker-authoritative world with compact diffs, a main-thread presentation mirror, and deterministic local-player prediction.}
+\resumeItem{Created benchmark and checksum suites to isolate optimizations while preserving exact behavior; hosted at \href{https://nicholasmayerrupert.com/work/falling-sand}{\underline{nicholasmayerrupert.com/work/falling-sand}}.}
+\resumeItemListEnd
+
+\resumeProjectHeading
+{\textbf{StoryCarbon} $|$ \emph{React, TypeScript, Mapbox, Firebase, Tailwind CSS}}{Jan -- Apr 2024}
+\resumeItemListStart
+\resumeItem{Built an interactive Mapbox experience for sponsoring farmland plots used for tree planting, with a responsive React and Tailwind CSS interface.}
+\resumeItem{Integrated Firebase authentication, storage, and real-time data, and surfaced impact in metric tons of CO\textsubscript{2} sequestered.}
+\resumeItem{Presented StoryCarbon at a BioGenerator meeting in St. Louis for venture-capital funding.}
+\resumeItemListEnd
+
+\resumeProjectHeading
+{\textbf{3D Conway's Game of Life} $|$ \emph{React, Three.js, C++, WebAssembly}}{2024 -- Present}
+\resumeItemListStart
+\resumeItem{Visualized a finite 16$\times$16 toroidal Game of Life board by stacking each generation as a Three.js layer along the vertical axis.}
+\resumeItem{Built a parallel C++/WebAssembly soup-search engine and searched hundreds of millions of seeds for rare long-lived patterns.}
+\resumeItem{Found and published a non-trivial 5,024-frame attractor reached after 176 transient generations, with interactive editing and playback controls.}
+\resumeItemListEnd
+
+\resumeSubHeadingListEnd
+
+\end{document}

@@ -8,6 +8,7 @@ const check = (label, ok, detail = '') => {
 
 const html = '<!doctype html><div id="root"></div>';
 const gameHtml = '<!doctype html><title>Sand Game</title><div id="root"></div>';
+const caseStudyHtml = '<!doctype html><title>Falling Sand Engineering Case Study</title><div id="root"></div>';
 let lastAssetPath = '';
 const env = {
   ASSETS: {
@@ -19,6 +20,9 @@ const env = {
       }
       if (path === '/game/') {
         return new Response(gameHtml, { headers: { 'content-type': 'text/html' } });
+      }
+      if (path === '/work/falling-sand/') {
+        return new Response(caseStudyHtml, { headers: { 'content-type': 'text/html' } });
       }
       if (path === '/assets/index-abc123.js') {
         return new Response('export default true', { headers: { 'content-type': 'text/javascript', 'cache-control': 'public, max-age=0, must-revalidate' } });
@@ -56,6 +60,14 @@ const game = await get('/game');
 check('/game resolves its dedicated HTML entry without a redirect', game.status === 200 && (await game.text()).includes('Sand Game'));
 check('/game is internally resolved as /game/', lastAssetPath === '/game/', lastAssetPath);
 check('/game HTML is never stored by the browser', game.headers.get('cache-control') === 'no-store', game.headers.get('cache-control'));
+
+const caseStudy = await get('/work/falling-sand');
+check('/work/falling-sand resolves its dedicated HTML entry without a redirect',
+  caseStudy.status === 200 && (await caseStudy.text()).includes('Falling Sand Engineering Case Study'));
+check('/work/falling-sand is internally resolved with a trailing slash',
+  lastAssetPath === '/work/falling-sand/', lastAssetPath);
+check('/work/falling-sand HTML is never stored by the browser',
+  caseStudy.headers.get('cache-control') === 'no-store', caseStudy.headers.get('cache-control'));
 
 const missing = await get('/assets/removed-build.js');
 check('missing old deployment asset is a real 404', missing.status === 404, String(missing.status));

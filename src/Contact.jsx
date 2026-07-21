@@ -1,16 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FaGithub, FaLinkedin } from 'react-icons/fa';
 import { usePrefersReducedMotion } from './hooks/useMediaQuery';
 
 
 /* ---------- PONG OVERLAY (half-activation AI; left starts AI, switches to player on input) ---------- */
-function PongOverlay() {
+function PongOverlay({ paused, onTogglePaused, prefersReducedMotion }) {
   const overlayRef = useRef(null);
   const canvasRef = useRef(null);
   const ctrlRef = useRef(null); // left-side control region
-
-  const [paused, setPaused] = useState(false);
-  const prefersReducedMotion = usePrefersReducedMotion();
 
   const pausedRef = useRef(false);
   const rmRef = useRef(false);
@@ -65,12 +62,14 @@ function PongOverlay() {
 
     let last = performance.now();
     let anim = 0;
+    let onScreen = true;
+    let needsDraw = true;
 
     // Keyboard
     const keys = new Set();
     const onKey = (e) => {
       if (e.type === 'keydown') {
-        if (e.code === 'Space') { e.preventDefault(); setPaused(p => !p); return; }
+        if (e.code === 'Space') { e.preventDefault(); onTogglePaused(); return; }
         keys.add(e.code);
         if (e.code === 'KeyW' || e.code === 'KeyS' || e.code === 'ArrowUp' || e.code === 'ArrowDown') {
           leftMode = 'player';
@@ -79,8 +78,10 @@ function PongOverlay() {
         keys.delete(e.code);
       }
     };
-    window.addEventListener('keydown', onKey);
-    window.addEventListener('keyup', onKey);
+    wrapper.addEventListener('keydown', onKey);
+    wrapper.addEventListener('keyup', onKey);
+    const clearKeys = () => keys.clear();
+    wrapper.addEventListener('blur', clearKeys);
 
     // Pointer controls (left region only)
     let dragging = false;
@@ -99,6 +100,7 @@ function PongOverlay() {
     const onCtrlPointerDown = (e) => {
       leftMode = 'player';
       dragging = true;
+      wrapper.focus({ preventScroll: true });
       if (e.pointerType === 'touch') {
         mode = 'relative';
         startTouchY = getYWithinOverlay(e);
@@ -142,6 +144,7 @@ function PongOverlay() {
     // Resize
     const ro = new ResizeObserver(() => {
       setCanvasSize();
+      needsDraw = true;
       const dim = world();
       w = dim.w; h = dim.h;
       right.x = w - PAD_MARGIN - PAD_W;
@@ -151,6 +154,10 @@ function PongOverlay() {
       ball.y = Math.max(BALL_R, Math.min(h - BALL_R, ball.y));
     });
     ro.observe(wrapper);
+    const visibilityObserver = typeof IntersectionObserver === 'undefined' ? null : new IntersectionObserver(([entry]) => {
+      onScreen = !!entry?.isIntersecting;
+    }, { rootMargin: '100px 0px' });
+    visibilityObserver?.observe(wrapper);
 
     const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
     const centerY = (h - PAD_H) / 2;
@@ -177,8 +184,12 @@ function PongOverlay() {
       if (dt > 0.033) dt = 0.033;
       last = now;
 
-      const actuallyPaused = pausedRef.current || rmRef.current;
-      if (!actuallyPaused) {
+      const canAnimate = !pausedRef.current && !rmRef.current && onScreen && !document.hidden;
+      if (!canAnimate && !needsDraw) {
+        last = now;
+        return;
+      }
+      if (canAnimate) {
         // Activation band around center to avoid both paddles moving
         const MID = w / 2;
         const BAND = Math.max(40, w * 0.04); // a little hysteresis so both don't trigger
@@ -248,34 +259,38 @@ function PongOverlay() {
       ctx.beginPath();
       ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
       ctx.fill();
+      needsDraw = false;
     };
 
     anim = requestAnimationFrame(step);
 
     return () => {
       cancelAnimationFrame(anim);
-      window.removeEventListener('keydown', onKey);
-      window.removeEventListener('keyup', onKey);
+      wrapper.removeEventListener('keydown', onKey);
+      wrapper.removeEventListener('keyup', onKey);
+      wrapper.removeEventListener('blur', clearKeys);
       ctrlEl.removeEventListener('pointerdown', onCtrlPointerDown);
       ctrlEl.removeEventListener('pointermove', onCtrlPointerMove);
       ctrlEl.removeEventListener('pointerup', onCtrlPointerUp);
       ctrlEl.removeEventListener('pointercancel', onCtrlPointerUp);
       ctrlEl.removeEventListener('pointerleave', onCtrlPointerUp);
       ro.disconnect();
+      visibilityObserver?.disconnect();
     };
-  }, []);
+  }, [onTogglePaused]);
 
   return (
     <div
       ref={overlayRef}
       className="pong-layer"
-      aria-hidden="false"
+      tabIndex="0"
+      role="group"
+      aria-label="Interactive Pong. Click the left edge, then use W and S or the arrow keys to move. Space pauses."
     >
       <canvas
         ref={canvasRef}
         className="pong-layer__canvas"
-        role="img"
-        aria-label="Pong overlay"
+        aria-hidden="true"
       />
       <div
         ref={ctrlRef}
@@ -290,6 +305,9 @@ function PongOverlay() {
 
 /* ---------- Contact section with sand overlay ---------- */
 const Contact = () => {
+  const [pongPaused, setPongPaused] = useState(false);
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const togglePongPaused = useCallback(() => setPongPaused((value) => !value), []);
   const contactItems = [
     {
       icon: <FaGithub className="text-4xl" />,
@@ -307,7 +325,11 @@ const Contact = () => {
     <section className="portfolio-section contact-section">
       <div className="portfolio-shell">
         <div className="contact-stage portfolio-reveal">
-          <PongOverlay />
+          <PongOverlay
+            paused={pongPaused}
+            onTogglePaused={togglePongPaused}
+            prefersReducedMotion={prefersReducedMotion}
+          />
 
           <div className="contact-stage__content">
             <p className="portfolio-eyebrow">Get in touch</p>
@@ -332,7 +354,24 @@ const Contact = () => {
                   <span aria-hidden="true">↗</span>
                 </a>
               ))}
+              <a href="/Nicholas-Mayer-Rupert-Resume.pdf" target="_blank" rel="noopener noreferrer">
+                <span className="contact-links__resume-icon" aria-hidden="true">CV</span>
+                <span>Résumé</span>
+                <span aria-hidden="true">↗</span>
+              </a>
             </div>
+          </div>
+
+          <div className="pong-controls">
+            <span>Click the left edge, then use W/S or ↑/↓</span>
+            <button
+              type="button"
+              onClick={togglePongPaused}
+              disabled={prefersReducedMotion}
+              aria-pressed={pongPaused}
+            >
+              {prefersReducedMotion ? 'Motion reduced' : pongPaused ? 'Resume Pong' : 'Pause Pong'}
+            </button>
           </div>
 
         </div>

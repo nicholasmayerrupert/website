@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#11172a"/>
+      <stop offset=".62" stop-color="#252440"/>
+      <stop offset="1" stop-color="#3a2639"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#8db8ff"/>
+      <stop offset=".55" stop-color="#d7b9ff"/>
+      <stop offset="1" stop-color="#ffb2cf"/>
+    </linearGradient>
+    <pattern id="grid" width="18" height="18" patternUnits="userSpaceOnUse">
+      <path d="M18 0H0V18" fill="none" stroke="#fff" stroke-opacity=".035"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="#07070a"/>
+  <rect x="38" y="38" width="1124" height="554" rx="30" fill="url(#sky)" stroke="#fff" stroke-opacity=".16"/>
+  <path d="M38 420L170 335L296 398L450 304L612 402L760 332L904 402L1060 316L1162 380V592H38Z" fill="#23283a"/>
+  <path d="M38 474L180 406L330 462L500 390L674 480L842 408L1010 460L1162 402V592H38Z" fill="#34323c"/>
+  <path d="M38 482C145 455 224 502 328 478C440 452 518 506 626 484C756 457 820 518 942 480C1022 456 1095 468 1162 446V592H38Z" fill="#8c6f46"/>
+  <path d="M38 522C168 494 262 550 390 516C516 484 606 548 736 516C874 482 986 548 1162 508V592H38Z" fill="#4b4b4f"/>
+  <rect x="38" y="38" width="1124" height="554" rx="30" fill="url(#grid)"/>
+  <circle cx="1018" cy="145" r="64" fill="#dbe6ff" opacity=".8"/>
+  <circle cx="994" cy="122" r="64" fill="#171b2c"/>
+  <rect x="72" y="72" width="310" height="42" rx="21" fill="#08090d" fill-opacity=".72" stroke="#fff" stroke-opacity=".12"/>
+  <text x="95" y="100" fill="#a8c8ff" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="3">C++ · WASM · WEBGL2</text>
+  <text x="70" y="232" fill="url(#title)" font-family="Arial, Helvetica, sans-serif" font-size="86" font-weight="700" letter-spacing="-4">Falling Sand</text>
+  <text x="76" y="291" fill="#f4f4f7" font-family="Arial, Helvetica, sans-serif" font-size="32">An engineering case study</text>
+  <text x="76" y="344" fill="#aaaab4" font-family="Arial, Helvetica, sans-serif" font-size="22">Two simulated layers · Procedural streaming · Deterministic benchmarks</text>
+</svg>

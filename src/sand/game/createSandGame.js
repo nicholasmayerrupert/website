@@ -443,7 +443,15 @@ export function createSandGame(container, opts = {}) {
     setDayPhase(phase) { loop.setDayPhase(phase); loop.render(false); },
     clearDayPhase() { loop.clearDayPhase(); loop.render(false); },
     getDayNight() { return loop.getDayNight(); },
-    setAudioEnabled(on) { audio.setEnabled(!!on); },
+    setViewportActive(active) {
+      ctx.viewportActive = !!active;
+      loop.setViewportPaused(!ctx.viewportActive);
+      audio.setEnabled(ctx.viewportActive && ctx.audioEnabled !== false);
+    },
+    setAudioEnabled(on) {
+      ctx.audioEnabled = !!on;
+      audio.setEnabled(ctx.audioEnabled && ctx.viewportActive !== false);
+    },
     setAudioMuted(on) { audio.setMuted(!!on); },
     toggleAudioMuted() { return audio.toggleMuted(); },
     unlockAudio() { return audio.unlock(); },

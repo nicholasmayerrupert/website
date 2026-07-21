@@ -104,7 +104,10 @@ terrain) is skipped, so a static scene costs about the same as one layer.
   canvas, hands it to the mirror engine for a WebGL2 context, runs the input and
   prediction clock, forwards DOM events (`engine.inputKey/inputPointer/...`),
   drives `engine.glRenderFrame()`, and carries authority transport. No pixels,
-  no camera math, no React.
+  no camera math, no React. The Web Component observes its own viewport and
+  document visibility; while offscreen it pauses the authority worker,
+  presentation loop, and audio, then resets the fixed clock before resuming so
+  hidden time never becomes catch-up debt.
 - `audio/sandAudio.js` — the sole Web Audio boundary. Authority engines emit a
   bounded packed stream of semantic events (place, break, impact, explosion,
   movement, reactions, player, pickup, and creature events) through `AudioSystem`;

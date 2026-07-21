@@ -603,6 +603,22 @@ class SandGameElement extends HTMLElement {
         syncMobileCreativeUi();
         // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).
         if (this.hasAttribute('perf-hud')) this._perfHud = createPerfHud(root, game);
+
+        // Stop authority, presentation, and audio work when the embedded game is
+        // outside the viewport. Resume from the current tick with a reset fixed
+        // clock, so time away never turns into catch-up simulation debt.
+        let onScreen = true;
+        const syncViewportActivity = () => game.setViewportActive(onScreen && !document.hidden);
+        if (typeof IntersectionObserver !== 'undefined') {
+          this._visibilityObserver = new IntersectionObserver(([entry]) => {
+            onScreen = !!entry?.isIntersecting;
+            syncViewportActivity();
+          }, { rootMargin: '150px 0px' });
+          this._visibilityObserver.observe(this);
+        }
+        this._onDocumentVisibility = syncViewportActivity;
+        document.addEventListener('visibilitychange', this._onDocumentVisibility);
+        syncViewportActivity();
       })
       .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 
@@ -623,8 +639,11 @@ class SandGameElement extends HTMLElement {
     this._start?.destroy();
     this._perfHud?.destroy();
     this._sound?.destroy();
+    this._visibilityObserver?.disconnect();
+    if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
     this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = null;
+    this._visibilityObserver = this._onDocumentVisibility = null;
     this._mounted = false;
   }
 

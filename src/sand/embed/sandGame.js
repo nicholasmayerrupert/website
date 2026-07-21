@@ -18,8 +18,6 @@
 
 import { initSandWasm } from '../wasmBridge/engineFactory.js';
 import { createSandGame } from '../game/createSandGame';
-import { createParallaxBackground } from '../game/parallaxBackground.js';
-import { DEFAULT_DAY_PHASE, sampleDayNight } from '../game/dayNightCycle.js';
 import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
@@ -492,24 +490,6 @@ class SandGameElement extends HTMLElement {
     sim.className = 'sg-sim';
     root.appendChild(sim);
 
-    // A backgrounded WebGL/WASM page may be evicted from the browser's
-    // back/forward cache. On return that is a cold mount, so paint the cheap 2D
-    // backdrop immediately instead of exposing the host's dark background while
-    // the module is compiled and the world is rebuilt.
-    const bootBackdrop = createParallaxBackground(sim);
-    const drawBootBackdrop = () => {
-      const rect = sim.getBoundingClientRect();
-      bootBackdrop.resize(rect.width, rect.height);
-      bootBackdrop.draw({ dayNight: sampleDayNight(DEFAULT_DAY_PHASE) });
-    };
-    drawBootBackdrop();
-    const bootResizeObserver = typeof ResizeObserver === 'undefined'
-      ? null
-      : new ResizeObserver(drawBootBackdrop);
-    bootResizeObserver?.observe(sim);
-    this._bootBackdrop = bootBackdrop;
-    this._bootResizeObserver = bootResizeObserver;
-
     const initialTool = this.getAttribute('initial-tool') || DEFAULT_TOOL;
     // 'survival' (default): player character + reach-limited tools, camera
     // follows. 'creative': free camera, draw anywhere, no character.
@@ -535,12 +515,6 @@ class SandGameElement extends HTMLElement {
           onToggleFootprintMenu: () => this._sizeMenu?.toggleOpen(),
         });
         this._game = game;
-        // createSandGame has synchronously sized and drawn its own backdrop by
-        // this point, so the bootstrap canvas can be removed without a blank
-        // frame between the two.
-        bootResizeObserver?.disconnect();
-        bootBackdrop.destroy();
-        this._bootBackdrop = this._bootResizeObserver = null;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&
           window.matchMedia('(pointer: coarse)').matches;
         let syncMobileCreativeUi = () => {};
@@ -646,15 +620,13 @@ class SandGameElement extends HTMLElement {
         document.addEventListener('visibilitychange', this._onDocumentVisibility);
         syncViewportActivity();
       })
-      .catch((e) => { console.error('sand-game: engine failed to init; staying on fallback', e); });
+      .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
 
     this._cancel = () => { cancelled = true; };
   }
 
   disconnectedCallback() {
     this._cancel?.();
-    this._bootResizeObserver?.disconnect();
-    this._bootBackdrop?.destroy();
     // Release analog input while its engine is still alive.
     this._stick?.destroy();
     this._game?.destroy();
@@ -672,7 +644,6 @@ class SandGameElement extends HTMLElement {
     setPageScrollLocked(false);
     this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = null;
     this._visibilityObserver = this._onDocumentVisibility = null;
-    this._bootBackdrop = this._bootResizeObserver = null;
     this._mounted = false;
   }
 

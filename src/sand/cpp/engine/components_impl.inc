@@ -71,7 +71,7 @@ void ComponentSystem::indexComponents() {
 // computeGrounded = rigid flood (computeRigidGrounded) + loose overlay
 // (applyLooseOverlay). The union is byte-identical to the old single flood
 // (dev builds re-run the old algorithm and memcmp — see the parity block).
-void ComponentSystem::computeRigidGrounded() {
+void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   // Hot flood: hoist the per-cell buffers into TRUE locals (register-bound;
   // uint8_t stores can't alias them, unlike the old Engine-member mirrors).
   Layer* const lay = E.L;
@@ -93,8 +93,25 @@ void ComponentSystem::computeRigidGrounded() {
   (void)lay->groundStreamX0; (void)lay->groundStreamY0;
   lay->groundStreamX0 = lay->groundStreamX1 = lay->groundStreamY0 = lay->groundStreamY1 = -1;
   std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
-  std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
-  indexComponents();
+  if (!reuseComponentIndex) {
+    std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
+    indexComponents();
+  } else {
+    // Free-body stamps participate in the grounding flood but never belong to
+    // static components. When only their occupancy changed, cellComp and the
+    // component adjacency cache remain exact; just rebind the layer-local
+    // Comp* view and reset flags instead of rescanning every static cell.
+    cgComps.clear();
+    cgCompDensity.clear();
+    auto bind = [&](std::vector<Comp>& list) {
+      for (auto& c : list) {
+        c.grounded = c.cells.empty();
+        cgComps.push_back(&c);
+        cgCompDensity.push_back(0);
+      }
+    };
+    bind(lay->stoneComponents); bind(lay->plantComponents); bind(lay->iceComponents);
+  }
   int sp = 0;
   if (groundStackX.size() != (size_t)E.cols * E.rows) groundStackX.assign((size_t)E.cols * E.rows, 0);
   int32_t* gsx = groundStackX.data();
@@ -385,7 +402,10 @@ void ComponentSystem::computeGrounded() {
     }
     lay->groundBaseReplay = false;
   } else {
-    computeRigidGrounded();
+    bool componentIndexExact = !groundForceFull && lay->groundBaseValid
+      && !lay->groundDirty && !lay->groundContentDirty
+      && lay->groundBaseFlags.size() == totalComps;
+    computeRigidGrounded(componentIndexExact);
     lay->groundRigidBase.assign(lay->groundedCell.begin(), lay->groundedCell.end());
     lay->groundBaseFlags.clear();
     auto push = [&](std::vector<Comp>& list) { for (auto& c : list) lay->groundBaseFlags.push_back(c.grounded ? 1 : 0); };
@@ -564,7 +584,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
   int need = (int)boundary.size(), found = 1; // boundary[0] is the BFS seed
   E.L->seenStamp[boundary[0]] = vis; q[qt++] = boundary[0];
   while (qh < qt) {
-    if (qt >= cap) return false;
+    if (qt >= cap) { gbCutCap++; return false; }
     int cur = q[qh++]; int cy = cur / E.cols, cx = cur - cy * E.cols;
     for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
       if (!ox && !oy) continue;
@@ -578,6 +598,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
       E.L->seenStamp[nk] = vis; q[qt++] = nk;
     }
   }
+  if (found != need) gbCutOpen++;
   return found == need;
 }
 
@@ -757,6 +778,9 @@ void ComponentSystem::computeGroundedBoth() {
     return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
            || !lay.bodies.empty() || !lay.bodyCells.empty();
   };
+  auto staticMayChange = [](Layer& lay) {
+    return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid;
+  };
   auto structureCanSelfActivate = [](Layer& lay) {
     if (lay.myceliumActive) return true;
     for (const auto& c : lay.plantComponents) if (c.growing) return true;
@@ -812,6 +836,7 @@ void ComponentSystem::computeGroundedBoth() {
     for (auto& c : lay.iceComponents) c.grounded = lay.groundBaseFlags[i++] != 0;
   };
   bool rf = rigidMayChange(E.fg), rb = rigidMayChange(E.bg);
+  bool sf = staticMayChange(E.fg), sb = staticMayChange(E.bg);
   // A cached sleeping pass deliberately kept joint patches in place. If a
   // later mutation requires a real joint rebuild, the dirty layer refloods and
   // the clean peer restores its independent rigid-base snapshot below. The old
@@ -835,13 +860,15 @@ void ComponentSystem::computeGroundedBoth() {
   if (prevFg) cgPrevFg.assign(E.fg.groundedCell.begin(), E.fg.groundedCell.end());
   if (prevBg) cgPrevBg.assign(E.bg.groundedCell.begin(), E.bg.groundedCell.end());
   if (rf || rb || jointInv) {
-    auto prepLayer = [&](Layer& lay, bool rigidDirty) {
-      if (rigidDirty) lay.groundDirty = true;
-      else if (!lay.looseGroundDirty && !lay.groundContentDirty) wipeJointPatchesKeepLoose(lay);
-      else { lay.looseGroundDirty = true; lay.looseDirtyFull = true; lay.looseDirtyX0 = 0; lay.looseDirtyX1 = E.cols - 1; }
+    auto prepLayer = [&](Layer& lay, bool rigidDirty, bool staticDirty) {
+      if (staticDirty) lay.groundDirty = true;
+      else if (!rigidDirty) {
+        if (!lay.looseGroundDirty && !lay.groundContentDirty) wipeJointPatchesKeepLoose(lay);
+        else { lay.looseGroundDirty = true; lay.looseDirtyFull = true; lay.looseDirtyX0 = 0; lay.looseDirtyX1 = E.cols - 1; }
+      }
     };
-    prepLayer(E.fg, rf);
-    prepLayer(E.bg, rb);
+    prepLayer(E.fg, rf, sf);
+    prepLayer(E.bg, rb, sb);
   }
   // Each layer's base grounding: full flood when its rigid topology changed, else a
   // cheap cache reuse / full skip inside computeGrounded.

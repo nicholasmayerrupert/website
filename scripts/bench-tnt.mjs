@@ -94,7 +94,7 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     previousTnt = tnt;
     rollingHash = hashGrid(rollingHash, engine.getGrid());
     if (bg) rollingHash = hashGrid(rollingHash, engine.getGridBg());
-    records.push({ step, wallMs, perf, reactMs: perf.reactMs || 0, tnt, bodies: engine._bodyCount() });
+    records.push({ step, wallMs, perf, reactMs: perf.reactMs || 0, tnt, bodies: engine._bodyCount(), groundingDiag: engine.groundingDiag() });
   }
 
   const blastRecords = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= (completed >= 0 ? completed : firstBlast));
@@ -115,6 +115,14 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     blastTail.reduce((sum, record) => sum + (record.perf[key] || 0), 0),
   ]));
   const peak = blastRecords.reduce((best, record) => record.reactMs > best.reactMs ? record : best, blastRecords[0]);
+  const groundingDiag = engine.groundingDiag();
+  const groundingEvents = [];
+  let previousDiag = { fast: 0, cut: 0, cutCap: 0, cutOpen: 0, span: 0, edge: 0, powder: 0 };
+  for (const record of records) {
+    const changed = Object.keys(previousDiag).filter((key) => record.groundingDiag[key] !== previousDiag[key]);
+    if (changed.length) groundingEvents.push(`${record.step}:${changed.map((key) => `${key}+${record.groundingDiag[key] - previousDiag[key]}`).join(',')}`);
+    previousDiag = record.groundingDiag;
+  }
   engine.destroy();
   return {
     name,
@@ -130,6 +138,8 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     blastTailWallMs: blastTail.reduce((sum, record) => sum + record.wallMs, 0),
     blastTailBodyMs: blastTail.reduce((sum, record) => sum + (record.perf.bodyMs || 0), 0),
     peakBodies: Math.max(0, ...blastTail.map(({ bodies }) => bodies)),
+    groundingDiag,
+    groundingEvents,
     aftermathPhases,
     tailPhases,
     detonationSteps: detonationDrops.length,
@@ -187,6 +197,9 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  full tail  p50 ${blastTailWall.p50.toFixed(3)}  p95 ${blastTailWall.p95.toFixed(3)}  body ${blastTailBody.p50.toFixed(3)} ms`);
   console.log(`  rubble     peak ${first.peakBodies} bodies`);
   console.log(`  front steps ${first.detonationSteps}  max cells ${first.maxDetonationDrop}`);
+  console.log(`  ground proof fast ${first.groundingDiag.fast}  cut ${first.groundingDiag.cut}  span ${first.groundingDiag.span}  edge ${first.groundingDiag.edge}  powder ${first.groundingDiag.powder}`);
+  console.log(`  ground cut reasons cap ${first.groundingDiag.cutCap}  open ${first.groundingDiag.cutOpen}`);
+  console.log(`  ground events ${first.groundingEvents.join('  ') || 'none'}`);
   console.log(`  +5 phases  ${phaseSummary}`);
   console.log(`  tail phases ${tailPhaseSummary}`);
 }

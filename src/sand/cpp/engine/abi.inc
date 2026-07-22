@@ -114,7 +114,12 @@ EMSCRIPTEN_KEEPALIVE void engine_set_actor_tick(Engine* e, int tick) { e->actorT
 // (the byte-identical reference for the checksum test).
 EMSCRIPTEN_KEEPALIVE void engine_test_set_grounding_debug(Engine* e, int verify, int forceFull) { e->comps.groundVerify = verify != 0; e->comps.groundForceFull = forceFull != 0; }
 EMSCRIPTEN_KEEPALIVE double engine_test_grounding_mismatches(Engine* e) { return (double)e->comps.groundMismatches; }
-EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) { return which == 0 ? (double)e->comps.gbFast : which == 1 ? (double)e->comps.gbEdge : which == 2 ? (double)e->comps.gbPowder : which == 3 ? (double)e->comps.gbCut : (double)e->comps.gbSpan; }
+EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) {
+  return which == 0 ? (double)e->comps.gbFast : which == 1 ? (double)e->comps.gbEdge
+    : which == 2 ? (double)e->comps.gbPowder : which == 3 ? (double)e->comps.gbCut
+    : which == 4 ? (double)e->comps.gbSpan : which == 5 ? (double)e->comps.gbCutCap
+    : (double)e->comps.gbCutOpen;
+}
 
 // drafts / seed
 // Draft staging is a SINGLE material-parameterized set. The old per-material

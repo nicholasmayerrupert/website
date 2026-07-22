@@ -62,7 +62,7 @@ class ComponentSystem {
   bool groundVerify = false;
   bool groundForceFull = false;
   long groundMismatches = 0;
-  long gbEdge = 0, gbPowder = 0, gbCut = 0, gbSpan = 0, gbFast = 0;
+  long gbEdge = 0, gbPowder = 0, gbCut = 0, gbCutCap = 0, gbCutOpen = 0, gbSpan = 0, gbFast = 0;
   std::vector<uint8_t> gvGrounded;
   std::vector<int32_t> gvCellComp;
   std::vector<int> cgRemovedCells, cgBlobN, cgRemovedComp;
@@ -86,7 +86,7 @@ class ComponentSystem {
   uint8_t floodTargetMat = 0; // set before a per-material stone flood
 
   void indexComponents();
-  void computeRigidGrounded();
+  void computeRigidGrounded(bool reuseComponentIndex = false);
   void applyLooseOverlay();
   void refreshLooseOverlayPreservingJoint(Layer* lay);
   void normalizeDeferredConnectivity();

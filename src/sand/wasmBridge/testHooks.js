@@ -65,7 +65,10 @@ export function attachTestHooks(engine) {
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);
   engine.setGroundingDebug = (verify, forceFull) => t.setGroundingDebug(ptr, verify ? 1 : 0, forceFull ? 1 : 0);
   engine.groundingMismatches = () => t.groundingMismatches(ptr);
-  engine.groundingDiag = () => ({ fast: t.groundingDiag(ptr, 0), edge: t.groundingDiag(ptr, 1), powder: t.groundingDiag(ptr, 2), cut: t.groundingDiag(ptr, 3), span: t.groundingDiag(ptr, 4) });
+  engine.groundingDiag = () => ({
+    fast: t.groundingDiag(ptr, 0), edge: t.groundingDiag(ptr, 1), powder: t.groundingDiag(ptr, 2),
+    cut: t.groundingDiag(ptr, 3), span: t.groundingDiag(ptr, 4), cutCap: t.groundingDiag(ptr, 5), cutOpen: t.groundingDiag(ptr, 6),
+  });
   engine.spawnParticle = (material, px, py, vx = 0, vy = 0, life = 0) => t.spawnParticle(ptr, material | 0, px, py, vx, vy, life | 0);
   return engine;
 }

@@ -527,7 +527,10 @@ hardcoded id list, decides who reacts.
   representative of each destroyed material before repeats. When every active
   body is one of these tiny, short-lived chunks, collision solving uses 16
   iterations instead of the 64 needed by persistent structural stacks; the full
-  64-iteration path is selected immediately if any ordinary body is present. Body motion also
+  64-iteration path is selected immediately if any ordinary body is present. A
+  required joint-grounding refresh still floods through every live body cell, but
+  reuses the static component index and adjacency when body occupancy changed
+  without changing static topology. Body motion also
   reuses the grounding pass already performed at the start of the layer unless
   assembly motion, loose support, or a sleeping-body wake check actually requires
   a refresh; long rubble flights no longer repeat a full-grid flood every tick.

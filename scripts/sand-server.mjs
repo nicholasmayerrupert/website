@@ -17,9 +17,10 @@ import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
+import { syncWorldWindow } from '../src/sand/net/server/worldWindow.js';
 
-// Bounded shared arena (MVP): a fixed, non-streaming world buffer. Multiples of
-// the 32-cell render chunk; ~61k cells stays well under the engine's cell budget.
+// Bootstrap size only. Connected clients report their survival viewport needs;
+// the shared authority window then streams/resizes around the player group.
 const DEFAULTS = { port: 5191, cols: 320, rows: 192, seed: 0xC0FFEE, room: 'main' };
 const STEP_MS = 16;            // fixed sim step (matches the browser STEP_MS)
 const SNAPSHOT_INTERVAL = 3;   // steps between player-snapshot broadcasts (~20Hz)
@@ -66,7 +67,7 @@ export async function startSandServer(opts = {}) {
           const pid = host.addClient(m.client, spawnFor(joinCounter++));
           if (!pid) { sendTo(ws, encode(makeReject(cfg.room, 'full'))); ws.close(); return; }
           cid = m.client;
-          peers.set(cid, { ws, pid, invRev: -1, needsWorld: false });
+          peers.set(cid, { ws, pid, invRev: -1, invTick: -Infinity, needsWorld: false, view: null });
           // The joiner gets its authoritative id, the full world, and an initial
           // items/inventory/cursor fill so its HUD + scene are correct immediately.
           sendTo(ws, encode(makeAssign(cfg.room, cid, pid)));
@@ -79,6 +80,14 @@ export async function startSandServer(opts = {}) {
           break;
         }
         case MSG.INPUT: host.receive(m, cid); break; // identity + movement/tool input are both authority-validated
+        case MSG.VIEW: {
+          const p = peers.get(cid);
+          if (p && m.client === cid && m.room === cfg.room) p.view = {
+            viewCols: m.viewCols, viewRows: m.viewRows,
+            bufferCols: m.bufferCols, bufferRows: m.bufferRows,
+          };
+          break;
+        }
         case MSG.RESYNC: {
           const p = peers.get(cid);
           if (p && m.client === cid && m.room === cfg.room) {
@@ -114,12 +123,13 @@ export async function startSandServer(opts = {}) {
         broadcastLatest(encode(encodeCreatures(engine, t)));
         broadcastLatest(encode(encodeProjectiles(engine, t)));
       }
-      // Per-player inventory + cursor, only when that player's inventory changed
-      // (idle players cost zero inventory bandwidth).
+      // Per-player inventory + cursor. Changes send immediately; a cheap 1 Hz
+      // refresh recovers a one-shot packet lost while a large streamed-window
+      // snapshot was in flight.
       for (const p of peers.values()) {
         const rev = inventoryRevision(engine, p.pid);
-        if (rev !== p.invRev && p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) {
-          p.invRev = rev;
+        if ((rev !== p.invRev || t - p.invTick >= 60) && p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) {
+          p.invRev = rev; p.invTick = t;
           sendTo(p.ws, encode(encodeInventory(engine, t, p.pid)));
           sendTo(p.ws, encode(encodeCursor(engine, t, p.pid)));
         }
@@ -128,23 +138,30 @@ export async function startSandServer(opts = {}) {
   }
 
   function stepWorldOnce() {
+    const windowChanged = peers.size > 0 && syncWorldWindow(engine, peers);
     host.stepWorld();
     if (peers.size > 0) {
       // Actor edits and cellular changes accumulate in the same dirty set and
       // leave together after this single world phase.
-      const d = encodeDiff(engine, host.worldTick);
+      const d = windowChanged ? null : encodeDiff(engine, host.worldTick);
       let full = null;
       for (const p of peers.values()) {
         if (!writable(p.ws)) continue;
-        if (p.needsWorld) {
+        if (windowChanged || p.needsWorld) {
           if (p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) {
             full ??= encode(encodeWorld(engine, host.worldTick));
             p.ws.send(full); p.needsWorld = false;
-          }
+          } else p.needsWorld = true;
         } else if (d) {
           if (p.ws.bufferedAmount > MAX_BUFFERED_BYTES) p.needsWorld = true;
           else p.ws.send(encode(d));
         }
+      }
+      if (windowChanged) {
+        broadcastLatest(encode(makeSnapshot(host.actorTick, engine.getPlayers(), null)));
+        broadcastLatest(encode(encodeItems(engine, host.actorTick)));
+        broadcastLatest(encode(encodeCreatures(engine, host.actorTick)));
+        broadcastLatest(encode(encodeProjectiles(engine, host.actorTick)));
       }
       const sounds = encodeSounds(engine, host.actorTick);
       if (sounds) broadcastLatest(encode(sounds));
@@ -183,8 +200,8 @@ export async function startSandServer(opts = {}) {
     engine,
     host,
     port: cfg.port,
-    cols: cfg.cols,
-    rows: cfg.rows,
+    get cols() { return engine.cols; },
+    get rows() { return engine.rows; },
     seed: cfg.seed >>> 0,
     peerCount: () => peers.size,
     step: stepOnce, // tests can drive the sim deterministically

@@ -214,7 +214,10 @@ export function installDevHooks(ctx, {
     debug: () => ctx.net.debug,
     // Drive N fixed sim steps synchronously (RAF-throttling-immune) so the
     // two-context multiplayer test is deterministic.
-    tickSteps: (n = 1) => { for (let i = 0; i < n; i++) doFixedStep(performance.now()); render(false); },
+    tickSteps: (n = 1, present = true) => {
+      for (let i = 0; i < n; i++) doFixedStep(performance.now());
+      if (present) render(false);
+    },
   };
 
   return function uninstallDevHooks() {

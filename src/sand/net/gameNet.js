@@ -11,6 +11,7 @@
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,
+  makeView,
   makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
   INV_SLOTS, INV_FIELDS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS,
 } from './protocol.js';
@@ -29,12 +30,13 @@ const fallbackPlayerSize = (engine) => engine?.getPlayerSize?.() || { w: 4, h: 8
 let clientCounter = 0;
 const newClientId = () => `c${Date.now().toString(36)}-${(clientCounter++).toString(36)}`;
 
-export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
+export function createGameNet({ getEngine, getLocalInput, getViewport = null, rebuildEngine }) {
   const engineNow = () => getEngine();
   let ws = null, role = null, room = null, clientId = null, connected = false;
   let ownPlayerId = 0;             // my authoritative player id on the server
   let predictor = null, predId = 0; // local prediction of our own player
   let inputSeq = 0;
+  let lastViewKey = '';
   let worldReady = false;          // has the initial world snapshot been applied?
   let paused = false, needsResync = false, resyncPending = false;
   let pendingJoin = null;
@@ -90,7 +92,11 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     }
     inQueue.push(m);
     while (inQueue.length > MAX_INBOUND) {
-      const dropped = inQueue.shift();
+      // Inventory/cursor are change-triggered authority facts, not periodic
+      // streams. Preserve their coalesced latest values when a slow render
+      // client falls behind; discard an older transient packet first.
+      const transient = inQueue.findIndex((queued) => !LATEST_MESSAGES.has(queued.t));
+      const [dropped] = inQueue.splice(transient >= 0 ? transient : 0, 1);
       if (dropped.t === MSG.WORLD || dropped.t === MSG.DIFF) { needsResync = true; requestResync(); }
     }
   }
@@ -100,6 +106,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     const { resolve, timer } = pendingJoin;
     pendingJoin = null; clearTimeout(timer);
     setStatus(`joined ${room}`);
+    sendViewport();
     resolve();
   }
 
@@ -112,7 +119,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
 
   function resetState(status = 'offline') {
     ws = null; role = null; room = null; connected = false;
-    ownPlayerId = 0; inputSeq = 0; worldReady = false;
+    ownPlayerId = 0; inputSeq = 0; lastViewKey = ''; worldReady = false;
     needsResync = false; resyncPending = false;
     predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
@@ -215,15 +222,30 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
         const cur = engineNow();
         const bytes = validateWorldMessage(m);
         if (!bytes) { resyncPending = false; needsResync = true; requestResync(); break; }
+        const oldOffsetX = cur.getWorldOffsetX?.() || 0;
+        const oldOffsetY = cur.getWorldOffsetY?.() || 0;
+        const oldCam = cur.getCam?.();
+        const worldCam = worldReady && oldCam ? { x: oldOffsetX + oldCam.x, y: oldOffsetY + oldCam.y } : null;
+        const dx = m.offsetX - oldOffsetX, dy = m.offsetY - oldOffsetY;
+        if (dx || dy) {
+          for (const r of remotes.values()) {
+            r.x -= dx; r.y -= dy;
+            if (r.tx !== undefined) r.tx -= dx;
+            if (r.ty !== undefined) r.ty -= dy;
+          }
+        }
+        if (predId) cur.removePlayer(predId);
+        predictor = null; predId = 0;
         let e = cur;
         // Adopt the server's buffer dims so diffs apply 1:1 (rebuild the local
         // render engine if ours differs). Only full snapshots (join/resync) carry
         // dims, so this is rare.
         if (!worldReady || m.cols !== cur.cols || m.rows !== cur.rows) {
-          e = rebuildEngine(m.cols, m.rows); predictor = null; predId = 0;
+          e = rebuildEngine(m.cols, m.rows);
         }
         resyncPending = false;
         if (!applyWorldMessage(e, m, { mirror: true, bytes })) { needsResync = true; requestResync(); break; }
+        if (worldCam) e.cameraSet(worldCam.x - m.offsetX, worldCam.y - m.offsetY);
         worldReady = true; needsResync = false;
         break;
       }
@@ -314,12 +336,28 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       r.x += (r.tx - r.x) * SMOOTH;
       r.y += (r.ty - r.y) * SMOOTH;
     }
+    sendViewport();
     // send local input to the server AND predict it locally (immediate, no lag).
     const inp = getLocalInput();
-    send(makeInput({ room, client: clientId, player: ownPlayerId, tick: inputSeq, seq: inputSeq, bits: inp.bits, aimX: inp.aimX, aimY: inp.aimY, tool: inp.tool, moveX: inp.moveX, moveY: inp.moveY }));
+    const e = engineNow();
+    send(makeInput({
+      room, client: clientId, player: ownPlayerId, tick: inputSeq, seq: inputSeq, bits: inp.bits,
+      aimX: inp.aimX + (e.getWorldOffsetX?.() || 0), aimY: inp.aimY + (e.getWorldOffsetY?.() || 0),
+      tool: inp.tool, moveX: inp.moveX, moveY: inp.moveY,
+    }));
     if (predictor) predictor.predict(inputSeq, inp);
     if (inp.bits) dbgSent++;
     inputSeq++;
+  }
+
+  function sendViewport() {
+    if (!connected || !room || !clientId || !getViewport) return;
+    const v = getViewport();
+    if (!v) return;
+    const key = `${v.viewCols}:${v.viewRows}:${v.bufferCols}:${v.bufferRows}`;
+    if (key === lastViewKey) return;
+    lastViewKey = key;
+    send(makeView(room, clientId, v.viewCols, v.viewRows, v.bufferCols, v.bufferRows));
   }
 
   function setPaused(next) {

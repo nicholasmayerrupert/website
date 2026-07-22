@@ -164,9 +164,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
-    // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. View-only, so it
-    // never rebuilds the world. Handled before movement/hotbar keys ('0' is
-    // unused there).
+    // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority owns
+    // any loaded-window resize (local worker or multiplayer server). Handled
+    // before movement/hotbar keys ('0' is unused there).
     if (key === '+' || key === '=') { zoomBy(1); e.preventDefault(); return; }
     if (key === '-' || key === '_') { zoomBy(-1); e.preventDefault(); return; }
     if (key === '0') { resetZoom(); e.preventDefault(); return; }

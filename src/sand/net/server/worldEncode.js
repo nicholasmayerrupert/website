@@ -7,7 +7,10 @@ import { makeWorld, makeDiff } from '../protocol.js';
 import { bytesToB64 } from '../worldSync.js';
 
 export function encodeWorld(engine, tick) {
-  return makeWorld(tick, engine.cols, engine.rows, engine.gridHash(), bytesToB64(engine.serializeWorld()));
+  return makeWorld(
+    tick, engine.cols, engine.rows, engine.gridHash(), bytesToB64(engine.serializeWorld()),
+    engine.getWorldOffsetX(), engine.getWorldOffsetY(),
+  );
 }
 export function encodeDiff(engine, tick) {
   const bytes = engine.serializeDiff();

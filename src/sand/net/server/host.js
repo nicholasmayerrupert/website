@@ -82,9 +82,10 @@ export class Host {
     // Commit sequence progress only after identity, fields, and rate limits all
     // pass. A forged or throttled high sequence cannot lock out later input.
     if (!c.tracker.accept(m.seq)) return false;
-    // Clamp the aim into the buffer (+small margin); reach is enforced in C++.
-    const aimX = Math.max(-1, Math.min(this.engine.cols, m.aimX | 0));
-    const aimY = Math.max(-1, Math.min(this.engine.rows, m.aimY | 0));
+    // Aim is world-space so an authority-window shift cannot redirect a held
+    // tool while its full snapshot is in flight. Physics still consumes local cells.
+    const aimX = Math.max(-1, Math.min(this.engine.cols, (m.aimX - this.engine.getWorldOffsetX()) | 0));
+    const aimY = Math.max(-1, Math.min(this.engine.rows, (m.aimY - this.engine.getWorldOffsetY()) | 0));
     this.engine.setPlayerInput(c.playerId, {
       bits: m.bits & INPUT_BITS_MAX, aimX, aimY, tool: m.tool, seq: m.seq,
       moveX: m.moveX, moveY: m.moveY,

@@ -44,6 +44,7 @@ try {
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.info && window.__sandTest.info().viewCols > 0, null, { timeout: 30000 });
   await page.waitForFunction(() => !!window.__sandTest.getPlayer?.(), null, { timeout: 30000 });
+  await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
   await page.evaluate(() => document.activeElement?.blur?.());
 
   const info = () => page.evaluate(() => window.__sandTest.info());

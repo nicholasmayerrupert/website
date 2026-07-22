@@ -214,7 +214,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
   // The browser never advances authoritative actors or cells. Its fixed clock
   // sends normalized input to the active authority and predicts only the local
   // survival player; creative uses the same mirror clock for free-camera pan.
-  const doActorStep = (now) => {
+  const doActorStep = () => {
     const engine = ctx.engine;
     if (!engine) return false;
     if (!ctx.playMode) engine.cameraPanTick();

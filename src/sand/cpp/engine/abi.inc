@@ -380,6 +380,8 @@ EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {
 // JS creates the canvas, registers it as a context target, and drives one
 // glRenderFrame per presented frame.
 EMSCRIPTEN_KEEPALIVE int engine_gl_init(Engine* e, const char* target) { return e->glp.glInit(target); }
+EMSCRIPTEN_KEEPALIVE void engine_gl_release_context(Engine* e) { e->glp.glReleaseContext(); }
+EMSCRIPTEN_KEEPALIVE int engine_gl_context_count() { return sandgl::contextCount(); }
 EMSCRIPTEN_KEEPALIVE int engine_gl_restore(Engine* e) { return e->glp.glRestore(); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_resize(Engine* e, int devW, int devH) { e->glp.glResize(devW, devH); }
 EMSCRIPTEN_KEEPALIVE void engine_gl_set_flags(Engine* e, int gutterOn, int snapOff, int animationPaused) { e->glp.glSetFlags(gutterOn, snapOff, animationPaused); }

@@ -359,7 +359,8 @@ npm run test:creatures # node scripts/creature-test.mjs
 npm run test:creatures-e2e # /fps spawn, animation, visibility, and hitbox pixels
 npm run test:net      # node scripts/net-test.mjs
 npm run test:e2e      # node scripts/player-e2e.mjs (headless Chromium gameplay)
-npm run test:all      # npm run test && npm run build
+npm run test:all      # unit suites + sand lint + production build + critical Chromium E2E
+npm run test:browser  # worker + multiplayer browser integration tests
 ```
 
 `test:e2e` boots the dev server, drives the local player with real keyboard

@@ -182,6 +182,9 @@ function streamForControl() {
 
 function applyEdges() {
   for (const edge of edges) {
+    // Creative drafts have only primary/background owners. Ignore auxiliary
+    // mouse buttons instead of folding them into primary held state.
+    if (edge.button !== 0 && edge.button !== 2) continue;
     edgesProcessed++;
     const p = toLocal(edge.worldX, edge.worldY);
     // An edge is a complete pointer sample, while `control` may still describe

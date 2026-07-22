@@ -37,6 +37,7 @@ function fitCells(cssW, cssH, logicalCellPx, cfg) {
 // The 6th argument was previously `minZoom` (buffer pinned to most-zoomed-out).
 // It is ignored when present so old call sites keep working.
 export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _minZoomIgnored = zoom, dprBaseline = dpr, maxBufferDimension = 0) {
+  void _minZoomIgnored; // retained only to preserve the legacy positional API
   const safeDpr = dpr > 0 ? dpr : 1;
   const pageZoom = safeDpr / (dprBaseline > 0 ? dprBaseline : safeDpr); // 1 at load
   // Zoom-corrected ("unzoomed") CSS box used only for choosing how many cells to

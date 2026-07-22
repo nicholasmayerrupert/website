@@ -18,6 +18,7 @@ class GLPresenter {
   static constexpr double GL_FULL_UPLOAD_DIRTY_RATIO = 0.38;
 
   sandgl::Ctx* glc = nullptr;
+  std::string glTarget;
   GLuint glTex = 0, glTexBg = 0, glTex2 = 0, glReadFBO = 0, glDrawFBO = 0;
   // Background draws at ~55% brightness behind the foreground so it reads as "behind".
   static constexpr float GL_BG_TINT = 0.55f;
@@ -92,6 +93,7 @@ class GLPresenter {
   int glInit(const char* target);
   int glRestore();
   void glDestroy();
+  void glReleaseContext();
   void glResize(int devW, int devH);
   void glSetCamera(double camX_, double camY_, double cellDev, int viewCols, int viewRows,
                  int gutterOn, int snapOff);

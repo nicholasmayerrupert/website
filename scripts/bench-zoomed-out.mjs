@@ -73,6 +73,7 @@ try {
       await page.goto(`http://localhost:5181/fps${query.size ? `?${query}` : ''}`, { waitUntil: 'networkidle' });
     }
     await page.waitForFunction(() => window.__sandTest?.info().cols > 0 && window.__sandPerf?.().worldTick > 0, null, { timeout: 60000 });
+    await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
     for (let i = 0; i < 40; i++) {
       const current = await page.evaluate(() => window.__sandTest.info());
       if (current.cols >= targetCols && current.rows >= targetRows) break;

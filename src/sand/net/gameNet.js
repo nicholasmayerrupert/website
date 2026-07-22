@@ -14,10 +14,16 @@ import {
   makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
   INV_SLOTS, INV_FIELDS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS,
 } from './protocol.js';
-import { applyWorldMessage, applyDiffMessage } from './worldSync.js';
+import { applyWorldMessage, applyDiffMessage, validateWorldMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
 
 const SMOOTH = 0.35;             // client render smoothing toward the latest snapshot
+const MAX_INBOUND = 96;
+const MAX_QUEUED_DIFFS = 48;
+const LATEST_MESSAGES = new Set([
+  MSG.SNAPSHOT, MSG.ITEMS, MSG.CREATURES, MSG.PROJECTILES,
+  MSG.INVENTORY, MSG.CURSOR,
+]);
 const fallbackPlayerSize = (engine) => engine?.getPlayerSize?.() || { w: 4, h: 8 };
 
 let clientCounter = 0;
@@ -30,6 +36,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   let predictor = null, predId = 0; // local prediction of our own player
   let inputSeq = 0;
   let worldReady = false;          // has the initial world snapshot been applied?
+  let paused = false, needsResync = false, resyncPending = false;
+  let pendingJoin = null;
   let dbgSent = 0;                 // diagnostics
   const inQueue = [];              // inbound decoded messages, drained each step
   const remotes = new Map();       // render: id -> { x,y,vx,vy,facing,grounded,tool,w,h,tx,ty,animState,animFrame }
@@ -46,9 +54,66 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   const send = (obj) => { if (ws && ws.readyState === 1) ws.send(encode(obj)); };
   const setStatus = (s) => { statusText = s; onStatus?.(s); };
 
+  const requestResync = () => {
+    if (!connected || !room || !clientId || resyncPending) return;
+    resyncPending = true;
+    send(makeResync(room, clientId));
+  };
+
+  const sameLatestKey = (a, b) => a.t === b.t &&
+    ((a.t === MSG.INVENTORY || a.t === MSG.CURSOR) ? a.player === b.player : true);
+
+  function dropQueuedWorld() {
+    let dropped = false;
+    for (let i = inQueue.length - 1; i >= 0; i--) {
+      if (inQueue[i].t === MSG.WORLD || inQueue[i].t === MSG.DIFF) {
+        inQueue.splice(i, 1); dropped = true;
+      }
+    }
+    return dropped;
+  }
+
+  function enqueueMessage(m) {
+    if (paused && m.t === MSG.SOUNDS) return;
+    if (paused && (m.t === MSG.WORLD || m.t === MSG.DIFF)) {
+      if (m.t === MSG.WORLD) resyncPending = false;
+      dropQueuedWorld(); needsResync = true;
+      return;
+    }
+    if (m.t === MSG.WORLD) dropQueuedWorld();
+    if (m.t === MSG.DIFF && inQueue.reduce((n, q) => n + (q.t === MSG.DIFF ? 1 : 0), 0) >= MAX_QUEUED_DIFFS) {
+      dropQueuedWorld(); needsResync = true; requestResync();
+      return;
+    }
+    if (LATEST_MESSAGES.has(m.t)) {
+      for (let i = inQueue.length - 1; i >= 0; i--) if (sameLatestKey(inQueue[i], m)) { inQueue.splice(i, 1); break; }
+    }
+    inQueue.push(m);
+    while (inQueue.length > MAX_INBOUND) {
+      const dropped = inQueue.shift();
+      if (dropped.t === MSG.WORLD || dropped.t === MSG.DIFF) { needsResync = true; requestResync(); }
+    }
+  }
+
+  function finishJoin() {
+    if (!pendingJoin || !ownPlayerId || !worldReady) return;
+    const { resolve, timer } = pendingJoin;
+    pendingJoin = null; clearTimeout(timer);
+    setStatus(`joined ${room}`);
+    resolve();
+  }
+
+  function failJoin(error) {
+    if (!pendingJoin) return;
+    const { reject, timer } = pendingJoin;
+    pendingJoin = null; clearTimeout(timer);
+    reject(error);
+  }
+
   function resetState(status = 'offline') {
     ws = null; role = null; room = null; connected = false;
     ownPlayerId = 0; inputSeq = 0; worldReady = false;
+    needsResync = false; resyncPending = false;
     predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
     itemsForRender = new Float32Array(0); creaturesForRender = new Float32Array(0);
@@ -61,11 +126,27 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     disconnect();
     clientId = newClientId();
     const socket = new WebSocket(url);
+    let closeStatus = 'disconnected';
     ws = socket;
     setStatus('connecting');
     socket.onmessage = (ev) => {
       const m = decode(typeof ev.data === 'string' ? ev.data : ev.data.toString());
-      if (m) inQueue.push(m);
+      if (!m) return;
+      if (m.t === MSG.REJECT) {
+        closeStatus = `rejected: ${m.reason}`;
+        setStatus(closeStatus);
+        failJoin(new Error(`Server rejected join: ${m.reason}`));
+        try { socket.close(); } catch { /* already closing */ }
+        return;
+      }
+      // Complete the join handshake even when presentation RAF is paused. Other
+      // state remains queued and bounded until the next fixed step.
+      if (pendingJoin && (m.t === MSG.ASSIGN || m.t === MSG.WORLD)) {
+        try { handleMessage(m); finishJoin(); }
+        catch (e) { failJoin(e); try { socket.close(); } catch { /* closing */ } }
+        return;
+      }
+      enqueueMessage(m);
     };
     return new Promise((resolve, reject) => {
       let settled = false, opened = false;
@@ -82,7 +163,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       };
       socket.onclose = () => {
         if (ws !== socket) return;
-        if (opened) { resetState('disconnected'); return; }
+        failJoin(new Error('WebSocket connection closed before the join completed'));
+        if (opened) { resetState(closeStatus); return; }
         resetState('disconnected');
         if (!settled) { settled = true; reject(new Error('WebSocket connection closed before opening')); }
       };
@@ -94,18 +176,28 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   async function joinRoom(url, roomId) {
     await connect(url, 'client');
     room = roomId;
+    setStatus(`joining ${roomId}`);
+    const joined = new Promise((resolve, reject) => {
+      const socket = ws;
+      const timer = setTimeout(() => {
+        failJoin(new Error('Timed out waiting for server assignment and world'));
+        try { socket.close(); } catch { /* closing */ }
+      }, 10000);
+      pendingJoin = { resolve, reject, timer };
+    });
     send(makeJoin(roomId, clientId, 'client'));
-    setStatus(`joined ${roomId}`);
+    return joined;
   }
 
-  function disconnect() {
+  function disconnect(status = 'offline') {
+    failJoin(new Error('Join cancelled'));
     const socket = ws;
     if (socket) {
       try { if (connected && room && clientId && socket.readyState === 1) socket.send(encode(makeLeave(room, clientId))); } catch { /* closing */ }
       socket.onopen = socket.onclose = socket.onerror = socket.onmessage = null;
       try { socket.close(); } catch { /* already closing */ }
     }
-    resetState('offline');
+    resetState(status);
   }
 
   function handleMessage(m) {
@@ -121,6 +213,8 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
       }
       case MSG.WORLD: {
         const cur = engineNow();
+        const bytes = validateWorldMessage(m);
+        if (!bytes) { resyncPending = false; needsResync = true; requestResync(); break; }
         let e = cur;
         // Adopt the server's buffer dims so diffs apply 1:1 (rebuild the local
         // render engine if ours differs). Only full snapshots (join/resync) carry
@@ -128,12 +222,14 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
         if (!worldReady || m.cols !== cur.cols || m.rows !== cur.rows) {
           e = rebuildEngine(m.cols, m.rows); predictor = null; predId = 0;
         }
-        applyWorldMessage(e, m); worldReady = true;
+        resyncPending = false;
+        if (!applyWorldMessage(e, m, { mirror: true, bytes })) { needsResync = true; requestResync(); break; }
+        worldReady = true; needsResync = false;
         break;
       }
       case MSG.DIFF: {
         if (!worldReady) break;
-        if (!applyDiffMessage(engineNow(), m)) send(makeResync(room, clientId)); // hash mismatch -> resync
+        if (!applyDiffMessage(engineNow(), m, { mirror: true })) { needsResync = true; requestResync(); } // hash mismatch -> resync
         break;
       }
       case MSG.ITEMS: ingestItems(m); break;
@@ -226,6 +322,17 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
     inputSeq++;
   }
 
+  function setPaused(next) {
+    const value = !!next;
+    if (value === paused) return;
+    paused = value;
+    if (paused) {
+      if (dropQueuedWorld()) needsResync = true;
+      return;
+    }
+    if (needsResync) requestResync();
+  }
+
   // ---- survival-inventory intents (forwarded to the authoritative server) ----
   const sendSelect = (slot) => send(makeSelect(room, clientId, slot | 0));
   const sendSize = (footprint) => send(makeSize(room, clientId, footprint | 0));
@@ -283,7 +390,7 @@ export function createGameNet({ getEngine, getLocalInput, rebuildEngine }) {
   function consumeInventoryDirty() { const d = invDirty; invDirty = false; return d; }
 
   return {
-    joinRoom, disconnect, update,
+    joinRoom, disconnect, update, setPaused,
     getPlayersForRender, getOwnPlayer,
     getItemsForRender, getCreaturesForRender, getProjectilesForRender, consumeSoundEvents, getOwnInventory, getOwnCursor, consumeInventoryDirty,
     sendSelect, sendSize, sendMove, sendPick, sendThrow, sendCraft, sendRespawn,

@@ -51,6 +51,7 @@ try {
   const page = await context.newPage();
   await page.goto(`${baseURL}game`, { waitUntil: 'load' }); // survival mode (the player character lives at /game)
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.getPlayer && window.__sandTest.getPlayer(), null, { timeout: 30000 });
+  await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
   await page.evaluate(() => {
     window.__sandTestCellScreenPoint = (cx, cy) => {
       const t = window.__sandTest, i = t.info(), cam = t.getCam(), off = t.off();

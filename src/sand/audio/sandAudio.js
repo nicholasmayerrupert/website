@@ -101,7 +101,6 @@ export function createSandAudio() {
   let ambienceVoices = null;
   let recordedAssets = null;
   let movementVoices = null;
-  let assetLoad = null;
   const lastEventAt = new Map();
   const MAX_VOICES = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 16 : 28;
 
@@ -235,7 +234,7 @@ export function createSandAudio() {
       }),
     };
     const loadingContext = context;
-    assetLoad = loadAudioAssets(context).then((assets) => {
+    loadAudioAssets(context).then((assets) => {
       if (destroyed || context !== loadingContext) return;
       recordedAssets = assets;
       movementVoices.water = createMovementVoice(assets.waterFlow, { frequency: 6800, q: 0.15 });
@@ -485,7 +484,7 @@ export function createSandAudio() {
     if (ambienceVoices) for (const voice of ambienceVoices) { try { voice.source.stop(); } catch { /* already stopped */ } }
     if (movementVoices) for (const voice of Object.values(movementVoices)) { try { voice.source.stop(); } catch { /* already stopped */ } }
     const ctx = context;
-    context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = assetLoad = null;
+    context = master = effectsBus = ambienceBus = ambienceVoices = movementVoices = recordedAssets = null;
     try { ctx?.close(); } catch { /* browser is already tearing down */ }
   };
 

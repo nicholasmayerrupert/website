@@ -27,6 +27,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
+import { comparePanResults } from './bench-pan-compare.mjs';
 
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
@@ -152,7 +153,16 @@ try {
   // Let the world settle a bit so terrain (not falling sand) dominates.
   await page.waitForTimeout(1500);
 
-  const info = await page.evaluate(() => window.__sandTest.info());
+  const info = await page.evaluate(() => {
+    const value = window.__sandTest.info();
+    const canvas = document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main');
+    const gl = canvas?.getContext('webgl2');
+    const debug = gl?.getExtension('WEBGL_debug_renderer_info');
+    return {
+      ...value,
+      renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : (gl?.getParameter(gl.RENDERER) || 'unknown'),
+    };
+  });
 
   // Pointer round-trip: a cursor at a cell's rendered center must map back to
   // that cell. Catches brush/cursor offset bugs across zoom levels. Reports the
@@ -198,13 +208,31 @@ try {
   }
 
   // Frame timing during a real held-key pan (relative-only on headless GL).
-  await page.evaluate(() => window.focus());
+  await page.waitForFunction(() => {
+    const surface = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sg-sim');
+    if (!surface) return false;
+    surface.focus({ preventScroll: true });
+    return surface.getRootNode().activeElement === surface;
+  }, null, { timeout: 10000 });
   await page.keyboard.down('d');
   await page.waitForTimeout(2500);
   const perf = await page.evaluate(() => window.__sandPerf());
   await page.keyboard.up('d');
 
-  result = { info, cursor, flicker, perf };
+  result = {
+    meta: {
+      platform: process.platform,
+      arch: process.arch,
+      node: process.version,
+      browser: browser.version(),
+      deviceScaleFactor: dsf,
+      renderer: info.renderer,
+    },
+    info,
+    cursor,
+    flicker,
+    perf,
+  };
 } catch (err) {
   await shutdown();
   console.error(err);
@@ -262,6 +290,16 @@ if (comparePath) {
   report.push(`  instability: ${base.flicker.instability} -> ${result.flicker.instability}  (${d >= 0 ? '+' : ''}${d.toFixed(2)})${tag}`);
   const fd = result.perf.avgFrameMs - base.perf.avgFrameMs;
   report.push(`  frame avg: ${base.perf.avgFrameMs} -> ${result.perf.avgFrameMs}ms  (${fd >= 0 ? '+' : ''}${fd.toFixed(1)})`);
+  const comparison = comparePanResults(result, base);
+  if (!comparison.perfEnvironment.compatible) {
+    report.push(`  timing gate skipped: ${comparison.perfEnvironment.reason}`);
+  } else {
+    report.push(`  timing limits: avg ${comparison.perfLimits.avgFrameMs.toFixed(3)}ms  p95 ${comparison.perfLimits.p95FrameMs.toFixed(3)}ms`);
+  }
+  if (comparison.failures.length) {
+    exit = 1;
+    report.push(...comparison.failures.map((failure) => `  REGRESSION: ${failure}`));
+  } else report.push('  regression gate: pass');
 }
 writeSync(1, `${report.join('\n')}\n`);
 await shutdown();

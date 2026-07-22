@@ -173,7 +173,10 @@ inline Ctx* acquire(const char* target) {
   attrs.stencil = false;
   attrs.antialias = false;          // crisp nearest-neighbour cells (no MSAA)
   attrs.premultipliedAlpha = true;  // we emit premultiplied colors
-  attrs.preserveDrawingBuffer = true; // bench reads pixels back between frames
+  // Readback tests render and call glReadPixels synchronously in the same task,
+  // before browser presentation clears the default framebuffer. Production can
+  // therefore use the lower-memory, faster default without weakening the probe.
+  attrs.preserveDrawingBuffer = false;
   attrs.failIfMajorPerformanceCaveat = false;
   EMSCRIPTEN_WEBGL_CONTEXT_HANDLE h = emscripten_webgl_create_context(target, &attrs);
   if (h <= 0) {
@@ -188,5 +191,26 @@ inline Ctx* acquire(const char* target) {
   reg[key] = c;
   return c.ready ? &reg[key] : nullptr;
 }
+
+// Final canvas teardown. Ordinary Engine destruction deliberately leaves this
+// entry alive because viewport/dimension rebuilds replace the Engine while
+// reusing the same canvas. The browser shell calls release only when that
+// canvas is leaving the DOM for good.
+inline void release(const char* target) {
+  auto& reg = registry();
+  auto it = reg.find(std::string(target));
+  if (it == reg.end()) return;
+  Ctx& c = it->second;
+  if (c.handle > 0) {
+    emscripten_webgl_make_context_current(c.handle);
+    if (c.vao) glDeleteVertexArrays(1, &c.vao);
+    if (c.vbo) glDeleteBuffers(1, &c.vbo);
+    if (c.prog) glDeleteProgram(c.prog);
+    emscripten_webgl_destroy_context(c.handle);
+  }
+  reg.erase(it);
+}
+
+inline int contextCount() { return (int)registry().size(); }
 
 }  // namespace sandgl

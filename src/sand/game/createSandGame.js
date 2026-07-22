@@ -344,7 +344,10 @@ export function createSandGame(container, opts = {}) {
     window.visualViewport?.removeEventListener?.('resize', onVisualViewportResize);
     ctx.net?.disconnect();
     ctx.stopLocalAuthority();
-    if (ctx.engine && ctx.engine.destroy) ctx.engine.destroy();
+    // Engine rebuilds keep the canvas/context alive; this is the final runtime
+    // teardown, so release the shared WebGL registry entry and canvas target.
+    if (ctx.engine && ctx.engine.destroy) ctx.engine.destroy({ releaseGlTarget: true });
+    ctx.engine = null;
     parallax.destroy();
     audio.destroy();
     inputs.detach();
@@ -445,6 +448,7 @@ export function createSandGame(container, opts = {}) {
     getDayNight() { return loop.getDayNight(); },
     setViewportActive(active) {
       ctx.viewportActive = !!active;
+      ctx.net?.setPaused(!ctx.viewportActive);
       loop.setViewportPaused(!ctx.viewportActive);
       audio.setEnabled(ctx.viewportActive && ctx.audioEnabled !== false);
     },

@@ -16,7 +16,8 @@ export function createNetGlue(ctx, { fit, rebuildEngineForDims, currentLocalInpu
     try {
       await ctx.net.joinRoom(url, room);
     } catch (e) {
-      ctx.net.disconnect();
+      const status = ctx.net.status;
+      ctx.net.disconnect(status.startsWith('rejected:') ? status : 'offline');
       if (ctx.survival && !ctx.localPlayerId) { ctx.cols = 0; ctx.rows = 0; fit(); }
       throw e;
     }

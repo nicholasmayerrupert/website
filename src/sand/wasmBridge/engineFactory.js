@@ -348,6 +348,8 @@ export function initSandWasm() {
         eraseDiscLayer: c('engine_erase_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number']),
         syncComponentsLayer: c('engine_sync_components_layer', null, ['number', 'number']),
         glInit: c('engine_gl_init', 'number', ['number', 'string']),
+        glReleaseContext: c('engine_gl_release_context', null, ['number']),
+        glContextCount: c('engine_gl_context_count', 'number', []),
         glRestore: c('engine_gl_restore', 'number', ['number']),
         glResize: c('engine_gl_resize', null, ['number', 'number', 'number']),
         glSetFlags: c('engine_gl_set_flags', null, ['number', 'number', 'number', 'number']),
@@ -384,6 +386,13 @@ export function initSandWasm() {
         pointerDownAtAim: c('engine_pointer_down_at_aim', 'number', ['number', 'number']),
       };
       return M;
+    }).catch((error) => {
+      // A transient fetch/compile failure must not poison every future mount.
+      // The Web Component exposes a Retry button which starts a fresh module
+      // attempt after the deployment or network recovers.
+      M = null;
+      modPromise = null;
+      throw error;
     });
   }
   return modPromise;
@@ -404,6 +413,11 @@ export function createEngineWasm({
   worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
+  const cells = cols * rows;
+  if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols <= 0 || rows <= 0 ||
+      cols > 16384 || rows > 16384 || !Number.isSafeInteger(cells) || cells > 0x7fffffff) {
+    throw new RangeError(`invalid sand engine dimensions ${cols}x${rows}`);
+  }
   const { mod } = M;
   const role = storageRole === 'presentation' ? 1 : (storageRole === 'authority' ? 2 : 0);
   const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role);
@@ -458,6 +472,7 @@ const renderStrides = Object.freeze({
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
   let mirrorDraftPtr = 0, mirrorDraftCap = 0, mirrorCreaturePtr = 0, mirrorCreatureCap = 0;
+  let glTargetKey = null, glCanvas = null, destroyed = false;
   const glScratch = (floats) => {
     if (floats > glScratchCap) {
       if (glScratchPtr) mod._free(glScratchPtr);
@@ -570,6 +585,8 @@ const renderStrides = Object.freeze({
         canvasEl.__sandGlKey = key;
         mod.specialHTMLTargets[key] = canvasEl;
       }
+      glTargetKey = key;
+      glCanvas = canvasEl;
       return M.glInit(ptr, key) === 1;
     },
     glRestore() { return M.glRestore(ptr) === 1; },
@@ -763,7 +780,28 @@ const renderStrides = Object.freeze({
     getActorTick() { return M.actorTick(ptr); },
     syncActorTick(tick) { M.setActorTick(ptr, Math.max(0, tick | 0)); },
     syncComponents() { M.syncComponents(ptr); },
-    destroy() { if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; } if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; } if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; } mod._free(seedOut); mod._free(seedDraftOut); mod._free(glOffOut); mod._free(camOut); mod._free(perfOut); mod._free(ambienceOut); M.destroy(ptr); },
+    sharedGlContextCount() { return M.glContextCount(); },
+    destroy({ releaseGlTarget = false } = {}) {
+      if (destroyed) return;
+      destroyed = true;
+      if (releaseGlTarget && glTargetKey) M.glReleaseContext(ptr);
+      if (glScratchPtr) { mod._free(glScratchPtr); glScratchPtr = 0; glScratchCap = 0; }
+      if (mirrorDraftPtr) { mod._free(mirrorDraftPtr); mirrorDraftPtr = 0; mirrorDraftCap = 0; }
+      if (mirrorCreaturePtr) { mod._free(mirrorCreaturePtr); mirrorCreaturePtr = 0; mirrorCreatureCap = 0; }
+      mod._free(seedOut);
+      mod._free(seedDraftOut);
+      mod._free(glOffOut);
+      mod._free(camOut);
+      mod._free(perfOut);
+      mod._free(ambienceOut);
+      M.destroy(ptr);
+      if (releaseGlTarget && glTargetKey) {
+        delete mod.specialHTMLTargets[glTargetKey];
+        if (glCanvas?.__sandGlKey === glTargetKey) delete glCanvas.__sandGlKey;
+      }
+      glTargetKey = null;
+      glCanvas = null;
+    },
 
     // Component drafts + seeds. One material-parameterized draft set; the
     // per-material method names remain for the tests/tools that use them.

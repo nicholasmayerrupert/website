@@ -6,13 +6,14 @@
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 9;
+export const PROTOCOL_VERSION = 10;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
   JOIN: 'join',
   LEAVE: 'leave',
   ASSIGN: 'assign',     // host -> client: your authoritative playerId
+  REJECT: 'reject',     // host -> client: join refused with a stable reason
   INPUT: 'input',
   SNAPSHOT: 'snapshot',
   WORLD: 'world',       // host -> client: full world snapshot (base64 RLE)
@@ -65,6 +66,9 @@ export function makeLeave(room, client) {
 }
 export function makeAssign(room, client, player) {
   return { t: MSG.ASSIGN, room, client, player: player | 0 };
+}
+export function makeReject(room, reason) {
+  return { t: MSG.REJECT, room, reason };
 }
 export function makeInput({ room, client, player, tick, seq, bits, aimX, aimY, tool, moveX, moveY }) {
   const msg = {
@@ -184,9 +188,10 @@ export function decode(str) {
     case MSG.JOIN: return (m.v === PROTOCOL_VERSION && isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.LEAVE: return (m.v === PROTOCOL_VERSION && isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ASSIGN: return (isRoom(m.room) && isId(m.client) && isNonNegInt(m.player)) ? m : null;
+    case MSG.REJECT: return (isRoom(m.room) && ['full', 'room', 'client'].includes(m.reason)) ? m : null;
     case MSG.INPUT: return validateInput(m);
     case MSG.SNAPSHOT: return validateSnapshot(m);
-    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && isNonNegInt(m.rows) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
+    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && m.cols > 0 && m.cols <= 16384 && isNonNegInt(m.rows) && m.rows > 0 && m.rows <= 16384 && m.cols * m.rows <= 8_000_000 && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.DIFF: return (isNonNegInt(m.tick) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.RESYNC: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ITEMS: return validateItems(m);

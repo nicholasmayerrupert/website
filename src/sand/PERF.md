@@ -49,13 +49,17 @@ actionable instead of just producing timing numbers.
   headless engine benchmark. Use this first for C++ sim/render/streaming changes.
 - `node scripts/bench-sand.mjs --repeat 5 --compare bench/baseline.json`: same
   benchmark with repeated runs to distinguish p99 noise from real regressions.
+  Timing gates run only when the baseline host, CPU, Node major, Emscripten, and
+  benchmark dimensions match; deterministic checksum and work-volume checks
+  remain active across environments.
 - `node scripts/bench-sand.mjs --checksum-only`: fast behavior check when timing
   is irrelevant.
 - `node scripts/bench-sand.mjs --scenario all --repeat 3`: broader gameplay
   load sweep. Use it before and after performance work that touches tools,
   inventory/player input, components, liquids, or net snapshots.
 - `node scripts/bench-pan.mjs --compare bench/pan-baseline.json`: browser/WebGL
-  pan, cursor mapping, frame-time, and flicker check.
+  pan, cursor mapping, frame-time, and flicker check. Cursor/flicker correctness
+  is always gated; frame timing is gated for matching platform/GPU metadata.
 - `npm run bench:tnt`: focused deterministic TNT benchmark covering cold/steady
   open-air, dual-layer, buried-component, enclosed-cave, 25x25/49x49 open
   chains, and a 79x79 two-layer cave chain, including the five settling ticks

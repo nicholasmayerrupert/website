@@ -124,6 +124,13 @@ export function installDevHooks(ctx, {
     renderedPlayers() { return playersForRender(); },
     localInput() { return currentLocalInput(); },
     heldKeys() { return engine() ? engine().getHeldKeys() : 0; },
+    sharedGlContexts() { return engine()?.sharedGlContextCount() ?? 0; },
+    sharedGlContextProbe() {
+      // Capture the wrapper, not ctx.engine: final teardown nulls ctx.engine,
+      // while this probe must still read the module-global registry afterward.
+      const current = engine();
+      return () => current?.sharedGlContextCount() ?? 0;
+    },
     // world-replication hooks (mp-e2e): edit the host world + measure a region.
     gridHash() { return engine() ? engine().gridHash() : 0; },
     erase(x, y, r) { engine()?.eraseDisc(x, y, r); },

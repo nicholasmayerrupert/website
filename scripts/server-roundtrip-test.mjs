@@ -124,6 +124,19 @@ function survivalEngine() {
   e.setSelectedFootprint(pid, 4);
   check('revision changes after footprint select', inventoryRevision(e, pid) !== r2);
   e.destroy();
+
+  const slot = { material: MAT.SEED, plantType: 0, itemKind: 0, count: 4, isTool: false };
+  let cursor = { ...slot };
+  const mock = {
+    getInventory: () => ({ selected: 0, selectedFootprint: 0, slots: [slot] }),
+    getCursor: () => cursor,
+  };
+  const species0 = inventoryRevision(mock, 1);
+  slot.plantType = 3;
+  check('revision includes inventory seed species', inventoryRevision(mock, 1) !== species0);
+  const species3 = inventoryRevision(mock, 1);
+  cursor = { ...cursor, plantType: 4 };
+  check('revision includes cursor seed species', inventoryRevision(mock, 1) !== species3);
 }
 
 // 5) intents mutate engine state the way the server dispatch does (select/size/pick).
@@ -148,7 +161,7 @@ function survivalEngine() {
 // 6) live two-client server: join hands out world + inventory; INPUT + intents act.
 {
   const PORT = 5197;
-  const srv = await startSandServer({ port: PORT, cols: 128, rows: 96, seed: 0x1234, room: 'r' });
+  const srv = await startSandServer({ port: PORT, cols: 128, rows: 96, seed: 0x1234, room: 'r', maxPlayers: 2 });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const open = () => new Promise((res, rej) => { const ws = new WebSocket(`ws://localhost:${PORT}`); ws.onopen = () => res(ws); ws.onerror = () => rej(new Error('connect failed')); });
   const inboxOf = (ws) => { const q = []; ws.onmessage = (ev) => { const m = decode(typeof ev.data === 'string' ? ev.data : ev.data.toString()); if (m) q.push(m); }; return q; };
@@ -165,6 +178,27 @@ function survivalEngine() {
     check('client A got an initial inventory', invA && invA.data.length === 36 * INV_FIELDS);
     check('client A got an initial creature snapshot', last(ai, MSG.CREATURES) !== null);
     check('client B also got a world + inventory', last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY));
+
+    // The transport binds identity to the socket. A cannot drive B or poison
+    // B's sequence tracker by naming B in a forged high-sequence packet.
+    const assignB = last(bi, MSG.ASSIGN);
+    a.send(encode(makeInput({ room: 'r', client: 'B', player: assignB.player, tick: 999999, seq: 999999, bits: 2, aimX: 0, aimY: 0, tool: 0 })));
+    a.send(encode(makeInput({ room: 'wrong', client: 'A', player: assignA.player, tick: 999999, seq: 999999, bits: 2, aimX: 0, aimY: 0, tool: 0 })));
+    await wait(40);
+    check('forged socket identity does not advance victim sequence', srv.host.clients.get('B').tracker.latest === -1);
+    check('wrong-room input does not advance sender sequence', srv.host.clients.get('A').tracker.latest === -1);
+    b.send(encode(makeInput({ room: 'r', client: 'B', player: assignB.player, tick: 0, seq: 0, bits: 2, aimX: 0, aimY: 0, tool: 0 })));
+    await wait(40);
+    check('legitimate low sequence works after forged high sequence', srv.host.clients.get('B').tracker.latest === 0);
+
+    const wrongRoom = await open(), wrongIn = inboxOf(wrongRoom);
+    wrongRoom.send(encode(makeJoin('elsewhere', 'C'))); await wait(40);
+    check('wrong room receives a structured rejection', last(wrongIn, MSG.REJECT)?.reason === 'room');
+    wrongRoom.close();
+    const full = await open(), fullIn = inboxOf(full);
+    full.send(encode(makeJoin('r', 'C'))); await wait(40);
+    check('full room receives a structured rejection', last(fullIn, MSG.REJECT)?.reason === 'full');
+    full.close();
 
     // snapshots list both players.
     const snapA = last(ai, MSG.SNAPSHOT);

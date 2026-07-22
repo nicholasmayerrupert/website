@@ -4,12 +4,12 @@
 
 import {
   MSG, encode, decode, makeJoin, makeLeave, makeInput, makeSnapshot,
-  INPUT_BITS_MAX, TOOL_MAX,
+  makeAssign, makeReject, makeWorld, makeDiff, INPUT_BITS_MAX, TOOL_MAX,
 } from '../src/sand/net/protocol.js';
 import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/server/sequencing.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
-import { applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
+import { applyWorldMessage, applyDiffMessage, bytesToB64 } from '../src/sand/net/worldSync.js';
 import { Predictor } from '../src/sand/net/predict.js';
 import { createGameNet } from '../src/sand/net/gameNet.js';
 import { startServer } from './dev-multiplayer-server.mjs';
@@ -44,6 +44,68 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('failed join clears world readiness', !net.worldReady);
   check('failed join clears remotes', net.remoteCount === 0);
   check(`failed join status is not joined (${net.status})`, !net.status.startsWith('joined '));
+  globalThis.WebSocket = RealWebSocket;
+}
+
+{
+  console.log('structured join rejection');
+  const RealWebSocket = globalThis.WebSocket;
+  class RejectingWebSocket {
+    constructor() { this.readyState = 0; queueMicrotask(() => { this.readyState = 1; this.onopen?.(); }); }
+    send(raw) {
+      const m = decode(raw);
+      if (m?.t === MSG.JOIN) queueMicrotask(() => this.onmessage?.({ data: encode(makeReject(m.room, 'full')) }));
+    }
+    close() { this.readyState = 3; queueMicrotask(() => this.onclose?.()); }
+  }
+  globalThis.WebSocket = RejectingWebSocket;
+  const net = createGameNet({ getEngine: () => null, getLocalInput: () => ({ bits: 0, aimX: 0, aimY: 0, tool: 0 }), rebuildEngine: () => null });
+  try { await net.joinRoom('ws://test', 'main'); } catch { /* expected */ }
+  await Promise.resolve();
+  check('structured rejection reason survives socket close', net.status === 'rejected: full');
+  globalThis.WebSocket = RealWebSocket;
+}
+
+// A join resolves only after ASSIGN + a validated mirror WORLD, even while the
+// presentation loop is paused. Paused diffs stay bounded and trigger one resync.
+{
+  console.log('client join handshake + paused queue');
+  const RealWebSocket = globalThis.WebSocket;
+  let socket;
+  const worldBytes = Uint8Array.from([4, 0, 0, 0, 0, 4, 0, 0, 0, 0]);
+  const engine = {
+    cols: 2, rows: 2, mirrorApplies: 0, mirrorTick: -1,
+    applyWorldMirror() { this.mirrorApplies++; },
+    applyDiffMirror() {},
+    setMirrorWorldTick(t) { this.mirrorTick = t; },
+    gridHash() { return 123; },
+  };
+  class HandshakeWebSocket {
+    constructor() { socket = this; this.readyState = 0; this.sent = []; queueMicrotask(() => { this.readyState = 1; this.onopen?.(); }); }
+    send(raw) {
+      this.sent.push(raw);
+      const m = decode(raw);
+      if (m?.t === MSG.JOIN) queueMicrotask(() => {
+        this.onmessage?.({ data: encode(makeAssign(m.room, m.client, 7)) });
+        this.onmessage?.({ data: encode(makeWorld(3, 2, 2, 123, bytesToB64(worldBytes))) });
+      });
+    }
+    close() { this.readyState = 3; queueMicrotask(() => this.onclose?.()); }
+  }
+  globalThis.WebSocket = HandshakeWebSocket;
+  const net = createGameNet({
+    getEngine: () => engine,
+    getLocalInput: () => ({ bits: 0, aimX: 0, aimY: 0, tool: 0 }),
+    rebuildEngine: () => engine,
+  });
+  await net.joinRoom('ws://test', 'main');
+  check('join waits for authoritative assignment', net.ownPlayerId === 7);
+  check('join applies initial world through mirror API', net.worldReady && engine.mirrorApplies === 1 && engine.mirrorTick === 3);
+  net.setPaused(true);
+  for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeDiff(4 + i, 123, 'AAAAAA==')) });
+  net.setPaused(false);
+  check('paused diff backlog requests one full resync', socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length === 1);
+  net.disconnect();
   globalThis.WebSocket = RealWebSocket;
 }
 
@@ -133,6 +195,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('deterministic replay');
   await initSandWasm();
+  for (const [cols, rows] of [[0, 10], [10.5, 10], [16385, 1], [10, Number.NaN]]) {
+    let rejected = false;
+    try { createEngineWasm({ cols, rows, sinksOn: false }); } catch (e) { rejected = e instanceof RangeError; }
+    check(`unsafe engine dimensions rejected (${cols}x${rows})`, rejected);
+  }
   const COLS = 200, ROWS = 120, SEED = 0xABCDEF;
   const stoneFloor = (e) => { for (let x = 20; x < 180; x++) for (let y = 90; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0); e.finalizeStoneDraft(); };
   // a fixed input program, encoded as protocol messages
@@ -255,6 +322,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const w = decode(encode(encodeWorld(host, 0)));
   const okW = applyWorldMessage(client, w);
   check(`full snapshot syncs client (host ${host.gridHash().toString(16)})`, okW && host.gridHash() === client.gridHash());
+  const mirror = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x7777, sinksOn: false, storageRole: 'presentation' });
+  check('presentation mirror accepts the authoritative world', applyWorldMessage(mirror, w, { mirror: true }) && mirror.gridHash() === host.gridHash());
+  const truncated = { ...w, data: w.data.slice(0, -4) };
+  const beforeBad = mirror.gridHash();
+  check('truncated world is rejected without mutating the mirror', !applyWorldMessage(mirror, truncated, { mirror: true }) && mirror.gridHash() === beforeBad);
   host.resetDirty();
 
   // a sequence of incremental diffs reconstructs the host hash on the client.
@@ -264,6 +336,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     host.resetDirty();
     const ok = applyDiffMessage(client, d);
     check(`diff ${i} applied, hashes match`, ok && host.gridHash() === client.gridHash());
+    check(`mirror diff ${i} applied without component reconstruction`, applyDiffMessage(mirror, d, { mirror: true }) && host.gridHash() === mirror.gridHash());
   }
 
   // lost diff -> divergence detected -> resync restores the match.
@@ -276,7 +349,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   applyWorldMessage(client, decode(encode(encodeWorld(host, 100)))); // resync
   check('resync restores the match', client.gridHash() === host.gridHash());
 
-  host.destroy(); client.destroy();
+  host.destroy(); client.destroy(); mirror.destroy();
 }
 
 // 11. join-in-progress: a client joining mid-session gets the host's CURRENT world.
@@ -413,10 +486,12 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     const e = mkE();
     const host = new Host({ engine: e, roomId: 'r' });
     const pid = host.addClient('A', { x: 50, y: 50 });
-    check('bad tool dropped', host.applyInput({ client: 'A', player: pid, seq: 1, bits: 0, aimX: 0, aimY: 0, tool: 99 }) === false);
-    check('bad bits dropped', host.applyInput({ client: 'A', player: pid, seq: 2, bits: 99999, aimX: 0, aimY: 0, tool: 0 }) === false);
-    check('NaN aim dropped', host.applyInput({ client: 'A', player: pid, seq: 3, bits: 0, aimX: NaN, aimY: 0, tool: 0 }) === false);
-    check('valid input accepted', host.applyInput({ client: 'A', player: pid, seq: 4, bits: INPUT.RIGHT, aimX: 10, aimY: 10, tool: 1 }) === true);
+    check('bad tool dropped', host.applyInput({ room: 'r', client: 'A', player: pid, seq: 1, bits: 0, aimX: 0, aimY: 0, tool: 99 }) === false);
+    check('bad bits dropped', host.applyInput({ room: 'r', client: 'A', player: pid, seq: 2, bits: 99999, aimX: 0, aimY: 0, tool: 0 }) === false);
+    check('NaN aim dropped', host.applyInput({ room: 'r', client: 'A', player: pid, seq: 3, bits: 0, aimX: NaN, aimY: 0, tool: 0 }) === false);
+    check('wrong player high sequence is rejected', host.applyInput({ room: 'r', client: 'A', player: pid + 1, seq: 999999, bits: 0, aimX: 0, aimY: 0, tool: 0 }) === false);
+    check('wrong room high sequence is rejected', host.applyInput({ room: 'elsewhere', client: 'A', player: pid, seq: 999999, bits: 0, aimX: 0, aimY: 0, tool: 0 }) === false);
+    check('valid input accepted after invalid high sequences', host.applyInput({ room: 'r', client: 'A', player: pid, seq: 4, bits: INPUT.RIGHT, aimX: 10, aimY: 10, tool: 1 }) === true);
     e.destroy();
   }
 
@@ -425,7 +500,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     const e = mkE();
     const host = new Host({ engine: e, roomId: 'r' });
     const pid = host.addClient('A', { x: 50, y: 50 });
-    host.applyInput({ client: 'A', player: pid, seq: 1, bits: INPUT.PRIMARY, aimX: 9999999, aimY: -9999999, tool: 1 });
+    host.applyInput({ room: 'r', client: 'A', player: pid, seq: 1, bits: INPUT.PRIMARY, aimX: 9999999, aimY: -9999999, tool: 1 });
     const p = e.getPlayer(pid);
     check(`far aim clamped to buffer (${p.aimX},${p.aimY})`, p.aimX >= -1 && p.aimX <= e.cols && p.aimY >= -1 && p.aimY <= e.rows);
     e.destroy();
@@ -439,11 +514,11 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     const host = new Host({ engine: e, roomId: 'r', maxInputRate: 90, inputBurst: 10, now: () => clock });
     const pid = host.addClient('A', { x: 50, y: 50 });
     let applied = 0;
-    for (let i = 0; i < 100; i++) if (host.applyInput({ client: 'A', player: pid, seq: i + 1, bits: 0, aimX: 0, aimY: 0, tool: 0 })) applied++;
+    for (let i = 0; i < 100; i++) if (host.applyInput({ room: 'r', client: 'A', player: pid, seq: i + 1, bits: 0, aimX: 0, aimY: 0, tool: 0 })) applied++;
     check(`input flood throttled to burst (${applied} of 100 applied)`, applied >= 8 && applied <= 12 && host.droppedInputs >= 85);
     clock += 1000; // a second passes -> bucket refills (capped at burst)
     let refilled = 0;
-    for (let i = 0; i < 100; i++) if (host.applyInput({ client: 'A', player: pid, seq: 200 + i, bits: 0, aimX: 0, aimY: 0, tool: 0 })) refilled++;
+    for (let i = 0; i < 100; i++) if (host.applyInput({ room: 'r', client: 'A', player: pid, seq: 200 + i, bits: 0, aimX: 0, aimY: 0, tool: 0 })) refilled++;
     check(`bucket refills over time (${refilled} applied)`, refilled >= 8 && refilled <= 12);
     e.destroy();
   }

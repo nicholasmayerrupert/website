@@ -8,6 +8,8 @@
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
 export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onToggleInventory, onToggleFootprintMenu }) {
+  const hadTabIndex = ctx.container.hasAttribute('tabindex');
+  const originalTabIndex = ctx.container.getAttribute('tabindex');
   // ctx.mouseButtons: bit 0 = LMB, bit 1 = RMB (drives player primary/secondary).
   // It is the AUTHORITATIVE held-button state and it is owned by the
   // pointerdown/pointerup EDGES, not by per-move `e.buttons`. Real
@@ -29,6 +31,18 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   const logicalButtons = (e) => {
     if (e.pointerType !== 'touch' || ctx.touchButton !== 2 || !(e.buttons & 1)) return e.buttons;
     return (e.buttons & ~1) | BUTTON_BITS[2];
+  };
+  const isSurfaceEvent = (e) => {
+    const path = e.composedPath?.();
+    if (path?.some((node) => node !== ctx.container &&
+      (node.isContentEditable || ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)))) return false;
+    const b = ctx.wrapBounds;
+    return (path?.includes(ctx.container) || ctx.container.contains(e.target) ||
+      (e.clientX >= b.left && e.clientX <= b.right && e.clientY >= b.top && e.clientY <= b.bottom));
+  };
+  const ownsKeyboard = () => {
+    const root = ctx.container.getRootNode?.();
+    return root?.activeElement === ctx.container || document.activeElement === ctx.container;
   };
   const updatePointer = (cx, cy) => {
     ctx.clientX = cx;
@@ -81,6 +95,11 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     // creative requires draw mode (so the page stays scrollable until the user
     // opts in).
     if (!ctx.playMode && !ctx.drawModeOn) return;
+    // The embed lives alongside ordinary page content, so keyboard shortcuts
+    // belong to it only after the simulation surface is explicitly focused.
+    // Pointer focus uses preventScroll so activating the game never jumps the
+    // surrounding page; keyboard users can reach the same surface with Tab.
+    if (isSurfaceEvent(e)) ctx.container.focus({ preventScroll: true });
     // Authoritative press edge: latch this button's bit (plus any other buttons
     // the event reports already down). The latch is what keeps PI_PRIMARY held
     // across steps even if later moves momentarily report buttons==0.
@@ -103,7 +122,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     const button = logicalButton(e);
     ctx.mouseButtons &= ~(BUTTON_BITS[button] || 0);
     updatePointer(e.clientX, e.clientY);
-    if (!ctx.playMode && ctx.worldWorker) {
+    if (!ctx.playMode && ctx.worldWorker && (button === 0 || button === 2)) {
       ctx.worldWorker.edge('up', button);
       e.preventDefault();
       return;
@@ -141,6 +160,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   // which owns the pan/player-input policy. The editable-target guard +
   // preventDefault stay in JS (they need the DOM event/target).
   const onKeyDown = (e) => {
+    if (!ownsKeyboard()) return;
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
@@ -207,6 +227,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   };
 
   const attach = () => {
+    if (!hadTabIndex) ctx.container.tabIndex = 0;
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('touchmove', onTouchMove, { passive: false });
     if (ctx.survival) window.addEventListener('wheel', onWheel, { passive: false });
@@ -231,6 +252,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
+    if (!hadTabIndex) ctx.container.removeAttribute('tabindex');
+    else ctx.container.setAttribute('tabindex', originalTabIndex);
   };
 
   return { attach, detach, updatePointer };

@@ -98,6 +98,11 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   color: #9ca3af; margin-bottom: 4px; }
 .sg-perf .sg-perf-row { display: flex; justify-content: space-between; gap: 12px; white-space: nowrap; }
 .sg-perf .sg-perf-row span:last-child { color: #fff; font-variant-numeric: tabular-nums; }
+.sg-init-failure { position: absolute; inset: 0; z-index: 90; display: grid; place-items: center;
+  padding: 24px; background: rgba(10,12,16,.9); color: #fff; text-align: center;
+  pointer-events: auto; font: 600 15px/1.45 ui-sans-serif, system-ui, sans-serif; }
+.sg-init-failure button { margin-top: 14px; border: 0; border-radius: 999px; padding: 9px 18px;
+  background: #fff; color: #111827; cursor: pointer; font: 700 14px/1 ui-sans-serif, system-ui, sans-serif; }
 `;
 
 // Mobile-only analog thumbstick. Its radial position is forwarded as a continuous
@@ -481,14 +486,20 @@ class SandGameElement extends HTMLElement {
   connectedCallback() {
     if (this._mounted) return;
     this._mounted = true;
-    const root = this.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = HOST_CSS;
-    root.appendChild(style);
-
-    const sim = document.createElement('div');
-    sim.className = 'sg-sim';
-    root.appendChild(sim);
+    let root = this.shadowRoot;
+    let sim = root?.querySelector('.sg-sim');
+    if (!root) {
+      root = this.attachShadow({ mode: 'open' });
+      const style = document.createElement('style');
+      style.dataset.sandHostStyle = '';
+      style.textContent = HOST_CSS;
+      root.appendChild(style);
+    }
+    if (!sim) {
+      sim = document.createElement('div');
+      sim.className = 'sg-sim';
+      root.appendChild(sim);
+    }
 
     const initialTool = this.getAttribute('initial-tool') || DEFAULT_TOOL;
     // 'survival' (default): player character + reach-limited tools, camera
@@ -497,7 +508,10 @@ class SandGameElement extends HTMLElement {
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
     let cancelled = false;
 
-    initSandWasm()
+    const start = () => {
+      this._initFailure?.remove();
+      this._initFailure = null;
+      return initSandWasm()
       .then(() => {
         if (cancelled || !this.isConnected) return;
         const game = createSandGame(sim, {
@@ -620,7 +634,26 @@ class SandGameElement extends HTMLElement {
         document.addEventListener('visibilitychange', this._onDocumentVisibility);
         syncViewportActivity();
       })
-      .catch((e) => { console.error('sand-game: engine failed to init; staying blank', e); });
+      .catch((e) => {
+        if (cancelled || !this.isConnected) return;
+        console.error('sand-game: engine failed to initialize', e);
+        const failure = document.createElement('div');
+        failure.className = 'sg-init-failure';
+        failure.setAttribute('role', 'alert');
+        const panel = document.createElement('div');
+        const message = document.createElement('div');
+        message.textContent = 'The sand simulation could not start.';
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Retry';
+        retry.addEventListener('click', () => start());
+        panel.append(message, retry);
+        failure.appendChild(panel);
+        root.appendChild(failure);
+        this._initFailure = failure;
+      });
+    };
+    start();
 
     this._cancel = () => { cancelled = true; };
   }
@@ -639,11 +672,13 @@ class SandGameElement extends HTMLElement {
     this._start?.destroy();
     this._perfHud?.destroy();
     this._sound?.destroy();
+    this._initFailure?.remove();
     this._visibilityObserver?.disconnect();
     if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = null;
+    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
     this._visibilityObserver = this._onDocumentVisibility = null;
+    this._cancel = null;
     this._mounted = false;
   }
 

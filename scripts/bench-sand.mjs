@@ -23,8 +23,9 @@
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
-import { platform, release } from 'node:os';
+import { arch, cpus, platform, release } from 'node:os';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { compatibleSandBenchmarkConfig, compatibleSandTimingEnvironment } from './bench-sand-environment.mjs';
 
 // --- args ---
 const args = process.argv.slice(2);
@@ -119,6 +120,8 @@ const metadata = () => ({
   generatedAt: new Date().toISOString(),
   node: process.version,
   platform: `${platform()} ${release()}`,
+  arch: arch(),
+  cpu: cpus()[0]?.model || null,
   git: gitMeta(),
   wasm: wasmMeta(),
 });
@@ -407,6 +410,7 @@ if (comparePath) {
   if (base.checksum !== result.checksum) {
     console.log(`  CHECKSUM CHANGED 0x${base.checksum.toString(16)} -> 0x${result.checksum.toString(16)} (behavior changed; not a pure refactor)`);
     console.log(`    inspect: worldgen.inc, generated material tables, C++ toolchain/WASM rebuild provenance`);
+    exit = 1;
   } else {
     console.log(`  checksum identical (pure refactor / deterministic)`);
   }
@@ -414,16 +418,25 @@ if (comparePath) {
     console.log(`  CHECKSUM UNSTABLE across repeats: ${result.checksums.map((h) => `0x${h.toString(16)}`).join(', ')}`);
     exit = 1;
   }
-  const rows = checksumOnly ? [['step', 'mean']] : [['step', 'p99'], ['renderFull', 'p99'], ['shiftWorldMiss', 'p99'], ['shiftWorldHit', 'p99'], ['step', 'mean'], ['renderFull', 'mean']];
-  for (const [k, m] of rows) {
-    if (!base[k] || !result[k]) continue;
-    const b = base[k][m], r = result[k][m];
-    const d = b ? ((r - b) / b) * 100 : 0;
-    const tag = d > 15 ? ' REGRESSION' : d < -10 ? ' improved' : '';
-    console.log(`  ${k}.${m}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
-    if (d > 15) {
-      console.log(`    inspect: ${PHASE_HINTS[k] || 'owning subsystem'}`);
-      exit = 1;
+  const environment = compatibleSandTimingEnvironment(result.metadata, base.metadata);
+  const config = compatibleSandBenchmarkConfig(result.config, base.config);
+  const timingComparable = environment.compatible && config.compatible;
+  if (!timingComparable) {
+    console.log('  timing comparison skipped (checksum and volume checks remain active):');
+    for (const reason of [...environment.reasons, ...config.reasons]) console.log(`    - ${reason}`);
+    console.log('    re-record a baseline on this host/toolchain with --update before judging timings');
+  } else {
+    const rows = checksumOnly ? [['step', 'mean']] : [['step', 'p99'], ['renderFull', 'p99'], ['shiftWorldMiss', 'p99'], ['shiftWorldHit', 'p99'], ['step', 'mean'], ['renderFull', 'mean']];
+    for (const [k, m] of rows) {
+      if (!base[k] || !result[k]) continue;
+      const b = base[k][m], r = result[k][m];
+      const d = b ? ((r - b) / b) * 100 : 0;
+      const tag = d > 15 ? ' REGRESSION' : d < -10 ? ' improved' : '';
+      console.log(`  ${k}.${m}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
+      if (d > 15) {
+        console.log(`    inspect: ${PHASE_HINTS[k] || 'owning subsystem'}`);
+        exit = 1;
+      }
     }
   }
   // Fine phase + volume deltas: only compare fine keys (apples-to-apples). Old
@@ -434,7 +447,7 @@ if (comparePath) {
   const basePh = base.stepPhases || {};
   const resPh = result.stepPhases || {};
   const phaseRows = FINE_PHASE_KEYS.filter((k) => basePh[k] && resPh[k]);
-  if (phaseRows.length) {
+  if (timingComparable && phaseRows.length) {
     console.log('  step phase p50 deltas (informational):');
     for (const k of phaseRows) {
       const b = basePh[k].p50, r = resPh[k].p50;
@@ -445,7 +458,7 @@ if (comparePath) {
       console.log(`    ${k}: ${b.toFixed(3)} -> ${r.toFixed(3)}  (${abs >= 0 ? '+' : ''}${abs.toFixed(3)}ms, ${d >= 0 ? '+' : ''}${d.toFixed(1)}%)${tag}`);
       if (tag.includes('hot')) console.log(`      inspect: ${PHASE_HINTS[k] || k}`);
     }
-  } else if (Object.keys(resPh).length) {
+  } else if (timingComparable && Object.keys(resPh).length) {
     console.log('  step phase p50 (current run — baseline predates fine phases; re-record with --update to enable phase deltas):');
     for (const k of FINE_PHASE_KEYS) {
       if (!resPh[k]) continue;

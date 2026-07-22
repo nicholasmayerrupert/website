@@ -41,6 +41,7 @@ export function inventoryRevision(engine, playerId) {
   mix(inv.selectedFootprint ?? 0);
   for (const s of inv.slots) {
     mix(s.material);
+    mix(s.plantType ?? 0);
     mix(s.itemKind ?? 0);
     mix(s.count);
     mix(s.isTool ? ((s.toolClass << 8) | s.toolTier | 0x10000) : 0);
@@ -48,6 +49,7 @@ export function inventoryRevision(engine, playerId) {
   const c = engine.getCursor(playerId);
   mix(c ? ((c.material << 16) | (c.count & 0xffff)) : 0x7fffffff);
   if (c) {
+    mix(c.plantType ?? 0);
     mix(c.itemKind ?? 0);
     mix(c.isTool ? ((c.toolClass << 8) | c.toolTier | 0x10000) : 0);
   }

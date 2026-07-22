@@ -49,22 +49,26 @@ export class Host {
   // applied to the sender's player through a per-client sequence gate so
   // reordered-late / duplicate packets are dropped. Returns the handled message
   // type, or null if it was malformed/ignored.
-  receive(raw) {
+  receive(raw, senderClientId = null) {
     const m = typeof raw === 'string' ? decode(raw) : raw;
     if (!m) return null;
     switch (m.t) {
-      case MSG.INPUT: return this.applyInput(m) ? MSG.INPUT : null;
-      case MSG.LEAVE: this.removeClient(m.client); return MSG.LEAVE;
+      case MSG.INPUT: return this.applyInput(m, senderClientId ?? m.client) ? MSG.INPUT : null;
+      case MSG.LEAVE:
+        if (senderClientId !== null && m.client !== senderClientId) return null;
+        this.removeClient(m.client); return MSG.LEAVE;
       default: return null; // join/snapshot/ping handled by the transport layer
     }
   }
 
-  applyInput(m) {
-    const c = this.clients.get(m.client);
+  applyInput(m, senderClientId = m.client) {
+    if (m.client !== senderClientId || m.room !== this.roomId) return false;
+    const c = this.clients.get(senderClientId);
     if (!c) return false;                  // unknown client -> reject
-    if (!c.tracker.accept(m.seq)) return false; // out-of-order / duplicate -> drop
+    if (m.player !== c.playerId) return false;
     // Defense in depth: never trust a peer's fields even post-decode.
-    if (!Number.isInteger(m.bits) || m.bits < 0 || m.bits > INPUT_BITS_MAX ||
+    if (!Number.isInteger(m.seq) || m.seq < 0 || m.seq <= c.tracker.latest ||
+        !Number.isInteger(m.bits) || m.bits < 0 || m.bits > INPUT_BITS_MAX ||
         !Number.isInteger(m.tool) || m.tool < 0 || m.tool > TOOL_MAX ||
         !Number.isFinite(m.aimX) || !Number.isFinite(m.aimY) ||
         ((m.moveX !== undefined) !== (m.moveY !== undefined)) ||
@@ -75,6 +79,9 @@ export class Host {
     c.lastInput = t;
     if (c.tokens < 1) { this.droppedInputs++; return false; }
     c.tokens -= 1;
+    // Commit sequence progress only after identity, fields, and rate limits all
+    // pass. A forged or throttled high sequence cannot lock out later input.
+    if (!c.tracker.accept(m.seq)) return false;
     // Clamp the aim into the buffer (+small margin); reach is enforced in C++.
     const aimX = Math.max(-1, Math.min(this.engine.cols, m.aimX | 0));
     const aimY = Math.max(-1, Math.min(this.engine.rows, m.aimY | 0));

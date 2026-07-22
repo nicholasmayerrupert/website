@@ -19,6 +19,7 @@ static bool glAllocateCellTexture(GLuint& texture, int cols, int rows) {
 }
 
 int GLPresenter::glInit(const char* target) {
+  glTarget = target ? target : "";
   glc = sandgl::acquire(target);
   if (!glc) return 0;
   emscripten_webgl_make_context_current(glc->handle);
@@ -86,6 +87,15 @@ void GLPresenter::glDestroy() {
   if (glDrawFBO) glDeleteFramebuffers(1, &glDrawFBO);
   glTex = glTexBg = glTex2 = glReadFBO = glDrawFBO = 0;
   glc = nullptr;
+}
+
+// Release both the per-engine objects and the context-global objects. This is
+// reserved for final canvas teardown; Engine replacement calls glDestroy() via
+// the destructor so the next Engine can acquire the same canvas context.
+void GLPresenter::glReleaseContext() {
+  glDestroy();
+  if (!glTarget.empty()) sandgl::release(glTarget.c_str());
+  glTarget.clear();
 }
 
 void GLPresenter::glResize(int devW, int devH) { glDevW = devW; glDevH = devH; }

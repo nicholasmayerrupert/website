@@ -8,8 +8,11 @@
 // places the element and listens for its draw-mode event. Any non-React page can
 // use <sand-game> directly — see ../embed/sandGame.js.
 
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
+// The Web Component attributes are the runtime schema; keep this shim free of
+// a second prop-types dependency that could drift from that public API.
+// eslint-disable-next-line react/prop-types
 export function SandGame({ initialTool = 'cube', mode = 'survival', onDrawModeChange, perfHud = false, debugHitboxes = false }) {
   const ref = useRef(null);
   useEffect(() => {

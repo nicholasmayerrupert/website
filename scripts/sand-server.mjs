@@ -12,7 +12,7 @@
 
 import { WebSocketServer } from 'ws';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
-import { decode, encode, MSG, makeAssign, makeSnapshot } from '../src/sand/net/protocol.js';
+import { decode, encode, MSG, makeAssign, makeReject, makeSnapshot } from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
@@ -25,6 +25,7 @@ const STEP_MS = 16;            // fixed sim step (matches the browser STEP_MS)
 const SNAPSHOT_INTERVAL = 3;   // steps between player-snapshot broadcasts (~20Hz)
 const ITEMS_INTERVAL = 6;      // steps between dropped-item broadcasts (~10Hz)
 const MAX_PLAYERS = 8;
+const MAX_BUFFERED_BYTES = 1 << 20;
 
 export async function startSandServer(opts = {}) {
   const cfg = { ...DEFAULTS, ...opts };
@@ -36,13 +37,17 @@ export async function startSandServer(opts = {}) {
   engine.setSurvivalInventory(true); // mining -> drops -> inventory; new players begin with bare hands
   engine.setCreatureRuntime(true, true);
   engine.setPlayMode(true);
-  const host = new Host({ engine, roomId: cfg.room, maxPlayers: MAX_PLAYERS });
+  const maxPlayers = cfg.maxPlayers ?? MAX_PLAYERS;
+  const host = new Host({ engine, roomId: cfg.room, maxPlayers });
 
   const spawnFor = (i) => engine.getSurfaceSpawn(Math.floor(cfg.cols / 2) + ((i % 5) - 2) * 6);
 
-  const peers = new Map(); // clientId -> { ws, pid, invRev }
+  const peers = new Map(); // clientId -> { ws, pid, invRev, needsWorld }
   let joinCounter = 0;
-  const broadcast = (data) => { for (const p of peers.values()) if (p.ws.readyState === 1) p.ws.send(data); };
+  const writable = (ws) => ws.readyState === 1;
+  const broadcastLatest = (data) => {
+    for (const p of peers.values()) if (writable(p.ws) && p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) p.ws.send(data);
+  };
   const sendTo = (ws, data) => { if (ws.readyState === 1) ws.send(data); };
 
   const wss = new WebSocketServer({ port: cfg.port });
@@ -55,11 +60,13 @@ export async function startSandServer(opts = {}) {
       switch (m.t) {
         case MSG.JOIN: {
           if (cid) break; // already joined on this socket
-          if (peers.size >= MAX_PLAYERS) { sendTo(ws, encode({ t: 'full', room: cfg.room })); ws.close(); return; }
+          if (m.room !== cfg.room) { sendTo(ws, encode(makeReject(cfg.room, 'room'))); ws.close(); return; }
+          if (peers.has(m.client)) { sendTo(ws, encode(makeReject(cfg.room, 'client'))); ws.close(); return; }
+          if (!host.hasRoom()) { sendTo(ws, encode(makeReject(cfg.room, 'full'))); ws.close(); return; }
+          const pid = host.addClient(m.client, spawnFor(joinCounter++));
+          if (!pid) { sendTo(ws, encode(makeReject(cfg.room, 'full'))); ws.close(); return; }
           cid = m.client;
-          const pid = host.addClient(cid, spawnFor(joinCounter++));
-          if (!pid) { ws.close(); cid = null; return; }
-          peers.set(cid, { ws, pid, invRev: -1 });
+          peers.set(cid, { ws, pid, invRev: -1, needsWorld: false });
           // The joiner gets its authoritative id, the full world, and an initial
           // items/inventory/cursor fill so its HUD + scene are correct immediately.
           sendTo(ws, encode(makeAssign(cfg.room, cid, pid)));
@@ -71,16 +78,23 @@ export async function startSandServer(opts = {}) {
           sendTo(ws, encode(encodeCursor(engine, host.actorTick, pid)));
           break;
         }
-        case MSG.INPUT: host.receive(m); break; // movement + place/mine (rate-limited, validated)
-        case MSG.RESYNC: sendTo(ws, encode(encodeWorld(engine, host.worldTick))); break;
-        case MSG.ACT_SELECT: { const p = host.playerIdFor(cid); if (p) engine.setSelectedSlot(p, m.slot); break; }
-        case MSG.ACT_SIZE: { const p = host.playerIdFor(cid); if (p) engine.setSelectedFootprint(p, m.footprint); break; }
-        case MSG.ACT_MOVE: { const p = host.playerIdFor(cid); if (p) engine.inventoryMove(p, m.from, m.to); break; }
-        case MSG.ACT_PICK: { const p = host.playerIdFor(cid); if (p) engine.inventoryCursorPick(p, m.slot, m.half); break; }
-        case MSG.ACT_THROW: { const p = host.playerIdFor(cid); if (p) engine.throwFromCursor(p, m.whole); break; }
-        case MSG.ACT_CRAFT: { const p = host.playerIdFor(cid); if (p) engine.craft(p, m.recipe, m.max); break; }
-        case MSG.ACT_RESPAWN: { const p = host.playerIdFor(cid); if (p) engine.respawnPlayer(p); break; }
-        case MSG.LEAVE: cleanup(); break;
+        case MSG.INPUT: host.receive(m, cid); break; // identity + movement/tool input are both authority-validated
+        case MSG.RESYNC: {
+          const p = peers.get(cid);
+          if (p && m.client === cid && m.room === cfg.room) {
+            if (ws.bufferedAmount <= MAX_BUFFERED_BYTES) { sendTo(ws, encode(encodeWorld(engine, host.worldTick))); p.needsWorld = false; }
+            else p.needsWorld = true;
+          }
+          break;
+        }
+        case MSG.ACT_SELECT: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.setSelectedSlot(p.pid, m.slot); break; }
+        case MSG.ACT_SIZE: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.setSelectedFootprint(p.pid, m.footprint); break; }
+        case MSG.ACT_MOVE: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.inventoryMove(p.pid, m.from, m.to); break; }
+        case MSG.ACT_PICK: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.inventoryCursorPick(p.pid, m.slot, m.half); break; }
+        case MSG.ACT_THROW: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.throwFromCursor(p.pid, m.whole); break; }
+        case MSG.ACT_CRAFT: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.craft(p.pid, m.recipe, m.max); break; }
+        case MSG.ACT_RESPAWN: { const p = peers.get(cid); if (p && m.client === cid && m.room === cfg.room) engine.respawnPlayer(p.pid); break; }
+        case MSG.LEAVE: if (m.client === cid && m.room === cfg.room) cleanup(); break;
         default: break;
       }
     });
@@ -93,18 +107,18 @@ export async function startSandServer(opts = {}) {
     host.stepActors(now);
     const t = host.actorTick;
     if (peers.size > 0) {
-      if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcast(encode(makeSnapshot(t, engine.getPlayers(), null))); }
-      if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcast(encode(encodeItems(engine, t))); }
+      if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcastLatest(encode(makeSnapshot(t, engine.getPlayers(), null))); }
+      if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcastLatest(encode(encodeItems(engine, t))); }
       if (++sinceCreatures >= SNAPSHOT_INTERVAL) {
         sinceCreatures = 0;
-        broadcast(encode(encodeCreatures(engine, t)));
-        broadcast(encode(encodeProjectiles(engine, t)));
+        broadcastLatest(encode(encodeCreatures(engine, t)));
+        broadcastLatest(encode(encodeProjectiles(engine, t)));
       }
       // Per-player inventory + cursor, only when that player's inventory changed
       // (idle players cost zero inventory bandwidth).
       for (const p of peers.values()) {
         const rev = inventoryRevision(engine, p.pid);
-        if (rev !== p.invRev) {
+        if (rev !== p.invRev && p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) {
           p.invRev = rev;
           sendTo(p.ws, encode(encodeInventory(engine, t, p.pid)));
           sendTo(p.ws, encode(encodeCursor(engine, t, p.pid)));
@@ -119,9 +133,21 @@ export async function startSandServer(opts = {}) {
       // Actor edits and cellular changes accumulate in the same dirty set and
       // leave together after this single world phase.
       const d = encodeDiff(engine, host.worldTick);
-      if (d) broadcast(encode(d));
+      let full = null;
+      for (const p of peers.values()) {
+        if (!writable(p.ws)) continue;
+        if (p.needsWorld) {
+          if (p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) {
+            full ??= encode(encodeWorld(engine, host.worldTick));
+            p.ws.send(full); p.needsWorld = false;
+          }
+        } else if (d) {
+          if (p.ws.bufferedAmount > MAX_BUFFERED_BYTES) p.needsWorld = true;
+          else p.ws.send(encode(d));
+        }
+      }
       const sounds = encodeSounds(engine, host.actorTick);
-      if (sounds) broadcast(encode(sounds));
+      if (sounds) broadcastLatest(encode(sounds));
     } else {
       // Do not retain authority events forever when nobody is listening.
       engine.drainSoundEvents();

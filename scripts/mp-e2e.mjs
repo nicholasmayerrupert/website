@@ -122,9 +122,22 @@ try {
   const solidA = await solid(a.page), solidB = await solid(b.page);
   check(`both clients render the same server terrain (A ${solidA} ~ B ${solidB})`, solidA > 0 && Math.abs(solidA - solidB) <= 2);
 
-  // inventory: both clients got the starter kit (slot 0 is a tool).
-  check('client A inventory has starter tools', await a.page.evaluate(() => !!window.__sandNet.ownInventory()?.slots?.[0]?.isTool));
-  check('client B inventory has starter tools', await b.page.evaluate(() => !!window.__sandNet.ownInventory()?.slots?.[0]?.isTool));
+  // Survival begins with bare hands: all inventory slots are empty.
+  const inventoryEmpty = (page) => page.evaluate(() => window.__sandNet.ownInventory()?.slots?.every((slot) => !slot.count));
+  check('client A begins with bare hands', await inventoryEmpty(a.page));
+  check('client B begins with bare hands', await inventoryEmpty(b.page));
+
+  // Give each authoritative player a distinct stack so the private inventory
+  // and cursor replication checks below exercise real state changes.
+  const pidA = await a.page.evaluate(() => window.__sandNet.ownPlayer()?.id);
+  const pidB = await b.page.evaluate(() => window.__sandNet.ownPlayer()?.id);
+  srv.engine.addToInventory(pidA, MAT.STONE, 3);
+  srv.engine.addToInventory(pidB, MAT.WOOD, 2);
+  for (let i = 0; i < 12; i++) {
+    await pump();
+    const ready = await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 3);
+    if (ready) break;
+  }
 
   // per-player inventory sync: A selects slot 3 -> only A's selected changes.
   await a.page.evaluate(() => window.__sandNet.select(3));
@@ -135,13 +148,13 @@ try {
   check(`client B selection unaffected (${selB})`, selB === 0);
 
   // cursor sync: A picks slot 0 onto its cursor -> A carries it, slot 0 empties;
-  // B is unaffected (its own pickaxe stays in slot 0).
+  // B is unaffected (its own wood stack stays in slot 0).
   await a.page.evaluate(() => window.__sandNet.pick(0, false));
   let curA = null;
   for (let i = 0; i < 12; i++) { await pump(); curA = await a.page.evaluate(() => window.__sandNet.ownCursor()); if (curA) break; }
   check('client A carries a cursor stack after pick', curA != null);
   check('client A slot 0 emptied after pick', await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 0));
-  check('client B slot 0 still holds its tool', await b.page.evaluate(() => !!window.__sandNet.ownInventory()?.slots?.[0]?.isTool));
+  check('client B slot 0 still holds its stack', await b.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 2));
 
   // item replication: a dropped item spawned on the SERVER (far from both players
   // so it isn't immediately vacuumed) must appear on BOTH clients' item views.

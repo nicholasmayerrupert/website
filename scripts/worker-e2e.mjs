@@ -87,8 +87,11 @@ try {
   const desktopAudioUi = await page.locator('sand-game').evaluate((host) => ({
     buttons: host.shadowRoot.querySelectorAll('.sg-sound').length,
     enabled: host._game.getAudioState().enabled,
+    hints: [...host.shadowRoot.querySelectorAll('.sg-control-hint')].map((hint) => hint.textContent),
   }));
-  check('desktop exposes one enabled sound control', desktopAudioUi.buttons === 1 && desktopAudioUi.enabled);
+  check('desktop exposes block controls beside one enabled sound control',
+    desktopAudioUi.buttons === 1 && desktopAudioUi.enabled &&
+      desktopAudioUi.hints.join('|') === 'WASDMOVE|LMBPLACE FOREGROUND|RMBPLACE BACKGROUND', desktopAudioUi.hints.join(', '));
   const countRaf = (ms) => page.evaluate((duration) => new Promise((resolve) => {
     let n = 0;
     const started = performance.now();

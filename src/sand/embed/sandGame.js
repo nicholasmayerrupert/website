@@ -30,18 +30,34 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
   box-shadow: 0 4px 10px rgba(0,0,0,.35); transition: transform .08s ease-out; will-change: transform; }
 .sg-stick.active .sg-knob { transition: none; background: rgba(255,255,255,.82); }
 .sg-stick.sg-hidden, .sg-zoom.sg-hidden, .sg-start.sg-hidden { display: none; }
-.sg-sound { position: absolute; right: 14px; bottom: 14px; z-index: 72; display: flex; align-items: center; gap: 7px;
-  height: 36px; padding: 0 11px; border: 1px solid rgba(255,255,255,.2); border-radius: 9px;
+.sg-desktop-controls { position: absolute; right: 14px; bottom: 14px; z-index: 72; display: flex; align-items: stretch;
+  gap: 8px; pointer-events: none; font-family: ui-monospace, "SFMono-Regular", "Cascadia Mono", "Roboto Mono", "Courier New", monospace;
+  font-weight: 700; text-rendering: geometricPrecision; -webkit-font-smoothing: none; font-smooth: never; }
+.sg-control-hints { display: flex; align-items: center; gap: 10px; height: 36px; box-sizing: border-box; padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.2); background: rgba(17,24,39,.5); color: #dbe4ef;
+  backdrop-filter: blur(5px); box-shadow: 3px 3px 0 rgba(0,0,0,.38); }
+.sg-control-hint { display: flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 8px; line-height: 1; letter-spacing: .08em; }
+.sg-control-key { display: inline-grid; place-items: center; min-width: 25px; height: 18px; box-sizing: border-box; padding: 0 4px;
+  border: 1px solid rgba(255,255,255,.42); background: rgba(255,255,255,.12); color: #fff;
+  box-shadow: 2px 2px 0 rgba(0,0,0,.48); font-family: inherit; font-size: 8px; font-weight: 800; line-height: 1; letter-spacing: .04em; }
+.sg-sound { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 11px;
+  border: 1px solid rgba(255,255,255,.2); border-radius: 0;
   background: rgba(17,24,39,.5); color: #fff; pointer-events: auto; cursor: pointer; touch-action: manipulation;
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: .09em;
-  backdrop-filter: blur(5px); box-shadow: 0 10px 18px -7px rgba(0,0,0,.48); }
+  font-family: inherit; font-size: 9px; font-weight: 700; line-height: 1; letter-spacing: .09em;
+  backdrop-filter: blur(5px); box-shadow: 3px 3px 0 rgba(0,0,0,.48); }
 .sg-sound:hover { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.34); }
-.sg-sound-icon { position: relative; width: 14px; height: 14px; flex: none; }
+.sg-sound-icon { position: relative; width: 17px; height: 14px; flex: none; }
 .sg-sound-icon::before { content: ''; position: absolute; left: 0; top: 4px; width: 5px; height: 6px;
-  border-radius: 1px; background: currentColor; box-shadow: 4px -3px 0 -1px currentColor, 4px 3px 0 -1px currentColor; }
-.sg-sound-icon::after { content: '))'; position: absolute; left: 7px; top: 1px; font: 700 9px/12px ui-monospace, monospace; letter-spacing: -3px; }
+  background: currentColor; box-shadow: 4px -3px 0 -1px currentColor, 4px 3px 0 -1px currentColor; }
+.sg-sound-icon::after { content: ''; position: absolute; left: 9px; top: 6px; width: 2px; height: 2px; background: currentColor;
+  box-shadow: 3px -2px 0 currentColor, 3px 0 0 currentColor, 3px 2px 0 currentColor,
+    6px -4px 0 currentColor, 6px -2px 0 currentColor, 6px 0 0 currentColor,
+    6px 2px 0 currentColor, 6px 4px 0 currentColor; }
 .sg-sound.muted { color: rgba(255,255,255,.55); }
-.sg-sound.muted .sg-sound-icon::after { content: '×'; left: 8px; top: 1px; font-size: 12px; letter-spacing: 0; }
+.sg-sound.muted .sg-sound-icon::after { left: 9px; top: 3px; box-shadow: 6px 0 0 currentColor,
+  2px 2px 0 currentColor, 4px 2px 0 currentColor, 2px 4px 0 currentColor,
+  4px 4px 0 currentColor, 0 6px 0 currentColor, 6px 6px 0 currentColor; }
 .sg-start { position: absolute; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); z-index: 72;
   width: min(72vw, 320px); height: 56px; transform: translateX(-50%); pointer-events: auto; touch-action: manipulation;
   border: 1px solid rgba(255,255,255,.32); border-radius: 16px; background: rgba(17,24,39,.62); color: #fff;
@@ -283,7 +299,26 @@ function createMobileStartButton(root, onStart) {
   };
 }
 
-function createDesktopSoundButton(root, game) {
+function createDesktopSoundButton(root, game, showCreativeHints) {
+  const controls = document.createElement('div');
+  controls.className = 'sg-desktop-controls';
+  if (showCreativeHints) {
+    const hints = document.createElement('div');
+    hints.className = 'sg-control-hints';
+    hints.setAttribute('aria-label', 'Creative controls');
+    for (const [key, action] of [['WASD', 'MOVE'], ['LMB', 'PLACE FOREGROUND'], ['RMB', 'PLACE BACKGROUND']]) {
+      const hint = document.createElement('span');
+      hint.className = 'sg-control-hint';
+      const keycap = document.createElement('kbd');
+      keycap.className = 'sg-control-key';
+      keycap.textContent = key;
+      const label = document.createElement('span');
+      label.textContent = action;
+      hint.append(keycap, label);
+      hints.appendChild(hint);
+    }
+    controls.appendChild(hints);
+  }
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'sg-sound';
@@ -309,8 +344,9 @@ function createDesktopSoundButton(root, game) {
   for (const event of ['pointerdown', 'pointerup', 'pointermove'])
     button.addEventListener(event, (e) => e.stopPropagation());
   render();
-  root.appendChild(button);
-  return { destroy() { button.remove(); } };
+  controls.appendChild(button);
+  root.appendChild(controls);
+  return { destroy() { controls.remove(); } };
 }
 
 // Live performance overlay (the /fps route). A tiny top-right panel that polls
@@ -598,7 +634,7 @@ class SandGameElement extends HTMLElement {
         this._palette?.setDrawMode(drawDefault);
         this._zoom?.setDrawMode(drawDefault);
         if (coarse) this._stick = createMobileJoystick(root, game);
-        else this._sound = createDesktopSoundButton(root, game);
+        else this._sound = createDesktopSoundButton(root, game, mode === 'creative');
         syncMobileCreativeUi();
         // Perf overlay (opt-in via the `perf-hud` attribute — the /fps route sets it).
         if (this.hasAttribute('perf-hud')) this._perfHud = createPerfHud(root, game);

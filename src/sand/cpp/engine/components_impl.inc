@@ -1265,28 +1265,39 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, int dir,
                            const AssemblyBodyPush& bodyPush, LayerMovePlan& plan) -> bool {
     plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
+    // Treat a free-body stack pushed by this assembly as part of the same
+    // one-cell translation. Its leading loose medium and trailing vacancies
+    // must participate in this exact plan; otherwise the body preflight either
+    // pins the assembly on water/powder or overwrites that volume.
+    std::unordered_set<int> combined;
+    const std::unordered_set<int>* moving = &own;
+    if (!bodyPush.empty()) {
+      combined = own;
+      combined.insert(bodyPush.oldCells.begin(), bodyPush.oldCells.end());
+      moving = &combined;
+    }
     auto materialAt = [&](int k) -> uint8_t {
       return bodyPush.vacated.count(k) ? EMPTY : lay.grid[k];
     };
     struct PendingRelocate { int source; uint8_t material; };
     std::vector<PendingRelocate> pending;
     std::vector<int> vacated;
-    for (int k : own) {
+    for (int k : *moving) {
       int nk = k + dir;
       if (nk < E.cols || nk >= E.cols * E.rows) return false;
-      if (own.count(nk)) continue;
+      if (moving->count(nk)) continue;
       uint8_t lead = materialAt(nk);
       if (lead == EMPTY) continue;
       if (!E.isGasMaterial(lead) && !E.isBuoyantMedium(lead)) return false;
       pending.push_back({nk, lead});
     }
-    for (int k : own) if (!own.count(k - dir)) vacated.push_back(k);
+    for (int k : *moving) if (!moving->count(k - dir)) vacated.push_back(k);
     if (pending.size() > vacated.size()) return false;
     const int gridLen = E.cols * E.rows;
     asmCells.reset((size_t)gridLen);
     trVacated.reset((size_t)gridLen);
     trReserved.reset((size_t)gridLen);
-    for (int k : own) asmCells.add(k);
+    for (int k : *moving) asmCells.add(k);
     for (int k : vacated) trVacated.add(k);
     std::vector<std::set<int>> vacatedByRow(E.rows);
     for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
@@ -1482,19 +1493,29 @@ void ComponentSystem::moveRigidAssemblies() {
                    matOf(ci, k));
       for (int groupCi : grp->comps) all[groupCi]->buoyancyDirection = 0;
     };
-    // Membership mirror of `cells` (iteration below stays on the set — its
-    // order feeds displaced/vacated order and thus every relocation write).
-    asmCells.reset((size_t)gridLen);
-    for (int k : cells) asmCells.add(k);
     AssemblyBodyPush bodyPush;
     if (!E.planAssemblyBodyPush(cells, dir, bodyPush)) { emitBlockedLanding(); return false; }
+    // The component and every body it pushes translate as one occupancy union.
+    // Plan loose displacement against that union so body-leading water/powder
+    // can use the combined trailing vacancies without being lost or pinning the
+    // component. Preserve the old component-only container/order when no body
+    // is selected so ordinary assembly behavior remains byte-identical.
+    std::unordered_set<int> combined;
+    const std::unordered_set<int>* moving = &cells;
+    if (!bodyPush.empty()) {
+      combined = cells;
+      combined.insert(bodyPush.oldCells.begin(), bodyPush.oldCells.end());
+      moving = &combined;
+    }
+    asmCells.reset((size_t)gridLen);
+    for (int k : *moving) asmCells.add(k);
     auto materialAt = [&](int k) -> uint8_t {
       return bodyPush.vacated.count(k) ? EMPTY : E.L->grid[k];
     };
     auto componentDisplaceableForAssembly = [&](uint8_t m) {
       return m == EMPTY || E.isGasMaterial(m) || E.isBuoyantMedium(m);
     };
-    for (int k : cells) {
+    for (int k : *moving) {
       int leadK = k + dir; int leadY = leadK / E.cols;
       if (leadY < 1 || leadY >= E.rows) { emitBlockedLanding(); return false; }
       if (asmCells.has(leadK)) continue;
@@ -1503,7 +1524,7 @@ void ComponentSystem::moveRigidAssemblies() {
     }
     struct Disp { uint8_t material; int from; };
     std::vector<Disp> displaced; std::vector<int> vacated;
-    for (int k : cells) {
+    for (int k : *moving) {
       int leadK = k + dir; uint8_t lead = materialAt(leadK);
       if (!asmCells.has(leadK) && lead != EMPTY && componentDisplaceableForAssembly(lead)) displaced.push_back({lead, leadK});
       int trailK = k - dir; // may be out of bounds at the world edge (the old set .count was safe on any int; the stamp array is not)
@@ -1533,7 +1554,7 @@ void ComponentSystem::moveRigidAssemblies() {
       // them. Built lazily here (only when liquid/powder is displaced) so a large
       // slab falling through air/empty skips the O(area) stamp fill per step.
       trMoved.reset(gridLen);
-      for (int k : cells) trMoved.add(k + dir);
+      for (int k : *moving) trMoved.add(k + dir);
       std::vector<std::set<int>> vacatedByRow(E.rows);
       for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }

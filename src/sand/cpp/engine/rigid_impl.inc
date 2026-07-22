@@ -1003,7 +1003,8 @@ bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemb
       if (!selected.count(owner)) return false;
     } else {
       uint8_t m = E.L->grid[nk];
-      if (m != EMPTY && !E.isGasMaterial(m)) return false;
+      Body* b = byId[plan.owners[i]];
+      if (!b || !canBodyOccupy(m, nk, b->density)) return false;
     }
     plan.occupied.insert(nk);
   }

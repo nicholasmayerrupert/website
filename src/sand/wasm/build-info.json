@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T20:26:00.016Z",
+  "generatedAt": "2026-07-22T20:50:54.825Z",
   "output": {
     "path": "src/sand/wasm/sandEngine.js",
     "bytes": 59158,
@@ -8,12 +8,12 @@
   },
   "wasm": {
     "path": "src/sand/wasm/sandEngine.wasm",
-    "bytes": 644472,
-    "sha256": "cc91ef097b3bf2fc158de69d6e9882937841591ccc071af126fad2990dce29a1",
-    "fnv1a": "0xd92f540c"
+    "bytes": 646489,
+    "sha256": "ba242cb41f108757af2984ddf2ad28dcff425be999d3f25aeaba0ab53e362942",
+    "fnv1a": "0xd1ee5193"
   },
   "source": {
-    "commit": "3f3ce40",
+    "commit": "f382178",
     "dirty": true
   },
   "toolchain": {

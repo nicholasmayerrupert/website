@@ -5,7 +5,6 @@ const NAV_ITEMS = [
   { label: 'ABOUT', href: '#skills', section: true },
   { label: 'WORK', href: '#projects', section: true },
   { label: 'CONTACT', href: '#contact', section: true },
-  { label: 'RESUME', href: '/Nicholas-Mayer-Rupert-Resume.pdf', external: true },
 ];
 
 const NavBar = ({ mobileHidden = false }) => {

@@ -21,6 +21,7 @@ function table() {
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
+    detonateTnt: c('engine_test_detonate_tnt', null, ['number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
@@ -43,6 +44,7 @@ export function attachTestHooks(engine) {
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
+  engine._detonateTnt = (cx, cy) => t.detonateTnt(ptr, cx | 0, cy | 0);
   // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
   engine._bodyState = (i) => {
     const buf = mod._malloc(8 * 8);

@@ -1,24 +1,28 @@
 // ExplosivesSystem method bodies (need the full Engine definition; see explosives.hpp).
 
-void ExplosivesSystem::buildTntStencil() {
-  int r2 = TNT_BLAST_RADIUS * TNT_BLAST_RADIUS;
-  int inner = imax(1, TNT_BLAST_RADIUS - BLAST_GAS_RING_DEPTH);
-  int inner2 = inner * inner;
-  tntStencil.reserve((size_t)(TNT_BLAST_RADIUS * 2 + 1) * (TNT_BLAST_RADIUS * 2 + 1));
-  tntGasStencil.reserve((size_t)(TNT_BLAST_RADIUS * 2 + 1) * BLAST_GAS_RING_DEPTH * 4);
-  for (int oy = -TNT_BLAST_RADIUS; oy <= TNT_BLAST_RADIUS; oy++)
-    for (int ox = -TNT_BLAST_RADIUS; ox <= TNT_BLAST_RADIUS; ox++) {
+void ExplosivesSystem::buildBlastStencils() {
+  auto build = [&](int radius, double power, std::vector<BlastOffset>& stencil,
+                   std::vector<BlastGasOffset>& gasStencil) {
+    int r2 = radius * radius;
+    int inner = imax(1, radius - BLAST_GAS_RING_DEPTH);
+    int inner2 = inner * inner;
+    stencil.reserve((size_t)(radius * 2 + 1) * (radius * 2 + 1));
+    gasStencil.reserve((size_t)(radius * 2 + 1) * BLAST_GAS_RING_DEPTH * 4);
+    for (int oy = -radius; oy <= radius; oy++) for (int ox = -radius; ox <= radius; ox++) {
       int dd = ox * ox + oy * oy;
       if (dd > r2) continue;
       double dist = std::sqrt((double)dd);
-      double energy = TNT_BLAST_POWER * (1.0 - dist / TNT_BLAST_RADIUS);
-      tntStencil.push_back({(int16_t)ox, (int16_t)oy, dd, dist, energy});
+      double energy = power * (1.0 - dist / radius);
+      stencil.push_back({(int16_t)ox, (int16_t)oy, dd, dist, energy});
       if (dd >= inner2) {
-        double shell = (dist - (double)inner) / (double)(TNT_BLAST_RADIUS - inner);
+        double shell = (dist - (double)inner) / (double)(radius - inner);
         double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
-        tntGasStencil.push_back({(int16_t)ox, (int16_t)oy, keepP});
+        gasStencil.push_back({(int16_t)ox, (int16_t)oy, keepP});
       }
     }
+  };
+  build(TNT_BLAST_RADIUS, TNT_BLAST_POWER, tntStencil, tntGasStencil);
+  build(METHANE_BLAST_RADIUS, METHANE_BLAST_POWER, methaneStencil, methaneGasStencil);
 }
 
 void ExplosivesSystem::queueDetonation(int cell, int fuse) {
@@ -60,8 +64,10 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves) 
         E.L->vacatedStamp[k] = E.tick;
         E.L->blastGasStamp[k] = E.tick;
     };
-    if (radius == TNT_BLAST_RADIUS) {
-      for (const BlastGasOffset& o : tntGasStencil) stamp(o.ox, o.oy, o.keepP);
+    const std::vector<BlastGasOffset>* gasStencil = radius == TNT_BLAST_RADIUS ? &tntGasStencil
+      : (radius == METHANE_BLAST_RADIUS ? &methaneGasStencil : nullptr);
+    if (gasStencil) {
+      for (const BlastGasOffset& o : *gasStencil) stamp(o.ox, o.oy, o.keepP);
     } else {
       for (int oy = -radius; oy <= radius; oy++) for (int ox = -radius; ox <= radius; ox++) {
         int dd = ox * ox + oy * oy;
@@ -376,11 +382,14 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
         bb.particles++;
       }
   };
-  if (radius == TNT_BLAST_RADIUS) {
-    if (power == TNT_BLAST_POWER) {
-      for (const BlastOffset& o : tntStencil) carveCell(o.ox, o.oy, o.dd, o.dist, o.tntEnergy);
+  const std::vector<BlastOffset>* stencil = radius == TNT_BLAST_RADIUS ? &tntStencil
+    : (radius == METHANE_BLAST_RADIUS ? &methaneStencil : nullptr);
+  if (stencil) {
+    double stencilPower = radius == TNT_BLAST_RADIUS ? TNT_BLAST_POWER : METHANE_BLAST_POWER;
+    if (power == stencilPower) {
+      for (const BlastOffset& o : *stencil) carveCell(o.ox, o.oy, o.dd, o.dist, o.energy);
     } else {
-      for (const BlastOffset& o : tntStencil)
+      for (const BlastOffset& o : *stencil)
         carveCell(o.ox, o.oy, o.dd, o.dist, power * (1.0 - o.dist / radius));
     }
   } else {
@@ -419,7 +428,9 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     }
   // Shockwave: shove nearby free bodies outward and wake them.
   for (Body* b : E.L->bodies) {
-    double ddx = b->px - cx, ddy = b->py - cy, bd = std::sqrt(ddx * ddx + ddy * ddy);
+    double ddx = b->px - cx, ddy = b->py - cy;
+    if (ddx <= -radius || ddx >= radius || ddy <= -radius || ddy >= radius) continue;
+    double bd = std::sqrt(ddx * ddx + ddy * ddy);
     if (bd >= radius || bd < 0.01) continue;
     double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
     b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;

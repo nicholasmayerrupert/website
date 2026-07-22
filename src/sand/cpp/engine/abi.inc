@@ -166,6 +166,10 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_count(Engine* e) { return (int)e->fg.b
 EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_material(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->fg.bodies[i]->material : -1; }
+EMSCRIPTEN_KEEPALIVE void engine_test_detonate_tnt(Engine* e, int cx, int cy) {
+  e->useLayer(&e->fg);
+  e->detonate(cx, cy, ExplosivesSystem::TNT_BLAST_RADIUS, ExplosivesSystem::TNT_BLAST_POWER);
+}
 // Read continuous body pose/motion for tests/tools: [px,py,angle,vx,vy,omega,nPts,maxR].
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;

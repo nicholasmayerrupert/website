@@ -12,7 +12,7 @@ struct Engine;
 
 class ExplosivesSystem {
  public:
-  explicit ExplosivesSystem(Engine& e) : E(e) { buildTntStencil(); }
+  explicit ExplosivesSystem(Engine& e) : E(e) { buildBlastStencils(); }
 
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
   static const int    TNT_CHAIN_FUSE = 1;    // one-tick rolling front: staged, without idle structural frames
@@ -53,7 +53,7 @@ class ExplosivesSystem {
 
   // Per-step accumulator: every crater of a step carves into one of these, then
   // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
-  struct BlastOffset { int16_t ox, oy; int32_t dd; double dist, tntEnergy; };
+  struct BlastOffset { int16_t ox, oy; int32_t dd; double dist, energy; };
   struct BlastGasOffset { int16_t ox, oy; double keepP; };
   struct BlastWave { int cx, cy, radius; uint32_t seed; };
   struct BlastDebrisSource { uint8_t material; int cell; };
@@ -98,5 +98,7 @@ class ExplosivesSystem {
   Engine& E;
   std::vector<BlastOffset> tntStencil;
   std::vector<BlastGasOffset> tntGasStencil;
-  void buildTntStencil();
+  std::vector<BlastOffset> methaneStencil;
+  std::vector<BlastGasOffset> methaneGasStencil;
+  void buildBlastStencils();
 };

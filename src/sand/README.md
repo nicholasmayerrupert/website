@@ -525,7 +525,12 @@ hardcoded id list, decides who reacts.
   never revisits the crater interior.
   Overlapping blasts use generation-stamped
   per-layer energy scratch, and bulk-terrain craters locally prove connectivity
-  before falling back to a full component split. Debris discovery stops sampling
+  before falling back to a full component split. When the bounded reconnect
+  window opens into multiple surviving regions, a capped exact fallback proves
+  each formerly grounded region still reaches a floor/stream-edge seed; uncertain
+  searches retain the full reflood. Batched craters also defer dirty-row marking
+  to their final union rectangle instead of repeating it for every destroyed cell.
+  Debris discovery stops sampling
   later overlapping craters as soon as the layer's bounded rubble budget is full;
   TNT emits at most three physical chunks per layer and tick while prioritizing one
   representative of each destroyed material before repeats. When every active

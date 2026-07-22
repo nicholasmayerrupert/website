@@ -94,6 +94,7 @@ class ComponentSystem {
   void incrementalGroundingRefresh();
   void ensureGroundedSingleLayer();
   bool blobBoundaryReconnects(const std::vector<int>& boundary, int32_t inN, int x0, int y0, int x1, int y1, int32_t removedGen);
+  bool blobBoundaryRegionsStayGrounded(const std::vector<int>& boundary, int32_t removedGen);
   bool blobKeepsGroundingValid(const std::vector<int>& blob);
   bool removalsKeepGroundingValid(const std::vector<int>& removed);
   int compCount(Layer& lay);

@@ -602,6 +602,67 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
   return found == need;
 }
 
+// Exact fallback for a bounded reconnect that ran out of open material rather
+// than visit budget. Removing a blob can split its surviving boundary into
+// several rigid regions without changing grounding when every formerly-grounded
+// region still reaches a real base seed. Walk only those boundary regions and
+// stop as soon as a floor/stream-edge seed or an already-proven path is reached.
+// A capped/uncertain search returns false and keeps the ordinary full reflood.
+bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& boundary, int32_t removedGen) {
+  const int gridLen = E.cols * E.rows;
+  if ((int)E.L->groundRigidBase.size() != gridLen || boundary.empty()) return false;
+  const int VISIT_CAP = 65536;
+  int visits = 0;
+  int32_t safe = ++E.L->seenGen;
+  int* stack = E.L->groundStack.data();
+  const uint8_t* grid = E.L->grid;
+  const uint8_t* prior = E.L->groundRigidBase.data();
+  auto directSeed = [&](int k, int x, int y) {
+    uint8_t m = grid[k];
+    if (y == E.rows - 1 && E.isBearingMaterial(m)) return true;
+    return E.L->infinite && !E.isIceComponentMaterial(m)
+      && (y == 1 || x == 1 || x == E.cols - 2);
+  };
+  for (int start : boundary) {
+    if (E.L->seenStamp[start] == safe) continue;
+    int32_t vis = ++E.L->seenGen;
+    int sp = 0;
+    bool reachedSeed = false;
+    bool wasGrounded = false;
+    cgIsland.clear();
+    E.L->seenStamp[start] = vis;
+    stack[sp++] = start;
+    while (sp > 0) {
+      if (++visits > VISIT_CAP) return false;
+      int cur = stack[--sp];
+      cgIsland.push_back(cur);
+      int cy = cur / E.cols, cx = cur - cy * E.cols;
+      if (prior[cur]) wasGrounded = true;
+      if (directSeed(cur, cx, cy)) { reachedSeed = true; break; }
+      for (int oy = -1; oy <= 1 && !reachedSeed; oy++) {
+        int ny = cy + oy;
+        if (ny < 1 || ny >= E.rows) continue;
+        for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          int nx = cx + ox;
+          if (nx <= 0 || nx >= E.cols - 1) continue;
+          int nk = ny * E.cols + nx;
+          int32_t stamp = E.L->seenStamp[nk];
+          if (stamp == safe) { reachedSeed = true; break; }
+          if (stamp == vis || stamp == removedGen || !E.isRigidMaterialClass(grid[nk])) continue;
+          E.L->seenStamp[nk] = vis;
+          stack[sp++] = nk;
+        }
+      }
+    }
+    if (!reachedSeed && wasGrounded) return false;
+    // A seeded partial walk and an exhausted previously-ungrounded region are
+    // both safe. Reuse the visited cells as terminals for later boundary starts.
+    for (int k : cgIsland) E.L->seenStamp[k] = safe;
+  }
+  return true;
+}
+
 // Decide whether ONE 8-connected blob of just-removed rigid cells (grid already
 // cleared at each) keeps the grounding cache valid. A removal changes another cell's
 // grounding only by disconnecting it from a SEED (floor / streamed buffer edge /
@@ -644,7 +705,11 @@ bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
   if ((int)cgBlobN.size() > 1) {  // 0/1 external connection: the blob is a pendant, removing it disconnects nothing else
     int x0 = imax(1, bx0 - W), x1 = imin(E.cols - 2, bx1 + W);
     int y0 = imax(1, by0 - W), y1 = imin(E.rows - 2, by1 + W);
-    if (!blobBoundaryReconnects(cgBlobN, inN, x0, y0, x1, y1, gen)) { gbCut++; return false; }
+    long openBefore = gbCutOpen;
+    if (!blobBoundaryReconnects(cgBlobN, inN, x0, y0, x1, y1, gen)) {
+      if (gbCutOpen > openBefore && blobBoundaryRegionsStayGrounded(cgBlobN, gen)) gbCutOpen--;
+      else { gbCut++; return false; }
+    }
   }
   gbFast++;
   return true;

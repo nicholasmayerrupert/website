@@ -259,6 +259,8 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
   }
 
   bb.any = true;
+  // Per-cell row marks are intentionally omitted below: finishBlasts activates
+  // and marks this batch's complete union rectangle after every carve/finalize.
   for (int cell : cells) {
     if (cell < 0 || cell >= E.cols * E.rows || E.L->grid[cell] != TNT || E.isBodyCell(cell)) continue;
     int y = cell / E.cols, x = cell - y * E.cols;
@@ -269,7 +271,6 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
     bb.erasedStone.push_back(cell);
     noteCrossSupportRemoval(cell, bb);
     E.L->grid[cell] = EMPTY;
-    E.markCellIndex(cell);
   }
 
   for (int cell : reps) {
@@ -312,7 +313,6 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
       uint8_t m = E.L->grid[k];
       if (E.isGasMaterial(m)) {
         E.L->grid[k] = EMPTY;
-        E.markCellIndex(k);
         return;
       }
       E.noteLooseGroundTouch(m);
@@ -326,14 +326,12 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
           Body* hitBody = it == bb.bodyById.end() ? nullptr : it->second;
           if (hitBody != sourceBody) {
             shortenTntBodyFuse(hitBody, TNT_CHAIN_FUSE);
-            E.markCellIndex(k);
             return;
           }
         } else {
           // Keep chained static TNT physically present until its short fuse fires.
           // Erasing it here created stale cell-coordinate blasts a few ticks later.
           queueDetonation(k, TNT_CHAIN_FUSE);
-          E.markCellIndex(k);
           return;
         }
       }
@@ -371,7 +369,6 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
         else if (group == CG_PLANT) bb.erasedPlant.push_back(k);
         E.L->grid[k] = EMPTY;
       }
-      E.markCellIndex(k);
       // Cosmetic flecks of the destroyed material, flung outward (also how loose
       // powders/liquids in the blast get scattered). Capped + sparse so large
       // chains don't flood the item/particle pool.

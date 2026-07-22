@@ -43,17 +43,35 @@ try {
   await page.waitForFunction(() => window.__sandTest && window.__sandPerf, null, { timeout: 30000 });
   await page.waitForFunction(() => window.__sandPerf().worldTps > 0, null, { timeout: 30000 });
   const keyboardOwnership = await page.evaluate(() => {
-    const sim = document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim');
-    const outside = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
-    window.dispatchEvent(outside);
+    const root = document.querySelector('sand-game').shadowRoot;
+    const sim = root.querySelector('.sg-sim');
+    const paletteToggle = root.querySelector('.sg-expand');
+    paletteToggle.focus({ preventScroll: true });
+    const visibleWasd = new KeyboardEvent('keydown', {
+      key: 'd', bubbles: true, composed: true, cancelable: true,
+    });
+    paletteToggle.dispatchEvent(visibleWasd);
+    paletteToggle.dispatchEvent(new KeyboardEvent('keyup', { key: 'd', bubbles: true, composed: true }));
+    const unfocusedArrow = new KeyboardEvent('keydown', {
+      key: 'ArrowDown', bubbles: true, composed: true, cancelable: true,
+    });
+    paletteToggle.dispatchEvent(unfocusedArrow);
     sim.focus({ preventScroll: true });
-    const inside = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
-    window.dispatchEvent(inside);
-    window.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true }));
-    return { outside: outside.defaultPrevented, inside: inside.defaultPrevented, tabIndex: sim.tabIndex };
+    const focusedArrow = new KeyboardEvent('keydown', {
+      key: 'ArrowDown', bubbles: true, composed: true, cancelable: true,
+    });
+    sim.dispatchEvent(focusedArrow);
+    sim.dispatchEvent(new KeyboardEvent('keyup', { key: 'ArrowDown', bubbles: true, composed: true }));
+    return {
+      visibleWasd: visibleWasd.defaultPrevented,
+      unfocusedArrow: unfocusedArrow.defaultPrevented,
+      focusedArrow: focusedArrow.defaultPrevented,
+      tabIndex: sim.tabIndex,
+    };
   });
-  check('page arrows remain native until the simulation owns focus',
-    !keyboardOwnership.outside && keyboardOwnership.inside && keyboardOwnership.tabIndex === 0);
+  check('visible creative WASD survives palette focus while page arrows still need surface focus',
+    keyboardOwnership.visibleWasd && !keyboardOwnership.unfocusedArrow &&
+      keyboardOwnership.focusedArrow && keyboardOwnership.tabIndex === 0);
   const auxiliaryEdges = await page.evaluate(async () => {
     const sim = document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim');
     const rect = sim.getBoundingClientRect();

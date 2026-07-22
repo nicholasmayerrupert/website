@@ -36,6 +36,12 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     const root = ctx.container.getRootNode?.();
     return root?.activeElement === ctx.container || document.activeElement === ctx.container;
   };
+  const surfaceIsVisible = () => {
+    if (document.hidden || !ctx.container.isConnected) return false;
+    const b = ctx.container.getBoundingClientRect();
+    return b.width > 0 && b.height > 0 && b.right > 0 && b.bottom > 0 &&
+      b.left < window.innerWidth && b.top < window.innerHeight;
+  };
   const updatePointer = (cx, cy) => {
     ctx.clientX = cx;
     ctx.clientY = cy;
@@ -87,10 +93,9 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     // creative requires draw mode (so the page stays scrollable until the user
     // opts in).
     if (!ctx.playMode && !ctx.drawModeOn) return;
-    // The embed lives alongside ordinary page content, so keyboard shortcuts
-    // belong to it only after the simulation surface is explicitly focused.
-    // Pointer focus uses preventScroll so activating the game never jumps the
-    // surrounding page; keyboard users can reach the same surface with Tab.
+    // Keep the surface focusable for arrow/zoom shortcuts and keyboard users.
+    // Creative WASD does not require this focus (see onKeyDown below), so
+    // clicking a palette control no longer disables camera movement.
     if (isSurfaceEvent(e)) ctx.container.focus({ preventScroll: true });
     // Authoritative press edge: latch this button's bit (plus any other buttons
     // the event reports already down). The latch is what keeps PI_PRIMARY held
@@ -152,10 +157,15 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   // which owns the pan/player-input policy. The editable-target guard +
   // preventDefault stay in JS (they need the DOM event/target).
   const onKeyDown = (e) => {
-    if (!ownsKeyboard()) return;
     if (isEditableEvent(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts alone
     const key = e.key.toLowerCase();
+    // Creative camera movement should survive focus moving to palette buttons
+    // and should not require a priming click. Keep all other shortcuts scoped
+    // to explicit surface focus so an embedded game does not capture page keys.
+    const visibleCreativeWasd = !ctx.playMode && surfaceIsVisible() &&
+      (key === 'w' || key === 'a' || key === 's' || key === 'd');
+    if (!ownsKeyboard() && !visibleCreativeWasd) return;
     // Zoom (desktop): +/= zoom in, -/_ zoom out, 0 reset. The authority owns
     // any loaded-window resize (local worker or multiplayer server). Handled
     // before movement/hotbar keys ('0' is unused there).

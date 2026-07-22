@@ -63,6 +63,7 @@ int GLPresenter::glRestore() {
   glGenFramebuffers(1, &glDrawFBO);
   glLastCamCol = glLastCamRow = INT_MIN;
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
+  glLastVisX0 = glLastVisY0 = glLastVisX1 = glLastVisY1 = -1;
   glLastSkyLight = glLightTick = INT_MIN;
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
   glAnimatedFg.clear(); glAnimatedBg.clear();
@@ -130,6 +131,7 @@ int GLPresenter::glRebuildCellTextures(int texCols, int texRows) {
   glTex = nextFg; glTexBg = nextBg; glTex2 = 0;
   glLastCamCol = glLastCamRow = INT_MIN;
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
+  glLastVisX0 = glLastVisY0 = glLastVisX1 = glLastVisY1 = -1;
   glLastSkyLight = -1;
   glLightTick = INT_MIN;
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
@@ -707,9 +709,9 @@ void GLPresenter::glDrawPreview() {
 
 // Render + upload ONLY the visible window into both layers' textures, then reset the
 // render-dirty flags. Gated to run when the grid changed, the skylight changed, or the
-// sampled window moved (whole-cell pan / world shift / forced refresh) — the last is
-// essential because off-screen texels are never sampled, so a pan that scrolls a new
-// cell into view must repaint that cell here. Lighting solves the visible window +
+// sampled window moved (whole-cell pan / world shift / forced refresh). A pure pan
+// preserves the already-valid overlap and repaints only newly exposed edge bands.
+// Lighting solves the visible window +
 // margin (exact inside the window — see glpresenter.hpp); forced events after
 // startup (shift/day-night/texture rebuild) still solve the full buffer, and a
 // pure pan re-solves only when the window drifts outside the last solve's exact zone.
@@ -729,6 +731,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   bool animationDue = !glAnimationPaused && glVisibleAnimated && animFrame != glLastAnimFrame;
   if (!contentDirty && !windowMoved && !animationDue) return;
   int x0, y0, x1, y1; glVisRect(&x0, &y0, &x1, &y1);
+  bool previousWindowValid = !forceFull && !worldShifted && glLastVisX0 >= 0;
 
   // Lighting policy: resize, world shift, and day-night changes solve the FULL
   // buffer (keeps the sky shift-remap caches coherent buffer-wide). The very
@@ -761,10 +764,29 @@ void GLPresenter::glPresentWindow(int forceFull) {
       lightUpdated = true;
     }
   }
-  // A lighting solve can change every visible pixel, and a moved window exposes
-  // texels that may never have been filled. Ordinary grid diffs between lighting
-  // solves only affect their dirty chunks, so keep those updates incremental.
-  bool fullWindowRefresh = windowMoved || lightUpdated;
+  // A lighting solve can change every visible pixel. A pure pan keeps the overlap
+  // valid and adds at most four non-overlapping edge bands; ordinary grid diffs
+  // between lighting solves continue to update their dirty chunks.
+  bool fullWindowRefresh = forceFull || worldShifted || lightUpdated || !previousWindowValid;
+  int exposed[16], exposedCount = 0;
+  auto addExposed = [&](int ax0, int ay0, int ax1, int ay1) {
+    if (ax0 > ax1 || ay0 > ay1) return;
+    int* r = exposed + exposedCount * 4;
+    r[0] = ax0; r[1] = ay0; r[2] = ax1; r[3] = ay1;
+    exposedCount++;
+  };
+  if (!fullWindowRefresh && windowMoved) {
+    int ix0 = imax(x0, glLastVisX0), iy0 = imax(y0, glLastVisY0);
+    int ix1 = imin(x1, glLastVisX1), iy1 = imin(y1, glLastVisY1);
+    if (ix0 > ix1 || iy0 > iy1) {
+      fullWindowRefresh = true;
+    } else {
+      addExposed(x0, y0, ix0 - 1, y1);
+      addExposed(ix1 + 1, y0, x1, y1);
+      addExposed(ix0, y0, ix1, iy0 - 1);
+      addExposed(ix0, iy1 + 1, ix1, y1);
+    }
+  }
   E.renderer.renderFrameSalt = animFrame;
   int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
   int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
@@ -780,6 +802,20 @@ void GLPresenter::glPresentWindow(int forceFull) {
       int tx1 = imin(x1, (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(y1, (cy + 1) * CHUNK_SIZE - 1);
       bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
       animatedChunks[ci] = found ? 1 : 0;
+    }
+    // Edge bands are cell-precise, but split at chunk boundaries so animation
+    // flags remain useful when the newly visible cells first enter the window.
+    for (int ri = 0; ri < exposedCount; ri++) {
+      const int* r = exposed + ri * 4;
+      int rcx0 = r[0] >> CHUNK_SHIFT, rcy0 = r[1] >> CHUNK_SHIFT;
+      int rcx1 = r[2] >> CHUNK_SHIFT, rcy1 = r[3] >> CHUNK_SHIFT;
+      for (int cy = rcy0; cy <= rcy1; cy++) for (int cx = rcx0; cx <= rcx1; cx++) {
+        int ci = cy * E.chunkCols + cx;
+        int tx0 = imax(r[0], cx * CHUNK_SIZE), ty0 = imax(r[1], cy * CHUNK_SIZE);
+        int tx1 = imin(r[2], (cx + 1) * CHUNK_SIZE - 1), ty1 = imin(r[3], (cy + 1) * CHUNK_SIZE - 1);
+        bool found = E.renderer.fillRenderSpan(lay.grid, (uint32_t*)lay.renderPixels.data(), tx0, ty0, tx1, ty1);
+        if (found) animatedChunks[ci] = 1;
+      }
     }
     for (int cy = cy0; cy <= cy1; cy++) for (int cx = cx0; cx <= cx1; cx++)
       if (animatedChunks[cy * E.chunkCols + cx]) return true;
@@ -816,6 +852,11 @@ void GLPresenter::glPresentWindow(int forceFull) {
   } else {
     uploadChanged(E.fg, glTex, glAnimatedFg);
     uploadChanged(E.bg, glTexBg, glAnimatedBg);
+    for (int ri = 0; ri < exposedCount; ri++) {
+      const int* r = exposed + ri * 4;
+      E.useLayer(&E.fg); glUploadWindow(glTex, r[0], r[1], r[2], r[3]);
+      E.useLayer(&E.bg); glUploadWindow(glTexBg, r[0], r[1], r[2], r[3]);
+    }
   }
   glVisibleAnimated = fgAnimated || bgAnimated;
   E.perfUploadMs = emscripten_get_now() - tu;
@@ -835,6 +876,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   clearPresentedDirty(E.bg);
   glLastCamCol = camCol; glLastCamRow = camRow;
   glLastWorldOffX = E.fg.worldOffsetX; glLastWorldOffY = E.fg.worldOffsetY;
+  glLastVisX0 = x0; glLastVisY0 = y0; glLastVisX1 = x1; glLastVisY1 = y1;
   glLastSkyLight = (int)E.renderer.renderSkyLight;
   glLastAnimFrame = animFrame;
   glCheapFirstPresent = false;

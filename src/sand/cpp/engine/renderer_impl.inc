@@ -14,22 +14,6 @@
 // GLPresenter uploads these pixels into foreground/background textures and
 // composites the final frame.
 
-bool Renderer::transparentForLight(uint8_t m) const {
-  return E.isEmptyMaterial(m) || E.isGasMaterial(m);
-}
-
-int Renderer::lightLossFor(uint8_t m) const {
-  if (E.isEmptyMaterial(m) || E.isGasMaterial(m)) return 4;
-  if (E.isLiquidMaterial(m)) return 8;
-  if (E.isLooseSolidMaterial(m)) return 17;
-  if (E.isRigidMaterialClass(m) || E.isComponentMaterial(m)) return 24;
-  return 20;
-}
-
-bool Renderer::faceLitMaterial(uint8_t m) const {
-  return !E.isEmptyMaterial(m) && !E.isGasMaterial(m) && !E.isLiquidMaterial(m);
-}
-
 bool Renderer::topRayStartsInSky(Layer* lay, int x) {
   if (!lay->infinite) return true;
   int worldX = lay->worldOffsetX + x;
@@ -182,18 +166,20 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
   computeDirectSky(lay, rx0, ry0, rx1, ry1);
 
   const uint8_t* g = lay->grid;
-  auto seed = [&](int k, uint8_t v) {
-    if (v > lay->light[k]) {
-      lay->light[k] = v;
-      lightQueue.push_back(k);
-    }
-  };
-
   // Seed sky and emissive cells by rows, then concatenate in the original
   // row-major order before the ordered flood.
   for (int y = ry0; y <= ry1; y++) {
     int rb = y * E.cols;
-    for (int x = rx0; x <= rx1; x++) { int k = rb + x; if (lay->skyLight[k] > LIGHT_AMBIENT) seed(k, lay->skyLight[k]); }
+    for (int x = rx0; x <= rx1; x++) {
+      int k = rb + x;
+      if (lay->skyLight[k] > LIGHT_AMBIENT) {
+        uint8_t v = lay->skyLight[k];
+        if (v > lay->light[k]) {
+          lay->light[k] = v;
+          lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+        }
+      }
+    }
   }
   // Then let sky and emissive sources spill into liquids/solids with material loss.
   for (int y = ry0; y <= ry1; y++) {
@@ -201,7 +187,10 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
     for (int x = rx0; x <= rx1; x++) {
       int k = rb + x;
       uint8_t e = emissionForCell(g[k], lay->worldOffsetX + x, wy);
-      if (e) seed(k, e);
+      if (e && e > lay->light[k]) {
+        lay->light[k] = e;
+        lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
+      }
     }
   }
 
@@ -209,19 +198,19 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
   // cut off), which cannot change any value inside the exact window (their
   // real contribution there is <= ambient by the distance argument above).
   for (size_t qi = 0; qi < lightQueue.size(); qi++) {
-    int k = lightQueue[qi];
+    uint64_t q = lightQueue[qi];
+    int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
     int cur = lay->light[k];
-    int y = k / E.cols, x = k - y * E.cols;
-    auto pushNeighbour = [&](int nk) {
+    auto pushNeighbour = [&](int nk, int nx) {
       int nl = cur - lightLossFor(g[nk]);
       if (nl <= (int)lay->light[nk]) return;
       lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
-      lightQueue.push_back(nk);
+      lightQueue.push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
     };
-    if (x > rx0) pushNeighbour(k - 1);
-    if (x < rx1) pushNeighbour(k + 1);
-    if (y > ry0) pushNeighbour(k - E.cols);
-    if (y < ry1) pushNeighbour(k + E.cols);
+    if (x > rx0) pushNeighbour(k - 1, x - 1);
+    if (x < rx1) pushNeighbour(k + 1, x + 1);
+    if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
+    if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
   }
 }
 
@@ -248,25 +237,25 @@ void Renderer::projectCrossLayerLight(Layer* lay, Layer* crossLay, int rx0, int 
       }
       if (v > (int)lay->light[k] && v > LIGHT_AMBIENT) {
         lay->light[k] = (uint8_t)v;
-        if (transparentForLight(g[k])) lightQueue.push_back(k);
+        if (transparentForLight(g[k])) lightQueue.push_back(((uint64_t)(uint32_t)x << 32) | (uint32_t)k);
       }
     }
   }
 
   for (size_t qi = 0; qi < lightQueue.size(); qi++) {
-    int k = lightQueue[qi];
+    uint64_t q = lightQueue[qi];
+    int k = (int)(uint32_t)q, x = (int)(uint32_t)(q >> 32);
     int cur = lay->light[k];
-    int y = k / E.cols, x = k - y * E.cols;
-    auto pushNeighbour = [&](int nk) {
+    auto pushNeighbour = [&](int nk, int nx) {
       int nl = cur - lightLossFor(g[nk]);
       if (nl <= (int)lay->light[nk]) return;
       lay->light[nk] = (uint8_t)(nl > 255 ? 255 : nl);
-      if (transparentForLight(g[nk])) lightQueue.push_back(nk);
+      if (transparentForLight(g[nk])) lightQueue.push_back(((uint64_t)(uint32_t)nx << 32) | (uint32_t)nk);
     };
-    if (x > rx0) pushNeighbour(k - 1);
-    if (x < rx1) pushNeighbour(k + 1);
-    if (y > ry0) pushNeighbour(k - E.cols);
-    if (y < ry1) pushNeighbour(k + E.cols);
+    if (x > rx0) pushNeighbour(k - 1, x - 1);
+    if (x < rx1) pushNeighbour(k + 1, x + 1);
+    if (k >= (ry0 + 1) * E.cols) pushNeighbour(k - E.cols, x);
+    if (k < ry1 * E.cols) pushNeighbour(k + E.cols, x);
   }
 }
 
@@ -313,6 +302,14 @@ uint8_t Renderer::renderLightForCell(const uint8_t* light, int k, int x, int y, 
 
 void Renderer::buildRenderTables() {
   for (int m = 0; m < TABLE; m++) {
+    bool empty = m == EMPTY || MAT_CLASS[m] == MC_NONE;
+    bool gas = MAT_CLASS[m] == MC_GAS;
+    bool liquid = MAT_CLASS[m] == MC_LIQUID;
+    bool looseSolid = MAT_CLASS[m] == MC_SOLID;
+    bool rigid = MAT_CLASS[m] == MC_RIGID || MAT_CGROUP[m] != CG_NONE;
+    renderLightTransparent[m] = empty || gas;
+    renderFaceLit[m] = !empty && !gas && !liquid;
+    renderLightLoss[m] = empty || gas ? 4 : liquid ? 8 : looseSolid ? 17 : rigid ? 24 : 20;
     int alpha = (int)std::lround((1.0f - MAT_TRANSPARENCY[m]) * 255.0f);
     if (alpha < 0) alpha = 0; else if (alpha > 255) alpha = 255;
     renderAlphaMask[m] = (uint32_t)alpha << 24;

@@ -73,6 +73,9 @@ component registration, and generation/restoration. Browser presentation exposes
   support, assembly movement, a snapshot, resize, or world shift invalidates the
   proof.
 - Presentation diffs use validated row copies and keep only one packet in flight.
+- Pure camera pans retain the valid texture overlap and fill/upload only newly
+  exposed edge bands; lighting flood queues carry their x coordinate so the hot
+  propagation loop does not divide every visited cell index by the grid width.
 - Static animated materials repaint only visible chunks that contain animation.
 
 These optimizations preserve deterministic output except the accepted cave-blast

@@ -30,6 +30,9 @@ class GLPresenter {
   int glLastCamCol = INT_MIN, glLastCamRow = INT_MIN;
   int glLastWorldOffX = INT_MIN, glLastWorldOffY = INT_MIN;
   int glLastSkyLight = -1;
+  // Inclusive cell rect whose texture pixels were valid on the last present.
+  // A pure pan retains the overlap and fills only newly exposed edge bands.
+  int glLastVisX0 = -1, glLastVisY0 = -1, glLastVisX1 = -1, glLastVisY1 = -1;
   // Only a brand-new presentation mirror may use the cheap regional first
   // solve. Texture rebuilds after real content exists retain the full-refresh
   // lighting contract even though they also reset the last-window sentinels.

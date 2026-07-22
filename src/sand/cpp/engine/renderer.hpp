@@ -29,13 +29,17 @@ class Renderer {
   // Renderer tables (material -> RGBA). Shared (layer-agnostic).
   uint32_t renderVariants[TABLE * 8]; // 8 brightness-shifted shades per material
   uint32_t renderAlphaMask[TABLE];     // schema transparency converted to packed ABGR alpha
+  uint8_t renderLightLoss[TABLE];      // material -> propagation loss (lighting hot loop)
+  uint8_t renderLightTransparent[TABLE];
+  uint8_t renderFaceLit[TABLE];
   uint8_t renderNoise[64 * 64];       // stable per-cell grain selector (0..7)
   uint32_t renderRngState = 0;
   // Shared render-only animation clock. The GL presenter sets this from a
   // wall-clock cadence; headless renderFull() advances it explicitly.
   uint32_t renderFrameSalt = 0;
   uint8_t renderSkyLight = 255;       // render-only day/night input; 255 = full day
-  std::vector<int> lightQueue;        // render-only flood-fill scratch
+  // Packed [x:k] entries avoid dividing k by cols for every flood-fill pop.
+  std::vector<uint64_t> lightQueue;   // render-only flood-fill scratch
 
   void init(uint32_t seed) { renderRngState = seed ^ 0x9e3779b9u; buildRenderTables(); }
   inline double renderRand() {
@@ -84,9 +88,9 @@ class Renderer {
     return a | (b << 16) | (g << 8) | r;
   }
 
-  bool transparentForLight(uint8_t m) const;
-  int lightLossFor(uint8_t m) const;
-  bool faceLitMaterial(uint8_t m) const;
+  inline bool transparentForLight(uint8_t m) const { return renderLightTransparent[m] != 0; }
+  inline int lightLossFor(uint8_t m) const { return renderLightLoss[m]; }
+  inline bool faceLitMaterial(uint8_t m) const { return renderFaceLit[m] != 0; }
   bool topRayStartsInSky(Layer* lay, int x);
   bool sideRayStartsInSky(Layer* lay, int x, int y);
   bool directSkyCurrent(Layer* lay) const;

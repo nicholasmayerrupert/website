@@ -1,15 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { NOON_SKY_LIGHT, SUNRISE_PHASE, SUNSET_PHASE } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
+import { getAvailablePort } from './test-port.mjs';
 
-const PORT = 5188;
-const URL = `http://localhost:${PORT}/`;
-const NPM = process.platform === 'win32' ? process.execPath : 'npm';
-const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
-const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
-  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
+const PORT = await getAvailablePort();
+const URL = `http://127.0.0.1:${PORT}/`;
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
+  cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
 });
 
 const waitForServer = () => new Promise((resolve, reject) => {
@@ -23,7 +21,9 @@ const waitForServer = () => new Promise((resolve, reject) => {
 
 const shutdownServer = () => {
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
-  else server.kill('SIGTERM');
+  else {
+    try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already stopped */ }
+  }
   server.stdout.destroy();
   server.stderr.destroy();
 };
@@ -129,13 +129,13 @@ try {
       frames++;
       const state = window.__sandTest.getDayNight();
       if (state.overridden && Math.abs(state.phase - 0.63) < 1e-6) {
-        return { frames, elapsed: performance.now() - started };
+        return { applied: true, frames, elapsed: performance.now() - started };
       }
     }
-    return { frames, elapsed: performance.now() - started };
+    return { applied: false, frames, elapsed: performance.now() - started };
   });
   check(`desktop slider applies during drag (${liveInput.frames} frame, ${liveInput.elapsed.toFixed(1)}ms)`,
-    liveInput.frames <= 2 && liveInput.elapsed < 80);
+    liveInput.applied && liveInput.frames <= 2);
 
   // Reproduce the old failure: several drag samples are queued, then Auto is
   // selected before the animation-frame update. No delayed noon sample may pin

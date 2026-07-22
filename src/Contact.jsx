@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FaGithub, FaLinkedin } from 'react-icons/fa';
 import { usePrefersReducedMotion } from './hooks/useMediaQuery';
 
@@ -129,7 +129,9 @@ function PongOverlay({ paused, onTogglePaused, prefersReducedMotion }) {
     const onCtrlPointerUp = (e) => {
       dragging = false;
       if (e.currentTarget.releasePointerCapture) {
-        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {}
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {
+          // Pointer capture may already have been released.
+        }
       }
     };
 
@@ -160,8 +162,6 @@ function PongOverlay({ paused, onTogglePaused, prefersReducedMotion }) {
     visibilityObserver?.observe(wrapper);
 
     const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
-    const centerY = (h - PAD_H) / 2;
-
     // AI driver
     const drivePaddleAI = (pad, targetX, dt) => {
       const goingTowardPad = (targetX > ball.x && ball.vx > 0) || (targetX < ball.x && ball.vx < 0);
@@ -173,7 +173,7 @@ function PongOverlay({ paused, onTogglePaused, prefersReducedMotion }) {
     };
 
     const relaxToCenter = (pad, dt) => {
-      const dy = centerY - pad.y;
+      const dy = (h - PAD_H) / 2 - pad.y;
       pad.y = clamp(pad.y + clamp(dy, -AI_IDLE_SPEED * dt, AI_IDLE_SPEED * dt), 0, h - PAD_H);
     };
 

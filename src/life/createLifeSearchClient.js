@@ -1,6 +1,5 @@
 import LifeSearchWorker from './lifeSearchWorkerConstructor.js';
-
-const normalizeWorkers = (value) => Math.max(1, Math.round(value) || 1);
+import { normalizeLifeSearchWorkers } from './searchLimits.js';
 
 export function createLifeSearchClient(onMessage) {
   let workers = [];
@@ -69,7 +68,7 @@ export function createLifeSearchClient(onMessage) {
     startSoup(settings) {
       stopPool(false);
       const token = runToken;
-      const workerCount = normalizeWorkers(settings.workers);
+      const workerCount = normalizeLifeSearchWorkers(settings.workers);
       leaderboardSize = Math.max(1, Math.min(100, Math.round(settings.leaderboardSize) || 10));
       progress = Array.from({ length: workerCount }, () => null);
       startedAt = performance.now();

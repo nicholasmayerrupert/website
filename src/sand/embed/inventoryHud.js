@@ -163,8 +163,10 @@ const STYLE = `
   box-shadow:inset 0 0 0 2px #59636c,5px 5px 0 rgba(0,0,0,.35); }
 .inv-slot { position: relative; width: 40px; height: 40px; box-sizing: border-box; border-radius:0;
   border:2px solid #0d1013; background:#161a1e; box-shadow:inset 2px 2px 0 #3c444b; cursor:pointer;
-  display: flex; align-items: center; justify-content: center; overflow: hidden; user-select: none; }
+  display: flex; align-items: center; justify-content: center; overflow: hidden; user-select: none;
+  padding:0; color:inherit; font:inherit; }
 .inv-slot:hover { border-color:#9ba5ae; }
+.inv-slot:focus-visible,.craft-recipe:focus-visible { outline:3px solid #fff; outline-offset:2px; }
 .inv-slot.selected { border-color:#f0d465; box-shadow:inset 2px 2px 0 #fff1a0,0 0 0 1px #17140a; }
 .inv-swatch { width:26px; height:26px; border-radius:0; box-shadow:inset 3px 3px 0 rgba(255,255,255,.18),inset -3px -3px 0 rgba(0,0,0,.2); }
 .inv-count { position: absolute; right: 2px; bottom: 1px; font-size: 11px; font-weight: 700; color: #fff;
@@ -216,6 +218,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // instant it appears — a freshly picked stack must not flash at (0,0) before the
   // first move. Updated by onMove and by the pick pointerdown.
   let ptrX = 0, ptrY = 0;
+  let selectedSlot = 0;
+  let previousFocus = null;
 
   // Darkened full-window backdrop BEHIND the panels (Minecraft style). Clicking it
   // while carrying throws the carried stack out into the world.
@@ -242,12 +246,13 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   bar.className = 'inv-bar';
   const hint = document.createElement('div');
   hint.className = 'inv-hint';
-  hint.textContent = 'E — inventory + crafting · Q — size · 1–9 / scroll — select';
+  hint.textContent = 'E / Esc — close · Shift+Enter — split stack · Delete — drop carried stack';
   // Minecraft-style "selected item name" label: fades in above the hotbar on a
   // selection change, then fades out after ~2s. Sits between the grid and the bar so
   // it reads as floating just above the hotbar.
   const toast = document.createElement('div');
   toast.className = 'inv-toast';
+  toast.setAttribute('aria-live', 'polite');
   hud.append(modal, toast, bar, hint);
 
   // The carried stack, rendered as a small floating swatch/chip that follows the
@@ -271,7 +276,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // upper slots, matching the engine's slot ordering.
   const slots = [];
   const makeSlot = (index, parent) => {
-    const el = document.createElement('div');
+    const el = document.createElement('button');
+    el.type = 'button';
     el.className = 'inv-slot';
     el.dataset.index = String(index);
     parent.appendChild(el);
@@ -393,6 +399,47 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     refreshCursor();
   });
 
+  // Native buttons expose every slot to the keyboard. Pointer clicks are handled
+  // on pointerdown above, so only keyboard/programmatic clicks are routed here.
+  hud.addEventListener('click', (e) => {
+    if (e.detail !== 0) return;
+    const i = idxOf(e.target);
+    if (i < 0) return;
+    if (!open) {
+      if (i < HOTBAR) selectSlot?.(i);
+      return;
+    }
+    cursorPick?.(i, e.shiftKey);
+    refreshCursor();
+  });
+
+  hud.addEventListener('keydown', (e) => {
+    if (!open) return;
+    if (e.key === 'Escape' || e.key.toLowerCase() === 'e') {
+      e.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (e.key === 'Delete' && hasCursor()) {
+      e.preventDefault();
+      throwFromCursor?.(!e.shiftKey);
+      refreshCursor();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusable = [...hud.querySelectorAll('.inv-slot, .craft-recipe:not(:disabled)')];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && root.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && root.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+
   hud.addEventListener('pointerup', (e) => {
     if (!open) { downSlot = -1; downOnSlot = false; return; }
     const to = idxOf(e.target);
@@ -505,6 +552,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function update(inv) {
     if (inv && inv.slots) {
       const sel = inv.selected;
+      selectedSlot = sel;
       if (lastSelected >= 0 && sel !== lastSelected) showToast(slotName(inv.slots[sel]));
       lastSelected = sel;
       for (let i = 0; i < SLOTS; i++) {
@@ -512,6 +560,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         if (!el) continue;
         const s = inv.slots[i] || { material: 0, isTool: false, count: 0 };
         el.classList.toggle('selected', i === inv.selected);
+        if (i < HOTBAR) el.setAttribute('aria-pressed', String(i === inv.selected));
+        const contents = i >= HOTBAR && !s.count ? 'Empty' : slotName(s);
+        const countLabel = s.count > 1 ? `, ${s.count}` : '';
+        el.setAttribute('aria-label', `${i < HOTBAR ? `Hotbar ${i + 1}` : `Inventory slot ${i + 1}`}: ${contents}${countLabel}${i === inv.selected ? ', selected' : ''}`);
         const sig = `${s.itemKind | 0}:${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
         if (sig === slotSig[i]) continue;
         slotSig[i] = sig;
@@ -541,13 +593,31 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   }
 
   const setOpen = (v) => {
-    open = !!v;
+    const next = !!v;
+    if (next === open) return;
+    if (next) previousFocus = root.activeElement || document.activeElement;
+    open = next;
     hud.classList.toggle('open', open);
     backdrop.classList.toggle('open', open);
+    if (open) {
+      hud.setAttribute('role', 'dialog');
+      hud.setAttribute('aria-modal', 'true');
+      hud.setAttribute('aria-label', 'Inventory and crafting');
+    } else {
+      hud.removeAttribute('role');
+      hud.removeAttribute('aria-modal');
+      hud.removeAttribute('aria-label');
+    }
     if (!open) { downSlot = -1; downOnSlot = false; }
     if (open) window.addEventListener('pointermove', onMove, true);
     else window.removeEventListener('pointermove', onMove, true);
     refreshCursor();
+    if (open) {
+      slots[selectedSlot]?.focus({ preventScroll: true });
+    } else if (previousFocus?.isConnected) {
+      previousFocus.focus?.({ preventScroll: true });
+      previousFocus = null;
+    }
   };
 
   // cursorItem is intentionally NOT appended here — it lives on document.body (see above).

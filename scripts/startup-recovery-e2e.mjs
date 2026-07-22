@@ -4,16 +4,22 @@ import { extname, normalize } from 'node:path';
 import { chromium, devices, webkit } from 'playwright';
 
 const root = new URL('../dist/', import.meta.url);
-const currentHtml = await readFile(new URL('index.html', root), 'utf8');
-const entry = currentHtml.match(/<script[^>]+type="module"[^>]+src="([^"]+)"/i)?.[1];
-if (!entry) throw new Error('production index has no module entry');
-const staleHtml = currentHtml.replace(entry, '/assets/removed-deployment.js');
+const entries = await Promise.all([
+  ['portfolio', '/', 'index.html', false],
+  ['falling-sand case study', '/work/falling-sand/', 'work/falling-sand/index.html', false],
+  ['sand game', '/game', 'index.html', true],
+].map(async ([name, pathname, file, sandRuntime]) => {
+  const currentHtml = await readFile(new URL(file, root), 'utf8');
+  const entry = currentHtml.match(/<script[^>]+type="module"[^>]+src="([^"]+)"/i)?.[1];
+  if (!entry) throw new Error(`${file} has no module entry`);
+  return { name, pathname, sandRuntime, currentHtml, staleHtml: currentHtml.replace(entry, '/assets/removed-deployment.js') };
+}));
 const mime = {
   '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.ico': 'image/x-icon',
   '.js': 'text/javascript; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
   '.wasm': 'application/wasm',
 };
-let initialDocuments = 0;
+const documentCounts = new Map(entries.map(({ pathname }) => [pathname, 0]));
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, 'http://localhost');
@@ -22,9 +28,10 @@ const server = createServer(async (request, response) => {
     'cross-origin-embedder-policy': 'require-corp',
     'cross-origin-resource-policy': 'same-origin',
   };
-  if (url.pathname === '/') {
-    initialDocuments++;
-    const body = url.searchParams.has('_startup') ? currentHtml : staleHtml;
+  const pageEntry = entries.find(({ pathname }) => pathname === url.pathname);
+  if (pageEntry) {
+    documentCounts.set(url.pathname, documentCounts.get(url.pathname) + 1);
+    const body = url.searchParams.has('_startup') ? pageEntry.currentHtml : pageEntry.staleHtml;
     response.writeHead(200, { ...headers, 'content-type': mime['.html'], 'cache-control': 'no-store' });
     response.end(body);
     return;
@@ -55,32 +62,47 @@ const check = (label, ok, detail = '') => {
 };
 
 console.log('stale deployment startup recovery');
-for (const [name, browserType, device] of [
-  ['mobile Chromium', chromium, devices['Pixel 7']],
-  ['mobile WebKit', webkit, devices['iPhone 13']],
-]) {
-  const beforeDocuments = initialDocuments;
-  const browser = await browserType.launch({ headless: true });
-  const context = await browser.newContext({ ...device });
-  const page = await context.newPage();
-  await page.goto(baseURL, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => window.__portfolioBooted === true, null, { timeout: 30000 });
-  const state = await page.evaluate(() => ({
-    cleanUrl: !location.search.includes('_startup'),
-    retryCleared: sessionStorage.getItem('portfolio-startup-retry') === null,
-    hasContent: !!document.getElementById('root')?.firstElementChild,
-    href: location.href,
-  }));
-  check(`${name} automatically replaces stale HTML`, initialDocuments - beforeDocuments === 2, `${initialDocuments - beforeDocuments} documents`);
-  check(`${name} reaches the current app`, state.hasContent, state.href);
-  check(`${name} clears recovery state after boot`, state.cleanUrl && state.retryCleared, state.href);
+for (const { name: entryName, pathname, sandRuntime } of entries) {
+  const browsers = sandRuntime ? [['desktop Chromium', chromium, { viewport: { width: 1280, height: 800 } }]] : [
+    ['mobile Chromium', chromium, devices['Pixel 7']],
+    ['mobile WebKit', webkit, devices['iPhone 13']],
+  ];
+  for (const [name, browserType, device] of browsers) {
+    const beforeDocuments = documentCounts.get(pathname);
+    let browser;
+    try {
+      browser = await browserType.launch({ headless: true });
+    } catch (error) {
+      if (browserType === chromium || process.env.REQUIRE_WEBKIT === '1') throw error;
+      console.log(`  skip ${entryName} ${name} (install with: npx playwright install --with-deps webkit)\n   ${error.message.split('\n')[0]}`);
+      continue;
+    }
+    const context = await browser.newContext({ ...device });
+    const page = await context.newPage();
+    await page.goto(new URL(pathname.slice(1), baseURL).href, { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => window.__portfolioBooted === true, null, { timeout: 30000 });
+    if (sandRuntime) {
+      await page.waitForFunction(() => !!document.querySelector('sand-game')?._game, null, { timeout: 30000 });
+      check(`${entryName} ${name} starts the production sand runtime`, true);
+    }
+    const state = await page.evaluate(() => ({
+      cleanUrl: !location.search.includes('_startup'),
+      retryCleared: sessionStorage.getItem('portfolio-startup-retry') === null,
+      hasContent: !!document.getElementById('root')?.firstElementChild,
+      href: location.href,
+    }));
+    const loadedDocuments = documentCounts.get(pathname) - beforeDocuments;
+    check(`${entryName} ${name} automatically replaces stale HTML`, loadedDocuments === 2, `${loadedDocuments} documents`);
+    check(`${entryName} ${name} reaches the current app`, state.hasContent, state.href);
+    check(`${entryName} ${name} clears recovery state after boot`, state.cleanUrl && state.retryCleared, state.href);
 
-  const href = page.url();
-  await page.evaluate(() => window.dispatchEvent(new Event('unhandledrejection')));
-  await page.waitForTimeout(100);
-  check(`${name} ignores unrelated rejections after boot`, page.url() === href);
-  await context.close();
-  await browser.close();
+    const href = page.url();
+    await page.evaluate(() => window.dispatchEvent(new Event('unhandledrejection')));
+    await page.waitForTimeout(100);
+    check(`${entryName} ${name} ignores unrelated rejections after boot`, page.url() === href);
+    await context.close();
+    await browser.close();
+  }
 }
 
 await new Promise((resolve) => server.close(resolve));

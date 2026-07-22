@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
+import { getAvailablePort } from './test-port.mjs';
 
-const port = 4187;
-const requestedWorkers = Math.max(1, Number(process.env.LIFE_TEST_WORKERS || 9) | 0);
+const port = await getAvailablePort();
+const requestedWorkers = Math.max(1, Number(process.env.LIFE_TEST_WORKERS || 999) | 0);
+const expectedWorkers = Math.min(16, requestedWorkers);
 const holdMs = Math.max(0, Number(process.env.LIFE_TEST_HOLD_MS || 0) | 0);
-const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port)], {
+const server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
   cwd: new URL('..', import.meta.url),
   stdio: 'ignore',
 });
@@ -52,14 +54,14 @@ try {
   await page.getByLabel('Game of Life board size').fill('8');
 
   await page.getByRole('tab', { name: 'Soup' }).click();
-  assert.equal(await page.getByLabel('Workers').getAttribute('max'), null, 'worker input has no upper cap');
+  assert.equal(await page.getByLabel('Workers').getAttribute('max'), '16', 'worker input exposes the safety cap');
   await page.getByLabel('Workers').fill(String(requestedWorkers));
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   const soups = await waitForValue(page, 'Soups', (value) => value > 0);
   assert.ok(soups > 0, 'soup worker reports completed soups');
   const workers = await page.getByText('Workers', { exact: true }).last().evaluate((element) =>
     Number(element.nextElementSibling?.textContent || 0));
-  assert.equal(workers, requestedWorkers, 'soup progress uses the requested uncapped worker count');
+  assert.equal(workers, expectedWorkers, 'soup progress clamps oversized worker requests');
   assert.equal(await page.getByText('Length', { exact: true }).count(), 1);
   assert.equal(await page.getByText('Repeat period', { exact: true }).count(), 1);
   if (holdMs) await page.waitForTimeout(holdMs);

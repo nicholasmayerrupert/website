@@ -22,7 +22,7 @@
 //   • Haptic tap feedback and a small undo button, since misfires are common.
 // Until that exists, mobile stays gated to the message below.
 
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import './sand/embed/sandGame'; // registers the <sand-game> custom element
 import { useMediaQuery } from './hooks/useMediaQuery';
 

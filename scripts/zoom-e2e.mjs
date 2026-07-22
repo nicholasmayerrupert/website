@@ -8,8 +8,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { chromium, webkit } from 'playwright';
+import { getAvailablePort } from './test-port.mjs';
 
-const PORT = 5182;
+const PORT = await getAvailablePort();
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
@@ -44,8 +45,8 @@ try {
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.info && window.__sandTest.info().viewCols > 0, null, { timeout: 30000 });
   await page.waitForFunction(() => !!window.__sandTest.getPlayer?.(), null, { timeout: 30000 });
-  await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
-  await page.evaluate(() => document.activeElement?.blur?.());
+  const focusGame = () => page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await focusGame();
 
   const info = () => page.evaluate(() => window.__sandTest.info());
   const base = await info();
@@ -53,23 +54,26 @@ try {
   check(`WebGL texture limit detected (${base.maxTextureSize})`, base.maxTextureSize >= 2048);
 
   // Zoom IN twice: fewer visible cells, bigger device cells, buffer unchanged.
+  await focusGame();
   await page.keyboard.press('=');
   await page.keyboard.press('=');
-  await page.waitForTimeout(120);
+  await page.waitForFunction((cols) => window.__sandTest.info().viewCols < cols, base.viewCols);
   const zin = await info();
   check(`zoom in reduces visible cells (${base.viewCols} -> ${zin.viewCols})`, zin.viewCols < base.viewCols && zin.viewRows < base.viewRows);
   check(`zoom in enlarges device cell size (${base.cellDev} -> ${zin.cellDev})`, zin.cellDev > base.cellDev);
   check(`zoom in shrinks the loaded buffer (${base.cols}x${base.rows} -> ${zin.cols}x${zin.rows})`, zin.cols <= base.cols && zin.rows <= base.rows);
 
   // Reset with 0.
+  await focusGame();
   await page.keyboard.press('0');
-  await page.waitForTimeout(120);
+  await page.waitForFunction((cols) => window.__sandTest.info().viewCols === cols, base.viewCols);
   const reset = await info();
   check(`0 resets to default view (${reset.viewCols} == ${base.viewCols})`, reset.viewCols === base.viewCols && reset.viewRows === base.viewRows);
 
   // Zoom OUT from default: more visible cells and a larger loaded buffer.
+  await focusGame();
   await page.keyboard.press('-');
-  await page.waitForTimeout(120);
+  await page.waitForFunction((cols) => window.__sandTest.info().viewCols > cols, base.viewCols);
   const zout = await info();
   check(`zoom out increases visible cells (${base.viewCols} -> ${zout.viewCols})`, zout.viewCols > base.viewCols && zout.viewRows > base.viewRows);
   check(`zoom out grows the loaded buffer (${base.cols}x${base.rows} -> ${zout.cols}x${zout.rows})`, zout.cols >= base.cols && zout.rows >= base.rows);
@@ -104,16 +108,33 @@ try {
 
   // Keep zooming out far past the former failure point. Fitting may stop only
   // at the device's texture-dimension limit; the composited canvas must stay alive.
-  for (let i = 0; i < 24; i++) await page.keyboard.press('-');
-  await page.waitForTimeout(1200);
+  await focusGame();
+  for (let i = 0; i < 24; i++) {
+    if ((await info()).cols * (await info()).rows > 1_200_000) break;
+    await page.keyboard.press('-');
+    await page.waitForTimeout(50);
+  }
+  await page.waitForFunction(() => window.__sandTest.info().cols * window.__sandTest.info().rows > 1_200_000,
+    null, { timeout: 30000 });
+  // Resizing this much reallocates and mirrors a million-cell world in the
+  // authority worker. Wait for that transaction instead of sampling after an
+  // arbitrary delay while the old and new buffers can still be in flight.
+  await page.waitForFunction(() => !window.__sandPerf().workerResizePending,
+    null, { timeout: 30000 });
+  await page.evaluate(() => window.__sandTest.render());
+  await page.waitForTimeout(100);
   const extreme = await info();
-  const rendered = await page.evaluate(() => {
+  // A completed worker resize and its first texture upload can land on adjacent
+  // frames. Poll the actual compositor result instead of sampling that boundary
+  // once. Render/read must remain in the same task because the context does not
+  // preserve its drawing buffer after presentation.
+  const rendered = await page.waitForFunction(() => {
     const t = window.__sandTest, i = t.info();
-    // A narrow full-height strip crosses both transparent sky and opaque terrain.
-    const pixels = t.readPixels(Math.floor(i.canvasW / 2) - 8, 0, 16, i.canvasH);
+    t.render();
+    const pixels = t.readPixels(0, 0, i.canvasW, i.canvasH);
     for (let p = 3; p < pixels.length; p += 4) if (pixels[p] > 0) return true;
     return false;
-  });
+  }, null, { timeout: 15000, polling: 500 }).then(() => true, () => false);
   if (!rendered) console.log('  extreme debug', await page.evaluate(() => {
     const t = window.__sandTest, canvas = document.querySelector('sand-game').shadowRoot.querySelector('#sand-main');
     const gl = canvas.getContext('webgl2');

@@ -20,8 +20,11 @@ import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { startSandServer } from './sand-server.mjs';
 import { MAT } from '../src/sand/materials.js';
+import { getAvailablePort } from './test-port.mjs';
 
-const PORT = 5181, WS_PORT = 5196;
+const PORT = await getAvailablePort();
+const WS_PORT = await getAvailablePort();
+const REFUSED_PORT = await getAvailablePort();
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
@@ -83,7 +86,7 @@ try {
   const localBefore = await a.page.evaluate(() => ({ player: window.__sandTest.getPlayer(), count: window.__sandNet.playerCount() }));
   const failedJoin = await a.page.evaluate(async (u) => {
     try { await window.__sandNet.join(u, 'missing'); return false; } catch { return true; }
-  }, `ws://localhost:${WS_PORT + 1}`);
+  }, `ws://localhost:${REFUSED_PORT}`);
   await a.page.evaluate(() => window.__sandNet.tickSteps(4));
   const localAfter = await a.page.evaluate(() => ({ player: window.__sandTest.getPlayer(), count: window.__sandNet.playerCount(), status: window.__sandNet.status() }));
   check('unavailable server rejects the join', failedJoin);

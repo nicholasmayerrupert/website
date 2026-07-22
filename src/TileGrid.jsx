@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import GameOfLife3D from './GameOfLife3D';
 import { ChessArt, SandSimArt, WildfireArt } from './ProjectArt';
 

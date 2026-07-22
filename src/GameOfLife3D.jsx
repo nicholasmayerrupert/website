@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { createLifeSearchClient } from "./life/createLifeSearchClient.js";
+import { MAX_LIFE_SEARCH_WORKERS } from "./life/searchLimits.js";
+import { usePrefersReducedMotion } from "./hooks/useMediaQuery.js";
 
 const GRID_HEIGHT = 30;
 const DEFAULT_STEPS_PER_SECOND = 15;
@@ -74,6 +76,7 @@ export default function GameOfLife3D({
   intro,
   labDetails,
 }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
   const lifeRootRef = useRef(null);
   const canvasHostRef = useRef(null);
   const editorCanvasRef = useRef(null);
@@ -84,6 +87,7 @@ export default function GameOfLife3D({
   const drawModeRef = useRef("draw");
   const seedRequestRef = useRef(null);
   const manualRotateRef = useRef(false);
+  const reducedMotionRef = useRef(prefersReducedMotion);
   const resumeStepResetRef = useRef(false);
   const editorPointerActiveRef = useRef(false);
   const seedInputRef = useRef(DEFAULT_SEED);
@@ -168,6 +172,10 @@ export default function GameOfLife3D({
   useEffect(() => {
     drawModeRef.current = drawMode;
   }, [drawMode]);
+
+  useEffect(() => {
+    reducedMotionRef.current = prefersReducedMotion;
+  }, [prefersReducedMotion]);
 
   useEffect(() => {
     seedInputRef.current = seedInput;
@@ -600,7 +608,7 @@ export default function GameOfLife3D({
 
       renderer.domElement.style.touchAction = manualRotateRef.current ? "none" : "pan-y";
 
-      if (!isDragging && now >= autoRotationResumeAt) {
+      if (!reducedMotionRef.current && !isDragging && now >= autoRotationResumeAt) {
         if (Math.abs(pitch) > 0.001) {
           if (!pitchReset) {
             pitchReset = { startTime: now, startPitch: pitch };
@@ -934,7 +942,7 @@ export default function GameOfLife3D({
     const animateToroid = (now) => {
       const dt = Math.min(50, now - lastTime);
       lastTime = now;
-      if (!pointerInteraction && now >= autoRotationResumeAt) {
+      if (!reducedMotionRef.current && !pointerInteraction && now >= autoRotationResumeAt) {
         if (!autoRotationAtFullSpeed) {
           if (!resumeTransition) {
             const fullTurn = Math.PI * 2;
@@ -1165,7 +1173,7 @@ export default function GameOfLife3D({
               <input type="range" min="1" max="99" step="0.5" value={soupSettings.density} onChange={(event) => updateSoupSetting("density", Number(event.target.value))} className="mt-1 w-full accent-white" />
               <div className="mt-3 grid grid-cols-2 gap-2">
                 <label className="text-white/65">Max generations (0=∞)<input type="number" min="0" value={soupSettings.horizon} onChange={(event) => updateSoupSetting("horizon", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
-                <label className="text-white/65">Workers<input type="number" min="1" value={soupSettings.workers} onChange={(event) => updateSoupSetting("workers", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
+                <label className="text-white/65">Workers<input type="number" min="1" max={MAX_LIFE_SEARCH_WORKERS} value={soupSettings.workers} onChange={(event) => updateSoupSetting("workers", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
                 <label className="text-white/65">Batch size<input type="number" min="1" max="10000" value={soupSettings.batchSize} onChange={(event) => updateSoupSetting("batchSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
                 <label className="text-white/65">RNG seed<input type="text" value={soupSettings.seed} onChange={(event) => updateSoupSetting("seed", event.target.value)} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>
                 <label className="text-white/65">Leaderboard<input type="number" min="1" max="100" value={soupSettings.leaderboardSize} onChange={(event) => updateSoupSetting("leaderboardSize", Number(event.target.value))} className="mt-1 w-full rounded border border-white/15 bg-gray-950/45 p-1 text-white" /></label>

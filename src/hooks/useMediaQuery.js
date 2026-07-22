@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 
-// Read inside an effect (never during render) so SSR/first paint is
-// consistent; subscribes to changes so rotate/resize/OS-setting updates it.
+const readMediaQuery = (query) =>
+  typeof window !== 'undefined' && !!window.matchMedia?.(query).matches;
+
+// Read during the browser's initial render so a media-gated component cannot
+// briefly mount with the wrong state. The server fallback remains `false`.
 export function useMediaQuery(query) {
-  const [matches, setMatches] = useState(false);
+  const [matches, setMatches] = useState(() => readMediaQuery(query));
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const mq = window.matchMedia(query);

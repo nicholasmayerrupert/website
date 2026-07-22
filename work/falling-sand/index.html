@@ -20,6 +20,80 @@
     <meta name="twitter:description" content="Technical notes on a C++, WebAssembly, and WebGL2 falling-sand engine." />
     <meta name="twitter:image" content="https://nicholasmayerrupert.com/og-falling-sand.png" />
     <title>Falling Sand Engine — Nicholas Mayer-Rupert</title>
+    <script>
+      // A resumed tab can reference a hashed bundle from an older deployment.
+      // Retry a bounded number of cache-busted document navigations, then offer
+      // an explicit retry instead of requiring visitors to know about hard reloads.
+      (() => {
+        const retryKey = 'portfolio-startup-retry';
+        const retryLimit = 3;
+        let booted = false;
+        let recovering = false;
+
+        const retryCount = () => {
+          const urlCount = Number(new URL(location.href).searchParams.get('_startup_attempt')) || 0;
+          try { return Math.max(urlCount, Number(sessionStorage.getItem(retryKey)) || 0); }
+          catch { return urlCount; }
+        };
+
+        const clearRetry = () => {
+          try { sessionStorage.removeItem(retryKey); } catch {}
+          const url = new URL(location.href);
+          if (url.searchParams.has('_startup') || url.searchParams.has('_startup_attempt')) {
+            url.searchParams.delete('_startup');
+            url.searchParams.delete('_startup_attempt');
+            history.replaceState(history.state, '', url);
+          }
+        };
+
+        const showFailure = () => {
+          const root = document.getElementById('root');
+          if (!root || root.hasChildNodes()) return;
+          const message = document.createElement('p');
+          message.textContent = 'The site could not finish loading.';
+          const retry = document.createElement('button');
+          retry.type = 'button';
+          retry.textContent = 'Try again';
+          retry.style.cssText = 'margin-top:1rem;padding:.65rem 1rem;border:0;border-radius:999px;cursor:pointer';
+          retry.addEventListener('click', () => {
+            clearRetry();
+            const url = new URL(location.href);
+            url.searchParams.set('_startup', Date.now());
+            location.replace(url);
+          });
+          root.replaceChildren(message, retry);
+          root.style.cssText = 'padding:2rem;color:#fff;background:#222;min-height:100vh;font:16px system-ui';
+        };
+
+        const recover = () => {
+          if (booted || recovering) return;
+          recovering = true;
+          const attempt = retryCount() + 1;
+          if (attempt <= retryLimit) {
+            try { sessionStorage.setItem(retryKey, String(attempt)); } catch {}
+            const url = new URL(location.href);
+            url.searchParams.set('_startup', Date.now());
+            url.searchParams.set('_startup_attempt', String(attempt));
+            location.replace(url);
+            return;
+          }
+          showFailure();
+        };
+
+        addEventListener('portfolio:booted', () => {
+          booted = true;
+          window.__portfolioBooted = true;
+          clearRetry();
+        }, { once: true });
+        addEventListener('error', (event) => {
+          if (event.target && event.target.tagName === 'SCRIPT') recover();
+        }, true);
+        addEventListener('unhandledrejection', recover);
+        setTimeout(() => {
+          if (!booted) recover();
+        }, 15000);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

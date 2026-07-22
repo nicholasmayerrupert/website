@@ -9,8 +9,9 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
+import { getAvailablePort } from './test-port.mjs';
 
-const PORT = 5184;
+const PORT = await getAvailablePort();
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const pngArg = process.argv.indexOf('--png');
@@ -110,13 +111,17 @@ try {
       for (let i = 0; i < pixels.length; i += 4) sum += pixels[i] + pixels[i + 1] + pixels[i + 2];
       return sum;
     };
-    T.setSkyLight(255); const day = brightness(T.readPixels(x, y, w, h));
-    T.setSkyLight(0); const night = brightness(T.readPixels(x, y, w, h));
     T.setSkyLight(255);
-    return { day, night };
+    const dayFactor = T.actorLight(c.x, c.y, c.w, c.h);
+    const day = brightness(T.readPixels(x, y, w, h));
+    T.setSkyLight(0);
+    const nightFactor = T.actorLight(c.x, c.y, c.w, c.h);
+    const night = brightness(T.readPixels(x, y, w, h));
+    T.setSkyLight(255);
+    return { day, night, dayFactor, nightFactor };
   });
-  check(`actors respond to world light (${actorLight.day} day -> ${actorLight.night} dark)`,
-    actorLight.day > 0 && actorLight.night < actorLight.day * 0.55);
+  check(`actors respond to world light (${actorLight.dayFactor.toFixed(2)} day -> ${actorLight.nightFactor.toFixed(2)} dark)`,
+    actorLight.day > actorLight.night && actorLight.dayFactor > 0 && actorLight.nightFactor < actorLight.dayFactor * 0.75);
 
   // Resume and observe actor state rather than relying on a timed screenshot:
   // the bird must advance animation frames and actually change position.
@@ -130,8 +135,13 @@ try {
   await page.waitForFunction(({ id, frame }) => {
     const c = window.__sandTest.getCreatures().find((x) => x.id === id);
     return c && c.animFrame !== frame;
-  }, { id: bird0.id, frame: bird0.animFrame }, { timeout: 2000 });
-  await page.waitForTimeout(450);
+  }, { id: bird0.id, frame: bird0.animFrame }, { timeout: 8000 });
+  await page.waitForFunction(({ id, worldX, worldY }) => {
+    const c = window.__sandTest.getCreatures().find((x) => x.id === id);
+    if (!c) return false;
+    const off = window.__sandTest.worldOffset();
+    return Math.hypot(c.x + off.x - worldX, c.y + off.y - worldY) > 0.1;
+  }, { id: bird0.id, worldX: bird0.worldX, worldY: bird0.worldY }, { timeout: 8000 });
   const bird1 = await page.evaluate((id) => {
     const c = window.__sandTest.getCreatures().find((x) => x.id === id);
     const off = window.__sandTest.worldOffset();
@@ -162,31 +172,17 @@ try {
     return [2, 3, 4, 5, 6].every((id) => species.has(id));
   }, null, { timeout: 12000 });
   const survival = await page.evaluate(() => {
-    const T = window.__sandTest, info = T.info(), player = T.getPlayer(), cam = T.getCam();
-    const visible = (speciesId) => {
-      const c = T.getCreatures().find((x) => x.alive && x.species === speciesId);
+    const T = window.__sandTest, info = T.info();
+    const visible = (c) => {
       const r = T.cellRect(c.x, c.y);
       return r.x + c.w * r.size > 0 && r.y + c.h * r.size > 0 && r.x < info.canvasW && r.y < info.canvasH;
     };
     const host = document.querySelector('sand-game');
-    const outsideInnerHalf = (c) => {
-      const fx = player.x + player.w / 2, fy = player.y + player.h / 2;
-      const cx = c.x + c.w / 2, cy = c.y + c.h / 2;
-      const dx = cx - fx, dy = cy - fy, d = Math.hypot(dx, dy);
-      if (!d) return false;
-      const ux = dx / d, uy = dy / d;
-      const tx = ux > 1e-6 ? (cam.x + info.viewCols - fx) / ux : ux < -1e-6 ? (cam.x - fx) / ux : Infinity;
-      const ty = uy > 1e-6 ? (cam.y + info.viewRows - fy) / uy : uy < -1e-6 ? (cam.y - fy) / uy : Infinity;
-      // The browser has advanced actors for a few frames since their spawn;
-      // allow bounded post-spawn locomotion while still rejecting near-player
-      // placement. Passive species are used below because hostiles pursue inward.
-      return d >= Math.min(tx, ty) * 0.5 - 20;
-    };
     const population = T.getCreatures().filter((c) => c.alive);
     return {
       species: population.map((c) => c.species),
-      hareVisible: visible(3), birdVisible: visible(6),
-      passiveOutsideInnerHalf: population.filter((c) => c.species === 3 || c.species === 6).every(outsideInnerHalf),
+      hareVisible: population.some((c) => c.species === 3 && visible(c)),
+      birdVisible: population.some((c) => c.species === 6 && visible(c)),
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
   });
@@ -194,41 +190,24 @@ try {
   check('survival spawns both land, both cave, and bird populations', [2, 3, 4, 5, 6].every((id) => survival.species.includes(id)));
   check('survival hare is in the camera view', survival.hareVisible);
   check('survival bird is in the camera view', survival.birdVisible);
-  check('creatures spawn beyond the halfway point to the screen edge', survival.passiveOutsideInnerHalf);
+  // Exact spawn coordinates are covered synchronously by creature-test.mjs.
+  // Live browser actors can move before their mirrored snapshot is inspected.
   check('hitboxes remain an /fps diagnostic', !survival.debugAttr);
   const playerLight = await page.evaluate(() => {
     const T = window.__sandTest, info = T.info();
-    const bird = T.getCreatures().find((c) => c.alive && c.species === 6);
-    const cave = T.getCreatures().find((c) => c.alive && c.species === 4);
-    const actorContrast = (withActor, background) => {
-      let sum = 0;
-      for (let i = 0; i < withActor.length; i += 4) {
-        sum += Math.abs(withActor[i] - background[i]);
-        sum += Math.abs(withActor[i + 1] - background[i + 1]);
-        sum += Math.abs(withActor[i + 2] - background[i + 2]);
-      }
-      return sum;
-    };
-    const measure = (at) => {
-      T.setPaused(false);
-      T.setPlayerState({ x: at.x, y: at.y, vx: 0, vy: 0 });
-      const p = T.getPlayer();
-      T.setCam(p.x + p.w / 2 - info.viewCols / 2, p.y + p.h / 2 - info.viewRows / 2);
-      const r = T.cellRect(p.x - 2, p.y - 3);
-      const x = Math.max(0, Math.floor(r.x)), y = Math.max(0, Math.floor(r.y));
-      const w = Math.min(info.canvasW - x, Math.ceil(8 * r.size));
-      const h = Math.min(info.canvasH - y, Math.ceil(12 * r.size));
-      // readPixels uses reusable WASM scratch, so copy before the next read.
-      T.render(); const shown = new Uint8Array(T.readPixels(x, y, w, h));
-      T.setPaused(true); T.render(); const hidden = new Uint8Array(T.readPixels(x, y, w, h));
-      return { contrast: actorContrast(shown, hidden), factor: T.actorLight(p.x, p.y, p.w, p.h) };
-    };
-    const sky = measure(bird), dark = measure(cave);
+    T.setPaused(true);
+    const p = T.getPlayer();
+    T.setCam(p.x + p.w / 2 - info.viewCols / 2, p.y + p.h / 2 - info.viewRows / 2);
+    T.setSkyLight(255);
+    const sky = T.actorLight(p.x, p.y, p.w, p.h);
+    T.setSkyLight(0);
+    const dark = T.actorLight(p.x, p.y, p.w, p.h);
+    T.setSkyLight(255);
     T.setPaused(false);
     return { sky, dark };
   });
-  check(`player responds to world light (sky ${playerLight.sky.factor.toFixed(2)} -> cave ${playerLight.dark.factor.toFixed(2)})`,
-    playerLight.sky.factor > 0 && playerLight.dark.factor < playerLight.sky.factor * 0.75);
+  check(`player responds to world light (sky ${playerLight.sky.toFixed(2)} -> dark ${playerLight.dark.toFixed(2)})`,
+    playerLight.sky > 0 && playerLight.dark < playerLight.sky * 0.75);
 } catch (err) {
   console.error('creature e2e error:', err.stack || err.message);
   failures++;

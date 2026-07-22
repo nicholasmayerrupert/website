@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import NavBar from './NavBar';
 import Hero from './Hero';
 import './Portfolio.css';

@@ -359,14 +359,24 @@ npm run test:creatures # node scripts/creature-test.mjs
 npm run test:creatures-e2e # /fps spawn, animation, visibility, and hitbox pixels
 npm run test:net      # node scripts/net-test.mjs
 npm run test:e2e      # node scripts/player-e2e.mjs (headless Chromium gameplay)
-npm run test:all      # unit suites + sand lint + production build + critical Chromium E2E
-npm run test:browser  # worker + multiplayer browser integration tests
+npm run test:all      # unit suites + lint + production/embed builds + required browser E2E
+npm run test:browser  # all browser suites in scripts/test-manifest.mjs
+npm run setup:browsers # install Chromium/WebKit and their host dependencies
 ```
 
 `test:e2e` boots the dev server, drives the local player with real keyboard
 events in headless Chromium (via the `playwright` library, like the pan bench),
 and asserts spawn/grounding, input wiring, jump, dig, and camera-follow. It is
-not in the required `npm run test` chain (it needs a browser), but is CI-runnable.
+not in the headless `npm run test` chain (it needs a browser), but is required by
+`test:browser`/`test:all`. Chromium is always required. WebKit smoke checks run
+when its system dependencies are installed; set `REQUIRE_WEBKIT=1` to make a
+missing WebKit installation fail (recommended in CI).
+
+`scripts/test-manifest.mjs` is the single manifest for executable test entry
+points. The runner fails before executing if a `*-test.mjs`, `*-e2e.mjs`, or
+`*-repro.mjs` file is missing from it. Each suite has a bounded runtime, and the
+browser group uses dynamically allocated strict ports to avoid stale-server and
+parallel-run collisions.
 
 ## Multiplayer
 

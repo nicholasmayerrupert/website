@@ -4,8 +4,9 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { chromium } from 'playwright';
+import { getAvailablePort } from './test-port.mjs';
 
-const PORT = 5193;
+const PORT = await getAvailablePort();
 const baseURL = `http://127.0.0.1:${PORT}/game`;
 const server = spawn('npm', ['run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,

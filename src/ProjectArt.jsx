@@ -3,7 +3,6 @@
 // Each scene fills its project card edge-to-edge. Animation is pure CSS (see
 // ProjectArt.css) and is disabled under prefers-reduced-motion.
 
-import React from 'react';
 import './ProjectArt.css';
 
 /* Four-point sparkle used across scenes. */
@@ -147,36 +146,6 @@ export function ChessArt() {
 /* =====================================================================
    2. GRABBY — OCR + snipping: marquee, scan beam, recognized glyphs
    ===================================================================== */
-const GRAB_ROWS = [
-  { y: 132, widths: [8, 6, 9, 5, 8, 7, 6, 9, 8, 5, 7], hot: [2, 6] },
-  { y: 154, widths: [6, 9, 7, 8, 5, 9, 6, 7, 8, 9, 5], hot: [0, 4, 9] },
-  { y: 176, widths: [9, 5, 7, 6, 8, 6, 9, 5, 7, 8, 6], hot: [3, 7] },
-];
-
-function glyphRow({ y, widths, hot }, rowIdx) {
-  const rects = [];
-  let x = 132;
-  widths.forEach((w, i) => {
-    const isHot = hot.includes(i);
-    rects.push(
-      <rect
-        key={`${rowIdx}-${i}`}
-        x={x}
-        y={y}
-        width={w}
-        height="10"
-        rx="1.5"
-        fill={isHot ? '#3ce0ff' : '#7d92c4'}
-        opacity={isHot ? 0.95 : 0.4}
-        className={isHot ? 'pa-pulse' : undefined}
-        style={isHot ? { animationDelay: `${(rowIdx * 3 + i) * 0.3}s` } : undefined}
-      />
-    );
-    x += w + 5;
-  });
-  return rects;
-}
-
 /* =====================================================================
    2b. PIXEL SAND SIMULATION - streamed terrain, two layers, falling cells
    ===================================================================== */

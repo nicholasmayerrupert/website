@@ -1,8 +1,9 @@
 import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
+import { getAvailablePort } from './test-port.mjs';
 
-const PORT = 5198;
+const PORT = await getAvailablePort();
 const baseURL = `http://localhost:${PORT}`;
 let failures = 0;
 const check = (label, ok, detail = '') => {
@@ -12,7 +13,7 @@ const check = (label, ok, detail = '') => {
 
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
-const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT)], {
+const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--host', '127.0.0.1', '--port', String(PORT), '--strictPort'], {
   cwd: new URL('..', import.meta.url), stdio: 'ignore', detached: true,
 });
 const killServer = () => {

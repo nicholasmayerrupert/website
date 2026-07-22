@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import { createLifeSearchEngine } from '../src/life/searchEngineWasm.js';
+import { MAX_LIFE_SEARCH_WORKERS, normalizeLifeSearchWorkers } from '../src/life/searchLimits.js';
+
+assert.equal(normalizeLifeSearchWorkers(0), 1, 'worker pool has a minimum');
+assert.equal(normalizeLifeSearchWorkers(3.6), 4, 'worker pool rounds numeric input');
+assert.equal(normalizeLifeSearchWorkers(1000000), MAX_LIFE_SEARCH_WORKERS, 'worker pool has a hard maximum');
 
 function referenceStep(cells, size) {
   const out = new Uint8Array(cells.length);

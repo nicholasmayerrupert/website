@@ -1,0 +1,80 @@
+// Every scripts/*-test.mjs, scripts/*-e2e.mjs, and scripts/*-repro.mjs entry
+// point must appear here.
+// run-tests.mjs verifies completeness before running anything, so adding a test
+// cannot silently leave it outside the required aggregates.
+
+export const UNIT_SUITES = [
+  ['deployment', 'deployment-cache-test.mjs'],
+  ['life-search', 'life-search-test.mjs'],
+  ['tooltier', 'tooltier-test.mjs'],
+  ['items', 'item-test.mjs'],
+  ['creatures', 'creature-test.mjs'],
+  ['mining', 'mining-drop-test.mjs'],
+  ['mining-speed', 'mining-speed-test.mjs'],
+  ['mine-lock', 'mine-lock-test.mjs'],
+  ['inventory', 'inventory-test.mjs'],
+  ['survival-upgrade', 'survival-upgrade-test.mjs'],
+  ['inv-bridge', 'inventory-bridge-test.mjs'],
+  ['creative', 'creative-place-test.mjs'],
+  ['throw', 'throw-test.mjs'],
+  ['mat-flags', 'materials-flags-test.mjs'],
+  ['mat-behavior', 'material-behavior-test.mjs'],
+  ['liquid-mass', 'liquid-mass-test.mjs'],
+  ['gas-bubble', 'gas-bubble-test.mjs'],
+  ['biomes', 'worldgen-biome-test.mjs'],
+  ['structures', 'worldgen-structures-test.mjs'],
+  ['flora', 'flora-test.mjs'],
+  ['sand', 'sand-test.mjs'],
+  ['rigid-collision', 'rigid-collision-test.mjs'],
+  ['rigid-topple', 'rigid-topple-test.mjs'],
+  ['rigidmat', 'rigidmat-test.mjs'],
+  ['explosives', 'explosives-test.mjs'],
+  ['methane', 'methane-test.mjs'],
+  ['grounding', 'grounding-incremental-test.mjs'],
+  ['pure-perf', 'pure-perf-checksum-test.mjs'],
+  ['timing', 'timing-test.mjs'],
+  ['viewport-pause', 'viewport-pause-test.mjs'],
+  ['players', 'player-test.mjs'],
+  ['anim', 'player-anim-test.mjs'],
+  ['net', 'net-test.mjs'],
+  ['net-protocol', 'net-protocol-test.mjs'],
+  ['audio', 'audio-test.mjs'],
+  ['server', 'server-roundtrip-test.mjs'],
+  ['layer', 'layer-test.mjs'],
+  ['stacked-logs', 'stacked-logs-test.mjs'],
+  ['xlayer-fall', 'xlayer-bonded-fall-test.mjs'],
+  ['component-gas', 'component-gas-displacement-test.mjs'],
+  ['rigid-spawn-joint', 'rigid-spawn-joint-repro.mjs'],
+  ['prefetch', 'prefetch-test.mjs'],
+  ['render', 'render-noise-test.mjs'],
+  ['viewport-sizing', 'viewport-sizing-test.mjs'],
+  ['day-night', 'day-night-test.mjs'],
+  ['pan-compare', 'bench-pan-compare-test.mjs', 180_000],
+  ['sand-bench-env', 'bench-sand-environment-test.mjs'],
+  ['lighting', 'render-lighting-test.mjs'],
+  ['stone-airgap', 'stone-airgap-test.mjs'],
+  ['stone-layers', 'stone-layer-dig-repro.mjs'],
+  ['component-erase', 'component-erase-test.mjs'],
+  ['acid-stuck', 'acid-stuck-test.mjs'],
+  ['hold-place', 'hold-place-test.mjs'],
+  ['item-float', 'item-float-test.mjs'],
+];
+
+export const BROWSER_SUITES = [
+  ['sand-lifecycle', 'sand-lifecycle-e2e.mjs', 180_000],
+  ['players-e2e', 'player-e2e.mjs', 240_000],
+  ['zoom-e2e', 'zoom-e2e.mjs', 240_000],
+  ['creatures-e2e', 'creature-e2e.mjs', 180_000],
+  ['day-night-e2e', 'day-night-e2e.mjs', 180_000],
+  ['worker-e2e', 'worker-e2e.mjs', 300_000],
+  ['multiplayer-e2e', 'mp-e2e.mjs', 240_000],
+  ['acid-cut-e2e', 'acid-cut-e2e.mjs', 180_000],
+  ['life-search-e2e', 'life-search-e2e.mjs', 120_000],
+  // Reads and serves dist/, proving the production bundle boots and recovers
+  // from a stale cached entry. `test:all` builds dist/ before this group.
+  ['production-startup', 'startup-recovery-e2e.mjs', 180_000],
+];
+
+// Keep exclusions explicit and justified if a future executable test is truly
+// unsuitable for either required aggregate.
+export const EXCLUDED_TESTS = [];

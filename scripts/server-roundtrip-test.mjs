@@ -11,7 +11,7 @@ const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
 import { CREATIVE_KIND, CREATURE, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
-import { decode, encode, MSG, makeJoin, makeInput, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS } from '../src/sand/net/protocol.js';
+import { decode, encode, MSG, makeJoin, makeInput, makeView, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS } from '../src/sand/net/protocol.js';
 import { encodeItems, encodeCreatures, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
@@ -172,16 +172,40 @@ function survivalEngine() {
     a.send(encode(makeJoin('r', 'A', 'host'))); await wait(60);
     b.send(encode(makeJoin('r', 'B', 'client'))); await wait(120);
 
-    const assignA = last(ai, MSG.ASSIGN), worldA = last(ai, MSG.WORLD), invA = last(ai, MSG.INVENTORY);
+    const assignA = last(ai, MSG.ASSIGN), assignB = last(bi, MSG.ASSIGN);
+    const worldA = last(ai, MSG.WORLD), invA = last(ai, MSG.INVENTORY);
     check('client A got an authoritative player id', assignA && assignA.player > 0);
     check('client A got the full world at server dims', worldA && worldA.cols === 128 && worldA.rows === 96);
     check('client A got an initial inventory', invA && invA.data.length === 36 * INV_FIELDS);
     check('client A got an initial creature snapshot', last(ai, MSG.CREATURES) !== null);
     check('client B also got a world + inventory', last(bi, MSG.WORLD) && last(bi, MSG.INVENTORY));
 
+    // The browser reports the same visible/loaded dimensions used by solo
+    // survival. The authority adopts them and sends the resized window to all
+    // peers instead of pinning play to its bootstrap arena.
+    ai.length = 0; bi.length = 0;
+    a.send(encode(makeView('r', 'A', 96, 64, 192, 128))); await wait(180);
+    const resizedA = last(ai, MSG.WORLD), resizedB = last(bi, MSG.WORLD);
+    check('survival viewport resizes the authority window', resizedA?.cols === 192 && resizedA?.rows === 128);
+    check('resized authority window reaches every peer', resizedB?.cols === 192 && resizedB?.rows === 128);
+
+    // Moving toward the loaded edge shifts that shared infinite-world window.
+    // Player and terrain coordinates are re-anchored under one offset-aware full
+    // snapshot, so both clients remain in the same world.
+    const beforeOffset = resizedA?.offsetX;
+    const beforePlayer = srv.engine.getPlayer(assignA.player);
+    const targetWorldX = srv.engine.getWorldOffsetX() + srv.engine.cols - 12;
+    srv.engine.setPlayerState(assignA.player, { ...beforePlayer, x: srv.engine.cols - 12 });
+    ai.length = 0; bi.length = 0;
+    await wait(180);
+    const streamedA = last(ai, MSG.WORLD), streamedB = last(bi, MSG.WORLD);
+    const afterPlayer = srv.engine.getPlayer(assignA.player);
+    check('player movement streams beyond the bootstrap screen', streamedA && streamedA.offsetX !== beforeOffset);
+    check('streamed offset reaches every peer', streamedB?.offsetX === streamedA?.offsetX && streamedB?.offsetY === streamedA?.offsetY);
+    check('stream preserves the player world position', Math.abs(srv.engine.getWorldOffsetX() + afterPlayer.x - targetWorldX) < 0.01);
+
     // The transport binds identity to the socket. A cannot drive B or poison
     // B's sequence tracker by naming B in a forged high-sequence packet.
-    const assignB = last(bi, MSG.ASSIGN);
     a.send(encode(makeInput({ room: 'r', client: 'B', player: assignB.player, tick: 999999, seq: 999999, bits: 2, aimX: 0, aimY: 0, tool: 0 })));
     a.send(encode(makeInput({ room: 'wrong', client: 'A', player: assignA.player, tick: 999999, seq: 999999, bits: 2, aimX: 0, aimY: 0, tool: 0 })));
     await wait(40);

@@ -87,7 +87,7 @@ try {
   const failedJoin = await a.page.evaluate(async (u) => {
     try { await window.__sandNet.join(u, 'missing'); return false; } catch { return true; }
   }, `ws://localhost:${REFUSED_PORT}`);
-  await a.page.evaluate(() => window.__sandNet.tickSteps(4));
+  await a.page.evaluate(() => window.__sandNet.tickSteps(4, false));
   const localAfter = await a.page.evaluate(() => ({ player: window.__sandTest.getPlayer(), count: window.__sandNet.playerCount(), status: window.__sandNet.status() }));
   check('unavailable server rejects the join', failedJoin);
   check('failed join keeps the local player', !!localBefore.player && !!localAfter.player && localBefore.player.id === localAfter.player.id && localAfter.count === 1);
@@ -95,8 +95,8 @@ try {
 
   // Pump BOTH clients (send input + drain inbound) then let the server tick/reply.
   const pump = async (n = 4, ms = 90) => {
-    await a.page.evaluate((k) => window.__sandNet.tickSteps(k), n);
-    await b.page.evaluate((k) => window.__sandNet.tickSteps(k), n);
+    await a.page.evaluate((k) => window.__sandNet.tickSteps(k, false), n);
+    await b.page.evaluate((k) => window.__sandNet.tickSteps(k, false), n);
     await sleep(ms);
   };
 
@@ -116,10 +116,18 @@ try {
   check('client B sees two players', (await b.page.evaluate(() => window.__sandNet.playerCount())) === 2);
   check('client A has an assigned player', await a.page.evaluate(() => window.__sandNet.ownPlayer() != null));
 
-  // world replication: both clients adopted the server's buffer dims and render
-  // the SAME terrain (full-world snapshot across two real browsers).
-  const dimsA = await a.page.evaluate(() => window.__sandTest.info());
-  check(`client A adopted server world dims (${dimsA.cols}x${dimsA.rows})`, dimsA.cols === srv.cols && dimsA.rows === srv.rows);
+  // World replication: both clients report their ordinary survival viewport,
+  // then converge on the server's shared loaded window instead of staying in
+  // its small bootstrap arena.
+  let dimsA, dimsB;
+  for (let i = 0; i < 30; i++) {
+    await pump();
+    dimsA = await a.page.evaluate(() => window.__sandTest.info());
+    dimsB = await b.page.evaluate(() => window.__sandTest.info());
+    if (dimsA.cols === srv.cols && dimsA.rows === srv.rows && dimsB.cols === srv.cols && dimsB.rows === srv.rows) break;
+  }
+  check(`clients adopted shared survival dims (${dimsA.cols}x${dimsA.rows})`, dimsA.cols === srv.cols && dimsA.rows === srv.rows && dimsB.cols === srv.cols && dimsB.rows === srv.rows);
+  check('authority grew beyond its bootstrap arena', srv.cols > 256 || srv.rows > 160);
   const region = [Math.floor(srv.cols / 2) - 20, srv.rows - 16, Math.floor(srv.cols / 2) + 20, srv.rows - 6];
   const solid = (p) => p.evaluate((r) => window.__sandTest.solidCount(r[0], r[1], r[2], r[3]), region);
   const solidA = await solid(a.page), solidB = await solid(b.page);
@@ -154,7 +162,7 @@ try {
   // B is unaffected (its own wood stack stays in slot 0).
   await a.page.evaluate(() => window.__sandNet.pick(0, false));
   let curA = null;
-  for (let i = 0; i < 12; i++) { await pump(); curA = await a.page.evaluate(() => window.__sandNet.ownCursor()); if (curA) break; }
+  for (let i = 0; i < 24; i++) { await pump(); curA = await a.page.evaluate(() => window.__sandNet.ownCursor()); if (curA) break; }
   check('client A carries a cursor stack after pick', curA != null);
   check('client A slot 0 emptied after pick', await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 0));
   check('client B slot 0 still holds its stack', await b.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 2));
@@ -167,10 +175,31 @@ try {
   check(`server item replicated to client A (${itemsA})`, itemsA >= 1);
   check(`server item replicated to client B (${itemsB})`, itemsB >= 1);
 
+  // Put A near the loaded edge. The server must resize/stream the shared window,
+  // send its new world offset to both render mirrors, and preserve A's absolute
+  // world position through the local-coordinate re-anchor.
+  const beforeWindow = { cols: srv.cols, rows: srv.rows, x: srv.engine.getWorldOffsetX(), y: srv.engine.getWorldOffsetY() };
+  const serverPlayer = srv.engine.getPlayer(pidA);
+  srv.engine.setPlayerState(pidA, { ...serverPlayer, x: srv.cols + 128 });
+  let streamedA, streamedB;
+  for (let i = 0; i < 30; i++) {
+    await pump();
+    streamedA = await a.page.evaluate(() => ({ info: window.__sandTest.info(), offset: window.__sandTest.worldOffset(), player: window.__sandNet.ownPlayer() }));
+    streamedB = await b.page.evaluate(() => ({ info: window.__sandTest.info(), offset: window.__sandTest.worldOffset() }));
+    if ((streamedA.offset.x !== beforeWindow.x || streamedA.offset.y !== beforeWindow.y || streamedA.info.cols !== beforeWindow.cols || streamedA.info.rows !== beforeWindow.rows) &&
+        streamedA.offset.x === streamedB.offset.x && streamedA.offset.y === streamedB.offset.y && streamedA.info.cols === srv.cols && streamedB.info.cols === srv.cols) break;
+  }
+  const serverAfterStream = srv.engine.getPlayer(pidA);
+  const serverWorldX = srv.engine.getWorldOffsetX() + serverAfterStream.x;
+  const clientWorldX = streamedA.offset.x + streamedA.player.x;
+  check('player traversal moves the multiplayer world window', streamedA.offset.x !== beforeWindow.x || streamedA.offset.y !== beforeWindow.y || streamedA.info.cols !== beforeWindow.cols || streamedA.info.rows !== beforeWindow.rows);
+  check('both clients receive the same streamed window', streamedA.offset.x === streamedB.offset.x && streamedA.offset.y === streamedB.offset.y && streamedA.info.cols === streamedB.info.cols && streamedA.info.rows === streamedB.info.rows);
+  check(`stream preserves A's world position (${clientWorldX.toFixed(1)} ~= ${serverWorldX.toFixed(1)})`, Math.abs(clientWorldX - serverWorldX) < 16);
+
   // disconnect A -> the server drops A's player; B converges to one player.
   await a.page.evaluate(() => window.__sandNet.disconnect());
   let bCount = 2;
-  for (let i = 0; i < 15; i++) { await b.page.evaluate((k) => window.__sandNet.tickSteps(k), 4); await sleep(90); bCount = await b.page.evaluate(() => window.__sandNet.playerCount()); if (bCount === 1) break; }
+  for (let i = 0; i < 15; i++) { await b.page.evaluate((k) => window.__sandNet.tickSteps(k, false), 4); await sleep(90); bCount = await b.page.evaluate(() => window.__sandNet.playerCount()); if (bCount === 1) break; }
   check(`server drops the disconnected player (B sees ${bCount})`, bCount === 1);
 
   await browser.close();

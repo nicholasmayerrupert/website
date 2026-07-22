@@ -9,6 +9,12 @@ export function createNetGlue(ctx, { fit, rebuildEngineForDims, currentLocalInpu
   ctx.net = createGameNet({
     getEngine: () => ctx.engine,
     getLocalInput: currentLocalInput,
+    getViewport: () => ({
+      viewCols: ctx.requestedViewCols || ctx.viewCols,
+      viewRows: ctx.requestedViewRows || ctx.viewRows,
+      bufferCols: ctx.requestedBufferCols || ctx.cols,
+      bufferRows: ctx.requestedBufferRows || ctx.rows,
+    }),
     rebuildEngine: rebuildEngineForDims,
   });
 
@@ -25,7 +31,7 @@ export function createNetGlue(ctx, { fit, rebuildEngineForDims, currentLocalInpu
   const netDisconnect = () => {
     ctx.net.disconnect();
     // Return to single-player: rebuild the local INFINITE world at window dims
-    // (the client engine was sized to the server's bounded arena). Forcing a
+    // (the client engine was sized to the server's shared streamed window). Forcing a
     // dims mismatch makes fit() take the full-rebuild path, which respawns the
     // player.
     if (ctx.survival) { ctx.cols = 0; ctx.rows = 0; fit(); ctx.startLocalAuthority?.(); }

@@ -108,6 +108,10 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     canvas.height = sizing.canvasH;
     ctx.viewCols = sizing.viewCols;
     ctx.viewRows = sizing.viewRows;
+    ctx.requestedViewCols = sizing.viewCols;
+    ctx.requestedViewRows = sizing.viewRows;
+    ctx.requestedBufferCols = sizing.bufCols;
+    ctx.requestedBufferRows = sizing.worldRows;
     let bufCols = sizing.bufCols;
     let worldRows = sizing.worldRows;
 
@@ -139,7 +143,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       ctx.previewDirty = false;
     };
 
-    // Live engine, same desired buffer (or client pinned dims): pure view update.
+    // Live engine, same desired buffer (or current shared client dims): pure view update.
     if (ctx.engine && ctx.cols === bufCols && ctx.rows === worldRows) {
       applyViewOnly();
       return;
@@ -180,8 +184,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
   };
 
   // Rebuild the local render engine to the authoritative server's buffer dims
-  // so world diffs apply 1:1 (a connected client renders the server's
-  // bounded-arena world, never its own). Keeps the current view metrics; does
+  // so world diffs apply 1:1 (a connected client renders the server's shared
+  // streamed window, never its own). Keeps the current view metrics; does
   // NOT spawn a local player (the server owns it). Called by the net layer on
   // the first WORLD message.
   const rebuildEngineForDims = (netCols, netRows) => {
@@ -192,8 +196,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     }
     ctx.cols = netCols;
     ctx.rows = netRows;
-    ctx.viewCols = Math.min(ctx.viewCols || netCols, netCols);
-    ctx.viewRows = Math.min(ctx.viewRows || netRows, netRows);
+    ctx.viewCols = Math.min(ctx.requestedViewCols || ctx.viewCols || netCols, netCols);
+    ctx.viewRows = Math.min(ctx.requestedViewRows || ctx.viewRows || netRows, netRows);
     const engine = buildEngine();
     ctx.localPlayerId = 0; // client: the server owns our player; render from snapshots
     engine.cameraSet((ctx.cols - ctx.viewCols) / 2, Math.max(0, (ctx.rows - ctx.viewRows) / 2));

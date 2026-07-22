@@ -335,7 +335,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     const localAuthorityReady = !!ctx.worldWorker?.state?.ready;
     const presentationReady = !ctx.worldWorker || localAuthorityReady || ctx.netClientReady();
     if (presentationReady &&
-        (dayChanged || stepped || camMoved || ctx.previewDirty || ctx.netClientReady() || localAuthorityReady)) {
+        (dayChanged || stepped || camMoved || ctx.previewDirty || (!ctx.testPaused && ctx.netClientReady()) || localAuthorityReady)) {
       render(false);
       samplePerf();
     }

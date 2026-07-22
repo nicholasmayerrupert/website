@@ -4,7 +4,7 @@
 
 import {
   MSG, encode, decode, makeJoin, makeLeave, makeInput, makeSnapshot,
-  makeAssign, makeReject, makeWorld, makeDiff, INPUT_BITS_MAX, TOOL_MAX,
+  makeAssign, makeReject, makeWorld, makeDiff, makeView, makeSounds, makeCursor, INPUT_BITS_MAX, TOOL_MAX,
 } from '../src/sand/net/protocol.js';
 import { SequenceTracker, InputSequencer, applyInputStream } from '../src/sand/net/server/sequencing.js';
 import { Host } from '../src/sand/net/server/host.js';
@@ -79,6 +79,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     applyDiffMirror() {},
     setMirrorWorldTick(t) { this.mirrorTick = t; },
     gridHash() { return 123; },
+    resetDirty() {},
   };
   class HandshakeWebSocket {
     constructor() { socket = this; this.readyState = 0; this.sent = []; queueMicrotask(() => { this.readyState = 1; this.onopen?.(); }); }
@@ -105,6 +106,10 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeDiff(4 + i, 123, 'AAAAAA==')) });
   net.setPaused(false);
   check('paused diff backlog requests one full resync', socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length === 1);
+  socket.onmessage({ data: encode(makeCursor(5, 7, { material: 1, isTool: false, toolClass: 0, toolTier: 0, count: 2, plantType: 0, itemKind: 0 })) });
+  for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeSounds(6 + i, [])) });
+  net.update();
+  check('inbound pressure preserves change-triggered cursor state', net.getOwnCursor()?.count === 2);
   net.disconnect();
   globalThis.WebSocket = RealWebSocket;
 }
@@ -141,6 +146,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   console.log('control messages');
   check('join', rt(makeJoin('room', 4, 'Nick')).t === MSG.JOIN);
   check('leave', rt(makeLeave('room', 4)).t === MSG.LEAVE);
+  const view = rt(makeView('room', 4, 120, 72, 384, 256));
+  check('survival viewport', view?.t === MSG.VIEW && view.bufferCols === 384 && view.bufferRows === 256);
 }
 
 // 4. malformed messages are rejected.
@@ -157,6 +164,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('snapshot bad player', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: -1 }] })) === null);
   check('snapshot missing anim rejected', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: 1, x: 0, y: 0, vx: 0, vy: 0, facing: 1, tool: 0, seq: 0 }] })) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);
+  check('viewport cannot exceed its buffer', rt(makeView('r', 'c', 200, 100, 100, 100)) === null);
+  check('viewport buffer cell cap enforced', rt(makeView('r', 'c', 100, 100, 4000, 4000)) === null);
 }
 
 // 5. integer fields preserved exactly across large values.
@@ -324,6 +333,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check(`full snapshot syncs client (host ${host.gridHash().toString(16)})`, okW && host.gridHash() === client.gridHash());
   const mirror = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x7777, sinksOn: false, storageRole: 'presentation' });
   check('presentation mirror accepts the authoritative world', applyWorldMessage(mirror, w, { mirror: true }) && mirror.gridHash() === host.gridHash());
+  check('full snapshot carries the authority window offset', mirror.getWorldOffsetX() === host.getWorldOffsetX() && mirror.getWorldOffsetY() === host.getWorldOffsetY());
   const truncated = { ...w, data: w.data.slice(0, -4) };
   const beforeBad = mirror.gridHash();
   check('truncated world is rejected without mutating the mirror', !applyWorldMessage(mirror, truncated, { mirror: true }) && mirror.gridHash() === beforeBad);

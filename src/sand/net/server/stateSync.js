@@ -30,9 +30,9 @@ export function encodeCursor(engine, tick, playerId) {
 }
 
 // Cheap FNV-1a fingerprint of a player's inventory + selected slot + cursor, so
-// the server only broadcasts that player's inventory when it actually changed
-// (idle players cost zero inventory bandwidth). Folds the same fields makeInventory
-// / makeCursor send, so any wire-visible change flips the revision.
+// changes broadcast immediately (alongside the server's low-rate recovery
+// refresh). Folds the same fields makeInventory / makeCursor send, so any
+// wire-visible change flips the revision.
 export function inventoryRevision(engine, playerId) {
   let h = 0x811c9dc5;
   const mix = (v) => { h = Math.imul(h ^ (v & 0xffffffff), 0x01000193) >>> 0; };

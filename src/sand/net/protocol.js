@@ -6,7 +6,7 @@
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -15,6 +15,7 @@ export const MSG = Object.freeze({
   ASSIGN: 'assign',     // host -> client: your authoritative playerId
   REJECT: 'reject',     // host -> client: join refused with a stable reason
   INPUT: 'input',
+  VIEW: 'view',         // client -> host: visible + desired loaded-window dimensions
   SNAPSHOT: 'snapshot',
   WORLD: 'world',       // host -> client: full world snapshot (base64 RLE)
   DIFF: 'diff',         // host -> client: changed cells (base64)
@@ -100,13 +101,24 @@ export function makeSnapshot(tick, players, hash = null) {
     })),
   };
 }
-export function makeWorld(tick, cols, rows, hash, data) {
-  return { t: MSG.WORLD, tick: Math.trunc(tick), cols: cols | 0, rows: rows | 0, hash: hash >>> 0, data: String(data) };
+export function makeWorld(tick, cols, rows, hash, data, offsetX = 0, offsetY = 0) {
+  return {
+    t: MSG.WORLD, tick: Math.trunc(tick), cols: cols | 0, rows: rows | 0,
+    offsetX: offsetX | 0, offsetY: offsetY | 0,
+    hash: hash >>> 0, data: String(data),
+  };
 }
 export function makeDiff(tick, hash, data) {
   return { t: MSG.DIFF, tick: Math.trunc(tick), hash: hash >>> 0, data: String(data) };
 }
 export function makeResync(room, client) { return { t: MSG.RESYNC, room, client }; }
+export function makeView(room, client, viewCols, viewRows, bufferCols, bufferRows) {
+  return {
+    t: MSG.VIEW, room, client,
+    viewCols: Math.trunc(viewCols), viewRows: Math.trunc(viewRows),
+    bufferCols: Math.trunc(bufferCols), bufferRows: Math.trunc(bufferRows),
+  };
+}
 
 // ---- world-state replication beyond players (Phase 9) ----
 // Dropped items, packed flat as ITEM_FIELDS numbers each. `items` is an array of
@@ -190,8 +202,9 @@ export function decode(str) {
     case MSG.ASSIGN: return (isRoom(m.room) && isId(m.client) && isNonNegInt(m.player)) ? m : null;
     case MSG.REJECT: return (isRoom(m.room) && ['full', 'room', 'client'].includes(m.reason)) ? m : null;
     case MSG.INPUT: return validateInput(m);
+    case MSG.VIEW: return validateView(m);
     case MSG.SNAPSHOT: return validateSnapshot(m);
-    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && m.cols > 0 && m.cols <= 16384 && isNonNegInt(m.rows) && m.rows > 0 && m.rows <= 16384 && m.cols * m.rows <= 8_000_000 && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
+    case MSG.WORLD: return (isNonNegInt(m.tick) && isNonNegInt(m.cols) && m.cols > 0 && m.cols <= 16384 && isNonNegInt(m.rows) && m.rows > 0 && m.rows <= 16384 && m.cols * m.rows <= 8_000_000 && isI32(m.offsetX) && isI32(m.offsetY) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.DIFF: return (isNonNegInt(m.tick) && isNonNegInt(m.hash) && typeof m.data === 'string') ? m : null;
     case MSG.RESYNC: return (isRoom(m.room) && isId(m.client)) ? m : null;
     case MSG.ITEMS: return validateItems(m);
@@ -213,6 +226,15 @@ export function decode(str) {
 
 const isBit = (v) => v === 0 || v === 1;
 const isSlot = (v) => isInt(v) && v >= 0 && v < INV_SLOTS;
+const isI32 = (v) => isInt(v) && v >= -2147483648 && v <= 2147483647;
+
+function validateView(m) {
+  if (!isRoom(m.room) || !isId(m.client)) return null;
+  const dims = [m.viewCols, m.viewRows, m.bufferCols, m.bufferRows];
+  if (dims.some((v) => !isInt(v) || v <= 0 || v > 16384)) return null;
+  if (m.viewCols > m.bufferCols || m.viewRows > m.bufferRows || m.bufferCols * m.bufferRows > 8_000_000) return null;
+  return m;
+}
 
 function validateItems(m) {
   if (!isNonNegInt(m.tick) || !Array.isArray(m.data)) return null;

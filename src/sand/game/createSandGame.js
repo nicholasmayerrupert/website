@@ -100,6 +100,8 @@ export function createSandGame(container, opts = {}) {
     cols: 0, rows: 0,
     cellSize: SIZING.cellPx, cellDev: SIZING.cellPx, dpr: 1,
     viewCols: 0, viewRows: 0,
+    requestedViewCols: 0, requestedViewRows: 0,
+    requestedBufferCols: 0, requestedBufferRows: 0,
     stableCssSize: null,
     // Continuous zoom factor (1 = default density; >1 zoomed in; <1 zoomed out).
     zoom: SIZING.zoomDefault ?? 1,

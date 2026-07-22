@@ -82,7 +82,7 @@ export function applyWorldMessage(engine, m, { mirror = false, bytes = null } = 
   const payload = bytes ?? validateWorldMessage(m);
   if (!payload) return false;
   if (mirror) {
-    engine.applyWorldMirror(payload, 0, 0);
+    engine.applyWorldMirror(payload, m.offsetX, m.offsetY);
     engine.setMirrorWorldTick?.(m.tick);
   } else engine.applyWorld(payload);
   return engine.gridHash() === (m.hash >>> 0);

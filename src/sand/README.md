@@ -271,8 +271,9 @@ cost); zoom in shrinks it (cheaper `step`). World content survives via
 `engine.resizeLoadedWindow` (tile/body stores). The effective zoom-out floor is
 device-aware: fitting stops only before WebGL's texture-dimension limit, rather
 than imposing a fixed total-cell ceiling on capable hardware.
-Multiplayer clients keep the host buffer size; their zoom is view-only within
-that window.
+Multiplayer clients report the same zoom-derived view and buffer sizes as solo
+survival. The server keeps one chunk-aligned authority window large enough for
+the connected player group, and all clients render that shared size.
 
 Offline zoom resizes the presentation mirror immediately and coalesces the more
 expensive authority-worker resize. Every viewport fit preserves the same
@@ -428,15 +429,18 @@ applies it so both see the same sand world:
 - `cpp/engine/netsync.inc` — full snapshot (RLE over the grid) + dirty-rect diffs
   + a FNV grid hash, with apply functions; `net/worldSync.js` bridges them to the
   protocol (`world`/`diff` messages, base64).
-- On join (or `resync`) the host sends a full snapshot; thereafter it streams
-  per-step diffs. The client applies them, doesn't simulate the shared world
-  itself (server-authoritative), and requests a `resync` when a diff's hash doesn't
-  match (a dropped packet). `test:net` covers snapshot/diff/lost-diff-resync/
-  join-in-progress; `mp-e2e.mjs` asserts the client's world matches the host and
-  that a host dig replicates.
-- **Limitation:** peers must share the same buffer size (window dimensions) — a
-  client whose buffer differs keeps its own local world. Independent far-apart
-  exploration isn't supported yet.
+- On join (or `resync`) the host sends an offset-aware full snapshot; thereafter
+  it streams per-step diffs. The client applies them, doesn't simulate the shared
+  world itself (server-authoritative), and requests a `resync` when a diff's hash
+  doesn't match (a dropped packet). `test:net` covers snapshot/diff/lost-diff-
+  resync/join-in-progress; `mp-e2e.mjs` asserts the clients match the host through
+  a real streamed-window move.
+- Clients send their visible and desired loaded-window dimensions. The server
+  grows, shrinks, and streams one chunk-aligned window around all players, using
+  the same C++ chunk store as solo survival. Full snapshots accompany a window
+  move; player aim remains world-space while the new offset is in flight. Widely
+  separated players expand the shared simulation window, subject to the protocol's
+  existing 8-million-cell safety cap.
 
 **Prediction + reconciliation (Phase 7).** `net/predict.js` lets the client
 simulate its own player immediately (no input lag) and reconcile against the

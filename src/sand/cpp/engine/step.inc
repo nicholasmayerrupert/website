@@ -9,12 +9,12 @@
     audio.beginRegionalPass();
     // Timers accumulate across both layers and are reset once per world tick.
     double t0 = emscripten_get_now();
-    if (!deferStructureThisTick && !comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
+    if (!comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     perfGroundingMs += emscripten_get_now() - t0;
 
     double tA = emscripten_get_now();
     L->assemblyRelocatedCells.clear();
-    if (!deferStructureThisTick) moveRigidAssemblies();
+    moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-assemblies");
 #endif
@@ -165,9 +165,6 @@
       comps.jointDirty = true;
       comps.jointDirtyDeferred = false;
     }
-    deferStructureThisTick = (int64_t)cols * rows > 900000
-      && comps.jointSupportValid && fg.bodies.empty() && bg.bodies.empty()
-      && (tick & 1) != 0;
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
     // stone/plant/ice or residual static powder exists. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
@@ -183,23 +180,12 @@
     bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
     bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
     bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
-    // At extreme zoom, a large generated window can contain thousands of
-    // residual bonded terrain assemblies. Re-solving and moving that structural
-    // graph at 60 Hz starves the much more visible loose-material simulation.
-    // Residual structure runs at 30 Hz above 900k cells; a topology edit on a
-    // deferred tick is reconciled on the next structural tick (one world tick
-    // later). Loose overlays still refresh every tick.
-    if (bgEnabled && needJoint && !deferStructureThisTick) {
+    if (bgEnabled && needJoint) {
       // computeGroundedBoth splits its wall time into groundingMs (base floods)
       // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).
       computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
-    }
-    if (deferStructureThisTick) {
-      comps.refreshLooseOverlayPreservingJoint(&fg);
-      comps.refreshLooseOverlayPreservingJoint(&bg);
-      useLayer(&fg);
     }
     double tL0 = emscripten_get_now();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
@@ -215,7 +201,7 @@
     // moveCrossLayerBondedAssemblies (jointBondsInvalid) — stuttering or freezing
     // until a dissolve-free step. Refresh joints when dirtied, then move.
     bool jointRefreshedAfterLayers = false;
-    if (bgEnabled && !deferStructureThisTick && (comps.jointDirty || comps.jointBondsInvalid)) {
+    if (bgEnabled && (comps.jointDirty || comps.jointBondsInvalid)) {
       computeGroundedBoth(); // adds into grounding / crossLayer / componentIndex
       comps.jointGroundReady = true;
       comps.jointDirty = false;

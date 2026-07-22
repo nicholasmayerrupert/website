@@ -53,6 +53,44 @@ for (let y = 0; y < ROWS - 1; y++) for (let x = 0; x < COLS; x++) if (g2[y * COL
 check(`grounded ring stays put (top stone row ${topRow} ~ ${ROWS - 8})`, topRow <= ROWS - 7);
 e2.destroy();
 
+// Structural motion must not change when the loaded window crosses the
+// historical 900,000-cell performance threshold. Both halves of this
+// cross-layer assembly should fall exactly one row per world tick.
+const fallTrace = (cols) => {
+  const rows = 1000, cx = cols >> 1;
+  const engine = createEngineWasm({ cols, rows, worldSeed: 1, sinksOn: false, infinite: false });
+  engine.setBgEnabled(true);
+  for (const [layer, material] of [[0, MAT.BRICK], [1, MAT.STONE]]) {
+    for (let y = 100; y < 105; y++) for (let x = cx - 2; x <= cx + 2; x++) {
+      engine.paintDiscLayer(layer, x, y, 0, material, true);
+    }
+    engine.syncComponentsLayer(layer);
+  }
+  const top = (grid, material) => {
+    for (let y = 90; y < 140; y++) for (let x = cx - 4; x <= cx + 4; x++) {
+      if (grid[y * cols + x] === material) return y;
+    }
+    return -1;
+  };
+  const fg = [], bg = [];
+  for (let i = 0; i < 12; i++) {
+    engine.stepWorld();
+    fg.push(top(engine.getGrid(), MAT.BRICK));
+    bg.push(top(engine.getGridBg(), MAT.STONE));
+  }
+  engine.destroy();
+  return { fg, bg };
+};
+
+const atThreshold = fallTrace(900);
+const aboveThreshold = fallTrace(901);
+check('component fall trace is cell-count invariant',
+  JSON.stringify(aboveThreshold) === JSON.stringify(atThreshold),
+  `(900k ${atThreshold.fg.join(',')}; 901k ${aboveThreshold.fg.join(',')})`);
+check('large cross-layer assembly falls every tick',
+  aboveThreshold.fg.every((y, i) => y === 101 + i)
+    && aboveThreshold.bg.every((y, i) => y === 101 + i));
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

@@ -2,8 +2,8 @@
 // HUD, footprint menu, connect panel).
 
 // Stop the given events from bubbling to the window-level game input (which
-// would latch mouse buttons / mine through a panel). See the mouseButtons
-// comment in createSandGame.js for why pointermove must be included: a drag
+// would latch mouse buttons / mine through a panel). See inputBindings.js for
+// why pointermove must be included: a drag
 // that leaves a widget while held must not feed the window's `|=  e.buttons`
 // latch without its matching pointerup.
 export const SWALLOW_POINTER_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu', 'wheel'];

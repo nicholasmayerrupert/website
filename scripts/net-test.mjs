@@ -1,4 +1,4 @@
-// Tests for the multiplayer protocol + sequencing layer (Phase 4). All run in
+// Multiplayer protocol, sequencing, authority, and prediction tests. All run in
 // Node with no real network. Run with:
 //   node scripts/net-test.mjs
 
@@ -375,7 +375,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   host.destroy(); latecomer.destroy();
 }
 
-// 12. client prediction + reconciliation (Phase 7). Player physics is
+// 12. Client prediction and reconciliation. Player physics is
 //     deterministic, so prediction is exact and corrections converge in one step.
 {
   console.log('prediction / reconciliation');
@@ -476,7 +476,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   }
 }
 
-// 13. host hardening (Phase 8): room cap, field validation, aim clamp, rate limit.
+// 13. Host hardening: room cap, field validation, aim clamp, rate limit.
 {
   console.log('hardening');
   const mkE = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x3333, sinksOn: false });

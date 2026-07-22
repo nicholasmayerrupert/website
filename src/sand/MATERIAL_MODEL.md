@@ -1,4 +1,4 @@
-# Sand Material Model
+# Sand material model
 
 `materials.schema.json` is the source of truth. `npm run generate` emits
 `materials.generated.js` for JS and `cpp/engine/materials.generated.hpp` for C++.
@@ -30,12 +30,12 @@ liquid?", or "does this material count as rigid terrain?"
 
 ### kind
 
-`kind` is hot-loop tick routing and legacy movement routing. It answers which
+`kind` is hot-loop tick and movement routing. It answers which
 settling/update path currently handles the cell: `NONE`, `POWDER`, `LIQUID`,
 `GAS`, `COMPONENT`, or `FREE_RIGID`.
 
-Keep `kind` until the movement dispatch is fully migrated; do not treat it as the
-general gameplay category when `materialClass` and `flags` are more explicit.
+Do not treat `kind` as the general gameplay category when `materialClass` and
+`flags` are more explicit.
 
 ### transparency
 
@@ -91,12 +91,7 @@ free body cell and a static `STONE` component cell.
 ## Which field should code use?
 
 - Rendering/inventory/drops: material ID.
-- Movement dispatch: `kind`, until fully migrated.
+- Movement dispatch: `kind`.
 - Gameplay questions: `materialClass` + `flags`.
 - Component splitting/registration: `componentGroup`.
 - Static-vs-body distinction: `bodyOwner` / `isBodyCell`.
-
-## Compatibility notes
-
-Do not remove `kind` yet. Do not rename existing material IDs. Do not change
-generated numeric IDs.

@@ -78,12 +78,12 @@ npm run sand:server
 ```
 
 Browsers are pure clients in that mode. Server and client must currently share
-the same world buffer dimensions; independent far-apart exploration is not
-supported yet.
+one authority window. The server expands and streams that window around the
+connected player group; widely separated players increase its simulation cost.
 
 ## Boundary Rules
 
 - The standalone embed must not import React, site pages, Tailwind config, or app
   CSS.
 - Use `npm run build:embed` to verify bundle generation.
-- Use `npm run check:embed` to verify the dependency boundary once available.
+- Use `npm run check:embed` to verify the dependency boundary.

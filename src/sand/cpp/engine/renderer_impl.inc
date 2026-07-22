@@ -1,5 +1,3 @@
-// Renderer method bodies (need the full Engine definition; see renderer.hpp).
-
 // Material -> RGBA pixel generation (the engine's render hot path).
 //
 // Writes one RGBA pixel per cell into renderPixels (little-endian uint32, so the
@@ -13,8 +11,8 @@
 // paths. MAT_RENDER_ANIM selects a render-only moving texture; simulation state and
 // the lighting solve remain untouched.
 //
-// JS owns the camera/presentation; it calls render_full or render_dirty_rects,
-// then uploads renderPixels (putImageData) and blits with drawImage.
+// GLPresenter uploads these pixels into foreground/background textures and
+// composites the final frame.
 
 bool Renderer::transparentForLight(uint8_t m) const {
   return E.isEmptyMaterial(m) || E.isGasMaterial(m);

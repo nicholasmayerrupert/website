@@ -1,17 +1,8 @@
-// Repro for the "stable acid-in-ice tub + acid boring stone elsewhere = super-linear
-// lag" bug. A big inert ice tub costs ~nothing on its own, but while acid bores stone
-// elsewhere the boring keeps the LAYER active every step, and the global grounding
-// pass (indexComponents + reflood) re-scans the whole layer INCLUDING the untouched
-// ice tub on every dissolve step -> cost grows with tub size.
+// Measures whether an inert ice component increases the cost of acid boring into
+// unrelated stone. Reports wall time and grounding/index costs across tub sizes.
 //
-// Measures per-step time for (a) ice tub alone, (b) boring stone alone, (c) both, over
-// a range of tub sizes, and reports total grounding cost (getStepPerf().joint =
-// groundingMs + crossLayerGroundingMs) which is the least noisy signal on a shared
-// host. Run on the committed tree to see the blowup, and after the fix to see it
-// shrink (esp. for a NARROW bore).
-//
-//   node scripts/acid-ice-lag-bench.mjs            (wide flat acid lake = worst case)
-//   node scripts/acid-ice-lag-bench.mjs --narrow   (narrow dropped-blob bore = typical)
+//   node scripts/acid-ice-lag-bench.mjs          # wide acid front
+//   node scripts/acid-ice-lag-bench.mjs --narrow # narrow dropped-blob bore
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 

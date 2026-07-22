@@ -1,5 +1,3 @@
-// RigidBodySystem method bodies (need the full Engine definition; see rigid.hpp).
-
 // Free rigid bodies and component-to-body conversion.
 //
 // Components are grid-anchored while bodies are moving entities. This file owns
@@ -467,7 +465,7 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
 int RigidBodySystem::localCellAt(Body* b, double wx, double wy) { b->cs = std::cos(b->angle); b->sn = std::sin(b->angle); return insideBodyIndex(b, wx, wy); }
 bool RigidBodySystem::eraseLocalCell(Body* b, int idx) { if (idx < 0 || idx >= (int)b->occ.size() || !b->occ[idx]) return false; b->occ[idx] = 0; return true; }
 
-// ---- rigidBodies.js layer ----
+// Terrain and medium queries used by free bodies.
 bool RigidBodySystem::isBodyTerrain(int x, int y, double bodyDensity) {
   (void)bodyDensity;
   int k = y * E.cols + x; uint8_t m = E.L->grid[k];
@@ -1063,9 +1061,8 @@ Body* RigidBodySystem::finishSpawn(const std::vector<std::pair<int, int>>& cells
 }
 Body* RigidBodySystem::spawnBody(const std::vector<std::pair<int, int>>& cells) { return finishSpawn(cells, RIGID); }
 
-// Primitive body shapes built engine-side (no per-cell array marshalled from
-// JS). Cells are clipped to the interior, exactly like the old JS cube tool
-// (dx in [-halfW, halfW), dy in [-halfH, halfH) for the box).
+// Primitive body shapes built engine-side. Cells are clipped like the cube tool:
+// dx in [-halfW, halfW), dy in [-halfH, halfH) for the box.
 Body* RigidBodySystem::spawnBox(int cx, int cy, int halfW, int halfH, uint8_t material) {
   if (material >= TABLE) material = RIGID;
   std::vector<std::pair<int, int>> cells;

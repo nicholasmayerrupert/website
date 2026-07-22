@@ -1,4 +1,4 @@
-// Quick sand-engine health/provenance report for humans and future agents.
+// Sand-engine health and provenance report.
 //
 // This is intentionally read-only for repo files. It checks generated material
 // freshness, reports the committed WASM bundle identity, runs a checksum-only

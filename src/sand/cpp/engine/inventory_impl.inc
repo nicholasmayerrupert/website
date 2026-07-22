@@ -1,11 +1,6 @@
-// InventorySystem method bodies (need the full Engine definition; see inventory.hpp).
-
 // Authoritative survival inventory.
-//
-// Per-player stacks (hotbar + grid). Authoritative in the engine like player
-// physics: JS reads a packed snapshot to draw the HUD and forwards slot-select /
-// move / place intents. Mining drops feed addToInventory (items.inc pickup); the
-// selected slot drives the held tool (mining) or the placed material (building).
+// JS renders packed snapshots and forwards intents; the selected slot drives
+// mining or placement.
 
 // Fresh survival players start empty. An empty slot is the bare hand; the first
 // Mining Tool is crafted from hand-harvestable wood.

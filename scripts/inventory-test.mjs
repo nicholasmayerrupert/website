@@ -1,4 +1,4 @@
-// Phase D: survival inventory (authoritative in the engine). Pickup vacuums dropped
+// Survival inventory is authoritative in the engine. Pickup vacuums dropped
 // items into per-player stacks; stacking merges; a full inventory overflows (item
 // stays in world); the selected slot drives held tool vs placed material; placing
 // consumes a count. Run: node scripts/inventory-test.mjs
@@ -9,7 +9,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, FLOOR = 60;
 await initSandWasm();
-const { check, done } = makeChecker('survival inventory (Phase D)');
+const { check, done } = makeChecker('survival inventory');
 
 function survivalEngine() {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 4, sinksOn: false, infinite: false });

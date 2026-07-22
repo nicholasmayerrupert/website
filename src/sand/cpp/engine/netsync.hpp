@@ -1,16 +1,6 @@
 #pragma once
-// World replication for multiplayer (extracted from the Engine in 5c). The
-// host serializes BOTH grids (foreground then background) and the client
-// applies them so both peers see the same two-layer world:
-//   - full snapshot: RLE over fg then bg (sent once on join / on resync).
-//   - diff: the dirty-rect cells of fg then bg (sent at a low rate).
-// A FNV grid hash over both layers lets the client detect divergence (a lost
-// diff) and request a resync. The wire format is opaque to JS/protocol.
-//
-// NetSync owns the serialization scratch (`blob`, exposed to the ABI) and the
-// wire format; it reaches back into the Engine for the grids, dirty rects, and
-// post-apply reconciliation. Method bodies live in netsync_impl.inc (they need
-// the full Engine definition).
+// Binary world replication for both layers: RLE full snapshots, dirty diffs,
+// and an FNV divergence hash. JavaScript treats the payload as opaque bytes.
 
 struct Engine;
 

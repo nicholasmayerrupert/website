@@ -303,15 +303,9 @@ export function createParallaxBackground(container) {
     }
   };
 
-  // `camX` is the absolute world coordinate at the horizontal center of the
-  // viewport. Each layer subtracts half its logical width from the parallax
-  // offset, keeping that center anchored while zoom changes the visible span.
-  // `scale` is the in-game zoom relative to the default (1 = default, >1 = zoomed
-  // in). The whole backdrop is drawn into a logical box of size (w/scale, h/scale)
-  // and then uniformly scaled to fill the canvas, so the mountains/clouds/stars and
-  // the pan rate grow and shrink in lockstep with the simulation — no desync. The
-  // horizon stays at a fixed fraction of the screen because it's a ratio of the
-  // logical height.
+  // `camX` is the viewport center in absolute world coordinates. Draw into a
+  // scale-adjusted logical box so backdrop size and parallax track game zoom while
+  // the horizon remains at a fixed screen fraction.
   const draw = ({ camX = 0, camY = 0, scale = 1, dayNight = sampleDayNight(0), dayVisualKey = 0 } = {}) => {
     if (!canvas.width || !canvas.height) return;
     const s = scale > 0 ? scale : 1;

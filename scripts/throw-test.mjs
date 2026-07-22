@@ -1,4 +1,4 @@
-// Phase D: Minecraft cursor model + throw-out. cursorPick picks up / places / half /
+// Inventory cursor and throw-out. cursorPick picks up, places, halves, or
 // swaps the carried stack; throwFromCursor ejects it into the world in the facing
 // direction (and it isn't instantly vacuumed back). Run: node scripts/throw-test.mjs
 
@@ -8,7 +8,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, FLOOR = 60;
 await initSandWasm();
-const { check, done } = makeChecker('inventory cursor + throw (Phase D)');
+const { check, done } = makeChecker('inventory cursor + throw');
 
 function eng() {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 2, sinksOn: false, infinite: false });

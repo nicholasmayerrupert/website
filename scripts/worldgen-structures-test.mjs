@@ -1,7 +1,5 @@
-// Phase 3 worldgen: ore veins + cave-wall MOSS + stamped ruins/themed cave biomes. All are pure
-// functions of world coords, inert (solid-in-solid or carved air), and must be
-// BYTE-IDENTICAL across streaming (a structure straddling a band seam regenerates
-// the same), persisted by the tile store. Run: node scripts/worldgen-structures-test.mjs
+// World structures are deterministic functions of world coordinates, remain
+// inert, reproduce exactly across stream boundaries, and persist in the tile store.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
@@ -9,7 +7,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 220, ROWS = 160, SEED = 0xBED;
 await initSandWasm();
-const { check, done } = makeChecker('worldgen structures (Phase 3)');
+const { check, done } = makeChecker('worldgen structures');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
 
 function materialComponents(g, mat) {

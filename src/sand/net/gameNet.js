@@ -1,13 +1,6 @@
-// Browser multiplayer glue for createSandGame. The browser is ALWAYS a pure
-// client: the authoritative engine runs in a headless Node server
-// (scripts/sand-server.mjs), which spawns a player per client, applies their
-// input + survival intents, and broadcasts the world, players, dropped items, and
-// each client's inventory/cursor. This module connects by ws URL, sends local
-// input + intents, applies the world diffs into a (server-dimensioned) local
-// engine for rendering, and predicts its own player for zero-lag movement.
-//
-// When offline this layer is inert. The shared local worker authority supplies
-// the same world/actor snapshot contract instead.
+// Browser client for the authoritative Node server. Sends input/intents, applies
+// world and actor state to the presentation engine, and predicts the local player.
+// It remains inert while the offline worker authority is active.
 
 import {
   encode, decode, MSG, makeInput, makeJoin, makeLeave, makeResync,

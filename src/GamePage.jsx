@@ -1,32 +1,10 @@
-// Fullscreen survival sand game at /game. The player character moves with WASD,
-// jumps with Space, and uses reach-limited survival actions from the selected
-// inventory slot — the camera follows. It's the same
-// <sand-game> Web Component as the About background, in survival mode, given the
-// whole viewport.
-//
-// DESKTOP-ONLY for now. The sandbox needs a mouse + keyboard, and the WASM
-// engine is heavy, so on small / coarse-pointer devices we render a friendly
-// message and never mount <sand-game> (so the engine never loads). The NavBar's
-// PLAY button is also hidden on mobile, but this gate also covers anyone who
-// hand-types /game.
-//
-// ─── Future: mobile creative controls (notes only) ───────────────────────────
-// The current touch experience fights page scrolling and has tiny targets.
-// A real mobile creative mode would want:
-//   • A bottom touch toolbar with large tap targets (mine / place / select).
-//   • Tap-to-place and drag-to-paint, with an explicit "draw vs scroll" toggle so
-//     the page can still scroll when the user isn't actively painting.
-//   • A floating action button (FAB) that opens the material picker as a
-//     bottom sheet instead of the cramped left rail.
-//   • Pinch-to-zoom + two-finger pan for camera control (one finger = paint).
-//   • Haptic tap feedback and a small undo button, since misfires are common.
-// Until that exists, mobile stays gated to the message below.
+// Fullscreen survival entry. Small/coarse-pointer devices do not mount the heavy
+// engine because the survival UI still requires desktop input.
 
 import { useEffect } from 'react';
 import './sand/embed/sandGame'; // registers the <sand-game> custom element
 import { useMediaQuery } from './hooks/useMediaQuery';
 
-// Treat narrow viewports OR coarse-only pointers (phones/tablets) as "mobile".
 const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
 const PERF_GAME = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('perf');

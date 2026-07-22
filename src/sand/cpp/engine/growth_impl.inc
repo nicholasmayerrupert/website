@@ -1,14 +1,7 @@
-// GrowthSystem method bodies (need the full Engine definition; see growth.hpp).
-
 // Plant and organic growth.
-//
-// Trees, cacti, mushrooms, kelp, and vines grow as plant components. This file
-// owns species-specific shape and water/terrain interactions; component
-// registration and grounding remain in components.inc.
-// Trees grow as plant components. The SPECIES (comp.plantType) selects the trunk
-// and foliage MATERIAL (gWoodMat/gLeafMat, set per-comp in growPlantComponents)
-// and shape biases. PT_STANDARD keeps the plain SEED material's original random
-// branching, while explicit oak seeds grow a tall leader and broad crown.
+// Trees, cacti, mushrooms, kelp, and vines grow as plant components. Species
+// selects trunk/foliage materials and shape; component registration and grounding
+// remain in ComponentSystem.
 bool GrowthSystem::growStraight() { return gGrowType == PT_PINE || gGrowType == PT_WILLOW || gGrowType == PT_CACTUS || gGrowType == PT_MUSHROOM || gGrowType == PT_VINE; }
 bool GrowthSystem::compHasSeed(Comp& comp) {
   for (int k : comp.cells) if (E.L->grid[k] == SEED) return true;

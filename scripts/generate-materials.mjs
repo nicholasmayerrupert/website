@@ -205,7 +205,7 @@ static const int TOOL_CLASS_COUNT = ${toolClassCount};
 static const uint8_t  TOOL_CLASS_SPEED[${toolClassCount * toolClassCount}] = {${miningSpeed.classPercent.flat().join(', ')}};
 static const uint8_t  TOOL_TIER_SPEED[${toolTierCount}] = {${miningSpeed.tierPercent.join(', ')}};
 static const int MINING_PROGRESS_DIVISOR = ${miningSpeed.progressDivisor};
-// Renderer tables (consumed once C++ owns material-to-RGBA generation).
+// Renderer lookup tables.
 static const uint32_t MAT_COLOR[TABLE]      = {${col((m) => m, hexColor)}};
 static const uint8_t  MAT_TEXTURE_AMP[TABLE]= {${col((m) => m.textureAmp, u8)}};
 static const uint8_t  MAT_RENDER_ANIM[TABLE] = {${col((m) => renderAnims[m.renderAnim], u8)}};

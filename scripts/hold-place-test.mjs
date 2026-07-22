@@ -1,8 +1,5 @@
-// Regression: in survival you must be able to HOLD primary to place a loose material
-// (sand/water/…) continuously, and the build must place even when the disc grazes the
-// player's own body (only the non-overlapping cells) instead of being rejected
-// wholesale. Block quantities are conserved: inventory units consumed == cells created.
-// Run: node scripts/hold-place-test.mjs
+// Held survival placement repeats, clips only cells overlapping the player, and
+// consumes exactly one inventory unit per created cell.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';

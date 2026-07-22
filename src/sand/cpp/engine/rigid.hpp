@@ -1,12 +1,6 @@
 #pragma once
-// Free rigid bodies (extracted from the Engine in 5f): swept mask-derived
-// collision (no centre-to-centre normals; point-speed substeps), buoyancy in
-// denser fluids, one-way granular support, sleep islands, lava/fire erosion,
-// erase/split reconciliation, resting-body bake into static components, and
-// the per-step stamp/un-stamp of each body's REAL material into the grid (the
-// BODY-MATERIAL invariant's write side). The bodies themselves live on the
-// Layer (they stream with the tile store). Method bodies live in
-// rigid_impl.inc.
+// Free rigid-body collision, buoyancy, sleep, erosion, and component baking.
+// Bodies stamp their real material into their owning Layer.
 
 struct Engine;
 
@@ -34,13 +28,12 @@ class RigidBodySystem {
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
-  // Scratch for the per-body bottom-edge support probes (Phase 6): membership
+  // Scratch for per-body bottom-edge support probes: membership
   // stamp + cell list replacing a per-call unordered_set (the probes only sum
   // integer counters, so iteration order is irrelevant).
   StampSet occStamp;
   std::vector<int> occCells;
-  // Erosion probabilities for body cells against lava/fire (match the static
-  // reaction rates; were Engine statics defined in sand.cpp).
+  // Body-cell erosion probabilities match static reaction rates.
   static constexpr double RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
   static constexpr double RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P
 

@@ -1,19 +1,15 @@
-// src/ProjectArt.jsx
-// Hand-crafted SVG artwork for the project cards (replaces the stock Lottie files).
+// Hand-crafted SVG artwork for the project cards.
 // Each scene fills its project card edge-to-edge. Animation is pure CSS (see
 // ProjectArt.css) and is disabled under prefers-reduced-motion.
 
 import './ProjectArt.css';
 
-/* Four-point sparkle used across scenes. */
 function Sparkle({ x, y, s, fill, className, style, opacity = 1 }) {
   const d = `M ${x} ${y - s} Q ${x} ${y} ${x + s} ${y} Q ${x} ${y} ${x} ${y + s} Q ${x} ${y} ${x - s} ${y} Q ${x} ${y} ${x} ${y - s} Z`;
   return <path d={d} fill={fill} className={className} style={style} opacity={opacity} />;
 }
 
-/* =====================================================================
-   1. LLM CHESS COACH — board analysis, engine lines, coaching feedback
-   ===================================================================== */
+// LLM chess coach.
 export function ChessArt() {
   const boardX = 49;
   const boardY = 52;
@@ -143,12 +139,7 @@ export function ChessArt() {
   );
 }
 
-/* =====================================================================
-   2. GRABBY — OCR + snipping: marquee, scan beam, recognized glyphs
-   ===================================================================== */
-/* =====================================================================
-   2b. PIXEL SAND SIMULATION - streamed terrain, two layers, falling cells
-   ===================================================================== */
+// Falling-sand simulation.
 const SAND_GRID = {
   x: 48,
   y: 60,
@@ -370,9 +361,7 @@ export function SandSimArt() {
   );
 }
 
-/* =====================================================================
-   3. FOREST FIRE MODELLING - burning ridge line + data overlay
-   ===================================================================== */
+// Forest-fire model.
 function Conifer({ x, y, h, fill, opacity = 1 }) {
   const w = h * 0.62;
   return (
@@ -555,9 +544,7 @@ export function WildfireArt() {
   );
 }
 
-/* =====================================================================
-   4. 3D GAME OF LIFE — isometric glider generations stacked in time
-   ===================================================================== */
+// 3D Game of Life.
 const ISO = { cx: 200, cyBase: 150, dx: 20, dy: 10, hz: 44, ch: 16, n: 5 };
 
 const isoPt = (c, r, layer) => ({

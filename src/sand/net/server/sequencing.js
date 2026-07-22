@@ -1,12 +1,10 @@
-// Client/host-shared helpers for the multiplayer layer. Transport-agnostic and
-// dependency-free so they can be tested in Node. The real WebSocket client and
-// the host-authoritative loop build on these in Phase 5.
+// Transport-independent input sequencing helpers shared by tests and the host.
 
 import { decode, makeInput } from '../protocol.js';
 
 // Monotonic per-source sequence gate: accepts a strictly increasing seq and
 // drops anything reordered late or duplicated. This is what makes input/snapshot
-// application order-independent over an unreliable transport.
+// application order-independent when messages are duplicated or reordered.
 export class SequenceTracker {
   constructor() { this.last = -1; }
   // Returns true if `seq` is newer than everything seen so far (and records it).

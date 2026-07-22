@@ -1,26 +1,5 @@
-// Framework-free, searchable "spawn anything" palette for the sand game. Builds
-// plain DOM into a host root (a Web Component's shadow root) with a single
-// injected <style> — no React and no Tailwind on the host page. Pure callbacks
-// out: it owns the visible UI state (selected entry, draw on/off, layout,
-// expanded/collapsed) and calls onSelectCreative / onToggleDrawMode; the caller
-// wires those into the runtime.
-//
-// To keep it small the palette is COLLAPSED by default: it shows only a compact
-// bar (the selected pixel sample + name, a dropdown button, and the Draw On/Off
-// toggle). The searchable grid is built lazily and mounted only while expanded.
-// It stays open after desktop selections for fast iteration; mobile selections
-// close it to return the limited screen space to the canvas controls.
-//
-// Every entry resolves to a creative pick {kind, value} matching the engine's
-// CreativeKind enum (consumed by game.setCreativeMaterial):
-//   CK_MATERIAL = 0  -> value = material id
-//   CK_SEED     = 1  -> value = species id (0..6; plain material SEED uses 7)
-//   CK_ERASER   = 2  -> value = 0
-//   CK_CUBE     = 3  -> value = 0
-//   CK_CREATURE = 4  -> value = creature species id
-// Entries: every MATERIALS row except EMPTY, one seed per plant species, an
-// eraser, a tumbling rigid cube, then all seven creature spawn eggs. The default
-// selection is the Cube.
+// Searchable framework-free creative palette. Entries map to the generated
+// CreativeKind ABI and are forwarded through `setCreativeMaterial`.
 
 import { MATERIALS } from '../materials.generated.js';
 import { CREATURE } from '../wasmBridge/abi.generated.js';
@@ -110,10 +89,8 @@ const entryInSection = (entry, section) =>
   section.all || section.labels?.includes(entry.label) || section.kinds?.includes(entry.kind);
 
 
-// Build the full entry list: materials (minus EMPTY), 7 seeds, eraser, cube.
-// Each entry is { key, label, color, kind, value } where `color` is a css color
-// string used as the swatch background. Entries are then reordered into Main's
-// curated order; any future materials not yet ranked follow in schema order.
+// Build materials (minus EMPTY), seeds, eraser, cube, and creature eggs. Entries
+// not named in the curated order retain schema order.
 export function buildEntries() {
   const entries = [];
   for (const m of MATERIALS) {
@@ -428,18 +405,8 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
 
   const wrap = document.createElement('div');
   wrap.className = 'sg-palette side';
-  // Don't let palette pointer events reach the window-level game input handlers.
-  // pointermove MUST be included: when a press starts on a palette button the
-  // browser implicitly captures the pointer to that button, so every move (and the
-  // closing pointerup) is delivered to the button — inside `wrap` — until release.
-  // If pointermove were allowed through, dragging off a button onto the canvas
-  // while still holding would hit the window's onPointerMove, which does
-  // `mouseButtons |= e.buttons` and latches the LMB bit. The matching pointerup is
-  // captured back to the button and stopped here, so that latch is never cleared —
-  // leaving PI_PRIMARY stuck on, which makes a freshly-selected paint/eraser tool
-  // act as if the mouse is held. Stopping pointermove too closes that gap.
-  // The search input is a normal text field, so keystrokes stay local; only its
-  // pointer events need the same guard, which it inherits from this wrap.
+  // Stop all pointer events, including captured pointermove, from reaching the
+  // game input latch. Search-field keyboard events remain local naturally.
   swallowEvents(wrap, ['pointerdown', 'pointermove', 'pointerup', 'click', 'contextmenu']);
 
   const col = document.createElement('div');

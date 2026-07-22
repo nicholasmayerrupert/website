@@ -1,11 +1,5 @@
-// Regression guard for the flag/class-based materials refactor (Phase 0).
-//
-// The engine's behavior predicates (isFlammable / isDissolvable / isRigidMaterial
-// / isBearingMaterial / isPlantMaterial) and its seeded-component registration are
-// now generated from materials.schema.json `flags` / `componentGroup` instead of
-// hand-written id lists. This test pins the generated MAT_FLAGS / MAT_CGROUP tables
-// to the EXACT id sets the hand-written predicates used, so the refactor can never
-// silently change which materials are flammable/rigid/etc.
+// Pins compatibility for the original material IDs and validates generated
+// flags, component groups, classes, and transparency for every material.
 
 import { MAT } from '../src/sand/materials.js';
 import { MATERIALS, KIND, MAT_CLASS, MAT_FLAGS, MAT_CGROUP, MAT_TRANSPARENCY, MC, MF, CG } from '../src/sand/materials.generated.js';
@@ -13,7 +7,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('materials flags/componentGroup round-trip');
 
-// The historical hand-written predicate id sets (pre-refactor, members.inc).
+// Compatibility sets for the original materials.
 const EXPECTED = {
   flammable:    ['OIL', 'SEED', 'WOOD', 'PLANT', 'DRIFTWOOD'],
   dissolvable:  ['SAND', 'STONE', 'WOOD', 'PLANT', 'SEED', 'DRIFTWOOD'],
@@ -22,10 +16,7 @@ const EXPECTED = {
   plantFamily:  ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD'],
 };
 
-// Pin only the ORIGINAL 15 materials (ids 0-14): this guards that the flag/class
-// refactor reproduced the historical hand-written predicate sets exactly. Newer
-// materials (id >= 15) legitimately add flags and are validated by the schema
-// generator, not here.
+// Newer materials may add flags; the original IDs must retain these sets.
 const LEGACY = ['EMPTY', 'SAND', 'WATER', 'STONE', 'OIL', 'FIRE', 'STEAM', 'SEED', 'WOOD', 'PLANT', 'ACID', 'LAVA', 'ICE', 'RIGID', 'DRIFTWOOD'];
 const ids = new Set(LEGACY.map((n) => MAT[n]));
 const has = (id, bit) => (MAT_FLAGS[id] & bit) !== 0;

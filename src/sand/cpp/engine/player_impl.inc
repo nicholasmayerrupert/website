@@ -1,8 +1,6 @@
-// PlayerSystem method bodies (need the full Engine definition; see player.hpp).
-
 // Player characters: deterministic AABB platformer physics over the cell grid.
 // JS/network supplies a normalized input bitmask + aim per step; the engine owns
-// movement, collision, and (Phase 3) player-mediated tool use. No RNG is used so
+// movement, collision, and player-mediated tool use. No RNG is used, so
 // a fixed input stream + seed replays identically across machines.
 
 // A cell is solid to the player if it is neither empty, liquid, nor gas — i.e.
@@ -506,12 +504,8 @@ bool PlayerSystem::mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed
   if (!mineFootprintHasContent(ax, ay, footprintId, nullptr)) resetPlayerMine(p);
   return changed;
 }
-// ---- survival solids: the EXACT creative E.tools.draft lifecycle, driven by a player ----
-// Begin a persistent solid E.tools.draft into `btn`'s layer (0=fg LMB, 1=bg RMB) using the
-// player's own tool. This is the same engine E.tools.draft state + live preview + finalize
-// that creative mode uses (continueDrafts / finalize*Draft), so survival places
-// solids identically: hold to draw a previewed shape, release to drop ONE connected
-// piece (it stays if it lands on grounded terrain, falls as one body if mid-air).
+// Survival reuses the creative solid-draft lifecycle: hold to preview one
+// connected piece and release to finalize it in the selected layer.
 void PlayerSystem::playerBeginSolidDraft(Player& p, int tool, int ax, int ay, int btn) {
   E.tools.draftLayer = btn; E.tools.draftOwner = p.id;
   E.useLayer(btn ? &E.bg : &E.fg);
@@ -556,14 +550,13 @@ void PlayerSystem::applyPlayerTools() {
     double dxp = (ax + 0.5) - cxp, dyp = (ay + 0.5) - cyp;
     bool inReach = (dxp * dxp + dyp * dyp <= P_TOOL_REACH * P_TOOL_REACH);
 
-    // --- finalize this player's solid E.tools.draft when its owning button releases (or all
-    //     buttons are up) — independent of the currently selected tool ---
+    // Finalize this player's draft when its owning button is released.
     if (E.tools.drafting && E.tools.draftOwner == p.id) {
       bool ownerReleased = (E.tools.draftLayer == 1) ? secondaryFalling : primaryFalling;
       if (ownerReleased || (!primary && !secondary)) { playerFinalizeSolidDraft(); E.playerActionCount++; }
     }
 
-    // --- SOLIDS: begin / extend the persistent E.tools.draft (creative parity) ---
+    // Begin or extend a solid draft.
     if (isSolidTool(t)) {
       resetPlayerMine(p);
       bool busy = E.tools.drafting;
@@ -574,8 +567,7 @@ void PlayerSystem::applyPlayerTools() {
       continue;
     }
 
-    // --- non-solids: fluids/sand (continuous paint), eraser (continuous sweep),
-    //     seed/cube (one-shot on press) ---
+    // Paint and erase continuously; seed/cube tools act once per press.
     if (!primary && !secondary) { resetPlayerMine(p); continue; }
     bool continuous = E.isPaintTool(t) || t == T_ERASER;
     bool doPrimary = continuous ? primary : primaryRising;
@@ -629,8 +621,7 @@ void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double 
   p->facing = facing; p->grounded = grounded != 0; p->jumpReady = jumpReady != 0;
 }
 
-// Pack all players into snapshot as flat float32 records (stride
-// PS_STRIDE). JS reads this zero-copy to draw the player overlay.
+// Pack players into flat PS_STRIDE records for replication and presentation.
 int PlayerSystem::buildPlayerSnapshot() {
   snapshot.assign((size_t)players.size() * PS_STRIDE, 0.0f);
   for (size_t i = 0; i < players.size(); i++) {

@@ -1,20 +1,5 @@
-// <sand-game> — a drop-in Web Component for the falling-sand simulation.
-//
-// Self-contained: the WebAssembly engine (simulation + WebGL rendering) is
-// embedded in the bundle, so any page can use it with no framework and no build
-// step:
-//
-//   <script type="module" src="sand-game.js"></script>
-//   <sand-game initial-tool="sand"></sand-game>
-//
-// The element owns a shadow root holding the simulation canvas and a vanilla
-// tool palette. It fills its host box (default: absolutely positioned to cover a
-// positioned ancestor). Draw-mode changes are surfaced as a DOM event:
-//
-//   el.addEventListener('sand:drawmodechange', (e) => { e.detail.on });
-//
-// `composed: true` lets the event cross the shadow boundary so any host (React,
-// vanilla, another framework) can listen.
+// Framework-free <sand-game> Web Component. The standalone build embeds WASM;
+// see embed/README.md for attributes, layout, and events.
 
 import { initSandWasm } from '../wasmBridge/engineFactory.js';
 import { createSandGame } from '../game/createSandGame';

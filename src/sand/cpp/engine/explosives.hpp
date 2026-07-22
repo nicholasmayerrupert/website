@@ -1,12 +1,7 @@
 #pragma once
-// TNT / explosives (extracted from the Engine in 5e): ignition + fuses (static
-// cells via pendingDetonations on the Layer; body TNT via Body::fuseTicks),
-// the DURABILITY-gated crater carve across both layers, rubble/debris bodies,
-// cosmetic flecks, the outward gas shockwave, and aftermath gases. Works the
-// same whether the TNT is a placed solid or a free body. Draws almost
-// exclusively from whash2 (position-keyed) so empty scenes cost no RNG; the
-// two rand() draws it does make are order-preserved by the extraction (the
-// checksum gate enforces it). Method bodies live in explosives_impl.inc.
+// TNT and methane ignition, fuses, blast carving, debris, shock, and aftermath.
+// Position-keyed hashes provide most blast variation; remaining shared-RNG order
+// is part of deterministic behavior.
 
 struct Engine;
 
@@ -29,7 +24,7 @@ class ExplosivesSystem {
   static const int    METHANE_BLAST_FRONT_CAP = 8;
   static const int    METHANE_DEBRIS_STEP_CAP = 10; // actual surrounding material only; never generic DEBRIS
   static const int    METHANE_DEBRIS_SOURCE_TRIES = 5; // extra launch candidates make carved rubble more likely to escape
-  // Debris + shockwave (Phase 3). All deterministic — velocities come from geometry +
+  // Debris and shockwave. Velocities come from geometry and
   // whash2 (the same rand-free hash the item drops use), never rand().
   static const int    BLAST_DEBRIS_CHUNKS = 1;    // physical rubble chunks ejected per destroyed material source
   static const int    BLAST_DEBRIS_SOURCE_TRIES = 2; // try the old fan positions, but stop after the smaller budget

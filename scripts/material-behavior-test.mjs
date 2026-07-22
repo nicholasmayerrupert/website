@@ -1,10 +1,5 @@
-// Behavior of the Phase-1 materials: they reuse existing physics with no engine
-// edits beyond the schema. Verifies that
-//   - new POWDERs (DIRT/SNOW/MUD/GRASS) fall and SETTLE TO INERT (no churn), like SAND;
-//   - new stone-group COMPONENTs (ores/brick) GROUND like STONE when supported;
-//   - a falling stone-group component KEEPS ITS MATERIAL (ore stays ore, not STONE)
-//     — the matOf fix in moveRigidAssemblies.
-// Run: node scripts/material-behavior-test.mjs
+// Powder materials settle without churn, and stone-group components retain their
+// material while grounding or falling.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
@@ -13,14 +8,14 @@ import { makeChecker } from './sand-test-util.mjs';
 const COLS = 160, ROWS = 120, SEED = 0xC0FFEE;
 await initSandWasm();
 const mk = (opts = {}) => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false, ...opts });
-const { check, done } = makeChecker('material behavior (Phase 1)');
+const { check, done } = makeChecker('material behavior');
 
 const count = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
 const minRow = (g, m) => { let r = ROWS; for (let i = 0; i < g.length; i++) if (g[i] === m) r = Math.min(r, (i / COLS) | 0); return r; };
 const maxRow = (g, m) => { let r = -1; for (let i = 0; i < g.length; i++) if (g[i] === m) r = Math.max(r, (i / COLS) | 0); return r; };
 const fillDisc = (e, cx, cy, r, mat) => e.placeMaterial(cx, cy, r, mat);
 
-// --- new powders fall and settle to inert (no shimmer) ---
+// Powders fall and settle to inert.
 for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   const e = mk();
   const mat = MAT[name];
@@ -35,7 +30,7 @@ for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   e.destroy();
 }
 
-// --- stone-group ore grounds like STONE when it rests on the floor ---
+// Stone-group ore grounds when it rests on the floor.
 {
   const e = mk();
   const ORE = MAT.COPPER_ORE;
@@ -50,7 +45,7 @@ for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   e.destroy();
 }
 
-// --- a FALLING stone-group component keeps its real material (matOf fix) ---
+// A falling stone-group component keeps its material.
 {
   const e = mk();
   const ORE = MAT.IRON_ORE;

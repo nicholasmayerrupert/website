@@ -4,14 +4,9 @@
   // save/restore, prefetch, and horizontal/vertical window shifts. Camera.inc may
   // request a shift, but this subsystem decides how cells/components/entities
   // move across the loaded window.
-  // Terraria/Starbound-flavoured generator. The SURFACE (height + biome + soil)
-  // is derived from the shared world seed, so the foreground and background line
-  // up at the top and the soil layer never erodes via cross-layer drain. The
-  // SUBSURFACE (caves + ore/liquid pockets) is derived from a PER-LAYER seed, so
-  // the background diverges underground — digging the foreground reveals a
-  // different cave network behind it, and cross-layer transfer flows wherever the
-  // two cavities mismatch. Biomes (plains / desert / rocky) vary the surface skin,
-  // soil depth, and tree density. Materials are the existing palette only.
+  // Surface height, biome, and soil use the shared seed so layers align near the
+  // surface. Per-layer cave and pocket seeds produce different underground
+  // networks, allowing transfer where cavities overlap or diverge.
   // Deterministic terrain queries (TerrainGen, terrain.hpp) — composed here;
   // method bodies in terrain_impl.inc. Streaming + fill passes below.
   TerrainGen terrain{*this};
@@ -944,9 +939,8 @@
     if (pfStage != PF_DONE) pfRunSlice();
   }
 
-  // Slide the loaded window so the camera always has room. cameraCell is the view's
-  // left/top cell; returns the applied shift (0 if none). JS slides its GL texture
-  // and pulls the camera back. WORLD_SHIFT_* are tile-aligned (the 2D store needs it).
+  // Slide the loaded window so the camera has room. cameraCell is the view's
+  // left/top cell; WORLD_SHIFT_* remain tile-aligned for the chunk store.
   int maybeShiftWorld(int cameraCellX, int visibleCols, int marginCols) {
     if (!fg.infinite) return 0;
     int dx = 0;

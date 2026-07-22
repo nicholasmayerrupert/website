@@ -1,10 +1,6 @@
 #pragma once
-// Survival inventory (extracted from the Engine in 5d). The stacks live ON the
-// Player (inv/cursor/selectedSlot — they must replicate + reconcile with the
-// player), so this class owns the POLICY: starter kit, slot selection,
-// stacking/merging, per-pixel placement economy, the Minecraft cursor model
-// (pick/place/swap/throw), the HUD snapshots, and the per-step survival input
-// application. Method bodies live in inventory_impl.inc.
+// Survival inventory policy. Stacks and cursor state live on Player so they can
+// replicate and reconcile with the player snapshot.
 
 struct Engine;
 

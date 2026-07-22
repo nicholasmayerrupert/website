@@ -245,7 +245,7 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
-// --- Phase 3: debris chunks (that bake into rubble), cosmetic particles, shockwave ---
+// --- debris chunks, cosmetic particles, and shockwave ---
 {
   const e = mk();
   for (let x = 30; x < 110; x++) for (let y = 50; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);

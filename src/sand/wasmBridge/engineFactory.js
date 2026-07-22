@@ -541,7 +541,7 @@ const renderStrides = Object.freeze({
     getRenderPixels() { return new Uint8ClampedArray(mod.HEAPU8.buffer, M.renderPixels(ptr), cellCount * 4); },
     getRenderPixelsLayer(layer) { return new Uint8ClampedArray(mod.HEAPU8.buffer, M.renderPixelsLayer(ptr, layer ? 1 : 0), cellCount * 4); },
     setSkyLight(value) { M.setSkyLight(ptr, value | 0); },
-    // These now return the COUNT of cells changed (per-pixel economy); >0 = success.
+    // Edit calls return the number of changed cells; the adapter exposes success.
     paintDisc(cx, cy, r, material, overwrite = false) {
       return M.paintDisc(ptr, cx, cy, r, material, overwrite ? 1 : 0) > 0;
     },
@@ -552,9 +552,8 @@ const renderStrides = Object.freeze({
       return (layer ? M.placeMaterialLayer(ptr, layer, cx, cy, r, material) : M.placeMaterial(ptr, cx, cy, r, material)) > 0;
     },
 
-    // Tool / pointer input. JS translates browser coords to cells and normalizes
-    // buttons; the engine owns all tool policy. The pointer/draft/up calls and
-    // applyTool return whether the draft preview changed.
+    // Direct cell-space tool helpers used by tests and compatibility callers.
+    // The browser runtime uses the engine-owned camera/aim API below.
     setTool(tool) { M.setTool(ptr, tool); },
     // Creative palette selection. kind: 0=material id, 1=seed species, 2=eraser, 3=cube.
     setCreativeMaterial(kind, value = 0) { M.setCreativeMaterial(ptr, kind | 0, value | 0); },
@@ -823,7 +822,7 @@ const renderStrides = Object.freeze({
     placeSeedAt(x0, y0) { return M.placeSeed(ptr, x0, y0) === 1; },
     placeSeedTyped(x0, y0, plantType) { return M.placeSeedTyped(ptr, x0, y0, plantType) === 1; },
 
-    // Streaming infinite world (Stage 5)
+    // Streaming infinite world.
     getWorldOffsetX() { return M.worldOffsetX(ptr); },
     getWorldOffsetY() { return M.worldOffsetY(ptr); },
     worldSurfaceAt(worldX) { return M.worldSurfaceAt(ptr, worldX); },
@@ -840,7 +839,7 @@ const renderStrides = Object.freeze({
     getShiftFillStats() { return { hit: M.shiftFillHit(ptr), miss: M.shiftFillMiss(ptr) }; },
     getHeapBytes() { return mod.HEAPU8.length; }, // wasm linear-memory size (debug)
 
-    // Free rigid bodies (Stage 4)
+    // Free rigid bodies.
     spawnBody(cells) {
       const nn = cells.length;
       if (!nn) return null;
@@ -855,8 +854,8 @@ const renderStrides = Object.freeze({
     spawnBox(cx, cy, halfW, halfH, material = MAT.RIGID) { M.spawnBox(ptr, cx, cy, halfW, halfH, material); },
     spawnDisc(cx, cy, radius, material = MAT.RIGID) { M.spawnDisc(ptr, cx, cy, radius, material); },
 
-    // Players (Terraria-like characters; physics owned by the engine). JS only
-    // collects input and reads snapshots to draw the overlay.
+    // Player physics is engine-owned; JS forwards input and consumes snapshots for
+    // replication, UI, and presentation.
     spawnPlayer(x, y) { return M.spawnPlayer(ptr, x, y); },
     spawnPlayerAtSurface(col) { return M.spawnPlayerSurface(ptr, col | 0); },
     getSurfaceSpawn(col) {
@@ -1072,7 +1071,7 @@ const renderStrides = Object.freeze({
       M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0, jumpReady ? 1 : 0);
     },
 
-    // World replication (Phase 6). serialize* return a COPY of the bytes (the
+    // World replication. serialize* returns a copy of the bytes (the
     // blob is re-derived each call; copy so callers can hold it). apply* take a
     // Uint8Array and write it into wasm memory. gridHash detects divergence.
     serializeWorld() { const n = M.serializeWorld(ptr); return wasmView(Uint8Array, M.netBlobPtr(ptr), n, 'serializeWorld').slice(); },

@@ -1,14 +1,9 @@
-// Authoritative headless multiplayer server for the sand game. Unlike the old
-// relay (dev-multiplayer-server.mjs, where the first browser peer secretly ran
-// the engine), THIS process IS the authority: it loads the WASM engine, runs the
-// real fixed-step simulation, and serializes world + players + creatures + items + inventory
-// + cursor down to every connected browser. Browsers are always pure clients —
-// they connect by IP:port, send input + survival intents, and render what the
-// server sends. The "host" is simply whoever runs this and also joins from a tab.
+// Authoritative headless multiplayer server. It runs the WASM simulation and
+// sends world, actor, item, inventory, and cursor state to pure browser clients.
 //
 //   node scripts/sand-server.mjs [port] [--cols N --rows N --seed N --room id]
 //
-// Exports startSandServer(opts) so tests can spin one up in-process.
+// Exports startSandServer(opts) for tests and embedding.
 
 import { WebSocketServer } from 'ws';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';

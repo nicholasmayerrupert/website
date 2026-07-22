@@ -9,8 +9,7 @@ import { TOOL } from '../wasmBridge/abi.generated.js';
 
 export const DEFAULT_TOOL = 'cube';
 
-// Legacy tool-name bridge for old attributes/tests/network packets — ids come
-// from the generated ABI manifest. Creative UI should prefer
+// Compatibility bridge for the `initial-tool` attribute and tests. Creative UI prefers
 // setCreativeMaterial(kind, value), which lets C++ route by material kind
 // instead of expanding this enum.
 export const TOOL_IDS = Object.freeze(

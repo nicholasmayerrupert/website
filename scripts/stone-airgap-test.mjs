@@ -1,11 +1,5 @@
-// Regression: a single solid draft that drops PHYSICALLY-DISCONNECTED blobs (what
-// a fast cursor produces — air gaps between brush stamps) must let each unsupported
-// blob fall on its own, even when another blob placed in the SAME draft is grounded.
-//
-// Before the fix, stone/ice finalized the whole draft as ONE rigid component, so a
-// single grounded blob set the component's grounded flag and the floating blobs were
-// frozen in mid-air. Driftwood already did the right thing (flood-fill registration);
-// this asserts stone and ice now match. Run: node scripts/stone-airgap-test.mjs
+// Disconnected blobs in one stone or ice draft must become separate components so
+// grounded blobs cannot pin unsupported ones in mid-air.
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 
 const COLS = 200, ROWS = 120, SEED = 0xC0FFEE;

@@ -3,7 +3,7 @@ import { FaGithub, FaLinkedin } from 'react-icons/fa';
 import { usePrefersReducedMotion } from './hooks/useMediaQuery';
 
 
-/* ---------- PONG OVERLAY (half-activation AI; left starts AI, switches to player on input) ---------- */
+// Pong overlay: the left paddle switches from AI to player control on input.
 function PongOverlay({ paused, onTogglePaused, prefersReducedMotion }) {
   const overlayRef = useRef(null);
   const canvasRef = useRef(null);
@@ -303,7 +303,7 @@ function PongOverlay({ paused, onTogglePaused, prefersReducedMotion }) {
 }
 
 
-/* ---------- Contact section with sand overlay ---------- */
+// Contact section with sand overlay.
 const Contact = () => {
   const [pongPaused, setPongPaused] = useState(false);
   const prefersReducedMotion = usePrefersReducedMotion();

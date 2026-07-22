@@ -1,15 +1,5 @@
-// Worldgen-prefetch tests. The predictive prefetch generates the upcoming
-// stream-in band into the tileStore ahead of the shift so the shift can skip the
-// expensive fillRect (the periodic pan hitch). These guard the two properties that
-// make it safe + worthwhile:
-//
-//  1) DETERMINISM: a world streamed WITH prefetch is byte-identical (fg AND bg) to
-//     one streamed WITHOUT it. Prefetch must change only WHEN worldgen runs, never
-//     WHAT it produces — otherwise the host/client diverge and replication breaks.
-//  2) EFFECTIVENESS: prefetch actually turns the shifts into cache HITS (the shift
-//     frame skips fillRect), in BOTH axes (panning right and panning down).
-//
-// Run: node scripts/prefetch-test.mjs   (also part of `npm test`)
+// Predictive worldgen must preserve both layers byte-for-byte while turning
+// horizontal and vertical stream shifts into cache hits.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 

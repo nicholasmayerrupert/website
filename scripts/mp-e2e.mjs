@@ -1,19 +1,12 @@
-// Two-context multiplayer browser test (Phase 9, authoritative server). Boots the
-// Vite dev server AND the headless authoritative sand-server, opens two browser
-// contexts that each JOIN the server as pure clients, and asserts the full new
-// feature set replicates across both real browsers + the real server:
+// Two-context multiplayer browser test. Boots Vite and the authoritative server,
+// opens two pure browser clients, and checks:
 //   - both clients see two players + the server's world (matching terrain)
 //   - per-player inventory syncs (select + cursor pick are private to each player)
 //   - dropped items replicate (a thrown item appears on both clients)
 //   - disconnect drops the player for the remaining client
 //
-// The server runs its own real-time fixed-step loop; clients never simulate the
-// world. We PAUSE each client's RAF and pump it deterministically with tickSteps
-// (which sends input + drains inbound server messages), with real-time sleeps in
-// between so the server can process + broadcast. World *diff* replication is
-// covered exhaustively in-process by scripts/net-test.mjs (§10/§11).
-//
-//   node scripts/mp-e2e.mjs
+// Clients are pumped with tickSteps while real time lets the server advance.
+// Detailed diff behavior is covered by net-test.mjs.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';

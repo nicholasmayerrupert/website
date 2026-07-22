@@ -1,8 +1,5 @@
-// Multiplayer wire protocol. Pure and transport-agnostic so it can be
-// unit-tested in Node without a real network. Messages are JSON for the MVP
-// (a later phase may swap world diffs to a binary/RLE encoding). Every decode
-// is strictly validated and integer fields are preserved exactly — divergence
-// here would desync a host-authoritative session.
+// Validated, transport-independent multiplayer protocol. JSON envelopes carry
+// packed actor arrays and base64-encoded binary world snapshots/diffs.
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
@@ -120,7 +117,7 @@ export function makeView(room, client, viewCols, viewRows, bufferCols, bufferRow
   };
 }
 
-// ---- world-state replication beyond players (Phase 9) ----
+// ---- replicated actors and inventory ----
 // Dropped items, packed flat as ITEM_FIELDS numbers each. `items` is an array of
 // { id, kind, material, count, x, y, life, plantType } (the engine's getItems() shape); the
 // caller filters which kinds to send (cosmetic particles are usually dropped).
@@ -180,7 +177,7 @@ export function makeCursor(tick, player, cur) {
   };
 }
 
-// ---- client -> host survival-inventory intents (Phase 9) ----
+// ---- client -> host survival intents ----
 export function makeSelect(room, client, slot) { return { t: MSG.ACT_SELECT, room, client, slot: slot | 0 }; }
 export function makeSize(room, client, footprint) { return { t: MSG.ACT_SIZE, room, client, footprint: footprint | 0 }; }
 export function makeMove(room, client, from, to) { return { t: MSG.ACT_MOVE, room, client, from: from | 0, to: to | 0 }; }

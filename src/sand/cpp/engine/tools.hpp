@@ -1,10 +1,5 @@
 #pragma once
-// Tool semantics and player/world edits (extracted from the Engine in 5d):
-// brushes, the generic material placer + per-pixel placement economy, the
-// eraser/mining destroy paths (destroyCellAt is the body-vs-static choke
-// point), the component draft lifecycle with live preview, seeds, the creative
-// palette routing, and the pointer state machine. Owns all tool/draft/pointer
-// state. Method bodies live in tools_impl.inc.
+// Creative and survival tool state, edits, drafts, seeds, and pointer policy.
 
 struct Engine;
 
@@ -12,7 +7,7 @@ class ToolSystem {
  public:
   explicit ToolSystem(Engine& e) : E(e) {}
 
-  // ---- tool / pointer / draft state (moved off the Engine) ----
+  // Tool, pointer, and draft state.
   int activeTool = T_CUBE;
   bool lmbDown = false, rmbDown = false;
   int draftLayer = 0;            // 0 = foreground (LMB), 1 = background (RMB)

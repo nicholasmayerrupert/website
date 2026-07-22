@@ -1,6 +1,5 @@
 export const DAY_CYCLE_MS = 10 * 60 * 1000;
-// Automatic sky motion keeps the previous clouds' 10 Hz cadence. Manual slider
-// changes bypass this bucket and render on their next animation frame.
+// Automatic sky visuals update at 10 Hz. Manual changes render on the next frame.
 export const DAY_VISUAL_STEP_MS = 100;
 export const NIGHT_SKY_LIGHT = 88;
 export const NOON_SKY_LIGHT = 255;

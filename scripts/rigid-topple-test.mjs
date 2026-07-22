@@ -1,19 +1,5 @@
-// Regression tests for free rigid bodies tipping over via rotation.
-//
-//   node scripts/rigid-topple-test.mjs
-//
-// A hand-drawn body whose centre of mass ends up past its support (landed on a
-// step edge, a slope, or a pile apex) must TOPPLE — and do so promptly, not creep
-// over across hundreds of ticks. The contact solver used to damp the slow onset of
-// that rotation every substep (it could not tell a genuine topple from rest
-// jitter), so tall/thin drawn bodies barely rotated while in contact. The fix:
-// skip the contact angular damping while the solver is actively building spin in a
-// consistent direction (a real topple), and keep damping sign-flipping/decaying
-// jitter (rest). These tests pin both halves: imbalanced bodies tip quickly, while
-// balanced/resting bodies stay put and still settle to sleep.
-//
-// The tip-speed bounds below are chosen to PASS the fixed engine and FAIL the
-// pre-fix engine (which took ~120-170 ticks to reach 45 deg in these scenes).
+// Imbalanced free bodies must topple promptly, while balanced bodies damp contact
+// jitter and settle to sleep.
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';

@@ -1,10 +1,6 @@
 #pragma once
-// Plant + mycelium growth (extracted from the Engine in 5e). The dormant tree
-// water-consumption path is retained in growth_impl.inc, but seeds currently
-// grow dry. Mycelium creeps over stone. Owns the per-tree growth scratch
-// (species material selectors set at
-// the top of each comp walk). DETERMINISM: heavy shared-rand() user — call
-// order is part of the sim contract. Method bodies live in growth_impl.inc.
+// Plant and mycelium growth. Seeds currently grow without consuming water.
+// Growth order consumes shared RNG and is part of deterministic behavior.
 
 struct Engine;
 

@@ -1,10 +1,5 @@
-// Test runner: runs every suite in the manifest sequentially (several boot the
-// wasm engine, so parallelism would eat RAM), reports ALL failures instead of
-// aborting at the first one, and exits non-zero if any failed.
-//
-//   node scripts/run-tests.mjs                 run everything
-//   node scripts/run-tests.mjs --only rigid    run suites whose name/file contains "rigid"
-//   node scripts/run-tests.mjs --from players  start at the "players" suite (mid-run resume)
+// Manifest-driven sequential test runner. The default runs headless suites;
+// `--browser` selects browser suites. `--only` filters and `--from` resumes by name.
 
 import { readdirSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';

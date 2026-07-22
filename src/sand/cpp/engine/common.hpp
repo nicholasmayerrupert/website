@@ -1,5 +1,5 @@
 #pragma once
-// Shared declarations for the WASM sand engine (ported from src/sand/*.js).
+// Shared declarations for the WASM sand engine.
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -30,7 +30,7 @@
 // (gl.inc) uploads the CPU-generated pixel buffer into a texture and composites.
 #include "gl_shared.hpp"
 
-// Tunables (mirror engine.js)
+// Simulation tunables.
 static const int   CHUNK_SIZE = 32, CHUNK_SHIFT = 5;
 // Runtime storage profiles. The browser presentation mirror never advances the
 // cellular simulation, while the authority worker never creates a GL context.
@@ -58,12 +58,9 @@ static const float SINK_LIQUID_P = 0.85f, SINK_SAND_P = 0.35f, INNER_LIQUID_P = 
 static const float OIL_IGNITE_P = 0.25f, PLANT_IGNITE_P = 0.25f * 0.67f, FIRE_SPREAD_P = 0.11f;
 // Chance a FIRE cell ignites a flammable at the SAME (x,y) in the OTHER layer.
 static const float FIRE_CROSS_P = 0.18f;
-// Acid flows + renews enclosed-cell activity every tick, but resolves static
-// terrain corrosion in short batches. The batch chance is deliberately higher
-// than the stationary 1-(1-.12)^3 probability: fixed-seed gameplay calibration
-// keeps cut depth close to the old cadence before moving acid escapes, while
-// component split/joint work is still paid only once every three ticks. Free
-// rigid-body erosion keeps the original per-tick ACID_DISSOLVE_P below.
+// Acid moves every tick but batches static corrosion every three ticks, reducing
+// component repair work while retaining the calibrated cut rate. Body erosion
+// uses the per-tick probability.
 static const int ACID_REACT_INTERVAL = 3;
 static const float ACID_DISSOLVE_P = 0.12f, ACID_BATCH_DISSOLVE_P = 0.75f;
 static const float ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
@@ -113,7 +110,7 @@ struct StampSet {
 // eraser, draft lifecycle, seed placement, and emit throttling.
 
 // Held movement/pan keys forwarded from the browser (createSandGame maps the
-// physical keys onto these). The engine owns the camera + input policy now:
+// physical keys onto these). The engine owns camera and input policy:
 // free-camera panning, the player input bitmask, and the pointer->aim mapping.
 enum InputKey : int { IK_LEFT = 0, IK_RIGHT, IK_UP, IK_DOWN, IK_SPACE, IK_SHIFT };
 static const double CAM_PAN_CELLS_PER_SEC = 100.0; // camera pan speed while a key is held
@@ -133,7 +130,7 @@ static const double EMIT_INTERVAL_MS = 18.0;
 static const int WORLD_SHIFT_COLS = 128;
 static const int WORLD_SHIFT_ROWS = 96; // vertical stream step (tile-aligned; smaller so it fits short buffers)
 
-// ---- Seeded noise (worldgen/noise.js) ----
+// ---- Seeded terrain noise ----
 static inline double whash2(uint32_t seed, int x, int y) {
   uint32_t h = seed;
   h = (h ^ (uint32_t)x) * 0x27d4eb2du;
@@ -191,7 +188,7 @@ struct Comp {
   std::vector<int> woodCells, seedWoodCells;
 };
 
-// Free rigid body: continuous float pose, solved in rigidStep (rigid2d.js port).
+// Free rigid body with a continuous pose over a cell occupancy mask.
 struct Body {
   int id = 0;
   std::vector<uint8_t> occ; int w = 0, h = 0;
@@ -282,24 +279,20 @@ struct Projectile {
   double px = 0, py = 0, vx = 0, vy = 0, charge = 0;
 };
 
-// ---- Player (Terraria-like character; simulated in C++, presented in JS) ----
+// Player state and deterministic platformer physics.
 // Input is a normalized bitmask (enum PlayerInput in abi.generated.hpp)
 // supplied by JS/network each step. Physics is fully deterministic (no RNG)
-// and runs at a fixed per-step timestep so a fixed input stream replays
-// identically — the foundation for multiplayer.
+// and runs at a fixed timestep so a fixed input stream replays identically.
 // Player physics tunables (cells; velocities in cells per fixed step).
 static const int    PLAYER_W = 4, PLAYER_H = 8;
-// Gravity is deliberately soft so falls feel floaty at sand-cell scale.
-// Move/run caps are ~2/3 of the original platformer values.
+// Soft gravity and capped acceleration keep movement readable at sand-cell scale.
 static const double P_GRAVITY = 0.078125, P_MAX_FALL = 6.0;
-// Speed was cut ~33% from 0.42/1.05; restored half that cut → mid-way boost.
 static const double P_MOVE_ACCEL = 0.35, P_MAX_RUN = 0.875, P_RUN_MULT = 1.7;
-// Jump height ~ v^2/(2g); √0.75 keeps height ~25% lower at current gravity.
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.035;
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
-// Player tool use (Phase 3): reach limit, per-action cooldown, brush radii.
+// Player tool reach and action cadence.
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between held creative/place actions (survival mining progresses every tick)
 static const int    P_MINE_R = 2, P_PAINT_R = 2, P_BUILD_R = 2;
@@ -469,7 +462,7 @@ struct Player {
 };
 // Player snapshot layout: PS_* offsets / PS_STRIDE in abi.generated.hpp.
 
-// Rigid tunables (rigid2d.js)
+// Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
@@ -485,41 +478,23 @@ static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG *
 static const double R_BUOY_REST_BAND = 0.08, R_BUOY_REST_DAMP = 0.45, R_BUOY_ZERO_VY = 0.02;
 static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.0;
 
-// View camera + input state class (extracted from the Engine in 5c; needs the
-// CAM_*/PLAYER_H constants and enums above).
+// Composed subsystem declarations.
 #include "camera.hpp"
-// Multiplayer world replication class (extracted in 5c; composed by Engine).
 #include "netsync.hpp"
-// Per-layer simulation state (hoisted from the Engine in 5c).
 #include "layer.hpp"
-// Deterministic terrain-query class (extracted in 5c; composed by Engine).
 #include "terrain.hpp"
-// Pixel generation + lighting class (extracted in 5c; composed by Engine).
 #include "renderer.hpp"
-// Material-aware non-player actors (AI, combat, spawning, world persistence).
 #include "creatures.hpp"
-// WebGL compositor class (extracted in 5c; composed by Engine).
 #include "glpresenter.hpp"
-// Dropped items + particles class (extracted in 5d; composed by Engine).
 #include "items.hpp"
-// Survival inventory policy class (extracted in 5d; composed by Engine).
 #include "inventory.hpp"
-// Survival recipes and bow-arrow actor policy.
 #include "crafting.hpp"
 #include "projectiles.hpp"
-// Player characters class (extracted in 5d; composed by Engine).
 #include "player.hpp"
-// Tool semantics class (extracted in 5d; composed by Engine).
 #include "tools.hpp"
-// Material reactions class (extracted in 5e; composed by Engine).
 #include "reactions.hpp"
-// TNT / explosives class (extracted in 5e; composed by Engine).
 #include "explosives.hpp"
-// Plant + mycelium growth class (extracted in 5e; composed by Engine).
 #include "growth.hpp"
-// Components + grounding class (extracted in 5f; composed by Engine).
 #include "components.hpp"
-// Free rigid bodies class (extracted in 5f; composed by Engine).
 #include "rigid.hpp"
-// Semantic sound events + nearby ambience sampling (browser synthesis stays in JS).
 #include "audio.hpp"

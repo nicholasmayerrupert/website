@@ -1,21 +1,13 @@
-  // Simulation tick orchestration.
-  //
-  // This file owns the top-level order: active-region prep, rigid/growth,
-  // reactions, loose-cell movement, cleanup, cross-layer transfer, psys.players, and
-  // dirty/perf bookkeeping. Local movement rules live in core.inc.
-
-  // ---- step ----
-  // Two layers run under ONE tick. updatePlayers + the tick++ happen once;
-  // each layer steps via stepLayer() (foreground FIRST, so the shared RNG stream
-  // for the foreground is byte-identical to a single-layer build when the
-  // background is idle). transferPass() then reconciles cross-layer loose/gas
-  // flow (P2).
+  // World-step orchestration. One shared tick steps foreground, then background,
+  // and finally reconciles cross-layer support, reactions, and transfer. Actor
+  // updates run independently in stepActors(); step() composes both clocks for
+  // compatibility. Local cell movement rules live in core.inc.
 
   void stepLayer(Layer* layer) {
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
     audio.beginRegionalPass();
-    // Phase times ACCUMULATE (both layers). step() zeros them once per tick.
+    // Timers accumulate across both layers and are reset once per world tick.
     double t0 = emscripten_get_now();
     if (!deferStructureThisTick && !comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     perfGroundingMs += emscripten_get_now() - t0;
@@ -137,9 +129,8 @@
     audio.flushRegionalPass();
   }
 
-  // Real-time entities advance on their own cheap deterministic clock. This is
-  // deliberately the extension point for future enemy/AI systems: add their
-  // Creature AI updates beside players/items without coupling it to the cellular world.
+  // Players, projectiles, items, and creatures advance on a separate deterministic
+  // clock so a quiet cellular world does not throttle real-time actors.
   bool stepActors() {
     double t0 = emscripten_get_now();
     useLayer(&fg);

@@ -1,4 +1,4 @@
-// Headless browser test for the local playable character (Phase 2). Boots the
+// Headless browser test for the local playable character. Boots the
 // Vite dev server, opens the About page, drives the player with real keyboard
 // events, and asserts the engine-simulated player responds (moves right, jumps).
 // Uses the `playwright` library directly (same approach as scripts/bench-pan.mjs)

@@ -1,5 +1,3 @@
-// ExplosivesSystem method bodies (need the full Engine definition; see explosives.hpp).
-
 void ExplosivesSystem::buildBlastStencils() {
   auto build = [&](int radius, double power, std::vector<BlastOffset>& stencil,
                    std::vector<BlastGasOffset>& gasStencil) {
@@ -433,7 +431,7 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
   }
   // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
-  // tumble and BAKE into static rubble on landing (Phase 1). Capped so a big chain
+  // tumble and bake into static rubble on landing. Capped so a big chain
   // can't flood the body solver.
   for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < localDebrisCap && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
     uint8_t debrisMat = debrisSources[di].material;

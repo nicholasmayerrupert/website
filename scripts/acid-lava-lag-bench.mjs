@@ -1,10 +1,5 @@
-// Repro for "dropping acid into lava is extremely expensive".
-// A pool of LAVA quenched by falling ACID hardens to STONE every step. Each harden
-// batch calls registerRigidCells -> groundDirty=true -> a FULL grounding reflood on
-// the next step, and rebuilds the stone owner-map over the growing stone mass. As the
-// stone island grows the per-step cost climbs.
-//
-//   node scripts/acid-lava-lag-bench.mjs
+// Measures the cost of repeatedly quenching a lava lake with acid or water,
+// including grounding and component-index timing as the stone mass grows.
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
 

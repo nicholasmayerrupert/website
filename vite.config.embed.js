@@ -4,8 +4,8 @@ import { fileURLToPath } from 'node:url';
 // Bundles the <sand-game> Web Component into ONE self-contained, drop-in ES file
 // (dist-embed/sand-game.js). Vite's library build inlines the site's external
 // WASM asset here, and the entry graph pulls in only the framework-agnostic
-// runtime + the vanilla palette — no React, no Tailwind. The multiplayer net
-// layer is DEV-gated and tree-shakes out of the production embed.
+// runtime + vanilla UI — no React or Tailwind. Development window hooks are
+// removed from the production embed.
 //
 //   npm run build:embed
 //   <script type="module" src="sand-game.js"></script>  <sand-game></sand-game>

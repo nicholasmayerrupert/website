@@ -1,31 +1,7 @@
-// Framework-agnostic falling-sand game runtime.
-//
-// `createSandGame(container, opts)` boots the whole interactive simulation into
-// a host element using nothing but the DOM — no React. It returns a small
-// handle to drive it from the outside:
-//
-//   const game = createSandGame(el, { initialTool: 'sand' });
-//   game.setTool('water');
-//   game.setDrawMode(true);
-//   game.destroy();
-//
-// The runtime is composed from focused modules that share one mutable state
-// object (`ctx`) owned here:
-//
-//   engineLifecycle.js  viewport fit, engine construction/wiring, zoom, DPR watch
-//   inputBindings.js    window pointer/keyboard/wheel listeners
-//   gameLoop.js         render, input/prediction clock, RAF loop, perf samples
-//   netGlue.js          multiplayer join/disconnect/status (gameNet lives on ctx.net)
-//   devHooks.js         DEV-only window.__sandPerf/__sandTest/__sandNet
-//
-// The React component in ../react/SandGame.jsx is a thin wrapper over this. The
-// simulation runs in the WebAssembly engine (../wasmBridge/engineFactory.js);
-// initSandWasm() must have resolved before createSandGame() is called.
-//
-// Browser-side tunables live in runtimeConfig.js. The simulation, rendering,
-// camera (pan/follow/bounds), pointer→aim mapping, player physics, tool policy,
-// and terrain all live in the C++ engine (cpp/engine/); JS forwards raw events
-// and drives the presentation RAF and input/prediction clock.
+// Framework-agnostic browser runtime for the C++/WASM sand engine. It owns one
+// shared `ctx`, composes lifecycle/input/loop/network modules, and returns the
+// handle used by the Web Component. C++ owns simulation, rendering, camera,
+// pointer mapping, actors, tools, and terrain; JS owns DOM events and lifecycle.
 
 import { BUTTON_BITS, DEFAULT_TOOL, SIZING, TOOL_IDS } from './runtimeConfig';
 import { createParallaxBackground } from './parallaxBackground';
@@ -61,8 +37,7 @@ export function createSandGame(container, opts = {}) {
   } = opts;
   const survival = mode === 'survival';
 
-  // --- Host canvas (created and owned here). The WASM engine owns a WebGL2
-  // context on it and composites everything (engine.glRenderFrame). ---
+  // Host canvas; the WASM engine owns its WebGL2 context and compositing.
   const parallax = createParallaxBackground(container);
   const audio = createSandAudio();
 
@@ -78,9 +53,9 @@ export function createSandGame(container, opts = {}) {
   canvas.setAttribute('aria-hidden', 'true');
   container.appendChild(canvas);
 
-  // --- Shared runtime state. Every module reads/writes this one object; the
+  // Shared runtime state. Every module reads/writes this one object; the
   // fields are grouped by owner. ctx.fns holds late-bound cross-module calls
-  // (set after the owning module is created). ---
+  // (set after the owning module is created).
   const ctx = {
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
     // One seed per mount so resizing regenerates the *same* infinite world.
@@ -264,7 +239,7 @@ export function createSandGame(container, opts = {}) {
     mqReduced.addListener?.(onReducedChange);
   }
 
-  // --- Compose the modules (order matters only for the initial fit/attach). ---
+  // Compose modules; order matters only for initial fit/attach.
   const lifecycle = createEngineLifecycle(ctx, { onLayoutChange });
   const inputs = createInputBindings(ctx, {
     refreshBounds: lifecycle.refreshBounds,
@@ -306,7 +281,7 @@ export function createSandGame(container, opts = {}) {
     });
   }
 
-  // --- Boot: size + build the engine, then start listening and looping. ---
+  // Size and build the engine before attaching input and the frame loop.
   lifecycle.fit();
   ctx.startLocalAuthority();
   const ro = new ResizeObserver(lifecycle.fit);

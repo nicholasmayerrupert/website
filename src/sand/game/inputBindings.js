@@ -10,17 +10,9 @@ import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onToggleInventory, onToggleFootprintMenu }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
-  // ctx.mouseButtons: bit 0 = LMB, bit 1 = RMB (drives player primary/secondary).
-  // It is the AUTHORITATIVE held-button state and it is owned by the
-  // pointerdown/pointerup EDGES, not by per-move `e.buttons`. Real
-  // hardware/drivers routinely emit a `pointermove` whose `buttons` field
-  // momentarily reads 0 while the button is still physically down (a "phantom
-  // release"). If a move were allowed to clear mouseButtons, the engine would
-  // see PI_PRIMARY fall for a step — finalizing the solid draft after a SINGLE
-  // chunk — then never see it rise again until the real release, which is
-  // exactly the "places one chunk then does nothing" bug. So down sets the
-  // bit, up clears it, and a move may only ADD a newly-pressed button, never
-  // drop a held one.
+  // Button state is edge-owned: pointerdown sets bits, pointerup clears them,
+  // and pointermove may only add bits. Some devices transiently report
+  // `buttons === 0` during a held drag, which must not finalize a draft.
 
   // Forward only when something actually changed (the loop calls this every
   // frame): the engine stores the pointer and derives the aim cell on demand,

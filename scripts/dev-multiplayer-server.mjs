@@ -1,13 +1,5 @@
-// Local development WebSocket relay for sand multiplayer. Pure relay: it tracks
-// room membership and forwards messages between peers in a room. The HOST browser
-// (the first peer to join a room) runs the authoritative engine; the server never
-// simulates anything — it only routes input up to the host and snapshots back
-// down. This keeps the deployable transport (a Cloudflare Durable Object relay)
-// a drop-in for the same protocol.
-//
-//   node scripts/dev-multiplayer-server.mjs [port]
-//
-// Exports startServer(port) so net-test.mjs can spin one up in-process.
+// Legacy peer-hosted WebSocket relay used by relay tests and experiments. It
+// forwards room messages without simulating; the first browser peer is authority.
 
 import { WebSocketServer } from 'ws';
 import { decode, encode, MSG, makeLeave } from '../src/sand/net/protocol.js';

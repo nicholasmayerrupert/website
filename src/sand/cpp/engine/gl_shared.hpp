@@ -1,17 +1,14 @@
 #pragma once
 // Shared WebGL context + program registry for the sand renderer.
 //
-// The GL *presentation* (upscale the cell texture, draw the gutter grid, the
-// player overlay, and the draft preview) runs in C++ via emscripten/WebGL2. The
-// material->RGBA pixel generation still happens on the CPU (render.inc); the
-// renderPixels buffer is uploaded into a cell texture and composited here.
+// C++/WebGL2 composites CPU-generated material pixels, gutters, actors, and
+// previews.
 //
 // A GL context is tied to a <canvas>, not to an Engine. The Engine is recreated
 // on resize, but the canvas (and thus its context) persists, and a canvas can
 // only hand out ONE context. So the context + the (context-global) shader
 // program live in this per-target registry, keyed by the canvas selector, and
-// survive engine recreation. Per-engine GL objects (the cell textures + FBOs)
-// live on the Engine itself (gl.inc) and are rebuilt with it.
+// survive engine recreation. Per-engine textures and FBOs live on GLPresenter.
 
 #include <emscripten/html5.h>
 #include <GLES3/gl3.h>

@@ -1,4 +1,4 @@
-// Phase A: mining tool classes + tiers. Materials declare which tool CLASS drops
+// Mining tool classes and tiers. Materials declare which tool class drops
 // them and the minimum tool TIER required (generated from materials.schema.json
 // into MAT_TOOLCLASS / MAT_TOOLTIER). This pins the gate so a schema typo or a
 // codegen regression can't silently change what drops from what.
@@ -8,7 +8,7 @@ import { MAT } from '../src/sand/materials.js';
 import { MAT_TOOLCLASS, MAT_TOOLTIER, TOOL_CLASS_SPEED, TOOL_TIER_SPEED, TC, TT, TABLE_SIZE } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
-const { check, done } = makeChecker('material tool classes/tiers (Phase A)');
+const { check, done } = makeChecker('material tool classes/tiers');
 
 // Table shape: one entry per slot, power-of-two headroom over the live ids
 // (TABLE_SIZE is generated from the schema's tableSize — don't hardcode it).

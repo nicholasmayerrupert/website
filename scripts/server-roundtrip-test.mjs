@@ -1,4 +1,4 @@
-// Tests for the authoritative sand-server state replication (Phase 9): the
+// Tests for authoritative sand-server state replication: the
 // item/inventory/cursor encoders round-trip through the wire format and back into
 // the same engine values, the survival intents mutate engine state the way the
 // server dispatches them, and a live two-client server hands out the world +
@@ -6,7 +6,6 @@
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-// Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
@@ -18,7 +17,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, FLOOR = 60;
 await initSandWasm();
-const { check, done } = makeChecker('authoritative server replication (Phase 9)');
+const { check, done } = makeChecker('authoritative server replication');
 
 function survivalEngine() {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
@@ -40,7 +39,7 @@ function survivalEngine() {
   e.destroy();
 }
 
-// 1c) creatures replicate the same health/hitbox state the renderer consumes.
+// Creatures replicate the same health and hitbox state the renderer consumes.
 {
   const e = survivalEngine();
   const id = e.spawnCreature(CREATURE.FOX, 35, FLOOR - 4);

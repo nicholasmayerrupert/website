@@ -1,13 +1,6 @@
 #pragma once
-// Material -> RGBA pixel generation + the lighting solver (extracted from the
-// Engine in 5c). Writes one RGBA pixel per cell into a layer's renderPixels;
-// owns the render-only RNG (a SEPARATE stream so per-frame fire/steam flicker
-// never perturbs the simulation), the shade/noise tables, the skylight +
-// flood-fill lighting solve, and the day/night input. Method bodies live in
-// renderer_impl.inc (they need the full Engine definition).
-//
-// Grain is keyed by ABSOLUTE WORLD position so it stays locked to the terrain
-// across frames and world shifts; see fillRenderSpan.
+// Material pixels and lighting. Render animation uses a separate RNG, and grain
+// is keyed to absolute world position so rendering cannot perturb simulation.
 
 struct Engine;
 

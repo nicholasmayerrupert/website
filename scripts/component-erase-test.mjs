@@ -1,9 +1,5 @@
-// Regression: destroying a stone-GROUP component cell (sandstone, ores, brick, …)
-// must remove it from its rigid component, not just clear the grid. Otherwise the
-// body keeps an invisible cell that still collides/grounds — the cell renders empty
-// but sand floats on it and acid/powders can't pass (the "invisible blocks" bug).
-// Every destruction site is covered: erase tool, acid dissolve, and tool mining.
-// Run: node scripts/component-erase-test.mjs
+// Erasing, dissolving, or mining a stone-group cell must remove both its grid cell
+// and component membership so no invisible collision remains.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';

@@ -1,10 +1,6 @@
 #pragma once
-// One simulation layer (foreground or background) — ALL the per-cell state:
-// grids, dirty tracking, components, rigid bodies, tile/body stores, lighting
-// buffers, render pixels. Hoisted out of the Engine (5c) so the extracted
-// subsystem classes (Renderer, TerrainGen, ...) can take Layer* in their
-// interfaces. The Engine composes two (fg/bg) plus raw-pointer mirrors of the
-// hot indexed buffers (see members.inc).
+// Per-layer grids, dirty state, components, bodies, world stores, and rendering
+// buffers. Engine owns foreground and background instances.
 
 struct Layer {
   EngineStorageRole storageRole = ESR_FULL;
@@ -41,7 +37,7 @@ struct Layer {
   std::vector<int32_t> reactionSteam, reactionFires, reactionIgnite;
   // Set when a reaction creates new heat after prepareActiveLists. Existing heat
   // may disappear safely (the candidate is rechecked); newly-created heat needs
-  // the legacy ordered active-span scan so TNT can still ignite that same tick.
+  // the ordered active-span scan so TNT can still ignite that same tick.
   bool heatAddedAfterPrepare = false;
   // Transient survival mining damage. 0 = no active damage; otherwise the
   // remaining durability for the current held mine target. Not serialized.
@@ -71,7 +67,7 @@ struct Layer {
   // true => the next grounding pass must be a full reflood; it is set true by any
   // component add/move/split/growth/sync.
   // groundSawPowder records whether the last overlay saw any powder (diagnostics /
-  // legacy gates; the hot path no longer refloods solely because powder exists).
+  // fallback gates; the hot path does not reflood solely because powder exists).
   // groundContentDirty: a rigid component change that did NOT set groundDirty (the
   // acid fast-path removal) happened since the last grounding pass, so the cached
   // cellComp/groundedCell must be refreshed even though no full reflood is forced.
@@ -200,10 +196,7 @@ struct Layer {
   void reallocSim(int newCols, int newRows, int newChunkCols, int newChunkRows) {
     const size_t newN = (size_t)newCols * newRows;
     if (newN < gridA.size()) {
-      // assign()/clear() preserve vector capacity. After an extreme zoom-out that
-      // kept every old per-cell allocation alive even though hot loops used the
-      // smaller logical size, leaving hundreds of MB resident. Swap only on the
-      // shrink path; growth still reuses capacity normally.
+      // Release capacity after shrink; ordinary growth still reuses allocations.
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);

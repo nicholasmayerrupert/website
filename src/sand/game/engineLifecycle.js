@@ -35,9 +35,7 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
     };
   };
 
-  // Construct + wire a fresh engine at ctx.cols × ctx.rows. This is the ONE
-  // build path (the old fit()/rebuildEngineForDims() duplicated it); every
-  // knob the engine forgets on recreation is re-applied here.
+  // Construct a presentation engine and reapply all runtime state.
   const buildEngine = () => {
     if (ctx.engine && ctx.engine.destroy) ctx.engine.destroy();
     const e = createEngineWasm({

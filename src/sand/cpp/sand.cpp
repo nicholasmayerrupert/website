@@ -1,24 +1,5 @@
-// Falling-sand simulation engine, ported from src/sand/*.js to C++/WebAssembly.
-// Behavioral parity (not bit-identical) with the JS engine.
-//
-// The implementation is split per-subsystem into engine/*.inc files (mirroring
-// the JS module layout) and assembled here into one Engine class. Each .inc
-// holds that subsystem's methods; they all share the Engine members declared in
-// engine/members.inc, exactly like the JS createX(S) factories share `S`.
-//
-//   common.hpp     enums, material tables, tunables, noise, Comp/Body/Contact
-//   members.inc    Engine data members, ctor, hot inline helpers (rand/I/marks)
-//   core.inc       grid CA settle passes + side sinks   (engine.js)
-//   step.inc       the step() pipeline                  (engine.js)
-//   components.inc grid-aligned stone/plant/ice          (components.js)
-//   reactions.inc  fire/acid/lava/ice                    (reactions.js)
-//   growth.inc     plant growth                          (growth.js)
-//   tools.inc      brushes/drafts/seeds                  (tools.js)
-//   worldgen.inc   streaming infinite world              (worldgen + worldWindow)
-//   rigid.inc      free rigid bodies                     (rigid2d.js + rigidBodies.js)
-//   abi.inc        extern "C" exports consumed by wasmBridge/engineFactory.js
-//
-// Material ids MUST stay in lockstep with src/sand/materials.schema.json.
+// Unity translation unit for the C++/WASM sand engine. Engine owns shared state
+// and thin subsystem shims; composed subsystem classes hold gameplay policy.
 
 #include "engine/common.hpp"
 
@@ -50,7 +31,7 @@ struct Engine {
 const int Engine::DIRS_LF[2] = {-1, 1};
 const int Engine::DIRS_RF[2] = {1, -1};
 
-// Out-of-line method bodies for the extracted subsystem classes (need Engine).
+// Subsystem method bodies require the complete Engine definition.
 #include "engine/netsync_impl.inc"
 #include "engine/terrain_impl.inc"
 #include "engine/renderer_impl.inc"

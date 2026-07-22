@@ -1,12 +1,6 @@
 #pragma once
-// Material reactions (extracted from the Engine in 5e): fire/steam/ignition,
-// acid dissolving (with its grounding-cache fast path), lava quench/harden,
-// ice freeze/melt, and salt. Runs after growth/rigid movement inside each
-// layer step; owns local transformations only, never broad movement order.
-//
-// DETERMINISM: these draw from the Engine's SHARED rand() stream — call order
-// is part of the sim contract (the bench checksum enforces it). Method bodies
-// live in reactions_impl.inc.
+// Local material reactions. Call order consumes shared RNG and is part of the
+// deterministic simulation contract.
 
 struct Engine;
 

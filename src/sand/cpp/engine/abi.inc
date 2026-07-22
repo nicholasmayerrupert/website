@@ -50,7 +50,7 @@ EMSCRIPTEN_KEEPALIVE void engine_build_dirty_rects(Engine* e) { e->useLayer(&e->
 EMSCRIPTEN_KEEPALIVE int engine_dirty_rect_count(Engine* e) { return (int)(e->fg.dirtyRects.size() / 4); }
 EMSCRIPTEN_KEEPALIVE int* engine_dirty_rects(Engine* e) { return e->fg.dirtyRects.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_dirty(Engine* e) { memset(e->fg.dirtyRender.data(), 0, e->fg.dirtyRender.size()); e->fg.dirtyRenderCount = 0; }
-// Material -> RGBA rendering (C++ owns the pixel generation; JS uploads/blits).
+// Material-to-RGBA buffers used by GL presentation and diagnostics.
 EMSCRIPTEN_KEEPALIVE void engine_render_full(Engine* e) { e->useLayer(&e->fg); e->renderer.renderFull(); }
 EMSCRIPTEN_KEEPALIVE void engine_render_full_layer(Engine* e, int layer) {
   if (layer) { e->useLayer(&e->fg); if (Renderer::RENDER_LIGHTING_ENABLED) e->renderer.computeLighting(&e->fg); }
@@ -122,9 +122,7 @@ EMSCRIPTEN_KEEPALIVE double engine_test_grounding_diag(Engine* e, int which) {
 }
 
 // drafts / seed
-// Draft staging is a SINGLE material-parameterized set. The old per-material
-// stone/ice hook pairs (byte-identical bodies) collapsed into these.
-// ICE keeps its historical one-row-shorter stage ceiling.
+// One material-parameterized draft set; ice excludes the bottom row.
 EMSCRIPTEN_KEEPALIVE int engine_add_draft(Engine* e, int cx, int cy, int r, int mat) {
   e->tools.draftMaterial = (uint8_t)mat;
   return e->addDiscToDraft(e->tools.draft, cx, cy, r, mat == ICE ? e->rows - 1 : e->rows);
@@ -145,7 +143,7 @@ EMSCRIPTEN_KEEPALIVE int engine_can_place_seed(Engine* e, int x0, int y0) { retu
 EMSCRIPTEN_KEEPALIVE int engine_place_seed(Engine* e, int x0, int y0) { return e->placeSeedAt(x0, y0) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_place_seed_typed(Engine* e, int x0, int y0, int pt) { return e->placeSeedAtTyped(x0, y0, (uint8_t)pt) ? 1 : 0; }
 
-// tools / pointer (input policy lives in the engine; JS forwards cell events)
+// Cell-space tool helpers used by tests and compatibility callers.
 EMSCRIPTEN_KEEPALIVE void engine_set_tool(Engine* e, int tool) { e->setTool(tool); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_down(Engine* e, int cx, int cy, int button) { return e->pointerDown(cx, cy, button); }
 EMSCRIPTEN_KEEPALIVE int engine_pointer_draft(Engine* e, int cx, int cy) { return e->pointerDraft(cx, cy); }
@@ -253,8 +251,7 @@ EMSCRIPTEN_KEEPALIVE int engine_player_mine_target(Engine* e, int id, int* out) 
 }
 EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
 
-// dropped items + particles (entities; physics in items.inc). spawn_item/_particle
-// are test/gameplay hooks; the snapshot lets JS draw or inspect them.
+// Dropped-item and particle hooks plus the packed replication/render snapshot.
 EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) { return e->spawnItem((uint8_t)mat, count, px, py, vx, vy); }
 EMSCRIPTEN_KEEPALIVE void engine_test_spawn_particle(Engine* e, int mat, double px, double py, double vx, double vy, int life) { e->spawnParticle((uint8_t)mat, px, py, vx, vy, life); }
 EMSCRIPTEN_KEEPALIVE int engine_item_count(Engine* e) { return (int)e->itemsys.items.size(); }
@@ -316,7 +313,7 @@ EMSCRIPTEN_KEEPALIVE int engine_crafting_ingredient_snapshot(Engine* e) { return
 EMSCRIPTEN_KEEPALIVE int32_t* engine_crafting_ingredient_snapshot_ptr(Engine* e) { return e->crafting.ingredientSnapshot.data(); }
 EMSCRIPTEN_KEEPALIVE int engine_respawn_player(Engine* e, int playerId) { return e->psys.requestRespawn(playerId) ? 1 : 0; }
 
-// world replication (Phase 6): serialize/apply full snapshots + dirty diffs.
+// World replication: serialize/apply full snapshots and dirty diffs.
 EMSCRIPTEN_KEEPALIVE int engine_serialize_world(Engine* e) { return e->net.serializeWorld(); }
 EMSCRIPTEN_KEEPALIVE int engine_serialize_diff(Engine* e) { return e->net.serializeDiff(); }
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->net.blob.data(); }

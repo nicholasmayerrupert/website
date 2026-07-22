@@ -1,10 +1,5 @@
-// Regression: acid boring through a solid must not freeze inside it. An acid cell
-// that has dug into stone only re-marks itself active when it SUCCEEDS at dissolving
-// (prob ACID_DISSOLVE_P); on a failed roll settleLiquid sees it resting-on-support
-// fully enclosed and goes inert, dropping it out of the active band forever — so it
-// "settles in stone after dissolving a little bit". Acid touching any dissolvable
-// neighbour must stay active until it eats through or decays.
-// Run: node scripts/acid-stuck-test.mjs
+// Acid enclosed by dissolvable material must remain active until it escapes,
+// consumes its neighbours, or decays.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';

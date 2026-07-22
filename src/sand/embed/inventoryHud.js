@@ -1,15 +1,5 @@
-// Framework-free survival inventory HUD for the sand game. Like toolPalette.js it
-// builds plain DOM into a host root (the Web Component's shadow root) with a single
-// injected <style> — no React, no Tailwind. It owns NO inventory state: the slots,
-// the carried "cursor" stack, and ALL pick/place/swap/merge/throw logic are
-// authoritative in the C++ engine. The HUD only renders the snapshot passed to
-// update() (plus the carried stack read via getCursor()) and forwards player intent
-// via callbacks; the caller wires those into the engine.
-//
-// Minecraft-style: an always-visible hotbar (slots 0..8) bottom-center, plus a
-// key-toggled grid (slots 9..35) above it with a darkened full-window backdrop.
-// While the grid is open the carried item follows the pointer and clicks pick /
-// place / swap / merge; clicks on the backdrop throw the carried stack out.
+// Framework-free survival inventory HUD. C++ owns every slot/cursor mutation;
+// this module renders snapshots and forwards user intent.
 
 import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
@@ -214,9 +204,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // DIFFERENT slot (and we avoid double-firing when down/up land on the same slot).
   let downSlot = -1;
   let downOnSlot = false; // did the active press start on a slot (vs the backdrop)?
-  // Latest pointer position, kept current so the carried chip can be placed the
-  // instant it appears — a freshly picked stack must not flash at (0,0) before the
-  // first move. Updated by onMove and by the pick pointerdown.
+  // Latest pointer position prevents a newly carried stack flashing at (0,0).
   let ptrX = 0, ptrY = 0;
   let selectedSlot = 0;
   let previousFocus = null;
@@ -255,13 +243,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   toast.setAttribute('aria-live', 'polite');
   hud.append(modal, toast, bar, hint);
 
-  // The carried stack, rendered as a small floating swatch/chip that follows the
-  // pointer while the grid is open. It is appended to document.body (NOT the shadow
-  // root) so position:fixed anchors to the real viewport — a CSS transform/filter on
-  // the <sand-game> host or an ancestor would otherwise capture position:fixed and
-  // strand it in the top-left, decoupled from clientX/clientY. Because it lives
-  // outside the shadow root the injected <style> can't reach it, so it is styled with
-  // INLINE styles only.
+  // Append the carried stack to document.body so fixed positioning stays relative
+  // to the viewport even when the Web Component has a transformed ancestor. It
+  // uses inline styles because shadow-root styles cannot reach it.
   const cursorItem = document.createElement('div');
   Object.assign(cursorItem.style, {
     position: 'fixed', left: '0', top: '0', zIndex: '2147483646', display: 'none',
@@ -317,9 +301,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     }
   }
 
-  // Render the carried stack into the body-appended floating element using INLINE
-  // styles (the shadow <style> can't reach an element outside the shadow root). Mirrors
-  // renderStack's swatch/count + tool-chip layout, just self-styled.
+  // Render the body-appended carried stack with inline styles.
   function renderCursorInline(s) {
     if (!s) return;
     if (s.itemKind === ITEM_KIND.BOW || s.itemKind === ITEM_KIND.ARROW) {
@@ -399,8 +381,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     refreshCursor();
   });
 
-  // Native buttons expose every slot to the keyboard. Pointer clicks are handled
-  // on pointerdown above, so only keyboard/programmatic clicks are routed here.
+  // Pointer actions run on pointerdown; click handles keyboard/programmatic use.
   hud.addEventListener('click', (e) => {
     if (e.detail !== 0) return;
     const i = idxOf(e.target);
@@ -474,12 +455,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     refreshCursor();
   });
 
-  // The carried element follows the pointer whenever the grid is open. Registered in
-  // the CAPTURE phase (see setOpen): while open, the full-window backdrop and the hud
-  // call stopPropagation() on every pointer event — including pointermove — so a
-  // bubble-phase window listener would never fire and the chip would stay stranded at
-  // (0,0). Capture runs top-down before the target's stopPropagation, so it still sees
-  // every move.
+  // Capture pointer movement before the HUD's propagation guards so the carried
+  // element continues to follow the pointer while the grid is open.
   const onMove = (e) => {
     ptrX = e.clientX; ptrY = e.clientY;
     if (!open) return;
@@ -498,9 +475,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     return 'Hand';
   };
 
-  // Flash the selected item's name above the hotbar, then fade it out after ~2s. The
-  // .show class snaps it to full opacity (transition:none); dropping .show after the
-  // timer lets the base .4s opacity transition fade it back out.
+  // Flash the selected item name, then let the base opacity transition fade it.
   function showToast(name) {
     toast.textContent = name;
     toast.classList.add('show');

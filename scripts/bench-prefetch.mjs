@@ -1,21 +1,6 @@
-// Prefetch pan-stutter benchmark — measures the periodic world-shift hitch when
-// panning, in BOTH axes (sideways AND down), WITH vs WITHOUT predictive worldgen
-// prefetch. Run:  node scripts/bench-prefetch.mjs
-//
-// The hitch: every WORLD_SHIFT_{COLS,ROWS} of pan the window slides one chunk and
-// the shift re-streams a band of terrain for BOTH layers ON ONE FRAME -> a spike
-// roughly once a second. Predictive prefetch generates that band into the tileStore
-// over the off-screen frames BEFORE the boundary, so the shift skips fillRect.
-//
-// This reproduces the real game-loop path (the game's streamWorld() calls
-// prefetchAdvance() then maybeShiftWorld()). Headless can't call streamWorld()
-// (it touches GL), so we drive prefetchAdvance() + maybeShiftWorld[V]() directly —
-// the same two engine calls, minus the GL texture slide.
-//
-// Headline: the WORST frame (p99 of ALL frames). WITHOUT prefetch it's the shift
-// spike; WITH prefetch the shift is a cache hit and the prefetch work is spread
-// into small per-frame slices, so the worst frame should drop well under budget —
-// proving the hitch is ELIMINATED, not merely relocated.
+// Compares horizontal and vertical world-shift frame times with and without
+// predictive terrain prefetch. It drives the same prefetch/shift calls as the game
+// loop, excluding the GL texture slide.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 

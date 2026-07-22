@@ -75,6 +75,5 @@ export const BROWSER_SUITES = [
   ['production-startup', 'startup-recovery-e2e.mjs', 180_000],
 ];
 
-// Keep exclusions explicit and justified if a future executable test is truly
-// unsuitable for either required aggregate.
+// Any executable excluded from required aggregates must be listed explicitly.
 export const EXCLUDED_TESTS = [];

@@ -1,6 +1,5 @@
-// The sand runtime's frame/step core: present one frame (render), run one
-// fixed simulation steps, the split actor/world clocks, camera follow, and the
-// rolling perf samples.
+// Frame and simulation loop: rendering, split actor/world clocks, camera follow,
+// and rolling performance samples.
 //
 // All mutable runtime state lives on the shared `ctx` object owned by
 // createSandGame.js.
@@ -20,9 +19,8 @@ import {
 export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory, onPlayerState }) {
   ctx.timingStats = { actorSteps: 0, actorDebtMs: 0, actorDroppedMs: 0, worldStepped: false };
 
-  // Presentation-only wall clock: every mount begins at dawn. Phase is derived
-  // directly from elapsed time, so a backgrounded tab
-  // jumps to the correct point on return instead of replaying missed frames.
+  // Presentation-only wall clock. Deriving phase from elapsed time lets a
+  // backgrounded tab resume at the current point instead of replaying frames.
   const dayCycleStart = performance.now();
   let dayVisualBucket = 0;
   ctx.dayNight = sampleDayNight(DEFAULT_DAY_PHASE);
@@ -249,8 +247,8 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     if (!running || viewportPaused) return;
     raf = requestAnimationFrame(loop);
     const rafDelta = lastRafNow ? now - lastRafNow : 0;
-    // Ignore tab suspension / debugger pauses; real slow frames below 100 ms
-    // remain captured, including the reported ~25 ms TNT dip.
+    // Ignore tab suspension and debugger pauses while retaining ordinary slow
+    // frames below 100 ms.
     currentRafMs = rafDelta > 0 && rafDelta < 100 ? rafDelta : 0;
     lastRafNow = now;
     const dayChanged = updateDayNight(now);

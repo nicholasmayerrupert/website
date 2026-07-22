@@ -1,5 +1,3 @@
-// CreatureSystem method bodies (need the full Engine definition).
-
 bool CreatureSystem::inLoadedWindow(const Creature& c, int margin) const {
   double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
   const CreatureSpecies& s = species(c);

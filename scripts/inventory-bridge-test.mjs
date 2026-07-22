@@ -1,6 +1,5 @@
-// Phase E: the JS<->engine inventory bridge (no DOM). Verifies the snapshot shapes
-// the HUD consumes and the intents it forwards round-trip through the engine. The
-// HUD DOM itself is verified manually in-browser. Run: node scripts/inventory-bridge-test.mjs
+// Verifies the snapshot shapes consumed by the HUD and intent round trips. Browser
+// dialog/accessibility coverage lives in player-e2e.mjs.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
@@ -10,7 +9,7 @@ import { mergePlayerPrediction } from '../src/sand/worker/playerPresentation.js'
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
-const { check, done } = makeChecker('inventory bridge (Phase E)');
+const { check, done } = makeChecker('inventory bridge');
 
 const e = createEngineWasm({ cols: 100, rows: 80, worldSeed: 1, sinksOn: false, infinite: false });
 e.setSurvivalInventory(true);

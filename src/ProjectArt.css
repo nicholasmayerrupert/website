@@ -1,5 +1,4 @@
-/* src/ProjectArt.css
-   Shared animation classes for the hand-drawn project card artwork.
+/* Shared animation classes for the hand-drawn project card artwork.
    All classes are prefixed pa- to avoid collisions with portfolio styles. */
 
 .project-art {
@@ -10,7 +9,6 @@
   display: block;
 }
 
-/* ---------- keyframes ---------- */
 @keyframes pa-spin {
   to { transform: rotate(360deg); }
 }
@@ -78,8 +76,7 @@
   50% { transform: translateX(-8px); }
 }
 
-/* ---------- classes ----------
-   Animations only run while `.project-art-active` (art is on-screen).
+/* Animations only run while `.project-art-active` (art is on-screen).
    Off-screen: animation-play-state: paused freezes paint cost. */
 .pa-spin-slow {
   transform-box: fill-box;

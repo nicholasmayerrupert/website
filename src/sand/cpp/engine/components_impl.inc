@@ -1,7 +1,3 @@
-// ComponentSystem method bodies (need the full Engine definition; see components.hpp).
-
-// Component lifetime and connectivity.
-//
 // Stone, ice, and plant materials are not loose pixels. They survive a step
 // only through component membership, and unregistered component cells are
 // erased during cleanup. Tool placement, worldgen, growth, and world shifting
@@ -68,28 +64,16 @@ void ComponentSystem::indexComponents() {
 //  - LOOSE grounding is strictly vertical: a loose cell is grounded iff the
 //    cell directly below it is grounded (any class), or it sits on the floor
 //    row, or on denser liquid. No loose cell grounds sideways.
-// computeGrounded = rigid flood (computeRigidGrounded) + loose overlay
-// (applyLooseOverlay). The union is byte-identical to the old single flood
-// (dev builds re-run the old algorithm and memcmp — see the parity block).
+// computeGrounded combines computeRigidGrounded with applyLooseOverlay.
 void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
-  // Hot flood: hoist the per-cell buffers into TRUE locals (register-bound;
-  // uint8_t stores can't alias them, unlike the old Engine-member mirrors).
+  // Keep hot buffers local so the compiler can preserve alias information.
   Layer* const lay = E.L;
   const uint8_t* const g = lay->grid;
   uint8_t* const grounded = lay->groundedCell.data();
   int32_t* const cc = lay->cellComp.data();
   int32_t* const gstack = lay->groundStack.data();
-  // Stream-aware path: grounding caches were shifted with the grid in shiftLayer.
-  // Start from the shifted rigid base, clear the entering band + buffer-edge seed
-  // columns/rows (edge support is buffer-relative), then run the normal seed DFS.
-  // The DFS is still O(grounded rigid) but we avoid wiping and re-touching the
-  // whole window when the shifted base is already correct for floor-connected bulk.
-  // groundForceFull always takes the classic full-zero path (equivalence tests).
-  // Stream band markers are recorded for diagnostics / future band-limit work.
-  // Post-stream always full-zeros then floods: edge seeds are buffer-relative, so
-  // a shifted base can leave stale grounded=1 when edge-only support is lost.
-  // (Caches are still shifted in shiftLayer so loose overlay can localize after
-  // the rigid pass and so we keep the seam metadata.)
+  // Streaming markers are diagnostic only. Edge support is buffer-relative, so
+  // every rigid flood starts from zero rather than trusting a shifted cache.
   (void)lay->groundStreamX0; (void)lay->groundStreamY0;
   lay->groundStreamX0 = lay->groundStreamX1 = lay->groundStreamY0 = lay->groundStreamY1 = -1;
   std::fill(lay->groundedCell.begin(), lay->groundedCell.end(), (uint8_t)0);
@@ -115,10 +99,7 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   int sp = 0;
   if (groundStackX.size() != (size_t)E.cols * E.rows) groundStackX.assign((size_t)E.cols * E.rows, 0);
   int32_t* gsx = groundStackX.data();
-  // groundRigidAt records the cell's column x alongside k, so the DFS below never
-  // recomputes k/E.cols (an integer division per popped rigid cell). Every caller
-  // already knows x: the seeds iterate x, and a propagation target's column is
-  // derived from its parent (the cell above shares x; an 8-neighbour is nx).
+  // Carry x alongside k to avoid division in the flood loop.
   auto groundRigidAt = [&](int k, int x) {
     if (grounded[k]) return;
     grounded[k] = 1;
@@ -145,16 +126,11 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   int gridLen = E.cols * E.rows;
   while (sp > 0) {
     --sp; int k = gstack[sp], kx = gsx[sp];
-    // Vertical support at the border columns (x=0 / x=cols-1), where the
-    // 8-neighbour scan below is clamped: the old flood's vertical rule had no
-    // x guard, so a border floor column still grounds the stack above it.
-    // Everywhere else this is a subset of the 8-neighbour scan. The upper cell
-    // must be bearing (VINE/GLOWBERRY hang, they don't stack) — matching the
-    // old canGroundAbove; rigid-below never triggers its loose exception.
+    // Handle vertical support in sentinel columns, which the clamped neighbour
+    // scan excludes. Hanging materials are not bearing.
     int above = k - E.cols;
     if (above >= 0 && !grounded[above] && E.isRigidMaterialClass(g[above]) && E.isBearingMaterial(g[above])) groundRigidAt(above, kx);
-    // Neighbour-row validity ny in [1, E.rows-1] <=> (k + oy*E.cols) in [E.cols, gridLen):
-    // a division-free restatement of the original `ny<=0 || ny>=E.rows` test.
+    // Validate neighbour rows without dividing k by E.cols.
     for (int oy = -1; oy <= 1; oy++) {
       int rb = k + oy * E.cols;
       if (rb < E.cols || rb >= gridLen) continue;
@@ -175,22 +151,9 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
 // on grounded rigid, the floor, or lower loose links), or it is on the floor
 // row, or it rests on liquid at least as dense (the buoyant-support seed).
 // Loose cells never receive sideways/8-adjacent support and never ground a
-// rigid cell, so this pass is exactly the loose part of the old flood.
-// Also records groundSawPowder (same interior window as the old seed scan).
+// rigid cell. Also records whether the interior contains powder.
 //
-// Ground the loose (powder) cells on top of the rigid base: one bottom-up pass.
-// A loose cell is grounded iff the cell DIRECTLY below is grounded (chain roots
-// on grounded rigid, the floor, or lower loose links), or it is on the floor
-// row, or it rests on liquid at least as dense (the buoyant-support seed).
-// Loose cells never receive sideways/8-adjacent support and never ground a
-// rigid cell, so this pass is exactly the loose part of the old flood.
-// Also records groundSawPowder (same interior window as the old seed scan).
-//
-// When looseDirtyX* is a proper subset of columns, only those columns are
-// walked. Callers that memcpied the rigid base must set the span to full width
-// (all loose bits were zeroed). Column-local dirt from write paths enables the
-// tight span on pure only-loose frames that clear non-dirty columns themselves
-// — today the reuse path always full-width memcpys for joint-patch identity.
+// Pure loose-only refreshes can restrict the pass to dirty columns.
 void ComponentSystem::applyLooseOverlay() {
   Layer* const lay = E.L;
   const uint8_t* const g = lay->grid;
@@ -515,14 +478,7 @@ void ComponentSystem::computeGrounded() {
 #endif
 }
 
-// Incremental grounding for the common single-layer, powder-free case: the
-// expensive part of computeGrounded is the flood; everything else (lay->cellComp +
-// per-component density + grounded flags) is a cheap O(stone) linear pass. When
-// no removal disconnected anything (Layer::groundDirty stayed false), the cached
-// grounded[] is still the true grounded set (removed cells were patched to 0
-// at the dissolve site), so we skip the flood entirely and only rebuild the
-// cheap bookkeeping, deriving each component's grounded flag from the cache.
-// Produces a byte-identical grounded[]/cc[] to a full reflood (verified).
+// Rebuild component bookkeeping after a removal that preserved cached grounding.
 void ComponentSystem::incrementalGroundingRefresh() {
   std::fill(E.L->cellComp.begin(), E.L->cellComp.end(), -1);
   indexComponents();                       // rebuilds E.L->cellComp + cgCompDensity, resets grounded=false
@@ -531,10 +487,8 @@ void ComponentSystem::incrementalGroundingRefresh() {
   }
 }
 
-// Single-layer grounding entry point (the cross-layer path uses computeGrounded
-// directly via computeGroundedBoth). Picks the full reflood or the incremental
-// refresh, and when groundVerify is on, runs BOTH and asserts byte-equality so a
-// wrong fast path can never silently desync — it shows up as a test failure.
+// Single-layer dispatch. Debug verification compares the selected path with a
+// forced full flood.
 void ComponentSystem::ensureGroundedSingleLayer() {
   // Skip the whole pass when nothing that affects grounding changed since the
   // last one: no loose/liquid motion (looseGroundDirty), no structural change
@@ -787,24 +741,8 @@ void ComponentSystem::unionCrossBondedClusters(std::vector<int>& parent, std::ve
   uniteCached(E.bg, nf, nb);
 }
 
-// Cross-layer grounding (runs once per step when the background is live). Each
-// layer is grounded independently first; any same-(x,y) rigid-rigid co-occupation
-// between components then creates a transient cross-layer bond. Support is
-// transitive across bonds: if either bonded component is base-grounded (floor /
-// edge / powder-on-liquid), every component in the groundParent cluster is
-// grounded. Unsupported bonded clusters fall together instead of pinning each
-// other mid-air. A single contact cell is enough — no size / fraction heuristics.
-// Produce one layer's BASE grounding (independent of the cross-layer step), either
-// by a full flood or by reusing the cached base from a prior flood. The reuse path
-// is taken only when the layer's rigid topology is provably unchanged: groundDirty
-// false (every add/split/remove/move/freeze/registration sets it) AND no acid
-// fast-path removal (groundContentDirty) AND a valid cache. Because computeGrounded
-// ends with groundDirty = sawPowder, a layer holding powder ALWAYS refloods; only a
-// powder-free, edit-free layer (the dry stone background during a pan) reuses. The
-// reused E.L->groundedCell/comp.grounded are byte-identical to a fresh flood (E.L->groundedCell
-// is a pure function of the grid; E.L->cellComp is written ONLY by grounding so it stays
-// valid untouched between passes). This halves computeGroundedBoth's cost in the
-// common two-layer pan case (the bg flood was ~half the joint-grounding time).
+// Produce one layer's independent grounding base. computeGrounded selects the
+// cheapest valid cache tier; computeGroundedBoth adds joint support afterward.
 void ComponentSystem::groundLayerBase(Layer* lay) {
   // computeGrounded's internal tiers do the caching (rigid-base reuse +
   // per-pass loose overlay). Result is the layer's INDEPENDENT grounding;
@@ -1025,8 +963,7 @@ void ComponentSystem::computeGroundedBoth() {
     // neighbour united below) is base-grounded, the whole cluster is grounded.
     ufUnite(groundParent, b.fgComp, nf + b.bgComp);
   }
-  // Same-layer adjacency: bounded walk from ungrounded bonded comps instead of
-  // the old O(E.cols*E.rows) full-grid scan (the panning-perf regression).
+  // Apply cached same-layer adjacency to the bonded component groups.
   unionCrossBondedClusters(parent, &groundParent, nf, nb);
   std::vector<uint8_t> rootBonded(nf + nb, 0);
   for (auto& b : cgBonds) rootBonded[ufFind(parent, b.fgComp)] = 1;

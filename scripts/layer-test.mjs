@@ -499,16 +499,8 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   e.destroy();
 }
 
-// 15e. User repro: FG 5×100 grounded beam + BG 5×100 with only 3 columns of
-//      horizontal co-occupation. Continuous acid drip in the MIDDLE of the BG
-//      must NOT creep the whole beam down.
-//
-// Two failure modes this locks:
-//  1) acid pure-bore cleared cgBonds without jointDirty → joint pass skipped
-//  2) acid transfers into FG (empty cells / floor), FG dissolve cleared
-//     jointGroundReady mid-step → BG stepLayer re-ran single-layer grounding
-//     and dropped the beam one cell per tick until overlap was lost.
-// Real play has terrain/floor in FG, so (2) is the dominant path — test with a floor.
+// Acid cutting the middle of a background beam must not disturb its remote
+// three-column support bond to grounded foreground terrain.
 {
   console.log('cross-layer support: mid-beam acid does not drop 3-col-overlap bg slab');
   const C = 220, R = 80;
@@ -551,11 +543,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   e.destroy();
 }
 
-// 15g. Erasing ALL FG co-occupation cells must wake the BG beam to fall on the
-//      next joint rebuild — not leave it frozen mid-air until something else
-//      dirties the background. Regression for joint-sleep peer-wake: FG-only
-//      rigid dirt wiped BG joint stamps but skipped wakeCellsThatLostGrounding
-//      on BG because rigidMayChange(bg) was false.
+// Erasing every foreground contact wakes the newly unsupported background beam.
 {
   console.log('cross-layer support: erase FG contact wakes unsupported bg beam');
   const C = 220, R = 80;
@@ -865,10 +853,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   e.destroy();
 }
 
-// 14. Liquids cross layers into space the player digs out. A sealed foreground
-//     basin of water with a SOLID background behind it; digging a background drain
-//     shaft (background-only, no foreground action) must let the water pour into
-//     the new channel on its own AND the scene must re-settle to inert (no churn).
+// Water crosses into a newly dug background drain and settles without churn.
 {
   console.log('liquid drains into a dug-out background channel + re-settles');
   const e = mk();
@@ -900,9 +885,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('drained scene re-settles to inert (no churn)', settledAt >= 0, `(step ${settledAt})`);
 }
 
-// 15. Cross-layer two-fluid: a foreground water column stuck above a background OIL
-//     column (with open background below it) drains into the background, displacing
-//     the lighter oil — conserved, no oscillation, settles to inert.
+// Foreground water displaces lighter background oil and settles without loss.
 {
   console.log('cross-layer: fg water drains through/displaces bg oil (two-fluid)');
   const e = mk();
@@ -921,12 +904,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check(`cross-layer two-fluid scene settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
 }
 
-// 16. Cross-layer powder-vs-liquid swap: a foreground LAVA column stuck directly
-//     above a background SAND column (with open background below it). Lava (2.8) is
-//     denser than sand (1.6), so the generic loose-density swap fires across layers:
-//     lava sinks into the background, sand rises into the foreground — conserved, no
-//     oscillation, settles to inert. This is the powder-OR-liquid generalization of
-//     the liquid-vs-liquid swap (case 15): the actor is a liquid, the target a powder.
+// Denser foreground lava swaps with lighter background sand and settles without loss.
 {
   console.log('cross-layer: fg lava displaces bg sand (powder vs liquid, density)');
   const e = mk();
@@ -946,10 +924,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check(`cross-layer powder/liquid swap settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
 }
 
-// 17. Cross-layer powder-vs-liquid swap, the other ordering: a foreground SAND
-//     column stuck directly above a background WATER column. Sand (1.6) is denser
-//     than water (1.0), so the generic swap fires: sand sinks into the background,
-//     water rises into the foreground — conserved, settles to inert.
+// Denser foreground sand swaps with lighter background water and settles without loss.
 {
   console.log('cross-layer: fg sand displaces bg water (powder vs liquid, density)');
   const e = mk();

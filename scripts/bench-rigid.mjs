@@ -1,15 +1,8 @@
-// Rigid-body collision stress benchmark.
-//
-//   node scripts/bench-rigid.mjs
-//
 // Spawns many irregular hand-drawn bodies (bars, L/T/U hooks, discs, blobs) that
-// fall, pile, and interact, then measures the per-tick rigid-phase cost. Prints
-// the median / p95 rigid-phase ms and total wall time so the swept-collision
-// changes can be compared against the prior implementation.
+// fall and pile up, then reports rigid-body and total step timing.
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-// Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 
 const COLS = 240, ROWS = 180, SEED = 0xBEEF, STONE = 3;

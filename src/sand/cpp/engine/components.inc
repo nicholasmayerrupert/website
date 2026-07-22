@@ -1,6 +1,4 @@
-  // Components + grounding (ComponentSystem, components.hpp) — composed here;
-  // method bodies in components_impl.inc. Shims keep the step pipeline,
-  // reactions, tools, worldgen streaming, and netsync call sites unchanged.
+  // Static components, grounding, and assembly movement.
   ComponentSystem comps{*this};
   void computeGrounded() { comps.computeGrounded(); }
   void ensureGroundedSingleLayer() { comps.ensureGroundedSingleLayer(); }

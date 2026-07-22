@@ -1,11 +1,5 @@
-// Regression: a cross-layer-bonded rigid shell FILLED with a lighter powder/liquid
-// must still fall. A stone ring mirrored in both layers and filled with sand bonds
-// across layers (full overlap), so it is moved by moveCrossLayerBondedAssemblies,
-// not the single-layer mover. That mover used to only descend into EMPTY cells, so
-// the ring's own interior sand (sitting directly beneath its top arc) pinned it in
-// the air forever ("sand supported by stone supporting that very stone"). The mover
-// now shoves aside lighter contents like the single-layer translateAssembly does.
-// Run: node scripts/xlayer-bonded-fall-test.mjs
+// A cross-layer-bonded rigid shell filled with lighter powder or liquid must
+// displace that content and fall instead of treating its contents as support.
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { makeChecker } from './sand-test-util.mjs';

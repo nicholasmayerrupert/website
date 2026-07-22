@@ -9,7 +9,7 @@ import { makeChecker } from './sand-test-util.mjs';
 const COLS = 160, ROWS = 120;
 const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6, STANDARD: 7 };
 await initSandWasm();
-const { check, done } = makeChecker('flora types (Phase 4)');
+const { check, done } = makeChecker('flora types');
 
 const LEAF = new Set([MAT.PLANT, MAT.PINE_NEEDLES, MAT.WILLOW_LEAF, MAT.BUSH_LEAF, MAT.MUSH_CAP, MAT.GLOWBERRY]);
 const WOOD = new Set([MAT.WOOD, MAT.PINE_WOOD, MAT.CACTUS, MAT.MUSH_STEM, MAT.VINE]);

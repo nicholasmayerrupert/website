@@ -1,18 +1,17 @@
-// Phase B: dropped-item / particle ENTITY physics. Items are not grid cells — they
-// fall (slower in liquid), rest on solids without clipping, stack on each other, are
+// Dropped-item and particle entity physics. Items fall, overlap rather than
+// stacking, move more slowly in liquid, rest without clipping, are
 // capped, remap on world shift, and never perturb the sim RNG (determinism).
 // Run: node scripts/item-test.mjs
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-// Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker, gridHash } from './sand-test-util.mjs';
 
 const COLS = 160, ROWS = 120, FLOOR = 90;
 await initSandWasm();
-const { check, done } = makeChecker('dropped items + particles (Phase B)');
+const { check, done } = makeChecker('dropped items + particles');
 
 // A solid stone floor from row FLOOR down, so items have something to rest on.
 function withFloor(opts = {}) {

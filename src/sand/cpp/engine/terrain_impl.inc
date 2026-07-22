@@ -1,15 +1,8 @@
-// TerrainGen method bodies (need the full Engine definition; see terrain.hpp).
-
-// Biome from a low-frequency SHARED-seed band, so both layers agree. A secondary
-// band splits plains/forest. Biomes vary the surface skin, soil depth and trees
-// (NOT the surface height — keeping the height biome-independent avoids cliffs at
-// biome seams, which would otherwise be steep enough to avalanche surface sand
-// forever).
+// Low-frequency climate and moisture bands choose the biome in both layers.
+// Biomes affect surface materials and vegetation, but not height, avoiding sharp
+// seams that would continually avalanche loose terrain.
 int TerrainGen::genBiomeAt(int worldX) {
-  // n is the primary climate band; t is a secondary (moisture) splitter that
-  // varies the biome WITHIN a band. Both are shared-seed + worldX only, so the
-  // foreground and background agree and there is no worldY dependence (height
-  // stays biome-independent — see the cliff/avalanche note above).
+  // Both fields depend only on the shared seed and world X, so layers agree.
   double n = wfbm2(E.L->worldSeed ^ 0xB10B10u, worldX * BIOME_FREQ, 2.5, 3, 0.5);
   double t = wfbm2(E.L->worldSeed ^ 0x7A11D2u, worldX * BIOME_FREQ * 1.7, 5.5, 2, 0.5);
   if (n < 0.30) return t < 0.5 ? BIOME_PLAINS : BIOME_FOREST;
@@ -18,7 +11,7 @@ int TerrainGen::genBiomeAt(int worldX) {
   if (n < 0.64) return BIOME_DESERT;
   if (n < 0.82) return t < 0.58 ? BIOME_TUNDRA : BIOME_FOREST;
   if (n < 0.92) return t < 0.52 ? BIOME_TUNDRA : BIOME_ROCKY;
-  return BIOME_ROCKY; // bare-stone country is now a rare high-climate extreme
+  return BIOME_ROCKY;
 }
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
@@ -60,9 +53,8 @@ uint8_t TerrainGen::genSkinMat(int biome, int slope, bool underwater) {
     default:           return slope <= 2 ? GRASS : SAND; // plains/forest/jungle: grass on gentle, sand on steeps
   }
 }
-// Material of the loose mantle between the skin and the deep stone (was a literal
-// SAND). `d` is depth into the soil band. All powders here rest on the stone
-// buffer below (caveTop) so they settle inert just like the old sand mantle.
+// Material of the mantle between the surface skin and deep stone. `d` is depth
+// within the soil band.
 uint8_t TerrainGen::genSoilMat(int biome, int d, int soil) {
   switch (biome) {
     case BIOME_DESERT: return d >= soil * 2 / 3 ? SANDSTONE : SAND; // sand over a sandstone base
@@ -82,9 +74,7 @@ int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
   double wx = worldX + (wfbm2(E.L->gCaveSeed ^ 0xB107u, worldX * 0.0029, worldY * 0.0024, 2, 0.5) - 0.5) * 128.0;
   double wy = worldY + (wfbm2(E.L->gCaveSeed ^ 0xB108u, worldX * 0.0023, worldY * 0.0029, 2, 0.5) - 0.5) * 112.0;
   double pick = wfbm2(E.L->gCaveSeed ^ 0xB109u, wx * 0.00175, wy * 0.00205, 3, 0.5);
-  // Three broad cave biome families, plus a sparse default. Liquids are stamped
-  // as structures inside these regions, so adding another family later only
-  // requires adding a new enum case and feature branch.
+  // Three broad cave-biome families plus sparse unthemed caves.
   if (pick < 0.10) return CAVE_DEFAULT;
   if (pick < 0.40) return CAVE_CRYSTAL;
   if (pick < 0.70) return CAVE_MUSHROOM;

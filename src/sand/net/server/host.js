@@ -1,9 +1,6 @@
-// Host-authoritative game host. One peer (the host browser, or a Node test) owns
-// the real engine; remote clients send input and receive snapshots. The Host is
-// transport-agnostic: feed it decoded/encoded messages via receive(), drive it
-// with step(), and read snapshot(). The WebSocket relay (dev-multiplayer-server)
-// and the browser client wire a transport around this; none of that logic lives
-// here, so it unit-tests in Node without a socket.
+// Transport-independent authority over player identity, input, and snapshots.
+// The Node WebSocket server owns the engine and uses this class; tests can drive
+// it without a socket.
 
 import { decode, makeSnapshot, MSG, INPUT_BITS_MAX, TOOL_MAX } from '../protocol.js';
 import { SequenceTracker } from './sequencing.js';
@@ -114,8 +111,7 @@ export class Host {
 
   get tick() { return this.actorTick; }
 
-  // Authoritative snapshot of all players. `withHash` includes a world hash so
-  // clients can detect divergence / request a resync (Phase 6).
+  // `withHash` lets clients detect world divergence and request a resync.
   snapshot({ withHash = false } = {}) {
     const hash = withHash ? gridHashU8(this.engine.getGrid()) : null;
     return makeSnapshot(this.actorTick, this.engine.getPlayers(), hash);

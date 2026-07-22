@@ -1,12 +1,6 @@
 #pragma once
-// WebGL presentation (the engine's compositor) — extracted from the Engine in
-// 5c. Uploads the CPU-generated cell pixel buffer (Renderer) into cols x rows
-// textures and draws the visible window as one nearest-neighbour upscaled
-// quad, plus the 1px gutter grid, the player/creature/item overlays, and the draft
-// preview. The context + program live per-canvas (gl_shared.hpp); the textures
-// + FBOs here are per-engine and rebuilt on resize. Parity notes (snapped
-// sub-cell offset = the documented flicker fix) live with the methods in
-// glpresenter_impl.inc.
+// WebGL compositor for layer textures, gutters, actors, and draft previews.
+// Context/program state is per canvas; textures and FBOs are per engine.
 
 struct Engine;
 
@@ -14,7 +8,7 @@ class GLPresenter {
  public:
   explicit GLPresenter(Engine& e) : E(e) {}
 
-  // Decide full-vs-incremental upload exactly like the old syncCellCanvas.
+  // Dirty ratio above which a full texture upload is cheaper.
   static constexpr double GL_FULL_UPLOAD_DIRTY_RATIO = 0.38;
 
   sandgl::Ctx* glc = nullptr;

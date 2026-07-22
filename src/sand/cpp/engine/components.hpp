@@ -1,12 +1,6 @@
 #pragma once
-// Grid-aligned stone/plant/ice components (extracted from the Engine in 5f):
-// the grounding floods (full + incremental with the cut-vertex fast path), the
-// two-layer coupled grounding + cross-layer bonds, ungrounded-assembly movement
-// with volume-preserving fluid/powder displacement, component registration
-// (seeded floods), and the split-after-erase reconciliation. Owns the entire
-// cg* grounding cache. DETERMINISM: assembly movement draws from the shared
-// rand() stream — order is part of the sim contract. Method bodies live in
-// components_impl.inc.
+// Static component membership, grounding, splitting, and assembly movement.
+// Assembly order consumes shared RNG and is part of deterministic behavior.
 
 struct Engine;
 
@@ -28,7 +22,7 @@ class ComponentSystem {
   // allowing a tall/concentrated load to overload the same footprint.
   static constexpr double GRANULAR_BEARING_DEPTH = 5.0;
 
-  // ---- grounding cache + scratch (moved off the Engine) ----
+  // ---- grounding cache and scratch ----
   bool jointGroundReady = false;
   bool jointBondsInvalid = false;
   // Fire completes component membership cleanup immediately, but may defer the
@@ -72,7 +66,7 @@ class ComponentSystem {
   std::vector<int32_t> cgBondSeenFg, cgBondSeenBg;
   std::vector<std::vector<int>> cgBondCandidatesFg, cgBondCandidatesBg;
   int32_t cgCompGen = 0;
-  // Membership mirrors for the assembly-displacement planning path (Phase 6).
+  // Membership mirrors for assembly-displacement planning.
   // The real unordered_sets are kept wherever their ITERATION order feeds cell
   // writes or FP sums; these only replace the .count() hashing.
   StampSet asmCells;                          // current assembly's cell set (translateAssembly / accumulateFaceContact)

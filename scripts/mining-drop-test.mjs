@@ -1,7 +1,6 @@
-// Phase C: mining drops. A destroyed cell yields a dropped ITEM only when the
-// player's held tool class + tier satisfies the material's gate. Hand-tier
-// materials drop with any tool. Wrong tool/tier still breaks the block, it just
-// yields nothing. Run: node scripts/mining-drop-test.mjs
+// Destroyed cells drop items only when the held tool satisfies the material's
+// class and tier gate. Hand-tier materials accept any tool; a mismatch still
+// destroys the cell but yields nothing.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
@@ -10,7 +9,7 @@ import { makeChecker, gridHash } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100;
 await initSandWasm();
-const { check, done } = makeChecker('mining drops (Phase C)');
+const { check, done } = makeChecker('mining drops');
 
 // Place a blob of `mat`, equip (cls,tier), mine its center until destroyed. No
 // stepping: items persist where spawned and the placed solid stays put.

@@ -1,13 +1,5 @@
-// Framework-free multiplayer connect panel for the sand game. Like inventoryHud.js
-// and toolPalette.js it builds plain DOM into a host root (the Web Component's
-// shadow root) with one injected <style> — no React. It owns NO net state: it
-// reads game.netStatus() and calls game.netJoin(url, room) / game.netDisconnect().
-//
-// "Normal" multiplayer: someone runs the authoritative server
-//   node scripts/sand-server.mjs <port>
-// and everyone (including the host) connects from the browser by typing the
-// server's IP/host + port + room. The panel is collapsed behind a small
-// "Multiplayer" button so single-player UI is unchanged at rest.
+// Framework-free multiplayer controls. The panel owns no network state; it reads
+// status and forwards join/disconnect requests to the game runtime.
 
 import { injectStyleOnce, swallowEvents } from './uiShared.js';
 

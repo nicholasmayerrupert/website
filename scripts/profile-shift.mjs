@@ -1,7 +1,5 @@
-// Throwaway profiler: where does shiftWorld's cost go? Sweep the shift width and
-// buffer size. If cost scales with shift width -> it's the band (fillBand /
-// memcpy); if it's ~flat in width -> it's fixed machinery (buffer memmove +
-// component re-registration) that a smaller SHIFT_COLS won't help.
+// Profiles shiftWorld across shift widths and buffer sizes to separate band work
+// from fixed buffer/component overhead.
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 const now = () => performance.now();
 const med = (a) => { const s = [...a].sort((x, y) => x - y); return s[s.length >> 1]; };

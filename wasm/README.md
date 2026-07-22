@@ -20,9 +20,9 @@ The build emits:
 calculating `source.dirty`, so a clean source tree can produce a clean provenance
 record even though the build just rewrote `sandEngine.js` and `sandEngine.wasm`.
 
-After changing C++ or generated material tables, rebuild and run:
+After changing simulation or rendering behavior, rebuild and run the relevant
+benchmark comparison, for example:
 
 ```sh
 node scripts/bench-sand.mjs --compare bench/baseline.json
-node scripts/bench-sand.mjs --scenario all --repeat 3
 ```

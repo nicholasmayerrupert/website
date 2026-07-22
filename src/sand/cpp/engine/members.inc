@@ -1,25 +1,12 @@
-  // Engine-owned state and two simulation layers.
-  //
-  // The engine simulates two independent grids: a foreground (`fg`) and a
-  // background (`bg`). Each `Layer` owns the per-cell state for its storage role
-  // (grids, dirty tracking, components, rigid bodies, chunk store, terrain,
-  // render pixels). Presentation and authority storage roles omit the half they
-  // never use. The shared subsystems (camera, GL, networking, players, tools,
-  // tick, RNG, render tables) stay on the Engine.
-  //
-  // To avoid threading a layer pointer through the hot settle path, the Engine
-  // keeps raw-pointer MIRRORS of every indexed per-cell buffer (`L->grid`, `L->next`,
-  // `L->vacatedStamp`, ...). `useLayer(lay)` repoints them at the active layer, so
-  // the thousands of `buf[k]` accesses in core/components/reactions/... are
-  // unchanged. Collections + scalars live on `Layer` and are reached via `L->`.
+  // The foreground and background are independent simulations. Each Layer owns
+  // its cells, components, bodies, chunk store, and dirty/render buffers; shared
+  // systems such as camera, networking, players, tools, and timing stay on Engine.
   int cols, rows, chunkCols, chunkRows;
   EngineStorageRole storageRole;
   Layer fg, bg;       // the two simulations
-  Layer* L = &fg;     // active layer (the mirrors below point into it)
+  Layer* L = &fg;     // active layer
 
-  // Make `lay` the active layer. The old raw-pointer mirrors of its indexed
-  // buffers are gone (5g): hot code reads through L-> (Layer::L->grid/L->next are
-  // already raw pointers; the vectors index directly).
+  // Hot paths address the active layer through L->.
   void useLayer(Layer* lay) { L = lay; }
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
@@ -245,7 +232,7 @@
   }
 #endif
 
-  // ---- dirty tracking (operates on the active layer via the mirrors) ----
+  // Dirty tracking for the active layer.
   inline void markCellIndex(int k) {
     if (k < 0 || k >= cols * rows) return;
     int y = k / cols, x = k - y * cols;

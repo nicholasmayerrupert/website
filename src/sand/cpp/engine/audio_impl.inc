@@ -1,5 +1,3 @@
-// AudioSystem method bodies (need the complete Engine definition).
-
 void AudioSystem::emit(uint8_t type, double localX, double localY, double intensity,
                        uint8_t material, int layer) {
   // Presentation mirrors must never invent gameplay events while predicting a

@@ -1,68 +1,34 @@
 # Support graph grounding
 
-Persistent solid-component support graph for dual-layer joint grounding, plus
-related grounding/carry hot-path work.
+Foreground and background rigid components support one another where they occupy
+the same cell. `computeGroundedBoth()` computes this joint support without
+rescanning every rigid cell on every active tick.
 
-## Production path (shipped)
+## Current path
 
-Joint steps (`computeGroundedBoth` when `sgCommitPrimary`, no free bodies):
+1. Restore each layer's independent grounding base when topology or bonds changed.
+2. Run `groundLayerBase()` for each layer, using its cache when valid.
+3. Stop if every component is independently grounded.
+4. Otherwise collect cross-layer bonds for unsupported components, union cached
+   same-layer adjacency, and propagate support through the resulting groups.
+5. Preserve the settled closure while only loose material changes and no
+   unsupported bond group remains.
 
-1. **Wipe** joint patches when either layer’s rigid topology changed (same as classic).
-2. **Independent bases** — `groundLayerBase` each layer (rigid flood + loose overlay, with cache reuse).
-3. If every component is base-grounded → clear residual bonds, done.
-4. Else if **`sgBondsValid`** and `cgBonds` non-empty (pure-loose re-entry) → re-stamp joint support via `expandSupportGraphFromBase` (UF + same-layer cluster walk) **without** rescanning cells.
-5. Else **emit** `SolidNode` maps (O(components)), **collect** cross-layer bonds from ungrounded comps (O(ungrounded cells)), **expand** via classic UF, set `sgBondsValid`.
+Free bodies and forced verification use the conservative rebuild path. Fire may
+defer a joint rebuild until the next tick after completing component membership
+cleanup; acid and tool edits reconcile immediately.
 
-`groundForceFull` and free-body layers use the classic joint in `computeGroundedBoth`.
+## Important state
 
-Single-layer grounding is unchanged (cell flood + incremental cache).
-
-## Perf work landed (this pass)
-
-| Change | Effect |
+| Symbol | Meaning |
 | --- | --- |
-| Drop unused `cgCompDensity` sum in `indexComponents` | Less work per flood/index (density never read by motion) |
-| Flood uses local `MAT_CLASS` / `MAT_FLAGS` pointers + `memset` | Slightly tighter rigid DFS |
-| Bond persistence (`sgBondsValid`) | Skips O(ungrounded) bond scan on pure-loose re-entry |
-| Pure-bore joint restore only for base-grounded terrain | Hanging dual-layer comps (joint-stamped, base-ungrounded) keep `jointDirty` so multi-log acid cannot creep |
-| Peer wake on joint rebuild | Snapshot both layers when joint stamps may drop; peel joint patches on bond-only invalidation |
-| Free-body joint keep | Free bodies do not force joint. `moveBodies` + `ensureGroundedSingleLayer` preserve stamps when `jointSupportValid` / `jointGroundReady` so spawn/cube cannot peel co-support without paying full joint every body frame |
+| `compAdjPairs` | Cached same-layer component adjacency. |
+| `cgBonds` | Cross-layer bonds relevant to unsupported groups. |
+| `jointSupportValid` | Both layers contain a valid joint-support closure. |
+| `jointSupportSleeping` | Loose-only ticks may preserve that closure. |
+| `jointDirty` / `jointBondsInvalid` | The next joint pass must rebuild bonds. |
 
-**Measured** (pan-stream, `--repeat 5` vs `bench/baseline.json`): step.mean about **−4.5%**, pure-perf checksums unchanged. Joint wall time remains ~5.1–5.3 ms p50 (timer mostly in `groundingMs` after bond work moved out of `crossLayerGroundingMs`).
-
-## Tried and not shipped
-
-| Approach | Result |
-| --- | --- |
-| Full edge rebuild every joint frame | ~15 ms joint regression |
-| Graph-stamped rigid bases | Pure-perf diverge (under-ground on chunk stone) |
-| Island BFS joint after flood bases | stream+loose / pure-perf diverge |
-| Shift `groundedCell` with the world | Changes `wakeCellsThatLostGrounding` → pure-perf diverge |
-| Stream bulk reuse without floor-reachability cleanup | Pure-perf diverge (edge-only remnants) |
-| Stream bulk reuse **with** floor-reachability cleanup | Identity green, **not faster** (cleanup ≈ full flood) |
-| Active-region component carry (skip inactive `next` stamps) | Large step win but pure-perf diverge (ghost rigid / dirty volume) |
-
-## Data
-
-| Symbol | Role |
-| --- | --- |
-| `SolidNode` | One node per stone/plant/ice component |
-| `sgFgNodeOfPos` / `sgBgNodeOfPos` | Positional comp index → node id |
-| `sgCrossCount` / `sgAdj` | Full rebuild topology (offline / future) |
-| `sgBondsValid` | `cgBonds` match co-occupation for residual joint |
-| `sgCommitPrimary` | `true` — joint uses the path above |
-| `groundStreamX*` / `Y*` | Entering band after `shiftWorld` (hook for future band-local flood) |
-
-## Next (to beat ~5 ms joint for real)
-
-1. **Band-local flood** that is cheaper than full DFS *and* strips edge-only remnants without an O(grounded) pass — or drop/redefine edge support at stream boundaries with an intentional checksum update.
-2. **Active-region carry** with a pure-perf-safe prevCompCells policy (likely must re-stamp `next` for any comp that might sit in a soon-to-be-blanked band).
-3. Fix graph-base identity on chunk-bounded infinite terrain, then O(components) grounding can replace cell DFS.
-
-## Tests
-
-- `npm run test:grounding`
-- `npm run test:pure-perf`
-- `npm run test:xlayer-fall` / `test:stone-layers` / `test:component-erase`
-- `npm run test:rigid-spawn-joint` (generated world: free-body spawn must not slough FG)
-- `node scripts/bench-sand.mjs --compare bench/baseline.json`
+The fallback is always the full grounding path. Validate changes with
+`test:grounding`, `test:pure-perf`, `test:xlayer-fall`, `test:stone-layers`,
+`test:component-erase`, and `test:rigid-spawn-joint`, then run the engine
+benchmark comparison.

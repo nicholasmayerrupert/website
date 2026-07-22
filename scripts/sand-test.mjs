@@ -646,7 +646,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   let tops = [];
   for (let x = L + 1; x < R; x++) { for (let y = top; y <= floorY; y++) { if (g[y * COLS + x] === WATER) { tops.push(y); break; } } }
   const spread = tops.length ? Math.max(...tops) - Math.min(...tops) : -1;
-  // pre-fix this body settled with a ~5-9px ramp; the leveller brings it to <=3px.
+  // Surface levelling keeps the settled ramp within three cells.
   check(`wide top surface is near-flat (spread ${spread}px over ${tops.length} cols)`, spread >= 0 && spread <= 3 && tops.length > 100);
   e.destroy();
 }

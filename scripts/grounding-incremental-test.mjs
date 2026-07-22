@@ -1,17 +1,8 @@
-// Rigorous validation of incremental grounding (the acid-on-stone speedup).
-//
-//   node scripts/grounding-incremental-test.mjs
-//
-// groundedCell[] is a pure function of the grid, so the incremental fast path is
-// correct iff it produces the identical array to a full reflood. Two guarantees:
-//   1. VERIFY: run the fast path AND a full reflood every step, assert 0 mismatches
-//      across a long randomized fuzz of paint/erase/acid/lava/ice/water/sand ops.
-//   2. CHECKSUM: run the same scenario twice — fast path vs forced-full-reflood —
-//      and assert the grid checksum matches at EVERY step (byte-identical behavior).
+// Validates incremental grounding against a full reflood using per-cell mismatch
+// checks and per-step grid checksums over deterministic mixed-material edits.
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-// Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 
 await initSandWasm();

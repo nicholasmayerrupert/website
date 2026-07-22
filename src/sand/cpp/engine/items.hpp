@@ -1,13 +1,6 @@
 #pragma once
-// Dropped items and cosmetic particles (extracted from the Engine in 5c/5d).
-//
-// Entities, NOT grid cells. An IT_ITEM is a Starbound-style surface sprite: it
-// falls, rests ON TOP of solids, NEVER stays buried (rises out if covered),
-// passes freely through other items (no stacking), and MAGNETS toward a nearby
-// player until collected. IT_PARTICLE is cosmetic mining debris. They never
-// write the grid, never go through the tile store, and use NO rand() — so
-// worldgen prefetch byte-identicality and the sim RNG stream are untouched
-// (determinism invariant). Method bodies live in items_impl.inc.
+// Dropped items and cosmetic particles are non-grid actors. They never use the
+// shared RNG or enter the chunk store; world shifts remap their local positions.
 
 struct Engine;
 

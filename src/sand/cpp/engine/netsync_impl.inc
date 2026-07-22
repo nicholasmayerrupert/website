@@ -1,5 +1,3 @@
-// NetSync method bodies (need the full Engine definition; see netsync.hpp).
-
 // RLE-encode one grid into blob: repeated [u32 run][u8 value].
 void NetSync::rleEncode(const uint8_t* g) {
   size_t n = (size_t)E.cols * E.rows, i = 0;

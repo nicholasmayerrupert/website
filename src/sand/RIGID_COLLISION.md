@@ -1,168 +1,49 @@
-# Rigid-body collision (swept, mask-derived)
+# Rigid-body collision
 
-Hand-drawn rigid bodies are pixel **occupancy masks** with a continuous pose
-(`px,py,angle`), linear/angular velocity, and mass/inertia derived from their
-occupied cells. This document covers the collision pipeline in
-`cpp/engine/rigid.inc` (`rigidStep`) and why it was reworked.
+Free bodies use a continuous pose over a pixel occupancy mask. Mass, inertia,
+boundary samples, and the local AABB are derived from occupied cells. The solver
+lives in `rigid_impl.inc`.
 
-## Root cause of the old "thin shapes pass through each other" bug
+## Collision pipeline
 
-The previous body↔body path had four compounding defects:
+- Substep count uses linear speed plus angular tip speed, capped by
+  `R_MAX_SUBSTEPS`.
+- Boundary samples include cell centers, exposed face midpoints, and exposed
+  convex corners. They are rebuilt only when occupancy changes.
+- Body/body and body/terrain checks sweep each sample's relative substep path in
+  increments no larger than `R_SWEEP_STEP` and refine the first hit.
+- Contact normals come from the target mask. Contacts are bucketed by normal
+  direction so distinct faces do not collapse into one diagonal manifold.
+- Sequential impulses solve normal velocity, friction, penetration bias, and a
+  fixed impact restitution target. Slow resting contacts target zero rebound.
+- Raster depenetration remains a last-resort fallback.
 
-1. **Centre-to-centre normal overwrite.** It first computed a correct
-   mask-derived surface normal per contact sample, then *threw it away* and
-   replaced every contact normal with `normalize(A.center − B.center)` plus a
-   single projection-overlap depth. An off-centre bar landing on a platform got
-   a diagonal normal and was flung sideways instead of stopping.
-2. **No sweep.** Contacts were only generated where a boundary **cell centre**
-   was already inside the other mask *at the substep boundary*. A thin (1-cell)
-   body moving ~0.6 cell/substep could sit above the target one substep and
-   below it the next — never overlapping on a sampled frame — and tunnel clean
-   through.
-3. **Cell-centre-only sampling.** The body shape is the union of 1×1 squares,
-   but only cell centres were tested, so the exposed *edges* of thin shapes were
-   invisible to collision.
-4. **Centre-velocity substeps.** Substep count came from body-centre linear
-   speed only. A slowly-translating but fast-spinning bar took too few substeps
-   and tunnelled at its endpoint (high angular tip speed, low centre speed).
+Contact damping lets stable bodies sleep, but angular damping is skipped while a
+contact is consistently converting a fall into a real topple. Bodies treat the
+loaded-window boundary as solid; camera-driven streaming persists bodies through
+the chunk store instead of using that collision wall.
 
-## What changed
+## Fluids and loose solids
 
-- **Mask-derived normals only.** `collectSweep` takes each contact normal from
-  the *target* mask surface (`bodyNormalAt`), oriented from B→A by a `sign`. The
-  centre-to-centre replacement is gone (a centre-to-centre direction survives
-  only as a degenerate fallback when a manifold bucket's normals cancel).
-- **Exposed-edge boundary samples.** `computeDerived` caches, per boundary cell,
-  the cell centre **plus the midpoint of every exposed face**
-  (`Body::boundarySamples`). Rebuilt only when occupancy changes, not per tick.
-- **Swept sampling (body↔body and body↔terrain).** For each sample either record
-  an existing penetration (t=0) or march the sample's per-substep **relative**
-  path (sample velocity − target velocity at that point) through the target mask
-  in steps ≤ `R_SWEEP_STEP` (0.4 cell), binary-searching the first impact. A
-  point can no longer cross a thin body without generating a contact. Terrain
-  uses the same swept helper against the static grid, generalising the old
-  single-step predicted check (consistent normal orientation + skin).
-- **Point-speed substeps.** Substep count uses `linear + |omega|·maxR` (max
-  point speed incl. angular tip speed), so spinning bodies get enough substeps.
-- **Contact skin.** Surfaces touch within `R_CONTACT_SKIN` (0.1 cell): the sweep
-  marches an extra skin distance so resting contacts are detected before deep
-  overlap (stable rest, minimal visible penetration, no visible float).
-- **Thresholded impact restitution.** A contact closing faster than 0.35
-  cell/tick captures a fixed separating-speed target at 10% of its initial
-  impact speed against terrain and 18% between bodies. The modestly stronger
-  body target keeps a cube-on-cube rebound visible after the two bodies share
-  the impulse; unsupported bodies still exchange momentum rather than acting
-  like immovable walls. Capturing the target once is important: applying a restitution
-  factor to the live velocity on every sequential-impulse iteration would wash
-  the rebound back toward zero. Slower contacts target zero normal speed, so
-  stacks, gravity contacts, and sleeping bodies remain stable rather than
-  jittering. Actors use a separate post-solve push/crush path, so an actor inside
-  the body's swept bounds suppresses terrain restitution for that substep: the
-  soft impact absorbs the bounce and preserves pinned/crushing behavior.
-- **Bucketed manifold.** Samples are grouped by quantized normal direction (8
-  sectors) so materially different faces stay separate instead of averaging into
-  one diagonal normal; within a bucket the two tangential extremes are kept so a
-  long contact gets stable torque at both ends. Deepest feeds the sleep gate.
-- **Depenetration fallback** (`depenetrateBodyRaster`, unchanged) still runs
-  after the solver as a last resort along valid mask normals — it is a fallback,
-  not the primary mechanism.
-- **Topple-aware settle damping.** While a body is in contact and barely moving it
-  is damped each substep (`R_CONTACT_LIN_DAMP`/`R_CONTACT_ANG_DAMP`) so residual
-  solver jitter dies and it can sleep. The angular part used to fire on *any* small
-  `|omega|`, which also crushed the slow *onset* of a genuine topple: a tall/thin
-  hand-drawn body whose centre of mass had moved past its support would creep over
-  across hundreds of ticks instead of tipping (a compact cube escaped because its
-  lower inertia spun it past the damping threshold quickly). The fix distinguishes
-  the two by what the contact solve is doing to the spin: a real topple is the
-  solver converting the body's fall into rotation, so `omega` grows in one
-  consistent direction every substep (`omega*omegaPre > 0 && |omega| > |omegaPre|`);
-  rest jitter oscillates sign or decays. Angular damping is skipped while the spin
-  is consistently growing and still applied otherwise — so an imbalanced body tips
-  promptly while a body whose COM sits over its support stays put and settles as
-  before. `omegaPre` (the spin entering the substep's solve) is cached per body in
-  `rigidStep`. Guarded by `scripts/rigid-topple-test.mjs`.
-- **Render-boundary wall.** `collectTerrain`'s `solid()` test treats any cell
-  outside the loaded buffer (`x<0 || x>=cols || y<0 || y>=rows`) as solid, with an
-  inward-pointing normal. A body's own motion can no longer carry it off the
-  simulated window — where its raster is clipped away and it silently
-  disappears. It rests against / is pushed back from the rim until that region
-  streams into view (then it resumes). This is distinct from world-stream
-  eviction, which legitimately carries bodies off-buffer and persists them
-  (`csSaveBodiesLeaving`/`csRestoreBodies` in `shiftLayer`); the wall only blocks
-  *self-propelled* exit, not camera-driven streaming.
+Liquids do not collide as terrain. Buoyancy depends on submerged boundary samples,
+material density, and drag. A body entering liquid relocates displaced cells to
+the nearest reachable space, treating its own raster as traversal-only space.
+Other bodies remain barriers.
 
-- **Buoyancy / partial submersion.** Fluids are no longer treated as solid
-  terrain (`isBodyTerrain` returns false for any liquid) and any liquid is
-  displaceable by a submerging body (`isBodyRelocatable`). Depth is governed by an
-  Archimedes force in `rigidStep`: each substep the body gains
-  `−R_GRAVITY·(fluidDensity/bodyDensity)·submerged` vertically plus linear/angular
-  drag (`R_LIQUID_DRAG`/`R_LIQUID_ANG_DRAG`). The submerged fraction is the share
-  of boundary cells with a liquid 4-neighbour — sampled on the *surrounding* medium
-  because the body's own footprint is cleared to EMPTY during the step. Result: a
-  body lighter than the fluid settles part-submerged at its float depth (denser
-  body → deeper) instead of resting on top as if the fluid were solid; a body
-  denser than the fluid sinks through. Fluid the body enters is spilled around it
-  (`spillDisplacedBodyMaterial`): the spill BFS spreads sideways/down before up
-  (so a plunge raises the surface instead of firing a fountain out the entry
-  column) and its passability is keyed to the *displaced* fluid's density, not the
-  body's — so a dense fluid (lava) shoved aside by a lighter body percolates
-  through its own pool to the free surface rather than being silently dropped when
-  it is boxed in by more of itself (the old per-body test lost volume mid-plunge).
-  The distance search begins at every displaced source and may traverse that
-  body's own raster as distance-only space, so a source enclosed by a rotated
-  footprint exits at the nearest boundary instead of being routed through the
-  first exposed tip. Other bodies remain barriers.
-  Floating bodies
-  have no solid contact so they never latch the sleep gate — they stay awake and
-  gently bob, which drag keeps stable (negligible cost for a few bodies).
+Powders provide one-way support and can be displaced by a sufficiently heavy
+body. They never push a rigid body upward.
 
-Constants live in `common.hpp`: `R_SAFE_SUBSTEP` 0.5, `R_MAX_SUBSTEPS` 10,
-`R_CONTACT_SKIN` 0.1, `R_SWEEP_STEP` 0.4, `R_TERRAIN_RESTITUTION` 0.1,
-`R_BODY_RESTITUTION` 0.18, `R_BOUNCE_MIN_SPEED` 0.35, `R_LIQUID_DRAG` 0.12, and
-`R_LIQUID_ANG_DRAG` 0.1.
+## Invariants and limits
 
-## Tests
+- A body stamps its real material into the grid; `bodyOwner` distinguishes it
+  from identical static terrain.
+- The sweep uses first-order target motion within each substep rather than exact
+  continuous rotation.
+- Curved masks can occupy several manifold buckets and cost more than flat
+  contacts.
+- Deep stacks converge at the sequential-impulse rate. Ordinary bodies use 64
+  solver iterations; scenes containing only short-lived blast debris use 16.
 
-`scripts/rigid-collision-test.mjs` (wired into `npm test`) covers: vertical bar
-on horizontal bridge over a gap (centred + off-centre, at several dt groupings),
-off-centre impact producing an ~upward normal (peak |vx| stays ~0.05, near-zero
-rotation), fast thin projectile vs a thin wall, rotating-bar endpoint strike,
-two concave hand-drawn bodies keeping their occupancy shape, a thin body resting
-on another for 1200+ ticks without sinking/drifting, nearest-outlet displacement
-from inside a rigid footprint, and determinism. New test
-ABI: `engine_body_state` / `engine_set_body_motion` (`_bodyState`,
-`_setBodyMotion`).
-
-## Benchmark
-
-`scripts/bench-rigid.mjs` — 60 irregular hand-drawn bodies (bars/L/disc/blob)
-trickled into a walled container, 700 ticks, measuring the rigid phase.
-
-| build                | rigid p50 | p95    | mean   | total  |
-|----------------------|-----------|--------|--------|--------|
-| before (this change) | 2.6 ms    | 4.7 ms | 2.5 ms | 1742 ms|
-| after                | 4.2 ms    | 13.8 ms| 5.3 ms | 3712 ms|
-
-The swept sampling + richer manifold roughly doubles the rigid cost **under this
-deliberately extreme 60-body pile-up**, which is still well inside a frame
-budget. Realistic scenes have a handful of bodies; the general-world bench
-(`bench-sand.mjs`) shows the rigid phase at ~0.03 ms with no bodies (unchanged).
-Idle/sleeping bodies are broad-phase- and sleep-gated to near-zero cost. No
-per-contact heap allocation was added (scratch `penAcc`/`terrAcc` reused; bucket
-state is fixed-size stack arrays; boundary samples cached).
-
-## Remaining limitations
-
-- **Speculative reaction distance.** A fast body can stop up to one substep of
-  relative motion (≤ ~`R_SAFE_SUBSTEP`) short of contact for a single tick, then
-  close the gap next tick. Not visible at normal speeds.
-- **Rotation within a substep is first-order.** The target's motion is
-  approximated by subtracting its point velocity over the substep rather than
-  re-rasterizing its rotated mask along the path. Adequate because substeps cap
-  point motion to ≤ ~0.5 cell, but extreme spin + extreme translation together
-  rely on the substep cap, not an exact time-of-impact.
-- **Manifold quantization.** Smoothly curved contacts (e.g. a disc on ground)
-  split across up to a few normal buckets, producing more contacts than a flat
-  rest — the main source of the benchmark's cost under heavy piling.
-- **Solver iterations unchanged (64).** Very deep single-column stacks still
-  converge at the sequential-impulse rate; not exercised by the test scenes.
+Constants live in `common.hpp`. Validate collision changes with
+`npm run test:rigid-collision`, `npm run test:rigid-topple`,
+`npm run test:rigidmat`, and `npm run bench:rigid`.

@@ -1,19 +1,5 @@
-// Render-noise stability test. The per-cell terrain "grain" (8 brightness shades
-// picked from a 64x64 noise tile) must stay LOCKED TO THE TERRAIN across a world
-// shift — i.e. a given world cell renders to the same shade no matter where it sits
-// in the buffer. The bug this guards: the noise was indexed by BUFFER coords, and
-// WORLD_SHIFT_ROWS (96) is not a multiple of the 64 tile, so panning down far
-// enough to trigger a vertical shift made the whole grain visibly "reapply"/jump.
-// Render-only lighting can legitimately change a small number of pixels near
-// exposure edges across a shift, so this checks that mismatches stay sparse rather
-// than requiring byte equality for every lit pixel.
-//
-// The fix keys the noise on ABSOLUTE WORLD coords (worldOffset + buffer). This test
-// performs a real vertical shift on a live engine and asserts the rendered color of
-// overlapping (un-changed) world cells stays stable apart from sparse lighting
-// differences.
-//
-// Run: node scripts/render-noise-test.mjs   (also part of `npm test`)
+// Terrain grain is keyed to absolute coordinates and must stay visually stable
+// across a vertical world shift. Sparse exposure-edge lighting changes are allowed.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';

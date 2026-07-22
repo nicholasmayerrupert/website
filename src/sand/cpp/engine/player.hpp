@@ -1,10 +1,5 @@
 #pragma once
-// Terraria-like player characters (extracted from the Engine in 5d):
-// deterministic AABB platformer physics over the cell grid (NO RNG — a fixed
-// input stream + seed replays identically, the multiplayer foundation), the
-// player-mediated tool policy (reach, cooldown, mining state machine, solid
-// drafts), spawn/remove/input plumbing, and the ABI snapshot. Owns the
-// players vector. Method bodies live in player_impl.inc.
+// Deterministic AABB player physics, survival tool policy, and snapshots.
 
 struct Engine;
 

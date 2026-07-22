@@ -1,5 +1,3 @@
-// ToolSystem method bodies (need the full Engine definition; see tools.hpp).
-
 // Shared capped scan for the per-pixel placement/staging economy: walk `offs`
 // (nearest-to-center-first) as (ox,oy) offsets from (cx,cy), skip out-of-bounds
 // cells and the player's own AABB, and invoke act(k) until `cap` cells acted
@@ -42,9 +40,8 @@ void ToolSystem::strokeScan(int x0, int y0, int x1, int y1, int spacing, Stamp s
 
 // Tool semantics and player/world edits.
 //
-// JS forwards raw input and selected tool/material ids; this file decides what
-// those intents do to the world. Keep component-aware writes here, and keep DOM
-// or pointer policy in camera.inc/JS.
+// This subsystem turns selected tools/materials into component-aware world edits.
+// DOM normalization stays in JS; view and pointer policy live in ViewCamera.
 void ToolSystem::initSurvivalFootprints() {
   survivalFootprints.clear();
   survivalFootprints.reserve(SURVIVAL_FOOTPRINT_MAX_SIZE);
@@ -501,8 +498,7 @@ int ToolSystem::placeMaterialAtFootprintStrokeCapped(int x0, int y0, int x1, int
     [&] { return remaining > 0; });
   return placed;
 }
-// Brush radius for a creative material (preserves the historical per-material sizes;
-// FIRE/DRIFTWOOD draw a tighter 1-radius, everything else 2).
+// Fire and driftwood use a tighter brush than other creative materials.
 int ToolSystem::brushFor(uint8_t m) { return (m == FIRE || m == DRIFTWOOD) ? 1 : 2; }
 // Finalize the single component draft: write draftMaterial into the staged EMPTY
 // cells and register them into the right seeded-component list by group (so stone,
@@ -521,7 +517,7 @@ void ToolSystem::finalizeDraft() {
   if (!cells.empty()) E.L->skyDirty = true;
   registerComponentCells(draftMaterial, cells);
 }
-// A seed is a single cell (the old SEED_SIZE generalization was never used).
+// Seeds occupy one cell.
 bool ToolSystem::getSeedOrigin(int cx, int cy, int& x0, int& y0) {
   x0 = cx;
   y0 = cy;
@@ -562,12 +558,9 @@ bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   return true;
 }
 
-// ---- tool / pointer state machine (input policy from createSandGame) ----
-// JS owns browser-coord -> cell translation, button normalization, the RAF
-// loop, and the camera; it forwards cell-space pointer events here. All tool
-// policy (what paints, brush radius, RMB-erase, draft lifecycle, seed, cube,
-// throttle) lives below. The "changed" return flags when the draft preview
-// needs a redraw. RMB arms a momentary eraser that overrides the active tool.
+// Tool and pointer state machine. The engine maps normalized pointer input to
+// aim cells and owns brush, draft, seed, cube, and throttle policy. A true return
+// value means the draft preview changed.
 int ToolSystem::effectiveTool() { return activeTool; }
 bool ToolSystem::isPaintTool(int t) { return t == T_SAND || t == T_WATER || t == T_OIL || t == T_FIRE || t == T_ACID || t == T_LAVA; }
 // The creative pointer flow routes by `creativeMode`. setTool keeps the legacy Tool

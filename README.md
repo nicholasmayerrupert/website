@@ -28,5 +28,5 @@ npm run deploy   # build and deploy to Cloudflare
   a thin JS shell, and the `<sand-game>` Web Component (`src/sand/embed/`). See
   its [README](src/sand/README.md) to work on it.
 - `scripts/` — headless test suites, benchmarks, and the authoritative
-  multiplayer server (`npm run sand:server`). `npm run test` runs everything.
-
+  multiplayer server (`npm run sand:server`). `npm test` runs the headless
+  suites; `npm run test:all` also runs lint, builds, and browser tests.

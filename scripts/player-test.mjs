@@ -225,11 +225,11 @@ const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);
   e.destroy();
 }
 
-// ---- Phase 3: player-mediated tool use (dig / build) ----
+// Player-mediated tool use.
 const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
 const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g[i] === m) n++; return n; };
 
-// 10. primary action with the eraser mines reachable stone.
+// Primary action with the eraser mines reachable stone.
 {
   console.log('tool: mine reachable stone');
   const e = mk();
@@ -248,7 +248,7 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
-// 11. an aim beyond reach mines nothing.
+// An aim beyond reach mines nothing.
 {
   console.log('tool: reach limit');
   const e = mk();
@@ -265,8 +265,8 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
-// 12. solids place EXACTLY like creative: holding draws a previewed draft (grid
-//     unchanged) and RELEASE finalizes one connected piece.
+// Solid placement previews a draft without changing the grid, then finalizes one
+// connected piece on release.
 {
   console.log('tool: place stone (creative draft -> finalize on release)');
   const e = mk();
@@ -285,8 +285,7 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
-// 13. gravity is unchanged: a solid drawn onto grounded terrain STAYS; one drawn in
-//     mid-air FALLS as one body and lands (creative parity, "stay only if supported").
+// Grounded drafts stay put; unsupported drafts fall as one body.
 {
   const drawAndSettle = (aimY, floorTop) => {
     const e = mk();
@@ -313,7 +312,7 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   check(`mid-air solid placed (${a.placed}) and falls (top ${a.t0}->${a.t1})`, a.placed > 6 && a.t1 > a.t0 + 5);
 }
 
-// 14. player edits mark dirty rects and the placed material simulates afterwards.
+// Player edits mark dirty rects and the placed material continues simulating.
 {
   console.log('tool: edits dirty + simulate');
   const e = mk();
@@ -336,9 +335,7 @@ const countMat = (g, m) => { let n = 0; for (let i = 0; i < g.length; i++) if (g
   e.destroy();
 }
 
-// 15. emit policy: continuous tools (fluids/sand) throttle by the cooldown while
-//     held; solids + the cube fire ONCE per press (rising edge), so holding the
-//     button doesn't spam blocks/boxes.
+// Continuous tools respect cooldowns; solids and cubes act once per press.
 {
   console.log('tool: continuous throttle vs single-shot');
   const e = mk();
@@ -475,8 +472,7 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
-// N6. control / regression guard: a SHALLOWLY buried (<= P_BURY_JUMP_MAX) player
-//     still walks horizontally with the same input — the gate must not over-block.
+// A shallowly buried player remains mobile.
 {
   console.log('survival: shallow-buried player still walks (regression)');
   const e = mk();
@@ -491,9 +487,7 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
-// 15. eraser acts as a DISC AT THE AIM CELL (like every other tool), NOT a directional
-//     sweep emanating from the player. Cells at the cursor are carved; cells back on
-//     the player side (well short of the cursor) are NOT touched.
+// Erasing is a disc at the aim cell, not a sweep from the player.
 {
   console.log('tool: eraser mines a disc at the cursor (no sweep from player)');
   const e = mk();
@@ -514,9 +508,7 @@ const buryFeet = (e, p, depth) => {
   e.destroy();
 }
 
-// 16. DURABILITY is per-cell progress, not a slower hit rate: held eraser hits happen
-//     at the same cadence for every material, damaged stone renders darker, and
-//     releasing before a break resets the partial progress.
+// Durability is per-cell progress; releasing before a break clears partial damage.
 {
   console.log('tool: durability is block progress at a constant hit cadence');
   const e = mk();
@@ -663,9 +655,9 @@ const waterPool = (e, x0, x1, top, floor) => {
   // Slide the world under the active draft on each axis in turn (the game only ever
   // shifts one axis per frame — maybeShiftWorld / maybeShiftWorldVertical — and
   // shiftLayer slides a single-axis band). The remap must move the draft cells WITH
-  // the grid so their WORLD coords are invariant (pre-fix they stayed at stale buffer
-  // indices -> world coords moved). Negative shifts move buffer content toward higher
-  // indices, keeping this sky draft (small y) on-buffer instead of sliding off the top.
+  // the grid so their absolute world coordinates remain invariant. Negative shifts
+  // move buffer content toward higher indices, keeping this sky draft (small y)
+  // on-buffer instead of sliding off the top.
   e.shiftWorldXY(-32, 0);
   e.shiftWorldXY(0, -32);
   e.shiftWorldXY(-32, 0);

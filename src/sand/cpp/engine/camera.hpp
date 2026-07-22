@@ -1,16 +1,6 @@
 #pragma once
-// View camera + input state (ported from createSandGame.js; extracted from the
-// Engine in the 5c re-architecture). Self-contained: pure view/pointer/key
-// state and math over it — no Engine or Layer access. The Engine composes one
-// as `cam`, keeps thin delegating shims for the existing call sites, and owns
-// the cross-system drivers (streamWorld, applyLocalInput) that weld the camera
-// to worldgen/GL/tools.
-//
-// JS is a thin shell: it sizes the canvas, forwards raw DOM events (held keys,
-// the pointer in canvas-relative CSS px, button state), and drives the
-// RAF/fixed-step loop. Everything else — clamped camera bounds, free-camera
-// panning, the follow glide, the pointer->aim-cell mapping, and the player
-// input bitmask — lives here.
+// Camera and normalized input state. This class is independent of Engine/Layer;
+// Engine coordinates it with tools, actors, streaming, and GL presentation.
 
 class ViewCamera {
  public:

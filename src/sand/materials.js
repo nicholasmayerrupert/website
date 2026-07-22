@@ -1,19 +1,9 @@
-// Material identity for the JS side of the sim/renderer.
-//
-// The registry itself (KIND, MC, MATERIALS) is generated from
-// src/sand/materials.schema.json — the single source shared with the C++ engine.
-// Edit the schema, then run `npm run generate`. To add a material: add a schema
-// entry. If it moves in a way no existing `kind` covers, also add a case to the
-// engine's step() dispatch (C++) — otherwise no other file needs editing.
-//
-// This module re-exports the registry and derives MAT.<NAME> = id for the JS
-// shell. The simulation and the renderer both run in C++/WASM now, so JS no
-// longer builds flat density/kind/color lookup tables — the engine reads its
-// own generated tables (materials.generated.hpp) from the same schema.
+// JS material identities generated from materials.schema.json. Edit the schema
+// and run `npm run generate`; C++ consumes the matching generated header.
 //
 // renderAnim drives per-frame shimmer/flicker; 'none' = static grain.
 // color is packed ABGR (0xAABBGGRR) over the little-endian RGBA ImageData view;
-// its alpha byte is legacy data. `transparency` explicitly controls rendering
+// its alpha byte is not used. `transparency` explicitly controls rendering
 // (0 = opaque, 1 = invisible).
 // density 0 = weightless (air/gas). looseSorted marks materials that participate
 // in density-sorted loose settling (powders + flowing liquids). mobility is the

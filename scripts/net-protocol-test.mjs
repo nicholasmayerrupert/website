@@ -1,4 +1,4 @@
-// Tests for the Phase 9 protocol additions: dropped-item, inventory and cursor
+// Protocol tests for dropped-item, inventory, and cursor
 // snapshots (host -> client) and the survival-inventory intents (client -> host).
 // All run in Node with no real network. Run with:
 //   node scripts/net-protocol-test.mjs

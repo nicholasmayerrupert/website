@@ -1,8 +1,7 @@
 // Reproducer suite for: digging a moat around overlapping foreground/background
 // stone sometimes lets only one layer's detached island fall.
 //
-// This is intentionally not wired into `npm run test` yet. It documents and
-// detects the current failure mode so the engine fix can promote it later.
+// This regression suite is part of the required headless test manifest.
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 

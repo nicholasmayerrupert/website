@@ -1,13 +1,7 @@
-// ItemSystem method bodies (need the full Engine definition; see items.hpp).
-
 // Dropped items and particles.
-//
-// Entities, NOT grid cells. An IT_ITEM is a Starbound-style surface sprite: it
-// falls, rests ON TOP of solids, NEVER stays buried (rises out if covered), passes
-// freely through other items (no stacking), and MAGNETS toward a nearby player
-// until collected. IT_PARTICLE is cosmetic mining debris. They never write the grid,
-// never go through the tile store, and use NO rand() — so worldgen prefetch
-// byte-identicality and the sim RNG stream are untouched (determinism invariant).
+// Items rest on solids, rise out when covered, overlap one another, and attract
+// toward nearby players. Particles are cosmetic mining debris. Neither writes the
+// grid, enters the tile store, or consumes the simulation RNG.
 
 int ItemSystem::itemCell(const Item& it) { int x = (int)std::floor(it.px), y = (int)std::floor(it.py); return y * E.cols + x; }
 // A grid cell is "solid" to an item exactly as it is to a player (settled powder +

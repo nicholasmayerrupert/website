@@ -1,12 +1,4 @@
-// Thin React wrapper that mounts the framework-agnostic <sand-game> Web Component
-// (../embed/sandGame.js) and bridges its draw-mode CustomEvent to a React prop:
-//
-//   <SandGame onDrawModeChange={setFaded} />
-//
-// The simulation, WebGL rendering, input, world streaming, and the tool palette
-// all live in the element now (and in the C++/WASM engine it drives). React only
-// places the element and listens for its draw-mode event. Any non-React page can
-// use <sand-game> directly — see ../embed/sandGame.js.
+// React shim for the framework-free <sand-game> element and its draw-mode event.
 
 import { useEffect, useRef } from 'react';
 

@@ -1,16 +1,6 @@
 #pragma once
-// Deterministic procedural terrain queries (extracted from the Engine in 5c).
-//
-// Every function is a pure function of absolute world coordinates + the ACTIVE
-// layer's terrain params (seeds, surface amplitude, sea row — set by
-// initInfiniteLayer) via position-keyed hashes (whash/wfbm; NO shared rand()
-// stream), so generation is order-independent and both layers line up at the
-// surface. Streaming (shifts, tile store, prefetch) and the fill passes stay
-// on the Engine (worldgen.inc); this class answers "what is the world at
-// (x, y)?".
-//
-// Method bodies live in terrain_impl.inc (they need the full Engine
-// definition to reach E.L-> and E.rows).
+// Procedural terrain queries are pure functions of absolute coordinates and the
+// active layer's terrain parameters. They never consume shared simulation RNG.
 
 struct Engine;
 
@@ -21,9 +11,9 @@ class TerrainGen {
  public:
   explicit TerrainGen(Engine& e) : E(e) {}
 
-  // Generator tunables (values were Engine statics defined in sand.cpp).
+  // Generator tunables.
   static constexpr double SURFACE_FREQ = 0.008;
-  static constexpr double CAVE_FREQ = 0.01;    // ~5x larger caves (lower freq = bigger features)
+  static constexpr double CAVE_FREQ = 0.01;    // lower frequency produces larger features
   static constexpr double CAVE_THRESH = 0.66;
   static constexpr double TREE_PROB = 0.05;
   static constexpr double BIOME_FREQ = 0.0025; // broad climate regions with smaller moisture pockets

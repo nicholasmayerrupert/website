@@ -1,6 +1,5 @@
-  // Tool semantics (ToolSystem, tools.hpp) — composed here; method bodies in
-  // tools_impl.inc. The shim layer below keeps every existing internal/ABI call
-  // site unchanged (to be thinned when 5g makes callers address tools.*).
+  // ToolSystem is composed here; wrappers preserve the Engine's internal and ABI
+  // surface while implementations live in tools_impl.inc.
   ToolSystem tools{*this};
   const SurvivalFootprint& getSurvivalFootprint(int id) const { return tools.getSurvivalFootprint(id); }
   const SurvivalFootprint& getSurvivalFootprint(const Player& p) const { return tools.getSurvivalFootprint(p); }

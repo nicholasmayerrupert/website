@@ -1,6 +1,4 @@
-  // Survival inventory (InventorySystem, inventory.hpp) — composed here; method
-  // bodies in inventory_impl.inc. Shims keep internal call sites (items pickup,
-  // player tools, spawn, ABI) unchanged.
+  // Authoritative survival inventory.
   InventorySystem inv{*this};
   void seedStarterTools(Player& p) { inv.seedStarterTools(p); }
   void seedStarterTools(int id) { inv.seedStarterTools(id); }

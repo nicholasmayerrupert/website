@@ -1,5 +1,3 @@
-// GLPresenter method bodies (need the full Engine definition; see glpresenter.hpp).
-
 bool GLPresenter::glReady() const { return glc != nullptr && glc->ready && glTex != 0; }
 
 static bool glAllocateCellTexture(GLuint& texture, int cols, int rows) {
@@ -111,9 +109,7 @@ void GLPresenter::glSetCamera(double camX_, double camY_, double cellDev, int vi
   glOffX = snapOff ? rawX : std::round(rawX);
   glOffY = snapOff ? rawY : std::round(rawY);
 }
-// Copy the engine's live camera/viewport (camera.inc) into the GL present state.
-// The camera moved into the engine in P2; the GL compositor reads it through
-// this each frame instead of JS passing it in.
+// Copy the engine's live camera and viewport into the GL present state.
 void GLPresenter::glSyncCamera() { glSetCamera(E.cam.camX, E.cam.camY, E.cam.cellDevPx, E.cam.viewportCols, E.cam.viewportRows, glGutterOn, glSnapOff); }
 
 // Recreate the cell textures at the engine's current cols×rows after a loaded-window
@@ -246,9 +242,8 @@ void GLPresenter::glShiftTex(GLuint& tex, int dx) {
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   std::swap(tex, glTex2);
 }
-// Slide BOTH layers' textures to mirror shiftWorld's grid memmove (the GPU
-// analogue of the old shiftCellCanvas). The exposed band repaints from dirty
-// chunks next frame. The world shifts both layers in lockstep (P5).
+// Slide both layer textures with shiftWorld's grid memmove. The exposed band
+// repaints from dirty chunks next frame.
 void GLPresenter::glShift(int dx) {
   if (!dx || !glReady()) return;
   emscripten_webgl_make_context_current(glc->handle);

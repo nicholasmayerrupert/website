@@ -1,27 +1,10 @@
-// Headless pan/flicker benchmark for the sand game (Playwright + Chromium).
-// Run with:
+// Headless Chromium benchmark for sub-cell pan instability and frame timing.
+// Absolute software-GL frame times are relative; instability should remain near 0.
+//
 //   node scripts/bench-pan.mjs                      # print results
 //   node scripts/bench-pan.mjs --update bench/pan-baseline.json
 //   node scripts/bench-pan.mjs --compare bench/pan-baseline.json
 //   node scripts/bench-pan.mjs --png bench/         # also dump downscaled frames
-//
-// It starts the Vite dev server (so the DEV-only __sandPerf / __sandTest hooks
-// exist), opens the About page, then measures two things:
-//
-//   1. FLICKER — the bright-block flicker users see only at lower browser zoom.
-//      That artifact is the GPU compositor DOWNSAMPLING our blocky+grid canvas
-//      when 1 CSS px < 1 backing px (zoom < 100%). We reproduce it faithfully
-//      in-page: draw the main canvas into a smaller offscreen canvas WITH
-//      smoothing (what the compositor does), then pan by WHOLE cells (a pure
-//      content translation), motion-compensate the exact integer pixel shift,
-//      and measure the residual brightness change. On a clean renderer that
-//      residual is ~0; moiré beating from sub-pixel cell/grid misalignment
-//      makes large regions change brightness -> high residual. A noise-floor
-//      capture (same camera twice) subtracts sim animation.
-//
-//   2. FRAME TIME — avg/p95 frame ms from window.__sandPerf() during a real
-//      held-key pan. (Headless uses software GL, so treat absolute numbers as
-//      relative-only; the flicker metric is the authoritative signal here.)
 
 import { spawn, spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, writeSync } from 'node:fs';
@@ -58,15 +41,8 @@ const waitForServer = () => new Promise((resolve, reject) => {
 await waitForServer();
 
 // --- in-page flicker probe (runs entirely in the browser) ---
-// Root-cause metric: as the camera pans through SUB-CELL offsets, a correct
-// renderer advances the on-screen image in clean whole-device-pixel steps, so
-// consecutive frames differ only by an exact integer-pixel translation. The
-// current fractional-offset renderer instead re-quantizes cell/grid edges
-// unevenly each frame -> a residual that no single integer shift removes. That
-// residual is exactly what the compositor downscale (zoom < 100%) amplifies
-// into the bright-block flicker. We sweep one full cell of panning and sum the
-// per-step min-over-integer-shift residual ("instability", luma 0..255).
-//   - subSteps: sub-cell sample positions across one cell.
+// Sweep one cell of camera movement. After compensating for the best integer
+// pixel shift, residual luma change is the instability score (0..255).
 const PROBE = ({ subSteps, noSnap }) => {
   const T = window.__sandTest;
   const cv = document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main');

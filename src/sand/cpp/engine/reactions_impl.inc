@@ -1,5 +1,3 @@
-// ReactionSystem method bodies (need the full Engine definition; see reactions.hpp).
-
 // Material reactions.
 //
 // Runs after growth/rigid movement inside each layer step. This file owns

@@ -1,11 +1,9 @@
-  // View camera + input policy. The state and pure view math live in
-  // ViewCamera (camera.hpp — extracted in 5c); the Engine composes one as
-  // `cam`, keeps thin delegating shims for existing call sites, and owns the
-  // drivers below that weld the camera to worldgen/GL/tools/players.
+  // ViewCamera owns view state, input policy, and pure camera math. Engine-level
+  // drivers below connect it to streaming, rendering, tools, and players.
 
   ViewCamera cam;
 
-  // ---- delegating shims (existing .inc/ABI call sites) ----
+  // Delegating wrappers used by the Engine and ABI.
   void cameraSet(double x, double y) { cam.set(x, y); }
   int cameraColX() { return cam.colX(); }
   int cameraColY() { return cam.colY(); }

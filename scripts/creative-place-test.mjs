@@ -1,12 +1,8 @@
-// Phase C: the creative palette can spawn ANY material (components draft with a live
-// preview then finalize; powders/liquids paint), place a seed for any species, and the
-// eraser/cube, and creature spawn eggs. Driven through the engine's creative
-// pointer state machine.
+// Creative pointer routing for materials, seeds, eraser, cube, and creature eggs.
 // Run: node scripts/creative-place-test.mjs
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-// Every engine in this file gets the test hooks (grounding/body/particle pokes).
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
 import { CREATIVE_KIND as CK, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
@@ -16,7 +12,7 @@ import { makeChecker } from './sand-test-util.mjs';
 const PT = { OAK: 0, PINE: 1, WILLOW: 2, CACTUS: 3, MUSHROOM: 4, BUSH: 5, VINE: 6 };
 const COLS = 100, ROWS = 80;
 await initSandWasm();
-const { check, done } = makeChecker('creative spawn-everything (Phase C)');
+const { check, done } = makeChecker('creative spawn-everything');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 1, sinksOn: false, infinite: false });
 const at = (g, x, y) => g[y * COLS + x];
 const hasCell = (cells, x, y) => {
@@ -90,7 +86,7 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
-// 6) Cube spawns a free rigid body.
+// Mycelium spores use their dedicated one-cell placement path.
 {
   const e = mk();
   e.setCreativeMaterial(CK.MATERIAL, MAT.MYCELIUM_SPORE);
@@ -102,7 +98,7 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
-// 6) Cube spawns a free rigid body.
+// Cube spawns a free rigid body.
 {
   const e = mk();
   e.setCreativeMaterial(CK.CUBE, 0);

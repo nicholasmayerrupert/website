@@ -5,7 +5,7 @@
   // rules used inside that order. Keep high-level gameplay/tool policy out of
   // this path because it runs over the active rows every simulation tick.
 
-  // ---- settle passes (identical to Stage 1) ----
+  // ---- settle passes ----
   // Density-scaled straight-down fall for liquids: a liquid may drop up to
   // round(DENSITY * LIQUID_FALL_PER_DENSITY) cells per tick (clamped to
   // [1, LIQUID_FALL_CAP]). With the values below: OIL(0.8)->2, WATER(1.0)->3,

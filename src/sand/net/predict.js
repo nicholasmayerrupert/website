@@ -1,12 +1,6 @@
-// Client-side prediction + server reconciliation for the local player. Because
-// the player physics is deterministic (same inputs + same world -> same state),
-// the client can simulate its own player immediately (no input lag) and, when the
-// host's authoritative state arrives, snap to it and replay the inputs the host
-// hasn't processed yet. With no divergence the replay reproduces the prediction
-// exactly; on a mismatch it converges in one correction.
-//
-// The predictor drives one player in a (client-owned) engine via stepPlayerOnly /
-// setPlayerState, so it never runs the host-authoritative world simulation.
+// Local-player prediction and server reconciliation. Deterministic player physics
+// allows unacknowledged inputs to be replayed after each authoritative correction
+// without advancing the world simulation.
 
 export class Predictor {
   constructor(engine, playerId) {

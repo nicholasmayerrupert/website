@@ -15,9 +15,10 @@ struct Layer {
   std::vector<int32_t> dirtyRects;
   std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp, assemblyWakeStamp, blastGasStamp;
   // A locally-proven cave blast starts from synchronized buffers (its fuse ticks
-  // paid the ordinary full carry). Keep the crater + short gas aftermath local
-  // without changing the general double-buffer path or its deterministic order.
-  int blastLocalCarryTicks = 0;
+  // paid the ordinary full carry). Once proven, gas/rigid-only ticks may keep
+  // component carry local until a buffer replacement/stream invalidates the proof;
+  // loose support or assembly relocation still selects the full carry path.
+  bool blastSparseCarryReady = false;
   // Persistent best-energy scratch for a same-tick blast batch. Membership uses
   // seenStamp/seenGen, so a batch clears in O(1) instead of allocating + zeroing
   // two full-window arrays on every detonation tick.
@@ -231,7 +232,7 @@ struct Layer {
     groundBaseValid = false;
     bodies.clear(); bodyCells.clear();
     pendingDetonations.clear();
-    blastLocalCarryTicks = 0;
+    blastSparseCarryReady = false;
     prevCompCells.clear(); curCompCells.clear();
     mineDamageAny = false;
     dirtyRenderCount = 0;

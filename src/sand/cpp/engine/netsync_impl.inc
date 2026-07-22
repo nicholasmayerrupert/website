@@ -32,6 +32,10 @@ int NetSync::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
 void NetSync::applyWorld(const uint8_t* buf, int len) {
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
+  // A full snapshot replaces grid[] without replacing the alternate buffers.
+  // Force one ordinary carry before a prior cave-blast sparse proof can be reused.
+  E.fg.blastSparseCarryReady = false;
+  E.bg.blastSparseCarryReady = false;
   E.fg.skyWorldReachY.clear(); E.fg.skyValid = false; E.fg.skyDirty = true;
   E.bg.skyWorldReachY.clear(); E.bg.skyValid = false; E.bg.skyDirty = true;
   E.useLayer(&E.fg); E.registerSeededComponents(0, E.cols); E.markAllDirty();

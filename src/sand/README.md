@@ -530,6 +530,11 @@ hardcoded id list, decides who reacts.
   each formerly grounded region still reaches a floor/stream-edge seed; uncertain
   searches retain the full reflood. Batched craters also defer dirty-row marking
   to their final union rectangle instead of repeating it for every destroyed cell.
+  A locally proven cave crater also leaves the double buffers synchronized, so
+  later gas/rigid-only aftermath ticks carry static components only inside their
+  active rows instead of walking the entire cave terrain. Loose-support changes
+  and moving assemblies retain the full carry path, while snapshots, resizes, and
+  world shifts discard the sparse-carry proof.
   Debris discovery stops sampling
   later overlapping craters as soon as the layer's bounded rubble budget is full;
   TNT emits at most three physical chunks per layer and tick while prioritizing one

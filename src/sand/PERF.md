@@ -176,7 +176,7 @@ Optimizations already landed (all byte-identical to a full reflood — verified 
   powder-free layer) — `groundDirty`/`groundContentDirty` gate it exactly like the
   single-layer incremental path.
 
-Landed (byte-identical, pan-stream checksum stable):
+Landed (pan-stream checksum stable; intentional behavior changes called out):
 
 - **Powder-aware grounding skip (`looseGroundDirty`)**: powder/liquid *presence*
   no longer forces a joint/overlay every step. Writes via `writeGridIndex` /
@@ -215,6 +215,13 @@ Landed (byte-identical, pan-stream checksum stable):
   and forced verification also rebuild the graph. A safe acid bore scans the
   smaller touched component for another overlap and retains the sleeping closure
   when that cross-layer edge provably survives.
+- **Blast-proven sparse rigid carry**: a locally safe cave crater begins with
+  synchronized double buffers, so later gas/rigid-only aftermath ticks restamp
+  components only in active/marked rows. Loose-support changes and moving
+  assemblies fall back to the full component walk; full snapshots, buffer resizes,
+  and world shifts invalidate the proof. This intentionally removes RNG variation
+  caused by redundant old-component dirty marks, so the focused cave TNT checksum
+  differs even though fuse timing and crater geometry are unchanged.
 
 Future opportunities (NOT yet done — each needs byte-exact verification):
 

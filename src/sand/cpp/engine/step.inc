@@ -52,7 +52,7 @@
     // their sparse dirty-column cache is order-sensitive, and the full path is
     // already a small fraction of those heavier settling ticks. This keeps a
     // million-cell cave blast local without changing loose-material behavior.
-    bool localRigidCarry = L->blastLocalCarryTicks > 0
+    bool localRigidCarry = L->blastSparseCarryReady
       && !L->looseGroundDirty && L->assemblyRelocatedCells.empty();
     if (localRigidCarry) {
       auto carryRigidRow = [&](int y) {
@@ -84,7 +84,6 @@
       }
       std::swap(L->prevCompCells, L->curCompCells);
     }
-    if (L->blastLocalCarryTicks > 0) L->blastLocalCarryTicks--;
     // Component displacement already moved these media once in the live grid.
     // Carry them through the freshly blanked next buffer and stamp them so the
     // loose pass cannot move the same volume a second time this tick.

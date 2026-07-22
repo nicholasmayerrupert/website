@@ -492,7 +492,7 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
     E.L->groundDirty = true;
     bb.structurePreserved = false;
   }
-  if (bb.structurePreserved) E.L->blastLocalCarryTicks = imax(E.L->blastLocalCarryTicks, 6);
+  if (bb.structurePreserved) E.L->blastSparseCarryReady = true;
   spawnBlastRingGases(bb.gasShockwaves);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);

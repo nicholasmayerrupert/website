@@ -147,7 +147,8 @@ Dynamiteers throw wide, high-damage bouncing charges; bore sentinels telegraph,
 lock, and then erase a thick line through both simulated layers. Caustic mortarmen lob large,
 double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
 carriers that split on impact into sixteen independently scattering
-mini-dynamites with 0.1–0.25 second fuses; and minigunners commit their aim
+mini-dynamites with distinct 0.1–0.37 second fuses and double-radius blasts; and
+minigunners commit their aim
 before saturating that line with long bursts of rapid, pinprick explosive rounds.
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
@@ -227,7 +228,9 @@ so backpedaling preserves the aimed sprite and weapon direction. Jetpack thrust
 uses layered body/hiss loops with ignition and release, while the raised ward has
 an activation transient, sustained resonant bed, impact, and break cues. Weapon
 reports layer compact CC0 recordings with synthesized pressure cracks, body,
-reflections, and mechanical action. Audio asset provenance is in
+reflections, and mechanical action. Cluster bomblets add a dedicated short
+crack/body cue so their stagger remains audible without stacking full TNT samples.
+Audio asset provenance is in
 `audio/assets/README.md`.
 
 ## Multiplayer

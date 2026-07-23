@@ -19,7 +19,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 16', PROTOCOL_VERSION === 16);
+  check('PROTOCOL_VERSION is 17', PROTOCOL_VERSION === 17);
 }
 
 {
@@ -38,15 +38,19 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const packed = [
     SOUND_EVENT.SHIELD_BREAK, -12.5, 44.25, 1.75, 7, 0,
     SOUND_EVENT.SPAWN_BREACH, 18, -7, 0.9, 0, 0,
+    SOUND_EVENT.CLUSTER_BLAST, 24, 11, 0.75, 16, 0,
   ];
   const d = rt(makeSounds(45, packed));
   check('decodes to sounds', d && d.t === MSG.SOUNDS && d.tick === 45);
-  check('sound records match ABI stride', d && d.data.length === SOUND_FIELDS * 2);
+  check('sound records match ABI stride', d && d.data.length === SOUND_FIELDS * 3);
   check('position/intensity preserved', d && d.data[1] === -12.5 && d.data[2] === 44.25 && d.data[3] === 1.75);
   check('shield semantic fields preserved', d && d.data[0] === SOUND_EVENT.SHIELD_BREAK && d.data[4] === 7 && d.data[5] === 0);
   check('spawn-breach semantic fields preserved',
     d && d.data[SOUND_FIELDS] === SOUND_EVENT.SPAWN_BREACH
       && d.data[SOUND_FIELDS + 1] === 18 && d.data[SOUND_FIELDS + 2] === -7);
+  check('cluster-blast semantic fields preserved',
+    d && d.data[SOUND_FIELDS * 2] === SOUND_EVENT.CLUSTER_BLAST
+      && d.data[SOUND_FIELDS * 2 + 1] === 24 && d.data[SOUND_FIELDS * 2 + 2] === 11);
   check('empty sound batch allowed', rt(makeSounds(0, [])).data.length === 0);
 }
 

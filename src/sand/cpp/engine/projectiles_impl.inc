@@ -16,12 +16,12 @@ static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
 static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 120;
 static constexpr int CLUSTER_BOMBLET_COUNT_LOCAL = 16;
 static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 6;
-static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 10;
+static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 17;
 static constexpr int CLUSTER_BOMBLET_FUSE_STRIDE_LOCAL = 7;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
-static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 10;
+static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 20;
 static constexpr double CLUSTER_BLAST_POWER_LOCAL = 13.0;
 static constexpr int MINIGUN_COOLDOWN_LOCAL = 2;
 static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
@@ -454,9 +454,8 @@ void ProjectileSystem::updateProjectiles() {
   auto splitCluster = [&](const Projectile& carrier) {
     // Sixteen deterministic pseudo-random directions read as genuinely scattered
     // mini-dynamite while remaining identical on authority, replay, and clients.
-    // A coprime stride distributes the volley across every 6-15 tick fuse. The
-    // ten-tick window is shorter than the sixteen-child count, so six timings
-    // repeat once rather than extending any stick beyond a quarter second.
+    // A coprime stride permutes the 6-22 tick window, guaranteeing all sixteen
+    // children distinct detonation ticks without tying fuse order to direction.
     int fusePhase = (int)(((uint32_t)carrier.id * 2654435761u) %
                           CLUSTER_BOMBLET_FUSE_SPAN_LOCAL);
     for (int child = 0; child < CLUSTER_BOMBLET_COUNT_LOCAL; child++) {
@@ -677,6 +676,7 @@ void ProjectileSystem::updateProjectiles() {
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
         detonateOwnerAware(p, x, y, CLUSTER_BLAST_RADIUS_LOCAL,
                            CLUSTER_BLAST_POWER_LOCAL, GUNPOWDER);
+        E.audio.emit(SE_CLUSTER_BLAST, x, y, 0.85, GUNPOWDER, 0);
         continue;
       }
       if (outside || --p.life <= 0) continue;

@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 21;
+static const int ABI_VERSION = 22;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -315,6 +315,7 @@ enum SoundEventType : uint8_t {
   SE_SHIELD_HIT = 25,
   SE_SHIELD_BREAK = 26,
   SE_SPAWN_BREACH = 27,
+  SE_CLUSTER_BLAST = 28,
 };
 
 static const int INV_HOTBAR = 9;

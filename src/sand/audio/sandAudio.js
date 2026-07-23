@@ -40,6 +40,7 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.SHIELD_HIT]: 110,
   [SOUND_EVENT.SHIELD_BREAK]: 155,
   [SOUND_EVENT.SPAWN_BREACH]: 220,
+  [SOUND_EVENT.CLUSTER_BLAST]: 190,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -70,6 +71,7 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.SHIELD_HIT]: 38,
   [SOUND_EVENT.SHIELD_BREAK]: 240,
   [SOUND_EVENT.SPAWN_BREACH]: 700,
+  [SOUND_EVENT.CLUSTER_BLAST]: 24,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -487,6 +489,17 @@ export function createSandAudio() {
         from: 820 + i * 180, to: 430 + i * 70, duration: 0.08,
         gain: gain * 0.045, pan, wave: 'square', delay: 0.045 + i * 0.026, attack: 0.002,
       });
+    } else if (type === SOUND_EVENT.CLUSTER_BLAST) {
+      // Bomblets get a compact crack/body cue instead of sixteen overlapping
+      // full-size TNT recordings. The ordinary explosion event supplies one
+      // deep anchor while these short voices preserve the audible stagger.
+      playNoise({ duration: 0.072, gain: gain * 0.20, pan, frequency: 2850,
+        type: 'highpass', q: 0.35, rate: 1.02 + variation * 0.18, attack: 0.001 });
+      playNoise({ duration: 0.13, gain: gain * 0.15, pan, frequency: 410,
+        type: 'lowpass', q: 0.58, rate: 0.88 + variation * 0.12,
+        buffer: brownBuffer, delay: 0.006, attack: 0.002 });
+      playTone({ from: 210 + variation * 55, to: 68, duration: 0.12,
+        gain: gain * 0.12, pan, wave: 'triangle', attack: 0.0015 });
     } else if (type === SOUND_EVENT.MINIGUN) {
       // The continuous crackle supplies the actual high cyclic rate; a quiet
       // real rifle burst periodically restores believable muzzle texture.

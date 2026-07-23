@@ -17,10 +17,11 @@ const mk = (storageRole = 'full') => createEngineWasm({
 });
 const O = OFF.soundEvent;
 
-check('ward impacts, ward breaks, and spawn breaches have distinct semantic cues',
+check('ward, spawn-breach, and cluster-blast cues have distinct semantic ids',
   Number.isInteger(SOUND_EVENT.SHIELD_HIT)
     && SOUND_EVENT.SHIELD_BREAK === SOUND_EVENT.SHIELD_HIT + 1
-    && SOUND_EVENT.SPAWN_BREACH === SOUND_EVENT.SHIELD_BREAK + 1);
+    && SOUND_EVENT.SPAWN_BREACH === SOUND_EVENT.SHIELD_BREAK + 1
+    && SOUND_EVENT.CLUSTER_BLAST === SOUND_EVENT.SPAWN_BREACH + 1);
 
 {
   const idle = derivePlayerEffectState({

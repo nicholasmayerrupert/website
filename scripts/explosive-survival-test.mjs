@@ -461,10 +461,13 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
   let sawCarrier = Boolean(launchedCarrier), maxBomblets = 0;
   let splitTick = -1, sixteenTogetherTicks = 0;
+  let clusterBlastSounds = 0;
   let firstChildFuses = null, blastVictimStaged = false, blastVictimDistance = 0;
   const childDirections = new Set();
+  e.drainSoundEvents();
   for (let tick = 0; tick < 250; tick++) {
     e.stepActors();
+    clusterBlastSounds += drainTypeCount(e, SOUND_EVENT.CLUSTER_BLAST);
     const cluster = e.getProjectiles().filter((p) => p.kind === PROJECTILE_KIND.CLUSTER_BOMB);
     sawCarrier ||= cluster.some((p) => p.charge < 0.5);
     const children = cluster.filter((p) => p.charge > 0.5);
@@ -479,8 +482,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       const victim = e.getPlayer(blastVictim);
       const blastX = Math.round(expiring.x) + 0.5;
       const blastY = Math.round(expiring.y) + 0.5;
-      const onRight = blastX + 8 + victim.w < COLS - 1;
-      const victimX = onRight ? blastX + 8 : blastX - 8 - victim.w;
+      const onRight = blastX + 16 + victim.w < COLS - 1;
+      const victimX = onRight ? blastX + 16 : blastX - 16 - victim.w;
       const victimY = Math.max(1, Math.min(FLOOR - victim.h, blastY - victim.h * 0.5));
       e.setPlayerState(blastVictim, {
         ...victim, x: victimX, y: victimY, vx: 0, vy: 0, grounded: false,
@@ -496,14 +499,16 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       && launchedCarrier.fuse > 100 && splitTick >= 0 && splitTick < 100);
   check(`captured cluster launcher splits into exactly sixteen live mini-dynamites (max ${maxBomblets})`,
     slot >= 0 && sawCarrier && maxBomblets === 16);
-  check(`sixteen mini-dynamites fill the 6-15 tick fuse window (${firstChildFuses?.join('/')})`,
+  check(`all sixteen mini-dynamites use distinct 6-22 tick fuses (${firstChildFuses?.join('/')})`,
     firstChildFuses?.length === 16
-      && firstChildFuses.every((fuse) => fuse >= 6 && fuse <= 15)
-      && new Set(firstChildFuses).size === 10);
+      && firstChildFuses.every((fuse) => fuse >= 6 && fuse <= 22)
+      && new Set(firstChildFuses).size === 16);
   check('all sixteen mini-dynamites scatter broadly and remain visible together',
     childDirections.size >= 12 && sixteenTogetherTicks >= 4);
-  check(`larger cluster blasts damage a non-owner beyond the old radius (${blastVictimDistance.toFixed(1)} cells)`,
-    blastVictimStaged && blastVictimDistance > 6 && e.getPlayer(blastVictim).health < 100);
+  check(`double-radius cluster blasts damage beyond the old ten-cell radius (${blastVictimDistance.toFixed(1)} cells)`,
+    blastVictimStaged && blastVictimDistance > 10 && e.getPlayer(blastVictim).health < 100);
+  check(`each bomblet emits its dedicated cluster-blast cue (${clusterBlastSounds})`,
+    clusterBlastSounds === 16);
   const stoneAfter = countStone(e.getGrid());
   check(`cluster bomblets leave multiple destructive craters (${stoneBefore} -> ${stoneAfter})`,
     stoneAfter < stoneBefore);

@@ -212,13 +212,20 @@ try {
       allButtons: slots.every((slot) => slot.tagName === 'BUTTON'),
       slotFocused: root.activeElement?.classList.contains('inv-slot') === true,
       starterTool: window.__sandTest.getInventory().slots[1],
+      craftingNames: [...root.querySelectorAll('.craft-name')].map((name) => name.textContent),
     };
   });
   check('E opens the accessible inventory/crafting modal', inventoryA11y.modal);
   check(`inventory exposes all 36 slot buttons (${inventoryA11y.slots})`, inventoryA11y.slots === 36 && inventoryA11y.allButtons);
   check(`empty hotbar slots remain selectable (${inventoryA11y.disabledSlots} disabled)`, inventoryA11y.disabledSlots === 0);
   check('inventory focuses the selected slot', inventoryA11y.slotFocused);
-  check('starter mining tool is present in slot 2', inventoryA11y.starterTool?.isTool && inventoryA11y.starterTool.count === 1);
+  check('starter iron mining tool is present in slot 2',
+    inventoryA11y.starterTool?.isTool
+      && inventoryA11y.starterTool.toolTier === 3
+      && inventoryA11y.starterTool.count === 1);
+  check('crafting UI contains no mining tools',
+    inventoryA11y.craftingNames.length === 4
+      && inventoryA11y.craftingNames.every((name) => !name.includes('Mining Tool')));
   await page.keyboard.press('e');
   await page.waitForTimeout(80);
   const inventoryClosed = await page.locator('sand-game').evaluate((host) => {
@@ -226,6 +233,36 @@ try {
     return root.querySelector('[aria-modal="true"]') === null && root.activeElement === root.querySelector('.sg-sim');
   });
   check('E closes inventory without the bubbling key reopening it', inventoryClosed);
+
+  // Clicking the non-focusable backdrop moves browser focus to <body>. Closing
+  // must still work even though neither the inventory HUD nor simulation surface
+  // owns that key event.
+  await page.keyboard.press('e');
+  await page.locator('sand-game .inv-backdrop').click({ position: { x: 10, y: 10 } });
+  const backdropBlurredInventory = await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('[aria-modal="true"]') !== null
+      && document.activeElement === document.body
+      && host.shadowRoot.activeElement === null);
+  check('clicking the inventory backdrop reproduces focus leaving the game', backdropBlurredInventory);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(50);
+  const backdropEscapeClosed = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return root.querySelector('[aria-modal="true"]') === null
+      && root.activeElement === root.querySelector('.sg-sim');
+  });
+  check('Escape closes inventory after backdrop focus loss', backdropEscapeClosed);
+
+  await page.keyboard.press('e');
+  await page.locator('sand-game .inv-backdrop').click({ position: { x: 10, y: 10 } });
+  await page.keyboard.press('e');
+  await page.waitForTimeout(50);
+  const backdropEClosed = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return root.querySelector('[aria-modal="true"]') === null
+      && root.activeElement === root.querySelector('.sg-sim');
+  });
+  check('E closes inventory after backdrop focus loss', backdropEClosed);
 
   await page.locator('sand-game .inv-slot[data-index="2"]').click();
   await page.waitForFunction(() => window.__sandTest.getInventory().selected === 2, null, { timeout: 4000 });

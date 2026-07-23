@@ -3,15 +3,10 @@ CraftingSystem::CraftingSystem(Engine& e) : E(e) {}
 void CraftingSystem::ensureRecipes() {
   if (!recipes.empty()) return;
   auto material = [](uint8_t mat, int count) { InvSlot s; s.itemKind = IK_MATERIAL; s.material = mat; s.count = count; return s; };
-  auto tool = [](uint8_t tier) { InvSlot s; s.itemKind = IK_MINING_TOOL; s.isTool = 1; s.toolClass = TC_DIG; s.toolTier = tier; s.count = 1; return s; };
   auto special = [](uint8_t kind, int count) { InvSlot s; s.itemKind = kind; s.count = count; return s; };
   auto mat = [](int value, int count) { return CraftIngredient{CIK_MATERIAL, value, count}; };
   auto flag = [](int value, int count) { return CraftIngredient{CIK_MATERIAL_FLAG, value, count}; };
   recipes = {
-    {0, tool(TT_WOOD),  {flag(MF_PLANTWOOD, 24)}},
-    {1, tool(TT_STONE), {mat(STONE, 24), flag(MF_PLANTWOOD, 8)}},
-    {2, tool(TT_IRON),  {mat(IRON_ORE, 24), flag(MF_PLANTWOOD, 8)}},
-    {3, tool(TT_GOLD),  {mat(GOLD_ORE, 24), flag(MF_PLANTWOOD, 8)}},
     {4, special(IK_BOW, 1),   {flag(MF_PLANTWOOD, 20), flag(MF_PLANTLEAF, 12)}},
     {5, special(IK_ARROW, 8), {flag(MF_PLANTWOOD, 4), mat(STONE, 4)}},
     {6, material(BRICK, 8),   {mat(CLAY, 8)}},

@@ -39,18 +39,21 @@ const inv = e.getInventory(id);
 check(`getInventory returns 36 slots (${inv.slots.length})`, inv.slots.length === 36);
 check(`starter weapon selected by default (${inv.selected})`, inv.selected === 0);
 check('slot 0 starts with one blast gun', inv.slots[0].itemKind === ITEM_KIND.BLAST_GUN && inv.slots[0].count === 1);
-check('slot 1 starts with the universal wood mining tool',
+check('slot 1 starts with the universal iron mining tool',
   inv.slots[1].itemKind === ITEM_KIND.MINING_TOOL && inv.slots[1].isTool
-    && inv.slots[1].toolClass === TC.dig && inv.slots[1].toolTier === TT.wood && inv.slots[1].count === 1);
+    && inv.slots[1].toolClass === TC.dig && inv.slots[1].toolTier === TT.iron && inv.slots[1].count === 1);
 check('slot 3 is an empty selectable bare-hand slot', inv.slots[3].count === 0);
 
-// Crafting remains available and can make a second universal mining tool.
+// Crafting remains available, but cannot make additional mining tools.
 e.addToInventory(id, MAT.WOOD, 24);
 const beforeTools = e.getInventory(id).slots.filter((s) => s.itemKind === ITEM_KIND.MINING_TOOL && s.count > 0).length;
-check('wood mining tool recipe crafts once', e.craft(id, 0) === 1);
 const tools = e.getInventory(id).slots.filter((s) => s.itemKind === ITEM_KIND.MINING_TOOL && s.count > 0);
-check('crafted tool adds a second universal wood tier tool',
-  tools.length === beforeTools + 1 && tools.every((s) => s.isTool && s.toolClass === TC.dig && s.toolTier === TT.wood));
+check('crafting snapshot omits every mining tool recipe',
+  e.getCraftingRecipes().every((recipe) => recipe.outputKind !== ITEM_KIND.MINING_TOOL));
+check('retired mining tool recipe cannot craft or consume ingredients',
+  e.craft(id, 0) === 0 && tools.length === beforeTools
+    && tools.every((s) => s.isTool && s.toolClass === TC.dig && s.toolTier === TT.iron)
+    && e.getInventory(id).slots.reduce((sum, slot) => sum + (slot.material === MAT.WOOD ? slot.count : 0), 0) === 24);
 
 // setSelectedSlot round-trips.
 e.setSelectedSlot(id, 3);

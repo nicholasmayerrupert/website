@@ -404,6 +404,12 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   }
 
   const hasCursor = () => !!(getCursor?.());
+  const onWindowKeyDown = (e) => {
+    if (!open || (e.key !== 'Escape' && e.key.toLowerCase() !== 'e')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setOpen(false);
+  };
 
   // --- Pointer routing -------------------------------------------------------
   // CLOSED: left-click a hotbar slot just selects it.
@@ -672,8 +678,13 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
       hud.removeAttribute('aria-label');
     }
     if (!open) { downSlot = -1; downOnSlot = false; }
-    if (open) window.addEventListener('pointermove', onMove, true);
-    else window.removeEventListener('pointermove', onMove, true);
+    if (open) {
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('keydown', onWindowKeyDown);
+    } else {
+      window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('keydown', onWindowKeyDown);
+    }
     refreshCursor();
     if (open) {
       slots[selectedSlot]?.focus({ preventScroll: true });
@@ -693,6 +704,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     isOpen() { return open; },
     destroy() {
       window.removeEventListener('pointermove', onMove, true);
+      window.removeEventListener('keydown', onWindowKeyDown);
       if (toastTimer) { clearTimeout(toastTimer); toastTimer = 0; }
       backdrop.remove();
       hud.remove();

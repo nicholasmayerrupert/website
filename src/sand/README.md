@@ -155,7 +155,8 @@ durability; directional hits drain the ward instead of player health, and its
 meter quickly recharges after combat. Mining, material pickups,
 block placement, the 36-slot inventory, 1x1–10x10 tool-size presets (10x10 by
 default), and crafting remain
-part of survival: defeated demolition crews can also drop their weapons into
+part of survival: the starter mining tool is iron-tier, and defeated
+demolition crews can also drop their weapons into
 that same inventory. Captured dynamite satchels carry 10 throws, bore cannons 15
 beams, acid mortars 20 shells, cluster launchers 15 carriers, and miniguns 250
 rounds. Picking up a duplicate weapon merges its full ammo load into the existing

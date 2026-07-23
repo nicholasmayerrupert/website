@@ -1,5 +1,6 @@
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import { TT } from '../src/sand/materials.generated.js';
 import { CREATURE, ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -19,12 +20,15 @@ function world() {
 {
   const e = world(); const p = e.spawnPlayer(30, FLOOR - 8);
   const recipes = e.getCraftingRecipes();
-  check('recipe catalog includes tools, bow, arrows, and building materials', recipes.length === 8);
-  e.addToInventory(p, MAT.WOOD, 23);
-  check('insufficient ingredients craft nothing', e.craft(p, 0) === 0);
-  check('failed crafting consumes nothing', e.getInventory(p).slots.reduce((n, s) => n + (s.material === MAT.WOOD ? s.count : 0), 0) === 23);
-  e.addToInventory(p, MAT.WOOD, 1);
-  check('24 wood crafts the universal mining tool', e.craft(p, 0) === 1 && e.getInventory(p).slots.some((s) => s.itemKind === ITEM_KIND.MINING_TOOL));
+  check('recipe catalog contains only bow, arrows, and building materials',
+    recipes.length === 4
+      && recipes.map((recipe) => recipe.id).join(',') === '4,5,6,7'
+      && recipes.every((recipe) => recipe.outputKind !== ITEM_KIND.MINING_TOOL));
+  e.addToInventory(p, MAT.WOOD, 24);
+  check('removed mining-tool recipe ids cannot craft',
+    [0, 1, 2, 3].every((recipe) => e.craft(p, recipe) === 0));
+  check('rejected retired recipes consume nothing',
+    e.getInventory(p).slots.reduce((n, s) => n + (s.material === MAT.WOOD ? s.count : 0), 0) === 24);
   e.destroy();
 }
 
@@ -81,11 +85,12 @@ function world() {
     dead?.deathTicks === 0 && dead.respawnReady === true);
   const accepted = e.respawnPlayer(p);
   const respawned = e.getPlayer(p);
-  check('manual respawn restores health, play, gun, and wood mining tool',
+  check('manual respawn restores health, play, gun, and iron mining tool',
     accepted && respawned?.alive && respawned?.health === 100
       && e.getInventory(p).slots[0].itemKind === ITEM_KIND.BLAST_GUN
       && e.getInventory(p).slots[1].itemKind === ITEM_KIND.MINING_TOOL
-      && e.getInventory(p).slots[1].isTool);
+      && e.getInventory(p).slots[1].isTool
+      && e.getInventory(p).slots[1].toolTier === TT.iron);
   check(`respawn returns to the safe first-spawn neighborhood (${respawned?.x.toFixed(1)},${respawned?.y.toFixed(1)})`,
     Math.hypot(respawned.x - firstSpawn.x, respawned.y - firstSpawn.y) <= 20
       && respawned.y + respawned.h >= FLOOR - 1 && respawned.y + respawned.h <= FLOOR + 1

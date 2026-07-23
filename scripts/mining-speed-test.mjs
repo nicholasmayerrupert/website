@@ -69,8 +69,8 @@ function survivalStepsToBreakStone(toolClass, toolTier) {
     : 3;
   e.setSelectedSlot(id, slot);
   if (toolClass !== TC.dig) e.setPlayerTool(id, toolClass, toolTier);
-  // Keep a 3x3 footprint: its nine-cell work scaling makes the stone timing
-  // 48 -> 4 steps, closely reflecting the roughly one-third speed increase.
+  // Keep a 3x3 footprint: its nine-cell work scaling makes the iron starter
+  // tool's stone timing easy to distinguish from hands and classed picks.
   let steps = 0;
   while (e.getGrid()[70 * COLS + 60] !== MAT.EMPTY && steps < 500) {
     e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX: 60, aimY: 70, tool: 0, seq: steps });
@@ -82,11 +82,11 @@ function survivalStepsToBreakStone(toolClass, toolTier) {
   return { steps, broke };
 }
 
-const survivalDig = survivalStepsToBreakStone(TC.dig, TT.wood);
+const survivalDig = survivalStepsToBreakStone(TC.dig, TT.iron);
 const survivalHand = survivalStepsToBreakStone(TC.hand, TT.hand);
 const survivalWoodPick = survivalStepsToBreakStone(TC.pickaxe, TT.wood);
-check(`inventory dig tool breaks stone about 13x faster (48 -> ${survivalDig.steps})`,
-  survivalDig.broke && survivalDig.steps === 4);
+check(`iron inventory dig tool combines its tier with the universal boost (48 -> ${survivalDig.steps})`,
+  survivalDig.broke && survivalDig.steps === 3);
 check(`bare-hand stone timing is unchanged (${survivalHand.steps})`,
   survivalHand.broke && survivalHand.steps === 144);
 check(`classed wood-pickaxe stone timing is unchanged (${survivalWoodPick.steps})`,

@@ -66,17 +66,17 @@ const hasDraftCell = (cells, x, y) => {
   e.destroy();
 }
 
-// 4) Armed spawn + crafting: the gun occupies slot 0 and the universal wood dig
-//    tool occupies slot 1, while crafting can still create additional tools.
+// 4) Armed spawn + crafting: the gun occupies slot 0 and the universal iron dig
+//    tool occupies slot 1; mining tools are not craftable.
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8); // far from the mined block (no auto-pickup)
   let kit = e.getInventory(id);
   const footprints = e.getSurvivalFootprints();
-  check('fresh survival inventory starts with the selected blast gun and wood dig tool',
+  check('fresh survival inventory starts with the selected blast gun and iron dig tool',
     kit.selected === 0 && kit.slots[0].itemKind === ITEM_KIND.BLAST_GUN && kit.slots[0].count === 1
       && kit.slots[1].itemKind === ITEM_KIND.MINING_TOOL && kit.slots[1].isTool
-      && kit.slots[1].toolClass === TC.dig && kit.slots[1].toolTier === TT.wood && kit.slots[1].count === 1
+      && kit.slots[1].toolClass === TC.dig && kit.slots[1].toolTier === TT.iron && kit.slots[1].count === 1
       && kit.slots.slice(2).every((slot) => slot.count === 0));
   check('survival sizes run 1x1 through 10x10 with 10x10 default',
     footprints.length === 10
@@ -86,8 +86,11 @@ const hasDraftCell = (cells, x, y) => {
       && kit.selectedFootprint === 9);
   e.addToInventory(id, MAT.WOOD, 24);
   const starterTools = kit.slots.filter((slot) => slot.itemKind === ITEM_KIND.MINING_TOOL && slot.count > 0).length;
-  check('24 wood crafts one additional wood mining tool', e.craft(id, 0) === 1
-    && e.getInventory(id).slots.filter((slot) => slot.itemKind === ITEM_KIND.MINING_TOOL && slot.count > 0).length === starterTools + 1);
+  check('mining tool recipes are absent and retired ids cannot craft',
+    e.getCraftingRecipes().every((recipe) => recipe.outputKind !== ITEM_KIND.MINING_TOOL)
+      && e.craft(id, 0) === 0
+      && e.getInventory(id).slots.filter((slot) => slot.itemKind === ITEM_KIND.MINING_TOOL && slot.count > 0).length === starterTools
+      && slotCount(e, id, MAT.WOOD) === 24);
   kit = e.getInventory(id);
   const toolSlot = kit.slots.findIndex((slot) => slot.isTool);
   e.placeMaterial(60, 50, 2, MAT.STONE);
@@ -208,15 +211,12 @@ const hasDraftCell = (cells, x, y) => {
   e.destroy();
 }
 
-// 6b) The fast universal dig tool still charges more work for a larger selected
-//     footprint. At the new 10x rate, integer damage floors 1x1 to one tick and
-//     the default 3x3 footprint to five.
+// 6b) The fast iron universal dig tool still charges more work for a larger
+//     selected footprint. Integer damage floors 1x1 to one tick and 3x3 to three.
 {
   const mineTicks = (footprintId) => {
     const e = survivalEngine();
     const id = e.spawnPlayer(10, FLOOR - 8);
-    e.addToInventory(id, MAT.WOOD, 24);
-    e.craft(id, 0);
     e.setSelectedSlot(id, e.getInventory(id).slots.findIndex((slot) => slot.isTool));
     e.setSelectedFootprint(id, footprintId);
     e.placeMaterial(60, 50, 2, MAT.STONE);
@@ -231,7 +231,7 @@ const hasDraftCell = (cells, x, y) => {
   const one = mineTicks(0);
   const three = mineTicks(2);
   check(`boosted 1x1 mine ticks (${one})`, one === 1);
-  check(`boosted 3x3 footprint still costs more work (${three} vs ${one})`, three === 4);
+  check(`boosted 3x3 footprint still costs more work (${three} vs ${one})`, three === 3);
 }
 
 // 7) Placing a COMPONENT material in survival uses the creative-style DRAFT: holding

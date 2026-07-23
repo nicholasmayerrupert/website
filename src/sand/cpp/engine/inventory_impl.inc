@@ -3,7 +3,7 @@
 // mining or placement.
 
 // Destructive survival starts armed and able to harvest terrain. The blast gun
-// is intentionally infinite-energy; the wood dig tool restores the mining loop.
+// is intentionally infinite-energy; the iron dig tool restores the mining loop.
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
@@ -13,7 +13,7 @@ void InventorySystem::seedStarterTools(Player& p) {
   p.inv[1].itemKind = IK_MINING_TOOL;
   p.inv[1].isTool = 1;
   p.inv[1].toolClass = TC_DIG;
-  p.inv[1].toolTier = TT_WOOD;
+  p.inv[1].toolTier = TT_IRON;
   p.inv[1].count = 1;
   p.selectedFootprint = E.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
   setSelectedSlot(p, 0);

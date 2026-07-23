@@ -496,12 +496,12 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       && launchedCarrier.fuse > 100 && splitTick >= 0 && splitTick < 100);
   check(`captured cluster launcher splits into exactly sixteen live mini-dynamites (max ${maxBomblets})`,
     slot >= 0 && sawCarrier && maxBomblets === 16);
-  check(`all sixteen mini-dynamites use distinct 20-40 tick fuses (${firstChildFuses?.join('/')})`,
+  check(`sixteen mini-dynamites fill the 6-15 tick fuse window (${firstChildFuses?.join('/')})`,
     firstChildFuses?.length === 16
-      && firstChildFuses.every((fuse) => fuse >= 20 && fuse <= 40)
-      && new Set(firstChildFuses).size === 16);
+      && firstChildFuses.every((fuse) => fuse >= 6 && fuse <= 15)
+      && new Set(firstChildFuses).size === 10);
   check('all sixteen mini-dynamites scatter broadly and remain visible together',
-    childDirections.size >= 12 && sixteenTogetherTicks >= 12);
+    childDirections.size >= 12 && sixteenTogetherTicks >= 4);
   check(`larger cluster blasts damage a non-owner beyond the old radius (${blastVictimDistance.toFixed(1)} cells)`,
     blastVictimStaged && blastVictimDistance > 6 && e.getPlayer(blastVictim).health < 100);
   const stoneAfter = countStone(e.getGrid());

@@ -15,9 +15,9 @@ static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
 static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
 static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 120;
 static constexpr int CLUSTER_BOMBLET_COUNT_LOCAL = 16;
-static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 20;
-static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 21;
-static constexpr int CLUSTER_BOMBLET_FUSE_STRIDE_LOCAL = 13;
+static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 6;
+static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 10;
+static constexpr int CLUSTER_BOMBLET_FUSE_STRIDE_LOCAL = 7;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
@@ -454,8 +454,9 @@ void ProjectileSystem::updateProjectiles() {
   auto splitCluster = [&](const Projectile& carrier) {
     // Sixteen deterministic pseudo-random directions read as genuinely scattered
     // mini-dynamite while remaining identical on authority, replay, and clients.
-    // A coprime stride permutes the 20-40 tick window, guaranteeing that every
-    // child has a distinct short fuse without tying fuse order to its direction.
+    // A coprime stride distributes the volley across every 6-15 tick fuse. The
+    // ten-tick window is shorter than the sixteen-child count, so six timings
+    // repeat once rather than extending any stick beyond a quarter second.
     int fusePhase = (int)(((uint32_t)carrier.id * 2654435761u) %
                           CLUSTER_BOMBLET_FUSE_SPAN_LOCAL);
     for (int child = 0; child < CLUSTER_BOMBLET_COUNT_LOCAL; child++) {

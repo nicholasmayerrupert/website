@@ -42,6 +42,18 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     return b.width > 0 && b.height > 0 && b.right > 0 && b.bottom > 0 &&
       b.left < window.innerWidth && b.top < window.innerHeight;
   };
+  const focusSurvivalSurfaceAtStartup = () => {
+    if (!ctx.survival || !surfaceIsVisible()) return;
+    const root = ctx.container.getRootNode?.();
+    const rootActive = root?.activeElement;
+    const documentActive = document.activeElement;
+    // A fresh document/navigation leaves focus on body. Claim that neutral
+    // focus once so /game accepts movement immediately, but never steal focus
+    // from a control the user reached while WASM was loading.
+    const unclaimed = !rootActive &&
+      (!documentActive || documentActive === document.body || documentActive === document.documentElement);
+    if (unclaimed) ctx.container.focus({ preventScroll: true });
+  };
   const updatePointer = (cx, cy) => {
     ctx.clientX = cx;
     ctx.clientY = cy;
@@ -241,6 +253,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
+    focusSurvivalSurfaceAtStartup();
   };
   const detach = () => {
     window.removeEventListener('pointermove', onPointerMove);

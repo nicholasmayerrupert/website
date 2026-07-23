@@ -352,10 +352,10 @@ void GLPresenter::glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlph
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-// Blit the player's current animation frame as per-pixel rects (one sprite-pixel =
-// one world cell). The sprite is anchored at AABB offset (-1,-2) cells so the feet
-// plant on the surface and the body centers on the 4-wide hitbox; mirrored when
-// facing left. A subtle own/other tint distinguishes the local player.
+// Blit the player's current animation frame as sub-cell pixel rects. The sprite
+// spans six world cells around the four-cell hitbox and its feet plant at the
+// AABB floor; articulated arms and jetpack layers are composed around it below.
+// Facing mirrors the authored body while a subtle tint distinguishes local/remote.
 float GLPresenter::glActorLight(double px, double py, int w, int h) const {
   if (!Renderer::RENDER_LIGHTING_ENABLED || E.fg.light.empty()) return 1.0f;
   int x0 = imax(0, (int)std::floor(px)), x1 = imin(E.cols - 1, (int)std::floor(px + w - 1e-6));
@@ -373,60 +373,212 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
-  double sprX = (pxc - camCol) * glCellDev + glOffX - cell;       // (-1) cell
-  double sprY = (pyc - camRow) * glCellDev + glOffY - 2.0 * cell; // (-2) cells
+  double pixel = cell * SPR_PIXEL_SCALE;
+  bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
+                     heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
+                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN;
+
+  // Sub-cell follow-through complements the authored leg frames. Keep aimed
+  // poses planted so the body never appears to slide away from the exact
+  // projectile/weapon shoulder shared with Projectiles.
+  double bodyBob = 0;
+  if (alive && !aimedWeapon) {
+    static const double WALK_BOB[4] = {0.0, -0.10, 0.0, -0.06};
+    static const double RUN_BOB[4] = {-0.14, 0.0, -0.11, 0.0};
+    static const double SWIM_BOB[4] = {-0.08, 0.02, 0.08, 0.0};
+    if (animState == AS_IDLE) bodyBob = animFrame ? 0.045 : 0.0;
+    else if (animState == AS_WALK) bodyBob = WALK_BOB[animFrame];
+    else if (animState == AS_RUN) bodyBob = RUN_BOB[animFrame];
+    else if (animState == AS_WADE) bodyBob = animFrame ? -0.045 : 0.0;
+    else if (animState == AS_SWIM) bodyBob = SWIM_BOB[animFrame];
+  }
+  double sprX = (pxc - camCol) * cell + glOffX - cell;
+  double sprY = (pyc - camRow - 1.0 + bodyBob) * cell + glOffY;
+
+  auto worldSquare = [&](double wx, double wy, double size,
+                         float r, float g, float b, float a = 1.0f) {
+    double x = (wx - camCol) * cell + glOffX;
+    double y = (wy - camRow) * cell + glOffY;
+    glUniform4f(glc->uColor, r * light, g * light, b * light, a);
+    glSolidDev(x - size * cell * .5, y - size * cell * .5, size * cell, size * cell);
+  };
+  auto segment = [&](double x0, double y0, double x1, double y1, double size,
+                     float r, float g, float b) {
+    double length = std::hypot(x1 - x0, y1 - y0);
+    // The squares overlap at this spacing, preserving a continuous pixel-art
+    // limb without turning each arm into dozens of tiny WebGL draw calls.
+    int samples = imax(1, (int)std::ceil(length / .48));
+    for (int i = 0; i <= samples; i++) {
+      double t = i / (double)samples;
+      worldSquare(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, size, r, g, b);
+    }
+  };
+  auto articulatedArm = [&](double sx, double sy, double ex, double ey,
+                            double hx, double hy, bool rear) {
+    float shade = rear ? .78f : 1.0f;
+    // A dark edge unifies the sampled squares into a readable jointed limb.
+    segment(sx, sy, ex, ey, .72, 20/255.f, 18/255.f, 26/255.f);
+    segment(ex, ey, hx, hy, .64, 20/255.f, 18/255.f, 26/255.f);
+    segment(sx, sy, ex, ey, .53, 48/255.f * shade, 108/255.f * shade, 170/255.f * shade);
+    segment(ex, ey, hx, hy, .46, 184/255.f * shade, 118/255.f * shade, 88/255.f * shade);
+    worldSquare(hx, hy, .57, rear ? 184/255.f : 236/255.f,
+                rear ? 118/255.f : 184/255.f, rear ? 88/255.f : 142/255.f);
+  };
+
+  // A relaxed/stroke pose is rendered as two independently articulated arms.
+  // Rear arm goes behind the torso; the front one is added after the sprite.
+  auto relaxedArmPose = [&](bool rear, double& sx, double& sy, double& ex,
+                            double& ey, double& hx, double& hy) {
+    static const double WALK_SWING[4] = {-0.66, -0.16, 0.66, 0.16};
+    static const double RUN_SWING[4] = {-0.94, -0.24, 0.94, 0.24};
+    static const double SWIM_STROKE[4] = {-0.70, 0.08, 0.78, 0.18};
+    double swing = animState == AS_WALK ? WALK_SWING[animFrame]
+                 : animState == AS_RUN ? RUN_SWING[animFrame]
+                 : animState == AS_WADE ? WALK_SWING[animFrame] * .42
+                 : animState == AS_SWIM ? SWIM_STROKE[animFrame]
+                 : animState == AS_IDLE ? (animFrame ? .08 : -.08)
+                 : 0.0;
+    if (rear) swing = -swing;
+    sx = pxc + PLAYER_W * .5 + facing * (rear ? -.08 : .42);
+    sy = pyc + PLAYER_H * .39 + bodyBob;
+    if (animState == AS_RISE) {
+      ex = sx + facing * (rear ? .45 : .72); ey = sy - (rear ? .46 : .68);
+      hx = ex + facing * .52; hy = ey - .48;
+    } else if (animState == AS_FALL) {
+      ex = sx + facing * (rear ? -.42 : .78); ey = sy + .26;
+      hx = ex + facing * (rear ? -.44 : .62); hy = ey + .30;
+    } else if (animState == AS_SWIM) {
+      ex = sx + facing * (.70 + swing * .42); ey = sy + .35 - std::fabs(swing) * .25;
+      hx = ex + facing * (.62 + swing * .48); hy = ey + .18 + swing * .34;
+    } else {
+      ex = sx + facing * (.24 + swing * .38); ey = sy + .92 - std::fabs(swing) * .10;
+      hx = ex + facing * (.18 + swing * .42); hy = ey + .92;
+    }
+  };
+
+  if (alive) {
+    // The backpack is drawn behind the torso. Its twin nozzles alternate by
+    // phase, the transparent gauge tracks authoritative fuel, and deterministic
+    // exhaust motes make sustained thrust read even when the plume is partly
+    // hidden by the player.
+    double fuel = std::max(0.0, std::min(1.0, jetpackFuel));
+    int thrustPhase = (int)(E.actorTick % 6);
+    double vibration = jetpackActive && fuel > 0 ? (thrustPhase - 2.5) * .012 : 0.0;
+    // Sit the pack just outside the six-cell authored silhouette so both tanks,
+    // rather than only a side sliver, remain readable behind the body.
+    double packWorldX = pxc + (facing >= 0 ? -1.0 : PLAYER_W + 1.0) + vibration;
+    double packWorldY = pyc + PLAYER_H * .47 + bodyBob;
+    double packX = (packWorldX - camCol) * cell + glOffX;
+    double packY = (packWorldY - camRow) * cell + glOffY;
+
+    if (jetpackActive && fuel > 0) {
+      for (int nozzle = -1; nozzle <= 1; nozzle += 2) {
+        int phase = (thrustPhase + (nozzle > 0 ? 3 : 0)) % 6;
+        double nozzleX = packX + nozzle * cell * .25;
+        double nozzleY = packY + cell * 1.11;
+        double pulse = phase < 3 ? phase * .10 : (6 - phase) * .10;
+        // The nozzles begin behind the torso, so carry the plume past the
+        // player's feet instead of letting the later body pass occlude it.
+        double outerLen = 2.45 + fuel * .70 + pulse;
+        double innerLen = 1.55 + fuel * .52 + (phase & 1) * .10;
+        double tipDrift = nozzle * (.08 + phase * .012);
+        glUniform4f(glc->uColor, 1.0f, .25f, .035f, .82f);
+        glSolidDev(nozzleX - cell * .23, nozzleY, cell * .46, cell * outerLen);
+        glUniform4f(glc->uColor, 1.0f, .72f, .10f, .96f);
+        glSolidDev(nozzleX - cell * .15, nozzleY, cell * .30, cell * innerLen);
+        glUniform4f(glc->uColor, 1.0f, 1.0f, .72f, 1);
+        glSolidDev(nozzleX - cell * .075, nozzleY, cell * .15, cell * (.30 + fuel * .16));
+        glUniform4f(glc->uColor, 1.0f, .35f, .04f, .70f);
+        glSolidDev(nozzleX + tipDrift * cell - cell * .13,
+                   nozzleY + outerLen * cell, cell * .26, cell * .28);
+      }
+      for (int mote = 0; mote < 4; mote++) {
+        double travel = std::fmod((double)E.actorTick * .19 + mote * .47, 1.85);
+        double drift = std::sin((double)E.actorTick * .41 + mote * 2.3) * (.13 + travel * .12);
+        glUniform4f(glc->uColor, 1.0f, .48f, .06f,
+                    (float)std::max(.12, .70 - travel * .28));
+        glSolidDev(packX + drift * cell - cell * .09,
+                   packY + (2.65 + travel) * cell, cell * .18, cell * .18);
+      }
+    }
+
+    // Armoured dual canisters, lower manifold, harness, and a real fuel window.
+    glUniform4f(glc->uColor, .075f * light, .095f * light, .13f * light, 1);
+    glSolidDev(packX - cell * .64, packY - cell * 1.08, cell * 1.28, cell * 2.22);
+    for (int tank = -1; tank <= 1; tank += 2) {
+      double tankX = packX + tank * cell * .29;
+      glUniform4f(glc->uColor, .20f * light, .32f * light, .39f * light, 1);
+      glSolidDev(tankX - cell * .22, packY - cell * .87, cell * .44, cell * 1.52);
+      glUniform4f(glc->uColor, .37f * light, .55f * light, .61f * light, 1);
+      glSolidDev(tankX - cell * .13, packY - cell * .76, cell * .12, cell * 1.22);
+      glUniform4f(glc->uColor, .08f * light, .11f * light, .14f * light, 1);
+      glSolidDev(tankX - cell * .24, packY + cell * .70, cell * .48, cell * .40);
+    }
+    glUniform4f(glc->uColor, .055f * light, .07f * light, .09f * light, 1);
+    glSolidDev(packX - cell * .13, packY - cell * .60, cell * .26, cell * 1.06);
+    if (fuel > 0) {
+      double fillH = .90 * fuel;
+      glUniform4f(glc->uColor, fuel < .20 ? 1.0f : .26f,
+                  fuel < .20 ? .25f : .88f, fuel < .20 ? .05f : .94f, .96f);
+      glSolidDev(packX - cell * .085, packY + cell * (.38 - fillH),
+                 cell * .17, cell * fillH);
+    }
+    float statusPulse = jetpackActive && fuel > 0 && (thrustPhase < 3) ? 1.0f : .62f;
+    glUniform4f(glc->uColor, (fuel < .20 ? 1.0f : .30f) * statusPulse,
+                (fuel < .20 ? .18f : .92f) * statusPulse, .10f * statusPulse, 1);
+    glSolidDev(packX - cell * .11, packY - cell * .86, cell * .22, cell * .18);
+    glUniform4f(glc->uColor, .055f * light, .07f * light, .09f * light, 1);
+    glSolidDev(packX - cell * .49, packY + cell * .90, cell * .98, cell * .30);
+  }
+
+  double rearSX = 0, rearSY = 0, rearEX = 0, rearEY = 0, rearHX = 0, rearHY = 0;
+  if (alive && !aimedWeapon) {
+    relaxedArmPose(true, rearSX, rearSY, rearEX, rearEY, rearHX, rearHY);
+    articulatedArm(rearSX, rearSY, rearEX, rearEY, rearHX, rearHY, true);
+  }
+
   for (int r = 0; r < SPR_H; r++) {
     const char* row = SPR_GRID[animState][animFrame][r];
-    for (int c = 0; c < SPR_W; c++) {
-      int idx = row[c] - '0';
-      if (idx <= 0 || idx > 7) continue;
-      int cc = (facing >= 0) ? c : (SPR_W - 1 - c);
+    // Merge adjacent authored pixels of the same color. This is visually exact
+    // and keeps the denser sprite near the old presenter's draw-call cost.
+    for (int c = 0; c < SPR_W;) {
+      int source = facing >= 0 ? c : (SPR_W - 1 - c);
+      int idx = row[source] - '0';
+      int run = 1;
+      while (c + run < SPR_W) {
+        int nextSource = facing >= 0 ? c + run : (SPR_W - 1 - c - run);
+        if (row[nextSource] - '0' != idx) break;
+        run++;
+      }
+      if (idx <= 0 || idx > 9) {
+        c += run;
+        continue;
+      }
       const float* col = SPR_PAL[idx];
       float tr = col[0], tg = col[1], tb = col[2];
       if (own) tb = std::min(1.0f, tb * 1.10f); else tr = std::min(1.0f, tr * 1.06f);
       glUniform4f(glc->uColor, tr * light, tg * light, tb * light, col[3]);
-      double drawY = alive ? sprY + r * cell : sprY + (SPR_H - 2) * cell + (r / 4) * cell * .45;
-      glSolidDev(sprX + cc * cell, drawY, cell, alive ? cell : cell * .45);
+      double drawY = alive ? sprY + r * pixel
+                           : sprY + (SPR_H - 2) * pixel + (r / 4) * pixel * .45;
+      glSolidDev(sprX + c * pixel, drawY, run * pixel, alive ? pixel : pixel * .45);
+      c += run;
     }
   }
-  if (alive) {
-    // The tank sits on the trailing shoulder. It is deliberately compact enough
-    // to preserve the player's silhouette while still reading at a one-cell
-    // render scale. Fuel is authoritative presentation state; only the active
-    // bit changes geometry, so depletion never makes the pack flicker.
-    double packWorldX = pxc + (facing >= 0 ? -0.40 : PLAYER_W + 0.40);
-    double packWorldY = pyc + PLAYER_H * .47;
-    double packX = (packWorldX - camCol) * cell + glOffX;
-    double packY = (packWorldY - camRow) * cell + glOffY;
-    glUniform4f(glc->uColor, .10f * light, .14f * light, .18f * light, 1);
-    glSolidDev(packX - cell * .52, packY - cell * 1.05, cell * 1.04, cell * 2.10);
-    glUniform4f(glc->uColor, .24f * light, .38f * light, .46f * light, 1);
-    glSolidDev(packX - cell * .34, packY - cell * .82, cell * .68, cell * 1.18);
-    glUniform4f(glc->uColor, .52f * light, .79f * light, .82f * light, 1);
-    glSolidDev(packX - cell * .22, packY - cell * .68, cell * .44, cell * .30);
-    glUniform4f(glc->uColor, .12f * light, .17f * light, .20f * light, 1);
-    glSolidDev(packX - cell * .38, packY + cell * .62, cell * .76, cell * .48);
-    if (jetpackActive && jetpackFuel > 0) {
-      double flicker = ((E.actorTick + animFrame) & 1) ? .18 : 0.0;
-      glUniform4f(glc->uColor, 1.0f, .31f, .055f, .90f);
-      glSolidDev(packX - cell * .38, packY + cell * 1.02, cell * .76, cell * (1.20 + flicker));
-      glUniform4f(glc->uColor, 1.0f, .78f, .18f, .98f);
-      glSolidDev(packX - cell * .25, packY + cell * 1.02, cell * .50, cell * (.82 + flicker));
-      glUniform4f(glc->uColor, 1.0f, 1.0f, .78f, 1);
-      glSolidDev(packX - cell * .13, packY + cell * 1.02, cell * .26, cell * .42);
-    }
+  if (alive && !aimedWeapon) {
+    double sx, sy, ex, ey, hx, hy;
+    relaxedArmPose(false, sx, sy, ex, ey, hx, hy);
+    articulatedArm(sx, sy, ex, ey, hx, hy, false);
   }
   if (alive && heldItemKind == IK_BOW) {
-    double bx = sprX + (facing > 0 ? SPR_W + .3 : -1.3) * cell, by = sprY + 3.2 * cell;
+    double physicalSpriteW = SPR_W * SPR_PIXEL_SCALE;
+    double bx = sprX + (facing > 0 ? physicalSpriteW + .3 : -1.3) * cell;
+    double by = sprY + 3.2 * cell;
     glUniform4f(glc->uColor, .55f * light, .31f * light, .14f * light, 1);
     glSolidDev(bx, by, cell * .45, cell * 4.4);
     glUniform4f(glc->uColor, .88f * light, .86f * light, .72f * light, 1);
     double pull = std::max(0.0, std::min(1.0, bowCharge)) * cell;
     glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
   }
-  bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
-                     heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
-                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN;
   if (alive && aimedWeapon) {
     // Aim from the shoulder, then extend an authored arm to a real hand anchor.
     // Weapon geometry below is grip-relative, so it rotates in the hand instead
@@ -439,15 +591,19 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double handX = shoulderX + dx * 1.55, handY = shoulderY + dy * 1.55;
     double hx = (handX - camCol) * cell + glOffX;
     double hy = (handY - camRow) * cell + glOffY;
-    auto limb = [&](double forward, double size, float r, float g, float b) {
-      double x = (shoulderX + dx * forward - camCol) * cell + glOffX;
-      double y = (shoulderY + dy * forward - camRow) * cell + glOffY;
-      glUniform4f(glc->uColor, r * light, g * light, b * light, 1);
-      glSolidDev(x - size * cell * .5, y - size * cell * .5, size * cell, size * cell);
-    };
-    limb(.48, .82, 70/255.f, 130/255.f, 200/255.f);
-    limb(1.02, .70, 188/255.f, 128/255.f, 96/255.f);
-    limb(1.52, .74, 232/255.f, 180/255.f, 140/255.f);
+    // Two-bone arms wrap around the weapon. The lead hand remains exactly at
+    // shoulder + 1.55 forward: projectiles and muzzle art depend on that anchor.
+    double supportSX = shoulderX - dx * .14 + nx * .18;
+    double supportSY = shoulderY - dy * .14 + ny * .18;
+    double supportEX = shoulderX + dx * .46 - nx * .52;
+    double supportEY = shoulderY + dy * .46 - ny * .52;
+    double supportHX = handX + dx * .74 - nx * .38;
+    double supportHY = handY + dy * .74 - ny * .38;
+    articulatedArm(supportSX, supportSY, supportEX, supportEY,
+                   supportHX, supportHY, true);
+    double leadEX = shoulderX + dx * .72 + nx * .25;
+    double leadEY = shoulderY + dy * .72 + ny * .25;
+    articulatedArm(shoulderX, shoulderY, leadEX, leadEY, handX, handY, false);
     auto pixel = [&](double forward, double side, double size, float r, float g, float b, float a = 1.0f) {
       double x = hx + (dx * forward + nx * side) * cell;
       double y = hy + (dy * forward + ny * side) * cell;

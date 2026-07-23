@@ -73,7 +73,6 @@ try {
   // covered deterministically by explosive-survival-test; freeze any naturally
   // spawned actors so a dynamite fuse cannot race these UI assertions.
   await page.evaluate(() => window.__sandTest.setCreatureRuntime(false, false));
-  await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
 
   console.log('local player');
   const getP = () => page.evaluate(() => window.__sandTest.getPlayer());
@@ -84,6 +83,58 @@ try {
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => window.__sandTest.getPlayer()?.alive, null, { timeout: 5000 });
   };
+
+  const startupFocus = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return root.activeElement === root.querySelector('.sg-sim');
+  });
+  check('survival surface owns keyboard focus without a priming click', startupFocus);
+  await page.keyboard.down('d');
+  await page.waitForTimeout(50);
+  const startupBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+  await page.keyboard.up('d');
+  check(`fresh /game forwards movement immediately (bits ${startupBits})`, (startupBits & INPUT_RIGHT) !== 0);
+
+  await page.waitForFunction(() => {
+    const root = document.querySelector('sand-game')?.shadowRoot;
+    return root?.querySelector('.survival-health')?.getAttribute('aria-valuenow') === '100' &&
+      root?.querySelector('.survival-fuel')?.getAttribute('aria-valuenow') === '100';
+  }, null, { timeout: 5000 });
+  const meterGeometry = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    const measure = (selector, reveal = false) => {
+      const meter = root.querySelector(selector);
+      if (reveal) meter.classList.add('show');
+      const cells = [...meter.children];
+      const box = meter.getBoundingClientRect();
+      const first = cells[0].getBoundingClientRect();
+      const last = cells.at(-1).getBoundingClientRect();
+      const result = {
+        width: box.width,
+        leading: first.left - box.left,
+        trailing: box.right - last.right,
+      };
+      if (reveal) meter.classList.remove('show');
+      return result;
+    };
+    return {
+      objectiveWidth: root.querySelector('.survival-objective').getBoundingClientRect().width,
+      health: measure('.survival-health'),
+      charge: measure('.survival-charge', true),
+      fuel: measure('.survival-fuel'),
+      fullHearts: [...root.querySelectorAll('.survival-heart')]
+        .every((heart) => heart.style.getPropertyValue('--fill') === '100%'),
+      fullFuelCells: root.querySelectorAll('.survival-fuel > i.full').length,
+    };
+  });
+  const meterTracksFit = [meterGeometry.health, meterGeometry.charge, meterGeometry.fuel]
+    .every(({ leading, trailing }) => leading >= 5 && leading <= 7 && trailing >= 5 && trailing <= 7);
+  check(
+    `health/charge/jetpack tracks fit their cells (trailing ${meterGeometry.health.trailing.toFixed(1)}/${meterGeometry.charge.trailing.toFixed(1)}/${meterGeometry.fuel.trailing.toFixed(1)}px)`,
+    meterTracksFit && meterGeometry.objectiveWidth > meterGeometry.health.width,
+  );
+  check('full health and jetpack capacity visually fill every meter cell',
+    meterGeometry.fullHearts && meterGeometry.fullFuelCells === 12);
 
   // let the player settle onto the ground
   await page.waitForFunction(() => window.__sandTest.getPlayer()?.grounded, null, { timeout: 4000 }).catch(() => {});

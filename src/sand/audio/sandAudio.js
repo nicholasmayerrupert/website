@@ -114,6 +114,7 @@ export function createSandAudio() {
   let recordedAssets = null;
   let movementVoices = null;
   const lastEventAt = new Map();
+  const lastRecordedWeaponAt = new Map();
   const MAX_VOICES = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 16 : 28;
 
   const audible = () => enabled && !muted && !hidden && !destroyed;
@@ -328,21 +329,35 @@ export function createSandAudio() {
     osc.start(now); osc.stop(now + duration + 0.01);
   };
 
-  const playSample = ({ buffer, gain, pan, rate = 1 }) => {
-    if (!buffer || !audible() || !context || activeVoices >= MAX_VOICES || gain <= 0.001) return;
-    const now = context.currentTime;
+  const playSample = ({ buffer, gain, pan, rate = 1, delay = 0, attack = 0.004 }) => {
+    if (!buffer || !audible() || !context || activeVoices >= MAX_VOICES || gain <= 0.001) return false;
+    const now = context.currentTime + delay;
     const source = context.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = rate;
     const envelope = context.createGain();
     envelope.gain.setValueAtTime(0.0001, now);
-    envelope.gain.linearRampToValueAtTime(gain, now + 0.004);
+    envelope.gain.linearRampToValueAtTime(gain, now + attack);
     const duration = buffer.duration / rate;
     envelope.gain.setValueAtTime(gain, now + Math.max(0.01, duration - 0.04));
     envelope.gain.linearRampToValueAtTime(0.0001, now + duration);
     source.connect(envelope); connectSpatial(envelope, effectsBus, pan);
     trackVoice(source);
     source.start(now);
+    return true;
+  };
+
+  const playRecordedWeapon = (asset, {
+    gain, pan, rate = 1, delay = 0, cooldown = 0, key = asset,
+  }) => {
+    const buffer = recordedAssets?.[asset];
+    if (!buffer || !context) return false;
+    const nowMs = context.currentTime * 1000;
+    const last = lastRecordedWeaponAt.get(key) ?? -Infinity;
+    if (nowMs - last < cooldown) return false;
+    if (!playSample({ buffer, gain, pan, rate, delay })) return false;
+    lastRecordedWeaponAt.set(key, nowMs);
+    return true;
   };
 
   const renderEvent = (type, strength, material, spatial, variation = 0.5) => {
@@ -350,14 +365,22 @@ export function createSandAudio() {
     const pan = spatial.pan;
     const pitch = 0.88 + ((material * 37) % 17) / 50;
     if (type === SOUND_EVENT.BLAST_GUN) {
-      // Compact cannon report: a sharp pressure crack, short mechanical snap,
-      // and low kick that stays distinct from the projectile's later explosion.
-      playNoise({ duration: 0.11, gain: gain * 0.34, pan, frequency: 1650,
-        type: 'highpass', q: 0.45, rate: 1.05 + variation * 0.12, attack: 0.003 });
-      playTone({ from: 155, to: 62, duration: 0.14, gain: gain * 0.22, pan,
-        wave: 'sawtooth', attack: 0.003 });
-      playTone({ from: 2350, to: 1280, duration: 0.055, gain: gain * 0.08, pan,
-        wave: 'square', delay: 0.012, attack: 0.002 });
+      // Recorded muzzle texture plus the fast pressure impulse, ground/body
+      // reflection, and delayed weapon action that survive small speakers.
+      playRecordedWeapon('blastGunReport', {
+        gain: Math.min(0.28, gain * 0.22), pan, rate: 0.96 + variation * 0.08,
+      });
+      playNoise({ duration: 0.075, gain: gain * 0.22, pan, frequency: 2350,
+        type: 'highpass', q: 0.38, rate: 1.05 + variation * 0.12, attack: 0.0015 });
+      playTone({ from: 132, to: 48, duration: 0.18, gain: gain * 0.17, pan,
+        wave: 'sine', attack: 0.002 });
+      playNoise({ duration: 0.17, gain: gain * 0.11, pan, frequency: 265,
+        type: 'lowpass', q: 0.55, rate: 0.88 + variation * 0.08,
+        buffer: brownBuffer, delay: 0.026, attack: 0.003 });
+      playRecordedWeapon('weaponAction', {
+        gain: gain * 0.085, pan, rate: 0.94 + variation * 0.14,
+        delay: 0.034, key: 'blast-action',
+      });
     } else if (type === SOUND_EVENT.BORE_CHARGE) {
       // A rising warning with enough low body to remain readable behind terrain.
       playTone({ from: 82, to: 410, duration: 0.62, gain: gain * 0.16, pan,
@@ -367,14 +390,24 @@ export function createSandAudio() {
       playNoise({ duration: 0.50, gain: gain * 0.08, pan, frequency: 2400,
         type: 'bandpass', q: 1.4, rate: 0.92 + variation * 0.12, attack: 0.08 });
     } else if (type === SOUND_EVENT.BORE_FIRE) {
-      // The cutting beam reads as one violent, descending energy discharge.
+      // The cutting beam reads as one violent pressure crack followed by a
+      // descending energy discharge and its low reflected tail.
+      playNoise({ duration: 0.065, gain: gain * 0.20, pan, frequency: 3900,
+        type: 'highpass', q: 0.34, rate: 1.05 + variation * 0.12, attack: 0.0015 });
       playTone({ from: 1180, to: 74, duration: 0.42, gain: gain * 0.22, pan,
         wave: 'sawtooth', attack: 0.003 });
-      playNoise({ duration: 0.34, gain: gain * 0.30, pan, frequency: 1120,
+      playNoise({ duration: 0.34, gain: gain * 0.24, pan, frequency: 1120,
         type: 'bandpass', q: 0.7, rate: 0.82 + variation * 0.10, attack: 0.004 });
       playTone({ from: 105, to: 42, duration: 0.48, gain: gain * 0.20, pan,
         wave: 'sine', delay: 0.018, attack: 0.008 });
+      playNoise({ duration: 0.31, gain: gain * 0.12, pan, frequency: 235,
+        type: 'lowpass', q: 0.55, rate: 0.77 + variation * 0.08,
+        buffer: brownBuffer, delay: 0.045, attack: 0.009 });
     } else if (type === SOUND_EVENT.ACID_MORTAR) {
+      playRecordedWeapon('weaponAction', {
+        gain: gain * 0.065, pan, rate: 0.78 + variation * 0.12,
+        delay: 0.035, cooldown: 80, key: 'acid-action',
+      });
       playTone({ from: 270, to: 92, duration: 0.22, gain: gain * 0.17, pan,
         wave: 'square', attack: 0.004 });
       playNoise({ duration: 0.24, gain: gain * 0.19, pan, frequency: 980,
@@ -382,6 +415,14 @@ export function createSandAudio() {
       playTone({ from: 690, to: 330, duration: 0.28, gain: gain * 0.07, pan,
         wave: 'sawtooth', delay: 0.025, attack: 0.012 });
     } else if (type === SOUND_EVENT.CLUSTER_LAUNCH) {
+      playRecordedWeapon('blastGunReport', {
+        gain: Math.min(0.12, gain * 0.085), pan, rate: 0.78 + variation * 0.06,
+        cooldown: 90, key: 'cluster-report',
+      });
+      playRecordedWeapon('weaponAction', {
+        gain: gain * 0.07, pan, rate: 0.82 + variation * 0.10,
+        delay: 0.042, cooldown: 90, key: 'cluster-action',
+      });
       playNoise({ duration: 0.12, gain: gain * 0.25, pan, frequency: 1350,
         type: 'highpass', q: 0.55, rate: 1.0 + variation * 0.15, attack: 0.003 });
       playTone({ from: 190, to: 75, duration: 0.21, gain: gain * 0.17, pan,
@@ -391,17 +432,24 @@ export function createSandAudio() {
         gain: gain * 0.045, pan, wave: 'square', delay: 0.045 + i * 0.026, attack: 0.002,
       });
     } else if (type === SOUND_EVENT.MINIGUN) {
-      // Repeated shot events keep one filtered crackle voice open, producing a
-      // continuous rotary buzz without allocating a long-lived oscillator per
-      // bullet. A short low mechanical knock preserves the individual cadence.
+      // The continuous crackle supplies the actual high cyclic rate; a quiet
+      // real rifle burst periodically restores believable muzzle texture.
+      playRecordedWeapon('minigunBurst', {
+        gain: Math.min(0.15, gain * 0.11), pan, rate: 0.96 + variation * 0.08,
+        cooldown: 235, key: 'minigun-burst',
+      });
+      playRecordedWeapon('weaponAction', {
+        gain: gain * 0.045, pan, rate: 1.08 + variation * 0.16,
+        delay: 0.012, cooldown: 90, key: 'minigun-action',
+      });
       holdMovementVoice('minigun', strength, spatial, {
-        volume: 0.13, rate: 1.18 + variation * 0.20,
+        volume: 0.105, rate: 1.18 + variation * 0.20,
         hold: 0.075, attack: 0.008, release: 0.045,
       });
       playTone({ from: 142 + variation * 24, to: 72, duration: 0.055,
-        gain: gain * 0.10, pan, wave: 'square', attack: 0.002 });
-      playNoise({ duration: 0.045, gain: gain * 0.10, pan, frequency: 3200,
-        type: 'highpass', q: 0.36, rate: 1.12 + variation * 0.18, attack: 0.002 });
+        gain: gain * 0.075, pan, wave: 'square', attack: 0.002 });
+      playNoise({ duration: 0.045, gain: gain * 0.085, pan, frequency: 3200,
+        type: 'highpass', q: 0.36, rate: 1.12 + variation * 0.18, attack: 0.0015 });
     } else if (type === SOUND_EVENT.EXPLOSION) {
       const sampleGain = Math.min(0.46, gain * 0.25);
       if (recordedAssets) {

@@ -135,8 +135,9 @@ Players and other real-time actors advance on a deterministic 60 Hz actor clock;
 cellular world work is attempted at most once per presentation frame and does not
 accumulate catch-up debt.
 
-`/game` is explosive survival. Players spawn with an automatic blast gun whose
-swept, high-velocity rounds detonate on the first liquid, solid, or creature hit.
+`/game` is explosive survival. Players spawn with a lower-cadence automatic
+blast gun whose swept, high-velocity rounds detonate on the first liquid, solid,
+or creature hit.
 Dynamiteers throw bouncing timed charges; bore sentinels telegraph, lock, and then
 erase a thick line through both simulated layers. Caustic mortarmen lob large,
 double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
@@ -144,8 +145,10 @@ carriers that split into three independently fused mini-dynamites; and
 minigunners saturate terrain with rapid, pinprick explosive rounds.
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
-an airborne rechargeable jetpack, and safe original-spawn respawning remain
-authoritative in the engine. Mining, material pickups,
+the articulated player animation, an airborne rechargeable jetpack, and safe
+original-spawn respawning remain authoritative in the engine. The rendered
+jetpack exposes its fuel level and animates twin thrust plumes without changing
+that authority. Mining, material pickups,
 block placement, the 36-slot inventory, tool-size presets, and crafting remain
 part of survival: defeated demolition crews can also drop their weapons into
 that same inventory. The starting universal dig tool cuts ordinary terrain at
@@ -199,7 +202,9 @@ network state. Creative mode can scrub and hold the cycle.
 
 The authority emits bounded semantic sound events. `audio/sandAudio.js` owns
 samples, synthesis, spatialization, loops, cooldowns, browser activation, mute,
-and visibility. Audio asset provenance is in `audio/assets/README.md`.
+and visibility. Weapon reports layer compact CC0 recordings with synthesized
+pressure cracks, body, reflections, and mechanical action. Audio asset
+provenance is in `audio/assets/README.md`.
 
 ## Multiplayer
 

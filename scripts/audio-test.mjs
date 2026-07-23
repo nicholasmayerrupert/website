@@ -6,7 +6,9 @@ import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFac
 import { CREATIVE_KIND, OFF, SOUND_EVENT, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { MAT } from '../src/sand/materials.js';
 import { spatializeSound } from '../src/sand/audio/sandAudio.js';
+import { AUDIO_ASSET_URLS } from '../src/sand/audio/audioAssets.js';
 import { makeChecker } from './sand-test-util.mjs';
+import { readFile } from 'node:fs/promises';
 
 await initSandWasm();
 const { check, done } = makeChecker('semantic audio');
@@ -14,6 +16,24 @@ const mk = (storageRole = 'full') => createEngineWasm({
   cols: 96, rows: 72, worldSeed: 0x50a0d, sinksOn: false, infinite: false, storageRole,
 });
 const O = OFF.soundEvent;
+
+// Gun layers stay compact, locally bundled, and tied to an auditable CC0 source.
+{
+  const expected = [
+    ['blastGunReport', '826162'],
+    ['minigunBurst', '482120'],
+    ['weaponAction', '844173'],
+  ];
+  const provenance = await readFile(
+    new URL('../src/sand/audio/assets/README.md', import.meta.url), 'utf8');
+  for (const [key, sourceId] of expected) {
+    const url = AUDIO_ASSET_URLS[key];
+    const bytes = await readFile(new URL(url));
+    const mp3 = bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33;
+    check(`${key} is a compact bundled MP3`, mp3 && bytes.length >= 1000 && bytes.length < 16000);
+    check(`${key} retains CC0 source provenance`, provenance.includes(sourceId));
+  }
+}
 
 // A gameplay action creates one packed authority event and draining is destructive.
 {

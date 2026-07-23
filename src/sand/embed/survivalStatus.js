@@ -10,19 +10,20 @@ const STYLE = `
   box-shadow:inset 0 0 0 1px #59636c,3px 3px 0 rgba(0,0,0,.35); }
 .survival-vitals-label { margin:0 0 5px 2px; letter-spacing:.14em; }
 .survival-health { display:grid; grid-template-columns:repeat(10,14px); gap:2px; padding:4px;
+  width:max-content; box-sizing:border-box;
   background:#171b20; border:2px solid #090b0e; box-shadow:inset 0 0 0 2px #3d4650,4px 4px 0 rgba(0,0,0,.3); }
 .survival-heart { position:relative; width:14px; height:12px; box-sizing:border-box; overflow:hidden;
   background:#3c2527; border:2px solid #261619; }
 .survival-heart::before { content:''; position:absolute; inset:0 auto 0 0; width:var(--fill,0%);
   background:#d94848; box-shadow:inset 2px 2px 0 #f07868; }
-.survival-charge { display:none; margin-top:7px; padding:4px; background:#171b20; border:2px solid #090b0e;
+.survival-charge { display:none; width:max-content; box-sizing:border-box; margin-top:7px; padding:4px; background:#171b20; border:2px solid #090b0e;
   grid-template-columns:repeat(12,10px); gap:2px; box-shadow:inset 0 0 0 2px #3d4650; }
 .survival-charge.show { display:grid; }
 .survival-charge > i { display:block; width:10px; height:6px; background:#303840; }
 .survival-charge > i.full { background:#e9c75b; box-shadow:inset 2px 2px 0 #fff0a0; }
 .survival-charge.bore > i.full { background:#43d3c9; box-shadow:inset 2px 2px 0 #c9fff5; }
 .survival-fuel-label { margin:7px 0 4px 2px; color:#cdeaf7; letter-spacing:.12em; }
-.survival-fuel { display:grid; padding:4px; background:#171b20; border:2px solid #090b0e;
+.survival-fuel { display:grid; width:max-content; box-sizing:border-box; padding:4px; background:#171b20; border:2px solid #090b0e;
   grid-template-columns:repeat(12,10px); gap:2px; box-shadow:inset 0 0 0 2px #3d4650; }
 .survival-fuel > i { display:block; width:10px; height:6px; background:#303840; }
 .survival-fuel > i.full { background:#58b9e9; box-shadow:inset 2px 2px 0 #bdeaff; }

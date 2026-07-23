@@ -59,6 +59,15 @@ function drainTypes(e, into) {
   for (let i = 0; i < packed.length; i += STRIDES.soundEvent) into.add(packed[i + type] | 0);
 }
 
+function drainTypeCount(e, wantedType) {
+  const packed = e.drainSoundEvents();
+  const type = OFF.soundEvent.type;
+  let count = 0;
+  for (let i = 0; i < packed.length; i += STRIDES.soundEvent)
+    if ((packed[i + type] | 0) === wantedType) count++;
+  return count;
+}
+
 const countStone = (grid) => grid.reduce((total, material) => total + (material === MAT.STONE ? 1 : 0), 0);
 
 function killForWeaponDrop(e, species, itemKind, x, y, label) {
@@ -124,6 +133,31 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('impact blast carves nearby terrain', countStone(e.getGrid()) < stoneBefore);
   check('the firing player is immune to their own round', e.getPlayer(player).health === 100);
   check('gunshot and explosion semantic sounds are emitted', sounds.has(SOUND_EVENT.BLAST_GUN) && sounds.has(SOUND_EVENT.EXPLOSION));
+  e.destroy();
+}
+
+// Held automatic fire retains the starter gun's behavior, but its cadence is
+// now exactly half the previous 11-tick rate.
+{
+  const e = arena();
+  const player = e.spawnPlayer(24, FLOOR - 8);
+  let shots = 0;
+  for (let tick = 0; tick < 22; tick++) {
+    e.setPlayerInput(player, {
+      bits: PI_PRIMARY, aimX: COLS - 3, aimY: FLOOR - 4, seq: tick + 1,
+    });
+    e.stepActors();
+    shots += drainTypeCount(e, SOUND_EVENT.BLAST_GUN);
+  }
+  check('starter blast gun fires only once in its 22-tick half-rate window',
+    shots === 1);
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: COLS - 3, aimY: FLOOR - 4, seq: 23,
+  });
+  e.stepActors();
+  shots += drainTypeCount(e, SOUND_EVENT.BLAST_GUN);
+  check('starter blast gun fires again on tick 22 while held',
+    shots === 2);
   e.destroy();
 }
 

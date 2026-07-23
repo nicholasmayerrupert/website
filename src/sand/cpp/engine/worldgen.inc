@@ -960,6 +960,12 @@
   // Slide BOTH layers in lockstep with the shared camera; anchor psys.players once.
   void shiftWorld(int dx, int dy) {
     if ((!dx && !dy) || !fg.infinite) return;
+    // A partial prefetch is tied to the current absolute (X,Y) origin. Even a
+    // perpendicular shift changes that target: retaining its completed slices
+    // would mix the old origin with newly generated slices and cache a vertically
+    // discontinuous foreground band. Finished bands are already in tileStore, so
+    // discarding only the in-flight scratch state is always safe.
+    pfDx = pfDy = 0; pfStage = PF_DONE; pfCursor = 0;
     worldShiftCount++;
     useLayer(&fg); shiftLayer(dx, dy);
     useLayer(&bg); shiftLayer(dx, dy);

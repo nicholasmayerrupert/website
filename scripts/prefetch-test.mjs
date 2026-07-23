@@ -71,6 +71,37 @@ console.log('prefetch determinism — vertical pan (down into novel terrain)');
   check('prefetch actually engaged (hits > 0)', r.statsB.hit > 0, `B hit=${r.statsB.hit}`);
 }
 
+// A perpendicular world shift changes one absolute coordinate of every pending
+// prefetch slice. If a foreground band survives that shift, its early columns
+// retain the old vertical origin while its later columns use the new one. The
+// cached strip then appears as a tall foreground pillar shifted by one stream
+// step, even though the background (generated afterward) remains continuous.
+console.log('perpendicular shift invalidates an in-flight foreground prefetch');
+{
+  const A = mk(), B = mk();
+  const triggerX = COLS - VIS - MARGIN;
+  const camX = triggerX - 20;
+  const camY = ROWS / 2;
+
+  // Begin only the first foreground slice of the upcoming right-hand band.
+  B.prefetchAdvance(camX, camY, VIS, VISR);
+  // Move the loaded window upward before that band finishes.
+  A.shiftWorldXY(0, -96);
+  B.shiftWorldXY(0, -96);
+  // Finish enough slices for both layers, then consume the cached right band.
+  for (let i = 0; i < 16; i++) B.prefetchAdvance(camX, camY, VIS, VISR);
+  A.shiftWorldXY(128, 0);
+  B.shiftWorldXY(128, 0);
+
+  const af = fnv(A.getGrid()), bf = fnv(B.getGrid());
+  const abg = fnv(A.getGridBg()), bbg = fnv(B.getGridBg());
+  check('interrupted prefetch stays byte-identical to synchronous foreground',
+    af === bf, `control=0x${af.toString(16)} prefetched=0x${bf.toString(16)}`);
+  check('interrupted prefetch stays byte-identical to synchronous background',
+    abg === bbg, `control=0x${abg.toString(16)} prefetched=0x${bbg.toString(16)}`);
+  A.destroy(); B.destroy();
+}
+
 // Re-entering a region the camera already left is ALSO a hit (the leaving band was
 // saved to the tileStore) — prefetch must coexist with that without clobbering it.
 console.log('prefetch coexists with saved (revisited) tiles');

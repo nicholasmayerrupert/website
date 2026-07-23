@@ -223,9 +223,10 @@ try {
     inventoryA11y.starterTool?.isTool
       && inventoryA11y.starterTool.toolTier === 3
       && inventoryA11y.starterTool.count === 1);
-  check('crafting UI contains no mining tools',
-    inventoryA11y.craftingNames.length === 4
-      && inventoryA11y.craftingNames.every((name) => !name.includes('Mining Tool')));
+  check('crafting UI contains only brick and TNT',
+    inventoryA11y.craftingNames.length === 2
+      && inventoryA11y.craftingNames.every((name) =>
+        !name.includes('Mining Tool') && !name.includes('Bow') && !name.includes('Arrow')));
   await page.keyboard.press('e');
   await page.waitForTimeout(80);
   const inventoryClosed = await page.locator('sand-game').evaluate((host) => {

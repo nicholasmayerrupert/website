@@ -3,12 +3,8 @@ CraftingSystem::CraftingSystem(Engine& e) : E(e) {}
 void CraftingSystem::ensureRecipes() {
   if (!recipes.empty()) return;
   auto material = [](uint8_t mat, int count) { InvSlot s; s.itemKind = IK_MATERIAL; s.material = mat; s.count = count; return s; };
-  auto special = [](uint8_t kind, int count) { InvSlot s; s.itemKind = kind; s.count = count; return s; };
   auto mat = [](int value, int count) { return CraftIngredient{CIK_MATERIAL, value, count}; };
-  auto flag = [](int value, int count) { return CraftIngredient{CIK_MATERIAL_FLAG, value, count}; };
   recipes = {
-    {4, special(IK_BOW, 1),   {flag(MF_PLANTWOOD, 20), flag(MF_PLANTLEAF, 12)}},
-    {5, special(IK_ARROW, 8), {flag(MF_PLANTWOOD, 4), mat(STONE, 4)}},
     {6, material(BRICK, 8),   {mat(CLAY, 8)}},
     {7, material(TNT, 4),     {mat(GUNPOWDER, 12), mat(SAND, 8)}},
   };

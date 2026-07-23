@@ -20,42 +20,15 @@ function world() {
 {
   const e = world(); const p = e.spawnPlayer(30, FLOOR - 8);
   const recipes = e.getCraftingRecipes();
-  check('recipe catalog contains only bow, arrows, and building materials',
-    recipes.length === 4
-      && recipes.map((recipe) => recipe.id).join(',') === '4,5,6,7'
+  check('recipe catalog contains only brick and TNT',
+    recipes.length === 2
+      && recipes.map((recipe) => recipe.id).join(',') === '6,7'
       && recipes.every((recipe) => recipe.outputKind !== ITEM_KIND.MINING_TOOL));
   e.addToInventory(p, MAT.WOOD, 24);
-  check('removed mining-tool recipe ids cannot craft',
-    [0, 1, 2, 3].every((recipe) => e.craft(p, recipe) === 0));
+  check('removed tool, bow, and arrow recipe ids cannot craft',
+    [0, 1, 2, 3, 4, 5].every((recipe) => e.craft(p, recipe) === 0));
   check('rejected retired recipes consume nothing',
     e.getInventory(p).slots.reduce((n, s) => n + (s.material === MAT.WOOD ? s.count : 0), 0) === 24);
-  e.destroy();
-}
-
-// A fully charged bow consumes one arrow and damages a creature along a swept path.
-{
-  const e = world(); const p = e.spawnPlayer(30, FLOOR - 8);
-  const creature = e.spawnCreature(CREATURE.FOX, 65, FLOOR - 4);
-  e.addToInventory(p, MAT.WOOD, 30);
-  e.addToInventory(p, MAT.PLANT, 12);
-  e.addToInventory(p, MAT.STONE, 4);
-  check('bow and eight arrows craft from wood, fiber, and stone', e.craft(p, 4) === 1 && e.craft(p, 5) === 1);
-  const bowSlot = e.getInventory(p).slots.findIndex((s) => s.itemKind === ITEM_KIND.BOW);
-  const arrowCount = () => e.getInventory(p).slots.filter((s) => s.itemKind === ITEM_KIND.ARROW).reduce((n, s) => n + s.count, 0);
-  e.setSelectedSlot(p, bowSlot);
-  let seq = 0;
-  for (let i = 0; i < 48; i++) {
-    e.setPlayerInput(p, { bits: 16, aimX: 66, aimY: FLOOR - 4, seq: ++seq });
-    e.stepActors();
-  }
-  check('held primary reaches full bow charge', e.getPlayer(p).bowCharge === 1);
-  e.setPlayerInput(p, { bits: 0, aimX: 66, aimY: FLOOR - 4, seq: ++seq });
-  e.stepActors();
-  check('release spawns an arrow and spends one ammo', e.getProjectiles().length === 1 && arrowCount() === 7);
-  const before = e.getCreatures().find((c) => c.id === creature)?.health;
-  for (let i = 0; i < 20; i++) e.stepActors();
-  const after = e.getCreatures().find((c) => c.id === creature)?.health;
-  check(`charged arrow damages the creature (${before} -> ${after})`, after < before);
   e.destroy();
 }
 

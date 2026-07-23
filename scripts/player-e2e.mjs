@@ -89,8 +89,8 @@ try {
   const settled = await getP();
   check(`player spawned + grounded (y ${settled.y.toFixed(1)}, grounded ${settled.grounded})`, settled && settled.grounded);
 
-  // Explosive survival deliberately keeps only the compact arsenal; the old E
-  // inventory/crafting modal must stay retired.
+  // E restores the full inventory/crafting dialog. Empty hotbar slots stay
+  // selectable as the bare hand, and Q opens the engine-authored footprint menu.
   await page.keyboard.press('e');
   await page.waitForTimeout(100);
   const inventoryA11y = await page.locator('sand-game').evaluate((host) => {
@@ -101,16 +101,73 @@ try {
       slots: slots.length,
       disabledSlots: slots.filter((slot) => slot.disabled).length,
       allButtons: slots.every((slot) => slot.tagName === 'BUTTON'),
-      simulationFocused: root.activeElement === root.querySelector('.sg-sim'),
+      slotFocused: root.activeElement?.classList.contains('inv-slot') === true,
+      starterTool: window.__sandTest.getInventory().slots[1],
     };
   });
-  check('E does not expose the retired modal', inventoryA11y.modal === false);
-  check(`arsenal exposes only nine hotbar buttons (${inventoryA11y.slots})`, inventoryA11y.slots === 9 && inventoryA11y.allButtons);
-  check(`empty arsenal slots are locked (${inventoryA11y.disabledSlots})`, inventoryA11y.disabledSlots === 8);
-  check('E leaves simulation focus intact', inventoryA11y.simulationFocused);
-  await page.keyboard.press('2');
+  check('E opens the accessible inventory/crafting modal', inventoryA11y.modal);
+  check(`inventory exposes all 36 slot buttons (${inventoryA11y.slots})`, inventoryA11y.slots === 36 && inventoryA11y.allButtons);
+  check(`empty hotbar slots remain selectable (${inventoryA11y.disabledSlots} disabled)`, inventoryA11y.disabledSlots === 0);
+  check('inventory focuses the selected slot', inventoryA11y.slotFocused);
+  check('starter mining tool is present in slot 2', inventoryA11y.starterTool?.isTool && inventoryA11y.starterTool.count === 1);
+  await page.keyboard.press('e');
   await page.waitForTimeout(80);
-  check('an empty number slot cannot unequip the blast gun', (await page.evaluate(() => window.__sandTest.getInventory().selected)) === 0);
+  const inventoryClosed = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return root.querySelector('[aria-modal="true"]') === null && root.activeElement === root.querySelector('.sg-sim');
+  });
+  check('E closes inventory without the bubbling key reopening it', inventoryClosed);
+
+  await page.locator('sand-game .inv-slot[data-index="2"]').click();
+  await page.waitForFunction(() => window.__sandTest.getInventory().selected === 2, null, { timeout: 4000 });
+  const hotbarFocus = await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.activeElement === host.shadowRoot.querySelector('.sg-sim'));
+  check('clicking the closed hotbar preserves simulation keyboard focus', hotbarFocus);
+
+  await page.keyboard.press('q');
+  await page.waitForTimeout(80);
+  const footprintMenu = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return {
+      open: root.querySelector('.fp-panel')?.classList.contains('open') === true,
+      options: root.querySelectorAll('.fp-btn').length,
+    };
+  });
+  check(`Q opens all eight square footprint choices (${footprintMenu.options})`, footprintMenu.open && footprintMenu.options === 8);
+
+  await page.keyboard.press('e');
+  await page.waitForTimeout(80);
+  const exclusiveMenus = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return {
+      inventory: root.querySelector('[aria-modal="true"]') !== null,
+      footprint: root.querySelector('.fp-panel')?.classList.contains('open') === true,
+    };
+  });
+  check('opening inventory closes the footprint menu', exclusiveMenus.inventory && !exclusiveMenus.footprint);
+  await page.keyboard.press('Escape');
+
+  await page.keyboard.press('q');
+  await page.waitForTimeout(50);
+  await page.locator('sand-game .fp-btn').nth(1).click();
+  await page.waitForTimeout(50);
+  const footprintClosed = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return !root.querySelector('.fp-panel')?.classList.contains('open')
+      && root.activeElement === root.querySelector('.sg-sim');
+  });
+  check('choosing a footprint closes its menu and restores simulation focus', footprintClosed);
+
+  await page.keyboard.press('1');
+  await page.waitForFunction(() => window.__sandTest.getInventory().selected === 0, null, { timeout: 4000 });
+  await page.keyboard.press('3');
+  await page.waitForFunction(() => window.__sandTest.getInventory().selected === 2, null, { timeout: 4000 }).catch(() => {});
+  const handSelection = await page.evaluate(() => {
+    const inv = window.__sandTest.getInventory();
+    return { selected: inv.selected, count: inv.slots[2].count };
+  });
+  check(`an empty number slot equips the bare hand (selected ${handSelection.selected}, count ${handSelection.count})`,
+    handSelection.selected === 2 && handSelection.count === 0);
 
   // Jump: hold briefly (so the press spans a 16ms fixed step) and watch the apex.
   // The procedural spawn can sit under an overhang/tree where a real jump hits a

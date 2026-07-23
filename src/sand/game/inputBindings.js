@@ -42,18 +42,6 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     return b.width > 0 && b.height > 0 && b.right > 0 && b.bottom > 0 &&
       b.left < window.innerWidth && b.top < window.innerHeight;
   };
-  const ownInventory = () => ctx.netClientReady()
-    ? ctx.net.getOwnInventory()
-    : ctx.worldWorker?.getInventory();
-  const occupiedHotbarSlot = (inv, slot) => (inv?.slots?.[slot]?.count || 0) > 0;
-  const nextOccupiedHotbarSlot = (inv, direction) => {
-    if (!inv) return -1;
-    for (let step = 1; step <= 9; step++) {
-      const slot = (inv.selected + direction * step + 9) % 9;
-      if (occupiedHotbarSlot(inv, slot)) return slot;
-    }
-    return -1;
-  };
   const updatePointer = (cx, cy) => {
     ctx.clientX = cx;
     ctx.clientY = cy;
@@ -189,11 +177,8 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     if (ctx.survival && ctx.engine && (ctx.localPlayerId || ctx.netClientReady())) {
       if (key >= '1' && key <= '9') {
         const slot = +key - 1;
-        const inv = ownInventory();
-        if (occupiedHotbarSlot(inv, slot)) {
-          if (ctx.netClientReady()) ctx.net.sendSelect(slot);
-          else ctx.worldWorker?.intent('select', { slot });
-        }
+        if (ctx.netClientReady()) ctx.net.sendSelect(slot);
+        else ctx.worldWorker?.intent('select', { slot });
         e.preventDefault();
         return;
       }
@@ -230,11 +215,16 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   // Survival: scroll cycles the selected hotbar slot (wrap-around policy is in C++).
   const onWheel = (e) => {
     if (!ctx.survival || !ctx.engine || !ctx.inside || isEditableEvent(e)) return;
-    const inv = ownInventory();
-    const slot = nextOccupiedHotbarSlot(inv, e.deltaY > 0 ? 1 : -1);
-    if (slot < 0) return;
-    if (ctx.netClientReady()) ctx.net.sendSelect(slot);
-    else ctx.worldWorker.intent('select', { slot });
+    if (ctx.netClientReady()) {
+      const inv = ctx.net.getOwnInventory();
+      if (!inv) return;
+      ctx.net.sendSelect((inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9); // hotbar is slots 0-8
+      e.preventDefault();
+      return;
+    }
+    const inv = ctx.worldWorker?.getInventory();
+    if (!inv) return;
+    ctx.worldWorker.intent('select', { slot: (inv.selected + (e.deltaY > 0 ? 1 : -1) + 9) % 9 });
     e.preventDefault();
   };
 

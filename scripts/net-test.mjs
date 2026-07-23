@@ -130,8 +130,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('snapshot round trip');
   const players = [
-    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN },
-    { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, alive: true, inputSeq: 0, animState: 0, animFrame: 1 },
+    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN, aimX: -12.5, aimY: 44.75 },
+    { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, alive: true, inputSeq: 0, animState: 0, animFrame: 1, aimX: 37, aimY: 8 },
   ];
   const d = rt(makeSnapshot(123, players, 0xdeadbeef));
   check('decodes to snapshot', d && d.t === MSG.SNAPSHOT && d.tick === 123);
@@ -141,6 +141,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('animation state preserved', d && d.players[0].animState === 2 && d.players[0].animFrame === 3 && d.players[1].animFrame === 1);
   check('alive state preserved', d && d.players[0].alive === 1 && d.players[1].alive === 1);
   check('held item kind preserved', d && d.players[0].heldItemKind === ITEM_KIND.BLAST_GUN);
+  check('player aim preserved', d && d.players[0].aimX === -12.5 && d.players[0].aimY === 44.75
+    && d.players[1].aimX === 37 && d.players[1].aimY === 8);
 }
 
 // 3. join/leave round trip.
@@ -164,10 +166,19 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('input rejects incomplete analog vector', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: 0, moveX: 0.5 })) === null);
   check('input rejects oversized analog vector', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: 0, moveX: 1, moveY: 1 })) === null);
   check('snapshot bad player', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: -1 }] })) === null);
-  check('snapshot missing anim rejected', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: 1, x: 0, y: 0, vx: 0, vy: 0, facing: 1, tool: 0, seq: 0 }] })) === null);
-  const badHeldItem = makeSnapshot(1, [{ id: 1, x: 0, y: 0, facing: 1, grounded: false, tool: 0, health: 100, alive: true, animState: 0, animFrame: 0 }]);
+  const validPlayer = { id: 1, x: 0, y: 0, facing: 1, grounded: false, tool: 0, health: 100, alive: true, animState: 0, animFrame: 0, aimX: 12, aimY: -4 };
+  const missingAnim = makeSnapshot(1, [validPlayer]);
+  delete missingAnim.players[0].animState;
+  check('snapshot missing anim rejected', decode(JSON.stringify(missingAnim)) === null);
+  const badHeldItem = makeSnapshot(1, [validPlayer]);
   badHeldItem.players[0].heldItemKind = Math.max(...Object.values(ITEM_KIND)) + 1;
   check('snapshot unknown held item rejected', decode(JSON.stringify(badHeldItem)) === null);
+  const missingAim = makeSnapshot(1, [validPlayer]);
+  delete missingAim.players[0].aimX;
+  check('snapshot missing aim rejected', decode(JSON.stringify(missingAim)) === null);
+  const nonFiniteAim = makeSnapshot(1, [validPlayer]);
+  nonFiniteAim.players[0].aimY = Number.POSITIVE_INFINITY;
+  check('snapshot non-finite aim rejected', decode(JSON.stringify(nonFiniteAim)) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);
   check('viewport cannot exceed its buffer', rt(makeView('r', 'c', 200, 100, 100, 100)) === null);
   check('viewport buffer cell cap enforced', rt(makeView('r', 'c', 100, 100, 4000, 4000)) === null);
@@ -261,7 +272,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const seqA = new InputSequencer();
   const x0 = engine.getPlayer(pA).x;
   for (let i = 0; i < 60; i++) {
-    host.receive(encode(seqA.next({ room: 'r', client: 'A', player: pA, tick: i, bits: INPUT.RIGHT, aimX: 0, aimY: 0, tool: 0 })));
+    host.receive(encode(seqA.next({ room: 'r', client: 'A', player: pA, tick: i, bits: INPUT.RIGHT, aimX: 73, aimY: 41, tool: 0 })));
     host.step();
   }
   check(`remote input moved client A's player (${x0.toFixed(1)} -> ${engine.getPlayer(pA).x.toFixed(1)})`, engine.getPlayer(pA).x > x0 + 4);
@@ -271,6 +282,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const snapA = snap.players.find((p) => p.id === pA);
   check('snapshot carries both players', snap.players.length === 2 && !!snapA);
   check(`snapshot lastProcessedSeq advanced (${snapA.seq})`, snapA.seq >= 59);
+  check('snapshot carries authoritative player aim', snapA.aimX === 73 && snapA.aimY === 41);
   check('snapshot has world hash', typeof snap.hash === 'number');
 
   check('duplicate/old seq dropped', host.receive(encode(makeInput({ room: 'r', client: 'A', player: pA, tick: 0, seq: 5, bits: INPUT.LEFT, aimX: 0, aimY: 0, tool: 0 }))) === null);
@@ -305,7 +317,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
     await wait(40);
     check('client input relayed to host', hostIn.some((m) => m.t === MSG.INPUT && m.client === 'c1'));
 
-    hostWs.send(encode(makeSnapshot(5, [{ id: 1, x: 10, y: 20, vx: 0, vy: 0, facing: 1, grounded: true, tool: 0, health: 100, inputSeq: 0 }])));
+    hostWs.send(encode(makeSnapshot(5, [{ id: 1, x: 10, y: 20, vx: 0, vy: 0, facing: 1, grounded: true, tool: 0, health: 100, inputSeq: 0, aimX: 35, aimY: 12 }])));
     await wait(40);
     check('host snapshot relayed to client', clientIn.some((m) => m.t === MSG.SNAPSHOT && m.tick === 5));
 

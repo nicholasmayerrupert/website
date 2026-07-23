@@ -1,7 +1,7 @@
 // Browser regression for creature visibility on /fps. It verifies that the
-// creative performance route enables populations, that land/cave/air species
-// all spawn, animate, and move, and that debug hitboxes alter the rendered
-// pixels around every new species.
+// creative performance route enables the active land/cave/air populations,
+// that they spawn, animate, and move, and that debug hitboxes alter the
+// rendered pixels around every active ambient species.
 //
 //   node scripts/creature-e2e.mjs
 //   node scripts/creature-e2e.mjs --png /tmp/creatures-fps.png
@@ -49,7 +49,7 @@ try {
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return [2, 3, 4, 5, 6].every((id) => species.has(id));
+    return [2, 5, 6].every((id) => species.has(id));
   }, null, { timeout: 12000 });
 
   console.log('/fps creature presentation');
@@ -60,16 +60,17 @@ try {
     return { creatures, debugAttr: host.hasAttribute('debug-hitboxes'), hud };
   });
   const species = new Set(initial.creatures.map((c) => c.species));
-  check('fox and hare spawned', species.has(2) && species.has(3));
-  check('crawler and mole spawned', species.has(4) && species.has(5));
+  check('fox and mole spawned', species.has(2) && species.has(5));
   check(`bird spawned (${initial.creatures.filter((c) => c.species === 6).length})`, species.has(6));
+  check('pike, hare, and crawler natural populations stay disabled',
+    [1, 3, 4].every((id) => !species.has(id)));
   check('/fps enables debug hitboxes', initial.debugAttr);
   check('/fps HUD reports creatures', initial.hud.includes('creatures'));
 
   // Freeze world/actor updates so the only pixel difference is the hitbox
   // overlay. Recenter on each habitat species before probing its AABB.
   await page.evaluate(() => window.__sandTest.setPaused(true));
-  for (const [id, name] of [[2, 'fox'], [3, 'hare'], [4, 'crawler'], [5, 'mole'], [6, 'bird']]) {
+  for (const [id, name] of [[2, 'fox'], [5, 'mole'], [6, 'bird']]) {
     const result = await page.evaluate((speciesId) => {
       const T = window.__sandTest;
       const c = T.getCreatures().find((x) => x.alive && x.species === speciesId);
@@ -152,24 +153,25 @@ try {
   check(`bird flies (${moved.toFixed(2)} cells)`, moved > 0.1);
 
   if (pngPath) {
-    const hare = await page.evaluate(() => window.__sandTest.getCreatures().find((c) => c.alive && c.species === 3));
+    const fox = await page.evaluate(() => window.__sandTest.getCreatures().find((c) => c.alive && c.species === 2));
     await page.evaluate((c) => {
       const T = window.__sandTest, i = T.info();
       T.setCam(c.x + c.w / 2 - i.viewCols / 2, c.y + c.h / 2 - i.viewRows / 2);
       T.setHitboxes(true); T.render();
-    }, hare);
+    }, fox);
     await page.screenshot({ path: pngPath });
     console.log(`  screenshot ${pngPath}`);
   }
 
   // The survival route is the real gameplay entry point. It should enable the
-  // same populations without depending on /fps's diagnostics flag, and the
-  // surface/air creatures should intersect the current camera view.
+  // ambient populations plus the two armed enemies without depending on
+  // /fps's diagnostics flag, and an air creature should intersect the current
+  // camera view.
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return [2, 3, 4, 5, 6].every((id) => species.has(id));
+    return [2, 5, 6, 7, 8].every((id) => species.has(id));
   }, null, { timeout: 12000 });
   const survival = await page.evaluate(() => {
     const T = window.__sandTest, info = T.info();
@@ -181,14 +183,15 @@ try {
     const population = T.getCreatures().filter((c) => c.alive);
     return {
       species: population.map((c) => c.species),
-      hareVisible: population.some((c) => c.species === 3 && visible(c)),
       birdVisible: population.some((c) => c.species === 6 && visible(c)),
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
   });
   console.log('\n/game creature spawning');
-  check('survival spawns both land, both cave, and bird populations', [2, 3, 4, 5, 6].every((id) => survival.species.includes(id)));
-  check('survival hare is in the camera view', survival.hareVisible);
+  check('survival spawns enabled ambient populations and both armed enemies',
+    [2, 5, 6, 7, 8].every((id) => survival.species.includes(id)));
+  check('survival keeps disabled natural populations absent',
+    [1, 3, 4].every((id) => !survival.species.includes(id)));
   check('survival bird is in the camera view', survival.birdVisible);
   // Exact spawn coordinates are covered synchronously by creature-test.mjs.
   // Live browser actors can move before their mirrored snapshot is inspected.

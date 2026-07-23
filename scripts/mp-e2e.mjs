@@ -127,13 +127,16 @@ try {
   const solidA = await solid(a.page), solidB = await solid(b.page);
   check(`both clients render the same server terrain (A ${solidA} ~ B ${solidB})`, solidA > 0 && Math.abs(solidA - solidB) <= 2);
 
-  // The authoritative server arms every joining player in selected slot 0.
-  const hasStarterGun = (page) => page.evaluate((gunKind) => {
+  // The authoritative server arms every joining player in selected slot 0 and
+  // grants the universal mining tool in slot 1.
+  const hasStarterKit = (page) => page.evaluate(([gunKind, toolKind]) => {
     const inv = window.__sandNet.ownInventory();
-    return inv?.selected === 0 && inv.slots?.[0]?.itemKind === gunKind && inv.slots[0].count === 1;
-  }, ITEM_KIND.BLAST_GUN);
-  check('client A receives the starter blast gun', await hasStarterGun(a.page));
-  check('client B receives the starter blast gun', await hasStarterGun(b.page));
+    return inv?.selected === 0
+      && inv.slots?.[0]?.itemKind === gunKind && inv.slots[0].count === 1
+      && inv.slots?.[1]?.itemKind === toolKind && inv.slots[1].isTool && inv.slots[1].count === 1;
+  }, [ITEM_KIND.BLAST_GUN, ITEM_KIND.MINING_TOOL]);
+  check('client A receives the starter gun + mining tool', await hasStarterKit(a.page));
+  check('client B receives the starter gun + mining tool', await hasStarterKit(b.page));
 
   // Give each authoritative player a distinct stack so the private inventory
   // and cursor replication checks below exercise real state changes.
@@ -155,14 +158,14 @@ try {
   check(`client A selected slot synced (${selA})`, selA === 3);
   check(`client B selection unaffected (${selB})`, selB === 0);
 
-  // Legacy cursor transport remains correct behind the streamlined HUD: A
-  // picks its material stack from slot 1 while both starter guns stay equipped.
-  await a.page.evaluate(() => window.__sandNet.pick(1, false));
+  // Cursor transport remains correct through the restored inventory HUD: A
+  // picks its material stack from slot 2 while both starter-kit items stay put.
+  await a.page.evaluate(() => window.__sandNet.pick(2, false));
   let curA = null;
   for (let i = 0; i < 24; i++) { await pump(); curA = await a.page.evaluate(() => window.__sandNet.ownCursor()); if (curA) break; }
   check('client A carries a cursor stack after pick', curA != null);
-  check('client A slot 1 emptied after pick', await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[1]?.count ?? 0) === 0));
-  check('client B slot 1 still holds its stack', await b.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[1]?.count ?? 0) === 2));
+  check('client A slot 2 emptied after pick', await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[2]?.count ?? 0) === 0));
+  check('client B slot 2 still holds its stack', await b.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[2]?.count ?? 0) === 2));
 
   // item replication: a dropped item spawned on the SERVER (far from both players
   // so it isn't immediately vacuumed) must appear on BOTH clients' item views.
@@ -183,8 +186,13 @@ try {
     await pump();
     streamedA = await a.page.evaluate(() => ({ info: window.__sandTest.info(), offset: window.__sandTest.worldOffset(), player: window.__sandNet.ownPlayer() }));
     streamedB = await b.page.evaluate(() => ({ info: window.__sandTest.info(), offset: window.__sandTest.worldOffset() }));
+    const serverNow = srv.engine.getPlayer(pidA);
+    const playerCaughtUp = Math.abs(
+      streamedA.offset.x + streamedA.player.x - (srv.engine.getWorldOffsetX() + serverNow.x),
+    ) < 16;
     if ((streamedA.offset.x !== beforeWindow.x || streamedA.offset.y !== beforeWindow.y || streamedA.info.cols !== beforeWindow.cols || streamedA.info.rows !== beforeWindow.rows) &&
-        streamedA.offset.x === streamedB.offset.x && streamedA.offset.y === streamedB.offset.y && streamedA.info.cols === srv.cols && streamedB.info.cols === srv.cols) break;
+        streamedA.offset.x === streamedB.offset.x && streamedA.offset.y === streamedB.offset.y && streamedA.info.cols === srv.cols && streamedB.info.cols === srv.cols &&
+        playerCaughtUp) break;
   }
   const serverAfterStream = srv.engine.getPlayer(pidA);
   const serverWorldX = srv.engine.getWorldOffsetX() + serverAfterStream.x;

@@ -68,7 +68,7 @@ class GLPresenter {
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1; // last solve region (-1 = never solved)
   int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
   bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
-  std::vector<float> glExtPlayers;      // packed [x,y,w,h,facing,own,animState,animFrame] per player
+  std::vector<float> glExtPlayers;      // packed GLP_* authority-render records
 
   // The authority owns survival inventory/tool state, while this engine is only
   // a presentation replica. Keep the tiny hover-preview state explicit instead
@@ -80,7 +80,7 @@ class GLPresenter {
   int glSurvivalPreviewX = 0, glSurvivalPreviewY = 0;
 
   bool glUseExtItems = false;           // client renders dropped items from host snapshots
-  std::vector<float> glExtItems;        // packed [id,kind,material,count,px,py,life] per item
+  std::vector<float> glExtItems;        // packed IS_* authority-render records
   bool glUseExtCreatures = false;       // client renders authoritative creatures
   std::vector<float> glExtCreatures;    // packed creatureSnapshot records
   bool glUseExtProjectiles = false;
@@ -122,7 +122,8 @@ class GLPresenter {
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
   float glActorLight(double px, double py, int w, int h) const;
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
-                     bool alive, int heldItemKind, double bowCharge, bool own, float light, int camCol, int camRow);
+                     bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
+                     bool own, float light, int camCol, int camRow);
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
                    int camCol, int camRow);

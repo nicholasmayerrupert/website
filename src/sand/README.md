@@ -140,9 +140,10 @@ swept, high-velocity rounds detonate on the first liquid, solid, or creature hit
 Dynamiteers throw bouncing timed charges; bore sentinels telegraph, lock, and then
 erase a thick line through both simulated layers. Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
-and manual respawn remain authoritative in the engine. The older crafting,
-mining, and placement machinery remains available to engine tests and future
-loot, but its modal UI is not exposed by the combat presentation.
+and manual respawn remain authoritative in the engine. Mining, material pickups,
+block placement, the 36-slot inventory, tool-size presets, and crafting remain
+part of survival: defeated demolition crews can also drop their weapons into
+that same inventory.
 
 Projectile kind, fuse, and rotation plus creature attack state, progress, and
 buffer-local aim are packed into the ABI snapshots; the worker mirror restores
@@ -163,8 +164,9 @@ explicit spawn eggs bypass natural-spawn caps.
 | `S`, `↓` | Crouch/down | Pan down |
 | `Shift` | Run | — |
 | `1`–`9`, wheel | Select hotbar | — |
-| `E`, `Q` | Reserved (no modal) | — |
-| Pointer | Aim; LMB fires the selected weapon | Paint, draft, erase, or spawn |
+| `E` | Inventory/crafting | — |
+| `Q` | Placement/mining footprint | — |
+| Pointer | Aim and use selected hand, tool, block, or weapon | Paint, draft, erase, or spawn |
 | `+`, `-`, `0` | Zoom in/out/reset | Zoom in/out/reset |
 
 Coarse-pointer creative mode starts in scroll-safe mode behind a `START` button.
@@ -177,6 +179,10 @@ The C++ renderer generates material pixels and lighting, then the GL presenter
 uploads dirty regions and composites both layers, actors, previews, and overlays.
 Terrain grain is keyed to absolute world coordinates. Settled animated materials
 repaint only visible chunks that contain animation.
+
+Bare hands, mining tools, and placeable blocks show the selected square footprint
+at the pointer. Equipping a weapon hides both the footprint and the legacy
+diamond tool preview so the weapon aim remains visually unambiguous.
 
 The render-only day/night cycle drives the sky and skylight but not simulation or
 network state. Creative mode can scrub and hold the cycle.

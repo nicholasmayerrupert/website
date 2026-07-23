@@ -27,8 +27,8 @@ export default function GamePage() {
             Explosive Survival is desktop-only for now
           </h1>
           <p className="text-sm leading-relaxed text-white/70">
-            Visit on a larger screen with a mouse and keyboard to aim, fire, and
-            tear through the simulated world. Touch controls are coming later.
+            Visit on a larger screen with a mouse and keyboard to mine, build,
+            fight, and tear through the simulated world. Touch controls are coming later.
           </p>
           <a
             href="/"
@@ -60,8 +60,13 @@ export default function GamePage() {
           <span className="font-semibold text-white/90">WASD</span> move ·{' '}
           <span className="font-semibold text-white/90">Space</span> jump ·{' '}
           <span className="font-semibold text-white/90">Mouse</span> aim ·{' '}
-          <span className="font-semibold text-[#f0d465]">LMB</span> fire ·{' '}
-          <span className="font-semibold text-white/90">1–9</span> arsenal
+          <span className="font-semibold text-white/90">1–9</span> hotbar
+        </div>
+        <div className="mt-1 whitespace-nowrap">
+          <span className="font-semibold text-[#f0d465]">LMB</span> use / fire ·{' '}
+          <span className="font-semibold text-white/90">RMB</span> alternate layer ·{' '}
+          <span className="font-semibold text-[#f0d465]">E</span> inventory + craft ·{' '}
+          <span className="font-semibold text-white/90">Q</span> tool size
         </div>
         <div className="mt-1 text-[9px] tracking-[.12em] text-[#f08a6a] sm:text-[10px]">
           Objective: survive the demolition crews. Destroy everything in your way.

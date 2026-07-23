@@ -277,6 +277,9 @@ void CreatureSystem::updateNaturalPopulation() {
   // Armed enemies belong to survival and get first claim on the bounded natural
   // population. Creative still permits explicit egg/script spawns for testing.
   for (int pass = 0; pass < 2; pass++) for (uint8_t sid = 0; sid < CS_COUNT; sid++) {
+    // Temporarily keep the ambient roster focused: these species remain valid
+    // for direct tests/scripts, but do not enter fresh natural populations.
+    if (sid == CS_PIKE || sid == CS_HARE || sid == CS_CRAWLER) continue;
     bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL;
     if (survivalEnemy != (pass == 0) || (survivalEnemy && !E.survivalInventory)) continue;
     const CreatureSpawnRule& r = CREATURE_SPECIES[sid].spawn;
@@ -573,8 +576,8 @@ void CreatureSystem::moveFlying(Creature& c) {
 
 static constexpr int DYNAMITE_CHARGE_TICKS = 30;
 static constexpr int DYNAMITE_THROW_TICKS = 8;
-static constexpr int BORE_CHARGE_TICKS = 72;
-static constexpr int BORE_LOCK_TICKS = 18;
+static constexpr int BORE_CHARGE_TICKS = 90;
+static constexpr int BORE_LOCK_TICKS = 30;
 static constexpr int BORE_FIRE_TICKS = 6;
 
 static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
@@ -627,17 +630,11 @@ void CreatureSystem::updateDynamiteerAttack(Creature& c) {
   c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
 }
 
-void CreatureSystem::fireBore(Creature& c) {
-  const CreatureSpecies& s = species(c);
-  double ox = c.wx - E.fg.worldOffsetX + s.w * 0.5;
-  double oy = c.wy - E.fg.worldOffsetY + s.h * 0.42;
-  double dx = c.attackAimX - (E.fg.worldOffsetX + ox);
-  double dy = c.attackAimY - (E.fg.worldOffsetY + oy);
+void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, int damage,
+                                  int immunePlayerId, int immuneCreatureId) {
   double d = std::hypot(dx, dy);
-  if (d < 1e-6) { dx = c.facing; dy = 0; d = 1; }
+  if (d < 1e-6) return;
   dx /= d; dy /= d;
-  // Start beyond the sentinel's own hull, then extend to the loaded-window edge.
-  ox += dx * (s.w * 0.5 + 0.75); oy += dy * (s.h * 0.35 + 0.75);
   double length = 1e9;
   if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - ox) / dx);
   else if (dx < -1e-9) length = std::min(length, (1.0 - ox) / dx);
@@ -676,21 +673,62 @@ void CreatureSystem::fireBore(Creature& c) {
 
   double awx0 = E.fg.worldOffsetX + ox, awy0 = E.fg.worldOffsetY + oy;
   double awx1 = E.fg.worldOffsetX + ex, awy1 = E.fg.worldOffsetY + ey;
-  for (Player& p : E.psys.players) if (p.active && p.alive &&
+  for (Player& p : E.psys.players) if (p.active && p.alive && p.id != immunePlayerId &&
       segmentHitsExpandedBox(awx0, awy0, awx1, awy1,
                              E.fg.worldOffsetX + p.px, E.fg.worldOffsetY + p.py,
                              E.fg.worldOffsetX + p.px + p.w, E.fg.worldOffsetY + p.py + p.h, CREATURE_BORE_RADIUS))
-    E.psys.damagePlayer(p, s.damage, 36);
+    E.psys.damagePlayer(p, damage, 36);
   for (Creature& other : creatures) {
-    if (!other.alive || other.id == c.id || other.hurtCooldown > 0) continue;
+    if (!other.alive || other.id == immuneCreatureId || other.hurtCooldown > 0) continue;
     const CreatureSpecies& os = species(other);
     if (!segmentHitsExpandedBox(awx0, awy0, awx1, awy1,
                                 other.wx, other.wy, other.wx + os.w, other.wy + os.h, CREATURE_BORE_RADIUS)) continue;
-    other.health -= s.damage; other.hurtCooldown = 7;
+    other.health -= damage; other.hurtCooldown = 7;
     E.audio.emit(SE_CREATURE, other.wx - E.fg.worldOffsetX + os.w * 0.5,
                  other.wy - E.fg.worldOffsetY + os.h * 0.5, 0.8, other.species, 0);
   }
   E.audio.emit(SE_BORE_FIRE, ox, oy, 1.0, STONE, 0);
+}
+
+void CreatureSystem::fireBore(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  double ox = c.wx - E.fg.worldOffsetX + s.w * 0.5;
+  double oy = c.wy - E.fg.worldOffsetY + s.h * 0.42;
+  double dx = c.attackAimX - (E.fg.worldOffsetX + ox);
+  double dy = c.attackAimY - (E.fg.worldOffsetY + oy);
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = c.facing; dy = 0; d = 1; }
+  dx /= d; dy /= d;
+  // Start beyond the sentinel's own hull, then extend to the loaded-window edge.
+  ox += dx * (s.w * 0.5 + 0.75); oy += dy * (s.h * 0.35 + 0.75);
+  fireBoreLine(ox, oy, dx, dy, s.damage, 0, c.id);
+}
+
+void CreatureSystem::fireBore(Player& p) {
+  double ox = p.px + p.w * 0.5, oy = p.py + p.h * 0.42;
+  double dx = p.aimX - ox, dy = p.aimY - oy;
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = p.facing; dy = 0; d = 1; }
+  dx /= d; dy /= d;
+  // Move the beam origin just outside whichever side of the player AABB the aim
+  // ray exits. This keeps the component cut from starting inside the shooter.
+  double exitX = std::fabs(dx) > 1e-9 ? (p.w * 0.5 + 0.75) / std::fabs(dx) : 1e9;
+  double exitY = std::fabs(dy) > 1e-9 ? (p.h * 0.5 + 0.75) / std::fabs(dy) : 1e9;
+  double exit = std::min(exitX, exitY);
+  ox += dx * exit; oy += dy * exit;
+  fireBoreLine(ox, oy, dx, dy, CREATURE_SPECIES[CS_BORE_SENTINEL].damage, p.id, 0);
+}
+
+void CreatureSystem::dropWeapon(const Creature& c) {
+  uint8_t itemKind = c.species == CS_DYNAMITEER ? IK_DYNAMITE_SATCHEL
+                   : c.species == CS_BORE_SENTINEL ? IK_BORE_CANNON : IK_MATERIAL;
+  if (itemKind == IK_MATERIAL) return;
+  const CreatureSpecies& s = species(c);
+  InvSlot weapon; weapon.itemKind = itemKind; weapon.count = 1;
+  E.itemsys.spawnStack(weapon,
+                       c.wx - E.fg.worldOffsetX + s.w * 0.5,
+                       c.wy - E.fg.worldOffsetY + s.h * 0.45,
+                       c.facing * 0.65, -1.0, IT_PICKUP_DELAY);
 }
 
 void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
@@ -757,7 +795,13 @@ void CreatureSystem::updateCreatures() {
   if (E.creatureNaturalSpawning) updateNaturalPopulation();
   for (Creature& c : creatures) {
     if (!c.alive) { c.deathTicks--; continue; }
-    if (c.health <= 0) { c.health = 0; c.alive = false; c.deathTicks = 18; continue; }
+    if (c.health <= 0) {
+      c.health = 0;
+      dropWeapon(c);
+      c.alive = false;
+      c.deathTicks = 18;
+      continue;
+    }
     if (c.scanCooldown > 0) c.scanCooldown--; else acquireTarget(c);
     if (c.attackCooldown > 0) c.attackCooldown--;
     if (c.hurtCooldown > 0) c.hurtCooldown--;

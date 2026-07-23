@@ -225,6 +225,8 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
             r.x -= dx; r.y -= dy;
             if (r.tx !== undefined) r.tx -= dx;
             if (r.ty !== undefined) r.ty -= dy;
+            if (r.aimX !== undefined) r.aimX -= dx;
+            if (r.aimY !== undefined) r.aimY -= dy;
           }
         }
         if (predId) cur.removePlayer(predId);
@@ -277,6 +279,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       r.health = p.health | 0; r.alive = p.alive !== 0;
       r.deathTicks = p.deathTicks | 0; r.respawnReady = p.respawnReady !== 0;
       r.bowCharge = p.bowCharge; r.heldItemKind = p.heldItemKind | 0;
+      r.aimX = p.aimX; r.aimY = p.aimY;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;
       if (p.id === ownPlayerId && !r.alive) {

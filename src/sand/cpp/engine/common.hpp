@@ -276,6 +276,8 @@ struct Item {
 static const int PROJECTILE_MAX = 256, ARROW_LIFE = 180, BOW_CHARGE_MAX = 48;
 static const int BLAST_ROUND_LIFE = 90, BLAST_GUN_COOLDOWN = 11;
 static const int DYNAMITE_FUSE_TICKS = 105;
+static const int DYNAMITE_SATCHEL_COOLDOWN = 45;
+static const int BORE_CANNON_CHARGE_TICKS = 60, BORE_CANNON_COOLDOWN = 150;
 static const int BLAST_ROUND_RADIUS = 10;
 static constexpr double BLAST_ROUND_POWER = 13.0;
 static const double ARROW_GRAVITY = 0.04, PROJECTILE_SWEEP_STEP = 0.25;

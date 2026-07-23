@@ -25,6 +25,29 @@ void ProjectileSystem::applyBlastGunInput(Player& p) {
   E.playerActionCount++;
 }
 
+void ProjectileSystem::applyDynamiteSatchelInput(Player& p, int previousInput) {
+  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  bool primary = (p.input & PI_PRIMARY) != 0;
+  bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
+  if (!primary || wasPrimary || p.toolCooldown > 0) return;
+  spawnDynamite(p);
+  p.toolCooldown = DYNAMITE_SATCHEL_COOLDOWN;
+  E.playerActionCount++;
+}
+
+void ProjectileSystem::applyBoreCannonInput(Player& p, int previousInput) {
+  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
+  bool primary = (p.input & PI_PRIMARY) != 0;
+  bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
+  if (!primary || p.toolCooldown > 0) { p.bowChargeTicks = 0; return; }
+  if (!wasPrimary) E.audio.emit(SE_BORE_CHARGE, p.px + p.w * .5, p.py + p.h * .42, 0.82, STONE, 0);
+  if (++p.bowChargeTicks < BORE_CANNON_CHARGE_TICKS) return;
+  E.creatures.fireBore(p);
+  p.bowChargeTicks = 0;
+  p.toolCooldown = BORE_CANNON_COOLDOWN;
+  E.playerActionCount++;
+}
+
 void ProjectileSystem::spawnArrow(Player& p, double charge) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double sx = p.px + p.w * .5, sy = p.py + p.h * .42;
@@ -55,17 +78,14 @@ void ProjectileSystem::spawnBlastRound(Player& p) {
   E.audio.emit(SE_BLAST_GUN, round.px, round.py, 0.9, GUNPOWDER, 0);
 }
 
-void ProjectileSystem::spawnDynamite(const Creature& thrower, double targetX, double targetY) {
+void ProjectileSystem::spawnDynamiteAt(int owner, double sx, double sy, double targetX, double targetY) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
-  const CreatureSpecies& s = E.creatures.species(thrower);
-  double localX = thrower.wx - E.fg.worldOffsetX;
-  double localY = thrower.wy - E.fg.worldOffsetY;
-  Projectile dynamite; dynamite.id = nextId++; dynamite.owner = -thrower.id; dynamite.kind = PK_DYNAMITE;
+  Projectile dynamite; dynamite.id = nextId++; dynamite.owner = owner; dynamite.kind = PK_DYNAMITE;
   // Start inside the thrower's actor space. The next actor step sweeps the
   // complete throw path, so a wall touching the actor cannot be bypassed by a
   // pre-offset visual muzzle position.
-  dynamite.px = localX + s.w * .5;
-  dynamite.py = localY + s.h * .35;
+  dynamite.px = sx;
+  dynamite.py = sy;
   double dx = targetX - dynamite.px, dy = targetY - dynamite.py;
   double flight = std::max(34.0, std::min(58.0, std::fabs(dx) * .72 + 24.0));
   dynamite.vx = std::max(-2.45, std::min(2.45, dx / flight));
@@ -75,6 +95,18 @@ void ProjectileSystem::spawnDynamite(const Creature& thrower, double targetX, do
   dynamite.rotation = std::atan2(dynamite.vy, dynamite.vx);
   projectiles.push_back(dynamite);
   E.audio.emit(SE_FUSE, dynamite.px, dynamite.py, 0.9, TNT, 0);
+}
+
+void ProjectileSystem::spawnDynamite(const Creature& thrower, double targetX, double targetY) {
+  const CreatureSpecies& s = E.creatures.species(thrower);
+  double localX = thrower.wx - E.fg.worldOffsetX;
+  double localY = thrower.wy - E.fg.worldOffsetY;
+  spawnDynamiteAt(-thrower.id, localX + s.w * .5, localY + s.h * .35, targetX, targetY);
+}
+
+void ProjectileSystem::spawnDynamite(Player& thrower) {
+  spawnDynamiteAt(thrower.id, thrower.px + thrower.w * .5, thrower.py + thrower.h * .42,
+                  thrower.aimX, thrower.aimY);
 }
 
 void ProjectileSystem::updateProjectiles() {

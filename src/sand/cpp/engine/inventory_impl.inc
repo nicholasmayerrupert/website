@@ -2,13 +2,18 @@
 // JS renders packed snapshots and forwards intents; the selected slot drives
 // mining or placement.
 
-// Destructive survival starts armed. The blast gun is intentionally infinite-
-// energy in this first combat slice; its cadence lives in ProjectileSystem.
+// Destructive survival starts armed and able to harvest terrain. The blast gun
+// is intentionally infinite-energy; the wood dig tool restores the mining loop.
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
   p.inv[0].itemKind = IK_BLAST_GUN;
   p.inv[0].count = 1;
+  p.inv[1].itemKind = IK_MINING_TOOL;
+  p.inv[1].isTool = 1;
+  p.inv[1].toolClass = TC_DIG;
+  p.inv[1].toolTier = TT_WOOD;
+  p.inv[1].count = 1;
   p.selectedFootprint = E.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
   setSelectedSlot(p, 0);
 }
@@ -69,7 +74,9 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
     InvSlot& s = trial.inv[i];
     if (s.count == 0) {
       s = incoming;
-      int limit = (incoming.itemKind == IK_MINING_TOOL || incoming.itemKind == IK_BOW || incoming.itemKind == IK_BLAST_GUN) ? 1 : INV_STACK_MAX;
+      int limit = (incoming.itemKind == IK_MINING_TOOL || incoming.itemKind == IK_BOW ||
+                   incoming.itemKind == IK_BLAST_GUN || incoming.itemKind == IK_DYNAMITE_SATCHEL ||
+                   incoming.itemKind == IK_BORE_CANNON) ? 1 : INV_STACK_MAX;
       int add = imin(count, limit); s.count = add; count -= add;
     }
   }
@@ -156,12 +163,19 @@ void InventorySystem::cursorPick(Player& p, int slot, bool half) {
 }
 void InventorySystem::cursorPick(int id, int slot, int half) { Player* p = E.findPlayer(id); if (p) cursorPick(*p, slot, half != 0); }
 
-// Throw the carried stack into the world in the facing direction (drop-out). whole=
-// the entire stack, else one. Tools can't be thrown. The thrown item ignores the
-// magnet briefly so it doesn't fly straight back. Returns true if anything was thrown.
+// Throw the carried stack into the world in the facing direction (drop-out).
+// Materials keep their stack-count behavior; captured enemy weapons can also be
+// dropped and recovered. The soulbound starter gun and mining tools stay put.
 bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   InvSlot& c = p.cursor;
-  if (c.count <= 0 || c.itemKind != IK_MATERIAL || c.isTool || c.material == EMPTY) return false;
+  if (c.count <= 0 || c.itemKind == IK_BLAST_GUN || c.itemKind == IK_MINING_TOOL) return false;
+  if (c.itemKind == IK_DYNAMITE_SATCHEL || c.itemKind == IK_BORE_CANNON) {
+    E.itemsys.spawnStack(c, p.px + p.w / 2.0 + p.facing * 1.5, p.py + p.h / 2.0,
+                         p.facing * IT_THROW_SPEED, IT_THROW_UP, IT_THROW_PICKUP_DELAY);
+    c = InvSlot();
+    return true;
+  }
+  if (c.itemKind != IK_MATERIAL || c.isTool || c.material == EMPTY) return false;
   int n = whole ? c.count : 1;
   double sx = p.px + p.w / 2.0 + p.facing * 1.5, sy = p.py + p.h / 2.0;
   E.throwItem(c.material, n, sx, sy, p.facing * IT_THROW_SPEED, IT_THROW_UP, c.plantType);
@@ -267,6 +281,8 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   bool mineMode = sel.itemKind == IK_MINING_TOOL || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
   if (sel.itemKind == IK_BOW) { E.projectiles.applyBowInput(p, prev); return; }
   if (sel.itemKind == IK_BLAST_GUN) { E.projectiles.applyBlastGunInput(p); return; }
+  if (sel.itemKind == IK_DYNAMITE_SATCHEL) { E.projectiles.applyDynamiteSatchelInput(p, prev); return; }
+  if (sel.itemKind == IK_BORE_CANNON) { E.projectiles.applyBoreCannonInput(p, prev); return; }
   if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
   bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && sel.material == SEED;
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);

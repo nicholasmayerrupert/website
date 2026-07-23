@@ -25,6 +25,7 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   let options = [];
   let selected = 0;
   let signature = '';
+  let previousFocus = null;
 
   const backdrop = document.createElement('div');
   backdrop.className = 'fp-backdrop';
@@ -69,9 +70,17 @@ export function createFootprintMenu(root, { selectFootprint } = {}) {
   }
 
   function setOpen(next) {
-    open = !!next;
+    const nextOpen = !!next;
+    if (nextOpen === open) return;
+    if (nextOpen) previousFocus = root.activeElement || document.activeElement;
+    open = nextOpen;
     panel.classList.toggle('open', open);
     backdrop.classList.toggle('open', open);
+    if (!open) {
+      const target = previousFocus?.isConnected ? previousFocus : root.querySelector('.sg-sim');
+      previousFocus = null;
+      target?.focus?.({ preventScroll: true });
+    }
   }
 
   root.append(backdrop, wrap);

@@ -367,7 +367,8 @@ float GLPresenter::glActorLight(double px, double py, int w, int h) const {
 }
 
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
-                     bool alive, int heldItemKind, double bowCharge, bool own, float light, int camCol, int camRow) {
+                     bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
+                     bool own, float light, int camCol, int camRow) {
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
@@ -395,14 +396,66 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double pull = std::max(0.0, std::min(1.0, bowCharge)) * cell;
     glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
   }
-  if (alive && heldItemKind == IK_BLAST_GUN) {
-    double gx = sprX + (facing > 0 ? SPR_W - .1 : -2.8) * cell, gy = sprY + 3.45 * cell;
-    glUniform4f(glc->uColor, .16f * light, .18f * light, .20f * light, 1);
-    glSolidDev(gx, gy, cell * 2.9, cell * .82);
-    glUniform4f(glc->uColor, .78f * light, .43f * light, .12f * light, 1);
-    glSolidDev(gx + (facing > 0 ? 2.35 : 0) * cell, gy + cell * .12, cell * .72, cell * .56);
-    glUniform4f(glc->uColor, .28f * light, .24f * light, .20f * light, 1);
-    glSolidDev(gx + (facing > 0 ? .55 : 1.75) * cell, gy + cell * .72, cell * .58, cell * 1.15);
+  bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
+                     heldItemKind == IK_BORE_CANNON;
+  if (alive && aimedWeapon) {
+    double handX = pxc + PLAYER_W * .5, handY = pyc + PLAYER_H * .42;
+    double dx = aimX - handX, dy = aimY - handY, d = std::hypot(dx, dy);
+    if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
+    dx /= d; dy /= d;
+    double nx = -dy, ny = dx;
+    double hx = (handX - camCol) * cell + glOffX;
+    double hy = (handY - camRow) * cell + glOffY;
+    auto pixel = [&](double forward, double side, double size, float r, float g, float b, float a = 1.0f) {
+      double x = hx + (dx * forward + nx * side) * cell;
+      double y = hy + (dy * forward + ny * side) * cell;
+      glUniform4f(glc->uColor, r * light, g * light, b * light, a);
+      glSolidDev(x - size * cell * .5, y - size * cell * .5, size * cell, size * cell);
+    };
+
+    if (heldItemKind == IK_BLAST_GUN) {
+      for (int i = 0; i < 7; i++) pixel(.25 + i * .48, 0, .58, .16f, .18f, .20f);
+      for (int i = 0; i < 4; i++) pixel(.52 + i * .48, -.34, .40, .31f, .36f, .40f);
+      pixel(3.30, 0, .72, .90f, .48f, .10f);
+      pixel(2.92, 0, .38, 1.0f, .72f, .18f);
+      pixel(.72, .52, .58, .31f, .24f, .17f);
+      pixel(.91, .92, .52, .26f, .20f, .15f);
+    } else if (heldItemKind == IK_DYNAMITE_SATCHEL) {
+      for (int stick = -1; stick <= 1; stick++) for (int i = 0; i < 4; i++)
+        pixel(.38 + i * .43, stick * .38, .48, stick == 0 ? .82f : .62f, .07f, .045f);
+      for (int stick = -1; stick <= 1; stick++) pixel(1.00, stick * .38, .30, .16f, .12f, .10f);
+      pixel(1.96, 0, .30, .95f, .73f, .18f);
+      pixel(2.25, 0, .24, 1.0f, .33f, .05f);
+    } else {
+      for (int i = 0; i < 9; i++) {
+        float shell = (i == 0 || i == 8) ? .30f : .18f;
+        pixel(.12 + i * .46, 0, .68, shell, .25f + i * .012f, .28f + i * .012f);
+      }
+      for (int i = 1; i < 8; i++) pixel(.12 + i * .46, 0, .32, .20f, .86f, .82f);
+      for (int i = 1; i < 7; i += 2) {
+        pixel(.12 + i * .46, -.48, .34, .40f, .48f, .50f);
+        pixel(.12 + i * .46, .48, .34, .40f, .48f, .50f);
+      }
+      pixel(.72, .62, .58, .20f, .25f, .27f);
+      pixel(.92, 1.00, .50, .15f, .19f, .21f);
+      pixel(4.02, 0, .76, .73f, 1.0f, .91f);
+      if (bowCharge > 0) {
+        double length = 1e9;
+        if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - handX) / dx);
+        else if (dx < -1e-9) length = std::min(length, (1.0 - handX) / dx);
+        if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - handY) / dy);
+        else if (dy < -1e-9) length = std::min(length, (1.0 - handY) / dy);
+        if (std::isfinite(length) && length > 4.5) {
+          double progress = std::max(0.0, std::min(1.0, bowCharge));
+          int samples = imax(1, (int)std::ceil((length - 4.2) / (2.7 - progress * 1.35)));
+          for (int i = 0; i <= samples; i++) {
+            double t = 4.2 + (length - 4.2) * i / samples;
+            pixel(t, 0, .16 + progress * .34, 1.0f, .40f + .46f * progress, .10f,
+                  .16f + .58f * progress);
+          }
+        }
+      }
+    }
   }
 }
 
@@ -416,15 +469,18 @@ void GLPresenter::glDrawPlayers() {
       const float* p = &glExtPlayers[(size_t)i * GLP_STRIDE];
       float light = glActorLight(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H]);
       glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME],
-                      p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE], p[GLP_OWN] > 0.5f, light, camCol, camRow);
+                      p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE],
+                      p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_OWN] > 0.5f, light, camCol, camRow);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
     for (auto& p : E.psys.players) {
       if (!p.active) continue;
       const InvSlot& held = p.inv[p.selectedSlot];
+      double chargeMax = held.itemKind == IK_BORE_CANNON ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
-                      p.bowChargeTicks / (double)BOW_CHARGE_MAX, p.id == glOwnPlayerId, glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
+                      p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.id == glOwnPlayerId,
+                      glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
@@ -442,6 +498,8 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
              : itemKind == IK_ARROW ? 0xffd6c49au
              : itemKind == IK_BOW ? 0xff4b6b9bu
              : itemKind == IK_BLAST_GUN ? 0xff3f76c4u
+             : itemKind == IK_DYNAMITE_SATCHEL ? 0xff203fc9u
+             : itemKind == IK_BORE_CANNON ? 0xffb8d851u
              : (tier == TT_GOLD ? 0xff34c7f2u : tier == TT_IRON ? 0xffe4e0d8u : tier == TT_STONE ? 0xff8f969eu : 0xff447ab0u);
   float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
   float baseA = ((c >> 24) & 0xff) / 255.0f;
@@ -481,6 +539,35 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
     glSolidDev(cx + sz * .34, cy - sz * .24, sz * .45, sz * .33);
     glUniform4f(glc->uColor, .31f, .25f, .19f, a);
     glSolidDev(cx - sz * .18, cy + sz * .05, sz * .32, sz * .62);
+    return;
+  }
+  if (kind == IT_ITEM && itemKind == IK_DYNAMITE_SATCHEL) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * glCellDev + glOffY;
+    for (int stick = -1; stick <= 1; stick++) {
+      glUniform4f(glc->uColor, stick == 0 ? .82f : .62f, .07f, .045f, a);
+      glSolidDev(cx - u * .72, bottom - u * (1.10 + stick * .34), u * 1.44, u * .42);
+    }
+    glUniform4f(glc->uColor, .14f, .11f, .09f, a);
+    glSolidDev(cx - u * .18, bottom - u * 1.60, u * .36, u * 1.18);
+    glUniform4f(glc->uColor, 1.0f, .66f, .10f, a);
+    glSolidDev(cx + u * .68, bottom - u * 1.62, u * .34, u * .34);
+    return;
+  }
+  if (kind == IT_ITEM && itemKind == IK_BORE_CANNON) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * glCellDev + glOffY;
+    glUniform4f(glc->uColor, .13f, .17f, .19f, a);
+    glSolidDev(cx - u * 1.55, bottom - u * 1.16, u * 3.10, u * .78);
+    glUniform4f(glc->uColor, .34f, .43f, .46f, a);
+    glSolidDev(cx - u * 1.15, bottom - u * 1.38, u * .42, u * 1.05);
+    glSolidDev(cx + u * .20, bottom - u * 1.38, u * .42, u * 1.05);
+    glUniform4f(glc->uColor, .19f, .82f, .78f, a);
+    glSolidDev(cx - u * .62, bottom - u * 1.02, u * 1.48, u * .30);
+    glUniform4f(glc->uColor, .73f, 1.0f, .91f, a);
+    glSolidDev(cx + u * 1.32, bottom - u * 1.20, u * .56, u * .86);
+    glUniform4f(glc->uColor, .12f, .16f, .18f, a);
+    glSolidDev(cx - u * 1.18, bottom - u * .50, u * .58, u * .62);
     return;
   }
   glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
@@ -532,18 +619,19 @@ void GLPresenter::glDrawProjectiles() {
       continue;
     }
     if (kind == PK_DYNAMITE) {
+      double dc = glCellDev * 1.4;
       double ax = std::cos(rotation), ay = std::sin(rotation), pxn = -ay, pyn = ax;
       for (int stick = -1; stick <= 1; stick++) for (int seg = -1; seg <= 1; seg++) {
-        double px = cx + ax * seg * glCellDev * .32 + pxn * stick * glCellDev * .28;
-        double py = cy + ay * seg * glCellDev * .32 + pyn * stick * glCellDev * .28;
+        double px = cx + ax * seg * dc * .32 + pxn * stick * dc * .28;
+        double py = cy + ay * seg * dc * .32 + pyn * stick * dc * .28;
         glUniform4f(glc->uColor, stick == 0 ? .82f : .62f, .08f, .055f, 1);
-        glSolidDev(px - glCellDev * .23, py - glCellDev * .23, glCellDev * .46, glCellDev * .46);
+        glSolidDev(px - dc * .23, py - dc * .23, dc * .46, dc * .46);
       }
       glUniform4f(glc->uColor, .16f, .12f, .10f, 1);
-      glSolidDev(cx - glCellDev * .48, cy - glCellDev * .10, glCellDev * .96, glCellDev * .20);
-      double fx = cx + ax * glCellDev * 1.15, fy = cy + ay * glCellDev * 1.15;
+      glSolidDev(cx - dc * .48, cy - dc * .10, dc * .96, dc * .20);
+      double fx = cx + ax * dc * 1.15, fy = cy + ay * dc * 1.15;
       glUniform4f(glc->uColor, ((int)fuse / 3) & 1 ? 1.0f : .92f, ((int)fuse / 3) & 1 ? .82f : .28f, .04f, 1);
-      glSolidDev(fx - glCellDev * .25, fy - glCellDev * .25, glCellDev * .50, glCellDev * .50);
+      glSolidDev(fx - dc * .25, fy - dc * .25, dc * .50, dc * .50);
       continue;
     }
     double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
@@ -766,6 +854,10 @@ void GLPresenter::glDrawPreview() {
   // dig/erase red. Faded when out of reach. While a hold-mine is locked, the
   // overlay sticks to mineX/mineY (not the live aim) so it matches dig damage.
   if (E.cam.playModeOn && glOwnPlayerId) {
+    // Browser/worker play always supplies the authority-derived preview policy.
+    // `off` is meaningful there: the held item is a weapon (or the player is
+    // dead), so do not fall back to the prediction body's legacy tool cursor.
+    if (glUseExtPlayers && !glSurvivalPreviewOn) return;
     Player* lp = nullptr;
     for (auto& pp : E.psys.players) if (pp.id == glOwnPlayerId && pp.active) { lp = &pp; break; }
     // External snapshots use the authority's player id, while the sole local
@@ -783,6 +875,7 @@ void GLPresenter::glDrawPreview() {
         if (glSurvivalPreviewLocked) { ax = glSurvivalPreviewX; ay = glSurvivalPreviewY; }
       } else if (E.survivalInventory) {
         const InvSlot& sel = lp->inv[lp->selectedSlot];
+        if (sel.count > 0 && sel.itemKind != IK_MATERIAL && sel.itemKind != IK_MINING_TOOL) return;
         erasing = sel.isTool || sel.count <= 0;
         fp = &E.getSurvivalFootprint(*lp);
         // Hold-lock: dig overlay tracks the locked origin, not the cursor.

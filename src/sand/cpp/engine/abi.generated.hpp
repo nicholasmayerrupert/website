@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 17;
+static const int ABI_VERSION = 18;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind
 enum PlayerSnapshotField : int {
@@ -131,7 +131,7 @@ enum SurvivalFootprintField : int {
 };
 static const int FP_STRIDE = 6;
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -144,8 +144,10 @@ enum GlPlayerExtField : int {
   GLP_ALIVE = 8,
   GLP_HELD_ITEM_KIND = 9,
   GLP_BOW_CHARGE = 10,
+  GLP_AIM_X = 11,
+  GLP_AIM_Y = 12,
 };
-static const int GLP_STRIDE = 11;
+static const int GLP_STRIDE = 13;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -207,6 +209,8 @@ enum InventoryItemKind : uint8_t {
   IK_BOW = 2,
   IK_ARROW = 3,
   IK_BLAST_GUN = 4,
+  IK_DYNAMITE_SATCHEL = 5,
+  IK_BORE_CANNON = 6,
 };
 
 enum ProjectileKind : uint8_t {

@@ -1,5 +1,5 @@
-// Framework-free survival arsenal HUD. C++ owns every slot mutation; this
-// module presents the nine combat slots and forwards selection intent.
+// Framework-free survival inventory HUD. C++ owns every slot/cursor mutation;
+// this module renders snapshots and forwards user intent.
 
 import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
@@ -125,13 +125,23 @@ const SPECIAL_ART = {
     '............','..DDDDDD....','.DGGGGGGDDD.','DGGGGGGGGGDD','DGGSSGGGGGDD','.DDDDDDDDDD.',
     '....DDDD....','....DWW.....','....WWW.....','....WWW.....','.....WW.....','............',
   ],
+  [ITEM_KIND.DYNAMITE_SATCHEL]: [
+    '............','....FF......','...FSS......','..RRRRRR....','.RCCCCCCR...','.RCRCCRCR...',
+    '.RCCCCCCR...','.RRRRRRRR...','...HHHH.....','..HH..HH....','..HH..HH....','............',
+  ],
+  [ITEM_KIND.BORE_CANNON]: [
+    '............','..NNNNNNN...','.NAAAAAAANN.','NNAAIIIINNN.','.NNNNNNNNN..','...NNNNN....',
+    '....NHH.....','....HHH.....','....HH......','.....H......','............','............',
+  ],
 };
 const SPECIAL_COLOR = {
   H: '#9b6a39', W: '#9b6a39', S: '#f8e7a1', M: '#c9d0d6',
-  D: '#26313b', G: '#e3a83c',
+  D: '#26313b', G: '#e3a83c', R: '#5d211f', C: '#d94a37',
+  F: '#ff9f32', N: '#273b48', A: '#3dd5cd', I: '#d9fff5',
 };
 const isSpecialKind = (kind) => kind === ITEM_KIND.BOW || kind === ITEM_KIND.ARROW
-  || kind === ITEM_KIND.BLAST_GUN;
+  || kind === ITEM_KIND.BLAST_GUN || kind === ITEM_KIND.DYNAMITE_SATCHEL
+  || kind === ITEM_KIND.BORE_CANNON;
 function specialIcon(kind, sizePx) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 12 12'); svg.setAttribute('width', String(sizePx)); svg.setAttribute('height', String(sizePx));
@@ -165,8 +175,7 @@ const STYLE = `
   border:2px solid #0d1013; background:#161a1e; box-shadow:inset 2px 2px 0 #3c444b; cursor:pointer;
   display: flex; align-items: center; justify-content: center; overflow: hidden; user-select: none;
   padding:0; color:inherit; font:inherit; }
-.inv-slot:hover:not(:disabled) { border-color:#9ba5ae; }
-.inv-slot:disabled { cursor:default; opacity:.48; }
+.inv-slot:hover { border-color:#9ba5ae; }
 .inv-slot:focus-visible,.craft-recipe:focus-visible { outline:3px solid #fff; outline-offset:2px; }
 .inv-slot.selected { border-color:#f0d465; box-shadow:inset 2px 2px 0 #fff1a0,0 0 0 1px #17140a; }
 .inv-swatch { width:26px; height:26px; border-radius:0; box-shadow:inset 3px 3px 0 rgba(255,255,255,.18),inset -3px -3px 0 rgba(0,0,0,.2); }
@@ -217,6 +226,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   let downOnSlot = false; // did the active press start on a slot (vs the backdrop)?
   // Latest pointer position prevents a newly carried stack flashing at (0,0).
   let ptrX = 0, ptrY = 0;
+  let selectedSlot = 0;
+  let previousFocus = null;
+  const focusSurface = () => root.querySelector('.sg-sim')?.focus({ preventScroll: true });
 
   // Darkened full-window backdrop BEHIND the panels (Minecraft style). Clicking it
   // while carrying throws the carried stack out into the world.
@@ -250,7 +262,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   const toast = document.createElement('div');
   toast.className = 'inv-toast';
   toast.setAttribute('aria-live', 'polite');
-  hud.append(toast, bar);
+  hud.append(modal, toast, bar, hint);
 
   // Append the carried stack to document.body so fixed positioning stays relative
   // to the viewport even when the Web Component has a transformed ancestor. It
@@ -262,8 +274,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     alignItems: 'center', justifyContent: 'center',
     filter: 'drop-shadow(0 4px 6px rgba(0,0,0,.6))',
   });
-  // The combat HUD never opens a carried-stack cursor. Keep this detached so
-  // legacy helpers remain harmless without leaving document-level UI behind.
+  document.body.appendChild(cursorItem);
 
   // Build the 36 slot elements once; update() refills them. Bar = slots 0..8 (the
   // hotbar), grid = slots 9..35. The grid renders top-to-bottom but indexes the
@@ -378,8 +389,14 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (i < 0) return;
     if (!open) {
       // Closed hotbar: a click selects. Record nothing for drag.
+      // Prevent the button's default focus transfer so WASD/hotkeys keep
+      // belonging to the simulation after a mouse selection.
+      e.preventDefault();
       downSlot = -1; downOnSlot = false;
-      if (i < HOTBAR && !slots[i].disabled && e.button === 0) selectSlot?.(i);
+      if (i < HOTBAR && e.button === 0) {
+        selectSlot?.(i);
+        focusSurface();
+      }
       return;
     }
     e.preventDefault();
@@ -397,7 +414,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     const i = idxOf(e.target);
     if (i < 0) return;
     if (!open) {
-      if (i < HOTBAR && !slots[i].disabled) selectSlot?.(i);
+      if (i < HOTBAR) {
+        selectSlot?.(i);
+        focusSurface();
+      }
       return;
     }
     cursorPick?.(i, e.shiftKey);
@@ -408,6 +428,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (!open) return;
     if (e.key === 'Escape' || e.key.toLowerCase() === 'e') {
       e.preventDefault();
+      e.stopPropagation();
       setOpen(false);
       return;
     }
@@ -478,6 +499,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   // materials, "Hand" for an empty slot (the implicit bare hand).
   const slotName = (s) => {
     if (!s) return 'Hand';
+    if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
+    if (s.itemKind === ITEM_KIND.BORE_CANNON) return 'Bore Cannon';
     if (s.itemKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (s.itemKind === ITEM_KIND.BOW) return 'Bow';
     if (s.itemKind === ITEM_KIND.ARROW) return 'Arrow';
@@ -500,6 +523,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
 
   const recipeName = (r) => {
     if (r.outputKind === ITEM_KIND.MINING_TOOL) return `${TIER_NAME[r.outputTier] || ''} Mining Tool`.trim();
+    if (r.outputKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
+    if (r.outputKind === ITEM_KIND.BORE_CANNON) return 'Bore Cannon';
     if (r.outputKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (r.outputKind === ITEM_KIND.BOW) return 'Bow';
     if (r.outputKind === ITEM_KIND.ARROW) return `${r.outputCount} Arrows`;
@@ -539,13 +564,13 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function update(inv) {
     if (inv && inv.slots) {
       const sel = inv.selected;
+      selectedSlot = sel;
       if (lastSelected >= 0 && sel !== lastSelected) showToast(slotName(inv.slots[sel]));
       lastSelected = sel;
       for (let i = 0; i < SLOTS; i++) {
         const el = slots[i];
         if (!el) continue;
         const s = inv.slots[i] || { material: 0, isTool: false, count: 0 };
-        if (i < HOTBAR) el.disabled = s.count <= 0;
         el.classList.toggle('selected', i === inv.selected);
         if (i < HOTBAR) el.setAttribute('aria-pressed', String(i === inv.selected));
         const contents = i >= HOTBAR && !s.count ? 'Empty' : slotName(s);
@@ -560,7 +585,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
           n.textContent = String(i + 1); el.appendChild(n);
         }
         renderStack(el, s);
-        if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
+        if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) el.title = 'Dynamite Satchel — LMB throws a bouncing fused charge';
+        else if (s.itemKind === ITEM_KIND.BORE_CANNON) el.title = 'Bore Cannon — hold LMB to charge a terrain-cutting beam';
+        else if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
         else if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
         else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;
         else if (s.isTool) {
@@ -580,24 +607,41 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     refreshCursor();
   }
 
-  const setOpen = () => {
-    // The old crafting/inventory modal is intentionally retired. Retain this
-    // API as a no-op so an E key from an older host cannot reveal stale UI.
-    open = false;
-    downSlot = -1;
-    downOnSlot = false;
-    hud.classList.remove('open');
-    backdrop.classList.remove('open');
-    window.removeEventListener('pointermove', onMove, true);
+  const setOpen = (v) => {
+    const next = !!v;
+    if (next === open) return;
+    if (next) previousFocus = root.activeElement || document.activeElement;
+    open = next;
+    hud.classList.toggle('open', open);
+    backdrop.classList.toggle('open', open);
+    if (open) {
+      hud.setAttribute('role', 'dialog');
+      hud.setAttribute('aria-modal', 'true');
+      hud.setAttribute('aria-label', 'Inventory and crafting');
+    } else {
+      hud.removeAttribute('role');
+      hud.removeAttribute('aria-modal');
+      hud.removeAttribute('aria-label');
+    }
+    if (!open) { downSlot = -1; downOnSlot = false; }
+    if (open) window.addEventListener('pointermove', onMove, true);
+    else window.removeEventListener('pointermove', onMove, true);
     refreshCursor();
+    if (open) {
+      slots[selectedSlot]?.focus({ preventScroll: true });
+    } else if (previousFocus?.isConnected) {
+      previousFocus.focus?.({ preventScroll: true });
+      previousFocus = null;
+    }
   };
 
-  root.append(hud);
+  // cursorItem is intentionally NOT appended here — it lives on document.body.
+  root.append(backdrop, hud);
   return {
     el: hud,
     update,
     setOpen,
-    toggleOpen() { setOpen(); },
+    toggleOpen() { setOpen(!open); },
     isOpen() { return open; },
     destroy() {
       window.removeEventListener('pointermove', onMove, true);

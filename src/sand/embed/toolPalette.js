@@ -41,16 +41,15 @@ const ERASER_SWATCH = 'rgb(254,205,211)';
 const CUBE_SWATCH = 'rgb(214,211,209)';
 
 // Kept separate from the material/tool list so these always form the final
-// seven entries in the creative menu. Layered gradients make the compact
+// six entries in the creative menu. Layered gradients make the compact
 // swatches read as patterned eggs without adding image assets.
 const CREATURE_EGGS = [
   ['Minnow', CREATURE.MINNOW, '#9de2c9', '#256f89'],
-  ['Pike', CREATURE.PIKE, '#97bc5c', '#2e5b3a'],
   ['Fox', CREATURE.FOX, '#f49a46', '#7b3420'],
-  ['Hare', CREATURE.HARE, '#edcfa6', '#835e48'],
-  ['Crawler', CREATURE.CRAWLER, '#9f6ea9', '#3d2b4c'],
   ['Mole', CREATURE.MOLE, '#ba997e', '#4b3b3a'],
   ['Bird', CREATURE.BIRD, '#aedaf0', '#3663a0'],
+  ['Dynamiteer', CREATURE.DYNAMITEER, '#ff6b35', '#5c1720'],
+  ['Bore Sentinel', CREATURE.BORE_SENTINEL, '#f4c95d', '#343746'],
 ];
 
 // Main contains the complete catalog, with this useful set pinned first. The

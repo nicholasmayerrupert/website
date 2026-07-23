@@ -3,7 +3,7 @@
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, PROJECTILE_KIND, CREATURE, CREATURE_ATTACK_STATE, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -99,6 +99,7 @@ export function makeSnapshot(tick, players, hash = null) {
       animState: p.animState | 0, animFrame: p.animFrame | 0,
       deathTicks: p.deathTicks | 0, respawnReady: p.respawnReady ? 1 : 0,
       bowCharge: Number.isFinite(p.bowCharge) ? p.bowCharge : 0, heldItemKind: p.heldItemKind | 0,
+      aimX: Number.isFinite(p.aimX) ? p.aimX : 0, aimY: Number.isFinite(p.aimY) ? p.aimY : 0,
     })),
   };
 }
@@ -345,6 +346,7 @@ function validateSnapshot(m) {
     if (!isNonNegInt(p.health) || !isBit(p.alive)) return null;
     if (!isNonNegInt(p.animState) || !isNonNegInt(p.animFrame) || !isNonNegInt(p.deathTicks) || !isBit(p.respawnReady)) return null;
     if (!isFiniteNum(p.bowCharge) || p.bowCharge < 0 || p.bowCharge > 1 || !isNonNegInt(p.heldItemKind) || p.heldItemKind > ITEM_KIND_MAX) return null;
+    if (!isFiniteNum(p.aimX) || !isFiniteNum(p.aimY)) return null;
   }
   return m;
 }

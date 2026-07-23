@@ -7,6 +7,7 @@ import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
 import { createSurvivalStatus } from './survivalStatus';
+import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 
 const HOST_CSS = `
@@ -540,23 +541,42 @@ class SandGameElement extends HTMLElement {
           debugHitboxes,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
           // Survival inventory HUD wiring (the engine owns the inventory state).
-          onInventory: (inv) => this._hud?.update(inv),
+          onInventory: (inv) => {
+            this._hud?.update(inv);
+            this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint);
+          },
           onPlayerState: (player) => this._status?.update(player),
-          onToggleInventory: () => this._hud?.toggleOpen(),
+          onToggleInventory: () => {
+            this._sizeMenu?.setOpen(false);
+            this._hud?.toggleOpen();
+          },
+          onToggleFootprintMenu: () => {
+            this._hud?.setOpen(false);
+            this._sizeMenu?.toggleOpen();
+          },
         });
         this._game = game;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&
           window.matchMedia('(pointer: coarse)').matches;
         let syncMobileCreativeUi = () => {};
         if (mode === 'survival') {
-          // Explosive survival keeps only the authoritative nine-slot arsenal.
-          // Inventory/crafting state may still exist in the engine and on the wire,
-          // but this combat presentation deliberately exposes no modal grid.
+          // Survival uses the authoritative hotbar + openable inventory/crafting
+          // grid. Combat weapons share the same slot/cursor model as mined blocks
+          // and tools.
           this._hud = createInventoryHud(root, {
             selectSlot: (i) => game.selectSlot(i),
+            cursorPick: (slot, half) => game.cursorPick(slot, half),
+            throwFromCursor: (whole) => game.throwFromCursor(whole),
+            getCursor: () => game.getCursor(),
+            recipes: game.getCraftingRecipes(),
+            craft: (recipe, max) => game.craft(recipe, max),
           });
           this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
+          this._sizeMenu = createFootprintMenu(root, {
+            selectFootprint: (id) => game.setSelectedFootprint(id),
+          });
           this._hud.update(game.getInventory());
+          this._sizeMenu.update(game.getSurvivalFootprints(), game.getInventory().selectedFootprint);
           // Multiplayer connect panel (collapsed): join an authoritative server
           // by IP:port. Survival-only; single-player UI is unchanged at rest.
           this._mp = createConnectPanel(root, {
@@ -673,6 +693,7 @@ class SandGameElement extends HTMLElement {
     this._palette?.destroy();
     this._hud?.destroy();
     this._status?.destroy();
+    this._sizeMenu?.destroy();
     this._mp?.destroy();
     this._zoom?.destroy();
     this._start?.destroy();
@@ -682,7 +703,7 @@ class SandGameElement extends HTMLElement {
     this._visibilityObserver?.disconnect();
     if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._status = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
+    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
     this._visibilityObserver = this._onDocumentVisibility = null;
     this._cancel = null;
     this._mounted = false;

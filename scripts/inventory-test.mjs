@@ -5,6 +5,7 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import { TC, TT } from '../src/sand/materials.generated.js';
 import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -54,8 +55,8 @@ const hasDraftCell = (cells, x, y) => {
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  // The starter gun reserves slot 0; fill the remaining 35 stacks exactly.
-  e.addToInventory(id, MAT.STONE, 999 * 35);
+  // The starter gun + mining tool reserve slots 0-1; fill the other 34 exactly.
+  e.addToInventory(id, MAT.STONE, 999 * 34);
   const full = e.addToInventory(id, MAT.GOLD_ORE, 1);
   check('a full inventory rejects a new material', full === false);
   // And a world item near the player is NOT absorbed when the inventory is full.
@@ -65,20 +66,24 @@ const hasDraftCell = (cells, x, y) => {
   e.destroy();
 }
 
-// 4) Armed spawn + crafting: the gun occupies slot 0, while the older crafting
-//    machinery remains available behind the combat presentation.
+// 4) Armed spawn + crafting: the gun occupies slot 0 and the universal wood dig
+//    tool occupies slot 1, while crafting can still create additional tools.
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8); // far from the mined block (no auto-pickup)
   let kit = e.getInventory(id);
   const footprints = e.getSurvivalFootprints();
-  check('fresh survival inventory starts with one selected blast gun',
+  check('fresh survival inventory starts with the selected blast gun and wood dig tool',
     kit.selected === 0 && kit.slots[0].itemKind === ITEM_KIND.BLAST_GUN && kit.slots[0].count === 1
-      && kit.slots.slice(1).every((slot) => slot.count === 0));
+      && kit.slots[1].itemKind === ITEM_KIND.MINING_TOOL && kit.slots[1].isTool
+      && kit.slots[1].toolClass === TC.dig && kit.slots[1].toolTier === TT.wood && kit.slots[1].count === 1
+      && kit.slots.slice(2).every((slot) => slot.count === 0));
   check('survival sizes run 1x1 through 8x8 with 3x3 default',
     footprints.length === 8 && footprints[0].width === 1 && footprints[7].width === 8 && kit.selectedFootprint === 2);
   e.addToInventory(id, MAT.WOOD, 24);
-  check('24 wood crafts one wood mining tool', e.craft(id, 0) === 1);
+  const starterTools = kit.slots.filter((slot) => slot.itemKind === ITEM_KIND.MINING_TOOL && slot.count > 0).length;
+  check('24 wood crafts one additional wood mining tool', e.craft(id, 0) === 1
+    && e.getInventory(id).slots.filter((slot) => slot.itemKind === ITEM_KIND.MINING_TOOL && slot.count > 0).length === starterTools + 1);
   kit = e.getInventory(id);
   const toolSlot = kit.slots.findIndex((slot) => slot.isTool);
   e.placeMaterial(60, 50, 2, MAT.STONE);

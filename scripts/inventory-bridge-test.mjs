@@ -3,7 +3,7 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
-import { TT } from '../src/sand/materials.generated.js';
+import { TC, TT } from '../src/sand/materials.generated.js';
 import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from '../src/sand/worker/playerPresentation.js';
 import { makeChecker } from './sand-test-util.mjs';
@@ -30,19 +30,24 @@ check('prediction supplies responsive player position', presented.x === 11.5 && 
 check('worker health remains authoritative for the HUD', presented.health === 63);
 check('worker bow/death state survives prediction', presented.bowCharge === 0.8 && presented.heldItemKind === ITEM_KIND.BOW && presented.deathTicks === 12);
 
-// Fresh explosive-survival inventories select the starter gun in slot 0.
+// Fresh explosive-survival inventories select the starter gun in slot 0 and
+// keep the universal mining tool ready in slot 1.
 const inv = e.getInventory(id);
 check(`getInventory returns 36 slots (${inv.slots.length})`, inv.slots.length === 36);
 check(`starter weapon selected by default (${inv.selected})`, inv.selected === 0);
 check('slot 0 starts with one blast gun', inv.slots[0].itemKind === ITEM_KIND.BLAST_GUN && inv.slots[0].count === 1);
-check('slot 1 is empty (no axe/shovel kit)', !inv.slots[1].isTool && inv.slots[1].count === 0);
-check('slot 3 is empty (no hand slot)', inv.slots[3].count === 0);
+check('slot 1 starts with the universal wood mining tool',
+  inv.slots[1].itemKind === ITEM_KIND.MINING_TOOL && inv.slots[1].isTool
+    && inv.slots[1].toolClass === TC.dig && inv.slots[1].toolTier === TT.wood && inv.slots[1].count === 1);
+check('slot 3 is an empty selectable bare-hand slot', inv.slots[3].count === 0);
 
-// The universal mining tool is crafted, not granted as a specialized starter.
+// Crafting remains available and can make a second universal mining tool.
 e.addToInventory(id, MAT.WOOD, 24);
+const beforeTools = e.getInventory(id).slots.filter((s) => s.itemKind === ITEM_KIND.MINING_TOOL && s.count > 0).length;
 check('wood mining tool recipe crafts once', e.craft(id, 0) === 1);
-const crafted = e.getInventory(id).slots.find((s) => s.itemKind === ITEM_KIND.MINING_TOOL);
-check('crafted tool is the universal wood tier', crafted?.isTool && crafted.toolTier === TT.wood);
+const tools = e.getInventory(id).slots.filter((s) => s.itemKind === ITEM_KIND.MINING_TOOL && s.count > 0);
+check('crafted tool adds a second universal wood tier tool',
+  tools.length === beforeTools + 1 && tools.every((s) => s.isTool && s.toolClass === TC.dig && s.toolTier === TT.wood));
 
 // setSelectedSlot round-trips.
 e.setSelectedSlot(id, 3);

@@ -21,10 +21,18 @@ const hasCell = (cells, x, y) => {
   return false;
 };
 
-const menuTail = buildEntries().slice(-7);
-check('creative menu ends with all seven creature spawn eggs',
-  menuTail.length === 7 && menuTail.every((entry, i) =>
-    entry.kind === CK.CREATURE && entry.value === i && entry.label.endsWith('Spawn Egg')));
+const expectedEggs = [
+  ['Minnow Spawn Egg', CREATURE.MINNOW],
+  ['Fox Spawn Egg', CREATURE.FOX],
+  ['Mole Spawn Egg', CREATURE.MOLE],
+  ['Bird Spawn Egg', CREATURE.BIRD],
+  ['Dynamiteer Spawn Egg', CREATURE.DYNAMITEER],
+  ['Bore Sentinel Spawn Egg', CREATURE.BORE_SENTINEL],
+];
+const menuTail = buildEntries().slice(-expectedEggs.length);
+check('creative menu ends with the six enabled creature spawn eggs',
+  menuTail.length === expectedEggs.length && menuTail.every((entry, i) =>
+    entry.kind === CK.CREATURE && entry.label === expectedEggs[i][0] && entry.value === expectedEggs[i][1]));
 const seedEntries = buildEntries().filter((entry) => entry.kind === CK.SEED);
 check('all seven species seeds have distinct creative-menu pixel icons',
   seedEntries.length === 7 && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === 7
@@ -121,14 +129,14 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
-// Creature eggs spawn every species at the clicked world position without
-// requiring its natural habitat (a beached fish then uses its flop physics).
-for (const [name, species] of Object.entries(CREATURE)) {
+// Every creature exposed in the creative palette spawns at the clicked world
+// position without requiring its natural habitat.
+for (const [label, species] of expectedEggs) {
   const e = mk();
   e.setCreativeMaterial(CK.CREATURE, species);
   e.pointerDown(50, 30, 0);
   const creatures = e.getCreatures();
-  check(`${name.toLowerCase()} spawn egg creates its creature`,
+  check(`${label.toLowerCase()} creates its creature`,
     creatures.length === 1 && creatures[0].species === species &&
     Math.abs(creatures[0].x + creatures[0].w / 2 - 50) < 0.01 &&
     Math.abs(creatures[0].y + creatures[0].h / 2 - 30) < 0.01);

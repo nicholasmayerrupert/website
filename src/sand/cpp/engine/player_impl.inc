@@ -651,8 +651,11 @@ int PlayerSystem::buildPlayerSnapshot() {
     o[PS_ANIM_FRAME] = (float)p.animFrame;
     o[PS_DEATH_TICKS] = (float)p.deathTicks;
     o[PS_RESPAWN_READY] = (!p.alive && p.deathTicks >= 180) ? 1.0f : 0.0f;
-    o[PS_BOW_CHARGE] = (float)(p.bowChargeTicks / (double)BOW_CHARGE_MAX);
-    const InvSlot& held = p.inv[p.selectedSlot]; o[PS_HELD_ITEM_KIND] = held.count > 0 ? (float)held.itemKind : (float)IK_MATERIAL;
+    const InvSlot& held = p.inv[p.selectedSlot];
+    double chargeMax = held.count > 0 && held.itemKind == IK_BORE_CANNON
+      ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
+    o[PS_BOW_CHARGE] = (float)(p.bowChargeTicks / chargeMax);
+    o[PS_HELD_ITEM_KIND] = held.count > 0 ? (float)held.itemKind : (float)IK_MATERIAL;
   }
   return (int)players.size();
 }

@@ -26,7 +26,7 @@ export function createSandGame(container, opts = {}) {
     // /fps enables engine-owned creature actors plus AABB outlines while
     // retaining creative controls and the performance HUD.
     debugHitboxes = false,
-    // Survival inventory hooks: onInventory(snapshot) feeds the arsenal HUD
+    // Survival inventory hooks: onInventory(snapshot) feeds the hotbar/modal HUD
     // when it changes. The inventory itself is authoritative in the engine —
     // these only move snapshots out and intents in. The toggle hooks remain as
     // harmless compatibility inputs for older embeds.

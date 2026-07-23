@@ -42,7 +42,7 @@ that shadow root for benchmark tooling.
 
 | Attribute | Values | Default | Notes |
 | --- | --- | --- | --- |
-| `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows a compact arsenal + health HUD. Creative uses free camera and palette. |
+| `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows inventory, crafting, hotbar, and health UI. Creative uses free camera and palette. |
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
 
 Changing `initial-tool` after mount forwards the legacy tool selection to the
@@ -61,9 +61,13 @@ the element instead.
   WebSocket transport.
 - C++/WASM owns simulation, rendering, camera policy, player physics, tools,
   terrain streaming, spawn placement, and inventory state.
-- Survival is an explosive combat mode: the hotbar selects the active arsenal,
-  the pointer aims, and primary fire launches the selected weapon. Its former
-  crafting/inventory modal is intentionally not exposed.
+- Survival combines explosive combat with inventory-backed mining and building.
+  The hotbar can hold bare-hand slots, mining tools, collected blocks, or dropped
+  weapons; `E` opens the inventory/crafting modal and `Q` selects the square tool
+  footprint.
+- Hands, mining tools, and blocks show their footprint at the pointer. Weapons
+  hide both that square and the legacy diamond preview while remaining aimed by
+  the pointer.
 - Touch/coarse-pointer creative mode starts with draw mode off and shows only a
   bottom `START` button so the host page can scroll. Starting reveals the normal
   controls; choosing `SCROLL` hides them again. Fine-pointer survival starts
@@ -80,8 +84,11 @@ the element instead.
 | `S` / `↓` | Crouch / descend |
 | `Shift` | Run |
 | Pointer | Aim |
-| Left mouse | Fire selected weapon |
-| `1`–`9` or wheel | Select arsenal slot |
+| Left mouse | Mine, place, or use selected weapon |
+| Right mouse | Use the alternate/background layer where supported |
+| `1`–`9` or wheel | Select hotbar slot, including an empty bare-hand slot |
+| `E` | Open inventory and crafting |
+| `Q` | Choose placement/mining footprint |
 | `+`, `-`, `0` | Zoom in / out / reset |
 
 ## Multiplayer

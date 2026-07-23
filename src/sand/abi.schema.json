@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 17,
+  "abiVersion": 18,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -45,7 +45,7 @@
     "glPlayerExt": {
       "$comment": "float32 records a multiplayer client packs for engine_gl_set_players (host-authoritative snapshot players).",
       "cPrefix": "GLP",
-      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame", "alive", "heldItemKind", "bowCharge"]
+      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame", "alive", "heldItemKind", "bowCharge", "aimX", "aimY"]
     },
     "soundEvent": {
       "$comment": "float32 semantic audio events drained from the authoritative engine. Coordinates are absolute world cells so streaming cannot move a queued sound.",
@@ -81,7 +81,15 @@
       "cType": "uint8_t",
       "jsName": "ITEM_KIND",
       "jsPrefix": "IK",
-      "values": { "IK_MATERIAL": 0, "IK_MINING_TOOL": 1, "IK_BOW": 2, "IK_ARROW": 3, "IK_BLAST_GUN": 4 }
+      "values": {
+        "IK_MATERIAL": 0,
+        "IK_MINING_TOOL": 1,
+        "IK_BOW": 2,
+        "IK_ARROW": 3,
+        "IK_BLAST_GUN": 4,
+        "IK_DYNAMITE_SATCHEL": 5,
+        "IK_BORE_CANNON": 6
+      }
     },
     "ProjectileKind": {
       "$comment": "Projectile actor kind used by simulation snapshots and render/network mirrors.",

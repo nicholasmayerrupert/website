@@ -171,6 +171,10 @@ class CreatureSystem {
   void updateDynamiteerAttack(Creature& c);
   void updateBoreSentinelAttack(Creature& c);
   void fireBore(Creature& c);
+  void fireBore(Player& p);
+  void fireBoreLine(double ox, double oy, double dx, double dy, int damage,
+                    int immunePlayerId, int immuneCreatureId);
+  void dropWeapon(const Creature& c);
   void updateCreatures();
   bool damageAtPoint(int x, int y, int radius, int damage);
   int buildCreatureSnapshot();

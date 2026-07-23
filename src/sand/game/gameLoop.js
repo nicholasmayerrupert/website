@@ -150,19 +150,22 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
       const ps = playersForRender();
       const stride = engine.getRenderStrides().player;
       const G = OFF.glPlayerExt;
+      const ownId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0;
+      const liveAim = engine.getAim();
       const floats = ps.length * stride;
       if (packScratch.length < floats) packScratch = new Float32Array(floats);
       const packed = packScratch.subarray(0, floats);
       for (let i = 0; i < ps.length; i++) {
         const p = ps[i], o = i * stride;
         packed[o + G.x] = p.x; packed[o + G.y] = p.y; packed[o + G.w] = p.w; packed[o + G.h] = p.h;
-        const ownId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0;
         packed[o + G.facing] = p.facing; packed[o + G.own] = p.id === ownId ? 1 : 0;
         packed[o + G.animState] = p.animState || 0; packed[o + G.animFrame] = p.animFrame || 0;
         packed[o + G.alive] = p.alive === false ? 0 : 1;
         packed[o + G.heldItemKind] = p.heldItemKind || 0; packed[o + G.bowCharge] = p.bowCharge || 0;
+        packed[o + G.aimX] = p.id === ownId ? liveAim.x : (p.aimX ?? p.x + p.w * .5 + p.facing);
+        packed[o + G.aimY] = p.id === ownId ? liveAim.y : (p.aimY ?? p.y + p.h * .42);
       }
-      engine.glSetPlayers(true, packed, ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.worldWorker?.ownPlayerId || 0);
+      engine.glSetPlayers(true, packed, ownId);
     }
     // The authority owns inventory selection and mining lock state. Send only
     // the resulting presentation facts to the mirror so its hover footprint

@@ -20,6 +20,7 @@ const STYLE = `
 .survival-charge.show { display:grid; }
 .survival-charge > i { display:block; width:10px; height:6px; background:#303840; }
 .survival-charge > i.full { background:#e9c75b; box-shadow:inset 2px 2px 0 #fff0a0; }
+.survival-charge.bore > i.full { background:#43d3c9; box-shadow:inset 2px 2px 0 #c9fff5; }
 .survival-death { position:fixed; inset:0; z-index:76; display:none; place-items:center; pointer-events:auto;
   background:rgba(52,9,12,.55); color:#fff; font-family:ui-monospace,"SFMono-Regular",Menlo,monospace; }
 .survival-death.show { display:grid; }
@@ -91,8 +92,10 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     health.setAttribute('aria-valuenow', String(hp));
     label.textContent = `HEALTH  ${hp}`;
     const bow = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BOW;
+    const bore = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BORE_CANNON;
     const level = Math.round(Math.max(0, Math.min(1, player?.bowCharge || 0)) * chargeCells.length);
-    charge.classList.toggle('show', bow && level > 0);
+    charge.classList.toggle('show', (bow || bore) && level > 0);
+    charge.classList.toggle('bore', bore);
     for (let i = 0; i < chargeCells.length; i++) chargeCells[i].classList.toggle('full', i < level);
 
     const dead = !!player && player.alive === false;

@@ -134,9 +134,14 @@ try {
   check('creative Main folder begins with the ten featured picks',
     mainLabels.slice(0, 10).join(',') === 'cube,eraser,rigid,stone,water,acid,lava,tnt,seed,sand',
     mainLabels.slice(0, 10).join(','));
-  check('creative Main folder contains the complete catalog', mainLabels.length === 62, `${mainLabels.length} entries`);
-  check('creative Main folder keeps all spawn eggs at the bottom',
-    mainLabels.slice(-7).every((label) => label.endsWith('Spawn Egg')), mainLabels.slice(-7).join(','));
+  check('creative Main folder contains the complete catalog', mainLabels.length === 61, `${mainLabels.length} entries`);
+  const expectedEggLabels = [
+    'Minnow Spawn Egg', 'Fox Spawn Egg', 'Mole Spawn Egg', 'Bird Spawn Egg',
+    'Dynamiteer Spawn Egg', 'Bore Sentinel Spawn Egg',
+  ];
+  check('creative Main folder keeps the enabled spawn eggs at the bottom',
+    mainLabels.slice(-expectedEggLabels.length).join(',') === expectedEggLabels.join(','),
+    mainLabels.slice(-expectedEggLabels.length).join(','));
   check('creative picker exposes all seven material folders', await game.locator('.sg-section').count() === 7);
   await game.locator('.sg-section', { hasText: 'Terrain' }).click();
   const terrainLabels = await game.locator('.sg-opt:not([hidden]) .sg-name').allTextContents();

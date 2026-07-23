@@ -60,6 +60,44 @@ function drainTypes(e, into) {
 
 const countStone = (grid) => grid.reduce((total, material) => total + (material === MAT.STONE ? 1 : 0), 0);
 
+function killForWeaponDrop(e, species, itemKind, x, y, label) {
+  const id = e.spawnCreature(species, x, y);
+  const creature = e.getCreatures().find((candidate) => candidate.id === id);
+  const hitX = Math.floor(creature.x + creature.w * 0.5);
+  const hitY = Math.floor(creature.y + creature.h * 0.5);
+  check(`${label} can be dealt lethal damage`, e.damageCreatures(hitX, hitY, 2, 999));
+  e.stepActors();
+  check(`${label} enters its corpse state`, e.getCreatures().find((candidate) => candidate.id === id)?.alive === false);
+  for (let tick = 0; tick < 25; tick++) e.stepActors();
+  const drops = e.getItems().filter((item) => item.kind === 0 && item.itemKind === itemKind);
+  check(`${label} death drops exactly one weapon and never duplicates it`, drops.length === 1 && drops[0].count === 1);
+  return drops[0];
+}
+
+function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
+  const player = e.getPlayer(playerId);
+  e.setPlayerState(playerId, {
+    ...player,
+    x: drop.x - player.w * 0.5,
+    y: Math.min(FLOOR - player.h, drop.y - player.h),
+    vx: 0,
+    vy: 0,
+    grounded: true,
+  });
+  for (let tick = 0; tick < 20; tick++) {
+    e.stepActors();
+    if (e.getInventory(playerId).slots.some((slot) => slot.itemKind === itemKind && slot.count === 1)) break;
+  }
+  const inventory = e.getInventory(playerId);
+  const slot = inventory.slots.findIndex((candidate) => candidate.itemKind === itemKind && candidate.count === 1);
+  check(`${label} can be picked up`, slot >= 0 && !e.getItems().some((item) => item.itemKind === itemKind));
+  if (slot >= 0) e.setSelectedSlot(playerId, slot);
+  const equipped = e.getInventory(playerId);
+  check(`${label} can be equipped`, slot >= 0 && equipped.selected === slot
+    && e.getPlayer(playerId).heldItemKind === itemKind);
+  return slot;
+}
+
 // The selected starter weapon launches a swept blast round. It can hit a
 // creature between actor frames, damages terrain and that creature, emits both
 // weapon/explosion audio, and never hurts its owner.
@@ -85,6 +123,36 @@ const countStone = (grid) => grid.reduce((total, material) => total + (material 
   check('impact blast carves nearby terrain', countStone(e.getGrid()) < stoneBefore);
   check('the firing player is immune to their own round', e.getPlayer(player).health === 100);
   check('gunshot and explosion semantic sounds are emitted', sounds.has(SOUND_EVENT.BLAST_GUN) && sounds.has(SOUND_EVENT.EXPLOSION));
+  e.destroy();
+}
+
+// Armed enemies deterministically surrender their weapon once. The generic
+// dropped-item path carries that special stack into the inventory, where the
+// captured satchel can be equipped and used to throw a player-owned charge.
+{
+  const e = arena();
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const drop = killForWeaponDrop(
+    e, CREATURE.DYNAMITEER, ITEM_KIND.DYNAMITE_SATCHEL, 82, FLOOR - 5, 'dynamiteer',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.DYNAMITE_SATCHEL, drop, 'dynamite satchel');
+  const pose = e.getPlayer(player);
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY,
+    aimX: Math.min(COLS - 4, pose.x + 54),
+    aimY: pose.y + pose.h * 0.35,
+    seq: 1,
+  });
+  e.stepActors();
+  const thrown = e.getProjectiles().find((projectile) =>
+    projectile.kind === PROJECTILE_KIND.DYNAMITE && projectile.owner === player);
+  check('equipped dynamite satchel throws a live player-owned charge',
+    slot >= 0 && thrown?.fuse > 0 && thrown.vx > 0 && Number.isFinite(thrown.rotation));
+  for (let tick = 0; tick < 25; tick++) e.stepActors();
+  check('dynamiteer corpse cleanup does not create another satchel',
+    !e.getItems().some((item) => item.itemKind === ITEM_KIND.DYNAMITE_SATCHEL)
+      && e.getInventory(player).slots.filter((item) =>
+        item.itemKind === ITEM_KIND.DYNAMITE_SATCHEL && item.count > 0).length === 1);
   e.destroy();
 }
 
@@ -120,6 +188,47 @@ const countStone = (grid) => grid.reduce((total, material) => total + (material 
   e.destroy();
 }
 
+// The captured bore cannon has a harmless charge window, then reuses the
+// component-aware bore path to cut terrain and damage a target without hitting
+// its owner.
+{
+  const e = arena();
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const drop = killForWeaponDrop(
+    e, CREATURE.BORE_SENTINEL, ITEM_KIND.BORE_CANNON, 76, FLOOR - 6, 'bore sentinel',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.BORE_CANNON, drop, 'bore cannon');
+  const pose = e.getPlayer(player);
+  const beamY = Math.floor(pose.y + pose.h * 0.42);
+  const wallX = Math.min(COLS - 40, Math.floor(pose.x) + 30);
+  for (let y = beamY - 8; y <= beamY + 8; y++) e.placeMaterial(wallX, y, 0, MAT.STONE);
+  e.syncComponents();
+  const target = e.spawnCreature(CREATURE.DYNAMITEER, wallX + 24, FLOOR - 5);
+  e.setCreatureRuntime(false, false);
+  const cutCell = beamY * COLS + wallX;
+  const targetHealth = e.getCreatures().find((creature) => creature.id === target)?.health;
+  let seq = 0;
+  for (let tick = 0; tick < 59; tick++) {
+    e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: COLS - 4, aimY: beamY, seq: ++seq });
+    e.stepActors();
+  }
+  check('bore cannon charge is visible but non-destructive',
+    slot >= 0 && e.getGrid()[cutCell] === MAT.STONE
+      && e.getCreatures().find((creature) => creature.id === target)?.health === targetHealth);
+  e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: COLS - 4, aimY: beamY, seq: ++seq });
+  e.stepActors();
+  check('charged bore cannon carves its aimed line', e.getGrid()[cutCell] === MAT.EMPTY);
+  check('charged bore cannon damages an enemy beyond the wall',
+    e.getCreatures().find((creature) => creature.id === target)?.health < targetHealth);
+  check('bore cannon preserves its owner immunity', e.getPlayer(player).health === 100);
+  for (let tick = 0; tick < 25; tick++) e.stepActors();
+  check('bore sentinel corpse cleanup does not create another cannon',
+    !e.getItems().some((item) => item.itemKind === ITEM_KIND.BORE_CANNON)
+      && e.getInventory(player).slots.filter((item) =>
+        item.itemKind === ITEM_KIND.BORE_CANNON && item.count > 0).length === 1);
+  e.destroy();
+}
+
 // Enemy throws use the same swept path rule as the gun: the projectile begins
 // inside actor space rather than teleporting past a wall touching the thrower.
 {
@@ -138,28 +247,44 @@ const countStone = (grid) => grid.reduce((total, material) => total + (material 
   e.destroy();
 }
 
-// The bore sentinel tracks, then locks, its aim before firing. The cut uses the
-// component-aware batch eraser in both layers and its thick segment hurts actors.
+// The bore sentinel tracks for 60 ticks, then leaves a harmless committed line
+// for 30 more ticks before firing. The cut uses the component-aware batch eraser
+// in both layers and its thick segment hurts actors that did not dodge.
 {
   const e = arena({ wall: true, background: true });
-  const player = e.spawnPlayer(24, FLOOR - 8);
+  const dodger = e.spawnPlayer(24, FLOOR - 8);
   const sentinel = e.spawnCreature(CREATURE.BORE_SENTINEL, 86, FLOOR - 6);
   const cutCell = (FLOOR - 4) * COLS + 56;
   check('bore test wall begins in both simulated layers', e.getGrid()[cutCell] === MAT.STONE && e.getGridBg()[cutCell] === MAT.STONE);
   const sounds = new Set();
-  let sawCharge = false, sawLockedAim = false, sawFire = false;
-  for (let tick = 0; tick < 100; tick++) {
-    e.stepActors(); drainTypes(e, sounds);
-    const c = e.getCreatures().find((candidate) => candidate.id === sentinel);
-    if (c?.attackState === CREATURE_ATTACK_STATE.CHARGING) {
-      sawCharge ||= c.attackProgress > 0.25;
-      sawLockedAim ||= c.attackProgress > 0.80 && c.aimX < c.x;
-    }
-    sawFire ||= c?.attackState === CREATURE_ATTACK_STATE.FIRING;
-  }
-  check('bore sentinel telegraphs and locks an aim toward the player', sawCharge && sawLockedAim);
-  check('bore sentinel exposes a replicated firing animation window', sawFire);
-  check('bore beam damages the player', e.getPlayer(player).health === 58);
+  e.stepActors(); drainTypes(e, sounds); // acquire target and enter charge
+  for (let tick = 0; tick < 60; tick++) { e.stepActors(); drainTypes(e, sounds); }
+  const lockStart = e.getCreatures().find((candidate) => candidate.id === sentinel);
+  check('bore warning tracks for exactly 60 charge ticks before locking',
+    lockStart?.attackState === CREATURE_ATTACK_STATE.CHARGING
+      && lockStart.attackProgress > 0.65 && lockStart.attackProgress < 0.68);
+  const lockedAim = { x: lockStart?.aimX, y: lockStart?.aimY };
+
+  const beforeDodge = e.getPlayer(dodger);
+  e.setPlayerState(dodger, { ...beforeDodge, x: beforeDodge.x, y: 15, vx: 0, vy: 0 });
+  const victim = e.spawnPlayer(24, FLOOR - 8);
+  for (let tick = 0; tick < 29; tick++) { e.stepActors(); drainTypes(e, sounds); }
+  const finalWarning = e.getCreatures().find((candidate) => candidate.id === sentinel);
+  check('bore aim stays committed for the final 30-tick dodge window',
+    finalWarning?.attackState === CREATURE_ATTACK_STATE.CHARGING
+      && finalWarning.attackProgress > 0.98
+      && Math.abs(finalWarning.aimX - lockedAim.x) < 1e-4
+      && Math.abs(finalWarning.aimY - lockedAim.y) < 1e-4);
+  check('the full 90-tick warning remains non-destructive',
+    e.getPlayer(dodger).health === 100 && e.getPlayer(victim).health === 100
+      && e.getGrid()[cutCell] === MAT.STONE && e.getGridBg()[cutCell] === MAT.STONE);
+
+  e.stepActors(); drainTypes(e, sounds);
+  const fired = e.getCreatures().find((candidate) => candidate.id === sentinel);
+  check('bore sentinel exposes a replicated firing animation window',
+    fired?.attackState === CREATURE_ATTACK_STATE.FIRING);
+  check('the locked warning gives the original target time to dodge', e.getPlayer(dodger).health === 100);
+  check('bore beam damages an actor that remains on the committed line', e.getPlayer(victim).health === 58);
   check('bore beam cuts the foreground and background wall', e.getGrid()[cutCell] === MAT.EMPTY && e.getGridBg()[cutCell] === MAT.EMPTY);
   check('bore charge and fire semantic sounds are emitted', sounds.has(SOUND_EVENT.BORE_CHARGE) && sounds.has(SOUND_EVENT.BORE_FIRE));
   e.destroy();

@@ -8,7 +8,7 @@ struct Engine;
 enum CreatureSpeciesId : uint8_t {
   CS_MINNOW = 0, CS_PIKE, CS_FOX, CS_HARE, CS_CRAWLER, CS_MOLE, CS_BIRD,
   CS_DYNAMITEER = 7, CS_BORE_SENTINEL = 8,
-  CS_CAUSTIC_MORTARMAN = 9, CS_CLUSTER_WASP = 10, CS_QUAKE_BRUTE = 11,
+  CS_CAUSTIC_MORTARMAN = 9, CS_CLUSTER_WASP = 10, CS_MINIGUNNER = 11,
   CS_COUNT
 };
 enum CreatureLocomotion : uint8_t { CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING };
@@ -114,12 +114,12 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .damage=0, .attackCooldown=210, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
    .spawn={CSM_CONTINUOUS, CH_AIR, 224, 1, 1, 144, 1, 840, 0.60, 38, 112}},
-  {.name="quake brute", .locomotion=CL_AMPHIBIOUS, .w=11, .h=7, .maxHealth=260,
-   .walkSpeed=0.11, .swimSpeed=0.09, .accel=0.024, .gravity=0.075, .jumpSpeed=0.68,
-   .fluidThreshold=0.36, .sightRange=96, .attackRange=50,
-   .damage=28, .attackCooldown=220, .scanInterval=10, .hopPeriod=0,
+  {.name="minigunner", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=165,
+   .walkSpeed=0.15, .swimSpeed=0.11, .accel=0.030, .gravity=0.075, .jumpSpeed=0.76,
+   .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
+   .damage=0, .attackCooldown=150, .scanInterval=6, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 288, 1, 1, 168, 1, 1200, 0.45, 50, 136}},
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, 128}},
 };
 
 struct Creature {
@@ -192,7 +192,7 @@ class CreatureSystem {
   void updateBoreSentinelAttack(Creature& c);
   void updateCausticMortarmanAttack(Creature& c);
   void updateClusterWaspAttack(Creature& c);
-  void updateQuakeBruteAttack(Creature& c);
+  void updateMinigunnerAttack(Creature& c);
   void fireBore(Creature& c);
   void fireBore(Player& p);
   void fireBoreLine(double ox, double oy, double dx, double dy, int damage,

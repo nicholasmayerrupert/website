@@ -78,7 +78,7 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
                    incoming.itemKind == IK_BLAST_GUN || incoming.itemKind == IK_DYNAMITE_SATCHEL ||
                    incoming.itemKind == IK_BORE_CANNON || incoming.itemKind == IK_ACID_MORTAR ||
                    incoming.itemKind == IK_CLUSTER_LAUNCHER ||
-                   incoming.itemKind == IK_SEISMIC_HAMMER) ? 1 : INV_STACK_MAX;
+                   incoming.itemKind == IK_MINIGUN) ? 1 : INV_STACK_MAX;
       int add = imin(count, limit); s.count = add; count -= add;
     }
   }
@@ -173,7 +173,7 @@ bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   if (c.count <= 0 || c.itemKind == IK_BLAST_GUN || c.itemKind == IK_MINING_TOOL) return false;
   if (c.itemKind == IK_DYNAMITE_SATCHEL || c.itemKind == IK_BORE_CANNON ||
       c.itemKind == IK_ACID_MORTAR || c.itemKind == IK_CLUSTER_LAUNCHER ||
-      c.itemKind == IK_SEISMIC_HAMMER) {
+      c.itemKind == IK_MINIGUN) {
     E.itemsys.spawnStack(c, p.px + p.w / 2.0 + p.facing * 1.5, p.py + p.h / 2.0,
                          p.facing * IT_THROW_SPEED, IT_THROW_UP, IT_THROW_PICKUP_DELAY);
     c = InvSlot();
@@ -289,7 +289,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (sel.itemKind == IK_BORE_CANNON) { E.projectiles.applyBoreCannonInput(p, prev); return; }
   if (sel.itemKind == IK_ACID_MORTAR) { E.projectiles.applyAcidMortarInput(p, prev); return; }
   if (sel.itemKind == IK_CLUSTER_LAUNCHER) { E.projectiles.applyClusterLauncherInput(p, prev); return; }
-  if (sel.itemKind == IK_SEISMIC_HAMMER) { E.projectiles.applySeismicHammerInput(p, prev); return; }
+  if (sel.itemKind == IK_MINIGUN) { E.projectiles.applyMinigunInput(p); return; }
   if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
   bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && sel.material == SEED;
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);

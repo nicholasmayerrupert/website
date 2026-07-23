@@ -310,9 +310,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       sound: SOUND_EVENT.CLUSTER_LAUNCH,
     },
     {
-      label: 'quake brute', species: CREATURE.QUAKE_BRUTE,
-      x: 68, y: FLOOR - 7, projectile: PROJECTILE_KIND.SEISMIC_WAVE,
-      sound: SOUND_EVENT.QUAKE,
+      label: 'minigunner', species: CREATURE.MINIGUNNER,
+      x: 68, y: FLOOR - 6, projectile: PROJECTILE_KIND.MINIGUN_ROUND,
+      sound: SOUND_EVENT.MINIGUN,
     },
   ];
   for (const scenario of scenarios) {
@@ -349,16 +349,24 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const acidBefore = e.getGrid().reduce((n, material) => n + (material === MAT.ACID ? 1 : 0), 0);
   e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 76, aimY: FLOOR - 1, seq: 1 });
   e.stepActors();
-  let sawShell = e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
+  let shell = e.getProjectiles().find((p) =>
+    p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
+  let sawShell = Boolean(shell);
+  let sawLargeShell = (shell?.charge ?? 0) > 1.5;
   e.setPlayerInput(player, { bits: 0, aimX: 76, aimY: FLOOR - 1, seq: 2 });
   for (let tick = 0; tick < 90; tick++) {
     e.stepActors();
-    sawShell ||= e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
+    shell = e.getProjectiles().find((p) =>
+      p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
+    sawShell ||= Boolean(shell);
+    sawLargeShell ||= (shell?.charge ?? 0) > 1.5;
     if (sawShell && !e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.ACID_SHELL)) break;
   }
   const acidAfter = e.getGrid().reduce((n, material) => n + (material === MAT.ACID ? 1 : 0), 0);
-  check(`captured acid mortar leaves a corrosive pool (${acidBefore} -> ${acidAfter})`,
-    slot >= 0 && sawShell && acidAfter > acidBefore);
+  check('acid mortar exposes a larger shell collision/render scale',
+    slot >= 0 && sawShell && sawLargeShell);
+  check(`captured acid mortar leaves a doubled corrosive pool (${acidBefore} -> ${acidAfter})`,
+    acidAfter - acidBefore >= 100);
   e.destroy();
 }
 
@@ -373,16 +381,29 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const stoneBefore = countStone(e.getGrid());
   e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 78, aimY: FLOOR - 1, seq: 1 });
   e.stepActors();
+  const launchedCarrier = e.getProjectiles().find((p) =>
+    p.kind === PROJECTILE_KIND.CLUSTER_BOMB && p.charge < 0.5);
   e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
-  let sawCarrier = false, maxBomblets = 0;
-  for (let tick = 0; tick < 100; tick++) {
+  let sawCarrier = Boolean(launchedCarrier), maxBomblets = 0;
+  let splitTick = -1, threeTogetherTicks = 0;
+  const childDirections = new Set();
+  for (let tick = 0; tick < 250; tick++) {
     e.stepActors();
     const cluster = e.getProjectiles().filter((p) => p.kind === PROJECTILE_KIND.CLUSTER_BOMB);
     sawCarrier ||= cluster.some((p) => p.charge < 0.5);
-    maxBomblets = Math.max(maxBomblets, cluster.filter((p) => p.charge > 0.5).length);
+    const children = cluster.filter((p) => p.charge > 0.5);
+    if (children.length && splitTick < 0) splitTick = tick;
+    if (children.length === 3) threeTogetherTicks++;
+    maxBomblets = Math.max(maxBomblets, children.length);
+    for (const child of children) childDirections.add(Math.round(Math.atan2(child.vy, child.vx) * 10));
   }
-  check(`captured cluster launcher splits into five live bomblets (max ${maxBomblets})`,
-    slot >= 0 && sawCarrier && maxBomblets === 5);
+  check('cluster carrier is slower and keeps a roughly two-second fuse',
+    launchedCarrier && Math.hypot(launchedCarrier.vx, launchedCarrier.vy) < 3
+      && launchedCarrier.fuse > 100 && splitTick >= 100);
+  check(`captured cluster launcher splits into exactly three live mini-dynamites (max ${maxBomblets})`,
+    slot >= 0 && sawCarrier && maxBomblets === 3);
+  check('all three mini-dynamites scatter distinctly and remain visible',
+    childDirections.size >= 3 && threeTogetherTicks >= 20);
   const stoneAfter = countStone(e.getGrid());
   check(`cluster bomblets leave multiple destructive craters (${stoneBefore} -> ${stoneAfter})`,
     stoneAfter < stoneBefore);
@@ -390,28 +411,84 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
 }
 
 {
-  const e = arena({ background: true });
+  const e = arena();
   const player = e.spawnPlayer(18, FLOOR - 8);
   const drop = killForWeaponDrop(
-    e, CREATURE.QUAKE_BRUTE, ITEM_KIND.SEISMIC_HAMMER,
-    72, FLOOR - 7, 'quake brute',
+    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
+    72, FLOOR - 6, 'minigunner',
   );
-  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.SEISMIC_HAMMER, drop, 'seismic hammer');
-  const foregroundBefore = countStone(e.getGrid());
-  const backgroundBefore = countStone(e.getGridBg());
-  e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 90, aimY: FLOOR - 1, seq: 1 });
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.MINIGUN, drop, 'minigun');
+  const pose = e.getPlayer(player);
+  const guardShoulderX = pose.x + pose.w * 0.5;
+  const guardShoulderY = pose.y + pose.h * 0.42;
+  const nearWallX = Math.floor(guardShoulderX + 3);
+  const nearWallY = Math.floor(guardShoulderY - 0.68);
+  e.placeMaterial(nearWallX, nearWallY, 0, MAT.STONE);
+  e.syncComponents();
+  const nearWallBefore = countStone(e.getGrid());
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: nearWallX + 20, aimY: guardShoulderY, seq: 1,
+  });
   e.stepActors();
-  let sawWave = e.getProjectiles().some((p) =>
-    p.kind === PROJECTILE_KIND.SEISMIC_WAVE && p.owner === player);
-  e.setPlayerInput(player, { bits: 0, aimX: 90, aimY: FLOOR - 1, seq: 2 });
-  for (let tick = 0; tick < 12; tick++) {
+  const skippedCover = e.getProjectiles().some((projectile) =>
+    projectile.kind === PROJECTILE_KIND.MINIGUN_ROUND
+      && projectile.owner === player && projectile.x > nearWallX + 1);
+  const nearWallAfter = countStone(e.getGrid());
+  const healthAfterGuardShot = e.getPlayer(player).health;
+  check('long minigun barrel cannot fire through nearby cover',
+    !skippedCover && nearWallAfter < nearWallBefore);
+  check('near-cover minigun blast preserves direct owner immunity',
+    healthAfterGuardShot === 100);
+  e.setPlayerInput(player, { bits: 0, aimX: nearWallX + 20, aimY: guardShoulderY, seq: 2 });
+  for (let tick = 0; tick < 3; tick++) e.stepActors();
+  e.eraseDisc(nearWallX, nearWallY, 5);
+  e.syncComponents();
+  const healthBeforeBurst = e.getPlayer(player).health;
+  const impactY = Math.floor(pose.y + pose.h * 0.42);
+  const wallX = 104;
+  for (let y = impactY - 5; y <= impactY + 5; y++) e.placeMaterial(wallX, y, 0, MAT.STONE);
+  e.syncComponents();
+  const stoneBefore = countStone(e.getGrid());
+  const seenRounds = new Set();
+  let fastestRound = 0;
+  let muzzleError = Infinity;
+  const aimX = wallX + 4, aimY = impactY;
+  const shoulderX = pose.x + pose.w * 0.5;
+  const shoulderY = pose.y + pose.h * 0.42;
+  const aimLength = Math.hypot(aimX - shoulderX, aimY - shoulderY);
+  const aimDx = (aimX - shoulderX) / aimLength;
+  const aimDy = (aimY - shoulderY) / aimLength;
+  const expectedMuzzleX = shoulderX + aimDx * 5.49 + aimDy * 0.68;
+  const expectedMuzzleY = shoulderY + aimDy * 5.49 - aimDx * 0.68;
+  let seq = 0;
+  for (let tick = 0; tick < 14; tick++) {
+    e.setPlayerInput(player, {
+      bits: PI_PRIMARY, aimX, aimY, seq: ++seq,
+    });
     e.stepActors();
-    sawWave ||= e.getProjectiles().some((p) =>
-      p.kind === PROJECTILE_KIND.SEISMIC_WAVE && p.owner === player);
+    for (const projectile of e.getProjectiles()) {
+      if (projectile.kind !== PROJECTILE_KIND.MINIGUN_ROUND || projectile.owner !== player) continue;
+      if (!seenRounds.has(projectile.id)) {
+        const launchX = projectile.x - projectile.vx;
+        const launchY = projectile.y - projectile.vy;
+        muzzleError = Math.min(muzzleError,
+          Math.hypot(launchX - expectedMuzzleX, launchY - expectedMuzzleY));
+      }
+      seenRounds.add(projectile.id);
+      fastestRound = Math.max(fastestRound, Math.hypot(projectile.vx, projectile.vy));
+    }
   }
-  check('captured seismic hammer launches a ground-following fracture', slot >= 0 && sawWave);
-  check('seismic fracture cuts component terrain in both simulated layers',
-    countStone(e.getGrid()) < foregroundBefore && countStone(e.getGridBg()) < backgroundBefore);
+  e.setPlayerInput(player, { bits: 0, aimX, aimY, seq: ++seq });
+  for (let tick = 0; tick < 12; tick++) e.stepActors();
+  const carved = stoneBefore - countStone(e.getGrid());
+  check(`captured minigun hold-fires an extremely fast burst (${seenRounds.size} rounds)`,
+    slot >= 0 && seenRounds.size >= 6 && fastestRound > 14);
+  check(`minigun rounds originate at the rendered hand-held muzzle (error ${muzzleError.toFixed(3)})`,
+    muzzleError < 0.02);
+  check(`minigun rounds make tiny component-safe craters (${carved} stone cells)`,
+    carved > 0 && carved < 70);
+  check('captured minigun preserves owner immunity',
+    e.getPlayer(player).health === healthBeforeBurst);
   e.destroy();
 }
 

@@ -204,7 +204,9 @@ const hasDraftCell = (cells, x, y) => {
   e.destroy();
 }
 
-// 6b) Mining time scales with the selected footprint area: 1x1 is 9x faster than 3x3.
+// 6b) The fast universal dig tool still charges more work for a larger selected
+//     footprint. At the new 10x rate, integer damage floors 1x1 to one tick and
+//     the default 3x3 footprint to five.
 {
   const mineTicks = (footprintId) => {
     const e = survivalEngine();
@@ -224,9 +226,8 @@ const hasDraftCell = (cells, x, y) => {
   };
   const one = mineTicks(0);
   const three = mineTicks(2);
-  check(`1x1 mine ticks (${one})`, one > 0);
-  // Area scale is 9x; integer damage means ticks can be floor/ceil off by one step.
-  check(`3x3 mine ticks scale with area (~9x: ${three} vs ${one})`, three >= one * 8 && three <= one * 9);
+  check(`boosted 1x1 mine ticks (${one})`, one === 1);
+  check(`boosted 3x3 footprint still costs more work (${three} vs ${one})`, three === 5);
 }
 
 // 7) Placing a COMPONENT material in survival uses the creative-style DRAFT: holding

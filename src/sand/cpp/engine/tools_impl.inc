@@ -426,6 +426,8 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
   std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
+  uint32_t speedMultiplier = SURVIVAL_MINING_SPEED_MULTIPLIER;
+  if (miner.heldToolClass == TC_DIG) speedMultiplier *= SURVIVAL_DIG_TOOL_SPEED_MULTIPLIER;
   for (const SurvivalFootprintCell& o : fp.cells) {
     int xx = cx + (int)o.ox, yy = cy + (int)o.oy;
     if (yy <= 0 || yy >= E.rows || xx <= 0 || xx >= E.cols - 1) continue;
@@ -435,7 +437,7 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
       if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; }
       continue;
     }
-    if (mineDamageCellStep(k, m, miner, scaledSpeed, areaScale, SURVIVAL_MINING_SPEED_MULTIPLIER, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
+    if (mineDamageCellStep(k, m, miner, scaledSpeed, areaScale, speedMultiplier, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
   }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) {

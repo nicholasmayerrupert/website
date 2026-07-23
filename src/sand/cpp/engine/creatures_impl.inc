@@ -279,9 +279,10 @@ void CreatureSystem::updateNaturalPopulation() {
   for (int pass = 0; pass < 2; pass++) for (uint8_t sid = 0; sid < CS_COUNT; sid++) {
     // Temporarily keep the ambient roster focused: these species remain valid
     // for direct tests/scripts, but do not enter fresh natural populations.
-    if (sid == CS_PIKE || sid == CS_HARE || sid == CS_CRAWLER) continue;
+    if (sid == CS_MINNOW || sid == CS_PIKE || sid == CS_FOX ||
+        sid == CS_HARE || sid == CS_CRAWLER || sid == CS_BIRD) continue;
     bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL ||
-      sid == CS_CAUSTIC_MORTARMAN || sid == CS_CLUSTER_WASP || sid == CS_QUAKE_BRUTE;
+      sid == CS_CAUSTIC_MORTARMAN || sid == CS_CLUSTER_WASP || sid == CS_MINIGUNNER;
     if (survivalEnemy != (pass == 0) || (survivalEnemy && !E.survivalInventory)) continue;
     const CreatureSpawnRule& r = CREATURE_SPECIES[sid].spawn;
     if (r.mode == CSM_CONTINUOUS) {
@@ -486,15 +487,17 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     }
     double wish;
     bool rangedEnemy = c.species == CS_DYNAMITEER || c.species == CS_BORE_SENTINEL ||
-      c.species == CS_CAUSTIC_MORTARMAN || c.species == CS_QUAKE_BRUTE;
+      c.species == CS_CAUSTIC_MORTARMAN || c.species == CS_MINIGUNNER;
     if (hasTarget && rangedEnemy) {
       double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
       double nearRange = c.species == CS_DYNAMITEER ? 28.0
         : c.species == CS_BORE_SENTINEL ? 46.0
-        : c.species == CS_CAUSTIC_MORTARMAN ? 36.0 : 10.0;
+        : c.species == CS_CAUSTIC_MORTARMAN ? 36.0
+        : c.species == CS_MINIGUNNER ? 38.0 : 10.0;
       double farRange = c.species == CS_DYNAMITEER ? 58.0
         : c.species == CS_BORE_SENTINEL ? 88.0
-        : c.species == CS_CAUSTIC_MORTARMAN ? 76.0 : 38.0;
+        : c.species == CS_CAUSTIC_MORTARMAN ? 76.0
+        : c.species == CS_MINIGUNNER ? 92.0 : 38.0;
       if (c.attackState != CAS_IDLE) wish = 0;
       else if (distance > farRange) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
       else if (distance < nearRange) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
@@ -602,9 +605,9 @@ static constexpr int MORTARMAN_CHARGE_TICKS = 42;
 static constexpr int MORTARMAN_FIRE_TICKS = 8;
 static constexpr int CLUSTER_WASP_CHARGE_TICKS = 32;
 static constexpr int CLUSTER_WASP_FIRE_TICKS = 8;
-static constexpr int QUAKE_BRUTE_CHARGE_TICKS = 54;
-static constexpr int QUAKE_BRUTE_LOCK_TICKS = 12;
-static constexpr int QUAKE_BRUTE_FIRE_TICKS = 10;
+static constexpr int MINIGUNNER_CHARGE_TICKS = 18;
+static constexpr int MINIGUNNER_BURST_TICKS = 54;
+static constexpr int MINIGUNNER_SHOT_INTERVAL = 2;
 
 static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
                                    double bx0, double by0, double bx1, double by1, double expand) {
@@ -722,11 +725,23 @@ void CreatureSystem::updateClusterWaspAttack(Creature& c) {
   c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
 }
 
-void CreatureSystem::updateQuakeBruteAttack(Creature& c) {
+void CreatureSystem::updateMinigunnerAttack(Creature& c) {
   const CreatureSpecies& s = species(c);
   if (c.attackState == CAS_FIRING) {
-    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)QUAKE_BRUTE_FIRE_TICKS);
-    if (++c.attackTicks >= QUAKE_BRUTE_FIRE_TICKS) {
+    double tx = 0, ty = 0;
+    if (targetPoint(c, tx, ty, nullptr, nullptr)) {
+      c.attackAimX = tx; c.attackAimY = ty;
+    }
+    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
+    if ((c.attackTicks % MINIGUNNER_SHOT_INTERVAL) == 0) {
+      E.projectiles.spawnMinigunRound(c,
+        c.attackAimX - E.fg.worldOffsetX,
+        c.attackAimY - E.fg.worldOffsetY);
+    }
+    c.attackTicks++;
+    c.attackProgress = std::max(0.0,
+      1.0 - c.attackTicks / (double)MINIGUNNER_BURST_TICKS);
+    if (c.attackTicks >= MINIGUNNER_BURST_TICKS) {
       c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
     }
     return;
@@ -735,14 +750,11 @@ void CreatureSystem::updateQuakeBruteAttack(Creature& c) {
   double tx = 0, ty = 0;
   bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   if (c.attackState == CAS_CHARGING) {
-    if (hasTarget && c.attackTicks < QUAKE_BRUTE_CHARGE_TICKS - QUAKE_BRUTE_LOCK_TICKS) {
-      c.attackAimX = tx; c.attackAimY = ty;
-    }
+    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
     c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
     c.attackTicks++;
-    c.attackProgress = std::min(1.0, c.attackTicks / (double)QUAKE_BRUTE_CHARGE_TICKS);
-    if (c.attackTicks >= QUAKE_BRUTE_CHARGE_TICKS) {
-      E.projectiles.spawnSeismicWave(c, c.attackAimX - E.fg.worldOffsetX);
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)MINIGUNNER_CHARGE_TICKS);
+    if (c.attackTicks >= MINIGUNNER_CHARGE_TICKS) {
       c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
       c.attackCooldown = s.attackCooldown;
     }
@@ -854,7 +866,7 @@ void CreatureSystem::dropWeapon(const Creature& c) {
                    : c.species == CS_BORE_SENTINEL ? IK_BORE_CANNON
                    : c.species == CS_CAUSTIC_MORTARMAN ? IK_ACID_MORTAR
                    : c.species == CS_CLUSTER_WASP ? IK_CLUSTER_LAUNCHER
-                   : c.species == CS_QUAKE_BRUTE ? IK_SEISMIC_HAMMER
+                   : c.species == CS_MINIGUNNER ? IK_MINIGUN
                    : IK_MATERIAL;
   if (itemKind == IK_MATERIAL) return;
   const CreatureSpecies& s = species(c);
@@ -908,7 +920,7 @@ void CreatureSystem::attackTarget(Creature& c) {
   if (c.species == CS_BORE_SENTINEL) { updateBoreSentinelAttack(c); return; }
   if (c.species == CS_CAUSTIC_MORTARMAN) { updateCausticMortarmanAttack(c); return; }
   if (c.species == CS_CLUSTER_WASP) { updateClusterWaspAttack(c); return; }
-  if (c.species == CS_QUAKE_BRUTE) { updateQuakeBruteAttack(c); return; }
+  if (c.species == CS_MINIGUNNER) { updateMinigunnerAttack(c); return; }
   const CreatureSpecies& s = species(c); if (c.attackCooldown > 0 || s.damage <= 0) return;
   double tx, ty; Creature* prey = nullptr; Player* player = nullptr;
   if (!targetPoint(c, tx, ty, &prey, &player)) return;
@@ -978,10 +990,10 @@ void CreatureSystem::updateCreatures() {
       if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.55 ? 1 : 2;
       else if (c.attackState == CAS_FIRING) c.animFrame = 3;
       else c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
-    } else if (c.species == CS_QUAKE_BRUTE) {
+    } else if (c.species == CS_MINIGUNNER) {
       if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
-      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
-      else c.animFrame = std::fabs(c.vx) > 0.02 ? (uint8_t)(((E.actorTick / 8) + c.id) & 1) : 0;
+      else if (c.attackState == CAS_FIRING) c.animFrame = (uint8_t)(2 + ((E.actorTick / 2) & 1));
+      else c.animFrame = std::fabs(c.vx) > 0.02 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
     } else if (c.species == CS_BIRD) {
       c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
     } else if (c.species == CS_HARE) {

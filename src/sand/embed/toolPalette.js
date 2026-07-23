@@ -52,7 +52,7 @@ const CREATURE_EGGS = [
   ['Bore Sentinel', CREATURE.BORE_SENTINEL, '#f4c95d', '#343746'],
   ['Caustic Mortarman', CREATURE.CAUSTIC_MORTARMAN, '#72dc69', '#263e30'],
   ['Cluster Wasp', CREATURE.CLUSTER_WASP, '#f2a63d', '#4b315e'],
-  ['Quake Brute', CREATURE.QUAKE_BRUTE, '#d86b3c', '#302b2c'],
+  ['Minigunner', CREATURE.MINIGUNNER, '#d5a83d', '#263746'],
 ];
 
 // Main contains the complete catalog, with this useful set pinned first. The

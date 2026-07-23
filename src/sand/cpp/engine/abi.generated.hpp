@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 19;
+static const int ABI_VERSION = 20;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive
 enum PlayerSnapshotField : int {
@@ -218,7 +218,7 @@ enum InventoryItemKind : uint8_t {
   IK_BORE_CANNON = 6,
   IK_ACID_MORTAR = 7,
   IK_CLUSTER_LAUNCHER = 8,
-  IK_SEISMIC_HAMMER = 9,
+  IK_MINIGUN = 9,
 };
 
 enum ProjectileKind : uint8_t {
@@ -227,7 +227,7 @@ enum ProjectileKind : uint8_t {
   PK_DYNAMITE = 2,
   PK_ACID_SHELL = 3,
   PK_CLUSTER_BOMB = 4,
-  PK_SEISMIC_WAVE = 5,
+  PK_MINIGUN_ROUND = 5,
   PK_BORE_BEAM = 6,
 };
 
@@ -271,7 +271,7 @@ enum CreatureSpeciesAbi : int {
   CREATURE_BORE_SENTINEL = 8,
   CREATURE_CAUSTIC_MORTARMAN = 9,
   CREATURE_CLUSTER_WASP = 10,
-  CREATURE_QUAKE_BRUTE = 11,
+  CREATURE_MINIGUNNER = 11,
 };
 
 enum CreatureAttackState : uint8_t {
@@ -305,7 +305,7 @@ enum SoundEventType : uint8_t {
   SE_BORE_FIRE = 21,
   SE_ACID_MORTAR = 22,
   SE_CLUSTER_LAUNCH = 23,
-  SE_QUAKE = 24,
+  SE_MINIGUN = 24,
 };
 
 static const int INV_HOTBAR = 9;

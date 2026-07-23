@@ -3,21 +3,27 @@
 static constexpr int ACID_MORTAR_COOLDOWN_LOCAL = 75;
 static constexpr int ACID_SHELL_LIFE_LOCAL = 180;
 static constexpr double ACID_SHELL_GRAVITY_LOCAL = 0.055;
-static constexpr int ACID_SPLASH_RADIUS_LOCAL = 6;
+// Nine cells is a little over twice the old six-cell footprint. The falling-sand
+// reactions quickly roughen that initial disc into a natural corrosive pool.
+static constexpr int ACID_SPLASH_RADIUS_LOCAL = 9;
 static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
 static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
-static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 38;
-static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 24;
-static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 13;
+static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 120;
+static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 72;
+static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 31;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
-static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 7;
-static constexpr double CLUSTER_BLAST_POWER_LOCAL = 14.0;
-static constexpr int SEISMIC_HAMMER_COOLDOWN_LOCAL = 105;
-static constexpr int SEISMIC_WAVE_LIFE_LOCAL = 26;
-static constexpr double SEISMIC_WAVE_SPEED_LOCAL = 1.5;
-static constexpr int SEISMIC_WAVE_DAMAGE_LOCAL = 28;
+static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 6;
+static constexpr double CLUSTER_BLAST_POWER_LOCAL = 8.0;
+static constexpr int MINIGUN_COOLDOWN_LOCAL = 2;
+static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
+static constexpr double MINIGUN_ROUND_SPEED_LOCAL = 15.5;
+static constexpr int MINIGUN_BLAST_RADIUS_LOCAL = 2;
+// Radius, not a weak visual-only puff, is what keeps these explosions tiny.
+// Just over stone durability lets a direct hit chip one hard cell while the
+// steep two-cell falloff prevents each high-rate round from opening a crater.
+static constexpr double MINIGUN_BLAST_POWER_LOCAL = 8.2;
 
 void ProjectileSystem::applyBowInput(Player& p, int previousInput) {
   bool primary = (p.input & PI_PRIMARY) != 0;
@@ -89,13 +95,11 @@ void ProjectileSystem::applyClusterLauncherInput(Player& p, int previousInput) {
   E.playerActionCount++;
 }
 
-void ProjectileSystem::applySeismicHammerInput(Player& p, int previousInput) {
+void ProjectileSystem::applyMinigunInput(Player& p) {
   E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
-  bool primary = (p.input & PI_PRIMARY) != 0;
-  bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
-  if (!primary || wasPrimary || p.toolCooldown > 0) return;
-  spawnSeismicWave(p);
-  p.toolCooldown = SEISMIC_HAMMER_COOLDOWN_LOCAL;
+  if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
+  spawnMinigunRound(p);
+  p.toolCooldown = MINIGUN_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
 
@@ -169,7 +173,9 @@ void ProjectileSystem::spawnAcidShellAt(int owner, double sx, double sy, double 
   shell.vx = dx / flight;
   shell.vy = (dy - .5 * ACID_SHELL_GRAVITY_LOCAL * flight * flight) / flight;
   shell.life = ACID_SHELL_LIFE_LOCAL;
-  shell.charge = 1.0;
+  // Charge doubles as the renderer's scale hint; acid shells are deliberately
+  // chunkier than ordinary rounds and have a matching collision envelope.
+  shell.charge = 1.65;
   shell.rotation = std::atan2(shell.vy, shell.vx);
   projectiles.push_back(shell);
   E.audio.emit(SE_ACID_MORTAR, sx, sy, 0.9, ACID, 0);
@@ -193,8 +199,8 @@ void ProjectileSystem::spawnClusterBombAt(int owner, double sx, double sy, doubl
   if (d < 1e-6) { dx = 1; dy = 0; d = 1; }
   Projectile carrier; carrier.id = nextId++; carrier.owner = owner; carrier.kind = PK_CLUSTER_BOMB;
   carrier.px = sx; carrier.py = sy;
-  carrier.vx = dx / d * 5.5;
-  carrier.vy = dy / d * 5.5 - .28;
+  carrier.vx = dx / d * 2.35;
+  carrier.vy = dy / d * 2.35 - .18;
   carrier.life = CLUSTER_CARRIER_FUSE_LOCAL + 90;
   carrier.fuse = CLUSTER_CARRIER_FUSE_LOCAL;
   carrier.charge = 0.0;
@@ -215,30 +221,112 @@ void ProjectileSystem::spawnClusterBomb(Player& shooter) {
                      shooter.aimX, shooter.aimY);
 }
 
-void ProjectileSystem::spawnSeismicWaveAt(int owner, double sx, double sy, double targetX) {
+void ProjectileSystem::spawnMinigunRoundAt(int owner, double guardX, double guardY,
+                                           double muzzleX, double muzzleY,
+                                           double dirX, double dirY) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
-  double dir = targetX >= sx ? 1.0 : -1.0;
-  Projectile wave; wave.id = nextId++; wave.owner = owner; wave.kind = PK_SEISMIC_WAVE;
-  wave.px = sx + dir * .75; wave.py = sy;
-  wave.vx = dir * SEISMIC_WAVE_SPEED_LOCAL; wave.vy = 0;
-  wave.life = SEISMIC_WAVE_LIFE_LOCAL; wave.charge = 1.0; wave.rotation = dir > 0 ? 0 : 3.141592653589793;
-  projectiles.push_back(wave);
-  E.audio.emit(SE_QUAKE, sx, sy, 1.0, STONE, 0);
+  double d = std::hypot(dirX, dirY);
+  if (d < 1e-6) { dirX = 1; dirY = 0; d = 1; }
+  dirX /= d; dirY /= d;
+  // A long authored barrel may cross nearby cover. Preserve the visible muzzle
+  // origin when clear. When it crosses an obstruction, launch from the final
+  // clear guard sample directly into the first blocked sample so spread cannot
+  // steer a fallback shot around a single terrain cell or actor.
+  auto blockedAt = [&](double px, double py) {
+    int x = (int)std::floor(px), y = (int)std::floor(py);
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
+    uint8_t material = E.fg.grid[E.I(x, y)];
+    if (!E.isEmptyMaterial(material) && !E.isGasMaterial(material)) return true;
+    double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
+    for (const Creature& creature : E.creatures.creatures) {
+      if (!creature.alive || (owner < 0 && creature.id == -owner)) continue;
+      const CreatureSpecies& s = E.creatures.species(creature);
+      double nx = std::max(creature.wx, std::min(wx, creature.wx + s.w));
+      double ny = std::max(creature.wy, std::min(wy, creature.wy + s.h));
+      double dx = wx - nx, dy = wy - ny;
+      if (dx * dx + dy * dy <= .48 * .48) return true;
+    }
+    for (const Player& player : E.psys.players) {
+      if (!player.active || !player.alive || player.id == owner) continue;
+      double nx = std::max(player.px, std::min(px, player.px + player.w));
+      double ny = std::max(player.py, std::min(py, player.py + player.h));
+      double dx = px - nx, dy = py - ny;
+      if (dx * dx + dy * dy <= .48 * .48) return true;
+    }
+    return false;
+  };
+  bool guarded = false;
+  double clearX = guardX, clearY = guardY;
+  double blockedX = muzzleX, blockedY = muzzleY;
+  double guardDx = muzzleX - guardX, guardDy = muzzleY - guardY;
+  double guardDistance = std::hypot(guardDx, guardDy);
+  int guardSteps = imax(1, (int)std::ceil(guardDistance / PROJECTILE_SWEEP_STEP));
+  for (int step = 1; step <= guardSteps; step++) {
+    double t = step / (double)guardSteps;
+    double sampleX = guardX + guardDx * t, sampleY = guardY + guardDy * t;
+    if (blockedAt(sampleX, sampleY)) {
+      guarded = true;
+      blockedX = sampleX;
+      blockedY = sampleY;
+      break;
+    }
+    clearX = sampleX;
+    clearY = sampleY;
+  }
+  // A tiny deterministic cone keeps sustained fire lively while preserving
+  // replay/network determinism. Each shot still travels much faster than the
+  // blast gun and uses swept collision below.
+  uint32_t seed = (uint32_t)nextId * 2654435761u ^ (uint32_t)(owner * 2246822519u);
+  double spread = ((seed >> 8) & 0xffffu) / 65535.0 * .10 - .05;
+  double angle = guarded
+    ? std::atan2(blockedY - clearY, blockedX - clearX)
+    : std::atan2(dirY, dirX) + spread;
+  Projectile round;
+  round.id = nextId++; round.owner = owner; round.kind = PK_MINIGUN_ROUND;
+  round.px = guarded ? clearX : muzzleX;
+  round.py = guarded ? clearY : muzzleY;
+  round.vx = guarded ? blockedX - clearX : std::cos(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+  round.vy = guarded ? blockedY - clearY : std::sin(angle) * MINIGUN_ROUND_SPEED_LOCAL;
+  round.life = MINIGUN_ROUND_LIFE_LOCAL;
+  round.charge = 1.0;
+  round.rotation = angle;
+  projectiles.push_back(round);
+  E.audio.emit(SE_MINIGUN, muzzleX, muzzleY, 0.48, GUNPOWDER, 0);
 }
 
-void ProjectileSystem::spawnSeismicWave(const Creature& shooter, double targetX) {
+void ProjectileSystem::spawnMinigunRound(const Creature& shooter,
+                                         double targetX, double targetY) {
   const CreatureSpecies& s = E.creatures.species(shooter);
   double localX = shooter.wx - E.fg.worldOffsetX;
   double localY = shooter.wy - E.fg.worldOffsetY;
-  double centerX = localX + s.w * .5;
-  double dir = targetX >= centerX ? 1.0 : -1.0;
-  spawnSeismicWaveAt(-shooter.id, centerX + dir * s.w * .5, localY + s.h, targetX);
+  // Match the authored overlay in GLPresenter: gun anchor + hand extension +
+  // muzzle bloom. Keep velocity parallel to the rendered barrel rather than
+  // bending it back toward the cursor from an offset muzzle.
+  double gunX = localX + s.w * .56;
+  double gunY = localY + s.h * .48;
+  double dx = targetX - gunX, dy = targetY - gunY;
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = shooter.facing; dy = 0; d = 1; }
+  dx /= d; dy /= d;
+  double muzzleX = gunX + dx * 4.73;
+  double muzzleY = gunY + dy * 4.73;
+  spawnMinigunRoundAt(-shooter.id, gunX, gunY, muzzleX, muzzleY, dx, dy);
 }
 
-void ProjectileSystem::spawnSeismicWave(Player& shooter) {
-  double centerX = shooter.px + shooter.w * .5;
-  double dir = shooter.aimX >= centerX ? 1.0 : -1.0;
-  spawnSeismicWaveAt(shooter.id, centerX + dir * shooter.w * .5, shooter.py + shooter.h, shooter.aimX);
+void ProjectileSystem::spawnMinigunRound(Player& shooter) {
+  double shoulderX = shooter.px + shooter.w * .5;
+  double shoulderY = shooter.py + shooter.h * .42;
+  double dx = shooter.aimX - shoulderX, dy = shooter.aimY - shoulderY;
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = shooter.facing; dy = 0; d = 1; }
+  dx /= d; dy /= d;
+  double nx = -dy, ny = dx;
+  // hand = shoulder + 1.55 forward; muzzle art = hand + 3.94 forward
+  // and -.68 normal.
+  double muzzleX = shoulderX + dx * 5.49 - nx * .68;
+  double muzzleY = shoulderY + dy * 5.49 - ny * .68;
+  spawnMinigunRoundAt(shooter.id, shoulderX, shoulderY,
+                      muzzleX, muzzleY, dx, dy);
 }
 
 void ProjectileSystem::spawnBoreBeam(int owner, double ox, double oy, double dx, double dy) {
@@ -284,6 +372,18 @@ void ProjectileSystem::updateProjectiles() {
     int x = (int)std::floor(px), y = (int)std::floor(py);
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
     return E.isBlockingForPlayer(E.fg.grid[E.I(x, y)]);
+  };
+  auto blocksClusterCarrier = [&](double px, double py) {
+    // The carrier is rendered roughly 2.5x1.8 cells. Sample a compact rounded
+    // envelope so that larger silhouette cannot sink a cell into terrain while
+    // it waits for its timed split.
+    static constexpr double OFFSETS[9][2] = {
+      {0, 0}, {-.95, 0}, {.95, 0}, {0, -.72}, {0, .72},
+      {-.67, -.51}, {.67, -.51}, {-.67, .51}, {.67, .51},
+    };
+    for (const auto& offset : OFFSETS)
+      if (blocksPoint(px + offset[0], py + offset[1])) return true;
+    return false;
   };
   auto materialStopsPoint = [&](double px, double py) {
     int x = (int)std::floor(px), y = (int)std::floor(py);
@@ -338,22 +438,25 @@ void ProjectileSystem::updateProjectiles() {
   };
 
   std::vector<Projectile> pendingCluster;
-  pendingCluster.reserve(10);
+  pendingCluster.reserve(6);
   auto splitCluster = [&](const Projectile& carrier) {
-    double base = std::atan2(carrier.vy, carrier.vx);
-    static constexpr double FAN[5] = {-1.02, -0.51, 0.0, 0.51, 1.02};
-    for (int child = 0; child < 5; child++) {
-      double angle = base + FAN[child];
-      double speed = 1.55 + .18 * child;
+    // Three deterministic pseudo-random directions read as genuinely scattered
+    // mini-dynamite while remaining identical on authority, replay, and clients.
+    for (int child = 0; child < 3; child++) {
+      uint32_t seed = (uint32_t)carrier.id * 2654435761u ^
+                      (uint32_t)(child + 1) * 2246822519u;
+      seed ^= seed >> 16; seed *= 0x7feb352du;
+      seed ^= seed >> 15; seed *= 0x846ca68bu; seed ^= seed >> 16;
+      double angle = (seed / 4294967296.0) * 6.283185307179586;
+      double speed = 1.55 + ((seed >> 9) & 0x3ffu) / 1023.0 * .85;
       Projectile bomblet;
       bomblet.id = nextId++;
       bomblet.owner = carrier.owner;
       bomblet.kind = PK_CLUSTER_BOMB;
-      bomblet.px = carrier.px - std::cos(base) * .45;
-      bomblet.py = carrier.py - std::sin(base) * .45;
+      bomblet.px = carrier.px;
+      bomblet.py = carrier.py;
       bomblet.vx = std::cos(angle) * speed;
-      bomblet.vy = std::sin(angle) * speed - .52;
-      uint32_t seed = (uint32_t)carrier.id * 2654435761u ^ (uint32_t)child * 2246822519u;
+      bomblet.vy = std::sin(angle) * speed - .42;
       bomblet.fuse = CLUSTER_BOMBLET_FUSE_MIN_LOCAL +
         (int)(seed % CLUSTER_BOMBLET_FUSE_SPAN_LOCAL);
       bomblet.life = bomblet.fuse + 45;
@@ -361,19 +464,28 @@ void ProjectileSystem::updateProjectiles() {
       bomblet.rotation = angle;
       pendingCluster.push_back(bomblet);
     }
+    E.audio.emit(SE_FUSE, carrier.px, carrier.py, 0.72, TNT, 0);
   };
-  auto eraseSeismicCells = [&](std::vector<int>& cells, int x0, int y0, int x1, int y1) {
-    if (cells.empty()) return;
-    std::sort(cells.begin(), cells.end());
-    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
-    Layer* restore = E.L;
-    E.useLayer(&E.fg);
-    E.eraseStrokeCells(cells, x0, y0, x1, y1);
-    if (E.bgEnabled) {
-      E.useLayer(&E.bg);
-      E.eraseStrokeCells(cells, x0, y0, x1, y1);
+  auto detonateOwnerAware = [&](const Projectile& projectile, int x, int y,
+                                int radius, double power, uint8_t material) {
+    Creature* immuneCreature = nullptr;
+    int savedHurtCooldown = 0;
+    if (projectile.owner < 0) {
+      for (Creature& creature : E.creatures.creatures) {
+        if (creature.id != -projectile.owner) continue;
+        immuneCreature = &creature;
+        savedHurtCooldown = creature.hurtCooldown;
+        // The common blast path already respects hurt cooldown, giving enemy
+        // projectiles the same explicit owner immunity players receive by id.
+        creature.hurtCooldown = imax(1, creature.hurtCooldown);
+        break;
+      }
     }
-    E.useLayer(restore);
+    uint32_t seed = (uint32_t)projectile.id * 2654435761u ^
+                    (uint32_t)projectile.kind * 2246822519u;
+    E.detonate(x, y, radius, power, projectile.owner > 0 ? projectile.owner : 0,
+               material, seed);
+    if (immuneCreature) immuneCreature->hurtCooldown = savedHurtCooldown;
   };
   auto damageBlastOwner = [&](const Projectile& round) {
     if (round.owner <= 0) return;
@@ -461,8 +573,8 @@ void ProjectileSystem::updateProjectiles() {
           outside = true;
           break;
         }
-        if (materialStopsPoint(nx, ny) || hitsCreature(nx, ny, .72, p.owner) ||
-            hitsPlayer(nx, ny, .72, p.owner)) {
+        if (materialStopsPoint(nx, ny) || hitsCreature(nx, ny, 1.35, p.owner) ||
+            hitsPlayer(nx, ny, 1.35, p.owner)) {
           hit = true;
           break;
         }
@@ -480,30 +592,37 @@ void ProjectileSystem::updateProjectiles() {
     }
 
     if (p.kind == PK_CLUSTER_BOMB && p.charge < .5) {
-      bool hit = false, outside = false;
-      double distance = std::hypot(p.vx, p.vy);
-      int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
-      double sx = p.vx / steps, sy = p.vy / steps;
-      for (int step = 0; step < steps && !hit; step++) {
-        double nx = p.px + sx, ny = p.py + sy;
-        if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows - 1) {
-          outside = true;
-          break;
+      bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
+      if (!outside) {
+        double distance = std::hypot(p.vx, p.vy);
+        int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
+        double sx = p.vx / steps, sy = p.vy / steps;
+        bool blockX = false, blockY = false;
+        for (int step = 0; step < steps; step++) {
+          if (!blockX) {
+            double nx = p.px + sx;
+            if (blocksClusterCarrier(nx, p.py)) {
+              p.vx = -p.vx * (CLUSTER_BOUNCE_LOCAL * .72);
+              blockX = true;
+            } else p.px = nx;
+          }
+          if (!blockY) {
+            double ny = p.py + sy;
+            if (blocksClusterCarrier(p.px, ny)) {
+              p.vy = -p.vy * (CLUSTER_BOUNCE_LOCAL * .72);
+              p.vx *= CLUSTER_FRICTION_LOCAL;
+              blockY = true;
+            } else p.py = ny;
+          }
         }
-        if (materialStopsPoint(nx, ny) || hitsCreature(nx, ny, .72, p.owner) ||
-            hitsPlayer(nx, ny, .72, p.owner)) {
-          hit = true;
-          break;
-        }
-        p.px = nx; p.py = ny;
+        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL * .62);
+        p.rotation += p.vx * .18;
       }
-      if (!outside && (hit || --p.fuse <= 0)) {
+      if (!outside && --p.fuse <= 0) {
         splitCluster(p);
         continue;
       }
       if (outside || --p.life <= 0) continue;
-      p.vy += CLUSTER_GRAVITY_LOCAL * .47;
-      p.rotation = std::atan2(p.vy, p.vx);
       projectiles[write++] = p;
       continue;
     }
@@ -538,10 +657,8 @@ void ProjectileSystem::updateProjectiles() {
       if (--p.fuse <= 0 && !outside) {
         int x = imax(1, imin(E.cols - 2, (int)std::lround(p.px)));
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
-        uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
-        int immunePlayer = p.owner > 0 ? p.owner : 0;
-        E.detonate(x, y, CLUSTER_BLAST_RADIUS_LOCAL, CLUSTER_BLAST_POWER_LOCAL,
-                   immunePlayer, GUNPOWDER, seed);
+        detonateOwnerAware(p, x, y, CLUSTER_BLAST_RADIUS_LOCAL,
+                           CLUSTER_BLAST_POWER_LOCAL, GUNPOWDER);
         continue;
       }
       if (outside || --p.life <= 0) continue;
@@ -549,53 +666,33 @@ void ProjectileSystem::updateProjectiles() {
       continue;
     }
 
-    if (p.kind == PK_SEISMIC_WAVE) {
-      double targetX = p.px + p.vx;
-      int direction = p.vx >= 0 ? 1 : -1;
-      int startX = (int)std::floor(p.px) + direction;
-      int endX = (int)std::floor(targetX);
-      int guessY = (int)std::lround(p.py);
-      std::vector<int> cells;
-      int x0 = E.cols, y0 = E.rows, x1 = 0, y1 = 0;
-      bool foundAny = false, lostGround = false;
-      for (int x = startX;
-           direction > 0 ? x <= endX : x >= endX; x += direction) {
-        if (x <= 0 || x >= E.cols - 1) { lostGround = true; break; }
-        int surfaceY = -1;
-        for (int d = 0; d <= 6 && surfaceY < 0; d++) {
-          int candidates[2] = {guessY - d, guessY + d};
-          int n = d == 0 ? 1 : 2;
-          for (int ci = 0; ci < n; ci++) {
-            int y = candidates[ci];
-            if (y <= 1 || y >= E.rows - 4) continue;
-            if (blocksPoint(x, y) && !blocksPoint(x, y - 1)) {
-              surfaceY = y;
-              break;
-            }
-          }
+    if (p.kind == PK_MINIGUN_ROUND) {
+      bool hit = false, outside = false;
+      double distance = std::hypot(p.vx, p.vy);
+      int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
+      double sx = p.vx / steps, sy = p.vy / steps;
+      for (int step = 0; step < steps && !hit; step++) {
+        double nx = p.px + sx, ny = p.py + sy;
+        if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows - 1) {
+          outside = true;
+          break;
         }
-        if (surfaceY < 0) { lostGround = true; break; }
-        foundAny = true;
-        guessY = surfaceY;
-        auto addCell = [&](int cx, int cy) {
-          if (cx <= 0 || cx >= E.cols - 1 || cy <= 0 || cy >= E.rows - 1) return;
-          cells.push_back(E.I(cx, cy));
-          x0 = imin(x0, cx); y0 = imin(y0, cy);
-          x1 = imax(x1, cx); y1 = imax(y1, cy);
-        };
-        addCell(x, surfaceY);
-        addCell(x, surfaceY + 1);
-        if (((x + p.id) & 3) == 0) {
-          addCell(x, surfaceY + 2);
-          addCell(x + direction, surfaceY + 3);
+        if (materialStopsPoint(nx, ny) || hitsCreature(nx, ny, .48, p.owner) ||
+            hitsPlayer(nx, ny, .48, p.owner)) {
+          hit = true;
+          p.px = nx; p.py = ny;
+          break;
         }
+        p.px = nx; p.py = ny;
       }
-      if (!foundAny) continue;
-      eraseSeismicCells(cells, x0, y0, x1, y1);
-      p.px = targetX;
-      p.py = guessY;
-      damageSplash(p.px, p.py - 1.5, 4, SEISMIC_WAVE_DAMAGE_LOCAL, p.owner, true);
-      if (lostGround || p.px < 1 || p.px >= E.cols - 1 || --p.life <= 0) continue;
+      if (hit) {
+        int x = imax(1, imin(E.cols - 2, (int)std::floor(p.px)));
+        int y = imax(1, imin(E.rows - 2, (int)std::floor(p.py)));
+        detonateOwnerAware(p, x, y, MINIGUN_BLAST_RADIUS_LOCAL,
+                           MINIGUN_BLAST_POWER_LOCAL, GUNPOWDER);
+        continue;
+      }
+      if (outside || --p.life <= 0) continue;
       projectiles[write++] = p;
       continue;
     }

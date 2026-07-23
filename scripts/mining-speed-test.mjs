@@ -53,22 +53,22 @@ check(`dig tool: wood between sand and stone (${digSand} < ${digWood} && ${digWo
 const digDirt = hitsToBreak(MAT.DIRT, TC.dig, TT.wood); // durability 2, shovel-class
 check(`dig tool ignores material type at equal hardness (sand=${digSand}, dirt=${digDirt})`, digSand === digDirt);
 
-// Exercise the real survival path: crafted Mining Tool + held input + engine steps.
-// Bare hand (empty slot) still breaks stone, just more slowly.
-function survivalStepsToBreakStone(useTool) {
+// Exercise the real survival path: selected Mining Tool + held input + engine
+// steps. The universal tool receives its survival-only 10x boost; bare hand and
+// the classed speed table retain their exact previous timings.
+function survivalStepsToBreakStone(toolClass, toolTier) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
   for (let x = 30; x < 90; x++) for (let y = 70; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
   e.finalizeStoneDraft();
   e.setSurvivalInventory(true);
   const id = e.spawnPlayer(55, 62);
-  let slot = 3;
-  if (useTool) {
-    e.addToInventory(id, MAT.WOOD, 24);
-    e.craft(id, 0);
-    slot = e.getInventory(id).slots.findIndex((candidate) => candidate.isTool);
-  }
+  const slot = toolClass === TC.dig
+    ? e.getInventory(id).slots.findIndex((candidate) => candidate.isTool)
+    : 3;
   e.setSelectedSlot(id, slot);
-  e.setSelectedFootprint(id, 0); // isolate tool-class speed from area scaling
+  if (toolClass !== TC.dig) e.setPlayerTool(id, toolClass, toolTier);
+  // Keep the real default 3x3 footprint: its nine-cell work scaling makes the
+  // player-visible stone timing 48 -> 5 steps, closely reflecting the 10x boost.
   let steps = 0;
   while (e.getGrid()[70 * COLS + 60] !== MAT.EMPTY && steps < 500) {
     e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX: 60, aimY: 70, tool: 0, seq: steps });
@@ -80,10 +80,15 @@ function survivalStepsToBreakStone(useTool) {
   return { steps, broke };
 }
 
-const survivalDig = survivalStepsToBreakStone(true);
-const survivalHand = survivalStepsToBreakStone(false);
-check(`inventory dig tool breaks stone (${survivalDig.steps} steps)`, survivalDig.broke);
-check(`bare hand still breaks stone, slower (${survivalHand.steps} > ${survivalDig.steps})`, survivalHand.broke && survivalHand.steps > survivalDig.steps);
+const survivalDig = survivalStepsToBreakStone(TC.dig, TT.wood);
+const survivalHand = survivalStepsToBreakStone(TC.hand, TT.hand);
+const survivalWoodPick = survivalStepsToBreakStone(TC.pickaxe, TT.wood);
+check(`inventory dig tool breaks stone about 10x faster (48 -> ${survivalDig.steps})`,
+  survivalDig.broke && survivalDig.steps === 5);
+check(`bare-hand stone timing is unchanged (${survivalHand.steps})`,
+  survivalHand.broke && survivalHand.steps === 144);
+check(`classed wood-pickaxe stone timing is unchanged (${survivalWoodPick.steps})`,
+  survivalWoodPick.broke && survivalWoodPick.steps === 18);
 
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);

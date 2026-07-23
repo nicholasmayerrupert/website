@@ -20,18 +20,18 @@ const stoneFloor = (e, top) => {
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
 check('roster includes ambient fauna plus all five explosive-survival enemies',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,QUAKE_BRUTE');
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER');
 
-// A viable water habitat still establishes the enabled ambient fish while the
-// temporarily retired predator remains absent from natural populations.
+// Retired fauna remain available to direct spawns, but even an ideal habitat
+// must not add them to a natural population.
 {
   const e = mk();
   waterBox(e, 4, 4, COLS - 4, ROWS - 4);
   e.setCreatureRuntime(true, true);
   e.stepActors();
   const species = e.getCreatures().filter((c) => c.alive).map((c) => c.species);
-  check('water habitat seeds minnows without naturally spawning pike',
-    species.includes(CREATURE.MINNOW) && !species.includes(CREATURE.PIKE));
+  check('water habitat does not naturally spawn minnows or pike',
+    !species.includes(CREATURE.MINNOW) && !species.includes(CREATURE.PIKE));
   e.destroy();
 }
 
@@ -162,56 +162,43 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
   e.destroy();
 }
 
-// Continuous focus spawning: enabled land, cave, and air inhabitants appear
-// near a normal surface player on the first actor tick, in their actual habitats.
+// Continuous focus spawning: the remaining ambient creature appears near a
+// normal surface player on the first actor tick in its actual habitat.
 {
   const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
   e.setCreatureRuntime(true, true);
   const playerId = e.spawnPlayerAtSurface(224), player = e.getPlayer(playerId);
   e.stepActors();
   const initial = e.getCreatures();
-  const fox = initial.find((c) => c.species === CREATURE.FOX);
   const mole = initial.find((c) => c.species === CREATURE.MOLE);
-  const bird = initial.find((c) => c.species === CREATURE.BIRD);
-  const disabledNatural = [CREATURE.PIKE, CREATURE.HARE, CREATURE.CRAWLER];
+  const disabledNatural = [
+    CREATURE.MINNOW, CREATURE.PIKE, CREATURE.FOX,
+    CREATURE.HARE, CREATURE.CRAWLER, CREATURE.BIRD,
+  ];
   const surfaceAt = (c) => e.worldSurfaceAt(e.getWorldOffsetX() + Math.floor(c.x + c.w / 2));
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
-  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46, 40, 38, 50];
+  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46, 40, 38, 44];
   const tooClose = initial.filter((c) => distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
   check(`habitat-snapped natural spawns preserve player safety distance (${tooClose.length} too close)`, tooClose.length === 0);
-  check('disabled pike, hare, and crawler populations do not spawn naturally',
+  check('retired fauna do not spawn naturally',
     !initial.some((c) => disabledNatural.includes(c.species)));
-  check('surface fox spawns near the visible player', fox && distFromPlayer(fox) <= 78);
-  check(`surface fox stands on generated terrain (y ${fox?.y.toFixed(1)})`,
-    fox && Math.abs(fox.y + fox.h - surfaceAt(fox)) <= 4);
   check('cave mole spawns in a loaded underground cavity', mole && mole.y > surfaceAt(mole) + 10);
-  const birdDistance = bird ? distFromPlayer(bird) : Infinity;
-  const birdClearance = bird ? surfaceAt(bird) - (bird.y + bird.h) : -Infinity;
-  check(`bird spawns in visible open sky (distance ${birdDistance.toFixed(1)}, clearance ${birdClearance.toFixed(1)})`,
-    bird && birdDistance <= 128 && birdClearance > 8);
-  const birdStart = bird ? { x: bird.x, y: bird.y, frame: bird.animFrame } : null;
-  actors(e, 6);
-  const birdAnimated = bird && byId(e, bird.id);
-  check('bird wing animation advances', birdAnimated && birdAnimated.animFrame !== birdStart.frame);
-  actors(e, 120);
-  const movedBird = bird && byId(e, bird.id);
-  check('bird flies through the world', movedBird && Math.hypot(movedBird.x - birdStart.x, movedBird.y - birdStart.y) > 2);
   actors(e, 1800);
   const later = e.getCreatures();
   const count = (species) => later.filter((c) => c.species === species && c.alive).length;
   const active = later.filter((c) => c.alive).length;
-  check(`disabled natural populations remain absent (pike ${count(CREATURE.PIKE)}, hare ${count(CREATURE.HARE)}, crawler ${count(CREATURE.CRAWLER)})`,
+  check(`retired natural populations remain absent (${disabledNatural.map((species) => count(species)).join('/')})`,
     disabledNatural.every((species) => count(species) === 0));
-  check(`enabled continuous spawning remains capped (fox ${count(CREATURE.FOX)}, mole ${count(CREATURE.MOLE)}, bird ${count(CREATURE.BIRD)})`,
-    count(CREATURE.FOX) <= 1 && count(CREATURE.MOLE) <= 1 && count(CREATURE.BIRD) <= 2);
+  check(`enabled continuous spawning remains capped (mole ${count(CREATURE.MOLE)})`,
+    count(CREATURE.MOLE) <= 1);
   check(`loaded population has a hard mixed-species cap (${active}/8)`, active <= 8);
   e.destroy();
 }
 
 // Random browser worlds must not produce an empty-looking game. Exercise a
 // spread of seeds long enough for several bounded spawn attempts and require
-// every enabled habitat population to establish while disabled populations
-// remain absent.
+// the enabled cave population to establish while retired populations remain
+// absent.
 {
   let established = 0;
   for (let seed = 1; seed <= 8; seed++) {
@@ -220,12 +207,15 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
     e.spawnPlayerAtSurface(224);
     actors(e, 4800);
     const ids = new Set(e.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    const enabled = [CREATURE.FOX, CREATURE.MOLE, CREATURE.BIRD];
-    const disabled = [CREATURE.PIKE, CREATURE.HARE, CREATURE.CRAWLER];
+    const enabled = [CREATURE.MOLE];
+    const disabled = [
+      CREATURE.MINNOW, CREATURE.PIKE, CREATURE.FOX,
+      CREATURE.HARE, CREATURE.CRAWLER, CREATURE.BIRD,
+    ];
     if (enabled.every((id) => ids.has(id)) && disabled.every((id) => !ids.has(id))) established++;
     e.destroy();
   }
-  check(`enabled land/cave/bird populations establish without disabled fauna (${established}/8)`, established === 8);
+  check(`enabled cave populations establish without retired fauna (${established}/8)`, established === 8);
 }
 
 // Lethal contact enters the explicit death state. Respawn is rejected during

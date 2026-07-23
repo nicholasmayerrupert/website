@@ -138,16 +138,19 @@ accumulate catch-up debt.
 `/game` is explosive survival. Players spawn with an automatic blast gun whose
 swept, high-velocity rounds detonate on the first liquid, solid, or creature hit.
 Dynamiteers throw bouncing timed charges; bore sentinels telegraph, lock, and then
-erase a thick line through both simulated layers. Caustic mortarmen lob
-terrain-poisoning acid shells, cluster wasps scatter independently fused bombs,
-and quake brutes send component-safe fractures racing through both layers.
+erase a thick line through both simulated layers. Caustic mortarmen lob large,
+double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
+carriers that split into three independently fused mini-dynamites; and
+minigunners saturate terrain with rapid, pinprick explosive rounds.
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
 an airborne rechargeable jetpack, and safe original-spawn respawning remain
 authoritative in the engine. Mining, material pickups,
 block placement, the 36-slot inventory, tool-size presets, and crafting remain
 part of survival: defeated demolition crews can also drop their weapons into
-that same inventory.
+that same inventory. The starting universal dig tool cuts ordinary terrain at
+roughly ten times its previous rate without accelerating bare hands or crafted
+material-specific picks.
 
 Projectile kind, fuse, and rotation plus creature attack state, progress, and
 buffer-local aim are packed into the ABI snapshots; the worker mirror restores
@@ -157,7 +160,9 @@ JavaScript.
 
 Creatures use absolute-world poses so they survive streaming. Off-window
 creatures hibernate, natural populations are capped locally and globally, and
-explicit spawn eggs bypass natural-spawn caps.
+explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
+crawlers, and birds are currently retired from natural spawning but remain
+available through their creative eggs.
 
 ### Controls
 

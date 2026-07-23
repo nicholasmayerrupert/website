@@ -361,6 +361,10 @@ struct SurvivalFootprint {
 static const int SURVIVAL_FOOTPRINT_MAX_SIZE = 8;
 static const int SURVIVAL_FOOTPRINT_DEFAULT_ID = 2;  // 3x3 in the default preset list
 static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
+// The starter/crafted TC_DIG tool is the fast universal survival tool. Keep this
+// separate from the shared survival multiplier so hands and classed tools retain
+// their existing material/tier timing.
+static const uint32_t SURVIVAL_DIG_TOOL_SPEED_MULTIPLIER = 10;
 
 // Creative brush mode (tools.inc): the searchable palette selects ANY material,
 // any seed species, the eraser, or the cube; the brush routes by mode rather than a

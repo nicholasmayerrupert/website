@@ -1,7 +1,7 @@
 // Browser regression for creature visibility on /fps. It verifies that the
-// creative performance route enables the active land/cave/air populations,
-// that they spawn, animate, and move, and that debug hitboxes alter the
-// rendered pixels around every active ambient species.
+// creative performance route enables the remaining ambient cave population,
+// that it spawns and moves, that retired fauna stay absent, and that debug
+// hitboxes alter the rendered pixels around the active species.
 //
 //   node scripts/creature-e2e.mjs
 //   node scripts/creature-e2e.mjs --png /tmp/creatures-fps.png
@@ -49,7 +49,7 @@ try {
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return [2, 5, 6].every((id) => species.has(id));
+    return species.has(5);
   }, null, { timeout: 12000 });
 
   console.log('/fps creature presentation');
@@ -60,17 +60,16 @@ try {
     return { creatures, debugAttr: host.hasAttribute('debug-hitboxes'), hud };
   });
   const species = new Set(initial.creatures.map((c) => c.species));
-  check('fox and mole spawned', species.has(2) && species.has(5));
-  check(`bird spawned (${initial.creatures.filter((c) => c.species === 6).length})`, species.has(6));
-  check('disabled fauna and survival enemies stay absent from /fps natural spawns',
-    [1, 3, 4, 7, 8, 9, 10, 11].every((id) => !species.has(id)));
+  check('mole spawned', species.has(5));
+  check('retired fauna and survival enemies stay absent from /fps natural spawns',
+    [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11].every((id) => !species.has(id)));
   check('/fps enables debug hitboxes', initial.debugAttr);
   check('/fps HUD reports creatures', initial.hud.includes('creatures'));
 
   // Freeze world/actor updates so the only pixel difference is the hitbox
-  // overlay. Recenter on each habitat species before probing its AABB.
+  // overlay. Recenter on the mole before probing its AABB.
   await page.evaluate(() => window.__sandTest.setPaused(true));
-  for (const [id, name] of [[2, 'fox'], [5, 'mole'], [6, 'bird']]) {
+  for (const [id, name] of [[5, 'mole']]) {
     const result = await page.evaluate((speciesId) => {
       const T = window.__sandTest;
       const c = T.getCreatures().find((x) => x.alive && x.species === speciesId);
@@ -94,84 +93,47 @@ try {
     check(`${name} sprite + hitbox rendered (${result.changed} changed pixels)`, result.changed > 0);
   }
 
-  // Actor sprites must sample the terrain light buffer, not render as an
-  // always-fullbright overlay. A bird is isolated against empty sky, so this
-  // probe measures the sprite itself without terrain pixels contaminating it.
-  const actorLight = await page.evaluate(() => {
-    const T = window.__sandTest;
-    const c = T.getCreatures().find((x) => x.alive && x.species === 6);
-    const info = T.info();
-    T.setCam(c.x + c.w / 2 - info.viewCols / 2, c.y + c.h / 2 - info.viewRows / 2);
-    T.setHitboxes(false);
-    const r = T.cellRect(c.x - 2, c.y - 1);
-    const x = Math.max(0, Math.floor(r.x)), y = Math.max(0, Math.floor(r.y));
-    const w = Math.min(info.canvasW - x, Math.ceil(9 * r.size));
-    const h = Math.min(info.canvasH - y, Math.ceil(5 * r.size));
-    const brightness = (pixels) => {
-      let sum = 0;
-      for (let i = 0; i < pixels.length; i += 4) sum += pixels[i] + pixels[i + 1] + pixels[i + 2];
-      return sum;
-    };
-    T.setSkyLight(255);
-    const dayFactor = T.actorLight(c.x, c.y, c.w, c.h);
-    const day = brightness(T.readPixels(x, y, w, h));
-    T.setSkyLight(0);
-    const nightFactor = T.actorLight(c.x, c.y, c.w, c.h);
-    const night = brightness(T.readPixels(x, y, w, h));
-    T.setSkyLight(255);
-    return { day, night, dayFactor, nightFactor };
-  });
-  check(`actors respond to world light (${actorLight.dayFactor.toFixed(2)} day -> ${actorLight.nightFactor.toFixed(2)} dark)`,
-    actorLight.day > actorLight.night && actorLight.dayFactor > 0 && actorLight.nightFactor < actorLight.dayFactor * 0.75);
-
-  // Resume and observe actor state rather than relying on a timed screenshot:
-  // the bird must advance animation frames and actually change position.
-  const bird0 = await page.evaluate(() => {
+  // Resume and observe actor state rather than relying on a timed screenshot.
+  const mole0 = await page.evaluate(() => {
     window.__sandTest.setHitboxes(true);
     window.__sandTest.setPaused(false);
-    const c = window.__sandTest.getCreatures().find((x) => x.alive && x.species === 6);
+    const c = window.__sandTest.getCreatures().find((x) => x.alive && x.species === 5);
     const off = window.__sandTest.worldOffset();
     return { ...c, worldX: c.x + off.x, worldY: c.y + off.y };
   });
-  await page.waitForFunction(({ id, frame }) => {
-    const c = window.__sandTest.getCreatures().find((x) => x.id === id);
-    return c && c.animFrame !== frame;
-  }, { id: bird0.id, frame: bird0.animFrame }, { timeout: 8000 });
   await page.waitForFunction(({ id, worldX, worldY }) => {
     const c = window.__sandTest.getCreatures().find((x) => x.id === id);
     if (!c) return false;
     const off = window.__sandTest.worldOffset();
     return Math.hypot(c.x + off.x - worldX, c.y + off.y - worldY) > 0.1;
-  }, { id: bird0.id, worldX: bird0.worldX, worldY: bird0.worldY }, { timeout: 8000 });
-  const bird1 = await page.evaluate((id) => {
+  }, { id: mole0.id, worldX: mole0.worldX, worldY: mole0.worldY }, { timeout: 8000 });
+  const mole1 = await page.evaluate((id) => {
     const c = window.__sandTest.getCreatures().find((x) => x.id === id);
     const off = window.__sandTest.worldOffset();
     return { ...c, worldX: c.x + off.x, worldY: c.y + off.y };
-  }, bird0.id);
-  const moved = Math.hypot(bird1.worldX - bird0.worldX, bird1.worldY - bird0.worldY);
-  check('bird animation advances through a four-pose cycle', bird1.animFrame >= 0 && bird1.animFrame < 4);
-  check(`bird flies (${moved.toFixed(2)} cells)`, moved > 0.1);
+  }, mole0.id);
+  const moved = Math.hypot(mole1.worldX - mole0.worldX, mole1.worldY - mole0.worldY);
+  check(`mole moves through its cave (${moved.toFixed(2)} cells)`, moved > 0.1);
 
   if (pngPath) {
-    const fox = await page.evaluate(() => window.__sandTest.getCreatures().find((c) => c.alive && c.species === 2));
+    const mole = await page.evaluate(() => window.__sandTest.getCreatures().find((c) => c.alive && c.species === 5));
     await page.evaluate((c) => {
       const T = window.__sandTest, i = T.info();
       T.setCam(c.x + c.w / 2 - i.viewCols / 2, c.y + c.h / 2 - i.viewRows / 2);
       T.setHitboxes(true); T.render();
-    }, fox);
+    }, mole);
     await page.screenshot({ path: pngPath });
     console.log(`  screenshot ${pngPath}`);
   }
 
   // The survival route is the real gameplay entry point. It should enable the
-  // ambient populations plus all five armed enemies without depending on
-  // /fps's diagnostics flag, and an air creature should intersect the current
-  // camera view.
+  // remaining ambient population plus all five armed enemies without depending
+  // on /fps's diagnostics flag, with an armed enemy in the current camera view.
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return [2, 5, 6, 7, 8, 9, 10, 11].every((id) => species.has(id));
+    return [5, 7, 8, 9, 10, 11].every((id) => species.has(id));
   }, null, { timeout: 12000 });
   const survival = await page.evaluate(() => {
     const T = window.__sandTest, info = T.info();
@@ -183,16 +145,16 @@ try {
     const population = T.getCreatures().filter((c) => c.alive);
     return {
       species: population.map((c) => c.species),
-      birdVisible: population.some((c) => c.species === 6 && visible(c)),
+      enemyVisible: population.some((c) => c.species >= 7 && visible(c)),
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
   });
   console.log('\n/game creature spawning');
-  check('survival spawns enabled ambient populations and all five armed enemies',
-    [2, 5, 6, 7, 8, 9, 10, 11].every((id) => survival.species.includes(id)));
-  check('survival keeps disabled natural populations absent',
-    [1, 3, 4].every((id) => !survival.species.includes(id)));
-  check('survival bird is in the camera view', survival.birdVisible);
+  check('survival spawns the mole and all five armed enemies',
+    [5, 7, 8, 9, 10, 11].every((id) => survival.species.includes(id)));
+  check('survival keeps retired natural populations absent',
+    [0, 1, 2, 3, 4, 6].every((id) => !survival.species.includes(id)));
+  check('a survival enemy is in the camera view', survival.enemyVisible);
   // Exact spawn coordinates are covered synchronously by creature-test.mjs.
   // Live browser actors can move before their mirrored snapshot is inspected.
   check('hitboxes remain an /fps diagnostic', !survival.debugAttr);

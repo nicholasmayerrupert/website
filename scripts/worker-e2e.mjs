@@ -138,7 +138,7 @@ try {
   const expectedEggLabels = [
     'Minnow Spawn Egg', 'Fox Spawn Egg', 'Mole Spawn Egg', 'Bird Spawn Egg',
     'Dynamiteer Spawn Egg', 'Bore Sentinel Spawn Egg', 'Caustic Mortarman Spawn Egg',
-    'Cluster Wasp Spawn Egg', 'Quake Brute Spawn Egg',
+    'Cluster Wasp Spawn Egg', 'Minigunner Spawn Egg',
   ];
   check('creative Main folder keeps the enabled spawn eggs at the bottom',
     mainLabels.slice(-expectedEggLabels.length).join(',') === expectedEggLabels.join(','),

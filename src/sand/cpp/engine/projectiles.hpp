@@ -15,7 +15,7 @@ class ProjectileSystem {
   void applyBoreCannonInput(Player& p, int previousInput);
   void applyAcidMortarInput(Player& p, int previousInput);
   void applyClusterLauncherInput(Player& p, int previousInput);
-  void applySeismicHammerInput(Player& p, int previousInput);
+  void applyMinigunInput(Player& p);
   void spawnArrow(Player& p, double charge);
   void spawnBlastRound(Player& p);
   void spawnDynamite(const Creature& thrower, double targetX, double targetY);
@@ -24,8 +24,8 @@ class ProjectileSystem {
   void spawnAcidShell(Player& shooter);
   void spawnClusterBomb(const Creature& shooter, double targetX, double targetY);
   void spawnClusterBomb(Player& shooter);
-  void spawnSeismicWave(const Creature& shooter, double targetX);
-  void spawnSeismicWave(Player& shooter);
+  void spawnMinigunRound(const Creature& shooter, double targetX, double targetY);
+  void spawnMinigunRound(Player& shooter);
   void spawnBoreBeam(int owner, double ox, double oy, double dx, double dy);
   void updateProjectiles();
   int buildSnapshot();
@@ -35,5 +35,6 @@ class ProjectileSystem {
   void spawnDynamiteAt(int owner, double sx, double sy, double targetX, double targetY);
   void spawnAcidShellAt(int owner, double sx, double sy, double targetX, double targetY);
   void spawnClusterBombAt(int owner, double sx, double sy, double targetX, double targetY);
-  void spawnSeismicWaveAt(int owner, double sx, double sy, double targetX);
+  void spawnMinigunRoundAt(int owner, double guardX, double guardY,
+                           double muzzleX, double muzzleY, double dirX, double dirY);
 };

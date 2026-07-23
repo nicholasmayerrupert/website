@@ -30,7 +30,7 @@ const expectedEggs = [
   ['Bore Sentinel Spawn Egg', CREATURE.BORE_SENTINEL],
   ['Caustic Mortarman Spawn Egg', CREATURE.CAUSTIC_MORTARMAN],
   ['Cluster Wasp Spawn Egg', CREATURE.CLUSTER_WASP],
-  ['Quake Brute Spawn Egg', CREATURE.QUAKE_BRUTE],
+  ['Minigunner Spawn Egg', CREATURE.MINIGUNNER],
 ];
 const menuTail = buildEntries().slice(-expectedEggs.length);
 check('creative menu ends with the nine enabled creature spawn eggs',

@@ -426,7 +426,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   }
   bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
                      heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
-                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_SEISMIC_HAMMER;
+                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN;
   if (alive && aimedWeapon) {
     // Aim from the shoulder, then extend an authored arm to a real hand anchor.
     // Weapon geometry below is grip-relative, so it rotates in the hand instead
@@ -519,15 +519,27 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                                          -.02 + std::sin(k * 2.094) * .30,
                                          .28, .94f, .57f, .12f);
       pixel(.10, .52, .52, .11f, .15f, .20f);
-    } else { // IK_SEISMIC_HAMMER
-      for (int i = -1; i < 7; i++) pixel(i * .46, -.02, .34, .34f, .23f, .14f);
-      for (int i = -1; i < 7; i += 2) pixel(i * .46, -.02, .16, .78f, .58f, .23f);
-      for (int side = -2; side <= 2; side++) {
-        float edge = std::abs(side) == 2 ? .18f : .28f;
-        pixel(3.05, side * .47, .68, edge, .22f, .24f);
+    } else { // IK_MINIGUN
+      // The rear motor and ammo drum sit around the grip while the barrel pack
+      // projects forward, so the weapon remains planted in the hand at every
+      // cursor angle. Alternating highlights give the rotary cage a live spin.
+      pixel(-.46, -.66, .86, .10f, .14f, .18f);
+      pixel(-.08, -.66, .94, .17f, .24f, .29f);
+      pixel(.34, -.66, .78, .27f, .34f, .35f);
+      pixel(-.16, -.04, 1.10, .13f, .18f, .21f);
+      pixel(-.16, -.04, .66, .74f, .53f, .16f);
+      pixel(.04, .52, .54, .15f, .18f, .19f);
+      int rotor = (E.actorTick / 2) % 3;
+      for (int barrel = 0; barrel < 3; barrel++) {
+        float hot = barrel == rotor ? .70f : .38f;
+        for (int i = 0; i < 8; i++)
+          pixel(.54 + i * .43, -1.04 + barrel * .36, .28,
+                hot, hot * .88f, hot * .66f);
       }
-      pixel(3.05, 0, .38, 1.0f, .62f, .12f);
-      pixel(2.70, -.48, .24, .96f, .84f, .28f);
+      for (int i = 0; i < 5; i++)
+        pixel(.72 + i * .67, -.68, .18, .10f, .13f, .15f);
+      pixel(3.76, -.68, .62, .19f, .22f, .22f);
+      pixel(3.94, -.68, .27, 1.0f, .55f, .10f);
     }
   }
 }
@@ -576,7 +588,7 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
              : itemKind == IK_BORE_CANNON ? 0xffb8d851u
              : itemKind == IK_ACID_MORTAR ? 0xff4fc760u
              : itemKind == IK_CLUSTER_LAUNCHER ? 0xffcf7939u
-             : itemKind == IK_SEISMIC_HAMMER ? 0xff42a5e9u
+             : itemKind == IK_MINIGUN ? 0xff3f586bu
              : (tier == TT_GOLD ? 0xff34c7f2u : tier == TT_IRON ? 0xffe4e0d8u : tier == TT_STONE ? 0xff8f969eu : 0xff447ab0u);
   float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
   float baseA = ((c >> 24) & 0xff) / 255.0f;
@@ -678,19 +690,25 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
     glSolidDev(cx - u * .05, bottom - u * .46, u * .25, u * .25);
     return;
   }
-  if (kind == IT_ITEM && itemKind == IK_SEISMIC_HAMMER) {
+  if (kind == IT_ITEM && itemKind == IK_MINIGUN) {
     double u = glCellDev;
     double bottom = (py + bob - camRow) * u + glOffY;
-    glUniform4f(glc->uColor, .32f, .21f, .13f, a);
-    glSolidDev(cx - u * 1.54, bottom - u * .54, u * 2.40, u * .38);
-    glUniform4f(glc->uColor, .76f, .55f, .20f, a);
-    glSolidDev(cx - u * 1.20, bottom - u * .48, u * 1.48, u * .16);
-    glUniform4f(glc->uColor, .18f, .21f, .23f, a);
-    glSolidDev(cx + u * .42, bottom - u * 1.38, u * 1.15, u * 1.38);
-    glUniform4f(glc->uColor, .31f, .33f, .34f, a);
-    glSolidDev(cx + u * .60, bottom - u * 1.18, u * .78, u * .98);
-    glUniform4f(glc->uColor, 1.0f, .59f, .10f, a);
-    glSolidDev(cx + u * .72, bottom - u * .90, u * .28, u * .28);
+    glUniform4f(glc->uColor, .10f, .14f, .18f, a);
+    glSolidDev(cx - u * 1.52, bottom - u * 1.28, u * 1.58, u * .86);
+    glUniform4f(glc->uColor, .24f, .32f, .36f, a);
+    glSolidDev(cx - u * 1.26, bottom - u * 1.45, u * 1.14, u * .42);
+    glUniform4f(glc->uColor, .72f, .53f, .18f, a);
+    glSolidDev(cx - u * 1.18, bottom - u * .96, u * .92, u * .72);
+    glUniform4f(glc->uColor, .37f, .43f, .44f, a);
+    for (int barrel = 0; barrel < 3; barrel++)
+      glSolidDev(cx - u * .10, bottom - u * (1.36 - barrel * .28), u * 1.72, u * .16);
+    glUniform4f(glc->uColor, .12f, .15f, .17f, a);
+    glSolidDev(cx + u * .18, bottom - u * 1.46, u * .24, u * 1.04);
+    glSolidDev(cx + u * .72, bottom - u * 1.46, u * .24, u * 1.04);
+    glUniform4f(glc->uColor, 1.0f, .52f, .08f, a);
+    glSolidDev(cx + u * 1.48, bottom - u * 1.19, u * .34, u * .34);
+    glUniform4f(glc->uColor, .12f, .16f, .18f, a);
+    glSolidDev(cx - u * .76, bottom - u * .50, u * .54, u * .64);
     return;
   }
   glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
@@ -790,71 +808,102 @@ void GLPresenter::glDrawProjectiles() {
     if (kind == PK_ACID_SHELL) {
       double u = glCellDev, ax = std::cos(rotation), ay = std::sin(rotation);
       double pxn = -ay, pyn = ax;
-      for (int trail = 1; trail <= 5; trail++) {
-        double fade = (6 - trail) / 6.0;
-        double tx = cx - ax * trail * u * .42 + pxn * ((trail & 1) ? .14 : -.14) * u;
-        double ty = cy - ay * trail * u * .42 + pyn * ((trail & 1) ? .14 : -.14) * u;
+      double scale = std::max(.75, std::min(2.0, charge));
+      for (int trail = 1; trail <= 6; trail++) {
+        double fade = (7 - trail) / 7.0;
+        double tx = cx - ax * trail * u * (.315 * scale)
+          + pxn * ((trail & 1) ? .11 : -.11) * scale * u;
+        double ty = cy - ay * trail * u * (.315 * scale)
+          + pyn * ((trail & 1) ? .11 : -.11) * scale * u;
         glUniform4f(glc->uColor, .48f, .92f, .12f, .16f + .42f * fade);
-        double drop = u * (.14 + .18 * fade);
+        double drop = u * scale * (.11 + .17 * fade);
         glSolidDev(tx - drop * .5, ty - drop * .5, drop, drop);
       }
       glUniform4f(glc->uColor, .10f, .16f, .10f, 1);
-      glSolidDev(cx - u * .66, cy - u * .50, u * 1.32, u);
+      glSolidDev(cx - u * .69 * scale, cy - u * .50 * scale,
+                 u * 1.38 * scale, u * scale);
       glUniform4f(glc->uColor, .37f, .68f, .16f, 1);
-      glSolidDev(cx - u * .42, cy - u * .36, u * .84, u * .72);
+      glSolidDev(cx - u * .50 * scale, cy - u * .37 * scale,
+                 u * scale, u * .74 * scale);
       glUniform4f(glc->uColor, .72f, 1.0f, .27f, 1);
-      glSolidDev(cx - u * .20, cy - u * .20, u * .40, u * .40);
+      glSolidDev(cx - u * .255 * scale, cy - u * .23 * scale,
+                 u * .51 * scale, u * .46 * scale);
+      glUniform4f(glc->uColor, .89f, 1.0f, .48f, 1);
+      glSolidDev(cx - u * .11 * scale, cy - u * .11 * scale,
+                 u * .22 * scale, u * .22 * scale);
       glUniform4f(glc->uColor, .18f, .25f, .15f, 1);
-      glSolidDev(cx + ax * u * .48 - u * .24, cy + ay * u * .48 - u * .24, u * .48, u * .48);
+      glSolidDev(cx + ax * u * .55 * scale - u * .205 * scale,
+                 cy + ay * u * .55 * scale - u * .205 * scale,
+                 u * .41 * scale, u * .41 * scale);
       continue;
     }
     if (kind == PK_CLUSTER_BOMB) {
       double u = glCellDev, ax = std::cos(rotation), ay = std::sin(rotation);
       double pxn = -ay, pyn = ax;
       if (charge < .5) {
-        for (int trail = 1; trail <= 5; trail++) {
+        for (int trail = 1; trail <= 6; trail++) {
           float fade = (6 - trail) / 6.0f;
-          double tx = cx - ax * trail * u * .50, ty = cy - ay * trail * u * .50;
+          double tx = cx - ax * trail * u * .42, ty = cy - ay * trail * u * .42;
           glUniform4f(glc->uColor, 1.0f, .38f, .055f, .14f + .34f * fade);
-          double s = u * (.12 + .20 * fade);
+          double s = u * (.14 + .22 * fade);
           glSolidDev(tx - s * .5, ty - s * .5, s, s);
         }
         glUniform4f(glc->uColor, .08f, .13f, .21f, 1);
-        glSolidDev(cx - u * .76, cy - u * .54, u * 1.52, u * 1.08);
+        glSolidDev(cx - u * 1.24, cy - u * .88, u * 2.48, u * 1.76);
         glUniform4f(glc->uColor, .27f, .46f, .67f, 1);
-        glSolidDev(cx - u * .46, cy - u * .35, u * .92, u * .70);
+        glSolidDev(cx - u * .88, cy - u * .61, u * 1.76, u * 1.22);
+        glUniform4f(glc->uColor, .10f, .17f, .25f, 1);
+        glSolidDev(cx - u * .19, cy - u * .80, u * .38, u * 1.60);
         glUniform4f(glc->uColor, .96f, .47f, .08f, 1);
-        glSolidDev(cx + ax * u * .58 - u * .28, cy + ay * u * .58 - u * .28, u * .56, u * .56);
+        glSolidDev(cx + ax * u * .92 - u * .33, cy + ay * u * .92 - u * .33, u * .66, u * .66);
         for (int side : {-1, 1}) {
-          double fx = cx - ax * u * .38 + pxn * side * u * .64;
-          double fy = cy - ay * u * .38 + pyn * side * u * .64;
-          glSolidDev(fx - u * .20, fy - u * .20, u * .40, u * .40);
+          double fx = cx - ax * u * .42 + pxn * side * u * 1.02;
+          double fy = cy - ay * u * .42 + pyn * side * u * 1.02;
+          glSolidDev(fx - u * .24, fy - u * .24, u * .48, u * .48);
         }
       } else {
+        // Split children are deliberately literal mini dynamite sticks. Their
+        // independently randomized rotations make the three-way burst obvious
+        // even before their staggered fuses reach zero.
         double pulse = (((int)fuse / 3) & 1) ? 1.0 : .70;
-        glUniform4f(glc->uColor, .15f, .10f, .08f, 1);
-        glSolidDev(cx - u * .48, cy - u * .48, u * .96, u * .96);
-        glUniform4f(glc->uColor, .94f * pulse, .28f * pulse, .055f, 1);
-        glSolidDev(cx - u * .30, cy - u * .30, u * .60, u * .60);
+        for (int seg = -2; seg <= 2; seg++) {
+          double sx = cx + ax * seg * u * .25;
+          double sy = cy + ay * seg * u * .25;
+          glUniform4f(glc->uColor, .76f * pulse, .075f, .045f, 1);
+          glSolidDev(sx - u * .25, sy - u * .25, u * .50, u * .50);
+        }
+        glUniform4f(glc->uColor, .12f, .10f, .09f, 1);
+        for (int side = -1; side <= 1; side++) {
+          double bx = cx + pxn * side * u * .22;
+          double by = cy + pyn * side * u * .22;
+          glSolidDev(bx - u * .17, by - u * .17, u * .34, u * .34);
+        }
+        double fx = cx + ax * u * 1.48, fy = cy + ay * u * 1.48;
         glUniform4f(glc->uColor, 1.0f, .78f, .18f, 1);
-        glSolidDev(cx - u * .12, cy - u * .12, u * .24, u * .24);
+        glSolidDev(fx - u * .23, fy - u * .23, u * .46, u * .46);
+        glUniform4f(glc->uColor, 1.0f, .28f, .035f, .88f);
+        glSolidDev(fx - u * .36, fy - u * .36, u * .72, u * .72);
       }
       continue;
     }
-    if (kind == PK_SEISMIC_WAVE) {
-      double u = glCellDev, dir = vx >= 0 ? 1.0 : -1.0;
-      double beat = ((E.actorTick + i) & 1) ? .18 : 0.0;
-      for (int shard = 0; shard < 4; shard++) {
-        double sx = cx - dir * shard * u * .72;
-        double rise = u * (.42 + (3 - shard) * .30 + (shard == 0 ? beat : 0));
-        glUniform4f(glc->uColor, shard < 2 ? .31f : .22f, shard < 2 ? .28f : .21f,
-                    shard < 2 ? .25f : .20f, .96f - shard * .14f);
-        glSolidDev(sx - u * .38, cy - rise, u * .76, rise);
-        glUniform4f(glc->uColor, .96f, .53f, .10f, .92f - shard * .15f);
-        glSolidDev(sx - u * .09, cy - rise * .82, u * .18, rise * .62);
+    if (kind == PK_MINIGUN_ROUND) {
+      // The physical round is intentionally tiny; a sparse eight-segment hot tracer
+      // keeps very fast shots readable without implying a larger blast radius.
+      double u = glCellDev;
+      double speed = std::max(.001, std::hypot(vx, vy));
+      double nx = vx / speed, ny = vy / speed;
+      for (int s = 1; s <= 8; s++) {
+        float fade = (9 - s) / 8.0f;
+        double tx = cx - nx * s * u * .62;
+        double ty = cy - ny * s * u * .62;
+        double size = u * (.10 + .15 * fade);
+        glUniform4f(glc->uColor, 1.0f, .34f + .50f * fade, .055f, .12f + .70f * fade);
+        glSolidDev(tx - size * .5, ty - size * .5, size, size);
       }
-      glUniform4f(glc->uColor, .62f, .48f, .31f, .34f);
-      glSolidDev(cx - dir * u * 2.85 - u * .45, cy - u * .20, u * 3.20, u * .42);
+      glUniform4f(glc->uColor, 1.0f, .82f, .26f, 1);
+      glSolidDev(cx - u * .24, cy - u * .24, u * .48, u * .48);
+      glUniform4f(glc->uColor, 1.0f, 1.0f, .79f, 1);
+      glSolidDev(cx - u * .10, cy - u * .10, u * .20, u * .20);
       continue;
     }
     double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
@@ -887,7 +936,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     {{0,0,0,0},{17/255.f,23/255.f,29/255.f,1},{48/255.f,62/255.f,72/255.f,1},{80/255.f,108/255.f,116/255.f,1},{57/255.f,211/255.f,201/255.f,1},{228/255.f,255/255.f,222/255.f,1}},
     {{0,0,0,0},{17/255.f,27/255.f,18/255.f,1},{43/255.f,67/255.f,37/255.f,1},{91/255.f,111/255.f,49/255.f,1},{139/255.f,201/255.f,45/255.f,1},{218/255.f,248/255.f,113/255.f,1}},
     {{0,0,0,0},{29/255.f,22/255.f,18/255.f,1},{86/255.f,53/255.f,24/255.f,1},{211/255.f,125/255.f,28/255.f,1},{248/255.f,199/255.f,55/255.f,1},{126/255.f,213/255.f,231/255.f,1}},
-    {{0,0,0,0},{27/255.f,25/255.f,27/255.f,1},{65/255.f,60/255.f,68/255.f,1},{105/255.f,91/255.f,78/255.f,1},{178/255.f,128/255.f,58/255.f,1},{255/255.f,103/255.f,25/255.f,1}},
+    {{0,0,0,0},{16/255.f,24/255.f,32/255.f,1},{49/255.f,66/255.f,79/255.f,1},{99/255.f,120/255.f,135/255.f,1},{214/255.f,173/255.f,68/255.f,1},{255/255.f,93/255.f,34/255.f,1}},
   };
   static const char* const grids[CS_COUNT][4][7] = {
     {// minnow: a forked tail and alternating body bend
@@ -945,11 +994,11 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000000000000","0011500511000","0001522510000","0002334434500","0001223221100","0000101010000","0000000000000"},
      {"0000000000000","0000111100000","0015223225100","0152334434550","0101223220100","0000134310000","0000011100000"},
      {"0000000000000","0011500511000","0001522510000","0002334434555","0001223221100","0000101010000","0000000000000"}},
-    {// quake brute: broad stone armor, hammer fists, molten seismic seams
-     {"0001111111000","0012333332100","0123344333210","1123333333211","0012222222100","0011000011000","0110000001100"},
-     {"0001111111000","0012333332100","1123344333211","0123333333210","0012222222100","0000110110000","0011000001100"},
-     {"0111000001110","0122100012210","0012333332100","0123344333210","1123333333211","0011222211000","0110000001100"},
-     {"0001111111000","0012335332100","0123355333210","0123333333210","1122222223211","0551000011550","5550000005550"}},
+    {// minigunner: armored gunner, brass feed, rotary cage, and firing bloom
+     {"0000011100000","0000123210000","0001233321000","0012333441000","0012222341000","0011000011000","0110000001100"},
+     {"0000011100000","0000123210000","0001233321000","0012333441000","0012222341000","0000110110000","0011000001100"},
+     {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0000110110000","0011000001100"},
+     {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0011000011000","0110000001100"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const int sw = 13, sh = 7;
@@ -1056,33 +1105,6 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       glSolidDev(bx - cell * .11, by - (sySign < 0 ? 0 : arm), cell * .22, arm);
     }
   }
-  if (alive && speciesId == CS_QUAKE_BRUTE &&
-      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
-    double ox = px + CREATURE_SPECIES[speciesId].w * .5;
-    double groundY = py + CREATURE_SPECIES[speciesId].h - .18;
-    double dx = aimX - ox;
-    double progress = std::max(0.0, std::min(1.0, attackProgress));
-    int samples = imax(2, (int)std::ceil(std::fabs(dx) / 2.4));
-    for (int i = 0; i <= samples; i++) {
-      double t = i / (double)samples;
-      double wx = ox + dx * t;
-      double rise = cell * (.30 + ((i + (int)(progress * 8)) & 2) * .12 + progress * .54);
-      double bx = (wx - camCol) * cell + glOffX;
-      double by = (groundY - camRow) * cell + glOffY;
-      glUniform4f(glc->uColor, 1.0f, .28f + .38f * (float)progress, .055f,
-                  attackState == CAS_FIRING ? .86f : (float)(.16 + progress * .48));
-      glSolidDev(bx - cell * .12, by - rise, cell * .24, rise);
-      glSolidDev(bx - cell * .45, by - cell * .16, cell * .90, cell * .22);
-    }
-    if (attackState == CAS_FIRING) {
-      double bx = (ox - camCol) * cell + glOffX;
-      double by = (groundY - camRow) * cell + glOffY;
-      glUniform4f(glc->uColor, 1.0f, .69f, .18f, .82f);
-      glSolidDev(bx - cell * 2.4, by - cell * .34, cell * 4.8, cell * .68);
-      glUniform4f(glc->uColor, 1.0f, .92f, .46f, .95f);
-      glSolidDev(bx - cell * .75, by - cell * .70, cell * 1.5, cell * .70);
-    }
-  }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
   double sy = (py - camRow) * cell + glOffY - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
   int frame = animFrame & 3;
@@ -1109,6 +1131,52 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glUniform4f(glc->uColor, col[0] * fade * light, col[1] * fade * light, col[2] * fade * light, col[3]);
     double drawY = alive ? sy + r * cell : corpseBase - (sh - r) * pixelH;
     glSolidDev(sx + cc * cell, drawY, cell, pixelH);
+  }
+  if (alive && speciesId == CS_MINIGUNNER) {
+    // Draw the active weapon over the body sprite so its grip remains attached
+    // while the barrel pack follows the authoritative target in both axes.
+    double gunX = px + CREATURE_SPECIES[speciesId].w * .56;
+    double gunY = py + CREATURE_SPECIES[speciesId].h * .48;
+    bool tracking = attackState == CAS_CHARGING || attackState == CAS_FIRING;
+    double dx = tracking ? aimX - gunX : (double)facing;
+    double dy = tracking ? aimY - gunY : 0.0;
+    double d = std::hypot(dx, dy);
+    if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
+    dx /= d; dy /= d;
+    double nx = -dy, ny = dx;
+    gunX += dx * .55;
+    gunY += dy * .55;
+    auto gunPixel = [&](double forward, double side, double size,
+                        float r, float g, float b, float a = 1.0f) {
+      double wx = gunX + dx * forward + nx * side;
+      double wy = gunY + dy * forward + ny * side;
+      double bx = (wx - camCol) * cell + glOffX;
+      double by = (wy - camRow) * cell + glOffY;
+      glUniform4f(glc->uColor, r * light, g * light, b * light, a);
+      glSolidDev(bx - size * cell * .5, by - size * cell * .5, size * cell, size * cell);
+    };
+    gunPixel(-.42, 0, 1.06, .08f, .12f, .16f);
+    gunPixel(-.02, 0, .92, .24f, .32f, .36f);
+    gunPixel(-.28, .62, 1.16, .12f, .17f, .20f);
+    gunPixel(-.28, .62, .72, .76f, .57f, .19f);
+    int rotorRate = attackState == CAS_FIRING ? 2 : 6;
+    int rotor = (E.actorTick / rotorRate + animFrame) % 3;
+    for (int barrel = 0; barrel < 3; barrel++) {
+      float shine = barrel == rotor ? .72f : .38f;
+      for (int seg = 0; seg < 8; seg++)
+        gunPixel(.42 + seg * .42, (barrel - 1) * .34, .27,
+                 shine, shine * .88f, shine * .67f);
+    }
+    for (int brace = 0; brace < 4; brace++)
+      gunPixel(.66 + brace * .75, 0, .18, .09f, .12f, .14f);
+    gunPixel(3.50, 0, .60, .17f, .21f, .22f);
+    if (attackState == CAS_FIRING) {
+      float flash = ((E.actorTick + animFrame) & 1) ? 1.0f : .72f;
+      gunPixel(3.86, 0, .66, 1.0f, .42f * flash, .04f, .95f);
+      gunPixel(4.18, 0, .38, 1.0f, .92f, .35f, .98f);
+      gunPixel(3.92, -.50, .28, 1.0f, .62f, .08f, .82f);
+      gunPixel(3.92, .50, .28, 1.0f, .62f, .08f, .82f);
+    }
   }
   // A segmented, hard-edged health bar appears only after damage (or during
   // death), matching the survival HUD without adding noise to ambient mobs.

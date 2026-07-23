@@ -491,9 +491,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       blastVictimStaged = true;
     }
   }
-  check('cluster carrier is slower and keeps a roughly two-second fuse',
+  check('cluster carrier splits on impact before its two-second airburst fallback',
     launchedCarrier && Math.hypot(launchedCarrier.vx, launchedCarrier.vy) < 3
-      && launchedCarrier.fuse > 100 && splitTick >= 100);
+      && launchedCarrier.fuse > 100 && splitTick >= 0 && splitTick < 100);
   check(`captured cluster launcher splits into exactly eight live mini-dynamites (max ${maxBomblets})`,
     slot >= 0 && sawCarrier && maxBomblets === 8);
   check(`all eight mini-dynamites use distinct short 36-51 tick fuses (${firstChildFuses?.join('/')})`,

@@ -384,23 +384,23 @@ void ProjectileSystem::updateProjectiles() {
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
     return E.isBlockingForPlayer(E.fg.grid[E.I(x, y)]);
   };
-  auto blocksClusterCarrier = [&](double px, double py) {
-    // The carrier is rendered roughly 2.5x1.8 cells. Sample a compact rounded
-    // envelope so that larger silhouette cannot sink a cell into terrain while
-    // it waits for its timed split.
-    static constexpr double OFFSETS[9][2] = {
-      {0, 0}, {-.95, 0}, {.95, 0}, {0, -.72}, {0, .72},
-      {-.67, -.51}, {.67, -.51}, {-.67, .51}, {.67, .51},
-    };
-    for (const auto& offset : OFFSETS)
-      if (blocksPoint(px + offset[0], py + offset[1])) return true;
-    return false;
-  };
   auto materialStopsPoint = [&](double px, double py) {
     int x = (int)std::floor(px), y = (int)std::floor(py);
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
     uint8_t material = E.fg.grid[E.I(x, y)];
     return !E.isEmptyMaterial(material) && !E.isGasMaterial(material);
+  };
+  auto blocksClusterCarrier = [&](double px, double py) {
+    // The carrier is rendered roughly 2.5x1.8 cells. Sample a compact rounded
+    // envelope so that the larger silhouette splits before sinking into terrain
+    // or liquid.
+    static constexpr double OFFSETS[9][2] = {
+      {0, 0}, {-.95, 0}, {.95, 0}, {0, -.72}, {0, .72},
+      {-.67, -.51}, {.67, -.51}, {-.67, .51}, {.67, .51},
+    };
+    for (const auto& offset : OFFSETS)
+      if (materialStopsPoint(px + offset[0], py + offset[1])) return true;
+    return false;
   };
   auto damageSplash = [&](double px, double py, int radius, int damage, int owner, bool launch) {
     double r2 = (double)radius * radius;
@@ -608,32 +608,31 @@ void ProjectileSystem::updateProjectiles() {
 
     if (p.kind == PK_CLUSTER_BOMB && p.charge < .5) {
       bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
+      bool impact = false;
       if (!outside) {
         double distance = std::hypot(p.vx, p.vy);
         int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
         double sx = p.vx / steps, sy = p.vy / steps;
-        bool blockX = false, blockY = false;
         for (int step = 0; step < steps; step++) {
-          if (!blockX) {
-            double nx = p.px + sx;
-            if (blocksClusterCarrier(nx, p.py)) {
-              p.vx = -p.vx * (CLUSTER_BOUNCE_LOCAL * .72);
-              blockX = true;
-            } else p.px = nx;
+          double nx = p.px + sx, ny = p.py + sy;
+          if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows - 1) {
+            outside = true;
+            break;
           }
-          if (!blockY) {
-            double ny = p.py + sy;
-            if (blocksClusterCarrier(p.px, ny)) {
-              p.vy = -p.vy * (CLUSTER_BOUNCE_LOCAL * .72);
-              p.vx *= CLUSTER_FRICTION_LOCAL;
-              blockY = true;
-            } else p.py = ny;
+          if (blocksClusterCarrier(nx, ny) ||
+              hitsCreature(nx, ny, 1.35, p.owner) ||
+              hitsPlayer(nx, ny, 1.35, p.owner)) {
+            impact = true;
+            break;
           }
+          p.px = nx; p.py = ny;
         }
-        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL * .62);
-        p.rotation += p.vx * .18;
+        if (!impact && !outside) {
+          p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL * .62);
+          p.rotation += p.vx * .18;
+        }
       }
-      if (!outside && --p.fuse <= 0) {
+      if (!outside && (impact || --p.fuse <= 0)) {
         splitCluster(p);
         continue;
       }

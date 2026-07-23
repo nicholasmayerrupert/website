@@ -146,7 +146,7 @@ or creature hit.
 Dynamiteers throw wide, high-damage bouncing charges; bore sentinels telegraph,
 lock, and then erase a thick line through both simulated layers. Caustic mortarmen lob large,
 double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
-carriers that split into eight short-fused, independently scattering
+carriers that split on impact into eight short-fused, independently scattering
 mini-dynamites; and minigunners commit their aim before saturating that line with
 long bursts of rapid, pinprick explosive rounds.
 Blasts and bore cuts damage

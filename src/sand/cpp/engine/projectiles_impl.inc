@@ -244,7 +244,9 @@ void ProjectileSystem::spawnSeismicWave(Player& shooter) {
 void ProjectileSystem::spawnBoreBeam(int owner, double ox, double oy, double dx, double dy) {
   double d = std::hypot(dx, dy);
   if (d < 1e-6) return;
-  if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
+  // This is a render-only latch. At the actor cap, preserve every live gameplay
+  // projectile and skip the cosmetic flash instead of evicting the oldest one.
+  if ((int)projectiles.size() >= PROJECTILE_MAX) return;
   Projectile beam;
   beam.id = nextId++; beam.owner = owner; beam.kind = PK_BORE_BEAM;
   beam.px = ox; beam.py = oy; beam.vx = dx / d; beam.vy = dy / d;

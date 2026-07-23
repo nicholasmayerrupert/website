@@ -47,6 +47,8 @@ struct CreatureSpecies {
 
 // One compact, centralized species table. Changing movement/combat/spawn cadence
 // or switching between region-time and continuous spawning is a data edit here.
+// 220 reaches the left/right simulated bands around the 248-cell desktop view.
+static constexpr int SURVIVAL_SPAWN_MAX_DISTANCE = 220;
 static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
   {.name="minnow", .locomotion=CL_AQUATIC, .w=4, .h=2, .maxHealth=18,
    .walkSpeed=0, .swimSpeed=0.34, .accel=0.055, .gravity=0, .jumpSpeed=0,
@@ -95,31 +97,31 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.30, .sightRange=92, .attackRange=72,
    .damage=18, .attackCooldown=135, .scanInterval=12, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 224, 1, 1, 128, 1, 780, 0.70, 34, 100}},
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 224, 1, 1, 128, 1, 780, 0.70, 34, SURVIVAL_SPAWN_MAX_DISTANCE}},
   {.name="bore sentinel", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=170,
    .walkSpeed=0.12, .swimSpeed=0.11, .accel=0.026, .gravity=0.075, .jumpSpeed=0.72,
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
    .damage=42, .attackCooldown=260, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 1050, 0.55, 46, 132}},
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 1050, 0.55, 46, SURVIVAL_SPAWN_MAX_DISTANCE}},
   {.name="caustic mortarman", .locomotion=CL_AMPHIBIOUS, .w=8, .h=6, .maxHealth=120,
    .walkSpeed=0.16, .swimSpeed=0.14, .accel=0.034, .gravity=0.075, .jumpSpeed=0.82,
    .fluidThreshold=0.32, .sightRange=112, .attackRange=92,
    .damage=16, .attackCooldown=180, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 240, 1, 1, 144, 1, 900, 0.55, 40, 116}},
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 240, 1, 1, 144, 1, 900, 0.55, 40, SURVIVAL_SPAWN_MAX_DISTANCE}},
   {.name="cluster wasp", .locomotion=CL_FLYING, .w=7, .h=5, .maxHealth=68,
    .walkSpeed=0, .swimSpeed=0.46, .accel=0.055, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=124, .attackRange=104,
    .damage=0, .attackCooldown=210, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_AIR, 224, 1, 1, 144, 1, 840, 0.60, 38, 112}},
+   .spawn={CSM_CONTINUOUS, CH_AIR, 224, 1, 1, 144, 1, 840, 0.60, 38, SURVIVAL_SPAWN_MAX_DISTANCE}},
   {.name="minigunner", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=165,
    .walkSpeed=0.15, .swimSpeed=0.11, .accel=0.030, .gravity=0.075, .jumpSpeed=0.76,
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
    .damage=0, .attackCooldown=270, .scanInterval=6, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, 128}},
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, SURVIVAL_SPAWN_MAX_DISTANCE}},
 };
 
 struct Creature {

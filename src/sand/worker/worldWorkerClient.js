@@ -136,11 +136,14 @@ export function createWorldWorkerClient(ctx) {
     },
     updateControl() {
       const e = ctx.engine;
+      // The worker intentionally ignores every message except init until its
+      // engine exists. Do not cache a control signature that was sent during
+      // that startup window, or the stable first viewport may never be resent.
+      if (!e || !state.ready) return;
       // fit() resizes the render mirror immediately but deliberately debounces
       // the expensive worker resize. Pointer/world coordinates must keep flowing
       // during that window so drawing follows a moving camera; only STREAMING is
       // suspended until the worker owns the new buffer dimensions.
-      if (!e) return;
       const resizePending = !!awaitingResizeId;
       const p = worldPoint();
       const cam = e.getCam();

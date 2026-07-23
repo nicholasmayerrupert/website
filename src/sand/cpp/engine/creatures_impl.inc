@@ -155,10 +155,29 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
     }
     return false;
   };
+  auto intersectsVisibleColumns = [&](double wx, double margin) {
+    auto overlapsExpanded = [&](double left, double right) {
+      return wx < right + margin && wx + s.w > left - margin;
+    };
+    double cameraLeft = E.fg.worldOffsetX + E.cam.camX;
+    if (overlapsExpanded(cameraLeft, cameraLeft + vw)) return true;
+    for (const Player* p : live) {
+      double pcx = E.fg.worldOffsetX + p->px + p->w * 0.5;
+      if (overlapsExpanded(pcx - vw * 0.5, pcx + vw * 0.5)) return true;
+    }
+    return false;
+  };
   uint32_t seed = E.fg.worldSeed ^ 0xC4EA7400u ^ ((uint32_t)speciesId * 0x9e3779b9u) ^ salt;
   for (int attempt = 0; attempt < 64; attempt++) {
+    // Armed survival encounters should enter from the simulated bands beside
+    // the view. Keep a short radial tail for terrain that offers no valid
+    // habitat on either side.
+    bool sideEntry = requireOffscreen && speciesId >= CS_DYNAMITEER && attempt < 48;
     double angle = whash2(seed ^ 0x11u, attempt, (int)salt) * 6.283185307179586;
-    double ux = std::cos(angle), uy = std::sin(angle);
+    double ux = sideEntry
+      ? (whash2(seed ^ 0x51DEu, (int)salt, attempt) < 0.5 ? -1.0 : 1.0)
+      : std::cos(angle);
+    double uy = sideEntry ? 0.0 : std::sin(angle);
     double minDist = r.minPlayerDistance;
     double maxDist = r.maxPlayerDistance;
     double dist = minDist + whash2(seed ^ 0x22u, (int)salt, attempt) * (maxDist - minDist);
@@ -189,6 +208,7 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
     // not materialize on top of a player despite their spawn safety radius.
     if (!farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, r.minPlayerDistance)) continue;
     if (requireOffscreen) {
+      if (sideEntry && intersectsVisibleColumns(wx, SPAWN_VIEW_MARGIN)) continue;
       if (intersectsVisibleViews(wx, wy, SPAWN_VIEW_MARGIN)) continue;
     } else if (!intersectsVisibleViews(wx, wy, 0)) {
       // A warning portal must actually be visible to at least one player. The

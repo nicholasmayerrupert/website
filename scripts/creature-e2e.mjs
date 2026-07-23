@@ -18,6 +18,17 @@ const pngPath = pngArg >= 0 ? process.argv[pngArg + 1] : null;
 const baseURL = `http://localhost:${PORT}/`;
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
+const waitForWorkerPause = async (page) => {
+  let lastTick = -1, stableSamples = 0;
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(100);
+    const tick = await page.evaluate(() => window.__sandPerf().worldTick);
+    stableSamples = tick === lastTick ? stableSamples + 1 : 0;
+    if (stableSamples >= 2) return;
+    lastTick = tick;
+  }
+  throw new Error('world worker did not pause');
+};
 
 const server = spawn(NPM, [...NPM_ARGS, 'run', 'dev', '--', '--port', String(PORT), '--strictPort'], {
   cwd: process.cwd(), env: process.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
@@ -89,24 +100,45 @@ try {
 
   // Force the director's habitat-valid visible fallback through its DEV-only
   // test hook, then inspect the replicated warning and its portal pixels.
+  // Freeze the authority first so the short warning cannot materialize between
+  // the async worker snapshot and the render probe.
+  await page.evaluate(() => {
+    window.__sandTest.setCreatureRuntime(true, false);
+    window.__sandTest.setPaused(true);
+  });
+  await waitForWorkerPause(page);
   const existingSpecies = new Set(survival.species);
   const breachChoices = [7, 9, 10, 8, 11].filter((id) => !existingSpecies.has(id));
   let portal = null;
   for (let i = 0; i < breachChoices.length && !portal; i++) {
-    await page.evaluate(({ species, salt }) => {
-      window.__sandTest.spawnNatural(species, salt, true);
-    }, { species: breachChoices[i], salt: 700 + i * 97 });
-    await page.waitForFunction((species) => window.__sandTest.getCreatures()
-      .some((c) => c.species === species && c.spawnProgress > 0),
-    breachChoices[i], { timeout: 800 }).catch(() => null);
-    portal = await page.evaluate((species) => window.__sandTest.getCreatures()
-      .find((c) => c.species === species && c.spawnProgress > 0) || null,
-    breachChoices[i]);
+    for (let attempt = 0; attempt < 6 && !portal; attempt++) {
+      await page.evaluate(({ species, salt }) => {
+        window.__sandTest.spawnNatural(species, salt, true);
+      }, { species: breachChoices[i], salt: 700 + i * 997 + attempt * 131 });
+      await page.waitForFunction((species) => window.__sandTest.getCreatures()
+        .some((c) => c.species === species && c.spawnProgress > 0),
+      breachChoices[i], { timeout: 250 }).catch(() => null);
+      portal = await page.evaluate((species) => window.__sandTest.getCreatures()
+        .find((c) => c.species === species && c.spawnProgress > 0) || null,
+      breachChoices[i]);
+    }
+  }
+  if (portal) {
+    // Advance into the readable middle of the portal animation, then freeze
+    // again before sampling pixels. Its minimum 54-tick warning cannot finish
+    // during this short window.
+    await page.evaluate(() => window.__sandTest.setPaused(false));
+    await page.waitForTimeout(400);
+    await page.evaluate(() => window.__sandTest.setPaused(true));
+    await waitForWorkerPause(page);
   }
   const portalPixels = await page.evaluate((portalId) => {
     const T = window.__sandTest, info = T.info();
     const c = T.getCreatures().find((x) => x.id === portalId && x.spawnProgress > 0);
-    if (!c) return { visible: false, colored: 0, id: 0 };
+    if (!c) {
+      T.setPaused(false);
+      return { visible: false, colored: 0, id: 0 };
+    }
     T.setPaused(true); T.render();
     const r = T.cellRect(c.x, c.y);
     const pad = Math.ceil(r.size * 7);
@@ -146,19 +178,20 @@ try {
 
   // Freeze world/actor updates so the only pixel difference is the hitbox
   // overlay, then probe the newly materialized enemy.
-  const hitboxResult = await page.evaluate(() => {
+  const hitboxResult = await page.evaluate((materializedId) => {
     const T = window.__sandTest;
     T.setPaused(true);
-    const c = T.getCreatures().find((x) => x.alive && x.species >= 7);
+    const c = T.getCreatures().find((x) => x.id === materializedId && x.alive) ||
+      T.getCreatures().find((x) => x.alive && x.species >= 7);
     if (!c) { T.setPaused(false); return { changed: 0 }; }
     const info = T.info();
     T.setCam(c.x + c.w / 2 - info.viewCols / 2, c.y + c.h / 2 - info.viewRows / 2);
     T.setHitboxes(true); T.render();
     const r = T.cellRect(c.x, c.y);
-    const x = Math.max(0, Math.floor(r.x - 2));
-    const y = Math.max(0, Math.floor(r.y - 2));
-    const w = Math.min(info.canvasW - x, Math.ceil(c.w * r.size + 4));
-    const h = Math.min(info.canvasH - y, Math.ceil(c.h * r.size + 4));
+    const x = Math.min(info.canvasW, Math.max(0, Math.floor(r.x - 2)));
+    const y = Math.min(info.canvasH, Math.max(0, Math.floor(r.y - 2)));
+    const w = Math.max(0, Math.min(info.canvasW - x, Math.ceil(c.w * r.size + 4)));
+    const h = Math.max(0, Math.min(info.canvasH - y, Math.ceil(c.h * r.size + 4)));
     const on = T.readPixels(x, y, w, h);
     T.setHitboxes(false); T.render();
     const off = T.readPixels(x, y, w, h);
@@ -167,7 +200,7 @@ try {
       if (on[i] !== off[i] || on[i + 1] !== off[i + 1] || on[i + 2] !== off[i + 2]) changed++;
     }
     return { changed };
-  });
+  }, portalPixels.id);
   check(`materialized enemy sprite + hitbox rendered (${hitboxResult.changed} changed pixels)`,
     hitboxResult.changed > 0);
 

@@ -295,6 +295,40 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
     offscreen?.clearsView && offscreen.spawnProgress === 0);
 }
 
+// The real 1366px desktop layout shows 248 cells. Armed encounters must first
+// try the simulated bands to its left/right instead of falling back to an
+// on-screen portal or entering below the camera.
+{
+  const horizontalSpecies = [
+    CREATURE.DYNAMITEER, CREATURE.BORE_SENTINEL, CREATURE.CAUSTIC_MORTARMAN,
+    CREATURE.CLUSTER_WASP, CREATURE.MINIGUNNER,
+  ];
+  const results = [];
+  for (const species of horizontalSpecies) {
+    const e = attachTestHooks(createEngineWasm({
+      cols: 512, rows: 352, worldSeed: 0x0FF5C2E + species,
+      sinksOn: false, infinite: true,
+    }));
+    e.setViewport(1, 1, 248, 140);
+    const playerId = e.spawnPlayerAtSurface(256);
+    const player = e.getPlayer(playerId);
+    e.cameraSet(
+      player.x + player.w * 0.5 - 124,
+      player.y + player.h * 0.5 + player.h * 0.5 + 4 - 140 * (2 / 3),
+    );
+    const spawned = e._spawnNearFocus(species, species * 977 + 41);
+    const candidate = e.getCreatures().find((c) => c.species === species && c.alive);
+    const cam = e.getCam();
+    results.push(spawned && candidate && (
+      candidate.x + candidate.w <= cam.x - 10 ||
+      candidate.x >= cam.x + 248 + 10
+    ));
+    e.destroy();
+  }
+  check('armed enemies enter left/right of the real desktop viewport',
+    results.every(Boolean));
+}
+
 // When the loaded buffer is entirely visible, no off-screen entry exists. The
 // natural spawn is then an inert, audible portal for 0.9–1.4 seconds before the
 // same reserved actor id materializes.

@@ -1,5 +1,10 @@
 // Tunables for the three captured enemy weapons live with their actor-clock
 // implementation. Their inventory/ABI identities are generated separately.
+// Thrown dynamite is deliberately more destructive than static TNT: the
+// satchel and dynamiteer share this projectile path and therefore the same
+// readable danger radius.
+static constexpr int DYNAMITE_PROJECTILE_BLAST_RADIUS_LOCAL = 32;
+static constexpr double DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL = 30.0;
 static constexpr int ACID_MORTAR_COOLDOWN_LOCAL = 75;
 static constexpr int ACID_SHELL_LIFE_LOCAL = 180;
 static constexpr double ACID_SHELL_GRAVITY_LOCAL = 0.055;
@@ -9,13 +14,13 @@ static constexpr int ACID_SPLASH_RADIUS_LOCAL = 9;
 static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
 static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
 static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 120;
-static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 72;
-static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 31;
+static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 36;
+static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 19;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
-static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 6;
-static constexpr double CLUSTER_BLAST_POWER_LOCAL = 8.0;
+static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 10;
+static constexpr double CLUSTER_BLAST_POWER_LOCAL = 13.0;
 static constexpr int MINIGUN_COOLDOWN_LOCAL = 2;
 static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
 static constexpr double MINIGUN_ROUND_SPEED_LOCAL = 15.5;
@@ -58,6 +63,7 @@ void ProjectileSystem::applyDynamiteSatchelInput(Player& p, int previousInput) {
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
   spawnDynamite(p);
+  E.inv.consumeSelectedWeaponAmmo(p, IK_DYNAMITE_SATCHEL);
   p.toolCooldown = DYNAMITE_SATCHEL_COOLDOWN;
   E.playerActionCount++;
 }
@@ -70,6 +76,7 @@ void ProjectileSystem::applyBoreCannonInput(Player& p, int previousInput) {
   if (!wasPrimary) E.audio.emit(SE_BORE_CHARGE, p.px + p.w * .5, p.py + p.h * .42, 0.82, STONE, 0);
   if (++p.bowChargeTicks < BORE_CANNON_CHARGE_TICKS) return;
   E.creatures.fireBore(p);
+  E.inv.consumeSelectedWeaponAmmo(p, IK_BORE_CANNON);
   p.bowChargeTicks = 0;
   p.toolCooldown = BORE_CANNON_COOLDOWN;
   E.playerActionCount++;
@@ -81,6 +88,7 @@ void ProjectileSystem::applyAcidMortarInput(Player& p, int previousInput) {
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
   spawnAcidShell(p);
+  E.inv.consumeSelectedWeaponAmmo(p, IK_ACID_MORTAR);
   p.toolCooldown = ACID_MORTAR_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
@@ -91,6 +99,7 @@ void ProjectileSystem::applyClusterLauncherInput(Player& p, int previousInput) {
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
   if (!primary || wasPrimary || p.toolCooldown > 0) return;
   spawnClusterBomb(p);
+  E.inv.consumeSelectedWeaponAmmo(p, IK_CLUSTER_LAUNCHER);
   p.toolCooldown = CLUSTER_LAUNCHER_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
@@ -99,6 +108,7 @@ void ProjectileSystem::applyMinigunInput(Player& p) {
   E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
   if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
   spawnMinigunRound(p);
+  E.inv.consumeSelectedWeaponAmmo(p, IK_MINIGUN);
   p.toolCooldown = MINIGUN_COOLDOWN_LOCAL;
   E.playerActionCount++;
 }
@@ -554,7 +564,8 @@ void ProjectileSystem::updateProjectiles() {
         int x = imax(1, imin(E.cols - 2, (int)std::lround(p.px)));
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
         uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
-        E.detonate(x, y, ExplosivesSystem::TNT_BLAST_RADIUS, ExplosivesSystem::TNT_BLAST_POWER, 0, TNT, seed);
+        E.detonate(x, y, DYNAMITE_PROJECTILE_BLAST_RADIUS_LOCAL,
+                   DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL, 0, TNT, seed);
         continue;
       }
       if (outside || --p.life <= 0) continue;

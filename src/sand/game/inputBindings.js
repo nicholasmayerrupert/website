@@ -10,9 +10,10 @@ import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onToggleInventory, onToggleFootprintMenu }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');
-  // Button state is edge-owned: pointerdown sets bits, pointerup clears them,
-  // and pointermove may only add bits. Some devices transiently report
-  // `buttons === 0` during a held drag, which must not finalize a draft.
+  // Button state is edge-owned: pointerdown sets bits and pointerup clears them.
+  // Pointermove never infers a new press from `buttons`: browsers can send a
+  // held-looking move while a tab/window is being re-entered even though this
+  // page never received the matching down/up pair.
 
   // Forward only when something actually changed (the loop calls this every
   // frame): the engine stores the pointer and derives the aim cell on demand,
@@ -20,10 +21,6 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   // starts with pointer state unset, hence the sentEngine check.
   let sentPX = NaN, sentPY = NaN, sentButtons = -1, sentInside = null, sentEngine = null;
   const logicalButton = (e) => e.pointerType === 'touch' && e.button === 0 ? ctx.touchButton : e.button;
-  const logicalButtons = (e) => {
-    if (e.pointerType !== 'touch' || ctx.touchButton !== 2 || !(e.buttons & 1)) return e.buttons;
-    return (e.buttons & ~1) | BUTTON_BITS[2];
-  };
   const isSurfaceEvent = (e) => {
     const path = e.composedPath?.();
     if (path?.some((node) => node !== ctx.container &&
@@ -69,9 +66,6 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
   };
 
   const onPointerMove = (e) => {
-    // Only ADD buttons a move reports as newly pressed; a held button is
-    // released solely by pointerup/pointercancel/blur (see above).
-    ctx.mouseButtons |= logicalButtons(e);
     updatePointer(e.clientX, e.clientY);
     if (ctx.playMode) { if (ctx.engine) ctx.previewDirty = true; return; } // re-present so the aim cursor follows
     if (!ctx.drawModeOn || !ctx.engine) return;
@@ -105,15 +99,17 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     // creative requires draw mode (so the page stays scrollable until the user
     // opts in).
     if (!ctx.playMode && !ctx.drawModeOn) return;
+    const surfaceEvent = isSurfaceEvent(e);
+    if (!surfaceEvent) return;
     // Keep the surface focusable for arrow/zoom shortcuts and keyboard users.
     // Creative WASD does not require this focus (see onKeyDown below), so
     // clicking a palette control no longer disables camera movement.
-    if (isSurfaceEvent(e)) ctx.container.focus({ preventScroll: true });
-    // Authoritative press edge: latch this button's bit (plus any other buttons
-    // the event reports already down). The latch is what keeps PI_PRIMARY held
-    // across steps even if later moves momentarily report buttons==0.
+    ctx.container.focus({ preventScroll: true });
     const button = logicalButton(e);
-    ctx.mouseButtons |= logicalButtons(e) | (BUTTON_BITS[button] || 0);
+    // Authoritative press edge: latch only this event's button. Any simultaneous
+    // button gets its own pointerdown; trusting the aggregate `buttons` field can
+    // resurrect a stale press from before this page regained focus.
+    ctx.mouseButtons |= BUTTON_BITS[button] || 0;
     updatePointer(e.clientX, e.clientY);
     if (!ctx.inside) return;
     if (button === 0 || button === 2) {

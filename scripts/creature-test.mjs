@@ -2,7 +2,9 @@
 // prey tracking, amphibious locomotion, density caps, and streaming coordinates.
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
-import { CREATIVE_KIND, CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
+import {
+  CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, PROJECTILE_KIND,
+} from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -162,60 +164,97 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
   e.destroy();
 }
 
-// Continuous focus spawning: the remaining ambient creature appears near a
-// normal surface player on the first actor tick in its actual habitat.
+// The minigunner commits to its charged line for a long burst. Moving after the
+// first muzzle flash must not drag the stream along with the player.
+{
+  const e = mk(); stoneFloor(e, 104);
+  const playerId = e.spawnPlayer(28, 96);
+  const gunnerId = e.spawnCreature(CREATURE.MINIGUNNER, 90, 98);
+  e.setCreatureRuntime(true, false);
+  let gunner = null;
+  for (let tick = 0; tick < 80; tick++) {
+    e.stepActors();
+    gunner = byId(e, gunnerId);
+    if (gunner?.attackState === CREATURE_ATTACK_STATE.FIRING) break;
+  }
+  check('minigunner reaches its firing phase', gunner?.attackState === CREATURE_ATTACK_STATE.FIRING);
+  const lockedAim = { x: gunner?.aimX, y: gunner?.aimY };
+  const player = e.getPlayer(playerId);
+  e.setPlayerState(playerId, { ...player, x: 28, y: 26, vx: 0, vy: 0 });
+
+  const rounds = new Set();
+  let aimLocked = true, burstSteps = 0, firingPastOldBurst = false;
+  for (; burstSteps < 180; burstSteps++) {
+    e.stepActors();
+    gunner = byId(e, gunnerId);
+    for (const projectile of e.getProjectiles()) {
+      if (projectile.kind === PROJECTILE_KIND.MINIGUN_ROUND && projectile.owner === -gunnerId)
+        rounds.add(projectile.id);
+    }
+    aimLocked &&= Math.abs((gunner?.aimX ?? Infinity) - lockedAim.x) < 1e-4
+      && Math.abs((gunner?.aimY ?? Infinity) - lockedAim.y) < 1e-4;
+    if (burstSteps >= 60 && gunner?.attackState === CREATURE_ATTACK_STATE.FIRING)
+      firingPastOldBurst = true;
+    if (gunner?.attackState !== CREATURE_ATTACK_STATE.FIRING) {
+      burstSteps++;
+      break;
+    }
+  }
+  check('minigunner aim stays locked after its target dodges', aimLocked);
+  check(`minigunner sustains a 150-tick burst (${burstSteps} ticks, ${rounds.size} rounds)`,
+    firingPastOldBurst && burstSteps === 150 && rounds.size === 75);
+  e.destroy();
+}
+
+// Ambient fauna remain available to eggs/scripts, but none enter the natural
+// population, even when a normal surface player keeps their habitats loaded.
 {
   const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
+  e.setSurvivalInventory(true);
   e.setCreatureRuntime(true, true);
   const playerId = e.spawnPlayerAtSurface(224), player = e.getPlayer(playerId);
   e.stepActors();
   const initial = e.getCreatures();
-  const mole = initial.find((c) => c.species === CREATURE.MOLE);
   const disabledNatural = [
     CREATURE.MINNOW, CREATURE.PIKE, CREATURE.FOX,
-    CREATURE.HARE, CREATURE.CRAWLER, CREATURE.BIRD,
+    CREATURE.HARE, CREATURE.CRAWLER, CREATURE.MOLE, CREATURE.BIRD,
   ];
-  const surfaceAt = (c) => e.worldSurfaceAt(e.getWorldOffsetX() + Math.floor(c.x + c.w / 2));
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
   const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46, 40, 38, 44];
   const tooClose = initial.filter((c) => distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
   check(`habitat-snapped natural spawns preserve player safety distance (${tooClose.length} too close)`, tooClose.length === 0);
-  check('retired fauna do not spawn naturally',
+  check('retired fauna, including moles, do not spawn naturally',
     !initial.some((c) => disabledNatural.includes(c.species)));
-  check('cave mole spawns in a loaded underground cavity', mole && mole.y > surfaceAt(mole) + 10);
   actors(e, 1800);
   const later = e.getCreatures();
   const count = (species) => later.filter((c) => c.species === species && c.alive).length;
   const active = later.filter((c) => c.alive).length;
   check(`retired natural populations remain absent (${disabledNatural.map((species) => count(species)).join('/')})`,
     disabledNatural.every((species) => count(species) === 0));
-  check(`enabled continuous spawning remains capped (mole ${count(CREATURE.MOLE)})`,
-    count(CREATURE.MOLE) <= 1);
   check(`loaded population has a hard mixed-species cap (${active}/8)`, active <= 8);
   e.destroy();
 }
 
-// Random browser worlds must not produce an empty-looking game. Exercise a
-// spread of seeds long enough for several bounded spawn attempts and require
-// the enabled cave population to establish while retired populations remain
-// absent.
+// Exercise a spread of world seeds through several recurring spawn attempts so
+// the mole exclusion cannot accidentally depend on one terrain layout.
 {
-  let established = 0;
+  let cleanWorlds = 0;
   for (let seed = 1; seed <= 8; seed++) {
     const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: seed, sinksOn: false, infinite: true });
+    e.setSurvivalInventory(true);
     e.setCreatureRuntime(true, true);
     e.spawnPlayerAtSurface(224);
     actors(e, 4800);
     const ids = new Set(e.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    const enabled = [CREATURE.MOLE];
     const disabled = [
       CREATURE.MINNOW, CREATURE.PIKE, CREATURE.FOX,
-      CREATURE.HARE, CREATURE.CRAWLER, CREATURE.BIRD,
+      CREATURE.HARE, CREATURE.CRAWLER, CREATURE.MOLE, CREATURE.BIRD,
     ];
-    if (enabled.every((id) => ids.has(id)) && disabled.every((id) => !ids.has(id))) established++;
+    if (disabled.every((id) => !ids.has(id))) cleanWorlds++;
     e.destroy();
   }
-  check(`enabled cave populations establish without retired fauna (${established}/8)`, established === 8);
+  check(`moles and other retired fauna remain absent across world seeds (${cleanWorlds}/8)`,
+    cleanWorlds === 8);
 }
 
 // Lethal contact enters the explicit death state. Respawn is rejected during

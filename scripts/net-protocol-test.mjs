@@ -76,18 +76,30 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('inventory round trip');
   const slots = Array.from({ length: INV_SLOTS }, (_, i) => ({ material: i, isTool: i === 0, toolClass: i === 0 ? 1 : 0, toolTier: i === 0 ? 2 : 0, count: i }));
+  slots[5] = {
+    material: 0, isTool: false, toolClass: 0, toolTier: 0,
+    count: 250, itemKind: ITEM_KIND.MINIGUN,
+  };
   const d = rt(makeInventory(7, 3, slots, 4, 2));
   check('decodes to inventory', d && d.t === MSG.INVENTORY && d.player === 3 && d.selected === 4 && d.selectedFootprint === 2);
   check('flat inventory length matches ABI', d && d.data.length === INV_SLOTS * INV_FIELDS);
   check('slot 0 is a tool (isTool + class + tier)', d && d.data[1] === 1 && d.data[2] === 1 && d.data[3] === 2);
-  check('slot 5 count preserved', d && d.data[5 * INV_FIELDS + 4] === 5);
+  check('finite weapon kind and ammo count survive inventory transport',
+    d && d.data[5 * INV_FIELDS + OFF.inventorySlot.itemKind] === ITEM_KIND.MINIGUN
+      && d.data[5 * INV_FIELDS + OFF.inventorySlot.count] === 250);
 }
 
 // 3. cursor round trip (carried + empty).
 {
   console.log('cursor round trip');
-  const d = rt(makeCursor(1, 2, { material: 9, isTool: false, toolClass: 0, toolTier: 0, count: 64 }));
-  check('carried cursor preserved', d && d.t === MSG.CURSOR && d.player === 2 && d.cur && d.cur.material === 9 && d.cur.count === 64 && d.cur.isTool === 0);
+  const d = rt(makeCursor(1, 2, {
+    material: 0, isTool: false, toolClass: 0, toolTier: 0,
+    count: 15, itemKind: ITEM_KIND.BORE_CANNON,
+  }));
+  check('finite weapon ammo survives cursor transport',
+    d && d.t === MSG.CURSOR && d.player === 2 && d.cur
+      && d.cur.itemKind === ITEM_KIND.BORE_CANNON && d.cur.count === 15
+      && d.cur.isTool === 0);
   const e = rt(makeCursor(1, 2, null));
   check('empty cursor preserved', e && e.cur === null);
 }

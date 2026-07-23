@@ -17,6 +17,7 @@ function makeWorld() {
   e.setSurvivalInventory(true);
   for (let x = 0; x < COLS; x++) for (let y = 70; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);
   const id = e.spawnPlayer(30, 66);
+  e.setSelectedFootprint(id, 2); // isolate hold placement with a compact 3x3
   let t = 0; const run = (n) => { for (let i = 0; i < n; i++) { t += 16; e.step(t); } };
   run(6);
   return { e, id, run };
@@ -49,7 +50,7 @@ const giveAndSelect = (e, id, mat, n) => {
 {
   const { e, id, run } = makeWorld();
   giveAndSelect(e, id, MAT.SAND, 500);
-  // player AABB ~ x[30..33] y[66..73]; aim so the default 3x3 footprint overlaps
+  // player AABB ~ x[30..33] y[66..73]; aim so the selected 3x3 footprint overlaps
   // the top-left edge of the body instead of sitting entirely inside it.
   e.setPlayerInput(id, { bits: PI_PRIMARY, aimX: 29, aimY: 65, seq: 1 });
   run(5);

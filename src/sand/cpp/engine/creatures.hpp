@@ -117,7 +117,7 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
   {.name="minigunner", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=165,
    .walkSpeed=0.15, .swimSpeed=0.11, .accel=0.030, .gravity=0.075, .jumpSpeed=0.76,
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
-   .damage=0, .attackCooldown=150, .scanInterval=6, .hopPeriod=0,
+   .damage=0, .attackCooldown=270, .scanInterval=6, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
    .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, 128}},
 };

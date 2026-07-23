@@ -16,6 +16,7 @@ const INPUT_LEFT = 1;
 const INPUT_RIGHT = 2;
 const INPUT_JUMP = 4; // PI_JUMP bit (mirrors enum PlayerInput / INPUT.JUMP)
 const INPUT_JETPACK = 128; // Space-specific sustained thrust bit
+const PI_PRIMARY = 16;
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
@@ -94,6 +95,57 @@ try {
   const startupBits = await page.evaluate(() => window.__sandTest.localInput().bits);
   await page.keyboard.up('d');
   check(`fresh /game forwards movement immediately (bits ${startupBits})`, (startupBits & INPUT_RIGHT) !== 0);
+
+  // Returning to a browser tab can yield a pointermove that reports buttons=1
+  // without this page receiving the corresponding press edge. It must not
+  // invent a hold; the following ordinary click should press and cleanly release.
+  const refocusProbe = await page.evaluate(async () => {
+    const host = document.querySelector('sand-game');
+    const canvas = host.shadowRoot.getElementById('sand-main');
+    const r = canvas.getBoundingClientRect();
+    const x = r.left + r.width * 0.6, y = r.top + r.height * 0.4;
+    const before = window.__sandTest.actionCount();
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+    canvas.dispatchEvent(new PointerEvent('pointermove', {
+      clientX: x, clientY: y, button: -1, buttons: 1, bubbles: true, composed: true,
+      pointerId: 91, pointerType: 'mouse',
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    const orphanBits = window.__sandTest.localInput().bits;
+    const afterOrphan = window.__sandTest.actionCount();
+    canvas.dispatchEvent(new PointerEvent('pointerdown', {
+      clientX: x, clientY: y, button: 0, buttons: 1, bubbles: true, composed: true,
+      pointerId: 91, pointerType: 'mouse',
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const pressedBits = window.__sandTest.localInput().bits;
+    const during = window.__sandTest.actionCount();
+    canvas.dispatchEvent(new PointerEvent('pointerup', {
+      clientX: x, clientY: y, button: 0, buttons: 0, bubbles: true, composed: true,
+      pointerId: 91, pointerType: 'mouse',
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    const releasedBits = window.__sandTest.localInput().bits;
+    const afterRelease = window.__sandTest.actionCount();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return {
+      orphanBits,
+      pressedBits,
+      releasedBits,
+      settledBits: window.__sandTest.localInput().bits,
+      actions: [before, afterOrphan, during, afterRelease, window.__sandTest.actionCount()],
+    };
+  });
+  check(`unpaired refocus move does not invent PI_PRIMARY (bits ${refocusProbe.orphanBits})`,
+    (refocusProbe.orphanBits & PI_PRIMARY) === 0);
+  check(`ordinary refocus click presses then releases PI_PRIMARY (bits ${refocusProbe.pressedBits}/${refocusProbe.releasedBits}/${refocusProbe.settledBits})`,
+    (refocusProbe.pressedBits & PI_PRIMARY) !== 0
+      && (refocusProbe.releasedBits & PI_PRIMARY) === 0
+      && (refocusProbe.settledBits & PI_PRIMARY) === 0);
+  check(`refocus move fires nothing and released click does not keep firing (${refocusProbe.actions.join(' -> ')})`,
+    refocusProbe.actions[0] === refocusProbe.actions[1]
+      && refocusProbe.actions[3] === refocusProbe.actions[4]);
 
   await page.waitForFunction(() => {
     const root = document.querySelector('sand-game')?.shadowRoot;
@@ -182,10 +234,18 @@ try {
     const root = host.shadowRoot;
     return {
       open: root.querySelector('.fp-panel')?.classList.contains('open') === true,
-      options: root.querySelectorAll('.fp-btn').length,
+      options: [...root.querySelectorAll('.fp-btn')].map((button) => ({
+        label: button.textContent,
+        selected: button.classList.contains('sel'),
+      })),
     };
   });
-  check(`Q opens all eight square footprint choices (${footprintMenu.options})`, footprintMenu.open && footprintMenu.options === 8);
+  check(`Q opens all ten square footprint choices (${footprintMenu.options.length})`,
+    footprintMenu.open && footprintMenu.options.length === 10);
+  check('Q includes 9x9 and 10x10 with 10x10 selected by default',
+    footprintMenu.options.at(-2)?.label === '9x9'
+      && footprintMenu.options.at(-1)?.label === '10x10'
+      && footprintMenu.options.at(-1)?.selected);
 
   await page.keyboard.press('e');
   await page.waitForTimeout(80);
@@ -260,7 +320,6 @@ try {
   // HELD solid build (regression for "click+hold places ONE chunk then nothing"):
   // exercise it before terrain-dependent walking can carry the player into a
   // generated hazard. Death/respawn behavior has deterministic engine coverage.
-  const PI_PRIMARY = 16;
   await page.evaluate(() => window.__sandTest.addInventory(3, 99)); // STONE = 3
   await page.waitForFunction(() => window.__sandTest.getInventory().slots.some((s) => !s.isTool && s.material === 3 && s.count > 0));
   const stoneSlot = await page.evaluate(() => window.__sandTest.getInventory().slots.findIndex((s) => !s.isTool && s.material === 3 && s.count > 0));

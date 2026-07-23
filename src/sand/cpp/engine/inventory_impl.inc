@@ -7,6 +7,7 @@
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
+  p.emptyWeaponTriggerLatch = false;
   p.inv[0].itemKind = IK_BLAST_GUN;
   p.inv[0].count = 1;
   p.inv[1].itemKind = IK_MINING_TOOL;
@@ -30,6 +31,7 @@ void InventorySystem::resetPlayerPlaceStroke(Player& p) {
 void InventorySystem::setSelectedSlot(Player& p, int slot) {
   if (slot < 0) slot = 0; if (slot >= INV_HOTBAR) slot = INV_HOTBAR - 1;
   p.selectedSlot = slot;
+  if (!(p.input & PI_PRIMARY)) p.emptyWeaponTriggerLatch = false;
   resetPlayerPlaceStroke(p);
   E.resetPlayerMine(p);
   InvSlot& s = p.inv[slot];
@@ -58,27 +60,23 @@ bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
   if (a.count <= 0 || b.count <= 0 || a.itemKind != b.itemKind) return false;
   if (a.itemKind == IK_MATERIAL) return a.material == b.material && (a.material != SEED || a.plantType == b.plantType);
   if (a.itemKind == IK_ARROW) return true;
-  return false; // tools, bows, and guns are intentionally non-stackable
+  return isFiniteAmmoWeapon(a.itemKind);
 }
 bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
   Player trial = p;
   int count = incoming.count;
   if (count <= 0) return true;
+  int limit = inventoryStackLimit(incoming.itemKind);
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
     InvSlot& s = trial.inv[i];
-    if (sameStack(s, incoming) && s.count < INV_STACK_MAX) {
-      int add = imin(count, INV_STACK_MAX - s.count); s.count += add; count -= add;
+    if (sameStack(s, incoming) && s.count < limit) {
+      int add = imin(count, limit - s.count); s.count += add; count -= add;
     }
   }
   for (int i = 0; i < INV_SLOTS && count > 0; i++) {
     InvSlot& s = trial.inv[i];
     if (s.count == 0) {
       s = incoming;
-      int limit = (incoming.itemKind == IK_MINING_TOOL || incoming.itemKind == IK_BOW ||
-                   incoming.itemKind == IK_BLAST_GUN || incoming.itemKind == IK_DYNAMITE_SATCHEL ||
-                   incoming.itemKind == IK_BORE_CANNON || incoming.itemKind == IK_ACID_MORTAR ||
-                   incoming.itemKind == IK_CLUSTER_LAUNCHER ||
-                   incoming.itemKind == IK_MINIGUN) ? 1 : INV_STACK_MAX;
       int add = imin(count, limit); s.count = add; count -= add;
     }
   }
@@ -88,6 +86,15 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
 }
 bool InventorySystem::addToInventory(int id, uint8_t mat, int count, uint8_t plantType) { Player* p = E.findPlayer(id); return p ? addToInventory(*p, mat, count, plantType) : false; }
 bool InventorySystem::addStack(int id, const InvSlot& stack) { Player* p = E.findPlayer(id); return p ? addStack(*p, stack) : false; }
+bool InventorySystem::consumeSelectedWeaponAmmo(Player& p, uint8_t itemKind) {
+  InvSlot& s = p.inv[p.selectedSlot];
+  if (s.itemKind != itemKind || !isFiniteAmmoWeapon(itemKind) || s.count <= 0) return false;
+  if (--s.count <= 0) {
+    s = InvSlot();
+    p.emptyWeaponTriggerLatch = (p.input & PI_PRIMARY) != 0;
+  }
+  return true;
+}
 
 // Place the selected slot's material at the aim cell, capped at how many units the
 // stack can afford — consuming EXACTLY the pixels created (per-pixel economy).
@@ -126,12 +133,13 @@ bool InventorySystem::placeFromSelectedStroke(Player& p, int x0, int y0, int x1,
 bool InventorySystem::placeFromSelected(int id, int ax, int ay) { Player* p = E.findPlayer(id); return p ? placeFromSelected(*p, ax, ay, &E.fg) : false; }
 
 // Move/swap/merge slot `from` into `to` (the openable-grid drag). Same-material
-// non-tool stacks merge (respecting INV_STACK_MAX); otherwise the slots swap.
+// compatible stacks merge (respecting their material/ammo limit); otherwise the
+// slots swap.
 void InventorySystem::moveSlot(Player& p, int from, int to) {
   if (from < 0 || from >= INV_SLOTS || to < 0 || to >= INV_SLOTS || from == to) return;
   InvSlot& a = p.inv[from]; InvSlot& b = p.inv[to];
   if (sameStack(a, b)) {
-    int mv = imin(a.count, INV_STACK_MAX - b.count); b.count += mv; a.count -= mv;
+    int mv = imin(a.count, inventoryStackLimit(b.itemKind) - b.count); b.count += mv; a.count -= mv;
     if (a.count <= 0) a = InvSlot();
     return;
   }
@@ -149,14 +157,19 @@ void InventorySystem::cursorPick(Player& p, int slot, bool half) {
   bool cEmpty = c.count <= 0, sEmpty = s.count <= 0;
   if (cEmpty) {
     if (sEmpty) return;
-    if (half && !s.isTool && s.count > 1) { c = s; c.count = (s.count + 1) / 2; s.count -= c.count; }
+    if (half && inventoryStackCanSplit(s.itemKind) && !s.isTool && s.count > 1) {
+      c = s; c.count = (s.count + 1) / 2; s.count -= c.count;
+    }
     else { c = s; s = InvSlot(); }
   } else if (sEmpty) {
-    if (half) { s = c; s.count = 1; if (--c.count <= 0) c = InvSlot(); }
+    if (half && inventoryStackCanSplit(c.itemKind)) {
+      s = c; s.count = 1; if (--c.count <= 0) c = InvSlot();
+    }
     else { s = c; c = InvSlot(); }
   } else if (sameStack(c, s)) { // merge same material/species/ammo
-    int room = INV_STACK_MAX - s.count;
-    int mv = half ? imin(1, imin(room, c.count)) : imin(room, c.count);
+    int room = inventoryStackLimit(s.itemKind) - s.count;
+    int mv = half && inventoryStackCanSplit(c.itemKind)
+      ? imin(1, imin(room, c.count)) : imin(room, c.count);
     s.count += mv; c.count -= mv; if (c.count <= 0) c = InvSlot();
   } else if (!half) { // different contents -> swap (left-click only)
     InvSlot tmp = s; s = c; c = tmp;
@@ -253,6 +266,12 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (p.toolCooldown > 0) p.toolCooldown--;
   int prev = p.prevInput;
   bool primary = (p.input & PI_PRIMARY) != 0, secondary = (p.input & PI_SECONDARY) != 0;
+  if (p.emptyWeaponTriggerLatch) {
+    E.resetPlayerMine(p); resetPlayerPlaceStroke(p);
+    p.prevInput = p.input;
+    if (primary) return;
+    p.emptyWeaponTriggerLatch = false;
+  }
   bool primaryRising = primary && !(prev & PI_PRIMARY);
   bool secondaryRising = secondary && !(prev & PI_SECONDARY);
   p.prevInput = p.input;

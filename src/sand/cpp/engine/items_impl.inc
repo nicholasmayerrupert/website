@@ -100,7 +100,7 @@ int ItemSystem::spawnStack(const InvSlot& stack, double px, double py, double vx
   ensureItemCapacity();
   Item it; it.id = nextItemId++; it.kind = IT_ITEM; it.itemKind = stack.itemKind; it.material = stack.material;
   it.isTool = stack.isTool; it.toolClass = stack.toolClass; it.toolTier = stack.toolTier; it.plantType = stack.plantType;
-  it.count = std::max(1, std::min(INV_STACK_MAX, stack.count));
+  it.count = std::max(1, std::min(inventoryStackLimit(stack.itemKind), stack.count));
   it.px = px; it.py = py; it.vx = vx; it.vy = vy; it.pickupDelay = std::max(0, delay);
   items.push_back(it); return it.id;
 }

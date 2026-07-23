@@ -156,6 +156,9 @@ const isSpecialKind = (kind) => kind === ITEM_KIND.BOW || kind === ITEM_KIND.ARR
   || kind === ITEM_KIND.BLAST_GUN || kind === ITEM_KIND.DYNAMITE_SATCHEL
   || kind === ITEM_KIND.BORE_CANNON || kind === ITEM_KIND.ACID_MORTAR
   || kind === ITEM_KIND.CLUSTER_LAUNCHER || kind === ITEM_KIND.MINIGUN;
+const isFiniteAmmoKind = (kind) => kind === ITEM_KIND.DYNAMITE_SATCHEL
+  || kind === ITEM_KIND.BORE_CANNON || kind === ITEM_KIND.ACID_MORTAR
+  || kind === ITEM_KIND.CLUSTER_LAUNCHER || kind === ITEM_KIND.MINIGUN;
 function specialIcon(kind, sizePx) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 12 12'); svg.setAttribute('width', String(sizePx)); svg.setAttribute('height', String(sizePx));
@@ -316,7 +319,10 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (!s) return;
     if (isSpecialKind(s.itemKind)) {
       el.appendChild(specialIcon(s.itemKind, 28));
-      if (s.count > 1) { const c = document.createElement('span'); c.className = 'inv-count'; c.textContent = String(s.count); el.appendChild(c); }
+      if (s.count > 1 || isFiniteAmmoKind(s.itemKind)) {
+        const c = document.createElement('span'); c.className = 'inv-count';
+        c.textContent = String(s.count); el.appendChild(c);
+      }
     } else if (s.isTool || s.itemKind === ITEM_KIND.MINING_TOOL) {
       el.appendChild(toolIcon(s.toolClass, s.toolTier, 28));
       if (s.toolTier > 0) {
@@ -341,6 +347,16 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (!s) return;
     if (isSpecialKind(s.itemKind)) {
       cursorItem.appendChild(specialIcon(s.itemKind, 30));
+      if (s.count > 1 || isFiniteAmmoKind(s.itemKind)) {
+        const c = document.createElement('span');
+        Object.assign(c.style, {
+          position: 'absolute', right: '-2px', bottom: '-2px', fontSize: '12px', fontWeight: '700',
+          color: '#fff', textShadow: '0 1px 2px #000, 0 0 2px #000',
+          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+        });
+        c.textContent = String(s.count);
+        cursorItem.appendChild(c);
+      }
     } else if (s.isTool || s.itemKind === ITEM_KIND.MINING_TOOL) {
       cursorItem.appendChild(toolIcon(s.toolClass, s.toolTier, 30));
       if (s.toolTier > 0) {
@@ -594,7 +610,8 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         el.classList.toggle('selected', i === inv.selected);
         if (i < HOTBAR) el.setAttribute('aria-pressed', String(i === inv.selected));
         const contents = i >= HOTBAR && !s.count ? 'Empty' : slotName(s);
-        const countLabel = s.count > 1 ? `, ${s.count}` : '';
+        const countLabel = isFiniteAmmoKind(s.itemKind)
+          ? `, ${s.count} ammo` : (s.count > 1 ? `, ${s.count}` : '');
         el.setAttribute('aria-label', `${i < HOTBAR ? `Hotbar ${i + 1}` : `Inventory slot ${i + 1}`}: ${contents}${countLabel}${i === inv.selected ? ', selected' : ''}`);
         const sig = `${s.itemKind | 0}:${s.isTool ? 1 : 0}:${s.material | 0}:${s.toolClass | 0}:${s.toolTier | 0}:${s.count | 0}`;
         if (sig === slotSig[i]) continue;
@@ -605,11 +622,11 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
           n.textContent = String(i + 1); el.appendChild(n);
         }
         renderStack(el, s);
-        if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) el.title = 'Dynamite Satchel — LMB throws a bouncing fused charge';
-        else if (s.itemKind === ITEM_KIND.BORE_CANNON) el.title = 'Bore Cannon — hold LMB to charge a terrain-cutting beam';
-        else if (s.itemKind === ITEM_KIND.ACID_MORTAR) el.title = 'Acid Mortar — LMB lobs a corrosive shell';
-        else if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) el.title = 'Cluster Launcher — LMB fires a heavy bomb that splits into three mini dynamites';
-        else if (s.itemKind === ITEM_KIND.MINIGUN) el.title = 'Minigun — hold LMB for a stream of tiny explosive rounds';
+        if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) el.title = `Dynamite Satchel — ${s.count} throws remaining`;
+        else if (s.itemKind === ITEM_KIND.BORE_CANNON) el.title = `Bore Cannon — ${s.count} beams remaining`;
+        else if (s.itemKind === ITEM_KIND.ACID_MORTAR) el.title = `Acid Mortar — ${s.count} shells remaining`;
+        else if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) el.title = `Cluster Launcher — ${s.count} carriers remaining`;
+        else if (s.itemKind === ITEM_KIND.MINIGUN) el.title = `Minigun — ${s.count} rounds remaining`;
         else if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
         else if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
         else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;

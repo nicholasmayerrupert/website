@@ -337,6 +337,36 @@ static const double P_LIQUID_RUN_MULT = 0.55, P_LIQUID_DRAG_X = 0.76, P_LIQUID_D
 // INV_HOTBAR / INV_SLOTS live in abi.generated.hpp (shared with the JS HUD).
 static const int INV_GRID = INV_SLOTS - INV_HOTBAR; // 27
 static const int INV_STACK_MAX = 999;
+// Captured weapons carry their remaining ammunition in InvSlot::count. The
+// starter blast gun is deliberately absent: its singleton count is ownership,
+// not ammunition, and it remains unlimited.
+static const int DYNAMITE_SATCHEL_PICKUP_AMMO = 10;
+static const int BORE_CANNON_PICKUP_AMMO = 15;
+static const int ACID_MORTAR_PICKUP_AMMO = 20;
+static const int CLUSTER_LAUNCHER_PICKUP_AMMO = 15;
+static const int MINIGUN_PICKUP_AMMO = 250;
+static const int INV_WEAPON_AMMO_MAX = 999999;
+static inline bool isFiniteAmmoWeapon(uint8_t itemKind) {
+  return itemKind == IK_DYNAMITE_SATCHEL || itemKind == IK_BORE_CANNON ||
+         itemKind == IK_ACID_MORTAR || itemKind == IK_CLUSTER_LAUNCHER ||
+         itemKind == IK_MINIGUN;
+}
+static inline int weaponPickupAmmo(uint8_t itemKind) {
+  if (itemKind == IK_DYNAMITE_SATCHEL) return DYNAMITE_SATCHEL_PICKUP_AMMO;
+  if (itemKind == IK_BORE_CANNON) return BORE_CANNON_PICKUP_AMMO;
+  if (itemKind == IK_ACID_MORTAR) return ACID_MORTAR_PICKUP_AMMO;
+  if (itemKind == IK_CLUSTER_LAUNCHER) return CLUSTER_LAUNCHER_PICKUP_AMMO;
+  if (itemKind == IK_MINIGUN) return MINIGUN_PICKUP_AMMO;
+  return 0;
+}
+static inline int inventoryStackLimit(uint8_t itemKind) {
+  if (isFiniteAmmoWeapon(itemKind)) return INV_WEAPON_AMMO_MAX;
+  if (itemKind == IK_MATERIAL || itemKind == IK_ARROW) return INV_STACK_MAX;
+  return 1;
+}
+static inline bool inventoryStackCanSplit(uint8_t itemKind) {
+  return itemKind == IK_MATERIAL || itemKind == IK_ARROW;
+}
 // Inventory snapshot layout: IVS_* offsets / IVS_STRIDE in abi.generated.hpp.
 struct InvSlot {
   uint8_t itemKind = IK_MATERIAL;
@@ -360,8 +390,8 @@ struct SurvivalFootprint {
   std::vector<SurvivalFootprintCell> cells; // deterministic center-first ordering
 };
 // Footprint snapshot layout: FP_* offsets / FP_STRIDE in abi.generated.hpp.
-static const int SURVIVAL_FOOTPRINT_MAX_SIZE = 8;
-static const int SURVIVAL_FOOTPRINT_DEFAULT_ID = 2;  // 3x3 in the default preset list
+static const int SURVIVAL_FOOTPRINT_MAX_SIZE = 10;
+static const int SURVIVAL_FOOTPRINT_DEFAULT_ID = 9;  // 10x10 in the square preset list
 static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
 // The starter/crafted TC_DIG tool is the fast universal survival tool. Keep this
 // separate from the shared survival multiplier so hands and classed tools retain
@@ -508,6 +538,9 @@ struct Player {
   bool jetpackActive = false;
   double landingImpact = 0;
   int toolCooldown = 0; // steps remaining before this player can act again
+  // When an automatic weapon spends its final round while PRIMARY stays held,
+  // suppress the now-empty slot's bare-hand mining until PRIMARY is released.
+  bool emptyWeaponTriggerLatch = false;
   bool mineActive = false;
   int mineLayer = 0, mineX = 0, mineY = 0, mineFootprint = -1;
   // Held mining tool: a destroyed cell drops its material only when this class/tier

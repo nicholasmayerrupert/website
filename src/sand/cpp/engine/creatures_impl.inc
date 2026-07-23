@@ -280,7 +280,8 @@ void CreatureSystem::updateNaturalPopulation() {
     // Temporarily keep the ambient roster focused: these species remain valid
     // for direct tests/scripts, but do not enter fresh natural populations.
     if (sid == CS_MINNOW || sid == CS_PIKE || sid == CS_FOX ||
-        sid == CS_HARE || sid == CS_CRAWLER || sid == CS_BIRD) continue;
+        sid == CS_HARE || sid == CS_CRAWLER || sid == CS_MOLE ||
+        sid == CS_BIRD) continue;
     bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL ||
       sid == CS_CAUSTIC_MORTARMAN || sid == CS_CLUSTER_WASP || sid == CS_MINIGUNNER;
     if (survivalEnemy != (pass == 0) || (survivalEnemy && !E.survivalInventory)) continue;
@@ -606,7 +607,7 @@ static constexpr int MORTARMAN_FIRE_TICKS = 8;
 static constexpr int CLUSTER_WASP_CHARGE_TICKS = 32;
 static constexpr int CLUSTER_WASP_FIRE_TICKS = 8;
 static constexpr int MINIGUNNER_CHARGE_TICKS = 18;
-static constexpr int MINIGUNNER_BURST_TICKS = 54;
+static constexpr int MINIGUNNER_BURST_TICKS = 150;
 static constexpr int MINIGUNNER_SHOT_INTERVAL = 2;
 
 static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
@@ -728,10 +729,8 @@ void CreatureSystem::updateClusterWaspAttack(Creature& c) {
 void CreatureSystem::updateMinigunnerAttack(Creature& c) {
   const CreatureSpecies& s = species(c);
   if (c.attackState == CAS_FIRING) {
-    double tx = 0, ty = 0;
-    if (targetPoint(c, tx, ty, nullptr, nullptr)) {
-      c.attackAimX = tx; c.attackAimY = ty;
-    }
+    // Commit to the charged line for the entire burst. The long stream remains
+    // threatening, but moving out of that line is now a reliable counterplay.
     c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
     if ((c.attackTicks % MINIGUNNER_SHOT_INTERVAL) == 0) {
       E.projectiles.spawnMinigunRound(c,
@@ -870,7 +869,7 @@ void CreatureSystem::dropWeapon(const Creature& c) {
                    : IK_MATERIAL;
   if (itemKind == IK_MATERIAL) return;
   const CreatureSpecies& s = species(c);
-  InvSlot weapon; weapon.itemKind = itemKind; weapon.count = 1;
+  InvSlot weapon; weapon.itemKind = itemKind; weapon.count = weaponPickupAmmo(itemKind);
   E.itemsys.spawnStack(weapon,
                        c.wx - E.fg.worldOffsetX + s.w * 0.5,
                        c.wy - E.fg.worldOffsetY + s.h * 0.45,

@@ -138,20 +138,26 @@ accumulate catch-up debt.
 `/game` is explosive survival. Players spawn with a lower-cadence automatic
 blast gun whose swept, high-velocity rounds detonate on the first liquid, solid,
 or creature hit.
-Dynamiteers throw bouncing timed charges; bore sentinels telegraph, lock, and then
-erase a thick line through both simulated layers. Caustic mortarmen lob large,
+Dynamiteers throw wide, high-damage bouncing charges; bore sentinels telegraph,
+lock, and then erase a thick line through both simulated layers. Caustic mortarmen lob large,
 double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
-carriers that split into three independently fused mini-dynamites; and
-minigunners saturate terrain with rapid, pinprick explosive rounds.
+carriers that split into three short-fused, independently scattering
+mini-dynamites; and minigunners commit their aim before saturating that line with
+long bursts of rapid, pinprick explosive rounds.
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
 the articulated player animation, an airborne rechargeable jetpack, and safe
 original-spawn respawning remain authoritative in the engine. The rendered
 jetpack exposes its fuel level and animates twin thrust plumes without changing
 that authority. Mining, material pickups,
-block placement, the 36-slot inventory, tool-size presets, and crafting remain
+block placement, the 36-slot inventory, 1x1–10x10 tool-size presets (10x10 by
+default), and crafting remain
 part of survival: defeated demolition crews can also drop their weapons into
-that same inventory. The starting universal dig tool cuts ordinary terrain at
+that same inventory. Captured dynamite satchels carry 10 throws, bore cannons 15
+beams, acid mortars 20 shells, cluster launchers 15 carriers, and miniguns 250
+rounds. Picking up a duplicate weapon merges its full ammo load into the existing
+weapon, while the bound starter blast gun remains unlimited. The starting
+universal dig tool cuts ordinary terrain at
 roughly ten times its previous rate without accelerating bare hands or crafted
 material-specific picks.
 
@@ -164,7 +170,7 @@ JavaScript.
 Creatures use absolute-world poses so they survive streaming. Off-window
 creatures hibernate, natural populations are capped locally and globally, and
 explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
-crawlers, and birds are currently retired from natural spawning but remain
+crawlers, moles, and birds are currently retired from natural spawning but remain
 available through their creative eggs.
 
 ### Controls

@@ -62,13 +62,15 @@ function survivalStepsToBreakStone(toolClass, toolTier) {
   e.finalizeStoneDraft();
   e.setSurvivalInventory(true);
   const id = e.spawnPlayer(55, 62);
+  // This suite isolates mining speed from the player-facing default footprint.
+  e.setSelectedFootprint(id, 2);
   const slot = toolClass === TC.dig
     ? e.getInventory(id).slots.findIndex((candidate) => candidate.isTool)
     : 3;
   e.setSelectedSlot(id, slot);
   if (toolClass !== TC.dig) e.setPlayerTool(id, toolClass, toolTier);
-  // Keep the real default 3x3 footprint: its nine-cell work scaling makes the
-  // player-visible stone timing 48 -> 5 steps, closely reflecting the 10x boost.
+  // Keep a 3x3 footprint: its nine-cell work scaling makes the stone timing
+  // 48 -> 5 steps, closely reflecting the 10x boost.
   let steps = 0;
   while (e.getGrid()[70 * COLS + 60] !== MAT.EMPTY && steps < 500) {
     e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX: 60, aimY: 70, tool: 0, seq: steps });

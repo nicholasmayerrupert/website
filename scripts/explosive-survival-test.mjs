@@ -12,6 +12,13 @@ await initSandWasm();
 const { check, done } = makeChecker('explosive survival combat');
 const COLS = 180, ROWS = 120, FLOOR = 104;
 const PI_PRIMARY = 16;
+const WEAPON_PICKUP_AMMO = Object.freeze({
+  [ITEM_KIND.DYNAMITE_SATCHEL]: 10,
+  [ITEM_KIND.BORE_CANNON]: 15,
+  [ITEM_KIND.ACID_MORTAR]: 20,
+  [ITEM_KIND.CLUSTER_LAUNCHER]: 15,
+  [ITEM_KIND.MINIGUN]: 250,
+});
 
 function arena({ wall = false, background = false } = {}) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0xB1057, sinksOn: false, infinite: false });
@@ -80,7 +87,9 @@ function killForWeaponDrop(e, species, itemKind, x, y, label) {
   check(`${label} enters its corpse state`, e.getCreatures().find((candidate) => candidate.id === id)?.alive === false);
   for (let tick = 0; tick < 25; tick++) e.stepActors();
   const drops = e.getItems().filter((item) => item.kind === 0 && item.itemKind === itemKind);
-  check(`${label} death drops exactly one weapon and never duplicates it`, drops.length === 1 && drops[0].count === 1);
+  const expectedAmmo = WEAPON_PICKUP_AMMO[itemKind];
+  check(`${label} death drops one fully loaded weapon (${expectedAmmo} ammo)`,
+    drops.length === 1 && drops[0].count === expectedAmmo);
   return drops[0];
 }
 
@@ -94,12 +103,15 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     vy: 0,
     grounded: true,
   });
+  const expectedAmmo = WEAPON_PICKUP_AMMO[itemKind];
   for (let tick = 0; tick < 20; tick++) {
     e.stepActors();
-    if (e.getInventory(playerId).slots.some((slot) => slot.itemKind === itemKind && slot.count === 1)) break;
+    if (e.getInventory(playerId).slots.some((slot) =>
+      slot.itemKind === itemKind && slot.count === expectedAmmo)) break;
   }
   const inventory = e.getInventory(playerId);
-  const slot = inventory.slots.findIndex((candidate) => candidate.itemKind === itemKind && candidate.count === 1);
+  const slot = inventory.slots.findIndex((candidate) =>
+    candidate.itemKind === itemKind && candidate.count === expectedAmmo);
   check(`${label} can be picked up`, slot >= 0 && !e.getItems().some((item) => item.itemKind === itemKind));
   if (slot >= 0) e.setSelectedSlot(playerId, slot);
   const equipped = e.getInventory(playerId);
@@ -183,6 +195,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     projectile.kind === PROJECTILE_KIND.DYNAMITE && projectile.owner === player);
   check('equipped dynamite satchel throws a live player-owned charge',
     slot >= 0 && thrown?.fuse > 0 && thrown.vx > 0 && Number.isFinite(thrown.rotation));
+  check('a successful dynamite throw consumes exactly one satchel charge',
+    e.getInventory(player).slots[slot]?.count === 9);
   for (let tick = 0; tick < 25; tick++) e.stepActors();
   check('dynamiteer corpse cleanup does not create another satchel',
     !e.getItems().some((item) => item.itemKind === ITEM_KIND.DYNAMITE_SATCHEL)
@@ -200,6 +214,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const stoneBefore = countStone(e.getGrid());
   const sounds = new Set();
   let sawCharge = false, sawThrow = false, rotationFinite = true, firstFuse = 0, minFuse = Infinity;
+  let extendedVictimStaged = false, extendedVictimDistance = 0, healthBeforeExtendedBlast = 0;
   for (let tick = 0; tick < 190; tick++) {
     e.stepActors(); drainTypes(e, sounds);
     const c = e.getCreatures().find((candidate) => candidate.id === thrower);
@@ -210,6 +225,22 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       if (!firstFuse) firstFuse = dynamite.fuse;
       minFuse = Math.min(minFuse, dynamite.fuse);
       rotationFinite &&= Number.isFinite(dynamite.rotation);
+      if (dynamite.fuse === 1 && !extendedVictimStaged) {
+        const victim = e.getPlayer(player);
+        const blastX = Math.round(dynamite.x) + 0.5;
+        const blastY = Math.round(dynamite.y) + 0.5;
+        const onRight = blastX + 25 + victim.w < COLS - 1;
+        const victimX = onRight ? blastX + 25 : blastX - 25 - victim.w;
+        const victimY = Math.max(1, Math.min(FLOOR - victim.h, blastY - victim.h * 0.5));
+        e.setPlayerState(player, {
+          ...victim, x: victimX, y: victimY, vx: 0, vy: 0, grounded: false,
+        });
+        const nearestX = Math.max(victimX, Math.min(blastX, victimX + victim.w));
+        const nearestY = Math.max(victimY, Math.min(blastY, victimY + victim.h));
+        extendedVictimDistance = Math.hypot(nearestX - blastX, nearestY - blastY);
+        healthBeforeExtendedBlast = victim.health;
+        extendedVictimStaged = true;
+      }
     }
     if (sawThrow && !dynamite) break;
   }
@@ -219,6 +250,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('dynamite expires into an autonomous explosion', !e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.DYNAMITE)
     && sounds.has(SOUND_EVENT.FUSE) && sounds.has(SOUND_EVENT.EXPLOSION));
   check('enemy dynamite damages the player', e.getPlayer(player).health < 100 || !e.getPlayer(player).alive);
+  check(`enlarged dynamite blast deals heavy damage beyond the old radius (${extendedVictimDistance.toFixed(1)} cells)`,
+    extendedVictimStaged && extendedVictimDistance > 22
+      && healthBeforeExtendedBlast - e.getPlayer(player).health >= 20);
   check('enemy dynamite destroys terrain', countStone(e.getGrid()) < stoneBefore);
   e.destroy();
 }
@@ -253,6 +287,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: COLS - 4, aimY: beamY, seq: ++seq });
   e.stepActors();
   check('charged bore cannon carves its aimed line', e.getGrid()[cutCell] === MAT.EMPTY);
+  check('a fired bore beam consumes exactly one cannon charge',
+    e.getInventory(player).slots[slot]?.count === 14);
   const boreFlash = e.getProjectiles().find((projectile) =>
     projectile.kind === PROJECTILE_KIND.BORE_BEAM && projectile.owner === player);
   check('player bore shot exposes a latched replicated firing beam',
@@ -383,6 +419,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const acidBefore = e.getGrid().reduce((n, material) => n + (material === MAT.ACID ? 1 : 0), 0);
   e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 76, aimY: FLOOR - 1, seq: 1 });
   e.stepActors();
+  check('a launched acid shell consumes exactly one mortar round',
+    e.getInventory(player).slots[slot]?.count === 19);
   let shell = e.getProjectiles().find((p) =>
     p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
   let sawShell = Boolean(shell);
@@ -415,11 +453,15 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const stoneBefore = countStone(e.getGrid());
   e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 78, aimY: FLOOR - 1, seq: 1 });
   e.stepActors();
+  check('a launched cluster carrier consumes exactly one launcher round',
+    e.getInventory(player).slots[slot]?.count === 14);
   const launchedCarrier = e.getProjectiles().find((p) =>
     p.kind === PROJECTILE_KIND.CLUSTER_BOMB && p.charge < 0.5);
+  const blastVictim = e.spawnPlayer(145, FLOOR - 8);
   e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
   let sawCarrier = Boolean(launchedCarrier), maxBomblets = 0;
   let splitTick = -1, threeTogetherTicks = 0;
+  let firstChildFuses = null, blastVictimStaged = false, blastVictimDistance = 0;
   const childDirections = new Set();
   for (let tick = 0; tick < 250; tick++) {
     e.stepActors();
@@ -427,17 +469,39 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     sawCarrier ||= cluster.some((p) => p.charge < 0.5);
     const children = cluster.filter((p) => p.charge > 0.5);
     if (children.length && splitTick < 0) splitTick = tick;
+    if (children.length === 3 && !firstChildFuses)
+      firstChildFuses = children.map((child) => child.fuse);
     if (children.length === 3) threeTogetherTicks++;
     maxBomblets = Math.max(maxBomblets, children.length);
     for (const child of children) childDirections.add(Math.round(Math.atan2(child.vy, child.vx) * 10));
+    const expiring = children.find((child) => child.fuse === 1);
+    if (expiring && !blastVictimStaged) {
+      const victim = e.getPlayer(blastVictim);
+      const blastX = Math.round(expiring.x) + 0.5;
+      const blastY = Math.round(expiring.y) + 0.5;
+      const onRight = blastX + 8 + victim.w < COLS - 1;
+      const victimX = onRight ? blastX + 8 : blastX - 8 - victim.w;
+      const victimY = Math.max(1, Math.min(FLOOR - victim.h, blastY - victim.h * 0.5));
+      e.setPlayerState(blastVictim, {
+        ...victim, x: victimX, y: victimY, vx: 0, vy: 0, grounded: false,
+      });
+      const nearestX = Math.max(victimX, Math.min(blastX, victimX + victim.w));
+      const nearestY = Math.max(victimY, Math.min(blastY, victimY + victim.h));
+      blastVictimDistance = Math.hypot(nearestX - blastX, nearestY - blastY);
+      blastVictimStaged = true;
+    }
   }
   check('cluster carrier is slower and keeps a roughly two-second fuse',
     launchedCarrier && Math.hypot(launchedCarrier.vx, launchedCarrier.vy) < 3
       && launchedCarrier.fuse > 100 && splitTick >= 100);
   check(`captured cluster launcher splits into exactly three live mini-dynamites (max ${maxBomblets})`,
     slot >= 0 && sawCarrier && maxBomblets === 3);
+  check(`all three mini-dynamites use short 36-54 tick fuses (${firstChildFuses?.join('/')})`,
+    firstChildFuses?.every((fuse) => fuse >= 36 && fuse <= 54));
   check('all three mini-dynamites scatter distinctly and remain visible',
     childDirections.size >= 3 && threeTogetherTicks >= 20);
+  check(`larger cluster blasts damage a non-owner beyond the old radius (${blastVictimDistance.toFixed(1)} cells)`,
+    blastVictimStaged && blastVictimDistance > 6 && e.getPlayer(blastVictim).health < 100);
   const stoneAfter = countStone(e.getGrid());
   check(`cluster bomblets leave multiple destructive craters (${stoneBefore} -> ${stoneAfter})`,
     stoneAfter < stoneBefore);
@@ -464,6 +528,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     bits: PI_PRIMARY, aimX: nearWallX + 20, aimY: guardShoulderY, seq: 1,
   });
   e.stepActors();
+  check('a successful minigun shot consumes exactly one round',
+    e.getInventory(player).slots[slot]?.count === 249);
   const skippedCover = e.getProjectiles().some((projectile) =>
     projectile.kind === PROJECTILE_KIND.MINIGUN_ROUND
       && projectile.owner === player && projectile.x > nearWallX + 1);
@@ -474,7 +540,10 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('near-cover minigun blast preserves direct owner immunity',
     healthAfterGuardShot === 100);
   e.setPlayerInput(player, { bits: 0, aimX: nearWallX + 20, aimY: guardShoulderY, seq: 2 });
-  for (let tick = 0; tick < 3; tick++) e.stepActors();
+  e.stepActors();
+  check('a cooldown tick without a shot consumes no minigun ammo',
+    e.getInventory(player).slots[slot]?.count === 249);
+  for (let tick = 0; tick < 2; tick++) e.stepActors();
   e.eraseDisc(nearWallX, nearWallY, 5);
   e.syncComponents();
   const healthBeforeBurst = e.getPlayer(player).health;
@@ -523,6 +592,120 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     carved > 0 && carved < 70);
   check('captured minigun preserves owner immunity',
     e.getPlayer(player).health === healthBeforeBurst);
+  e.destroy();
+}
+
+// Captured weapons are one indivisible item whose count is ammunition. Inventory
+// moves preserve that count, right-click cannot split it into duplicate guns, and
+// another pickup merges its full load into the existing weapon.
+{
+  const e = arena();
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const firstDrop = killForWeaponDrop(
+    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
+    72, FLOOR - 6, 'first ammo-test minigunner',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.MINIGUN, firstDrop, 'ammo-test minigun');
+
+  e.inventoryCursorPick(player, slot, true);
+  check('right-click carries the whole weapon instead of splitting its ammunition',
+    e.getCursor(player)?.itemKind === ITEM_KIND.MINIGUN
+      && e.getCursor(player)?.count === 250
+      && e.getInventory(player).slots[slot]?.count === 0);
+  e.inventoryCursorPick(player, slot, true);
+  check('right-click places the whole weapon back into one slot',
+    e.getCursor(player) === null
+      && e.getInventory(player).slots[slot]?.itemKind === ITEM_KIND.MINIGUN
+      && e.getInventory(player).slots[slot]?.count === 250);
+
+  const movedSlot = 8;
+  e.inventoryMove(player, slot, movedSlot);
+  check('hotbar movement preserves a captured weapon ammo count',
+    e.getInventory(player).slots[movedSlot]?.itemKind === ITEM_KIND.MINIGUN
+      && e.getInventory(player).slots[movedSlot]?.count === 250);
+  e.inventoryMove(player, movedSlot, slot);
+  e.setSelectedSlot(player, slot);
+
+  const pose = e.getPlayer(player);
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: COLS - 3, aimY: pose.y - 12, seq: 1,
+  });
+  e.stepActors();
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: COLS - 3, aimY: pose.y - 12, seq: 2,
+  });
+  e.stepActors();
+  check('only the successful shot, not its cooldown tick, spends ammunition',
+    e.getInventory(player).slots[slot]?.count === 249);
+  e.setPlayerInput(player, { bits: 0, aimX: COLS - 3, aimY: pose.y - 12, seq: 3 });
+  e.stepActors();
+
+  const secondDrop = killForWeaponDrop(
+    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
+    150, FLOOR - 6, 'second ammo-test minigunner',
+  );
+  const beforePickup = e.getPlayer(player);
+  e.setPlayerState(player, {
+    ...beforePickup,
+    x: secondDrop.x - beforePickup.w * 0.5,
+    y: Math.min(FLOOR - beforePickup.h, secondDrop.y - beforePickup.h),
+    vx: 0,
+    vy: 0,
+    grounded: true,
+  });
+  for (let tick = 0; tick < 20; tick++) {
+    e.stepActors();
+    if (!e.getItems().some((item) => item.itemKind === ITEM_KIND.MINIGUN)) break;
+  }
+  const merged = e.getInventory(player).slots.filter((item) =>
+    item.itemKind === ITEM_KIND.MINIGUN && item.count > 0);
+  check('a duplicate minigun pickup adds 250 ammo to the existing weapon',
+    merged.length === 1 && merged[0].count === 499);
+  e.destroy();
+}
+
+// Spending the final automatic round while PRIMARY remains down must not turn
+// the newly empty hotbar slot into a bare-hand mining action.
+{
+  const e = arena();
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const drop = killForWeaponDrop(
+    e, CREATURE.MINIGUNNER, ITEM_KIND.MINIGUN,
+    72, FLOOR - 6, 'empty-latch minigunner',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.MINIGUN, drop, 'empty-latch minigun');
+  const pose = e.getPlayer(player);
+  let shots = 0;
+  for (let tick = 0; tick < 520 && e.getInventory(player).slots[slot]?.count > 0; tick++) {
+    e.setPlayerInput(player, {
+      bits: PI_PRIMARY, aimX: COLS - 3, aimY: pose.y - 14, seq: tick + 1,
+    });
+    e.stepActors();
+    shots += drainTypeCount(e, SOUND_EVENT.MINIGUN);
+  }
+  check('a full minigun load produces exactly 250 successful shots before emptying',
+    shots === 250 && e.getInventory(player).slots[slot]?.count === 0);
+
+  e.setSelectedSlot(player, 7); // slot changes must not bypass the held-trigger latch
+  e.setSelectedFootprint(player, 0); // isolate trigger routing from 10x10 mining work scaling
+  const mineX = Math.floor(e.getPlayer(player).x + 10);
+  const mineY = Math.floor(e.getPlayer(player).y + 3);
+  e.placeMaterial(mineX, mineY, 0, MAT.SAND);
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: mineX, aimY: mineY, seq: 600,
+  });
+  for (let tick = 0; tick < 40; tick++) e.stepActors();
+  check('held fire after the final round cannot become bare-hand mining after a slot change',
+    e.getGrid()[mineY * COLS + mineX] === MAT.SAND);
+  e.setPlayerInput(player, { bits: 0, aimX: mineX, aimY: mineY, seq: 601 });
+  e.stepActors();
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: mineX, aimY: mineY, seq: 602,
+  });
+  for (let tick = 0; tick < 64 && e.getGrid()[mineY * COLS + mineX] !== MAT.EMPTY; tick++)
+    e.stepActors();
+  check('releasing and pressing again restores bare-hand mining',
+    e.getGrid()[mineY * COLS + mineX] === MAT.EMPTY);
   e.destroy();
 }
 

@@ -78,8 +78,12 @@ const hasDraftCell = (cells, x, y) => {
       && kit.slots[1].itemKind === ITEM_KIND.MINING_TOOL && kit.slots[1].isTool
       && kit.slots[1].toolClass === TC.dig && kit.slots[1].toolTier === TT.wood && kit.slots[1].count === 1
       && kit.slots.slice(2).every((slot) => slot.count === 0));
-  check('survival sizes run 1x1 through 8x8 with 3x3 default',
-    footprints.length === 8 && footprints[0].width === 1 && footprints[7].width === 8 && kit.selectedFootprint === 2);
+  check('survival sizes run 1x1 through 10x10 with 10x10 default',
+    footprints.length === 10
+      && footprints[0].width === 1
+      && footprints[8].width === 9 && footprints[8].height === 9
+      && footprints[9].width === 10 && footprints[9].height === 10
+      && kit.selectedFootprint === 9);
   e.addToInventory(id, MAT.WOOD, 24);
   const starterTools = kit.slots.filter((slot) => slot.itemKind === ITEM_KIND.MINING_TOOL && slot.count > 0).length;
   check('24 wood crafts one additional wood mining tool', e.craft(id, 0) === 1
@@ -109,7 +113,7 @@ const hasDraftCell = (cells, x, y) => {
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8);
-  e.addToInventory(id, MAT.STONE, 50);
+  e.addToInventory(id, MAT.STONE, 150);
   const slot = e.getInventory(id).slots.findIndex((s) => !s.isTool && s.material === MAT.STONE && s.count > 0);
   e.setSelectedSlot(id, slot);
   const fp = e.getSurvivalFootprints()[e.getInventory(id).selectedFootprint];

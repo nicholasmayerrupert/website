@@ -146,7 +146,35 @@ const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);
   e.destroy();
 }
 
-// 8. analog camera input preserves arbitrary direction and stops on release.
+// 8. Facing follows horizontal aim, even while backpedaling.
+{
+  console.log('aim controls facing independently of movement');
+  const e = mk();
+  stoneFloor(e, 40, 180, 90);
+  const id = e.spawnPlayer(100, 80);
+  runSteps(e, 30);
+  let p = e.getPlayer(id);
+  e.setPlayerInput(id, {
+    bits: INPUT.RIGHT, aimX: p.x - 10, aimY: p.y + p.h * 0.5,
+  });
+  e.step(0);
+  p = e.getPlayer(id);
+  check('moving right while aiming left faces left', p.vx > 0 && p.facing === -1);
+  e.setPlayerInput(id, {
+    bits: INPUT.LEFT, aimX: p.x + p.w + 10, aimY: p.y + p.h * 0.5,
+  });
+  e.step(16);
+  p = e.getPlayer(id);
+  check('moving left while aiming right faces right', p.facing === 1);
+  e.setPlayerInput(id, {
+    bits: INPUT.LEFT, aimX: p.x + p.w * 0.5, aimY: p.y - 20,
+  });
+  e.step(32);
+  check('near-vertical aim retains the previous stable side', e.getPlayer(id).facing === 1);
+  e.destroy();
+}
+
+// 9. analog camera input preserves arbitrary direction and stops on release.
 {
   console.log('analog camera pan');
   const e = mk({ infinite: false });

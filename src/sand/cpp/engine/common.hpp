@@ -306,6 +306,7 @@ static const int    PLAYER_W = 4, PLAYER_H = 8;
 static const double P_GRAVITY = 0.078125, P_MAX_FALL = 6.0;
 static const double P_MOVE_ACCEL = 0.35, P_MAX_RUN = 0.875, P_RUN_MULT = 1.7;
 static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL = 2.035;
+static const double P_AIM_FACING_DEADZONE = 0.2; // retain side while aiming almost exactly vertical
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)

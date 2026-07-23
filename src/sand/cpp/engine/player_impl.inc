@@ -402,6 +402,12 @@ void PlayerSystem::setPlayerInput(int id, int inputBits, double aimX, double aim
     p->inputX = p->inputY = 0;
   }
   p->aimX = aimX; p->aimY = aimY;
+  // Facing follows the hand/cursor, independently of movement. A narrow
+  // horizontal dead zone keeps straight-up/down aim from flickering sides as
+  // quantized pointer cells cross the player's centre.
+  double aimDx = aimX - (p->px + p->w * 0.5);
+  if (std::isfinite(aimDx) && std::fabs(aimDx) > P_AIM_FACING_DEADZONE)
+    p->facing = aimDx > 0 ? 1 : -1;
   p->selectedTool = selectedTool;
   p->inputSeq = seq;
 }
@@ -456,7 +462,6 @@ void PlayerSystem::integratePlayer(Player& p) {
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
   } else {
     p.vx += P_MOVE_ACCEL * moveX;
-    p.facing = moveX > 0 ? 1 : -1;
   }
   if (p.vx >  maxRun) p.vx =  maxRun;
   if (p.vx < -maxRun) p.vx = -maxRun;

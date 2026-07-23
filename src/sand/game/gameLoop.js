@@ -300,6 +300,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     // total grid size.
     const listener = audioListener();
     if (listener) {
+      ctx.audio.updatePlayerEffects(ctx.survival ? localPlayer() : null);
       const soundEvents = ctx.netClientReady()
         ? ctx.net.consumeSoundEvents()
         : ctx.worldWorker?.consumeSoundEvents();

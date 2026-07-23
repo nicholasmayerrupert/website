@@ -5,7 +5,7 @@
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATIVE_KIND, OFF, SOUND_EVENT, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { MAT } from '../src/sand/materials.js';
-import { spatializeSound } from '../src/sand/audio/sandAudio.js';
+import { derivePlayerEffectState, spatializeSound } from '../src/sand/audio/sandAudio.js';
 import { AUDIO_ASSET_URLS } from '../src/sand/audio/audioAssets.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { readFile } from 'node:fs/promises';
@@ -21,6 +21,24 @@ check('ward impacts, ward breaks, and spawn breaches have distinct semantic cues
   Number.isInteger(SOUND_EVENT.SHIELD_HIT)
     && SOUND_EVENT.SHIELD_BREAK === SOUND_EVENT.SHIELD_HIT + 1
     && SOUND_EVENT.SPAWN_BREACH === SOUND_EVENT.SHIELD_BREAK + 1);
+
+{
+  const idle = derivePlayerEffectState({
+    id: 1, alive: true, jetpackActive: false, shieldActive: false,
+  });
+  const active = derivePlayerEffectState({
+    id: 1, alive: true, jetpackActive: true, jetpackFuel: 0.5,
+    shieldActive: true, shieldHealth: 120,
+  });
+  const dead = derivePlayerEffectState({
+    id: 1, alive: false, jetpackActive: true, jetpackFuel: 0.5,
+    shieldActive: true, shieldHealth: 120,
+  });
+  check('continuous player audio follows authoritative jetpack and ward state',
+    !idle.jetpack && !idle.shield && active.jetpack && active.shield);
+  check('death silences continuous player effects',
+    !dead.jetpack && !dead.shield && dead.id === 0);
+}
 
 // Gun layers stay compact, locally bundled, and tied to an auditable CC0 source.
 {

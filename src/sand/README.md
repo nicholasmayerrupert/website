@@ -222,9 +222,13 @@ network state. Creative mode can scrub and hold the cycle.
 
 The authority emits bounded semantic sound events. `audio/sandAudio.js` owns
 samples, synthesis, spatialization, loops, cooldowns, browser activation, mute,
-and visibility. Weapon reports layer compact CC0 recordings with synthesized
-pressure cracks, body, reflections, and mechanical action. Audio asset
-provenance is in `audio/assets/README.md`.
+and visibility. Player-facing follows horizontal cursor aim rather than movement,
+so backpedaling preserves the aimed sprite and weapon direction. Jetpack thrust
+uses layered body/hiss loops with ignition and release, while the raised ward has
+an activation transient, sustained resonant bed, impact, and break cues. Weapon
+reports layer compact CC0 recordings with synthesized pressure cracks, body,
+reflections, and mechanical action. Audio asset provenance is in
+`audio/assets/README.md`.
 
 ## Multiplayer
 

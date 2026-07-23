@@ -74,6 +74,15 @@ const EVENT_COOLDOWN_MS = Object.freeze({
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
 
+export function derivePlayerEffectState(player) {
+  const alive = !!player && player.alive !== false;
+  return {
+    id: alive ? (player.id | 0) : 0,
+    jetpack: alive && !!player.jetpackActive && (player.jetpackFuel ?? 1) > 0,
+    shield: alive && !!player.shieldActive && (player.shieldHealth ?? 1) > 0,
+  };
+}
+
 export function spatializeSound(eventX, eventY, listener, maxDistance, layer = 0) {
   const dx = eventX - listener.x;
   const dy = eventY - listener.y;
@@ -119,6 +128,7 @@ export function createSandAudio() {
   let ambienceVoices = null;
   let recordedAssets = null;
   let movementVoices = null;
+  let playerEffects = { id: 0, jetpack: false, shield: false };
   const lastEventAt = new Map();
   const lastRecordedWeaponAt = new Map();
   const MAX_VOICES = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 16 : 28;
@@ -216,6 +226,27 @@ export function createSandAudio() {
     if (voice.panner) voice.panner.pan.setTargetAtTime(spatial.pan, now, 0.1);
   };
 
+  const setMovementVoice = (name, strength, {
+    volume, rate = 1, attack = 0.06, release = 0.12, pan = 0,
+  }) => {
+    const voice = movementVoices?.[name];
+    if (!voice || !context) return;
+    const now = context.currentTime;
+    const target = audible()
+      ? Math.min(0.22, clamp(strength, 0, 2.5) * volume)
+      : 0.0001;
+    const current = Math.max(0.0001, voice.gain.gain.value);
+    if (voice.gain.gain.cancelAndHoldAtTime) voice.gain.gain.cancelAndHoldAtTime(now);
+    else {
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setValueAtTime(current, now);
+    }
+    voice.gain.gain.setTargetAtTime(Math.max(0.0001, target), now,
+      target > current ? attack : release);
+    voice.source.playbackRate.setTargetAtTime(voice.baseRate * rate, now, 0.08);
+    if (voice.panner) voice.panner.pan.setTargetAtTime(pan, now, 0.08);
+  };
+
   const init = () => {
     if (context || destroyed || typeof window === 'undefined') return context;
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -254,6 +285,15 @@ export function createSandAudio() {
       minigun: createMovementVoice(crackleBuffer, {
         filterType: 'bandpass', frequency: 1750, q: 0.46, rate: 1.32,
       }),
+      jetpackBody: createMovementVoice(brownBuffer, {
+        filterType: 'lowpass', frequency: 520, q: 0.62, rate: 0.92,
+      }),
+      jetpackHiss: createMovementVoice(noiseBuffer, {
+        filterType: 'bandpass', frequency: 1850, q: 0.48, rate: 1.08,
+      }),
+      shieldHum: createMovementVoice(crackleBuffer, {
+        filterType: 'bandpass', frequency: 1120, q: 1.9, rate: 0.64,
+      }),
     };
     const loadingContext = context;
     loadAudioAssets(context).then((assets) => {
@@ -275,8 +315,12 @@ export function createSandAudio() {
     master.gain.cancelScheduledValues(now);
     if (immediate) master.gain.setValueAtTime(target, now);
     else master.gain.setTargetAtTime(target, now, target ? 0.035 : 0.025);
-    if (!audible() && ambienceVoices) for (const voice of ambienceVoices)
-      voice.gain.gain.setTargetAtTime(0, now, 0.04);
+    if (!audible()) {
+      if (ambienceVoices) for (const voice of ambienceVoices)
+        voice.gain.gain.setTargetAtTime(0, now, 0.04);
+      if (movementVoices) for (const voice of Object.values(movementVoices))
+        voice.gain.gain.setTargetAtTime(0.0001, now, 0.04);
+    }
   };
 
   const unlock = async () => {
@@ -371,21 +415,27 @@ export function createSandAudio() {
     const pan = spatial.pan;
     const pitch = 0.88 + ((material * 37) % 17) / 50;
     if (type === SOUND_EVENT.BLAST_GUN) {
-      // Recorded muzzle texture plus the fast pressure impulse, ground/body
-      // reflection, and delayed weapon action that survive small speakers.
+      // A compact real report anchors the shot. Separate pressure, receiver,
+      // sub-body, and mechanical layers give the destructive starter gun weight
+      // without turning its automatic fire into one clipped wall of noise.
       playRecordedWeapon('blastGunReport', {
-        gain: Math.min(0.28, gain * 0.22), pan, rate: 0.96 + variation * 0.08,
+        gain: Math.min(0.38, gain * 0.34), pan, rate: 0.94 + variation * 0.08,
       });
-      playNoise({ duration: 0.075, gain: gain * 0.22, pan, frequency: 2350,
-        type: 'highpass', q: 0.38, rate: 1.05 + variation * 0.12, attack: 0.0015 });
-      playTone({ from: 132, to: 48, duration: 0.18, gain: gain * 0.17, pan,
+      playNoise({ duration: 0.055, gain: gain * 0.29, pan, frequency: 3150,
+        type: 'highpass', q: 0.32, rate: 1.08 + variation * 0.12, attack: 0.0008 });
+      playNoise({ duration: 0.115, gain: gain * 0.16, pan, frequency: 760,
+        type: 'bandpass', q: 0.66, rate: 0.94 + variation * 0.09,
+        buffer: brownBuffer, delay: 0.006, attack: 0.002 });
+      playTone({ from: 158, to: 46, duration: 0.22, gain: gain * 0.22, pan,
         wave: 'sine', attack: 0.002 });
-      playNoise({ duration: 0.17, gain: gain * 0.11, pan, frequency: 265,
+      playTone({ from: 690 + variation * 80, to: 210, duration: 0.11,
+        gain: gain * 0.07, pan, wave: 'sawtooth', delay: 0.008, attack: 0.0015 });
+      playNoise({ duration: 0.21, gain: gain * 0.14, pan, frequency: 245,
         type: 'lowpass', q: 0.55, rate: 0.88 + variation * 0.08,
-        buffer: brownBuffer, delay: 0.026, attack: 0.003 });
+        buffer: brownBuffer, delay: 0.022, attack: 0.003 });
       playRecordedWeapon('weaponAction', {
-        gain: gain * 0.085, pan, rate: 0.94 + variation * 0.14,
-        delay: 0.034, key: 'blast-action',
+        gain: gain * 0.11, pan, rate: 0.91 + variation * 0.14,
+        delay: 0.052, key: 'blast-action',
       });
     } else if (type === SOUND_EVENT.BORE_CHARGE) {
       // A rising warning with enough low body to remain readable behind terrain.
@@ -637,6 +687,40 @@ export function createSandAudio() {
     }
   };
 
+  const updatePlayerEffects = (player) => {
+    if (!context || !movementVoices) return;
+    const next = derivePlayerEffectState(player);
+    const samePlayer = next.id !== 0 && next.id === playerEffects.id;
+    const fuel = clamp(player?.jetpackFuel ?? 0);
+    const ward = clamp((player?.shieldHealth ?? 0) / 200);
+
+    if (next.jetpack && (!samePlayer || !playerEffects.jetpack) && audible()) {
+      playNoise({ duration: 0.14, gain: 0.115, pan: 0, frequency: 1450,
+        type: 'highpass', q: 0.36, rate: 0.92, attack: 0.003 });
+      playNoise({ duration: 0.20, gain: 0.10, pan: 0, frequency: 310,
+        type: 'lowpass', q: 0.58, rate: 0.78, buffer: brownBuffer, attack: 0.004 });
+      playTone({ from: 64, to: 118, duration: 0.16, gain: 0.055, pan: 0,
+        wave: 'sawtooth', attack: 0.005 });
+    }
+    if (next.shield && (!samePlayer || !playerEffects.shield) && audible()) {
+      playTone({ from: 180, to: 720, duration: 0.19, gain: 0.085, pan: 0,
+        wave: 'triangle', attack: 0.008 });
+      playTone({ from: 590, to: 980, duration: 0.22, gain: 0.052, pan: 0,
+        wave: 'sine', delay: 0.025, attack: 0.012 });
+      playNoise({ duration: 0.18, gain: 0.055, pan: 0, frequency: 2350,
+        type: 'bandpass', q: 1.55, rate: 0.88, attack: 0.012 });
+    }
+
+    const thrust = next.jetpack ? 0.82 + fuel * 0.18 : 0;
+    setMovementVoice('jetpackBody', thrust,
+      { volume: 0.105, rate: 0.94 + fuel * 0.10, attack: 0.035, release: 0.12 });
+    setMovementVoice('jetpackHiss', thrust,
+      { volume: 0.062, rate: 1.02 + fuel * 0.16, attack: 0.025, release: 0.09 });
+    setMovementVoice('shieldHum', next.shield ? 0.68 + ward * 0.32 : 0,
+      { volume: 0.048, rate: 0.92 + ward * 0.12, attack: 0.055, release: 0.16 });
+    playerEffects = next;
+  };
+
   const setEnabled = (on) => { enabled = !!on; applyMaster(); };
   const setMuted = (on) => { muted = !!on; writeStoredMuted(muted); applyMaster(); };
   const toggleMuted = () => { setMuted(!muted); if (!muted) unlock(); return muted; };
@@ -663,12 +747,14 @@ export function createSandAudio() {
     unlock,
     playEvents,
     updateAmbience,
+    updatePlayerEffects,
     setEnabled,
     setMuted,
     toggleMuted,
     get enabled() { return enabled; },
     get muted() { return muted; },
     get ready() { return context?.state === 'running'; },
+    get playerEffects() { return { ...playerEffects }; },
     destroy,
   };
 }

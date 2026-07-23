@@ -436,7 +436,12 @@ export function createSandGame(container, opts = {}) {
     setAudioMuted(on) { audio.setMuted(!!on); },
     toggleAudioMuted() { return audio.toggleMuted(); },
     unlockAudio() { return audio.unlock(); },
-    getAudioState() { return { enabled: audio.enabled, muted: audio.muted, ready: audio.ready }; },
+    getAudioState() {
+      return {
+        enabled: audio.enabled, muted: audio.muted, ready: audio.ready,
+        effects: audio.playerEffects,
+      };
+    },
     // Creative palette selection (material/seed/eraser/cube/creature).
     setCreativeMaterial(kind, value) {
       ctx.creativeKind = kind | 0;

@@ -385,6 +385,10 @@ try {
       && host?.shadowRoot?.querySelector('.survival-shield.active')
       && host.shadowRoot.querySelector('.survival-shield-label')?.textContent.includes('ACTIVE');
   }, null, { timeout: 5000 });
+  await page.waitForFunction(() =>
+    document.querySelector('sand-game')._game.getAudioState().effects.shield);
+  const shieldSoundActive = await page.evaluate(() =>
+    document.querySelector('sand-game')._game.getAudioState().effects.shield);
   await page.waitForTimeout(80);
   const wardVisual = await page.evaluate(() => {
     const t = window.__sandTest, before = window.__wardProbe;
@@ -417,8 +421,11 @@ try {
     return window.__sandTest.getPlayer()?.shieldActive === false
       && root?.querySelector('.survival-shield-label')?.textContent.includes('HOLD F');
   }, null, { timeout: 5000 });
+  await page.waitForFunction(() =>
+    !document.querySelector('sand-game')._game.getAudioState().effects.shield);
   check(`F maps to SHIELD input and activates a full 200-point ward (bits ${shieldBits})`,
     (shieldBits & INPUT_SHIELD) !== 0 && wardVisual.health === 200 && wardVisual.aria === '200');
+  check('raising the ward activates its continuous sound bed', shieldSoundActive);
   check(`active ward reaches the GL presentation (${wardVisual.changed} changed, ${wardVisual.paleWard} pale pixels)`,
     wardVisual.changed > 80 && wardVisual.paleWard > 12);
 
@@ -432,10 +439,17 @@ try {
   await page.waitForTimeout(50);
   const jumpBits = await page.evaluate(() => window.__sandTest.localInput().bits);
   let minVy = 0;
-  for (let t = 0; t < 10; t++) { await page.waitForTimeout(45); minVy = Math.min(minVy, (await getP()).vy); }
+  let jetpackSoundActive = false;
+  for (let t = 0; t < 10; t++) {
+    await page.waitForTimeout(45);
+    minVy = Math.min(minVy, (await getP()).vy);
+    jetpackSoundActive ||= await page.evaluate(() =>
+      document.querySelector('sand-game')._game.getAudioState().effects.jetpack);
+  }
   await page.keyboard.up('Space');
   check(`SPACE maps to jump + jetpack input (bits ${jumpBits})`,
     (jumpBits & INPUT_JUMP) !== 0 && (jumpBits & INPUT_JETPACK) !== 0);
+  check('airborne jetpack thrust activates its layered sound bed', jetpackSoundActive);
   console.log(`   (physical jump impulse minVy ${minVy.toFixed(2)})`);
   await waitGrounded();
   let afterJump = await getP();
@@ -565,11 +579,17 @@ try {
   const a1 = await page.evaluate(() => window.__sandTest.actionCount());
   check(`LMB fires the worker-authoritative blast gun (${a0} -> ${a1})`, a1 > a0);
 
-  // hold D: input reaches the engine (facing flips right; x does not go backward).
-  // Absolute displacement depends on the random terrain ahead, so the hard
-  // assertion is on facing + non-regression; the distance is logged.
+  // Movement and facing are independent: backpedal right while the cursor stays
+  // left, then walk left while aiming right.
   await ensureAlive();
   await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  const aimLeft = await page.evaluate(() => {
+    const p = window.__sandTest.getPlayer();
+    return window.__sandTestCellScreenPoint(
+      Math.floor(p.x + p.w * 0.5 - 12), Math.floor(p.y + p.h * 0.5),
+    );
+  });
+  await page.mouse.move(aimLeft.vx, aimLeft.vy);
   const x0 = (await getP()).x;
   await page.keyboard.down('d');
   await page.waitForTimeout(50);
@@ -577,17 +597,26 @@ try {
   await page.waitForTimeout(950);
   await page.keyboard.up('d');
   const movedR = await getP();
-  check(`D maps to RIGHT input (bits ${rightBits}, x ${x0.toFixed(1)} -> ${movedR.x.toFixed(1)})`, (rightBits & INPUT_RIGHT) !== 0);
+  check(`D moves right while left aim controls facing (bits ${rightBits}, x ${x0.toFixed(1)} -> ${movedR.x.toFixed(1)}, facing ${movedR.facing})`,
+    (rightBits & INPUT_RIGHT) !== 0 && movedR.facing === -1);
   // The hard assertion is the input mapping; deterministic player physics has
   // unit coverage and this generated route can enter a hazard while walking.
   await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  const aimRight = await page.evaluate(() => {
+    const p = window.__sandTest.getPlayer();
+    return window.__sandTestCellScreenPoint(
+      Math.floor(p.x + p.w * 0.5 + 12), Math.floor(p.y + p.h * 0.5),
+    );
+  });
+  await page.mouse.move(aimRight.vx, aimRight.vy);
   await page.keyboard.down('a');
   await page.waitForTimeout(50);
   const leftBits = await page.evaluate(() => window.__sandTest.localInput().bits);
   await page.waitForTimeout(450);
   await page.keyboard.up('a');
   const movedL = await getP();
-  check(`A maps to LEFT input (bits ${leftBits}, facing ${movedL.facing})`, (leftBits & INPUT_LEFT) !== 0);
+  check(`A moves left while right aim controls facing (bits ${leftBits}, facing ${movedL.facing})`,
+    (leftBits & INPUT_LEFT) !== 0 && movedL.facing === 1);
 
   await ensureAlive();
 
@@ -702,11 +731,14 @@ try {
   const webkitBefore = await webkitPage.evaluate(() => window.__sandTest.getPlayer());
   await webkitPage.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
   await webkitPage.keyboard.down('d');
+  await webkitPage.waitForTimeout(50);
+  const webkitBits = await webkitPage.evaluate(() => window.__sandTest.localInput().bits);
   await webkitPage.waitForTimeout(300);
   await webkitPage.keyboard.up('d');
   const webkitAfter = await webkitPage.evaluate(() => window.__sandTest.getPlayer());
   check('WebKit receives a worker-authoritative survival player', !!webkitBefore && !!webkitAfter);
-  check('WebKit forwards movement input through the worker authority', webkitAfter.facing === 1);
+  check('WebKit forwards movement input through the worker authority',
+    (webkitBits & INPUT_RIGHT) !== 0);
   await webkitBrowser.close();
   webkitBrowser = null;
   }

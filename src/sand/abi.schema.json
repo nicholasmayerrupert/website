@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 16,
+  "abiVersion": 17,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -15,7 +15,7 @@
     "creatureSnapshot": {
       "$comment": "float32 creature records built by CreatureSystem; also used by the external GL renderer and CREATURES wire message.",
       "cPrefix": "CSN",
-      "fields": ["id", "species", "x", "y", "vx", "vy", "w", "h", "facing", "health", "maxHealth", "alive", "animFrame"]
+      "fields": ["id", "species", "x", "y", "vx", "vy", "w", "h", "facing", "health", "maxHealth", "alive", "animFrame", "attackState", "attackProgress", "aimX", "aimY"]
     },
     "inventorySlot": {
       "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
@@ -23,9 +23,9 @@
       "fields": ["material", "isTool", "toolClass", "toolTier", "count", "plantType", "itemKind", "selected"]
     },
     "projectileSnapshot": {
-      "$comment": "float32 arrow records used by the authority, network, and external GL renderer.",
+      "$comment": "float32 projectile records used by the authority, network, and external GL renderer.",
       "cPrefix": "PRS",
-      "fields": ["id", "owner", "x", "y", "vx", "vy", "charge"]
+      "fields": ["id", "owner", "x", "y", "vx", "vy", "charge", "kind", "fuse", "rotation"]
     },
     "craftingRecipe": {
       "$comment": "int32 recipe headers; ingredientStart/count index craftingIngredient records.",
@@ -81,7 +81,15 @@
       "cType": "uint8_t",
       "jsName": "ITEM_KIND",
       "jsPrefix": "IK",
-      "values": { "IK_MATERIAL": 0, "IK_MINING_TOOL": 1, "IK_BOW": 2, "IK_ARROW": 3 }
+      "values": { "IK_MATERIAL": 0, "IK_MINING_TOOL": 1, "IK_BOW": 2, "IK_ARROW": 3, "IK_BLAST_GUN": 4 }
+    },
+    "ProjectileKind": {
+      "$comment": "Projectile actor kind used by simulation snapshots and render/network mirrors.",
+      "cName": "ProjectileKind",
+      "cType": "uint8_t",
+      "jsName": "PROJECTILE_KIND",
+      "jsPrefix": "PK",
+      "values": { "PK_ARROW": 0, "PK_BLAST_ROUND": 1, "PK_DYNAMITE": 2 }
     },
     "CraftIngredientKind": {
       "$comment": "How a crafting ingredient value is interpreted.",
@@ -120,8 +128,18 @@
         "CREATURE_HARE": 3,
         "CREATURE_CRAWLER": 4,
         "CREATURE_MOLE": 5,
-        "CREATURE_BIRD": 6
+        "CREATURE_BIRD": 6,
+        "CREATURE_DYNAMITEER": 7,
+        "CREATURE_BORE_SENTINEL": 8
       }
+    },
+    "CreatureAttackState": {
+      "$comment": "Replicated enemy telegraph/fire state used by simulation, transport, and GL presentation.",
+      "cName": "CreatureAttackState",
+      "cType": "uint8_t",
+      "jsName": "CREATURE_ATTACK_STATE",
+      "jsPrefix": "CAS",
+      "values": { "CAS_IDLE": 0, "CAS_CHARGING": 1, "CAS_FIRING": 2 }
     },
     "SoundEventType": {
       "$comment": "Semantic game sounds. The engine reports what happened; the browser audio mixer owns synthesis, spatialization, and voice policy.",
@@ -148,7 +166,10 @@
         "SE_BOW": 15,
         "SE_ARROW_HIT": 16,
         "SE_DEATH": 17,
-        "SE_RESPAWN": 18
+        "SE_RESPAWN": 18,
+        "SE_BLAST_GUN": 19,
+        "SE_BORE_CHARGE": 20,
+        "SE_BORE_FIRE": 21
       }
     }
   },

@@ -19,17 +19,17 @@ export function createSandGame(container, opts = {}) {
     initialTool = DEFAULT_TOOL,
     onLayoutChange,
     reducedMotion,
-    // 'survival' (default): a player character with reach/cooldown-restricted
-    // tools, camera follows. 'creative': free camera (WASD pans the infinite
-    // world), draw tools place/erase anywhere with no reach limit, no character.
+    // 'survival' (default): an armed player character and follow camera.
+    // 'creative': free camera (WASD pans the infinite world), draw tools
+    // place/erase anywhere with no reach limit, no character.
     mode = 'survival',
     // /fps enables engine-owned creature actors plus AABB outlines while
     // retaining creative controls and the performance HUD.
     debugHitboxes = false,
-    // Survival inventory hooks: onInventory(snapshot) feeds the HUD when it
-    // changes; onToggleInventory() opens/closes the grid (the E key). The
-    // inventory itself is authoritative in the engine — these only move
-    // snapshots out and intents in.
+    // Survival inventory hooks: onInventory(snapshot) feeds the arsenal HUD
+    // when it changes. The inventory itself is authoritative in the engine —
+    // these only move snapshots out and intents in. The toggle hooks remain as
+    // harmless compatibility inputs for older embeds.
     onInventory = null,
     onPlayerState = null,
     onToggleInventory = null,

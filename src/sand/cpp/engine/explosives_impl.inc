@@ -283,7 +283,7 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
 // (sand/dirt) are cleared almost to the rim; hard ones (iron ore) only near centre.
 // Destruction is component-safe and body-aware, reusing the eraser/mining primitives.
 void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody,
-                                 uint8_t explosiveMaterial) {
+                                 uint8_t explosiveMaterial, uint32_t seedSerial) {
   bb.any = true;
   if (explosiveMaterial == METHANE) bb.debrisStepCap = METHANE_DEBRIS_STEP_CAP;
   if (cx - radius < bb.minX) bb.minX = cx - radius;
@@ -291,7 +291,8 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   if (cx + radius > bb.maxX) bb.maxX = cx + radius;
   if (cy + radius > bb.maxY) bb.maxY = cy + radius;
   int r2 = radius * radius;
-  uint32_t bseed = (uint32_t)E.tick * 2654435761u ^ (uint32_t)(cy * E.cols + cx); // per-blast deterministic seed
+  uint32_t serial = seedSerial == UINT32_MAX ? (uint32_t)E.tick : seedSerial;
+  uint32_t bseed = serial * 2654435761u ^ (uint32_t)(cy * E.cols + cx); // per-blast deterministic seed
   bb.gasShockwaves.push_back({cx, cy, radius, bseed});
   // Physical chunks remain bounded and each candidate must have an escape path,
   // but enclosing foreground/background terrain does not suppress the budget.
@@ -496,14 +497,60 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
 }
 
-void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody, uint8_t explosiveMaterial) {
+void ExplosivesSystem::damageActors(int cx, int cy, int radius, double power, int immunePlayerId) {
+  const double blastX = cx + 0.5, blastY = cy + 0.5;
+  auto hit = [&](double x, double y, double w, double h, int salt,
+                 int& health, int& hurtCooldown, double& vx, double& vy) {
+    double nearestX = std::max(x, std::min(blastX, x + w));
+    double nearestY = std::max(y, std::min(blastY, y + h));
+    double dx = nearestX - blastX, dy = nearestY - blastY;
+    double distance = std::hypot(dx, dy);
+    if (distance > radius || hurtCooldown > 0) return 0;
+    double falloff = std::max(0.0, 1.0 - distance / std::max(1, radius));
+    int damage = imax(1, (int)std::ceil(power * 5.0 * falloff));
+    double centreDx = x + w * .5 - blastX, centreDy = y + h * .5 - blastY;
+    double centreDistance = std::hypot(centreDx, centreDy);
+    if (centreDistance < 1e-6) { centreDx = (salt & 1) ? 1.0 : -1.0; centreDy = -0.35; centreDistance = std::hypot(centreDx, centreDy); }
+    double impulse = .25 + power * .045 * falloff;
+    vx += centreDx / centreDistance * impulse;
+    vy += centreDy / centreDistance * impulse - impulse * .18;
+    health -= damage;
+    hurtCooldown = 12;
+    return damage;
+  };
+
+  for (Player& p : E.psys.players) {
+    if (!p.active || !p.alive || p.id == immunePlayerId) continue;
+    int before = p.health;
+    int damage = hit(p.px, p.py, p.w, p.h, p.id, p.health, p.hurtCooldown, p.vx, p.vy);
+    if (damage <= 0) continue;
+    // PlayerSystem owns hurt/death audio and bookkeeping. Restore the health
+    // value briefly so its common damage path applies exactly once.
+    p.health = before;
+    p.hurtCooldown = 0;
+    E.psys.damagePlayer(p, damage, 12);
+  }
+
+  for (Creature& c : E.creatures.creatures) {
+    if (!c.alive) continue;
+    const CreatureSpecies& s = E.creatures.species(c);
+    double localX = c.wx - E.fg.worldOffsetX, localY = c.wy - E.fg.worldOffsetY;
+    int damage = hit(localX, localY, s.w, s.h, c.id, c.health, c.hurtCooldown, c.vx, c.vy);
+    if (damage <= 0) continue;
+    E.audio.emit(SE_CREATURE, localX + s.w * .5, localY + s.h * .5,
+                 std::min(1.2, .5 + damage / 60.0), c.species, 0);
+  }
+}
+
+void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody, uint8_t explosiveMaterial, int immunePlayerId, uint32_t seedSerial) {
   Layer* src = E.L;
   E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), explosiveMaterial, src == &E.bg ? 1 : 0);
-  carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial);
+  damageActors(cx, cy, radius, power, immunePlayerId);
+  carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial, seedSerial);
   if (!E.bgEnabled || !otherBb) return;
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
   E.useLayer(other);
-  carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial);
+  carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial, seedSerial);
   E.useLayer(src);
 }
 
@@ -546,8 +593,10 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
 }
 
 // Single-blast convenience wrapper (one crater, its own finalize).
-void ExplosivesSystem::detonate(int cx, int cy, int radius, double power) {
-  BlastBatch bb, otherBb; carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb); finishBlastBatches(bb, &otherBb);
+void ExplosivesSystem::detonate(int cx, int cy, int radius, double power, int immunePlayerId, uint8_t explosiveMaterial, uint32_t seedSerial) {
+  BlastBatch bb, otherBb;
+  carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb, nullptr, explosiveMaterial, immunePlayerId, seedSerial);
+  finishBlastBatches(bb, &otherBb);
 }
 
 // Step pass (dispatched in step.inc next to the other reactions): light TNT touching

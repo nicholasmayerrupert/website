@@ -135,10 +135,20 @@ Players and other real-time actors advance on a deterministic 60 Hz actor clock;
 cellular world work is attempted at most once per presentation frame and does not
 accumulate catch-up debt.
 
-Survival includes inventory-backed mining and placement, engine-defined
-footprints, crafting, tiered mining tools, bows, health, environmental damage,
-dropped inventory on death, and manual respawn. The server and worker transport
-intents and authoritative snapshots rather than duplicating this policy in JS.
+`/game` is explosive survival. Players spawn with an automatic blast gun whose
+swept, high-velocity rounds detonate on the first liquid, solid, or creature hit.
+Dynamiteers throw bouncing timed charges; bore sentinels telegraph, lock, and then
+erase a thick line through both simulated layers. Blasts and bore cuts damage
+and knock back actors as well as changing terrain. Health, dropped equipment,
+and manual respawn remain authoritative in the engine. The older crafting,
+mining, and placement machinery remains available to engine tests and future
+loot, but its modal UI is not exposed by the combat presentation.
+
+Projectile kind, fuse, and rotation plus creature attack state, progress, and
+buffer-local aim are packed into the ABI snapshots; the worker mirror restores
+that aim to the creature's absolute-world state. The server and worker transport
+those authoritative snapshots rather than duplicating weapon or enemy policy in
+JavaScript.
 
 Creatures use absolute-world poses so they survive streaming. Off-window
 creatures hibernate, natural populations are capped locally and globally, and
@@ -153,9 +163,8 @@ explicit spawn eggs bypass natural-spawn caps.
 | `S`, `↓` | Crouch/down | Pan down |
 | `Shift` | Run | — |
 | `1`–`9`, wheel | Select hotbar | — |
-| `E` | Inventory/crafting | — |
-| `Q` | Placement/mining footprint | — |
-| Pointer | Aim and use selected stack/tool | Paint, draft, erase, or spawn |
+| `E`, `Q` | Reserved (no modal) | — |
+| Pointer | Aim; LMB fires the selected weapon | Paint, draft, erase, or spawn |
 | `+`, `-`, `0` | Zoom in/out/reset | Zoom in/out/reset |
 
 Coarse-pointer creative mode starts in scroll-safe mode behind a `START` button.

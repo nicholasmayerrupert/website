@@ -51,6 +51,7 @@
     "test:mining-speed": "node scripts/mining-speed-test.mjs",
     "test:inventory": "node scripts/inventory-test.mjs",
     "test:survival-upgrade": "node scripts/survival-upgrade-test.mjs",
+    "test:combat": "node scripts/explosive-survival-test.mjs",
     "test:inv-bridge": "node scripts/inventory-bridge-test.mjs",
     "test:creative": "node scripts/creative-place-test.mjs",
     "test:throw": "node scripts/throw-test.mjs",

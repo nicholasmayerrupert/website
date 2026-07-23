@@ -357,6 +357,8 @@ self.onmessage = async ({ data }) => {
     if (engine.paintDisc(p.x, p.y, Math.max(1, data.radius | 0), data.material | 0, false)) toolWrites++;
   } else if (data.type === 'test-seed-reaction') {
     seedReactionInterface(data.material | 0, Math.max(1, data.cap | 0), data.phase | 0);
+  } else if (data.type === 'test-creature-runtime') {
+    engine.setCreatureRuntime(!!data.simulate, !!data.naturalSpawn);
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;

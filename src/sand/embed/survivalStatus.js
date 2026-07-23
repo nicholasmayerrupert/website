@@ -5,6 +5,9 @@ const STYLE = `
 .survival-vitals { position:absolute; left:14px; bottom:72px; z-index:70; pointer-events:none;
   color:#fff; font:700 10px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
   text-shadow:2px 2px 0 #111; }
+.survival-objective { margin:0 0 8px; padding:5px 7px; color:#f0d465; letter-spacing:.09em;
+  background:rgba(23,27,32,.88); border:2px solid #090b0e;
+  box-shadow:inset 0 0 0 1px #59636c,3px 3px 0 rgba(0,0,0,.35); }
 .survival-vitals-label { margin:0 0 5px 2px; letter-spacing:.14em; }
 .survival-health { display:grid; grid-template-columns:repeat(10,14px); gap:2px; padding:4px;
   background:#171b20; border:2px solid #090b0e; box-shadow:inset 0 0 0 2px #3d4650,4px 4px 0 rgba(0,0,0,.3); }
@@ -35,6 +38,9 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   injectStyleOnce(root, 'data-sand-survival-status', STYLE);
   const vitals = document.createElement('div');
   vitals.className = 'survival-vitals';
+  const objective = document.createElement('div');
+  objective.className = 'survival-objective';
+  objective.textContent = 'OBJECTIVE  SURVIVE THE DEMOLITION CREWS';
   const label = document.createElement('div');
   label.className = 'survival-vitals-label'; label.textContent = 'HEALTH';
   const health = document.createElement('div'); health.className = 'survival-health';
@@ -47,23 +53,32 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   const chargeCells = Array.from({ length: 12 }, () => {
     const el = document.createElement('i'); charge.appendChild(el); return el;
   });
-  vitals.append(label, health, charge);
+  vitals.append(objective, label, health, charge);
 
   const death = document.createElement('div'); death.className = 'survival-death';
   const card = document.createElement('div'); card.className = 'survival-death-card';
   const title = document.createElement('h2'); title.className = 'survival-death-title'; title.textContent = 'YOU DIED';
   const note = document.createElement('div'); note.className = 'survival-death-note';
   const button = document.createElement('button'); button.type = 'button'; button.className = 'survival-respawn'; button.textContent = 'RESPAWN';
+  title.id = 'sand-survival-death-title'; note.id = 'sand-survival-death-note';
+  note.setAttribute('role', 'status'); note.setAttribute('aria-live', 'polite'); note.setAttribute('aria-atomic', 'true');
+  death.tabIndex = -1; death.setAttribute('role', 'dialog'); death.setAttribute('aria-hidden', 'true');
+  death.setAttribute('aria-labelledby', title.id); death.setAttribute('aria-describedby', note.id);
   card.append(title, note, button); death.appendChild(card);
   swallowEvents(death);
   root.append(vitals, death);
 
-  let ready = false;
+  let ready = false, wasDead = false, wasReady = false, previousFocus = null;
   const request = () => { if (ready) respawn?.(); };
   button.addEventListener('click', request);
   const onKey = (event) => {
-    if (!death.classList.contains('show') || event.code !== 'Enter') return;
-    event.preventDefault(); event.stopImmediatePropagation(); request();
+    if (!death.classList.contains('show')) return;
+    if (event.key === 'Tab') {
+      event.preventDefault(); event.stopImmediatePropagation();
+      (ready ? button : death).focus({ preventScroll: true });
+    } else if (event.code === 'Enter') {
+      event.preventDefault(); event.stopImmediatePropagation(); request();
+    }
   };
   window.addEventListener('keydown', onKey, true);
 
@@ -83,11 +98,23 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     const dead = !!player && player.alive === false;
     ready = dead && !!player.respawnReady;
     death.classList.toggle('show', dead);
+    death.setAttribute('aria-hidden', String(!dead));
+    if (dead) death.setAttribute('aria-modal', 'true');
+    else death.removeAttribute('aria-modal');
     button.disabled = !ready;
     if (dead) {
       const remaining = Math.max(0, Math.ceil((180 - (player.deathTicks || 0)) / 60));
-      note.textContent = ready ? 'PRESS ENTER OR CLICK BELOW' : `RESPAWN AVAILABLE IN ${remaining}`;
+      const message = ready ? 'PRESS ENTER OR CLICK BELOW' : `RESPAWN AVAILABLE IN ${remaining}`;
+      if (note.textContent !== message) note.textContent = message;
+      if (!wasDead) {
+        previousFocus = root.activeElement || document.activeElement;
+        death.focus({ preventScroll: true });
+      } else if (ready && !wasReady) button.focus({ preventScroll: true });
+    } else if (wasDead) {
+      if (previousFocus?.isConnected) previousFocus.focus?.({ preventScroll: true });
+      previousFocus = null;
     }
+    wasDead = dead; wasReady = ready;
   };
 
   return {

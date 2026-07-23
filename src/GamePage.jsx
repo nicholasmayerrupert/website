@@ -14,7 +14,7 @@ export default function GamePage() {
 
   useEffect(() => {
     const prev = document.title;
-    document.title = 'Sand Game — Nicholas Mayer-Rupert';
+    document.title = 'Explosive Survival — Nicholas Mayer-Rupert';
     return () => { document.title = prev; };
   }, []);
 
@@ -24,11 +24,11 @@ export default function GamePage() {
         <div className="max-w-sm">
           <div className="mb-4 text-5xl">🖥️</div>
           <h1 className="mb-3 text-xl font-semibold text-white">
-            The sandbox is desktop-only for now
+            Explosive Survival is desktop-only for now
           </h1>
           <p className="text-sm leading-relaxed text-white/70">
-            Visit on a larger screen with a mouse and keyboard to dig, build, and
-            explore. Touch controls are coming later.
+            Visit on a larger screen with a mouse and keyboard to aim, fire, and
+            tear through the simulated world. Touch controls are coming later.
           </p>
           <a
             href="/"
@@ -43,7 +43,7 @@ export default function GamePage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-dark">
-      <sand-game mode="survival" initial-tool="stone" perf-hud={PERF_GAME ? '' : undefined} />
+      <sand-game mode="survival" perf-hud={PERF_GAME ? '' : undefined} />
 
       {/* Back to the portfolio */}
       <a
@@ -55,12 +55,16 @@ export default function GamePage() {
 
       {/* Controls hint */}
       <div className="pointer-events-none absolute left-1/2 top-3 z-[80] -translate-x-1/2 border-2 border-black bg-[#252b31] px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-white/75 shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.4)] sm:text-xs">
-        <div className="mb-1 text-[#f0d465]">Survival · work in progress</div>
+        <div className="mb-1 text-[#f0d465]">Explosive Survival · work in progress</div>
         <div className="whitespace-nowrap">
           <span className="font-semibold text-white/90">WASD</span> move ·{' '}
           <span className="font-semibold text-white/90">Space</span> jump ·{' '}
-          <span className="font-semibold text-[#f0d465]">E</span> inventory + craft ·{' '}
-          LMB use / charge · RMB alternate layer
+          <span className="font-semibold text-white/90">Mouse</span> aim ·{' '}
+          <span className="font-semibold text-[#f0d465]">LMB</span> fire ·{' '}
+          <span className="font-semibold text-white/90">1–9</span> arsenal
+        </div>
+        <div className="mt-1 text-[9px] tracking-[.12em] text-[#f08a6a] sm:text-[10px]">
+          Objective: survive the demolition crews. Destroy everything in your way.
         </div>
       </div>
     </div>

@@ -23,7 +23,7 @@ function survival() {
 {
   const e = survival();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  e.setSelectedSlot(id, 0); // dig tool
+  e.setSelectedSlot(id, 8); // empty arsenal slot -> legacy bare-hand mining
   e.setSelectedFootprint(id, 0); // 1x1
   const x0 = 55, y0 = FLOOR;
   // Neighbour cell that must stay untouched while aim wanders onto it.
@@ -48,7 +48,7 @@ function survival() {
 {
   const e = survival();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  e.setSelectedSlot(id, 0);
+  e.setSelectedSlot(id, 8);
   e.setSelectedFootprint(id, 0);
   const x0 = 55, y0 = FLOOR;
   const x1 = 58, y1 = FLOOR;
@@ -77,7 +77,7 @@ function survival() {
 {
   const e = survival();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  e.setSelectedSlot(id, 0);
+  e.setSelectedSlot(id, 8);
   e.setSelectedFootprint(id, 0);
   const x0 = 55, y0 = FLOOR;
   const x1 = 58, y1 = FLOOR;

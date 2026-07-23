@@ -31,6 +31,9 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.ARROW_HIT]: 95,
   [SOUND_EVENT.DEATH]: 100,
   [SOUND_EVENT.RESPAWN]: 80,
+  [SOUND_EVENT.BLAST_GUN]: 150,
+  [SOUND_EVENT.BORE_CHARGE]: 260,
+  [SOUND_EVENT.BORE_FIRE]: 360,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -52,6 +55,9 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.ARROW_HIT]: 40,
   [SOUND_EVENT.DEATH]: 250,
   [SOUND_EVENT.RESPAWN]: 150,
+  [SOUND_EVENT.BLAST_GUN]: 55,
+  [SOUND_EVENT.BORE_CHARGE]: 320,
+  [SOUND_EVENT.BORE_FIRE]: 260,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -334,14 +340,49 @@ export function createSandAudio() {
     const gain = clamp(strength, 0.08, 2.5) * spatial.gain;
     const pan = spatial.pan;
     const pitch = 0.88 + ((material * 37) % 17) / 50;
-    if (type === SOUND_EVENT.EXPLOSION) {
+    if (type === SOUND_EVENT.BLAST_GUN) {
+      // Compact cannon report: a sharp pressure crack, short mechanical snap,
+      // and low kick that stays distinct from the projectile's later explosion.
+      playNoise({ duration: 0.11, gain: gain * 0.34, pan, frequency: 1650,
+        type: 'highpass', q: 0.45, rate: 1.05 + variation * 0.12, attack: 0.003 });
+      playTone({ from: 155, to: 62, duration: 0.14, gain: gain * 0.22, pan,
+        wave: 'sawtooth', attack: 0.003 });
+      playTone({ from: 2350, to: 1280, duration: 0.055, gain: gain * 0.08, pan,
+        wave: 'square', delay: 0.012, attack: 0.002 });
+    } else if (type === SOUND_EVENT.BORE_CHARGE) {
+      // A rising warning with enough low body to remain readable behind terrain.
+      playTone({ from: 82, to: 410, duration: 0.62, gain: gain * 0.16, pan,
+        wave: 'sawtooth', attack: 0.04 });
+      playTone({ from: 360, to: 1220, duration: 0.58, gain: gain * 0.09, pan,
+        wave: 'triangle', delay: 0.035, attack: 0.05 });
+      playNoise({ duration: 0.50, gain: gain * 0.08, pan, frequency: 2400,
+        type: 'bandpass', q: 1.4, rate: 0.92 + variation * 0.12, attack: 0.08 });
+    } else if (type === SOUND_EVENT.BORE_FIRE) {
+      // The cutting beam reads as one violent, descending energy discharge.
+      playTone({ from: 1180, to: 74, duration: 0.42, gain: gain * 0.22, pan,
+        wave: 'sawtooth', attack: 0.003 });
+      playNoise({ duration: 0.34, gain: gain * 0.30, pan, frequency: 1120,
+        type: 'bandpass', q: 0.7, rate: 0.82 + variation * 0.10, attack: 0.004 });
+      playTone({ from: 105, to: 42, duration: 0.48, gain: gain * 0.20, pan,
+        wave: 'sine', delay: 0.018, attack: 0.008 });
+    } else if (type === SOUND_EVENT.EXPLOSION) {
       const sampleGain = Math.min(0.46, gain * 0.25);
-      playSample({ buffer: recordedAssets?.tntDeepExplosion,
-        gain: sampleGain, pan, rate: 0.90 + variation * 0.04 });
-      playSample({ buffer: recordedAssets?.tntDeepBoom,
-        gain: sampleGain, pan, rate: 0.88 + variation * 0.04 });
-      playSample({ buffer: recordedAssets?.tntLargeExplosion,
-        gain: sampleGain, pan, rate: 0.91 + variation * 0.04 });
+      if (recordedAssets) {
+        playSample({ buffer: recordedAssets.tntDeepExplosion,
+          gain: sampleGain, pan, rate: 0.90 + variation * 0.04 });
+        playSample({ buffer: recordedAssets.tntDeepBoom,
+          gain: sampleGain, pan, rate: 0.88 + variation * 0.04 });
+        playSample({ buffer: recordedAssets.tntLargeExplosion,
+          gain: sampleGain, pan, rate: 0.91 + variation * 0.04 });
+      } else {
+        // The first shot can land before recorded assets finish decoding, and a
+        // failed asset request must not make the game's central effect silent.
+        playNoise({ duration: 0.46, gain: gain * 0.38, pan, frequency: 210,
+          type: 'lowpass', q: 0.6, rate: 0.78 + variation * 0.08,
+          buffer: brownBuffer, attack: 0.003 });
+        playTone({ from: 118, to: 38, duration: 0.48, gain: gain * 0.23, pan,
+          wave: 'sine', delay: 0.006, attack: 0.003 });
+      }
     } else if (type === SOUND_EVENT.FUSE) {
       playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {

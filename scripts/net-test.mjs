@@ -12,6 +12,7 @@ import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { applyWorldMessage, applyDiffMessage, bytesToB64 } from '../src/sand/net/worldSync.js';
 import { Predictor } from '../src/sand/net/predict.js';
 import { createGameNet } from '../src/sand/net/gameNet.js';
+import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { startServer } from './dev-multiplayer-server.mjs';
 import { approxEqual } from './sand-test-util.mjs';
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
@@ -129,7 +130,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('snapshot round trip');
   const players = [
-    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3 },
+    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN },
     { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, alive: true, inputSeq: 0, animState: 0, animFrame: 1 },
   ];
   const d = rt(makeSnapshot(123, players, 0xdeadbeef));
@@ -139,6 +140,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('grounded normalized to 0/1', d && d.players[0].grounded === 1 && d.players[1].grounded === 0);
   check('animation state preserved', d && d.players[0].animState === 2 && d.players[0].animFrame === 3 && d.players[1].animFrame === 1);
   check('alive state preserved', d && d.players[0].alive === 1 && d.players[1].alive === 1);
+  check('held item kind preserved', d && d.players[0].heldItemKind === ITEM_KIND.BLAST_GUN);
 }
 
 // 3. join/leave round trip.
@@ -163,6 +165,9 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('input rejects oversized analog vector', decode(JSON.stringify({ t: 'input', room: 'r', client: 1, player: 0, tick: 0, seq: 0, bits: 0, aimX: 0, aimY: 0, tool: 0, moveX: 1, moveY: 1 })) === null);
   check('snapshot bad player', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: -1 }] })) === null);
   check('snapshot missing anim rejected', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: [{ id: 1, x: 0, y: 0, vx: 0, vy: 0, facing: 1, tool: 0, seq: 0 }] })) === null);
+  const badHeldItem = makeSnapshot(1, [{ id: 1, x: 0, y: 0, facing: 1, grounded: false, tool: 0, health: 100, alive: true, animState: 0, animFrame: 0 }]);
+  badHeldItem.players[0].heldItemKind = Math.max(...Object.values(ITEM_KIND)) + 1;
+  check('snapshot unknown held item rejected', decode(JSON.stringify(badHeldItem)) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);
   check('viewport cannot exceed its buffer', rt(makeView('r', 'c', 200, 100, 100, 100)) === null);
   check('viewport buffer cell cap enforced', rt(makeView('r', 'c', 100, 100, 4000, 4000)) === null);

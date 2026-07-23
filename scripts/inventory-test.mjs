@@ -5,6 +5,7 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 120, ROWS = 100, FLOOR = 60;
@@ -53,8 +54,8 @@ const hasDraftCell = (cells, x, y) => {
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(50, FLOOR - 8);
-  // Fresh inventories are empty, so all 36 slots can be filled.
-  e.addToInventory(id, MAT.STONE, 999 * 36);
+  // The starter gun reserves slot 0; fill the remaining 35 stacks exactly.
+  e.addToInventory(id, MAT.STONE, 999 * 35);
   const full = e.addToInventory(id, MAT.GOLD_ORE, 1);
   check('a full inventory rejects a new material', full === false);
   // And a world item near the player is NOT absorbed when the inventory is full.
@@ -64,14 +65,16 @@ const hasDraftCell = (cells, x, y) => {
   e.destroy();
 }
 
-// 4) Empty spawn + crafting: bare hand gathers wood, then a crafted universal
-//    mining tool can harvest tiered stone while an empty slot cannot.
+// 4) Armed spawn + crafting: the gun occupies slot 0, while the older crafting
+//    machinery remains available behind the combat presentation.
 {
   const e = survivalEngine();
   const id = e.spawnPlayer(10, FLOOR - 8); // far from the mined block (no auto-pickup)
   let kit = e.getInventory(id);
   const footprints = e.getSurvivalFootprints();
-  check('fresh survival inventory starts empty', kit.slots.every((slot) => slot.count === 0));
+  check('fresh survival inventory starts with one selected blast gun',
+    kit.selected === 0 && kit.slots[0].itemKind === ITEM_KIND.BLAST_GUN && kit.slots[0].count === 1
+      && kit.slots.slice(1).every((slot) => slot.count === 0));
   check('survival sizes run 1x1 through 8x8 with 3x3 default',
     footprints.length === 8 && footprints[0].width === 1 && footprints[7].width === 8 && kit.selectedFootprint === 2);
   e.addToInventory(id, MAT.WOOD, 24);
@@ -183,7 +186,7 @@ const hasDraftCell = (cells, x, y) => {
   e.placeMaterial(44, FLOOR - 1, 0, MAT.STONE);
   e.paintDiscLayer(1, 44, FLOOR - 1, 0, MAT.STONE, true);
   e.syncComponentsLayer(1);
-  e.setSelectedSlot(id, 0);
+  e.setSelectedSlot(id, 8); // empty arsenal slot -> legacy bare-hand mining
   e.setSelectedFootprint(id, 0);
   for (let s = 0; s < 40; s++) {
     e.setPlayerInput(id, { bits: PI_SECONDARY, aimX: 44.5, aimY: FLOOR - 1 + 0.5, seq: s + 1 });

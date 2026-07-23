@@ -9,9 +9,9 @@ import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
-import { CREATIVE_KIND, CREATURE, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
-import { decode, encode, MSG, makeJoin, makeInput, makeView, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS } from '../src/sand/net/protocol.js';
-import { encodeItems, encodeCreatures, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, OFF, PROJECTILE_KIND, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
+import { decode, encode, MSG, makeJoin, makeInput, makeView, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS, PROJECTILE_FIELDS } from '../src/sand/net/protocol.js';
+import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -39,13 +39,35 @@ function survivalEngine() {
   e.destroy();
 }
 
-// Creatures replicate the same health and hitbox state the renderer consumes.
+// Creature combat poses replicate through the server encoder, including the
+// bore telegraph aim used by presentation mirrors.
 {
   const e = survivalEngine();
-  const id = e.spawnCreature(CREATURE.FOX, 35, FLOOR - 4);
+  e.spawnPlayer(25, FLOOR - 8);
+  const id = e.spawnCreature(CREATURE.BORE_SENTINEL, 70, FLOOR - 6);
+  e.setCreatureRuntime(true, false);
+  for (let i = 0; i < 8; i++) e.stepActors();
   const m = decode(encode(encodeCreatures(e, 0)));
+  const O = OFF.creatureSnapshot;
   check('creatures message decodes', m && m.t === MSG.CREATURES);
-  check('creature id/species/health replicated', m && m.data[0] === id && m.data[1] === CREATURE.FOX && m.data[9] === 42);
+  check('creature id/species/health replicated', m && m.data[O.id] === id && m.data[O.species] === CREATURE.BORE_SENTINEL && m.data[O.health] > 0);
+  check('bore charge state/progress/aim replicated', m && m.data[O.attackState] === CREATURE_ATTACK_STATE.CHARGING
+    && m.data[O.attackProgress] > 0 && Number.isFinite(m.data[O.aimX]) && Number.isFinite(m.data[O.aimY]));
+  e.destroy();
+}
+
+// Fused projectile pose fields take the same authoritative transport path.
+{
+  const e = survivalEngine();
+  e.spawnPlayer(25, FLOOR - 8);
+  e.spawnCreature(CREATURE.DYNAMITEER, 66, FLOOR - 5);
+  e.setCreatureRuntime(true, false);
+  for (let i = 0; i < 50 && e.getProjectiles().length === 0; i++) e.stepActors();
+  const m = decode(encode(encodeProjectiles(e, 0)));
+  const O = OFF.projectileSnapshot;
+  check('projectiles message decodes at the expanded stride', m && m.t === MSG.PROJECTILES && m.data.length === PROJECTILE_FIELDS);
+  check('dynamite kind/fuse/rotation replicated', m && m.data[O.kind] === PROJECTILE_KIND.DYNAMITE
+    && m.data[O.fuse] > 0 && Number.isFinite(m.data[O.rotation]));
   e.destroy();
 }
 
@@ -84,7 +106,7 @@ function survivalEngine() {
   check('inventory message decodes', m && m.t === MSG.INVENTORY && m.player === pid);
   check('selected slot preserved', m && m.selected === 4);
   check('selected footprint preserved', m && m.selectedFootprint === 3);
-  // Slot fields exactly mirror the engine, including the empty bare-hand slot.
+  // Slot fields exactly mirror the engine, including the selected starter gun.
   const inv = e.getInventory(pid);
   check('slot 0 tool fields match engine', m && m.data[1] === (inv.slots[0].isTool ? 1 : 0) && m.data[2] === inv.slots[0].toolClass);
   // the stone we added is somewhere in the flat data with count 42.

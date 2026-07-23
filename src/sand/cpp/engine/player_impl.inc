@@ -118,7 +118,7 @@ int PlayerSystem::spawnPlayer(double x, double y) {
   p.px = x; p.py = y;
   p.aimX = x; p.aimY = y;
   players.push_back(p);
-  if (E.survivalInventory) E.seedStarterTools(players.back()); // survival spawns empty; slot 0 is the bare hand
+  if (E.survivalInventory) E.seedStarterTools(players.back());
   return p.id;
 }
 void PlayerSystem::playerSurfaceSpawn(int col, double* out) {
@@ -146,6 +146,9 @@ void PlayerSystem::respawnPlayer(Player& p) {
   p.hurtCooldown = 120;
   resetPlayerMine(p); p.placeStrokeActive = false; p.prevInput = p.input;
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
+  // Death drops the old loadout into the world; always restore the starter gun
+  // so respawning cannot leave the combat mode soft-locked with empty hands.
+  if (E.survivalInventory) E.seedStarterTools(p);
   E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
 }
 bool PlayerSystem::requestRespawn(int id) {

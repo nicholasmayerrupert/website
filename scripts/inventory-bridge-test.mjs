@@ -30,11 +30,11 @@ check('prediction supplies responsive player position', presented.x === 11.5 && 
 check('worker health remains authoritative for the HUD', presented.health === 63);
 check('worker bow/death state survives prediction', presented.bowCharge === 0.8 && presented.heldItemKind === ITEM_KIND.BOW && presented.deathTicks === 12);
 
-// Fresh survival inventories are empty: slot 0 is the implicit bare hand.
+// Fresh explosive-survival inventories select the starter gun in slot 0.
 const inv = e.getInventory(id);
 check(`getInventory returns 36 slots (${inv.slots.length})`, inv.slots.length === 36);
-check(`bare-hand slot selected by default (${inv.selected})`, inv.selected === 0);
-check('slot 0 starts empty', !inv.slots[0].isTool && inv.slots[0].count === 0);
+check(`starter weapon selected by default (${inv.selected})`, inv.selected === 0);
+check('slot 0 starts with one blast gun', inv.slots[0].itemKind === ITEM_KIND.BLAST_GUN && inv.slots[0].count === 1);
 check('slot 1 is empty (no axe/shovel kit)', !inv.slots[1].isTool && inv.slots[1].count === 0);
 check('slot 3 is empty (no hand slot)', inv.slots[3].count === 0);
 

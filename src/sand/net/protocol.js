@@ -1,9 +1,9 @@
 // Validated, transport-independent multiplayer protocol. JSON envelopes carry
 // packed actor arrays and base64-encoded binary world snapshots/diffs.
 
-import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
+import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, PROJECTILE_KIND, CREATURE, CREATURE_ATTACK_STATE, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -37,6 +37,10 @@ export const MSG = Object.freeze({
 export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 127
 export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
 const SOUND_EVENT_MAX = Math.max(...Object.values(SOUND_EVENT));
+const ITEM_KIND_MAX = Math.max(...Object.values(ITEM_KIND));
+const PROJECTILE_KIND_MAX = Math.max(...Object.values(PROJECTILE_KIND));
+const CREATURE_MAX = Math.max(...Object.values(CREATURE));
+const CREATURE_ATTACK_STATE_MAX = Math.max(...Object.values(CREATURE_ATTACK_STATE));
 const MAX_SNAPSHOT_PLAYERS = 64;
 export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life,plantType] per item
 export const CREATURE_FIELDS = STRIDES.creatureSnapshot;
@@ -138,7 +142,9 @@ export function makeProjectiles(tick, projectiles) {
   for (let i = 0; i < projectiles.length; i++) {
     const p = projectiles[i], o = i * PROJECTILE_FIELDS;
     data[o + O.id] = p.id | 0; data[o + O.owner] = p.owner | 0;
-    data[o + O.x] = p.x; data[o + O.y] = p.y; data[o + O.vx] = p.vx; data[o + O.vy] = p.vy; data[o + O.charge] = p.charge;
+    data[o + O.x] = p.x; data[o + O.y] = p.y; data[o + O.vx] = p.vx; data[o + O.vy] = p.vy;
+    data[o + O.charge] = p.charge; data[o + O.kind] = p.kind | 0; data[o + O.fuse] = p.fuse | 0;
+    data[o + O.rotation] = Number.isFinite(p.rotation) ? p.rotation : 0;
   }
   return { t: MSG.PROJECTILES, tick: Math.trunc(tick), data };
 }
@@ -151,6 +157,10 @@ export function makeCreatures(tick, creatures) {
     data[o + O.w] = c.w | 0; data[o + O.h] = c.h | 0; data[o + O.facing] = c.facing | 0;
     data[o + O.health] = c.health | 0; data[o + O.maxHealth] = c.maxHealth | 0;
     data[o + O.alive] = c.alive ? 1 : 0; data[o + O.animFrame] = c.animFrame | 0;
+    data[o + O.attackState] = c.attackState | 0;
+    data[o + O.attackProgress] = Number.isFinite(c.attackProgress) ? c.attackProgress : 0;
+    data[o + O.aimX] = Number.isFinite(c.aimX) ? c.aimX : c.x;
+    data[o + O.aimY] = Number.isFinite(c.aimY) ? c.aimY : c.y;
   }
   return { t: MSG.CREATURES, tick: Math.trunc(tick), data };
 }
@@ -236,11 +246,13 @@ function validateView(m) {
 function validateItems(m) {
   if (!isNonNegInt(m.tick) || !Array.isArray(m.data)) return null;
   if (m.data.length % ITEM_FIELDS !== 0 || m.data.length > MAX_SNAPSHOT_ITEMS * ITEM_FIELDS) return null;
+  const O = OFF.itemSnapshot;
   for (let i = 0; i < m.data.length; i++) {
     const f = i % ITEM_FIELDS;
     // fields 4,5 are x,y (any finite); the rest are integers.
     if (f === 4 || f === 5) { if (!isFiniteNum(m.data[i])) return null; }
     else if (!isInt(m.data[i])) return null;
+    else if (f === O.itemKind && (m.data[i] < 0 || m.data[i] > ITEM_KIND_MAX)) return null;
   }
   return m;
 }
@@ -250,8 +262,13 @@ function validateCreatures(m) {
   const O = OFF.creatureSnapshot;
   for (let i = 0; i < m.data.length; i++) {
     const f = i % CREATURE_FIELDS;
-    if (f === O.x || f === O.y || f === O.vx || f === O.vy) { if (!isFiniteNum(m.data[i])) return null; }
+    if (f === O.x || f === O.y || f === O.vx || f === O.vy || f === O.attackProgress || f === O.aimX || f === O.aimY) {
+      if (!isFiniteNum(m.data[i])) return null;
+      if (f === O.attackProgress && (m.data[i] < 0 || m.data[i] > 1)) return null;
+    }
     else if (!isInt(m.data[i])) return null;
+    else if (f === O.species && (m.data[i] < 0 || m.data[i] > CREATURE_MAX)) return null;
+    else if (f === O.attackState && (m.data[i] < 0 || m.data[i] > CREATURE_ATTACK_STATE_MAX)) return null;
   }
   return m;
 }
@@ -260,8 +277,10 @@ function validateProjectiles(m) {
   const O = OFF.projectileSnapshot;
   for (let i = 0; i < m.data.length; i++) {
     const f = i % PROJECTILE_FIELDS;
-    if (f === O.x || f === O.y || f === O.vx || f === O.vy || f === O.charge) { if (!isFiniteNum(m.data[i])) return null; }
+    if (f === O.x || f === O.y || f === O.vx || f === O.vy || f === O.charge || f === O.rotation) { if (!isFiniteNum(m.data[i])) return null; }
     else if (!isInt(m.data[i])) return null;
+    else if (f === O.kind && (m.data[i] < 0 || m.data[i] > PROJECTILE_KIND_MAX)) return null;
+    else if (f === O.fuse && m.data[i] < 0) return null;
   }
   return m;
 }
@@ -284,7 +303,11 @@ function validateSounds(m) {
 function validateInventory(m) {
   if (!isNonNegInt(m.tick) || !isNonNegInt(m.player)) return null;
   if (!Array.isArray(m.data) || m.data.length !== INV_SLOTS * INV_FIELDS) return null;
-  for (const v of m.data) if (!isInt(v)) return null;
+  const O = OFF.inventorySlot;
+  for (let i = 0; i < m.data.length; i++) {
+    const v = m.data[i]; if (!isInt(v)) return null;
+    if (i % INV_FIELDS === O.itemKind && (v < 0 || v > ITEM_KIND_MAX)) return null;
+  }
   if (!isInt(m.selected) || m.selected < 0 || m.selected >= INV_SLOTS) return null;
   if (!isNonNegInt(m.selectedFootprint) || m.selectedFootprint > 255) return null;
   return m;
@@ -295,7 +318,7 @@ function validateCursor(m) {
   if (m.cur === null) return m;
   const c = m.cur;
   if (!c || typeof c !== 'object') return null;
-  if (!isInt(c.material) || !isBit(c.isTool) || !isInt(c.toolClass) || !isInt(c.toolTier) || !isInt(c.count) || !isNonNegInt(c.itemKind) || c.itemKind > Math.max(...Object.values(ITEM_KIND))) return null;
+  if (!isInt(c.material) || !isBit(c.isTool) || !isInt(c.toolClass) || !isInt(c.toolTier) || !isInt(c.count) || !isNonNegInt(c.itemKind) || c.itemKind > ITEM_KIND_MAX) return null;
   return m;
 }
 
@@ -321,7 +344,7 @@ function validateSnapshot(m) {
     if (!isInt(p.facing) || !isNonNegInt(p.tool) || !isNonNegInt(p.seq)) return null;
     if (!isNonNegInt(p.health) || !isBit(p.alive)) return null;
     if (!isNonNegInt(p.animState) || !isNonNegInt(p.animFrame) || !isNonNegInt(p.deathTicks) || !isBit(p.respawnReady)) return null;
-    if (!isFiniteNum(p.bowCharge) || p.bowCharge < 0 || p.bowCharge > 1 || !isNonNegInt(p.heldItemKind)) return null;
+    if (!isFiniteNum(p.bowCharge) || p.bowCharge < 0 || p.bowCharge > 1 || !isNonNegInt(p.heldItemKind) || p.heldItemKind > ITEM_KIND_MAX) return null;
   }
   return m;
 }

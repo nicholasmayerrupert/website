@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { chromium } from 'playwright';
 import { startSandServer } from './sand-server.mjs';
 import { MAT } from '../src/sand/materials.js';
+import { ITEM_KIND } from '../src/sand/wasmBridge/abi.generated.js';
 import { getAvailablePort } from './test-port.mjs';
 
 const PORT = await getAvailablePort();
@@ -126,10 +127,13 @@ try {
   const solidA = await solid(a.page), solidB = await solid(b.page);
   check(`both clients render the same server terrain (A ${solidA} ~ B ${solidB})`, solidA > 0 && Math.abs(solidA - solidB) <= 2);
 
-  // Survival begins with bare hands: all inventory slots are empty.
-  const inventoryEmpty = (page) => page.evaluate(() => window.__sandNet.ownInventory()?.slots?.every((slot) => !slot.count));
-  check('client A begins with bare hands', await inventoryEmpty(a.page));
-  check('client B begins with bare hands', await inventoryEmpty(b.page));
+  // The authoritative server arms every joining player in selected slot 0.
+  const hasStarterGun = (page) => page.evaluate((gunKind) => {
+    const inv = window.__sandNet.ownInventory();
+    return inv?.selected === 0 && inv.slots?.[0]?.itemKind === gunKind && inv.slots[0].count === 1;
+  }, ITEM_KIND.BLAST_GUN);
+  check('client A receives the starter blast gun', await hasStarterGun(a.page));
+  check('client B receives the starter blast gun', await hasStarterGun(b.page));
 
   // Give each authoritative player a distinct stack so the private inventory
   // and cursor replication checks below exercise real state changes.
@@ -139,7 +143,7 @@ try {
   srv.engine.addToInventory(pidB, MAT.WOOD, 2);
   for (let i = 0; i < 12; i++) {
     await pump();
-    const ready = await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 3);
+    const ready = await a.page.evaluate((stone) => window.__sandNet.ownInventory()?.slots?.some((slot) => slot.material === stone && slot.count === 3), MAT.STONE);
     if (ready) break;
   }
 
@@ -151,14 +155,14 @@ try {
   check(`client A selected slot synced (${selA})`, selA === 3);
   check(`client B selection unaffected (${selB})`, selB === 0);
 
-  // cursor sync: A picks slot 0 onto its cursor -> A carries it, slot 0 empties;
-  // B is unaffected (its own wood stack stays in slot 0).
-  await a.page.evaluate(() => window.__sandNet.pick(0, false));
+  // Legacy cursor transport remains correct behind the streamlined HUD: A
+  // picks its material stack from slot 1 while both starter guns stay equipped.
+  await a.page.evaluate(() => window.__sandNet.pick(1, false));
   let curA = null;
   for (let i = 0; i < 24; i++) { await pump(); curA = await a.page.evaluate(() => window.__sandNet.ownCursor()); if (curA) break; }
   check('client A carries a cursor stack after pick', curA != null);
-  check('client A slot 0 emptied after pick', await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 0));
-  check('client B slot 0 still holds its stack', await b.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[0]?.count ?? 0) === 2));
+  check('client A slot 1 emptied after pick', await a.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[1]?.count ?? 0) === 0));
+  check('client B slot 1 still holds its stack', await b.page.evaluate(() => (window.__sandNet.ownInventory()?.slots?.[1]?.count ?? 0) === 2));
 
   // item replication: a dropped item spawned on the SERVER (far from both players
   // so it isn't immediately vacuumed) must appear on BOTH clients' item views.

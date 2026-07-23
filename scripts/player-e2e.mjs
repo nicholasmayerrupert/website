@@ -68,44 +68,49 @@ try {
   });
   await page.goto(`${baseURL}game`, { waitUntil: 'load' }); // survival mode (the player character lives at /game)
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.getPlayer && window.__sandTest.getPlayer(), null, { timeout: 30000 });
+  // This suite verifies browser input wiring, not enemy lethality. Combat AI is
+  // covered deterministically by explosive-survival-test; freeze any naturally
+  // spawned actors so a dynamite fuse cannot race these UI assertions.
+  await page.evaluate(() => window.__sandTest.setCreatureRuntime(false, false));
   await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
 
   console.log('local player');
   const getP = () => page.evaluate(() => window.__sandTest.getPlayer());
   const ensureAlive = async () => {
     if ((await getP())?.alive) return;
-    await page.waitForFunction(() => window.__sandTest.getPlayer()?.respawnReady, null, { timeout: 5000 });
+    await page.waitForFunction(() => window.__sandTest.getPlayer()?.respawnReady, null, { timeout: 10000 });
     await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => window.__sandTest.getPlayer()?.alive, null, { timeout: 5000 });
   };
 
   // let the player settle onto the ground
-  await page.waitForTimeout(800);
+  await page.waitForFunction(() => window.__sandTest.getPlayer()?.grounded, null, { timeout: 4000 }).catch(() => {});
   const settled = await getP();
   check(`player spawned + grounded (y ${settled.y.toFixed(1)}, grounded ${settled.grounded})`, settled && settled.grounded);
 
-  // Inventory is a keyboard-operated modal, not a pointer-only overlay.
+  // Explosive survival deliberately keeps only the compact arsenal; the old E
+  // inventory/crafting modal must stay retired.
   await page.keyboard.press('e');
-  const inventoryDialog = page.locator('sand-game').getByRole('dialog');
-  await inventoryDialog.waitFor({ state: 'visible' });
+  await page.waitForTimeout(100);
   const inventoryA11y = await page.locator('sand-game').evaluate((host) => {
     const root = host.shadowRoot;
     const slots = [...root.querySelectorAll('.inv-slot')];
     return {
-      modal: root.querySelector('.inv-hud')?.getAttribute('aria-modal'),
+      modal: root.querySelector('[aria-modal="true"]') !== null,
       slots: slots.length,
+      disabledSlots: slots.filter((slot) => slot.disabled).length,
       allButtons: slots.every((slot) => slot.tagName === 'BUTTON'),
-      selectedFocused: root.activeElement === root.querySelector('.inv-slot.selected'),
+      simulationFocused: root.activeElement === root.querySelector('.sg-sim'),
     };
   });
-  check('open inventory is an aria-modal dialog', inventoryA11y.modal === 'true');
-  check(`inventory slots are keyboard buttons (${inventoryA11y.slots})`, inventoryA11y.slots === 36 && inventoryA11y.allButtons);
-  check('opening inventory focuses the selected slot', inventoryA11y.selectedFocused);
-  await page.keyboard.press('Escape');
-  await inventoryDialog.waitFor({ state: 'hidden' });
-  check('closing inventory restores simulation focus', await page.locator('sand-game').evaluate((host) =>
-    host.shadowRoot.activeElement === host.shadowRoot.querySelector('.sg-sim')));
+  check('E does not expose the retired modal', inventoryA11y.modal === false);
+  check(`arsenal exposes only nine hotbar buttons (${inventoryA11y.slots})`, inventoryA11y.slots === 9 && inventoryA11y.allButtons);
+  check(`empty arsenal slots are locked (${inventoryA11y.disabledSlots})`, inventoryA11y.disabledSlots === 8);
+  check('E leaves simulation focus intact', inventoryA11y.simulationFocused);
+  await page.keyboard.press('2');
+  await page.waitForTimeout(80);
+  check('an empty number slot cannot unequip the blast gun', (await page.evaluate(() => window.__sandTest.getInventory().selected)) === 0);
 
   // Jump: hold briefly (so the press spans a 16ms fixed step) and watch the apex.
   // The procedural spawn can sit under an overhang/tree where a real jump hits a
@@ -200,17 +205,17 @@ try {
     `release commits the connected stone draft (stone +${stoneResult.stone - stoneAim.stone0}, inventory ${stoneAim.inventory0} -> ${stoneResult.inventory})`,
     stoneResult.draft === 0 && (stoneResult.stone > stoneAim.stone0 || stoneResult.inventory < stoneAim.inventory0),
   );
+  await ensureAlive();
   await page.evaluate(() => window.__sandTest.selectSlot(0));
   await page.waitForFunction(() => window.__sandTest.getInventory().selected === 0);
 
-  // Player-mediated dig: use bare hands on terrain beside the still-safe spawn
-  // and assert the real pointer path reaches the worker authority.
+  // Fire the starter gun into nearby terrain and assert the real pointer path
+  // reaches the worker authority. Deterministic engine coverage verifies the
+  // resulting projectile sweep and explosion in detail.
   const a0 = await page.evaluate(() => window.__sandTest.actionCount());
   await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
   const aim = await page.evaluate(() => {
     const t = window.__sandTest, p = t.getPlayer();
-    t.setDrawMode(true);
-    t.setTool('eraser');
     const footY = Math.floor(p.y + p.h);
     for (const dx of [10, -10, 14, -14, 18, -18]) {
       for (let dy = -4; dy <= 8; dy++) {
@@ -222,15 +227,18 @@ try {
   });
   await page.mouse.move(aim.vx, aim.vy);
   await page.mouse.down({ button: 'left' });
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(180);
   await page.mouse.up({ button: 'left' });
+  await page.waitForFunction((before) => window.__sandTest.actionCount() > before, a0, { timeout: 5000 }).catch(() => {});
   const a1 = await page.evaluate(() => window.__sandTest.actionCount());
-  check(`LMB drives player tool actions (${a0} -> ${a1})`, a1 > a0);
+  check(`LMB fires the worker-authoritative blast gun (${a0} -> ${a1})`, a1 > a0);
 
   // hold D: input reaches the engine (facing flips right; x does not go backward).
   // Absolute displacement depends on the random terrain ahead, so the hard
   // assertion is on facing + non-regression; the distance is logged.
-  const x0 = afterJump.x;
+  await ensureAlive();
+  await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  const x0 = (await getP()).x;
   await page.keyboard.down('d');
   await page.waitForTimeout(50);
   const rightBits = await page.evaluate(() => window.__sandTest.localInput().bits);
@@ -302,7 +310,7 @@ try {
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const mobilePage = await mobileContext.newPage();
   await mobilePage.goto(`${baseURL}game`, { waitUntil: 'load' });
-  await mobilePage.getByText('The sandbox is desktop-only for now').waitFor();
+  await mobilePage.getByText('Explosive Survival is desktop-only for now').waitFor();
   check('mobile /game never connects a sand-game element', await mobilePage.locator('sand-game').count() === 0);
   await mobileContext.close();
 

@@ -30,7 +30,7 @@ export async function startSandServer(opts = {}) {
     cols: cfg.cols, rows: cfg.rows, infinite: true, worldSeed: cfg.seed >>> 0,
     emittersOn: false, sinksOn: false,
   });
-  engine.setSurvivalInventory(true); // mining -> drops -> inventory; new players begin with bare hands
+  engine.setSurvivalInventory(true); // arms new players and enables authoritative combat inventory
   engine.setCreatureRuntime(true, true);
   engine.setPlayMode(true);
   const maxPlayers = cfg.maxPlayers ?? MAX_PLAYERS;

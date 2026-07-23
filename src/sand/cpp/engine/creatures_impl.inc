@@ -166,6 +166,10 @@ bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
     }
     Creature probe; probe.species = speciesId; probe.wx = wx; probe.wy = wy;
     if (!inLoadedWindow(probe, 0) || !boxFitsHabitat(speciesId, wx, wy)) continue;
+    // Surface/cave/air habitat snapping can substantially change Y after the
+    // radial candidate was chosen. Recheck the actual final pose so enemies do
+    // not materialize on top of a player despite their spawn safety radius.
+    if (!farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, r.minPlayerDistance)) continue;
     if (!outsideInnerHalf(wx + s.w * 0.5, wy + s.h * 0.5)) continue;
     if (spawnCreatureNatural(speciesId, wx, wy)) return true;
   }
@@ -270,7 +274,11 @@ void CreatureSystem::maintainPopulation() {
 }
 
 void CreatureSystem::updateNaturalPopulation() {
-  for (uint8_t sid = 0; sid < CS_COUNT; sid++) {
+  // Armed enemies belong to survival and get first claim on the bounded natural
+  // population. Creative still permits explicit egg/script spawns for testing.
+  for (int pass = 0; pass < 2; pass++) for (uint8_t sid = 0; sid < CS_COUNT; sid++) {
+    bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL;
+    if (survivalEnemy != (pass == 0) || (survivalEnemy && !E.survivalInventory)) continue;
     const CreatureSpawnRule& r = CREATURE_SPECIES[sid].spawn;
     if (r.mode == CSM_CONTINUOUS) {
       if (r.intervalTicks > 0 && E.actorTick % r.intervalTicks == 0) {
@@ -472,9 +480,20 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       double d2 = dx * dx + dy * dy;
       if (d2 < avoidD2) { avoidD2 = d2; avoidX = px; avoidsPlayer = true; }
     }
-    double wish = hasTarget ? (tx > c.wx + s.w * 0.5 ? s.walkSpeed : -s.walkSpeed)
-                            : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
-                            : c.wanderDir * s.walkSpeed * 0.62;
+    double wish;
+    if (hasTarget && (c.species == CS_DYNAMITEER || c.species == CS_BORE_SENTINEL)) {
+      double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
+      double nearRange = c.species == CS_DYNAMITEER ? 28.0 : 46.0;
+      double farRange = c.species == CS_DYNAMITEER ? 58.0 : 88.0;
+      if (c.attackState != CAS_IDLE) wish = 0;
+      else if (distance > farRange) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
+      else if (distance < nearRange) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
+      else wish = 0;
+    } else {
+      wish = hasTarget ? (tx > c.wx + s.w * 0.5 ? s.walkSpeed : -s.walkSpeed)
+                       : avoidsPlayer ? (avoidX > c.wx + s.w * 0.5 ? -s.walkSpeed : s.walkSpeed)
+                       : c.wanderDir * s.walkSpeed * 0.62;
+    }
     c.vx += std::max(-s.accel, std::min(s.accel, wish - c.vx));
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
     c.vy += s.gravity; if (c.vy > 2.4) c.vy = 2.4;
@@ -552,7 +571,169 @@ void CreatureSystem::moveFlying(Creature& c) {
   if (!moveAxis(c.wy, c.vy, false)) c.vy *= -0.55;
 }
 
+static constexpr int DYNAMITE_CHARGE_TICKS = 30;
+static constexpr int DYNAMITE_THROW_TICKS = 8;
+static constexpr int BORE_CHARGE_TICKS = 72;
+static constexpr int BORE_LOCK_TICKS = 18;
+static constexpr int BORE_FIRE_TICKS = 6;
+
+static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
+                                   double bx0, double by0, double bx1, double by1, double expand) {
+  bx0 -= expand; by0 -= expand; bx1 += expand; by1 += expand;
+  double dx = x1 - x0, dy = y1 - y0, t0 = 0, t1 = 1;
+  auto clip = [&](double p, double q) {
+    if (std::fabs(p) < 1e-9) return q >= 0;
+    double r = q / p;
+    if (p < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+    else { if (r < t0) return false; if (r < t1) t1 = r; }
+    return true;
+  };
+  return clip(-dx, x0 - bx0) && clip(dx, bx1 - x0) &&
+         clip(-dy, y0 - by0) && clip(dy, by1 - y0);
+}
+
+void CreatureSystem::updateDynamiteerAttack(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  if (c.attackState == CAS_FIRING) {
+    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)DYNAMITE_THROW_TICKS);
+    if (++c.attackTicks >= DYNAMITE_THROW_TICKS) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+    }
+    return;
+  }
+
+  double tx = 0, ty = 0;
+  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
+  if (c.attackState == CAS_CHARGING) {
+    // Keep tracking throughout the short wind-up; if the target vanishes, throw
+    // at its last observed position instead of cancelling an already-lit bundle.
+    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
+    if (c.attackAimX != 0 || c.attackAimY != 0)
+      c.facing = c.attackAimX >= c.wx + s.w * 0.5 ? 1 : -1;
+    c.attackTicks++;
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)DYNAMITE_CHARGE_TICKS);
+    if (c.attackTicks >= DYNAMITE_CHARGE_TICKS) {
+      E.projectiles.spawnDynamite(c, c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY);
+      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
+      c.attackCooldown = s.attackCooldown;
+    }
+    return;
+  }
+
+  if (!hasTarget || c.attackCooldown > 0) return;
+  double dx = tx - (c.wx + s.w * 0.5), dy = ty - (c.wy + s.h * 0.5);
+  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
+  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
+}
+
+void CreatureSystem::fireBore(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  double ox = c.wx - E.fg.worldOffsetX + s.w * 0.5;
+  double oy = c.wy - E.fg.worldOffsetY + s.h * 0.42;
+  double dx = c.attackAimX - (E.fg.worldOffsetX + ox);
+  double dy = c.attackAimY - (E.fg.worldOffsetY + oy);
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = c.facing; dy = 0; d = 1; }
+  dx /= d; dy /= d;
+  // Start beyond the sentinel's own hull, then extend to the loaded-window edge.
+  ox += dx * (s.w * 0.5 + 0.75); oy += dy * (s.h * 0.35 + 0.75);
+  double length = 1e9;
+  if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - ox) / dx);
+  else if (dx < -1e-9) length = std::min(length, (1.0 - ox) / dx);
+  if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - oy) / dy);
+  else if (dy < -1e-9) length = std::min(length, (1.0 - oy) / dy);
+  if (!std::isfinite(length) || length <= 0) return;
+  double ex = ox + dx * length, ey = oy + dy * length;
+
+  // Deduplicate the swept footprint with the layer's generation-stamped scratch.
+  // The complete cell list is built before eraseStrokeCells can reuse this scratch,
+  // so no full-window allocation or clear is needed for each bore shot.
+  std::vector<int32_t>& seen = E.fg.seenStamp;
+  int32_t seenGen = ++E.fg.seenGen;
+  std::vector<int> cells;
+  int x0 = E.cols, y0 = E.rows, x1 = 0, y1 = 0;
+  int samples = imax(1, (int)std::ceil(length * 2.0));
+  cells.reserve((size_t)samples * (CREATURE_BORE_RADIUS * 2 + 1));
+  for (int sample = 0; sample <= samples; sample++) {
+    double t = length * sample / samples;
+    int cx = (int)std::lround(ox + dx * t), cy = (int)std::lround(oy + dy * t);
+    for (int yy = -CREATURE_BORE_RADIUS; yy <= CREATURE_BORE_RADIUS; yy++) for (int xx = -CREATURE_BORE_RADIUS; xx <= CREATURE_BORE_RADIUS; xx++) {
+      if (xx * xx + yy * yy > CREATURE_BORE_RADIUS * CREATURE_BORE_RADIUS) continue;
+      int x = cx + xx, y = cy + yy;
+      if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) continue;
+      int k = E.I(x, y); if (seen[k] == seenGen) continue;
+      seen[k] = seenGen; cells.push_back(k);
+      x0 = imin(x0, x); y0 = imin(y0, y); x1 = imax(x1, x); y1 = imax(y1, y);
+    }
+  }
+  if (!cells.empty()) {
+    Layer* restore = E.L;
+    E.useLayer(&E.fg); E.eraseStrokeCells(cells, x0, y0, x1, y1);
+    if (E.bgEnabled) { E.useLayer(&E.bg); E.eraseStrokeCells(cells, x0, y0, x1, y1); }
+    E.useLayer(restore);
+  }
+
+  double awx0 = E.fg.worldOffsetX + ox, awy0 = E.fg.worldOffsetY + oy;
+  double awx1 = E.fg.worldOffsetX + ex, awy1 = E.fg.worldOffsetY + ey;
+  for (Player& p : E.psys.players) if (p.active && p.alive &&
+      segmentHitsExpandedBox(awx0, awy0, awx1, awy1,
+                             E.fg.worldOffsetX + p.px, E.fg.worldOffsetY + p.py,
+                             E.fg.worldOffsetX + p.px + p.w, E.fg.worldOffsetY + p.py + p.h, CREATURE_BORE_RADIUS))
+    E.psys.damagePlayer(p, s.damage, 36);
+  for (Creature& other : creatures) {
+    if (!other.alive || other.id == c.id || other.hurtCooldown > 0) continue;
+    const CreatureSpecies& os = species(other);
+    if (!segmentHitsExpandedBox(awx0, awy0, awx1, awy1,
+                                other.wx, other.wy, other.wx + os.w, other.wy + os.h, CREATURE_BORE_RADIUS)) continue;
+    other.health -= s.damage; other.hurtCooldown = 7;
+    E.audio.emit(SE_CREATURE, other.wx - E.fg.worldOffsetX + os.w * 0.5,
+                 other.wy - E.fg.worldOffsetY + os.h * 0.5, 0.8, other.species, 0);
+  }
+  E.audio.emit(SE_BORE_FIRE, ox, oy, 1.0, STONE, 0);
+}
+
+void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  if (c.attackState == CAS_FIRING) {
+    c.attackProgress = 1;
+    if (++c.attackTicks >= BORE_FIRE_TICKS) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+    }
+    return;
+  }
+
+  double tx = 0, ty = 0;
+  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
+  if (c.attackState == CAS_CHARGING) {
+    // Track for most of the charge, then leave a clearly committed line for the
+    // final beat so the player can escape before terrain and actors are cut.
+    if (hasTarget && c.attackTicks < BORE_CHARGE_TICKS - BORE_LOCK_TICKS) {
+      c.attackAimX = tx; c.attackAimY = ty;
+    }
+    c.facing = c.attackAimX >= c.wx + s.w * 0.5 ? 1 : -1;
+    c.attackTicks++;
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)BORE_CHARGE_TICKS);
+    if (c.attackTicks >= BORE_CHARGE_TICKS) {
+      fireBore(c);
+      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
+      c.attackCooldown = s.attackCooldown;
+    }
+    return;
+  }
+
+  if (!hasTarget || c.attackCooldown > 0) return;
+  double dx = tx - (c.wx + s.w * 0.5), dy = ty - (c.wy + s.h * 0.5);
+  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
+  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
+  E.audio.emit(SE_BORE_CHARGE, c.wx - E.fg.worldOffsetX + s.w * 0.5,
+               c.wy - E.fg.worldOffsetY + s.h * 0.42, 0.9, STONE, 0);
+}
+
 void CreatureSystem::attackTarget(Creature& c) {
+  if (c.species == CS_DYNAMITEER) { updateDynamiteerAttack(c); return; }
+  if (c.species == CS_BORE_SENTINEL) { updateBoreSentinelAttack(c); return; }
   const CreatureSpecies& s = species(c); if (c.attackCooldown > 0 || s.damage <= 0) return;
   double tx, ty; Creature* prey = nullptr; Player* player = nullptr;
   if (!targetPoint(c, tx, ty, &prey, &player)) return;
@@ -600,7 +781,15 @@ void CreatureSystem::updateCreatures() {
     // Four authored poses per species. Tie pose selection to locomotion where
     // it matters so feet, wings, and body arcs describe the actual movement
     // instead of every creature sharing the same two-frame global blink.
-    if (c.species == CS_BIRD) {
+    if (c.species == CS_DYNAMITEER) {
+      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
+      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
+      else c.animFrame = std::fabs(c.vx) > 0.035 ? (uint8_t)(((E.actorTick / 5) + c.id) & 1) : 0;
+    } else if (c.species == CS_BORE_SENTINEL) {
+      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.50 ? 1 : 2;
+      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
+      else c.animFrame = std::fabs(c.vx) > 0.025 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
+    } else if (c.species == CS_BIRD) {
       c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
     } else if (c.species == CS_HARE) {
       if (c.vy < -0.18) c.animFrame = 1;       // launch: long rear-leg extension
@@ -645,6 +834,8 @@ int CreatureSystem::buildCreatureSnapshot() {
     o[CSN_VX] = (float)c.vx; o[CSN_VY] = (float)c.vy; o[CSN_W] = (float)s.w; o[CSN_H] = (float)s.h;
     o[CSN_FACING] = (float)c.facing; o[CSN_HEALTH] = (float)c.health; o[CSN_MAX_HEALTH] = (float)s.maxHealth;
     o[CSN_ALIVE] = c.alive ? 1.0f : 0.0f; o[CSN_ANIM_FRAME] = (float)c.animFrame;
+    o[CSN_ATTACK_STATE] = (float)c.attackState; o[CSN_ATTACK_PROGRESS] = (float)c.attackProgress;
+    o[CSN_AIM_X] = (float)(c.attackAimX - E.fg.worldOffsetX); o[CSN_AIM_Y] = (float)(c.attackAimY - E.fg.worldOffsetY);
   }
   return (int)creatures.size();
 }

@@ -270,13 +270,24 @@ struct Item {
   int pickupDelay = 0;     // ITEM: steps before it can be vacuumed (and homed)
 };
 
-// Bow arrows are lightweight actor-clock entities. They never write the grid;
-// terrain collision only retires the projectile and emits debris/audio.
+// Projectiles are lightweight actor-clock entities. Fast rounds use swept
+// collision rather than the globally speed-clamped rigid-body solver; dynamite
+// keeps its replicated fuse/pose here so presentation mirrors can animate it.
 static const int PROJECTILE_MAX = 256, ARROW_LIFE = 180, BOW_CHARGE_MAX = 48;
-static const double ARROW_GRAVITY = 0.04, ARROW_SWEEP_STEP = 0.25;
+static const int BLAST_ROUND_LIFE = 90, BLAST_GUN_COOLDOWN = 11;
+static const int DYNAMITE_FUSE_TICKS = 105;
+static const int BLAST_ROUND_RADIUS = 10;
+static constexpr double BLAST_ROUND_POWER = 13.0;
+static const double ARROW_GRAVITY = 0.04, PROJECTILE_SWEEP_STEP = 0.25;
+static const double BLAST_ROUND_SPEED = 11.5;
+static const double DYNAMITE_GRAVITY = 0.075, DYNAMITE_MAX_FALL = 2.8;
+static const double DYNAMITE_BOUNCE = 0.58, DYNAMITE_FRICTION = 0.52;
 struct Projectile {
   int id = 0, owner = 0, life = ARROW_LIFE;
   double px = 0, py = 0, vx = 0, vy = 0, charge = 0;
+  uint8_t kind = PK_ARROW;
+  int fuse = 0;
+  double rotation = 0;
 };
 
 // Player state and deterministic platformer physics.

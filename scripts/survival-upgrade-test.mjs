@@ -66,11 +66,18 @@ function world() {
   const dead = e.getPlayer(p);
   const dropped = e.getItems().filter((item) => item.kind === 0).reduce((n, item) => n + item.count, 0);
   check('lava can kill the player', dead?.alive === false && dead.health === 0);
-  check('death drops the complete inventory', dropped === 30 && e.getInventory(p).slots.every((s) => s.count === 0));
+  check('death drops resources but keeps the bound starter gun out of the world', dropped === 30
+    && !e.getItems().some((item) => item.itemKind === ITEM_KIND.BLAST_GUN)
+    && e.getInventory(p).slots.every((s) => s.count === 0));
   check('respawn is rejected before three seconds', e.respawnPlayer(p) === false);
   for (let i = 0; i < 180; i++) e.stepActors();
   check('respawn becomes ready after 180 actor ticks', e.getPlayer(p)?.respawnReady === true);
-  check('manual respawn restores health and play', e.respawnPlayer(p) && e.getPlayer(p)?.alive && e.getPlayer(p)?.health === 100);
+  check('manual respawn restores health, play, and a replacement gun',
+    e.respawnPlayer(p) && e.getPlayer(p)?.alive && e.getPlayer(p)?.health === 100
+      && e.getInventory(p).slots[0].itemKind === ITEM_KIND.BLAST_GUN);
+  for (let i = 0; i < 60; i++) e.stepActors();
+  check('the old starter gun cannot return and duplicate the replacement',
+    e.getInventory(p).slots.filter((s) => s.itemKind === ITEM_KIND.BLAST_GUN && s.count > 0).length === 1);
   e.destroy();
 }
 

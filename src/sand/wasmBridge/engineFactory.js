@@ -1011,7 +1011,15 @@ const renderStrides = Object.freeze({
       const n = M.projectileSnapshot(ptr); if (!n) return [];
       const f = new Float32Array(mod.HEAPF32.buffer, M.projectileSnapshotPtr(ptr), n * STRIDES.projectileSnapshot);
       const O = OFF.projectileSnapshot, out = new Array(n);
-      for (let i = 0; i < n; i++) { const o = i * STRIDES.projectileSnapshot; out[i] = { id:f[o+O.id]|0, owner:f[o+O.owner]|0, x:f[o+O.x], y:f[o+O.y], vx:f[o+O.vx], vy:f[o+O.vy], charge:f[o+O.charge] }; }
+      for (let i = 0; i < n; i++) {
+        const o = i * STRIDES.projectileSnapshot;
+        out[i] = {
+          id: f[o + O.id] | 0, owner: f[o + O.owner] | 0,
+          x: f[o + O.x], y: f[o + O.y], vx: f[o + O.vx], vy: f[o + O.vy],
+          charge: f[o + O.charge], kind: f[o + O.kind] | 0,
+          fuse: f[o + O.fuse] | 0, rotation: f[o + O.rotation],
+        };
+      }
       return out;
     },
     getProjectileSnapshotData() {
@@ -1032,6 +1040,8 @@ const renderStrides = Object.freeze({
           w: f[o + O.w] | 0, h: f[o + O.h] | 0, facing: f[o + O.facing] | 0,
           health: f[o + O.health] | 0, maxHealth: f[o + O.maxHealth] | 0,
           alive: f[o + O.alive] === 1, animFrame: f[o + O.animFrame] | 0,
+          attackState: f[o + O.attackState] | 0, attackProgress: f[o + O.attackProgress],
+          aimX: f[o + O.aimX], aimY: f[o + O.aimY],
         };
       }
       return out;

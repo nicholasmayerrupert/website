@@ -19,8 +19,8 @@ const stoneFloor = (e, top) => {
 };
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
-check('roster is exactly two water, two land, two cave, and one bird species',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD');
+check('roster includes ambient fauna plus both explosive-survival enemies',
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL');
 
 // A bird may be engulfed by newly placed/falling water. Water blocks normal
 // flight entry, but a submerged bird must climb back through it instead of
@@ -164,6 +164,9 @@ check('roster is exactly two water, two land, two cave, and one bird species',
   const bird = initial.find((c) => c.species === CREATURE.BIRD);
   const surfaceAt = (c) => e.worldSurfaceAt(e.getWorldOffsetX() + Math.floor(c.x + c.w / 2));
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
+  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46];
+  const tooClose = initial.filter((c) => distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
+  check(`habitat-snapped natural spawns preserve player safety distance (${tooClose.length} too close)`, tooClose.length === 0);
   check('both land creatures spawn near the visible player', fox && hare && distFromPlayer(hare) <= 72);
   check(`land creature stands on generated terrain (y ${hare?.y.toFixed(1)})`, hare && Math.abs(hare.y + hare.h - surfaceAt(hare)) <= 4);
   check('both cave creatures spawn in loaded underground cavities', crawler && mole &&

@@ -8,7 +8,9 @@ import {
   makeSelect, makeSize, makeMove, makePick, makeThrow, makeCraft, makeRespawn,
   INV_SLOTS, ITEM_FIELDS, CREATURE_FIELDS, PROJECTILE_FIELDS, SOUND_FIELDS, INV_FIELDS, PROTOCOL_VERSION,
 } from '../src/sand/net/protocol.js';
-import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
+import {
+  CREATURE, CREATURE_ATTACK_STATE, ITEM_KIND, OFF, PROJECTILE_KIND, SOUND_EVENT,
+} from '../src/sand/wasmBridge/abi.generated.js';
 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
@@ -17,13 +19,17 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 11', PROTOCOL_VERSION === 11);
+  check('PROTOCOL_VERSION is 12', PROTOCOL_VERSION === 12);
 }
 
 {
   console.log('projectiles round trip');
-  const d = rt(makeProjectiles(4, [{ id: 2, owner: 7, x: 1.5, y: 2.5, vx: 4, vy: -1, charge: 0.75 }]));
-  check('arrow record matches ABI and preserves charge', d?.t === MSG.PROJECTILES && d.data.length === PROJECTILE_FIELDS && d.data[6] === 0.75);
+  const d = rt(makeProjectiles(4, [{
+    id: 2, owner: -7, x: 1.5, y: 2.5, vx: 4, vy: -1, charge: 0.75,
+    kind: PROJECTILE_KIND.DYNAMITE, fuse: 84, rotation: 1.25,
+  }]));
+  check('projectile record matches the expanded ABI', d?.t === MSG.PROJECTILES && d.data.length === PROJECTILE_FIELDS);
+  check('projectile kind, fuse, and rotation survive', d?.data[7] === PROJECTILE_KIND.DYNAMITE && d.data[8] === 84 && d.data[9] === 1.25);
 }
 
 // Semantic sound records round trip without exposing browser audio details.
@@ -41,11 +47,12 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // Creature actor snapshot round trip + bounds.
 {
   console.log('creatures round trip');
-  const creatures = [{ id: 7, species: 1, x: 22.5, y: -3.25, vx: 0.4, vy: -0.1, w: 7, h: 3, facing: -1, health: 41, maxHealth: 55, alive: true, animFrame: 1 }];
+  const creatures = [{ id: 7, species: CREATURE.BORE_SENTINEL, x: 22.5, y: -3.25, vx: 0.4, vy: -0.1, w: 9, h: 6, facing: -1, health: 141, maxHealth: 170, alive: true, animFrame: 2, attackState: CREATURE_ATTACK_STATE.CHARGING, attackProgress: 0.75, aimX: -11.5, aimY: 48.25 }];
   const d = rt(makeCreatures(43, creatures));
   check('decodes to creatures', d && d.t === MSG.CREATURES && d.tick === 43);
   check('creature flat length matches ABI', d && d.data.length === CREATURE_FIELDS);
-  check('creature pose/health preserved', d && d.data[0] === 7 && d.data[1] === 1 && d.data[2] === 22.5 && d.data[3] === -3.25 && d.data[9] === 41 && d.data[11] === 1);
+  check('creature pose/health preserved', d && d.data[0] === 7 && d.data[1] === 8 && d.data[2] === 22.5 && d.data[3] === -3.25 && d.data[9] === 141 && d.data[11] === 1);
+  check('creature attack state, progress, and aim survive', d && d.data[13] === 1 && d.data[14] === 0.75 && d.data[15] === -11.5 && d.data[16] === 48.25);
   check('empty creatures allowed', rt(makeCreatures(0, [])).data.length === 0);
 }
 
@@ -100,12 +107,29 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 5. malformed messages are rejected (strict validation; a desync vector).
 {
   console.log('reject malformed');
+  const item = new Array(ITEM_FIELDS).fill(0);
+  item[OFF.itemSnapshot.id] = 1; item[OFF.itemSnapshot.count] = 1;
+  const creature = new Array(CREATURE_FIELDS).fill(0);
+  creature[OFF.creatureSnapshot.id] = 1; creature[OFF.creatureSnapshot.species] = CREATURE.BORE_SENTINEL;
+  creature[OFF.creatureSnapshot.w] = 9; creature[OFF.creatureSnapshot.h] = 6;
+  creature[OFF.creatureSnapshot.health] = 170; creature[OFF.creatureSnapshot.maxHealth] = 170;
+  creature[OFF.creatureSnapshot.alive] = 1;
+  const projectile = new Array(PROJECTILE_FIELDS).fill(0);
+  projectile[OFF.projectileSnapshot.id] = 1;
   check('items bad record length', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 2, 3] })) === null);
-  check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: [1, 0, 0, 1, Number.NaN, 0, 0] })) === null);
-  check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: [1.5, 0, 0, 1, 0, 0, 0] })) === null);
+  check('items NaN coord', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.x]: Number.NaN }) })) === null);
+  check('items non-int field', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.id]: 1.5 }) })) === null);
+  check('items unknown item kind', decode(JSON.stringify({ t: 'items', tick: 0, data: Object.assign([...item], { [OFF.itemSnapshot.itemKind]: 99 }) })) === null);
   check('items data not array', decode(JSON.stringify({ t: 'items', tick: 0, data: 'x' })) === null);
   check('creatures bad record length', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 2, 3] })) === null);
-  check('creatures NaN coord', decode(JSON.stringify({ t: 'creatures', tick: 0, data: [1, 0, Number.NaN, 0, 0, 0, 4, 2, 1, 10, 10, 1, 0] })) === null);
+  check('creatures NaN coord', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.x]: Number.NaN }) })) === null);
+  check('creatures NaN aim', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.aimX]: Number.NaN }) })) === null);
+  check('creatures invalid attack state', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackState]: 99 }) })) === null);
+  check('creatures negative attack progress', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackProgress]: -0.1 }) })) === null);
+  check('creatures attack progress above one', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackProgress]: 1.1 }) })) === null);
+  check('projectiles unknown kind', decode(JSON.stringify({ t: 'projectiles', tick: 0, data: Object.assign([...projectile], { [OFF.projectileSnapshot.kind]: 99 }) })) === null);
+  check('projectiles negative fuse', decode(JSON.stringify({ t: 'projectiles', tick: 0, data: Object.assign([...projectile], { [OFF.projectileSnapshot.fuse]: -1 }) })) === null);
+  check('projectiles NaN rotation', decode(JSON.stringify({ t: 'projectiles', tick: 0, data: Object.assign([...projectile], { [OFF.projectileSnapshot.rotation]: Number.NaN }) })) === null);
   check('sounds bad record length', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [1, 2, 3] })) === null);
   check('sounds NaN intensity', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0, 1, 2, Number.NaN, 0, 0] })) === null);
   check('sounds non-int semantic field', decode(JSON.stringify({ t: 'sounds', tick: 0, data: [0.5, 1, 2, 1, 0, 0] })) === null);
@@ -114,6 +138,9 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('inventory wrong slot count', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: [1, 2, 3], selected: 0, selectedFootprint: 0 })) === null);
   check('inventory selected out of range', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: INV_SLOTS, selectedFootprint: 0 })) === null);
   check('inventory footprint required', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: new Array(INV_SLOTS * INV_FIELDS).fill(0), selected: 0 })) === null);
+  const badInventoryKind = new Array(INV_SLOTS * INV_FIELDS).fill(0);
+  badInventoryKind[OFF.inventorySlot.itemKind] = Math.max(...Object.values(ITEM_KIND)) + 1;
+  check('inventory unknown item kind', decode(JSON.stringify({ t: 'inv', tick: 0, player: 0, data: badInventoryKind, selected: 0, selectedFootprint: 0 })) === null);
   check('cursor bad shape', decode(JSON.stringify({ t: 'cursor', tick: 0, player: 0, cur: { material: 1.2 } })) === null);
   check('select slot >= INV_SLOTS rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: INV_SLOTS })) === null);
   check('select negative slot rejected', decode(JSON.stringify({ t: 'aselect', room: 'r', client: 'c', slot: -1 })) === null);

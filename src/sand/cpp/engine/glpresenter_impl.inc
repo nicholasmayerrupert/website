@@ -306,6 +306,10 @@ void GLPresenter::glSetClip(double dx0, double dy0, double dx1, double dy1) {
   glUniform4f(glc->uClipRect, cx0, cy0, cx1, cy1);
 }
 void GLPresenter::glSolidDev(double dx0, double dy0, double w, double h) {
+  // Most bore-ray samples can lie in the loaded buffer but outside the visible
+  // camera. Preserve partially visible quads for GPU clipping, but skip fully
+  // offscreen draw calls (also benefits sprites and particles generally).
+  if (w <= 0 || h <= 0 || dx0 + w <= 0 || dy0 + h <= 0 || dx0 >= glDevW || dy0 >= glDevH) return;
   glSetClip(dx0, dy0, dx0 + w, dy0 + h);
   glUniform4f(glc->uTexRect, 0, 0, 0, 0);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -391,6 +395,15 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double pull = std::max(0.0, std::min(1.0, bowCharge)) * cell;
     glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
   }
+  if (alive && heldItemKind == IK_BLAST_GUN) {
+    double gx = sprX + (facing > 0 ? SPR_W - .1 : -2.8) * cell, gy = sprY + 3.45 * cell;
+    glUniform4f(glc->uColor, .16f * light, .18f * light, .20f * light, 1);
+    glSolidDev(gx, gy, cell * 2.9, cell * .82);
+    glUniform4f(glc->uColor, .78f * light, .43f * light, .12f * light, 1);
+    glSolidDev(gx + (facing > 0 ? 2.35 : 0) * cell, gy + cell * .12, cell * .72, cell * .56);
+    glUniform4f(glc->uColor, .28f * light, .24f * light, .20f * light, 1);
+    glSolidDev(gx + (facing > 0 ? .55 : 1.75) * cell, gy + cell * .72, cell * .58, cell * 1.15);
+  }
 }
 
 void GLPresenter::glDrawPlayers() {
@@ -428,6 +441,7 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
   uint32_t c = itemKind == IK_MATERIAL ? MAT_COLOR[material]
              : itemKind == IK_ARROW ? 0xffd6c49au
              : itemKind == IK_BOW ? 0xff4b6b9bu
+             : itemKind == IK_BLAST_GUN ? 0xff3f76c4u
              : (tier == TT_GOLD ? 0xff34c7f2u : tier == TT_IRON ? 0xffe4e0d8u : tier == TT_STONE ? 0xff8f969eu : 0xff447ab0u);
   float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
   float baseA = ((c >> 24) & 0xff) / 255.0f;
@@ -460,6 +474,15 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
     glSolidDev(cx - sz * .20, cy + sz * .24, sz * .38, sz * .18);
     return;
   }
+  if (kind == IT_ITEM && itemKind == IK_BLAST_GUN) {
+    glUniform4f(glc->uColor, .18f, .20f, .23f, a);
+    glSolidDev(cx - sz * .62, cy - sz * .30, sz * 1.20, sz * .45);
+    glUniform4f(glc->uColor, .82f, .44f, .12f, a);
+    glSolidDev(cx + sz * .34, cy - sz * .24, sz * .45, sz * .33);
+    glUniform4f(glc->uColor, .31f, .25f, .19f, a);
+    glSolidDev(cx - sz * .18, cy + sz * .05, sz * .32, sz * .62);
+    return;
+  }
   glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
 }
 
@@ -489,10 +512,40 @@ void GLPresenter::glDrawProjectiles() {
   glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   for (int i = 0; i < n; i++) {
-    double x, y, vx, vy;
-    if (external) { const float* p = external->data() + i * PRS_STRIDE; x=p[PRS_X]; y=p[PRS_Y]; vx=p[PRS_VX]; vy=p[PRS_VY]; }
-    else { const Projectile& p=E.projectiles.projectiles[i]; x=p.px; y=p.py; vx=p.vx; vy=p.vy; }
+    double x, y, vx, vy, fuse, rotation; int kind;
+    if (external) { const float* p = external->data() + i * PRS_STRIDE; x=p[PRS_X]; y=p[PRS_Y]; vx=p[PRS_VX]; vy=p[PRS_VY]; kind=(int)p[PRS_KIND]; fuse=p[PRS_FUSE]; rotation=p[PRS_ROTATION]; }
+    else { const Projectile& p=E.projectiles.projectiles[i]; x=p.px; y=p.py; vx=p.vx; vy=p.vy; kind=p.kind; fuse=p.fuse; rotation=p.rotation; }
     double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
+    if (kind == PK_BLAST_ROUND) {
+      double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
+      for (int s = 1; s <= 8; s++) {
+        float fade = (9 - s) / 9.0f;
+        glUniform4f(glc->uColor, 1.0f, .28f + .35f * fade, .04f, .32f + .55f * fade);
+        double px = cx - nx * s * glCellDev * .48, py = cy - ny * s * glCellDev * .48;
+        double size = glCellDev * (.16 + fade * .18);
+        glSolidDev(px - size * .5, py - size * .5, size, size);
+      }
+      glUniform4f(glc->uColor, 1.0f, .88f, .32f, 1);
+      glSolidDev(cx - glCellDev * .34, cy - glCellDev * .34, glCellDev * .68, glCellDev * .68);
+      glUniform4f(glc->uColor, 1.0f, 1.0f, .82f, 1);
+      glSolidDev(cx - glCellDev * .16, cy - glCellDev * .16, glCellDev * .32, glCellDev * .32);
+      continue;
+    }
+    if (kind == PK_DYNAMITE) {
+      double ax = std::cos(rotation), ay = std::sin(rotation), pxn = -ay, pyn = ax;
+      for (int stick = -1; stick <= 1; stick++) for (int seg = -1; seg <= 1; seg++) {
+        double px = cx + ax * seg * glCellDev * .32 + pxn * stick * glCellDev * .28;
+        double py = cy + ay * seg * glCellDev * .32 + pyn * stick * glCellDev * .28;
+        glUniform4f(glc->uColor, stick == 0 ? .82f : .62f, .08f, .055f, 1);
+        glSolidDev(px - glCellDev * .23, py - glCellDev * .23, glCellDev * .46, glCellDev * .46);
+      }
+      glUniform4f(glc->uColor, .16f, .12f, .10f, 1);
+      glSolidDev(cx - glCellDev * .48, cy - glCellDev * .10, glCellDev * .96, glCellDev * .20);
+      double fx = cx + ax * glCellDev * 1.15, fy = cy + ay * glCellDev * 1.15;
+      glUniform4f(glc->uColor, ((int)fuse / 3) & 1 ? 1.0f : .92f, ((int)fuse / 3) & 1 ? .82f : .28f, .04f, 1);
+      glSolidDev(fx - glCellDev * .25, fy - glCellDev * .25, glCellDev * .50, glCellDev * .50);
+      continue;
+    }
     double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
     glUniform4f(glc->uColor, .62f, .39f, .19f, 1);
     for (int s = 1; s <= 5; s++) {
@@ -509,7 +562,8 @@ void GLPresenter::glDrawProjectiles() {
 // negative space is intentional: ears, feet, tails, fins, and wing tips retain
 // a readable silhouette instead of collapsing into a filled rectangle.
 void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int facing, int health, int maxHealth,
-                    int alive, int animFrame, float light, int camCol, int camRow) {
+                    int alive, int animFrame, int attackState, double attackProgress,
+                    double aimX, double aimY, float light, int camCol, int camRow) {
   static const float pal[CS_COUNT][6][4] = {
     {{0,0,0,0},{12/255.f,31/255.f,43/255.f,1},{37/255.f,111/255.f,137/255.f,1},{74/255.f,174/255.f,180/255.f,1},{157/255.f,226/255.f,201/255.f,1},{244/255.f,218/255.f,104/255.f,1}},
     {{0,0,0,0},{20/255.f,29/255.f,27/255.f,1},{46/255.f,91/255.f,58/255.f,1},{80/255.f,139/255.f,72/255.f,1},{151/255.f,188/255.f,92/255.f,1},{238/255.f,199/255.f,72/255.f,1}},
@@ -518,6 +572,8 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     {{0,0,0,0},{22/255.f,20/255.f,28/255.f,1},{61/255.f,43/255.f,76/255.f,1},{105/255.f,70/255.f,124/255.f,1},{159/255.f,110/255.f,169/255.f,1},{100/255.f,224/255.f,184/255.f,1}},
     {{0,0,0,0},{29/255.f,25/255.f,28/255.f,1},{75/255.f,59/255.f,58/255.f,1},{126/255.f,99/255.f,88/255.f,1},{186/255.f,153/255.f,126/255.f,1},{238/255.f,183/255.f,185/255.f,1}},
     {{0,0,0,0},{24/255.f,28/255.f,42/255.f,1},{54/255.f,99/255.f,160/255.f,1},{91/255.f,157/255.f,211/255.f,1},{174/255.f,218/255.f,239/255.f,1},{247/255.f,179/255.f,69/255.f,1}},
+    {{0,0,0,0},{28/255.f,24/255.f,22/255.f,1},{76/255.f,54/255.f,43/255.f,1},{139/255.f,91/255.f,51/255.f,1},{240/255.f,174/255.f,61/255.f,1},{194/255.f,47/255.f,39/255.f,1}},
+    {{0,0,0,0},{17/255.f,23/255.f,29/255.f,1},{48/255.f,62/255.f,72/255.f,1},{80/255.f,108/255.f,116/255.f,1},{57/255.f,211/255.f,201/255.f,1},{228/255.f,255/255.f,222/255.f,1}},
   };
   static const char* const grids[CS_COUNT][4][7] = {
     {// minnow: a forked tail and alternating body bend
@@ -555,10 +611,56 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000000000000","0011000011000","0012100121000","0001233451000","0000123210000","0000012100000","0000001000000"},
      {"0000000000000","0000000000000","0000111110000","0001233451000","0012233321100","0122100122100","1100000000110"},
      {"0000000000000","0000000000000","0001233451000","0012233321100","0122100122100","0110000001100","0000000000000"}},
+    {// dynamiteer: soot mask, heavy coat, and a visibly raised red bundle
+     {"0000011100000","0000123210000","0001233321000","0051233321550","0055222255000","0001122110000","0011000011000"},
+     {"0000011100000","0000123210000","0001233321000","0051233321550","0055222255000","0000112200000","0001100110000"},
+     {"0000555500000","0000544500000","0000011100000","0000123210000","0001233321000","0001122110000","0011000011000"},
+     {"0000000005550","0000011054450","0000123211100","0001233321000","0001122210000","0011000110000","0110000011000"}},
+    {// bore sentinel: plated walker whose cyan barrel blooms during charge/fire
+     {"0000222200000","0002333320000","0012333444111","0012223332111","0001222222100","0011000011000","0110000001100"},
+     {"0000222200000","0002333320000","0012333444111","0012223332111","0001222222100","0000110110000","0011000001100"},
+     {"0000222200000","0002333320000","0012334555111","0012223444111","0001222222100","0000110110000","0011000001100"},
+     {"0000222200005","0002333320055","0012334555555","0012223444055","0001222222005","0011000011000","0110000001100"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const int sw = 13, sh = 7;
   double cell = glCellDev;
+  if (alive && speciesId == CS_BORE_SENTINEL &&
+      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    double ox = px + CREATURE_SPECIES[speciesId].w * 0.5;
+    double oy = py + CREATURE_SPECIES[speciesId].h * 0.42;
+    double dx = aimX - ox, dy = aimY - oy, d = std::hypot(dx, dy);
+    if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
+    dx /= d; dy /= d;
+    ox += dx * (CREATURE_SPECIES[speciesId].w * 0.5 + 0.75);
+    oy += dy * (CREATURE_SPECIES[speciesId].h * 0.35 + 0.75);
+    double length = 1e9;
+    if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - ox) / dx);
+    else if (dx < -1e-9) length = std::min(length, (1.0 - ox) / dx);
+    if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - oy) / dy);
+    else if (dy < -1e-9) length = std::min(length, (1.0 - oy) / dy);
+    if (std::isfinite(length) && length > 0) {
+      double progress = std::max(0.0, std::min(1.0, attackProgress));
+      double spacing = attackState == CAS_FIRING ? 1.35 : 2.6 - progress * 1.25;
+      int samples = imax(1, (int)std::ceil(length / spacing));
+      for (int i = 0; i <= samples; i++) {
+        double t = length * i / samples;
+        double bx = (ox + dx * t - camCol) * cell + glOffX;
+        double by = (oy + dy * t - camRow) * cell + glOffY;
+        if (attackState == CAS_FIRING) {
+          double outer = cell * (CREATURE_BORE_RADIUS * 2.0 + .35);
+          glUniform4f(glc->uColor, .95f, .18f, .055f, .40f);
+          glSolidDev(bx - outer * .5, by - outer * .5, outer, outer);
+          glUniform4f(glc->uColor, 1.0f, .88f, .34f, .96f);
+          glSolidDev(bx - cell * .68, by - cell * .68, cell * 1.36, cell * 1.36);
+        } else {
+          double width = cell * (.18 + progress * .38);
+          glUniform4f(glc->uColor, 1.0f, .34f + .48f * progress, .10f, .18f + .58f * progress);
+          glSolidDev(bx - width * .5, by - width * .5, width, width);
+        }
+      }
+    }
+  }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
   double sy = (py - camRow) * cell + glOffY - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
   int frame = animFrame & 3;
@@ -623,12 +725,14 @@ void GLPresenter::glDrawCreatures() {
     for (int i = 0; i < n; i++) { const float* c = &glExtCreatures[(size_t)i * CSN_STRIDE];
       glDrawOneCreature((int)c[CSN_SPECIES], c[CSN_X], c[CSN_Y], (int)c[CSN_FACING], (int)c[CSN_HEALTH],
                         (int)c[CSN_MAX_HEALTH], (int)c[CSN_ALIVE], (int)c[CSN_ANIM_FRAME],
+                        (int)c[CSN_ATTACK_STATE], c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
                         glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow);
     }
   } else for (const Creature& c : E.creatures.creatures) {
     const CreatureSpecies& s = E.creatures.species(c);
     glDrawOneCreature(c.species, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, c.facing, c.health,
-                      s.maxHealth, c.alive ? 1 : 0, c.animFrame,
+                      s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState, c.attackProgress,
+                      c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
                       glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h), camCol, camRow);
   }
 }

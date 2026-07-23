@@ -82,11 +82,15 @@ class ExplosivesSystem {
   bool touchedCrossSupportSurvives(const BlastBatch& bb);
   void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr,
-                  uint8_t explosiveMaterial = TNT);
+                  uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX);
   void finishBlasts(BlastBatch& bb);
-  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT);
+  void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb,
+                              Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT,
+                              int immunePlayerId = 0, uint32_t seedSerial = UINT32_MAX);
   void finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb);
-  void detonate(int cx, int cy, int radius, double power);
+  void damageActors(int cx, int cy, int radius, double power, int immunePlayerId = 0);
+  void detonate(int cx, int cy, int radius, double power, int immunePlayerId = 0,
+                uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX);
   void applyExplosives();
 
  private:

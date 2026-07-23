@@ -2,11 +2,13 @@
 // JS renders packed snapshots and forwards intents; the selected slot drives
 // mining or placement.
 
-// Fresh survival players start empty. An empty slot is the bare hand; the first
-// Mining Tool is crafted from hand-harvestable wood.
+// Destructive survival starts armed. The blast gun is intentionally infinite-
+// energy in this first combat slice; its cadence lives in ProjectileSystem.
 void InventorySystem::seedStarterTools(Player& p) {
   for (int i = 0; i < INV_SLOTS; i++) p.inv[i] = InvSlot();
   p.cursor = InvSlot();
+  p.inv[0].itemKind = IK_BLAST_GUN;
+  p.inv[0].count = 1;
   p.selectedFootprint = E.clampSurvivalFootprintId(SURVIVAL_FOOTPRINT_DEFAULT_ID);
   setSelectedSlot(p, 0);
 }
@@ -51,7 +53,7 @@ bool InventorySystem::sameStack(const InvSlot& a, const InvSlot& b) {
   if (a.count <= 0 || b.count <= 0 || a.itemKind != b.itemKind) return false;
   if (a.itemKind == IK_MATERIAL) return a.material == b.material && (a.material != SEED || a.plantType == b.plantType);
   if (a.itemKind == IK_ARROW) return true;
-  return false; // tools and bows are intentionally non-stackable
+  return false; // tools, bows, and guns are intentionally non-stackable
 }
 bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
   Player trial = p;
@@ -67,7 +69,7 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
     InvSlot& s = trial.inv[i];
     if (s.count == 0) {
       s = incoming;
-      int limit = (incoming.itemKind == IK_MINING_TOOL || incoming.itemKind == IK_BOW) ? 1 : INV_STACK_MAX;
+      int limit = (incoming.itemKind == IK_MINING_TOOL || incoming.itemKind == IK_BOW || incoming.itemKind == IK_BLAST_GUN) ? 1 : INV_STACK_MAX;
       int add = imin(count, limit); s.count = add; count -= add;
     }
   }
@@ -172,6 +174,10 @@ void InventorySystem::dropAll(Player& p) {
   int ordinal = 0;
   auto drop = [&](InvSlot& s) {
     if (s.count <= 0) return;
+    // The infinite-ammo starter gun is a bound loadout item. Respawn grants a
+    // fresh loadout, so dropping this copy would duplicate it when the old gun
+    // magnetized back to the player.
+    if (s.itemKind == IK_BLAST_GUN) { s = InvSlot(); return; }
     double a = ordinal++ * 2.399963229728653; // deterministic golden-angle scatter
     E.itemsys.spawnStack(s, p.px + p.w * 0.5, p.py + p.h * 0.45,
                          std::cos(a) * 1.35, -0.75 - std::fabs(std::sin(a)) * 0.8, 180);
@@ -260,6 +266,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
 
   bool mineMode = sel.itemKind == IK_MINING_TOOL || sel.count <= 0; // tool or empty slot -> mine (empty = hand)
   if (sel.itemKind == IK_BOW) { E.projectiles.applyBowInput(p, prev); return; }
+  if (sel.itemKind == IK_BLAST_GUN) { E.projectiles.applyBlastGunInput(p); return; }
   if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
   bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && sel.material == SEED;
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);

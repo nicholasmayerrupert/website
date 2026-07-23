@@ -5,11 +5,15 @@
 
 struct Engine;
 
-enum CreatureSpeciesId : uint8_t { CS_MINNOW = 0, CS_PIKE, CS_FOX, CS_HARE, CS_CRAWLER, CS_MOLE, CS_BIRD, CS_COUNT };
+enum CreatureSpeciesId : uint8_t {
+  CS_MINNOW = 0, CS_PIKE, CS_FOX, CS_HARE, CS_CRAWLER, CS_MOLE, CS_BIRD,
+  CS_DYNAMITEER = 7, CS_BORE_SENTINEL = 8, CS_COUNT
+};
 enum CreatureLocomotion : uint8_t { CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING };
 enum CreatureTarget : uint8_t { CT_NONE = 0, CT_PLAYER = 1, CT_PREY = 2 };
 enum CreatureSpawnMode : uint8_t { CSM_REGION = 0, CSM_CONTINUOUS };
 enum CreatureHabitat : uint8_t { CH_WATER = 0, CH_SURFACE, CH_CAVE, CH_AIR };
+static constexpr int CREATURE_BORE_RADIUS = 4;
 
 struct CreatureSpawnRule {
   CreatureSpawnMode mode;
@@ -84,6 +88,18 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .damage=0, .attackCooldown=0, .scanInterval=20, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
    .spawn={CSM_CONTINUOUS, CH_AIR, 176, 1, 2, 96, 1, 600, 0.55, 20, 72}},
+  {.name="dynamiteer", .locomotion=CL_AMPHIBIOUS, .w=7, .h=5, .maxHealth=72,
+   .walkSpeed=0.23, .swimSpeed=0.17, .accel=0.045, .gravity=0.075, .jumpSpeed=1.00,
+   .fluidThreshold=0.30, .sightRange=92, .attackRange=72,
+   .damage=18, .attackCooldown=135, .scanInterval=12, .hopPeriod=0,
+   .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 224, 1, 1, 128, 1, 780, 0.70, 34, 100}},
+  {.name="bore sentinel", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=170,
+   .walkSpeed=0.12, .swimSpeed=0.11, .accel=0.026, .gravity=0.075, .jumpSpeed=0.72,
+   .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
+   .damage=42, .attackCooldown=260, .scanInterval=10, .hopPeriod=0,
+   .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 1050, 0.55, 46, 132}},
 };
 
 struct Creature {
@@ -104,6 +120,10 @@ struct Creature {
   double habitatX = 0, habitatY = 0;
   bool hasHabitatGoal = false;
   uint8_t animFrame = 0;
+  uint8_t attackState = CAS_IDLE;
+  int attackTicks = 0;
+  double attackProgress = 0;
+  double attackAimX = 0, attackAimY = 0; // absolute-world target
 };
 
 class CreatureSystem {
@@ -148,6 +168,9 @@ class CreatureSystem {
   void moveAmphibious(Creature& c);
   void moveFlying(Creature& c);
   void attackTarget(Creature& c);
+  void updateDynamiteerAttack(Creature& c);
+  void updateBoreSentinelAttack(Creature& c);
+  void fireBore(Creature& c);
   void updateCreatures();
   bool damageAtPoint(int x, int y, int radius, int damage);
   int buildCreatureSnapshot();

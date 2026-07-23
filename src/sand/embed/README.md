@@ -10,7 +10,7 @@ That emits one self-contained ES module:
 
 ```html
 <script type="module" src="./sand-game.js"></script>
-<sand-game mode="survival" initial-tool="cube"></sand-game>
+<sand-game mode="survival"></sand-game>
 ```
 
 The bundle embeds the WASM engine, so host pages do not need a separate `.wasm`
@@ -42,7 +42,7 @@ that shadow root for benchmark tooling.
 
 | Attribute | Values | Default | Notes |
 | --- | --- | --- | --- |
-| `mode` | `survival`, `creative` | `survival` | Survival spawns a player and inventory HUD. Creative uses free camera and palette. |
+| `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows a compact arsenal + health HUD. Creative uses free camera and palette. |
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
 
 Changing `initial-tool` after mount forwards the legacy tool selection to the
@@ -61,12 +61,28 @@ the element instead.
   WebSocket transport.
 - C++/WASM owns simulation, rendering, camera policy, player physics, tools,
   terrain streaming, spawn placement, and inventory state.
+- Survival is an explosive combat mode: the hotbar selects the active arsenal,
+  the pointer aims, and primary fire launches the selected weapon. Its former
+  crafting/inventory modal is intentionally not exposed.
 - Touch/coarse-pointer creative mode starts with draw mode off and shows only a
   bottom `START` button so the host page can scroll. Starting reveals the normal
   controls; choosing `SCROLL` hides them again. Fine-pointer survival starts
   draw-enabled for immediate play.
 - The mobile creative material picker accepts vertical touch scrolling while
   the movement and view controls remain available around it.
+
+## Survival Controls
+
+| Input | Action |
+| --- | --- |
+| `A` / `D` or arrows | Move |
+| `W`, `↑`, or `Space` | Jump / swim |
+| `S` / `↓` | Crouch / descend |
+| `Shift` | Run |
+| Pointer | Aim |
+| Left mouse | Fire selected weapon |
+| `1`–`9` or wheel | Select arsenal slot |
+| `+`, `-`, `0` | Zoom in / out / reset |
 
 ## Multiplayer
 

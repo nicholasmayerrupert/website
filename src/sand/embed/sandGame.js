@@ -7,7 +7,6 @@ import { DEFAULT_TOOL } from '../game/runtimeConfig';
 import { createToolPalette } from './toolPalette';
 import { createInventoryHud } from './inventoryHud';
 import { createSurvivalStatus } from './survivalStatus';
-import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 
 const HOST_CSS = `
@@ -523,8 +522,8 @@ class SandGameElement extends HTMLElement {
     }
 
     const initialTool = this.getAttribute('initial-tool') || DEFAULT_TOOL;
-    // 'survival' (default): player character + reach-limited tools, camera
-    // follows. 'creative': free camera, draw anywhere, no character.
+    // 'survival' (default): armed player character + follow camera.
+    // 'creative': free camera, draw anywhere, no character.
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
     let cancelled = false;
@@ -541,36 +540,23 @@ class SandGameElement extends HTMLElement {
           debugHitboxes,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
           // Survival inventory HUD wiring (the engine owns the inventory state).
-          onInventory: (inv) => {
-            this._hud?.update(inv);
-            this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint);
-          },
+          onInventory: (inv) => this._hud?.update(inv),
           onPlayerState: (player) => this._status?.update(player),
           onToggleInventory: () => this._hud?.toggleOpen(),
-          onToggleFootprintMenu: () => this._sizeMenu?.toggleOpen(),
         });
         this._game = game;
         const coarse = typeof window !== 'undefined' && window.matchMedia &&
           window.matchMedia('(pointer: coarse)').matches;
         let syncMobileCreativeUi = () => {};
         if (mode === 'survival') {
-          // Survival uses the inventory HUD (hotbar + openable grid) with the full
-          // Minecraft cursor model. All state is authoritative in the engine; the HUD
-          // forwards intents (select, pick/place the carried stack, throw out).
+          // Explosive survival keeps only the authoritative nine-slot arsenal.
+          // Inventory/crafting state may still exist in the engine and on the wire,
+          // but this combat presentation deliberately exposes no modal grid.
           this._hud = createInventoryHud(root, {
             selectSlot: (i) => game.selectSlot(i),
-            cursorPick: (slot, half) => game.cursorPick(slot, half),
-            throwFromCursor: (whole) => game.throwFromCursor(whole),
-            getCursor: () => game.getCursor(),
-            recipes: game.getCraftingRecipes(),
-            craft: (recipe, max) => game.craft(recipe, max),
           });
           this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
-          this._sizeMenu = createFootprintMenu(root, {
-            selectFootprint: (id) => game.setSelectedFootprint(id),
-          });
           this._hud.update(game.getInventory());
-          this._sizeMenu.update(game.getSurvivalFootprints(), game.getInventory().selectedFootprint);
           // Multiplayer connect panel (collapsed): join an authoritative server
           // by IP:port. Survival-only; single-player UI is unchanged at rest.
           this._mp = createConnectPanel(root, {
@@ -687,7 +673,6 @@ class SandGameElement extends HTMLElement {
     this._palette?.destroy();
     this._hud?.destroy();
     this._status?.destroy();
-    this._sizeMenu?.destroy();
     this._mp?.destroy();
     this._zoom?.destroy();
     this._start?.destroy();
@@ -697,7 +682,7 @@ class SandGameElement extends HTMLElement {
     this._visibilityObserver?.disconnect();
     if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
+    this._game = this._palette = this._hud = this._status = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
     this._visibilityObserver = this._onDocumentVisibility = null;
     this._cancel = null;
     this._mounted = false;

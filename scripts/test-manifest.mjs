@@ -14,6 +14,7 @@ export const UNIT_SUITES = [
   ['mine-lock', 'mine-lock-test.mjs'],
   ['inventory', 'inventory-test.mjs'],
   ['survival-upgrade', 'survival-upgrade-test.mjs'],
+  ['explosive-survival', 'explosive-survival-test.mjs'],
   ['inv-bridge', 'inventory-bridge-test.mjs'],
   ['creative', 'creative-place-test.mjs'],
   ['throw', 'throw-test.mjs'],

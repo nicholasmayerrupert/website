@@ -278,6 +278,8 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.wx = sourceOffsetX + in[CSN_X]; c.wy = sourceOffsetY + in[CSN_Y];
     c.vx = in[CSN_VX]; c.vy = in[CSN_VY]; c.facing = (int)in[CSN_FACING];
     c.health = (int)in[CSN_HEALTH]; c.alive = in[CSN_ALIVE] != 0; c.animFrame = (uint8_t)in[CSN_ANIM_FRAME];
+    c.attackState = (uint8_t)in[CSN_ATTACK_STATE]; c.attackProgress = in[CSN_ATTACK_PROGRESS];
+    c.attackAimX = sourceOffsetX + in[CSN_AIM_X]; c.attackAimY = sourceOffsetY + in[CSN_AIM_Y];
     e->creatures.creatures.push_back(c);
   }
 }

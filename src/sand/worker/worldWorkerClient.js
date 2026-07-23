@@ -161,6 +161,9 @@ export function createWorldWorkerClient(ctx) {
     testSeedReaction(material, cap = 600, phase = 0) {
       worker.postMessage({ type: 'test-seed-reaction', material: material | 0, cap: cap | 0, phase: phase | 0 });
     },
+    testCreatureRuntime(simulate, naturalSpawn = false) {
+      worker.postMessage({ type: 'test-creature-runtime', simulate: !!simulate, naturalSpawn: !!naturalSpawn });
+    },
     config(config) { worker.postMessage({ type: 'config', ...config }); },
     resize(cols, rows, worldCenter) {
       pending = null;
@@ -261,10 +264,12 @@ export function createWorldWorkerClient(ctx) {
           const O = OFF.projectileSnapshot;
           projectiles = new Float32Array(packet.projectiles.length * STRIDES.projectileSnapshot);
           for (let i = 0; i < packet.projectiles.length; i++) {
-            const arrow = packet.projectiles[i], o = i * STRIDES.projectileSnapshot;
-            projectiles[o + O.id] = arrow.id; projectiles[o + O.owner] = arrow.owner;
-            projectiles[o + O.x] = arrow.x; projectiles[o + O.y] = arrow.y;
-            projectiles[o + O.vx] = arrow.vx; projectiles[o + O.vy] = arrow.vy; projectiles[o + O.charge] = arrow.charge;
+            const projectile = packet.projectiles[i], o = i * STRIDES.projectileSnapshot;
+            projectiles[o + O.id] = projectile.id; projectiles[o + O.owner] = projectile.owner;
+            projectiles[o + O.x] = projectile.x; projectiles[o + O.y] = projectile.y;
+            projectiles[o + O.vx] = projectile.vx; projectiles[o + O.vy] = projectile.vy;
+            projectiles[o + O.charge] = projectile.charge; projectiles[o + O.kind] = projectile.kind ?? 0;
+            projectiles[o + O.fuse] = projectile.fuse ?? 0; projectiles[o + O.rotation] = projectile.rotation ?? 0;
           }
         }
         mineProgress = packet.mineProgress || 0;

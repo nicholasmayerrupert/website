@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 16;
+static const int ABI_VERSION = 17;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind
 enum PlayerSnapshotField : int {
@@ -50,7 +50,7 @@ enum ItemSnapshotField : int {
 };
 static const int IS_STRIDE = 12;
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -65,8 +65,12 @@ enum CreatureSnapshotField : int {
   CSN_MAX_HEALTH = 10,
   CSN_ALIVE = 11,
   CSN_ANIM_FRAME = 12,
+  CSN_ATTACK_STATE = 13,
+  CSN_ATTACK_PROGRESS = 14,
+  CSN_AIM_X = 15,
+  CSN_AIM_Y = 16,
 };
-static const int CSN_STRIDE = 13;
+static const int CSN_STRIDE = 17;
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected
 enum InventorySlotField : int {
@@ -81,7 +85,7 @@ enum InventorySlotField : int {
 };
 static const int IVS_STRIDE = 8;
 
-// projectileSnapshot: id, owner, x, y, vx, vy, charge
+// projectileSnapshot: id, owner, x, y, vx, vy, charge, kind, fuse, rotation
 enum ProjectileSnapshotField : int {
   PRS_ID = 0,
   PRS_OWNER = 1,
@@ -90,8 +94,11 @@ enum ProjectileSnapshotField : int {
   PRS_VX = 4,
   PRS_VY = 5,
   PRS_CHARGE = 6,
+  PRS_KIND = 7,
+  PRS_FUSE = 8,
+  PRS_ROTATION = 9,
 };
-static const int PRS_STRIDE = 7;
+static const int PRS_STRIDE = 10;
 
 // craftingRecipe: id, outputKind, outputMaterial, outputTier, outputCount, ingredientStart, ingredientCount
 enum CraftingRecipeField : int {
@@ -199,6 +206,13 @@ enum InventoryItemKind : uint8_t {
   IK_MINING_TOOL = 1,
   IK_BOW = 2,
   IK_ARROW = 3,
+  IK_BLAST_GUN = 4,
+};
+
+enum ProjectileKind : uint8_t {
+  PK_ARROW = 0,
+  PK_BLAST_ROUND = 1,
+  PK_DYNAMITE = 2,
 };
 
 enum CraftIngredientKind : uint8_t {
@@ -237,6 +251,14 @@ enum CreatureSpeciesAbi : int {
   CREATURE_CRAWLER = 4,
   CREATURE_MOLE = 5,
   CREATURE_BIRD = 6,
+  CREATURE_DYNAMITEER = 7,
+  CREATURE_BORE_SENTINEL = 8,
+};
+
+enum CreatureAttackState : uint8_t {
+  CAS_IDLE = 0,
+  CAS_CHARGING = 1,
+  CAS_FIRING = 2,
 };
 
 enum SoundEventType : uint8_t {
@@ -259,6 +281,9 @@ enum SoundEventType : uint8_t {
   SE_ARROW_HIT = 16,
   SE_DEATH = 17,
   SE_RESPAWN = 18,
+  SE_BLAST_GUN = 19,
+  SE_BORE_CHARGE = 20,
+  SE_BORE_FIRE = 21,
 };
 
 static const int INV_HOTBAR = 9;

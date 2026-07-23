@@ -14,9 +14,10 @@ static constexpr int ACID_SPLASH_RADIUS_LOCAL = 9;
 static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
 static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
 static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 120;
-static constexpr int CLUSTER_BOMBLET_COUNT_LOCAL = 8;
-static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 36;
-static constexpr int CLUSTER_BOMBLET_FUSE_STEP_LOCAL = 2;
+static constexpr int CLUSTER_BOMBLET_COUNT_LOCAL = 16;
+static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 20;
+static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 21;
+static constexpr int CLUSTER_BOMBLET_FUSE_STRIDE_LOCAL = 13;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
@@ -451,10 +452,12 @@ void ProjectileSystem::updateProjectiles() {
   std::vector<Projectile> pendingCluster;
   pendingCluster.reserve(CLUSTER_BOMBLET_COUNT_LOCAL);
   auto splitCluster = [&](const Projectile& carrier) {
-    // Eight deterministic pseudo-random directions read as genuinely scattered
+    // Sixteen deterministic pseudo-random directions read as genuinely scattered
     // mini-dynamite while remaining identical on authority, replay, and clients.
-    // Disjoint two-tick fuse bands guarantee a visible stagger without making
-    // any child feel like a separate, long-lived projectile.
+    // A coprime stride permutes the 20-40 tick window, guaranteeing that every
+    // child has a distinct short fuse without tying fuse order to its direction.
+    int fusePhase = (int)(((uint32_t)carrier.id * 2654435761u) %
+                          CLUSTER_BOMBLET_FUSE_SPAN_LOCAL);
     for (int child = 0; child < CLUSTER_BOMBLET_COUNT_LOCAL; child++) {
       uint32_t seed = (uint32_t)carrier.id * 2654435761u ^
                       (uint32_t)(child + 1) * 2246822519u;
@@ -471,8 +474,8 @@ void ProjectileSystem::updateProjectiles() {
       bomblet.vx = std::cos(angle) * speed;
       bomblet.vy = std::sin(angle) * speed - .42;
       bomblet.fuse = CLUSTER_BOMBLET_FUSE_MIN_LOCAL +
-        child * CLUSTER_BOMBLET_FUSE_STEP_LOCAL +
-        (int)(seed % CLUSTER_BOMBLET_FUSE_STEP_LOCAL);
+        (child * CLUSTER_BOMBLET_FUSE_STRIDE_LOCAL + fusePhase) %
+          CLUSTER_BOMBLET_FUSE_SPAN_LOCAL;
       bomblet.life = bomblet.fuse + 45;
       bomblet.charge = 1.0;
       bomblet.rotation = angle;

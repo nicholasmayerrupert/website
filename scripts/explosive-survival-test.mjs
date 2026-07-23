@@ -460,7 +460,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const blastVictim = e.spawnPlayer(145, FLOOR - 8);
   e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
   let sawCarrier = Boolean(launchedCarrier), maxBomblets = 0;
-  let splitTick = -1, eightTogetherTicks = 0;
+  let splitTick = -1, sixteenTogetherTicks = 0;
   let firstChildFuses = null, blastVictimStaged = false, blastVictimDistance = 0;
   const childDirections = new Set();
   for (let tick = 0; tick < 250; tick++) {
@@ -469,9 +469,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     sawCarrier ||= cluster.some((p) => p.charge < 0.5);
     const children = cluster.filter((p) => p.charge > 0.5);
     if (children.length && splitTick < 0) splitTick = tick;
-    if (children.length === 8 && !firstChildFuses)
+    if (children.length === 16 && !firstChildFuses)
       firstChildFuses = children.map((child) => child.fuse);
-    if (children.length === 8) eightTogetherTicks++;
+    if (children.length === 16) sixteenTogetherTicks++;
     maxBomblets = Math.max(maxBomblets, children.length);
     for (const child of children) childDirections.add(Math.round(Math.atan2(child.vy, child.vx) * 10));
     const expiring = children.find((child) => child.fuse === 1);
@@ -494,14 +494,14 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('cluster carrier splits on impact before its two-second airburst fallback',
     launchedCarrier && Math.hypot(launchedCarrier.vx, launchedCarrier.vy) < 3
       && launchedCarrier.fuse > 100 && splitTick >= 0 && splitTick < 100);
-  check(`captured cluster launcher splits into exactly eight live mini-dynamites (max ${maxBomblets})`,
-    slot >= 0 && sawCarrier && maxBomblets === 8);
-  check(`all eight mini-dynamites use distinct short 36-51 tick fuses (${firstChildFuses?.join('/')})`,
-    firstChildFuses?.length === 8
-      && firstChildFuses.every((fuse) => fuse >= 36 && fuse <= 51)
-      && new Set(firstChildFuses).size === 8);
-  check('all eight mini-dynamites scatter broadly and remain visible together',
-    childDirections.size >= 6 && eightTogetherTicks >= 20);
+  check(`captured cluster launcher splits into exactly sixteen live mini-dynamites (max ${maxBomblets})`,
+    slot >= 0 && sawCarrier && maxBomblets === 16);
+  check(`all sixteen mini-dynamites use distinct 20-40 tick fuses (${firstChildFuses?.join('/')})`,
+    firstChildFuses?.length === 16
+      && firstChildFuses.every((fuse) => fuse >= 20 && fuse <= 40)
+      && new Set(firstChildFuses).size === 16);
+  check('all sixteen mini-dynamites scatter broadly and remain visible together',
+    childDirections.size >= 12 && sixteenTogetherTicks >= 12);
   check(`larger cluster blasts damage a non-owner beyond the old radius (${blastVictimDistance.toFixed(1)} cells)`,
     blastVictimStaged && blastVictimDistance > 6 && e.getPlayer(blastVictim).health < 100);
   const stoneAfter = countStone(e.getGrid());

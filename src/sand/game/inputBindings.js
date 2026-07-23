@@ -161,7 +161,7 @@ export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onT
     return !!e.composedPath?.().some(isEditableTarget);
   };
 
-  // Movement keys (WASD/arrows + space/shift) are forwarded to the engine,
+  // Movement/combat keys (WASD/arrows + space/shift/F) are forwarded to the engine,
   // which owns the pan/player-input policy. The editable-target guard +
   // preventDefault stay in JS (they need the DOM event/target).
   const onKeyDown = (e) => {

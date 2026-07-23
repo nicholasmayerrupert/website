@@ -144,6 +144,17 @@ struct Creature {
   int attackTicks = 0;
   double attackProgress = 0;
   double attackAimX = 0, attackAimY = 0; // absolute-world target
+  // Presentation mirrors also store pending-breach records in this compact
+  // actor shape. Authority-side materialized creatures always keep this at 0.
+  double spawnProgress = 0;
+};
+
+struct CreatureSpawnTelegraph {
+  int id = 0;
+  uint8_t species = CS_DYNAMITEER;
+  double wx = 0, wy = 0;
+  int ticksRemaining = 0, totalTicks = 1;
+  int threatCost = 0;
 };
 
 class CreatureSystem {
@@ -155,14 +166,24 @@ class CreatureSystem {
   // touches only nearby buckets instead of scanning all previously explored life.
   std::unordered_map<uint64_t, std::vector<Creature>> dormantRegions;
   std::unordered_set<uint64_t> spawnedRegions;
+  std::vector<CreatureSpawnTelegraph> pendingSpawns;
   std::vector<float> snapshot;
   int nextCreatureId = 1;
   static constexpr int NATURAL_MOB_CAP = 8;
   static constexpr int MIXED_DENSITY_RADIUS = 96;
   static constexpr int MIXED_DENSITY_CAP = 3;
+  static constexpr int SPAWN_VIEW_MARGIN = 10;
+  static constexpr int SPAWN_TELEGRAPH_MIN_TICKS = 54;
+  static constexpr int SPAWN_TELEGRAPH_TICK_SPAN = 31;
+  static constexpr int ENCOUNTER_CADENCE_TICKS = 120;
+  static constexpr int ENCOUNTER_THREAT_GAIN_TICKS = 90;
+  static constexpr int ENCOUNTER_THREAT_MAX = 14;
+  int encounterThreat = 8;
+  int encounterNextTick = 0;
 
   const CreatureSpecies& species(const Creature& c) const { return CREATURE_SPECIES[c.species]; }
   bool inLoadedWindow(const Creature& c, int margin = 0) const;
+  bool boxInsideLoadedWindow(double wx, double wy, int w, int h, int margin = 0) const;
   bool boxHitsSolid(double wx, double wy, int w, int h) const;
   double blockingCoverage(double wx, double wy, int w, int h) const;
   double fluidCoverage(double wx, double wy, int w, int h) const;
@@ -172,6 +193,13 @@ class CreatureSystem {
   int localDensityAll(double wx, double wy, int radius) const;
   bool farEnoughFromPlayers(double wx, double wy, int minDistance) const;
   bool spawnNearFocus(uint8_t speciesId, uint32_t salt);
+  bool findSpawnNearFocus(uint8_t speciesId, uint32_t salt, bool requireOffscreen,
+                          double& outWx, double& outWy) const;
+  bool queueSpawnTelegraph(uint8_t speciesId, double wx, double wy, uint32_t salt,
+                           int threatCost);
+  void updateSpawnTelegraphs();
+  int encounterCost(uint8_t speciesId) const;
+  int addCreature(uint8_t speciesId, double wx, double wy, int id);
   int spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat = true);
   int spawnCreatureNatural(uint8_t speciesId, double wx, double wy);
   bool spawnCandidate(uint8_t speciesId, int regionX, int regionY, uint32_t salt);

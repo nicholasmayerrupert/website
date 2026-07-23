@@ -440,16 +440,19 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
 
   // Pointer actions run on pointerdown; click handles keyboard/programmatic use.
   hud.addEventListener('click', (e) => {
-    if (e.detail !== 0) return;
     const i = idxOf(e.target);
     if (i < 0) return;
     if (!open) {
       if (i < HOTBAR) {
-        selectSlot?.(i);
+        // Pointer selection already ran on pointerdown. Reassert focus at the
+        // end of the complete click sequence because browsers may transfer it
+        // to the button after that earlier focus() call.
+        if (e.detail === 0) selectSlot?.(i);
         focusSurface();
       }
       return;
     }
+    if (e.detail !== 0) return;
     cursorPick?.(i, e.shiftKey);
     refreshCursor();
   });
@@ -483,7 +486,12 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   });
 
   hud.addEventListener('pointerup', (e) => {
-    if (!open) { downSlot = -1; downOnSlot = false; return; }
+    if (!open) {
+      const i = idxOf(e.target);
+      if (i >= 0 && i < HOTBAR) focusSurface();
+      downSlot = -1; downOnSlot = false;
+      return;
+    }
     const to = idxOf(e.target);
     const from = downSlot;
     downSlot = -1; downOnSlot = false;

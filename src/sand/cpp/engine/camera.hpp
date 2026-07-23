@@ -39,7 +39,7 @@ class ViewCamera {
 
   // ---- input forwarding ----
   void inputKey(int code, int down) {
-    if (code < 0 || code > IK_SHIFT) return;
+    if (code < 0 || code > IK_SHIELD) return;
     if (down) heldKeys |= (1u << code); else heldKeys &= ~(1u << code);
   }
   void inputClearKeys() { heldKeys = 0; }
@@ -75,6 +75,7 @@ class ViewCamera {
     if (space) b |= PI_JETPACK;
     if (heldKeys & (1u << IK_DOWN)) b |= PI_DOWN;
     if (heldKeys & (1u << IK_SHIFT)) b |= PI_RUN;
+    if (heldKeys & (1u << IK_SHIELD)) b |= PI_SHIELD;
     if (stickX < -1e-6) b |= PI_LEFT;
     if (stickX >  1e-6) b |= PI_RIGHT;
     // Platformer vertical input remains jump/crouch, with a deliberate tilt

@@ -231,7 +231,7 @@ const hasDraftCell = (cells, x, y) => {
   const one = mineTicks(0);
   const three = mineTicks(2);
   check(`boosted 1x1 mine ticks (${one})`, one === 1);
-  check(`boosted 3x3 footprint still costs more work (${three} vs ${one})`, three === 5);
+  check(`boosted 3x3 footprint still costs more work (${three} vs ${one})`, three === 4);
 }
 
 // 7) Placing a COMPONENT material in survival uses the creative-style DRAFT: holding

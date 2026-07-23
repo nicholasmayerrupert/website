@@ -33,6 +33,7 @@ let toolWrites = 0;
 let resizeId = 0;
 let mirroredCreatures = false;
 let survival = false;
+let survivalSpawnViewReady = false;
 let localPlayerId = 0;
 let latestInput = null;
 let actorClock = null;
@@ -85,7 +86,10 @@ function postDraft() {
   if (signature === lastDraftSignature) return;
   lastDraftSignature = signature;
   const data = cells.buffer;
-  self.postMessage({ type: 'draft', epoch, revision: ++draftRevision, material, data }, [data]);
+  self.postMessage({
+    type: 'draft', epoch, revision: ++draftRevision, material,
+    worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(), data,
+  }, [data]);
 }
 
 function postCreatures() {
@@ -94,7 +98,8 @@ function postCreatures() {
   mirroredCreatures = creatures.length > 0;
   const data = creatures.buffer;
   self.postMessage({
-    type: 'creatures', worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(), data,
+    type: 'creatures', epoch,
+    worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(), data,
   }, [data]);
 }
 
@@ -111,6 +116,7 @@ function postActors(force = false) {
   const player = players.find((candidate) => candidate.id === localPlayerId) || null;
   self.postMessage({
     type: 'actors', epoch, actorTick, localPlayerId, players,
+    worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     mineProgress: engine.getPlayerMineProgress(localPlayerId),
     mineTarget: engine.getPlayerMineTarget(localPlayerId),
     actionCount: engine.getPlayerActionCount(),
@@ -174,8 +180,11 @@ function streamForControl() {
   if (control.viewCols + STREAM_MARGIN * 2 > engine.cols ||
       control.viewRows + STREAM_MARGIN * 2 > engine.rows) return false;
   const localX = Math.floor(control.camWorldX - engine.getWorldOffsetX());
-  const dx = engine.maybeShiftWorld(localX, control.viewCols, STREAM_MARGIN);
   const localY = Math.floor(control.camWorldY - engine.getWorldOffsetY());
+  // Generate/cache the band we are approaching over several cheap turns. The
+  // main-thread camera path already does this; worker authority must do it too.
+  engine.prefetchAdvance(localX, localY, control.viewCols, control.viewRows);
+  const dx = engine.maybeShiftWorld(localX, control.viewCols, STREAM_MARGIN);
   const dy = engine.maybeShiftWorldV(localY, control.viewRows, STREAM_MARGIN);
   return !!(dx || dy);
 }
@@ -234,6 +243,25 @@ function run() {
   const started = performance.now();
   if (paused) { actorClock?.reset(started); schedule(WORLD_STEP_MS); return; }
   const shifted = streamForControl();
+  if (shifted) {
+    // The shift has already translated every authority-owned actor into the new
+    // buffer frame. Start its epoch before any of those coordinates are posted.
+    epoch++;
+    sequence = 0;
+    awaitingAck = false;
+  }
+  // Natural-spawn visibility is authority-owned. Keep its otherwise headless
+  // camera aligned with the presentation camera so "off-screen" means outside
+  // the player's real viewport rather than outside a stale startup rectangle.
+  if (control && Number.isFinite(control.camWorldX) && Number.isFinite(control.camWorldY)) {
+    const viewCols = Math.max(1, Math.min(engine.cols, control.viewCols | 0));
+    const viewRows = Math.max(1, Math.min(engine.rows, control.viewRows | 0));
+    engine.setViewport(1, 1, viewCols, viewRows);
+    engine.cameraSet(
+      control.camWorldX - engine.getWorldOffsetX(),
+      control.camWorldY - engine.getWorldOffsetY(),
+    );
+  }
   if (!survival) {
     applyEdges();
     applyContinuous(started);
@@ -250,24 +278,23 @@ function run() {
   // The DEV delay hook isolates scheduling without burning a browser CPU core;
   // normal production turns always execute the real WASM world step here.
   if (artificialDelayMs <= 0) engine.stepWorld();
-  postSounds();
   lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
   rateSteps++;
+  // Establish the new mirror coordinate frame before publishing any payload
+  // whose local coordinates were translated by the stream.
+  if (shifted) postFull('stream');
+  postSounds();
   if (started - lastStatsPost >= 250) {
     lastStatsPost = started;
     self.postMessage({ type: 'stats', worldTick: engine.getTick(), perf: perf(), epoch, sequence });
   }
   postDraft();
   postCreatures();
-  postActors();
-  if (shifted) {
-    epoch++;
-    sequence = 0;
-    awaitingAck = false;
-    postFull('stream');
-  } else {
-    postDiffIfReady();
-  }
+  // Inventory/cursor are change-triggered rather than periodic. Force them into
+  // the first packet of a new epoch so coalescing cannot strand an update that
+  // was posted immediately before the shift.
+  postActors(shifted);
+  if (!shifted) postDiffIfReady();
   const targetTurnMs = artificialDelayMs > 0 ? artificialDelayMs : WORLD_STEP_MS;
   schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
 }
@@ -296,7 +323,9 @@ self.onmessage = async ({ data }) => {
     creatureNaturalSpawning = !!data.creatureNaturalSpawning;
     creatureSimulationRequested = false;
     engine.setCreativeMaterial(creativeKind, creativeValue);
-    if (survival) engine.setCreatureRuntime(true, true);
+    // Wait for the first presentation control before natural spawning so the
+    // initial encounter also observes the real viewport, not camera defaults.
+    if (survival) engine.setCreatureRuntime(true, false);
     else applyCreatureRuntime();
     // Preserve the selected startup tool. The initial creative selection is an
     // EMPTY placeholder until the palette emits a real material selection.
@@ -306,6 +335,7 @@ self.onmessage = async ({ data }) => {
     actorClock = createFixedRateClock({ now: performance.now() });
     lastInventoryHash = -1; lastItemsActorTick = -6;
     epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false;
+    survivalSpawnViewReady = false;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
     postFull('init');
     postActors(true);
@@ -318,6 +348,10 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'control') {
     controlsReceived++;
     control = data;
+    if (survival && !survivalSpawnViewReady) {
+      survivalSpawnViewReady = true;
+      engine.setCreatureRuntime(true, true);
+    }
   } else if (data.type === 'input') {
     latestInput = data.input || null;
   } else if (data.type === 'intent' && survival && localPlayerId) {
@@ -358,10 +392,24 @@ self.onmessage = async ({ data }) => {
   } else if (data.type === 'test-seed-reaction') {
     seedReactionInterface(data.material | 0, Math.max(1, data.cap | 0), data.phase | 0);
   } else if (data.type === 'test-creature-runtime') {
+    // An explicit diagnostic override owns the startup gate too. Otherwise a
+    // late first viewport-control packet can silently re-enable natural spawns
+    // after a browser test has frozen combat.
+    survivalSpawnViewReady = true;
     engine.setCreatureRuntime(!!data.simulate, !!data.naturalSpawn);
+  } else if (data.type === 'test-natural-spawn') {
+    if (data.forceBreach) engine._testSpawnBreachNearFocus(data.species | 0, data.salt | 0);
+    else engine._testSpawnNearFocus(data.species | 0, data.salt | 0);
+    postSounds();
+    postCreatures();
+    postActors(true);
   } else if (data.type === 'resize') {
     awaitingAck = false;
     resizeId = data.resizeId | 0;
+    if (survival) {
+      survivalSpawnViewReady = false;
+      engine.setCreatureRuntime(true, false);
+    }
     // The authority does not render, so its internal camera normally remains at
     // startup. Give resizeLoadedWindow the presentation's exact world center;
     // otherwise its full snapshot can be re-anchored around that stale camera
@@ -381,6 +429,10 @@ self.onmessage = async ({ data }) => {
       sequence = 0;
       postFull('resize');
     } else postFull('resize');
+    // Coordinate-free inventory/cursor updates must cross the epoch with the
+    // resized actor frame. Otherwise an old pending packet can be superseded
+    // after its one-shot inventory hash was already consumed.
+    postActors(true);
   } else if (data.type === 'destroy') {
     clearTimeout(timer);
     engine.destroy();

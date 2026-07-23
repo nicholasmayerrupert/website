@@ -17,6 +17,11 @@ const mk = (storageRole = 'full') => createEngineWasm({
 });
 const O = OFF.soundEvent;
 
+check('ward impacts, ward breaks, and spawn breaches have distinct semantic cues',
+  Number.isInteger(SOUND_EVENT.SHIELD_HIT)
+    && SOUND_EVENT.SHIELD_BREAK === SOUND_EVENT.SHIELD_HIT + 1
+    && SOUND_EVENT.SPAWN_BREACH === SOUND_EVENT.SHIELD_BREAK + 1);
+
 // Gun layers stay compact, locally bundled, and tied to an auditable CC0 source.
 {
   const expected = [

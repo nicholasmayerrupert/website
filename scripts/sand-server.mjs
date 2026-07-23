@@ -13,6 +13,7 @@ import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
 import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
 import { syncWorldWindow } from '../src/sand/net/server/worldWindow.js';
+import { canSendBufferLocalFrame } from '../src/sand/net/server/frameGate.js';
 
 // Bootstrap size only. Connected clients report their survival viewport needs;
 // the shared authority window then streams/resizes around the player group.
@@ -31,7 +32,7 @@ export async function startSandServer(opts = {}) {
     emittersOn: false, sinksOn: false,
   });
   engine.setSurvivalInventory(true); // arms new players and enables authoritative combat inventory
-  engine.setCreatureRuntime(true, true);
+  engine.setCreatureRuntime(true, cfg.creatureNaturalSpawning !== false);
   engine.setPlayMode(true);
   const maxPlayers = cfg.maxPlayers ?? MAX_PLAYERS;
   const host = new Host({ engine, roomId: cfg.room, maxPlayers });
@@ -43,6 +44,11 @@ export async function startSandServer(opts = {}) {
   const writable = (ws) => ws.readyState === 1;
   const broadcastLatest = (data) => {
     for (const p of peers.values()) if (writable(p.ws) && p.ws.bufferedAmount <= MAX_BUFFERED_BYTES) p.ws.send(data);
+  };
+  const broadcastLocalFrame = (data) => {
+    for (const p of peers.values()) {
+      if (canSendBufferLocalFrame(p, MAX_BUFFERED_BYTES)) p.ws.send(data);
+    }
   };
   const sendTo = (ws, data) => { if (ws.readyState === 1) ws.send(data); };
 
@@ -111,12 +117,12 @@ export async function startSandServer(opts = {}) {
     host.stepActors(now);
     const t = host.actorTick;
     if (peers.size > 0) {
-      if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcastLatest(encode(makeSnapshot(t, engine.getPlayers(), null))); }
-      if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcastLatest(encode(encodeItems(engine, t))); }
+      if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcastLocalFrame(encode(makeSnapshot(t, engine.getPlayers(), null))); }
+      if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcastLocalFrame(encode(encodeItems(engine, t))); }
       if (++sinceCreatures >= SNAPSHOT_INTERVAL) {
         sinceCreatures = 0;
-        broadcastLatest(encode(encodeCreatures(engine, t)));
-        broadcastLatest(encode(encodeProjectiles(engine, t)));
+        broadcastLocalFrame(encode(encodeCreatures(engine, t)));
+        broadcastLocalFrame(encode(encodeProjectiles(engine, t)));
       }
       // Per-player inventory + cursor. Changes send immediately; a cheap 1 Hz
       // refresh recovers a one-shot packet lost while a large streamed-window
@@ -153,10 +159,10 @@ export async function startSandServer(opts = {}) {
         }
       }
       if (windowChanged) {
-        broadcastLatest(encode(makeSnapshot(host.actorTick, engine.getPlayers(), null)));
-        broadcastLatest(encode(encodeItems(engine, host.actorTick)));
-        broadcastLatest(encode(encodeCreatures(engine, host.actorTick)));
-        broadcastLatest(encode(encodeProjectiles(engine, host.actorTick)));
+        broadcastLocalFrame(encode(makeSnapshot(host.actorTick, engine.getPlayers(), null)));
+        broadcastLocalFrame(encode(encodeItems(engine, host.actorTick)));
+        broadcastLocalFrame(encode(encodeCreatures(engine, host.actorTick)));
+        broadcastLocalFrame(encode(encodeProjectiles(engine, host.actorTick)));
       }
       const sounds = encodeSounds(engine, host.actorTick);
       if (sounds) broadcastLatest(encode(sounds));

@@ -16,6 +16,17 @@ const STYLE = `
   background:#3c2527; border:2px solid #261619; }
 .survival-heart::before { content:''; position:absolute; inset:0 auto 0 0; width:var(--fill,0%);
   background:#d94848; box-shadow:inset 2px 2px 0 #f07868; }
+.survival-shield-label { margin:7px 0 4px 2px; color:#bcefff; letter-spacing:.12em; }
+.survival-shield { display:grid; width:max-content; box-sizing:border-box; padding:4px;
+  grid-template-columns:repeat(10,14px); gap:2px; background:#171b20;
+  border:2px solid #090b0e; box-shadow:inset 0 0 0 2px #355467,4px 4px 0 rgba(0,0,0,.3); }
+.survival-shield > i { position:relative; display:block; width:14px; height:7px;
+  overflow:hidden; background:#273640; }
+.survival-shield > i::before { content:''; position:absolute; inset:0 auto 0 0; width:var(--fill,0%);
+  background:#45a6ca; box-shadow:inset 2px 2px 0 #a6f0ff; }
+.survival-shield.active { box-shadow:inset 0 0 0 2px #8de9ff,0 0 9px rgba(89,213,255,.55); }
+.survival-shield.active > i::before { background:#7ce5ff; box-shadow:inset 2px 2px 0 #e1fbff; }
+.survival-shield.depleted > i { background:#352d3b; }
 .survival-charge { display:none; width:max-content; box-sizing:border-box; margin-top:7px; padding:4px; background:#171b20; border:2px solid #090b0e;
   grid-template-columns:repeat(12,10px); gap:2px; box-shadow:inset 0 0 0 2px #3d4650; }
 .survival-charge.show { display:grid; }
@@ -57,6 +68,14 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   const hearts = Array.from({ length: 10 }, () => {
     const el = document.createElement('i'); el.className = 'survival-heart'; health.appendChild(el); return el;
   });
+  const shieldLabel = document.createElement('div');
+  shieldLabel.className = 'survival-shield-label'; shieldLabel.textContent = 'WARD  200  HOLD F';
+  const shield = document.createElement('div'); shield.className = 'survival-shield';
+  shield.setAttribute('role', 'meter'); shield.setAttribute('aria-label', 'Ward shield health');
+  shield.setAttribute('aria-valuemin', '0'); shield.setAttribute('aria-valuemax', '200');
+  const shieldCells = Array.from({ length: 10 }, () => {
+    const el = document.createElement('i'); shield.appendChild(el); return el;
+  });
   const charge = document.createElement('div'); charge.className = 'survival-charge';
   const chargeCells = Array.from({ length: 12 }, () => {
     const el = document.createElement('i'); charge.appendChild(el); return el;
@@ -69,7 +88,7 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   const fuelCells = Array.from({ length: 12 }, () => {
     const el = document.createElement('i'); fuel.appendChild(el); return el;
   });
-  vitals.append(objective, label, health, charge, fuelLabel, fuel);
+  vitals.append(objective, label, health, shieldLabel, shield, charge, fuelLabel, fuel);
 
   const death = document.createElement('div'); death.className = 'survival-death';
   const card = document.createElement('div'); card.className = 'survival-death-card';
@@ -106,6 +125,17 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     }
     health.setAttribute('aria-valuenow', String(hp));
     label.textContent = `HEALTH  ${hp}`;
+    const shieldHealth = Math.max(0, Math.min(200, player?.shieldHealth ?? 200));
+    const shieldActive = !!player && player.alive !== false && !!player.shieldActive && shieldHealth > 0;
+    for (let i = 0; i < shieldCells.length; i++) {
+      const fill = Math.max(0, Math.min(20, shieldHealth - i * 20)) * 5;
+      shieldCells[i].style.setProperty('--fill', `${fill}%`);
+    }
+    shield.classList.toggle('active', shieldActive);
+    shield.classList.toggle('depleted', shieldHealth <= 0);
+    shield.setAttribute('aria-valuenow', String(shieldHealth));
+    shield.setAttribute('aria-valuetext', `${shieldHealth} of 200, ${shieldActive ? 'active' : 'inactive'}`);
+    shieldLabel.textContent = `WARD  ${shieldHealth}  ${shieldActive ? 'ACTIVE' : 'HOLD F'}`;
     const bow = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BOW;
     const bore = !!player && player.alive !== false && player.heldItemKind === ITEM_KIND.BORE_CANNON;
     const level = Math.round(Math.max(0, Math.min(1, player?.bowCharge || 0)) * chargeCells.length);
@@ -127,8 +157,7 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     else death.removeAttribute('aria-modal');
     button.disabled = !ready;
     if (dead) {
-      const remaining = Math.max(0, Math.ceil((180 - (player.deathTicks || 0)) / 60));
-      const message = ready ? 'PRESS ENTER OR CLICK BELOW' : `RESPAWN AVAILABLE IN ${remaining}`;
+      const message = ready ? 'PRESS ENTER OR CLICK BELOW' : 'RETURNING TO SPAWN';
       if (note.textContent !== message) note.textContent = message;
       if (!wasDead) {
         previousFocus = root.activeElement || document.activeElement;

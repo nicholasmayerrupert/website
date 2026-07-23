@@ -10,6 +10,8 @@ import {
 } from './protocol.js';
 import { applyWorldMessage, applyDiffMessage, validateWorldMessage } from './worldSync.js';
 import { Predictor } from './predict.js';
+import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
+import { translatePackedPositions } from './localCoordinates.js';
 
 const SMOOTH = 0.35;             // client render smoothing toward the latest snapshot
 const MAX_INBOUND = 96;
@@ -17,6 +19,9 @@ const MAX_QUEUED_DIFFS = 48;
 const LATEST_MESSAGES = new Set([
   MSG.SNAPSHOT, MSG.ITEMS, MSG.CREATURES, MSG.PROJECTILES,
   MSG.INVENTORY, MSG.CURSOR,
+]);
+const BUFFER_LOCAL_MESSAGES = new Set([
+  MSG.SNAPSHOT, MSG.ITEMS, MSG.CREATURES, MSG.PROJECTILES,
 ]);
 const fallbackPlayerSize = (engine) => engine?.getPlayerSize?.() || { w: 4, h: 8 };
 
@@ -68,16 +73,35 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     return dropped;
   }
 
+  function dropQueuedLocalFrames() {
+    for (let i = inQueue.length - 1; i >= 0; i--) {
+      if (BUFFER_LOCAL_MESSAGES.has(inQueue[i].t)) inQueue.splice(i, 1);
+    }
+  }
+
   function enqueueMessage(m) {
     if (paused && m.t === MSG.SOUNDS) return;
     if (paused && (m.t === MSG.WORLD || m.t === MSG.DIFF)) {
       if (m.t === MSG.WORLD) resyncPending = false;
-      dropQueuedWorld(); needsResync = true;
+      dropQueuedWorld(); dropQueuedLocalFrames(); needsResync = true;
       return;
     }
-    if (m.t === MSG.WORLD) dropQueuedWorld();
+    // Once a world frame was dropped, buffer-local actors cannot be interpreted
+    // safely until a replacement WORLD establishes their coordinate frame.
+    // Actor packets that follow an already-queued WORLD are safe: WebSocket
+    // ordering guarantees they use that new frame.
+    const queuedWorld = inQueue.some((queued) => queued.t === MSG.WORLD);
+    if (BUFFER_LOCAL_MESSAGES.has(m.t) && (needsResync || resyncPending) && !queuedWorld) return;
+    if (m.t === MSG.WORLD) {
+      // Any buffer-local packet before this WORLD belongs to the frame of the
+      // older queued/applied world. This also covers two rapid shifts before a
+      // slow presentation tick, where the first shift's actors sit between the
+      // two full worlds.
+      dropQueuedLocalFrames();
+      dropQueuedWorld();
+    }
     if (m.t === MSG.DIFF && inQueue.reduce((n, q) => n + (q.t === MSG.DIFF ? 1 : 0), 0) >= MAX_QUEUED_DIFFS) {
-      dropQueuedWorld(); needsResync = true; requestResync();
+      dropQueuedWorld(); dropQueuedLocalFrames(); needsResync = true; requestResync();
       return;
     }
     if (LATEST_MESSAGES.has(m.t)) {
@@ -90,7 +114,9 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       // client falls behind; discard an older transient packet first.
       const transient = inQueue.findIndex((queued) => !LATEST_MESSAGES.has(queued.t));
       const [dropped] = inQueue.splice(transient >= 0 ? transient : 0, 1);
-      if (dropped.t === MSG.WORLD || dropped.t === MSG.DIFF) { needsResync = true; requestResync(); }
+      if (dropped.t === MSG.WORLD || dropped.t === MSG.DIFF) {
+        dropQueuedLocalFrames(); needsResync = true; requestResync();
+      }
     }
   }
 
@@ -200,6 +226,25 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     resetState(status);
   }
 
+  function rebaseRenderActors(dx, dy) {
+    if (!dx && !dy) return;
+    for (const r of remotes.values()) {
+      r.x += dx; r.y += dy;
+      if (r.tx !== undefined) r.tx += dx;
+      if (r.ty !== undefined) r.ty += dy;
+      if (r.aimX !== undefined) r.aimX += dx;
+      if (r.aimY !== undefined) r.aimY += dy;
+    }
+    translatePackedPositions(itemsForRender, STRIDES.itemSnapshot,
+      OFF.itemSnapshot.x, OFF.itemSnapshot.y, dx, dy);
+    translatePackedPositions(creaturesForRender, STRIDES.creatureSnapshot,
+      OFF.creatureSnapshot.x, OFF.creatureSnapshot.y, dx, dy);
+    translatePackedPositions(creaturesForRender, STRIDES.creatureSnapshot,
+      OFF.creatureSnapshot.aimX, OFF.creatureSnapshot.aimY, dx, dy);
+    translatePackedPositions(projectilesForRender, STRIDES.projectileSnapshot,
+      OFF.projectileSnapshot.x, OFF.projectileSnapshot.y, dx, dy);
+  }
+
   function handleMessage(m) {
     switch (m.t) {
       case MSG.ASSIGN: if (m.client === clientId) ownPlayerId = m.player; break;
@@ -220,26 +265,20 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
         const oldCam = cur.getCam?.();
         const worldCam = worldReady && oldCam ? { x: oldOffsetX + oldCam.x, y: oldOffsetY + oldCam.y } : null;
         const dx = m.offsetX - oldOffsetX, dy = m.offsetY - oldOffsetY;
-        if (dx || dy) {
-          for (const r of remotes.values()) {
-            r.x -= dx; r.y -= dy;
-            if (r.tx !== undefined) r.tx -= dx;
-            if (r.ty !== undefined) r.ty -= dy;
-            if (r.aimX !== undefined) r.aimX -= dx;
-            if (r.aimY !== undefined) r.aimY -= dy;
-          }
-        }
-        if (predId) cur.removePlayer(predId);
-        predictor = null; predId = 0;
         let e = cur;
+        const rebuild = !worldReady || m.cols !== cur.cols || m.rows !== cur.rows;
         // Adopt the server's buffer dims so diffs apply 1:1 (rebuild the local
         // render engine if ours differs). Only full snapshots (join/resync) carry
         // dims, so this is rare.
-        if (!worldReady || m.cols !== cur.cols || m.rows !== cur.rows) {
+        if (rebuild) {
+          if (predId) cur.removePlayer(predId);
+          predictor = null; predId = 0;
           e = rebuildEngine(m.cols, m.rows);
         }
         resyncPending = false;
         if (!applyWorldMessage(e, m, { mirror: true, bytes })) { needsResync = true; requestResync(); break; }
+        rebaseRenderActors(-dx, -dy);
+        if (!rebuild && predictor) predictor.rebase(-dx, -dy);
         if (worldCam) e.cameraSet(worldCam.x - m.offsetX, worldCam.y - m.offsetY);
         worldReady = true; needsResync = false;
         break;
@@ -284,6 +323,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       r.deathTicks = p.deathTicks | 0; r.respawnReady = p.respawnReady !== 0;
       r.bowCharge = p.bowCharge; r.heldItemKind = p.heldItemKind | 0;
       r.jetpackFuel = p.jetpackFuel; r.jetpackActive = p.jetpackActive !== 0;
+      r.shieldHealth = p.shieldHealth | 0; r.shieldActive = p.shieldActive !== 0;
       r.aimX = p.aimX; r.aimY = p.aimY;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;
@@ -328,7 +368,14 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     // The client doesn't step, so reset its dirty marks here; the diffs applied
     // below then mark exactly the cells that changed for an incremental repaint.
     engineNow().resetDirty();
-    for (let i = 0; i < inQueue.length; i++) handleMessage(inQueue[i]);
+    for (let i = 0; i < inQueue.length; i++) {
+      const message = inQueue[i];
+      // A malformed/hash-invalid WORLD leaves the existing mirror installed.
+      // Do not interpret later actor packets in the rejected frame while the
+      // requested replacement full world is still pending.
+      if (BUFFER_LOCAL_MESSAGES.has(message.t) && (needsResync || resyncPending)) continue;
+      handleMessage(message);
+    }
     inQueue.length = 0;
 
     // smooth render players toward the latest snapshot target
@@ -366,7 +413,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     if (value === paused) return;
     paused = value;
     if (paused) {
-      if (dropQueuedWorld()) needsResync = true;
+      if (dropQueuedWorld()) { dropQueuedLocalFrames(); needsResync = true; }
       return;
     }
     if (needsResync) requestResync();
@@ -406,6 +453,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     const r = remotes.get(ownPlayerId);
     return r ? { id: ownPlayerId, ...r } : null;
   }
+  function advancePresentation() { predictor?.advanceRenderSmoothing(); }
 
   // Server-authoritative dropped items for the renderer (empty when none).
   function getItemsForRender() { return itemsForRender; }
@@ -430,7 +478,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
 
   return {
     joinRoom, disconnect, update, setPaused,
-    getPlayersForRender, getOwnPlayer,
+    getPlayersForRender, getOwnPlayer, advancePresentation,
     getItemsForRender, getCreaturesForRender, getProjectilesForRender, consumeSoundEvents, getOwnInventory, getOwnCursor, consumeInventoryDirty,
     sendSelect, sendSize, sendMove, sendPick, sendThrow, sendCraft, sendRespawn,
     get role() { return role; },

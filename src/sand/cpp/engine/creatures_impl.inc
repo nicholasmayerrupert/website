@@ -4,6 +4,11 @@ bool CreatureSystem::inLoadedWindow(const Creature& c, int margin) const {
   return x + s.w >= -margin && x < E.cols + margin && y + s.h >= -margin && y < E.rows + margin;
 }
 
+bool CreatureSystem::boxInsideLoadedWindow(double wx, double wy, int w, int h, int margin) const {
+  double x = wx - E.fg.worldOffsetX, y = wy - E.fg.worldOffsetY;
+  return x >= margin && y >= margin && x + w <= E.cols - margin && y + h <= E.rows - margin;
+}
+
 bool CreatureSystem::boxHitsSolid(double wx, double wy, int w, int h) const {
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
   int y0 = (int)std::floor(wy - E.fg.worldOffsetY), y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
@@ -77,6 +82,11 @@ int CreatureSystem::localDensity(uint8_t speciesId, double wx, double wy, int ra
     double dx = c.wx - wx, dy = c.wy - wy;
     if (dx * dx + dy * dy <= r2) n++;
   }
+  for (const CreatureSpawnTelegraph& p : pendingSpawns) {
+    if (p.species != speciesId) continue;
+    double dx = p.wx - wx, dy = p.wy - wy;
+    if (dx * dx + dy * dy <= r2) n++;
+  }
   return n;
 }
 
@@ -85,6 +95,10 @@ int CreatureSystem::localDensityAll(double wx, double wy, int radius) const {
   for (const Creature& c : creatures) {
     if (!c.alive) continue;
     double dx = c.wx - wx, dy = c.wy - wy;
+    if (dx * dx + dy * dy <= r2) n++;
+  }
+  for (const CreatureSpawnTelegraph& p : pendingSpawns) {
+    double dx = p.wx - wx, dy = p.wy - wy;
     if (dx * dx + dy * dy <= r2) n++;
   }
   return n;
@@ -100,11 +114,13 @@ bool CreatureSystem::farEnoughFromPlayers(double wx, double wy, int minDistance)
   return true;
 }
 
-// Continuous populations spawn in a band around a player (or the camera when
-// no player exists, as on /fps). This makes successful spawns observable while
-// min/max distance plus local/global caps keep them from appearing on top of the
-// player or filling the buffer.
-bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
+// Find a deterministic habitat-valid entry near one player (or the camera when
+// no player exists). A normal encounter must clear every live player's
+// approximate visible rectangle plus SPAWN_VIEW_MARGIN. The second, explicitly
+// requested search is the on-screen fallback used only by the breach telegraph.
+bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
+                                        bool requireOffscreen,
+                                        double& outWx, double& outWy) const {
   const CreatureSpecies& s = CREATURE_SPECIES[speciesId];
   const CreatureSpawnRule& r = s.spawn;
   double fx, fy;
@@ -120,29 +136,31 @@ bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
     fx = E.fg.worldOffsetX + E.cam.camX + vw * 0.5;
     fy = E.fg.worldOffsetY + E.cam.camY + vh * 0.5;
   }
-  double viewLeft = E.fg.worldOffsetX + E.cam.camX, viewTop = E.fg.worldOffsetY + E.cam.camY;
-  double viewRight = viewLeft + vw, viewBottom = viewTop + vh;
-  auto edgeDistance = [&](double ux, double uy) {
-    double tx = 1e9, ty = 1e9;
-    if (ux > 1e-6) tx = (viewRight - fx) / ux;
-    else if (ux < -1e-6) tx = (viewLeft - fx) / ux;
-    if (uy > 1e-6) ty = (viewBottom - fy) / uy;
-    else if (uy < -1e-6) ty = (viewTop - fy) / uy;
-    return std::max(0.0, std::min(tx, ty));
-  };
-  auto outsideInnerHalf = [&](double cx, double cy) {
-    double dx = cx - fx, dy = cy - fy, d = std::sqrt(dx * dx + dy * dy);
-    if (d < 1e-6) return false;
-    return d + 1e-6 >= edgeDistance(dx / d, dy / d) * 0.5;
+  auto intersectsVisibleViews = [&](double wx, double wy, double margin) {
+    auto intersectsExpanded = [&](double left, double top, double right, double bottom) {
+      left -= margin; top -= margin;
+      right += margin; bottom += margin;
+      return wx < right && wx + s.w > left && wy < bottom && wy + s.h > top;
+    };
+    double cameraLeft = E.fg.worldOffsetX + E.cam.camX;
+    double cameraTop = E.fg.worldOffsetY + E.cam.camY;
+    if (intersectsExpanded(cameraLeft, cameraTop,
+                           cameraLeft + vw, cameraTop + vh)) return true;
+    for (const Player* p : live) {
+      double pcx = E.fg.worldOffsetX + p->px + p->w * 0.5;
+      double pcy = E.fg.worldOffsetY + p->py + p->h * 0.5;
+      double left = pcx - vw * 0.5;
+      double top = pcy + PLAYER_H * 0.5 + 4.0 - vh * CAM_SURFACE_VIEW_Y_FRAC;
+      if (intersectsExpanded(left, top, left + vw, top + vh)) return true;
+    }
+    return false;
   };
   uint32_t seed = E.fg.worldSeed ^ 0xC4EA7400u ^ ((uint32_t)speciesId * 0x9e3779b9u) ^ salt;
-  for (int attempt = 0; attempt < 36; attempt++) {
+  for (int attempt = 0; attempt < 64; attempt++) {
     double angle = whash2(seed ^ 0x11u, attempt, (int)salt) * 6.283185307179586;
     double ux = std::cos(angle), uy = std::sin(angle);
-    double edge = edgeDistance(ux, uy);
-    double minDist = std::max((double)r.minPlayerDistance, edge * 0.5);
-    double maxDist = std::min((double)r.maxPlayerDistance, edge - std::max(s.w, s.h));
-    if (maxDist < minDist) maxDist = minDist;
+    double minDist = r.minPlayerDistance;
+    double maxDist = r.maxPlayerDistance;
     double dist = minDist + whash2(seed ^ 0x22u, (int)salt, attempt) * (maxDist - minDist);
     double wx = fx + ux * dist - s.w * 0.5;
     double wy = fy + uy * dist - s.h * 0.5;
@@ -164,25 +182,79 @@ bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
       }
       if (!found) continue;
     }
-    Creature probe; probe.species = speciesId; probe.wx = wx; probe.wy = wy;
-    if (!inLoadedWindow(probe, 0) || !boxFitsHabitat(speciesId, wx, wy)) continue;
+    if (!boxInsideLoadedWindow(wx, wy, s.w, s.h, 2) ||
+        !boxFitsHabitat(speciesId, wx, wy)) continue;
     // Surface/cave/air habitat snapping can substantially change Y after the
     // radial candidate was chosen. Recheck the actual final pose so enemies do
     // not materialize on top of a player despite their spawn safety radius.
     if (!farEnoughFromPlayers(wx + s.w * 0.5, wy + s.h * 0.5, r.minPlayerDistance)) continue;
-    if (!outsideInnerHalf(wx + s.w * 0.5, wy + s.h * 0.5)) continue;
-    if (spawnCreatureNatural(speciesId, wx, wy)) return true;
+    if (requireOffscreen) {
+      if (intersectsVisibleViews(wx, wy, SPAWN_VIEW_MARGIN)) continue;
+    } else if (!intersectsVisibleViews(wx, wy, 0)) {
+      // A warning portal must actually be visible to at least one player. The
+      // ten-cell exclusion margin is for unannounced off-screen entries only.
+      continue;
+    }
+    outWx = wx; outWy = wy;
+    return true;
   }
   return false;
 }
 
-int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat) {
-  if (speciesId >= CS_COUNT || (requireHabitat && !boxFitsHabitat(speciesId, wx, wy))) return 0;
-  Creature c; c.id = nextCreatureId++; c.species = speciesId; c.wx = wx; c.wy = wy;
+int CreatureSystem::encounterCost(uint8_t speciesId) const {
+  if (speciesId == CS_DYNAMITEER) return 2;
+  if (speciesId == CS_CAUSTIC_MORTARMAN || speciesId == CS_CLUSTER_WASP) return 3;
+  return 4; // bore sentinels and minigunners are the director's heavy picks
+}
+
+int CreatureSystem::addCreature(uint8_t speciesId, double wx, double wy, int id) {
+  Creature c; c.id = id; c.species = speciesId; c.wx = wx; c.wy = wy;
   c.health = CREATURE_SPECIES[speciesId].maxHealth;
   c.facing = whash1(E.fg.worldSeed ^ 0xC4EA7u, c.id) < 0.5 ? -1 : 1;
   creatures.push_back(c);
   return c.id;
+}
+
+bool CreatureSystem::queueSpawnTelegraph(uint8_t speciesId, double wx, double wy,
+                                         uint32_t salt, int threatCost) {
+  const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
+  int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
+  for (const CreatureSpawnTelegraph& p : pendingSpawns)
+    if (p.species == speciesId) activeOfSpecies++;
+  for (const Creature& c : creatures) if (c.alive) {
+    active++;
+    if (c.species == speciesId) activeOfSpecies++;
+  }
+  if (active >= NATURAL_MOB_CAP || activeOfSpecies >= r.maxActive ||
+      localDensity(speciesId, wx, wy, r.densityRadius) >= r.densityCap ||
+      localDensityAll(wx, wy, MIXED_DENSITY_RADIUS) >= MIXED_DENSITY_CAP) return false;
+  int duration = SPAWN_TELEGRAPH_MIN_TICKS +
+    (int)(whash2(E.fg.worldSeed ^ 0xB4EAC100u, speciesId, (int)salt) *
+          SPAWN_TELEGRAPH_TICK_SPAN);
+  duration = imin(SPAWN_TELEGRAPH_MIN_TICKS + SPAWN_TELEGRAPH_TICK_SPAN - 1,
+                  imax(SPAWN_TELEGRAPH_MIN_TICKS, duration));
+  pendingSpawns.push_back({nextCreatureId++, speciesId, wx, wy, duration, duration,
+                           threatCost});
+  E.audio.emit(SE_SPAWN_BREACH, wx - E.fg.worldOffsetX + CREATURE_SPECIES[speciesId].w * 0.5,
+               wy - E.fg.worldOffsetY + CREATURE_SPECIES[speciesId].h * 0.5,
+               0.72, STONE, 0);
+  return true;
+}
+
+// Prefer a normal off-screen entry. When terrain or buffer geometry offers no
+// such position, reserve the same population capacity and visibly telegraph the
+// best habitat-valid fallback before materializing it.
+bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
+  double wx = 0, wy = 0;
+  if (findSpawnNearFocus(speciesId, salt, true, wx, wy))
+    return spawnCreatureNatural(speciesId, wx, wy) != 0;
+  if (!findSpawnNearFocus(speciesId, salt ^ 0xB4EAC5u, false, wx, wy)) return false;
+  return queueSpawnTelegraph(speciesId, wx, wy, salt, encounterCost(speciesId));
+}
+
+int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat) {
+  if (speciesId >= CS_COUNT || (requireHabitat && !boxFitsHabitat(speciesId, wx, wy))) return 0;
+  return addCreature(speciesId, wx, wy, nextCreatureId++);
 }
 
 // Population policy belongs only to natural spawning. Eggs and future scripted,
@@ -191,7 +263,9 @@ int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool 
 int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy) {
   if (speciesId >= CS_COUNT || !boxFitsHabitat(speciesId, wx, wy)) return 0;
   const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
-  int active = 0, activeOfSpecies = 0;
+  int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
+  for (const CreatureSpawnTelegraph& p : pendingSpawns)
+    if (p.species == speciesId) activeOfSpecies++;
   for (const Creature& c : creatures) if (c.alive) { active++; if (c.species == speciesId) activeOfSpecies++; }
   if (active >= NATURAL_MOB_CAP || activeOfSpecies >= r.maxActive ||
       localDensity(speciesId, wx, wy, r.densityRadius) >= r.densityCap ||
@@ -273,34 +347,65 @@ void CreatureSystem::maintainPopulation() {
   }
 }
 
-void CreatureSystem::updateNaturalPopulation() {
-  // Armed enemies belong to survival and get first claim on the bounded natural
-  // population. Creative still permits explicit egg/script spawns for testing.
-  for (int pass = 0; pass < 2; pass++) for (uint8_t sid = 0; sid < CS_COUNT; sid++) {
-    // Temporarily keep the ambient roster focused: these species remain valid
-    // for direct tests/scripts, but do not enter fresh natural populations.
-    if (sid == CS_MINNOW || sid == CS_PIKE || sid == CS_FOX ||
-        sid == CS_HARE || sid == CS_CRAWLER || sid == CS_MOLE ||
-        sid == CS_BIRD) continue;
-    bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL ||
-      sid == CS_CAUSTIC_MORTARMAN || sid == CS_CLUSTER_WASP || sid == CS_MINIGUNNER;
-    if (survivalEnemy != (pass == 0) || (survivalEnemy && !E.survivalInventory)) continue;
-    const CreatureSpawnRule& r = CREATURE_SPECIES[sid].spawn;
-    if (r.mode == CSM_CONTINUOUS) {
-      if (r.intervalTicks > 0 && E.actorTick % r.intervalTicks == 0) {
-        uint32_t salt = (uint32_t)E.actorTick ^ ((uint32_t)sid * 1013u);
-        // Seed one representative immediately when its habitat exists; only
-        // replenishment uses the low recurring probability/cadence.
-        if (E.actorTick == 0 || whash2(E.fg.worldSeed ^ 0xC4EA7300u, E.actorTick, sid) < r.chance)
-          spawnNearFocus(sid, salt);
-      }
+void CreatureSystem::updateSpawnTelegraphs() {
+  size_t i = 0;
+  while (i < pendingSpawns.size()) {
+    CreatureSpawnTelegraph& pending = pendingSpawns[i];
+    if (--pending.ticksRemaining > 0) { i++; continue; }
+    CreatureSpawnTelegraph ready = pending;
+    pendingSpawns.erase(pendingSpawns.begin() + i);
+    const CreatureSpecies& s = CREATURE_SPECIES[ready.species];
+    const CreatureSpawnRule& r = s.spawn;
+    int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
+    for (const CreatureSpawnTelegraph& p : pendingSpawns)
+      if (p.species == ready.species) activeOfSpecies++;
+    for (const Creature& c : creatures) if (c.alive) {
+      active++;
+      if (c.species == ready.species) activeOfSpecies++;
+    }
+    bool valid = boxInsideLoadedWindow(ready.wx, ready.wy, s.w, s.h, 2) &&
+      boxFitsHabitat(ready.species, ready.wx, ready.wy) &&
+      farEnoughFromPlayers(ready.wx + s.w * 0.5, ready.wy + s.h * 0.5,
+                           r.minPlayerDistance) &&
+      active < NATURAL_MOB_CAP && activeOfSpecies < r.maxActive &&
+      localDensity(ready.species, ready.wx, ready.wy, r.densityRadius) < r.densityCap &&
+      localDensityAll(ready.wx, ready.wy, MIXED_DENSITY_RADIUS) < MIXED_DENSITY_CAP;
+    if (!valid) {
+      encounterThreat = imin(ENCOUNTER_THREAT_MAX, encounterThreat + ready.threatCost);
       continue;
     }
-    int rx0 = (int)std::floor((double)E.fg.worldOffsetX / r.regionSize);
-    int ry0 = (int)std::floor((double)E.fg.worldOffsetY / r.regionSize);
-    int rx1 = (int)std::floor((double)(E.fg.worldOffsetX + E.cols - 1) / r.regionSize);
-    int ry1 = (int)std::floor((double)(E.fg.worldOffsetY + E.rows - 1) / r.regionSize);
-    for (int ry = ry0; ry <= ry1; ry++) for (int rx = rx0; rx <= rx1; rx++) spawnRegion(sid, rx, ry);
+    addCreature(ready.species, ready.wx, ready.wy, ready.id);
+  }
+}
+
+void CreatureSystem::updateNaturalPopulation() {
+  // The survival director creates at most one encounter per cadence. Threat
+  // accrues on the deterministic actor clock and expensive enemies consume more
+  // of it; this replaces five independent timers that could all pop at once.
+  if (!E.survivalInventory) return;
+  if (E.actorTick % ENCOUNTER_THREAT_GAIN_TICKS == 0)
+    encounterThreat = imin(ENCOUNTER_THREAT_MAX, encounterThreat + 1);
+  if (E.actorTick < encounterNextTick) return;
+  encounterNextTick = E.actorTick + ENCOUNTER_CADENCE_TICKS;
+
+  static const uint8_t roster[] = {
+    CS_DYNAMITEER, CS_BORE_SENTINEL, CS_CAUSTIC_MORTARMAN,
+    CS_CLUSTER_WASP, CS_MINIGUNNER
+  };
+  uint32_t salt = (uint32_t)E.actorTick ^
+    ((uint32_t)std::max(0, E.fg.worldOffsetX) * 2246822519u) ^
+    ((uint32_t)std::max(0, E.fg.worldOffsetY) * 3266489917u);
+  int start = (int)(whash2(E.fg.worldSeed ^ 0xC4EA7300u,
+                            E.actorTick / ENCOUNTER_CADENCE_TICKS,
+                            encounterThreat) * 5.0);
+  start = imin(4, imax(0, start));
+  for (int offset = 0; offset < 5; offset++) {
+    uint8_t sid = roster[(start + offset) % 5];
+    int cost = encounterCost(sid);
+    if (encounterThreat < cost) continue;
+    if (!spawnNearFocus(sid, salt ^ ((uint32_t)sid * 1013u))) continue;
+    encounterThreat -= cost;
+    return;
   }
 }
 
@@ -814,7 +919,7 @@ void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, in
       segmentHitsExpandedBox(awx0, awy0, awx1, awy1,
                              E.fg.worldOffsetX + p.px, E.fg.worldOffsetY + p.py,
                              E.fg.worldOffsetX + p.px + p.w, E.fg.worldOffsetY + p.py + p.h, CREATURE_BORE_RADIUS))
-    E.psys.damagePlayer(p, damage, 36);
+    E.psys.damagePlayer(p, damage, 36, ox, oy);
   for (Creature& other : creatures) {
     if (!other.alive || other.id == immuneCreatureId || other.hurtCooldown > 0) continue;
     const CreatureSpecies& os = species(other);
@@ -932,7 +1037,11 @@ void CreatureSystem::attackTarget(Creature& c) {
   if (prey) { const CreatureSpecies& ps = species(*prey); hit = inMeleeRange(prey->wx, prey->wy, ps.w, ps.h); if (hit) prey->health -= s.damage; }
   if (player) {
     hit = inMeleeRange(E.fg.worldOffsetX + player->px, E.fg.worldOffsetY + player->py, player->w, player->h);
-    if (hit) E.psys.damagePlayer(*player, s.damage, 30);
+    if (hit) {
+      double sourceX = c.wx - E.fg.worldOffsetX + s.w * .5;
+      double sourceY = c.wy - E.fg.worldOffsetY + s.h * .5;
+      E.psys.damagePlayer(*player, s.damage, 30, sourceX, sourceY);
+    }
   }
   if (hit) c.attackCooldown = s.attackCooldown;
 }
@@ -940,6 +1049,7 @@ void CreatureSystem::attackTarget(Creature& c) {
 void CreatureSystem::updateCreatures() {
   if (!E.creaturesEnabled) return;
   maintainPopulation();
+  updateSpawnTelegraphs();
   if (E.creatureNaturalSpawning) updateNaturalPopulation();
   for (Creature& c : creatures) {
     if (!c.alive) { c.deathTicks--; continue; }
@@ -1029,7 +1139,7 @@ bool CreatureSystem::damageAtPoint(int x, int y, int radius, int damage) {
 }
 
 int CreatureSystem::buildCreatureSnapshot() {
-  snapshot.assign(creatures.size() * CSN_STRIDE, 0.0f);
+  snapshot.assign((creatures.size() + pendingSpawns.size()) * CSN_STRIDE, 0.0f);
   for (size_t i = 0; i < creatures.size(); i++) {
     const Creature& c = creatures[i]; const CreatureSpecies& s = species(c);
     float* o = snapshot.data() + i * CSN_STRIDE;
@@ -1040,6 +1150,22 @@ int CreatureSystem::buildCreatureSnapshot() {
     o[CSN_ALIVE] = c.alive ? 1.0f : 0.0f; o[CSN_ANIM_FRAME] = (float)c.animFrame;
     o[CSN_ATTACK_STATE] = (float)c.attackState; o[CSN_ATTACK_PROGRESS] = (float)c.attackProgress;
     o[CSN_AIM_X] = (float)(c.attackAimX - E.fg.worldOffsetX); o[CSN_AIM_Y] = (float)(c.attackAimY - E.fg.worldOffsetY);
+    o[CSN_SPAWN_PROGRESS] = (float)c.spawnProgress;
   }
-  return (int)creatures.size();
+  for (size_t i = 0; i < pendingSpawns.size(); i++) {
+    const CreatureSpawnTelegraph& p = pendingSpawns[i];
+    const CreatureSpecies& s = CREATURE_SPECIES[p.species];
+    float* o = snapshot.data() + (creatures.size() + i) * CSN_STRIDE;
+    o[CSN_ID] = (float)p.id; o[CSN_SPECIES] = (float)p.species;
+    o[CSN_X] = (float)(p.wx - E.fg.worldOffsetX);
+    o[CSN_Y] = (float)(p.wy - E.fg.worldOffsetY);
+    o[CSN_W] = (float)s.w; o[CSN_H] = (float)s.h;
+    o[CSN_FACING] = 1.0f; o[CSN_MAX_HEALTH] = (float)s.maxHealth;
+    // Keep zero reserved for ordinary materialized actors. The first warning
+    // frame is therefore already distinguishable on mirrors and the wire.
+    int elapsed = p.totalTicks - p.ticksRemaining;
+    o[CSN_SPAWN_PROGRESS] = (float)std::max(1.0 / p.totalTicks,
+      std::min(1.0, (elapsed + 1.0) / p.totalTicks));
+  }
+  return (int)(creatures.size() + pendingSpawns.size());
 }

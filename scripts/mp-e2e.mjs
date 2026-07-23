@@ -50,7 +50,12 @@ const waitForServer = () => new Promise((resolve, reject) => {
   vite.stderr.on('data', (d) => { const s = d.toString(); if (/error|in use/i.test(s)) fail(new Error('dev server: ' + s.trim())); });
 });
 
-const srv = await startSandServer({ port: WS_PORT, cols: 256, rows: 160, seed: 0x1234, room: ROOM });
+const srv = await startSandServer({
+  port: WS_PORT, cols: 256, rows: 160, seed: 0x1234, room: ROOM,
+  // This suite verifies transport/state isolation. Combat AI has dedicated
+  // coverage and would make cursor assertions depend on whether a player died.
+  creatureNaturalSpawning: false,
+});
 let browser;
 try {
   await waitForServer();

@@ -54,7 +54,7 @@ const digDirt = hitsToBreak(MAT.DIRT, TC.dig, TT.wood); // durability 2, shovel-
 check(`dig tool ignores material type at equal hardness (sand=${digSand}, dirt=${digDirt})`, digSand === digDirt);
 
 // Exercise the real survival path: selected Mining Tool + held input + engine
-// steps. The universal tool receives its survival-only 10x boost; bare hand and
+// steps. The universal tool receives its survival-only 13x boost; bare hand and
 // the classed speed table retain their exact previous timings.
 function survivalStepsToBreakStone(toolClass, toolTier) {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });
@@ -70,7 +70,7 @@ function survivalStepsToBreakStone(toolClass, toolTier) {
   e.setSelectedSlot(id, slot);
   if (toolClass !== TC.dig) e.setPlayerTool(id, toolClass, toolTier);
   // Keep a 3x3 footprint: its nine-cell work scaling makes the stone timing
-  // 48 -> 5 steps, closely reflecting the 10x boost.
+  // 48 -> 4 steps, closely reflecting the roughly one-third speed increase.
   let steps = 0;
   while (e.getGrid()[70 * COLS + 60] !== MAT.EMPTY && steps < 500) {
     e.setPlayerInput(id, { bits: INPUT.PRIMARY, aimX: 60, aimY: 70, tool: 0, seq: steps });
@@ -85,8 +85,8 @@ function survivalStepsToBreakStone(toolClass, toolTier) {
 const survivalDig = survivalStepsToBreakStone(TC.dig, TT.wood);
 const survivalHand = survivalStepsToBreakStone(TC.hand, TT.hand);
 const survivalWoodPick = survivalStepsToBreakStone(TC.pickaxe, TT.wood);
-check(`inventory dig tool breaks stone about 10x faster (48 -> ${survivalDig.steps})`,
-  survivalDig.broke && survivalDig.steps === 5);
+check(`inventory dig tool breaks stone about 13x faster (48 -> ${survivalDig.steps})`,
+  survivalDig.broke && survivalDig.steps === 4);
 check(`bare-hand stone timing is unchanged (${survivalHand.steps})`,
   survivalHand.broke && survivalHand.steps === 144);
 check(`classed wood-pickaxe stone timing is unchanged (${survivalWoodPick.steps})`,

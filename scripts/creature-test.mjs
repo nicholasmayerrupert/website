@@ -3,8 +3,10 @@
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import {
-  CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, PROJECTILE_KIND,
+  CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, OFF, PROJECTILE_KIND,
+  SOUND_EVENT, STRIDES,
 } from '../src/sand/wasmBridge/abi.generated.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
@@ -257,8 +259,120 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
     cleanWorlds === 8);
 }
 
-// Lethal contact enters the explicit death state. Respawn is rejected during
-// the three-second delay, then restores the same input-capable actor identity.
+// A habitat-valid point beyond the real viewport enters immediately. It must
+// clear the whole camera rectangle plus the ten-cell spawn safety margin.
+{
+  let offscreen = null;
+  for (let salt = 0; salt < 12 && !offscreen; salt++) {
+    const e = attachTestHooks(createEngineWasm({
+      cols: 448, rows: 320, worldSeed: 0x0FF5C2E + salt,
+      sinksOn: false, infinite: true,
+    }));
+    e.setViewport(1, 1, 120, 80);
+    const playerId = e.spawnPlayerAtSurface(224);
+    const player = e.getPlayer(playerId);
+    e.cameraSet(
+      player.x + player.w * 0.5 - 60 - 24, // deliberately lag left of the player
+      player.y + player.h * 0.5 + player.h * 0.5 + 4 - 80 * (2 / 3),
+    );
+    e.setCreatureRuntime(true, false);
+    if (e._spawnNearFocus(CREATURE.DYNAMITEER, salt * 977 + 41)) {
+      const candidate = e.getCreatures().find((c) => c.alive);
+      if (candidate) {
+        const cam = e.getCam();
+        const intersectsExpandedView =
+          candidate.x < cam.x + 120 + 10 && candidate.x + candidate.w > cam.x - 10 &&
+          candidate.y < cam.y + 80 + 10 && candidate.y + candidate.h > cam.y - 10;
+        offscreen = {
+          clearsView: !intersectsExpandedView,
+          spawnProgress: candidate.spawnProgress,
+        };
+      }
+    }
+    e.destroy();
+  }
+  check('natural entry clears the actual lagged camera plus the viewport margin',
+    offscreen?.clearsView && offscreen.spawnProgress === 0);
+}
+
+// When the loaded buffer is entirely visible, no off-screen entry exists. The
+// natural spawn is then an inert, audible portal for 0.9–1.4 seconds before the
+// same reserved actor id materializes.
+{
+  const e = attachTestHooks(createEngineWasm({
+    cols: 448, rows: 320, worldSeed: 0xB4EAC5,
+    sinksOn: false, infinite: true,
+  }));
+  e.setViewport(1, 1, 448, 320);
+  e.cameraSet(0, 0);
+  e.spawnPlayerAtSurface(224);
+  e.setCreatureRuntime(true, false);
+  const requested = e._spawnNearFocus(CREATURE.DYNAMITEER, 0x5151);
+  const portal = e.getCreatures().find((c) => c.spawnProgress > 0);
+  const sounds = e.drainSoundEvents();
+  const soundTypes = [];
+  for (let i = 0; i < sounds.length; i += STRIDES.soundEvent)
+    soundTypes.push(sounds[i + OFF.soundEvent.type]);
+  const pendingWasInert = portal &&
+    !e.damageCreatures(Math.floor(portal.x + portal.w / 2), Math.floor(portal.y + portal.h / 2), 2, 50) &&
+    e.getProjectiles().length === 0;
+  let progressMonotonic = true, previousProgress = portal?.spawnProgress || 0;
+  let materializedAt = 0, materialized = null;
+  for (let tick = 1; tick <= 90; tick++) {
+    e.stepActors();
+    const state = e.getCreatures().find((c) => c.id === portal?.id);
+    if (state?.alive) { materializedAt = tick; materialized = state; break; }
+    if (state) {
+      progressMonotonic &&= state.spawnProgress + 1e-6 >= previousProgress;
+      previousProgress = state.spawnProgress;
+    }
+  }
+  check('visible fallback begins as a replicated inert breach marker',
+    requested && portal && !portal.alive && pendingWasInert);
+  check('breach warning emits its dedicated semantic cue exactly once',
+    soundTypes.filter((type) => type === SOUND_EVENT.SPAWN_BREACH).length === 1);
+  check(`breach progresses monotonically and materializes after ${materializedAt} ticks`,
+    progressMonotonic && materialized?.id === portal?.id &&
+    materialized.spawnProgress === 0 && materializedAt >= 54 && materializedAt <= 84);
+  e.destroy();
+}
+
+// The encounter director spends one shared threat budget and creates at most
+// one reservation per two-second cadence instead of firing five species timers
+// together. First-seen ids include portal reservations, so this also covers the
+// pending population path.
+{
+  const e = createEngineWasm({
+    cols: 448, rows: 320, worldSeed: 0xD1EC70,
+    sinksOn: false, infinite: true,
+  });
+  e.setViewport(1, 1, 120, 80);
+  const playerId = e.spawnPlayerAtSurface(224);
+  const player = e.getPlayer(playerId);
+  e.cameraSet(player.x + player.w * 0.5 - 60, player.y + player.h * 0.5 - 54);
+  e.setSurvivalInventory(true);
+  e.setCreatureRuntime(true, true);
+  const firstSeen = [], known = new Set();
+  let maxPopulation = 0;
+  for (let tick = 0; tick < 960; tick++) {
+    e.stepActors();
+    const population = e.getCreatures().filter((c) => c.alive || c.spawnProgress > 0);
+    maxPopulation = Math.max(maxPopulation, population.length);
+    for (const c of population) if (!known.has(c.id)) {
+      known.add(c.id);
+      firstSeen.push(tick);
+    }
+  }
+  const cadenceHeld = firstSeen.every((tick, i) => i === 0 || tick - firstSeen[i - 1] >= 120);
+  check(`encounters arrive gradually on the shared cadence (${firstSeen.join(', ')})`,
+    firstSeen.length >= 3 && cadenceHeld);
+  check(`director reservations preserve the natural population cap (${maxPopulation}/8)`,
+    maxPopulation <= 8);
+  e.destroy();
+}
+
+// Lethal contact enters the explicit death state and immediately allows a
+// manual respawn that restores the same input-capable actor identity.
 {
   const e = mk(); stoneFloor(e, 92);
   const player = e.spawnPlayer(72, 84);
@@ -270,15 +384,13 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
     const p = e.getPlayer(player);
     if (p?.alive === false) { died = true; break; }
   }
-  const rejectedEarly = !e.respawnPlayer(player);
-  actors(e, 180);
   const ready = e.getPlayer(player)?.respawnReady;
   const respawned = e.respawnPlayer(player);
   const before = e.getPlayer(player)?.x;
   e.setPlayerInput(player, { bits: 2, aimX: 72, aimY: 88, tool: 0, seq: 1 });
   actors(e, 30);
   const after = e.getPlayer(player);
-  check('lethal creature damage enters delayed manual death', died && rejectedEarly && ready && respawned && after?.alive);
+  check('lethal creature damage allows immediate manual respawn', died && ready && respawned && after?.alive);
   check('respawned player still accepts movement input', after && after.x > before);
   e.destroy();
 }

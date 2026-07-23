@@ -65,6 +65,7 @@ export const KEY_CODES = Object.freeze({
   arrowdown: 3,
   ' ': 4,
   shift: 5,
+  f: 6,
 });
 
 export const BUTTON_BITS = Object.freeze({

@@ -61,45 +61,96 @@ try {
   check('/fps enables debug hitboxes', initial.debugAttr);
   check('/fps HUD reports creatures', initial.hud.includes('creatures'));
 
-  // The survival route is the real gameplay entry point. It should enable the
-  // five armed enemies without depending on /fps's diagnostics flag, with an
-  // armed enemy in the current camera view.
+  // The survival route is the real gameplay entry point. Its encounter director
+  // should begin with one armed reservation rather than all five species popping
+  // into view at once.
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
-    const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return [7, 8, 9, 10, 11].every((id) => species.has(id));
+    return window.__sandTest.getCreatures().some((c) =>
+      c.species >= 7 && (c.alive || c.spawnProgress > 0));
   }, null, { timeout: 12000 });
   const survival = await page.evaluate(() => {
-    const T = window.__sandTest, info = T.info();
-    const visible = (c) => {
-      const r = T.cellRect(c.x, c.y);
-      return r.x + c.w * r.size > 0 && r.y + c.h * r.size > 0 && r.x < info.canvasW && r.y < info.canvasH;
-    };
+    const T = window.__sandTest;
     const host = document.querySelector('sand-game');
-    const population = T.getCreatures().filter((c) => c.alive);
+    const population = T.getCreatures().filter((c) => c.alive || c.spawnProgress > 0);
     return {
       species: population.map((c) => c.species),
-      enemyVisible: population.some((c) => c.species >= 7 && visible(c)),
+      armed: population.filter((c) => c.species >= 7).length,
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
   });
   console.log('\n/game creature spawning');
-  check('survival spawns all five armed enemies',
-    [7, 8, 9, 10, 11].every((id) => survival.species.includes(id)));
+  check(`survival begins with a paced armed encounter (${survival.armed} reserved)`,
+    survival.armed >= 1 && survival.armed < 5);
   check('survival keeps moles and other retired natural populations absent',
     [0, 1, 2, 3, 4, 5, 6].every((id) => !survival.species.includes(id)));
-  check('a survival enemy is in the camera view', survival.enemyVisible);
-  // Exact spawn coordinates are covered synchronously by creature-test.mjs.
-  // Live browser actors can move before their mirrored snapshot is inspected.
   check('hitboxes remain an /fps diagnostic', !survival.debugAttr);
 
+  // Force the director's habitat-valid visible fallback through its DEV-only
+  // test hook, then inspect the replicated warning and its portal pixels.
+  const existingSpecies = new Set(survival.species);
+  const breachChoices = [7, 9, 10, 8, 11].filter((id) => !existingSpecies.has(id));
+  let portal = null;
+  for (let i = 0; i < breachChoices.length && !portal; i++) {
+    await page.evaluate(({ species, salt }) => {
+      window.__sandTest.spawnNatural(species, salt, true);
+    }, { species: breachChoices[i], salt: 700 + i * 97 });
+    await page.waitForFunction((species) => window.__sandTest.getCreatures()
+      .some((c) => c.species === species && c.spawnProgress > 0),
+    breachChoices[i], { timeout: 800 }).catch(() => null);
+    portal = await page.evaluate((species) => window.__sandTest.getCreatures()
+      .find((c) => c.species === species && c.spawnProgress > 0) || null,
+    breachChoices[i]);
+  }
+  const portalPixels = await page.evaluate((portalId) => {
+    const T = window.__sandTest, info = T.info();
+    const c = T.getCreatures().find((x) => x.id === portalId && x.spawnProgress > 0);
+    if (!c) return { visible: false, colored: 0, id: 0 };
+    T.setPaused(true); T.render();
+    const r = T.cellRect(c.x, c.y);
+    const pad = Math.ceil(r.size * 7);
+    const x = Math.max(0, Math.floor(r.x - pad));
+    const y = Math.max(0, Math.floor(r.y - pad));
+    const w = Math.max(0, Math.min(info.canvasW - x, Math.ceil(c.w * r.size + pad * 2)));
+    const h = Math.max(0, Math.min(info.canvasH - y, Math.ceil(c.h * r.size + pad * 2)));
+    const pixels = w && h ? T.readPixels(x, y, w, h) : [];
+    let colored = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const red = pixels[i], green = pixels[i + 1], blue = pixels[i + 2];
+      if ((blue > 175 && blue > red * 1.25 && green > 65) ||
+          (blue > 220 && green > 190 && red < 225)) colored++;
+    }
+    T.setPaused(false);
+    return {
+      visible: r.x + c.w * r.size > 0 && r.y + c.h * r.size > 0 &&
+        r.x < info.canvasW && r.y < info.canvasH,
+      colored, id: c.id,
+    };
+  }, portal?.id || 0);
+  check('visible fallback is replicated as a non-materialized portal',
+    !!portal && !portal.alive && portal.spawnProgress > 0 && portalPixels.visible);
+  check(`breach portal renders its cyan/violet pixel animation (${portalPixels.colored} pixels)`,
+    portalPixels.colored > 0);
+
+  let portalMaterialized = false;
+  if (portalPixels.id) {
+    await page.waitForFunction((id) => window.__sandTest.getCreatures()
+      .some((c) => c.id === id && c.alive && c.spawnProgress === 0),
+    portalPixels.id, { timeout: 2500 }).catch(() => null);
+    portalMaterialized = await page.evaluate((id) => window.__sandTest.getCreatures()
+      .some((c) => c.id === id && c.alive && c.spawnProgress === 0),
+    portalPixels.id);
+  }
+  check('breach materializes the same reserved enemy id', portalMaterialized);
+
   // Freeze world/actor updates so the only pixel difference is the hitbox
-  // overlay, then probe the naturally spawned minigunner.
+  // overlay, then probe the newly materialized enemy.
   const hitboxResult = await page.evaluate(() => {
     const T = window.__sandTest;
     T.setPaused(true);
-    const c = T.getCreatures().find((x) => x.alive && x.species === 11);
+    const c = T.getCreatures().find((x) => x.alive && x.species >= 7);
+    if (!c) { T.setPaused(false); return { changed: 0 }; }
     const info = T.info();
     T.setCam(c.x + c.w / 2 - info.viewCols / 2, c.y + c.h / 2 - info.viewRows / 2);
     T.setHitboxes(true); T.render();
@@ -117,7 +168,7 @@ try {
     }
     return { changed };
   });
-  check(`minigunner sprite + hitbox rendered (${hitboxResult.changed} changed pixels)`,
+  check(`materialized enemy sprite + hitbox rendered (${hitboxResult.changed} changed pixels)`,
     hitboxResult.changed > 0);
 
   if (pngPath) {

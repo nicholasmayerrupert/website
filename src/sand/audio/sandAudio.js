@@ -37,6 +37,9 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.ACID_MORTAR]: 155,
   [SOUND_EVENT.CLUSTER_LAUNCH]: 175,
   [SOUND_EVENT.MINIGUN]: 205,
+  [SOUND_EVENT.SHIELD_HIT]: 110,
+  [SOUND_EVENT.SHIELD_BREAK]: 155,
+  [SOUND_EVENT.SPAWN_BREACH]: 220,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -64,6 +67,9 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.ACID_MORTAR]: 85,
   [SOUND_EVENT.CLUSTER_LAUNCH]: 90,
   [SOUND_EVENT.MINIGUN]: 28,
+  [SOUND_EVENT.SHIELD_HIT]: 38,
+  [SOUND_EVENT.SHIELD_BREAK]: 240,
+  [SOUND_EVENT.SPAWN_BREACH]: 700,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -450,6 +456,45 @@ export function createSandAudio() {
         gain: gain * 0.075, pan, wave: 'square', attack: 0.002 });
       playNoise({ duration: 0.045, gain: gain * 0.085, pan, frequency: 3200,
         type: 'highpass', q: 0.36, rate: 1.12 + variation * 0.18, attack: 0.0015 });
+    } else if (type === SOUND_EVENT.SHIELD_HIT) {
+      // A compact glassy impact with a low magical shove. Rapid incoming fire
+      // stays readable without becoming a wall of full-volume transients.
+      playTone({ from: 760 + variation * 120, to: 1180, duration: 0.085,
+        gain: gain * 0.13, pan, wave: 'triangle', attack: 0.002 });
+      playTone({ from: 1540, to: 620 + variation * 90, duration: 0.14,
+        gain: gain * 0.075, pan, wave: 'sine', delay: 0.008, attack: 0.002 });
+      playNoise({ duration: 0.095, gain: gain * 0.11, pan, frequency: 2650,
+        type: 'bandpass', q: 1.5, rate: 1.04 + variation * 0.12, attack: 0.0015 });
+      playTone({ from: 118, to: 76, duration: 0.12, gain: gain * 0.075, pan,
+        wave: 'sine', attack: 0.003 });
+    } else if (type === SOUND_EVENT.SHIELD_BREAK) {
+      // Ward collapse is deliberately distinct from ordinary health damage:
+      // brittle high shards tear away above a descending, hollow power-down.
+      playNoise({ duration: 0.30, gain: gain * 0.24, pan, frequency: 3400,
+        type: 'highpass', q: 0.42, rate: 1.02 + variation * 0.14, attack: 0.001 });
+      playNoise({ duration: 0.24, gain: gain * 0.18, pan, frequency: 1450,
+        type: 'bandpass', q: 1.15, rate: 0.88 + variation * 0.10,
+        buffer: crackleBuffer, delay: 0.012, attack: 0.002 });
+      playTone({ from: 1280, to: 145, duration: 0.38, gain: gain * 0.18, pan,
+        wave: 'sawtooth', attack: 0.003 });
+      playTone({ from: 168, to: 46, duration: 0.42, gain: gain * 0.15, pan,
+        wave: 'sine', delay: 0.018, attack: 0.005 });
+    } else if (type === SOUND_EVENT.SPAWN_BREACH) {
+      // A slow spatial tear announces the portal before the creature exists.
+      // The climbing body, noisy seam, and final low pull are distinct from the
+      // bore cannon's mechanical charge-up.
+      playTone({ from: 66, to: 430, duration: 0.90, gain: gain * 0.15, pan,
+        wave: 'sawtooth', attack: 0.11 });
+      playTone({ from: 285 + variation * 45, to: 1160, duration: 0.82,
+        gain: gain * 0.085, pan, wave: 'triangle', delay: 0.055, attack: 0.14 });
+      playNoise({ duration: 0.78, gain: gain * 0.14, pan, frequency: 1480,
+        type: 'bandpass', q: 1.25, rate: 0.68 + variation * 0.08,
+        buffer: crackleBuffer, delay: 0.04, attack: 0.12 });
+      playNoise({ duration: 0.24, gain: gain * 0.17, pan, frequency: 2900,
+        type: 'highpass', q: 0.48, rate: 1.04 + variation * 0.10,
+        delay: 0.69, attack: 0.025 });
+      playTone({ from: 124, to: 42, duration: 0.30, gain: gain * 0.14, pan,
+        wave: 'sine', delay: 0.67, attack: 0.018 });
     } else if (type === SOUND_EVENT.EXPLOSION) {
       const sampleGain = Math.min(0.46, gain * 0.25);
       if (recordedAssets) {

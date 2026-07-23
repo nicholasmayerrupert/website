@@ -20,14 +20,17 @@ const id = e.spawnPlayer(40, 40);
 const authoritative = {
   id, x: 10, y: 20, health: 63, alive: true, deathTicks: 12,
   respawnReady: false, bowCharge: 0.8, heldItemKind: ITEM_KIND.BOW,
+  shieldHealth: 146, shieldActive: true,
 };
 const predicted = {
   x: 11.5, y: 19.5, vx: 2, vy: -1, health: 100, alive: true,
   deathTicks: 0, respawnReady: false, bowCharge: 0, heldItemKind: 0,
+  shieldHealth: 200, shieldActive: false,
 };
 const presented = mergePlayerPrediction(authoritative, predicted, id);
 check('prediction supplies responsive player position', presented.x === 11.5 && presented.y === 19.5);
 check('worker health remains authoritative for the HUD', presented.health === 63);
+check('worker ward remains authoritative for the HUD', presented.shieldHealth === 146 && presented.shieldActive);
 check('worker bow/death state survives prediction', presented.bowCharge === 0.8 && presented.heldItemKind === ITEM_KIND.BOW && presented.deathTicks === 12);
 
 // Fresh explosive-survival inventories select the starter gun in slot 0 and

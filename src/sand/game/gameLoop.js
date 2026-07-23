@@ -166,6 +166,8 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
         packed[o + G.aimY] = p.id === ownId ? liveAim.y : (p.aimY ?? p.y + p.h * .42);
         packed[o + G.jetpackFuel] = p.jetpackFuel ?? 1;
         packed[o + G.jetpackActive] = p.jetpackActive ? 1 : 0;
+        packed[o + G.shieldHealth] = p.shieldHealth ?? 200;
+        packed[o + G.shieldActive] = p.shieldActive ? 1 : 0;
       }
       engine.glSetPlayers(true, packed, ownId);
     }
@@ -264,6 +266,11 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
 
     let actorChanged = false;
     let worldChanged = !ctx.netClientReady() && (ctx.worldWorker?.applyPending() || false);
+    // Advance correction easing once before any camera/audio/HUD/render reads.
+    // renderState() is otherwise pure, so every consumer in this RAF sees one
+    // consistent player pose even if the fixed clock runs multiple steps.
+    if (ctx.netClientReady()) ctx.net.advancePresentation?.();
+    else ctx.worldWorker?.advancePresentation?.();
     let timing = { steps: 0, debtMs: 0, droppedDebtMs: 0 };
     const pauseWorker = shouldPauseWorker();
     if (ctx.worldWorker && pauseWorker !== workerPaused) {
@@ -315,7 +322,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     }
     if (ctx.survival && onPlayerState) {
       const player = localPlayer();
-      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}:${player.jetpackFuel}:${player.jetpackActive}` : '';
+      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}:${player.jetpackFuel}:${player.jetpackActive}:${player.shieldHealth}:${player.shieldActive}` : '';
       if (signature !== lastPlayerStateSignature) {
         lastPlayerStateSignature = signature;
         onPlayerState(player);

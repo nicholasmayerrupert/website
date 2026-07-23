@@ -19,7 +19,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 15', PROTOCOL_VERSION === 15);
+  check('PROTOCOL_VERSION is 16', PROTOCOL_VERSION === 16);
 }
 
 {
@@ -35,24 +35,31 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // Semantic sound records round trip without exposing browser audio details.
 {
   console.log('sounds round trip');
-  const packed = [SOUND_EVENT.EXPLOSION, -12.5, 44.25, 1.75, 7, 0];
+  const packed = [
+    SOUND_EVENT.SHIELD_BREAK, -12.5, 44.25, 1.75, 7, 0,
+    SOUND_EVENT.SPAWN_BREACH, 18, -7, 0.9, 0, 0,
+  ];
   const d = rt(makeSounds(45, packed));
   check('decodes to sounds', d && d.t === MSG.SOUNDS && d.tick === 45);
-  check('sound record matches ABI stride', d && d.data.length === SOUND_FIELDS);
+  check('sound records match ABI stride', d && d.data.length === SOUND_FIELDS * 2);
   check('position/intensity preserved', d && d.data[1] === -12.5 && d.data[2] === 44.25 && d.data[3] === 1.75);
-  check('semantic fields preserved', d && d.data[0] === SOUND_EVENT.EXPLOSION && d.data[4] === 7 && d.data[5] === 0);
+  check('shield semantic fields preserved', d && d.data[0] === SOUND_EVENT.SHIELD_BREAK && d.data[4] === 7 && d.data[5] === 0);
+  check('spawn-breach semantic fields preserved',
+    d && d.data[SOUND_FIELDS] === SOUND_EVENT.SPAWN_BREACH
+      && d.data[SOUND_FIELDS + 1] === 18 && d.data[SOUND_FIELDS + 2] === -7);
   check('empty sound batch allowed', rt(makeSounds(0, [])).data.length === 0);
 }
 
 // Creature actor snapshot round trip + bounds.
 {
   console.log('creatures round trip');
-  const creatures = [{ id: 7, species: CREATURE.BORE_SENTINEL, x: 22.5, y: -3.25, vx: 0.4, vy: -0.1, w: 9, h: 6, facing: -1, health: 141, maxHealth: 170, alive: true, animFrame: 2, attackState: CREATURE_ATTACK_STATE.CHARGING, attackProgress: 0.75, aimX: -11.5, aimY: 48.25 }];
+  const creatures = [{ id: 7, species: CREATURE.BORE_SENTINEL, x: 22.5, y: -3.25, vx: 0.4, vy: -0.1, w: 9, h: 6, facing: -1, health: 141, maxHealth: 170, alive: true, animFrame: 2, attackState: CREATURE_ATTACK_STATE.CHARGING, attackProgress: 0.75, aimX: -11.5, aimY: 48.25, spawnProgress: 0.625 }];
   const d = rt(makeCreatures(43, creatures));
   check('decodes to creatures', d && d.t === MSG.CREATURES && d.tick === 43);
   check('creature flat length matches ABI', d && d.data.length === CREATURE_FIELDS);
   check('creature pose/health preserved', d && d.data[0] === 7 && d.data[1] === 8 && d.data[2] === 22.5 && d.data[3] === -3.25 && d.data[9] === 141 && d.data[11] === 1);
   check('creature attack state, progress, and aim survive', d && d.data[13] === 1 && d.data[14] === 0.75 && d.data[15] === -11.5 && d.data[16] === 48.25);
+  check('creature breach progress survives', d && d.data[OFF.creatureSnapshot.spawnProgress] === 0.625);
   check('empty creatures allowed', rt(makeCreatures(0, [])).data.length === 0);
 }
 
@@ -139,6 +146,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('creatures invalid attack state', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackState]: 99 }) })) === null);
   check('creatures negative attack progress', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackProgress]: -0.1 }) })) === null);
   check('creatures attack progress above one', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.attackProgress]: 1.1 }) })) === null);
+  check('creatures spawn progress above one', decode(JSON.stringify({ t: 'creatures', tick: 0, data: Object.assign([...creature], { [OFF.creatureSnapshot.spawnProgress]: 1.1 }) })) === null);
   check('projectiles unknown kind', decode(JSON.stringify({ t: 'projectiles', tick: 0, data: Object.assign([...projectile], { [OFF.projectileSnapshot.kind]: 99 }) })) === null);
   check('projectiles negative fuse', decode(JSON.stringify({ t: 'projectiles', tick: 0, data: Object.assign([...projectile], { [OFF.projectileSnapshot.fuse]: -1 }) })) === null);
   check('projectiles NaN rotation', decode(JSON.stringify({ t: 'projectiles', tick: 0, data: Object.assign([...projectile], { [OFF.projectileSnapshot.rotation]: Number.NaN }) })) === null);

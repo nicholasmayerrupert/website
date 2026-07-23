@@ -140,7 +140,8 @@
     updateCreatures();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
-    return !psys.players.empty() || !projectiles.projectiles.empty() || !itemsys.items.empty() || !creatures.creatures.empty();
+    return !psys.players.empty() || !projectiles.projectiles.empty() || !itemsys.items.empty() ||
+      !creatures.creatures.empty() || !creatures.pendingSpawns.empty();
   }
 
   bool stepWorld() {

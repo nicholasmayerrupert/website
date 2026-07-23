@@ -16,6 +16,7 @@ const INPUT_LEFT = 1;
 const INPUT_RIGHT = 2;
 const INPUT_JUMP = 4; // PI_JUMP bit (mirrors enum PlayerInput / INPUT.JUMP)
 const INPUT_JETPACK = 128; // Space-specific sustained thrust bit
+const INPUT_SHIELD = 256;
 const PI_PRIMARY = 16;
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
@@ -150,6 +151,7 @@ try {
   await page.waitForFunction(() => {
     const root = document.querySelector('sand-game')?.shadowRoot;
     return root?.querySelector('.survival-health')?.getAttribute('aria-valuenow') === '100' &&
+      root?.querySelector('.survival-shield')?.getAttribute('aria-valuenow') === '200' &&
       root?.querySelector('.survival-fuel')?.getAttribute('aria-valuenow') === '100';
   }, null, { timeout: 5000 });
   const meterGeometry = await page.locator('sand-game').evaluate((host) => {
@@ -172,21 +174,24 @@ try {
     return {
       objectiveWidth: root.querySelector('.survival-objective').getBoundingClientRect().width,
       health: measure('.survival-health'),
+      shield: measure('.survival-shield'),
       charge: measure('.survival-charge', true),
       fuel: measure('.survival-fuel'),
       fullHearts: [...root.querySelectorAll('.survival-heart')]
         .every((heart) => heart.style.getPropertyValue('--fill') === '100%'),
+      fullShieldCells: [...root.querySelectorAll('.survival-shield > i')]
+        .every((cell) => cell.style.getPropertyValue('--fill') === '100%'),
       fullFuelCells: root.querySelectorAll('.survival-fuel > i.full').length,
     };
   });
-  const meterTracksFit = [meterGeometry.health, meterGeometry.charge, meterGeometry.fuel]
+  const meterTracksFit = [meterGeometry.health, meterGeometry.shield, meterGeometry.charge, meterGeometry.fuel]
     .every(({ leading, trailing }) => leading >= 5 && leading <= 7 && trailing >= 5 && trailing <= 7);
   check(
-    `health/charge/jetpack tracks fit their cells (trailing ${meterGeometry.health.trailing.toFixed(1)}/${meterGeometry.charge.trailing.toFixed(1)}/${meterGeometry.fuel.trailing.toFixed(1)}px)`,
+    `health/ward/charge/jetpack tracks fit their cells (trailing ${meterGeometry.health.trailing.toFixed(1)}/${meterGeometry.shield.trailing.toFixed(1)}/${meterGeometry.charge.trailing.toFixed(1)}/${meterGeometry.fuel.trailing.toFixed(1)}px)`,
     meterTracksFit && meterGeometry.objectiveWidth > meterGeometry.health.width,
   );
-  check('full health and jetpack capacity visually fill every meter cell',
-    meterGeometry.fullHearts && meterGeometry.fullFuelCells === 12);
+  check('full health, ward, and jetpack capacity visually fill every meter cell',
+    meterGeometry.fullHearts && meterGeometry.fullShieldCells && meterGeometry.fullFuelCells === 12);
 
   // let the player settle onto the ground
   await page.waitForFunction(() => window.__sandTest.getPlayer()?.grounded, null, { timeout: 4000 }).catch(() => {});
@@ -258,9 +263,23 @@ try {
   });
   check('opening inventory closes the footprint menu', exclusiveMenus.inventory && !exclusiveMenus.footprint);
   await page.keyboard.press('Escape');
+  await page.waitForTimeout(50);
+  const inventoryEscape = await page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return {
+      closed: root.querySelector('[aria-modal="true"]') === null,
+      focused: root.activeElement === root.querySelector('.sg-sim'),
+    };
+  });
+  check('Escape closes inventory and restores simulation focus',
+    inventoryEscape.closed && inventoryEscape.focused);
 
   await page.keyboard.press('q');
   await page.waitForTimeout(50);
+  const footprintReopened = await page.locator('sand-game').evaluate((host) =>
+    host.shadowRoot.querySelector('.fp-panel')?.classList.contains('open') === true);
+  check('Q reopens the footprint menu after inventory closes', footprintReopened);
+  if (!footprintReopened) throw new Error('footprint menu did not reopen after inventory close');
   await page.locator('sand-game .fp-btn').nth(1).click();
   await page.waitForTimeout(50);
   const footprintClosed = await page.locator('sand-game').evaluate((host) => {
@@ -290,7 +309,81 @@ try {
   // Keyboard input is intentionally scoped to the simulation. Keep it focused
   // after setup interactions so these keys exercise the real ownership policy.
   await page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));
+  await ensureAlive();
   await waitGrounded();
+
+  // F holds the authoritative directional ward. Besides the input/HUD state,
+  // compare a tight GL readback around the player so the replicated active flag
+  // is proven to reach the curved in-world presentation.
+  const wardAim = await page.evaluate(() => {
+    const p = window.__sandTest.getPlayer();
+    return window.__sandTestCellScreenPoint(
+      Math.floor(p.x + p.w / 2 + 10),
+      Math.floor(p.y + p.h * .42),
+    );
+  });
+  await page.mouse.move(wardAim.vx, wardAim.vy);
+  await page.waitForTimeout(50);
+  await page.evaluate(() => {
+    const t = window.__sandTest, p = t.getPlayer(), info = t.info();
+    t.render();
+    const corner = t.cellRect(
+      Math.floor(p.x + p.w / 2 - 7),
+      Math.floor(p.y + p.h * .42 - 7),
+    );
+    const x = Math.max(0, Math.floor(corner.x));
+    const y = Math.max(0, Math.floor(corner.y));
+    const w = Math.max(1, Math.min(info.canvasW - x, Math.ceil(info.cellDev * 14)));
+    const h = Math.max(1, Math.min(info.canvasH - y, Math.ceil(info.cellDev * 14)));
+    const pixels = t.readPixels(x, y, w, h);
+    let cyan = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i + 2] > 110 && pixels[i + 2] > pixels[i] + 20 && pixels[i + 1] > pixels[i] + 10) cyan++;
+    }
+    window.__wardProbe = { x, y, w, h, pixels: Array.from(pixels), cyan };
+  });
+  await page.keyboard.down('f');
+  await page.waitForTimeout(50);
+  const shieldBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+  await page.waitForFunction(() => {
+    const host = document.querySelector('sand-game'), p = window.__sandTest.getPlayer();
+    return p?.shieldActive
+      && host?.shadowRoot?.querySelector('.survival-shield.active')
+      && host.shadowRoot.querySelector('.survival-shield-label')?.textContent.includes('ACTIVE');
+  }, null, { timeout: 5000 });
+  await page.waitForTimeout(80);
+  const wardVisual = await page.evaluate(() => {
+    const t = window.__sandTest, before = window.__wardProbe;
+    t.render();
+    const pixels = t.readPixels(before.x, before.y, before.w, before.h);
+    let changed = 0, cyan = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const delta = Math.abs(pixels[i] - before.pixels[i])
+        + Math.abs(pixels[i + 1] - before.pixels[i + 1])
+        + Math.abs(pixels[i + 2] - before.pixels[i + 2]);
+      if (delta > 45) changed++;
+      if (pixels[i + 2] > 110 && pixels[i + 2] > pixels[i] + 20 && pixels[i + 1] > pixels[i] + 10) cyan++;
+    }
+    const root = document.querySelector('sand-game').shadowRoot;
+    const result = {
+      changed, cyanAdded: cyan - before.cyan,
+      health: window.__sandTest.getPlayer().shieldHealth,
+      aria: root.querySelector('.survival-shield').getAttribute('aria-valuenow'),
+    };
+    delete window.__wardProbe;
+    return result;
+  });
+  await page.keyboard.up('f');
+  await page.waitForFunction(() => {
+    const root = document.querySelector('sand-game')?.shadowRoot;
+    return window.__sandTest.getPlayer()?.shieldActive === false
+      && root?.querySelector('.survival-shield-label')?.textContent.includes('HOLD F');
+  }, null, { timeout: 5000 });
+  check(`F maps to SHIELD input and activates a full 200-point ward (bits ${shieldBits})`,
+    (shieldBits & INPUT_SHIELD) !== 0 && wardVisual.health === 200 && wardVisual.aria === '200');
+  check(`active ward reaches the GL presentation (${wardVisual.changed} changed, ${wardVisual.cyanAdded} cyan pixels)`,
+    wardVisual.changed > 80 && wardVisual.cyanAdded > 8);
+
   const before = await getP();
   // Hard check: SPACE maps to the JUMP input bit reaching the engine (terrain
   // independent). Jump PHYSICS — gravity, apex, no-double-jump — is covered
@@ -466,6 +559,48 @@ try {
 
   await page.evaluate(() => window.__sandTest.setDrawMode(false));
 
+  // Force the exact worker-stream boundary behind the reported long-walk jerk
+  // while sampling the displayed player every RAF. Absolute player X must stay
+  // continuous even when the mirror offset and actor epoch change separately.
+  await ensureAlive();
+  await page.evaluate(() => window.__sandTest.setPlayerState({ vx: 0 }));
+  await page.waitForTimeout(100);
+  const streamContinuity = await page.evaluate(() => new Promise((resolve) => {
+    const t = window.__sandTest;
+    const info = t.info();
+    const startOffset = t.worldOffset().x;
+    const startPlayer = t.getPlayer();
+    let previous = startOffset + startPlayer.x;
+    let minX = previous, maxX = previous, maxStep = 0;
+    let samples = 0, shifted = false, afterShift = 0;
+    t.setPlayMode(false);
+    t.setCam(info.cols - info.viewCols - 2, t.getCam().y);
+    const sample = () => {
+      const p = t.getPlayer();
+      const offset = t.worldOffset().x;
+      if (p) {
+        const worldX = offset + p.x;
+        maxStep = Math.max(maxStep, Math.abs(worldX - previous));
+        minX = Math.min(minX, worldX); maxX = Math.max(maxX, worldX);
+        previous = worldX;
+      }
+      samples++;
+      if (offset !== startOffset) { shifted = true; afterShift++; }
+      if ((shifted && afterShift >= 12) || samples >= 240) {
+        t.setPlayMode(true);
+        resolve({ shifted, startOffset, endOffset: offset, samples, maxStep, span: maxX - minX });
+        return;
+      }
+      requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  }));
+  check(
+    `streamed actor stays continuous across RAFs (offset ${streamContinuity.startOffset} -> ${streamContinuity.endOffset}, max step ${streamContinuity.maxStep.toFixed(2)})`,
+    streamContinuity.shifted && streamContinuity.maxStep < 8 && streamContinuity.span < 8,
+  );
+  await page.waitForTimeout(700);
+
   // camera follows: the player should remain near the viewport center
   const followInfo = await page.evaluate(() => {
     const t = window.__sandTest, i = t.info(), cam = t.getCam(), p = t.getPlayer();
@@ -508,7 +643,7 @@ try {
 
   await browser.close();
 } catch (err) {
-  console.error('e2e error:', err.message);
+  console.error('e2e error:', err.stack || err.message);
   failures++;
 } finally {
   if (webkitBrowser) await webkitBrowser.close().catch(() => {});

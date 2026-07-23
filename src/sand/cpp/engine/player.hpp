@@ -32,7 +32,11 @@ class PlayerSystem {
   int spawnPlayerAtSurface(int col);
   bool respawnPlayer(Player& p);
   bool requestRespawn(int id);
-  void damagePlayer(Player& p, int damage, int cooldown = 30);
+  bool shieldCoversSource(const Player& p, double sourceX, double sourceY) const;
+  // Returns the portion that reached player health. Omitting source coordinates
+  // marks environmental/contact damage that a directional ward cannot block.
+  int damagePlayer(Player& p, int damage, int cooldown = 30,
+                   double sourceX = NAN, double sourceY = NAN);
   void killPlayer(Player& p);
   void updatePlayerVitals(Player& p);
   Player* findPlayer(int id);

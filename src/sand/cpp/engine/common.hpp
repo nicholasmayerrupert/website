@@ -112,7 +112,7 @@ struct StampSet {
 // Held movement/pan keys forwarded from the browser (createSandGame maps the
 // physical keys onto these). The engine owns camera and input policy:
 // free-camera panning, the player input bitmask, and the pointer->aim mapping.
-enum InputKey : int { IK_LEFT = 0, IK_RIGHT, IK_UP, IK_DOWN, IK_SPACE, IK_SHIFT };
+enum InputKey : int { IK_LEFT = 0, IK_RIGHT, IK_UP, IK_DOWN, IK_SPACE, IK_SHIFT, IK_SHIELD };
 static const double CAM_PAN_CELLS_PER_SEC = 100.0; // camera pan speed while a key is held
 static const double CAM_FOLLOW_LERP = 0.18;        // play-mode follow glide
 static const double CAM_SURFACE_VIEW_Y_FRAC = 2.0 / 3.0; // surface sits ~2/3 down the view
@@ -312,6 +312,12 @@ static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can 
 // seconds of thrust and takes three seconds of non-thrusting time to refill.
 static const double P_JETPACK_THRUST = 0.16, P_JETPACK_MAX_RISE = 1.65;
 static const double P_JETPACK_BURN = 1.0 / 120.0, P_JETPACK_RECHARGE = 1.0 / 180.0;
+// A held ward covers the 120-degree sector centered on the cursor aim. Combat
+// damage entering that sector drains ward health before player health; the ward
+// begins its quick recharge one second after its most recent absorbed hit.
+static const int    P_SHIELD_MAX_HEALTH = 200;
+static const int    P_SHIELD_RECHARGE_DELAY = 60, P_SHIELD_RECHARGE_PER_TICK = 2;
+static constexpr double P_SHIELD_HALF_ARC_COS = 0.5; // cos(60 degrees)
 // Safe-spawn search stays local to the original surface neighborhood. If a
 // player destroyed every candidate, respawn builds a tiny component-aware pad.
 static const int    P_SPAWN_SEARCH_X = 64, P_SPAWN_SEARCH_Y = 64, P_SPAWN_HAZARD_MARGIN = 2;
@@ -396,7 +402,7 @@ static const uint32_t SURVIVAL_MINING_SPEED_MULTIPLIER = 8;
 // The starter/crafted TC_DIG tool is the fast universal survival tool. Keep this
 // separate from the shared survival multiplier so hands and classed tools retain
 // their existing material/tier timing.
-static const uint32_t SURVIVAL_DIG_TOOL_SPEED_MULTIPLIER = 10;
+static const uint32_t SURVIVAL_DIG_TOOL_SPEED_MULTIPLIER = 13;
 
 // Creative brush mode (tools.inc): the searchable palette selects ANY material,
 // any seed species, the eraser, or the cube; the brush routes by mode rather than a
@@ -531,6 +537,10 @@ struct Player {
   int health = 100;
   int hurtCooldown = 0; // contact-damage immunity; also protects a fresh respawn
   int lastDamageTick = -1000000;
+  int shieldHealth = P_SHIELD_MAX_HEALTH;
+  int shieldHurtCooldown = 0;
+  int lastShieldDamageTick = -1000000;
+  bool shieldActive = false;
   int deathTicks = 0;
   int buriedTicks = 0;
   int bowChargeTicks = 0;

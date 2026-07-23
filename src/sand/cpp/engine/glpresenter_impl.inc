@@ -366,10 +366,66 @@ float GLPresenter::glActorLight(double px, double py, int w, int h) const {
   return count ? (float)sum / (255.0f * count) : Renderer::LIGHT_AMBIENT / 255.0f;
 }
 
+void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
+                             int shieldHealth, bool shieldActive, int camCol, int camRow) {
+  if (!shieldActive || shieldHealth <= 0) return;
+  double cell = (double)glCellDev;
+  double originX = pxc + PLAYER_W * .5;
+  double originY = pyc + PLAYER_H * .5;
+  double dx = aimX - originX, dy = aimY - originY;
+  if (std::hypot(dx, dy) < 1e-6) { dx = facing; dy = 0; }
+  double aimAngle = std::atan2(dy, dx);
+  double strength = std::max(0.0, std::min(1.0, shieldHealth / (double)P_SHIELD_MAX_HEALTH));
+  double phase = E.actorTick * .16;
+  float red = (float)(.22 + (1.0 - strength) * .42);
+  float green = (float)(.72 + strength * .20);
+  float blue = 1.0f;
+
+  // The compositor uses premultiplied alpha. Layer a broad, quiet field between
+  // two crisp rims so the ward reads as translucent curved glass rather than a
+  // dotted line, while retaining the simulation's pixel-art vocabulary.
+  auto wardSquare = [&](double wx, double wy, double size,
+                        float r, float g, float b, float alpha) {
+    double x = (wx - camCol) * cell + glOffX;
+    double y = (wy - camRow) * cell + glOffY;
+    glUniform4f(glc->uColor, r * alpha, g * alpha, b * alpha, alpha);
+    glSolidDev(x - size * cell * .5, y - size * cell * .5,
+               size * cell, size * cell);
+  };
+  static constexpr int SEGMENTS = 30;
+  static constexpr double HALF_ARC = 3.14159265358979323846 / 3.0;
+  for (int i = 0; i <= SEGMENTS; i++) {
+    double t = i / (double)SEGMENTS;
+    double angle = aimAngle - HALF_ARC + t * HALF_ARC * 2.0;
+    double shimmer = .5 + .5 * std::sin(phase + i * .83);
+    double cs = std::cos(angle), sn = std::sin(angle);
+    double fieldRadius = 5.05 + std::sin(phase * .55 + i * .47) * .035;
+    wardSquare(originX + cs * fieldRadius, originY + sn * fieldRadius,
+               1.12, red, green, blue, (float)(.055 + strength * .035));
+    wardSquare(originX + cs * 5.55, originY + sn * 5.55,
+               .38, red, green, blue, (float)(.28 + strength * .18 + shimmer * .08));
+    wardSquare(originX + cs * 4.48, originY + sn * 4.48,
+               .27, .72f, .95f, 1.0f, (float)(.22 + strength * .14));
+    if (i % 5 == 0) {
+      wardSquare(originX + cs * 5.02, originY + sn * 5.02,
+                 .31, .88f, 1.0f, 1.0f, (float)(.56 + shimmer * .20));
+    }
+  }
+  // Luminous end caps clearly delimit the protected 120-degree sector.
+  for (int side : {-1, 1}) {
+    double angle = aimAngle + side * HALF_ARC;
+    double cs = std::cos(angle), sn = std::sin(angle);
+    wardSquare(originX + cs * 5.02, originY + sn * 5.02,
+               .88, red, green, blue, .20f);
+    wardSquare(originX + cs * 5.02, originY + sn * 5.02,
+               .38, .88f, 1.0f, 1.0f, .90f);
+  }
+}
+
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
-                     double jetpackFuel, bool jetpackActive, bool own, float light,
-                     int camCol, int camRow) {
+                     double jetpackFuel, bool jetpackActive, int shieldHealth,
+                     bool shieldActive, bool own, float light, int camCol, int camRow) {
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
@@ -394,6 +450,7 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   }
   double sprX = (pxc - camCol) * cell + glOffX - cell;
   double sprY = (pyc - camRow - 1.0 + bodyBob) * cell + glOffY;
+  if (alive) glDrawWard(pxc, pyc, facing, aimX, aimY, shieldHealth, shieldActive, camCol, camRow);
 
   auto worldSquare = [&](double wx, double wy, double size,
                          float r, float g, float b, float a = 1.0f) {
@@ -712,6 +769,7 @@ void GLPresenter::glDrawPlayers() {
       glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME],
                       p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE],
                       p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_FUEL], p[GLP_JETPACK_ACTIVE] > .5f,
+                      (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f,
                       p[GLP_OWN] > 0.5f, light, camCol, camRow);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
@@ -721,7 +779,8 @@ void GLPresenter::glDrawPlayers() {
       const InvSlot& held = p.inv[p.selectedSlot];
       double chargeMax = held.itemKind == IK_BORE_CANNON ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
-                      p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive, p.id == glOwnPlayerId,
+                      p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive,
+                      p.shieldHealth, p.shieldActive, p.id == glOwnPlayerId,
                       glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
@@ -1079,7 +1138,8 @@ void GLPresenter::glDrawProjectiles() {
 // a readable silhouette instead of collapsing into a filled rectangle.
 void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int facing, int health, int maxHealth,
                     int alive, int animFrame, int attackState, double attackProgress,
-                    double aimX, double aimY, float light, int camCol, int camRow) {
+                    double aimX, double aimY, double spawnProgress, float light,
+                    int camCol, int camRow) {
   static const float pal[CS_COUNT][6][4] = {
     {{0,0,0,0},{12/255.f,31/255.f,43/255.f,1},{37/255.f,111/255.f,137/255.f,1},{74/255.f,174/255.f,180/255.f,1},{157/255.f,226/255.f,201/255.f,1},{244/255.f,218/255.f,104/255.f,1}},
     {{0,0,0,0},{20/255.f,29/255.f,27/255.f,1},{46/255.f,91/255.f,58/255.f,1},{80/255.f,139/255.f,72/255.f,1},{151/255.f,188/255.f,92/255.f,1},{238/255.f,199/255.f,72/255.f,1}},
@@ -1159,6 +1219,48 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const int sw = 13, sh = 7;
   double cell = glCellDev;
+  if (spawnProgress > 0) {
+    // A deterministic pixel breach: two counter-rotating broken rings tighten
+    // around the reserved habitat while sparks converge on the future body.
+    // Pending records return here, so they never draw a corpse/hitbox and remain
+    // visually distinct from a materialized, damageable creature.
+    double progress = std::max(0.0, std::min(1.0, spawnProgress));
+    double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
+    double cy = (py + CREATURE_SPECIES[speciesId].h * .5 - camRow) * cell + glOffY;
+    double phase = progress * 9.42477796076938;
+    for (int ring = 0; ring < 2; ring++) {
+      double rx = cell * (CREATURE_SPECIES[speciesId].w * (.63 + ring * .18) +
+                          (1.0 - progress) * (3.4 + ring));
+      double ry = cell * (CREATURE_SPECIES[speciesId].h * (.70 + ring * .19) +
+                          (1.0 - progress) * (2.2 + ring * .6));
+      for (int segment = 0; segment < 24; segment++) {
+        if (((segment + ring * 2 + (int)(progress * 24)) % 5) == 0) continue;
+        double a = segment * 6.283185307179586 / 24.0 +
+          (ring ? -phase : phase) * .18;
+        double x = cx + std::cos(a) * rx, y = cy + std::sin(a) * ry;
+        double size = cell * (.30 + progress * .23 + ring * .08);
+        float alpha = (float)(.34 + progress * .46 - ring * .10);
+        glUniform4f(glc->uColor, .52f * alpha, .20f * alpha,
+                    1.0f * alpha, alpha);
+        glSolidDev(x - size * .5, y - size * .5, size, size);
+      }
+    }
+    for (int spark = 0; spark < 7; spark++) {
+      double a = spark * 2.399963229728653 + phase * .31;
+      double radius = cell * (1.1 + (1.0 - progress) * (5.4 + (spark % 3)));
+      double size = cell * (.22 + progress * .24);
+      double x = cx + std::cos(a) * radius, y = cy + std::sin(a) * radius;
+      float alpha = (float)(.42 + progress * .48);
+      glUniform4f(glc->uColor, .28f * alpha, .86f * alpha,
+                  1.0f * alpha, alpha);
+      glSolidDev(x - size * .5, y - size * .5, size, size);
+    }
+    double slitW = std::max(cell * .20, cell * progress * 1.15);
+    double slitH = cell * (1.0 + progress * CREATURE_SPECIES[speciesId].h * .70);
+    glUniform4f(glc->uColor, .74f, .94f, 1.0f, .86f);
+    glSolidDev(cx - slitW * .5, cy - slitH * .5, slitW, slitH);
+    return;
+  }
   if (alive && speciesId == CS_BORE_SENTINEL &&
       (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
     double ox = px + CREATURE_SPECIES[speciesId].w * 0.5;
@@ -1373,14 +1475,29 @@ void GLPresenter::glDrawCreatures() {
       glDrawOneCreature((int)c[CSN_SPECIES], c[CSN_X], c[CSN_Y], (int)c[CSN_FACING], (int)c[CSN_HEALTH],
                         (int)c[CSN_MAX_HEALTH], (int)c[CSN_ALIVE], (int)c[CSN_ANIM_FRAME],
                         (int)c[CSN_ATTACK_STATE], c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
+                        c[CSN_SPAWN_PROGRESS],
                         glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow);
     }
-  } else for (const Creature& c : E.creatures.creatures) {
-    const CreatureSpecies& s = E.creatures.species(c);
-    glDrawOneCreature(c.species, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, c.facing, c.health,
-                      s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState, c.attackProgress,
-                      c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
-                      glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h), camCol, camRow);
+  } else {
+    for (const Creature& c : E.creatures.creatures) {
+      const CreatureSpecies& s = E.creatures.species(c);
+      glDrawOneCreature(c.species, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, c.facing, c.health,
+                        s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState, c.attackProgress,
+                        c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
+                        c.spawnProgress,
+                        glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
+                        camCol, camRow);
+    }
+    for (const CreatureSpawnTelegraph& p : E.creatures.pendingSpawns) {
+      const CreatureSpecies& s = CREATURE_SPECIES[p.species];
+      int elapsed = p.totalTicks - p.ticksRemaining;
+      double progress = std::max(1.0 / p.totalTicks,
+        std::min(1.0, (elapsed + 1.0) / p.totalTicks));
+      double x = p.wx - E.fg.worldOffsetX, y = p.wy - E.fg.worldOffsetY;
+      glDrawOneCreature(p.species, x, y, 1, 0, s.maxHealth, 0, 0,
+                        CAS_IDLE, 0, x, y, progress,
+                        glActorLight(x, y, s.w, s.h), camCol, camRow);
+    }
   }
 }
 

@@ -3,7 +3,7 @@
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, PROJECTILE_KIND, CREATURE, CREATURE_ATTACK_STATE, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 15;
+export const PROTOCOL_VERSION = 16;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -34,7 +34,7 @@ export const MSG = Object.freeze({
 
 // Field bounds, derived from the generated ABI manifest so they can't drift
 // from the engine.
-export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 255
+export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 511
 export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
 const SOUND_EVENT_MAX = Math.max(...Object.values(SOUND_EVENT));
 const ITEM_KIND_MAX = Math.max(...Object.values(ITEM_KIND));
@@ -42,6 +42,7 @@ const PROJECTILE_KIND_MAX = Math.max(...Object.values(PROJECTILE_KIND));
 const CREATURE_MAX = Math.max(...Object.values(CREATURE));
 const CREATURE_ATTACK_STATE_MAX = Math.max(...Object.values(CREATURE_ATTACK_STATE));
 const MAX_SNAPSHOT_PLAYERS = 64;
+const MAX_SHIELD_HEALTH = 200;
 export const ITEM_FIELDS = STRIDES.itemSnapshot;      // [id,kind,material,count,x,y,life,plantType] per item
 export const CREATURE_FIELDS = STRIDES.creatureSnapshot;
 export const PROJECTILE_FIELDS = STRIDES.projectileSnapshot;
@@ -101,6 +102,9 @@ export function makeSnapshot(tick, players, hash = null) {
       bowCharge: Number.isFinite(p.bowCharge) ? p.bowCharge : 0, heldItemKind: p.heldItemKind | 0,
       jetpackFuel: Number.isFinite(p.jetpackFuel) ? p.jetpackFuel : 1,
       jetpackActive: p.jetpackActive ? 1 : 0,
+      shieldHealth: Number.isFinite(p.shieldHealth)
+        ? Math.max(0, Math.min(MAX_SHIELD_HEALTH, Math.trunc(p.shieldHealth))) : MAX_SHIELD_HEALTH,
+      shieldActive: p.shieldActive ? 1 : 0,
       aimX: Number.isFinite(p.aimX) ? p.aimX : 0, aimY: Number.isFinite(p.aimY) ? p.aimY : 0,
     })),
   };
@@ -164,6 +168,7 @@ export function makeCreatures(tick, creatures) {
     data[o + O.attackProgress] = Number.isFinite(c.attackProgress) ? c.attackProgress : 0;
     data[o + O.aimX] = Number.isFinite(c.aimX) ? c.aimX : c.x;
     data[o + O.aimY] = Number.isFinite(c.aimY) ? c.aimY : c.y;
+    data[o + O.spawnProgress] = Number.isFinite(c.spawnProgress) ? c.spawnProgress : 0;
   }
   return { t: MSG.CREATURES, tick: Math.trunc(tick), data };
 }
@@ -265,9 +270,12 @@ function validateCreatures(m) {
   const O = OFF.creatureSnapshot;
   for (let i = 0; i < m.data.length; i++) {
     const f = i % CREATURE_FIELDS;
-    if (f === O.x || f === O.y || f === O.vx || f === O.vy || f === O.attackProgress || f === O.aimX || f === O.aimY) {
+    if (f === O.x || f === O.y || f === O.vx || f === O.vy ||
+        f === O.attackProgress || f === O.aimX || f === O.aimY ||
+        f === O.spawnProgress) {
       if (!isFiniteNum(m.data[i])) return null;
-      if (f === O.attackProgress && (m.data[i] < 0 || m.data[i] > 1)) return null;
+      if ((f === O.attackProgress || f === O.spawnProgress) &&
+          (m.data[i] < 0 || m.data[i] > 1)) return null;
     }
     else if (!isInt(m.data[i])) return null;
     else if (f === O.species && (m.data[i] < 0 || m.data[i] > CREATURE_MAX)) return null;
@@ -349,6 +357,7 @@ function validateSnapshot(m) {
     if (!isNonNegInt(p.animState) || !isNonNegInt(p.animFrame) || !isNonNegInt(p.deathTicks) || !isBit(p.respawnReady)) return null;
     if (!isFiniteNum(p.bowCharge) || p.bowCharge < 0 || p.bowCharge > 1 || !isNonNegInt(p.heldItemKind) || p.heldItemKind > ITEM_KIND_MAX) return null;
     if (!isFiniteNum(p.jetpackFuel) || p.jetpackFuel < 0 || p.jetpackFuel > 1 || !isBit(p.jetpackActive)) return null;
+    if (!isNonNegInt(p.shieldHealth) || p.shieldHealth > MAX_SHIELD_HEALTH || !isBit(p.shieldActive)) return null;
     if (!isFiniteNum(p.aimX) || !isFiniteNum(p.aimY)) return null;
   }
   return m;

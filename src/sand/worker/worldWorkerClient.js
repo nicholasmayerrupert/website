@@ -2,6 +2,7 @@ import WorldWorker from './worldWorkerConstructor.js';
 import { Predictor } from '../net/predict.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
+import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
 
 export function createWorldWorkerClient(ctx) {
   let worker = new WorldWorker();
@@ -30,6 +31,7 @@ export function createWorldWorkerClient(ctx) {
   let mineProgress = 0;
   let mineTarget = null;
   let actionCount = 0;
+  let appliedEpoch = 0;
   let state = {
     ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
     resizePending: false, resizeControlsSent: 0, controlWorldX: 0, controlWorldY: 0,
@@ -38,6 +40,10 @@ export function createWorldWorkerClient(ctx) {
   const handleMessage = ({ data }) => {
     if (!data) return;
     if (data.type === 'full' || data.type === 'diff') {
+      if ((data.epoch | 0) < appliedEpoch) {
+        worker.postMessage({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
+        return;
+      }
       // Runtime zoom can emit many buffer sizes in quick succession. While the
       // worker is catching up, discard packets from its old-sized world; applying
       // them to the already-resized render mirror is both stale and expensive.
@@ -46,8 +52,15 @@ export function createWorldWorkerClient(ctx) {
         return;
       }
       if (awaitingResizeId && data.type === 'full') awaitingResizeId = 0;
-      // A full snapshot supersedes an obsolete diff during resize/streaming.
-      if (!pending || data.type === 'full' || data.epoch >= pending.epoch) pending = data;
+      // A full snapshot establishes an epoch. Never let a diff for a future
+      // frame replace it before the browser has applied that coordinate frame.
+      if (data.type === 'diff' && data.epoch !== appliedEpoch) {
+        worker.postMessage({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
+        return;
+      }
+      if (!pending || data.epoch > pending.epoch ||
+          (data.type === 'full' && data.epoch >= pending.epoch) ||
+          (data.type === 'diff' && pending.type !== 'full' && data.sequence >= pending.sequence)) pending = data;
       state = {
         ...state, ...data.perf, ready: true, worldTick: data.worldTick || state.worldTick,
         worldTps: data.perf?.worldTps || state.worldTps,
@@ -59,20 +72,23 @@ export function createWorldWorkerClient(ctx) {
       destroyTimer = 0;
       worker.terminate();
     } else if (data.type === 'draft') {
-      pendingDraft = data;
+      if (!data.epoch || data.epoch >= appliedEpoch) pendingDraft = data;
     } else if (data.type === 'creatures') {
-      pendingCreatures = data;
+      if (!data.epoch || data.epoch >= appliedEpoch) pendingCreatures = data;
     } else if (data.type === 'actors') {
+      if (data.epoch && data.epoch < appliedEpoch) return;
+      if (pendingActors?.epoch && data.epoch < pendingActors.epoch) return;
       // Actor poses are latest-wins, but revision-gated inventory/items must
       // survive if a newer pose packet arrives before the next browser frame.
+      const prior = pendingActors?.epoch === data.epoch ? pendingActors : null;
       pendingActors = {
         ...data,
-        inventory: data.inventory !== undefined ? data.inventory : pendingActors?.inventory,
-        cursor: data.inventory !== undefined ? data.cursor : pendingActors?.cursor,
-        items: data.items !== undefined ? data.items : pendingActors?.items,
+        inventory: data.inventory !== undefined ? data.inventory : prior?.inventory,
+        cursor: data.inventory !== undefined ? data.cursor : prior?.cursor,
+        items: data.items !== undefined ? data.items : prior?.items,
       };
     } else if (data.type === 'sounds') {
-      if (!data.epoch || data.epoch === state.epoch) pendingSounds.push(new Float32Array(data.data));
+      if (!data.epoch || data.epoch >= appliedEpoch) pendingSounds.push(new Float32Array(data.data));
     } else if (data.type === 'stats') {
       state = {
         ...state, ...data.perf, worldTick: data.worldTick ?? state.worldTick,
@@ -92,6 +108,22 @@ export function createWorldWorkerClient(ctx) {
     if (!e) return { worldX: 0, worldY: 0 };
     const aim = e.getAim();
     return { worldX: e.getWorldOffsetX() + aim.x, worldY: e.getWorldOffsetY() + aim.y };
+  };
+
+  const rebasePresentation = (oldOffsetX, oldOffsetY, newOffsetX, newOffsetY) => {
+    const dx = oldOffsetX - newOffsetX, dy = oldOffsetY - newOffsetY;
+    if (!dx && !dy) return;
+    const mapped = mapActorPacketToOffset({
+      worldOffsetX: oldOffsetX, worldOffsetY: oldOffsetY,
+      players, mineTarget,
+    }, newOffsetX, newOffsetY);
+    players = mapped.players || [];
+    mineTarget = mapped.mineTarget || null;
+    translatePackedPositions(items, STRIDES.itemSnapshot,
+      OFF.itemSnapshot.x, OFF.itemSnapshot.y, dx, dy);
+    translatePackedPositions(projectiles, STRIDES.projectileSnapshot,
+      OFF.projectileSnapshot.x, OFF.projectileSnapshot.y, dx, dy);
+    if (predictor && predictorEngine === ctx.engine) predictor.rebase(dx, dy);
   };
 
   const api = {
@@ -164,6 +196,12 @@ export function createWorldWorkerClient(ctx) {
     testCreatureRuntime(simulate, naturalSpawn = false) {
       worker.postMessage({ type: 'test-creature-runtime', simulate: !!simulate, naturalSpawn: !!naturalSpawn });
     },
+    testNaturalSpawn(species, salt = 0, forceBreach = false) {
+      worker.postMessage({
+        type: 'test-natural-spawn', species: species | 0, salt: salt | 0,
+        forceBreach: !!forceBreach,
+      });
+    },
     config(config) { worker.postMessage({ type: 'config', ...config }); },
     resize(cols, rows, worldCenter) {
       pending = null;
@@ -183,18 +221,6 @@ export function createWorldWorkerClient(ctx) {
     },
     applyPending() {
       let changed = false;
-      if (pendingDraft) {
-        const cells = new Int32Array(pendingDraft.data);
-        ctx.engine?.setMirrorDraft(cells, pendingDraft.material);
-        pendingDraft = null;
-        ctx.previewDirty = true;
-        changed = true;
-      }
-      if (pendingCreatures && ctx.engine) {
-        ctx.engine.setMirrorCreatures(new Float32Array(pendingCreatures.data), pendingCreatures.worldOffsetX, pendingCreatures.worldOffsetY);
-        pendingCreatures = null;
-        changed = true;
-      }
       if (pending && ctx.engine) {
         const packet = pending;
         pending = null;
@@ -202,8 +228,10 @@ export function createWorldWorkerClient(ctx) {
         const applyStarted = performance.now();
         if (packet.type === 'full') {
           const cam = ctx.engine.getCam();
-          const worldCamX = ctx.engine.getWorldOffsetX() + cam.x;
-          const worldCamY = ctx.engine.getWorldOffsetY() + cam.y;
+          const oldOffsetX = ctx.engine.getWorldOffsetX();
+          const oldOffsetY = ctx.engine.getWorldOffsetY();
+          const worldCamX = oldOffsetX + cam.x;
+          const worldCamY = oldOffsetY + cam.y;
           const containsView = worldCamX >= packet.worldOffsetX && worldCamY >= packet.worldOffsetY &&
             worldCamX + ctx.viewCols <= packet.worldOffsetX + packet.cols &&
             worldCamY + ctx.viewRows <= packet.worldOffsetY + packet.rows;
@@ -217,20 +245,52 @@ export function createWorldWorkerClient(ctx) {
             ctx.engine.applyWorldMirror(bytes, packet.worldOffsetX, packet.worldOffsetY);
             ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
             ctx.engine.setMirrorWorldTick(packet.worldTick);
+            rebasePresentation(oldOffsetX, oldOffsetY, packet.worldOffsetX, packet.worldOffsetY);
+            appliedEpoch = packet.epoch | 0;
             ctx.forceFullRender = true;
             changed = true;
           }
-        } else {
+        } else if ((packet.epoch | 0) === appliedEpoch) {
           ctx.engine.applyDiffMirror(bytes);
           ctx.engine.setMirrorWorldTick(packet.worldTick);
           changed = true;
+        } else {
+          state = { ...state, droppedWrongEpochDiffs: (state.droppedWrongEpochDiffs || 0) + 1 };
         }
         worker.postMessage({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
-        state = { ...state, mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length };
+        state = {
+          ...state, epoch: appliedEpoch,
+          mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length,
+        };
+      }
+      // Draft indices do not carry enough information to translate across
+      // frames, so apply only after their matching full world is installed.
+      if (pendingDraft && (!pendingDraft.epoch || pendingDraft.epoch <= appliedEpoch)) {
+        if (!pendingDraft.epoch || pendingDraft.epoch === appliedEpoch) {
+          const cells = new Int32Array(pendingDraft.data);
+          ctx.engine?.setMirrorDraft(cells, pendingDraft.material);
+          ctx.previewDirty = true;
+          changed = true;
+        }
+        pendingDraft = null;
+      }
+      if (pendingCreatures && ctx.engine) {
+        if (!pendingCreatures.epoch || pendingCreatures.epoch >= appliedEpoch) {
+          ctx.engine.setMirrorCreatures(
+            new Float32Array(pendingCreatures.data),
+            pendingCreatures.worldOffsetX, pendingCreatures.worldOffsetY,
+          );
+          changed = true;
+        }
+        pendingCreatures = null;
       }
       if (pendingActors && ctx.engine) {
-        const packet = pendingActors;
+        const rawPacket = pendingActors;
         pendingActors = null;
+        if (rawPacket.epoch && rawPacket.epoch < appliedEpoch) return changed;
+        const packet = mapActorPacketToOffset(
+          rawPacket, ctx.engine.getWorldOffsetX(), ctx.engine.getWorldOffsetY(),
+        );
         authoritativePlayerId = packet.localPlayerId | 0;
         players = packet.players || [];
         const own = players.find((p) => p.id === authoritativePlayerId) || null;
@@ -298,6 +358,7 @@ export function createWorldWorkerClient(ctx) {
       const own = this.getOwnPlayer();
       return players.filter((p) => p.active !== false).map((p) => p.id === authoritativePlayerId && own ? own : p);
     },
+    advancePresentation() { predictor?.advanceRenderSmoothing(); },
     getItemsForRender() { return items; },
     getProjectilesForRender() { return projectiles; },
     getInventory() { return inventory; },
@@ -348,6 +409,7 @@ export function createWorldWorkerClient(ctx) {
     pendingSounds = [];
     predictor = predictorEngine = null;
     predictorPlayerId = authoritativePlayerId = 0;
+    appliedEpoch = 0;
     players = []; inventory = cursor = null; items = new Float32Array(0); projectiles = new Float32Array(0);
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
     ctx.localPlayerId = 0;

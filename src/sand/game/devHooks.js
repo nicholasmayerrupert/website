@@ -178,6 +178,9 @@ export function installDevHooks(ctx, {
       engine()?.setCreatureRuntime(!!simulate, !!naturalSpawn);
       ctx.worldWorker?.testCreatureRuntime(!!simulate, !!naturalSpawn);
     },
+    spawnNatural(species, salt = 0, forceBreach = false) {
+      ctx.worldWorker?.testNaturalSpawn(species | 0, salt | 0, !!forceBreach);
+    },
     flushAuthorityControl() { ctx.worldWorker?.updateControl(); },
     paintWorker(material, x, y, radius = 8) { ctx.worldWorker?.testPaintDisc(material, x, y, radius); },
     seedWorkerReaction(material, cap = 600, phase = 0) { ctx.worldWorker?.testSeedReaction(material, cap, phase); },

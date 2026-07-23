@@ -76,9 +76,16 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const worldBytes = Uint8Array.from([4, 0, 0, 0, 0, 4, 0, 0, 0, 0]);
   const engine = {
     cols: 2, rows: 2, mirrorApplies: 0, mirrorTick: -1,
-    applyWorldMirror() { this.mirrorApplies++; },
+    offX: 0, offY: 0, cam: { x: 0, y: 0 },
+    applyWorldMirror(_bytes, x = 0, y = 0) {
+      this.mirrorApplies++; this.offX = x; this.offY = y;
+    },
     applyDiffMirror() {},
     setMirrorWorldTick(t) { this.mirrorTick = t; },
+    getWorldOffsetX() { return this.offX; },
+    getWorldOffsetY() { return this.offY; },
+    getCam() { return { ...this.cam }; },
+    cameraSet(x, y) { this.cam = { x, y }; },
     gridHash() { return 123; },
     resetDirty() {},
   };
@@ -103,10 +110,89 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   await net.joinRoom('ws://test', 'main');
   check('join waits for authoritative assignment', net.ownPlayerId === 7);
   check('join applies initial world through mirror API', net.worldReady && engine.mirrorApplies === 1 && engine.mirrorTick === 3);
+  socket.onmessage({ data: encode(makeSnapshot(4, [{
+    id: 8, x: 1, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 0, animState: 0, animFrame: 0,
+    aimX: 8, aimY: 1, shieldHealth: 83, shieldActive: true,
+  }])) });
+  net.update();
+  const wardRemote = net.getPlayersForRender().find((p) => p.id === 8);
+  check('multiplayer client preserves remote ward state for presentation',
+    wardRemote?.shieldHealth === 83 && wardRemote.shieldActive === true);
+
+  // A shift can occur while the presentation is paused. Quarantine its
+  // buffer-local actors until the replacement WORLD arrives, then accept only
+  // actor packets ordered after that WORLD.
+  const remoteWorldX = engine.offX + wardRemote.x;
+  net.setPaused(true);
+  socket.onmessage({ data: encode(makeWorld(5, 2, 2, 123, bytesToB64(worldBytes), 128, 0)) });
+  socket.onmessage({ data: encode(makeSnapshot(5, [{
+    id: 8, x: -127, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 1, animState: 0, animFrame: 0,
+    aimX: -120, aimY: 1,
+  }])) });
+  net.setPaused(false);
+  net.update();
+  const quarantined = net.getPlayersForRender().find((p) => p.id === 8);
+  check('shifted actors stay quarantined while resync WORLD is pending',
+    engine.offX === 0 && quarantined.x === wardRemote.x);
+  socket.onmessage({ data: encode(makeWorld(6, 2, 2, 123, bytesToB64(worldBytes), 128, 0)) });
+  socket.onmessage({ data: encode(makeSnapshot(6, [{
+    id: 8, x: -127, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 2, animState: 0, animFrame: 0,
+    aimX: -120, aimY: 1,
+  }])) });
+  net.update();
+  const shiftedRemote = net.getPlayersForRender().find((p) => p.id === 8);
+  check('WORLD then shifted snapshot preserves the remote world position',
+    engine.offX === 128 && Math.abs(engine.offX + shiftedRemote.x - remoteWorldX) < 1e-6);
+
+  // Two full shifts can overtake one slow presentation tick. The actor packet
+  // between them belongs to the first new frame and must be discarded when the
+  // second WORLD supersedes it.
+  socket.onmessage({ data: encode(makeWorld(7, 2, 2, 123, bytesToB64(worldBytes), 256, 0)) });
+  socket.onmessage({ data: encode(makeSnapshot(7, [{
+    id: 8, x: -255, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 3, animState: 0, animFrame: 0,
+    aimX: -248, aimY: 1,
+  }])) });
+  socket.onmessage({ data: encode(makeWorld(8, 2, 2, 123, bytesToB64(worldBytes), 384, 0)) });
+  net.update();
+  const twiceShiftedRemote = net.getPlayersForRender().find((p) => p.id === 8);
+  check('a second queued WORLD discards actors from the superseded frame',
+    engine.offX === 384 && Math.abs(engine.offX + twiceShiftedRemote.x - remoteWorldX) < 1e-6);
+
+  // A rejected WORLD never establishes its advertised coordinate frame. Actor
+  // packets ordered after it must wait for the requested valid replacement.
+  socket.onmessage({
+    data: encode(makeWorld(9, 2, 2, 123, bytesToB64(Uint8Array.of(0)), 512, 0)),
+  });
+  socket.onmessage({ data: encode(makeSnapshot(9, [{
+    id: 8, x: -511, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 4, animState: 0, animFrame: 0,
+    aimX: -504, aimY: 1,
+  }])) });
+  net.update();
+  const afterRejectedWorld = net.getPlayersForRender().find((p) => p.id === 8);
+  check('actors after a rejected WORLD remain quarantined in the installed frame',
+    engine.offX === 384 && Math.abs(engine.offX + afterRejectedWorld.x - remoteWorldX) < 1e-6);
+  socket.onmessage({ data: encode(makeWorld(10, 2, 2, 123, bytesToB64(worldBytes), 512, 0)) });
+  socket.onmessage({ data: encode(makeSnapshot(10, [{
+    id: 8, x: -511, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 5, animState: 0, animFrame: 0,
+    aimX: -504, aimY: 1,
+  }])) });
+  net.update();
+  const afterReplacementWorld = net.getPlayersForRender().find((p) => p.id === 8);
+  check('valid replacement WORLD resumes actors without changing world position',
+    engine.offX === 512 && Math.abs(engine.offX + afterReplacementWorld.x - remoteWorldX) < 1e-6);
+
+  const resyncsBeforePressure = socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length;
   net.setPaused(true);
   for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeDiff(4 + i, 123, 'AAAAAA==')) });
   net.setPaused(false);
-  check('paused diff backlog requests one full resync', socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length === 1);
+  check('paused diff backlog requests one full resync',
+    socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length === resyncsBeforePressure + 1);
   socket.onmessage({ data: encode(makeCursor(5, 7, { material: 1, isTool: false, toolClass: 0, toolTier: 0, count: 2, plantType: 0, itemKind: 0 })) });
   for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeSounds(6 + i, [])) });
   net.update();
@@ -118,10 +204,10 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 1. input message round trip.
 {
   console.log('input round trip');
-  const m = makeInput({ room: 'r1', client: 7, player: 3, tick: 42, seq: 5, bits: INPUT.RIGHT | INPUT.JUMP | INPUT.JETPACK, aimX: 120, aimY: -8, tool: 6 });
+  const m = makeInput({ room: 'r1', client: 7, player: 3, tick: 42, seq: 5, bits: INPUT.RIGHT | INPUT.JUMP | INPUT.JETPACK | INPUT.SHIELD, aimX: 120, aimY: -8, tool: 6 });
   const d = rt(m);
   check('decodes to input', d && d.t === MSG.INPUT);
-  check('fields preserved', d && d.room === 'r1' && d.client === 7 && d.player === 3 && d.tick === 42 && d.seq === 5 && d.bits === (INPUT.RIGHT | INPUT.JUMP | INPUT.JETPACK) && d.aimX === 120 && d.aimY === -8 && d.tool === 6);
+  check('fields preserved', d && d.room === 'r1' && d.client === 7 && d.player === 3 && d.tick === 42 && d.seq === 5 && d.bits === (INPUT.RIGHT | INPUT.JUMP | INPUT.JETPACK | INPUT.SHIELD) && d.aimX === 120 && d.aimY === -8 && d.tool === 6);
   const analog = rt(makeInput({ room: 'r1', client: 7, player: 3, tick: 43, seq: 6, bits: INPUT.RIGHT, aimX: 0, aimY: 0, tool: 0, moveX: 0.3, moveY: -0.4 }));
   check('analog vector preserved', analog && analog.moveX === 0.3 && analog.moveY === -0.4);
 }
@@ -130,7 +216,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('snapshot round trip');
   const players = [
-    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN, jetpackFuel: 0.625, jetpackActive: true, aimX: -12.5, aimY: 44.75 },
+    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN, jetpackFuel: 0.625, jetpackActive: true, shieldHealth: 137, shieldActive: true, aimX: -12.5, aimY: 44.75 },
     { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, alive: true, inputSeq: 0, animState: 0, animFrame: 1, aimX: 37, aimY: 8 },
   ];
   const d = rt(makeSnapshot(123, players, 0xdeadbeef));
@@ -143,6 +229,9 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('held item kind preserved', d && d.players[0].heldItemKind === ITEM_KIND.BLAST_GUN);
   check('jetpack state preserved', d && d.players[0].jetpackFuel === 0.625 && d.players[0].jetpackActive === 1
     && d.players[1].jetpackFuel === 1 && d.players[1].jetpackActive === 0);
+  check('ward state preserved and defaults safely',
+    d && d.players[0].shieldHealth === 137 && d.players[0].shieldActive === 1
+      && d.players[1].shieldHealth === 200 && d.players[1].shieldActive === 0);
   check('player aim preserved', d && d.players[0].aimX === -12.5 && d.players[0].aimY === 44.75
     && d.players[1].aimX === 37 && d.players[1].aimY === 8);
 }
@@ -187,6 +276,15 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const badJetpackActive = makeSnapshot(1, [validPlayer]);
   badJetpackActive.players[0].jetpackActive = 2;
   check('snapshot non-bit jetpack activity rejected', decode(JSON.stringify(badJetpackActive)) === null);
+  const missingShieldHealth = makeSnapshot(1, [validPlayer]);
+  delete missingShieldHealth.players[0].shieldHealth;
+  check('snapshot missing ward health rejected', decode(JSON.stringify(missingShieldHealth)) === null);
+  const badShieldHealth = makeSnapshot(1, [validPlayer]);
+  badShieldHealth.players[0].shieldHealth = 201;
+  check('snapshot over-full ward rejected', decode(JSON.stringify(badShieldHealth)) === null);
+  const badShieldActive = makeSnapshot(1, [validPlayer]);
+  badShieldActive.players[0].shieldActive = 2;
+  check('snapshot non-bit ward activity rejected', decode(JSON.stringify(badShieldActive)) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);
   check('viewport cannot exceed its buffer', rt(makeView('r', 'c', 200, 100, 100, 100)) === null);
   check('viewport buffer cell cap enforced', rt(makeView('r', 'c', 100, 100, 4000, 4000)) === null);

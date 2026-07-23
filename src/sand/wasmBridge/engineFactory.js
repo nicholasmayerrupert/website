@@ -298,6 +298,8 @@ export function initSandWasm() {
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
         itemSnapshotPtr: c('engine_item_snapshot_ptr', 'number', ['number']),
         spawnCreature: c('engine_spawn_creature', 'number', ['number', 'number', 'number', 'number']),
+        testSpawnNearFocus: c('engine_test_spawn_near_focus', 'number', ['number', 'number', 'number']),
+        testSpawnBreachNearFocus: c('engine_test_spawn_breach_near_focus', 'number', ['number', 'number', 'number']),
         damageCreatures: c('engine_damage_creatures', 'number', ['number', 'number', 'number', 'number', 'number']),
         creatureCount: c('engine_creature_count', 'number', ['number']),
         creatureSnapshot: c('engine_creature_snapshot', 'number', ['number']),
@@ -501,6 +503,7 @@ const renderStrides = Object.freeze({
     out.deathTicks = f[o + P.deathTicks] | 0; out.respawnReady = f[o + P.respawnReady] === 1;
     out.bowCharge = f[o + P.bowCharge]; out.heldItemKind = f[o + P.heldItemKind] | 0;
     out.jetpackFuel = f[o + P.jetpackFuel]; out.jetpackActive = f[o + P.jetpackActive] === 1;
+    out.shieldHealth = f[o + P.shieldHealth] | 0; out.shieldActive = f[o + P.shieldActive] === 1;
     return out;
   };
 
@@ -903,6 +906,12 @@ const renderStrides = Object.freeze({
     spawnItem(material, count, px, py, vx = 0, vy = 0) { return M.spawnItem(ptr, material | 0, count | 0, px, py, vx, vy); },
     itemCount() { return M.itemCount(ptr); },
     spawnCreature(species, worldX, worldY) { return M.spawnCreature(ptr, species | 0, worldX, worldY); },
+    _testSpawnNearFocus(species, salt = 0) {
+      return M.testSpawnNearFocus(ptr, species | 0, salt | 0) === 1;
+    },
+    _testSpawnBreachNearFocus(species, salt = 0) {
+      return M.testSpawnBreachNearFocus(ptr, species | 0, salt | 0) === 1;
+    },
     damageCreatures(x, y, radius, damage) { return M.damageCreatures(ptr, x | 0, y | 0, radius | 0, damage | 0) === 1; },
     creatureCount() { return M.creatureCount(ptr); },
 
@@ -1043,6 +1052,7 @@ const renderStrides = Object.freeze({
           alive: f[o + O.alive] === 1, animFrame: f[o + O.animFrame] | 0,
           attackState: f[o + O.attackState] | 0, attackProgress: f[o + O.attackProgress],
           aimX: f[o + O.aimX], aimY: f[o + O.aimY],
+          spawnProgress: f[o + O.spawnProgress],
         };
       }
       return out;

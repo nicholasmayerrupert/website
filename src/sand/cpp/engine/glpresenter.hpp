@@ -121,10 +121,12 @@ class GLPresenter {
   void glDrawHitbox(double px, double py, int w, int h, float r, float g, float b, int camCol, int camRow);
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
   float glActorLight(double px, double py, int w, int h) const;
+  void glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
+                  int shieldHealth, bool shieldActive, int camCol, int camRow);
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
-                     double jetpackFuel, bool jetpackActive, bool own, float light,
-                     int camCol, int camRow);
+                     double jetpackFuel, bool jetpackActive, int shieldHealth,
+                     bool shieldActive, bool own, float light, int camCol, int camRow);
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
                    int camCol, int camRow);
@@ -132,7 +134,8 @@ class GLPresenter {
   void glDrawProjectiles();
   void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,
                          int alive, int animFrame, int attackState, double attackProgress,
-                         double aimX, double aimY, float light, int camCol, int camRow);
+                         double aimX, double aimY, double spawnProgress, float light,
+                         int camCol, int camRow);
   void glDrawCreatures();
   void glDrawPreview();
   void glPresentWindow(int forceFull);

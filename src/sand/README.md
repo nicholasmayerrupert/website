@@ -146,10 +146,13 @@ mini-dynamites; and minigunners commit their aim before saturating that line wit
 long bursts of rapid, pinprick explosive rounds.
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
-the articulated player animation, an airborne rechargeable jetpack, and safe
-original-spawn respawning remain authoritative in the engine. The rendered
+the articulated player animation, an airborne rechargeable jetpack, and
+immediate manual respawning at a safe original-spawn location remain
+authoritative in the engine. The rendered
 jetpack exposes its fuel level and animates twin thrust plumes without changing
-that authority. Mining, material pickups,
+that authority. Holding `F` raises a cursor-facing 120-degree ward with 200
+durability; directional hits drain the ward instead of player health, and its
+meter quickly recharges after combat. Mining, material pickups,
 block placement, the 36-slot inventory, 1x1–10x10 tool-size presets (10x10 by
 default), and crafting remain
 part of survival: defeated demolition crews can also drop their weapons into
@@ -158,7 +161,7 @@ beams, acid mortars 20 shells, cluster launchers 15 carriers, and miniguns 250
 rounds. Picking up a duplicate weapon merges its full ammo load into the existing
 weapon, while the bound starter blast gun remains unlimited. The starting
 universal dig tool cuts ordinary terrain at
-roughly ten times its previous rate without accelerating bare hands or crafted
+roughly thirteen times its previous rate without accelerating bare hands or crafted
 material-specific picks.
 
 Projectile kind, fuse, and rotation plus creature attack state, progress, and
@@ -172,6 +175,10 @@ creatures hibernate, natural populations are capped locally and globally, and
 explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
 crawlers, moles, and birds are currently retired from natural spawning but remain
 available through their creative eggs.
+Survival encounters spend a shared deterministic threat budget at a paced
+two-second cadence: habitat-valid entries beyond the real viewport margin are
+preferred, while an audible, replicated 0.9–1.4 second breach portal telegraphs
+the visible fallback before its reserved enemy becomes active.
 
 ### Controls
 
@@ -182,6 +189,7 @@ available through their creative eggs.
 | `Space` | Jump, then hold for rechargeable jetpack thrust | Pan up |
 | `S`, `↓` | Crouch/down | Pan down |
 | `Shift` | Run | — |
+| `F` | Hold a 120-degree directional ward | — |
 | `1`–`9`, wheel | Select hotbar | — |
 | `E` | Inventory/crafting | — |
 | `Q` | Placement/mining footprint | — |

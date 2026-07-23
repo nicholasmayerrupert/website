@@ -409,7 +409,7 @@ void ProjectileSystem::updateProjectiles() {
       double ny = std::max(player.py, std::min(py, player.py + player.h));
       double dx = px - nx, dy = py - ny;
       if (dx * dx + dy * dy > r2) continue;
-      E.psys.damagePlayer(player, damage, 16);
+      E.psys.damagePlayer(player, damage, 16, px, py);
       if (launch) {
         double dir = player.px + player.w * .5 >= px ? 1.0 : -1.0;
         player.vx += dir * .72;
@@ -519,7 +519,7 @@ void ProjectileSystem::updateProjectiles() {
     double impulse = .22 + .38 * falloff;
     owner->vx += centerDx / centerDistance * impulse;
     owner->vy += centerDy / centerDistance * impulse - impulse * .12;
-    E.psys.damagePlayer(*owner, damage, 10);
+    E.psys.damagePlayer(*owner, damage, 10, round.px, round.py);
   };
 
   size_t write = 0;

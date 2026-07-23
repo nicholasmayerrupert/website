@@ -11,6 +11,8 @@ export class Predictor {
     // render smoothing: a decaying offset applied to the predicted state so a
     // correction is eased in rather than snapped.
     this.smoothX = 0; this.smoothY = 0;
+    this.currentInput = null;
+    this.currentInputSeq = 0;
   }
 
   // Apply one local input and predict forward immediately.
@@ -18,6 +20,31 @@ export class Predictor {
     this.engine.setPlayerInput(this.id, { ...input, seq });
     this.engine.stepPlayerOnly(this.id);
     this.pending.push({ seq, input });
+    this.currentInput = input;
+    this.currentInputSeq = seq;
+  }
+
+  // Translate prediction into a new buffer-local coordinate frame while
+  // retaining unacknowledged inputs and correction smoothing. `dx`/`dy` are the
+  // direct translation applied to local coordinates (normally oldOffset-newOffset).
+  rebase(dx, dy) {
+    if ((!dx && !dy) || !Number.isFinite(dx) || !Number.isFinite(dy)) return false;
+    const state = this.state();
+    if (!state) return false;
+    const mapInput = (input) => ({
+      ...input,
+      aimX: Number.isFinite(input?.aimX) ? input.aimX + dx : input?.aimX,
+      aimY: Number.isFinite(input?.aimY) ? input.aimY + dy : input?.aimY,
+    });
+    this.pending = this.pending.map(({ seq, input }) => ({ seq, input: mapInput(input) }));
+    if (this.currentInput) this.currentInput = mapInput(this.currentInput);
+    this.engine.setPlayerState(this.id, { ...state, x: state.x + dx, y: state.y + dy });
+    // setPlayerState intentionally owns only physics fields. Restore the latest
+    // translated aim/input too, so held tools remain pointed at the same world cell.
+    if (this.currentInput) {
+      this.engine.setPlayerInput(this.id, { ...this.currentInput, seq: this.currentInputSeq });
+    }
+    return true;
   }
 
   // Authoritative correction: `authState` is the host's state for our player and
@@ -47,15 +74,25 @@ export class Predictor {
   // Authoritative state of the predicted player.
   state() { return this.engine.getPlayer(this.id); }
 
-  // Render state with the correction error eased in (call once per frame). Hard
-  // snaps when the error is large so it never lags far behind the truth.
-  renderState(snapThreshold = 16, ease = 0.25) {
-    const s = this.state();
-    if (!s) return null;
-    if (Math.hypot(this.smoothX, this.smoothY) > snapThreshold) { this.smoothX = 0; this.smoothY = 0; }
+  // Advance correction easing exactly once per presentation frame. Keeping this
+  // separate from renderState() makes camera, audio, HUD, and sprite reads agree
+  // even when they all sample the player during one RAF.
+  advanceRenderSmoothing(snapThreshold = 16, ease = 0.25) {
+    if (Math.hypot(this.smoothX, this.smoothY) > snapThreshold) {
+      this.smoothX = 0; this.smoothY = 0;
+      return;
+    }
     this.smoothX *= (1 - ease); this.smoothY *= (1 - ease);
     if (Math.abs(this.smoothX) < 0.01) this.smoothX = 0;
     if (Math.abs(this.smoothY) < 0.01) this.smoothY = 0;
+  }
+
+  // Pure presentation read. A large correction renders authoritative truth
+  // immediately; advanceRenderSmoothing() clears that stale offset this frame.
+  renderState(snapThreshold = 16) {
+    const s = this.state();
+    if (!s) return null;
+    if (Math.hypot(this.smoothX, this.smoothY) > snapThreshold) return { ...s };
     return { ...s, x: s.x + this.smoothX, y: s.y + this.smoothY };
   }
 }

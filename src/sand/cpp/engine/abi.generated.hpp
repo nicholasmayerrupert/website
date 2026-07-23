@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 20;
+static const int ABI_VERSION = 21;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -32,8 +32,10 @@ enum PlayerSnapshotField : int {
   PS_HELD_ITEM_KIND = 22,
   PS_JETPACK_FUEL = 23,
   PS_JETPACK_ACTIVE = 24,
+  PS_SHIELD_HEALTH = 25,
+  PS_SHIELD_ACTIVE = 26,
 };
-static const int PS_STRIDE = 25;
+static const int PS_STRIDE = 27;
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier
 enum ItemSnapshotField : int {
@@ -52,7 +54,7 @@ enum ItemSnapshotField : int {
 };
 static const int IS_STRIDE = 12;
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -71,8 +73,9 @@ enum CreatureSnapshotField : int {
   CSN_ATTACK_PROGRESS = 14,
   CSN_AIM_X = 15,
   CSN_AIM_Y = 16,
+  CSN_SPAWN_PROGRESS = 17,
 };
-static const int CSN_STRIDE = 17;
+static const int CSN_STRIDE = 18;
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected
 enum InventorySlotField : int {
@@ -133,7 +136,7 @@ enum SurvivalFootprintField : int {
 };
 static const int FP_STRIDE = 6;
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -150,8 +153,10 @@ enum GlPlayerExtField : int {
   GLP_AIM_Y = 12,
   GLP_JETPACK_FUEL = 13,
   GLP_JETPACK_ACTIVE = 14,
+  GLP_SHIELD_HEALTH = 15,
+  GLP_SHIELD_ACTIVE = 16,
 };
-static const int GLP_STRIDE = 15;
+static const int GLP_STRIDE = 17;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -206,6 +211,7 @@ enum PlayerInput : int {
   PI_SECONDARY = 32,
   PI_RUN = 64,
   PI_JETPACK = 128,
+  PI_SHIELD = 256,
 };
 
 enum InventoryItemKind : uint8_t {
@@ -306,6 +312,9 @@ enum SoundEventType : uint8_t {
   SE_ACID_MORTAR = 22,
   SE_CLUSTER_LAUNCH = 23,
   SE_MINIGUN = 24,
+  SE_SHIELD_HIT = 25,
+  SE_SHIELD_BREAK = 26,
+  SE_SPAWN_BREACH = 27,
 };
 
 static const int INV_HOTBAR = 9;

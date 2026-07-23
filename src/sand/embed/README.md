@@ -84,6 +84,7 @@ the element instead.
 | `Space` | Jump, then hold for rechargeable jetpack thrust |
 | `S` / `↓` | Crouch / descend |
 | `Shift` | Run |
+| `F` | Hold a 120-degree directional ward |
 | Pointer | Aim |
 | Left mouse | Mine, place, or use selected weapon |
 | Right mouse | Use the alternate/background layer where supported |
@@ -104,6 +105,10 @@ npm run sand:server
 Browsers are pure clients in that mode. Server and client must currently share
 one authority window. The server expands and streams that window around the
 connected player group; widely separated players increase its simulation cost.
+
+The survival HUD exposes the player’s 100 health, rechargeable jetpack fuel, and
+200-point directional ward. Hold `F` while aiming to raise the ward across the
+120-degree sector in front of the player.
 
 ## Boundary Rules
 

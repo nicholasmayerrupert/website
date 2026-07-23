@@ -528,7 +528,7 @@ void ExplosivesSystem::damageActors(int cx, int cy, int radius, double power, in
     // value briefly so its common damage path applies exactly once.
     p.health = before;
     p.hurtCooldown = 0;
-    E.psys.damagePlayer(p, damage, 12);
+    E.psys.damagePlayer(p, damage, 12, blastX, blastY);
   }
 
   for (Creature& c : E.creatures.creatures) {

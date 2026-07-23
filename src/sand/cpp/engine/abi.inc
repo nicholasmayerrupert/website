@@ -173,6 +173,11 @@ EMSCRIPTEN_KEEPALIVE void engine_test_detonate_tnt(Engine* e, int cx, int cy) {
   e->useLayer(&e->fg);
   e->detonate(cx, cy, ExplosivesSystem::TNT_BLAST_RADIUS, ExplosivesSystem::TNT_BLAST_POWER);
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_damage_player(Engine* e, int id, int damage,
+                                                   double sourceX, double sourceY) {
+  Player* p = e->findPlayer(id);
+  return p ? e->psys.damagePlayer(*p, damage, 1, sourceX, sourceY) : 0;
+}
 // Read continuous body pose/motion for tests/tools: [px,py,angle,vx,vy,omega,nPts,maxR].
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
@@ -265,6 +270,18 @@ EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->item
 // Material-aware creatures. The spawn/damage entries are intentionally small
 // gameplay/test hooks; ordinary population is owned by CreatureSystem rules.
 EMSCRIPTEN_KEEPALIVE int engine_spawn_creature(Engine* e, int species, double worldX, double worldY) { return e->creatures.spawnCreature((uint8_t)species, worldX, worldY); }
+EMSCRIPTEN_KEEPALIVE int engine_test_spawn_near_focus(Engine* e, int species, int salt) {
+  if (species < 0 || species >= CS_COUNT) return 0;
+  return e->creatures.spawnNearFocus((uint8_t)species, (uint32_t)salt) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_spawn_breach_near_focus(Engine* e, int species, int salt) {
+  if (species < 0 || species >= CS_COUNT) return 0;
+  double wx = 0, wy = 0;
+  if (!e->creatures.findSpawnNearFocus((uint8_t)species, (uint32_t)salt,
+                                       false, wx, wy)) return 0;
+  return e->creatures.queueSpawnTelegraph((uint8_t)species, wx, wy,
+    (uint32_t)salt, e->creatures.encounterCost((uint8_t)species)) ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int radius, int damage) { return e->damageCreaturesAt(x, y, radius, damage) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_creature_snapshot(Engine* e) { return e->creatures.buildCreatureSnapshot(); }
@@ -284,6 +301,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.health = (int)in[CSN_HEALTH]; c.alive = in[CSN_ALIVE] != 0; c.animFrame = (uint8_t)in[CSN_ANIM_FRAME];
     c.attackState = (uint8_t)in[CSN_ATTACK_STATE]; c.attackProgress = in[CSN_ATTACK_PROGRESS];
     c.attackAimX = sourceOffsetX + in[CSN_AIM_X]; c.attackAimY = sourceOffsetY + in[CSN_AIM_Y];
+    c.spawnProgress = in[CSN_SPAWN_PROGRESS];
     e->creatures.creatures.push_back(c);
   }
 }

@@ -56,7 +56,7 @@ function world() {
 }
 
 // Environmental damage leads to a corpse state, drops the full inventory, and
-// requires the explicit three-second respawn gate.
+// makes manual respawn available immediately.
 {
   const e = world(); const p = e.spawnPlayer(40, FLOOR - 8);
   const firstSpawn = e.getPlayer(p);
@@ -77,9 +77,8 @@ function world() {
     && droppedItems.some((item) => item.itemKind === ITEM_KIND.MINING_TOOL && item.isTool)
     && !droppedItems.some((item) => item.itemKind === ITEM_KIND.BLAST_GUN)
     && e.getInventory(p).slots.every((s) => s.count === 0));
-  check('respawn is rejected before three seconds', e.respawnPlayer(p) === false);
-  for (let i = 0; i < 180; i++) e.stepActors();
-  check('respawn becomes ready after 180 actor ticks', e.getPlayer(p)?.respawnReady === true);
+  check('respawn is ready on the first dead snapshot',
+    dead?.deathTicks === 0 && dead.respawnReady === true);
   const accepted = e.respawnPlayer(p);
   const respawned = e.getPlayer(p);
   check('manual respawn restores health, play, gun, and wood mining tool',
@@ -131,9 +130,10 @@ function world() {
     e.stepActors();
   }
   check('streamed-away player can die far from home', e.getPlayer(p).alive === false);
-  for (let tick = 0; tick < 180; tick++) e.stepActors();
-  check('far respawn request is accepted without reviving out of bounds',
-    e.respawnPlayer(p) && e.getPlayer(p).alive === false);
+  const acceptedFar = e.respawnPlayer(p);
+  const pending = e.getPlayer(p);
+  check('far respawn request is accepted immediately without reviving out of bounds',
+    acceptedFar && pending.alive === false && pending.respawnReady === false);
   const dxHome = Math.trunc(home.x - born.x - e.getWorldOffsetX());
   e.shiftWorldXY(dxHome, 0);
   e.stepActors();

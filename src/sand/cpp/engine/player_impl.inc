@@ -281,6 +281,9 @@ bool PlayerSystem::respawnPlayer(Player& p) {
   p.deathTicks = 0; p.buriedTicks = 0; p.bowChargeTicks = 0; p.lastDamageTick = E.actorTick;
   p.respawnPending = false;
   p.jetpackFuel = 1.0; p.jetpackActive = false;
+  p.shieldHealth = P_SHIELD_MAX_HEALTH; p.shieldHurtCooldown = 0;
+  p.lastShieldDamageTick = -1000000;
+  p.shieldActive = false;
   p.hurtCooldown = 120;
   resetPlayerMine(p); p.placeStrokeActive = false; p.prevInput = p.input;
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
@@ -292,7 +295,7 @@ bool PlayerSystem::respawnPlayer(Player& p) {
 }
 bool PlayerSystem::requestRespawn(int id) {
   Player* p = findPlayer(id);
-  if (!p || p->alive || p->respawnPending || p->deathTicks < 180) return false;
+  if (!p || p->alive || p->respawnPending) return false;
   p->respawnPending = true;
   p->px = p->spawnWorldX - E.fg.worldOffsetX;
   p->py = p->spawnWorldY - E.fg.worldOffsetY;
@@ -304,20 +307,61 @@ bool PlayerSystem::requestRespawn(int id) {
 void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
-  p.respawnPending = false; p.jetpackActive = false;
+  p.respawnPending = false; p.jetpackActive = false; p.shieldActive = false;
   resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
   E.inv.dropAll(p);
   E.audio.emit(SE_DEATH, p.px + p.w * .5, p.py + p.h * .5, 1.0, EMPTY);
 }
-void PlayerSystem::damagePlayer(Player& p, int damage, int cooldown) {
-  if (!p.active || !p.alive || damage <= 0 || p.hurtCooldown > 0) return;
-  p.health -= damage; p.hurtCooldown = cooldown; p.lastDamageTick = E.actorTick;
-  E.audio.emit(SE_HURT, p.px + p.w * .5, p.py + p.h * .5, std::min(1.2, .45 + damage / 30.0), EMPTY);
+bool PlayerSystem::shieldCoversSource(const Player& p, double sourceX, double sourceY) const {
+  if (!p.shieldActive || p.shieldHealth <= 0 ||
+      !std::isfinite(sourceX) || !std::isfinite(sourceY)) return false;
+  double centreX = p.px + p.w * .5, centreY = p.py + p.h * .5;
+  double aimDx = p.aimX - centreX, aimDy = p.aimY - centreY;
+  double aimLength = std::hypot(aimDx, aimDy);
+  if (aimLength < 1e-6) { aimDx = p.facing; aimDy = 0; aimLength = 1; }
+  double sourceDx = sourceX - centreX, sourceDy = sourceY - centreY;
+  double sourceLength = std::hypot(sourceDx, sourceDy);
+  if (sourceLength < 1e-6) return false; // no meaningful incoming direction
+  double dot = aimDx * sourceDx + aimDy * sourceDy;
+  return dot + 1e-9 >= P_SHIELD_HALF_ARC_COS * aimLength * sourceLength;
+}
+int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
+                               double sourceX, double sourceY) {
+  if (!p.active || !p.alive || damage <= 0) return 0;
+  int remaining = damage;
+  if (shieldCoversSource(p, sourceX, sourceY)) {
+    if (p.shieldHurtCooldown > 0) return 0;
+    int shieldBefore = p.shieldHealth;
+    int absorbed = imin(p.shieldHealth, remaining);
+    p.shieldHealth -= absorbed;
+    p.lastShieldDamageTick = E.actorTick;
+    // Ward impacts use their own short immunity window. This
+    // preserves the intended "200 ward ~= twice 100 health" combat durability
+    // against high-rate explosive rounds without making the player's unguarded
+    // rear invulnerable after a frontal block.
+    p.shieldHurtCooldown = cooldown;
+    E.audio.emit(SE_SHIELD_HIT, p.px + p.w * .5, p.py + p.h * .5,
+                 std::min(1.2, .4 + absorbed / 40.0), EMPTY);
+    if (shieldBefore > 0 && p.shieldHealth <= 0)
+      E.audio.emit(SE_SHIELD_BREAK, p.px + p.w * .5, p.py + p.h * .5, 1.0, EMPTY);
+    remaining -= absorbed;
+    if (p.shieldHealth <= 0) p.shieldActive = false;
+    if (remaining <= 0) return 0;
+  }
+  if (p.hurtCooldown > 0) return 0;
+  p.health -= remaining; p.hurtCooldown = cooldown; p.lastDamageTick = E.actorTick;
+  E.audio.emit(SE_HURT, p.px + p.w * .5, p.py + p.h * .5, std::min(1.2, .45 + remaining / 30.0), EMPTY);
   if (p.health <= 0) killPlayer(p);
+  return remaining;
 }
 void PlayerSystem::updatePlayerVitals(Player& p) {
   if (!p.alive) { p.deathTicks++; return; }
+  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0;
+  if (p.shieldHealth < P_SHIELD_MAX_HEALTH &&
+      E.actorTick - p.lastShieldDamageTick >= P_SHIELD_RECHARGE_DELAY)
+    p.shieldHealth = imin(P_SHIELD_MAX_HEALTH,
+                          p.shieldHealth + P_SHIELD_RECHARGE_PER_TICK);
   int x0 = imax(0, (int)std::floor(p.px)), x1 = imin(E.cols - 1, (int)std::floor(p.px + p.w - 1e-6));
   int y0 = imax(0, (int)std::floor(p.py)), y1 = imin(E.rows - 1, (int)std::floor(p.py + p.h - 1e-6));
   int cells = 0, blocked = 0; bool fire = false, acid = false, lava = false;
@@ -388,6 +432,7 @@ double PlayerSystem::samplePlayerFluidCoverage(const Player& p) {
 
 void PlayerSystem::integratePlayer(Player& p) {
   if (!p.active) return;
+  p.shieldActive = (p.input & PI_SHIELD) != 0 && p.shieldHealth > 0;
   bool wasGrounded = p.grounded;
   bool left = (p.input & PI_LEFT) != 0, right = (p.input & PI_RIGHT) != 0;
   double moveX = p.analogInput ? p.inputX : ((right ? 1.0 : 0.0) - (left ? 1.0 : 0.0));
@@ -768,6 +813,7 @@ void PlayerSystem::updatePlayers() {
   for (auto& p : players) {
     if (p.active && !p.alive && p.respawnPending) respawnPlayer(p);
     if (p.hurtCooldown > 0) p.hurtCooldown--;
+    if (p.shieldHurtCooldown > 0) p.shieldHurtCooldown--;
     if (p.active && p.alive) integratePlayer(p);
     if (p.active) updatePlayerVitals(p);
   }
@@ -821,7 +867,7 @@ int PlayerSystem::buildPlayerSnapshot() {
     o[PS_ANIM_STATE] = (float)p.animState;
     o[PS_ANIM_FRAME] = (float)p.animFrame;
     o[PS_DEATH_TICKS] = (float)p.deathTicks;
-    o[PS_RESPAWN_READY] = (!p.alive && !p.respawnPending && p.deathTicks >= 180) ? 1.0f : 0.0f;
+    o[PS_RESPAWN_READY] = (!p.alive && !p.respawnPending) ? 1.0f : 0.0f;
     const InvSlot& held = p.inv[p.selectedSlot];
     double chargeMax = held.count > 0 && held.itemKind == IK_BORE_CANNON
       ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
@@ -829,6 +875,8 @@ int PlayerSystem::buildPlayerSnapshot() {
     o[PS_HELD_ITEM_KIND] = held.count > 0 ? (float)held.itemKind : (float)IK_MATERIAL;
     o[PS_JETPACK_FUEL] = (float)p.jetpackFuel;
     o[PS_JETPACK_ACTIVE] = p.jetpackActive ? 1.0f : 0.0f;
+    o[PS_SHIELD_HEALTH] = (float)p.shieldHealth;
+    o[PS_SHIELD_ACTIVE] = p.shieldActive ? 1.0f : 0.0f;
   }
   return (int)players.size();
 }

@@ -23,7 +23,8 @@ class ItemSystem {
   Player* magnetTarget(const Item& it);
   void ensureItemCapacity();
   int spawnItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType = PT_OAK);
-  int spawnStack(const InvSlot& stack, double px, double py, double vx, double vy, int pickupDelay = IT_PICKUP_DELAY);
+  int spawnStack(const InvSlot& stack, double px, double py, double vx, double vy,
+                 int pickupDelay = IT_PICKUP_DELAY, bool coagulate = true);
   int throwItem(uint8_t mat, int count, double px, double py, double vx, double vy, uint8_t plantType = PT_OAK);
   void spawnParticle(uint8_t mat, double px, double py, double vx, double vy, int life);
   void cullItems();

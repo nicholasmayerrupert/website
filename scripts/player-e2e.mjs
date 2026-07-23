@@ -460,7 +460,7 @@ try {
     const t = window.__sandTest, p = t.getPlayer(), inventory = t.getInventory();
     const canvas = document.querySelector('sand-game').shadowRoot.getElementById('sand-main');
     const bounds = canvas.getBoundingClientRect();
-    let point = null;
+    let point = null, cellX = 0, cellY = 0;
     for (const dy of [-2, -4, -6, 0, 2, 4, 6, -8, 8]) {
       for (const dx of [6, -6, 8, -8]) {
         const x = Math.floor(p.x + p.w / 2 + dx), y = Math.floor(p.y + p.h / 2 + dy);
@@ -469,14 +469,17 @@ try {
         const onCanvas = screen.vx > bounds.left + 8 && screen.vx < bounds.right - 8
           && screen.vy > bounds.top + 8 && screen.vy < bounds.bottom - 8;
         if (outsidePlayer && onCanvas && t.solidCount(x - 2, y - 2, x + 3, y + 3) === 0) {
-          point = screen;
+          point = screen; cellX = x; cellY = y;
           break;
         }
       }
       if (point) break;
     }
     if (!point) throw new Error('no empty in-reach patch for stone draft');
-    return { ...point, stone0: t.materialCountBoth(3), inventory0: inventory.slots[inventory.selected]?.count || 0 };
+    return {
+      ...point, cellX, cellY,
+      stone0: t.materialCountBoth(3), inventory0: inventory.slots[inventory.selected]?.count || 0,
+    };
   });
   await page.mouse.move(stoneAim.vx, stoneAim.vy);
   await page.mouse.down({ button: 'left' });
@@ -505,6 +508,35 @@ try {
     `release commits the connected stone draft (stone +${stoneResult.stone - stoneAim.stone0}, inventory ${stoneAim.inventory0} -> ${stoneResult.inventory})`,
     stoneResult.draft === 0 && (stoneResult.stone > stoneAim.stone0 || stoneResult.inventory < stoneAim.inventory0),
   );
+  // Mine that new patch with the starter tool. The local worker must present
+  // both the coagulated collectible and multiple independent cosmetic flecks.
+  await page.evaluate(() => window.__sandTest.selectSlot(1));
+  await page.waitForFunction(() => window.__sandTest.getInventory().selected === 1);
+  const itemActors0 = await page.evaluate(() => window.__sandNet.items());
+  const minePoint = await page.evaluate(({ x, y }) => {
+    const t = window.__sandTest;
+    for (let r = 0; r <= 8; r++) {
+      for (let oy = -r; oy <= r; oy++) {
+        for (let ox = -r; ox <= r; ox++) {
+          if (Math.max(Math.abs(ox), Math.abs(oy)) !== r) continue;
+          const cx = x + ox, cy = y + oy;
+          if (t.materialCount(3, cx, cy, cx + 1, cy + 1) > 0) {
+            return { ...window.__sandTestCellScreenPoint(cx, cy), cellX: cx, cellY: cy };
+          }
+        }
+      }
+    }
+    throw new Error('no committed stone cell found for mining presentation probe');
+  }, { x: stoneAim.cellX, y: stoneAim.cellY });
+  const debrisPromise = page.waitForFunction(
+    (before) => window.__sandNet.items() > before + 1, itemActors0, { timeout: 3000 },
+  ).then(() => true).catch(() => false);
+  await page.mouse.move(minePoint.vx, minePoint.vy);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForTimeout(700);
+  await page.mouse.up({ button: 'left' });
+  const debrisPresented = await debrisPromise;
+  check('local mining presents collectible and cosmetic debris actors at worker cadence', debrisPresented);
   await ensureAlive();
   await page.evaluate(() => window.__sandTest.selectSlot(0));
   await page.waitForFunction(() => window.__sandTest.getInventory().selected === 0);

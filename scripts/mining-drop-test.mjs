@@ -88,8 +88,10 @@ function mineBlob(mat, cls, tier, { hits = 200, placeR = 2 } = {}) {
   e.placeMaterial(60, 50, 5, MAT.PLANT);
   for (let i = 0; i < 200; i++) e.playerMine(id, 60, 50);
   const items = e.getItems();
-  const leafDrops = items.filter((it) => it.kind === 0 && it.material === MAT.PLANT).length;
-  const seedDrops = items.filter((it) => it.kind === 0 && it.material === MAT.SEED).length;
+  const leafDrops = items.filter((it) => it.kind === 0 && it.material === MAT.PLANT)
+    .reduce((count, it) => count + it.count, 0);
+  const seedDrops = items.filter((it) => it.kind === 0 && it.material === MAT.SEED)
+    .reduce((count, it) => count + it.count, 0);
   check(`dig-harvested leaves usually drop leaf items (${leafDrops})`, leafDrops > seedDrops);
   check(`dig-harvested leaves sometimes drop seeds (${seedDrops})`, seedDrops > 0);
   check('mined oak seeds retain their species', items.filter((it) => it.kind === 0 && it.material === MAT.SEED).every((it) => it.plantType === 0));

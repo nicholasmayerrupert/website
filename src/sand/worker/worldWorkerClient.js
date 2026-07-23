@@ -78,13 +78,14 @@ export function createWorldWorkerClient(ctx) {
     } else if (data.type === 'actors') {
       if (data.epoch && data.epoch < appliedEpoch) return;
       if (pendingActors?.epoch && data.epoch < pendingActors.epoch) return;
-      // Actor poses are latest-wins, but revision-gated inventory/items must
-      // survive if a newer pose packet arrives before the next browser frame.
+      // Actor poses are latest-wins, but sparse packet fields must survive if a
+      // newer pose arrives before the next browser frame.
       const prior = pendingActors?.epoch === data.epoch ? pendingActors : null;
       pendingActors = {
         ...data,
         inventory: data.inventory !== undefined ? data.inventory : prior?.inventory,
         cursor: data.inventory !== undefined ? data.cursor : prior?.cursor,
+        itemData: data.itemData !== undefined ? data.itemData : prior?.itemData,
         items: data.items !== undefined ? data.items : prior?.items,
       };
     } else if (data.type === 'sounds') {
@@ -291,8 +292,12 @@ export function createWorldWorkerClient(ctx) {
         const rawPacket = pendingActors;
         pendingActors = null;
         if (rawPacket.epoch && rawPacket.epoch < appliedEpoch) return changed;
+        const targetOffsetX = ctx.engine.getWorldOffsetX();
+        const targetOffsetY = ctx.engine.getWorldOffsetY();
+        const itemDx = (Number.isFinite(rawPacket.worldOffsetX) ? rawPacket.worldOffsetX : targetOffsetX) - targetOffsetX;
+        const itemDy = (Number.isFinite(rawPacket.worldOffsetY) ? rawPacket.worldOffsetY : targetOffsetY) - targetOffsetY;
         const packet = mapActorPacketToOffset(
-          rawPacket, ctx.engine.getWorldOffsetX(), ctx.engine.getWorldOffsetY(),
+          rawPacket, targetOffsetX, targetOffsetY,
         );
         authoritativePlayerId = packet.localPlayerId | 0;
         players = packet.players || [];
@@ -311,7 +316,11 @@ export function createWorldWorkerClient(ctx) {
         }
         if (packet.inventory !== undefined) { inventory = packet.inventory; inventoryDirty = true; }
         if (packet.cursor !== undefined) cursor = packet.cursor;
-        if (packet.items !== undefined) {
+        if (packet.itemData !== undefined) {
+          items = new Float32Array(packet.itemData);
+          translatePackedPositions(items, STRIDES.itemSnapshot,
+            OFF.itemSnapshot.x, OFF.itemSnapshot.y, itemDx, itemDy);
+        } else if (packet.items !== undefined) {
           const O = OFF.itemSnapshot;
           items = new Float32Array(packet.items.length * STRIDES.itemSnapshot);
           for (let i = 0; i < packet.items.length; i++) {

@@ -234,8 +234,9 @@ struct Contact {
 // A lightweight NON-GRID entity. IT_ITEM = a dropped material the player can pick
 // up; IT_PARTICLE = a short-lived fleck of mining debris (no pickup). Items fall
 // under gravity (slower in liquid), rest on the SURFACE of solids (never buried —
-// they rise out if covered), pass through each other (no stacking), and MAGNET
-// toward a nearby player. Pose is buffer-local cell coords like Player/Body, so a
+// they rise out if covered), and MAGNET toward a nearby player. Compatible
+// material drops coagulate when spawned close together; the remaining actors
+// pass through each other. Pose is buffer-local cell coords like Player/Body, so a
 // world shift remaps them by (dx,dy). Updated with NO rand(), so the sim RNG stream
 // stays byte-identical.
 enum ItemKind : uint8_t { IT_ITEM = 0, IT_PARTICLE = 1 };
@@ -253,6 +254,7 @@ static const int    IT_BOB_PERIOD = 70;      // render-only bob period (steps)
 static const double IT_THROW_SPEED = 1.7;    // horizontal throw speed (facing direction)
 static const double IT_THROW_UP = -0.9;      // upward kick on a throw
 static const int    IT_THROW_PICKUP_DELAY = 40; // a thrown item ignores the magnet this long
+static const double IT_COAGULATE_R = 4.0;    // nearby identical material drops share one stack actor
 static const int    IT_PARTICLE_LIFE = 24;   // default mining-debris lifetime (steps)
 static const int    IT_MAX_ITEMS = 1024;     // hard cap; oldest particle (then item) evicted
 // Item snapshot layout: IS_* offsets / IS_STRIDE in abi.generated.hpp.

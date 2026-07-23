@@ -134,6 +134,11 @@ are entities whose occupancy is stamped into the material grid.
 Players and other real-time actors advance on a deterministic 60 Hz actor clock;
 cellular world work is attempted at most once per presentation frame and does not
 accumulate catch-up debt.
+The offline worker transfers dropped items and cosmetic debris to the renderer as
+one packed buffer at actor cadence. Nearby identical collectible materials
+coagulate into normal inventory-sized stacks, while independent debris flecks
+remain short-lived and visual-only. Multiplayer continues to replicate only
+collectible items.
 
 `/game` is explosive survival. Players spawn with a lower-cadence automatic
 blast gun whose swept, high-velocity rounds detonate on the first liquid, solid,

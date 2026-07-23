@@ -210,7 +210,8 @@ export function installDevHooks(ctx, {
     players: () => playersForRender(),
     playerCount: () => playersForRender().length,
     ownPlayer: () => (ctx.netClientReady() ? ctx.net.getOwnPlayer() : localPlayer()),
-    // Dropped-item count from whichever authority currently owns the world.
+    // Presentation item-actor count. Offline includes cosmetic debris; the
+    // multiplayer transport intentionally contains collectible drops only.
     items: () => (ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || []).length / ITEM_FIELDS,
     ownInventory: () => (ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory() || null),
     ownCursor: () => (ctx.netClientReady() ? ctx.net.getOwnCursor() : ctx.worldWorker?.getCursor() || null),

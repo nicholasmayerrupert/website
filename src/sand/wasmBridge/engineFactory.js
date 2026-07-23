@@ -902,7 +902,8 @@ const renderStrides = Object.freeze({
     },
 
     // Dropped items (entities; physics owned by the engine). spawnItem returns
-    // the new item id. Cosmetic particles are a test hook (wasmBridge/testHooks.js).
+    // the receiving stack actor id. Cosmetic particles are a test hook
+    // (wasmBridge/testHooks.js).
     spawnItem(material, count, px, py, vx = 0, vy = 0) { return M.spawnItem(ptr, material | 0, count | 0, px, py, vx, vy); },
     itemCount() { return M.itemCount(ptr); },
     spawnCreature(species, worldX, worldY) { return M.spawnCreature(ptr, species | 0, worldX, worldY); },
@@ -1016,6 +1017,14 @@ const renderStrides = Object.freeze({
         out[i] = { id: f[o + O.id] | 0, kind: f[o + O.kind] | 0, material: f[o + O.material] | 0, count: f[o + O.count] | 0, x: f[o + O.x], y: f[o + O.y], life: f[o + O.life] | 0, plantType: f[o + O.plantType] | 0, itemKind: f[o + O.itemKind] | 0, isTool: f[o + O.isTool] === 1, toolClass: f[o + O.toolClass] | 0, toolTier: f[o + O.toolTier] | 0 };
       }
       return out;
+    },
+    // Local presentation uses one compact copy per actor tick. Unlike network
+    // item replication, this includes short-lived cosmetic debris.
+    getItemSnapshotData() {
+      const n = M.itemSnapshot(ptr); if (!n) return new Float32Array();
+      return Float32Array.from(new Float32Array(
+        mod.HEAPF32.buffer, M.itemSnapshotPtr(ptr), n * STRIDES.itemSnapshot,
+      ));
     },
     getProjectiles() {
       const n = M.projectileSnapshot(ptr); if (!n) return [];

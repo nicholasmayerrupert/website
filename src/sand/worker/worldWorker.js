@@ -38,7 +38,6 @@ let localPlayerId = 0;
 let latestInput = null;
 let actorClock = null;
 let lastInventoryHash = -1;
-let lastItemsActorTick = -6;
 
 function seedReactionInterface(material, cap, phase) {
   const grid = engine.getGrid(), cols = engine.cols, rows = engine.rows;
@@ -110,10 +109,12 @@ function postActors(force = false) {
   const inventoryChanged = force || inventoryHash !== lastInventoryHash;
   if (inventoryChanged) lastInventoryHash = inventoryHash;
   const actorTick = engine.getActorTick();
-  const itemsChanged = force || actorTick - lastItemsActorTick >= 6;
-  const items = itemsChanged ? engine.getItems().filter((item) => item.kind === 0) : undefined;
-  if (itemsChanged) lastItemsActorTick = actorTick;
+  // The browser mirror renders every authority item at actor cadence, including
+  // cosmetic mining debris. A transferred packed snapshot avoids allocating an
+  // object per item; multiplayer keeps its lower-bandwidth collectible-only path.
+  const itemData = engine.getItemSnapshotData();
   const player = players.find((candidate) => candidate.id === localPlayerId) || null;
+  const itemBuffer = itemData.buffer;
   self.postMessage({
     type: 'actors', epoch, actorTick, localPlayerId, players,
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
@@ -122,10 +123,10 @@ function postActors(force = false) {
     actionCount: engine.getPlayerActionCount(),
     inventory: inventoryChanged ? engine.getInventory(localPlayerId) : undefined,
     cursor: inventoryChanged ? engine.getCursor(localPlayerId) : undefined,
-    items,
+    itemData: itemBuffer,
     projectiles: engine.getProjectiles(),
     ackSeq: player?.inputSeq ?? 0,
-  });
+  }, [itemBuffer]);
 }
 
 function postSounds() {
@@ -333,7 +334,7 @@ self.onmessage = async ({ data }) => {
     localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
     latestInput = null;
     actorClock = createFixedRateClock({ now: performance.now() });
-    lastInventoryHash = -1; lastItemsActorTick = -6;
+    lastInventoryHash = -1;
     epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false;
     survivalSpawnViewReady = false;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;

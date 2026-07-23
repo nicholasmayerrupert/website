@@ -1,5 +1,5 @@
-// Dropped-item and particle entity physics. Items fall, overlap rather than
-// stacking, move more slowly in liquid, rest without clipping, are
+// Dropped-item and particle entity physics. Nearby compatible materials
+// coagulate; remaining actors overlap, move more slowly in liquid, and rest
 // capped, remap on world shift, and never perturb the sim RNG (determinism).
 // Run: node scripts/item-test.mjs
 
@@ -7,6 +7,7 @@ import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sa
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 import { MAT } from '../src/sand/materials.js';
+import { OFF, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker, gridHash } from './sand-test-util.mjs';
 
 const COLS = 160, ROWS = 120, FLOOR = 90;
@@ -47,16 +48,30 @@ const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step
   e.destroy();
 }
 
-// 3) Items pass through each other (NO stacking): three dropped at the same spot
-//    settle onto the SAME surface cell instead of piling into distinct rows.
+// 3) Compatible nearby materials coagulate into one conserved stack actor.
 {
   const e = withFloor();
   for (let i = 0; i < 3; i++) e.spawnItem(MAT.STONE, 1, 40, 20, 0, 0);
   run(e, 220);
   const items = e.getItems();
-  const rows = new Set(items.map((i) => Math.floor(i.y)));
-  check(`three items overlap on one surface cell, not stacked (${rows.size} row)`, rows.size === 1);
-  check('all rest just above the floor', items.every((i) => i.y < FLOOR && i.y > FLOOR - 3));
+  check(`three nearby stone drops coagulate (${items.length} actor)`, items.length === 1);
+  check(`coagulation conserves the stack count (${items[0]?.count})`, items[0]?.count === 3);
+  check('the coagulated stack rests above the floor', items[0]?.y < FLOOR && items[0]?.y > FLOOR - 3);
+  e.spawnItem(MAT.WOOD, 1, 40, 20, 0, 0);
+  e.spawnItem(MAT.STONE, 1, 55, 20, 0, 0);
+  check('different materials and distant matches stay independent', e.itemCount() === 3);
+  e.destroy();
+}
+
+// 3a) Coagulation respects the inventory stack cap without losing resources.
+{
+  const e = withFloor();
+  for (let i = 0; i < 1000; i++) e.spawnItem(MAT.WOOD, 1, 40, 20, 0, 0);
+  const stacks = e.getItems();
+  check(`a 1000-item pile uses two capped actors (${stacks.length})`, stacks.length === 2);
+  check('coagulation conserves all 1000 units',
+    stacks.reduce((count, item) => count + item.count, 0) === 1000 &&
+    stacks.every((item) => item.count <= 999));
   e.destroy();
 }
 
@@ -84,10 +99,11 @@ const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step
   e.destroy();
 }
 
-// 4) Hard cap: spawning past IT_MAX_ITEMS evicts oldest, count never exceeds the cap.
+// 4) Hard cap: particles do not coagulate, so spawning past IT_MAX_ITEMS still
+//    evicts the oldest and never exceeds the cap.
 {
   const e = withFloor();
-  for (let i = 0; i < 1034; i++) e.spawnItem(MAT.SAND, 1, 20 + (i % 100), 10, 0, 0);
+  for (let i = 0; i < 1034; i++) e.spawnParticle(MAT.SAND, 20 + (i % 100), 10, 0, 0, 100);
   check(`item count capped at 1024 (got ${e.itemCount()})`, e.itemCount() === 1024);
   e.destroy();
 }
@@ -97,6 +113,11 @@ const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step
   const e = withFloor();
   e.spawnParticle(MAT.STONE, 50, 20, 0, -0.5, 8);
   check('particle present after spawn', e.itemCount() === 1);
+  const packed = e.getItemSnapshotData();
+  check('packed presentation snapshot includes the cosmetic particle',
+    packed.length === STRIDES.itemSnapshot &&
+    packed[OFF.itemSnapshot.kind] === 1 &&
+    packed[OFF.itemSnapshot.material] === MAT.STONE);
   run(e, 12);
   check(`particle culled after its life expires (count ${e.itemCount()})`, e.itemCount() === 0);
   e.destroy();

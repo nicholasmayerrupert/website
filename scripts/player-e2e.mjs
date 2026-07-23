@@ -328,19 +328,15 @@ try {
     const t = window.__sandTest, p = t.getPlayer(), info = t.info();
     t.render();
     const corner = t.cellRect(
-      Math.floor(p.x + p.w / 2 - 7),
-      Math.floor(p.y + p.h * .42 - 7),
+      Math.floor(p.x + p.w / 2 - 9),
+      Math.floor(p.y + p.h * .42 - 9),
     );
     const x = Math.max(0, Math.floor(corner.x));
     const y = Math.max(0, Math.floor(corner.y));
-    const w = Math.max(1, Math.min(info.canvasW - x, Math.ceil(info.cellDev * 14)));
-    const h = Math.max(1, Math.min(info.canvasH - y, Math.ceil(info.cellDev * 14)));
+    const w = Math.max(1, Math.min(info.canvasW - x, Math.ceil(info.cellDev * 18)));
+    const h = Math.max(1, Math.min(info.canvasH - y, Math.ceil(info.cellDev * 18)));
     const pixels = t.readPixels(x, y, w, h);
-    let cyan = 0;
-    for (let i = 0; i < pixels.length; i += 4) {
-      if (pixels[i + 2] > 110 && pixels[i + 2] > pixels[i] + 20 && pixels[i + 1] > pixels[i] + 10) cyan++;
-    }
-    window.__wardProbe = { x, y, w, h, pixels: Array.from(pixels), cyan };
+    window.__wardProbe = { x, y, w, h, pixels: Array.from(pixels) };
   });
   await page.keyboard.down('f');
   await page.waitForTimeout(50);
@@ -356,17 +352,21 @@ try {
     const t = window.__sandTest, before = window.__wardProbe;
     t.render();
     const pixels = t.readPixels(before.x, before.y, before.w, before.h);
-    let changed = 0, cyan = 0;
+    let changed = 0, paleWard = 0;
     for (let i = 0; i < pixels.length; i += 4) {
       const delta = Math.abs(pixels[i] - before.pixels[i])
         + Math.abs(pixels[i + 1] - before.pixels[i + 1])
         + Math.abs(pixels[i + 2] - before.pixels[i + 2]);
       if (delta > 45) changed++;
-      if (pixels[i + 2] > 110 && pixels[i + 2] > pixels[i] + 20 && pixels[i + 1] > pixels[i] + 10) cyan++;
+      if (delta > 45
+          && pixels[i + 1] > before.pixels[i + 1] + 8
+          && pixels[i + 2] > before.pixels[i + 2] + 8
+          && pixels[i + 1] >= pixels[i] - 10
+          && pixels[i + 2] >= pixels[i] - 5) paleWard++;
     }
     const root = document.querySelector('sand-game').shadowRoot;
     const result = {
-      changed, cyanAdded: cyan - before.cyan,
+      changed, paleWard,
       health: window.__sandTest.getPlayer().shieldHealth,
       aria: root.querySelector('.survival-shield').getAttribute('aria-valuenow'),
     };
@@ -381,8 +381,8 @@ try {
   }, null, { timeout: 5000 });
   check(`F maps to SHIELD input and activates a full 200-point ward (bits ${shieldBits})`,
     (shieldBits & INPUT_SHIELD) !== 0 && wardVisual.health === 200 && wardVisual.aria === '200');
-  check(`active ward reaches the GL presentation (${wardVisual.changed} changed, ${wardVisual.cyanAdded} cyan pixels)`,
-    wardVisual.changed > 80 && wardVisual.cyanAdded > 8);
+  check(`active ward reaches the GL presentation (${wardVisual.changed} changed, ${wardVisual.paleWard} pale pixels)`,
+    wardVisual.changed > 80 && wardVisual.paleWard > 12);
 
   const before = await getP();
   // Hard check: SPACE maps to the JUMP input bit reaching the engine (terrain

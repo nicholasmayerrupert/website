@@ -377,8 +377,8 @@ void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, do
   double aimAngle = std::atan2(dy, dx);
   double strength = std::max(0.0, std::min(1.0, shieldHealth / (double)P_SHIELD_MAX_HEALTH));
   double phase = E.actorTick * .16;
-  float red = (float)(.22 + (1.0 - strength) * .42);
-  float green = (float)(.72 + strength * .20);
+  float red = (float)(.48 + (1.0 - strength) * .28);
+  float green = (float)(.86 + strength * .12);
   float blue = 1.0f;
 
   // The compositor uses premultiplied alpha. Layer a broad, quiet field between
@@ -394,31 +394,34 @@ void GLPresenter::glDrawWard(double pxc, double pyc, int facing, double aimX, do
   };
   static constexpr int SEGMENTS = 30;
   static constexpr double HALF_ARC = 3.14159265358979323846 / 3.0;
+  static constexpr double FIELD_RADIUS = 6.20;
+  static constexpr double OUTER_RADIUS = 6.75;
+  static constexpr double INNER_RADIUS = 5.55;
   for (int i = 0; i <= SEGMENTS; i++) {
     double t = i / (double)SEGMENTS;
     double angle = aimAngle - HALF_ARC + t * HALF_ARC * 2.0;
     double shimmer = .5 + .5 * std::sin(phase + i * .83);
     double cs = std::cos(angle), sn = std::sin(angle);
-    double fieldRadius = 5.05 + std::sin(phase * .55 + i * .47) * .035;
+    double fieldRadius = FIELD_RADIUS + std::sin(phase * .55 + i * .47) * .04;
     wardSquare(originX + cs * fieldRadius, originY + sn * fieldRadius,
-               1.12, red, green, blue, (float)(.055 + strength * .035));
-    wardSquare(originX + cs * 5.55, originY + sn * 5.55,
+               1.24, red, green, blue, (float)(.075 + strength * .045));
+    wardSquare(originX + cs * OUTER_RADIUS, originY + sn * OUTER_RADIUS,
                .38, red, green, blue, (float)(.28 + strength * .18 + shimmer * .08));
-    wardSquare(originX + cs * 4.48, originY + sn * 4.48,
-               .27, .72f, .95f, 1.0f, (float)(.22 + strength * .14));
+    wardSquare(originX + cs * INNER_RADIUS, originY + sn * INNER_RADIUS,
+               .27, .84f, .98f, 1.0f, (float)(.24 + strength * .15));
     if (i % 5 == 0) {
-      wardSquare(originX + cs * 5.02, originY + sn * 5.02,
-                 .31, .88f, 1.0f, 1.0f, (float)(.56 + shimmer * .20));
+      wardSquare(originX + cs * FIELD_RADIUS, originY + sn * FIELD_RADIUS,
+                 .31, .96f, 1.0f, 1.0f, (float)(.60 + shimmer * .20));
     }
   }
   // Luminous end caps clearly delimit the protected 120-degree sector.
   for (int side : {-1, 1}) {
     double angle = aimAngle + side * HALF_ARC;
     double cs = std::cos(angle), sn = std::sin(angle);
-    wardSquare(originX + cs * 5.02, originY + sn * 5.02,
-               .88, red, green, blue, .20f);
-    wardSquare(originX + cs * 5.02, originY + sn * 5.02,
-               .38, .88f, 1.0f, 1.0f, .90f);
+    wardSquare(originX + cs * FIELD_RADIUS, originY + sn * FIELD_RADIUS,
+               .96, red, green, blue, .22f);
+    wardSquare(originX + cs * FIELD_RADIUS, originY + sn * FIELD_RADIUS,
+               .38, .96f, 1.0f, 1.0f, .92f);
   }
 }
 

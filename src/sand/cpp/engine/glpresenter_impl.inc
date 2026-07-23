@@ -1081,7 +1081,7 @@ void GLPresenter::glDrawProjectiles() {
         }
       } else {
         // Split children are deliberately literal mini dynamite sticks. Their
-        // independently randomized rotations make the three-way burst obvious
+        // independently randomized rotations make the eight-way burst obvious
         // even before their staggered fuses reach zero.
         double pulse = (((int)fuse / 3) & 1) ? 1.0 : .70;
         for (int seg = -2; seg <= 2; seg++) {

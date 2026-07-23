@@ -14,8 +14,9 @@ static constexpr int ACID_SPLASH_RADIUS_LOCAL = 9;
 static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
 static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
 static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 120;
+static constexpr int CLUSTER_BOMBLET_COUNT_LOCAL = 8;
 static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 36;
-static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 19;
+static constexpr int CLUSTER_BOMBLET_FUSE_STEP_LOCAL = 2;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
@@ -448,11 +449,13 @@ void ProjectileSystem::updateProjectiles() {
   };
 
   std::vector<Projectile> pendingCluster;
-  pendingCluster.reserve(6);
+  pendingCluster.reserve(CLUSTER_BOMBLET_COUNT_LOCAL);
   auto splitCluster = [&](const Projectile& carrier) {
-    // Three deterministic pseudo-random directions read as genuinely scattered
+    // Eight deterministic pseudo-random directions read as genuinely scattered
     // mini-dynamite while remaining identical on authority, replay, and clients.
-    for (int child = 0; child < 3; child++) {
+    // Disjoint two-tick fuse bands guarantee a visible stagger without making
+    // any child feel like a separate, long-lived projectile.
+    for (int child = 0; child < CLUSTER_BOMBLET_COUNT_LOCAL; child++) {
       uint32_t seed = (uint32_t)carrier.id * 2654435761u ^
                       (uint32_t)(child + 1) * 2246822519u;
       seed ^= seed >> 16; seed *= 0x7feb352du;
@@ -468,7 +471,8 @@ void ProjectileSystem::updateProjectiles() {
       bomblet.vx = std::cos(angle) * speed;
       bomblet.vy = std::sin(angle) * speed - .42;
       bomblet.fuse = CLUSTER_BOMBLET_FUSE_MIN_LOCAL +
-        (int)(seed % CLUSTER_BOMBLET_FUSE_SPAN_LOCAL);
+        child * CLUSTER_BOMBLET_FUSE_STEP_LOCAL +
+        (int)(seed % CLUSTER_BOMBLET_FUSE_STEP_LOCAL);
       bomblet.life = bomblet.fuse + 45;
       bomblet.charge = 1.0;
       bomblet.rotation = angle;

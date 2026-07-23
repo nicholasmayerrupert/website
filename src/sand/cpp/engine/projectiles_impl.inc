@@ -1,3 +1,24 @@
+// Tunables for the three captured enemy weapons live with their actor-clock
+// implementation. Their inventory/ABI identities are generated separately.
+static constexpr int ACID_MORTAR_COOLDOWN_LOCAL = 75;
+static constexpr int ACID_SHELL_LIFE_LOCAL = 180;
+static constexpr double ACID_SHELL_GRAVITY_LOCAL = 0.055;
+static constexpr int ACID_SPLASH_RADIUS_LOCAL = 6;
+static constexpr int ACID_SPLASH_DAMAGE_LOCAL = 16;
+static constexpr int CLUSTER_LAUNCHER_COOLDOWN_LOCAL = 90;
+static constexpr int CLUSTER_CARRIER_FUSE_LOCAL = 38;
+static constexpr int CLUSTER_BOMBLET_FUSE_MIN_LOCAL = 24;
+static constexpr int CLUSTER_BOMBLET_FUSE_SPAN_LOCAL = 13;
+static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
+static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
+static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
+static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 7;
+static constexpr double CLUSTER_BLAST_POWER_LOCAL = 14.0;
+static constexpr int SEISMIC_HAMMER_COOLDOWN_LOCAL = 105;
+static constexpr int SEISMIC_WAVE_LIFE_LOCAL = 26;
+static constexpr double SEISMIC_WAVE_SPEED_LOCAL = 1.5;
+static constexpr int SEISMIC_WAVE_DAMAGE_LOCAL = 28;
+
 void ProjectileSystem::applyBowInput(Player& p, int previousInput) {
   bool primary = (p.input & PI_PRIMARY) != 0;
   bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
@@ -48,6 +69,36 @@ void ProjectileSystem::applyBoreCannonInput(Player& p, int previousInput) {
   E.playerActionCount++;
 }
 
+void ProjectileSystem::applyAcidMortarInput(Player& p, int previousInput) {
+  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  bool primary = (p.input & PI_PRIMARY) != 0;
+  bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
+  if (!primary || wasPrimary || p.toolCooldown > 0) return;
+  spawnAcidShell(p);
+  p.toolCooldown = ACID_MORTAR_COOLDOWN_LOCAL;
+  E.playerActionCount++;
+}
+
+void ProjectileSystem::applyClusterLauncherInput(Player& p, int previousInput) {
+  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  bool primary = (p.input & PI_PRIMARY) != 0;
+  bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
+  if (!primary || wasPrimary || p.toolCooldown > 0) return;
+  spawnClusterBomb(p);
+  p.toolCooldown = CLUSTER_LAUNCHER_COOLDOWN_LOCAL;
+  E.playerActionCount++;
+}
+
+void ProjectileSystem::applySeismicHammerInput(Player& p, int previousInput) {
+  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  bool primary = (p.input & PI_PRIMARY) != 0;
+  bool wasPrimary = (previousInput & PI_PRIMARY) != 0;
+  if (!primary || wasPrimary || p.toolCooldown > 0) return;
+  spawnSeismicWave(p);
+  p.toolCooldown = SEISMIC_HAMMER_COOLDOWN_LOCAL;
+  E.playerActionCount++;
+}
+
 void ProjectileSystem::spawnArrow(Player& p, double charge) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double sx = p.px + p.w * .5, sy = p.py + p.h * .42;
@@ -69,8 +120,8 @@ void ProjectileSystem::spawnBlastRound(Player& p) {
   dx /= d; dy /= d;
   Projectile round; round.id = nextId++; round.owner = p.id; round.kind = PK_BLAST_ROUND;
   // Begin at the actor-space muzzle origin so the swept path also tests the
-  // cells between the player and the visible barrel. Owner immunity prevents a
-  // close impact from turning this into self-damage.
+  // cells between the player and the visible barrel. The full blast keeps owner
+  // immunity; updateProjectiles applies only a small controlled close-range hit.
   round.px = cx; round.py = cy;
   round.vx = dx * BLAST_ROUND_SPEED; round.vy = dy * BLAST_ROUND_SPEED;
   round.life = BLAST_ROUND_LIFE; round.charge = 1.0; round.rotation = std::atan2(dy, dx);
@@ -109,12 +160,105 @@ void ProjectileSystem::spawnDynamite(Player& thrower) {
                   thrower.aimX, thrower.aimY);
 }
 
+void ProjectileSystem::spawnAcidShellAt(int owner, double sx, double sy, double targetX, double targetY) {
+  if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
+  double dx = targetX - sx, dy = targetY - sy;
+  double flight = std::max(34.0, std::min(58.0, std::fabs(dx) * .45 + 30.0));
+  Projectile shell; shell.id = nextId++; shell.owner = owner; shell.kind = PK_ACID_SHELL;
+  shell.px = sx; shell.py = sy;
+  shell.vx = dx / flight;
+  shell.vy = (dy - .5 * ACID_SHELL_GRAVITY_LOCAL * flight * flight) / flight;
+  shell.life = ACID_SHELL_LIFE_LOCAL;
+  shell.charge = 1.0;
+  shell.rotation = std::atan2(shell.vy, shell.vx);
+  projectiles.push_back(shell);
+  E.audio.emit(SE_ACID_MORTAR, sx, sy, 0.9, ACID, 0);
+}
+
+void ProjectileSystem::spawnAcidShell(const Creature& shooter, double targetX, double targetY) {
+  const CreatureSpecies& s = E.creatures.species(shooter);
+  double localX = shooter.wx - E.fg.worldOffsetX;
+  double localY = shooter.wy - E.fg.worldOffsetY;
+  spawnAcidShellAt(-shooter.id, localX + s.w * .5, localY + s.h * .34, targetX, targetY);
+}
+
+void ProjectileSystem::spawnAcidShell(Player& shooter) {
+  spawnAcidShellAt(shooter.id, shooter.px + shooter.w * .5, shooter.py + shooter.h * .42,
+                   shooter.aimX, shooter.aimY);
+}
+
+void ProjectileSystem::spawnClusterBombAt(int owner, double sx, double sy, double targetX, double targetY) {
+  if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
+  double dx = targetX - sx, dy = targetY - sy, d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = 1; dy = 0; d = 1; }
+  Projectile carrier; carrier.id = nextId++; carrier.owner = owner; carrier.kind = PK_CLUSTER_BOMB;
+  carrier.px = sx; carrier.py = sy;
+  carrier.vx = dx / d * 5.5;
+  carrier.vy = dy / d * 5.5 - .28;
+  carrier.life = CLUSTER_CARRIER_FUSE_LOCAL + 90;
+  carrier.fuse = CLUSTER_CARRIER_FUSE_LOCAL;
+  carrier.charge = 0.0;
+  carrier.rotation = std::atan2(carrier.vy, carrier.vx);
+  projectiles.push_back(carrier);
+  E.audio.emit(SE_CLUSTER_LAUNCH, sx, sy, 0.9, GUNPOWDER, 0);
+}
+
+void ProjectileSystem::spawnClusterBomb(const Creature& shooter, double targetX, double targetY) {
+  const CreatureSpecies& s = E.creatures.species(shooter);
+  double localX = shooter.wx - E.fg.worldOffsetX;
+  double localY = shooter.wy - E.fg.worldOffsetY;
+  spawnClusterBombAt(-shooter.id, localX + s.w * .5, localY + s.h * .52, targetX, targetY);
+}
+
+void ProjectileSystem::spawnClusterBomb(Player& shooter) {
+  spawnClusterBombAt(shooter.id, shooter.px + shooter.w * .5, shooter.py + shooter.h * .42,
+                     shooter.aimX, shooter.aimY);
+}
+
+void ProjectileSystem::spawnSeismicWaveAt(int owner, double sx, double sy, double targetX) {
+  if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
+  double dir = targetX >= sx ? 1.0 : -1.0;
+  Projectile wave; wave.id = nextId++; wave.owner = owner; wave.kind = PK_SEISMIC_WAVE;
+  wave.px = sx + dir * .75; wave.py = sy;
+  wave.vx = dir * SEISMIC_WAVE_SPEED_LOCAL; wave.vy = 0;
+  wave.life = SEISMIC_WAVE_LIFE_LOCAL; wave.charge = 1.0; wave.rotation = dir > 0 ? 0 : 3.141592653589793;
+  projectiles.push_back(wave);
+  E.audio.emit(SE_QUAKE, sx, sy, 1.0, STONE, 0);
+}
+
+void ProjectileSystem::spawnSeismicWave(const Creature& shooter, double targetX) {
+  const CreatureSpecies& s = E.creatures.species(shooter);
+  double localX = shooter.wx - E.fg.worldOffsetX;
+  double localY = shooter.wy - E.fg.worldOffsetY;
+  double centerX = localX + s.w * .5;
+  double dir = targetX >= centerX ? 1.0 : -1.0;
+  spawnSeismicWaveAt(-shooter.id, centerX + dir * s.w * .5, localY + s.h, targetX);
+}
+
+void ProjectileSystem::spawnSeismicWave(Player& shooter) {
+  double centerX = shooter.px + shooter.w * .5;
+  double dir = shooter.aimX >= centerX ? 1.0 : -1.0;
+  spawnSeismicWaveAt(shooter.id, centerX + dir * shooter.w * .5, shooter.py + shooter.h, shooter.aimX);
+}
+
+void ProjectileSystem::spawnBoreBeam(int owner, double ox, double oy, double dx, double dy) {
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) return;
+  if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
+  Projectile beam;
+  beam.id = nextId++; beam.owner = owner; beam.kind = PK_BORE_BEAM;
+  beam.px = ox; beam.py = oy; beam.vx = dx / d; beam.vy = dy / d;
+  beam.life = 7; beam.fuse = 7; beam.charge = 1.0;
+  beam.rotation = std::atan2(beam.vy, beam.vx);
+  projectiles.push_back(beam);
+}
+
 void ProjectileSystem::updateProjectiles() {
-  auto hitsCreature = [&](double px, double py, double radius) {
+  auto hitsCreature = [&](double px, double py, double radius, int owner) {
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
     double r2 = radius * radius;
     for (const Creature& c : E.creatures.creatures) {
-      if (!c.alive) continue;
+      if (!c.alive || (owner < 0 && c.id == -owner)) continue;
       const CreatureSpecies& s = E.creatures.species(c);
       double nx = std::max(c.wx, std::min(wx, c.wx + s.w));
       double ny = std::max(c.wy, std::min(wy, c.wy + s.h));
@@ -139,10 +283,130 @@ void ProjectileSystem::updateProjectiles() {
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
     return E.isBlockingForPlayer(E.fg.grid[E.I(x, y)]);
   };
+  auto materialStopsPoint = [&](double px, double py) {
+    int x = (int)std::floor(px), y = (int)std::floor(py);
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return true;
+    uint8_t material = E.fg.grid[E.I(x, y)];
+    return !E.isEmptyMaterial(material) && !E.isGasMaterial(material);
+  };
+  auto damageSplash = [&](double px, double py, int radius, int damage, int owner, bool launch) {
+    double r2 = (double)radius * radius;
+    for (Player& player : E.psys.players) {
+      if (!player.active || !player.alive || (owner > 0 && player.id == owner)) continue;
+      double nx = std::max(player.px, std::min(px, player.px + player.w));
+      double ny = std::max(player.py, std::min(py, player.py + player.h));
+      double dx = px - nx, dy = py - ny;
+      if (dx * dx + dy * dy > r2) continue;
+      E.psys.damagePlayer(player, damage, 16);
+      if (launch) {
+        double dir = player.px + player.w * .5 >= px ? 1.0 : -1.0;
+        player.vx += dir * .72;
+        player.vy = std::min(player.vy, -1.05);
+      }
+    }
+    double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
+    for (Creature& c : E.creatures.creatures) {
+      if (!c.alive || c.hurtCooldown > 0 || (owner < 0 && c.id == -owner)) continue;
+      const CreatureSpecies& s = E.creatures.species(c);
+      double nx = std::max(c.wx, std::min(wx, c.wx + s.w));
+      double ny = std::max(c.wy, std::min(wy, c.wy + s.h));
+      double dx = wx - nx, dy = wy - ny;
+      if (dx * dx + dy * dy > r2) continue;
+      c.health -= damage;
+      c.hurtCooldown = 12;
+      if (launch) {
+        double dir = c.wx + s.w * .5 >= wx ? 1.0 : -1.0;
+        c.vx += dir * .72;
+        c.vy = std::min(c.vy, -1.05);
+      }
+      E.audio.emit(SE_CREATURE, c.wx - E.fg.worldOffsetX + s.w * .5,
+                   c.wy - E.fg.worldOffsetY + s.h * .5, 0.75, c.species, 0);
+    }
+  };
+  auto burstAcid = [&](const Projectile& shell) {
+    int x = imax(1, imin(E.cols - 2, (int)std::lround(shell.px)));
+    int y = imax(1, imin(E.rows - 2, (int)std::lround(shell.py)));
+    damageSplash(x + .5, y + .5, ACID_SPLASH_RADIUS_LOCAL,
+                 ACID_SPLASH_DAMAGE_LOCAL, shell.owner, false);
+    Layer* restore = E.L;
+    E.useLayer(&E.fg);
+    E.paintDisc(x, y, ACID_SPLASH_RADIUS_LOCAL, ACID, false);
+    E.useLayer(restore);
+    E.audio.emit(SE_ACID_DISSOLVE, x, y, 1.0, ACID, 0);
+  };
+
+  std::vector<Projectile> pendingCluster;
+  pendingCluster.reserve(10);
+  auto splitCluster = [&](const Projectile& carrier) {
+    double base = std::atan2(carrier.vy, carrier.vx);
+    static constexpr double FAN[5] = {-1.02, -0.51, 0.0, 0.51, 1.02};
+    for (int child = 0; child < 5; child++) {
+      double angle = base + FAN[child];
+      double speed = 1.55 + .18 * child;
+      Projectile bomblet;
+      bomblet.id = nextId++;
+      bomblet.owner = carrier.owner;
+      bomblet.kind = PK_CLUSTER_BOMB;
+      bomblet.px = carrier.px - std::cos(base) * .45;
+      bomblet.py = carrier.py - std::sin(base) * .45;
+      bomblet.vx = std::cos(angle) * speed;
+      bomblet.vy = std::sin(angle) * speed - .52;
+      uint32_t seed = (uint32_t)carrier.id * 2654435761u ^ (uint32_t)child * 2246822519u;
+      bomblet.fuse = CLUSTER_BOMBLET_FUSE_MIN_LOCAL +
+        (int)(seed % CLUSTER_BOMBLET_FUSE_SPAN_LOCAL);
+      bomblet.life = bomblet.fuse + 45;
+      bomblet.charge = 1.0;
+      bomblet.rotation = angle;
+      pendingCluster.push_back(bomblet);
+    }
+  };
+  auto eraseSeismicCells = [&](std::vector<int>& cells, int x0, int y0, int x1, int y1) {
+    if (cells.empty()) return;
+    std::sort(cells.begin(), cells.end());
+    cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
+    Layer* restore = E.L;
+    E.useLayer(&E.fg);
+    E.eraseStrokeCells(cells, x0, y0, x1, y1);
+    if (E.bgEnabled) {
+      E.useLayer(&E.bg);
+      E.eraseStrokeCells(cells, x0, y0, x1, y1);
+    }
+    E.useLayer(restore);
+  };
+  auto damageBlastOwner = [&](const Projectile& round) {
+    if (round.owner <= 0) return;
+    Player* owner = E.psys.findPlayer(round.owner);
+    if (!owner || !owner->active || !owner->alive) return;
+    double nearestX = std::max(owner->px, std::min(round.px, owner->px + owner->w));
+    double nearestY = std::max(owner->py, std::min(round.py, owner->py + owner->h));
+    double dx = nearestX - round.px, dy = nearestY - round.py;
+    double distance = std::hypot(dx, dy);
+    if (distance >= BLAST_ROUND_RADIUS) return;
+    double falloff = 1.0 - distance / BLAST_ROUND_RADIUS;
+    int damage = imax(1, (int)std::lround(8.0 * falloff));
+    double centerDx = owner->px + owner->w * .5 - round.px;
+    double centerDy = owner->py + owner->h * .5 - round.py;
+    double centerDistance = std::hypot(centerDx, centerDy);
+    if (centerDistance < 1e-6) {
+      centerDx = round.vx > 0 ? -1.0 : 1.0;
+      centerDy = -.25;
+      centerDistance = std::hypot(centerDx, centerDy);
+    }
+    double impulse = .22 + .38 * falloff;
+    owner->vx += centerDx / centerDistance * impulse;
+    owner->vy += centerDy / centerDistance * impulse - impulse * .12;
+    E.psys.damagePlayer(*owner, damage, 10);
+  };
 
   size_t write = 0;
   for (size_t i = 0; i < projectiles.size(); i++) {
     Projectile p = projectiles[i];
+    if (p.kind == PK_BORE_BEAM) {
+      if (--p.life <= 0) continue;
+      p.fuse = imax(0, p.fuse - 1);
+      projectiles[write++] = p;
+      continue;
+    }
     if (p.kind == PK_DYNAMITE) {
       bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
       if (!outside) {
@@ -184,6 +448,156 @@ void ProjectileSystem::updateProjectiles() {
       continue;
     }
 
+    if (p.kind == PK_ACID_SHELL) {
+      bool hit = false, outside = false;
+      double distance = std::hypot(p.vx, p.vy);
+      int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
+      double sx = p.vx / steps, sy = p.vy / steps;
+      for (int step = 0; step < steps && !hit; step++) {
+        double nx = p.px + sx, ny = p.py + sy;
+        if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows - 1) {
+          outside = true;
+          break;
+        }
+        if (materialStopsPoint(nx, ny) || hitsCreature(nx, ny, .72, p.owner) ||
+            hitsPlayer(nx, ny, .72, p.owner)) {
+          hit = true;
+          break;
+        }
+        p.px = nx; p.py = ny;
+      }
+      if (hit) {
+        burstAcid(p);
+        continue;
+      }
+      if (outside || --p.life <= 0) continue;
+      p.vy += ACID_SHELL_GRAVITY_LOCAL;
+      p.rotation = std::atan2(p.vy, p.vx);
+      projectiles[write++] = p;
+      continue;
+    }
+
+    if (p.kind == PK_CLUSTER_BOMB && p.charge < .5) {
+      bool hit = false, outside = false;
+      double distance = std::hypot(p.vx, p.vy);
+      int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
+      double sx = p.vx / steps, sy = p.vy / steps;
+      for (int step = 0; step < steps && !hit; step++) {
+        double nx = p.px + sx, ny = p.py + sy;
+        if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows - 1) {
+          outside = true;
+          break;
+        }
+        if (materialStopsPoint(nx, ny) || hitsCreature(nx, ny, .72, p.owner) ||
+            hitsPlayer(nx, ny, .72, p.owner)) {
+          hit = true;
+          break;
+        }
+        p.px = nx; p.py = ny;
+      }
+      if (!outside && (hit || --p.fuse <= 0)) {
+        splitCluster(p);
+        continue;
+      }
+      if (outside || --p.life <= 0) continue;
+      p.vy += CLUSTER_GRAVITY_LOCAL * .47;
+      p.rotation = std::atan2(p.vy, p.vx);
+      projectiles[write++] = p;
+      continue;
+    }
+
+    if (p.kind == PK_CLUSTER_BOMB) {
+      bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
+      if (!outside) {
+        double distance = std::hypot(p.vx, p.vy);
+        int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
+        double sx = p.vx / steps, sy = p.vy / steps;
+        bool blockX = false, blockY = false;
+        for (int step = 0; step < steps; step++) {
+          if (!blockX) {
+            double nx = p.px + sx;
+            if (blocksPoint(nx, p.py)) {
+              p.vx = -p.vx * CLUSTER_BOUNCE_LOCAL;
+              blockX = true;
+            } else p.px = nx;
+          }
+          if (!blockY) {
+            double ny = p.py + sy;
+            if (blocksPoint(p.px, ny)) {
+              p.vy = -p.vy * CLUSTER_BOUNCE_LOCAL;
+              p.vx *= CLUSTER_FRICTION_LOCAL;
+              blockY = true;
+            } else p.py = ny;
+          }
+        }
+        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL);
+        p.rotation += p.vx * .28;
+      }
+      if (--p.fuse <= 0 && !outside) {
+        int x = imax(1, imin(E.cols - 2, (int)std::lround(p.px)));
+        int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
+        uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
+        int immunePlayer = p.owner > 0 ? p.owner : 0;
+        E.detonate(x, y, CLUSTER_BLAST_RADIUS_LOCAL, CLUSTER_BLAST_POWER_LOCAL,
+                   immunePlayer, GUNPOWDER, seed);
+        continue;
+      }
+      if (outside || --p.life <= 0) continue;
+      projectiles[write++] = p;
+      continue;
+    }
+
+    if (p.kind == PK_SEISMIC_WAVE) {
+      double targetX = p.px + p.vx;
+      int direction = p.vx >= 0 ? 1 : -1;
+      int startX = (int)std::floor(p.px) + direction;
+      int endX = (int)std::floor(targetX);
+      int guessY = (int)std::lround(p.py);
+      std::vector<int> cells;
+      int x0 = E.cols, y0 = E.rows, x1 = 0, y1 = 0;
+      bool foundAny = false, lostGround = false;
+      for (int x = startX;
+           direction > 0 ? x <= endX : x >= endX; x += direction) {
+        if (x <= 0 || x >= E.cols - 1) { lostGround = true; break; }
+        int surfaceY = -1;
+        for (int d = 0; d <= 6 && surfaceY < 0; d++) {
+          int candidates[2] = {guessY - d, guessY + d};
+          int n = d == 0 ? 1 : 2;
+          for (int ci = 0; ci < n; ci++) {
+            int y = candidates[ci];
+            if (y <= 1 || y >= E.rows - 4) continue;
+            if (blocksPoint(x, y) && !blocksPoint(x, y - 1)) {
+              surfaceY = y;
+              break;
+            }
+          }
+        }
+        if (surfaceY < 0) { lostGround = true; break; }
+        foundAny = true;
+        guessY = surfaceY;
+        auto addCell = [&](int cx, int cy) {
+          if (cx <= 0 || cx >= E.cols - 1 || cy <= 0 || cy >= E.rows - 1) return;
+          cells.push_back(E.I(cx, cy));
+          x0 = imin(x0, cx); y0 = imin(y0, cy);
+          x1 = imax(x1, cx); y1 = imax(y1, cy);
+        };
+        addCell(x, surfaceY);
+        addCell(x, surfaceY + 1);
+        if (((x + p.id) & 3) == 0) {
+          addCell(x, surfaceY + 2);
+          addCell(x + direction, surfaceY + 3);
+        }
+      }
+      if (!foundAny) continue;
+      eraseSeismicCells(cells, x0, y0, x1, y1);
+      p.px = targetX;
+      p.py = guessY;
+      damageSplash(p.px, p.py - 1.5, 4, SEISMIC_WAVE_DAMAGE_LOCAL, p.owner, true);
+      if (lostGround || p.px < 1 || p.px >= E.cols - 1 || --p.life <= 0) continue;
+      projectiles[write++] = p;
+      continue;
+    }
+
     bool hit = false;
     double distance = std::hypot(p.vx, p.vy);
     int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
@@ -195,7 +609,8 @@ void ProjectileSystem::updateProjectiles() {
       uint8_t material = E.fg.grid[E.I(x, y)];
       if (p.kind == PK_BLAST_ROUND) {
         if ((!E.isEmptyMaterial(material) && !E.isGasMaterial(material)) ||
-            hitsCreature(p.px, p.py, 0.8) || hitsPlayer(p.px, p.py, 0.8, p.owner)) hit = true;
+            hitsCreature(p.px, p.py, 0.8, p.owner) ||
+            hitsPlayer(p.px, p.py, 0.8, p.owner)) hit = true;
       } else {
         if (E.isBlockingForPlayer(material)) { hit = true; break; }
         int damage = 8 + (int)std::lround(22 * p.charge);
@@ -206,6 +621,7 @@ void ProjectileSystem::updateProjectiles() {
       if (p.kind == PK_BLAST_ROUND && p.px >= 1 && p.px < E.cols - 1 && p.py >= 1 && p.py < E.rows - 1) {
         int x = (int)std::floor(p.px), y = (int)std::floor(p.py);
         uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
+        damageBlastOwner(p);
         E.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner, GUNPOWDER, seed);
       } else if (p.kind == PK_ARROW) {
         E.spawnParticle(STONE, p.px, p.py, -p.vx * .08, -0.15, 12);
@@ -221,6 +637,10 @@ void ProjectileSystem::updateProjectiles() {
     projectiles[write++] = p;
   }
   projectiles.resize(write);
+  for (const Projectile& child : pendingCluster) {
+    if ((int)projectiles.size() >= PROJECTILE_MAX) break;
+    projectiles.push_back(child);
+  }
 }
 
 int ProjectileSystem::buildSnapshot() {

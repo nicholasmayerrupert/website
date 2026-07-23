@@ -675,5 +675,45 @@ const waterPool = (e, x0, x1, top, floor) => {
   e.destroy();
 }
 
+// N11. Space carries a distinct jetpack bit: it preserves the ordinary ground
+// jump, then adds sustained airborne thrust, consumes replicated fuel, and
+// gradually recharges after release. W/up (PI_JUMP alone) remains a plain jump.
+{
+  console.log('survival: rechargeable jetpack');
+  const ordinary = mk();
+  const boosted = mk();
+  stoneFloor(ordinary, 60, 140, 100);
+  stoneFloor(boosted, 60, 140, 100);
+  const plainId = ordinary.spawnPlayer(98, 92);
+  const jetId = boosted.spawnPlayer(98, 92);
+  runSteps(ordinary, 8);
+  runSteps(boosted, 8);
+  let sawFlame = false;
+  for (let i = 0; i < 42; i++) {
+    ordinary.setPlayerInput(plainId, { bits: INPUT.JUMP });
+    boosted.setPlayerInput(jetId, { bits: INPUT.JUMP | INPUT.JETPACK });
+    ordinary.step(16 * i);
+    boosted.step(16 * i);
+    sawFlame ||= boosted.getPlayer(jetId).jetpackActive;
+  }
+  const plain = ordinary.getPlayer(plainId);
+  const jet = boosted.getPlayer(jetId);
+  check(`jetpack climbs above an ordinary held jump (${jet.y.toFixed(1)} < ${plain.y.toFixed(1)})`,
+    jet.y < plain.y - 8);
+  check(`airborne thrust drains normalized fuel (${jet.jetpackFuel.toFixed(3)})`,
+    sawFlame && jet.jetpackFuel > 0 && jet.jetpackFuel < 0.8);
+  check('ordinary jump input does not consume jetpack fuel', plain.jetpackFuel === 1 && !plain.jetpackActive);
+  const drained = jet.jetpackFuel;
+  for (let i = 0; i < 45; i++) {
+    boosted.setPlayerInput(jetId, { bits: 0 });
+    boosted.step(1000 + 16 * i);
+  }
+  const recharged = boosted.getPlayer(jetId);
+  check(`released jetpack recharges over time (${drained.toFixed(3)} -> ${recharged.jetpackFuel.toFixed(3)})`,
+    !recharged.jetpackActive && recharged.jetpackFuel > drained + 0.15 && recharged.jetpackFuel <= 1);
+  ordinary.destroy();
+  boosted.destroy();
+}
+
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

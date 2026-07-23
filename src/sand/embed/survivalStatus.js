@@ -21,6 +21,12 @@ const STYLE = `
 .survival-charge > i { display:block; width:10px; height:6px; background:#303840; }
 .survival-charge > i.full { background:#e9c75b; box-shadow:inset 2px 2px 0 #fff0a0; }
 .survival-charge.bore > i.full { background:#43d3c9; box-shadow:inset 2px 2px 0 #c9fff5; }
+.survival-fuel-label { margin:7px 0 4px 2px; color:#cdeaf7; letter-spacing:.12em; }
+.survival-fuel { display:grid; padding:4px; background:#171b20; border:2px solid #090b0e;
+  grid-template-columns:repeat(12,10px); gap:2px; box-shadow:inset 0 0 0 2px #3d4650; }
+.survival-fuel > i { display:block; width:10px; height:6px; background:#303840; }
+.survival-fuel > i.full { background:#58b9e9; box-shadow:inset 2px 2px 0 #bdeaff; }
+.survival-fuel.active > i.full { background:#f0a542; box-shadow:inset 2px 2px 0 #ffe3a2; }
 .survival-death { position:fixed; inset:0; z-index:76; display:none; place-items:center; pointer-events:auto;
   background:rgba(52,9,12,.55); color:#fff; font-family:ui-monospace,"SFMono-Regular",Menlo,monospace; }
 .survival-death.show { display:grid; }
@@ -54,7 +60,15 @@ export function createSurvivalStatus(root, { respawn } = {}) {
   const chargeCells = Array.from({ length: 12 }, () => {
     const el = document.createElement('i'); charge.appendChild(el); return el;
   });
-  vitals.append(objective, label, health, charge);
+  const fuelLabel = document.createElement('div');
+  fuelLabel.className = 'survival-fuel-label'; fuelLabel.textContent = 'JETPACK  SPACE';
+  const fuel = document.createElement('div'); fuel.className = 'survival-fuel';
+  fuel.setAttribute('role', 'meter'); fuel.setAttribute('aria-label', 'Jetpack fuel');
+  fuel.setAttribute('aria-valuemin', '0'); fuel.setAttribute('aria-valuemax', '100');
+  const fuelCells = Array.from({ length: 12 }, () => {
+    const el = document.createElement('i'); fuel.appendChild(el); return el;
+  });
+  vitals.append(objective, label, health, charge, fuelLabel, fuel);
 
   const death = document.createElement('div'); death.className = 'survival-death';
   const card = document.createElement('div'); card.className = 'survival-death-card';
@@ -97,6 +111,12 @@ export function createSurvivalStatus(root, { respawn } = {}) {
     charge.classList.toggle('show', (bow || bore) && level > 0);
     charge.classList.toggle('bore', bore);
     for (let i = 0; i < chargeCells.length; i++) chargeCells[i].classList.toggle('full', i < level);
+    const fuelLevel = Math.max(0, Math.min(1, player?.jetpackFuel ?? 1));
+    const filledFuel = Math.ceil(fuelLevel * fuelCells.length);
+    fuel.classList.toggle('active', !!player?.jetpackActive);
+    fuel.setAttribute('aria-valuenow', String(Math.round(fuelLevel * 100)));
+    fuelLabel.textContent = player?.jetpackActive ? 'JETPACK  FIRING' : 'JETPACK  SPACE';
+    for (let i = 0; i < fuelCells.length; i++) fuelCells[i].classList.toggle('full', i < filledFuel);
 
     const dead = !!player && player.alive === false;
     ready = dead && !!player.respawnReady;

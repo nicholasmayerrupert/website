@@ -112,37 +112,175 @@ bool PlayerSystem::tryMoveY(Player& p, double d) {
   return d > 0 ? moveDown(p, d) : moveUp(p, d);
 }
 
+bool PlayerSystem::spawnAreaLoaded(double px, double py, int margin) {
+  int x0 = (int)std::floor(px) - margin;
+  int y0 = (int)std::floor(py) - margin;
+  int x1 = (int)std::floor(px + PLAYER_W - 1e-6) + margin;
+  int y1 = (int)std::floor(py + PLAYER_H - 1e-6) + margin + 1; // support row
+  return x0 >= 0 && y0 >= 0 && x1 < E.cols && y1 < E.rows;
+}
+
+bool PlayerSystem::spawnOverlapsPlayer(double px, double py, const Player* ignore) {
+  for (const Player& other : players) {
+    if (&other == ignore || !other.active || !other.alive) continue;
+    if (px < other.px + other.w && px + PLAYER_W > other.px &&
+        py < other.py + other.h && py + PLAYER_H > other.py) return true;
+  }
+  return false;
+}
+
+// A safe spawn is immediately supported (never hanging high in the air), has a
+// clear body box, and has no fire/corrosive/molten cells close enough to deal
+// damage before the player can move. Foreground is the only player-physical
+// layer, so background decoration intentionally does not reject a candidate.
+bool PlayerSystem::safeSpawnAt(double px, double py, const Player* ignore) {
+  if (!spawnAreaLoaded(px, py, P_SPAWN_HAZARD_MARGIN) || spawnOverlapsPlayer(px, py, ignore)) return false;
+  int x0 = (int)std::floor(px), x1 = (int)std::floor(px + PLAYER_W - 1e-6);
+  int y0 = (int)std::floor(py), y1 = (int)std::floor(py + PLAYER_H - 1e-6);
+  auto harmful = [](uint8_t m) { return m == FIRE || m == ACID || m == LAVA; };
+  for (int y = y0 - P_SPAWN_HAZARD_MARGIN; y <= y1 + P_SPAWN_HAZARD_MARGIN; y++)
+    for (int x = x0 - P_SPAWN_HAZARD_MARGIN; x <= x1 + P_SPAWN_HAZARD_MARGIN; x++)
+      if (harmful(E.fg.grid[E.I(x, y)])) return false;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    uint8_t m = E.fg.grid[E.I(x, y)];
+    if (E.isBlockingForPlayer(m)) return false;
+  }
+  int support = 0;
+  for (int x = x0; x <= x1; x++) {
+    uint8_t m = E.fg.grid[E.I(x, y1 + 1)];
+    if (E.isBlockingForPlayer(m) && !harmful(m)) support++;
+  }
+  return support >= imax(2, PLAYER_W / 2);
+}
+
+// Resolve around an ABSOLUTE first-spawn anchor. Candidate order is stable:
+// closest horizontal position, then closest elevation, with left/above winning
+// ties. This is called rarely (join/respawn), so clarity beats a spatial index.
+bool PlayerSystem::findSafeSpawnNearWorld(double worldX, double worldY, double* out, const Player* ignore) {
+  int baseX = (int)std::lround(worldX - E.fg.worldOffsetX);
+  int baseY = (int)std::lround(worldY - E.fg.worldOffsetY);
+  int bestDistance2 = INT_MAX;
+  bool found = false;
+  for (int ax = 0; ax <= P_SPAWN_SEARCH_X; ax++) {
+    for (int xs = 0; xs < (ax == 0 ? 1 : 2); xs++) {
+      int x = baseX + (ax == 0 ? 0 : (xs == 0 ? -ax : ax));
+      for (int ay = 0; ay <= P_SPAWN_SEARCH_Y; ay++) {
+        int distance2 = ax * ax + ay * ay;
+        if (distance2 >= bestDistance2) continue;
+        for (int ys = 0; ys < (ay == 0 ? 1 : 2); ys++) {
+          int y = baseY + (ay == 0 ? 0 : (ys == 0 ? -ay : ay));
+          if (distance2 >= bestDistance2 || !safeSpawnAt(x, y, ignore)) continue;
+          bestDistance2 = distance2;
+          out[0] = x; out[1] = y;
+          found = true;
+        }
+      }
+    }
+  }
+  return found;
+}
+
+// Absolute spawn terrain can be completely destroyed or flooded. Once its
+// neighborhood is loaded, make the smallest reliable rescue site: erase the
+// body/hazard margin with the shared component-aware eraser, then place a short
+// stone platform with two narrow supports reaching existing ground (or the
+// buffer floor). placeMaterialAt registers every stone cell, avoiding the
+// component-less raw writes that would flicker away next step.
+bool PlayerSystem::buildSafeSpawnPad(double worldX, double worldY, double* out, const Player* ignore) {
+  int baseX = (int)std::lround(worldX - E.fg.worldOffsetX);
+  int baseY = (int)std::lround(worldY - E.fg.worldOffsetY);
+  for (int offset = 0; offset <= P_SPAWN_SEARCH_X; offset += 8) {
+    for (int side = 0; side < (offset == 0 ? 1 : 2); side++) {
+      int x0 = baseX + (offset == 0 ? 0 : (side == 0 ? -offset : offset));
+      int y0 = baseY;
+      if (!spawnAreaLoaded(x0, y0, P_SPAWN_HAZARD_MARGIN + 1) ||
+          spawnOverlapsPlayer(x0, y0, ignore)) continue;
+      int left = x0 - P_SPAWN_HAZARD_MARGIN;
+      int right = x0 + PLAYER_W - 1 + P_SPAWN_HAZARD_MARGIN;
+      int top = y0 - P_SPAWN_HAZARD_MARGIN;
+      int platformY = y0 + PLAYER_H;
+      int pillarLeft = x0 - 1, pillarRight = x0 + PLAYER_W;
+      int pillarBottom = platformY + 1;
+      for (; pillarBottom < E.rows - 1; pillarBottom++) {
+        uint8_t ml = E.fg.grid[E.I(pillarLeft, pillarBottom + 1)];
+        uint8_t mr = E.fg.grid[E.I(pillarRight, pillarBottom + 1)];
+        if (E.isBlockingForPlayer(ml) || E.isBlockingForPlayer(mr)) break;
+      }
+
+      std::vector<int> erase;
+      erase.reserve((right - left + 1) * (platformY + 2 - top) +
+                    2 * imax(0, pillarBottom - platformY));
+      for (int y = top; y <= platformY + 1; y++)
+        for (int x = left; x <= right; x++) erase.push_back(E.I(x, y));
+      for (int y = platformY + 2; y <= pillarBottom; y++) {
+        erase.push_back(E.I(pillarLeft, y));
+        erase.push_back(E.I(pillarRight, y));
+      }
+      E.useLayer(&E.fg);
+      E.eraseStrokeCells(erase, left, top, right, pillarBottom);
+      for (int y = platformY; y <= platformY + 1; y++)
+        for (int x = left; x <= right; x++) E.placeMaterialAt(x, y, 0, STONE);
+      for (int y = platformY + 2; y <= pillarBottom; y++) {
+        E.placeMaterialAt(pillarLeft, y, 0, STONE);
+        E.placeMaterialAt(pillarRight, y, 0, STONE);
+      }
+      if (!safeSpawnAt(x0, y0, ignore)) continue;
+      out[0] = x0; out[1] = y0;
+      return true;
+    }
+  }
+  return false;
+}
+
 int PlayerSystem::spawnPlayer(double x, double y) {
   Player p;
   p.id = nextPlayerId++;
   p.px = x; p.py = y;
+  p.spawnWorldX = E.fg.worldOffsetX + x;
+  p.spawnWorldY = E.fg.worldOffsetY + y;
   p.aimX = x; p.aimY = y;
+  p.jetpackFuel = 1.0;
   players.push_back(p);
   if (E.survivalInventory) E.seedStarterTools(players.back());
   return p.id;
 }
 void PlayerSystem::playerSurfaceSpawn(int col, double* out) {
+  col = std::max(PLAYER_W, std::min(E.cols - PLAYER_W - 1, col));
   int worldX0 = E.fg.worldOffsetX;
   int top = E.fg.infinite ? E.genSurfaceAt(worldX0 + col) : E.rows / 2;
   for (int c = col - PLAYER_W; c <= col + PLAYER_W; c++) {
     int surf = E.fg.infinite ? E.genSurfaceAt(worldX0 + c) : E.rows / 2;
     if (surf < top) top = surf;
   }
-  out[0] = col - PLAYER_W / 2.0;
-  out[1] = top - PLAYER_H - 4;
+  double roughX = col - PLAYER_W / 2.0;
+  double roughY = top - PLAYER_H - 4;
+  if (findSafeSpawnNearWorld(worldX0 + roughX, E.fg.worldOffsetY + roughY, out, nullptr)) return;
+  // A read-only surface query cannot build the rescue pad. Keep this fallback
+  // near the generated surface; spawnPlayerAtSurface will normally never need it.
+  out[0] = roughX;
+  out[1] = top - PLAYER_H;
 }
 int PlayerSystem::spawnPlayerAtSurface(int col) {
   double out[2];
   playerSurfaceSpawn(col, out);
   return spawnPlayer(out[0], out[1]);
 }
-void PlayerSystem::respawnPlayer(Player& p) {
+bool PlayerSystem::respawnPlayer(Player& p) {
   double out[2];
-  int col = (int)std::lround(p.px + p.w * 0.5);
-  playerSurfaceSpawn(std::max(PLAYER_W, std::min(E.cols - PLAYER_W - 1, col)), out);
+  // Do not revive outside the loaded buffer. Keeping the dead player's local
+  // pose at the absolute anchor makes the existing worker camera streaming and
+  // multiplayer shared-window sync load the right chunks without a destructive,
+  // synchronous global shift here.
+  double localAnchorX = p.spawnWorldX - E.fg.worldOffsetX;
+  double localAnchorY = p.spawnWorldY - E.fg.worldOffsetY;
+  if (!spawnAreaLoaded(localAnchorX, localAnchorY, P_SPAWN_HAZARD_MARGIN + 1)) return false;
+  if (!findSafeSpawnNearWorld(p.spawnWorldX, p.spawnWorldY, out, &p) &&
+      !buildSafeSpawnPad(p.spawnWorldX, p.spawnWorldY, out, &p)) return false;
   p.px = out[0]; p.py = out[1]; p.vx = p.vy = 0;
   p.health = 100; p.alive = true; p.grounded = false; p.jumpReady = false;
   p.deathTicks = 0; p.buriedTicks = 0; p.bowChargeTicks = 0; p.lastDamageTick = E.actorTick;
+  p.respawnPending = false;
+  p.jetpackFuel = 1.0; p.jetpackActive = false;
   p.hurtCooldown = 120;
   resetPlayerMine(p); p.placeStrokeActive = false; p.prevInput = p.input;
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
@@ -150,15 +288,23 @@ void PlayerSystem::respawnPlayer(Player& p) {
   // so respawning cannot leave the combat mode soft-locked with empty hands.
   if (E.survivalInventory) E.seedStarterTools(p);
   E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, EMPTY);
+  return true;
 }
 bool PlayerSystem::requestRespawn(int id) {
   Player* p = findPlayer(id);
-  if (!p || p->alive || p->deathTicks < 180) return false;
-  respawnPlayer(*p); return true;
+  if (!p || p->alive || p->respawnPending || p->deathTicks < 180) return false;
+  p->respawnPending = true;
+  p->px = p->spawnWorldX - E.fg.worldOffsetX;
+  p->py = p->spawnWorldY - E.fg.worldOffsetY;
+  p->aimX = p->px + p->w * 0.5;
+  p->aimY = p->py + p->h * 0.5;
+  respawnPlayer(*p); // immediate when the original spawn neighborhood is loaded
+  return true;       // request accepted; otherwise streaming completes it later
 }
 void PlayerSystem::killPlayer(Player& p) {
   if (!p.alive) return;
   p.health = 0; p.alive = false; p.deathTicks = 0; p.vx = p.vy = 0; p.bowChargeTicks = 0;
+  p.respawnPending = false; p.jetpackActive = false;
   resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p);
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
   E.inv.dropAll(p);
@@ -248,6 +394,8 @@ void PlayerSystem::integratePlayer(Player& p) {
   double moveStrength = std::fabs(moveX);
   bool run = (p.input & PI_RUN) != 0;
   bool wantJump = (p.input & PI_JUMP) != 0;
+  bool wantJetpack = (p.input & PI_JETPACK) != 0;
+  p.jetpackActive = false;
   // Two coverage thresholds: past MIN he's "in liquid" (drag + slow sink + slower
   // run); past the higher SWIM threshold he can also swim upward with jump/up.
   double fluidCoverage = samplePlayerFluidCoverage(p);
@@ -299,7 +447,26 @@ void PlayerSystem::integratePlayer(Player& p) {
     if (p.vy > P_LIQUID_MAX_FALL) p.vy = P_LIQUID_MAX_FALL;
   } else {
     p.vy += P_GRAVITY;
+    // Space keeps thrusting after the ordinary ground jump. Preserve the
+    // stronger initial jump impulse, then accelerate upward once it decays into
+    // the jetpack's speed band. Holding an empty pack does not create a
+    // recharge/thrust pulse: release Space (or land/swim) to refill it.
+    bool canThrust = !p.grounded && wantJetpack && p.jetpackFuel > 1e-9;
+    if (canThrust) {
+      p.jetpackActive = true;
+      p.jetpackFuel = std::max(0.0, p.jetpackFuel - P_JETPACK_BURN);
+      if (p.vy > -P_JETPACK_MAX_RISE)
+        p.vy = std::max(-P_JETPACK_MAX_RISE, p.vy - P_JETPACK_THRUST);
+    } else if (!wantJetpack || p.grounded) {
+      p.jetpackFuel = std::min(1.0, p.jetpackFuel + P_JETPACK_RECHARGE);
+    }
     if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;
+  }
+  // Liquids suppress the flame but safely recharge the pack; swimming retains
+  // its established jump/up behavior.
+  if (inLiquid) {
+    p.jetpackActive = false;
+    p.jetpackFuel = std::min(1.0, p.jetpackFuel + P_JETPACK_RECHARGE);
   }
   double impactVy = p.vy;
   if (tryMoveY(p, p.vy)) p.vy = 0;
@@ -599,6 +766,7 @@ void PlayerSystem::applyPlayerTools() {
 
 void PlayerSystem::updatePlayers() {
   for (auto& p : players) {
+    if (p.active && !p.alive && p.respawnPending) respawnPlayer(p);
     if (p.hurtCooldown > 0) p.hurtCooldown--;
     if (p.active && p.alive) integratePlayer(p);
     if (p.active) updatePlayerVitals(p);
@@ -617,11 +785,14 @@ void PlayerSystem::stepPlayerOnly(int id) {
 }
 // Snap a player to an authoritative state (reconciliation), before replaying its
 // unacknowledged inputs.
-void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) {
+void PlayerSystem::setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
+                                  double jetpackFuel, int jetpackActive) {
   Player* p = findPlayer(id);
   if (!p) return;
   p->px = x; p->py = y; p->vx = vx; p->vy = vy;
   p->facing = facing; p->grounded = grounded != 0; p->jumpReady = jumpReady != 0;
+  p->jetpackFuel = std::isfinite(jetpackFuel) ? std::max(0.0, std::min(1.0, jetpackFuel)) : 0.0;
+  p->jetpackActive = jetpackActive != 0 && p->jetpackFuel > 0;
 }
 
 // Pack players into flat PS_STRIDE records for replication and presentation.
@@ -650,12 +821,14 @@ int PlayerSystem::buildPlayerSnapshot() {
     o[PS_ANIM_STATE] = (float)p.animState;
     o[PS_ANIM_FRAME] = (float)p.animFrame;
     o[PS_DEATH_TICKS] = (float)p.deathTicks;
-    o[PS_RESPAWN_READY] = (!p.alive && p.deathTicks >= 180) ? 1.0f : 0.0f;
+    o[PS_RESPAWN_READY] = (!p.alive && !p.respawnPending && p.deathTicks >= 180) ? 1.0f : 0.0f;
     const InvSlot& held = p.inv[p.selectedSlot];
     double chargeMax = held.count > 0 && held.itemKind == IK_BORE_CANNON
       ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
     o[PS_BOW_CHARGE] = (float)(p.bowChargeTicks / chargeMax);
     o[PS_HELD_ITEM_KIND] = held.count > 0 ? (float)held.itemKind : (float)IK_MATERIAL;
+    o[PS_JETPACK_FUEL] = (float)p.jetpackFuel;
+    o[PS_JETPACK_ACTIVE] = p.jetpackActive ? 1.0f : 0.0f;
   }
   return (int)players.size();
 }

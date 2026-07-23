@@ -164,6 +164,8 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
         packed[o + G.heldItemKind] = p.heldItemKind || 0; packed[o + G.bowCharge] = p.bowCharge || 0;
         packed[o + G.aimX] = p.id === ownId ? liveAim.x : (p.aimX ?? p.x + p.w * .5 + p.facing);
         packed[o + G.aimY] = p.id === ownId ? liveAim.y : (p.aimY ?? p.y + p.h * .42);
+        packed[o + G.jetpackFuel] = p.jetpackFuel ?? 1;
+        packed[o + G.jetpackActive] = p.jetpackActive ? 1 : 0;
       }
       engine.glSetPlayers(true, packed, ownId);
     }
@@ -313,7 +315,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
     }
     if (ctx.survival && onPlayerState) {
       const player = localPlayer();
-      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}` : '';
+      const signature = player ? `${player.id}:${player.health}:${player.alive}:${player.deathTicks}:${player.respawnReady}:${player.bowCharge}:${player.heldItemKind}:${player.jetpackFuel}:${player.jetpackActive}` : '';
       if (signature !== lastPlayerStateSignature) {
         lastPlayerStateSignature = signature;
         onPlayerState(player);

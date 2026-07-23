@@ -39,7 +39,8 @@ function arena({ wall = false, background = false } = {}) {
   e.stepActors();
   check('muzzle sweep detonates on an immediately adjacent wall', e.getProjectiles().length === 0
     && e.getGrid()[(FLOOR - 4) * COLS + 28] === MAT.EMPTY);
-  check('point-blank wall impact keeps the owner safe', e.getPlayer(shooter).health === 100);
+  check('point-blank ground/wall impact deals only a small self-hit',
+    e.getPlayer(shooter).health >= 90 && e.getPlayer(shooter).health < 100);
   e.destroy();
 
   const pvp = arena();
@@ -218,6 +219,10 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: COLS - 4, aimY: beamY, seq: ++seq });
   e.stepActors();
   check('charged bore cannon carves its aimed line', e.getGrid()[cutCell] === MAT.EMPTY);
+  const boreFlash = e.getProjectiles().find((projectile) =>
+    projectile.kind === PROJECTILE_KIND.BORE_BEAM && projectile.owner === player);
+  check('player bore shot exposes a latched replicated firing beam',
+    boreFlash?.fuse > 0 && boreFlash.vx > 0.99 && Math.abs(boreFlash.vy) < 0.02);
   check('charged bore cannon damages an enemy beyond the wall',
     e.getCreatures().find((creature) => creature.id === target)?.health < targetHealth);
   check('bore cannon preserves its owner immunity', e.getPlayer(player).health === 100);
@@ -287,6 +292,126 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('bore beam damages an actor that remains on the committed line', e.getPlayer(victim).health === 58);
   check('bore beam cuts the foreground and background wall', e.getGrid()[cutCell] === MAT.EMPTY && e.getGridBg()[cutCell] === MAT.EMPTY);
   check('bore charge and fire semantic sounds are emitted', sounds.has(SOUND_EVENT.BORE_CHARGE) && sounds.has(SOUND_EVENT.BORE_FIRE));
+  e.destroy();
+}
+
+// Each new demolition crew has an autonomous telegraph and emits its distinct
+// projectile/sound from the AI path—not just from the captured player weapon.
+{
+  const scenarios = [
+    {
+      label: 'caustic mortarman', species: CREATURE.CAUSTIC_MORTARMAN,
+      x: 68, y: FLOOR - 6, projectile: PROJECTILE_KIND.ACID_SHELL,
+      sound: SOUND_EVENT.ACID_MORTAR,
+    },
+    {
+      label: 'cluster wasp', species: CREATURE.CLUSTER_WASP,
+      x: 70, y: FLOOR - 28, projectile: PROJECTILE_KIND.CLUSTER_BOMB,
+      sound: SOUND_EVENT.CLUSTER_LAUNCH,
+    },
+    {
+      label: 'quake brute', species: CREATURE.QUAKE_BRUTE,
+      x: 68, y: FLOOR - 7, projectile: PROJECTILE_KIND.SEISMIC_WAVE,
+      sound: SOUND_EVENT.QUAKE,
+    },
+  ];
+  for (const scenario of scenarios) {
+    const e = arena();
+    e.spawnPlayer(30, FLOOR - 8);
+    const enemy = e.spawnCreature(scenario.species, scenario.x, scenario.y);
+    const sounds = new Set();
+    let sawCharge = false, sawProjectile = false;
+    for (let tick = 0; tick < 100; tick++) {
+      e.stepActors(); drainTypes(e, sounds);
+      const creature = e.getCreatures().find((candidate) => candidate.id === enemy);
+      sawCharge ||= creature?.attackState === CREATURE_ATTACK_STATE.CHARGING
+        && creature.attackProgress > 0;
+      sawProjectile ||= e.getProjectiles().some((projectile) =>
+        projectile.kind === scenario.projectile);
+      if (sawCharge && sawProjectile && sounds.has(scenario.sound)) break;
+    }
+    check(`${scenario.label} telegraphs and launches its autonomous attack`,
+      sawCharge && sawProjectile && sounds.has(scenario.sound));
+    e.destroy();
+  }
+}
+
+// Defeating each new crew member yields one polished, singleton weapon. The
+// ordinary pickup/equip path then drives the same destructive projectile logic.
+{
+  const e = arena();
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const drop = killForWeaponDrop(
+    e, CREATURE.CAUSTIC_MORTARMAN, ITEM_KIND.ACID_MORTAR,
+    78, FLOOR - 6, 'caustic mortarman',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.ACID_MORTAR, drop, 'acid mortar');
+  const acidBefore = e.getGrid().reduce((n, material) => n + (material === MAT.ACID ? 1 : 0), 0);
+  e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 76, aimY: FLOOR - 1, seq: 1 });
+  e.stepActors();
+  let sawShell = e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
+  e.setPlayerInput(player, { bits: 0, aimX: 76, aimY: FLOOR - 1, seq: 2 });
+  for (let tick = 0; tick < 90; tick++) {
+    e.stepActors();
+    sawShell ||= e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.ACID_SHELL && p.owner === player);
+    if (sawShell && !e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.ACID_SHELL)) break;
+  }
+  const acidAfter = e.getGrid().reduce((n, material) => n + (material === MAT.ACID ? 1 : 0), 0);
+  check(`captured acid mortar leaves a corrosive pool (${acidBefore} -> ${acidAfter})`,
+    slot >= 0 && sawShell && acidAfter > acidBefore);
+  e.destroy();
+}
+
+{
+  const e = arena();
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const drop = killForWeaponDrop(
+    e, CREATURE.CLUSTER_WASP, ITEM_KIND.CLUSTER_LAUNCHER,
+    78, FLOOR - 30, 'cluster wasp',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.CLUSTER_LAUNCHER, drop, 'cluster launcher');
+  const stoneBefore = countStone(e.getGrid());
+  e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 78, aimY: FLOOR - 1, seq: 1 });
+  e.stepActors();
+  e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
+  let sawCarrier = false, maxBomblets = 0;
+  for (let tick = 0; tick < 100; tick++) {
+    e.stepActors();
+    const cluster = e.getProjectiles().filter((p) => p.kind === PROJECTILE_KIND.CLUSTER_BOMB);
+    sawCarrier ||= cluster.some((p) => p.charge < 0.5);
+    maxBomblets = Math.max(maxBomblets, cluster.filter((p) => p.charge > 0.5).length);
+  }
+  check(`captured cluster launcher splits into five live bomblets (max ${maxBomblets})`,
+    slot >= 0 && sawCarrier && maxBomblets === 5);
+  const stoneAfter = countStone(e.getGrid());
+  check(`cluster bomblets leave multiple destructive craters (${stoneBefore} -> ${stoneAfter})`,
+    stoneAfter < stoneBefore);
+  e.destroy();
+}
+
+{
+  const e = arena({ background: true });
+  const player = e.spawnPlayer(18, FLOOR - 8);
+  const drop = killForWeaponDrop(
+    e, CREATURE.QUAKE_BRUTE, ITEM_KIND.SEISMIC_HAMMER,
+    72, FLOOR - 7, 'quake brute',
+  );
+  const slot = collectAndEquipWeapon(e, player, ITEM_KIND.SEISMIC_HAMMER, drop, 'seismic hammer');
+  const foregroundBefore = countStone(e.getGrid());
+  const backgroundBefore = countStone(e.getGridBg());
+  e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 90, aimY: FLOOR - 1, seq: 1 });
+  e.stepActors();
+  let sawWave = e.getProjectiles().some((p) =>
+    p.kind === PROJECTILE_KIND.SEISMIC_WAVE && p.owner === player);
+  e.setPlayerInput(player, { bits: 0, aimX: 90, aimY: FLOOR - 1, seq: 2 });
+  for (let tick = 0; tick < 12; tick++) {
+    e.stepActors();
+    sawWave ||= e.getProjectiles().some((p) =>
+      p.kind === PROJECTILE_KIND.SEISMIC_WAVE && p.owner === player);
+  }
+  check('captured seismic hammer launches a ground-following fracture', slot >= 0 && sawWave);
+  check('seismic fracture cuts component terrain in both simulated layers',
+    countStone(e.getGrid()) < foregroundBefore && countStone(e.getGridBg()) < backgroundBefore);
   e.destroy();
 }
 

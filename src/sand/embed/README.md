@@ -80,7 +80,8 @@ the element instead.
 | Input | Action |
 | --- | --- |
 | `A` / `D` or arrows | Move |
-| `W`, `↑`, or `Space` | Jump / swim |
+| `W` or `↑` | Jump / swim |
+| `Space` | Jump, then hold for rechargeable jetpack thrust |
 | `S` / `↓` | Crouch / descend |
 | `Shift` | Run |
 | Pointer | Aim |

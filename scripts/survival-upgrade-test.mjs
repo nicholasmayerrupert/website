@@ -59,8 +59,13 @@ function world() {
 // requires the explicit three-second respawn gate.
 {
   const e = world(); const p = e.spawnPlayer(40, FLOOR - 8);
+  const firstSpawn = e.getPlayer(p);
   e.addToInventory(p, MAT.WOOD, 30);
+  e.setPlayerState(p, { ...firstSpawn, x: 80, y: FLOOR - 8, vx: 0, vy: 0, grounded: true });
+  // Poison the exact home tile after leaving it. Respawn must find nearby
+  // supported ground instead of placing the player into the hazard.
   for (let x = 40; x < 44; x++) for (let y = FLOOR - 8; y < FLOOR; y++) e.paintDisc(x, y, 0, MAT.LAVA, false);
+  for (let x = 80; x < 84; x++) for (let y = FLOOR - 8; y < FLOOR; y++) e.paintDisc(x, y, 0, MAT.LAVA, false);
   let ticks = 0;
   while (e.getPlayer(p)?.alive && ticks++ < 300) e.stepActors();
   const dead = e.getPlayer(p);
@@ -75,14 +80,67 @@ function world() {
   check('respawn is rejected before three seconds', e.respawnPlayer(p) === false);
   for (let i = 0; i < 180; i++) e.stepActors();
   check('respawn becomes ready after 180 actor ticks', e.getPlayer(p)?.respawnReady === true);
+  const accepted = e.respawnPlayer(p);
+  const respawned = e.getPlayer(p);
   check('manual respawn restores health, play, gun, and wood mining tool',
-    e.respawnPlayer(p) && e.getPlayer(p)?.alive && e.getPlayer(p)?.health === 100
+    accepted && respawned?.alive && respawned?.health === 100
       && e.getInventory(p).slots[0].itemKind === ITEM_KIND.BLAST_GUN
       && e.getInventory(p).slots[1].itemKind === ITEM_KIND.MINING_TOOL
       && e.getInventory(p).slots[1].isTool);
+  check(`respawn returns to the safe first-spawn neighborhood (${respawned?.x.toFixed(1)},${respawned?.y.toFixed(1)})`,
+    Math.hypot(respawned.x - firstSpawn.x, respawned.y - firstSpawn.y) <= 20
+      && respawned.y + respawned.h >= FLOOR - 1 && respawned.y + respawned.h <= FLOOR + 1
+      && respawned.jetpackFuel === 1);
+  const grid = e.getGrid();
+  let safeBody = true;
+  for (let y = Math.floor(respawned.y); y < Math.ceil(respawned.y + respawned.h); y++)
+    for (let x = Math.floor(respawned.x); x < Math.ceil(respawned.x + respawned.w); x++)
+      safeBody &&= ![MAT.LAVA, MAT.ACID, MAT.FIRE].includes(grid[y * COLS + x]);
+  const supportY = Math.floor(respawned.y + respawned.h);
+  const supported = Array.from({ length: respawned.w }, (_, dx) =>
+    grid[supportY * COLS + Math.floor(respawned.x) + dx] === MAT.STONE).filter(Boolean).length >= 2;
+  check('respawn body is hazard-free and immediately supported', safeBody && supported);
   for (let i = 0; i < 60; i++) e.stepActors();
   check('the old starter gun cannot return and duplicate the replacement',
     e.getInventory(p).slots.filter((s) => s.itemKind === ITEM_KIND.BLAST_GUN && s.count > 0).length === 1);
+  e.destroy();
+}
+
+// The home anchor is absolute-world state, not a buffer-local death column.
+// A respawn request made after multiple streamed shifts stays pending until the
+// original chunks are loaded, then revives at the same safe world location.
+{
+  const e = createEngineWasm({ cols: 256, rows: 192, worldSeed: 0x51A7, sinksOn: false, infinite: true });
+  e.setSurvivalInventory(true);
+  const p = e.spawnPlayerAtSurface(128);
+  const born = e.getPlayer(p);
+  const home = { x: e.getWorldOffsetX() + born.x, y: e.getWorldOffsetY() + born.y };
+  for (let leg = 0; leg < 2; leg++) {
+    const pose = e.getPlayer(p);
+    e.setPlayerState(p, { ...pose, x: 192, vx: 0, vy: 0 });
+    e.shiftWorldXY(64, 0);
+  }
+  const far = e.getPlayer(p);
+  for (let tick = 0; tick < 360 && e.getPlayer(p).alive; tick++) {
+    const pose = e.getPlayer(p);
+    // Keep the hazard attached to the moving fixture so procedural terrain
+    // height cannot let a short loose-lava column fall away before it kills.
+    for (let y = Math.floor(pose.y); y < Math.ceil(pose.y + pose.h); y++)
+      for (let x = Math.floor(pose.x); x < Math.ceil(pose.x + pose.w); x++)
+        e.paintDisc(x, y, 0, MAT.LAVA, false);
+    e.stepActors();
+  }
+  check('streamed-away player can die far from home', e.getPlayer(p).alive === false);
+  for (let tick = 0; tick < 180; tick++) e.stepActors();
+  check('far respawn request is accepted without reviving out of bounds',
+    e.respawnPlayer(p) && e.getPlayer(p).alive === false);
+  const dxHome = Math.trunc(home.x - born.x - e.getWorldOffsetX());
+  e.shiftWorldXY(dxHome, 0);
+  e.stepActors();
+  const returned = e.getPlayer(p);
+  check(`pending respawn resolves at the original absolute spawn (${(e.getWorldOffsetX() + returned.x).toFixed(1)},${(e.getWorldOffsetY() + returned.y).toFixed(1)})`,
+    returned.alive
+      && Math.hypot(e.getWorldOffsetX() + returned.x - home.x, e.getWorldOffsetY() + returned.y - home.y) <= 8);
   e.destroy();
 }
 

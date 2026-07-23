@@ -3,9 +3,9 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 18;
+static const int ABI_VERSION = 19;
 
-// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind
+// playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive
 enum PlayerSnapshotField : int {
   PS_ID = 0,
   PS_ACTIVE = 1,
@@ -30,8 +30,10 @@ enum PlayerSnapshotField : int {
   PS_RESPAWN_READY = 20,
   PS_BOW_CHARGE = 21,
   PS_HELD_ITEM_KIND = 22,
+  PS_JETPACK_FUEL = 23,
+  PS_JETPACK_ACTIVE = 24,
 };
-static const int PS_STRIDE = 23;
+static const int PS_STRIDE = 25;
 
 // itemSnapshot: id, kind, material, count, x, y, life, plantType, itemKind, isTool, toolClass, toolTier
 enum ItemSnapshotField : int {
@@ -131,7 +133,7 @@ enum SurvivalFootprintField : int {
 };
 static const int FP_STRIDE = 6;
 
-// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY
+// glPlayerExt: x, y, w, h, facing, own, animState, animFrame, alive, heldItemKind, bowCharge, aimX, aimY, jetpackFuel, jetpackActive
 enum GlPlayerExtField : int {
   GLP_X = 0,
   GLP_Y = 1,
@@ -146,8 +148,10 @@ enum GlPlayerExtField : int {
   GLP_BOW_CHARGE = 10,
   GLP_AIM_X = 11,
   GLP_AIM_Y = 12,
+  GLP_JETPACK_FUEL = 13,
+  GLP_JETPACK_ACTIVE = 14,
 };
-static const int GLP_STRIDE = 13;
+static const int GLP_STRIDE = 15;
 
 // soundEvent: type, x, y, intensity, material, layer
 enum SoundEventField : int {
@@ -201,6 +205,7 @@ enum PlayerInput : int {
   PI_PRIMARY = 16,
   PI_SECONDARY = 32,
   PI_RUN = 64,
+  PI_JETPACK = 128,
 };
 
 enum InventoryItemKind : uint8_t {
@@ -211,12 +216,19 @@ enum InventoryItemKind : uint8_t {
   IK_BLAST_GUN = 4,
   IK_DYNAMITE_SATCHEL = 5,
   IK_BORE_CANNON = 6,
+  IK_ACID_MORTAR = 7,
+  IK_CLUSTER_LAUNCHER = 8,
+  IK_SEISMIC_HAMMER = 9,
 };
 
 enum ProjectileKind : uint8_t {
   PK_ARROW = 0,
   PK_BLAST_ROUND = 1,
   PK_DYNAMITE = 2,
+  PK_ACID_SHELL = 3,
+  PK_CLUSTER_BOMB = 4,
+  PK_SEISMIC_WAVE = 5,
+  PK_BORE_BEAM = 6,
 };
 
 enum CraftIngredientKind : uint8_t {
@@ -257,6 +269,9 @@ enum CreatureSpeciesAbi : int {
   CREATURE_BIRD = 6,
   CREATURE_DYNAMITEER = 7,
   CREATURE_BORE_SENTINEL = 8,
+  CREATURE_CAUSTIC_MORTARMAN = 9,
+  CREATURE_CLUSTER_WASP = 10,
+  CREATURE_QUAKE_BRUTE = 11,
 };
 
 enum CreatureAttackState : uint8_t {
@@ -288,6 +303,9 @@ enum SoundEventType : uint8_t {
   SE_BLAST_GUN = 19,
   SE_BORE_CHARGE = 20,
   SE_BORE_FIRE = 21,
+  SE_ACID_MORTAR = 22,
+  SE_CLUSTER_LAUNCH = 23,
+  SE_QUAKE = 24,
 };
 
 static const int INV_HOTBAR = 9;

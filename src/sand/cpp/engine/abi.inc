@@ -249,7 +249,11 @@ EMSCRIPTEN_KEEPALIVE int engine_player_mine_target(Engine* e, int id, int* out) 
   if (out) { out[0] = p->mineX; out[1] = p->mineY; }
   return 1;
 }
-EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
+EMSCRIPTEN_KEEPALIVE void engine_set_player_state(Engine* e, int id, double x, double y, double vx, double vy,
+                                                  int facing, int grounded, int jumpReady,
+                                                  double jetpackFuel, int jetpackActive) {
+  e->setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive);
+}
 
 // Dropped-item and particle hooks plus the packed replication/render snapshot.
 EMSCRIPTEN_KEEPALIVE int engine_spawn_item(Engine* e, int mat, int count, double px, double py, double vx, double vy) { return e->spawnItem((uint8_t)mat, count, px, py, vx, vy); }

@@ -280,7 +280,8 @@ void CreatureSystem::updateNaturalPopulation() {
     // Temporarily keep the ambient roster focused: these species remain valid
     // for direct tests/scripts, but do not enter fresh natural populations.
     if (sid == CS_PIKE || sid == CS_HARE || sid == CS_CRAWLER) continue;
-    bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL;
+    bool survivalEnemy = sid == CS_DYNAMITEER || sid == CS_BORE_SENTINEL ||
+      sid == CS_CAUSTIC_MORTARMAN || sid == CS_CLUSTER_WASP || sid == CS_QUAKE_BRUTE;
     if (survivalEnemy != (pass == 0) || (survivalEnemy && !E.survivalInventory)) continue;
     const CreatureSpawnRule& r = CREATURE_SPECIES[sid].spawn;
     if (r.mode == CSM_CONTINUOUS) {
@@ -484,10 +485,16 @@ void CreatureSystem::moveAmphibious(Creature& c) {
       if (d2 < avoidD2) { avoidD2 = d2; avoidX = px; avoidsPlayer = true; }
     }
     double wish;
-    if (hasTarget && (c.species == CS_DYNAMITEER || c.species == CS_BORE_SENTINEL)) {
+    bool rangedEnemy = c.species == CS_DYNAMITEER || c.species == CS_BORE_SENTINEL ||
+      c.species == CS_CAUSTIC_MORTARMAN || c.species == CS_QUAKE_BRUTE;
+    if (hasTarget && rangedEnemy) {
       double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
-      double nearRange = c.species == CS_DYNAMITEER ? 28.0 : 46.0;
-      double farRange = c.species == CS_DYNAMITEER ? 58.0 : 88.0;
+      double nearRange = c.species == CS_DYNAMITEER ? 28.0
+        : c.species == CS_BORE_SENTINEL ? 46.0
+        : c.species == CS_CAUSTIC_MORTARMAN ? 36.0 : 10.0;
+      double farRange = c.species == CS_DYNAMITEER ? 58.0
+        : c.species == CS_BORE_SENTINEL ? 88.0
+        : c.species == CS_CAUSTIC_MORTARMAN ? 76.0 : 38.0;
       if (c.attackState != CAS_IDLE) wish = 0;
       else if (distance > farRange) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
       else if (distance < nearRange) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
@@ -546,8 +553,20 @@ void CreatureSystem::moveFlying(Creature& c) {
   double tx = 0, ty = 0;
   bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
   double phase = (E.actorTick + c.id * 43) * 0.025;
-  double desiredX = hasTarget ? tx - (c.wx + s.w * 0.5) : std::cos(phase);
-  double desiredY = hasTarget ? ty - (c.wy + s.h * 0.5) : std::sin(phase * 0.71 + c.id) * 0.55;
+  double desiredX, desiredY;
+  if (hasTarget && c.species == CS_CLUSTER_WASP) {
+    double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
+    if (c.attackState != CAS_IDLE) desiredX = 0;
+    else if (distance > 82) desiredX = dx;
+    else if (distance < 48) desiredX = -dx;
+    else desiredX = std::cos(phase) * .16;
+    // Hover above the target so the carrier opens into a readable rain of
+    // bomblets instead of behaving like a contact-melee bird.
+    desiredY = (ty - 25.0) - (c.wy + s.h * 0.5);
+  } else {
+    desiredX = hasTarget ? tx - (c.wx + s.w * 0.5) : std::cos(phase);
+    desiredY = hasTarget ? ty - (c.wy + s.h * 0.5) : std::sin(phase * 0.71 + c.id) * 0.55;
+  }
   int surface = E.terrain.genSurfaceAbs((int)std::floor(c.wx + s.w * 0.5));
   double altitude = surface - (c.wy + s.h);
   if (submerged) { desiredX *= 0.25; desiredY = -1; }
@@ -579,6 +598,13 @@ static constexpr int DYNAMITE_THROW_TICKS = 8;
 static constexpr int BORE_CHARGE_TICKS = 90;
 static constexpr int BORE_LOCK_TICKS = 30;
 static constexpr int BORE_FIRE_TICKS = 6;
+static constexpr int MORTARMAN_CHARGE_TICKS = 42;
+static constexpr int MORTARMAN_FIRE_TICKS = 8;
+static constexpr int CLUSTER_WASP_CHARGE_TICKS = 32;
+static constexpr int CLUSTER_WASP_FIRE_TICKS = 8;
+static constexpr int QUAKE_BRUTE_CHARGE_TICKS = 54;
+static constexpr int QUAKE_BRUTE_LOCK_TICKS = 12;
+static constexpr int QUAKE_BRUTE_FIRE_TICKS = 10;
 
 static bool segmentHitsExpandedBox(double x0, double y0, double x1, double y1,
                                    double bx0, double by0, double bx1, double by1, double expand) {
@@ -625,6 +651,106 @@ void CreatureSystem::updateDynamiteerAttack(Creature& c) {
 
   if (!hasTarget || c.attackCooldown > 0) return;
   double dx = tx - (c.wx + s.w * 0.5), dy = ty - (c.wy + s.h * 0.5);
+  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
+  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
+}
+
+void CreatureSystem::updateCausticMortarmanAttack(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  if (c.attackState == CAS_FIRING) {
+    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)MORTARMAN_FIRE_TICKS);
+    if (++c.attackTicks >= MORTARMAN_FIRE_TICKS) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+    }
+    return;
+  }
+
+  double tx = 0, ty = 0;
+  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
+  if (c.attackState == CAS_CHARGING) {
+    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
+    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
+    c.attackTicks++;
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)MORTARMAN_CHARGE_TICKS);
+    if (c.attackTicks >= MORTARMAN_CHARGE_TICKS) {
+      E.projectiles.spawnAcidShell(c, c.attackAimX - E.fg.worldOffsetX,
+                                   c.attackAimY - E.fg.worldOffsetY);
+      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
+      c.attackCooldown = s.attackCooldown;
+    }
+    return;
+  }
+
+  if (!hasTarget || c.attackCooldown > 0) return;
+  double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
+  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
+  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
+}
+
+void CreatureSystem::updateClusterWaspAttack(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  if (c.attackState == CAS_FIRING) {
+    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)CLUSTER_WASP_FIRE_TICKS);
+    if (++c.attackTicks >= CLUSTER_WASP_FIRE_TICKS) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+    }
+    return;
+  }
+
+  double tx = 0, ty = 0;
+  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
+  if (c.attackState == CAS_CHARGING) {
+    if (hasTarget) { c.attackAimX = tx; c.attackAimY = ty; }
+    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
+    c.attackTicks++;
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)CLUSTER_WASP_CHARGE_TICKS);
+    if (c.attackTicks >= CLUSTER_WASP_CHARGE_TICKS) {
+      E.projectiles.spawnClusterBomb(c, c.attackAimX - E.fg.worldOffsetX,
+                                     c.attackAimY - E.fg.worldOffsetY);
+      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
+      c.attackCooldown = s.attackCooldown;
+    }
+    return;
+  }
+
+  if (!hasTarget || c.attackCooldown > 0) return;
+  double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
+  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
+  c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
+  c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
+}
+
+void CreatureSystem::updateQuakeBruteAttack(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  if (c.attackState == CAS_FIRING) {
+    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)QUAKE_BRUTE_FIRE_TICKS);
+    if (++c.attackTicks >= QUAKE_BRUTE_FIRE_TICKS) {
+      c.attackState = CAS_IDLE; c.attackTicks = 0; c.attackProgress = 0;
+    }
+    return;
+  }
+
+  double tx = 0, ty = 0;
+  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
+  if (c.attackState == CAS_CHARGING) {
+    if (hasTarget && c.attackTicks < QUAKE_BRUTE_CHARGE_TICKS - QUAKE_BRUTE_LOCK_TICKS) {
+      c.attackAimX = tx; c.attackAimY = ty;
+    }
+    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
+    c.attackTicks++;
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)QUAKE_BRUTE_CHARGE_TICKS);
+    if (c.attackTicks >= QUAKE_BRUTE_CHARGE_TICKS) {
+      E.projectiles.spawnSeismicWave(c, c.attackAimX - E.fg.worldOffsetX);
+      c.attackState = CAS_FIRING; c.attackTicks = 0; c.attackProgress = 1;
+      c.attackCooldown = s.attackCooldown;
+    }
+    return;
+  }
+
+  if (!hasTarget || c.attackCooldown > 0) return;
+  double dx = tx - (c.wx + s.w * .5), dy = ty - (c.wy + s.h * .5);
   if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
   c.attackState = CAS_CHARGING; c.attackTicks = 0; c.attackProgress = 0;
   c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
@@ -717,11 +843,19 @@ void CreatureSystem::fireBore(Player& p) {
   double exit = std::min(exitX, exitY);
   ox += dx * exit; oy += dy * exit;
   fireBoreLine(ox, oy, dx, dy, CREATURE_SPECIES[CS_BORE_SENTINEL].damage, p.id, 0);
+  // The terrain/actor cut is immediate and authoritative. Retain its latched ray
+  // briefly as a render-only projectile so presentation mirrors show the same
+  // thick firing flash that the sentinel's replicated firing state provides.
+  E.projectiles.spawnBoreBeam(p.id, ox, oy, dx, dy);
 }
 
 void CreatureSystem::dropWeapon(const Creature& c) {
   uint8_t itemKind = c.species == CS_DYNAMITEER ? IK_DYNAMITE_SATCHEL
-                   : c.species == CS_BORE_SENTINEL ? IK_BORE_CANNON : IK_MATERIAL;
+                   : c.species == CS_BORE_SENTINEL ? IK_BORE_CANNON
+                   : c.species == CS_CAUSTIC_MORTARMAN ? IK_ACID_MORTAR
+                   : c.species == CS_CLUSTER_WASP ? IK_CLUSTER_LAUNCHER
+                   : c.species == CS_QUAKE_BRUTE ? IK_SEISMIC_HAMMER
+                   : IK_MATERIAL;
   if (itemKind == IK_MATERIAL) return;
   const CreatureSpecies& s = species(c);
   InvSlot weapon; weapon.itemKind = itemKind; weapon.count = 1;
@@ -772,6 +906,9 @@ void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
 void CreatureSystem::attackTarget(Creature& c) {
   if (c.species == CS_DYNAMITEER) { updateDynamiteerAttack(c); return; }
   if (c.species == CS_BORE_SENTINEL) { updateBoreSentinelAttack(c); return; }
+  if (c.species == CS_CAUSTIC_MORTARMAN) { updateCausticMortarmanAttack(c); return; }
+  if (c.species == CS_CLUSTER_WASP) { updateClusterWaspAttack(c); return; }
+  if (c.species == CS_QUAKE_BRUTE) { updateQuakeBruteAttack(c); return; }
   const CreatureSpecies& s = species(c); if (c.attackCooldown > 0 || s.damage <= 0) return;
   double tx, ty; Creature* prey = nullptr; Player* player = nullptr;
   if (!targetPoint(c, tx, ty, &prey, &player)) return;
@@ -833,6 +970,18 @@ void CreatureSystem::updateCreatures() {
       if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.50 ? 1 : 2;
       else if (c.attackState == CAS_FIRING) c.animFrame = 3;
       else c.animFrame = std::fabs(c.vx) > 0.025 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
+    } else if (c.species == CS_CAUSTIC_MORTARMAN) {
+      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.55 ? 1 : 2;
+      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
+      else c.animFrame = std::fabs(c.vx) > 0.025 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;
+    } else if (c.species == CS_CLUSTER_WASP) {
+      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.55 ? 1 : 2;
+      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
+      else c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
+    } else if (c.species == CS_QUAKE_BRUTE) {
+      if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
+      else if (c.attackState == CAS_FIRING) c.animFrame = 3;
+      else c.animFrame = std::fabs(c.vx) > 0.02 ? (uint8_t)(((E.actorTick / 8) + c.id) & 1) : 0;
     } else if (c.species == CS_BIRD) {
       c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
     } else if (c.species == CS_HARE) {

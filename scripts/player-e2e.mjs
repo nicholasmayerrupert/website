@@ -15,6 +15,7 @@ const PORT = await getAvailablePort();
 const INPUT_LEFT = 1;
 const INPUT_RIGHT = 2;
 const INPUT_JUMP = 4; // PI_JUMP bit (mirrors enum PlayerInput / INPUT.JUMP)
+const INPUT_JETPACK = 128; // Space-specific sustained thrust bit
 const NPM = process.platform === 'win32' ? process.execPath : 'npm';
 const NPM_ARGS = process.platform === 'win32' ? [join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')] : [];
 const baseURL = `http://localhost:${PORT}/`;
@@ -191,7 +192,8 @@ try {
   let minVy = 0;
   for (let t = 0; t < 10; t++) { await page.waitForTimeout(45); minVy = Math.min(minVy, (await getP()).vy); }
   await page.keyboard.up('Space');
-  check(`SPACE maps to the JUMP input (bits ${jumpBits})`, (jumpBits & INPUT_JUMP) !== 0);
+  check(`SPACE maps to jump + jetpack input (bits ${jumpBits})`,
+    (jumpBits & INPUT_JUMP) !== 0 && (jumpBits & INPUT_JETPACK) !== 0);
   console.log(`   (physical jump impulse minVy ${minVy.toFixed(2)})`);
   await waitGrounded();
   let afterJump = await getP();

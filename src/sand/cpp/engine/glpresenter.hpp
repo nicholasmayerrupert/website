@@ -123,7 +123,8 @@ class GLPresenter {
   float glActorLight(double px, double py, int w, int h) const;
   void glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
-                     bool own, float light, int camCol, int camRow);
+                     double jetpackFuel, bool jetpackActive, bool own, float light,
+                     int camCol, int camRow);
   void glDrawPlayers();
   void glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
                    int camCol, int camRow);

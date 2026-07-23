@@ -1,11 +1,11 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 18,
+  "abiVersion": 19,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
       "cPrefix": "PS",
-      "fields": ["id", "active", "x", "y", "vx", "vy", "w", "h", "facing", "grounded", "tool", "aimX", "aimY", "health", "inputSeq", "alive", "jumpReady", "animState", "animFrame", "deathTicks", "respawnReady", "bowCharge", "heldItemKind"]
+      "fields": ["id", "active", "x", "y", "vx", "vy", "w", "h", "facing", "grounded", "tool", "aimX", "aimY", "health", "inputSeq", "alive", "jumpReady", "animState", "animFrame", "deathTicks", "respawnReady", "bowCharge", "heldItemKind", "jetpackFuel", "jetpackActive"]
     },
     "itemSnapshot": {
       "$comment": "float32 records built by buildItemSnapshot (items.inc); also the external GL item layout (glSetItems) and the ITEMS wire message payload.",
@@ -45,7 +45,7 @@
     "glPlayerExt": {
       "$comment": "float32 records a multiplayer client packs for engine_gl_set_players (host-authoritative snapshot players).",
       "cPrefix": "GLP",
-      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame", "alive", "heldItemKind", "bowCharge", "aimX", "aimY"]
+      "fields": ["x", "y", "w", "h", "facing", "own", "animState", "animFrame", "alive", "heldItemKind", "bowCharge", "aimX", "aimY", "jetpackFuel", "jetpackActive"]
     },
     "soundEvent": {
       "$comment": "float32 semantic audio events drained from the authoritative engine. Coordinates are absolute world cells so streaming cannot move a queued sound.",
@@ -73,7 +73,7 @@
       "cName": "PlayerInput",
       "jsName": "INPUT",
       "jsPrefix": "PI",
-      "values": { "PI_LEFT": 1, "PI_RIGHT": 2, "PI_JUMP": 4, "PI_DOWN": 8, "PI_PRIMARY": 16, "PI_SECONDARY": 32, "PI_RUN": 64 }
+      "values": { "PI_LEFT": 1, "PI_RIGHT": 2, "PI_JUMP": 4, "PI_DOWN": 8, "PI_PRIMARY": 16, "PI_SECONDARY": 32, "PI_RUN": 64, "PI_JETPACK": 128 }
     },
     "InventoryItemKind": {
       "$comment": "Inventory/world-drop stack identity. Empty stacks are represented by count=0.",
@@ -88,7 +88,10 @@
         "IK_ARROW": 3,
         "IK_BLAST_GUN": 4,
         "IK_DYNAMITE_SATCHEL": 5,
-        "IK_BORE_CANNON": 6
+        "IK_BORE_CANNON": 6,
+        "IK_ACID_MORTAR": 7,
+        "IK_CLUSTER_LAUNCHER": 8,
+        "IK_SEISMIC_HAMMER": 9
       }
     },
     "ProjectileKind": {
@@ -97,7 +100,15 @@
       "cType": "uint8_t",
       "jsName": "PROJECTILE_KIND",
       "jsPrefix": "PK",
-      "values": { "PK_ARROW": 0, "PK_BLAST_ROUND": 1, "PK_DYNAMITE": 2 }
+      "values": {
+        "PK_ARROW": 0,
+        "PK_BLAST_ROUND": 1,
+        "PK_DYNAMITE": 2,
+        "PK_ACID_SHELL": 3,
+        "PK_CLUSTER_BOMB": 4,
+        "PK_SEISMIC_WAVE": 5,
+        "PK_BORE_BEAM": 6
+      }
     },
     "CraftIngredientKind": {
       "$comment": "How a crafting ingredient value is interpreted.",
@@ -138,7 +149,10 @@
         "CREATURE_MOLE": 5,
         "CREATURE_BIRD": 6,
         "CREATURE_DYNAMITEER": 7,
-        "CREATURE_BORE_SENTINEL": 8
+        "CREATURE_BORE_SENTINEL": 8,
+        "CREATURE_CAUSTIC_MORTARMAN": 9,
+        "CREATURE_CLUSTER_WASP": 10,
+        "CREATURE_QUAKE_BRUTE": 11
       }
     },
     "CreatureAttackState": {
@@ -177,7 +191,10 @@
         "SE_RESPAWN": 18,
         "SE_BLAST_GUN": 19,
         "SE_BORE_CHARGE": 20,
-        "SE_BORE_FIRE": 21
+        "SE_BORE_FIRE": 21,
+        "SE_ACID_MORTAR": 22,
+        "SE_CLUSTER_LAUNCH": 23,
+        "SE_QUAKE": 24
       }
     }
   },

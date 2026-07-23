@@ -19,8 +19,8 @@ const stoneFloor = (e, top) => {
 };
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
-check('roster includes ambient fauna plus both explosive-survival enemies',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL');
+check('roster includes ambient fauna plus all five explosive-survival enemies',
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,QUAKE_BRUTE');
 
 // A viable water habitat still establishes the enabled ambient fish while the
 // temporarily retired predator remains absent from natural populations.
@@ -176,7 +176,7 @@ check('roster includes ambient fauna plus both explosive-survival enemies',
   const disabledNatural = [CREATURE.PIKE, CREATURE.HARE, CREATURE.CRAWLER];
   const surfaceAt = (c) => e.worldSurfaceAt(e.getWorldOffsetX() + Math.floor(c.x + c.w / 2));
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
-  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46];
+  const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46, 40, 38, 50];
   const tooClose = initial.filter((c) => distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
   check(`habitat-snapped natural spawns preserve player safety distance (${tooClose.length} too close)`, tooClose.length === 0);
   check('disabled pike, hare, and crawler populations do not spawn naturally',

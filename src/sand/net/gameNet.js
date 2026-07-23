@@ -264,7 +264,11 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   function reconcilePredictor(op, actorTick) {
     const e = engineNow();
     if (!predictor) { if (!predId) predId = e.spawnPlayer(op.x, op.y); predictor = new Predictor(e, predId); }
-    predictor.reconcile({ x: op.x, y: op.y, vx: op.vx, vy: op.vy, facing: op.facing, grounded: !!op.grounded, jumpReady: !!op.jr }, op.seq >>> 0, actorTick);
+    predictor.reconcile({
+      x: op.x, y: op.y, vx: op.vx, vy: op.vy, facing: op.facing,
+      grounded: !!op.grounded, jumpReady: !!op.jr,
+      jetpackFuel: op.jetpackFuel, jetpackActive: !!op.jetpackActive,
+    }, op.seq >>> 0, actorTick);
   }
 
   function ingestSnapshot(m) {
@@ -279,6 +283,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       r.health = p.health | 0; r.alive = p.alive !== 0;
       r.deathTicks = p.deathTicks | 0; r.respawnReady = p.respawnReady !== 0;
       r.bowCharge = p.bowCharge; r.heldItemKind = p.heldItemKind | 0;
+      r.jetpackFuel = p.jetpackFuel; r.jetpackActive = p.jetpackActive !== 0;
       r.aimX = p.aimX; r.aimY = p.aimY;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;

@@ -62,8 +62,8 @@ try {
   const species = new Set(initial.creatures.map((c) => c.species));
   check('fox and mole spawned', species.has(2) && species.has(5));
   check(`bird spawned (${initial.creatures.filter((c) => c.species === 6).length})`, species.has(6));
-  check('pike, hare, and crawler natural populations stay disabled',
-    [1, 3, 4].every((id) => !species.has(id)));
+  check('disabled fauna and survival enemies stay absent from /fps natural spawns',
+    [1, 3, 4, 7, 8, 9, 10, 11].every((id) => !species.has(id)));
   check('/fps enables debug hitboxes', initial.debugAttr);
   check('/fps HUD reports creatures', initial.hud.includes('creatures'));
 
@@ -164,14 +164,14 @@ try {
   }
 
   // The survival route is the real gameplay entry point. It should enable the
-  // ambient populations plus the two armed enemies without depending on
+  // ambient populations plus all five armed enemies without depending on
   // /fps's diagnostics flag, and an air creature should intersect the current
   // camera view.
   await page.goto(`${baseURL}game`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     const species = new Set(window.__sandTest.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    return [2, 5, 6, 7, 8].every((id) => species.has(id));
+    return [2, 5, 6, 7, 8, 9, 10, 11].every((id) => species.has(id));
   }, null, { timeout: 12000 });
   const survival = await page.evaluate(() => {
     const T = window.__sandTest, info = T.info();
@@ -188,8 +188,8 @@ try {
     };
   });
   console.log('\n/game creature spawning');
-  check('survival spawns enabled ambient populations and both armed enemies',
-    [2, 5, 6, 7, 8].every((id) => survival.species.includes(id)));
+  check('survival spawns enabled ambient populations and all five armed enemies',
+    [2, 5, 6, 7, 8, 9, 10, 11].every((id) => survival.species.includes(id)));
   check('survival keeps disabled natural populations absent',
     [1, 3, 4].every((id) => !survival.species.includes(id)));
   check('survival bird is in the camera view', survival.birdVisible);

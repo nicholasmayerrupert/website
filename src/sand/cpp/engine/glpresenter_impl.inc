@@ -368,7 +368,8 @@ float GLPresenter::glActorLight(double px, double py, int w, int h) const {
 
 void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animState, int animFrame,
                      bool alive, int heldItemKind, double bowCharge, double aimX, double aimY,
-                     bool own, float light, int camCol, int camRow) {
+                     double jetpackFuel, bool jetpackActive, bool own, float light,
+                     int camCol, int camRow) {
   if (animState < 0 || animState >= AS_COUNT) animState = AS_IDLE;
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
@@ -388,6 +389,33 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       glSolidDev(sprX + cc * cell, drawY, cell, alive ? cell : cell * .45);
     }
   }
+  if (alive) {
+    // The tank sits on the trailing shoulder. It is deliberately compact enough
+    // to preserve the player's silhouette while still reading at a one-cell
+    // render scale. Fuel is authoritative presentation state; only the active
+    // bit changes geometry, so depletion never makes the pack flicker.
+    double packWorldX = pxc + (facing >= 0 ? -0.40 : PLAYER_W + 0.40);
+    double packWorldY = pyc + PLAYER_H * .47;
+    double packX = (packWorldX - camCol) * cell + glOffX;
+    double packY = (packWorldY - camRow) * cell + glOffY;
+    glUniform4f(glc->uColor, .10f * light, .14f * light, .18f * light, 1);
+    glSolidDev(packX - cell * .52, packY - cell * 1.05, cell * 1.04, cell * 2.10);
+    glUniform4f(glc->uColor, .24f * light, .38f * light, .46f * light, 1);
+    glSolidDev(packX - cell * .34, packY - cell * .82, cell * .68, cell * 1.18);
+    glUniform4f(glc->uColor, .52f * light, .79f * light, .82f * light, 1);
+    glSolidDev(packX - cell * .22, packY - cell * .68, cell * .44, cell * .30);
+    glUniform4f(glc->uColor, .12f * light, .17f * light, .20f * light, 1);
+    glSolidDev(packX - cell * .38, packY + cell * .62, cell * .76, cell * .48);
+    if (jetpackActive && jetpackFuel > 0) {
+      double flicker = ((E.actorTick + animFrame) & 1) ? .18 : 0.0;
+      glUniform4f(glc->uColor, 1.0f, .31f, .055f, .90f);
+      glSolidDev(packX - cell * .38, packY + cell * 1.02, cell * .76, cell * (1.20 + flicker));
+      glUniform4f(glc->uColor, 1.0f, .78f, .18f, .98f);
+      glSolidDev(packX - cell * .25, packY + cell * 1.02, cell * .50, cell * (.82 + flicker));
+      glUniform4f(glc->uColor, 1.0f, 1.0f, .78f, 1);
+      glSolidDev(packX - cell * .13, packY + cell * 1.02, cell * .26, cell * .42);
+    }
+  }
   if (alive && heldItemKind == IK_BOW) {
     double bx = sprX + (facing > 0 ? SPR_W + .3 : -1.3) * cell, by = sprY + 3.2 * cell;
     glUniform4f(glc->uColor, .55f * light, .31f * light, .14f * light, 1);
@@ -397,15 +425,29 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     glSolidDev(bx + (facing > 0 ? -pull : pull), by + cell * 2.0, cell * .25, cell * .25);
   }
   bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
-                     heldItemKind == IK_BORE_CANNON;
+                     heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
+                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_SEISMIC_HAMMER;
   if (alive && aimedWeapon) {
-    double handX = pxc + PLAYER_W * .5, handY = pyc + PLAYER_H * .42;
-    double dx = aimX - handX, dy = aimY - handY, d = std::hypot(dx, dy);
+    // Aim from the shoulder, then extend an authored arm to a real hand anchor.
+    // Weapon geometry below is grip-relative, so it rotates in the hand instead
+    // of orbiting around the center of the player's torso.
+    double shoulderX = pxc + PLAYER_W * .5, shoulderY = pyc + PLAYER_H * .42;
+    double dx = aimX - shoulderX, dy = aimY - shoulderY, d = std::hypot(dx, dy);
     if (d < 1e-6) { dx = facing; dy = 0; d = 1; }
     dx /= d; dy /= d;
     double nx = -dy, ny = dx;
+    double handX = shoulderX + dx * 1.55, handY = shoulderY + dy * 1.55;
     double hx = (handX - camCol) * cell + glOffX;
     double hy = (handY - camRow) * cell + glOffY;
+    auto limb = [&](double forward, double size, float r, float g, float b) {
+      double x = (shoulderX + dx * forward - camCol) * cell + glOffX;
+      double y = (shoulderY + dy * forward - camRow) * cell + glOffY;
+      glUniform4f(glc->uColor, r * light, g * light, b * light, 1);
+      glSolidDev(x - size * cell * .5, y - size * cell * .5, size * cell, size * cell);
+    };
+    limb(.48, .82, 70/255.f, 130/255.f, 200/255.f);
+    limb(1.02, .70, 188/255.f, 128/255.f, 96/255.f);
+    limb(1.52, .74, 232/255.f, 180/255.f, 140/255.f);
     auto pixel = [&](double forward, double side, double size, float r, float g, float b, float a = 1.0f) {
       double x = hx + (dx * forward + nx * side) * cell;
       double y = hy + (dy * forward + ny * side) * cell;
@@ -414,47 +456,78 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     };
 
     if (heldItemKind == IK_BLAST_GUN) {
-      for (int i = 0; i < 7; i++) pixel(.25 + i * .48, 0, .58, .16f, .18f, .20f);
-      for (int i = 0; i < 4; i++) pixel(.52 + i * .48, -.34, .40, .31f, .36f, .40f);
-      pixel(3.30, 0, .72, .90f, .48f, .10f);
-      pixel(2.92, 0, .38, 1.0f, .72f, .18f);
-      pixel(.72, .52, .58, .31f, .24f, .17f);
-      pixel(.91, .92, .52, .26f, .20f, .15f);
+      for (int i = 0; i < 7; i++) pixel(-.46 + i * .48, -.68, .58, .16f, .18f, .20f);
+      for (int i = 0; i < 4; i++) pixel(-.20 + i * .48, -1.02, .40, .31f, .36f, .40f);
+      pixel(2.59, -.68, .72, .90f, .48f, .10f);
+      pixel(2.21, -.68, .38, 1.0f, .72f, .18f);
+      pixel(-.08, -.06, .58, .31f, .24f, .17f);
+      pixel(.11, .34, .52, .26f, .20f, .15f);
     } else if (heldItemKind == IK_DYNAMITE_SATCHEL) {
       for (int stick = -1; stick <= 1; stick++) for (int i = 0; i < 4; i++)
-        pixel(.38 + i * .43, stick * .38, .48, stick == 0 ? .82f : .62f, .07f, .045f);
-      for (int stick = -1; stick <= 1; stick++) pixel(1.00, stick * .38, .30, .16f, .12f, .10f);
-      pixel(1.96, 0, .30, .95f, .73f, .18f);
-      pixel(2.25, 0, .24, 1.0f, .33f, .05f);
-    } else {
+        pixel(-.38 + i * .43, stick * .38, .48, stick == 0 ? .82f : .62f, .07f, .045f);
+      for (int stick = -1; stick <= 1; stick++) pixel(.24, stick * .38, .30, .16f, .12f, .10f);
+      pixel(1.20, 0, .30, .95f, .73f, .18f);
+      pixel(1.49, 0, .24, 1.0f, .33f, .05f);
+    } else if (heldItemKind == IK_BORE_CANNON) {
       for (int i = 0; i < 9; i++) {
         float shell = (i == 0 || i == 8) ? .30f : .18f;
-        pixel(.12 + i * .46, 0, .68, shell, .25f + i * .012f, .28f + i * .012f);
+        pixel(-.66 + i * .46, -.78, .68, shell, .25f + i * .012f, .28f + i * .012f);
       }
-      for (int i = 1; i < 8; i++) pixel(.12 + i * .46, 0, .32, .20f, .86f, .82f);
+      for (int i = 1; i < 8; i++) pixel(-.66 + i * .46, -.78, .32, .20f, .86f, .82f);
       for (int i = 1; i < 7; i += 2) {
-        pixel(.12 + i * .46, -.48, .34, .40f, .48f, .50f);
-        pixel(.12 + i * .46, .48, .34, .40f, .48f, .50f);
+        pixel(-.66 + i * .46, -1.26, .34, .40f, .48f, .50f);
+        pixel(-.66 + i * .46, -.30, .34, .40f, .48f, .50f);
       }
-      pixel(.72, .62, .58, .20f, .25f, .27f);
-      pixel(.92, 1.00, .50, .15f, .19f, .21f);
-      pixel(4.02, 0, .76, .73f, 1.0f, .91f);
+      pixel(-.08, -.16, .58, .20f, .25f, .27f);
+      pixel(.12, .22, .50, .15f, .19f, .21f);
+      pixel(3.24, -.78, .76, .73f, 1.0f, .91f);
       if (bowCharge > 0) {
+        double rayX = handX + dx * 3.52 + nx * -.78;
+        double rayY = handY + dy * 3.52 + ny * -.78;
         double length = 1e9;
-        if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - handX) / dx);
-        else if (dx < -1e-9) length = std::min(length, (1.0 - handX) / dx);
-        if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - handY) / dy);
-        else if (dy < -1e-9) length = std::min(length, (1.0 - handY) / dy);
-        if (std::isfinite(length) && length > 4.5) {
+        if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - rayX) / dx);
+        else if (dx < -1e-9) length = std::min(length, (1.0 - rayX) / dx);
+        if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - rayY) / dy);
+        else if (dy < -1e-9) length = std::min(length, (1.0 - rayY) / dy);
+        if (std::isfinite(length) && length > 0) {
           double progress = std::max(0.0, std::min(1.0, bowCharge));
-          int samples = imax(1, (int)std::ceil((length - 4.2) / (2.7 - progress * 1.35)));
+          int samples = imax(1, (int)std::ceil(length / (2.7 - progress * 1.35)));
           for (int i = 0; i <= samples; i++) {
-            double t = 4.2 + (length - 4.2) * i / samples;
-            pixel(t, 0, .16 + progress * .34, 1.0f, .40f + .46f * progress, .10f,
-                  .16f + .58f * progress);
+            double t = length * i / samples;
+            double bx = (rayX + dx * t - camCol) * cell + glOffX;
+            double by = (rayY + dy * t - camRow) * cell + glOffY;
+            double width = cell * (.16 + progress * .34);
+            glUniform4f(glc->uColor, 1.0f, .40f + .46f * progress, .10f, .16f + .58f * progress);
+            glSolidDev(bx - width * .5, by - width * .5, width, width);
           }
         }
       }
+    } else if (heldItemKind == IK_ACID_MORTAR) {
+      for (int i = 0; i < 8; i++) pixel(-.48 + i * .46, -.66, .64, .16f, .22f, .15f);
+      for (int i = 1; i < 7; i++) pixel(-.48 + i * .46, -.66, .30, .49f, .63f, .20f);
+      pixel(2.82, -.66, .82, .25f, .34f, .19f);
+      pixel(-.10, .04, .76, .22f, .28f, .17f);
+      pixel(.02, .05, .42, .64f, .91f, .18f);
+      pixel(.18, .48, .52, .18f, .22f, .15f);
+      pixel(3.14, -.66, .30, .79f, 1.0f, .30f);
+    } else if (heldItemKind == IK_CLUSTER_LAUNCHER) {
+      for (int i = 0; i < 8; i++) pixel(-.50 + i * .46, -.68, .62, .10f, .15f, .24f);
+      for (int i = 1; i < 7; i += 2) pixel(-.50 + i * .46, -1.03, .42, .28f, .48f, .68f);
+      pixel(2.76, -.68, .80, .93f, .43f, .10f);
+      pixel(-.02, -.02, .92, .16f, .23f, .32f);
+      for (int k = 0; k < 3; k++) pixel(-.02 + std::cos(k * 2.094) * .30,
+                                         -.02 + std::sin(k * 2.094) * .30,
+                                         .28, .94f, .57f, .12f);
+      pixel(.10, .52, .52, .11f, .15f, .20f);
+    } else { // IK_SEISMIC_HAMMER
+      for (int i = -1; i < 7; i++) pixel(i * .46, -.02, .34, .34f, .23f, .14f);
+      for (int i = -1; i < 7; i += 2) pixel(i * .46, -.02, .16, .78f, .58f, .23f);
+      for (int side = -2; side <= 2; side++) {
+        float edge = std::abs(side) == 2 ? .18f : .28f;
+        pixel(3.05, side * .47, .68, edge, .22f, .24f);
+      }
+      pixel(3.05, 0, .38, 1.0f, .62f, .12f);
+      pixel(2.70, -.48, .24, .96f, .84f, .28f);
     }
   }
 }
@@ -470,7 +543,8 @@ void GLPresenter::glDrawPlayers() {
       float light = glActorLight(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H]);
       glDrawOnePlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_FACING], (int)p[GLP_ANIM_STATE], (int)p[GLP_ANIM_FRAME],
                       p[GLP_ALIVE] > .5f, (int)p[GLP_HELD_ITEM_KIND], p[GLP_BOW_CHARGE],
-                      p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_OWN] > 0.5f, light, camCol, camRow);
+                      p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_FUEL], p[GLP_JETPACK_ACTIVE] > .5f,
+                      p[GLP_OWN] > 0.5f, light, camCol, camRow);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
@@ -479,7 +553,7 @@ void GLPresenter::glDrawPlayers() {
       const InvSlot& held = p.inv[p.selectedSlot];
       double chargeMax = held.itemKind == IK_BORE_CANNON ? BORE_CANNON_CHARGE_TICKS : BOW_CHARGE_MAX;
       glDrawOnePlayer(p.px, p.py, p.facing, p.animState, p.animFrame, p.alive, held.count > 0 ? held.itemKind : IK_MATERIAL,
-                      p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.id == glOwnPlayerId,
+                      p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive, p.id == glOwnPlayerId,
                       glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
@@ -500,6 +574,9 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
              : itemKind == IK_BLAST_GUN ? 0xff3f76c4u
              : itemKind == IK_DYNAMITE_SATCHEL ? 0xff203fc9u
              : itemKind == IK_BORE_CANNON ? 0xffb8d851u
+             : itemKind == IK_ACID_MORTAR ? 0xff4fc760u
+             : itemKind == IK_CLUSTER_LAUNCHER ? 0xffcf7939u
+             : itemKind == IK_SEISMIC_HAMMER ? 0xff42a5e9u
              : (tier == TT_GOLD ? 0xff34c7f2u : tier == TT_IRON ? 0xffe4e0d8u : tier == TT_STONE ? 0xff8f969eu : 0xff447ab0u);
   float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
   float baseA = ((c >> 24) & 0xff) / 255.0f;
@@ -570,6 +647,52 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
     glSolidDev(cx - u * 1.18, bottom - u * .50, u * .58, u * .62);
     return;
   }
+  if (kind == IT_ITEM && itemKind == IK_ACID_MORTAR) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * u + glOffY;
+    glUniform4f(glc->uColor, .14f, .20f, .13f, a);
+    glSolidDev(cx - u * 1.45, bottom - u * 1.18, u * 2.90, u * .72);
+    glUniform4f(glc->uColor, .39f, .53f, .20f, a);
+    glSolidDev(cx - u * .95, bottom - u * 1.02, u * 1.96, u * .28);
+    glUniform4f(glc->uColor, .20f, .27f, .16f, a);
+    glSolidDev(cx - u * 1.56, bottom - u * 1.30, u * .45, u * .92);
+    glUniform4f(glc->uColor, .55f, .88f, .16f, a);
+    glSolidDev(cx - u * .60, bottom - u * .82, u * .82, u * .72);
+    glUniform4f(glc->uColor, .75f, 1.0f, .27f, a);
+    glSolidDev(cx - u * .35, bottom - u * .70, u * .28, u * .28);
+    return;
+  }
+  if (kind == IT_ITEM && itemKind == IK_CLUSTER_LAUNCHER) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * u + glOffY;
+    glUniform4f(glc->uColor, .08f, .13f, .21f, a);
+    glSolidDev(cx - u * 1.50, bottom - u * 1.20, u * 3.00, u * .72);
+    glUniform4f(glc->uColor, .25f, .43f, .62f, a);
+    glSolidDev(cx - u * .80, bottom - u * 1.38, u * 1.64, u * .30);
+    glUniform4f(glc->uColor, .91f, .40f, .08f, a);
+    glSolidDev(cx + u * 1.18, bottom - u * 1.32, u * .55, u * .88);
+    glUniform4f(glc->uColor, .15f, .22f, .30f, a);
+    glSolidDev(cx - u * .62, bottom - u * .74, u * 1.02, u * .86);
+    glUniform4f(glc->uColor, .96f, .61f, .13f, a);
+    glSolidDev(cx - u * .42, bottom - u * .55, u * .25, u * .25);
+    glSolidDev(cx - u * .05, bottom - u * .46, u * .25, u * .25);
+    return;
+  }
+  if (kind == IT_ITEM && itemKind == IK_SEISMIC_HAMMER) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * u + glOffY;
+    glUniform4f(glc->uColor, .32f, .21f, .13f, a);
+    glSolidDev(cx - u * 1.54, bottom - u * .54, u * 2.40, u * .38);
+    glUniform4f(glc->uColor, .76f, .55f, .20f, a);
+    glSolidDev(cx - u * 1.20, bottom - u * .48, u * 1.48, u * .16);
+    glUniform4f(glc->uColor, .18f, .21f, .23f, a);
+    glSolidDev(cx + u * .42, bottom - u * 1.38, u * 1.15, u * 1.38);
+    glUniform4f(glc->uColor, .31f, .33f, .34f, a);
+    glSolidDev(cx + u * .60, bottom - u * 1.18, u * .78, u * .98);
+    glUniform4f(glc->uColor, 1.0f, .59f, .10f, a);
+    glSolidDev(cx + u * .72, bottom - u * .90, u * .28, u * .28);
+    return;
+  }
   glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
 }
 
@@ -599,10 +722,40 @@ void GLPresenter::glDrawProjectiles() {
   glUniform1i(glc->uMode, 1); glUniform1i(glc->uGutter, 0);
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   for (int i = 0; i < n; i++) {
-    double x, y, vx, vy, fuse, rotation; int kind;
-    if (external) { const float* p = external->data() + i * PRS_STRIDE; x=p[PRS_X]; y=p[PRS_Y]; vx=p[PRS_VX]; vy=p[PRS_VY]; kind=(int)p[PRS_KIND]; fuse=p[PRS_FUSE]; rotation=p[PRS_ROTATION]; }
-    else { const Projectile& p=E.projectiles.projectiles[i]; x=p.px; y=p.py; vx=p.vx; vy=p.vy; kind=p.kind; fuse=p.fuse; rotation=p.rotation; }
+    double x, y, vx, vy, charge, fuse, rotation; int kind;
+    if (external) {
+      const float* p = external->data() + i * PRS_STRIDE;
+      x=p[PRS_X]; y=p[PRS_Y]; vx=p[PRS_VX]; vy=p[PRS_VY]; charge=p[PRS_CHARGE];
+      kind=(int)p[PRS_KIND]; fuse=p[PRS_FUSE]; rotation=p[PRS_ROTATION];
+    } else {
+      const Projectile& p=E.projectiles.projectiles[i];
+      x=p.px; y=p.py; vx=p.vx; vy=p.vy; charge=p.charge;
+      kind=p.kind; fuse=p.fuse; rotation=p.rotation;
+    }
     double cx=(x-camCol)*glCellDev+glOffX, cy=(y-camRow)*glCellDev+glOffY;
+    if (kind == PK_BORE_BEAM) {
+      double speed = std::hypot(vx, vy);
+      if (speed < 1e-6) continue;
+      double dx = vx / speed, dy = vy / speed;
+      double length = 1e9;
+      if (dx > 1e-9) length = std::min(length, (E.cols - 2.0 - x) / dx);
+      else if (dx < -1e-9) length = std::min(length, (1.0 - x) / dx);
+      if (dy > 1e-9) length = std::min(length, (E.rows - 2.0 - y) / dy);
+      else if (dy < -1e-9) length = std::min(length, (1.0 - y) / dy);
+      if (!std::isfinite(length) || length <= 0) continue;
+      int samples = imax(1, (int)std::ceil(length / 1.35));
+      for (int sample = 0; sample <= samples; sample++) {
+        double t = length * sample / samples;
+        double bx = (x + dx * t - camCol) * glCellDev + glOffX;
+        double by = (y + dy * t - camRow) * glCellDev + glOffY;
+        double outer = glCellDev * (CREATURE_BORE_RADIUS * 2.0 + .35);
+        glUniform4f(glc->uColor, .95f, .18f, .055f, .40f);
+        glSolidDev(bx - outer * .5, by - outer * .5, outer, outer);
+        glUniform4f(glc->uColor, 1.0f, .88f, .34f, .96f);
+        glSolidDev(bx - glCellDev * .68, by - glCellDev * .68, glCellDev * 1.36, glCellDev * 1.36);
+      }
+      continue;
+    }
     if (kind == PK_BLAST_ROUND) {
       double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
       for (int s = 1; s <= 8; s++) {
@@ -634,6 +787,76 @@ void GLPresenter::glDrawProjectiles() {
       glSolidDev(fx - dc * .25, fy - dc * .25, dc * .50, dc * .50);
       continue;
     }
+    if (kind == PK_ACID_SHELL) {
+      double u = glCellDev, ax = std::cos(rotation), ay = std::sin(rotation);
+      double pxn = -ay, pyn = ax;
+      for (int trail = 1; trail <= 5; trail++) {
+        double fade = (6 - trail) / 6.0;
+        double tx = cx - ax * trail * u * .42 + pxn * ((trail & 1) ? .14 : -.14) * u;
+        double ty = cy - ay * trail * u * .42 + pyn * ((trail & 1) ? .14 : -.14) * u;
+        glUniform4f(glc->uColor, .48f, .92f, .12f, .16f + .42f * fade);
+        double drop = u * (.14 + .18 * fade);
+        glSolidDev(tx - drop * .5, ty - drop * .5, drop, drop);
+      }
+      glUniform4f(glc->uColor, .10f, .16f, .10f, 1);
+      glSolidDev(cx - u * .66, cy - u * .50, u * 1.32, u);
+      glUniform4f(glc->uColor, .37f, .68f, .16f, 1);
+      glSolidDev(cx - u * .42, cy - u * .36, u * .84, u * .72);
+      glUniform4f(glc->uColor, .72f, 1.0f, .27f, 1);
+      glSolidDev(cx - u * .20, cy - u * .20, u * .40, u * .40);
+      glUniform4f(glc->uColor, .18f, .25f, .15f, 1);
+      glSolidDev(cx + ax * u * .48 - u * .24, cy + ay * u * .48 - u * .24, u * .48, u * .48);
+      continue;
+    }
+    if (kind == PK_CLUSTER_BOMB) {
+      double u = glCellDev, ax = std::cos(rotation), ay = std::sin(rotation);
+      double pxn = -ay, pyn = ax;
+      if (charge < .5) {
+        for (int trail = 1; trail <= 5; trail++) {
+          float fade = (6 - trail) / 6.0f;
+          double tx = cx - ax * trail * u * .50, ty = cy - ay * trail * u * .50;
+          glUniform4f(glc->uColor, 1.0f, .38f, .055f, .14f + .34f * fade);
+          double s = u * (.12 + .20 * fade);
+          glSolidDev(tx - s * .5, ty - s * .5, s, s);
+        }
+        glUniform4f(glc->uColor, .08f, .13f, .21f, 1);
+        glSolidDev(cx - u * .76, cy - u * .54, u * 1.52, u * 1.08);
+        glUniform4f(glc->uColor, .27f, .46f, .67f, 1);
+        glSolidDev(cx - u * .46, cy - u * .35, u * .92, u * .70);
+        glUniform4f(glc->uColor, .96f, .47f, .08f, 1);
+        glSolidDev(cx + ax * u * .58 - u * .28, cy + ay * u * .58 - u * .28, u * .56, u * .56);
+        for (int side : {-1, 1}) {
+          double fx = cx - ax * u * .38 + pxn * side * u * .64;
+          double fy = cy - ay * u * .38 + pyn * side * u * .64;
+          glSolidDev(fx - u * .20, fy - u * .20, u * .40, u * .40);
+        }
+      } else {
+        double pulse = (((int)fuse / 3) & 1) ? 1.0 : .70;
+        glUniform4f(glc->uColor, .15f, .10f, .08f, 1);
+        glSolidDev(cx - u * .48, cy - u * .48, u * .96, u * .96);
+        glUniform4f(glc->uColor, .94f * pulse, .28f * pulse, .055f, 1);
+        glSolidDev(cx - u * .30, cy - u * .30, u * .60, u * .60);
+        glUniform4f(glc->uColor, 1.0f, .78f, .18f, 1);
+        glSolidDev(cx - u * .12, cy - u * .12, u * .24, u * .24);
+      }
+      continue;
+    }
+    if (kind == PK_SEISMIC_WAVE) {
+      double u = glCellDev, dir = vx >= 0 ? 1.0 : -1.0;
+      double beat = ((E.actorTick + i) & 1) ? .18 : 0.0;
+      for (int shard = 0; shard < 4; shard++) {
+        double sx = cx - dir * shard * u * .72;
+        double rise = u * (.42 + (3 - shard) * .30 + (shard == 0 ? beat : 0));
+        glUniform4f(glc->uColor, shard < 2 ? .31f : .22f, shard < 2 ? .28f : .21f,
+                    shard < 2 ? .25f : .20f, .96f - shard * .14f);
+        glSolidDev(sx - u * .38, cy - rise, u * .76, rise);
+        glUniform4f(glc->uColor, .96f, .53f, .10f, .92f - shard * .15f);
+        glSolidDev(sx - u * .09, cy - rise * .82, u * .18, rise * .62);
+      }
+      glUniform4f(glc->uColor, .62f, .48f, .31f, .34f);
+      glSolidDev(cx - dir * u * 2.85 - u * .45, cy - u * .20, u * 3.20, u * .42);
+      continue;
+    }
     double speed = std::max(.001, std::hypot(vx, vy)), nx = vx / speed, ny = vy / speed;
     glUniform4f(glc->uColor, .62f, .39f, .19f, 1);
     for (int s = 1; s <= 5; s++) {
@@ -662,6 +885,9 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     {{0,0,0,0},{24/255.f,28/255.f,42/255.f,1},{54/255.f,99/255.f,160/255.f,1},{91/255.f,157/255.f,211/255.f,1},{174/255.f,218/255.f,239/255.f,1},{247/255.f,179/255.f,69/255.f,1}},
     {{0,0,0,0},{28/255.f,24/255.f,22/255.f,1},{76/255.f,54/255.f,43/255.f,1},{139/255.f,91/255.f,51/255.f,1},{240/255.f,174/255.f,61/255.f,1},{194/255.f,47/255.f,39/255.f,1}},
     {{0,0,0,0},{17/255.f,23/255.f,29/255.f,1},{48/255.f,62/255.f,72/255.f,1},{80/255.f,108/255.f,116/255.f,1},{57/255.f,211/255.f,201/255.f,1},{228/255.f,255/255.f,222/255.f,1}},
+    {{0,0,0,0},{17/255.f,27/255.f,18/255.f,1},{43/255.f,67/255.f,37/255.f,1},{91/255.f,111/255.f,49/255.f,1},{139/255.f,201/255.f,45/255.f,1},{218/255.f,248/255.f,113/255.f,1}},
+    {{0,0,0,0},{29/255.f,22/255.f,18/255.f,1},{86/255.f,53/255.f,24/255.f,1},{211/255.f,125/255.f,28/255.f,1},{248/255.f,199/255.f,55/255.f,1},{126/255.f,213/255.f,231/255.f,1}},
+    {{0,0,0,0},{27/255.f,25/255.f,27/255.f,1},{65/255.f,60/255.f,68/255.f,1},{105/255.f,91/255.f,78/255.f,1},{178/255.f,128/255.f,58/255.f,1},{255/255.f,103/255.f,25/255.f,1}},
   };
   static const char* const grids[CS_COUNT][4][7] = {
     {// minnow: a forked tail and alternating body bend
@@ -709,6 +935,21 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000222200000","0002333320000","0012333444111","0012223332111","0001222222100","0000110110000","0011000001100"},
      {"0000222200000","0002333320000","0012334555111","0012223444111","0001222222100","0000110110000","0011000001100"},
      {"0000222200005","0002333320055","0012334555555","0012223444055","0001222222005","0011000011000","0110000001100"}},
+    {// caustic mortarman: hunched chem-trooper, tank, and lime mortar tube
+     {"0000011110000","0000122221100","0001233332450","0012233344550","0012223332100","0011000011000","0110000001100"},
+     {"0000011110000","0000122221100","0001233332450","0012233344550","0012223332100","0000110110000","0011000001100"},
+     {"0000001144500","0000012244550","0000123332450","0012233332100","0012222222100","0000110110000","0011000001100"},
+     {"0000001144555","0000012244555","0000123332450","0012233332100","0012222222100","0011000011000","0110000001100"}},
+    {// cluster wasp: striped armored abdomen, glassy wings, bomb carriage
+     {"0100000000010","0150000000510","0011223221100","0002334434500","0001223221100","0000101010000","0000000000000"},
+     {"0000000000000","0011500511000","0001522510000","0002334434500","0001223221100","0000101010000","0000000000000"},
+     {"0000000000000","0000111100000","0015223225100","0152334434550","0101223220100","0000134310000","0000011100000"},
+     {"0000000000000","0011500511000","0001522510000","0002334434555","0001223221100","0000101010000","0000000000000"}},
+    {// quake brute: broad stone armor, hammer fists, molten seismic seams
+     {"0001111111000","0012333332100","0123344333210","1123333333211","0012222222100","0011000011000","0110000001100"},
+     {"0001111111000","0012333332100","1123344333211","0123333333210","0012222222100","0000110110000","0011000001100"},
+     {"0111000001110","0122100012210","0012333332100","0123344333210","1123333333211","0011222211000","0110000001100"},
+     {"0001111111000","0012335332100","0123355333210","0123333333210","1122222223211","0551000011550","5550000005550"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   const int sw = 13, sh = 7;
@@ -749,6 +990,99 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       }
     }
   }
+  if (alive && speciesId == CS_CAUSTIC_MORTARMAN &&
+      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    double ox = px + CREATURE_SPECIES[speciesId].w * .60;
+    double oy = py + CREATURE_SPECIES[speciesId].h * .28;
+    double dx = aimX - ox, dy = aimY - oy;
+    double dist = std::hypot(dx, dy);
+    double progress = std::max(0.0, std::min(1.0, attackProgress));
+    double lift = std::max(5.0, std::min(16.0, dist * .20));
+    int samples = imax(10, (int)std::ceil(dist / 3.0));
+    for (int i = 0; i <= samples; i++) {
+      double t = i / (double)samples;
+      double wx = ox + dx * t;
+      double wy = oy + dy * t - std::sin(t * 3.141592653589793) * lift;
+      double bx = (wx - camCol) * cell + glOffX;
+      double by = (wy - camRow) * cell + glOffY;
+      double pulse = .14 + progress * .34;
+      if (attackState == CAS_FIRING) pulse = .72;
+      double size = cell * (.18 + progress * .22);
+      glUniform4f(glc->uColor, .55f, 1.0f, .12f, (float)pulse);
+      glSolidDev(bx - size * .5, by - size * .5, size, size);
+    }
+    // The landing reticle expands into the acid splash footprint, making the
+    // danger readable even when the arc passes above the viewport.
+    double targetX = (aimX - camCol) * cell + glOffX;
+    double targetY = (aimY - camRow) * cell + glOffY;
+    double radius = cell * (1.4 + progress * 2.2);
+    glUniform4f(glc->uColor, .62f, 1.0f, .16f,
+                attackState == CAS_FIRING ? .82f : (float)(.22 + progress * .40));
+    glSolidDev(targetX - radius, targetY - cell * .14, radius * 2.0, cell * .28);
+    glSolidDev(targetX - cell * .14, targetY - radius * .48, cell * .28, radius * .96);
+    if (attackState == CAS_FIRING) {
+      glUniform4f(glc->uColor, .82f, 1.0f, .34f, .95f);
+      glSolidDev((ox - camCol) * cell + glOffX - cell * .55,
+                 (oy - camRow) * cell + glOffY - cell * .55, cell * 1.10, cell * 1.10);
+    }
+  }
+  if (alive && speciesId == CS_CLUSTER_WASP &&
+      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    double ox = px + CREATURE_SPECIES[speciesId].w * .58;
+    double oy = py + CREATURE_SPECIES[speciesId].h * .55;
+    double dx = aimX - ox, dy = aimY - oy, dist = std::hypot(dx, dy);
+    double progress = std::max(0.0, std::min(1.0, attackProgress));
+    int samples = imax(4, (int)std::ceil(dist / (3.4 - progress * 1.4)));
+    for (int i = 0; i <= samples; i++) {
+      if ((i & 1) && attackState != CAS_FIRING) continue;
+      double t = i / (double)samples;
+      double bx = (ox + dx * t - camCol) * cell + glOffX;
+      double by = (oy + dy * t - camRow) * cell + glOffY;
+      double size = cell * (.16 + progress * .26);
+      glUniform4f(glc->uColor, 1.0f, .48f + .34f * (float)progress, .08f,
+                  attackState == CAS_FIRING ? .86f : (float)(.18 + progress * .45));
+      glSolidDev(bx - size * .5, by - size * .5, size, size);
+    }
+    // Four corner brackets communicate the carrier's cluster radius without
+    // covering the player at the center of the target.
+    double tx = (aimX - camCol) * cell + glOffX;
+    double ty = (aimY - camRow) * cell + glOffY;
+    double r = cell * (2.2 + progress * 1.4), arm = cell * .72;
+    glUniform4f(glc->uColor, 1.0f, .62f, .12f,
+                attackState == CAS_FIRING ? .90f : (float)(.24 + progress * .45));
+    for (int sxSign : {-1, 1}) for (int sySign : {-1, 1}) {
+      double bx = tx + sxSign * r, by = ty + sySign * r;
+      glSolidDev(bx - (sxSign < 0 ? 0 : arm), by - cell * .11, arm, cell * .22);
+      glSolidDev(bx - cell * .11, by - (sySign < 0 ? 0 : arm), cell * .22, arm);
+    }
+  }
+  if (alive && speciesId == CS_QUAKE_BRUTE &&
+      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    double ox = px + CREATURE_SPECIES[speciesId].w * .5;
+    double groundY = py + CREATURE_SPECIES[speciesId].h - .18;
+    double dx = aimX - ox;
+    double progress = std::max(0.0, std::min(1.0, attackProgress));
+    int samples = imax(2, (int)std::ceil(std::fabs(dx) / 2.4));
+    for (int i = 0; i <= samples; i++) {
+      double t = i / (double)samples;
+      double wx = ox + dx * t;
+      double rise = cell * (.30 + ((i + (int)(progress * 8)) & 2) * .12 + progress * .54);
+      double bx = (wx - camCol) * cell + glOffX;
+      double by = (groundY - camRow) * cell + glOffY;
+      glUniform4f(glc->uColor, 1.0f, .28f + .38f * (float)progress, .055f,
+                  attackState == CAS_FIRING ? .86f : (float)(.16 + progress * .48));
+      glSolidDev(bx - cell * .12, by - rise, cell * .24, rise);
+      glSolidDev(bx - cell * .45, by - cell * .16, cell * .90, cell * .22);
+    }
+    if (attackState == CAS_FIRING) {
+      double bx = (ox - camCol) * cell + glOffX;
+      double by = (groundY - camRow) * cell + glOffY;
+      glUniform4f(glc->uColor, 1.0f, .69f, .18f, .82f);
+      glSolidDev(bx - cell * 2.4, by - cell * .34, cell * 4.8, cell * .68);
+      glUniform4f(glc->uColor, 1.0f, .92f, .46f, .95f);
+      glSolidDev(bx - cell * .75, by - cell * .70, cell * 1.5, cell * .70);
+    }
+  }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
   double sy = (py - camRow) * cell + glOffY - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
   int frame = animFrame & 3;
@@ -757,6 +1091,7 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   // swimmers roll gently, and the downstroke gives the bird visible lift.
   if (alive) {
     if (speciesId == CS_BIRD) sy += (frame == 0 ? -0.35 : frame == 2 ? 0.20 : 0.0) * cell;
+    else if (speciesId == CS_CLUSTER_WASP) sy += (frame == 0 ? -0.28 : frame == 2 ? 0.16 : 0.0) * cell;
     else if (CREATURE_SPECIES[speciesId].locomotion == CL_AQUATIC) sy += (frame == 1 ? -0.12 : frame == 3 ? 0.12 : 0.0) * cell;
     else if (speciesId != CS_HARE && (frame & 1)) sy -= 0.10 * cell;
   }

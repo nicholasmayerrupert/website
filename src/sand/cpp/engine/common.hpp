@@ -305,6 +305,14 @@ static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL 
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
+// Rechargeable personal jetpack. Fuel is normalized [0,1] so the ABI/HUD can
+// expose it without duplicating a capacity constant. A full tank provides two
+// seconds of thrust and takes three seconds of non-thrusting time to refill.
+static const double P_JETPACK_THRUST = 0.16, P_JETPACK_MAX_RISE = 1.65;
+static const double P_JETPACK_BURN = 1.0 / 120.0, P_JETPACK_RECHARGE = 1.0 / 180.0;
+// Safe-spawn search stays local to the original surface neighborhood. If a
+// player destroyed every candidate, respawn builds a tiny component-aware pad.
+static const int    P_SPAWN_SEARCH_X = 64, P_SPAWN_SEARCH_Y = 64, P_SPAWN_HAZARD_MARGIN = 2;
 // Player tool reach and action cadence.
 static const double P_TOOL_REACH = 30.0;   // max cells from player center (place/mine further)
 static const int    P_TOOL_COOLDOWN = 4;   // steps between held creative/place actions (survival mining progresses every tick)
@@ -435,6 +443,10 @@ struct Player {
   int id = 0;
   bool active = true, alive = true;
   double px = 0, py = 0;   // AABB top-left, cell coords (world-local to the buffer)
+  // Immutable first-spawn anchor in absolute world cells. Unlike px/py it is
+  // deliberately not translated when the streamed window moves or resizes.
+  double spawnWorldX = 0, spawnWorldY = 0;
+  bool respawnPending = false;
   double vx = 0, vy = 0;   // cells per step (+y is down, matching the grid)
   int w = PLAYER_W, h = PLAYER_H;
   int facing = 1;          // +1 right, -1 left
@@ -453,6 +465,8 @@ struct Player {
   int deathTicks = 0;
   int buriedTicks = 0;
   int bowChargeTicks = 0;
+  double jetpackFuel = 1.0; // normalized [0,1]
+  bool jetpackActive = false;
   double landingImpact = 0;
   int toolCooldown = 0; // steps remaining before this player can act again
   bool mineActive = false;

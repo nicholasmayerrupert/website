@@ -292,7 +292,7 @@ export function initSandWasm() {
         playerMine: c('engine_player_mine', 'number', ['number', 'number', 'number', 'number']),
         playerMineProgress: c('engine_player_mine_progress', 'number', ['number', 'number']),
         playerMineTarget: c('engine_player_mine_target', 'number', ['number', 'number', 'number']),
-        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        setPlayerState: c('engine_set_player_state', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']),
         spawnItem: c('engine_spawn_item', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
         itemCount: c('engine_item_count', 'number', ['number']),
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
@@ -500,6 +500,7 @@ const renderStrides = Object.freeze({
     out.animState = f[o + P.animState] | 0; out.animFrame = f[o + P.animFrame] | 0;
     out.deathTicks = f[o + P.deathTicks] | 0; out.respawnReady = f[o + P.respawnReady] === 1;
     out.bowCharge = f[o + P.bowCharge]; out.heldItemKind = f[o + P.heldItemKind] | 0;
+    out.jetpackFuel = f[o + P.jetpackFuel]; out.jetpackActive = f[o + P.jetpackActive] === 1;
     return out;
   };
 
@@ -1077,8 +1078,12 @@ const renderStrides = Object.freeze({
       const o = glOffOut >> 2;
       return { x: mod.HEAP32[o] | 0, y: mod.HEAP32[o + 1] | 0 };
     },
-    setPlayerState(id, { x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false }) {
-      M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0, jumpReady ? 1 : 0);
+    setPlayerState(id, {
+      x, y, vx = 0, vy = 0, facing = 1, grounded = false, jumpReady = false,
+      jetpackFuel = 1, jetpackActive = false,
+    }) {
+      M.setPlayerState(ptr, id, x, y, vx, vy, facing | 0, grounded ? 1 : 0,
+        jumpReady ? 1 : 0, jetpackFuel, jetpackActive ? 1 : 0);
     },
 
     // World replication. serialize* returns a copy of the bytes (the

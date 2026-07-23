@@ -133,15 +133,29 @@ const SPECIAL_ART = {
     '............','..NNNNNNN...','.NAAAAAAANN.','NNAAIIIINNN.','.NNNNNNNNN..','...NNNNN....',
     '....NHH.....','....HHH.....','....HH......','.....H......','............','............',
   ],
+  [ITEM_KIND.ACID_MORTAR]: [
+    '............','....PPPPPP..','...PAAAAAAP.','..PPAAAAAPP.','.PPPPPPPPP..','...PPPPP....',
+    '....PHH.....','....HHH.....','....HH......','.....H......','............','............',
+  ],
+  [ITEM_KIND.CLUSTER_LAUNCHER]: [
+    '............','...BBBBBBB..','..BOOOOOOBB.','.BBOOOOOBBB.','..BBBBBBBB..','....BBBB....',
+    '....BHH.....','....HHH.....','....HH......','.....H......','............','............',
+  ],
+  [ITEM_KIND.SEISMIC_HAMMER]: [
+    '...QQQQQQ...','..QKKKKKKQ..','..QKKKKKKQ..','...QQHHQQ...','.....HH.....','.....HH.....',
+    '.....HH.....','.....HH.....','.....HH.....','....HHHH....','....HHHH....','............',
+  ],
 };
 const SPECIAL_COLOR = {
   H: '#9b6a39', W: '#9b6a39', S: '#f8e7a1', M: '#c9d0d6',
   D: '#26313b', G: '#e3a83c', R: '#5d211f', C: '#d94a37',
   F: '#ff9f32', N: '#273b48', A: '#3dd5cd', I: '#d9fff5',
+  P: '#324737', B: '#3e315c', O: '#f2a63d', Q: '#302b2c', K: '#d86b3c',
 };
 const isSpecialKind = (kind) => kind === ITEM_KIND.BOW || kind === ITEM_KIND.ARROW
   || kind === ITEM_KIND.BLAST_GUN || kind === ITEM_KIND.DYNAMITE_SATCHEL
-  || kind === ITEM_KIND.BORE_CANNON;
+  || kind === ITEM_KIND.BORE_CANNON || kind === ITEM_KIND.ACID_MORTAR
+  || kind === ITEM_KIND.CLUSTER_LAUNCHER || kind === ITEM_KIND.SEISMIC_HAMMER;
 function specialIcon(kind, sizePx) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 12 12'); svg.setAttribute('width', String(sizePx)); svg.setAttribute('height', String(sizePx));
@@ -501,6 +515,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (!s) return 'Hand';
     if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
     if (s.itemKind === ITEM_KIND.BORE_CANNON) return 'Bore Cannon';
+    if (s.itemKind === ITEM_KIND.ACID_MORTAR) return 'Acid Mortar';
+    if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) return 'Cluster Launcher';
+    if (s.itemKind === ITEM_KIND.SEISMIC_HAMMER) return 'Seismic Hammer';
     if (s.itemKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (s.itemKind === ITEM_KIND.BOW) return 'Bow';
     if (s.itemKind === ITEM_KIND.ARROW) return 'Arrow';
@@ -525,6 +542,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (r.outputKind === ITEM_KIND.MINING_TOOL) return `${TIER_NAME[r.outputTier] || ''} Mining Tool`.trim();
     if (r.outputKind === ITEM_KIND.DYNAMITE_SATCHEL) return 'Dynamite Satchel';
     if (r.outputKind === ITEM_KIND.BORE_CANNON) return 'Bore Cannon';
+    if (r.outputKind === ITEM_KIND.ACID_MORTAR) return 'Acid Mortar';
+    if (r.outputKind === ITEM_KIND.CLUSTER_LAUNCHER) return 'Cluster Launcher';
+    if (r.outputKind === ITEM_KIND.SEISMIC_HAMMER) return 'Seismic Hammer';
     if (r.outputKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (r.outputKind === ITEM_KIND.BOW) return 'Bow';
     if (r.outputKind === ITEM_KIND.ARROW) return `${r.outputCount} Arrows`;
@@ -587,6 +607,9 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         renderStack(el, s);
         if (s.itemKind === ITEM_KIND.DYNAMITE_SATCHEL) el.title = 'Dynamite Satchel — LMB throws a bouncing fused charge';
         else if (s.itemKind === ITEM_KIND.BORE_CANNON) el.title = 'Bore Cannon — hold LMB to charge a terrain-cutting beam';
+        else if (s.itemKind === ITEM_KIND.ACID_MORTAR) el.title = 'Acid Mortar — LMB lobs a corrosive shell';
+        else if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) el.title = 'Cluster Launcher — LMB fires a bomb that splits into five charges';
+        else if (s.itemKind === ITEM_KIND.SEISMIC_HAMMER) el.title = 'Seismic Hammer — LMB launches a terrain-ripping ground wave';
         else if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
         else if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
         else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;

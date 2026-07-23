@@ -138,9 +138,13 @@ accumulate catch-up debt.
 `/game` is explosive survival. Players spawn with an automatic blast gun whose
 swept, high-velocity rounds detonate on the first liquid, solid, or creature hit.
 Dynamiteers throw bouncing timed charges; bore sentinels telegraph, lock, and then
-erase a thick line through both simulated layers. Blasts and bore cuts damage
+erase a thick line through both simulated layers. Caustic mortarmen lob
+terrain-poisoning acid shells, cluster wasps scatter independently fused bombs,
+and quake brutes send component-safe fractures racing through both layers.
+Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
-and manual respawn remain authoritative in the engine. Mining, material pickups,
+an airborne rechargeable jetpack, and safe original-spawn respawning remain
+authoritative in the engine. Mining, material pickups,
 block placement, the 36-slot inventory, tool-size presets, and crafting remain
 part of survival: defeated demolition crews can also drop their weapons into
 that same inventory.
@@ -160,7 +164,8 @@ explicit spawn eggs bypass natural-spawn caps.
 | Input | Survival | Creative/free camera |
 | --- | --- | --- |
 | `A/D` or arrows | Move | Pan |
-| `W`, `↑`, `Space` | Jump/swim | Pan up |
+| `W`, `↑` | Jump/swim | Pan up |
+| `Space` | Jump, then hold for rechargeable jetpack thrust | Pan up |
 | `S`, `↓` | Crouch/down | Pan down |
 | `Shift` | Run | — |
 | `1`–`9`, wheel | Select hotbar | — |

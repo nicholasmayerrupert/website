@@ -63,20 +63,23 @@ class ViewCamera {
   double aimCellX() const { return std::floor(camX + pointerCssX * viewDpr / cellDevPx); }
   double aimCellY() const { return std::floor(camY + pointerCssY * viewDpr / cellDevPx); }
 
-  // Normalized local player input each step: held keys (+ up/space -> jump)
-  // and, in draw mode, the mouse buttons as primary/secondary.
+  // Normalized local player input each step. Up/W remains an ordinary jump;
+  // Space is both jump and jetpack so holding it continues into airborne thrust.
+  // In draw mode the mouse buttons are also primary/secondary.
   int localInputBits() const {
     int b = 0;
     if (heldKeys & (1u << IK_LEFT)) b |= PI_LEFT;
     if (heldKeys & (1u << IK_RIGHT)) b |= PI_RIGHT;
-    if (heldKeys & ((1u << IK_UP) | (1u << IK_SPACE))) b |= PI_JUMP;
+    bool space = (heldKeys & (1u << IK_SPACE)) != 0;
+    if ((heldKeys & (1u << IK_UP)) || space) b |= PI_JUMP;
+    if (space) b |= PI_JETPACK;
     if (heldKeys & (1u << IK_DOWN)) b |= PI_DOWN;
     if (heldKeys & (1u << IK_SHIFT)) b |= PI_RUN;
     if (stickX < -1e-6) b |= PI_LEFT;
     if (stickX >  1e-6) b |= PI_RIGHT;
     // Platformer vertical input remains jump/crouch, with a deliberate tilt
     // threshold so a mostly-horizontal analog move does not jump accidentally.
-    if (stickY < -0.35) b |= PI_JUMP;
+    if (stickY < -0.35) b |= PI_JUMP | PI_JETPACK;
     if (stickY >  0.35) b |= PI_DOWN;
     // Survival aims/places with the mouse whenever the cursor is over the
     // canvas — no "Draw" toggle gating (the fullscreen game has no page to

@@ -34,6 +34,9 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.BLAST_GUN]: 150,
   [SOUND_EVENT.BORE_CHARGE]: 260,
   [SOUND_EVENT.BORE_FIRE]: 360,
+  [SOUND_EVENT.ACID_MORTAR]: 155,
+  [SOUND_EVENT.CLUSTER_LAUNCH]: 175,
+  [SOUND_EVENT.QUAKE]: 230,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -58,6 +61,9 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.BLAST_GUN]: 55,
   [SOUND_EVENT.BORE_CHARGE]: 320,
   [SOUND_EVENT.BORE_FIRE]: 260,
+  [SOUND_EVENT.ACID_MORTAR]: 85,
+  [SOUND_EVENT.CLUSTER_LAUNCH]: 90,
+  [SOUND_EVENT.QUAKE]: 150,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -365,6 +371,29 @@ export function createSandAudio() {
         type: 'bandpass', q: 0.7, rate: 0.82 + variation * 0.10, attack: 0.004 });
       playTone({ from: 105, to: 42, duration: 0.48, gain: gain * 0.20, pan,
         wave: 'sine', delay: 0.018, attack: 0.008 });
+    } else if (type === SOUND_EVENT.ACID_MORTAR) {
+      playTone({ from: 270, to: 92, duration: 0.22, gain: gain * 0.17, pan,
+        wave: 'square', attack: 0.004 });
+      playNoise({ duration: 0.24, gain: gain * 0.19, pan, frequency: 980,
+        type: 'bandpass', q: 0.8, rate: 0.82 + variation * 0.16, attack: 0.008 });
+      playTone({ from: 690, to: 330, duration: 0.28, gain: gain * 0.07, pan,
+        wave: 'sawtooth', delay: 0.025, attack: 0.012 });
+    } else if (type === SOUND_EVENT.CLUSTER_LAUNCH) {
+      playNoise({ duration: 0.12, gain: gain * 0.25, pan, frequency: 1350,
+        type: 'highpass', q: 0.55, rate: 1.0 + variation * 0.15, attack: 0.003 });
+      playTone({ from: 190, to: 75, duration: 0.21, gain: gain * 0.17, pan,
+        wave: 'triangle', attack: 0.004 });
+      for (let i = 0; i < 3; i++) playTone({
+        from: 820 + i * 180, to: 430 + i * 70, duration: 0.08,
+        gain: gain * 0.045, pan, wave: 'square', delay: 0.045 + i * 0.026, attack: 0.002,
+      });
+    } else if (type === SOUND_EVENT.QUAKE) {
+      playTone({ from: 92, to: 31, duration: 0.58, gain: gain * 0.25, pan,
+        wave: 'sawtooth', attack: 0.006 });
+      playNoise({ duration: 0.52, gain: gain * 0.28, pan, frequency: 260,
+        type: 'lowpass', q: 0.9, rate: 0.68 + variation * 0.10, attack: 0.004 });
+      playTone({ from: 46, to: 25, duration: 0.66, gain: gain * 0.18, pan,
+        wave: 'sine', delay: 0.025, attack: 0.008 });
     } else if (type === SOUND_EVENT.EXPLOSION) {
       const sampleGain = Math.min(0.46, gain * 0.25);
       if (recordedAssets) {

@@ -21,4 +21,7 @@
   void applyPlayerTools() { psys.applyPlayerTools(); }
   void updatePlayers() { psys.updatePlayers(); }
   void stepPlayerOnly(int id) { psys.stepPlayerOnly(id); }
-  void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady) { psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady); }
+  void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded,
+                      int jumpReady, double jetpackFuel, int jetpackActive) {
+    psys.setPlayerState(id, x, y, vx, vy, facing, grounded, jumpReady, jetpackFuel, jetpackActive);
+  }

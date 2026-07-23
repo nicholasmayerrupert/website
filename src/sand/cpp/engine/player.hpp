@@ -22,10 +22,15 @@ class PlayerSystem {
   bool moveDown(Player& p, double d);
   bool moveUp(Player& p, double d);
   bool tryMoveY(Player& p, double d);
+  bool spawnAreaLoaded(double px, double py, int margin = P_SPAWN_HAZARD_MARGIN);
+  bool spawnOverlapsPlayer(double px, double py, const Player* ignore);
+  bool safeSpawnAt(double px, double py, const Player* ignore);
+  bool findSafeSpawnNearWorld(double worldX, double worldY, double* out, const Player* ignore);
+  bool buildSafeSpawnPad(double worldX, double worldY, double* out, const Player* ignore);
   int spawnPlayer(double x, double y);
   void playerSurfaceSpawn(int col, double* out);
   int spawnPlayerAtSurface(int col);
-  void respawnPlayer(Player& p);
+  bool respawnPlayer(Player& p);
   bool requestRespawn(int id);
   void damagePlayer(Player& p, int damage, int cooldown = 30);
   void killPlayer(Player& p);
@@ -54,7 +59,8 @@ class PlayerSystem {
   void applyPlayerTools();
   void updatePlayers();
   void stepPlayerOnly(int id);
-  void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady);
+  void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded, int jumpReady,
+                      double jetpackFuel = 1.0, int jetpackActive = 0);
   int buildPlayerSnapshot();
 
  private:

@@ -134,10 +134,11 @@ try {
   check('creative Main folder begins with the ten featured picks',
     mainLabels.slice(0, 10).join(',') === 'cube,eraser,rigid,stone,water,acid,lava,tnt,seed,sand',
     mainLabels.slice(0, 10).join(','));
-  check('creative Main folder contains the complete catalog', mainLabels.length === 61, `${mainLabels.length} entries`);
+  check('creative Main folder contains the complete catalog', mainLabels.length === 64, `${mainLabels.length} entries`);
   const expectedEggLabels = [
     'Minnow Spawn Egg', 'Fox Spawn Egg', 'Mole Spawn Egg', 'Bird Spawn Egg',
-    'Dynamiteer Spawn Egg', 'Bore Sentinel Spawn Egg',
+    'Dynamiteer Spawn Egg', 'Bore Sentinel Spawn Egg', 'Caustic Mortarman Spawn Egg',
+    'Cluster Wasp Spawn Egg', 'Quake Brute Spawn Egg',
   ];
   check('creative Main folder keeps the enabled spawn eggs at the bottom',
     mainLabels.slice(-expectedEggLabels.length).join(',') === expectedEggLabels.join(','),

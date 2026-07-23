@@ -3,7 +3,7 @@
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, PROJECTILE_KIND, CREATURE, CREATURE_ATTACK_STATE, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -34,7 +34,7 @@ export const MSG = Object.freeze({
 
 // Field bounds, derived from the generated ABI manifest so they can't drift
 // from the engine.
-export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 127
+export const INPUT_BITS_MAX = Object.values(INPUT).reduce((a, b) => a | b, 0); // 255
 export const TOOL_MAX = Math.max(...Object.values(TOOL)); // 11
 const SOUND_EVENT_MAX = Math.max(...Object.values(SOUND_EVENT));
 const ITEM_KIND_MAX = Math.max(...Object.values(ITEM_KIND));
@@ -99,6 +99,8 @@ export function makeSnapshot(tick, players, hash = null) {
       animState: p.animState | 0, animFrame: p.animFrame | 0,
       deathTicks: p.deathTicks | 0, respawnReady: p.respawnReady ? 1 : 0,
       bowCharge: Number.isFinite(p.bowCharge) ? p.bowCharge : 0, heldItemKind: p.heldItemKind | 0,
+      jetpackFuel: Number.isFinite(p.jetpackFuel) ? p.jetpackFuel : 1,
+      jetpackActive: p.jetpackActive ? 1 : 0,
       aimX: Number.isFinite(p.aimX) ? p.aimX : 0, aimY: Number.isFinite(p.aimY) ? p.aimY : 0,
     })),
   };
@@ -346,6 +348,7 @@ function validateSnapshot(m) {
     if (!isNonNegInt(p.health) || !isBit(p.alive)) return null;
     if (!isNonNegInt(p.animState) || !isNonNegInt(p.animFrame) || !isNonNegInt(p.deathTicks) || !isBit(p.respawnReady)) return null;
     if (!isFiniteNum(p.bowCharge) || p.bowCharge < 0 || p.bowCharge > 1 || !isNonNegInt(p.heldItemKind) || p.heldItemKind > ITEM_KIND_MAX) return null;
+    if (!isFiniteNum(p.jetpackFuel) || p.jetpackFuel < 0 || p.jetpackFuel > 1 || !isBit(p.jetpackActive)) return null;
     if (!isFiniteNum(p.aimX) || !isFiniteNum(p.aimY)) return null;
   }
   return m;

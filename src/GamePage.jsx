@@ -58,7 +58,7 @@ export default function GamePage() {
         <div className="mb-1 text-[#f0d465]">Explosive Survival · work in progress</div>
         <div className="whitespace-nowrap">
           <span className="font-semibold text-white/90">WASD</span> move ·{' '}
-          <span className="font-semibold text-white/90">Space</span> jump ·{' '}
+          <span className="font-semibold text-white/90">Space</span> jump / jetpack ·{' '}
           <span className="font-semibold text-white/90">Mouse</span> aim ·{' '}
           <span className="font-semibold text-white/90">1–9</span> hotbar
         </div>

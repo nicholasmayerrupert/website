@@ -1,5 +1,5 @@
 // Player prediction owns only immediate movement presentation. Survival state
-// (health, death/respawn, held items, and bow charge) stays authoritative.
+// (health, death/respawn, held items, and weapon charge) stays authoritative.
 export function mergePlayerPrediction(authoritative, predicted, id) {
   if (!authoritative || !predicted) return authoritative;
   return {
@@ -14,6 +14,8 @@ export function mergePlayerPrediction(authoritative, predicted, id) {
     facing: predicted.facing,
     grounded: predicted.grounded,
     jumpReady: predicted.jumpReady,
+    jetpackFuel: predicted.jetpackFuel,
+    jetpackActive: predicted.jetpackActive,
     animState: predicted.animState,
     animFrame: predicted.animFrame,
   };

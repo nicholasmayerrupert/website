@@ -118,10 +118,10 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 1. input message round trip.
 {
   console.log('input round trip');
-  const m = makeInput({ room: 'r1', client: 7, player: 3, tick: 42, seq: 5, bits: INPUT.RIGHT | INPUT.JUMP, aimX: 120, aimY: -8, tool: 6 });
+  const m = makeInput({ room: 'r1', client: 7, player: 3, tick: 42, seq: 5, bits: INPUT.RIGHT | INPUT.JUMP | INPUT.JETPACK, aimX: 120, aimY: -8, tool: 6 });
   const d = rt(m);
   check('decodes to input', d && d.t === MSG.INPUT);
-  check('fields preserved', d && d.room === 'r1' && d.client === 7 && d.player === 3 && d.tick === 42 && d.seq === 5 && d.bits === (INPUT.RIGHT | INPUT.JUMP) && d.aimX === 120 && d.aimY === -8 && d.tool === 6);
+  check('fields preserved', d && d.room === 'r1' && d.client === 7 && d.player === 3 && d.tick === 42 && d.seq === 5 && d.bits === (INPUT.RIGHT | INPUT.JUMP | INPUT.JETPACK) && d.aimX === 120 && d.aimY === -8 && d.tool === 6);
   const analog = rt(makeInput({ room: 'r1', client: 7, player: 3, tick: 43, seq: 6, bits: INPUT.RIGHT, aimX: 0, aimY: 0, tool: 0, moveX: 0.3, moveY: -0.4 }));
   check('analog vector preserved', analog && analog.moveX === 0.3 && analog.moveY === -0.4);
 }
@@ -130,7 +130,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 {
   console.log('snapshot round trip');
   const players = [
-    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN, aimX: -12.5, aimY: 44.75 },
+    { id: 1, x: 10.5, y: 20.25, vx: -1.5, vy: 0.75, facing: -1, grounded: true, tool: 2, health: 100, alive: true, inputSeq: 9, animState: 2, animFrame: 3, heldItemKind: ITEM_KIND.BLAST_GUN, jetpackFuel: 0.625, jetpackActive: true, aimX: -12.5, aimY: 44.75 },
     { id: 2, x: 33, y: 5, vx: 0, vy: 0, facing: 1, grounded: false, tool: 0, health: 80, alive: true, inputSeq: 0, animState: 0, animFrame: 1, aimX: 37, aimY: 8 },
   ];
   const d = rt(makeSnapshot(123, players, 0xdeadbeef));
@@ -141,6 +141,8 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('animation state preserved', d && d.players[0].animState === 2 && d.players[0].animFrame === 3 && d.players[1].animFrame === 1);
   check('alive state preserved', d && d.players[0].alive === 1 && d.players[1].alive === 1);
   check('held item kind preserved', d && d.players[0].heldItemKind === ITEM_KIND.BLAST_GUN);
+  check('jetpack state preserved', d && d.players[0].jetpackFuel === 0.625 && d.players[0].jetpackActive === 1
+    && d.players[1].jetpackFuel === 1 && d.players[1].jetpackActive === 0);
   check('player aim preserved', d && d.players[0].aimX === -12.5 && d.players[0].aimY === 44.75
     && d.players[1].aimX === 37 && d.players[1].aimY === 8);
 }
@@ -179,6 +181,12 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const nonFiniteAim = makeSnapshot(1, [validPlayer]);
   nonFiniteAim.players[0].aimY = Number.POSITIVE_INFINITY;
   check('snapshot non-finite aim rejected', decode(JSON.stringify(nonFiniteAim)) === null);
+  const badFuel = makeSnapshot(1, [validPlayer]);
+  badFuel.players[0].jetpackFuel = 1.01;
+  check('snapshot over-full jetpack rejected', decode(JSON.stringify(badFuel)) === null);
+  const badJetpackActive = makeSnapshot(1, [validPlayer]);
+  badJetpackActive.players[0].jetpackActive = 2;
+  check('snapshot non-bit jetpack activity rejected', decode(JSON.stringify(badJetpackActive)) === null);
   check('snapshot non-array players', decode(JSON.stringify({ t: 'snapshot', tick: 1, hash: null, players: 5 })) === null);
   check('viewport cannot exceed its buffer', rt(makeView('r', 'c', 200, 100, 100, 100)) === null);
   check('viewport buffer cell cap enforced', rt(makeView('r', 'c', 100, 100, 4000, 4000)) === null);

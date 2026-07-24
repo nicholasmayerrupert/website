@@ -679,23 +679,23 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check('captured minigun preserves owner immunity',
     e.getPlayer(player).health === healthBeforeBurst);
 
-  const crystalX = wallX - 8;
-  e.eraseDisc(crystalX, impactY, 4);
+  const ironX = wallX - 8;
+  e.eraseDisc(ironX, impactY, 4);
   for (let y = impactY - 2; y <= impactY + 2; y++)
-    e.placeMaterial(crystalX, y, 0, MAT.CRYSTAL);
+    e.placeMaterial(ironX, y, 0, MAT.IRON_ORE);
   e.syncComponents();
-  const crystalBefore = e.getGrid().reduce(
-    (total, material) => total + (material === MAT.CRYSTAL ? 1 : 0), 0);
+  const ironBefore = e.getGrid().reduce(
+    (total, material) => total + (material === MAT.IRON_ORE ? 1 : 0), 0);
   e.setPlayerInput(player, {
-    bits: PI_PRIMARY, aimX: crystalX, aimY: impactY, seq: ++seq,
+    bits: PI_PRIMARY, aimX: ironX, aimY: impactY, seq: ++seq,
   });
   e.stepActors();
-  e.setPlayerInput(player, { bits: 0, aimX: crystalX, aimY: impactY, seq: ++seq });
+  e.setPlayerInput(player, { bits: 0, aimX: ironX, aimY: impactY, seq: ++seq });
   for (let tick = 0; tick < 8; tick++) e.stepActors();
-  const crystalAfter = e.getGrid().reduce(
-    (total, material) => total + (material === MAT.CRYSTAL ? 1 : 0), 0);
-  check(`direct minigun explosions fracture durability-8 crystal (${crystalBefore} -> ${crystalAfter})`,
-    crystalAfter < crystalBefore);
+  const ironAfter = e.getGrid().reduce(
+    (total, material) => total + (material === MAT.IRON_ORE ? 1 : 0), 0);
+  check(`direct minigun explosions fracture durability-8 iron ore (${ironBefore} -> ${ironAfter})`,
+    ironAfter < ironBefore);
 
   // A centre-sourced, one-cell minigun crater has no radial source-to-centre
   // vector. The general blast path must infer the ceiling's open side from the

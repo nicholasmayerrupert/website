@@ -127,7 +127,7 @@ function blastDamagesMaterial(name) {
 // --- detonation happens, and the TNT is consumed ---
 {
   const soft = blastCrater(MAT.SANDSTONE); // durability 6
-  const hard = blastCrater(MAT.IRON_ORE);  // durability 14
+  const hard = blastCrater(MAT.GOLD_ORE);  // durability 12
   check(`TNT detonated (blast fired at step ${soft.blast})`, soft.blast > 0);
   check(`TNT is consumed by its own blast (${soft.tntLeft} left)`, soft.tntLeft === 0);
   check(`soft block carves a crater (${soft.crater} cells)`, soft.crater > 30);
@@ -519,8 +519,8 @@ function blastDamagesMaterial(name) {
   const e = mk();
   const cx = 60, cy = 55;
   // STONE is chunk-bounded, so the U in x<64 is one component while the
-  // blast-resistant IRON_ORE bridge across the chunk seam is another. TNT cuts
-  // the U's left connection; the iron bridge keeps the global graph grounded.
+  // blast-resistant GOLD_ORE bridge across the chunk seam is another. TNT cuts
+  // the U's left connection; the gold bridge keeps the global graph grounded.
   e.placeMaterial(cx, cy, 0, MAT.TNT);
   for (let x = 30; x < 64; x++) for (let y = 39; y <= 43; y++) e.placeMaterial(x, y, 0, MAT.STONE);
   for (let x = 30; x < 64; x++) for (let y = 67; y <= 71; y++) e.placeMaterial(x, y, 0, MAT.STONE);
@@ -529,7 +529,7 @@ function blastDamagesMaterial(name) {
     e.placeMaterial(x, y, 0, MAT.STONE);
   }
   for (let x = 34; x <= 38; x++) for (let y = 67; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);
-  for (let x = 64; x <= 67; x++) for (let y = 39; y <= 71; y++) e.placeMaterial(x, y, 0, MAT.IRON_ORE);
+  for (let x = 64; x <= 69; x++) for (let y = 39; y <= 71; y++) e.placeMaterial(x, y, 0, MAT.GOLD_ORE);
   e.syncComponents();
   for (let i = 0; i < 8; i++) e.step(i * 16);
   const fast0 = e.groundingDiag().fast;
@@ -541,7 +541,7 @@ function blastDamagesMaterial(name) {
   }
   const heldTop = topRow(e.getGrid(), MAT.STONE);
   const fast1 = e.groundingDiag().fast;
-  for (let y = 39; y <= 71; y++) for (let x = 64; x <= 67; x++) e.eraseDisc(x, y, 0);
+  for (let y = 39; y <= 71; y++) for (let x = 64; x <= 69; x++) e.eraseDisc(x, y, 0);
   for (let i = 90; i < 130; i++) e.step(i * 16);
   const releasedTop = topRow(e.getGrid(), MAT.STONE);
   check(`alternate-component reconnect blast detonated`, detonated);

@@ -100,7 +100,7 @@ export const MATERIALS = [
   { id: 19, name: 'SANDSTONE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.3, looseSorted: false, mobility: 0, transparency: 0, color: 0xb382b4d2, textureAmp: 7, durability: 6, renderAnim: 'none' },
   { id: 20, name: 'MOSS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.9, looseSorted: false, mobility: 0, transparency: 0, color: 0xb33e7856, textureAmp: 8, durability: 3, renderAnim: 'none' },
   { id: 21, name: 'COPPER_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.7, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3466eaf, textureAmp: 8, durability: 10, renderAnim: 'none' },
-  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.8, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3788ca0, textureAmp: 8, durability: 14, renderAnim: 'none' },
+  { id: 22, name: 'IRON_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.8, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3788ca0, textureAmp: 8, durability: 8, renderAnim: 'none' },
   { id: 23, name: 'COAL_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xb3555050, textureAmp: 8, durability: 9, renderAnim: 'none' },
   { id: 24, name: 'GOLD_ORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 3, looseSorted: false, mobility: 0, transparency: 0, color: 0xb35aafc8, textureAmp: 8, durability: 12, renderAnim: 'none' },
   { id: 25, name: 'BRICK', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8374696, textureAmp: 4, durability: 12, renderAnim: 'none' },

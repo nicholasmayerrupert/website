@@ -3,6 +3,7 @@
 //   node scripts/layer-test.mjs
 
 import { initSandWasm, createEngineWasm, MAT, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
+import { CG, MAT_CGROUP } from '../src/sand/materials.generated.js';
 import { countMaterials } from './sand-test-util.mjs';
 
 const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
@@ -175,6 +176,49 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   }
   check('falling tree diffs keep the presentation grid synchronized', mismatch === null, mismatch && `(${JSON.stringify(mismatch)})`);
   host.destroy(); mirror.destroy();
+}
+
+// 6c. The initial infinite-world buffer can clip tall generated foliage at its
+// top edge. That edge is deterministic open sky here, so crown leaves must not
+// inherit unloaded-world support and pin a non-physical outline in place. Stone
+// and wood structures retain the general streamed-edge support rule.
+{
+  console.log('worldgen tree crowns are not grounded by an open-sky top edge');
+  const cols = 200, rows = 120;
+  const e = createEngineWasm({ cols, rows, worldSeed: 14, sinksOn: false, infinite: true });
+  const plantStats = () => {
+    const grid = e.getGridBg();
+    let n = 0, top = rows, topEdge = 0;
+    for (let cell = 0; cell < grid.length; cell++) {
+      if (MAT_CGROUP[grid[cell]] !== CG.plant) continue;
+      const y = (cell / cols) | 0;
+      n++; top = Math.min(top, y);
+      if (y <= 1) topEdge++;
+    }
+    return { n, top, topEdge };
+  };
+  const before = plantStats();
+  step(e, 12);
+  const after = plantStats();
+  check('fixture starts with a crown clipped by the top edge',
+    before.n > 0 && before.top === 0 && before.topEdge > 0,
+    `(${before.n} cells, ${before.topEdge} at edge)`);
+  check('open-sky crown falls without leaving its top outline',
+    after.n === before.n && after.top > before.top && after.topEdge === 0,
+    `(${before.top}/${before.n} -> ${after.top}/${after.n}, edge ${after.topEdge})`);
+  e.destroy();
+
+  const supported = createEngineWasm({ cols, rows, worldSeed: 14, sinksOn: false, infinite: true });
+  const stoneX = 80, woodX = 120, topRow = 1;
+  supported.paintDiscLayer(0, stoneX, topRow, 0, MAT.STONE, true);
+  supported.paintDiscLayer(0, woodX, topRow, 0, MAT.WOOD, true);
+  supported.syncComponentsLayer(0);
+  step(supported, 12);
+  const fg = supported.getGrid();
+  check('open-sky edge support remains intact for streamed structures',
+    fg[topRow * cols + stoneX] === MAT.STONE && fg[topRow * cols + woodX] === MAT.WOOD,
+    `(stone ${fg[topRow * cols + stoneX]}, wood ${fg[topRow * cols + woodX]})`);
+  supported.destroy();
 }
 
 // 7. RMB paints into the background; LMB into the foreground.

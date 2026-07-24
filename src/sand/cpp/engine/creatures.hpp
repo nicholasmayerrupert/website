@@ -189,6 +189,7 @@ class CreatureSystem {
   bool boxHitsSolid(double wx, double wy, int w, int h) const;
   double blockingCoverage(double wx, double wy, int w, int h) const;
   double fluidCoverage(double wx, double wy, int w, int h) const;
+  bool boxTouchesMaterial(double wx, double wy, int w, int h, uint8_t material) const;
   bool boxTouchesLiquid(double wx, double wy, int w, int h) const;
   bool boxFitsHabitat(uint8_t speciesId, double wx, double wy) const;
   int localDensity(uint8_t speciesId, double wx, double wy, int radius) const;

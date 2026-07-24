@@ -112,16 +112,29 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
   // UNLOADED world that may itself be grounded. A non-ice rigid cell touching such an
   // edge is assumed supported, so terrain whose real floor-contact has streamed off
-  // the buffer does not spuriously fall. Ice must remain mobile: large icebergs often
-  // span a loaded-window edge, and grounding the edge cell disables buoyancy for the
-  // whole connected iceberg (even after most of it is erased).
+  // the buffer does not spuriously fall. Preserve that support for structures,
+  // including plant-family wood. Only foliage at a top edge known to be open sky is
+  // excluded: sky cannot support a clipped worldgen crown, and seeding those leaves
+  // pins its visible outline while the rest of the tree falls. Ice must remain mobile:
+  // large icebergs often span a loaded-window edge, and grounding the edge cell
+  // disables buoyancy for the whole connected iceberg (even after most of it is
+  // erased).
   if (lay->infinite) {
     for (int y = 1; y < E.rows; y++) {
       int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl]) && !E.isIceComponentMaterial(g[kl])) groundRigidAt(kl, 1);
       int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) groundRigidAt(kr, E.cols - 2);
     }
     int topBase = E.cols; // row y = 1
-    for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k]) && !E.isIceComponentMaterial(g[k])) groundRigidAt(k, x); }
+    int topWorldY = lay->worldOffsetY;
+    bool topMayBeSky = topWorldY < lay->gSeaRow;
+    for (int x = 1; x < E.cols - 1; x++) {
+      int k = topBase + x;
+      if (!E.isRigidMaterialClass(g[k]) || E.isIceComponentMaterial(g[k])) continue;
+      if (!E.isPlantLeaf(g[k])) { groundRigidAt(k, x); continue; }
+      bool openSky = topMayBeSky
+                  && topWorldY < E.terrain.genSurfaceAbs(lay->worldOffsetX + x);
+      if (!openSky) groundRigidAt(k, x);
+    }
   }
   int gridLen = E.cols * E.rows;
   while (sp > 0) {

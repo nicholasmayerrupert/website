@@ -154,6 +154,23 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
   e.destroy();
 }
 
+// Corrosive material harms entity actors as well as the player. Keep the pool
+// static under the actor-only clock so this isolates contact damage from acid
+// movement or terrain dissolution.
+{
+  const e = mk(); stoneFloor(e, 92);
+  const id = e.spawnCreature(CREATURE.FOX, 50, 88);
+  const before = byId(e, id).health;
+  for (let y = 84; y < 92; y++)
+    for (let x = 24; x < 116; x++) e.paintDisc(x, y, 0, MAT.ACID, true);
+  e.setCreatureRuntime(true, false);
+  actors(e, 30);
+  const exposed = byId(e, id);
+  check(`acid contact now damages creatures (${before} -> ${exposed?.health})`,
+    exposed && exposed.health <= before - 24);
+  e.destroy();
+}
+
 // Hitbox damage changes health and respects the short hurt cooldown.
 {
   const e = mk(); waterBox(e, 20, 20, 100, 70);

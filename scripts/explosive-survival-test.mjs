@@ -144,7 +144,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check(`impact blast damages its creature target (${healthBefore} -> ${healthAfter})`, healthAfter < healthBefore);
   check('impact blast carves nearby terrain', countStone(e.getGrid()) < stoneBefore);
   check('the firing player is immune to their own round', e.getPlayer(player).health === 100);
-  check('gunshot and explosion semantic sounds are emitted', sounds.has(SOUND_EVENT.BLAST_GUN) && sounds.has(SOUND_EVENT.EXPLOSION));
+  check('gunshot and unsuppressed weapon-explosion sounds are emitted',
+    sounds.has(SOUND_EVENT.BLAST_GUN) && sounds.has(SOUND_EVENT.WEAPON_EXPLOSION));
   e.destroy();
 }
 
@@ -248,7 +249,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   check(`dynamiteer throws a live fused projectile (${firstFuse} -> ${minFuse})`, sawThrow && firstFuse > minFuse && minFuse > 0);
   check('thrown dynamite exposes finite rotation throughout flight', rotationFinite);
   check('dynamite expires into an autonomous explosion', !e.getProjectiles().some((p) => p.kind === PROJECTILE_KIND.DYNAMITE)
-    && sounds.has(SOUND_EVENT.FUSE) && sounds.has(SOUND_EVENT.EXPLOSION));
+    && sounds.has(SOUND_EVENT.FUSE) && sounds.has(SOUND_EVENT.WEAPON_EXPLOSION));
   check('enemy dynamite damages the player', e.getPlayer(player).health < 100 || !e.getPlayer(player).alive);
   check(`enlarged dynamite blast deals heavy damage beyond the old radius (${extendedVictimDistance.toFixed(1)} cells)`,
     extendedVictimStaged && extendedVictimDistance > 22
@@ -461,13 +462,13 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
   let sawCarrier = Boolean(launchedCarrier), maxBomblets = 0;
   let splitTick = -1, sixteenTogetherTicks = 0;
-  let clusterBlastSounds = 0;
+  let clusterExplosionSounds = 0;
   let firstChildFuses = null, blastVictimStaged = false, blastVictimDistance = 0;
   const childDirections = new Set();
   e.drainSoundEvents();
   for (let tick = 0; tick < 250; tick++) {
     e.stepActors();
-    clusterBlastSounds += drainTypeCount(e, SOUND_EVENT.CLUSTER_BLAST);
+    clusterExplosionSounds += drainTypeCount(e, SOUND_EVENT.WEAPON_EXPLOSION);
     const cluster = e.getProjectiles().filter((p) => p.kind === PROJECTILE_KIND.CLUSTER_BOMB);
     sawCarrier ||= cluster.some((p) => p.charge < 0.5);
     const children = cluster.filter((p) => p.charge > 0.5);
@@ -507,8 +508,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     childDirections.size >= 12 && sixteenTogetherTicks >= 4);
   check(`double-radius cluster blasts damage beyond the old ten-cell radius (${blastVictimDistance.toFixed(1)} cells)`,
     blastVictimStaged && blastVictimDistance > 10 && e.getPlayer(blastVictim).health < 100);
-  check(`each bomblet emits its dedicated cluster-blast cue (${clusterBlastSounds})`,
-    clusterBlastSounds === 16);
+  check(`each bomblet emits an unsuppressed TNT-palette explosion (${clusterExplosionSounds})`,
+    clusterExplosionSounds === 16);
   const stoneAfter = countStone(e.getGrid());
   check(`cluster bomblets leave multiple destructive craters (${stoneBefore} -> ${stoneAfter})`,
     stoneAfter < stoneBefore);
@@ -553,13 +554,16 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   for (let tick = 0; tick < 2; tick++) e.stepActors();
   e.eraseDisc(nearWallX, nearWallY, 5);
   e.syncComponents();
+  e.drainSoundEvents();
   const healthBeforeBurst = e.getPlayer(player).health;
   const impactY = Math.floor(pose.y + pose.h * 0.42);
   const wallX = 104;
-  for (let y = impactY - 5; y <= impactY + 5; y++) e.placeMaterial(wallX, y, 0, MAT.STONE);
+  for (let y = impactY - 5; y <= impactY + 5; y++)
+    for (let x = wallX; x <= wallX + 10; x++) e.placeMaterial(x, y, 0, MAT.STONE);
   e.syncComponents();
   const stoneBefore = countStone(e.getGrid());
   const seenRounds = new Set();
+  let weaponExplosionSounds = 0;
   let fastestRound = 0;
   let muzzleError = Infinity;
   const aimX = wallX + 4, aimY = impactY;
@@ -576,6 +580,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       bits: PI_PRIMARY, aimX, aimY, seq: ++seq,
     });
     e.stepActors();
+    weaponExplosionSounds += drainTypeCount(e, SOUND_EVENT.WEAPON_EXPLOSION);
     for (const projectile of e.getProjectiles()) {
       if (projectile.kind !== PROJECTILE_KIND.MINIGUN_ROUND || projectile.owner !== player) continue;
       if (!seenRounds.has(projectile.id)) {
@@ -589,7 +594,10 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     }
   }
   e.setPlayerInput(player, { bits: 0, aimX, aimY, seq: ++seq });
-  for (let tick = 0; tick < 12; tick++) e.stepActors();
+  for (let tick = 0; tick < 12; tick++) {
+    e.stepActors();
+    weaponExplosionSounds += drainTypeCount(e, SOUND_EVENT.WEAPON_EXPLOSION);
+  }
   const carved = stoneBefore - countStone(e.getGrid());
   check(`captured minigun hold-fires an extremely fast burst (${seenRounds.size} rounds)`,
     slot >= 0 && seenRounds.size >= 6 && fastestRound > 14);
@@ -597,6 +605,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     muzzleError < 0.02);
   check(`minigun rounds make tiny component-safe craters (${carved} stone cells)`,
     carved > 0 && carved < 70);
+  check(`every minigun impact emits its own weapon explosion (${weaponExplosionSounds}/${seenRounds.size})`,
+    weaponExplosionSounds === seenRounds.size);
   check('captured minigun preserves owner immunity',
     e.getPlayer(player).health === healthBeforeBurst);
   e.destroy();

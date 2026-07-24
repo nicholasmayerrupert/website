@@ -12,21 +12,25 @@ void AudioSystem::emit(uint8_t type, double localX, double localY, double intens
   // Dense brushes, contact manifolds, and TNT chains can report several nearby
   // facts in one tick. Merge only like events in a small neighbourhood; unlike
   // events remain distinct and the simulation never waits on audio capacity.
+  // Weapon impacts are intentionally exempt: each projectile detonation must
+  // reach the mixer, even when several rounds land together.
   const float mergeRadius = type == SE_EXPLOSION ? 12.0f
                           : type == SE_FLUID_FALL || type == SE_POWDER_MOVE ? 10.0f
                           : type == SE_ACID_DISSOLVE ? 7.0f
                           : type == SE_IMPACT || type == SE_SOLID_LAND ? 4.0f : 2.0f;
   const float mergeRadius2 = mergeRadius * mergeRadius;
   int serial = std::max(E.tick, E.actorTick);
-  for (auto it = events.rbegin(); it != events.rend(); ++it) {
-    if (it->tick != serial) break;
-    if (it->type != type || it->material != material || it->layer != layer) continue;
-    float dx = it->x - wx, dy = it->y - wy;
-    if (dx * dx + dy * dy > mergeRadius2) continue;
-    float old = it->intensity, total = old + strength;
-    if (total > 0) { it->x = (it->x * old + wx * strength) / total; it->y = (it->y * old + wy * strength) / total; }
-    it->intensity = std::min(4.0f, old + strength * 0.55f);
-    return;
+  if (type != SE_WEAPON_EXPLOSION) {
+    for (auto it = events.rbegin(); it != events.rend(); ++it) {
+      if (it->tick != serial) break;
+      if (it->type != type || it->material != material || it->layer != layer) continue;
+      float dx = it->x - wx, dy = it->y - wy;
+      if (dx * dx + dy * dy > mergeRadius2) continue;
+      float old = it->intensity, total = old + strength;
+      if (total > 0) { it->x = (it->x * old + wx * strength) / total; it->y = (it->y * old + wy * strength) / total; }
+      it->intensity = std::min(4.0f, old + strength * 0.55f);
+      return;
+    }
   }
   if ((int)events.size() >= MAX_EVENTS) return;
   events.push_back({type, wx, wy, strength, material, (uint8_t)layer, serial});

@@ -5,8 +5,13 @@
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { CREATIVE_KIND, OFF, SOUND_EVENT, STRIDES } from '../src/sand/wasmBridge/abi.generated.js';
 import { MAT } from '../src/sand/materials.js';
-import { derivePlayerEffectState, spatializeSound } from '../src/sand/audio/sandAudio.js';
-import { AUDIO_ASSET_URLS } from '../src/sand/audio/audioAssets.js';
+import {
+  buildTntExplosionBuffer, derivePlayerEffectState,
+  semanticEventCooldownMs, spatializeSound,
+} from '../src/sand/audio/sandAudio.js';
+import {
+  AUDIO_ASSET_URLS, TNT_EXPLOSION_LAYERS,
+} from '../src/sand/audio/audioAssets.js';
 import { makeChecker } from './sand-test-util.mjs';
 import { readFile } from 'node:fs/promises';
 
@@ -17,11 +22,42 @@ const mk = (storageRole = 'full') => createEngineWasm({
 });
 const O = OFF.soundEvent;
 
-check('ward, spawn-breach, and cluster-blast cues have distinct semantic ids',
+check('ward, spawn-breach, and weapon-explosion cues have distinct semantic ids',
   Number.isInteger(SOUND_EVENT.SHIELD_HIT)
     && SOUND_EVENT.SHIELD_BREAK === SOUND_EVENT.SHIELD_HIT + 1
     && SOUND_EVENT.SPAWN_BREACH === SOUND_EVENT.SHIELD_BREAK + 1
-    && SOUND_EVENT.CLUSTER_BLAST === SOUND_EVENT.SPAWN_BREACH + 1);
+    && SOUND_EVENT.WEAPON_EXPLOSION === SOUND_EVENT.SPAWN_BREACH + 1);
+check('weapon detonations bypass the terrain-TNT presentation cooldown',
+  semanticEventCooldownMs(SOUND_EVENT.WEAPON_EXPLOSION) === 0
+    && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION, 0) === 190
+    && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION, 1) === 350);
+
+{
+  const assets = Object.fromEntries(TNT_EXPLOSION_LAYERS.map((layer, index) => [
+    layer.asset,
+    {
+      numberOfChannels: 1,
+      length: 4,
+      getChannelData: () => Float32Array.of(index + 1, 0, 0, 0),
+    },
+  ]));
+  const context = {
+    sampleRate: 4,
+    createBuffer(channels, length) {
+      const data = Array.from({ length: channels }, () => new Float32Array(length));
+      return {
+        numberOfChannels: channels,
+        length,
+        getChannelData: (channel) => data[channel],
+      };
+    },
+  };
+  const mixed = buildTntExplosionBuffer(context, assets);
+  check('the shared TNT effect runtime-mixes all three complete recorded layers',
+    TNT_EXPLOSION_LAYERS.length === 3
+      && mixed.length === 5
+      && mixed.getChannelData(0)[0] === 6);
+}
 
 {
   const idle = derivePlayerEffectState({

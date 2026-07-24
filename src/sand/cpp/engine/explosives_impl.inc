@@ -542,9 +542,14 @@ void ExplosivesSystem::damageActors(int cx, int cy, int radius, double power, in
   }
 }
 
-void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb, Body* sourceBody, uint8_t explosiveMaterial, int immunePlayerId, uint32_t seedSerial) {
+void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double power,
+                                             BlastBatch& bb, BlastBatch* otherBb,
+                                             Body* sourceBody, uint8_t explosiveMaterial,
+                                             int immunePlayerId, uint32_t seedSerial,
+                                             uint8_t soundEvent) {
   Layer* src = E.L;
-  E.audio.emit(SE_EXPLOSION, cx, cy, std::min(2.5, power / TNT_BLAST_POWER), explosiveMaterial, src == &E.bg ? 1 : 0);
+  E.audio.emit(soundEvent, cx, cy, std::min(2.5, power / TNT_BLAST_POWER),
+               explosiveMaterial, src == &E.bg ? 1 : 0);
   damageActors(cx, cy, radius, power, immunePlayerId);
   carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial, seedSerial);
   if (!E.bgEnabled || !otherBb) return;
@@ -593,9 +598,12 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
 }
 
 // Single-blast convenience wrapper (one crater, its own finalize).
-void ExplosivesSystem::detonate(int cx, int cy, int radius, double power, int immunePlayerId, uint8_t explosiveMaterial, uint32_t seedSerial) {
+void ExplosivesSystem::detonate(int cx, int cy, int radius, double power,
+                               int immunePlayerId, uint8_t explosiveMaterial,
+                               uint32_t seedSerial, uint8_t soundEvent) {
   BlastBatch bb, otherBb;
-  carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb, nullptr, explosiveMaterial, immunePlayerId, seedSerial);
+  carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb, nullptr,
+                        explosiveMaterial, immunePlayerId, seedSerial, soundEvent);
   finishBlastBatches(bb, &otherBb);
 }
 

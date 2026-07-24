@@ -24,6 +24,7 @@ function table() {
     detonateTnt: c('engine_test_detonate_tnt', null, ['number', 'number', 'number']),
     damagePlayer: c('engine_test_damage_player', 'number',
       ['number', 'number', 'number', 'number', 'number']),
+    collectDynamicLights: c('engine_test_collect_dynamic_lights', 'number', ['number']),
     spawnNearFocus: c('engine_test_spawn_near_focus', 'number',
       ['number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
@@ -51,6 +52,7 @@ export function attachTestHooks(engine) {
   engine._detonateTnt = (cx, cy) => t.detonateTnt(ptr, cx | 0, cy | 0);
   engine._damagePlayer = (id, damage, sourceX = NaN, sourceY = NaN) =>
     t.damagePlayer(ptr, id | 0, damage | 0, sourceX, sourceY);
+  engine._collectDynamicLights = () => t.collectDynamicLights(ptr);
   engine._spawnNearFocus = (species, salt = 0) =>
     t.spawnNearFocus(ptr, species | 0, salt | 0) === 1;
   // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.

@@ -65,7 +65,11 @@ class GLPresenter {
   // the full buffer so the sky shift-remap caches stay coherent.
   static constexpr int GL_LIGHT_WINDOW_MARGIN = 72;
   static constexpr int GL_LIGHT_EXACT_SHRINK = 61;
+  static constexpr int GL_DYNAMIC_LIGHT_CAP = 32;
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1; // last solve region (-1 = never solved)
+  // Stays pending across throttled frames so moving lights cannot be forgotten
+  // merely because they changed between scheduled terrain-light solves.
+  bool glDynamicLightPending = false;
   int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
   bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
   std::vector<float> glExtPlayers;      // packed GLP_* authority-render records
@@ -120,6 +124,7 @@ class GLPresenter {
   void glSolidDev(double dx0, double dy0, double w, double h);
   void glDrawHitbox(double px, double py, int w, int h, float r, float g, float b, int camCol, int camRow);
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
+  void glCollectDynamicLights();
   float glActorLight(double px, double py, int w, int h) const;
   void glDrawWard(double pxc, double pyc, int facing, double aimX, double aimY,
                   int shieldHealth, bool shieldActive, int camCol, int camRow);

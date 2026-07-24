@@ -193,6 +193,20 @@ void Renderer::computeLightingBase(Layer* lay, int rx0, int ry0, int rx1, int ry
       }
     }
   }
+  // Players/projectiles occupy the foreground actor plane. Seed their light
+  // after material emission so both share the same wall/liquid attenuation and
+  // the existing foreground -> background projection below.
+  if (lay == &E.fg) {
+    for (const RenderLightSource& source : dynamicLights) {
+      if (source.x < rx0 || source.x > rx1 ||
+          source.y < ry0 || source.y > ry1 ||
+          source.intensity <= LIGHT_AMBIENT) continue;
+      int k = source.y * E.cols + source.x;
+      if (source.intensity <= lay->light[k]) continue;
+      lay->light[k] = source.intensity;
+      lightQueue.push_back(((uint64_t)(uint32_t)source.x << 32) | (uint32_t)k);
+    }
+  }
 
   // Flood clamped to the region: the ring underestimates (its far sources are
   // cut off), which cannot change any value inside the exact window (their

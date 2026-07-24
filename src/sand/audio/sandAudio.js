@@ -6,7 +6,7 @@
 
 import { OFF, SOUND_EVENT, STRIDES } from '../wasmBridge/abi.generated.js';
 import { KIND, MATERIALS, MAT } from '../materials.js';
-import { loadAudioAssets } from './audioAssets.js';
+import { loadAudioAssets, TNT_EXPLOSION_LAYERS } from './audioAssets.js';
 
 const STORAGE_KEY = 'sand-audio-muted';
 const AMBIENCE = Object.freeze({ WATER: 0, FIRE: 1, LAVA: 2, ACID: 3 });
@@ -40,7 +40,7 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.SHIELD_HIT]: 110,
   [SOUND_EVENT.SHIELD_BREAK]: 155,
   [SOUND_EVENT.SPAWN_BREACH]: 220,
-  [SOUND_EVENT.CLUSTER_BLAST]: 190,
+  [SOUND_EVENT.WEAPON_EXPLOSION]: 190,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -71,10 +71,17 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.SHIELD_HIT]: 38,
   [SOUND_EVENT.SHIELD_BREAK]: 240,
   [SOUND_EVENT.SPAWN_BREACH]: 700,
-  [SOUND_EVENT.CLUSTER_BLAST]: 24,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
+
+export function semanticEventCooldownMs(type, variation = 0.5, continuousPlace = false) {
+  // Projectile detonations are already discrete authority events. Unlike a TNT
+  // chain or a dense brush, suppressing any one of them loses gameplay feedback.
+  if (type === SOUND_EVENT.WEAPON_EXPLOSION) return 0;
+  if (type === SOUND_EVENT.EXPLOSION) return 190 + variation * 160;
+  return continuousPlace ? 125 : (EVENT_COOLDOWN_MS[type] ?? 45);
+}
 
 export function derivePlayerEffectState(player) {
   const alive = !!player && player.alive !== false;
@@ -102,6 +109,34 @@ export function spatializeSound(eventX, eventY, listener, maxDistance, layer = 0
     pan: clamp(dx / panWidth, -1, 1),
     distance,
   };
+}
+
+export function buildTntExplosionBuffer(context, assets) {
+  const layers = TNT_EXPLOSION_LAYERS.map((layer) => ({
+    ...layer, buffer: assets[layer.asset],
+  }));
+  if (layers.some((layer) => !layer.buffer)) return null;
+  const channels = Math.max(...layers.map((layer) => layer.buffer.numberOfChannels));
+  const length = Math.max(...layers.map((layer) =>
+    Math.ceil(layer.buffer.length / layer.rate)));
+  const mixed = context.createBuffer(channels, length, context.sampleRate);
+  for (const layer of layers) {
+    for (let channel = 0; channel < channels; channel++) {
+      const input = layer.buffer.getChannelData(
+        Math.min(channel, layer.buffer.numberOfChannels - 1),
+      );
+      const output = mixed.getChannelData(channel);
+      const layerLength = Math.ceil(input.length / layer.rate);
+      for (let i = 0; i < layerLength; i++) {
+        const sourceIndex = i * layer.rate;
+        const lo = Math.floor(sourceIndex);
+        const mix = sourceIndex - lo;
+        const hi = Math.min(input.length - 1, lo + 1);
+        output[i] += input[lo] + (input[hi] - input[lo]) * mix;
+      }
+    }
+  }
+  return mixed;
 }
 
 function readStoredMuted() {
@@ -133,7 +168,9 @@ export function createSandAudio() {
   let playerEffects = { id: 0, jetpack: false, shield: false };
   const lastEventAt = new Map();
   const lastRecordedWeaponAt = new Map();
-  const MAX_VOICES = typeof navigator !== 'undefined' && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 16 : 28;
+  const mobileVoiceBudget = typeof navigator !== 'undefined'
+    && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const MAX_VOICES = mobileVoiceBudget ? 16 : 28;
 
   const audible = () => enabled && !muted && !hidden && !destroyed;
 
@@ -300,7 +337,10 @@ export function createSandAudio() {
     const loadingContext = context;
     loadAudioAssets(context).then((assets) => {
       if (destroyed || context !== loadingContext) return;
-      recordedAssets = assets;
+      recordedAssets = {
+        ...assets,
+        tntExplosion: buildTntExplosionBuffer(context, assets),
+      };
       movementVoices.water = createMovementVoice(assets.waterFlow, { frequency: 6800, q: 0.15 });
       movementVoices.sand = createMovementVoice(assets.sandFlow, {
         filterType: 'highpass', frequency: 720, q: 0.18,
@@ -342,14 +382,23 @@ export function createSandAudio() {
     } catch { return false; }
   };
 
-  const trackVoice = (source) => {
+  const trackVoice = (source, weaponExplosion = false) => {
+    // Weapon explosions are bounded by the authority event queue and must not
+    // lose an onset to presentation activity. Their complete three-layer effect
+    // is pre-mixed into one source, so it is safe to bypass the generic voice
+    // budget without tripling node count.
+    if (weaponExplosion) return;
     activeVoices++;
-    source.onended = () => { activeVoices = Math.max(0, activeVoices - 1); };
+    source.onended = () => {
+      activeVoices = Math.max(0, activeVoices - 1);
+    };
   };
 
   const playNoise = ({ duration, gain, pan, frequency, type = 'bandpass', q = 0.7,
-    rate = 1, buffer = noiseBuffer, delay = 0, attack = 0.012 }) => {
-    if (!audible() || !context || activeVoices >= MAX_VOICES || gain <= 0.001) return;
+    rate = 1, buffer = noiseBuffer, delay = 0, attack = 0.012,
+    weaponExplosion = false }) => {
+    const atVoiceLimit = !weaponExplosion && activeVoices >= MAX_VOICES;
+    if (!audible() || !context || atVoiceLimit || gain <= 0.001) return;
     const now = context.currentTime + delay;
     const source = context.createBufferSource();
     source.buffer = buffer;
@@ -361,12 +410,15 @@ export function createSandAudio() {
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + Math.min(attack, duration * 0.45));
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     source.connect(filter); filter.connect(envelope); connectSpatial(envelope, effectsBus, pan);
-    trackVoice(source);
+    trackVoice(source, weaponExplosion);
     source.start(now, (context.currentTime * 0.371) % Math.max(0.01, buffer.duration - duration), duration);
   };
 
-  const playTone = ({ from, to = from, duration, gain, pan, wave = 'sine', delay = 0, attack = 0.012 }) => {
-    if (!audible() || !context || activeVoices >= MAX_VOICES || gain <= 0.001) return;
+  const playTone = ({ from, to = from, duration, gain, pan, wave = 'sine',
+    delay = 0, attack = 0.012, weaponExplosion = false }) => {
+    if (!audible() || !context
+        || (!weaponExplosion && activeVoices >= MAX_VOICES)
+        || gain <= 0.001) return;
     const now = context.currentTime + delay;
     const osc = context.createOscillator();
     osc.type = wave;
@@ -377,12 +429,15 @@ export function createSandAudio() {
     envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, gain), now + Math.min(attack, duration * 0.45));
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     osc.connect(envelope); connectSpatial(envelope, effectsBus, pan);
-    trackVoice(osc);
+    trackVoice(osc, weaponExplosion);
     osc.start(now); osc.stop(now + duration + 0.01);
   };
 
-  const playSample = ({ buffer, gain, pan, rate = 1, delay = 0, attack = 0.004 }) => {
-    if (!buffer || !audible() || !context || activeVoices >= MAX_VOICES || gain <= 0.001) return false;
+  const playSample = ({ buffer, gain, pan, rate = 1, delay = 0,
+    attack = 0.004, weaponExplosion = false }) => {
+    if (!buffer || !audible() || !context
+        || (!weaponExplosion && activeVoices >= MAX_VOICES)
+        || gain <= 0.001) return false;
     const now = context.currentTime + delay;
     const source = context.createBufferSource();
     source.buffer = buffer;
@@ -394,7 +449,7 @@ export function createSandAudio() {
     envelope.gain.setValueAtTime(gain, now + Math.max(0.01, duration - 0.04));
     envelope.gain.linearRampToValueAtTime(0.0001, now + duration);
     source.connect(envelope); connectSpatial(envelope, effectsBus, pan);
-    trackVoice(source);
+    trackVoice(source, weaponExplosion);
     source.start(now);
     return true;
   };
@@ -410,6 +465,27 @@ export function createSandAudio() {
     if (!playSample({ buffer, gain, pan, rate, delay })) return false;
     lastRecordedWeaponAt.set(key, nowMs);
     return true;
+  };
+
+  const playTntExplosionEffect = (gain, pan, variation, weaponExplosion) => {
+    const sampleGain = Math.min(0.46, gain * 0.25);
+    if (recordedAssets?.tntExplosion) {
+      playSample({
+        buffer: recordedAssets.tntExplosion,
+        gain: sampleGain,
+        pan,
+        rate: 1 + variation * 0.04,
+        weaponExplosion,
+      });
+      return;
+    }
+    // The first blast can land before recorded assets finish decoding, and a
+    // failed request must not make the game's central effect silent.
+    playNoise({ duration: 0.46, gain: gain * 0.38, pan, frequency: 210,
+      type: 'lowpass', q: 0.6, rate: 0.78 + variation * 0.08,
+      buffer: brownBuffer, attack: 0.003, weaponExplosion });
+    playTone({ from: 118, to: 38, duration: 0.48, gain: gain * 0.23, pan,
+      wave: 'sine', delay: 0.006, attack: 0.003, weaponExplosion });
   };
 
   const renderEvent = (type, strength, material, spatial, variation = 0.5) => {
@@ -489,17 +565,10 @@ export function createSandAudio() {
         from: 820 + i * 180, to: 430 + i * 70, duration: 0.08,
         gain: gain * 0.045, pan, wave: 'square', delay: 0.045 + i * 0.026, attack: 0.002,
       });
-    } else if (type === SOUND_EVENT.CLUSTER_BLAST) {
-      // Bomblets get a compact crack/body cue instead of sixteen overlapping
-      // full-size TNT recordings. The ordinary explosion event supplies one
-      // deep anchor while these short voices preserve the audible stagger.
-      playNoise({ duration: 0.072, gain: gain * 0.20, pan, frequency: 2850,
-        type: 'highpass', q: 0.35, rate: 1.02 + variation * 0.18, attack: 0.001 });
-      playNoise({ duration: 0.13, gain: gain * 0.15, pan, frequency: 410,
-        type: 'lowpass', q: 0.58, rate: 0.88 + variation * 0.12,
-        buffer: brownBuffer, delay: 0.006, attack: 0.002 });
-      playTone({ from: 210 + variation * 55, to: 68, duration: 0.12,
-        gain: gain * 0.12, pan, wave: 'triangle', attack: 0.0015 });
+    } else if (type === SOUND_EVENT.WEAPON_EXPLOSION) {
+      // Weapon and terrain blasts use the exact same complete TNT effect. Only
+      // this semantic class bypasses coalescing, cooldown, and generic voices.
+      playTntExplosionEffect(gain, pan, variation, true);
     } else if (type === SOUND_EVENT.MINIGUN) {
       // The continuous crackle supplies the actual high cyclic rate; a quiet
       // real rifle burst periodically restores believable muzzle texture.
@@ -559,23 +628,7 @@ export function createSandAudio() {
       playTone({ from: 124, to: 42, duration: 0.30, gain: gain * 0.14, pan,
         wave: 'sine', delay: 0.67, attack: 0.018 });
     } else if (type === SOUND_EVENT.EXPLOSION) {
-      const sampleGain = Math.min(0.46, gain * 0.25);
-      if (recordedAssets) {
-        playSample({ buffer: recordedAssets.tntDeepExplosion,
-          gain: sampleGain, pan, rate: 0.90 + variation * 0.04 });
-        playSample({ buffer: recordedAssets.tntDeepBoom,
-          gain: sampleGain, pan, rate: 0.88 + variation * 0.04 });
-        playSample({ buffer: recordedAssets.tntLargeExplosion,
-          gain: sampleGain, pan, rate: 0.91 + variation * 0.04 });
-      } else {
-        // The first shot can land before recorded assets finish decoding, and a
-        // failed asset request must not make the game's central effect silent.
-        playNoise({ duration: 0.46, gain: gain * 0.38, pan, frequency: 210,
-          type: 'lowpass', q: 0.6, rate: 0.78 + variation * 0.08,
-          buffer: brownBuffer, attack: 0.003 });
-        playTone({ from: 118, to: 38, duration: 0.48, gain: gain * 0.23, pan,
-          wave: 'sine', delay: 0.006, attack: 0.003 });
-      }
+      playTntExplosionEffect(gain, pan, variation, false);
     } else if (type === SOUND_EVENT.FUSE) {
       playNoise({ duration: 0.48, gain: gain * 0.32, pan, frequency: 3100, type: 'highpass', q: 0.35, buffer: crackleBuffer, rate: 1.1 });
     } else if (type === SOUND_EVENT.IMPACT || type === SOUND_EVENT.SOLID_LAND) {
@@ -676,11 +729,12 @@ export function createSandAudio() {
         || type === SOUND_EVENT.ACID_DISSOLVE;
       const cooldownKey = regional
         ? `${type}:${Math.round(spatial.pan * 2)}` : type;
-      const last = lastEventAt.get(cooldownKey) || -Infinity;
-      const cooldown = type === SOUND_EVENT.EXPLOSION ? 190 + variation * 160
-        : continuousPlace ? 125 : (EVENT_COOLDOWN_MS[type] ?? 45);
-      if (nowMs - last < cooldown) continue;
-      lastEventAt.set(cooldownKey, nowMs);
+      const cooldown = semanticEventCooldownMs(type, variation, continuousPlace);
+      if (cooldown > 0) {
+        const last = lastEventAt.get(cooldownKey) || -Infinity;
+        if (nowMs - last < cooldown) continue;
+        lastEventAt.set(cooldownKey, nowMs);
+      }
       renderEvent(type, packed[i + O.intensity], material, spatial, variation);
     }
   };

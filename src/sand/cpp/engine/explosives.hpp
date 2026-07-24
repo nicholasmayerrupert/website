@@ -86,11 +86,13 @@ class ExplosivesSystem {
   void finishBlasts(BlastBatch& bb);
   void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb,
                               Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT,
-                              int immunePlayerId = 0, uint32_t seedSerial = UINT32_MAX);
+                              int immunePlayerId = 0, uint32_t seedSerial = UINT32_MAX,
+                              uint8_t soundEvent = SE_EXPLOSION);
   void finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb);
   void damageActors(int cx, int cy, int radius, double power, int immunePlayerId = 0);
   void detonate(int cx, int cy, int radius, double power, int immunePlayerId = 0,
-                uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX);
+                uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX,
+                uint8_t soundEvent = SE_EXPLOSION);
   void applyExplosives();
 
  private:

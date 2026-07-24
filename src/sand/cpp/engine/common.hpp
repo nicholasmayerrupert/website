@@ -64,6 +64,10 @@ static const float FIRE_CROSS_P = 0.18f;
 static const int ACID_REACT_INTERVAL = 3;
 static const float ACID_DISSOLVE_P = 0.12f, ACID_BATCH_DISSOLVE_P = 0.75f;
 static const float ACID_DECAY_P = 0.4f, LAVA_EMIT_FIRE_P = 0.001f, ICE_FREEZE_P = 0.03f;
+// Corrosive contact is dangerous to every living actor. Twelve damage four
+// times per second is twice the old player-only acid DPS while staying below
+// direct lava immersion.
+static const int ACID_CONTACT_DAMAGE = 12, ACID_CONTACT_INTERVAL = 15;
 static const float ACRID_SMOKE_P = 0.5f; // chance a dissolved cell emits acrid smoke instead of leaving empty space
 // Acrid smoke is wispier and shorter-lived than steam so a big acid burn doesn't
 // leave a long-lived gas cloud that keeps the layer active (each active step pays a

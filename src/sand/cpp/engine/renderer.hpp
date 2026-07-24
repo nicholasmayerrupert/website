@@ -4,6 +4,14 @@
 
 struct Engine;
 
+// Render-only entity emission. Positions are buffer-local grid cells so the
+// ordinary terrain-aware flood can treat moving actors exactly like emissive
+// materials without putting presentation state into saves or checksums.
+struct RenderLightSource {
+  int x = 0, y = 0;
+  uint8_t intensity = 0;
+};
+
 // Brighten/darken a packed ABGR color by delta on each channel (alpha kept).
 static inline uint32_t jitterShade(uint32_t packed, int delta) {
   if (packed == 0) return 0;
@@ -38,6 +46,7 @@ class Renderer {
   // wall-clock cadence; headless renderFull() advances it explicitly.
   uint32_t renderFrameSalt = 0;
   uint8_t renderSkyLight = 255;       // render-only day/night input; 255 = full day
+  std::vector<RenderLightSource> dynamicLights;
   // Packed [x:k] entries avoid dividing k by cols for every flood-fill pop.
   std::vector<uint64_t> lightQueue;   // render-only flood-fill scratch
 

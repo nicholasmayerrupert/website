@@ -373,7 +373,8 @@ void PlayerSystem::updatePlayerVitals(Player& p) {
   if (p.landingImpact > 3.0) damagePlayer(p, imin(45, (int)std::floor((p.landingImpact - 3.0) * 15.0)), 12);
   p.landingImpact = 0;
   if (lava && E.actorTick % 15 == 0) damagePlayer(p, 15, 15);
-  else if (acid && E.actorTick % 20 == 0) damagePlayer(p, 8, 20);
+  else if (acid && E.actorTick % ACID_CONTACT_INTERVAL == 0)
+    damagePlayer(p, ACID_CONTACT_DAMAGE, ACID_CONTACT_INTERVAL);
   else if (fire && E.actorTick % 30 == 0) damagePlayer(p, 4, 30);
   else if (p.buriedTicks >= 120 && E.actorTick % 30 == 0) damagePlayer(p, 2, 30);
   bool hazard = fire || acid || lava || p.buriedTicks >= 120;
@@ -391,6 +392,11 @@ void PlayerSystem::setPlayerInput(int id, int inputBits, double aimX, double aim
                                   double moveX, double moveY) {
   Player* p = findPlayer(id);
   if (!p) return;
+  // Ward use is an exclusive stance. Keep movement/jetpack input available,
+  // but never let a held mouse button leak into weapons, mining, or placement
+  // while the ward has durability and can actually be raised.
+  if ((inputBits & PI_SHIELD) && p->shieldHealth > 0)
+    inputBits &= ~(PI_PRIMARY | PI_SECONDARY);
   p->input = inputBits;
   p->analogInput = std::isfinite(moveX) && std::isfinite(moveY);
   if (p->analogInput) {

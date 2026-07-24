@@ -1,7 +1,7 @@
 // Deterministic ward mechanics: 120-degree directional coverage, durability,
 // recharge, overflow, unshieldable hazards, and the principal combat routes.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { KEY_CODES } from '../src/sand/game/runtimeConfig.js';
 import {
@@ -53,6 +53,61 @@ function soundTypes(e) {
   e.inputKey(KEY_CODES.f, 0);
   check('releasing F clears PI_SHIELD',
     (e.localInputBits() & INPUT.SHIELD) === 0);
+  e.destroy();
+}
+
+// Raising the ward is an exclusive stance: mouse buttons remain physically
+// held in the browser input, but cannot leak into any selected hotbar action.
+{
+  const e = arena();
+  e.setSurvivalInventory(true);
+  const id = e.spawnPlayer(80, FLOOR - 8);
+  const p = e.getPlayer(id);
+  e.setPlayerInput(id, {
+    bits: INPUT.SHIELD | INPUT.PRIMARY,
+    aimX: 110, aimY: p.y + p.h * .5, seq: 1,
+  });
+  for (let tick = 0; tick < 4; tick++) e.stepActors();
+  check('raising the ward suppresses starter-gun fire',
+    e.getPlayer(id).shieldActive && e.getProjectiles().length === 0);
+  e.destroy();
+}
+
+{
+  const e = arena();
+  e.setSurvivalInventory(true);
+  const id = e.spawnPlayer(80, FLOOR - 8);
+  e.setSelectedSlot(id, 1); // bound iron mining tool
+  e.addDiscToStoneDraft(102, FLOOR - 4, 0);
+  e.finalizeStoneDraft();
+  const target = (FLOOR - 4) * COLS + 102;
+  e.setPlayerInput(id, {
+    bits: INPUT.SHIELD | INPUT.SECONDARY,
+    aimX: 102.5, aimY: FLOOR - 3.5, seq: 1,
+  });
+  for (let tick = 0; tick < 24; tick++) e.stepActors();
+  check('raising the ward suppresses foreground/background mining',
+    e.getGrid()[target] === MAT.STONE && e.getPlayerMineProgress(id) === 0);
+  e.destroy();
+}
+
+{
+  const e = arena();
+  e.setSurvivalInventory(true);
+  const id = e.spawnPlayer(80, FLOOR - 8);
+  e.addToInventory(id, MAT.STONE, 20);
+  const slot = e.getInventory(id).slots.findIndex((s) =>
+    !s.isTool && s.material === MAT.STONE && s.count > 0);
+  e.setSelectedSlot(id, slot);
+  const before = e.getInventory(id).slots[slot].count;
+  e.setPlayerInput(id, {
+    bits: INPUT.SHIELD | INPUT.PRIMARY,
+    aimX: 102.5, aimY: FLOOR - 10.5, seq: 1,
+  });
+  for (let tick = 0; tick < 4; tick++) e.stepActors();
+  check('raising the ward suppresses block placement and inventory spend',
+    e.getStoneDraftCells().length === 0 &&
+      e.getInventory(id).slots[slot].count === before);
   e.destroy();
 }
 
@@ -143,6 +198,21 @@ for (const [label, sourceAngle, blocked] of [
   const p = e.getPlayer(id);
   check('source-less environmental damage bypasses the directional ward',
     healthDamage === 20 && p.health === 80 && p.shieldHealth === 200);
+  e.destroy();
+}
+
+// Acid is an environmental hazard, so the ward cannot block it. Its doubled
+// contact rate deals two twelve-point ticks during this half-second exposure.
+{
+  const e = arena();
+  const id = e.spawnPlayer(80, FLOOR - 8);
+  activateWard(e, id);
+  for (let y = FLOOR - 8; y < FLOOR; y++)
+    for (let x = 80; x < 84; x++) e.paintDisc(x, y, 0, MAT.ACID, true);
+  for (let tick = 0; tick < 30; tick++) e.stepActors();
+  const p = e.getPlayer(id);
+  check('stronger acid contact bypasses the ward and damages player health',
+    p.health === 76 && p.shieldHealth === 200);
   e.destroy();
 }
 

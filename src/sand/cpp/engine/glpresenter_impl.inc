@@ -179,6 +179,95 @@ void GLPresenter::glSetProjectiles(int useExternal, const float* data, int count
   else glExtProjectiles.clear();
 }
 
+void GLPresenter::glCollectDynamicLights() {
+  std::vector<RenderLightSource> next;
+  next.reserve(GL_DYNAMIC_LIGHT_CAP);
+  auto add = [&](double x, double y, int intensity) {
+    if ((int)next.size() >= GL_DYNAMIC_LIGHT_CAP) return;
+    int ix = (int)std::floor(x), iy = (int)std::floor(y);
+    if (ix < 0 || ix >= E.cols || iy < 0 || iy >= E.rows) return;
+    next.push_back({ix, iy, (uint8_t)imax(0, imin(255, intensity))});
+  };
+  auto addPlayer = [&](double x, double y, int w, int h, int facing, bool alive,
+                       double aimX, double aimY, bool jetpackActive,
+                       int shieldHealth, bool shieldActive) {
+    if (!alive) return;
+    double cx = x + w * .5, cy = y + h * .5;
+    if (jetpackActive)
+      add(cx - facing * 1.55, y + h - 1.15, 225);
+    if (shieldActive && shieldHealth > 0) {
+      double dx = aimX - cx, dy = aimY - cy;
+      double length = std::hypot(dx, dy);
+      if (length < 1e-6) { dx = facing; dy = 0; length = 1; }
+      int intensity = 170 + 45 * imin(P_SHIELD_MAX_HEALTH, shieldHealth) /
+                            P_SHIELD_MAX_HEALTH;
+      add(cx + dx / length * 6.2, cy + dy / length * 6.2, intensity);
+    }
+  };
+  if (glUseExtPlayers) {
+    int count = (int)(glExtPlayers.size() / GLP_STRIDE);
+    for (int i = 0; i < count; i++) {
+      const float* p = glExtPlayers.data() + (size_t)i * GLP_STRIDE;
+      addPlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H],
+                (int)p[GLP_FACING], p[GLP_ALIVE] > .5f,
+                p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_ACTIVE] > .5f,
+                (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f);
+    }
+  } else {
+    for (const Player& p : E.psys.players) if (p.active)
+      addPlayer(p.px, p.py, p.w, p.h, p.facing, p.alive, p.aimX, p.aimY,
+                p.jetpackActive, p.shieldHealth, p.shieldActive);
+  }
+
+  int minigunLights = 0;
+  auto addProjectile = [&](int kind, double x, double y, double vx, double vy,
+                           double charge, int fuse) {
+    if (kind == PK_BLAST_ROUND) add(x, y, 255);
+    else if (kind == PK_DYNAMITE)
+      add(x, y, (((fuse / 3) & 1) ? 225 : 185));
+    else if (kind == PK_ACID_SHELL) add(x, y, 215);
+    else if (kind == PK_CLUSTER_BOMB)
+      add(x, y, charge < .5 ? 220 : (((fuse / 2) & 1) ? 235 : 195));
+    else if (kind == PK_MINIGUN_ROUND && minigunLights++ < 6)
+      add(x, y, 125);
+    else if (kind == PK_BORE_BEAM) {
+      double length = std::hypot(vx, vy);
+      if (length < 1e-6) return;
+      double dx = vx / length, dy = vy / length;
+      // A few terrain-aware samples make the long beam illuminate its tunnel
+      // without turning every beam pixel into a separate flood source.
+      for (int i = 0; i < 6; i++) add(x + dx * i * 12.0, y + dy * i * 12.0, 245);
+    }
+  };
+  if (glUseExtProjectiles) {
+    int count = (int)(glExtProjectiles.size() / PRS_STRIDE);
+    for (int i = 0; i < count; i++) {
+      const float* p = glExtProjectiles.data() + (size_t)i * PRS_STRIDE;
+      addProjectile((int)p[PRS_KIND], p[PRS_X], p[PRS_Y], p[PRS_VX], p[PRS_VY],
+                    p[PRS_CHARGE], (int)p[PRS_FUSE]);
+    }
+  } else {
+    for (const Projectile& p : E.projectiles.projectiles)
+      addProjectile(p.kind, p.px, p.py, p.vx, p.vy, p.charge, p.fuse);
+  }
+
+  bool changed = next.size() != E.renderer.dynamicLights.size();
+  if (!changed) {
+    for (size_t i = 0; i < next.size(); i++) {
+      const RenderLightSource& a = next[i];
+      const RenderLightSource& b = E.renderer.dynamicLights[i];
+      if (a.x != b.x || a.y != b.y || a.intensity != b.intensity) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (changed) {
+    E.renderer.dynamicLights.swap(next);
+    glDynamicLightPending = true;
+  }
+}
+
 // ---- texture uploads (active layer's renderPixels -> the given texture) ----
 void GLPresenter::glUploadFull(GLuint tex) {
   glBindTexture(GL_TEXTURE_2D, tex);
@@ -1598,7 +1687,8 @@ void GLPresenter::glPresentWindow(int forceFull) {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   bool worldShifted = E.fg.worldOffsetX != glLastWorldOffX || E.fg.worldOffsetY != glLastWorldOffY;
   bool skyChanged = (int)E.renderer.renderSkyLight != glLastSkyLight;
-  bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged;
+  bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged ||
+                      glDynamicLightPending;
   bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
   // Reduce the monotonic clock through a safe 64-bit frame counter and keep only
   // the wrapping low 32 bits.
@@ -1638,6 +1728,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
       glLightTick = E.tick;
       E.perfLightMs = emscripten_get_now() - t0;
       lightUpdated = true;
+      glDynamicLightPending = false;
     }
   }
   // A lighting solve can change every visible pixel. A pure pan keeps the overlap
@@ -1765,6 +1856,7 @@ int GLPresenter::glRenderFrame(int forceFull) {
   if (!glReady()) return 0;
   emscripten_webgl_make_context_current(glc->handle);
   glSyncCamera();
+  glCollectDynamicLights();
   glPresentWindow(forceFull);
   E.useLayer(&E.fg); // preview/seed checks read the foreground grid
   glBindFramebuffer(GL_FRAMEBUFFER, 0);

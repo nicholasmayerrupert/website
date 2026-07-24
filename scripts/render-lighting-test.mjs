@@ -3,6 +3,8 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import { INPUT, PROJECTILE_KIND } from '../src/sand/wasmBridge/abi.generated.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { NIGHT_SKY_LIGHT, NOON_SKY_LIGHT } from '../src/sand/game/dayNightCycle.js';
 import { makeChecker } from './sand-test-util.mjs';
 
@@ -40,6 +42,12 @@ function fillStoneLayer(e, layer, x0, y0, x1, y1) {
 
 function carveLayer(e, layer, x0, y0, x1, y1) {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) e.eraseDiscLayer(layer, x, y, 0);
+}
+
+function sealedActorCave(e) {
+  e.setSkyLight(0);
+  fillStone(e, 8, 8, 87, 88);
+  carve(e, 30, 38, 65, 66);
 }
 
 // Empty shaft from the top lights exposed deep stone faces.
@@ -129,6 +137,90 @@ function carveLayer(e, layer, x0, y0, x1, y1) {
   const nearMyc = brightness(myc, 34, 52);
   check(`mycelium dimly lights a sealed cave (${nearMyc.toFixed(1)} > ${farWall.toFixed(1)})`, nearMyc > farWall + 8);
   myc.destroy();
+}
+
+// Moving entities seed the same terrain-aware light flood as emissive
+// materials. Collect the render-only sources without needing a GL context, then
+// assert that each source illuminates the surrounding cave wall.
+{
+  const base = mk();
+  sealedActorCave(base);
+  base.renderFull();
+  const darkWall = brightness(base, 66, 52);
+  base.destroy();
+
+  const shield = attachTestHooks(mk());
+  sealedActorCave(shield);
+  const id = shield.spawnPlayer(42, 48);
+  shield.setPlayerInput(id, {
+    bits: INPUT.SHIELD, aimX: 75, aimY: 52, seq: 1,
+  });
+  shield.stepActors();
+  const sources = shield._collectDynamicLights();
+  shield.renderFull();
+  const litWall = brightness(shield, 66, 52);
+  check(`raised shield emits terrain light (${litWall.toFixed(1)} > ${darkWall.toFixed(1)})`,
+    sources === 1 && litWall > darkWall + 30);
+  shield.setPlayerInput(id, { bits: 0, aimX: 75, aimY: 52, seq: 2 });
+  shield.stepActors();
+  const clearedSources = shield._collectDynamicLights();
+  shield.renderFull();
+  const clearedWall = brightness(shield, 66, 52);
+  check('lowering the shield removes its terrain light',
+    clearedSources === 0 && Math.abs(clearedWall - darkWall) < 2);
+  shield.destroy();
+}
+
+{
+  const base = mk();
+  sealedActorCave(base);
+  base.renderFull();
+  const darkWall = brightness(base, 40, 67);
+  base.destroy();
+
+  const jetpack = attachTestHooks(mk());
+  sealedActorCave(jetpack);
+  const id = jetpack.spawnPlayer(40, 51);
+  const p = jetpack.getPlayer(id);
+  jetpack.setPlayerState(id, {
+    ...p, x: 40, y: 51, vx: 0, vy: 0, grounded: false,
+  });
+  jetpack.setPlayerInput(id, {
+    bits: INPUT.JETPACK, aimX: 70, aimY: 54, seq: 1,
+  });
+  jetpack.stepActors();
+  const sources = jetpack._collectDynamicLights();
+  jetpack.renderFull();
+  const litWall = brightness(jetpack, 40, 67);
+  check(`active jetpack emits terrain light (${litWall.toFixed(1)} > ${darkWall.toFixed(1)})`,
+    jetpack.getPlayer(id).jetpackActive && sources === 1 &&
+      litWall > darkWall + 30);
+  jetpack.destroy();
+}
+
+{
+  const base = mk();
+  sealedActorCave(base);
+  base.renderFull();
+  const darkWall = brightness(base, 66, 52);
+  base.destroy();
+
+  const projectile = attachTestHooks(mk());
+  sealedActorCave(projectile);
+  projectile.setSurvivalInventory(true);
+  const id = projectile.spawnPlayer(36, 48);
+  projectile.setPlayerInput(id, {
+    bits: INPUT.PRIMARY, aimX: 62, aimY: 52, seq: 1,
+  });
+  projectile.stepActors();
+  const round = projectile.getProjectiles().find((p) =>
+    p.kind === PROJECTILE_KIND.BLAST_ROUND);
+  const sources = projectile._collectDynamicLights();
+  projectile.renderFull();
+  const litWall = brightness(projectile, 66, 52);
+  check(`blast projectile emits terrain light (${litWall.toFixed(1)} > ${darkWall.toFixed(1)})`,
+    round && sources === 1 && litWall > darkWall + 35);
+  projectile.destroy();
 }
 
 // Cross-layer FIRE/LAVA seed emissive light into the opposite layer. Skylight is

@@ -501,7 +501,7 @@ void ProjectileSystem::updateProjectiles() {
     uint32_t seed = (uint32_t)projectile.id * 2654435761u ^
                     (uint32_t)projectile.kind * 2246822519u;
     E.detonate(x, y, radius, power, projectile.owner > 0 ? projectile.owner : 0,
-               material, seed);
+               material, seed, SE_WEAPON_EXPLOSION);
     if (immuneCreature) immuneCreature->hurtCooldown = savedHurtCooldown;
   };
   auto damageBlastOwner = [&](const Projectile& round) {
@@ -572,7 +572,8 @@ void ProjectileSystem::updateProjectiles() {
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
         uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
         E.detonate(x, y, DYNAMITE_PROJECTILE_BLAST_RADIUS_LOCAL,
-                   DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL, 0, TNT, seed);
+                   DYNAMITE_PROJECTILE_BLAST_POWER_LOCAL, 0, TNT, seed,
+                   SE_WEAPON_EXPLOSION);
         continue;
       }
       if (outside || --p.life <= 0) continue;
@@ -676,7 +677,6 @@ void ProjectileSystem::updateProjectiles() {
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
         detonateOwnerAware(p, x, y, CLUSTER_BLAST_RADIUS_LOCAL,
                            CLUSTER_BLAST_POWER_LOCAL, GUNPOWDER);
-        E.audio.emit(SE_CLUSTER_BLAST, x, y, 0.85, GUNPOWDER, 0);
         continue;
       }
       if (outside || --p.life <= 0) continue;
@@ -739,7 +739,8 @@ void ProjectileSystem::updateProjectiles() {
         int x = (int)std::floor(p.px), y = (int)std::floor(p.py);
         uint32_t seed = (uint32_t)p.id * 2654435761u ^ (uint32_t)p.kind * 2246822519u;
         damageBlastOwner(p);
-        E.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner, GUNPOWDER, seed);
+        E.detonate(x, y, BLAST_ROUND_RADIUS, BLAST_ROUND_POWER, p.owner,
+                   GUNPOWDER, seed, SE_WEAPON_EXPLOSION);
       } else if (p.kind == PK_ARROW) {
         E.spawnParticle(STONE, p.px, p.py, -p.vx * .08, -0.15, 12);
         E.audio.emit(SE_ARROW_HIT, p.px, p.py, 0.45 + p.charge * .55, STONE);

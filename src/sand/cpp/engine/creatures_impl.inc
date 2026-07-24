@@ -46,6 +46,18 @@ double CreatureSystem::fluidCoverage(double wx, double wy, int w, int h) const {
   return total ? (double)wet / total : 0;
 }
 
+bool CreatureSystem::boxTouchesMaterial(double wx, double wy, int w, int h,
+                                        uint8_t material) const {
+  int x0 = (int)std::floor(wx - E.fg.worldOffsetX);
+  int x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
+  int y0 = (int)std::floor(wy - E.fg.worldOffsetY);
+  int y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++)
+    if (x >= 0 && x < E.cols && y >= 0 && y < E.rows &&
+        E.fg.grid[E.I(x, y)] == material) return true;
+  return false;
+}
+
 bool CreatureSystem::boxTouchesLiquid(double wx, double wy, int w, int h) const {
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
   int y0 = (int)std::floor(wy - E.fg.worldOffsetY), y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
@@ -1099,6 +1111,9 @@ void CreatureSystem::updateCreatures() {
     // least half the body deals one point every half-second at 60 actor Hz.
     if (((E.actorTick + c.id * 7) % 30) == 0 &&
         blockingCoverage(c.wx, c.wy, species(c).w, species(c).h) >= 0.5) c.health--;
+    if (((E.actorTick + c.id * 7) % ACID_CONTACT_INTERVAL) == 0 &&
+        boxTouchesMaterial(c.wx, c.wy, species(c).w, species(c).h, ACID))
+      c.health -= ACID_CONTACT_DAMAGE;
     attackTarget(c);
     // Four authored poses per species. Tie pose selection to locomotion where
     // it matters so feet, wings, and body arcs describe the actual movement

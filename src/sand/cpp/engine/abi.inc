@@ -178,6 +178,10 @@ EMSCRIPTEN_KEEPALIVE int engine_test_damage_player(Engine* e, int id, int damage
   Player* p = e->findPlayer(id);
   return p ? e->psys.damagePlayer(*p, damage, 1, sourceX, sourceY) : 0;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_collect_dynamic_lights(Engine* e) {
+  e->glp.glCollectDynamicLights();
+  return (int)e->renderer.dynamicLights.size();
+}
 // Read continuous body pose/motion for tests/tools: [px,py,angle,vx,vy,omega,nPts,maxR].
 EMSCRIPTEN_KEEPALIVE int engine_test_body_state(Engine* e, int i, double* out) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;

@@ -158,7 +158,10 @@ authoritative in the engine. The rendered
 jetpack exposes its fuel level and animates twin thrust plumes without changing
 that authority. Holding `F` raises a cursor-facing 120-degree ward with 200
 durability; directional hits drain the ward instead of player health, and its
-meter quickly recharges after combat. Mining, material pickups,
+meter quickly recharges after combat. The raised ward is an exclusive stance:
+shooting, mining, and placement remain disabled until it is lowered. Acid contact
+deals twice its former player damage and now corrodes creatures at the same rate.
+Mining, material pickups,
 block placement, the 36-slot inventory, 1x1–10x10 tool-size presets (10x10 by
 default), and crafting remain
 part of survival: the starter mining tool is iron-tier, and defeated
@@ -213,6 +216,11 @@ The C++ renderer generates material pixels and lighting, then the GL presenter
 uploads dirty regions and composites both layers, actors, previews, and overlays.
 Terrain grain is keyed to absolute world coordinates. Settled animated materials
 repaint only visible chunks that contain animation.
+Jetpack exhaust, raised wards, and explosive or energy projectiles contribute a
+capped set of render-only light sources to the same terrain-aware flood as fire
+and lava. Their cell-quantized motion uses the existing throttled light solve, so
+they illuminate walls and both layers without entering saves, networking, or the
+simulation checksum.
 
 Bare hands, mining tools, and placeable blocks show the selected square footprint
 at the pointer. Equipping a weapon hides both the footprint and the legacy
@@ -228,8 +236,10 @@ so backpedaling preserves the aimed sprite and weapon direction. Jetpack thrust
 uses layered body/hiss loops with ignition and release, while the raised ward has
 an activation transient, sustained resonant bed, impact, and break cues. Weapon
 reports layer compact CC0 recordings with synthesized pressure cracks, body,
-reflections, and mechanical action. Cluster bomblets add a dedicated short
-crack/body cue so their stagger remains audible without stacking full TNT samples.
+reflections, and mechanical action. Every projectile detonation bypasses the
+terrain-TNT chain cooldown and plays the same complete effect, runtime-mixed from
+all three recorded TNT layers into one uncapped weapon voice; cluster volleys
+therefore sound like sixteen staggered TNT blasts without tripling source count.
 Audio asset provenance is in
 `audio/assets/README.md`.
 

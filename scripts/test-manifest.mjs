@@ -24,6 +24,7 @@ export const UNIT_SUITES = [
   ['liquid-mass', 'liquid-mass-test.mjs'],
   ['gas-bubble', 'gas-bubble-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
+  ['worldgen-quality', 'worldgen-quality-test.mjs'],
   ['structures', 'worldgen-structures-test.mjs'],
   ['flora', 'flora-test.mjs'],
   ['sand', 'sand-test.mjs'],

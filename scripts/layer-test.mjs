@@ -185,7 +185,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
 {
   console.log('worldgen tree crowns are not grounded by an open-sky top edge');
   const cols = 200, rows = 120;
-  const e = createEngineWasm({ cols, rows, worldSeed: 14, sinksOn: false, infinite: true });
+  const e = createEngineWasm({ cols, rows, worldSeed: 60, sinksOn: false, infinite: true });
   const plantStats = () => {
     const grid = e.getGridBg();
     let n = 0, top = rows, topEdge = 0;
@@ -227,7 +227,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
 // reaches the presentation mirror for one frame before a later dirty rect clears it.
 {
   console.log('presentation diff: streamed falling trees clear vacated crowns');
-  const opts = { cols: 160, rows: 100, worldSeed: 17, sinksOn: false, infinite: true };
+  const opts = { cols: 160, rows: 100, worldSeed: 0, sinksOn: false, infinite: true };
   const host = createEngineWasm({ ...opts, storageRole: 'authority' });
   const mirror = createEngineWasm({ ...opts, storageRole: 'presentation' });
   mirror.applyWorldMirror(host.serializeWorld(), host.getWorldOffsetX(), host.getWorldOffsetY());

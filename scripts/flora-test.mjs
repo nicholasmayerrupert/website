@@ -244,10 +244,23 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 // Type persistence across streaming: a grown cactus's cells (which ENCODE the
 // species) survive a shift off-buffer and back via the tile store.
 {
-  const C = 220, R = 140, SX = 110;
+  const C = 220, R = 140;
   const e = createEngineWasm({ cols: C, rows: R, worldSeed: 9, sinksOn: false, infinite: true });
-  // find the solid surface top in column SX and seat the seed just above it
-  let top = R; { const g = e.getGrid(); for (let y = 0; y < R; y++) { const v = g[y * C + SX]; if (v !== MAT.EMPTY && v !== MAT.WATER) { top = y; break; } } }
+  // Locate a clear surface column in the half that will leave on the next shift.
+  // A fixed column can now intersect a canonical village roof or cave mouth.
+  const grid = e.getGrid();
+  let SX = -1, top = R;
+  for (let x = 16; x < 100 && SX < 0; x++) {
+    let candidateTop = R;
+    for (let y = 1; y < R; y++) {
+      const v = grid[y * C + x];
+      if (v !== MAT.EMPTY && v !== MAT.WATER) { candidateTop = y; break; }
+    }
+    if (candidateTop > 5 && grid[(candidateTop - 3) * C + x] === MAT.EMPTY) {
+      SX = x;
+      top = candidateTop;
+    }
+  }
   const placed = e.placeSeedTyped(SX, top - 3, PT.CACTUS);
   check('cactus seed placed in the infinite world', placed);
   let t = 0; for (let s = 0; s < 900; s++) { t += 16; e.step(t); }

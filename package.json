@@ -58,6 +58,7 @@
     "test:mat-flags": "node scripts/materials-flags-test.mjs",
     "test:mat-behavior": "node scripts/material-behavior-test.mjs",
     "test:biomes": "node scripts/worldgen-biome-test.mjs",
+    "test:worldgen": "node scripts/worldgen-quality-test.mjs",
     "test:structures": "node scripts/worldgen-structures-test.mjs",
     "test:flora": "node scripts/flora-test.mjs",
     "test:rigid-collision": "node scripts/rigid-collision-test.mjs",
@@ -99,6 +100,7 @@
     "bench:prefetch": "node scripts/bench-prefetch.mjs",
     "bench:profile-shift": "node scripts/profile-shift.mjs",
     "bench:zoom": "node scripts/bench-zoomed-out.mjs",
+    "worldgen:atlas": "node scripts/worldgen-atlas.mjs",
     "check:embed": "node scripts/check-embed-boundary.mjs"
   },
   "dependencies": {

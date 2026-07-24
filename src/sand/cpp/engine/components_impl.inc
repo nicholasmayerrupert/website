@@ -447,7 +447,15 @@ void ComponentSystem::computeGrounded() {
         int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) groundCellAt(kr, E.cols - 2);
       }
       int topBase = E.cols;
-      for (int x = 1; x < E.cols - 1; x++) { int k = topBase + x; if (E.isRigidMaterialClass(g[k]) && !E.isIceComponentMaterial(g[k])) groundCellAt(k, x); }
+      int topWorldY = lay->worldOffsetY;
+      bool topMayBeSky = topWorldY < lay->gSeaRow;
+      for (int x = 1; x < E.cols - 1; x++) {
+        int k = topBase + x;
+        if (!E.isRigidMaterialClass(g[k]) || E.isIceComponentMaterial(g[k])) continue;
+        bool openSkyLeaf = E.isPlantLeaf(g[k]) && topMayBeSky
+                        && topWorldY < E.terrain.genSurfaceAbs(lay->worldOffsetX + x);
+        if (!openSkyLeaf) groundCellAt(k, x);
+      }
     }
     for (int y = E.rows - 2; y > 0; y--) {
       int rb = y * E.cols;

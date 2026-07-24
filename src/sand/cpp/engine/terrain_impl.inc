@@ -1,21 +1,73 @@
-// Low-frequency climate and moisture bands choose the biome in both layers.
-// Biomes affect surface materials and vegetation, but not height, avoiding sharp
-// seams that would continually avalanche loose terrain.
+int TerrainGen::floorDiv(int value, int divisor) {
+  int q = value / divisor, r = value % divisor;
+  if (r < 0) q--;
+  return q;
+}
+
+double TerrainGen::genTemperatureAt(int worldX) {
+  double broad = wfbm2(E.L->worldSeed ^ 0x7A11D2u, worldX * BIOME_FREQ, 5.5, 4, 0.52);
+  double local = wfbm2(E.L->worldSeed ^ 0x7A11D3u, worldX * BIOME_FREQ * 3.1, 1.7, 2, 0.5);
+  double altitude = std::fmax(0.0, (double)(SEA_LEVEL - genSurfaceAbs(worldX)) / 92.0);
+  return std::fmax(0.0, std::fmin(1.0, broad * 0.78 + local * 0.22 - altitude * 0.24));
+}
+
+double TerrainGen::genMoistureAt(int worldX) {
+  double broad = wfbm2(E.L->worldSeed ^ 0xB10B10u, worldX * BIOME_FREQ * 0.82, 2.5, 4, 0.52);
+  double pockets = wfbm2(E.L->worldSeed ^ 0xB10B11u, worldX * BIOME_FREQ * 3.7, 9.5, 2, 0.5);
+  double coast = 1.0 - std::fmin(1.0, std::fabs((double)(genSurfaceAbs(worldX) - SEA_LEVEL)) / 54.0);
+  return std::fmax(0.0, std::fmin(1.0, broad * 0.72 + pockets * 0.18 + coast * 0.10));
+}
+
+// Continuous temperature, moisture, altitude, and ruggedness fields choose the
+// raw biome. Height itself remains biome-independent, avoiding unstable material
+// cliffs where climates meet.
+int TerrainGen::classifyBiomeAt(int worldX) {
+  double temperature = genTemperatureAt(worldX);
+  double moisture = genMoistureAt(worldX);
+  int surface = genSurfaceAbs(worldX);
+  double altitude = std::fmax(0.0, (double)(SEA_LEVEL - surface) / 92.0);
+  double rugged = wridged2(E.L->worldSeed ^ 0xB10B12u, worldX * BIOME_FREQ * 2.2, 4.0, 3, 0.52);
+
+  if ((altitude > 0.28 && rugged > 0.58) || (altitude > 0.52 && temperature > 0.27)) return BIOME_ROCKY;
+  if (temperature < 0.29 || (altitude > 0.34 && temperature < 0.45)) return BIOME_TUNDRA;
+  if (moisture < 0.31 && temperature > 0.43) return BIOME_DESERT;
+  if (moisture > 0.72 && surface > SEA_LEVEL - 20 && temperature > 0.38) return BIOME_SWAMP;
+  if (temperature > 0.62 && moisture > 0.57) return BIOME_JUNGLE;
+  if (moisture > 0.51) return BIOME_FOREST;
+  return BIOME_PLAINS;
+}
+
+// Ecotones occupy a narrow band around raw climate boundaries. Four-column
+// deterministic patches borrow the neighbouring biome, producing a readable
+// transition without per-pixel speckle or a single hard material seam.
 int TerrainGen::genBiomeAt(int worldX) {
-  // Both fields depend only on the shared seed and world X, so layers agree.
-  double n = wfbm2(E.L->worldSeed ^ 0xB10B10u, worldX * BIOME_FREQ, 2.5, 3, 0.5);
-  double t = wfbm2(E.L->worldSeed ^ 0x7A11D2u, worldX * BIOME_FREQ * 1.7, 5.5, 2, 0.5);
-  if (n < 0.30) return t < 0.5 ? BIOME_PLAINS : BIOME_FOREST;
-  if (n < 0.42) return t < 0.45 ? BIOME_FOREST : BIOME_JUNGLE;
-  if (n < 0.54) return t < 0.5 ? BIOME_DESERT : BIOME_SWAMP;
-  if (n < 0.64) return BIOME_DESERT;
-  if (n < 0.82) return t < 0.58 ? BIOME_TUNDRA : BIOME_FOREST;
-  if (n < 0.92) return t < 0.52 ? BIOME_TUNDRA : BIOME_ROCKY;
-  return BIOME_ROCKY;
+  uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x9e3779b9u);
+  BiomeCacheEntry& cached = biomeCache[key & (BIOME_CACHE_SIZE - 1)];
+  if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
+
+  int center = classifyBiomeAt(worldX);
+  int left = classifyBiomeAt(worldX - 24);
+  int right = classifyBiomeAt(worldX + 24);
+  int alternate = left != center ? left : (right != center ? right : center);
+  if (left == right && left != center) alternate = left;
+  if (alternate != center) {
+    int patch = floorDiv(worldX, 4);
+    double chance = left != center && right != center ? 0.48 : 0.28;
+    if (whash1(E.L->worldSeed ^ 0xEC070E01u, patch) < chance) center = alternate;
+  }
+
+  cached.seed = E.L->worldSeed;
+  cached.x = worldX;
+  cached.value = (uint8_t)center;
+  return center;
 }
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
 int TerrainGen::genSurfaceAbs(int worldX) {
+  uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
+  SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
+  if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
+
   // A very-low-frequency continental silhouette gives the world long mountain
   // ranges and broad ocean basins. Mid-frequency hills ride on top, while a
   // softly gated ridged field raises dramatic highlands without introducing a
@@ -27,11 +79,15 @@ int TerrainGen::genSurfaceAbs(int worldX) {
   double cuts = wridged2(E.L->worldSeed ^ 0xA5116Eu, worldX * SURFACE_FREQ * 1.55, 11.0, 2, 0.55);
   double highland = std::fmax(0.0, (continental - 0.53) / 0.30);
   if (highland > 1.0) highland = 1.0;
-  double amp = E.L->gSurfAmp * (0.68 + hills * 0.55 + highland * 0.42);
-  double macro = -(continental - 0.5) * E.L->gSurfAmp * 1.55;
-  double peaks = -highland * ridges * E.L->gSurfAmp * 0.70;
-  return (int)std::lround(macro - (n - 0.5) * 2 * amp + peaks
-                        + (cuts - 0.45) * E.L->gSurfAmp * 0.18);
+  double amp = SURFACE_AMPLITUDE * (0.68 + hills * 0.55 + highland * 0.42);
+  double macro = -(continental - 0.5) * SURFACE_AMPLITUDE * 1.55;
+  double peaks = -highland * ridges * SURFACE_AMPLITUDE * 0.70;
+  int value = (int)std::lround(macro - (n - 0.5) * 2 * amp + peaks
+                             + (cuts - 0.45) * SURFACE_AMPLITUDE * 0.18);
+  cached.seed = E.L->worldSeed;
+  cached.x = worldX;
+  cached.value = value;
+  return value;
 }
 // Terrain top as a BUFFER row in the current window (may be <0 or >=E.rows when the
 // surface has scrolled off; genCellAt's `y < surf` test handles that as all-sky /
@@ -42,6 +98,17 @@ int TerrainGen::genSoilDepth(int biome) {
   if (biome == BIOME_DESERT) return E.L->gSoil * 3; // deep sand
   if (biome == BIOME_JUNGLE) return E.L->gSoil + 3; // thick lush mantle
   return E.L->gSoil + 2;                            // plains / forest / tundra / swamp
+}
+int TerrainGen::genSoilDepthAt(int worldX, int biome) {
+  int total = genSoilDepth(biome);
+  int samples = 1;
+  for (int dx : {-16, 16}) {
+    int other = genBiomeAt(worldX + dx);
+    if (other == biome) continue;
+    total += genSoilDepth(other);
+    samples++;
+  }
+  return imax(0, (int)std::lround((double)total / samples));
 }
 uint8_t TerrainGen::genSkinMat(int biome, int slope, bool underwater) {
   if (underwater) return STONE;                // solid seabed (loose powder under water just avalanches)
@@ -64,8 +131,8 @@ uint8_t TerrainGen::genSoilMat(int biome, int d, int soil) {
   }
 }
 int TerrainGen::genCaveTopAbs(int worldX) {
-  int biome = genBiomeAt(worldX), soil = genSoilDepth(biome);
-  return genSurfaceAbs(worldX) + GEN_SKIN + soil + imax(10, (int)std::floor(E.rows * 0.04));
+  int biome = genBiomeAt(worldX), soil = genSoilDepthAt(worldX, biome);
+  return genSurfaceAbs(worldX) + GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
 }
 int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
   if (worldY < genCaveTopAbs(worldX) + 18 || worldY >= caveBottomAbs()) return CAVE_DEFAULT;
@@ -83,25 +150,116 @@ int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
 // Caves combine Minecraft-style density fields: broad "cheese" voids plus
 // contour-line "spaghetti/noodle" tunnels. Terraria-like detail passes decorate
 // the resulting cave floors/walls later, rather than carving independent rooms.
+TerrainGen::CaveRegionPlan TerrainGen::cavePlan(int region) {
+  uint32_t layerSeed = E.L->gCaveSeed ^ (E.L->isBackground ? 0xBACC600Du : 0u);
+  uint32_t key = layerSeed ^ ((uint32_t)region * 0x27d4eb2du);
+  CavePlanCacheEntry& cached = cavePlanCache[key & (CAVE_PLAN_CACHE_SIZE - 1)];
+  if (cached.seed == layerSeed && cached.region == region) return cached.plan;
+
+  int base = region * CAVE_REGION_WIDTH;
+  auto roll = [&](uint32_t salt) { return whash1(layerSeed ^ salt, region); };
+  CaveRegionPlan plan;
+  plan.entryX = base + 36 + (int)(roll(0x101u) * (CAVE_REGION_WIDTH - 72));
+  plan.entryY = genSurfaceAbs(plan.entryX);
+  plan.upperX = imax(base + 24, imin(base + CAVE_REGION_WIDTH - 24,
+                    plan.entryX - 34 + (int)(roll(0x102u) * 69)));
+  plan.upperY = plan.entryY + 50 + (int)(roll(0x103u) * 28);
+  plan.middleX = base + 34 + (int)(roll(0x104u) * (CAVE_REGION_WIDTH - 68));
+  plan.middleY = imax(plan.upperY + 54, 196 + (int)(roll(0x105u) * 68));
+  plan.deepX = base + 34 + (int)(roll(0x106u) * (CAVE_REGION_WIDTH - 68));
+  plan.deepY = imin(CAVE_BOTTOM - 32, imax(plan.middleY + 92, 414 + (int)(roll(0x107u) * 78)));
+  plan.enabled = !E.L->isBackground || roll(0x108u) < 0.68;
+
+  cached.seed = layerSeed;
+  cached.region = region;
+  cached.plan = plan;
+  return plan;
+}
+
+bool TerrainGen::segmentContains(int x, int y, int ax, int ay, int bx, int by, double radius) {
+  double vx = bx - ax, vy = by - ay;
+  double wx = x - ax, wy = y - ay;
+  double vv = vx * vx + vy * vy;
+  double t = vv > 0 ? (wx * vx + wy * vy) / vv : 0.0;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  double dx = x - (ax + vx * t), dy = y - (ay + vy * t);
+  return dx * dx + dy * dy <= radius * radius;
+}
+
+// Every foreground macro-region owns a player-clear route from its surface to
+// the deep cave band, plus horizontal links to its neighbours. Noise caves add
+// variety around this graph; they are no longer responsible for connectivity.
+// Background routes are thinner and sparsely enabled, creating deliberate
+// transfer shortcuts without duplicating the foreground cavern volume.
+bool TerrainGen::genIsBackboneCave(int worldX, int worldY) {
+  if (worldY >= CAVE_BOTTOM) return false;
+  int region = floorDiv(worldX, CAVE_REGION_WIDTH);
+  double radius = E.L->isBackground ? 2.25 : 5.25;
+  for (int r = region - 1; r <= region; r++) {
+    CaveRegionPlan p = cavePlan(r);
+    if (!p.enabled) continue;
+    if (!E.L->isBackground &&
+        segmentContains(worldX, worldY, p.entryX, p.entryY, p.upperX, p.upperY, radius)) return true;
+    if (segmentContains(worldX, worldY, p.upperX, p.upperY, p.middleX, p.middleY, radius)) return true;
+    if (segmentContains(worldX, worldY, p.middleX, p.middleY, p.deepX, p.deepY, radius)) return true;
+    CaveRegionPlan next = cavePlan(r + 1);
+    if (next.enabled &&
+        segmentContains(worldX, worldY, p.middleX, p.middleY, next.middleX, next.middleY, radius)) return true;
+    if (!E.L->isBackground && next.enabled && (r & 1) == 0 &&
+        segmentContains(worldX, worldY, p.deepX, p.deepY, next.deepX, next.deepY, radius)) return true;
+  }
+  return false;
+}
+
+bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
+  if (E.L->isBackground) return false;
+  int localSurface = genSurfaceAbs(worldX);
+  if (worldY < localSurface - 2 || worldY > localSurface + 120) return false;
+  int region = floorDiv(worldX, CAVE_REGION_WIDTH);
+  for (int r = region - 1; r <= region; r++) {
+    CaveRegionPlan p = cavePlan(r);
+    if (worldY < p.entryY - 1 || worldY > p.upperY + 2) continue;
+    bool outer = segmentContains(worldX, worldY, p.entryX, p.entryY, p.upperX, p.upperY, 7.25);
+    bool inner = segmentContains(worldX, worldY, p.entryX, p.entryY, p.upperX, p.upperY, 5.25);
+    if (outer && !inner) return true;
+  }
+  return false;
+}
+
 bool TerrainGen::genIsCave(int worldX, int worldY) {
-  double warpX = (wfbm2(E.L->gCaveSeed ^ 0xCA71u, worldX * 0.010, worldY * 0.010, 1, 0.5) - 0.5) * 18.0;
-  double warpY = (wfbm2(E.L->gCaveSeed ^ 0xCA72u, worldX * 0.009, worldY * 0.011, 1, 0.5) - 0.5) * 14.0;
-  double sx = worldX + warpX, sy = worldY + warpY;
-  double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
-  if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
-  double bgBias = E.L->isBackground ? 0.060 : 0.0;
-  double cheese = wfbm2(E.L->gCaveSeed ^ 0x55u, sx * CAVE_FREQ * 0.52, sy * CAVE_FREQ * 0.42, 3, 0.5);
-  double spaghetti = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A6Eu, sx * CAVE_FREQ * 1.55, sy * CAVE_FREQ * 0.82, 2, 0.5) - 0.5);
-  double noodle = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x7A6Eu, sx * CAVE_FREQ * 2.8, sy * CAVE_FREQ * 1.9, 1, 0.5) - 0.5);
-  double shaft = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A7Fu, sx * CAVE_FREQ * 0.80, sy * CAVE_FREQ * 2.20, 1, 0.5) - 0.5);
-  double chamberThresh = 0.755 - depthFrac * 0.075 + bgBias * 3.0;
-  double spaghettiWidth = 0.075 + depthFrac * 0.026 - bgBias;
-  double noodleWidth = 0.044 + depthFrac * 0.014 - bgBias * 0.6;
-  double shaftWidth = 0.052 + depthFrac * 0.012 - bgBias * 0.8;
-  return cheese > chamberThresh || spaghetti < spaghettiWidth || noodle < noodleWidth || shaft < shaftWidth;
+  uint32_t seed = E.L->gCaveSeed ^ (E.L->isBackground ? 0x80000000u : 0u);
+  uint32_t key = seed ^ ((uint32_t)worldX * 0x85ebca6bu) ^ ((uint32_t)worldY * 0xc2b2ae35u);
+  CaveCacheEntry& cached = caveCache[key & (CAVE_CACHE_SIZE - 1)];
+  if (cached.seed == seed && cached.x == worldX && cached.y == worldY) return cached.value != 0;
+
+  bool result = genIsBackboneCave(worldX, worldY);
+  if (!result) {
+    double warpX = (wfbm2(E.L->gCaveSeed ^ 0xCA71u, worldX * 0.010, worldY * 0.010, 1, 0.5) - 0.5) * 18.0;
+    double warpY = (wfbm2(E.L->gCaveSeed ^ 0xCA72u, worldX * 0.009, worldY * 0.011, 1, 0.5) - 0.5) * 14.0;
+    double sx = worldX + warpX, sy = worldY + warpY;
+    double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
+    if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
+    double bgBias = E.L->isBackground ? 0.072 : 0.0;
+    double cheese = wfbm2(E.L->gCaveSeed ^ 0x55u, sx * CAVE_FREQ * 0.52, sy * CAVE_FREQ * 0.42, 3, 0.5);
+    double spaghetti = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A6Eu, sx * CAVE_FREQ * 1.55, sy * CAVE_FREQ * 0.82, 2, 0.5) - 0.5);
+    double noodle = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x7A6Eu, sx * CAVE_FREQ * 2.8, sy * CAVE_FREQ * 1.9, 1, 0.5) - 0.5);
+    double shaft = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A7Fu, sx * CAVE_FREQ * 0.80, sy * CAVE_FREQ * 2.20, 1, 0.5) - 0.5);
+    double chamberThresh = 0.755 - depthFrac * 0.075 + bgBias * 3.0;
+    double spaghettiWidth = 0.075 + depthFrac * 0.026 - bgBias;
+    double noodleWidth = 0.044 + depthFrac * 0.014 - bgBias * 0.6;
+    double shaftWidth = 0.052 + depthFrac * 0.012 - bgBias * 0.8;
+    result = cheese > chamberThresh || spaghetti < spaghettiWidth || noodle < noodleWidth || shaft < shaftWidth;
+  }
+  cached.seed = seed;
+  cached.x = worldX;
+  cached.y = worldY;
+  cached.value = result ? 1 : 0;
+  return result;
 }
 bool TerrainGen::genOpenCaveAt(int worldX, int worldY) {
-  return worldY >= genCaveTopAbs(worldX) && worldY < caveBottomAbs() && genIsCave(worldX, worldY);
+  if (worldY >= caveBottomAbs()) return false;
+  if (!E.L->isBackground && worldY >= genSurfaceAbs(worldX) && genIsBackboneCave(worldX, worldY)) return true;
+  return worldY >= genCaveTopAbs(worldX) && genIsCave(worldX, worldY);
 }
 // Solid stone that sits one cell from a carved cave (a cave-wall surface). Pure
 // noise (samples genIsCave at the 4 neighbours), so it stays deterministic. The
@@ -115,28 +273,34 @@ bool TerrainGen::genIsCaveWall(int worldX, int worldY) {
 // byte-identical; ore is solid-in-solid so it's inert and grounds like stone.
 // Biome + depth bias WHICH ore. gPocketSeed is per-layer (fg only places ore).
 uint8_t TerrainGen::genOreFor(int biome, int worldX, int worldY) {
-  double v = wridged2(E.L->gPocketSeed ^ 0x0a5eu, worldX * ORE_FREQ, worldY * ORE_FREQ, 2, 0.5);
-  if (v < ORE_THRESH) return STONE;
-  double sel = wfbm2(E.L->gPocketSeed ^ 0x5e1eu, worldX * ORE_FREQ * 0.7, worldY * ORE_FREQ * 0.7, 2, 0.5);
-  bool deep = worldY > caveBottomAbs();
-  // GOLD is rare and only deep; the others scale coal(common)->copper->iron.
-  if (deep && sel > 0.90) return GOLD_ORE;
-  switch (biome) {
-    case BIOME_DESERT: return sel < 0.55 ? COPPER_ORE : IRON_ORE;
-    case BIOME_ROCKY:
-    case BIOME_TUNDRA: return sel < 0.55 ? COAL_ORE : IRON_ORE;
-    case BIOME_JUNGLE: return sel < 0.6 ? COPPER_ORE : IRON_ORE;
-    default: // plains / forest / swamp
-      if (sel < 0.45) return COAL_ORE;
-      if (sel < 0.78) return COPPER_ORE;
-      return IRON_ORE;
+  int depth = worldY - genSurfaceAbs(worldX);
+  if (depth < 18) return STONE;
+
+  // Two compact starter lodes near the original spawn make the first upgrades
+  // dependable without flattening the broader geological distribution.
+  for (int i = 0; i < 2; i++) {
+    uint32_t salt = 0x57A27000u + (uint32_t)i * 0x101u;
+    int cx = -112 + i * 128 + (int)(whash1(E.L->worldSeed ^ salt, i) * 72);
+    int cy = genSurfaceAbs(cx) + 34 + i * 24;
+    double dx = (worldX - cx) / (i == 0 ? 13.0 : 11.0);
+    double dy = (worldY - cy) / 7.0;
+    if (dx * dx + dy * dy <= 1.0) return i == 0 ? COAL_ORE : COPPER_ORE;
   }
+
+  double v = wridged2(E.L->gPocketSeed ^ 0x0a5eu, worldX * ORE_FREQ, worldY * ORE_FREQ, 2, 0.5);
+  double depth01 = std::fmax(0.0, std::fmin(1.0, (depth - 24) / 480.0));
+  if (v < ORE_THRESH - depth01 * 0.025) return STONE;
+  double sel = wfbm2(E.L->gPocketSeed ^ 0x5e1eu, worldX * ORE_FREQ * 0.7, worldY * ORE_FREQ * 0.7, 2, 0.5);
+  double geology = wfbm2(E.L->worldSeed ^ 0x6E0106u, worldX * 0.0017, worldY * 0.0012, 3, 0.5);
+  if (depth > 300 && sel > 0.88 - depth01 * 0.08 && geology > 0.48) return GOLD_ORE;
+  if (depth > 105 && sel > 0.57 - depth01 * 0.16 + (geology < 0.42 ? 0.08 : 0.0)) return IRON_ORE;
+  if (depth > 38 && (sel > 0.40 || geology > 0.62 || biome == BIOME_DESERT || biome == BIOME_JUNGLE)) return COPPER_ORE;
+  return COAL_ORE;
 }
-// Absolute-world depth zones (cells below the surface centre, worldY=0). These
-// scale with the viewport but the world is infinitely deep: below the underworld
-// top it's stone + lava forever. Surface->caves->deep ore->underworld lava.
-int TerrainGen::caveBottomAbs() { return E.rows * 9 / 5; }     // caves stop here (~1.8 viewports down)
-int TerrainGen::underworldAbs() { return E.rows * 13 / 5; }    // lava underworld begins (~2.6 down)
+// Canonical absolute-world depth zones. Below the underworld top the world stays
+// stone + lava forever: surface -> caves -> deep ore -> underworld lava.
+int TerrainGen::caveBottomAbs() { return CAVE_BOTTOM; }
+int TerrainGen::underworldAbs() { return UNDERWORLD_TOP; }
 // Sealed liquid/lava chambers in the DEEP stone (below the cave zone, so they're
 // enclosed by solid rock and stay inert until dug into — never cave-adjacent,
 // which would let them drain + churn). The zones are DEPTH-SEPARATED with stone
@@ -166,6 +330,9 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   int depth = y - surf;
   int worldY = E.L->worldOffsetY + y;             // absolute depth for the cave/underworld zones
   bool underwater = surf > sea;
+  // A two-cell stone sleeve keeps loose biome mantles from collapsing sideways
+  // into the foreground's player-clear surface route.
+  if (genIsEntranceWall(worldX, worldY)) return STONE;
   // Both layers share the visible skin + soil mantle. Matching strata prevent
   // gaps in foreground dirt/sand from exposing an unrelated stone backdrop.
   if (depth < GEN_SKIN) return genSkinMat(biome, slope, underwater);
@@ -173,12 +340,11 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   // A thick solid stone buffer separates the loose soil (and any ocean floor)
   // from the cave zone, so generated sand never rests directly over a cave and
   // oceans can't drain into one (both churn the cross-layer transfer forever).
-  int caveTop = GEN_SKIN + soil + imax(10, (int)std::floor(E.rows * 0.04));
-  // Caves are foreground traversal. The generated background stays solid stone
-  // behind them; players can still dig/paint the background, but streaming does
-  // not spend half the terrain budget carving a second hidden cave network.
+  int caveTop = GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
+  if (genOpenCaveAt(worldX, worldY)) return EMPTY;
+  // Background caves are intentionally sparse and inert: no generated
+  // liquids/ores/features, only voids that create visual depth and transfer paths.
   if (E.L->isBackground) return STONE;
-  if (depth >= caveTop && worldY < caveBottomAbs() && genIsCave(worldX, worldY)) return EMPTY;
   uint8_t base = genPocketAt(worldX, worldY);              // fg: deep stone + sealed liquids/lava
   if (base != STONE) return base;                          // sealed liquid / lava chamber
   // Cave-wall lining is intentionally sparse. Whole-biome component walls look

@@ -234,12 +234,14 @@
   // Dirty tracking for the active layer.
   inline void markCellIndex(int k) {
     if (k < 0 || k >= cols * rows) return;
+    markWorldTileDirty(k);
     int y = k / cols, x = k - y * cols;
     if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
     if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
   }
   void markDirtyRect(int x0, int y0, int x1, int y1) {
     int mx0 = imax(0, x0), mx1 = imin(cols - 1, x1), my0 = imax(0, y0), my1 = imin(rows - 1, y1);
+    markWorldRectDirty(mx0, my0, mx1, my1);
     for (int y = my0; y <= my1; y++) {
       if (mx0 < L->rowMarkMin[y]) L->rowMarkMin[y] = mx0;
       if (mx1 > L->rowMarkMax[y]) L->rowMarkMax[y] = mx1;

@@ -134,11 +134,15 @@ struct Layer {
   bool isBackground = false; // bg = a more-solid backdrop (sparser caves) behind the carved fg
   int worldOffsetX = 0, worldOffsetY = 0; // buffer cell (x,y) maps to world (worldOffsetX+x, worldOffsetY+y)
   uint32_t worldSeed = 0;
-  int gSurfAmp = 0, gSurfBase = 0, gSeaRow = 0, gSoil = 0;
+  int gSurfBase = 0, gSeaRow = 0, gSoil = 0;
   uint32_t gCaveSeed = 0, gTreeSeed = 0, gPocketSeed = 0;
-  // 2D streaming persistence: full sim-state saved as CHUNK_SIZE x CHUNK_SIZE
-  // tiles keyed by absolute tile coords (so it survives shifts in BOTH axes).
-  std::unordered_map<int64_t, std::vector<uint8_t>> tileStore;              // (tileWX,tileWY) -> CHUNK*CHUNK cells
+  // 2D streaming persistence keyed by absolute tile coordinates. Persistent
+  // tiles contain changed simulation state; predictive baseline tiles live in a
+  // separate, bounded cache and disappear once their target shift is consumed.
+  // Payloads use compact RLE when it beats the raw CHUNK*CHUNK bytes.
+  std::unordered_map<int64_t, std::vector<uint8_t>> tileStore;
+  std::unordered_map<int64_t, std::vector<uint8_t>> prefetchStore;
+  std::unordered_set<int64_t> dirtyWorldTiles;
   std::unordered_map<int64_t, std::vector<std::pair<Body*, std::pair<double, double>>>> bodyStore; // tile -> [(body, (worldPx,worldPy))]
   // render pixels for this layer (cols*rows*4 RGBA)
   std::vector<uint8_t> renderPixels;

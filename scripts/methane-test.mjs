@@ -122,8 +122,11 @@ for (const [name, gas] of [['steam', MAT.STEAM], ['acrid smoke', MAT.ACRID_SMOKE
 // The material is part of world generation rather than creative-only.
 {
   const e = mk(768, 320, true);
+  const early = count(e.getGrid(), MAT.METHANE);
+  e.shiftWorldXY(0, 96);
   const natural = count(e.getGrid(), MAT.METHANE);
-  check(`procedural caves contain natural methane (${natural} cells)`, natural > 0);
+  check(`early cave band is methane-free (${early} cells)`, early === 0);
+  check(`deeper procedural caves contain natural methane (${natural} cells)`, natural > 0);
   e.destroy();
 }
 

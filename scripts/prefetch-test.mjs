@@ -109,6 +109,7 @@ console.log('prefetch coexists with saved (revisited) tiles');
   const e = mk();
   // edit some foreground terrain so a leaving band has real saved state
   for (let i = 0; i < 30; i++) e.paintDisc(60 + i * 4, 40 + (i % 12), 3, 1, false);
+  const editedHash = fnv(e.getGrid());
   let cam = MARGIN + 6; const trigger = COLS - VIS - MARGIN;
   let shifts = 0;
   // pan right a few shifts, then pan back left over the saved bands
@@ -125,6 +126,38 @@ console.log('prefetch coexists with saved (revisited) tiles');
   check(`completed ${shifts} back-and-forth shifts without divergence/crash`, shifts >= 5, `(${shifts})`);
   const s = e.getShiftFillStats();
   check('all shifts were cache hits (prefetch + saved tiles)', s.miss === 0, `hit=${s.hit} miss=${s.miss}`);
+  const store = e.getWorldStoreStats();
+  check('edited tiles use persistent storage', store.persistentTiles > 0,
+    `persistent=${store.persistentTiles}, prefetch=${store.prefetchTiles}`);
+  check('edited world is exact after leaving and revisiting', fnv(e.getGrid()) === editedHash);
+  e.destroy();
+}
+
+console.log('pristine exploration keeps only a bounded baseline cache');
+{
+  const e = mk();
+  let cam = MARGIN + 6;
+  const trigger = COLS - VIS - MARGIN;
+  let shifts = 0, maxBytes = 0, maxPrefetchTiles = 0, maxPersistentTiles = 0;
+  while (shifts < 80) {
+    e.prefetchAdvance(cam, 0, VIS, VISR);
+    cam += 2;
+    if (cam < trigger) continue;
+    const dx = e.maybeShiftWorld(cam, VIS, MARGIN);
+    if (!dx) continue;
+    cam -= dx;
+    shifts++;
+    const stats = e.getWorldStoreStats();
+    maxBytes = Math.max(maxBytes, stats.bytes);
+    maxPrefetchTiles = Math.max(maxPrefetchTiles, stats.prefetchTiles);
+    maxPersistentTiles = Math.max(maxPersistentTiles, stats.persistentTiles);
+  }
+  check('pristine terrain never enters persistent storage', maxPersistentTiles === 0,
+    `max persistent=${maxPersistentTiles}`);
+  check('baseline tile cache remains bounded over 80 novel shifts', maxPrefetchTiles <= 512,
+    `max prefetch=${maxPrefetchTiles}`);
+  check('compressed baseline cache remains compact', maxBytes < 100_000,
+    `max bytes=${maxBytes}`);
   e.destroy();
 }
 

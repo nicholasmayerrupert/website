@@ -27,9 +27,21 @@ EMSCRIPTEN_KEEPALIVE int engine_world_shift_count(Engine* e) { return e->worldSh
 EMSCRIPTEN_KEEPALIVE void engine_prefetch_advance(Engine* e, int camCellX, int camCellY, int visCols, int visRows) { e->prefetchAdvance(camCellX, camCellY, visCols, visRows); }
 EMSCRIPTEN_KEEPALIVE int engine_shift_fill_hit(Engine* e) { return e->shiftFillHit; }
 EMSCRIPTEN_KEEPALIVE int engine_shift_fill_miss(Engine* e) { return e->shiftFillMiss; }
+EMSCRIPTEN_KEEPALIVE double engine_world_store_bytes(Engine* e) { return (double)e->worldStoreBytes(); }
+EMSCRIPTEN_KEEPALIVE int engine_world_stored_tile_count(Engine* e) { return e->worldStoredTileCount(); }
+EMSCRIPTEN_KEEPALIVE int engine_world_prefetch_tile_count(Engine* e) { return e->worldPrefetchTileCount(); }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_x(Engine* e) { return e->fg.worldOffsetX; }
 EMSCRIPTEN_KEEPALIVE int engine_world_offset_y(Engine* e) { return e->fg.worldOffsetY; }
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->genSurfaceAt(worldX) : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_world_surface_abs_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->genSurfaceAbs(worldX) : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_world_biome_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->terrain.genBiomeAt(worldX) : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_world_cave_biome_at(Engine* e, int worldX, int worldY) { e->useLayer(&e->fg); return e->fg.infinite ? e->terrain.genCaveBiomeAt(worldX, worldY) : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_world_is_cave_at(Engine* e, int layer, int worldX, int worldY) {
+  e->useLayer(layer ? &e->bg : &e->fg);
+  int result = e->fg.infinite && e->terrain.genOpenCaveAt(worldX, worldY) ? 1 : 0;
+  e->useLayer(&e->fg);
+  return result;
+}
 EMSCRIPTEN_KEEPALIVE void engine_destroy(Engine* e) { delete e; }
 EMSCRIPTEN_KEEPALIVE int engine_step(Engine* e) { return e->step() ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_step_actors(Engine* e) { return e->stepActors() ? 1 : 0; }

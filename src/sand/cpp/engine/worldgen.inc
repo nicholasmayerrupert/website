@@ -4,9 +4,10 @@
   // save/restore, prefetch, and horizontal/vertical window shifts. Camera.inc may
   // request a shift, but this subsystem decides how cells/components/entities
   // move across the loaded window.
-  // Surface height, biome, and soil use the shared seed so layers align near the
-  // surface. Per-layer cave and pocket seeds produce different underground
-  // networks, allowing transfer where cavities overlap or diverge.
+  // Surface height, climate, and soil use the shared seed so layers align near
+  // the surface. The foreground owns player-clear cave backbones; the background
+  // uses its own sparse cave field and thinner partial backbones, allowing
+  // transfer where cavities overlap or diverge.
   // Deterministic terrain queries (TerrainGen, terrain.hpp) — composed here;
   // method bodies in terrain_impl.inc. Streaming + fill passes below.
   TerrainGen terrain{*this};
@@ -37,7 +38,7 @@
       int worldX = L->worldOffsetX + lx;
       int surf = surfAbsScratch[j + 1] - L->worldOffsetY;
       int slope = std::abs(surfAbsScratch[j + 2] - surfAbsScratch[j]);
-      int biome = terrain.genBiomeAt(worldX); int soil = terrain.genSoilDepth(biome);
+      int biome = terrain.genBiomeAt(worldX); int soil = terrain.genSoilDepthAt(worldX, biome);
       for (int y = rowStart; y < rowEnd; y++) L->grid[y * cols + lx] = terrain.genCellAt(worldX, surf, slope, biome, soil, y);
     }
   }
@@ -234,9 +235,9 @@
     // features attach it (stems/plants rise from the floor, vines hang from the
     // top wall) so the whole thing generates inert. Interiors are carved EMPTY.
     enum SKind { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_SHRINE, SK_FORGE, SK_OVERGROWN, SK_MUSHGROVE };
-    // A plain hollow brick house with a doorway (the original ruin).
+    // A plain hollow brick house with a doorway.
     auto stampHouse = [&](int ax, int ay, int w, int h, int lx, int ly) {
-      int doorX = ax + 1 + (int)(h2(0xE5u, lx, ly) * (w - 4));
+      int doorX = 1 + (int)(h2(0xE5u, lx, ly) * (w - 4));
       for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
         bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
         bool door = oy == h - 1 && ox >= doorX && ox <= doorX + 1;
@@ -250,11 +251,15 @@
         put(ax + ox, ay + oy, border ? BRICK : EMPTY);
       }
       int fy = ay + h - 2;
+      int rewardDepth = fy - terrain.genSurfaceAbs(ax + w / 2);
+      bool ironDepth = rewardDepth > 105, goldDepth = rewardDepth > 300;
       for (int ox = 2; ox < w - 2; ox++) {
         double r = h2(0x7000u, ax + ox, ay);
-        uint8_t ore = r < 0.14 ? GOLD_ORE : r < 0.42 ? IRON_ORE : r < 0.72 ? COPPER_ORE : EMPTY;
+        uint8_t ore = goldDepth && r < 0.14 ? GOLD_ORE
+                    : ironDepth && r < 0.42 ? IRON_ORE
+                    : r < 0.72 ? COPPER_ORE : EMPTY;
         if (ore != EMPTY) put(ax + ox, fy, ore);
-        if (r < 0.06) put(ax + ox, fy - 1, GOLD_ORE);   // taller heaps of treasure
+        if (goldDepth && r < 0.06) put(ax + ox, fy - 1, GOLD_ORE); // taller deep-vault heaps
       }
       put(ax + 2, fy, CRYSTAL); put(ax + w - 3, fy, CRYSTAL);
     };
@@ -326,8 +331,8 @@
       // jittered anchor + hashed size
       int ax = lx * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xA1u, lx, ly) * 6);
       int ay = ly * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xB2u, lx, ly) * 6);
-      int w = 12 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 8); // 12..19
-      int h = 7 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 4);  // 7..10
+      int w = 14 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 8); // 14..21
+      int h = 11 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 5); // 11..15; player-clear interiors
       // Pick an archetype, biased by the cave biome it sits in so a structure fits
       // its surroundings (lush -> overgrown ruin, mushroom -> grove, crystal ->
       // shrine); elsewhere a mix of the neutral kinds.
@@ -342,13 +347,28 @@
         kind = pool[(int)(whash2(sseed ^ 0x9002u, lx, ly) * 6) % 6];
       }
       if (kind == SK_COLONNADE) w += 4;                // halls run wider
-      if (kind == SK_SHRINE) { w = 9 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 6); h = w / 2 + 3; }
-      // Only underground in solid stone, above the sealed-liquid zone: keeps the
-      // carved interior away from loose soil (no avalanche) and from pockets. The
-      // shrine also throws a crystal spire UP, so leave headroom above it too.
-      int surfAbs = terrain.genSurfaceAbs(ax + w / 2);
-      if (ay < surfAbs + 30) continue;
-      if (ay + h > terrain.caveBottomAbs()) continue;
+      if (kind == SK_SHRINE) {
+        w = 9 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 6);
+        h = imax(PLAYER_H + 3, w / 2 + 3);
+      }
+      // Seat the structure on an actual cave floor near its deterministic
+      // candidate. This keeps its reward and doorway on the traversable cave
+      // graph instead of creating an isolated room in arbitrary solid stone.
+      int centerX = ax + w / 2, floorY = INT_MIN;
+      for (int radius = 0; radius <= 30 && floorY == INT_MIN; radius++) {
+        for (int side = 0; side < (radius == 0 ? 1 : 2); side++) {
+          int yy = ay + (radius == 0 ? 0 : (side == 0 ? -radius : radius));
+          if (terrain.genOpenCaveAt(centerX, yy) && !terrain.genOpenCaveAt(centerX, yy + 1)) {
+            floorY = yy;
+            break;
+          }
+        }
+      }
+      if (floorY == INT_MIN) continue;
+      ay = floorY - h + 1;
+      int surfAbs = terrain.genSurfaceAbs(centerX);
+      if (ay < surfAbs + 30 || ay + h > terrain.caveBottomAbs()) continue;
+      if (kind == SK_FORGE && floorY - surfAbs < 180) kind = SK_HOUSE;
       switch (kind) {
         case SK_HOUSE:     stampHouse(ax, ay, w, h, lx, ly); break;
         case SK_VAULT:     stampVault(ax, ay, w, h, lx, ly); break;
@@ -358,6 +378,20 @@
         case SK_OVERGROWN: stampOvergrown(ax, ay, w, h, lx, ly); break;
         case SK_MUSHGROVE: stampMushGrove(ax, ay, w, h, lx, ly); break;
       }
+
+      // Open one full-height side door and connect it to the first nearby cave
+      // cell. The containing cavern normally starts immediately outside the
+      // facade; the bounded search also handles thick noise walls.
+      int dir = h2(0xAACC355u, lx, ly) < 0.5 ? -1 : 1;
+      int edgeX = dir < 0 ? ax : ax + w - 1;
+      int doorBottom = ay + h - 2;
+      int doorTop = doorBottom - PLAYER_H + 1;
+      int reach = 2;
+      for (int d = 1; d <= 28; d++) {
+        if (terrain.genOpenCaveAt(edgeX + dir * d, doorBottom)) { reach = d; break; }
+      }
+      for (int d = 0; d <= reach; d++)
+        for (int py = doorTop; py <= doorBottom; py++) put(edgeX + dir * d, py, EMPTY);
     }
   }
   // Deterministic ocean gardens rooted in the background seabed. VINE is used as
@@ -535,17 +569,25 @@
       int wx = gx * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x11u, gx, gy) * FEATURE_LATTICE);
       int wy = gy * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x22u, gx, gy) * FEATURE_LATTICE);
       int caveBiome = terrain.genCaveBiomeAt(wx, wy);
+      int caveTop = terrain.genCaveTopAbs(wx);
+      double depth01 = std::fmax(0.0, std::fmin(1.0,
+        (double)(wy - caveTop) / (double)imax(1, terrain.caveBottomAbs() - caveTop)));
       double h = whash2(sseed, gx, gy);
       double lavaH = whash2(sseed ^ 0x55AAu, gx, gy);
       int floorY = wy, ceilY = wy;
       bool hasFloor = findFloor(wx, wy, floorY), hasCeil = findCeiling(wx, wy, ceilY);
 
+      // Hazard pressure rises with depth. The first fifth of the cave network is
+      // deliberately forgiving; below it, danger ramps continuously rather than
+      // appearing at one hard world-Y boundary.
+      double hazardDepth = std::fmax(0.0, (depth01 - 0.18) / 0.82);
+
       // Lava pools are the main light source in the caves that grow nothing
       // luminous of their own: plain and (to a lesser extent) mushroom/lush caves
       // get them far more often. Crystal caves stay lava-light — they glow already.
-      double lavaThr = caveBiome == CAVE_DEFAULT ? 0.0100
+      double lavaThr = (caveBiome == CAVE_DEFAULT ? 0.0100
                      : caveBiome == CAVE_CRYSTAL ? 0.0012
-                     : 0.0034;   // mushroom / lush: brighten them up
+                     : 0.0034) * (hazardDepth * 2.50);
       if (hasFloor && lavaH < lavaThr) {
         stampLavaBasin(wx, floorY, gx, gy);
         continue;
@@ -555,16 +597,17 @@
       // are richest; crystal caves are nearly methane-free. Keeping this sparse
       // avoids filling every generated window with permanently active gas.
       double methaneH = whash2(sseed ^ 0x6A52u, gx, gy);
-      double methaneThr = caveBiome == CAVE_MUSHROOM ? 0.009
+      double methaneThr = (caveBiome == CAVE_MUSHROOM ? 0.009
                           : caveBiome == CAVE_DEFAULT ? 0.006
-                          : caveBiome == CAVE_LUSH ? 0.002 : 0.001;
+                          : caveBiome == CAVE_LUSH ? 0.002 : 0.001) * (hazardDepth * 1.30);
       if (hasCeil && methaneH < methaneThr) {
         stampMethanePocket(wx, ceilY, gx, gy);
         continue;
       }
 
       if (caveBiome == CAVE_CRYSTAL) {
-        if (hasFloor && h < 0.030) stampCrystalAcidBasin(wx, floorY, gx, gy);   // sparse, big lakes
+        double acidThreshold = hazardDepth > 0 ? 0.003 + hazardDepth * 0.038 : 0.0;
+        if (hasFloor && h < acidThreshold) stampCrystalAcidBasin(wx, floorY, gx, gy);
         else if (hasFloor && h < 0.30) stampSaltPile(wx, floorY, gx, gy);
         else if ((hasFloor || hasCeil) && h < 0.40) {
           // GIANT crystal cluster: a slender central spire hugged by a couple of
@@ -690,10 +733,9 @@
   // leaving the surface seed shared. fg passes 0, bg passes 1 (+ isBackground).
   void initInfiniteLayerState(uint32_t seed, uint32_t layerSalt, bool background) {
     L->infinite = true; L->isBackground = background; L->worldSeed = seed;
-    L->gSurfAmp = imax(20, (int)std::floor(rows * 0.17));
     L->gSurfBase = imax(8, (int)std::floor(rows * 0.22));
-    L->gSeaRow = (int)std::floor(L->gSurfAmp * 0.35); // ABSOLUTE sea level (worldY); valleys below flood
-    L->gSoil = imax(2, (int)std::floor(rows * 0.012));
+    L->gSeaRow = TerrainGen::SEA_LEVEL;
+    L->gSoil = TerrainGen::BASE_SOIL_DEPTH;
     L->gCaveSeed = (seed ^ 0x5bd1e995u) + layerSalt * 0x9e3779b9u;
     L->gPocketSeed = (seed ^ 0xC0FFEE11u) + layerSalt * 0x85ebca6bu;
     L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
@@ -759,21 +801,89 @@
     }
     list.resize(w);
   }
-  // ---- 2D tile chunk store: full sim-state persistence keyed by absolute tiles ----
-  static inline int64_t tileKey(int tx, int ty) { return ((int64_t)tx << 32) | (uint32_t)ty; }
+  // ---- 2D tile chunk store: changed sim-state keyed by absolute tiles --------
+  static inline int64_t tileKey(int tx, int ty) {
+    return (int64_t)(((uint64_t)(uint32_t)tx << 32) | (uint32_t)ty);
+  }
+  void markWorldTileDirty(int k) {
+    if (!L->infinite || L->storageRole == ESR_PRESENTATION || k < 0 || k >= cols * rows) return;
+    int y = k / cols, x = k - y * cols;
+    int wx = L->worldOffsetX + x, wy = L->worldOffsetY + y;
+    L->dirtyWorldTiles.insert(tileKey(floorDiv(wx, CHUNK_SIZE), floorDiv(wy, CHUNK_SIZE)));
+  }
+  void markWorldRectDirty(int x0, int y0, int x1, int y1) {
+    if (!L->infinite || L->storageRole == ESR_PRESENTATION || x1 < x0 || y1 < y0) return;
+    int tx0 = floorDiv(L->worldOffsetX + x0, CHUNK_SIZE);
+    int tx1 = floorDiv(L->worldOffsetX + x1, CHUNK_SIZE);
+    int ty0 = floorDiv(L->worldOffsetY + y0, CHUNK_SIZE);
+    int ty1 = floorDiv(L->worldOffsetY + y1, CHUNK_SIZE);
+    for (int ty = ty0; ty <= ty1; ty++)
+      for (int tx = tx0; tx <= tx1; tx++) L->dirtyWorldTiles.insert(tileKey(tx, ty));
+  }
+  static void encodeTile(const uint8_t* raw, std::vector<uint8_t>& out) {
+    std::vector<uint8_t> packed;
+    packed.reserve(CHUNK_SIZE * 4);
+    const int count = CHUNK_SIZE * CHUNK_SIZE;
+    for (int i = 0; i < count;) {
+      int run = 1;
+      while (i + run < count && raw[i + run] == raw[i] && run < 255) run++;
+      packed.push_back((uint8_t)run);
+      packed.push_back(raw[i]);
+      i += run;
+    }
+    if ((int)packed.size() < count) out.swap(packed);
+    else out.assign(raw, raw + count);
+  }
+  static bool decodeTile(const std::vector<uint8_t>& stored, uint8_t* out) {
+    const int count = CHUNK_SIZE * CHUNK_SIZE;
+    if ((int)stored.size() == count) {
+      memcpy(out, stored.data(), count);
+      return true;
+    }
+    int cursor = 0;
+    if (stored.empty() || (stored.size() & 1)) return false;
+    for (size_t i = 0; i < stored.size(); i += 2) {
+      int run = stored[i];
+      if (run <= 0 || cursor + run > count) return false;
+      memset(out + cursor, stored[i + 1], (size_t)run);
+      cursor += run;
+    }
+    return cursor == count;
+  }
+  size_t worldStoreBytes() const {
+    size_t total = 0;
+    auto add = [&](const Layer& lay) {
+      for (const auto& entry : lay.tileStore) total += entry.second.size();
+      for (const auto& entry : lay.prefetchStore) total += entry.second.size();
+    };
+    add(fg); add(bg);
+    return total;
+  }
+  int worldStoredTileCount() const { return (int)(fg.tileStore.size() + bg.tileStore.size()); }
+  int worldPrefetchTileCount() const { return (int)(fg.prefetchStore.size() + bg.prefetchStore.size()); }
   // Only WHOLE 32x32 tiles fully inside the buffer are persisted; a partial edge
   // tile (when cols/rows aren't chunk-multiples — e.g. the headless tests) is
   // skipped and just regenerates. The game's buffer is chunk-rounded, so every
   // tile is whole and persistence is complete.
   bool wholeTile(int tx, int ty) { return tx >= 0 && ty >= 0 && tx + CHUNK_SIZE <= cols && ty + CHUNK_SIZE <= rows; }
   void csSaveTiles(int bx0, int by0, int w, int h) { // uses the CURRENT offset (leaving band)
+    std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> raw;
     for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
       for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) continue;
         int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
-        auto& buf = L->tileStore[tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT)];
-        if ((int)buf.size() != CHUNK_SIZE * CHUNK_SIZE) buf.resize((size_t)CHUNK_SIZE * CHUNK_SIZE);
-        for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, L->grid + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+        int64_t key = tileKey(floorDiv(awx, CHUNK_SIZE), floorDiv(awy, CHUNK_SIZE));
+        for (int r = 0; r < CHUNK_SIZE; r++)
+          memcpy(raw.data() + r * CHUNK_SIZE,
+                 L->grid + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+        if (!L->dirtyWorldTiles.count(key)) {
+          L->tileStore.erase(key);
+          if (L->prefetchStore.find(key) == L->prefetchStore.end())
+            encodeTile(raw.data(), L->prefetchStore[key]);
+          continue;
+        }
+        L->prefetchStore.erase(key);
+        encodeTile(raw.data(), L->tileStore[key]);
       }
   }
   bool csTilesAllPresent(int bx0, int by0, int w, int h) { // entering band, NEW offset
@@ -781,19 +891,31 @@
       for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) return false; // a partial tile is never persisted -> must regenerate
         int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
-        if (L->tileStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT)) == L->tileStore.end()) return false;
+        int64_t key = tileKey(floorDiv(awx, CHUNK_SIZE), floorDiv(awy, CHUNK_SIZE));
+        if (L->tileStore.find(key) == L->tileStore.end() &&
+            L->prefetchStore.find(key) == L->prefetchStore.end()) return false;
       }
     return true;
   }
   void csLoadTiles(int bx0, int by0, int w, int h) { // overlay saved tiles (NEW offset); missing left as-is
+    std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> raw;
     for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
       for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) continue;
         int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
-        auto it = L->tileStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT));
-        if (it == L->tileStore.end()) continue;
-        const uint8_t* buf = it->second.data();
-        for (int r = 0; r < CHUNK_SIZE; r++) { size_t d = (size_t)(ty + r) * cols + tx; memcpy(L->grid + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); memcpy(L->next + d, buf + (size_t)r * CHUNK_SIZE, CHUNK_SIZE); }
+        int64_t key = tileKey(floorDiv(awx, CHUNK_SIZE), floorDiv(awy, CHUNK_SIZE));
+        auto persistent = L->tileStore.find(key);
+        auto prefetched = L->prefetchStore.find(key);
+        const std::vector<uint8_t>* stored = persistent != L->tileStore.end() ? &persistent->second
+          : (prefetched != L->prefetchStore.end() ? &prefetched->second : nullptr);
+        if (!stored || !decodeTile(*stored, raw.data())) continue;
+        for (int r = 0; r < CHUNK_SIZE; r++) {
+          size_t d = (size_t)(ty + r) * cols + tx;
+          memcpy(L->grid + d, raw.data() + r * CHUNK_SIZE, CHUNK_SIZE);
+          memcpy(L->next + d, raw.data() + r * CHUNK_SIZE, CHUNK_SIZE);
+        }
+        if (persistent != L->tileStore.end()) L->dirtyWorldTiles.insert(key);
+        if (prefetched != L->prefetchStore.end()) L->prefetchStore.erase(prefetched);
       }
   }
   void csSaveBodiesLeaving(int bx0, int by0, int w, int h) { // CURRENT offset
@@ -801,7 +923,8 @@
     for (Body* b : L->bodies) {
       if (b->px >= bx0 && b->px < bx0 + w && b->py >= by0 && b->py < by0 + h) {
         double awx = L->worldOffsetX + b->px, awy = L->worldOffsetY + b->py;
-        L->bodyStore[tileKey((int)std::floor(awx) >> CHUNK_SHIFT, (int)std::floor(awy) >> CHUNK_SHIFT)].push_back({b, {awx, awy}});
+        L->bodyStore[tileKey(floorDiv((int)std::floor(awx), CHUNK_SIZE),
+                             floorDiv((int)std::floor(awy), CHUNK_SIZE))].push_back({b, {awx, awy}});
       } else staying.push_back(b);
     }
     L->bodies = std::move(staying);
@@ -810,7 +933,8 @@
     for (int ty = by0; ty < by0 + h; ty += CHUNK_SIZE)
       for (int tx = bx0; tx < bx0 + w; tx += CHUNK_SIZE) {
         int awx = L->worldOffsetX + tx, awy = L->worldOffsetY + ty;
-        auto it = L->bodyStore.find(tileKey(awx >> CHUNK_SHIFT, awy >> CHUNK_SHIFT));
+        auto it = L->bodyStore.find(tileKey(floorDiv(awx, CHUNK_SIZE),
+                                            floorDiv(awy, CHUNK_SIZE)));
         if (it == L->bodyStore.end()) continue;
         for (auto& e : it->second) { Body* b = e.first; b->px = e.second.first - L->worldOffsetX; b->py = e.second.second - L->worldOffsetY; L->bodies.push_back(b); }
         L->bodyStore.erase(it);
@@ -822,16 +946,16 @@
   // x2 layers) is the dominant cause of the periodic ~1/sec pan hitch when exploring
   // NEW terrain. But the entering band is OFF-SCREEN (the shift fires `margin` cells
   // before the edge and slides a whole chunk), so there's ~1s of runway to build it.
-  // So we pre-generate the upcoming band's tiles into the tileStore a slice per
-  // frame; when the shift fires, csTilesAllPresent is already true and fillRect is
-  // skipped -> only the cheap csLoadTiles memcpy runs on that frame.
+  // So we pre-generate the upcoming band's tiles into a bounded baseline cache a
+  // slice per frame; when the shift fires, csTilesAllPresent is already true and
+  // fillRect is skipped -> only the cheap csLoadTiles memcpy runs on that frame.
   //
   // SAFETY (multiplayer / determinism): prefetch changes only WHEN worldgen runs,
   // never WHAT it produces. Tiles are generated by the SAME fillTerrain/fillTrees
   // keyed on ABSOLUTE coords, so a prefetched tile is byte-identical to fillRect's
   // for that position regardless of timing. Worst case is a cache MISS (graceful
   // fallback to the synchronous fillRect), never corruption. It writes only to the
-  // side-cache tileStore; the live sim buffers are untouched.
+  // side-cache; the live sim buffers are untouched.
 
   // The entering band's buffer rect for a coming shift (mirrors shiftLayer).
   void pfBand(int dx, int dy, int& ex0, int& ey0, int& ew, int& eh) {
@@ -839,14 +963,17 @@
     if (dx) { eh = rows; ey0 = 0; ew = s; ex0 = dx > 0 ? cols - s : 0; }
     else    { ew = cols; ex0 = 0; eh = s; ey0 = dy > 0 ? rows - s : 0; }
   }
-  // Is every whole tile of a layer's entering band already in its tileStore (saved
-  // edits or a prior prefetch)? A partial edge tile (non-chunk-multiple buffer) is
+  // Is every whole tile of a layer's entering band already cached (saved edits or
+  // a prior prefetch)? A partial edge tile (non-chunk-multiple buffer) is
   // never persisted, so such a band can't be all-present -> prefetch is a no-op there.
   bool pfBandCached(Layer* Lx, int futOffX, int futOffY) {
     for (int ty = pfEy0; ty < pfEy0 + pfEh; ty += CHUNK_SIZE)
       for (int tx = pfEx0; tx < pfEx0 + pfEw; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) return false;
-        if (Lx->tileStore.find(tileKey((futOffX + tx) >> CHUNK_SHIFT, (futOffY + ty) >> CHUNK_SHIFT)) == Lx->tileStore.end()) return false;
+        int64_t key = tileKey(floorDiv(futOffX + tx, CHUNK_SIZE),
+                              floorDiv(futOffY + ty, CHUNK_SIZE));
+        if (Lx->tileStore.find(key) == Lx->tileStore.end() &&
+            Lx->prefetchStore.find(key) == Lx->prefetchStore.end()) return false;
       }
     return true;
   }
@@ -854,14 +981,18 @@
   // present (never clobber a saved/edited tile). Keyed by FUTURE absolute coords so
   // the shift's csLoadTiles (which uses the post-shift offset) finds them.
   void pfStoreTiles(Layer* Lx, int futOffX, int futOffY) {
+    std::array<uint8_t, CHUNK_SIZE * CHUNK_SIZE> raw;
     for (int ty = pfEy0; ty < pfEy0 + pfEh; ty += CHUNK_SIZE)
       for (int tx = pfEx0; tx < pfEx0 + pfEw; tx += CHUNK_SIZE) {
         if (!wholeTile(tx, ty)) continue;
-        int64_t key = tileKey((futOffX + tx) >> CHUNK_SHIFT, (futOffY + ty) >> CHUNK_SHIFT);
+        int64_t key = tileKey(floorDiv(futOffX + tx, CHUNK_SIZE),
+                              floorDiv(futOffY + ty, CHUNK_SIZE));
         if (Lx->tileStore.find(key) != Lx->tileStore.end()) continue;
-        auto& buf = Lx->tileStore[key];
-        buf.resize((size_t)CHUNK_SIZE * CHUNK_SIZE);
-        for (int r = 0; r < CHUNK_SIZE; r++) memcpy(buf.data() + (size_t)r * CHUNK_SIZE, pfGrid.data() + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+        if (Lx->prefetchStore.find(key) != Lx->prefetchStore.end()) continue;
+        for (int r = 0; r < CHUNK_SIZE; r++)
+          memcpy(raw.data() + r * CHUNK_SIZE,
+                 pfGrid.data() + (size_t)(ty + r) * cols + tx, CHUNK_SIZE);
+        encodeTile(raw.data(), Lx->prefetchStore[key]);
       }
   }
   // Run one terrain slice for layer Lx into the pfGrid scratch at the future offset.
@@ -887,7 +1018,7 @@
     Lx->grid = sGrid; L = sL;
     return done;
   }
-  // Trees over the whole background band, then slice the band into the tileStore.
+  // Complete the band, then slice it into the disposable baseline cache.
   void pfFinalizeLayer(Layer* Lx, int futOffX, int futOffY) {
     Layer* sL = L; uint8_t* sGrid = Lx->grid;
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
@@ -905,6 +1036,11 @@
     pfStoreTiles(Lx, futOffX, futOffY);
   }
   void pfStartTarget(int dx, int dy) {
+    // Keep a few recent pristine bands for immediate backtracking, but never let
+    // disposable baseline state grow with total exploration distance.
+    size_t baselineLimit = (size_t)chunkCols * chunkRows * 4;
+    if (fg.prefetchStore.size() > baselineLimit) fg.prefetchStore.clear();
+    if (bg.prefetchStore.size() > baselineLimit) bg.prefetchStore.clear();
     pfDx = dx; pfDy = dy; pfCursor = 0;
     if ((int)pfGrid.size() != cols * rows) {
       if ((size_t)cols * rows < pfGrid.size()) std::vector<uint8_t>().swap(pfGrid);
@@ -967,7 +1103,7 @@
     // A partial prefetch is tied to the current absolute (X,Y) origin. Even a
     // perpendicular shift changes that target: retaining its completed slices
     // would mix the old origin with newly generated slices and cache a vertically
-    // discontinuous foreground band. Finished bands are already in tileStore, so
+    // discontinuous foreground band. Finished bands are already cached, so
     // discarding only the in-flight scratch state is always safe.
     pfDx = pfDy = 0; pfStage = PF_DONE; pfCursor = 0;
     worldShiftCount++;
@@ -1164,6 +1300,8 @@
     // Keep worldgen amplitude/seeds (set at first init); only buffers resize.
     fg.reallocSim(cols, rows, chunkCols, chunkRows);
     bg.reallocSim(cols, rows, chunkCols, chunkRows);
+    fg.prefetchStore.clear();
+    bg.prefetchStore.clear();
     fg.worldOffsetX = newOffX; fg.worldOffsetY = newOffY;
     bg.worldOffsetX = newOffX; bg.worldOffsetY = newOffY;
 

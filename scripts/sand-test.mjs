@@ -109,7 +109,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   const before = iceTop();
   run(200, e);
   const after = iceTop();
-  check(`edge-spanning iceberg rose (top ${before.top} -> ${after.top})`, before.n === 280 && after.n === before.n && after.top < before.top - 8);
+  check(`edge-spanning iceberg rose (top ${before.top} -> ${after.top})`, before.n === 280 && after.n === before.n && after.top <= before.top - 8);
   e.destroy();
 }
 

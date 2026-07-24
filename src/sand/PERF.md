@@ -14,6 +14,8 @@ mapping, and pan stability.
 | `node scripts/bench-sand.mjs --checksum-only` | Fast behavior check without timing. |
 | `node scripts/bench-sand.mjs --scenario all --repeat 3` | Run the broader gameplay workload sweep. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, and pan instability. |
+| `npm run test:worldgen` | Check canonical world coordinates, cave reachability, progression, and layer density. |
+| `npm run worldgen:atlas` | Render the foreground/background topology atlas to `bench/worldgen-atlas.png`. |
 | `npm run bench:tnt` | Profile TNT chains, cave carving, grounding, debris, and aftermath. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
@@ -77,6 +79,11 @@ component registration, and generation/restoration. Browser presentation exposes
   exposed edge bands; lighting flood queues carry their x coordinate so the hot
   propagation loop does not divide every visited cell index by the grid width.
 - Static animated materials repaint only visible chunks that contain animation.
+- Direct-mapped terrain-query caches avoid repeating surface, climate, cave, and
+  cave-plan noise within fills and diagnostic scans.
+- Streaming stores only changed tiles persistently. Recent pristine bands use a
+  bounded baseline cache, and both stores choose compact RLE per tile when it is
+  smaller than the raw payload.
 
 These optimizations preserve deterministic output except the accepted cave-blast
 carry change: removing redundant dirty rows changes shared-RNG consumption in the

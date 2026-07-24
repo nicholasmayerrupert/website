@@ -50,6 +50,28 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
+Worldgen version 2 is canonical in absolute coordinates: viewport size changes
+only the loaded window, never terrain, biome, cave, structure, or resource
+placement for a seed. Continuous temperature, moisture, elevation, and
+ruggedness fields select surface biomes; narrow deterministic ecotones blend
+their soil and vegetation instead of creating hard seams.
+
+Foreground caves combine noise caverns with a player-clear macro-region
+backbone from the surface to the deep band. Underground structures are seated on
+that traversable graph and receive a full-height side passage. The background
+uses a thinner, partial backbone and a much sparser cave field, providing visual
+depth and cross-layer transfer routes without duplicating foreground volume.
+Coal and copper have compact starter lodes near the original spawn; iron, gold,
+and environmental hazards unlock progressively deeper.
+
+Only changed simulation tiles enter persistent streaming storage. Pristine
+generated and prefetched tiles use RLE when useful and live in a bounded
+disposable cache, so ordinary exploration does not grow storage with total
+distance. Use `npm run test:worldgen` for canonical-coordinate, connectivity,
+progression, reachability, and layer-density checks; `npm run test:prefetch`
+covers deterministic restoration and storage bounds. `npm run worldgen:atlas`
+writes `bench/worldgen-atlas.png`, with foreground above background.
+
 Zoom changes both the visible cell count and the loaded-window dimensions. A
 larger zoomed-out window costs more to simulate. The effective zoom floor is
 limited by the device's WebGL texture dimensions rather than a fixed cell cap.

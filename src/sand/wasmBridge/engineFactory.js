@@ -219,9 +219,16 @@ export function initSandWasm() {
         prefetchAdvance: c('engine_prefetch_advance', null, ['number', 'number', 'number', 'number', 'number']),
         shiftFillHit: c('engine_shift_fill_hit', 'number', ['number']),
         shiftFillMiss: c('engine_shift_fill_miss', 'number', ['number']),
+        worldStoreBytes: c('engine_world_store_bytes', 'number', ['number']),
+        worldStoredTileCount: c('engine_world_stored_tile_count', 'number', ['number']),
+        worldPrefetchTileCount: c('engine_world_prefetch_tile_count', 'number', ['number']),
         worldOffsetX: c('engine_world_offset_x', 'number', ['number']),
         worldOffsetY: c('engine_world_offset_y', 'number', ['number']),
         worldSurfaceAt: c('engine_world_surface_at', 'number', ['number', 'number']),
+        worldSurfaceAbsAt: c('engine_world_surface_abs_at', 'number', ['number', 'number']),
+        worldBiomeAt: c('engine_world_biome_at', 'number', ['number', 'number']),
+        worldCaveBiomeAt: c('engine_world_cave_biome_at', 'number', ['number', 'number', 'number']),
+        worldIsCaveAt: c('engine_world_is_cave_at', 'number', ['number', 'number', 'number', 'number']),
         destroy: c('engine_destroy', null, ['number']),
         step: c('engine_step', 'number', ['number']),
         stepActors: c('engine_step_actors', 'number', ['number']),
@@ -830,6 +837,10 @@ const renderStrides = Object.freeze({
     getWorldOffsetX() { return M.worldOffsetX(ptr); },
     getWorldOffsetY() { return M.worldOffsetY(ptr); },
     worldSurfaceAt(worldX) { return M.worldSurfaceAt(ptr, worldX); },
+    worldSurfaceAbsAt(worldX) { return M.worldSurfaceAbsAt(ptr, worldX); },
+    worldBiomeAt(worldX) { return M.worldBiomeAt(ptr, worldX); },
+    worldCaveBiomeAt(worldX, worldY) { return M.worldCaveBiomeAt(ptr, worldX, worldY); },
+    worldIsCaveAt(layer, worldX, worldY) { return M.worldIsCaveAt(ptr, layer ? 1 : 0, worldX, worldY) === 1; },
     shiftWorld(dx) { M.shiftWorld(ptr, dx); },
     shiftWorldXY(dx, dy) { M.shiftWorldXY(ptr, dx, dy); },
     maybeShiftWorldV(cameraCellY, visibleRows, marginRows) { return M.maybeShiftWorldV(ptr, cameraCellY, visibleRows, marginRows); },
@@ -841,6 +852,13 @@ const renderStrides = Object.freeze({
     // upcoming stream-in band given the camera + viewport, without shifting/GL.
     prefetchAdvance(camCellX, camCellY, visCols, visRows) { M.prefetchAdvance(ptr, camCellX | 0, camCellY | 0, visCols | 0, visRows | 0); },
     getShiftFillStats() { return { hit: M.shiftFillHit(ptr), miss: M.shiftFillMiss(ptr) }; },
+    getWorldStoreStats() {
+      return {
+        bytes: M.worldStoreBytes(ptr),
+        persistentTiles: M.worldStoredTileCount(ptr),
+        prefetchTiles: M.worldPrefetchTileCount(ptr),
+      };
+    },
     getHeapBytes() { return mod.HEAPU8.length; }, // wasm linear-memory size (debug)
 
     // Free rigid bodies.

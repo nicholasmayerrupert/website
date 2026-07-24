@@ -750,6 +750,10 @@
       }
       if (cw == 0) continue;
       cs.resize(cw); comp.yMax = yMax; comp.cacheDirty = true;
+      // The carry history is coordinate-bearing state for the ping-pong
+      // buffers. Rebuild its staying footprint from these already-translated
+      // cells instead of performing a second full index-translation pass.
+      L->prevCompCells.insert(L->prevCompCells.end(), cs.begin(), cs.end());
       if (w != r) list[w] = std::move(comp);
       w++;
     }
@@ -1039,6 +1043,7 @@
     else for (int y = ey0; y < ey0 + s; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; }
     // 7) re-index components, register the entering band.
     _t = emscripten_get_now();
+    L->prevCompCells.clear();
     translateComponents(L->stoneComponents, dx, dy);
     translateComponents(L->plantComponents, dx, dy);
     translateComponents(L->iceComponents, dx, dy);

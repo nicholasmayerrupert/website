@@ -221,6 +221,46 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   supported.destroy();
 }
 
+// 6d. Streaming translates both ping-pong grids and the registered components.
+// The previous-component footprint used by carry must move with them as well:
+// otherwise a falling streamed tree can leave an unregistered crown pixel that
+// reaches the presentation mirror for one frame before a later dirty rect clears it.
+{
+  console.log('presentation diff: streamed falling trees clear vacated crowns');
+  const opts = { cols: 160, rows: 100, worldSeed: 17, sinksOn: false, infinite: true };
+  const host = createEngineWasm({ ...opts, storageRole: 'authority' });
+  const mirror = createEngineWasm({ ...opts, storageRole: 'presentation' });
+  mirror.applyWorldMirror(host.serializeWorld(), host.getWorldOffsetX(), host.getWorldOffsetY());
+  host.consumeReplicaDirty(); mirror.resetDirty();
+
+  host.shiftWorldXY(-32, 0);
+  mirror.applyWorldMirror(host.serializeWorld(), host.getWorldOffsetX(), host.getWorldOffsetY());
+  host.consumeReplicaDirty(); mirror.resetDirty();
+
+  let mismatch = null, pineMoved = false;
+  let previousBg = Uint8Array.from(host.getGridBg());
+  const pineBefore = countIn(previousBg, MAT.PINE_NEEDLES);
+  for (let i = 0; i < 12 && !mismatch; i++) {
+    host.step(16 * (i + 1));
+    const currentBg = host.getGridBg();
+    pineMoved = pineMoved || currentBg.some((m, k0) =>
+      m !== previousBg[k0] && (m === MAT.PINE_NEEDLES || previousBg[k0] === MAT.PINE_NEEDLES));
+    mirror.applyDiffMirror(host.serializeDiff());
+    host.consumeReplicaDirty();
+    const grids = [[host.getGrid(), mirror.getGrid(), 'fg'], [currentBg, mirror.getGridBg(), 'bg']];
+    for (const [authoritative, presented, layer] of grids) {
+      const cell = authoritative.findIndex((v, k0) => v !== presented[k0]);
+      if (cell >= 0) { mismatch = { tick: i + 1, layer, cell, authoritative: authoritative[cell], presented: presented[cell] }; break; }
+    }
+    previousBg = Uint8Array.from(currentBg);
+  }
+  check('streamed fixture contains pine foliage', pineBefore > 0, `(${pineBefore})`);
+  check('streamed pine foliage moves after the shift', pineMoved);
+  check('streamed falling tree diffs keep the presentation grid synchronized',
+    mismatch === null, mismatch && `(${JSON.stringify(mismatch)})`);
+  host.destroy(); mirror.destroy();
+}
+
 // 7. RMB paints into the background; LMB into the foreground.
 {
   console.log('RMB -> background, LMB -> foreground');

@@ -394,8 +394,8 @@ void ProjectileSystem::updateProjectiles() {
   };
   auto blocksClusterCarrier = [&](double px, double py) {
     // The carrier is rendered roughly 2.5x1.8 cells. Sample a compact rounded
-    // envelope so that the larger silhouette splits before sinking into terrain
-    // or liquid.
+    // envelope so that the larger silhouette bounces before sinking into
+    // terrain or liquid.
     static constexpr double OFFSETS[9][2] = {
       {0, 0}, {-.95, 0}, {.95, 0}, {0, -.72}, {0, .72},
       {-.67, -.51}, {.67, -.51}, {-.67, .51}, {.67, .51},
@@ -602,31 +602,50 @@ void ProjectileSystem::updateProjectiles() {
 
     if (p.kind == PK_CLUSTER_BOMB && p.charge < .5) {
       bool outside = p.px < 1 || p.px >= E.cols - 1 || p.py < 1 || p.py >= E.rows - 1;
-      bool impact = false;
+      bool actorImpact = false;
       if (!outside) {
         double distance = std::hypot(p.vx, p.vy);
         int steps = imax(1, (int)std::ceil(distance / PROJECTILE_SWEEP_STEP));
         double sx = p.vx / steps, sy = p.vy / steps;
+        bool blockX = false, blockY = false;
         for (int step = 0; step < steps; step++) {
-          double nx = p.px + sx, ny = p.py + sy;
+          double nx = p.px + (blockX ? 0 : sx);
+          double ny = p.py + (blockY ? 0 : sy);
           if (nx < 1 || nx >= E.cols - 1 || ny < 1 || ny >= E.rows - 1) {
             outside = true;
             break;
           }
-          if (blocksClusterCarrier(nx, ny) ||
-              hitsCreature(nx, ny, 1.35, p.owner) ||
+          // Actor contact has priority when the carrier simultaneously brushes
+          // nearby terrain (for example, hitting a grounded target).
+          if (hitsCreature(nx, ny, 1.35, p.owner) ||
               hitsPlayer(nx, ny, 1.35, p.owner)) {
-            impact = true;
+            p.px = nx; p.py = ny;
+            actorImpact = true;
             break;
           }
-          p.px = nx; p.py = ny;
+          bool hitX = !blockX && blocksClusterCarrier(nx, p.py);
+          bool hitY = !blockY && blocksClusterCarrier(p.px, ny);
+          // Resolve a diagonal corner that neither axis probe reaches alone.
+          if (!hitX && !hitY && blocksClusterCarrier(nx, ny)) {
+            hitX = !blockX;
+            hitY = !blockY;
+          }
+          if (hitX) {
+            p.vx = -p.vx * CLUSTER_BOUNCE_LOCAL;
+            blockX = true;
+          } else p.px = nx;
+          if (hitY) {
+            p.vy = -p.vy * CLUSTER_BOUNCE_LOCAL;
+            p.vx *= CLUSTER_FRICTION_LOCAL;
+            blockY = true;
+          } else p.py = ny;
         }
-        if (!impact && !outside) {
+        if (!actorImpact && !outside) {
           p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL * .62);
           p.rotation += p.vx * .18;
         }
       }
-      if (!outside && (impact || --p.fuse <= 0)) {
+      if (!outside && (actorImpact || --p.fuse <= 0)) {
         splitCluster(p);
         continue;
       }

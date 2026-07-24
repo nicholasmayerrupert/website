@@ -151,7 +151,8 @@ lock, and then erase a player-traversable line through both simulated layers.
 Captured bore cannons deal 70 damage to creatures while preserving the
 sentinel's existing damage against players. Caustic mortarmen lob large,
 double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
-carriers that split on impact into sixteen independently scattering
+carriers that bounce off terrain and split on actor impact or fuse expiry into
+sixteen independently scattering
 mini-dynamites with distinct 0.1–0.37 second fuses and 18-cell blasts. Each
 bomblet contributes reduced actor damage independently instead of losing most
 of the volley to the ordinary explosion hurt cooldown; and

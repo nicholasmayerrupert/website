@@ -115,7 +115,7 @@ export const MATERIALS = [
   { id: 34, name: 'GUNPOWDER', kind: KIND.POWDER, materialClass: MC.SOLID, density: 1.2, looseSorted: true, mobility: 1, transparency: 0, color: 0xc84a4a52, textureAmp: 6, durability: 1, renderAnim: 'none' },
   { id: 35, name: 'TNT', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.6, looseSorted: false, mobility: 0, transparency: 0, color: 0xc82838cc, textureAmp: 4, durability: 3, renderAnim: 'none' },
   { id: 36, name: 'DEBRIS', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xb8424852, textureAmp: 8, durability: 8, renderAnim: 'none' },
-  { id: 37, name: 'CRYSTAL', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xd8fff4e8, textureAmp: 7, durability: 10, renderAnim: 'none' },
+  { id: 37, name: 'CRYSTAL', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 2.5, looseSorted: false, mobility: 0, transparency: 0, color: 0xd8fff4e8, textureAmp: 7, durability: 8, renderAnim: 'none' },
   { id: 38, name: 'MYCELIUM', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.2, looseSorted: false, mobility: 0, transparency: 0, color: 0xc8643255, textureAmp: 12, durability: 4, renderAnim: 'none' },
   { id: 39, name: 'MYCELIUM_SPORE', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 1.1, looseSorted: false, mobility: 0, transparency: 0, color: 0xdf96547d, textureAmp: 8, durability: 5, renderAnim: 'none' },
   { id: 40, name: 'GLOWBERRY', kind: KIND.COMPONENT, materialClass: MC.RIGID, density: 0.4, looseSorted: false, mobility: 0, transparency: 0, color: 0xd81e9bff, textureAmp: 8, durability: 1, renderAnim: 'none' },

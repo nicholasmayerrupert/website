@@ -461,17 +461,28 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     78, FLOOR - 30, 'cluster wasp',
   );
   const slot = collectAndEquipWeapon(e, player, ITEM_KIND.CLUSTER_LAUNCHER, drop, 'cluster launcher');
+  const equippedPose = e.getPlayer(player);
+  e.setPlayerState(player, {
+    ...equippedPose, x: 70, y: FLOOR - equippedPose.h,
+    vx: 0, vy: 0, grounded: true,
+  });
   const stoneBefore = countStone(e.getGrid());
-  e.setPlayerInput(player, { bits: PI_PRIMARY, aimX: 78, aimY: FLOOR - 1, seq: 1 });
+  const terrainAimX = 110;
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: terrainAimX, aimY: FLOOR - 1, seq: 1,
+  });
   e.stepActors();
   check('a launched cluster carrier consumes exactly one launcher round',
     e.getInventory(player).slots[slot]?.count === 14);
   const launchedCarrier = e.getProjectiles().find((p) =>
     p.kind === PROJECTILE_KIND.CLUSTER_BOMB && p.charge < 0.5);
   const blastVictim = e.spawnPlayer(145, FLOOR - 8);
-  e.setPlayerInput(player, { bits: 0, aimX: 78, aimY: FLOOR - 1, seq: 2 });
+  e.setPlayerInput(player, {
+    bits: 0, aimX: terrainAimX, aimY: FLOOR - 1, seq: 2,
+  });
   let sawCarrier = Boolean(launchedCarrier), maxBomblets = 0;
   let splitTick = -1, sixteenTogetherTicks = 0;
+  let sawTerrainBounce = false;
   let clusterExplosionSounds = 0;
   let firstChildFuses = null, blastVictimStaged = false, blastVictimDistance = 0;
   let heavyTargetId = 0, heavyTargetStart = 0, heavyTargetMin = Infinity;
@@ -483,6 +494,9 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     clusterExplosionSounds += drainTypeCount(e, SOUND_EVENT.WEAPON_EXPLOSION);
     const cluster = e.getProjectiles().filter((p) => p.kind === PROJECTILE_KIND.CLUSTER_BOMB);
     sawCarrier ||= cluster.some((p) => p.charge < 0.5);
+    const liveCarrier = cluster.find((p) => p.charge < 0.5);
+    sawTerrainBounce ||= Boolean(liveCarrier
+      && liveCarrier.fuse < launchedCarrier.fuse && liveCarrier.vy < -0.12);
     const children = cluster.filter((p) => p.charge > 0.5);
     if (children.length && splitTick < 0) splitTick = tick;
     if (children.length === 16 && !firstChildFuses)
@@ -521,9 +535,10 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       }
     }
   }
-  check('cluster carrier splits on impact before its two-second airburst fallback',
+  check('cluster carrier bounces off terrain and waits for its airburst fuse',
     launchedCarrier && Math.hypot(launchedCarrier.vx, launchedCarrier.vy) < 3
-      && launchedCarrier.fuse > 100 && splitTick >= 0 && splitTick < 100);
+      && launchedCarrier.fuse > 100 && sawTerrainBounce
+      && splitTick >= launchedCarrier.fuse - 2);
   check(`captured cluster launcher splits into exactly sixteen live mini-dynamites (max ${maxBomblets})`,
     slot >= 0 && sawCarrier && maxBomblets === 16);
   check(`all sixteen mini-dynamites use distinct 6-22 tick fuses (${firstChildFuses?.join('/')})`,
@@ -541,6 +556,32 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   const stoneAfter = countStone(e.getGrid());
   check(`cluster bomblets leave multiple destructive craters (${stoneBefore} -> ${stoneAfter})`,
     stoneAfter < stoneBefore);
+
+  const directTarget = e.spawnPlayer(96, FLOOR - 8);
+  const directPose = e.getPlayer(directTarget);
+  const directAimX = directPose.x + directPose.w * .5;
+  const directAimY = directPose.y + directPose.h * .5;
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: directAimX, aimY: directAimY, seq: 3,
+  });
+  e.stepActors();
+  const actorCarrier = e.getProjectiles().find((p) =>
+    p.kind === PROJECTILE_KIND.CLUSTER_BOMB && p.charge < 0.5);
+  e.setPlayerInput(player, { bits: 0, aimX: directAimX, aimY: directAimY, seq: 4 });
+  let actorSplitTick = -1, actorChildren = 0;
+  for (let tick = 0; tick < 30; tick++) {
+    e.stepActors();
+    const children = e.getProjectiles().filter((p) =>
+      p.kind === PROJECTILE_KIND.CLUSTER_BOMB && p.charge > 0.5);
+    if (children.length) {
+      actorSplitTick = tick;
+      actorChildren = children.length;
+      break;
+    }
+  }
+  check('direct player/enemy impacts split the cluster carrier immediately',
+    actorCarrier?.fuse > 100 && actorSplitTick >= 0 && actorSplitTick < 20
+      && actorChildren === 16);
   e.destroy();
 }
 
@@ -637,6 +678,24 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     weaponExplosionSounds === seenRounds.size);
   check('captured minigun preserves owner immunity',
     e.getPlayer(player).health === healthBeforeBurst);
+
+  const crystalX = wallX - 8;
+  e.eraseDisc(crystalX, impactY, 4);
+  for (let y = impactY - 2; y <= impactY + 2; y++)
+    e.placeMaterial(crystalX, y, 0, MAT.CRYSTAL);
+  e.syncComponents();
+  const crystalBefore = e.getGrid().reduce(
+    (total, material) => total + (material === MAT.CRYSTAL ? 1 : 0), 0);
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: crystalX, aimY: impactY, seq: ++seq,
+  });
+  e.stepActors();
+  e.setPlayerInput(player, { bits: 0, aimX: crystalX, aimY: impactY, seq: ++seq });
+  for (let tick = 0; tick < 8; tick++) e.stepActors();
+  const crystalAfter = e.getGrid().reduce(
+    (total, material) => total + (material === MAT.CRYSTAL ? 1 : 0), 0);
+  check(`direct minigun explosions fracture durability-8 crystal (${crystalBefore} -> ${crystalAfter})`,
+    crystalAfter < crystalBefore);
 
   // A centre-sourced, one-cell minigun crater has no radial source-to-centre
   // vector. The general blast path must infer the ceiling's open side from the

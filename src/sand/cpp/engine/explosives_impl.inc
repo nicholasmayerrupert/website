@@ -497,46 +497,49 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
 }
 
-void ExplosivesSystem::damageActors(int cx, int cy, int radius, double power, int immunePlayerId) {
+void ExplosivesSystem::damageActors(int cx, int cy, int radius, double power,
+                                   int immunePlayerId, double damageScale,
+                                   bool bypassCooldown, int immuneCreatureId) {
   const double blastX = cx + 0.5, blastY = cy + 0.5;
   auto hit = [&](double x, double y, double w, double h, int salt,
-                 int& health, int& hurtCooldown, double& vx, double& vy) {
+                 int hurtCooldown, double& vx, double& vy) {
     double nearestX = std::max(x, std::min(blastX, x + w));
     double nearestY = std::max(y, std::min(blastY, y + h));
     double dx = nearestX - blastX, dy = nearestY - blastY;
     double distance = std::hypot(dx, dy);
-    if (distance > radius || hurtCooldown > 0) return 0;
+    if (distance > radius || (!bypassCooldown && hurtCooldown > 0)) return 0;
     double falloff = std::max(0.0, 1.0 - distance / std::max(1, radius));
-    int damage = imax(1, (int)std::ceil(power * 5.0 * falloff));
-    double centreDx = x + w * .5 - blastX, centreDy = y + h * .5 - blastY;
-    double centreDistance = std::hypot(centreDx, centreDy);
-    if (centreDistance < 1e-6) { centreDx = (salt & 1) ? 1.0 : -1.0; centreDy = -0.35; centreDistance = std::hypot(centreDx, centreDy); }
-    double impulse = .25 + power * .045 * falloff;
-    vx += centreDx / centreDistance * impulse;
-    vy += centreDy / centreDistance * impulse - impulse * .18;
-    health -= damage;
-    hurtCooldown = 12;
+    int damage = imax(1, (int)std::ceil(power * 5.0 * damageScale * falloff));
+    // A cluster volley may damage on every staggered blast, but its shared
+    // cooldown still limits knockback so the first puff cannot launch a target
+    // out of the remaining pattern before the damage has a chance to add up.
+    if (hurtCooldown <= 0) {
+      double centreDx = x + w * .5 - blastX, centreDy = y + h * .5 - blastY;
+      double centreDistance = std::hypot(centreDx, centreDy);
+      if (centreDistance < 1e-6) { centreDx = (salt & 1) ? 1.0 : -1.0; centreDy = -0.35; centreDistance = std::hypot(centreDx, centreDy); }
+      double impulse = .25 + power * .045 * falloff;
+      vx += centreDx / centreDistance * impulse;
+      vy += centreDy / centreDistance * impulse - impulse * .18;
+    }
     return damage;
   };
 
   for (Player& p : E.psys.players) {
     if (!p.active || !p.alive || p.id == immunePlayerId) continue;
-    int before = p.health;
-    int damage = hit(p.px, p.py, p.w, p.h, p.id, p.health, p.hurtCooldown, p.vx, p.vy);
+    int impactCooldown = imax(p.hurtCooldown, p.shieldHurtCooldown);
+    int damage = hit(p.px, p.py, p.w, p.h, p.id, impactCooldown, p.vx, p.vy);
     if (damage <= 0) continue;
-    // PlayerSystem owns hurt/death audio and bookkeeping. Restore the health
-    // value briefly so its common damage path applies exactly once.
-    p.health = before;
-    p.hurtCooldown = 0;
-    E.psys.damagePlayer(p, damage, 12, blastX, blastY);
+    E.psys.damagePlayer(p, damage, 12, blastX, blastY, bypassCooldown);
   }
 
   for (Creature& c : E.creatures.creatures) {
-    if (!c.alive) continue;
+    if (!c.alive || c.id == immuneCreatureId) continue;
     const CreatureSpecies& s = E.creatures.species(c);
     double localX = c.wx - E.fg.worldOffsetX, localY = c.wy - E.fg.worldOffsetY;
-    int damage = hit(localX, localY, s.w, s.h, c.id, c.health, c.hurtCooldown, c.vx, c.vy);
+    int damage = hit(localX, localY, s.w, s.h, c.id, c.hurtCooldown, c.vx, c.vy);
     if (damage <= 0) continue;
+    c.health -= damage;
+    c.hurtCooldown = 12;
     E.audio.emit(SE_CREATURE, localX + s.w * .5, localY + s.h * .5,
                  std::min(1.2, .5 + damage / 60.0), c.species, 0);
   }
@@ -546,11 +549,15 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
                                              BlastBatch& bb, BlastBatch* otherBb,
                                              Body* sourceBody, uint8_t explosiveMaterial,
                                              int immunePlayerId, uint32_t seedSerial,
-                                             uint8_t soundEvent) {
+                                             uint8_t soundEvent,
+                                             double actorDamageScale,
+                                             bool bypassActorCooldown,
+                                             int immuneCreatureId) {
   Layer* src = E.L;
   E.audio.emit(soundEvent, cx, cy, std::min(2.5, power / TNT_BLAST_POWER),
                explosiveMaterial, src == &E.bg ? 1 : 0);
-  damageActors(cx, cy, radius, power, immunePlayerId);
+  damageActors(cx, cy, radius, power, immunePlayerId, actorDamageScale,
+               bypassActorCooldown, immuneCreatureId);
   carveBlast(cx, cy, radius, power, bb, sourceBody, explosiveMaterial, seedSerial);
   if (!E.bgEnabled || !otherBb) return;
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
@@ -600,10 +607,14 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
 // Single-blast convenience wrapper (one crater, its own finalize).
 void ExplosivesSystem::detonate(int cx, int cy, int radius, double power,
                                int immunePlayerId, uint8_t explosiveMaterial,
-                               uint32_t seedSerial, uint8_t soundEvent) {
+                               uint32_t seedSerial, uint8_t soundEvent,
+                               double actorDamageScale,
+                               bool bypassActorCooldown,
+                               int immuneCreatureId) {
   BlastBatch bb, otherBb;
   carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb, nullptr,
-                        explosiveMaterial, immunePlayerId, seedSerial, soundEvent);
+                        explosiveMaterial, immunePlayerId, seedSerial, soundEvent,
+                        actorDamageScale, bypassActorCooldown, immuneCreatureId);
   finishBlastBatches(bb, &otherBb);
 }
 

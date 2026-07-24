@@ -327,11 +327,12 @@ bool PlayerSystem::shieldCoversSource(const Player& p, double sourceX, double so
   return dot + 1e-9 >= P_SHIELD_HALF_ARC_COS * aimLength * sourceLength;
 }
 int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
-                               double sourceX, double sourceY) {
+                               double sourceX, double sourceY,
+                               bool bypassCooldown) {
   if (!p.active || !p.alive || damage <= 0) return 0;
   int remaining = damage;
   if (shieldCoversSource(p, sourceX, sourceY)) {
-    if (p.shieldHurtCooldown > 0) return 0;
+    if (!bypassCooldown && p.shieldHurtCooldown > 0) return 0;
     int shieldBefore = p.shieldHealth;
     int absorbed = imin(p.shieldHealth, remaining);
     p.shieldHealth -= absorbed;
@@ -349,7 +350,7 @@ int PlayerSystem::damagePlayer(Player& p, int damage, int cooldown,
     if (p.shieldHealth <= 0) p.shieldActive = false;
     if (remaining <= 0) return 0;
   }
-  if (p.hurtCooldown > 0) return 0;
+  if (!bypassCooldown && p.hurtCooldown > 0) return 0;
   p.health -= remaining; p.hurtCooldown = cooldown; p.lastDamageTick = E.actorTick;
   E.audio.emit(SE_HURT, p.px + p.w * .5, p.py + p.h * .5, std::min(1.2, .45 + remaining / 30.0), EMPTY);
   if (p.health <= 0) killPlayer(p);

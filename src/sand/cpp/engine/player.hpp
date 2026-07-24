@@ -36,7 +36,8 @@ class PlayerSystem {
   // Returns the portion that reached player health. Omitting source coordinates
   // marks environmental/contact damage that a directional ward cannot block.
   int damagePlayer(Player& p, int damage, int cooldown = 30,
-                   double sourceX = NAN, double sourceY = NAN);
+                   double sourceX = NAN, double sourceY = NAN,
+                   bool bypassCooldown = false);
   void killPlayer(Player& p);
   void updatePlayerVitals(Player& p);
   Player* findPlayer(int id);

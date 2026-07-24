@@ -464,6 +464,8 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   let splitTick = -1, sixteenTogetherTicks = 0;
   let clusterExplosionSounds = 0;
   let firstChildFuses = null, blastVictimStaged = false, blastVictimDistance = 0;
+  let heavyTargetId = 0, heavyTargetStart = 0, heavyTargetMin = Infinity;
+  let heavyTargetKilled = false;
   const childDirections = new Set();
   e.drainSoundEvents();
   for (let tick = 0; tick < 250; tick++) {
@@ -475,6 +477,13 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     if (children.length && splitTick < 0) splitTick = tick;
     if (children.length === 16 && !firstChildFuses)
       firstChildFuses = children.map((child) => child.fuse);
+    if (children.length === 16 && !heavyTargetId) {
+      const splitX = Math.max(2, Math.min(COLS - 11, children[0].x - 4.5));
+      heavyTargetId = e.spawnCreature(CREATURE.BORE_SENTINEL, splitX, FLOOR - 6);
+      const target = e.getCreatures().find((creature) => creature.id === heavyTargetId);
+      heavyTargetStart = target?.health ?? 0;
+      heavyTargetMin = heavyTargetStart;
+    }
     if (children.length === 16) sixteenTogetherTicks++;
     maxBomblets = Math.max(maxBomblets, children.length);
     for (const child of children) childDirections.add(Math.round(Math.atan2(child.vy, child.vx) * 10));
@@ -494,6 +503,13 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       blastVictimDistance = Math.hypot(nearestX - blastX, nearestY - blastY);
       blastVictimStaged = true;
     }
+    if (heavyTargetId) {
+      const target = e.getCreatures().find((creature) => creature.id === heavyTargetId);
+      if (target) {
+        heavyTargetMin = Math.min(heavyTargetMin, target.health);
+        heavyTargetKilled ||= target.alive === false || target.health <= 0;
+      }
+    }
   }
   check('cluster carrier splits on impact before its two-second airburst fallback',
     launchedCarrier && Math.hypot(launchedCarrier.vx, launchedCarrier.vy) < 3
@@ -506,8 +522,10 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
       && new Set(firstChildFuses).size === 16);
   check('all sixteen mini-dynamites scatter broadly and remain visible together',
     childDirections.size >= 12 && sixteenTogetherTicks >= 4);
-  check(`double-radius cluster blasts damage beyond the old ten-cell radius (${blastVictimDistance.toFixed(1)} cells)`,
+  check(`18-cell cluster blasts still damage beyond the old ten-cell radius (${blastVictimDistance.toFixed(1)} cells)`,
     blastVictimStaged && blastVictimDistance > 10 && e.getPlayer(blastVictim).health < 100);
+  check(`one direct cluster volley kills a heavy enemy despite its shared hurt cooldown (${heavyTargetStart} -> ${heavyTargetMin})`,
+    heavyTargetStart >= 165 && heavyTargetKilled);
   check(`each bomblet emits an unsuppressed TNT-palette explosion (${clusterExplosionSounds})`,
     clusterExplosionSounds === 16);
   const stoneAfter = countStone(e.getGrid());

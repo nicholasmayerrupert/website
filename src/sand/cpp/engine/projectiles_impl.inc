@@ -21,8 +21,9 @@ static constexpr int CLUSTER_BOMBLET_FUSE_STRIDE_LOCAL = 7;
 static constexpr double CLUSTER_GRAVITY_LOCAL = 0.075;
 static constexpr double CLUSTER_BOUNCE_LOCAL = 0.54;
 static constexpr double CLUSTER_FRICTION_LOCAL = 0.58;
-static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 20;
+static constexpr int CLUSTER_BLAST_RADIUS_LOCAL = 18;
 static constexpr double CLUSTER_BLAST_POWER_LOCAL = 13.0;
+static constexpr double CLUSTER_ACTOR_DAMAGE_SCALE_LOCAL = 0.5;
 static constexpr int MINIGUN_COOLDOWN_LOCAL = 2;
 static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
 static constexpr double MINIGUN_ROUND_SPEED_LOCAL = 15.5;
@@ -484,25 +485,14 @@ void ProjectileSystem::updateProjectiles() {
     E.audio.emit(SE_FUSE, carrier.px, carrier.py, 0.72, TNT, 0);
   };
   auto detonateOwnerAware = [&](const Projectile& projectile, int x, int y,
-                                int radius, double power, uint8_t material) {
-    Creature* immuneCreature = nullptr;
-    int savedHurtCooldown = 0;
-    if (projectile.owner < 0) {
-      for (Creature& creature : E.creatures.creatures) {
-        if (creature.id != -projectile.owner) continue;
-        immuneCreature = &creature;
-        savedHurtCooldown = creature.hurtCooldown;
-        // The common blast path already respects hurt cooldown, giving enemy
-        // projectiles the same explicit owner immunity players receive by id.
-        creature.hurtCooldown = imax(1, creature.hurtCooldown);
-        break;
-      }
-    }
+                                int radius, double power, uint8_t material,
+                                double actorDamageScale = 1.0,
+                                bool bypassActorCooldown = false) {
     uint32_t seed = (uint32_t)projectile.id * 2654435761u ^
                     (uint32_t)projectile.kind * 2246822519u;
     E.detonate(x, y, radius, power, projectile.owner > 0 ? projectile.owner : 0,
-               material, seed, SE_WEAPON_EXPLOSION);
-    if (immuneCreature) immuneCreature->hurtCooldown = savedHurtCooldown;
+               material, seed, SE_WEAPON_EXPLOSION, actorDamageScale,
+               bypassActorCooldown, projectile.owner < 0 ? -projectile.owner : 0);
   };
   auto damageBlastOwner = [&](const Projectile& round) {
     if (round.owner <= 0) return;
@@ -676,7 +666,8 @@ void ProjectileSystem::updateProjectiles() {
         int x = imax(1, imin(E.cols - 2, (int)std::lround(p.px)));
         int y = imax(1, imin(E.rows - 2, (int)std::lround(p.py)));
         detonateOwnerAware(p, x, y, CLUSTER_BLAST_RADIUS_LOCAL,
-                           CLUSTER_BLAST_POWER_LOCAL, GUNPOWDER);
+                           CLUSTER_BLAST_POWER_LOCAL, GUNPOWDER,
+                           CLUSTER_ACTOR_DAMAGE_SCALE_LOCAL, true);
         continue;
       }
       if (outside || --p.life <= 0) continue;

@@ -29,9 +29,9 @@ static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
 static constexpr double MINIGUN_ROUND_SPEED_LOCAL = 15.5;
 static constexpr int MINIGUN_BLAST_RADIUS_LOCAL = 2;
 // Radius, not a weak visual-only puff, is what keeps these explosions tiny.
-// Just over stone durability lets a direct hit chip one hard cell while the
+// Thirteen power lets a direct hit chip durability-13 terrain while the
 // steep two-cell falloff prevents each high-rate round from opening a crater.
-static constexpr double MINIGUN_BLAST_POWER_LOCAL = 8.2;
+static constexpr double MINIGUN_BLAST_POWER_LOCAL = 13.0;
 
 void ProjectileSystem::applyBowInput(Player& p, int previousInput) {
   bool primary = (p.input & PI_PRIMARY) != 0;

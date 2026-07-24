@@ -317,7 +317,7 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
 // Carve one durability-gated crater centred at (cx,cy) INTO the shared batch (no
 // finalize — that's finishBlasts). A cell at distance d survives iff its DURABILITY
 // exceeds the blast energy there: energy = power*(1 - d/radius). Soft blocks
-// (sand/dirt) are cleared almost to the rim; hard ones (gold ore) only near centre.
+// (sand/dirt) are cleared almost to the rim; hard ones (iron ore) only near centre.
 // Destruction is component-safe and body-aware, reusing the eraser/mining primitives.
 void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody,
                                  uint8_t explosiveMaterial, uint32_t seedSerial) {

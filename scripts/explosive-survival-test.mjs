@@ -694,7 +694,7 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   for (let tick = 0; tick < 8; tick++) e.stepActors();
   const ironAfter = e.getGrid().reduce(
     (total, material) => total + (material === MAT.IRON_ORE ? 1 : 0), 0);
-  check(`direct minigun explosions fracture durability-8 iron ore (${ironBefore} -> ${ironAfter})`,
+  check(`direct minigun explosions fracture durability-13 iron ore (${ironBefore} -> ${ironAfter})`,
     ironAfter < ironBefore);
 
   // A centre-sourced, one-cell minigun crater has no radial source-to-centre

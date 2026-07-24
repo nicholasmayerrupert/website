@@ -126,6 +126,9 @@ TNT uses precomputed radius stencils, overlapping-blast energy dominance, batche
 component repair, and sparse cave aftermath carry. The accepted large-cave
 optimization can change gas/smoke/debris RNG outcomes by removing redundant
 dirty-row RNG draws; fuse timing and crater geometry remain unchanged.
+Physical blast rubble samples the undisturbed terrain around each detonation and
+ejects toward local open space, so walls, floors, ceilings, and angled surfaces
+share one orientation-independent debris path.
 
 ## Actors and survival
 
@@ -144,7 +147,9 @@ collectible items.
 blast gun whose swept, high-velocity rounds detonate on the first liquid, solid,
 or creature hit.
 Dynamiteers throw wide, high-damage bouncing charges; bore sentinels telegraph,
-lock, and then erase a thick line through both simulated layers. Caustic mortarmen lob large,
+lock, and then erase a player-traversable line through both simulated layers.
+Captured bore cannons deal 70 damage to creatures while preserving the
+sentinel's existing damage against players. Caustic mortarmen lob large,
 double-payload terrain-poisoning acid shells; cluster wasps launch slow heavy
 carriers that split on impact into sixteen independently scattering
 mini-dynamites with distinct 0.1–0.37 second fuses and 18-cell blasts. Each

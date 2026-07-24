@@ -516,27 +516,45 @@ export function createSandAudio() {
         delay: 0.052, key: 'blast-action',
       });
     } else if (type === SOUND_EVENT.BORE_CHARGE) {
-      // A rising warning with enough low body to remain readable behind terrain.
-      playTone({ from: 82, to: 410, duration: 0.62, gain: gain * 0.16, pan,
-        wave: 'sawtooth', attack: 0.04 });
-      playTone({ from: 360, to: 1220, duration: 0.58, gain: gain * 0.09, pan,
-        wave: 'triangle', delay: 0.035, attack: 0.05 });
-      playNoise({ duration: 0.50, gain: gain * 0.08, pan, frequency: 2400,
-        type: 'bandpass', q: 1.4, rate: 0.92 + variation * 0.12, attack: 0.08 });
+      // A long mechanical latch feeds a rising rail-charge so the warning spans
+      // most of the wind-up instead of fading before the beam commits.
+      playRecordedWeapon('weaponAction', {
+        gain: gain * 0.10, pan, rate: 0.66 + variation * 0.08,
+        key: 'bore-charge-action',
+      });
+      playTone({ from: 68, to: 520, duration: 0.92, gain: gain * 0.18, pan,
+        wave: 'sawtooth', delay: 0.018, attack: 0.07 });
+      playTone({ from: 285, to: 1680, duration: 0.86, gain: gain * 0.10, pan,
+        wave: 'triangle', delay: 0.06, attack: 0.09 });
+      playNoise({ duration: 0.82, gain: gain * 0.09, pan, frequency: 2150,
+        type: 'bandpass', q: 1.7, rate: 0.84 + variation * 0.10,
+        buffer: crackleBuffer, delay: 0.04, attack: 0.10 });
     } else if (type === SOUND_EVENT.BORE_FIRE) {
-      // The cutting beam reads as one violent pressure crack followed by a
-      // descending energy discharge and its low reflected tail.
-      playNoise({ duration: 0.065, gain: gain * 0.20, pan, frequency: 3900,
-        type: 'highpass', q: 0.34, rate: 1.05 + variation * 0.12, attack: 0.0015 });
-      playTone({ from: 1180, to: 74, duration: 0.42, gain: gain * 0.22, pan,
-        wave: 'sawtooth', attack: 0.003 });
-      playNoise({ duration: 0.34, gain: gain * 0.24, pan, frequency: 1120,
-        type: 'bandpass', q: 0.7, rate: 0.82 + variation * 0.10, attack: 0.004 });
-      playTone({ from: 105, to: 42, duration: 0.48, gain: gain * 0.20, pan,
-        wave: 'sine', delay: 0.018, attack: 0.008 });
-      playNoise({ duration: 0.31, gain: gain * 0.12, pan, frequency: 235,
-        type: 'lowpass', q: 0.55, rate: 0.77 + variation * 0.08,
-        buffer: brownBuffer, delay: 0.045, attack: 0.009 });
+      // A pitched-down recorded crack anchors a two-stage rail discharge. The
+      // bright tearing front, collapsing harmonic, and sub tail read as one
+      // enormous line-cut rather than another ordinary explosion.
+      playRecordedWeapon('blastGunReport', {
+        gain: Math.min(0.28, gain * 0.22), pan,
+        rate: 0.62 + variation * 0.05, key: 'bore-fire-report',
+      });
+      playNoise({ duration: 0.075, gain: gain * 0.25, pan, frequency: 4300,
+        type: 'highpass', q: 0.30, rate: 1.08 + variation * 0.10, attack: 0.001 });
+      playTone({ from: 1760, to: 190, duration: 0.16, gain: gain * 0.17, pan,
+        wave: 'sawtooth', attack: 0.0015 });
+      playTone({ from: 2150, to: 82, duration: 0.46, gain: gain * 0.20, pan,
+        wave: 'sawtooth', delay: 0.055, attack: 0.002 });
+      playNoise({ duration: 0.42, gain: gain * 0.22, pan, frequency: 980,
+        type: 'bandpass', q: 0.82, rate: 0.72 + variation * 0.08,
+        buffer: crackleBuffer, delay: 0.025, attack: 0.003 });
+      playTone({ from: 92, to: 34, duration: 0.62, gain: gain * 0.25, pan,
+        wave: 'sine', delay: 0.012, attack: 0.004 });
+      playNoise({ duration: 0.48, gain: gain * 0.14, pan, frequency: 205,
+        type: 'lowpass', q: 0.50, rate: 0.68 + variation * 0.07,
+        buffer: brownBuffer, delay: 0.07, attack: 0.006 });
+      playRecordedWeapon('weaponAction', {
+        gain: gain * 0.08, pan, rate: 0.72 + variation * 0.09,
+        delay: 0.12, key: 'bore-fire-action',
+      });
     } else if (type === SOUND_EVENT.ACID_MORTAR) {
       playRecordedWeapon('weaponAction', {
         gain: gain * 0.065, pan, rate: 0.78 + variation * 0.12,

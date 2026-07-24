@@ -15,7 +15,7 @@ enum CreatureLocomotion : uint8_t { CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING };
 enum CreatureTarget : uint8_t { CT_NONE = 0, CT_PLAYER = 1, CT_PREY = 2 };
 enum CreatureSpawnMode : uint8_t { CSM_REGION = 0, CSM_CONTINUOUS };
 enum CreatureHabitat : uint8_t { CH_WATER = 0, CH_SURFACE, CH_CAVE, CH_AIR };
-static constexpr int CREATURE_BORE_RADIUS = 4;
+static constexpr int CREATURE_BORE_RADIUS = 5;
 
 struct CreatureSpawnRule {
   CreatureSpawnMode mode;

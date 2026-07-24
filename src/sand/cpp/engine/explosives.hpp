@@ -52,6 +52,7 @@ class ExplosivesSystem {
   struct BlastGasOffset { int16_t ox, oy; double keepP; };
   struct BlastWave { int cx, cy, radius; uint32_t seed; };
   struct BlastDebrisSource { uint8_t material; int cell; };
+  struct BlastDebrisEjection { double nx = 0, ny = -1; bool terrainGuided = false; };
   struct BlastCrossPair { int ownId, peerId; uint8_t dependentMask; };
   struct BlastBatch {
     std::vector<int> erasedStone, erasedIce;
@@ -76,7 +77,10 @@ class ExplosivesSystem {
   void spawnBlastRingGases(const std::vector<BlastWave>& waves);
   void activateBlastRectNow(int x0, int y0, int x1, int y1);
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);
-  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries = -1);
+  BlastDebrisEjection inferBlastDebrisEjection(int cx, int cy);
+  void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat,
+                           int sx0, int sy, int count, int salt, BlastBatch& bb,
+                           const BlastDebrisEjection& fallback, int tries = -1);
   bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
   void noteCrossSupportRemoval(int k, BlastBatch& bb);
   bool touchedCrossSupportSurvives(const BlastBatch& bb);

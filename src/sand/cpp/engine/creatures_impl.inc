@@ -739,6 +739,7 @@ static constexpr int DYNAMITE_THROW_TICKS = 8;
 static constexpr int BORE_CHARGE_TICKS = 90;
 static constexpr int BORE_LOCK_TICKS = 30;
 static constexpr int BORE_FIRE_TICKS = 6;
+static constexpr int BORE_CANNON_DAMAGE = 70;
 static constexpr int MORTARMAN_CHARGE_TICKS = 42;
 static constexpr int MORTARMAN_FIRE_TICKS = 8;
 static constexpr int CLUSTER_WASP_CHARGE_TICKS = 32;
@@ -990,7 +991,7 @@ void CreatureSystem::fireBore(Player& p) {
   double exitY = std::fabs(dy) > 1e-9 ? (p.h * 0.5 + 0.75) / std::fabs(dy) : 1e9;
   double exit = std::min(exitX, exitY);
   ox += dx * exit; oy += dy * exit;
-  fireBoreLine(ox, oy, dx, dy, CREATURE_SPECIES[CS_BORE_SENTINEL].damage, p.id, 0);
+  fireBoreLine(ox, oy, dx, dy, BORE_CANNON_DAMAGE, p.id, 0);
   // The terrain/actor cut is immediate and authoritative. Retain its latched ray
   // briefly as a render-only projectile so presentation mirrors show the same
   // thick firing flash that the sentinel's replicated firing state provides.

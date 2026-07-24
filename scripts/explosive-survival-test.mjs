@@ -1,7 +1,10 @@
 // Deterministic combat regression for /game: the starter blast gun, the
 // dynamiteer's fused throw, and the bore sentinel's telegraphed two-layer cut.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import {
+  initSandWasm, createEngineWasm as createEngineWasmRaw,
+} from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import {
   CREATURE, CREATURE_ATTACK_STATE, ITEM_KIND, OFF, PROJECTILE_KIND, SOUND_EVENT, STRIDES,
@@ -9,6 +12,7 @@ import {
 import { makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
+const createEngineWasm = (options) => attachTestHooks(createEngineWasmRaw(options));
 const { check, done } = makeChecker('explosive survival combat');
 const COLS = 180, ROWS = 120, FLOOR = 104;
 const PI_PRIMARY = 16;
@@ -294,8 +298,14 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     projectile.kind === PROJECTILE_KIND.BORE_BEAM && projectile.owner === player);
   check('player bore shot exposes a latched replicated firing beam',
     boreFlash?.fuse > 0 && boreFlash.vx > 0.99 && Math.abs(boreFlash.vy) < 0.02);
-  check('charged bore cannon damages an enemy beyond the wall',
-    e.getCreatures().find((creature) => creature.id === target)?.health < targetHealth);
+  const targetAfterBore = e.getCreatures().find((creature) => creature.id === target)?.health;
+  check(`charged bore cannon deals heavy damage to an enemy beyond the wall (${targetHealth} -> ${targetAfterBore})`,
+    targetAfterBore === targetHealth - 70);
+  let opening = 0;
+  for (let y = beamY - 8; y <= beamY + 8; y++)
+    if (e.getGrid()[y * COLS + wallX] === MAT.EMPTY) opening++;
+  check(`bore cannon leaves player-height clearance through its cut (${opening} cells for a ${pose.h}-cell player)`,
+    opening >= pose.h + 2);
   check('bore cannon preserves its owner immunity', e.getPlayer(player).health === 100);
   for (let tick = 0; tick < 25; tick++) e.stepActors();
   check('bore sentinel corpse cleanup does not create another cannon',
@@ -627,6 +637,28 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
     weaponExplosionSounds === seenRounds.size);
   check('captured minigun preserves owner immunity',
     e.getPlayer(player).health === healthBeforeBurst);
+
+  // A centre-sourced, one-cell minigun crater has no radial source-to-centre
+  // vector. The general blast path must infer the ceiling's open side from the
+  // undisturbed terrain and eject rubble down into the room.
+  const ceilingBottom = Math.floor(pose.y - 12);
+  for (let y = ceilingBottom - 6; y <= ceilingBottom; y++)
+    for (let x = Math.floor(shoulderX) - 10; x <= Math.floor(shoulderX) + 10; x++)
+      e.placeMaterial(x, y, 0, MAT.STONE);
+  e.syncComponents();
+  const bodiesBeforeCeiling = e._bodyCount();
+  e.setPlayerInput(player, {
+    bits: PI_PRIMARY, aimX: shoulderX, aimY: ceilingBottom - 20, seq: ++seq,
+  });
+  e.stepActors();
+  const bodiesAfterCeiling = e._bodyCount();
+  let downwardCeilingRubble = false;
+  for (let body = bodiesBeforeCeiling; body < bodiesAfterCeiling; body++) {
+    const state = e._bodyState(body);
+    downwardCeilingRubble ||= state?.py > ceilingBottom && state.vy > 0;
+  }
+  check('minigun ceiling impacts eject physical rubble into the open room',
+    bodiesAfterCeiling > bodiesBeforeCeiling && downwardCeilingRubble);
   e.destroy();
 }
 

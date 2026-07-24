@@ -124,20 +124,57 @@ std::vector<std::pair<int, int>> ExplosivesSystem::blastBoxCells(int cx, int cy,
   return cells;
 }
 
-void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat, int sx0, int sy, int count, int salt, BlastBatch& bb, int tries) {
+ExplosivesSystem::BlastDebrisEjection ExplosivesSystem::inferBlastDebrisEjection(int cx, int cy) {
+  // Sample the undisturbed terrain before carving. A weighted vector toward
+  // nearby non-blocking cells is the local open-side normal of a wall, floor,
+  // ceiling, or irregular surface. Symmetric open air and fully buried blasts
+  // deliberately retain the established upward fallback.
+  static constexpr int PROBE_RADIUS = 4;
+  static constexpr double MIN_DIRECTIONALITY = 0.18;
+  double sumX = 0, sumY = 0, weightSum = 0;
+  for (int oy = -PROBE_RADIUS; oy <= PROBE_RADIUS; oy++)
+    for (int ox = -PROBE_RADIUS; ox <= PROBE_RADIUS; ox++) {
+      int dd = ox * ox + oy * oy;
+      if (dd == 0 || dd > PROBE_RADIUS * PROBE_RADIUS) continue;
+      int x = cx + ox, y = cy + oy;
+      if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) continue;
+      if (E.isSolidForPlayer(E.L->grid[E.I(x, y)])) continue;
+      double distance = std::sqrt((double)dd);
+      double weight = 1.0 / distance;
+      sumX += ox / distance * weight;
+      sumY += oy / distance * weight;
+      weightSum += weight;
+    }
+  double magnitude = std::hypot(sumX, sumY);
+  BlastDebrisEjection result;
+  if (weightSum > 0 && magnitude >= weightSum * MIN_DIRECTIONALITY) {
+    result.nx = sumX / magnitude;
+    result.ny = sumY / magnitude;
+    result.terrainGuided = true;
+  }
+  return result;
+}
+
+void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed,
+                                           uint8_t debrisMat, int sx0, int sy,
+                                           int count, int salt, BlastBatch& bb,
+                                           const BlastDebrisEjection& fallback,
+                                           int tries) {
   if (tries < count) tries = count;
   double dx = (double)cx - sx0, dy = (double)cy - sy;
   double dl = std::sqrt(dx * dx + dy * dy);
-  bool sourcedFromWall = dl > 0.5;
-  double nx = sourcedFromWall ? dx / dl : 0.0;
-  double ny = sourcedFromWall ? dy / dl : -1.0;
+  bool sourceDirected = dl > 0.5;
+  bool terrainDirected = !sourceDirected && fallback.terrainGuided;
+  bool directed = sourceDirected || terrainDirected;
+  double nx = sourceDirected ? dx / dl : fallback.nx;
+  double ny = sourceDirected ? dy / dl : fallback.ny;
   double tx = -ny, ty = nx;
   static const int TANGENT[5] = {0, -2, 2, -4, 4};
   int spawned = 0;
   for (int i = 0; i < tries && spawned < count && bb.debrisSpawned < bb.debrisStepCap && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; i++) {
     double j = whash2(bseed, salt + i, 13);
     int sx, spawnY;
-    if (sourcedFromWall) {
+    if (directed) {
       int tangent = TANGENT[i % 5];
       int inset = 3 + i / 5;
       sx = (int)std::lround(sx0 + nx * inset + tx * tangent);
@@ -151,7 +188,7 @@ void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8
     Body* b = E.finishSpawn(cells, debrisMat);
     if (!b) continue;
     b->blastDebris = true;
-    if (sourcedFromWall) {
+    if (directed) {
       double speed = BLAST_DEBRIS_SPEED * (0.7 + 0.6 * j);
       b->vx = nx * speed + tx * (j - 0.5);
       b->vy = ny * speed + ty * (j - 0.5) - 0.35;
@@ -285,6 +322,7 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
 void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody,
                                  uint8_t explosiveMaterial, uint32_t seedSerial) {
   bb.any = true;
+  BlastDebrisEjection debrisEjection = inferBlastDebrisEjection(cx, cy);
   if (explosiveMaterial == METHANE) bb.debrisStepCap = METHANE_DEBRIS_STEP_CAP;
   if (cx - radius < bb.minX) bb.minX = cx - radius;
   if (cy - radius < bb.minY) bb.minY = cy - radius;
@@ -438,14 +476,17 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     uint8_t debrisMat = debrisSources[di].material;
     int src = debrisSources[di].cell, sy = src / E.cols, sx0 = src - sy * E.cols;
     int tries = explosiveMaterial == METHANE ? METHANE_DEBRIS_SOURCE_TRIES : BLAST_DEBRIS_SOURCE_TRIES;
-    spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy, BLAST_DEBRIS_CHUNKS, (int)di * 17, bb, tries);
+    spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy,
+                        BLAST_DEBRIS_CHUNKS, (int)di * 17, bb,
+                        debrisEjection, tries);
   }
   // Actual destroyed materials own the bounded budget first. TNT may contribute
   // a generic fragment only when a slot remains; methane owns no solid
   // material and therefore never creates generic DEBRIS.
   if (explosiveMaterial != METHANE && bb.debrisSpawned < localDebrisCap
       && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
-    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy, BLAST_FORCED_DEBRIS_CHUNKS, 97, bb);
+    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy,
+                        BLAST_FORCED_DEBRIS_CHUNKS, 97, bb, debrisEjection);
 }
 
 void ExplosivesSystem::finishBlasts(BlastBatch& bb) {

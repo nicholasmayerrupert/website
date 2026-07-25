@@ -483,7 +483,8 @@ function blastDamagesMaterial(name) {
   e.syncComponentsLayer(1);
   const fgStone0 = countInBox(e.getGrid(), MAT.STONE, cx, top - 1, 18);
   const bgStone0 = countInBox(e.getGridBg(), MAT.STONE, cx, top - 1, 18);
-  let fgStone1 = fgStone0, bgStone1 = bgStone0, fgGas = 0, bgGas = 0, tntLeft = 1;
+  let fgStone1 = fgStone0, bgStone1 = bgStone0, fgGas = 0, bgGas = 0;
+  let fgBodies = 0, bgBodies = 0, tntLeft = 1;
   for (let i = 0; i < 90; i++) {
     e.placeMaterial(cx + 1, top - 1, 1, MAT.FIRE);
     e.step(i * 16);
@@ -493,6 +494,8 @@ function blastDamagesMaterial(name) {
       bgStone1 = countInBox(e.getGridBg(), MAT.STONE, cx, top - 1, 18);
       fgGas = countAny(e.getGrid(), AFTERMATH);
       bgGas = countAny(e.getGridBg(), AFTERMATH);
+      fgBodies = e._bodyCountLayer(0);
+      bgBodies = e._bodyCountLayer(1);
       break;
     }
   }
@@ -500,6 +503,8 @@ function blastDamagesMaterial(name) {
   check(`cross-layer TNT blast carved foreground stone (${fgStone0} -> ${fgStone1})`, fgStone1 < fgStone0);
   check(`cross-layer TNT blast carved background stone (${bgStone0} -> ${bgStone1})`, bgStone1 < bgStone0);
   check(`cross-layer TNT blast emitted gas in both layers (fg ${fgGas}, bg ${bgGas})`, fgGas > 0 && bgGas > 0);
+  check(`cross-layer TNT blast kept physical rubble in its source layer (fg ${fgBodies}, bg ${bgBodies})`,
+    fgBodies > 0 && bgBodies === 0);
   e.destroy();
 }
 

@@ -818,24 +818,37 @@ void ComponentSystem::groundLayerBase(Layer* lay) {
 // grounded, now not) so they start falling next step. Shared by the fast and
 // full grounding paths.
 void ComponentSystem::wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev) {
-  // Only rigid component/body cells can lose structural grounding. Scanning the
-  // full grid was O(cols*rows) per layer per joint pass; the component lists are
-  // the same set of candidates (unregistered rigid cells are erased each step).
   const uint8_t* gr = lay.groundedCell.data();
   int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
   auto wake = [&](int k) {
-    if (!prev[k] || gr[k]) return;
     int y = k / E.cols, x = k - y * E.cols;
     if (x < rmn[y]) rmn[y] = x;
     if (x > rmx[y]) rmx[y] = x;
   };
-  auto wakeList = [&](std::vector<Comp>& list) {
-    for (auto& c : list) if (!c.grounded) for (int k : c.cells) wake(k);
-  };
-  wakeList(lay.stoneComponents);
-  wakeList(lay.plantComponents);
-  wakeList(lay.iceComponents);
-  for (int k : lay.bodyCells) wake(k);
+  // The support arrays contain bytes restricted to 0/1. Compare eight cells at
+  // once, then resolve the rare 1->0 transitions against live component/body
+  // membership. This preserves the exact per-cell wake semantics without
+  // walking every member of every component on each joint grounding pass.
+  constexpr uint64_t BYTE_LOW_BITS = 0x0101010101010101ull;
+  const size_t n = (size_t)E.cols * E.rows;
+  size_t base = 0;
+  for (; base + sizeof(uint64_t) <= n; base += sizeof(uint64_t)) {
+    uint64_t before, after;
+    std::memcpy(&before, prev.data() + base, sizeof(before));
+    std::memcpy(&after, gr + base, sizeof(after));
+    uint64_t lost = before & ~after & BYTE_LOW_BITS;
+    while (lost) {
+      int byte = __builtin_ctzll(lost) >> 3;
+      int k = (int)base + byte;
+      if (lay.cellComp[k] >= 0 || lay.bodyOwner[k] >= 0) wake(k);
+      lost &= lost - 1;
+    }
+  }
+  for (; base < n; base++) {
+    if (prev[base] && !gr[base]
+        && (lay.cellComp[base] >= 0 || lay.bodyOwner[base] >= 0))
+      wake((int)base);
+  }
 }
 void ComponentSystem::computeGroundedBoth() {
   // Wall-time split: base floods -> groundingMs; bond scan + UF -> crossLayerGroundingMs.

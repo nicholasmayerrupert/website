@@ -223,7 +223,7 @@ void ExplosivesSystem::buildBlastDamage(const BlastBatch& bb) {
   }
   plannedDense = area <= estimatedVisits * 2 + 1024;
   if (plannedDense) {
-    plannedDamage.assign(area, -1.0f);
+    plannedDamage.resize(area);
     plannedBestWave.assign(area, -1);
   } else {
     size_t n = (size_t)E.cols * E.rows;
@@ -241,7 +241,8 @@ void ExplosivesSystem::buildBlastDamage(const BlastBatch& bb) {
     int index;
     if (plannedDense) {
       index = (y - plannedY0) * plannedWidth + x - plannedX0;
-      if ((double)plannedDamage[index] >= energy) return;
+      if (plannedBestWave[index] >= 0
+          && (double)plannedDamage[index] >= energy) return;
     } else {
       index = y * E.cols + x;
       if (plannedDamageStamp[index] == plannedDamageGen) {
@@ -402,9 +403,16 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   if (cy + radius > bb.maxY) bb.maxY = cy + radius;
   uint32_t serial = seedSerial == UINT32_MAX ? (uint32_t)E.tick : seedSerial;
   uint32_t bseed = serial * 2654435761u ^ (uint32_t)(cy * E.cols + cx); // per-blast deterministic seed
-  BlastWave wave{cx, cy, radius, bseed, power, explosiveMaterial, debrisEjection, {}, {}};
+  bb.waves.emplace_back();
+  BlastWave& wave = bb.waves.back();
+  wave.cx = cx;
+  wave.cy = cy;
+  wave.radius = radius;
+  wave.seed = bseed;
+  wave.power = power;
+  wave.explosiveMaterial = explosiveMaterial;
+  wave.debrisEjection = debrisEjection;
   wave.debrisSlots.fill(-1);
-  bb.waves.push_back(std::move(wave));
   if (sourceBody) bb.sourceBodies.insert(sourceBody);
 }
 
@@ -479,7 +487,6 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
     int y = k / E.cols, x = k - y * E.cols;
     int ox = x - wave.cx, oy = y - wave.cy;
     int dd = ox * ox + oy * oy;
-    double dist = std::sqrt((double)dd);
     bool bodyCell = E.isBodyCell(k);
     Body* hitBody = nullptr;
     if (bodyCell) {
@@ -505,6 +512,7 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
       planStaticCut(k, material, waveIndex, dd, true);
     }
     if (bb.particles < BLAST_PARTICLE_CAP && (((x * 7) ^ (y * 3)) % 8 == 0)) {
+      double dist = std::sqrt((double)dd);
       double inv = dist > 0.5 ? 1.0 / dist : 0.0;
       double speed = BLAST_PARTICLE_SPEED * (1.0 - dist / wave.radius)
                    * (0.5 + whash2(wave.seed, x, y));
@@ -626,49 +634,29 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
 
     int localDebrisCap = bb.debrisStepCap;
     int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
-    int debrisSampleCells[TABLE * SAMPLE_COUNT];
-    int debrisSampleDist[TABLE * SAMPLE_COUNT];
-    uint16_t debrisSampleMask[TABLE] = {};
-    uint64_t debrisMaterialMask = 0;
-    int sampleThird = imax(1, wave.radius / 3);
-    for (const BlastDebrisCandidate& candidate : wave.debrisCandidates) {
-      int y = candidate.cell / E.cols, x = candidate.cell - y * E.cols;
-      int ox = x - wave.cx, oy = y - wave.cy;
-      int bx = ox < -sampleThird ? 0 : (ox > sampleThird ? 2 : 1);
-      int by = oy < -sampleThird ? 0 : (oy > sampleThird ? 2 : 1);
-      int bucket = by * BLAST_DEBRIS_SAMPLE_SIDE + bx;
-      uint64_t materialBit = 1ull << candidate.material;
-      debrisMaterialMask |= materialBit;
-      uint16_t bucketBit = (uint16_t)(1u << bucket);
-      int sample = (int)candidate.material * SAMPLE_COUNT + bucket;
-      if (!(debrisSampleMask[candidate.material] & bucketBit)
-          || candidate.dd < debrisSampleDist[sample]) {
-        debrisSampleMask[candidate.material] |= bucketBit;
-        debrisSampleCells[sample] = candidate.cell;
-        debrisSampleDist[sample] = candidate.dd;
-      }
-    }
-
     std::vector<BlastDebrisSource> debrisSources;
     debrisSources.reserve((size_t)sourceLimit);
     uint8_t firstSample[TABLE] = {};
     for (int material = 0;
          material < TABLE && (int)debrisSources.size() < sourceLimit;
          material++) {
-      if (!(debrisMaterialMask & (1ull << material))) continue;
-      int best = -1;
+      int bestCandidate = -1, bestSample = -1;
       for (int sampleIndex = 0; sampleIndex < SAMPLE_COUNT; sampleIndex++) {
         int sample = material * SAMPLE_COUNT + sampleIndex;
-        if ((debrisSampleMask[material] & (1u << sampleIndex))
-            && (best < 0 || debrisSampleDist[sample]
-              < debrisSampleDist[material * SAMPLE_COUNT + best]))
-          best = sampleIndex;
+        int candidate = wave.debrisSlots[sample];
+        if (candidate >= 0
+            && (bestCandidate < 0
+                || wave.debrisCandidates[candidate].dd
+                  < wave.debrisCandidates[bestCandidate].dd)) {
+          bestCandidate = candidate;
+          bestSample = sampleIndex;
+        }
       }
-      if (best >= 0) {
-        firstSample[material] = (uint8_t)best;
+      if (bestCandidate >= 0) {
+        firstSample[material] = (uint8_t)bestSample;
         debrisSources.push_back({
           (uint8_t)material,
-          debrisSampleCells[material * SAMPLE_COUNT + best],
+          wave.debrisCandidates[bestCandidate].cell,
         });
       }
     }
@@ -678,11 +666,13 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
       for (int material = 0;
            material < TABLE && (int)debrisSources.size() < sourceLimit;
            material++) {
-        if (!(debrisMaterialMask & (1ull << material))) continue;
         int sample = material * SAMPLE_COUNT + sampleIndex;
-        if (sampleIndex != firstSample[material]
-            && (debrisSampleMask[material] & (1u << sampleIndex)))
-          debrisSources.push_back({(uint8_t)material, debrisSampleCells[sample]});
+        int candidate = wave.debrisSlots[sample];
+        if (candidate >= 0 && sampleIndex != firstSample[material])
+          debrisSources.push_back({
+            (uint8_t)material,
+            wave.debrisCandidates[candidate].cell,
+          });
       }
 
     for (size_t i = 0;
@@ -776,6 +766,10 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
   E.useLayer(other);
   carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial, seedSerial);
+  // Cross-layer damage, gas, particles, support repair, and shock are mirrored.
+  // Physical rubble belongs to the layer containing the explosive so the peer
+  // crater does not duplicate simulated collision bodies.
+  otherBb->debrisStepCap = 0;
   E.useLayer(src);
 }
 

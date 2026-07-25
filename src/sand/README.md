@@ -175,7 +175,9 @@ TNT uses precomputed radius stencils and a four-phase blast transaction. Active
 craters first accumulate one maximum-energy field; the unique affected cells are
 classified from the untouched foreground/background snapshot; both layers are
 cut and repaired; then rubble, flecks, gas, and shock impulses consume the
-completed removal set. Due TNT is divided into stable 14-cell spatial regions.
+completed removal set. Cross-layer damage, gas, flecks, and shock are mirrored;
+physical rubble remains in the layer containing the explosive. Due TNT is
+divided into stable 14-cell spatial regions.
 Fronts spanning at most six regions finish atomically, as do due fronts of at
 most 2,048 cells. Broader fronts consume one compact six-by-two-region window per
 tick until their live backlog drains. Waiting TNT remains visible and simulated,

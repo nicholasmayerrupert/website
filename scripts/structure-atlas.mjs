@@ -174,7 +174,7 @@ const engine = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: seed, sinks
 const surface = findSurfaceStructure(engine);
 if (surface) {
   engine.shiftWorldXY(Math.round(surface.x - engine.getWorldOffsetX() - COLS / 2), 0);
-  capture(engine, 'surface settlement', surface.x, surface.y, 240, 96);
+  capture(engine, 'surface settlement', surface.x, surface.y, 300, 100);
 }
 
 engine.shiftWorldXY(0, 96);

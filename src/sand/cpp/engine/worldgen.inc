@@ -181,6 +181,49 @@
     int lxMin = floorDiv(wx0, STRUCT_LATTICE), lxMax = floorDiv(wx1, STRUCT_LATTICE);
     int lyMin = floorDiv(wy0, STRUCT_LATTICE), lyMax = floorDiv(wy1, STRUCT_LATTICE);
     auto h2 = [&](uint32_t salt, int a, int b) { return whash2(sseed ^ salt, a, b); };
+    // Structure plans always consult foreground cave topology, even while the
+    // background or a prefetched scratch band is active. This keeps placement
+    // decisions byte-identical across both layers.
+    struct ForegroundTerrainScope {
+      Layer* layer;
+      bool wasBackground;
+      uint32_t caveSeed;
+      explicit ForegroundTerrainScope(Layer* active)
+        : layer(active), wasBackground(active->isBackground), caveSeed(active->gCaveSeed) {
+        if (wasBackground) {
+          layer->isBackground = false;
+          layer->gCaveSeed = layer->worldSeed ^ 0x5bd1e995u;
+        }
+      }
+      ~ForegroundTerrainScope() {
+        layer->isBackground = wasBackground;
+        layer->gCaveSeed = caveSeed;
+      }
+    };
+    auto stampTerraceFoundation = [&](int left, int right, int floorY,
+                                      uint8_t foundation, bool stairs) {
+      for (int x = left; x <= right; x++) {
+        int groundY = terrain.genSurfaceAbs(x);
+        for (int y = floorY + 1; y <= groundY; y++) {
+          uint8_t course = foundation;
+          if (foundation == BRICK && (y - floorY) % 5 == 0) course = SANDSTONE;
+          put(x, y, course);
+        }
+      }
+      if (!stairs) return;
+      // Compact masonry stairs join a raised terrace to the natural grade. Each
+      // tread continues to the terrain, so even the approach is visibly grounded.
+      for (int side : {-1, 1}) {
+        int edgeX = side < 0 ? left : right;
+        int drop = terrain.genSurfaceAbs(edgeX + side) - floorY;
+        for (int step = 1; step <= imin(10, drop); step++) {
+          int x = edgeX + side * step;
+          int groundY = terrain.genSurfaceAbs(x);
+          int stepY = imin(floorY + step, groundY - 1);
+          for (int y = stepY; y <= groundY; y++) put(x, y, foundation);
+        }
+      }
+    };
     // Surface villages: a deterministic chain of roomy homes, workshops,
     // apothecaries, storehouses, and a meeting hall. The foreground retains a
     // generous walk-through silhouette; the solid background wall carries the
@@ -188,19 +231,41 @@
     static const int VILLAGE_LATTICE = 420;
     int vxMin = floorDiv(wx0, VILLAGE_LATTICE), vxMax = floorDiv(wx1, VILLAGE_LATTICE);
     auto stampCottage = [&](int cx, int ordinal, bool hall) {
-      int w = hall ? 52 : 34 + (ordinal % 3) * 4, h = hall ? 30 : 23 + (ordinal & 1) * 3;
+      int role = ordinal & 3, variant = (ordinal >> 2) & 1;
+      int w = hall ? 52
+            : role == 0 ? 36 + variant * 4
+            : role == 1 ? 44 + variant * 2
+            : role == 2 ? 38 + variant * 4
+                        : 46 - variant * 2;
+      int h = hall ? 30
+            : role == 0 ? 24 + variant * 2
+            : role == 1 ? 22 + variant * 2
+            : role == 2 ? 27 + variant
+                        : 24 + variant * 2;
+      int biome = terrain.genBiomeAt(cx);
       int ground = terrain.genSurfaceAbs(cx), left = cx - w / 2;
-      if (ground >= L->gSeaRow || terrain.genBiomeAt(cx) == BIOME_ROCKY) return;
-      int lo = ground, hi = ground;
-      for (int x = left; x <= left + w; x++) { int sy = terrain.genSurfaceAbs(x); lo = imin(lo, sy); hi = imax(hi, sy); }
+      if (ground >= L->gSeaRow || biome == BIOME_ROCKY) return;
+      int lo = ground, hi = ground, surfaceSum = 0;
+      bool crossesCaveMouth = false;
+      {
+        ForegroundTerrainScope foregroundQuery(L);
+        for (int x = left; x <= left + w; x++) {
+          int sy = terrain.genSurfaceAbs(x);
+          lo = imin(lo, sy); hi = imax(hi, sy); surfaceSum += sy;
+          if (terrain.genOpenCaveAt(x, sy) || terrain.genOpenCaveAt(x, sy + 1)
+              || terrain.genOpenCaveAt(x, sy + 2)) crossesCaveMouth = true;
+        }
+      }
       // Stone foundations absorb ordinary rolling terrain; reject only severe
-      // escarpments. This keeps a village from silently losing most of its homes.
-      if (hi - lo > (hall ? 14 : 11)) return;
-      int floorY = lo - 1, wallTop = floorY - h, roofH = hall ? 11 : 9;
+      // escarpments. A structure never bridges a surface cave entrance.
+      if (crossesCaveMouth || hi - lo > (hall ? 14 : 11)) return;
+      int floorY = floorDiv(surfaceSum, w + 1) - 1;
+      int wallTop = floorY - h, roofH = hall ? 11 : role == 2 ? 10 : 9;
       if (left + w + 2 < rectX0 || left - 2 > rectX1
-          || floorY < rectY0 || wallTop - roofH - 6 > rectY1) return;
+          || floorY < rectY0 || wallTop - roofH - 16 > rectY1) return;
       const int DOOR_CLEARANCE = PLAYER_H + 5;
-      uint8_t wall = terrain.genBiomeAt(cx) == BIOME_DESERT ? SANDSTONE : BRICK;
+      uint8_t wall = biome == BIOME_DESERT ? SANDSTONE : BRICK;
+      uint8_t foundation = biome == BIOME_DESERT ? SANDSTONE : BRICK;
       for (int x = left; x <= left + w; x++) {
         for (int y = wallTop; y <= floorY; y++) {
           bool edge = x == left || x == left + w || y == wallTop || y == floorY;
@@ -209,11 +274,61 @@
           if (L->isBackground) put(x, y, wall); // dim, solid room backdrop behind the facade
           else put(x, y, edge && !sidePassage && !door ? wall : EMPTY);
         }
-        for (int y = floorY + 1; y <= terrain.genSurfaceAbs(x); y++) put(x, y, BRICK);
       }
-      // A solid pitched roof, not just an outline. The background copy gives it
-      // depth; the foreground copy makes the roof genuinely mineable/walkable.
-      for (int ry = 0; ry <= roofH; ry++) for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
+      // Every exposed column continues into natural terrain. Alternating courses
+      // keep tall downhill foundations from reading as featureless rectangles.
+      stampTerraceFoundation(left, left + w, floorY, foundation, true);
+
+      // The four occupations use genuinely different silhouettes: domestic
+      // gable, workshop shed, glazed apothecary arch, warehouse parapet, and a
+      // civic hall with a belfry. All roofs are solid in both layers.
+      int roofStyle = hall ? 4 : role;
+      auto roofColumn = [&](int x, int top) {
+        for (int y = top; y <= wallTop; y++) put(x, y, wall);
+      };
+      if (roofStyle == 0) {
+        for (int ry = 0; ry <= roofH; ry++)
+          for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
+        int dormerY = wallTop - roofH / 2;
+        for (int dx = -3; dx <= 3; dx++) for (int dy = -2; dy <= 2; dy++)
+          put(cx + dx, dormerY + dy, std::abs(dx) == 3 || std::abs(dy) == 2 ? PINE_WOOD : CRYSTAL);
+      } else if (roofStyle == 1) {
+        for (int x = left - 2; x <= left + w + 2; x++) {
+          int run = x - (left - 2);
+          int rise = roofH - run * roofH / (w + 4);
+          roofColumn(x, wallTop - rise);
+        }
+        for (int x = left + 5; x <= left + 7; x++)
+          for (int y = wallTop - roofH - 6; y <= wallTop - roofH + 2; y++) put(x, y, BRICK);
+        put(left + 6, wallTop - roofH - 7, CRYSTAL);
+      } else if (roofStyle == 2) {
+        int half = w / 2 + 2;
+        for (int x = left - 2; x <= left + w + 2; x++) {
+          int dx = std::abs(x - cx);
+          int arch = 3 + (roofH - 2) * (half * half - dx * dx) / (half * half);
+          roofColumn(x, wallTop - imax(2, arch));
+        }
+        for (int ribX : {cx - 9, cx, cx + 9}) {
+          int dx = std::abs(ribX - cx);
+          int arch = 3 + (roofH - 2) * (half * half - dx * dx) / (half * half);
+          put(ribX, wallTop - arch, CRYSTAL);
+          put(ribX, wallTop - arch + 1, CRYSTAL);
+        }
+      } else if (roofStyle == 3) {
+        for (int x = left - 2; x <= left + w + 2; x++)
+          for (int y = wallTop - 5; y <= wallTop; y++) put(x, y, wall);
+        for (int x = left - 2; x <= left + w + 2; x += 7)
+          for (int y = wallTop - 8; y < wallTop - 5; y++) put(x, y, wall);
+      } else {
+        for (int ry = 0; ry <= roofH; ry++)
+          for (int x = left - 2 + ry; x <= left + w + 2 - ry; x++) put(x, wallTop - ry, wall);
+        int apex = wallTop - roofH;
+        for (int x = cx - 6; x <= cx + 6; x++) for (int y = apex - 8; y <= apex + 1; y++) put(x, y, wall);
+        for (int ry = 0; ry <= 5; ry++)
+          for (int x = cx - 8 + ry; x <= cx + 8 - ry; x++) put(x, apex - 8 - ry, wall);
+        for (int wx : {cx - 2, cx + 2}) for (int y = apex - 6; y <= apex - 3; y++) put(wx, y, CRYSTAL);
+        put(cx, apex - 7, CLAY);
+      }
 
       if (L->isBackground) {
         auto shelf = [&](int x0, int x1, int y) {
@@ -326,10 +441,14 @@
           }
         }
       } else {
-        // High beams preserve the airy silhouette while adding visible structure.
+        // Two widely spaced masonry piers carry the roof into the terrace. They
+        // leave player-clear side entries and a broad central room, but prevent
+        // the foreground facade from reading as a roof suspended over a floor.
+        for (int pierX : {left + 9, left + w - 9})
+          for (int y = wallTop + 1; y <= floorY; y++) put(pierX, y, wall);
+        // High beams brace the wide spans without shrinking the playable opening.
         for (int y = wallTop + 2; y < floorY - DOOR_CLEARANCE; y++) put(cx, y, wall);
         for (int x = left + 5; x <= left + w - 5; x++) if (x < cx - 4 || x > cx + 4) put(x, floorY - DOOR_CLEARANCE - 1, wall);
-        if (hall) for (int y = wallTop - roofH - 6; y < wallTop - roofH; y++) put(left + 5, y, BRICK);
         // Hanging shop signs make the village roles readable from outside.
         int signX = left + w + 6;
         for (int y = floorY - 8; y <= floorY; y++) put(signX, y, PINE_WOOD);
@@ -344,7 +463,7 @@
       if (terrain.genSurfaceAbs(center) >= L->gSeaRow) continue;
       int count = 5 + (int)(whash1(sseed ^ 0xA11A70u, vx) * 3);
       for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 58, i, i == count / 2);
-      int wellX = center + count * 29 + 12, wellY = terrain.genSurfaceAbs(wellX) - 1;
+      int wellX = center + count * 29 + 12, wellY;
 
       // A continuous stone street and lanterns turn the individual facades into
       // one settlement. Everything follows the terrain instead of flattening it.
@@ -360,7 +479,10 @@
 
       // A covered market stall beside the well adds a communal place rather than
       // another sealed box: canopy, counter, produce, pottery, and hanging goods.
-      int marketX = wellX - 20, marketY = terrain.genSurfaceAbs(marketX) - 1;
+      int marketX = wellX - 20, marketSurfaceSum = 0;
+      for (int x = marketX - 11; x <= marketX + 11; x++) marketSurfaceSum += terrain.genSurfaceAbs(x);
+      int marketY = floorDiv(marketSurfaceSum, 23) - 1;
+      stampTerraceFoundation(marketX - 11, marketX + 11, marketY, SANDSTONE, true);
       for (int x = marketX - 11; x <= marketX + 11; x++) {
         put(x, marketY - 12, ((x - marketX) & 3) < 2 ? BRICK : SANDSTONE);
         put(x, marketY - 11, ((x - marketX) & 3) < 2 ? BRICK : SANDSTONE);
@@ -378,6 +500,10 @@
         }
       }
 
+      int wellSurfaceSum = 0;
+      for (int x = wellX - 7; x <= wellX + 7; x++) wellSurfaceSum += terrain.genSurfaceAbs(x);
+      wellY = floorDiv(wellSurfaceSum, 15) - 1;
+      stampTerraceFoundation(wellX - 7, wellX + 7, wellY, BRICK, true);
       for (int dx = -4; dx <= 4; dx++) put(wellX + dx, wellY, BRICK);
       for (int side : {-1, 1}) for (int y = wellY - 12; y < wellY; y++) put(wellX + side * 5, y, PINE_WOOD);
       for (int ry = 0; ry <= 4; ry++)
@@ -588,14 +714,19 @@
 
       // A substantial headhouse makes the mine legible at the surface. Its
       // constructed shaft is intentionally regular; natural cave mouths are not.
-      int houseW = 42, houseH = 25, floor = surface - 1;
-      int houseLeft = center - houseW / 2, houseTop = floor - houseH;
+      int houseW = 42, houseH = 25, houseLeft = center - houseW / 2;
+      int houseSurfaceSum = 0;
+      for (int x = houseLeft; x <= houseLeft + houseW; x++)
+        houseSurfaceSum += terrain.genSurfaceAbs(x);
+      int floor = floorDiv(houseSurfaceSum, houseW + 1) - 1;
+      int houseTop = floor - houseH;
       for (int y = houseTop; y <= floor; y++) for (int x = houseLeft; x <= houseLeft + houseW; x++) {
         bool shell = x == houseLeft || x == houseLeft + houseW || y == houseTop || y == floor;
         bool doorway = y >= floor - PLAYER_H - 4 && std::abs(x - center) <= shaftHalf;
         if (L->isBackground) put(x, y, BRICK);
         else put(x, y, shell && !doorway ? BRICK : EMPTY);
       }
+      stampTerraceFoundation(houseLeft, houseLeft + houseW, floor, BRICK, true);
       for (int roof = 0; roof <= 9; roof++)
         for (int x = houseLeft - 2 + roof; x <= houseLeft + houseW + 2 - roof; x++)
           put(x, houseTop - roof, BRICK);
@@ -642,7 +773,7 @@
     // shell; the background is a fully solid decorated wall with furnishings,
     // murals, storage, vegetation, and light. This keeps the backdrop mostly solid
     // while making the empty play space feel inhabited.
-    enum SKind { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_SHRINE, SK_FORGE, SK_OVERGROWN, SK_MUSHGROVE };
+    enum SKind { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_SHRINE, SK_FORGE, SK_ARCHIVE, SK_OVERGROWN, SK_MUSHGROVE };
     auto backdropRoom = [&](int ax, int ay, int w, int h, uint8_t field) {
       for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
         bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
@@ -803,6 +934,58 @@
       uint8_t toolMetal = fy - terrain.genSurfaceAbs(ax + w - 6) > 105 ? IRON_ORE : COPPER_ORE;
       put(ax + w - 6, fy - 2, toolMetal); put(ax + w - 6, fy - 3, toolMetal);
     };
+    // A lost archive with tall book bays, reading tables, maps, and balconies.
+    // The shelves remain in the background; only edge stacks and a lectern enter
+    // the foreground, preserving a broad central aisle.
+    auto stampArchive = [&](int ax, int ay, int w, int h, int lx, int ly) {
+      int fy = ay + h - 1, cx = ax + w / 2;
+      if (L->isBackground) {
+        backdropRoom(ax, ay, w, h, SANDSTONE);
+        auto bookcase = [&](int x0, int x1) {
+          for (int x : {x0, x1}) for (int y = ay + 3; y <= fy - 2; y++) put(x, y, PINE_WOOD);
+          for (int shelfY = ay + 6; shelfY < fy - 2; shelfY += 5) {
+            for (int x = x0; x <= x1; x++) put(x, shelfY, WOOD);
+            for (int x = x0 + 2; x < x1; x += 2) {
+              static const uint8_t books[] = { CLAY, MOSS, CRYSTAL, COPPER_ORE, COAL_ORE };
+              put(x, shelfY - 1, books[std::abs(x + shelfY) % 5]);
+              if ((x + shelfY) & 1) put(x, shelfY - 2, books[std::abs(x + shelfY + 2) % 5]);
+            }
+          }
+        };
+        bookcase(ax + 3, ax + 12);
+        bookcase(ax + w - 13, ax + w - 4);
+        // Central celestial map and librarian's desk.
+        int mapY = ay + h / 2 - 3;
+        for (int r = 2; r <= 7; r += 2) for (int d = -r; d <= r; d++) {
+          if (std::abs(d) == r || (d + r) % 3 == 0)
+            put(cx + d, mapY + (r - std::abs(d)) / 2, r == 6 ? GOLD_ORE : CRYSTAL);
+        }
+        for (int x = cx - 7; x <= cx + 7; x++) put(x, fy - 6, WOOD);
+        for (int x : {cx - 5, cx + 5}) for (int y = fy - 5; y < fy; y++) put(x, y, PINE_WOOD);
+        put(cx - 3, fy - 7, CLAY); put(cx, fy - 7, CRYSTAL); put(cx + 3, fy - 7, MOSS);
+        for (int y = ay + 1; y <= ay + 7; y++) put(cx, y, PINE_WOOD);
+        for (int dx = -3; dx <= 3; dx++) put(cx + dx, ay + 7, IRON_ORE);
+        put(cx - 3, ay + 8, CRYSTAL); put(cx, ay + 8, CRYSTAL); put(cx + 3, ay + 8, CRYSTAL);
+        return;
+      }
+      for (int oy = 0; oy < h; oy++) for (int ox = 0; ox < w; ox++) {
+        bool border = ox == 0 || ox == w - 1 || oy == 0 || oy == h - 1;
+        put(ax + ox, ay + oy, border ? BRICK : EMPTY);
+      }
+      for (int side : {-1, 1}) {
+        int x0 = side < 0 ? ax + 2 : ax + w - 6;
+        for (int x = x0; x <= x0 + 4; x++) for (int y = fy - 7; y < fy; y++) {
+          bool frame = x == x0 || x == x0 + 4 || (y - (fy - 7)) % 3 == 0;
+          if (frame) put(x, y, PINE_WOOD);
+        }
+        int balconyX0 = side < 0 ? ax + 2 : ax + w - 12;
+        int balconyX1 = side < 0 ? ax + 11 : ax + w - 3;
+        for (int x = balconyX0; x <= balconyX1; x++) put(x, ay + 9, WOOD);
+        for (int y = ay + 10; y <= ay + 13; y++) put(side < 0 ? balconyX1 : balconyX0, y, PINE_WOOD);
+      }
+      for (int x = cx - 2; x <= cx + 2; x++) put(x, fy - 2, WOOD);
+      put(cx, fy - 3, CRYSTAL);
+    };
     // A crumbled, plant-choked ruin — the lush biome's signature structure.
     auto stampOvergrown = [&](int ax, int ay, int w, int h, int lx, int ly) {
       if (L->isBackground) {
@@ -878,22 +1061,6 @@
       put(ax + 2, ay + h - 3, CRYSTAL);
     };
 
-    struct ForegroundTerrainScope {
-      Layer* layer;
-      bool wasBackground;
-      uint32_t caveSeed;
-      explicit ForegroundTerrainScope(Layer* active)
-        : layer(active), wasBackground(active->isBackground), caveSeed(active->gCaveSeed) {
-        if (wasBackground) {
-          layer->isBackground = false;
-          layer->gCaveSeed = layer->worldSeed ^ 0x5bd1e995u;
-        }
-      }
-      ~ForegroundTerrainScope() {
-        layer->isBackground = wasBackground;
-        layer->gCaveSeed = caveSeed;
-      }
-    };
     for (int ly = lyMin; ly <= lyMax; ly++) for (int lx = lxMin; lx <= lxMax; lx++) {
       if (whash2(sseed, lx, ly) >= 0.25) continue;
       // jittered anchor + hashed size
@@ -918,10 +1085,11 @@
         else if (caveBiome == CAVE_MUSHROOM && pick < 0.55) kind = SK_MUSHGROVE;
         else if (caveBiome == CAVE_CRYSTAL && pick < 0.55) kind = SK_SHRINE;
         else {
-          static const SKind pool[] = { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_FORGE, SK_OVERGROWN, SK_SHRINE };
-          kind = pool[(int)(whash2(sseed ^ 0x9002u, lx, ly) * 6) % 6];
+          static const SKind pool[] = { SK_HOUSE, SK_VAULT, SK_COLONNADE, SK_FORGE, SK_ARCHIVE, SK_OVERGROWN, SK_SHRINE };
+          kind = pool[(int)(whash2(sseed ^ 0x9002u, lx, ly) * 7) % 7];
         }
         if (kind == SK_COLONNADE) w += 4;                // halls run wider
+        if (kind == SK_ARCHIVE) { w += 8; h += 4; }      // room for shelves + central aisle
         if (kind == SK_SHRINE) {
           w = 19 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 10);
           h = imax(PLAYER_H + 3, w / 2 + 3);
@@ -961,6 +1129,7 @@
         case SK_COLONNADE: stampColonnade(ax, ay, w, h, lx, ly); break;
         case SK_SHRINE:    stampShrine(ax, ay, w, h, lx, ly); break;
         case SK_FORGE:     stampForge(ax, ay, w, h, lx, ly); break;
+        case SK_ARCHIVE:   stampArchive(ax, ay, w, h, lx, ly); break;
         case SK_OVERGROWN: stampOvergrown(ax, ay, w, h, lx, ly); break;
         case SK_MUSHGROVE: stampMushGrove(ax, ay, w, h, lx, ly); break;
       }

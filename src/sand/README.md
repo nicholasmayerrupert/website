@@ -67,19 +67,22 @@ passages. Large multi-level mines add rail galleries, stations, side chambers,
 wide inter-level shafts, and surface headhouses. Mine interiors live in the
 foreground while aligned timber frames, station walls, furnished workrooms,
 carts, and rail beds remain solid in the background. Surface settlements contain
-five to seven large role-specific buildings, a market, lantern-lit streets, and a
-roofed well. Ruins and homes keep player-clear foreground routes while their
-coordinated background walls carry furniture, murals, storage, machinery, and
-plant life. Coal and copper have compact starter lodes near the original spawn;
-iron, gold, and environmental hazards unlock progressively deeper.
+five to seven large role-specific buildings with distinct rooflines, terraced
+foundations, broad masonry supports, slope stairs, a market, lantern-lit streets,
+and a roofed well. Ruins and homes keep player-clear foreground routes while
+their coordinated background walls carry furniture, murals, storage, machinery,
+and plant life; underground archetypes include lost archives with book bays,
+reading desks, maps, balconies, and lecterns. Coal and copper have compact
+starter lodes near the original spawn; iron, gold, and environmental hazards
+unlock progressively deeper.
 
 Only changed simulation tiles enter persistent streaming storage. Pristine
 generated and prefetched tiles use RLE when useful and live in a bounded
 disposable cache, so ordinary exploration does not grow storage with total
 distance. Use `npm run test:worldgen` for canonical-coordinate, entrance shape,
 connectivity, progression, reachability, and background-solidity checks;
-`scripts/worldgen-structures-test.mjs` verifies large player-clear mines and
-cross-layer rail alignment. `npm run test:prefetch`
+`scripts/worldgen-structures-test.mjs` verifies grounded surface masonry, furnished
+archives, large player-clear mines, and cross-layer rail alignment. `npm run test:prefetch`
 covers deterministic restoration and storage bounds. `npm run worldgen:atlas`
 writes `bench/worldgen-atlas.png`, with foreground above background;
 `npm run worldgen:structure-atlas` finds representative structures and renders

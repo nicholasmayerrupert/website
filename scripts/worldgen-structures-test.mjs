@@ -44,6 +44,50 @@ function materialComponents(g, mat) {
 const acidComponents = (g) => materialComponents(g, MAT.ACID);
 const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
 
+function surfaceMasonryComponents(g, engine) {
+  const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
+  const surfaceY = new Int32Array(COLS);
+  for (let x = 0; x < COLS; x++) surfaceY[x] = engine.worldSurfaceAbsAt(offX + x) - offY;
+  const seen = new Uint8Array(g.length);
+  const stack = [];
+  const builtAt = (k) => {
+    const x = k % COLS, y = (k / COLS) | 0, mat = g[k];
+    return (mat === MAT.BRICK || mat === MAT.SANDSTONE) && y <= surfaceY[x];
+  };
+  const comps = [];
+  for (let start = 0; start < g.length; start++) {
+    if (seen[start] || !builtAt(start)) continue;
+    seen[start] = 1;
+    stack.length = 0;
+    stack.push(start);
+    let n = 0, minX = COLS, maxX = -1, minY = ROWS, maxY = -1;
+    let edge = false, groundContacts = 0;
+    while (stack.length) {
+      const k = stack.pop();
+      const x = k % COLS, y = (k / COLS) | 0;
+      n++;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      edge ||= x === 0 || x === COLS - 1 || y === 0 || y === ROWS - 1;
+      groundContacts += y >= surfaceY[x] - 1;
+      const neighbors = [
+        x ? k - 1 : -1, x + 1 < COLS ? k + 1 : -1,
+        y ? k - COLS : -1, y + 1 < ROWS ? k + COLS : -1,
+      ];
+      for (const next of neighbors) {
+        if (next < 0 || seen[next] || !builtAt(next)) continue;
+        seen[next] = 1;
+        stack.push(next);
+      }
+    }
+    comps.push({
+      n, width: maxX - minX + 1, height: maxY - minY + 1,
+      edge, groundContacts,
+    });
+  }
+  return comps;
+}
+
 // --- ores + ruins actually generate while exploring ---
 {
   const tally = {
@@ -51,6 +95,7 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
     mycelium: 0, mushroom: 0, plant: 0, vine: 0,
     mineRailRows: 0, roomyRailRows: 0, coherentRailCells: 0, railCells: 0, maxRailSpan: 0,
     decoratedMineRows: 0, surfaceFurnishings: 0, undergroundFurnishings: 0, alignedBrick: 0,
+    surfaceShells: 0, groundedSurfaceShells: 0, surfaceGroundContacts: 0,
   };
   const oreIds = new Set([MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE]);
   const furnishingIds = new Set([
@@ -118,6 +163,14 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
             details += mineDetailIds.has(bg[yy * COLS + x]);
         if (details >= 18) tally.decoratedMineRows++;
       }
+      if (depth === 0) for (const c of surfaceMasonryComponents(g, e)) {
+        // Ignore natural one-cell sandstone crusts and structures clipped by the
+        // streaming window. A full facade is substantial in both dimensions.
+        if (c.edge || c.n < 80 || c.width < 12 || c.height < 8) continue;
+        tally.surfaceShells++;
+        tally.surfaceGroundContacts += c.groundContacts;
+        if (c.groundContacts >= 3) tally.groundedSurfaceShells++;
+      }
       e.shiftWorldXY(128, 0);
     }
     e.destroy();
@@ -141,9 +194,45 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
   check(`mine levels contain machinery, cargo, lamps, and themed rooms (${tally.decoratedMineRows}/${tally.mineRailRows})`,
     tally.decoratedMineRows > tally.mineRailRows * 0.80);
   check(`surface buildings contain visible furnishings (${tally.surfaceFurnishings} cells)`, tally.surfaceFurnishings > 200);
+  check(`surface structures are masonry-connected to the terrain (${tally.groundedSurfaceShells}/${tally.surfaceShells}, ${tally.surfaceGroundContacts} ground contacts)`,
+    tally.surfaceShells > 10 && tally.groundedSurfaceShells === tally.surfaceShells
+      && tally.surfaceGroundContacts > tally.surfaceShells * 3);
   check(`underground structures contain visible furnishings (${tally.undergroundFurnishings} cells)`, tally.undergroundFurnishings > 200);
   check(`foreground brickwork has a coordinated background wall (${tally.alignedBrick}/${tally.brick})`,
     tally.brick > 0 && tally.alignedBrick > tally.brick * 0.65);
+}
+
+// --- the archive archetype remains a real furnished library, not an empty shell ---
+{
+  const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 0x1234, sinksOn: false, infinite: true });
+  const bookIds = new Set([MAT.CLAY, MAT.MOSS, MAT.CRYSTAL, MAT.COPPER_ORE, MAT.COAL_ORE]);
+  let archiveBays = 0;
+  e.shiftWorldXY(0, 96);
+  for (let band = 0; band < 50; band++) {
+    const fg = e.getGrid(), bg = e.getGridBg();
+    const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
+    for (let y = 5; y < ROWS - 6; y++) for (let x = 1; x < COLS - 11; x++) {
+      const worldX = offX + x, worldY = offY + y;
+      if (worldY < e.worldSurfaceAbsAt(worldX) + 30) continue;
+      let upperShelf = true, lowerShelf = true;
+      for (let dx = 0; dx < 10; dx++) {
+        upperShelf &&= bg[y * COLS + x + dx] === MAT.WOOD;
+        lowerShelf &&= bg[(y + 5) * COLS + x + dx] === MAT.WOOD;
+      }
+      if (!upperShelf || !lowerShelf) continue;
+      let books = 0, framing = 0, visible = 0;
+      for (let yy = y - 4; yy < y; yy++) for (let dx = 0; dx < 10; dx++) {
+        const k = yy * COLS + x + dx;
+        books += bookIds.has(bg[k]);
+        framing += bg[k] === MAT.PINE_WOOD;
+        visible += bookIds.has(bg[k]) && fg[k] === MAT.EMPTY;
+      }
+      if (books >= 4 && framing >= 4 && visible >= 2) archiveBays++;
+    }
+    e.shiftWorldXY(128, 0);
+  }
+  check(`lost archives contain framed, visible book bays (${archiveBays} bays)`, archiveBays >= 4);
+  e.destroy();
 }
 
 // --- ocean flora stays submerged. Surface markets and cave ruins now also use

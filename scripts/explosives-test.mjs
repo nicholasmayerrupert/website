@@ -772,6 +772,56 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a rolling TNT front does not pin terrain detached by the preceding blast ---
+{
+  const e = mk();
+  const tntY = 39;
+  for (let y = 40; y <= 50; y++) for (let x = 30; x <= 110; x++)
+    e.placeMaterial(x, y, 0, MAT.IRON_ORE);
+  for (let y = 40; y < ROWS; y++) for (let x = 25; x <= 30; x++)
+    e.placeMaterial(x, y, 0, MAT.STONE);
+  for (let x = 30; x <= 110; x++) e.placeMaterial(x, tntY, 0, MAT.TNT);
+  e.syncComponents();
+  let firstDrop = -1;
+  for (let i = 0; i < 100; i++) {
+    if (i < 4) e.placeMaterial(28, tntY, 1, MAT.FIRE);
+    e.step(i * 16);
+    if (count(e.getGrid(), MAT.TNT) < 81) { firstDrop = i; break; }
+  }
+  check(`unsupported rolling TNT front began detonating`, firstDrop >= 0 && count(e.getGrid(), MAT.TNT) > 0);
+  e.step((firstDrop + 1) * 16);
+  check(`rolling TNT front did not anchor the detached shelf`,
+        e.getGrid()[40 * COLS + 105] !== MAT.IRON_ORE);
+  e.destroy();
+}
+
+// --- an attached TNT fuse does not pause a large falling plate on its final tick ---
+{
+  const C = 180, R = 300;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 7, sinksOn: false, infinite: false });
+  for (let y = 20; y <= 40; y++) for (let x = 30; x <= 130; x++) {
+    const marker = x >= 40 && x <= 44 && y >= 25 && y <= 29;
+    e.placeMaterial(x, y, 0, marker ? MAT.IRON_ORE : MAT.STONE);
+  }
+  e.placeMaterial(80, 41, 0, MAT.TNT);
+  e.syncComponents();
+  let previous = topRow(e.getGrid(), MAT.IRON_ORE, C);
+  const deltas = [];
+  let detonated = false;
+  for (let i = 0; i < 40; i++) {
+    if (i < 6) e.placeMaterial(81, 41 + i, 1, MAT.FIRE);
+    e.step(i * 16);
+    const next = topRow(e.getGrid(), MAT.IRON_ORE, C);
+    deltas.push(next - previous);
+    previous = next;
+    if (count(e.getGrid(), MAT.TNT) === 0) { detonated = true; break; }
+  }
+  check(`attached TNT detonated while its plate was airborne`, detonated);
+  check(`final fuse tick did not pause the falling plate (${deltas.join('')})`,
+        deltas.every((delta) => delta === 1));
+  e.destroy();
+}
+
 // --- generated two-layer terrain: foreground TNT blast invalidates stale cross-layer bonds ---
 {
   const C = 512, R = 256, seed = 12648430;

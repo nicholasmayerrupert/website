@@ -1442,6 +1442,7 @@ void ComponentSystem::moveRigidAssemblies() {
   int totalComps = (int)(E.L->stoneComponents.size() + E.L->plantComponents.size() + E.L->iceComponents.size());
   if (totalComps == 0) return;
   std::vector<Comp*> all;
+  std::vector<uint8_t> allImminentTnt;
   std::vector<int> localOf(totalComps, -1);
   std::vector<uint8_t> imminentTnt(totalComps, 0);
   for (const auto& fuse : E.L->pendingDetonations) {
@@ -1462,14 +1463,14 @@ void ComponentSystem::moveRigidAssemblies() {
                      ice ? ICE : E.L->grid[c.cells[0]]);
         c.buoyancyDirection = 0;
       }
-      // A TNT component touched by a chain front is due to explode in this same
-      // tick's reaction pass. Do not spend the much larger assembly planner on
-      // translating and spilling media around a shape that is about to vanish;
-      // it also keeps the one-tick front spatially coherent. The normal 28-tick
-      // fuse remains fully physical and continues falling until the blast reaches it.
-      if (!c.grounded && !imminentTnt[gi]
+      // Due TNT stays in a mixed falling assembly so it cannot pin adjacent
+      // detached terrain for its final fuse tick. A due-only front is skipped
+      // below because it disappears in this tick's reaction pass.
+      if (!c.grounded
           && (!jointGroundReady || gi >= (int)E.L->crossBondedComp.size() || !E.L->crossBondedComp[gi])) {
-        localOf[gi] = (int)all.size(); all.push_back(&c);
+        localOf[gi] = (int)all.size();
+        all.push_back(&c);
+        allImminentTnt.push_back(imminentTnt[gi]);
       }
       gi++;
     }
@@ -1502,9 +1503,9 @@ void ComponentSystem::moveRigidAssemblies() {
       else anchored[i] = 1;
     }
   }
-  struct Group { std::vector<int> comps; bool grounded = false; int maxY = 0; };
+  struct Group { std::vector<int> comps; bool grounded = false, dueTntOnly = true; int maxY = 0; };
   std::unordered_map<int, Group> groups;
-  for (int i = 0; i < n; i++) { int r = ufFind(parent, i); Group& g = groups[r]; g.comps.push_back(i); if (all[i]->grounded || anchored[i]) g.grounded = true; if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax; }
+  for (int i = 0; i < n; i++) { int r = ufFind(parent, i); Group& g = groups[r]; g.comps.push_back(i); if (all[i]->grounded || anchored[i]) g.grounded = true; if (!allImminentTnt[i]) g.dueTntOnly = false; if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax; }
   std::vector<Group*> order; order.reserve(groups.size());
   for (auto& kv : groups) order.push_back(&kv.second);
   std::sort(order.begin(), order.end(), [](Group* a, Group* b) { return a->maxY > b->maxY; });
@@ -1952,7 +1953,7 @@ void ComponentSystem::moveRigidAssemblies() {
   };
 
   for (Group* grp : order) {
-    if (grp->grounded) continue;
+    if (grp->grounded || grp->dueTntOnly) continue;
     std::unordered_set<int> cells;
     for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
     double weight = 0;

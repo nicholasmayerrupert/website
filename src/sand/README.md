@@ -65,11 +65,13 @@ foreground route graph.
 Underground ruins are seated on the traversable cave graph and receive roomy side
 passages. Large multi-level mines add rail galleries, stations, side chambers,
 wide inter-level shafts, and surface headhouses. Mine interiors live in the
-foreground while aligned timber frames, station walls, and rail beds remain
-solid in the background. Surface settlements contain five to seven large
-buildings, including a meeting hall, plus a well. Coal and copper have compact starter
-lodes near the original spawn; iron, gold, and environmental hazards unlock
-progressively deeper.
+foreground while aligned timber frames, station walls, furnished workrooms,
+carts, and rail beds remain solid in the background. Surface settlements contain
+five to seven large role-specific buildings, a market, lantern-lit streets, and a
+roofed well. Ruins and homes keep player-clear foreground routes while their
+coordinated background walls carry furniture, murals, storage, machinery, and
+plant life. Coal and copper have compact starter lodes near the original spawn;
+iron, gold, and environmental hazards unlock progressively deeper.
 
 Only changed simulation tiles enter persistent streaming storage. Pristine
 generated and prefetched tiles use RLE when useful and live in a bounded
@@ -79,7 +81,9 @@ connectivity, progression, reachability, and background-solidity checks;
 `scripts/worldgen-structures-test.mjs` verifies large player-clear mines and
 cross-layer rail alignment. `npm run test:prefetch`
 covers deterministic restoration and storage bounds. `npm run worldgen:atlas`
-writes `bench/worldgen-atlas.png`, with foreground above background.
+writes `bench/worldgen-atlas.png`, with foreground above background;
+`npm run worldgen:structure-atlas` finds representative structures and renders
+their actual composited cell grids to `bench/structure-atlas.png`.
 
 Zoom changes both the visible cell count and the loaded-window dimensions. A
 larger zoomed-out window costs more to simulate. The effective zoom floor is

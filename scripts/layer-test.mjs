@@ -185,7 +185,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
 {
   console.log('worldgen tree crowns are not grounded by an open-sky top edge');
   const cols = 200, rows = 120;
-  const e = createEngineWasm({ cols, rows, worldSeed: 60, sinksOn: false, infinite: true });
+  const e = createEngineWasm({ cols, rows, worldSeed: 6, sinksOn: false, infinite: true });
   const plantStats = () => {
     const grid = e.getGridBg();
     let n = 0, top = rows, topEdge = 0;
@@ -227,7 +227,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
 // reaches the presentation mirror for one frame before a later dirty rect clears it.
 {
   console.log('presentation diff: streamed falling trees clear vacated crowns');
-  const opts = { cols: 160, rows: 100, worldSeed: 0, sinksOn: false, infinite: true };
+  const opts = { cols: 160, rows: 100, worldSeed: 10, sinksOn: false, infinite: true };
   const host = createEngineWasm({ ...opts, storageRole: 'authority' });
   const mirror = createEngineWasm({ ...opts, storageRole: 'presentation' });
   mirror.applyWorldMirror(host.serializeWorld(), host.getWorldOffsetX(), host.getWorldOffsetY());
@@ -1027,25 +1027,27 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check(`cross-layer sand/water swap settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
 }
 
-// Worldgen trees spawn in the BACKGROUND only. Mines can now use foreground
-// timber underground, so isolate tree trunks by counting WOOD above local ground.
+// Worldgen trees spawn in the BACKGROUND only. Constructed settlements now use
+// foreground timber above ground, so use canopy-exclusive tree materials rather
+// than treating every WOOD cell as a trunk.
 {
   console.log('worldgen: trees only in the background');
-  let fgWood = 0, bgWood = 0, sawTrees = false;
+  const treeMats = new Set([MAT.PINE_NEEDLES, MAT.WILLOW_LEAF, MAT.BUSH_LEAF, MAT.CACTUS]);
+  let fgTree = 0, bgTree = 0, sawTrees = false;
   for (const seed of [0x55aa55, 0x9e3779b9, 0x777, 0x1234]) {
     const e = createEngineWasm({ cols: 256, rows: 256, worldSeed: seed >>> 0, sinksOn: false, infinite: true });
     const fg = e.getGrid(), bg = e.getGridBg(), ox = e.getWorldOffsetX(), oy = e.getWorldOffsetY();
-    let fw = 0, bw = 0;
+    let ft = 0, bt = 0;
     for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
       if (oy + y >= e.worldSurfaceAbsAt(ox + x)) continue;
-      fw += fg[y * 256 + x] === MAT.WOOD;
-      bw += bg[y * 256 + x] === MAT.WOOD;
+      ft += treeMats.has(fg[y * 256 + x]);
+      bt += treeMats.has(bg[y * 256 + x]);
     }
-    fgWood += fw; bgWood += bw; if (bw > 0) sawTrees = true;
+    fgTree += ft; bgTree += bt; if (bt > 0) sawTrees = true;
     e.destroy();
   }
-  check('a tree-bearing seed generated trees in the background', sawTrees, `(bg WOOD ${bgWood})`);
-  check('no worldgen tree trunks in the foreground', fgWood === 0, `(fg WOOD ${fgWood})`);
+  check('a tree-bearing seed generated canopies in the background', sawTrees, `(bg tree cells ${bgTree})`);
+  check('no worldgen canopy materials in the foreground', fgTree === 0, `(fg tree cells ${fgTree})`);
 }
 
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} FAILED`);

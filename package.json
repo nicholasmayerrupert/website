@@ -101,6 +101,7 @@
     "bench:profile-shift": "node scripts/profile-shift.mjs",
     "bench:zoom": "node scripts/bench-zoomed-out.mjs",
     "worldgen:atlas": "node scripts/worldgen-atlas.mjs",
+    "worldgen:structure-atlas": "node scripts/structure-atlas.mjs",
     "check:embed": "node scripts/check-embed-boundary.mjs"
   },
   "dependencies": {

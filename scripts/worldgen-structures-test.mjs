@@ -50,14 +50,24 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
     ore: 0, brick: 0, moss: 0, acid: 0, salt: 0, lava: 0, crystal: 0,
     mycelium: 0, mushroom: 0, plant: 0, vine: 0,
     mineRailRows: 0, roomyRailRows: 0, coherentRailCells: 0, railCells: 0, maxRailSpan: 0,
+    decoratedMineRows: 0, surfaceFurnishings: 0, undergroundFurnishings: 0, alignedBrick: 0,
   };
   const oreIds = new Set([MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE]);
+  const furnishingIds = new Set([
+    MAT.CLAY, MAT.CRYSTAL, MAT.COPPER_ORE, MAT.GOLD_ORE, MAT.MUSH_CAP, MAT.GLOWBERRY, MAT.GLOWSHROOM,
+  ]);
+  const mineDetailIds = new Set([
+    MAT.CRYSTAL, MAT.COPPER_ORE, MAT.GOLD_ORE, MAT.COAL_ORE, MAT.CLAY,
+    MAT.MYCELIUM, MAT.MUSH_CAP, MAT.GLOWBERRY, MAT.PINE_WOOD, MAT.SANDSTONE,
+  ]);
   for (let depth = 0; depth < 3; depth++) {
     const e = mk();
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
     for (let i = 0; i < 25; i++) {
       const g = e.getGrid(), bg = e.getGridBg();
-      for (const v of g) {
+      const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
+      for (let k = 0; k < g.length; k++) {
+        const v = g[k];
         if (oreIds.has(v)) tally.ore++;
         else if (v === MAT.BRICK) tally.brick++;
         else if (v === MAT.MOSS) tally.moss++;
@@ -69,6 +79,21 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
         else if (v === MAT.MUSH_STEM || v === MAT.MUSH_CAP) tally.mushroom++;
         else if (v === MAT.PLANT) tally.plant++;
         else if (v === MAT.VINE) tally.vine++;
+        const x = k % COLS, y = (k / COLS) | 0;
+        const worldX = offX + x, worldY = offY + y;
+        const depthBelowSurface = worldY - e.worldSurfaceAbsAt(worldX);
+        if (furnishingIds.has(bg[k]) && v === MAT.EMPTY) {
+          let framed = false;
+          for (let dy = -2; dy <= 2 && !framed; dy++) for (let dx = -2; dx <= 2; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= COLS || ny < 0 || ny >= ROWS) continue;
+            const nearby = bg[ny * COLS + nx];
+            if (nearby === MAT.BRICK || nearby === MAT.PINE_WOOD) { framed = true; break; }
+          }
+          if (framed && depthBelowSurface < 0) tally.surfaceFurnishings++;
+          else if (framed && depthBelowSurface > 30) tally.undergroundFurnishings++;
+        }
+        if (v === MAT.BRICK && bg[k] !== MAT.STONE && bg[k] !== MAT.EMPTY) tally.alignedBrick++;
       }
       for (let y = PLAYER_CLEAR; y < ROWS; y++) {
         const rails = [];
@@ -87,6 +112,11 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
         }
         tally.railCells += rails.length;
         if (clear > rails.length * 0.70) tally.roomyRailRows++;
+        let details = 0;
+        for (let yy = Math.max(0, y - 18); yy <= y - 2; yy++)
+          for (let x = rails[0]; x <= rails.at(-1); x++)
+            details += mineDetailIds.has(bg[yy * COLS + x]);
+        if (details >= 18) tally.decoratedMineRows++;
       }
       e.shiftWorldXY(128, 0);
     }
@@ -108,17 +138,27 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
     tally.roomyRailRows > tally.mineRailRows * 0.70);
   check(`mine rails align across foreground/background (${tally.coherentRailCells}/${tally.railCells} cells)`,
     tally.railCells > 0 && tally.coherentRailCells > tally.railCells * 0.90);
+  check(`mine levels contain machinery, cargo, lamps, and themed rooms (${tally.decoratedMineRows}/${tally.mineRailRows})`,
+    tally.decoratedMineRows > tally.mineRailRows * 0.80);
+  check(`surface buildings contain visible furnishings (${tally.surfaceFurnishings} cells)`, tally.surfaceFurnishings > 200);
+  check(`underground structures contain visible furnishings (${tally.undergroundFurnishings} cells)`, tally.undergroundFurnishings > 200);
+  check(`foreground brickwork has a coordinated background wall (${tally.alignedBrick}/${tally.brick})`,
+    tally.brick > 0 && tally.alignedBrick > tally.brick * 0.65);
 }
 
-// --- ocean flora stays submerged: background VINE/GLOWBERRY only comes from
-// fillOceanFlora, so its foreground counterpart must still be generated water.
+// --- ocean flora stays submerged. Surface markets and cave ruins now also use
+// vines/glowberries, so only classify plants in the actual sea water column.
 {
   const e = mk();
   let flora = 0, exposed = 0;
   for (let band = 0; band < 100; band++) {
     const fg = e.getGrid(), bg = e.getGridBg();
+    const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
     for (let k = 0; k < bg.length; k++) {
       if (bg[k] !== MAT.VINE && bg[k] !== MAT.GLOWBERRY) continue;
+      const x = k % COLS, y = (k / COLS) | 0;
+      const worldX = offX + x, worldY = offY + y;
+      if (worldY < 18 || worldY >= e.worldSurfaceAbsAt(worldX)) continue;
       flora++;
       if (fg[k] !== MAT.WATER) exposed++;
     }
@@ -264,7 +304,13 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
   let bx = -1, by = -1;
   for (let s = 0; s < 20 && bx < 0; s++) {
     const g = e.getGrid();
-    for (let i = 0; i < g.length; i++) if (featureMats.has(g[i])) { bx = i % COLS; by = (i / COLS) | 0; break; }
+    const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
+    for (let i = 0; i < g.length; i++) {
+      if (!featureMats.has(g[i])) continue;
+      const x = i % COLS, y = (i / COLS) | 0;
+      if (offY + y <= e.worldSurfaceAbsAt(offX + x) + 30) continue;
+      bx = x; by = y; break;
+    }
     if (bx < 0) e.shiftWorldXY(128, 0);
   }
   check('found a themed cave feature to test', bx >= 0);

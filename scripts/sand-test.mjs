@@ -361,12 +361,19 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
 // 5. a dropped cube settles on terrain without disintegrating or clipping.
 {
   console.log('free rigid body');
-  const e = mk({ infinite: true });
-  const surf = e.worldSurfaceAt(0);
-  e.spawnBox(COLS / 2, surf - 20, 5, 5); // 10x10 box, built engine-side
+  // Use a controlled slope: the populated infinite surface now legitimately
+  // contains roofs, wells, and lanterns, none of which belong in this body-only
+  // integrity fixture.
+  const e = mk({ infinite: false });
+  for (let x = 5; x < COLS - 5; x++) {
+    const top = 76 + ((x - 5) >> 4);
+    for (let y = top; y < ROWS; y++) e.addDiscToStoneDraft(x, y, 0);
+  }
+  e.finalizeStoneDraft();
+  e.spawnBox(COLS / 2, 40, 5, 5); // 10x10 box, built engine-side
   run(260, e);
   const n = rigidCells(e.getGrid());
-  // The cube lands on sloped natural terrain and rolls a quarter turn before it
+  // The cube lands on sloped terrain and rolls a quarter turn before it
   // settles, so it comes to rest ROTATED; a rotated 100-cell raster covers a few
   // cells more or fewer than the axis-aligned 100. The check is "intact" (no
   // disintegration well below 100, no terrain clipping that swallows cells), not

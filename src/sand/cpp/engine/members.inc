@@ -10,7 +10,7 @@
   void useLayer(Layer* lay) { L = lay; }
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
-    if (!lay->pendingDetonations.empty() || !lay->pendingTntBlastFronts.empty()) return true;
+    if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies) if (b->material == TNT && b->fuseTicks > 0) return true;
     for (int y = 0; y < rows; y++) if (lay->rowMarkMax[y] >= lay->rowMarkMin[y]) return true;
     return false;
@@ -287,12 +287,6 @@
   bool beginStepDirty() {
     for (auto& kv : L->pendingDetonations) {
       int k = kv.first;
-      if (k < 0 || k >= cols * rows) continue;
-      int y = k / cols, x = k - y * cols;
-      if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
-      if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
-    }
-    for (int k : L->pendingTntBlastFronts) {
       if (k < 0 || k >= cols * rows) continue;
       int y = k / cols, x = k - y * cols;
       if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;

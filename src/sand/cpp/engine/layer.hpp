@@ -129,8 +129,6 @@ struct Layer {
   // lit static TNT cells counting down to detonation (cell -> ticksLeft). Body TNT
   // uses Body::fuseTicks instead, since a body's cells move. See explosives.inc.
   std::unordered_map<int, int> pendingDetonations;
-  // Spatial representatives from dense TNT fronts awaiting their bounded blast pass.
-  std::vector<int> pendingTntBlastFronts;
   // worldgen / streaming (per-layer terrain + chunk store)
   bool infinite = false;
   bool isBackground = false; // bg = a more-solid backdrop (sparser caves) behind the carved fg
@@ -231,7 +229,6 @@ struct Layer {
     groundBaseValid = false;
     bodies.clear(); bodyCells.clear();
     pendingDetonations.clear();
-    pendingTntBlastFronts.clear();
     blastSparseCarryReady = false;
     prevCompCells.clear(); curCompCells.clear();
     mineDamageAny = false;

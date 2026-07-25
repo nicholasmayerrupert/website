@@ -313,29 +313,10 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
     E.L->grid[cell] = EMPTY;
   }
 
-  if (massFront && (!E.L->pendingTntBlastFronts.empty()
-      || (int)reps.size() > TNT_MASS_FRONT_BUDGET_THRESHOLD)) {
-    E.L->pendingTntBlastFronts.insert(E.L->pendingTntBlastFronts.end(), reps.begin(), reps.end());
-  } else {
-    for (int cell : reps) {
-      int y = cell / E.cols, x = cell - y * E.cols;
-      carveBlastAcrossLayers(x, y, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb);
-    }
-  }
-}
-
-void ExplosivesSystem::drainMassTntFronts(BlastBatch& bb, BlastBatch* otherBb) {
-  auto& fronts = E.L->pendingTntBlastFronts;
-  int count = imin(TNT_MASS_FRONT_BUCKETS_PER_STEP, (int)fronts.size());
-  if (count <= 0) return;
-  bb.debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
-  if (otherBb) otherBb->debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
-  for (int i = 0; i < count; i++) {
-    int cell = fronts[i];
+  for (int cell : reps) {
     carveBlastAcrossLayers(cell % E.cols, cell / E.cols,
                           TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb);
   }
-  fronts.erase(fronts.begin(), fronts.begin() + count);
 }
 
 // Carve one durability-gated crater centred at (cx,cy) INTO the shared batch (no
@@ -770,17 +751,61 @@ void ExplosivesSystem::applyExplosives() {
     if (y > 0) igniteMethanePocket(k - E.cols);
   }
 
-  // 2) Tick static fuses; carve the expired ones in deterministic (sorted) order.
+  // 2) Tick static fuses; broad due fronts consume one compact spatial window,
+  //    while smaller fronts carve atomically. Cell and bucket order is deterministic.
   if (!E.L->pendingDetonations.empty()) {
     std::vector<int> fire;
-    for (auto& kv : E.L->pendingDetonations) if (--kv.second <= 0) fire.push_back(kv.first);
-    std::sort(fire.begin(), fire.end());
-    std::vector<int> staticFire;
-    staticFire.reserve(fire.size());
-    for (int cell : fire) {
-      if (cell >= 0 && cell < E.cols * E.rows && E.L->grid[cell] == TNT && !E.isBodyCell(cell)) staticFire.push_back(cell);
+    bool overdue = false;
+    for (auto& kv : E.L->pendingDetonations) {
+      if (--kv.second <= 0) fire.push_back(kv.first);
+      if (kv.second < 0) overdue = true;
     }
-    bool massFront = (int)staticFire.size() >= TNT_MASS_FRONT_CELLS;
+    std::sort(fire.begin(), fire.end());
+    std::vector<int> dueStatic;
+    dueStatic.reserve(fire.size());
+    for (int cell : fire) {
+      if (cell >= 0 && cell < E.cols * E.rows && E.L->grid[cell] == TNT && !E.isBodyCell(cell)) dueStatic.push_back(cell);
+    }
+    std::vector<int> staticFire;
+    bool massFront = (int)dueStatic.size() >= TNT_MASS_FRONT_CELLS;
+    if (massFront) {
+      int bucketCols = (E.cols + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
+      std::unordered_set<int> uniqueBuckets;
+      for (int cell : dueStatic) {
+        int y = cell / E.cols, x = cell - y * E.cols;
+        uniqueBuckets.insert((y / TNT_CLUSTER_BUCKET) * bucketCols + x / TNT_CLUSTER_BUCKET);
+      }
+      if (((int)dueStatic.size() > TNT_LIVE_FRONT_BUDGET_CELLS || overdue)
+          && (int)uniqueBuckets.size() > TNT_MASS_FRONT_BUDGET_THRESHOLD) {
+        std::vector<int> buckets(uniqueBuckets.begin(), uniqueBuckets.end());
+        std::sort(buckets.begin(), buckets.end());
+        std::unordered_set<int> selected;
+        int firstBucket = buckets.front();
+        int firstBucketRow = firstBucket / bucketCols;
+        int firstBucketCol = firstBucket - firstBucketRow * bucketCols;
+        for (int bucket : buckets) {
+          int row = bucket / bucketCols;
+          if (row >= firstBucketRow + TNT_MASS_FRONT_BUCKET_ROWS_PER_STEP) break;
+          int col = bucket - row * bucketCols;
+          if (col >= firstBucketCol
+              && col < firstBucketCol + TNT_MASS_FRONT_BUCKET_COLS_PER_STEP)
+            selected.insert(bucket);
+        }
+        staticFire.reserve(dueStatic.size()
+                           * TNT_MASS_FRONT_BUCKET_COLS_PER_STEP
+                           * TNT_MASS_FRONT_BUCKET_ROWS_PER_STEP
+                           / buckets.size());
+        for (int cell : dueStatic) {
+          int y = cell / E.cols, x = cell - y * E.cols;
+          int bucket = (y / TNT_CLUSTER_BUCKET) * bucketCols + x / TNT_CLUSTER_BUCKET;
+          if (selected.count(bucket)) staticFire.push_back(cell);
+        }
+      } else {
+        staticFire.swap(dueStatic);
+      }
+    } else {
+      staticFire.swap(dueStatic);
+    }
     if ((int)staticFire.size() >= TNT_CLUSTER_FAST_THRESHOLD) {
       carveStaticTntCluster(staticFire, bb, &otherBb, massFront);
     } else {
@@ -789,7 +814,6 @@ void ExplosivesSystem::applyExplosives() {
     }
     for (int cell : staticFire) E.L->pendingDetonations.erase(cell);
   }
-  drainMassTntFronts(bb, &otherBb);
   // 3) Tick body fuses; an expired TNT body detonates at its centre (the blast
   //    consumes its own cells, so finishErasedBodies removes the now-empty body).
   std::vector<std::pair<int, int>> bodyBlasts;

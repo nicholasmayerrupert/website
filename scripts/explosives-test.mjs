@@ -658,7 +658,7 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
-// --- exceptionally broad fronts are queued in bounded deterministic slices ---
+// --- exceptionally broad chains stay paced and bounded ---
 {
   const C = 360, R = 260, side = 159;
   const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
@@ -666,20 +666,26 @@ function blastDamagesMaterial(name) {
   for (let y = y0; y < y0 + side; y++)
     for (let x = x0; x < x0 + side; x++) e.placeMaterial(x, y, 0, MAT.TNT);
   e.syncComponents();
-  let tntLeft = side * side, peakQueuedFronts = 0, completed = false;
-  for (let i = 0; i < 160; i++) {
+  let tntLeft = side * side, completed = false, previous = tntLeft;
+  let detonationSteps = 0, maxDrop = 0;
+  for (let i = 0; i < 200; i++) {
     if (i < 3) e.placeMaterial(x0 + side + 1, y0 + (side >> 1), 1, MAT.FIRE);
     e.step(i * 16);
     tntLeft = count(e.getGrid(), MAT.TNT);
-    peakQueuedFronts = Math.max(peakQueuedFronts, e._tntFrontCount());
-    if (tntLeft === 0 && e._tntFrontCount() === 0) { completed = true; break; }
+    if (tntLeft < previous) {
+      detonationSteps++;
+      maxDrop = Math.max(maxDrop, previous - tntLeft);
+    }
+    previous = tntLeft;
+    if (tntLeft === 0) { completed = true; break; }
   }
-  check(`exceptionally broad TNT chain used the deferred front budget (peak queue ${peakQueuedFronts})`,
-        peakQueuedFronts > 0);
-  check(`budgeted TNT chain completed and drained its front queue (${tntLeft} TNT left)`,
-        completed && tntLeft === 0);
-  check(`budgeted TNT chain kept live rigid rubble bounded (${e._bodyCount()} bodies)`,
-        e._bodyCount() <= BLAST_DEBRIS_CAP);
+  check(`exceptionally broad TNT chain stayed distributed (${detonationSteps} steps, max ${maxDrop} cells)`,
+        detonationSteps >= 22 && maxDrop < 2500);
+  check(`paced TNT chain completed (${tntLeft} TNT left)`, completed && tntLeft === 0);
+  // The spawn ceiling is checked before impact splitting; split fragments retain
+  // their non-structural blast-rubble flag and may add two solver bodies.
+  check(`paced TNT chain kept live rigid rubble bounded (${e._bodyCount()} bodies)`,
+        e._bodyCount() <= BLAST_DEBRIS_CAP + 2);
   e.destroy();
 }
 

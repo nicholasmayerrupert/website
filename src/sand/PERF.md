@@ -69,7 +69,9 @@ component registration, and generation/restoration. Browser presentation exposes
   grounding caches in place; their movement planner keeps ordered cell vectors
   with generation-stamped membership instead of whole-mass hash tables. Contact
   probes use stamped sparse overlays/open-air caches, and translated masses batch
-  exact persistence-tile dirt instead of hashing once per moved cell.
+  exact persistence-tile dirt instead of hashing once per moved cell. Grid
+  mutation writes the shifted snapshot once and clears only its trailing
+  boundary instead of clearing and rewriting the full island.
 - Component adjacency edges use dense-id counting passes, so the duplicate-heavy
   edge list produced by a blast cut is sorted in linear time.
 - Above 900,000 loaded cells, grounding and assembly motion may run at 30 Hz;
@@ -78,6 +80,11 @@ component registration, and generation/restoration. Browser presentation exposes
 - Reaction passes build ordered active-material candidates once per layer.
 - Fire and acid split only touched components; safe local cuts avoid full
   grounding floods.
+- A TNT batch accumulates overlapping stencils into one bounds-local
+  maximum-energy field, with generation-stamped sparse storage for widely
+  separated waves. Each unique affected cell is classified once, each
+  foreground/background cell is cut once, and component repair completes before
+  physical or cosmetic aftermath is emitted.
 - A locally proven cave blast keeps double-buffer carry sparse until loose
   support, assembly movement, a snapshot, resize, or world shift invalidates the
   proof.

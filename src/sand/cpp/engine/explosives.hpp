@@ -52,22 +52,40 @@ class ExplosivesSystem {
   static constexpr double BLAST_GAS_INNER_KEEP = 0.22; // inner shell is mostly air
   static constexpr double BLAST_GAS_OUTER_KEEP = 0.88; // rim stays visibly smoky
 
-  // Per-step accumulator: every crater of a step carves into one of these, then
-  // finishBlasts() runs the expensive finalize once (the TNT chain-lag fix).
-  struct BlastOffset { int16_t ox, oy; int32_t dd; double dist, energy; };
+  // Per-step transaction: every crater first contributes to one damage field.
+  // The union is classified from the untouched grid, cut once, repaired once,
+  // and only then consumed by the visual and physical aftermath.
+  struct BlastOffset { int16_t ox, oy; double dist, energy; };
   struct BlastGasOffset { int16_t ox, oy; double keepP; };
-  struct BlastWave { int cx, cy, radius; uint32_t seed; };
-  struct BlastDebrisSource { uint8_t material; int cell; };
   struct BlastDebrisEjection { double nx = 0, ny = -1; bool terrainGuided = false; };
+  struct BlastDebrisCandidate { uint8_t material; int cell, dd; };
+  struct BlastDebrisSource { uint8_t material; int cell; };
+  struct BlastWave {
+    int cx, cy, radius;
+    uint32_t seed;
+    double power;
+    uint8_t explosiveMaterial;
+    BlastDebrisEjection debrisEjection;
+    std::vector<BlastDebrisCandidate> debrisCandidates;
+    std::array<int16_t, TABLE * BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE> debrisSlots;
+  };
+  struct BlastCellRemoval { int cell; uint8_t material; };
+  struct BlastParticlePlan {
+    uint8_t material;
+    double x, y, vx, vy;
+  };
   struct BlastCrossPair { int ownId, peerId; uint8_t dependentMask; };
   struct BlastBatch {
+    std::vector<int> forcedStaticTnt;
+    std::vector<BlastCellRemoval> staticCuts;
+    std::vector<int> gasCuts, bodyCuts, staticTntIgnitions;
     std::vector<int> erasedStone, erasedIce;
     std::vector<int> erasedPlant;
+    std::vector<BlastParticlePlan> particlePlans;
     std::vector<BlastCrossPair> touchedCrossPairs;
-    std::vector<BlastWave> gasShockwaves;
+    std::vector<BlastWave> waves;
+    std::unordered_set<Body*> sourceBodies, tntBodyIgnitions;
     Layer* structuralLayer = nullptr;
-    Layer* energyLayer = nullptr;
-    int32_t blastEnergyGen = 0;
     std::unordered_map<int, Body*> bodyById; bool bodyMapBuilt = false;
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
@@ -87,14 +105,17 @@ class ExplosivesSystem {
   void spawnBlastDebrisFan(int cx, int cy, uint32_t bseed, uint8_t debrisMat,
                            int sx0, int sy, int count, int salt, BlastBatch& bb,
                            const BlastDebrisEjection& fallback, int tries = -1);
-  bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
+  void buildBlastDamage(const BlastBatch& bb);
   void noteCrossSupportRemoval(int k, BlastBatch& bb);
   bool touchedCrossSupportSurvives(const BlastBatch& bb);
   void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb,
                              bool massFront = false);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr,
                   uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX);
-  void finishBlasts(BlastBatch& bb);
+  void evaluateBlastPlan(BlastBatch& bb);
+  void applyBlastCuts(BlastBatch& bb);
+  void repairBlastStructures(BlastBatch& bb);
+  void applyBlastAftermath(BlastBatch& bb);
   void carveBlastAcrossLayers(int cx, int cy, int radius, double power, BlastBatch& bb, BlastBatch* otherBb,
                               Body* sourceBody = nullptr, uint8_t explosiveMaterial = TNT,
                               int immunePlayerId = 0, uint32_t seedSerial = UINT32_MAX,
@@ -121,5 +142,11 @@ class ExplosivesSystem {
   std::vector<BlastOffset> methaneStencil;
   std::vector<BlastGasOffset> methaneGasStencil;
   std::vector<int> addedHeatCells;
+  std::vector<float> plannedDamage;
+  std::vector<int32_t> plannedBestWave, plannedDamageStamp, plannedDamageCells;
+  std::vector<int32_t> plannedRemovalStamp;
+  int32_t plannedDamageGen = 0, plannedRemovalGen = 0;
+  int plannedX0 = 0, plannedY0 = 0, plannedWidth = 0, plannedHeight = 0;
+  bool plannedDense = true;
   void buildBlastStencils();
 };

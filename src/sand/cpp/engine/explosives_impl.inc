@@ -11,7 +11,7 @@ void ExplosivesSystem::buildBlastStencils() {
       if (dd > r2) continue;
       double dist = std::sqrt((double)dd);
       double energy = power * (1.0 - dist / radius);
-      stencil.push_back({(int16_t)ox, (int16_t)oy, dd, dist, energy});
+      stencil.push_back({(int16_t)ox, (int16_t)oy, dist, energy});
       if (dd >= inner2) {
         double shell = (dist - (double)inner) / (double)(radius - inner);
         double keepP = BLAST_GAS_INNER_KEEP + (BLAST_GAS_OUTER_KEEP - BLAST_GAS_INNER_KEEP) * shell;
@@ -202,17 +202,86 @@ void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed,
   }
 }
 
-bool ExplosivesSystem::blastEnergyDominated(BlastBatch& bb, int k, double energy) {
-  size_t n = (size_t)E.cols * E.rows;
-  if (bb.energyLayer != E.L) {
-    bb.energyLayer = E.L;
-    bb.blastEnergyGen = ++E.L->seenGen;
-    if (E.L->blastBestEnergy.size() < n) E.L->blastBestEnergy.resize(n);
+void ExplosivesSystem::buildBlastDamage(const BlastBatch& bb) {
+  if (bb.waves.empty()) {
+    plannedWidth = plannedHeight = 0;
+    plannedDamageCells.clear();
+    return;
   }
-  if (E.L->seenStamp[k] == bb.blastEnergyGen && (double)E.L->blastBestEnergy[k] >= energy) return true;
-  E.L->seenStamp[k] = bb.blastEnergyGen;
-  E.L->blastBestEnergy[k] = (float)energy;
-  return false;
+  plannedX0 = imax(1, bb.minX);
+  plannedY0 = imax(1, bb.minY);
+  int x1 = imin(E.cols - 2, bb.maxX);
+  int y1 = imin(E.rows - 1, bb.maxY);
+  plannedWidth = imax(0, x1 - plannedX0 + 1);
+  plannedHeight = imax(0, y1 - plannedY0 + 1);
+  size_t area = (size_t)plannedWidth * plannedHeight;
+  size_t estimatedVisits = 0;
+  for (const BlastWave& wave : bb.waves) {
+    if (wave.radius == TNT_BLAST_RADIUS) estimatedVisits += tntStencil.size();
+    else if (wave.radius == METHANE_BLAST_RADIUS) estimatedVisits += methaneStencil.size();
+    else estimatedVisits += (size_t)(wave.radius * 2 + 1) * (wave.radius * 2 + 1);
+  }
+  plannedDense = area <= estimatedVisits * 2 + 1024;
+  if (plannedDense) {
+    plannedDamage.assign(area, -1.0f);
+    plannedBestWave.assign(area, -1);
+  } else {
+    size_t n = (size_t)E.cols * E.rows;
+    if (plannedDamage.size() < n) plannedDamage.resize(n);
+    if (plannedBestWave.size() < n) plannedBestWave.resize(n);
+    if (plannedDamageStamp.size() < n) plannedDamageStamp.resize(n);
+    plannedDamageGen++;
+    plannedDamageCells.clear();
+    plannedDamageCells.reserve(imin((int)n, (int)estimatedVisits));
+  }
+
+  auto addDamage = [&](int waveIndex, int x, int y, double energy) {
+    if (x < plannedX0 || x >= plannedX0 + plannedWidth
+        || y < plannedY0 || y >= plannedY0 + plannedHeight) return;
+    int index;
+    if (plannedDense) {
+      index = (y - plannedY0) * plannedWidth + x - plannedX0;
+      if ((double)plannedDamage[index] >= energy) return;
+    } else {
+      index = y * E.cols + x;
+      if (plannedDamageStamp[index] == plannedDamageGen) {
+        if ((double)plannedDamage[index] >= energy) return;
+      } else {
+        plannedDamageStamp[index] = plannedDamageGen;
+        plannedDamageCells.push_back(index);
+      }
+    }
+    plannedDamage[index] = (float)energy;
+    plannedBestWave[index] = waveIndex;
+  };
+
+  for (int waveIndex = 0; waveIndex < (int)bb.waves.size(); waveIndex++) {
+    const BlastWave& wave = bb.waves[waveIndex];
+    const std::vector<BlastOffset>* stencil = wave.radius == TNT_BLAST_RADIUS ? &tntStencil
+      : (wave.radius == METHANE_BLAST_RADIUS ? &methaneStencil : nullptr);
+    if (stencil) {
+      double stencilPower = wave.radius == TNT_BLAST_RADIUS
+        ? TNT_BLAST_POWER : METHANE_BLAST_POWER;
+      if (wave.power == stencilPower) {
+        for (const BlastOffset& offset : *stencil)
+          addDamage(waveIndex, wave.cx + offset.ox, wave.cy + offset.oy, offset.energy);
+      } else {
+        for (const BlastOffset& offset : *stencil)
+          addDamage(waveIndex, wave.cx + offset.ox, wave.cy + offset.oy,
+                    wave.power * (1.0 - offset.dist / wave.radius));
+      }
+      continue;
+    }
+    int r2 = wave.radius * wave.radius;
+    for (int oy = -wave.radius; oy <= wave.radius; oy++)
+      for (int ox = -wave.radius; ox <= wave.radius; ox++) {
+        int dd = ox * ox + oy * oy;
+        if (dd > r2) continue;
+        double dist = std::sqrt((double)dd);
+        addDamage(waveIndex, wave.cx + ox, wave.cy + oy,
+                  wave.power * (1.0 - dist / wave.radius));
+      }
+  }
 }
 
 void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
@@ -298,9 +367,11 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
     }
   }
 
+  bb.waves.reserve(bb.waves.size() + reps.size());
+  if (otherBb) otherBb->waves.reserve(otherBb->waves.size() + reps.size());
   bb.any = true;
-  // Per-cell row marks are intentionally omitted below: finishBlasts activates
-  // and marks this batch's complete union rectangle after every carve/finalize.
+  // The entire due front is part of this transaction even when only spatial
+  // representatives contribute crater energy.
   for (int cell : cells) {
     if (cell < 0 || cell >= E.cols * E.rows || E.L->grid[cell] != TNT || E.isBodyCell(cell)) continue;
     int y = cell / E.cols, x = cell - y * E.cols;
@@ -308,9 +379,7 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
     if (y - TNT_BLAST_RADIUS < bb.minY) bb.minY = y - TNT_BLAST_RADIUS;
     if (x + TNT_BLAST_RADIUS > bb.maxX) bb.maxX = x + TNT_BLAST_RADIUS;
     if (y + TNT_BLAST_RADIUS > bb.maxY) bb.maxY = y + TNT_BLAST_RADIUS;
-    bb.erasedStone.push_back(cell);
-    noteCrossSupportRemoval(cell, bb);
-    E.L->grid[cell] = EMPTY;
+    bb.forcedStaticTnt.push_back(cell);
   }
 
   for (int cell : reps) {
@@ -319,11 +388,9 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
   }
 }
 
-// Carve one durability-gated crater centred at (cx,cy) INTO the shared batch (no
-// finalize — that's finishBlasts). A cell at distance d survives iff its DURABILITY
-// exceeds the blast energy there: energy = power*(1 - d/radius). Soft blocks
-// (sand/dirt) are cleared almost to the rim; hard ones (iron ore) only near centre.
-// Destruction is component-safe and body-aware, reusing the eraser/mining primitives.
+// Add one durability-gated crater to the shared damage field. No terrain,
+// components, bodies, fuses, or effects are changed here. A cell's strongest
+// overlapping wave is classified once after every active crater is known.
 void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody,
                                  uint8_t explosiveMaterial, uint32_t seedSerial) {
   bb.any = true;
@@ -333,169 +400,164 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
   if (cy - radius < bb.minY) bb.minY = cy - radius;
   if (cx + radius > bb.maxX) bb.maxX = cx + radius;
   if (cy + radius > bb.maxY) bb.maxY = cy + radius;
-  int r2 = radius * radius;
   uint32_t serial = seedSerial == UINT32_MAX ? (uint32_t)E.tick : seedSerial;
   uint32_t bseed = serial * 2654435761u ^ (uint32_t)(cy * E.cols + cx); // per-blast deterministic seed
-  bb.gasShockwaves.push_back({cx, cy, radius, bseed});
-  // Physical chunks remain bounded and each candidate must have an escape path,
-  // but enclosing foreground/background terrain does not suppress the budget.
-  int localDebrisCap = bb.debrisStepCap;
-  int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
-  static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
-  int debrisSampleCells[TABLE * SAMPLE_COUNT];
-  int debrisSampleDist[TABLE * SAMPLE_COUNT];
-  uint16_t debrisSampleMask[TABLE];
-  uint64_t debrisMaterialMask = 0;
-  int sampleThird = imax(1, radius / 3);
-  auto carveCell = [&](int ox, int oy, int dd, double dist, double energy) {
-      int yy = cy + oy; if (yy <= 0 || yy >= E.rows) return;
-      int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) return;
-      int k = E.I(xx, yy);
-      if (blastEnergyDominated(bb, k, energy)) return;
-      uint8_t m = E.L->grid[k];
-      if (E.isGasMaterial(m)) {
-        E.L->grid[k] = EMPTY;
-        return;
-      }
-      E.noteLooseGroundTouch(m);
-      if (!E.isBlastDamageable(m)) return;
-      if (energy < (double)DURABILITY[m]) return; // too hard to blow up at this distance
-      bool wasTnt = (m == TNT);
-      if (wasTnt && dd > 0) {
-        if (E.isBodyCell(k)) {
-          if (!bb.bodyMapBuilt) { for (Body* b : E.L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
-          auto it = bb.bodyById.find(E.L->bodyOwner[k]);
-          Body* hitBody = it == bb.bodyById.end() ? nullptr : it->second;
-          if (hitBody != sourceBody) {
-            shortenTntBodyFuse(hitBody, TNT_CHAIN_FUSE);
-            return;
-          }
-        } else {
-          // Keep chained static TNT physically present until its short fuse fires.
-          // Erasing it here created stale cell-coordinate blasts a few ticks later.
-          queueDetonation(k, TNT_CHAIN_FUSE);
-          return;
-        }
-      }
-      // body-material invariant: a body cell goes through the body system, a static
-      // cell through the component-split system (see isBodyCell).
-      if (E.isBodyCell(k)) {
-        if (!bb.bodyMapBuilt) { for (Body* b : E.L->bodies) bb.bodyById[b->id] = b; bb.bodyMapBuilt = true; }
-        if (!E.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
-      } else {
-        // Keep one central candidate per material in each of nine fixed spatial
-        // buckets. This lets a large stone wall fill the existing rubble budget
-        // instead of collapsing to one sample, without a growing per-cell list.
-        // TNT itself is never scattered as live shrapnel.
-        if (m != TNT && sourceLimit > 0 && E.isRigidMaterialClass(m)) {
-          int bx = ox < -sampleThird ? 0 : (ox > sampleThird ? 2 : 1);
-          int by = oy < -sampleThird ? 0 : (oy > sampleThird ? 2 : 1);
-          int bucket = by * BLAST_DEBRIS_SAMPLE_SIDE + bx;
-          uint64_t materialBit = 1ull << m;
-          if (!(debrisMaterialMask & materialBit)) {
-            debrisMaterialMask |= materialBit;
-            debrisSampleMask[m] = 0;
-          }
-          uint16_t bucketBit = (uint16_t)(1u << bucket);
-          int sample = (int)m * SAMPLE_COUNT + bucket;
-          if (!(debrisSampleMask[m] & bucketBit) || dd < debrisSampleDist[sample]) {
-            debrisSampleMask[m] |= bucketBit;
-            debrisSampleCells[sample] = k;
-            debrisSampleDist[sample] = dd;
-          }
-        }
-        uint8_t group = E.componentGroupOf(m);
-        if (group != CG_NONE) noteCrossSupportRemoval(k, bb);
-        if (group == CG_STONE) bb.erasedStone.push_back(k);
-        else if (group == CG_ICE) bb.erasedIce.push_back(k);
-        else if (group == CG_PLANT) bb.erasedPlant.push_back(k);
-        E.L->grid[k] = EMPTY;
-      }
-      // Cosmetic flecks of the destroyed material, flung outward (also how loose
-      // powders/liquids in the blast get scattered). Capped + sparse so large
-      // chains don't flood the item/particle pool.
-      if (!E.isGasMaterial(m) && bb.particles < BLAST_PARTICLE_CAP && (((xx * 7) ^ (yy * 3)) % 8 == 0)) {
-        double inv = dist > 0.5 ? 1.0 / dist : 0.0;
-        double sp = BLAST_PARTICLE_SPEED * (1.0 - dist / radius) * (0.5 + whash2(bseed, xx, yy));
-        E.spawnParticle(m, xx + 0.5, yy + 0.5, ox * inv * sp, oy * inv * sp - 0.6, BLAST_PARTICLE_LIFE);
-        bb.particles++;
-      }
-  };
-  const std::vector<BlastOffset>* stencil = radius == TNT_BLAST_RADIUS ? &tntStencil
-    : (radius == METHANE_BLAST_RADIUS ? &methaneStencil : nullptr);
-  if (stencil) {
-    double stencilPower = radius == TNT_BLAST_RADIUS ? TNT_BLAST_POWER : METHANE_BLAST_POWER;
-    if (power == stencilPower) {
-      for (const BlastOffset& o : *stencil) carveCell(o.ox, o.oy, o.dd, o.dist, o.energy);
-    } else {
-      for (const BlastOffset& o : *stencil)
-        carveCell(o.ox, o.oy, o.dd, o.dist, power * (1.0 - o.dist / radius));
-    }
-  } else {
-    for (int oy = -radius; oy <= radius; oy++) for (int ox = -radius; ox <= radius; ox++) {
-      int dd = ox * ox + oy * oy;
-      if (dd <= r2) {
-        double dist = std::sqrt((double)dd);
-        carveCell(ox, oy, dd, dist, power * (1.0 - dist / radius));
-      }
-    }
-  }
-  std::vector<BlastDebrisSource> debrisSources;
-  debrisSources.reserve((size_t)sourceLimit);
-  uint8_t firstSample[TABLE];
-  // Give each destroyed material one representative before taking repeats.
-  for (int m = 0; m < TABLE && (int)debrisSources.size() < sourceLimit; m++) {
-    if (!(debrisMaterialMask & (1ull << m))) continue;
-    int best = -1;
-    for (int s = 0; s < SAMPLE_COUNT; s++) {
-      int sample = m * SAMPLE_COUNT + s;
-      if ((debrisSampleMask[m] & (1u << s)) && (best < 0 || debrisSampleDist[sample] < debrisSampleDist[m * SAMPLE_COUNT + best])) best = s;
-    }
-    if (best >= 0) {
-      firstSample[m] = (uint8_t)best;
-      debrisSources.push_back({(uint8_t)m, debrisSampleCells[m * SAMPLE_COUNT + best]});
-    }
-  }
-  // Then distribute repeated samples spatially. The vector can never exceed the
-  // already-existing per-step body budget (3 TNT / 10 methane).
-  for (int s = 0; s < SAMPLE_COUNT && (int)debrisSources.size() < sourceLimit; s++)
-    for (int m = 0; m < TABLE && (int)debrisSources.size() < sourceLimit; m++) {
-      if (!(debrisMaterialMask & (1ull << m))) continue;
-      int sample = m * SAMPLE_COUNT + s;
-      if (s != firstSample[m] && (debrisSampleMask[m] & (1u << s)))
-        debrisSources.push_back({(uint8_t)m, debrisSampleCells[sample]});
-    }
-  // Shockwave: shove nearby free bodies outward and wake them.
-  for (Body* b : E.L->bodies) {
-    double ddx = b->px - cx, ddy = b->py - cy;
-    if (ddx <= -radius || ddx >= radius || ddy <= -radius || ddy >= radius) continue;
-    double bd = std::sqrt(ddx * ddx + ddy * ddy);
-    if (bd >= radius || bd < 0.01) continue;
-    double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
-    b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
-  }
-  // Eject a few physical rubble chunks of the destroyed solid, flung radially.
-  // They stay non-structural and are capped so a big chain cannot flood the solver.
-  for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < localDebrisCap && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
-    uint8_t debrisMat = debrisSources[di].material;
-    int src = debrisSources[di].cell, sy = src / E.cols, sx0 = src - sy * E.cols;
-    int tries = explosiveMaterial == METHANE ? METHANE_DEBRIS_SOURCE_TRIES : BLAST_DEBRIS_SOURCE_TRIES;
-    spawnBlastDebrisFan(cx, cy, bseed, debrisMat, sx0, sy,
-                        BLAST_DEBRIS_CHUNKS, (int)di * 17, bb,
-                        debrisEjection, tries);
-  }
-  // Actual destroyed materials own the bounded budget first. TNT may contribute
-  // a generic fragment only when a slot remains; methane owns no solid
-  // material and therefore never creates generic DEBRIS.
-  if (explosiveMaterial != METHANE && bb.debrisSpawned < localDebrisCap
-      && whash2(bseed ^ 0xD3B15u, cx, cy) < BLAST_FORCED_DEBRIS_FRAC)
-    spawnBlastDebrisFan(cx, cy, bseed, DEBRIS, cx, cy,
-                        BLAST_FORCED_DEBRIS_CHUNKS, 97, bb, debrisEjection);
+  BlastWave wave{cx, cy, radius, bseed, power, explosiveMaterial, debrisEjection, {}, {}};
+  wave.debrisSlots.fill(-1);
+  bb.waves.push_back(std::move(wave));
+  if (sourceBody) bb.sourceBodies.insert(sourceBody);
 }
 
-void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
+void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
   if (!bb.any) return;
+  const size_t n = (size_t)E.cols * E.rows;
+  if (plannedRemovalStamp.size() < n) plannedRemovalStamp.resize(n);
+  plannedRemovalGen++;
+  auto removalPlanned = [&](int k) {
+    return plannedRemovalStamp[k] == plannedRemovalGen;
+  };
+  auto markRemoval = [&](int k) {
+    plannedRemovalStamp[k] = plannedRemovalGen;
+  };
+  auto ensureBodyMap = [&]() {
+    if (bb.bodyMapBuilt) return;
+    for (Body* b : E.L->bodies) bb.bodyById[b->id] = b;
+    bb.bodyMapBuilt = true;
+  };
+  auto planStaticCut = [&](int k, uint8_t material, int waveIndex, int dd,
+                           bool collectAftermath) {
+    if (removalPlanned(k)) return;
+    markRemoval(k);
+    bb.staticCuts.push_back({k, material});
+    uint8_t group = E.componentGroupOf(material);
+    if (group != CG_NONE) noteCrossSupportRemoval(k, bb);
+    if (group == CG_STONE) bb.erasedStone.push_back(k);
+    else if (group == CG_ICE) bb.erasedIce.push_back(k);
+    else if (group == CG_PLANT) bb.erasedPlant.push_back(k);
+    if (collectAftermath && material != TNT && E.isRigidMaterialClass(material)
+        && waveIndex >= 0 && waveIndex < (int)bb.waves.size()) {
+      BlastWave& wave = bb.waves[waveIndex];
+      static const int SAMPLE_COUNT =
+        BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
+      int y = k / E.cols, x = k - y * E.cols;
+      int ox = x - wave.cx, oy = y - wave.cy;
+      int sampleThird = imax(1, wave.radius / 3);
+      int bx = ox < -sampleThird ? 0 : (ox > sampleThird ? 2 : 1);
+      int by = oy < -sampleThird ? 0 : (oy > sampleThird ? 2 : 1);
+      int sample = (int)material * SAMPLE_COUNT
+                 + by * BLAST_DEBRIS_SAMPLE_SIDE + bx;
+      int candidateIndex = wave.debrisSlots[sample];
+      if (candidateIndex < 0) {
+        wave.debrisSlots[sample] = (int16_t)wave.debrisCandidates.size();
+        wave.debrisCandidates.push_back({material, k, dd});
+      } else if (dd < wave.debrisCandidates[candidateIndex].dd) {
+        wave.debrisCandidates[candidateIndex] = {material, k, dd};
+      }
+    }
+  };
+
+  // Dense static fronts are consumed by the transaction but do not become
+  // thousands of independent crater effects.
+  for (int k : bb.forcedStaticTnt) {
+    if (k < 0 || k >= E.cols * E.rows || E.L->grid[k] != TNT || E.isBodyCell(k)) continue;
+    planStaticCut(k, TNT, -1, 0, false);
+  }
+
+  auto evaluateCell = [&](int k, double energy, int waveIndex) {
+    if (removalPlanned(k)) return;
+    uint8_t material = E.L->grid[k];
+    if (E.isGasMaterial(material)) {
+      markRemoval(k);
+      bb.gasCuts.push_back(k);
+      return;
+    }
+    E.noteLooseGroundTouch(material);
+    if (!E.isBlastDamageable(material)
+        || energy < (double)DURABILITY[material]) return;
+    if (waveIndex < 0 || waveIndex >= (int)bb.waves.size()) return;
+    BlastWave& wave = bb.waves[waveIndex];
+    int y = k / E.cols, x = k - y * E.cols;
+    int ox = x - wave.cx, oy = y - wave.cy;
+    int dd = ox * ox + oy * oy;
+    double dist = std::sqrt((double)dd);
+    bool bodyCell = E.isBodyCell(k);
+    Body* hitBody = nullptr;
+    if (bodyCell) {
+      ensureBodyMap();
+      auto it = bb.bodyById.find(E.L->bodyOwner[k]);
+      if (it != bb.bodyById.end()) hitBody = it->second;
+    }
+    if (material == TNT && dd > 0) {
+      if (bodyCell) {
+        if (hitBody && !bb.sourceBodies.count(hitBody)) {
+          bb.tntBodyIgnitions.insert(hitBody);
+          return;
+        }
+      } else {
+        bb.staticTntIgnitions.push_back(k);
+        return;
+      }
+    }
+    if (bodyCell) {
+      markRemoval(k);
+      bb.bodyCuts.push_back(k);
+    } else {
+      planStaticCut(k, material, waveIndex, dd, true);
+    }
+    if (bb.particles < BLAST_PARTICLE_CAP && (((x * 7) ^ (y * 3)) % 8 == 0)) {
+      double inv = dist > 0.5 ? 1.0 / dist : 0.0;
+      double speed = BLAST_PARTICLE_SPEED * (1.0 - dist / wave.radius)
+                   * (0.5 + whash2(wave.seed, x, y));
+      bb.particlePlans.push_back({
+        material, x + 0.5, y + 0.5,
+        ox * inv * speed, oy * inv * speed - 0.6,
+      });
+      bb.particles++;
+    }
+  };
+  if (plannedDense) {
+    for (int y = 0; y < plannedHeight; y++)
+      for (int x = 0; x < plannedWidth; x++) {
+        int index = y * plannedWidth + x;
+        int waveIndex = plannedBestWave[index];
+        if (waveIndex < 0) continue;
+        int k = (plannedY0 + y) * E.cols + plannedX0 + x;
+        evaluateCell(k, plannedDamage[index], waveIndex);
+      }
+  } else {
+    for (int k : plannedDamageCells)
+      evaluateCell(k, plannedDamage[k], plannedBestWave[k]);
+  }
+}
+
+void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
+  if (!bb.any) return;
+  for (int k : bb.gasCuts) {
+    if (E.isGasMaterial(E.L->grid[k])) E.L->grid[k] = EMPTY;
+  }
+  for (const BlastCellRemoval& cut : bb.staticCuts) {
+    if (!E.isBodyCell(cut.cell) && E.L->grid[cut.cell] == cut.material)
+      E.L->grid[cut.cell] = EMPTY;
+  }
+  if (!bb.bodyCuts.empty() && !bb.bodyMapBuilt) {
+    for (Body* b : E.L->bodies) bb.bodyById[b->id] = b;
+    bb.bodyMapBuilt = true;
+  }
+  for (int k : bb.bodyCuts) {
+    if (!E.eraseBodyCellIndex(k, bb.bodyById, bb.dirtyBodies)) {
+      E.L->grid[k] = EMPTY;
+      E.L->bodyOwner[k] = -1;
+    }
+  }
   E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells);
+  for (int k : bb.staticTntIgnitions) {
+    if (E.L->grid[k] == TNT && !E.isBodyCell(k)) queueDetonation(k, TNT_CHAIN_FUSE);
+  }
+  for (Body* b : bb.tntBodyIgnitions) shortenTntBodyFuse(b, TNT_CHAIN_FUSE);
+}
+
+void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
+  if (!bb.any) return;
   std::vector<int> allErased;
   const std::vector<int>* erased = nullptr;
   if (bb.erasedIce.empty() && bb.erasedPlant.empty()) erased = &bb.erasedStone;
@@ -537,7 +599,113 @@ void ExplosivesSystem::finishBlasts(BlastBatch& bb) {
     bb.structurePreserved = false;
   }
   if (bb.structurePreserved) E.L->blastSparseCarryReady = true;
-  spawnBlastRingGases(bb.gasShockwaves);
+}
+
+void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
+  if (!bb.any) return;
+  for (const BlastParticlePlan& particle : bb.particlePlans)
+    E.spawnParticle(particle.material, particle.x, particle.y,
+                    particle.vx, particle.vy, BLAST_PARTICLE_LIFE);
+
+  static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
+  for (BlastWave& wave : bb.waves) {
+    // Every impulse observes the completed cut and repair. Processing waves in
+    // order accumulates impulses on bodies and rubble emitted by earlier waves.
+    for (Body* b : E.L->bodies) {
+      double dx = b->px - wave.cx, dy = b->py - wave.cy;
+      if (dx <= -wave.radius || dx >= wave.radius
+          || dy <= -wave.radius || dy >= wave.radius) continue;
+      double distance = std::sqrt(dx * dx + dy * dy);
+      if (distance >= wave.radius || distance < 0.01) continue;
+      double force = BLAST_PUSH * (1.0 - distance / wave.radius) / distance;
+      b->vx += dx * force;
+      b->vy += dy * force;
+      b->awake = true;
+      b->stillTicks = 0;
+    }
+
+    int localDebrisCap = bb.debrisStepCap;
+    int sourceLimit = imax(0, localDebrisCap - bb.debrisSpawned);
+    int debrisSampleCells[TABLE * SAMPLE_COUNT];
+    int debrisSampleDist[TABLE * SAMPLE_COUNT];
+    uint16_t debrisSampleMask[TABLE] = {};
+    uint64_t debrisMaterialMask = 0;
+    int sampleThird = imax(1, wave.radius / 3);
+    for (const BlastDebrisCandidate& candidate : wave.debrisCandidates) {
+      int y = candidate.cell / E.cols, x = candidate.cell - y * E.cols;
+      int ox = x - wave.cx, oy = y - wave.cy;
+      int bx = ox < -sampleThird ? 0 : (ox > sampleThird ? 2 : 1);
+      int by = oy < -sampleThird ? 0 : (oy > sampleThird ? 2 : 1);
+      int bucket = by * BLAST_DEBRIS_SAMPLE_SIDE + bx;
+      uint64_t materialBit = 1ull << candidate.material;
+      debrisMaterialMask |= materialBit;
+      uint16_t bucketBit = (uint16_t)(1u << bucket);
+      int sample = (int)candidate.material * SAMPLE_COUNT + bucket;
+      if (!(debrisSampleMask[candidate.material] & bucketBit)
+          || candidate.dd < debrisSampleDist[sample]) {
+        debrisSampleMask[candidate.material] |= bucketBit;
+        debrisSampleCells[sample] = candidate.cell;
+        debrisSampleDist[sample] = candidate.dd;
+      }
+    }
+
+    std::vector<BlastDebrisSource> debrisSources;
+    debrisSources.reserve((size_t)sourceLimit);
+    uint8_t firstSample[TABLE] = {};
+    for (int material = 0;
+         material < TABLE && (int)debrisSources.size() < sourceLimit;
+         material++) {
+      if (!(debrisMaterialMask & (1ull << material))) continue;
+      int best = -1;
+      for (int sampleIndex = 0; sampleIndex < SAMPLE_COUNT; sampleIndex++) {
+        int sample = material * SAMPLE_COUNT + sampleIndex;
+        if ((debrisSampleMask[material] & (1u << sampleIndex))
+            && (best < 0 || debrisSampleDist[sample]
+              < debrisSampleDist[material * SAMPLE_COUNT + best]))
+          best = sampleIndex;
+      }
+      if (best >= 0) {
+        firstSample[material] = (uint8_t)best;
+        debrisSources.push_back({
+          (uint8_t)material,
+          debrisSampleCells[material * SAMPLE_COUNT + best],
+        });
+      }
+    }
+    for (int sampleIndex = 0;
+         sampleIndex < SAMPLE_COUNT && (int)debrisSources.size() < sourceLimit;
+         sampleIndex++)
+      for (int material = 0;
+           material < TABLE && (int)debrisSources.size() < sourceLimit;
+           material++) {
+        if (!(debrisMaterialMask & (1ull << material))) continue;
+        int sample = material * SAMPLE_COUNT + sampleIndex;
+        if (sampleIndex != firstSample[material]
+            && (debrisSampleMask[material] & (1u << sampleIndex)))
+          debrisSources.push_back({(uint8_t)material, debrisSampleCells[sample]});
+      }
+
+    for (size_t i = 0;
+         i < debrisSources.size() && bb.debrisSpawned < localDebrisCap
+           && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP;
+         i++) {
+      uint8_t material = debrisSources[i].material;
+      int source = debrisSources[i].cell;
+      int sourceY = source / E.cols, sourceX = source - sourceY * E.cols;
+      int tries = wave.explosiveMaterial == METHANE
+        ? METHANE_DEBRIS_SOURCE_TRIES : BLAST_DEBRIS_SOURCE_TRIES;
+      spawnBlastDebrisFan(wave.cx, wave.cy, wave.seed, material,
+                          sourceX, sourceY, BLAST_DEBRIS_CHUNKS, (int)i * 17,
+                          bb, wave.debrisEjection, tries);
+    }
+    if (wave.explosiveMaterial != METHANE && bb.debrisSpawned < localDebrisCap
+        && whash2(wave.seed ^ 0xD3B15u, wave.cx, wave.cy)
+             < BLAST_FORCED_DEBRIS_FRAC)
+      spawnBlastDebrisFan(wave.cx, wave.cy, wave.seed, DEBRIS,
+                          wave.cx, wave.cy, BLAST_FORCED_DEBRIS_CHUNKS, 97,
+                          bb, wave.debrisEjection);
+  }
+  spawnBlastRingGases(bb.waves);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
 }
@@ -613,15 +781,25 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
 
 void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   Layer* src = E.L;
+  Layer* other = E.bgEnabled && otherBb ? (src == &E.fg ? &E.bg : &E.fg) : nullptr;
   bool jointDirtyBefore = E.comps.jointDirty;
   bool jointBondsInvalidBefore = E.comps.jointBondsInvalid;
-  if (E.bgEnabled && otherBb) {
-    Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
-    E.useLayer(other);
-    finishBlasts(*otherBb);
-    E.useLayer(src);
-  }
-  finishBlasts(bb);
+  if (!bb.waves.empty()) buildBlastDamage(bb);
+  else if (otherBb) buildBlastDamage(*otherBb);
+  // Plan both layers from the same pre-cut snapshot, then advance the
+  // transaction phase for both before starting the next phase.
+  if (other) { E.useLayer(other); evaluateBlastPlan(*otherBb); }
+  E.useLayer(src);
+  evaluateBlastPlan(bb);
+  if (other) { E.useLayer(other); applyBlastCuts(*otherBb); }
+  E.useLayer(src);
+  applyBlastCuts(bb);
+  if (other) { E.useLayer(other); repairBlastStructures(*otherBb); }
+  E.useLayer(src);
+  repairBlastStructures(bb);
+  if (other) { E.useLayer(other); applyBlastAftermath(*otherBb); }
+  E.useLayer(src);
+  applyBlastAftermath(bb);
   // A settled cave crater commonly removes only a trailing, isolated TNT
   // component and locally bores two still-grounded terrain components. The
   // per-layer proofs above leave every surviving positional component id and

@@ -829,9 +829,12 @@ void ComponentSystem::wakeCellsThatLostGrounding(Layer& lay, const std::vector<u
     if (x < rmn[y]) rmn[y] = x;
     if (x > rmx[y]) rmx[y] = x;
   };
-  for (auto& c : lay.stoneComponents) for (int k : c.cells) wake(k);
-  for (auto& c : lay.plantComponents) for (int k : c.cells) wake(k);
-  for (auto& c : lay.iceComponents) for (int k : c.cells) wake(k);
+  auto wakeList = [&](std::vector<Comp>& list) {
+    for (auto& c : list) if (!c.grounded) for (int k : c.cells) wake(k);
+  };
+  wakeList(lay.stoneComponents);
+  wakeList(lay.plantComponents);
+  wakeList(lay.iceComponents);
   for (int k : lay.bodyCells) wake(k);
 }
 void ComponentSystem::computeGroundedBoth() {
@@ -1376,7 +1379,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   // anti-jitter decision cannot observe a different world from the mover.
   auto planLayerMove = [&](Layer& lay, const std::vector<int>& own, int dir,
                            const AssemblyBodyPush& bodyPush, AssemblyLayerMovePlan& plan) -> bool {
-    plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
+    plan.relocate.clear(); plan.shifted.clear(); plan.vacated.clear(); plan.materials.clear();
     // Treat a free-body stack pushed by this assembly as part of the same
     // one-cell translation. Its leading loose medium and trailing vacancies
     // must participate in this exact plan; otherwise the body preflight either
@@ -1407,12 +1410,6 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     }
     for (int k : *moving) if (!asmCells.has(k - dir)) vacated.push_back(k);
     if (pending.size() > vacated.size()) return false;
-    const int gridLen = E.cols * E.rows;
-    asmCells.reset((size_t)gridLen);
-    trVacated.reset((size_t)gridLen);
-    trReserved.reset((size_t)gridLen);
-    for (int k : *moving) asmCells.add(k);
-    for (int k : vacated) trVacated.add(k);
     const int vacatedWords = (E.cols + 63) >> 6;
     asmVacatedBits.assign(E.rows * vacatedWords, 0);
     for (int k : vacated) {
@@ -1439,7 +1436,6 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       // remaining upper vacancies before declaring an otherwise valid rise pinned.
       if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, asmVacatedBits);
       if (target < 0) return false;
-      trReserved.add(target);
       plan.relocate.push_back({target, p.material});
     }
     plan.shifted.reserve(own.size());
@@ -1452,13 +1448,16 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     asmCells.reset((size_t)E.cols * E.rows);
     for (int k : own) asmCells.add(k);
     for (int k : own) {
-      if (!asmCells.has(k - dir)) plan.materials.push_back({k, EMPTY});
+      if (!asmCells.has(k - dir)) {
+        plan.vacated.push_back(k);
+        plan.materials.push_back({k, EMPTY});
+      }
       if (!asmCells.has(k + dir)) plan.materials.push_back({k + dir, lay.grid[k]});
     }
     for (auto& r : plan.relocate) plan.materials.push_back(r);
     return true;
   };
-  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::vector<int>& cells,
+  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids,
                         const std::vector<AssemblyCellMat>& mats,
                         const AssemblyLayerMovePlan& plan, int dir,
                         bool updateGroundCache) {
@@ -1493,25 +1492,17 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
         }
       }
     };
-    for (int k : cells) {
-      writeAssemblyIndex(k, EMPTY);
-      if (updateGroundCache) {
-        lay.cellComp[k] = -1;
-        lay.groundRigidBase[k] = 0;
-        lay.groundedCell[k] = 0;
-      }
-    }
-    for (auto& cm : mats) writeAssemblyIndex(cm.k + dir, cm.material);
-    for (auto& r : plan.relocate) writeAssemblyIndex(r.first, r.second);
-    for (int tile : asmDirtyTileList) {
-      int ty = tile / tileCols, tx = tile - ty * tileCols;
-      lay.dirtyWorldTiles.insert(E.tileKey(tileX0 + tx, tileY0 + ty));
-    }
+    size_t materialIndex = 0;
     for (int id : ids) {
       Comp* c = compById(lay, id);
       bool isPlant = compIdIsPlant(lay, id);
       for (int& k : c->cells) {
+        const AssemblyCellMat& cm = mats[materialIndex++];
         k += dir;
+        int y = k / E.cols, x = k - y * E.cols;
+        if (x < lay.rowMarkMin[y]) lay.rowMarkMin[y] = x;
+        if (x > lay.rowMarkMax[y]) lay.rowMarkMax[y] = x;
+        writeAssemblyIndex(k, cm.material);
         if (updateGroundCache) {
           lay.cellComp[k] = id;
           lay.groundRigidBase[k] = 0;
@@ -1522,6 +1513,25 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       // maximum row by one, so plant metadata needs no full-cell rescan.
       c->yMax = imax(0, imin(E.rows - 1, c->yMax + (dir < 0 ? -1 : 1)));
       if (isPlant) c->cacheDirty = true;
+    }
+#ifdef SAND_INVARIANT_CHECKS
+    if (materialIndex != mats.size()) {
+      emscripten_console_error("ASSEMBLY MATERIAL SNAPSHOT SIZE MISMATCH");
+      abort();
+    }
+#endif
+    for (int k : plan.vacated) {
+      writeAssemblyIndex(k, EMPTY);
+      if (updateGroundCache) {
+        lay.cellComp[k] = -1;
+        lay.groundRigidBase[k] = 0;
+        lay.groundedCell[k] = 0;
+      }
+    }
+    for (auto& r : plan.relocate) writeAssemblyIndex(r.first, r.second);
+    for (int tile : asmDirtyTileList) {
+      int ty = tile / tileCols, tx = tile - ty * tileCols;
+      lay.dirtyWorldTiles.insert(E.tileKey(tileX0 + tx, tileY0 + ty));
     }
   };
 
@@ -1561,8 +1571,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (!fgBodyPush.bodies.empty() || !bgBodyPush.bodies.empty()) translationCacheExact = false;
     E.applyAssemblyBodyPush(fgBodyPush);
     E.applyAssemblyBodyPush(bgBodyPush);
-    applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir, translationCacheExact);
-    applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir, translationCacheExact);
+    applyLayer(E.fg, g->fgComps, fgMats, fgPlan, dir, translationCacheExact);
+    applyLayer(E.bg, g->bgComps, bgMats, bgPlan, dir, translationCacheExact);
     translated = true;
     // New contact with bearing terrain changes same-layer adjacency. The
     // translation remains valid, but grounding must be rebuilt before another

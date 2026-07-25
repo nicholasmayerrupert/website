@@ -7,6 +7,7 @@
 /* global process */
 
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repoRoot = process.env.SAND_ROOT
@@ -243,6 +244,29 @@ function countStaticStructure(grid, owners) {
     if (isStaticStructure(grid, owners, k)) count++;
   }
   return count;
+}
+
+function behaviorFingerprint(trace) {
+  const rows = trace.map((row) => ({
+    tick: row.tick,
+    trackingY: row.trackingY,
+    dMeanY: row.dMeanY,
+    disconnected: row.disconnected,
+    grounded: row.grounded,
+    edge: row.edge,
+    cells: row.cells,
+    fgCells: row.fgCells,
+    meanY: row.meanY,
+    minY: row.minY,
+    maxY: row.maxY,
+    tnt: row.tnt,
+    bodies: row.bodies,
+    contacts: row.contacts,
+    componentCells: row.componentCells,
+    gridComponentCells: row.gridComponentCells,
+    dirtyCells: row.dirtyCells,
+  }));
+  return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 }
 
 function findTrackingCell(grid, owners, expectedX, expectedY) {
@@ -482,13 +506,22 @@ async function runCase(testCase, caseIndex) {
       tnt,
       bodies: engine._bodyCountLayer(0) + engine._bodyCountLayer(1),
       contacts,
+      components: perf.componentCount,
       componentCells: perf.componentCellCount,
       gridComponentCells: countStaticStructure(views.grids[0], views.owners[0])
         + countStaticStructure(views.grids[1], views.owners[1]),
       stepMs: Number(perf.stepMs.toFixed(3)),
       dirtyCells: perf.dirtyCells,
       groundingMs: Number(perf.groundingMs.toFixed(3)),
+      crossLayerGroundingMs: Number(perf.crossLayerGroundingMs.toFixed(3)),
+      componentIndexMs: Number(perf.componentIndexMs.toFixed(3)),
+      assemblyUnionMs: Number(perf.assemblyUnionMs.toFixed(3)),
       carryMs: Number(perf.carryMs.toFixed(3)),
+      sandMs: Number(perf.sandMs.toFixed(3)),
+      liquidMs: Number(perf.liquidMs.toFixed(3)),
+      gasMs: Number(perf.gasMs.toFixed(3)),
+      reactMs: Number(perf.reactMs.toFixed(3)),
+      tailMs: Number(perf.tailMs.toFixed(3)),
       layersMs: Number(perf.layersMs.toFixed(3)),
       crossMs: Number(perf.crossMs.toFixed(3)),
       bodyMs: Number(perf.bodyMs.toFixed(3)),
@@ -547,6 +580,16 @@ for (let index = first; index < last; index++) {
     + ` disconnectedTicks=${disconnected} movedTicks=${moved} peakBodies=${peakBodies}`
     + ` ${result.reproduction ? 'REPRODUCED' : 'no pause/resume'}`,
   );
+  if (process.env.TRACE_WORST === '1') {
+    const worst = result.trace
+      .filter((row) => row.tnt < result.geometry.initialTnt)
+      .sort((a, b) => b.stepMs - a.stepMs)
+      .slice(0, 3);
+    console.log(JSON.stringify({ worstExplosionTicks: worst }));
+  }
+  if (process.env.TRACE_FINGERPRINT === '1') {
+    console.log(JSON.stringify({ behaviorFingerprint: behaviorFingerprint(result.trace) }));
+  }
   if (result.reproduction) {
     found = result;
     break;

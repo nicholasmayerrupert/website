@@ -67,7 +67,11 @@ component registration, and generation/restoration. Browser presentation exposes
 - A settled cross-layer support closure can sleep during loose-only motion.
 - Collision-free cross-layer assembly translations patch component indices and
   grounding caches in place; their movement planner keeps ordered cell vectors
-  with generation-stamped membership instead of whole-mass hash tables.
+  with generation-stamped membership instead of whole-mass hash tables. Contact
+  probes use stamped sparse overlays/open-air caches, and translated masses batch
+  exact persistence-tile dirt instead of hashing once per moved cell.
+- Component adjacency edges use dense-id counting passes, so the duplicate-heavy
+  edge list produced by a blast cut is sorted in linear time.
 - Above 900,000 loaded cells, grounding and assembly motion may run at 30 Hz;
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.

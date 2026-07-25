@@ -2,25 +2,37 @@
 // only through component membership, and unregistered component cells are
 // erased during cleanup. Tool placement, worldgen, growth, and world shifting
 // should route component writes through this subsystem and then sync/register.
-// Rebuild E.L->cellComp[] (cell -> component index), the cgComps index, and per-
-// component mean density. Shared by the full reflood (computeGrounded) and the
-// incremental refresh (incrementalGroundingRefresh). Resets each Comp's grounded
-// flag to false (the flood / refresh sets it back). Does NOT touch E.L->groundedCell[].
+void ComponentSystem::prepareAssemblyScratch(size_t gridLen) {
+  auto prepareStamp = [&](StampSet& set) {
+    set.stamp.assign(gridLen, 0);
+    set.gen = 0;
+  };
+  prepareStamp(asmCells);
+  prepareStamp(asmPlanned);
+  prepareStamp(asmOpenAir);
+  asmPlannedMat.resize(gridLen);
+  asmOpenAirValue.resize(gridLen);
+  asmAirFaces.reserve((size_t)(E.cols + E.rows) * 4);
+  asmOpenAirPath.reserve((size_t)E.rows);
+  asmVacatedBits.reserve((size_t)E.rows * ((E.cols + 63) >> 6));
+}
+
+// Rebuild E.L->cellComp[] (cell -> component index) and the cgComps index.
+// Shared by the full reflood (computeGrounded) and the incremental refresh
+// (incrementalGroundingRefresh). Resets each Comp's grounded flag to false (the
+// flood / refresh sets it back). Does NOT touch E.L->groundedCell[].
 // O(total component cells).
 void ComponentSystem::indexComponents() {
   double t0 = emscripten_get_now();
   Layer* const lay = E.L;
   int32_t* const cc = lay->cellComp.data();
   cgComps.clear();
-  cgCompDensity.clear();
   auto idx = [&](std::vector<Comp>& list) {
     for (auto& c : list) {
       c.grounded = c.cells.empty();
       int id = (int)cgComps.size();
       cgComps.push_back(&c);
-      double sum = 0;
-      for (int k : c.cells) { cc[k] = id; sum += DENSITY[lay->grid[k]]; }
-      cgCompDensity.push_back(c.cells.empty() ? 0 : sum / c.cells.size());
+      for (int k : c.cells) cc[k] = id;
     }
   };
   idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
@@ -52,7 +64,22 @@ void ComponentSystem::indexComponents() {
       }
     };
     scanRect(lay->compAdjPairs, 0, 0, cols, rows);
-    std::sort(lay->compAdjPairs.begin(), lay->compAdjPairs.end());
+    // Component ids are dense in [0, count). Two stable counting passes sort
+    // (lo, hi) pairs in linear time; blast fronts generate many duplicate edge
+    // samples, so comparison-sorting the raw list creates an avoidable spike.
+    const size_t count = cgComps.size();
+    const size_t pairCount = lay->compAdjPairs.size();
+    cgAdjScratch.resize(pairCount);
+    cgAdjCounts.assign(count + 1, 0);
+    for (uint64_t packed : lay->compAdjPairs) cgAdjCounts[(uint32_t)packed + 1]++;
+    for (size_t i = 1; i < cgAdjCounts.size(); i++) cgAdjCounts[i] += cgAdjCounts[i - 1];
+    for (uint64_t packed : lay->compAdjPairs)
+      cgAdjScratch[cgAdjCounts[(uint32_t)packed]++] = packed;
+    cgAdjCounts.assign(count + 1, 0);
+    for (uint64_t packed : cgAdjScratch) cgAdjCounts[(uint32_t)(packed >> 32) + 1]++;
+    for (size_t i = 1; i < cgAdjCounts.size(); i++) cgAdjCounts[i] += cgAdjCounts[i - 1];
+    for (uint64_t packed : cgAdjScratch)
+      lay->compAdjPairs[cgAdjCounts[(uint32_t)(packed >> 32)]++] = packed;
     lay->compAdjPairs.erase(std::unique(lay->compAdjPairs.begin(), lay->compAdjPairs.end()), lay->compAdjPairs.end());
   }
   E.perfComponentIndexMs += emscripten_get_now() - t0;
@@ -99,12 +126,10 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
     // layer-local Comp* view and reset flags instead of rescanning every static
     // cell. Blast rubble is ignored by the flood.
     cgComps.clear();
-    cgCompDensity.clear();
     auto bind = [&](std::vector<Comp>& list) {
       for (auto& c : list) {
         c.grounded = c.cells.empty();
         cgComps.push_back(&c);
-        cgCompDensity.push_back(0);
       }
     };
     bind(lay->stoneComponents); bind(lay->plantComponents); bind(lay->iceComponents);
@@ -519,7 +544,7 @@ void ComponentSystem::computeGrounded() {
 // Rebuild component bookkeeping after a removal that preserved cached grounding.
 void ComponentSystem::incrementalGroundingRefresh() {
   std::fill(E.L->cellComp.begin(), E.L->cellComp.end(), -1);
-  indexComponents();                       // rebuilds E.L->cellComp + cgCompDensity, resets grounded=false
+  indexComponents();                       // rebuilds E.L->cellComp and resets grounded=false
   for (Comp* c : cgComps) {                // a connected component is grounded iff ANY of its cells is
     for (int k : c->cells) if (E.L->groundedCell[k]) { c->grounded = true; break; }
   }
@@ -1066,39 +1091,64 @@ bool ComponentSystem::compIdIsPlant(Layer& lay, int id) {
 }
 
 // Match a displaced leading-face cell to the nearest unclaimed trailing-face
-// vacancy by Manhattan distance. Only trailing candidates are indexed: the old
-// BFS flooded up to the entire grid once per displaced cell, making a wide or
-// concave iceberg O(face * grid area). Row sets preserve spatial matching while
-// bounding a lookup to O(rows * log(face)); erasing the winner keeps targets
-// unique without another grid search.
+// vacancy by Manhattan distance. Each row is a packed bitset, so predecessor and
+// successor lookup stays bounded by the grid width without allocating tree nodes
+// for every boundary cell. The row/x tie order matches the spatial BFS order.
 int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
-                                          std::vector<std::set<int>>& vacatedByRow) {
+                                          std::vector<uint64_t>& vacatedBits) {
   int sourceY = source / E.cols, sourceX = source - sourceY * E.cols;
   int firstY = dir > 0 ? imax(1, minTargetY)
                        : (sourceSideOnly ? imax(sourceY + 1, minTargetY) : imax(1, minTargetY));
   int lastY = dir > 0 ? sourceY - 1 : E.rows - 1;
   int best = -1, bestDist = INT_MAX;
+  const int words = (E.cols + 63) >> 6;
   for (int y = firstY; y <= lastY; y++) {
-    auto& xs = vacatedByRow[y];
-    if (xs.empty()) continue;
     int dy = std::abs(y - sourceY);
     if (dy > bestDist) continue;
-    auto consider = [&](std::set<int>::iterator it) {
-      if (it == xs.end()) return;
-      int dist = dy + std::abs(*it - sourceX);
-      int k = y * E.cols + *it;
+    const int base = y * words;
+    const int sourceWord = sourceX >> 6;
+    const int sourceBit = sourceX & 63;
+    int rightX = -1;
+    uint64_t rightWord = vacatedBits[base + sourceWord] & (~uint64_t{0} << sourceBit);
+    if (rightWord) {
+      rightX = (sourceWord << 6) + __builtin_ctzll(rightWord);
+    } else {
+      for (int wi = sourceWord + 1; wi < words; wi++) {
+        uint64_t word = vacatedBits[base + wi];
+        if (!word) continue;
+        rightX = (wi << 6) + __builtin_ctzll(word);
+        break;
+      }
+    }
+    int leftX = -1;
+    uint64_t leftMask = sourceBit == 0 ? 0 : ((uint64_t{1} << sourceBit) - 1);
+    uint64_t leftWord = vacatedBits[base + sourceWord] & leftMask;
+    if (leftWord) {
+      leftX = (sourceWord << 6) + 63 - __builtin_clzll(leftWord);
+    } else {
+      for (int wi = sourceWord - 1; wi >= 0; wi--) {
+        uint64_t word = vacatedBits[base + wi];
+        if (!word) continue;
+        leftX = (wi << 6) + 63 - __builtin_clzll(word);
+        break;
+      }
+    }
+    auto consider = [&](int x) {
+      if (x < 0 || x >= E.cols) return;
+      int dist = dy + std::abs(x - sourceX);
+      int k = y * E.cols + x;
       int bestY = best < 0 ? -1 : best / E.cols;
       bool earlierBfsTie = best >= 0 && (dir > 0 ? y < bestY : y > bestY);
       if (dist < bestDist || (dist == bestDist && (earlierBfsTie || (y == bestY && k < best)))) {
         best = k; bestDist = dist;
       }
     };
-    auto right = xs.lower_bound(sourceX);
-    consider(right);
-    if (right != xs.begin()) consider(std::prev(right));
+    consider(rightX);
+    consider(leftX);
   }
   if (best < 0) return -1;
-  vacatedByRow[best / E.cols].erase(best % E.cols);
+  int bestX = best % E.cols, bestY = best / E.cols;
+  vacatedBits[bestY * words + (bestX >> 6)] &= ~(uint64_t{1} << (bestX & 63));
   return best;
 }
 
@@ -1109,7 +1159,7 @@ int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY, b
 // and ignores the `faces` total.
 template <class Cells>
 void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
-                                            const std::unordered_map<int, uint8_t>* planned,
+                                            const std::vector<std::pair<int, uint8_t>>* planned,
                                             bool collectBearing) {
   // Iteration order of `cells` feeds the double accumulators below; only the
   // per-neighbour membership test moves to the stamp mirror.
@@ -1119,22 +1169,25 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
   const int gridLen = E.cols * E.rows;
   asmCells.reset((size_t)gridLen);
   for (int k : cells) if (k >= 0 && k < gridLen) asmCells.add(k);
-  auto materialAt = [&](int k) {
-    uint8_t m = g[k];
-    if (planned) {
-      auto it = planned->find(k);
-      if (it != planned->end()) m = it->second;
+  if (planned) {
+    asmPlanned.reset((size_t)gridLen);
+    if (asmPlannedMat.size() < (size_t)gridLen) asmPlannedMat.resize((size_t)gridLen);
+    for (const auto& entry : *planned) {
+      asmPlanned.add(entry.first);
+      if ((unsigned)entry.first < asmPlannedMat.size()) asmPlannedMat[entry.first] = entry.second;
     }
-    return m;
+  }
+  auto materialAt = [&](int k) {
+    return planned && asmPlanned.has(k) ? asmPlannedMat[k] : g[k];
   };
   Layer& contactLayer = g == E.fg.grid ? E.fg : E.bg;
   auto isExternalBearing = [&](int k) {
     uint8_t m = materialAt(k);
     if (!E.isRigidMaterialClass(m)) return false;
-    if (planned && planned->count(k)) return true;
+    if (planned && asmPlanned.has(k)) return true;
     return isGroundingRigidCell(contactLayer, k);
   };
-  std::vector<int> airFaces;
+  asmAirFaces.clear();
   for (int k : cells) {
     if (k < 0 || k >= gridLen) continue;
     int y = k / E.cols, x = k - y * E.cols;
@@ -1157,7 +1210,7 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
       } else if (collectBearing && isExternalBearing(nk)) {
         c.bearingFaces++;
       } else if (m == EMPTY || E.isGasMaterial(m)) {
-        airFaces.push_back(nk);
+        asmAirFaces.push_back(nk);
       }
     }
     if (collectBearing) {
@@ -1209,24 +1262,22 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
   // fragments produced by fire must not raycast to the top of the world from
   // every exposed face. When liquid is present, cache vertical runs so a wide
   // or irregular floating assembly resolves each visited cell once per probe.
-  if (c.liquidFaces == 0 || airFaces.empty()) return;
-  std::unordered_map<int, uint8_t> openAir;
-  openAir.reserve(airFaces.size() * 2);
-  std::vector<int> path;
-  path.reserve((size_t)E.rows);
-  for (int start : airFaces) {
+  if (c.liquidFaces == 0 || asmAirFaces.empty()) return;
+  asmOpenAir.reset((size_t)gridLen);
+  if (asmOpenAirValue.size() < (size_t)gridLen) asmOpenAirValue.resize((size_t)gridLen);
+  asmOpenAirPath.reserve((size_t)E.rows);
+  for (int start : asmAirFaces) {
     int ak = start;
     bool visible = false;
-    path.clear();
+    asmOpenAirPath.clear();
     for (;;) {
-      auto cached = openAir.find(ak);
-      if (cached != openAir.end()) {
-        visible = cached->second != 0;
+      if (asmOpenAir.has(ak)) {
+        visible = asmOpenAirValue[ak] != 0;
         break;
       }
       uint8_t am = materialAt(ak);
       if (am != EMPTY && !E.isGasMaterial(am)) break;
-      path.push_back(ak);
+      asmOpenAirPath.push_back(ak);
       if (ak < E.cols * 2) {
         visible = true;
         break;
@@ -1234,8 +1285,12 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
       ak -= E.cols;
     }
     const uint8_t result = visible ? 1 : 0;
-    for (int pathK : path) openAir.emplace(pathK, result);
-    openAir.emplace(ak, result);
+    for (int pathK : asmOpenAirPath) {
+      asmOpenAir.add(pathK);
+      asmOpenAirValue[pathK] = result;
+    }
+    asmOpenAir.add(ak);
+    asmOpenAirValue[ak] = result;
     if (visible) c.openAirFaces++;
   }
 
@@ -1303,10 +1358,12 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   for (auto& kv : groups) order.push_back(&kv.second);
   std::sort(order.begin(), order.end(), [](JointGroup* a, JointGroup* b) { return a->maxY > b->maxY; });
 
-  std::vector<int> fgCells, bgCells;
-  struct CellMat { int k; uint8_t m; };
-  std::vector<CellMat> fgMats, bgMats;
-  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::vector<int>& cells, std::vector<CellMat>& mats) {
+  std::vector<int>& fgCells = jointFgCells;
+  std::vector<int>& bgCells = jointBgCells;
+  std::vector<AssemblyCellMat>& fgMats = jointFgMats;
+  std::vector<AssemblyCellMat>& bgMats = jointBgMats;
+  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::vector<int>& cells,
+                     std::vector<AssemblyCellMat>& mats) {
     cells.clear(); mats.clear();
     for (int id : ids) {
       Comp* c = compById(lay, id);
@@ -1314,16 +1371,11 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       for (int k : c->cells) mats.push_back({k, lay.grid[k]});
     }
   };
-  struct LayerMovePlan {
-    std::vector<std::pair<int, uint8_t>> relocate;
-    std::vector<int> shifted;
-    std::unordered_map<int, uint8_t> materials;
-  };
   // Build the exact one-cell result for one half of a joint assembly. The same
   // plan feeds both the post-move buoyancy probe and the eventual writes, so the
   // anti-jitter decision cannot observe a different world from the mover.
   auto planLayerMove = [&](Layer& lay, const std::vector<int>& own, int dir,
-                           const AssemblyBodyPush& bodyPush, LayerMovePlan& plan) -> bool {
+                           const AssemblyBodyPush& bodyPush, AssemblyLayerMovePlan& plan) -> bool {
     plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
     // Treat a free-body stack pushed by this assembly as part of the same
     // one-cell translation. Its leading loose medium and trailing vacancies
@@ -1361,8 +1413,12 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     trReserved.reset((size_t)gridLen);
     for (int k : *moving) asmCells.add(k);
     for (int k : vacated) trVacated.add(k);
-    std::vector<std::set<int>> vacatedByRow(E.rows);
-    for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
+    const int vacatedWords = (E.cols + 63) >> 6;
+    asmVacatedBits.assign(E.rows * vacatedWords, 0);
+    for (int k : vacated) {
+      int y = k / E.cols, x = k - y * E.cols;
+      asmVacatedBits[y * vacatedWords + (x >> 6)] |= uint64_t{1} << (x & 63);
+    }
     std::unordered_map<uint8_t, std::vector<int>> sourceRows;
     for (const auto& p : pending) sourceRows[p.material].push_back(p.source / E.cols);
     std::unordered_map<uint8_t, int> contactFloorRow;
@@ -1376,12 +1432,12 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     });
     for (const auto& p : pending) {
       int minTargetY = dir < 0 && E.isLiquidMaterial(p.material) ? contactFloorRow[p.material] : 0;
-      int target = nearestVacatedTarget(p.source, dir, minTargetY, true, vacatedByRow);
+      int target = nearestVacatedTarget(p.source, dir, minTargetY, true, asmVacatedBits);
       // The contact floor is a preference, not a hard capacity limit. Concave
       // assemblies can have several vertical runs and fewer trailing vacancies
       // below the median contact row than displaced leading-face cells. Use the
       // remaining upper vacancies before declaring an otherwise valid rise pinned.
-      if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, vacatedByRow);
+      if (target < 0 && minTargetY > 0) target = nearestVacatedTarget(p.source, dir, minTargetY, false, asmVacatedBits);
       if (target < 0) return false;
       trReserved.add(target);
       plan.relocate.push_back({target, p.material});
@@ -1389,37 +1445,71 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     plan.shifted.reserve(own.size());
     plan.materials.reserve(bodyPush.overlay.size() + plan.relocate.size() + pending.size() * 2);
     for (int k : own) plan.shifted.push_back(k + dir);
-    for (auto& entry : bodyPush.overlay) plan.materials[entry.first] = entry.second;
+    for (auto& entry : bodyPush.overlay) plan.materials.push_back(entry);
     // The live grid already contains every overlap between the old and shifted
     // footprints. Only the trailing and leading boundaries differ in the
     // hypothetical post-move view used by the equilibrium probe.
     asmCells.reset((size_t)E.cols * E.rows);
     for (int k : own) asmCells.add(k);
     for (int k : own) {
-      if (!asmCells.has(k - dir)) plan.materials[k] = EMPTY;
-      if (!asmCells.has(k + dir)) plan.materials[k + dir] = lay.grid[k];
+      if (!asmCells.has(k - dir)) plan.materials.push_back({k, EMPTY});
+      if (!asmCells.has(k + dir)) plan.materials.push_back({k + dir, lay.grid[k]});
     }
-    for (auto& r : plan.relocate) plan.materials[r.first] = r.second;
+    for (auto& r : plan.relocate) plan.materials.push_back(r);
     return true;
   };
   auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::vector<int>& cells,
-                        const std::vector<CellMat>& mats, const LayerMovePlan& plan, int dir,
+                        const std::vector<AssemblyCellMat>& mats,
+                        const AssemblyLayerMovePlan& plan, int dir,
                         bool updateGroundCache) {
     E.useLayer(&lay);
+    const bool trackWorldTiles = lay.infinite && lay.storageRole != ESR_PRESENTATION;
+    const int tileX0 = trackWorldTiles ? E.floorDiv(lay.worldOffsetX, CHUNK_SIZE) : 0;
+    const int tileY0 = trackWorldTiles ? E.floorDiv(lay.worldOffsetY, CHUNK_SIZE) : 0;
+    const int tileCols = trackWorldTiles
+      ? E.floorDiv(lay.worldOffsetX + E.cols - 1, CHUNK_SIZE) - tileX0 + 1 : 0;
+    const int tileRows = trackWorldTiles
+      ? E.floorDiv(lay.worldOffsetY + E.rows - 1, CHUNK_SIZE) - tileY0 + 1 : 0;
+    if (trackWorldTiles) asmDirtyTiles.reset((size_t)tileCols * tileRows);
+    asmDirtyTileList.clear();
+    auto writeAssemblyIndex = [&](int k, uint8_t material) {
+      if (k < 0 || k >= E.cols * E.rows || lay.grid[k] == material) return;
+      int y = k / E.cols, x = k - y * E.cols;
+      uint8_t old = lay.grid[k];
+      E.noteLooseGroundTouch2At(k, old, material);
+      E.adjustLooseColCount(x, old, material);
+      if ((material == FIRE || material == LAVA) && old != FIRE && old != LAVA)
+        lay.heatAddedAfterPrepare = true;
+      lay.grid[k] = material;
+      if (x < lay.rowMarkMin[y]) lay.rowMarkMin[y] = x;
+      if (x > lay.rowMarkMax[y]) lay.rowMarkMax[y] = x;
+      if (trackWorldTiles) {
+        int tx = E.floorDiv(lay.worldOffsetX + x, CHUNK_SIZE) - tileX0;
+        int ty = E.floorDiv(lay.worldOffsetY + y, CHUNK_SIZE) - tileY0;
+        int tile = ty * tileCols + tx;
+        if (!asmDirtyTiles.has(tile)) {
+          asmDirtyTiles.add(tile);
+          asmDirtyTileList.push_back(tile);
+        }
+      }
+    };
     for (int k : cells) {
-      E.writeGridIndex(k, EMPTY);
+      writeAssemblyIndex(k, EMPTY);
       if (updateGroundCache) {
         lay.cellComp[k] = -1;
         lay.groundRigidBase[k] = 0;
         lay.groundedCell[k] = 0;
       }
     }
-    for (auto& cm : mats) E.writeGridIndex(cm.k + dir, cm.m);
-    for (auto& r : plan.relocate) E.writeGridIndex(r.first, r.second);
+    for (auto& cm : mats) writeAssemblyIndex(cm.k + dir, cm.material);
+    for (auto& r : plan.relocate) writeAssemblyIndex(r.first, r.second);
+    for (int tile : asmDirtyTileList) {
+      int ty = tile / tileCols, tx = tile - ty * tileCols;
+      lay.dirtyWorldTiles.insert(E.tileKey(tileX0 + tx, tileY0 + ty));
+    }
     for (int id : ids) {
       Comp* c = compById(lay, id);
       bool isPlant = compIdIsPlant(lay, id);
-      int wood = 0, leaf = 0, ym = 0;
       for (int& k : c->cells) {
         k += dir;
         if (updateGroundCache) {
@@ -1427,15 +1517,16 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
           lay.groundRigidBase[k] = 0;
           lay.groundedCell[k] = 0;
         }
-        int y = k / E.cols; if (y > ym) ym = y;
-        if (isPlant) { uint8_t m = lay.grid[k]; if (E.isPlantWood(m)) wood++; else if (E.isPlantLeaf(m)) leaf++; }
       }
-      c->yMax = ym;
-      if (isPlant) { c->woodCount = wood; c->leafCount = leaf; c->cacheDirty = true; }
+      // A one-cell translation preserves material counts and shifts the exact
+      // maximum row by one, so plant metadata needs no full-cell rescan.
+      c->yMax = imax(0, imin(E.rows - 1, c->yMax + (dir < 0 ? -1 : 1)));
+      if (isPlant) c->cacheDirty = true;
     }
   };
 
-  LayerMovePlan fgPlan, bgPlan;
+  AssemblyLayerMovePlan& fgPlan = jointFgPlan;
+  AssemblyLayerMovePlan& bgPlan = jointBgPlan;
   bool translated = false;
   bool translationCacheExact = E.fg.groundBaseValid && E.bg.groundBaseValid
     && E.fg.groundRigidBase.size() == (size_t)E.cols * E.rows
@@ -1445,8 +1536,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     collect(E.fg, g->fgComps, fgCells, fgMats);
     collect(E.bg, g->bgComps, bgCells, bgMats);
     double sum = 0;
-    for (auto& cm : fgMats) sum += DENSITY[cm.m];
-    for (auto& cm : bgMats) sum += DENSITY[cm.m];
+    for (auto& cm : fgMats) sum += DENSITY[cm.material];
+    for (auto& cm : bgMats) sum += DENSITY[cm.material];
     FaceContact before;
     accumulateFaceContact(E.fg.grid, fgCells, before);
     accumulateFaceContact(E.bg.grid, bgCells, before);
@@ -1658,8 +1749,12 @@ void ComponentSystem::moveRigidAssemblies() {
       // slab falling through air/empty skips the O(area) stamp fill per step.
       trMoved.reset(gridLen);
       for (int k : *moving) trMoved.add(k + dir);
-      std::vector<std::set<int>> vacatedByRow(E.rows);
-      for (int k : vacated) vacatedByRow[k / E.cols].insert(k % E.cols);
+      const int vacatedWords = (E.cols + 63) >> 6;
+      asmVacatedBits.assign(E.rows * vacatedWords, 0);
+      for (int k : vacated) {
+        int y = k / E.cols, x = k - y * E.cols;
+        asmVacatedBits[y * vacatedWords + (x >> 6)] |= uint64_t{1} << (x & 63);
+      }
       int offs[4]; if (dir > 0) { offs[0] = -1; offs[1] = 1; offs[2] = E.cols; offs[3] = -E.cols; } else { offs[0] = -1; offs[1] = 1; offs[2] = -E.cols; offs[3] = E.cols; }
       auto plannedMaterialAt = [&](int k) -> uint8_t { return trVacated.has(k) ? EMPTY : materialAt(k); };
       // Bound the total volume-preserving liquid search for this one assembly move.
@@ -1743,9 +1838,9 @@ void ComponentSystem::moveRigidAssemblies() {
         }
       }
       auto planVacatedLiquidDump = [&](uint8_t material, int source) {
-        int target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], true, vacatedByRow);
+        int target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], true, asmVacatedBits);
         if (target < 0 && minLiquidTargetY[material] > 0)
-          target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], false, vacatedByRow);
+          target = nearestVacatedTarget(source, dir, minLiquidTargetY[material], false, asmVacatedBits);
         if (target < 0) return false;
         liquidWrites.push_back({target, material});
         trReserved.add(target);
@@ -1879,14 +1974,18 @@ void ComponentSystem::moveRigidAssemblies() {
       }
     }
     if (gasFallback) {
-      std::vector<std::set<int>> vacatedByRow(E.rows);
-      for (int k : vacated) if (!trReserved.has(k)) vacatedByRow[k / E.cols].insert(k % E.cols);
+      const int vacatedWords = (E.cols + 63) >> 6;
+      asmVacatedBits.assign(E.rows * vacatedWords, 0);
+      for (int k : vacated) if (!trReserved.has(k)) {
+        int y = k / E.cols, x = k - y * E.cols;
+        asmVacatedBits[y * vacatedWords + (x >> 6)] |= uint64_t{1} << (x & 63);
+      }
       int gasIndex = 0;
       for (const auto& d : displaced) {
         if (!E.isGasMaterial(d.material)) continue;
         if (gasTargets[gasIndex] >= 0) { gasIndex++; continue; }
-        int target = nearestVacatedTarget(d.from, dir, 0, true, vacatedByRow);
-        if (target < 0) target = nearestVacatedTarget(d.from, dir, 0, false, vacatedByRow);
+        int target = nearestVacatedTarget(d.from, dir, 0, true, asmVacatedBits);
+        if (target < 0) target = nearestVacatedTarget(d.from, dir, 0, false, asmVacatedBits);
         if (target < 0) return false;
         trReserved.add(target);
         gasTargets[gasIndex++] = target;
@@ -1914,8 +2013,11 @@ void ComponentSystem::moveRigidAssemblies() {
     for (auto& d : displaced) if (E.isGasMaterial(d.material)) {
       planned[gasTargets[plannedGas++]] = d.material;
     }
+    std::vector<std::pair<int, uint8_t>> plannedView;
+    plannedView.reserve(planned.size());
+    for (const auto& entry : planned) plannedView.push_back(entry);
     FaceContact postMove;
-    accumulateFaceContact(E.L->grid, shifted, postMove, &planned);
+    accumulateFaceContact(E.L->grid, shifted, postMove, &plannedView);
     int postDecision = motionDecision(postMove, shifted.size(), solidMass);
     if (postDecision == -decision) return false;
     bool landed = false;

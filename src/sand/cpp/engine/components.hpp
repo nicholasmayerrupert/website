@@ -18,6 +18,13 @@ class ComponentSystem {
  public:
   explicit ComponentSystem(Engine& e) : E(e) {}
 
+  struct AssemblyCellMat { int k; uint8_t material; };
+  struct AssemblyLayerMovePlan {
+    std::vector<std::pair<int, uint8_t>> relocate;
+    std::vector<int> shifted;
+    std::vector<std::pair<int, uint8_t>> materials;
+  };
+
   // One downward powder-contact cell bears this many cell-depths of material
   // at the powder's density. This keeps small light solids on the surface while
   // allowing a tall/concentrated load to overload the same footprint.
@@ -54,9 +61,8 @@ class ComponentSystem {
   std::vector<int> cgStack, cgIsland;
   // Parallel x-coordinate stack for computeGrounded's flood.
   std::vector<int32_t> groundStackX;
-  // cellComp index -> Comp* map + mean densities (rebuilt by indexComponents()).
+  // cellComp index -> Comp* map (rebuilt by indexComponents()).
   std::vector<Comp*> cgComps;
-  std::vector<double> cgCompDensity;
   // Incremental-grounding diagnostics (engine_test_ grounding ABI).
   bool groundVerify = false;
   bool groundForceFull = false;
@@ -68,6 +74,8 @@ class ComponentSystem {
   struct CrossLayerBond { int fgComp = -1, bgComp = -1; bool supportsGround = false; };
   std::vector<CrossLayerBond> cgBonds;
   std::vector<int> cgParent, cgGroundParent, cgWorkQueue, cgCompStamp;
+  std::vector<int> cgAdjCounts;
+  std::vector<uint64_t> cgAdjScratch;
   std::vector<int32_t> cgBondSeenFg, cgBondSeenBg;
   std::vector<std::vector<int>> cgBondCandidatesFg, cgBondCandidatesBg;
   int32_t cgCompGen = 0;
@@ -75,6 +83,18 @@ class ComponentSystem {
   // The real unordered_sets are kept wherever their ITERATION order feeds cell
   // writes or FP sums; these only replace the .count() hashing.
   StampSet asmCells;                          // current assembly's cell set (translateAssembly / accumulateFaceContact)
+  StampSet asmPlanned;                        // sparse hypothetical material overlay for assembly contact probes
+  std::vector<uint8_t> asmPlannedMat;
+  std::vector<int> asmAirFaces;
+  StampSet asmOpenAir;
+  std::vector<uint8_t> asmOpenAirValue;
+  std::vector<int> asmOpenAirPath;
+  std::vector<uint64_t> asmVacatedBits;
+  StampSet asmDirtyTiles;
+  std::vector<int> asmDirtyTileList;
+  std::vector<int> jointFgCells, jointBgCells;
+  std::vector<AssemblyCellMat> jointFgMats, jointBgMats;
+  AssemblyLayerMovePlan jointFgPlan, jointBgPlan;
   StampSet trMoved, trVacated, trReserved, trSeen; // translateAssembly relocation planning
   StampSet regCells, regOwnerStamp;           // registerRigidCells: input-set membership + lazy owner map validity
   std::vector<int32_t> regOwnerVal;           // owner comp index, valid where regOwnerStamp.has(k)
@@ -83,6 +103,8 @@ class ComponentSystem {
   std::vector<int> splitSurvivors, splitErased, splitBlob, splitPart, splitBoundary; // split + local-proof reusable queues
   std::vector<Comp> splitUpdated;              // avoids rebuilding list capacity per bite
   uint8_t floodTargetMat = 0; // set before a per-material stone flood
+
+  void prepareAssemblyScratch(size_t gridLen);
 
   void indexComponents();
   void computeRigidGrounded(bool reuseComponentIndex = false);
@@ -104,10 +126,10 @@ class ComponentSystem {
   Comp* compById(Layer& lay, int id);
   bool compIdIsPlant(Layer& lay, int id);
   int nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
-                           std::vector<std::set<int>>& vacatedByRow);
+                           std::vector<uint64_t>& vacatedBits);
   template <class Cells>
   void accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
-                             const std::unordered_map<int, uint8_t>* planned = nullptr,
+                             const std::vector<std::pair<int, uint8_t>>* planned = nullptr,
                              bool collectBearing = false);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
   void moveCrossLayerBondedAssemblies();

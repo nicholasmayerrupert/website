@@ -98,6 +98,9 @@
     chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
     fg.alloc(cols, rows, chunkCols, chunkRows, storageRole);
     bg.alloc(cols, rows, chunkCols, chunkRows, storageRole);
+    if (storageRole != ESR_PRESENTATION) {
+      comps.prepareAssemblyScratch((size_t)cols * rows);
+    }
     useLayer(&fg);
     renderer.init(seed); // render-only RNG + shade/noise tables (separate stream)
     initSurvivalFootprints();

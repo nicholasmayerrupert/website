@@ -22,6 +22,7 @@ class ComponentSystem {
   struct AssemblyLayerMovePlan {
     std::vector<std::pair<int, uint8_t>> relocate;
     std::vector<int> shifted;
+    std::vector<int> vacated;
     std::vector<std::pair<int, uint8_t>> materials;
   };
 

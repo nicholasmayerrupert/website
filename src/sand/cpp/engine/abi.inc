@@ -182,6 +182,49 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked(Engine* e, int i) { e->useLaye
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_material(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->fg.bodies[i]->material : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_blast_debris(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->blastDebris ? 1 : 0) : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_count_layer(Engine* e, int layer) {
+  return (int)(layer ? e->bg : e->fg).bodies.size();
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_body_id_layer(Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return (i >= 0 && i < (int)lay.bodies.size()) ? lay.bodies[i]->id : -1;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_body_blast_debris_layer(Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return (i >= 0 && i < (int)lay.bodies.size()) ? (lay.bodies[i]->blastDebris ? 1 : 0) : -1;
+}
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_test_grounded_ptr(Engine* e, int layer) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return lay.groundedCell.data();
+}
+EMSCRIPTEN_KEEPALIVE int32_t* engine_test_body_owner_ptr(Engine* e, int layer) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return lay.bodyOwner.data();
+}
+EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
+  auto reset = [&](Layer& lay) {
+    for (Body* body : lay.bodies) delete body;
+    lay.bodies.clear();
+    lay.bodyCells.clear();
+    lay.stoneComponents.clear();
+    lay.plantComponents.clear();
+    lay.iceComponents.clear();
+    lay.prevCompCells.clear();
+    lay.curCompCells.clear();
+    lay.pendingDetonations.clear();
+    std::fill(lay.bodyOwner.begin(), lay.bodyOwner.end(), -1);
+    lay.nextStoneId = lay.nextPlantId = lay.nextIceId = lay.nextBodyId = 1;
+    lay.myceliumActive = false;
+    lay.groundDirty = lay.groundContentDirty = lay.looseGroundDirty = true;
+    lay.groundBaseValid = false;
+  };
+  reset(e->fg);
+  reset(e->bg);
+  e->comps.jointSupportValid = false;
+  e->comps.jointSupportSleeping = false;
+  e->comps.jointDirty = true;
+  e->useLayer(&e->fg);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_set_body_blast_debris(Engine* e, int i, int enabled) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   e->fg.bodies[i]->blastDebris = enabled != 0;

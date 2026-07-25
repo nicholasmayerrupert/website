@@ -2225,10 +2225,9 @@ bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& e
 }
 
 void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty, bool localConnectivityFastPath, bool deferJointRefresh) {
-  // Dirty joints for the NEXT step, but leave jointGroundReady set: clearing it
-  // mid-step lets the other layer's stepLayer re-run single-layer grounding and
-  // drop cross-supported stone before this tick finishes (acid often transfers
-  // to the opposite layer and dissolves there first).
+  // A deferred joint refresh leaves jointGroundReady set until both layers have
+  // stepped. The post-layer phase then rebuilds the shared support closure before
+  // cross-layer assembly motion.
   if (E.bgEnabled) {
     if (deferJointRefresh) jointDirtyDeferred = true;
     else { jointBondsInvalid = true; jointDirty = true; }

@@ -202,12 +202,18 @@
     // moveCrossLayerBondedAssemblies (jointBondsInvalid) — stuttering or freezing
     // until a dissolve-free step. Refresh joints when dirtied, then move.
     bool jointRefreshedAfterLayers = false;
+    // Plant erosion defers joint invalidation so the second layer keeps the
+    // start-of-tick support closure. Both layers are complete here, so consume
+    // that invalidation before deciding whether the bonded assembly can move.
+    if (comps.jointDirtyDeferred) {
+      comps.jointDirty = true;
+      comps.jointDirtyDeferred = false;
+    }
     if (bgEnabled && (comps.jointDirty || comps.jointBondsInvalid)) {
       computeGroundedBoth(); // adds into grounding / crossLayer / componentIndex
       comps.jointGroundReady = true;
       comps.jointDirty = false;
       comps.jointBondsInvalid = false;
-      comps.jointDirtyDeferred = false;
       jointRefreshedAfterLayers = true;
     }
     if (comps.jointGroundReady && !comps.jointDirtyDeferred) {

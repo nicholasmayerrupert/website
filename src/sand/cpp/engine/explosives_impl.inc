@@ -278,6 +278,10 @@ bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
 
 void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb) {
   if (cells.empty()) return;
+  if ((int)cells.size() >= TNT_MASS_FRONT_CELLS) {
+    bb.debrisStepCap = 0;
+    if (otherBb) otherBb->debrisStepCap = 0;
+  }
   std::vector<int> reps;
   if ((int)cells.size() <= TNT_COMPACT_FRONT_CELLS) {
     reps.push_back(cells[cells.size() / 2]);
@@ -686,21 +690,22 @@ void ExplosivesSystem::applyExplosives() {
       if (it != bodyById.end() && it->second->fuseTicks == 0) shortenTntBodyFuse(it->second, TNT_FUSE_TICKS);
     } else queueDetonation(k, TNT_FUSE_TICKS);
   };
-  auto scanHeat = [&](auto&& visit) {
-    if (!E.L->heatAddedAfterPrepare) {
-      for (int k : E.activeHeatCells) { uint8_t m = E.L->grid[k]; if (m == FIRE || m == LAVA) visit(k); }
-      return;
-    }
+  const std::vector<int>* heatCells = &E.activeHeatCells;
+  if (E.L->heatAddedAfterPrepare) {
+    addedHeatCells.clear();
     for (int y = 1; y < E.rows - 1; y++) {
       int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
-        int k = E.I(x, y); uint8_t m = E.L->grid[k]; if (m == FIRE || m == LAVA) visit(k);
+        int k = E.I(x, y); uint8_t m = E.L->grid[k];
+        if (m == FIRE || m == LAVA) addedHeatCells.push_back(k);
       }
     }
-  };
-  scanHeat([&](int k) {
-      lightTnt(k, k + 1); lightTnt(k, k - 1); lightTnt(k, k + E.cols); lightTnt(k, k - E.cols);
-  });
+    heatCells = &addedHeatCells;
+  }
+  for (int k : *heatCells) {
+    uint8_t m = E.L->grid[k]; if (m != FIRE && m != LAVA) continue;
+    lightTnt(k, k + 1); lightTnt(k, k - 1); lightTnt(k, k + E.cols); lightTnt(k, k - E.cols);
+  }
   BlastBatch bb, otherBb;
 
   // Methane is a volume hazard, not thousands of tiny TNT cells. A heat contact
@@ -737,13 +742,14 @@ void ExplosivesSystem::applyExplosives() {
                             bb, &otherBb, nullptr, METHANE);
     }
   };
-  scanHeat([&](int k) {
+  for (int k : *heatCells) {
+    uint8_t m = E.L->grid[k]; if (m != FIRE && m != LAVA) continue;
     int y = k / E.cols, x = k - y * E.cols;
     if (x + 1 < E.cols) igniteMethanePocket(k + 1);
     if (x > 0) igniteMethanePocket(k - 1);
     if (y + 1 < E.rows) igniteMethanePocket(k + E.cols);
     if (y > 0) igniteMethanePocket(k - E.cols);
-  });
+  }
 
   // 2) Tick static fuses; carve the expired ones in deterministic (sorted) order.
   if (!E.L->pendingDetonations.empty()) {

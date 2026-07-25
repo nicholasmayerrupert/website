@@ -174,9 +174,10 @@ TNT uses precomputed radius stencils, overlapping-blast energy dominance, batche
 component repair, and sparse cave aftermath carry. The accepted large-cave
 optimization can change gas/smoke/debris RNG outcomes by removing redundant
 dirty-row RNG draws; fuse timing and crater geometry remain unchanged.
-Physical blast rubble samples the undisturbed terrain around each detonation and
-ejects toward local open space, so walls, floors, ceilings, and angled surfaces
-share one orientation-independent debris path.
+Isolated and small-front blasts eject physical rubble sampled from the
+undisturbed terrain toward local open space. Dense chain fronts retain material
+flecks, gas, and their staged crater wave without creating persistent rigid
+rubble inside the blast cloud.
 
 ## Actors and survival
 

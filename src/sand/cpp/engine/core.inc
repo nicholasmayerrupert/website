@@ -580,13 +580,14 @@
     if (L->vacatedStamp[k] == tick) { writeNextIndex(k, FIRE); return; } // keep explosion fire volume through the detonation step
     if (rand() < FIRE_DECAY_P || y <= 1) { markCellIndex(k); return; }
     int32_t blastGas = L->blastGasStamp[k];
+    bool recentBlastFire = blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
     auto writeFire = [&](int dst) {
       writeNextIndex(dst, FIRE);
-      if (blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS) L->blastGasStamp[dst] = blastGas;
+      if (recentBlastFire) L->blastGasStamp[dst] = blastGas;
     };
     auto moveFire = [&](int dst) {
       if (!tryRiseGasInto(k, dst, FIRE)) return false;
-      if (blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS) L->blastGasStamp[dst] = blastGas;
+      if (recentBlastFire) L->blastGasStamp[dst] = blastGas;
       return true;
     };
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;

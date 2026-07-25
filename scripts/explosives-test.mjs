@@ -631,7 +631,7 @@ function blastDamagesMaterial(name) {
   check(`terrain-embedded long TNT chain stayed staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
   check(`terrain-embedded long TNT chain completed (${tntLeft} left)`, tntLeft === 0);
   check(`terrain-embedded long TNT chain emitted its three-piece stone rubble budget (peak ${peakStoneBodies})`, peakStoneBodies >= 3);
-  check(`terrain-embedded long TNT chain kept rubble bounded (peak ${peakBodies})`, peakBodies <= 64);
+  check(`terrain-embedded long TNT chain kept rigid rubble to its first-blast budget (peak ${peakBodies})`, peakBodies <= 3);
   e.destroy();
 }
 

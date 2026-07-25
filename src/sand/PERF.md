@@ -74,6 +74,8 @@ component registration, and generation/restoration. Browser presentation exposes
 - A locally proven cave blast keeps double-buffer carry sparse until loose
   support, assembly movement, a snapshot, resize, or world shift invalidates the
   proof.
+- Dense TNT fronts use cosmetic flecks and gas instead of rigid rubble bodies,
+  avoiding repeated full-window grounding while the chain advances.
 - Presentation diffs use validated row copies and keep only one packet in flight.
 - Pure camera pans retain the valid texture overlap and fill/upload only newly
   exposed edge bands; lighting flood queues carry their x coordinate so the hot

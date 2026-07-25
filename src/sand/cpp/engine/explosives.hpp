@@ -14,6 +14,7 @@ class ExplosivesSystem {
   static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
   static const int    TNT_CLUSTER_FAST_THRESHOLD = 4;  // merge compact brush-sized fronts while keeping the one-tick chain cadence
   static const int    TNT_COMPACT_FRONT_CELLS = 13;    // one creative click: render as one pulse, not one crater per cell
+  static const int    TNT_MASS_FRONT_CELLS = 64;       // dense waves use flecks and gas instead of persistent rigid rubble
   static const int    TNT_CLUSTER_BUCKET = 14; // representative spacing; blast radii still overlap into one continuous front
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   static const int    METHANE_BLAST_RADIUS = 16; // one-third broader pressure flash, still smaller than TNT
@@ -113,5 +114,6 @@ class ExplosivesSystem {
   std::vector<BlastGasOffset> tntGasStencil;
   std::vector<BlastOffset> methaneStencil;
   std::vector<BlastGasOffset> methaneGasStencil;
+  std::vector<int> addedHeatCells;
   void buildBlastStencils();
 };

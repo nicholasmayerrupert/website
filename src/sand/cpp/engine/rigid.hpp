@@ -77,8 +77,8 @@ class RigidBodySystem {
   bool bodyFloatsOnMedium(Body* b);
   bool bodyHasLooseSupport(Body* b);
   void bakeRestingBodies();
-  bool planAssemblyBodyPush(const std::unordered_set<int>& assemblyCells, int dir,
-                            AssemblyBodyPush& plan);
+  template <class Cells>
+  bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);
   void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material);

@@ -8,6 +8,7 @@ struct Engine;
 // purpose: top liquid never creates support/lift).
 struct FaceContact {
   int faces = 0, liquidFaces = 0, bottomLiquidFaces = 0, bottomPowderFaces = 0, openAirFaces = 0;
+  int bearingFaces = 0;
   double liquidDensityArea = 0, bottomPowderDensityArea = 0;
   double displacedArea = 0, displacedLiquidMass = 0;
 };
@@ -25,6 +26,10 @@ class ComponentSystem {
   // ---- grounding cache and scratch ----
   bool jointGroundReady = false;
   bool jointBondsInvalid = false;
+  // A collision-free joint assembly translation preserves component ids,
+  // adjacency, cross-layer bonds, and ungrounded flags. The next tick may reuse
+  // that closure after refreshing only the loose overlay.
+  bool jointTranslationReady = false;
   // Fire completes component membership cleanup immediately, but may defer the
   // expensive joint-graph rebuild to the start of the next tick.
   bool jointDirtyDeferred = false;
@@ -100,8 +105,10 @@ class ComponentSystem {
   bool compIdIsPlant(Layer& lay, int id);
   int nearestVacatedTarget(int source, int dir, int minTargetY, bool sourceSideOnly,
                            std::vector<std::set<int>>& vacatedByRow);
-  void accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c,
-                             const std::unordered_map<int, uint8_t>* planned = nullptr);
+  template <class Cells>
+  void accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
+                             const std::unordered_map<int, uint8_t>* planned = nullptr,
+                             bool collectBearing = false);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();

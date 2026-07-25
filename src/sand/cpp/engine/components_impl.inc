@@ -1107,10 +1107,12 @@ int ComponentSystem::nearestVacatedTarget(int source, int dir, int minTargetY, b
 // buoyancy decision (moveRigidAssemblies) and the cross-layer descend decision
 // (moveCrossLayerBondedAssemblies) — the latter accumulates over both layers
 // and ignores the `faces` total.
-void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unordered_set<int>& cells, FaceContact& c,
-                                            const std::unordered_map<int, uint8_t>* planned) {
-  // Iteration order of `cells` feeds the double accumulators below, so the set
-  // stays; only the per-neighbour membership test moves to the stamp mirror.
+template <class Cells>
+void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells, FaceContact& c,
+                                            const std::unordered_map<int, uint8_t>* planned,
+                                            bool collectBearing) {
+  // Iteration order of `cells` feeds the double accumulators below; only the
+  // per-neighbour membership test moves to the stamp mirror.
   // The caller may pass a probe set shifted past the grid edge (motionDecision's
   // `shifted`); OOB members must be skipped entirely — even computing x/y from a
   // negative k and calling asmCells.has(nk) is a memory-safety hazard.
@@ -1124,6 +1126,13 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
       if (it != planned->end()) m = it->second;
     }
     return m;
+  };
+  Layer& contactLayer = g == E.fg.grid ? E.fg : E.bg;
+  auto isExternalBearing = [&](int k) {
+    uint8_t m = materialAt(k);
+    if (!E.isRigidMaterialClass(m)) return false;
+    if (planned && planned->count(k)) return true;
+    return isGroundingRigidCell(contactLayer, k);
   };
   std::vector<int> airFaces;
   for (int k : cells) {
@@ -1145,8 +1154,20 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const std::unorder
           c.bottomPowderFaces++;
           c.bottomPowderDensityArea += DENSITY[m];
         }
+      } else if (collectBearing && isExternalBearing(nk)) {
+        c.bearingFaces++;
       } else if (m == EMPTY || E.isGasMaterial(m)) {
         airFaces.push_back(nk);
+      }
+    }
+    if (collectBearing) {
+      const int bearingOffs[5] = {-E.cols - 1, -E.cols, -E.cols + 1, E.cols - 1, E.cols + 1};
+      for (int off : bearingOffs) {
+        int nk = k + off;
+        if (nk < 0 || nk >= gridLen || asmCells.has(nk)) continue;
+        int ny = nk / E.cols, nx = nk - ny * E.cols;
+        if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
+        if (isExternalBearing(nk)) c.bearingFaces++;
       }
     }
   }
@@ -1282,38 +1303,41 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   for (auto& kv : groups) order.push_back(&kv.second);
   std::sort(order.begin(), order.end(), [](JointGroup* a, JointGroup* b) { return a->maxY > b->maxY; });
 
-  std::unordered_set<int> fgCells, bgCells;
+  std::vector<int> fgCells, bgCells;
   struct CellMat { int k; uint8_t m; };
   std::vector<CellMat> fgMats, bgMats;
-  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::unordered_set<int>& cells, std::vector<CellMat>& mats) {
+  auto collect = [&](Layer& lay, const std::vector<int>& ids, std::vector<int>& cells, std::vector<CellMat>& mats) {
     cells.clear(); mats.clear();
     for (int id : ids) {
       Comp* c = compById(lay, id);
-      for (int k : c->cells) { cells.insert(k); mats.push_back({k, lay.grid[k]}); }
+      cells.insert(cells.end(), c->cells.begin(), c->cells.end());
+      for (int k : c->cells) mats.push_back({k, lay.grid[k]});
     }
   };
   struct LayerMovePlan {
     std::vector<std::pair<int, uint8_t>> relocate;
-    std::unordered_set<int> shifted;
+    std::vector<int> shifted;
     std::unordered_map<int, uint8_t> materials;
   };
   // Build the exact one-cell result for one half of a joint assembly. The same
   // plan feeds both the post-move buoyancy probe and the eventual writes, so the
   // anti-jitter decision cannot observe a different world from the mover.
-  auto planLayerMove = [&](Layer& lay, const std::unordered_set<int>& own, int dir,
+  auto planLayerMove = [&](Layer& lay, const std::vector<int>& own, int dir,
                            const AssemblyBodyPush& bodyPush, LayerMovePlan& plan) -> bool {
     plan.relocate.clear(); plan.shifted.clear(); plan.materials.clear();
     // Treat a free-body stack pushed by this assembly as part of the same
     // one-cell translation. Its leading loose medium and trailing vacancies
     // must participate in this exact plan; otherwise the body preflight either
     // pins the assembly on water/powder or overwrites that volume.
-    std::unordered_set<int> combined;
-    const std::unordered_set<int>* moving = &own;
+    std::vector<int> combined;
+    const std::vector<int>* moving = &own;
     if (!bodyPush.empty()) {
       combined = own;
-      combined.insert(bodyPush.oldCells.begin(), bodyPush.oldCells.end());
+      combined.insert(combined.end(), bodyPush.oldCells.begin(), bodyPush.oldCells.end());
       moving = &combined;
     }
+    asmCells.reset((size_t)E.cols * E.rows);
+    for (int k : *moving) asmCells.add(k);
     auto materialAt = [&](int k) -> uint8_t {
       return bodyPush.vacated.count(k) ? EMPTY : lay.grid[k];
     };
@@ -1323,13 +1347,13 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     for (int k : *moving) {
       int nk = k + dir;
       if (nk < E.cols || nk >= E.cols * E.rows) return false;
-      if (moving->count(nk)) continue;
+      if (asmCells.has(nk)) continue;
       uint8_t lead = materialAt(nk);
       if (lead == EMPTY) continue;
       if (!E.isGasMaterial(lead) && !E.isBuoyantMedium(lead)) return false;
       pending.push_back({nk, lead});
     }
-    for (int k : *moving) if (!moving->count(k - dir)) vacated.push_back(k);
+    for (int k : *moving) if (!asmCells.has(k - dir)) vacated.push_back(k);
     if (pending.size() > vacated.size()) return false;
     const int gridLen = E.cols * E.rows;
     asmCells.reset((size_t)gridLen);
@@ -1362,17 +1386,34 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       trReserved.add(target);
       plan.relocate.push_back({target, p.material});
     }
-    plan.shifted.reserve(own.size()); plan.materials.reserve(own.size() * 2 + plan.relocate.size());
+    plan.shifted.reserve(own.size());
+    plan.materials.reserve(bodyPush.overlay.size() + plan.relocate.size() + pending.size() * 2);
+    for (int k : own) plan.shifted.push_back(k + dir);
     for (auto& entry : bodyPush.overlay) plan.materials[entry.first] = entry.second;
-    for (int k : own) plan.materials[k] = EMPTY;
-    for (int k : own) { plan.shifted.insert(k + dir); plan.materials[k + dir] = lay.grid[k]; }
+    // The live grid already contains every overlap between the old and shifted
+    // footprints. Only the trailing and leading boundaries differ in the
+    // hypothetical post-move view used by the equilibrium probe.
+    asmCells.reset((size_t)E.cols * E.rows);
+    for (int k : own) asmCells.add(k);
+    for (int k : own) {
+      if (!asmCells.has(k - dir)) plan.materials[k] = EMPTY;
+      if (!asmCells.has(k + dir)) plan.materials[k + dir] = lay.grid[k];
+    }
     for (auto& r : plan.relocate) plan.materials[r.first] = r.second;
     return true;
   };
-  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::unordered_set<int>& cells,
-                        const std::vector<CellMat>& mats, const LayerMovePlan& plan, int dir) {
+  auto applyLayer = [&](Layer& lay, const std::vector<int>& ids, const std::vector<int>& cells,
+                        const std::vector<CellMat>& mats, const LayerMovePlan& plan, int dir,
+                        bool updateGroundCache) {
     E.useLayer(&lay);
-    for (int k : cells) E.writeGridIndex(k, EMPTY);
+    for (int k : cells) {
+      E.writeGridIndex(k, EMPTY);
+      if (updateGroundCache) {
+        lay.cellComp[k] = -1;
+        lay.groundRigidBase[k] = 0;
+        lay.groundedCell[k] = 0;
+      }
+    }
     for (auto& cm : mats) E.writeGridIndex(cm.k + dir, cm.m);
     for (auto& r : plan.relocate) E.writeGridIndex(r.first, r.second);
     for (int id : ids) {
@@ -1381,6 +1422,11 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       int wood = 0, leaf = 0, ym = 0;
       for (int& k : c->cells) {
         k += dir;
+        if (updateGroundCache) {
+          lay.cellComp[k] = id;
+          lay.groundRigidBase[k] = 0;
+          lay.groundedCell[k] = 0;
+        }
         int y = k / E.cols; if (y > ym) ym = y;
         if (isPlant) { uint8_t m = lay.grid[k]; if (E.isPlantWood(m)) wood++; else if (E.isPlantLeaf(m)) leaf++; }
       }
@@ -1390,6 +1436,10 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   };
 
   LayerMovePlan fgPlan, bgPlan;
+  bool translated = false;
+  bool translationCacheExact = E.fg.groundBaseValid && E.bg.groundBaseValid
+    && E.fg.groundRigidBase.size() == (size_t)E.cols * E.rows
+    && E.bg.groundRigidBase.size() == (size_t)E.cols * E.rows;
   for (JointGroup* g : order) {
     if (g->grounded || g->fgComps.empty() || g->bgComps.empty()) continue;
     collect(E.fg, g->fgComps, fgCells, fgMats);
@@ -1414,18 +1464,32 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (!planLayerMove(E.fg, fgCells, dir, fgBodyPush, fgPlan)
         || !planLayerMove(E.bg, bgCells, dir, bgBodyPush, bgPlan)) continue;
     FaceContact after;
-    accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials);
-    accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials);
+    accumulateFaceContact(E.fg.grid, fgPlan.shifted, after, &fgPlan.materials, true);
+    accumulateFaceContact(E.bg.grid, bgPlan.shifted, after, &bgPlan.materials, true);
     if (motionDecision(after, fgPlan.shifted.size() + bgPlan.shifted.size(), sum) == -decision) continue;
+    if (!fgBodyPush.bodies.empty() || !bgBodyPush.bodies.empty()) translationCacheExact = false;
     E.applyAssemblyBodyPush(fgBodyPush);
     E.applyAssemblyBodyPush(bgBodyPush);
-    applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir);
-    applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir);
+    applyLayer(E.fg, g->fgComps, fgCells, fgMats, fgPlan, dir, translationCacheExact);
+    applyLayer(E.bg, g->bgComps, bgCells, bgMats, bgPlan, dir, translationCacheExact);
+    translated = true;
+    // New contact with bearing terrain changes same-layer adjacency. The
+    // translation remains valid, but grounding must be rebuilt before another
+    // movement decision.
+    if (translationCacheExact && after.bearingFaces > 0)
+      translationCacheExact = false;
     int8_t moveDir = dir < 0 ? -1 : 1;
     for (int id : g->fgComps) compById(E.fg, id)->buoyancyDirection = moveDir;
     for (int id : g->bgComps) compById(E.bg, id)->buoyancyDirection = moveDir;
-    // Assembly relocated: both layers need a full joint re-flood next step.
-    E.fg.groundDirty = true; E.bg.groundDirty = true;
+  }
+  if (translated) {
+    if (translationCacheExact) {
+      jointTranslationReady = true;
+    } else {
+      E.fg.groundDirty = true;
+      E.bg.groundDirty = true;
+      jointTranslationReady = false;
+    }
   }
   E.useLayer(&E.fg);
 }

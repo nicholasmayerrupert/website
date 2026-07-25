@@ -879,8 +879,15 @@ void RigidBodySystem::moveBodies() {
   // the next tick then skips joint, co-supported terrain sloughs off. Preserve
   // stamps when joint already ran this tick OR a prior joint closure is valid.
   bool hasSleepingBody = false;
-  for (Body* b : E.L->bodies) if (!b->awake) { hasSleepingBody = true; break; }
+  bool hasAwakeBody = false;
+  for (Body* b : E.L->bodies) {
+    if (b->awake) hasAwakeBody = true;
+    else hasSleepingBody = true;
+  }
   bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
+  // Stable sleeping bodies remain stamped in the live grid. Support/topology
+  // invalidation wakes this path through the dirty flags above.
+  if (!hasAwakeBody && !needsGroundRefresh) return;
   if (hasSleepingBody || needsGroundRefresh) {
     if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
       // joint stamps intact; body wake probes do not need a re-flood
@@ -939,8 +946,9 @@ void RigidBodySystem::moveBodies() {
   erodeBodies(cells);
 }
 
-bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemblyCells,
-                                           int dir, AssemblyBodyPush& plan) {
+template <class Cells>
+bool RigidBodySystem::planAssemblyBodyPush(const Cells& assemblyCells, int dir,
+                                           AssemblyBodyPush& plan) {
   plan = AssemblyBodyPush{};
   plan.layer = E.L;
   // Components only push with gravity. Rising/floating components still treat
@@ -961,9 +969,12 @@ bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemb
 
   std::unordered_set<int> selected, crushed;
   std::vector<int> queue;
+  occStamp.reset((size_t)E.cols * E.rows);
+  for (int k : assemblyCells) occStamp.add(k);
   for (int k : assemblyCells) {
     int lead = k + dir;
     if (lead < 0 || lead >= E.cols * E.rows) continue;
+    if (occStamp.has(lead)) continue;
     int id = E.L->bodyOwner[lead];
     if (id < 0) continue;
     auto it = byId.find(id);
@@ -1015,7 +1026,7 @@ bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemb
 
   for (size_t i = 0; i < plan.newCells.size(); i++) {
     int nk = plan.newCells[i];
-    if (nk < E.cols || nk >= E.cols * E.rows || assemblyCells.count(nk)) return false;
+    if (nk < E.cols || nk >= E.cols * E.rows || occStamp.has(nk)) return false;
     int owner = E.L->bodyOwner[nk];
     if (owner >= 0) {
       if (!selected.count(owner) && !crushed.count(owner)) return false;

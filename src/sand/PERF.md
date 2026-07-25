@@ -65,6 +65,9 @@ component registration, and generation/restoration. Browser presentation exposes
   cells during each joint pass.
 - Rigid grounding and loose support are cached and invalidated separately.
 - A settled cross-layer support closure can sleep during loose-only motion.
+- Collision-free cross-layer assembly translations patch component indices and
+  grounding caches in place; their movement planner keeps ordered cell vectors
+  with generation-stamped membership instead of whole-mass hash tables.
 - Above 900,000 loaded cells, grounding and assembly motion may run at 30 Hz;
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
@@ -75,8 +78,8 @@ component registration, and generation/restoration. Browser presentation exposes
   support, assembly movement, a snapshot, resize, or world shift invalidates the
   proof.
 - Blast rubble stays body-owned, does not bear structural load, and does not
-  invalidate cached cave grounding. Dense TNT fronts emit a bounded number of
-  physical chunks.
+  invalidate cached cave grounding. Stable sleeping rubble remains stamped until
+  its support changes. Dense TNT fronts emit a bounded number of physical chunks.
 - Due TNT uses stable 14-cell spatial regions. Fronts spanning more than six
   regions and containing more than 2,048 due cells consume one compact
   six-by-two-region window per tick until their backlog drains; smaller fronts

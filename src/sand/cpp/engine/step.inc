@@ -166,6 +166,20 @@
       comps.jointDirty = true;
       comps.jointDirtyDeferred = false;
     }
+    bool reuseTranslatedJoint = bgEnabled && comps.jointTranslationReady
+      && !comps.groundForceFull && !comps.jointSleepBlocked
+      && !comps.jointDirty && !comps.jointBondsInvalid
+      && !fg.groundDirty && !bg.groundDirty
+      && !fg.groundContentDirty && !bg.groundContentDirty
+      && !comps.cgBonds.empty();
+    comps.jointTranslationReady = false;
+    if (reuseTranslatedJoint) {
+      double tReuse = emscripten_get_now();
+      comps.refreshLooseOverlayPreservingJoint(&fg);
+      comps.refreshLooseOverlayPreservingJoint(&bg);
+      perfGroundingMs += emscripten_get_now() - tReuse;
+      comps.jointGroundReady = true;
+    }
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
     // stone/plant/ice or residual static powder exists. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
@@ -181,7 +195,7 @@
     bool rigidDirty = fg.groundDirty || bg.groundDirty || fg.groundContentDirty || bg.groundContentDirty;
     bool looseDirty = fg.looseGroundDirty || bg.looseGroundDirty;
     bool needJoint = comps.jointDirty || !comps.cgBonds.empty() || rigidDirty || looseDirty;
-    if (bgEnabled && needJoint) {
+    if (bgEnabled && needJoint && !reuseTranslatedJoint) {
       // computeGroundedBoth splits its wall time into groundingMs (base floods)
       // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).
       computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;

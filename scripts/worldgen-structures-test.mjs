@@ -96,6 +96,7 @@ function surfaceMasonryComponents(g, engine) {
     mineRailRows: 0, roomyRailRows: 0, coherentRailCells: 0, railCells: 0, maxRailSpan: 0,
     decoratedMineRows: 0, surfaceFurnishings: 0, undergroundFurnishings: 0, alignedBrick: 0,
     surfaceShells: 0, groundedSurfaceShells: 0, surfaceGroundContacts: 0,
+    streetLamps: 0, collidingStreetLamps: 0,
   };
   const oreIds = new Set([MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE]);
   const furnishingIds = new Set([
@@ -171,6 +172,22 @@ function surfaceMasonryComponents(g, engine) {
         tally.surfaceGroundContacts += c.groundContacts;
         if (c.groundContacts >= 3) tally.groundedSurfaceShells++;
       }
+      if (depth === 0) for (let y = 0; y < ROWS - 10; y++) for (let x = 3; x < COLS - 3; x++) {
+        let lamp = bg[(y + 1) * COLS + x - 3] === MAT.CRYSTAL
+          && bg[(y + 1) * COLS + x + 3] === MAT.CRYSTAL;
+        for (let dx = -3; dx <= 3 && lamp; dx++)
+          lamp = bg[y * COLS + x + dx] === MAT.PINE_WOOD;
+        for (let dy = 0; dy <= 9 && lamp; dy++)
+          lamp = bg[(y + dy) * COLS + x] === MAT.PINE_WOOD;
+        if (!lamp) continue;
+        tally.streetLamps++;
+        let colliding = false;
+        for (let dx = -3; dx <= 3; dx++)
+          colliding ||= g[y * COLS + x + dx] === MAT.PINE_WOOD || g[y * COLS + x + dx] === MAT.CRYSTAL;
+        for (let dy = 1; dy <= 9; dy++)
+          colliding ||= g[(y + dy) * COLS + x] === MAT.PINE_WOOD || g[(y + dy) * COLS + x] === MAT.CRYSTAL;
+        tally.collidingStreetLamps += colliding;
+      }
       e.shiftWorldXY(128, 0);
     }
     e.destroy();
@@ -197,6 +214,8 @@ function surfaceMasonryComponents(g, engine) {
   check(`surface structures are masonry-connected to the terrain (${tally.groundedSurfaceShells}/${tally.surfaceShells}, ${tally.surfaceGroundContacts} ground contacts)`,
     tally.surfaceShells > 10 && tally.groundedSurfaceShells === tally.surfaceShells
       && tally.surfaceGroundContacts > tally.surfaceShells * 3);
+  check(`streetlamps remain visible but non-colliding (${tally.streetLamps} lamps, ${tally.collidingStreetLamps} foreground fixtures)`,
+    tally.streetLamps > 10 && tally.collidingStreetLamps === 0);
   check(`underground structures contain visible furnishings (${tally.undergroundFurnishings} cells)`, tally.undergroundFurnishings > 200);
   check(`foreground brickwork has a coordinated background wall (${tally.alignedBrick}/${tally.brick})`,
     tally.brick > 0 && tally.alignedBrick > tally.brick * 0.65);

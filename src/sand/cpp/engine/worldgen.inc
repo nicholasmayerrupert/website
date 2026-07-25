@@ -449,7 +449,10 @@
         // High beams brace the wide spans without shrinking the playable opening.
         for (int y = wallTop + 2; y < floorY - DOOR_CLEARANCE; y++) put(cx, y, wall);
         for (int x = left + 5; x <= left + w - 5; x++) if (x < cx - 4 || x > cx + 4) put(x, floorY - DOOR_CLEARANCE - 1, wall);
-        // Hanging shop signs make the village roles readable from outside.
+      }
+      if (L->isBackground) {
+        // Hanging shop signs remain readable but, like streetlamps, sit behind the
+        // player so the decorative post cannot obstruct the path between homes.
         int signX = left + w + 6;
         for (int y = floorY - 8; y <= floorY; y++) put(signX, y, PINE_WOOD);
         for (int x = signX - 4; x <= signX + 3; x++) for (int y = floorY - 9; y <= floorY - 6; y++)
@@ -469,7 +472,10 @@
       // one settlement. Everything follows the terrain instead of flattening it.
       int streetLeft = center - count * 29 - 30, streetRight = wellX + 12;
       for (int x = streetLeft; x <= streetRight; x++) put(x, terrain.genSurfaceAbs(x), SANDSTONE);
-      for (int i = 0; i + 1 < count; i++) {
+      // Streetlamps live entirely in the background plane, whose emissive light
+      // projects into the foreground. They remain bright without becoming narrow
+      // collision posts between otherwise player-clear buildings.
+      if (L->isBackground) for (int i = 0; i + 1 < count; i++) {
         int lampX = center + (i - count / 2) * 58 + 29;
         int lampY = terrain.genSurfaceAbs(lampX) - 1;
         for (int y = lampY - 9; y <= lampY; y++) put(lampX, y, PINE_WOOD);

@@ -168,6 +168,57 @@ function findRuin(engine) {
   return null;
 }
 
+function captureDeepMonuments(engine) {
+  const names = ['magma citadel', 'crystal observatory', 'fossil conservatory', 'hanging archive'];
+  const found = new Set();
+  while (engine.getWorldOffsetY() < 640) engine.shiftWorldXY(0, 160);
+  for (let depth = 0; depth < 6 && found.size < 4; depth++) {
+    for (let attempt = 0; attempt < 36; attempt++) {
+      const fg = engine.getGrid();
+      const offX = engine.getWorldOffsetX(), offY = engine.getWorldOffsetY();
+      const seen = new Uint8Array(fg.length);
+      const stack = [];
+      for (let start = 0; start < fg.length; start++) {
+        if (seen[start] || (fg[start] !== MAT.BRICK && fg[start] !== MAT.SANDSTONE)) continue;
+        seen[start] = 1;
+        stack.push(start);
+        let count = 0, minX = COLS, maxX = -1, minY = ROWS, maxY = -1;
+        while (stack.length) {
+          const k = stack.pop(), x = k % COLS, y = (k / COLS) | 0;
+          count++; minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          for (const nk of [x ? k - 1 : -1, x + 1 < COLS ? k + 1 : -1,
+            y ? k - COLS : -1, y + 1 < ROWS ? k + COLS : -1])
+            if (nk >= 0 && !seen[nk] && (fg[nk] === MAT.BRICK || fg[nk] === MAT.SANDSTONE)) {
+              seen[nk] = 1;
+              stack.push(nk);
+            }
+        }
+        const width = maxX - minX + 1, height = maxY - minY + 1;
+        if (count > 140 && width >= 70 && height >= 24) {
+          const bg = engine.getGridBg();
+          let furnishedWall = 0;
+          for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++)
+            furnishedWall += bg[y * COLS + x] === MAT.BRICK
+              || bg[y * COLS + x] === MAT.SANDSTONE
+              || bg[y * COLS + x] === MAT.WOOD;
+          if (furnishedWall < 100) continue;
+          const x = offX + (minX + maxX) / 2, y = offY + (minY + maxY) / 2;
+          const biome = engine.worldCaveBiomeAt(Math.round(x), Math.round(y));
+          if (biome >= 4 && biome <= 7 && !found.has(biome)) {
+            capture(engine, names[biome - 4], x, y, 220, 112);
+            found.add(biome);
+          }
+        }
+      }
+      engine.shiftWorldXY(160, 0);
+      if (found.size === 4) break;
+    }
+    engine.shiftWorldXY(0, 160);
+  }
+  return found.size;
+}
+
 await initSandWasm();
 const engine = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: seed, sinksOn: false, infinite: true });
 
@@ -190,9 +241,12 @@ if (ruin) {
   engine.shiftWorldXY(Math.round(ruin.x - engine.getWorldOffsetX() - COLS / 2), 0);
   capture(engine, 'underground ruin', ruin.x, ruin.y, 180, 96);
 }
+
+const deepCount = captureDeepMonuments(engine);
 engine.destroy();
 
-if (panels.length !== 3) throw new Error(`could only find ${panels.length}/3 structure types for seed ${seed}`);
+if (panels.length !== 7)
+  throw new Error(`could only find ${panels.length - 3}/4 deep structure types for seed ${seed} (found ${deepCount})`);
 const width = Math.max(...panels.map((p) => p.width));
 const height = panels.reduce((sum, p) => sum + p.height, 0) + GAP * (panels.length - 1);
 const pixels = Buffer.alloc(width * height * 4);

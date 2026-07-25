@@ -11,8 +11,8 @@ const seed = Number(process.argv[3] || 0xBED) >>> 0;
 const WIDTH = 1024;
 const WORLD_X0 = -1536, WORLD_Y0 = -96;
 const X_SCALE = 3, Y_SCALE = 2;
-const PANE_HEIGHT = 480, GAP = 8, HEIGHT = PANE_HEIGHT * 2 + GAP;
-const SEA_LEVEL = 18, CAVE_BOTTOM = 576, UNDERWORLD_TOP = 832;
+const PANE_HEIGHT = 720, GAP = 8, HEIGHT = PANE_HEIGHT * 2 + GAP;
+const SEA_LEVEL = 18, DEEP_BLEND_TOP = 480, DEEP_BLEND_BOTTOM = 704;
 
 const biomeColors = [
   [92, 151, 76],   // plains
@@ -28,6 +28,10 @@ const caveColors = [
   [79, 184, 205],  // crystal
   [143, 74, 143],  // mushroom
   [58, 137, 80],   // lush
+  [192, 70, 42],   // deep magma
+  [87, 169, 207],  // deep geode
+  [183, 151, 105], // deep fossil
+  [104, 62, 133],  // deep void
 ];
 
 function mix(a, b, t) {
@@ -119,14 +123,14 @@ for (let layer = 0; layer < 2; layer++) {
       } else if (engine.worldIsCaveAt(layer, wx, wy)) {
         color = caveColors[engine.worldCaveBiomeAt(wx, wy)];
         if (layer) color = mix([15, 18, 24], color, 0.58);
-      } else if (wy >= UNDERWORLD_TOP) {
-        color = [72, 26, 29];
       } else {
         const depth = Math.max(0, wy - surface);
         color = depth < 12 ? biomeColor : mix([73, 61, 54], [33, 31, 34], Math.min(1, depth / 620));
+        const deepMix = Math.max(0, Math.min(1,
+          (wy - DEEP_BLEND_TOP) / (DEEP_BLEND_BOTTOM - DEEP_BLEND_TOP)));
+        color = mix(color, [35, 29, 36], deepMix);
         if (layer) color = mix([12, 14, 19], color, 0.70);
       }
-      if (wy === CAVE_BOTTOM || wy === UNDERWORLD_TOP) color = mix(color, [230, 189, 91], 0.55);
       paintPixel(px, paneY + py, color);
     }
   }

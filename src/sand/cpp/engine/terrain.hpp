@@ -6,7 +6,10 @@ struct Engine;
 
 enum Biome : int { BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_DESERT = 2, BIOME_ROCKY = 3,
                    BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
-enum CaveBiome : int { CAVE_DEFAULT = 0, CAVE_CRYSTAL = 1, CAVE_MUSHROOM = 2, CAVE_LUSH = 3 };
+enum CaveBiome : int {
+  CAVE_DEFAULT = 0, CAVE_CRYSTAL = 1, CAVE_MUSHROOM = 2, CAVE_LUSH = 3,
+  CAVE_DEEP_MAGMA = 4, CAVE_DEEP_GEODE = 5, CAVE_DEEP_FOSSIL = 6, CAVE_DEEP_VOID = 7
+};
 class TerrainGen {
  public:
   explicit TerrainGen(Engine& e) : E(e) {}
@@ -20,16 +23,16 @@ class TerrainGen {
   static constexpr int BASE_SOIL_DEPTH = 3;
   static constexpr int CAVE_SURFACE_BUFFER = 12;
   static constexpr int CAVE_BOTTOM = 576;
-  static constexpr int UNDERWORLD_TOP = 832;
+  static constexpr int DEEP_BLEND_TOP = CAVE_BOTTOM - 96;
+  static constexpr int DEEP_BLEND_BOTTOM = CAVE_BOTTOM + 128;
   static constexpr int CAVE_REGION_WIDTH = 256;
+  static constexpr int DEEP_CAVERN_WIDTH = 288;
+  static constexpr int DEEP_CAVERN_HEIGHT = 208;
   static constexpr double SURFACE_FREQ = 0.008;
   static constexpr double CAVE_FREQ = 0.01;    // lower frequency produces larger features
   static constexpr double CAVE_THRESH = 0.66;
   static constexpr double TREE_PROB = 0.05;
   static constexpr double BIOME_FREQ = 0.0018; // broad climate regions with smaller moisture pockets
-  static constexpr double POCKET_FREQ = 0.06;  // underground liquid/lava pockets
-  static constexpr double WATER_POCKET_THRESH = 0.80; // pocket noise below this stays STONE (genPocketAt)
-  static constexpr double LAVA_THRESH = 0.88;  // rare sealed bedrock lava chambers
   static constexpr double ORE_FREQ = 0.11;     // ore-vein noise wavelength (small clusters)
   static constexpr double ORE_THRESH = 0.80;   // ridged-noise cutoff -> sparse veins
   static constexpr int SURFACE_OCT = 5;
@@ -47,18 +50,24 @@ class TerrainGen {
   int genCaveTopAbs(int worldX);
   int genCaveBiomeAt(int worldX, int worldY);
   bool genIsBackboneCave(int worldX, int worldY);
+  bool genIsDeepCave(int worldX, int worldY);
   bool genIsCave(int worldX, int worldY);
   bool genOpenCaveAt(int worldX, int worldY);
   bool genIsCaveWall(int worldX, int worldY);
   bool genIsEntranceWall(int worldX, int worldY);
   uint8_t genOreFor(int biome, int worldX, int worldY);
   int caveBottomAbs();
-  int underworldAbs();
-  uint8_t genPocketAt(int worldX, int worldY);
+  uint8_t genDeepRockAt(int worldX, int worldY);
   uint8_t genCellAt(int worldX, int surf, int slope, int biome, int soil, int y);
   double genTreeProb(int biome);
   uint8_t pickTreeType(int biome, int worldX);
   bool genTreeAt(int worldX, int surf);
+
+  struct DeepCavernPlan {
+    int centerX = 0, centerY = 0;
+    int radiusX = 0, radiusY = 0;
+  };
+  DeepCavernPlan deepCavernPlan(int gx, int gy);
 
  private:
   struct SurfaceCacheEntry {
@@ -88,17 +97,24 @@ class TerrainGen {
     int region = INT_MIN;
     CaveRegionPlan plan;
   };
+  struct DeepPlanCacheEntry {
+    uint32_t seed = 0;
+    int gx = INT_MIN, gy = INT_MIN;
+    DeepCavernPlan plan;
+  };
 
   static constexpr int SURFACE_CACHE_SIZE = 4096;
   static constexpr int BIOME_CACHE_SIZE = 2048;
   static constexpr int CAVE_CACHE_SIZE = 16384;
   static constexpr int CAVE_PLAN_CACHE_SIZE = 256;
+  static constexpr int DEEP_PLAN_CACHE_SIZE = 256;
 
   Engine& E;
   std::array<SurfaceCacheEntry, SURFACE_CACHE_SIZE> surfaceCache{};
   std::array<BiomeCacheEntry, BIOME_CACHE_SIZE> biomeCache{};
   std::array<CaveCacheEntry, CAVE_CACHE_SIZE> caveCache{};
   std::array<CavePlanCacheEntry, CAVE_PLAN_CACHE_SIZE> cavePlanCache{};
+  std::array<DeepPlanCacheEntry, DEEP_PLAN_CACHE_SIZE> deepPlanCache{};
 
   static int floorDiv(int value, int divisor);
   int classifyBiomeAt(int worldX);

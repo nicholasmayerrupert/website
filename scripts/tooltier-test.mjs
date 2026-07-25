@@ -24,12 +24,14 @@ check('TT enum present', TT.hand === 0 && TT.wood === 1 && TT.stone === 2 && TT.
 const cls = (n) => MAT_TOOLCLASS[MAT[n]];
 const tier = (n) => MAT_TOOLTIER[MAT[n]];
 check(`STONE is pickaxe (${cls('STONE')})`, cls('STONE') === TC.pickaxe);
+check(`DEEPSTONE is pickaxe (${cls('DEEPSTONE')})`, cls('DEEPSTONE') === TC.pickaxe);
 check(`COPPER_ORE/IRON_ORE/GOLD_ORE are pickaxe`, cls('COPPER_ORE') === TC.pickaxe && cls('IRON_ORE') === TC.pickaxe && cls('GOLD_ORE') === TC.pickaxe);
 check(`WOOD/PINE_WOOD/CACTUS are axe`, cls('WOOD') === TC.axe && cls('PINE_WOOD') === TC.axe && cls('CACTUS') === TC.axe);
 check(`DIRT/SAND/SNOW/MUD/GRASS are shovel`, cls('DIRT') === TC.shovel && cls('SAND') === TC.shovel && cls('SNOW') === TC.shovel && cls('MUD') === TC.shovel && cls('GRASS') === TC.shovel);
 
 // Tier ladder: common stone is wood-tier, iron needs stone, gold needs iron.
 check(`STONE tier is wood (${tier('STONE')})`, tier('STONE') === TT.wood);
+check(`DEEPSTONE tier is stone (${tier('DEEPSTONE')})`, tier('DEEPSTONE') === TT.stone);
 check(`IRON_ORE tier is stone (${tier('IRON_ORE')})`, tier('IRON_ORE') === TT.stone);
 check(`GOLD_ORE tier is iron (${tier('GOLD_ORE')})`, tier('GOLD_ORE') === TT.iron);
 check(`DIRT tier is hand/0 (${tier('DIRT')})`, tier('DIRT') === TT.hand);

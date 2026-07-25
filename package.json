@@ -59,6 +59,7 @@
     "test:mat-behavior": "node scripts/material-behavior-test.mjs",
     "test:biomes": "node scripts/worldgen-biome-test.mjs",
     "test:worldgen": "node scripts/worldgen-quality-test.mjs",
+    "test:deep-world": "node scripts/worldgen-deep-test.mjs",
     "test:structures": "node scripts/worldgen-structures-test.mjs",
     "test:flora": "node scripts/flora-test.mjs",
     "test:rigid-collision": "node scripts/rigid-collision-test.mjs",

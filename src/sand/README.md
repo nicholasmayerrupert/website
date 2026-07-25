@@ -57,10 +57,13 @@ ruggedness fields select surface biomes; narrow deterministic ecotones blend
 their soil and vegetation instead of creating hard seams.
 
 Foreground caves combine noise caverns with a player-clear macro-region
-backbone from the surface to the deep band. Entrances seek a hillside, bend
+backbone from the surface into an infinite deep-cavern graph. Entrances seek a hillside, bend
 beneath it, and vary in width instead of exposing a straight cylindrical shaft.
 The background is solid except for rare rounded chambers; it never receives the
-foreground route graph.
+foreground route graph. Upper and deep caves overlap across a broad transition
+instead of meeting at a horizontal cutoff, while stone blends through wandering
+mixed strata into darker deepstone. The abyss contains broad magma, geode,
+fossil, and fungal-void realms with chamber-scale lava seas and landmarks.
 
 Underground ruins are seated on the traversable cave graph and receive roomy side
 passages. Large multi-level mines add rail galleries, stations, side chambers,
@@ -72,7 +75,10 @@ foundations, broad masonry supports, slope stairs, a market, lantern-lit streets
 and a roofed well. Ruins and homes keep player-clear foreground routes while
 their coordinated background walls carry furniture, murals, storage, machinery,
 and plant life; underground archetypes include lost archives with book bays,
-reading desks, maps, balconies, and lecterns. Coal and copper have compact
+reading desks, maps, balconies, and lecterns. Deep caverns add furnace citadels,
+crystal observatories, fossil conservatories, and hanging archives; their
+foreground halls remain player-clear while the background carries hearths,
+scaffolds, exhibits, shelves, lamps, and machinery. Coal and copper have compact
 starter lodes near the original spawn; iron, gold, and environmental hazards
 unlock progressively deeper.
 
@@ -83,7 +89,9 @@ distance. Use `npm run test:worldgen` for canonical-coordinate, entrance shape,
 connectivity, progression, reachability, and background-solidity checks;
 `scripts/worldgen-structures-test.mjs` verifies grounded surface masonry, furnished
 archives, large player-clear mines, and cross-layer rail alignment. `npm run test:prefetch`
-covers deterministic restoration and storage bounds. `npm run worldgen:atlas`
+covers deterministic restoration and storage bounds; `npm run test:deep-world`
+flood-tests the former cave cutoff and checks deep strata, biome diversity, lava
+seas, monuments, and background solidity. `npm run worldgen:atlas`
 writes `bench/worldgen-atlas.png`, with foreground above background;
 `npm run worldgen:structure-atlas` finds representative structures and renders
 their actual composited cell grids to `bench/structure-atlas.png`.

@@ -121,5 +121,7 @@ class ComponentSystem {
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 
  private:
+  bool hasGroundingBodies(const Layer& lay) const;
+  bool isGroundingRigidCell(const Layer& lay, int k) const;
   Engine& E;
 };

@@ -99,8 +99,8 @@ struct Layer {
   // Rigid-grounding base cache (Perf 7b): groundedCell as of the last fresh
   // computeRigidGrounded (R bits only, taken BEFORE the loose overlay) plus the
   // comp grounded flags in stone|plant|ice order. computeGrounded reuses it
-  // (memcpy + overlay) when no rigid mutation is pending and the layer has no
-  // bodies (body stamps join rigid chains without routing through the hooks).
+  // (memcpy + overlay) when no rigid mutation or structurally bearing free body
+  // is pending. Airborne blast rubble does not participate in grounding.
   // The acid pure-bore path patches removed cells here like it patches
   // groundedCell (removalsKeepGroundingValid).
   std::vector<uint8_t> groundRigidBase, groundBaseFlags;

@@ -916,7 +916,9 @@ void RigidBodySystem::moveBodies() {
       int k = y * E.cols + x; if (E.L->bodyOwner[k] != -1) return; uint8_t m = E.L->grid[k];
       if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
       if (isBodyRelocatable(m, k, b->density)) pb.first.push_back({m, k});
-      E.writeGridIndex(k, b->material); E.L->bodyOwner[k] = b->id; cells.push_back(k); footprint.push_back(k); pb.second.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+      E.writeGridIndex(k, b->material); E.L->bodyOwner[k] = b->id;
+      if (b->blastDebris) E.L->groundedCell[k] = 0;
+      cells.push_back(k); footprint.push_back(k); pb.second.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
   {

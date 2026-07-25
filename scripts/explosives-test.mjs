@@ -11,7 +11,7 @@ import { MAT } from '../src/sand/materials.js';
 import { SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
-const COLS = 140, ROWS = 110, SEED = 0xC0FFEE;
+const COLS = 140, ROWS = 110, SEED = 0xC0FFEE, BLAST_DEBRIS_CAP = 64;
 await initSandWasm();
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: false });
 const { check, done } = makeChecker('explosives (TNT)');
@@ -630,8 +630,9 @@ function blastDamagesMaterial(name) {
   check(`terrain-embedded long TNT chain existed (${tnt0} cells)`, tnt0 === side * side);
   check(`terrain-embedded long TNT chain stayed staged after first blast (${firstDropLeft} left)`, firstDropLeft > 0);
   check(`terrain-embedded long TNT chain completed (${tntLeft} left)`, tntLeft === 0);
-  check(`terrain-embedded long TNT chain emitted its three-piece stone rubble budget (peak ${peakStoneBodies})`, peakStoneBodies >= 3);
-  check(`terrain-embedded long TNT chain kept rigid rubble to its first-blast budget (peak ${peakBodies})`, peakBodies <= 3);
+  check(`terrain-embedded long TNT chain emitted repeated stone rubble (peak ${peakStoneBodies})`, peakStoneBodies > 3);
+  check(`terrain-embedded long TNT chain kept live rigid rubble bounded (peak ${peakBodies})`,
+    peakBodies > 3 && peakBodies <= BLAST_DEBRIS_CAP);
   e.destroy();
 }
 

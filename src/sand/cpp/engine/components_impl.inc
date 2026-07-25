@@ -65,6 +65,18 @@ void ComponentSystem::indexComponents() {
 //    cell directly below it is grounded (any class), or it sits on the floor
 //    row, or on denser liquid. No loose cell grounds sideways.
 // computeGrounded combines computeRigidGrounded with applyLooseOverlay.
+bool ComponentSystem::hasGroundingBodies(const Layer& lay) const {
+  if (!lay.bodyCells.empty() && lay.bodies.empty()) return true;
+  for (Body* b : lay.bodies) if (!b->blastDebris) return true;
+  return false;
+}
+bool ComponentSystem::isGroundingRigidCell(const Layer& lay, int k) const {
+  if (!E.isRigidMaterialClass(lay.grid[k])) return false;
+  int owner = lay.bodyOwner[k];
+  if (owner < 0) return true;
+  for (Body* b : lay.bodies) if (b->id == owner) return !b->blastDebris;
+  return true;
+}
 void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   // Keep hot buffers local so the compiler can preserve alias information.
   Layer* const lay = E.L;
@@ -81,10 +93,11 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
     std::fill(lay->cellComp.begin(), lay->cellComp.end(), -1);
     indexComponents();
   } else {
-    // Free-body stamps participate in the grounding flood but never belong to
-    // static components. When only their occupancy changed, cellComp and the
-    // component adjacency cache remain exact; just rebind the layer-local
-    // Comp* view and reset flags instead of rescanning every static cell.
+    // Structurally bearing free-body stamps participate in the grounding flood
+    // but never belong to static components. When only their occupancy changed,
+    // cellComp and the component adjacency cache remain exact; just rebind the
+    // layer-local Comp* view and reset flags instead of rescanning every static
+    // cell. Airborne blast rubble is ignored by the flood.
     cgComps.clear();
     cgCompDensity.clear();
     auto bind = [&](std::vector<Comp>& list) {
@@ -108,7 +121,7 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
     gsx[sp] = x; gstack[sp++] = k;
   };
   int floorBase = (E.rows - 1) * E.cols;
-  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isRigidMaterialClass(g[k]) && E.isBearingMaterial(g[k])) groundRigidAt(k, x); }
+  for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (isGroundingRigidCell(*lay, k) && E.isBearingMaterial(g[k])) groundRigidAt(k, x); }
   // Streamed-edge support: in the infinite world the left/right/top buffer edges abut
   // UNLOADED world that may itself be grounded. A non-ice rigid cell touching such an
   // edge is assumed supported, so terrain whose real floor-contact has streamed off
@@ -121,15 +134,15 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   // erased).
   if (lay->infinite) {
     for (int y = 1; y < E.rows; y++) {
-      int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl]) && !E.isIceComponentMaterial(g[kl])) groundRigidAt(kl, 1);
-      int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) groundRigidAt(kr, E.cols - 2);
+      int kl = y * E.cols + 1;          if (isGroundingRigidCell(*lay, kl) && !E.isIceComponentMaterial(g[kl])) groundRigidAt(kl, 1);
+      int kr = y * E.cols + (E.cols - 2); if (isGroundingRigidCell(*lay, kr) && !E.isIceComponentMaterial(g[kr])) groundRigidAt(kr, E.cols - 2);
     }
     int topBase = E.cols; // row y = 1
     int topWorldY = lay->worldOffsetY;
     bool topMayBeSky = topWorldY < lay->gSeaRow;
     for (int x = 1; x < E.cols - 1; x++) {
       int k = topBase + x;
-      if (!E.isRigidMaterialClass(g[k]) || E.isIceComponentMaterial(g[k])) continue;
+      if (!isGroundingRigidCell(*lay, k) || E.isIceComponentMaterial(g[k])) continue;
       if (!E.isPlantLeaf(g[k])) { groundRigidAt(k, x); continue; }
       bool openSky = topMayBeSky
                   && topWorldY < E.terrain.genSurfaceAbs(lay->worldOffsetX + x);
@@ -142,7 +155,7 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
     // Handle vertical support in sentinel columns, which the clamped neighbour
     // scan excludes. Hanging materials are not bearing.
     int above = k - E.cols;
-    if (above >= 0 && !grounded[above] && E.isRigidMaterialClass(g[above]) && E.isBearingMaterial(g[above])) groundRigidAt(above, kx);
+    if (above >= 0 && !grounded[above] && isGroundingRigidCell(*lay, above) && E.isBearingMaterial(g[above])) groundRigidAt(above, kx);
     // Validate neighbour rows without dividing k by E.cols.
     for (int oy = -1; oy <= 1; oy++) {
       int rb = k + oy * E.cols;
@@ -154,7 +167,7 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
         // x=0/cols-1 are artificial infinite-world sentinel walls. They keep
         // media in the loaded window, but must not anchor an adjacent iceberg.
         if (lay->infinite && (kx == 0 || kx == E.cols - 1) && E.isIceComponentMaterial(g[nk])) continue;
-        if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundRigidAt(nk, nx);
+        if (!grounded[nk] && isGroundingRigidCell(*lay, nk)) groundRigidAt(nk, nx);
       }
     }
   }
@@ -305,17 +318,17 @@ void ComponentSystem::computeGrounded() {
   // Powder's mere presence does NOT force a pass — only looseGroundDirty (a
   // powder/liquid write since the last successful overlay) does.
   if (!groundForceFull && lay->groundBaseValid && !lay->groundDirty && !lay->groundContentDirty
-      && !lay->looseGroundDirty && lay->bodies.empty() && lay->bodyCells.empty()
+      && !lay->looseGroundDirty && !hasGroundingBodies(*lay)
       && lay->groundBaseFlags.size() == totalComps) {
     return;
   }
   // Reuse the rigid base when no rigid mutation is pending. The loose overlay
   // is the only liquid-dependent part, so it is recomputed when loose moved;
   // the rigid flood + indexComponents are skipped. Bodies stamp rigid material
-  // into the grid without routing through the dirty hooks, so any body in the
-  // layer disables reuse (moveBodies re-floods every step, as before).
+  // into the grid without routing through the dirty hooks, so a body that can
+  // bear structural load disables reuse. Airborne blast rubble is non-bearing.
   bool reuse = !groundForceFull && lay->groundBaseValid && !lay->groundDirty
-               && lay->bodies.empty() && lay->bodyCells.empty()
+               && !hasGroundingBodies(*lay)
                && (lay->groundContentDirty || lay->groundBaseFlags.size() == totalComps);
   if (reuse) {
     if (lay->groundContentDirty) {
@@ -426,6 +439,7 @@ void ComponentSystem::computeGrounded() {
     auto canGroundAbove = [&](int below, int above) {
       uint8_t upper = g[above];
       if (!E.isBearingMaterial(upper)) return false;
+      if (E.isRigidMaterialClass(upper) && !isGroundingRigidCell(*lay, above)) return false;
       uint8_t lower = g[below];
       if (E.isLooseSolidMaterial(lower) && E.isRigidMaterialClass(upper)) return false;
       return true;
@@ -440,18 +454,21 @@ void ComponentSystem::computeGrounded() {
       gsx[sp] = x; gstack[sp++] = k;
     };
     int floorBase = (E.rows - 1) * E.cols;
-    for (int x = 0; x < E.cols; x++) { int k = floorBase + x; if (E.isBearingMaterial(g[k])) groundCellAt(k, x); }
+    for (int x = 0; x < E.cols; x++) {
+      int k = floorBase + x;
+      if (E.isBearingMaterial(g[k]) && (!E.isRigidMaterialClass(g[k]) || isGroundingRigidCell(*lay, k))) groundCellAt(k, x);
+    }
     if (lay->infinite) {
       for (int y = 1; y < E.rows; y++) {
-        int kl = y * E.cols + 1;          if (E.isRigidMaterialClass(g[kl]) && !E.isIceComponentMaterial(g[kl])) groundCellAt(kl, 1);
-        int kr = y * E.cols + (E.cols - 2); if (E.isRigidMaterialClass(g[kr]) && !E.isIceComponentMaterial(g[kr])) groundCellAt(kr, E.cols - 2);
+        int kl = y * E.cols + 1;          if (isGroundingRigidCell(*lay, kl) && !E.isIceComponentMaterial(g[kl])) groundCellAt(kl, 1);
+        int kr = y * E.cols + (E.cols - 2); if (isGroundingRigidCell(*lay, kr) && !E.isIceComponentMaterial(g[kr])) groundCellAt(kr, E.cols - 2);
       }
       int topBase = E.cols;
       int topWorldY = lay->worldOffsetY;
       bool topMayBeSky = topWorldY < lay->gSeaRow;
       for (int x = 1; x < E.cols - 1; x++) {
         int k = topBase + x;
-        if (!E.isRigidMaterialClass(g[k]) || E.isIceComponentMaterial(g[k])) continue;
+        if (!isGroundingRigidCell(*lay, k) || E.isIceComponentMaterial(g[k])) continue;
         bool openSkyLeaf = E.isPlantLeaf(g[k]) && topMayBeSky
                         && topWorldY < E.terrain.genSurfaceAbs(lay->worldOffsetX + x);
         if (!openSkyLeaf) groundCellAt(k, x);
@@ -469,7 +486,7 @@ void ComponentSystem::computeGrounded() {
       --sp; int k = gstack[sp], kx = gsx[sp];
       int above = k - E.cols;
       if (above >= 0 && !grounded[above] && canGroundAbove(k, above)) groundCellAt(above, kx);
-      if (E.isRigidMaterialClass(g[k])) {
+      if (isGroundingRigidCell(*lay, k)) {
         for (int oy = -1; oy <= 1; oy++) {
           int rb = k + oy * E.cols;
           if (rb < E.cols || rb >= gridLen) continue;
@@ -478,7 +495,7 @@ void ComponentSystem::computeGrounded() {
             int nx = kx + ox; if (nx <= 0 || nx >= E.cols - 1) continue;
             int nk = rb + ox;
             if (lay->infinite && (kx == 0 || kx == E.cols - 1) && E.isIceComponentMaterial(g[nk])) continue;
-            if (!grounded[nk] && E.isRigidMaterialClass(g[nk])) groundCellAt(nk, nx);
+            if (!grounded[nk] && isGroundingRigidCell(*lay, nk)) groundCellAt(nk, nx);
           }
         }
       }
@@ -798,9 +815,9 @@ void ComponentSystem::computeGroundedBoth() {
   double tJoint0 = emscripten_get_now();
   // Snapshot prev grounded only when rigid grounding may change (wake needs the
   // 1->0 transition). A pure loose-overlay refresh cannot unground rigid cells.
-  auto rigidMayChange = [](Layer& lay) {
+  auto rigidMayChange = [&](Layer& lay) {
     return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid
-           || !lay.bodies.empty() || !lay.bodyCells.empty();
+           || hasGroundingBodies(lay);
   };
   auto staticMayChange = [](Layer& lay) {
     return lay.groundDirty || lay.groundContentDirty || !lay.groundBaseValid;
@@ -813,8 +830,8 @@ void ComponentSystem::computeGroundedBoth() {
   if (structureCanSelfActivate(E.fg) || structureCanSelfActivate(E.bg)) {
     // Runtime-grown structures have deterministic transition order tied to the
     // classic per-tick joint rebuild. Once observed, keep this engine on that
-    // path; ordinary generated terrain never sets this flag. Free bodies only
-    // suppress sleeping while they actually exist (via rigidMayChange below).
+    // path; ordinary generated terrain never sets this flag. Structurally
+    // bearing free bodies suppress sleeping while they exist.
     jointSleepBlocked = true;
   }
   // Pure loose motion cannot alter rigid base grounding, component adjacency, or

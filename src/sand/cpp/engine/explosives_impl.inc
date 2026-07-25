@@ -279,8 +279,8 @@ bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
 void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb) {
   if (cells.empty()) return;
   if ((int)cells.size() >= TNT_MASS_FRONT_CELLS) {
-    bb.debrisStepCap = 0;
-    if (otherBb) otherBb->debrisStepCap = 0;
+    bb.debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
+    if (otherBb) otherBb->debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
   }
   std::vector<int> reps;
   if ((int)cells.size() <= TNT_COMPACT_FRONT_CELLS) {

@@ -171,13 +171,17 @@ Reactions are routed through generated flags where possible:
 - Growth owns plant and mycelium expansion.
 - Explosives own TNT/methane fuses, staged blasts, debris, shock, and chaining.
 
-TNT uses precomputed radius stencils, overlapping-blast energy dominance, batched
-component repair, and sparse cave aftermath carry. Due TNT is divided into
-stable 14-cell spatial regions. Fronts spanning at most six regions finish
-atomically, as do due fronts of at most 2,048 cells. Broader fronts consume one
-compact six-by-two-region window per tick until their live backlog drains.
-Waiting TNT remains visible and simulated, while every consumed region
-immediately runs its crater representative.
+TNT uses precomputed radius stencils and a four-phase blast transaction. Active
+craters first accumulate one maximum-energy field; the unique affected cells are
+classified from the untouched foreground/background snapshot; both layers are
+cut and repaired; then rubble, flecks, gas, and shock impulses consume the
+completed removal set. Cross-layer damage, gas, flecks, and shock are mirrored;
+physical rubble remains in the layer containing the explosive. Due TNT is
+divided into stable 14-cell spatial regions.
+Fronts spanning at most six regions finish atomically, as do due fronts of at
+most 2,048 cells. Broader fronts consume one compact six-by-two-region window per
+tick until their live backlog drains. Waiting TNT remains visible and simulated,
+while every consumed region immediately runs its crater representative.
 Blasts eject bounded physical rubble sampled from the undisturbed terrain toward
 local open space. Dense chain fronts retain material flecks, gas, and their
 staged crater wave while pacing rigid rubble through a per-tick body budget.

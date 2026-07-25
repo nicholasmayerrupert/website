@@ -15,10 +15,6 @@ struct Layer {
   // component carry local until a buffer replacement/stream invalidates the proof;
   // loose support or assembly relocation still selects the full carry path.
   bool blastSparseCarryReady = false;
-  // Persistent best-energy scratch for a same-tick blast batch. Membership uses
-  // seenStamp/seenGen, so a batch clears in O(1) instead of allocating + zeroing
-  // two full-window arrays on every detonation tick.
-  std::vector<float> blastBestEnergy;
   int dirtyRenderCount = 0;
   // per-cell sim scratch
   std::vector<uint8_t> groundedCell;
@@ -204,7 +200,7 @@ struct Layer {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
-      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(blastBestEnergy); release(assemblyRelocatedCells);
+      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
       release(prevCompCells); release(curCompCells); release(bodyCells);

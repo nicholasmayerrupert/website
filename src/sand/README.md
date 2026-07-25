@@ -172,9 +172,13 @@ Reactions are routed through generated flags where possible:
 - Explosives own TNT/methane fuses, staged blasts, debris, shock, and chaining.
 
 TNT uses precomputed radius stencils, overlapping-blast energy dominance, batched
-component repair, and sparse cave aftermath carry. The accepted large-cave
-optimization can change gas/smoke/debris RNG outcomes by removing redundant
-dirty-row RNG draws; fuse timing and crater geometry remain unchanged.
+component repair, and sparse cave aftermath carry. Dense fronts are divided into
+stable 14-cell spatial representatives. Fronts of at most 32 representatives
+finish atomically; exceptionally broad fronts queue their representatives and
+execute at most 16 per layer per tick. The due TNT cells are consumed together,
+so the queue bounds crater-stencil work without leaving a load-bearing TNT shelf
+behind. Small and medium chains keep their existing cadence and checksum; huge
+queued fronts intentionally have slower timing and a different aftermath.
 Blasts eject bounded physical rubble sampled from the undisturbed terrain toward
 local open space. Dense chain fronts retain material flecks, gas, and their
 staged crater wave while pacing rigid rubble through a per-tick body budget.

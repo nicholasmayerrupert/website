@@ -658,6 +658,31 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- exceptionally broad fronts are queued in bounded deterministic slices ---
+{
+  const C = 360, R = 260, side = 159;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  const x0 = (C - side) >> 1, y0 = (R - side) >> 1;
+  for (let y = y0; y < y0 + side; y++)
+    for (let x = x0; x < x0 + side; x++) e.placeMaterial(x, y, 0, MAT.TNT);
+  e.syncComponents();
+  let tntLeft = side * side, peakQueuedFronts = 0, completed = false;
+  for (let i = 0; i < 160; i++) {
+    if (i < 3) e.placeMaterial(x0 + side + 1, y0 + (side >> 1), 1, MAT.FIRE);
+    e.step(i * 16);
+    tntLeft = count(e.getGrid(), MAT.TNT);
+    peakQueuedFronts = Math.max(peakQueuedFronts, e._tntFrontCount());
+    if (tntLeft === 0 && e._tntFrontCount() === 0) { completed = true; break; }
+  }
+  check(`exceptionally broad TNT chain used the deferred front budget (peak queue ${peakQueuedFronts})`,
+        peakQueuedFronts > 0);
+  check(`budgeted TNT chain completed and drained its front queue (${tntLeft} TNT left)`,
+        completed && tntLeft === 0);
+  check(`budgeted TNT chain kept live rigid rubble bounded (${e._bodyCount()} bodies)`,
+        e._bodyCount() <= BLAST_DEBRIS_CAP);
+  e.destroy();
+}
+
 // --- a large falling component pushes movable blast rubble instead of pausing ---
 // The blast fan's exact shapes/velocities are intentionally random-looking. A
 // directly spawned stone-body stack exercises the same body-owned grid collision

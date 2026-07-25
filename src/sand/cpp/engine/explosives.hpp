@@ -12,10 +12,12 @@ class ExplosivesSystem {
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
   static const int    TNT_CHAIN_FUSE = 1;    // one-tick rolling front: staged, without idle structural frames
   static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
-  static const int    TNT_CLUSTER_FAST_THRESHOLD = 4;  // merge compact brush-sized fronts while keeping the one-tick chain cadence
+  static const int    TNT_CLUSTER_FAST_THRESHOLD = 4;  // merge compact brush-sized fronts into spatial representatives
   static const int    TNT_COMPACT_FRONT_CELLS = 13;    // one creative click: render as one pulse, not one crater per cell
-  static const int    TNT_MASS_FRONT_CELLS = 64;       // dense waves use flecks and gas instead of persistent rigid rubble
+  static const int    TNT_MASS_FRONT_CELLS = 64;       // enables the dense-front representative and debris policy
   static const int    TNT_CLUSTER_BUCKET = 14; // representative spacing; blast radii still overlap into one continuous front
+  static const int    TNT_MASS_FRONT_BUDGET_THRESHOLD = 32; // cheaper fronts finish atomically and preserve normal cave topology
+  static const int    TNT_MASS_FRONT_BUCKETS_PER_STEP = 16; // deterministic stencil budget once a front exceeds the threshold
   static constexpr double TNT_BLAST_POWER = 20.0; // energy at the centre; falls off to 0 at the rim
   static const int    METHANE_BLAST_RADIUS = 16; // one-third broader pressure flash, still smaller than TNT
   static constexpr double METHANE_BLAST_POWER = 14.0; // fractures a wider stone shell; hard ores survive
@@ -86,7 +88,9 @@ class ExplosivesSystem {
   bool blastEnergyDominated(BlastBatch& bb, int k, double energy);
   void noteCrossSupportRemoval(int k, BlastBatch& bb);
   bool touchedCrossSupportSurvives(const BlastBatch& bb);
-  void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb);
+  void carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb,
+                             bool massFront = false);
+  void drainMassTntFronts(BlastBatch& bb, BlastBatch* otherBb);
   void carveBlast(int cx, int cy, int radius, double power, BlastBatch& bb, Body* sourceBody = nullptr,
                   uint8_t explosiveMaterial = TNT, uint32_t seedSerial = UINT32_MAX);
   void finishBlasts(BlastBatch& bb);

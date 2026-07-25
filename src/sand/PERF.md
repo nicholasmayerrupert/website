@@ -77,6 +77,10 @@ component registration, and generation/restoration. Browser presentation exposes
 - Blast rubble stays body-owned, does not bear structural load, and does not
   invalidate cached cave grounding. Dense TNT fronts emit a bounded number of
   physical chunks.
+- TNT fronts with more than 32 spatial blast representatives queue their crater
+  work in deterministic order and execute at most 16 representatives per layer
+  per tick. Smaller fronts finish atomically so ordinary cave topology does not
+  pay for extra grounding passes.
 - Presentation diffs use validated row copies and keep only one packet in flight.
 - Pure camera pans retain the valid texture overlap and fill/upload only newly
   exposed edge bands; lighting flood queues carry their x coordinate so the hot
@@ -89,8 +93,9 @@ component registration, and generation/restoration. Browser presentation exposes
   smaller than the raw payload.
 
 These optimizations preserve deterministic output except the accepted cave-blast
-carry change: removing redundant dirty rows changes shared-RNG consumption in the
-aftermath while preserving fuse timing and crater geometry.
+carry change and exceptionally broad queued TNT fronts. Queued fronts advance
+their crater representatives over additional ticks, so their timing and
+aftermath checksum intentionally differ.
 
 ## Baseline policy
 

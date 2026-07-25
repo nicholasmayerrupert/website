@@ -276,14 +276,15 @@ bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
   return true;
 }
 
-void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb, BlastBatch* otherBb) {
+void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, BlastBatch& bb,
+                                             BlastBatch* otherBb, bool massFront) {
   if (cells.empty()) return;
-  if ((int)cells.size() >= TNT_MASS_FRONT_CELLS) {
+  if (massFront || (int)cells.size() >= TNT_MASS_FRONT_CELLS) {
     bb.debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
     if (otherBb) otherBb->debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
   }
   std::vector<int> reps;
-  if ((int)cells.size() <= TNT_COMPACT_FRONT_CELLS) {
+  if (!massFront && (int)cells.size() <= TNT_COMPACT_FRONT_CELLS) {
     reps.push_back(cells[cells.size() / 2]);
   } else {
     int bucketCols = (E.cols + TNT_CLUSTER_BUCKET - 1) / TNT_CLUSTER_BUCKET;
@@ -312,10 +313,29 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
     E.L->grid[cell] = EMPTY;
   }
 
-  for (int cell : reps) {
-    int y = cell / E.cols, x = cell - y * E.cols;
-    carveBlastAcrossLayers(x, y, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb);
+  if (massFront && (!E.L->pendingTntBlastFronts.empty()
+      || (int)reps.size() > TNT_MASS_FRONT_BUDGET_THRESHOLD)) {
+    E.L->pendingTntBlastFronts.insert(E.L->pendingTntBlastFronts.end(), reps.begin(), reps.end());
+  } else {
+    for (int cell : reps) {
+      int y = cell / E.cols, x = cell - y * E.cols;
+      carveBlastAcrossLayers(x, y, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb);
+    }
   }
+}
+
+void ExplosivesSystem::drainMassTntFronts(BlastBatch& bb, BlastBatch* otherBb) {
+  auto& fronts = E.L->pendingTntBlastFronts;
+  int count = imin(TNT_MASS_FRONT_BUCKETS_PER_STEP, (int)fronts.size());
+  if (count <= 0) return;
+  bb.debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
+  if (otherBb) otherBb->debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
+  for (int i = 0; i < count; i++) {
+    int cell = fronts[i];
+    carveBlastAcrossLayers(cell % E.cols, cell / E.cols,
+                          TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, otherBb);
+  }
+  fronts.erase(fronts.begin(), fronts.begin() + count);
 }
 
 // Carve one durability-gated crater centred at (cx,cy) INTO the shared batch (no
@@ -760,14 +780,16 @@ void ExplosivesSystem::applyExplosives() {
     for (int cell : fire) {
       if (cell >= 0 && cell < E.cols * E.rows && E.L->grid[cell] == TNT && !E.isBodyCell(cell)) staticFire.push_back(cell);
     }
+    bool massFront = (int)staticFire.size() >= TNT_MASS_FRONT_CELLS;
     if ((int)staticFire.size() >= TNT_CLUSTER_FAST_THRESHOLD) {
-      carveStaticTntCluster(staticFire, bb, &otherBb);
+      carveStaticTntCluster(staticFire, bb, &otherBb, massFront);
     } else {
       for (int cell : staticFire)
         carveBlastAcrossLayers(cell % E.cols, cell / E.cols, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb);
     }
-    for (int cell : fire) E.L->pendingDetonations.erase(cell);
+    for (int cell : staticFire) E.L->pendingDetonations.erase(cell);
   }
+  drainMassTntFronts(bb, &otherBb);
   // 3) Tick body fuses; an expired TNT body detonates at its centre (the blast
   //    consumes its own cells, so finishErasedBodies removes the now-empty body).
   std::vector<std::pair<int, int>> bodyBlasts;

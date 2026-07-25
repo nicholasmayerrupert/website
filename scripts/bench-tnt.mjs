@@ -132,6 +132,7 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     rollingHash,
     peakReactMs: peak.reactMs,
     peakWallMs: peak.wallMs,
+    worstWallMs: Math.max(0, ...blastRecords.map(({ wallMs }) => wallMs)),
     waveReactMs: blastRecords.reduce((sum, record) => sum + record.reactMs, 0),
     waveWallMs: blastRecords.reduce((sum, record) => sum + record.wallMs, 0),
     blastAndAftermathWallMs: blastAndAftermath.reduce((sum, record) => sum + record.wallMs, 0),
@@ -157,6 +158,7 @@ const scenarios = [
   { name: 'chain-49x49', cols: 260, rows: 220, side: 49, steps: 90 },
   { name: 'chain-49-wide-stone-bed', cols: 260, rows: 220, side: 49, buried: true, steps: 90 },
   { name: 'chain-79-cave-dual-layer', cols: 640, rows: 384, side: 79, cave: true, caveRadius: 47, bg: true, steps: 100 },
+  { name: 'chain-159-cave-dual-layer', cols: 768, rows: 512, side: 159, cave: true, caveRadius: 100, bg: true, steps: 150 },
 ];
 
 // Warm lazy WASM/runtime paths before collecting samples.
@@ -169,6 +171,7 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   const hashes = [...new Set(runs.map(({ rollingHash }) => rollingHash.toString(16).padStart(8, '0')))];
   const peakReact = summary(runs.map(({ peakReactMs }) => peakReactMs));
   const peakWall = summary(runs.map(({ peakWallMs }) => peakWallMs));
+  const worstWall = summary(runs.map(({ worstWallMs }) => worstWallMs));
   const waveReact = summary(runs.map(({ waveReactMs }) => waveReactMs));
   const waveWall = summary(runs.map(({ waveWallMs }) => waveWallMs));
   const blastAndAftermathWall = summary(runs.map(({ blastAndAftermathWallMs }) => blastAndAftermathWallMs));
@@ -191,6 +194,7 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  cold wave   react ${first.waveReactMs.toFixed(3)}  wall ${first.waveWallMs.toFixed(3)} ms`);
   console.log(`  peak react  p50 ${peakReact.p50.toFixed(3)}  p95 ${peakReact.p95.toFixed(3)}  mean ${peakReact.mean.toFixed(3)} ms`);
   console.log(`  peak wall   p50 ${peakWall.p50.toFixed(3)}  p95 ${peakWall.p95.toFixed(3)}  mean ${peakWall.mean.toFixed(3)} ms`);
+  console.log(`  worst wall  p50 ${worstWall.p50.toFixed(3)}  p95 ${worstWall.p95.toFixed(3)}  mean ${worstWall.mean.toFixed(3)} ms`);
   console.log(`  wave react  p50 ${waveReact.p50.toFixed(3)}  p95 ${waveReact.p95.toFixed(3)}  mean ${waveReact.mean.toFixed(3)} ms`);
   console.log(`  wave wall   p50 ${waveWall.p50.toFixed(3)}  p95 ${waveWall.p95.toFixed(3)}  mean ${waveWall.mean.toFixed(3)} ms`);
   console.log(`  blast +5   p50 ${blastAndAftermathWall.p50.toFixed(3)}  p95 ${blastAndAftermathWall.p95.toFixed(3)}  mean ${blastAndAftermathWall.mean.toFixed(3)} ms`);

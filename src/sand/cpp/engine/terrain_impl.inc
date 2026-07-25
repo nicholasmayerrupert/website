@@ -151,7 +151,7 @@ int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
 // contour-line "spaghetti/noodle" tunnels. Terraria-like detail passes decorate
 // the resulting cave floors/walls later, rather than carving independent rooms.
 TerrainGen::CaveRegionPlan TerrainGen::cavePlan(int region) {
-  uint32_t layerSeed = E.L->gCaveSeed ^ (E.L->isBackground ? 0xBACC600Du : 0u);
+  uint32_t layerSeed = E.L->gCaveSeed;
   uint32_t key = layerSeed ^ ((uint32_t)region * 0x27d4eb2du);
   CavePlanCacheEntry& cached = cavePlanCache[key & (CAVE_PLAN_CACHE_SIZE - 1)];
   if (cached.seed == layerSeed && cached.region == region) return cached.plan;
@@ -159,16 +159,33 @@ TerrainGen::CaveRegionPlan TerrainGen::cavePlan(int region) {
   int base = region * CAVE_REGION_WIDTH;
   auto roll = [&](uint32_t salt) { return whash1(layerSeed ^ salt, region); };
   CaveRegionPlan plan;
-  plan.entryX = base + 36 + (int)(roll(0x101u) * (CAVE_REGION_WIDTH - 72));
+  int preferredX = base + 40 + (int)(roll(0x101u) * (CAVE_REGION_WIDTH - 80));
+  int bestScore = INT_MIN, inward = roll(0x102u) < 0.5 ? -1 : 1;
+  // Put the mouth on a real slope when possible: the outside starts on lower
+  // ground and the passage heads beneath the higher side of the hill.
+  for (int dx = -32; dx <= 32; dx += 8) {
+    int candidate = imax(base + 28, imin(base + CAVE_REGION_WIDTH - 28, preferredX + dx));
+    int ground = genSurfaceAbs(candidate);
+    for (int dir : {-1, 1}) {
+      int rise = ground - genSurfaceAbs(candidate + dir * 18);
+      int score = rise * 6 - std::abs(dx);
+      if (score > bestScore) {
+        bestScore = score;
+        plan.entryX = candidate;
+        inward = dir;
+      }
+    }
+  }
   plan.entryY = genSurfaceAbs(plan.entryX);
+  plan.mouthX = plan.entryX + inward * (14 + (int)(roll(0x103u) * 8));
+  plan.mouthY = imax(plan.entryY + 5, genSurfaceAbs(plan.mouthX) + 5);
   plan.upperX = imax(base + 24, imin(base + CAVE_REGION_WIDTH - 24,
-                    plan.entryX - 34 + (int)(roll(0x102u) * 69)));
-  plan.upperY = plan.entryY + 50 + (int)(roll(0x103u) * 28);
-  plan.middleX = base + 34 + (int)(roll(0x104u) * (CAVE_REGION_WIDTH - 68));
-  plan.middleY = imax(plan.upperY + 54, 196 + (int)(roll(0x105u) * 68));
-  plan.deepX = base + 34 + (int)(roll(0x106u) * (CAVE_REGION_WIDTH - 68));
-  plan.deepY = imin(CAVE_BOTTOM - 32, imax(plan.middleY + 92, 414 + (int)(roll(0x107u) * 78)));
-  plan.enabled = !E.L->isBackground || roll(0x108u) < 0.68;
+                    plan.mouthX + inward * (12 + (int)(roll(0x104u) * 20))));
+  plan.upperY = imax(plan.mouthY + 24, plan.entryY + 48 + (int)(roll(0x105u) * 30));
+  plan.middleX = base + 34 + (int)(roll(0x106u) * (CAVE_REGION_WIDTH - 68));
+  plan.middleY = imax(plan.upperY + 54, 196 + (int)(roll(0x107u) * 68));
+  plan.deepX = base + 34 + (int)(roll(0x108u) * (CAVE_REGION_WIDTH - 68));
+  plan.deepY = imin(CAVE_BOTTOM - 32, imax(plan.middleY + 92, 414 + (int)(roll(0x109u) * 78)));
 
   cached.seed = layerSeed;
   cached.region = region;
@@ -186,27 +203,49 @@ bool TerrainGen::segmentContains(int x, int y, int ax, int ay, int bx, int by, d
   return dx * dx + dy * dy <= radius * radius;
 }
 
+bool TerrainGen::taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
+                                        double startRadius, double endRadius, uint32_t salt) {
+  double reach = std::fmax(startRadius, endRadius) + 1.1;
+  if (x < std::min(ax, bx) - reach || x > std::max(ax, bx) + reach
+      || y < std::min(ay, by) - reach || y > std::max(ay, by) + reach) return false;
+  double vx = bx - ax, vy = by - ay;
+  double wx = x - ax, wy = y - ay;
+  double vv = vx * vx + vy * vy;
+  double t = vv > 0 ? (wx * vx + wy * vy) / vv : 0.0;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  double cx = ax + vx * t, cy = ay + vy * t;
+  int band = (int)std::floor(t * 12.0);
+  double rough = (whash1(E.L->gCaveSeed ^ salt, band) - 0.5) * 2.2;
+  double radius = startRadius + (endRadius - startRadius) * t + rough;
+  radius = std::fmax(4.5, radius);
+  double dx = x - cx, dy = y - cy;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
 // Every foreground macro-region owns a player-clear route from its surface to
 // the deep cave band, plus horizontal links to its neighbours. Noise caves add
 // variety around this graph; they are no longer responsible for connectivity.
-// Background routes are thinner and sparsely enabled, creating deliberate
-// transfer shortcuts without duplicating the foreground cavern volume.
+// The background deliberately has no route graph: rare chambers there remain
+// visual pockets instead of revealing the foreground topology as straight lines.
 bool TerrainGen::genIsBackboneCave(int worldX, int worldY) {
-  if (worldY >= CAVE_BOTTOM) return false;
+  if (E.L->isBackground || worldY >= CAVE_BOTTOM) return false;
   int region = floorDiv(worldX, CAVE_REGION_WIDTH);
-  double radius = E.L->isBackground ? 2.25 : 5.25;
   for (int r = region - 1; r <= region; r++) {
     CaveRegionPlan p = cavePlan(r);
-    if (!p.enabled) continue;
-    if (!E.L->isBackground &&
-        segmentContains(worldX, worldY, p.entryX, p.entryY, p.upperX, p.upperY, radius)) return true;
-    if (segmentContains(worldX, worldY, p.upperX, p.upperY, p.middleX, p.middleY, radius)) return true;
-    if (segmentContains(worldX, worldY, p.middleX, p.middleY, p.deepX, p.deepY, radius)) return true;
+    if (taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
+                               p.mouthX, p.mouthY, 4.8, 5.8, 0xE101u)) return true;
+    if (taperedSegmentContains(worldX, worldY, p.mouthX, p.mouthY,
+                               p.upperX, p.upperY, 5.8, 6.6, 0xE102u)) return true;
+    if (taperedSegmentContains(worldX, worldY, p.upperX, p.upperY,
+                               p.middleX, p.middleY, 6.6, 5.8, 0xE103u)) return true;
+    if (taperedSegmentContains(worldX, worldY, p.middleX, p.middleY,
+                               p.deepX, p.deepY, 5.8, 6.4, 0xE104u)) return true;
     CaveRegionPlan next = cavePlan(r + 1);
-    if (next.enabled &&
-        segmentContains(worldX, worldY, p.middleX, p.middleY, next.middleX, next.middleY, radius)) return true;
-    if (!E.L->isBackground && next.enabled && (r & 1) == 0 &&
-        segmentContains(worldX, worldY, p.deepX, p.deepY, next.deepX, next.deepY, radius)) return true;
+    if (taperedSegmentContains(worldX, worldY, p.middleX, p.middleY,
+                               next.middleX, next.middleY, 5.6, 5.6, 0xE105u)) return true;
+    if ((r & 1) == 0 &&
+        taperedSegmentContains(worldX, worldY, p.deepX, p.deepY,
+                               next.deepX, next.deepY, 6.0, 6.0, 0xE106u)) return true;
   }
   return false;
 }
@@ -218,9 +257,11 @@ bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
   int region = floorDiv(worldX, CAVE_REGION_WIDTH);
   for (int r = region - 1; r <= region; r++) {
     CaveRegionPlan p = cavePlan(r);
-    if (worldY < p.entryY - 1 || worldY > p.upperY + 2) continue;
-    bool outer = segmentContains(worldX, worldY, p.entryX, p.entryY, p.upperX, p.upperY, 7.25);
-    bool inner = segmentContains(worldX, worldY, p.entryX, p.entryY, p.upperX, p.upperY, 5.25);
+    if (worldY < p.entryY - 1 || worldY > p.entryY + 22) continue;
+    bool outer = taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
+                                         p.mouthX, p.mouthY, 6.5, 7.2, 0xE101u);
+    bool inner = taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
+                                         p.mouthX, p.mouthY, 4.8, 5.8, 0xE101u);
     if (outer && !inner) return true;
   }
   return false;
@@ -232,22 +273,34 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
   CaveCacheEntry& cached = caveCache[key & (CAVE_CACHE_SIZE - 1)];
   if (cached.seed == seed && cached.x == worldX && cached.y == worldY) return cached.value != 0;
 
-  bool result = genIsBackboneCave(worldX, worldY);
-  if (!result) {
+  bool result = false;
+  if (E.L->isBackground) {
+    // Background terrain is a backdrop, not a second tunnel map. One broad
+    // density field produces occasional enclosed chambers without spaghetti,
+    // noodles, shafts, or graph segments.
+    double warpX = (wfbm2(E.L->gCaveSeed ^ 0xCA71u, worldX * 0.006, worldY * 0.006, 1, 0.5) - 0.5) * 14.0;
+    double warpY = (wfbm2(E.L->gCaveSeed ^ 0xCA72u, worldX * 0.006, worldY * 0.006, 1, 0.5) - 0.5) * 12.0;
+    double chamber = wfbm2(E.L->gCaveSeed ^ 0x55u,
+                           (worldX + warpX) * CAVE_FREQ * 0.38,
+                           (worldY + warpY) * CAVE_FREQ * 0.34, 3, 0.5);
+    result = chamber > 0.825;
+  } else {
+    result = genIsBackboneCave(worldX, worldY);
+  }
+  if (!result && !E.L->isBackground) {
     double warpX = (wfbm2(E.L->gCaveSeed ^ 0xCA71u, worldX * 0.010, worldY * 0.010, 1, 0.5) - 0.5) * 18.0;
     double warpY = (wfbm2(E.L->gCaveSeed ^ 0xCA72u, worldX * 0.009, worldY * 0.011, 1, 0.5) - 0.5) * 14.0;
     double sx = worldX + warpX, sy = worldY + warpY;
     double depthFrac = (double)worldY / (double)imax(1, caveBottomAbs());
     if (depthFrac < 0) depthFrac = 0; else if (depthFrac > 1) depthFrac = 1;
-    double bgBias = E.L->isBackground ? 0.072 : 0.0;
     double cheese = wfbm2(E.L->gCaveSeed ^ 0x55u, sx * CAVE_FREQ * 0.52, sy * CAVE_FREQ * 0.42, 3, 0.5);
     double spaghetti = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A6Eu, sx * CAVE_FREQ * 1.55, sy * CAVE_FREQ * 0.82, 2, 0.5) - 0.5);
     double noodle = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x7A6Eu, sx * CAVE_FREQ * 2.8, sy * CAVE_FREQ * 1.9, 1, 0.5) - 0.5);
     double shaft = std::fabs(wfbm2(E.L->gCaveSeed ^ 0x5A7Fu, sx * CAVE_FREQ * 0.80, sy * CAVE_FREQ * 2.20, 1, 0.5) - 0.5);
-    double chamberThresh = 0.755 - depthFrac * 0.075 + bgBias * 3.0;
-    double spaghettiWidth = 0.075 + depthFrac * 0.026 - bgBias;
-    double noodleWidth = 0.044 + depthFrac * 0.014 - bgBias * 0.6;
-    double shaftWidth = 0.052 + depthFrac * 0.012 - bgBias * 0.8;
+    double chamberThresh = 0.755 - depthFrac * 0.075;
+    double spaghettiWidth = 0.075 + depthFrac * 0.026;
+    double noodleWidth = 0.044 + depthFrac * 0.014;
+    double shaftWidth = 0.052 + depthFrac * 0.012;
     result = cheese > chamberThresh || spaghetti < spaghettiWidth || noodle < noodleWidth || shaft < shaftWidth;
   }
   cached.seed = seed;

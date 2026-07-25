@@ -93,35 +93,104 @@ function caveReach(e, region) {
 
 {
   let failedRoutes = 0, smallestFlood = Infinity;
+  let oversizedMouths = 0, straightMouths = 0;
   for (const seed of [0, 0xBED, 0xBEEF]) {
     const e = mk(128, 128, seed);
     for (let region = -2; region <= 2; region++) {
       const route = caveReach(e, region);
       smallestFlood = Math.min(smallestFlood, route.cells);
       if (route.deepest < 420) failedRoutes++;
+
+      const groups = [];
+      let current = [];
+      for (let x = region * 256; x < (region + 1) * 256; x++) {
+        if (e.worldIsCaveAt(0, x, e.worldSurfaceAbsAt(x))) current.push(x);
+        else if (current.length) { groups.push(current); current = []; }
+      }
+      if (current.length) groups.push(current);
+      groups.sort((a, b) => b.length - a.length);
+      const mouth = groups[0] || [];
+      if (mouth.length < 5 || mouth.length > 20) oversizedMouths++;
+
+      const startX = mouth.length ? Math.round((mouth[0] + mouth.at(-1)) / 2) : region * 256 + 128;
+      const startY = e.worldSurfaceAbsAt(startX);
+      const centers = [], widths = [];
+      let previous = startX;
+      for (let depth = 0; depth <= 32; depth += 4) {
+        const runs = [];
+        let run = null;
+        for (let x = startX - 40; x <= startX + 40; x++) {
+          if (e.worldIsCaveAt(0, x, startY + depth)) {
+            if (!run) run = [x, x];
+            else run[1] = x;
+          } else if (run) { runs.push(run); run = null; }
+        }
+        if (run) runs.push(run);
+        if (!runs.length) continue;
+        const nearest = runs.reduce((best, candidate) =>
+          Math.abs((candidate[0] + candidate[1]) / 2 - previous)
+            < Math.abs((best[0] + best[1]) / 2 - previous) ? candidate : best);
+        previous = (nearest[0] + nearest[1]) / 2;
+        centers.push(previous);
+        widths.push(nearest[1] - nearest[0] + 1);
+      }
+      const centerDrift = Math.max(...centers) - Math.min(...centers);
+      const widthVariation = Math.max(...widths) - Math.min(...widths);
+      if (centerDrift < 6 || widthVariation < 4) straightMouths++;
     }
     e.destroy();
   }
   check(`surface entrances reach the deep cave band (15 regions, ${failedRoutes} failures)`,
     failedRoutes === 0 && smallestFlood > 1_000);
+  check(`surface mouths stay human-scale and irregular (${oversizedMouths} oversized, ${straightMouths} straight)`,
+    oversizedMouths === 0 && straightMouths === 0);
 }
 
-// Background caves should create real transfer/exploration choices without
-// duplicating the foreground's cavern volume.
+// The background is a solid visual/support layer. Rare rounded chambers are
+// allowed, but it must not duplicate the foreground graph or form long thin lines.
 {
   const e = mk(128, 128, 0xBED);
   let fg = 0, bg = 0, overlap = 0, samples = 0;
+  const sampleWidth = 768, sampleHeight = 240;
+  const background = new Uint8Array(sampleWidth * sampleHeight);
   for (let y = 40; y < 520; y += 2) for (let x = -768; x < 768; x += 2) {
     const f = e.worldIsCaveAt(0, x, y);
     const b = e.worldIsCaveAt(1, x, y);
     fg += f;
     bg += b;
     overlap += f && b;
+    background[((y - 40) / 2) * sampleWidth + (x + 768) / 2] = b;
     samples++;
   }
   const fgFraction = fg / samples, bgFraction = bg / samples;
-  check(`background caves are sparse but substantial (${(bgFraction * 100).toFixed(1)}% vs fg ${(fgFraction * 100).toFixed(1)}%)`,
-    bgFraction > 0.05 && bgFraction < fgFraction * 0.45 && overlap > 1_000);
+  const seen = new Uint8Array(background.length);
+  let longThinComponents = 0, roundedChambers = 0;
+  for (let start = 0; start < background.length; start++) {
+    if (!background[start] || seen[start]) continue;
+    const queue = [start];
+    seen[start] = 1;
+    let head = 0, minX = sampleWidth, maxX = -1, minY = sampleHeight, maxY = -1, cells = 0;
+    while (head < queue.length) {
+      const i = queue[head++], x = i % sampleWidth, y = (i / sampleWidth) | 0;
+      cells++;
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      for (const next of [x ? i - 1 : -1, x + 1 < sampleWidth ? i + 1 : -1,
+        y ? i - sampleWidth : -1, y + 1 < sampleHeight ? i + sampleWidth : -1]) {
+        if (next >= 0 && background[next] && !seen[next]) {
+          seen[next] = 1;
+          queue.push(next);
+        }
+      }
+    }
+    const width = maxX - minX + 1, height = maxY - minY + 1;
+    if (Math.max(width, height) >= 12 && Math.min(width, height) <= 2) longThinComponents++;
+    if (cells >= 40 && width >= 6 && height >= 6) roundedChambers++;
+  }
+  check(`background stays essentially solid (${(bgFraction * 100).toFixed(1)}% void vs fg ${(fgFraction * 100).toFixed(1)}%)`,
+    bgFraction > 0.002 && bgFraction < 0.03 && overlap > 100);
+  check(`background exceptions are chambers, not carved lines (${roundedChambers} chambers, ${longThinComponents} thin components)`,
+    roundedChambers > 0 && longThinComponents === 0);
   e.destroy();
 }
 

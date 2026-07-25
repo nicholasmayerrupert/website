@@ -50,25 +50,34 @@ coordinate and generates or restores the entering band. Horizontal and vertical
 shifts are supported: surface exploration is horizontally unbounded and digging
 can continue vertically.
 
-Worldgen version 2 is canonical in absolute coordinates: viewport size changes
+Worldgen version 3 is canonical in absolute coordinates: viewport size changes
 only the loaded window, never terrain, biome, cave, structure, or resource
 placement for a seed. Continuous temperature, moisture, elevation, and
 ruggedness fields select surface biomes; narrow deterministic ecotones blend
 their soil and vegetation instead of creating hard seams.
 
 Foreground caves combine noise caverns with a player-clear macro-region
-backbone from the surface to the deep band. Underground structures are seated on
-that traversable graph and receive a full-height side passage. The background
-uses a thinner, partial backbone and a much sparser cave field, providing visual
-depth and cross-layer transfer routes without duplicating foreground volume.
-Coal and copper have compact starter lodes near the original spawn; iron, gold,
-and environmental hazards unlock progressively deeper.
+backbone from the surface to the deep band. Entrances seek a hillside, bend
+beneath it, and vary in width instead of exposing a straight cylindrical shaft.
+The background is solid except for rare rounded chambers; it never receives the
+foreground route graph.
+
+Underground ruins are seated on the traversable cave graph and receive roomy side
+passages. Large multi-level mines add rail galleries, stations, side chambers,
+wide inter-level shafts, and surface headhouses. Mine interiors live in the
+foreground while aligned timber frames, station walls, and rail beds remain
+solid in the background. Surface settlements contain five to seven large
+buildings, including a meeting hall, plus a well. Coal and copper have compact starter
+lodes near the original spawn; iron, gold, and environmental hazards unlock
+progressively deeper.
 
 Only changed simulation tiles enter persistent streaming storage. Pristine
 generated and prefetched tiles use RLE when useful and live in a bounded
 disposable cache, so ordinary exploration does not grow storage with total
-distance. Use `npm run test:worldgen` for canonical-coordinate, connectivity,
-progression, reachability, and layer-density checks; `npm run test:prefetch`
+distance. Use `npm run test:worldgen` for canonical-coordinate, entrance shape,
+connectivity, progression, reachability, and background-solidity checks;
+`scripts/worldgen-structures-test.mjs` verifies large player-clear mines and
+cross-layer rail alignment. `npm run test:prefetch`
 covers deterministic restoration and storage bounds. `npm run worldgen:atlas`
 writes `bench/worldgen-atlas.png`, with foreground above background.
 

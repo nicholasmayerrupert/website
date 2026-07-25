@@ -14,7 +14,7 @@ class TerrainGen {
   // Generator tunables. World-space dimensions are deliberately independent of
   // the loaded buffer: a seed names one canonical world at every viewport size.
   // These values match the former 320-row reference world.
-  static constexpr int WORLDGEN_VERSION = 2;
+  static constexpr int WORLDGEN_VERSION = 3;
   static constexpr int SURFACE_AMPLITUDE = 54;
   static constexpr int SEA_LEVEL = 18;
   static constexpr int BASE_SOIL_DEPTH = 3;
@@ -78,10 +78,10 @@ class TerrainGen {
   };
   struct CaveRegionPlan {
     int entryX = 0, entryY = 0;
+    int mouthX = 0, mouthY = 0;
     int upperX = 0, upperY = 0;
     int middleX = 0, middleY = 0;
     int deepX = 0, deepY = 0;
-    bool enabled = true;
   };
   struct CavePlanCacheEntry {
     uint32_t seed = 0;
@@ -104,4 +104,6 @@ class TerrainGen {
   int classifyBiomeAt(int worldX);
   CaveRegionPlan cavePlan(int region);
   static bool segmentContains(int x, int y, int ax, int ay, int bx, int by, double radius);
+  bool taperedSegmentContains(int x, int y, int ax, int ay, int bx, int by,
+                              double startRadius, double endRadius, uint32_t salt);
 };

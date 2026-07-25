@@ -6,8 +6,7 @@
   // move across the loaded window.
   // Surface height, climate, and soil use the shared seed so layers align near
   // the surface. The foreground owns player-clear cave backbones; the background
-  // uses its own sparse cave field and thinner partial backbones, allowing
-  // transfer where cavities overlap or diverge.
+  // is a mostly-solid backdrop with only rare rounded chambers.
   // Deterministic terrain queries (TerrainGen, terrain.hpp) — composed here;
   // method bodies in terrain_impl.inc. Streaming + fill passes below.
   TerrainGen terrain{*this};
@@ -165,8 +164,8 @@
   // no matter which band generates it. Like fillTrees, we OVERSCAN the rect by
   // STRUCT_REACH and clip with `put`, so a structure straddling a band seam is written
   // identically whether produced by one big fillRect or two band calls. fg only.
-  static const int STRUCT_LATTICE = 56;  // world cells between candidate anchors
-  static const int STRUCT_REACH = 192;   // includes wide surface village clusters
+  static const int STRUCT_LATTICE = 76;  // world cells between candidate anchors
+  static const int STRUCT_REACH = 256;   // includes villages and broad mine galleries
   static int floorDiv(int a, int b) { int q = a / b, r = a % b; if (r != 0 && ((r < 0) != (b < 0))) q--; return q; }
   void fillStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
     auto put = [&](int wx, int wy, uint8_t m) {
@@ -177,23 +176,27 @@
     uint32_t sseed = L->worldSeed ^ 0x57121314u;       // fg-only struct seed (shared is fine)
     int wx0 = L->worldOffsetX + colStart - STRUCT_REACH, wx1 = L->worldOffsetX + colEnd + STRUCT_REACH;
     int wy0 = L->worldOffsetY + rowStart - STRUCT_REACH, wy1 = L->worldOffsetY + rowEnd + STRUCT_REACH;
+    int rectX0 = L->worldOffsetX + colStart, rectX1 = L->worldOffsetX + colEnd - 1;
+    int rectY0 = L->worldOffsetY + rowStart, rectY1 = L->worldOffsetY + rowEnd - 1;
     int lxMin = floorDiv(wx0, STRUCT_LATTICE), lxMax = floorDiv(wx1, STRUCT_LATTICE);
     int lyMin = floorDiv(wy0, STRUCT_LATTICE), lyMax = floorDiv(wy1, STRUCT_LATTICE);
     auto h2 = [&](uint32_t salt, int a, int b) { return whash2(sseed ^ salt, a, b); };
-    // Surface villages: a deterministic chain of cottages, paths, wells and a
-    // taller meeting hall. Foundations follow the local ground so settlements
-    // feel embedded in the landscape rather than pasted across it.
-    static const int VILLAGE_LATTICE = 360;
+    // Surface villages: a deterministic chain of roomy cottages, warehouses,
+    // wells, and a meeting hall. Foundations follow the local ground so the
+    // larger settlements remain embedded in the landscape.
+    static const int VILLAGE_LATTICE = 420;
     int vxMin = floorDiv(wx0, VILLAGE_LATTICE), vxMax = floorDiv(wx1, VILLAGE_LATTICE);
     auto stampCottage = [&](int cx, int ordinal, bool hall) {
-      int w = hall ? 43 : 32 + (ordinal % 3) * 3, h = hall ? 27 : 21 + (ordinal & 1) * 2;
+      int w = hall ? 52 : 34 + (ordinal % 3) * 4, h = hall ? 30 : 23 + (ordinal & 1) * 3;
       int ground = terrain.genSurfaceAbs(cx), left = cx - w / 2;
       if (ground >= L->gSeaRow || terrain.genBiomeAt(cx) == BIOME_ROCKY) return;
       int lo = ground, hi = ground;
       for (int x = left; x <= left + w; x++) { int sy = terrain.genSurfaceAbs(x); lo = imin(lo, sy); hi = imax(hi, sy); }
       if (hi - lo > 5) return;
       int floorY = lo - 1, wallTop = floorY - h, roofH = hall ? 11 : 9;
-      const int DOOR_CLEARANCE = PLAYER_H + 3; // 11 cells: comfortably taller than the 8-cell player
+      if (left + w + 2 < rectX0 || left - 2 > rectX1
+          || floorY < rectY0 || wallTop - roofH - 6 > rectY1) return;
+      const int DOOR_CLEARANCE = PLAYER_H + 5;
       uint8_t wall = terrain.genBiomeAt(cx) == BIOME_DESERT ? SANDSTONE : BRICK;
       for (int x = left; x <= left + w; x++) {
         for (int y = wallTop; y <= floorY; y++) {
@@ -217,17 +220,142 @@
       }
     };
     for (int vx = vxMin; vx <= vxMax; vx++) {
-      if (whash1(sseed ^ 0xA11A6Eu, vx) > 0.58) continue;
-      int center = vx * VILLAGE_LATTICE + 70 + (int)(whash1(sseed ^ 0xA11A6Fu, vx) * 210);
+      if (whash1(sseed ^ 0xA11A6Eu, vx) > 0.78) continue;
+      int center = vx * VILLAGE_LATTICE + 76 + (int)(whash1(sseed ^ 0xA11A6Fu, vx) * 268);
       if (terrain.genSurfaceAbs(center) >= L->gSeaRow) continue;
-      int count = 3 + (int)(whash1(sseed ^ 0xA11A70u, vx) * 3);
-      for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 56, i, i == count / 2);
-      int wellX = center + count * 28 + 10, wellY = terrain.genSurfaceAbs(wellX) - 1;
+      int count = 5 + (int)(whash1(sseed ^ 0xA11A70u, vx) * 3);
+      for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 58, i, i == count / 2);
+      int wellX = center + count * 29 + 12, wellY = terrain.genSurfaceAbs(wellX) - 1;
       for (int dx = -3; dx <= 3; dx++) { put(wellX + dx, wellY, BRICK); if (std::abs(dx) == 3) for (int dy = 1; dy <= 5; dy++) put(wellX + dx, wellY - dy, BRICK); }
       for (int dx = -2; dx <= 2; dx++) put(wellX + dx, wellY - 5, BRICK);
       put(wellX, wellY - 1, WATER); put(wellX, wellY - 2, WATER);
     }
-    if (L->isBackground) return;                       // villages have backdrops; caves/ruins stay fg-only
+
+    // Large, multi-level mines are shared structures: the foreground owns their
+    // clear galleries and access shafts, while the background remains solid and
+    // carries matching timber frames, station walls, and rail beds. In side view
+    // the support work therefore reads behind the player without cutting linear
+    // voids through the backdrop.
+    static const int MINE_LATTICE = 512;
+    struct MineFootprint { int left, right, top, bottom; };
+    std::vector<MineFootprint> mines;
+    int mineMin = floorDiv(wx0, MINE_LATTICE), mineMax = floorDiv(wx1, MINE_LATTICE);
+    for (int mr = mineMin; mr <= mineMax; mr++) {
+      if (whash1(sseed ^ 0xD16D0001u, mr) > 0.72) continue;
+      int center = mr * MINE_LATTICE + 112
+                 + (int)(whash1(sseed ^ 0xD16D0002u, mr) * (MINE_LATTICE - 224));
+      int surface = terrain.genSurfaceAbs(center);
+      if (surface >= L->gSeaRow || terrain.genBiomeAt(center) == BIOME_ROCKY) continue;
+
+      int width = 152 + (int)(whash1(sseed ^ 0xD16D0003u, mr) * 57);
+      int levels = whash1(sseed ^ 0xD16D0004u, mr) < 0.38 ? 4 : 3;
+      const int clearHeight = PLAYER_H + 7;
+      const int levelGap = 27;
+      int firstFloor = surface + 126 + (int)(whash1(sseed ^ 0xD16D0005u, mr) * 64);
+      firstFloor = imin(firstFloor, TerrainGen::CAVE_BOTTOM - 28 - (levels - 1) * levelGap);
+      int left = center - width / 2, right = center + width / 2;
+      int shaftHalf = 6;
+      MineFootprint mine{left, right, surface - 36, firstFloor + (levels - 1) * levelGap};
+      if (mine.right < rectX0 || mine.left > rectX1 || mine.bottom < rectY0 || mine.top > rectY1) continue;
+      mines.push_back(mine);
+
+      auto stampSupportFrame = [&](int x, int ceiling, int floor) {
+        for (int y = ceiling; y <= floor; y++) put(x, y, WOOD);
+        for (int dx = -4; dx <= 4; dx++) put(x + dx, ceiling, WOOD);
+      };
+      auto stampRail = [&](int x0, int x1, int floor) {
+        for (int x = x0; x <= x1; x++) put(x, floor - 1, IRON_ORE);
+        for (int x = x0; x <= x1; x += 5)
+          for (int dx = 0; dx < 3 && x + dx <= x1; dx++) put(x + dx, floor, WOOD);
+      };
+
+      for (int level = 0; level < levels; level++) {
+        int floor = firstFloor + level * levelGap;
+        int ceiling = floor - clearHeight;
+        int inset = (level & 1) * 10;
+        int x0 = left + inset, x1 = right - inset;
+        int stationHalf = level == 0 ? 27 : 21;
+
+        if (L->isBackground) {
+          for (int y = ceiling - 3; y <= floor; y++)
+            for (int x = center - stationHalf; x <= center + stationHalf; x++)
+              put(x, y, BRICK);
+          for (int x = x0 + 8; x <= x1 - 8; x += 18)
+            stampSupportFrame(x, ceiling, floor);
+          stampRail(x0 + 3, x1 - 3, floor);
+          continue;
+        }
+
+        for (int y = ceiling; y < floor; y++)
+          for (int x = x0; x <= x1; x++) put(x, y, EMPTY);
+        // A tall central station breaks up the long gallery and leaves generous
+        // headroom around the main shaft.
+        for (int y = ceiling - 5; y < floor; y++)
+          for (int x = center - stationHalf; x <= center + stationHalf; x++) put(x, y, EMPTY);
+
+        int shaftA = center - width / 4, shaftB = center + width / 4;
+        auto railSection = [&](int from, int to) {
+          if (from <= to) stampRail(from, to, floor);
+        };
+        railSection(x0 + 3, shaftA - shaftHalf - 1);
+        railSection(shaftA + shaftHalf + 1, shaftB - shaftHalf - 1);
+        railSection(shaftB + shaftHalf + 1, x1 - 3);
+
+        if ((level & 1) == 0) {
+          for (int x = x0 + 12; x < x0 + 42; x++)
+            for (int y = ceiling - 8; y < ceiling; y++) put(x, y, EMPTY);
+        } else {
+          for (int x = x1 - 42; x < x1 - 12; x++)
+            for (int y = ceiling - 8; y < ceiling; y++) put(x, y, EMPTY);
+        }
+        for (int lampX = x0 + 18; lampX < x1 - 12; lampX += 36)
+          put(lampX, ceiling + 1, CRYSTAL);
+      }
+
+      // Broad inter-level shafts let the full player body pass with room to
+      // maneuver. Timber ledges mark each landing in the background layer.
+      for (int shaftX : {center - width / 4, center + width / 4}) {
+        int top = firstFloor - clearHeight;
+        int bottom = firstFloor + (levels - 1) * levelGap;
+        if (!L->isBackground) {
+          for (int y = top; y < bottom; y++)
+            for (int x = shaftX - shaftHalf; x <= shaftX + shaftHalf; x++) put(x, y, EMPTY);
+        } else {
+          for (int level = 0; level < levels; level++) {
+            int landing = firstFloor + level * levelGap;
+            for (int x = shaftX - shaftHalf - 2; x <= shaftX + shaftHalf + 2; x++)
+              put(x, landing, WOOD);
+          }
+        }
+      }
+
+      // A substantial headhouse makes the mine legible at the surface. Its
+      // constructed shaft is intentionally regular; natural cave mouths are not.
+      int houseW = 42, houseH = 25, floor = surface - 1;
+      int houseLeft = center - houseW / 2, houseTop = floor - houseH;
+      for (int y = houseTop; y <= floor; y++) for (int x = houseLeft; x <= houseLeft + houseW; x++) {
+        bool shell = x == houseLeft || x == houseLeft + houseW || y == houseTop || y == floor;
+        bool doorway = y >= floor - PLAYER_H - 4 && std::abs(x - center) <= shaftHalf;
+        if (L->isBackground) put(x, y, BRICK);
+        else put(x, y, shell && !doorway ? BRICK : EMPTY);
+      }
+      for (int roof = 0; roof <= 9; roof++)
+        for (int x = houseLeft - 2 + roof; x <= houseLeft + houseW + 2 - roof; x++)
+          put(x, houseTop - roof, BRICK);
+
+      int shaftTop = floor - PLAYER_H - 4;
+      int shaftBottom = firstFloor - clearHeight;
+      if (!L->isBackground) {
+        for (int y = shaftTop; y <= shaftBottom; y++)
+          for (int x = center - shaftHalf; x <= center + shaftHalf; x++) put(x, y, EMPTY);
+      } else {
+        for (int y = floor; y <= shaftBottom; y += 14)
+          for (int x = center - shaftHalf - 2; x <= center + shaftHalf + 2; x++)
+            put(x, y, WOOD);
+      }
+    }
+
+    if (L->isBackground) return; // natural caves stay foreground-only; mines already supplied the backdrop
     // --- structure archetypes ------------------------------------------------
     // Each stamps a self-contained ruin anchored at its top-left (ax,ay). All use
     // only solid CG_STONE shells (BRICK/CRYSTAL/MOSS/MYCELIUM merge into the
@@ -263,11 +391,14 @@
       }
       put(ax + 2, fy, CRYSTAL); put(ax + w - 3, fy, CRYSTAL);
     };
-    // An open pillared hall: brick floor + roof with regularly spaced columns.
+    // An open pillared hall with spans wide enough for the player to traverse.
     auto stampColonnade = [&](int ax, int ay, int w, int h, int lx, int ly) {
       for (int oy = 1; oy < h - 1; oy++) for (int ox = 1; ox < w - 1; ox++) put(ax + ox, ay + oy, EMPTY);
       for (int ox = 0; ox < w; ox++) { put(ax + ox, ay, BRICK); put(ax + ox, ay + h - 1, BRICK); }
-      for (int ox = 0; ox < w; ox += 3) for (int oy = 1; oy < h - 1; oy++) put(ax + ox, ay + oy, BRICK);
+      for (int ox = 0; ox < w; ox += 12) for (int oy = 1; oy < h - 1; oy++) {
+        put(ax + ox, ay + oy, BRICK);
+        if (ox + 1 < w) put(ax + ox + 1, ay + oy, BRICK);
+      }
       put(ax + w / 2, ay + h - 2, CRYSTAL);             // an altar crystal for light
     };
     // A stepped brick pyramid crowned with a crystal cluster (a crystal-cave shrine).
@@ -327,12 +458,12 @@
     };
 
     for (int ly = lyMin; ly <= lyMax; ly++) for (int lx = lxMin; lx <= lxMax; lx++) {
-      if (whash2(sseed, lx, ly) >= 0.18) continue;     // rare: a ruin at this anchor
+      if (whash2(sseed, lx, ly) >= 0.25) continue;
       // jittered anchor + hashed size
       int ax = lx * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xA1u, lx, ly) * 6);
       int ay = ly * STRUCT_LATTICE + (int)(whash2(sseed ^ 0xB2u, lx, ly) * 6);
-      int w = 14 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 8); // 14..21
-      int h = 11 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 5); // 11..15; player-clear interiors
+      int w = 28 + (int)(whash2(sseed ^ 0xC3u, lx, ly) * 17); // 28..44
+      int h = 18 + (int)(whash2(sseed ^ 0xD4u, lx, ly) * 10); // 18..27
       // Pick an archetype, biased by the cave biome it sits in so a structure fits
       // its surroundings (lush -> overgrown ruin, mushroom -> grove, crystal ->
       // shrine); elsewhere a mix of the neutral kinds.
@@ -348,7 +479,7 @@
       }
       if (kind == SK_COLONNADE) w += 4;                // halls run wider
       if (kind == SK_SHRINE) {
-        w = 9 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 6);
+        w = 19 + (int)(whash2(sseed ^ 0xC4u, lx, ly) * 10);
         h = imax(PLAYER_H + 3, w / 2 + 3);
       }
       // Seat the structure on an actual cave floor near its deterministic
@@ -366,8 +497,18 @@
       }
       if (floorY == INT_MIN) continue;
       ay = floorY - h + 1;
+      if (ax + w < rectX0 || ax > rectX1 || ay + h < rectY0 || ay > rectY1) continue;
       int surfAbs = terrain.genSurfaceAbs(centerX);
       if (ay < surfAbs + 30 || ay + h > terrain.caveBottomAbs()) continue;
+      bool overlapsMine = false;
+      for (const MineFootprint& mine : mines) {
+        if (ax <= mine.right && ax + w >= mine.left
+            && ay <= mine.bottom && ay + h >= mine.top) {
+          overlapsMine = true;
+          break;
+        }
+      }
+      if (overlapsMine) continue;
       if (kind == SK_FORGE && floorY - surfAbs < 180) kind = SK_HOUSE;
       switch (kind) {
         case SK_HOUSE:     stampHouse(ax, ay, w, h, lx, ly); break;
@@ -385,7 +526,7 @@
       int dir = h2(0xAACC355u, lx, ly) < 0.5 ? -1 : 1;
       int edgeX = dir < 0 ? ax : ax + w - 1;
       int doorBottom = ay + h - 2;
-      int doorTop = doorBottom - PLAYER_H + 1;
+      int doorTop = doorBottom - PLAYER_H - 4;
       int reach = 2;
       for (int d = 1; d <= 28; d++) {
         if (terrain.genOpenCaveAt(edgeX + dir * d, doorBottom)) { reach = d; break; }
@@ -700,6 +841,9 @@
         }
       }
     }
+    sealHazardBoundaries(colStart, colEnd, rowStart, rowEnd);
+  }
+  void sealHazardBoundaries(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
       int k = y * cols + x;
       if (L->grid[k] != SALT && !isDissolvable(L->grid[k])) continue;
@@ -709,23 +853,28 @@
     }
     for (int y = rowStart; y < rowEnd; y++) for (int x = colStart; x < colEnd; x++) {
       int k = y * cols + x;
-      if (L->grid[k] != ACID) continue;
-      if (y + 1 < rows && L->grid[k + cols] != ACID) L->grid[k + cols] = CRYSTAL;
-      if (x > 0 && L->grid[k - 1] != ACID && L->grid[k - 1] != EMPTY) L->grid[k - 1] = CRYSTAL;
-      if (x + 1 < cols && L->grid[k + 1] != ACID && L->grid[k + 1] != EMPTY) L->grid[k + 1] = CRYSTAL;
+      if (L->grid[k] == ACID) {
+        if (y + 1 < rows && L->grid[k + cols] != ACID) L->grid[k + cols] = CRYSTAL;
+        if (x > 0 && L->grid[k - 1] != ACID && L->grid[k - 1] != EMPTY) L->grid[k - 1] = CRYSTAL;
+        if (x + 1 < cols && L->grid[k + 1] != ACID && L->grid[k + 1] != EMPTY) L->grid[k + 1] = CRYSTAL;
+      } else if (L->grid[k] == LAVA) {
+        if (y + 1 < rows && L->grid[k + cols] != LAVA) L->grid[k + cols] = STONE;
+        if (x > 0 && L->grid[k - 1] != LAVA && L->grid[k - 1] != EMPTY) L->grid[k - 1] = STONE;
+        if (x + 1 < cols && L->grid[k + 1] != LAVA && L->grid[k + 1] != EMPTY) L->grid[k + 1] = STONE;
+      }
     }
   }
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; L->next[k] = L->grid[k]; }
   }
   // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd):
-  // terrain, then trees, then mirror into `L->next`. (Same order/output as before the
-  // split — terrain first, trees second, L->next-copy last.)
+  // terrain, natural dressing, constructed structures, trees, then `L->next`.
   void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
-    fillStructures(colStart, colEnd, rowStart, rowEnd); // overwrite terrain before cave features / trees overlay
     fillCaveFeatures(colStart, colEnd, rowStart, rowEnd);
     fillOceanFlora(colStart, colEnd, rowStart, rowEnd);
+    fillStructures(colStart, colEnd, rowStart, rowEnd); // keep constructed interiors clear of natural cave dressing
+    sealHazardBoundaries(colStart, colEnd, rowStart, rowEnd);
     fillTrees(colStart, colEnd, rowStart, rowEnd);
     copyGridToNext(colStart, colEnd, rowStart, rowEnd);
   }
@@ -1024,12 +1173,13 @@
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
     L = Lx; Lx->grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
-    // Structures / cave features BEFORE trees and BEFORE pfStoreTiles, mirroring
+    // Cave features / structures BEFORE trees and BEFORE pfStoreTiles, mirroring
     // fillRect's order, so a prefetched tile is byte-identical to the synchronous
     // fillRect tile.
-    fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillOceanFlora(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    sealHazardBoundaries(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
     Lx->grid = sGrid; L = sL;

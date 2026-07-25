@@ -6,6 +6,7 @@ import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 220, ROWS = 160, SEED = 0xBED;
+const PLAYER_CLEAR = 11;
 await initSandWasm();
 const { check, done } = makeChecker('worldgen structures');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
@@ -45,13 +46,17 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
 
 // --- ores + ruins actually generate while exploring ---
 {
-  const tally = { ore: 0, brick: 0, moss: 0, acid: 0, salt: 0, lava: 0, crystal: 0, mycelium: 0, mushroom: 0, plant: 0, vine: 0 };
+  const tally = {
+    ore: 0, brick: 0, moss: 0, acid: 0, salt: 0, lava: 0, crystal: 0,
+    mycelium: 0, mushroom: 0, plant: 0, vine: 0,
+    mineRailRows: 0, roomyRailRows: 0, coherentRailCells: 0, railCells: 0, maxRailSpan: 0,
+  };
   const oreIds = new Set([MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE]);
   for (let depth = 0; depth < 3; depth++) {
     const e = mk();
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
     for (let i = 0; i < 25; i++) {
-      const g = e.getGrid();
+      const g = e.getGrid(), bg = e.getGridBg();
       for (const v of g) {
         if (oreIds.has(v)) tally.ore++;
         else if (v === MAT.BRICK) tally.brick++;
@@ -64,6 +69,24 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
         else if (v === MAT.MUSH_STEM || v === MAT.MUSH_CAP) tally.mushroom++;
         else if (v === MAT.PLANT) tally.plant++;
         else if (v === MAT.VINE) tally.vine++;
+      }
+      for (let y = PLAYER_CLEAR; y < ROWS; y++) {
+        const rails = [];
+        for (let x = 0; x < COLS; x++) if (g[y * COLS + x] === MAT.IRON_ORE) rails.push(x);
+        if (rails.length < 50) continue; // natural ore never forms a room-wide horizontal bed
+        tally.mineRailRows++;
+        tally.maxRailSpan = Math.max(tally.maxRailSpan, rails.at(-1) - rails[0] + 1);
+        let clear = 0;
+        for (const x of rails) {
+          let roomy = true;
+          for (let dy = 1; dy <= PLAYER_CLEAR; dy++) {
+            if (g[(y - dy) * COLS + x] !== MAT.EMPTY) { roomy = false; break; }
+          }
+          clear += roomy;
+          tally.coherentRailCells += bg[y * COLS + x] === MAT.IRON_ORE;
+        }
+        tally.railCells += rails.length;
+        if (clear > rails.length * 0.70) tally.roomyRailRows++;
       }
       e.shiftWorldXY(128, 0);
     }
@@ -79,6 +102,12 @@ const lavaComponents = (g) => materialComponents(g, MAT.LAVA);
   check(`mycelium mushroom caves generate (${tally.mycelium}/${tally.mushroom} cells)`, tally.mycelium > 40 && tally.mushroom > 20);
   check(`lush caves generate plants and vines (${tally.plant}/${tally.vine} cells)`, tally.plant > 40 && tally.vine > 40);
   check(`crystal volume stays comparable to lush/mycelium caves (${tally.crystal} vs ${tally.mycelium + tally.mushroom + tally.plant + tally.vine})`, tally.crystal < tally.mycelium + tally.mushroom + tally.plant + tally.vine);
+  check(`large railroad mines generate (${tally.mineRailRows} rail rows, widest ${tally.maxRailSpan} cells)`,
+    tally.mineRailRows > 20 && tally.maxRailSpan > 100);
+  check(`mine galleries easily clear the player (${tally.roomyRailRows}/${tally.mineRailRows} roomy rail rows)`,
+    tally.roomyRailRows > tally.mineRailRows * 0.70);
+  check(`mine rails align across foreground/background (${tally.coherentRailCells}/${tally.railCells} cells)`,
+    tally.railCells > 0 && tally.coherentRailCells > tally.railCells * 0.90);
 }
 
 // --- ocean flora stays submerged: background VINE/GLOWBERRY only comes from

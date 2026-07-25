@@ -14,7 +14,7 @@ mapping, and pan stability.
 | `node scripts/bench-sand.mjs --checksum-only` | Fast behavior check without timing. |
 | `node scripts/bench-sand.mjs --scenario all --repeat 3` | Run the broader gameplay workload sweep. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, and pan instability. |
-| `npm run test:worldgen` | Check canonical world coordinates, cave reachability, progression, and layer density. |
+| `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
 | `npm run worldgen:atlas` | Render the foreground/background topology atlas to `bench/worldgen-atlas.png`. |
 | `npm run bench:tnt` | Profile TNT chains, cave carving, grounding, debris, and aftermath. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |

@@ -1027,17 +1027,20 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check(`cross-layer sand/water swap settles to inert (no oscillation, step ${settledAt})`, settledAt >= 0);
 }
 
-// Worldgen trees spawn in the BACKGROUND only. Tree trunks are WOOD (the only
-// worldgen WOOD source; surface grass has its own loose material, so count WOOD
-// to isolate trees).
-// Manual placement is a separate path and is unaffected.
+// Worldgen trees spawn in the BACKGROUND only. Mines can now use foreground
+// timber underground, so isolate tree trunks by counting WOOD above local ground.
 {
   console.log('worldgen: trees only in the background');
-  const woodIn = (g) => countIn(g, MAT.WOOD);
   let fgWood = 0, bgWood = 0, sawTrees = false;
   for (const seed of [0x55aa55, 0x9e3779b9, 0x777, 0x1234]) {
     const e = createEngineWasm({ cols: 256, rows: 256, worldSeed: seed >>> 0, sinksOn: false, infinite: true });
-    const fw = woodIn(e.getGrid()), bw = woodIn(e.getGridBg());
+    const fg = e.getGrid(), bg = e.getGridBg(), ox = e.getWorldOffsetX(), oy = e.getWorldOffsetY();
+    let fw = 0, bw = 0;
+    for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+      if (oy + y >= e.worldSurfaceAbsAt(ox + x)) continue;
+      fw += fg[y * 256 + x] === MAT.WOOD;
+      bw += bg[y * 256 + x] === MAT.WOOD;
+    }
     fgWood += fw; bgWood += bw; if (bw > 0) sawTrees = true;
     e.destroy();
   }

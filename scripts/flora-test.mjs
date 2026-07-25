@@ -245,7 +245,7 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
 // species) survive a shift off-buffer and back via the tile store.
 {
   const C = 220, R = 140;
-  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 9, sinksOn: false, infinite: true });
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: 4, sinksOn: false, infinite: true });
   // Locate a clear surface column in the half that will leave on the next shift.
   // A fixed column can now intersect a canonical village roof or cave mouth.
   const grid = e.getGrid();
@@ -256,7 +256,12 @@ check(`mushroom grows a broad, substantial cap (${mush.w}w, ${mush.cnt[MAT.MUSH_
       const v = grid[y * C + x];
       if (v !== MAT.EMPTY && v !== MAT.WATER) { candidateTop = y; break; }
     }
-    if (candidateTop > 5 && grid[(candidateTop - 3) * C + x] === MAT.EMPTY) {
+    let clear = candidateTop > 32;
+    for (let xx = x - 4; clear && xx <= x + 4; xx++)
+      for (let yy = candidateTop - 28; yy < candidateTop; yy++) {
+        if (grid[yy * C + xx] !== MAT.EMPTY) { clear = false; break; }
+      }
+    if (clear) {
       SX = x;
       top = candidateTop;
     }

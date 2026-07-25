@@ -622,6 +622,7 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::
       if (!p) continue;
       double rx = p->px - opx, ry = p->py - opy;
       p->vx = ovx - ow * ry; p->vy = ovy + ow * rx; p->omega = ow;
+      p->blastDebris = b->blastDebris;
     }
     removedIds.insert(b->id);
   }

@@ -22,6 +22,8 @@ function table() {
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
+    bodyBlastDebris: c('engine_test_body_blast_debris', 'number', ['number', 'number']),
+    setBodyBlastDebris: c('engine_test_set_body_blast_debris', 'number', ['number', 'number', 'number']),
     detonateTnt: c('engine_test_detonate_tnt', null, ['number', 'number', 'number']),
     damagePlayer: c('engine_test_damage_player', 'number',
       ['number', 'number', 'number', 'number', 'number']),
@@ -51,6 +53,9 @@ export function attachTestHooks(engine) {
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
+  engine._bodyBlastDebris = (i) => t.bodyBlastDebris(ptr, i);
+  engine._setBodyBlastDebris = (i, enabled = true) =>
+    t.setBodyBlastDebris(ptr, i | 0, enabled ? 1 : 0) > 0;
   engine._detonateTnt = (cx, cy) => t.detonateTnt(ptr, cx | 0, cy | 0);
   engine._damagePlayer = (id, damage, sourceX = NaN, sourceY = NaN) =>
     t.damagePlayer(ptr, id | 0, damage | 0, sourceX, sourceY);

@@ -685,9 +685,8 @@ function blastDamagesMaterial(name) {
 
 // --- a large falling component pushes movable blast rubble instead of pausing ---
 // The blast fan's exact shapes/velocities are intentionally random-looking. A
-// directly spawned stone-body stack exercises the same body-owned grid collision
-// in a deterministic arrangement: without the push path the 101px plate stalls
-// when the upper body's raster catches its underside.
+// directly spawned blast-rubble stack exercises the same body-owned grid collision
+// in a deterministic arrangement.
 {
   const C = 180, R = 260;
   const run = (crossLayer) => {
@@ -702,6 +701,8 @@ function blastDamagesMaterial(name) {
     }
     e.spawnBox(80, 122, 4, 2, MAT.STONE);
     e.spawnBox(80, 126, 4, 2, MAT.STONE);
+    e._setBodyBlastDebris(0);
+    e._setBodyBlastDebris(1);
     e.step(0); // stamp the free bodies into the live grid
     e._setBodyMotion(0, 0, 0, 0);
     e._setBodyMotion(1, 0, 0, 0);
@@ -722,6 +723,23 @@ function blastDamagesMaterial(name) {
     check(`large ${crossLayer ? 'cross-layer ' : ''}falling plate continuously pushes movable rigid-rubble stack (${deltas.join('')})`,
           deltas.every((delta) => delta === 1));
   }
+}
+
+// --- blast erosion preserves the non-structural state when rubble splits ---
+{
+  const C = 180, R = 140;
+  const e = createEngineWasm({ cols: C, rows: R, worldSeed: SEED, sinksOn: false, infinite: false });
+  e.spawnBox(90, 70, 15, 3, MAT.STONE);
+  e._setBodyBlastDebris(0);
+  e.step(0);
+  e._detonateTnt(90, 70);
+  const bodyCount = e._bodyCount();
+  let structuralFragments = 0;
+  for (let i = 0; i < bodyCount; i++) if (e._bodyBlastDebris(i) !== 1) structuralFragments++;
+  check(`blast-cut rubble split into multiple bodies (${bodyCount})`, bodyCount > 1);
+  check(`blast-cut rubble kept every fragment non-structural (${structuralFragments} structural)`,
+        structuralFragments === 0);
+  e.destroy();
 }
 
 // --- blast-created fire must not start a second, full-fuse explosion wave afterward ---

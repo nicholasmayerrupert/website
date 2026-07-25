@@ -13,13 +13,14 @@ struct Disp { uint8_t material; int from; };
 struct AssemblyBodyPush {
   Layer* layer = nullptr;
   std::vector<Body*> bodies;
+  std::vector<Body*> crushedBodies;
   std::vector<int> oldCells;
   std::vector<int> newCells;
   std::vector<int> owners;
   std::unordered_set<int> vacated;
   std::unordered_set<int> occupied;
   std::unordered_map<int, uint8_t> overlay;
-  bool empty() const { return bodies.empty(); }
+  bool empty() const { return bodies.empty() && crushedBodies.empty(); }
 };
 
 class RigidBodySystem {

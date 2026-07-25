@@ -473,9 +473,8 @@ void ExplosivesSystem::carveBlast(int cx, int cy, int radius, double power, Blas
     double f = BLAST_PUSH * (1.0 - bd / radius) / bd;
     b->vx += ddx * f; b->vy += ddy * f; b->awake = true; b->stillTicks = 0;
   }
-  // Eject a few physical rubble chunks of the destroyed solid, flung radially; they
-  // tumble and bake into static rubble on landing. Capped so a big chain
-  // can't flood the body solver.
+  // Eject a few physical rubble chunks of the destroyed solid, flung radially.
+  // They stay non-structural and are capped so a big chain cannot flood the solver.
   for (size_t di = 0; di < debrisSources.size() && bb.debrisSpawned < localDebrisCap && (int)E.L->bodies.size() < BLAST_DEBRIS_CAP; di++) {
     uint8_t debrisMat = debrisSources[di].material;
     int src = debrisSources[di].cell, sy = src / E.cols, sx0 = src - sy * E.cols;

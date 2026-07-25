@@ -405,9 +405,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
     }
     // Break as soon as a whole iteration applies zero impulse everywhere.
     // General bodies retain the full 64-iteration cap because structural stacks
-    // genuinely use it. A scene containing only tiny, short-lived blast rubble
-    // uses the smaller cap above; those chunks bake instead of becoming lasting
-    // structural stacks.
+    // genuinely use it. A scene containing only tiny blast rubble uses the
+    // smaller cap above; those chunks never become structural stacks.
     for (int it = 0; it < solverIters; it++) {
       double moved = 0;
       if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveContact(contacts[ci]);
@@ -799,8 +798,8 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, do
 }
 // ===== Body material identity & solidify-on-rest =====
 // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
-// real material into the grid; when a NON-RIGID body sleeps it bakes into a normal
-// static component here. RIGID bodies never bake — they stay free bodies forever.
+// real material into the grid; when an ordinary NON-RIGID body sleeps it bakes
+// into a normal static component here. RIGID bodies and blast rubble stay free.
 void RigidBodySystem::bakeBodyToGrid(Body* b) {
   // The body's cells were just cleared to EMPTY (moveBodies), so write the body's
   // material into them and hand the set to registerRigidCells — the exact primitive
@@ -823,13 +822,11 @@ bool RigidBodySystem::bodySolidifies(uint8_t m) { return E.isStoneComponentMater
 // A sleeping body bakes UNLESS it is FLOATING in liquid. "Floating" = its
 // bottom-edge contact is predominantly liquid (a wood log bobbing on water).
 // Powders never provide upward support, so a body in grains can only sink.
-// Everything else at rest solidifies:
-// on terrain, the world floor, OR piled on other debris (at bake time other bodies'
-// cells are already cleared from the grid, so a debris pile reads as empty-below, not
-// medium-supported — so it bakes, which is what keeps a big TNT chain's rubble from lingering as
-// hundreds of live bodies grinding the solver). Probes the cell under each bottom-edge
-// cell. (sleepingBodyHasSupport can't be reused: it clamps the AABB and so misses the
-// world-floor boundary, where stone/wood bodies legitimately come to rest.)
+// Everything else at rest solidifies on terrain or the world floor. Blast rubble
+// bypasses this path so it never becomes structural support. Probes the cell under
+// each bottom-edge cell. (sleepingBodyHasSupport can't be reused: it clamps the
+// AABB and so misses the world-floor boundary, where stone/wood bodies legitimately
+// come to rest.)
 bool RigidBodySystem::bodyFloatsOnMedium(Body* b) {
   // occStamp/occCells replace a per-call unordered_set: the loop only sums
   // integer counters, so visit order is irrelevant.
@@ -863,8 +860,9 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
 void RigidBodySystem::bakeRestingBodies() {
   bool baked = false; std::vector<Body*> keep;
   for (Body* b : E.L->bodies) {
-    // Solidify a sleeping body unless it is still floating in liquid.
-    if (!b->awake && bodySolidifies(b->material) && !bodyFloatsOnMedium(b)) { bakeBodyToGrid(b); delete b; baked = true; }
+    // Ordinary material bodies solidify on rest unless they are floating.
+    // Blast rubble stays body-owned so it cannot become structural support.
+    if (!b->awake && !b->blastDebris && bodySolidifies(b->material) && !bodyFloatsOnMedium(b)) { bakeBodyToGrid(b); delete b; baked = true; }
     else keep.push_back(b);
   }
   if (baked) E.L->bodies = std::move(keep);
@@ -907,7 +905,7 @@ void RigidBodySystem::moveBodies() {
     if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++;
     if (hp && E.L == &E.fg) pushActorsFromBody(b, ppx, ppy, ppa, pvx, pvy);
   }
-  bakeRestingBodies(); // a non-RIGID body that just slept solidifies into a static component (after depenetrate, which may re-wake it)
+  bakeRestingBodies(); // an ordinary non-RIGID body that just slept solidifies after depenetration; blast rubble stays free
   std::vector<int> cells, footprint;
   std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
   for (Body* b : E.L->bodies) {
@@ -960,18 +958,23 @@ bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemb
     if (id >= 0 && byId.count(id)) cellsById[id].push_back(k);
   }
 
-  std::unordered_set<int> selected;
+  std::unordered_set<int> selected, crushed;
   std::vector<int> queue;
   for (int k : assemblyCells) {
     int lead = k + dir;
     if (lead < 0 || lead >= E.cols * E.rows) continue;
     int id = E.L->bodyOwner[lead];
-    if (id >= 0 && selected.insert(id).second) queue.push_back(id);
+    if (id < 0) continue;
+    auto it = byId.find(id);
+    if (it == byId.end()) return false;
+    if (it->second->blastDebris) crushed.insert(id);
+    else if (selected.insert(id).second) queue.push_back(id);
   }
-  if (queue.empty()) return true;
+  if (queue.empty() && crushed.empty()) return true;
 
   // A body may be resting on another body. Move the entire downward stack or
   // none of it; otherwise the first body would simply overwrite/pin the next.
+  // Tiny blast rubble yields instead of transmitting the stack's load.
   for (size_t qi = 0; qi < queue.size(); qi++) {
     int id = queue[qi];
     auto bodyIt = byId.find(id);
@@ -981,28 +984,40 @@ bool RigidBodySystem::planAssemblyBodyPush(const std::unordered_set<int>& assemb
       int nk = k + dir;
       if (nk < E.cols || nk >= E.cols * E.rows) return false;
       int nextId = E.L->bodyOwner[nk];
-      if (nextId >= 0 && selected.insert(nextId).second) queue.push_back(nextId);
+      if (nextId < 0 || selected.count(nextId) || crushed.count(nextId)) continue;
+      auto nextIt = byId.find(nextId);
+      if (nextIt == byId.end()) return false;
+      if (nextIt->second->blastDebris) crushed.insert(nextId);
+      else if (selected.insert(nextId).second) queue.push_back(nextId);
     }
   }
 
-  for (Body* b : E.L->bodies) if (selected.count(b->id)) plan.bodies.push_back(b);
+  for (Body* b : E.L->bodies) {
+    if (selected.count(b->id)) plan.bodies.push_back(b);
+    else if (crushed.count(b->id)) plan.crushedBodies.push_back(b);
+  }
   for (int k : E.L->bodyCells) {
     if (k < 0 || k >= E.cols * E.rows) continue;
     int id = E.L->bodyOwner[k];
+    if (crushed.count(id)) {
+      plan.vacated.insert(k);
+      plan.overlay[k] = EMPTY;
+      continue;
+    }
     if (!selected.count(id)) continue;
     plan.oldCells.push_back(k);
     plan.newCells.push_back(k + dir);
     plan.owners.push_back(id);
     plan.vacated.insert(k);
   }
-  if (plan.oldCells.empty()) return false;
+  if (plan.oldCells.empty() && plan.crushedBodies.empty()) return false;
 
   for (size_t i = 0; i < plan.newCells.size(); i++) {
     int nk = plan.newCells[i];
     if (nk < E.cols || nk >= E.cols * E.rows || assemblyCells.count(nk)) return false;
     int owner = E.L->bodyOwner[nk];
     if (owner >= 0) {
-      if (!selected.count(owner)) return false;
+      if (!selected.count(owner) && !crushed.count(owner)) return false;
     } else {
       uint8_t m = E.L->grid[nk];
       Body* b = byId[plan.owners[i]];
@@ -1024,20 +1039,18 @@ void RigidBodySystem::applyAssemblyBodyPush(AssemblyBodyPush& plan) {
   Layer* previous = E.L;
   E.useLayer(plan.layer);
   std::unordered_set<int> selected;
-  selected.reserve(plan.bodies.size() * 2);
+  selected.reserve((plan.bodies.size() + plan.crushedBodies.size()) * 2);
   for (Body* b : plan.bodies) selected.insert(b->id);
+  for (Body* b : plan.crushedBodies) selected.insert(b->id);
 
   std::vector<int> kept;
   kept.reserve(E.L->bodyCells.size());
   for (int k : E.L->bodyCells) {
     int owner = (k >= 0 && k < E.cols * E.rows) ? E.L->bodyOwner[k] : -1;
-    if (!selected.count(owner)) kept.push_back(k);
-  }
-  for (int k : plan.oldCells) {
-    if (E.L->bodyOwner[k] >= 0 && selected.count(E.L->bodyOwner[k])) {
+    if (selected.count(owner)) {
       E.writeGridIndex(k, EMPTY);
       E.L->bodyOwner[k] = -1;
-    }
+    } else kept.push_back(k);
   }
   for (Body* b : plan.bodies) {
     b->py += 1.0;
@@ -1054,6 +1067,18 @@ void RigidBodySystem::applyAssemblyBodyPush(AssemblyBodyPush& plan) {
     kept.push_back(k);
   }
   E.L->bodyCells = std::move(kept);
+  if (!plan.crushedBodies.empty()) {
+    std::unordered_set<int> crushed;
+    crushed.reserve(plan.crushedBodies.size() * 2);
+    for (Body* b : plan.crushedBodies) crushed.insert(b->id);
+    std::vector<Body*> survivors;
+    survivors.reserve(E.L->bodies.size() - plan.crushedBodies.size());
+    for (Body* b : E.L->bodies) {
+      if (crushed.count(b->id)) delete b;
+      else survivors.push_back(b);
+    }
+    E.L->bodies = std::move(survivors);
+  }
   E.useLayer(previous);
 }
 

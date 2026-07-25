@@ -174,9 +174,9 @@
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
   //   * A body whose material has a static component form (stone-group, ice, OR
   //     plant-family) BAKES into that component when it comes to rest ON SOLID GROUND
-  //     (bakeRestingBodies in rigid.inc). RIGID bodies never bake, and a body still
-  //     FLOATING on liquid (e.g. a wood log bobbing on water) keeps bobbing as a free
-  //     body until it actually beaches on solid terrain.
+  //     (bakeRestingBodies in rigid.inc). RIGID bodies and blast rubble never bake,
+  //     and a body still FLOATING on liquid (e.g. a wood log bobbing on water) keeps
+  //     bobbing as a free body until it actually beaches on solid terrain.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }

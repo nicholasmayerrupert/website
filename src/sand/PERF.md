@@ -74,8 +74,9 @@ component registration, and generation/restoration. Browser presentation exposes
 - A locally proven cave blast keeps double-buffer carry sparse until loose
   support, assembly movement, a snapshot, resize, or world shift invalidates the
   proof.
-- Airborne blast rubble does not bear structural load or invalidate cached cave
-  grounding. Dense TNT fronts emit a bounded number of physical chunks.
+- Blast rubble stays body-owned, does not bear structural load, and does not
+  invalidate cached cave grounding. Dense TNT fronts emit a bounded number of
+  physical chunks.
 - Presentation diffs use validated row copies and keep only one packet in flight.
 - Pure camera pans retain the valid texture overlap and fill/upload only newly
   exposed edge bands; lighting flood queues carry their x coordinate so the hot

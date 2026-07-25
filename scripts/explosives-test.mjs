@@ -270,8 +270,30 @@ function blastDamagesMaterial(name) {
   check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
   check(`stone blast fills its bounded real-stone sample budget (peak ${maxStoneBodies})`, maxStoneBodies >= 3);
   check(`blast can suppress default generic DEBRIS chunks`, !sawGenericDebris);
-  for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle + bake
-  check(`debris chunks baked back into static rubble (bodies now ${e._bodyCount()})`, e._bodyCount() <= 1);
+  for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle
+  const settledBodies = e._bodyCount();
+  check(`settled blast rubble remains non-structural rigid bodies (${settledBodies})`, settledBodies > 0);
+  const target = e._bodyState(0);
+  let crushedWithoutPause = false;
+  if (target) {
+    const px = Math.round(target.px);
+    const bodyTop = Math.floor(target.py - target.maxR);
+    const plateBottom = bodyTop - 2;
+    for (let y = plateBottom - 5; y <= plateBottom; y++)
+      for (let x = px - 5; x <= px + 5; x++)
+        e.placeMaterial(x, y, 0, x === px && y === plateBottom - 5 ? MAT.IRON_ORE : MAT.STONE);
+    e.syncComponents();
+    let previousTop = topRow(e.getGrid(), MAT.IRON_ORE);
+    let paused = false;
+    for (let i = 500; i < 512 && e._bodyCount() >= settledBodies; i++) {
+      e.step(i * 16);
+      const nextTop = topRow(e.getGrid(), MAT.IRON_ORE);
+      if (nextTop === previousTop) paused = true;
+      previousTop = nextTop;
+    }
+    crushedWithoutPause = e._bodyCount() < settledBodies && !paused;
+  }
+  check(`falling terrain crushes blast rubble without pausing`, crushedWithoutPause);
   e.destroy();
 }
 {

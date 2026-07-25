@@ -159,8 +159,9 @@ not be renumbered.
 
 Loose powder, liquid, and gas cells live directly in the grid. Static rigid
 materials live in components. Free bodies stamp their real material into the
-grid and are distinguished by `bodyOwner`; supported static forms bake back into
-components when they settle.
+grid and are distinguished by `bodyOwner`; ordinary supported static forms bake
+back into components when they settle. Blast rubble stays body-owned and
+non-structural, and yields when descending terrain reaches it.
 
 Reactions are routed through generated flags where possible:
 
@@ -174,10 +175,9 @@ TNT uses precomputed radius stencils, overlapping-blast energy dominance, batche
 component repair, and sparse cave aftermath carry. The accepted large-cave
 optimization can change gas/smoke/debris RNG outcomes by removing redundant
 dirty-row RNG draws; fuse timing and crater geometry remain unchanged.
-Isolated and small-front blasts eject physical rubble sampled from the
-undisturbed terrain toward local open space. Dense chain fronts retain material
-flecks, gas, and their staged crater wave without creating persistent rigid
-rubble inside the blast cloud.
+Blasts eject bounded physical rubble sampled from the undisturbed terrain toward
+local open space. Dense chain fronts retain material flecks, gas, and their
+staged crater wave while pacing rigid rubble through a per-tick body budget.
 
 ## Actors and survival
 

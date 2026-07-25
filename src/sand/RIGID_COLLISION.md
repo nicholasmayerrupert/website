@@ -42,7 +42,7 @@ body. They never push a rigid body upward.
 - Curved masks can occupy several manifold buckets and cost more than flat
   contacts.
 - Deep stacks converge at the sequential-impulse rate. Ordinary bodies use 64
-  solver iterations; scenes containing only short-lived blast debris use 16.
+  solver iterations; scenes containing only small blast debris use 16.
 
 Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-collision`, `npm run test:rigid-topple`,

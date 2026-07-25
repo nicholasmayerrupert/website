@@ -204,7 +204,11 @@ TerrainGen::CaveRegionPlan TerrainGen::cavePlan(int region) {
   plan.middleX = base + 34 + (int)(roll(0x106u) * (CAVE_REGION_WIDTH - 68));
   plan.middleY = imax(plan.upperY + 54, 196 + (int)(roll(0x107u) * 68));
   plan.deepX = base + 34 + (int)(roll(0x108u) * (CAVE_REGION_WIDTH - 68));
-  plan.deepY = imin(CAVE_BOTTOM - 32, imax(plan.middleY + 92, 414 + (int)(roll(0x109u) * 78)));
+  // The guaranteed upper route ends inside the normal/deep overlap and meets
+  // its deep-cavern connector there.
+  plan.deepY = imin(CAVE_BOTTOM - 16,
+                    imax(plan.middleY + 112,
+                         DEEP_BLEND_TOP + 16 + (int)(roll(0x109u) * 64)));
 
   cached.seed = layerSeed;
   cached.region = region;
@@ -264,9 +268,8 @@ bool TerrainGen::taperedSegmentContains(int x, int y, int ax, int ay, int bx, in
 
 // Every foreground macro-region owns a player-clear route from its surface to
 // the deep cave band, plus horizontal links to its neighbours. Noise caves add
-// variety around this graph; they are no longer responsible for connectivity.
-// The background deliberately has no route graph: rare chambers there remain
-// visual pockets instead of revealing the foreground topology as straight lines.
+// local variety around this connected graph. Background terrain omits the route
+// graph and contains only rare enclosed chambers.
 bool TerrainGen::genIsBackboneCave(int worldX, int worldY) {
   if (E.L->isBackground || worldY >= DEEP_BLEND_BOTTOM) return false;
   int region = floorDiv(worldX, CAVE_REGION_WIDTH);
@@ -369,9 +372,8 @@ bool TerrainGen::genIsDeepCave(int worldX, int worldY) {
                          (worldX + warp) * 0.0038, (worldY - warp) * 0.0032, 2, 0.5);
   if (hollow > 0.700) return true;
 
-  // The upper cave backbone flows directly into the first deep chamber row.
-  // This overlap begins well above the old cutoff, so there is no sealed shelf
-  // between "caves" and "deep caves".
+  // The upper cave backbone and first deep chamber row share an overlapping,
+  // player-clear connector.
   int region = floorDiv(worldX, CAVE_REGION_WIDTH);
   for (int r = region - 1; r <= region; r++) {
     CaveRegionPlan upper = cavePlan(r);
@@ -407,18 +409,23 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
   if (cached.seed == seed && cached.x == worldX && cached.y == worldY) return cached.value != 0;
 
   constexpr int UPPER_CAVE_FADE_BOTTOM = DEEP_BLEND_BOTTOM + 160;
+  constexpr int BACKGROUND_FADE_TOP = DEEP_BLEND_TOP - 224;
+  constexpr int BACKGROUND_SOLID_Y = DEEP_BLEND_TOP;
   bool result = false;
-  if (worldY < DEEP_BLEND_BOTTOM && E.L->isBackground) {
-    // Background terrain is a backdrop, not a second tunnel map. One broad
-    // density field produces occasional enclosed chambers without spaghetti,
-    // noodles, shafts, or graph segments.
+  if (E.L->isBackground && worldY < BACKGROUND_SOLID_Y) {
+    // One broad density field forms occasional enclosed background chambers.
+    // Its threshold rises ahead of the deep overlap, producing a continuous
+    // solid backdrop throughout the transition.
     double warpX = (wfbm2(E.L->gCaveSeed ^ 0xCA71u, worldX * 0.006, worldY * 0.006, 1, 0.5) - 0.5) * 14.0;
     double warpY = (wfbm2(E.L->gCaveSeed ^ 0xCA72u, worldX * 0.006, worldY * 0.006, 1, 0.5) - 0.5) * 12.0;
     double chamber = wfbm2(E.L->gCaveSeed ^ 0x55u,
                            (worldX + warpX) * CAVE_FREQ * 0.38,
                            (worldY + warpY) * CAVE_FREQ * 0.34, 3, 0.5);
-    result = chamber > 0.825;
-  } else if (worldY < DEEP_BLEND_BOTTOM) {
+    double solidify = std::fmax(0.0, std::fmin(1.0,
+      (double)(worldY - BACKGROUND_FADE_TOP)
+      / (double)(BACKGROUND_SOLID_Y - BACKGROUND_FADE_TOP)));
+    result = chamber > 0.825 + solidify * 0.20;
+  } else if (!E.L->isBackground && worldY < DEEP_BLEND_BOTTOM) {
     result = genIsBackboneCave(worldX, worldY);
   }
   if (!result && worldY < UPPER_CAVE_FADE_BOTTOM && !E.L->isBackground) {
@@ -490,17 +497,16 @@ uint8_t TerrainGen::genOreFor(int biome, int worldX, int worldY) {
   if (depth > 38 && (sel > 0.40 || geology > 0.62 || biome == BIOME_DESERT || biome == BIOME_JUNGLE)) return COPPER_ORE;
   return COAL_ORE;
 }
-// CAVE_BOTTOM is now the midpoint of a broad transition, retained as a stable
-// reference for progression and structure placement rather than a cave cutoff.
+// CAVE_BOTTOM is the midpoint of the broad normal/deep transition and the
+// reference depth for progression and structure placement.
 int TerrainGen::caveBottomAbs() { return CAVE_BOTTOM; }
 
 uint8_t TerrainGen::genDeepRockAt(int worldX, int worldY) {
   if (worldY < DEEP_BLEND_TOP) return STONE;
   if (worldY >= DEEP_BLEND_BOTTOM) return DEEPSTONE;
 
-  // A slowly wandering boundary plus 4x4 rock patches creates a broad geological
-  // intermix rather than a one-row material swap. Stone islands become rarer over
-  // 224 vertical cells until the abyss is wholly deepstone.
+  // A slowly wandering boundary and 2x2 rock patches distribute mixed strata
+  // across 224 vertical cells. Stone islands taper out with increasing depth.
   int bx = floorDiv(worldX, 32);
   double tx = (double)(worldX - bx * 32) / 32.0;
   double boundaryNoise = wlerp(whash1(E.L->worldSeed ^ 0xD33A001u, bx),
@@ -510,7 +516,7 @@ uint8_t TerrainGen::genDeepRockAt(int worldX, int worldY) {
   double mix = (worldY - (boundary - 112.0)) / 224.0;
   mix = std::fmax(0.0, std::fmin(1.0, mix));
   double patch = whash2(E.L->worldSeed ^ 0xD33A002u,
-                        floorDiv(worldX, 4), floorDiv(worldY, 4));
+                        floorDiv(worldX, 2), floorDiv(worldY, 2));
   return patch < mix ? DEEPSTONE : STONE;
 }
 uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int soil, int y) {

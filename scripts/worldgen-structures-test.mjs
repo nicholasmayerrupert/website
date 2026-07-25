@@ -285,7 +285,7 @@ function surfaceMasonryComponents(g, engine) {
   ]);
   let acid = 0, acidTouchCrystal = 0, acidOverCrystal = 0, acidTouchDissolvable = 0;
   let acidBottomBoundary = 0, acidBottomCrystal = 0, acidSideBoundary = 0, acidSideCrystal = 0;
-  let roundedAcid = 0, flatSmearAcid = 0, basinComponents = 0, stoneBankComponents = 0;
+  let inspectableAcid = 0, roundedAcid = 0, flatSmearAcid = 0, basinComponents = 0, stoneBankComponents = 0;
   for (let depth = 0; depth < 3; depth++) {
     const e = mk();
     for (let d = 0; d < depth; d++) e.shiftWorldXY(0, 96);
@@ -311,6 +311,7 @@ function surfaceMasonryComponents(g, engine) {
       }
       for (const c of acidComponents(g)) {
         if (c.edge || c.n < 12) continue;
+        inspectableAcid += c.n;
         const leftDepth = c.colCounts.get(c.minX) || 0;
         const rightDepth = c.colCounts.get(c.maxX) || 0;
         const centerDepth = c.colCounts.get((c.minX + c.maxX) >> 1) || 0;
@@ -330,15 +331,14 @@ function surfaceMasonryComponents(g, engine) {
     e.destroy();
   }
   check(`large acid pits are easy to find (${acid} acid cells)`, acid > 2000);
-  check(`acid basins have rounded depth (${roundedAcid}/${acid} acid cells in ${basinComponents} rounded components)`, roundedAcid > acid * 0.65 && basinComponents > 8);
+  check(`acid basins have rounded depth (${roundedAcid}/${inspectableAcid} inspectable acid cells in ${basinComponents} rounded components)`,
+    inspectableAcid > 0 && roundedAcid > inspectableAcid * 0.90 && basinComponents > 8);
   check(`acid is not smeared into flat cave-floor streaks (${flatSmearAcid}/${acid} flat-streak cells)`, flatSmearAcid < acid * 0.08);
   check(`acid basin bottoms are crystal-lined (${acidBottomCrystal}/${acidBottomBoundary})`, acidBottomBoundary > 0 && acidBottomCrystal === acidBottomBoundary);
   check(`acid basin solid side walls are crystal (${acidSideCrystal}/${acidSideBoundary})`, acidSideBoundary > 0 && acidSideCrystal === acidSideBoundary);
   check(`acid basin edges are grounded into stone (${stoneBankComponents}/${basinComponents})`, basinComponents > 0 && stoneBankComponents > basinComponents * 0.80);
-  // Acid basins are now large lakes, so the crystal lining (a perimeter) is a
-  // smaller fraction of the acid VOLUME than it was for the old small ponds — but
-  // every basin bottom/wall is still crystal (asserted above). Contact stays well
-  // above a tenth of the acid.
+  // Crystal contact covers the basin perimeter, while the bottom and side-wall
+  // assertions above verify the complete protective lining.
   check(`acid has substantial crystal contact (${acidTouchCrystal}/${acid} touch crystal, ${acidOverCrystal} sit directly on crystal)`, acidTouchCrystal > acid * 0.10 && acidOverCrystal > acid * 0.05);
   check(`acid does not start adjacent to dissolvable cave walls (${acidTouchDissolvable})`, acidTouchDissolvable === 0);
 }

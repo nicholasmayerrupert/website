@@ -80,3 +80,7 @@ slides and a fresh band is generated or restored from the chunk store.
    style; don't refactor unrelated code.
 4. **Goal-driven execution** — define success, verify with the smallest relevant
    check (run the app or the benchmark), and keep going until the goal is met.
+5. **Current-state comments** — when adding or editing comments, describe only
+   what the code currently does. Do not include historical comparisons, prior
+   behavior, migration notes, or phrases such as “25% deeper than its original
+   boundary.”

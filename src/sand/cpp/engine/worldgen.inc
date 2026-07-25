@@ -1549,8 +1549,9 @@
       int wy = gy * FEATURE_LATTICE + (int)(whash2(sseed ^ 0x22u, gx, gy) * FEATURE_LATTICE);
       int caveBiome = terrain.genCaveBiomeAt(wx, wy);
       int caveTop = terrain.genCaveTopAbs(wx);
+      int hazardRampBottom = terrain.caveBottomAbs() * 4 / 5;
       double depth01 = std::fmax(0.0, std::fmin(1.0,
-        (double)(wy - caveTop) / (double)imax(1, terrain.caveBottomAbs() - caveTop)));
+        (double)(wy - caveTop) / (double)imax(1, hazardRampBottom - caveTop)));
       double h = whash2(sseed, gx, gy);
       double lavaH = whash2(sseed ^ 0x55AAu, gx, gy);
       int floorY = wy, ceilY = wy;

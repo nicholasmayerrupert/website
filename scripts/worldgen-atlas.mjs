@@ -12,7 +12,7 @@ const WIDTH = 1024;
 const WORLD_X0 = -1536, WORLD_Y0 = -96;
 const X_SCALE = 3, Y_SCALE = 2;
 const PANE_HEIGHT = 720, GAP = 8, HEIGHT = PANE_HEIGHT * 2 + GAP;
-const SEA_LEVEL = 18, DEEP_BLEND_TOP = 480, DEEP_BLEND_BOTTOM = 704;
+const SEA_LEVEL = 18, DEEP_BLEND_TOP = 624, DEEP_BLEND_BOTTOM = 848;
 
 const biomeColors = [
   [92, 151, 76],   // plains

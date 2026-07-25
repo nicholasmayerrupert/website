@@ -22,7 +22,7 @@ class TerrainGen {
   static constexpr int SEA_LEVEL = 18;
   static constexpr int BASE_SOIL_DEPTH = 3;
   static constexpr int CAVE_SURFACE_BUFFER = 12;
-  static constexpr int CAVE_BOTTOM = 576;
+  static constexpr int CAVE_BOTTOM = 720;
   static constexpr int DEEP_BLEND_TOP = CAVE_BOTTOM - 96;
   static constexpr int DEEP_BLEND_BOTTOM = CAVE_BOTTOM + 128;
   static constexpr int CAVE_REGION_WIDTH = 256;

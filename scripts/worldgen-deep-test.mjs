@@ -11,16 +11,16 @@ const mk = (cols, rows, seed) => createEngineWasm({
   cols, rows, worldSeed: seed, sinksOn: false, infinite: true,
 });
 
-// Flood from a real surface mouth, through the former y=576 cave floor, and well
+// Flood from a real surface mouth, through the normal/deep midpoint at y=720, and well
 // into the deep graph. A visually hidden one-cell break fails this at cell scale.
 function floodFromSurface(engine, region) {
   const x0 = region * 256 - 180, x1 = (region + 1) * 256 + 180;
-  const y0 = -160, y1 = 1000;
+  const y0 = -160, y1 = 1200;
   const width = x1 - x0 + 1, height = y1 - y0 + 1;
   const cave = new Uint8Array(width * height);
   const seen = new Uint8Array(cave.length);
   const queue = new Int32Array(cave.length);
-  let head = 0, tail = 0, deepest = y0, crossedOldFloor = false;
+  let head = 0, tail = 0, deepest = y0, crossedNormalFloor = false;
 
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)
     cave[(y - y0) * width + x - x0] = engine.worldIsCaveAt(0, x, y) ? 1 : 0;
@@ -39,7 +39,7 @@ function floodFromSurface(engine, region) {
     const x = i % width, y = (i / width) | 0;
     const worldY = y0 + y;
     deepest = Math.max(deepest, worldY);
-    crossedOldFloor ||= worldY === 576;
+    crossedNormalFloor ||= worldY === 720;
     for (const next of [x ? i - 1 : -1, x + 1 < width ? i + 1 : -1,
       y ? i - width : -1, y + 1 < height ? i + width : -1]) {
       if (next >= 0 && cave[next] && !seen[next]) {
@@ -48,7 +48,7 @@ function floodFromSurface(engine, region) {
       }
     }
   }
-  return { deepest, crossedOldFloor, cells: tail };
+  return { deepest, crossedNormalFloor, cells: tail };
 }
 
 {
@@ -57,10 +57,10 @@ function floodFromSurface(engine, region) {
     const engine = mk(96, 96, seed);
     const result = floodFromSurface(engine, 0);
     smallestFlood = Math.min(smallestFlood, result.cells);
-    failures += !result.crossedOldFloor || result.deepest < 995;
+    failures += !result.crossedNormalFloor || result.deepest < 1195;
     engine.destroy();
   }
-  check(`surface caves cross the old floor and reach y=1000 (${failures} failures)`,
+  check(`surface caves cross the normal cave band and reach y=1200 (${failures} failures)`,
     failures === 0 && smallestFlood > 12_000);
 }
 
@@ -70,7 +70,7 @@ function floodFromSurface(engine, region) {
   const counts = [0, 0, 0, 0];
   for (const seed of [0xBED, 0xBEEF, 7]) {
     const engine = mk(96, 96, seed);
-    for (let y = 720; y <= 2200; y += 104)
+    for (let y = 864; y <= 2400; y += 104)
       for (let x = -3600; x <= 3600; x += 144) {
         const biome = engine.worldCaveBiomeAt(x, y);
         if (biome >= 4 && biome <= 7) counts[biome - 4]++;
@@ -86,7 +86,7 @@ function floodFromSurface(engine, region) {
 {
   const engine = mk(96, 96, 0xBED);
   let foreground = 0, background = 0, samples = 0;
-  for (let y = 720; y < 1400; y += 4) for (let x = -1600; x < 1600; x += 4) {
+  for (let y = 864; y < 1544; y += 4) for (let x = -1600; x < 1600; x += 4) {
     foreground += engine.worldIsCaveAt(0, x, y);
     background += engine.worldIsCaveAt(1, x, y);
     samples++;
@@ -97,17 +97,37 @@ function floodFromSurface(engine, region) {
   engine.destroy();
 }
 
+// Background chamber noise must disappear before the normal/deep boundary.
+// Sampling at full cell resolution catches both broad holes and tile-sized gaps.
+{
+  const engine = mk(96, 96, 0xBED);
+  let voids = 0, samples = 0, emptiestChunk = 0;
+  for (let cy = 624; cy < 848; cy += 32) for (let cx = -1024; cx < 1024; cx += 32) {
+    let chunkVoids = 0;
+    for (let y = cy; y < cy + 32; y++) for (let x = cx; x < cx + 32; x++) {
+      chunkVoids += engine.worldIsCaveAt(1, x, y);
+      samples++;
+    }
+    voids += chunkVoids;
+    emptiestChunk = Math.max(emptiestChunk, chunkVoids);
+  }
+  check(`transition background has no missing chunks (${voids}/${samples} void cells, worst chunk ${emptiestChunk})`,
+    voids === 0 && emptiestChunk === 0);
+  engine.destroy();
+}
+
 // Inspect actual generated cells across the transition. Both rocks coexist for a
 // long interval and the deepstone share rises monotonically; no row performs an
 // abrupt global material swap.
 {
-  const COLS = 512, ROWS = 320;
+  const COLS = 512, ROWS = 384;
   const engine = mk(COLS, ROWS, 0xBED);
-  engine.shiftWorldXY(0, 256);
-  engine.shiftWorldXY(0, 256);
+  engine.shiftWorldXY(0, 224);
+  engine.shiftWorldXY(0, 224);
+  engine.shiftWorldXY(0, 224);
   const grid = engine.getGrid();
   const ox = engine.getWorldOffsetX(), oy = engine.getWorldOffsetY();
-  const bands = [[480, 520], [560, 600], [640, 680], [704, 744]];
+  const bands = [[624, 664], [704, 744], [784, 824], [848, 888]];
   const shares = bands.map(([a, b]) => {
     let stone = 0, deepstone = 0;
     for (let wy = a; wy < b; wy++) for (let wx = ox; wx < ox + COLS; wx++) {
@@ -118,7 +138,7 @@ function floodFromSurface(engine, region) {
     return deepstone / Math.max(1, stone + deepstone);
   });
   let hardRows = 0;
-  for (let wy = 520; wy < 680; wy++) {
+  for (let wy = 664; wy < 824; wy++) {
     let stone = 0, deepstone = 0;
     for (let x = 0; x < COLS; x++) {
       const mat = grid[(wy - oy) * COLS + x];
@@ -209,8 +229,8 @@ function deepWindowMetrics(engine, cols, rows) {
 {
   let movedCells = 0, compared = 0;
   for (const [worldX, worldY, wall] of [
-    [2009, 768, MAT.BRICK],       // crystal observatory
-    [4267, 686, MAT.SANDSTONE],   // fossil conservatory
+    [5927, 883, MAT.BRICK],       // crystal observatory
+    [3467, 768, MAT.SANDSTONE],   // fossil conservatory
   ]) {
     const COLS = 320, ROWS = 240;
     const engine = mk(COLS, ROWS, 3053);

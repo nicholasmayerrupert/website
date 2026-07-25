@@ -57,12 +57,14 @@ ruggedness fields select surface biomes; narrow deterministic ecotones blend
 their soil and vegetation instead of creating hard seams.
 
 Foreground caves combine noise caverns with a player-clear macro-region
-backbone from the surface into an infinite deep-cavern graph. Entrances seek a hillside, bend
-beneath it, and vary in width instead of exposing a straight cylindrical shaft.
+backbone from the surface into an infinite deep-cavern graph. The normal cave
+band extends to y=720. Entrances seek a hillside, bend beneath it, and vary in
+width instead of exposing a straight cylindrical shaft.
 The background is solid except for rare rounded chambers; it never receives the
-foreground route graph. Upper and deep caves overlap across a broad transition
-instead of meeting at a horizontal cutoff, while stone blends through wandering
-mixed strata into darker deepstone. The abyss contains broad magma, geode,
+foreground route graph. Upper and deep caves share a broad transition, while
+stone blends through fine 2x2 mixed strata into darker deepstone. Background
+recesses fade away before this overlap so streamed transition tiles retain a
+continuous solid backdrop. The abyss contains broad magma, geode,
 fossil, and fungal-void realms with chamber-scale lava seas and landmarks.
 
 Underground ruins are seated on the traversable cave graph and receive roomy side
@@ -90,7 +92,7 @@ connectivity, progression, reachability, and background-solidity checks;
 `scripts/worldgen-structures-test.mjs` verifies grounded surface masonry, furnished
 archives, large player-clear mines, and cross-layer rail alignment. `npm run test:prefetch`
 covers deterministic restoration and storage bounds; `npm run test:deep-world`
-flood-tests the former cave cutoff and checks deep strata, biome diversity, lava
+flood-tests normal/deep connectivity and checks deep strata, biome diversity, lava
 seas, monuments, and background solidity. `npm run worldgen:atlas`
 writes `bench/worldgen-atlas.png`, with foreground above background;
 `npm run worldgen:structure-atlas` finds representative structures and renders

@@ -163,8 +163,13 @@ void ReactionSystem::applyAcid() {
   // cell in the layer just to discover which one or two components acid touched.
   // Capture the ice offset before the stone list can split and change its size.
   int iceIndexOffset = (int)(E.L->stoneComponents.size() + E.L->plantComponents.size());
-  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false, false, cellCompExact ? 0 : -1);
-  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true, false, cellCompExact ? iceIndexOffset : -1);
+  ConnectivitySplitMode splitMode = cellCompExact
+    ? ConnectivitySplitMode::LOCAL_EXACT
+    : ConnectivitySplitMode::FULL;
+  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId,
+                                             false, false, cellCompExact ? 0 : -1, splitMode);
+  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId,
+                                           true, false, cellCompExact ? iceIndexOffset : -1, splitMode);
   if (dissolvedPlant) E.finishPlantErosion(erasedPlant, cellCompExact && !dissolvedStone && !dissolvedIce);
   bool pureBore = false;
   if (dissolvedStone || dissolvedIce) {

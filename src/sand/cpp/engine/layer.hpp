@@ -107,11 +107,11 @@ struct Layer {
   // whether a dissolve that kept grounding valid needs a full re-index (structure
   // changed) or just a cheap cellComp patch of the removed cells (a pure bore).
   bool compsReshaped = false;
-  // A locally-safe bore can leave one positional Comp represented by multiple
-  // pieces that are still connected through neighbouring components. That is
-  // physically equivalent while the global rigid graph is unchanged. Remember
-  // the stable logical ids and split them before the next true topology reflood,
-  // when that external route may cease to exist.
+  // A locally-safe edit can retain a positional Comp without immediately
+  // rebuilding its canonical flood order. In the global-equivalence mode, its
+  // pieces remain connected through neighbouring components while the rigid graph
+  // is unchanged. Remember these stable ids and normalize them before the next
+  // true topology reflood.
   std::vector<int> deferredStoneSplitIds, deferredIceSplitIds;
   int componentTombstones = 0;
   std::vector<uint8_t> crossBondedComp;

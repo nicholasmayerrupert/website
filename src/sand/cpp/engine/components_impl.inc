@@ -2496,12 +2496,14 @@ void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedE
   E.L->groundContentDirty = true;
 }
 
-// split stone/ice after erase: remove erased cells, re-flood
+// Split stone/ice after an erase.
 // markGroundDirty=true (the default, used by tools-erase and ice-melt) forces a
-// full grounding reflood next pass. Acid passes false and instead runs its own
-// cut-vertex check (noteAcidRemovals) to keep the grounding cache valid when a
-// dissolve doesn't disconnect anything.
-void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty, int indexedOffset, bool localConnectivityFastPath) {
+// full grounding reflood next pass. Callers with an exact component index may
+// request a bounded connectivity proof before falling back to the full component
+// flood; grounding-cache validity remains a separate caller decision.
+void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased,
+                                           int& nextId, bool iceCache, bool markGroundDirty,
+                                           int indexedOffset, ConnectivitySplitMode splitMode) {
   // Dirty joints for the NEXT step when bg is live. Even acid pure-bore
   // (markGroundDirty=false) must force a recompute — but do NOT clear
   // jointGroundReady mid-step. step() grounds jointly, then stepLayer(fg) then
@@ -2553,7 +2555,8 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     // otherwise shifts and re-indexes almost the entire loaded world. Empty slots
     // are inert, survive future index rebuilds as grounded no-ops, and disappear
     // naturally on the next full component sync/world stream.
-    if (survivors.empty() && localConnectivityFastPath && indexedOffset >= 0) {
+    if (survivors.empty() && splitMode == ConnectivitySplitMode::GLOBAL_EQUIVALENT
+        && indexedOffset >= 0) {
       int dead = indexedOffset + (int)compIndex;
       comp.cells.clear(); comp.yMax = 0; comp.grounded = true; comp.cacheDirty = iceCache;
       if (dead >= 0 && dead < (int)E.L->groundBaseFlags.size()) E.L->groundBaseFlags[dead] = 1;
@@ -2569,6 +2572,25 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     // later positional component really shifts.
     if (survivors.empty()) { removedBefore = true; continue; }
     if (removedBefore) E.L->compsReshaped = true;
+    int indexedComp = indexedOffset >= 0 ? indexedOffset + (int)compIndex : -1;
+    bool baseGrounded = indexedComp >= 0
+      && indexedComp < (int)E.L->groundBaseFlags.size()
+      && E.L->groundBaseFlags[indexedComp];
+    // Joint-only support can disappear in the post-reaction cross-layer pass;
+    // keep its established flood order so a same-tick fall stays deterministic.
+    if (splitMode == ConnectivitySplitMode::LOCAL_EXACT && baseGrounded
+        && componentRemovalLocallyConnected(removedCells, survivors,
+                                            indexedComp)) {
+      std::vector<int>& deferred = iceCache ? E.L->deferredIceSplitIds : E.L->deferredStoneSplitIds;
+      if (std::find(deferred.begin(), deferred.end(), comp.id) == deferred.end())
+        deferred.push_back(comp.id);
+      comp.cells.swap(survivors);
+      comp.yMax = 0;
+      comp.cacheDirty = iceCache;
+      for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
+      updated.push_back(std::move(comp));
+      continue;
+    }
     // removalsKeepGroundingValid already proved every boundary of the whole
     // erased batch reconnects through surviving rigid material. Generated cave
     // terrain is deliberately partitioned into many adjacent components, so a
@@ -2576,14 +2598,14 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
     // even though the surrounding rigid graph is unchanged. Keep the touched
     // grounded slot and filter its cells; adjacent component unions preserve the
     // same global structural group.
-    if (localConnectivityFastPath && comp.grounded) {
+    if (splitMode == ConnectivitySplitMode::GLOBAL_EQUIVALENT && comp.grounded) {
       std::vector<int>& deferred = iceCache ? E.L->deferredIceSplitIds : E.L->deferredStoneSplitIds;
       if (std::find(deferred.begin(), deferred.end(), comp.id) == deferred.end()) deferred.push_back(comp.id);
       comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
       for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
       updated.push_back(std::move(comp)); continue;
     }
-    if (localConnectivityFastPath) E.L->compsReshaped = true;
+    if (splitMode == ConnectivitySplitMode::GLOBAL_EQUIVALENT) E.L->compsReshaped = true;
     int32_t remGen = ++E.L->seenGen;
     for (int k : survivors) seen[k] = remGen;
     bool reused = false;

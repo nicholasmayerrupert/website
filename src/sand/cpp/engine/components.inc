@@ -13,7 +13,11 @@
   void registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) { comps.registerPlantCells(mat, cells, yMax); }
   void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false, bool deferJointRefresh = false) { comps.splitPlantAfterErase(erased, indexedOffset, markGroundDirty, localConnectivityFastPath, deferJointRefresh); }
   void finishPlantErosion(std::vector<int>& erased, bool indexedExact, bool deferJointRefresh = false) { comps.finishPlantErosion(erased, indexedExact, deferJointRefresh); }
-  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1, bool localConnectivityFastPath = false) { comps.splitRigidAfterErase(list, erased, nextId, iceCache, markGroundDirty, indexedOffset, localConnectivityFastPath); }
+  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId,
+                            bool iceCache, bool markGroundDirty = true, int indexedOffset = -1,
+                            ConnectivitySplitMode splitMode = ConnectivitySplitMode::FULL) {
+    comps.splitRigidAfterErase(list, erased, nextId, iceCache, markGroundDirty, indexedOffset, splitMode);
+  }
   int compCount(Layer& lay) { return comps.compCount(lay); }
   Comp* compById(Layer& lay, int id) { return comps.compById(lay, id); }
   void wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev) { comps.wakeCellsThatLostGrounding(lay, prev); }

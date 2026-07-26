@@ -80,8 +80,9 @@ component registration, and generation/restoration. Browser presentation exposes
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
 - Reaction passes build ordered active-material candidates once per layer.
-- Fire and acid split only touched components; safe local cuts avoid full
-  grounding floods.
+- Fire and acid split only touched components. Base-grounded acid bites use a
+  bounded exact-connectivity proof before falling back to a full component
+  flood, and safe local cuts avoid full grounding floods.
 - A TNT batch accumulates overlapping stencils into one bounds-local
   maximum-energy field, with generation-stamped sparse storage for widely
   separated waves. Each unique affected cell is classified once, each

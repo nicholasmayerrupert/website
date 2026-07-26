@@ -4,6 +4,12 @@
 
 struct Engine;
 
+enum class ConnectivitySplitMode : uint8_t {
+  FULL,               // rebuild every surviving connected piece
+  GLOBAL_EQUIVALENT,  // preserve a grounded slot while the rigid graph is unchanged
+  LOCAL_EXACT,        // preserve only when the touched component remains connected
+};
+
 // Side/bottom face contact of a cell set against a grid (top faces excluded on
 // purpose: top liquid never creates support/lift).
 struct FaceContact {
@@ -147,7 +153,9 @@ class ComponentSystem {
   bool componentRemovalLocallyConnected(const std::vector<int>& erased, const std::vector<int>& survivors, int indexedComp = -1);
   void splitPlantAfterErase(std::vector<int>* erased = nullptr, int indexedOffset = -1, bool markGroundDirty = true, bool localConnectivityFastPath = false, bool deferJointRefresh = false);
   void finishPlantErosion(std::vector<int>& erased, bool indexedExact, bool deferJointRefresh = false);
-  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId, bool iceCache, bool markGroundDirty = true, int indexedOffset = -1, bool localConnectivityFastPath = false);
+  void splitRigidAfterErase(std::vector<Comp>& list, std::vector<int>& erased, int& nextId,
+                            bool iceCache, bool markGroundDirty = true, int indexedOffset = -1,
+                            ConnectivitySplitMode splitMode = ConnectivitySplitMode::FULL);
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 
  private:

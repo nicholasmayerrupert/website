@@ -586,9 +586,13 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   int iceIndexOffset = plantIndexOffset + (int)E.L->plantComponents.size();
   E.L->compsReshaped = false;
   E.splitRigidAfterErase(E.L->stoneComponents, bb.erasedStone, E.L->nextStoneId, false, false,
-                         indexesExact ? 0 : -1, localConnectivityFastPath);
+                         indexesExact ? 0 : -1, localConnectivityFastPath
+                           ? ConnectivitySplitMode::GLOBAL_EQUIVALENT
+                           : ConnectivitySplitMode::FULL);
   E.splitRigidAfterErase(E.L->iceComponents, bb.erasedIce, E.L->nextIceId, true, false,
-                         indexesExact ? iceIndexOffset : -1, localConnectivityFastPath);
+                         indexesExact ? iceIndexOffset : -1, localConnectivityFastPath
+                           ? ConnectivitySplitMode::GLOBAL_EQUIVALENT
+                           : ConnectivitySplitMode::FULL);
   if (!bb.erasedPlant.empty() && !E.L->plantComponents.empty())
     E.splitPlantAfterErase(&bb.erasedPlant, indexesExact ? plantIndexOffset : -1, false, localConnectivityFastPath);
   if (!localConnectivityFastPath) {

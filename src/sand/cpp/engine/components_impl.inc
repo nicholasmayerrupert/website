@@ -1680,7 +1680,7 @@ void ComponentSystem::moveRigidAssemblies() {
   std::vector<int> localOf(totalComps, -1);
   std::vector<uint8_t> imminentTnt(totalComps, 0);
   for (const auto& fuse : E.L->pendingDetonations) {
-    if (fuse.second > ExplosivesSystem::TNT_CHAIN_FUSE) continue;
+    if (fuse.second > ExplosivesSystem::TNT_FINAL_FUSE_TICK) continue;
     int k = fuse.first;
     if (k < 0 || k >= E.cols * E.rows) continue;
     int comp = E.L->cellComp[k];

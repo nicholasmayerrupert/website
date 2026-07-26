@@ -10,7 +10,8 @@ class ExplosivesSystem {
   explicit ExplosivesSystem(Engine& e) : E(e) { buildBlastStencils(); }
 
   static const int    TNT_FUSE_TICKS = 28;   // delay from ignition to blast (~run-away time)
-  static const int    TNT_CHAIN_FUSE = 1;    // one-tick rolling front: staged, without idle structural frames
+  static const int    TNT_CHAIN_FUSE = 3;    // three-tick delay between successive blast generations
+  static const int    TNT_FINAL_FUSE_TICK = 1; // due TNT disappears in this tick's reaction pass
   static const int    TNT_BLAST_RADIUS = 22; // crater reach (cells)
   static const int    TNT_CLUSTER_FAST_THRESHOLD = 4;  // merge compact brush-sized fronts into spatial representatives
   static const int    TNT_COMPACT_FRONT_CELLS = 13;    // one creative click: render as one pulse, not one crater per cell

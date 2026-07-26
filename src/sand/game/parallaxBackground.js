@@ -321,7 +321,13 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     if (detail > 1 && rand01(worldX + seed * 401) > 0.6) ctx.fillRect(x + length - 1, y + 1, 1, 2);
   }
   ctx.restore();
-  return { offX, offY, surfaceRawY, surfaceY };
+  return {
+    offX,
+    offY,
+    minimumSurfaceY: base - offY - amp * 1.23,
+    surfaceRawY,
+    surfaceY,
+  };
 }
 
 function drawSnowCap(ctx, points, snow, shade, snowLine, amp, ridge) {
@@ -413,10 +419,8 @@ function drawPine(ctx, x, groundY, height, dark, light) {
 function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
   const dark = mixColor(color, '#061713', 0.62);
   const light = mixColor(color, skyLow, 0.28);
-  let highestSurface = h;
-  for (let x = 0; x <= w; x += 16) highestSurface = Math.min(highestSurface, ridge.surfaceY(x));
   const bandStep = 9;
-  const bandCount = Math.ceil(Math.max(0, h - highestSurface) / bandStep) + 1;
+  const bandCount = Math.ceil(Math.max(0, h - ridge.minimumSurfaceY) / bandStep) + 1;
 
   for (let band = 0; band < bandCount; band++) {
     const spacing = 11 + (band % 3);
@@ -424,10 +428,11 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
     const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
     for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
       const treeSeed = worldX + seed * 613 + band * 1877;
-      if (rand01(treeSeed) < Math.min(0.32, 0.16 + band * 0.009)) continue;
-      const x = Math.round(worldX - ridge.offX);
+      if (rand01(treeSeed) < Math.min(0.24, 0.1 + band * 0.006)) continue;
+      const screenX = worldX - ridge.offX;
+      const x = Math.round(screenX);
       const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
-      const groundY = ridge.surfaceY(x) + 1 + band * bandStep
+      const groundY = Math.round(ridge.surfaceRawY(screenX)) + 1 + band * bandStep
         + Math.floor(rand01(treeSeed + 198) * 4);
       if (groundY - height > h || groundY > h + 4) continue;
 

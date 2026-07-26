@@ -336,7 +336,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   const firstMark = Math.floor((offX - textureStep) / textureStep) * textureStep;
   for (let worldX = firstMark; worldX < offX + w + textureStep; worldX += textureStep) {
     const x = Math.round(worldX - offX);
-    const y = surfaceY(x) + 5 + Math.floor(rand01(worldX + seed * 211) * (amp * 1.8 + 8));
+    const y = Math.round(surfaceWorldRawY(worldX)) + 5 + Math.floor(rand01(worldX + seed * 211) * (amp * 1.8 + 8));
     const length = 2 + Math.floor(rand01(worldX + seed * 307) * (3 + detail));
     ctx.fillRect(x, y, length, 1);
     if (detail > 1 && rand01(worldX + seed * 401) > 0.6) ctx.fillRect(x + length - 1, y + 1, 1, 2);

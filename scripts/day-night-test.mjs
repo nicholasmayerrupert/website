@@ -8,7 +8,7 @@ import {
   dayPhaseAt,
   sampleDayNight,
 } from '../src/sand/game/dayNightCycle.js';
-import { cloudCycleOffset, paletteForPhase } from '../src/sand/game/parallaxBackground.js';
+import { celestialOrbitY, cloudCycleOffset, paletteForPhase } from '../src/sand/game/parallaxBackground.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const { check, done } = makeChecker('day/night cycle');
@@ -70,6 +70,10 @@ check('cloud travel is phase-driven and loops exactly once per day',
   close(cloudCycleOffset(0.25, 170), 170) &&
   close(cloudCycleOffset(0.5, 170), 340) &&
   close(cloudCycleOffset(0, 170), cloudCycleOffset(1, 170)));
+check('sun and moon paths begin below the mountain troughs before reaching the same apex',
+  celestialOrbitY(70, 0) >= 138 &&
+  celestialOrbitY(70, 1) >= 138 &&
+  close(celestialOrbitY(70, 0.5), 70 - 70 * 0.68));
 
 const failures = done();
 process.exit(failures === 0 ? 0 : 1);

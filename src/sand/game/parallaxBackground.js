@@ -161,15 +161,21 @@ function drawPixelMoon(ctx, x, y) {
   ctx.fillRect(px - 3, py + 2, 2, 1);
 }
 
-function drawCelestialBodies(ctx, w, horizon, dayNight) {
+export function celestialOrbitY(horizon, progress) {
   const arcHeight = Math.max(12, horizon * 0.68);
+  const belowHorizon = clamp(horizon * 1.05, 68, 96);
+  return horizon + belowHorizon
+    - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
+}
+
+function drawCelestialBodies(ctx, w, horizon, dayNight) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = horizon - Math.sin(Math.PI * t) * arcHeight;
+    const y = celestialOrbitY(horizon, t);
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -183,7 +189,7 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), horizon - Math.sin(Math.PI * t) * arcHeight);
+    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t));
   }
 }
 
@@ -404,24 +410,36 @@ function drawPine(ctx, x, groundY, height, dark, light) {
   ctx.fillRect(x - 1, top + 3, 1, 1);
 }
 
-function drawForest(ctx, w, ridge, color, skyLow, seed) {
+function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
   const dark = mixColor(color, '#061713', 0.62);
   const light = mixColor(color, skyLow, 0.28);
-  const spacing = 11;
-  const first = Math.floor((ridge.offX - spacing) / spacing) * spacing;
-  for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
-    if (rand01(worldX + seed * 613) < 0.25) continue;
-    const x = Math.round(worldX - ridge.offX);
-    const groundY = ridge.surfaceY(x) + 1;
-    const height = 4 + Math.floor(rand01(worldX + seed * 719) * 4);
-    drawPine(ctx, x, groundY, height, dark, light);
+  let highestSurface = h;
+  for (let x = 0; x <= w; x += 16) highestSurface = Math.min(highestSurface, ridge.surfaceY(x));
+  const bandStep = 9;
+  const bandCount = Math.ceil(Math.max(0, h - highestSurface) / bandStep) + 1;
 
-    ctx.globalAlpha = 0.28;
-    ctx.fillStyle = light;
-    const textureY = groundY + 3 + Math.floor(rand01(worldX + seed * 811) * 12);
-    ctx.fillRect(x - 3, textureY, 2 + Math.floor(rand01(worldX + seed * 907) * 4), 1);
-    ctx.globalAlpha = 1;
+  for (let band = 0; band < bandCount; band++) {
+    const spacing = 11 + (band % 3);
+    const stagger = (band * 7) % spacing;
+    const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
+    for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
+      const treeSeed = worldX + seed * 613 + band * 1877;
+      if (rand01(treeSeed) < Math.min(0.4, 0.22 + band * 0.012)) continue;
+      const x = Math.round(worldX - ridge.offX);
+      const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
+      const groundY = ridge.surfaceY(x) + 1 + band * bandStep
+        + Math.floor(rand01(treeSeed + 198) * 4);
+      if (groundY - height > h || groundY > h + 4) continue;
+
+      ctx.globalAlpha = Math.max(0.58, 1 - band * 0.035);
+      drawPine(ctx, x, groundY, height, dark, light);
+      if (rand01(treeSeed + 294) > 0.56) {
+        ctx.fillStyle = light;
+        ctx.fillRect(x - 3, groundY + 2, 2 + Math.floor(rand01(treeSeed + 388) * 4), 1);
+      }
+    }
   }
+  ctx.globalAlpha = 1;
 }
 
 function drawLodgeWindow(ctx, x, y, light) {
@@ -641,10 +659,10 @@ export function createParallaxBackground(container) {
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);
     const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4);
-    drawForest(ctx, w, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2);
+    drawForest(ctx, w, h, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

@@ -16,11 +16,39 @@ const Hero = ({ onDrawModeChange }) => {
     if (typeof window === 'undefined' || !window.matchMedia) return true;
     return !window.matchMedia(DEFER_SAND_QUERY).matches;
   });
+  const [startRequested, setStartRequested] = useState(false);
   const [sandReady, setSandReady] = useState(false);
 
   useEffect(() => {
-    if (!deferSand) setSandRequested(true);
-  }, [deferSand]);
+    if (!deferSand) {
+      setSandRequested(true);
+      return undefined;
+    }
+    if (sandRequested) return undefined;
+
+    let idle = 0;
+    let timer = 0;
+    const frame = requestAnimationFrame(() => {
+      if (typeof window.requestIdleCallback === 'function') {
+        idle = window.requestIdleCallback(
+          () => setSandRequested(true),
+          { timeout: 1200 },
+        );
+      } else {
+        timer = window.setTimeout(() => setSandRequested(true), 400);
+      }
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (idle) window.cancelIdleCallback?.(idle);
+      if (timer) clearTimeout(timer);
+    };
+  }, [deferSand, sandRequested]);
+
+  const requestSandStart = () => {
+    setStartRequested(true);
+    setSandRequested(true);
+  };
 
   const handleDrawModeChange = (active) => {
     setDrawModeActive(active);
@@ -42,7 +70,7 @@ const Hero = ({ onDrawModeChange }) => {
         <div className="absolute inset-0 z-10">
           <SandGame
             mode="creative"
-            autoStart={deferSand}
+            autoStart={startRequested}
             onDrawModeChange={handleDrawModeChange}
             onReady={() => setSandReady(true)}
             perfHud={PERF_ROUTE}
@@ -77,7 +105,7 @@ const Hero = ({ onDrawModeChange }) => {
         <button
           type="button"
           className="absolute bottom-[calc(24px+env(safe-area-inset-bottom,0px))] left-1/2 z-30 h-14 w-[min(72vw,320px)] -translate-x-1/2 rounded-2xl border border-white/30 bg-slate-950/65 text-[15px] font-bold tracking-[.12em] text-white shadow-2xl backdrop-blur-md transition active:bg-white active:text-slate-900 disabled:cursor-wait disabled:text-white/70"
-          onClick={() => setSandRequested(true)}
+          onClick={requestSandStart}
           disabled={sandRequested}
           aria-busy={sandRequested}
         >

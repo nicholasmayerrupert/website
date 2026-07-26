@@ -43,7 +43,7 @@ await waitForServer();
 // --- in-page flicker probe (runs entirely in the browser) ---
 // Sweep one cell of camera movement. After compensating for the best integer
 // pixel shift, residual luma change is the instability score (0..255).
-const PROBE = ({ subSteps, noSnap }) => {
+const PROBE = ({ subSteps, noSnap, axis }) => {
   const T = window.__sandTest;
   const cv = document.querySelector('sand-game')?.shadowRoot?.getElementById('sand-main') || document.getElementById('sand-main');
   const W = cv.width, H = cv.height;
@@ -63,7 +63,7 @@ const PROBE = ({ subSteps, noSnap }) => {
     }
     return luma;
   };
-  // mean-abs residual of B vs A shifted by `shift` sampled-px, min over shifts.
+  // mean-abs residual of B vs A shifted along the pan axis, min over shifts.
   const minResid = (A, B) => {
     let best = Infinity, bestShift = 0;
     for (const shift of [-2, -1, 0, 1, 2]) {
@@ -72,8 +72,9 @@ const PROBE = ({ subSteps, noSnap }) => {
       for (let y = m; y < sh - m; y++) {
         const row = y * sw;
         for (let x = m; x < sw - m; x++) {
-          const xa = x + shift;
-          sum += Math.abs(B[row + x] - A[row + xa]); n++;
+          const xa = axis === 'x' ? x + shift : x;
+          const ya = axis === 'y' ? y + shift : y;
+          sum += Math.abs(B[row + x] - A[ya * sw + xa]); n++;
         }
       }
       const mean = sum / n;
@@ -90,18 +91,83 @@ const PROBE = ({ subSteps, noSnap }) => {
   let instability = 0, worst = 0;
   const dbg = [];
   for (let s = 1; s <= subSteps; s++) {
-    T.setCam(cam0.x + s / subSteps, cam0.y); // sub-cell pan (offX sweeps a full cell)
+    T.setCam(cam0.x + (axis === 'x' ? s / subSteps : 0),
+             cam0.y + (axis === 'y' ? s / subSteps : 0));
     const cur = grab();
     const r = minResid(prev, cur);
     instability += r.best; if (r.best > worst) worst = r.best;
-    if (s <= 14) dbg.push(`${(cam0.x + s / subSteps).toFixed(3)}:${r.best.toFixed(1)}/sh${r.bestShift}/ox${T.off().offX}`);
+    if (s <= 14) {
+      const cam = axis === 'x' ? cam0.x + s / subSteps : cam0.y + s / subSteps;
+      const off = T.off();
+      dbg.push(`${cam.toFixed(3)}:${r.best.toFixed(1)}/sh${r.bestShift}/o${axis}${axis === 'x' ? off.offX : off.offY}`);
+    }
     prev = cur;
   }
   T.setCam(cam0.x, cam0.y);
   if (T.setGutter) T.setGutter(true);
   if (T.setSnap) T.setSnap(true);
   T.setPaused(false);
-  return { subSteps, cam0x: cam0.x, instability: +instability.toFixed(3), perStep: +(instability / subSteps).toFixed(4), worst: +worst.toFixed(4), dbg };
+  return { axis, subSteps, cam0: axis === 'x' ? cam0.x : cam0.y, instability: +instability.toFixed(3), perStep: +(instability / subSteps).toFixed(4), worst: +worst.toFixed(4), dbg };
+};
+
+const PARALLAX_RIGIDITY_PROBE = ({ axis }) => {
+  const T = window.__sandTest;
+  const canvas = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sand-parallax-bg');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const grab = () => ctx.getImageData(0, 0, W, H).data;
+  const rgb = (hex) => Number.parseInt(hex.slice(1), 16);
+  // Exact noon ridge fills isolate the four scenery layers from clouds, facets,
+  // and lighting so the comparison measures shape changes rather than motion.
+  const target = [rgb('#718d9a'), rgb('#527264'), rgb('#35634f'), rgb('#222b29')];
+  const matches = (pixels, index, color) =>
+    ((pixels[index] << 16) | (pixels[index + 1] << 8) | pixels[index + 2]) === color;
+
+  T.setPaused(true);
+  T.setDayPhase(0.5);
+  const cam0 = T.getCam();
+  if (axis === 'y') {
+    const info = T.info();
+    const worldOffset = T.worldOffset();
+    // Keep the vertical sample at one absolute surface coordinate even if the
+    // authority has already rebased its loaded window.
+    const targetCamY = Math.max(0, Math.min(info.rows - info.viewRows - 2, -96 - worldOffset.y));
+    T.setCam(cam0.x, targetCamY);
+  }
+  const probeCam = T.getCam();
+  const before = grab();
+  T.setCam(probeCam.x + (axis === 'x' ? 2 : 0),
+           probeCam.y + (axis === 'y' ? 2 : 0));
+  const after = grab();
+
+  const layers = target.map((color) => {
+    let best = Infinity, bestShift = 0;
+    for (let shift = -4; shift <= 4; shift++) {
+      let changed = 0, covered = 0;
+      for (let y = 5; y < H - 5; y++) for (let x = 5; x < W - 5; x++) {
+        const ax = axis === 'x' ? x + shift : x;
+        const ay = axis === 'y' ? y + shift : y;
+        if (ax < 0 || ax >= W || ay < 0 || ay >= H) continue;
+        const a = matches(before, (ay * W + ax) * 4, color);
+        const b = matches(after, (y * W + x) * 4, color);
+        if (!a && !b) continue;
+        covered++;
+        if (a !== b) changed++;
+      }
+      const ratio = covered ? changed / covered : 0;
+      if (ratio < best) { best = ratio; bestShift = shift; }
+    }
+    return { mismatch: +best.toFixed(5), shift: bestShift };
+  });
+
+  T.setCam(cam0.x, cam0.y);
+  T.clearDayPhase();
+  T.setPaused(false);
+  return {
+    axis,
+    worst: Math.max(...layers.map((layer) => layer.mismatch)),
+    layers,
+  };
 };
 
 const browser = await chromium.launch({ headless: true });
@@ -159,7 +225,10 @@ try {
   });
 
   // Sub-cell pan instability (root-cause flicker metric).
-  const flicker = await page.evaluate(PROBE, { subSteps: 24, noSnap: !!process.env.NO_SNAP });
+  const flicker = await page.evaluate(PROBE, { axis: 'x', subSteps: 24, noSnap: !!process.env.NO_SNAP });
+  const verticalFlicker = await page.evaluate(PROBE, { axis: 'y', subSteps: 24, noSnap: !!process.env.NO_SNAP });
+  const parallaxHorizontal = await page.evaluate(PARALLAX_RIGIDITY_PROBE, { axis: 'x' });
+  const parallaxVertical = await page.evaluate(PARALLAX_RIGIDITY_PROBE, { axis: 'y' });
 
   // Optionally dump downscaled frames at two sub-cell pan phases so the moiré
   // banding (what the user sees) is visible to the eye.
@@ -207,6 +276,9 @@ try {
     info,
     cursor,
     flicker,
+    verticalFlicker,
+    parallaxHorizontal,
+    parallaxVertical,
     perf,
   };
 } catch (err) {
@@ -220,9 +292,13 @@ const report = [
   '',
   `pan/flicker benchmark  (canvas ${result.info.canvasW}x${result.info.canvasH}, cellSize ${result.info.cellSize}, dpr ${result.info.dpr})`,
   `  cursor->cell round-trip worst error: ${result.cursor.worstCellErr} cells (must be 0)`,
-  `  sub-cell instability (luma 0..255; lower is better): total ${result.flicker.instability}  perStep ${result.flicker.perStep}  worst ${result.flicker.worst}`,
+  `  horizontal sub-cell instability (luma 0..255; lower is better): total ${result.flicker.instability}  perStep ${result.flicker.perStep}  worst ${result.flicker.worst}`,
+  `  vertical sub-cell instability: total ${result.verticalFlicker.instability}  perStep ${result.verticalFlicker.perStep}  worst ${result.verticalFlicker.worst}`,
+  `  horizontal parallax rigidity: worst ${(result.parallaxHorizontal.worst * 100).toFixed(3)}% mismatch; layers ${result.parallaxHorizontal.layers.map((layer) => `${(layer.mismatch * 100).toFixed(3)}%/shift${layer.shift}`).join('  ')}`,
+  `  vertical parallax rigidity: worst ${(result.parallaxVertical.worst * 100).toFixed(3)}% mismatch; layers ${result.parallaxVertical.layers.map((layer) => `${(layer.mismatch * 100).toFixed(3)}%/shift${layer.shift}`).join('  ')}`,
 ];
-if (result.flicker.dbg) report.push(`  dbg cam0x=${result.flicker.cam0x} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
+if (result.flicker.dbg) report.push(`  horizontal dbg cam0=${result.flicker.cam0} steps(resid/shift): ${result.flicker.dbg.join('  ')}`);
+if (result.verticalFlicker.dbg) report.push(`  vertical dbg cam0=${result.verticalFlicker.cam0} steps(resid/shift): ${result.verticalFlicker.dbg.join('  ')}`);
 report.push(`  frame: avg ${result.perf.avgFrameMs}ms  p95 ${result.perf.p95FrameMs}ms  step ${result.perf.stepMs}ms  render ${result.perf.renderMs}ms  dirtyChunks ${result.perf.dirtyChunks}`);
 report.push(`  render CPU phases: light ${result.perf.lightMs ?? '-'}ms  fill ${result.perf.fillMs ?? '-'}ms  upload ${result.perf.uploadMs ?? '-'}ms`);
 // Fine step breakdown (same fields as headless bench-sand / __sandPerf).
@@ -264,6 +340,10 @@ if (comparePath) {
   const d = result.flicker.instability - base.flicker.instability;
   const tag = d > 0.5 ? ' WORSE' : d < -0.5 ? ' better' : '';
   report.push(`  instability: ${base.flicker.instability} -> ${result.flicker.instability}  (${d >= 0 ? '+' : ''}${d.toFixed(2)})${tag}`);
+  if (base.verticalFlicker && base.parallaxVertical?.layers?.[2]) {
+    report.push(`  vertical instability: ${base.verticalFlicker.instability} -> ${result.verticalFlicker.instability}`);
+    report.push(`  vertical near-ridge mismatch: ${(base.parallaxVertical.layers[2].mismatch * 100).toFixed(3)}% -> ${(result.parallaxVertical.layers[2].mismatch * 100).toFixed(3)}%`);
+  }
   const fd = result.perf.avgFrameMs - base.perf.avgFrameMs;
   report.push(`  frame avg: ${base.perf.avgFrameMs} -> ${result.perf.avgFrameMs}ms  (${fd >= 0 ? '+' : ''}${fd.toFixed(1)})`);
   const comparison = comparePanResults(result, base);

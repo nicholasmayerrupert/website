@@ -14,8 +14,9 @@
     "worstCellErr": 0
   },
   "flicker": {
+    "axis": "x",
     "subSteps": 24,
-    "cam0x": 132,
+    "cam0": 132,
     "instability": 0,
     "perStep": 0,
     "worst": 0,
@@ -34,6 +35,74 @@
       "132.500:0.0/sh0/ox-3",
       "132.542:0.0/sh0/ox-3",
       "132.583:0.0/sh1/ox-4"
+    ]
+  },
+  "verticalFlicker": {
+    "axis": "y",
+    "subSteps": 24,
+    "cam0": 102,
+    "instability": 0,
+    "perStep": 0,
+    "worst": 0,
+    "dbg": [
+      "102.042:0.0/sh0/oy0",
+      "102.083:0.0/sh0/oy0",
+      "102.125:0.0/sh1/oy-1",
+      "102.167:0.0/sh0/oy-1",
+      "102.208:0.0/sh0/oy-1",
+      "102.250:0.0/sh1/oy-2",
+      "102.292:0.0/sh0/oy-2",
+      "102.333:0.0/sh0/oy-2",
+      "102.375:0.0/sh0/oy-2",
+      "102.417:0.0/sh1/oy-3",
+      "102.458:0.0/sh0/oy-3",
+      "102.500:0.0/sh0/oy-3",
+      "102.542:0.0/sh0/oy-3",
+      "102.583:0.0/sh0/oy-3"
+    ]
+  },
+  "parallaxHorizontal": {
+    "axis": "x",
+    "worst": 0.04193,
+    "layers": [
+      {
+        "mismatch": 0.04193,
+        "shift": 1
+      },
+      {
+        "mismatch": 0.0131,
+        "shift": 1
+      },
+      {
+        "mismatch": 0.00238,
+        "shift": 1
+      },
+      {
+        "mismatch": 0.01907,
+        "shift": 1
+      }
+    ]
+  },
+  "parallaxVertical": {
+    "axis": "y",
+    "worst": 0.01974,
+    "layers": [
+      {
+        "mismatch": 0,
+        "shift": 2
+      },
+      {
+        "mismatch": 0.00066,
+        "shift": 2
+      },
+      {
+        "mismatch": 0.00445,
+        "shift": 2
+      },
+      {
+        "mismatch": 0.01974,
+        "shift": 2
+      }
     ]
   },
   "perf": {

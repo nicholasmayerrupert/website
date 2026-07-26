@@ -1,6 +1,8 @@
 export const PAN_COMPARE_LIMITS = Object.freeze({
   maxCursorCellError: 0,
   maxInstability: 0.5,
+  maxVerticalInstability: 0.5,
+  maxParallaxNearMismatch: 0.01,
   frameAvgRelative: 0.5,
   frameAvgAbsoluteMs: 2,
   frameP95Relative: 0.5,
@@ -32,6 +34,14 @@ export function comparePanResults(current, baseline, limits = PAN_COMPARE_LIMITS
   const instability = Number(current?.flicker?.instability);
   if (!Number.isFinite(instability) || instability > limits.maxInstability) {
     failures.push(`instability ${instability} exceeds ${limits.maxInstability}`);
+  }
+  const verticalInstability = Number(current?.verticalFlicker?.instability);
+  if (!Number.isFinite(verticalInstability) || verticalInstability > limits.maxVerticalInstability) {
+    failures.push(`vertical instability ${verticalInstability} exceeds ${limits.maxVerticalInstability}`);
+  }
+  const parallaxNearMismatch = Number(current?.parallaxVertical?.layers?.[2]?.mismatch);
+  if (!Number.isFinite(parallaxNearMismatch) || parallaxNearMismatch > limits.maxParallaxNearMismatch) {
+    failures.push(`vertical parallax near-ridge mismatch ${parallaxNearMismatch} exceeds ${limits.maxParallaxNearMismatch}`);
   }
 
   const perfEnvironment = compatiblePerfEnvironment(current?.meta, baseline?.meta);

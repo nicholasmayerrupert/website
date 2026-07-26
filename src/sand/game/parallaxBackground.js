@@ -108,7 +108,7 @@ function drawStars(ctx, w, horizon, camX, camY, opacity) {
   if (opacity <= 0) return;
   ctx.globalAlpha = opacity;
   const offX = Math.floor(camX * 0.025 - w * 0.5);
-  const offY = Math.floor(backgroundDriftY(camY) * 0.2);
+  const offY = Math.round(backgroundDriftY(camY) * 1.2);
   const period = 240;
   const start = Math.floor((offX - 16) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
@@ -177,14 +177,14 @@ export function celestialOrbitY(horizon, progress) {
     - Math.sin(Math.PI * clamp(progress, 0, 1)) * (arcHeight + belowHorizon);
 }
 
-function drawCelestialBodies(ctx, w, horizon, dayNight) {
+function drawCelestialBodies(ctx, w, horizon, dayNight, offY) {
   // The centered site navigation occupies the geometric apex of the sky.
   // Bias the visible arc left so noon/midnight bodies remain unobstructed.
   const orbitX = (t) => w * (0.04 + 0.56 * t);
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
-    const y = celestialOrbitY(horizon, t);
+    const y = celestialOrbitY(horizon, t) - offY;
     const horizonWarmth = 1 - Math.sin(Math.PI * t);
     const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
     const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
@@ -198,7 +198,7 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t));
+    drawPixelMoon(ctx, orbitX(t), celestialOrbitY(horizon, t) - offY);
   }
 }
 
@@ -238,7 +238,7 @@ export function cloudCycleOffset(phase, period) {
 function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period, phase) {
   const drift = cloudCycleOffset(phase, period);
   const offX = camX * depth - w * 0.5 - drift;
-  const offY = backgroundDriftY(camY) * depth;
+  const offY = Math.round(backgroundDriftY(camY) * (1 + depth));
   const start = Math.floor((offX - 40) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
     for (let i = 0; i < count; i++) {
@@ -264,7 +264,9 @@ function ridgeY(worldX, base, amp, seed) {
 
 function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
   const offX = camX * depth - w * 0.5;
-  const offY = backgroundDriftY(camY) * depth;
+  // Keep the sampled contour rigid in both axes. A shared integer Y offset
+  // moves the whole layer without making individual peaks or trees re-round.
+  const offY = Math.round(backgroundDriftY(camY) * (1 + depth));
   const surfaceWorldRawY = (worldX) => ridgeY(worldX, base - offY, amp, seed);
   const surfaceRawY = (x) => surfaceWorldRawY(x + offX);
   const surfaceY = (x) => Math.round(surfaceRawY(x));
@@ -677,7 +679,10 @@ export function createParallaxBackground(container) {
     const h = canvas.height / s;
     ctx.setTransform(s, 0, 0, s, 0, 0);
 
-    const horizon = Math.round(clamp(h * HORIZON_RATIO - backgroundDriftY(qy), -28, h - 36));
+    // Vertical parallax belongs in each layer's offset. Changing the horizon
+    // would regenerate the sky and rescale seeded scenery on every vertical pan.
+    const horizon = Math.round(clamp(h * HORIZON_RATIO, -28, h - 36));
+    const verticalDrift = Math.round(backgroundDriftY(qy));
     const skyHeight = Math.max(0, horizon);
     const palette = paletteForPhase(dayNight.phase);
     const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, skyHeight));
@@ -692,7 +697,7 @@ export function createParallaxBackground(container) {
     drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
-    drawCelestialBodies(ctx, w, skyHeight, dayNight);
+    drawCelestialBodies(ctx, w, skyHeight, dayNight, verticalDrift);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
     const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2);

@@ -364,9 +364,9 @@ node scripts/bench-pan.mjs --compare bench/pan-baseline.json
 ```
 
 Use the engine benchmark for simulation/render-fill/streaming changes and the pan
-benchmark for WebGL presentation, pointer mapping, and flicker. Pure refactors
-must preserve deterministic checksums. See `PERF.md` for metric ownership and
-focused commands.
+benchmark for WebGL presentation, pointer mapping, two-axis cell stability, and
+parallax rigidity. Pure refactors must preserve deterministic checksums. See
+`PERF.md` for metric ownership and focused commands.
 
 ## Adding a material
 

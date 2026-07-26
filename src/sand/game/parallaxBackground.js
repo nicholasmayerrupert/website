@@ -256,7 +256,8 @@ function ridgeY(worldX, base, amp, seed) {
 function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
-  const surfaceRawY = (x) => ridgeY(x + offX, base - offY, amp, seed);
+  const surfaceWorldRawY = (worldX) => ridgeY(worldX, base - offY, amp, seed);
+  const surfaceRawY = (x) => surfaceWorldRawY(x + offX);
   const surfaceY = (x) => Math.round(surfaceRawY(x));
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -326,6 +327,7 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     offY,
     minimumSurfaceY: base - offY - amp * 1.23,
     surfaceRawY,
+    surfaceWorldRawY,
     surfaceY,
   };
 }
@@ -432,7 +434,7 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
       const screenX = worldX - ridge.offX;
       const x = Math.round(screenX);
       const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
-      const groundY = Math.round(ridge.surfaceRawY(screenX)) + 1 + band * bandStep
+      const groundY = Math.round(ridge.surfaceWorldRawY(worldX)) + 1 + band * bandStep
         + Math.floor(rand01(treeSeed + 198) * 4);
       if (groundY - height > h || groundY > h + 4) continue;
 
@@ -462,7 +464,7 @@ function drawLodgeWindow(ctx, x, y, light) {
   ctx.fillRect(x, y + 1, 3, 1);
 }
 
-function drawLodge(ctx, x, platformY, variant, light, ridge) {
+function drawLodge(ctx, x, platformY, variant, light, ridge, worldX) {
   const width = variant ? 21 : 18;
   const left = Math.round(x - width * 0.5);
   const wallHeight = variant ? 9 : 8;
@@ -479,7 +481,7 @@ function drawLodge(ctx, x, platformY, variant, light, ridge) {
   ctx.fillStyle = '#2a201c';
   ctx.fillRect(left - 2, platformY - 1, width + 4, 2);
   for (const postX of [left + 2, left + width - 4]) {
-    const terrainY = ridge.surfaceY(postX) + 2;
+    const terrainY = Math.round(ridge.surfaceWorldRawY(worldX + postX - x)) + 2;
     ctx.fillRect(postX, platformY, 2, Math.max(2, terrainY - platformY));
     ctx.fillStyle = '#5e6460';
     ctx.fillRect(postX - 1, Math.max(platformY + 1, terrainY - 1), 4, 2);
@@ -550,7 +552,8 @@ function drawLodge(ctx, x, platformY, variant, light, ridge) {
   ctx.globalAlpha = 0.44;
   for (let step = 0; step < 4; step++) {
     const trailX = left + width + 4 + step * 3;
-    ctx.fillRect(trailX, ridge.surfaceY(trailX) + 2, 2, 1);
+    const trailY = Math.round(ridge.surfaceWorldRawY(worldX + trailX - x)) + 2;
+    ctx.fillRect(trailX, trailY, 2, 1);
   }
 
   const smoke = mixColor('#788182', '#dbe1da', light * 0.38);
@@ -572,22 +575,22 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
     let slope = Infinity;
     for (const shift of [0, -22, 22, -44, 44]) {
       const candidate = startX + shift;
-      const screenX = candidate - ridge.offX;
-      const ys = [-11, 0, 11].map((dx) => ridge.surfaceRawY(screenX + dx));
+      const ys = [-11, 0, 11].map((dx) => ridge.surfaceWorldRawY(candidate + dx));
       const candidateSlope = Math.max(...ys) - Math.min(...ys);
       if (candidateSlope < slope) {
         slope = candidateSlope;
         worldX = candidate;
       }
     }
-    const x = Math.round(worldX - ridge.offX);
+    const screenX = worldX - ridge.offX;
+    const x = Math.round(screenX);
     if (x < -28 || x > w + 28 || slope > 6) continue;
     const platformY = Math.round(Math.min(
-      ridge.surfaceRawY(x - 11),
-      ridge.surfaceRawY(x),
-      ridge.surfaceRawY(x + 11),
-    )) + 4;
-    drawLodge(ctx, x, platformY, rand01(tile + seed * 1217) > 0.58 ? 1 : 0, light, ridge);
+      ridge.surfaceWorldRawY(worldX - 11),
+      ridge.surfaceWorldRawY(worldX),
+      ridge.surfaceWorldRawY(worldX + 11),
+    )) + 6;
+    drawLodge(ctx, x, platformY, rand01(tile + seed * 1217) > 0.58 ? 1 : 0, light, ridge, worldX);
   }
 }
 

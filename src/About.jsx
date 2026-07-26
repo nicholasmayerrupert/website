@@ -20,8 +20,7 @@ export default function About() {
 
       <div className="portfolio-shell">
         <header className="portfolio-intro portfolio-reveal">
-          <p className="portfolio-eyebrow">About</p>
-          <h2>I code</h2>
+          <h2>About Me</h2>
           <p className="portfolio-lede">
             I&apos;m Nicholas, a software engineer who enjoys working on systems
             and web applications. I like learning how things work, solving
@@ -73,7 +72,6 @@ export default function About() {
 
         <section className="toolbox portfolio-reveal" aria-labelledby="skills-heading">
           <div className="toolbox__heading">
-            <p className="portfolio-eyebrow">Skills</p>
             <h3 id="skills-heading">Tools I use</h3>
           </div>
 

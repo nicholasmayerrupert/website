@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import SplitText from "./SplitText";
 import { useMediaQuery } from "./hooks/useMediaQuery";
+import { SandBackground } from "./sand/react/SandBackground";
 import { SandGame } from "./sand/react/SandGame";
 
 // /fps renders the normal portfolio but flips the hero's sand game into a
@@ -58,11 +59,10 @@ const Hero = ({ onDrawModeChange }) => {
   return (
     <section className="relative h-[100svh] overflow-hidden bg-[#222222] md:h-[100dvh]">
       {deferSand && (
-        <div
-          className={`hero-sand-poster absolute inset-0 transition-opacity duration-500 ${
+        <SandBackground
+          className={`absolute inset-0 overflow-hidden transition-opacity duration-500 ${
             sandReady ? 'opacity-0' : 'opacity-100'
           }`}
-          aria-hidden="true"
         />
       )}
 

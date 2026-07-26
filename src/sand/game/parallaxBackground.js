@@ -525,10 +525,126 @@ function drawObservatory(ctx, x, groundY, color, skyLow, starOpacity) {
   }
 }
 
-function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, features = {}) {
+function drawAlpineRange(ctx, w, h, camX, camY, {
+  depth,
+  base,
+  amp,
+  spacing,
+  color,
+  skyLow,
+  seed,
+  daylight,
+  lightX,
+  opacity = 1,
+}) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
   const effectiveBase = base - offY;
+  const seedOffset = seed * 19;
+  const peakHeight = (index) => amp * (0.76 + rand01(index * 919 + seed * 131) * 0.38);
+  const peakCenter = (index) => (index + 0.5) * spacing - seedOffset;
+  const surfaceY = (screenX) => {
+    const worldX = screenX + offX;
+    const shifted = (worldX + seedOffset) / spacing;
+    const index = Math.floor(shifted);
+    const rise = 1 - Math.abs(fract(shifted) * 2 - 1);
+    const rock = Math.sin(worldX * 0.19 + seed * 3.7) * amp * 0.025 * rise;
+    const shoulder = Math.sin(worldX * 0.047 + seed * 5.1) * amp * 0.035;
+    return Math.round(effectiveBase - Math.pow(rise, 1.08) * peakHeight(index) + rock + shoulder);
+  };
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(0, h);
+  for (let x = 0; x <= w + 3; x += 3) ctx.lineTo(x, surfaceY(x));
+  ctx.lineTo(w + 3, h);
+  ctx.closePath();
+  ctx.fill();
+  ctx.clip();
+
+  const firstPeak = Math.floor((offX + seedOffset) / spacing) - 1;
+  const lastPeak = Math.ceil((offX + w + seedOffset) / spacing) + 1;
+  const snow = mixColor(skyLow, '#fffdf4', 0.68 + daylight * 0.22);
+  const snowShade = mixColor(snow, color, 0.3);
+  const litRock = mixColor(color, skyLow, 0.46);
+  const shadowRock = mixColor(color, '#070b10', 0.44);
+
+  for (let index = firstPeak; index <= lastPeak; index++) {
+    const x = peakCenter(index) - offX;
+    const peakY = surfaceY(x);
+    const height = Math.max(18, effectiveBase - peakY);
+    const halfSpan = spacing * 0.5;
+    const lightFromLeft = lightX < x;
+
+    ctx.globalAlpha = opacity * 0.34;
+    ctx.fillStyle = shadowRock;
+    ctx.beginPath();
+    ctx.moveTo(x, peakY);
+    ctx.lineTo(x + (lightFromLeft ? halfSpan : -halfSpan), effectiveBase + 5);
+    ctx.lineTo(x + (lightFromLeft ? halfSpan * 0.72 : -halfSpan * 0.72), h);
+    ctx.lineTo(x, h);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = opacity * 0.36;
+    ctx.fillStyle = litRock;
+    ctx.beginPath();
+    ctx.moveTo(x, peakY);
+    ctx.lineTo(x + (lightFromLeft ? -halfSpan : halfSpan), effectiveBase + 4);
+    ctx.lineTo(x + (lightFromLeft ? -halfSpan * 0.32 : halfSpan * 0.32), h);
+    ctx.closePath();
+    ctx.fill();
+
+    const capDepth = clamp(height * 0.31, 11, 22);
+    const capHalf = Math.min(spacing * 0.3, capDepth * 1.18);
+    ctx.globalAlpha = opacity * 0.96;
+    ctx.fillStyle = snowShade;
+    ctx.beginPath();
+    ctx.moveTo(x, peakY);
+    ctx.lineTo(x + capHalf, peakY + capDepth);
+    ctx.lineTo(x + capHalf * 0.62, peakY + capDepth * 0.74);
+    ctx.lineTo(x + capHalf * 0.38, peakY + capDepth * 1.06);
+    ctx.lineTo(x + capHalf * 0.12, peakY + capDepth * 0.66);
+    ctx.lineTo(x - capHalf * 0.14, peakY + capDepth * 1.16);
+    ctx.lineTo(x - capHalf * 0.42, peakY + capDepth * 0.76);
+    ctx.lineTo(x - capHalf * 0.68, peakY + capDepth * 0.98);
+    ctx.lineTo(x - capHalf, peakY + capDepth);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = snow;
+    ctx.beginPath();
+    ctx.moveTo(x, peakY);
+    ctx.lineTo(x + (lightFromLeft ? -capHalf : capHalf), peakY + capDepth);
+    ctx.lineTo(x + (lightFromLeft ? -capHalf * 0.58 : capHalf * 0.58), peakY + capDepth * 0.7);
+    ctx.lineTo(x + (lightFromLeft ? -capHalf * 0.3 : capHalf * 0.3), peakY + capDepth * 0.94);
+    ctx.lineTo(x, peakY + capDepth * 0.58);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.globalAlpha = opacity * 0.24;
+    ctx.fillStyle = snow;
+    const snowLine = peakY + capDepth + 4;
+    ctx.fillRect(Math.round(x - capHalf * 0.66), Math.round(snowLine), Math.max(2, Math.round(capHalf * 0.28)), 1);
+    ctx.fillRect(Math.round(x + capHalf * 0.26), Math.round(snowLine + 3), Math.max(2, Math.round(capHalf * 0.36)), 1);
+  }
+
+  ctx.globalAlpha = opacity * 0.48;
+  ctx.strokeStyle = mixColor(color, skyLow, 0.62);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0; x <= w + 3; x += 3) {
+    if (x === 0) ctx.moveTo(x, surfaceY(x) + 1); else ctx.lineTo(x, surfaceY(x) + 1);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, features = {}) {
+  const offX = camX * depth - w * 0.5;
+  const offY = backgroundDriftY(camY) * depth;
   const surfaceY = (x) => Math.round(ridgeY(x + offX, base - offY, amp, seed));
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -593,42 +709,6 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     ctx.lineTo(x + (lightFromLeft ? width * 0.1 : -width * 0.1), peakY + amp * 0.32);
     ctx.closePath();
     ctx.fill();
-  }
-
-  if (features.snow) {
-    const capColor = mixColor(skyLow, '#fff9e7', 0.46 + (features.daylight ?? 0) * 0.25);
-    const shadeColor = mixColor(capColor, color, 0.36);
-    let prevY = surfaceY(0);
-    let x = 4, y = surfaceY(4);
-    for (let nextX = 8; nextX <= w + 4; nextX += 4) {
-      const nextY = surfaceY(nextX);
-      if (y <= prevY && y < nextY && effectiveBase - y > amp * 0.34 && rand01(Math.round(x + offX) + seed * 719) < features.snow) {
-        const width = 6 + Math.floor(rand01(Math.round(x + offX) + seed * 883) * 7);
-        ctx.globalAlpha = 0.66 + (features.daylight ?? 0) * 0.2;
-        ctx.fillStyle = shadeColor;
-        ctx.beginPath();
-        ctx.moveTo(x - width, y + width * 0.78);
-        ctx.lineTo(x - width * 0.35, y + 3);
-        ctx.lineTo(x, y);
-        ctx.lineTo(x + width * 0.42, y + 4);
-        ctx.lineTo(x + width, y + width * 0.8);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = capColor;
-        ctx.beginPath();
-        ctx.moveTo(x - width * 0.62, y + width * 0.48);
-        ctx.lineTo(x - width * 0.22, y + 3);
-        ctx.lineTo(x, y);
-        ctx.lineTo(x + width * 0.18, y + 3);
-        ctx.lineTo(x + width * 0.38, y + 2);
-        ctx.lineTo(x + width * 0.56, y + width * 0.46);
-        ctx.closePath();
-        ctx.fill();
-      }
-      prevY = y;
-      x = nextX;
-      y = nextY;
-    }
   }
 
   if (features.waterfalls) {
@@ -772,16 +852,32 @@ export function createParallaxBackground(container) {
       starOpacity: dayNight.starOpacity,
       lightX,
     };
-    drawRidge(ctx, w, h, qx, qy, 0.16, horizon + 14, 28, palette.ridgeFar, 3.2, palette.skyLow, 1, {
+    drawAlpineRange(ctx, w, h, qx, qy, {
       ...commonFeatures,
-      snow: 0.92,
-      landmark: true,
+      depth: 0.08,
+      base: horizon + 25,
+      amp: 45,
+      spacing: 82,
+      color: mixColor(palette.ridgeFar, palette.skyLow, 0.38),
+      skyLow: palette.skyLow,
+      seed: 1.4,
+      opacity: 0.58,
     });
-    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow, 0.24, 16, 0.24);
-    drawRidge(ctx, w, h, qx, qy, 0.32, horizon + 36, 32, palette.ridgeMid, 7.9, palette.skyLow, 2, {
+    drawAlpineRange(ctx, w, h, qx, qy, {
       ...commonFeatures,
-      snow: 0.36,
+      depth: 0.16,
+      base: horizon + 39,
+      amp: 64,
+      spacing: 74,
+      color: palette.ridgeFar,
+      skyLow: palette.skyLow,
+      seed: 4.6,
+    });
+    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow, 0.24, 28, 0.2);
+    drawRidge(ctx, w, h, qx, qy, 0.32, horizon + 55, 27, palette.ridgeMid, 7.9, palette.skyLow, 2, {
+      ...commonFeatures,
       waterfalls: true,
+      landmark: true,
     });
     drawMistLayer(ctx, w, horizon, qx, qy, palette.cloudLight, 0.42, 43, 0.13);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 67, 36, palette.ridgeNear, 12.4, palette.skyLow, 3, {

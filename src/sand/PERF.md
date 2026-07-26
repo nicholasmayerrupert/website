@@ -92,9 +92,10 @@ component registration, and generation/restoration. Browser presentation exposes
 - A locally proven cave blast keeps double-buffer carry sparse until loose
   support, assembly movement, a snapshot, resize, or world shift invalidates the
   proof.
-- Blast rubble stays body-owned, does not bear structural load, and does not
-  invalidate cached cave grounding. Stable sleeping rubble remains stamped until
-  its support changes. Dense TNT fronts emit a bounded number of physical chunks.
+- Live blast rubble stays body-owned, does not bear structural load, and does not
+  invalidate cached cave grounding. Settled rubble bakes into ordinary static
+  material once structural motion in its layer clears. Dense TNT fronts emit a
+  bounded number of physical chunks.
 - Due TNT uses stable 14-cell spatial regions. Fronts spanning more than six
   regions and containing more than 2,048 due cells consume one compact
   six-by-two-region window per tick until their backlog drains; smaller fronts

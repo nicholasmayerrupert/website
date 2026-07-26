@@ -406,7 +406,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // Break as soon as a whole iteration applies zero impulse everywhere.
     // General bodies retain the full 64-iteration cap because structural stacks
     // genuinely use it. A scene containing only tiny blast rubble uses the
-    // smaller cap above; those chunks never become structural stacks.
+    // smaller cap above; those chunks bake when their contact islands settle.
     for (int it = 0; it < solverIters; it++) {
       double moved = 0;
       if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveContact(contacts[ci]);
@@ -799,8 +799,8 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, do
 }
 // ===== Body material identity & solidify-on-rest =====
 // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
-// real material into the grid; when an ordinary NON-RIGID body sleeps it bakes
-// into a normal static component here. RIGID bodies and blast rubble stay free.
+// real material into the grid; when a NON-RIGID body sleeps it bakes into a
+// normal static component here. RIGID bodies stay free forever.
 void RigidBodySystem::bakeBodyToGrid(Body* b) {
   // The body's cells were just cleared to EMPTY (moveBodies), so write the body's
   // material into them and hand the set to registerRigidCells — the exact primitive
@@ -823,11 +823,10 @@ bool RigidBodySystem::bodySolidifies(uint8_t m) { return E.isStoneComponentMater
 // A sleeping body bakes UNLESS it is FLOATING in liquid. "Floating" = its
 // bottom-edge contact is predominantly liquid (a wood log bobbing on water).
 // Powders never provide upward support, so a body in grains can only sink.
-// Everything else at rest solidifies on terrain or the world floor. Blast rubble
-// bypasses this path so it never becomes structural support. Probes the cell under
-// each bottom-edge cell. (sleepingBodyHasSupport can't be reused: it clamps the
-// AABB and so misses the world-floor boundary, where stone/wood bodies legitimately
-// come to rest.)
+// Everything else at rest solidifies on terrain or the world floor. Probes the
+// cell under each bottom-edge cell. (sleepingBodyHasSupport can't be reused: it
+// clamps the AABB and so misses the world-floor boundary, where stone/wood bodies
+// legitimately come to rest.)
 bool RigidBodySystem::bodyFloatsOnMedium(Body* b) {
   // occStamp/occCells replace a per-call unordered_set: the loop only sums
   // integer counters, so visit order is irrelevant.
@@ -859,11 +858,29 @@ bool RigidBodySystem::bodyHasLooseSupport(Body* b) {
   return mediumBelow > 0 && mediumBelow > solidBelow;
 }
 void RigidBodySystem::bakeRestingBodies() {
+  auto falling = [](const std::vector<Comp>& components) {
+    for (const Comp& component : components)
+      if (component.buoyancyDirection > 0) return true;
+    return false;
+  };
+  bool deferBlastBake = false;
+  for (Body* b : E.L->bodies) {
+    if (!b->awake && b->blastDebris) {
+      deferBlastBake = falling(E.L->stoneComponents)
+                    || falling(E.L->plantComponents)
+                    || falling(E.L->iceComponents);
+      break;
+    }
+  }
   bool baked = false; std::vector<Body*> keep;
   for (Body* b : E.L->bodies) {
-    // Ordinary material bodies solidify on rest unless they are floating.
-    // Blast rubble stays body-owned so it cannot become structural support.
-    if (!b->awake && !b->blastDebris && bodySolidifies(b->material) && !bodyFloatsOnMedium(b)) { bakeBodyToGrid(b); delete b; baked = true; }
+    // Keep the joint component graph stable while a structural fall is active;
+    // blast rubble bakes as soon as that motion clears. Other component-backed
+    // bodies retain their normal solidify-on-rest behavior.
+    if (!b->awake && (!b->blastDebris || !deferBlastBake)
+        && bodySolidifies(b->material) && !bodyFloatsOnMedium(b)) {
+      bakeBodyToGrid(b); delete b; baked = true;
+    }
     else keep.push_back(b);
   }
   if (baked) E.L->bodies = std::move(keep);
@@ -918,7 +935,7 @@ void RigidBodySystem::moveBodies() {
     if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++;
     if (hp && E.L == &E.fg) pushActorsFromBody(b, ppx, ppy, ppa, pvx, pvy);
   }
-  bakeRestingBodies(); // an ordinary non-RIGID body that just slept solidifies after depenetration; blast rubble stays free
+  bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
   std::vector<int> cells, footprint;
   std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
   for (Body* b : E.L->bodies) {

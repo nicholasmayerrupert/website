@@ -127,7 +127,7 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
     // but never belong to static components. When only their occupancy changed,
     // cellComp and the component adjacency cache remain exact; just rebind the
     // layer-local Comp* view and reset flags instead of rescanning every static
-    // cell. Blast rubble is ignored by the flood.
+    // cell. Body-owned blast rubble is ignored by the flood.
     cgComps.clear();
     auto bind = [&](std::vector<Comp>& list) {
       for (auto& c : list) {
@@ -354,7 +354,7 @@ void ComponentSystem::computeGrounded() {
   // is the only liquid-dependent part, so it is recomputed when loose moved;
   // the rigid flood + indexComponents are skipped. Bodies stamp rigid material
   // into the grid without routing through the dirty hooks, so a body that can
-  // bear structural load disables reuse. Blast rubble is non-bearing.
+  // bear structural load disables reuse. Body-owned blast rubble is non-bearing.
   bool reuse = !groundForceFull && lay->groundBaseValid && !lay->groundDirty
                && !hasGroundingBodies(*lay)
                && (lay->groundContentDirty || lay->groundBaseFlags.size() == totalComps);

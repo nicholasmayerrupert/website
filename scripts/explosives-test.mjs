@@ -272,9 +272,20 @@ function blastDamagesMaterial(name) {
   check(`blast ejected physical debris chunks (peak bodies ${maxBodies})`, maxBodies > 0);
   check(`stone blast fills its bounded real-stone sample budget (peak ${maxStoneBodies})`, maxStoneBodies >= 3);
   check(`blast can suppress default generic DEBRIS chunks`, !sawGenericDebris);
-  for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle
-  const settledBodies = e._bodyCount();
-  check(`settled blast rubble remains non-structural rigid bodies (${settledBodies})`, settledBodies > 0);
+  for (let i = 60; i < 500; i++) e.step(i * 16); // let the rubble settle and bake
+  check(`settled blast rubble bakes back into static material (${e._bodyCount()} bodies remain)`,
+    e._bodyCount() === 0);
+  e.destroy();
+}
+{
+  // Descending terrain gets first refusal on still-live rubble. It crushes the
+  // body before the later rigid-body pass can settle and bake it.
+  const e = mk();
+  for (let x = 30; x < 110; x++)
+    for (let y = 70; y < ROWS; y++) e.placeMaterial(x, y, 0, MAT.STONE);
+  e.syncComponents();
+  e.spawnBox(70, 67, 1, 1, MAT.STONE);
+  check('live-rubble fixture spawned', e._bodyCount() === 1 && e._setBodyBlastDebris(0));
   const target = e._bodyState(0);
   let crushedWithoutPause = false;
   if (target) {
@@ -287,15 +298,15 @@ function blastDamagesMaterial(name) {
     e.syncComponents();
     let previousTop = topRow(e.getGrid(), MAT.IRON_ORE);
     let paused = false;
-    for (let i = 500; i < 512 && e._bodyCount() >= settledBodies; i++) {
+    for (let i = 0; i < 12 && e._bodyCount() > 0; i++) {
       e.step(i * 16);
       const nextTop = topRow(e.getGrid(), MAT.IRON_ORE);
       if (nextTop === previousTop) paused = true;
       previousTop = nextTop;
     }
-    crushedWithoutPause = e._bodyCount() < settledBodies && !paused;
+    crushedWithoutPause = e._bodyCount() === 0 && !paused;
   }
-  check(`falling terrain crushes blast rubble without pausing`, crushedWithoutPause);
+  check('falling terrain crushes live blast rubble without pausing', crushedWithoutPause);
   e.destroy();
 }
 {

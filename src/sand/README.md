@@ -160,9 +160,10 @@ not be renumbered.
 
 Loose powder, liquid, and gas cells live directly in the grid. Static rigid
 materials live in components. Free bodies stamp their real material into the
-grid and are distinguished by `bodyOwner`; ordinary supported static forms bake
-back into components when they settle. Blast rubble stays body-owned and
-non-structural, and yields when descending terrain reaches it.
+grid and are distinguished by `bodyOwner`; supported static forms, including
+blast rubble, bake back into components when they settle and structural motion
+in the layer clears. Live blast rubble is non-structural and yields when
+descending terrain reaches it.
 
 Reactions are routed through generated flags where possible:
 

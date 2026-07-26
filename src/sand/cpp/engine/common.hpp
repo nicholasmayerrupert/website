@@ -202,7 +202,7 @@ struct Body {
   double vx = 0, vy = 0, omega = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
-  bool blastDebris = false; // tiny explosion rubble; never a persistent structural body
+  bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;

@@ -48,6 +48,10 @@ function smooth01(value) {
   return t * t * (3 - 2 * t);
 }
 
+function fract(value) {
+  return value - Math.floor(value);
+}
+
 function mixColor(a, b, t) {
   if (t <= 0) return a;
   if (t >= 1) return b;
@@ -55,6 +59,11 @@ function mixColor(a, b, t) {
   const bv = Number.parseInt(b.slice(1), 16);
   const channel = (shift) => Math.round(((av >> shift) & 255) + (((bv >> shift) & 255) - ((av >> shift) & 255)) * t);
   return `#${((channel(16) << 16) | (channel(8) << 8) | channel(0)).toString(16).padStart(6, '0')}`;
+}
+
+function rgbaColor(hex, alpha) {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(value >> 16) & 255},${(value >> 8) & 255},${value & 255},${alpha})`;
 }
 
 function mixPalette(a, b, t) {
@@ -95,6 +104,95 @@ function drawDither(ctx, w, h, horizon, daylight) {
   }
 }
 
+function drawHorizonBloom(ctx, w, horizon, palette, dayNight) {
+  if (horizon <= 0) return;
+  const spread = Math.max(22, horizon * 0.66);
+  const warmth = dayNight.sunVisible
+    ? Math.pow(1 - Math.sin(Math.PI * dayNight.sunProgress), 1.6)
+    : 0;
+  const haze = ctx.createLinearGradient(0, Math.max(0, horizon - spread), 0, horizon + 24);
+  haze.addColorStop(0, rgbaColor(palette.skyMid, 0));
+  haze.addColorStop(0.58, rgbaColor(palette.skyLow, 0.12 + dayNight.daylight * 0.05));
+  haze.addColorStop(0.82, rgbaColor(mixColor(palette.skyLow, '#ffe7bc', warmth * 0.54), 0.34));
+  haze.addColorStop(1, rgbaColor(palette.skyLow, 0));
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, Math.max(0, horizon - spread), w, spread + 24);
+}
+
+function drawSunShafts(ctx, w, horizon, dayNight) {
+  if (!dayNight.sunVisible || horizon <= 0) return;
+  const progress = dayNight.sunProgress;
+  const sunX = orbitX(w, progress);
+  const sunY = orbitY(horizon, progress);
+  const lowSun = Math.pow(1 - Math.sin(Math.PI * progress), 1.35);
+  const strength = (0.018 + lowSun * 0.052) * dayNight.daylight;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, w, Math.max(0, horizon + 8));
+  ctx.clip();
+  for (let i = 0; i < 6; i++) {
+    const spread = 22 + i * 19;
+    const lean = (i - 2.5) * 13;
+    ctx.fillStyle = `rgba(255,235,195,${strength * (0.82 - i * 0.07)})`;
+    ctx.beginPath();
+    ctx.moveTo(sunX - 1, sunY + 1);
+    ctx.lineTo(sunX + 2, sunY + 1);
+    ctx.lineTo(sunX + lean + spread, horizon + 18);
+    ctx.lineTo(sunX + lean - spread * 0.42, horizon + 18);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawAurora(ctx, w, horizon, camX, dayNight) {
+  const strength = smooth01((dayNight.starOpacity - 0.18) / 0.82);
+  if (strength <= 0 || horizon <= 18) return;
+  const colors = ['#55e6c1', '#78d9ef', '#ae8cff'];
+  const drift = dayNight.phase * Math.PI * 8 + camX * 0.002;
+  ctx.save();
+  for (let band = 0; band < colors.length; band++) {
+    const base = horizon * (0.18 + band * 0.095);
+    ctx.strokeStyle = rgbaColor(colors[band], strength * (0.09 - band * 0.014));
+    ctx.lineWidth = 5 - band * 0.8;
+    ctx.beginPath();
+    for (let x = -12; x <= w + 12; x += 7) {
+      const y = base
+        + Math.sin(x * 0.031 + drift + band * 1.7) * (4 + band)
+        + Math.sin(x * 0.071 - drift * 0.37) * 2;
+      if (x === -12) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = rgbaColor(mixColor(colors[band], '#ffffff', 0.48), strength * 0.075);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawGalacticBand(ctx, w, horizon, camX, camY, opacity) {
+  if (opacity <= 0 || horizon <= 12) return;
+  const offX = Math.floor(camX * 0.018 - w * 0.5);
+  const offY = Math.floor(backgroundDriftY(camY) * 0.12);
+  const period = 360;
+  const start = Math.floor((offX - period) / period) * period;
+  ctx.save();
+  for (let tile = start; tile < offX + w + period; tile += period) {
+    for (let i = 0; i < 88; i++) {
+      const seed = tile * 67 + i * 1291;
+      const x = tile + rand01(seed) * period - offX;
+      const centerY = horizon * 0.16 + fract((x + offX) / period) * horizon * 0.48 - offY;
+      const y = centerY + (rand01(seed + 3) - 0.5) * horizon * 0.23;
+      if (x < 0 || x >= w || y < 0 || y >= horizon) continue;
+      const closeness = 1 - Math.min(1, Math.abs(y - centerY) / Math.max(1, horizon * 0.12));
+      ctx.globalAlpha = opacity * (0.025 + closeness * 0.11);
+      ctx.fillStyle = rand01(seed + 9) > 0.7 ? '#d5c7ff' : '#bfeaf1';
+      ctx.fillRect(Math.round(x), Math.round(y), rand01(seed + 11) > 0.93 ? 2 : 1, 1);
+    }
+  }
+  ctx.restore();
+}
+
 function drawStars(ctx, w, horizon, camX, camY, opacity) {
   if (opacity <= 0) return;
   ctx.globalAlpha = opacity;
@@ -119,6 +217,24 @@ function drawStars(ctx, w, horizon, camX, camY, opacity) {
         ctx.fillRect(x + 1, y, 1, 1);
       }
     }
+
+    const constellationSeed = Math.round(tile / period) * 431;
+    const points = [];
+    for (let i = 0; i < 5; i++) {
+      points.push({
+        x: tile + 34 + i * 24 + rand01(constellationSeed + i * 17) * 9 - offX,
+        y: 8 + rand01(constellationSeed + i * 29) * Math.max(12, horizon * 0.38) - offY,
+      });
+    }
+    ctx.globalAlpha = opacity * 0.14;
+    ctx.strokeStyle = '#c6e7f0';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+    ctx.globalAlpha = opacity;
   }
   ctx.globalAlpha = 1;
 }
@@ -147,17 +263,38 @@ function drawSkyGlow(ctx, w, horizon, dayNight) {
     glow.addColorStop(1, `rgba(${rgb},0)`);
     ctx.fillStyle = glow;
     ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+
+    ctx.globalAlpha = alpha * 0.42;
+    ctx.strokeStyle = `rgb(${rgb})`;
+    ctx.lineWidth = 1;
+    for (let ring = 10; ring <= 16; ring += 3) {
+      ctx.strokeRect(Math.round(x - ring), Math.round(y - ring * 0.62), ring * 2, Math.round(ring * 1.24));
+    }
+    ctx.globalAlpha = 1;
   }
 }
 
 function drawPixelOrb(ctx, x, y, color, detail, rays = false) {
   const px = Math.round(x), py = Math.round(y);
-  ctx.fillStyle = color;
-  ctx.fillRect(px - 3, py - 2, 7, 5);
-  ctx.fillRect(px - 2, py - 3, 5, 7);
   if (rays) {
-    ctx.fillRect(px - 5, py, 1, 1); ctx.fillRect(px + 5, py, 1, 1);
-    ctx.fillRect(px, py - 5, 1, 1); ctx.fillRect(px, py + 5, 1, 1);
+    ctx.globalAlpha = 0.26;
+    ctx.fillStyle = '#fff0b2';
+    ctx.fillRect(px - 7, py, 15, 1);
+    ctx.fillRect(px, py - 7, 1, 15);
+    ctx.fillRect(px - 5, py - 5, 2, 2);
+    ctx.fillRect(px + 4, py - 5, 2, 2);
+    ctx.fillRect(px - 5, py + 4, 2, 2);
+    ctx.fillRect(px + 4, py + 4, 2, 2);
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = color;
+  ctx.fillRect(px - 4, py - 3, 9, 7);
+  ctx.fillRect(px - 3, py - 4, 7, 9);
+  if (rays) {
+    ctx.fillStyle = '#fff3c4';
+    ctx.fillRect(px - 2, py - 2, 5, 5);
+    ctx.fillStyle = '#fff9de';
+    ctx.fillRect(px - 1, py - 1, 3, 3);
   } else {
     ctx.fillStyle = detail;
     ctx.fillRect(px - 1, py - 2, 2, 1);
@@ -168,19 +305,23 @@ function drawPixelOrb(ctx, x, y, color, detail, rays = false) {
 
 function drawPixelMoon(ctx, x, y) {
   const px = Math.round(x), py = Math.round(y);
-  ctx.globalAlpha = 0.22;
+  ctx.globalAlpha = 0.16;
   ctx.fillStyle = '#dff4ff';
-  ctx.fillRect(px - 6, py - 4, 13, 9);
-  ctx.fillRect(px - 4, py - 6, 9, 13);
+  ctx.fillRect(px - 8, py - 5, 17, 11);
+  ctx.fillRect(px - 5, py - 8, 11, 17);
   ctx.globalAlpha = 1;
   ctx.fillStyle = '#f4fbff';
-  ctx.fillRect(px - 5, py - 3, 11, 7);
-  ctx.fillRect(px - 3, py - 5, 7, 11);
-  ctx.fillRect(px - 4, py - 4, 9, 9);
+  ctx.fillRect(px - 6, py - 4, 13, 9);
+  ctx.fillRect(px - 4, py - 6, 9, 13);
+  ctx.fillRect(px - 5, py - 5, 11, 11);
   ctx.fillStyle = '#b8cad1';
-  ctx.fillRect(px - 2, py - 3, 2, 2);
-  ctx.fillRect(px + 2, py, 2, 3);
-  ctx.fillRect(px - 3, py + 2, 2, 1);
+  ctx.fillRect(px - 3, py - 4, 3, 2);
+  ctx.fillRect(px + 2, py - 1, 3, 3);
+  ctx.fillRect(px - 4, py + 2, 3, 2);
+  ctx.fillRect(px, py + 4, 2, 1);
+  ctx.fillStyle = '#d8e5e8';
+  ctx.fillRect(px + 3, py - 4, 2, 1);
+  ctx.fillRect(px - 1, py, 2, 2);
 }
 
 function drawCelestialBodies(ctx, w, horizon, dayNight) {
@@ -194,15 +335,21 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
   }
 }
 
-function drawCloud(ctx, x, y, size, color, highlight, shadow) {
+function drawCloud(ctx, x, y, size, color, highlight, shadow, variant) {
   fillRect(ctx, x + size, y + size * 2, size * 6, size * 2, shadow);
+  if (variant > 0.68) fillRect(ctx, x + size * 3, y + size * 3, size * 3, size, shadow);
   fillRect(ctx, x, y + size, size * 7, size * 2, color);
   fillRect(ctx, x + size, y, size * 2, size * 4, color);
   fillRect(ctx, x + size * 3, y - size, size * 2, size * 5, color);
   fillRect(ctx, x + size * 5, y + size, size * 2, size * 3, color);
+  if (variant > 0.42) {
+    fillRect(ctx, x + size * 2, y - size * 2, size * 2, size * 2, color);
+    fillRect(ctx, x + size * 4, y, size * 2, size * 3, color);
+  }
   fillRect(ctx, x + size, y, size * 2, size, highlight);
   fillRect(ctx, x + size * 3, y - size, size * 2, size, highlight);
   fillRect(ctx, x + size * 5, y + size, size, size, highlight);
+  if (variant > 0.42) fillRect(ctx, x + size * 2, y - size * 2, size * 2, size, highlight);
 }
 
 export function cloudCycleOffset(phase, period) {
@@ -226,22 +373,86 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
       const size = 2 + Math.floor(rand01(seed + 2) * 2);
       const x = tile + rand01(seed) * period - offX;
       const y = 10 + rand01(seed + 1) * Math.max(16, horizon * 0.34) - offY;
-      drawCloud(ctx, x, y, size, color, highlight, shadow);
+      drawCloud(ctx, x, y, size, color, highlight, shadow, rand01(seed + 12));
     }
   }
 }
 
-function drawMistLayer(ctx, w, horizon, camX, camY, color) {
+function drawHighCloudLayer(ctx, w, horizon, camX, camY, color, phase) {
+  if (horizon <= 8) return;
+  const period = 260;
+  const drift = cloudCycleOffset(phase, period);
+  const offX = camX * 0.04 - w * 0.5 - drift;
+  const offY = backgroundDriftY(camY) * 0.05;
+  const start = Math.floor((offX - period) / period) * period;
+  const cycleColor = mixColor(color, '#ffffff', 0.42);
+  ctx.globalAlpha = 0.24;
+  ctx.fillStyle = cycleColor;
+  for (let tile = start; tile < offX + w + period; tile += period) {
+    const tileIndex = Math.round(tile / period);
+    const cycleTile = ((tileIndex % CLOUD_CYCLE_TILES) + CLOUD_CYCLE_TILES) % CLOUD_CYCLE_TILES;
+    for (let i = 0; i < 2; i++) {
+      const seed = cycleTile * 2003 + i * 733;
+      const x = Math.round(tile + rand01(seed) * period - offX);
+      const y = Math.round(7 + rand01(seed + 1) * Math.max(10, horizon * 0.25) - offY);
+      const length = 32 + Math.floor(rand01(seed + 2) * 44);
+      ctx.fillRect(x, y, length, 1);
+      ctx.fillRect(x + 7, y + 1, Math.floor(length * 0.68), 1);
+      ctx.fillRect(x + 18, y + 2, Math.floor(length * 0.32), 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawSkyLife(ctx, w, horizon, camX, dayNight, palette) {
+  if (horizon <= 12) return;
+  const birdOpacity = smooth01((dayNight.daylight - 0.36) / 0.42);
+  if (birdOpacity > 0) {
+    const period = 280;
+    const offX = camX * 0.09 - w * 0.5 - cloudCycleOffset(dayNight.phase, period);
+    const start = Math.floor((offX - period) / period) * period;
+    ctx.globalAlpha = birdOpacity * 0.48;
+    ctx.fillStyle = mixColor(palette.ridgeFar, '#17202a', 0.35);
+    for (let tile = start; tile < offX + w + period; tile += period) {
+      const tileIndex = Math.round(tile / period);
+      const cycleTile = ((tileIndex % CLOUD_CYCLE_TILES) + CLOUD_CYCLE_TILES) % CLOUD_CYCLE_TILES;
+      const seed = cycleTile * 1223;
+      const flockX = tile + 40 + rand01(seed) * 170 - offX;
+      const flockY = 12 + rand01(seed + 1) * Math.max(8, horizon * 0.34);
+      for (let bird = 0; bird < 5; bird++) {
+        const x = Math.round(flockX + bird * 5);
+        const y = Math.round(flockY + Math.abs(bird - 2) * 2 + rand01(seed + bird * 31) * 2);
+        ctx.fillRect(x - 1, y, 2, 1);
+        ctx.fillRect(x + 1, y - 1, 2, 1);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  const meteorProgress = fract(dayNight.phase * 16);
+  if (dayNight.starOpacity > 0.55 && meteorProgress < 0.12) {
+    const travel = meteorProgress / 0.12;
+    const x = w * (0.16 + travel * 0.54);
+    const y = horizon * (0.16 + travel * 0.31);
+    ctx.save();
+    ctx.globalAlpha = dayNight.starOpacity * (1 - travel) * 0.72;
+    ctx.fillStyle = '#e9fbff';
+    for (let i = 0; i < 9; i++) ctx.fillRect(Math.round(x - i * 2), Math.round(y - i), Math.max(1, 3 - Math.floor(i / 4)), 1);
+    ctx.restore();
+  }
+}
+
+function drawMistLayer(ctx, w, horizon, camX, camY, color, depth = 0.24, yOffset = 13, alpha = 0.18) {
   const period = 132;
-  const offX = camX * 0.24 - w * 0.5;
-  const offY = backgroundDriftY(camY) * 0.24;
+  const offX = camX * depth - w * 0.5;
+  const offY = backgroundDriftY(camY) * depth;
   const start = Math.floor((offX - period) / period) * period;
   ctx.fillStyle = mixColor(color, '#ffffff', 0.18);
-  ctx.globalAlpha = 0.18;
+  ctx.globalAlpha = alpha;
   for (let tile = start; tile < offX + w + period; tile += period) {
     const seed = Math.round(tile / period) * 811;
     const x = Math.round(tile - offX + rand01(seed) * 28);
-    const y = Math.round(horizon + 13 + rand01(seed + 1) * 10 - offY);
+    const y = Math.round(horizon + yOffset + rand01(seed + 1) * 10 - offY);
     const length = 34 + Math.floor(rand01(seed + 2) * 42);
     ctx.fillRect(x, y, length, 1);
     ctx.fillRect(x + 9, y + 2, Math.max(8, length - 20), 1);
@@ -252,13 +463,72 @@ function drawMistLayer(ctx, w, horizon, camX, camY, color) {
 function ridgeY(worldX, base, amp, seed) {
   const broad = Math.pow(Math.abs(Math.sin(worldX * 0.0105 + seed)), 1.7);
   const shoulder = Math.pow(Math.abs(Math.sin(worldX * 0.022 + seed * 1.9)), 1.35);
+  const crown = Math.pow(Math.abs(Math.sin(worldX * 0.0042 + seed * 0.73)), 4.2);
   const brokenEdge = Math.sin(worldX * 0.063 + seed * 3.1) * amp * 0.12;
-  return base + amp * 0.72 - broad * amp * 1.35 - shoulder * amp * 0.48 + brokenEdge;
+  return base + amp * 0.72 - broad * amp * 1.27 - shoulder * amp * 0.44 - crown * amp * 0.5 + brokenEdge;
 }
 
-function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
+function drawConifer(ctx, x, baseY, height, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, baseY - height, 1, height + 2);
+  for (let row = 2; row < height; row += 2) {
+    const halfWidth = Math.max(1, Math.floor(row * 0.38));
+    ctx.fillRect(x - halfWidth, baseY - height + row, halfWidth * 2 + 1, 1);
+    if (row + 1 < height) ctx.fillRect(x - Math.max(1, halfWidth - 1), baseY - height + row + 1, Math.max(3, halfWidth * 2 - 1), 1);
+  }
+}
+
+function drawObservatory(ctx, x, groundY, color, skyLow, starOpacity) {
+  const wall = mixColor(color, '#111820', 0.18);
+  const shade = mixColor(color, '#070b10', 0.34);
+  const edge = mixColor(color, skyLow, 0.5);
+  const px = Math.round(x), py = Math.round(groundY);
+
+  ctx.fillStyle = shade;
+  ctx.fillRect(px - 13, py - 2, 27, 3);
+  ctx.fillRect(px - 10, py - 5, 21, 4);
+  ctx.fillStyle = wall;
+  ctx.fillRect(px - 9, py - 12, 18, 8);
+  ctx.fillRect(px - 12, py - 9, 4, 7);
+  ctx.fillRect(px + 8, py - 10, 5, 8);
+  ctx.fillRect(px - 5, py - 16, 11, 5);
+  ctx.fillRect(px - 3, py - 18, 7, 2);
+  ctx.fillRect(px, py - 22, 1, 5);
+  ctx.fillRect(px - 2, py - 21, 5, 1);
+
+  ctx.fillStyle = edge;
+  ctx.globalAlpha = 0.54;
+  ctx.fillRect(px - 9, py - 13, 18, 1);
+  ctx.fillRect(px - 5, py - 17, 11, 1);
+  ctx.fillRect(px - 12, py - 10, 4, 1);
+  ctx.fillRect(px + 8, py - 11, 5, 1);
+  ctx.globalAlpha = 1;
+
+  const light = 0.12 + starOpacity * 0.88;
+  ctx.globalAlpha = light;
+  ctx.fillStyle = '#ffd36f';
+  ctx.fillRect(px - 7, py - 9, 2, 2);
+  ctx.fillRect(px - 2, py - 9, 2, 2);
+  ctx.fillRect(px + 4, py - 9, 2, 2);
+  ctx.fillRect(px + 10, py - 7, 1, 2);
+  ctx.fillStyle = '#fff2ad';
+  ctx.fillRect(px, py - 22, 1, 1);
+  ctx.globalAlpha = 1;
+
+  if (starOpacity > 0.12) {
+    ctx.save();
+    ctx.globalAlpha = starOpacity * 0.14;
+    ctx.fillStyle = '#ffe99d';
+    ctx.fillRect(px - 6, py - 24, 13, 5);
+    ctx.fillRect(px - 2, py - 28, 5, 13);
+    ctx.restore();
+  }
+}
+
+function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, features = {}) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
+  const effectiveBase = base - offY;
   const surfaceY = (x) => Math.round(ridgeY(x + offX, base - offY, amp, seed));
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -270,22 +540,17 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   ctx.closePath();
   ctx.fill();
 
-  if (detail >= 3) {
-    const treeColor = mixColor(color, '#071116', 0.24);
-    const treeStep = 15;
+  if (features.trees || detail >= 3) {
+    const treeColor = mixColor(color, '#071116', 0.28);
+    const treeStep = features.trees ? 10 : 15;
     const firstTree = Math.floor((offX - treeStep) / treeStep) * treeStep;
-    ctx.fillStyle = treeColor;
     for (let worldX = firstTree; worldX < offX + w + treeStep; worldX += treeStep) {
       const chance = rand01(worldX + seed * 557);
-      if (chance < 0.23) continue;
+      if (chance < 0.16) continue;
       const x = Math.round(worldX - offX);
       const baseY = surfaceY(x) + 2;
-      const treeHeight = 4 + Math.floor(chance * 5);
-      ctx.fillRect(x, baseY - treeHeight, 1, treeHeight + 2);
-      for (let row = 2; row < treeHeight; row += 2) {
-        const halfWidth = Math.max(1, Math.floor(row * 0.32));
-        ctx.fillRect(x - halfWidth, baseY - treeHeight + row, halfWidth * 2 + 1, 1);
-      }
+      const treeHeight = 5 + Math.floor(chance * (features.trees ? 7 : 4));
+      drawConifer(ctx, x, baseY, treeHeight, treeColor);
     }
   }
 
@@ -303,30 +568,87 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   }
   ctx.stroke();
 
-  // Alternating faces give each ridge structure as the camera pans.
+  // Alternating faces form broad lit and shadowed planes across the range.
   const facetPeriod = 48 + detail * 12;
   const firstFacet = Math.floor((offX - facetPeriod) / facetPeriod) * facetPeriod;
   for (let worldX = firstFacet; worldX < offX + w + facetPeriod; worldX += facetPeriod) {
     const x = worldX - offX;
     const peakY = surfaceY(x);
     const width = facetPeriod * (0.55 + rand01(worldX + seed * 101) * 0.3);
-    ctx.globalAlpha = 0.13 + detail * 0.025;
-    ctx.fillStyle = rand01(worldX + seed * 37) > 0.5 ? '#071116' : '#000000';
+    const lightFromLeft = (features.lightX ?? w * 0.28) < x;
+    ctx.globalAlpha = 0.14 + detail * 0.026;
+    ctx.fillStyle = '#03070a';
     ctx.beginPath();
     ctx.moveTo(x, peakY);
-    ctx.lineTo(x + width, peakY + amp * 1.5);
-    ctx.lineTo(x + width * 0.55, h);
+    ctx.lineTo(x + (lightFromLeft ? width : -width), peakY + amp * 1.5);
+    ctx.lineTo(x + (lightFromLeft ? width * 0.55 : -width * 0.55), h);
     ctx.closePath();
     ctx.fill();
 
-    ctx.globalAlpha = 0.18;
+    ctx.globalAlpha = 0.2;
     ctx.fillStyle = mixColor(color, skyLow, 0.52);
     ctx.beginPath();
     ctx.moveTo(x, peakY + 1);
-    ctx.lineTo(x - width * 0.28, peakY + amp * 0.62);
-    ctx.lineTo(x + width * 0.12, peakY + amp * 0.34);
+    ctx.lineTo(x + (lightFromLeft ? -width * 0.34 : width * 0.34), peakY + amp * 0.68);
+    ctx.lineTo(x + (lightFromLeft ? width * 0.1 : -width * 0.1), peakY + amp * 0.32);
     ctx.closePath();
     ctx.fill();
+  }
+
+  if (features.snow) {
+    const capColor = mixColor(skyLow, '#fff9e7', 0.46 + (features.daylight ?? 0) * 0.25);
+    const shadeColor = mixColor(capColor, color, 0.36);
+    let prevY = surfaceY(0);
+    let x = 4, y = surfaceY(4);
+    for (let nextX = 8; nextX <= w + 4; nextX += 4) {
+      const nextY = surfaceY(nextX);
+      if (y <= prevY && y < nextY && effectiveBase - y > amp * 0.34 && rand01(Math.round(x + offX) + seed * 719) < features.snow) {
+        const width = 6 + Math.floor(rand01(Math.round(x + offX) + seed * 883) * 7);
+        ctx.globalAlpha = 0.66 + (features.daylight ?? 0) * 0.2;
+        ctx.fillStyle = shadeColor;
+        ctx.beginPath();
+        ctx.moveTo(x - width, y + width * 0.78);
+        ctx.lineTo(x - width * 0.35, y + 3);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + width * 0.42, y + 4);
+        ctx.lineTo(x + width, y + width * 0.8);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = capColor;
+        ctx.beginPath();
+        ctx.moveTo(x - width * 0.62, y + width * 0.48);
+        ctx.lineTo(x - width * 0.22, y + 3);
+        ctx.lineTo(x, y);
+        ctx.lineTo(x + width * 0.18, y + 3);
+        ctx.lineTo(x + width * 0.38, y + 2);
+        ctx.lineTo(x + width * 0.56, y + width * 0.46);
+        ctx.closePath();
+        ctx.fill();
+      }
+      prevY = y;
+      x = nextX;
+      y = nextY;
+    }
+  }
+
+  if (features.waterfalls) {
+    const period = 176;
+    const firstFall = Math.floor((offX - period) / period) * period;
+    for (let worldX = firstFall; worldX < offX + w + period; worldX += period) {
+      if (rand01(worldX + seed * 977) < 0.42) continue;
+      const x = Math.round(worldX + 43 + rand01(worldX + seed * 991) * 48 - offX);
+      const startY = surfaceY(x) + 5;
+      const length = Math.max(10, Math.floor(amp * (0.72 + rand01(worldX + seed * 1013) * 0.64)));
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = '#071116';
+      ctx.fillRect(x - 1, startY - 1, 3, length + 3);
+      ctx.globalAlpha = 0.34 + (features.daylight ?? 0) * 0.34;
+      ctx.fillStyle = mixColor(skyLow, '#d5fbff', 0.58);
+      ctx.fillRect(x, startY, 1, length);
+      if (length > 18) ctx.fillRect(x + 1, startY + Math.floor(length * 0.58), 1, Math.floor(length * 0.33));
+      ctx.globalAlpha = 0.2;
+      ctx.fillRect(x - 3, startY + length, 7, 1);
+    }
   }
 
   // Sparse deterministic ledges add texture without animated noise.
@@ -342,6 +664,30 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     if (detail > 1 && rand01(worldX + seed * 401) > 0.6) ctx.fillRect(x + length - 1, y + 1, 1, 2);
   }
   ctx.restore();
+
+  if (features.lights && (features.starOpacity ?? 0) > 0.08) {
+    const period = 74;
+    const firstLight = Math.floor((offX - period) / period) * period;
+    ctx.globalAlpha = (features.starOpacity ?? 0) * 0.78;
+    for (let worldX = firstLight; worldX < offX + w + period; worldX += period) {
+      const x = Math.round(worldX + 19 + rand01(worldX + seed * 1103) * 34 - offX);
+      const y = surfaceY(x) - 2 - Math.floor(rand01(worldX + seed * 1117) * 6);
+      ctx.fillStyle = rand01(worldX + seed * 1129) > 0.52 ? '#ffd36f' : '#9ef0c9';
+      ctx.fillRect(x, y, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  if (features.landmark && w >= 120) {
+    const period = 760;
+    const firstLandmark = Math.floor((offX - period) / period) * period;
+    for (let tile = firstLandmark; tile < offX + w + period; tile += period) {
+      const worldX = tile + 52;
+      const x = worldX - offX;
+      if (x < -18 || x > w + 18) continue;
+      drawObservatory(ctx, x, surfaceY(x) + 1, color, skyLow, features.starOpacity ?? 0);
+    }
+  }
 }
 
 export function createParallaxBackground(container) {
@@ -399,26 +745,53 @@ export function createParallaxBackground(container) {
     const palette = paletteForPhase(dayNight.phase);
     const sky = ctx.createLinearGradient(0, 0, 0, h);
     sky.addColorStop(0, palette.skyTop);
-    sky.addColorStop(0.48, palette.skyMid);
+    sky.addColorStop(0.34, mixColor(palette.skyTop, palette.skyMid, 0.62));
+    sky.addColorStop(0.66, palette.skyMid);
     sky.addColorStop(1, palette.skyLow);
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, w, h);
 
-    drawDither(ctx, w, h, skyHeight, dayNight.daylight);
-    drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
+    drawHorizonBloom(ctx, w, skyHeight, palette, dayNight);
+    drawSunShafts(ctx, w, skyHeight, dayNight);
+    drawAurora(ctx, w, skyHeight, qx, dayNight);
+    drawGalacticBand(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
     drawSkyGlow(ctx, w, skyHeight, dayNight);
+    drawDither(ctx, w, h, skyHeight, dayNight.daylight);
+    drawSkyLife(ctx, w, skyHeight, qx, dayNight, palette);
+    drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
     drawCelestialBodies(ctx, w, skyHeight, dayNight);
+    drawHighCloudLayer(ctx, w, skyHeight, qx, qy, palette.cloudLight, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
-    drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 9, 13, palette.ridgeFar, 3.2, palette.skyLow, 1);
-    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow);
-    drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 24, 17, palette.ridgeMid, 7.9, palette.skyLow, 2);
-    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 43, 21, palette.ridgeNear, 12.4, palette.skyLow, 3);
+    const lightProgress = dayNight.sunVisible ? dayNight.sunProgress : dayNight.moonProgress;
+    const lightX = orbitX(w, lightProgress);
+    const commonFeatures = {
+      daylight: dayNight.daylight,
+      starOpacity: dayNight.starOpacity,
+      lightX,
+    };
+    drawRidge(ctx, w, h, qx, qy, 0.16, horizon + 14, 28, palette.ridgeFar, 3.2, palette.skyLow, 1, {
+      ...commonFeatures,
+      snow: 0.92,
+      landmark: true,
+    });
+    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow, 0.24, 16, 0.24);
+    drawRidge(ctx, w, h, qx, qy, 0.32, horizon + 36, 32, palette.ridgeMid, 7.9, palette.skyLow, 2, {
+      ...commonFeatures,
+      snow: 0.36,
+      waterfalls: true,
+    });
+    drawMistLayer(ctx, w, horizon, qx, qy, palette.cloudLight, 0.42, 43, 0.13);
+    drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 67, 36, palette.ridgeNear, 12.4, palette.skyLow, 3, {
+      ...commonFeatures,
+      trees: true,
+      lights: true,
+    });
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
-    drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2);
+    drawRidge(ctx, w, h, qx, qy, 0.72, horizon + 118, 16, palette.ridgeDeep, 18.5, palette.skyLow, 2, commonFeatures);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

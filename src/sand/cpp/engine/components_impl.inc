@@ -9,9 +9,12 @@ void ComponentSystem::prepareAssemblyScratch(size_t gridLen) {
   };
   prepareStamp(asmCells);
   prepareStamp(asmPlanned);
+  prepareStamp(asmExterior);
   prepareStamp(asmOpenAir);
   asmPlannedMat.resize(gridLen);
+  asmExteriorValue.resize(gridLen);
   asmOpenAirValue.resize(gridLen);
+  asmExteriorRegion.reserve((size_t)(E.cols + E.rows) * 4);
   asmAirFaces.reserve((size_t)(E.cols + E.rows) * 4);
   asmOpenAirPath.reserve((size_t)E.rows);
   asmVacatedBits.reserve((size_t)E.rows * ((E.cols + 63) >> 6));
@@ -1184,7 +1187,13 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
   // negative k and calling asmCells.has(nk) is a memory-safety hazard.
   const int gridLen = E.cols * E.rows;
   asmCells.reset((size_t)gridLen);
-  for (int k : cells) if (k >= 0 && k < gridLen) asmCells.add(k);
+  int minX = E.cols, minY = E.rows, maxX = -1, maxY = -1;
+  for (int k : cells) if (k >= 0 && k < gridLen) {
+    asmCells.add(k);
+    int y = k / E.cols, x = k - y * E.cols;
+    minX = imin(minX, x); minY = imin(minY, y);
+    maxX = imax(maxX, x); maxY = imax(maxY, y);
+  }
   if (planned) {
     asmPlanned.reset((size_t)gridLen);
     if (asmPlannedMat.size() < (size_t)gridLen) asmPlannedMat.resize((size_t)gridLen);
@@ -1203,6 +1212,52 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
     if (planned && asmPlanned.has(k)) return true;
     return isGroundingRigidCell(contactLayer, k);
   };
+  // Only media outside the assembly can support or buoy it. A cave enclosed by
+  // the moving cells is cargo space: its liquid cannot lift the surrounding
+  // shell. Connectivity ignores all other terrain because it is classifying
+  // the assembly's own inside/outside, not fluid reachability in the world.
+  asmExterior.reset((size_t)gridLen);
+  if (asmExteriorValue.size() < (size_t)gridLen) asmExteriorValue.resize((size_t)gridLen);
+  auto isExteriorMedium = [&](int start) {
+    if (start < 0 || start >= gridLen || asmCells.has(start)) return false;
+    int sy = start / E.cols, sx = start - sy * E.cols;
+    if (sx < minX || sx > maxX || sy < minY || sy > maxY) return true;
+    if (asmExterior.has(start)) return asmExteriorValue[start] == 1;
+
+    asmExteriorRegion.clear();
+    asmExteriorRegion.push_back(start);
+    asmExterior.add(start);
+    asmExteriorValue[start] = 2;
+    bool exterior = false;
+    static const int dx[8] = {-1, 0, 1, -1, 1, -1, 0, 1};
+    static const int dy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+    for (size_t qi = 0; qi < asmExteriorRegion.size() && !exterior; qi++) {
+      int k = asmExteriorRegion[qi], y = k / E.cols, x = k - y * E.cols;
+      if (x == minX || x == maxX || y == minY || y == maxY) {
+        exterior = true;
+        break;
+      }
+      for (int i = 0; i < 8; i++) {
+        int nx = x + dx[i], ny = y + dy[i];
+        if (nx < minX || nx > maxX || ny < minY || ny > maxY) {
+          exterior = true;
+          break;
+        }
+        int nk = ny * E.cols + nx;
+        if (asmCells.has(nk)) continue;
+        if (asmExterior.has(nk)) {
+          if (asmExteriorValue[nk] == 1) exterior = true;
+          continue;
+        }
+        asmExterior.add(nk);
+        asmExteriorValue[nk] = 2;
+        asmExteriorRegion.push_back(nk);
+      }
+    }
+    uint8_t result = exterior ? 1 : 0;
+    for (int k : asmExteriorRegion) asmExteriorValue[k] = result;
+    return exterior;
+  };
   asmAirFaces.clear();
   for (int k : cells) {
     if (k < 0 || k >= gridLen) continue;
@@ -1215,9 +1270,11 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
       uint8_t m = materialAt(nk);
       c.faces++;
       if (E.isLiquidMaterial(m)) {
-        c.liquidFaces++;
-        c.liquidDensityArea += DENSITY[m];
-        if (offs[i] == E.cols) c.bottomLiquidFaces++;
+        if (isExteriorMedium(nk)) {
+          c.liquidFaces++;
+          c.liquidDensityArea += DENSITY[m];
+          if (offs[i] == E.cols) c.bottomLiquidFaces++;
+        }
       } else if (E.isLooseSolidMaterial(m)) {
         if (offs[i] == E.cols) {
           c.bottomPowderFaces++;
@@ -1256,8 +1313,8 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
     double sideDensity = 0;
     int liquidSides = 0;
     uint8_t left = materialAt(start - 1), right = materialAt(end + 1);
-    if (E.isLiquidMaterial(left)) { sideDensity += DENSITY[left]; liquidSides++; }
-    if (E.isLiquidMaterial(right)) { sideDensity += DENSITY[right]; liquidSides++; }
+    if (E.isLiquidMaterial(left) && isExteriorMedium(start - 1)) { sideDensity += DENSITY[left]; liquidSides++; }
+    if (E.isLiquidMaterial(right) && isExteriorMedium(end + 1)) { sideDensity += DENSITY[right]; liquidSides++; }
     if (liquidSides > 0) {
       double density = sideDensity / liquidSides;
       c.displacedArea += runLength;
@@ -1268,7 +1325,7 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
       int below = k + E.cols;
       if (below >= gridLen || asmCells.has(below)) continue;
       uint8_t m = materialAt(below);
-      if (!E.isLiquidMaterial(m)) continue;
+      if (!E.isLiquidMaterial(m) || !isExteriorMedium(below)) continue;
       c.displacedArea += 0.5;
       c.displacedLiquidMass += 0.5 * DENSITY[m];
     }
@@ -1309,7 +1366,6 @@ void ComponentSystem::accumulateFaceContact(const uint8_t* g, const Cells& cells
     asmOpenAirValue[ak] = result;
     if (visible) c.openAirFaces++;
   }
-
 }
 
 int ComponentSystem::motionDecision(const FaceContact& c, size_t cellCount, double solidMass) {

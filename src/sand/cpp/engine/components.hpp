@@ -92,6 +92,9 @@ class ComponentSystem {
   StampSet asmCells;                          // current assembly's cell set (translateAssembly / accumulateFaceContact)
   StampSet asmPlanned;                        // sparse hypothetical material overlay for assembly contact probes
   std::vector<uint8_t> asmPlannedMat;
+  StampSet asmExterior;
+  std::vector<uint8_t> asmExteriorValue;
+  std::vector<int> asmExteriorRegion;
   std::vector<int> asmAirFaces;
   StampSet asmOpenAir;
   std::vector<uint8_t> asmOpenAirValue;

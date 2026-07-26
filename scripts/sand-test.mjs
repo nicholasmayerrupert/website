@@ -816,6 +816,45 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   e.destroy();
 }
 
+// Cave air is exterior to a detached island even when the cave roof blocks a
+// vertical path to the world top. Lava enclosed by the island is cargo, not an
+// external fluid that can buoy the surrounding stone shell upward.
+{
+  console.log('lava-filled cave island does not rise');
+  const BRICK = 25, STONE = 3, LAVA = 11;
+  const e = mk();
+  const roomL = 20, roomR = 180, roofY = 10, floorY = 110;
+  for (let y = roofY; y <= floorY; y++) {
+    e.paintDisc(roomL, y, 0, BRICK, true);
+    e.paintDisc(roomR, y, 0, BRICK, true);
+  }
+  for (let x = roomL; x <= roomR; x++) {
+    e.paintDisc(x, roofY, 0, BRICK, true);
+    e.paintDisc(x, floorY, 0, BRICK, true);
+  }
+  for (let y = 30; y <= 79; y++) for (let x = 55; x <= 144; x++) {
+    if (x === 55 || x === 144 || y === 30 || y === 79) e.paintDisc(x, y, 0, STONE, true);
+  }
+  e.syncComponents();
+  for (let y = 31; y < 79; y++) for (let x = 56; x < 144; x++) {
+    e.paintDisc(x, y, 0, LAVA, true);
+  }
+  const stoneTop = () => {
+    const g = e.getGrid(); let top = ROWS, n = 0;
+    for (let i = 0; i < g.length; i++) if (g[i] === STONE) {
+      top = Math.min(top, (i / COLS) | 0);
+      n++;
+    }
+    return { top, n };
+  };
+  const before = stoneTop();
+  run(80, e);
+  const after = stoneTop();
+  check(`lava-filled island did not rise (top ${before.top} -> ${after.top})`,
+    before.n > 0 && after.n === before.n && after.top >= before.top);
+  e.destroy();
+}
+
 // A fully submerged ice component must rise. The reverse-direction anti-jitter
 // probe must see the liquid that the planned move restores into vacated cells,
 // not the component's stale pre-move ICE cells.

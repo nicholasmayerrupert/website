@@ -138,11 +138,11 @@ Material or ABI schema changes:
 npm run generate
 ```
 
-C++ changes:
+C++ changes (from the repository root):
 
 ```sh
-source wasm/emenv.sh
-wasm/build.sh
+source ./wasm/emenv.sh
+./wasm/build.sh
 ```
 
 The WASM loader, binary, and `src/sand/wasm/build-info.json` are committed so a

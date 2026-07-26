@@ -178,7 +178,7 @@ classified from the untouched foreground/background snapshot; both layers are
 cut and repaired; then rubble, flecks, gas, and shock impulses consume the
 completed removal set. Cross-layer damage, gas, flecks, and shock are mirrored;
 physical rubble remains in the layer containing the explosive. Blast-ignited TNT
-propagates on the next tick. Due TNT is divided into stable 14-cell spatial
+uses a three-tick chain fuse. Due TNT is divided into stable 14-cell spatial
 regions.
 Fronts spanning at most six regions finish atomically, as do due fronts of at
 most 2,048 cells. Broader fronts consume one compact six-by-two-region window per

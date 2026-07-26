@@ -185,10 +185,10 @@ function blastDamagesMaterial(name) {
       if (sounds[s] === SOUND_EVENT.EXPLOSION) pulseIntensity.push(sounds[s + 3]);
   }
   check(`creative TNT diamond existed (${tnt0} cells)`, tnt0 === 13);
-  check(`creative TNT diamond retained a next-tick chain (${firstDrop} -> ${completed})`, completed - firstDrop === 1);
+  check(`creative TNT diamond retained a three-tick chain (${firstDrop} -> ${completed})`, completed - firstDrop === 3);
   // Nearby same-tick craters merge into one event at 1.55 intensity.
-  check(`creative TNT diamond emitted two compact blast fronts (${pulseIntensity.join(', ')})`,
-        pulseIntensity.length === 2 && pulseIntensity.every((v) => v <= 1.56));
+  check(`creative TNT diamond emitted three compact blast fronts (${pulseIntensity.join(', ')})`,
+        pulseIntensity.length === 3 && pulseIntensity.every((v) => v <= 1.56));
   e.destroy();
 }
 
@@ -209,7 +209,7 @@ function blastDamagesMaterial(name) {
     if (completed < 0 && now === 0) completed = i;
   }
   check(`blast front shortened the later static fuse to the chain cadence (${firstDrop} -> ${completed})`,
-        completed - firstDrop === 1);
+        completed - firstDrop === 3);
   e.destroy();
 }
 

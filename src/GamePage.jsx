@@ -2,8 +2,8 @@
 // engine because the survival UI still requires desktop input.
 
 import { useEffect } from 'react';
-import './sand/embed/sandGame'; // registers the <sand-game> custom element
 import { useMediaQuery } from './hooks/useMediaQuery';
+import { SandGame } from './sand/react/SandGame';
 
 const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
 const PERF_GAME = typeof window !== 'undefined' &&
@@ -43,7 +43,7 @@ export default function GamePage() {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-dark">
-      <sand-game mode="survival" perf-hud={PERF_GAME ? '' : undefined} />
+      <SandGame mode="survival" perfHud={PERF_GAME} />
 
       {/* Back to the portfolio */}
       <a

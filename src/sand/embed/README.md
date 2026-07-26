@@ -44,6 +44,7 @@ that shadow root for benchmark tooling.
 | --- | --- | --- | --- |
 | `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows inventory, crafting, hotbar, and health UI. Creative uses free camera and palette. |
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
+| `auto-start` | presence | absent | Coarse-pointer creative mode starts with drawing active instead of showing its internal `START` button. |
 
 Changing `initial-tool` after mount forwards the legacy tool selection to the
 runtime. Changing `mode` after mount is not a supported live transition; recreate
@@ -54,6 +55,7 @@ the element instead.
 | Event | Detail | When |
 | --- | --- | --- |
 | `sand:drawmodechange` | `{ on: boolean }` | Creative palette toggles drawing. Bubbles and crosses the shadow boundary. |
+| `sand:ready` | none | The engine, renderer, and mode-specific controls have initialized. Bubbles and crosses the shadow boundary. |
 
 ## Runtime Behavior
 
@@ -68,10 +70,10 @@ the element instead.
 - Hands, mining tools, and blocks show their footprint at the pointer. Weapons
   hide both that square and the legacy diamond preview while remaining aimed by
   the pointer.
-- Touch/coarse-pointer creative mode starts with draw mode off and shows only a
-  bottom `START` button so the host page can scroll. Starting reveals the normal
-  controls; choosing `SCROLL` hides them again. Fine-pointer survival starts
-  draw-enabled for immediate play.
+- Without `auto-start`, touch/coarse-pointer creative mode starts with draw mode
+  off and shows only a bottom `START` button so the host page can scroll.
+  Starting reveals the normal controls; choosing `SCROLL` hides them again.
+  Fine-pointer survival starts draw-enabled for immediate play.
 - The mobile creative material picker accepts vertical touch scrolling while
   the movement and view controls remain available around it.
 

@@ -3,9 +3,11 @@ import ReactDOM from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 
-// Start the hero engine alongside the statically imported portfolio entry,
-// rather than waiting for App -> Hero -> useEffect. /game has its own HTML entry.
-void import('./sand/embed/sandGame.js')
+// Fine-pointer desktop loads the hero engine alongside the portfolio entry.
+// Small and coarse-pointer devices wait for the visitor to start the simulation.
+const eagerSand = !window.matchMedia ||
+  window.matchMedia('(min-width: 768px) and (pointer: fine)').matches
+if (eagerSand) void import('./sand/embed/sandGame.js')
 
 function BootSignal() {
   useEffect(() => {

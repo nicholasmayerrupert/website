@@ -527,6 +527,7 @@ class SandGameElement extends HTMLElement {
     // 'creative': free camera, draw anywhere, no character.
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
+    const autoStart = this.hasAttribute('auto-start');
     let cancelled = false;
 
     const start = () => {
@@ -587,7 +588,7 @@ class SandGameElement extends HTMLElement {
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
-          let drawModeOn = !coarse;
+          let drawModeOn = !coarse || autoStart;
           syncMobileCreativeUi = () => {
             if (!coarse) return;
             const controlsHidden = !drawModeOn;
@@ -628,12 +629,12 @@ class SandGameElement extends HTMLElement {
           // the palette (desktop zooms via the keyboard).
           if (coarse) {
             this._zoom = createZoomButtons(root, game, applyDrawMode);
-            this._start = createMobileStartButton(root, () => applyDrawMode(true));
+            if (!autoStart) this._start = createMobileStartButton(root, () => applyDrawMode(true));
           }
         }
-        // Default draw state: fine pointers are always draw-enabled. Coarse
-        // pointers start off so touch pages can scroll until the user opts in.
-        const drawDefault = !coarse;
+        // Fine pointers are draw-enabled. Coarse pointers stay scrollable unless
+        // the host already received an explicit start action.
+        const drawDefault = !coarse || (mode === 'creative' && autoStart);
         game.setDrawMode(drawDefault);
         game.setAudioEnabled(!coarse || mode === 'survival' || drawDefault);
         sim.classList.toggle('draw-on', coarse && drawDefault);
@@ -660,6 +661,15 @@ class SandGameElement extends HTMLElement {
         this._onDocumentVisibility = syncViewportActivity;
         document.addEventListener('visibilitychange', this._onDocumentVisibility);
         syncViewportActivity();
+        if (coarse && mode === 'creative' && autoStart) {
+          setPageScrollLocked(true);
+          this.dispatchEvent(new CustomEvent('sand:drawmodechange', {
+            detail: { on: true }, bubbles: true, composed: true,
+          }));
+        }
+        this.dispatchEvent(new CustomEvent('sand:ready', {
+          bubbles: true, composed: true,
+        }));
       })
       .catch((e) => {
         if (cancelled || !this.isConnected) return;

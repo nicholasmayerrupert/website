@@ -3,7 +3,10 @@ import {
   DEFAULT_DAY_PHASE,
   sampleDayNight,
 } from '../game/dayNightCycle.js';
-import { createParallaxBackground } from '../game/parallaxBackground.js';
+import {
+  SURFACE_CAM_Y,
+  createParallaxBackground,
+} from '../game/parallaxBackground.js';
 
 const INITIAL_DAY_NIGHT = sampleDayNight(DEFAULT_DAY_PHASE);
 
@@ -19,6 +22,7 @@ export function SandBackground({ className = '' }) {
       const { width, height } = container.getBoundingClientRect();
       background.resize(width, height);
       background.draw({
+        camY: SURFACE_CAM_Y,
         dayNight: INITIAL_DAY_NIGHT,
         dayVisualKey: 'hero',
       });

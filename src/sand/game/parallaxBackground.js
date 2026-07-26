@@ -23,7 +23,7 @@ const NOON = Object.freeze({
   ridgeFar: '#718d9a', ridgeMid: '#527264', ridgeNear: '#35634f', ridgeDeep: '#222b29',
 });
 const HORIZON_RATIO = 0.36;
-const SURFACE_CAM_Y = -120;
+export const SURFACE_CAM_Y = -120;
 const MAX_VERTICAL_DRIFT_UP = 18;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
 const CLOUD_CYCLE_TILES = 4;

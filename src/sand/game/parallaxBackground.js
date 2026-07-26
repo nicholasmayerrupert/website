@@ -48,6 +48,14 @@ function smooth01(value) {
   return t * t * (3 - 2 * t);
 }
 
+function smoothNoise1D(value, seed) {
+  const cell = Math.floor(value);
+  const t = smooth01(value - cell);
+  const a = rand01(cell + seed);
+  const b = rand01(cell + seed + 1);
+  return a + (b - a) * t;
+}
+
 function mixColor(a, b, t) {
   if (t <= 0) return a;
   if (t >= 1) return b;
@@ -253,19 +261,42 @@ function ridgeY(worldX, base, amp, seed) {
   return base + amp * 0.72 - broad * amp * 1.35 - shoulder * amp * 0.48 + brokenEdge;
 }
 
-function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
+function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, worldStep = 0) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
   const surfaceWorldRawY = (worldX) => ridgeY(worldX, base - offY, amp, seed);
   const surfaceRawY = (x) => surfaceWorldRawY(x + offX);
   const surfaceY = (x) => Math.round(surfaceRawY(x));
+  const surfacePoints = [];
+  if (worldStep > 0) {
+    const firstWorldX = Math.floor((offX - worldStep) / worldStep) * worldStep;
+    const lastWorldX = Math.ceil((offX + w + worldStep) / worldStep) * worldStep;
+    for (let worldX = firstWorldX; worldX <= lastWorldX; worldX += worldStep) {
+      const rawY = surfaceWorldRawY(worldX);
+      surfacePoints.push({
+        x: Math.round(worldX - offX),
+        y: Math.round(rawY),
+        rawY,
+        worldX,
+      });
+    }
+  } else {
+    for (let x = 0; x <= w + 4; x += 4) {
+      const rawY = surfaceRawY(x);
+      surfacePoints.push({
+        x,
+        y: Math.round(rawY),
+        rawY,
+        worldX: x + offX,
+      });
+    }
+  }
+
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.moveTo(0, h);
-  for (let x = 0; x <= w + 4; x += 4) {
-    ctx.lineTo(x, surfaceY(x));
-  }
-  ctx.lineTo(w + 4, h);
+  ctx.moveTo(surfacePoints[0].x, h);
+  for (const point of surfacePoints) ctx.lineTo(point.x, point.y);
+  ctx.lineTo(surfacePoints[surfacePoints.length - 1].x, h);
   ctx.closePath();
   ctx.fill();
 
@@ -277,10 +308,10 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   ctx.strokeStyle = mixColor(color, skyLow, 0.34);
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (let x = 0; x <= w + 4; x += 4) {
-    const y = surfaceY(x) + 1;
-    if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
+  surfacePoints.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y + 1);
+    else ctx.lineTo(point.x, point.y + 1);
+  });
   ctx.stroke();
 
   // Alternating faces give each ridge structure as the camera pans.
@@ -329,48 +360,61 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     surfaceRawY,
     surfaceWorldRawY,
     surfaceY,
+    surfacePoints,
   };
 }
 
-function drawSnowCap(ctx, points, snow, shade, snowLine, amp, ridge) {
+function drawSnowCap(ctx, points, snow, shade, snowLine, amp) {
   if (points.length < 4) return;
-  const depthAt = ({ x, rawY }) => {
+  const capPoints = points.map((point) => {
+    const { rawY, worldX } = point;
     const altitude = clamp((snowLine - rawY) / Math.max(1, amp * 0.7), 0, 1);
-    const worldX = Math.round(x + ridge.offX);
-    return Math.round(Math.pow(altitude, 0.72) * amp * (0.24 + rand01(worldX * 419) * 0.08));
-  };
+    const variation = 0.24 + smoothNoise1D(worldX / 18, 419) * 0.08;
+    return {
+      ...point,
+      depth: Math.round(Math.pow(altitude, 0.72) * amp * variation),
+    };
+  });
 
   ctx.fillStyle = snow;
   ctx.beginPath();
-  points.forEach(({ x, y }, index) => {
+  capPoints.forEach(({ x, y }, index) => {
     if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   });
-  for (let i = points.length - 1; i >= 0; i--) {
-    const point = points[i];
-    ctx.lineTo(point.x, point.y + depthAt(point));
+  for (let i = capPoints.length - 1; i >= 0; i--) {
+    const point = capPoints[i];
+    ctx.lineTo(point.x, point.y + point.depth);
   }
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = shade;
-  ctx.lineWidth = 1;
+  // Filled one-pixel bands keep both snow edges crisp on the low-resolution
+  // canvas without introducing a second antialiased contour.
+  ctx.fillStyle = shade;
   ctx.beginPath();
-  points.forEach((point, index) => {
-    const depth = depthAt(point);
-    if (index === 0) ctx.moveTo(point.x, point.y + depth);
-    else ctx.lineTo(point.x, point.y + depth);
+  capPoints.forEach((point, index) => {
+    const y = point.y + Math.max(0, point.depth - 1);
+    if (index === 0) ctx.moveTo(point.x, y); else ctx.lineTo(point.x, y);
   });
-  ctx.stroke();
+  for (let i = capPoints.length - 1; i >= 0; i--) {
+    const point = capPoints[i];
+    ctx.lineTo(point.x, point.y + point.depth);
+  }
+  ctx.closePath();
+  ctx.fill();
 
-  // Seal the cap against the mountain edge after clipping. This covers the
-  // ridge crest's antialiased edge without allowing snow into the sky.
-  ctx.strokeStyle = snow;
-  ctx.lineWidth = 1.5;
+  ctx.fillStyle = snow;
   ctx.beginPath();
-  points.forEach((point, index) => {
-    if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+  capPoints.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y - 1);
+    else ctx.lineTo(point.x, point.y - 1);
   });
-  ctx.stroke();
+  for (let i = capPoints.length - 1; i >= 0; i--) {
+    const point = capPoints[i];
+    ctx.lineTo(point.x, point.y + 1);
+  }
+  ctx.closePath();
+  ctx.fill();
 }
 
 function drawSnowCaps(ctx, w, h, ridge, base, amp, color, daylight) {
@@ -378,31 +422,31 @@ function drawSnowCaps(ctx, w, h, ridge, base, amp, color, daylight) {
   const snow = mixColor(color, '#f5f5e9', 0.42 + daylight * 0.34);
   const shade = mixColor(snow, color, 0.28);
 
-  // Clip to the exact ridge path, then build each cap from those same sampled
-  // contour points so snow and rock share one pixel-perfect upper edge.
+  // The clip and every cap reuse the ridge's world-anchored contour points.
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(-4, h);
-  for (let x = -4; x <= w + 4; x += 4) ctx.lineTo(x, ridge.surfaceY(x));
-  ctx.lineTo(w + 4, h);
+  const points = ridge.surfacePoints;
+  ctx.moveTo(points[0].x, h);
+  for (const point of points) ctx.lineTo(point.x, point.y);
+  ctx.lineTo(points[points.length - 1].x, h);
   ctx.closePath();
   ctx.clip();
 
-  let previous = { x: -4, y: ridge.surfaceY(-4), rawY: ridge.surfaceRawY(-4) };
+  let previous = points[0];
   let cap = [];
-  for (let x = 0; x <= w + 4; x += 4) {
-    const point = { x, y: ridge.surfaceY(x), rawY: ridge.surfaceRawY(x) };
+  for (let i = 1; i < points.length; i++) {
+    const point = points[i];
     if (point.rawY < snowLine) {
       if (cap.length === 0) cap.push(previous);
       cap.push(point);
     } else if (cap.length) {
       cap.push(point);
-      drawSnowCap(ctx, cap, snow, shade, snowLine, amp, ridge);
+      drawSnowCap(ctx, cap, snow, shade, snowLine, amp);
       cap = [];
     }
     previous = point;
   }
-  if (cap.length) drawSnowCap(ctx, cap, snow, shade, snowLine, amp, ridge);
+  if (cap.length) drawSnowCap(ctx, cap, snow, shade, snowLine, amp);
   ctx.restore();
 }
 
@@ -662,7 +706,7 @@ export function createParallaxBackground(container) {
     drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
-    const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2);
+    const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, 4);
     drawSnowCaps(ctx, w, h, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);

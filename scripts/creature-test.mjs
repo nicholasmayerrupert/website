@@ -346,6 +346,34 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
     results.every(Boolean));
 }
 
+// Cave encounters follow the player's absolute depth. Their habitat search
+// must use the loaded deep-cavern window rather than snapping back to the
+// shallow cave band below the procedural surface.
+{
+  const caveSpecies = [CREATURE.BORE_SENTINEL, CREATURE.MINIGUNNER];
+  const results = [];
+  for (const species of caveSpecies) {
+    const e = attachTestHooks(createEngineWasm({
+      cols: 512, rows: 352, worldSeed: 0xD33F + species,
+      sinksOn: false, infinite: true,
+    }));
+    for (let shift = 0; shift < 12; shift++) e.shiftWorldXY(0, 128);
+    e.setViewport(1, 1, 160, 100);
+    e.spawnPlayer(256, 176);
+    e.cameraSet(176, 126);
+    let spawned = false;
+    for (let salt = 0; salt < 64 && !spawned; salt++)
+      spawned = e._spawnNearFocus(species, salt * 977 + species);
+    const candidate = e.getCreatures().find((c) => c.species === species && c.alive);
+    results.push(spawned && candidate &&
+      candidate.y >= 2 && candidate.y + candidate.h <= e.rows - 2 &&
+      e.getWorldOffsetY() + candidate.y > 1000);
+    e.destroy();
+  }
+  check('cave enemies spawn in habitat inside the loaded deep-cavern window',
+    results.every(Boolean));
+}
+
 // When the loaded buffer is entirely visible, no off-screen entry exists. The
 // natural spawn is then an inert, audible portal for 0.9–1.4 seconds before the
 // same reserved actor id materializes.
@@ -558,6 +586,40 @@ check('roster includes ambient fauna plus all five explosive-survival enemies',
   e.shiftWorldXY(-128, 0); e.stepActors();
   check('returning to the area restores the same creature', byId(e, id)?.id === id);
   e.destroy();
+}
+
+// Once an actor leaves the loaded window, its terrain no longer exists. Save it
+// immediately so time spent away cannot alter its pose or health against empty
+// off-window cells. Horizontal and vertical streaming share this lifecycle.
+{
+  const axes = [[128, 0], [0, 128]];
+  const results = [];
+  for (const [dx, dy] of axes) {
+    const e = createEngineWasm({
+      cols: 224, rows: 160, worldSeed: 0x51A9 + dx + dy,
+      sinksOn: false, infinite: true,
+    });
+    for (let y = 70; y < 110; y++)
+      for (let x = 4; x < 220; x++) e.paintDisc(x, y, 0, MAT.WATER, true);
+    const ox = e.getWorldOffsetX(), oy = e.getWorldOffsetY();
+    const id = e.spawnCreature(CREATURE.PIKE, ox + 60, oy + 80);
+    const before = byId(e, id);
+    e.setCreatureRuntime(true, false);
+    e.shiftWorldXY(dx, dy);
+    e.stepActors();
+    const hibernated = !byId(e, id);
+    actors(e, 180);
+    e.shiftWorldXY(-dx, -dy);
+    e.stepActors();
+    const restored = byId(e, id);
+    results.push(hibernated && restored?.id === id &&
+      Math.abs(restored.x - before.x) < 0.5 &&
+      Math.abs(restored.y - before.y) < 0.5 &&
+      restored.health === before.health);
+    e.destroy();
+  }
+  check('derendered enemies hibernate immediately and restore unchanged on both axes',
+    results.every(Boolean));
 }
 
 if (done()) process.exit(1);

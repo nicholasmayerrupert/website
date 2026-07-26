@@ -204,10 +204,15 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
       double altitude = 10 + whash2(seed ^ 0x33u, attempt, centerX) * 34;
       wy = surface - s.h - altitude;
     } else if (r.habitat == CH_CAVE) {
-      int depth = 12 + (int)(whash2(seed ^ 0x44u, centerX, attempt) * 72);
-      wy = surface + depth;
+      double caveRoll = whash2(seed ^ 0x44u, centerX, attempt);
+      double shallowCaveTop = surface + 12;
+      bool followFocusDepth = fy > shallowCaveTop + 72;
+      wy = followFocusDepth
+        ? std::floor(fy - s.h * 0.5 + (caveRoll - 0.5) * 72)
+        : shallowCaveTop + (int)(caveRoll * 72);
       bool found = false;
-      for (int d = 0; d < 48 && !found; d++) for (int sign : {1, -1}) {
+      int scanRadius = followFocusDepth ? 96 : 48;
+      for (int d = 0; d < scanRadius && !found; d++) for (int sign : {1, -1}) {
         double cy = wy + sign * d;
         if (boxFitsHabitat(speciesId, wx, cy)) { wy = cy; found = true; break; }
       }
@@ -350,7 +355,7 @@ void CreatureSystem::maintainPopulation() {
   size_t w = 0;
   for (size_t i = 0; i < creatures.size(); i++) {
     if (!creatures[i].alive && creatures[i].deathTicks <= 0) continue;
-    if (!inLoadedWindow(creatures[i], 80)) {
+    if (E.fg.infinite && !inLoadedWindow(creatures[i])) {
       if (creatures[i].alive) {
         int rx = (int)std::floor(creatures[i].wx / HIBERNATE_REGION);
         int ry = (int)std::floor(creatures[i].wy / HIBERNATE_REGION);
@@ -371,7 +376,7 @@ void CreatureSystem::maintainPopulation() {
     auto it = dormantRegions.find(regionKey(rx, ry)); if (it == dormantRegions.end()) continue;
     std::vector<Creature>& bucket = it->second; size_t keep = 0;
     for (size_t i = 0; i < bucket.size(); i++) {
-      if (inLoadedWindow(bucket[i], 24)) creatures.push_back(bucket[i]);
+      if (inLoadedWindow(bucket[i])) creatures.push_back(bucket[i]);
       else { if (keep != i) bucket[keep] = bucket[i]; keep++; }
     }
     bucket.resize(keep);

@@ -216,6 +216,7 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     lay.nextStoneId = lay.nextPlantId = lay.nextIceId = lay.nextBodyId = 1;
     lay.myceliumActive = false;
     lay.groundDirty = lay.groundContentDirty = lay.looseGroundDirty = true;
+    lay.sleepingBodySupportDirty = false;
     lay.groundBaseValid = false;
   };
   reset(e->fg);

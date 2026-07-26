@@ -145,6 +145,15 @@
   }
 
   bool stepWorld() {
+    auto retainSleepingBodySupportDirty = [&](Layer& lay) {
+      if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
+      for (Body* b : lay.bodies) if (!b->awake) {
+        lay.sleepingBodySupportDirty = true;
+        break;
+      }
+    };
+    retainSleepingBodySupportDirty(fg);
+    retainSleepingBodySupportDirty(bg);
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
     if (!fgA && !bgA) { useLayer(&fg); perfStepMs = 0; return false; }
     double t0 = emscripten_get_now();

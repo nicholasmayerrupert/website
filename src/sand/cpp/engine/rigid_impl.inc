@@ -869,7 +869,10 @@ void RigidBodySystem::bakeRestingBodies() {
   if (baked) E.L->bodies = std::move(keep);
 }
 void RigidBodySystem::moveBodies() {
-  if (E.L->bodies.empty() && E.L->bodyCells.empty()) return;
+  if (E.L->bodies.empty() && E.L->bodyCells.empty()) {
+    E.L->sleepingBodySupportDirty = false;
+    return;
+  }
   // stepLayer already grounded the live grid before assembly motion. Repeat that
   // full-grid work only if an assembly/loose-support change dirtied it afterward,
   // or if a sleeping body needs its support revalidated. This matters for blast
@@ -886,8 +889,9 @@ void RigidBodySystem::moveBodies() {
   }
   bool needsGroundRefresh = E.L->groundDirty || E.L->groundContentDirty || E.L->looseGroundDirty;
   // Stable sleeping bodies remain stamped in the live grid. Support/topology
-  // invalidation wakes this path through the dirty flags above.
-  if (!hasAwakeBody && !needsGroundRefresh) return;
+  // invalidation wakes this path even when the preceding grounding pass consumed
+  // the source dirty flags.
+  if (!hasAwakeBody && !needsGroundRefresh && !E.L->sleepingBodySupportDirty) return;
   if (hasSleepingBody || needsGroundRefresh) {
     if (E.bgEnabled && (E.comps.jointGroundReady || E.comps.jointSupportValid)) {
       // joint stamps intact; body wake probes do not need a re-flood
@@ -901,6 +905,7 @@ void RigidBodySystem::moveBodies() {
   // other E.L->bodies still count as support; body-on-body stacks cascade (the
   // bottom body wakes and moves, then the contact solver wakes those above).
   for (Body* b : E.L->bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
+  E.L->sleepingBodySupportDirty = false;
   for (int k : E.L->bodyCells) { if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
   std::unordered_map<int, std::array<double, 5>> prePoses;
   for (Body* b : E.L->bodies) prePoses[b->id] = {b->px, b->py, b->angle, b->vx, b->vy};

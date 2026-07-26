@@ -122,6 +122,9 @@ struct Layer {
   // free rigid bodies + ownership
   std::vector<Body*> bodies; int nextBodyId = 1;
   std::vector<int32_t> bodyOwner;
+  // One-shot wake probe retained across the grounding pass, which consumes the
+  // dirty flags that reported a possible change beneath a sleeping body.
+  bool sleepingBodySupportDirty = false;
   // lit static TNT cells counting down to detonation (cell -> ticksLeft). Body TNT
   // uses Body::fuseTicks instead, since a body's cells move. See explosives.inc.
   std::unordered_map<int, int> pendingDetonations;
@@ -181,6 +184,7 @@ struct Layer {
     reactionFlags.assign(n, 0); reactionSteam.assign(n, 0); reactionFires.assign(n, 0); reactionIgnite.assign(n, 0);
     mineDamage.assign(n, 0);
     bodyOwner.assign(n, -1);
+    sleepingBodySupportDirty = false;
     if (role != ESR_AUTHORITY) {
       light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
       skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);

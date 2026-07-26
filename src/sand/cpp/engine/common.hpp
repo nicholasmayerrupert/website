@@ -152,12 +152,13 @@ static double valueNoise2D(uint32_t seed, double x, double y) {
   double ab = whash2(seed, (int)xi, (int)yi + 1), bb = whash2(seed, (int)xi + 1, (int)yi + 1);
   return wlerp(wlerp(aa, ba, u), wlerp(ab, bb, u), v);
 }
-static double wfbm2(uint32_t seed, double x, double y, int octaves, double gain) {
+// Keep the octave loops shared instead of cloning them into each terrain query.
+static __attribute__((noinline)) double wfbm2(uint32_t seed, double x, double y, int octaves, double gain) {
   double amp = 1, freq = 1, sum = 0, norm = 0;
   for (int o = 0; o < octaves; o++) { double n = valueNoise2D(seed + (uint32_t)o * 1013u, x * freq, y * freq); sum += n * amp; norm += amp; amp *= gain; freq *= 2; }
   return norm > 0 ? sum / norm : 0;
 }
-static double wridged2(uint32_t seed, double x, double y, int octaves, double gain) {
+static __attribute__((noinline)) double wridged2(uint32_t seed, double x, double y, int octaves, double gain) {
   double amp = 1, freq = 1, sum = 0, norm = 0;
   for (int o = 0; o < octaves; o++) { double n = valueNoise2D(seed + (uint32_t)o * 1013u, x * freq, y * freq); double r = 1 - std::fabs(n * 2 - 1); sum += r * r * amp; norm += amp; amp *= gain; freq *= 2; }
   return norm > 0 ? sum / norm : 0;

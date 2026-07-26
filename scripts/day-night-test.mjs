@@ -40,17 +40,21 @@ check('dawn and dusk terrain are visibly brighter than midnight',
   sunrise.skyLight >= midnight.skyLight + 60 && sunset.skyLight >= midnight.skyLight + 60);
 
 check('midnight palette keeps a deep blue sky and moonlit mountain separation', JSON.stringify(paletteForPhase(0)) === JSON.stringify({
-  skyTop: '#081226', skyMid: '#19334f', skyGlow: '#38566b', skyLow: '#6f7c78',
-  cloudDark: '#96abb4', cloudLight: '#cedde0',
+  skyTop: '#071327', skyMid: '#102b47', skyGlow: '#24455e', skyLow: '#3b5970',
+  cloudDark: '#71899a', cloudLight: '#a7bac3',
   ridgeFar: '#31485f', ridgeMid: '#263f43', ridgeNear: '#17352f', ridgeDeep: '#11171a',
 }));
 check('day palette reaches the intended noon colors', JSON.stringify(paletteForPhase(0.5)) === JSON.stringify({
-  skyTop: '#4d90c6', skyMid: '#84bcd2', skyGlow: '#bdd4d3', skyLow: '#e4d8b5',
-  cloudDark: '#c9d8dc', cloudLight: '#f4f2e8',
+  skyTop: '#448cc6', skyMid: '#78b7d5', skyGlow: '#add5e1', skyLow: '#d4e8ea',
+  cloudDark: '#b8cdd5', cloudLight: '#edf4f2',
   ridgeFar: '#718d9a', ridgeMid: '#527264', ridgeNear: '#35634f', ridgeDeep: '#222b29',
 }));
 check('sunset transitions from blue through orange before pink',
-  paletteForPhase(0.72).skyLow === '#f5d3a0' && paletteForPhase(0.80).skyLow === '#f3a184');
+  paletteForPhase(0.72).skyLow === '#f1bf89' && paletteForPhase(0.80).skyLow === '#e69a81');
+check('midnight and noon horizons stay cool while golden hour stays warm',
+  paletteForPhase(0).skyLow === '#3b5970' &&
+  paletteForPhase(0.5).skyLow === '#d4e8ea' &&
+  paletteForPhase(0.72).skyLow === '#f1bf89');
 
 let bounded = true, quantized = true;
 for (let i = 0; i <= 1000; i++) {

@@ -3,23 +3,23 @@ import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
 const PIXEL_SCALE = 4;
 
 const NIGHT = Object.freeze({
-  skyTop: '#081226', skyMid: '#19334f', skyGlow: '#38566b', skyLow: '#6f7c78',
-  cloudDark: '#96abb4', cloudLight: '#cedde0',
+  skyTop: '#071327', skyMid: '#102b47', skyGlow: '#24455e', skyLow: '#3b5970',
+  cloudDark: '#71899a', cloudLight: '#a7bac3',
   ridgeFar: '#31485f', ridgeMid: '#263f43', ridgeNear: '#17352f', ridgeDeep: '#11171a',
 });
 const TWILIGHT = Object.freeze({
-  skyTop: '#2f294f', skyMid: '#874b70', skyGlow: '#d66d79', skyLow: '#f3a184',
-  cloudDark: '#ad849a', cloudLight: '#e7b5aa',
+  skyTop: '#242849', skyMid: '#5c416b', skyGlow: '#b45f73', skyLow: '#e69a81',
+  cloudDark: '#9a7d94', cloudLight: '#d9aaa6',
   ridgeFar: '#685b70', ridgeMid: '#4c4b4f', ridgeNear: '#30433b', ridgeDeep: '#1b1e22',
 });
 const GOLDEN = Object.freeze({
-  skyTop: '#3c6c91', skyMid: '#ba6b59', skyGlow: '#e99a67', skyLow: '#f5d3a0',
-  cloudDark: '#bd988c', cloudLight: '#f0caa5',
+  skyTop: '#346b99', skyMid: '#7f9cad', skyGlow: '#d99a75', skyLow: '#f1bf89',
+  cloudDark: '#af9a91', cloudLight: '#ead0b1',
   ridgeFar: '#776d70', ridgeMid: '#596054', ridgeNear: '#3c5542', ridgeDeep: '#242725',
 });
 const NOON = Object.freeze({
-  skyTop: '#4d90c6', skyMid: '#84bcd2', skyGlow: '#bdd4d3', skyLow: '#e4d8b5',
-  cloudDark: '#c9d8dc', cloudLight: '#f4f2e8',
+  skyTop: '#448cc6', skyMid: '#78b7d5', skyGlow: '#add5e1', skyLow: '#d4e8ea',
+  cloudDark: '#b8cdd5', cloudLight: '#edf4f2',
   ridgeFar: '#718d9a', ridgeMid: '#527264', ridgeNear: '#35634f', ridgeDeep: '#222b29',
 });
 const HORIZON_RATIO = 0.36;
@@ -127,11 +127,15 @@ function drawStars(ctx, w, horizon, camX, camY, opacity) {
 function drawPixelOrb(ctx, x, y, color, detail, rays = false) {
   const px = Math.round(x), py = Math.round(y);
   ctx.fillStyle = color;
-  ctx.fillRect(px - 3, py - 2, 7, 5);
-  ctx.fillRect(px - 2, py - 3, 5, 7);
+  ctx.fillRect(px - 4, py - 3, 9, 7);
+  ctx.fillRect(px - 3, py - 4, 7, 9);
   if (rays) {
-    ctx.fillRect(px - 5, py, 1, 1); ctx.fillRect(px + 5, py, 1, 1);
-    ctx.fillRect(px, py - 5, 1, 1); ctx.fillRect(px, py + 5, 1, 1);
+    ctx.fillRect(px - 7, py, 2, 1); ctx.fillRect(px + 6, py, 2, 1);
+    ctx.fillRect(px, py - 7, 1, 2); ctx.fillRect(px, py + 6, 1, 2);
+    ctx.fillRect(px - 5, py - 5, 1, 1); ctx.fillRect(px + 5, py - 5, 1, 1);
+    ctx.fillRect(px - 5, py + 5, 1, 1); ctx.fillRect(px + 5, py + 5, 1, 1);
+    ctx.fillStyle = detail;
+    ctx.fillRect(px - 2, py - 2, 5, 5);
   } else {
     ctx.fillStyle = detail;
     ctx.fillRect(px - 1, py - 2, 2, 1);
@@ -166,11 +170,16 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
     const t = dayNight.sunProgress;
     const x = orbitX(t);
     const y = horizon - Math.sin(Math.PI * t) * arcHeight;
-    ctx.globalAlpha = 0.07 + dayNight.daylight * 0.05;
-    fillRect(ctx, x - 10, y - 5, 21, 11, '#fff1bd');
-    fillRect(ctx, x - 6, y - 8, 13, 17, '#fff1bd');
+    const horizonWarmth = 1 - Math.sin(Math.PI * t);
+    const outer = mixColor('#ffe39a', '#ffc477', horizonWarmth * 0.48);
+    const inner = mixColor('#fff5c9', '#ffe7ad', horizonWarmth * 0.3);
+    ctx.globalAlpha = 0.055 + dayNight.daylight * 0.045;
+    fillRect(ctx, x - 14, y - 6, 29, 13, outer);
+    fillRect(ctx, x - 9, y - 10, 19, 21, outer);
+    ctx.globalAlpha = 0.09 + dayNight.daylight * 0.035;
+    fillRect(ctx, x - 7, y - 7, 15, 15, inner);
     ctx.globalAlpha = 1;
-    drawPixelOrb(ctx, x, y, '#ffe39a', '#fff1bd', true);
+    drawPixelOrb(ctx, x, y, outer, inner, true);
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
@@ -178,14 +187,32 @@ function drawCelestialBodies(ctx, w, horizon, dayNight) {
   }
 }
 
-function drawCloud(ctx, x, y, size, color) {
-  fillRect(ctx, x, y + size, size * 7, size * 2, color);
-  fillRect(ctx, x + size, y, size * 2, size * 4, color);
-  fillRect(ctx, x + size * 3, y - size, size * 2, size * 5, color);
-  fillRect(ctx, x + size * 5, y + size, size * 2, size * 3, color);
-  ctx.globalAlpha = 0.26;
-  fillRect(ctx, x + size, y, size * 2, 1, mixColor(color, '#ffffff', 0.44));
-  fillRect(ctx, x + size * 3, y - size, size * 2, 1, mixColor(color, '#ffffff', 0.44));
+function drawCloud(ctx, x, y, size, color, variant) {
+  const shadow = mixColor(color, '#435566', 0.28);
+  const highlight = mixColor(color, '#ffffff', 0.32);
+  const wide = variant > 0.48;
+
+  fillRect(ctx, x + size, y + size * 2, size * (wide ? 8 : 7), size * 2, shadow);
+  fillRect(ctx, x + size * 2, y + size, size * 2, size * 3, shadow);
+  fillRect(ctx, x + size * 4, y, size * 2, size * 4, shadow);
+  fillRect(ctx, x + size * 6, y + size, size * 2, size * 3, shadow);
+
+  fillRect(ctx, x, y + size, size * (wide ? 9 : 8), size * 2, color);
+  fillRect(ctx, x + size, y, size * 2, size * 3, color);
+  fillRect(ctx, x + size * 3, y - size, size * 3, size * 4, color);
+  fillRect(ctx, x + size * 6, y, size * 2, size * 3, color);
+  if (wide) {
+    fillRect(ctx, x + size * 8, y + size * 2, size * 3, size, shadow);
+    fillRect(ctx, x + size * 8, y + size, size * 2, size * 2, color);
+  } else {
+    fillRect(ctx, x - size * 2, y + size * 2, size * 2, size, color);
+  }
+
+  fillRect(ctx, x + size, y, size * 2, 1, highlight);
+  fillRect(ctx, x + size * 3, y - size, size * 3, 1, highlight);
+  fillRect(ctx, x + size * 6, y, size * 2, 1, highlight);
+  ctx.globalAlpha = 0.34;
+  fillRect(ctx, x + size * 2, y + size * 3, size * 5, 1, shadow);
   ctx.globalAlpha = 1;
 }
 
@@ -208,7 +235,7 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
       const size = 2 + Math.floor(rand01(seed + 2) * 2);
       const x = tile + rand01(seed) * period - offX;
       const y = 10 + rand01(seed + 1) * Math.max(16, horizon * 0.34) - offY;
-      drawCloud(ctx, x, y, size, color);
+      drawCloud(ctx, x, y, size, color, rand01(seed + 12));
     }
   }
 }
@@ -223,7 +250,8 @@ function ridgeY(worldX, base, amp, seed) {
 function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
-  const surfaceY = (x) => Math.round(ridgeY(x + offX, base - offY, amp, seed));
+  const surfaceRawY = (x) => ridgeY(x + offX, base - offY, amp, seed);
+  const surfaceY = (x) => Math.round(surfaceRawY(x));
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(0, h);
@@ -287,13 +315,13 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     if (detail > 1 && rand01(worldX + seed * 401) > 0.6) ctx.fillRect(x + length - 1, y + 1, 1, 2);
   }
   ctx.restore();
-  return { offX, offY, surfaceY };
+  return { offX, offY, surfaceRawY, surfaceY };
 }
 
 function drawSnowCap(ctx, points, snow, shade, snowLine, amp, ridge) {
   if (points.length < 4) return;
-  const depthAt = ({ x, y }) => {
-    const altitude = clamp((snowLine - y) / Math.max(1, amp * 0.7), 0, 1);
+  const depthAt = ({ x, rawY }) => {
+    const altitude = clamp((snowLine - rawY) / Math.max(1, amp * 0.7), 0, 1);
     const worldX = Math.round(x + ridge.offX);
     return Math.round(Math.pow(altitude, 0.72) * amp * (0.24 + rand01(worldX * 419) * 0.08));
   };
@@ -319,6 +347,16 @@ function drawSnowCap(ctx, points, snow, shade, snowLine, amp, ridge) {
     else ctx.lineTo(point.x, point.y + depth);
   });
   ctx.stroke();
+
+  // Seal the cap against the mountain edge after clipping. This covers the
+  // ridge crest's antialiased edge without allowing snow into the sky.
+  ctx.strokeStyle = snow;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) ctx.moveTo(point.x, point.y); else ctx.lineTo(point.x, point.y);
+  });
+  ctx.stroke();
 }
 
 function drawSnowCaps(ctx, w, h, ridge, base, amp, color, daylight) {
@@ -336,11 +374,11 @@ function drawSnowCaps(ctx, w, h, ridge, base, amp, color, daylight) {
   ctx.closePath();
   ctx.clip();
 
-  let previous = { x: -4, y: ridge.surfaceY(-4) };
+  let previous = { x: -4, y: ridge.surfaceY(-4), rawY: ridge.surfaceRawY(-4) };
   let cap = [];
   for (let x = 0; x <= w + 4; x += 4) {
-    const point = { x, y: ridge.surfaceY(x) };
-    if (point.y < snowLine) {
+    const point = { x, y: ridge.surfaceY(x), rawY: ridge.surfaceRawY(x) };
+    if (point.rawY < snowLine) {
       if (cap.length === 0) cap.push(previous);
       cap.push(point);
     } else if (cap.length) {
@@ -408,11 +446,11 @@ function drawLodge(ctx, x, platformY, variant, light, ridge) {
   const wallTop = platformY - wallHeight;
   const peakX = left + Math.floor(width * 0.5);
   const peakY = wallTop - 7;
-  const roof = '#211c1c';
-  const roofLight = '#55443a';
-  const timber = variant ? '#5a3a27' : '#68452d';
-  const timberDark = '#34231c';
-  const wallLight = mixColor(timber, '#d4a66c', 0.25);
+  const roof = '#252323';
+  const roofLight = '#514c48';
+  const timber = variant ? '#514943' : '#5a5048';
+  const timberDark = '#34302d';
+  const wallLight = mixColor(timber, '#aaa093', 0.3);
 
   // A level beam and short stone-and-timber piers seat the lodge on the ridge.
   ctx.fillStyle = '#2a201c';
@@ -502,7 +540,7 @@ function drawLodge(ctx, x, platformY, variant, light, ridge) {
 }
 
 function drawLodges(ctx, w, ridge, seed, daylight) {
-  const period = 270;
+  const period = 540;
   const first = Math.floor((ridge.offX - period) / period) * period;
   const light = 1 - smooth01((daylight - 0.08) / 0.68);
   for (let tile = first; tile < ridge.offX + w + period; tile += period) {
@@ -512,7 +550,7 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
     for (const shift of [0, -22, 22, -44, 44]) {
       const candidate = startX + shift;
       const screenX = candidate - ridge.offX;
-      const ys = [-11, 0, 11].map((dx) => ridge.surfaceY(screenX + dx));
+      const ys = [-11, 0, 11].map((dx) => ridge.surfaceRawY(screenX + dx));
       const candidateSlope = Math.max(...ys) - Math.min(...ys);
       if (candidateSlope < slope) {
         slope = candidateSlope;
@@ -521,7 +559,11 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
     }
     const x = Math.round(worldX - ridge.offX);
     if (x < -28 || x > w + 28 || slope > 6) continue;
-    const platformY = Math.min(ridge.surfaceY(x - 11), ridge.surfaceY(x), ridge.surfaceY(x + 11)) + 1;
+    const platformY = Math.round(Math.min(
+      ridge.surfaceRawY(x - 11),
+      ridge.surfaceRawY(x),
+      ridge.surfaceRawY(x + 11),
+    )) + 4;
     drawLodge(ctx, x, platformY, rand01(tile + seed * 1217) > 0.58 ? 1 : 0, light, ridge);
   }
 }

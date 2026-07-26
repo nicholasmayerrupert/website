@@ -110,10 +110,44 @@ function drawStars(ctx, w, horizon, camX, camY, opacity) {
       if (x < 0 || x >= w || y < 0 || y >= horizon) continue;
       ctx.fillStyle = rand01(seed + 13) > 0.78 ? '#f9f3c6' : '#d6edf2';
       ctx.fillRect(x, y, 1, 1);
-      if (rand01(seed + 31) > 0.93) ctx.fillRect(x + 1, y, 1, 1);
+      if (rand01(seed + 31) > 0.93) {
+        ctx.globalAlpha = opacity * 0.72;
+        ctx.fillRect(x - 1, y, 3, 1);
+        ctx.fillRect(x, y - 1, 1, 3);
+        ctx.globalAlpha = opacity;
+      } else if (rand01(seed + 31) > 0.78) {
+        ctx.fillRect(x + 1, y, 1, 1);
+      }
     }
   }
   ctx.globalAlpha = 1;
+}
+
+function orbitX(w, progress) {
+  return w * (0.04 + 0.56 * progress);
+}
+
+function orbitY(horizon, progress) {
+  const arcHeight = Math.max(12, horizon * 0.68);
+  return horizon - Math.sin(Math.PI * progress) * arcHeight;
+}
+
+function drawSkyGlow(ctx, w, horizon, dayNight) {
+  if (horizon <= 0) return;
+  const bodies = [];
+  if (dayNight.sunVisible) bodies.push([dayNight.sunProgress, '255,211,126', 0.25]);
+  if (dayNight.moonVisible) bodies.push([dayNight.moonProgress, '174,218,239', 0.14]);
+  for (const [progress, rgb, alpha] of bodies) {
+    const x = orbitX(w, progress);
+    const y = orbitY(horizon, progress);
+    const radius = Math.max(18, horizon * 0.38);
+    const glow = ctx.createRadialGradient(x, y, 1, x, y, radius);
+    glow.addColorStop(0, `rgba(${rgb},${alpha})`);
+    glow.addColorStop(0.38, `rgba(${rgb},${alpha * 0.42})`);
+    glow.addColorStop(1, `rgba(${rgb},0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
 }
 
 function drawPixelOrb(ctx, x, y, color, detail, rays = false) {
@@ -150,25 +184,25 @@ function drawPixelMoon(ctx, x, y) {
 }
 
 function drawCelestialBodies(ctx, w, horizon, dayNight) {
-  const arcHeight = Math.max(12, horizon * 0.68);
-  // The centered site navigation occupies the geometric apex of the sky.
-  // Bias the visible arc left so noon/midnight bodies remain unobstructed.
-  const orbitX = (t) => w * (0.04 + 0.56 * t);
   if (dayNight.sunVisible) {
     const t = dayNight.sunProgress;
-    drawPixelOrb(ctx, orbitX(t), horizon - Math.sin(Math.PI * t) * arcHeight, '#ffe39a', '#ffe39a', true);
+    drawPixelOrb(ctx, orbitX(w, t), orbitY(horizon, t), '#ffe39a', '#ffe39a', true);
   }
   if (dayNight.moonVisible) {
     const t = dayNight.moonProgress;
-    drawPixelMoon(ctx, orbitX(t), horizon - Math.sin(Math.PI * t) * arcHeight);
+    drawPixelMoon(ctx, orbitX(w, t), orbitY(horizon, t));
   }
 }
 
-function drawCloud(ctx, x, y, size, color) {
+function drawCloud(ctx, x, y, size, color, highlight, shadow) {
+  fillRect(ctx, x + size, y + size * 2, size * 6, size * 2, shadow);
   fillRect(ctx, x, y + size, size * 7, size * 2, color);
   fillRect(ctx, x + size, y, size * 2, size * 4, color);
   fillRect(ctx, x + size * 3, y - size, size * 2, size * 5, color);
   fillRect(ctx, x + size * 5, y + size, size * 2, size * 3, color);
+  fillRect(ctx, x + size, y, size * 2, size, highlight);
+  fillRect(ctx, x + size * 3, y - size, size * 2, size, highlight);
+  fillRect(ctx, x + size * 5, y + size, size, size, highlight);
 }
 
 export function cloudCycleOffset(phase, period) {
@@ -179,6 +213,8 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
   const drift = cloudCycleOffset(phase, period);
   const offX = camX * depth - w * 0.5 - drift;
   const offY = backgroundDriftY(camY) * depth;
+  const highlight = mixColor(color, '#ffffff', 0.22);
+  const shadow = mixColor(color, '#17202a', 0.20);
   const start = Math.floor((offX - 40) / period) * period;
   for (let tile = start; tile < offX + w + period; tile += period) {
     for (let i = 0; i < count; i++) {
@@ -190,9 +226,27 @@ function drawCloudLayer(ctx, w, horizon, camX, camY, depth, color, count, period
       const size = 2 + Math.floor(rand01(seed + 2) * 2);
       const x = tile + rand01(seed) * period - offX;
       const y = 10 + rand01(seed + 1) * Math.max(16, horizon * 0.34) - offY;
-      drawCloud(ctx, x, y, size, color);
+      drawCloud(ctx, x, y, size, color, highlight, shadow);
     }
   }
+}
+
+function drawMistLayer(ctx, w, horizon, camX, camY, color) {
+  const period = 132;
+  const offX = camX * 0.24 - w * 0.5;
+  const offY = backgroundDriftY(camY) * 0.24;
+  const start = Math.floor((offX - period) / period) * period;
+  ctx.fillStyle = mixColor(color, '#ffffff', 0.18);
+  ctx.globalAlpha = 0.18;
+  for (let tile = start; tile < offX + w + period; tile += period) {
+    const seed = Math.round(tile / period) * 811;
+    const x = Math.round(tile - offX + rand01(seed) * 28);
+    const y = Math.round(horizon + 13 + rand01(seed + 1) * 10 - offY);
+    const length = 34 + Math.floor(rand01(seed + 2) * 42);
+    ctx.fillRect(x, y, length, 1);
+    ctx.fillRect(x + 9, y + 2, Math.max(8, length - 20), 1);
+  }
+  ctx.globalAlpha = 1;
 }
 
 function ridgeY(worldX, base, amp, seed) {
@@ -215,6 +269,25 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   ctx.lineTo(w + 4, h);
   ctx.closePath();
   ctx.fill();
+
+  if (detail >= 3) {
+    const treeColor = mixColor(color, '#071116', 0.24);
+    const treeStep = 15;
+    const firstTree = Math.floor((offX - treeStep) / treeStep) * treeStep;
+    ctx.fillStyle = treeColor;
+    for (let worldX = firstTree; worldX < offX + w + treeStep; worldX += treeStep) {
+      const chance = rand01(worldX + seed * 557);
+      if (chance < 0.23) continue;
+      const x = Math.round(worldX - offX);
+      const baseY = surfaceY(x) + 2;
+      const treeHeight = 4 + Math.floor(chance * 5);
+      ctx.fillRect(x, baseY - treeHeight, 1, treeHeight + 2);
+      for (let row = 2; row < treeHeight; row += 2) {
+        const halfWidth = Math.max(1, Math.floor(row * 0.32));
+        ctx.fillRect(x - halfWidth, baseY - treeHeight + row, halfWidth * 2 + 1, 1);
+      }
+    }
+  }
 
   ctx.save();
   ctx.clip();
@@ -333,12 +406,14 @@ export function createParallaxBackground(container) {
 
     drawDither(ctx, w, h, skyHeight, dayNight.daylight);
     drawStars(ctx, w, skyHeight, qx, qy, dayNight.starOpacity);
+    drawSkyGlow(ctx, w, skyHeight, dayNight);
     // Celestial bodies belong behind the weather: either cloud layer may pass
     // over and partially occlude the sun or moon as it drifts.
     drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
     drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 9, 13, palette.ridgeFar, 3.2, palette.skyLow, 1);
+    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow);
     drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 24, 17, palette.ridgeMid, 7.9, palette.skyLow, 2);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 43, 21, palette.ridgeNear, 12.4, palette.skyLow, 3);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so

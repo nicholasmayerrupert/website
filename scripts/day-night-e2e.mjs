@@ -63,7 +63,7 @@ try {
       state: T.getDayNight(),
       skyLuma: luma(0, 0, W, Math.max(1, Math.floor(H * 0.30))),
       ridgeLuma: luma(0, Math.floor(H * 0.38), W, Math.max(1, Math.floor(H * 0.58))),
-      stars: exactColorCount(214, 237, 242) + exactColorCount(249, 243, 198),
+      stars: exactColorCount(225, 241, 243) + exactColorCount(249, 231, 183) + exactColorCount(185, 220, 255),
       sun: exactColorCount(255, 227, 154),
       moon: exactColorCount(244, 251, 255),
     };

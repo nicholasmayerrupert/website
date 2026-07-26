@@ -10,6 +10,8 @@
   // Deterministic terrain queries (TerrainGen, terrain.hpp) — composed here;
   // method bodies in terrain_impl.inc. Streaming + fill passes below.
   TerrainGen terrain{*this};
+  static constexpr int VILLAGE_LATTICE = 420;
+  static constexpr double VILLAGE_CHANCE = 0.70;
   // Shims for the external users (player spawn, render lighting, ABI).
   int genSurfaceAt(int worldX) { return terrain.genSurfaceAt(worldX); }
   int genSurfaceAbs(int worldX) { return terrain.genSurfaceAbs(worldX); }
@@ -55,10 +57,10 @@
       // Leave a clean skyline around deterministic villages. Besides making the
       // settlement readable, this prevents background tree components from
       // overlapping the foreground buildings across simulation layers.
-      bool nearVillage = false; int vq = worldX / 420; if (worldX < 0 && worldX % 420) vq--;
+      bool nearVillage = false; int vq = worldX / VILLAGE_LATTICE; if (worldX < 0 && worldX % VILLAGE_LATTICE) vq--;
       uint32_t villageSeed = L->worldSeed ^ 0x57121314u;
-      for (int v = vq - 1; v <= vq + 1; v++) if (whash1(villageSeed ^ 0xA11A6Eu, v) <= 0.78) {
-        int vc = v * 420 + 76 + (int)(whash1(villageSeed ^ 0xA11A6Fu, v) * 268);
+      for (int v = vq - 1; v <= vq + 1; v++) if (whash1(villageSeed ^ 0xA11A6Eu, v) <= VILLAGE_CHANCE) {
+        int vc = v * VILLAGE_LATTICE + 76 + (int)(whash1(villageSeed ^ 0xA11A6Fu, v) * 268);
         if (std::abs(worldX - vc) < 252) { nearVillage = true; break; }
       }
       if (nearVillage) continue;
@@ -229,7 +231,6 @@
     // apothecaries, storehouses, and a meeting hall. The foreground retains a
     // generous walk-through silhouette; the solid background wall carries the
     // windows, furniture, tools, produce, banners, and other lived-in detail.
-    static const int VILLAGE_LATTICE = 420;
     int vxMin = floorDiv(wx0, VILLAGE_LATTICE), vxMax = floorDiv(wx1, VILLAGE_LATTICE);
     auto stampCottage = [&](int cx, int ordinal, bool hall) {
       int role = ordinal & 3, variant = (ordinal >> 2) & 1;
@@ -462,17 +463,19 @@
       }
     };
     for (int vx = vxMin; vx <= vxMax; vx++) {
-      if (whash1(sseed ^ 0xA11A6Eu, vx) > 0.78) continue;
+      if (whash1(sseed ^ 0xA11A6Eu, vx) > VILLAGE_CHANCE) continue;
       int center = vx * VILLAGE_LATTICE + 76 + (int)(whash1(sseed ^ 0xA11A6Fu, vx) * 268);
       if (terrain.genSurfaceAbs(center) >= L->gSeaRow) continue;
       int count = 5 + (int)(whash1(sseed ^ 0xA11A70u, vx) * 3);
-      for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 58, i, i == count / 2);
       int wellX = center + count * 29 + 12, wellY;
 
-      // A continuous stone street and lanterns turn the individual facades into
+      // A continuous sand street and lanterns turn the individual facades into
       // one settlement. Everything follows the terrain instead of flattening it.
       int streetLeft = center - count * 29 - 30, streetRight = wellX + 12;
-      for (int x = streetLeft; x <= streetRight; x++) put(x, terrain.genSurfaceAbs(x), SANDSTONE);
+      for (int x = streetLeft; x <= streetRight; x++) put(x, terrain.genSurfaceAbs(x), SAND);
+      // Facades and their masonry foundations remain embedded through the loose
+      // street layer.
+      for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 58, i, i == count / 2);
       // Streetlamps live entirely in the background plane, whose emissive light
       // projects into the foreground. They remain bright without becoming narrow
       // collision posts between otherwise player-clear buildings.

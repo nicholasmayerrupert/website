@@ -397,7 +397,9 @@ bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
                                          p.mouthX, p.mouthY, 6.5, 7.2, 0xE101u);
     bool inner = taperedSegmentContains(worldX, worldY, p.entryX, p.entryY,
                                          p.mouthX, p.mouthY, 4.8, 5.8, 0xE101u);
-    if (outer && !inner) return true;
+    // The stone sleeve occupies only solid terrain, leaving junctions with the
+    // adjoining backbone segment fully open.
+    if (outer && !inner && !genIsBackboneCave(worldX, worldY)) return true;
   }
   return false;
 }
@@ -413,18 +415,36 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
   constexpr int BACKGROUND_SOLID_Y = DEEP_BLEND_TOP;
   bool result = false;
   if (E.L->isBackground && worldY < BACKGROUND_SOLID_Y) {
-    // One broad density field forms occasional enclosed background chambers.
-    // Its threshold rises ahead of the deep overlap, producing a continuous
-    // solid backdrop throughout the transition.
-    double warpX = (wfbm2(E.L->gCaveSeed ^ 0xCA71u, worldX * 0.006, worldY * 0.006, 1, 0.5) - 0.5) * 14.0;
-    double warpY = (wfbm2(E.L->gCaveSeed ^ 0xCA72u, worldX * 0.006, worldY * 0.006, 1, 0.5) - 0.5) * 12.0;
-    double chamber = wfbm2(E.L->gCaveSeed ^ 0x55u,
-                           (worldX + warpX) * CAVE_FREQ * 0.38,
-                           (worldY + warpY) * CAVE_FREQ * 0.34, 3, 0.5);
-    double solidify = std::fmax(0.0, std::fmin(1.0,
-      (double)(worldY - BACKGROUND_FADE_TOP)
-      / (double)(BACKGROUND_SOLID_Y - BACKGROUND_FADE_TOP)));
-    result = chamber > 0.825 + solidify * 0.20;
+    // Rare background recesses stay inside separated lattice cells, bounding
+    // their size and preventing neighbouring voids from merging into broad cuts.
+    constexpr int CELL_W = 128, CELL_H = 112;
+    int gx = floorDiv(worldX, CELL_W), gy = floorDiv(worldY, CELL_H);
+    uint32_t chamberSeed = E.L->gCaveSeed ^ 0xBACC610u;
+    if (whash2(chamberSeed ^ 0x01u, gx, gy) < 0.12) {
+      int cx = gx * CELL_W + CELL_W / 2
+             + (int)std::lround((whash2(chamberSeed ^ 0x02u, gx, gy) - 0.5) * 32.0);
+      int cy = gy * CELL_H + CELL_H / 2
+             + (int)std::lround((whash2(chamberSeed ^ 0x03u, gx, gy) - 0.5) * 28.0);
+      double radiusX = 14.0 + whash2(chamberSeed ^ 0x04u, gx, gy) * 14.0;
+      double radiusY = 11.0 + whash2(chamberSeed ^ 0x05u, gx, gy) * 13.0;
+      double nx = (worldX - cx) / radiusX;
+      double ny = (worldY - cy) / radiusY;
+      double shear = (whash2(chamberSeed ^ 0x06u, gx, gy) - 0.5) * 0.45;
+      double curve = (whash2(chamberSeed ^ 0x09u, gx, gy) - 0.5) * 0.55;
+      nx += ny * shear + (ny * ny - 0.35) * curve;
+      double rough = (valueNoise2D(chamberSeed ^ 0x07u, worldX * 0.055, worldY * 0.055) - 0.5) * 0.62
+                   + (valueNoise2D(chamberSeed ^ 0x08u, worldX * 0.130, worldY * 0.110) - 0.5) * 0.28;
+      double notchSide = whash2(chamberSeed ^ 0x0Au, gx, gy) < 0.5 ? -1.0 : 1.0;
+      double notchY = (whash2(chamberSeed ^ 0x0Bu, gx, gy) - 0.5) * 0.70;
+      double notchX = nx - notchSide * 0.82, notchDy = ny - notchY;
+      bool notch = notchX * notchX + notchDy * notchDy < 0.13;
+      // Recesses taper out before the upper/deep overlap, leaving its background
+      // continuously solid.
+      double solidify = std::fmax(0.0, std::fmin(1.0,
+        (double)(worldY - BACKGROUND_FADE_TOP)
+        / (double)(BACKGROUND_SOLID_Y - BACKGROUND_FADE_TOP)));
+      result = !notch && nx * nx + ny * ny < 0.78 + rough - solidify * 0.72;
+    }
   } else if (!E.L->isBackground && worldY < DEEP_BLEND_BOTTOM) {
     result = genIsBackboneCave(worldX, worldY);
   }
@@ -534,6 +554,11 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
   // A two-cell stone sleeve keeps loose biome mantles from collapsing sideways
   // into the foreground's player-clear surface route.
   if (genIsEntranceWall(worldX, worldY)) return STONE;
+  // Natural entrances carve their backbone through the dry surface mantle. The
+  // later cave check still opens underground caves beneath oceans without
+  // piercing the seabed.
+  if (!underwater && depth < GEN_SKIN + soil + CAVE_SURFACE_BUFFER
+      && genOpenCaveAt(worldX, worldY)) return EMPTY;
   // Both layers share the visible skin + soil mantle. Matching strata prevent
   // gaps in foreground dirt/sand from exposing an unrelated stone backdrop.
   if (depth < GEN_SKIN) return genSkinMat(biome, slope, underwater);

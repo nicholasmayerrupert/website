@@ -52,6 +52,59 @@ const mk = (cols, rows, seed) => createEngineWasm({
   large.destroy();
 }
 
+// The stone sleeve around a natural entrance must not form a connected cap where
+// its first segment meets the rest of the cave backbone. Small isolated stone
+// cells remain valid cave-basin decoration.
+{
+  let openEntranceCells = 0, blockedEntranceCells = 0, largestStoneBlocker = 0;
+  for (const seed of [0, 0xBED, 0xBEEF]) {
+    const cols = 1280, rows = 200;
+    const e = mk(cols, rows, seed);
+    const grid = e.getGrid();
+    const offX = e.getWorldOffsetX(), offY = e.getWorldOffsetY();
+    const blocked = new Uint8Array(grid.length);
+    for (let x = 2; x < cols - 2; x++) {
+      const worldX = offX + x;
+      const surface = e.worldSurfaceAbsAt(worldX);
+      for (let worldY = surface; worldY <= surface + 24; worldY++) {
+        const y = worldY - offY;
+        if (y < 1 || y >= rows - 1 || !e.worldIsCaveAt(0, worldX, worldY)) continue;
+        openEntranceCells++;
+        if (grid[y * cols + x] === MAT.STONE) {
+          blocked[y * cols + x] = 1;
+          blockedEntranceCells++;
+        }
+      }
+    }
+    const seen = new Uint8Array(blocked.length);
+    const stack = [];
+    for (let start = 0; start < blocked.length; start++) {
+      if (!blocked[start] || seen[start]) continue;
+      seen[start] = 1;
+      stack.length = 0;
+      stack.push(start);
+      let cells = 0;
+      while (stack.length) {
+        const k = stack.pop();
+        const x = k % cols, y = (k / cols) | 0;
+        cells++;
+        for (const next of [
+          x ? k - 1 : -1, x + 1 < cols ? k + 1 : -1,
+          y ? k - cols : -1, y + 1 < rows ? k + cols : -1,
+        ]) {
+          if (next < 0 || !blocked[next] || seen[next]) continue;
+          seen[next] = 1;
+          stack.push(next);
+        }
+      }
+      largestStoneBlocker = Math.max(largestStoneBlocker, cells);
+    }
+    e.destroy();
+  }
+  check(`entrance sleeves leave cave junctions open (largest blocker ${largestStoneBlocker}, ${blockedEntranceCells}/${openEntranceCells} decorated cells)`,
+    openEntranceCells > 10_000 && largestStoneBlocker <= 6);
+}
+
 // Flood from every surface entrance in a macro-region. The guaranteed backbone
 // must carry that flood into the deep cave band without tunnelling through solids.
 function caveReach(e, region) {
@@ -146,52 +199,64 @@ function caveReach(e, region) {
     oversizedMouths === 0 && straightMouths === 0);
 }
 
-// The background is a solid visual/support layer. Rare rounded chambers are
-// allowed, but it must not duplicate the foreground graph or form long thin lines.
+// The background is a solid visual/support layer. Rare bounded recesses are
+// allowed, but they must not merge into broad cuts or form long thin lines.
 {
-  const e = mk(128, 128, 0xBED);
   let fg = 0, bg = 0, overlap = 0, samples = 0;
   const sampleWidth = 768, sampleHeight = 240;
-  const background = new Uint8Array(sampleWidth * sampleHeight);
-  for (let y = 40; y < 520; y += 2) for (let x = -768; x < 768; x += 2) {
-    const f = e.worldIsCaveAt(0, x, y);
-    const b = e.worldIsCaveAt(1, x, y);
-    fg += f;
-    bg += b;
-    overlap += f && b;
-    background[((y - 40) / 2) * sampleWidth + (x + 768) / 2] = b;
-    samples++;
-  }
-  const fgFraction = fg / samples, bgFraction = bg / samples;
-  const seen = new Uint8Array(background.length);
-  let longThinComponents = 0, roundedChambers = 0;
-  for (let start = 0; start < background.length; start++) {
-    if (!background[start] || seen[start]) continue;
-    const queue = [start];
-    seen[start] = 1;
-    let head = 0, minX = sampleWidth, maxX = -1, minY = sampleHeight, maxY = -1, cells = 0;
-    while (head < queue.length) {
-      const i = queue[head++], x = i % sampleWidth, y = (i / sampleWidth) | 0;
-      cells++;
-      minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-      minY = Math.min(minY, y); maxY = Math.max(maxY, y);
-      for (const next of [x ? i - 1 : -1, x + 1 < sampleWidth ? i + 1 : -1,
-        y ? i - sampleWidth : -1, y + 1 < sampleHeight ? i + sampleWidth : -1]) {
-        if (next >= 0 && background[next] && !seen[next]) {
-          seen[next] = 1;
-          queue.push(next);
+  let longThinComponents = 0, boundedRecesses = 0, oversizedComponents = 0, roundComponents = 0;
+  let largestCells = 0, widest = 0, tallest = 0;
+  for (const seed of [0, 0xBED, 0xC0FFEE]) {
+    const e = mk(128, 128, seed);
+    const background = new Uint8Array(sampleWidth * sampleHeight);
+    for (let y = 40; y < 520; y += 2) for (let x = -768; x < 768; x += 2) {
+      const f = e.worldIsCaveAt(0, x, y);
+      const b = e.worldIsCaveAt(1, x, y);
+      fg += f;
+      bg += b;
+      overlap += f && b;
+      background[((y - 40) / 2) * sampleWidth + (x + 768) / 2] = b;
+      samples++;
+    }
+    const seen = new Uint8Array(background.length);
+    for (let start = 0; start < background.length; start++) {
+      if (!background[start] || seen[start]) continue;
+      const queue = [start];
+      seen[start] = 1;
+      let head = 0, minX = sampleWidth, maxX = -1, minY = sampleHeight, maxY = -1, cells = 0;
+      while (head < queue.length) {
+        const i = queue[head++], x = i % sampleWidth, y = (i / sampleWidth) | 0;
+        cells++;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        for (const next of [x ? i - 1 : -1, x + 1 < sampleWidth ? i + 1 : -1,
+          y ? i - sampleWidth : -1, y + 1 < sampleHeight ? i + sampleWidth : -1]) {
+          if (next >= 0 && background[next] && !seen[next]) {
+            seen[next] = 1;
+            queue.push(next);
+          }
         }
       }
+      const width = maxX - minX + 1, height = maxY - minY + 1;
+      largestCells = Math.max(largestCells, cells);
+      widest = Math.max(widest, width);
+      tallest = Math.max(tallest, height);
+      if (Math.max(width, height) >= 12 && Math.min(width, height) <= 2) longThinComponents++;
+      if (cells >= 24 && width >= 5 && height >= 5) {
+        boundedRecesses++;
+        const aspect = width / height, fill = cells / (width * height);
+        if (aspect >= 0.85 && aspect <= 1.18 && fill > 0.72) roundComponents++;
+      }
+      if (cells > 700 || width > 34 || height > 30) oversizedComponents++;
     }
-    const width = maxX - minX + 1, height = maxY - minY + 1;
-    if (Math.max(width, height) >= 12 && Math.min(width, height) <= 2) longThinComponents++;
-    if (cells >= 40 && width >= 6 && height >= 6) roundedChambers++;
+    e.destroy();
   }
+  const fgFraction = fg / samples, bgFraction = bg / samples;
   check(`background stays essentially solid (${(bgFraction * 100).toFixed(1)}% void vs fg ${(fgFraction * 100).toFixed(1)}%)`,
     bgFraction > 0.002 && bgFraction < 0.03 && overlap > 100);
-  check(`background exceptions are chambers, not carved lines (${roundedChambers} chambers, ${longThinComponents} thin components)`,
-    roundedChambers > 0 && longThinComponents === 0);
-  e.destroy();
+  check(`background recesses stay bounded and irregular (${boundedRecesses} recesses, largest ${largestCells} cells/${widest}x${tallest}, ${oversizedComponents} oversized, ${roundComponents} round, ${longThinComponents} thin)`,
+    boundedRecesses > 2 && oversizedComponents === 0
+      && roundComponents * 2 < boundedRecesses && longThinComponents === 0);
 }
 
 // Every seed gets compact coal and copper lodes near the original spawn.

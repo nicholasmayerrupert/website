@@ -96,7 +96,7 @@ function surfaceMasonryComponents(g, engine) {
     mineRailRows: 0, roomyRailRows: 0, coherentRailCells: 0, railCells: 0, maxRailSpan: 0,
     decoratedMineRows: 0, surfaceFurnishings: 0, undergroundFurnishings: 0, alignedBrick: 0,
     surfaceShells: 0, groundedSurfaceShells: 0, surfaceGroundContacts: 0,
-    streetLamps: 0, collidingStreetLamps: 0,
+    streetLamps: 0, looseStreetApproaches: 0, collidingStreetLamps: 0,
   };
   const oreIds = new Set([MAT.COPPER_ORE, MAT.IRON_ORE, MAT.COAL_ORE, MAT.GOLD_ORE]);
   const furnishingIds = new Set([
@@ -181,6 +181,13 @@ function surfaceMasonryComponents(g, engine) {
           lamp = bg[(y + dy) * COLS + x] === MAT.PINE_WOOD;
         if (!lamp) continue;
         tally.streetLamps++;
+        let looseStreet = false;
+        for (let dx = -5; dx <= 5; dx++) {
+          const surface = e.worldSurfaceAbsAt(offX + x + dx) - offY;
+          looseStreet ||= surface >= 0 && surface < ROWS
+            && g[surface * COLS + x + dx] === MAT.SAND;
+        }
+        tally.looseStreetApproaches += looseStreet;
         let colliding = false;
         for (let dx = -3; dx <= 3; dx++)
           colliding ||= g[y * COLS + x + dx] === MAT.PINE_WOOD || g[y * COLS + x + dx] === MAT.CRYSTAL;
@@ -214,6 +221,8 @@ function surfaceMasonryComponents(g, engine) {
   check(`surface structures are masonry-connected to the terrain (${tally.groundedSurfaceShells}/${tally.surfaceShells}, ${tally.surfaceGroundContacts} ground contacts)`,
     tally.surfaceShells > 10 && tally.groundedSurfaceShells === tally.surfaceShells
       && tally.surfaceGroundContacts > tally.surfaceShells * 3);
+  check(`village streets use loose sand (${tally.looseStreetApproaches}/${tally.streetLamps} lamp approaches)`,
+    tally.streetLamps > 10 && tally.looseStreetApproaches === tally.streetLamps);
   check(`streetlamps remain visible but non-colliding (${tally.streetLamps} lamps, ${tally.collidingStreetLamps} foreground fixtures)`,
     tally.streetLamps > 10 && tally.collidingStreetLamps === 0);
   check(`underground structures contain visible furnishings (${tally.undergroundFurnishings} cells)`, tally.undergroundFurnishings > 200);

@@ -184,7 +184,8 @@
     }
   };
   void fillStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
-    auto put = [&](int wx, int wy, uint8_t m) {
+    // Keep clipping and store logic shared across structure stamp sites.
+    auto put = [&](int wx, int wy, uint8_t m) __attribute__((noinline)) {
       int lx = wx - L->worldOffsetX, y = wy - L->worldOffsetY;
       if (lx < colStart || lx >= colEnd || y < rowStart || y >= rowEnd) return;
       L->grid[y * cols + lx] = m;                         // structures OVERWRITE terrain

@@ -27,6 +27,7 @@ const SURFACE_CAM_Y = -120;
 const MAX_VERTICAL_DRIFT_UP = 18;
 const MAX_VERTICAL_DRIFT_DOWN = 120;
 const CLOUD_CYCLE_TILES = 4;
+const RIDGE_SAMPLE_STEP = 4;
 
 function hash(n) {
   let x = n | 0;
@@ -261,35 +262,23 @@ function ridgeY(worldX, base, amp, seed) {
   return base + amp * 0.72 - broad * amp * 1.35 - shoulder * amp * 0.48 + brokenEdge;
 }
 
-function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1, worldStep = 0) {
+function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow, detail = 1) {
   const offX = camX * depth - w * 0.5;
   const offY = backgroundDriftY(camY) * depth;
   const surfaceWorldRawY = (worldX) => ridgeY(worldX, base - offY, amp, seed);
   const surfaceRawY = (x) => surfaceWorldRawY(x + offX);
   const surfaceY = (x) => Math.round(surfaceRawY(x));
   const surfacePoints = [];
-  if (worldStep > 0) {
-    const firstWorldX = Math.floor((offX - worldStep) / worldStep) * worldStep;
-    const lastWorldX = Math.ceil((offX + w + worldStep) / worldStep) * worldStep;
-    for (let worldX = firstWorldX; worldX <= lastWorldX; worldX += worldStep) {
-      const rawY = surfaceWorldRawY(worldX);
-      surfacePoints.push({
-        x: Math.round(worldX - offX),
-        y: Math.round(rawY),
-        rawY,
-        worldX,
-      });
-    }
-  } else {
-    for (let x = 0; x <= w + 4; x += 4) {
-      const rawY = surfaceRawY(x);
-      surfacePoints.push({
-        x,
-        y: Math.round(rawY),
-        rawY,
-        worldX: x + offX,
-      });
-    }
+  const firstWorldX = Math.floor((offX - RIDGE_SAMPLE_STEP) / RIDGE_SAMPLE_STEP) * RIDGE_SAMPLE_STEP;
+  const lastWorldX = Math.ceil((offX + w + RIDGE_SAMPLE_STEP) / RIDGE_SAMPLE_STEP) * RIDGE_SAMPLE_STEP;
+  for (let worldX = firstWorldX; worldX <= lastWorldX; worldX += RIDGE_SAMPLE_STEP) {
+    const rawY = surfaceWorldRawY(worldX);
+    surfacePoints.push({
+      x: Math.round(worldX - offX),
+      y: Math.round(rawY),
+      rawY,
+      worldX,
+    });
   }
 
   ctx.fillStyle = color;
@@ -706,7 +695,7 @@ export function createParallaxBackground(container) {
     drawCelestialBodies(ctx, w, skyHeight, dayNight);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
-    const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2, 4);
+    const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2);
     drawSnowCaps(ctx, w, h, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);

@@ -424,7 +424,7 @@ function drawForest(ctx, w, h, ridge, color, skyLow, seed) {
     const first = Math.floor((ridge.offX - stagger - spacing) / spacing) * spacing + stagger;
     for (let worldX = first; worldX < ridge.offX + w + spacing; worldX += spacing) {
       const treeSeed = worldX + seed * 613 + band * 1877;
-      if (rand01(treeSeed) < Math.min(0.4, 0.22 + band * 0.012)) continue;
+      if (rand01(treeSeed) < Math.min(0.32, 0.16 + band * 0.009)) continue;
       const x = Math.round(worldX - ridge.offX);
       const height = 4 + Math.floor(rand01(treeSeed + 106) * 4);
       const groundY = ridge.surfaceY(x) + 1 + band * bandStep

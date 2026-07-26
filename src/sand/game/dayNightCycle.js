@@ -3,7 +3,7 @@ export const DAY_CYCLE_MS = 10 * 60 * 1000;
 export const DAY_VISUAL_STEP_MS = 100;
 export const NIGHT_SKY_LIGHT = 88;
 export const NOON_SKY_LIGHT = 255;
-export const DEFAULT_DAY_PHASE = 0.25;
+export const DEFAULT_DAY_PHASE = 5 / 24;
 export const SUNRISE_PHASE = 0.20;
 export const SUNSET_PHASE = 0.80;
 

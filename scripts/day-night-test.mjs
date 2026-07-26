@@ -15,10 +15,10 @@ const { check, done } = makeChecker('day/night cycle');
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 
 check('full cycle is ten real-time minutes', DAY_CYCLE_MS === 600000);
-check('clock starts at dawn and maps noon/sunset/midnight',
-  DEFAULT_DAY_PHASE === 0.25 && close(dayPhaseAt(0), 0.25) &&
-  close(dayPhaseAt(150000), 0.5) && close(dayPhaseAt(300000), 0.75) &&
-  close(dayPhaseAt(450000), 0));
+check('clock starts at 5 AM and advances six hours per quarter-cycle',
+  close(DEFAULT_DAY_PHASE, 5 / 24) && close(dayPhaseAt(0), 5 / 24) &&
+  close(dayPhaseAt(150000), 11 / 24) && close(dayPhaseAt(300000), 17 / 24) &&
+  close(dayPhaseAt(450000), 23 / 24));
 check('clock wraps exactly after one cycle', close(dayPhaseAt(DAY_CYCLE_MS), DEFAULT_DAY_PHASE));
 
 const midnight = sampleDayNight(0);

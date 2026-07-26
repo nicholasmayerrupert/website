@@ -3,6 +3,7 @@
 
 import { MATERIALS } from '../materials.generated.js';
 import { CREATURE } from '../wasmBridge/abi.generated.js';
+import { DEFAULT_DAY_PHASE } from '../game/dayNightCycle.js';
 import { injectStyleOnce, packedToRgb, swallowEvents } from './uiShared.js';
 
 const CK_MATERIAL = 0;
@@ -400,7 +401,7 @@ export function createToolPalette(root, { onSelectCreative, onToggleDrawMode, on
   let nameMotionFrame = 0;
   let dropdownRemoveTimer = 0;
   let timeAuto = true;
-  let timePhase = 0.25;
+  let timePhase = DEFAULT_DAY_PHASE;
   let timeApplyFrame = 0;
   let lastAppliedTimePhase = NaN;
   let timePollTimer = 0;

@@ -927,14 +927,12 @@ void ExplosivesSystem::applyExplosives() {
     if (y > 0) igniteMethanePocket(k - E.cols);
   }
 
-  // 2) Tick static fuses; broad due fronts consume one compact spatial window,
-  //    while smaller fronts carve atomically. Cell and bucket order is deterministic.
+  // 2) Tick static fuses; broad due fronts consume a fixed number of spatial
+  //    buckets per step. Cell and bucket order is deterministic.
   if (!E.L->pendingDetonations.empty()) {
     std::vector<int> fire;
-    bool overdue = false;
     for (auto& kv : E.L->pendingDetonations) {
       if (--kv.second <= 0) fire.push_back(kv.first);
-      if (kv.second < 0) overdue = true;
     }
     std::sort(fire.begin(), fire.end());
     std::vector<int> dueStatic;
@@ -951,26 +949,32 @@ void ExplosivesSystem::applyExplosives() {
         int y = cell / E.cols, x = cell - y * E.cols;
         uniqueBuckets.insert((y / TNT_CLUSTER_BUCKET) * bucketCols + x / TNT_CLUSTER_BUCKET);
       }
-      if (((int)dueStatic.size() > TNT_LIVE_FRONT_BUDGET_CELLS || overdue)
-          && (int)uniqueBuckets.size() > TNT_MASS_FRONT_BUDGET_THRESHOLD) {
-        std::vector<int> buckets(uniqueBuckets.begin(), uniqueBuckets.end());
-        std::sort(buckets.begin(), buckets.end());
-        std::unordered_set<int> selected;
-        int firstBucket = buckets.front();
+      if ((int)uniqueBuckets.size() > TNT_MASS_FRONT_BUCKETS_PER_STEP) {
+        int firstBucket = INT_MAX;
+        for (int bucket : uniqueBuckets) firstBucket = imin(firstBucket, bucket);
         int firstBucketRow = firstBucket / bucketCols;
         int firstBucketCol = firstBucket - firstBucketRow * bucketCols;
-        for (int bucket : buckets) {
-          int row = bucket / bucketCols;
-          if (row >= firstBucketRow + TNT_MASS_FRONT_BUCKET_ROWS_PER_STEP) break;
-          int col = bucket - row * bucketCols;
-          if (col >= firstBucketCol
-              && col < firstBucketCol + TNT_MASS_FRONT_BUCKET_COLS_PER_STEP)
-            selected.insert(bucket);
+        std::unordered_set<int> selected;
+        for (int i = 0; i < TNT_MASS_FRONT_BUCKETS_PER_STEP; i++) {
+          int bestBucket = -1, bestDistance = INT_MAX;
+          for (int bucket : uniqueBuckets) {
+            if (selected.count(bucket)) continue;
+            int row = bucket / bucketCols;
+            int col = bucket - row * bucketCols;
+            int dr = row - firstBucketRow;
+            int dc = col - firstBucketCol;
+            int distance = dr * dr + dc * dc;
+            if (distance < bestDistance
+                || (distance == bestDistance && bucket < bestBucket)) {
+              bestBucket = bucket;
+              bestDistance = distance;
+            }
+          }
+          selected.insert(bestBucket);
         }
         staticFire.reserve(dueStatic.size()
-                           * TNT_MASS_FRONT_BUCKET_COLS_PER_STEP
-                           * TNT_MASS_FRONT_BUCKET_ROWS_PER_STEP
-                           / buckets.size());
+                           * TNT_MASS_FRONT_BUCKETS_PER_STEP
+                           / uniqueBuckets.size());
         for (int cell : dueStatic) {
           int y = cell / E.cols, x = cell - y * E.cols;
           int bucket = (y / TNT_CLUSTER_BUCKET) * bucketCols + x / TNT_CLUSTER_BUCKET;

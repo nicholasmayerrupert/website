@@ -674,7 +674,7 @@ function blastDamagesMaterial(name) {
     for (let x = x0; x < x0 + side; x++) e.placeMaterial(x, y, 0, MAT.TNT);
   e.syncComponents();
   let tntLeft = side * side, completed = false, previous = tntLeft;
-  let detonationSteps = 0, maxDrop = 0;
+  let detonationSteps = 0, maxDrop = 0, pause = 0, maxPause = 0;
   for (let i = 0; i < 200; i++) {
     if (i < 3) e.placeMaterial(x0 + side + 1, y0 + (side >> 1), 1, MAT.FIRE);
     e.step(i * 16);
@@ -682,12 +682,15 @@ function blastDamagesMaterial(name) {
     if (tntLeft < previous) {
       detonationSteps++;
       maxDrop = Math.max(maxDrop, previous - tntLeft);
+      pause = 0;
+    } else if (detonationSteps > 0 && tntLeft > 0) {
+      maxPause = Math.max(maxPause, ++pause);
     }
     previous = tntLeft;
     if (tntLeft === 0) { completed = true; break; }
   }
-  check(`exceptionally broad TNT chain stayed distributed (${detonationSteps} steps, max ${maxDrop} cells)`,
-        detonationSteps >= 22 && maxDrop < 2500);
+  check(`exceptionally broad TNT chain stayed continuously distributed (${detonationSteps} steps, max ${maxDrop} cells, pause ${maxPause})`,
+        detonationSteps >= 40 && maxDrop <= 1200 && maxPause <= 2);
   check(`paced TNT chain completed (${tntLeft} TNT left)`, completed && tntLeft === 0);
   // The spawn ceiling is checked before impact splitting; split fragments retain
   // their non-structural blast-rubble flag and may add two solver bodies.

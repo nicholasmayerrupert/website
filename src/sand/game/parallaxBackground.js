@@ -468,61 +468,25 @@ function ridgeY(worldX, base, amp, seed) {
   return base + amp * 0.72 - broad * amp * 1.27 - shoulder * amp * 0.44 - crown * amp * 0.5 + brokenEdge;
 }
 
-function drawConifer(ctx, x, baseY, height, color) {
+function drawConifer(ctx, x, baseY, height, color, edgeColor, lightFromLeft) {
+  const top = baseY - height;
   ctx.fillStyle = color;
-  ctx.fillRect(x, baseY - height, 1, height + 2);
-  for (let row = 2; row < height; row += 2) {
-    const halfWidth = Math.max(1, Math.floor(row * 0.38));
-    ctx.fillRect(x - halfWidth, baseY - height + row, halfWidth * 2 + 1, 1);
-    if (row + 1 < height) ctx.fillRect(x - Math.max(1, halfWidth - 1), baseY - height + row + 1, Math.max(3, halfWidth * 2 - 1), 1);
+  ctx.fillRect(x, baseY - 2, 1, 4);
+  for (let row = 0; row < height - 1; row++) {
+    const growth = row / Math.max(1, height - 2);
+    const shelf = row > 1 && row % 3 === 2 ? 1 : 0;
+    const halfWidth = Math.min(Math.floor(height * 0.32), Math.max(0, Math.floor(growth * height * 0.3) + shelf));
+    ctx.fillRect(x - halfWidth, top + row, halfWidth * 2 + 1, 1);
   }
-}
 
-function drawObservatory(ctx, x, groundY, color, skyLow, starOpacity) {
-  const wall = mixColor(color, '#111820', 0.18);
-  const shade = mixColor(color, '#070b10', 0.34);
-  const edge = mixColor(color, skyLow, 0.5);
-  const px = Math.round(x), py = Math.round(groundY);
-
-  ctx.fillStyle = shade;
-  ctx.fillRect(px - 13, py - 2, 27, 3);
-  ctx.fillRect(px - 10, py - 5, 21, 4);
-  ctx.fillStyle = wall;
-  ctx.fillRect(px - 9, py - 12, 18, 8);
-  ctx.fillRect(px - 12, py - 9, 4, 7);
-  ctx.fillRect(px + 8, py - 10, 5, 8);
-  ctx.fillRect(px - 5, py - 16, 11, 5);
-  ctx.fillRect(px - 3, py - 18, 7, 2);
-  ctx.fillRect(px, py - 22, 1, 5);
-  ctx.fillRect(px - 2, py - 21, 5, 1);
-
-  ctx.fillStyle = edge;
-  ctx.globalAlpha = 0.54;
-  ctx.fillRect(px - 9, py - 13, 18, 1);
-  ctx.fillRect(px - 5, py - 17, 11, 1);
-  ctx.fillRect(px - 12, py - 10, 4, 1);
-  ctx.fillRect(px + 8, py - 11, 5, 1);
-  ctx.globalAlpha = 1;
-
-  const light = 0.12 + starOpacity * 0.88;
-  ctx.globalAlpha = light;
-  ctx.fillStyle = '#ffd36f';
-  ctx.fillRect(px - 7, py - 9, 2, 2);
-  ctx.fillRect(px - 2, py - 9, 2, 2);
-  ctx.fillRect(px + 4, py - 9, 2, 2);
-  ctx.fillRect(px + 10, py - 7, 1, 2);
-  ctx.fillStyle = '#fff2ad';
-  ctx.fillRect(px, py - 22, 1, 1);
-  ctx.globalAlpha = 1;
-
-  if (starOpacity > 0.12) {
-    ctx.save();
-    ctx.globalAlpha = starOpacity * 0.14;
-    ctx.fillStyle = '#ffe99d';
-    ctx.fillRect(px - 6, py - 24, 13, 5);
-    ctx.fillRect(px - 2, py - 28, 5, 13);
-    ctx.restore();
+  ctx.globalAlpha = 0.2;
+  ctx.fillStyle = edgeColor;
+  for (let row = 2; row < height - 2; row += 3) {
+    const halfWidth = Math.max(1, Math.floor((row / height) * height * 0.28));
+    const edgeX = lightFromLeft ? x - halfWidth : x + 1;
+    ctx.fillRect(edgeX, top + row, halfWidth, 1);
   }
+  ctx.globalAlpha = 1;
 }
 
 function drawAlpineRange(ctx, w, h, camX, camY, {
@@ -541,16 +505,16 @@ function drawAlpineRange(ctx, w, h, camX, camY, {
   const offY = backgroundDriftY(camY) * depth;
   const effectiveBase = base - offY;
   const seedOffset = seed * 19;
-  const peakHeight = (index) => amp * (0.76 + rand01(index * 919 + seed * 131) * 0.38);
+  const peakHeight = (index) => amp * (0.84 + rand01(index * 919 + seed * 131) * 0.2);
   const peakCenter = (index) => (index + 0.5) * spacing - seedOffset;
   const surfaceY = (screenX) => {
     const worldX = screenX + offX;
     const shifted = (worldX + seedOffset) / spacing;
     const index = Math.floor(shifted);
-    const rise = 1 - Math.abs(fract(shifted) * 2 - 1);
-    const rock = Math.sin(worldX * 0.19 + seed * 3.7) * amp * 0.025 * rise;
-    const shoulder = Math.sin(worldX * 0.047 + seed * 5.1) * amp * 0.035;
-    return Math.round(effectiveBase - Math.pow(rise, 1.08) * peakHeight(index) + rock + shoulder);
+    const rise = 0.5 - Math.cos(fract(shifted) * Math.PI * 2) * 0.5;
+    const rock = Math.sin(worldX * 0.11 + seed * 3.7) * amp * 0.01 * rise;
+    const shoulder = Math.sin(worldX * 0.034 + seed * 5.1) * amp * 0.016;
+    return Math.round(effectiveBase - Math.pow(rise, 1.02) * peakHeight(index) + rock + shoulder);
   };
 
   ctx.save();
@@ -578,38 +542,30 @@ function drawAlpineRange(ctx, w, h, camX, camY, {
     const halfSpan = spacing * 0.5;
     const lightFromLeft = lightX < x;
 
-    ctx.globalAlpha = opacity * 0.34;
-    ctx.fillStyle = shadowRock;
-    ctx.beginPath();
-    ctx.moveTo(x, peakY);
-    ctx.lineTo(x + (lightFromLeft ? halfSpan : -halfSpan), effectiveBase + 5);
-    ctx.lineTo(x + (lightFromLeft ? halfSpan * 0.72 : -halfSpan * 0.72), h);
-    ctx.lineTo(x, h);
-    ctx.closePath();
-    ctx.fill();
+    const leftFace = lightFromLeft ? litRock : shadowRock;
+    const rightFace = lightFromLeft ? shadowRock : litRock;
+    const face = ctx.createLinearGradient(x - halfSpan, 0, x + halfSpan, 0);
+    face.addColorStop(0, rgbaColor(leftFace, 0.58));
+    face.addColorStop(0.38, rgbaColor(color, 0.24));
+    face.addColorStop(0.52, rgbaColor(color, 0.08));
+    face.addColorStop(0.66, rgbaColor(color, 0.2));
+    face.addColorStop(1, rgbaColor(rightFace, 0.54));
+    ctx.globalAlpha = opacity;
+    ctx.fillStyle = face;
+    ctx.fillRect(x - halfSpan, peakY, spacing, h - peakY);
 
-    ctx.globalAlpha = opacity * 0.36;
-    ctx.fillStyle = litRock;
-    ctx.beginPath();
-    ctx.moveTo(x, peakY);
-    ctx.lineTo(x + (lightFromLeft ? -halfSpan : halfSpan), effectiveBase + 4);
-    ctx.lineTo(x + (lightFromLeft ? -halfSpan * 0.32 : halfSpan * 0.32), h);
-    ctx.closePath();
-    ctx.fill();
-
-    const capDepth = clamp(height * 0.31, 11, 22);
-    const capHalf = Math.min(spacing * 0.3, capDepth * 1.18);
+    const capDepth = clamp(height * 0.22, 8, 13);
+    const capHalf = Math.min(spacing * 0.23, capDepth * 1.48);
     ctx.globalAlpha = opacity * 0.96;
     ctx.fillStyle = snowShade;
     ctx.beginPath();
     ctx.moveTo(x, peakY);
     ctx.lineTo(x + capHalf, peakY + capDepth);
-    ctx.lineTo(x + capHalf * 0.62, peakY + capDepth * 0.74);
-    ctx.lineTo(x + capHalf * 0.38, peakY + capDepth * 1.06);
-    ctx.lineTo(x + capHalf * 0.12, peakY + capDepth * 0.66);
-    ctx.lineTo(x - capHalf * 0.14, peakY + capDepth * 1.16);
-    ctx.lineTo(x - capHalf * 0.42, peakY + capDepth * 0.76);
-    ctx.lineTo(x - capHalf * 0.68, peakY + capDepth * 0.98);
+    ctx.lineTo(x + capHalf * 0.52, peakY + capDepth * 0.78);
+    ctx.lineTo(x + capHalf * 0.22, peakY + capDepth * 0.92);
+    ctx.lineTo(x, peakY + capDepth * 0.68);
+    ctx.lineTo(x - capHalf * 0.24, peakY + capDepth * 0.9);
+    ctx.lineTo(x - capHalf * 0.54, peakY + capDepth * 0.76);
     ctx.lineTo(x - capHalf, peakY + capDepth);
     ctx.closePath();
     ctx.fill();
@@ -618,17 +574,11 @@ function drawAlpineRange(ctx, w, h, camX, camY, {
     ctx.beginPath();
     ctx.moveTo(x, peakY);
     ctx.lineTo(x + (lightFromLeft ? -capHalf : capHalf), peakY + capDepth);
-    ctx.lineTo(x + (lightFromLeft ? -capHalf * 0.58 : capHalf * 0.58), peakY + capDepth * 0.7);
-    ctx.lineTo(x + (lightFromLeft ? -capHalf * 0.3 : capHalf * 0.3), peakY + capDepth * 0.94);
+    ctx.lineTo(x + (lightFromLeft ? -capHalf * 0.52 : capHalf * 0.52), peakY + capDepth * 0.74);
+    ctx.lineTo(x + (lightFromLeft ? -capHalf * 0.24 : capHalf * 0.24), peakY + capDepth * 0.88);
     ctx.lineTo(x, peakY + capDepth * 0.58);
     ctx.closePath();
     ctx.fill();
-
-    ctx.globalAlpha = opacity * 0.24;
-    ctx.fillStyle = snow;
-    const snowLine = peakY + capDepth + 4;
-    ctx.fillRect(Math.round(x - capHalf * 0.66), Math.round(snowLine), Math.max(2, Math.round(capHalf * 0.28)), 1);
-    ctx.fillRect(Math.round(x + capHalf * 0.26), Math.round(snowLine + 3), Math.max(2, Math.round(capHalf * 0.36)), 1);
   }
 
   ctx.globalAlpha = opacity * 0.48;
@@ -657,16 +607,24 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   ctx.fill();
 
   if (features.trees || detail >= 3) {
-    const treeColor = mixColor(color, '#071116', 0.28);
-    const treeStep = features.trees ? 10 : 15;
-    const firstTree = Math.floor((offX - treeStep) / treeStep) * treeStep;
-    for (let worldX = firstTree; worldX < offX + w + treeStep; worldX += treeStep) {
-      const chance = rand01(worldX + seed * 557);
-      if (chance < 0.16) continue;
-      const x = Math.round(worldX - offX);
-      const baseY = surfaceY(x) + 2;
-      const treeHeight = 5 + Math.floor(chance * (features.trees ? 7 : 4));
-      drawConifer(ctx, x, baseY, treeHeight, treeColor);
+    const forestLayers = features.trees
+      ? [
+        { step: 8, minHeight: 4, heightSpan: 5, color: mixColor(color, skyLow, 0.12), seedAdd: 149 },
+        { step: 13, minHeight: 7, heightSpan: 7, color: mixColor(color, '#071116', 0.3), seedAdd: 557 },
+      ]
+      : [{ step: 15, minHeight: 5, heightSpan: 5, color: mixColor(color, '#071116', 0.24), seedAdd: 557 }];
+    for (const forest of forestLayers) {
+      const firstTree = Math.floor((offX - forest.step) / forest.step) * forest.step;
+      const edgeColor = mixColor(forest.color, skyLow, 0.34);
+      for (let worldX = firstTree; worldX < offX + w + forest.step; worldX += forest.step) {
+        const chance = rand01(worldX + seed * forest.seedAdd);
+        const cluster = 0.5 + Math.sin(worldX * 0.035 + seed * 2.4) * 0.22;
+        if (chance > cluster) continue;
+        const x = Math.round(worldX - offX);
+        const baseY = surfaceY(x) + 2;
+        const treeHeight = forest.minHeight + Math.floor(rand01(worldX + seed * (forest.seedAdd + 73)) * forest.heightSpan);
+        drawConifer(ctx, x, baseY, treeHeight, forest.color, edgeColor, (features.lightX ?? w * 0.28) < x);
+      }
     }
   }
 
@@ -692,43 +650,30 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     const peakY = surfaceY(x);
     const width = facetPeriod * (0.55 + rand01(worldX + seed * 101) * 0.3);
     const lightFromLeft = (features.lightX ?? w * 0.28) < x;
-    ctx.globalAlpha = 0.14 + detail * 0.026;
-    ctx.fillStyle = '#03070a';
+    const shadowX = x + (lightFromLeft ? width : -width);
+    const shadow = ctx.createLinearGradient(x, 0, shadowX, 0);
+    shadow.addColorStop(0, rgbaColor(color, 0));
+    shadow.addColorStop(1, rgbaColor('#03070a', 0.34 + detail * 0.03));
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = shadow;
     ctx.beginPath();
     ctx.moveTo(x, peakY);
-    ctx.lineTo(x + (lightFromLeft ? width : -width), peakY + amp * 1.5);
+    ctx.lineTo(shadowX, peakY + amp * 1.5);
     ctx.lineTo(x + (lightFromLeft ? width * 0.55 : -width * 0.55), h);
     ctx.closePath();
     ctx.fill();
 
-    ctx.globalAlpha = 0.2;
-    ctx.fillStyle = mixColor(color, skyLow, 0.52);
+    const litX = x + (lightFromLeft ? -width * 0.34 : width * 0.34);
+    const light = ctx.createLinearGradient(x, 0, litX, 0);
+    light.addColorStop(0, rgbaColor(color, 0));
+    light.addColorStop(1, rgbaColor(mixColor(color, skyLow, 0.52), 0.38));
+    ctx.fillStyle = light;
     ctx.beginPath();
     ctx.moveTo(x, peakY + 1);
-    ctx.lineTo(x + (lightFromLeft ? -width * 0.34 : width * 0.34), peakY + amp * 0.68);
+    ctx.lineTo(litX, peakY + amp * 0.68);
     ctx.lineTo(x + (lightFromLeft ? width * 0.1 : -width * 0.1), peakY + amp * 0.32);
     ctx.closePath();
     ctx.fill();
-  }
-
-  if (features.waterfalls) {
-    const period = 176;
-    const firstFall = Math.floor((offX - period) / period) * period;
-    for (let worldX = firstFall; worldX < offX + w + period; worldX += period) {
-      if (rand01(worldX + seed * 977) < 0.42) continue;
-      const x = Math.round(worldX + 43 + rand01(worldX + seed * 991) * 48 - offX);
-      const startY = surfaceY(x) + 5;
-      const length = Math.max(10, Math.floor(amp * (0.72 + rand01(worldX + seed * 1013) * 0.64)));
-      ctx.globalAlpha = 0.22;
-      ctx.fillStyle = '#071116';
-      ctx.fillRect(x - 1, startY - 1, 3, length + 3);
-      ctx.globalAlpha = 0.34 + (features.daylight ?? 0) * 0.34;
-      ctx.fillStyle = mixColor(skyLow, '#d5fbff', 0.58);
-      ctx.fillRect(x, startY, 1, length);
-      if (length > 18) ctx.fillRect(x + 1, startY + Math.floor(length * 0.58), 1, Math.floor(length * 0.33));
-      ctx.globalAlpha = 0.2;
-      ctx.fillRect(x - 3, startY + length, 7, 1);
-    }
   }
 
   // Sparse deterministic ledges add texture without animated noise.
@@ -758,16 +703,6 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
     ctx.globalAlpha = 1;
   }
 
-  if (features.landmark && w >= 120) {
-    const period = 760;
-    const firstLandmark = Math.floor((offX - period) / period) * period;
-    for (let tile = firstLandmark; tile < offX + w + period; tile += period) {
-      const worldX = tile + 52;
-      const x = worldX - offX;
-      if (x < -18 || x > w + 18) continue;
-      drawObservatory(ctx, x, surfaceY(x) + 1, color, skyLow, features.starOpacity ?? 0);
-    }
-  }
 }
 
 export function createParallaxBackground(container) {
@@ -854,31 +789,16 @@ export function createParallaxBackground(container) {
     };
     drawAlpineRange(ctx, w, h, qx, qy, {
       ...commonFeatures,
-      depth: 0.08,
-      base: horizon + 25,
-      amp: 45,
-      spacing: 82,
-      color: mixColor(palette.ridgeFar, palette.skyLow, 0.38),
-      skyLow: palette.skyLow,
-      seed: 1.4,
-      opacity: 0.58,
-    });
-    drawAlpineRange(ctx, w, h, qx, qy, {
-      ...commonFeatures,
-      depth: 0.16,
-      base: horizon + 39,
-      amp: 64,
-      spacing: 74,
+      depth: 0.14,
+      base: horizon + 47,
+      amp: 40,
+      spacing: 108,
       color: palette.ridgeFar,
       skyLow: palette.skyLow,
       seed: 4.6,
     });
-    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow, 0.24, 28, 0.2);
-    drawRidge(ctx, w, h, qx, qy, 0.32, horizon + 55, 27, palette.ridgeMid, 7.9, palette.skyLow, 2, {
-      ...commonFeatures,
-      waterfalls: true,
-      landmark: true,
-    });
+    drawMistLayer(ctx, w, horizon, qx, qy, palette.skyLow, 0.24, 35, 0.18);
+    drawRidge(ctx, w, h, qx, qy, 0.32, horizon + 55, 27, palette.ridgeMid, 7.9, palette.skyLow, 2, commonFeatures);
     drawMistLayer(ctx, w, horizon, qx, qy, palette.cloudLight, 0.42, 43, 0.13);
     drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 67, 36, palette.ridgeNear, 12.4, palette.skyLow, 3, {
       ...commonFeatures,

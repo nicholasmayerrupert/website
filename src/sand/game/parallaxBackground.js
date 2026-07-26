@@ -667,10 +667,10 @@ export function createParallaxBackground(container) {
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);
     const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4);
+    drawForest(ctx, w, h, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
     // Dark backdrop band: pushed low (large base offset) and short (small amp) so
     // it's a subtle distant floor behind caves, not a looming mountain.
     drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 103, 13, palette.ridgeDeep, 18.5, palette.skyLow, 2);
-    drawForest(ctx, w, h, nearRidge, palette.ridgeNear, palette.skyLow, 12.4);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   };
 

@@ -35,7 +35,8 @@ class ExplosivesSystem {
   static const int    BLAST_DEBRIS_CHUNKS = 1;    // physical rubble chunks ejected per destroyed material source
   static const int    BLAST_DEBRIS_SOURCE_TRIES = 2; // try the old fan positions, but stop after the smaller budget
   static const int    BLAST_FORCED_DEBRIS_CHUNKS = 1; // extra generic blast debris, even in open air
-  static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.50; // generic open-air debris spawns on half of blasts
+  static const int    BLAST_FORCED_DEBRIS_TRIES = 3; // nearby placement attempts after the debris roll succeeds
+  static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.75; // generic open-air debris spawns on three quarters of blasts
   static const int    BLAST_DEBRIS_STEP_CAP = 3;  // max chunks a same-tick TNT wave can add per layer
   static const int    BLAST_MASS_DEBRIS_STEP_CAP = 8; // bounded physical rubble from a dense TNT front
   static const int    BLAST_DEBRIS_SAMPLE_SIDE = 3; // fixed spatial buckets; no growing candidate list in large craters

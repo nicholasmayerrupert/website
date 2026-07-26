@@ -697,7 +697,7 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
              < BLAST_FORCED_DEBRIS_FRAC)
       spawnBlastDebrisFan(wave.cx, wave.cy, wave.seed, DEBRIS,
                           wave.cx, wave.cy, BLAST_FORCED_DEBRIS_CHUNKS, 97,
-                          bb, wave.debrisEjection);
+                          bb, wave.debrisEjection, BLAST_FORCED_DEBRIS_TRIES);
   }
   spawnBlastRingGases(bb.waves);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);

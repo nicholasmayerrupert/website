@@ -290,21 +290,68 @@ function drawRidge(ctx, w, h, camX, camY, depth, base, amp, color, seed, skyLow,
   return { offX, offY, surfaceY };
 }
 
-function drawSnowCaps(ctx, w, ridge, base, amp, color, daylight) {
-  const snowLine = base - ridge.offY + amp * 0.08;
+function drawSnowCap(ctx, points, snow, shade, snowLine, amp, ridge) {
+  if (points.length < 4) return;
+  const depthAt = ({ x, y }) => {
+    const altitude = clamp((snowLine - y) / Math.max(1, amp * 0.7), 0, 1);
+    const worldX = Math.round(x + ridge.offX);
+    return Math.round(Math.pow(altitude, 0.72) * amp * (0.24 + rand01(worldX * 419) * 0.08));
+  };
+
+  ctx.fillStyle = snow;
+  ctx.beginPath();
+  points.forEach(({ x, y }, index) => {
+    if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  for (let i = points.length - 1; i >= 0; i--) {
+    const point = points[i];
+    ctx.lineTo(point.x, point.y + depthAt(point));
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = shade;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  points.forEach((point, index) => {
+    const depth = depthAt(point);
+    if (index === 0) ctx.moveTo(point.x, point.y + depth);
+    else ctx.lineTo(point.x, point.y + depth);
+  });
+  ctx.stroke();
+}
+
+function drawSnowCaps(ctx, w, h, ridge, base, amp, color, daylight) {
+  const snowLine = base - ridge.offY - amp * 0.16;
   const snow = mixColor(color, '#f5f5e9', 0.42 + daylight * 0.34);
   const shade = mixColor(snow, color, 0.28);
+
+  // Clip to the exact ridge path, then build each cap from those same sampled
+  // contour points so snow and rock share one pixel-perfect upper edge.
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-4, h);
+  for (let x = -4; x <= w + 4; x += 4) ctx.lineTo(x, ridge.surfaceY(x));
+  ctx.lineTo(w + 4, h);
+  ctx.closePath();
+  ctx.clip();
+
+  let previous = { x: -4, y: ridge.surfaceY(-4) };
+  let cap = [];
   for (let x = 0; x <= w + 4; x += 4) {
-    const y = ridge.surfaceY(x);
-    if (y >= snowLine) continue;
-    const depth = Math.max(1, Math.min(7, Math.round((snowLine - y) * 0.42)));
-    ctx.fillStyle = snow;
-    ctx.fillRect(x, y, 4, depth);
-    if (((Math.round(x + ridge.offX) >> 2) & 3) === 0 && depth > 2) {
-      ctx.fillStyle = shade;
-      ctx.fillRect(x + 3, y + depth - 2, 1, 2);
+    const point = { x, y: ridge.surfaceY(x) };
+    if (point.y < snowLine) {
+      if (cap.length === 0) cap.push(previous);
+      cap.push(point);
+    } else if (cap.length) {
+      cap.push(point);
+      drawSnowCap(ctx, cap, snow, shade, snowLine, amp, ridge);
+      cap = [];
     }
+    previous = point;
   }
+  if (cap.length) drawSnowCap(ctx, cap, snow, shade, snowLine, amp, ridge);
+  ctx.restore();
 }
 
 function drawPine(ctx, x, groundY, height, dark, light) {
@@ -339,41 +386,118 @@ function drawForest(ctx, w, ridge, color, skyLow, seed) {
   }
 }
 
-function drawLodge(ctx, x, groundY, variant, light) {
-  const width = 9 + variant * 2;
-  const left = Math.round(x - width * 0.5);
-  const wallTop = groundY - 4;
-  const roof = '#211d1d';
-  const timber = variant ? '#4a3226' : '#55392a';
-
-  ctx.fillStyle = timber;
-  ctx.fillRect(left, wallTop, width, 5);
-  ctx.fillStyle = mixColor(timber, '#c49a65', 0.28);
-  ctx.fillRect(left + 1, wallTop + 1, width - 2, 1);
-  ctx.fillStyle = roof;
-  ctx.fillRect(left - 1, wallTop - 2, width + 2, 2);
-  ctx.fillRect(left + 1, wallTop - 3, width - 2, 1);
-  if (variant) ctx.fillRect(left + 3, wallTop - 4, width - 6, 1);
-  ctx.fillRect(left + width - 3, wallTop - 5, 2, 3);
-
-  ctx.fillStyle = '#281d19';
-  ctx.fillRect(left + Math.floor(width * 0.5), wallTop + 2, 2, 3);
-
-  const windowX = left + 2;
+function drawLodgeWindow(ctx, x, y, light) {
   if (light > 0) {
-    ctx.globalAlpha = 0.12 * light;
-    fillRect(ctx, windowX - 2, wallTop - 1, 6, 7, '#ffd36d');
-    if (variant) fillRect(ctx, left + width - 5, wallTop - 1, 6, 7, '#ffd36d');
+    ctx.globalAlpha = 0.14 * light;
+    fillRect(ctx, x - 2, y - 2, 7, 7, '#ffd36d');
     ctx.globalAlpha = 1;
   }
-  ctx.fillStyle = light > 0.08 ? mixColor('#806037', '#ffd36d', light) : '#34464b';
-  ctx.fillRect(windowX, wallTop + 1, 2, 2);
-  if (variant) ctx.fillRect(left + width - 3, wallTop + 1, 2, 2);
-  ctx.fillStyle = mixColor(roof, '#d8c8b1', 0.32);
-  ctx.globalAlpha = 0.32 + light * 0.28;
-  ctx.fillRect(left + width - 2, wallTop - 7, 1, 1);
-  ctx.fillRect(left + width - 1, wallTop - 9, 1, 1);
-  ctx.fillRect(left + width - 2, wallTop - 11, 2, 1);
+  ctx.fillStyle = '#241b18';
+  ctx.fillRect(x - 1, y - 1, 5, 5);
+  ctx.fillStyle = light > 0.08 ? mixColor('#7b603f', '#ffd36d', light) : '#769297';
+  ctx.fillRect(x, y, 3, 3);
+  ctx.fillStyle = '#3b2b21';
+  ctx.fillRect(x + 1, y, 1, 3);
+  ctx.fillRect(x, y + 1, 3, 1);
+}
+
+function drawLodge(ctx, x, platformY, variant, light, ridge) {
+  const width = variant ? 21 : 18;
+  const left = Math.round(x - width * 0.5);
+  const wallHeight = variant ? 9 : 8;
+  const wallTop = platformY - wallHeight;
+  const peakX = left + Math.floor(width * 0.5);
+  const peakY = wallTop - 7;
+  const roof = '#211c1c';
+  const roofLight = '#55443a';
+  const timber = variant ? '#5a3a27' : '#68452d';
+  const timberDark = '#34231c';
+  const wallLight = mixColor(timber, '#d4a66c', 0.25);
+
+  // A level beam and short stone-and-timber piers seat the lodge on the ridge.
+  ctx.fillStyle = '#2a201c';
+  ctx.fillRect(left - 2, platformY - 1, width + 4, 2);
+  for (const postX of [left + 2, left + width - 4]) {
+    const terrainY = ridge.surfaceY(postX) + 2;
+    ctx.fillRect(postX, platformY, 2, Math.max(2, terrainY - platformY));
+    ctx.fillStyle = '#5e6460';
+    ctx.fillRect(postX - 1, Math.max(platformY + 1, terrainY - 1), 4, 2);
+    ctx.fillStyle = '#2a201c';
+  }
+
+  ctx.fillStyle = timber;
+  ctx.fillRect(left, wallTop, width, wallHeight);
+  ctx.fillStyle = wallLight;
+  for (let y = wallTop + 1; y < platformY - 1; y += 2) ctx.fillRect(left + 1, y, width - 2, 1);
+
+  // Exposed framing and a recessed central door give the facade readable scale.
+  ctx.fillStyle = timberDark;
+  ctx.fillRect(left, wallTop, 2, wallHeight);
+  ctx.fillRect(left + width - 2, wallTop, 2, wallHeight);
+  ctx.fillRect(left, wallTop, width, 1);
+  ctx.fillRect(left, platformY - 2, width, 2);
+  ctx.fillRect(peakX - 1, wallTop, 2, wallHeight);
+  ctx.fillRect(peakX - 2, platformY - 6, 4, 6);
+  ctx.fillStyle = '#9a7147';
+  ctx.fillRect(peakX, platformY - 4, 1, 1);
+
+  drawLodgeWindow(ctx, left + 3, wallTop + 3, light);
+  drawLodgeWindow(ctx, left + width - 6, wallTop + 3, light);
+  if (variant) {
+    ctx.fillStyle = timberDark;
+    ctx.fillRect(left + 7, wallTop + 1, 1, wallHeight - 2);
+  }
+
+  // The chimney is behind a stepped gable roof, with a brighter windward edge.
+  const chimneyX = left + width - 5;
+  ctx.fillStyle = '#3b3030';
+  ctx.fillRect(chimneyX, wallTop - 8, 3, 7);
+  ctx.fillStyle = '#78615a';
+  ctx.fillRect(chimneyX - 1, wallTop - 9, 5, 1);
+  ctx.fillStyle = roof;
+  const roofRows = 7;
+  for (let row = 0; row < roofRows; row++) {
+    const half = 1 + Math.round(((width + 3) * 0.5) * row / (roofRows - 1));
+    ctx.fillRect(peakX - half, peakY + row, half * 2 + 1, 1);
+  }
+  ctx.fillStyle = roofLight;
+  for (let row = 1; row < roofRows - 1; row++) {
+    const half = 1 + Math.round(((width + 3) * 0.5) * row / (roofRows - 1));
+    ctx.fillRect(peakX - half + 1, peakY + row, Math.min(3, half), 1);
+  }
+  ctx.fillStyle = '#1b1717';
+  ctx.fillRect(left - 2, wallTop - 1, width + 4, 1);
+
+  // Porch rails, a lamp, and a short trail keep the landmark from reading as
+  // a single isolated icon.
+  ctx.fillStyle = '#3a281f';
+  ctx.fillRect(left - 3, platformY - 1, width + 6, 2);
+  ctx.fillRect(left - 2, platformY - 4, 1, 4);
+  ctx.fillRect(left + width + 1, platformY - 4, 1, 4);
+  ctx.fillRect(left - 2, platformY - 4, 5, 1);
+  ctx.fillRect(left + width - 3, platformY - 4, 5, 1);
+  const lampX = peakX + 3;
+  if (light > 0) {
+    ctx.globalAlpha = 0.16 * light;
+    fillRect(ctx, lampX - 2, platformY - 7, 5, 6, '#ffd36d');
+    ctx.globalAlpha = 1;
+  }
+  ctx.fillStyle = light > 0.08 ? mixColor('#705637', '#ffd36d', light) : '#687d80';
+  ctx.fillRect(lampX, platformY - 5, 1, 2);
+
+  ctx.fillStyle = '#827765';
+  ctx.globalAlpha = 0.44;
+  for (let step = 0; step < 4; step++) {
+    const trailX = left + width + 4 + step * 3;
+    ctx.fillRect(trailX, ridge.surfaceY(trailX) + 2, 2, 1);
+  }
+
+  const smoke = mixColor('#788182', '#dbe1da', light * 0.38);
+  ctx.fillStyle = smoke;
+  ctx.globalAlpha = 0.26 + light * 0.26;
+  ctx.fillRect(chimneyX + 1, wallTop - 11, 2, 1);
+  ctx.fillRect(chimneyX + 3, wallTop - 14, 2, 2);
+  ctx.fillRect(chimneyX + 5, wallTop - 17, 3, 1);
   ctx.globalAlpha = 1;
 }
 
@@ -382,12 +506,23 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
   const first = Math.floor((ridge.offX - period) / period) * period;
   const light = 1 - smooth01((daylight - 0.08) / 0.68);
   for (let tile = first; tile < ridge.offX + w + period; tile += period) {
-    const worldX = tile + 52 + Math.floor(rand01(tile + seed * 977) * (period - 104));
+    const startX = tile + 52 + Math.floor(rand01(tile + seed * 977) * (period - 104));
+    let worldX = startX;
+    let slope = Infinity;
+    for (const shift of [0, -22, 22, -44, 44]) {
+      const candidate = startX + shift;
+      const screenX = candidate - ridge.offX;
+      const ys = [-11, 0, 11].map((dx) => ridge.surfaceY(screenX + dx));
+      const candidateSlope = Math.max(...ys) - Math.min(...ys);
+      if (candidateSlope < slope) {
+        slope = candidateSlope;
+        worldX = candidate;
+      }
+    }
     const x = Math.round(worldX - ridge.offX);
-    if (x < -16 || x > w + 16) continue;
-    const groundY = ridge.surfaceY(x);
-    if (Math.abs(ridge.surfaceY(x - 5) - ridge.surfaceY(x + 5)) > 4) continue;
-    drawLodge(ctx, x, groundY, rand01(tile + seed * 1217) > 0.58 ? 1 : 0, light);
+    if (x < -28 || x > w + 28 || slope > 6) continue;
+    const platformY = Math.min(ridge.surfaceY(x - 11), ridge.surfaceY(x), ridge.surfaceY(x + 11)) + 1;
+    drawLodge(ctx, x, platformY, rand01(tile + seed * 1217) > 0.58 ? 1 : 0, light, ridge);
   }
 }
 
@@ -460,7 +595,7 @@ export function createParallaxBackground(container) {
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.08, palette.cloudDark, 1, 170, dayNight.phase);
     drawCloudLayer(ctx, w, skyHeight, qx, qy, 0.14, palette.cloudLight, 2, 210, dayNight.phase);
     const farRidge = drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 17, 20, palette.ridgeFar, 3.2, palette.skyLow, 2);
-    drawSnowCaps(ctx, w, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
+    drawSnowCaps(ctx, w, h, farRidge, horizon + 17, 20, palette.ridgeFar, dayNight.daylight);
     const midRidge = drawRidge(ctx, w, h, qx, qy, 0.34, horizon + 26, 18, palette.ridgeMid, 7.9, palette.skyLow, 3);
     drawLodges(ctx, w, midRidge, 7.9, dayNight.daylight);
     const nearRidge = drawRidge(ctx, w, h, qx, qy, 0.52, horizon + 45, 22, palette.ridgeNear, 12.4, palette.skyLow, 4);

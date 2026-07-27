@@ -213,6 +213,15 @@
     }
     double tL0 = emscripten_get_now();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
+    if (bgEnabled && comps.jointBakeNeedsGroundRefresh) {
+      computeGroundedBoth();
+      comps.jointGroundReady = true;
+      comps.jointDirty = false;
+      comps.jointBondsInvalid = false;
+      comps.jointBakeNeedsGroundRefresh = false;
+      fgA = fgA || layerActive(&fg);
+      bgA = bgA || layerActive(&bg);
+    }
     if (bgA) stepLayer(&bg);
     perfLayersMs = emscripten_get_now() - tL0;
     double tX0 = emscripten_get_now();

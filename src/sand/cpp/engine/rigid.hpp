@@ -88,6 +88,7 @@ class RigidBodySystem {
   void bakeBodyToGrid(Body* b);
   bool bodySolidifies(Body* b);
   bool bodyTouchesGroundedSolid(Body* b);
+  bool bodyTouchesSettledLooseComponent(Body* b);
   bool bodyHasLooseSupport(Body* b);
   void stampJointFollower(Body* leader);
   void bakeRestingBodies();

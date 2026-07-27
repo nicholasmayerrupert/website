@@ -53,6 +53,19 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
+// --- component-backed bodies resting only on another free body stay in the
+//     rigid solver. The lower generic body never becomes static terrain. ---
+{
+  const e = mk();
+  e.spawnBox(60, 78, 10, 3, MAT.RIGID);
+  e.spawnBox(60, 66, 5, 4, MAT.WOOD);
+  for (let i = 0; i < 800; i++) e.step((i + 1) * 16);
+  check(`WOOD supported only by a RIGID body does not bake (${e._bodyCount()} bodies)`,
+    e._bodyCount() === 2 && e._bodyMaterial(1) === MAT.WOOD
+      && e._bodyAwake(1) === 0);
+  e.destroy();
+}
+
 // --- a body that cannot stamp any visible cell is culled instead of surviving as
 //     an invisible solver participant ---
 {

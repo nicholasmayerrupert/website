@@ -40,6 +40,11 @@ class ComponentSystem {
   // ---- grounding cache and scratch ----
   bool jointGroundReady = false;
   bool jointBondsInvalid = false;
+  // Foreground body baking can register new static components in both layers
+  // before the background layer moves. Refresh their shared component index and
+  // support closure first so the background never classifies those new pieces
+  // from stale layer-local topology.
+  bool jointBakeNeedsGroundRefresh = false;
   // A collision-free joint assembly translation preserves component ids,
   // adjacency, cross-layer bonds, and ungrounded flags. The next tick may reuse
   // that closure after refreshing only the loose overlay.

@@ -265,6 +265,95 @@ naturallyLoose.destroy();
   separate.destroy();
 }
 
+// A furnished generated hall contains many adjacent masonry, timber, mineral,
+// and plant partitions. After a rotated cross-layer fall, baking must refresh
+// both layers' component index before the background layer can move.
+{
+  const C = 220, R = 160;
+  const generated = createEngineWasm({
+    cols: C, rows: R, worldSeed: 0xBED, sinksOn: false, infinite: true,
+  });
+  generated.shiftWorldXY(128, 0);
+  generated.shiftWorldXY(128, 0);
+  const hall = [];
+  for (let layer = 0; layer < 2; layer++) {
+    const grid = layer ? generated.getGridBg() : generated.getGrid();
+    const cells = [];
+    for (let y = 10; y <= 52; y++) for (let x = 50; x <= 105; x++) {
+      const material = grid[y * C + x];
+      if (material !== MAT.EMPTY) cells.push([x, y, material]);
+    }
+    hall.push(cells);
+  }
+  generated.destroy();
+
+  const house = createEngineWasm({
+    cols: C, rows: R, worldSeed: 37, sinksOn: false, infinite: false,
+  });
+  house.setBgEnabled(true);
+  for (let layer = 0; layer < 2; layer++) {
+    for (const [x, y, material] of hall[layer])
+      house.paintDiscLayer(layer, x, y, 0, material, true);
+    for (let y = 53; y < R - 3; y++)
+      for (const x of [61, 62, 63, 96, 97, 98])
+        house.paintDiscLayer(layer, x, y, 0, MAT.BRICK, true);
+    for (let y = R - 3; y < R; y++)
+      for (let x = 0; x < C; x++)
+        house.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    house.syncComponentsLayer(layer);
+  }
+  house.stepWorld();
+  check('furnished hall fixture starts as one static cross-layer structure',
+    house._bodyCountLayer(0) === 0 && house._bodyCountLayer(1) === 0);
+
+  for (let layer = 0; layer < 2; layer++) {
+    for (let y = 53; y < R - 3; y++)
+      for (const x of [60, 61, 62, 63, 64, 95, 96, 97, 98, 99])
+        house.paintDiscLayer(layer, x, y, 0, MAT.EMPTY, true);
+    house.syncComponentsLayer(layer);
+  }
+  house.stepWorld();
+  check('cut hall becomes one foreground/background rigid pair',
+    house._bodyCountLayer(0) === 1 && house._bodyCountLayer(1) === 1
+      && house._bodyJointRoleLayer(0, 0) === 1
+      && house._bodyJointRoleLayer(1, 0) === 2);
+  house._setBodyMotion(0, 0, 0, 0.01);
+
+  let cohesive = true, bakedAt = -1, maxAngle = 0;
+  for (let i = 0; i < 260; i++) {
+    house.stepWorld();
+    const fgCount = house._bodyCountLayer(0);
+    const bgCount = house._bodyCountLayer(1);
+    if (fgCount === 0 && bgCount === 0) {
+      bakedAt = i;
+      break;
+    }
+    if (fgCount !== 1 || bgCount !== 1
+        || house._bodyJointRoleLayer(0, 0) !== 1
+        || house._bodyJointRoleLayer(1, 0) !== 2) {
+      cohesive = false;
+      break;
+    }
+    const fg = house._bodyStateLayer(0, 0);
+    const bg = house._bodyStateLayer(1, 0);
+    if (!fg || !bg
+        || Math.abs(fg.px - bg.px) > 1e-9
+        || Math.abs(fg.py - bg.py) > 1e-9
+        || Math.abs(fg.angle - bg.angle) > 1e-9) {
+      cohesive = false;
+      break;
+    }
+    maxAngle = Math.max(maxAngle, Math.abs(fg.angle));
+  }
+  check(`rotated furnished hall stays one assembly (max angle ${maxAngle.toFixed(2)} rad)`,
+    cohesive && maxAngle > 0.1);
+  check(`rotated furnished hall bakes without material fragments (step ${bakedAt})`,
+    bakedAt >= 0
+      && house._bodyCountLayer(0) === 0
+      && house._bodyCountLayer(1) === 0);
+  house.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

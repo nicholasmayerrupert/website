@@ -1227,7 +1227,8 @@ void RigidBodySystem::bakeBodyToGrid(Body* b) {
   // rasterized material, then register same-material sets through the normal
   // component paths. Adjacent sets regain shared structural support during the
   // next grounding pass.
-  bool looseSupport = bodyHasLooseSupport(b);
+  bool looseSupport = bodyHasLooseSupport(b)
+                   || bodyTouchesSettledLooseComponent(b);
   std::array<std::unordered_set<int>, TABLE> baked;
   forEachBodyCell(b, [&](int x, int y, int local) {
     int k = y * E.cols + x;
@@ -1357,16 +1358,34 @@ bool RigidBodySystem::bodyTouchesGroundedSolid(Body* b) {
       uint8_t material = E.L->grid[neighbor];
       if ((E.isRigidMaterialClass(material) || E.isLooseSolidMaterial(material))
           && E.L->groundedCell[neighbor]) return true;
-      // A component baked onto grounded powder is retained by its settled-body
-      // support state even though the rigid grounding flood does not stamp it.
-      // It is valid structural contact for bodies stacked on top of it.
-      if (E.isComponentMaterial(material)) {
-        int componentId = E.L->cellComp[neighbor];
-        if (componentId >= 0 && componentId < E.comps.compCount(*E.L)) {
-          Comp* component = E.comps.compById(*E.L, componentId);
-          if (component && component->settledBody) return true;
-        }
-      }
+    }
+  }
+  return bodyTouchesSettledLooseComponent(b);
+}
+bool RigidBodySystem::bodyTouchesSettledLooseComponent(Body* b) {
+  // Powder-backed baked components are retained outside the rigid grounding
+  // flood. Propagate that support through static stacks, but never through a
+  // body-owned cell.
+  occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
+  forEachBodyCell(b, [&](int x, int y, int) {
+    int k = y * E.cols + x;
+    if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); }
+  });
+  const int offsets[4] = {-1, 1, -E.cols, E.cols};
+  for (int k : occCells) {
+    int y = k / E.cols, x = k - y * E.cols;
+    for (int offset : offsets) {
+      if ((offset == -1 && x == 0) || (offset == 1 && x + 1 >= E.cols)
+          || (offset == -E.cols && y == 0) || (offset == E.cols && y + 1 >= E.rows))
+        continue;
+      int neighbor = k + offset;
+      if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0
+          || !E.isComponentMaterial(E.L->grid[neighbor])) continue;
+      int componentId = E.L->cellComp[neighbor];
+      if (componentId < 0 || componentId >= E.comps.compCount(*E.L)) continue;
+      Comp* component = E.comps.compById(*E.L, componentId);
+      if (component && component->settledBody
+          && component->settledLooseSupport) return true;
     }
   }
   return false;
@@ -1448,7 +1467,11 @@ void RigidBodySystem::bakeRestingBodies() {
     }
     else keep.push_back(b);
   }
-  if (baked) E.L->bodies = std::move(keep);
+  if (baked) {
+    E.L->bodies = std::move(keep);
+    if (E.L == &E.fg && E.bgEnabled)
+      E.comps.jointBakeNeedsGroundRefresh = true;
+  }
 }
 void RigidBodySystem::stampJointFollower(Body* leader) {
   if (!leader || leader->jointRole != 1 || !leader->jointPeer) return;

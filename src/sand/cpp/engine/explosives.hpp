@@ -73,7 +73,10 @@ class ExplosivesSystem {
     uint8_t material;
     double x, y, vx, vy;
   };
-  struct BlastCrossPair { int ownId, peerId; uint8_t dependentMask; };
+  struct BlastCrossPair {
+    int ownId, peerId;
+    uint8_t dependentMask, dependentNeighbourMask;
+  };
   struct BlastBatch {
     std::vector<int> forcedStaticTnt;
     std::vector<BlastCellRemoval> staticCuts;

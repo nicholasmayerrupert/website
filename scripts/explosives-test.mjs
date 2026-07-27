@@ -554,6 +554,37 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a removed cross-supported bridge releases its surviving same-layer neighbour ---
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  e.eraseDiscLayer(0, COLS >> 1, ROWS >> 1, COLS + ROWS);
+  e.eraseDiscLayer(1, COLS >> 1, ROWS >> 1, COLS + ROWS);
+  e._resetTopology();
+
+  const cx = 45, cy = 35;
+  const bridgeX = cx + 10;
+  for (let y = cy; y < ROWS; y++) e.placeMaterial(bridgeX, y, 0, MAT.IRON_ORE, 1);
+  e.placeMaterial(bridgeX, cy, 0, MAT.STONE, 0);
+  for (let y = cy - 3; y <= cy + 3; y++) {
+    for (let x = bridgeX + 1; x <= bridgeX + 10; x++)
+      e.placeMaterial(x, y, 0, MAT.IRON_ORE, 0);
+  }
+  e.syncComponentsLayer(0);
+  e.syncComponentsLayer(1);
+  for (let i = 0; i < 5; i++) e.step(i * 16);
+
+  const before = topRow(e.getGrid(), MAT.IRON_ORE);
+  e._detonateTnt(cx, cy);
+  const bridgeRemoved = e.getGrid()[cy * COLS + bridgeX] === MAT.EMPTY;
+  for (let i = 5; i < 13; i++) e.step(i * 16);
+  const after = topRow(e.getGrid(), MAT.IRON_ORE);
+  check(`blast removed the cross-supported bridge cell`, bridgeRemoved);
+  check(`the bridge's surviving same-layer neighbour falls (top ${before} -> ${after})`,
+    after > before + 4);
+  e.destroy();
+}
+
 // --- a locally-safe blast may reconnect through another component, but a later cut must still split it ---
 {
   const e = mk();

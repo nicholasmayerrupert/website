@@ -305,11 +305,22 @@ void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
                         | (peer->groundBaseFlags[peerId] ? 0 : 2);
   if (!dependentMask) return;
   bb.structuralLayer = own;
-  for (auto& pair : bb.touchedCrossPairs) if (pair.ownId == ownId && pair.peerId == peerId) {
+  for (auto& pair : bb.touchedCrossPairs) {
+    if (pair.ownId != ownId || pair.peerId != peerId) continue;
     pair.dependentMask |= dependentMask;
     return;
   }
-  bb.touchedCrossPairs.push_back({ownId, peerId, dependentMask});
+  auto hasSameLayerNeighbour = [](const Layer& lay, int id) {
+    for (uint64_t packed : lay.compAdjPairs) {
+      int a = (int)(packed >> 32), b = (int)(uint32_t)packed;
+      if (a == id || b == id) return true;
+    }
+    return false;
+  };
+  uint8_t dependentNeighbourMask =
+      ((dependentMask & 1) && hasSameLayerNeighbour(*own, ownId) ? 1 : 0)
+    | ((dependentMask & 2) && hasSameLayerNeighbour(*peer, peerId) ? 2 : 0);
+  bb.touchedCrossPairs.push_back({ownId, peerId, dependentMask, dependentNeighbourMask});
 }
 
 bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
@@ -335,12 +346,13 @@ bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
           && E.isIceComponentMaterial(own.grid[q]) == E.isIceComponentMaterial(peer.grid[q])) { survives = true; break; }
     }
     if (!survives) {
-      // Losing a contact matters only while at least one endpoint that depended
-      // on it survived the blast. Cave TNT itself is commonly supported by the
-      // solid background; once that TNT component is gone, rebuilding the whole
-      // joint closure would repair nothing.
-      if ((pair.dependentMask & 1) && !a->cells.empty()) return false;
-      if ((pair.dependentMask & 2) && !b->cells.empty()) return false;
+      // A removed endpoint can have transmitted joint support into a surviving
+      // same-layer neighbour. Isolated dependent components need no repair once
+      // fully removed.
+      if ((pair.dependentMask & 1)
+          && (!a->cells.empty() || (pair.dependentNeighbourMask & 1))) return false;
+      if ((pair.dependentMask & 2)
+          && (!b->cells.empty() || (pair.dependentNeighbourMask & 2))) return false;
     }
   }
   return true;

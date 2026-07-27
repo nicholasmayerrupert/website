@@ -153,6 +153,59 @@ function collectAndEquipWeapon(e, playerId, itemKind, drop, label) {
   e.destroy();
 }
 
+// A foreground-only structure must lose its grounding when a blast round cuts
+// its same-layer connection to a post that is itself supported from behind.
+{
+  const e = arena({ background: true });
+  e.setBgEnabled(true);
+  const material = MAT.STONE;
+  for (let y = 80; y < FLOOR; y++) e.paintDiscLayer(1, 108, y, 1, material, true);
+  e.syncComponentsLayer(1);
+  for (let y = 78; y <= 88; y++) e.addDiscToStoneDraft(108, y, 0);
+  e.finalizeStoneDraft();
+  for (let y = 45; y <= 57; y++) {
+    for (let x = 60; x <= 105; x++) e.addDiscToStoneDraft(x, y, 0);
+  }
+  for (let y = 55; y <= 77; y++) {
+    for (let x = 106; x <= 108; x++) e.addDiscToStoneDraft(x, y, 0);
+  }
+  e.finalizeStoneDraft();
+  for (let tick = 0; tick < 6; tick++) e.step(tick * 16);
+  const shooter = e.spawnPlayer(150, 66);
+  const slabTopRow = () => {
+    const grid = e.getGrid();
+    for (let y = 1; y < FLOOR; y++) {
+      for (let x = 40; x <= 105; x++) {
+        if (grid[y * COLS + x] === material) return y;
+      }
+    }
+    return -1;
+  };
+  const before = slabTopRow();
+  e.setPlayerInput(shooter, {
+    bits: PI_PRIMARY, aimX: 100, aimY: 70, seq: 1,
+  });
+  for (let tick = 0; tick < 8 && (tick === 0 || e.getProjectiles().length); tick++) {
+    e.stepActors();
+  }
+  e.setPlayerInput(shooter, {
+    bits: 0, aimX: 100, aimY: 70, seq: 2,
+  });
+  const gridAfterBlast = e.getGrid();
+  let severed = false;
+  for (let y = 61; y <= 76; y++) {
+    let clear = true;
+    for (let x = 106; x <= 108; x++) clear &&= gridAfterBlast[y * COLS + x] !== material;
+    severed ||= clear;
+  }
+  for (let tick = 8; tick < 68; tick++) e.step(tick * 16);
+  const after = slabTopRow();
+  check('blast round severs the foreground-only structure from its cross-supported post', severed);
+  check(`severed foreground-only structure falls (top ${before} -> ${after})`,
+    before >= 0 && after > before + 4);
+  e.destroy();
+}
+
 // Held automatic fire retains the starter gun's behavior, but its cadence is
 // now exactly half the previous 11-tick rate.
 {

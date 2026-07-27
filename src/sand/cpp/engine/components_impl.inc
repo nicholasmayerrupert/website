@@ -723,7 +723,11 @@ bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& bo
   int32_t safe = ++E.L->seenGen;
   int* stack = E.L->groundStack.data();
   const uint8_t* grid = E.L->grid;
-  const uint8_t* prior = E.L->groundRigidBase.data();
+  // A same-layer region can be grounded only through a component whose support
+  // comes from the other layer, so a live joint closure is the relevant prior.
+  const uint8_t* prior = jointSupportValid
+    ? E.L->groundedCell.data()
+    : E.L->groundRigidBase.data();
   auto directSeed = [&](int k, int x, int y) {
     uint8_t m = grid[k];
     if (y == E.rows - 1 && E.isBearingMaterial(m)) return true;

@@ -197,6 +197,15 @@ function survivalEngine() {
   const PORT = await getAvailablePort();
   const srv = await startSandServer({ port: PORT, cols: 128, rows: 96, seed: 0x1234, room: 'r', maxPlayers: 2 });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (predicate, timeoutMs = 2000) => {
+    const deadline = Date.now() + timeoutMs;
+    let value = predicate();
+    while (!value && Date.now() < deadline) {
+      await wait(10);
+      value = predicate();
+    }
+    return value;
+  };
   const open = () => new Promise((res, rej) => { const ws = new WebSocket(`ws://localhost:${PORT}`); ws.onopen = () => res(ws); ws.onerror = () => rej(new Error('connect failed')); });
   const inboxOf = (ws) => { const q = []; ws.onmessage = (ev) => { const m = decode(typeof ev.data === 'string' ? ev.data : ev.data.toString()); if (m) q.push(m); }; return q; };
   const last = (q, t) => { for (let i = q.length - 1; i >= 0; i--) if (q[i].t === t) return q[i]; return null; };
@@ -250,12 +259,14 @@ function survivalEngine() {
     check('legitimate low sequence works after forged high sequence', srv.host.clients.get('B').tracker.latest === 0);
 
     const wrongRoom = await open(), wrongIn = inboxOf(wrongRoom);
-    wrongRoom.send(encode(makeJoin('elsewhere', 'C'))); await wait(40);
-    check('wrong room receives a structured rejection', last(wrongIn, MSG.REJECT)?.reason === 'room');
+    wrongRoom.send(encode(makeJoin('elsewhere', 'C')));
+    const wrongReject = await waitFor(() => last(wrongIn, MSG.REJECT));
+    check('wrong room receives a structured rejection', wrongReject?.reason === 'room');
     wrongRoom.close();
     const full = await open(), fullIn = inboxOf(full);
-    full.send(encode(makeJoin('r', 'C'))); await wait(40);
-    check('full room receives a structured rejection', last(fullIn, MSG.REJECT)?.reason === 'full');
+    full.send(encode(makeJoin('r', 'C')));
+    const fullReject = await waitFor(() => last(fullIn, MSG.REJECT));
+    check('full room receives a structured rejection', fullReject?.reason === 'full');
     full.close();
 
     // snapshots list both players.

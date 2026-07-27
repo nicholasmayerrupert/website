@@ -403,6 +403,7 @@ void ComponentSystem::normalizeDeferredConnectivity() {
         c.id = reused ? nextId++ : comp.id;
         c.plantType = comp.plantType; c.age = comp.age; c.growing = comp.growing;
         c.settledBody = comp.settledBody;
+        c.settledLooseSupport = comp.settledLooseSupport;
         c.detachedByBreak = comp.detachedByBreak;
         c.buoyancyDirection = comp.buoyancyDirection; c.cacheDirty = iceCache || comp.cacheDirty;
         c.cells = std::move(splitPart); c.yMax = 0;
@@ -1753,7 +1754,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
 
   struct JointGroup {
     std::vector<int> fgComps, bgComps;
-    bool grounded = false, settledBody = false, detachedByBreak = false, growingPlant = false;
+    bool grounded = false, settledBody = false, settledLooseSupport = false;
+    bool detachedByBreak = false, growingPlant = false;
     int maxY = 0;
     int minComp = INT_MAX;
   };
@@ -1763,6 +1765,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     Comp* c = compById(E.fg, i);
     if (c->grounded) g.grounded = true;
     if (c->settledBody) g.settledBody = true;
+    if (c->settledLooseSupport) g.settledLooseSupport = true;
     if (c->detachedByBreak) g.detachedByBreak = true;
     if (compIdIsPlant(E.fg, i) && c->growing) g.growingPlant = true;
     if (c->yMax > g.maxY) g.maxY = c->yMax;
@@ -1773,6 +1776,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     Comp* c = compById(E.bg, i);
     if (c->grounded) g.grounded = true;
     if (c->settledBody) g.settledBody = true;
+    if (c->settledLooseSupport) g.settledLooseSupport = true;
     if (c->detachedByBreak) g.detachedByBreak = true;
     if (compIdIsPlant(E.bg, i) && c->growing) g.growingPlant = true;
     if (c->yMax > g.maxY) g.maxY = c->yMax;
@@ -1986,15 +1990,23 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     accumulateFaceContact(E.fg.grid, fgCells, before);
     accumulateFaceContact(E.bg.grid, bgCells, before);
     int decision = motionDecision(before, fgCells.size() + bgCells.size(), sum);
-    // A body baked on powder remains static while that footprint exists. Loose
-    // material does not enter the structural grounding graph, so the explicit
-    // bake marker distinguishes it from a freshly separated solid.
-    if (g->settledBody && before.bottomPowderFaces > 0) continue;
+    // An intact baked powder stack retains the body-by-body support accepted
+    // while it settled. After a structural break, the remaining footprint must
+    // carry the full detached assembly. Complete support loss restores the
+    // baked group to the body solver instead of lightweight component motion.
+    bool bakedPowderSupported = g->settledBody && before.bottomPowderFaces > 0
+      && sum <= before.bottomPowderDensityArea * R_GRANULAR_BEARING_DEPTH + 1e-6;
+    bool unchangedBakedPowderStack = g->settledBody && !g->detachedByBreak
+      && before.bottomPowderFaces > 0;
+    if (g->settledBody
+        && (decision == 0 || bakedPowderSupported || unchangedBakedPowderStack)) continue;
     // A structural break creates one optional cross-layer body: the two masks
     // share a pose only because this same detachment event produced both.
     // A lit static fuse keeps the one-cell assembly path until it detonates so
     // its buffer-local countdown remains attached to the TNT cell.
-    if (g->detachedByBreak && !g->growingPlant) {
+    bool lostBakedLooseSupport = g->settledLooseSupport
+      && before.bottomPowderFaces == 0;
+    if ((g->detachedByBreak || lostBakedLooseSupport) && !g->growingPlant) {
       bool containsTnt = false;
       for (const auto& cell : fgMats) if (cell.material == TNT) { containsTnt = true; break; }
       if (!containsTnt)
@@ -2131,7 +2143,8 @@ void ComponentSystem::moveRigidAssemblies() {
   }
   struct Group {
     std::vector<int> comps;
-    bool grounded = false, dueTntOnly = true, settledBody = false, detachedByBreak = false;
+    bool grounded = false, dueTntOnly = true, settledBody = false;
+    bool settledLooseSupport = false, detachedByBreak = false;
     int maxY = 0;
     int minComp = INT_MAX;
   };
@@ -2141,6 +2154,7 @@ void ComponentSystem::moveRigidAssemblies() {
     if (all[i]->grounded || anchored[i]) g.grounded = true;
     if (!allImminentTnt[i]) g.dueTntOnly = false;
     if (all[i]->settledBody) g.settledBody = true;
+    if (all[i]->settledLooseSupport) g.settledLooseSupport = true;
     if (all[i]->detachedByBreak) g.detachedByBreak = true;
     if (all[i]->yMax > g.maxY) g.maxY = all[i]->yMax;
     if (allGlobalIds[i] < g.minComp) g.minComp = allGlobalIds[i];
@@ -2636,10 +2650,18 @@ void ComponentSystem::moveRigidAssemblies() {
     FaceContact current;
     accumulateFaceContact(E.L->grid, cells, current);
     int decision = motionDecision(current, cells.size(), weight);
-    // Component grounding deliberately excludes loose cells. Preserve a baked
-    // body's settled state while its powder footprint remains in place.
-    if (grp->settledBody && current.bottomPowderFaces > 0) continue;
-    if (grp->detachedByBreak) {
+    // Component grounding deliberately excludes loose cells. An intact baked
+    // powder stack retains its settled support; a structural break rechecks the
+    // full detached mass, and complete support loss restores the body solver.
+    bool bakedPowderSupported = grp->settledBody && current.bottomPowderFaces > 0
+      && weight <= current.bottomPowderDensityArea * R_GRANULAR_BEARING_DEPTH + 1e-6;
+    bool unchangedBakedPowderStack = grp->settledBody && !grp->detachedByBreak
+      && current.bottomPowderFaces > 0;
+    if (grp->settledBody
+        && (decision == 0 || bakedPowderSupported || unchangedBakedPowderStack)) continue;
+    bool lostBakedLooseSupport = grp->settledLooseSupport
+      && current.bottomPowderFaces == 0;
+    if (grp->detachedByBreak || lostBakedLooseSupport) {
       bool hasLiveFuse = false;
       for (int k : cells) if (E.L->pendingDetonations.count(k)) { hasLiveFuse = true; break; }
       bool containsTnt = false;
@@ -2970,6 +2992,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
         comp.cells.swap(splitSurvivors); comp.yMax = comp.woodCount = comp.leafCount = 0; comp.cacheDirty = true;
         comp.detachedByBreak = true;
         comp.settledBody = false;
+        comp.settledLooseSupport = false;
         for (int k : comp.cells) { int y = k / E.cols; comp.yMax = imax(comp.yMax, y); if (E.isPlantWood(E.L->grid[k])) comp.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) comp.leafCount++; }
         updated.push_back(std::move(comp)); continue;
       }
@@ -2994,6 +3017,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       c.requiresCellGrounding = comp.requiresCellGrounding;
       c.detachedByBreak = comp.detachedByBreak || componentChanged;
       c.settledBody = componentChanged ? false : comp.settledBody;
+      c.settledLooseSupport = componentChanged ? false : comp.settledLooseSupport;
       for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.L->grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) c.leafCount++; }
       c.cells = std::move(part); updated.push_back(std::move(c)); reused = true;
     }
@@ -3114,6 +3138,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       comp.cacheDirty = iceCache;
       comp.detachedByBreak = true;
       comp.settledBody = false;
+      comp.settledLooseSupport = false;
       for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
       updated.push_back(std::move(comp));
       continue;
@@ -3131,6 +3156,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       comp.cells.swap(survivors); comp.yMax = 0; comp.cacheDirty = iceCache;
       comp.detachedByBreak = true;
       comp.settledBody = false;
+      comp.settledLooseSupport = false;
       for (int k : comp.cells) comp.yMax = imax(comp.yMax, k / E.cols);
       updated.push_back(std::move(comp)); continue;
     }

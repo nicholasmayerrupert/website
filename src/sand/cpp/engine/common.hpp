@@ -183,9 +183,13 @@ struct Comp {
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
   bool grounded = false;
-  // Set when this component was stamped from a sleeping rigid body. While its
-  // powder footprint remains, it stays baked instead of re-entering the solver.
+  // Set when this component was stamped from a sleeping rigid body. It
+  // distinguishes a stable bake from a naturally unsupported component.
   bool settledBody = false;
+  // The sleeping body baked while loose material, rather than rigid terrain,
+  // supplied its underside support. Complete loss of that footprint restores
+  // the body solver even when no rigid component was directly cut.
+  bool settledLooseSupport = false;
   // A topology-changing erase marks the affected support closure for rigid-body
   // conversion if grounding shows that it lost its last static support.
   bool detachedByBreak = false;

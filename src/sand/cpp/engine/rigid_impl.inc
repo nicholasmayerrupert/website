@@ -1062,6 +1062,7 @@ void RigidBodySystem::bakeBodyToGrid(Body* b) {
   // rasterized material, then register same-material sets through the normal
   // component paths. Adjacent sets regain shared structural support during the
   // next grounding pass.
+  bool looseSupport = bodyHasLooseSupport(b);
   std::array<std::unordered_set<int>, TABLE> baked;
   forEachBodyCell(b, [&](int x, int y, int local) {
     int k = y * E.cols + x;
@@ -1118,6 +1119,7 @@ void RigidBodySystem::bakeBodyToGrid(Body* b) {
       for (int k : component.cells) {
         if (!occStamp.has(k)) continue;
         component.settledBody = true;
+        component.settledLooseSupport = looseSupport;
         component.detachedByBreak = false;
         break;
       }

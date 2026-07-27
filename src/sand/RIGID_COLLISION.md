@@ -42,7 +42,10 @@ When a component-backed body sleeps on terrain or powder, its current raster is
 registered through the ordinary stone, ice, and plant component paths and the
 body is deleted. Cross-layer halves sleep and bake together. A body floating in
 liquid stays dynamic. The generic `RIGID` material has no static component form
-and never bakes.
+and never bakes. A later structural break rechecks the full detached assembly
+against its remaining granular footprint, so a few trapped grains cannot pin a
+large baked island. If the loose footprint drains completely, the baked
+component returns to the body solver; intact supported stacks remain baked.
 
 ## Fluids and loose solids
 

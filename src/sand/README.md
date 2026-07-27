@@ -353,8 +353,11 @@ npm run build:embed
 
 `scripts/test-manifest.mjs` is the source of truth for executable test entries.
 The runner checks that every `*-test.mjs`, `*-e2e.mjs`, and `*-repro.mjs` file is
-declared before running suites. Browser suites allocate strict ports and have
-per-suite timeouts.
+declared before running suites. Headless tests use two workers; browser suites
+stay serial because their real-time rendering checks are contention-sensitive.
+Pass `--jobs N` to `scripts/run-tests.mjs` or set `TEST_JOBS=N` to override that.
+Passing suites are summarized by default; add `--verbose` for their full output.
+Browser suites allocate strict ports and have per-suite timeouts.
 
 For engine or renderer changes, benchmark before and after:
 

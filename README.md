@@ -29,4 +29,5 @@ npm run deploy   # build and deploy to Cloudflare
   its [README](src/sand/README.md) to work on it.
 - `scripts/` — headless test suites, benchmarks, and the authoritative
   multiplayer server (`npm run sand:server`). `npm test` runs the headless
-  suites; `npm run test:all` also runs lint, builds, and browser tests.
+  suites with two workers; `npm run test:all` also runs lint, builds, and browser
+  tests.

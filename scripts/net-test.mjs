@@ -17,6 +17,7 @@ import { startServer } from './dev-multiplayer-server.mjs';
 import { approxEqual } from './sand-test-util.mjs';
 import { initSandWasm, createEngineWasm, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
 import { gridHash } from './sand-test-util.mjs';
+import { getAvailablePort } from './test-port.mjs';
 import { WebSocket } from 'ws';
 
 const COLS = 200, ROWS = 120;
@@ -428,7 +429,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 //    peer, host snapshot reaches the client, disconnect produces a leave.
 {
   console.log('websocket relay (live)');
-  const PORT = 5193;
+  const PORT = await getAvailablePort();
   const srv = startServer(PORT);
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const open = () => new Promise((res, rej) => { const ws = new WebSocket(`ws://localhost:${PORT}`); ws.onopen = () => res(ws); ws.onerror = () => rej(new Error('ws connect failed')); });

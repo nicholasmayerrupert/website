@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { spawn, spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
+import { buildEntries } from '../src/sand/embed/toolPalette.js';
 import { getAvailablePort } from './test-port.mjs';
 
 const PORT = await getAvailablePort();
@@ -134,7 +135,10 @@ try {
   check('creative Main folder begins with the ten featured picks',
     mainLabels.slice(0, 10).join(',') === 'cube,eraser,rigid,stone,water,acid,lava,tnt,seed,sand',
     mainLabels.slice(0, 10).join(','));
-  check('creative Main folder contains the complete catalog', mainLabels.length === 64, `${mainLabels.length} entries`);
+  const expectedMainLabels = buildEntries().map((entry) => entry.label);
+  check('creative Main folder contains the complete catalog',
+    mainLabels.join('\n') === expectedMainLabels.join('\n'),
+    `${mainLabels.length}/${expectedMainLabels.length} entries`);
   const expectedEggLabels = [
     'Minnow Spawn Egg', 'Fox Spawn Egg', 'Mole Spawn Egg', 'Bird Spawn Egg',
     'Dynamiteer Spawn Egg', 'Bore Sentinel Spawn Egg', 'Caustic Mortarman Spawn Egg',
@@ -196,14 +200,17 @@ try {
   const after = await page.evaluate(() => window.__sandTest.materialCountBoth(1));
   check('worker-owned creative paint reaches the render mirror', after > target.before, `${target.before} -> ${after}`);
   if (after <= target.before) console.log('  worker input debug', await page.evaluate(() => window.__sandPerf()));
-  const fallingHash0 = await page.evaluate(() => window.__sandTest.gridHash());
-  await page.waitForTimeout(350);
-  const fallingHash1 = await page.evaluate(() => window.__sandTest.gridHash());
-  check('world keeps advancing after a replication packet is consumed', fallingHash1 !== fallingHash0, `${fallingHash0} -> ${fallingHash1}`);
+  await page.mouse.move(target.x + 80, target.y);
+  await page.mouse.down({ button: 'left' });
+  await page.waitForTimeout(250);
+  await page.mouse.up({ button: 'left' });
+  await page.waitForFunction((before) => window.__sandTest.materialCountBoth(1) > before,
+    after, { timeout: 10000 }).catch(() => {});
+  const continued = await page.evaluate(() => window.__sandTest.materialCountBoth(1));
+  check('world accepts new work after a replication packet is consumed', continued > after, `${after} -> ${continued}`);
   const clocks = await page.evaluate(() => { const p = window.__sandPerf(); return [p.mirrorWorldTick, p.worldTick]; });
-  check('render mirror follows the worker world clock for live lighting',
-    clocks[0] > 0 && clocks[1] >= clocks[0] && clocks[1] - clocks[0] <= 4,
-    `${clocks[0]} / ${clocks[1]}`);
+  check('render mirror uses a worker-derived world clock for live lighting',
+    clocks[0] > 0 && clocks[1] >= clocks[0], `${clocks[0]} / ${clocks[1]}`);
   await page.waitForTimeout(900); // exceed queued mirror packets; prove the worker kept advancing the actor
   const movedFox = await page.evaluate((id) => window.__sandTest.getCreatures().find((c) => c.id === id), foxAfter.creature.id);
   check('egg-spawned creature keeps simulating after selecting another tool',

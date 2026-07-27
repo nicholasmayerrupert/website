@@ -194,7 +194,7 @@ function survivalEngine() {
 
 // 6) live two-client server: join hands out world + inventory; INPUT + intents act.
 {
-  const PORT = 5197;
+  const PORT = await getAvailablePort();
   const srv = await startSandServer({ port: PORT, cols: 128, rows: 96, seed: 0x1234, room: 'r', maxPlayers: 2 });
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const open = () => new Promise((res, rej) => { const ws = new WebSocket(`ws://localhost:${PORT}`); ws.onopen = () => res(ws); ws.onerror = () => rej(new Error('connect failed')); });

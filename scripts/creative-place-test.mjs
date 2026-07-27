@@ -192,6 +192,27 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
+// Cross-layer overlap supplies static support at placement time. Creative and
+// survival both finalize through the same structural placement path.
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  for (let y = 20; y < ROWS; y++)
+    e.paintDiscLayer(1, 35, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(1);
+  e.setCreativeMaterial(CK.MATERIAL, MAT.BRICK);
+  e.pointerDown(37, 30, 0);
+  e.pointerUp(0);
+  check('creative foreground placement overlapping background terrain stays static',
+    e._bodyCountLayer(0) === 0
+      && at(e.getGrid(), 35, 30) === MAT.BRICK
+      && e._bodyOwnerGrid(0)[30 * COLS + 35] < 0);
+  e.stepWorld();
+  check('creative cross-layer-supported placement remains component-backed',
+    e._bodyCountLayer(0) === 0 && at(e.getGrid(), 35, 30) === MAT.BRICK);
+  e.destroy();
+}
+
 // The survival placement API uses the same weld path.
 {
   const e = mk();
@@ -220,6 +241,24 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   check('survival cave-wall infill remains static after a step',
     e._bodyCount() === 0 && at(e.getGrid(), 36, 40) === MAT.COPPER_ORE
       && at(e.getGrid(), 36, 50) === MAT.WOOD);
+  e.destroy();
+}
+
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  for (let y = 20; y < ROWS; y++)
+    e.paintDiscLayer(0, 35, y, 0, MAT.STONE, true);
+  e.syncComponentsLayer(0);
+  e.placeMaterial(37, 50, 2, MAT.COPPER_ORE, 1);
+  check('survival background placement overlapping foreground terrain stays static',
+    e._bodyCountLayer(1) === 0
+      && at(e.getGridBg(), 35, 50) === MAT.COPPER_ORE
+      && e._bodyOwnerGrid(1)[50 * COLS + 35] < 0);
+  e.stepWorld();
+  check('survival cross-layer-supported placement remains component-backed',
+    e._bodyCountLayer(1) === 0
+      && at(e.getGridBg(), 35, 50) === MAT.COPPER_ORE);
   e.destroy();
 }
 

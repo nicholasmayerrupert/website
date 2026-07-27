@@ -234,7 +234,12 @@ void ToolSystem::finalizeStructuralPlacement(
     }
 
     bool touchesStatic = false;
+    Layer* peer = E.bgEnabled ? (E.L == &E.fg ? &E.bg : &E.fg) : nullptr;
     for (const auto& cell : island) {
+      int k = cell.second * E.cols + cell.first;
+      if (peer && peer->bodyOwner[k] < 0
+          && E.isComponentMaterial(peer->grid[k]))
+        touchesStatic = true;
       for (int oy = -1; oy <= 1 && !touchesStatic; oy++)
         for (int ox = -1; ox <= 1; ox++) {
           if (!ox && !oy) continue;

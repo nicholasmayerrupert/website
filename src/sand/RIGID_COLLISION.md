@@ -51,10 +51,12 @@ returns to the body solver; intact supported stacks remain baked.
 
 ## Fluids and loose solids
 
-Liquids do not collide as terrain. Buoyancy depends on submerged boundary samples,
-material density, and drag. A body entering liquid relocates displaced cells to
-the nearest reachable space, treating its own raster as traversal-only space.
-Other bodies remain barriers.
+Liquids do not collide as terrain. Buoyancy depends on exterior liquid connected
+to the body's expanded raster boundary, material density, and drag. Fluid
+retained in an open basin is cargo rather than displaced exterior volume, so it
+falls with its container without slowing the container through self-buoyancy. A
+body entering liquid relocates displaced cells to the nearest reachable space,
+treating its own raster as traversal-only space. Other bodies remain barriers.
 
 Powders provide one-way support and can be displaced by a sufficiently heavy
 body. Material above a body contributes granular confinement only when the

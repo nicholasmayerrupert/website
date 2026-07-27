@@ -430,6 +430,50 @@ for (const dt of [16, 8, 33, 50]) {
 //    longer rests on top of a denser fluid as if it were solid); a body denser
 //    than the fluid sinks through to the floor. Fluid mass is conserved.
 {
+  console.log('fluid retained in an open tub is cargo, not exterior buoyancy');
+  const WATER = 2;
+  const buildTub = (loaded) => {
+    const e = mk({ rows: 180 });
+    const cells = [];
+    for (let y = 25; y <= 55; y++) for (let x = 75; x <= 124; x++)
+      if (y >= 52 || x <= 78 || x >= 121) cells.push([x, y]);
+    e.spawnBody(cells);
+    if (loaded)
+      for (let y = 35; y <= 51; y++) for (let x = 79; x <= 120; x++)
+        e.paintDisc(x, y, 0, WATER, true);
+    return e;
+  };
+  const empty = buildTub(false);
+  const loaded = buildTub(true);
+  const waterBefore = (() => {
+    let n = 0;
+    for (const material of loaded.getGrid()) if (material === WATER) n++;
+    return n;
+  })();
+  run(empty, 30);
+  run(loaded, 30);
+  const emptyState = empty._bodyState(0);
+  const loadedState = loaded._bodyState(0);
+  let waterAfter = 0, waterMinY = 180, waterMaxY = -1;
+  for (let k = 0; k < loaded.getGrid().length; k++) {
+    if (loaded.getGrid()[k] !== WATER) continue;
+    const y = (k / COLS) | 0;
+    waterAfter++;
+    waterMinY = Math.min(waterMinY, y);
+    waterMaxY = Math.max(waterMaxY, y);
+  }
+  check(`loaded tub keeps empty-tub fall speed (${loadedState.vy.toFixed(3)} ~= ${emptyState.vy.toFixed(3)})`,
+    Math.abs(loadedState.vy - emptyState.vy) < 0.02
+      && Math.abs(loadedState.py - emptyState.py) < 0.25);
+  check(`falling tub retains its fluid cargo (${waterAfter} == ${waterBefore})`,
+    waterAfter === waterBefore
+      && waterMinY < loadedState.py
+      && waterMaxY > loadedState.py);
+  empty.destroy();
+  loaded.destroy();
+}
+
+{
   const WATER = 2, WOOD = 8;                                 // water density 1.0, wood 0.6
   const x0 = 40, x1 = 160, yTop = 50, yBot = 110;            // walled pool with a stone floor
   const buildPool = (e) => {

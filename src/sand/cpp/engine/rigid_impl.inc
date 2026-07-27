@@ -707,12 +707,32 @@ double RigidBodySystem::bodyLiquidSupport(Body* b, double& submerged) {
   });
   if (occCells.empty()) return 0;
 
-  // Flood the medium immediately outside the raster. Liquid in a closed cavity
-  // inside the body is cargo, not displaced exterior volume, so it must not add
-  // buoyancy. The one-cell-expanded box is enough to expose every outside row
-  // while keeping enclosed holes unreachable.
+  // Flood the medium immediately outside the raster. Empty cells retained
+  // between walls and above a floor in the body's local occupancy mask form its
+  // basin; liquid there is cargo rather than displaced exterior volume.
   int x0 = imax(0, minX - 1), x1 = imin(E.cols - 1, maxX + 1);
   int y0 = imax(0, minY - 1), y1 = imin(E.rows - 1, maxY + 1);
+  bool basinShape = b->nPts < b->w * b->h
+                 && b->nPts * 5 >= b->w * b->h;
+  auto retainedCargo = [&](int x, int y) {
+    if (!basinShape) return false;
+    double dx = x + 0.5 - b->px, dy = y + 0.5 - b->py;
+    double lx = dx * b->cs + dy * b->sn;
+    double ly = -dx * b->sn + dy * b->cs;
+    int i = (int)std::lround(lx - b->offsetX);
+    int j = (int)std::lround(ly - b->offsetY);
+    if (i < 0 || i >= b->w || j < 0 || j >= b->h
+        || b->occ[j * b->w + i]) return false;
+    bool wallLeft = false, wallRight = false, floorBelow = false;
+    for (int ii = i - 1; ii >= 0; ii--)
+      if (b->occ[j * b->w + ii]) { wallLeft = true; break; }
+    for (int ii = i + 1; ii < b->w; ii++)
+      if (b->occ[j * b->w + ii]) { wallRight = true; break; }
+    if (!wallLeft || !wallRight) return false;
+    for (int jj = j + 1; jj < b->h; jj++)
+      if (b->occ[jj * b->w + i]) { floorBelow = true; break; }
+    return floorBelow;
+  };
   int32_t seenGen = ++E.L->seenGen;
   std::vector<int> queue;
   queue.reserve((size_t)(x1 - x0 + 1) * 2 + (size_t)(y1 - y0 + 1) * 2);
@@ -738,14 +758,26 @@ double RigidBodySystem::bodyLiquidSupport(Body* b, double& submerged) {
     enqueue(x1, y);
   }
   std::vector<double> rowDensity((size_t)(y1 - y0 + 1), 0);
+  int retainedCargoCells = 0;
   for (size_t qi = 0; qi < queue.size(); qi++) {
     int k = queue[qi], y = k / E.cols, x = k - y * E.cols;
     uint8_t material = E.L->grid[k];
-    if (E.isLiquidMaterial(material))
-      rowDensity[y - y0] = std::fmax(rowDensity[y - y0], DENSITY[material]);
+    if (E.isLiquidMaterial(material)) {
+      if (retainedCargo(x, y)) retainedCargoCells++;
+      else rowDensity[y - y0] = std::fmax(rowDensity[y - y0], DENSITY[material]);
+    }
     enqueue(x - 1, y); enqueue(x + 1, y);
     enqueue(x, y - 1); enqueue(x, y + 1);
   }
+  // A few liquid cells caught in raster-scale concavities remain exterior
+  // medium. Only a meaningful retained volume acts as cargo.
+  if (!basinShape || retainedCargoCells * 16 < b->nPts)
+    for (int k : queue) {
+      uint8_t material = E.L->grid[k];
+      if (!E.isLiquidMaterial(material)) continue;
+      int y = k / E.cols;
+      rowDensity[y - y0] = std::fmax(rowDensity[y - y0], DENSITY[material]);
+    }
 
   // Integrate each source cell's continuous vertical span through the exterior
   // liquid rows. Fractional coverage gives a shallow raft an equilibrium draft

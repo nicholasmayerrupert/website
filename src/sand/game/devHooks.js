@@ -215,6 +215,8 @@ export function installDevHooks(ctx, {
     items: () => (ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || []).length / ITEM_FIELDS,
     ownInventory: () => (ctx.netClientReady() ? ctx.net.getOwnInventory() : ctx.worldWorker?.getInventory() || null),
     ownCursor: () => (ctx.netClientReady() ? ctx.net.getOwnCursor() : ctx.worldWorker?.getCursor() || null),
+    mineProgress: () => (ctx.netClientReady() ? ctx.net.getMineProgress() : ctx.worldWorker?.getMineProgress() || 0),
+    mineTarget: () => (ctx.netClientReady() ? ctx.net.getMineTarget() : ctx.worldWorker?.getMineTarget() || null),
     // survival intents routed to the server (used by the mp e2e test).
     select: (slot) => ctx.net.sendSelect(slot),
     pick: (slot, half) => ctx.net.sendPick(slot, half),

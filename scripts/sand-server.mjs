@@ -7,10 +7,10 @@
 
 import { WebSocketServer } from 'ws';
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
-import { decode, encode, MSG, makeAssign, makeReject, makeSnapshot } from '../src/sand/net/protocol.js';
+import { decode, encode, MSG, makeAssign, makeReject } from '../src/sand/net/protocol.js';
 import { Host } from '../src/sand/net/server/host.js';
 import { encodeWorld, encodeDiff } from '../src/sand/net/server/worldEncode.js';
-import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodePlayers, encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { createFixedRateClock } from '../src/sand/timing/fixedRateClock.js';
 import { syncWorldWindow } from '../src/sand/net/server/worldWindow.js';
 import { canSendBufferLocalFrame } from '../src/sand/net/server/frameGate.js';
@@ -19,8 +19,8 @@ import { canSendBufferLocalFrame } from '../src/sand/net/server/frameGate.js';
 // the shared authority window then streams/resizes around the player group.
 const DEFAULTS = { port: 5191, cols: 320, rows: 192, seed: 0xC0FFEE, room: 'main' };
 const STEP_MS = 16;            // fixed sim step (matches the browser STEP_MS)
-const SNAPSHOT_INTERVAL = 3;   // steps between player-snapshot broadcasts (~20Hz)
-const ITEMS_INTERVAL = 6;      // steps between dropped-item broadcasts (~10Hz)
+const SNAPSHOT_INTERVAL = 1;   // player state follows the 60 Hz actor clock
+const ITEMS_INTERVAL = 2;      // dropped items update at ~30 Hz
 const MAX_PLAYERS = 8;
 const MAX_BUFFERED_BYTES = 1 << 20;
 
@@ -73,6 +73,7 @@ export async function startSandServer(opts = {}) {
           // items/inventory/cursor fill so its HUD + scene are correct immediately.
           sendTo(ws, encode(makeAssign(cfg.room, cid, pid)));
           sendTo(ws, encode(encodeWorld(engine, host.worldTick)));
+          sendTo(ws, encode(encodePlayers(engine, host.actorTick)));
           sendTo(ws, encode(encodeItems(engine, host.actorTick)));
           sendTo(ws, encode(encodeCreatures(engine, host.actorTick)));
           sendTo(ws, encode(encodeProjectiles(engine, host.actorTick)));
@@ -117,7 +118,7 @@ export async function startSandServer(opts = {}) {
     host.stepActors(now);
     const t = host.actorTick;
     if (peers.size > 0) {
-      if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcastLocalFrame(encode(makeSnapshot(t, engine.getPlayers(), null))); }
+      if (++sinceSnap >= SNAPSHOT_INTERVAL) { sinceSnap = 0; broadcastLocalFrame(encode(encodePlayers(engine, t))); }
       if (++sinceItems >= ITEMS_INTERVAL) { sinceItems = 0; broadcastLocalFrame(encode(encodeItems(engine, t))); }
       if (++sinceCreatures >= SNAPSHOT_INTERVAL) {
         sinceCreatures = 0;
@@ -159,7 +160,7 @@ export async function startSandServer(opts = {}) {
         }
       }
       if (windowChanged) {
-        broadcastLocalFrame(encode(makeSnapshot(host.actorTick, engine.getPlayers(), null)));
+        broadcastLocalFrame(encode(encodePlayers(engine, host.actorTick)));
         broadcastLocalFrame(encode(encodeItems(engine, host.actorTick)));
         broadcastLocalFrame(encode(encodeCreatures(engine, host.actorTick)));
         broadcastLocalFrame(encode(encodeProjectiles(engine, host.actorTick)));

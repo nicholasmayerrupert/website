@@ -179,7 +179,7 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
       const ownPlayer = localPlayer();
       const selected = inventory?.slots?.[inventory.selected];
       const erasing = !selected || selected.itemKind === ITEM_KIND.MINING_TOOL || selected.count <= 0;
-      const mineTarget = ctx.netClientReady() ? null : ctx.worldWorker?.getMineTarget();
+      const mineTarget = ctx.netClientReady() ? ctx.net.getMineTarget() : ctx.worldWorker?.getMineTarget();
       const usable = !selected || selected.count <= 0 || selected.itemKind === ITEM_KIND.MATERIAL || selected.itemKind === ITEM_KIND.MINING_TOOL;
       engine.glSetSurvivalPreview(ownPlayer?.alive !== false && usable, inventory?.selectedFootprint ?? 2, erasing, mineTarget);
     } else {

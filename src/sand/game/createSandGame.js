@@ -172,6 +172,7 @@ export function createSandGame(container, opts = {}) {
 
   // Mining-progress pill (a tiny DOM overlay next to the cursor).
   const mineProgress = document.createElement('div');
+  mineProgress.className = 'sand-mine-progress';
   mineProgress.style.position = 'absolute';
   mineProgress.style.width = '7px';
   mineProgress.style.height = '42px';
@@ -184,6 +185,7 @@ export function createSandGame(container, opts = {}) {
   mineProgress.style.overflow = 'hidden';
   mineProgress.style.display = 'none';
   const mineProgressFill = document.createElement('div');
+  mineProgressFill.className = 'sand-mine-progress-fill';
   mineProgressFill.style.position = 'absolute';
   mineProgressFill.style.left = '0';
   mineProgressFill.style.right = '0';
@@ -194,15 +196,16 @@ export function createSandGame(container, opts = {}) {
   container.appendChild(mineProgress);
 
   const updateMineProgress = () => {
-    if (!survival || !ctx.engine || !ctx.localPlayerId || !ctx.inside || !(ctx.mouseButtons & (BUTTON_BITS[0] | BUTTON_BITS[2]))) {
+    const playerId = ctx.netClientReady() ? ctx.net.ownPlayerId : ctx.localPlayerId;
+    if (!survival || !ctx.engine || !playerId || !ctx.inside || !(ctx.mouseButtons & (BUTTON_BITS[0] | BUTTON_BITS[2]))) {
       mineProgress.style.display = 'none';
       return;
     }
     const progress = ctx.netClientReady()
-      ? ctx.engine.getPlayerMineProgress?.(ctx.localPlayerId) || 0
+      ? ctx.net.getMineProgress()
       : ctx.worldWorker?.getMineProgress() || 0;
     const target = ctx.netClientReady()
-      ? ctx.engine.getPlayerMineTarget?.(ctx.localPlayerId)
+      ? ctx.net.getMineTarget()
       : ctx.worldWorker?.getMineTarget();
     if (progress <= 0 || !target) {
       mineProgress.style.display = 'none';

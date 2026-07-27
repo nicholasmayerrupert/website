@@ -19,7 +19,7 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
 // 0. version bump (gates new sends on the JOIN ack).
 {
   console.log('protocol version');
-  check('PROTOCOL_VERSION is 18', PROTOCOL_VERSION === 18);
+  check('PROTOCOL_VERSION is 19', PROTOCOL_VERSION === 19);
 }
 
 {

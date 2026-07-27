@@ -885,7 +885,7 @@ void GLPresenter::glDrawPlayers() {
 // vector — no JS state push, exactly like host-side player drawing.
 // Draw one dropped item/particle. Identical for engine-owned E.itemsys.items and the
 // client's host-snapshot E.itemsys.items, so id-keyed bob/glimmer stay in sync.
-void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
+void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
                    int camCol, int camRow) {
   uint32_t c = itemKind == IK_MATERIAL ? MAT_COLOR[material]
              : itemKind == IK_ARROW ? 0xffd6c49au
@@ -917,6 +917,38 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
   // py) so a resting item never sinks into the surface. x uses the float point.
   double cx = (px - camCol) * glCellDev + glOffX;
   double cy = (py - szCells * 0.5 + bob - camRow) * glCellDev + glOffY;
+  if (kind == IT_ITEM && itemKind == IK_MATERIAL) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * u + glOffY;
+    if (count > 1) {
+      glUniform4f(glc->uColor, r * .48f, g * .48f, b * .48f, a);
+      glSolidDev(cx - u * .88, bottom - u * .92, u * .86, u * .70);
+      glUniform4f(glc->uColor, r * .78f, g * .78f, b * .78f, a);
+      glSolidDev(cx - u * .80, bottom - u * .86, u * .70, u * .52);
+    }
+    glUniform4f(glc->uColor, r * .42f, g * .42f, b * .42f, a);
+    glSolidDev(cx - u * .68, bottom - u * 1.16, u * 1.36, u * 1.04);
+    glUniform4f(glc->uColor, r, g, b, a);
+    glSolidDev(cx - u * .58, bottom - u * 1.08, u * 1.16, u * .84);
+    glUniform4f(glc->uColor, std::min(1.0f, r * 1.28f), std::min(1.0f, g * 1.28f),
+                std::min(1.0f, b * 1.28f), a);
+    glSolidDev(cx - u * .48, bottom - u * .98, u * .72, u * .24);
+    glSolidDev(cx - u * .48, bottom - u * .74, u * .22, u * .30);
+    return;
+  }
+  if (kind == IT_ITEM && itemKind == IK_MINING_TOOL) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * u + glOffY;
+    glUniform4f(glc->uColor, .25f, .15f, .08f, a);
+    glSolidDev(cx - u * .18, bottom - u * 1.72, u * .36, u * 1.54);
+    glUniform4f(glc->uColor, r * .55f, g * .55f, b * .55f, a);
+    glSolidDev(cx - u * 1.03, bottom - u * 1.90, u * 2.06, u * .42);
+    glUniform4f(glc->uColor, std::min(1.0f, r * 1.25f), std::min(1.0f, g * 1.25f),
+                std::min(1.0f, b * 1.25f), a);
+    glSolidDev(cx - u * .84, bottom - u * 1.82, u * 1.22, u * .18);
+    glSolidDev(cx + u * .70, bottom - u * 1.72, u * .34, u * .52);
+    return;
+  }
   if (kind == IT_ITEM && itemKind == IK_ARROW) {
     glSolidDev(cx - sz * .62, cy - sz * .12, sz * 1.05, sz * .24);
     glSolidDev(cx + sz * .24, cy - sz * .30, sz * .38, sz * .60);
@@ -1030,14 +1062,14 @@ void GLPresenter::glDrawItems() {
     glUniform1i(glc->uGutter, 0);
     for (int i = 0; i < n; i++) {
       const float* it = &glExtItems[(size_t)i * IS_STRIDE];
-      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_ITEM_KIND], (int)it[IS_MATERIAL], (int)it[IS_TOOL_TIER], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
+      glDrawOneItem((int)it[IS_ID], (int)it[IS_KIND], (int)it[IS_ITEM_KIND], (int)it[IS_MATERIAL], (int)it[IS_COUNT], (int)it[IS_TOOL_TIER], it[IS_X], it[IS_Y], (int)it[IS_LIFE], camCol, camRow);
     }
     return;
   }
   if (E.itemsys.items.empty()) return;
   glUniform1i(glc->uMode, 1);
   glUniform1i(glc->uGutter, 0);
-  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.itemKind, it.material, it.toolTier, it.px, it.py, it.life, camCol, camRow);
+  for (auto& it : E.itemsys.items) glDrawOneItem(it.id, it.kind, it.itemKind, it.material, it.count, it.toolTier, it.px, it.py, it.life, camCol, camRow);
 }
 
 void GLPresenter::glDrawProjectiles() {

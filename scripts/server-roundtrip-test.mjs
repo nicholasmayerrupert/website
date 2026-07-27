@@ -11,7 +11,7 @@ import WebSocket from 'ws';
 import { MAT } from '../src/sand/materials.js';
 import { CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, OFF, PROJECTILE_KIND, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 import { decode, encode, MSG, makeJoin, makeInput, makeView, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS, PROJECTILE_FIELDS } from '../src/sand/net/protocol.js';
-import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { encodePlayers, encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
 import { applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
@@ -20,6 +20,17 @@ import { getAvailablePort } from './test-port.mjs';
 const COLS = 120, ROWS = 100, FLOOR = 60;
 await initSandWasm();
 const { check, done } = makeChecker('authoritative server replication');
+
+{
+  const m = decode(encode(encodePlayers({
+    getPlayers: () => [{ id: 3, x: 10, y: 20, health: 100, alive: true }],
+    getPlayerMineProgress: () => 0.75,
+    getPlayerMineTarget: () => ({ x: 13, y: 24 }),
+  }, 7)));
+  check('player snapshot carries mining progress and lock target',
+    m?.players?.[0]?.mineProgress === 0.75
+      && m.players[0].mineTarget?.x === 13 && m.players[0].mineTarget?.y === 24);
+}
 
 function survivalEngine() {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 7, sinksOn: false, infinite: false });

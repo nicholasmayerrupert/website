@@ -119,6 +119,18 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   const wardRemote = net.getPlayersForRender().find((p) => p.id === 8);
   check('multiplayer client preserves remote ward state for presentation',
     wardRemote?.shieldHealth === 83 && wardRemote.shieldActive === true);
+  socket.onmessage({ data: encode(makeSnapshot(4, [{
+    id: 7, x: 1, y: 1, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 0, alive: false, inputSeq: 0, animState: 0, animFrame: 0,
+    aimX: 2, aimY: 2, mineProgress: 0.625, mineTarget: { x: 4, y: 5 },
+  }, {
+    id: 8, x: wardRemote.x, y: wardRemote.y, vx: 0, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 0, animState: 0, animFrame: 0,
+    aimX: 8, aimY: 1, shieldHealth: 83, shieldActive: true,
+  }])) });
+  net.update();
+  check('multiplayer client exposes authoritative mining progress and lock target',
+    net.getMineProgress() === 0.625 && net.getMineTarget()?.x === 4 && net.getMineTarget()?.y === 5);
 
   // A shift can occur while the presentation is paused. Quarantine its
   // buffer-local actors until the replacement WORLD arrives, then accept only

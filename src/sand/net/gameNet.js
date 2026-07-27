@@ -12,9 +12,11 @@ import { applyWorldMessage, applyDiffMessage, validateWorldMessage } from './wor
 import { Predictor } from './predict.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { translatePackedPositions } from './localCoordinates.js';
+import { mergePlayerPrediction } from '../worker/playerPresentation.js';
 
-const REMOTE_SMOOTH = 0.5;
 const MAX_REMOTE_EXTRAPOLATION_TICKS = 8;
+const REMOTE_CORRECTION_SNAP = 16;
+const REMOTE_CORRECTION_EASE = 0.25;
 const MAX_INBOUND = 96;
 const MAX_QUEUED_DIFFS = 48;
 const LATEST_MESSAGES = new Set([
@@ -238,6 +240,9 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       if (r.snapshotY !== undefined) r.snapshotY += dy;
       if (r.aimX !== undefined) r.aimX += dx;
       if (r.aimY !== undefined) r.aimY += dy;
+      if (r.mineTarget) {
+        r.mineTarget = { x: r.mineTarget.x + dx, y: r.mineTarget.y + dy };
+      }
     }
     translatePackedPositions(itemsForRender, STRIDES.itemSnapshot,
       OFF.itemSnapshot.x, OFF.itemSnapshot.y, dx, dy);
@@ -322,6 +327,16 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       let r = remotes.get(p.id);
       const size = fallbackPlayerSize(engineNow());
       if (!r) { r = { x: p.x, y: p.y, w: size.w, h: size.h }; remotes.set(p.id, r); }
+      const age = Math.max(0, Math.min(
+        MAX_REMOTE_EXTRAPOLATION_TICKS,
+        remotePresentationTick - m.tick,
+      ));
+      const targetX = p.x + p.vx * age, targetY = p.y + p.vy * age;
+      r.correctionX = Number.isFinite(r.x) ? r.x - targetX : 0;
+      r.correctionY = Number.isFinite(r.y) ? r.y - targetY : 0;
+      if (Math.hypot(r.correctionX, r.correctionY) > REMOTE_CORRECTION_SNAP) {
+        r.correctionX = 0; r.correctionY = 0;
+      }
       r.snapshotX = r.tx = p.x; r.snapshotY = r.ty = p.y;
       r.snapshotTick = m.tick;
       r.vx = p.vx; r.vy = p.vy;
@@ -332,6 +347,8 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       r.jetpackFuel = p.jetpackFuel; r.jetpackActive = p.jetpackActive !== 0;
       r.shieldHealth = p.shieldHealth | 0; r.shieldActive = p.shieldActive !== 0;
       r.aimX = p.aimX; r.aimY = p.aimY;
+      r.mineProgress = p.mineProgress;
+      r.mineTarget = p.mineTarget ? { ...p.mineTarget } : null;
       r.animState = p.animState | 0; r.animFrame = p.animFrame | 0; // so remotes animate too
       r.w = size.w; r.h = size.h;
       if (p.id === ownPlayerId && !r.alive) {
@@ -389,7 +406,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     const predictedActorTick = predictor
       ? Math.max(remotePresentationTick, engineNow().getActorTick?.() || 0)
       : remotePresentationTick;
-    // Dead-reckon remote players between 20 Hz snapshots. The short cap keeps a
+    // Dead-reckon remote players between authority snapshots. The short cap keeps a
     // dropped packet from letting a player run through terrain indefinitely;
     // each authoritative snapshot corrects the projected target.
     for (const [id, r] of remotes) {
@@ -401,9 +418,16 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
         ));
         r.tx = r.snapshotX + r.vx * age;
         r.ty = r.snapshotY + r.vy * age;
+        r.correctionX = (r.correctionX || 0) * (1 - REMOTE_CORRECTION_EASE);
+        r.correctionY = (r.correctionY || 0) * (1 - REMOTE_CORRECTION_EASE);
+        if (Math.abs(r.correctionX) < 0.01) r.correctionX = 0;
+        if (Math.abs(r.correctionY) < 0.01) r.correctionY = 0;
+        r.x = r.tx + r.correctionX;
+        r.y = r.ty + r.correctionY;
+        continue;
       }
-      r.x += (r.tx - r.x) * REMOTE_SMOOTH;
-      r.y += (r.ty - r.y) * REMOTE_SMOOTH;
+      r.x = r.tx;
+      r.y = r.ty;
     }
     sendViewport();
     // send local input to the server AND predict it locally (immediate, no lag).
@@ -466,10 +490,10 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     if (authoritative && !authoritative.alive) return { id: ownPlayerId, ...authoritative };
     if (predictor) {
       const ps = predictor.renderState();
-      if (ps) {
-        const size = fallbackPlayerSize(engineNow());
-        return { ...authoritative, id: ownPlayerId, x: ps.x, y: ps.y, w: ps.w ?? size.w, h: ps.h ?? size.h, facing: ps.facing, grounded: ps.grounded };
-      }
+      if (ps) return mergePlayerPrediction(authoritative, {
+        ...ps,
+        ...fallbackPlayerSize(engineNow()),
+      }, ownPlayerId);
     }
     const r = remotes.get(ownPlayerId);
     return r ? { id: ownPlayerId, ...r } : null;
@@ -494,13 +518,19 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   // Our own inventory / cursor from the server (null until the first arrives).
   function getOwnInventory() { return invByPlayer.get(ownPlayerId) || null; }
   function getOwnCursor() { return curByPlayer.get(ownPlayerId) ?? null; }
+  function getMineProgress() { return remotes.get(ownPlayerId)?.mineProgress || 0; }
+  function getMineTarget() {
+    const target = remotes.get(ownPlayerId)?.mineTarget;
+    return target ? { ...target } : null;
+  }
   // True (and self-clearing) when our inventory changed since the last poll.
   function consumeInventoryDirty() { const d = invDirty; invDirty = false; return d; }
 
   return {
     joinRoom, disconnect, update, setPaused,
     getPlayersForRender, getOwnPlayer, advancePresentation,
-    getItemsForRender, getCreaturesForRender, getProjectilesForRender, consumeSoundEvents, getOwnInventory, getOwnCursor, consumeInventoryDirty,
+    getItemsForRender, getCreaturesForRender, getProjectilesForRender, consumeSoundEvents,
+    getOwnInventory, getOwnCursor, getMineProgress, getMineTarget, consumeInventoryDirty,
     sendSelect, sendSize, sendMove, sendPick, sendThrow, sendCraft, sendRespawn,
     get role() { return role; },
     get connected() { return connected; },

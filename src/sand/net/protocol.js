@@ -3,7 +3,7 @@
 
 import { INPUT, TOOL, SOUND_EVENT, ITEM_KIND, PROJECTILE_KIND, CREATURE, CREATURE_ATTACK_STATE, INV_SLOTS, STRIDES, OFF } from '../wasmBridge/abi.generated.js';
 
-export const PROTOCOL_VERSION = 18;
+export const PROTOCOL_VERSION = 19;
 export { INV_SLOTS };
 
 export const MSG = Object.freeze({
@@ -106,6 +106,9 @@ export function makeSnapshot(tick, players, hash = null) {
         ? Math.max(0, Math.min(MAX_SHIELD_HEALTH, Math.trunc(p.shieldHealth))) : MAX_SHIELD_HEALTH,
       shieldActive: p.shieldActive ? 1 : 0,
       aimX: Number.isFinite(p.aimX) ? p.aimX : 0, aimY: Number.isFinite(p.aimY) ? p.aimY : 0,
+      mineProgress: Number.isFinite(p.mineProgress) ? Math.max(0, Math.min(1, p.mineProgress)) : 0,
+      mineTarget: p.mineTarget && Number.isFinite(p.mineTarget.x) && Number.isFinite(p.mineTarget.y)
+        ? { x: Math.trunc(p.mineTarget.x), y: Math.trunc(p.mineTarget.y) } : null,
     })),
   };
 }
@@ -359,6 +362,9 @@ function validateSnapshot(m) {
     if (!isFiniteNum(p.jetpackFuel) || p.jetpackFuel < 0 || p.jetpackFuel > 1 || !isBit(p.jetpackActive)) return null;
     if (!isNonNegInt(p.shieldHealth) || p.shieldHealth > MAX_SHIELD_HEALTH || !isBit(p.shieldActive)) return null;
     if (!isFiniteNum(p.aimX) || !isFiniteNum(p.aimY)) return null;
+    if (!isFiniteNum(p.mineProgress) || p.mineProgress < 0 || p.mineProgress > 1) return null;
+    if (p.mineTarget !== null &&
+        (!p.mineTarget || !isI32(p.mineTarget.x) || !isI32(p.mineTarget.y))) return null;
   }
   return m;
 }

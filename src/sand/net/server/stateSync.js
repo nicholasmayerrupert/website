@@ -4,7 +4,16 @@
 // client decodes + ingests them in gameNet. Isomorphic (Node + browser), so it
 // unit-tests in Node without a socket. World cells live in worldSync.js.
 
-import { makeItems, makeCreatures, makeProjectiles, makeSounds, makeInventory, makeCursor } from '../protocol.js';
+import { makeSnapshot, makeItems, makeCreatures, makeProjectiles, makeSounds, makeInventory, makeCursor } from '../protocol.js';
+
+export function encodePlayers(engine, tick, hash = null) {
+  const players = engine.getPlayers().map((player) => ({
+    ...player,
+    mineProgress: engine.getPlayerMineProgress(player.id),
+    mineTarget: engine.getPlayerMineTarget(player.id),
+  }));
+  return makeSnapshot(tick, players, hash);
+}
 
 // Dropped items only (kind 0). Cosmetic mining particles (kind 1) are short-lived
 // and high-volume; they stay local to each renderer rather than being replicated.

@@ -177,6 +177,62 @@ try {
   check(`focused multiplayer movement reaches the engine (bits ${movement.bits})`, (movement.bits & 2) !== 0);
   check(`local prediction advances every client tick (${movement.poses} poses)`, movement.poses === 5 && movement.distance > 0);
 
+  // Mining is authoritative, so the host must return the held target and
+  // progress before the browser can present the cursor-side meter.
+  await a.page.evaluate(() => window.__sandNet.select(8)); // empty slot = bare hand
+  for (let i = 0; i < 12; i++) {
+    await pump();
+    if (await a.page.evaluate(() => window.__sandNet.ownInventory()?.selected === 8)) break;
+  }
+  const minePoint = await a.page.evaluate(() => {
+    const t = window.__sandTest;
+    const p = window.__sandNet.ownPlayer();
+    const info = t.info();
+    const surface = document.querySelector('sand-game').shadowRoot.querySelector('.sg-sim').getBoundingClientRect();
+    const cx = Math.floor(p.x + p.w / 2);
+    const cy = Math.floor(p.y + p.h / 2);
+    for (let radius = 1; radius <= 26; radius++) {
+      for (let y = cy - radius; y <= cy + radius; y++) {
+        for (let x = cx - radius; x <= cx + radius; x++) {
+          if (Math.max(Math.abs(x - cx), Math.abs(y - cy)) !== radius ||
+              t.solidCount(x, y, x + 1, y + 1) === 0) continue;
+          const cell = t.cellRect(x, y);
+          const localX = (cell.x + cell.size / 2) / info.dpr;
+          const localY = (cell.y + cell.size / 2) / info.dpr;
+          if (localX < 1 || localY < 1 || localX >= surface.width - 1 || localY >= surface.height - 1) continue;
+          return { x: surface.left + localX, y: surface.top + localY };
+        }
+      }
+    }
+    return null;
+  });
+  check('client A finds reachable terrain to mine', minePoint != null);
+  let mining = null;
+  if (minePoint) {
+    await a.page.mouse.move(minePoint.x, minePoint.y);
+    await a.page.mouse.down({ button: 'left' });
+    for (let i = 0; i < 24; i++) {
+      await pump(1, 45);
+      mining = await a.page.evaluate(() => {
+        const root = document.querySelector('sand-game').shadowRoot;
+        const meter = root.querySelector('.sand-mine-progress');
+        const fill = root.querySelector('.sand-mine-progress-fill');
+        return {
+          progress: window.__sandNet.mineProgress(),
+          target: window.__sandNet.mineTarget(),
+          display: meter?.style.display,
+          fill: fill?.style.height,
+        };
+      });
+      if (mining.progress > 0 && mining.target && mining.display === 'block') break;
+    }
+    await a.page.mouse.up({ button: 'left' });
+  }
+  check(`host mining progress reaches client A (${(mining?.progress || 0).toFixed(3)})`,
+    !!mining?.target && mining.progress > 0);
+  check(`multiplayer mining meter is visible (${mining?.fill || 'missing'})`,
+    mining?.display === 'block' && parseFloat(mining.fill) > 0);
+
   // Give each authoritative player a distinct stack so the private inventory
   // and cursor replication checks below exercise real state changes.
   const pidA = await a.page.evaluate(() => window.__sandNet.ownPlayer()?.id);

@@ -133,8 +133,8 @@ class GLPresenter {
                      double jetpackFuel, bool jetpackActive, int shieldHealth,
                      bool shieldActive, bool own, float light, int camCol, int camRow);
   void glDrawPlayers();
-  void glDrawOneItem(int id, int kind, int itemKind, int material, int tier, double px, double py, int life,
-                   int camCol, int camRow);
+  void glDrawOneItem(int id, int kind, int itemKind, int material, int count, int tier, double px, double py, int life,
+                     int camCol, int camRow);
   void glDrawItems();
   void glDrawProjectiles();
   void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,

@@ -12,8 +12,10 @@ import { MAT } from '../src/sand/materials.js';
 import { CREATIVE_KIND, CREATURE, CREATURE_ATTACK_STATE, OFF, PROJECTILE_KIND, SOUND_EVENT } from '../src/sand/wasmBridge/abi.generated.js';
 import { decode, encode, MSG, makeJoin, makeInput, makeView, makeSelect, makeSize, makePick, ITEM_FIELDS, INV_FIELDS, PROJECTILE_FIELDS } from '../src/sand/net/protocol.js';
 import { encodeItems, encodeCreatures, encodeProjectiles, encodeSounds, encodeInventory, encodeCursor, inventoryRevision } from '../src/sand/net/server/stateSync.js';
+import { applyWorldMessage, applyDiffMessage } from '../src/sand/net/worldSync.js';
 import { startSandServer } from './sand-server.mjs';
 import { makeChecker } from './sand-test-util.mjs';
+import { getAvailablePort } from './test-port.mjs';
 
 const COLS = 120, ROWS = 100, FLOOR = 60;
 await initSandWasm();
@@ -277,6 +279,89 @@ function survivalEngine() {
   } catch (err) {
     check(`live server error: ${err.message}`, false);
   } finally {
+    await srv.close();
+  }
+}
+
+// 7) A live authority must clear only consumed replication chunks. Clearing the
+// cellular scheduler's row marks after each packet lets later buffer swaps
+// change structural cells outside the transmitted dirty rectangles.
+{
+  const PORT = await getAvailablePort();
+  const srv = await startSandServer({
+    port: PORT,
+    cols: 512,
+    rows: 352,
+    seed: 0xC0FFEE,
+    room: 'replica',
+    maxPlayers: 1,
+    creatureNaturalSpawning: true,
+  });
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const immediate = () => new Promise((resolve) => setImmediate(resolve));
+  let ws = null;
+  let mirror = null;
+  let invalidFrames = 0;
+  let diffFrames = 0;
+  const inbox = [];
+  const applyQueuedWorld = () => {
+    while (inbox.length) {
+      const m = inbox.shift();
+      if (m.t === MSG.WORLD) {
+        if (!mirror || mirror.cols !== m.cols || mirror.rows !== m.rows) {
+          mirror?.destroy();
+          mirror = createEngineWasm({
+            cols: m.cols,
+            rows: m.rows,
+            worldSeed: 1,
+            sinksOn: false,
+            infinite: true,
+            storageRole: 'presentation',
+          });
+        }
+        if (!applyWorldMessage(mirror, m, { mirror: true })) invalidFrames++;
+      } else if (m.t === MSG.DIFF && mirror) {
+        diffFrames++;
+        if (!applyDiffMessage(mirror, m, { mirror: true })) invalidFrames++;
+      }
+      mirror?.resetDirty();
+    }
+  };
+  try {
+    ws = await new Promise((resolve, reject) => {
+      const socket = new WebSocket(`ws://127.0.0.1:${PORT}`);
+      socket.onopen = () => resolve(socket);
+      socket.onerror = () => reject(new Error('replica connect failed'));
+    });
+    ws.onmessage = (event) => {
+      const m = decode(typeof event.data === 'string' ? event.data : event.data.toString());
+      if (m) inbox.push(m);
+    };
+    ws.send(encode(makeJoin('replica', 'replica-client')));
+    for (let i = 0; i < 100 && !mirror; i++) {
+      await wait(5);
+      applyQueuedWorld();
+    }
+    check('combat replica receives its initial authority world', mirror !== null);
+    ws.send(encode(makeView('replica', 'replica-client', 232, 132, 512, 352)));
+
+    // Drive enough deterministic survival time for natural encounters and
+    // structural motion while still letting the real WebSocket drain each turn.
+    for (let i = 0; i < 550 && invalidFrames === 0; i++) {
+      srv.step(i * (1000 / 60));
+      await immediate();
+      applyQueuedWorld();
+    }
+    await wait(20);
+    applyQueuedWorld();
+    check(`combat world diffs stay hash-exact (${diffFrames} diffs)`,
+      diffFrames > 100 && invalidFrames === 0);
+  } catch (err) {
+    check(`combat replica error: ${err.message}`, false);
+  } finally {
+    ws?.close();
+    mirror?.destroy();
+    await wait(20);
     await srv.close();
   }
 }

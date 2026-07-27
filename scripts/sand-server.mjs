@@ -170,9 +170,10 @@ export async function startSandServer(opts = {}) {
       // Do not retain authority events forever when nobody is listening.
       engine.drainSoundEvents();
     }
-    // The server never renders, so nothing else clears the per-step render-dirty
-    // marks the diff reads — reset them here so the next diff is just that step.
-    engine.resetDirty();
+    // The server never renders, so consume the packet/render chunks after the
+    // diff reads them. Preserve row marks because they schedule late structural
+    // writes for the next cellular step.
+    engine.consumeReplicaDirty();
   }
 
   function stepOnce(now) {

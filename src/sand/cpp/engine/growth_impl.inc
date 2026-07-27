@@ -674,17 +674,25 @@ bool GrowthSystem::myceliumCompTouchesStone(Comp& comp) {
 
 void GrowthSystem::refreshDormantMyceliumComponents() {
   bool active = false;
+  bool present = false;
   for (auto& comp : E.L->stoneComponents) {
     if (!myceliumCompHasSpore(comp)) { comp.growing = false; continue; }
+    present = true;
     if ((int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
     if (!comp.growing && myceliumCompTouchesStone(comp)) { comp.growing = true; comp.age = 0; }
     if (comp.growing) active = true;
   }
+  E.L->myceliumSporePresent = present;
   E.L->myceliumActive = active;
 }
 
 void GrowthSystem::growMyceliumComponents() {
-  if (E.L->stoneComponents.empty()) { E.L->myceliumActive = false; return; }
+  if (!E.L->myceliumSporePresent) { E.L->myceliumActive = false; return; }
+  if (E.L->stoneComponents.empty()) {
+    E.L->myceliumActive = false;
+    E.L->myceliumSporePresent = false;
+    return;
+  }
   refreshDormantMyceliumComponents();
   if (!E.L->myceliumActive) return;
   struct MycGrowth { int compId; int targetK; };

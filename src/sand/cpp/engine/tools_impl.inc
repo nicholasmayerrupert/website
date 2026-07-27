@@ -192,6 +192,7 @@ void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& ce
       E.registerRigidCellsSplit(E.L->stoneComponents, E.L->nextStoneId, mat, cells, false); // stone group
       if (mat == MYCELIUM_SPORE) {
         E.L->myceliumActive = true;
+        E.L->myceliumSporePresent = true;
         for (auto& comp : E.L->stoneComponents) {
           for (int k : cells) {
             if (std::find(comp.cells.begin(), comp.cells.end(), k) == comp.cells.end()) continue;
@@ -554,6 +555,7 @@ bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   c.cells.push_back(k);
   E.L->stoneComponents.push_back(std::move(c));
   E.L->myceliumActive = true;
+  E.L->myceliumSporePresent = true;
   E.L->groundDirty = true;
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);

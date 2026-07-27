@@ -59,6 +59,9 @@ struct Layer {
   std::vector<Comp> stoneComponents, plantComponents, iceComponents;
   int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
   bool myceliumActive = false;
+  // False proves that no growth-capable spore exists in this loaded layer.
+  // It avoids searching every stone cell for dormant spores on ordinary terrain.
+  bool myceliumSporePresent = false;
   // Incremental-grounding cache state (see members near cgComps). groundDirty
   // true => the next grounding pass must be a full reflood; it is set true by any
   // component add/move/split/growth/sync.
@@ -225,6 +228,7 @@ struct Layer {
     deferredStoneSplitIds.clear(); deferredIceSplitIds.clear(); componentTombstones = 0;
     nextStoneId = nextPlantId = nextIceId = 1;
     myceliumActive = false;
+    myceliumSporePresent = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;
     looseGroundDirty = true; looseDirtyX0 = 0; looseDirtyX1 = -1;
     looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;

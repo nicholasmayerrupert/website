@@ -81,6 +81,8 @@ component registration, and generation/restoration. Browser presentation exposes
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
 - Reaction passes build ordered active-material candidates once per layer.
+- A per-layer spore-presence latch skips dormant-mycelium component scans when
+  the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a
   bounded exact-connectivity proof before falling back to a full component
   flood, and safe local cuts avoid full grounding floods.

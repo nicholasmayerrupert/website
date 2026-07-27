@@ -215,6 +215,7 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     std::fill(lay.bodyOwner.begin(), lay.bodyOwner.end(), -1);
     lay.nextStoneId = lay.nextPlantId = lay.nextIceId = lay.nextBodyId = 1;
     lay.myceliumActive = false;
+    lay.myceliumSporePresent = false;
     lay.groundDirty = lay.groundContentDirty = lay.looseGroundDirty = true;
     lay.sleepingBodySupportDirty = false;
     lay.groundBaseValid = false;

@@ -2359,7 +2359,10 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
       Comp c; c.id = E.L->nextStoneId++; c.cells = std::move(cells); c.yMax = yMax;
       c.growing = floodTargetMat == MYCELIUM_SPORE;
-      if (c.growing) E.L->myceliumActive = true;
+      if (c.growing) {
+        E.L->myceliumActive = true;
+        E.L->myceliumSporePresent = true;
+      }
       E.L->stoneComponents.push_back(std::move(c));
     }
   }

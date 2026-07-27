@@ -119,6 +119,9 @@ struct Layer {
   // Rebuilt with cellComp in indexComponents; joint grounding reuses it instead
   // of re-walking every component cell on every loose-material tick.
   std::vector<uint64_t> compAdjPairs;
+  // The top row and outer columns have directed support rules. A component
+  // touching them requires the conservative cell flood.
+  bool groundHasDirectedBoundaryComp = false;
   // free rigid bodies + ownership
   std::vector<Body*> bodies; int nextBodyId = 1;
   std::vector<int32_t> bodyOwner;

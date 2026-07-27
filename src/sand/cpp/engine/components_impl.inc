@@ -39,6 +39,13 @@ void ComponentSystem::indexComponents() {
     }
   };
   idx(lay->stoneComponents); idx(lay->plantComponents); idx(lay->iceComponents);
+  lay->groundHasDirectedBoundaryComp = false;
+  for (int x = 0; x < E.cols && !lay->groundHasDirectedBoundaryComp; x++)
+    lay->groundHasDirectedBoundaryComp = cc[x] >= 0;
+  for (int y = 1; y < E.rows && !lay->groundHasDirectedBoundaryComp; y++) {
+    int k = y * E.cols;
+    lay->groundHasDirectedBoundaryComp = cc[k] >= 0 || cc[k + E.cols - 1] >= 0;
+  }
   lay->compAdjPairs.clear();
   if (cgComps.size() > 1) {
     // Four forward neighbours cover 8-connectivity exactly once. Duplicate
@@ -87,6 +94,67 @@ void ComponentSystem::indexComponents() {
   }
   E.perfComponentIndexMs += emscripten_get_now() - t0;
 }
+
+// Static rigid support is connectivity over the component contact graph.
+// Component membership already proves connectivity inside each node, while
+// compAdjPairs records every same-layer 8-neighbour contact between nodes.
+// Resolve seeded graph roots, then stamp only the resulting component members.
+// Free bodies and directed-boundary component sets use the conservative cell
+// flood below.
+void ComponentSystem::computeStaticGraphGrounded() {
+  Layer* const lay = E.L;
+  const int count = (int)cgComps.size();
+  if (count == 0) return;
+
+  std::vector<int>& parent = cgParent;
+  parent.resize(count);
+  for (int i = 0; i < count; i++) parent[i] = i;
+  for (uint64_t packed : lay->compAdjPairs) {
+    int a = (int)(packed >> 32), b = (int)(uint32_t)packed;
+    if (a >= 0 && b >= 0 && a < count && b < count) ufUnite(parent, a, b);
+  }
+
+  cgVisited.assign(count, 0);
+  const int32_t* const cc = lay->cellComp.data();
+  const uint8_t* const g = lay->grid;
+  auto seedAt = [&](int k) {
+    int id = cc[k];
+    if (id >= 0 && id < count) cgVisited[ufFind(parent, id)] = 1;
+  };
+
+  const int floorBase = (E.rows - 1) * E.cols;
+  for (int x = 0; x < E.cols; x++) {
+    int k = floorBase + x;
+    if (isGroundingRigidCell(*lay, k) && E.isBearingMaterial(g[k])) seedAt(k);
+  }
+  if (lay->infinite) {
+    for (int y = 1; y < E.rows; y++) {
+      int kl = y * E.cols + 1;
+      int kr = y * E.cols + (E.cols - 2);
+      if (isGroundingRigidCell(*lay, kl) && !E.isIceComponentMaterial(g[kl])) seedAt(kl);
+      if (isGroundingRigidCell(*lay, kr) && !E.isIceComponentMaterial(g[kr])) seedAt(kr);
+    }
+    const int topBase = E.cols;
+    const int topWorldY = lay->worldOffsetY;
+    const bool topMayBeSky = topWorldY < lay->gSeaRow;
+    for (int x = 1; x < E.cols - 1; x++) {
+      int k = topBase + x;
+      if (!isGroundingRigidCell(*lay, k) || E.isIceComponentMaterial(g[k])) continue;
+      bool openSkyLeaf = E.isPlantLeaf(g[k]) && topMayBeSky
+                      && topWorldY < E.terrain.genSurfaceAbs(lay->worldOffsetX + x);
+      if (!openSkyLeaf) seedAt(k);
+    }
+  }
+
+  uint8_t* const grounded = lay->groundedCell.data();
+  for (int i = 0; i < count; i++) {
+    Comp* c = cgComps[i];
+    c->grounded = c->cells.empty() || cgVisited[ufFind(parent, i)] != 0;
+    if (c->grounded)
+      for (int k : c->cells) grounded[k] = 1;
+  }
+}
+
 // Grounding is SEPARABLE (this is what makes the rigid part cacheable):
 //  - RIGID grounding never flows through loose cells: the vertical rule refuses
 //    loose-below -> rigid-above, and 8-adjacency requires rigid on both ends.
@@ -137,8 +205,13 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
     };
     bind(lay->stoneComponents); bind(lay->plantComponents); bind(lay->iceComponents);
   }
+  if (groundStackX.size() != (size_t)E.cols * E.rows)
+    groundStackX.assign((size_t)E.cols * E.rows, 0);
+  if (!groundForceFull && !lay->groundHasDirectedBoundaryComp && !hasGroundingBodies(*lay)) {
+    computeStaticGraphGrounded();
+    return;
+  }
   int sp = 0;
-  if (groundStackX.size() != (size_t)E.cols * E.rows) groundStackX.assign((size_t)E.cols * E.rows, 0);
   int32_t* gsx = groundStackX.data();
   // Carry x alongside k to avoid division in the flood loop.
   auto groundRigidAt = [&](int k, int x) {
@@ -538,7 +611,18 @@ void ComponentSystem::computeGrounded() {
       }
     }
     for (size_t i = 0; i < cgComps.size(); i++) {
-      if (nuFlags[i] != (cgComps[i]->grounded ? 1 : 0)) { emscripten_console_error("GROUND SPLIT PARITY: comp flag mismatch"); abort(); }
+      if (nuFlags[i] != (cgComps[i]->grounded ? 1 : 0)) {
+        Comp* c = cgComps[i];
+        int sample = c->cells.empty() ? -1 : c->cells[0];
+        char buf[200];
+        snprintf(buf, sizeof(buf),
+                 "GROUND SPLIT PARITY: comp=%d cells=%d sample=%d (x=%d,y=%d) graph=%d ref=%d",
+                 (int)i, (int)c->cells.size(), sample,
+                 sample < 0 ? -1 : sample % E.cols, sample < 0 ? -1 : sample / E.cols,
+                 (int)nuFlags[i], c->grounded ? 1 : 0);
+        emscripten_console_error(buf);
+        abort();
+      }
     }
   }
 #endif
@@ -581,7 +665,10 @@ void ComponentSystem::ensureGroundedSingleLayer() {
   gvGrounded.assign(E.L->groundedCell.begin(), E.L->groundedCell.end());
   gvCellComp.assign(E.L->cellComp.begin(), E.L->cellComp.end());
   E.L->groundBaseValid = false; // force the reference below to a real full flood
-  computeGrounded(); // the trusted reference; leaves the live arrays correct regardless
+  bool priorForceFull = groundForceFull;
+  groundForceFull = true;
+  computeGrounded(); // the trusted cell-flood reference; leaves the live arrays correct
+  groundForceFull = priorForceFull;
   for (size_t i = 0, n = (size_t)E.cols * E.rows; i < n; i++) {
     if (gvGrounded[i] != E.L->groundedCell[i] || gvCellComp[i] != E.L->cellComp[i]) { groundMismatches++; break; }
   }

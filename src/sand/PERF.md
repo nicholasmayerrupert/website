@@ -61,8 +61,9 @@ component registration, and generation/restoration. Browser presentation exposes
 
 ## Current structural optimizations
 
-- Component indices cache same-layer adjacency instead of rescanning all rigid
-  cells during each joint pass.
+- Component indices cache same-layer adjacency. Static interior support is
+  solved over that graph; free bodies and sentinel-touching components retain
+  the cell flood.
 - Rigid grounding and loose support are cached and invalidated separately.
 - A settled cross-layer support closure can sleep during loose-only motion.
 - Collision-free cross-layer assembly translations patch component indices and

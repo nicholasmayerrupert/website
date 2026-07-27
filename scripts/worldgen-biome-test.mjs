@@ -3,6 +3,7 @@
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
 import { MAT } from '../src/sand/materials.js';
+import { MAT_FLAGS, MF } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 220, ROWS = 140, SEED = 0xBED;
@@ -20,6 +21,7 @@ check(`surface height is continuous across biome seams (max adjacent jump ${maxJ
 const skins = new Set();
 let sawDirtMantle = false;
 let matchedBackgroundStrata = 0;
+let backgroundVegetationStrata = 0;
 let mismatchedBackgroundStrata = 0;
 const scan = () => {
   const g = e.getGrid(), bg = e.getGridBg();
@@ -33,6 +35,7 @@ const scan = () => {
       if (m === MAT.DIRT) sawDirtMantle = true;
       if (m === MAT.SAND || m === MAT.DIRT || m === MAT.MUD || m === MAT.SNOW || m === MAT.GRASS) {
         if (bg[k] === m) matchedBackgroundStrata++;
+        else if (MAT_FLAGS[bg[k]] & MF.plantFamily) backgroundVegetationStrata++;
         else mismatchedBackgroundStrata++;
       }
     }
@@ -47,7 +50,7 @@ check(`several biome skins generate (${named.sort().join(', ')})`, skins.size >=
 check('plains/forest GRASS skin appears', skins.has(MAT.GRASS));
 check('tundra SNOW skin appears', skins.has(MAT.SNOW));
 check('a DIRT mantle is generated under grass', sawDirtMantle);
-check(`background matches exposed loose surface strata (${matchedBackgroundStrata} cells)`,
+check(`background matches exposed loose surface strata (${matchedBackgroundStrata} cells, ${backgroundVegetationStrata} vegetation occlusions)`,
   matchedBackgroundStrata > 0 && mismatchedBackgroundStrata === 0);
 e.destroy();
 

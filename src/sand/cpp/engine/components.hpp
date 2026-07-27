@@ -117,6 +117,7 @@ class ComponentSystem {
   void prepareAssemblyScratch(size_t gridLen);
 
   void indexComponents();
+  void computeStaticGraphGrounded();
   void computeRigidGrounded(bool reuseComponentIndex = false);
   void applyLooseOverlay();
   void refreshLooseOverlayPreservingJoint(Layer* lay);

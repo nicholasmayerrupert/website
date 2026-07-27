@@ -4,9 +4,10 @@ Grounding decides which rigid cells are connected to a support seed: the floor,
 a streamed edge, or the engine's loose-material support rules. The result lives
 in `Layer::groundedCell`; component and rigid-body movement depend on it.
 
-A full `computeGrounded()` pass indexes components, floods rigid support, then
-overlays loose support. Because a flood touches every supported rigid cell, the
-engine caches the result and invalidates each part separately.
+A full `computeGrounded()` pass indexes components, resolves rigid support, then
+overlays loose support. Static interior sets use the component graph; free
+bodies and directed buffer-boundary cases use the cell flood. The engine caches
+the result and invalidates each part separately.
 
 ## Cache states
 

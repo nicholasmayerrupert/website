@@ -167,10 +167,10 @@ foliage, and ice rotate together without losing their identities. Foreground and
 background halves released by the same bonded structural break become one
 cross-layer body with a shared pose and combined collision shape.
 
-Creative and survival placement creates structural material as a body first.
-Painting cells that touch an existing same-layer body welds the new cells and
-every touched body into one mixed-material body. Blast debris opts out of this
-placement weld.
+Creative and survival placement makes each connected structural island static
+when it touches existing static structure. Otherwise it becomes a body, welding
+to every same-layer body it touches or falling freely when unsupported. Blast
+debris opts out of this placement weld.
 
 Component-backed bodies bake back into ordinary static components after sleeping
 with direct contact to a grounded static solid; both halves of a cross-layer body

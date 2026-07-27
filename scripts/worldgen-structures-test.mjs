@@ -1,13 +1,15 @@
 // World structures are deterministic functions of world coordinates, remain
 // inert, reproduce exactly across stream boundaries, and persist in the tile store.
 
-import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
+import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 220, ROWS = 160, SEED = 0xBED;
 const PLAYER_CLEAR = 11;
 await initSandWasm();
+const createEngineWasm = (opts) => attachTestHooks(createEngineWasmRaw(opts));
 const { check, done } = makeChecker('worldgen structures');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: SEED, sinksOn: false, infinite: true });
 
@@ -458,6 +460,32 @@ function surfaceMasonryComponents(g, engine) {
   let t = 0, settledAt = -1;
   for (let i = 0; i < 1500; i++) { t += 16; if (!e.step(t)) { settledAt = i; break; } }
   check(`world with ores/ruins settles to inert (step ${settledAt})`, settledAt >= 0 && settledAt < 1500);
+  e.destroy();
+}
+
+// Surface buildings reach static rock through the loose soil mantle, so their
+// mixed masonry/timber shell does not enter the body solver on its first tick.
+{
+  const e = mk();
+  e.shiftWorldXY(608, 0);
+  e.stepWorld();
+  let ownedMasonry = 0, ownedBuildingWood = 0;
+  for (let layer = 0; layer < 2; layer++) {
+    const grid = layer ? e.getGridBg() : e.getGrid();
+    const owners = e._bodyOwnerGrid(layer);
+    for (let k = 0; k < grid.length; k++) {
+      if (owners[k] >= 0 && (grid[k] === MAT.BRICK || grid[k] === MAT.SANDSTONE))
+        ownedMasonry++;
+      const x = k % COLS, y = (k / COLS) | 0;
+      if (owners[k] >= 0 && x >= 120 && x <= 190 && y <= 80
+          && (grid[k] === MAT.WOOD || grid[k] === MAT.PINE_WOOD))
+        ownedBuildingWood++;
+    }
+  }
+  check(`generated surface buildings remain static on spawn (${ownedMasonry} body-owned masonry cells)`,
+    ownedMasonry === 0);
+  check(`generated building timber stays attached on spawn (${ownedBuildingWood} body-owned wood cells)`,
+    ownedBuildingWood === 0);
   e.destroy();
 }
 

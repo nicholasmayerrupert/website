@@ -171,6 +171,27 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
+// Static structural contact takes precedence over body contact. This keeps cave
+// infill attached to the cave wall instead of turning it into colliding rubble.
+{
+  const e = mk();
+  for (let y = 20; y < ROWS; y++) e.paintDisc(35, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  e.spawnBox(44, 30, 3, 3, MAT.RIGID);
+  const bodyCells = e._bodyState(0)?.nPts ?? 0;
+  e.setCreativeMaterial(CK.MATERIAL, MAT.BRICK);
+  e.pointerDown(38, 30, 0);
+  e.pointerUp(0);
+  check('creative placement touching static structure stays static',
+    e._bodyCount() === 1 && (e._bodyState(0)?.nPts ?? 0) === bodyCells);
+  check('static contact wins when the same placement also touches a body',
+    at(e.getGrid(), 36, 30) === MAT.BRICK && e._bodyOwnerGrid()[30 * COLS + 36] < 0);
+  e.stepWorld();
+  check('cave-wall infill remains component-backed after a step',
+    at(e.getGrid(), 36, 30) === MAT.BRICK);
+  e.destroy();
+}
+
 // The survival placement API uses the same weld path.
 {
   const e = mk();
@@ -182,6 +203,23 @@ check('all seven species seeds have distinct creative-menu pixel icons',
     e._bodyCount() === 1 && (e._bodyState(0)?.nPts ?? 0) > before);
   check('survival weld preserves both material identities',
     count(grid, MAT.RIGID) > 0 && count(grid, MAT.COPPER_ORE) > 0);
+  e.destroy();
+}
+
+{
+  const e = mk();
+  for (let y = 20; y < ROWS; y++) e.paintDisc(35, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  e.placeMaterial(38, 40, 2, MAT.COPPER_ORE);
+  e.placeMaterial(38, 50, 2, MAT.WOOD);
+  check('survival placement touching static structure stays static',
+    e._bodyCount() === 0 && at(e.getGrid(), 36, 40) === MAT.COPPER_ORE);
+  check('static wood placement uses plant-aware component registration',
+    at(e.getGrid(), 36, 50) === MAT.WOOD && e._bodyOwnerGrid()[50 * COLS + 36] < 0);
+  e.stepWorld();
+  check('survival cave-wall infill remains static after a step',
+    e._bodyCount() === 0 && at(e.getGrid(), 36, 40) === MAT.COPPER_ORE
+      && at(e.getGrid(), 36, 50) === MAT.WOOD);
   e.destroy();
 }
 
@@ -244,6 +282,20 @@ for (const [label, species] of expectedEggs) {
   e.finalizeStoneDraft();
   check('direct stone draft finalizes as a body',
     at(e.getGrid(), 60, 60) === MAT.STONE && e._bodyCount() === 1);
+  e.destroy();
+}
+
+// Disconnected islands in one draft make their own support decisions.
+{
+  const e = mk();
+  for (let y = 20; y < ROWS; y++) e.paintDisc(35, y, 0, MAT.STONE, true);
+  e.syncComponents();
+  e.addDiscToStoneDraft(36, 30, 0);
+  e.addDiscToStoneDraft(70, 30, 0);
+  e.finalizeStoneDraft();
+  const owners = e._bodyOwnerGrid();
+  check('one draft can place a supported static island and an unsupported body',
+    e._bodyCount() === 1 && owners[30 * COLS + 36] < 0 && owners[30 * COLS + 70] >= 0);
   e.destroy();
 }
 

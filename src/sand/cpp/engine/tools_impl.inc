@@ -150,8 +150,8 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
   return changed;
 }
 // Generic material placement by id — the inventory-forward path. Loose media
-// paint as cells; structural materials spawn as bodies and fall until they make
-// grounded contact and bake. EMPTY erases.
+// paint as cells; structural placement uses its local support/contact state.
+// EMPTY erases.
 int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
   if (mat == EMPTY) return eraseDisc(cx, cy, radius);
   if (!E.isComponentMaterial(mat)) return paintDisc(cx, cy, radius, mat, false);
@@ -161,7 +161,7 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
       int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY) cells.push_back({xx, yy}); } }
   if (cells.empty()) return 0;
   E.L->skyDirty = true;
-  E.finishSpawn(cells, mat);
+  finalizeStructuralPlacement(cells, mat);
   return (int)cells.size();
 }
 // Shared component registration for runtime structural edits. Exact material
@@ -169,8 +169,14 @@ int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
 void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& cells) {
   if (cells.empty()) return;
   if (mat == SEED || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
-  E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, mat, cells,
-                            E.isIceMaterial(mat));
+  if (E.isPlantMaterial(mat)) {
+    int yMax = 0;
+    for (int k : cells) yMax = imax(yMax, k / E.cols);
+    E.registerPlantCells(mat, cells, yMax);
+  } else {
+    E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, mat, cells,
+                              E.isIceMaterial(mat));
+  }
   if (mat == MYCELIUM_SPORE) {
     E.L->myceliumActive = true;
     E.L->myceliumSporePresent = true;
@@ -187,6 +193,78 @@ void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& ce
     }
   }
 }
+
+// Resolve each connected island from one placement gesture independently.
+// Contact with static structure makes the island static; otherwise the rigid
+// spawn path either welds it to contacted bodies or creates a free body.
+void ToolSystem::finalizeStructuralPlacement(
+    const std::vector<std::pair<int, int>>& cells, uint8_t mat) {
+  if (cells.empty()) return;
+  E.L->skyDirty = true;
+  if (!E.isComponentMaterial(mat)) {
+    E.finishSpawn(cells, mat);
+    return;
+  }
+  std::map<int, std::pair<int, int>> ordered;
+  for (const auto& cell : cells) {
+    if (!E.isInBounds(cell.first, cell.second)) continue;
+    ordered[cell.second * E.cols + cell.first] = cell;
+  }
+  std::unordered_set<int> remaining;
+  remaining.reserve(ordered.size() * 2);
+  for (const auto& entry : ordered) remaining.insert(entry.first);
+  std::vector<int> stack;
+  for (const auto& entry : ordered) {
+    if (!remaining.erase(entry.first)) continue;
+    std::vector<std::pair<int, int>> island;
+    stack.clear();
+    stack.push_back(entry.first);
+    while (!stack.empty()) {
+      int k = stack.back();
+      stack.pop_back();
+      int x = k % E.cols, y = k / E.cols;
+      island.push_back({x, y});
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = x + ox, ny = y + oy;
+        if (!E.isInBounds(nx, ny)) continue;
+        int nk = ny * E.cols + nx;
+        if (remaining.erase(nk)) stack.push_back(nk);
+      }
+    }
+
+    bool touchesStatic = false;
+    for (const auto& cell : island) {
+      for (int oy = -1; oy <= 1 && !touchesStatic; oy++)
+        for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          int nx = cell.first + ox, ny = cell.second + oy;
+          if (!E.isInBounds(nx, ny)) continue;
+          int nk = ny * E.cols + nx;
+          if (E.L->bodyOwner[nk] < 0 && E.isComponentMaterial(E.L->grid[nk])) {
+            touchesStatic = true;
+            break;
+          }
+        }
+      if (touchesStatic) break;
+    }
+    if (!touchesStatic) {
+      E.finishSpawn(island, mat);
+      continue;
+    }
+
+    std::unordered_set<int> staticCells;
+    staticCells.reserve(island.size() * 2);
+    for (const auto& cell : island) {
+      int k = cell.second * E.cols + cell.first;
+      if (E.L->grid[k] != EMPTY) continue;
+      E.writeGridIndex(k, mat);
+      staticCells.insert(k);
+    }
+    registerComponentCells(mat, staticCells);
+  }
+}
+
 int ToolSystem::placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p) {
   if (mat == EMPTY) return eraseDisc(cx, cy, radius);
   bool comp = E.isComponentMaterial(mat);
@@ -199,7 +277,7 @@ int ToolSystem::placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, i
       return true;
     });
   if (placed) { E.L->skyDirty = true; E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius); }
-  if (comp) E.finishSpawn(cells, mat);
+  if (comp) finalizeStructuralPlacement(cells, mat);
   return placed;
 }
 int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p) {
@@ -217,7 +295,7 @@ int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFoo
     survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
     E.markDirtyRect(x0, y0, x1, y1);
   }
-  if (comp) E.finishSpawn(cells, mat);
+  if (comp) finalizeStructuralPlacement(cells, mat);
   return placed;
 }
 // Disc cell offsets ordered by distance from center (cached per radius). Tie-break
@@ -493,8 +571,8 @@ int ToolSystem::placeMaterialAtFootprintStrokeCapped(int x0, int y0, int x1, int
 }
 // Fire and driftwood use a tighter brush than other creative materials.
 int ToolSystem::brushFor(uint8_t m) { return (m == FIRE || m == DRIFTWOOD) ? 1 : 2; }
-// Finalize a structural draft as one body. The body keeps its exact material,
-// falls through the rigid solver, and later bakes on grounded contact.
+// Finalize a structural draft according to the support/contact state of each
+// connected island.
 void ToolSystem::finalizeDraft() {
   if (draft.empty()) return;
   std::vector<std::pair<int, int>> cells;
@@ -503,7 +581,7 @@ void ToolSystem::finalizeDraft() {
     if (E.L->grid[k] == EMPTY) cells.push_back({k % E.cols, k / E.cols});
   if (!cells.empty()) {
     E.L->skyDirty = true;
-    E.finishSpawn(cells, draftMaterial);
+    finalizeStructuralPlacement(cells, draftMaterial);
   }
 }
 // Seeds occupy one cell.

@@ -203,10 +203,15 @@
     // Structure plans always consult foreground cave topology, even while the
     // background or a prefetched scratch band is active. This keeps placement
     // decisions byte-identical across both layers.
+    auto groundAnchorY = [&](int x) {
+      int biome = terrain.genBiomeAt(x);
+      return terrain.genSurfaceAbs(x) + TerrainGen::GEN_SKIN
+           + terrain.genSoilDepthAt(x, biome);
+    };
     auto stampTerraceFoundation = [&](int left, int right, int floorY,
                                       uint8_t foundation, bool stairs) {
       for (int x = left; x <= right; x++) {
-        int groundY = terrain.genSurfaceAbs(x);
+        int groundY = groundAnchorY(x);
         for (int y = floorY + 1; y <= groundY; y++) {
           uint8_t course = foundation;
           if (foundation == BRICK && (y - floorY) % 5 == 0) course = SANDSTONE;
@@ -221,7 +226,7 @@
         int drop = terrain.genSurfaceAbs(edgeX + side) - floorY;
         for (int step = 1; step <= imin(10, drop); step++) {
           int x = edgeX + side * step;
-          int groundY = terrain.genSurfaceAbs(x);
+          int groundY = groundAnchorY(x);
           int stepY = imin(floorY + step, groundY - 1);
           for (int y = stepY; y <= groundY; y++) put(x, y, foundation);
         }
@@ -457,6 +462,7 @@
         // player so the decorative post cannot obstruct the path between homes.
         int signX = left + w + 6;
         for (int y = floorY - 8; y <= floorY; y++) put(signX, y, PINE_WOOD);
+        for (int y = floorY + 1; y <= groundAnchorY(signX); y++) put(signX, y, PINE_WOOD);
         for (int x = signX - 4; x <= signX + 3; x++) for (int y = floorY - 9; y <= floorY - 6; y++)
           put(x, y, PINE_WOOD);
         put(signX - 1, floorY - 8, hall ? CRYSTAL : (ordinal & 1 ? COPPER_ORE : CRYSTAL));
@@ -482,7 +488,7 @@
       if (L->isBackground) for (int i = 0; i + 1 < count; i++) {
         int lampX = center + (i - count / 2) * 58 + 29;
         int lampY = terrain.genSurfaceAbs(lampX) - 1;
-        for (int y = lampY - 9; y <= lampY; y++) put(lampX, y, PINE_WOOD);
+        for (int y = lampY - 9; y <= groundAnchorY(lampX); y++) put(lampX, y, PINE_WOOD);
         for (int dx = -3; dx <= 3; dx++) put(lampX + dx, lampY - 9, PINE_WOOD);
         put(lampX - 3, lampY - 8, CRYSTAL); put(lampX + 3, lampY - 8, CRYSTAL);
       }

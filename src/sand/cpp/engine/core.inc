@@ -102,7 +102,9 @@
         && !(y > 1 && isLiquidMaterial(L->grid[k - cols]) && canDisplaceByLooseDensity(m, L->grid[k - cols]))) {
       uint8_t below = liquidOccupantAt(belowK), bl = liquidOccupantAt(belowK - 1), br = liquidOccupantAt(belowK + 1);
       if ((below == m && bl == m && br == m) || (supportsLiquid(below, m) && bl != EMPTY && !canDisplaceMaterial(m, bl) && br != EMPTY && !canDisplaceMaterial(m, br))) {
-        L->next[k] = m; return; // settled flat surface -> go inert (no re-mark just for open sky above)
+        L->next[k] = m;
+        carryNextLiquidVelocity(k, k);
+        return; // settled flat surface -> go inert (no re-mark just for open sky above)
       }
     }
     // FALL / SINK: less-dense liquid is free volume for a *single-cell* sink
@@ -135,6 +137,7 @@
       // buffer resurrects stale water as a ghost trail (false "duplication").
       vacateForNextMove(k);
       writeNextIndex(dst, m);
+      carryNextLiquidVelocity(k, dst);
       carryNextFallSpeed(dst, maxFall);
       audio.noteFluidFall(m, dst % cols, dst / cols, (dst - k) / cols);
       if (dst != k) markMoveSpan(k, dst);
@@ -149,6 +152,7 @@
       uint8_t occ = liquidOccupantAt(ik);
       if (occ == EMPTY) {
         vacateForNextMove(k); writeNextIndex(ik, m);
+        carryNextLiquidVelocity(k, ik);
         audio.noteFluidFall(m, nx, ny, 1);
         return;
       }
@@ -186,7 +190,12 @@
       // Resting on support: same-level empty is only an escape when pressured.
       // Free-surface leveling of denser mounds under lighter fluid is done by
       // levelLiquidSurfaces (lighter liquid = air, drop>=2) — same as air pyramids.
-      if (L->next[k] == EMPTY) { L->next[k] = m; if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m)) || adjacentInternalHole(k, m)) markCellIndex(k); }
+      if (L->next[k] == EMPTY) {
+        L->next[k] = m;
+        carryNextLiquidVelocity(k, k);
+        if ((hasAbove ? liquidCanEscape(k) : touchesUnstableLooseDensityInterface(k, m))
+            || adjacentInternalHole(k, m)) markCellIndex(k);
+      }
       return;
     }
     // Same-level sideways into EMPTY under pressure (own liquid or lighter liquid
@@ -199,6 +208,7 @@
       }
       if (L->next[k] == EMPTY) {
         L->next[k] = m;
+        carryNextLiquidVelocity(k, k);
         bool fillableGap = false;
         for (int i = 0; i < 2; i++) {
           int dx = dirs[i]; int nx = x + dx; if (nx <= 0 || nx >= cols - 1) continue;
@@ -209,7 +219,12 @@
       }
       return;
     }
-    if (L->next[k] == EMPTY) { L->next[k] = m; if (touchesUnstableLooseDensityInterface(k, m) || adjacentInternalHole(k, m)) markCellIndex(k); }
+    if (L->next[k] == EMPTY) {
+      L->next[k] = m;
+      carryNextLiquidVelocity(k, k);
+      if (touchesUnstableLooseDensityInterface(k, m)
+          || adjacentInternalHole(k, m)) markCellIndex(k);
+    }
   }
   void settleLava(int x, int y, int k) {
     if (L->next[k] != EMPTY) return;
@@ -426,14 +441,28 @@
         int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
         if (L->grid[I(x, y + 1)] == EMPTY) continue;
         int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
-        if (relaxesGaps(above)) { writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY); continue; }
+        if (relaxesGaps(above)) {
+          uint32_t velocity = L->liquidVel[aboveK];
+          writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY);
+          L->liquidVel[k] = velocity;
+          continue;
+        }
         // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
         // always migrates the same way — toward the layer's edge, where it vanishes.
         // A holey liquid layer (e.g. oil arriving at the surface in scattered spots)
         // thus coalesces into a solid, flat layer and SETTLES, instead of the random
         // fill shuffling the holes around forever (perpetual churn).
         static const int FILL_DIRS[2] = { -1, 1 };
-        for (int i = 0; i < 2; i++) { int dx = FILL_DIRS[i]; int sx = x + dx; if (sx <= 0 || sx >= cols - 1) continue; int sk = I(sx, y); uint8_t side = L->grid[sk]; if (!relaxesGaps(side)) continue; writeGridIndex(k, side); writeGridIndex(sk, EMPTY); if (L->grid[k] != EMPTY) break; }
+        for (int i = 0; i < 2; i++) {
+          int dx = FILL_DIRS[i], sx = x + dx;
+          if (sx <= 0 || sx >= cols - 1) continue;
+          int sk = I(sx, y); uint8_t side = L->grid[sk];
+          if (!relaxesGaps(side)) continue;
+          uint32_t velocity = L->liquidVel[sk];
+          writeGridIndex(k, side); writeGridIndex(sk, EMPTY);
+          L->liquidVel[k] = velocity;
+          if (L->grid[k] != EMPTY) break;
+        }
       }
     }
   }
@@ -509,8 +538,12 @@
           // Swap is volume-safe; lighter liquid takes the denser free-surface cell and
           // is pushed up by later density sink / free-surface water fill.
           uint8_t displaced = L->grid[toK];
+          uint32_t sourceVelocity = L->liquidVel[k];
+          uint32_t displacedVelocity = L->liquidVel[toK];
           writeGridIndex(k, displaced);
           writeGridIndex(toK, m);
+          if (isLiquidMaterial(displaced)) L->liquidVel[k] = displacedVelocity;
+          L->liquidVel[toK] = sourceVelocity;
           L->vacatedStamp[k] = tick;
           L->vacatedStamp[toK] = tick;
         }
@@ -529,7 +562,13 @@
         int k = I(x, y), belowK = k + cols; uint8_t upper = L->grid[k], lower = L->grid[belowK];
         // Liquid↔liquid: settleLiquid + density-chain BFS only (no checkerboard swaps).
         if (isLiquidMaterial(upper) && isLiquidMaterial(lower)) continue;
-        if (canDisplaceByLooseDensity(upper, lower)) { writeGridIndex(belowK, upper); writeGridIndex(k, lower); }
+        if (canDisplaceByLooseDensity(upper, lower)) {
+          uint32_t upperVelocity = L->liquidVel[k];
+          uint32_t lowerVelocity = L->liquidVel[belowK];
+          writeGridIndex(belowK, upper); writeGridIndex(k, lower);
+          if (isLiquidMaterial(upper)) L->liquidVel[belowK] = upperVelocity;
+          if (isLiquidMaterial(lower)) L->liquidVel[k] = lowerVelocity;
+        }
       }
     }
   }

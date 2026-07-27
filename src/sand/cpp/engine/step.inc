@@ -121,6 +121,7 @@
     double tT = emscripten_get_now();
     std::swap(L->grid, L->next);
     std::swap(L->fallSpeed, L->nextFallSpeed);
+    std::swap(L->liquidVel, L->nextLiquidVel);
     if ((tick & 1) == 0) relaxLiquidGaps();
     if (tick % 3 == 0) separateLooseByDensity();
     levelLiquidSurfaces();
@@ -410,6 +411,10 @@
       if (!gasBlockedUpIn(from, x, y)) return false;
       if (!canRise(to, x, y)) return false;
       to->grid[k] = m; from->grid[k] = EMPTY;
+      if (to->liquidVel) {
+        to->liquidVel[k] = 0;
+        from->liquidVel[k] = 0;
+      }
       if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
       if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;
       return true;
@@ -439,14 +444,24 @@
     if (!canFall(to, x, y, m)) return false;
     uint8_t srcSpeed = from->fallSpeed ? from->fallSpeed[k] : 0;
     uint8_t dstSpeed = to->fallSpeed ? to->fallSpeed[k] : 0;
+    uint32_t srcVelocity = from->liquidVel ? from->liquidVel[k] : 0;
+    uint32_t dstVelocity = to->liquidVel ? to->liquidVel[k] : 0;
     if (swap) {
       to->grid[k] = m; from->grid[k] = dst;
       if (to->fallSpeed) to->fallSpeed[k] = srcSpeed;
       if (from->fallSpeed) from->fallSpeed[k] = dstSpeed;
+      if (to->liquidVel) {
+        to->liquidVel[k] = isLiquidMaterial(m) ? srcVelocity : 0;
+        from->liquidVel[k] = isLiquidMaterial(dst) ? dstVelocity : 0;
+      }
     } else {
       to->grid[k] = m; from->grid[k] = EMPTY;
       if (to->fallSpeed) to->fallSpeed[k] = srcSpeed;
       if (from->fallSpeed) from->fallSpeed[k] = 0;
+      if (to->liquidVel) {
+        to->liquidVel[k] = isLiquidMaterial(m) ? srcVelocity : 0;
+        from->liquidVel[k] = 0;
+      }
     }
     // Cross-layer powder/liquid motion invalidates both layers' loose overlays.
     auto touchLoose = [&](Layer* lay) {

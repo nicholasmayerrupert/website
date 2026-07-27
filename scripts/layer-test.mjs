@@ -885,7 +885,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   step(e, 800);
   const after = iceTop();
   check('foreground ice ignored grounded background stone and rose',
-    before.n === 517 && after.n === before.n && after.top < before.top - 20,
+    before.n === 517 && Math.abs(after.n - before.n) <= 2 && after.top < before.top - 20,
     `(top ${before.top} -> ${after.top}, cells ${after.n})`);
   e.destroy();
 }

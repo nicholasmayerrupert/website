@@ -672,12 +672,10 @@ void ComponentSystem::ensureGroundedSingleLayer() {
 }
 
 // Do all of the rigid cells in `boundary` (the surviving rigid neighbours of the
-// removed blob) reconnect to one another through rigid material within [x0,x1] x
-// [y0,y1], WITHOUT passing through any cell stamped `removedGen`? If so, the blob is
-// not a cut: every path that used the blob reroutes through the reconnected
-// boundary, so removing it disconnects nothing. A bounded window + visit cap keep
-// it cheap; failing to connect (or exceeding the cap) is treated as a cut, which is
-// always safe (the caller refloods).
+// removed blob) reconnect through static grounding cells within [x0,x1] x
+// [y0,y1], without passing through `removedGen` or a free body? If so, the blob
+// is not a cut: every path that used it reroutes through the reconnected boundary.
+// A bounded window + visit cap keep it cheap; uncertainty forces a safe reflood.
 bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, int32_t inN, int x0, int y0, int x1, int y1, int32_t removedGen) {
   int32_t vis = ++E.L->seenGen;
   // Early-exit means a genuine reconnection finds all boundary cells quickly, so the
@@ -697,7 +695,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
       int nk = ny * E.cols + nx;
       int32_t s = E.L->seenStamp[nk];
       if (s == vis || s == removedGen) continue;
-      if (!E.isRigidMaterialClass(E.L->grid[nk])) continue;
+      if (!isGroundingRigidCell(*E.L, nk)) continue;
       if (s == inN && ++found == need) return true; // all boundary cells reconnected -> not a cut (early out)
       E.L->seenStamp[nk] = vis; q[qt++] = nk;
     }
@@ -708,10 +706,11 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
 
 // Exact fallback for a bounded reconnect that ran out of open material rather
 // than visit budget. Removing a blob can split its surviving boundary into
-// several rigid regions without changing grounding when every formerly-grounded
+// several static regions without changing grounding when every formerly-grounded
 // region still reaches a real base seed. Walk only those boundary regions and
 // stop as soon as a floor/stream-edge seed or an already-proven path is reached.
-// A capped/uncertain search returns false and keeps the ordinary full reflood.
+// Free bodies are neither paths nor seeds. A capped/uncertain search returns
+// false and keeps the ordinary full reflood.
 bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& boundary, int32_t removedGen) {
   const int gridLen = E.cols * E.rows;
   if ((int)E.L->groundRigidBase.size() != gridLen || boundary.empty()) return false;
@@ -727,7 +726,8 @@ bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& bo
     : E.L->groundRigidBase.data();
   auto directSeed = [&](int k, int x, int y) {
     uint8_t m = grid[k];
-    if (y == E.rows - 1 && E.isBearingMaterial(m)) return true;
+    if (y == E.rows - 1 && isGroundingRigidCell(*E.L, k)
+        && E.isBearingMaterial(m)) return true;
     return E.L->infinite && !E.isIceMaterial(m)
       && (y == 1 || x == 1 || x == E.cols - 2);
   };
@@ -757,7 +757,8 @@ bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& bo
           int nk = ny * E.cols + nx;
           int32_t stamp = E.L->seenStamp[nk];
           if (stamp == safe) { reachedSeed = true; break; }
-          if (stamp == vis || stamp == removedGen || !E.isRigidMaterialClass(grid[nk])) continue;
+          if (stamp == vis || stamp == removedGen
+              || !isGroundingRigidCell(*E.L, nk)) continue;
           E.L->seenStamp[nk] = vis;
           stack[sp++] = nk;
         }
@@ -794,10 +795,10 @@ bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
   }
   if (bx1 - bx0 > SPAN || by1 - by0 > SPAN) { gbSpan++; return false; }
   if (bx0 <= MARGIN || bx1 >= E.cols - 1 - MARGIN || by0 <= MARGIN || by1 >= E.rows - 1 - MARGIN) { gbEdge++; return false; }
-  // Gather the blob's surviving rigid neighbours (deduped via the inN stamp); bail
-  // on any powder nearby (powder/liquid grounding nuance not modelled here). Removed
-  // cells of OTHER components are already empty in the grid, so they are skipped by
-  // the isRigidMaterial test and never pollute this blob's boundary.
+  // Gather the blob's surviving static neighbours (deduped via the inN stamp);
+  // bail on any nearby powder because its grounding rules are not modelled here.
+  // Other removed components are already empty, and free bodies do not anchor
+  // static terrain, so neither can pollute this blob's boundary.
   int32_t inN = ++E.L->seenGen;
   cgBlobN.clear();
   for (int r : blob) {
@@ -807,7 +808,11 @@ bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
       int nk = (ry + oy) * E.cols + (rx + ox);
       uint8_t m = E.L->grid[nk];
       if (E.isLooseSolidMaterial(m)) { gbPowder++; return false; }
-      if (E.isRigidMaterialClass(m) && E.L->seenStamp[nk] != gen && E.L->seenStamp[nk] != inN) { E.L->seenStamp[nk] = inN; cgBlobN.push_back(nk); }
+      if (isGroundingRigidCell(*E.L, nk)
+          && E.L->seenStamp[nk] != gen && E.L->seenStamp[nk] != inN) {
+        E.L->seenStamp[nk] = inN;
+        cgBlobN.push_back(nk);
+      }
     }
   }
   if ((int)cgBlobN.size() > 1) {  // 0/1 external connection: the blob is a pendant, removing it disconnects nothing else

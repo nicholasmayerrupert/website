@@ -609,6 +609,9 @@ struct Player {
 // Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const int    R_FLUID_SLEEP_TICKS = 80;
+static const int    R_FLUID_PRESSURE_ITERS = 96;
+static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is
@@ -616,11 +619,14 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
 static const double R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
-static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6, R_LIQUID_DRAG = 0.12, R_LIQUID_ANG_DRAG = 0.1;
+static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;
+static const double R_FLUID_SLEEP_LIN = 0.03;
 static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG * 8;
-static const double R_BUOY_REST_BAND = 0.08, R_BUOY_REST_DAMP = 0.45, R_BUOY_ZERO_VY = 0.02;
 static const double R_GRANULAR_BEARING_DEPTH = 7.0;
+static const double R_GRANULAR_DRAG = 0.12, R_GRANULAR_ANG_DRAG = 0.1;
+static const double R_GRANULAR_REST_BAND = 0.08, R_GRANULAR_REST_DAMP = 0.45;
+static const double R_GRANULAR_ZERO_VY = 0.02;
 static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.0;
 
 // Composed subsystem declarations.

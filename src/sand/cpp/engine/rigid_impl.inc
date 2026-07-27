@@ -293,6 +293,32 @@ void RigidBodySystem::rigidStep(double tickDt) {
   int n = (int)solverBodies.size();
   std::vector<int> islandParent(n);
   std::vector<double> islandMinStill(n);
+  std::vector<uint8_t> liquidContact(n, 0);
+  std::vector<uint8_t> liquidSurfaceContact(n, 0);
+  std::vector<uint8_t> fluidOnlySleep(n, 0);
+  std::vector<uint8_t> awakeBeforeLiquid(n, 0);
+  std::vector<double> vyBeforeLiquid(n, 0), predictedLiquidVy(n, 0);
+  for (int bi = 0; bi < n; bi++) {
+    Body* body = solverBodies[bi];
+    awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
+    vyBeforeLiquid[bi] = body->vy;
+    if (body->awake) body->vy += R_GRAVITY * tickDt;
+    predictedLiquidVy[bi] = body->vy;
+    body->cs = std::cos(body->angle);
+    body->sn = std::sin(body->angle);
+    body->hadContact = false;
+  }
+  bool coupledLiquid = coupleLiquids(solverBodies, tickDt);
+  for (int bi = 0; bi < n; bi++) {
+    Body* body = solverBodies[bi];
+    liquidContact[bi] = body->hadContact;
+    if (bi < (int)fluidBodySurface.size())
+      liquidSurfaceContact[bi] = fluidBodySurface[bi];
+    if (!coupledLiquid)
+      body->vy = vyBeforeLiquid[bi];
+    else if (awakeBeforeLiquid[bi])
+      body->vy = vyBeforeLiquid[bi] + (body->vy - predictedLiquidVy[bi]);
+  }
   // Substep count is driven by the fastest *point* on any body — linear speed
   // plus angular tip speed (|omega|*radius) — not just the centre velocity, so
   // a slowly-translating but fast-spinning bar still gets enough substeps that
@@ -310,27 +336,24 @@ void RigidBodySystem::rigidStep(double tickDt) {
   for (Body* b : solverBodies) if (!b->blastDebris) { solverIters = R_SOLVER_ITERS; break; }
   std::vector<Contact> contacts; int nc = 0;
   std::vector<uint8_t> actorSweepOverlap(n, 0);
+  std::vector<uint8_t> solidContact(n, 0);
   struct PenPt { double wx, wy, nx, ny, depth; int bk; };
   std::vector<PenPt> penAcc, terrAcc;
   double wpx, wpy, nx_, ny_;
   for (int sub = 0; sub < substeps; sub++) {
     double dt = tickDt / substeps;
+    std::fill(solidContact.begin(), solidContact.end(), 0);
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
       if (b->awake) b->vy += R_GRAVITY * dt;
-      b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
-      b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
+      b->cs = std::cos(b->angle);
+      b->sn = std::sin(b->angle);
+      b->pvx = 0; b->pvy = 0; b->pw = 0;
+      b->hadContact = liquidContact[bi] != 0;
+      b->maxDepth = 0; b->idx = bi;
       if (b->awake && !b->boundaryPts.empty()) {
-        // Support/drag from surrounding loose media. The body's own footprint is
-        // cleared to EMPTY for the duration of rigidStep, so probing the
-        // boundary cell itself reads air; we instead take the densest surrounding
-        // liquid/powder. Powder above the body participates only when the
-        // underside footprint has enough bearing capacity for the body's full
-        // mass. Loose cargo on an airborne body therefore adds no false support,
-        // while a body embedded in a grain bed retains side confinement.
-        // Liquids may produce true buoyancy (including upward acceleration);
-        // powders can only cancel gravity, never exceed it, so bodies in grains
-        // settle but do not bob/rise.
+        // Powder support remains a local bearing-capacity model. Liquid forces
+        // have already been resolved as pressure impulses by coupleLiquids.
         double powderBottomDensityArea = 0;
         for (int bp : b->boundaryPts) {
           worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
@@ -340,17 +363,6 @@ void RigidBodySystem::rigidStep(double tickDt) {
         double bodyMass = b->invMass > 0 ? 1.0 / b->invMass : 0;
         bool powderCanBear = powderBottomDensityArea * R_GRANULAR_BEARING_DEPTH
           >= bodyMass - 1e-6;
-        double liquidSubmerged = 0;
-        double liquidSupport = bodyLiquidSupport(b, liquidSubmerged);
-        if (b->jointRole == 1 && b->jointPeer) {
-          Layer* previous = E.L;
-          Layer* peerLayer = E.L == &E.fg ? &E.bg : &E.fg;
-          E.useLayer(peerLayer);
-          double peerSubmerged = 0;
-          liquidSupport += bodyLiquidSupport(b->jointPeer, peerSubmerged);
-          liquidSubmerged = (liquidSubmerged + peerSubmerged) * 0.5;
-          E.useLayer(previous);
-        }
         int powderWet = 0; double powderDensitySum = 0;
         for (int bp : b->boundaryPts) {
           worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
@@ -365,34 +377,21 @@ void RigidBodySystem::rigidStep(double tickDt) {
           }
           if (pd > 0) { powderWet++; powderDensitySum += pd; }
         }
-        if (liquidSupport > 0 || powderWet > 0) {
+        if (powderWet > 0) {
           double powderSubmerged = (double)powderWet / b->boundaryPts.size();
           double powderSupport = powderWet > 0 ? (powderDensitySum / powderWet / b->density) * powderSubmerged : 0;
-          double supportRatio = liquidSupport + powderSupport;
-          double maxSupport = powderWet > 0 ? std::fmax(1.0, liquidSupport) : supportRatio;
-          if (supportRatio > maxSupport) supportRatio = maxSupport;
-          b->vy -= R_GRAVITY * supportRatio * dt;
-          // A body may enter and maintain rest across a wider band once
-          // buoyancy opposes its motion. While buoyancy and motion point the
-          // same way, the narrow band keeps the body seeking its real draft.
-          double supportError = supportRatio - 1.0;
-          bool atFreeSurface = liquidSubmerged > 0 && liquidSubmerged < 0.98;
-          bool opposingMotion = (b->vy > 0 && supportError > 0)
-                             || (b->vy < 0 && supportError < 0);
-          bool maintainingRest = atFreeSurface && b->stillTicks > 0
-                              && std::fabs(supportError) <= 0.20;
-          if (std::fabs(supportError) <= R_BUOY_REST_BAND
-              || (atFreeSurface && opposingMotion
-                  && std::fabs(supportError) <= 0.20)
-              || maintainingRest) {
-            b->vy *= R_BUOY_REST_DAMP;
-            if (std::fabs(b->vy) < R_BUOY_ZERO_VY) b->vy = 0;
+          powderSupport = std::fmin(1.0, powderSupport);
+          b->vy -= R_GRAVITY * powderSupport * dt;
+          if (std::fabs(powderSupport - 1.0) <= R_GRANULAR_REST_BAND) {
+            b->vy *= R_GRANULAR_REST_DAMP;
+            if (std::fabs(b->vy) < R_GRANULAR_ZERO_VY) b->vy = 0;
             if (std::fabs(b->omega) < R_SETTLE_ANG) b->omega = 0;
-            b->hadContact = true; // buoyant rest counts as support for sleeping.
+            b->hadContact = true;
           }
-          double submerged = std::fmax(liquidSubmerged, powderSubmerged);
-          double drag = std::fmax(0.0, 1 - R_LIQUID_DRAG * submerged);
-          b->vx *= drag; b->vy *= drag; b->omega *= std::fmax(0.0, 1 - R_LIQUID_ANG_DRAG * submerged);
+          double drag = std::fmax(0.0, 1 - R_GRANULAR_DRAG * powderSubmerged);
+          b->vx *= drag;
+          b->vy *= drag;
+          b->omega *= std::fmax(0.0, 1 - R_GRANULAR_ANG_DRAG * powderSubmerged);
         }
       }
       if (b->awake) {
@@ -556,7 +555,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
         if (B && p->depth > B->maxDepth) B->maxDepth = p->depth;
       };
       for (int bk = 0; bk < 8; bk++) { if (!cnt[bk]) continue; push(lo[bk], bk); if (hi[bk] != lo[bk]) push(hi[bk], bk); }
-      A->hadContact = true; if (B) B->hadContact = true;
+      A->hadContact = true;
+      solidContact[A->idx] = 1;
+      if (B) {
+        B->hadContact = true;
+        solidContact[B->idx] = 1;
+      }
     };
     for (int i = 0; i < n; i++) {
       Body* A = solverBodies[i];
@@ -611,12 +615,21 @@ void RigidBodySystem::rigidStep(double tickDt) {
       // Near rest, confirm the body has powder beneath its bottom edge so an
       // exact zero-velocity equilibrium can sleep and bake instead of remaining
       // an awake solver participant forever.
-      if (!b->hadContact
-          && b->vx * b->vx + b->vy * b->vy < R_SLEEP_LIN * R_SLEEP_LIN
+      bool looseContact = false;
+      if (b->vx * b->vx + b->vy * b->vy < R_SLEEP_LIN * R_SLEEP_LIN
           && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
-          && bodyHasLooseSupport(b)) b->hadContact = true;
+          && !liquidContact[bi]
+          && bodyHasLooseSupport(b)) {
+        b->hadContact = true;
+        looseContact = true;
+      }
       if (!b->hadContact) { b->stillTicks = 0; continue; }
-      if (b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) { b->vx *= R_CONTACT_LIN_DAMP; b->vy *= R_CONTACT_LIN_DAMP; }
+      bool frictionalContact = solidContact[bi] || looseContact;
+      if (frictionalContact
+          && b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN) {
+        b->vx *= R_CONTACT_LIN_DAMP;
+        b->vy *= R_CONTACT_LIN_DAMP;
+      }
       // Don't damp a spin the contact solve is actively building in one direction
       // (a body toppling about a corner): that is real rotation, not jitter, and
       // damping it every substep is what made hand-drawn bodies creep over
@@ -624,14 +637,42 @@ void RigidBodySystem::rigidStep(double tickDt) {
       // (omega*omegaPre <= 0 or |omega| not growing) and is still damped, so bodies
       // whose centre of mass sits over their support stay put and settle as before.
       bool spinGrowing = b->omega * b->omegaPre > 0 && std::fabs(b->omega) > std::fabs(b->omegaPre);
-      if (!spinGrowing && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG) b->omega *= R_CONTACT_ANG_DAMP;
-      if (b->vx * b->vx + b->vy * b->vy < R_SLEEP_LIN * R_SLEEP_LIN && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG && b->maxDepth <= R_REST_DEPTH) b->stillTicks++; else b->stillTicks = 0;
+      if (frictionalContact && !spinGrowing
+          && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG)
+        b->omega *= R_CONTACT_ANG_DAMP;
+      bool fluidOnlyContact = liquidContact[bi] && !frictionalContact;
+      fluidOnlySleep[bi] = fluidOnlyContact ? 1 : 0;
+      double sleepLinear = fluidOnlyContact ? R_FLUID_SLEEP_LIN : R_SLEEP_LIN;
+      bool sleepQuiet = b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
+                     && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
+                     && b->maxDepth <= R_REST_DEPTH;
+      if (fluidOnlyContact && !liquidSurfaceContact[bi]) sleepQuiet = false;
+      if (sleepQuiet) {
+        b->stillTicks++;
+      } else if (fluidOnlyContact) {
+        b->stillTicks = liquidSurfaceContact[bi]
+          ? imax(0, b->stillTicks - 1)
+          : 0;
+      } else {
+        bool settling = b->vx * b->vx + b->vy * b->vy < R_SETTLE_LIN * R_SETTLE_LIN
+                     && b->omega * b->omega < R_SETTLE_ANG * R_SETTLE_ANG
+                     && b->maxDepth <= R_REST_DEPTH;
+        b->stillTicks = settling ? std::fmax(0.0, b->stillTicks - 1.0) : 0;
+      }
     }
   }
   for (int bi = 0; bi < n; bi++) islandParent[bi] = bi;
   for (int ci = 0; ci < nc; ci++) { Contact& c = contacts[ci]; if (!c.b || !c.a->awake || !c.b->awake) continue; ufUnite(islandParent, c.a->idx, c.b->idx); }
   for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
-  for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; int r = ufFind(islandParent, bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
+  for (int bi = 0; bi < n; bi++) {
+    Body* b = solverBodies[bi];
+    if (!b->awake) continue;
+    int r = ufFind(islandParent, bi);
+    double st = b->hadContact ? b->stillTicks : 0;
+    if (fluidOnlySleep[bi])
+      st *= (double)R_SLEEP_TICKS / R_FLUID_SLEEP_TICKS;
+    if (st < islandMinStill[r]) islandMinStill[r] = st;
+  }
   for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; if (b->jointRole == 1) syncJointFollower(b); } }
 }
 template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
@@ -691,119 +732,477 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
     return solidIn(E.fg, false) || solidIn(E.bg, true);
   return solidIn(*E.L, false);
 }
-double RigidBodySystem::buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLiquidMaterial(m) ? DENSITY[m] : 0; }
-double RigidBodySystem::bodyLiquidSupport(Body* b, double& submerged) {
-  submerged = 0;
-  occStamp.reset((size_t)E.cols * E.rows);
-  occCells.clear();
-  int minX = E.cols, minY = E.rows, maxX = -1, maxY = -1;
-  forEachBodyCell(b, [&](int x, int y, int) {
-    int k = y * E.cols + x;
-    if (occStamp.has(k)) return;
-    occStamp.add(k);
-    occCells.push_back(k);
-    minX = imin(minX, x); minY = imin(minY, y);
-    maxX = imax(maxX, x); maxY = imax(maxY, y);
+bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt) {
+  const int cellCount = E.cols * E.rows;
+  fluidBodySurface.assign(bodies.size(), 0);
+  if (bodies.empty() || cellCount == 0) return false;
+  for (int layer = 0; layer < 2; layer++) {
+    if ((int)fluidNodeStamp[layer].size() != cellCount) {
+      fluidNodeStamp[layer].assign(cellCount, 0);
+      fluidNodeIndex[layer].assign(cellCount, -1);
+      fluidBodyStamp[layer].assign(cellCount, 0);
+      fluidBodyIndex[layer].assign(cellCount, -1);
+      fluidPressureCache[layer].assign(cellCount, 0);
+      fluidPressureWorldX[layer] = fluidPressureWorldY[layer] = INT32_MIN;
+    }
+    Layer* cacheLayer = layer == 0 ? &E.fg : &E.bg;
+    if (fluidPressureWorldX[layer] != cacheLayer->worldOffsetX
+        || fluidPressureWorldY[layer] != cacheLayer->worldOffsetY) {
+      std::fill(fluidPressureCache[layer].begin(), fluidPressureCache[layer].end(), 0);
+      fluidPressureWorldX[layer] = cacheLayer->worldOffsetX;
+      fluidPressureWorldY[layer] = cacheLayer->worldOffsetY;
+    }
+  }
+  if (++fluidNodeGeneration <= 0) {
+    fluidNodeGeneration = 1;
+    for (auto& stamp : fluidNodeStamp) std::fill(stamp.begin(), stamp.end(), 0);
+  }
+  if (++fluidBodyGeneration <= 0) {
+    fluidBodyGeneration = 1;
+    for (auto& stamp : fluidBodyStamp) std::fill(stamp.begin(), stamp.end(), 0);
+  }
+
+  const int activeLayer = E.L == &E.bg ? 1 : 0;
+  fluidQueue.clear();
+  auto stampBody = [&](Body* body, int bodyIndex, int layer, bool seedLiquid) {
+    forEachBodyCell(body, [&](int x, int y, int) {
+      int k = y * E.cols + x;
+      if (seedLiquid && fluidBodyStamp[layer][k] != fluidBodyGeneration)
+        fluidQueue.push_back(layer * cellCount + k);
+      fluidBodyStamp[layer][k] = fluidBodyGeneration;
+      fluidBodyIndex[layer][k] = bodyIndex;
+    });
+  };
+  for (int i = 0; i < (int)bodies.size(); i++) {
+    Body* body = bodies[i];
+    stampBody(body, i, activeLayer, body->awake);
+    if (body->jointRole == 1 && body->jointPeer)
+      stampBody(body->jointPeer, i, 1 - activeLayer, body->awake);
+  }
+
+  auto layerAt = [&](int index) -> Layer* { return index == 0 ? &E.fg : &E.bg; };
+  fluidSeeds.clear();
+  const int offsets[4] = {-1, 1, -E.cols, E.cols};
+  for (int packed : fluidQueue) {
+    int layer = packed / cellCount;
+    int k = packed - layer * cellCount;
+    Layer* lay = layerAt(layer);
+    int x = k - (k / E.cols) * E.cols, y = k / E.cols;
+    int bodyIndex = fluidBodyIndex[layer][k];
+    for (int d = 0; d < 4; d++) {
+      if ((d == 0 && x == 0) || (d == 1 && x == E.cols - 1)
+          || (d == 2 && y == 0) || (d == 3 && y == E.rows - 1)) continue;
+      int nk = k + offsets[d];
+      if (fluidBodyStamp[layer][nk] == fluidBodyGeneration) continue;
+      if (E.isLiquidMaterial(lay->grid[nk]))
+        fluidSeeds.push_back(layer * cellCount + nk);
+      else if (lay->grid[nk] == EMPTY || E.isGasMaterial(lay->grid[nk]))
+        fluidBodySurface[bodyIndex] = 1;
+    }
+  }
+  fluidQueue.clear();
+  if (fluidSeeds.empty()) return false;
+  std::sort(fluidSeeds.begin(), fluidSeeds.end());
+  fluidSeeds.erase(std::unique(fluidSeeds.begin(), fluidSeeds.end()), fluidSeeds.end());
+
+  fluidNodes.clear();
+  fluidQueue.clear();
+  int component = 0;
+  std::vector<int> componentFirst;
+  auto addNode = [&](int layer, int k, int componentIndex) {
+    if (fluidNodeStamp[layer][k] == fluidNodeGeneration) return false;
+    Layer* lay = layerAt(layer);
+    uint8_t material = lay->grid[k];
+    if (!E.isLiquidMaterial(material)) return false;
+    fluidNodeStamp[layer][k] = fluidNodeGeneration;
+    fluidNodeIndex[layer][k] = (int)fluidNodes.size();
+    uint32_t packedVelocity = lay->liquidVel ? lay->liquidVel[k] : 0;
+    double vx = E.liquidVelocityX(packedVelocity);
+    double vy = E.liquidVelocityY(packedVelocity);
+    double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]);
+    fluidNodes.push_back({lay, k, componentIndex, material, vx, vy + R_GRAVITY * dt,
+                          pressure});
+    fluidQueue.push_back(layer * cellCount + k);
+    return true;
+  };
+  for (int seed : fluidSeeds) {
+    int layer = seed / cellCount, k = seed - layer * cellCount;
+    if (!addNode(layer, k, component)) continue;
+    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
+      int packed = fluidQueue[qi];
+      int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
+      int y = qk / E.cols, x = qk - y * E.cols;
+      if (x > 0) addNode(qLayer, qk - 1, component);
+      if (x + 1 < E.cols) addNode(qLayer, qk + 1, component);
+      if (y > 0) addNode(qLayer, qk - E.cols, component);
+      if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, component);
+    }
+    fluidQueue.clear();
+    component++;
+  }
+  if (fluidNodes.empty()) return false;
+  std::sort(fluidNodes.begin(), fluidNodes.end(), [&](const FluidNode& a, const FluidNode& b) {
+    int aLayer = a.layer == &E.bg ? 1 : 0;
+    int bLayer = b.layer == &E.bg ? 1 : 0;
+    return aLayer != bLayer ? aLayer < bLayer : a.cell < b.cell;
   });
-  if (occCells.empty()) return 0;
+  componentFirst.assign((size_t)component, -1);
+  for (int i = 0; i < (int)fluidNodes.size(); i++) {
+    FluidNode& node = fluidNodes[i];
+    int layer = node.layer == &E.bg ? 1 : 0;
+    fluidNodeIndex[layer][node.cell] = i;
+    if (componentFirst[node.component] < 0) componentFirst[node.component] = i;
+  }
 
-  // Flood the medium immediately outside the raster. Empty cells retained
-  // between walls and above a floor in the body's local occupancy mask form its
-  // basin; liquid there is cargo rather than displaced exterior volume.
-  int x0 = imax(0, minX - 1), x1 = imin(E.cols - 1, maxX + 1);
-  int y0 = imax(0, minY - 1), y1 = imin(E.rows - 1, maxY + 1);
-  bool basinShape = b->nPts < b->w * b->h
-                 && b->nPts * 5 >= b->w * b->h;
-  auto retainedCargo = [&](int x, int y) {
-    if (!basinShape) return false;
-    double dx = x + 0.5 - b->px, dy = y + 0.5 - b->py;
-    double lx = dx * b->cs + dy * b->sn;
-    double ly = -dx * b->sn + dy * b->cs;
-    int i = (int)std::lround(lx - b->offsetX);
-    int j = (int)std::lround(ly - b->offsetY);
-    if (i < 0 || i >= b->w || j < 0 || j >= b->h
-        || b->occ[j * b->w + i]) return false;
-    bool wallLeft = false, wallRight = false, floorBelow = false;
-    for (int ii = i - 1; ii >= 0; ii--)
-      if (b->occ[j * b->w + ii]) { wallLeft = true; break; }
-    for (int ii = i + 1; ii < b->w; ii++)
-      if (b->occ[j * b->w + ii]) { wallRight = true; break; }
-    if (!wallLeft || !wallRight) return false;
-    for (int jj = j + 1; jj < b->h; jj++)
-      if (b->occ[jj * b->w + i]) { floorBelow = true; break; }
-    return floorBelow;
-  };
-  int32_t seenGen = ++E.L->seenGen;
-  std::vector<int> queue;
-  queue.reserve((size_t)(x1 - x0 + 1) * 2 + (size_t)(y1 - y0 + 1) * 2);
-  auto passable = [&](int k) {
-    if (occStamp.has(k)) return false;
-    uint8_t material = E.L->grid[k];
-    return material == EMPTY || E.isGasMaterial(material)
-      || E.isLiquidMaterial(material);
-  };
-  auto enqueue = [&](int x, int y) {
-    if (x < x0 || x > x1 || y < y0 || y > y1) return;
-    int k = y * E.cols + x;
-    if (E.L->seenStamp[k] == seenGen || !passable(k)) return;
-    E.L->seenStamp[k] = seenGen;
-    queue.push_back(k);
-  };
-  for (int x = x0; x <= x1; x++) {
-    enqueue(x, y0);
-    enqueue(x, y1);
-  }
-  for (int y = y0 + 1; y < y1; y++) {
-    enqueue(x0, y);
-    enqueue(x1, y);
-  }
-  std::vector<double> rowDensity((size_t)(y1 - y0 + 1), 0);
-  int retainedCargoCells = 0;
-  for (size_t qi = 0; qi < queue.size(); qi++) {
-    int k = queue[qi], y = k / E.cols, x = k - y * E.cols;
-    uint8_t material = E.L->grid[k];
-    if (E.isLiquidMaterial(material)) {
-      if (retainedCargo(x, y)) retainedCargoCells++;
-      else rowDensity[y - y0] = std::fmax(rowDensity[y - y0], DENSITY[material]);
+  fluidFaces.clear();
+  std::vector<uint8_t> componentHasAir((size_t)component, 0);
+  auto addBoundaryFace = [&](int ni, int layer, int nk, int nx, int ny, bool outside) {
+    FluidNode& node = fluidNodes[ni];
+    if (outside) {
+      fluidFaces.push_back({ni, -1, -1, (int8_t)nx, (int8_t)ny, 0, 0, 0, FF_STATIC});
+      return;
     }
-    enqueue(x - 1, y); enqueue(x + 1, y);
-    enqueue(x, y - 1); enqueue(x, y + 1);
-  }
-  // A few liquid cells caught in raster-scale concavities remain exterior
-  // medium. Only a meaningful retained volume acts as cargo.
-  if (!basinShape || retainedCargoCells * 16 < b->nPts)
-    for (int k : queue) {
-      uint8_t material = E.L->grid[k];
-      if (!E.isLiquidMaterial(material)) continue;
-      int y = k / E.cols;
-      rowDensity[y - y0] = std::fmax(rowDensity[y - y0], DENSITY[material]);
+    if (fluidBodyStamp[layer][nk] == fluidBodyGeneration) {
+      int bodyIndex = fluidBodyIndex[layer][nk];
+      Body* body = bodies[bodyIndex];
+      double x = node.cell - (node.cell / E.cols) * E.cols + 0.5 + nx * 0.5;
+      double y = node.cell / E.cols + 0.5 + ny * 0.5;
+      double rx = x - body->px, ry = y - body->py;
+      double bodyNormal = (body->vx - body->omega * ry) * nx
+                        + (body->vy + body->omega * rx) * ny;
+      if (!body->awake) {
+        fluidFaces.push_back({ni, -1, -1, (int8_t)nx, (int8_t)ny,
+                              0, 0, 0, FF_STATIC});
+      } else {
+        fluidFaces.push_back({ni, -1, bodyIndex, (int8_t)nx, (int8_t)ny,
+                              rx, ry, bodyNormal, FF_BODY});
+        body->hadContact = true;
+      }
+      return;
     }
+    uint8_t material = layerAt(layer)->grid[nk];
+    if (material == EMPTY || E.isGasMaterial(material)) {
+      double normal = node.vx * nx + node.vy * ny;
+      fluidFaces.push_back({ni, -1, -1, (int8_t)nx, (int8_t)ny, 0, 0, normal, FF_AIR});
+      componentHasAir[node.component] = 1;
+    } else {
+      fluidFaces.push_back({ni, -1, -1, (int8_t)nx, (int8_t)ny, 0, 0, 0, FF_STATIC});
+    }
+  };
 
-  // Integrate each source cell's continuous vertical span through the exterior
-  // liquid rows. Fractional coverage gives a shallow raft an equilibrium draft
-  // between raster rows instead of alternating between two integer support
-  // values forever.
-  double displacedMass = 0, submergedArea = 0;
-  double sn = std::sin(b->angle), cs = std::cos(b->angle);
-  for (int i = 0; i < b->nPts; i++) {
-    double wx, wy;
-    worldPoint(b, i, sn, cs, wx, wy);
-    double top = wy - 0.5, bottom = wy + 0.5;
-    int firstRow = (int)std::floor(top);
-    int lastRow = (int)std::floor(bottom - 1e-9);
-    for (int row = firstRow; row <= lastRow; row++) {
-      if (row < y0 || row > y1) continue;
-      double overlap = std::fmax(0.0, std::fmin(bottom, (double)row + 1)
-                                      - std::fmax(top, (double)row));
-      double density = rowDensity[row - y0];
-      if (overlap <= 0 || density <= 0) continue;
-      displacedMass += density * overlap;
-      submergedArea += overlap;
+  for (int ni = 0; ni < (int)fluidNodes.size(); ni++) {
+    FluidNode& node = fluidNodes[ni];
+    int layer = node.layer == &E.bg ? 1 : 0;
+    int y = node.cell / E.cols, x = node.cell - y * E.cols;
+    const int nx[4] = {-1, 1, 0, 0};
+    const int ny[4] = {0, 0, -1, 1};
+    for (int d = 0; d < 4; d++) {
+      int xx = x + nx[d], yy = y + ny[d];
+      bool outside = xx < 0 || xx >= E.cols || yy < 0 || yy >= E.rows;
+      int nk = outside ? node.cell : yy * E.cols + xx;
+      if (!outside && E.isLiquidMaterial(node.layer->grid[nk])) {
+        if (d == 1 || d == 3) {
+          int other = fluidNodeIndex[layer][nk];
+          double predicted = (node.vx + fluidNodes[other].vx) * nx[d] * 0.5
+                           + (node.vy + fluidNodes[other].vy) * ny[d] * 0.5;
+          fluidFaces.push_back({ni, other, -1, (int8_t)nx[d], (int8_t)ny[d],
+                                0, 0, predicted, FF_INTERNAL});
+        }
+        continue;
+      }
+      addBoundaryFace(ni, layer, nk, nx[d], ny[d], outside);
     }
   }
-  submerged = b->nPts > 0 ? submergedArea / b->nPts : 0;
-  double bodyMass = b->invMass > 0 ? 1.0 / b->invMass : 0;
-  return bodyMass > 0 ? displacedMass / bodyMass : 0;
+
+  const int nodeCount = (int)fluidNodes.size();
+  fluidBodyDVX.assign(bodies.size(), 0);
+  fluidBodyDVY.assign(bodies.size(), 0);
+  fluidBodyDW.assign(bodies.size(), 0);
+  for (FluidNode& node : fluidNodes) {
+    node.residual = 0;
+    node.diagonal = 1e-9;
+  }
+  for (const FluidFace& face : fluidFaces) {
+    if (face.kind == FF_INTERNAL) {
+      double invDensity = 2.0 / (DENSITY[fluidNodes[face.a].material]
+                               + DENSITY[fluidNodes[face.b].material]);
+      fluidNodes[face.a].residual -= face.predicted;
+      fluidNodes[face.b].residual += face.predicted;
+      fluidNodes[face.a].diagonal += invDensity;
+      fluidNodes[face.b].diagonal += invDensity;
+      int lo = imin(face.a, face.b), hi = imax(face.a, face.b);
+      FluidNode& upper = fluidNodes[hi];
+      if (upper.lowerCount < 2) {
+        upper.lower[upper.lowerCount] = lo;
+        upper.lowerMatrix[upper.lowerCount] = -invDensity;
+        upper.lowerCount++;
+      }
+    } else {
+      fluidNodes[face.a].residual -= face.predicted;
+      if (face.kind == FF_AIR)
+        fluidNodes[face.a].diagonal += 1.0 / DENSITY[fluidNodes[face.a].material];
+      else if (face.kind == FF_BODY) {
+        Body* body = bodies[face.body];
+        double cross = face.rx * face.ny - face.ry * face.nx;
+        fluidNodes[face.a].diagonal += body->invMass + cross * cross * body->invInertia;
+      }
+    }
+  }
+  fluidRHS.resize(nodeCount);
+  for (int i = 0; i < nodeCount; i++) fluidRHS[i] = fluidNodes[i].residual;
+  for (int c = 0; c < component; c++) {
+    if (componentHasAir[c]) continue;
+    fluidNodes[componentFirst[c]].pinned = true;
+  }
+
+  auto applyPressureMatrix = [&](bool useDirection) {
+    for (FluidNode& node : fluidNodes) node.applied = 0;
+    std::fill(fluidBodyDVX.begin(), fluidBodyDVX.end(), 0);
+    std::fill(fluidBodyDVY.begin(), fluidBodyDVY.end(), 0);
+    std::fill(fluidBodyDW.begin(), fluidBodyDW.end(), 0);
+    auto value = [&](int i) { return useDirection ? fluidNodes[i].direction : fluidNodes[i].pressure; };
+    for (const FluidFace& face : fluidFaces) {
+      if (face.kind == FF_INTERNAL) {
+        double invDensity = 2.0 / (DENSITY[fluidNodes[face.a].material]
+                                 + DENSITY[fluidNodes[face.b].material]);
+        double delta = (value(face.a) - value(face.b)) * invDensity;
+        fluidNodes[face.a].applied += delta;
+        fluidNodes[face.b].applied -= delta;
+      } else if (face.kind == FF_AIR) {
+        fluidNodes[face.a].applied += value(face.a) / DENSITY[fluidNodes[face.a].material];
+      } else if (face.kind == FF_BODY) {
+        double impulse = value(face.a);
+        Body* body = bodies[face.body];
+        double cross = face.rx * face.ny - face.ry * face.nx;
+        fluidBodyDVX[face.body] += impulse * face.nx * body->invMass;
+        fluidBodyDVY[face.body] += impulse * face.ny * body->invMass;
+        fluidBodyDW[face.body] += impulse * cross * body->invInertia;
+      }
+    }
+    for (const FluidFace& face : fluidFaces) if (face.kind == FF_BODY) {
+      double cross = face.rx * face.ny - face.ry * face.nx;
+      fluidNodes[face.a].applied += fluidBodyDVX[face.body] * face.nx
+                                 + fluidBodyDVY[face.body] * face.ny
+                                 + fluidBodyDW[face.body] * cross;
+    }
+    for (FluidNode& node : fluidNodes) if (node.pinned) node.applied = value(&node - fluidNodes.data());
+  };
+
+  for (int activeSet = 0; activeSet < 2; activeSet++) {
+    for (FluidNode& node : fluidNodes) if (node.pinned) node.pressure = 0;
+    for (int i = 0; i < nodeCount; i++) {
+      FluidNode& node = fluidNodes[i];
+      if (node.pinned) {
+        node.factorDiagonal = 1;
+        for (int edge = 0; edge < node.lowerCount; edge++) node.lowerFactor[edge] = 0;
+        continue;
+      }
+      double diagonal = node.diagonal;
+      for (int edge = 0; edge < node.lowerCount; edge++) {
+        int j = node.lower[edge];
+        if (fluidNodes[j].pinned) {
+          node.lowerFactor[edge] = 0;
+          continue;
+        }
+        double correction = 0;
+        for (int a = 0; a < edge; a++) {
+          int common = node.lower[a];
+          if (common >= j) continue;
+          for (int b = 0; b < fluidNodes[j].lowerCount; b++)
+            if (fluidNodes[j].lower[b] == common)
+              correction += node.lowerFactor[a] * fluidNodes[j].lowerFactor[b];
+        }
+        node.lowerFactor[edge] = (node.lowerMatrix[edge] - correction)
+                               / fluidNodes[j].factorDiagonal;
+        diagonal -= node.lowerFactor[edge] * node.lowerFactor[edge];
+      }
+      node.factorDiagonal = std::sqrt(std::fmax(diagonal, 1e-9));
+    }
+    auto applyPreconditioner = [&]() {
+      for (int i = 0; i < nodeCount; i++) {
+        FluidNode& node = fluidNodes[i];
+        if (node.pinned) {
+          node.applied = node.preconditioned = 0;
+          continue;
+        }
+        double value = node.residual;
+        for (int edge = 0; edge < node.lowerCount; edge++)
+          value -= node.lowerFactor[edge] * fluidNodes[node.lower[edge]].applied;
+        node.applied = value / node.factorDiagonal;
+      }
+      for (int i = nodeCount - 1; i >= 0; i--) {
+        FluidNode& node = fluidNodes[i];
+        if (node.pinned) continue;
+        node.preconditioned = node.applied / node.factorDiagonal;
+        for (int edge = 0; edge < node.lowerCount; edge++)
+          fluidNodes[node.lower[edge]].applied -= node.lowerFactor[edge] * node.preconditioned;
+      }
+    };
+    applyPressureMatrix(false);
+    double rz = 0, rhsNorm = 0;
+    for (int i = 0; i < nodeCount; i++) {
+      FluidNode& node = fluidNodes[i];
+      if (node.pinned) {
+        node.residual = node.direction = 0;
+        continue;
+      }
+      node.residual = fluidRHS[i] - node.applied;
+      rhsNorm += node.residual * node.residual;
+    }
+    applyPreconditioner();
+    for (FluidNode& node : fluidNodes) {
+      if (node.pinned) continue;
+      node.direction = node.preconditioned;
+      rz += node.residual * node.preconditioned;
+    }
+    for (int iteration = 0; iteration < R_FLUID_PRESSURE_ITERS && rz > 1e-18; iteration++) {
+      applyPressureMatrix(true);
+      double denom = 0;
+      for (const FluidNode& node : fluidNodes) denom += node.direction * node.applied;
+      if (denom <= 1e-18) break;
+      double alpha = rz / denom;
+      double nextRz = 0, residualNorm = 0;
+      for (FluidNode& node : fluidNodes) {
+        if (node.pinned) continue;
+        node.pressure += alpha * node.direction;
+        node.residual -= alpha * node.applied;
+        residualNorm += node.residual * node.residual;
+      }
+      applyPreconditioner();
+      for (const FluidNode& node : fluidNodes)
+        if (!node.pinned) nextRz += node.residual * node.preconditioned;
+      if (residualNorm <= rhsNorm * R_FLUID_PRESSURE_REL_RESIDUAL2) {
+        rz = nextRz;
+        break;
+      }
+      double beta = nextRz / rz;
+      for (FluidNode& node : fluidNodes)
+        if (!node.pinned) node.direction = node.preconditioned + beta * node.direction;
+      rz = nextRz;
+    }
+    bool clamped = false;
+    for (FluidNode& node : fluidNodes) if (!node.pinned && node.pressure < 0) {
+      node.pinned = true;
+      node.pressure = 0;
+      clamped = true;
+    }
+    if (!clamped) break;
+  }
+
+  applyPressureMatrix(false);
+  for (int i = 0; i < (int)bodies.size(); i++) {
+    Body* body = bodies[i];
+    if (fluidBodyDVX[i] == 0 && fluidBodyDVY[i] == 0 && fluidBodyDW[i] == 0) continue;
+    if (!body->awake) wakeBody(body);
+    body->vx += fluidBodyDVX[i];
+    body->vy += fluidBodyDVY[i];
+    body->omega += fluidBodyDW[i];
+    body->hadContact = true;
+  }
+
+  // Reconstruct cell-centered velocity from the projected face fluxes. The
+  // pressure solve operates on these face fluxes, and this transfer carries its
+  // no-penetration and zero-divergence result into persistent liquid velocity.
+  for (FluidNode& node : fluidNodes) node.residual = node.direction = 0;
+  for (const FluidFace& face : fluidFaces) {
+    FluidNode& a = fluidNodes[face.a];
+    double normalVelocity = 0;
+    if (face.kind == FF_INTERNAL) {
+      FluidNode& b = fluidNodes[face.b];
+      double inverseDensity = 2.0 / (DENSITY[a.material] + DENSITY[b.material]);
+      normalVelocity = face.predicted + (a.pressure - b.pressure) * inverseDensity;
+      double worldX = normalVelocity * face.nx;
+      double worldY = normalVelocity * face.ny;
+      if (face.nx) {
+        a.residual += worldX;
+        b.residual += worldX;
+      } else {
+        a.direction += worldY;
+        b.direction += worldY;
+      }
+      continue;
+    }
+    if (face.kind == FF_AIR)
+      normalVelocity = face.predicted + a.pressure / DENSITY[a.material];
+    else if (face.kind == FF_BODY) {
+      Body* body = bodies[face.body];
+      normalVelocity = (body->vx - body->omega * face.ry) * face.nx
+                     + (body->vy + body->omega * face.rx) * face.ny;
+    }
+    if (face.nx) a.residual += normalVelocity * face.nx;
+    else a.direction += normalVelocity * face.ny;
+  }
+  for (FluidNode& node : fluidNodes) {
+    node.vx = node.residual * 0.5;
+    node.vy = node.direction * 0.5;
+  }
+
+  // Diffuse liquid momentum across neighboring cells with a conservative
+  // Jacobi pass. Uniform translation is unchanged, so carried liquid and its
+  // container remain in the same freely-falling frame.
+  for (FluidNode& node : fluidNodes) node.residual = node.direction = 0;
+  for (const FluidFace& face : fluidFaces) {
+    if (face.kind != FF_INTERNAL) continue;
+    FluidNode& a = fluidNodes[face.a];
+    FluidNode& b = fluidNodes[face.b];
+    double mobility = (MOBILITY[a.material] + MOBILITY[b.material]) * 0.5;
+    double viscosity = (0.35 + (1.0 - mobility) * 0.25) * dt;
+    double inverseMass = 1.0 / DENSITY[a.material] + 1.0 / DENSITY[b.material];
+    double impulseX = (b.vx - a.vx) * viscosity / inverseMass;
+    double impulseY = (b.vy - a.vy) * viscosity / inverseMass;
+    a.residual += impulseX / DENSITY[a.material];
+    a.direction += impulseY / DENSITY[a.material];
+    b.residual -= impulseX / DENSITY[b.material];
+    b.direction -= impulseY / DENSITY[b.material];
+  }
+  for (FluidNode& node : fluidNodes) {
+    node.vx += node.residual;
+    node.vy += node.direction;
+  }
+  // Exchange tangential momentum only where liquid and body surfaces touch.
+  // Matching motion produces no impulse, so retained liquid can free-fall with
+  // its container while exterior slip decays through ordinary wet-face drag.
+  for (const FluidFace& face : fluidFaces) {
+    if (face.kind != FF_BODY) continue;
+    FluidNode& node = fluidNodes[face.a];
+    Body* body = bodies[face.body];
+    double tangentX = -face.ny, tangentY = face.nx;
+    double bodyTangent = (body->vx - body->omega * face.ry) * tangentX
+                       + (body->vy + body->omega * face.rx) * tangentY;
+    double relative = node.vx * tangentX + node.vy * tangentY - bodyTangent;
+    double cross = face.rx * tangentY - face.ry * tangentX;
+    double inverseMass = 1.0 / DENSITY[node.material]
+                       + body->invMass + cross * cross * body->invInertia;
+    if (inverseMass <= 0) continue;
+    double viscosity = (0.025 + (1.0 - MOBILITY[node.material]) * 0.015) * dt;
+    double impulse = relative * viscosity / inverseMass;
+    node.vx -= impulse * tangentX / DENSITY[node.material];
+    node.vy -= impulse * tangentY / DENSITY[node.material];
+    body->vx += impulse * tangentX * body->invMass;
+    body->vy += impulse * tangentY * body->invMass;
+    body->omega += impulse * cross * body->invInertia;
+  }
+  for (const FluidFace& face : fluidFaces) {
+    FluidNode& node = fluidNodes[face.a];
+    if (face.kind == FF_STATIC) {
+      double tangentX = -face.ny, tangentY = face.nx;
+      double normalVelocity = node.vx * face.nx + node.vy * face.ny;
+      double tangentVelocity = node.vx * tangentX + node.vy * tangentY;
+      node.vx -= normalVelocity * face.nx * 0.50 * dt;
+      node.vy -= normalVelocity * face.ny * 0.50 * dt;
+      node.vx -= tangentVelocity * tangentX * 0.08 * dt;
+      node.vy -= tangentVelocity * tangentY * 0.08 * dt;
+      continue;
+    }
+  }
+  for (FluidNode& node : fluidNodes) {
+    uint32_t velocity = E.packedLiquidVelocity(node.vx, node.vy);
+    node.layer->liquidVel[node.cell] = velocity;
+    node.layer->nextLiquidVel[node.cell] = velocity;
+    int layer = node.layer == &E.bg ? 1 : 0;
+    fluidPressureCache[layer][node.cell] = (float)node.pressure;
+  }
+  return true;
 }
 double RigidBodySystem::granularMediumDensityAt(int x, int y) {
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0;

@@ -28,7 +28,7 @@ export const UNIT_SUITES = [
   ['deep-world', 'worldgen-deep-test.mjs'],
   ['structures', 'worldgen-structures-test.mjs'],
   ['flora', 'flora-test.mjs'],
-  ['sand', 'sand-test.mjs'],
+  ['sand', 'sand-test.mjs', 240_000],
   ['loose-acceleration', 'loose-acceleration-test.mjs'],
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],

@@ -35,6 +35,10 @@ void NetSync::applyWorld(const uint8_t* buf, int len) {
     std::fill(E.fg.fallSpeedB.begin(), E.fg.fallSpeedB.end(), (uint8_t)0);
     std::fill(E.bg.fallSpeedA.begin(), E.bg.fallSpeedA.end(), (uint8_t)0);
     std::fill(E.bg.fallSpeedB.begin(), E.bg.fallSpeedB.end(), (uint8_t)0);
+    std::fill(E.fg.liquidVelA.begin(), E.fg.liquidVelA.end(), (uint32_t)0);
+    std::fill(E.fg.liquidVelB.begin(), E.fg.liquidVelB.end(), (uint32_t)0);
+    std::fill(E.bg.liquidVelA.begin(), E.bg.liquidVelA.end(), (uint32_t)0);
+    std::fill(E.bg.liquidVelB.begin(), E.bg.liquidVelB.end(), (uint32_t)0);
   }
   // A full snapshot replaces grid[] without replacing the alternate buffers.
   // Force one ordinary carry before a prior cave-blast sparse proof can be reused.
@@ -117,6 +121,12 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background) 
       if (validRect) {
         std::memcpy(lay->grid + y * E.cols + x0, buf + p, (size_t)width);
         if (lay->fallSpeed) std::memset(lay->fallSpeed + y * E.cols + x0, 0, (size_t)width);
+        if (lay->liquidVel) {
+          size_t offset = (size_t)y * E.cols + x0;
+          size_t bytes = (size_t)width * sizeof(uint32_t);
+          std::memset(lay->liquidVel + offset, 0, bytes);
+          std::memset(lay->nextLiquidVel + offset, 0, bytes);
+        }
       }
       p += width;
     }

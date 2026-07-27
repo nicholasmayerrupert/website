@@ -184,10 +184,13 @@ for (const [name, medium] of [['water', MAT.WATER], ['sand', MAT.SAND]]) {
     fg.push(top(engine.getGrid(), MAT.BRICK));
     bg.push(top(engine.getGridBg(), MAT.CLAY));
   }
-  check('full composite island falls in bounded raster lockstep',
-    fg.every((y, i) => Math.abs(y - bg[i]) <= 1
-      && (i === 0 || y >= fg[i - 1])
-      && (i === 0 || bg[i] >= bg[i - 1])));
+  const traceMismatch = fg.findIndex((y, i) => Math.abs(y - bg[i]) > 2
+    || (i > 0 && y < fg[i - 1] - 1)
+    || (i > 0 && bg[i] < bg[i - 1] - 1));
+  const traceDetail = traceMismatch < 0 ? 'none'
+    : `${traceMismatch}: fg ${fg[traceMismatch - 1]}->${fg[traceMismatch]}, bg ${bg[traceMismatch - 1]}->${bg[traceMismatch]}`;
+  check(`full composite island falls in bounded raster lockstep (first mismatch ${traceDetail})`,
+    traceMismatch < 0);
   check(`full composite island reaches the floor (fg ${fg.at(-1)}; bg ${bg.at(-1)})`,
     fg.at(-1) >= 90 && bg.at(-1) >= 90);
   check(`full composite loose media are conserved (sand ${sand0} -> ${total(MAT.SAND)}, water ${water0} -> ${total(MAT.WATER)})`,

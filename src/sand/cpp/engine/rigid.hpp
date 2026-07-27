@@ -62,12 +62,11 @@ class RigidBodySystem {
   void wakeBody(Body* b);
   void syncJointFollower(Body* leader);
   void breakJointBody(Body* member);
+  bool coupleLiquids(const std::vector<Body*>& bodies, double dt);
   void rigidStep(double tickDt);
   int localCellAt(Body* b, double wx, double wy);
   bool eraseLocalCell(Body* b, int idx);
   bool isBodyTerrain(Body* b, int x, int y, double bodyDensity);
-  double buoyantLiquidDensityAt(int x, int y);
-  double bodyLiquidSupport(Body* b, double& submerged);
   double granularMediumDensityAt(int x, int y);
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity);
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity);
@@ -103,5 +102,43 @@ class RigidBodySystem {
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material);
 
  private:
+  struct FluidNode {
+    Layer* layer = nullptr;
+    int cell = -1, component = -1;
+    uint8_t material = EMPTY;
+    double vx = 0, vy = 0, pressure = 0;
+    double residual = 0, direction = 0, applied = 0, diagonal = 0;
+    double preconditioned = 0, factorDiagonal = 1;
+    std::array<int, 2> lower{{-1, -1}};
+    std::array<double, 2> lowerMatrix{{0, 0}};
+    std::array<double, 2> lowerFactor{{0, 0}};
+    int lowerCount = 0;
+    bool pinned = false;
+  };
+  enum FluidFaceKind : uint8_t {
+    FF_INTERNAL,
+    FF_AIR,
+    FF_STATIC,
+    FF_BODY
+  };
+  struct FluidFace {
+    int a, b, body;
+    int8_t nx, ny;
+    double rx, ry, predicted;
+    FluidFaceKind kind;
+  };
+  std::array<std::vector<int32_t>, 2> fluidNodeStamp, fluidNodeIndex;
+  std::array<std::vector<int32_t>, 2> fluidBodyStamp, fluidBodyIndex;
+  std::array<std::vector<float>, 2> fluidPressureCache;
+  std::array<int, 2> fluidPressureWorldX{{INT32_MIN, INT32_MIN}};
+  std::array<int, 2> fluidPressureWorldY{{INT32_MIN, INT32_MIN}};
+  int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0;
+  std::vector<FluidNode> fluidNodes;
+  std::vector<FluidFace> fluidFaces;
+  std::vector<int> fluidQueue, fluidSeeds;
+  std::vector<double> fluidRHS;
+  std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
+  std::vector<uint8_t> fluidBodySurface;
+
   Engine& E;
 };

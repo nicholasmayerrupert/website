@@ -11,6 +11,12 @@ struct Layer {
   std::vector<uint8_t> fallSpeedA, fallSpeedB;
   uint8_t* fallSpeed = nullptr;
   uint8_t* nextFallSpeed = nullptr;
+  // Packed cell-centered liquid velocity used by the rigid/fluid pressure
+  // solve. It moves with liquid cells and remains independent of the cellular
+  // automaton's integer fall distance above.
+  std::vector<uint32_t> liquidVelA, liquidVelB;
+  uint32_t* liquidVel = nullptr;
+  uint32_t* nextLiquidVel = nullptr;
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
@@ -177,6 +183,8 @@ struct Layer {
     if (role == ESR_PRESENTATION) {
       gridB.clear(); next = grid;
       fallSpeedA.clear(); fallSpeedB.clear(); fallSpeed = nextFallSpeed = nullptr;
+      liquidVelA.clear(); liquidVelB.clear();
+      liquidVel = nextLiquidVel = nullptr;
       light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
       skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
       renderPixels.assign(n * 4, 0);
@@ -186,6 +194,8 @@ struct Layer {
     gridB.assign(n, EMPTY); next = gridB.data();
     fallSpeedA.assign(n, 0); fallSpeedB.assign(n, 0);
     fallSpeed = fallSpeedA.data(); nextFallSpeed = fallSpeedB.data();
+    liquidVelA.assign(n, 0); liquidVelB.assign(n, 0);
+    liquidVel = liquidVelA.data(); nextLiquidVel = liquidVelB.data();
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
     activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
     vacatedStamp.assign(n, -1);
@@ -222,6 +232,7 @@ struct Layer {
       // Release capacity after shrink; ordinary growth still reuses allocations.
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
       release(gridA); release(gridB); release(fallSpeedA); release(fallSpeedB);
+      release(liquidVelA); release(liquidVelB);
       release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
       release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
@@ -277,6 +288,8 @@ struct Layer {
     }
     gridB.clear(); grid = gridA.data(); next = grid;
     fallSpeedA.clear(); fallSpeedB.clear(); fallSpeed = nextFallSpeed = nullptr;
+    liquidVelA.clear(); liquidVelB.clear();
+    liquidVel = nextLiquidVel = nullptr;
     size_t n = (size_t)newCols * newRows;
     if (n < light.size()) {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };

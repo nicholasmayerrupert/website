@@ -51,12 +51,29 @@ returns to the body solver; intact supported stacks remain baked.
 
 ## Fluids and loose solids
 
-Liquids do not collide as terrain. Buoyancy depends on exterior liquid connected
-to the body's expanded raster boundary, material density, and drag. Fluid
-retained in an open basin is cargo rather than displaced exterior volume, so it
-falls with its container without slowing the container through self-buoyancy. A
-body entering liquid relocates displaced cells to the nearest reachable space,
-treating its own raster as traversal-only space. Other bodies remain barriers.
+Liquids do not collide as terrain. A sparse pressure projection gathers the
+connected liquid touching awake bodies, predicts liquid and body gravity
+together, and solves pressure against liquid, terrain, free surfaces, and the
+shared body degrees of freedom. Pressure and viscosity apply equal-and-opposite
+impulses to liquid and bodies. A nonnegative pressure constraint prevents
+unphysical suction. The solve handles both layers of a cross-layer body as
+separate fluid domains coupled by the shared body motion. Its iteration cap and
+traversal orders are deterministic.
+
+Liquid cells carry compact two-axis coupling velocity in addition to the
+cellular automaton's downward fall distance. Pressure is warm-started from the
+prior tick, while conservative local viscosity damps grid-scale velocity
+differences. Uniform motion is unchanged, so liquid on or inside a freely
+falling body shares its frame without basin, cargo, or inside/outside
+classification. A body in a terrain-supported pool receives buoyancy from the
+pool's pressure field. Only local wet faces receive viscosity; liquid-only
+contact does not use solid-contact settle damping. Fluid-supported bodies sleep
+only after reaching a free surface and remaining below the fluid sleep velocity
+through an extended quiet interval.
+
+A body entering liquid relocates displaced cells to the nearest reachable
+space, treating its own raster as traversal-only space. Other bodies remain
+barriers.
 
 Powders provide one-way support and can be displaced by a sufficiently heavy
 body. Material above a body contributes granular confinement only when the

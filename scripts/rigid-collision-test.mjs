@@ -477,7 +477,7 @@ for (const dt of [16, 8, 33, 50]) {
   const WATER = 2, WOOD = 8;                                 // water density 1.0, wood 0.6
   const x0 = 40, x1 = 160, yTop = 50, yBot = 110;            // walled pool with a stone floor
   const buildPool = (e) => {
-    for (let y = yTop - 1; y <= yBot + 1; y++) { e.paintDisc(x0 - 1, y, 0, STONE, true); e.paintDisc(x1 + 1, y, 0, STONE, true); }
+    for (let y = yTop - 1; y < ROWS; y++) { e.paintDisc(x0 - 1, y, 0, STONE, true); e.paintDisc(x1 + 1, y, 0, STONE, true); }
     for (let x = x0 - 1; x <= x1 + 1; x++) e.paintDisc(x, yBot + 1, 0, STONE, true);
     e.syncComponents();
     for (let y = yTop; y <= yBot; y++) for (let x = x0; x <= x1; x++) e.paintDisc(x, y, 0, WATER, true);
@@ -502,7 +502,8 @@ for (const dt of [16, 8, 33, 50]) {
     check(`wood did not sink to the floor (bottom ${bot} < ${yBot - 2})`, bot >= 0 && bot < yBot - 2);
     check(`wood is partially submerged, not resting on top (bottom ${bot} > surface ${surf})`, bot > surf + 1);
     check(`wood came to rest while floating (|vy| ${Math.abs(s.vy).toFixed(3)})`, Math.abs(s.vy) < 0.1);
-    check(`wood slept at buoyant equilibrium (awake ${e._bodyAwake(idx)})`, e._bodyAwake(idx) === 0);
+    check(`wood slept at buoyant equilibrium (awake ${e._bodyAwake(idx)}, vx ${s.vx.toFixed(3)}, omega ${s.omega.toFixed(4)})`,
+      e._bodyAwake(idx) === 0);
     check(`no ongoing fluid leak once floating (${water2} == ${water1})`, water2 === water1);
     e.destroy();
   }
@@ -518,6 +519,65 @@ for (const dt of [16, 8, 33, 50]) {
     check(`rigid body sank to the pool floor (bottom ${bot} >= ${yBot - 4})`, bot >= yBot - 4);
     e.destroy();
   }
+}
+
+{
+  console.log('thin dual-layer tub and retained water share one free-fall frame');
+  const WATER = 2;
+  const buildTub = (loaded) => {
+    const e = mk({ rows: 180 });
+    e.setBgEnabled(true);
+    for (const layer of [0, 1]) {
+      for (let x = 60; x <= 140; x++) e.paintDiscLayer(layer, x, 80, 0, STONE, true);
+      for (let y = 30; y < 80; y++) {
+        e.paintDiscLayer(layer, 60, y, 0, STONE, true);
+        e.paintDiscLayer(layer, 140, y, 0, STONE, true);
+      }
+      if (loaded)
+        for (let y = 50; y < 80; y++) for (let x = 61; x < 140; x++)
+          e.paintDiscLayer(layer, x, y, 0, WATER, true);
+      e.syncComponentsLayer(layer);
+    }
+    return e;
+  };
+  const empty = buildTub(false), loaded = buildTub(true);
+  const countWater = (e) => {
+    let count = 0;
+    for (const grid of [e.getGrid(), e.getGridBg()])
+      for (const material of grid) if (material === WATER) count++;
+    return count;
+  };
+  const waterBefore = countWater(loaded);
+  run(empty, 30);
+  run(loaded, 30);
+  const dry = empty._bodyState(0), wet = loaded._bodyState(0);
+  check(`thin loaded tub falls with the empty tub (${wet.vy.toFixed(3)} == ${dry.vy.toFixed(3)})`,
+    Math.abs(wet.vy - dry.vy) < 0.002 && Math.abs(wet.py - dry.py) < 0.02);
+  check(`thin falling tub retains both layers of water (${countWater(loaded)} == ${waterBefore})`,
+    countWater(loaded) === waterBefore);
+  empty.destroy();
+  loaded.destroy();
+}
+
+{
+  console.log('a small liquid load does not trigger solid-contact rotation damping');
+  const LAVA = 11;
+  const buildSlab = (loaded) => {
+    const e = mk({ rows: 180 });
+    e.spawnBox(100, 55, 14, 2, RIGID);
+    if (loaded)
+      for (let x = 99; x <= 101; x++) e.paintDisc(x, 52, 0, LAVA, true);
+    e._setBodyMotion(0, 0, 0, 0.025);
+    return e;
+  };
+  const empty = buildSlab(false), loaded = buildSlab(true);
+  run(empty, 10);
+  run(loaded, 10);
+  const dry = empty._bodyState(0), wet = loaded._bodyState(0);
+  check(`small lava load preserves rotation (${wet.omega.toFixed(4)} vs ${dry.omega.toFixed(4)})`,
+    Math.abs(wet.omega) > Math.abs(dry.omega) * 0.9);
+  empty.destroy();
+  loaded.destroy();
 }
 
 // 9. Volume preservation: a light body plunging into a denser fluid must not

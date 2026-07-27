@@ -91,6 +91,21 @@
     return (double)(t ^ (t >> 14)) / 4294967296.0;
   }
   inline int I(int x, int y) { return y * cols + x; }
+  inline double liquidVelocityX(uint32_t packed) {
+    int component = packed & 0x7fff;
+    if (component & 0x4000) component -= 0x8000;
+    return (double)component / 4096.0;
+  }
+  inline double liquidVelocityY(uint32_t packed) {
+    int component = (packed >> 15) & 0x1ffff;
+    if (component & 0x10000) component -= 0x20000;
+    return (double)component / 16384.0;
+  }
+  inline uint32_t packedLiquidVelocity(double vx, double vy) {
+    long qx = std::max(-16383L, std::min(16383L, std::lround(vx * 4096.0)));
+    long qy = std::max(-65535L, std::min(65535L, std::lround(vy * 16384.0)));
+    return (uint32_t)((qx & 0x7fff) | ((qy & 0x1ffff) << 15));
+  }
 
 
   Engine(int c, int r, uint32_t seed, bool sinks, EngineStorageRole role = ESR_FULL)
@@ -323,6 +338,8 @@
         size_t width = (size_t)(maxX - minX + 1);
         memset(L->next + rs + minX, EMPTY, width);
         if (L->nextFallSpeed) memset(L->nextFallSpeed + rs + minX, 0, width);
+        if (L->nextLiquidVel)
+          memset(L->nextLiquidVel + rs + minX, 0, width * sizeof(uint32_t));
       }
     }
   }
@@ -406,6 +423,7 @@
     if (k < 0 || k >= cols * rows) return;
     if (L->fallSpeed) L->fallSpeed[k] = 0;
     if (L->grid[k] == m) return;
+    if (L->liquidVel) L->liquidVel[k] = 0;
     int x = k - (k / cols) * cols;
     uint8_t old = L->grid[k];
     noteLooseGroundTouch2At(k, old, m);
@@ -463,6 +481,12 @@
   }
   inline void writeNextIndex(int k, uint8_t m) {
     if (L->nextFallSpeed) L->nextFallSpeed[k] = 0;
+    if (L->nextLiquidVel) {
+      L->nextLiquidVel[k] = 0;
+      if (isLiquidMaterial(m) && L->grid[k] == m && L->vacatedStamp[k] != tick) {
+        L->nextLiquidVel[k] = L->liquidVel[k];
+      }
+    }
     // Even when next[] already holds m (stale double-buffer residue), still mark
     // if the committed grid differs — otherwise a reclaim that early-outs here
     // leaves the vacated source without a dirty mark and ghosts can return.
@@ -553,6 +577,10 @@
   }
   inline bool canLiquidEnter(int x, int y, uint8_t m) { return x >= 0 && x < cols && y >= 0 && y < rows && canEnterIndex(I(x, y), m); }
   inline bool supportsLiquid(uint8_t s, uint8_t m) { return s != EMPTY && s != m && !canDisplaceMaterial(m, s); }
+  inline void carryNextLiquidVelocity(int fromK, int toK) {
+    if (!L->nextLiquidVel) return;
+    L->nextLiquidVel[toK] = L->liquidVel[fromK];
+  }
   // True if something stacks pressure on this liquid cell: more of the same
   // material above, OR a strictly lighter liquid (e.g. water over brine). Without
   // the latter, submerged denser fluid never equalizes sideways and freezes into
@@ -569,6 +597,7 @@
     // denser cell can overwrite a lighter liquid that already settled into next[].
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
     writeNextIndex(toK, m);
+    if (isLiquidMaterial(m)) carryNextLiquidVelocity(fromK, toK);
     int fromY = fromK / cols, fromX = fromK - fromY * cols;
     int toY = toK / cols, toX = toK - toY * cols;
     if (toY > fromY && toX == fromX)

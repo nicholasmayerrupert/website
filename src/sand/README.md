@@ -179,7 +179,9 @@ solver. A body floating without grounded-solid contact can sleep but does not
 bake, and the generic `RIGID` tool material never bakes. Live blast rubble is
 non-structural and yields when descending terrain reaches it.
 
-Powders and liquids carry a per-cell downward fall speed. A clear vertical fall
+Powders and liquids carry a per-cell downward fall speed. Liquids also carry a
+compact two-axis velocity used by the rigid/fluid pressure solve; it is separate
+from the cellular automaton's integer fall distance. A clear vertical fall
 accelerates by one cell per world tick up to the material's terminal speed;
 contact, diagonal avalanching, and lateral flow reset the stored momentum.
 

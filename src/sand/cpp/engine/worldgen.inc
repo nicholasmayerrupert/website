@@ -1941,12 +1941,37 @@
     if (dx > 0) for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b, arr + b + dx, cols - dx); memset(arr + b + cols - dx, fill, dx); }
     else { int s = -dx; for (int y = 0; y < rows; y++) { int b = y * cols; memmove(arr + b + s, arr + b, cols - s); memset(arr + b, fill, s); } }
   }
+  void shiftRowMajorU32(uint32_t* arr, int dx, uint32_t fill) {
+    if (dx > 0) for (int y = 0; y < rows; y++) {
+      int b = y * cols;
+      memmove(arr + b, arr + b + dx, (size_t)(cols - dx) * sizeof(uint32_t));
+      std::fill(arr + b + cols - dx, arr + b + cols, fill);
+    } else {
+      int s = -dx;
+      for (int y = 0; y < rows; y++) {
+        int b = y * cols;
+        memmove(arr + b + s, arr + b, (size_t)(cols - s) * sizeof(uint32_t));
+        std::fill(arr + b, arr + b + s, fill);
+      }
+    }
+  }
   // Vertical slide of a row-major buffer by dy rows (dy>0: content moves UP, new
   // band enters at the bottom). A single contiguous memmove (no per-row loop).
   void shiftBufV(uint8_t* arr, int dy, uint8_t fill) {
     int s = std::abs(dy); size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols;
     if (dy > 0) { memmove(arr, arr + band, rest); memset(arr + rest, fill, band); }
     else { memmove(arr + band, arr, rest); memset(arr, fill, band); }
+  }
+  void shiftBufVU32(uint32_t* arr, int dy, uint32_t fill) {
+    int s = std::abs(dy);
+    size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols;
+    if (dy > 0) {
+      memmove(arr, arr + band, rest * sizeof(uint32_t));
+      std::fill(arr + rest, arr + rest + band, fill);
+    } else {
+      memmove(arr + band, arr, rest * sizeof(uint32_t));
+      std::fill(arr, arr + band, fill);
+    }
   }
   void shiftBufVI32(int32_t* arr, int dy, int32_t fill) {
     int s = std::abs(dy); size_t band = (size_t)s * cols, rest = (size_t)(rows - s) * cols, n = (size_t)rows * cols;
@@ -2089,6 +2114,10 @@
           memcpy(L->next + d, raw.data() + r * CHUNK_SIZE, CHUNK_SIZE);
           if (L->fallSpeed) memset(L->fallSpeed + d, 0, CHUNK_SIZE);
           if (L->nextFallSpeed) memset(L->nextFallSpeed + d, 0, CHUNK_SIZE);
+          if (L->liquidVel) {
+            memset(L->liquidVel + d, 0, CHUNK_SIZE * sizeof(uint32_t));
+            memset(L->nextLiquidVel + d, 0, CHUNK_SIZE * sizeof(uint32_t));
+          }
         }
         if (persistent != L->tileStore.end()) L->dirtyWorldTiles.insert(key);
         if (prefetched != L->prefetchStore.end()) L->prefetchStore.erase(prefetched);
@@ -2341,10 +2370,12 @@
     if (dx) {
       shiftRowMajorU8(L->grid, dx, EMPTY); shiftRowMajorU8(L->next, dx, EMPTY); shiftRowMajorI32(L->bodyOwner.data(), dx, -1);
       shiftRowMajorU8(L->fallSpeed, dx, 0); shiftRowMajorU8(L->nextFallSpeed, dx, 0);
+      shiftRowMajorU32(L->liquidVel, dx, 0); shiftRowMajorU32(L->nextLiquidVel, dx, 0);
       for (int y = 0; y < rows; y++) { if (L->rowMarkMax[y] < L->rowMarkMin[y]) continue; int mn = L->rowMarkMin[y] - dx, mx = L->rowMarkMax[y] - dx; if (mx < 0 || mn > cols - 1) { L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1; continue; } L->rowMarkMin[y] = mn < 0 ? 0 : mn; L->rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx; }
     } else {
       shiftBufV(L->grid, dy, EMPTY); shiftBufV(L->next, dy, EMPTY); shiftBufVI32(L->bodyOwner.data(), dy, -1);
       shiftBufV(L->fallSpeed, dy, 0); shiftBufV(L->nextFallSpeed, dy, 0);
+      shiftBufVU32(L->liquidVel, dy, 0); shiftBufVU32(L->nextLiquidVel, dy, 0);
       if (dy > 0) for (int y = 0; y < rows; y++) { int sy = y + dy; L->rowMarkMin[y] = sy < rows ? L->rowMarkMin[sy] : cols; L->rowMarkMax[y] = sy < rows ? L->rowMarkMax[sy] : -1; }
       else for (int y = rows - 1; y >= 0; y--) { int sy = y + dy; L->rowMarkMin[y] = sy >= 0 ? L->rowMarkMin[sy] : cols; L->rowMarkMax[y] = sy >= 0 ? L->rowMarkMax[sy] : -1; }
     }

@@ -123,6 +123,57 @@ naturallyLoose.destroy();
   blastCut.destroy();
 }
 
+// Loose material resting on top is cargo, not support. It must neither keep the
+// blast-separated cap in the static component graph nor cancel the body's
+// gravity once the cap is airborne.
+{
+  const C = 120, R = 220;
+  const runLoadedBlast = (withDirt) => {
+    const engine = createEngineWasm({
+      cols: C, rows: R, worldSeed: 31, sinksOn: false, infinite: false,
+    });
+    const rect = (x0, y0, x1, y1, material) => {
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++)
+          engine.paintDisc(x, y, 0, material, true);
+    };
+    rect(0, R - 3, C - 1, R - 1, MAT.STONE);
+    rect(48, 45, 52, R - 4, MAT.STONE);
+    rect(20, 30, 85, 49, MAT.STONE);
+    if (withDirt) rect(20, 24, 85, 29, MAT.DIRT);
+    engine.syncComponents();
+    engine.stepWorld();
+    engine._detonateTnt(50, 75);
+    engine.stepWorld();
+    const largestState = () => {
+      let largest = null;
+      for (let i = 0; i < engine._bodyCount(); i++) {
+        const state = engine._bodyState(i);
+        if (state && (!largest || state.nPts > largest.nPts)) largest = state;
+      }
+      return largest;
+    };
+    const start = largestState();
+    for (let i = 0; i < 18; i++) engine.stepWorld();
+    const end = largestState();
+    const result = {
+      spawned: !!start && start.nPts > 1000,
+      nPts: start?.nPts ?? 0,
+      dy: start && end ? end.py - start.py : -Infinity,
+      vy: end?.vy ?? -Infinity,
+    };
+    engine.destroy();
+    return result;
+  };
+  const bare = runLoadedBlast(false);
+  const loaded = runLoadedBlast(true);
+  check(`dirt-covered TNT island is classified as detached (${loaded.nPts} cells)`,
+    loaded.spawned);
+  check(`dirt above does not slow the detached fall (dy ${loaded.dy.toFixed(2)}/${bare.dy.toFixed(2)}, `
+    + `vy ${loaded.vy.toFixed(2)}/${bare.vy.toFixed(2)})`,
+  loaded.dy >= bare.dy * 0.9 && loaded.vy >= bare.vy * 0.9);
+}
+
 // Foreground/background pieces created by the same structural detachment share
 // one pose. This is creation-time membership, not a global cross-layer weld.
 {

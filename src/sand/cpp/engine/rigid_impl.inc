@@ -323,12 +323,23 @@ void RigidBodySystem::rigidStep(double tickDt) {
       if (b->awake && !b->boundaryPts.empty()) {
         // Support/drag from surrounding loose media. The body's own footprint is
         // cleared to EMPTY for the duration of rigidStep, so probing the
-        // boundary cell itself reads air; we instead take the densest liquid/powder
-        // among its 4-neighbours (the medium the body sits IN). A face deep in
-        // a medium has wet neighbours; a face above the surface does not — so the
-        // wet fraction rises with depth. Liquids may produce true buoyancy
-        // (including upward acceleration); powders can only cancel gravity, never
-        // exceed it, so bodies in grains settle but do not bob/rise.
+        // boundary cell itself reads air; we instead take the densest surrounding
+        // liquid/powder. Powder above the body participates only when the
+        // underside footprint has enough bearing capacity for the body's full
+        // mass. Loose cargo on an airborne body therefore adds no false support,
+        // while a body embedded in a grain bed retains side confinement.
+        // Liquids may produce true buoyancy (including upward acceleration);
+        // powders can only cancel gravity, never exceed it, so bodies in grains
+        // settle but do not bob/rise.
+        double powderBottomDensityArea = 0;
+        for (int bp : b->boundaryPts) {
+          worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
+          int cx = (int)std::floor(wpx), cy = (int)std::floor(wpy);
+          powderBottomDensityArea += granularMediumDensityAt(cx, cy + 1);
+        }
+        double bodyMass = b->invMass > 0 ? 1.0 / b->invMass : 0;
+        bool powderCanBear = powderBottomDensityArea * R_GRANULAR_BEARING_DEPTH
+          >= bodyMass - 1e-6;
         int liquidWet = 0, powderWet = 0; double liquidDensitySum = 0, powderDensitySum = 0;
         for (int bp : b->boundaryPts) {
           worldPoint(b, bp, b->sn, b->cs, wpx, wpy);
@@ -338,7 +349,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
           ld = std::fmax(ld, buoyantLiquidDensityAt(cx, cy - 1)); ld = std::fmax(ld, buoyantLiquidDensityAt(cx, cy + 1));
           double pd = granularMediumDensityAt(cx, cy);
           pd = std::fmax(pd, granularMediumDensityAt(cx - 1, cy)); pd = std::fmax(pd, granularMediumDensityAt(cx + 1, cy));
-          pd = std::fmax(pd, granularMediumDensityAt(cx, cy - 1)); pd = std::fmax(pd, granularMediumDensityAt(cx, cy + 1));
+          if (powderCanBear) pd = std::fmax(pd, granularMediumDensityAt(cx, cy - 1));
+          pd = std::fmax(pd, granularMediumDensityAt(cx, cy + 1));
           if (ld > 0) { liquidWet++; liquidDensitySum += ld; }
           if (pd > 0) { powderWet++; powderDensitySum += pd; }
         }
@@ -655,7 +667,11 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
   return solidIn(*E.L, false);
 }
 double RigidBodySystem::buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLiquidMaterial(m) ? DENSITY[m] : 0; }
-double RigidBodySystem::granularMediumDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLooseSolidMaterial(m) ? DENSITY[m] : 0; }
+double RigidBodySystem::granularMediumDensityAt(int x, int y) {
+  if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0;
+  uint8_t material = E.L->grid[y * E.cols + x];
+  return E.isLooseSolidMaterial(material) ? DENSITY[material] : 0;
+}
 // Any loose medium is relocatable: a body submerging into liquid or powder
 // displaces it (spilled around the body) rather than being blocked at the surface.
 // Only liquids provide upward buoyancy; powders can support, but only by

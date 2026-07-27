@@ -52,7 +52,9 @@ the nearest reachable space, treating its own raster as traversal-only space.
 Other bodies remain barriers.
 
 Powders provide one-way support and can be displaced by a sufficiently heavy
-body. They never push a rigid body upward.
+body. Material above a body contributes granular confinement only when the
+underside footprint can bear the body's mass, so loose cargo cannot slow or
+re-ground an airborne body. Powders never push a rigid body upward.
 
 ## Invariants and limits
 

@@ -615,6 +615,7 @@ static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6, R_LIQUID
 static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;
 static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG * 8;
 static const double R_BUOY_REST_BAND = 0.08, R_BUOY_REST_DAMP = 0.45, R_BUOY_ZERO_VY = 0.02;
+static const double R_GRANULAR_BEARING_DEPTH = 7.0;
 static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.0;
 
 // Composed subsystem declarations.

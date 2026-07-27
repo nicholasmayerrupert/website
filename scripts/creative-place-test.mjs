@@ -15,6 +15,11 @@ await initSandWasm();
 const { check, done } = makeChecker('creative spawn-everything');
 const mk = () => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 1, sinksOn: false, infinite: false });
 const at = (g, x, y) => g[y * COLS + x];
+const count = (g, material) => {
+  let total = 0;
+  for (const cell of g) if (cell === material) total++;
+  return total;
+};
 const hasCell = (cells, x, y) => {
   const k = y * COLS + x;
   for (const c of cells) if (c === k) return true;
@@ -41,7 +46,8 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   seedEntries.length === 7 && new Set(seedEntries.map((entry) => entry.seedPixels.join('/'))).size === 7
     && new Set(seedEntries.map((entry) => entry.seedColors.join('/'))).size === 7);
 
-// 1) Any COMPONENT material drafts with a live preview, then finalizes into the grid.
+// 1) Any COMPONENT material drafts with a live preview, then starts as a body,
+// falls, and bakes after grounded contact.
 {
   const e = mk();
   e.setCreativeMaterial(CK.MATERIAL, MAT.COPPER_ORE);
@@ -49,6 +55,22 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   check(`copper ore shows a draft preview (${e.getStoneDraftCells().length} cells)`, e.getStoneDraftCells().length > 0);
   e.pointerUp(0);
   check('copper ore finalized into the grid', at(e.getGrid(), 50, 40) === MAT.COPPER_ORE);
+  check('copper ore finalized as one body', e._bodyCount() === 1);
+  const initial = e._bodyState(0);
+  e.step(16);
+  const falling = e._bodyState(0);
+  check('new copper ore body begins falling',
+    initial && falling && falling.py > initial.py && falling.vy > 0);
+  let bakedAt = -1;
+  for (let i = 0; i < 400; i++) {
+    e.step((i + 2) * 16);
+    if (e._bodyCount() === 0) { bakedAt = i; break; }
+  }
+  let maxY = -1;
+  for (let i = 0; i < e.getGrid().length; i++)
+    if (e.getGrid()[i] === MAT.COPPER_ORE) maxY = Math.max(maxY, (i / COLS) | 0);
+  check(`copper ore bakes after grounded rest (step ${bakedAt}, bottom ${maxY})`,
+    bakedAt >= 0 && maxY >= ROWS - 3);
   e.destroy();
 }
 
@@ -59,6 +81,7 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.pointerDown(30, 30, 0);
   e.pointerUp(0);
   check('brick finalized into the grid', at(e.getGrid(), 30, 30) === MAT.BRICK);
+  check('brick finalized as a body', e._bodyCount() === 1);
   e.destroy();
 }
 
@@ -132,6 +155,36 @@ check('all seven species seeds have distinct creative-menu pixel icons',
   e.destroy();
 }
 
+// Creative structural placement welds to a touched existing body.
+{
+  const e = mk();
+  e.spawnBox(50, 40, 3, 3, MAT.RIGID);
+  const before = e._bodyState(0)?.nPts ?? 0;
+  e.setCreativeMaterial(CK.MATERIAL, MAT.BRICK);
+  e.pointerDown(50, 34, 0);
+  e.pointerUp(0);
+  const grid = e.getGrid();
+  check('creative placement welds to the touched body',
+    e._bodyCount() === 1 && (e._bodyState(0)?.nPts ?? 0) > before);
+  check('creative weld preserves both material identities',
+    count(grid, MAT.RIGID) > 0 && count(grid, MAT.BRICK) > 0);
+  e.destroy();
+}
+
+// The survival placement API uses the same weld path.
+{
+  const e = mk();
+  e.spawnBox(50, 40, 3, 3, MAT.RIGID);
+  const before = e._bodyState(0)?.nPts ?? 0;
+  e.placeMaterial(50, 34, 2, MAT.COPPER_ORE);
+  const grid = e.getGrid();
+  check('survival placement welds to the touched body',
+    e._bodyCount() === 1 && (e._bodyState(0)?.nPts ?? 0) > before);
+  check('survival weld preserves both material identities',
+    count(grid, MAT.RIGID) > 0 && count(grid, MAT.COPPER_ORE) > 0);
+  e.destroy();
+}
+
 // Every creature exposed in the creative palette spawns at the clicked world
 // position without requiring its natural habitat.
 for (const [label, species] of expectedEggs) {
@@ -180,15 +233,17 @@ for (const [label, species] of expectedEggs) {
   let solidLine = true;
   for (let x = 20; x <= 36; x++) if (at(e.getGrid(), x, 40) !== MAT.BRICK) solidLine = false;
   check('component draft materializes an interpolated stroke without gaps', solidLine);
+  check('component stroke starts as one body', e._bodyCount() === 1);
   e.destroy();
 }
 
-// 9) Legacy stone/ice draft path (used by other tests + back-compat) still finalizes.
+// 9) The direct draft ABI finalizes through the same body path.
 {
   const e = mk();
   e.addDiscToStoneDraft(60, 60, 0);
   e.finalizeStoneDraft();
-  check('legacy stone draft still finalizes', at(e.getGrid(), 60, 60) === MAT.STONE);
+  check('direct stone draft finalizes as a body',
+    at(e.getGrid(), 60, 60) === MAT.STONE && e._bodyCount() === 1);
   e.destroy();
 }
 

@@ -3,9 +3,9 @@
   ToolSystem tools{*this};
   const SurvivalFootprint& getSurvivalFootprint(int id) const { return tools.getSurvivalFootprint(id); }
   const SurvivalFootprint& getSurvivalFootprint(const Player& p) const { return tools.getSurvivalFootprint(p); }
-  void destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+  void destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStructural,
                      std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
-    tools.destroyCellAt(k, m, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
+    tools.destroyCellAt(k, m, erasedStructural, bodyById, dirtyBodies);
   }
   void initSurvivalFootprints() { tools.initSurvivalFootprints(); }
   int survivalFootprintCount() const { return tools.survivalFootprintCount(); }
@@ -23,7 +23,7 @@
   int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr) { return tools.placeMaterialAtCapped(cx, cy, radius, mat, maxCells, p); }
   int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr) { return tools.placeMaterialAtFootprintCapped(cx, cy, fp, mat, maxCells, p); }
   const std::vector<std::pair<int, int>>& discOffsets(int radius) { return tools.discOffsets(radius); }
-  void splitComponentsAfterDestroy(std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool erasedPlant) { tools.splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant); }
+  void splitComponentsAfterDestroy(std::vector<int>& erasedStructural) { tools.splitComponentsAfterDestroy(erasedStructural); }
   int eraseDisc(int cx, int cy, int radius) { return tools.eraseDisc(cx, cy, radius); }
   int eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, int x1, int y1) { return tools.eraseStrokeCells(cells, x0, y0, x1, y1); }
   int clearMineDamageDisc(int cx, int cy, int radius) { return tools.clearMineDamageDisc(cx, cy, radius); }

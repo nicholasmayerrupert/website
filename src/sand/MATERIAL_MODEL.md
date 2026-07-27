@@ -57,17 +57,17 @@ used for material opacity.
 Use flags for gameplay traits such as ignition, acid dissolving, support/bearing,
 and plant-family behavior.
 
-### componentGroup
+### Structural components
 
-`componentGroup` routes static component storage, registration, and splitting:
+Every material with `kind: COMPONENT` uses the same static component registry and
+the same rigid-body conversion path. Connected structural materials can therefore
+detach as one mixed-material body.
 
-- `none`: no static component bookkeeping.
-- `stone`: chunk-bounded static rigid components, same-material islands.
-- `plant`: unbounded plant-family components, tree/vine/wood family.
-- `ice`: unbounded ice components.
-
-`componentGroup` is separate from exact material ID: many different rigid-looking
-materials can share the same static component machinery.
+Registration topology is chosen from material behavior within that registry:
+plant-family materials use the `plantFamily` flag, ice uses its
+exact material ID, and other structural materials use the chunk-bounded terrain
+registration path. Growth, freezing, ignition, dissolving, and other special
+behavior likewise dispatch from exact IDs or flags.
 
 ### bodyOwner
 
@@ -78,20 +78,17 @@ free body cell and a static `STONE` component cell.
 
 ## Examples
 
-- `WOOD`: id `WOOD`, `materialClass` `rigid`, `kind` `component`,
-  `componentGroup` `plant`, flags `flammable`/`dissolvable`/`rigid`/`bearing`/
-  `plantFamily`.
-- `SAND`: id `SAND`, `materialClass` `solid`, `kind` `powder`,
-  `componentGroup` `none`.
+- `WOOD`: id `WOOD`, `materialClass` `rigid`, `kind` `component`, flags
+  `flammable`/`dissolvable`/`rigid`/`bearing`/`plantFamily`.
+- `SAND`: id `SAND`, `materialClass` `solid`, `kind` `powder`.
 - `WATER`: id `WATER`, `materialClass` `liquid`, `kind` `liquid`.
 - `FIRE`: id `FIRE`, `materialClass` `gas`, `kind` `gas`.
-- `TNT`: id `TNT`, `materialClass` `rigid`, `kind` `component`,
-  `componentGroup` `stone`.
+- `TNT`: id `TNT`, `materialClass` `rigid`, `kind` `component`.
 
 ## Which field should code use?
 
 - Rendering/inventory/drops: material ID.
 - Movement dispatch: `kind`.
 - Gameplay questions: `materialClass` + `flags`.
-- Component splitting/registration: `componentGroup`.
+- Special structural behavior: exact material ID + flags.
 - Static-vs-body distinction: `bodyOwner` / `isBodyCell`.

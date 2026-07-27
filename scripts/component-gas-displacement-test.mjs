@@ -1,6 +1,6 @@
-// Falling component solids must swap displaced gas into the nearest trailing
-// air cell. In particular, a long horizontal rod must not teleport gas from
-// one end to the other (or erase it for a cross-layer-bonded assembly).
+// Structural bodies sweep through gas without receiving support or treating it
+// as a conserved displaced medium. The rule is identical for ordinary and
+// cross-layer bodies.
 //
 // Run: node scripts/component-gas-displacement-test.mjs
 
@@ -9,7 +9,7 @@ import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 200, ROWS = 90, ROD_Y = 30, X0 = 30, X1 = 170, GAS_X = 42;
 await initSandWasm();
-const { check, done } = makeChecker('component gas displacement');
+const { check, done } = makeChecker('structural body gas sweep');
 
 const makeEngine = (bgEnabled = false) => {
   const e = createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 1, sinksOn: false, infinite: false });
@@ -30,40 +30,29 @@ const gasCells = (grid) => {
   return cells;
 };
 
-// Single-layer assembly: movement happens before the loose-gas pass.
+// Single-layer body.
 {
   const e = makeEngine();
   placeRod(e, 0);
   e.placeMaterial(GAS_X, ROD_Y + 1, 0, MAT.STEAM);
-  e.step(16);
+  for (let i = 0; i < 12; i++) e.step((i + 1) * 16);
   const gas = gasCells(e.getGrid());
-  check(`single-layer gas is conserved (${JSON.stringify(gas)})`, gas.length === 1);
-  check(
-    `single-layer gas swaps into the same-column wake (${JSON.stringify(gas)})`,
-    gas.length === 1 && gas[0][0] === GAS_X && gas[0][1] === ROD_Y,
-  );
+  check(`single-layer body swept the gas (${JSON.stringify(gas)})`, gas.length === 0);
   e.destroy();
 }
 
-// Fully overlapping rods are cross-layer bonded and use the joint mover after
-// both loose passes. Gas in either layer must receive the same local swap.
+// Fully overlapping rods become one cross-layer body and apply the same rule.
 {
   const e = makeEngine(true);
   placeRod(e, 0);
   placeRod(e, 1);
   e.placeMaterial(GAS_X, ROD_Y + 1, 0, MAT.STEAM, 0);
   e.placeMaterial(GAS_X, ROD_Y + 1, 0, MAT.STEAM, 1);
-  e.step(16);
+  for (let i = 0; i < 12; i++) e.step((i + 1) * 16);
   const fgGas = gasCells(e.getGrid());
   const bgGas = gasCells(e.getGridBg());
-  check(`cross-layer fg gas is conserved (${JSON.stringify(fgGas)})`, fgGas.length === 1);
-  check(`cross-layer bg gas is conserved (${JSON.stringify(bgGas)})`, bgGas.length === 1);
-  check(
-    `cross-layer gas swaps locally in both layers (fg ${JSON.stringify(fgGas)}, bg ${JSON.stringify(bgGas)})`,
-    fgGas.length === 1 && bgGas.length === 1
-      && fgGas[0][0] === GAS_X && fgGas[0][1] === ROD_Y
-      && bgGas[0][0] === GAS_X && bgGas[0][1] === ROD_Y,
-  );
+  check(`cross-layer body swept gas in both layers (fg ${JSON.stringify(fgGas)}, bg ${JSON.stringify(bgGas)})`,
+    fgGas.length === 0 && bgGas.length === 0);
   e.destroy();
 }
 

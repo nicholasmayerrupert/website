@@ -67,10 +67,15 @@ class RigidBodySystem {
   bool eraseLocalCell(Body* b, int idx);
   bool isBodyTerrain(Body* b, int x, int y, double bodyDensity);
   double buoyantLiquidDensityAt(int x, int y);
+  double bodyLiquidSupport(Body* b, double& submerged);
   double granularMediumDensityAt(int x, int y);
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity);
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity);
-  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced, const std::vector<int>& edgeFootprint, int32_t footprintGen, int bodyId, double bodyDensity);
+  void spillDisplacedBodyMaterial(std::vector<Disp>& displaced,
+                                  const std::vector<int>& edgeFootprint,
+                                  int32_t footprintGen, int bodyId,
+                                  double bodyDensity,
+                                  const std::vector<int>* vacated = nullptr);
   double rigidErodeProbabilityAt(int k);
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty);
   void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells);
@@ -82,7 +87,7 @@ class RigidBodySystem {
   bool pushActorsFromBody(Body* b, double prePx, double prePy, double preAngle, double preVx, double preVy);
   void bakeBodyToGrid(Body* b);
   bool bodySolidifies(Body* b);
-  bool bodyFloatsOnMedium(Body* b);
+  bool bodyTouchesGroundedSolid(Body* b);
   bool bodyHasLooseSupport(Body* b);
   void stampJointFollower(Body* leader);
   void bakeRestingBodies();
@@ -90,7 +95,8 @@ class RigidBodySystem {
   bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);
   void applyAssemblyBodyPush(AssemblyBodyPush& plan);
   void moveBodies();
-  Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material);
+  Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material,
+                    bool attachTouchingBodies = true);
   Body* spawnBody(const std::vector<std::pair<int, int>>& cells);
   Body* spawnBox(int cx, int cy, int halfW, int halfH, uint8_t material);
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material);

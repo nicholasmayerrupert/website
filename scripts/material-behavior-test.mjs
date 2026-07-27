@@ -1,4 +1,4 @@
-// Powder materials settle without churn, and stone-group components retain their
+// Powder materials settle without churn, and structural components retain their
 // material while grounding or falling.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';
@@ -30,7 +30,7 @@ for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   e.destroy();
 }
 
-// Stone-group ore grounds when it rests on the floor.
+// Structural ore grounds when it rests on the floor.
 {
   const e = mk();
   const ORE = MAT.COPPER_ORE;
@@ -45,7 +45,7 @@ for (const name of ['DIRT', 'SNOW', 'MUD', 'GRASS']) {
   e.destroy();
 }
 
-// A falling stone-group component keeps its material.
+// A falling structural component keeps its material.
 {
   const e = mk();
   const ORE = MAT.IRON_ORE;

@@ -231,14 +231,12 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     lay.bodyCells.clear();
     lay.passiveBodyCells.clear();
     lay.passiveBodyIds.clear();
-    lay.stoneComponents.clear();
-    lay.plantComponents.clear();
-    lay.iceComponents.clear();
+    lay.components.clear();
     lay.prevCompCells.clear();
     lay.curCompCells.clear();
     lay.pendingDetonations.clear();
     std::fill(lay.bodyOwner.begin(), lay.bodyOwner.end(), -1);
-    lay.nextStoneId = lay.nextPlantId = lay.nextIceId = lay.nextBodyId = 1;
+    lay.nextComponentId = lay.nextBodyId = 1;
     lay.myceliumActive = false;
     lay.myceliumSporePresent = false;
     lay.groundDirty = lay.groundContentDirty = lay.looseGroundDirty = true;
@@ -489,7 +487,7 @@ EMSCRIPTEN_KEEPALIVE int engine_erase_disc_layer(Engine* e, int layer, int cx, i
   e->useLayer(&e->fg);
   return n;
 }
-// Register stone/plant/ice components in a layer so raw painted solids become
+// Register structural components in a layer so raw painted solids become
 // component-backed (don't flicker). 0=fg, 1=bg.
 EMSCRIPTEN_KEEPALIVE void engine_sync_components_layer(Engine* e, int layer) {
   e->useLayer(layer ? &e->bg : &e->fg);

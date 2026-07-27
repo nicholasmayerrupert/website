@@ -548,8 +548,12 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
   return -1;
 }
 void GrowthSystem::growPlantComponents() {
-  if (E.L->plantComponents.empty()) return;
-  for (auto& comp : E.L->plantComponents) {
+  if (E.L->components.empty()) return;
+  for (auto& comp : E.L->components) {
+    // Component registration keeps plant-family cells together and never mixes
+    // them with non-plant structural material, so one live member classifies
+    // the component without scanning its full footprint.
+    if (comp.cells.empty() || !E.isPlantMaterial(E.L->grid[comp.cells[0]])) continue;
     comp.age++;
     if (!comp.growing) continue;                          // worldgen/restored trees are inert scenery
     comp.requiresCellGrounding = true;
@@ -676,8 +680,8 @@ bool GrowthSystem::myceliumCompTouchesStone(Comp& comp) {
 void GrowthSystem::refreshDormantMyceliumComponents() {
   bool active = false;
   bool present = false;
-  for (auto& comp : E.L->stoneComponents) {
-    if (!myceliumCompHasSpore(comp)) { comp.growing = false; continue; }
+  for (auto& comp : E.L->components) {
+    if (!myceliumCompHasSpore(comp)) continue;
     present = true;
     if ((int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
     if (!comp.growing && myceliumCompTouchesStone(comp)) { comp.growing = true; comp.age = 0; }
@@ -689,7 +693,7 @@ void GrowthSystem::refreshDormantMyceliumComponents() {
 
 void GrowthSystem::growMyceliumComponents() {
   if (!E.L->myceliumSporePresent) { E.L->myceliumActive = false; return; }
-  if (E.L->stoneComponents.empty()) {
+  if (E.L->components.empty()) {
     E.L->myceliumActive = false;
     E.L->myceliumSporePresent = false;
     return;
@@ -700,8 +704,8 @@ void GrowthSystem::growMyceliumComponents() {
   std::vector<MycGrowth> growth;
   std::unordered_set<int> reserved;
   bool anyGrowing = false;
-  for (auto& comp : E.L->stoneComponents) {
-    if (!comp.growing) continue;
+  for (auto& comp : E.L->components) {
+    if (!comp.growing || !myceliumCompHasSpore(comp)) continue;
     comp.age++;
     if (!myceliumCompHasSpore(comp) || comp.age > MYCELIUM_MAX_AGE || (int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
     E.L->groundDirty = true; // an active colony may add rigid cells this step
@@ -727,10 +731,10 @@ void GrowthSystem::growMyceliumComponents() {
   }
   if (converted.empty()) return;
 
-  E.splitRigidAfterErase(E.L->stoneComponents, converted, E.L->nextStoneId, false);
+  E.splitRigidAfterErase(E.L->components, converted, E.L->nextComponentId, false);
   for (const MycGrowth& g : growth) {
     if (E.L->grid[g.targetK] != MYCELIUM) continue;
-    for (auto& comp : E.L->stoneComponents) {
+    for (auto& comp : E.L->components) {
       if (comp.id != g.compId) continue;
       if (std::find(comp.cells.begin(), comp.cells.end(), g.targetK) != comp.cells.end()) break;
       comp.cells.push_back(g.targetK);

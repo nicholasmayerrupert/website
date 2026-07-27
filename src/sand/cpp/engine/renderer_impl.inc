@@ -320,7 +320,7 @@ void Renderer::buildRenderTables() {
     bool gas = MAT_CLASS[m] == MC_GAS;
     bool liquid = MAT_CLASS[m] == MC_LIQUID;
     bool looseSolid = MAT_CLASS[m] == MC_SOLID;
-    bool rigid = MAT_CLASS[m] == MC_RIGID || MAT_CGROUP[m] != CG_NONE;
+    bool rigid = MAT_CLASS[m] == MC_RIGID;
     renderLightTransparent[m] = empty || gas;
     renderFaceLit[m] = !empty && !gas && !liquid;
     renderLightLoss[m] = empty || gas ? 4 : liquid ? 8 : looseSolid ? 17 : rigid ? 24 : 20;

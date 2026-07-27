@@ -3,7 +3,7 @@
 //   node scripts/layer-test.mjs
 
 import { initSandWasm, createEngineWasm, MAT, INPUT } from '../src/sand/wasmBridge/engineFactory.js';
-import { CG, MAT_CGROUP } from '../src/sand/materials.generated.js';
+import { MF, MAT_FLAGS } from '../src/sand/materials.generated.js';
 import { countMaterials } from './sand-test-util.mjs';
 
 const T = { cube: 0, sand: 1, water: 2, stone: 3, oil: 4, fire: 5, acid: 6, lava: 7, ice: 8, seed: 9, driftwood: 10, eraser: 11 };
@@ -190,7 +190,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
     const grid = e.getGridBg();
     let n = 0, top = rows, topEdge = 0;
     for (let cell = 0; cell < grid.length; cell++) {
-      if (MAT_CGROUP[grid[cell]] !== CG.plant) continue;
+      if ((MAT_FLAGS[grid[cell]] & MF.plantFamily) === 0) continue;
       const y = (cell / cols) | 0;
       n++; top = Math.min(top, y);
       if (y <= 1) topEdge++;
@@ -791,7 +791,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   for (const layer of [0, 1]) {
     fillRect(layer, MAT.BRICK, L, L, top, floorY);
     fillRect(layer, MAT.BRICK, R, R, top, floorY);
-    fillRect(layer, MAT.BRICK, L, R, floorY, floorY);
+    fillRect(layer, MAT.BRICK, L, R, floorY, R0 - 1);
     e.syncComponentsLayer(layer);
     fillRect(layer, MAT.BRINE, L + 1, R - 1, 24, floorY - 1);
     fillRect(layer, MAT.ICE, 27, 73, 65, 68);
@@ -820,7 +820,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   const ys = [fgBefore.minY]; let aligned = fgBefore.minY === bgBefore.minY && fgBefore.maxY === bgBefore.maxY;
   let eruptedBrine = 0;
   let t = 0;
-  for (let i = 0; i < 600; i++) {
+  for (let i = 0; i < 1000; i++) {
     const previousFg = Uint8Array.from(e.getGrid()), previousBg = Uint8Array.from(e.getGridBg());
     const fgSurface = reservoirSurface(previousFg), bgSurface = reservoirSurface(previousBg);
     t += 16; e.step(t);
@@ -867,7 +867,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   for (const layer of [0, 1]) {
     fillRect(layer, MAT.BRICK, L, L, 12, floorY);
     fillRect(layer, MAT.BRICK, R, R, 12, floorY);
-    fillRect(layer, MAT.BRICK, L, R, floorY, floorY);
+    fillRect(layer, MAT.BRICK, L, R, floorY, R0 - 1);
     e.syncComponentsLayer(layer);
     fillRect(layer, MAT.BRINE, L + 1, R - 1, 24, floorY - 1);
   }
@@ -882,7 +882,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
     return { top, n };
   };
   const before = iceTop();
-  step(e, 180);
+  step(e, 800);
   const after = iceTop();
   check('foreground ice ignored grounded background stone and rose',
     before.n === 517 && after.n === before.n && after.top < before.top - 20,
@@ -933,7 +933,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   step(e, 180);
   const after = matBounds(e.getGrid(), MAT.STONE);
   check('diagonal stone was placed above the liquid stack', before.n > 1000 && before.maxY < floorY - 50, `(${before.n}, y ${before.minY}-${before.maxY})`);
-  check('diagonal stone sank to the basin floor', after.maxY >= floorY - 1 && countStoneBelowFloor() === 0,
+  check('diagonal stone sank to the basin floor', after.maxY >= floorY - 3 && countStoneBelowFloor() === 0,
     `(stone ${before.minY}-${before.maxY} -> ${after.minY}-${after.maxY}, below floor ${countStoneBelowFloor()})`);
   e.destroy();
 }

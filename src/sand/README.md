@@ -154,29 +154,30 @@ post-step component/body invariant validator.
 ## Materials and simulation
 
 `materials.schema.json` is the source of truth for IDs, class, movement kind,
-density, durability, component group, flags, color, transparency, emission, and
-render animation. Existing numeric IDs are persistent save/network data and must
-not be renumbered.
+density, durability, flags, color, transparency, emission, and render animation.
+Existing numeric IDs are persistent save/network data and must not be renumbered.
 
 Loose powder, liquid, and gas cells live directly in the grid. Static rigid
-materials live in components. Free bodies stamp their real material into the
-grid and are distinguished by `bodyOwner`. A component group stays static while
-connected to the floor, a streamed edge, or supported terrain. An erase, cut, or
-explosion marks the edited support closure; any formerly supported group
-disconnected by that edit converts into a continuous rigid body. Naturally
-unsupported generated or painted components keep the lightweight
-component-motion path.
-Mixed groups retain a per-cell material map, so ore, masonry, timber, foliage,
-and ice can rotate together without losing their identities. Foreground and
+materials share one component registry. Free bodies stamp their real material
+into the grid and are distinguished by `bodyOwner`. Any unsupported inert
+structural assembly converts into a continuous rigid body; active growth sources
+and live TNT fuses remain in their owning subsystem until that activity ends.
+Mixed assemblies retain a per-cell material map, so ore, masonry, timber,
+foliage, and ice rotate together without losing their identities. Foreground and
 background halves released by the same bonded structural break become one
-cross-layer body with a shared pose and combined collision shape. Bodies created
-by separate events remain independent, even when they overlap across layers.
+cross-layer body with a shared pose and combined collision shape.
+
+Creative and survival placement creates structural material as a body first.
+Painting cells that touch an existing same-layer body welds the new cells and
+every touched body into one mixed-material body. Blast debris opts out of this
+placement weld.
 
 Component-backed bodies bake back into ordinary static components after sleeping
-on solid or granular support; both halves of a cross-layer body bake together.
-Bodies still floating in liquid remain dynamic, and the generic `RIGID` tool
-material never bakes. Live blast rubble is non-structural and yields when
-descending terrain reaches it.
+with direct contact to a grounded static solid; both halves of a cross-layer body
+bake together. Buoyancy and loose-medium displacement are owned by the rigid-body
+solver. A body floating without grounded-solid contact can sleep but does not
+bake, and the generic `RIGID` tool material never bakes. Live blast rubble is
+non-structural and yields when descending terrain reaches it.
 
 Powders and liquids carry a per-cell downward fall speed. A clear vertical fall
 accelerates by one cell per world tick up to the material's terminal speed;

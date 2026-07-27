@@ -189,7 +189,7 @@ void ExplosivesSystem::spawnBlastDebrisFan(int cx, int cy, uint32_t bseed,
     }
     std::vector<std::pair<int, int>> cells = blastBoxCells(sx, spawnY, 1, 1);
     if (!blastBodyCandidateHasEscape(cells, debrisMat, false)) continue;
-    Body* b = E.finishSpawn(cells, debrisMat);
+    Body* b = E.finishSpawn(cells, debrisMat, false);
     if (!b) continue;
     b->blastDebris = true;
     if (directed) {
@@ -294,7 +294,7 @@ void ExplosivesSystem::noteCrossSupportRemoval(int k, BlastBatch& bb) {
   Layer* own = E.L;
   Layer* peer = own == &E.fg ? &E.bg : &E.fg;
   if (!E.isRigidMaterialClass(own->grid[k]) || !E.isRigidMaterialClass(peer->grid[k])) return;
-  if (E.isIceComponentMaterial(own->grid[k]) != E.isIceComponentMaterial(peer->grid[k])) return;
+  if (E.isIceMaterial(own->grid[k]) != E.isIceMaterial(peer->grid[k])) return;
   int ownId = own->cellComp[k], peerId = peer->cellComp[k];
   int ownN = E.compCount(*own), peerN = E.compCount(*peer);
   if (ownId < 0 || ownId >= ownN || peerId < 0 || peerId >= peerN
@@ -332,11 +332,11 @@ bool ExplosivesSystem::touchedCrossSupportSurvives(const BlastBatch& bb) {
     if (a->cells.size() <= b->cells.size()) {
       for (int q : a->cells) if (E.isRigidMaterialClass(own.grid[q])
           && peer.cellComp[q] == peerId && E.isRigidMaterialClass(peer.grid[q])
-          && E.isIceComponentMaterial(own.grid[q]) == E.isIceComponentMaterial(peer.grid[q])) { survives = true; break; }
+          && E.isIceMaterial(own.grid[q]) == E.isIceMaterial(peer.grid[q])) { survives = true; break; }
     } else {
       for (int q : b->cells) if (E.isRigidMaterialClass(peer.grid[q])
           && own.cellComp[q] == ownId && E.isRigidMaterialClass(own.grid[q])
-          && E.isIceComponentMaterial(own.grid[q]) == E.isIceComponentMaterial(peer.grid[q])) { survives = true; break; }
+          && E.isIceMaterial(own.grid[q]) == E.isIceMaterial(peer.grid[q])) { survives = true; break; }
     }
     if (!survives) {
       // Losing a contact matters only while at least one endpoint that depended
@@ -441,11 +441,10 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
     if (removalPlanned(k)) return;
     markRemoval(k);
     bb.staticCuts.push_back({k, material});
-    uint8_t group = E.componentGroupOf(material);
-    if (group != CG_NONE) noteCrossSupportRemoval(k, bb);
-    if (group == CG_STONE) bb.erasedStone.push_back(k);
-    else if (group == CG_ICE) bb.erasedIce.push_back(k);
-    else if (group == CG_PLANT) bb.erasedPlant.push_back(k);
+    if (E.isComponentMaterial(material)) {
+      noteCrossSupportRemoval(k, bb);
+      bb.erasedStructural.push_back(k);
+    }
     if (collectAftermath && material != TNT && E.isRigidMaterialClass(material)
         && waveIndex >= 0 && waveIndex < (int)bb.waves.size()) {
       BlastWave& wave = bb.waves[waveIndex];
@@ -570,39 +569,18 @@ void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
 
 void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   if (!bb.any) return;
-  std::vector<int> allErased;
-  const std::vector<int>* erased = nullptr;
-  if (bb.erasedIce.empty() && bb.erasedPlant.empty()) erased = &bb.erasedStone;
-  else if (bb.erasedStone.empty() && bb.erasedPlant.empty()) erased = &bb.erasedIce;
-  else if (bb.erasedStone.empty() && bb.erasedIce.empty()) erased = &bb.erasedPlant;
-  else {
-    allErased.reserve(bb.erasedStone.size() + bb.erasedIce.size() + bb.erasedPlant.size());
-    allErased.insert(allErased.end(), bb.erasedStone.begin(), bb.erasedStone.end());
-    allErased.insert(allErased.end(), bb.erasedIce.begin(), bb.erasedIce.end());
-    allErased.insert(allErased.end(), bb.erasedPlant.begin(), bb.erasedPlant.end());
-    erased = &allErased;
-  }
+  const std::vector<int>& erased = bb.erasedStructural;
   bool indexesExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
   // A crater is a structural edit, so surviving terrain receives an exact
   // support reflood. TNT commonly removes several material components and both
   // layers in one transaction; retaining a locally patched grounded flag can
   // otherwise leave a visually separated closure anchored in mid-air.
-  bool localConnectivityFastPath = erased->empty() && indexesExact;
-  // The pre-blast cellComp index still names the touched components exactly.
-  // Preserve its offsets before any split can resize a preceding list.
-  int plantIndexOffset = (int)E.L->stoneComponents.size();
-  int iceIndexOffset = plantIndexOffset + (int)E.L->plantComponents.size();
+  bool localConnectivityFastPath = erased.empty() && indexesExact;
   E.L->compsReshaped = false;
-  E.splitRigidAfterErase(E.L->stoneComponents, bb.erasedStone, E.L->nextStoneId, false, false,
+  E.splitRigidAfterErase(E.L->components, bb.erasedStructural, E.L->nextComponentId, false, false,
                          indexesExact ? 0 : -1, localConnectivityFastPath
                            ? ConnectivitySplitMode::GLOBAL_EQUIVALENT
                            : ConnectivitySplitMode::FULL);
-  E.splitRigidAfterErase(E.L->iceComponents, bb.erasedIce, E.L->nextIceId, true, false,
-                         indexesExact ? iceIndexOffset : -1, localConnectivityFastPath
-                           ? ConnectivitySplitMode::GLOBAL_EQUIVALENT
-                           : ConnectivitySplitMode::FULL);
-  if (!bb.erasedPlant.empty() && !E.L->plantComponents.empty())
-    E.splitPlantAfterErase(&bb.erasedPlant, indexesExact ? plantIndexOffset : -1, false, localConnectivityFastPath);
   if (!localConnectivityFastPath) {
     E.L->groundDirty = true;
   } else if (E.L->compsReshaped) {
@@ -610,7 +588,7 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   } else {
     // No component-backed cells were erased, so the cached rigid support remains
     // exact and the next tick can skip grounding.
-    for (int k : *erased) E.L->cellComp[k] = -1;
+    for (int k : erased) E.L->cellComp[k] = -1;
   }
   bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;
   if (E.L->componentTombstones >= 256) {
@@ -819,7 +797,7 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   if (E.bgEnabled && bb.structurePreserved && otherPreserved && crossSupportPreserved
       && E.comps.jointSupportValid && E.comps.cgBonds.empty()) {
     auto trimTrailingCaches = [&](Layer& lay) {
-      size_t count = lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size();
+      size_t count = lay.components.size();
       if (lay.groundBaseFlags.size() > count) lay.groundBaseFlags.resize(count);
       if (lay.crossBondedComp.size() > count) lay.crossBondedComp.resize(count);
       lay.compAdjPairs.erase(std::remove_if(lay.compAdjPairs.begin(), lay.compAdjPairs.end(), [&](uint64_t packed) {
@@ -1002,13 +980,43 @@ void ExplosivesSystem::applyExplosives() {
     }
     for (int cell : staticFire) E.L->pendingDetonations.erase(cell);
   }
-  // 3) Tick body fuses; an expired TNT body detonates at its centre (the blast
-  //    consumes its own cells, so finishErasedBodies removes the now-empty body).
+  // 3) Tick body fuses. Each expired body detonates the TNT cell nearest its
+  //    centre, letting later short-fuse blasts advance through a carved charge.
   std::vector<std::pair<int, int>> bodyBlasts;
   std::vector<Body*> bodyBlastSources;
-  for (Body* b : E.L->bodies) if (b->jointRole != 2 && b->fuseTicks > 0 && --b->fuseTicks <= 0) {
-    bodyBlasts.push_back({(int)std::lround(b->px), (int)std::lround(b->py)});
+  for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2 || b->fuseTicks <= 0) continue;
+    bool containsTnt = b->material == TNT && b->cellMaterials.empty();
+    if (!containsTnt)
+      for (uint8_t material : b->cellMaterials)
+        if (material == TNT) { containsTnt = true; break; }
+    if (!containsTnt)
+      for (uint8_t material : b->jointPeerMaterials)
+        if (material == TNT) { containsTnt = true; break; }
+    if (!containsTnt) {
+      b->fuseTicks = 0;
+      continue;
+    }
+    if (--b->fuseTicks > 0) continue;
+    int blastX = (int)std::lround(b->px);
+    int blastY = (int)std::lround(b->py);
+    double bestDistance = 1e30;
+    for (int k : E.L->bodyCells) {
+      if (E.L->bodyOwner[k] != b->id || E.L->grid[k] != TNT) continue;
+      int y = k / E.cols, x = k - y * E.cols;
+      double dx = x + 0.5 - b->px, dy = y + 0.5 - b->py;
+      double distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        blastX = x;
+        blastY = y;
+      }
+    }
+    bodyBlasts.push_back({blastX, blastY});
     bodyBlastSources.push_back(b);
+    // Any TNT left outside this crater continues as a short-fuse body or body
+    // fragment, so large rigid charges propagate instead of leaving inert TNT.
+    b->fuseTicks = TNT_CHAIN_FUSE;
   }
   for (size_t i = 0; i < bodyBlasts.size(); i++)
     carveBlastAcrossLayers(bodyBlasts[i].first, bodyBlasts[i].second, TNT_BLAST_RADIUS, TNT_BLAST_POWER, bb, &otherBb, bodyBlastSources[i]);

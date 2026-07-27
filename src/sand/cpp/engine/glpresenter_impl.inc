@@ -1634,8 +1634,7 @@ void GLPresenter::glDrawPreview() {
   };
   // Background drafts (RMB) read darker so they look like they're behind the world.
   float df = (E.tools.draftLayer == 1) ? GL_BG_TINT : 1.0f;
-  // The single component E.tools.draft previews in its own material color (generalized from the
-  // old stone/ice/driftwood-specific blocks — ANY component material now previews).
+  // The structural draft previews in its exact material color.
   if (!E.tools.draft.empty()) {
     uint32_t c = MAT_COLOR[E.tools.draftMaterial];
     float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;

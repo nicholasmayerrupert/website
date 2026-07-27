@@ -1,11 +1,11 @@
 // Pins compatibility for the original material IDs and validates generated
-// flags, component groups, classes, and transparency for every material.
+// flags, classes, and transparency for every material.
 
 import { MAT } from '../src/sand/materials.js';
-import { MATERIALS, KIND, MAT_CLASS, MAT_FLAGS, MAT_CGROUP, MAT_TRANSPARENCY, MC, MF, CG } from '../src/sand/materials.generated.js';
+import { MATERIALS, KIND, MAT_CLASS, MAT_FLAGS, MAT_TRANSPARENCY, MC, MF } from '../src/sand/materials.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
-const { check, done } = makeChecker('materials flags/componentGroup round-trip');
+const { check, done } = makeChecker('materials flags/class round-trip');
 
 // Compatibility sets for the original materials.
 const EXPECTED = {
@@ -35,34 +35,8 @@ for (const [flag, names] of Object.entries(EXPECTED)) {
   check(`flag ${flag} matches historical id set`, okFlag);
 }
 
-// componentGroup membership.
-const GROUPS = {
-  stone: ['STONE'],
-  plant: ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD'],
-  ice: ['ICE'],
-};
-for (const [group, names] of Object.entries(GROUPS)) {
-  const want = new Set(names.map((n) => MAT[n]));
-  const gid = CG[group];
-  let okGroup = gid !== undefined;
-  for (const id of ids) {
-    const expected = want.has(id);
-    if ((MAT_CGROUP[id] === gid) !== expected) {
-      okGroup = false;
-      console.log(`    group ${group}: id ${id} expected ${expected}, got cgroup ${MAT_CGROUP[id]}`);
-    }
-  }
-  check(`componentGroup ${group} matches historical id set`, okGroup);
-}
-
-// Every material not in stone/plant/ice must be CG_NONE.
-let noneOk = true;
-const grouped = new Set([...GROUPS.stone, ...GROUPS.plant, ...GROUPS.ice].map((n) => MAT[n]));
-for (const id of ids) if (!grouped.has(id) && MAT_CGROUP[id] !== CG.none) noneOk = false;
-check('all other materials are componentGroup none', noneOk);
-
 // Broad material classes. These are the gameplay/physics buckets above exact
-// material ids and below traits/component storage.
+// material ids and below traits.
 const CLASS_EXPECTED = {
   NONE: ['EMPTY'],
   GAS: ['FIRE', 'STEAM', 'ACRID_SMOKE', 'METHANE'],
@@ -106,15 +80,20 @@ const isRigid = (id) => MAT_CLASS[id] === MC.RIGID;
 const isBlastDamageable = (id) => MAT_CLASS[id] !== MC.NONE && MAT_CLASS[id] !== MC.GAS;
 const isBlockingForPlayer = (id) => MAT_CLASS[id] !== MC.NONE && MAT_CLASS[id] !== MC.GAS && MAT_CLASS[id] !== MC.LIQUID;
 
-check('every componentGroup material is rigid class', MATERIALS.every((m) => MAT_CGROUP[m.id] === CG.none || isRigid(m.id)));
+check('every structural component material is rigid class',
+  MATERIALS.every((m) => m.kind !== KIND.COMPONENT || isRigid(m.id)));
 check('every rigid-flag material is rigid class', MATERIALS.every((m) => (MAT_FLAGS[m.id] & MF.rigid) === 0 || isRigid(m.id)));
 check('every gas is non-blocking and not blast-damageable', MATERIALS.every((m) => !isGas(m.id) || (!isBlockingForPlayer(m.id) && !isBlastDamageable(m.id))));
-check('every liquid is non-rigid and not component-registered', MATERIALS.every((m) => !isLiquid(m.id) || (!isRigid(m.id) && MAT_CGROUP[m.id] === CG.none)));
-check('every loose solid is solid class and componentGroup none', MATERIALS.every((m) => !isLooseSolid(m.id) || (MAT_CLASS[m.id] === MC.SOLID && MAT_CGROUP[m.id] === CG.none)));
-check('every plant/wood material is rigid class and plant componentGroup',
+check('every liquid is non-rigid and non-structural',
+  MATERIALS.every((m) => !isLiquid(m.id) || (!isRigid(m.id) && m.kind !== KIND.COMPONENT)));
+check('every loose solid is solid class and non-structural',
+  MATERIALS.every((m) => !isLooseSolid(m.id) || (MAT_CLASS[m.id] === MC.SOLID && m.kind !== KIND.COMPONENT)));
+check('every plant/wood material is a flagged rigid component',
   ['SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
     'GLOWBERRY', 'PINE_NEEDLES', 'WILLOW_LEAF', 'BUSH_LEAF']
-    .every((n) => isRigid(MAT[n]) && MAT_CGROUP[MAT[n]] === CG.plant));
+    .every((n) => isRigid(MAT[n])
+      && MATERIALS.find((m) => m.id === MAT[n])?.kind === KIND.COMPONENT
+      && (MAT_FLAGS[MAT[n]] & MF.plantFamily) !== 0));
 check('class table agrees with legacy kind buckets for gas/liquid/powder routing',
   MATERIALS.every((m) =>
     (m.kind !== KIND.GAS || MAT_CLASS[m.id] === MC.GAS) &&

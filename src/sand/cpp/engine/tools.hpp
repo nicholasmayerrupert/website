@@ -65,9 +65,9 @@ class ToolSystem {
   int placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p = nullptr);
   int placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p = nullptr);
   const std::vector<std::pair<int, int>>& discOffsets(int radius);
-  void destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+  void destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStructural,
                      std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies);
-  void splitComponentsAfterDestroy(std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool erasedPlant);
+  void splitComponentsAfterDestroy(std::vector<int>& erasedStructural);
   int eraseDisc(int cx, int cy, int radius);
   int eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, int x1, int y1);
   int clearMineDamageDisc(int cx, int cy, int radius);
@@ -77,7 +77,7 @@ class ToolSystem {
   uint32_t minePowerFor(uint8_t m, const Player& miner, bool scaledSpeed, uint32_t speedMultiplier = 1) const;
   double playerMineProgress(int id);
   bool mineDamageCellStep(int k, uint8_t m, const Player& miner, bool scaledSpeed, uint32_t areaScale, uint32_t speedMultiplier,
-                          std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+                          std::vector<int>& erasedStructural,
                           std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies);
   int mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed);
   int mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed);

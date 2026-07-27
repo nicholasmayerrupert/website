@@ -186,9 +186,10 @@ check('weapon detonations bypass the terrain-TNT presentation cooldown',
     e.step();
     const events = e.drainSoundEvents();
     for (let o = 0; o < events.length; o += STRIDES.soundEvent)
-      if (events[o + O.type] === SOUND_EVENT.SOLID_LAND) landed = true;
+      if (events[o + O.type] === SOUND_EVENT.IMPACT
+          && events[o + O.material] === MAT.STONE) landed = true;
   }
-  check('a falling solid component emits a landing event', landed);
+  check('a newly placed structural body emits a material-tagged impact', landed);
   e.destroy();
 }
 

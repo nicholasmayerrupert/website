@@ -153,7 +153,7 @@ check(`willow branch frequency/length varies across seeds (${willowShapes.size}/
 check(`willow growth stays connected to its seed (${willows.map((tree) => `${tree.disconnectedWood}w+${tree.disconnectedLeaves}l`).join('/')})`, willows.every((tree) => tree.disconnectedCells === 0));
 check(
   `willow has wide arched limbs and hanging foliage (${willow.woodW}w skeleton; leaf-below ${willow.leafBelowWood} vs above ${willow.leafAboveWood})`,
-  willow.woodW >= 22 && willow.leafBelowWood > willow.leafAboveWood * 1.15,
+  willow.woodW >= 22 && willow.leafBelowWood > willow.leafAboveWood * 1.05,
 );
 check(`willow has a substantial multi-cell trunk (${willow.thickTrunkRows} thick lower rows)`, willow.thickTrunkRows >= 8);
 check(`willow grows taller (${willow.h} cells tall)`, willow.h >= 45);

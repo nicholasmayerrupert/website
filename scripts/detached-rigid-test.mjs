@@ -30,7 +30,7 @@ paintRect(0, ROWS - 2, COLS - 1, ROWS - 1, MAT.STONE);
 paintRect(8, 20, 12, ROWS - 3, MAT.STONE);
 paintRect(35, 80, 39, ROWS - 3, MAT.STONE);
 paintRect(10, 20, 50, 22, MAT.BRICK);
-paintRect(40, 10, 52, 19, MAT.IRON_ORE);
+paintRect(40, 10, 52, 19, MAT.WOOD);
 e.syncComponents();
 e.stepWorld();
 check(`structure connected to the floor stays static (bodies ${e._bodyCount()})`,
@@ -39,19 +39,19 @@ check(`structure connected to the floor stays static (bodies ${e._bodyCount()})`
 for (let y = 5; y <= 28; y++) e.paintDisc(30, y, 0, MAT.EMPTY, true);
 e.syncComponents();
 const expectedBrick = count(MAT.BRICK);
-const expectedOre = count(MAT.IRON_ORE);
+const expectedWood = count(MAT.WOOD);
 const detachedBrick = 20 * 3;
-const detachedOre = 13 * 10;
+const detachedWood = 13 * 10;
 e.stepWorld();
 
 const spawned = e._bodyState(0);
 check(`cut-off mixed solid becomes one body (bodies ${e._bodyCount()})`,
   e._bodyCount() === 1);
 check(`body contains both detached materials (${spawned?.nPts ?? 0} cells)`,
-  spawned?.nPts === detachedBrick + detachedOre);
+  spawned?.nPts === detachedBrick + detachedWood);
 check('body begins accelerating downward', !!spawned && spawned.vy > 0);
 check('materials are preserved while airborne',
-  count(MAT.BRICK) === expectedBrick && count(MAT.IRON_ORE) === expectedOre);
+  count(MAT.BRICK) === expectedBrick && count(MAT.WOOD) === expectedWood);
 
 let bakedAt = -1;
 let maxAngle = Math.abs(spawned?.angle ?? 0);
@@ -70,9 +70,9 @@ check(`detached solid rotates on the offset ledge (max angle ${maxAngle.toFixed(
 check(`settled body bakes back into static components (step ${bakedAt})`,
   bakedAt >= 0 && e._bodyCount() === 0);
 const bakedBrick = count(MAT.BRICK);
-const bakedOre = count(MAT.IRON_ORE);
-check(`baking preserves both materials (${bakedBrick}/${expectedBrick} brick, ${bakedOre}/${expectedOre} ore)`,
-  Math.abs(bakedBrick - expectedBrick) <= 4 && Math.abs(bakedOre - expectedOre) <= 4);
+const bakedWood = count(MAT.WOOD);
+check(`baking preserves both materials (${bakedBrick}/${expectedBrick} brick, ${bakedWood}/${expectedWood} wood)`,
+  Math.abs(bakedBrick - expectedBrick) <= 4 && Math.abs(bakedWood - expectedWood) <= 4);
 
 for (let i = 0; i < 30; i++) e.stepWorld();
 check(`baked solid remains static (bodies ${e._bodyCount()})`, e._bodyCount() === 0);
@@ -86,12 +86,9 @@ for (let y = 10; y <= 13; y++) {
 }
 naturallyLoose.syncComponents();
 naturallyLoose.stepWorld();
-let naturalTop = ROWS;
-for (let k = 0; k < naturallyLoose.getGrid().length; k++) {
-  if (naturallyLoose.getGrid()[k] === MAT.STONE) naturalTop = Math.min(naturalTop, Math.floor(k / COLS));
-}
-check(`naturally unsupported solid keeps component motion (top ${naturalTop}, bodies ${naturallyLoose._bodyCount()})`,
-  naturalTop > 10 && naturallyLoose._bodyCount() === 0);
+const naturalBody = naturallyLoose._bodyState(0);
+check(`naturally unsupported solid enters the rigid solver (bodies ${naturallyLoose._bodyCount()}, vy ${naturalBody?.vy.toFixed(3)})`,
+  naturallyLoose._bodyCount() === 1 && naturalBody?.nPts === 16 && naturalBody.vy > 0);
 naturallyLoose.destroy();
 
 // A topology-changing TNT crater must force an exact support reflood. The

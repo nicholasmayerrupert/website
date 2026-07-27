@@ -2363,9 +2363,7 @@
     // 7) re-index components, register the entering band.
     _t = emscripten_get_now();
     L->prevCompCells.clear();
-    translateComponents(L->stoneComponents, dx, dy);
-    translateComponents(L->plantComponents, dx, dy);
-    translateComponents(L->iceComponents, dx, dy);
+    translateComponents(L->components, dx, dy);
     perfShiftTranslate = emscripten_get_now() - _t;
     _t = emscripten_get_now();
     if (dx) registerSeededComponents(ex0, ex0 + s, 0, rows);
@@ -2463,9 +2461,9 @@
       csSaveBodiesLeaving(0, 0, cols, rows); // all bodies -> bodyStore (world keys)
       csSaveTiles(0, 0, cols, rows);
       // Components are buffer-indexed; drop and re-register after refill.
-      L->stoneComponents.clear(); L->plantComponents.clear(); L->iceComponents.clear();
-      L->deferredStoneSplitIds.clear(); L->deferredIceSplitIds.clear(); L->componentTombstones = 0;
-      L->nextStoneId = L->nextPlantId = L->nextIceId = 1;
+      L->components.clear();
+      L->deferredSplitIds.clear(); L->componentTombstones = 0;
+      L->nextComponentId = 1;
     };
     persistLayer(&fg);
     persistLayer(&bg);

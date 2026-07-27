@@ -13,12 +13,11 @@ const mk = (opts = {}) => createEngineWasm({ cols: COLS, rows: ROWS, worldSeed: 
 let failures = 0;
 const check = (label, ok) => { if (!ok) failures++; console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}`); };
 
-// Paint a solid stone block (component-aware) spanning [x0,x1) x [y0,y1).
-// Blocks that don't reach the bottom row are ungrounded and fall as a rigid
-// component, so test terrain must extend to ROWS to stay put.
+// Paint static component-aware test terrain spanning [x0,x1) x [y0,y1).
 const stoneBlock = (e, x0, x1, y0, y1) => {
-  for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++) e.addDiscToStoneDraft(x, y, 0);
-  e.finalizeStoneDraft();
+  for (let x = x0; x < x1; x++) for (let y = y0; y < y1; y++)
+    e.paintDisc(x, y, 0, MAT.STONE, true);
+  e.syncComponents();
 };
 // A grounded floor: solid from `top` down to the bottom of the world.
 const stoneFloor = (e, x0, x1, top) => stoneBlock(e, x0, x1, top, ROWS);

@@ -112,7 +112,7 @@ class ComponentSystem {
   StampSet splitMembers, splitRemovedSet;      // local no-cut proof + batch erased membership
   std::vector<int> splitSurvivors, splitErased, splitBlob, splitPart, splitBoundary; // split + local-proof reusable queues
   std::vector<Comp> splitUpdated;              // avoids rebuilding list capacity per bite
-  uint8_t floodTargetMat = 0; // set before a per-material stone flood
+  uint8_t floodTargetMat = 0; // set before a per-material chunk-bounded flood
 
   void prepareAssemblyScratch(size_t gridLen);
 
@@ -150,7 +150,7 @@ class ComponentSystem {
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();
   bool isFloodTargetMat(uint8_t m);
-  bool isIceGroup(uint8_t m);
+  bool isIceMat(uint8_t m);
   bool isPlantMat(uint8_t m);
   void registerSeededComponents(int colStart, int colEnd);
   void registerSeededComponents(int colStart, int colEnd, int rowStart, int rowEnd);
@@ -167,7 +167,6 @@ class ComponentSystem {
   void floodComponent(int sx, int sy, std::vector<int32_t>& seen, int32_t gen, bool bounded, std::vector<int>& outCells, int& outYMax, bool (ComponentSystem::*matCheck)(uint8_t));
 
  private:
-  bool hasGroundingBodies(const Layer& lay) const;
   bool isGroundingRigidCell(const Layer& lay, int k) const;
   Engine& E;
 };

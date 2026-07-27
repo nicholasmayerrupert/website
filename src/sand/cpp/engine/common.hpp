@@ -10,6 +10,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <set>
+#include <map>
 #include <algorithm>
 #include <utility>
 #include <emscripten.h>

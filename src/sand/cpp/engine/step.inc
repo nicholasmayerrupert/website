@@ -65,9 +65,7 @@
       for (int y = 0; y < rows; y++) carryRigidRow(y);
     } else {
       L->curCompCells.clear();
-      for (auto& comp : L->stoneComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-      for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-      for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      for (auto& comp : L->components) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (int k : L->prevCompCells) {
@@ -192,7 +190,7 @@
       comps.jointGroundReady = true;
     }
     // Idle-structure skip: do NOT force a joint pass just because marked rows hold
-    // stone/plant/ice or residual static powder exists. Joint runs when:
+    // structural components or residual static powder exist. Joint runs when:
     //   - jointDirty: acid pure-bore / erase invalidated bonds without groundDirty
     //   - residual cgBonds: ungrounded cross-bonded clusters still need joint motion
     //   - rigidDirty: rigid topology or acid content change on either layer
@@ -273,7 +271,7 @@
         perfComponentCount += (int)list.size();
         for (const auto& c : list) perfComponentCellCount += (int)c.cells.size();
       };
-      acc(lay.stoneComponents); acc(lay.plantComponents); acc(lay.iceComponents);
+      acc(lay.components);
     };
     countComps(fg); countComps(bg);
     // Live residual bonds, or (when cleared after all-grounded) count of comps

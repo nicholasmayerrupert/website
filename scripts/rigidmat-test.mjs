@@ -57,7 +57,7 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
 //     an invisible solver participant ---
 {
   const e = mk();
-  for (let y = 30; y < 70; y++) for (let x = 40; x < 80; x++) e.paintDisc(x, y, 0, MAT.STONE, true);
+  for (let y = 30; y < ROWS; y++) for (let x = 40; x < 80; x++) e.paintDisc(x, y, 0, MAT.STONE, true);
   e.syncComponents();
   e.spawnBox(60, 50, 4, 4, MAT.RIGID);
   e.step(16);

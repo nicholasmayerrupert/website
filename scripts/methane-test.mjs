@@ -15,14 +15,15 @@ const countRect = (g, cols, m, x0, y0, x1, y1) => {
 };
 const mk = (cols = 160, rows = 120, infinite = false) =>
   attachTestHooks(createEngineWasmRaw({ cols, rows, worldSeed: 0xC0FFEE, sinksOn: false, infinite }));
+const paintStatic = (e, x, y, material) => e.paintDisc(x, y, 0, material, true);
 
 // A sealed, grounded cave retains every methane cell indefinitely. Movement is
 // allowed; disappearance is not.
 {
   const e = mk();
-  for (let x = 20; x <= 140; x++) { e.placeMaterial(x, 20, 0, MAT.STONE); e.placeMaterial(x, 100, 0, MAT.STONE); }
-  for (let y = 20; y < 120; y++) e.placeMaterial(20, y, 0, MAT.STONE);
-  for (let y = 20; y <= 100; y++) e.placeMaterial(140, y, 0, MAT.STONE);
+  for (let x = 20; x <= 140; x++) { paintStatic(e, x, 20, MAT.STONE); paintStatic(e, x, 100, MAT.STONE); }
+  for (let y = 20; y < 120; y++) paintStatic(e, 20, y, MAT.STONE);
+  for (let y = 20; y <= 100; y++) paintStatic(e, 140, y, MAT.STONE);
   for (let y = 55; y <= 72; y++) for (let x = 55; x <= 104; x++) e.placeMaterial(x, y, 0, MAT.METHANE);
   e.syncComponents();
   const before = count(e.getGrid(), MAT.METHANE);
@@ -40,12 +41,12 @@ for (const [name, gas] of [['steam', MAT.STEAM], ['acrid smoke', MAT.ACRID_SMOKE
   const e = mk();
   const x0 = 51, x1 = 78, ceiling = 30, split = 45, floor = 61;
   for (let x = x0 - 1; x <= x1 + 1; x++) {
-    e.placeMaterial(x, ceiling, 0, MAT.STONE);
-    e.placeMaterial(x, floor, 0, MAT.STONE);
+    paintStatic(e, x, ceiling, MAT.STONE);
+    paintStatic(e, x, floor, MAT.STONE);
   }
   for (let y = ceiling; y <= floor; y++) {
-    e.placeMaterial(x0 - 1, y, 0, MAT.STONE);
-    e.placeMaterial(x1 + 1, y, 0, MAT.STONE);
+    paintStatic(e, x0 - 1, y, MAT.STONE);
+    paintStatic(e, x1 + 1, y, MAT.STONE);
   }
   for (let y = ceiling + 1; y <= split; y++) for (let x = x0; x <= x1; x++) e.placeMaterial(x, y, 0, MAT.METHANE);
   for (let y = split + 1; y < floor; y++) for (let x = x0; x <= x1; x++) e.placeMaterial(x, y, 0, gas);
@@ -73,8 +74,8 @@ for (const [name, gas] of [['steam', MAT.STEAM], ['acrid smoke', MAT.ACRID_SMOKE
 // wood wall. The gas itself contributes no generic rubble body.
 {
   const e = mk();
-  for (let x = 20; x <= 140; x++) e.placeMaterial(x, 100, 0, MAT.STONE);
-  for (let y = 45; y < 120; y++) e.placeMaterial(106, y, 0, MAT.WOOD);
+  for (let x = 20; x <= 140; x++) paintStatic(e, x, 100, MAT.STONE);
+  for (let y = 45; y < 120; y++) paintStatic(e, 106, y, MAT.WOOD);
   for (let y = 45; y <= 68; y++) for (let x = 55; x <= 104; x++) e.placeMaterial(x, y, 0, MAT.METHANE);
   e.placeMaterial(105, 56, 0, MAT.FIRE);
   e.syncComponents();
@@ -99,9 +100,9 @@ for (const [name, gas] of [['steam', MAT.STEAM], ['acrid smoke', MAT.ACRID_SMOKE
 {
   const e = mk();
   for (let y = 45; y <= 78; y++) for (let x = 58; x <= 102; x++) {
-    if (x <= 63 || x >= 97 || y <= 50 || y >= 73) e.placeMaterial(x, y, 0, MAT.STONE);
+    if (x <= 63 || x >= 97 || y <= 50 || y >= 73) paintStatic(e, x, y, MAT.STONE);
   }
-  for (let y = 78; y < 120; y++) e.placeMaterial(58, y, 0, MAT.STONE);
+  for (let y = 78; y < 120; y++) paintStatic(e, 58, y, MAT.STONE);
   for (let y = 51; y < 73; y++) for (let x = 65; x < 97; x++) e.placeMaterial(x, y, 0, MAT.METHANE);
   e.placeMaterial(64, 60, 0, MAT.FIRE);
   e.syncComponents();

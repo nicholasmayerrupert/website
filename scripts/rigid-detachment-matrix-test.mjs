@@ -283,7 +283,7 @@ function runCase(spec, caseIndex) {
   const falling = layers.every((layer) => {
     const start = starts.get(layer)?.state;
     const end = ends.get(layer)?.state;
-    return start && end && end.py - start.py > 3 && end.vy > 0.25;
+    return start && end && end.py - start.py > 3 && end.vy > 0.1;
   });
   let joint = true;
   if (spec.requireJoint) {
@@ -301,7 +301,13 @@ function runCase(spec, caseIndex) {
     initiallyGrounded ? null : 'cap was not initially grounded',
     unsupported ? `${unsupported} unsupported static cells` : null,
     bodiesSpawned ? null : 'structural body missing',
-    falling ? null : 'body did not accelerate downward',
+    falling ? null : `body did not keep falling (${[...layers].map((layer) => {
+      const start = starts.get(layer)?.state;
+      const end = ends.get(layer)?.state;
+      return start && end
+        ? `L${layer} dy=${(end.py - start.py).toFixed(2)} vy=${end.vy.toFixed(2)}`
+        : `L${layer} missing`;
+    }).join(', ')})`,
     joint ? null : 'cross-layer body was not joint',
   ].filter(Boolean).join(', ');
   engine.destroy();

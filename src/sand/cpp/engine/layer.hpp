@@ -60,9 +60,11 @@ struct Layer {
   // case that nobody is mining (a pure render speedup; pixels aren't in the
   // checksum). A stale-true flag just falls back to the exact per-cell path.
   bool mineDamageAny = false;
-  // components + ids
-  std::vector<Comp> stoneComponents, plantComponents, iceComponents;
-  int nextStoneId = 1, nextPlantId = 1, nextIceId = 1;
+  // Static structural cells share one registry regardless of material. Individual
+  // materials still select their own reactions and growth behavior from their
+  // exact id/flags; component partitions are only a topology/performance detail.
+  std::vector<Comp> components;
+  int nextComponentId = 1;
   bool myceliumActive = false;
   // False proves that no growth-capable spore exists in this loaded layer.
   // It avoids searching every stone cell for dormant spores on ordinary terrain.
@@ -120,7 +122,7 @@ struct Layer {
   // pieces remain connected through neighbouring components while the rigid graph
   // is unchanged. Remember these stable ids and normalize them before the next
   // true topology reflood.
-  std::vector<int> deferredStoneSplitIds, deferredIceSplitIds;
+  std::vector<int> deferredSplitIds;
   int componentTombstones = 0;
   std::vector<uint8_t> crossBondedComp;
   // Cached 8-neighbour adjacency between component ids (packed min/max ids).
@@ -229,16 +231,16 @@ struct Layer {
       release(reactionFlags); release(reactionSteam); release(reactionFires); release(reactionIgnite);
       release(mineDamage); release(light); release(lightBase); release(skyLight);
       release(skyTopInput); release(skyDownValue); release(skyDownDepth);
-      release(stoneComponents); release(plantComponents); release(iceComponents);
-      release(deferredStoneSplitIds); release(deferredIceSplitIds);
+      release(components);
+      release(deferredSplitIds);
       release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
       release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
       release(compAdjPairs);
     }
     alloc(newCols, newRows, newChunkCols, newChunkRows, storageRole);
-    stoneComponents.clear(); plantComponents.clear(); iceComponents.clear();
-    deferredStoneSplitIds.clear(); deferredIceSplitIds.clear(); componentTombstones = 0;
-    nextStoneId = nextPlantId = nextIceId = 1;
+    components.clear();
+    deferredSplitIds.clear(); componentTombstones = 0;
+    nextComponentId = 1;
     myceliumActive = false;
     myceliumSporePresent = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;

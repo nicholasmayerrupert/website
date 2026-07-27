@@ -78,8 +78,7 @@ class ExplosivesSystem {
     std::vector<int> forcedStaticTnt;
     std::vector<BlastCellRemoval> staticCuts;
     std::vector<int> gasCuts, bodyCuts, staticTntIgnitions;
-    std::vector<int> erasedStone, erasedIce;
-    std::vector<int> erasedPlant;
+    std::vector<int> erasedStructural;
     std::vector<BlastParticlePlan> particlePlans;
     std::vector<BlastCrossPair> touchedCrossPairs;
     std::vector<BlastWave> waves;

@@ -1,4 +1,4 @@
-// Erasing, dissolving, or mining a stone-group cell must remove both its grid cell
+// Erasing, dissolving, or mining a structural cell must remove both its grid cell
 // and component membership so no invisible collision remains.
 
 import { initSandWasm, createEngineWasm } from '../src/sand/wasmBridge/engineFactory.js';

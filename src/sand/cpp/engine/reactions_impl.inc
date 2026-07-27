@@ -75,14 +75,13 @@ void ReactionSystem::applyReactions() {
 }
 void ReactionSystem::applyAcid() {
   bool reactNow = E.tick % ACID_REACT_INTERVAL == 0;
-  bool dissolvedStone = false, dissolvedIce = false, dissolvedPlant = false;
+  bool dissolvedStructural = false;
   bool cellCompExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
   bool jointWasDirty = E.comps.jointDirty, jointBondsWereInvalid = E.comps.jointBondsInvalid;
   bool crossBondMayBreak = false;
-  std::vector<int>& erasedStone = E.acidErasedStone; std::vector<int>& erasedIce = E.acidErasedIce;
+  std::vector<int>& erasedStructural = E.acidErasedStructural;
   std::vector<int64_t>& crossPairs = E.acidCrossPairs;
-  std::vector<int>& erasedPlant = E.reactionErasedPlant;
-  erasedStone.clear(); erasedIce.clear(); erasedPlant.clear();
+  erasedStructural.clear();
   crossPairs.clear();
   // A pure acid bore can preserve the sleeping joint closure when the batch did
   // not remove the last co-occupation contact between a component pair. Record
@@ -142,8 +141,11 @@ void ReactionSystem::applyAcid() {
       if (target < 0) continue;
       uint8_t tm = E.L->grid[target];
       E.audio.noteAcidDissolve(target % E.cols, target / E.cols);
-      if (E.isStoneComponentMaterial(tm) || E.isIceComponentMaterial(tm)) noteTouchedCrossBond(target);
-      if (E.isStoneComponentMaterial(tm)) { erasedStone.push_back(target); dissolvedStone = true; } else if (E.isIceComponentMaterial(tm)) { erasedIce.push_back(target); dissolvedIce = true; } else if (E.isPlantMaterial(tm)) { erasedPlant.push_back(target); dissolvedPlant = true; }
+      if (E.isComponentMaterial(tm)) {
+        noteTouchedCrossBond(target);
+        erasedStructural.push_back(target);
+        dissolvedStructural = true;
+      }
       // Dissolving releases acrid smoke (a yellow gas that rises/dissipates like
       // steam) from the dissolved cell ~half the time; otherwise it leaves space.
       if (E.rand() < ACRID_SMOKE_P) { E.writeGridIndex(target, ACRID_SMOKE); E.markCellIndex(target); }
@@ -161,21 +163,17 @@ void ReactionSystem::applyAcid() {
   E.L->compsReshaped = false; // splitRigidAfterErase sets this if the comp SET changes
   // cellComp is exact at reaction time. Use it to avoid re-scanning every rigid
   // cell in the layer just to discover which one or two components acid touched.
-  // Capture the ice offset before the stone list can split and change its size.
-  int iceIndexOffset = (int)(E.L->stoneComponents.size() + E.L->plantComponents.size());
   ConnectivitySplitMode splitMode = cellCompExact
     ? ConnectivitySplitMode::LOCAL_EXACT
     : ConnectivitySplitMode::FULL;
-  if (dissolvedStone) E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId,
-                                             false, false, cellCompExact ? 0 : -1, splitMode);
-  if (dissolvedIce) E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId,
-                                           true, false, cellCompExact ? iceIndexOffset : -1, splitMode);
-  if (dissolvedPlant) E.finishPlantErosion(erasedPlant, cellCompExact && !dissolvedStone && !dissolvedIce);
+  if (dissolvedStructural) E.splitRigidAfterErase(
+    E.L->components, erasedStructural, E.L->nextComponentId,
+    false, false, cellCompExact ? 0 : -1, splitMode);
   bool pureBore = false;
-  if (dissolvedStone || dissolvedIce) {
+  if (dissolvedStructural) {
     E.comps.cgRemovedCells.clear();
-    E.comps.cgRemovedCells.insert(E.comps.cgRemovedCells.end(), erasedStone.begin(), erasedStone.end());
-    E.comps.cgRemovedCells.insert(E.comps.cgRemovedCells.end(), erasedIce.begin(), erasedIce.end());
+    E.comps.cgRemovedCells.insert(E.comps.cgRemovedCells.end(),
+                                  erasedStructural.begin(), erasedStructural.end());
     if (!E.removalsKeepGroundingValid(E.comps.cgRemovedCells)) {
       E.L->groundDirty = true; // a real disconnect -> full reflood
     } else if (E.L->compsReshaped) {
@@ -190,7 +188,7 @@ void ReactionSystem::applyAcid() {
       // what stops acid boring bulk stone from re-indexing the whole layer (incl. a
       // big inert ice tub holding a separate acid pool) every dissolve step.
       for (int k : E.comps.cgRemovedCells) E.L->cellComp[k] = -1;
-      pureBore = !dissolvedPlant;
+      pureBore = true;
     }
   }
   if (pureBore && !crossBondMayBreak && E.comps.jointSupportValid && !E.comps.jointSleepBlocked) {
@@ -202,7 +200,7 @@ void ReactionSystem::applyAcid() {
     // while co-occupation still exists (sleep skips re-joint; stamps go stale).
     auto dependsOnJoint = [](Layer& lay) {
       if (!lay.groundBaseValid) return true;
-      size_t n = lay.stoneComponents.size() + lay.plantComponents.size() + lay.iceComponents.size();
+      size_t n = lay.components.size();
       if (lay.groundBaseFlags.size() != n) return true;
       size_t i = 0;
       auto scan = [&](std::vector<Comp>& list) {
@@ -212,7 +210,7 @@ void ReactionSystem::applyAcid() {
         }
         return false;
       };
-      return scan(lay.stoneComponents) || scan(lay.plantComponents) || scan(lay.iceComponents);
+      return scan(lay.components);
     };
     if (!dependsOnJoint(E.fg) && !dependsOnJoint(E.bg)) {
       // splitRigidAfterErase conservatively invalidates every joint. Surviving
@@ -224,7 +222,7 @@ void ReactionSystem::applyAcid() {
 }
 void ReactionSystem::applyLava() {
   std::unordered_set<int>& hardened = E.lavaHardenedScratch; hardened.clear();
-  bool plantBurned = false;
+  std::vector<int> burnedPlant;
   for (int k : E.activeLavaCells) {
       if (E.L->grid[k] != LAVA) continue;
       int y = k / E.cols;
@@ -236,7 +234,7 @@ void ReactionSystem::applyLava() {
       // body-material invariant: lava disintegrates a flammable body via erodeBodies, not in-place ignition.
       auto lavaBurns = [&](int q) { return E.isFlammable(E.L->grid[q]) && !E.isBodyCell(q); };
       if (lavaBurns(right)) burnK = right; else if (lavaBurns(left)) burnK = left; else if (lavaBurns(down)) burnK = down; else if (lavaBurns(up)) burnK = up;
-      if (burnK >= 0) { if (E.isPlantMaterial(E.L->grid[burnK])) plantBurned = true; E.writeGridIndex(burnK, FIRE); continue; }
+      if (burnK >= 0) { if (E.isPlantMaterial(E.L->grid[burnK])) burnedPlant.push_back(burnK); E.writeGridIndex(burnK, FIRE); continue; }
       int liquidK = -1;
       // Flag-driven (quenchesLava: water/acid/brine) -> steam + hardened stone.
       auto quenches = [&](int q) { return E.isLavaQuencher(E.L->grid[q]); };
@@ -244,12 +242,14 @@ void ReactionSystem::applyLava() {
       if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE); hardened.insert(k); continue; }
       if (E.rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (E.L->grid[up] == EMPTY) airK = up; else if (E.L->grid[right] == EMPTY) airK = right; else if (E.L->grid[left] == EMPTY) airK = left; if (airK >= 0) E.writeGridIndex(airK, FIRE); }
   }
-  if (!hardened.empty()) E.registerRigidCellsSplit(E.L->stoneComponents, E.L->nextStoneId, STONE, hardened, false);
-  if (plantBurned) E.splitPlantAfterErase();
+  if (!hardened.empty()) E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, STONE, hardened, false);
+  if (!burnedPlant.empty()) E.splitPlantAfterErase(&burnedPlant);
 }
 void ReactionSystem::applyIce() {
   bool melted = false; std::vector<int>& meltedCells = E.iceMeltedScratch; meltedCells.clear();
-  for (auto& comp : E.L->iceComponents) {
+  for (auto& comp : E.L->components) {
+    // Ice registration and freezing keep each ice component homogeneous.
+    if (comp.cells.empty() || E.L->grid[comp.cells[0]] != ICE) continue;
     // Iterate by snapshot length, not a copy: freezing appends ICE cells to
     // comp.cells, and those new cells are already ICE (no further melt/freeze this
     // pass), so capping the loop at the pre-pass size is byte-identical to copying
@@ -283,7 +283,7 @@ void ReactionSystem::applyIce() {
       }
     }
   }
-  if (melted) E.splitRigidAfterErase(E.L->iceComponents, meltedCells, E.L->nextIceId, true);
+  if (melted) E.splitRigidAfterErase(E.L->components, meltedCells, E.L->nextComponentId, true);
 }
 // Salt is a desiccant / de-icer. A grain that touches WATER dissolves into it,
 // turning that water to BRINE (saltwater) and liquefying the grain into brine as

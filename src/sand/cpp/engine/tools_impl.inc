@@ -127,7 +127,7 @@ bool ToolSystem::footprintHasMaterialAt(int cx, int cy, const SurvivalFootprint&
 // Returns the NUMBER OF CELLS actually written (for the per-pixel inventory economy).
 int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool overwrite) {
   int changed = 0;
-  std::vector<int> erasedStone, erasedIce; bool erasedPlant = false;
+  std::vector<int> erasedStructural;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   bool destroyedAny = false;
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if ((overwrite || E.L->grid[k] == EMPTY) && E.L->grid[k] != material) {
@@ -136,7 +136,7 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
     // or the comp/body keeps an invisible phantom cell (the component-cell
     // destroy invariant — found by the --dev validator via overwrite paints).
     if (old != EMPTY && (E.isComponentMaterial(old) || E.isBodyCell(k))) {
-      destroyCellAt(k, old, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
+      destroyCellAt(k, old, erasedStructural, bodyById, dirtyBodies);
       destroyedAny = true;
     }
     E.noteLooseGroundTouch2(old, material);
@@ -144,87 +144,80 @@ int ToolSystem::paintDisc(int cx, int cy, int radius, uint8_t material, bool ove
   } } }
   if (destroyedAny) {
     E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
-    splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
+    splitComponentsAfterDestroy(erasedStructural);
   }
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   return changed;
 }
-// Generic material placement by id — the inventory-forward path. Routes by the
-// material's kind/group so a new material is placeable with NO new tool enum or
-// switch case: powders/liquids/gases paint as loose cells; component materials
-// are written into EMPTY cells and registered into their seeded-component list
-// (stone/ice via registerRigidCellsSplit keyed on the actual material; plant via
-// the flood-fill registrar). EMPTY erases. Returns the NUMBER OF CELLS written.
+// Generic material placement by id — the inventory-forward path. Loose media
+// paint as cells; structural materials spawn as bodies and fall until they make
+// grounded contact and bake. EMPTY erases.
 int ToolSystem::placeMaterialAt(int cx, int cy, int radius, uint8_t mat) {
   if (mat == EMPTY) return eraseDisc(cx, cy, radius);
   if (!E.isComponentMaterial(mat)) return paintDisc(cx, cy, radius, mat, false);
-  std::unordered_set<int> cells;
+  std::vector<std::pair<int, int>> cells;
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue;
     for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue;
-      int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY) { E.L->grid[k] = mat; E.markCellIndex(k); cells.insert(k); } } }
+      int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY) cells.push_back({xx, yy}); } }
   if (cells.empty()) return 0;
   E.L->skyDirty = true;
-  E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-  registerComponentCells(mat, cells);
+  E.finishSpawn(cells, mat);
   return (int)cells.size();
 }
-// Shared component registration: route a freshly-written cell set into its seeded
-// list by group (ice / plant / stone). Used by placeMaterialAt, the capped placer,
-// and the generalized creative draft finalize so they all register identically.
+// Shared component registration for runtime structural edits. Exact material
+// traits supply growth/reaction behavior; physical storage is unified.
 void ToolSystem::registerComponentCells(uint8_t mat, std::unordered_set<int>& cells) {
   if (cells.empty()) return;
   if (mat == SEED || mat == MYCELIUM_SPORE) E.comps.jointSleepBlocked = true;
-  switch (MAT_CGROUP[mat]) {
-    case CG_ICE:  E.registerRigidCellsSplit(E.L->iceComponents, E.L->nextIceId, mat, cells, true); break;
-    case CG_PLANT:
-      E.registerSeededComponents(0, E.cols); // unbounded flood (a tree/blob is one comp)
-      if (mat != SEED) break;
-      for (auto& comp : E.L->plantComponents) {
-        for (int k : cells) {
-          if (std::find(comp.cells.begin(), comp.cells.end(), k) == comp.cells.end()) continue;
-          comp.growing = true;
-          comp.cacheDirty = true;
-          break;
-        }
+  E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, mat, cells,
+                            E.isIceMaterial(mat));
+  if (mat == MYCELIUM_SPORE) {
+    E.L->myceliumActive = true;
+    E.L->myceliumSporePresent = true;
+  }
+  if (mat == SEED || mat == MYCELIUM_SPORE) {
+    for (auto& component : E.L->components) {
+      for (int k : cells) {
+        if (std::find(component.cells.begin(), component.cells.end(), k) == component.cells.end()) continue;
+        component.growing = true;
+        component.cacheDirty = true;
+        if (mat == SEED) component.requiresCellGrounding = true;
+        break;
       }
-      break;
-    default:
-      E.registerRigidCellsSplit(E.L->stoneComponents, E.L->nextStoneId, mat, cells, false); // stone group
-      if (mat == MYCELIUM_SPORE) {
-        E.L->myceliumActive = true;
-        E.L->myceliumSporePresent = true;
-        for (auto& comp : E.L->stoneComponents) {
-          for (int k : cells) {
-            if (std::find(comp.cells.begin(), comp.cells.end(), k) == comp.cells.end()) continue;
-            comp.growing = true;
-            break;
-          }
-        }
-      }
-      break;
+    }
   }
 }
 int ToolSystem::placeMaterialAtCapped(int cx, int cy, int radius, uint8_t mat, int maxCells, const Player* p) {
   if (mat == EMPTY) return eraseDisc(cx, cy, radius);
   bool comp = E.isComponentMaterial(mat);
-  std::unordered_set<int> cells;
+  std::vector<std::pair<int, int>> cells;
   int placed = cappedOffsetScan(cx, cy, discOffsets(radius), [](const std::pair<int, int>& o) { return o; }, E.rows, maxCells, p,
-    [&](int k) { if (E.L->grid[k] != EMPTY) return false; E.L->grid[k] = mat; if (comp) { E.markCellIndex(k); cells.insert(k); } return true; });
+    [&](int k) {
+      if (E.L->grid[k] != EMPTY) return false;
+      if (comp) cells.push_back({k % E.cols, k / E.cols});
+      else E.writeGridIndex(k, mat);
+      return true;
+    });
   if (placed) { E.L->skyDirty = true; E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius); }
-  if (comp) registerComponentCells(mat, cells);
+  if (comp) E.finishSpawn(cells, mat);
   return placed;
 }
 int ToolSystem::placeMaterialAtFootprintCapped(int cx, int cy, const SurvivalFootprint& fp, uint8_t mat, int maxCells, const Player* p) {
   bool comp = E.isComponentMaterial(mat);
-  std::unordered_set<int> cells;
+  std::vector<std::pair<int, int>> cells;
   int placed = cappedOffsetScan(cx, cy, fp.cells, [](const SurvivalFootprintCell& o) { return std::pair<int, int>((int)o.ox, (int)o.oy); }, E.rows, maxCells, p,
-    [&](int k) { if (E.L->grid[k] != EMPTY) return false; E.L->grid[k] = mat; if (comp) { E.markCellIndex(k); cells.insert(k); } return true; });
+    [&](int k) {
+      if (E.L->grid[k] != EMPTY) return false;
+      if (comp) cells.push_back({k % E.cols, k / E.cols});
+      else E.writeGridIndex(k, mat);
+      return true;
+    });
   if (placed) {
     int x0, y0, x1, y1;
     survivalFootprintBounds(fp, cx, cy, x0, y0, x1, y1);
     E.markDirtyRect(x0, y0, x1, y1);
   }
-  if (comp) registerComponentCells(mat, cells);
+  if (comp) E.finishSpawn(cells, mat);
   return placed;
 }
 // Disc cell offsets ordered by distance from center (cached per radius). Tie-break
@@ -244,38 +237,35 @@ const std::vector<std::pair<int, int>>& ToolSystem::discOffsets(int radius) {
 // body eraser, a static cell is classified for the component split and cleared.
 // body-material invariant: body cells hold their real material; the body system
 // erases them, the component-split system erases static cells.
-void ToolSystem::destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+void ToolSystem::destroyCellAt(int k, uint8_t m, std::vector<int>& erasedStructural,
                    std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
   E.noteLooseGroundTouch(m);
   if (E.isBodyCell(k)) {
     if (bodyById.empty()) for (Body* b : E.L->bodies) bodyById[b->id] = b;
     if (!E.eraseBodyCellIndex(k, bodyById, dirtyBodies)) { E.L->grid[k] = EMPTY; E.L->bodyOwner[k] = -1; }
   } else {
-    if (E.isStoneComponentMaterial(m)) erasedStone.push_back(k); else if (E.isIceComponentMaterial(m)) erasedIce.push_back(k);
-    if (E.isPlantMaterial(m)) erasedPlant = true;
+    if (E.isComponentMaterial(m)) erasedStructural.push_back(k);
     E.L->grid[k] = EMPTY;
   }
 }
 // Component-split epilogue shared by every destroy path (eraser, stroke
 // eraser, both mining paths).
-void ToolSystem::splitComponentsAfterDestroy(std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool erasedPlant) {
-  E.splitRigidAfterErase(E.L->stoneComponents, erasedStone, E.L->nextStoneId, false);
-  E.splitRigidAfterErase(E.L->iceComponents, erasedIce, E.L->nextIceId, true);
-  if (erasedPlant && !E.L->plantComponents.empty()) E.splitPlantAfterErase();
+void ToolSystem::splitComponentsAfterDestroy(std::vector<int>& erasedStructural) {
+  E.splitRigidAfterErase(E.L->components, erasedStructural, E.L->nextComponentId, false);
 }
 // Returns the NUMBER OF GRID CELLS cleared (non-EMPTY -> EMPTY). Body/draft-only
 // erases still mark dirty but don't count toward the cleared total.
 int ToolSystem::eraseDisc(int cx, int cy, int radius) {
-  std::vector<int> erasedStone, erasedIce, bodyCellList; bool erasedPlant = false; bool changed = false; int cleared = 0;
+  std::vector<int> erasedStructural; bool changed = false; int cleared = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy);
-    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
-    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
+    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; }
+    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; cleared++; }
     if (draft.erase(k)) changed = true;
   } }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-  splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
+  splitComponentsAfterDestroy(erasedStructural);
   return cleared;
 }
 // Batched eraser for continuous creative strokes: collect the whole swept brush
@@ -283,16 +273,16 @@ int ToolSystem::eraseDisc(int cx, int cy, int radius) {
 // cleanup for every interpolated brush stamp while the pointer is held.
 int ToolSystem::eraseStrokeCells(const std::vector<int>& cells, int x0, int y0, int x1, int y1) {
   if (cells.empty()) return 0;
-  std::vector<int> erasedStone, erasedIce; bool erasedPlant = false, changed = false; int cleared = 0;
+  std::vector<int> erasedStructural; bool changed = false; int cleared = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   for (int k : cells) {
-    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; }
-    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies); changed = true; cleared++; }
+    if (E.isBodyCell(k)) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; }
+    else if (E.L->grid[k] != EMPTY) { destroyCellAt(k, E.L->grid[k], erasedStructural, bodyById, dirtyBodies); changed = true; cleared++; }
     if (draft.erase(k)) changed = true;
   }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) { E.L->skyDirty = true; E.markDirtyRect(x0, y0, x1, y1); }
-  splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
+  splitComponentsAfterDestroy(erasedStructural);
   return cleared;
 }
 int ToolSystem::clearMineDamageDisc(int cx, int cy, int radius) {
@@ -389,7 +379,7 @@ double ToolSystem::playerMineProgress(int id) {
 // it (body-material invariant handled by destroyCellAt), and unstage it from
 // the draft. Returns true when anything changed (it always does for m != EMPTY).
 bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool scaledSpeed, uint32_t areaScale, uint32_t speedMultiplier,
-                        std::vector<int>& erasedStone, std::vector<int>& erasedIce, bool& erasedPlant,
+                        std::vector<int>& erasedStructural,
                         std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirtyBodies) {
   uint32_t dur = mineDurationFor(m, areaScale);
   if (dur > 0) {
@@ -400,31 +390,31 @@ bool ToolSystem::mineDamageCellStep(int k, uint8_t m, const Player& miner, bool 
     if (E.L->mineDamage[k] > 0) return true;
   }
   uint8_t pt = PT_OAK;
-  if (E.isPlantLeaf(m)) for (const Comp& c : E.L->plantComponents) {
+  if (E.isPlantLeaf(m)) for (const Comp& c : E.L->components) {
     if (std::find(c.cells.begin(), c.cells.end(), k) != c.cells.end()) { pt = c.plantType; break; }
   }
   lastMinedCells.push_back({m, k, pt});
-  destroyCellAt(k, m, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies);
+  destroyCellAt(k, m, erasedStructural, bodyById, dirtyBodies);
   E.L->mineDamage[k] = 0;
   draft.erase(k);
   return true;
 }
 int ToolSystem::mineDamageDisc(int cx, int cy, int radius, const Player& miner, bool scaledSpeed) {
   lastMinedCells.clear(); // this call's destroyed (material, cell) pairs -> mineDisc drops
-  std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
+  std::vector<int> erasedStructural; int changed = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= E.rows) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); uint8_t m = E.L->grid[k]; if (m == EMPTY) { if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; } continue; }
-    if (mineDamageCellStep(k, m, miner, scaledSpeed, 1, 1, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
+    if (mineDamageCellStep(k, m, miner, scaledSpeed, 1, 1, erasedStructural, bodyById, dirtyBodies)) changed = 1;
   } }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (!lastMinedCells.empty()) E.L->skyDirty = true;
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
-  splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
+  splitComponentsAfterDestroy(erasedStructural);
   return changed;
 }
 int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp, const Player& miner, bool scaledSpeed) {
   lastMinedCells.clear();
-  std::vector<int> erasedStone, erasedIce; bool erasedPlant = false; int changed = 0;
+  std::vector<int> erasedStructural; int changed = 0;
   std::unordered_map<int, Body*> bodyById; std::unordered_set<Body*> dirtyBodies;
   uint32_t areaScale = (uint32_t)imax(1, (int)fp.cells.size());
   uint32_t speedMultiplier = SURVIVAL_MINING_SPEED_MULTIPLIER;
@@ -438,7 +428,7 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
       if (E.L->mineDamage[k]) { E.L->mineDamage[k] = 0; changed = 1; }
       continue;
     }
-    if (mineDamageCellStep(k, m, miner, scaledSpeed, areaScale, speedMultiplier, erasedStone, erasedIce, erasedPlant, bodyById, dirtyBodies)) changed = 1;
+    if (mineDamageCellStep(k, m, miner, scaledSpeed, areaScale, speedMultiplier, erasedStructural, bodyById, dirtyBodies)) changed = 1;
   }
   E.finishErasedBodies(dirtyBodies, E.L->bodyCells);
   if (changed) {
@@ -447,7 +437,7 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
     if (!lastMinedCells.empty()) E.L->skyDirty = true;
     E.markDirtyRect(x0, y0, x1, y1);
   }
-  splitComponentsAfterDestroy(erasedStone, erasedIce, erasedPlant);
+  splitComponentsAfterDestroy(erasedStructural);
   return changed;
 }
 int ToolSystem::addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {
@@ -503,22 +493,18 @@ int ToolSystem::placeMaterialAtFootprintStrokeCapped(int x0, int y0, int x1, int
 }
 // Fire and driftwood use a tighter brush than other creative materials.
 int ToolSystem::brushFor(uint8_t m) { return (m == FIRE || m == DRIFTWOOD) ? 1 : 2; }
-// Finalize the single component draft: write draftMaterial into the staged EMPTY
-// cells and register them into the right seeded-component list by group (so stone,
-// ice, driftwood, ores — ANY component — drop as connected pieces identically).
+// Finalize a structural draft as one body. The body keeps its exact material,
+// falls through the rigid solver, and later bakes on grounded contact.
 void ToolSystem::finalizeDraft() {
   if (draft.empty()) return;
-  if (draftMaterial == RIGID) {
-    std::vector<std::pair<int, int>> cells;
-    cells.reserve(draft.size());
-    for (int k : draft) if (E.L->grid[k] == EMPTY) cells.push_back({k % E.cols, k / E.cols});
-    E.finishSpawn(cells, RIGID);
-    return;
+  std::vector<std::pair<int, int>> cells;
+  cells.reserve(draft.size());
+  for (int k : draft)
+    if (E.L->grid[k] == EMPTY) cells.push_back({k % E.cols, k / E.cols});
+  if (!cells.empty()) {
+    E.L->skyDirty = true;
+    E.finishSpawn(cells, draftMaterial);
   }
-  std::unordered_set<int> cells;
-  for (int k : draft) if (E.L->grid[k] == EMPTY) { E.L->grid[k] = draftMaterial; E.markCellIndex(k); cells.insert(k); }
-  if (!cells.empty()) E.L->skyDirty = true;
-  registerComponentCells(draftMaterial, cells);
 }
 // Seeds occupy one cell.
 bool ToolSystem::getSeedOrigin(int cx, int cy, int& x0, int& y0) {
@@ -539,9 +525,9 @@ bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   // Growth runs before joint grounding and can finish a newly placed seed in
   // that first tick. Latch here so the sleeping path cannot miss the transient.
   E.comps.jointSleepBlocked = true;
-  Comp c; c.id = E.L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true; c.requiresCellGrounding = true;
+  Comp c; c.id = E.L->nextComponentId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true; c.requiresCellGrounding = true;
   { int k = E.I(x0, y0); E.L->grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
-  E.L->plantComponents.push_back(std::move(c));
+  E.L->components.push_back(std::move(c));
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;
@@ -549,11 +535,11 @@ bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
 bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   if (!canPlaceSeedAt(x0, y0)) return false;
   E.comps.jointSleepBlocked = true;
-  Comp c; c.id = E.L->nextStoneId++; c.yMax = y0; c.age = 0; c.growing = true;
+  Comp c; c.id = E.L->nextComponentId++; c.yMax = y0; c.age = 0; c.growing = true;
   int k = E.I(x0, y0);
   E.L->grid[k] = MYCELIUM_SPORE;
   c.cells.push_back(k);
-  E.L->stoneComponents.push_back(std::move(c));
+  E.L->components.push_back(std::move(c));
   E.L->myceliumActive = true;
   E.L->myceliumSporePresent = true;
   E.L->groundDirty = true;
@@ -685,7 +671,7 @@ int ToolSystem::pointerDown(int cx, int cy, int button) {
     case CM_CUBE:
       if (E.spawnBox(cx, cy, CUBE_HALF, CUBE_HALF, cubeMaterial))
         E.audio.emit(SE_PLACE, cx, cy, 1.0, cubeMaterial, toBg ? 1 : 0);
-      break; // RIGID by default; a selected stone/ice/TNT solid spawns a material body that bakes/explodes
+      break; // RIGID by default; a selected component solid spawns a material body that bakes or reacts
     case CM_CREATURE: {
       const CreatureSpecies& s = CREATURE_SPECIES[creativeCreature];
       double wx = E.fg.worldOffsetX + cx - s.w * 0.5;

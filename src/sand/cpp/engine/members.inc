@@ -61,7 +61,7 @@
   // front (computeGroundedBoth) so solids support solids across layers; this flag
   // tells each stepLayer() to skip its own per-layer computeGrounded() (the first
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
-  std::vector<int> acidErasedStone, acidErasedIce, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
+  std::vector<int> acidErasedStructural, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
   std::vector<int> crossFireErasedFg, crossFireErasedBg;
   std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
@@ -110,9 +110,9 @@
 
   // ---- material predicates ----
   // Material id is exact identity. MAT_CLASS is the broad gameplay/physics
-  // bucket, MAT_FLAGS are extra traits, and MAT_CGROUP routes static component
-  // storage/splitting. Adding a material that reuses existing physics should
-  // need only a schema entry.
+  // bucket, MAT_FLAGS are extra traits, and K_COMPONENT identifies static/body-
+  // bakeable structural material. Adding a material that reuses existing physics
+  // should need only a schema entry.
   inline bool isEmptyMaterial(uint8_t m) { return m == EMPTY || MAT_CLASS[m] == MC_NONE; }
   inline bool isGasMaterial(uint8_t m) { return MAT_CLASS[m] == MC_GAS; }
   inline bool canGasRiseThrough(uint8_t rising, uint8_t upper) {
@@ -121,11 +121,8 @@
   inline bool isLiquidMaterial(uint8_t m) { return MAT_CLASS[m] == MC_LIQUID; }
   inline bool isLooseSolidMaterial(uint8_t m) { return MAT_CLASS[m] == MC_SOLID; }
   inline bool isRigidMaterialClass(uint8_t m) { return MAT_CLASS[m] == MC_RIGID; }
-  inline bool isComponentMaterial(uint8_t m) { return MAT_CGROUP[m] != CG_NONE; }
-  inline uint8_t componentGroupOf(uint8_t m) { return MAT_CGROUP[m]; }
-  inline bool isStoneComponentMaterial(uint8_t m) { return MAT_CGROUP[m] == CG_STONE; }
-  inline bool isPlantComponentMaterial(uint8_t m) { return MAT_CGROUP[m] == CG_PLANT; }
-  inline bool isIceComponentMaterial(uint8_t m) { return MAT_CGROUP[m] == CG_ICE; }
+  inline bool isComponentMaterial(uint8_t m) { return MAT_KIND[m] == K_COMPONENT; }
+  inline bool isIceMaterial(uint8_t m) { return m == ICE; }
   inline bool hasRigidFlag(uint8_t m) { return MAT_FLAGS[m] & MF_RIGID; }
   inline bool isPlantMaterial(uint8_t m) { return MAT_FLAGS[m] & MF_PLANTFAMILY; }
   inline bool isDissolvable(uint8_t m) { return MAT_FLAGS[m] & MF_DISSOLVABLE; }
@@ -141,14 +138,9 @@
   inline bool isBuoyantMedium(uint8_t m) { return isLooseMedium(m); }
   inline bool isBlockingForPlayer(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m) && !isLiquidMaterial(m); }
   inline bool isMineable(uint8_t m) { return !isEmptyMaterial(m) && !isGasMaterial(m); }
-  // Which rigid-component list a destroyed L->grid cell belongs to mirrors
-  // registerComponentCells' routing (CG_ICE -> ice, CG_PLANT -> plant via
-  // isPlantMaterial, else stone). EVERY site that clears a component cell from the
-  // L->grid (erase, mine, acid) must feed it to splitRigidAfterErase via
-  // componentGroupOf, or the body keeps an invisible cell that still
-  // collides/grounds — sand floats on the hole and powders/liquids won't pass.
-  // Keyed on group, not material id, so new ores/blocks (sandstone, brick, …)
-  // are covered with no edit here.
+  // EVERY site that clears a component cell from the grid (erase, mine, acid)
+  // must feed it to the unified component split path, or the component keeps an
+  // invisible cell that still collides/grounds.
   // Flora-type material classification: which plant-family materials act as a tree
   // trunk vs foliage, and the species<->material mapping. A plant comp is a single
   // species, so its trunk/leaf material is derived from its plantType (and vice
@@ -176,11 +168,10 @@
   //     clear) MUST skip body cells via isBodyCell(k). Each such site carries the
   //     comment `// body-material invariant: skip free-body cells (see isBodyCell)` so
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
-  //   * A detached component group may carry a per-cell material map. Each
-  //     stone/ice/plant material BAKES through its own component path when the body
-  //     rests on solid or granular support (bakeRestingBodies in rigid_impl.inc).
-  //     RIGID bodies never bake, and a body still FLOATING on liquid (e.g. a wood
-  //     log bobbing on water) remains free until it beaches.
+  //   * A detached structural assembly may carry a per-cell material map. Every
+  //     component material bakes through the unified registry after solver sleep
+  //     and direct grounded-solid contact (bakeRestingBodies in rigid_impl.inc).
+  //     RIGID bodies never bake, and a body still floating on liquid remains free.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }
@@ -201,9 +192,9 @@
   // letting it surface later as flicker/invisible collision.
   //   A. BODY-MATERIAL: a body-owned cell (L->bodyOwner[k] != -1) must hold a
   //      non-EMPTY material (the body stamps its real material into the L->grid).
-  //   B. COMPONENT-CELL: every component cell must hold a material of its
-  //      list's group, must not be body-owned, and must appear in exactly one
-  //      component (comp.cells dedup-by-construction).
+  //   B. COMPONENT-CELL: every component cell must hold a component material,
+  //      must not be body-owned, and must appear in exactly one component
+  //      (comp.cells dedup-by-construction).
   void validateInvariants(const char* where) {
     auto fail = [&](const char* what, int k, int mat, int extra) {
       char buf[200];
@@ -216,19 +207,14 @@
       for (size_t k = 0; k < n; k++)
         if (lay.bodyOwner[k] != -1 && lay.grid[k] == EMPTY) fail("body-owned cell is EMPTY", (int)k, 0, lay.bodyOwner[k]);
       lay.seenGen++;
-      auto checkList = [&](std::vector<Comp>& comps, uint8_t group, bool plant) {
-        for (Comp& c : comps) for (int k : c.cells) {
-          if (k < 0 || k >= (int)n) fail("component cell out of bounds", k, -1, 0);
-          uint8_t m0 = lay.grid[k];
-          if (plant ? !isPlantMaterial(m0) : componentGroupOf(m0) != group) fail("component cell material not in its group", k, m0, group);
-          if (lay.bodyOwner[k] != -1) fail("component cell is body-owned", k, m0, lay.bodyOwner[k]);
-          if (lay.seenStamp[k] == lay.seenGen) fail("cell in two components / duplicated", k, m0, 0);
-          lay.seenStamp[k] = lay.seenGen;
-        }
-      };
-      checkList(lay.stoneComponents, CG_STONE, false);
-      checkList(lay.iceComponents, CG_ICE, false);
-      checkList(lay.plantComponents, CG_PLANT, true);
+      for (Comp& component : lay.components) for (int k : component.cells) {
+        if (k < 0 || k >= (int)n) fail("component cell out of bounds", k, -1, 0);
+        uint8_t material = lay.grid[k];
+        if (!isComponentMaterial(material)) fail("component cell has non-component material", k, material, 0);
+        if (lay.bodyOwner[k] != -1) fail("component cell is body-owned", k, material, lay.bodyOwner[k]);
+        if (lay.seenStamp[k] == lay.seenGen) fail("cell in two components / duplicated", k, material, 0);
+        lay.seenStamp[k] = lay.seenGen;
+      }
     };
     checkLayer(fg);
     checkLayer(bg);

@@ -44,6 +44,8 @@ class RigidBodySystem {
   void worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy);
   bool computeDerived(Body* b, bool preserveWorld);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, uint8_t material, double density);
+  Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, const std::vector<uint8_t>& materials);
+  uint8_t bodyMaterialAt(Body* b, int localIndex);
   void terrainNormalAt(int cx, int cy, double bodyDensity, double& ox, double& oy);
   int insideBodyIndex(Body* b, double wx, double wy);
   void bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy);
@@ -73,7 +75,7 @@ class RigidBodySystem {
   bool depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre);
   bool pushActorsFromBody(Body* b, double prePx, double prePy, double preAngle, double preVx, double preVy);
   void bakeBodyToGrid(Body* b);
-  bool bodySolidifies(uint8_t m);
+  bool bodySolidifies(Body* b);
   bool bodyFloatsOnMedium(Body* b);
   bool bodyHasLooseSupport(Body* b);
   void bakeRestingBodies();

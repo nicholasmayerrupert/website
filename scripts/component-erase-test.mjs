@@ -18,6 +18,7 @@ const lowestSand = (e) => { const g = e.getGrid(); let low = -1; for (let y = 0;
 function fallsThrough(label, mat, carve) {
   const e = fresh();
   for (let y = 40; y <= 50; y++) for (let x = 5; x <= 34; x++) e.placeMaterial(x, y, 0, mat);
+  for (let y = 51; y < ROWS; y++) e.placeMaterial(5, y, 0, mat);
   let t = run(e, 3);
   carve(e); // open a vertical channel around x=20
   t = run(e, 5, t);
@@ -29,7 +30,7 @@ function fallsThrough(label, mat, carve) {
 }
 
 for (const [name, mat] of [['stone', MAT.STONE], ['sandstone', MAT.SANDSTONE], ['iron ore', MAT.IRON_ORE], ['brick', MAT.BRICK]]) {
-  fallsThrough(`erase ${name}`, mat, (e) => e.eraseDisc(20, 45, 3));
+  fallsThrough(`erase ${name}`, mat, (e) => e.eraseDisc(20, 45, 6));
 }
 
 // Acid boring a channel through a non-STONE component must not leave invisible
@@ -40,6 +41,7 @@ for (const [name, mat] of [['stone', MAT.STONE], ['sandstone', MAT.SANDSTONE], [
 {
   const e = fresh();
   for (let y = 35; y <= 50; y++) for (let x = 5; x <= 34; x++) e.placeMaterial(x, y, 0, MAT.SANDSTONE);
+  for (let y = 51; y < ROWS; y++) e.placeMaterial(5, y, 0, MAT.SANDSTONE);
   let t = run(e, 3);
   const ssBefore = (() => { let n = 0; for (const v of e.getGrid()) if (v === MAT.SANDSTONE) n++; return n; })();
   for (let s = 0; s < 280; s++) { if (s % 3 === 0) for (let x = 19; x <= 21; x++) e.placeMaterial(x, 30, 0, MAT.ACID); t = run(e, 1, t); }

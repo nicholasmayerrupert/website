@@ -30,6 +30,12 @@ int NetSync::rleDecode(const uint8_t* buf, int len, int p, uint8_t* g) {
 void NetSync::applyWorld(const uint8_t* buf, int len) {
   int p = rleDecode(buf, len, 0, E.fg.grid);
   rleDecode(buf, len, p, E.bg.grid);
+  if (E.fg.fallSpeed) {
+    std::fill(E.fg.fallSpeedA.begin(), E.fg.fallSpeedA.end(), (uint8_t)0);
+    std::fill(E.fg.fallSpeedB.begin(), E.fg.fallSpeedB.end(), (uint8_t)0);
+    std::fill(E.bg.fallSpeedA.begin(), E.bg.fallSpeedA.end(), (uint8_t)0);
+    std::fill(E.bg.fallSpeedB.begin(), E.bg.fallSpeedB.end(), (uint8_t)0);
+  }
   // A full snapshot replaces grid[] without replacing the alternate buffers.
   // Force one ordinary carry before a prior cave-blast sparse proof can be reused.
   E.fg.blastSparseCarryReady = false;
@@ -108,7 +114,10 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background) 
     bool validRect = x0 >= 0 && x1 <= E.cols && y0 >= 0 && y1 <= E.rows;
     for (int y = y0; y < y1; y++) {
       if (p + width > len) return p;
-      if (validRect) std::memcpy(lay->grid + y * E.cols + x0, buf + p, (size_t)width);
+      if (validRect) {
+        std::memcpy(lay->grid + y * E.cols + x0, buf + p, (size_t)width);
+        if (lay->fallSpeed) std::memset(lay->fallSpeed + y * E.cols + x0, 0, (size_t)width);
+      }
       p += width;
     }
     if (x1 > x0 && y1 > y0) E.markDirtyRect(x0, y0, x1 - 1, y1 - 1);

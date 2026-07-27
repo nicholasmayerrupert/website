@@ -121,6 +121,7 @@
 
     double tT = emscripten_get_now();
     std::swap(L->grid, L->next);
+    std::swap(L->fallSpeed, L->nextFallSpeed);
     if ((tick & 1) == 0) relaxLiquidGaps();
     if (tick % 3 == 0) separateLooseByDensity();
     levelLiquidSurfaces();
@@ -428,8 +429,17 @@
     }
     if (!stuckIn(from, x, y, m)) return false;
     if (!canFall(to, x, y, m)) return false;
-    if (swap) { to->grid[k] = m; from->grid[k] = dst; }
-    else { to->grid[k] = m; from->grid[k] = EMPTY; }
+    uint8_t srcSpeed = from->fallSpeed ? from->fallSpeed[k] : 0;
+    uint8_t dstSpeed = to->fallSpeed ? to->fallSpeed[k] : 0;
+    if (swap) {
+      to->grid[k] = m; from->grid[k] = dst;
+      if (to->fallSpeed) to->fallSpeed[k] = srcSpeed;
+      if (from->fallSpeed) from->fallSpeed[k] = dstSpeed;
+    } else {
+      to->grid[k] = m; from->grid[k] = EMPTY;
+      if (to->fallSpeed) to->fallSpeed[k] = srcSpeed;
+      if (from->fallSpeed) from->fallSpeed[k] = 0;
+    }
     // Cross-layer powder/liquid motion invalidates both layers' loose overlays.
     auto touchLoose = [&](Layer* lay) {
       lay->looseGroundDirty = true;

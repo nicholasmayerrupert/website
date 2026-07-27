@@ -143,6 +143,8 @@ class ComponentSystem {
                              const std::vector<std::pair<int, uint8_t>>* planned = nullptr,
                              bool collectBearing = false);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
+  void detachComponentGroups(Layer& lay, const std::vector<std::vector<int>>& groups);
+  void markBreakCandidates();
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();
   bool isFloodTargetMat(uint8_t m);

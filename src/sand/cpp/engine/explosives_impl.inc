@@ -35,7 +35,11 @@ void ExplosivesSystem::queueDetonation(int cell, int fuse) {
   }
 }
 void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse) {
-  if (!b || b->material != TNT) return;
+  if (!b) return;
+  bool containsTnt = b->material == TNT;
+  if (!containsTnt)
+    for (uint8_t material : b->cellMaterials) if (material == TNT) { containsTnt = true; break; }
+  if (!containsTnt) return;
   if (b->fuseTicks <= 0 || b->fuseTicks > fuse) {
     b->fuseTicks = fuse;
     E.audio.emit(SE_FUSE, b->px, b->py, fuse <= TNT_CHAIN_FUSE ? 0.45 : 0.8, TNT);
@@ -998,7 +1002,7 @@ void ExplosivesSystem::applyExplosives() {
   //    consumes its own cells, so finishErasedBodies removes the now-empty body).
   std::vector<std::pair<int, int>> bodyBlasts;
   std::vector<Body*> bodyBlastSources;
-  for (Body* b : E.L->bodies) if (b->material == TNT && b->fuseTicks > 0 && --b->fuseTicks <= 0) {
+  for (Body* b : E.L->bodies) if (b->fuseTicks > 0 && --b->fuseTicks <= 0) {
     bodyBlasts.push_back({(int)std::lround(b->px), (int)std::lround(b->py)});
     bodyBlastSources.push_back(b);
   }

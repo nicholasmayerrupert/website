@@ -27,6 +27,7 @@ function table() {
     bodyBlastDebrisLayer: c('engine_test_body_blast_debris_layer', 'number', ['number', 'number', 'number']),
     groundedPtr: c('engine_test_grounded_ptr', 'number', ['number', 'number']),
     bodyOwnerPtr: c('engine_test_body_owner_ptr', 'number', ['number', 'number']),
+    fallSpeedPtr: c('engine_test_fall_speed_ptr', 'number', ['number', 'number']),
     resetTopology: c('engine_test_reset_topology', null, ['number']),
     setBodyBlastDebris: c('engine_test_set_body_blast_debris', 'number', ['number', 'number', 'number']),
     detonateTnt: c('engine_test_detonate_tnt', null, ['number', 'number', 'number']),
@@ -65,6 +66,8 @@ export function attachTestHooks(engine) {
     new Uint8Array(mod.HEAPU8.buffer, t.groundedPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._bodyOwnerGrid = (layer = 0) =>
     new Int32Array(mod.HEAP32.buffer, t.bodyOwnerPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
+  engine._fallSpeedGrid = (layer = 0) =>
+    new Uint8Array(mod.HEAPU8.buffer, t.fallSpeedPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._resetTopology = () => t.resetTopology(ptr);
   engine._setBodyBlastDebris = (i, enabled = true) =>
     t.setBodyBlastDebris(ptr, i | 0, enabled ? 1 : 0) > 0;

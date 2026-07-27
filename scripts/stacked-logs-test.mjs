@@ -335,8 +335,8 @@ console.log('stacked-logs: free-fall cadence after contact cut');
     dropped += d;
   }
   check('free-fall progress', dropped >= 10, `(dropped ${dropped}, tops ${tops.slice(0, 12).join(',')})`);
-  check('free-fall ~1/step', air.filter((d) => d === 0).length <= 2, `(stalls ${air.filter((d) => d === 0).length})`);
-  check('free-fall not lurching', air.filter((d) => d > 1).length <= 3, `(multi ${air.filter((d) => d > 1).length})`);
+  check('free-body fall remains forward-only', air.every((d) => d >= 0), `(deltas ${air.join(',')})`);
+  check('free-body fall accelerates', air.some((d) => d > 1), `(deltas ${air.join(',')})`);
   e.destroy();
 }
 

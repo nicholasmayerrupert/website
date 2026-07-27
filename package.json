@@ -17,6 +17,8 @@
     "preview": "vite preview",
     "deploy": "npm run build && wrangler deploy --config cloudflare/wrangler.jsonc",
     "test:sand": "node scripts/sand-test.mjs",
+    "test:loose-acceleration": "node scripts/loose-acceleration-test.mjs",
+    "test:detached-rigid": "node scripts/detached-rigid-test.mjs",
     "test:players": "node scripts/player-test.mjs",
     "test:timing": "node scripts/timing-test.mjs",
     "test:anim": "node scripts/player-anim-test.mjs",

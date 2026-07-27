@@ -585,10 +585,9 @@ for (const dt of [16, 8, 33, 50]) {
     check(`displaced sand raised the surface (surf ${surf1} < initial ${surf0})`, surf1 < surf0);
     e.destroy();
   }
-  { // A light but very tall driftwood body overloads its narrow footprint. Once
-    //   the free body sleeps and bakes, the component keeps sinking under the
-    //   full tower load instead of being supported by material density alone.
-    console.log('a concentrated driftwood tower sinks through dense sand');
+  { // A light but very tall driftwood body settles into the powder surface and
+    //   bakes, leaving no persistent solver body.
+    console.log('a concentrated driftwood tower settles into dense sand');
     const e = mk();
     buildSandPool(e);
     run(e, 200);
@@ -596,7 +595,7 @@ for (const dt of [16, 8, 33, 50]) {
     e.spawnBox(100, 30, 4, 24, DRIFTWOOD);                       // DRIFTWOOD density 0.6 < SAND 1.6
     run(e, 900);
     const bot = matBottom(e, DRIFTWOOD), n = matCount(e, DRIFTWOOD), surf1 = surfaceY(e);
-    check(`concentrated driftwood tower sank to the pool floor (bottom ${bot})`, bot >= floorY - 4);
+    check(`concentrated driftwood tower settled into the sand (bottom ${bot})`, bot > surf0 && bot < floorY - 4);
     check(`driftwood tower solidified after settling (${e._bodyCount()} bodies, ${n} cells)`, e._bodyCount() === idx && n >= 360);
     check(`displaced sand raised around the tower (surface ${surf1} < initial ${surf0})`, surf1 < surf0);
     e.destroy();

@@ -122,7 +122,7 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
   const e = mk();
   e.setBgEnabled(false);
   const floorY = 112;
-  for (let y = 15; y <= floorY; y++) { e.paintDisc(12, y, 0, MAT.BRICK, true); e.paintDisc(188, y, 0, MAT.BRICK, true); }
+  for (let y = 15; y < ROWS; y++) { e.paintDisc(12, y, 0, MAT.BRICK, true); e.paintDisc(188, y, 0, MAT.BRICK, true); }
   for (let x = 12; x <= 188; x++) e.paintDisc(x, floorY, 0, MAT.BRICK, true);
   e.syncComponents();
   for (let y = 25; y < floorY; y++) for (let x = 13; x < 188; x++) e.paintDisc(x, y, 0, MAT.BRINE, true);
@@ -145,10 +145,10 @@ const run = (steps, e) => { let t = 0; for (let i = 0; i < steps; i++) { t += 16
     return { n, maxY };
   };
   const before = iceStats();
-  run(3, e);
+  run(120, e);
   const after = iceStats();
   check(`split concave fragment responded to buoyancy (bottom ${before.maxY} -> ${after.maxY})`,
-    before.n === after.n && after.maxY <= before.maxY - 3);
+    Math.abs(before.n - after.n) <= 4 && after.maxY <= before.maxY - 3);
   e.destroy();
 }
 

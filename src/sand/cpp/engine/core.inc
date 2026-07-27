@@ -6,17 +6,25 @@
   // this path because it runs over the active rows every simulation tick.
 
   // ---- settle passes ----
-  // Density-scaled straight-down fall for liquids: a liquid may drop up to
-  // round(DENSITY * LIQUID_FALL_PER_DENSITY) cells per tick (clamped to
-  // [1, LIQUID_FALL_CAP]). With the values below: OIL(0.8)->2, WATER(1.0)->3,
-  // ACID(1.1)->3, LAVA(2.8)->8 capped to 5 — so density actually orders the
-  // fall speed (lighter oil lags, heavier lava plummets). Defined here (NOT
-  // common.hpp) on purpose. Column free space is EMPTY/gas/less-dense liquid
-  // (liquidTreatsAsEmpty); only the landing cell is occupied (lighter liquid
-  // there is density-chain relocated). Single-fluid settled columns (nothing
-  // free below) still take 0 steps.
+  // Falling loose cells carry downward momentum in Layer::fallSpeed. A clear
+  // vertical fall accelerates by one cell/tick until its material's terminal
+  // speed; contact, diagonal avalanching, and lateral flow reset that momentum.
+  // Liquid terminal speed remains density-scaled, while powder has a shared cap.
   static const int LIQUID_FALL_PER_DENSITY = 3;
   static const int LIQUID_FALL_CAP = 5;
+  static const int POWDER_FALL_CAP = 8;
+  int looseFallCap(uint8_t m) {
+    if (isLooseSolidMaterial(m)) return POWDER_FALL_CAP;
+    int cap = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
+    return imax(1, imin(LIQUID_FALL_CAP, cap));
+  }
+  uint8_t acceleratedFallSpeed(int k, uint8_t m) {
+    int speed = L->fallSpeed ? (int)L->fallSpeed[k] + 1 : 1;
+    return (uint8_t)imin(looseFallCap(m), imax(1, speed));
+  }
+  void carryNextFallSpeed(int k, uint8_t speed) {
+    if (L->nextFallSpeed) L->nextFallSpeed[k] = speed;
+  }
   bool canLooseDensitySettleThisTick(uint8_t m) { float mob = MOBILITY[m]; return mob >= 1 || rand() < mob; }
   void settleLooseDensityInterface(int x, int y, int k) {
     uint8_t m = L->grid[k];
@@ -49,7 +57,22 @@
     uint8_t self = L->grid[k];
     int belowK = k + cols;
     if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
-    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) { vacateForNextMove(k); writeNextIndex(belowK, self); audio.notePowderMove(self, x, y + 1); return; }
+    if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) {
+      uint8_t speed = acceleratedFallSpeed(k, self);
+      int dst = belowK;
+      for (int s = 2; s <= speed; s++) {
+        if (y + s >= rows) break;
+        int nk = k + s * cols;
+        if (L->grid[nk] != EMPTY || L->next[nk] != EMPTY) break;
+        dst = nk;
+      }
+      vacateForNextMove(k);
+      writeNextIndex(dst, self);
+      carryNextFallSpeed(dst, speed);
+      audio.notePowderMove(self, dst % cols, dst / cols, (dst - k) / cols);
+      if (dst != belowK) markMoveSpan(k, dst);
+      return;
+    }
     if (y + 1 < rows && canDisplaceMaterial(self, L->grid[belowK]) && L->next[belowK] == EMPTY) { moveMaterialInto(k, belowK, self); return; }
     int firstDx = rand() < 0.5 ? -1 : 1, secondDx = -firstDx;
     for (int i = 0; i < 2; i++) {
@@ -96,9 +119,7 @@
         moveLiquidInto(k, x, y + 1, m);
         return;
       }
-      int maxFall = (int)std::lround(DENSITY[m] * LIQUID_FALL_PER_DENSITY);
-      if (maxFall < 1) maxFall = 1;
-      if (maxFall > LIQUID_FALL_CAP) maxFall = LIQUID_FALL_CAP;
+      uint8_t maxFall = acceleratedFallSpeed(k, m);
       int dst = belowK;
       for (int s = 2; s <= maxFall; s++) {
         if (y + s >= rows) break;
@@ -114,6 +135,7 @@
       // buffer resurrects stale water as a ghost trail (false "duplication").
       vacateForNextMove(k);
       writeNextIndex(dst, m);
+      carryNextFallSpeed(dst, maxFall);
       audio.noteFluidFall(m, dst % cols, dst / cols, (dst - k) / cols);
       if (dst != k) markMoveSpan(k, dst);
       return;
@@ -189,7 +211,15 @@
     }
     if (L->next[k] == EMPTY) { L->next[k] = m; if (touchesUnstableLooseDensityInterface(k, m) || adjacentInternalHole(k, m)) markCellIndex(k); }
   }
-  void settleLava(int x, int y, int k) { if (L->next[k] != EMPTY) return; if (rand() >= MOBILITY[LAVA]) { writeNextIndex(k, LAVA); return; } settleLiquid(x, y, k, LAVA); }
+  void settleLava(int x, int y, int k) {
+    if (L->next[k] != EMPTY) return;
+    if (rand() >= MOBILITY[LAVA]) {
+      writeNextIndex(k, LAVA);
+      if (L->fallSpeed) carryNextFallSpeed(k, L->fallSpeed[k]);
+      return;
+    }
+    settleLiquid(x, y, k, LAVA);
+  }
 
   // After liquid settle: place every lighter liquid that denser fluid displaced this
   // tick. One multi-source BFS per material group per wave (not per cell).

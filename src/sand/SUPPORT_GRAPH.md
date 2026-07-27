@@ -9,17 +9,20 @@ rescanning every rigid cell on every active tick.
 1. Restore each layer's independent grounding base when topology or bonds changed.
 2. For static interior components, union cached same-layer adjacency, seed the
    resulting roots from the floor and streamed edges, and stamp supported roots.
-3. Use the cell flood when free bodies participate or a component touches a
-   directed top/outer sentinel boundary.
+3. Use the conservative cell-flood path while free bodies exist or a component
+   touches a directed top/outer sentinel boundary. Body-owned cells are excluded
+   from the static support graph.
 4. Stop if every component is independently grounded.
 5. Otherwise collect cross-layer bonds for unsupported components, union cached
    same-layer adjacency, and propagate support through the resulting groups.
 6. Preserve the settled closure while only loose material changes and no
    unsupported bond group remains.
 
-Free bodies, directed-boundary components, and forced verification use the
-conservative cell flood. Fire may defer a joint rebuild until the next tick
-after completing component membership cleanup; acid and tool edits reconcile
+Free-body presence, directed-boundary components, and forced verification select
+the conservative cell flood. Bodies support one another through collision
+contacts, not by grounding static components; a component supported only by a
+body therefore detaches. Fire may defer a joint rebuild until the next tick after
+completing component membership cleanup; acid and tool edits reconcile
 immediately.
 
 ## Important state

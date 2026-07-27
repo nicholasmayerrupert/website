@@ -6,15 +6,18 @@
 import { execFileSync } from 'node:child_process';
 
 const EXPECTED = {
-  'pan-stream': 0x64deb0d8,
-  'liquid-active': 0xe2af4a0c,
-  'components-active': 0xc7c5675d,
+  'pan-stream': 0xafe14479,
+  'liquid-active': 0xf89039f1,
+  'components-active': 0xd7f431ba,
 };
 
-const out = execFileSync(process.execPath, ['scripts/bench-sand.mjs', '--scenario', 'all', '--checksum-only'], {
-  encoding: 'utf8',
-  maxBuffer: 20 * 1024 * 1024,
-});
+let out = '';
+for (const name of Object.keys(EXPECTED)) {
+  out += execFileSync(process.execPath, ['scripts/bench-sand.mjs', '--scenario', name, '--checksum-only'], {
+    encoding: 'utf8',
+    maxBuffer: 20 * 1024 * 1024,
+  });
+}
 console.log(out);
 
 let failures = 0;

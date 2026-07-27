@@ -160,10 +160,24 @@ not be renumbered.
 
 Loose powder, liquid, and gas cells live directly in the grid. Static rigid
 materials live in components. Free bodies stamp their real material into the
-grid and are distinguished by `bodyOwner`; supported static forms, including
-blast rubble, bake back into components when they settle and structural motion
-in the layer clears. Live blast rubble is non-structural and yields when
-descending terrain reaches it.
+grid and are distinguished by `bodyOwner`. A component group stays static while
+connected to the floor, a streamed edge, or supported terrain. An erase, cut, or
+explosion marks the edited support closure; any formerly supported group
+disconnected by that edit converts into a continuous rigid body. Naturally
+unsupported generated or painted components keep the lightweight
+component-motion path.
+Mixed groups retain a per-cell material map, so ore, masonry, timber, foliage,
+and ice can rotate together without losing their identities. Foreground and
+background halves become independent bodies in their own layers.
+
+Component-backed bodies bake back into ordinary static components after sleeping
+on solid or granular support. Bodies still floating in liquid remain dynamic,
+and the generic `RIGID` tool material never bakes. Live blast rubble is
+non-structural and yields when descending terrain reaches it.
+
+Powders and liquids carry a per-cell downward fall speed. A clear vertical fall
+accelerates by one cell per world tick up to the material's terminal speed;
+contact, diagonal avalanching, and lateral flow reset the stored momentum.
 
 Reactions are routed through generated flags where possible:
 
@@ -365,6 +379,9 @@ For engine or renderer changes, benchmark before and after:
 node scripts/bench-sand.mjs --compare bench/baseline.json
 node scripts/bench-pan.mjs --compare bench/pan-baseline.json
 ```
+
+Detached-solid and loose-acceleration behavior has focused coverage in
+`npm run test:detached-rigid` and `npm run test:loose-acceleration`.
 
 Use the engine benchmark for simulation/render-fill/streaming changes and the pan
 benchmark for WebGL presentation, pointer mapping, two-axis cell stability, and

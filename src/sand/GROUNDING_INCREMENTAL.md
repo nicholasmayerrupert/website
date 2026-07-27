@@ -5,9 +5,11 @@ a streamed edge, or the engine's loose-material support rules. The result lives
 in `Layer::groundedCell`; component and rigid-body movement depend on it.
 
 A full `computeGrounded()` pass indexes components, resolves rigid support, then
-overlays loose support. Static interior sets use the component graph; free
-bodies and directed buffer-boundary cases use the cell flood. The engine caches
-the result and invalidates each part separately.
+overlays loose support. Static interior sets use the component graph; free-body
+presence and directed buffer-boundary cases select the conservative cell flood.
+Body-owned cells are excluded from static grounding because body/body support is
+resolved by collision contacts. The engine caches the result and invalidates
+each part separately.
 
 ## Cache states
 

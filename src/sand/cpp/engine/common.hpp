@@ -183,6 +183,12 @@ struct Comp {
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
   bool grounded = false;
+  // Set when this component was stamped from a sleeping rigid body. While its
+  // powder footprint remains, it stays baked instead of re-entering the solver.
+  bool settledBody = false;
+  // A topology-changing erase marks the affected support closure for rigid-body
+  // conversion if grounding shows that it lost its last static support.
+  bool detachedByBreak = false;
   // Last committed vertical component move. A prior buoyant rise supplies
   // surface hysteresis while liquid still supports the underside.
   int8_t buoyancyDirection = 0;
@@ -197,6 +203,10 @@ struct Comp {
 struct Body {
   int id = 0;
   std::vector<uint8_t> occ; int w = 0, h = 0;
+  // Empty means every occupied cell uses `material`. Detached terrain keeps an
+  // occ-sized material map so stone, ore, timber, and foliage remain one rigid
+  // shape without losing their individual cell identities.
+  std::vector<uint8_t> cellMaterials;
   double offsetX = 0, offsetY = 0;
   double px = 0, py = 0, angle = 0;
   double vx = 0, vy = 0, omega = 0;

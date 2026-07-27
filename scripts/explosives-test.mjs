@@ -388,8 +388,8 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 {
-  // A blast-cut static component should not become one massive launched body.
-  // Destroyed solid cells still emit small physical rubble of their own material.
+  // A blast-cut static component emits small rubble and converts the surviving
+  // disconnected wood into a larger rigid body.
   const e = mk();
   for (let x = 20; x < 120; x++) e.placeMaterial(x, ROWS - 1, 0, MAT.STONE);
   for (let y = 45; y < ROWS - 1; y++) e.placeMaterial(72, y, 0, MAT.WOOD);
@@ -406,7 +406,7 @@ function blastDamagesMaterial(name) {
     }
   }
   check(`TNT emitted small WOOD rubble from destroyed cells (max body cells ${maxWoodPts})`, maxWoodPts > 0);
-  check(`TNT did not launch a massive detached WOOD chunk (max body cells ${maxWoodPts})`, maxWoodPts <= 4);
+  check(`TNT launched the detached WOOD chunk as a body (max body cells ${maxWoodPts})`, maxWoodPts > 4);
   e.destroy();
 }
 {

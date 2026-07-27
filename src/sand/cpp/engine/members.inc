@@ -11,7 +11,7 @@
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
-    for (Body* b : lay->bodies) if (b->material == TNT && b->fuseTicks > 0) return true;
+    for (Body* b : lay->bodies) if (b->awake || b->fuseTicks > 0) return true;
     for (int y = 0; y < rows; y++) if (lay->rowMarkMax[y] >= lay->rowMarkMin[y]) return true;
     return false;
   }
@@ -175,12 +175,11 @@
   //     clear) MUST skip body cells via isBodyCell(k). Each such site carries the
   //     comment `// body-material invariant: skip free-body cells (see isBodyCell)` so
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
-  //   * A body whose material has a static component form (stone-group, ice, OR
-  //     plant-family) BAKES into that component when it comes to rest ON SOLID GROUND
-  //     (bakeRestingBodies in rigid.inc). Blast rubble follows that path once
-  //     settled structural motion clears. RIGID bodies never bake, and a body
-  //     still FLOATING on liquid (e.g. a wood log bobbing on water) keeps bobbing
-  //     as a free body until it actually beaches on solid terrain.
+  //   * A detached component group may carry a per-cell material map. Each
+  //     stone/ice/plant material BAKES through its own component path when the body
+  //     rests on solid or granular support (bakeRestingBodies in rigid_impl.inc).
+  //     RIGID bodies never bake, and a body still FLOATING on liquid (e.g. a wood
+  //     log bobbing on water) remains free until it beaches.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }
@@ -296,7 +295,7 @@
       if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
       if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
     }
-    for (Body* b : L->bodies) if (b->material == TNT && b->fuseTicks > 0) {
+    for (Body* b : L->bodies) if (b->fuseTicks > 0) {
       int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
       if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
@@ -333,7 +332,11 @@
   void prepareNextBuffer() {
     for (int y = 0; y < rows; y++) {
       int rs = y * cols, minX = L->activeRowMin[y], maxX = L->activeRowMax[y];
-      if (maxX >= minX) memset(L->next + rs + minX, EMPTY, (size_t)(maxX - minX + 1));
+      if (maxX >= minX) {
+        size_t width = (size_t)(maxX - minX + 1);
+        memset(L->next + rs + minX, EMPTY, width);
+        if (L->nextFallSpeed) memset(L->nextFallSpeed + rs + minX, 0, width);
+      }
     }
   }
 
@@ -414,6 +417,7 @@
   }
   inline void writeGridIndex(int k, uint8_t m) {
     if (k < 0 || k >= cols * rows) return;
+    if (L->fallSpeed) L->fallSpeed[k] = 0;
     if (L->grid[k] == m) return;
     int x = k - (k / cols) * cols;
     uint8_t old = L->grid[k];
@@ -471,6 +475,7 @@
     markDirtyRect(imin(fx, tx), imin(fy, ty), imax(fx, tx), imax(fy, ty));
   }
   inline void writeNextIndex(int k, uint8_t m) {
+    if (L->nextFallSpeed) L->nextFallSpeed[k] = 0;
     // Even when next[] already holds m (stale double-buffer residue), still mark
     // if the committed grid differs — otherwise a reclaim that early-outs here
     // leaves the vacated source without a dirty mark and ghosts can return.
@@ -577,9 +582,12 @@
     // denser cell can overwrite a lighter liquid that already settled into next[].
     uint8_t displaced = isLiquidMaterial(m) ? liquidOccupantAt(toK) : L->grid[toK];
     writeNextIndex(toK, m);
+    int fromY = fromK / cols, fromX = fromK - fromY * cols;
+    int toY = toK / cols, toX = toK - toY * cols;
+    if (toY > fromY && toX == fromX)
+      carryNextFallSpeed(toK, acceleratedFallSpeed(fromK, m));
     vacateForNextMove(fromK);
     if (isLiquidMaterial(m)) {
-      int fromY = fromK / cols, toY = toK / cols;
       if (toY > fromY) audio.noteFluidFall(m, toK - toY * cols, toY, toY - fromY);
     } else if (isLooseSolidMaterial(m) && fromK != toK) {
       int toY = toK / cols;

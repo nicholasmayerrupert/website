@@ -201,6 +201,10 @@ EMSCRIPTEN_KEEPALIVE int32_t* engine_test_body_owner_ptr(Engine* e, int layer) {
   Layer& lay = layer ? e->bg : e->fg;
   return lay.bodyOwner.data();
 }
+EMSCRIPTEN_KEEPALIVE uint8_t* engine_test_fall_speed_ptr(Engine* e, int layer) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return lay.fallSpeed;
+}
 EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
   auto reset = [&](Layer& lay) {
     for (Body* body : lay.bodies) delete body;

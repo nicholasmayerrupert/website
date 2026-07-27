@@ -6,6 +6,11 @@ struct Layer {
   EngineStorageRole storageRole = ESR_FULL;
   // double buffer + the "current"/"next" pointers (alternate each step)
   std::vector<uint8_t> gridA, gridB; uint8_t* grid = nullptr; uint8_t* next = nullptr;
+  // Per-cell downward momentum for powders and liquids. These buffers swap with
+  // grid/next, so a loose cell carries its fall speed across world ticks.
+  std::vector<uint8_t> fallSpeedA, fallSpeedB;
+  uint8_t* fallSpeed = nullptr;
+  uint8_t* nextFallSpeed = nullptr;
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
@@ -166,6 +171,7 @@ struct Layer {
     // presentation code never swaps or writes the cellular next buffer.
     if (role == ESR_PRESENTATION) {
       gridB.clear(); next = grid;
+      fallSpeedA.clear(); fallSpeedB.clear(); fallSpeed = nextFallSpeed = nullptr;
       light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(cols, 0);
       skyDownValue.assign(cols, 0); skyDownDepth.assign(cols, -1);
       renderPixels.assign(n * 4, 0);
@@ -173,6 +179,8 @@ struct Layer {
     }
 
     gridB.assign(n, EMPTY); next = gridB.data();
+    fallSpeedA.assign(n, 0); fallSpeedB.assign(n, 0);
+    fallSpeed = fallSpeedA.data(); nextFallSpeed = fallSpeedB.data();
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
     activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
     vacatedStamp.assign(n, -1);
@@ -208,7 +216,8 @@ struct Layer {
     if (newN < gridA.size()) {
       // Release capacity after shrink; ordinary growth still reuses allocations.
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
-      release(gridA); release(gridB); release(dirtyRender); release(dirtyRects);
+      release(gridA); release(gridB); release(fallSpeedA); release(fallSpeedB);
+      release(dirtyRender); release(dirtyRects);
       release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
       release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
@@ -262,6 +271,7 @@ struct Layer {
       }
     }
     gridB.clear(); grid = gridA.data(); next = grid;
+    fallSpeedA.clear(); fallSpeedB.clear(); fallSpeed = nextFallSpeed = nullptr;
     size_t n = (size_t)newCols * newRows;
     if (n < light.size()) {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };

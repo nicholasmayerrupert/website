@@ -32,12 +32,17 @@ lists and spawned as one body. Naturally unsupported components retain their
 lightweight component motion. Mixed-material groups carry an occupancy-sized
 material map; mass, center of mass, inertia, stamping, erosion, TNT fuses, and
 baking all use the material at each local cell. Cross-layer bonded groups split
-into one body per simulated layer.
+into one body with a foreground solver leader and a background follower. Its
+union mask supplies combined mass and collision against terrain in either layer,
+while each layer stamps only its own materials. This joint is assigned only when
+one structural detachment creates both halves; ordinary bodies never acquire a
+cross-layer joint through contact or overlap.
 
 When a component-backed body sleeps on terrain or powder, its current raster is
 registered through the ordinary stone, ice, and plant component paths and the
-body is deleted. A body floating in liquid stays dynamic. The generic `RIGID`
-material has no static component form and never bakes.
+body is deleted. Cross-layer halves sleep and bake together. A body floating in
+liquid stays dynamic. The generic `RIGID` material has no static component form
+and never bakes.
 
 ## Fluids and loose solids
 

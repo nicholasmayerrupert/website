@@ -2106,7 +2106,13 @@
         auto it = L->bodyStore.find(tileKey(floorDiv(awx, CHUNK_SIZE),
                                             floorDiv(awy, CHUNK_SIZE)));
         if (it == L->bodyStore.end()) continue;
-        for (auto& e : it->second) { Body* b = e.first; b->px = e.second.first - L->worldOffsetX; b->py = e.second.second - L->worldOffsetY; L->bodies.push_back(b); }
+        for (auto& e : it->second) {
+          Body* b = e.first;
+          b->px = e.second.first - L->worldOffsetX;
+          b->py = e.second.second - L->worldOffsetY;
+          L->bodies.push_back(b);
+          if (b->jointRole == 2) L->passiveBodyIds.insert(b->id);
+        }
         L->bodyStore.erase(it);
       }
   }
@@ -2317,6 +2323,8 @@
     //    real material now, so clear by isBodyCell, not by == RIGID.
     for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
     L->bodyCells.clear();
+    for (int k : L->passiveBodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+    L->passiveBodyCells.clear();
     L->pendingDetonations.clear(); // lit-fuse cell indices are buffer-local; drop them on a shift (a rare lost fuse)
     L->blastSparseCarryReady = false;
     // 2) persist the leaving band (bodies + full-state tiles) at the CURRENT offset.
@@ -2448,6 +2456,8 @@
       // persist via bodyStore, same as shiftWorld).
       for (int k : L->bodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
       L->bodyCells.clear();
+      for (int k : L->passiveBodyCells) { if (isBodyCell(k)) { L->grid[k] = EMPTY; L->next[k] = EMPTY; } L->bodyOwner[k] = -1; }
+      L->passiveBodyCells.clear();
       L->pendingDetonations.clear();
       L->blastSparseCarryReady = false;
       csSaveBodiesLeaving(0, 0, cols, rows); // all bodies -> bodyStore (world keys)

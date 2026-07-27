@@ -25,6 +25,10 @@ function table() {
     bodyCountLayer: c('engine_test_body_count_layer', 'number', ['number', 'number']),
     bodyIdLayer: c('engine_test_body_id_layer', 'number', ['number', 'number', 'number']),
     bodyBlastDebrisLayer: c('engine_test_body_blast_debris_layer', 'number', ['number', 'number', 'number']),
+    bodyJointRoleLayer: c('engine_test_body_joint_role_layer', 'number', ['number', 'number', 'number']),
+    bodyStateLayer: c('engine_test_body_state_layer', 'number', ['number', 'number', 'number', 'number']),
+    spawnBoxLayer: c('engine_test_spawn_box_layer', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
     groundedPtr: c('engine_test_grounded_ptr', 'number', ['number', 'number']),
     bodyOwnerPtr: c('engine_test_body_owner_ptr', 'number', ['number', 'number']),
     fallSpeedPtr: c('engine_test_fall_speed_ptr', 'number', ['number', 'number']),
@@ -62,6 +66,7 @@ export function attachTestHooks(engine) {
   engine._bodyCountLayer = (layer = 0) => t.bodyCountLayer(ptr, layer ? 1 : 0);
   engine._bodyIdLayer = (layer, i) => t.bodyIdLayer(ptr, layer ? 1 : 0, i);
   engine._bodyBlastDebrisLayer = (layer, i) => t.bodyBlastDebrisLayer(ptr, layer ? 1 : 0, i);
+  engine._bodyJointRoleLayer = (layer, i) => t.bodyJointRoleLayer(ptr, layer ? 1 : 0, i);
   engine._groundedGrid = (layer = 0) =>
     new Uint8Array(mod.HEAPU8.buffer, t.groundedPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._bodyOwnerGrid = (layer = 0) =>
@@ -91,6 +96,21 @@ export function attachTestHooks(engine) {
     mod._free(buf);
     return s;
   };
+  engine._bodyStateLayer = (layer, i) => {
+    const buf = mod._malloc(8 * 8);
+    const ok = t.bodyStateLayer(ptr, layer ? 1 : 0, i | 0, buf);
+    if (!ok) { mod._free(buf); return null; }
+    const base = buf >> 3;
+    const s = {
+      px: mod.HEAPF64[base], py: mod.HEAPF64[base + 1], angle: mod.HEAPF64[base + 2],
+      vx: mod.HEAPF64[base + 3], vy: mod.HEAPF64[base + 4], omega: mod.HEAPF64[base + 5],
+      nPts: mod.HEAPF64[base + 6], maxR: mod.HEAPF64[base + 7],
+    };
+    mod._free(buf);
+    return s;
+  };
+  engine._spawnBoxLayer = (layer, cx, cy, halfW, halfH, material) =>
+    t.spawnBoxLayer(ptr, layer ? 1 : 0, cx | 0, cy | 0, halfW | 0, halfH | 0, material | 0);
   engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
   engine.getRigidDebug = () => ({ rejectedCells: t.rigidRejected(ptr), depenetrations: t.rigidDepen(ptr) });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>

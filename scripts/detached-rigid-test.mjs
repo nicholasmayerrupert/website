@@ -94,6 +94,129 @@ check(`naturally unsupported solid keeps component motion (top ${naturalTop}, bo
   naturalTop > 10 && naturallyLoose._bodyCount() === 0);
 naturallyLoose.destroy();
 
+// A topology-changing TNT crater must force an exact support reflood. The
+// surviving cap is well clear of the floor after the pillar is removed, so its
+// largest remnant must enter the body solver instead of retaining a stale
+// grounded flag.
+{
+  const C = 120, R = 140;
+  const blastCut = createEngineWasm({
+    cols: C, rows: R, worldSeed: 17, sinksOn: false, infinite: false,
+  });
+  const rect = (x0, y0, x1, y1, material) => {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        blastCut.paintDisc(x, y, 0, material, true);
+  };
+  rect(0, R - 3, C - 1, R - 1, MAT.STONE);
+  rect(48, 45, 52, R - 4, MAT.STONE);
+  rect(20, 30, 85, 49, MAT.IRON_ORE);
+  blastCut.syncComponents();
+  blastCut.stepWorld();
+  blastCut._detonateTnt(50, 75);
+  blastCut.stepWorld();
+  let largest = 0;
+  for (let i = 0; i < blastCut._bodyCount(); i++)
+    largest = Math.max(largest, blastCut._bodyState(i)?.nPts ?? 0);
+  check(`TNT-separated cap becomes a rigid body (largest ${largest} cells)`,
+    largest > 1000);
+  blastCut.destroy();
+}
+
+// Foreground/background pieces created by the same structural detachment share
+// one pose. This is creation-time membership, not a global cross-layer weld.
+{
+  const C = 120, R = 170;
+  const paired = createEngineWasm({
+    cols: C, rows: R, worldSeed: 23, sinksOn: false, infinite: false,
+  });
+  paired.setBgEnabled(true);
+  const rect = (layer, x0, y0, x1, y1, material) => {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        paired.paintDiscLayer(layer, x, y, 0, material, true);
+  };
+  for (const layer of [0, 1]) {
+    rect(layer, 0, R - 3, C - 1, R - 1, MAT.STONE);
+    rect(layer, 48, 45, 52, R - 4, MAT.STONE);
+  }
+  rect(0, 18, 30, 84, 49, MAT.IRON_ORE);
+  rect(1, 24, 27, 90, 52, MAT.BRICK);
+  paired.syncComponentsLayer(0);
+  paired.syncComponentsLayer(1);
+  paired.stepWorld();
+  paired._detonateTnt(50, 78);
+  paired.stepWorld();
+
+  const findRole = (layer, role) => {
+    for (let i = 0; i < paired._bodyCountLayer(layer); i++)
+      if (paired._bodyJointRoleLayer(layer, i) === role) return i;
+    return -1;
+  };
+  const leader = findRole(0, 1);
+  const follower = findRole(1, 2);
+  check(`one blast created an explicit cross-layer rigid pair (${leader}/${follower})`,
+    leader >= 0 && follower >= 0);
+  let locked = leader >= 0 && follower >= 0;
+  const startPy = paired._bodyStateLayer(0, leader)?.py ?? Infinity;
+  let moved = false;
+  let pairDetail = '';
+  for (let i = 0; i < 14 && locked; i++) {
+    paired.stepWorld();
+    const currentLeader = findRole(0, 1);
+    const currentFollower = findRole(1, 2);
+    const fg = paired._bodyStateLayer(0, currentLeader);
+    const bg = paired._bodyStateLayer(1, currentFollower);
+    if (!fg || !bg) { locked = false; break; }
+    pairDetail = `step ${i}: pose Δ ${Math.abs(fg.px - bg.px).toExponential(2)},`
+      + `${Math.abs(fg.py - bg.py).toExponential(2)},${Math.abs(fg.angle - bg.angle).toExponential(2)} `
+      + `motion Δ ${Math.abs(fg.vx - bg.vx).toExponential(2)},`
+      + `${Math.abs(fg.vy - bg.vy).toExponential(2)},${Math.abs(fg.omega - bg.omega).toExponential(2)}`;
+    moved ||= fg.py > startPy + 0.25;
+    locked = Math.abs(fg.px - bg.px) < 1e-9
+      && Math.abs(fg.py - bg.py) < 1e-9
+      && Math.abs(fg.angle - bg.angle) < 1e-9
+      && Math.abs(fg.vx - bg.vx) < 1e-9
+      && Math.abs(fg.vy - bg.vy) < 1e-9
+      && Math.abs(fg.omega - bg.omega) < 1e-9;
+  }
+  check(`blast-created foreground/background halves share one moving pose (${pairDetail})`,
+    locked && moved);
+  let jointBakedAt = -1;
+  for (let i = 0; i < 700; i++) {
+    paired.stepWorld();
+    if (findRole(0, 1) < 0 && findRole(1, 2) < 0) {
+      jointBakedAt = i;
+      break;
+    }
+  }
+  const countMaterial = (grid, material) => {
+    let total = 0;
+    for (const value of grid) if (value === material) total++;
+    return total;
+  };
+  check(`settled cross-layer rigid pair bakes in both layers (step ${jointBakedAt})`,
+    jointBakedAt >= 0
+      && countMaterial(paired.getGrid(), MAT.IRON_ORE) > 500
+      && countMaterial(paired.getGridBg(), MAT.BRICK) > 500);
+  paired.destroy();
+
+  const separate = createEngineWasm({
+    cols: 80, rows: 100, worldSeed: 29, sinksOn: false, infinite: false,
+  });
+  separate.setBgEnabled(true);
+  separate._spawnBoxLayer(0, 25, 15, 3, 3, MAT.RIGID);
+  separate._spawnBoxLayer(1, 55, 25, 4, 2, MAT.RIGID);
+  separate.stepWorld();
+  const fg = separate._bodyStateLayer(0, 0);
+  const bg = separate._bodyStateLayer(1, 0);
+  check('independently spawned cross-layer rigids remain independent',
+    separate._bodyJointRoleLayer(0, 0) === 0
+      && separate._bodyJointRoleLayer(1, 0) === 0
+      && fg && bg && Math.abs(fg.px - bg.px) > 20);
+  separate.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

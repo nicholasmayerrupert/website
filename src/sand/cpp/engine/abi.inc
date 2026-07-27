@@ -193,6 +193,25 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_blast_debris_layer(Engine* e, int laye
   Layer& lay = layer ? e->bg : e->fg;
   return (i >= 0 && i < (int)lay.bodies.size()) ? (lay.bodies[i]->blastDebris ? 1 : 0) : -1;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_joint_role_layer(Engine* e, int layer, int i) {
+  Layer& lay = layer ? e->bg : e->fg;
+  return (i >= 0 && i < (int)lay.bodies.size()) ? lay.bodies[i]->jointRole : -1;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_body_state_layer(Engine* e, int layer, int i, double* out) {
+  Layer& lay = layer ? e->bg : e->fg;
+  if (i < 0 || i >= (int)lay.bodies.size()) return 0;
+  Body* b = lay.bodies[i];
+  out[0] = b->px; out[1] = b->py; out[2] = b->angle; out[3] = b->vx;
+  out[4] = b->vy; out[5] = b->omega; out[6] = b->nPts; out[7] = b->maxR;
+  return 1;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_spawn_box_layer(
+    Engine* e, int layer, int cx, int cy, int halfW, int halfH, int material) {
+  e->useLayer(layer ? &e->bg : &e->fg);
+  Body* body = e->spawnBox(cx, cy, halfW, halfH, (uint8_t)material);
+  e->useLayer(&e->fg);
+  return body ? body->id : -1;
+}
 EMSCRIPTEN_KEEPALIVE uint8_t* engine_test_grounded_ptr(Engine* e, int layer) {
   Layer& lay = layer ? e->bg : e->fg;
   return lay.groundedCell.data();
@@ -210,6 +229,8 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     for (Body* body : lay.bodies) delete body;
     lay.bodies.clear();
     lay.bodyCells.clear();
+    lay.passiveBodyCells.clear();
+    lay.passiveBodyIds.clear();
     lay.stoneComponents.clear();
     lay.plantComponents.clear();
     lay.iceComponents.clear();

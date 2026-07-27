@@ -45,8 +45,12 @@ class RigidBodySystem {
   bool computeDerived(Body* b, bool preserveWorld);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, uint8_t material, double density);
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, const std::vector<uint8_t>& materials);
+  Body* spawnJointBodyImpl(const std::vector<std::pair<int, int>>& fgCells,
+                           const std::vector<uint8_t>& fgMaterials,
+                           const std::vector<std::pair<int, int>>& bgCells,
+                           const std::vector<uint8_t>& bgMaterials);
   uint8_t bodyMaterialAt(Body* b, int localIndex);
-  void terrainNormalAt(int cx, int cy, double bodyDensity, double& ox, double& oy);
+  void terrainNormalAt(Body* b, int cx, int cy, double bodyDensity, double& ox, double& oy);
   int insideBodyIndex(Body* b, double wx, double wy);
   void bodyNormalAt(Body* b, int idx, double wx, double wy, double& ox, double& oy);
   // Return the total |impulse| applied, so the solver loops can early-exit the
@@ -56,10 +60,12 @@ class RigidBodySystem {
   double resolveContact(Contact& c);
   double resolveBias(Contact& c);
   void wakeBody(Body* b);
+  void syncJointFollower(Body* leader);
+  void breakJointBody(Body* member);
   void rigidStep(double tickDt);
   int localCellAt(Body* b, double wx, double wy);
   bool eraseLocalCell(Body* b, int idx);
-  bool isBodyTerrain(int x, int y, double bodyDensity);
+  bool isBodyTerrain(Body* b, int x, int y, double bodyDensity);
   double buoyantLiquidDensityAt(int x, int y);
   double granularMediumDensityAt(int x, int y);
   bool isBodyRelocatable(uint8_t m, int k, double bodyDensity);
@@ -78,6 +84,7 @@ class RigidBodySystem {
   bool bodySolidifies(Body* b);
   bool bodyFloatsOnMedium(Body* b);
   bool bodyHasLooseSupport(Body* b);
+  void stampJointFollower(Body* leader);
   void bakeRestingBodies();
   template <class Cells>
   bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);

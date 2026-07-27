@@ -539,7 +539,7 @@ bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   // Growth runs before joint grounding and can finish a newly placed seed in
   // that first tick. Latch here so the sleeping path cannot miss the transient.
   E.comps.jointSleepBlocked = true;
-  Comp c; c.id = E.L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true;
+  Comp c; c.id = E.L->nextPlantId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true; c.requiresCellGrounding = true;
   { int k = E.I(x0, y0); E.L->grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
   E.L->plantComponents.push_back(std::move(c));
   E.L->skyDirty = true;

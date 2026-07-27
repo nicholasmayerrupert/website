@@ -16,14 +16,20 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
     int local = j * b->w + i;
     if (!b->occ[local]) continue;
+    auto materialMass = [](uint8_t material) {
+      return material > EMPTY && material < TABLE ? DENSITY[material] : 0.0;
+    };
+    double cellMass = b->jointRole
+      ? materialMass(b->cellMaterials[local]) + materialMass(b->jointPeerMaterials[local])
+      : (b->cellMaterials.empty() ? 1.0 : materialMass(bodyMaterialAt(b, local)));
+    if (cellMass <= 0) continue;
     nPts++;
-    double cellMass = b->cellMaterials.empty() ? 1.0 : DENSITY[bodyMaterialAt(b, local)];
     sumX += (b->offsetX + i) * cellMass;
     sumY += (b->offsetY + j) * cellMass;
     totalMass += cellMass;
   }
   if (nPts == 0) return false;
-  double divisor = b->cellMaterials.empty() ? nPts : totalMass;
+  double divisor = b->cellMaterials.empty() && !b->jointRole ? nPts : totalMass;
   double dx = sumX / divisor, dy = sumY / divisor;
   if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
   b->offsetX -= dx; b->offsetY -= dy;
@@ -35,7 +41,16 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     if (!b->occ[j * b->w + i]) continue;
     double lx = b->offsetX + i, ly = b->offsetY + j;
     b->points[pi * 2] = (float)lx; b->points[pi * 2 + 1] = (float)ly;
-    double cellMass = b->cellMaterials.empty() ? b->density : DENSITY[bodyMaterialAt(b, j * b->w + i)];
+    double cellMass = b->density;
+    if (b->jointRole) {
+      uint8_t own = b->cellMaterials[j * b->w + i];
+      uint8_t peer = b->jointPeerMaterials[j * b->w + i];
+      cellMass = (own > EMPTY && own < TABLE ? DENSITY[own] : 0)
+               + (peer > EMPTY && peer < TABLE ? DENSITY[peer] : 0);
+    } else if (!b->cellMaterials.empty()) {
+      uint8_t material = bodyMaterialAt(b, j * b->w + i);
+      cellMass = material > EMPTY && material < TABLE ? DENSITY[material] : 0;
+    }
     double r2 = lx * lx + ly * ly; inertia += cellMass * r2; if (r2 > maxR2) maxR2 = r2;
     bool exL = !filled(i - 1, j), exR = !filled(i + 1, j), exU = !filled(i, j - 1), exD = !filled(i, j + 1);
     if (exL || exR || exU || exD) {
@@ -48,8 +63,8 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     }
     pi++;
   }
-  double mass = b->cellMaterials.empty() ? b->density * nPts : totalMass;
-  if (!b->cellMaterials.empty()) b->density = mass / nPts;
+  double mass = b->cellMaterials.empty() && !b->jointRole ? b->density * nPts : totalMass;
+  if (!b->cellMaterials.empty() || b->jointRole) b->density = mass / nPts;
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
   b->maxR = std::sqrt(maxR2); b->awake = true; b->stillTicks = 0;
   return true;
@@ -90,11 +105,72 @@ Body* RigidBodySystem::spawnBodyImpl(const std::vector<std::pair<int, int>>& cel
   computeDerived(b, true);
   return b;
 }
-void RigidBodySystem::terrainNormalAt(int cx, int cy, double bodyDensity, double& ox, double& oy) {
-  int l = cx > 0 && isBodyTerrain(cx - 1, cy, bodyDensity) ? 1 : 0;
-  int r = cx < E.cols - 1 && isBodyTerrain(cx + 1, cy, bodyDensity) ? 1 : 0;
-  int u = cy > 0 && isBodyTerrain(cx, cy - 1, bodyDensity) ? 1 : 0;
-  int d = cy < E.rows - 1 && isBodyTerrain(cx, cy + 1, bodyDensity) ? 1 : 0;
+Body* RigidBodySystem::spawnJointBodyImpl(
+    const std::vector<std::pair<int, int>>& fgCells,
+    const std::vector<uint8_t>& fgMaterials,
+    const std::vector<std::pair<int, int>>& bgCells,
+    const std::vector<uint8_t>& bgMaterials) {
+  if (fgCells.empty() || bgCells.empty()
+      || fgCells.size() != fgMaterials.size()
+      || bgCells.size() != bgMaterials.size()) return nullptr;
+  std::vector<std::pair<int, int>> unionCells = fgCells;
+  unionCells.insert(unionCells.end(), bgCells.begin(), bgCells.end());
+  std::sort(unionCells.begin(), unionCells.end());
+  unionCells.erase(std::unique(unionCells.begin(), unionCells.end()), unionCells.end());
+
+  Layer* previous = E.L;
+  E.useLayer(&E.fg);
+  Body* leader = spawnBodyImpl(unionCells, fgMaterials[0], DENSITY[fgMaterials[0]]);
+  E.useLayer(&E.bg);
+  Body* follower = spawnBodyImpl(unionCells, bgMaterials[0], DENSITY[bgMaterials[0]]);
+  if (!leader || !follower) {
+    E.useLayer(previous);
+    return nullptr;
+  }
+  int jointId = imax(leader->id, follower->id);
+  leader->id = follower->id = jointId;
+  E.fg.nextBodyId = imax(E.fg.nextBodyId, jointId + 1);
+  E.bg.nextBodyId = imax(E.bg.nextBodyId, jointId + 1);
+
+  int minX = unionCells[0].first, minY = unionCells[0].second;
+  for (const auto& cell : unionCells) {
+    minX = imin(minX, cell.first);
+    minY = imin(minY, cell.second);
+  }
+  auto fillLayerMap = [&](Body* body,
+                          const std::vector<std::pair<int, int>>& ownCells,
+                          const std::vector<uint8_t>& ownMaterials,
+                          const std::vector<std::pair<int, int>>& peerCells,
+                          const std::vector<uint8_t>& peerMaterials) {
+    body->cellMaterials.assign(body->occ.size(), EMPTY);
+    body->jointPeerMaterials.assign(body->occ.size(), EMPTY);
+    for (size_t i = 0; i < ownCells.size(); i++) {
+      int local = (ownCells[i].second - minY) * body->w + ownCells[i].first - minX;
+      body->cellMaterials[local] = ownMaterials[i];
+    }
+    for (size_t i = 0; i < peerCells.size(); i++) {
+      int local = (peerCells[i].second - minY) * body->w + peerCells[i].first - minX;
+      body->jointPeerMaterials[local] = peerMaterials[i];
+    }
+  };
+  fillLayerMap(leader, fgCells, fgMaterials, bgCells, bgMaterials);
+  fillLayerMap(follower, bgCells, bgMaterials, fgCells, fgMaterials);
+  leader->jointRole = 1;
+  follower->jointRole = 2;
+  leader->jointPeer = follower;
+  follower->jointPeer = leader;
+  computeDerived(leader, true);
+  computeDerived(follower, true);
+  syncJointFollower(leader);
+  E.bg.passiveBodyIds.insert(jointId);
+  E.useLayer(previous);
+  return leader;
+}
+void RigidBodySystem::terrainNormalAt(Body* b, int cx, int cy, double bodyDensity, double& ox, double& oy) {
+  int l = cx > 0 && isBodyTerrain(b, cx - 1, cy, bodyDensity) ? 1 : 0;
+  int r = cx < E.cols - 1 && isBodyTerrain(b, cx + 1, cy, bodyDensity) ? 1 : 0;
+  int u = cy > 0 && isBodyTerrain(b, cx, cy - 1, bodyDensity) ? 1 : 0;
+  int d = cy < E.rows - 1 && isBodyTerrain(b, cx, cy + 1, bodyDensity) ? 1 : 0;
   double nx = l - r, ny = u - d;
   if (nx == 0 && ny == 0) { ox = 0; oy = -1; return; }
   double inv = 1 / std::sqrt(nx * nx + ny * ny); ox = nx * inv; oy = ny * inv;
@@ -169,9 +245,52 @@ double RigidBodySystem::resolveBias(Contact& c) {
   if (B) { B->pvx -= jx * bInvM; B->pvy -= jy * bInvM; B->pw -= bInvI * (c.rbx * jy - c.rby * jx); }
   return std::fabs(applied);
 }
-void RigidBodySystem::wakeBody(Body* b) { b->awake = true; b->stillTicks = 0; }
+void RigidBodySystem::wakeBody(Body* b) {
+  if (b->jointRole == 2 && b->jointPeer) b = b->jointPeer;
+  b->awake = true;
+  b->stillTicks = 0;
+  if (b->jointRole == 1) syncJointFollower(b);
+}
+void RigidBodySystem::syncJointFollower(Body* leader) {
+  if (!leader || leader->jointRole != 1 || !leader->jointPeer) return;
+  Body* follower = leader->jointPeer;
+  follower->px = leader->px; follower->py = leader->py; follower->angle = leader->angle;
+  follower->vx = leader->vx; follower->vy = leader->vy; follower->omega = leader->omega;
+  follower->awake = leader->awake; follower->stillTicks = leader->stillTicks;
+  follower->cs = leader->cs; follower->sn = leader->sn;
+}
+void RigidBodySystem::breakJointBody(Body* member) {
+  if (!member || !member->jointRole || !member->jointPeer) return;
+  Body* leader = member->jointRole == 1 ? member : member->jointPeer;
+  Body* follower = leader->jointPeer;
+  syncJointFollower(leader);
+  auto keepOwnLayer = [&](Body* body) {
+    for (size_t i = 0; i < body->occ.size(); i++)
+      body->occ[i] = body->cellMaterials[i] != EMPTY;
+    body->jointPeerMaterials.clear();
+    body->jointPeer = nullptr;
+    body->jointRole = 0;
+    computeDerived(body, true);
+  };
+  keepOwnLayer(leader);
+  keepOwnLayer(follower);
+  E.bg.passiveBodyIds.erase(follower->id);
+  std::vector<int> stillPassive;
+  stillPassive.reserve(E.bg.passiveBodyCells.size());
+  for (int k : E.bg.passiveBodyCells) {
+    if (k >= 0 && k < E.cols * E.rows && E.bg.bodyOwner[k] == follower->id)
+      E.bg.bodyCells.push_back(k);
+    else
+      stillPassive.push_back(k);
+  }
+  E.bg.passiveBodyCells = std::move(stillPassive);
+}
 void RigidBodySystem::rigidStep(double tickDt) {
-  int n = (int)E.L->bodies.size();
+  std::vector<Body*> solverBodies;
+  solverBodies.reserve(E.L->bodies.size());
+  for (Body* body : E.L->bodies)
+    if (body->jointRole != 2) solverBodies.push_back(body);
+  int n = (int)solverBodies.size();
   std::vector<int> islandParent(n);
   std::vector<double> islandMinStill(n);
   // Substep count is driven by the fastest *point* on any body — linear speed
@@ -179,7 +298,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   // a slowly-translating but fast-spinning bar still gets enough substeps that
   // its tip moves only a fraction of a cell per substep (no endpoint tunnelling).
   double maxPointSpeed = 0;
-  for (Body* b : E.L->bodies) {
+  for (Body* b : solverBodies) {
     if (!b->awake) continue;
     double lin = std::sqrt(b->vx * b->vx + b->vy * b->vy);
     double pt = lin + std::fabs(b->omega) * (b->maxR > 0 ? b->maxR : 1);
@@ -188,7 +307,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   maxPointSpeed += R_GRAVITY * tickDt;
   int substeps = (int)std::ceil(maxPointSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
   int solverIters = R_BLAST_DEBRIS_SOLVER_ITERS;
-  for (Body* b : E.L->bodies) if (!b->blastDebris) { solverIters = R_SOLVER_ITERS; break; }
+  for (Body* b : solverBodies) if (!b->blastDebris) { solverIters = R_SOLVER_ITERS; break; }
   std::vector<Contact> contacts; int nc = 0;
   std::vector<uint8_t> actorSweepOverlap(n, 0);
   struct PenPt { double wx, wy, nx, ny, depth; int bk; };
@@ -197,7 +316,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   for (int sub = 0; sub < substeps; sub++) {
     double dt = tickDt / substeps;
     for (int bi = 0; bi < n; bi++) {
-      Body* b = E.L->bodies[bi];
+      Body* b = solverBodies[bi];
       if (b->awake) b->vy += R_GRAVITY * dt;
       b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
       b->pvx = 0; b->pvy = 0; b->pw = 0; b->hadContact = false; b->maxDepth = 0; b->idx = bi;
@@ -273,7 +392,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         return x < b->aabbX1 && x + w > b->aabbX0 && y < b->aabbY1 && y + h > b->aabbY0;
       };
       for (int bi = 0; bi < n; bi++) {
-        Body* b = E.L->bodies[bi];
+        Body* b = solverBodies[bi];
         for (const Player& p : E.psys.players) {
           if (p.active && p.alive && overlapsAabb(b, p.px, p.py, p.w, p.h)) { actorSweepOverlap[bi] = 1; break; }
         }
@@ -334,13 +453,13 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // carries bodies off-buffer and persists them) is a separate path.
     auto collectTerrain = [&](Body* b, double dt) {
       const std::vector<float>& S = b->boundarySamples;
-      auto solid = [&](int ix, int iy) { return ix < 0 || ix >= E.cols || iy < 0 || iy >= E.rows || isBodyTerrain(ix, iy, b->density); };
+      auto solid = [&](int ix, int iy) { return ix < 0 || ix >= E.cols || iy < 0 || iy >= E.rows || isBodyTerrain(b, ix, iy, b->density); };
       auto tnorm = [&](int ix, int iy, double& ox, double& oy) {
         if (ix < 0) { ox = 1; oy = 0; return; }
         if (ix >= E.cols) { ox = -1; oy = 0; return; }
         if (iy < 0) { ox = 0; oy = 1; return; }
         if (iy >= E.rows) { ox = 0; oy = -1; return; }
-        terrainNormalAt(ix, iy, b->density, ox, oy);
+        terrainNormalAt(b, ix, iy, b->density, ox, oy);
       };
       for (size_t si = 0; si + 1 < S.size(); si += 2) {
         double lx = S[si], ly = S[si + 1];
@@ -407,9 +526,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
       A->hadContact = true; if (B) B->hadContact = true;
     };
     for (int i = 0; i < n; i++) {
-      Body* A = E.L->bodies[i];
+      Body* A = solverBodies[i];
       for (int j = i + 1; j < n; j++) {
-        Body* B = E.L->bodies[j];
+        Body* B = solverBodies[j];
         if (!A->awake && !B->awake) continue;
         if (A->aabbX1 < B->aabbX0 || B->aabbX1 < A->aabbX0 || A->aabbY1 < B->aabbY0 || B->aabbY1 < A->aabbY0) continue;
         bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
@@ -425,7 +544,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       }
     }
     for (int bi = 0; bi < n; bi++) {
-      Body* b = E.L->bodies[bi]; if (!b->awake) continue;
+      Body* b = solverBodies[bi]; if (!b->awake) continue;
       terrAcc.clear();
       collectTerrain(b, dt);
       reduceManifold(terrAcc, b, nullptr, 0, -1);
@@ -453,7 +572,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       if (moved == 0.0) break;
     }
     for (int bi = 0; bi < n; bi++) {
-      Body* b = E.L->bodies[bi]; if (!b->awake) continue;
+      Body* b = solverBodies[bi]; if (!b->awake) continue;
       b->px += (b->vx + b->pvx) * dt; b->py += (b->vy + b->pvy) * dt; b->angle += (b->omega + b->pw) * dt;
       // Granular support is sampled as a medium rather than a terrain contact.
       // Near rest, confirm the body has powder beneath its bottom edge so an
@@ -479,8 +598,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
   for (int bi = 0; bi < n; bi++) islandParent[bi] = bi;
   for (int ci = 0; ci < nc; ci++) { Contact& c = contacts[ci]; if (!c.b || !c.a->awake || !c.b->awake) continue; ufUnite(islandParent, c.a->idx, c.b->idx); }
   for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
-  for (int bi = 0; bi < n; bi++) { Body* b = E.L->bodies[bi]; if (!b->awake) continue; int r = ufFind(islandParent, bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
-  for (int bi = 0; bi < n; bi++) { Body* b = E.L->bodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; } }
+  for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; int r = ufFind(islandParent, bi); double st = b->hadContact ? b->stillTicks : 0; if (st < islandMinStill[r]) islandMinStill[r] = st; }
+  for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; if (b->jointRole == 1) syncJointFollower(b); } }
 }
 template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
@@ -500,24 +619,40 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
     int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
     if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
     int local = j * b->w + i;
-    if (b->occ[local]) cb(wx, wy, local);
+    if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) cb(wx, wy, local);
   }
 }
 int RigidBodySystem::localCellAt(Body* b, double wx, double wy) { b->cs = std::cos(b->angle); b->sn = std::sin(b->angle); return insideBodyIndex(b, wx, wy); }
 bool RigidBodySystem::eraseLocalCell(Body* b, int idx) {
   if (idx < 0 || idx >= (int)b->occ.size() || !b->occ[idx]) return false;
+  if (b->jointRole) breakJointBody(b);
+  if (!b->occ[idx]) return false;
   b->occ[idx] = 0;
   if (!b->cellMaterials.empty()) b->cellMaterials[idx] = EMPTY;
   return true;
 }
 
 // Terrain and medium queries used by free bodies.
-bool RigidBodySystem::isBodyTerrain(int x, int y, double bodyDensity) {
+bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity) {
   (void)bodyDensity;
-  int k = y * E.cols + x; uint8_t m = E.L->grid[k];
-  if (E.isBodyCell(k)) return false;                            // free bodies collide via body-vs-body, not as static terrain
-  if (E.isBuoyantMedium(m)) return false;                       // liquids/powders are not solid walls; liquid buoys, powder supports one-way
-  return E.isRigidMaterialClass(m);                             // stone/plant/ice-group solids incl. new ores & woods
+  int k = y * E.cols + x;
+  auto solidIn = [&](Layer& lay, bool peerLayer) {
+    int owner = lay.bodyOwner[k];
+    if (owner >= 0) {
+      if (body && body->jointRole == 1 && owner == body->id) return false;
+      // A joint leader is solved only in foreground. Its peer-layer obstacles
+      // and a follower seen by an ordinary background body are kinematic
+      // terrain for this pass; same-layer ordinary bodies retain impulse
+      // collision through the body/body solver.
+      return peerLayer || lay.passiveBodyIds.count(owner) != 0;
+    }
+    uint8_t material = lay.grid[k];
+    if (E.isBuoyantMedium(material)) return false;
+    return E.isRigidMaterialClass(material);
+  };
+  if (body && body->jointRole == 1)
+    return solidIn(E.fg, false) || solidIn(E.bg, true);
+  return solidIn(*E.L, false);
 }
 double RigidBodySystem::buoyantLiquidDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLiquidMaterial(m) ? DENSITY[m] : 0; }
 double RigidBodySystem::granularMediumDensityAt(int x, int y) { if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return 0; uint8_t m = E.L->grid[y * E.cols + x]; return E.isLooseSolidMaterial(m) ? DENSITY[m] : 0; }
@@ -634,7 +769,32 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
   auto it = bodyById.find(id); if (it == bodyById.end()) return false; Body* b = it->second;
   int y = k / E.cols, x = k - y * E.cols;
   int idx = localCellAt(b, x + 0.5, y + 0.5);
-  if (idx < 0 || !eraseLocalCell(b, idx)) return false;
+  if (idx < 0) return false;
+  if (b->jointRole && b->jointPeer) {
+    Body* leader = b->jointRole == 1 ? b : b->jointPeer;
+    Body* follower = leader->jointPeer;
+    if (bodyMaterialAt(b, idx) == EMPTY) return false;
+    b->cellMaterials[idx] = EMPTY;
+    b->jointPeer->jointPeerMaterials[idx] = EMPTY;
+    if (b->jointPeer->cellMaterials[idx] == EMPTY) {
+      leader->occ[idx] = 0;
+      follower->occ[idx] = 0;
+    }
+    computeDerived(leader, true);
+    computeDerived(follower, true);
+    syncJointFollower(leader);
+    E.writeGridIndex(k, EMPTY);
+    E.L->bodyOwner[k] = -1;
+    if (b->jointRole == 1) {
+      dirty.insert(b);
+    } else {
+      E.L->passiveBodyCells.erase(
+        std::remove(E.L->passiveBodyCells.begin(), E.L->passiveBodyCells.end(), k),
+        E.L->passiveBodyCells.end());
+    }
+    return true;
+  }
+  if (!eraseLocalCell(b, idx)) return false;
   E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; dirty.insert(b); return true;
 }
 void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells) {
@@ -649,6 +809,7 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::
   std::vector<Body*> orderedDirty(dirty.begin(), dirty.end());
   std::sort(orderedDirty.begin(), orderedDirty.end(), [](Body* a, Body* b) { return a->id < b->id; });
   for (Body* b : orderedDirty) {
+    if (b->jointRole) continue;
     std::vector<int> wc; // b's remaining world cells
     for (int k : cells) if (E.L->bodyOwner[k] == b->id) wc.push_back(k); // body cells carry the body's real material; E.L->bodyOwner identifies them
     if (wc.empty()) { removedIds.insert(b->id); continue; }
@@ -729,7 +890,22 @@ void RigidBodySystem::erodeBodies(std::vector<int>& cells) {
 }
 int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   int blocked = 0;
-  forEachBodyCell(b, [&](int x, int y, int) { int k = y * E.cols + x; if (E.L->bodyOwner[k] == b->id) return; uint8_t m = E.L->grid[k]; if (!canBodyOccupy(m, k, b->density)) blocked++; });
+  auto blockedIn = [&](Layer& lay, int k) {
+    if (lay.bodyOwner[k] == b->id) return false;
+    uint8_t material = lay.grid[k];
+    return material != EMPTY && !E.isGasMaterial(material)
+      && !E.isBuoyantMedium(material);
+  };
+  auto probe = [&](int x, int y, int) {
+    int k = y * E.cols + x;
+    if (occStamp.has(k)) return;
+    occStamp.add(k);
+    if (blockedIn(*E.L, k)
+        || (b->jointRole == 1 && blockedIn(E.bg, k))) blocked++;
+  };
+  occStamp.reset((size_t)E.cols * E.rows);
+  forEachBodyCell(b, probe);
+  if (b->jointRole == 1 && b->jointPeer) forEachBodyCell(b->jointPeer, probe);
   return blocked;
 }
 // A sleeping body keeps its support if nudging it straight down by `probe`
@@ -954,13 +1130,18 @@ bool RigidBodySystem::bodySolidifies(Body* b) {
     return E.isStoneComponentMaterial(b->material)
         || E.isIceComponentMaterial(b->material)
         || E.isPlantMaterial(b->material);
+  bool hasMaterial = false;
   for (int i = 0; i < (int)b->occ.size(); i++) {
     if (!b->occ[i]) continue;
     uint8_t m = bodyMaterialAt(b, i);
+    if (m == EMPTY) continue;
+    hasMaterial = true;
     if (!E.isStoneComponentMaterial(m) && !E.isIceComponentMaterial(m) && !E.isPlantMaterial(m))
       return false;
   }
-  return true;
+  // One half of a joint may be fully eroded while the peer still has cells.
+  // The empty half has nothing to prevent the remaining solid half from baking.
+  return hasMaterial || b->jointRole != 0;
 }
 // A sleeping body bakes UNLESS it is FLOATING in liquid. "Floating" = its
 // bottom-edge contact is predominantly liquid (a wood log bobbing on water).
@@ -1017,19 +1198,90 @@ void RigidBodySystem::bakeRestingBodies() {
   }
   bool baked = false; std::vector<Body*> keep;
   for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2) {
+      keep.push_back(b);
+      continue;
+    }
+    bool canBake = !b->awake && (!b->blastDebris || !deferBlastBake)
+      && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
+    bool floats = canBake && bodyFloatsOnMedium(b);
+    bool peerFloats = false;
+    if (canBake && b->jointRole == 1 && b->jointPeer) {
+      Layer* previous = E.L;
+      E.useLayer(&E.bg);
+      peerFloats = bodyFloatsOnMedium(b->jointPeer);
+      E.useLayer(previous);
+    }
     // Keep the joint component graph stable while a structural fall is active;
     // blast rubble bakes as soon as that motion clears. Other component-backed
     // bodies retain their normal solidify-on-rest behavior.
-    if (!b->awake && (!b->blastDebris || !deferBlastBake)
-        && bodySolidifies(b) && !bodyFloatsOnMedium(b)) {
-      bakeBodyToGrid(b); delete b; baked = true;
+    if (canBake && !floats && !peerFloats) {
+      if (b->jointRole == 1 && b->jointPeer) {
+        Body* follower = b->jointPeer;
+        syncJointFollower(b);
+        Layer* previous = E.L;
+        E.useLayer(&E.fg);
+        bakeBodyToGrid(b);
+        E.useLayer(&E.bg);
+        bakeBodyToGrid(follower);
+        E.bg.passiveBodyIds.erase(follower->id);
+        E.bg.passiveBodyCells.erase(
+          std::remove_if(E.bg.passiveBodyCells.begin(), E.bg.passiveBodyCells.end(),
+                         [&](int k) {
+                           return k >= 0 && k < E.cols * E.rows
+                             && E.bg.bodyOwner[k] == follower->id;
+                         }),
+          E.bg.passiveBodyCells.end());
+        std::vector<Body*> bgKeep;
+        bgKeep.reserve(E.bg.bodies.size());
+        for (Body* candidate : E.bg.bodies)
+          if (candidate != follower) bgKeep.push_back(candidate);
+        E.bg.bodies = std::move(bgKeep);
+        delete follower;
+        E.useLayer(previous);
+      } else {
+        bakeBodyToGrid(b);
+      }
+      delete b; baked = true;
     }
     else keep.push_back(b);
   }
   if (baked) E.L->bodies = std::move(keep);
 }
+void RigidBodySystem::stampJointFollower(Body* leader) {
+  if (!leader || leader->jointRole != 1 || !leader->jointPeer) return;
+  Body* follower = leader->jointPeer;
+  syncJointFollower(leader);
+  Layer* previous = E.L;
+  E.useLayer(&E.bg);
+  std::vector<Disp> displaced;
+  std::vector<int> footprint;
+  forEachBodyCell(follower, [&](int x, int y, int local) {
+    int k = y * E.cols + x;
+    if (E.bg.bodyOwner[k] != -1) return;
+    uint8_t material = E.bg.grid[k];
+    if (!canBodyOccupy(material, k, follower->density)) {
+      rigidRejectedCells++;
+      return;
+    }
+    if (isBodyRelocatable(material, k, follower->density))
+      displaced.push_back({material, k});
+    E.writeGridIndex(k, bodyMaterialAt(follower, local));
+    E.bg.bodyOwner[k] = follower->id;
+    E.bg.passiveBodyCells.push_back(k);
+    footprint.push_back(k);
+  });
+  int32_t footprintGen = ++E.bg.seenGen;
+  for (int k : footprint) E.bg.rigidSpillFootprint[k] = footprintGen;
+  spillDisplacedBodyMaterial(displaced, footprint, footprintGen,
+                             follower->id, follower->density);
+  E.useLayer(previous);
+}
 void RigidBodySystem::moveBodies() {
-  if (E.L->bodies.empty() && E.L->bodyCells.empty()) {
+  bool hasSimulatedBody = false;
+  for (Body* b : E.L->bodies)
+    if (b->jointRole != 2) { hasSimulatedBody = true; break; }
+  if (!hasSimulatedBody && E.L->bodyCells.empty()) {
     E.L->sleepingBodySupportDirty = false;
     return;
   }
@@ -1044,6 +1296,7 @@ void RigidBodySystem::moveBodies() {
   bool hasSleepingBody = false;
   bool hasAwakeBody = false;
   for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2) continue;
     if (b->awake) hasAwakeBody = true;
     else hasSleepingBody = true;
   }
@@ -1064,14 +1317,38 @@ void RigidBodySystem::moveBodies() {
   // falls instead of floating. Checked before the grid cells are cleared so
   // other E.L->bodies still count as support; body-on-body stacks cascade (the
   // bottom body wakes and moves, then the contact solver wakes those above).
-  for (Body* b : E.L->bodies) if (!b->awake && !sleepingBodyHasSupport(b, 1.0)) wakeBody(b);
+  for (Body* b : E.L->bodies) if (b->jointRole != 2 && !b->awake) {
+    bool supported = sleepingBodyHasSupport(b, 1.0);
+    if (!supported && b->jointRole == 1 && b->jointPeer) {
+      Layer* previous = E.L;
+      E.useLayer(&E.bg);
+      supported = sleepingBodyHasSupport(b->jointPeer, 1.0);
+      E.useLayer(previous);
+    }
+    if (!supported) wakeBody(b);
+  }
   E.L->sleepingBodySupportDirty = false;
+  if (E.L == &E.fg) {
+    for (int k : E.bg.passiveBodyCells) {
+      if (k < 0 || k >= E.cols * E.rows) continue;
+      int owner = E.bg.bodyOwner[k];
+      if (owner >= 0 && E.bg.passiveBodyIds.count(owner)) {
+        E.useLayer(&E.bg);
+        E.writeGridIndex(k, EMPTY);
+        E.bg.bodyOwner[k] = -1;
+        E.useLayer(&E.fg);
+      }
+    }
+    E.bg.passiveBodyCells.clear();
+  }
   for (int k : E.L->bodyCells) { if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
   std::unordered_map<int, std::array<double, 5>> prePoses;
-  for (Body* b : E.L->bodies) prePoses[b->id] = {b->px, b->py, b->angle, b->vx, b->vy};
+  for (Body* b : E.L->bodies) if (b->jointRole != 2)
+    prePoses[b->id] = {b->px, b->py, b->angle, b->vx, b->vy};
   rigidStep(1.0);
   rigidRejectedCells = 0; rigidDepenetrations = 0;
   for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2) continue;
     auto it = prePoses.find(b->id); bool hp = it != prePoses.end();
     double ppx = hp ? it->second[0] : 0, ppy = hp ? it->second[1] : 0, ppa = hp ? it->second[2] : 0;
     double pvx = hp ? it->second[3] : 0, pvy = hp ? it->second[4] : 0;
@@ -1082,6 +1359,7 @@ void RigidBodySystem::moveBodies() {
   std::vector<int> cells, footprint;
   std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
   for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2) continue;
     auto& pb = perBody[b->id];
     forEachBodyCell(b, [&](int x, int y, int local) {
       int k = y * E.cols + x; if (E.L->bodyOwner[k] != -1) return; uint8_t m = E.L->grid[k];
@@ -1096,8 +1374,27 @@ void RigidBodySystem::moveBodies() {
     std::vector<Body*> keep;
     keep.reserve(E.L->bodies.size());
     for (Body* b : E.L->bodies) {
+      if (b->jointRole == 2) { keep.push_back(b); continue; }
       auto it = perBody.find(b->id);
-      if (it != perBody.end() && it->second.second.empty()) { delete b; continue; }
+      if (it != perBody.end() && it->second.second.empty()) {
+        if (b->jointRole == 1 && b->jointPeer) {
+          bool hasUnionCell = false;
+          for (uint8_t occupied : b->occ)
+            if (occupied) { hasUnionCell = true; break; }
+          if (hasUnionCell) {
+            keep.push_back(b);
+            continue;
+          }
+          Body* follower = b->jointPeer;
+          E.bg.passiveBodyIds.erase(follower->id);
+          E.bg.bodies.erase(
+            std::remove(E.bg.bodies.begin(), E.bg.bodies.end(), follower),
+            E.bg.bodies.end());
+          delete follower;
+        }
+        delete b;
+        continue;
+      }
       keep.push_back(b);
     }
     if (keep.size() != E.L->bodies.size()) E.L->bodies = std::move(keep);
@@ -1105,10 +1402,16 @@ void RigidBodySystem::moveBodies() {
   int32_t footprintGen = ++E.L->seenGen;
   for (int k : footprint) E.L->rigidSpillFootprint[k] = footprintGen;
   for (Body* b : E.L->bodies) {
+    if (b->jointRole == 2) continue;
     auto it = perBody.find(b->id);
     if (it != perBody.end()) spillDisplacedBodyMaterial(it->second.first, it->second.second, footprintGen, b->id, b->density);
   }
   erodeBodies(cells);
+  if (E.L == &E.fg) {
+    std::vector<Body*> leaders;
+    for (Body* b : E.fg.bodies) if (b->jointRole == 1) leaders.push_back(b);
+    for (Body* leader : leaders) stampJointFollower(leader);
+  }
 }
 
 template <class Cells>
@@ -1142,6 +1445,7 @@ bool RigidBodySystem::planAssemblyBodyPush(const Cells& assemblyCells, int dir,
     if (occStamp.has(lead)) continue;
     int id = E.L->bodyOwner[lead];
     if (id < 0) continue;
+    if (E.L->passiveBodyIds.count(id)) return false;
     auto it = byId.find(id);
     if (it == byId.end()) return false;
     if (it->second->blastDebris) crushed.insert(id);

@@ -92,9 +92,9 @@ component registration, and generation/restoration. Browser presentation exposes
   foreground/background cell is cut once, and component repair completes before
   physical or cosmetic aftermath is emitted. Cross-layer damage and visual
   aftermath are mirrored, while physical rubble remains source-layer-owned.
-- A locally proven cave blast keeps double-buffer carry sparse until loose
-  support, assembly movement, a snapshot, resize, or world shift invalidates the
-  proof.
+- A blast that erases no component-backed cells can keep double-buffer carry
+  sparse until loose support, assembly movement, a snapshot, resize, or world
+  shift invalidates it. Structural craters rebuild exact support.
 - Live blast rubble stays body-owned, does not bear structural load, and does not
   invalidate cached cave grounding. Settled rubble bakes into ordinary static
   material once structural motion in its layer clears. Dense TNT fronts emit a

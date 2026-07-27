@@ -168,12 +168,15 @@ unsupported generated or painted components keep the lightweight
 component-motion path.
 Mixed groups retain a per-cell material map, so ore, masonry, timber, foliage,
 and ice can rotate together without losing their identities. Foreground and
-background halves become independent bodies in their own layers.
+background halves released by the same bonded structural break become one
+cross-layer body with a shared pose and combined collision shape. Bodies created
+by separate events remain independent, even when they overlap across layers.
 
 Component-backed bodies bake back into ordinary static components after sleeping
-on solid or granular support. Bodies still floating in liquid remain dynamic,
-and the generic `RIGID` tool material never bakes. Live blast rubble is
-non-structural and yields when descending terrain reaches it.
+on solid or granular support; both halves of a cross-layer body bake together.
+Bodies still floating in liquid remain dynamic, and the generic `RIGID` tool
+material never bakes. Live blast rubble is non-structural and yields when
+descending terrain reaches it.
 
 Powders and liquids carry a per-cell downward fall speed. A clear vertical fall
 accelerates by one cell per world tick up to the material's terminal speed;

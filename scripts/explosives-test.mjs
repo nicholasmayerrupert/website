@@ -554,7 +554,7 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
-// --- a locally-safe blast may reconnect through another component, but a later cut must still split it ---
+// --- a blast reconnect may use another component, but a later cut must still split it ---
 {
   const e = mk();
   const cx = 60, cy = 55;
@@ -585,7 +585,8 @@ function blastDamagesMaterial(name) {
   for (let i = 90; i < 130; i++) e.step(i * 16);
   const releasedTop = topRow(e.getGrid(), MAT.STONE);
   check(`alternate-component reconnect blast detonated`, detonated);
-  check(`alternate-component reconnect used the local grounding proof (${fast0} -> ${fast1})`, fast1 > fast0);
+  check(`alternate-component reconnect used an exact blast reflood (${fast0} -> ${fast1})`,
+    fast1 === fast0);
   check(`deferred split releases the upper piece after its alternate bridge is cut (top ${heldTop} -> ${releasedTop})`, releasedTop > heldTop + 4);
   e.destroy();
 }

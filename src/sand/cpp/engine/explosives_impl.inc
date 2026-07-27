@@ -583,7 +583,11 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
     erased = &allErased;
   }
   bool indexesExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
-  bool localConnectivityFastPath = indexesExact && E.removalsKeepGroundingValid(*erased);
+  // A crater is a structural edit, so surviving terrain receives an exact
+  // support reflood. TNT commonly removes several material components and both
+  // layers in one transaction; retaining a locally patched grounded flag can
+  // otherwise leave a visually separated closure anchored in mid-air.
+  bool localConnectivityFastPath = erased->empty() && indexesExact;
   // The pre-blast cellComp index still names the touched components exactly.
   // Preserve its offsets before any split can resize a preceding list.
   int plantIndexOffset = (int)E.L->stoneComponents.size();
@@ -604,9 +608,8 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   } else if (E.L->compsReshaped) {
     E.L->groundContentDirty = true;
   } else {
-    // Every touched component kept its position and grounded flag. The local
-    // proof already patched the rigid grounding base, so only the erased index
-    // entries need clearing; the next tick can skip grounding altogether.
+    // No component-backed cells were erased, so the cached rigid support remains
+    // exact and the next tick can skip grounding.
     for (int k : *erased) E.L->cellComp[k] = -1;
   }
   bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;
@@ -628,6 +631,7 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
     // Every impulse observes the completed cut and repair. Processing waves in
     // order accumulates impulses on bodies and rubble emitted by earlier waves.
     for (Body* b : E.L->bodies) {
+      if (b->jointRole == 2) continue;
       double dx = b->px - wave.cx, dy = b->py - wave.cy;
       if (dx <= -wave.radius || dx >= wave.radius
           || dy <= -wave.radius || dy >= wave.radius) continue;
@@ -1002,7 +1006,7 @@ void ExplosivesSystem::applyExplosives() {
   //    consumes its own cells, so finishErasedBodies removes the now-empty body).
   std::vector<std::pair<int, int>> bodyBlasts;
   std::vector<Body*> bodyBlastSources;
-  for (Body* b : E.L->bodies) if (b->fuseTicks > 0 && --b->fuseTicks <= 0) {
+  for (Body* b : E.L->bodies) if (b->jointRole != 2 && b->fuseTicks > 0 && --b->fuseTicks <= 0) {
     bodyBlasts.push_back({(int)std::lround(b->px), (int)std::lround(b->py)});
     bodyBlastSources.push_back(b);
   }

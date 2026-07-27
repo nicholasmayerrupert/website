@@ -69,6 +69,7 @@
       for (auto& comp : L->plantComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (auto& comp : L->iceComponents) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
       for (int k : L->prevCompCells) {
         if (L->compOccStamp[k] == tick) continue;
         if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
@@ -148,7 +149,7 @@
   bool stepWorld() {
     auto retainSleepingBodySupportDirty = [&](Layer& lay) {
       if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
-      for (Body* b : lay.bodies) if (!b->awake) {
+      for (Body* b : lay.bodies) if (b->jointRole != 2 && !b->awake) {
         lay.sleepingBodySupportDirty = true;
         break;
       }

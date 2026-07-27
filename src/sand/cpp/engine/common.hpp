@@ -196,6 +196,9 @@ struct Comp {
   // comps) are inert scenery (growing=false) so they never self-activate the sim.
   // Cleared once a growing plant reaches its species' size cap.
   bool growing = false;
+  // Procedural growth can add non-adjacent cells to one logical plant. Such a
+  // component uses cell connectivity for support instead of the component graph.
+  bool requiresCellGrounding = false;
   std::vector<int> woodCells, seedWoodCells;
 };
 
@@ -207,6 +210,15 @@ struct Body {
   // occ-sized material map so stone, ore, timber, and foliage remain one rigid
   // shape without losing their individual cell identities.
   std::vector<uint8_t> cellMaterials;
+  // A blast-detached foreground/background pair shares one physical occupancy
+  // and pose. Each body stores only its own layer's materials in cellMaterials;
+  // this inverse map supplies the peer layer for combined mass/collision.
+  std::vector<uint8_t> jointPeerMaterials;
+  Body* jointPeer = nullptr;
+  // 0 = ordinary body, 1 = simulated foreground leader, 2 = kinematic
+  // background follower. Bodies become joint only when one structural
+  // detachment event creates both halves.
+  uint8_t jointRole = 0;
   double offsetX = 0, offsetY = 0;
   double px = 0, py = 0, angle = 0;
   double vx = 0, vy = 0, omega = 0;

@@ -208,7 +208,15 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
   }
   if (groundStackX.size() != (size_t)E.cols * E.rows)
     groundStackX.assign((size_t)E.cols * E.rows, 0);
-  if (!groundForceFull && !lay->groundHasDirectedBoundaryComp && !hasGroundingBodies(*lay)) {
+  bool requiresCellGrounding = lay->myceliumActive;
+  if (!requiresCellGrounding)
+    for (const Comp& component : lay->plantComponents)
+      if (component.growing || component.requiresCellGrounding) {
+        requiresCellGrounding = true;
+        break;
+      }
+  if (!groundForceFull && !requiresCellGrounding
+      && !lay->groundHasDirectedBoundaryComp && !hasGroundingBodies(*lay)) {
     computeStaticGraphGrounded();
     return;
   }
@@ -1616,6 +1624,116 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   E.useLayer(previous);
 }
 
+void ComponentSystem::detachCrossLayerComponentGroups(
+    const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups) {
+  if (groups.empty()) return;
+  struct PendingJoint {
+    std::vector<std::pair<int, int>> fgCells, bgCells;
+    std::vector<uint8_t> fgMaterials, bgMaterials;
+  };
+  std::vector<PendingJoint> pending;
+  std::unordered_set<Comp*> detachedFg, detachedBg;
+  auto collect = [&](Layer& lay, const std::vector<int>& ids,
+                     std::unordered_set<Comp*>& detached,
+                     std::vector<std::pair<int, int>>& cells,
+                     std::vector<uint8_t>& materials) {
+    std::vector<std::pair<int, uint8_t>> indexed;
+    for (int id : ids) {
+      Comp* component = compById(lay, id);
+      if (!component || detached.count(component)) continue;
+      detached.insert(component);
+      for (int k : component->cells) {
+        if (k < 0 || k >= E.cols * E.rows || lay.bodyOwner[k] >= 0) continue;
+        indexed.push_back({k, lay.grid[k]});
+      }
+    }
+    std::sort(indexed.begin(), indexed.end(),
+              [](const auto& a, const auto& b) { return a.first < b.first; });
+    indexed.erase(std::unique(indexed.begin(), indexed.end(),
+                              [](const auto& a, const auto& b) {
+                                return a.first == b.first;
+                              }),
+                  indexed.end());
+    cells.reserve(indexed.size());
+    materials.reserve(indexed.size());
+    for (const auto& cell : indexed) {
+      cells.push_back({cell.first % E.cols, cell.first / E.cols});
+      materials.push_back(cell.second);
+    }
+  };
+  for (const auto& group : groups) {
+    PendingJoint joint;
+    collect(E.fg, group.first, detachedFg, joint.fgCells, joint.fgMaterials);
+    collect(E.bg, group.second, detachedBg, joint.bgCells, joint.bgMaterials);
+    if (!joint.fgCells.empty() && !joint.bgCells.empty())
+      pending.push_back(std::move(joint));
+  }
+  if (pending.empty()) return;
+
+  auto removeDetached = [](std::vector<Comp>& list,
+                           const std::unordered_set<Comp*>& detached) {
+    std::vector<Comp> keep;
+    keep.reserve(list.size());
+    for (Comp& component : list)
+      if (!detached.count(&component)) keep.push_back(std::move(component));
+    list = std::move(keep);
+  };
+  removeDetached(E.fg.stoneComponents, detachedFg);
+  removeDetached(E.fg.plantComponents, detachedFg);
+  removeDetached(E.fg.iceComponents, detachedFg);
+  removeDetached(E.bg.stoneComponents, detachedBg);
+  removeDetached(E.bg.plantComponents, detachedBg);
+  removeDetached(E.bg.iceComponents, detachedBg);
+
+  for (PendingJoint& source : pending) {
+    Body* leader = E.rigid.spawnJointBodyImpl(
+      source.fgCells, source.fgMaterials, source.bgCells, source.bgMaterials);
+    if (!leader || !leader->jointPeer) continue;
+    Body* follower = leader->jointPeer;
+    for (const auto& cell : source.fgCells) {
+      int k = cell.second * E.cols + cell.first;
+      E.fg.bodyOwner[k] = leader->id;
+      E.fg.bodyCells.push_back(k);
+      E.useLayer(&E.fg);
+      E.markCellIndex(k);
+    }
+    for (const auto& cell : source.bgCells) {
+      int k = cell.second * E.cols + cell.first;
+      E.bg.bodyOwner[k] = follower->id;
+      E.bg.passiveBodyCells.push_back(k);
+      E.useLayer(&E.bg);
+      E.markCellIndex(k);
+    }
+  }
+
+  auto dirty = [&](Layer& lay) {
+    lay.groundDirty = true;
+    lay.groundContentDirty = true;
+    lay.groundBaseValid = false;
+    lay.compsReshaped = true;
+    lay.deferredStoneSplitIds.clear();
+    lay.deferredIceSplitIds.clear();
+    lay.myceliumActive = false;
+    lay.myceliumSporePresent = false;
+    for (const Comp& component : lay.stoneComponents) {
+      if (component.growing) lay.myceliumActive = true;
+      for (int k : component.cells)
+        if (lay.grid[k] == MYCELIUM_SPORE) {
+          lay.myceliumSporePresent = true;
+          break;
+        }
+    }
+  };
+  dirty(E.fg);
+  dirty(E.bg);
+  jointDirty = true;
+  jointBondsInvalid = true;
+  jointSupportValid = false;
+  jointSupportSleeping = false;
+  jointTranslationReady = false;
+  E.useLayer(&E.fg);
+}
+
 void ComponentSystem::moveCrossLayerBondedAssemblies() {
   int nf = compCount(E.fg), nb = compCount(E.bg);
   if (cgBonds.empty() || nf == 0 || nb == 0) return;
@@ -1844,7 +1962,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   AssemblyLayerMovePlan& fgPlan = jointFgPlan;
   AssemblyLayerMovePlan& bgPlan = jointBgPlan;
   bool translated = false;
-  std::vector<std::vector<int>> detachFg, detachBg;
+  std::vector<std::pair<std::vector<int>, std::vector<int>>> detachGroups;
   bool translationCacheExact = E.fg.groundBaseValid && E.bg.groundBaseValid
     && E.fg.groundRigidBase.size() == (size_t)E.cols * E.rows
     && E.bg.groundRigidBase.size() == (size_t)E.cols * E.rows;
@@ -1872,17 +1990,17 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     // material does not enter the structural grounding graph, so the explicit
     // bake marker distinguishes it from a freshly separated solid.
     if (g->settledBody && before.bottomPowderFaces > 0) continue;
-    // Detached cross-layer halves become independent bodies in their owning
-    // layers. A lit static fuse keeps the one-cell assembly path until it
-    // detonates so its buffer-local countdown remains attached to the TNT cell.
+    // A structural break creates one optional cross-layer body: the two masks
+    // share a pose only because this same detachment event produced both.
+    // A lit static fuse keeps the one-cell assembly path until it detonates so
+    // its buffer-local countdown remains attached to the TNT cell.
     if (g->detachedByBreak && !g->growingPlant) {
       bool containsTnt = false;
       for (const auto& cell : fgMats) if (cell.material == TNT) { containsTnt = true; break; }
       if (!containsTnt)
         for (const auto& cell : bgMats) if (cell.material == TNT) { containsTnt = true; break; }
       if (!containsTnt && !hasLiveFuse(E.fg, fgCells) && !hasLiveFuse(E.bg, bgCells)) {
-        detachFg.push_back(g->fgComps);
-        detachBg.push_back(g->bgComps);
+        detachGroups.push_back({g->fgComps, g->bgComps});
         continue;
       }
     }
@@ -1926,9 +2044,8 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       jointTranslationReady = false;
     }
   }
-  if (!detachFg.empty()) {
-    detachComponentGroups(E.fg, detachFg);
-    detachComponentGroups(E.bg, detachBg);
+  if (!detachGroups.empty()) {
+    detachCrossLayerComponentGroups(detachGroups);
     cgBonds.clear();
     E.fg.crossBondedComp.clear();
     E.bg.crossBondedComp.clear();
@@ -2600,6 +2717,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
     int32_t gen = ++E.L->seenGen;
     for (auto& comp : E.L->stoneComponents) for (int k : comp.cells) seen[k] = gen;
     for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components (skip both seeding and flood-merge)
+    for (int k : E.L->passiveBodyCells) seen[k] = gen;
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
       int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_STONE) continue;
       std::vector<int> cells; int yMax;
@@ -2621,6 +2739,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
     int32_t gen = ++E.L->seenGen;
     for (auto& comp : E.L->plantComponents) for (int k : comp.cells) seen[k] = gen;
     for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
+    for (int k : E.L->passiveBodyCells) seen[k] = gen;
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
       int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_PLANT) continue;
       std::vector<int> cells; int yMax;
@@ -2638,6 +2757,7 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
     int32_t gen = ++E.L->seenGen;
     for (auto& comp : E.L->iceComponents) for (int k : comp.cells) seen[k] = gen;
     for (int k : E.L->bodyCells) seen[k] = gen; // body-material invariant: free-body cells are not static components
+    for (int k : E.L->passiveBodyCells) seen[k] = gen;
     for (int sy = rowStart; sy < rowEnd; sy++) for (int sx = colStart; sx < colEnd; sx++) {
       int k = sy * E.cols + sx; if (seen[k] == gen || MAT_CGROUP[E.L->grid[k]] != CG_ICE) continue;
       std::vector<int> cells; int yMax;
@@ -2871,6 +2991,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       if (reused) E.L->compsReshaped = true;
       Comp c; c.id = reused ? E.L->nextPlantId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
       c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
+      c.requiresCellGrounding = comp.requiresCellGrounding;
       c.detachedByBreak = comp.detachedByBreak || componentChanged;
       c.settledBody = componentChanged ? false : comp.settledBody;
       for (int k : part) { int y = k / E.cols; if (y > c.yMax) c.yMax = y; if (E.isPlantWood(E.L->grid[k])) c.woodCount++; else if (E.isPlantLeaf(E.L->grid[k])) c.leafCount++; }

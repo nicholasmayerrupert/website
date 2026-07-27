@@ -11,7 +11,8 @@
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;
-    for (Body* b : lay->bodies) if (b->awake || b->fuseTicks > 0) return true;
+    for (Body* b : lay->bodies)
+      if (b->jointRole != 2 && (b->awake || b->fuseTicks > 0)) return true;
     for (int y = 0; y < rows; y++) if (lay->rowMarkMax[y] >= lay->rowMarkMin[y]) return true;
     return false;
   }
@@ -295,7 +296,7 @@
       if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
       if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
     }
-    for (Body* b : L->bodies) if (b->fuseTicks > 0) {
+    for (Body* b : L->bodies) if (b->jointRole != 2 && b->fuseTicks > 0) {
       int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
       if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;

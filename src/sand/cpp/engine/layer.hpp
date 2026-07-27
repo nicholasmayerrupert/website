@@ -30,7 +30,7 @@ struct Layer {
   // Free rigid-body displacement spill scratch. Footprint and reserved targets
   // must be live at the same time as a BFS seen set, so they use separate stamps.
   std::vector<int32_t> rigidSpillFootprint, rigidSpillReserved;
-  std::vector<int> prevCompCells, curCompCells, bodyCells;
+  std::vector<int> prevCompCells, curCompCells, bodyCells, passiveBodyCells;
   // Loose/gas cells relocated by static-component motion before prepareNextBuffer.
   // They are carried once into next[] and skipped by the loose pass that tick.
   std::vector<int> assemblyRelocatedCells;
@@ -133,6 +133,9 @@ struct Layer {
   // free rigid bodies + ownership
   std::vector<Body*> bodies; int nextBodyId = 1;
   std::vector<int32_t> bodyOwner;
+  // Kinematic halves of cross-layer bodies are stamped into this layer but are
+  // simulated by their foreground leader.
+  std::unordered_set<int> passiveBodyIds;
   // One-shot wake probe retained across the grounding pass, which consumes the
   // dirty flags that reported a possible change beneath a sleeping body.
   bool sleepingBodySupportDirty = false;
@@ -222,7 +225,7 @@ struct Layer {
       release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
-      release(prevCompCells); release(curCompCells); release(bodyCells);
+      release(prevCompCells); release(curCompCells); release(bodyCells); release(passiveBodyCells);
       release(reactionFlags); release(reactionSteam); release(reactionFires); release(reactionIgnite);
       release(mineDamage); release(light); release(lightBase); release(skyLight);
       release(skyTopInput); release(skyDownValue); release(skyDownDepth);
@@ -243,7 +246,7 @@ struct Layer {
     looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;
     groundStreamX0 = groundStreamX1 = groundStreamY0 = groundStreamY1 = -1;
     groundBaseValid = false;
-    bodies.clear(); bodyCells.clear();
+    bodies.clear(); bodyCells.clear(); passiveBodyCells.clear(); passiveBodyIds.clear();
     pendingDetonations.clear();
     blastSparseCarryReady = false;
     prevCompCells.clear(); curCompCells.clear();

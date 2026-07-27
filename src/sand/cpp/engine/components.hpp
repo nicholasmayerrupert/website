@@ -144,6 +144,8 @@ class ComponentSystem {
                              bool collectBearing = false);
   int motionDecision(const FaceContact& c, size_t cellCount, double solidMass);
   void detachComponentGroups(Layer& lay, const std::vector<std::vector<int>>& groups);
+  void detachCrossLayerComponentGroups(
+    const std::vector<std::pair<std::vector<int>, std::vector<int>>>& groups);
   void markBreakCandidates();
   void moveCrossLayerBondedAssemblies();
   void moveRigidAssemblies();

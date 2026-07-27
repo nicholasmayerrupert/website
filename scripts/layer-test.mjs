@@ -472,7 +472,7 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
   check('unsupported bg beam fell', after.minY > before.minY + 4, `(top ${before.minY} -> ${after.minY})`);
 }
 
-// 15f. Dual-layer stone that loses support becomes one body per layer and
+// 15f. Dual-layer stone that loses support becomes one shared-pose body and
 //      accelerates smoothly even while acid is still dissolving cells.
 {
   console.log('cross-layer support: dual-layer slab falls smoothly after acid cuts support');

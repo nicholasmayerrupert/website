@@ -552,6 +552,7 @@ void GrowthSystem::growPlantComponents() {
   for (auto& comp : E.L->plantComponents) {
     comp.age++;
     if (!comp.growing) continue;                          // worldgen/restored trees are inert scenery
+    comp.requiresCellGrounding = true;
     if (!compHasSeed(comp)) { comp.growing = false; continue; }
     E.L->groundDirty = true; // an actively-growing plant may add cells this step -> full reflood
     // Species materials + per-type caps. PT_STANDARD keeps the original caps.

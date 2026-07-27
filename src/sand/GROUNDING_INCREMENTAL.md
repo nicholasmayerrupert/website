@@ -28,8 +28,8 @@ and wakes cells that lost support.
 
 ## Safe removal fast path
 
-Acid, fire, and explosions can avoid a full reflood when
-`removalsKeepGroundingValid()` proves that a removal did not disconnect support:
+Acid and fire can avoid a full reflood when `removalsKeepGroundingValid()` proves
+that a removal did not disconnect support:
 
 1. Partition removed cells into 8-connected blobs.
 2. Reject blobs near support boundaries, powder, or outside the bounded size.
@@ -39,6 +39,8 @@ Acid, fire, and explosions can avoid a full reflood when
 
 Failure or an inconclusive cap always falls back to the full flood. Successful
 checks patch only the removed cells in `groundedCell` and `groundRigidBase`.
+Explosions that erase component-backed cells always rebuild exact support after
+the complete blast transaction.
 
 Blobs must be checked as groups: adjacent removals can sever a bridge even when
 each cell appears safe in isolation. Distinct 8-connected blobs cannot hide one

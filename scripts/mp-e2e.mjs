@@ -99,8 +99,18 @@ try {
     await sleep(ms);
   };
 
-  // both clients join the authoritative server
-  await a.page.evaluate(([u, r]) => window.__sandNet.join(u, r), [wsURL, ROOM]);
+  // A joins through the real panel so a successful mouse-driven connection
+  // also proves keyboard ownership returns to the simulation surface.
+  await a.page.evaluate(([port, room]) => {
+    const root = document.querySelector('sand-game').shadowRoot;
+    root.querySelector('.mp-host').value = 'localhost';
+    root.querySelector('.mp-port').value = String(port);
+    root.querySelector('.mp-room').value = room;
+    const button = root.querySelector('.mp-btn');
+    button.focus();
+    button.click();
+  }, [WS_PORT, ROOM]);
+  await a.page.waitForFunction(() => window.__sandNet.status().connected && window.__sandNet.status().worldReady);
   await b.page.evaluate(([u, r]) => window.__sandNet.join(u, r), [wsURL, ROOM]);
 
   // wait for both to be assigned a player + receive the world.
@@ -142,6 +152,30 @@ try {
   }, [ITEM_KIND.BLAST_GUN, ITEM_KIND.MINING_TOOL]);
   check('client A receives the starter gun + mining tool', await hasStarterKit(a.page));
   check('client B receives the starter gun + mining tool', await hasStarterKit(b.page));
+
+  const surfaceFocused = await a.page.locator('sand-game').evaluate((host) => {
+    const root = host.shadowRoot;
+    return root.activeElement === root.querySelector('.sg-sim');
+  });
+  check('successful panel join returns keyboard focus to the game', surfaceFocused);
+  await a.page.keyboard.down('d');
+  const movement = await a.page.evaluate(() => {
+    const bits = window.__sandTest.localInput().bits;
+    const poses = [window.__sandNet.ownPlayer().x];
+    for (let i = 0; i < 4; i++) {
+      window.__sandNet.tickSteps(1, false);
+      poses.push(window.__sandNet.ownPlayer().x);
+    }
+    return {
+      bits,
+      poses: new Set(poses.map((x) => x.toFixed(4))).size,
+      distance: poses.at(-1) - poses[0],
+    };
+  });
+  await a.page.keyboard.up('d');
+  await a.page.evaluate(() => window.__sandNet.tickSteps(1, false));
+  check(`focused multiplayer movement reaches the engine (bits ${movement.bits})`, (movement.bits & 2) !== 0);
+  check(`local prediction advances every client tick (${movement.poses} poses)`, movement.poses === 5 && movement.distance > 0);
 
   // Give each authoritative player a distinct stack so the private inventory
   // and cursor replication checks below exercise real state changes.

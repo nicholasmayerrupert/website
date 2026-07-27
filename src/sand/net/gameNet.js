@@ -13,7 +13,8 @@ import { Predictor } from './predict.js';
 import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { translatePackedPositions } from './localCoordinates.js';
 
-const SMOOTH = 0.35;             // client render smoothing toward the latest snapshot
+const REMOTE_SMOOTH = 0.5;
+const MAX_REMOTE_EXTRAPOLATION_TICKS = 8;
 const MAX_INBOUND = 96;
 const MAX_QUEUED_DIFFS = 48;
 const LATEST_MESSAGES = new Set([
@@ -34,6 +35,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   let ownPlayerId = 0;             // my authoritative player id on the server
   let predictor = null, predId = 0; // local prediction of our own player
   let inputSeq = 0;
+  let remotePresentationTick = 0;
   let lastViewKey = '';
   let worldReady = false;          // has the initial world snapshot been applied?
   let paused = false, needsResync = false, resyncPending = false;
@@ -138,7 +140,7 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
 
   function resetState(status = 'offline') {
     ws = null; role = null; room = null; connected = false;
-    ownPlayerId = 0; inputSeq = 0; lastViewKey = ''; worldReady = false;
+    ownPlayerId = 0; inputSeq = 0; remotePresentationTick = 0; lastViewKey = ''; worldReady = false;
     needsResync = false; resyncPending = false;
     predictor = null; predId = 0;
     remotes.clear(); inQueue.length = 0;
@@ -232,6 +234,8 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
       r.x += dx; r.y += dy;
       if (r.tx !== undefined) r.tx += dx;
       if (r.ty !== undefined) r.ty += dy;
+      if (r.snapshotX !== undefined) r.snapshotX += dx;
+      if (r.snapshotY !== undefined) r.snapshotY += dy;
       if (r.aimX !== undefined) r.aimX += dx;
       if (r.aimY !== undefined) r.aimY += dy;
     }
@@ -311,13 +315,16 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
   }
 
   function ingestSnapshot(m) {
+    remotePresentationTick = Math.max(remotePresentationTick, m.tick);
     const seen = new Set();
     for (const p of m.players) {
       seen.add(p.id);
       let r = remotes.get(p.id);
       const size = fallbackPlayerSize(engineNow());
       if (!r) { r = { x: p.x, y: p.y, w: size.w, h: size.h }; remotes.set(p.id, r); }
-      r.tx = p.x; r.ty = p.y; r.vx = p.vx; r.vy = p.vy;
+      r.snapshotX = r.tx = p.x; r.snapshotY = r.ty = p.y;
+      r.snapshotTick = m.tick;
+      r.vx = p.vx; r.vy = p.vy;
       r.facing = p.facing; r.grounded = !!p.grounded; r.tool = p.tool; r.seq = p.seq;
       r.health = p.health | 0; r.alive = p.alive !== 0;
       r.deathTicks = p.deathTicks | 0; r.respawnReady = p.respawnReady !== 0;
@@ -378,11 +385,25 @@ export function createGameNet({ getEngine, getLocalInput, getViewport = null, re
     }
     inQueue.length = 0;
 
-    // smooth render players toward the latest snapshot target
-    for (const r of remotes.values()) {
+    remotePresentationTick++;
+    const predictedActorTick = predictor
+      ? Math.max(remotePresentationTick, engineNow().getActorTick?.() || 0)
+      : remotePresentationTick;
+    // Dead-reckon remote players between 20 Hz snapshots. The short cap keeps a
+    // dropped packet from letting a player run through terrain indefinitely;
+    // each authoritative snapshot corrects the projected target.
+    for (const [id, r] of remotes) {
       if (r.tx === undefined) continue;
-      r.x += (r.tx - r.x) * SMOOTH;
-      r.y += (r.ty - r.y) * SMOOTH;
+      if (id !== ownPlayerId && r.snapshotTick !== undefined) {
+        const age = Math.max(0, Math.min(
+          MAX_REMOTE_EXTRAPOLATION_TICKS,
+          predictedActorTick - r.snapshotTick,
+        ));
+        r.tx = r.snapshotX + r.vx * age;
+        r.ty = r.snapshotY + r.vy * age;
+      }
+      r.x += (r.tx - r.x) * REMOTE_SMOOTH;
+      r.y += (r.ty - r.y) * REMOTE_SMOOTH;
     }
     sendViewport();
     // send local input to the server AND predict it locally (immediate, no lag).

@@ -187,6 +187,19 @@ const rt = (m) => decode(encode(m)); // round trip through the wire format
   check('valid replacement WORLD resumes actors without changing world position',
     engine.offX === 512 && Math.abs(engine.offX + afterReplacementWorld.x - remoteWorldX) < 1e-6);
 
+  socket.onmessage({ data: encode(makeSnapshot(11, [{
+    id: 8, x: -511, y: 1, vx: 0.5, vy: 0, facing: 1, grounded: true,
+    tool: 0, health: 100, alive: true, inputSeq: 6, animState: 1, animFrame: 0,
+    aimX: -504, aimY: 1,
+  }])) });
+  const projectedRemoteX = [];
+  for (let i = 0; i < 4; i++) {
+    net.update();
+    projectedRemoteX.push(net.getPlayersForRender().find((p) => p.id === 8).x);
+  }
+  check('remote movement advances between authoritative snapshots',
+    projectedRemoteX.every((x, i) => i === 0 || x > projectedRemoteX[i - 1]));
+
   const resyncsBeforePressure = socket.sent.map(decode).filter((m) => m?.t === MSG.RESYNC).length;
   net.setPaused(true);
   for (let i = 0; i < 200; i++) socket.onmessage({ data: encode(makeDiff(4 + i, 123, 'AAAAAA==')) });

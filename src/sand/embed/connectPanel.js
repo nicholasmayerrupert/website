@@ -32,7 +32,7 @@ const STYLE = `
 .mp-status { margin-top: 7px; font-size: 11px; color: rgba(255,255,255,.7); min-height: 14px; word-break: break-word; }
 `;
 
-export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
+export function createConnectPanel(root, { join, disconnect, getStatus, focusSurface } = {}) {
   injectStyleOnce(root, 'data-sand-connect', STYLE);
 
   const wrap = document.createElement('div');
@@ -82,21 +82,29 @@ export function createConnectPanel(root, { join, disconnect, getStatus } = {}) {
   toggle.addEventListener('click', () => { panel.classList.toggle('open'); refresh(); });
 
   btn.addEventListener('click', async () => {
-    if (connected) { disconnect?.(); refresh(); return; }
+    if (connected) {
+      disconnect?.();
+      refresh();
+      focusSurface?.();
+      return;
+    }
     const host = (hostIn.value || 'localhost').trim();
     const port = (portIn.value || '5191').trim();
     const room = (roomIn.value || 'main').trim();
     const url = `ws://${host}:${port}`;
     connecting = true; lastError = '';
     refresh();
+    let joined = false;
     try {
       await join?.(url, room);
+      joined = true;
     } catch (e) {
       lastError = `failed: ${e?.message || e}`;
     } finally {
       connecting = false;
     }
     refresh();
+    if (joined && connected) focusSurface?.();
   });
 
   // Light poll so the status line tracks (dis)connection events the panel didn't

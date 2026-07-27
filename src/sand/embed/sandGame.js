@@ -584,6 +584,7 @@ class SandGameElement extends HTMLElement {
             join: (url, room) => game.netJoin(url, room),
             disconnect: () => game.netDisconnect(),
             getStatus: () => game.netStatus(),
+            focusSurface: () => sim.focus({ preventScroll: true }),
           });
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +

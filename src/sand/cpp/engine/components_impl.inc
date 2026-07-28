@@ -1723,7 +1723,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
   struct JointGroup {
     std::vector<int> fgComps, bgComps;
     bool grounded = false, settledBody = false, settledLooseSupport = false;
-    bool detachedByBreak = false, growingPlant = false;
+    bool detachedByBreak = false, growingStructure = false;
     int maxY = 0;
     int minComp = INT_MAX;
   };
@@ -1735,7 +1735,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (c->settledBody) g.settledBody = true;
     if (c->settledLooseSupport) g.settledLooseSupport = true;
     if (c->detachedByBreak) g.detachedByBreak = true;
-    if (compIdIsPlant(E.fg, i) && c->growing) g.growingPlant = true;
+    if (c->growing) g.growingStructure = true;
     if (c->yMax > g.maxY) g.maxY = c->yMax;
     if (i < g.minComp) g.minComp = i;
   }
@@ -1746,7 +1746,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     if (c->settledBody) g.settledBody = true;
     if (c->settledLooseSupport) g.settledLooseSupport = true;
     if (c->detachedByBreak) g.detachedByBreak = true;
-    if (compIdIsPlant(E.bg, i) && c->growing) g.growingPlant = true;
+    if (c->growing) g.growingStructure = true;
     if (c->yMax > g.maxY) g.maxY = c->yMax;
     if (nf + i < g.minComp) g.minComp = nf + i;
   }
@@ -1977,7 +1977,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     // Every unsupported, inert structural assembly enters the rigid solver.
     // Only a live per-cell TNT fuse or an active growth source stays in the
     // component path long enough to finish that material-specific behavior.
-    if (!g->growingPlant && !hasLiveFuse(E.fg, fgCells) && !hasLiveFuse(E.bg, bgCells)) {
+    if (!g->growingStructure && !hasLiveFuse(E.fg, fgCells) && !hasLiveFuse(E.bg, bgCells)) {
       detachGroups.push_back({g->fgComps, g->bgComps});
       continue;
     }
@@ -2632,17 +2632,14 @@ void ComponentSystem::moveRigidAssemblies() {
       && current.bottomPowderFaces == 0;
     bool hasLiveFuse = false;
     for (int k : cells) if (E.L->pendingDetonations.count(k)) { hasLiveFuse = true; break; }
-    bool hasActivePlantGrowth = false;
+    bool hasActiveGrowthSource = false;
     for (int ci : grp->comps) {
-      if (!all[ci]->growing) continue;
-      for (int k : all[ci]->cells)
-        if (E.isPlantMaterial(E.L->grid[k])) {
-          hasActivePlantGrowth = true;
-          break;
-        }
-      if (hasActivePlantGrowth) break;
+      if (all[ci]->growing) {
+        hasActiveGrowthSource = true;
+        break;
+      }
     }
-    if (!hasLiveFuse && !hasActivePlantGrowth) {
+    if (!hasLiveFuse && !hasActiveGrowthSource) {
       std::vector<int> ids;
       ids.reserve(grp->comps.size());
       for (int ci : grp->comps) ids.push_back(allGlobalIds[ci]);

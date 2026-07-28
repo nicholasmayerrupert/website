@@ -20,3 +20,4 @@
   bool canBodyOccupy(uint8_t m, int k, double bodyDensity) { return rigid.canBodyOccupy(m, k, bodyDensity); }
   int bodyFootprintBlocked(Body* b) { return rigid.bodyFootprintBlocked(b); }
   bool computeDerived(Body* b, bool preserveWorld) { return rigid.computeDerived(b, preserveWorld); }
+  void restampBodiesAfterStream() { rigid.restampBodiesAfterStream(); }

@@ -63,6 +63,8 @@
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   std::vector<int> acidErasedStructural, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
   std::vector<int> crossFireErasedFg, crossFireErasedBg;
+  std::unordered_set<int> bodyFrozenIceScratch;
+  std::unordered_set<int> crossFrozenIceFg, crossFrozenIceBg;
   std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
   std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
@@ -183,10 +185,11 @@
   //     clear) MUST skip body cells via isBodyCell(k). Each such site carries the
   //     comment `// body-material invariant: skip free-body cells (see isBodyCell)` so
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
-  //   * A detached structural assembly may carry a per-cell material map. Every
-  //     component material bakes through the unified registry after solver sleep
-  //     and direct grounded-solid contact (bakeRestingBodies in rigid_impl.inc).
-  //     RIGID bodies never bake, and a body still floating on liquid remains free.
+  //   * A detached structural assembly may carry a per-cell material map.
+  //     Homogeneous component bodies bake through the unified registry after
+  //     solver sleep and direct grounded-solid contact. Heterogeneous bodies
+  //     keep their object-level bond as sleeping bodies. RIGID bodies never
+  //     bake, and a body still floating on liquid remains free.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }

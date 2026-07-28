@@ -109,6 +109,35 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
+// --- ICE keeps its freezing behavior while it is a free body, including
+//     co-occupied WATER in the other simulated layer. ---
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  const x0 = 28, x1 = 92, y0 = 22, y1 = 78;
+  for (const layer of [0, 1]) {
+    for (let y = y0; y <= y1; y++) {
+      e.paintDiscLayer(layer, x0, y, 0, MAT.STONE, true);
+      e.paintDiscLayer(layer, x1, y, 0, MAT.STONE, true);
+    }
+    for (let x = x0; x <= x1; x++)
+      e.paintDiscLayer(layer, x, y1, 0, MAT.STONE, true);
+    for (let y = y0; y < y1; y++)
+      for (let x = x0 + 1; x < x1; x++)
+        e.paintDiscLayer(layer, x, y, 0, MAT.WATER, true);
+    e.syncComponentsLayer(layer);
+  }
+  e._spawnBoxLayer(0, 60, 48, 4, 4, MAT.ICE);
+  const initialFgIce = count(e.getGrid(), MAT.ICE);
+  for (let i = 0; i < 80; i++) e.stepWorld();
+  const fgIce = count(e.getGrid(), MAT.ICE);
+  const bgIce = count(e.getGridBg(), MAT.ICE);
+  check(`free ICE freezes same-layer WATER (${initialFgIce} -> ${fgIce})`,
+    initialFgIce > 0 && fgIce > initialFgIce);
+  check(`free ICE freezes adjacent-layer WATER (${bgIce} cells)`, bgIce > 0);
+  e.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

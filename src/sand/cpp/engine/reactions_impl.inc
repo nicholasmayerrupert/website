@@ -284,6 +284,42 @@ void ReactionSystem::applyIce() {
     }
   }
   if (melted) E.splitRigidAfterErase(E.L->components, meltedCells, E.L->nextComponentId, true);
+
+  // Free ice bodies remain material-identical ICE cells in the live grid, but
+  // they are intentionally absent from the static component registry. Give
+  // those stamped cells the same local freezing influence as component ice,
+  // then register the new cells as ordinary ice components.
+  std::unordered_set<int>& frozen = E.bodyFrozenIceScratch;
+  frozen.clear();
+  auto freezeBesideBodyIce = [&](int k) {
+    if (k < 0 || k >= E.cols * E.rows || E.L->bodyOwner[k] < 0
+        || E.L->grid[k] != ICE) return;
+    int y = k / E.cols, x = k - y * E.cols;
+    uint8_t rm = x + 1 < E.cols ? E.L->grid[k + 1] : EMPTY;
+    uint8_t lm = x > 0 ? E.L->grid[k - 1] : EMPTY;
+    uint8_t dm = y + 1 < E.rows ? E.L->grid[k + E.cols] : EMPTY;
+    uint8_t um = y > 0 ? E.L->grid[k - E.cols] : EMPTY;
+    int waterK = rm == WATER && E.L->bodyOwner[k + 1] < 0 ? k + 1
+               : lm == WATER && E.L->bodyOwner[k - 1] < 0 ? k - 1
+               : dm == WATER && E.L->bodyOwner[k + E.cols] < 0 ? k + E.cols
+               : um == WATER && E.L->bodyOwner[k - E.cols] < 0 ? k - E.cols
+               : -1;
+    if (waterK < 0) return;
+    // A world/tick hash keeps the new body reaction deterministic without
+    // advancing the shared reaction stream for unrelated materials.
+    uint32_t phase = E.L->worldSeed ^ 0x1CEB0D1u
+                   ^ ((uint32_t)E.tick * 0x9E3779B9u)
+                   ^ (E.L->isBackground ? 0xB6A4D5u : 0u);
+    if (whash2(phase, E.L->worldOffsetX + x,
+               E.L->worldOffsetY + y) >= ICE_FREEZE_P) return;
+    E.writeGridIndex(waterK, ICE);
+    frozen.insert(waterK);
+  };
+  for (int k : E.L->bodyCells) freezeBesideBodyIce(k);
+  for (int k : E.L->passiveBodyCells) freezeBesideBodyIce(k);
+  if (!frozen.empty())
+    E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId,
+                              ICE, frozen, true);
 }
 // Salt is a desiccant / de-icer. A grain that touches WATER dissolves into it,
 // turning that water to BRINE (saltwater) and liquefying the grain into brine as

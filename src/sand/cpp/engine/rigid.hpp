@@ -90,6 +90,7 @@ class RigidBodySystem {
   bool bodyTouchesSettledLooseComponent(Body* b);
   bool bodyHasLooseSupport(Body* b);
   void stampJointFollower(Body* leader);
+  void restampBodiesAfterStream();
   void bakeRestingBodies();
   template <class Cells>
   bool planAssemblyBodyPush(const Cells& assemblyCells, int dir, AssemblyBodyPush& plan);

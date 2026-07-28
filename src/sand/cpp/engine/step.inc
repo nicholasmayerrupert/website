@@ -326,6 +326,7 @@
     bool fgIndexExact = fg.groundBaseValid && !fg.groundDirty && !fg.groundContentDirty;
     bool bgIndexExact = bg.groundBaseValid && !bg.groundDirty && !bg.groundContentDirty;
     crossFireErasedFg.clear(); crossFireErasedBg.clear();
+    crossFrozenIceFg.clear(); crossFrozenIceBg.clear();
     for (int y = 1; y < rows - 1; y++) {
       int mn = cols, mx = -1;
       if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
@@ -346,11 +347,47 @@
             fg.grid[k] = FIRE; if (x < fg.rowMarkMin[y]) fg.rowMarkMin[y] = x; if (x > fg.rowMarkMax[y]) fg.rowMarkMax[y] = x;
           }
         }
+        // Co-occupied cells are adjacent across the two simulated planes.
+        // Body-owned ICE is a valid cold source; the newly frozen WATER is
+        // registered below in its own layer so it cannot flicker out. Stateless
+        // world/tick rolls leave the shared reaction stream unchanged.
+        if (f == ICE && b == WATER && bg.bodyOwner[k] < 0) {
+          uint32_t phase = fg.worldSeed ^ 0x1CEB0D2u
+                         ^ ((uint32_t)tick * 0x9E3779B9u);
+          if (whash2(phase, fg.worldOffsetX + x,
+                     fg.worldOffsetY + y) < ICE_FREEZE_P)
+            crossFrozenIceBg.insert(k);
+        } else if (b == ICE && f == WATER && fg.bodyOwner[k] < 0) {
+          uint32_t phase = fg.worldSeed ^ 0x1CEB0D3u
+                         ^ ((uint32_t)tick * 0x9E3779B9u);
+          if (whash2(phase, fg.worldOffsetX + x,
+                     fg.worldOffsetY + y) < ICE_FREEZE_P)
+            crossFrozenIceFg.insert(k);
+        }
       }
     }
     if (!crossFireErasedFg.empty()) { useLayer(&fg); finishPlantErosion(crossFireErasedFg, fgIndexExact, true); }
     if (!crossFireErasedBg.empty()) { useLayer(&bg); finishPlantErosion(crossFireErasedBg, bgIndexExact, true); }
-    if (!crossFireErasedFg.empty() || !crossFireErasedBg.empty()) useLayer(&fg);
+    auto commitFrozenIce = [&](Layer& layer, std::unordered_set<int>& cells) {
+      if (cells.empty()) return;
+      useLayer(&layer);
+      for (auto it = cells.begin(); it != cells.end();) {
+        int k = *it;
+        if (layer.grid[k] == WATER) {
+          writeGridIndex(k, ICE);
+          ++it;
+        } else {
+          it = cells.erase(it);
+        }
+      }
+      registerRigidCellsSplit(layer.components, layer.nextComponentId,
+                              ICE, cells, true);
+    };
+    commitFrozenIce(fg, crossFrozenIceFg);
+    commitFrozenIce(bg, crossFrozenIceBg);
+    if (!crossFireErasedFg.empty() || !crossFireErasedBg.empty()
+        || !crossFrozenIceFg.empty() || !crossFrozenIceBg.empty())
+      useLayer(&fg);
   }
 
   // ---- cross-layer transfer (RNG-free) ----

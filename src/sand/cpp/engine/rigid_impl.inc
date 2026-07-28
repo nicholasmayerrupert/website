@@ -1419,14 +1419,26 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty, std::
     std::vector<int> wc; // b's remaining world cells
     for (int k : cells) if (E.L->bodyOwner[k] == b->id) wc.push_back(k); // body cells carry the body's real material; E.L->bodyOwner identifies them
     if (wc.empty()) { removedIds.insert(b->id); continue; }
-    // flood (4-connected) into world-connected groups
+    // Flood with the same 8-connectivity used by static structures and
+    // component-to-body detachment. A rotated raster commonly turns a face
+    // contact into a diagonal contact; treating that as a fracture makes a
+    // chipped mixed-material object split even though its structural bond is
+    // still intact.
     std::unordered_map<int, int> idxOf; for (size_t i = 0; i < wc.size(); i++) idxOf[wc[i]] = (int)i;
     std::vector<int> comp(wc.size(), -1); std::vector<std::vector<int>> groups;
     for (size_t i = 0; i < wc.size(); i++) {
       if (comp[i] != -1) continue; int gid = (int)groups.size(); groups.push_back({}); std::vector<int> st{(int)i}; comp[i] = gid;
       while (!st.empty()) { int ci = st.back(); st.pop_back(); int k = wc[ci]; groups[gid].push_back(k); int y = k / E.cols, x = k - y * E.cols;
-        const int off[4][2] = {{-1,0},{1,0},{0,-1},{0,1}};
-        for (auto& o : off) { int nx = x + o[0], ny = y + o[1]; if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue; auto it = idxOf.find(ny * E.cols + nx); if (it == idxOf.end() || comp[it->second] != -1) continue; comp[it->second] = gid; st.push_back(it->second); } }
+        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+          if (!ox && !oy) continue;
+          int nx = x + ox, ny = y + oy;
+          if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+          auto it = idxOf.find(ny * E.cols + nx);
+          if (it == idxOf.end() || comp[it->second] != -1) continue;
+          comp[it->second] = gid;
+          st.push_back(it->second);
+        }
+      }
     }
     if (groups.size() <= 1) {
       computeDerived(b, true);
@@ -1748,23 +1760,24 @@ void RigidBodySystem::bakeBodyToGrid(Body* b) {
     }
   }
 }
-// Every component material has a static form to bake into. Only the generic
-// RIGID cube has no terrain form, so it stays a free body forever.
+// A homogeneous component body has one lossless static representation. A
+// heterogeneous body stays a sleeping rigid entity: registering each material
+// as a separate component would discard the bond that makes it one object.
 bool RigidBodySystem::bodySolidifies(Body* b) {
-  if (b->cellMaterials.empty())
-    return E.isComponentMaterial(b->material);
-  bool hasMaterial = false;
+  uint8_t bakeMaterial = EMPTY;
+  auto accept = [&](uint8_t material) {
+    if (material == EMPTY) return true;
+    if (!E.isComponentMaterial(material)) return false;
+    if (bakeMaterial == EMPTY) bakeMaterial = material;
+    return bakeMaterial == material;
+  };
+  if (b->cellMaterials.empty()) return accept(b->material);
   for (int i = 0; i < (int)b->occ.size(); i++) {
     if (!b->occ[i]) continue;
-    uint8_t m = bodyMaterialAt(b, i);
-    if (m == EMPTY) continue;
-    hasMaterial = true;
-    if (!E.isComponentMaterial(m))
-      return false;
+    if (!accept(bodyMaterialAt(b, i))) return false;
+    if (b->jointRole && !accept(b->jointPeerMaterials[i])) return false;
   }
-  // One half of a joint may be fully eroded while the peer still has cells.
-  // The empty half has nothing to prevent the remaining solid half from baking.
-  return hasMaterial || b->jointRole != 0;
+  return bakeMaterial != EMPTY;
 }
 // Baking is a structural transition, so solver sleep alone is insufficient:
 // buoyancy can put a floating body to sleep with no terrain contact. Require a
@@ -1932,6 +1945,47 @@ void RigidBodySystem::stampJointFollower(Body* leader) {
   spillDisplacedBodyMaterial(displaced, footprint, footprintGen,
                              follower->id, follower->density);
   E.useLayer(previous);
+}
+// World streaming clears body rasters before saving and translating tiles.
+// Rebuild each body's current footprint immediately after both layers have
+// loaded so sleeping bodies remain visible and interactive without requiring a
+// simulation tick.
+void RigidBodySystem::restampBodiesAfterStream() {
+  std::vector<int> cells, footprint;
+  std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2) continue;
+    auto& stamped = perBody[body->id];
+    forEachBodyCell(body, [&](int x, int y, int local) {
+      int k = y * E.cols + x;
+      if (E.L->bodyOwner[k] != -1) return;
+      uint8_t material = E.L->grid[k];
+      if (!canBodyOccupy(material, k, body->density)) return;
+      if (isBodyRelocatable(material, k, body->density))
+        stamped.first.push_back({material, k});
+      E.writeGridIndex(k, bodyMaterialAt(body, local));
+      E.L->bodyOwner[k] = body->id;
+      if (body->blastDebris) E.L->groundedCell[k] = 0;
+      cells.push_back(k);
+      footprint.push_back(k);
+      stamped.second.push_back(k);
+    });
+  }
+  int32_t footprintGen = ++E.L->seenGen;
+  for (int k : footprint) E.L->rigidSpillFootprint[k] = footprintGen;
+  for (Body* body : E.L->bodies) {
+    if (body->jointRole == 2) continue;
+    auto it = perBody.find(body->id);
+    if (it == perBody.end()) continue;
+    spillDisplacedBodyMaterial(it->second.first, it->second.second,
+                               footprintGen, body->id, body->density);
+  }
+  E.L->bodyCells = std::move(cells);
+  if (E.L == &E.fg) {
+    for (Body* body : E.fg.bodies)
+      if (body->jointRole == 1) stampJointFollower(body);
+  }
+  E.L->sleepingBodySupportDirty = true;
 }
 void RigidBodySystem::moveBodies() {
   bool hasSimulatedBody = false;

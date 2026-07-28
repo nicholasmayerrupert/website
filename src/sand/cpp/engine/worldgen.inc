@@ -2323,6 +2323,8 @@
     worldShiftCount++;
     useLayer(&fg); shiftLayer(dx, dy);
     useLayer(&bg); shiftLayer(dx, dy);
+    useLayer(&fg); restampBodiesAfterStream();
+    useLayer(&bg); restampBodiesAfterStream();
     useLayer(&fg);
     for (auto& p : psys.players) { p.px -= dx; p.py -= dy; p.aimX -= dx; p.aimY -= dy; }
     // Items are buffer-local entities like psys.players: slide them by the same delta and
@@ -2539,6 +2541,8 @@
     };
     refillLayer(&fg);
     refillLayer(&bg);
+    useLayer(&fg); restampBodiesAfterStream();
+    useLayer(&bg); restampBodiesAfterStream();
     useLayer(&fg);
 
     // Re-anchor entities into the new buffer.

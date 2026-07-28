@@ -131,6 +131,52 @@ const speed = (state) =>
 }
 
 {
+  const cols = 420, rows = 280, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0xa987, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  staticRectangle(engine, 0, 55, 0, 59, floorY - 1, MAT.STONE);
+  staticRectangle(engine, 0, 360, 0, 364, floorY - 1, MAT.STONE);
+  staticRectangle(engine, 0, 55, 184, 69, floorY - 1, MAT.STONE);
+  staticRectangle(engine, 0, 350, 184, 364, floorY - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+
+  const smallBodies = 14;
+  const spawnSmall = (body) => {
+    const x = 78 + body * 20;
+    engine.spawnBody(rectangle(x, 30, x + 2, 32));
+  };
+  for (let body = 0; body < smallBodies / 2; body++) spawnSmall(body);
+
+  const beam = [];
+  let beamY = 180;
+  for (let x = 60; x < 360; x++) {
+    if (x > 60 && x % 47 === 0) beamY++;
+    if (x > 60 && x % 71 === 0) beamY--;
+    beam.push([x, beamY]);
+  }
+  engine.spawnBody(beam);
+  const beamIndex = smallBodies / 2;
+  for (let i = 0; i < 180; i++) engine.stepWorld();
+
+  for (let body = smallBodies / 2; body < smallBodies; body++)
+    spawnSmall(body);
+  for (let i = 0; i < 900; i++) engine.stepWorld();
+
+  const finalBeam = engine._bodyState(beamIndex);
+  let passedThrough = 0;
+  for (let body = 0; body <= smallBodies; body++) {
+    if (body === beamIndex) continue;
+    const state = engine._bodyState(body);
+    if (!state || state.py > finalBeam.py + 4) passedThrough++;
+  }
+  check(`small bodies remain above a long jagged body (${passedThrough} passed through)`,
+    passedThrough === 0);
+  engine.destroy();
+}
+
+{
   const cols = 420, rows = 260, floorY = rows - 3;
   const engine = createEngineWasm({
     cols, rows, worldSeed: 0x2b3c, sinksOn: false, infinite: false,

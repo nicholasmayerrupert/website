@@ -1082,6 +1082,24 @@ void RigidBodySystem::rigidStep(double tickDt) {
         }
       }
     }
+    if (firstSlender != secondSlender) {
+      Body* slender = firstSlender ? first : second;
+      bool horizontal = slender->w >= slender->h;
+      double axisX = horizontal ? slender->cs : -slender->sn;
+      double axisY = horizontal ? slender->sn : slender->cs;
+      ox = -axisY;
+      oy = axisX;
+      double projection = (first->px - second->px) * ox
+                        + (first->py - second->py) * oy;
+      if (std::fabs(projection) < 1e-6)
+        projection = -((first->vx - second->vx) * ox
+                     + (first->vy - second->vy) * oy);
+      if (projection < 0) {
+        ox = -ox;
+        oy = -oy;
+      }
+      return;
+    }
     ox = first->px - second->px;
     oy = first->py - second->py;
     double length = std::hypot(ox, oy);
@@ -1463,10 +1481,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
         if (!cnt[bk]) continue;
         double nl = std::sqrt(snx[bk] * snx[bk] + sny[bk] * sny[bk]);
         if (nl < 1e-6) { Nx[bk] = fbx; Ny[bk] = fby; } else { Nx[bk] = snx[bk] / nl; Ny[bk] = sny[bk] / nl; }
-        // Deep overlap samples can see the target's far-side faces too. The
-        // reference direction follows the shared minor axis for parallel,
-        // slender bodies, so longitudinal center offset does not discard a
-        // valid support face. Terrain remains multi-sided for floor/wall corners.
+        // Deep overlap samples can see the target's far-side faces too. For a
+        // large slender body the reference follows its minor axis, so
+        // longitudinal center offset does not discard a valid support face.
+        // Terrain remains multi-sided for floor/wall corners.
         if (B && Nx[bk] * fbx + Ny[bk] * fby < 0.5) {
           cnt[bk] = 0;
           continue;

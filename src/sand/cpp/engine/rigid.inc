@@ -12,7 +12,10 @@
   Body* spawnBodyImpl(const std::vector<std::pair<int, int>>& cells, uint8_t material, double density) { return rigid.spawnBodyImpl(cells, material, density); }
   Body* finishSpawn(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool attachTouchingBodies = true) { return rigid.finishSpawn(cells, material, attachTouchingBodies); }
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty) { return rigid.eraseBodyCellIndex(k, bodyById, dirty); }
-  void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells) { rigid.finishErasedBodies(dirty, cells); }
+  void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells,
+                          bool splitJointBodies = true) {
+    rigid.finishErasedBodies(dirty, cells, splitJointBodies);
+  }
   void erodeBodies(std::vector<int>& cells) { rigid.erodeBodies(cells); }
   void wakeBody(Body* b) { rigid.wakeBody(b); }
   int localCellAt(Body* b, double wx, double wy) { return rigid.localCellAt(b, wx, wy); }

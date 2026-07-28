@@ -34,9 +34,11 @@ material map; mass, center of mass, inertia, stamping, erosion, TNT fuses, and
 baking all use the material at each local cell. Cross-layer bonded groups split
 into one body with a foreground solver leader and a background follower. Its
 union mask supplies combined mass and collision against terrain in either layer,
-while each layer stamps only its own materials. This joint is assigned only when
-one structural detachment creates both halves; ordinary bodies never acquire a
-cross-layer joint through contact or overlap.
+while each layer stamps only its own materials. Damage refloods that union after
+both mirrored cuts; disconnected pieces receive independent local centers of
+mass, and a piece that survives in only one layer becomes an ordinary body there.
+This joint is assigned only when one structural detachment creates both halves;
+ordinary bodies never acquire a cross-layer joint through contact or overlap.
 
 When a component-backed body sleeps on terrain or powder, its current raster is
 registered as isolated material components and the body is deleted. Every
@@ -57,23 +59,31 @@ intact supported stacks remain baked.
 Liquids do not collide as terrain. A sparse pressure projection gathers a
 connected neighborhood around awake body surfaces, predicts liquid and body
 gravity together, and solves pressure against liquid, terrain, free surfaces,
-domain cutoffs, and the shared body degrees of freedom. The neighborhood radius
-uses the square root of displaced body area as its two-dimensional length scale,
-with a small minimum for tiny bodies. Overlapping body neighborhoods form one
-domain.
+domain cutoffs, and the shared body degrees of freedom. The near-field band uses
+the square root of displaced body area as its two-dimensional length scale,
+with an eight-cell minimum and a 32-cell maximum. Overlapping body
+neighborhoods form one domain. The maximum keeps pressure work bounded as ice
+grows while retaining the wider neighborhood needed by long hydrostatic bodies.
 
-A linear pass over each touched liquid topology supplies its hydrostatic
-far-field pressure. Cutoff faces retain the adjacent cellular velocity, use a
-distance-scaled lateral pressure response, and exchange viscosity with that
-reservoir. When one rigid solve touches different liquid materials, the pressure
-domain expands across their full connected topologies so density interfaces are
-not reduced to one hydrostatic boundary. Pressure and viscosity apply
-equal-and-opposite impulses to liquid and bodies. A nonnegative pressure
-constraint prevents unphysical suction. The solve handles both layers of a
-cross-layer body as separate fluid domains coupled by the shared body motion.
-Its iteration cap and traversal orders are deterministic. In a single-material
-lake, pressure cost scales with wet body neighborhoods rather than total lake
-area.
+A linear pass over each touched liquid topology supplies a hydrostatic
+far-field fallback. Free-surface heights are median-filtered over the pressure
+radius. Relief contained within the local domain keeps the shared hydrostatic
+reference; taller relief transitions over one domain width to the local surface,
+so shallow moving fronts do not inherit the head of a distant reservoir and
+pixel-scale scallops do not push floating bodies sideways. Columns without a
+visible surface retain the topology fallback. Cutoff faces retain the adjacent
+cellular velocity, use a distance-scaled lateral pressure response, and exchange
+viscosity with that reservoir. When one rigid solve touches different liquid
+materials, the pressure domain expands across their full connected topologies so
+density interfaces are not reduced to one hydrostatic boundary. Pressure and
+viscosity apply equal-and-opposite impulses to liquid and bodies. A nonnegative
+pressure constraint prevents unphysical suction. The solve handles both layers
+of a cross-layer body as separate fluid domains coupled by the shared body
+motion.
+Its iteration cap and traversal orders are deterministic. Persistent cellular
+liquid velocity propagates dynamic motion beyond the near-field cutoff across
+ticks. In a single-material lake, pressure cost scales with the wet perimeter
+rather than body or lake area.
 
 Liquid cells carry compact two-axis coupling velocity in addition to the
 cellular automaton's downward fall distance. Pressure is warm-started from the

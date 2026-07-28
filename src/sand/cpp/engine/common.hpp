@@ -616,6 +616,7 @@ static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
 static const int    R_FLUID_SLEEP_TICKS = 80;
 static const int    R_FLUID_DOMAIN_MIN_RADIUS = 8;
+static const int    R_FLUID_DOMAIN_MAX_RADIUS = 32;
 static const int    R_FLUID_PRESSURE_ITERS = 96;
 static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;

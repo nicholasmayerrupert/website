@@ -559,6 +559,105 @@ function blastDamagesMaterial(name) {
   e.destroy();
 }
 
+// --- a removed cross-layer endpoint releases its surviving same-layer neighbour ---
+{
+  const e = mk();
+  e.setBgEnabled(true);
+  e.eraseDiscLayer(0, COLS >> 1, ROWS >> 1, COLS + ROWS);
+  e.eraseDiscLayer(1, COLS >> 1, ROWS >> 1, COLS + ROWS);
+  e._resetTopology();
+
+  const cx = 45, cy = 35, bridgeX = cx + 10;
+  for (let y = cy; y < ROWS; y++)
+    e.paintDiscLayer(1, bridgeX, y, 0, MAT.IRON_ORE, true);
+  e.paintDiscLayer(0, bridgeX, cy, 0, MAT.STONE, true);
+  for (let y = cy - 3; y <= cy + 3; y++)
+    for (let x = bridgeX + 1; x <= bridgeX + 10; x++)
+      e.paintDiscLayer(0, x, y, 0, MAT.IRON_ORE, true);
+  e.syncComponentsLayer(0);
+  e.syncComponentsLayer(1);
+  e.stepWorld();
+
+  const before = topRow(e.getGrid(), MAT.IRON_ORE);
+  e._detonateTnt(cx, cy);
+  const bridgeRemoved = e.getGrid()[cy * COLS + bridgeX] === MAT.EMPTY;
+  for (let i = 0; i < 16; i++) e.stepWorld();
+  const after = topRow(e.getGrid(), MAT.IRON_ORE);
+  check('blast removes the cross-layer support endpoint', bridgeRemoved);
+  check(`the endpoint's surviving same-layer neighbour falls (top ${before} -> ${after})`,
+    after > before + 4);
+  e.destroy();
+}
+
+// --- a blast through a moving cross-layer body gives each survivor its own pivot ---
+{
+  const C = 150, R = 130;
+  const e = createEngineWasm({
+    cols: C, rows: R, worldSeed: 99, sinksOn: false, infinite: false,
+  });
+  e.setBgEnabled(true);
+  const rect = (layer, x0, y0, x1, y1, material) => {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        e.paintDiscLayer(layer, x, y, 0, material, true);
+  };
+  for (const layer of [0, 1]) {
+    rect(layer, 0, R - 3, C - 1, R - 1, MAT.STONE);
+    rect(layer, 15, 21, 44, 35, MAT.IRON_ORE);
+    rect(layer, 85, 21, 114, 35, MAT.BRICK);
+    rect(layer, 45, 27, 84, 29, MAT.WOOD);
+    rect(layer, 63, 30, 65, R - 4, MAT.STONE);
+    e.syncComponentsLayer(layer);
+  }
+  e.stepWorld();
+  for (const layer of [0, 1]) {
+    rect(layer, 61, 30, 67, R - 4, MAT.EMPTY);
+    e.syncComponentsLayer(layer);
+  }
+  e.stepWorld();
+  const beforeLeaders = Array.from({ length: e._bodyCountLayer(0) },
+    (_, i) => e._bodyJointRoleLayer(0, i)).filter((role) => role === 1).length;
+  e._detonateTnt(65, 28);
+  const leaders = Array.from({ length: e._bodyCountLayer(0) }, (_, i) => ({
+    id: e._bodyIdLayer(0, i),
+    role: e._bodyJointRoleLayer(0, i),
+    state: e._bodyStateLayer(0, i),
+  })).filter((body) => body.role === 1)
+    .sort((a, b) => a.state.px - b.state.px);
+  const followers = Array.from({ length: e._bodyCountLayer(1) },
+    (_, i) => e._bodyJointRoleLayer(1, i)).filter((role) => role === 2).length;
+  const fgOwners = e._bodyOwnerGrid(0), bgOwners = e._bodyOwnerGrid(1);
+  const fgGrid = e.getGrid(), bgGrid = e.getGridBg();
+  const centroidX = (id) => {
+    let weightedX = 0, mass = 0;
+    for (let k = 0; k < fgGrid.length; k++) {
+      const x = k % C;
+      if (fgOwners[k] === id) {
+        const cellMass = MATERIALS[fgGrid[k]].density;
+        weightedX += (x + 0.5) * cellMass;
+        mass += cellMass;
+      }
+      if (bgOwners[k] === id) {
+        const cellMass = MATERIALS[bgGrid[k]].density;
+        weightedX += (x + 0.5) * cellMass;
+        mass += cellMass;
+      }
+    }
+    return weightedX / mass;
+  };
+  check(`detached cross-layer fixture starts as one body (${beforeLeaders})`,
+    beforeLeaders === 1);
+  check(`blast-cut body becomes two independent cross-layer pieces (${leaders.length}/${followers})`,
+    leaders.length === 2 && followers === 2);
+  check('blast-cut pieces use local centers of mass',
+    leaders.length === 2
+      && leaders[1].state.px - leaders[0].state.px > 50
+      && leaders.every((body) =>
+        Math.abs(body.state.px - centroidX(body.id)) < 1e-6
+          && body.state.maxR < 30));
+  e.destroy();
+}
+
 // --- a blast reconnect may use another component, but a later cut must still split it ---
 {
   const e = mk();

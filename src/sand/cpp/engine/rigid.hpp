@@ -79,7 +79,9 @@ class RigidBodySystem {
                                   const std::vector<int>* vacated = nullptr);
   double rigidErodeProbabilityAt(int k);
   bool eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& bodyById, std::unordered_set<Body*>& dirty);
-  void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells);
+  void finishErasedBodies(std::unordered_set<Body*>& dirty, std::vector<int>& cells,
+                          bool splitJointBodies = true);
+  void finishErasedJointBodies(const std::unordered_set<Body*>& dirty);
   void erodeBodies(std::vector<int>& cells);
   int bodyFootprintBlocked(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
@@ -110,13 +112,7 @@ class RigidBodySystem {
     int cell = -1, component = -1, topology = -1;
     uint8_t material = EMPTY;
     double vx = 0, vy = 0, pressure = 0;
-    double residual = 0, direction = 0, applied = 0, diagonal = 0;
-    double preconditioned = 0, factorDiagonal = 1;
-    std::array<int, 2> lower{{-1, -1}};
-    std::array<double, 2> lowerMatrix{{0, 0}};
-    std::array<double, 2> lowerFactor{{0, 0}};
-    int lowerCount = 0;
-    bool pinned = false;
+    double residual = 0, direction = 0;
   };
   enum FluidFaceKind : uint8_t {
     FF_INTERNAL,
@@ -132,11 +128,18 @@ class RigidBodySystem {
     FluidFaceKind kind;
     double boundaryPressure = 0, inverseDensity = 0;
   };
+  struct FluidOperatorFace {
+    int a, b;
+    double inverseDensity;
+  };
   struct FluidTopology {
     uint8_t material = EMPTY;
     bool mixedMaterials = false;
     std::vector<double> rowDensitySum, rowPressure;
     std::vector<int> rowCellCount;
+    std::vector<int> columnSurfaceY;
+    std::vector<double> filteredSurfaceY;
+    int surfaceMinY = INT32_MAX, surfaceMaxY = -1;
   };
   std::array<std::vector<int32_t>, 2> fluidNodeStamp, fluidNodeIndex;
   std::array<std::vector<int32_t>, 2> fluidBodyStamp, fluidBodyIndex;
@@ -147,7 +150,18 @@ class RigidBodySystem {
   int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0, fluidTopologyGeneration = 0;
   std::vector<FluidNode> fluidNodes;
   std::vector<FluidFace> fluidFaces;
+  std::vector<FluidOperatorFace> fluidOperatorFaces;
+  std::vector<int> fluidBodyFaceIndices;
   std::vector<FluidTopology> fluidTopologies;
+  std::vector<double> fluidSolvePressure, fluidSolveResidual;
+  std::vector<double> fluidSolveDirection, fluidSolveApplied;
+  std::vector<double> fluidSolvePreconditioned, fluidSolveDiagonal;
+  std::vector<double> fluidSolveFactorDiagonal;
+  std::vector<std::array<int, 2>> fluidSolveLower;
+  std::vector<std::array<double, 2>> fluidSolveLowerMatrix;
+  std::vector<std::array<double, 2>> fluidSolveLowerFactor;
+  std::vector<uint8_t> fluidSolveLowerCount;
+  std::vector<uint8_t> fluidSolvePinned;
   std::vector<int> fluidQueue, fluidSeeds, fluidNodeDepth;
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;

@@ -189,9 +189,15 @@ from the cellular automaton's integer fall distance. A clear vertical fall
 accelerates by one cell per world tick up to the material's terminal speed;
 contact, diagonal avalanching, and lateral flow reset the stored momentum.
 Rigid coupling projects a deterministic pressure domain around wet body
-surfaces, sized from the bodies' displaced area. A linear topology pass supplies
-the domain with the connected liquid's hydrostatic far field, so a body in a
-large single-material lake does not make remote water enter the pressure matrix.
+surfaces using a near-field band sized to the wet bodies and capped at 32 cells.
+The cap prevents a growing body from expanding its pressure matrix without
+bound. A linear topology pass supplies hydrostatic far-field pressure at the
+cutoff, while persistent liquid velocity propagates dynamic motion across
+ticks. Pixel-scale surface relief keeps that stable shared reference; taller
+relief transitions to median-filtered local free-surface pressure at cutoff
+columns. A body in a large single-material lake therefore does not make remote
+water enter the pressure matrix or give a shallow flowing front the pressure
+head of a distant deep column.
 When one rigid solve touches different liquid materials, it retains the complete
 connected pressure domains so their density interfaces remain coupled exactly.
 

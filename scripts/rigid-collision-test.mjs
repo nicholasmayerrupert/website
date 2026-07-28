@@ -522,6 +522,56 @@ for (const dt of [16, 8, 33, 50]) {
 }
 
 {
+  console.log('dense body crosses a breaking current instead of surfing it');
+  const WATER = 2, WOOD = 8;
+  const runCurrent = (material) => {
+    const e = mk();
+    const paintRect = (x0, y0, x1, y1, mat) => {
+      for (let y = y0; y <= y1; y++)
+        for (let x = x0; x <= x1; x++)
+          e.paintDisc(x, y, 0, mat, true);
+    };
+    paintRect(0, 125, COLS - 1, ROWS - 1, STONE);
+    paintRect(8, 18, 8, 124, STONE);
+    paintRect(96, 18, 96, 124, STONE);
+    paintRect(190, 18, 190, 124, STONE);
+    e.syncComponents();
+    paintRect(9, 35, 95, 124, WATER);
+    let t = run(e, 20);
+    paintRect(96, 42, 96, 124, 0);
+    e.syncComponents();
+    const index = e._bodyCount();
+    e.spawnBox(105, 30, 5, 5, material);
+    let reachedFloorAt = -1, landedAt = -1, peakVx = 0, maxX = 105;
+    for (let tick = 1; tick <= 200; tick++) {
+      t = run(e, 1, t);
+      if (index >= e._bodyCount()) {
+        landedAt = tick;
+        break;
+      }
+      const state = e._bodyState(index);
+      if (reachedFloorAt < 0 && state.py >= 119) reachedFloorAt = tick;
+      peakVx = Math.max(peakVx, Math.abs(state.vx));
+      maxX = Math.max(maxX, state.px);
+    }
+    e.destroy();
+    return { reachedFloorAt, landedAt, peakVx, maxX };
+  };
+  const stone = runCurrent(STONE);
+  const wood = runCurrent(WOOD);
+  check(`stone sinks and solidifies through the current (tick ${stone.landedAt})`,
+    stone.landedAt > 0 && stone.landedAt < 180);
+  check(`stone current speed stays bounded (peak vx ${stone.peakVx.toFixed(3)})`,
+    stone.peakVx < 0.9);
+  check(`stone stays within 45 downstream cells (dx ${(stone.maxX - 105).toFixed(1)})`,
+    stone.maxX - 105 < 45);
+  check(`stone reaches the basin floor promptly (tick ${stone.reachedFloorAt})`,
+    stone.reachedFloorAt > 0 && stone.reachedFloorAt < 75);
+  check(`lighter wood follows more of the current (${(wood.maxX - 105).toFixed(1)} > ${(stone.maxX - 105).toFixed(1)})`,
+    wood.maxX > stone.maxX + 10 && wood.peakVx > stone.peakVx + 0.3);
+}
+
+{
   console.log('thin dual-layer tub and retained water share one free-fall frame');
   const WATER = 2;
   const buildTub = (loaded) => {

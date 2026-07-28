@@ -560,7 +560,14 @@ void ExplosivesSystem::applyBlastCuts(BlastBatch& bb) {
       E.L->bodyOwner[k] = -1;
     }
   }
-  E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells);
+  std::unordered_set<Body*> dirtyJoints;
+  for (Body* body : bb.dirtyBodies)
+    if (body->jointRole)
+      dirtyJoints.insert(body->jointRole == 1 ? body : body->jointPeer);
+  // The mirrored layer has not applied its cuts yet. Ordinary bodies can split
+  // now; cross-layer bodies split once the complete two-layer cut is visible.
+  E.finishErasedBodies(bb.dirtyBodies, E.L->bodyCells, false);
+  bb.dirtyBodies = std::move(dirtyJoints);
   for (int k : bb.staticTntIgnitions) {
     if (E.L->grid[k] == TNT && !E.isBodyCell(k)) queueDetonation(k, TNT_CHAIN_FUSE);
   }
@@ -781,6 +788,19 @@ void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   if (other) { E.useLayer(other); repairBlastStructures(*otherBb); }
   E.useLayer(src);
   repairBlastStructures(bb);
+  std::unordered_set<Body*> dirtyJoints;
+  auto collectDirtyJoints = [&](const BlastBatch& batch) {
+    for (Body* body : batch.dirtyBodies)
+      if (body && body->jointRole)
+        dirtyJoints.insert(body->jointRole == 1 ? body : body->jointPeer);
+  };
+  collectDirtyJoints(bb);
+  if (other) collectDirtyJoints(*otherBb);
+  if (!dirtyJoints.empty()) {
+    E.useLayer(&E.fg);
+    E.rigid.finishErasedJointBodies(dirtyJoints);
+    E.useLayer(src);
+  }
   if (other) { E.useLayer(other); applyBlastAftermath(*otherBb); }
   E.useLayer(src);
   applyBlastAftermath(bb);

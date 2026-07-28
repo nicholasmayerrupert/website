@@ -3,6 +3,11 @@
 // Components are grid-anchored while bodies are moving entities. This file owns
 // body geometry, integration, collision sampling, and stamping settled bodies
 // back into component-aware grid state.
+static bool rigidLargeSlenderBody(const Body* body) {
+  int shortSide = imax(1, imin(body->w, body->h));
+  return imax(body->w, body->h) >= shortSide * 4 && body->maxR >= 24;
+}
+
 void RigidBodySystem::clearContactCaches() {
   for (ContactCache& cache : contactCaches) cache.clear();
   for (std::vector<int>& ids : broadphaseBodyIds) ids.clear();
@@ -548,7 +553,10 @@ void RigidBodySystem::applyWarmStart(Contact& c) {
 }
 double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
-  double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - R_PEN_SLOP);
+  bool precisePair = B && rigidLargeSlenderBody(A)
+                       && rigidLargeSlenderBody(B);
+  double slop = precisePair ? R_BODY_PEN_SLOP : R_PEN_SLOP;
+  double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - slop);
   if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
   double bInvM = (B && B->awake && c.bIntegrated) ? B->invMass : 0;
@@ -766,6 +774,94 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<PenPt> penAcc, terrAcc;
   std::vector<Body*> terrPeers;
   std::vector<TerrainGroup> terrGroups;
+  auto addSlenderObbManifold = [&](Body* first, Body* second,
+                                   std::vector<PenPt>& points,
+                                   double& referenceX, double& referenceY) {
+    struct Frame {
+      double cx, cy, ax, ay, nx, ny, halfMajor, halfMinor;
+      bool slender;
+    };
+    auto frame = [](Body* body) {
+      Frame result{};
+      result.slender = rigidLargeSlenderBody(body);
+      bool horizontal = body->w >= body->h;
+      result.ax = horizontal ? body->cs : -body->sn;
+      result.ay = horizontal ? body->sn : body->cs;
+      result.nx = -result.ay;
+      result.ny = result.ax;
+      result.halfMajor = (horizontal ? body->w : body->h) * 0.5;
+      result.halfMinor = (horizontal ? body->h : body->w) * 0.5;
+      double localX = body->offsetX + (body->w - 1) * 0.5;
+      double localY = body->offsetY + (body->h - 1) * 0.5;
+      result.cx = body->px + localX * body->cs - localY * body->sn;
+      result.cy = body->py + localX * body->sn + localY * body->cs;
+      return result;
+    };
+    Frame a = frame(first), b = frame(second);
+    if (!a.slender || !b.slender)
+      return false;
+    auto extent = [](const Frame& shape, double x, double y) {
+      return std::fabs(x * shape.ax + y * shape.ay) * shape.halfMajor
+           + std::fabs(x * shape.nx + y * shape.ny) * shape.halfMinor;
+    };
+    const double axes[4][2] = {
+      {a.ax, a.ay}, {a.nx, a.ny}, {b.ax, b.ay}, {b.nx, b.ny},
+    };
+    double normalX = 0, normalY = -1, minimumOverlap = 1e18;
+    for (const auto& axis : axes) {
+      double delta = (a.cx - b.cx) * axis[0]
+                   + (a.cy - b.cy) * axis[1];
+      double overlap = extent(a, axis[0], axis[1])
+                     + extent(b, axis[0], axis[1])
+                     - std::fabs(delta);
+      if (overlap <= 0) return false;
+      if (overlap >= minimumOverlap) continue;
+      minimumOverlap = overlap;
+      normalX = axis[0];
+      normalY = axis[1];
+      if (std::fabs(delta) < 1e-6) {
+        double relative = (first->vx - second->vx) * normalX
+                        + (first->vy - second->vy) * normalY;
+        delta = relative <= 0 ? 1 : -1;
+      }
+      if (delta < 0) {
+        normalX = -normalX;
+        normalY = -normalY;
+      }
+    }
+    double tangentX = -normalY, tangentY = normalX;
+    double aTangent = a.cx * tangentX + a.cy * tangentY;
+    double bTangent = b.cx * tangentX + b.cy * tangentY;
+    double aTangentExtent = extent(a, tangentX, tangentY);
+    double bTangentExtent = extent(b, tangentX, tangentY);
+    double lo = std::fmax(aTangent - aTangentExtent,
+                          bTangent - bTangentExtent);
+    double hi = std::fmin(aTangent + aTangentExtent,
+                          bTangent + bTangentExtent);
+    if (hi <= lo) return false;
+    double aNormal = a.cx * normalX + a.cy * normalY;
+    double bNormal = b.cx * normalX + b.cy * normalY;
+    double aNormalExtent = extent(a, normalX, normalY);
+    double bNormalExtent = extent(b, normalX, normalY);
+    double depth = std::fmin(4.5, minimumOverlap);
+    double plane = ((aNormal - aNormalExtent)
+                  + (bNormal + bNormalExtent)) * 0.5;
+    points.push_back({
+      tangentX * lo + normalX * plane,
+      tangentY * lo + normalY * plane,
+      normalX, normalY, depth, 0,
+    });
+    if (hi - lo >= 1) {
+      points.push_back({
+        tangentX * hi + normalX * plane,
+        tangentY * hi + normalY * plane,
+        normalX, normalY, depth, 0,
+      });
+    }
+    referenceX = normalX;
+    referenceY = normalY;
+    return true;
+  };
   std::vector<int>& broadphaseOrder = broadphaseOrderScratch;
   std::vector<std::pair<int, int>>& broadphasePairs = broadphasePairScratch;
   broadphaseOrder.clear();
@@ -950,6 +1046,53 @@ void RigidBodySystem::rigidStep(double tickDt) {
     if (std::fabs(body->omega) < 1e-8) return false;
     return body->maxR >= 24;
   };
+  auto pairSeparatingDirection = [](Body* first, Body* second,
+                                    double& ox, double& oy) {
+    bool firstSlender = rigidLargeSlenderBody(first);
+    bool secondSlender = rigidLargeSlenderBody(second);
+    if (firstSlender && secondSlender) {
+      double firstAngle = first->angle + (first->h > first->w ? M_PI * 0.5 : 0);
+      double secondAngle = second->angle + (second->h > second->w ? M_PI * 0.5 : 0);
+      double fax = std::cos(firstAngle), fay = std::sin(firstAngle);
+      double sax = std::cos(secondAngle), say = std::sin(secondAngle);
+      double alignment = fax * sax + fay * say;
+      if (alignment < 0) {
+        sax = -sax;
+        say = -say;
+        alignment = -alignment;
+      }
+      if (alignment >= 0.75) {
+        double axisX = fax + sax, axisY = fay + say;
+        double axisLength = std::hypot(axisX, axisY);
+        if (axisLength > 1e-9) {
+          axisX /= axisLength;
+          axisY /= axisLength;
+          ox = -axisY;
+          oy = axisX;
+          double projection = (first->px - second->px) * ox
+                            + (first->py - second->py) * oy;
+          if (std::fabs(projection) < 1e-6)
+            projection = -((first->vx - second->vx) * ox
+                         + (first->vy - second->vy) * oy);
+          if (projection < 0) {
+            ox = -ox;
+            oy = -oy;
+          }
+          return;
+        }
+      }
+    }
+    ox = first->px - second->px;
+    oy = first->py - second->py;
+    double length = std::hypot(ox, oy);
+    if (length < 1e-9) {
+      ox = 0;
+      oy = -1;
+    } else {
+      ox /= length;
+      oy /= length;
+    }
+  };
   std::vector<uint8_t> activeBody(n, 0);
   std::vector<double> bodyDt(n, 0);
   for (int sub = 0; sub < substeps; sub++) {
@@ -1061,7 +1204,35 @@ void RigidBodySystem::rigidStep(double tickDt) {
     contacts.clear();
     // Penetration depth of a point that is already inside target T, measured by
     // marching outward along T's surface normal until it exits the mask.
-    auto penDepth = [&](Body* T, double wx, double wy, double nx, double ny) { double d = 0.5, mx = wx, my = wy; for (int s = 0; s < 4; s++) { mx += nx; my += ny; if (insideBodyIndex(T, mx, my) < 0) break; d += 1; } return d; };
+    auto penDepth = [&](Body* target, double wx, double wy,
+                        double nx, double ny, bool precise) {
+      if (!precise) {
+        double depth = 0.5, mx = wx, my = wy;
+        for (int step = 0; step < 4; step++) {
+          mx += nx;
+          my += ny;
+          if (insideBodyIndex(target, mx, my) < 0) break;
+          depth += 1;
+        }
+        return depth;
+      }
+      double inside = 0, outside = 0.25;
+      while (outside <= 4.5
+             && insideBodyIndex(target, wx + nx * outside,
+                                wy + ny * outside) >= 0) {
+        inside = outside;
+        outside += 0.25;
+      }
+      if (outside > 4.5) return 4.5;
+      for (int iteration = 0; iteration < 6; iteration++) {
+        double mid = (inside + outside) * 0.5;
+        if (insideBodyIndex(target, wx + nx * mid, wy + ny * mid) >= 0)
+          inside = mid;
+        else
+          outside = mid;
+      }
+      return outside;
+    };
     // Swept body-to-body sampling: for each exposed boundary sample of P, either
     // record an existing penetration (t=0) or march the sample's per-substep
     // RELATIVE path (P's point velocity minus T's velocity at that point) through
@@ -1071,6 +1242,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // side of a thin body to the other without generating a contact.
     auto collectSweep = [&](Body* P, Body* T, double sign, double dt) {
       const std::vector<float>& S = P->boundarySamples; double pm = P->sweepMargin;
+      bool preciseDepth = rigidLargeSlenderBody(P)
+                       && rigidLargeSlenderBody(T);
       for (size_t si = 0; si + 1 < S.size(); si += 2) {
         double lx = S[si], ly = S[si + 1];
         double sx = P->px + lx * P->cs - ly * P->sn, sy = P->py + lx * P->sn + ly * P->cs;
@@ -1080,7 +1253,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
           bodyNormalAt(T, idx0, sx, sy, nx_, ny_);
           penAcc.push_back({
             sx, sy, nx_ * sign, ny_ * sign,
-            penDepth(T, sx, sy, nx_, ny_), 0,
+            penDepth(T, sx, sy, nx_, ny_, preciseDepth), 0,
           });
           continue;
         }
@@ -1290,12 +1463,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
         if (!cnt[bk]) continue;
         double nl = std::sqrt(snx[bk] * snx[bk] + sny[bk] * sny[bk]);
         if (nl < 1e-6) { Nx[bk] = fbx; Ny[bk] = fby; } else { Nx[bk] = snx[bk] / nl; Ny[bk] = sny[bk] / nl; }
-        // A body pair has one separating half-space at a contact patch. Deep
-        // overlap samples can see the target's far-side faces too; accepting
-        // those opposite normals creates mutually unsatisfiable impulses that
-        // pump energy into crowded piles. Keep the faces that point generally
-        // from B toward A. Terrain remains multi-sided so floor/wall corners
-        // retain both constraints.
+        // Deep overlap samples can see the target's far-side faces too. The
+        // reference direction follows the shared minor axis for parallel,
+        // slender bodies, so longitudinal center offset does not discard a
+        // valid support face. Terrain remains multi-sided for floor/wall corners.
         if (B && Nx[bk] * fbx + Ny[bk] * fby < 0.5) {
           cnt[bk] = 0;
           continue;
@@ -1306,8 +1477,18 @@ void RigidBodySystem::rigidStep(double tickDt) {
         int bk = p.bk;
         if (!cnt[bk]) continue;
         double pr = p.wx * tx[bk] + p.wy * ty[bk];
-        if (pr < loP[bk]) { loP[bk] = pr; lo[bk] = &p; }
-        if (pr > hiP[bk]) { hiP[bk] = pr; hi[bk] = &p; }
+        if (pr < loP[bk] - 1e-9
+            || (std::fabs(pr - loP[bk]) <= 1e-9
+                && (!lo[bk] || p.depth > lo[bk]->depth))) {
+          loP[bk] = pr;
+          lo[bk] = &p;
+        }
+        if (pr > hiP[bk] + 1e-9
+            || (std::fabs(pr - hiP[bk]) <= 1e-9
+                && (!hi[bk] || p.depth > hi[bk]->depth))) {
+          hiP[bk] = pr;
+          hi[bk] = &p;
+        }
       }
       auto push = [&](PenPt* p, int bk) {
         if (!p) return -1;
@@ -1407,12 +1588,15 @@ void RigidBodySystem::rigidStep(double tickDt) {
       penAcc.clear();
       collectSweep(A, B, 1, pairDt);
       collectSweep(B, A, -1, pairDt);
+      double fbx, fby;
+      bool hasSlenderObb = addSlenderObbManifold(
+        A, B, penAcc, fbx, fby);
       if (penAcc.empty()) continue;
       if (!A->awake && bMoving) wakeBody(A);
       if (!B->awake && aMoving) wakeBody(B);
       if (!A->awake && !B->awake) continue;
-      double fbx = A->px - B->px, fby = A->py - B->py, fl = std::sqrt(fbx * fbx + fby * fby);
-      if (fl < 1e-9) { fbx = 0; fby = -1; } else { fbx /= fl; fby /= fl; }
+      if (!hasSlenderObb)
+        pairSeparatingDirection(A, B, fbx, fby);
       reduceManifold(penAcc, A, B, fbx, fby, pairDt);
     }
     for (int bi = 0; bi < n; bi++) {
@@ -1455,10 +1639,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
           if (!b->awake && peerMoving) wakeBody(b);
           if (!peer->awake && bodyMoving) wakeBody(peer);
           if (!b->awake && !peer->awake) continue;
-          double fbx = b->px - peer->px, fby = b->py - peer->py;
-          double fl = std::sqrt(fbx * fbx + fby * fby);
-          if (fl < 1e-9) { fbx = 0; fby = -1; }
-          else { fbx /= fl; fby /= fl; }
+          double fbx, fby;
+          pairSeparatingDirection(b, peer, fbx, fby);
           reduceManifold(group.points, b, peer, fbx, fby, contactDt);
         } else {
           reduceManifold(group.points, b, nullptr, 0, -1, contactDt);
@@ -2701,11 +2883,11 @@ double RigidBodySystem::rigidErodeProbabilityAt(int k) {
   uint8_t target = E.L->grid[k];
   auto consider = [&](int nk) {
     uint8_t medium = E.L->grid[nk];
-    if (medium == ACID && E.isDissolvable(target))
+    if (medium == ACID && (target == RIGID || E.isDissolvable(target)))
       p = std::fmax(p, ACID_DISSOLVE_P);
-    else if (medium == LAVA && E.isFlammable(target))
+    else if (medium == LAVA && (target == RIGID || E.isFlammable(target)))
       p = std::fmax(p, RIGID_LAVA_ERODE_P);
-    else if (medium == FIRE && E.isFlammable(target))
+    else if (medium == FIRE && (target == RIGID || E.isFlammable(target)))
       p = std::fmax(p, RIGID_FIRE_ERODE_P);
   };
   if (x < E.cols - 1) consider(k + 1); if (x > 0) consider(k - 1); if (y < E.rows - 1) consider(k + E.cols); if (y > 0) consider(k - E.cols);

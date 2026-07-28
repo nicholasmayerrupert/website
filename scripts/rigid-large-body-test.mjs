@@ -73,6 +73,64 @@ const speed = (state) =>
 }
 
 {
+  const cols = 420, rows = 300, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0x9876, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+  const localPoints = [];
+  for (let body = 0; body < 10; body++) {
+    const cells = [];
+    let y = 250 - body * 18;
+    for (let i = 0; i < 120; i++) {
+      if (i > 0 && i % 23 === 0) y++;
+      if (i > 0 && i % 37 === 0) y--;
+      cells.push([70 + (body % 2) * 60 + i, y]);
+    }
+    const cx = cells.reduce((sum, cell) => sum + cell[0] + 0.5, 0) / cells.length;
+    const cy = cells.reduce((sum, cell) => sum + cell[1] + 0.5, 0) / cells.length;
+    localPoints.push(cells.map(([x, cellY]) => [x + 0.5 - cx, cellY + 0.5 - cy]));
+    engine.spawnBody(cells);
+  }
+  for (let i = 0; i < 1400; i++) engine.stepWorld();
+  const finalStates = localPoints.map((_, body) => engine._bodyState(body));
+  const worldPoints = localPoints.map((points, body) => {
+    const state = finalStates[body];
+    const cs = Math.cos(state.angle), sn = Math.sin(state.angle);
+    return points.map(([x, y]) => [
+      state.px + x * cs - y * sn,
+      state.py + x * sn + y * cs,
+    ]);
+  });
+  let deepOverlaps = 0, minimumDistance = Infinity, minimumPair = '';
+  for (let a = 0; a < worldPoints.length; a++) {
+    for (let b = a + 1; b < worldPoints.length; b++) {
+      let pairDistance2 = Infinity;
+      for (const first of worldPoints[a]) {
+        for (const second of worldPoints[b]) {
+          const dx = first[0] - second[0], dy = first[1] - second[1];
+          pairDistance2 = Math.min(pairDistance2, dx * dx + dy * dy);
+        }
+      }
+      const pairDistance = Math.sqrt(pairDistance2);
+      if (pairDistance < minimumDistance) {
+        minimumDistance = pairDistance;
+        minimumPair = `${a}/${b}`;
+      }
+      if (pairDistance < 0.5) deepOverlaps++;
+    }
+  }
+  const [minimumA, minimumB] = minimumPair.split('/').map(Number);
+  check(`staggered jagged beams do not phase through one another `
+      + `(${deepOverlaps} deep overlaps, minimum ${minimumDistance.toFixed(3)} `
+      + `at ${minimumPair}, angles ${finalStates[minimumA].angle.toFixed(3)}/`
+      + `${finalStates[minimumB].angle.toFixed(3)})`,
+    deepOverlaps === 0);
+  engine.destroy();
+}
+
+{
   const cols = 420, rows = 260, floorY = rows - 3;
   const engine = createEngineWasm({
     cols, rows, worldSeed: 0x2b3c, sinksOn: false, infinite: false,

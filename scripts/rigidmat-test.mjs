@@ -53,6 +53,32 @@ const count = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return
   e.destroy();
 }
 
+// --- generic creative RIGID is destructible by corrosive and molten media. ---
+for (const [name, medium] of [['ACID', MAT.ACID], ['LAVA', MAT.LAVA]]) {
+  const e = mk();
+  const x0 = 24, x1 = 96, y0 = 18, y1 = 84;
+  for (let y = y0; y <= y1; y++) {
+    e.paintDisc(x0, y, 0, MAT.CRYSTAL, true);
+    e.paintDisc(x1, y, 0, MAT.CRYSTAL, true);
+  }
+  for (let x = x0; x <= x1; x++)
+    e.paintDisc(x, y1, 0, MAT.CRYSTAL, true);
+  e.syncComponents();
+  for (let y = y0 + 1; y < y1; y++)
+    for (let x = x0 + 1; x < x1; x++)
+      e.paintDisc(x, y, 0, medium, true);
+  for (let i = 0; i < 40; i++) e.stepWorld();
+  e.spawnBox(60, 48, 5, 5, MAT.RIGID);
+  const initialCells = e._bodyState(0)?.nPts ?? 0;
+  for (let i = 0; i < 360; i++) e.stepWorld();
+  let remainingCells = 0;
+  for (let body = 0; body < e._bodyCount(); body++)
+    remainingCells += e._bodyState(body)?.nPts ?? 0;
+  check(`${name} destroys generic RIGID bodies (${initialCells} -> ${remainingCells})`,
+    initialCells > 0 && remainingCells < initialCells / 2);
+  e.destroy();
+}
+
 // --- component-backed bodies resting only on another free body stay in the
 //     rigid solver. The lower generic body never becomes static terrain. ---
 {

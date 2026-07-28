@@ -84,6 +84,9 @@ free body cell and a static `STONE` component cell.
 - `WATER`: id `WATER`, `materialClass` `liquid`, `kind` `liquid`.
 - `FIRE`: id `FIRE`, `materialClass` `gas`, `kind` `gas`.
 - `TNT`: id `TNT`, `materialClass` `rigid`, `kind` `component`.
+- `RIGID`: id `RIGID`, `materialClass` `rigid`, `kind` `free_rigid`. It has no
+  static component form; acid, lava, and fire erode it through the free-body
+  reaction path.
 
 ## Which field should code use?
 

@@ -238,11 +238,11 @@ struct Body {
   int fuseTicks = 0; // >0 = a lit TNT body counting down to detonation (explosives.inc)
   std::vector<float> points; int nPts = 0;
   std::vector<int> boundaryPts;
-  // Local-space collision samples (interleaved lx,ly): the cell centre plus the
-  // midpoint of every exposed cell face and exposed convex corner. The body
-  // shape is the union of 1x1 occupied squares, so sampling only cell centres
-  // misses the exposed edges of thin shapes; these are cached and rebuilt only
-  // when the occupancy changes (computeDerived).
+  // Local-space collision samples (interleaved lx,ly): the cell centre and
+  // midpoint of every exposed face. Filled, large, and very slender masks also
+  // sample exposed convex corners. The body shape is the union of 1x1 occupied
+  // squares, so cell centres alone miss thin-shape edges; samples are cached and
+  // rebuilt only when occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
   uint32_t geometryRevision = 0;
   double invMass = 0, invInertia = 0, maxR = 0;
@@ -643,7 +643,8 @@ static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;
 static const int    R_CONTACT_CACHE_MISSED_SUBSTEPS = 2;
 static const int    R_CONTACT_CACHE_MAX_PER_KEY = 16;
 static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
-static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
+static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3;
+static const double R_PEN_SLOP = 0.5, R_BODY_PEN_SLOP = 0.1;
 static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;

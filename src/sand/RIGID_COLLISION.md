@@ -24,14 +24,23 @@ lives in `rigid_impl.inc`.
   including very long beams, evaluate the exact constant-linear/angular
   trajectory and target rotation so a distant tip cannot tunnel through terrain
   or another body.
+- When two genuinely large, slender bodies overlap, an oriented-rectangle SAT
+  manifold supplements the raster samples. Its minimum-overlap axis and two
+  support points keep shallow-angle, longitudinally offset beams from passing
+  through one another when their sparse samples alternate sides. This
+  conservative fallback is restricted to pairs with `maxR >= 24` and at least a
+  4:1 bounding-box aspect ratio; ordinary debris retains the exact raster path
+  and its lower collision cost. These pairs also use refined penetration depth
+  and a tighter positional slop.
 - Contact normals come from the target mask. A body sample surrounded by
   occupied mask cells uses its nearest empty axial direction instead of a radial
   guess. A symmetric terrain cell uses the side facing the body's center, so a
   one-cell wall produces a horizontal normal instead of an arbitrary upward one.
   Contacts are bucketed by normal direction so distinct faces do not collapse
   into one diagonal manifold. Body/body buckets must also face the separating
-  half-space; far-side samples from a deep overlap are discarded instead of
-  creating opposing constraints.
+  half-space; parallel slender pairs derive that half-space from their shared
+  minor axis rather than their longitudinally offset centers. Far-side samples
+  from a deep overlap are discarded instead of creating opposing constraints.
 - Per-layer contact caches match local anchors by stable body id, geometry
   revision, peer layer, and normal bucket. Persistent normal and friction
   impulses warm-start the next substep/tick, while restitution remains an
@@ -86,6 +95,11 @@ break rechecks the full detached assembly against its remaining granular
 footprint, so a few trapped grains cannot pin a large baked island. If the loose
 footprint drains completely, the baked component returns to the body solver;
 intact supported stacks remain baked.
+
+Generic creative `RIGID` has no material-specific reaction flags, but its body
+cells erode next to acid, lava, or fire. Component-backed bodies instead retain
+their material identities and use the corresponding dissolvable or flammable
+flags.
 
 ## Fluids and loose solids
 

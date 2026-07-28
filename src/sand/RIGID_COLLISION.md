@@ -25,12 +25,14 @@ lives in `rigid_impl.inc`.
   trajectory and target rotation so a distant tip cannot tunnel through terrain
   or another body.
 - After the raster sweep finds real contact between two genuinely large,
-  slender bodies, an oriented-rectangle SAT manifold supplements those samples.
-  Its minimum-overlap axis and two support points keep shallow-angle,
-  longitudinally offset beams from passing through one another when their sparse
-  samples alternate sides. It never creates contact from bounding rectangles
-  alone, so sparse or kinked masks cannot support each other across empty space.
-  The fallback is restricted to pairs with `maxR >= 24` and at least a 4:1
+  slender bodies, oriented rectangles supply a stable minimum-overlap reference
+  axis. Near-parallel pairs also receive two span support points so
+  shallow-angle, longitudinally offset beams cannot pass through one another
+  when sparse samples alternate sides. Crossed beams retain their local raster
+  anchors, and positional bias always uses measured raster penetration rather
+  than bounding-box overlap. The fallback never creates contact from bounding
+  rectangles alone, so sparse or kinked masks cannot support each other across
+  empty space. It is restricted to pairs with `maxR >= 24` and at least a 4:1
   bounding-box aspect ratio; ordinary debris retains the exact raster path and
   its lower collision cost. These pairs also use refined penetration depth and
   a tighter positional slop.

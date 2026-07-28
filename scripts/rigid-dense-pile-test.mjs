@@ -120,6 +120,102 @@ check(`late terrain depenetrations stayed bounded (${lateDepenetrations} <= 2)`,
   lateDepenetrations <= 2);
 
 e.destroy();
+
+console.log('\nmixed long and short bodies settle without visible shimmer');
+const mixedCols = 320, mixedRows = 230, mixedFloorY = mixedRows - 3;
+const mixed = createEngineWasm({
+  cols: mixedCols,
+  rows: mixedRows,
+  worldSeed: 0x51A7,
+  sinksOn: false,
+});
+const mixedStoneRect = (x0, y0, x1, y1) => {
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      mixed.paintDisc(x, y, 0, STONE, true);
+};
+mixedStoneRect(0, mixedFloorY, mixedCols - 1, mixedRows - 1);
+mixedStoneRect(18, mixedRows - 150, 22, mixedFloorY - 1);
+mixedStoneRect(mixedCols - 23, mixedRows - 150,
+  mixedCols - 19, mixedFloorY - 1);
+mixed.syncComponents();
+
+let mixedRandomState = 0x51A7;
+const mixedRandom = () => {
+  mixedRandomState = (mixedRandomState * 1103515245 + 12345) & 0x7fffffff;
+  return mixedRandomState / 0x7fffffff;
+};
+const mixedRandomInt = (a, b) =>
+  a + ((mixedRandom() * (b - a + 1)) | 0);
+const mixedBody = (body) => {
+  if (body % 3 !== 0) {
+    const size = mixedRandomInt(3, 6);
+    const x0 = mixedRandomInt(35, mixedCols - 35 - size);
+    const y0 = mixedRandomInt(8, 45);
+    const cells = [];
+    for (let y = y0; y < y0 + size; y++)
+      for (let x = x0; x < x0 + size; x++) cells.push([x, y]);
+    return cells;
+  }
+  const length = mixedRandomInt(60, 100);
+  const x0 = mixedRandomInt(35, mixedCols - 35 - length);
+  let y = mixedRandomInt(8, 45);
+  const cells = [];
+  for (let x = x0; x < x0 + length; x++) {
+    if (x > x0 && (x - x0) % 23 === 0) y++;
+    if (x > x0 && (x - x0) % 37 === 0) y--;
+    cells.push([x, y]);
+  }
+  return cells;
+};
+
+const mixedBodyCount = 36, mixedSteps = 1200;
+let mixedSpawned = 0, mixedSettledAt = -1;
+let mixedLatePeak = 0, mixedLateRejected = 0, mixedLateDepenetrations = 0;
+for (let tick = 1; tick <= mixedSteps; tick++) {
+  if (mixedSpawned < mixedBodyCount && tick % 4 === 0) {
+    mixed.spawnBody(mixedBody(mixedSpawned));
+    const body = mixed._bodyCount() - 1;
+    mixed._setBodyMotion(body,
+      (mixedRandom() - 0.5) * 0.8,
+      mixedRandom() * 0.4,
+      (mixedRandom() - 0.5) * 0.05);
+    mixedSpawned++;
+  }
+  mixed.stepWorld();
+  if (tick < 650) continue;
+  const raster = mixed.getRigidDebug();
+  mixedLateRejected = Math.max(mixedLateRejected, raster.rejectedCells);
+  mixedLateDepenetrations = Math.max(
+    mixedLateDepenetrations, raster.depenetrations);
+  let awake = 0;
+  for (let body = 0; body < mixed._bodyCount(); body++) {
+    awake += mixed._bodyAwake(body) > 0;
+    const state = mixed._bodyState(body);
+    mixedLatePeak = Math.max(mixedLatePeak,
+      Math.hypot(state.vx, state.vy) + Math.abs(state.omega) * state.maxR);
+  }
+  if (awake === 0 && mixedSettledAt < 0) mixedSettledAt = tick;
+}
+
+let mixedFinalAwake = 0;
+for (let body = 0; body < mixed._bodyCount(); body++)
+  mixedFinalAwake += mixed._bodyAwake(body) > 0;
+check(`mixed pile slept by tick 1000 (tick ${mixedSettledAt})`,
+  mixedSettledAt >= 0 && mixedSettledAt <= 1000);
+check(`mixed pile has no awake bodies (${mixedFinalAwake} == 0)`,
+  mixedFinalAwake === 0);
+check(`mixed pile late point motion stayed restrained `
+    + `(${mixedLatePeak.toFixed(4)} <= 0.05)`,
+  mixedLatePeak <= 0.05);
+check(`mixed pile late raster conflicts stayed bounded `
+    + `(${mixedLateRejected} <= 20)`,
+  mixedLateRejected <= 20);
+check(`mixed pile late terrain depenetrations stayed bounded `
+    + `(${mixedLateDepenetrations} <= 2)`,
+  mixedLateDepenetrations <= 2);
+mixed.destroy();
+
 if (failures) {
   console.error(`\n${failures} checks FAILED`);
   process.exit(1);

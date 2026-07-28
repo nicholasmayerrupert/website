@@ -635,6 +635,7 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // stability + earlier contact), and a sample's per-substep relative path is
 // marched in steps no larger than R_SWEEP_STEP cells looking for first impact.
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
+static const double R_SLENDER_PARALLEL_COS = 0.75;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
 static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
 static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;

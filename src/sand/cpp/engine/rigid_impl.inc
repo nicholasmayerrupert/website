@@ -830,6 +830,16 @@ void RigidBodySystem::rigidStep(double tickDt) {
         normalY = -normalY;
       }
     }
+    referenceX = normalX;
+    referenceY = normalY;
+    double deepestRaster = 0;
+    for (const PenPt& point : points)
+      deepestRaster = std::fmax(deepestRaster, point.depth);
+    double alignment = std::fabs(a.ax * b.ax + a.ay * b.ay);
+    // A crossed pair has a local point contact. Span constraints belong only to
+    // near-parallel faces, and their bias follows measured raster penetration.
+    if (alignment < R_SLENDER_PARALLEL_COS) return true;
+
     double tangentX = -normalY, tangentY = normalX;
     double aTangent = a.cx * tangentX + a.cy * tangentY;
     double bTangent = b.cx * tangentX + b.cy * tangentY;
@@ -839,12 +849,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
                           bTangent - bTangentExtent);
     double hi = std::fmin(aTangent + aTangentExtent,
                           bTangent + bTangentExtent);
-    if (hi <= lo) return false;
+    if (hi <= lo) return true;
     double aNormal = a.cx * normalX + a.cy * normalY;
     double bNormal = b.cx * normalX + b.cy * normalY;
     double aNormalExtent = extent(a, normalX, normalY);
     double bNormalExtent = extent(b, normalX, normalY);
-    double depth = std::fmin(4.5, minimumOverlap);
+    double depth = std::fmin(4.5, deepestRaster);
     double plane = ((aNormal - aNormalExtent)
                   + (bNormal + bNormalExtent)) * 0.5;
     points.push_back({
@@ -859,8 +869,6 @@ void RigidBodySystem::rigidStep(double tickDt) {
         normalX, normalY, depth, 0,
       });
     }
-    referenceX = normalX;
-    referenceY = normalY;
     return true;
   };
   std::vector<int>& broadphaseOrder = broadphaseOrderScratch;
@@ -1062,7 +1070,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         say = -say;
         alignment = -alignment;
       }
-      if (alignment >= 0.75) {
+      if (alignment >= R_SLENDER_PARALLEL_COS) {
         double axisX = fax + sax, axisY = fay + say;
         double axisLength = std::hypot(axisX, axisY);
         if (axisLength > 1e-9) {

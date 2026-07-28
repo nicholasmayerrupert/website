@@ -1403,9 +1403,11 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   fluidRHS.resize(nodeCount);
   for (int i = 0; i < nodeCount; i++)
     fluidRHS[i] = fluidSolveResidual[i];
+  bool hasPinned = false;
   for (int c = 0; c < component; c++) {
     if (componentHasAir[c] || componentHasDomain[c]) continue;
     fluidSolvePinned[componentFirst[c]] = 1;
+    hasPinned = true;
   }
   auto applyPressureOperator = [&](const double* value,
                                    std::vector<double>& output) {
@@ -1439,11 +1441,12 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
                       + fluidBodyDVY[face.body] * face.ny
                       + fluidBodyDW[face.body] * cross;
     }
+    if (hasPinned)
+      for (int i = 0; i < nodeCount; i++)
+        if (fluidSolvePinned[i]) output[i] = value[i];
     double dot = 0;
-    for (int i = 0; i < nodeCount; i++) {
-      if (fluidSolvePinned[i]) output[i] = value[i];
+    for (int i = 0; i < nodeCount; i++)
       dot += value[i] * output[i];
-    }
     return dot;
   };
   auto applyPressureMatrix = [&](bool useDirection) {
@@ -1453,11 +1456,12 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   };
 
   for (int activeSet = 0; activeSet < 2; activeSet++) {
-    for (int i = 0; i < nodeCount; i++)
-      if (fluidSolvePinned[i]) fluidSolvePressure[i] = 0;
+    if (hasPinned)
+      for (int i = 0; i < nodeCount; i++)
+        if (fluidSolvePinned[i]) fluidSolvePressure[i] = 0;
     for (int i = 0; i < nodeCount; i++) {
       int lowerCount = fluidSolveLowerCount[i];
-      if (fluidSolvePinned[i]) {
+      if (hasPinned && fluidSolvePinned[i]) {
         fluidSolveFactorDiagonal[i] = 1;
         for (int edge = 0; edge < lowerCount; edge++)
           fluidSolveLowerFactor[i][edge] = 0;
@@ -1466,7 +1470,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       double diagonal = fluidSolveDiagonal[i];
       for (int edge = 0; edge < lowerCount; edge++) {
         int j = fluidSolveLower[i][edge];
-        if (fluidSolvePinned[j]) {
+        if (hasPinned && fluidSolvePinned[j]) {
           fluidSolveLowerFactor[i][edge] = 0;
           continue;
         }
@@ -1490,7 +1494,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     }
     auto applyPreconditioner = [&]() {
       for (int i = 0; i < nodeCount; i++) {
-        if (fluidSolvePinned[i]) {
+        if (hasPinned && fluidSolvePinned[i]) {
           fluidSolveApplied[i] = fluidSolvePreconditioned[i] = 0;
           continue;
         }
@@ -1501,7 +1505,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
         fluidSolveApplied[i] = value / fluidSolveFactorDiagonal[i];
       }
       for (int i = nodeCount - 1; i >= 0; i--) {
-        if (fluidSolvePinned[i]) continue;
+        if (hasPinned && fluidSolvePinned[i]) continue;
         fluidSolvePreconditioned[i] =
           fluidSolveApplied[i] / fluidSolveFactorDiagonal[i];
         for (int edge = 0; edge < fluidSolveLowerCount[i]; edge++)
@@ -1513,7 +1517,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     applyPressureMatrix(false);
     double rz = 0, rhsNorm = 0;
     for (int i = 0; i < nodeCount; i++) {
-      if (fluidSolvePinned[i]) {
+      if (hasPinned && fluidSolvePinned[i]) {
         fluidSolveResidual[i] = fluidSolveDirection[i] = 0;
         continue;
       }
@@ -1522,7 +1526,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     }
     applyPreconditioner();
     for (int i = 0; i < nodeCount; i++) {
-      if (fluidSolvePinned[i]) continue;
+      if (hasPinned && fluidSolvePinned[i]) continue;
       fluidSolveDirection[i] = fluidSolvePreconditioned[i];
       rz += fluidSolveResidual[i] * fluidSolvePreconditioned[i];
     }
@@ -1531,26 +1535,43 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       if (denom <= 1e-18) break;
       double alpha = rz / denom;
       double residualNorm = 0;
-      for (int i = 0; i < nodeCount; i++) {
-        if (fluidSolvePinned[i]) continue;
-        fluidSolvePressure[i] += alpha * fluidSolveDirection[i];
-        fluidSolveResidual[i] -= alpha * fluidSolveApplied[i];
-        residualNorm += fluidSolveResidual[i] * fluidSolveResidual[i];
+      if (hasPinned) {
+        for (int i = 0; i < nodeCount; i++) {
+          if (fluidSolvePinned[i]) continue;
+          fluidSolvePressure[i] += alpha * fluidSolveDirection[i];
+          fluidSolveResidual[i] -= alpha * fluidSolveApplied[i];
+          residualNorm += fluidSolveResidual[i] * fluidSolveResidual[i];
+        }
+      } else {
+        // This norm controls stopping only; pressure arithmetic remains
+        // lane-independent while the reduction uses SIMD.
+        #pragma clang loop vectorize(enable)
+        for (int i = 0; i < nodeCount; i++) {
+          fluidSolvePressure[i] += alpha * fluidSolveDirection[i];
+          fluidSolveResidual[i] -= alpha * fluidSolveApplied[i];
+          residualNorm += fluidSolveResidual[i] * fluidSolveResidual[i];
+        }
       }
       applyPreconditioner();
       double nextRz = 0;
       for (int i = 0; i < nodeCount; i++)
-        if (!fluidSolvePinned[i])
+        if (!hasPinned || !fluidSolvePinned[i])
           nextRz += fluidSolveResidual[i] * fluidSolvePreconditioned[i];
       if (residualNorm <= rhsNorm * R_FLUID_PRESSURE_REL_RESIDUAL2) {
         rz = nextRz;
         break;
       }
       double beta = nextRz / rz;
-      for (int i = 0; i < nodeCount; i++)
-        if (!fluidSolvePinned[i])
+      if (hasPinned) {
+        for (int i = 0; i < nodeCount; i++)
+          if (!fluidSolvePinned[i])
+            fluidSolveDirection[i] =
+              fluidSolvePreconditioned[i] + beta * fluidSolveDirection[i];
+      } else {
+        for (int i = 0; i < nodeCount; i++)
           fluidSolveDirection[i] =
             fluidSolvePreconditioned[i] + beta * fluidSolveDirection[i];
+      }
       rz = nextRz;
     }
     bool clamped = false;
@@ -1559,6 +1580,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
         fluidSolvePinned[i] = 1;
         fluidSolvePressure[i] = 0;
         clamped = true;
+        hasPinned = true;
       }
     if (!clamped) break;
   }

@@ -108,8 +108,9 @@ component registration, and generation/restoration. Browser presentation exposes
   flood, while persistent liquid velocity carries dynamics beyond the cutoff. A
   local multi-material interface triggers exact connected projection; ordinary
   single-material pools remain fixed-size. Pressure Krylov vectors use
-  contiguous storage, and its repeated matrix pass traverses compact dynamic
-  faces.
+  contiguous storage, the common unpinned iteration keeps its convergence and
+  direction updates SIMD-vectorized, and the repeated matrix pass traverses
+  compact dynamic faces.
 - Body/body broadphase uses sweep-and-prune, then sorts surviving pairs back
   into deterministic body-index order before generating contacts.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize

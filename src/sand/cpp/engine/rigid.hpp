@@ -49,6 +49,8 @@ class RigidBodySystem {
                            const std::vector<uint8_t>& fgMaterials,
                            const std::vector<std::pair<int, int>>& bgCells,
                            const std::vector<uint8_t>& bgMaterials);
+  void freezeCellsOntoBody(Layer& sourceLayer, int sourceBodyId,
+                           Layer& targetLayer, const std::vector<int>& cells);
   uint8_t bodyMaterialAt(Body* b, int localIndex);
   void terrainNormalAt(Body* b, int cx, int cy, double bodyDensity, double& ox, double& oy);
   int insideBodyIndex(Body* b, double wx, double wy);

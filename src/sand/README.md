@@ -201,7 +201,9 @@ Reactions are routed through generated flags where possible:
 - Acid dissolves `dissolvable` cells.
 - Water, brine, ice, snow, salt, and lava handle freezing, melting, and quenching.
   Static and free-body ice freeze water in their own layer and at co-occupied
-  cells in the adjacent layer.
+  cells in the adjacent layer. Water frozen by a free body extends that body's
+  occupancy; cross-layer growth promotes a single-layer body to a shared-pose
+  foreground/background body.
 - Growth owns plant and mycelium expansion.
 - Explosives own TNT/methane fuses, staged blasts, debris, shock, and chaining.
 

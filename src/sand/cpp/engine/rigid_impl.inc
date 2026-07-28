@@ -166,6 +166,166 @@ Body* RigidBodySystem::spawnJointBodyImpl(
   E.useLayer(previous);
   return leader;
 }
+void RigidBodySystem::freezeCellsOntoBody(
+    Layer& sourceLayer, int sourceBodyId, Layer& targetLayer,
+    const std::vector<int>& cells) {
+  if (cells.empty()) return;
+  auto findBody = [](Layer& layer, int id) -> Body* {
+    for (Body* body : layer.bodies)
+      if (body->id == id) return body;
+    return nullptr;
+  };
+  Body* source = findBody(sourceLayer, sourceBodyId);
+  if (!source) return;
+
+  Body* target = source;
+  if (&sourceLayer != &targetLayer) {
+    if (source->jointRole) {
+      target = source->jointPeer;
+      if (!target) return;
+    } else {
+      // A cross-layer attachment promotes the existing body to a shared-pose
+      // pair. The missing layer starts empty and receives only the new cells.
+      Body* peer = new Body(*source);
+      std::vector<uint8_t> sourceMaterials(source->occ.size(), EMPTY);
+      if (source->cellMaterials.empty()) {
+        for (size_t i = 0; i < source->occ.size(); i++)
+          if (source->occ[i]) sourceMaterials[i] = source->material;
+      } else {
+        sourceMaterials = source->cellMaterials;
+      }
+      source->cellMaterials = sourceMaterials;
+      source->jointPeerMaterials.assign(source->occ.size(), EMPTY);
+      peer->cellMaterials.assign(peer->occ.size(), EMPTY);
+      peer->jointPeerMaterials = sourceMaterials;
+      source->jointPeer = peer;
+      peer->jointPeer = source;
+
+      Body* leader = &sourceLayer == &E.fg ? source : peer;
+      Body* follower = &sourceLayer == &E.bg ? source : peer;
+      leader->jointRole = 1;
+      follower->jointRole = 2;
+      int oldId = source->id;
+      int jointId = imax(E.fg.nextBodyId, E.bg.nextBodyId);
+      E.fg.nextBodyId = E.bg.nextBodyId = jointId + 1;
+      source->id = peer->id = jointId;
+      for (int k : sourceLayer.bodyCells)
+        if (sourceLayer.bodyOwner[k] == oldId)
+          sourceLayer.bodyOwner[k] = jointId;
+      (&sourceLayer == &E.fg ? E.bg : E.fg).bodies.push_back(peer);
+      if (&sourceLayer == &E.bg) {
+        std::vector<int> active;
+        active.reserve(E.bg.bodyCells.size());
+        for (int k : E.bg.bodyCells) {
+          if (E.bg.bodyOwner[k] == jointId)
+            E.bg.passiveBodyCells.push_back(k);
+          else
+            active.push_back(k);
+        }
+        E.bg.bodyCells = std::move(active);
+      }
+      E.bg.passiveBodyIds.insert(jointId);
+      computeDerived(leader, true);
+      computeDerived(follower, true);
+      syncJointFollower(leader);
+      target = &targetLayer == &E.fg ? leader : follower;
+    }
+  }
+  if (!target) return;
+
+  // Quantize the frozen world cells into the body's authoritative local mask.
+  // Expanding that mask shifts its offset so every existing local cell keeps
+  // the same world-space pose.
+  std::vector<std::pair<int, int>> localCells;
+  localCells.reserve(cells.size());
+  double cs = std::cos(target->angle), sn = std::sin(target->angle);
+  int minI = 0, minJ = 0, maxI = target->w - 1, maxJ = target->h - 1;
+  for (int k : cells) {
+    if (k < 0 || k >= E.cols * E.rows
+        || targetLayer.grid[k] != WATER || targetLayer.bodyOwner[k] >= 0)
+      continue;
+    int y = k / E.cols, x = k - y * E.cols;
+    double dx = x + 0.5 - target->px, dy = y + 0.5 - target->py;
+    double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
+    int i = (int)std::lround(lx - target->offsetX);
+    int j = (int)std::lround(ly - target->offsetY);
+    localCells.push_back({i, j});
+    minI = imin(minI, i); minJ = imin(minJ, j);
+    maxI = imax(maxI, i); maxJ = imax(maxJ, j);
+  }
+  if (localCells.empty()) return;
+
+  int addLeft = -minI, addTop = -minJ;
+  int newW = maxI - minI + 1, newH = maxJ - minJ + 1;
+  auto resize = [&](Body* body) {
+    if (newW == body->w && newH == body->h) return;
+    int oldW = body->w, oldH = body->h;
+    std::vector<uint8_t> occ((size_t)newW * newH, 0);
+    std::vector<uint8_t> own, peer;
+    if (!body->cellMaterials.empty())
+      own.assign((size_t)newW * newH, EMPTY);
+    if (!body->jointPeerMaterials.empty())
+      peer.assign((size_t)newW * newH, EMPTY);
+    for (int j = 0; j < oldH; j++) for (int i = 0; i < oldW; i++) {
+      int oldLocal = j * oldW + i;
+      int local = (j + addTop) * newW + i + addLeft;
+      occ[local] = body->occ[oldLocal];
+      if (!own.empty()) own[local] = body->cellMaterials[oldLocal];
+      if (!peer.empty()) peer[local] = body->jointPeerMaterials[oldLocal];
+    }
+    body->occ = std::move(occ);
+    if (!own.empty()) body->cellMaterials = std::move(own);
+    if (!peer.empty()) body->jointPeerMaterials = std::move(peer);
+    body->w = newW; body->h = newH;
+    body->offsetX -= addLeft; body->offsetY -= addTop;
+  };
+  Body* leader = target->jointRole == 2 ? target->jointPeer : target;
+  Body* follower = leader && leader->jointRole == 1 ? leader->jointPeer : nullptr;
+  resize(target);
+  if (follower) resize(target == leader ? follower : leader);
+
+  for (const auto& cell : localCells) {
+    int local = (cell.second + addTop) * newW + cell.first + addLeft;
+    if (target->cellMaterials.empty() && target->material != ICE) {
+      target->cellMaterials.assign(target->occ.size(), EMPTY);
+      for (size_t i = 0; i < target->occ.size(); i++)
+        if (target->occ[i]) target->cellMaterials[i] = target->material;
+    }
+    target->occ[local] = 1;
+    if (!target->cellMaterials.empty()) target->cellMaterials[local] = ICE;
+    if (target->jointRole) {
+      target->jointPeer->occ[local] = 1;
+      target->jointPeer->jointPeerMaterials[local] = ICE;
+    }
+  }
+  if (follower) {
+    computeDerived(leader, true);
+    computeDerived(follower, true);
+    syncJointFollower(leader);
+  } else {
+    computeDerived(target, true);
+  }
+
+  Layer* previous = E.L;
+  E.useLayer(&targetLayer);
+  std::vector<int>& bodyCells = target->jointRole == 2
+    ? targetLayer.passiveBodyCells : targetLayer.bodyCells;
+  for (int k : cells) {
+    if (k < 0 || k >= E.cols * E.rows
+        || targetLayer.grid[k] != WATER || targetLayer.bodyOwner[k] >= 0)
+      continue;
+    E.writeGridIndex(k, ICE);
+    targetLayer.bodyOwner[k] = target->id;
+    bodyCells.push_back(k);
+  }
+  targetLayer.sleepingBodySupportDirty = true;
+  if (E.bgEnabled) {
+    E.comps.jointDirty = true;
+    E.comps.jointBondsInvalid = true;
+    E.comps.jointSupportValid = false;
+  }
+  E.useLayer(previous);
+}
 void RigidBodySystem::terrainNormalAt(Body* b, int cx, int cy, double bodyDensity, double& ox, double& oy) {
   int l = cx > 0 && isBodyTerrain(b, cx - 1, cy, bodyDensity) ? 1 : 0;
   int r = cx < E.cols - 1 && isBodyTerrain(b, cx + 1, cy, bodyDensity) ? 1 : 0;

@@ -285,11 +285,10 @@ void ReactionSystem::applyIce() {
   }
   if (melted) E.splitRigidAfterErase(E.L->components, meltedCells, E.L->nextComponentId, true);
 
-  // Free ice bodies remain material-identical ICE cells in the live grid, but
-  // they are intentionally absent from the static component registry. Give
-  // those stamped cells the same local freezing influence as component ice,
-  // then register the new cells as ordinary ice components.
-  std::unordered_set<int>& frozen = E.bodyFrozenIceScratch;
+  // Free ice bodies remain material-identical ICE cells in the live grid. Water
+  // frozen by one extends that body's local occupancy so the new ice shares its
+  // pose instead of entering the static component registry as a separate island.
+  std::vector<std::pair<int, int>>& frozen = E.bodyFrozenIceScratch;
   frozen.clear();
   auto freezeBesideBodyIce = [&](int k) {
     if (k < 0 || k >= E.cols * E.rows || E.L->bodyOwner[k] < 0
@@ -312,14 +311,27 @@ void ReactionSystem::applyIce() {
                    ^ (E.L->isBackground ? 0xB6A4D5u : 0u);
     if (whash2(phase, E.L->worldOffsetX + x,
                E.L->worldOffsetY + y) >= ICE_FREEZE_P) return;
-    E.writeGridIndex(waterK, ICE);
-    frozen.insert(waterK);
+    frozen.push_back({waterK, E.L->bodyOwner[k]});
   };
   for (int k : E.L->bodyCells) freezeBesideBodyIce(k);
   for (int k : E.L->passiveBodyCells) freezeBesideBodyIce(k);
-  if (!frozen.empty())
-    E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId,
-                              ICE, frozen, true);
+  std::sort(frozen.begin(), frozen.end(),
+            [](const auto& a, const auto& b) {
+              return a.second != b.second ? a.second < b.second
+                                          : a.first < b.first;
+            });
+  for (size_t begin = 0; begin < frozen.size();) {
+    size_t end = begin + 1;
+    while (end < frozen.size() && frozen[end].second == frozen[begin].second) end++;
+    std::vector<int> cells;
+    cells.reserve(end - begin);
+    for (size_t i = begin; i < end; i++) {
+      if (i > begin && frozen[i].first == frozen[i - 1].first) continue;
+      cells.push_back(frozen[i].first);
+    }
+    E.rigid.freezeCellsOntoBody(*E.L, frozen[begin].second, *E.L, cells);
+    begin = end;
+  }
 }
 // Salt is a desiccant / de-icer. A grain that touches WATER dissolves into it,
 // turning that water to BRINE (saltwater) and liquefying the grain into brine as

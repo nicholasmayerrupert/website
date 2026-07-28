@@ -64,7 +64,8 @@
   // one — moveBodies still re-derives per-layer grounding for free bodies/sand).
   std::vector<int> acidErasedStructural, reactionErasedPlant; // reusable reaction scratch (avoids heap allocs every active step)
   std::vector<int> crossFireErasedFg, crossFireErasedBg;
-  std::unordered_set<int> bodyFrozenIceScratch;
+  std::vector<std::pair<int, int>> bodyFrozenIceScratch;
+  std::vector<std::pair<int, int>> crossBodyFrozenIceFg, crossBodyFrozenIceBg;
   std::unordered_set<int> crossFrozenIceFg, crossFrozenIceBg;
   std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;

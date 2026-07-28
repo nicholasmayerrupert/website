@@ -29,6 +29,7 @@ export const UNIT_SUITES = [
   ['structures', 'worldgen-structures-test.mjs'],
   ['flora', 'flora-test.mjs'],
   ['sand', 'sand-test.mjs', 240_000],
+  ['ice-body-growth', 'ice-body-growth-test.mjs'],
   ['loose-acceleration', 'loose-acceleration-test.mjs'],
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],

@@ -146,10 +146,11 @@ source ./wasm/emenv.sh
 ./wasm/build.sh
 ```
 
-The WASM loader, binary, and `src/sand/wasm/build-info.json` are committed so a
-normal site build does not require Emscripten. `npm run sand:doctor` checks their
-provenance and generated-source freshness. `wasm/build.sh --dev` enables the
-post-step component/body invariant validator.
+The WASM loader, SIMD-enabled binary, and `src/sand/wasm/build-info.json` are
+committed so a normal site build does not require Emscripten. The site ships
+that single SIMD package without a scalar fallback. `npm run sand:doctor`
+checks its provenance and generated-source freshness. `wasm/build.sh --dev`
+enables the post-step component/body invariant validator.
 
 ## Materials and simulation
 
@@ -189,17 +190,16 @@ from the cellular automaton's integer fall distance. A clear vertical fall
 accelerates by one cell per world tick up to the material's terminal speed;
 contact, diagonal avalanching, and lateral flow reset the stored momentum.
 Rigid coupling projects a deterministic pressure domain around wet body
-surfaces using a near-field band sized to the wet bodies and capped at 32 cells.
-The cap prevents a growing body from expanding its pressure matrix without
-bound. A linear topology pass supplies hydrostatic far-field pressure at the
-cutoff, while persistent liquid velocity propagates dynamic motion across
-ticks. Pixel-scale surface relief keeps that stable shared reference; taller
-relief transitions to median-filtered local free-surface pressure at cutoff
-columns. A body in a large single-material lake therefore does not make remote
-water enter the pressure matrix or give a shallow flowing front the pressure
-head of a distant deep column.
-When one rigid solve touches different liquid materials, it retains the complete
-connected pressure domains so their density interfaces remain coupled exactly.
+surfaces using a fixed eight-cell near-field band. Liquid hidden by a solid
+raster never enters the matrix, and cavities are reached from their actual wet
+walls rather than seeded through the body's whole bounding box. Two nearby open
+columns per body supply the unresolved reservoir's hydrostatic pressure at the
+cutoff; their vertical integration retains local wave height and mixed-liquid
+density layers without walking the connected pool. Persistent liquid velocity
+propagates dynamic motion across ticks. If the local band reaches a liquid
+density interface, that connected liquid region joins the projection so the
+interface remains exact. Ordinary single-material pressure work therefore
+scales with wet surface area and the fixed band, not body area or lake area.
 
 Reactions are routed through generated flags where possible:
 

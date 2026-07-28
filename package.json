@@ -98,6 +98,7 @@
     "bench:pan:compare": "node scripts/bench-pan.mjs --compare bench/pan-baseline.json",
     "bench:rigid": "node scripts/bench-rigid.mjs",
     "bench:rigid-fluid": "node scripts/bench-rigid-fluid.mjs",
+    "bench:rigid-fluid-large": "node scripts/bench-large-rigid-fluid.mjs",
     "bench:ice-growth": "node scripts/bench-ice-growth.mjs",
     "bench:tnt": "node scripts/bench-tnt.mjs",
     "bench:tnt:shock": "node scripts/bench-tnt-shock.mjs",

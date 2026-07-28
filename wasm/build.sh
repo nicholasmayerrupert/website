@@ -29,7 +29,7 @@ build_engine() {
 local OUT="$1"
 shift
 em++ \
-  -O3 -std=c++20 \
+  -O3 -msimd128 -std=c++20 \
   "$@" \
   ${DEV_FLAGS[@]+"${DEV_FLAGS[@]}"} \
   -s MODULARIZE=1 \

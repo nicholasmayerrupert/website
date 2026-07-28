@@ -499,6 +499,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<uint8_t> solidContact(n, 0);
   struct PenPt { double wx, wy, nx, ny, depth; int bk; };
   std::vector<PenPt> penAcc, terrAcc;
+  std::vector<int> broadphaseOrder(n);
+  std::vector<std::pair<int, int>> broadphasePairs;
+  broadphasePairs.reserve((size_t)n * 4);
   double wpx, wpy, nx_, ny_;
   for (int sub = 0; sub < substeps; sub++) {
     double dt = tickDt / substeps;
@@ -722,23 +725,42 @@ void RigidBodySystem::rigidStep(double tickDt) {
         solidContact[B->idx] = 1;
       }
     };
-    for (int i = 0; i < n; i++) {
-      Body* A = solverBodies[i];
-      for (int j = i + 1; j < n; j++) {
-        Body* B = solverBodies[j];
-        if (!A->awake && !B->awake) continue;
-        if (A->aabbX1 < B->aabbX0 || B->aabbX1 < A->aabbX0 || A->aabbY1 < B->aabbY0 || B->aabbY1 < A->aabbY0) continue;
-        bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
-        bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
-        penAcc.clear(); collectSweep(A, B, 1, dt); collectSweep(B, A, -1, dt);
-        if (penAcc.empty()) continue;
-        if (!A->awake && bMoving) wakeBody(A);
-        if (!B->awake && aMoving) wakeBody(B);
-        if (!A->awake && !B->awake) continue;
-        double fbx = A->px - B->px, fby = A->py - B->py, fl = std::sqrt(fbx * fbx + fby * fby);
-        if (fl < 1e-9) { fbx = 0; fby = -1; } else { fbx /= fl; fby /= fl; }
-        reduceManifold(penAcc, A, B, fbx, fby);
+    for (int i = 0; i < n; i++) broadphaseOrder[i] = i;
+    std::sort(broadphaseOrder.begin(), broadphaseOrder.end(),
+              [&](int a, int b) {
+                if (solverBodies[a]->aabbX0 != solverBodies[b]->aabbX0)
+                  return solverBodies[a]->aabbX0 < solverBodies[b]->aabbX0;
+                return a < b;
+              });
+    broadphasePairs.clear();
+    for (int oi = 0; oi < n; oi++) {
+      int a = broadphaseOrder[oi];
+      Body* A = solverBodies[a];
+      for (int oj = oi + 1; oj < n; oj++) {
+        int b = broadphaseOrder[oj];
+        Body* B = solverBodies[b];
+        if (B->aabbX0 > A->aabbX1) break;
+        if (A->aabbY1 < B->aabbY0 || B->aabbY1 < A->aabbY0) continue;
+        broadphasePairs.push_back({imin(a, b), imax(a, b)});
       }
+    }
+    // Contact order is part of deterministic sequential impulse behavior.
+    // Restore the original nested-loop order after sweep-and-prune culling.
+    std::sort(broadphasePairs.begin(), broadphasePairs.end());
+    for (const auto& pair : broadphasePairs) {
+      Body* A = solverBodies[pair.first];
+      Body* B = solverBodies[pair.second];
+      if (!A->awake && !B->awake) continue;
+      bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
+      bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
+      penAcc.clear(); collectSweep(A, B, 1, dt); collectSweep(B, A, -1, dt);
+      if (penAcc.empty()) continue;
+      if (!A->awake && bMoving) wakeBody(A);
+      if (!B->awake && aMoving) wakeBody(B);
+      if (!A->awake && !B->awake) continue;
+      double fbx = A->px - B->px, fby = A->py - B->py, fl = std::sqrt(fbx * fbx + fby * fby);
+      if (fl < 1e-9) { fbx = 0; fby = -1; } else { fbx /= fl; fby /= fl; }
+      reduceManifold(penAcc, A, B, fbx, fby);
     }
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi]; if (!b->awake) continue;
@@ -807,8 +829,18 @@ void RigidBodySystem::rigidStep(double tickDt) {
       // at larger speeds.
       if (fluidOnlyContact && liquidSurfaceContact[bi]
           && std::fabs(b->vy) < R_SETTLE_LIN
-          && b->maxDepth <= R_REST_DEPTH)
+          && b->maxDepth <= R_REST_DEPTH) {
         b->vy *= R_FLUID_REST_DAMP;
+        int shortSide = imin(b->w, b->h);
+        int longSide = imax(b->w, b->h);
+        if (shortSide > 0 && longSide >= shortSide * 8
+            && std::fabs(b->vx) < R_SETTLE_LIN
+            && std::fabs(b->omega) < R_SETTLE_ANG) {
+          b->vx *= R_FLUID_SLENDER_REST_DAMP;
+          b->vy *= R_FLUID_SLENDER_REST_DAMP;
+          b->omega *= R_FLUID_REST_DAMP;
+        }
+      }
       double sleepLinear = fluidOnlyContact ? R_FLUID_SLEEP_LIN : R_SLEEP_LIN;
       bool sleepQuiet = b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
                      && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
@@ -909,8 +941,6 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       fluidNodeIndex[layer].assign(cellCount, -1);
       fluidBodyStamp[layer].assign(cellCount, 0);
       fluidBodyIndex[layer].assign(cellCount, -1);
-      fluidTopologyStamp[layer].assign(cellCount, 0);
-      fluidTopologyIndex[layer].assign(cellCount, -1);
       fluidPressureCache[layer].assign(cellCount, 0);
       fluidPressureWorldX[layer] = fluidPressureWorldY[layer] = INT32_MIN;
     }
@@ -930,20 +960,31 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     fluidBodyGeneration = 1;
     for (auto& stamp : fluidBodyStamp) std::fill(stamp.begin(), stamp.end(), 0);
   }
-  if (++fluidTopologyGeneration <= 0) {
-    fluidTopologyGeneration = 1;
-    for (auto& stamp : fluidTopologyStamp) std::fill(stamp.begin(), stamp.end(), 0);
-  }
 
   const int activeLayer = E.L == &E.bg ? 1 : 0;
   fluidQueue.clear();
+  fluidBodyBounds.assign(bodies.size() * 2,
+                         {{E.cols, E.rows, -1, -1}});
   auto stampBody = [&](Body* body, int bodyIndex, int layer, bool seedLiquid) {
-    forEachBodyCell(body, [&](int x, int y, int) {
+    std::array<int, 4>& bounds = fluidBodyBounds[bodyIndex * 2 + layer];
+    forEachBodyCell(body, [&](int x, int y, int local) {
       int k = y * E.cols + x;
-      if (seedLiquid && fluidBodyStamp[layer][k] != fluidBodyGeneration)
-        fluidQueue.push_back(layer * cellCount + k);
       fluidBodyStamp[layer][k] = fluidBodyGeneration;
       fluidBodyIndex[layer][k] = bodyIndex;
+      bounds[0] = imin(bounds[0], x);
+      bounds[1] = imin(bounds[1], y);
+      bounds[2] = imax(bounds[2], x);
+      bounds[3] = imax(bounds[3], y);
+      if (!seedLiquid) return;
+      int lx = local - (local / body->w) * body->w;
+      int ly = local / body->w;
+      auto occupied = [&](int xx, int yy) {
+        return xx >= 0 && xx < body->w && yy >= 0 && yy < body->h
+            && body->occ[yy * body->w + xx];
+      };
+      if (!occupied(lx - 1, ly) || !occupied(lx + 1, ly)
+          || !occupied(lx, ly - 1) || !occupied(lx, ly + 1))
+        fluidQueue.push_back(layer * cellCount + k);
     });
   };
   for (int i = 0; i < (int)bodies.size(); i++) {
@@ -952,14 +993,6 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     if (body->jointRole == 1 && body->jointPeer)
       stampBody(body->jointPeer, i, 1 - activeLayer, body->awake);
   }
-  int fluidDomainRadius = R_FLUID_DOMAIN_MIN_RADIUS;
-  for (Body* body : bodies) if (body->awake) {
-    int area = body->nPts;
-    if (body->jointRole == 1 && body->jointPeer) area += body->jointPeer->nPts;
-    int bodyScale = (int)std::ceil(std::sqrt((double)area));
-    fluidDomainRadius = imax(fluidDomainRadius, (bodyScale * 5 + 3) / 4);
-  }
-  fluidDomainRadius = imin(fluidDomainRadius, R_FLUID_DOMAIN_MAX_RADIUS);
 
   auto layerAt = [&](int index) -> Layer* { return index == 0 ? &E.fg : &E.bg; };
   fluidSeeds.clear();
@@ -976,205 +1009,200 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       int nk = k + offsets[d];
       if (fluidBodyStamp[layer][nk] == fluidBodyGeneration) continue;
       if (E.isLiquidMaterial(lay->grid[nk]))
-        fluidSeeds.push_back(layer * cellCount + nk);
+        fluidSeeds.push_back({layer * cellCount + nk, bodyIndex});
       else if (lay->grid[nk] == EMPTY || E.isGasMaterial(lay->grid[nk]))
         fluidBodySurface[bodyIndex] = 1;
     }
   }
-  auto seedBodyInterior = [&](Body* body, int layer) {
-    double lx0 = body->offsetX - 0.5, lx1 = body->offsetX + body->w - 0.5;
-    double ly0 = body->offsetY - 0.5, ly1 = body->offsetY + body->h - 0.5;
-    double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
-    auto includeCorner = [&](double lx, double ly) {
-      double x = body->px + lx * body->cs - ly * body->sn;
-      double y = body->py + lx * body->sn + ly * body->cs;
-      minX = std::fmin(minX, x); maxX = std::fmax(maxX, x);
-      minY = std::fmin(minY, y); maxY = std::fmax(maxY, y);
-    };
-    includeCorner(lx0, ly0); includeCorner(lx1, ly0);
-    includeCorner(lx1, ly1); includeCorner(lx0, ly1);
-    int x0 = imax(0, (int)std::floor(minX));
-    int x1 = imin(E.cols - 1, (int)std::floor(maxX));
-    int y0 = imax(0, (int)std::floor(minY));
-    int y1 = imin(E.rows - 1, (int)std::floor(maxY));
-    Layer* lay = layerAt(layer);
-    for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
-      double dx = x + 0.5 - body->px, dy = y + 0.5 - body->py;
-      double lx = dx * body->cs + dy * body->sn;
-      double ly = -dx * body->sn + dy * body->cs;
-      if (lx < lx0 || lx > lx1 || ly < ly0 || ly > ly1) continue;
-      int k = y * E.cols + x;
-      if (E.isLiquidMaterial(lay->grid[k])) fluidSeeds.push_back(layer * cellCount + k);
-    }
-  };
-  for (Body* body : bodies) {
-    seedBodyInterior(body, activeLayer);
-    if (body->jointRole == 1 && body->jointPeer)
-      seedBodyInterior(body->jointPeer, 1 - activeLayer);
-  }
   fluidQueue.clear();
   if (fluidSeeds.empty()) return false;
-  std::sort(fluidSeeds.begin(), fluidSeeds.end());
-  fluidSeeds.erase(std::unique(fluidSeeds.begin(), fluidSeeds.end()), fluidSeeds.end());
+  std::sort(fluidSeeds.begin(), fluidSeeds.end(),
+            [](const FluidSeed& a, const FluidSeed& b) {
+              return a.packedCell != b.packedCell
+                ? a.packedCell < b.packedCell : a.body < b.body;
+            });
+  fluidSeeds.erase(
+    std::unique(fluidSeeds.begin(), fluidSeeds.end(),
+                [](const FluidSeed& a, const FluidSeed& b) {
+                  return a.packedCell == b.packedCell;
+                }),
+    fluidSeeds.end());
 
-  // The topology pass is linear in touched liquid cells and supplies a shared
-  // hydrostatic fallback to local regions separated by a wide body.
-  fluidTopologies.clear();
-  for (int seed : fluidSeeds) {
-    int layer = seed / cellCount, k = seed - layer * cellCount;
-    if (fluidTopologyStamp[layer][k] == fluidTopologyGeneration) continue;
-    int topology = (int)fluidTopologies.size();
-    FluidTopology topo;
-    topo.rowDensitySum.assign(E.rows, 0);
-    topo.rowCellCount.assign(E.rows, 0);
-    topo.rowPressure.assign(E.rows, 0);
-    topo.columnSurfaceY.assign(E.cols, -1);
-    fluidTopologies.push_back(std::move(topo));
-    auto addTopologyCell = [&](int cell) {
-      if (fluidTopologyStamp[layer][cell] == fluidTopologyGeneration)
-        return fluidTopologyIndex[layer][cell] == topology;
-      if (!E.isLiquidMaterial(layerAt(layer)->grid[cell])) return false;
-      fluidTopologyStamp[layer][cell] = fluidTopologyGeneration;
-      fluidTopologyIndex[layer][cell] = topology;
-      uint8_t material = layerAt(layer)->grid[cell];
-      if (fluidTopologies[topology].material == EMPTY)
-        fluidTopologies[topology].material = material;
-      else if (fluidTopologies[topology].material != material)
-        fluidTopologies[topology].mixedMaterials = true;
-      int y = cell / E.cols;
-      fluidTopologies[topology].rowDensitySum[y] += DENSITY[material];
-      fluidTopologies[topology].rowCellCount[y]++;
-      fluidQueue.push_back(layer * cellCount + cell);
-      return true;
-    };
-    addTopologyCell(k);
-    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
-      int qk = fluidQueue[qi] - layer * cellCount;
-      int y = qk / E.cols, x = qk - y * E.cols;
-      if (x > 0) addTopologyCell(qk - 1);
-      if (x + 1 < E.cols) addTopologyCell(qk + 1);
-      bool liquidAbove = y > 0 && addTopologyCell(qk - E.cols);
-      bool exposedAbove = y == 0;
-      if (y > 0 && !liquidAbove) {
-        int above = qk - E.cols;
-        uint8_t material = layerAt(layer)->grid[above];
-        exposedAbove = fluidBodyStamp[layer][above] != fluidBodyGeneration
-                    && (material == EMPTY || E.isGasMaterial(material));
-      }
-      if (exposedAbove) {
-        FluidTopology& built = fluidTopologies[topology];
-        int& surfaceY = built.columnSurfaceY[x];
-        if (surfaceY < 0 || y < surfaceY) surfaceY = y;
-        built.surfaceMinY = imin(built.surfaceMinY, y);
-        built.surfaceMaxY = imax(built.surfaceMaxY, y);
-      }
-      if (y + 1 < E.rows) addTopologyCell(qk + E.cols);
-    }
-    fluidQueue.clear();
+  // Each body samples hydrostatic head in the nearest open liquid columns just
+  // outside its raster. This preserves density layers and nearby wave height
+  // without walking the connected pool. The local pressure domain interpolates
+  // between the two sides; sealed regions fall back to their cached pressure.
+  fluidReferences.resize(bodies.size() * 2);
+  std::vector<double> candidatePressure;
+  candidatePressure.reserve(E.rows);
+  std::vector<std::pair<int, int>> referenceColumns;
+  auto buildReferenceColumn = [&](int layer, int x,
+                                  std::vector<double>& pressureOut) {
+    pressureOut.assign(E.rows, 0);
+    if (x < 0 || x >= E.cols) return false;
+    Layer* lay = layerAt(layer);
+    bool inLiquid = false, openSegment = false, found = false;
     double pressure = 0, priorDensity = 0;
-    int priorY = -1;
     for (int y = 0; y < E.rows; y++) {
-      FluidTopology& built = fluidTopologies[topology];
-      if (built.rowCellCount[y] == 0) continue;
-      double density = built.rowDensitySum[y] / built.rowCellCount[y];
-      if (priorY < 0)
+      int k = y * E.cols + x;
+      uint8_t material = lay->grid[k];
+      bool liquid = fluidBodyStamp[layer][k] != fluidBodyGeneration
+                 && E.isLiquidMaterial(material);
+      if (!liquid) {
+        inLiquid = openSegment = false;
+        pressure = priorDensity = 0;
+        continue;
+      }
+      double density = DENSITY[material];
+      if (!inLiquid) {
+        bool exposed = y == 0;
+        if (y > 0) {
+          int above = k - E.cols;
+          uint8_t aboveMaterial = lay->grid[above];
+          exposed = fluidBodyStamp[layer][above] != fluidBodyGeneration
+                 && (aboveMaterial == EMPTY || E.isGasMaterial(aboveMaterial));
+        }
+        openSegment = exposed;
         pressure = density * R_GRAVITY * dt * 0.5;
-      else
-        pressure += (priorDensity + density) * 0.5 * R_GRAVITY * dt * (y - priorY);
-      built.rowPressure[y] = pressure;
+      } else {
+        pressure += (priorDensity + density) * 0.5 * R_GRAVITY * dt;
+      }
+      inLiquid = true;
       priorDensity = density;
-      priorY = y;
+      if (openSegment) {
+        pressureOut[y] = pressure;
+        found = true;
+      }
     }
-    FluidTopology& built = fluidTopologies[topology];
-    if (built.mixedMaterials || built.surfaceMaxY < 0
-        || built.surfaceMaxY - built.surfaceMinY <= 2 * fluidDomainRadius)
-      continue;
-    // The cellular surface is pixel-quantized. A median over one pressure radius
-    // removes those scallops without smearing a wave beyond the solved domain.
-    built.filteredSurfaceY.assign(E.cols, -1);
-    int surfaceRadius = fluidDomainRadius;
-    for (int x = 0; x < E.cols; x++) {
-      fluidQueue.clear();
-      for (int xx = imax(0, x - surfaceRadius);
-           xx <= imin(E.cols - 1, x + surfaceRadius); xx++)
-        if (built.columnSurfaceY[xx] >= 0)
-          fluidQueue.push_back(built.columnSurfaceY[xx]);
-      if (fluidQueue.empty()) continue;
-      size_t middle = fluidQueue.size() / 2;
-      std::nth_element(fluidQueue.begin(), fluidQueue.begin() + middle, fluidQueue.end());
-      built.filteredSurfaceY[x] = fluidQueue[middle];
+    return found;
+  };
+  auto selectSideReference = [&](int layer, int edgeX, int direction,
+                                 int& referenceX,
+                                 std::vector<double>& pressureOut) {
+    referenceColumns.clear();
+    for (int distance = 1; distance <= R_FLUID_REFERENCE_SEARCH; distance++) {
+      int x = edgeX + direction * distance;
+      if (!buildReferenceColumn(layer, x, candidatePressure)) continue;
+      int surfaceY = 0;
+      while (surfaceY < E.rows && candidatePressure[surfaceY] <= 0) surfaceY++;
+      if (surfaceY < E.rows) referenceColumns.push_back({surfaceY, x});
     }
-    fluidQueue.clear();
+    if (referenceColumns.empty()) return;
+    std::sort(referenceColumns.begin(), referenceColumns.end());
+    referenceX = referenceColumns[referenceColumns.size() / 2].second;
+    buildReferenceColumn(layer, referenceX, pressureOut);
+  };
+  for (int bodyIndex = 0; bodyIndex < (int)bodies.size(); bodyIndex++) {
+    for (int layer = 0; layer < 2; layer++) {
+      FluidReference& reference = fluidReferences[bodyIndex * 2 + layer];
+      reference.leftX = reference.rightX = -1;
+      reference.leftPressure.clear();
+      reference.rightPressure.clear();
+      const std::array<int, 4>& bounds =
+        fluidBodyBounds[bodyIndex * 2 + layer];
+      if (bounds[2] < bounds[0]) continue;
+      if (E.isIceMaterial(bodies[bodyIndex]->material)) {
+        selectSideReference(layer, bounds[0], -1, reference.leftX,
+                            reference.leftPressure);
+        selectSideReference(layer, bounds[2], 1, reference.rightX,
+                            reference.rightPressure);
+      } else {
+        for (int distance = 1; distance <= R_FLUID_REFERENCE_SEARCH; distance++) {
+          int x = bounds[0] - distance;
+          if (!buildReferenceColumn(layer, x, candidatePressure)) continue;
+          reference.leftX = x;
+          reference.leftPressure = candidatePressure;
+          break;
+        }
+        for (int distance = 1; distance <= R_FLUID_REFERENCE_SEARCH; distance++) {
+          int x = bounds[2] + distance;
+          if (!buildReferenceColumn(layer, x, candidatePressure)) continue;
+          reference.rightX = x;
+          reference.rightPressure = candidatePressure;
+          break;
+        }
+      }
+    }
   }
+  auto referencePressureAt = [&](int sourceBody, int layer, int cell) {
+    double cached = std::fmax(0.0f, fluidPressureCache[layer][cell]);
+    if (sourceBody < 0 || sourceBody >= (int)bodies.size()) return cached;
+    const FluidReference& reference =
+      fluidReferences[sourceBody * 2 + layer];
+    int y = cell / E.cols, x = cell - y * E.cols;
+    double left = reference.leftX >= 0 ? reference.leftPressure[y] : 0;
+    double right = reference.rightX >= 0 ? reference.rightPressure[y] : 0;
+    if (left <= 0) return right > 0 ? right : cached;
+    if (right <= 0) return left;
+    double width = reference.rightX - reference.leftX;
+    double weight = width > 0
+      ? std::fmax(0.0, std::fmin(1.0, (x - reference.leftX) / width))
+      : 0.5;
+    return left + (right - left) * weight;
+  };
 
   fluidNodes.clear();
   fluidNodeDepth.clear();
   fluidQueue.clear();
-  bool heterogeneousCoupling = false;
   uint8_t coupledMaterial = EMPTY;
-  for (const FluidTopology& topology : fluidTopologies) {
-    if (topology.mixedMaterials) heterogeneousCoupling = true;
-    if (coupledMaterial == EMPTY)
-      coupledMaterial = topology.material;
-    else if (coupledMaterial != topology.material)
-      heterogeneousCoupling = true;
-  }
-  auto referencePressureAt = [&](int topologyIndex, int cell, uint8_t material) {
-    const FluidTopology& topology = fluidTopologies[topologyIndex];
-    int y = cell / E.cols, x = cell - y * E.cols;
-    if (topology.mixedMaterials || topology.filteredSurfaceY.empty())
-      return topology.rowPressure[y];
-    double localSurfaceY = topology.filteredSurfaceY[x];
-    double relief = topology.surfaceMaxY >= 0
-      ? topology.surfaceMaxY - topology.surfaceMinY : 0;
-    // A topology whose entire surface relief fits inside the local domain keeps
-    // the shared hydrostatic reference. Over the next domain width it transitions
-    // to local head, reaching it before remote tall water can load a shallow wave.
-    double localWeight = std::fmax(0.0, std::fmin(
-      1.0, (relief - 2.0 * fluidDomainRadius) / (2.0 * fluidDomainRadius)));
-    if (localSurfaceY < 0 || localWeight <= 0) return topology.rowPressure[y];
-    double localPressure =
-      DENSITY[material] * R_GRAVITY * dt
-      * std::fmax(0.5, y - localSurfaceY + 0.5);
-    return topology.rowPressure[y]
-         + (localPressure - topology.rowPressure[y]) * localWeight;
-  };
+  bool heterogeneousCoupling = false;
   // A deterministic multi-source flood extends a uniform near-field band from
   // wet body surfaces. Remote cells remain in the cellular solver.
-  auto addNode = [&](int layer, int k, int depth) {
+  auto addNode = [&](int layer, int k, int depth, int sourceBody) {
     if (fluidNodeStamp[layer][k] == fluidNodeGeneration) return false;
+    if (fluidBodyStamp[layer][k] == fluidBodyGeneration) return false;
     Layer* lay = layerAt(layer);
     uint8_t material = lay->grid[k];
     if (!E.isLiquidMaterial(material)) return false;
+    if (coupledMaterial == EMPTY)
+      coupledMaterial = material;
+    else if (coupledMaterial != material)
+      heterogeneousCoupling = true;
     fluidNodeStamp[layer][k] = fluidNodeGeneration;
     fluidNodeIndex[layer][k] = (int)fluidNodes.size();
     uint32_t packedVelocity = lay->liquidVel ? lay->liquidVel[k] : 0;
     double vx = E.liquidVelocityX(packedVelocity);
     double vy = E.liquidVelocityY(packedVelocity);
     double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]);
-    int topology = fluidTopologyIndex[layer][k];
-    fluidNodes.push_back({lay, k, -1, topology, material, vx, vy + R_GRAVITY * dt,
+    fluidNodes.push_back({lay, k, -1, sourceBody, material, vx, vy + R_GRAVITY * dt,
                           pressure});
     fluidNodeDepth.push_back(depth);
     fluidQueue.push_back(layer * cellCount + k);
     return true;
   };
-  for (int seed : fluidSeeds) {
-    int layer = seed / cellCount, k = seed - layer * cellCount;
-    addNode(layer, k, 0);
+  for (const FluidSeed& seed : fluidSeeds) {
+    int layer = seed.packedCell / cellCount;
+    int k = seed.packedCell - layer * cellCount;
+    addNode(layer, k, 0, seed.body);
   }
   for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
     int packed = fluidQueue[qi];
     int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
     int nodeIndex = fluidNodeIndex[qLayer][qk];
     int depth = fluidNodeDepth[nodeIndex];
-    int topology = fluidNodes[nodeIndex].topology;
-    if (depth >= fluidDomainRadius && !heterogeneousCoupling) continue;
+    int sourceBody = fluidNodes[nodeIndex].sourceBody;
+    if (depth >= R_FLUID_DOMAIN_RADIUS) continue;
     int y = qk / E.cols, x = qk - y * E.cols;
-    if (x > 0) addNode(qLayer, qk - 1, depth + 1);
-    if (x + 1 < E.cols) addNode(qLayer, qk + 1, depth + 1);
-    if (y > 0) addNode(qLayer, qk - E.cols, depth + 1);
-    if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, depth + 1);
+    if (x > 0) addNode(qLayer, qk - 1, depth + 1, sourceBody);
+    if (x + 1 < E.cols) addNode(qLayer, qk + 1, depth + 1, sourceBody);
+    if (y > 0) addNode(qLayer, qk - E.cols, depth + 1, sourceBody);
+    if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, depth + 1, sourceBody);
+  }
+  if (heterogeneousCoupling) {
+    // A local density interface needs both sides in one pressure projection.
+    // This fallback is intentionally rare: ordinary single-material reservoirs
+    // retain the fixed band and never walk the connected pool.
+    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
+      int packed = fluidQueue[qi];
+      int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
+      int nodeIndex = fluidNodeIndex[qLayer][qk];
+      int sourceBody = fluidNodes[nodeIndex].sourceBody;
+      int y = qk / E.cols, x = qk - y * E.cols;
+      if (x > 0) addNode(qLayer, qk - 1, 0, sourceBody);
+      if (x + 1 < E.cols) addNode(qLayer, qk + 1, 0, sourceBody);
+      if (y > 0) addNode(qLayer, qk - E.cols, 0, sourceBody);
+      if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, 0, sourceBody);
+    }
   }
   if (fluidNodes.empty()) return false;
   std::sort(fluidNodes.begin(), fluidNodes.end(), [&](const FluidNode& a, const FluidNode& b) {
@@ -1255,9 +1283,9 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
         2.0 / (DENSITY[node.material] + DENSITY[material]);
       // The lateral Robin coefficient represents the pressure response of the
       // unresolved reservoir between this face and the far field.
-      if (nx) face.inverseDensity /= fluidDomainRadius;
-      int topology = fluidTopologyIndex[layer][nk];
-      face.boundaryPressure = referencePressureAt(topology, nk, material);
+      if (nx) face.inverseDensity /= R_FLUID_DOMAIN_RADIUS;
+      face.boundaryPressure =
+        referencePressureAt(node.sourceBody, layer, nk);
       fluidFaces.push_back(face);
       return;
     }

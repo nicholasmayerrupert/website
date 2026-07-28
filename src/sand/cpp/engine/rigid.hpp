@@ -109,10 +109,13 @@ class RigidBodySystem {
  private:
   struct FluidNode {
     Layer* layer = nullptr;
-    int cell = -1, component = -1, topology = -1;
+    int cell = -1, component = -1, sourceBody = -1;
     uint8_t material = EMPTY;
     double vx = 0, vy = 0, pressure = 0;
     double residual = 0, direction = 0;
+  };
+  struct FluidSeed {
+    int packedCell = -1, body = -1;
   };
   enum FluidFaceKind : uint8_t {
     FF_INTERNAL,
@@ -132,27 +135,22 @@ class RigidBodySystem {
     int a, b;
     double inverseDensity;
   };
-  struct FluidTopology {
-    uint8_t material = EMPTY;
-    bool mixedMaterials = false;
-    std::vector<double> rowDensitySum, rowPressure;
-    std::vector<int> rowCellCount;
-    std::vector<int> columnSurfaceY;
-    std::vector<double> filteredSurfaceY;
-    int surfaceMinY = INT32_MAX, surfaceMaxY = -1;
+  struct FluidReference {
+    int leftX = -1, rightX = -1;
+    std::vector<double> leftPressure, rightPressure;
   };
   std::array<std::vector<int32_t>, 2> fluidNodeStamp, fluidNodeIndex;
   std::array<std::vector<int32_t>, 2> fluidBodyStamp, fluidBodyIndex;
-  std::array<std::vector<int32_t>, 2> fluidTopologyStamp, fluidTopologyIndex;
   std::array<std::vector<float>, 2> fluidPressureCache;
   std::array<int, 2> fluidPressureWorldX{{INT32_MIN, INT32_MIN}};
   std::array<int, 2> fluidPressureWorldY{{INT32_MIN, INT32_MIN}};
-  int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0, fluidTopologyGeneration = 0;
+  int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0;
   std::vector<FluidNode> fluidNodes;
   std::vector<FluidFace> fluidFaces;
   std::vector<FluidOperatorFace> fluidOperatorFaces;
   std::vector<int> fluidBodyFaceIndices;
-  std::vector<FluidTopology> fluidTopologies;
+  std::vector<FluidReference> fluidReferences;
+  std::vector<std::array<int, 4>> fluidBodyBounds;
   std::vector<double> fluidSolvePressure, fluidSolveResidual;
   std::vector<double> fluidSolveDirection, fluidSolveApplied;
   std::vector<double> fluidSolvePreconditioned, fluidSolveDiagonal;
@@ -162,7 +160,8 @@ class RigidBodySystem {
   std::vector<std::array<double, 2>> fluidSolveLowerFactor;
   std::vector<uint8_t> fluidSolveLowerCount;
   std::vector<uint8_t> fluidSolvePinned;
-  std::vector<int> fluidQueue, fluidSeeds, fluidNodeDepth;
+  std::vector<int> fluidQueue, fluidNodeDepth;
+  std::vector<FluidSeed> fluidSeeds;
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
   std::vector<uint8_t> fluidBodySurface;

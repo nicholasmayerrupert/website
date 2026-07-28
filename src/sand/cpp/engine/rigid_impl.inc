@@ -777,6 +777,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   auto addSlenderObbManifold = [&](Body* first, Body* second,
                                    std::vector<PenPt>& points,
                                    double& referenceX, double& referenceY) {
+    if (points.empty()) return false;
     struct Frame {
       double cx, cy, ax, ay, nx, ny, halfMajor, halfMinor;
       bool slender;

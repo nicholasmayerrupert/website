@@ -133,6 +133,53 @@ const speed = (state) =>
 {
   const cols = 420, rows = 280, floorY = rows - 3;
   const engine = createEngineWasm({
+    cols, rows, worldSeed: 0xb987, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+
+  const lower = [], upper = [];
+  for (let x = 70; x < 350; x++) {
+    lower.push([x, 250]);
+    upper.push([x, 180]);
+  }
+  for (let y = 240; y < 250; y++) lower.push([70, y]);
+  for (let y = 181; y <= 190; y++) upper.push([349, y]);
+  const toLocalPoints = (cells) => {
+    const cx = cells.reduce((sum, cell) => sum + cell[0] + 0.5, 0) / cells.length;
+    const cy = cells.reduce((sum, cell) => sum + cell[1] + 0.5, 0) / cells.length;
+    return cells.map(([x, y]) => [x + 0.5 - cx, y + 0.5 - cy]);
+  };
+  const localPoints = [toLocalPoints(lower), toLocalPoints(upper)];
+  engine.spawnBody(lower);
+  for (let i = 0; i < 180; i++) engine.stepWorld();
+  engine.spawnBody(upper);
+  for (let i = 0; i < 300; i++) engine.stepWorld();
+
+  const worldPoints = localPoints.map((points, body) => {
+    const state = engine._bodyState(body);
+    const cs = Math.cos(state.angle), sn = Math.sin(state.angle);
+    return points.map(([x, y]) => [
+      state.px + x * cs - y * sn,
+      state.py + x * sn + y * cs,
+    ]);
+  });
+  let minimumDistance2 = Infinity;
+  for (const first of worldPoints[0]) {
+    for (const second of worldPoints[1]) {
+      const dx = first[0] - second[0], dy = first[1] - second[1];
+      minimumDistance2 = Math.min(minimumDistance2, dx * dx + dy * dy);
+    }
+  }
+  const minimumDistance = Math.sqrt(minimumDistance2);
+  check(`opposing sparse kinks make real contact (${minimumDistance.toFixed(3)} <= 1.5)`,
+    minimumDistance <= 1.5);
+  engine.destroy();
+}
+
+{
+  const cols = 420, rows = 280, floorY = rows - 3;
+  const engine = createEngineWasm({
     cols, rows, worldSeed: 0xa987, sinksOn: false, infinite: false,
   });
   staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);

@@ -130,9 +130,10 @@ component registration, and generation/restoration. Browser presentation exposes
   Compact bodies use tangent sweeps to keep the common debris path inexpensive;
   long and filled masks still receive convex-corner samples. Body pairs that are
   both at least 4:1 slender with `maxR >= 24` also receive a constant-cost
-  oriented-rectangle SAT manifold; refined penetration and tighter slop remain
-  confined to that path. A long/small pair only substitutes the long body's
-  minor axis for center-to-center manifold filtering.
+  oriented-rectangle SAT manifold after raster contact exists; refined
+  penetration and tighter slop remain confined to that path. A long/small pair
+  only substitutes the long body's minor axis for center-to-center manifold
+  filtering.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize
   contiguous solver, grid, and rendering loops without a parallel runtime.
   Threading rigid islands would require a shared-memory worker package plus

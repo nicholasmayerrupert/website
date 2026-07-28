@@ -24,14 +24,16 @@ lives in `rigid_impl.inc`.
   including very long beams, evaluate the exact constant-linear/angular
   trajectory and target rotation so a distant tip cannot tunnel through terrain
   or another body.
-- When two genuinely large, slender bodies overlap, an oriented-rectangle SAT
-  manifold supplements the raster samples. Its minimum-overlap axis and two
-  support points keep shallow-angle, longitudinally offset beams from passing
-  through one another when their sparse samples alternate sides. This
-  conservative fallback is restricted to pairs with `maxR >= 24` and at least a
-  4:1 bounding-box aspect ratio; ordinary debris retains the exact raster path
-  and its lower collision cost. These pairs also use refined penetration depth
-  and a tighter positional slop.
+- After the raster sweep finds real contact between two genuinely large,
+  slender bodies, an oriented-rectangle SAT manifold supplements those samples.
+  Its minimum-overlap axis and two support points keep shallow-angle,
+  longitudinally offset beams from passing through one another when their sparse
+  samples alternate sides. It never creates contact from bounding rectangles
+  alone, so sparse or kinked masks cannot support each other across empty space.
+  The fallback is restricted to pairs with `maxR >= 24` and at least a 4:1
+  bounding-box aspect ratio; ordinary debris retains the exact raster path and
+  its lower collision cost. These pairs also use refined penetration depth and
+  a tighter positional slop.
 - Contact normals come from the target mask. A body sample surrounded by
   occupied mask cells uses its nearest empty axial direction instead of a radial
   guess. A symmetric terrain cell uses the side facing the body's center, so a

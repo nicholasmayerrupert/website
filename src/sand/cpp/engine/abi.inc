@@ -245,6 +245,7 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
   };
   reset(e->fg);
   reset(e->bg);
+  e->rigid.clearContactCaches();
   e->comps.jointSupportValid = false;
   e->comps.jointSupportSleeping = false;
   e->comps.jointDirty = true;
@@ -284,6 +285,17 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigid.rigidRejectedCells; }
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_depen(Engine* e) { return e->rigid.rigidDepenetrations; }
+EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) {
+  switch (field) {
+    case 0: return e->rigid.rigidSubsteps;
+    case 1: return e->rigid.rigidContacts;
+    case 2: return e->rigid.rigidWarmStarted;
+    case 3: return e->rigid.rigidVelocityIterations;
+    case 4: return e->rigid.rigidBiasIterations;
+    case 5: return e->rigid.rigidMaxContactDepth;
+    default: return 0;
+  }
+}
 // Synthetic spill probe for outlet-locality regression tests. The rectangle is
 // stamped as one body and `source` is treated as loose material displaced from
 // inside it; return the selected exterior target index.

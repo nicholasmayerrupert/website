@@ -3,6 +3,9 @@
 // Components are grid-anchored while bodies are moving entities. This file owns
 // body geometry, integration, collision sampling, and stamping settled bodies
 // back into component-aware grid state.
+void RigidBodySystem::clearContactCaches() {
+  for (ContactCache& cache : contactCaches) cache.clear();
+}
 void RigidBodySystem::worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy) {
   double lx = b->points[i * 2], ly = b->points[i * 2 + 1];
   ox = b->px + lx * cs - ly * sn; oy = b->py + lx * sn + ly * cs;
@@ -66,6 +69,7 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   double mass = b->cellMaterials.empty() && !b->jointRole ? b->density * nPts : totalMass;
   if (!b->cellMaterials.empty() || b->jointRole) b->density = mass / nPts;
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
+  if (++b->geometryRevision == 0) b->geometryRevision = 1;
   b->maxR = std::sqrt(maxR2); b->awake = true; b->stillTicks = 0;
   return true;
 }
@@ -332,7 +336,15 @@ void RigidBodySystem::terrainNormalAt(Body* b, int cx, int cy, double bodyDensit
   int u = cy > 0 && isBodyTerrain(b, cx, cy - 1, bodyDensity) ? 1 : 0;
   int d = cy < E.rows - 1 && isBodyTerrain(b, cx, cy + 1, bodyDensity) ? 1 : 0;
   double nx = l - r, ny = u - d;
-  if (nx == 0 && ny == 0) { ox = 0; oy = -1; return; }
+  if (nx == 0 && ny == 0) {
+    double bx = b->px - (cx + 0.5), by = b->py - (cy + 0.5);
+    if (std::fabs(bx) > std::fabs(by)) {
+      ox = bx < 0 ? -1 : 1; oy = 0;
+    } else {
+      ox = 0; oy = by < 0 ? -1 : 1;
+    }
+    return;
+  }
   double inv = 1 / std::sqrt(nx * nx + ny * ny); ox = nx * inv; oy = ny * inv;
 }
 int RigidBodySystem::insideBodyIndex(Body* b, double wx, double wy) {
@@ -346,7 +358,24 @@ void RigidBodySystem::bodyNormalAt(Body* b, int idx, double wx, double wy, doubl
   int i = idx % b->w, j = idx / b->w; int w = b->w, h = b->h;
   auto at = [&](int ii, int jj) { return (ii < 0 || ii >= w || jj < 0 || jj >= h) ? 0 : (int)b->occ[jj * w + ii]; };
   int nlx = at(i - 1, j) - at(i + 1, j), nly = at(i, j - 1) - at(i, j + 1);
-  if (nlx == 0 && nly == 0) { double rx = wx - b->px, ry = wy - b->py; double rl = std::sqrt(rx * rx + ry * ry); if (rl > 0) { ox = rx / rl; oy = ry / rl; } else { ox = 0; oy = -1; } return; }
+  if (nlx == 0 && nly == 0) {
+    double dx = wx - b->px, dy = wy - b->py;
+    double lx = dx * b->cs + dy * b->sn;
+    double ly = -dx * b->sn + dy * b->cs;
+    int left = 1, right = 1, up = 1, down = 1;
+    while (at(i - left, j)) left++;
+    while (at(i + right, j)) right++;
+    while (at(i, j - up)) up++;
+    while (at(i, j + down)) down++;
+    double dl = lx - (b->offsetX + i - left + 0.5);
+    double dr = b->offsetX + i + right - 0.5 - lx;
+    double du = ly - (b->offsetY + j - up + 0.5);
+    double dd = b->offsetY + j + down - 0.5 - ly;
+    nlx = -1; nly = 0; double nearest = dl;
+    if (dr < nearest) { nearest = dr; nlx = 1; nly = 0; }
+    if (du < nearest) { nearest = du; nlx = 0; nly = -1; }
+    if (dd < nearest) { nlx = 0; nly = 1; }
+  }
   double wx2 = nlx * b->cs - nly * b->sn, wy2 = nlx * b->sn + nly * b->cs;
   double inv = 1 / std::sqrt(wx2 * wx2 + wy2 * wy2); ox = wx2 * inv; oy = wy2 * inv;
 }
@@ -385,6 +414,20 @@ double RigidBodySystem::resolveContact(Contact& c) {
     if (B) { B->vx -= jx * bInvM; B->vy -= jy * bInvM; B->omega -= bInvI * (c.rbx * jy - c.rby * jx); }
   }
   return movedN + movedT;
+}
+void RigidBodySystem::applyWarmStart(Contact& c) {
+  Body* A = c.a; Body* B = c.b;
+  double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
+  double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
+  double tx = -c.ny, ty = c.nx;
+  double jx = c.accJn * c.nx + c.accJt * tx;
+  double jy = c.accJn * c.ny + c.accJt * ty;
+  A->vx += jx * aInvM; A->vy += jy * aInvM;
+  A->omega += aInvI * (c.rax * jy - c.ray * jx);
+  if (B) {
+    B->vx -= jx * bInvM; B->vy -= jy * bInvM;
+    B->omega -= bInvI * (c.rbx * jy - c.rby * jx);
+  }
 }
 double RigidBodySystem::resolveBias(Contact& c) {
   Body* A = c.a; Body* B = c.b;
@@ -454,6 +497,9 @@ void RigidBodySystem::breakJointBody(Body* member) {
   E.bg.passiveBodyCells = std::move(stillPassive);
 }
 void RigidBodySystem::rigidStep(double tickDt) {
+  rigidSubsteps = rigidContacts = rigidWarmStarted = 0;
+  rigidVelocityIterations = rigidBiasIterations = 0;
+  rigidMaxContactDepth = 0;
   std::vector<Body*> solverBodies;
   solverBodies.reserve(E.L->bodies.size());
   for (Body* body : E.L->bodies)
@@ -500,6 +546,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   }
   maxPointSpeed += R_GRAVITY * tickDt;
   int substeps = (int)std::ceil(maxPointSpeed / R_SAFE_SUBSTEP); if (substeps < 1) substeps = 1; if (substeps > R_MAX_SUBSTEPS) substeps = R_MAX_SUBSTEPS;
+  rigidSubsteps = substeps;
   int solverIters = R_BLAST_DEBRIS_SOLVER_ITERS;
   for (Body* b : solverBodies) if (!b->blastDebris) { solverIters = R_SOLVER_ITERS; break; }
   std::vector<Contact> contacts; int nc = 0;
@@ -513,6 +560,69 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<int> broadphaseOrder(n);
   std::vector<std::pair<int, int>> broadphasePairs;
   broadphasePairs.reserve((size_t)n * 4);
+  int activeLayer = E.L == &E.fg ? 0 : 1;
+  ContactCache& previousContacts = contactCaches[activeLayer];
+  auto cacheKey = [&](const Contact& contact, int normalBucket) {
+    bool peerLayer = contact.b && !contact.bIntegrated;
+    return ContactCacheKey{
+      contact.a->id,
+      contact.b ? contact.b->id : -1,
+      contact.a->geometryRevision,
+      contact.b ? contact.b->geometryRevision : 0,
+      (uint8_t)normalBucket,
+      (uint8_t)(contact.b ? (peerLayer ? 1 - activeLayer : activeLayer) : 2),
+    };
+  };
+  auto localAnchors = [](const Contact& contact, double& lax, double& lay,
+                         double& lbx, double& lby) {
+    Body* A = contact.a;
+    lax = contact.rax * A->cs + contact.ray * A->sn;
+    lay = -contact.rax * A->sn + contact.ray * A->cs;
+    lbx = lby = 0;
+    if (!contact.b) return;
+    Body* B = contact.b;
+    double bcs = std::cos(B->angle), bsn = std::sin(B->angle);
+    lbx = contact.rbx * bcs + contact.rby * bsn;
+    lby = -contact.rbx * bsn + contact.rby * bcs;
+  };
+  auto restoreContact = [&](Contact& contact, int normalBucket, double dt) {
+    auto found = previousContacts.find(cacheKey(contact, normalBucket));
+    if (found == previousContacts.end()) return;
+    double lax, lay, lbx, lby;
+    localAnchors(contact, lax, lay, lbx, lby);
+    CachedContact* best = nullptr;
+    double bestDistance = 1e18;
+    for (CachedContact& cached : found->second) {
+      if (cached.used || cached.nx * contact.nx + cached.ny * contact.ny < 0.7)
+        continue;
+      double dax = cached.lax - lax, day = cached.lay - lay;
+      double aDistance = dax * dax + day * day;
+      if (aDistance > R_CONTACT_CACHE_MATCH2) continue;
+      double distance = aDistance;
+      if (contact.b) {
+        double dbx = cached.lbx - lbx, dby = cached.lby - lby;
+        double bDistance = dbx * dbx + dby * dby;
+        if (bDistance > R_CONTACT_CACHE_MATCH2) continue;
+        distance += bDistance;
+      }
+      if (distance < bestDistance) {
+        best = &cached;
+        bestDistance = distance;
+      }
+    }
+    if (!best) return;
+    best->used = true;
+    double dtRatio = best->dt > 0 ? dt / best->dt : 1;
+    if (dtRatio < 0.25) dtRatio = 0.25;
+    else if (dtRatio > 4) dtRatio = 4;
+    contact.accJn = std::fmax(0.0, best->jn * dtRatio * R_WARM_START_FACTOR);
+    double maxFriction = R_FRICTION * contact.accJn;
+    contact.accJt = best->jt * dtRatio * R_WARM_START_FACTOR;
+    if (contact.accJt > maxFriction) contact.accJt = maxFriction;
+    else if (contact.accJt < -maxFriction) contact.accJt = -maxFriction;
+    contact.persisted = true;
+    contact.targetVn = 0;
+  };
   // Each layer owns its integration pass, but a joint body's collision shape is
   // present in both grids. Resolve owner-marked contacts against the peer's real
   // dynamics while leaving positional integration to that body's owning pass.
@@ -771,9 +881,25 @@ void RigidBodySystem::rigidStep(double tickDt) {
         if (!cnt[bk]) continue;
         double nl = std::sqrt(snx[bk] * snx[bk] + sny[bk] * sny[bk]);
         if (nl < 1e-6) { Nx[bk] = fbx; Ny[bk] = fby; } else { Nx[bk] = snx[bk] / nl; Ny[bk] = sny[bk] / nl; }
+        // A body pair has one separating half-space at a contact patch. Deep
+        // overlap samples can see the target's far-side faces too; accepting
+        // those opposite normals creates mutually unsatisfiable impulses that
+        // pump energy into crowded piles. Keep the faces that point generally
+        // from B toward A. Terrain remains multi-sided so floor/wall corners
+        // retain both constraints.
+        if (B && Nx[bk] * fbx + Ny[bk] * fby < 0.5) {
+          cnt[bk] = 0;
+          continue;
+        }
         tx[bk] = -Ny[bk]; ty[bk] = Nx[bk]; loP[bk] = 1e18; hiP[bk] = -1e18;
       }
-      for (auto& p : acc) { int bk = p.bk; double pr = p.wx * tx[bk] + p.wy * ty[bk]; if (pr < loP[bk]) { loP[bk] = pr; lo[bk] = &p; } if (pr > hiP[bk]) { hiP[bk] = pr; hi[bk] = &p; } }
+      for (auto& p : acc) {
+        int bk = p.bk;
+        if (!cnt[bk]) continue;
+        double pr = p.wx * tx[bk] + p.wy * ty[bk];
+        if (pr < loP[bk]) { loP[bk] = pr; lo[bk] = &p; }
+        if (pr > hiP[bk]) { hiP[bk] = pr; hi[bk] = &p; }
+      }
       auto push = [&](PenPt* p, int bk) {
         if (!p) return;
         double rax = p->wx - A->px, ray = p->wy - A->py;
@@ -785,9 +911,13 @@ void RigidBodySystem::rigidStep(double tickDt) {
           || (bIndex >= 0 && actorSweepOverlap[bIndex]);
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
-        contacts.push_back({A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
-                            bIndex >= 0, std::max(0.0, -impactVn), targetVn,
-                            0, 0, 0});
+        Contact contact{
+          A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
+          bIndex >= 0, std::max(0.0, -impactVn), targetVn,
+          0, 0, 0, false,
+        };
+        restoreContact(contact, bk, dt);
+        contacts.push_back(contact);
         if (p->depth > A->maxDepth) A->maxDepth = p->depth;
         if (B && p->depth > B->maxDepth) B->maxDepth = p->depth;
       };
@@ -885,8 +1015,16 @@ void RigidBodySystem::rigidStep(double tickDt) {
       }
     }
     nc = (int)contacts.size();
+    rigidContacts += nc;
+    for (Contact& contact : contacts) {
+      if (contact.depth > rigidMaxContactDepth)
+        rigidMaxContactDepth = contact.depth;
+      if (contact.persisted) rigidWarmStarted++;
+      if (contact.persisted && (contact.accJn != 0 || contact.accJt != 0))
+        applyWarmStart(contact);
+    }
     for (const Contact& contact : contacts) {
-      if (contact.impactSpeed < 0.28) continue;
+      if (contact.persisted || contact.impactSpeed < 0.28) continue;
       E.audio.emit(SE_IMPACT, contact.a->px, contact.a->py,
                    std::min(1.8, 0.25 + contact.impactSpeed * 0.55), contact.a->material);
     }
@@ -895,17 +1033,32 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // genuinely use it. A scene containing only tiny blast rubble uses the
     // smaller cap above; those chunks bake when their contact islands settle.
     for (int it = 0; it < solverIters; it++) {
+      rigidVelocityIterations++;
       double moved = 0;
       if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveContact(contacts[ci]);
       else for (int ci = 0; ci < nc; ci++) moved += resolveContact(contacts[ci]);
       if (moved == 0.0) break;
     }
     for (int it = 0; it < solverIters; it++) {
+      rigidBiasIterations++;
       double moved = 0;
       if (it & 1) for (int ci = nc - 1; ci >= 0; ci--) moved += resolveBias(contacts[ci]);
       else for (int ci = 0; ci < nc; ci++) moved += resolveBias(contacts[ci]);
       if (moved == 0.0) break;
     }
+    ContactCache nextContacts;
+    nextContacts.reserve(previousContacts.size());
+    for (const Contact& contact : contacts) {
+      int normalBucket = ((int)std::lround(
+        std::atan2(contact.ny, contact.nx) * (8.0 / (2.0 * M_PI)))) & 7;
+      double lax, lay, lbx, lby;
+      localAnchors(contact, lax, lay, lbx, lby);
+      nextContacts[cacheKey(contact, normalBucket)].push_back({
+        lax, lay, lbx, lby, contact.nx, contact.ny,
+        contact.accJn, contact.accJt, dt, false,
+      });
+    }
+    previousContacts = std::move(nextContacts);
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi]; if (!b->awake) continue;
       b->px += (b->vx + b->pvx) * dt; b->py += (b->vy + b->pvy) * dt; b->angle += (b->omega + b->pw) * dt;
@@ -2544,28 +2697,23 @@ bool RigidBodySystem::bodySolidifies(Body* b) {
 }
 // Baking is a structural transition, so solver sleep alone is insufficient:
 // buoyancy can put a floating body to sleep with no terrain contact. Require a
-// direct contact with a grounded static solid (or the world floor). Liquids and
-// other free bodies remain entirely in the rigid solver.
+// grounded static support below the raster (or the world floor). Side contact
+// does not bear the body's weight; liquids and other free bodies remain entirely
+// in the rigid solver.
 bool RigidBodySystem::bodyTouchesGroundedSolid(Body* b) {
   occStamp.reset((size_t)(E.cols * E.rows)); occCells.clear();
   forEachBodyCell(b, [&](int x, int y, int) {
     int k = y * E.cols + x;
     if (!occStamp.has(k)) { occStamp.add(k); occCells.push_back(k); }
   });
-  const int offsets[4] = {-1, 1, -E.cols, E.cols};
   for (int k : occCells) {
-    int y = k / E.cols, x = k - y * E.cols;
+    int y = k / E.cols;
     if (y + 1 >= E.rows) return true;
-    for (int offset : offsets) {
-      if ((offset == -1 && x == 0) || (offset == 1 && x + 1 >= E.cols)
-          || (offset == -E.cols && y == 0) || (offset == E.cols && y + 1 >= E.rows))
-        continue;
-      int neighbor = k + offset;
-      if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0) continue;
-      uint8_t material = E.L->grid[neighbor];
-      if ((E.isRigidMaterialClass(material) || E.isLooseSolidMaterial(material))
-          && E.L->groundedCell[neighbor]) return true;
-    }
+    int neighbor = k + E.cols;
+    if (occStamp.has(neighbor) || E.L->bodyOwner[neighbor] >= 0) continue;
+    uint8_t material = E.L->grid[neighbor];
+    if ((E.isRigidMaterialClass(material) || E.isLooseSolidMaterial(material))
+        && E.L->groundedCell[neighbor]) return true;
   }
   return bodyTouchesSettledLooseComponent(b);
 }

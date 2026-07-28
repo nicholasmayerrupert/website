@@ -15,8 +15,18 @@ lives in `rigid_impl.inc`.
   sequential impulse result stays deterministic.
 - Body/body and body/terrain checks sweep each sample's relative substep path in
   increments no larger than `R_SWEEP_STEP` and refine the first hit.
-- Contact normals come from the target mask. Contacts are bucketed by normal
-  direction so distinct faces do not collapse into one diagonal manifold.
+- Contact normals come from the target mask. A body sample surrounded by
+  occupied mask cells uses its nearest empty axial direction instead of a radial
+  guess. A symmetric terrain cell uses the side facing the body's center, so a
+  one-cell wall produces a horizontal normal instead of an arbitrary upward one.
+  Contacts are bucketed by normal direction so distinct faces do not collapse
+  into one diagonal manifold. Body/body buckets must also face the separating
+  half-space; far-side samples from a deep overlap are discarded instead of
+  creating opposing constraints.
+- Per-layer contact caches match local anchors by stable body id, geometry
+  revision, peer layer, and normal bucket. Persistent normal and friction
+  impulses warm-start the next substep/tick, while restitution remains an
+  impact-only target and positional bias stays separate.
 - Sequential impulses solve normal velocity, friction, penetration bias, and a
   fixed impact restitution target. Slow resting contacts target zero rebound.
 - Raster depenetration remains a last-resort fallback.
@@ -120,6 +130,7 @@ re-ground an airborne body. Powders never push a rigid body upward.
   solver iterations; scenes containing only small blast debris use 16.
 
 Constants live in `common.hpp`. Validate collision changes with
-`npm run test:rigid-collision`, `npm run test:rigid-topple`,
+`npm run test:rigid-collision`, `npm run test:rigid-dense-pile`,
+`npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
 `npm run bench:rigid`.

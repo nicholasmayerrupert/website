@@ -34,6 +34,7 @@ export const UNIT_SUITES = [
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],
   ['rigid-collision', 'rigid-collision-test.mjs'],
+  ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['house-blast-float', 'house-blast-float-test.mjs'],
   ['rigid-topple', 'rigid-topple-test.mjs'],
   ['rigidmat', 'rigidmat-test.mjs'],

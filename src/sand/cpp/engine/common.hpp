@@ -244,6 +244,7 @@ struct Body {
   // misses the exposed edges of thin shapes; these are cached and rebuilt only
   // when the occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
+  uint32_t geometryRevision = 0;
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;
@@ -270,6 +271,7 @@ struct Contact {
   // damping it back to zero over later solver iterations.
   double impactSpeed, targetVn;
   double accJn, accJt, accBias;
+  bool persisted;
 };
 
 // ---- Dropped items + cosmetic particles (items.inc) ----
@@ -631,17 +633,18 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
 static const double R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
+static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
-static const double R_SLEEP_LIN = 0.007, R_SLEEP_ANG = 0.0045;
+static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
 static const double R_FLUID_SLEEP_LIN = 0.05;
 static const double R_FLUID_REST_DAMP = 0.98;
 static const double R_FLUID_SLENDER_REST_DAMP = 0.85;
-static const double R_SETTLE_LIN = R_SLEEP_LIN * 8, R_SETTLE_ANG = R_SLEEP_ANG * 8;
+static const double R_SETTLE_LIN = 0.056, R_SETTLE_ANG = 0.036;
 static const double R_GRANULAR_BEARING_DEPTH = 7.0;
 static const double R_GRANULAR_DRAG = 0.12, R_GRANULAR_ANG_DRAG = 0.1;
 static const double R_GRANULAR_REST_BAND = 0.08, R_GRANULAR_REST_DAMP = 0.45;
 static const double R_GRANULAR_ZERO_VY = 0.02;
-static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.0;
+static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.5;
 
 // Composed subsystem declarations.
 #include "camera.hpp"

@@ -29,6 +29,10 @@ class RigidBodySystem {
 
   // Diagnostics (engine_test_ rigid ABI).
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
+  int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
+  int rigidVelocityIterations = 0, rigidBiasIterations = 0;
+  double rigidMaxContactDepth = 0;
+  void clearContactCaches();
   // Scratch for per-body bottom-edge support probes: membership
   // stamp + cell list replacing a per-call unordered_set (the probes only sum
   // integer counters, so iteration order is irrelevant).
@@ -60,6 +64,7 @@ class RigidBodySystem {
   // every velocity bitwise unchanged, so every later iteration recomputes the
   // same zeros — breaking there is bit-identical to running all iterations).
   double resolveContact(Contact& c);
+  void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
   void wakeBody(Body* b);
   void syncJointFollower(Body* leader);
@@ -107,6 +112,36 @@ class RigidBodySystem {
   Body* spawnDisc(int cx, int cy, int radius, uint8_t material);
 
  private:
+  struct ContactCacheKey {
+    int aId = -1, bId = -1;
+    uint32_t aRevision = 0, bRevision = 0;
+    uint8_t normalBucket = 0, bLayer = 0;
+    bool operator==(const ContactCacheKey& other) const {
+      return aId == other.aId && bId == other.bId
+          && aRevision == other.aRevision && bRevision == other.bRevision
+          && normalBucket == other.normalBucket && bLayer == other.bLayer;
+    }
+  };
+  struct ContactCacheKeyHash {
+    size_t operator()(const ContactCacheKey& key) const {
+      size_t h = (uint32_t)key.aId * 0x9e3779b1u;
+      h ^= (uint32_t)key.bId + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= key.aRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= key.bRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= (size_t)key.normalBucket << 1;
+      h ^= (size_t)key.bLayer << 5;
+      return h;
+    }
+  };
+  struct CachedContact {
+    double lax = 0, lay = 0, lbx = 0, lby = 0;
+    double nx = 0, ny = 0, jn = 0, jt = 0, dt = 1;
+    bool used = false;
+  };
+  using ContactCache = std::unordered_map<
+    ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
+  std::array<ContactCache, 2> contactCaches;
+
   struct FluidNode {
     Layer* layer = nullptr;
     int cell = -1, component = -1, sourceBody = -1;

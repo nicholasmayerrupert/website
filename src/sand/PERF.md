@@ -19,6 +19,7 @@ mapping, and pan stability.
 | `npm run bench:tnt` | Profile TNT chains, cave carving, grounding, debris, and aftermath. |
 | `npm run bench:rigid-fluid` | Stress awake bodies in one large connected water domain. |
 | `npm run bench:rigid-fluid-large` | Drop one 120×60 body into a large connected pool. |
+| `npm run test:rigid-dense-pile` | Verify contact persistence, bounded late motion/raster conflicts, and island sleep for 100 irregular bodies. |
 | `npm run bench:ice-growth` | Track rigid/fluid cost while one floating ice body grows through a pool. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
@@ -113,6 +114,10 @@ component registration, and generation/restoration. Browser presentation exposes
   compact dynamic faces.
 - Body/body broadphase uses sweep-and-prune, then sorts surviving pairs back
   into deterministic body-index order before generating contacts.
+- Rigid contact manifolds reject deep-overlap normals that oppose the pair's
+  separating half-space. Stable local anchors persist normal/friction impulses
+  across substeps and ticks, so dense piles converge from the previous solution
+  and enter island sleep instead of cold-solving jitter indefinitely.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize
   contiguous solver, grid, and rendering loops without a parallel runtime.
 - Due TNT uses stable 14-cell spatial regions. Fronts spanning more than six

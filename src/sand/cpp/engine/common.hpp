@@ -260,6 +260,11 @@ struct Body {
 struct Contact {
   Body* a; Body* b;
   double rax, ray, rbx, rby, nx, ny, depth;
+  // Cross-layer contacts exchange velocity impulses immediately even though the
+  // peer body integrates in a different layer pass. Positional bias remains on
+  // the body in the active solver so neither layer's stamped raster becomes
+  // stale before its normal moveBodies pass.
+  bool bIntegrated;
   // Separating speed captured from the contact's initial impact. Keeping this
   // target fixed lets sequential impulses preserve a small rebound instead of
   // damping it back to zero over later solver iterations.

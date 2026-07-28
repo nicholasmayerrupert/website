@@ -391,9 +391,13 @@ double RigidBodySystem::resolveBias(Contact& c) {
   double bias = R_BAUMGARTE * std::fmax(0.0, c.depth - R_PEN_SLOP);
   if (bias <= 0) return 0; if (bias > R_MAX_BIAS_VEL) bias = R_MAX_BIAS_VEL;
   double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
-  double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
+  double bInvM = (B && B->awake && c.bIntegrated) ? B->invMass : 0;
+  double bInvI = (B && B->awake && c.bIntegrated) ? B->invInertia : 0;
   double rvx = A->pvx - A->pw * c.ray, rvy = A->pvy + A->pw * c.rax;
-  if (B) { rvx -= B->pvx - B->pw * c.rby; rvy -= B->pvy + B->pw * c.rbx; }
+  if (B && c.bIntegrated) {
+    rvx -= B->pvx - B->pw * c.rby;
+    rvy -= B->pvy + B->pw * c.rbx;
+  }
   double vn = rvx * c.nx + rvy * c.ny; if (vn >= bias) return 0;
   double rnA = c.rax * c.ny - c.ray * c.nx, rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
   double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB; if (denom <= 0) return 0;
@@ -402,7 +406,11 @@ double RigidBodySystem::resolveBias(Contact& c) {
   double applied = newJ - c.accBias; c.accBias = newJ;
   double jx = applied * c.nx, jy = applied * c.ny;
   A->pvx += jx * aInvM; A->pvy += jy * aInvM; A->pw += aInvI * (c.rax * jy - c.ray * jx);
-  if (B) { B->pvx -= jx * bInvM; B->pvy -= jy * bInvM; B->pw -= bInvI * (c.rbx * jy - c.rby * jx); }
+  if (B && c.bIntegrated) {
+    B->pvx -= jx * bInvM;
+    B->pvy -= jy * bInvM;
+    B->pw -= bInvI * (c.rbx * jy - c.rby * jx);
+  }
   return std::fabs(applied);
 }
 void RigidBodySystem::wakeBody(Body* b) {
@@ -498,10 +506,56 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<uint8_t> actorSweepOverlap(n, 0);
   std::vector<uint8_t> solidContact(n, 0);
   struct PenPt { double wx, wy, nx, ny, depth; int bk; };
+  struct TerrainGroup { Body* peer; std::vector<PenPt> points; };
   std::vector<PenPt> penAcc, terrAcc;
+  std::vector<Body*> terrPeers;
+  std::vector<TerrainGroup> terrGroups;
   std::vector<int> broadphaseOrder(n);
   std::vector<std::pair<int, int>> broadphasePairs;
   broadphasePairs.reserve((size_t)n * 4);
+  // Each layer owns its integration pass, but a joint body's collision shape is
+  // present in both grids. Resolve owner-marked contacts against the peer's real
+  // dynamics while leaving positional integration to that body's owning pass.
+  std::unordered_map<int, Body*> peerBackgroundBodies;
+  std::unordered_map<int, Body*> peerJointLeaders;
+  if (E.bgEnabled) {
+    if (E.L == &E.fg) {
+      bool hasJointLeader = false;
+      for (Body* body : solverBodies)
+        if (body->jointRole == 1) { hasJointLeader = true; break; }
+      if (hasJointLeader)
+        for (Body* peer : E.bg.bodies)
+          if (peer->jointRole == 0) peerBackgroundBodies[peer->id] = peer;
+    } else if (!E.bg.passiveBodyIds.empty()) {
+      for (Body* leader : E.fg.bodies)
+        if (leader->jointRole == 1) peerJointLeaders[leader->id] = leader;
+    }
+  }
+  auto peerDynamicBodyAt = [&](Body* body, int x, int y) -> Body* {
+    if (!E.bgEnabled || x < 0 || x >= E.cols || y < 0 || y >= E.rows)
+      return nullptr;
+    int k = y * E.cols + x;
+    if (E.L == &E.fg && body->jointRole == 1) {
+      int owner = E.bg.bodyOwner[k];
+      if (owner < 0 || owner == body->id
+          || E.bg.passiveBodyIds.count(owner)) return nullptr;
+      auto it = peerBackgroundBodies.find(owner);
+      return it == peerBackgroundBodies.end() ? nullptr : it->second;
+    }
+    if (E.L == &E.bg && body->jointRole == 0) {
+      int owner = E.bg.bodyOwner[k];
+      if (owner < 0 || !E.bg.passiveBodyIds.count(owner)) return nullptr;
+      auto it = peerJointLeaders.find(owner);
+      return it == peerJointLeaders.end() ? nullptr : it->second;
+    }
+    return nullptr;
+  };
+  auto bodyUsesPeerContacts = [&](Body* body) {
+    return (E.L == &E.fg && body->jointRole == 1
+            && !peerBackgroundBodies.empty())
+        || (E.L == &E.bg && body->jointRole == 0
+            && !peerJointLeaders.empty());
+  };
   double wpx, wpy, nx_, ny_;
   for (int sub = 0; sub < substeps; sub++) {
     double dt = tickDt / substeps;
@@ -618,7 +672,14 @@ void RigidBodySystem::rigidStep(double tickDt) {
         double sx = P->px + lx * P->cs - ly * P->sn, sy = P->py + lx * P->sn + ly * P->cs;
         if (sx < T->aabbX0 - pm || sx > T->aabbX1 + pm || sy < T->aabbY0 - pm || sy > T->aabbY1 + pm) continue;
         int idx0 = insideBodyIndex(T, sx, sy);
-        if (idx0 >= 0) { bodyNormalAt(T, idx0, sx, sy, nx_, ny_); penAcc.push_back({sx, sy, nx_ * sign, ny_ * sign, penDepth(T, sx, sy, nx_, ny_), 0}); continue; }
+        if (idx0 >= 0) {
+          bodyNormalAt(T, idx0, sx, sy, nx_, ny_);
+          penAcc.push_back({
+            sx, sy, nx_ * sign, ny_ * sign,
+            penDepth(T, sx, sy, nx_, ny_), 0,
+          });
+          continue;
+        }
         double rPx = sx - P->px, rPy = sy - P->py, rTx = sx - T->px, rTy = sy - T->py;
         double mvx = ((P->vx - P->omega * rPy) - (T->vx - T->omega * rTy)) * dt;
         double mvy = ((P->vy + P->omega * rPx) - (T->vy + T->omega * rTx)) * dt;
@@ -634,12 +695,14 @@ void RigidBodySystem::rigidStep(double tickDt) {
           double hx = sx + dirx * bb, hy = sy + diry * bb; int hidx = insideBodyIndex(T, hx, hy);
           if (hidx < 0) { hx = sx + dirx * dk; hy = sy + diry * dk; hidx = insideBodyIndex(T, hx, hy); }
           if (hidx < 0) break;
-          bodyNormalAt(T, hidx, hx, hy, nx_, ny_); penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
+          bodyNormalAt(T, hidx, hx, hy, nx_, ny_);
+          penAcc.push_back({hx, hy, nx_ * sign, ny_ * sign, 0.0, 0});
           break;
         }
       }
     };
-    // Swept body-to-terrain sampling: same idea against the static grid mask.
+    // Swept body-to-grid sampling. Static cells stay terrain contacts; owner-
+    // marked peer-layer cells are grouped by their dynamic body below.
     // The loaded-buffer rim counts as solid wall: a body's own motion must not
     // carry it off the simulated window (where its raster is clipped away and it
     // silently vanishes). Off-buffer cells get an inward-pointing normal so the
@@ -647,6 +710,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // window streams that region into view. World-stream eviction (which legitly
     // carries bodies off-buffer and persists them) is a separate path.
     auto collectTerrain = [&](Body* b, double dt) {
+      bool bodyHasPeerContacts = bodyUsesPeerContacts(b);
       const std::vector<float>& S = b->boundarySamples;
       auto solid = [&](int ix, int iy) { return ix < 0 || ix >= E.cols || iy < 0 || iy >= E.rows || isBodyTerrain(b, ix, iy, b->density); };
       auto tnorm = [&](int ix, int iy, double& ox, double& oy) {
@@ -664,7 +728,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
           tnorm(cx, cy, nx_, ny_);
           double depth = 0.5, mx = sx, my = sy;
           for (int s = 0; s < 4; s++) { mx += nx_; my += ny_; if (!solid((int)std::floor(mx), (int)std::floor(my))) break; depth += 1; }
-          terrAcc.push_back({sx, sy, nx_, ny_, depth, 0}); continue;
+          terrAcc.push_back({sx, sy, nx_, ny_, depth, 0});
+          if (bodyHasPeerContacts)
+            terrPeers.push_back(peerDynamicBodyAt(b, cx, cy));
+          continue;
         }
         double rx = sx - b->px, ry = sy - b->py;
         double mvx = (b->vx - b->omega * ry) * dt, mvy = (b->vy + b->omega * rx) * dt;
@@ -679,7 +746,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
           for (int it = 0; it < 6; it++) { double mm = (a + bb) * 0.5; if (solid((int)std::floor(sx + dirx * mm), (int)std::floor(sy + diry * mm))) bb = mm; else a = mm; }
           double hx = sx + dirx * bb, hy = sy + diry * bb; int hxx = (int)std::floor(hx), hyy = (int)std::floor(hy);
           if (!solid(hxx, hyy)) { hx = sx + dirx * dk; hy = sy + diry * dk; hxx = (int)std::floor(hx); hyy = (int)std::floor(hy); }
-          tnorm(hxx, hyy, nx_, ny_); terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
+          tnorm(hxx, hyy, nx_, ny_);
+          terrAcc.push_back({hx, hy, nx_, ny_, 0.0, 0});
+          if (bodyHasPeerContacts)
+            terrPeers.push_back(peerDynamicBodyAt(b, hxx, hyy));
           break;
         }
       }
@@ -691,6 +761,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // ends. Deepest contributes to maxDepth for the sleep gate.
     auto reduceManifold = [&](std::vector<PenPt>& acc, Body* A, Body* B, double fbx, double fby) {
       if (acc.empty()) return;
+      int bIndex = B && B->idx >= 0 && B->idx < n
+        && solverBodies[B->idx] == B ? B->idx : -1;
       const double Q = 8.0 / (2.0 * M_PI);
       double snx[8] = {0}, sny[8] = {0}; int cnt[8] = {0};
       for (auto& p : acc) { int bk = ((int)std::lround(std::atan2(p.ny, p.nx) * Q)) & 7; p.bk = bk; snx[bk] += p.nx; sny[bk] += p.ny; cnt[bk]++; }
@@ -709,11 +781,13 @@ void RigidBodySystem::rigidStep(double tickDt) {
         double rvx = A->vx - A->omega * ray, rvy = A->vy + A->omega * rax;
         if (B) { rvx -= B->vx - B->omega * rby; rvy -= B->vy + B->omega * rbx; }
         double impactVn = rvx * Nx[bk] + rvy * Ny[bk];
-        bool softImpact = actorSweepOverlap[A->idx] || (B && actorSweepOverlap[B->idx]);
+        bool softImpact = actorSweepOverlap[A->idx]
+          || (bIndex >= 0 && actorSweepOverlap[bIndex]);
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
         contacts.push_back({A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
-                            std::max(0.0, -impactVn), targetVn, 0, 0, 0});
+                            bIndex >= 0, std::max(0.0, -impactVn), targetVn,
+                            0, 0, 0});
         if (p->depth > A->maxDepth) A->maxDepth = p->depth;
         if (B && p->depth > B->maxDepth) B->maxDepth = p->depth;
       };
@@ -722,7 +796,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       solidContact[A->idx] = 1;
       if (B) {
         B->hadContact = true;
-        solidContact[B->idx] = 1;
+        if (bIndex >= 0) solidContact[bIndex] = 1;
       }
     };
     for (int i = 0; i < n; i++) broadphaseOrder[i] = i;
@@ -765,8 +839,50 @@ void RigidBodySystem::rigidStep(double tickDt) {
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi]; if (!b->awake) continue;
       terrAcc.clear();
+      terrPeers.clear();
       collectTerrain(b, dt);
-      reduceManifold(terrAcc, b, nullptr, 0, -1);
+      if (!bodyUsesPeerContacts(b)) {
+        reduceManifold(terrAcc, b, nullptr, 0, -1);
+        continue;
+      }
+      size_t terrGroupCount = 0;
+      for (size_t pi = 0; pi < terrAcc.size(); pi++) {
+        const PenPt& point = terrAcc[pi];
+        Body* peer = terrPeers[pi];
+        auto it = std::find_if(
+          terrGroups.begin(), terrGroups.begin() + terrGroupCount,
+          [&](const TerrainGroup& group) { return group.peer == peer; });
+        if (it == terrGroups.begin() + terrGroupCount) {
+          if (terrGroupCount == terrGroups.size())
+            terrGroups.push_back({nullptr, {}});
+          it = terrGroups.begin() + terrGroupCount++;
+          it->peer = peer;
+          it->points.clear();
+        }
+        it->points.push_back(point);
+      }
+      for (size_t gi = 0; gi < terrGroupCount; gi++) {
+        TerrainGroup& group = terrGroups[gi];
+        Body* peer = group.peer;
+        if (peer) {
+          bool bodyMoving = b->awake
+            && (b->vx * b->vx + b->vy * b->vy > R_WAKE_LIN2
+                || b->omega * b->omega > R_WAKE_ANG2);
+          bool peerMoving = peer->awake
+            && (peer->vx * peer->vx + peer->vy * peer->vy > R_WAKE_LIN2
+                || peer->omega * peer->omega > R_WAKE_ANG2);
+          if (!b->awake && peerMoving) wakeBody(b);
+          if (!peer->awake && bodyMoving) wakeBody(peer);
+          if (!b->awake && !peer->awake) continue;
+          double fbx = b->px - peer->px, fby = b->py - peer->py;
+          double fl = std::sqrt(fbx * fbx + fby * fby);
+          if (fl < 1e-9) { fbx = 0; fby = -1; }
+          else { fbx /= fl; fby /= fl; }
+          reduceManifold(group.points, b, peer, fbx, fby);
+        } else {
+          reduceManifold(group.points, b, nullptr, 0, -1);
+        }
+      }
     }
     nc = (int)contacts.size();
     for (const Contact& contact : contacts) {
@@ -861,7 +977,11 @@ void RigidBodySystem::rigidStep(double tickDt) {
     }
   }
   for (int bi = 0; bi < n; bi++) islandParent[bi] = bi;
-  for (int ci = 0; ci < nc; ci++) { Contact& c = contacts[ci]; if (!c.b || !c.a->awake || !c.b->awake) continue; ufUnite(islandParent, c.a->idx, c.b->idx); }
+  for (int ci = 0; ci < nc; ci++) {
+    Contact& c = contacts[ci];
+    if (!c.b || !c.bIntegrated || !c.a->awake || !c.b->awake) continue;
+    ufUnite(islandParent, c.a->idx, c.b->idx);
+  }
   for (int bi = 0; bi < n; bi++) islandMinStill[bi] = 1e18;
   for (int bi = 0; bi < n; bi++) {
     Body* b = solverBodies[bi];
@@ -917,10 +1037,10 @@ bool RigidBodySystem::isBodyTerrain(Body* body, int x, int y, double bodyDensity
     int owner = lay.bodyOwner[k];
     if (owner >= 0) {
       if (body && body->jointRole == 1 && owner == body->id) return false;
-      // A joint leader is solved only in foreground. Its peer-layer obstacles
-      // and a follower seen by an ordinary background body are kinematic
-      // terrain for this pass; same-layer ordinary bodies retain impulse
-      // collision through the body/body solver.
+      // Owner cells stay present in the grid sweep. Same-layer ordinary bodies
+      // use the body/body broad phase, while rigidStep promotes peer-layer owner
+      // hits to dynamic contacts after the sweep identifies their exact cells.
+      // Passive followers without an active leader mapping remain terrain.
       return peerLayer || lay.passiveBodyIds.count(owner) != 0;
     }
     uint8_t material = lay.grid[k];

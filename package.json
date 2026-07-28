@@ -66,6 +66,7 @@
     "test:structures": "node scripts/worldgen-structures-test.mjs",
     "test:flora": "node scripts/flora-test.mjs",
     "test:rigid-collision": "node scripts/rigid-collision-test.mjs",
+    "test:house-blast-float": "node scripts/house-blast-float-test.mjs",
     "test:rigid-topple": "node scripts/rigid-topple-test.mjs",
     "test:rigidmat": "node scripts/rigidmat-test.mjs",
     "test:rigid-spawn-joint": "node scripts/rigid-spawn-joint-repro.mjs",

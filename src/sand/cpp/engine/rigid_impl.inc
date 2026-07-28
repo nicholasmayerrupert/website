@@ -642,6 +642,13 @@ void RigidBodySystem::rigidStep(double tickDt) {
         b->omega *= R_CONTACT_ANG_DAMP;
       bool fluidOnlyContact = liquidContact[bi] && !frictionalContact;
       fluidOnlySleep[bi] = fluidOnlyContact ? 1 : 0;
+      // Dissipate residual vertical surface waves once the body is already
+      // inside the ordinary settling band; translation and spin stay physical
+      // at larger speeds.
+      if (fluidOnlyContact && liquidSurfaceContact[bi]
+          && std::fabs(b->vy) < R_SETTLE_LIN
+          && b->maxDepth <= R_REST_DEPTH)
+        b->vy *= R_FLUID_REST_DAMP;
       double sleepLinear = fluidOnlyContact ? R_FLUID_SLEEP_LIN : R_SLEEP_LIN;
       bool sleepQuiet = b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
                      && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
@@ -742,6 +749,8 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       fluidNodeIndex[layer].assign(cellCount, -1);
       fluidBodyStamp[layer].assign(cellCount, 0);
       fluidBodyIndex[layer].assign(cellCount, -1);
+      fluidTopologyStamp[layer].assign(cellCount, 0);
+      fluidTopologyIndex[layer].assign(cellCount, -1);
       fluidPressureCache[layer].assign(cellCount, 0);
       fluidPressureWorldX[layer] = fluidPressureWorldY[layer] = INT32_MIN;
     }
@@ -761,6 +770,10 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     fluidBodyGeneration = 1;
     for (auto& stamp : fluidBodyStamp) std::fill(stamp.begin(), stamp.end(), 0);
   }
+  if (++fluidTopologyGeneration <= 0) {
+    fluidTopologyGeneration = 1;
+    for (auto& stamp : fluidTopologyStamp) std::fill(stamp.begin(), stamp.end(), 0);
+  }
 
   const int activeLayer = E.L == &E.bg ? 1 : 0;
   fluidQueue.clear();
@@ -778,6 +791,13 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     stampBody(body, i, activeLayer, body->awake);
     if (body->jointRole == 1 && body->jointPeer)
       stampBody(body->jointPeer, i, 1 - activeLayer, body->awake);
+  }
+  int fluidDomainRadius = R_FLUID_DOMAIN_MIN_RADIUS;
+  for (Body* body : bodies) if (body->awake) {
+    int area = body->nPts;
+    if (body->jointRole == 1 && body->jointPeer) area += body->jointPeer->nPts;
+    int bodyScale = (int)std::ceil(std::sqrt((double)area));
+    fluidDomainRadius = imax(fluidDomainRadius, (bodyScale * 5 + 3) / 4);
   }
 
   auto layerAt = [&](int index) -> Layer* { return index == 0 ? &E.fg : &E.bg; };
@@ -800,16 +820,110 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
         fluidBodySurface[bodyIndex] = 1;
     }
   }
+  auto seedBodyInterior = [&](Body* body, int layer) {
+    double lx0 = body->offsetX - 0.5, lx1 = body->offsetX + body->w - 0.5;
+    double ly0 = body->offsetY - 0.5, ly1 = body->offsetY + body->h - 0.5;
+    double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+    auto includeCorner = [&](double lx, double ly) {
+      double x = body->px + lx * body->cs - ly * body->sn;
+      double y = body->py + lx * body->sn + ly * body->cs;
+      minX = std::fmin(minX, x); maxX = std::fmax(maxX, x);
+      minY = std::fmin(minY, y); maxY = std::fmax(maxY, y);
+    };
+    includeCorner(lx0, ly0); includeCorner(lx1, ly0);
+    includeCorner(lx1, ly1); includeCorner(lx0, ly1);
+    int x0 = imax(0, (int)std::floor(minX));
+    int x1 = imin(E.cols - 1, (int)std::floor(maxX));
+    int y0 = imax(0, (int)std::floor(minY));
+    int y1 = imin(E.rows - 1, (int)std::floor(maxY));
+    Layer* lay = layerAt(layer);
+    for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+      double dx = x + 0.5 - body->px, dy = y + 0.5 - body->py;
+      double lx = dx * body->cs + dy * body->sn;
+      double ly = -dx * body->sn + dy * body->cs;
+      if (lx < lx0 || lx > lx1 || ly < ly0 || ly > ly1) continue;
+      int k = y * E.cols + x;
+      if (E.isLiquidMaterial(lay->grid[k])) fluidSeeds.push_back(layer * cellCount + k);
+    }
+  };
+  for (Body* body : bodies) {
+    seedBodyInterior(body, activeLayer);
+    if (body->jointRole == 1 && body->jointPeer)
+      seedBodyInterior(body->jointPeer, 1 - activeLayer);
+  }
   fluidQueue.clear();
   if (fluidSeeds.empty()) return false;
   std::sort(fluidSeeds.begin(), fluidSeeds.end());
   fluidSeeds.erase(std::unique(fluidSeeds.begin(), fluidSeeds.end()), fluidSeeds.end());
 
+  // The topology pass is linear in touched liquid cells and supplies one shared
+  // hydrostatic reference to local regions separated by a wide rigid surface.
+  fluidTopologies.clear();
+  for (int seed : fluidSeeds) {
+    int layer = seed / cellCount, k = seed - layer * cellCount;
+    if (fluidTopologyStamp[layer][k] == fluidTopologyGeneration) continue;
+    int topology = (int)fluidTopologies.size();
+    FluidTopology topo;
+    topo.rowDensitySum.assign(E.rows, 0);
+    topo.rowCellCount.assign(E.rows, 0);
+    topo.rowPressure.assign(E.rows, 0);
+    fluidTopologies.push_back(std::move(topo));
+    auto addTopologyCell = [&](int cell) {
+      if (fluidTopologyStamp[layer][cell] == fluidTopologyGeneration
+          || !E.isLiquidMaterial(layerAt(layer)->grid[cell])) return;
+      fluidTopologyStamp[layer][cell] = fluidTopologyGeneration;
+      fluidTopologyIndex[layer][cell] = topology;
+      uint8_t material = layerAt(layer)->grid[cell];
+      if (fluidTopologies[topology].material == EMPTY)
+        fluidTopologies[topology].material = material;
+      else if (fluidTopologies[topology].material != material)
+        fluidTopologies[topology].mixedMaterials = true;
+      int y = cell / E.cols;
+      fluidTopologies[topology].rowDensitySum[y] += DENSITY[material];
+      fluidTopologies[topology].rowCellCount[y]++;
+      fluidQueue.push_back(layer * cellCount + cell);
+    };
+    addTopologyCell(k);
+    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
+      int qk = fluidQueue[qi] - layer * cellCount;
+      int y = qk / E.cols, x = qk - y * E.cols;
+      if (x > 0) addTopologyCell(qk - 1);
+      if (x + 1 < E.cols) addTopologyCell(qk + 1);
+      if (y > 0) addTopologyCell(qk - E.cols);
+      if (y + 1 < E.rows) addTopologyCell(qk + E.cols);
+    }
+    fluidQueue.clear();
+    double pressure = 0, priorDensity = 0;
+    int priorY = -1;
+    for (int y = 0; y < E.rows; y++) {
+      FluidTopology& built = fluidTopologies[topology];
+      if (built.rowCellCount[y] == 0) continue;
+      double density = built.rowDensitySum[y] / built.rowCellCount[y];
+      if (priorY < 0)
+        pressure = density * R_GRAVITY * dt * 0.5;
+      else
+        pressure += (priorDensity + density) * 0.5 * R_GRAVITY * dt * (y - priorY);
+      built.rowPressure[y] = pressure;
+      priorDensity = density;
+      priorY = y;
+    }
+  }
+
   fluidNodes.clear();
+  fluidNodeDepth.clear();
   fluidQueue.clear();
-  int component = 0;
-  std::vector<int> componentFirst;
-  auto addNode = [&](int layer, int k, int componentIndex) {
+  bool heterogeneousCoupling = false;
+  uint8_t coupledMaterial = EMPTY;
+  for (const FluidTopology& topology : fluidTopologies) {
+    if (topology.mixedMaterials) heterogeneousCoupling = true;
+    if (coupledMaterial == EMPTY)
+      coupledMaterial = topology.material;
+    else if (coupledMaterial != topology.material)
+      heterogeneousCoupling = true;
+  }
+  // A deterministic multi-source flood extends beyond wet surfaces by the
+  // bodies' characteristic length. Remote cells remain in the cellular solver.
+  auto addNode = [&](int layer, int k, int depth) {
     if (fluidNodeStamp[layer][k] == fluidNodeGeneration) return false;
     Layer* lay = layerAt(layer);
     uint8_t material = lay->grid[k];
@@ -820,25 +934,29 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     double vx = E.liquidVelocityX(packedVelocity);
     double vy = E.liquidVelocityY(packedVelocity);
     double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]);
-    fluidNodes.push_back({lay, k, componentIndex, material, vx, vy + R_GRAVITY * dt,
+    int topology = fluidTopologyIndex[layer][k];
+    fluidNodes.push_back({lay, k, -1, topology, material, vx, vy + R_GRAVITY * dt,
                           pressure});
+    fluidNodeDepth.push_back(depth);
     fluidQueue.push_back(layer * cellCount + k);
     return true;
   };
   for (int seed : fluidSeeds) {
     int layer = seed / cellCount, k = seed - layer * cellCount;
-    if (!addNode(layer, k, component)) continue;
-    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
-      int packed = fluidQueue[qi];
-      int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
-      int y = qk / E.cols, x = qk - y * E.cols;
-      if (x > 0) addNode(qLayer, qk - 1, component);
-      if (x + 1 < E.cols) addNode(qLayer, qk + 1, component);
-      if (y > 0) addNode(qLayer, qk - E.cols, component);
-      if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, component);
-    }
-    fluidQueue.clear();
-    component++;
+    addNode(layer, k, 0);
+  }
+  for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
+    int packed = fluidQueue[qi];
+    int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
+    int nodeIndex = fluidNodeIndex[qLayer][qk];
+    int depth = fluidNodeDepth[nodeIndex];
+    int topology = fluidNodes[nodeIndex].topology;
+    if (depth >= fluidDomainRadius && !heterogeneousCoupling) continue;
+    int y = qk / E.cols, x = qk - y * E.cols;
+    if (x > 0) addNode(qLayer, qk - 1, depth + 1);
+    if (x + 1 < E.cols) addNode(qLayer, qk + 1, depth + 1);
+    if (y > 0) addNode(qLayer, qk - E.cols, depth + 1);
+    if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, depth + 1);
   }
   if (fluidNodes.empty()) return false;
   std::sort(fluidNodes.begin(), fluidNodes.end(), [&](const FluidNode& a, const FluidNode& b) {
@@ -846,16 +964,42 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     int bLayer = b.layer == &E.bg ? 1 : 0;
     return aLayer != bLayer ? aLayer < bLayer : a.cell < b.cell;
   });
-  componentFirst.assign((size_t)component, -1);
   for (int i = 0; i < (int)fluidNodes.size(); i++) {
     FluidNode& node = fluidNodes[i];
     int layer = node.layer == &E.bg ? 1 : 0;
     fluidNodeIndex[layer][node.cell] = i;
-    if (componentFirst[node.component] < 0) componentFirst[node.component] = i;
+  }
+  int component = 0;
+  std::vector<int> componentFirst;
+  fluidQueue.clear();
+  for (int first = 0; first < (int)fluidNodes.size(); first++) {
+    if (fluidNodes[first].component >= 0) continue;
+    componentFirst.push_back(first);
+    fluidNodes[first].component = component;
+    fluidQueue.push_back(first);
+    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
+      FluidNode& node = fluidNodes[fluidQueue[qi]];
+      int layer = node.layer == &E.bg ? 1 : 0;
+      int y = node.cell / E.cols, x = node.cell - y * E.cols;
+      auto visit = [&](int k) {
+        if (fluidNodeStamp[layer][k] != fluidNodeGeneration) return;
+        int ni = fluidNodeIndex[layer][k];
+        if (fluidNodes[ni].component >= 0) return;
+        fluidNodes[ni].component = component;
+        fluidQueue.push_back(ni);
+      };
+      if (x > 0) visit(node.cell - 1);
+      if (x + 1 < E.cols) visit(node.cell + 1);
+      if (y > 0) visit(node.cell - E.cols);
+      if (y + 1 < E.rows) visit(node.cell + E.cols);
+    }
+    fluidQueue.clear();
+    component++;
   }
 
   fluidFaces.clear();
   std::vector<uint8_t> componentHasAir((size_t)component, 0);
+  std::vector<uint8_t> componentHasDomain((size_t)component, 0);
   auto addBoundaryFace = [&](int ni, int layer, int nk, int nx, int ny, bool outside) {
     FluidNode& node = fluidNodes[ni];
     if (outside) {
@@ -881,6 +1025,25 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       return;
     }
     uint8_t material = layerAt(layer)->grid[nk];
+    if (E.isLiquidMaterial(material)) {
+      uint32_t packedVelocity = layerAt(layer)->liquidVel[nk];
+      double outsideVx = E.liquidVelocityX(packedVelocity);
+      double outsideVy = E.liquidVelocityY(packedVelocity) + R_GRAVITY * dt;
+      double predicted = (node.vx + outsideVx) * nx * 0.5
+                       + (node.vy + outsideVy) * ny * 0.5;
+      FluidFace face{ni, nk, -1, (int8_t)nx, (int8_t)ny,
+                     outsideVx, E.liquidVelocityY(packedVelocity), predicted, FF_DOMAIN};
+      face.inverseDensity =
+        2.0 / (DENSITY[node.material] + DENSITY[material]);
+      // The lateral Robin coefficient represents the pressure response of the
+      // unresolved reservoir between this face and the far field.
+      if (nx) face.inverseDensity /= fluidDomainRadius;
+      int topology = fluidTopologyIndex[layer][nk];
+      int y = nk / E.cols;
+      face.boundaryPressure = fluidTopologies[topology].rowPressure[y];
+      fluidFaces.push_back(face);
+      return;
+    }
     if (material == EMPTY || E.isGasMaterial(material)) {
       double normal = node.vx * nx + node.vy * ny;
       fluidFaces.push_back({ni, -1, -1, (int8_t)nx, (int8_t)ny, 0, 0, normal, FF_AIR});
@@ -900,7 +1063,8 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       int xx = x + nx[d], yy = y + ny[d];
       bool outside = xx < 0 || xx >= E.cols || yy < 0 || yy >= E.rows;
       int nk = outside ? node.cell : yy * E.cols + xx;
-      if (!outside && E.isLiquidMaterial(node.layer->grid[nk])) {
+      if (!outside && E.isLiquidMaterial(node.layer->grid[nk])
+          && fluidNodeStamp[layer][nk] == fluidNodeGeneration) {
         if (d == 1 || d == 3) {
           int other = fluidNodeIndex[layer][nk];
           double predicted = (node.vx + fluidNodes[other].vx) * nx[d] * 0.5
@@ -912,6 +1076,11 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       }
       addBoundaryFace(ni, layer, nk, nx[d], ny[d], outside);
     }
+  }
+  for (FluidFace& face : fluidFaces) {
+    if (face.kind != FF_DOMAIN) continue;
+    FluidNode& node = fluidNodes[face.a];
+    componentHasDomain[node.component] = 1;
   }
 
   const int nodeCount = (int)fluidNodes.size();
@@ -941,7 +1110,10 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       fluidNodes[face.a].residual -= face.predicted;
       if (face.kind == FF_AIR)
         fluidNodes[face.a].diagonal += 1.0 / DENSITY[fluidNodes[face.a].material];
-      else if (face.kind == FF_BODY) {
+      else if (face.kind == FF_DOMAIN) {
+        fluidNodes[face.a].residual += face.boundaryPressure * face.inverseDensity;
+        fluidNodes[face.a].diagonal += face.inverseDensity;
+      } else if (face.kind == FF_BODY) {
         Body* body = bodies[face.body];
         double cross = face.rx * face.ny - face.ry * face.nx;
         fluidNodes[face.a].diagonal += body->invMass + cross * cross * body->invInertia;
@@ -951,7 +1123,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   fluidRHS.resize(nodeCount);
   for (int i = 0; i < nodeCount; i++) fluidRHS[i] = fluidNodes[i].residual;
   for (int c = 0; c < component; c++) {
-    if (componentHasAir[c]) continue;
+    if (componentHasAir[c] || componentHasDomain[c]) continue;
     fluidNodes[componentFirst[c]].pinned = true;
   }
 
@@ -970,6 +1142,8 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
         fluidNodes[face.b].applied -= delta;
       } else if (face.kind == FF_AIR) {
         fluidNodes[face.a].applied += value(face.a) / DENSITY[fluidNodes[face.a].material];
+      } else if (face.kind == FF_DOMAIN) {
+        fluidNodes[face.a].applied += value(face.a) * face.inverseDensity;
       } else if (face.kind == FF_BODY) {
         double impulse = value(face.a);
         Body* body = bodies[face.body];
@@ -1124,6 +1298,9 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     }
     if (face.kind == FF_AIR)
       normalVelocity = face.predicted + a.pressure / DENSITY[a.material];
+    else if (face.kind == FF_DOMAIN)
+      normalVelocity = face.predicted
+                     + (a.pressure - face.boundaryPressure) * face.inverseDensity;
     else if (face.kind == FF_BODY) {
       Body* body = bodies[face.body];
       normalVelocity = (body->vx - body->omega * face.ry) * face.nx
@@ -1142,6 +1319,18 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   // container remain in the same freely-falling frame.
   for (FluidNode& node : fluidNodes) node.residual = node.direction = 0;
   for (const FluidFace& face : fluidFaces) {
+    if (face.kind == FF_DOMAIN) {
+      FluidNode& node = fluidNodes[face.a];
+      uint8_t outsideMaterial = node.layer->grid[face.b];
+      double mobility = (MOBILITY[node.material] + MOBILITY[outsideMaterial]) * 0.5;
+      double viscosity = (0.50 + (1.0 - mobility) * 0.35) * dt;
+      double inverseMass = 1.0 / DENSITY[node.material] + 1.0 / DENSITY[outsideMaterial];
+      node.residual += (face.rx - node.vx) * viscosity
+                     / (inverseMass * DENSITY[node.material]);
+      node.direction += (face.ry - node.vy) * viscosity
+                      / (inverseMass * DENSITY[node.material]);
+      continue;
+    }
     if (face.kind != FF_INTERNAL) continue;
     FluidNode& a = fluidNodes[face.a];
     FluidNode& b = fluidNodes[face.b];

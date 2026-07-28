@@ -17,6 +17,7 @@ mapping, and pan stability.
 | `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
 | `npm run worldgen:atlas` | Render the foreground/background topology atlas to `bench/worldgen-atlas.png`. |
 | `npm run bench:tnt` | Profile TNT chains, cave carving, grounding, debris, and aftermath. |
+| `npm run bench:rigid-fluid` | Stress awake bodies in one large connected water domain. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
 
@@ -99,6 +100,10 @@ component registration, and generation/restoration. Browser presentation exposes
   invalidate cached cave grounding. Settled rubble bakes into ordinary static
   material once structural motion in its layer clears. Dense TNT fronts emit a
   bounded number of physical chunks.
+- Rigid/fluid pressure projection uses deterministic overlapping neighborhoods
+  sized from wet body area. A linear topology pass supplies the hydrostatic
+  boundary condition, so the pressure matrix for a single-material lake is
+  independent of remote connected water.
 - Due TNT uses stable 14-cell spatial regions. Fronts spanning more than six
   regions and containing more than 2,048 due cells consume one compact
   six-by-two-region window per tick until their backlog drains; smaller fronts

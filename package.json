@@ -97,6 +97,7 @@
     "bench:pan": "node scripts/bench-pan.mjs",
     "bench:pan:compare": "node scripts/bench-pan.mjs --compare bench/pan-baseline.json",
     "bench:rigid": "node scripts/bench-rigid.mjs",
+    "bench:rigid-fluid": "node scripts/bench-rigid-fluid.mjs",
     "bench:tnt": "node scripts/bench-tnt.mjs",
     "bench:tnt:shock": "node scripts/bench-tnt-shock.mjs",
     "bench:methane": "node scripts/bench-methane.mjs",

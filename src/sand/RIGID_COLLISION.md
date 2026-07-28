@@ -54,14 +54,26 @@ intact supported stacks remain baked.
 
 ## Fluids and loose solids
 
-Liquids do not collide as terrain. A sparse pressure projection gathers the
-connected liquid touching awake bodies, predicts liquid and body gravity
-together, and solves pressure against liquid, terrain, free surfaces, and the
-shared body degrees of freedom. Pressure and viscosity apply equal-and-opposite
-impulses to liquid and bodies. A nonnegative pressure constraint prevents
-unphysical suction. The solve handles both layers of a cross-layer body as
-separate fluid domains coupled by the shared body motion. Its iteration cap and
-traversal orders are deterministic.
+Liquids do not collide as terrain. A sparse pressure projection gathers a
+connected neighborhood around awake body surfaces, predicts liquid and body
+gravity together, and solves pressure against liquid, terrain, free surfaces,
+domain cutoffs, and the shared body degrees of freedom. The neighborhood radius
+uses the square root of displaced body area as its two-dimensional length scale,
+with a small minimum for tiny bodies. Overlapping body neighborhoods form one
+domain.
+
+A linear pass over each touched liquid topology supplies its hydrostatic
+far-field pressure. Cutoff faces retain the adjacent cellular velocity, use a
+distance-scaled lateral pressure response, and exchange viscosity with that
+reservoir. When one rigid solve touches different liquid materials, the pressure
+domain expands across their full connected topologies so density interfaces are
+not reduced to one hydrostatic boundary. Pressure and viscosity apply
+equal-and-opposite impulses to liquid and bodies. A nonnegative pressure
+constraint prevents unphysical suction. The solve handles both layers of a
+cross-layer body as separate fluid domains coupled by the shared body motion.
+Its iteration cap and traversal orders are deterministic. In a single-material
+lake, pressure cost scales with wet body neighborhoods rather than total lake
+area.
 
 Liquid cells carry compact two-axis coupling velocity in addition to the
 cellular automaton's downward fall distance. Pressure is warm-started from the

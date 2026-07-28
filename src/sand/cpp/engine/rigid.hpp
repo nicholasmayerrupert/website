@@ -105,7 +105,7 @@ class RigidBodySystem {
  private:
   struct FluidNode {
     Layer* layer = nullptr;
-    int cell = -1, component = -1;
+    int cell = -1, component = -1, topology = -1;
     uint8_t material = EMPTY;
     double vx = 0, vy = 0, pressure = 0;
     double residual = 0, direction = 0, applied = 0, diagonal = 0;
@@ -120,6 +120,7 @@ class RigidBodySystem {
     FF_INTERNAL,
     FF_AIR,
     FF_STATIC,
+    FF_DOMAIN,
     FF_BODY
   };
   struct FluidFace {
@@ -127,16 +128,25 @@ class RigidBodySystem {
     int8_t nx, ny;
     double rx, ry, predicted;
     FluidFaceKind kind;
+    double boundaryPressure = 0, inverseDensity = 0;
+  };
+  struct FluidTopology {
+    uint8_t material = EMPTY;
+    bool mixedMaterials = false;
+    std::vector<double> rowDensitySum, rowPressure;
+    std::vector<int> rowCellCount;
   };
   std::array<std::vector<int32_t>, 2> fluidNodeStamp, fluidNodeIndex;
   std::array<std::vector<int32_t>, 2> fluidBodyStamp, fluidBodyIndex;
+  std::array<std::vector<int32_t>, 2> fluidTopologyStamp, fluidTopologyIndex;
   std::array<std::vector<float>, 2> fluidPressureCache;
   std::array<int, 2> fluidPressureWorldX{{INT32_MIN, INT32_MIN}};
   std::array<int, 2> fluidPressureWorldY{{INT32_MIN, INT32_MIN}};
-  int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0;
+  int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0, fluidTopologyGeneration = 0;
   std::vector<FluidNode> fluidNodes;
   std::vector<FluidFace> fluidFaces;
-  std::vector<int> fluidQueue, fluidSeeds;
+  std::vector<FluidTopology> fluidTopologies;
+  std::vector<int> fluidQueue, fluidSeeds, fluidNodeDepth;
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
   std::vector<uint8_t> fluidBodySurface;

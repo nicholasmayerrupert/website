@@ -188,6 +188,12 @@ compact two-axis velocity used by the rigid/fluid pressure solve; it is separate
 from the cellular automaton's integer fall distance. A clear vertical fall
 accelerates by one cell per world tick up to the material's terminal speed;
 contact, diagonal avalanching, and lateral flow reset the stored momentum.
+Rigid coupling projects a deterministic pressure domain around wet body
+surfaces, sized from the bodies' displaced area. A linear topology pass supplies
+the domain with the connected liquid's hydrostatic far field, so a body in a
+large single-material lake does not make remote water enter the pressure matrix.
+When one rigid solve touches different liquid materials, it retains the complete
+connected pressure domains so their density interfaces remain coupled exactly.
 
 Reactions are routed through generated flags where possible:
 

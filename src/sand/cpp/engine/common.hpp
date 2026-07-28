@@ -184,6 +184,11 @@ struct Comp {
   int woodCount = 0, leafCount = 0, age = 0;
   bool cacheDirty = false;
   bool grounded = false;
+  // Nonzero for material partitions created by one rigid-body bake. The tag
+  // prevents later registration from merging the partition into unrelated
+  // same-material terrain; physical connectivity still decides support,
+  // detachment, and splitting.
+  int bakedAssemblyId = 0;
   // Set when this component was stamped from a sleeping rigid body. It
   // distinguishes a stable bake from a naturally unsupported component.
   bool settledBody = false;

@@ -84,7 +84,7 @@ class RigidBodySystem {
   int bodyDepenTolerance(Body* b);
   bool depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre);
   bool pushActorsFromBody(Body* b, double prePx, double prePy, double preAngle, double preVx, double preVy);
-  void bakeBodyToGrid(Body* b);
+  void bakeBodyToGrid(Body* b, int assemblyId);
   bool bodySolidifies(Body* b);
   bool bodyTouchesGroundedSolid(Body* b);
   bool bodyTouchesSettledLooseComponent(Body* b);

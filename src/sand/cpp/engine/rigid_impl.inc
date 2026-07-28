@@ -1665,11 +1665,11 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, do
 // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
 // real material into the grid; when a NON-RIGID body sleeps it bakes into a
 // normal static component here. RIGID bodies stay free forever.
-void RigidBodySystem::bakeBodyToGrid(Body* b) {
+void RigidBodySystem::bakeBodyToGrid(Body* b, int assemblyId) {
   // The body's cells were just cleared to EMPTY (moveBodies). Restore each
-  // rasterized material, then register same-material sets through the normal
-  // component paths. Adjacent sets regain shared structural support during the
-  // next grounding pass.
+  // rasterized material. Each material stays an isolated component carrying the
+  // same baked-assembly id, so support and cuts use the component graph without
+  // merging the old body into adjacent same-material terrain.
   bool looseSupport = bodyHasLooseSupport(b)
                    || bodyTouchesSettledLooseComponent(b);
   std::array<std::unordered_set<int>, TABLE> baked;
@@ -1681,103 +1681,35 @@ void RigidBodySystem::bakeBodyToGrid(Body* b) {
     E.writeGridIndex(k, material);
     baked[material].insert(k);
   });
-  auto registerPlantGroups = [&](uint8_t material, std::unordered_set<int>& cells) {
-    std::unordered_set<int> remaining(cells.begin(), cells.end());
-    std::vector<int> stack;
-    while (!remaining.empty()) {
-      int seed = *remaining.begin();
-      remaining.erase(seed);
-      std::unordered_set<int> group;
-      int groupYMax = 0;
-      stack.clear();
-      stack.push_back(seed);
-      while (!stack.empty()) {
-        int k = stack.back();
-        stack.pop_back();
-        group.insert(k);
-        int y = k / E.cols, x = k - y * E.cols;
-        groupYMax = imax(groupYMax, y);
-        for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
-          if (!ox && !oy) continue;
-          int nx = x + ox, ny = y + oy;
-          if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
-          int nk = ny * E.cols + nx;
-          auto it = remaining.find(nk);
-          if (it == remaining.end()) continue;
-          remaining.erase(it);
-          stack.push_back(nk);
-        }
-      }
-      E.registerPlantCells(material, group, groupYMax);
-    }
-  };
   for (int material = 0; material < TABLE; material++) {
     if (baked[material].empty()) continue;
-    if (E.isPlantMaterial(material))
-      registerPlantGroups(material, baked[material]);
-    else
-      E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, material,
-                                baked[material], E.isIceMaterial(material));
+    E.comps.registerBakedCells((uint8_t)material, baked[material], assemblyId,
+                               E.isIceMaterial(material), looseSupport);
   }
   if (b->fuseTicks > 0)
     for (int k : baked[TNT]) E.queueDetonation(k, b->fuseTicks);
-  occStamp.reset((size_t)E.cols * E.rows);
-  for (const auto& cells : baked)
-    for (int k : cells) occStamp.add(k);
-  auto markSettled = [&](std::vector<Comp>& components) {
-    for (Comp& component : components) {
-      for (int k : component.cells) {
-        if (!occStamp.has(k)) continue;
-        component.settledBody = true;
-        component.settledLooseSupport = looseSupport;
-        component.detachedByBreak = false;
-        break;
-      }
-    }
-  };
-  markSettled(E.L->components);
-  if (!baked[SEED].empty()) {
-    E.comps.jointSleepBlocked = true;
-    for (Comp& component : E.L->components) {
-      for (int k : component.cells) {
-        if (!baked[SEED].count(k)) continue;
-        component.growing = true;
-        component.requiresCellGrounding = true;
-        component.cacheDirty = true;
-        break;
-      }
-    }
-  }
-  if (!baked[MYCELIUM_SPORE].empty()) {
-    E.L->myceliumActive = true;
-    E.L->myceliumSporePresent = true;
-    for (Comp& comp : E.L->components) {
-      for (int k : comp.cells) {
-        if (!baked[MYCELIUM_SPORE].count(k)) continue;
-        comp.growing = true;
-        break;
-      }
-    }
-  }
 }
-// A homogeneous component body has one lossless static representation. A
-// heterogeneous body stays a sleeping rigid entity: registering each material
-// as a separate component would discard the bond that makes it one object.
+// Every component material has a static representation. Generic RIGID has none
+// and therefore remains a body.
 bool RigidBodySystem::bodySolidifies(Body* b) {
-  uint8_t bakeMaterial = EMPTY;
-  auto accept = [&](uint8_t material) {
-    if (material == EMPTY) return true;
-    if (!E.isComponentMaterial(material)) return false;
-    if (bakeMaterial == EMPTY) bakeMaterial = material;
-    return bakeMaterial == material;
-  };
-  if (b->cellMaterials.empty()) return accept(b->material);
+  if (b->cellMaterials.empty()) return E.isComponentMaterial(b->material);
+  bool hasMaterial = false;
   for (int i = 0; i < (int)b->occ.size(); i++) {
     if (!b->occ[i]) continue;
-    if (!accept(bodyMaterialAt(b, i))) return false;
-    if (b->jointRole && !accept(b->jointPeerMaterials[i])) return false;
+    uint8_t own = bodyMaterialAt(b, i);
+    if (own != EMPTY) {
+      hasMaterial = true;
+      if (!E.isComponentMaterial(own)) return false;
+    }
+    if (b->jointRole) {
+      uint8_t peer = b->jointPeerMaterials[i];
+      if (peer != EMPTY) {
+        hasMaterial = true;
+        if (!E.isComponentMaterial(peer)) return false;
+      }
+    }
   }
-  return bakeMaterial != EMPTY;
+  return hasMaterial;
 }
 // Baking is a structural transition, so solver sleep alone is insufficient:
 // buoyancy can put a floating body to sleep with no terrain contact. Require a
@@ -1881,14 +1813,15 @@ void RigidBodySystem::bakeRestingBodies() {
     // blast rubble bakes as soon as that motion clears. Other component-backed
     // bodies retain their normal solidify-on-rest behavior.
     if (canBake && (groundedContact || peerGroundedContact)) {
+      int assemblyId = E.nextBakedAssemblyId++;
       if (b->jointRole == 1 && b->jointPeer) {
         Body* follower = b->jointPeer;
         syncJointFollower(b);
         Layer* previous = E.L;
         E.useLayer(&E.fg);
-        bakeBodyToGrid(b);
+        bakeBodyToGrid(b, assemblyId);
         E.useLayer(&E.bg);
-        bakeBodyToGrid(follower);
+        bakeBodyToGrid(follower, assemblyId);
         E.bg.passiveBodyIds.erase(follower->id);
         E.bg.passiveBodyCells.erase(
           std::remove_if(E.bg.passiveBodyCells.begin(), E.bg.passiveBodyCells.end(),
@@ -1905,7 +1838,7 @@ void RigidBodySystem::bakeRestingBodies() {
         delete follower;
         E.useLayer(previous);
       } else {
-        bakeBodyToGrid(b);
+        bakeBodyToGrid(b, assemblyId);
       }
       delete b; baked = true;
     }

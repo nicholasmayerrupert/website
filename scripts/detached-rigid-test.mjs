@@ -1,11 +1,10 @@
-// A component-backed solid remains static while connected to the world and
-// becomes one material-preserving rigid body when cut free. Homogeneous bodies
-// can bake on rest; heterogeneous assemblies retain their object-level bond as
-// sleeping bodies.
+// A component-backed solid remains static while connected to the world, becomes
+// one material-preserving rigid body when cut free, then bakes into isolated
+// material components that retain the assembly's physical connectivity.
 
 import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
-import { MAT } from '../src/sand/materials.js';
+import { MAT, MATERIALS } from '../src/sand/materials.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 100, ROWS = 120, SEED = 0xC0FFEE;
@@ -54,26 +53,112 @@ check('body begins accelerating downward', !!spawned && spawned.vy > 0);
 check('materials are preserved while airborne',
   count(MAT.BRICK) === expectedBrick && count(MAT.WOOD) === expectedWood);
 
-let maxAngle = Math.abs(spawned?.angle ?? 0);
+let maxAngle = Math.abs(spawned?.angle ?? 0), bakedAt = -1;
 for (let i = 0; i < 1000; i++) {
   e.stepWorld();
   const state = e._bodyState(0);
-  if (!state) break;
+  if (!state) {
+    bakedAt = i;
+    break;
+  }
   maxAngle = Math.max(maxAngle, Math.abs(state.angle));
 }
 
 check(`detached solid rotates on the offset ledge (max angle ${maxAngle.toFixed(2)} rad)`,
   maxAngle > 0.2);
-check('settled mixed-material body retains one object-level bond',
-  e._bodyCount() === 1 && e._bodyAwake(0) === 0
-    && e._bodyState(0)?.nPts === detachedBrick + detachedWood);
-check('sleeping mixed body still stamps both materials',
-  count(MAT.BRICK) > 0 && count(MAT.WOOD) > 0);
+check(`settled mixed-material body bakes (step ${bakedAt})`,
+  bakedAt >= 0 && e._bodyCount() === 0);
+check('mixed bake preserves both materials',
+  Math.abs(count(MAT.BRICK) - expectedBrick) <= 4
+    && Math.abs(count(MAT.WOOD) - expectedWood) <= 4);
 
 for (let i = 0; i < 30; i++) e.stepWorld();
-check(`sleeping mixed body remains one stable assembly (bodies ${e._bodyCount()})`,
-  e._bodyCount() === 1 && e._bodyAwake(0) === 0);
+check(`mixed bake remains static (bodies ${e._bodyCount()})`,
+  e._bodyCount() === 0);
 e.destroy();
+
+// A baked mixed rectangle must not merge its masonry partition into the
+// same-material floor. Cutting it into two pieces and removing the floor should
+// produce exactly two bodies whose pivots are their own mass centroids.
+{
+  const C = 120, R = 130, floorY = 108;
+  const split = createEngineWasm({
+    cols: C, rows: R, worldSeed: 71, sinksOn: false, infinite: false,
+  });
+  for (let y = floorY; y < R; y++)
+    for (let x = 0; x < C; x++)
+      split.paintDisc(x, y, 0, MAT.BRICK, true);
+  for (let y = 22; y <= 35; y++) for (let x = 30; x <= 89; x++) {
+    const material = (x + y) % 5 < 2 ? MAT.WOOD : MAT.BRICK;
+    split.paintDisc(x, y, 0, material, true);
+  }
+  for (const x of [30, 31, 88, 89])
+    for (let y = 36; y < floorY; y++)
+      split.paintDisc(x, y, 0, MAT.BRICK, true);
+  split.syncComponents();
+  split.stepWorld();
+  for (const x of [29, 30, 31, 32, 87, 88, 89, 90])
+    for (let y = 36; y < floorY; y++)
+      split.paintDisc(x, y, 0, MAT.EMPTY, true);
+  split.syncComponents();
+  split.stepWorld();
+  check('mixed rectangle detaches as one body before baking',
+    split._bodyCount() === 1);
+  split._setBodyMotion(0, 0, 0, 0.012);
+  let rectangleBaked = false;
+  for (let i = 0; i < 900; i++) {
+    split.stepWorld();
+    if (split._bodyCount() === 0) {
+      rectangleBaked = true;
+      break;
+    }
+  }
+  check('mixed rectangle bakes into static components', rectangleBaked);
+
+  const grid = split.getGrid();
+  let minX = C, maxX = -1, minY = R, maxY = -1;
+  for (let k = 0; k < grid.length; k++) {
+    if (grid[k] !== MAT.BRICK && grid[k] !== MAT.WOOD) continue;
+    const x = k % C, y = (k / C) | 0;
+    if (y >= floorY) continue;
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+  }
+  const cutX = (minX + maxX) >> 1;
+  for (let y = minY - 1; y <= maxY + 1; y++)
+    for (let x = cutX - 1; x <= cutX + 1; x++)
+      split.paintDisc(x, y, 0, MAT.EMPTY, true);
+  for (let y = floorY; y < R; y++)
+    for (let x = minX - 2; x <= maxX + 2; x++)
+      split.paintDisc(x, y, 0, MAT.EMPTY, true);
+  split.syncComponents();
+
+  const beforeSplit = split.getGrid();
+  const centroidX = (left) => {
+    let weightedX = 0, mass = 0;
+    for (let k = 0; k < beforeSplit.length; k++) {
+      const material = beforeSplit[k];
+      if (material !== MAT.BRICK && material !== MAT.WOOD) continue;
+      const x = k % C, y = (k / C) | 0;
+      if (y >= floorY || (left ? x >= cutX - 1 : x <= cutX + 1)) continue;
+      const cellMass = MATERIALS[material].density;
+      weightedX += (x + 0.5) * cellMass;
+      mass += cellMass;
+    }
+    return weightedX / mass;
+  };
+  const expectedPivots = [centroidX(true), centroidX(false)];
+  split.stepWorld();
+  const states = Array.from({ length: split._bodyCount() },
+    (_, i) => split._bodyState(i)).filter(Boolean).sort((a, b) => a.px - b.px);
+  check(`cut baked assembly separates into two bodies (${states.length})`,
+    states.length === 2);
+  check('split-body pivots are their local mass centroids',
+    states.length === 2
+      && Math.abs(states[0].px - expectedPivots[0]) < 1e-6
+      && Math.abs(states[1].px - expectedPivots[1]) < 1e-6);
+  split.destroy();
+}
 
 // Static structures and body damage both use 8-neighbor connectivity. A chip
 // must not reinterpret an intentional diagonal material bond as a fracture.
@@ -251,16 +336,15 @@ naturallyLoose.destroy();
   for (let i = 0; i < 700; i++) {
     paired.stepWorld();
   }
-  const settledLeader = findRole(0, 1);
-  const settledFollower = findRole(1, 2);
-  const settledFg = paired._bodyStateLayer(0, settledLeader);
-  const settledBg = paired._bodyStateLayer(1, settledFollower);
-  check('heterogeneous cross-layer pair remains one sleeping bonded object',
-    settledLeader >= 0 && settledFollower >= 0 && settledFg && settledBg
-      && Math.abs(settledFg.px - settledBg.px) < 1e-9
-      && Math.abs(settledFg.py - settledBg.py) < 1e-9
-      && Math.abs(settledFg.angle - settledBg.angle) < 1e-9
-      && settledFg.vx === 0 && settledFg.vy === 0 && settledFg.omega === 0);
+  const countMaterial = (grid, material) => {
+    let total = 0;
+    for (const value of grid) if (value === material) total++;
+    return total;
+  };
+  check('heterogeneous cross-layer pair bakes in both layers',
+    findRole(0, 1) < 0 && findRole(1, 2) < 0
+      && countMaterial(paired.getGrid(), MAT.IRON_ORE) > 500
+      && countMaterial(paired.getGridBg(), MAT.BRICK) > 500);
   paired.destroy();
 
   const separate = createEngineWasm({
@@ -333,11 +417,15 @@ naturallyLoose.destroy();
       && house._bodyJointRoleLayer(1, 0) === 2);
   house._setBodyMotion(0, 0, 0, 0.01);
 
-  let cohesive = true, maxAngle = 0;
+  let cohesive = true, maxAngle = 0, bakedAt = -1;
   for (let i = 0; i < 260; i++) {
     house.stepWorld();
     const fgCount = house._bodyCountLayer(0);
     const bgCount = house._bodyCountLayer(1);
+    if (fgCount === 0 && bgCount === 0) {
+      bakedAt = i;
+      break;
+    }
     if (fgCount !== 1 || bgCount !== 1
         || house._bodyJointRoleLayer(0, 0) !== 1
         || house._bodyJointRoleLayer(1, 0) !== 2) {
@@ -357,11 +445,24 @@ naturallyLoose.destroy();
   }
   check(`rotated furnished hall stays one assembly (max angle ${maxAngle.toFixed(2)} rad)`,
     cohesive && maxAngle > 0.1);
-  const rested = house._bodyStateLayer(0, 0);
-  check('rotated furnished hall rests without material fragments',
-    cohesive && house._bodyCountLayer(0) === 1
-      && house._bodyCountLayer(1) === 1 && rested
-      && rested.vx === 0 && rested.vy === 0 && rested.omega === 0);
+  check(`rotated furnished hall bakes without material fragments (step ${bakedAt})`,
+    cohesive && bakedAt >= 0
+      && house._bodyCountLayer(0) === 0
+      && house._bodyCountLayer(1) === 0);
+  for (let layer = 0; layer < 2; layer++) {
+    for (let y = R - 3; y < R; y++)
+      for (let x = 0; x < C; x++)
+        house.paintDiscLayer(layer, x, y, 0, MAT.EMPTY, true);
+    house.syncComponentsLayer(layer);
+  }
+  house.stepWorld();
+  if ((house._bodyStateLayer(0, 0)?.vy ?? 0) <= 0) house.stepWorld();
+  const redetached = house._bodyStateLayer(0, 0);
+  check('baked furnished hall re-detaches as one foreground/background assembly',
+    house._bodyCountLayer(0) === 1 && house._bodyCountLayer(1) === 1
+      && house._bodyJointRoleLayer(0, 0) === 1
+      && house._bodyJointRoleLayer(1, 0) === 2
+      && redetached?.vy > 0);
   house.destroy();
 }
 

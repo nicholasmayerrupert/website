@@ -390,6 +390,7 @@ void ComponentSystem::normalizeDeferredConnectivity() {
         c.id = reused ? nextId++ : comp.id;
         c.plantType = comp.plantType; c.age = comp.age; c.growing = comp.growing;
         c.requiresCellGrounding = comp.requiresCellGrounding;
+        c.bakedAssemblyId = comp.bakedAssemblyId;
         c.settledBody = comp.settledBody;
         c.settledLooseSupport = comp.settledLooseSupport;
         c.detachedByBreak = comp.detachedByBreak;
@@ -2777,7 +2778,13 @@ void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, u
         for (size_t i = 0; i < list.size(); i++) for (int c : list[i].cells) { regOwnerStamp.add(c); regOwnerVal[c] = (int32_t)i; }
         ownerBuilt = true;
       }
-      if (regOwnerStamp.has(nk)) touchingIds.insert(list[regOwnerVal[nk]].id);
+      if (regOwnerStamp.has(nk)) {
+        Comp& owner = list[regOwnerVal[nk]];
+        // Baked partitions retain their object boundary. New world/tool/reaction
+        // cells may support them through the contact graph, but cannot merge
+        // into their material component and silently enlarge the old body.
+        if (owner.bakedAssemblyId == 0) touchingIds.insert(owner.id);
+      }
     }
   }
   Comp newComp; newComp.id = nextId++; newComp.cells.assign(cells.begin(), cells.end()); newComp.yMax = yMax; newComp.cacheDirty = iceCache;
@@ -2792,11 +2799,8 @@ void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, u
   list.push_back(std::move(newComp));
 }
 
-// Plant analogue of registerRigidCells, used when a free plant-family body (a wood
-// log, etc.) bakes into terrain on rest. Delegates the cell/merge bookkeeping to
-// registerRigidCells (so a baked log fuses with an adjacent same-material tree), then
-// re-derives the plant-comp fields (species + wood/leaf counts) from the resulting
-// cell set. The baked plant is inert scenery (growing=false), like worldgen flora.
+// Plant analogue of registerRigidCells for ordinary runtime placement and
+// growth registration. Re-derive species and counters from the merged cell set.
 void ComponentSystem::registerPlantCells(uint8_t mat, std::unordered_set<int>& cells, int yMax) {
   registerRigidCells(E.L->components, E.L->nextComponentId, mat, cells, yMax, false);
   Comp& c = E.L->components.back();
@@ -2835,6 +2839,69 @@ void ComponentSystem::registerRigidCellsSplit(std::vector<Comp>& list, int& next
       }
     }
     registerRigidCells(list, nextId, mat, group, yMax, iceCache);
+  }
+}
+
+// Register one material partition of a baked body without merging it into
+// adjacent same-material terrain. The component contact graph still bonds every
+// touching partition for grounding and later detachment; keeping the component
+// boundary preserves the exact object that produced the bake.
+void ComponentSystem::registerBakedCells(
+    uint8_t mat, std::unordered_set<int>& cells, int assemblyId,
+    bool iceCache, bool looseSupport) {
+  if (cells.empty()) return;
+  E.L->groundDirty = true;
+  std::unordered_set<int> remaining(cells.begin(), cells.end());
+  std::vector<int> stack;
+  while (!remaining.empty()) {
+    int seed = *remaining.begin();
+    remaining.erase(seed);
+    Comp component;
+    component.id = E.L->nextComponentId++;
+    component.bakedAssemblyId = assemblyId;
+    component.settledBody = true;
+    component.settledLooseSupport = looseSupport;
+    component.cacheDirty = iceCache || E.isPlantMaterial(mat);
+    component.plantType = PT_OAK;
+    stack.clear();
+    stack.push_back(seed);
+    while (!stack.empty()) {
+      int k = stack.back();
+      stack.pop_back();
+      component.cells.push_back(k);
+      int y = k / E.cols, x = k - y * E.cols;
+      component.yMax = imax(component.yMax, y);
+      uint8_t material = E.L->grid[k];
+      if (E.isPlantWood(material)) {
+        component.woodCount++;
+        if (component.plantType == PT_OAK)
+          component.plantType = E.plantTypeFromWood(material);
+      } else if (E.isPlantLeaf(material)) {
+        component.leafCount++;
+        if (component.plantType == PT_OAK)
+          component.plantType = E.plantTypeFromLeaf(material);
+      }
+      for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+        if (!ox && !oy) continue;
+        int nx = x + ox, ny = y + oy;
+        if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+        int nk = ny * E.cols + nx;
+        auto it = remaining.find(nk);
+        if (it == remaining.end()) continue;
+        remaining.erase(it);
+        stack.push_back(nk);
+      }
+    }
+    if (mat == SEED || mat == MYCELIUM_SPORE) {
+      component.growing = true;
+      if (mat == SEED) component.requiresCellGrounding = true;
+      jointSleepBlocked = true;
+    }
+    if (mat == MYCELIUM_SPORE) {
+      E.L->myceliumActive = true;
+      E.L->myceliumSporePresent = true;
+    }
+    E.L->components.push_back(std::move(component));
   }
 }
 
@@ -2989,6 +3056,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
       Comp c; c.id = reused ? E.L->nextComponentId++ : comp.id; c.yMax = 0; c.age = comp.age; c.cacheDirty = true;
       c.plantType = comp.plantType; c.growing = comp.growing; // a cut tree keeps species + growth on both halves
       c.requiresCellGrounding = comp.requiresCellGrounding;
+      c.bakedAssemblyId = comp.bakedAssemblyId;
       c.detachedByBreak = comp.detachedByBreak || componentChanged;
       c.settledBody = componentChanged ? false : comp.settledBody;
       c.settledLooseSupport = componentChanged ? false : comp.settledLooseSupport;
@@ -3150,6 +3218,7 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
       c.age = comp.age;
       c.growing = comp.growing;
       c.requiresCellGrounding = comp.requiresCellGrounding;
+      c.bakedAssemblyId = comp.bakedAssemblyId;
       c.detachedByBreak = true;
       for (int k : part) {
         int y = k / E.cols; if (y > c.yMax) c.yMax = y;

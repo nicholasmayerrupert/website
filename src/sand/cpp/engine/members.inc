@@ -18,6 +18,7 @@
   }
 
   int stepSerial = 0, tick = 0, actorTick = 0, worldShiftCount = 0;
+  int nextBakedAssemblyId = 1;
   // Last-step volume counters (accumulated across both layers in beginStepDirty /
   // end-of-step component scan). Zeroed at the start of each step().
   int perfDirtyChunks = 0, perfDirtyRows = 0, perfDirtyCells = 0;
@@ -186,10 +187,10 @@
   //     comment `// body-material invariant: skip free-body cells (see isBodyCell)` so
   //     the whole pattern is greppable. Body-cell reactions stay owned by erodeBodies.
   //   * A detached structural assembly may carry a per-cell material map.
-  //     Homogeneous component bodies bake through the unified registry after
-  //     solver sleep and direct grounded-solid contact. Heterogeneous bodies
-  //     keep their object-level bond as sleeping bodies. RIGID bodies never
-  //     bake, and a body still floating on liquid remains free.
+  //     Component bodies bake into isolated, assembly-tagged material
+  //     partitions after solver sleep and direct grounded-solid contact.
+  //     RIGID bodies never bake, and a body still floating on liquid remains
+  //     free.
   // Explosives (explosives.inc) are the one reaction that is body-agnostic: a TNT cell
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }

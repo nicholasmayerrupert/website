@@ -38,17 +38,19 @@ while each layer stamps only its own materials. This joint is assigned only when
 one structural detachment creates both halves; ordinary bodies never acquire a
 cross-layer joint through contact or overlap.
 
-When a homogeneous component-backed body sleeps on terrain or powder, its current
-raster is registered through the ordinary stone, ice, or plant component path and
-the body is deleted. A heterogeneous body remains one sleeping rigid entity
-because splitting its material map into static components would discard its
-object-level bonds. Cross-layer bodies bake only when both halves contain the same
-single material. A body floating in liquid or supported only by free bodies stays
-dynamic. The generic `RIGID` material has no static component form and never
-bakes. A later structural break rechecks the full detached assembly against its
-remaining granular footprint, so a few trapped grains cannot pin a large baked
-island. If the loose footprint drains completely, the baked component returns to
-the body solver; intact supported stacks remain baked.
+When a component-backed body sleeps on terrain or powder, its current raster is
+registered as isolated material components and the body is deleted. Every
+partition receives one baked-assembly tag, preventing stone, ice, plants, and
+other materials from merging into unrelated same-material terrain. The ordinary
+component contact graph supplies support and reconstructs the assembly when it
+detaches; a cut that disconnects the raster produces independent pieces.
+Cross-layer halves receive the same assembly tag and bake together. A body
+floating in liquid or supported only by free bodies stays dynamic. The generic
+`RIGID` material has no static component form and never bakes. A later structural
+break rechecks the full detached assembly against its remaining granular
+footprint, so a few trapped grains cannot pin a large baked island. If the loose
+footprint drains completely, the baked component returns to the body solver;
+intact supported stacks remain baked.
 
 ## Fluids and loose solids
 

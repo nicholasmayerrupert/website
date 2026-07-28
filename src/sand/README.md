@@ -172,14 +172,16 @@ when it touches existing static structure. Otherwise it becomes a body, welding
 to every same-layer body it touches or falling freely when unsupported. Blast
 debris opts out of this placement weld.
 
-Homogeneous component-backed bodies bake back into an ordinary static component
-after sleeping with direct contact to a grounded static solid. Heterogeneous
-bodies remain sleeping rigid entities so their material map retains one
-object-level bond; cross-layer bodies bake only when both halves contain the same
-single material. Buoyancy and loose-medium displacement are owned by the
-rigid-body solver. A body floating without grounded-solid contact can sleep but
-does not bake, and the generic `RIGID` tool material never bakes. Live blast
-rubble is non-structural and yields when descending terrain reaches it.
+Component-backed bodies bake after sleeping with direct contact to a grounded
+static solid. A mixed body becomes isolated, assembly-tagged material components:
+the component contact graph retains the original object without merging its
+stone, timber, ice, or plants into adjacent same-material terrain. Cuts rebuild
+connectivity, so separated pieces detach independently. Both halves of a
+cross-layer body bake with one assembly tag. Buoyancy and loose-medium
+displacement are owned by the rigid-body solver. A body floating without
+grounded-solid contact can sleep but does not bake, and the generic `RIGID` tool
+material never bakes. Live blast rubble is non-structural and yields when
+descending terrain reaches it.
 
 Powders and liquids carry a per-cell downward fall speed. Liquids also carry a
 compact two-axis velocity used by the rigid/fluid pressure solve; it is separate

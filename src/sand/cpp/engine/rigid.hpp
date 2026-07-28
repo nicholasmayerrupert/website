@@ -31,6 +31,8 @@ class RigidBodySystem {
   int rigidRejectedCells = 0, rigidDepenetrations = 0;
   int rigidSubsteps = 0, rigidContacts = 0, rigidWarmStarted = 0;
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
+  int rigidIslands = 0, rigidBlockSolves = 0;
+  int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
   double rigidMaxContactDepth = 0;
   void clearContactCaches();
   // Scratch for per-body bottom-edge support probes: membership
@@ -64,6 +66,9 @@ class RigidBodySystem {
   // every velocity bitwise unchanged, so every later iteration recomputes the
   // same zeros — breaking there is bit-identical to running all iterations).
   double resolveContact(Contact& c);
+  double resolveContactNormal(Contact& c);
+  double resolveContactFriction(Contact& c);
+  double resolveContactBlock(Contact& first, Contact& second);
   void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
   void wakeBody(Body* b);
@@ -136,11 +141,17 @@ class RigidBodySystem {
   struct CachedContact {
     double lax = 0, lay = 0, lbx = 0, lby = 0;
     double nx = 0, ny = 0, jn = 0, jt = 0, dt = 1;
+    uint8_t age = 0;
     bool used = false;
   };
   using ContactCache = std::unordered_map<
     ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
   std::array<ContactCache, 2> contactCaches;
+  ContactCache nextContactCacheScratch;
+  std::vector<Contact> solverContactScratch;
+  std::vector<int> broadphaseOrderScratch;
+  std::vector<std::pair<int, int>> broadphasePairScratch;
+  std::array<std::vector<int>, 2> broadphaseBodyIds;
 
   struct FluidNode {
     Layer* layer = nullptr;

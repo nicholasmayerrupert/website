@@ -1,0 +1,167 @@
+// Long contact patches must settle without rocking, rotating endpoints must use
+// continuous collision, and blast-damaged cross-layer assemblies retain their
+// shared pose while their projected structural union remains connected.
+
+import { initSandWasm, createEngineWasm as createEngineWasmRaw, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
+import { makeChecker } from './sand-test-util.mjs';
+
+await initSandWasm();
+const createEngineWasm = (options) => attachTestHooks(createEngineWasmRaw(options));
+const { check, done } = makeChecker('large and cross-layer rigid bodies');
+
+const rectangle = (x0, y0, x1, y1) => {
+  const cells = [];
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++) cells.push([x, y]);
+  return cells;
+};
+const staticRectangle = (engine, layer, x0, y0, x1, y1, material) => {
+  for (let y = y0; y <= y1; y++)
+    for (let x = x0; x <= x1; x++)
+      engine.paintDiscLayer(layer, x, y, 0, material, true);
+};
+const speed = (state) =>
+  state ? Math.hypot(state.vx, state.vy) + Math.abs(state.omega) * state.maxR : Infinity;
+
+{
+  const cols = 420, rows = 260, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0x1a2b, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+  engine.spawnBody(rectangle(70, floorY - 8, 349, floorY - 3));
+  for (let i = 0; i < 180; i++) engine.stepWorld();
+  engine.spawnBody(rectangle(90, 70, 329, 73));
+
+  let sleptAt = -1, latePeak = 0, maxRejected = 0, maxDepenetrations = 0;
+  let maxBlockSolves = 0;
+  for (let i = 0; i < 1200; i++) {
+    engine.stepWorld();
+    const lower = engine._bodyState(0);
+    const upper = engine._bodyState(1);
+    if (i >= 500) latePeak = Math.max(latePeak, speed(lower), speed(upper));
+    const diagnostics = engine.getRigidDebug();
+    const solver = engine.getRigidSolverDebug();
+    maxBlockSolves = Math.max(maxBlockSolves, solver.blockSolves);
+    maxRejected = Math.max(maxRejected, diagnostics.rejectedCells);
+    maxDepenetrations = Math.max(maxDepenetrations, diagnostics.depenetrations);
+    if (!engine._bodyAwake(0) && !engine._bodyAwake(1)) {
+      sleptAt = i;
+      break;
+    }
+  }
+  const lower = engine._bodyState(0);
+  const upper = engine._bodyState(1);
+  check(`280-cell support and 240-cell beam remain separate (${upper?.py.toFixed(2)} < ${lower?.py.toFixed(2)})`,
+    !!lower && !!upper && upper.py < lower.py - 3);
+  check(`long stacked beams sleep (${sleptAt} < 1200)`, sleptAt >= 0);
+  check(`long contact has restrained late motion (${latePeak.toFixed(4)} <= 0.03)`,
+    latePeak <= 0.03);
+  check(`long contact avoids raster phasing (${maxRejected} rejected, ${maxDepenetrations} depenetrations)`,
+    maxRejected <= 4 && maxDepenetrations <= 1);
+  check(`long manifold used coupled endpoint solves (${maxBlockSolves} > 0)`,
+    maxBlockSolves > 0);
+  engine.spawnBody(rectangle(10, 20, 15, 25));
+  engine._setBodyMotion(2, 3, 0, 0.4);
+  engine.stepWorld();
+  const islandWork = engine.getRigidSolverDebug();
+  check(`isolated fast body does not substep sleeping beams (${islandWork.islandBodySteps} < ${islandWork.globalBodySteps})`,
+    islandWork.islandBodySteps < islandWork.globalBodySteps);
+  engine.destroy();
+}
+
+{
+  const cols = 420, rows = 260, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0x2b3c, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+  engine.spawnBody(rectangle(294, 151, 301, floorY - 1));
+  for (let i = 0; i < 140; i++) engine.stepWorld();
+  const targetStart = engine._bodyState(0);
+  engine.spawnBody(rectangle(80, 120, 299, 120));
+  engine._setBodyMotion(1, 0, 0, 0.03);
+  let maxTargetMotion = 0, maxDepenetrations = 0;
+  for (let i = 0; i < 45; i++) {
+    engine.stepWorld();
+    const target = engine._bodyState(0);
+    maxTargetMotion = Math.max(maxTargetMotion,
+      Math.hypot(target.px - targetStart.px, target.py - targetStart.py)
+        + Math.abs(target.angle - targetStart.angle));
+    maxDepenetrations = Math.max(
+      maxDepenetrations, engine.getRigidDebug().depenetrations);
+  }
+  check(`220-cell rotating endpoint transfers its impact (${maxTargetMotion.toFixed(3)} > 0.02)`,
+    maxTargetMotion > 0.02);
+  check(`rotating long-body CCD avoids raster fallback (${maxDepenetrations} <= 1)`,
+    maxDepenetrations <= 1);
+  engine.destroy();
+}
+
+{
+  const cols = 160, rows = 180, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0x3c4d, sinksOn: false, infinite: false,
+  });
+  engine.setBgEnabled(true);
+  for (const layer of [0, 1])
+    staticRectangle(engine, layer, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  staticRectangle(engine, 0, 25, 30, 80, 59, MAT.BRICK);
+  staticRectangle(engine, 1, 80, 30, 135, 59, MAT.CLAY);
+  for (const layer of [0, 1])
+    staticRectangle(engine, layer, 78, 60, 82, floorY - 1, MAT.BRICK);
+  engine.syncComponentsLayer(0);
+  engine.syncComponentsLayer(1);
+  engine.stepWorld();
+  for (const layer of [0, 1]) {
+    staticRectangle(engine, layer, 74, 60, 86, floorY - 1, MAT.EMPTY);
+    engine.syncComponentsLayer(layer);
+  }
+  engine.stepWorld();
+
+  const findRole = (layer, role) => {
+    for (let i = 0; i < engine._bodyCountLayer(layer); i++)
+      if (engine._bodyJointRoleLayer(layer, i) === role) return i;
+    return -1;
+  };
+  check('adjacent-layer structure initially detaches as one joint body',
+    findRole(0, 1) >= 0 && findRole(1, 2) >= 0);
+
+  for (let y = 30; y <= 59; y++)
+    engine.paintDiscLayer(0, 80, y, 0, MAT.EMPTY, true);
+  engine.stepWorld();
+  let leader = findRole(0, 1), follower = findRole(1, 2);
+  check('removing exact overlap keeps projected adjacent layers bonded',
+    leader >= 0 && follower >= 0);
+
+  engine._detonateTnt(38, 42);
+  let locked = true, moved = false;
+  const startY = engine._bodyStateLayer(0, findRole(0, 1))?.py ?? Infinity;
+  for (let i = 0; i < 40; i++) {
+    engine.stepWorld();
+    leader = findRole(0, 1);
+    follower = findRole(1, 2);
+    const fg = engine._bodyStateLayer(0, leader);
+    const bg = engine._bodyStateLayer(1, follower);
+    if (!fg || !bg) {
+      locked = false;
+      break;
+    }
+    moved ||= fg.py > startY + 0.5;
+    if (Math.abs(fg.px - bg.px) > 1e-9
+        || Math.abs(fg.py - bg.py) > 1e-9
+        || Math.abs(fg.angle - bg.angle) > 1e-9) {
+      locked = false;
+      break;
+    }
+  }
+  check('TNT-damaged adjacent layers retain one moving pose', locked && moved);
+  engine.destroy();
+}
+
+const failures = done();
+console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
+process.exit(failures === 0 ? 0 : 1);

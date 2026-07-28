@@ -269,8 +269,10 @@ struct Contact {
   // Separating speed captured from the contact's initial impact. Keeping this
   // target fixed lets sequential impulses preserve a small rebound instead of
   // damping it back to zero over later solver iterations.
-  double impactSpeed, targetVn;
+  double impactSpeed, targetVn, dt;
+  double staticFriction, dynamicFriction;
   double accJn, accJt, accBias;
+  int blockMate;
   bool persisted;
 };
 
@@ -621,6 +623,8 @@ struct Player {
 // Rigid-body tunables.
 static const double R_GRAVITY = 0.06, R_MAX_SPEED = 3.0, R_SAFE_SUBSTEP = 0.5;
 static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20;
+static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
+static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_FLUID_SLEEP_TICKS = 80;
 static const int    R_FLUID_DOMAIN_RADIUS = 8;
 static const int    R_FLUID_REFERENCE_SEARCH = 16;
@@ -632,9 +636,17 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // marched in steps no larger than R_SWEEP_STEP cells looking for first impact.
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
-static const double R_FRICTION = 0.6, R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
+static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
+static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;
+static const double R_STATIC_FRICTION_SPEED = 0.025;
+static const double R_BLOCK_SOLVE_MIN_SPAN2 = 16.0;
+static const int    R_CONTACT_CACHE_MISSED_SUBSTEPS = 2;
+static const int    R_CONTACT_CACHE_MAX_PER_KEY = 16;
+static const double R_CONTACT_CACHE_STALE_DECAY = 0.5;
+static const double R_BAUMGARTE = 0.2, R_MAX_BIAS_VEL = 0.3, R_PEN_SLOP = 0.5;
 static const double R_WARM_START_FACTOR = 0.85, R_CONTACT_CACHE_MATCH2 = 2.25;
 static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
+static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
 static const double R_FLUID_SLEEP_LIN = 0.05;
 static const double R_FLUID_REST_DAMP = 0.98;

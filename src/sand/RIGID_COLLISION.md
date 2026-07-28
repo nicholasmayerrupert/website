@@ -6,15 +6,24 @@ lives in `rigid_impl.inc`.
 
 ## Collision pipeline
 
-- Substep count uses linear speed plus angular tip speed, capped by
-  `R_MAX_SUBSTEPS`.
-- Boundary samples include cell centers, exposed face midpoints, and exposed
-  convex corners. They are rebuilt only when occupancy changes.
-- Sweep-and-prune generates horizontally overlapping body pairs. Candidate
-  pairs are restored to body-index order before contact generation so the
-  sequential impulse result stays deterministic.
+- A conservative full-tick broadphase partitions bodies into candidate islands.
+  Each island chooses its own substep cadence from linear speed plus angular tip
+  speed, capped by `R_MAX_SUBSTEPS`; an isolated fast projectile therefore does
+  not make a distant resting structure run at the projectile's cadence.
+- Boundary samples include cell centers and exposed face midpoints. Large and
+  slender masks also sample exposed convex corners so a rotating endpoint cannot
+  cross a thin collider between face samples. Samples are rebuilt only when
+  occupancy changes.
+- A persistent sweep-and-prune order generates horizontally overlapping body
+  pairs. Insertion repair is linear in the common coherent case. Candidate pairs
+  are restored to body-index order before contact generation so the sequential
+  impulse result stays deterministic.
 - Body/body and body/terrain checks sweep each sample's relative substep path in
-  increments no larger than `R_SWEEP_STEP` and refine the first hit.
+  increments no larger than `R_SWEEP_STEP` and refine the first hit. Compact
+  bodies use the point tangent over the short substep. Large rotating bodies,
+  including very long beams, evaluate the exact constant-linear/angular
+  trajectory and target rotation so a distant tip cannot tunnel through terrain
+  or another body.
 - Contact normals come from the target mask. A body sample surrounded by
   occupied mask cells uses its nearest empty axial direction instead of a radial
   guess. A symmetric terrain cell uses the side facing the body's center, so a
@@ -26,9 +35,17 @@ lives in `rigid_impl.inc`.
 - Per-layer contact caches match local anchors by stable body id, geometry
   revision, peer layer, and normal bucket. Persistent normal and friction
   impulses warm-start the next substep/tick, while restitution remains an
-  impact-only target and positional bias stays separate.
-- Sequential impulses solve normal velocity, friction, penetration bias, and a
-  fixed impact restitution target. Slow resting contacts target zero rebound.
+  impact-only target and positional bias stays separate. Large manifolds retain a
+  missed anchor for up to two substeps with decaying impulses to bridge
+  raster-boundary transitions.
+- Sequential impulses solve normal velocity, static/dynamic friction,
+  penetration bias, and a fixed impact restitution target. Ice contacts select a
+  lower material-pair friction. Two well-separated contacts on one face use a
+  coupled two-point normal solve, which prevents a long resting face from
+  alternating support between its endpoints.
+- Contact islands are ordered from the lowest contact upward for the first
+  passes, then alternate direction. Iteration budgets scale with island size,
+  retain a minimum for large bodies, and use the full cap for impacts.
 - Raster depenetration remains a last-resort fallback.
 
 Contact damping lets stable bodies sleep, but angular damping is skipped while a
@@ -48,8 +65,11 @@ baking all use the material at each local cell. Cross-layer bonded groups split
 into one body with a foreground solver leader and a background follower. Its
 union mask supplies combined mass and collision against terrain in either layer,
 while each layer stamps only its own materials. Damage refloods that union after
-both mirrored cuts; disconnected pieces receive independent local centers of
-mass, and a piece that survives in only one layer becomes an ordinary body there.
+both mirrored cuts. Foreground and background cells remain bonded while their
+projected union is eight-connected, even if damage removes the last exactly
+co-occupied cell. A real gap splits the union; disconnected pieces receive
+independent local centers of mass, and a piece that survives in only one layer
+becomes an ordinary body there.
 This joint is assigned only when one structural detachment creates both halves;
 ordinary bodies never acquire a cross-layer joint through contact or overlap.
 
@@ -122,15 +142,38 @@ re-ground an airborne body. Powders never push a rigid body upward.
   from identical static terrain.
 - Body-owned cells are not grounding anchors. Static solids resting only on a
   free body detach and join the body solver.
-- The sweep uses first-order target motion within each substep rather than exact
-  continuous rotation.
+- Compact-body angular sweeps use a first-order tangent within each substep;
+  large bodies and long beams use exact constant-velocity rotation.
 - Curved masks can occupy several manifold buckets and cost more than flat
   contacts.
-- Deep stacks converge at the sequential-impulse rate. Ordinary bodies use 64
-  solver iterations; scenes containing only small blast debris use 16.
+- Deep stacks converge at the sequential-impulse rate. An ordinary contact
+  island starts at 12 iterations plus two per body, large-body islands use at
+  least 32, impacts can use 64, and small blast-debris islands use 16.
+- The shipped WASM solver is single-threaded. Its island partition is also the
+  scheduling boundary for a future threaded build, but browser threads require
+  a worker sidecar, shared memory, and cross-origin isolation across every host.
 
 Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-collision`, `npm run test:rigid-dense-pile`,
-`npm run test:rigid-topple`,
+`npm run test:rigid-large-body`, `npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
 `npm run bench:rigid`.
+
+## Design references
+
+The contact persistence, block solve, island scheduling, substep, and continuous
+collision choices follow the same families used by production engines:
+
+- [Box2D Solver2D](https://box2d.org/posts/2024/02/solver2d/) compares PGS,
+  temporal substepping, block solving, persistent anchors, soft constraints, and
+  XPBD.
+- [Box2D simulation islands](https://box2d.org/posts/2023/10/simulation-islands/)
+  describes the graph boundary used for sleeping and parallel scheduling.
+- [Box2D continuous collision](https://box2d.org/files/ErinCatto_ContinuousCollision_GDC2013.pdf)
+  and the [Box2D simulation documentation](https://box2d.org/documentation/md_simulation.html)
+  cover time-of-impact and speculative contacts.
+- [PhysX simulation](https://nvidia-omniverse.github.io/PhysX/physx/5.7.0/docs/Simulation.html)
+  documents temporal Gauss-Seidel substepping and solver iteration controls.
+- [XPBD](https://matthias-research.github.io/pages/publications/XPBD.pdf)
+  provides the compliance-based alternative for constraints that need
+  timestep-independent stiffness.

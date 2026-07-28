@@ -295,6 +295,7 @@ function blastDamagesMaterial(name) {
   check('live-rubble fixture spawned', e._bodyCount() === 1 && e._setBodyBlastDebris(0));
   const target = e._bodyState(0);
   let rubbleDidNotPin = false;
+  let rubbleInitialTop = -1, rubbleNextTop = -1, plateBodies = 0;
   if (target) {
     const px = Math.round(target.px);
     const bodyTop = Math.floor(target.py - target.maxR);
@@ -309,9 +310,19 @@ function blastDamagesMaterial(name) {
       e.step(i * 16);
       nextTop = topRow(e.getGrid(), MAT.IRON_ORE);
     }
-    rubbleDidNotPin = nextTop >= initialTop + 4;
+    rubbleInitialTop = initialTop;
+    rubbleNextTop = nextTop;
+    for (let body = 0; body < e._bodyCount(); body++) {
+      const state = e._bodyState(body);
+      if (!e._bodyBlastDebris(body) && state?.nPts >= 60) plateBodies++;
+    }
+    // Dynamic rubble can physically support the plate without becoming a
+    // structural grounding anchor. The plate must remain a free body.
+    rubbleDidNotPin = plateBodies === 1 && nextTop >= initialTop;
   }
-  check('live blast rubble does not pin a falling structural body', rubbleDidNotPin);
+  check(`live blast rubble does not pin a falling structural body `
+      + `(${rubbleInitialTop} -> ${rubbleNextTop}, dynamic ${plateBodies})`,
+    rubbleDidNotPin);
   e.destroy();
 }
 {

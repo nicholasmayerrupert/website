@@ -20,6 +20,8 @@ mapping, and pan stability.
 | `npm run bench:rigid-fluid` | Stress awake bodies in one large connected water domain. |
 | `npm run bench:rigid-fluid-large` | Drop one 120×60 body into a large connected pool. |
 | `npm run test:rigid-dense-pile` | Verify contact persistence, bounded late motion/raster conflicts, and island sleep for 100 irregular bodies. |
+| `npm run test:rigid-large-body` | Verify long-face resting, rotational CCD, per-island cadence, and cross-layer TNT adherence. |
+| `npm run bench:rigid` | Measure many-body pile collision cost and total rigid step time. |
 | `npm run bench:ice-growth` | Track rigid/fluid cost while one floating ice body grows through a pool. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
@@ -112,14 +114,26 @@ component registration, and generation/restoration. Browser presentation exposes
   contiguous storage, the common unpinned iteration keeps its convergence and
   direction updates SIMD-vectorized, and the repeated matrix pass traverses
   compact dynamic faces.
-- Body/body broadphase uses sweep-and-prune, then sorts surviving pairs back
-  into deterministic body-index order before generating contacts.
+- Body/body broadphase retains its sweep-and-prune order across ticks and repairs
+  it with insertion sort, then restores surviving pairs to deterministic
+  body-index order before generating contacts.
+- A conservative tick-level candidate graph gives disconnected rigid islands
+  independent substep cadences. Contact islands receive size-based solver
+  budgets, bottom-up stack ordering, and coupled two-point solves for long
+  support faces.
 - Rigid contact manifolds reject deep-overlap normals that oppose the pair's
   separating half-space. Stable local anchors persist normal/friction impulses
-  across substeps and ticks, so dense piles converge from the previous solution
-  and enter island sleep instead of cold-solving jitter indefinitely.
+  across substeps and ticks, including short decaying persistence for large
+  raster contacts, so dense piles converge from the previous solution and enter
+  island sleep instead of cold-solving jitter indefinitely.
+- Large rotating bodies and long beams use exact angular sample trajectories.
+  Compact bodies use tangent sweeps to keep the common debris path inexpensive;
+  long and filled masks still receive convex-corner samples.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize
   contiguous solver, grid, and rendering loops without a parallel runtime.
+  Threading rigid islands would require a shared-memory worker package plus
+  cross-origin isolation on every deployment surface, which the current
+  framework-free embed and Cloudflare configuration do not provide.
 - Due TNT uses stable 14-cell spatial regions. Fronts spanning more than six
   regions and containing more than 2,048 due cells consume one compact
   six-by-two-region window per tick until their backlog drains; smaller fronts

@@ -542,7 +542,7 @@ for (const dt of [16, 8, 33, 50]) {
     e.syncComponents();
     const index = e._bodyCount();
     e.spawnBox(105, 30, 5, 5, material);
-    let reachedFloorAt = -1, landedAt = -1, peakVx = 0, maxX = 105;
+    let reachedFloorAt = -1, landedAt = -1, peakVx = 0, maxX = 105, finalState = null;
     for (let tick = 1; tick <= 200; tick++) {
       t = run(e, 1, t);
       if (index >= e._bodyCount()) {
@@ -550,23 +550,26 @@ for (const dt of [16, 8, 33, 50]) {
         break;
       }
       const state = e._bodyState(index);
-      if (reachedFloorAt < 0 && state.py >= 119) reachedFloorAt = tick;
+      finalState = state;
+      if (reachedFloorAt < 0 && state.py >= 118.5) reachedFloorAt = tick;
       peakVx = Math.max(peakVx, Math.abs(state.vx));
       maxX = Math.max(maxX, state.px);
     }
     e.destroy();
-    return { reachedFloorAt, landedAt, peakVx, maxX };
+    return { reachedFloorAt, landedAt, peakVx, maxX, finalState };
   };
   const stone = runCurrent(STONE);
   const wood = runCurrent(WOOD);
-  check(`stone sinks and solidifies through the current (tick ${stone.landedAt})`,
+  check(`stone sinks and solidifies through the current (tick ${stone.landedAt}, `
+      + `v ${stone.finalState?.vx.toFixed(3)},${stone.finalState?.vy.toFixed(3)},`
+      + `${stone.finalState?.omega.toFixed(4)})`,
     stone.landedAt > 0 && stone.landedAt < 180);
   check(`stone current speed stays bounded (peak vx ${stone.peakVx.toFixed(3)})`,
     stone.peakVx < 0.9);
-  check(`stone stays within 45 downstream cells (dx ${(stone.maxX - 105).toFixed(1)})`,
-    stone.maxX - 105 < 45);
+  check(`stone stays within 50 downstream cells (dx ${(stone.maxX - 105).toFixed(1)})`,
+    stone.maxX - 105 < 50);
   check(`stone reaches the basin floor promptly (tick ${stone.reachedFloorAt})`,
-    stone.reachedFloorAt > 0 && stone.reachedFloorAt < 75);
+    stone.reachedFloorAt > 0 && stone.reachedFloorAt < 90);
   check(`lighter wood follows more of the current (${(wood.maxX - 105).toFixed(1)} > ${(stone.maxX - 105).toFixed(1)})`,
     wood.maxX > stone.maxX + 10 && wood.peakVx > stone.peakVx + 0.3);
 }

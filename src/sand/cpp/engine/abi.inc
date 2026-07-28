@@ -293,6 +293,10 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 3: return e->rigid.rigidVelocityIterations;
     case 4: return e->rigid.rigidBiasIterations;
     case 5: return e->rigid.rigidMaxContactDepth;
+    case 6: return e->rigid.rigidIslands;
+    case 7: return e->rigid.rigidBlockSolves;
+    case 8: return e->rigid.rigidIslandBodySteps;
+    case 9: return e->rigid.rigidGlobalBodySteps;
     default: return 0;
   }
 }

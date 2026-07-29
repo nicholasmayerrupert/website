@@ -14,6 +14,7 @@ static bool rigidTightSlenderBounds(const Body* body) {
 
 void RigidBodySystem::clearContactCaches() {
   for (ContactCache& cache : contactCaches) cache.clear();
+  for (auto& axes : pairAxes) axes.clear();
   for (std::vector<int>& ids : broadphaseBodyIds) ids.clear();
 }
 void RigidBodySystem::worldPoint(Body* b, int i, double sn, double cs, double& ox, double& oy) {
@@ -109,6 +110,74 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   b->tightSlenderBounds =
     (int64_t)nPts * 4 >= (int64_t)b->w * b->h * 3
     || (shortSide <= 4 && coversMajorAxis);
+  b->collisionRects.clear();
+  b->collisionSpans.clear();
+  std::map<std::pair<int, int>, int> previousRuns, currentRuns;
+  for (int j = 0; j < b->h; j++) {
+    currentRuns.clear();
+    for (int i = 0; i < b->w;) {
+      while (i < b->w && !filled(i, j)) i++;
+      if (i >= b->w) break;
+      int x0 = i;
+      while (i < b->w && filled(i, j)) i++;
+      int x1 = i;
+      std::pair<int, int> run{x0, x1};
+      auto existing = previousRuns.find(run);
+      int child = -1;
+      if (existing != previousRuns.end()) {
+        child = existing->second;
+        b->collisionRects[child].y1 = j + 1;
+      } else {
+        child = (int)b->collisionRects.size();
+        BodyCollisionRect rect;
+        rect.x0 = x0;
+        rect.y0 = j;
+        rect.x1 = x1;
+        rect.y1 = j + 1;
+        b->collisionRects.push_back(rect);
+      }
+      currentRuns.emplace(run, child);
+    }
+    previousRuns.swap(currentRuns);
+  }
+  auto addFaceSpans = [&](BodyCollisionRect& rect, BodyCollisionFace face) {
+    rect.spanStart[face] = (int)b->collisionSpans.size();
+    int q0 = (face == BCF_LEFT || face == BCF_RIGHT) ? rect.y0 : rect.x0;
+    int q1 = (face == BCF_LEFT || face == BCF_RIGHT) ? rect.y1 : rect.x1;
+    int runStart = -1;
+    auto exposed = [&](int q) {
+      if (face == BCF_LEFT) return !filled(rect.x0 - 1, q);
+      if (face == BCF_RIGHT) return !filled(rect.x1, q);
+      if (face == BCF_UP) return !filled(q, rect.y0 - 1);
+      return !filled(q, rect.y1);
+    };
+    auto finishSpan = [&](int end) {
+      if (runStart < 0) return;
+      double offset = (face == BCF_LEFT || face == BCF_RIGHT)
+        ? b->offsetY : b->offsetX;
+      b->collisionSpans.push_back({
+        (float)(offset + runStart - 0.5),
+        (float)(offset + end - 0.5),
+      });
+      runStart = -1;
+    };
+    for (int q = q0; q < q1; q++) {
+      if (exposed(q)) {
+        if (runStart < 0) runStart = q;
+      } else {
+        finishSpan(q);
+      }
+    }
+    finishSpan(q1);
+    rect.spanCount[face] =
+      (int)b->collisionSpans.size() - rect.spanStart[face];
+  };
+  for (BodyCollisionRect& rect : b->collisionRects) {
+    addFaceSpans(rect, BCF_LEFT);
+    addFaceSpans(rect, BCF_RIGHT);
+    addFaceSpans(rect, BCF_UP);
+    addFaceSpans(rect, BCF_DOWN);
+  }
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
   if (++b->geometryRevision == 0) b->geometryRevision = 1;
   b->maxR = std::sqrt(maxR2); b->awake = true; b->stillTicks = 0;
@@ -651,11 +720,15 @@ void RigidBodySystem::rigidStep(double tickDt) {
   rigidVelocityIterations = rigidBiasIterations = 0;
   rigidIslands = rigidBlockSolves = 0;
   rigidIslandBodySteps = rigidGlobalBodySteps = 0;
+  rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
+  rigidMaxChildren = 0;
   rigidMaxContactDepth = 0;
   std::vector<Body*> solverBodies;
   solverBodies.reserve(E.L->bodies.size());
   for (Body* body : E.L->bodies)
     if (body->jointRole != 2) solverBodies.push_back(body);
+  for (Body* body : solverBodies)
+    rigidMaxChildren = imax(rigidMaxChildren, (int)body->collisionRects.size());
   int n = (int)solverBodies.size();
   std::vector<int> islandParent(n);
   std::vector<double> islandMinStill(n);
@@ -794,7 +867,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<int> contactOrder, contactRoot;
   std::vector<double> solveMaxRadius(n);
   std::vector<uint8_t> solveHasGeneral(n);
-  struct PenPt { double wx, wy, nx, ny, depth; int bk; };
+  struct PenPt {
+    double wx, wy, nx, ny, depth;
+    int bk = 0;
+    int childA = -1, childB = -1;
+    int featureA = -1, featureB = -1;
+  };
   struct TerrainGroup { Body* peer; std::vector<PenPt> points; };
   std::vector<PenPt> penAcc, terrAcc;
   std::vector<Body*> terrPeers;
@@ -917,11 +995,26 @@ void RigidBodySystem::rigidStep(double tickDt) {
   for (int i = 0; i < n; i++)
     if (!broadphaseSeen[i]) broadphaseOrder.push_back(i);
   ContactCache& previousContacts = contactCaches[activeLayer];
+  auto& activePairAxes = pairAxes[activeLayer];
+  auto bodyPairKey = [](int aId, int bId) {
+    return ((uint64_t)(uint32_t)aId << 32) | (uint32_t)bId;
+  };
+  for (auto it = activePairAxes.begin(); it != activePairAxes.end();) {
+    if (it->second.age >= 4) it = activePairAxes.erase(it);
+    else {
+      it->second.age++;
+      ++it;
+    }
+  }
   auto cacheKey = [&](const Contact& contact, int normalBucket) {
     bool peerLayer = contact.b && !contact.bIntegrated;
     return ContactCacheKey{
       contact.a->id,
       contact.b ? contact.b->id : -1,
+      contact.childA,
+      contact.childB,
+      contact.featureA,
+      contact.featureB,
       contact.a->geometryRevision,
       contact.b ? contact.b->geometryRevision : 0,
       (uint8_t)normalBucket,
@@ -1147,6 +1240,286 @@ void RigidBodySystem::rigidStep(double tickDt) {
       ox /= length;
       oy /= length;
     }
+  };
+  struct ChildFrame {
+    Body* body = nullptr;
+    const BodyCollisionRect* rect = nullptr;
+    int child = -1;
+    double px = 0, py = 0;
+    double ux = 1, uy = 0, vx = 0, vy = 1;
+    double cx = 0, cy = 0, hx = 0, hy = 0;
+  };
+  struct ChildManifold {
+    PenPt points[2];
+    int count = 0;
+  };
+  std::vector<ChildManifold> childManifoldScratch;
+  std::vector<ChildFrame> currentChildFramesA, currentChildFramesB;
+  std::vector<ChildFrame> nextChildFramesA, nextChildFramesB;
+  auto collectChildFrames = [](Body* body, double time,
+                               std::vector<ChildFrame>& frames) {
+    frames.resize(body->collisionRects.size());
+    double angle = body->angle + body->omega * time;
+    double ux = std::cos(angle), uy = std::sin(angle);
+    double vx = -uy, vy = ux;
+    double px = body->px + body->vx * time;
+    double py = body->py + body->vy * time;
+    for (int child = 0; child < (int)frames.size(); child++) {
+      ChildFrame& frame = frames[child];
+      frame.body = body;
+      frame.rect = &body->collisionRects[child];
+      frame.child = child;
+      frame.ux = ux;
+      frame.uy = uy;
+      frame.vx = vx;
+      frame.vy = vy;
+      frame.px = px;
+      frame.py = py;
+      double lx = body->offsetX
+        + (frame.rect->x0 + frame.rect->x1 - 1) * 0.5;
+      double ly = body->offsetY
+        + (frame.rect->y0 + frame.rect->y1 - 1) * 0.5;
+      frame.cx = px + lx * ux + ly * vx;
+      frame.cy = py + lx * uy + ly * vy;
+      frame.hx = (frame.rect->x1 - frame.rect->x0) * 0.5;
+      frame.hy = (frame.rect->y1 - frame.rect->y0) * 0.5;
+    }
+  };
+  auto childFramesOverlap = [](const ChildFrame& a, const ChildFrame& b) {
+    double aExtentX = std::fabs(a.ux) * a.hx + std::fabs(a.vx) * a.hy;
+    double aExtentY = std::fabs(a.uy) * a.hx + std::fabs(a.vy) * a.hy;
+    double bExtentX = std::fabs(b.ux) * b.hx + std::fabs(b.vx) * b.hy;
+    double bExtentY = std::fabs(b.uy) * b.hx + std::fabs(b.vy) * b.hy;
+    return std::fabs(a.cx - b.cx)
+             <= aExtentX + bExtentX + R_CONTACT_SKIN
+        && std::fabs(a.cy - b.cy)
+             <= aExtentY + bExtentY + R_CONTACT_SKIN;
+  };
+  auto faceNormal = [](const ChildFrame& frame, BodyCollisionFace face,
+                       double& nx, double& ny) {
+    if (face == BCF_LEFT) { nx = -frame.ux; ny = -frame.uy; }
+    else if (face == BCF_RIGHT) { nx = frame.ux; ny = frame.uy; }
+    else if (face == BCF_UP) { nx = -frame.vx; ny = -frame.vy; }
+    else { nx = frame.vx; ny = frame.vy; }
+  };
+  auto faceForNormal = [&](const ChildFrame& frame, double nx, double ny) {
+    BodyCollisionFace best = BCF_LEFT;
+    double bestDot = -1e18;
+    for (int fi = 0; fi < 4; fi++) {
+      double fx, fy;
+      faceNormal(frame, (BodyCollisionFace)fi, fx, fy);
+      double dot = fx * nx + fy * ny;
+      if (dot > bestDot) {
+        bestDot = dot;
+        best = (BodyCollisionFace)fi;
+      }
+    }
+    return best;
+  };
+  auto facePoint = [](const ChildFrame& frame, BodyCollisionFace face,
+                      double tangent, double& wx, double& wy) {
+    double lx = 0, ly = 0;
+    if (face == BCF_LEFT) {
+      lx = frame.body->offsetX + frame.rect->x0 - 0.5;
+      ly = tangent;
+    } else if (face == BCF_RIGHT) {
+      lx = frame.body->offsetX + frame.rect->x1 - 0.5;
+      ly = tangent;
+    } else if (face == BCF_UP) {
+      lx = tangent;
+      ly = frame.body->offsetY + frame.rect->y0 - 0.5;
+    } else {
+      lx = tangent;
+      ly = frame.body->offsetY + frame.rect->y1 - 0.5;
+    }
+    wx = frame.px + lx * frame.ux + ly * frame.vx;
+    wy = frame.py + lx * frame.uy + ly * frame.vy;
+  };
+  auto clipLinearRange = [](double start, double end, double lo, double hi,
+                            double& u0, double& u1) {
+    double delta = end - start;
+    if (std::fabs(delta) < 1e-12)
+      return start >= lo - 1e-9 && start <= hi + 1e-9;
+    double first = (lo - start) / delta;
+    double second = (hi - start) / delta;
+    if (first > second) std::swap(first, second);
+    u0 = std::fmax(u0, first);
+    u1 = std::fmin(u1, second);
+    return u1 >= u0 - 1e-9;
+  };
+  auto childSatManifolds = [&](const ChildFrame& a, const ChildFrame& b,
+                               bool speculative) {
+    struct Axis {
+      double x, y;
+      bool fromA;
+      int order;
+    };
+    struct AxisCandidate {
+      Axis axis;
+      double overlap;
+      double separation;
+    };
+    Axis axes[4] = {
+      {a.ux, a.uy, true, 0},
+      {a.vx, a.vy, true, 1},
+      {b.ux, b.uy, false, 2},
+      {b.vx, b.vy, false, 3},
+    };
+    double deltaX = a.cx - b.cx, deltaY = a.cy - b.cy;
+    AxisCandidate candidates[4];
+    int candidateCount = 0;
+    for (const Axis& axis : axes) {
+      double aExtent = std::fabs(axis.x * a.ux + axis.y * a.uy) * a.hx
+                     + std::fabs(axis.x * a.vx + axis.y * a.vy) * a.hy;
+      double bExtent = std::fabs(axis.x * b.ux + axis.y * b.uy) * b.hx
+                     + std::fabs(axis.x * b.vx + axis.y * b.vy) * b.hy;
+      double separation = deltaX * axis.x + deltaY * axis.y;
+      double overlap = aExtent + bExtent + R_CONTACT_SKIN
+                     - std::fabs(separation);
+      if (overlap < 0) return false;
+      candidates[candidateCount++] = {axis, overlap, separation};
+    }
+    std::sort(candidates, candidates + candidateCount,
+              [](const AxisCandidate& first, const AxisCandidate& second) {
+      if (first.overlap != second.overlap)
+        return first.overlap < second.overlap;
+      return first.axis.order < second.axis.order;
+    });
+    for (const AxisCandidate& candidate : candidates) {
+      double minimum = candidate.overlap;
+      double separation = candidate.separation;
+      double normalX = candidate.axis.x;
+      double normalY = candidate.axis.y;
+      bool referenceA = candidate.axis.fromA;
+      if (std::fabs(separation) < 1e-9) {
+        double arx = a.cx - a.px, ary = a.cy - a.py;
+        double brx = b.cx - b.px, bry = b.cy - b.py;
+        double relativeX = (a.body->vx - a.body->omega * ary)
+                         - (b.body->vx - b.body->omega * bry);
+        double relativeY = (a.body->vy + a.body->omega * arx)
+                         - (b.body->vy + b.body->omega * brx);
+        separation = -(relativeX * candidate.axis.x
+                     + relativeY * candidate.axis.y);
+      }
+      if (separation < 0) {
+        normalX = -normalX;
+        normalY = -normalY;
+      }
+      const ChildFrame& reference = referenceA ? a : b;
+      const ChildFrame& incident = referenceA ? b : a;
+      double refOutX = referenceA ? -normalX : normalX;
+      double refOutY = referenceA ? -normalY : normalY;
+      BodyCollisionFace refFace = faceForNormal(reference, refOutX, refOutY);
+      BodyCollisionFace incFace = faceForNormal(incident, -refOutX, -refOutY);
+      double refTangentX = (refFace == BCF_LEFT || refFace == BCF_RIGHT)
+        ? reference.vx : reference.ux;
+      double refTangentY = (refFace == BCF_LEFT || refFace == BCF_RIGHT)
+        ? reference.vy : reference.uy;
+      double planeX, planeY;
+      facePoint(reference, refFace, 0, planeX, planeY);
+      const BodyCollisionRect& refRect = *reference.rect;
+      const BodyCollisionRect& incRect = *incident.rect;
+      int refStart = refRect.spanStart[refFace];
+      int refEnd = refStart + refRect.spanCount[refFace];
+      if (refStart == refEnd) continue;
+      int incStart = incRect.spanStart[incFace];
+      int incEnd = incStart + incRect.spanCount[incFace];
+      if (incStart == incEnd) continue;
+      bool produced = false;
+      for (int ii = incStart; ii < incEnd; ii++) {
+        const BodyCollisionSpan& incSpan =
+          incident.body->collisionSpans[ii];
+        double x0, y0, x1, y1;
+        facePoint(incident, incFace, incSpan.lo, x0, y0);
+        facePoint(incident, incFace, incSpan.hi, x1, y1);
+        double tangent0 = (x0 - reference.px) * refTangentX
+                        + (y0 - reference.py) * refTangentY;
+        double tangent1 = (x1 - reference.px) * refTangentX
+                        + (y1 - reference.py) * refTangentY;
+        double sep0 = (x0 - planeX) * refOutX + (y0 - planeY) * refOutY;
+        double sep1 = (x1 - planeX) * refOutX + (y1 - planeY) * refOutY;
+        double sepDelta = sep1 - sep0;
+        for (int ri = refStart; ri < refEnd; ri++) {
+          const BodyCollisionSpan& refSpan =
+            reference.body->collisionSpans[ri];
+          double u0 = 0, u1 = 1;
+          if (!clipLinearRange(tangent0, tangent1,
+                               refSpan.lo, refSpan.hi, u0, u1))
+            continue;
+          if (std::fabs(sepDelta) < 1e-12) {
+            if (sep0 > R_CONTACT_SKIN) continue;
+          } else {
+            double crossing = (R_CONTACT_SKIN - sep0) / sepDelta;
+            if (sepDelta > 0) u1 = std::fmin(u1, crossing);
+            else u0 = std::fmax(u0, crossing);
+            if (u1 < u0 - 1e-9) continue;
+          }
+          ChildManifold manifold;
+          int pointCount = u1 - u0 > 1e-6 ? 2 : 1;
+          for (int pi = 0; pi < pointCount; pi++) {
+            double u = pi == 0 ? u0 : u1;
+            double px = x0 + (x1 - x0) * u;
+            double py = y0 + (y1 - y0) * u;
+            double separation = sep0 + sepDelta * u;
+            double satDepth = std::fmax(0.0, minimum - R_CONTACT_SKIN);
+            double depth = speculative
+              ? 0 : std::fmin(4.5, std::fmax(satDepth, -separation));
+            px -= refOutX * separation * 0.5;
+            py -= refOutY * separation * 0.5;
+            PenPt point{px, py, normalX, normalY, depth};
+            point.childA = a.child;
+            point.childB = b.child;
+            int refFeature = ((int)refFace << 24) | ri;
+            int incFeature = ((int)incFace << 24) | ii;
+            point.featureA = referenceA ? refFeature : incFeature;
+            point.featureB = referenceA ? incFeature : refFeature;
+            manifold.points[manifold.count++] = point;
+          }
+          childManifoldScratch.push_back(manifold);
+          rigidChildManifolds++;
+          produced = true;
+        }
+      }
+      if (produced) return true;
+    }
+    return false;
+  };
+  enum ChildContactState {
+    CCS_NONE,
+    CCS_SPECULATIVE,
+    CCS_CURRENT,
+  };
+  auto collectChildContacts = [&](Body* a, Body* b, double dt) {
+    childManifoldScratch.clear();
+    collectChildFrames(a, 0, currentChildFramesA);
+    collectChildFrames(b, 0, currentChildFramesB);
+    collectChildFrames(a, dt, nextChildFramesA);
+    collectChildFrames(b, dt, nextChildFramesB);
+    bool currentContact = false;
+    for (int ai = 0; ai < (int)a->collisionRects.size(); ai++) {
+      for (int bi = 0; bi < (int)b->collisionRects.size(); bi++) {
+        rigidChildPairs++;
+        const ChildFrame& nowA = currentChildFramesA[ai];
+        const ChildFrame& nowB = currentChildFramesB[bi];
+        if (!childFramesOverlap(nowA, nowB)) {
+          const ChildFrame& nextA = nextChildFramesA[ai];
+          const ChildFrame& nextB = nextChildFramesB[bi];
+          if (childFramesOverlap(nextA, nextB))
+            childSatManifolds(nextA, nextB, true);
+          continue;
+        }
+        if (childSatManifolds(nowA, nowB, false)) {
+          currentContact = true;
+          continue;
+        }
+        const ChildFrame& nextA = nextChildFramesA[ai];
+        const ChildFrame& nextB = nextChildFramesB[bi];
+        if (childFramesOverlap(nextA, nextB))
+          childSatManifolds(nextA, nextB, true);
+      }
+    }
+    if (currentContact) return CCS_CURRENT;
+    return childManifoldScratch.empty() ? CCS_NONE : CCS_SPECULATIVE;
   };
   std::vector<uint8_t> activeBody(n, 0);
   std::vector<double> bodyDt(n, 0);
@@ -1513,6 +1886,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       const double Q = 8.0 / (2.0 * M_PI);
       double snx[8] = {0}, sny[8] = {0}; int cnt[8] = {0};
       bool sweptHit[8] = {false};
+      bool childFeature[8] = {false};
       for (auto& p : acc) {
         int bk = ((int)std::lround(std::atan2(p.ny, p.nx) * Q)) & 7;
         p.bk = bk;
@@ -1520,6 +1894,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         sny[bk] += p.ny;
         cnt[bk]++;
         sweptHit[bk] = sweptHit[bk] || p.depth == 0;
+        childFeature[bk] = childFeature[bk] || p.childA >= 0;
       }
       double Nx[8], Ny[8], tx[8], ty[8], loP[8], hiP[8]; PenPt* lo[8] = {nullptr}; PenPt* hi[8] = {nullptr};
       for (int bk = 0; bk < 8; bk++) {
@@ -1535,7 +1910,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         bool localSparseSweep = sweptHit[bk]
           && (!rigidTightSlenderBounds(A)
               || !rigidTightSlenderBounds(B));
-        if (B && !localSparseSweep
+        if (B && !childFeature[bk] && !localSparseSweep
             && Nx[bk] * fbx + Ny[bk] * fby < 0.5) {
           cnt[bk] = 0;
           continue;
@@ -1587,6 +1962,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
           ? R_ICE_DYNAMIC_FRICTION : R_DYNAMIC_FRICTION;
         Contact contact{
           A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
+          p->childA, p->childB, p->featureA, p->featureB,
           bIndex >= 0, std::max(0.0, -impactVn), targetVn,
           contactDt, staticFriction, dynamicFriction,
           0, 0, 0, -1, false,
@@ -1654,19 +2030,81 @@ void RigidBodySystem::rigidStep(double tickDt) {
       double pairDt = std::fmin(bodyDt[pair.first], bodyDt[pair.second]);
       bool aMoving = A->awake && (A->vx * A->vx + A->vy * A->vy > R_WAKE_LIN2 || A->omega * A->omega > R_WAKE_ANG2);
       bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
-      penAcc.clear();
-      collectSweep(A, B, 1, pairDt);
-      collectSweep(B, A, -1, pairDt);
-      double fbx, fby;
-      bool hasSlenderObb = addSlenderObbManifold(
-        A, B, penAcc, fbx, fby);
-      if (penAcc.empty()) continue;
+      ChildContactState childContactState =
+        collectChildContacts(A, B, pairDt);
+      uint64_t pairKey = bodyPairKey(A->id, B->id);
+      auto remembered = activePairAxes.find(pairKey);
+      if (remembered != activePairAxes.end()
+          && (remembered->second.aRevision != A->geometryRevision
+              || remembered->second.bRevision != B->geometryRevision)) {
+        activePairAxes.erase(remembered);
+        remembered = activePairAxes.end();
+      }
+      double scratchNormalX = 0, scratchNormalY = 0;
+      int scratchPointCount = 0;
+      for (const ChildManifold& manifold : childManifoldScratch)
+        for (int pi = 0; pi < manifold.count; pi++) {
+          scratchNormalX += manifold.points[pi].nx;
+          scratchNormalY += manifold.points[pi].ny;
+          scratchPointCount++;
+        }
+      double scratchNormalLength =
+        std::hypot(scratchNormalX, scratchNormalY);
+      bool coherentScratch = scratchPointCount > 0
+        && scratchNormalLength >= scratchPointCount * 0.65;
+      if (coherentScratch) {
+        scratchNormalX /= scratchNormalLength;
+        scratchNormalY /= scratchNormalLength;
+        if (remembered == activePairAxes.end()) {
+          remembered = activePairAxes.emplace(pairKey, PairAxisState{
+            A->geometryRevision, B->geometryRevision,
+            scratchNormalX, scratchNormalY, 0,
+          }).first;
+        }
+      }
+      if (childContactState != CCS_NONE
+          && remembered != activePairAxes.end())
+        remembered->second.age = 0;
+      if (childContactState != CCS_CURRENT) {
+        rigidSweepFallbacks++;
+        penAcc.clear();
+        collectSweep(A, B, 1, pairDt);
+        collectSweep(B, A, -1, pairDt);
+        double fbx, fby;
+        bool hasSlenderObb = addSlenderObbManifold(
+          A, B, penAcc, fbx, fby);
+        if (!penAcc.empty()) {
+          if (!A->awake && bMoving) wakeBody(A);
+          if (!B->awake && aMoving) wakeBody(B);
+          if (!A->awake && !B->awake) continue;
+          if (!hasSlenderObb)
+            pairSeparatingDirection(A, B, fbx, fby);
+          reduceManifold(penAcc, A, B, fbx, fby, pairDt);
+          continue;
+        }
+        if (childContactState == CCS_NONE) continue;
+      }
       if (!A->awake && bMoving) wakeBody(A);
       if (!B->awake && aMoving) wakeBody(B);
       if (!A->awake && !B->awake) continue;
-      if (!hasSlenderObb)
-        pairSeparatingDirection(A, B, fbx, fby);
-      reduceManifold(penAcc, A, B, fbx, fby, pairDt);
+      double preferredX = 0, preferredY = 0;
+      bool hasPreferredNormal = false;
+      if (remembered != activePairAxes.end()) {
+        preferredX = remembered->second.nx;
+        preferredY = remembered->second.ny;
+        hasPreferredNormal = true;
+      }
+      penAcc.clear();
+      for (const ChildManifold& manifold : childManifoldScratch) {
+        for (int pi = 0; pi < manifold.count; pi++) {
+          const PenPt& point = manifold.points[pi];
+          if (hasPreferredNormal
+              && point.nx * preferredX + point.ny * preferredY < -0.25)
+            continue;
+          penAcc.push_back(point);
+        }
+      }
+      reduceManifold(penAcc, A, B, 0, -1, pairDt);
     }
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];

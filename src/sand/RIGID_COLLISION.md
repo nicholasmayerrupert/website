@@ -10,20 +10,35 @@ lives in `rigid_impl.inc`.
   Each island chooses its own substep cadence from linear speed plus angular tip
   speed, capped by `R_MAX_SUBSTEPS`; an isolated fast projectile therefore does
   not make a distant resting structure run at the projectile's cadence.
-- Boundary samples include cell centers and exposed face midpoints. Large and
-  slender masks also sample exposed convex corners so a rotating endpoint cannot
-  cross a thin collider between face samples. Samples are rebuilt only when
-  occupancy changes.
+- `computeDerived` converts each occupied row into runs and merges identical
+  runs vertically. The result is an exact, non-overlapping rectangle cover of
+  the pixel mask: a box or beam is one child and a 120×120 L with eight-cell
+  arms is two. Each child face stores only the sub-spans exposed in the original
+  mask, so internal decomposition seams cannot generate contacts. Dev builds
+  verify exact coverage and face exposure after every validated phase.
+- Boundary samples remain available for terrain collision and the conservative
+  body/body sweep fallback. They include cell centers and exposed face
+  midpoints. Large and slender masks also sample exposed convex corners so a
+  rotating endpoint cannot cross a thin collider between face samples. Samples
+  and compound children are rebuilt only when occupancy changes.
 - A persistent sweep-and-prune order generates horizontally overlapping body
   pairs. Insertion repair is linear in the common coherent case. Candidate pairs
   are restored to body-index order before contact generation so the sequential
   impulse result stays deterministic.
-- Body/body and body/terrain checks sweep each sample's relative substep path in
-  increments no larger than `R_SWEEP_STEP` and refine the first hit. Compact
-  bodies use the point tangent over the short substep. Large rotating bodies,
-  including very long beams, evaluate the exact constant-linear/angular
-  trajectory and target rotation so a distant tip cannot tunnel through terrain
-  or another body.
+- Body/body candidates first test overlapping child rectangles with oriented-box
+  SAT. Reference and incident edges are clipped against exposed sub-spans on
+  both children, producing one- or two-point local-feature manifolds. The
+  current pose is tested first and the substep-end pose supplies speculative
+  contacts. A coherent separating axis is retained briefly by body id and
+  geometry revision; newly exposed far-side features cannot reverse an
+  established contact while a thin pair is crossing a pixel boundary.
+- Body/terrain checks sweep each sample's relative substep path in increments no
+  larger than `R_SWEEP_STEP` and refine the first hit. The same sweep remains a
+  body/body CCD fallback when the compound children have not reached a current
+  overlap. Compact bodies use the point tangent over the short substep. Large
+  rotating bodies, including very long beams, evaluate the exact
+  constant-linear/angular trajectory and target rotation so a distant tip
+  cannot tunnel through terrain or another body.
 - After the raster sweep finds real contact between two genuinely large,
   slender bodies, oriented rectangles supply a stable minimum-overlap reference
   axis. Near-parallel pairs also receive two span support points so
@@ -54,12 +69,13 @@ lives in `rigid_impl.inc`.
   samples from a deep overlap are discarded instead of creating opposing
   constraints.
 - Per-layer contact caches match local anchors by stable body id, geometry
-  revision, peer layer, and normal bucket. Persistent normal and friction
-  impulses warm-start the next substep/tick, while restitution remains an
-  impact-only target and positional bias stays separate. Large manifolds retain a
-  missed anchor for up to two substeps with decaying impulses to bridge
-  raster-boundary transitions. A mixed-size pair receives that persistence when
-  either participant is large, independent of body-index order.
+  revision, compound child and face-span feature ids, peer layer, and normal
+  bucket. Persistent normal and friction impulses warm-start the next
+  substep/tick, while restitution remains an impact-only target and positional
+  bias stays separate. Large manifolds retain a missed anchor for up to two
+  substeps with decaying impulses to bridge raster-boundary transitions. A
+  mixed-size pair receives that persistence when either participant is large,
+  independent of body-index order.
 - Sequential impulses solve normal velocity, static/dynamic friction,
   penetration bias, and a fixed impact restitution target. Ice contacts select a
   lower material-pair friction. Two well-separated contacts on one face use a
@@ -173,6 +189,10 @@ re-ground an airborne body. Powders never push a rigid body upward.
   large bodies and long beams use exact constant-velocity rotation.
 - Curved masks can occupy several manifold buckets and cost more than flat
   contacts.
+- Child rectangles are tested directly within a broadphase body pair. There is
+  no child BVH yet; boxes, beams, and the large-L regression have one or two
+  children, while highly alternating masks can have enough children for the
+  child-pair product to dominate collision cost.
 - Deep stacks converge at the sequential-impulse rate. An ordinary contact
   island starts at 12 iterations plus two per body, large-body islands use at
   least 32, impacts can use 64, and small blast-debris islands use 16.
@@ -182,7 +202,8 @@ re-ground an airborne body. Powders never push a rigid body upward.
 
 Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-collision`, `npm run test:rigid-dense-pile`,
-`npm run test:rigid-large-body`, `npm run test:rigid-topple`,
+`npm run test:rigid-large-body`, `npm run test:rigid-shape-stress`,
+`npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
 `npm run bench:rigid`.
 

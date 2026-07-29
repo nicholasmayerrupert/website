@@ -21,6 +21,7 @@ function table() {
     bodyBlocked: c('engine_test_body_blocked', 'number', ['number', 'number']),
     bodyAwake: c('engine_test_body_awake', 'number', ['number', 'number']),
     bodyMaterial: c('engine_test_body_material', 'number', ['number', 'number']),
+    bodyChildCount: c('engine_test_body_child_count', 'number', ['number', 'number']),
     bodyBlastDebris: c('engine_test_body_blast_debris', 'number', ['number', 'number']),
     bodyCountLayer: c('engine_test_body_count_layer', 'number', ['number', 'number']),
     bodyIdLayer: c('engine_test_body_id_layer', 'number', ['number', 'number', 'number']),
@@ -63,6 +64,7 @@ export function attachTestHooks(engine) {
   engine._bodyBlocked = (i) => t.bodyBlocked(ptr, i);
   engine._bodyAwake = (i) => t.bodyAwake(ptr, i);
   engine._bodyMaterial = (i) => t.bodyMaterial(ptr, i);
+  engine._bodyChildCount = (i) => t.bodyChildCount(ptr, i);
   engine._bodyBlastDebris = (i) => t.bodyBlastDebris(ptr, i);
   engine._bodyCountLayer = (layer = 0) => t.bodyCountLayer(ptr, layer ? 1 : 0);
   engine._bodyIdLayer = (layer, i) => t.bodyIdLayer(ptr, layer ? 1 : 0, i);
@@ -125,6 +127,10 @@ export function attachTestHooks(engine) {
     blockSolves: t.rigidSolverDiag(ptr, 7),
     islandBodySteps: t.rigidSolverDiag(ptr, 8),
     globalBodySteps: t.rigidSolverDiag(ptr, 9),
+    childPairs: t.rigidSolverDiag(ptr, 10),
+    childManifolds: t.rigidSolverDiag(ptr, 11),
+    sweepFallbacks: t.rigidSolverDiag(ptr, 12),
+    maxChildren: t.rigidSolverDiag(ptr, 13),
   });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);

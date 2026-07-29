@@ -33,6 +33,8 @@ class RigidBodySystem {
   int rigidVelocityIterations = 0, rigidBiasIterations = 0;
   int rigidIslands = 0, rigidBlockSolves = 0;
   int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
+  int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
+  int rigidMaxChildren = 0;
   double rigidMaxContactDepth = 0;
   void clearContactCaches();
   // Scratch for per-body bottom-edge support probes: membership
@@ -119,11 +121,14 @@ class RigidBodySystem {
  private:
   struct ContactCacheKey {
     int aId = -1, bId = -1;
+    int childA = -1, childB = -1, featureA = -1, featureB = -1;
     uint32_t aRevision = 0, bRevision = 0;
     uint8_t normalBucket = 0, bLayer = 0;
     uint8_t retainMissed = 0; // pair metadata, not key identity
     bool operator==(const ContactCacheKey& other) const {
       return aId == other.aId && bId == other.bId
+          && childA == other.childA && childB == other.childB
+          && featureA == other.featureA && featureB == other.featureB
           && aRevision == other.aRevision && bRevision == other.bRevision
           && normalBucket == other.normalBucket && bLayer == other.bLayer;
     }
@@ -132,6 +137,10 @@ class RigidBodySystem {
     size_t operator()(const ContactCacheKey& key) const {
       size_t h = (uint32_t)key.aId * 0x9e3779b1u;
       h ^= (uint32_t)key.bId + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= (uint32_t)key.childA + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= (uint32_t)key.childB + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= (uint32_t)key.featureA + 0x9e3779b9u + (h << 6) + (h >> 2);
+      h ^= (uint32_t)key.featureB + 0x9e3779b9u + (h << 6) + (h >> 2);
       h ^= key.aRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
       h ^= key.bRevision + 0x9e3779b9u + (h << 6) + (h >> 2);
       h ^= (size_t)key.normalBucket << 1;
@@ -148,6 +157,12 @@ class RigidBodySystem {
   using ContactCache = std::unordered_map<
     ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
   std::array<ContactCache, 2> contactCaches;
+  struct PairAxisState {
+    uint32_t aRevision = 0, bRevision = 0;
+    double nx = 0, ny = 0;
+    uint8_t age = 0;
+  };
+  std::array<std::unordered_map<uint64_t, PairAxisState>, 2> pairAxes;
   ContactCache nextContactCacheScratch;
   std::vector<Contact> solverContactScratch;
   std::vector<int> broadphaseOrderScratch;

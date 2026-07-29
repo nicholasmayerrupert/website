@@ -21,6 +21,7 @@ mapping, and pan stability.
 | `npm run bench:rigid-fluid-large` | Drop one 120×60 body into a large connected pool. |
 | `npm run test:rigid-dense-pile` | Verify contact persistence, bounded late motion/raster conflicts, and island sleep for 100 irregular bodies. |
 | `npm run test:rigid-large-body` | Verify long-face resting, rotational CCD, per-island cadence, and cross-layer TNT adherence. |
+| `npm run test:rigid-shape-stress` | Drop convex, concave, hollow, stepped, thin, thick, small, and 120-cell bodies together; verify exact compound proxies, retention, overlap bounds, and sleep. |
 | `npm run bench:rigid` | Measure many-body pile collision cost and total rigid step time. |
 | `npm run bench:ice-growth` | Track rigid/fluid cost while one floating ice body grows through a pool. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
@@ -117,6 +118,14 @@ component registration, and generation/restoration. Browser presentation exposes
 - Body/body broadphase retains its sweep-and-prune order across ticks and repairs
   it with insertion sort, then restores surviving pairs to deterministic
   body-index order before generating contacts.
+- Each body caches an exact non-overlapping rectangle cover of its occupied
+  pixels. Child transforms are computed once per candidate pair and cheap world
+  AABBs reject most child combinations before oriented-box SAT. Manifolds clip
+  both incident and reference edges against original-mask exposed spans, so
+  decomposition seams cannot act as collision faces. Child and face-span ids
+  participate in the warm-start key. A short-lived coherent child separating
+  axis prevents a far-side feature from reversing a thin contact while the pair
+  crosses a raster boundary.
 - A conservative tick-level candidate graph gives disconnected rigid islands
   independent substep cadences. Contact islands receive size-based solver
   budgets, bottom-up stack ordering, and coupled two-point solves for long
@@ -159,9 +168,11 @@ component registration, and generation/restoration. Browser presentation exposes
   bounded baseline cache, and both stores choose compact RLE per tile when it is
   smaller than the raw payload.
 
-These optimizations preserve deterministic output except the accepted cave-blast
-carry change and exceptionally broad TNT fronts. Broad fronts consume live TNT
-over additional ticks, so their timing and aftermath checksum intentionally differ.
+These optimizations preserve deterministic output except accepted behavior
+changes. The recorded checksum includes compound rigid-body contacts, the
+cave-blast carry change, and exceptionally broad TNT fronts. Broad fronts
+consume live TNT over additional ticks, so their timing and aftermath checksum
+intentionally differ.
 
 ## Baseline policy
 

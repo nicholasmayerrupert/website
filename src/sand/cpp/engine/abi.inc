@@ -181,6 +181,10 @@ EMSCRIPTEN_KEEPALIVE int engine_test_body_count(Engine* e) { return (int)e->fg.b
 EMSCRIPTEN_KEEPALIVE int engine_test_body_blocked(Engine* e, int i) { e->useLayer(&e->fg); return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->bodyFootprintBlocked(e->fg.bodies[i]) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_awake(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->awake ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_material(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? e->fg.bodies[i]->material : -1; }
+EMSCRIPTEN_KEEPALIVE int engine_test_body_child_count(Engine* e, int i) {
+  return (i >= 0 && i < (int)e->fg.bodies.size())
+    ? (int)e->fg.bodies[i]->collisionRects.size() : -1;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_body_blast_debris(Engine* e, int i) { return (i >= 0 && i < (int)e->fg.bodies.size()) ? (e->fg.bodies[i]->blastDebris ? 1 : 0) : -1; }
 EMSCRIPTEN_KEEPALIVE int engine_test_body_count_layer(Engine* e, int layer) {
   return (int)(layer ? e->bg : e->fg).bodies.size();
@@ -297,6 +301,10 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 7: return e->rigid.rigidBlockSolves;
     case 8: return e->rigid.rigidIslandBodySteps;
     case 9: return e->rigid.rigidGlobalBodySteps;
+    case 10: return e->rigid.rigidChildPairs;
+    case 11: return e->rigid.rigidChildManifolds;
+    case 12: return e->rigid.rigidSweepFallbacks;
+    case 13: return e->rigid.rigidMaxChildren;
     default: return 0;
   }
 }

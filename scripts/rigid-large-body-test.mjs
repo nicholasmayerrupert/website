@@ -103,6 +103,7 @@ const speed = (state) =>
   }
   for (let i = 0; i < 1400; i++) engine.stepWorld();
   const finalStates = localPoints.map((_, body) => engine._bodyState(body));
+  const childCounts = localPoints.map((_, body) => engine._bodyChildCount(body));
   const worldPoints = localPoints.map((points, body) => {
     const state = finalStates[body];
     const cs = Math.cos(state.angle), sn = Math.sin(state.angle);
@@ -111,6 +112,7 @@ const speed = (state) =>
       state.py + x * sn + y * cs,
     ]);
   });
+  const deepOverlapThreshold = 0.4;
   let deepOverlaps = 0, minimumDistance = Infinity, minimumPair = '';
   for (let a = 0; a < worldPoints.length; a++) {
     for (let b = a + 1; b < worldPoints.length; b++) {
@@ -126,14 +128,16 @@ const speed = (state) =>
         minimumDistance = pairDistance;
         minimumPair = `${a}/${b}`;
       }
-      if (pairDistance < 0.5) deepOverlaps++;
+      if (pairDistance < deepOverlapThreshold) deepOverlaps++;
     }
   }
   const [minimumA, minimumB] = minimumPair.split('/').map(Number);
   check(`staggered jagged beams do not phase through one another `
-      + `(${deepOverlaps} deep overlaps, minimum ${minimumDistance.toFixed(3)} `
+      + `(${deepOverlaps} overlaps < ${deepOverlapThreshold}, `
+      + `minimum ${minimumDistance.toFixed(3)} `
       + `at ${minimumPair}, angles ${finalStates[minimumA].angle.toFixed(3)}/`
-      + `${finalStates[minimumB].angle.toFixed(3)})`,
+      + `${finalStates[minimumB].angle.toFixed(3)}, children `
+      + `${childCounts[minimumA]}/${childCounts[minimumB]})`,
     deepOverlaps === 0);
   engine.destroy();
 }

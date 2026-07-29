@@ -215,10 +215,22 @@
   //   B. COMPONENT-CELL: every component cell must hold a component material,
   //      must not be body-owned, and must appear in exactly one component
   //      (comp.cells dedup-by-construction).
+  //   C. BODY-COLLISION: collision rectangles cover each occupied body cell
+  //      exactly once, and their stored face spans match original-mask exposure.
   void validateInvariants(const char* where) {
     auto fail = [&](const char* what, int k, int mat, int extra) {
       char buf[200];
       snprintf(buf, sizeof(buf), "SAND INVARIANT VIOLATION [%s] %s at k=%d (x=%d,y=%d) mat=%d extra=%d", where, what, k, k % cols, k / cols, mat, extra);
+      emscripten_console_error(buf);
+      abort();
+    };
+    auto failBody = [&](const char* what, Body* body, int local, int extra) {
+      char buf[220];
+      snprintf(buf, sizeof(buf),
+        "SAND INVARIANT VIOLATION [%s] %s body=%d local=%d (x=%d,y=%d) extra=%d",
+        where, what, body->id, local,
+        local >= 0 ? local % body->w : -1,
+        local >= 0 ? local / body->w : -1, extra);
       emscripten_console_error(buf);
       abort();
     };
@@ -234,6 +246,68 @@
         if (lay.bodyOwner[k] != -1) fail("component cell is body-owned", k, material, lay.bodyOwner[k]);
         if (lay.seenStamp[k] == lay.seenGen) fail("cell in two components / duplicated", k, material, 0);
         lay.seenStamp[k] = lay.seenGen;
+      }
+      for (Body* body : lay.bodies) {
+        std::vector<uint8_t> coverage(body->occ.size(), 0);
+        int coveredCells = 0;
+        auto filled = [&](int x, int y) {
+          return x >= 0 && x < body->w && y >= 0 && y < body->h
+            && body->occ[y * body->w + x];
+        };
+        for (const BodyCollisionRect& rect : body->collisionRects) {
+          if (rect.x0 < 0 || rect.y0 < 0
+              || rect.x1 > body->w || rect.y1 > body->h
+              || rect.x0 >= rect.x1 || rect.y0 >= rect.y1)
+            failBody("collision rectangle out of bounds", body, -1, 0);
+          for (int y = rect.y0; y < rect.y1; y++)
+            for (int x = rect.x0; x < rect.x1; x++) {
+              int local = y * body->w + x;
+              if (!body->occ[local])
+                failBody("collision rectangle covers empty cell", body, local, 0);
+              if (coverage[local]++)
+                failBody("collision rectangles overlap", body, local, coverage[local]);
+              coveredCells++;
+            }
+          for (int face = 0; face < 4; face++) {
+            int start = rect.spanStart[face];
+            int count = rect.spanCount[face];
+            if (start < 0 || count < 0
+                || start + count > (int)body->collisionSpans.size())
+              failBody("collision face span range out of bounds", body, -1, face);
+            int q0 = face < 2 ? rect.y0 : rect.x0;
+            int q1 = face < 2 ? rect.y1 : rect.x1;
+            double offset = face < 2 ? body->offsetY : body->offsetX;
+            for (int q = q0; q < q1; q++) {
+              bool exposed = face == BCF_LEFT ? !filled(rect.x0 - 1, q)
+                : face == BCF_RIGHT ? !filled(rect.x1, q)
+                : face == BCF_UP ? !filled(q, rect.y0 - 1)
+                : !filled(q, rect.y1);
+              double tangent = offset + q;
+              int spanHits = 0;
+              for (int si = start; si < start + count; si++) {
+                const BodyCollisionSpan& span = body->collisionSpans[si];
+                if (!(span.lo < span.hi))
+                  failBody("collision face has empty span", body, -1, si);
+                if (tangent > span.lo && tangent < span.hi) spanHits++;
+              }
+              if (spanHits != (exposed ? 1 : 0)) {
+                int localX = face == BCF_LEFT ? rect.x0
+                  : face == BCF_RIGHT ? rect.x1 - 1 : q;
+                int localY = face == BCF_UP ? rect.y0
+                  : face == BCF_DOWN ? rect.y1 - 1 : q;
+                failBody("collision face exposure mismatch", body,
+                         localY * body->w + localX, face);
+              }
+            }
+          }
+        }
+        for (int local = 0; local < (int)body->occ.size(); local++)
+          if ((body->occ[local] != 0) != (coverage[local] == 1))
+            failBody("collision rectangles do not exactly cover occ",
+                     body, local, coverage[local]);
+        if (coveredCells != body->nPts)
+          failBody("collision rectangle area differs from nPts",
+                   body, -1, coveredCells);
       }
     };
     checkLayer(fg);

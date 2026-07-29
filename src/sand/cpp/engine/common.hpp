@@ -212,6 +212,23 @@ struct Comp {
   std::vector<int> woodCells, seedWoodCells;
 };
 
+enum BodyCollisionFace : uint8_t {
+  BCF_LEFT = 0,
+  BCF_RIGHT = 1,
+  BCF_UP = 2,
+  BCF_DOWN = 3,
+};
+
+struct BodyCollisionSpan {
+  float lo = 0, hi = 0;
+};
+
+struct BodyCollisionRect {
+  int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+  std::array<int, 4> spanStart{{0, 0, 0, 0}};
+  std::array<int, 4> spanCount{{0, 0, 0, 0}};
+};
+
 // Free rigid body with a continuous pose over a cell occupancy mask.
 struct Body {
   int id = 0;
@@ -244,6 +261,10 @@ struct Body {
   // squares, so cell centres alone miss thin-shape edges; samples are cached and
   // rebuilt only when occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
+  // Exact non-overlapping rectangle cover of `occ`. Each face indexes its
+  // exposed sub-spans so contacts cannot originate from decomposition seams.
+  std::vector<BodyCollisionRect> collisionRects;
+  std::vector<BodyCollisionSpan> collisionSpans;
   uint32_t geometryRevision = 0;
   bool tightSlenderBounds = false; // derived span-manifold eligibility
   double invMass = 0, invInertia = 0, maxR = 0;
@@ -262,6 +283,7 @@ struct Body {
 struct Contact {
   Body* a; Body* b;
   double rax, ray, rbx, rby, nx, ny, depth;
+  int childA, childB, featureA, featureB;
   // Cross-layer contacts exchange velocity impulses immediately even though the
   // peer body integrates in a different layer pass. Positional bias remains on
   // the body in the active solver so neither layer's stamped raster becomes
@@ -654,7 +676,7 @@ static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
 static const double R_FLUID_SLEEP_LIN = 0.05;
 static const double R_FLUID_REST_DAMP = 0.98;
 static const double R_FLUID_SLENDER_REST_DAMP = 0.85;
-static const double R_SETTLE_LIN = 0.056, R_SETTLE_ANG = 0.036;
+static const double R_SETTLE_LIN = 0.06, R_SETTLE_ANG = 0.036;
 static const double R_GRANULAR_BEARING_DEPTH = 7.0;
 static const double R_GRANULAR_DRAG = 0.12, R_GRANULAR_ANG_DRAG = 0.1;
 static const double R_GRANULAR_REST_BAND = 0.08, R_GRANULAR_REST_DAMP = 0.45;

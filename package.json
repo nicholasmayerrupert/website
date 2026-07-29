@@ -68,6 +68,7 @@
     "test:rigid-collision": "node scripts/rigid-collision-test.mjs",
     "test:rigid-dense-pile": "node scripts/rigid-dense-pile-test.mjs",
     "test:rigid-large-body": "node scripts/rigid-large-body-test.mjs",
+    "test:rigid-shape-stress": "node scripts/rigid-shape-stress-test.mjs",
     "test:house-blast-float": "node scripts/house-blast-float-test.mjs",
     "test:rigid-topple": "node scripts/rigid-topple-test.mjs",
     "test:rigidmat": "node scripts/rigidmat-test.mjs",

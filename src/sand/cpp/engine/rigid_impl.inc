@@ -4296,12 +4296,16 @@ void RigidBodySystem::moveBodies() {
     spillDisplacedBodyMaterial(it->second.first, it->second.second,
                                footprintGen, b->id, b->density, vacated);
   }
-  erodeBodies(cells);
   if (E.L == &E.fg) {
+    // Joint erosion rebuilds pieces from the two live owner rasters. Restore
+    // the follower before acid/fire can erase the leader so the splitter sees
+    // both layer maps instead of interpreting the temporarily-cleared
+    // background footprint as a foreground-only body.
     std::vector<Body*> leaders;
     for (Body* b : E.fg.bodies) if (b->jointRole == 1) leaders.push_back(b);
     for (Body* leader : leaders) stampJointFollower(leader);
   }
+  erodeBodies(cells);
 }
 
 template <class Cells>

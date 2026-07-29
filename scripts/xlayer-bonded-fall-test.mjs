@@ -35,6 +35,108 @@ const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for
   engine.destroy();
 }
 
+// Foreground acid can erode a joint leader while its background follower is in
+// motion. The follower must remain visible to the joint splitter during that
+// erosion instead of being mistaken for an empty layer.
+{
+  const cols = 48, rows = 80;
+  const engine = attachTestHooks(createEngineWasm({
+    cols, rows, worldSeed: 1, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  for (let layer = 0; layer <= 1; layer++) {
+    for (let y = 8; y <= 19; y++) for (let x = 16; x <= 31; x++)
+      engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    engine.syncComponentsLayer(layer);
+  }
+  engine.stepWorld();
+  const stoneAtBirth = cnt(engine.getGrid(), MAT.STONE);
+  let eroded = false, jointAfterErosion = false, erosionDetail = '';
+  for (let step = 0; step < 160 && !eroded; step++) {
+    const owner = engine._bodyOwnerGrid(0);
+    const grid = engine.getGrid();
+    let placed = 0;
+    for (let k = 0; k < owner.length && placed < 24; k++) {
+      if (owner[k] < 0) continue;
+      const y = Math.floor(k / cols), x = k - y * cols;
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (nx <= 0 || nx >= cols - 1 || ny <= 0 || ny >= rows - 1) continue;
+        const nk = ny * cols + nx;
+        if (owner[nk] >= 0 || grid[nk] !== MAT.EMPTY) continue;
+        engine.paintDiscLayer(0, nx, ny, 0, MAT.ACID, false);
+        placed++;
+        break;
+      }
+    }
+    engine.stepWorld();
+    if (cnt(engine.getGrid(), MAT.STONE) >= stoneAtBirth) continue;
+    eroded = true;
+    const fgRoles = Array.from(
+      { length: engine._bodyCountLayer(0) },
+      (_, i) => engine._bodyJointRoleLayer(0, i),
+    );
+    const bgRoles = Array.from(
+      { length: engine._bodyCountLayer(1) },
+      (_, i) => engine._bodyJointRoleLayer(1, i),
+    );
+    jointAfterErosion = fgRoles.includes(1) && bgRoles.includes(2);
+    erosionDetail = `step ${step}; roles ${fgRoles.join(',')}/${bgRoles.join(',')}; bg stone ${cnt(engine.getGridBg(), MAT.STONE)}`;
+  }
+  check('foreground acid erodes a moving joint body', eroded);
+  check(`acid erosion preserves the background follower (${erosionDetail})`, jointAfterErosion);
+  engine.destroy();
+}
+
+// Acid cutting matching foreground/background supports must create the falling
+// slab as a joint body on its first dynamic tick.
+{
+  const cols = 64, rows = 80;
+  const engine = attachTestHooks(createEngineWasm({
+    cols, rows, worldSeed: 1, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  for (let layer = 0; layer <= 1; layer++) {
+    for (let y = 15; y <= 30; y++) for (let x = 14; x <= 49; x++)
+      engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    for (let y = 31; y < rows; y++) for (let x = 31; x <= 32; x++)
+      engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    engine.syncComponentsLayer(layer);
+  }
+  for (let i = 0; i < 4; i++) engine.stepWorld();
+  for (let y = 38; y <= 55; y++) {
+    engine.paintDiscLayer(0, 30, y, 0, MAT.ACID, true);
+    engine.paintDiscLayer(0, 33, y, 0, MAT.ACID, true);
+  }
+  let born = false, jointAtBirth = false, birthDetail = '';
+  for (let i = 0; i < 500; i++) {
+    engine.stepWorld();
+    if (engine._bodyCountLayer(0) === 0 && engine._bodyCountLayer(1) === 0) continue;
+    born = true;
+    const fgCount = engine._bodyCountLayer(0), bgCount = engine._bodyCountLayer(1);
+    const describe = (layer, count) => Array.from({ length: count }, (_, b) =>
+      `${engine._bodyJointRoleLayer(layer, b)}:${engine._bodyStateLayer(layer, b)?.nPts ?? 0}`);
+    const fgBodies = describe(0, fgCount), bgBodies = describe(1, bgCount);
+    birthDetail = `tick ${i}; role:cells ${fgBodies.join(',')}/${bgBodies.join(',')}`;
+    jointAtBirth = engine._bodyCountLayer(0) === 1
+      && engine._bodyCountLayer(1) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 1
+      && engine._bodyJointRoleLayer(1, 0) === 2;
+    break;
+  }
+  check('aligned acid cut produces a body', born);
+  check(`aligned acid-cut body contains both layers at birth (${birthDetail})`, jointAtBirth);
+  const bgStoneAtBirth = cnt(engine.getGridBg(), MAT.STONE);
+  let minBgStone = bgStoneAtBirth, maxRejected = 0;
+  for (let i = 0; i < 24; i++) {
+    engine.stepWorld();
+    minBgStone = Math.min(minBgStone, cnt(engine.getGridBg(), MAT.STONE));
+    maxRejected = Math.max(maxRejected, engine.getRigidDebug().rejectedCells);
+  }
+  check(`acid-cut follower raster remains materialized (${bgStoneAtBirth} -> ${minBgStone}; rejected ${maxRejected})`,
+    minBgStone >= bgStoneAtBirth - 2);
+  engine.destroy();
+}
+
 // hollow stone box outline filled with sand, in `layer`
 function ring(e, x0, y0, x1, y1, layer) {
   for (let x = x0; x <= x1; x++) { e.placeMaterial(x, y0, 0, MAT.STONE, layer); e.placeMaterial(x, y1, 0, MAT.STONE, layer); }

@@ -41,12 +41,12 @@ input, textarea { user-select: text; -webkit-user-select: text; -webkit-touch-ca
 .sg-control-key { display: inline-grid; place-items: center; min-width: 25px; height: 18px; box-sizing: border-box; padding: 0 4px;
   border: 1px solid rgba(255,255,255,.42); background: rgba(255,255,255,.12); color: #fff;
   box-shadow: 2px 2px 0 rgba(0,0,0,.48); font-family: inherit; font-size: 8px; font-weight: 800; line-height: 1; letter-spacing: .04em; }
-.sg-sound { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 11px;
-  border: 1px solid rgba(255,255,255,.2); border-radius: 0;
-  background: rgba(17,24,39,.5); color: #fff; pointer-events: auto; cursor: pointer; touch-action: manipulation;
-  font-family: inherit; font-size: 9px; font-weight: 700; line-height: 1; letter-spacing: .09em;
-  backdrop-filter: blur(5px); box-shadow: 3px 3px 0 rgba(0,0,0,.48); }
-.sg-sound:hover { background: rgba(255,255,255,.15); border-color: rgba(255,255,255,.34); }
+.sg-sound { display:flex; align-items:center; gap:7px; height:40px; padding:0 11px;
+  border:2px solid #080a0c; border-radius:0; background:#252b31; color:#fff;
+  pointer-events:auto; cursor:pointer; touch-action:manipulation; font-family:inherit;
+  font-size:9px; font-weight:800; line-height:1; letter-spacing:.1em;
+  box-shadow:inset 0 0 0 1px #59636c,4px 4px 0 rgba(0,0,0,.48); }
+.sg-sound:hover { background:#30373e; border-color:#080a0c; color:#f0d465; }
 .sg-sound-icon { position: relative; width: 17px; height: 14px; flex: none; }
 .sg-sound-icon::before { content: ''; position: absolute; left: 0; top: 4px; width: 5px; height: 6px;
   background: currentColor; box-shadow: 4px -3px 0 -1px currentColor, 4px 3px 0 -1px currentColor; }

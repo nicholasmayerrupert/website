@@ -175,43 +175,62 @@ function specialIcon(kind, sizePx) {
 
 const STYLE = `
 .inv-backdrop { position: fixed; inset: 0; z-index: 71; display: none;
-  background: rgba(0,0,0,.55); pointer-events: auto; }
+  background:radial-gradient(circle at 50% 55%,rgba(8,11,14,.44),rgba(0,0,0,.78)); pointer-events:auto;
+  backdrop-filter:blur(2px); }
 .inv-backdrop.open { display: block; }
-.inv-hud { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 72;
-  display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none;
+.inv-hud { position:absolute; left:50%; bottom:14px; transform:translateX(-50%); z-index:72;
+  display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none;
   font-family: ui-monospace,"SFMono-Regular",Menlo,monospace; max-width: calc(100vw - 1rem); }
-.inv-modal { display:none; grid-template-columns:auto minmax(190px,250px); gap:8px; align-items:stretch; pointer-events:auto; }
+.inv-modal { display:none; position:relative; grid-template-columns:auto minmax(210px,260px); gap:8px; align-items:stretch;
+  padding:8px; pointer-events:auto; background:#101317; border:3px solid #080a0c;
+  box-shadow:inset 0 0 0 2px #4c5660,8px 8px 0 rgba(0,0,0,.52); }
+.inv-modal::before { content:'FIELD INVENTORY'; position:absolute; left:10px; bottom:100%; padding:6px 10px;
+  color:#17140a; background:#f0d465; border:2px solid #080a0c;
+  font-size:9px; font-weight:900; letter-spacing:.14em; text-shadow:none; }
 .inv-hud.open .inv-modal { display:grid; }
-.inv-grid { display:grid; grid-template-columns: repeat(9, 1fr); gap: 4px; padding: 10px; align-content:center;
-  background:#252b31; border:3px solid #0a0c0f; border-radius:0;
-  box-shadow:inset 0 0 0 2px #59636c,6px 6px 0 rgba(0,0,0,.45); }
-.inv-bar { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; padding: 6px; pointer-events: auto;
-  background:#252b31; border:3px solid #0a0c0f; border-radius:0;
-  box-shadow:inset 0 0 0 2px #59636c,5px 5px 0 rgba(0,0,0,.35); }
-.inv-slot { position: relative; width: 40px; height: 40px; box-sizing: border-box; border-radius:0;
-  border:2px solid #0d1013; background:#161a1e; box-shadow:inset 2px 2px 0 #3c444b; cursor:pointer;
+.inv-grid { display:grid; grid-template-columns:repeat(9,1fr); gap:5px; padding:10px; align-content:center;
+  background:#252b31; border:2px solid #0a0c0f; border-radius:0;
+  box-shadow:inset 0 0 0 2px #59636c; }
+.inv-bar { position:relative; display:grid; grid-template-columns:repeat(9,1fr); gap:5px; padding:8px; pointer-events:auto;
+  background:linear-gradient(#30373e,#22282e); border:3px solid #080a0c; border-radius:0;
+  box-shadow:inset 0 0 0 2px #64707a,6px 6px 0 rgba(0,0,0,.48); }
+.inv-bar::before { content:'LOADOUT'; position:absolute; right:8px; bottom:100%; padding:4px 7px 3px;
+  color:#aeb7bf; background:#171b20; border:2px solid #080a0c; border-bottom:0;
+  font-size:8px; font-weight:900; letter-spacing:.16em; text-shadow:1px 1px 0 #000; }
+.inv-bar::after { content:''; position:absolute; left:50%; top:-3px; width:34px; height:3px;
+  transform:translateX(-50%); background:#f0d465; box-shadow:0 0 7px rgba(240,212,101,.35); }
+.inv-slot { position:relative; width:46px; height:46px; box-sizing:border-box; border-radius:0;
+  border:2px solid #0b0e11; background:linear-gradient(135deg,#1c2227,#111519); box-shadow:inset 2px 2px 0 #414b54; cursor:pointer;
   display: flex; align-items: center; justify-content: center; overflow: hidden; user-select: none;
   padding:0; color:inherit; font:inherit; }
-.inv-slot:hover { border-color:#9ba5ae; }
+.inv-slot::after { content:''; position:absolute; left:4px; right:4px; bottom:3px; height:1px; background:rgba(255,255,255,.07); }
+.inv-slot:hover { border-color:#9ba5ae; background:#22292f; transform:translateY(-1px); }
 .inv-slot:focus-visible,.craft-recipe:focus-visible { outline:3px solid #fff; outline-offset:2px; }
-.inv-slot.selected { border-color:#f0d465; box-shadow:inset 2px 2px 0 #fff1a0,0 0 0 1px #17140a; }
-.inv-swatch { width:26px; height:26px; border-radius:0; box-shadow:inset 3px 3px 0 rgba(255,255,255,.18),inset -3px -3px 0 rgba(0,0,0,.2); }
-.inv-count { position: absolute; right: 2px; bottom: 1px; font-size: 11px; font-weight: 700; color: #fff;
+.inv-slot.selected { z-index:1; border-color:#f0d465; transform:translateY(-2px);
+  background:#292a24; box-shadow:inset 2px 2px 0 #fff1a0,0 0 0 1px #17140a,0 4px 10px rgba(240,212,101,.2); }
+.inv-swatch { width:30px; height:30px; border-radius:0;
+  box-shadow:inset 3px 3px 0 rgba(255,255,255,.2),inset -3px -3px 0 rgba(0,0,0,.24),2px 2px 0 #090b0e; }
+.inv-count { position:absolute; right:3px; bottom:2px; z-index:2; font-size:11px; font-weight:800; color:#fff;
   text-shadow: 0 1px 2px #000, 0 0 2px #000; pointer-events: none; }
-.inv-num { position: absolute; left: 3px; top: 1px; font-size: 9px; font-weight: 700; color: rgba(255,255,255,.6);
+.inv-num { position:absolute; left:3px; top:2px; z-index:2; min-width:11px; height:11px; display:grid; place-items:center;
+  font-size:8px; font-weight:900; color:rgba(255,255,255,.72); background:rgba(4,6,8,.52);
   text-shadow: 0 1px 2px #000; pointer-events: none; }
-.inv-tier { position: absolute; right: 2px; bottom: 1px; font-size: 9px; font-weight: 700; color: #cbd5e1;
+.inv-tier { position:absolute; right:3px; bottom:2px; z-index:2; font-size:9px; font-weight:800; color:#cbd5e1;
   text-shadow: 0 1px 2px #000; pointer-events: none; }
-.inv-hint { font-size:10px; color:rgba(229,231,235,.75); text-shadow:2px 2px 0 #000; letter-spacing:.04em; }
+.inv-hint { padding:3px 8px; font-size:9px; color:rgba(229,231,235,.7); background:rgba(9,12,15,.58);
+  border-left:2px solid rgba(240,212,101,.48); border-right:2px solid rgba(240,212,101,.48);
+  text-shadow:2px 2px 0 #000; letter-spacing:.06em; }
 .inv-hud.open .inv-hint { color: rgba(229,231,235,.95); }
-.inv-toast { position: relative; pointer-events: none; padding:5px 10px; border-radius:0; border:2px solid #090b0e;
+.inv-toast { position:absolute; left:50%; bottom:88px; transform:translateX(-50%); pointer-events:none; padding:6px 11px;
+  border-radius:0; border:2px solid #090b0e; white-space:nowrap;
   background: rgba(3,7,18,.78); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.2;
-  text-shadow: 0 1px 2px #000; box-shadow: 0 4px 6px -1px rgba(0,0,0,.4);
+  text-shadow:0 1px 2px #000; box-shadow:inset 0 0 0 1px #4c5660,4px 4px 0 rgba(0,0,0,.4);
   opacity: 0; transition: opacity .4s ease; }
 .inv-toast.show { opacity: 1; transition: none; }
-.craft-panel { min-width:190px; max-height:210px; overflow:auto; padding:9px; color:#fff; background:#252b31;
-  border:3px solid #0a0c0f; box-shadow:inset 0 0 0 2px #59636c,6px 6px 0 rgba(0,0,0,.45); }
-.craft-title { margin:1px 2px 8px; font-size:11px; letter-spacing:.16em; color:#f0d465; }
+.craft-panel { min-width:210px; max-height:238px; overflow:auto; padding:10px; color:#fff; background:#252b31;
+  border:2px solid #0a0c0f; box-shadow:inset 0 0 0 2px #59636c; }
+.craft-title { margin:1px 2px 9px; padding-bottom:7px; border-bottom:1px solid #59636c;
+  font-size:11px; letter-spacing:.16em; color:#f0d465; }
 .craft-list { display:grid; gap:6px; }
 .craft-recipe { display:grid; grid-template-columns:34px 1fr auto; gap:7px; align-items:center; padding:6px;
   border:2px solid #0c0e11; border-radius:0; background:#171b20; color:#fff; text-align:left; cursor:pointer;
@@ -224,9 +243,9 @@ const STYLE = `
 @media (max-width:720px) {
   .inv-modal { grid-template-columns:1fr; max-height:62vh; overflow:auto; }
   .craft-panel { max-height:155px; }
-  .inv-slot { width:34px; height:34px; }
+  .inv-slot { width:36px; height:36px; }
 }
-@media (max-width:380px) { .inv-slot { width:30px; height:30px; } .inv-grid { gap:2px; padding:6px; } .inv-bar { gap:2px; padding:4px; } }
+@media (max-width:380px) { .inv-slot { width:30px; height:30px; } .inv-grid { gap:2px; padding:6px; } .inv-bar { gap:2px; padding:5px; } }
 `;
 
 export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCursor, getCursor, recipes = [], craft } = {}) {
@@ -270,9 +289,12 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   craftPanel.append(craftTitle, craftList); modal.append(grid, craftPanel);
   const bar = document.createElement('div');
   bar.className = 'inv-bar';
+  bar.setAttribute('aria-label', 'Player loadout');
   const hint = document.createElement('div');
   hint.className = 'inv-hint';
-  hint.textContent = 'E / Esc — close · Shift+Enter — split stack · Delete — drop carried stack';
+  const closedHint = 'E — inventory · 1—9 / wheel — select · Q — tool size';
+  const openHint = 'E / Esc — close · Shift+Enter — split stack · Delete — drop carried stack';
+  hint.textContent = closedHint;
   // Minecraft-style "selected item name" label: fades in above the hotbar on a
   // selection change, then fades out after ~2s. Sits between the grid and the bar so
   // it reads as floating just above the hotbar.
@@ -318,13 +340,13 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
   function renderStack(el, s) {
     if (!s) return;
     if (isSpecialKind(s.itemKind)) {
-      el.appendChild(specialIcon(s.itemKind, 28));
+      el.appendChild(specialIcon(s.itemKind, 32));
       if (s.count > 1 || isFiniteAmmoKind(s.itemKind)) {
         const c = document.createElement('span'); c.className = 'inv-count';
         c.textContent = String(s.count); el.appendChild(c);
       }
     } else if (s.isTool || s.itemKind === ITEM_KIND.MINING_TOOL) {
-      el.appendChild(toolIcon(s.toolClass, s.toolTier, 28));
+      el.appendChild(toolIcon(s.toolClass, s.toolTier, 32));
       if (s.toolTier > 0) {
         const t = document.createElement('span'); t.className = 'inv-tier';
         t.textContent = TIER[s.toolTier] || '';
@@ -668,6 +690,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     open = next;
     hud.classList.toggle('open', open);
     backdrop.classList.toggle('open', open);
+    hint.textContent = open ? openHint : closedHint;
     if (open) {
       hud.setAttribute('role', 'dialog');
       hud.setAttribute('aria-modal', 'true');

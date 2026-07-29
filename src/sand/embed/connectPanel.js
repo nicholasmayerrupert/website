@@ -4,32 +4,33 @@
 import { injectStyleOnce, swallowEvents } from './uiShared.js';
 
 const STYLE = `
-.mp-wrap { position: absolute; top: 10px; right: 10px; z-index: 73; pointer-events: auto;
-  font-family: ui-sans-serif, system-ui, sans-serif; color: #e5e7eb; }
-.mp-toggle { padding: 6px 10px; font-size: 12px; font-weight: 700; border-radius: 8px; cursor: pointer;
-  border: 1px solid rgba(255,255,255,.18); background: rgba(17,24,39,.6); color: #e5e7eb;
-  backdrop-filter: blur(4px); box-shadow: 0 6px 12px -4px rgba(0,0,0,.4); }
-.mp-toggle:hover { border-color: rgba(255,255,255,.4); }
-.mp-toggle .mp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
-  background: #6b7280; vertical-align: middle; }
-.mp-toggle.online .mp-dot { background: #34d399; }
-.mp-panel { display: none; margin-top: 6px; width: 220px; padding: 10px; border-radius: 10px;
-  background: rgba(3,7,18,.86); border: 1px solid rgba(255,255,255,.15);
-  box-shadow: 0 20px 25px -5px rgba(0,0,0,.5); backdrop-filter: blur(4px); }
+.mp-wrap { position:absolute; top:10px; right:10px; z-index:73; pointer-events:auto;
+  font-family:ui-monospace,"SFMono-Regular",Menlo,monospace; color:#e5e7eb; }
+.mp-toggle { padding:7px 10px; font-size:9px; font-weight:800; line-height:1; letter-spacing:.1em;
+  text-transform:uppercase; border-radius:0; cursor:pointer; border:2px solid #080a0c;
+  background:#252b31; color:#cbd2d8; box-shadow:inset 0 0 0 1px #59636c,4px 4px 0 rgba(0,0,0,.42); }
+.mp-toggle:hover { color:#fff; border-color:#080a0c; background:#30373e; }
+.mp-toggle .mp-dot { display:inline-block; width:7px; height:7px; margin-right:7px;
+  background:#6b7280; vertical-align:middle; box-shadow:0 0 0 2px #111418; }
+.mp-toggle.online .mp-dot { background:#53d697; box-shadow:0 0 0 2px #111418,0 0 6px #34d399; }
+.mp-panel { display:none; margin-top:7px; width:230px; padding:11px; border-radius:0;
+  background:rgba(20,24,29,.96); border:3px solid #080a0c;
+  box-shadow:inset 0 0 0 2px #515b65,7px 7px 0 rgba(0,0,0,.5); }
 .mp-panel.open { display: block; }
 .mp-row { display: flex; gap: 6px; margin-bottom: 6px; }
 .mp-field { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.mp-field label { font-size: 10px; font-weight: 700; color: rgba(255,255,255,.55); }
-.mp-field input { width: 100%; box-sizing: border-box; padding: 5px 6px; font-size: 12px; border-radius: 6px;
-  border: 1px solid rgba(255,255,255,.18); background: rgba(10,14,22,.7); color: #f1f5f9; }
-.mp-field input:focus { outline: none; border-color: #fde68a; }
-.mp-btn { width: 100%; padding: 7px; font-size: 13px; font-weight: 800; border-radius: 8px; cursor: pointer;
-  border: 1px solid rgba(255,255,255,.18); background: #2563eb; color: #fff; }
-.mp-btn:hover { background: #1d4ed8; }
+.mp-field label { font-size:8px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#8e98a1; }
+.mp-field input { width:100%; box-sizing:border-box; padding:7px; font-family:inherit; font-size:10px; border-radius:0;
+  border:2px solid #080a0c; background:#101317; color:#f1f5f9; box-shadow:inset 2px 2px 0 #272e34; }
+.mp-field input:focus { outline:2px solid #fde68a; outline-offset:0; border-color:#080a0c; }
+.mp-btn { width:100%; padding:8px; font-family:inherit; font-size:10px; font-weight:900; letter-spacing:.1em;
+  text-transform:uppercase; border-radius:0; cursor:pointer; border:2px solid #080a0c;
+  background:#496b88; color:#fff; box-shadow:inset 0 0 0 1px #7796ae,3px 3px 0 #080a0c; }
+.mp-btn:hover { background:#587c99; }
 .mp-btn:disabled { cursor: wait; opacity: .7; }
 .mp-btn.leave { background: #b91c1c; }
 .mp-btn.leave:hover { background: #991b1b; }
-.mp-status { margin-top: 7px; font-size: 11px; color: rgba(255,255,255,.7); min-height: 14px; word-break: break-word; }
+.mp-status { margin-top:8px; font-size:9px; color:#aeb7bf; min-height:12px; word-break:break-word; }
 `;
 
 export function createConnectPanel(root, { join, disconnect, getStatus, focusSurface } = {}) {

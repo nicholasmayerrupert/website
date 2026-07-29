@@ -9,6 +9,21 @@ const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
 const PERF_GAME = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).has('perf');
 
+function ControlChip({ keys, children, accent = false }) {
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap">
+      <kbd className={`border px-1.5 py-1 font-mono text-[8px] font-black leading-none shadow-[2px_2px_0_#080a0c] ${
+        accent
+          ? 'border-[#e7ca5c] bg-[#4a4020] text-[#ffe783]'
+          : 'border-[#65717b] bg-[#13171b] text-white'
+      }`}>
+        {keys}
+      </kbd>
+      <span className="text-[8px] font-bold tracking-[.1em] text-[#b9c1c8]">{children}</span>
+    </span>
+  );
+}
+
 export default function GamePage() {
   const isMobile = useMediaQuery(MOBILE_QUERY);
 
@@ -48,28 +63,26 @@ export default function GamePage() {
       {/* Back to the portfolio */}
       <a
         href="/"
-        className="pointer-events-auto absolute left-3 top-3 z-[80] border-2 border-black bg-[#252b31] px-3 py-2 font-mono text-xs font-bold uppercase tracking-wider text-white shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.4)] hover:text-[#f0d465]"
+        className="group pointer-events-auto absolute left-3 top-3 z-[80] flex items-center border-[3px] border-[#080a0c] bg-[#252b31] p-1 font-mono text-[10px] font-black uppercase tracking-[.12em] text-white shadow-[inset_0_0_0_2px_#59636c,5px_5px_0_rgba(0,0,0,.45)]"
       >
-        ← back to site
+        <span className="mr-2 grid h-7 w-7 place-items-center bg-[#f0d465] text-base text-[#17140a] shadow-[inset_-2px_-2px_0_#b89d3f] transition-colors group-hover:bg-[#ffe783]">←</span>
+        <span className="pr-2 transition-colors group-hover:text-[#f0d465]">Portfolio</span>
       </a>
 
       {/* Controls hint */}
-      <div className="pointer-events-none absolute left-1/2 top-3 z-[80] -translate-x-1/2 border-2 border-black bg-[#252b31] px-4 py-2 text-center font-mono text-[10px] font-bold uppercase tracking-wide text-white/75 shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.4)] sm:text-xs">
-        <div className="mb-1 text-[#f0d465]">Explosive Survival · work in progress</div>
-        <div className="whitespace-nowrap">
-          <span className="font-semibold text-white/90">WASD</span> move ·{' '}
-          <span className="font-semibold text-white/90">Space</span> jump / jetpack ·{' '}
-          <span className="font-semibold text-white/90">Mouse</span> aim ·{' '}
-          <span className="font-semibold text-white/90">1–9</span> hotbar
+      <div className="pointer-events-none absolute left-1/2 top-3 z-[80] flex -translate-x-1/2 flex-col items-center font-mono uppercase">
+        <div className="relative z-10 flex h-8 items-center border-[3px] border-[#080a0c] bg-[#252b31] px-1 shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.44)]">
+          <span className="mr-2 grid h-[22px] w-[22px] place-items-center bg-[#d24a42] text-[11px] font-black text-white shadow-[inset_-2px_-2px_0_#88312f]">!</span>
+          <span className="pr-3 text-[11px] font-black tracking-[.16em] text-[#f0d465]">Explosive Survival</span>
+          <span className="border-l border-[#59636c] px-2 text-[7px] font-bold tracking-[.18em] text-[#98a2ab]">Field Test</span>
         </div>
-        <div className="mt-1 whitespace-nowrap">
-          <span className="font-semibold text-[#f0d465]">LMB</span> use / fire ·{' '}
-          <span className="font-semibold text-white/90">RMB</span> alternate layer ·{' '}
-          <span className="font-semibold text-[#f0d465]">E</span> inventory + craft ·{' '}
-          <span className="font-semibold text-white/90">Q</span> tool size
-        </div>
-        <div className="mt-1 text-[9px] tracking-[.12em] text-[#f08a6a] sm:text-[10px]">
-          Objective: survive the demolition crews. Destroy everything in your way.
+        <div className="-mt-[3px] flex items-center gap-3 border-[3px] border-[#080a0c] bg-[#1b2025]/95 px-3 pb-2 pt-3 shadow-[inset_0_0_0_1px_#48515a,5px_5px_0_rgba(0,0,0,.38)]">
+          <ControlChip keys="WASD">Move</ControlChip>
+          <ControlChip keys="SPACE">Jump / thrust</ControlChip>
+          <ControlChip keys="LMB" accent>Use / fire</ControlChip>
+          <ControlChip keys="1—9">Loadout</ControlChip>
+          <ControlChip keys="E" accent>Inventory</ControlChip>
+          <ControlChip keys="Q">Tool size</ControlChip>
         </div>
       </div>
     </div>

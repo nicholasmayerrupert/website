@@ -172,11 +172,12 @@ try {
       return result;
     };
     return {
-      objectiveWidth: root.querySelector('.survival-objective').getBoundingClientRect().width,
+      missionRemoved: root.querySelector('.survival-objective') === null,
       health: measure('.survival-health'),
       shield: measure('.survival-shield'),
       charge: measure('.survival-charge', true),
       fuel: measure('.survival-fuel'),
+      fullJetpackHidden: getComputedStyle(root.querySelector('.survival-stat.fuel')).display === 'none',
       fullHearts: [...root.querySelectorAll('.survival-heart')]
         .every((heart) => heart.style.getPropertyValue('--fill') === '100%'),
       fullShieldCells: [...root.querySelectorAll('.survival-shield > i')]
@@ -184,14 +185,15 @@ try {
       fullFuelCells: root.querySelectorAll('.survival-fuel > i.full').length,
     };
   });
-  const meterTracksFit = [meterGeometry.health, meterGeometry.shield, meterGeometry.charge, meterGeometry.fuel]
-    .every(({ leading, trailing }) => leading >= 5 && leading <= 7 && trailing >= 5 && trailing <= 7);
+  const meterTracksAreBare = [meterGeometry.health, meterGeometry.shield, meterGeometry.charge, meterGeometry.fuel]
+    .every(({ leading, trailing }) => Math.abs(leading) < .5 && Math.abs(trailing) < .5);
   check(
-    `health/ward/charge/jetpack tracks fit their cells (trailing ${meterGeometry.health.trailing.toFixed(1)}/${meterGeometry.shield.trailing.toFixed(1)}/${meterGeometry.charge.trailing.toFixed(1)}/${meterGeometry.fuel.trailing.toFixed(1)}px)`,
-    meterTracksFit && meterGeometry.objectiveWidth > meterGeometry.health.width,
+    `health/ward/charge/jetpack icons have no meter backplates (trailing ${meterGeometry.health.trailing.toFixed(1)}/${meterGeometry.shield.trailing.toFixed(1)}/${meterGeometry.charge.trailing.toFixed(1)}/${meterGeometry.fuel.trailing.toFixed(1)}px)`,
+    meterTracksAreBare && meterGeometry.missionRemoved,
   );
   check('full health, ward, and jetpack capacity visually fill every meter cell',
     meterGeometry.fullHearts && meterGeometry.fullShieldCells && meterGeometry.fullFuelCells === 12);
+  check('the jetpack row hides at full charge', meterGeometry.fullJetpackHidden);
 
   // let the player settle onto the ground
   await page.waitForFunction(() => window.__sandTest.getPlayer()?.grounded, null, { timeout: 4000 }).catch(() => {});
@@ -446,10 +448,13 @@ try {
     jetpackSoundActive ||= await page.evaluate(() =>
       document.querySelector('sand-game')._game.getAudioState().effects.jetpack);
   }
+  const jetpackMeterVisible = await page.locator('sand-game').evaluate((host) =>
+    getComputedStyle(host.shadowRoot.querySelector('.survival-stat.fuel')).display !== 'none');
   await page.keyboard.up('Space');
   check(`SPACE maps to jump + jetpack input (bits ${jumpBits})`,
     (jumpBits & INPUT_JUMP) !== 0 && (jumpBits & INPUT_JETPACK) !== 0);
   check('airborne jetpack thrust activates its layered sound bed', jetpackSoundActive);
+  check('using jetpack fuel reveals its row above the ward', jetpackMeterVisible);
   console.log(`   (physical jump impulse minVy ${minVy.toFixed(2)})`);
   await waitGrounded();
   let afterJump = await getP();

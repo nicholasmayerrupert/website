@@ -194,9 +194,6 @@ const STYLE = `
 .inv-bar { position:relative; display:grid; grid-template-columns:repeat(9,1fr); gap:5px; padding:8px; pointer-events:auto;
   background:linear-gradient(#30373e,#22282e); border:3px solid #080a0c; border-radius:0;
   box-shadow:inset 0 0 0 2px #64707a,6px 6px 0 rgba(0,0,0,.48); }
-.inv-bar::before { content:'LOADOUT'; position:absolute; right:8px; bottom:100%; padding:4px 7px 3px;
-  color:#aeb7bf; background:#171b20; border:2px solid #080a0c; border-bottom:0;
-  font-size:8px; font-weight:900; letter-spacing:.16em; text-shadow:1px 1px 0 #000; }
 .inv-bar::after { content:''; position:absolute; left:50%; top:-3px; width:34px; height:3px;
   transform:translateX(-50%); background:#f0d465; box-shadow:0 0 7px rgba(240,212,101,.35); }
 .inv-slot { position:relative; width:46px; height:46px; box-sizing:border-box; border-radius:0;
@@ -221,7 +218,7 @@ const STYLE = `
   border-left:2px solid rgba(240,212,101,.48); border-right:2px solid rgba(240,212,101,.48);
   text-shadow:2px 2px 0 #000; letter-spacing:.06em; }
 .inv-hud.open .inv-hint { color: rgba(229,231,235,.95); }
-.inv-toast { position:absolute; left:50%; bottom:88px; transform:translateX(-50%); pointer-events:none; padding:6px 11px;
+.inv-toast { position:absolute; left:50%; bottom:118px; transform:translateX(-50%); pointer-events:none; padding:6px 11px;
   border-radius:0; border:2px solid #090b0e; white-space:nowrap;
   background: rgba(3,7,18,.78); color: #fff; font-size: 12px; font-weight: 600; line-height: 1.2;
   text-shadow:0 1px 2px #000; box-shadow:inset 0 0 0 1px #4c5660,4px 4px 0 rgba(0,0,0,.4);

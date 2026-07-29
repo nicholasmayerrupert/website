@@ -112,20 +112,29 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
     || (shortSide <= 4 && coversMajorAxis);
   b->collisionRects.clear();
   b->collisionSpans.clear();
-  std::map<std::pair<int, int>, int> previousRuns, currentRuns;
+  struct CollisionRun {
+    int x0, x1, child;
+  };
+  std::vector<CollisionRun> previousRuns, currentRuns;
   for (int j = 0; j < b->h; j++) {
     currentRuns.clear();
+    int previous = 0;
     for (int i = 0; i < b->w;) {
       while (i < b->w && !filled(i, j)) i++;
       if (i >= b->w) break;
       int x0 = i;
       while (i < b->w && filled(i, j)) i++;
       int x1 = i;
-      std::pair<int, int> run{x0, x1};
-      auto existing = previousRuns.find(run);
+      while (previous < (int)previousRuns.size()
+             && (previousRuns[previous].x0 < x0
+                 || (previousRuns[previous].x0 == x0
+                     && previousRuns[previous].x1 < x1)))
+        previous++;
       int child = -1;
-      if (existing != previousRuns.end()) {
-        child = existing->second;
+      if (previous < (int)previousRuns.size()
+          && previousRuns[previous].x0 == x0
+          && previousRuns[previous].x1 == x1) {
+        child = previousRuns[previous].child;
         b->collisionRects[child].y1 = j + 1;
       } else {
         child = (int)b->collisionRects.size();
@@ -136,7 +145,7 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
         rect.y1 = j + 1;
         b->collisionRects.push_back(rect);
       }
-      currentRuns.emplace(run, child);
+      currentRuns.push_back({x0, x1, child});
     }
     previousRuns.swap(currentRuns);
   }
@@ -1253,9 +1262,22 @@ void RigidBodySystem::rigidStep(double tickDt) {
     PenPt points[2];
     int count = 0;
   };
+  struct ChildBounds {
+    double minX = 0, minY = 0, maxX = 0, maxY = 0;
+  };
+  struct ChildEvent {
+    double position = 0;
+    int child = -1;
+    bool fromA = false;
+    bool start = false;
+  };
   std::vector<ChildManifold> childManifoldScratch;
   std::vector<ChildFrame> currentChildFramesA, currentChildFramesB;
   std::vector<ChildFrame> nextChildFramesA, nextChildFramesB;
+  std::vector<ChildBounds> childBoundsA, childBoundsB;
+  std::vector<ChildEvent> childEventScratch;
+  std::vector<int> activeChildrenA, activeChildrenB;
+  std::vector<std::pair<int, int>> childPairScratch;
   auto collectChildFrames = [](Body* body, double time,
                                std::vector<ChildFrame>& frames) {
     frames.resize(body->collisionRects.size());
@@ -1294,6 +1316,124 @@ void RigidBodySystem::rigidStep(double tickDt) {
              <= aExtentX + bExtentX + R_CONTACT_SKIN
         && std::fabs(a.cy - b.cy)
              <= aExtentY + bExtentY + R_CONTACT_SKIN;
+  };
+  auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB) {
+    int countA = (int)bodyA->collisionRects.size();
+    int countB = (int)bodyB->collisionRects.size();
+    childPairScratch.clear();
+    if ((int64_t)countA * countB <= 64) {
+      for (int ai = 0; ai < countA; ai++)
+        for (int bi = 0; bi < countB; bi++) {
+          if (!childFramesOverlap(currentChildFramesA[ai],
+                                  currentChildFramesB[bi])
+              && !childFramesOverlap(nextChildFramesA[ai],
+                                     nextChildFramesB[bi]))
+            continue;
+          childPairScratch.push_back({ai, bi});
+        }
+      return;
+    }
+    childBoundsA.resize(countA);
+    childBoundsB.resize(countB);
+    auto boundsAtBothPoses = [&](const ChildFrame& now,
+                                 const ChildFrame& next) {
+      double nowX = std::fabs(now.ux) * now.hx
+                  + std::fabs(now.vx) * now.hy;
+      double nowY = std::fabs(now.uy) * now.hx
+                  + std::fabs(now.vy) * now.hy;
+      double nextX = std::fabs(next.ux) * next.hx
+                   + std::fabs(next.vx) * next.hy;
+      double nextY = std::fabs(next.uy) * next.hx
+                   + std::fabs(next.vy) * next.hy;
+      double pad = R_CONTACT_SKIN * 0.5;
+      return ChildBounds{
+        std::fmin(now.cx - nowX, next.cx - nextX) - pad,
+        std::fmin(now.cy - nowY, next.cy - nextY) - pad,
+        std::fmax(now.cx + nowX, next.cx + nextX) + pad,
+        std::fmax(now.cy + nowY, next.cy + nextY) + pad,
+      };
+    };
+    double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
+    double totalX = 0, totalY = 0;
+    auto includeBounds = [&](const ChildBounds& bounds) {
+      minX = std::fmin(minX, bounds.minX);
+      minY = std::fmin(minY, bounds.minY);
+      maxX = std::fmax(maxX, bounds.maxX);
+      maxY = std::fmax(maxY, bounds.maxY);
+      totalX += bounds.maxX - bounds.minX;
+      totalY += bounds.maxY - bounds.minY;
+    };
+    for (int ai = 0; ai < countA; ai++) {
+      childBoundsA[ai] = boundsAtBothPoses(
+        currentChildFramesA[ai], nextChildFramesA[ai]);
+      includeBounds(childBoundsA[ai]);
+    }
+    for (int bi = 0; bi < countB; bi++) {
+      childBoundsB[bi] = boundsAtBothPoses(
+        currentChildFramesB[bi], nextChildFramesB[bi]);
+      includeBounds(childBoundsB[bi]);
+    }
+    double spanX = std::fmax(1e-9, maxX - minX);
+    double spanY = std::fmax(1e-9, maxY - minY);
+    bool sweepX = totalX * spanY <= totalY * spanX;
+    childEventScratch.clear();
+    childEventScratch.reserve((size_t)(countA + countB) * 2);
+    auto addEvents = [&](const std::vector<ChildBounds>& bounds, bool fromA) {
+      for (int child = 0; child < (int)bounds.size(); child++) {
+        double lo = sweepX ? bounds[child].minX : bounds[child].minY;
+        double hi = sweepX ? bounds[child].maxX : bounds[child].maxY;
+        childEventScratch.push_back({lo, child, fromA, true});
+        childEventScratch.push_back({hi, child, fromA, false});
+      }
+    };
+    addEvents(childBoundsA, true);
+    addEvents(childBoundsB, false);
+    std::sort(childEventScratch.begin(), childEventScratch.end(),
+              [](const ChildEvent& first, const ChildEvent& second) {
+      if (first.position != second.position)
+        return first.position < second.position;
+      if (first.start != second.start) return first.start;
+      if (first.fromA != second.fromA) return first.fromA;
+      return first.child < second.child;
+    });
+    activeChildrenA.clear();
+    activeChildrenB.clear();
+    auto overlapsOtherAxis = [&](const ChildBounds& a,
+                                 const ChildBounds& b) {
+      return sweepX
+        ? a.minY <= b.maxY && b.minY <= a.maxY
+        : a.minX <= b.maxX && b.minX <= a.maxX;
+    };
+    auto removeActive = [](std::vector<int>& active, int child) {
+      auto found = std::find(active.begin(), active.end(), child);
+      if (found == active.end()) return;
+      *found = active.back();
+      active.pop_back();
+    };
+    for (const ChildEvent& event : childEventScratch) {
+      std::vector<int>& own = event.fromA ? activeChildrenA : activeChildrenB;
+      std::vector<int>& other = event.fromA ? activeChildrenB : activeChildrenA;
+      if (!event.start) {
+        removeActive(own, event.child);
+        continue;
+      }
+      for (int peer : other) {
+        int ai = event.fromA ? event.child : peer;
+        int bi = event.fromA ? peer : event.child;
+        if (!overlapsOtherAxis(childBoundsA[ai], childBoundsB[bi]))
+          continue;
+        if (!childFramesOverlap(currentChildFramesA[ai],
+                                currentChildFramesB[bi])
+            && !childFramesOverlap(nextChildFramesA[ai],
+                                   nextChildFramesB[bi]))
+          continue;
+        childPairScratch.push_back({ai, bi});
+      }
+      own.push_back(event.child);
+    }
+    // Sequential manifold collection is order-sensitive. Restore the original
+    // child-index nesting after exact swept-AABB culling.
+    std::sort(childPairScratch.begin(), childPairScratch.end());
   };
   auto faceNormal = [](const ChildFrame& frame, BodyCollisionFace face,
                        double& nx, double& ny) {
@@ -1495,28 +1635,28 @@ void RigidBodySystem::rigidStep(double tickDt) {
     collectChildFrames(b, 0, currentChildFramesB);
     collectChildFrames(a, dt, nextChildFramesA);
     collectChildFrames(b, dt, nextChildFramesB);
+    collectChildPairCandidates(a, b);
     bool currentContact = false;
-    for (int ai = 0; ai < (int)a->collisionRects.size(); ai++) {
-      for (int bi = 0; bi < (int)b->collisionRects.size(); bi++) {
-        rigidChildPairs++;
-        const ChildFrame& nowA = currentChildFramesA[ai];
-        const ChildFrame& nowB = currentChildFramesB[bi];
-        if (!childFramesOverlap(nowA, nowB)) {
-          const ChildFrame& nextA = nextChildFramesA[ai];
-          const ChildFrame& nextB = nextChildFramesB[bi];
-          if (childFramesOverlap(nextA, nextB))
-            childSatManifolds(nextA, nextB, true);
-          continue;
-        }
-        if (childSatManifolds(nowA, nowB, false)) {
-          currentContact = true;
-          continue;
-        }
+    for (const auto& pair : childPairScratch) {
+      int ai = pair.first, bi = pair.second;
+      rigidChildPairs++;
+      const ChildFrame& nowA = currentChildFramesA[ai];
+      const ChildFrame& nowB = currentChildFramesB[bi];
+      if (!childFramesOverlap(nowA, nowB)) {
         const ChildFrame& nextA = nextChildFramesA[ai];
         const ChildFrame& nextB = nextChildFramesB[bi];
         if (childFramesOverlap(nextA, nextB))
           childSatManifolds(nextA, nextB, true);
+        continue;
       }
+      if (childSatManifolds(nowA, nowB, false)) {
+        currentContact = true;
+        continue;
+      }
+      const ChildFrame& nextA = nextChildFramesA[ai];
+      const ChildFrame& nextB = nextChildFramesB[bi];
+      if (childFramesOverlap(nextA, nextB))
+        childSatManifolds(nextA, nextB, true);
     }
     if (currentContact) return CCS_CURRENT;
     return childManifoldScratch.empty() ? CCS_NONE : CCS_SPECULATIVE;
@@ -3414,9 +3554,6 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
       leader->occ[idx] = 0;
       follower->occ[idx] = 0;
     }
-    computeDerived(leader, true);
-    computeDerived(follower, true);
-    syncJointFollower(leader);
     E.writeGridIndex(k, EMPTY);
     E.L->bodyOwner[k] = -1;
     dirty.insert(leader);
@@ -3452,6 +3589,16 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
     }
   }
   std::sort(orderedDirty.begin(), orderedDirty.end(), [](Body* a, Body* b) { return a->id < b->id; });
+  std::unordered_map<int, int> originalIndexById;
+  originalIndexById.reserve(E.L->bodies.size() * 2);
+  std::vector<std::vector<int>> originalWorldCells(E.L->bodies.size());
+  for (int i = 0; i < (int)E.L->bodies.size(); i++)
+    originalIndexById[E.L->bodies[i]->id] = i;
+  for (int k : cells) {
+    auto found = originalIndexById.find(E.L->bodyOwner[k]);
+    if (found != originalIndexById.end())
+      originalWorldCells[found->second].push_back(k);
+  }
   for (Body* b : orderedDirty) {
     auto containsTnt = [&](Body* body) {
       if (body->cellMaterials.empty()) return body->material == TNT && body->nPts > 0;
@@ -3459,27 +3606,34 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
         if (material == TNT) return true;
       return false;
     };
-    std::vector<int> wc; // b's remaining world cells
-    for (int k : cells) if (E.L->bodyOwner[k] == b->id) wc.push_back(k); // body cells carry the body's real material; E.L->bodyOwner identifies them
+    const std::vector<int>& wc = originalWorldCells[
+      originalIndexById.find(b->id)->second];
     if (wc.empty()) { removedIds.insert(b->id); continue; }
     // Flood with the same 8-connectivity used by static structures and
     // component-to-body detachment. A rotated raster commonly turns a face
     // contact into a diagonal contact; treating that as a fracture makes a
     // chipped mixed-material object split even though its structural bond is
     // still intact.
-    std::unordered_map<int, int> idxOf; for (size_t i = 0; i < wc.size(); i++) idxOf[wc[i]] = (int)i;
-    std::vector<int> comp(wc.size(), -1); std::vector<std::vector<int>> groups;
-    for (size_t i = 0; i < wc.size(); i++) {
-      if (comp[i] != -1) continue; int gid = (int)groups.size(); groups.push_back({}); std::vector<int> st{(int)i}; comp[i] = gid;
-      while (!st.empty()) { int ci = st.back(); st.pop_back(); int k = wc[ci]; groups[gid].push_back(k); int y = k / E.cols, x = k - y * E.cols;
+    splitMemberStamp.reset((size_t)E.cols * E.rows);
+    splitVisitedStamp.reset((size_t)E.cols * E.rows);
+    for (int k : wc) splitMemberStamp.add(k);
+    std::vector<std::vector<int>> groups;
+    for (int seed : wc) {
+      if (splitVisitedStamp.has(seed)) continue;
+      int gid = (int)groups.size();
+      groups.push_back({});
+      std::vector<int> st{seed};
+      splitVisitedStamp.add(seed);
+      while (!st.empty()) { int k = st.back(); st.pop_back(); groups[gid].push_back(k); int y = k / E.cols, x = k - y * E.cols;
         for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
           if (!ox && !oy) continue;
           int nx = x + ox, ny = y + oy;
           if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
-          auto it = idxOf.find(ny * E.cols + nx);
-          if (it == idxOf.end() || comp[it->second] != -1) continue;
-          comp[it->second] = gid;
-          st.push_back(it->second);
+          int neighbor = ny * E.cols + nx;
+          if (!splitMemberStamp.has(neighbor)
+              || splitVisitedStamp.has(neighbor)) continue;
+          splitVisitedStamp.add(neighbor);
+          st.push_back(neighbor);
         }
       }
     }
@@ -3524,16 +3678,28 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
   // identifies them — `wasBody` (the prior body-cell set) is the authoritative source,
   // and disambiguates a body cell from identical-looking static terrain of the same
   // material that the rebuilt footprint may overlap.
-  std::unordered_set<int> wasBody(cells.begin(), cells.end());
+  splitWasBodyStamp.reset((size_t)E.cols * E.rows);
+  splitClaimedStamp.reset((size_t)E.cols * E.rows);
+  for (int k : cells) splitWasBodyStamp.add(k);
   for (int k : cells) E.L->bodyOwner[k] = -1;
-  std::vector<int> kept; std::unordered_set<int> claimed;
+  std::vector<int> kept;
   // Skip EMPTY cells: an erased cell (grid already cleared) can still fall
   // under a rotated body's re-rasterization, and claiming it would leave a
   // body-owned EMPTY cell until the next moveBodies stamp — a powder settling
   // into it that step would then be wiped by the un-stamp (silent cell loss).
   // Found by the SAND_INVARIANT_CHECKS post-step validator.
-  for (Body* b : E.L->bodies) forEachBodyCell(b, [&](int x, int y, int) { int k = y * E.cols + x; if (!wasBody.count(k) || claimed.count(k) || E.L->grid[k] == EMPTY) return; E.L->bodyOwner[k] = b->id; claimed.insert(k); kept.push_back(k); });
-  for (int k : cells) if (!claimed.count(k)) { E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; }
+  auto claim = [&](Body* body, int k) {
+    if (!splitWasBodyStamp.has(k) || splitClaimedStamp.has(k)
+        || E.L->grid[k] == EMPTY) return;
+    E.L->bodyOwner[k] = body->id;
+    splitClaimedStamp.add(k);
+    kept.push_back(k);
+  };
+  for (Body* b : E.L->bodies)
+    forEachBodyCell(b, [&](int x, int y, int) {
+      claim(b, y * E.cols + x);
+    });
+  for (int k : cells) if (!splitClaimedStamp.has(k)) { E.writeGridIndex(k, EMPTY); E.L->bodyOwner[k] = -1; }
   E.L->bodyCells = kept;
   if (splitJointBodies) finishErasedJointBodies(dirtyJoints);
 }
@@ -3613,6 +3779,9 @@ void RigidBodySystem::finishErasedJointBodies(
     uint8_t remainingLayers = 0;
     for (uint8_t mask : layerMask) remainingLayers |= mask;
     if (groups.size() <= 1 && !worldCells.empty() && remainingLayers == 3) {
+      computeDerived(leader, true);
+      computeDerived(follower, true);
+      syncJointFollower(leader);
       bool hasTnt = false;
       for (size_t i = 0; i < worldCells.size() && !hasTnt; i++) {
         int k = worldCells[i];

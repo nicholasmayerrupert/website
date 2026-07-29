@@ -23,6 +23,7 @@ mapping, and pan stability.
 | `npm run test:rigid-large-body` | Verify long-face resting, rotational CCD, per-island cadence, and cross-layer TNT adherence. |
 | `npm run test:rigid-shape-stress` | Drop convex, concave, hollow, stepped, thin, thick, small, and 120-cell bodies together; verify exact compound proxies, retention, overlap bounds, and sleep. |
 | `npm run bench:rigid` | Measure many-body pile collision cost and total rigid step time. |
+| `npm run bench:rigid-acid` | Measure collision, erosion, and connectivity repair while acid fragments 32 large piled bodies. |
 | `npm run bench:ice-growth` | Track rigid/fluid cost while one floating ice body grows through a pool. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
@@ -120,13 +121,19 @@ component registration, and generation/restoration. Browser presentation exposes
   it with insertion sort, then restores surviving pairs to deterministic
   body-index order before generating contacts.
 - Each body caches an exact non-overlapping rectangle cover of its occupied
-  pixels. Child transforms are computed once per candidate pair and cheap world
-  AABBs reject most child combinations before oriented-box SAT. Manifolds clip
-  both incident and reference edges against original-mask exposed spans, so
-  decomposition seams cannot act as collision faces. Child and face-span ids
-  participate in the warm-start key. A short-lived coherent child separating
-  axis prevents a far-side feature from reversing a thin contact while the pair
-  crosses a raster boundary.
+  pixels. Child transforms are computed once per candidate pair. Small compounds
+  use direct endpoint-AABB rejection; larger child sets use a two-set
+  sweep-and-prune over their start/end bounds before oriented-box SAT. The
+  surviving pairs return to child-index order, preserving deterministic contact
+  generation. Manifolds clip both incident and reference edges against
+  original-mask exposed spans, so decomposition seams cannot act as collision
+  faces. Child and face-span ids participate in the warm-start key. A
+  short-lived coherent child separating axis prevents a far-side feature from
+  reversing a thin contact while the pair crosses a raster boundary.
+- Rigid erosion groups body-owned world cells once per tick, then uses dense
+  generation stamps for connectivity and ownership membership. Damage to joint
+  foreground/background bodies batches geometry reconstruction until all
+  erasures for the tick are known.
 - A conservative tick-level candidate graph gives disconnected rigid islands
   independent substep cadences. Contact islands receive size-based solver
   budgets, bottom-up stack ordering, and coupled two-point solves for long

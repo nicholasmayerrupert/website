@@ -42,6 +42,10 @@ class RigidBodySystem {
   // integer counters, so iteration order is irrelevant).
   StampSet occStamp;
   std::vector<int> occCells;
+  // Body erosion connectivity and ownership repair use dense generation stamps
+  // because every key is already a loaded-grid cell index.
+  StampSet splitMemberStamp, splitVisitedStamp;
+  StampSet splitWasBodyStamp, splitClaimedStamp;
   // Body-cell erosion probabilities match static reaction rates.
   static constexpr double RIGID_LAVA_ERODE_P = 0.12; // = ACID_DISSOLVE_P
   static constexpr double RIGID_FIRE_ERODE_P = 0.11; // = FIRE_SPREAD_P

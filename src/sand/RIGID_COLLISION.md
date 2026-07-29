@@ -26,12 +26,16 @@ lives in `rigid_impl.inc`.
   are restored to body-index order before contact generation so the sequential
   impulse result stays deterministic.
 - Body/body candidates first test overlapping child rectangles with oriented-box
-  SAT. Reference and incident edges are clipped against exposed sub-spans on
-  both children, producing one- or two-point local-feature manifolds. The
-  current pose is tested first and the substep-end pose supplies speculative
-  contacts. A coherent separating axis is retained briefly by body id and
-  geometry revision; newly exposed far-side features cannot reverse an
-  established contact while a thin pair is crossing a pixel boundary.
+  SAT. Compounds with more than 64 possible child pairs first run a two-set
+  sweep-and-prune over child AABBs spanning the current and substep-end poses;
+  smaller compounds use direct endpoint-AABB checks. Surviving pairs return to
+  child-index order before contact generation. Reference and incident edges are
+  clipped against exposed sub-spans on both children, producing one- or
+  two-point local-feature manifolds. The current pose is tested first and the
+  substep-end pose supplies speculative contacts. A coherent separating axis is
+  retained briefly by body id and geometry revision; newly exposed far-side
+  features cannot reverse an established contact while a thin pair is crossing
+  a pixel boundary.
 - Body/terrain checks sweep each sample's relative substep path in increments no
   larger than `R_SWEEP_STEP` and refine the first hit. The same sweep remains a
   body/body CCD fallback when the compound children have not reached a current
@@ -190,9 +194,9 @@ re-ground an airborne body. Powders never push a rigid body upward.
 - Curved masks can occupy several manifold buckets and cost more than flat
   contacts.
 - Child rectangles are tested directly within a broadphase body pair. There is
-  no child BVH yet; boxes, beams, and the large-L regression have one or two
-  children, while highly alternating masks can have enough children for the
-  child-pair product to dominate collision cost.
+  no child BVH; boxes, beams, and the large-L regression have one or two
+  children. Highly alternating masks use a transient two-set sweep-and-prune
+  when their child-pair product exceeds 64.
 - Deep stacks converge at the sequential-impulse rate. An ordinary contact
   island starts at 12 iterations plus two per body, large-body islands use at
   least 32, impacts can use 64, and small blast-debris islands use 16.
@@ -205,7 +209,8 @@ Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-large-body`, `npm run test:rigid-shape-stress`,
 `npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
-`npm run bench:rigid`.
+`npm run bench:rigid`. Use `npm run bench:rigid-acid` for repeated
+large-body fragmentation and repair.
 
 ## Design references
 

@@ -150,10 +150,12 @@ component registration, and generation/restoration. Browser presentation exposes
 - Large rotating bodies and long beams use exact angular sample trajectories.
   Compact bodies use tangent sweeps to keep the common debris path inexpensive;
   long and filled masks still receive convex-corner samples. Immutable sample
-  radii and pair/body speed terms are cached outside the sample loops. A
-  conservative full-substep body envelope rejects raster CCD only when two
-  bodies cannot meet, while an in-bounds swept raster box that contains no grid
-  material skips terrain sampling. Body pairs that are both at least 4:1 slender
+  radii and pair/body speed terms are cached outside the sample loops.
+  Conservative swept oriented bounds test current and end axes with complete
+  translation and rotational point-reach limits before the body/body raster
+  fallback. Terrain rejection scans horizontal spans of an oriented bound
+  expanded by the complete substep reach. Both paths reject only when the exact
+  raster sweep cannot find a hit. Body pairs that are both at least 4:1 slender
   with `maxR >= 24` also receive a constant-cost oriented-rectangle reference
   axis after raster contact exists. Near-parallel pairs add two span constraints
   with raster-measured depth only when both masks tightly fit their bounds; thin

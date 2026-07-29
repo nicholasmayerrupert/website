@@ -1470,6 +1470,70 @@ void RigidBodySystem::rigidStep(double tickDt) {
     return a.minX <= b.maxX && b.minX <= a.maxX
         && a.minY <= b.maxY && b.minY <= a.maxY;
   };
+  auto sweptObbsSeparated = [](Body* a, const ChildFrame& nowA,
+                               const ChildFrame& nextA,
+                               Body* b, const ChildFrame& nowB,
+                               const ChildFrame& nextB, double dt) {
+    struct WholeFrame {
+      double cx, cy, ux, uy, vx, vy, hx, hy;
+    };
+    auto wholeFrame = [](Body* body, const ChildFrame& pose) {
+      double localX = body->offsetX + (body->w - 1) * 0.5;
+      double localY = body->offsetY + (body->h - 1) * 0.5;
+      return WholeFrame{
+        pose.px + localX * pose.ux + localY * pose.vx,
+        pose.py + localX * pose.uy + localY * pose.vy,
+        pose.ux, pose.uy, pose.vx, pose.vy,
+        body->w * 0.5, body->h * 0.5,
+      };
+    };
+    auto rotationReach = [dt](Body* body) {
+      double theta = std::fabs(body->omega) * dt;
+      double radius = body->maxR + 0.7071067811865476;
+      return theta >= M_PI
+        ? radius * 2
+        : radius * 2 * std::sin(theta * 0.5);
+    };
+    double rotationA = rotationReach(a);
+    double rotationB = rotationReach(b);
+    double relativeVx = a->vx - b->vx;
+    double relativeVy = a->vy - b->vy;
+    auto separatedAt = [&](const WholeFrame& frameA,
+                           const WholeFrame& frameB) {
+      double axes[4][2] = {
+        {frameA.ux, frameA.uy}, {frameA.vx, frameA.vy},
+        {frameB.ux, frameB.uy}, {frameB.vx, frameB.vy},
+      };
+      double centerX = frameA.cx - frameB.cx;
+      double centerY = frameA.cy - frameB.cy;
+      for (const auto& axis : axes) {
+        double extentA =
+          std::fabs(axis[0] * frameA.ux + axis[1] * frameA.uy)
+            * frameA.hx
+          + std::fabs(axis[0] * frameA.vx + axis[1] * frameA.vy)
+            * frameA.hy;
+        double extentB =
+          std::fabs(axis[0] * frameB.ux + axis[1] * frameB.uy)
+            * frameB.hx
+          + std::fabs(axis[0] * frameB.vx + axis[1] * frameB.vy)
+            * frameB.hy;
+        double separation =
+          std::fabs(centerX * axis[0] + centerY * axis[1])
+          - extentA - extentB;
+        double closing =
+          std::fabs(relativeVx * axis[0] + relativeVy * axis[1]) * dt
+          + rotationA + rotationB + R_CONTACT_SKIN + 1e-9;
+        if (separation > closing) return true;
+      }
+      return false;
+    };
+    WholeFrame currentA = wholeFrame(a, nowA);
+    WholeFrame currentB = wholeFrame(b, nowB);
+    if (separatedAt(currentA, currentB)) return true;
+    WholeFrame endA = wholeFrame(a, nextA);
+    WholeFrame endB = wholeFrame(b, nextB);
+    return separatedAt(endA, endB);
+  };
   auto faceNormal = [](const ChildFrame& frame, BodyCollisionFace face,
                        double& nx, double& ny) {
     if (face == BCF_LEFT) { nx = -frame.ux; ny = -frame.uy; }
@@ -1961,15 +2025,62 @@ void RigidBodySystem::rigidStep(double tickDt) {
       double linearSpeed = exactAngular ? std::hypot(b->vx, b->vy) : 0;
       double angularSpeed = std::fabs(b->omega);
       if (!bodyHasPeerContacts) {
-        // The solver AABB already contains the substep reach. One extra cell
-        // also covers the half-cell boundary samples beyond maxR.
-        int x0 = (int)std::floor(b->aabbX0) - 1;
-        int y0 = (int)std::floor(b->aabbY0) - 1;
-        int x1 = (int)std::floor(b->aabbX1) + 1;
-        int y1 = (int)std::floor(b->aabbY1) + 1;
-        if (x0 >= 0 && y0 >= 0 && x1 < E.cols && y1 < E.rows) {
+        // The complete substep sweep lies inside the current oriented bounds
+        // expanded by translation, rotational point travel, contact skin, and
+        // one terrain-cell corner radius. Scan only its horizontal row spans;
+        // any material found still goes through the exact sample sweep below.
+        double localX = b->offsetX + (b->w - 1) * 0.5;
+        double localY = b->offsetY + (b->h - 1) * 0.5;
+        double centerX =
+          b->px + localX * b->cs - localY * b->sn
+          + b->vx * dt * 0.5;
+        double centerY =
+          b->py + localX * b->sn + localY * b->cs
+          + b->vy * dt * 0.5;
+        double theta = std::fabs(b->omega) * dt;
+        double radius = b->maxR + 0.7071067811865476;
+        double rotationReach = theta >= M_PI
+          ? radius * 2
+          : radius * 2 * std::sin(theta * 0.5);
+        double pad = rotationReach + R_CONTACT_SKIN
+          + 0.7071067811865476 + 1e-9;
+        double halfX = b->w * 0.5 + pad
+          + std::fabs(b->vx * b->cs + b->vy * b->sn) * dt * 0.5;
+        double halfY = b->h * 0.5 + pad
+          + std::fabs(-b->vx * b->sn + b->vy * b->cs) * dt * 0.5;
+        double extentX =
+          std::fabs(b->cs) * halfX + std::fabs(b->sn) * halfY;
+        double extentY =
+          std::fabs(b->sn) * halfX + std::fabs(b->cs) * halfY;
+        if (centerX - extentX >= 0 && centerY - extentY >= 0
+            && centerX + extentX < E.cols
+            && centerY + extentY < E.rows) {
           bool occupied = false;
+          int y0 = imax(0, (int)std::ceil(
+            centerY - extentY - 0.5 - 1e-9));
+          int y1 = imin(E.rows - 1, (int)std::floor(
+            centerY + extentY - 0.5 + 1e-9));
           for (int y = y0; y <= y1 && !occupied; y++) {
+            double dy = y + 0.5 - centerY;
+            double minX = -1e18, maxX = 1e18;
+            auto clipAxis = [&](double coefficient, double constant,
+                                double half) {
+              if (std::fabs(coefficient) < 1e-12)
+                return std::fabs(constant) <= half;
+              double lo = (-half - constant) / coefficient;
+              double hi = (half - constant) / coefficient;
+              if (lo > hi) std::swap(lo, hi);
+              minX = std::fmax(minX, centerX + lo);
+              maxX = std::fmin(maxX, centerX + hi);
+              return minX <= maxX + 1e-9;
+            };
+            if (!clipAxis(b->cs, b->sn * dy, halfX)
+                || !clipAxis(-b->sn, b->cs * dy, halfY))
+              continue;
+            int x0 = imax(0, (int)std::ceil(minX - 0.5 - 1e-9));
+            int x1 = imin(E.cols - 1,
+                          (int)std::floor(maxX - 0.5 + 1e-9));
+            if (x0 > x1) continue;
             const uint8_t* row = E.L->grid + y * E.cols;
             int x = x0;
             for (; x + 7 <= x1; x += 8) {
@@ -1980,8 +2091,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
                 break;
               }
             }
-            for (; x <= x1 && !occupied; x++)
+            for (; x <= x1 && !occupied; x++) {
               occupied = row[x] != EMPTY;
+            }
           }
           if (!occupied) return;
         }
@@ -2254,6 +2366,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
         if (childContactState == CCS_NONE
             && !sweptBoundsOverlap(sweptA, sweptB))
           continue;
+        if (childContactState == CCS_NONE
+            && sweptObbsSeparated(
+              A, currentChildFramesA[0], nextChildFramesA[0],
+              B, currentChildFramesB[0], nextChildFramesB[0], pairDt)) {
+          continue;
+        }
       }
       uint64_t pairKey = bodyPairKey(A->id, B->id);
       auto remembered = activePairAxes.find(pairKey);

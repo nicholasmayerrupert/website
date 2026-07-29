@@ -39,9 +39,12 @@ lives in `rigid_impl.inc`.
 - Body/terrain checks sweep each sample's relative substep path in increments no
   larger than `R_SWEEP_STEP` and refine the first hit. The same sweep remains a
   body/body CCD fallback when the compound children have not reached a current
-  overlap. A conservative full-substep body envelope can prove that a body pair
-  cannot meet before entering that fallback. An in-bounds swept raster box with
-  no grid material similarly proves that terrain sampling has no possible hit.
+  overlap. Conservative swept oriented bounds test the bodies' current and end
+  axes with translation and rotational point-reach limits; separation on any
+  axis proves that a body pair cannot meet before entering that fallback. An
+  in-bounds oriented terrain envelope expands the current bounds by the complete
+  substep reach and scans only its horizontal row spans. An empty envelope proves
+  that terrain sampling has no possible hit.
   Compact bodies use the point tangent over the short substep. Large rotating
   bodies, including very long beams, evaluate the exact constant-linear/angular
   trajectory and target rotation so a distant tip cannot tunnel through terrain

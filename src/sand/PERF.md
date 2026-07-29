@@ -163,6 +163,12 @@ component registration, and generation/restoration. Browser presentation exposes
   that path. A long/small pair only substitutes the long body's minor axis for
   center-to-center manifold filtering, and a large participant keeps the pair's
   missed contact anchors alive regardless of pair order.
+- Inverse rasterization is cached by exact body pose, geometry revision, and
+  loaded-grid dimensions. Fluid coupling, blocked-footprint probes, actor
+  overlap, support checks, and final stamping reuse that footprint whenever the
+  body has not moved between queries. A conservative center-line capsule rejects
+  actor sweeps before rasterization when no live actor can be reached, and a
+  boundary preflight skips fluid stamping when no awake body touches liquid.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize
   contiguous solver, grid, and rendering loops without a parallel runtime.
   Threading rigid islands would require a shared-memory worker package plus

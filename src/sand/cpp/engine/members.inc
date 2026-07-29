@@ -312,6 +312,20 @@
               != body->boundarySampleRadii.size() * 2)
           failBody("boundary sample radius count mismatch",
                    body, -1, (int)body->boundarySampleRadii.size());
+        if (body->rasterFootprintValid
+            && body->rasterGeometryRevision == body->geometryRevision) {
+          for (const BodyRasterCell& cell : body->rasterFootprint) {
+            if (cell.x < 0 || cell.x >= body->rasterCols
+                || cell.y < 0 || cell.y >= body->rasterRows)
+              failBody("cached raster cell out of bounds",
+                       body, cell.local, 0);
+            if (cell.local < 0
+                || cell.local >= (int)body->occ.size()
+                || !body->occ[cell.local])
+              failBody("cached raster cell has invalid local source",
+                       body, cell.local, 0);
+          }
+        }
       }
     };
     checkLayer(fg);

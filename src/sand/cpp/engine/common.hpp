@@ -229,6 +229,10 @@ struct BodyCollisionRect {
   std::array<int, 4> spanCount{{0, 0, 0, 0}};
 };
 
+struct BodyRasterCell {
+  int x = 0, y = 0, local = -1;
+};
+
 // Free rigid body with a continuous pose over a cell occupancy mask.
 struct Body {
   int id = 0;
@@ -267,6 +271,14 @@ struct Body {
   std::vector<BodyCollisionRect> collisionRects;
   std::vector<BodyCollisionSpan> collisionSpans;
   uint32_t geometryRevision = 0;
+  // Exact inverse-raster result for one pose. Multiple systems query an
+  // unchanged pose in the same tick; the pose/revision/grid key prevents reuse
+  // after integration, depenetration, erosion, streaming, or resize.
+  std::vector<BodyRasterCell> rasterFootprint;
+  double rasterPx = 0, rasterPy = 0, rasterAngle = 0;
+  uint32_t rasterGeometryRevision = 0;
+  int rasterCols = 0, rasterRows = 0;
+  bool rasterFootprintValid = false;
   bool tightSlenderBounds = false; // derived span-manifold eligibility
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step

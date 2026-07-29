@@ -101,6 +101,12 @@ contact is consistently converting a fall into a real topple. Bodies treat the
 loaded-window boundary as solid; camera-driven streaming persists bodies through
 the chunk store instead of using that collision wall.
 
+The exact inverse-raster footprint is cached for one pose and geometry revision.
+Systems that query an unchanged pose reuse the same ordered world/local cells.
+Actor pushing first rejects the complete swept center-line capsule when no live
+actor AABB can intersect it, and fluid coupling performs a boundary-only liquid
+preflight before stamping body footprints into its pressure domain.
+
 ## Component-to-body lifecycle
 
 An erase, cut, or explosion marks the edited support closure. Grounding then

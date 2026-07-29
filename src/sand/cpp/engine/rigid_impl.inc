@@ -26,6 +26,7 @@ uint8_t RigidBodySystem::bodyMaterialAt(Body* b, int localIndex) {
   return b->cellMaterials.empty() ? b->material : b->cellMaterials[localIndex];
 }
 bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
+  b->rasterFootprintValid = false;
   int nPts = 0; double sumX = 0, sumY = 0, totalMass = 0;
   for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
     int local = j * b->w + i;
@@ -2658,6 +2659,18 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   // center back into occ space and stamp if filled. This is hole-free for
   // rotated E.L->bodies (forward occ->world point-sampling instead leaves gaps
   // between rotated E.rows). The body shape stays authoritative in occ.
+  bool cacheValid = b->rasterFootprintValid
+    && b->rasterPx == b->px
+    && b->rasterPy == b->py
+    && b->rasterAngle == b->angle
+    && b->rasterGeometryRevision == b->geometryRevision
+    && b->rasterCols == E.cols
+    && b->rasterRows == E.rows;
+  if (cacheValid) {
+    for (const BodyRasterCell& cell : b->rasterFootprint)
+      cb(cell.x, cell.y, cell.local);
+    return;
+  }
   double sn = std::sin(b->angle), cs = std::cos(b->angle);
   double lx0 = b->offsetX - 0.5, lx1 = b->offsetX + b->w - 0.5, ly0 = b->offsetY - 0.5, ly1 = b->offsetY + b->h - 0.5;
   double minWX = 1e18, minWY = 1e18, maxWX = -1e18, maxWY = -1e18;
@@ -2665,14 +2678,25 @@ template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   corner(lx0, ly0); corner(lx1, ly0); corner(lx1, ly1); corner(lx0, ly1);
   int x0 = (int)std::floor(minWX), x1 = (int)std::floor(maxWX), y0 = (int)std::floor(minWY), y1 = (int)std::floor(maxWY);
   if (x0 < 0) x0 = 0; if (y0 < 0) y0 = 0; if (x1 >= E.cols) x1 = E.cols - 1; if (y1 >= E.rows) y1 = E.rows - 1;
+  b->rasterFootprint.clear();
   for (int wy = y0; wy <= y1; wy++) for (int wx = x0; wx <= x1; wx++) {
     double dx = wx + 0.5 - b->px, dy = wy + 0.5 - b->py;
     double lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs;
     int i = (int)std::lround(lx - b->offsetX), j = (int)std::lround(ly - b->offsetY);
     if (i < 0 || i >= b->w || j < 0 || j >= b->h) continue;
     int local = j * b->w + i;
-    if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY) cb(wx, wy, local);
+    if (b->occ[local] && bodyMaterialAt(b, local) != EMPTY)
+      b->rasterFootprint.push_back({wx, wy, local});
   }
+  b->rasterPx = b->px;
+  b->rasterPy = b->py;
+  b->rasterAngle = b->angle;
+  b->rasterGeometryRevision = b->geometryRevision;
+  b->rasterCols = E.cols;
+  b->rasterRows = E.rows;
+  b->rasterFootprintValid = true;
+  for (const BodyRasterCell& cell : b->rasterFootprint)
+    cb(cell.x, cell.y, cell.local);
 }
 int RigidBodySystem::localCellAt(Body* b, double wx, double wy) { b->cs = std::cos(b->angle); b->sn = std::sin(b->angle); return insideBodyIndex(b, wx, wy); }
 bool RigidBodySystem::eraseLocalCell(Body* b, int idx) {
@@ -2681,6 +2705,7 @@ bool RigidBodySystem::eraseLocalCell(Body* b, int idx) {
   if (!b->occ[idx]) return false;
   b->occ[idx] = 0;
   if (!b->cellMaterials.empty()) b->cellMaterials[idx] = EMPTY;
+  b->rasterFootprintValid = false;
   return true;
 }
 
@@ -2714,6 +2739,47 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   const int cellCount = E.cols * E.rows;
   fluidBodySurface.assign(bodies.size(), 0);
   if (bodies.empty() || cellCount == 0) return false;
+  const int activeLayer = E.L == &E.bg ? 1 : 0;
+  auto touchesLiquid = [&](Body* body, Layer& layer) {
+    bool found = false;
+    forEachBodyCell(body, [&](int x, int y, int local) {
+      if (found) return;
+      int lx = local - (local / body->w) * body->w;
+      int ly = local / body->w;
+      auto occupied = [&](int xx, int yy) {
+        return xx >= 0 && xx < body->w && yy >= 0 && yy < body->h
+            && body->occ[yy * body->w + xx];
+      };
+      if (occupied(lx - 1, ly) && occupied(lx + 1, ly)
+          && occupied(lx, ly - 1) && occupied(lx, ly + 1))
+        return;
+      int k = y * E.cols + x;
+      if ((x > 0 && E.isLiquidMaterial(layer.grid[k - 1]))
+          || (x + 1 < E.cols && E.isLiquidMaterial(layer.grid[k + 1]))
+          || (y > 0 && E.isLiquidMaterial(layer.grid[k - E.cols]))
+          || (y + 1 < E.rows
+              && E.isLiquidMaterial(layer.grid[k + E.cols])))
+        found = true;
+    });
+    return found;
+  };
+  bool liquidCandidate = false;
+  for (Body* body : bodies) {
+    if (!body->awake) continue;
+    Layer& layer = activeLayer == 0 ? E.fg : E.bg;
+    if (touchesLiquid(body, layer)) {
+      liquidCandidate = true;
+      break;
+    }
+    if (body->jointRole == 1 && body->jointPeer) {
+      Layer& peerLayer = activeLayer == 0 ? E.bg : E.fg;
+      if (touchesLiquid(body->jointPeer, peerLayer)) {
+        liquidCandidate = true;
+        break;
+      }
+    }
+  }
+  if (!liquidCandidate) return false;
   for (int layer = 0; layer < 2; layer++) {
     if ((int)fluidNodeStamp[layer].size() != cellCount) {
       fluidNodeStamp[layer].assign(cellCount, 0);
@@ -2740,7 +2806,6 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     for (auto& stamp : fluidBodyStamp) std::fill(stamp.begin(), stamp.end(), 0);
   }
 
-  const int activeLayer = E.L == &E.bg ? 1 : 0;
   fluidQueue.clear();
   fluidBodyBounds.assign(bodies.size() * 2,
                          {{E.cols, E.rows, -1, -1}});
@@ -3672,6 +3737,8 @@ bool RigidBodySystem::eraseBodyCellIndex(int k, std::unordered_map<int, Body*>& 
       leader->occ[idx] = 0;
       follower->occ[idx] = 0;
     }
+    leader->rasterFootprintValid = false;
+    follower->rasterFootprintValid = false;
     E.writeGridIndex(k, EMPTY);
     E.L->bodyOwner[k] = -1;
     dirty.insert(leader);
@@ -4109,6 +4176,39 @@ bool RigidBodySystem::depenetrateBodyRaster(Body* b, double prePx, double prePy,
 bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy, double preAngle, double preVx, double preVy) {
   const double finalPx = b->px, finalPy = b->py, finalAngle = b->angle;
   const double dx = finalPx - prePx, dy = finalPy - prePy, da = finalAngle - preAngle;
+  // Every occupied pixel square stays inside this center-line capsule for the
+  // complete translation/rotation sweep. If no live actor AABB touches it,
+  // rasterizing intermediate poses cannot find an overlap.
+  const double sweepRadius = b->maxR + 0.7071067811865476;
+  const double sweepMinX = std::fmin(prePx, finalPx) - sweepRadius;
+  const double sweepMinY = std::fmin(prePy, finalPy) - sweepRadius;
+  const double sweepMaxX = std::fmax(prePx, finalPx) + sweepRadius;
+  const double sweepMaxY = std::fmax(prePy, finalPy) + sweepRadius;
+  auto sweepOverlaps = [&](double x, double y, double w, double h) {
+    return x <= sweepMaxX && x + w >= sweepMinX
+        && y <= sweepMaxY && y + h >= sweepMinY;
+  };
+  bool actorCandidate = false;
+  for (const Player& player : E.psys.players) {
+    if (player.active && player.alive
+        && sweepOverlaps(player.px, player.py, player.w, player.h)) {
+      actorCandidate = true;
+      break;
+    }
+  }
+  if (!actorCandidate) {
+    for (const Creature& creature : E.creatures.creatures) {
+      if (!creature.alive) continue;
+      const CreatureSpecies& species = E.creatures.species(creature);
+      double x = creature.wx - E.fg.worldOffsetX;
+      double y = creature.wy - E.fg.worldOffsetY;
+      if (sweepOverlaps(x, y, species.w, species.h)) {
+        actorCandidate = true;
+        break;
+      }
+    }
+  }
+  if (!actorCandidate) return false;
   const double sweepDistance = std::max(std::hypot(dx, dy), std::fabs(da) * std::hypot(b->w, b->h) * 0.5);
   const int sweepSteps = imin(256, imax(1, (int)std::ceil(sweepDistance / 0.5)));
   double driveX = preVx, driveY = preVy;

@@ -71,12 +71,7 @@ export default function GamePage() {
 
       {/* Controls hint */}
       <div className="pointer-events-none absolute left-1/2 top-3 z-[80] flex -translate-x-1/2 flex-col items-center font-mono uppercase">
-        <div className="relative z-10 flex h-8 items-center border-[3px] border-[#080a0c] bg-[#252b31] px-1 shadow-[inset_0_0_0_1px_#59636c,4px_4px_0_rgba(0,0,0,.44)]">
-          <span className="mr-2 grid h-[22px] w-[22px] place-items-center bg-[#d24a42] text-[11px] font-black text-white shadow-[inset_-2px_-2px_0_#88312f]">!</span>
-          <span className="pr-3 text-[11px] font-black tracking-[.16em] text-[#f0d465]">Explosive Survival</span>
-          <span className="border-l border-[#59636c] px-2 text-[7px] font-bold tracking-[.18em] text-[#98a2ab]">Field Test</span>
-        </div>
-        <div className="-mt-[3px] flex items-center gap-3 border-[3px] border-[#080a0c] bg-[#1b2025]/95 px-3 pb-2 pt-3 shadow-[inset_0_0_0_1px_#48515a,5px_5px_0_rgba(0,0,0,.38)]">
+        <div className="flex items-center gap-3 border-[3px] border-[#080a0c] bg-[#1b2025]/95 px-3 py-2 shadow-[inset_0_0_0_1px_#48515a,5px_5px_0_rgba(0,0,0,.38)]">
           <ControlChip keys="WASD">Move</ControlChip>
           <ControlChip keys="SPACE">Jump / thrust</ControlChip>
           <ControlChip keys="LMB" accent>Use / fire</ControlChip>

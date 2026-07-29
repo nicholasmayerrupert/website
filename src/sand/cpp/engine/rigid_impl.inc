@@ -515,11 +515,9 @@ double RigidBodySystem::resolveContactNormal(Contact& c) {
   double rvx = A->vx - A->omega * c.ray, rvy = A->vy + A->omega * c.rax;
   if (B) { rvx -= B->vx - B->omega * c.rby; rvy -= B->vy + B->omega * c.rbx; }
   double vn = rvx * c.nx + rvy * c.ny;
-  double rnA = c.rax * c.ny - c.ray * c.nx, rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
-  double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB;
   double movedN = 0;
-  if (denom > 0) {
-    double delta = (c.targetVn - vn) / denom;
+  if (c.normalMass > 0) {
+    double delta = (c.targetVn - vn) * c.normalMass;
     double newJn = c.accJn + delta; if (newJn < 0) newJn = 0;
     double applied = newJn - c.accJn; c.accJn = newJn;
     movedN = std::fabs(applied);
@@ -537,11 +535,9 @@ double RigidBodySystem::resolveContactFriction(Contact& c) {
   double rtvx = A->vx - A->omega * c.ray, rtvy = A->vy + A->omega * c.rax;
   if (B) { rtvx -= B->vx - B->omega * c.rby; rtvy -= B->vy + B->omega * c.rbx; }
   double vt = rtvx * tx + rtvy * ty;
-  double rtA = c.rax * ty - c.ray * tx, rtB = B ? c.rbx * ty - c.rby * tx : 0;
-  double denomT = aInvM + bInvM + aInvI * rtA * rtA + bInvI * rtB * rtB;
   double movedT = 0;
-  if (denomT > 0) {
-    double candidate = c.accJt - vt / denomT;
+  if (c.tangentMass > 0) {
+    double candidate = c.accJt - vt * c.tangentMass;
     double coefficient = std::fabs(vt) <= R_STATIC_FRICTION_SPEED
       ? c.staticFriction : c.dynamicFriction;
     double limit = coefficient * c.accJn;
@@ -677,9 +673,8 @@ double RigidBodySystem::resolveBias(Contact& c) {
     rvy -= B->pvy + B->pw * c.rbx;
   }
   double vn = rvx * c.nx + rvy * c.ny; if (vn >= bias) return 0;
-  double rnA = c.rax * c.ny - c.ray * c.nx, rnB = B ? c.rbx * c.ny - c.rby * c.nx : 0;
-  double denom = aInvM + bInvM + aInvI * rnA * rnA + bInvI * rnB * rnB; if (denom <= 0) return 0;
-  double delta = (bias - vn) / denom;
+  if (c.biasMass <= 0) return 0;
+  double delta = (bias - vn) * c.biasMass;
   double newJ = c.accBias + delta; if (newJ < 0) newJ = 0;
   double applied = newJ - c.accBias; c.accBias = newJ;
   double jx = applied * c.nx, jy = applied * c.ny;
@@ -2181,6 +2176,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
           (uint8_t)bk,
           bIndex >= 0, std::max(0.0, -impactVn), targetVn,
           contactDt, staticFriction, dynamicFriction,
+          0, 0, 0,
           0, 0, 0, -1, false,
         };
         restoreContact(contact, bk, contactDt);
@@ -2383,6 +2379,44 @@ void RigidBodySystem::rigidStep(double tickDt) {
     nc = (int)contacts.size();
     rigidContacts += nc;
     for (Contact& contact : contacts) {
+      Body* A = contact.a;
+      Body* B = contact.b;
+      double aInvM = A->awake ? A->invMass : 0;
+      double aInvI = A->awake ? A->invInertia : 0;
+      double bInvM = B && B->awake ? B->invMass : 0;
+      double bInvI = B && B->awake ? B->invInertia : 0;
+      double tx = -contact.ny, ty = contact.nx;
+      double rnA = contact.rax * contact.ny
+                 - contact.ray * contact.nx;
+      double rnB = B ? contact.rbx * contact.ny
+                     - contact.rby * contact.nx : 0;
+      double rtA = contact.rax * ty - contact.ray * tx;
+      double rtB = B ? contact.rbx * ty - contact.rby * tx : 0;
+      double normalK = aInvM + bInvM
+        + aInvI * rnA * rnA + bInvI * rnB * rnB;
+      double tangentK = aInvM + bInvM
+        + aInvI * rtA * rtA + bInvI * rtB * rtB;
+      if (!contact.bIntegrated) {
+        bInvM = 0;
+        bInvI = 0;
+      }
+      double biasK = aInvM + bInvM
+        + aInvI * rnA * rnA + bInvI * rnB * rnB;
+      contact.normalMass = normalK > 0 ? 1 / normalK : 0;
+      contact.tangentMass = tangentK > 0 ? 1 / tangentK : 0;
+      contact.biasMass = biasK > 0 ? 1 / biasK : 0;
+#ifdef SAND_INVARIANT_CHECKS
+      if (!std::isfinite(contact.normalMass)
+          || !std::isfinite(contact.tangentMass)
+          || !std::isfinite(contact.biasMass)
+          || contact.normalMass < 0
+          || contact.tangentMass < 0
+          || contact.biasMass < 0) {
+        emscripten_console_error(
+          "RIGID CONTACT MASS INVARIANT: invalid effective mass");
+        abort();
+      }
+#endif
       if (contact.depth > rigidMaxContactDepth)
         rigidMaxContactDepth = contact.depth;
       if (contact.persisted) rigidWarmStarted++;

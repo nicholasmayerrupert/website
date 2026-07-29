@@ -144,6 +144,9 @@ component registration, and generation/restoration. Browser presentation exposes
   across substeps and ticks, including short decaying persistence for large
   raster contacts, so dense piles converge from the previous solution and enter
   island sleep instead of cold-solving jitter indefinitely.
+- Each contact stores its substep-constant inverse normal, tangent, and
+  positional effective masses. Solver iterations reuse them instead of
+  rebuilding and dividing by the same mass and inertia expression.
 - Large rotating bodies and long beams use exact angular sample trajectories.
   Compact bodies use tangent sweeps to keep the common debris path inexpensive;
   long and filled masks still receive convex-corner samples. Immutable sample

@@ -296,6 +296,10 @@ struct Contact {
   // damping it back to zero over later solver iterations.
   double impactSpeed, targetVn, dt;
   double staticFriction, dynamicFriction;
+  // Inverse effective masses are fixed for this contact during one substep.
+  // Computing them once turns repeated inertia expressions and divisions into
+  // one preparation pass plus multiplications in the iterative solver.
+  double normalMass, tangentMass, biasMass;
   double accJn, accJt, accBias;
   int blockMate;
   bool persisted;

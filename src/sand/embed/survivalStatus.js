@@ -2,7 +2,7 @@ import { ITEM_KIND } from '../wasmBridge/abi.generated.js';
 import { injectStyleOnce, swallowEvents } from './uiShared.js';
 
 const STYLE = `
-.survival-vitals { position:absolute; left:50%; bottom:103px; z-index:70; width:476px;
+.survival-vitals { position:absolute; left:50%; bottom:112px; z-index:70; width:476px;
   transform:translateX(-50%); pointer-events:none; color:#fff;
   font:800 10px/1 ui-monospace,"SFMono-Regular",Menlo,monospace; }
 .survival-stats { position:relative; display:grid; grid-template-columns:1fr 1fr; align-items:end; gap:32px; }
@@ -31,8 +31,8 @@ const STYLE = `
 .survival-shield.active { filter:drop-shadow(0 0 4px rgba(89,213,255,.8)); }
 .survival-shield.active > i::before { background:#65d9f4; box-shadow:inset 3px 3px 0 #e1fbff,inset -2px -2px 0 #3598b8; }
 .survival-shield.depleted > i { background:#352d3b; }
-.survival-fuel { grid-template-columns:repeat(12,8px); gap:1px; }
-.survival-fuel > i { position:relative; display:block; width:8px; height:14px; overflow:hidden; background:#39372e;
+.survival-fuel { grid-template-columns:repeat(12,11px); gap:1.5px; }
+.survival-fuel > i { position:relative; display:block; width:11px; height:14px; overflow:hidden; background:#39372e;
   filter:drop-shadow(1px 1px 0 #080a0c);
   clip-path:polygon(36% 0,100% 0,100% 16%,82% 16%,82% 32%,64% 32%,64% 42%,100% 42%,100% 58%,82% 58%,82% 68%,64% 68%,64% 84%,45% 84%,45% 100%,0 100%,0 84%,18% 84%,18% 68%,36% 68%,36% 58%,0 58%,0 42%,18% 42%,18% 32%,36% 32%); }
 .survival-fuel > i::before { content:''; position:absolute; inset:auto 0 0; height:0; background:#e8b53e;
@@ -68,7 +68,7 @@ const STYLE = `
   @keyframes survival-warning { 50% { filter:brightness(1.25); } }
 }
 @media (max-width:760px) {
-  .survival-vitals { bottom:88px; transform:translateX(-50%) scale(.8); transform-origin:center bottom; }
+  .survival-vitals { bottom:97px; transform:translateX(-50%) scale(.8); transform-origin:center bottom; }
 }
 `;
 

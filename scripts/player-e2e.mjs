@@ -171,12 +171,16 @@ try {
       if (reveal) meter.classList.remove('show');
       return result;
     };
+    const fuelStat = root.querySelector('.survival-stat.fuel');
+    fuelStat.classList.remove('charged');
+    const fuel = measure('.survival-fuel');
+    fuelStat.classList.add('charged');
     return {
       missionRemoved: root.querySelector('.survival-objective') === null,
       health: measure('.survival-health'),
       shield: measure('.survival-shield'),
       charge: measure('.survival-charge', true),
-      fuel: measure('.survival-fuel'),
+      fuel,
       fullJetpackHidden: getComputedStyle(root.querySelector('.survival-stat.fuel')).display === 'none',
       fullHearts: [...root.querySelectorAll('.survival-heart')]
         .every((heart) => heart.style.getPropertyValue('--fill') === '100%'),
@@ -191,6 +195,8 @@ try {
     `health/ward/charge/jetpack icons have no meter backplates (trailing ${meterGeometry.health.trailing.toFixed(1)}/${meterGeometry.shield.trailing.toFixed(1)}/${meterGeometry.charge.trailing.toFixed(1)}/${meterGeometry.fuel.trailing.toFixed(1)}px)`,
     meterTracksAreBare && meterGeometry.missionRemoved,
   );
+  check(`jetpack and ward rows share a width (${meterGeometry.fuel.width.toFixed(1)}/${meterGeometry.shield.width.toFixed(1)}px)`,
+    Math.abs(meterGeometry.fuel.width - meterGeometry.shield.width) < 1);
   check('full health, ward, and jetpack capacity visually fill every meter cell',
     meterGeometry.fullHearts && meterGeometry.fullShieldCells && meterGeometry.fullFuelCells === 12);
   check('the jetpack row hides at full charge', meterGeometry.fullJetpackHidden);

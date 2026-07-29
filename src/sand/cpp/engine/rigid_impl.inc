@@ -3484,7 +3484,12 @@ void RigidBodySystem::finishErasedBodies(std::unordered_set<Body*>& dirty,
       }
     }
     if (groups.size() <= 1) {
-      computeDerived(b, true);
+      // Several rotated raster cells can map to one local cell, so world cells
+      // may remain after the authoritative local shape becomes empty.
+      if (!computeDerived(b, true)) {
+        removedIds.insert(b->id);
+        continue;
+      }
       if (!containsTnt(b)) b->fuseTicks = 0;
       continue;
     } // chip: keep the body (+ rotation)

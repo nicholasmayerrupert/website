@@ -578,11 +578,11 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   if (!bb.any) return;
   const std::vector<int>& erased = bb.erasedStructural;
   bool indexesExact = E.L->groundBaseValid && !E.L->groundDirty && !E.L->groundContentDirty;
-  // A crater is a structural edit, so surviving terrain receives an exact
-  // support reflood. TNT commonly removes several material components and both
-  // layers in one transaction; retaining a locally patched grounded flag can
-  // otherwise leave a visually separated closure anchored in mid-air.
-  bool localConnectivityFastPath = erased.empty() && indexesExact;
+  // Preserve the cached support graph only when the bounded removal proof can
+  // reconnect every edge of the crater through surviving rigid material.
+  // Genuine cuts fall back to a full split and support reflood.
+  bool localConnectivityFastPath = indexesExact
+    && E.removalsKeepGroundingValid(erased);
   E.L->compsReshaped = false;
   E.splitRigidAfterErase(E.L->components, bb.erasedStructural, E.L->nextComponentId, false, false,
                          indexesExact ? 0 : -1, localConnectivityFastPath
@@ -593,8 +593,8 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
   } else if (E.L->compsReshaped) {
     E.L->groundContentDirty = true;
   } else {
-    // No component-backed cells were erased, so the cached rigid support remains
-    // exact and the next tick can skip grounding.
+    // Component ordering is unchanged, so clearing the removed index entries
+    // leaves the cached rigid support exact.
     for (int k : erased) E.L->cellComp[k] = -1;
   }
   bb.structurePreserved = localConnectivityFastPath && !E.L->compsReshaped;

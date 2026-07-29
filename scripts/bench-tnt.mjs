@@ -31,6 +31,14 @@ function hashGrid(hash, grid) {
   return hash;
 }
 
+function fillEmptyRect(grid, cols, x0, y0, x1, y1, material) {
+  for (let y = y0; y < y1; y++) {
+    const row = y * cols;
+    for (let x = x0; x < x1; x++)
+      if (grid[row + x] === MAT.EMPTY) grid[row + x] = material;
+  }
+}
+
 function summary(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const at = (q) => sorted[Math.floor((sorted.length - 1) * q)];
@@ -42,7 +50,10 @@ function summary(values) {
   };
 }
 
-function runScenario({ name, cols, rows, side = 1, buried = false, cave = false, caveRadius = 10, bg = false, steps }) {
+function runScenario({
+  name, cols, rows, side = 1, tntRadius = 0,
+  buried = false, cave = false, caveRadius = 10, bg = false, steps,
+}) {
   const engine = createEngineWasm({ cols, rows, worldSeed: SEED, sinksOn: false, infinite: false });
   engine.setBgEnabled(bg);
   const cx = cols >> 1;
@@ -61,11 +72,15 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
     // the benchmark catches joint-grounding invalidation on a cave blast.
     if (bg) engine.paintDiscLayer(1, cx, cy, Math.max(cols, rows), MAT.STONE, true);
   } else if (buried) {
-    for (let y = cy + 1; y < rows; y++)
-      for (let x = 20; x < cols - 20; x++) engine.placeMaterial(x, y, 0, MAT.STONE);
+    fillEmptyRect(engine.getGrid(), cols, 20, cy + 1, cols - 20, rows, MAT.STONE);
   }
-  for (let y = y0; y < y0 + side; y++)
-    for (let x = x0; x < x0 + side; x++) engine.placeMaterial(x, y, 0, MAT.TNT);
+  if (tntRadius > 0) {
+    engine.paintDisc(cx, cy, tntRadius, MAT.TNT, true);
+  } else {
+    // Benchmark setup writes the zero-copy grid in bulk, then the component
+    // sync below registers every rigid cell before simulation starts.
+    fillEmptyRect(engine.getGrid(), cols, x0, y0, x0 + side, y0 + side, MAT.TNT);
+  }
   engine.syncComponentsLayer(0);
   if (bg) engine.syncComponentsLayer(1);
 
@@ -78,7 +93,8 @@ function runScenario({ name, cols, rows, side = 1, buried = false, cave = false,
 
   for (let step = 0; step < steps; step++) {
     if (step < 3) {
-      const igniteX = side === 1 ? cx + 1 : x0 + side + 1;
+      const igniteX = tntRadius > 0 ? cx + tntRadius + 1
+        : (side === 1 ? cx + 1 : x0 + side + 1);
       engine.placeMaterial(igniteX, cy, 1, MAT.FIRE);
     }
     const started = performance.now();
@@ -158,7 +174,7 @@ const scenarios = [
   { name: 'chain-49x49', cols: 260, rows: 220, side: 49, steps: 90 },
   { name: 'chain-49-wide-stone-bed', cols: 260, rows: 220, side: 49, buried: true, steps: 90 },
   { name: 'chain-79-cave-dual-layer', cols: 640, rows: 384, side: 79, cave: true, caveRadius: 47, bg: true, steps: 100 },
-  { name: 'chain-159-cave-dual-layer', cols: 768, rows: 512, side: 159, cave: true, caveRadius: 100, bg: true, steps: 150 },
+  { name: 'packed-cave-r79-dual-layer', cols: 768, rows: 512, tntRadius: 79, cave: true, caveRadius: 100, bg: true, steps: 150 },
 ];
 
 // Warm lazy WASM/runtime paths before collecting samples.

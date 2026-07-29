@@ -245,6 +245,7 @@ struct Body {
   // rebuilt only when occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
   uint32_t geometryRevision = 0;
+  bool tightSlenderBounds = false; // derived span-manifold eligibility
   double invMass = 0, invInertia = 0, maxR = 0;
   // transient per-step
   double cs = 1, sn = 0;

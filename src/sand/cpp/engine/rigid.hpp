@@ -121,6 +121,7 @@ class RigidBodySystem {
     int aId = -1, bId = -1;
     uint32_t aRevision = 0, bRevision = 0;
     uint8_t normalBucket = 0, bLayer = 0;
+    uint8_t retainMissed = 0; // pair metadata, not key identity
     bool operator==(const ContactCacheKey& other) const {
       return aId == other.aId && bId == other.bId
           && aRevision == other.aRevision && bRevision == other.bRevision

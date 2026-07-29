@@ -178,6 +178,37 @@ const speed = (state) =>
 }
 
 {
+  const cols = 320, rows = 240, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0xc987, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+  engine.spawnBody(rectangle(40, 232, 280, 234));
+  for (let i = 0; i < 150; i++) engine.stepWorld();
+
+  const hanger = [];
+  for (let x = 90; x <= 230; x++) hanger.push([x, 205]);
+  for (let y = 206; y <= 231; y++) hanger.push([90, y]);
+  engine.spawnBody(hanger);
+  let maxAngle = 0, latePeak = 0;
+  for (let i = 0; i < 500; i++) {
+    engine.stepWorld();
+    const state = engine._bodyState(1);
+    maxAngle = Math.max(maxAngle, Math.abs(state.angle));
+    if (i >= 200) latePeak = Math.max(latePeak, speed(state));
+  }
+  const final = engine._bodyState(1);
+  check(`sparse hanger pivots on its occupied foot `
+      + `(${maxAngle.toFixed(3)} rad, y ${final.py.toFixed(2)})`,
+    maxAngle >= 0.15 && final.py >= 218);
+  check(`sparse hanger settles without shaking `
+      + `(awake ${engine._bodyAwake(1)}, late speed ${latePeak.toFixed(4)})`,
+    engine._bodyAwake(1) === 0 && latePeak <= 0.03);
+  engine.destroy();
+}
+
+{
   const cols = 420, rows = 280, floorY = rows - 3;
   const engine = createEngineWasm({
     cols, rows, worldSeed: 0xa987, sinksOn: false, infinite: false,

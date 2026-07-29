@@ -8,6 +8,10 @@ static bool rigidLargeSlenderBody(const Body* body) {
   return imax(body->w, body->h) >= shortSide * 4 && body->maxR >= 24;
 }
 
+static bool rigidTightSlenderBounds(const Body* body) {
+  return body->tightSlenderBounds;
+}
+
 void RigidBodySystem::clearContactCaches() {
   for (ContactCache& cache : contactCaches) cache.clear();
   for (std::vector<int>& ids : broadphaseBodyIds) ids.clear();
@@ -84,6 +88,27 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   }
   double mass = b->cellMaterials.empty() && !b->jointRole ? b->density * nPts : totalMass;
   if (!b->cellMaterials.empty() || b->jointRole) b->density = mass / nPts;
+  bool coversMajorAxis = true;
+  if (shortSide <= 4) {
+    if (b->w >= b->h) {
+      for (int i = 0; i < b->w; i++) {
+        bool covered = false;
+        for (int j = 0; j < b->h; j++)
+          if (filled(i, j)) { covered = true; break; }
+        if (!covered) { coversMajorAxis = false; break; }
+      }
+    } else {
+      for (int j = 0; j < b->h; j++) {
+        bool covered = false;
+        for (int i = 0; i < b->w; i++)
+          if (filled(i, j)) { covered = true; break; }
+        if (!covered) { coversMajorAxis = false; break; }
+      }
+    }
+  }
+  b->tightSlenderBounds =
+    (int64_t)nPts * 4 >= (int64_t)b->w * b->h * 3
+    || (shortSide <= 4 && coversMajorAxis);
   b->nPts = nPts; b->invMass = mass > 0 ? 1 / mass : 0; b->invInertia = inertia > 0 ? 1 / inertia : 0;
   if (++b->geometryRevision == 0) b->geometryRevision = 1;
   b->maxR = std::sqrt(maxR2); b->awake = true; b->stillTicks = 0;
@@ -836,10 +861,11 @@ void RigidBodySystem::rigidStep(double tickDt) {
     for (const PenPt& point : points)
       deepestRaster = std::fmax(deepestRaster, point.depth);
     double alignment = std::fabs(a.ax * b.ax + a.ay * b.ay);
-    // A crossed pair has a local point contact. Span constraints belong only to
-    // near-parallel faces, and their bias follows measured raster penetration.
+    // Crossed pairs and sparse masks keep only their raster anchors. A span
+    // manifold is safe when each occupied union closely fits its local bounds.
     if (alignment < R_SLENDER_PARALLEL_COS) return true;
-
+    if (!rigidTightSlenderBounds(first)
+        || !rigidTightSlenderBounds(second)) return true;
     double tangentX = -normalY, tangentY = normalX;
     double aTangent = a.cx * tangentX + a.cy * tangentY;
     double bTangent = b.cx * tangentX + b.cy * tangentY;
@@ -900,6 +926,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
       contact.b ? contact.b->geometryRevision : 0,
       (uint8_t)normalBucket,
       (uint8_t)(contact.b ? (peerLayer ? 1 - activeLayer : activeLayer) : 2),
+      (uint8_t)(contact.a->maxR >= 24
+        || (contact.b && contact.b->maxR >= 24)),
     };
   };
   auto localAnchors = [](const Contact& contact, double& lax, double& lay,
@@ -1800,9 +1828,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
           nextContacts[entry.first].push_back(cached);
           continue;
         }
-        Body* cacheBody = solverBodies[bodyIt->second];
-        bool retainMissed = cacheBody->maxR >= 24;
-        if (!retainMissed) continue;
+        if (!entry.first.retainMissed) continue;
         if (cached.used || cached.age >= R_CONTACT_CACHE_MISSED_SUBSTEPS)
           continue;
         std::vector<CachedContact>& destination = nextContacts[entry.first];

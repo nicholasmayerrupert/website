@@ -30,12 +30,16 @@ lives in `rigid_impl.inc`.
   shallow-angle, longitudinally offset beams cannot pass through one another
   when sparse samples alternate sides. Crossed beams retain their local raster
   anchors, and positional bias always uses measured raster penetration rather
-  than bounding-box overlap. The fallback never creates contact from bounding
-  rectangles alone, so sparse or kinked masks cannot support each other across
-  empty space. It is restricted to pairs with `maxR >= 24` and at least a 4:1
-  bounding-box aspect ratio; ordinary debris retains the exact raster path and
-  its lower collision cost. These pairs also use refined penetration depth and
-  a tighter positional slop.
+  than bounding-box overlap. Span points require both masks to fit their bounds
+  closely: at least 75% of the bounding rectangle is occupied, or a mask no more
+  than four cells thick has occupancy in every major-axis row or column. Sparse
+  shapes with broad empty bounds or major-axis gaps keep only their real raster
+  anchors, so a local contact cannot become a body-wide support surface. The
+  fallback never creates contact from bounding rectangles alone and is
+  restricted to pairs with `maxR >= 24` and at least a 4:1 bounding-box aspect
+  ratio; ordinary debris retains the exact raster path and its lower collision
+  cost. These pairs also use refined penetration depth and a tighter positional
+  slop.
 - Contact normals come from the target mask. A body sample surrounded by
   occupied mask cells uses its nearest empty axial direction instead of a radial
   guess. A symmetric terrain cell uses the side facing the body's center, so a
@@ -51,7 +55,8 @@ lives in `rigid_impl.inc`.
   impulses warm-start the next substep/tick, while restitution remains an
   impact-only target and positional bias stays separate. Large manifolds retain a
   missed anchor for up to two substeps with decaying impulses to bridge
-  raster-boundary transitions.
+  raster-boundary transitions. A mixed-size pair receives that persistence when
+  either participant is large, independent of body-index order.
 - Sequential impulses solve normal velocity, static/dynamic friction,
   penetration bias, and a fixed impact restitution target. Ice contacts select a
   lower material-pair friction. Two well-separated contacts on one face use a

@@ -187,6 +187,7 @@ class CreatureSystem {
   bool inLoadedWindow(const Creature& c, int margin = 0) const;
   bool boxInsideLoadedWindow(double wx, double wy, int w, int h, int margin = 0) const;
   bool boxHitsSolid(double wx, double wy, int w, int h) const;
+  bool boxHitsOtherBody(double wx, double wy, int w, int h, const Body* ignored);
   double blockingCoverage(double wx, double wy, int w, int h) const;
   double fluidCoverage(double wx, double wy, int w, int h) const;
   bool boxTouchesMaterial(double wx, double wy, int w, int h, uint8_t material) const;
@@ -229,6 +230,8 @@ class CreatureSystem {
   void fireBoreLine(double ox, double oy, double dx, double dy, int damage,
                     int immunePlayerId, int immuneCreatureId);
   void dropWeapon(const Creature& c);
+  void killCreature(Creature& c);
+  void crushCreature(Creature& c);
   void updateCreatures();
   bool damageAtPoint(int x, int y, int radius, int damage);
   int buildCreatureSnapshot();

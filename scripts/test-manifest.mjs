@@ -47,6 +47,7 @@ export const UNIT_SUITES = [
   ['timing', 'timing-test.mjs'],
   ['viewport-pause', 'viewport-pause-test.mjs'],
   ['players', 'player-test.mjs'],
+  ['actor-rigid', 'actor-rigid-test.mjs'],
   ['anim', 'player-anim-test.mjs'],
   ['net', 'net-test.mjs'],
   ['stream-reconcile', 'stream-reconcile-test.mjs'],

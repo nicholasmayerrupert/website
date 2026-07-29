@@ -404,15 +404,20 @@ For engine or renderer changes, benchmark before and after:
 ```sh
 node scripts/bench-sand.mjs --compare bench/baseline.json
 node scripts/bench-pan.mjs --compare bench/pan-baseline.json
+node scripts/bench-actor-rigid.mjs --compare bench/actor-rigid-baseline.json
 ```
 
 Detached-solid and loose-acceleration behavior has focused coverage in
 `npm run test:detached-rigid` and `npm run test:loose-acceleration`.
+Player/creature sweeps, pushes, crushing, and rigid/actor sandwiches are covered
+by `npm run test:actor-rigid`.
 
 Use the engine benchmark for simulation/render-fill/streaming changes and the pan
 benchmark for WebGL presentation, pointer mapping, two-axis cell stability, and
-parallax rigidity. Pure refactors must preserve deterministic checksums. See
-`PERF.md` for metric ownership and focused commands.
+parallax rigidity. Use the actor/rigid benchmark for dense actor cadence and
+one-way body sweeps through player/creature populations. Pure refactors must
+preserve deterministic checksums. See `PERF.md` for metric ownership and focused
+commands.
 
 ## Adding a material
 

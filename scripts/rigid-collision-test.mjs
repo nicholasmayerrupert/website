@@ -379,9 +379,8 @@ for (const dt of [16, 8, 33, 50]) {
   e.destroy();
 }
 
-// A creature pinned against terrain stays in the crush overlap. It must not be
-// ejected through an unrelated free side; the normal engulfment damage owns the
-// resulting suffocation.
+// A creature pinned against terrain stays in the crush overlap and dies there.
+// It must not be ejected through an unrelated free side.
 {
   console.log('pinned creature is crushed instead of teleported');
   const e = mk();
@@ -394,12 +393,9 @@ for (const dt of [16, 8, 33, 50]) {
   e._setBodyMotion(body, 2.5, 0, 0);
   run(e, 8);
   const pinned = e.getCreatures().find((x) => x.id === creature);
-  const healthBefore = pinned?.health;
-  for (let i = 0; i < 140; i++) e.stepActors();
-  const crushed = e.getCreatures().find((x) => x.id === creature);
   check(`pinned creature was not ejected vertically (y ${pinned?.y.toFixed(2)})`, pinned && pinned.y > 125);
-  check(`pinned creature suffocates in the overlap (${healthBefore} -> ${crushed?.health})`,
-    crushed && crushed.health < healthBefore);
+  check(`pinned creature is crushed immediately (health ${pinned?.health})`,
+    pinned && !pinned.alive && pinned.health === 0);
   e.destroy();
 }
 
@@ -414,15 +410,17 @@ for (const dt of [16, 8, 33, 50]) {
   e.setCreatureRuntime(true, false);
   const creature = e.spawnCreature(2, 104, 126); // fox standing on the floor
   e.spawnBox(104, 106, 7, 5, RIGID);
-  let t = 0, maxDx = 0;
+  let t = 0, maxDx = 0, sawCrushed = false;
   for (let i = 0; i < 90; i++) {
     t += 16; e.step(t); e.stepActors();
     const c = e.getCreatures().find((x) => x.id === creature);
-    if (c) maxDx = Math.max(maxDx, Math.abs(c.x - 104));
+    if (c) {
+      maxDx = Math.max(maxDx, Math.abs(c.x - 104));
+      sawCrushed ||= !c.alive && c.health === 0;
+    }
   }
-  const crushed = e.getCreatures().find((x) => x.id === creature);
   check(`head-on impact does not eject creature sideways (max dx ${maxDx.toFixed(2)})`, maxDx < 1.0);
-  check(`head-on impact suffocates creature in place (health ${crushed?.health})`, crushed && crushed.health < 42);
+  check('head-on impact crushes creature in place', sawCrushed);
   e.destroy();
 }
 

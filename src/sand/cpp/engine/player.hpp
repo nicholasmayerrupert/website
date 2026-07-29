@@ -14,6 +14,7 @@ class PlayerSystem {
   bool isSolidForPlayer(uint8_t m);
   bool playerCellSolid(int x, int y);
   bool playerBoxHits(double px, double py, int w, int h);
+  bool playerBoxHitsOtherBody(double px, double py, int w, int h, const Body* ignored);
   bool rowSolid(double px, int w, int row);
   bool colSolid(double py, int h, int col);
   int buryDepth(const Player& p);
@@ -39,6 +40,7 @@ class PlayerSystem {
                    double sourceX = NAN, double sourceY = NAN,
                    bool bypassCooldown = false);
   void killPlayer(Player& p);
+  void crushPlayer(Player& p);
   void updatePlayerVitals(Player& p);
   Player* findPlayer(int id);
   void removePlayer(int id);

@@ -1,0 +1,33 @@
+{
+  "scene": {
+    "repeats": 5,
+    "actorCadence": {
+      "actors": 128,
+      "ticks": 240
+    },
+    "rigidSweeps": {
+      "actors": 140,
+      "bodies": 14,
+      "ticks": 96
+    }
+  },
+  "checksum": {
+    "actorCadence": "0x9cc23ecf",
+    "rigidSweeps": "0x73d7a204"
+  },
+  "actorMs": {
+    "p50": 0.04772700000000896,
+    "p95": 0.06754499999999553,
+    "mean": 0.049660800909090703
+  },
+  "rigidActorBodyMs": {
+    "p50": 0.6556279999999788,
+    "p95": 1.339823000000024,
+    "mean": 1.1830801874999983
+  },
+  "rigidActorWallMs": {
+    "p50": 0.7458699999999681,
+    "p95": 1.5023570000000745,
+    "mean": 1.3968155166666665
+  }
+}

@@ -20,6 +20,23 @@ bool CreatureSystem::boxHitsSolid(double wx, double wy, int w, int h) const {
   return false;
 }
 
+bool CreatureSystem::boxHitsOtherBody(double wx, double wy, int w, int h,
+                                      const Body* ignored) {
+  double px = wx - E.fg.worldOffsetX, py = wy - E.fg.worldOffsetY;
+  for (Body* body : E.fg.bodies) {
+    if (body == ignored || body->jointRole == 2) continue;
+    double radius = body->maxR + 1.0;
+    if (px >= body->px + radius || px + w <= body->px - radius ||
+        py >= body->py + radius || py + h <= body->py - radius) continue;
+    bool hit = false;
+    E.rigid.forEachBodyCell(body, [&](int x, int y, int) {
+      if (!hit && px < x + 1 && px + w > x && py < y + 1 && py + h > y) hit = true;
+    });
+    if (hit) return true;
+  }
+  return false;
+}
+
 double CreatureSystem::blockingCoverage(double wx, double wy, int w, int h) const {
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
   int y0 = (int)std::floor(wy - E.fg.worldOffsetY), y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
@@ -1019,6 +1036,18 @@ void CreatureSystem::dropWeapon(const Creature& c) {
                        c.facing * 0.65, -1.0, IT_PICKUP_DELAY);
 }
 
+void CreatureSystem::killCreature(Creature& c) {
+  if (!c.alive) return;
+  c.health = 0;
+  dropWeapon(c);
+  c.alive = false;
+  c.deathTicks = 18;
+}
+
+void CreatureSystem::crushCreature(Creature& c) {
+  killCreature(c);
+}
+
 void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
   const CreatureSpecies& s = species(c);
   if (c.attackState == CAS_FIRING) {
@@ -1092,10 +1121,7 @@ void CreatureSystem::updateCreatures() {
   for (Creature& c : creatures) {
     if (!c.alive) { c.deathTicks--; continue; }
     if (c.health <= 0) {
-      c.health = 0;
-      dropWeapon(c);
-      c.alive = false;
-      c.deathTicks = 18;
+      killCreature(c);
       continue;
     }
     if (c.scanCooldown > 0) c.scanCooldown--; else acquireTarget(c);

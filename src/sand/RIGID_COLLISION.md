@@ -107,8 +107,15 @@ the chunk store instead of using that collision wall.
 The exact inverse-raster footprint is cached for one pose and geometry revision.
 Systems that query an unchanged pose reuse the same ordered world/local cells.
 Actor pushing first rejects the complete swept center-line capsule when no live
-actor AABB can intersect it, and fluid coupling performs a boundary-only liquid
-preflight before stamping body footprints into its pressure domain.
+actor AABB can intersect it. Contact uses the body's actual translation plus the
+local angular sweep, so rotating tips push actors without a center translation.
+Actor-owned collision queries test every other body's finalized raster directly
+while body stamps are absent; a push blocked by terrain or another body applies
+the actor's crush lifecycle when the body's occupied footprint is large enough
+relative to the actor. Smaller trapped rubble stays pinned without becoming a
+lethal slab. Actor resolution never changes either body's pose or velocity.
+Fluid coupling performs a boundary-only liquid preflight before stamping body
+footprints into its pressure domain.
 
 ## Component-to-body lifecycle
 

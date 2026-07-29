@@ -25,6 +25,24 @@ bool PlayerSystem::playerBoxHits(double px, double py, int w, int h) {
       if (playerCellSolid(x, y)) return true;
   return false;
 }
+// During a body step every free-body stamp is temporarily absent from the grid.
+// Actor displacement therefore checks the finalized body poses directly so a
+// second body remains a real obstacle in a rigid/actor/rigid sandwich.
+bool PlayerSystem::playerBoxHitsOtherBody(double px, double py, int w, int h,
+                                          const Body* ignored) {
+  for (Body* body : E.fg.bodies) {
+    if (body == ignored || body->jointRole == 2) continue;
+    double radius = body->maxR + 1.0;
+    if (px >= body->px + radius || px + w <= body->px - radius ||
+        py >= body->py + radius || py + h <= body->py - radius) continue;
+    bool hit = false;
+    E.rigid.forEachBodyCell(body, [&](int x, int y, int) {
+      if (!hit && px < x + 1 && px + w > x && py < y + 1 && py + h > y) hit = true;
+    });
+    if (hit) return true;
+  }
+  return false;
+}
 // Any solid across the player's horizontal span [px, px+w) at integer row `row`?
 bool PlayerSystem::rowSolid(double px, int w, int row) {
   int ix0 = (int)std::floor(px), ix1 = (int)std::floor(px + w - 1e-6);
@@ -312,6 +330,9 @@ void PlayerSystem::killPlayer(Player& p) {
   if (E.tools.drafting && E.tools.draftOwner == p.id) playerFinalizeSolidDraft();
   E.inv.dropAll(p);
   E.audio.emit(SE_DEATH, p.px + p.w * .5, p.py + p.h * .5, 1.0, EMPTY);
+}
+void PlayerSystem::crushPlayer(Player& p) {
+  killPlayer(p);
 }
 bool PlayerSystem::shieldCoversSource(const Player& p, double sourceX, double sourceY) const {
   if (!p.shieldActive || p.shieldHealth <= 0 ||

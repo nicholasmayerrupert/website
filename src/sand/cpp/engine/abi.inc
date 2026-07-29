@@ -255,6 +255,16 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
   e->comps.jointDirty = true;
   e->useLayer(&e->fg);
 }
+EMSCRIPTEN_KEEPALIVE void engine_test_drop_joint_bond_cache(Engine* e) {
+  e->comps.computeGroundedBoth();
+  e->fg.crossBondedComp.assign(e->fg.components.size(), 0);
+  e->bg.crossBondedComp.assign(e->bg.components.size(), 0);
+  e->comps.cgBonds.clear();
+  e->comps.jointDirty = false;
+  e->comps.jointBondsInvalid = false;
+  e->comps.jointDirtyDeferred = false;
+  e->useLayer(&e->fg);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_set_body_blast_debris(Engine* e, int i, int enabled) {
   if (i < 0 || i >= (int)e->fg.bodies.size()) return 0;
   e->fg.bodies[i]->blastDebris = enabled != 0;

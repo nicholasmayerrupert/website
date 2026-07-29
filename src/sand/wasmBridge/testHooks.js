@@ -34,6 +34,7 @@ function table() {
     bodyOwnerPtr: c('engine_test_body_owner_ptr', 'number', ['number', 'number']),
     fallSpeedPtr: c('engine_test_fall_speed_ptr', 'number', ['number', 'number']),
     resetTopology: c('engine_test_reset_topology', null, ['number']),
+    dropJointBondCache: c('engine_test_drop_joint_bond_cache', null, ['number']),
     setBodyBlastDebris: c('engine_test_set_body_blast_debris', 'number', ['number', 'number', 'number']),
     detonateTnt: c('engine_test_detonate_tnt', null, ['number', 'number', 'number']),
     damagePlayer: c('engine_test_damage_player', 'number',
@@ -77,6 +78,7 @@ export function attachTestHooks(engine) {
   engine._fallSpeedGrid = (layer = 0) =>
     new Uint8Array(mod.HEAPU8.buffer, t.fallSpeedPtr(ptr, layer ? 1 : 0), engine.cols * engine.rows);
   engine._resetTopology = () => t.resetTopology(ptr);
+  engine._dropJointBondCache = () => t.dropJointBondCache(ptr);
   engine._setBodyBlastDebris = (i, enabled = true) =>
     t.setBodyBlastDebris(ptr, i | 0, enabled ? 1 : 0) > 0;
   engine._detonateTnt = (cx, cy) => t.detonateTnt(ptr, cx | 0, cy | 0);

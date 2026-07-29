@@ -2598,22 +2598,68 @@ void ComponentSystem::moveRigidAssemblies() {
     if (grp->dueTntOnly) continue;
     std::unordered_set<int> cells;
     for (int ci : grp->comps) for (int k : all[ci]->cells) cells.insert(k);
-    // Same-cell static terrain in the peer layer is a structural bond. Leave
-    // that pair to the joint mover even if a forced diagnostic reflood did not
-    // retain the cached crossBondedComp bit for this tick.
-    bool hasPeerBond = false;
+    // Same-cell static terrain in the peer layer is a structural bond. A
+    // missing transient bond bit cannot admit either half to the single-layer
+    // detacher: rebuild exact component indexes and let the joint mover create
+    // both body rasters atomically.
+    int peerOverlap = 0, firstPeerOverlap = -1;
     if (E.bgEnabled) {
       Layer& peer = E.L == &E.fg ? E.bg : E.fg;
       for (int k : cells) {
         uint8_t own = E.L->grid[k], other = peer.grid[k];
-        if (peer.bodyOwner[k] < 0 && peer.groundedCell[k] && E.isRigidMaterialClass(other)
+        if (peer.bodyOwner[k] < 0
+            && E.isRigidMaterialClass(own) && E.isRigidMaterialClass(other)
             && E.isIceMaterial(own) == E.isIceMaterial(other)) {
-          hasPeerBond = true;
+          if (firstPeerOverlap < 0) firstPeerOverlap = k;
+#ifdef SAND_INVARIANT_CHECKS
+          peerOverlap++;
+#else
+          peerOverlap = 1;
           break;
+#endif
         }
       }
     }
-    if (hasPeerBond) continue;
+    if (peerOverlap) {
+#ifdef SAND_INVARIANT_CHECKS
+      if (!jointDirty && !jointBondsInvalid) {
+        Layer& peer = E.L == &E.fg ? E.bg : E.fg;
+        int ownComp = E.L->cellComp[firstPeerOverlap];
+        int peerComp = peer.cellComp[firstPeerOverlap];
+        int fgComp = E.L == &E.fg ? ownComp : peerComp;
+        int bgComp = E.L == &E.bg ? ownComp : peerComp;
+        char buf[640];
+        snprintf(buf, sizeof(buf),
+                 "JOINT BOND REPAIR: tick=%d layer=%s groupComp=%d ownComp=%d peerComp=%d "
+                 "jointReady=%d jointDirty=%d bondsInvalid=%d supportValid=%d "
+                 "fgDirty=%d/%d bgDirty=%d/%d crossSize=%d/%d crossValue=%d/%d "
+                 "grounded=%d/%d groupCells=%d overlap=%d cell=%d",
+                 E.tick, E.L == &E.fg ? "fg" : "bg",
+                 grp->comps.empty() ? -1 : allGlobalIds[grp->comps[0]],
+                 ownComp, peerComp, (int)jointGroundReady, (int)jointDirty,
+                 (int)jointBondsInvalid, (int)jointSupportValid,
+                 (int)E.fg.groundDirty, (int)E.fg.groundContentDirty,
+                 (int)E.bg.groundDirty, (int)E.bg.groundContentDirty,
+                 (int)E.fg.crossBondedComp.size(), (int)E.bg.crossBondedComp.size(),
+                 fgComp >= 0 && fgComp < (int)E.fg.crossBondedComp.size()
+                   ? (int)E.fg.crossBondedComp[fgComp] : -1,
+                 bgComp >= 0 && bgComp < (int)E.bg.crossBondedComp.size()
+                   ? (int)E.bg.crossBondedComp[bgComp] : -1,
+                 (int)E.L->groundedCell[firstPeerOverlap],
+                 (int)peer.groundedCell[firstPeerOverlap],
+                 (int)cells.size(), peerOverlap, firstPeerOverlap);
+        emscripten_console_error(buf);
+      }
+#endif
+      E.fg.groundDirty = true;
+      E.bg.groundDirty = true;
+      jointSupportValid = false;
+      jointSupportSleeping = false;
+      jointTranslationReady = false;
+      jointBondsInvalid = true;
+      jointDirty = true;
+      continue;
+    }
     double weight = 0;
     for (int ci : grp->comps)
       for (int k : all[ci]->cells) weight += DENSITY[matOf(ci, k)];

@@ -2,6 +2,7 @@
 // displace that content and fall instead of treating its contents as support.
 
 import { initSandWasm, createEngineWasm, MAT } from '../src/sand/wasmBridge/engineFactory.js';
+import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 30, ROWS = 36;
@@ -11,6 +12,28 @@ const { check, done } = makeChecker('cross-layer bonded sand-filled shell falls'
 const run = (e, n) => { let t = 0; for (let i = 0; i < n; i++) { t += 16; e.step(t); } };
 const cnt = (g, m) => { let n = 0; for (const v of g) if (v === m) n++; return n; };
 const lowestStone = (g) => { let lo = -1; for (let y = 0; y < ROWS - 1; y++) for (let x = 0; x < COLS; x++) if (g[y * COLS + x] === MAT.STONE) lo = Math.max(lo, y); return lo; };
+
+// A missing transient bond cache must be repaired before either layer enters
+// the ordinary single-layer detacher.
+{
+  const engine = attachTestHooks(createEngineWasm({
+    cols: COLS, rows: ROWS, worldSeed: 1, sinksOn: false, infinite: false,
+  }));
+  engine.setBgEnabled(true);
+  for (let layer = 0; layer <= 1; layer++) {
+    for (let y = 6; y <= 10; y++) for (let x = 11; x <= 17; x++)
+      engine.paintDiscLayer(layer, x, y, 0, MAT.STONE, true);
+    engine.syncComponentsLayer(layer);
+  }
+  engine._dropJointBondCache();
+  engine.stepWorld();
+  check('missing bond cache is repaired as one foreground/background body',
+    engine._bodyCountLayer(0) === 1
+      && engine._bodyCountLayer(1) === 1
+      && engine._bodyJointRoleLayer(0, 0) === 1
+      && engine._bodyJointRoleLayer(1, 0) === 2);
+  engine.destroy();
+}
 
 // hollow stone box outline filled with sand, in `layer`
 function ring(e, x0, y0, x1, y1, layer) {

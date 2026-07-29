@@ -102,6 +102,7 @@
     "bench:pan:compare": "node scripts/bench-pan.mjs --compare bench/pan-baseline.json",
     "bench:rigid": "node scripts/bench-rigid.mjs",
     "bench:rigid-acid": "node scripts/bench-rigid-acid.mjs",
+    "bench:rigid-long": "node scripts/bench-rigid-long.mjs",
     "bench:rigid-fluid": "node scripts/bench-rigid-fluid.mjs",
     "bench:rigid-fluid-large": "node scripts/bench-large-rigid-fluid.mjs",
     "bench:ice-growth": "node scripts/bench-ice-growth.mjs",

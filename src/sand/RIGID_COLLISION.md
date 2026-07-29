@@ -39,10 +39,14 @@ lives in `rigid_impl.inc`.
 - Body/terrain checks sweep each sample's relative substep path in increments no
   larger than `R_SWEEP_STEP` and refine the first hit. The same sweep remains a
   body/body CCD fallback when the compound children have not reached a current
-  overlap. Compact bodies use the point tangent over the short substep. Large
-  rotating bodies, including very long beams, evaluate the exact
-  constant-linear/angular trajectory and target rotation so a distant tip
-  cannot tunnel through terrain or another body.
+  overlap. A conservative full-substep body envelope can prove that a body pair
+  cannot meet before entering that fallback. An in-bounds swept raster box with
+  no grid material similarly proves that terrain sampling has no possible hit.
+  Compact bodies use the point tangent over the short substep. Large rotating
+  bodies, including very long beams, evaluate the exact constant-linear/angular
+  trajectory and target rotation so a distant tip cannot tunnel through terrain
+  or another body. Their immutable sample radii and substep-constant speed terms
+  are computed outside the sample loops.
 - After the raster sweep finds real contact between two genuinely large,
   slender bodies, oriented rectangles supply a stable minimum-overlap reference
   axis. Near-parallel pairs also receive two span support points so
@@ -210,7 +214,8 @@ Constants live in `common.hpp`. Validate collision changes with
 `npm run test:rigid-topple`,
 `npm run test:rigidmat`, `npm run test:detached-rigid`, and
 `npm run bench:rigid`. Use `npm run bench:rigid-acid` for repeated
-large-body fragmentation and repair.
+large-body fragmentation and repair, and `npm run bench:rigid-long` for sustained
+large/long-body contact.
 
 ## Design references
 

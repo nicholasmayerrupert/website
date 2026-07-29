@@ -308,6 +308,10 @@
         if (coveredCells != body->nPts)
           failBody("collision rectangle area differs from nPts",
                    body, -1, coveredCells);
+        if (body->boundarySamples.size()
+              != body->boundarySampleRadii.size() * 2)
+          failBody("boundary sample radius count mismatch",
+                   body, -1, (int)body->boundarySampleRadii.size());
       }
     };
     checkLayer(fg);

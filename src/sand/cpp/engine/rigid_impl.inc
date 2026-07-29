@@ -47,14 +47,21 @@ bool RigidBodySystem::computeDerived(Body* b, bool preserveWorld) {
   double dx = sumX / divisor, dy = sumY / divisor;
   if (preserveWorld && (dx != 0 || dy != 0)) { double c = std::cos(b->angle), s = std::sin(b->angle); b->px += dx * c - dy * s; b->py += dx * s + dy * c; }
   b->offsetX -= dx; b->offsetY -= dy;
-  b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear(); b->boundarySamples.clear();
+  b->points.assign((size_t)nPts * 2, 0.f); b->boundaryPts.clear();
+  b->boundarySamples.clear(); b->boundarySampleRadii.clear();
   int pi = 0; double inertia = 0, maxR2 = 0;
   int shortSide = imax(1, imin(b->w, b->h));
   int longSide = imax(b->w, b->h);
   bool sampleCorners = nPts == b->w * b->h
     || longSide >= 24 || longSide >= shortSide * 8;
   auto filled = [&](int ii, int jj) { return ii >= 0 && ii < b->w && jj >= 0 && jj < b->h && b->occ[jj * b->w + ii]; };
-  auto addSample = [&](double sx, double sy) { b->boundarySamples.push_back((float)sx); b->boundarySamples.push_back((float)sy); };
+  auto addSample = [&](double sx, double sy) {
+    float sampleX = (float)sx, sampleY = (float)sy;
+    b->boundarySamples.push_back(sampleX);
+    b->boundarySamples.push_back(sampleY);
+    b->boundarySampleRadii.push_back(std::hypot(
+      (double)sampleX, (double)sampleY));
+  };
   for (int j = 0; j < b->h; j++) for (int i = 0; i < b->w; i++) {
     if (!b->occ[j * b->w + i]) continue;
     double lx = b->offsetX + i, ly = b->offsetY + j;
@@ -1040,7 +1047,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
     lbx = lby = 0;
     if (!contact.b) return;
     Body* B = contact.b;
-    double bcs = std::cos(B->angle), bsn = std::sin(B->angle);
+    double bcs = contact.bIntegrated ? B->cs : std::cos(B->angle);
+    double bsn = contact.bIntegrated ? B->sn : std::sin(B->angle);
     lbx = contact.rbx * bcs + contact.rby * bsn;
     lby = -contact.rbx * bsn + contact.rby * bcs;
   };
@@ -1435,6 +1443,37 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // child-index nesting after exact swept-AABB culling.
     std::sort(childPairScratch.begin(), childPairScratch.end());
   };
+  auto sweptBodyBounds = [&](Body* body, const ChildFrame& now,
+                             const ChildFrame& next, double dt) {
+    double localX = body->offsetX + (body->w - 1) * 0.5;
+    double localY = body->offsetY + (body->h - 1) * 0.5;
+    double halfX = body->w * 0.5, halfY = body->h * 0.5;
+    double nowCx = now.px + localX * now.ux + localY * now.vx;
+    double nowCy = now.py + localX * now.uy + localY * now.vy;
+    double nextCx = next.px + localX * next.ux + localY * next.vx;
+    double nextCy = next.py + localX * next.uy + localY * next.vy;
+    double nowX = std::fabs(now.ux) * halfX
+                + std::fabs(now.vx) * halfY;
+    double nowY = std::fabs(now.uy) * halfX
+                + std::fabs(now.vy) * halfY;
+    double nextX = std::fabs(next.ux) * halfX
+                 + std::fabs(next.vx) * halfY;
+    double nextY = std::fabs(next.uy) * halfX
+                 + std::fabs(next.vy) * halfY;
+    double pad = (body->maxR + 0.7071067811865476)
+               * std::fabs(body->omega) * dt
+               + R_CONTACT_SKIN * 0.5 + 1e-9;
+    return ChildBounds{
+      std::fmin(nowCx - nowX, nextCx - nextX) - pad,
+      std::fmin(nowCy - nowY, nextCy - nextY) - pad,
+      std::fmax(nowCx + nowX, nextCx + nextX) + pad,
+      std::fmax(nowCy + nowY, nextCy + nextY) + pad,
+    };
+  };
+  auto sweptBoundsOverlap = [](const ChildBounds& a, const ChildBounds& b) {
+    return a.minX <= b.maxX && b.minX <= a.maxX
+        && a.minY <= b.maxY && b.minY <= a.maxY;
+  };
   auto faceNormal = [](const ChildFrame& frame, BodyCollisionFace face,
                        double& nx, double& ny) {
     if (face == BCF_LEFT) { nx = -frame.ux; ny = -frame.uy; }
@@ -1810,8 +1849,15 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // side of a thin body to the other without generating a contact.
     auto collectSweep = [&](Body* P, Body* T, double sign, double dt) {
       const std::vector<float>& S = P->boundarySamples; double pm = P->sweepMargin;
+      const std::vector<double>& radii = P->boundarySampleRadii;
       bool preciseDepth = rigidLargeSlenderBody(P)
                        && rigidLargeSlenderBody(T);
+      bool exactAngular = needsExactAngularSweep(P)
+                       || needsExactAngularSweep(T);
+      double relativeLinear = exactAngular
+        ? std::hypot(P->vx - T->vx, P->vy - T->vy) : 0;
+      double sourceAngularSpeed = std::fabs(P->omega);
+      double targetAngularSpeed = std::fabs(T->omega) * T->maxR;
       for (size_t si = 0; si + 1 < S.size(); si += 2) {
         double lx = S[si], ly = S[si + 1];
         double sx = P->px + lx * P->cs - ly * P->sn, sy = P->py + lx * P->sn + ly * P->cs;
@@ -1828,7 +1874,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         // Compact bodies use the point's tangent over this short substep.
         // Long or large rotating bodies follow their exact circular trajectory,
         // since their endpoints can depart materially from that tangent.
-        if (!needsExactAngularSweep(P) && !needsExactAngularSweep(T)) {
+        if (!exactAngular) {
           double rPx = sx - P->px, rPy = sy - P->py;
           double rTx = sx - T->px, rTy = sy - T->py;
           double mvx = ((P->vx - P->omega * rPy)
@@ -1867,11 +1913,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
           }
           continue;
         }
-        double relativeLinear = std::hypot(P->vx - T->vx, P->vy - T->vy);
-        double pointRadius = std::hypot(lx, ly);
+        double pointRadius = radii[si / 2];
         double speedBound = relativeLinear
-          + std::fabs(P->omega) * pointRadius
-          + std::fabs(T->omega) * T->maxR;
+          + sourceAngularSpeed * pointRadius
+          + targetAngularSpeed;
         if (speedBound < 1e-9) continue;
         double timeEnd = dt + R_CONTACT_SKIN / speedBound;
         double total = speedBound * timeEnd;
@@ -1915,6 +1960,36 @@ void RigidBodySystem::rigidStep(double tickDt) {
     auto collectTerrain = [&](Body* b, double dt) {
       bool bodyHasPeerContacts = bodyUsesPeerContacts(b);
       const std::vector<float>& S = b->boundarySamples;
+      const std::vector<double>& radii = b->boundarySampleRadii;
+      bool exactAngular = needsExactAngularSweep(b);
+      double linearSpeed = exactAngular ? std::hypot(b->vx, b->vy) : 0;
+      double angularSpeed = std::fabs(b->omega);
+      if (!bodyHasPeerContacts) {
+        // The solver AABB already contains the substep reach. One extra cell
+        // also covers the half-cell boundary samples beyond maxR.
+        int x0 = (int)std::floor(b->aabbX0) - 1;
+        int y0 = (int)std::floor(b->aabbY0) - 1;
+        int x1 = (int)std::floor(b->aabbX1) + 1;
+        int y1 = (int)std::floor(b->aabbY1) + 1;
+        if (x0 >= 0 && y0 >= 0 && x1 < E.cols && y1 < E.rows) {
+          bool occupied = false;
+          for (int y = y0; y <= y1 && !occupied; y++) {
+            const uint8_t* row = E.L->grid + y * E.cols;
+            int x = x0;
+            for (; x + 7 <= x1; x += 8) {
+              uint64_t materials = 0;
+              memcpy(&materials, row + x, sizeof(materials));
+              if (materials != 0) {
+                occupied = true;
+                break;
+              }
+            }
+            for (; x <= x1 && !occupied; x++)
+              occupied = row[x] != EMPTY;
+          }
+          if (!occupied) return;
+        }
+      }
       auto solid = [&](int ix, int iy) { return ix < 0 || ix >= E.cols || iy < 0 || iy >= E.rows || isBodyTerrain(b, ix, iy, b->density); };
       auto tnorm = [&](int ix, int iy, double& ox, double& oy) {
         if (ix < 0) { ox = 1; oy = 0; return; }
@@ -1936,7 +2011,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
             terrPeers.push_back(peerDynamicBodyAt(b, cx, cy));
           continue;
         }
-        if (!needsExactAngularSweep(b)) {
+        if (!exactAngular) {
           double rx = sx - b->px, ry = sy - b->py;
           double mvx = (b->vx - b->omega * ry) * dt;
           double mvy = (b->vy + b->omega * rx) * dt;
@@ -1976,9 +2051,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
           }
           continue;
         }
-        double pointRadius = std::hypot(lx, ly);
-        double speedBound = std::hypot(b->vx, b->vy)
-          + std::fabs(b->omega) * pointRadius;
+        double pointRadius = radii[si / 2];
+        double speedBound = linearSpeed + angularSpeed * pointRadius;
         if (speedBound < 1e-9) continue;
         double timeEnd = dt + R_CONTACT_SKIN / speedBound;
         double total = speedBound * timeEnd;
@@ -2086,6 +2160,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
         auto materialAtContact = [&](Body* body) {
+          if (body->cellMaterials.empty()) return body->material;
           int local = insideBodyIndex(body, p->wx, p->wy);
           return local >= 0 ? bodyMaterialAt(body, local) : body->material;
         };
@@ -2103,6 +2178,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         Contact contact{
           A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
           p->childA, p->childB, p->featureA, p->featureB,
+          (uint8_t)bk,
           bIndex >= 0, std::max(0.0, -impactVn), targetVn,
           contactDt, staticFriction, dynamicFriction,
           0, 0, 0, -1, false,
@@ -2172,6 +2248,16 @@ void RigidBodySystem::rigidStep(double tickDt) {
       bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
       ChildContactState childContactState =
         collectChildContacts(A, B, pairDt);
+      ChildBounds sweptA, sweptB;
+      if (childContactState != CCS_CURRENT) {
+        sweptA = sweptBodyBounds(
+          A, currentChildFramesA[0], nextChildFramesA[0], pairDt);
+        sweptB = sweptBodyBounds(
+          B, currentChildFramesB[0], nextChildFramesB[0], pairDt);
+        if (childContactState == CCS_NONE
+            && !sweptBoundsOverlap(sweptA, sweptB))
+          continue;
+      }
       uint64_t pairKey = bodyPairKey(A->id, B->id);
       auto remembered = activePairAxes.find(pairKey);
       if (remembered != activePairAxes.end()
@@ -2398,11 +2484,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
     nextContacts.clear();
     nextContacts.reserve(previousContacts.size());
     for (const Contact& contact : contacts) {
-      int normalBucket = ((int)std::lround(
-        std::atan2(contact.ny, contact.nx) * (8.0 / (2.0 * M_PI)))) & 7;
       double lax, lay, lbx, lby;
       localAnchors(contact, lax, lay, lbx, lby);
-      nextContacts[cacheKey(contact, normalBucket)].push_back({
+      nextContacts[cacheKey(contact, contact.normalBucket)].push_back({
         lax, lay, lbx, lby, contact.nx, contact.ny,
         contact.accJn, contact.accJt, contact.dt, 0, false,
       });

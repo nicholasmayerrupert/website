@@ -261,6 +261,7 @@ struct Body {
   // squares, so cell centres alone miss thin-shape edges; samples are cached and
   // rebuilt only when occupancy changes (computeDerived).
   std::vector<float> boundarySamples;
+  std::vector<double> boundarySampleRadii;
   // Exact non-overlapping rectangle cover of `occ`. Each face indexes its
   // exposed sub-spans so contacts cannot originate from decomposition seams.
   std::vector<BodyCollisionRect> collisionRects;
@@ -284,6 +285,7 @@ struct Contact {
   Body* a; Body* b;
   double rax, ray, rbx, rby, nx, ny, depth;
   int childA, childB, featureA, featureB;
+  uint8_t normalBucket;
   // Cross-layer contacts exchange velocity impulses immediately even though the
   // peer body integrates in a different layer pass. Positional bias remains on
   // the body in the active solver so neither layer's stamped raster becomes

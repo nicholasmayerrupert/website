@@ -24,6 +24,7 @@ mapping, and pan stability.
 | `npm run test:rigid-shape-stress` | Drop convex, concave, hollow, stepped, thin, thick, small, and 120-cell bodies together; verify exact compound proxies, retention, overlap bounds, and sleep. |
 | `npm run bench:rigid` | Measure many-body pile collision cost and total rigid step time. |
 | `npm run bench:rigid-acid` | Measure collision, erosion, and connectivity repair while acid fragments 32 large piled bodies. |
+| `npm run bench:rigid-long` | Continuously collide solid, thin, jagged, and L-shaped long bodies in one pile. |
 | `npm run bench:ice-growth` | Track rigid/fluid cost while one floating ice body grows through a pool. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
@@ -145,17 +146,20 @@ component registration, and generation/restoration. Browser presentation exposes
   island sleep instead of cold-solving jitter indefinitely.
 - Large rotating bodies and long beams use exact angular sample trajectories.
   Compact bodies use tangent sweeps to keep the common debris path inexpensive;
-  long and filled masks still receive convex-corner samples. Body pairs that are
-  both at least 4:1 slender with `maxR >= 24` also receive a constant-cost
-  oriented-rectangle reference axis after raster contact exists. Near-parallel
-  pairs add two span constraints with raster-measured depth only when both masks
-  tightly fit their bounds; thin masks must cover every major-axis row or column,
-  while other masks must fill at least 75% of the bounds. Sparse broad bounds and
-  crossed pairs keep their local raster anchors. Refined penetration and tighter
-  slop remain confined to that path. A long/small pair only substitutes the long
-  body's minor axis for center-to-center manifold filtering, and a large
-  participant keeps the pair's missed contact anchors alive regardless of pair
-  order.
+  long and filled masks still receive convex-corner samples. Immutable sample
+  radii and pair/body speed terms are cached outside the sample loops. A
+  conservative full-substep body envelope rejects raster CCD only when two
+  bodies cannot meet, while an in-bounds swept raster box that contains no grid
+  material skips terrain sampling. Body pairs that are both at least 4:1 slender
+  with `maxR >= 24` also receive a constant-cost oriented-rectangle reference
+  axis after raster contact exists. Near-parallel pairs add two span constraints
+  with raster-measured depth only when both masks tightly fit their bounds; thin
+  masks must cover every major-axis row or column, while other masks must fill
+  at least 75% of the bounds. Sparse broad bounds and crossed pairs keep their
+  local raster anchors. Refined penetration and tighter slop remain confined to
+  that path. A long/small pair only substitutes the long body's minor axis for
+  center-to-center manifold filtering, and a large participant keeps the pair's
+  missed contact anchors alive regardless of pair order.
 - The committed engine is one SIMD-enabled WASM package; `-O3` can vectorize
   contiguous solver, grid, and rendering loops without a parallel runtime.
   Threading rigid islands would require a shared-memory worker package plus

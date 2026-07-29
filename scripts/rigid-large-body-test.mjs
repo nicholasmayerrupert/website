@@ -16,6 +16,14 @@ const rectangle = (x0, y0, x1, y1) => {
     for (let x = x0; x <= x1; x++) cells.push([x, y]);
   return cells;
 };
+const lShape = (x0, y0, size, thickness) => {
+  const cells = [];
+  for (let y = y0; y < y0 + size; y++)
+    for (let x = x0; x < x0 + size; x++)
+      if (x < x0 + thickness || y >= y0 + size - thickness)
+        cells.push([x, y]);
+  return cells;
+};
 const staticRectangle = (engine, layer, x0, y0, x1, y1, material) => {
   for (let y = y0; y <= y1; y++)
     for (let x = x0; x <= x1; x++)
@@ -174,6 +182,28 @@ const speed = (state) =>
   const minimumDistance = Math.sqrt(minimumDistance2);
   check(`opposing sparse kinks make real contact (${minimumDistance.toFixed(3)} <= 1.5)`,
     minimumDistance <= 1.5);
+  engine.destroy();
+}
+
+{
+  const cols = 280, rows = 300, floorY = rows - 3;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0xd987, sinksOn: false, infinite: false,
+  });
+  staticRectangle(engine, 0, 0, floorY, cols - 1, rows - 1, MAT.STONE);
+  staticRectangle(engine, 0, 72, 220, 79, floorY - 1, MAT.STONE);
+  staticRectangle(engine, 0, 180, 220, 187, floorY - 1, MAT.STONE);
+  engine.syncComponentsLayer(0);
+
+  engine.spawnBody(lShape(70, 100, 120, 8));
+  for (let i = 0; i < 180; i++) engine.stepWorld();
+  engine.spawnBody(rectangle(154, 120, 159, 125));
+  for (let i = 0; i < 500; i++) engine.stepWorld();
+
+  const dropped = engine._bodyState(1);
+  check(`body dropped onto the remote arm of an 8x120 L stays above the deep floor `
+      + `(y ${dropped?.py.toFixed(2)} < ${floorY - 20})`,
+    !!dropped && dropped.py < floorY - 20);
   engine.destroy();
 }
 

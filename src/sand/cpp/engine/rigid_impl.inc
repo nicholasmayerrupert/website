@@ -1512,7 +1512,15 @@ void RigidBodySystem::rigidStep(double tickDt) {
         && solverBodies[B->idx] == B ? B->idx : -1;
       const double Q = 8.0 / (2.0 * M_PI);
       double snx[8] = {0}, sny[8] = {0}; int cnt[8] = {0};
-      for (auto& p : acc) { int bk = ((int)std::lround(std::atan2(p.ny, p.nx) * Q)) & 7; p.bk = bk; snx[bk] += p.nx; sny[bk] += p.ny; cnt[bk]++; }
+      bool sweptHit[8] = {false};
+      for (auto& p : acc) {
+        int bk = ((int)std::lround(std::atan2(p.ny, p.nx) * Q)) & 7;
+        p.bk = bk;
+        snx[bk] += p.nx;
+        sny[bk] += p.ny;
+        cnt[bk]++;
+        sweptHit[bk] = sweptHit[bk] || p.depth == 0;
+      }
       double Nx[8], Ny[8], tx[8], ty[8], loP[8], hiP[8]; PenPt* lo[8] = {nullptr}; PenPt* hi[8] = {nullptr};
       for (int bk = 0; bk < 8; bk++) {
         if (!cnt[bk]) continue;
@@ -1521,8 +1529,14 @@ void RigidBodySystem::rigidStep(double tickDt) {
         // Deep overlap samples can see the target's far-side faces too. For a
         // large slender body the reference follows its minor axis, so
         // longitudinal center offset does not discard a valid support face.
+        // A sparse shape's first swept hit already identifies its entered local
+        // face; a remote concave arm can put the body's center on the other side.
         // Terrain remains multi-sided for floor/wall corners.
-        if (B && Nx[bk] * fbx + Ny[bk] * fby < 0.5) {
+        bool localSparseSweep = sweptHit[bk]
+          && (!rigidTightSlenderBounds(A)
+              || !rigidTightSlenderBounds(B));
+        if (B && !localSparseSweep
+            && Nx[bk] * fbx + Ny[bk] * fby < 0.5) {
           cnt[bk] = 0;
           continue;
         }

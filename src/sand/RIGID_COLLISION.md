@@ -48,8 +48,11 @@ lives in `rigid_impl.inc`.
   into one diagonal manifold. Body/body buckets must also face the separating
   half-space. A long/small pair derives it from the long body's minor axis, and
   parallel long pairs use their shared minor axis, rather than allowing
-  longitudinally offset centers to hide a valid support face. Far-side samples
-  from a deep overlap are discarded instead of creating opposing constraints.
+  longitudinally offset centers to hide a valid support face. First-hit sweep
+  normals on sparse-bounds shapes use the entered local face even when a remote
+  concave arm puts the body's center outside that local half-space. Far-side
+  samples from a deep overlap are discarded instead of creating opposing
+  constraints.
 - Per-layer contact caches match local anchors by stable body id, geometry
   revision, peer layer, and normal bucket. Persistent normal and friction
   impulses warm-start the next substep/tick, while restitution remains an

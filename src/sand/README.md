@@ -334,9 +334,10 @@ staged crater wave while pacing rigid rubble through a per-tick body budget.
 Players, creatures, items, and projectiles are non-grid actors. Free rigid bodies
 are entities whose occupancy is stamped into the material grid.
 Moving rigid bodies sweep against a 0.35-cell skin around each player and
-creature AABB, then push the actor or deal cooldown-limited, nonlethal crush
-damage without applying a direct actor impulse to the body. Debug hitbox mode
-draws the rigid-contact skin outside the terrain hitbox.
+creature AABB. A descending body settles on an actor with free space below;
+otherwise it pushes the actor or deals cooldown-limited, nonlethal crush damage
+without applying a direct actor impulse to the body. Debug hitbox mode draws the
+rigid-contact skin outside the terrain hitbox.
 Players and other real-time actors advance on a deterministic 60 Hz actor clock;
 cellular world work is attempted at most once per presentation frame and does not
 accumulate catch-up debt.

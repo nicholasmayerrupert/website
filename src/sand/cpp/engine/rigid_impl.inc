@@ -4299,15 +4299,16 @@ bool RigidBodySystem::depenetrateBodyRaster(Body* b, double prePx, double prePy,
   b->px = newPx; b->py = newPy; b->angle = newAngle; return false;
 }
 
-// Free bodies are grid entities while players/creatures are AABBs, so the rigid
-// solver cannot see them as ordinary contacts. Resolve body->actor overlap here,
-// while body cells are temporarily absent from the grid: push in the body's
-// swept direction. If terrain or another body blocks that displacement, keep
-// the actor in place and let its owning system apply the crush lifecycle.
+// Free bodies are grid entities while players/creatures are AABBs, so this
+// swept post-solve path resolves their contact while body cells are absent from
+// the grid. An airborne actor supports a descending body; other contact keeps
+// the established push and crush behavior.
 bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
                                          double preAngle) {
   const double finalPx = b->px, finalPy = b->py, finalAngle = b->angle;
   const double dx = finalPx - prePx, dy = finalPy - prePy, da = finalAngle - preAngle;
+  const double angularSweep = std::fabs(da) * std::hypot(b->w, b->h) * 0.5;
+  const bool downwardSweep = dy > 1e-6 && dy >= std::fabs(dx) && dy >= angularSweep;
   // Every occupied pixel square stays inside this center-line capsule for the
   // complete translation/rotation sweep. If no live actor AABB touches it,
   // rasterizing intermediate poses cannot find an overlap.
@@ -4373,6 +4374,19 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
           ay0 < cell.second + 1 && ay1 > cell.second) return true;
     return false;
   };
+  auto settleOnActor = [&](double ax, double ay, int aw, int ah, int step) {
+    double lo = (double)(step - 1) / sweepSteps, hi = (double)step / sweepSteps;
+    for (int iter = 0; iter < 7; iter++) {
+      double mid = (lo + hi) * 0.5;
+      b->px = prePx + dx * mid; b->py = prePy + dy * mid; b->angle = preAngle + da * mid;
+      rasterBody();
+      if (broadOverlaps(ax, ay, aw, ah) && overlaps(ax, ay, aw, ah)) hi = mid;
+      else lo = mid;
+    }
+    b->px = prePx + dx * lo; b->py = prePy + dy * lo; b->angle = preAngle + da * lo;
+    b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
+    b->vy = 0; b->awake = true; b->stillTicks = 0;
+  };
   auto pushOverlapping = [&](double& ax, double& ay, int aw, int ah,
                              double& avx, double& avy, bool player) {
     double colliderX0 = ax - ACTOR_RIGID_SKIN;
@@ -4432,6 +4446,10 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
       Player& p = E.psys.players[i];
       if (!p.active || !p.alive) continue;
       if (!broadOverlaps(p.px, p.py, p.w, p.h) || !overlaps(p.px, p.py, p.w, p.h)) continue;
+      if (downwardSweep && !E.psys.playerBoxHits(p.px, p.py + .25, p.w, p.h)) {
+        settleOnActor(p.px, p.py, p.w, p.h, step);
+        return true;
+      }
       if (pushOverlapping(p.px, p.py, p.w, p.h, p.vx, p.vy, true))
         E.psys.crushPlayer(p);
     }
@@ -4441,6 +4459,12 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
       const CreatureSpecies& s = E.creatures.species(c);
       double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
       if (!broadOverlaps(x, y, s.w, s.h) || !overlaps(x, y, s.w, s.h)) continue;
+      if (downwardSweep && !E.creatures.boxHitsSolid(E.fg.worldOffsetX + x,
+                                                      E.fg.worldOffsetY + y + .25,
+                                                      s.w, s.h)) {
+        settleOnActor(x, y, s.w, s.h, step);
+        return true;
+      }
       if (pushOverlapping(x, y, s.w, s.h, c.vx, c.vy, false))
         E.creatures.crushCreature(c);
       c.wx = E.fg.worldOffsetX + x; c.wy = E.fg.worldOffsetY + y;

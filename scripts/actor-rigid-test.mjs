@@ -107,6 +107,35 @@ const stepWorld = (e, count) => {
   e.destroy();
 }
 
+// A player's padded collider is a real support surface: a falling body comes
+// to rest on it without passing through or displacing the player.
+{
+  const e = mk();
+  const id = e.spawnPlayer(82, 92);
+  e.spawnBox(80, 48, 8, 3, MAT.RIGID);
+  e._setBodyMotion(0, 0, 18, 0);
+  stepWorld(e, 32);
+  const p = e.getPlayer(id), b = e._bodyState(0);
+  check(`falling body is supported by the player collider (body y ${b.py.toFixed(1)}, player y ${p.y.toFixed(1)})`,
+    p.alive && Math.abs(p.y - 92) < 1e-6 &&
+      b.py < p.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, p));
+  e.destroy();
+}
+
+// Enemy colliders provide the same support surface as players.
+{
+  const e = mk();
+  const id = e.spawnCreature(CREATURE.BIRD, 82, 92);
+  e.spawnBox(80, 48, 8, 3, MAT.RIGID);
+  e._setBodyMotion(0, 0, 18, 0);
+  stepWorld(e, 32);
+  const c = creature(e, id), b = e._bodyState(0);
+  check(`falling body is supported by an enemy collider (body y ${b.py.toFixed(1)}, enemy y ${c.y.toFixed(1)})`,
+    c.alive && Math.abs(c.y - 92) < 1e-6 &&
+      b.py < c.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, c));
+  e.destroy();
+}
+
 // A falling slab cannot move a player through the solid floor. The blocked
 // downward sweep damages the player without killing or rescue-teleporting them.
 {

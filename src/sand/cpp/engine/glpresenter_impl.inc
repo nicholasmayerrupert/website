@@ -415,7 +415,8 @@ void GLPresenter::glSolidDev(double dx0, double dy0, double w, double h) {
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-void GLPresenter::glDrawHitbox(double px, double py, int w, int h, float r, float g, float b, int camCol, int camRow) {
+void GLPresenter::glDrawHitbox(double px, double py, double w, double h,
+                               float r, float g, float b, int camCol, int camRow) {
   if (!glDebugHitboxes) return;
   double x = (px - camCol) * glCellDev + glOffX;
   double y = (py - camRow) * glCellDev + glOffY;
@@ -900,6 +901,11 @@ void GLPresenter::glDrawPlayers() {
                       p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_FUEL], p[GLP_JETPACK_ACTIVE] > .5f,
                       (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f,
                       p[GLP_OWN] > 0.5f, light, camCol, camRow);
+      glDrawHitbox(p[GLP_X] - ACTOR_RIGID_SKIN,
+                   p[GLP_Y] - ACTOR_RIGID_SKIN,
+                   p[GLP_W] + ACTOR_RIGID_SKIN * 2.0,
+                   p[GLP_H] + ACTOR_RIGID_SKIN * 2.0,
+                   1.0f, 0.72f, 0.20f, camCol, camRow);
       glDrawHitbox(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H], 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   } else {
@@ -911,6 +917,11 @@ void GLPresenter::glDrawPlayers() {
                       p.bowChargeTicks / chargeMax, p.aimX, p.aimY, p.jetpackFuel, p.jetpackActive,
                       p.shieldHealth, p.shieldActive, p.id == glOwnPlayerId,
                       glActorLight(p.px, p.py, p.w, p.h), camCol, camRow);
+      glDrawHitbox(p.px - ACTOR_RIGID_SKIN,
+                   p.py - ACTOR_RIGID_SKIN,
+                   p.w + ACTOR_RIGID_SKIN * 2.0,
+                   p.h + ACTOR_RIGID_SKIN * 2.0,
+                   1.0f, 0.72f, 0.20f, camCol, camRow);
       glDrawHitbox(p.px, p.py, p.w, p.h, 0.20f, 0.90f, 1.0f, camCol, camRow);
     }
   }
@@ -1734,6 +1745,10 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       glSolidDev(x, innerY, segW * amount, std::max(1.0, innerH * 0.28));
     }
   }
+  glDrawHitbox(px - ACTOR_RIGID_SKIN, py - ACTOR_RIGID_SKIN,
+               CREATURE_SPECIES[speciesId].w + ACTOR_RIGID_SKIN * 2.0,
+               CREATURE_SPECIES[speciesId].h + ACTOR_RIGID_SKIN * 2.0,
+               1.0f, 0.72f, 0.20f, camCol, camRow);
   glDrawHitbox(px, py, CREATURE_SPECIES[speciesId].w, CREATURE_SPECIES[speciesId].h,
                1.0f, CREATURE_SPECIES[speciesId].hostile ? 0.24f : 0.88f, 0.20f, camCol, camRow);
 }

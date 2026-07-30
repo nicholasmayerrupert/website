@@ -396,6 +396,9 @@ static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL 
 static const double P_AIM_FACING_DEADZONE = 0.2; // retain side while aiming almost exactly vertical
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
+static const double ACTOR_RIGID_SKIN = 0.35; // moving bodies contact just outside actor AABBs
+static const int    ACTOR_CRUSH_DAMAGE = 18;
+static const int    ACTOR_CRUSH_COOLDOWN = 30;
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
 // Rechargeable personal jetpack. Fuel is normalized [0,1] so the ABI/HUD can
 // expose it without duplicating a capacity constant. A full tank provides two

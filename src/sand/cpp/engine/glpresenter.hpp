@@ -124,7 +124,8 @@ class GLPresenter {
   void glShiftV(int dy);
   void glSetClip(double dx0, double dy0, double dx1, double dy1);
   void glSolidDev(double dx0, double dy0, double w, double h);
-  void glDrawHitbox(double px, double py, int w, int h, float r, float g, float b, int camCol, int camRow);
+  void glDrawHitbox(double px, double py, double w, double h,
+                    float r, float g, float b, int camCol, int camRow);
   void glDrawCells(GLuint tex, float tint, int gutter, int opaqueAlpha);
   void glCollectDynamicLights();
   float glActorLight(double px, double py, int w, int h) const;

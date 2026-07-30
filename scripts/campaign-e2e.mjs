@@ -64,7 +64,7 @@ const deployments = [
     completedMissionIds: ['greenfall-recovery'],
     planet: 'moon',
     planetId: 1,
-    gravity: 0.165,
+    gravity: 0.33,
     operation: 'Operation Silent Quarry',
   },
   {
@@ -72,7 +72,7 @@ const deployments = [
     completedMissionIds: ['greenfall-recovery', 'silent-quarry'],
     planet: 'mars',
     planetId: 2,
-    gravity: 0.38,
+    gravity: 0.76,
     operation: 'Operation Red Furnace',
   },
 ];
@@ -89,7 +89,13 @@ try {
   await page.goto(baseURL, { waitUntil: 'load' });
   await page.getByText('Field Ship Kestrel').waitFor({ state: 'visible' });
   check('campaign opens aboard Kestrel', await page.getByText('Field Ship Kestrel').isVisible());
-  check('ship briefing does not mount a simulation', await page.locator('sand-game').count() === 0);
+  await page.waitForFunction(() => {
+    const game = document.querySelector('sand-game')?._game;
+    return game?.getPlanetState?.().id === 3 && game?.perfStats?.().creatureCount >= 3;
+  }, null, { timeout: 30000 });
+  check('Kestrel is a physical ship world with a player and crew',
+    await page.locator('sand-game[planet="ship"]').count() === 1 &&
+    await page.evaluate(() => document.querySelector('sand-game')._game.perfStats().creatureCount >= 3));
   check('Earth, Moon, and Mars are visible on the mission deck',
     await page.getByText('Earth', { exact: true }).count() > 0 &&
     await page.getByText('The Moon', { exact: true }).count() > 0 &&

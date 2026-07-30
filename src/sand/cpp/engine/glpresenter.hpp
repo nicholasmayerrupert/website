@@ -138,7 +138,8 @@ class GLPresenter {
   void glDrawItems();
   void glDrawProjectiles();
   void glDrawOneCreature(int species, double px, double py, int facing, int health, int maxHealth,
-                         int alive, int animFrame, int attackState, double attackProgress,
+                         int alive, int animFrame, int attackState, int attackPattern,
+                         double attackProgress,
                          double aimX, double aimY, double spawnProgress, float light,
                          int camCol, int camRow);
   void glDrawCreatures();

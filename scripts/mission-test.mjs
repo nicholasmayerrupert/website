@@ -206,8 +206,8 @@ function rescueSurveyors(engine, playerId) {
   snapshot = engine.getMission();
   check('defeating the warden exposes the reactor core',
     snapshot.objectives[2].state === OBJECTIVE_STATE.ACTIVE &&
-    livingSpecies(engine, CREATURE.SHIELD_ANCHOR).length === 1);
-  eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
+    livingSpecies(engine, CREATURE.REACTOR_CORE).length === 1);
+  eliminate(engine, livingSpecies(engine, CREATURE.REACTOR_CORE));
   snapshot = engine.getMission();
   check('breaching the core triggers the severe threat spike',
     snapshot.phase === MISSION_PHASE.EXTRACTION &&

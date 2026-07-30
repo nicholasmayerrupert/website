@@ -24,7 +24,7 @@ const stoneFloor = (e, top) => {
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
 check('roster includes fauna, combatants, and authored mission actors',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN');
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN,REACTOR_CORE,IRIS_COMMANDER,IRIS_ENGINEER');
 
 // Retired fauna remain available to direct spawns, but even an ideal habitat
 // must not add them to a natural population.
@@ -222,6 +222,33 @@ check('roster includes fauna, combatants, and authored mission actors',
   check('minigunner aim stays locked after its target dodges', aimLocked);
   check(`minigunner sustains a 150-tick burst (${burstSteps} ticks, ${rounds.size} rounds)`,
     firingPastOldBurst && burstSteps === 150 && rounds.size === 75);
+  e.destroy();
+}
+
+// Mission bosses rotate through three authored patterns instead of replaying a
+// single inherited weapon routine.
+for (const [species, label] of [
+  [CREATURE.QUARRY_FOREMAN, 'quarry foreman'],
+  [CREATURE.REACTOR_WARDEN, 'reactor warden'],
+]) {
+  const e = mk(); stoneFloor(e, 104);
+  e.spawnPlayer(12, 96);
+  e.spawnPlayer(26, 96);
+  e.spawnPlayer(40, 96);
+  e.spawnPlayer(54, 96);
+  e.setCreativeMaterial(CREATIVE_KIND.CREATURE, species);
+  e.pointerDown(104, 96, 0);
+  const bossId = e.getCreatures().find((c) => c.species === species)?.id;
+  e.setCreatureRuntime(true, false);
+  const patterns = new Set();
+  for (let tick = 0; tick < 1100 && patterns.size < 3; tick++) {
+    e.stepActors();
+    const boss = byId(e, bossId);
+    if (boss && boss.attackState !== CREATURE_ATTACK_STATE.IDLE)
+      patterns.add(boss.attackPattern);
+  }
+  check(`${label} rotates through three telegraphed attack patterns (${[...patterns].join(',')})`,
+    patterns.size === 3);
   e.destroy();
 }
 

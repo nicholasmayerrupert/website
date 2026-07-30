@@ -124,6 +124,11 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   auto depth = [&](double fraction) {
     return surfaceY + imax(32, (int)std::lround(maxDepth * fraction));
   };
+  auto spawnResident = [&](uint8_t species, int worldX, int worldY) {
+    const CreatureSpecies& resident = CREATURE_SPECIES[species];
+    return E.creatures.spawnCreature(
+      species, worldX - resident.w * .5, worldY - resident.h, false);
+  };
 
   if (missionId == MI_GREENFALL_RECOVERY) {
     int crewX = centerX + side * 2 / 3, crewY = depth(.40);
@@ -156,6 +161,8 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     authorFacilityRoom(centerX - side, anchorY, 17);
     authorFacilityRoom(centerX + side, depth(.68), 17);
     authorFacilityRoom(boss.worldX, boss.worldY, 24);
+    spawnResident(CS_IRIS_ENGINEER, centerX - side + 8, anchorY + 8);
+    spawnResident(CS_SURVEYOR, centerX + side - 8, depth(.68) + 8);
     anchors.targetActorId = spawnMissionCreature(
       CS_SHIELD_ANCHOR, centerX - side, anchorY, anchors.id);
     spawnMissionCreature(CS_SHIELD_ANCHOR, centerX + side, depth(.68), anchors.id);
@@ -179,6 +186,8 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     authorFacilityRoom(centerX + side, y2, 17);
     authorFacilityRoom(boss.worldX, boss.worldY, 25);
     authorFacilityRoom(core.worldX, core.worldY, 22);
+    spawnResident(CS_IRIS_ENGINEER, centerX - side + 8, y0 + 8);
+    spawnResident(CS_SURVEYOR, centerX + side - 8, y2 + 8);
     anchors.targetActorId = spawnMissionCreature(
       CS_SHIELD_ANCHOR, centerX - side, y0, anchors.id);
     spawnMissionCreature(CS_SHIELD_ANCHOR, centerX, y1, anchors.id);
@@ -213,7 +222,7 @@ void MissionSystem::activateObjective(int objectiveId) {
       species, objective->worldX, objective->worldY + 10, objective->id);
   } else if (objective->type == OK_CORE) {
     objective->targetActorId = spawnMissionCreature(
-      CS_SHIELD_ANCHOR, objective->worldX, objective->worldY,
+      CS_REACTOR_CORE, objective->worldX, objective->worldY,
       objective->id);
   }
 }

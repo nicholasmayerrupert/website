@@ -11,6 +11,8 @@ enum CreatureSpeciesId : uint8_t {
   CS_CAUSTIC_MORTARMAN = 9, CS_CLUSTER_WASP = 10, CS_MINIGUNNER = 11,
   CS_SURVEYOR = 12, CS_SHIELD_ANCHOR = 13,
   CS_QUARRY_FOREMAN = 14, CS_REACTOR_WARDEN = 15,
+  CS_REACTOR_CORE = 16, CS_IRIS_COMMANDER = 17,
+  CS_IRIS_ENGINEER = 18,
   CS_COUNT
 };
 enum CreatureLocomotion : uint8_t {
@@ -150,6 +152,24 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .damage=0, .attackCooldown=190, .scanInterval=5, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
    .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 180, 0, 0, 0.0, 0, 0}},
+  {.name="reactor core", .locomotion=CL_STATIONARY, .w=9, .h=12, .maxHealth=460,
+   .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0, .sightRange=0, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+  {.name="IRIS commander", .locomotion=CL_STATIONARY, .w=4, .h=8, .maxHealth=100,
+   .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0, .sightRange=0, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+  {.name="IRIS engineer", .locomotion=CL_STATIONARY, .w=4, .h=8, .maxHealth=100,
+   .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0, .sightRange=0, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
 };
 
 struct Creature {
@@ -171,6 +191,7 @@ struct Creature {
   bool hasHabitatGoal = false;
   uint8_t animFrame = 0;
   uint8_t attackState = CAS_IDLE;
+  uint8_t attackPattern = 0;
   int attackTicks = 0;
   double attackProgress = 0;
   double attackAimX = 0, attackAimY = 0; // absolute-world target
@@ -255,6 +276,7 @@ class CreatureSystem {
   void updateCausticMortarmanAttack(Creature& c);
   void updateClusterWaspAttack(Creature& c);
   void updateMinigunnerAttack(Creature& c);
+  void updateBossAttack(Creature& c);
   void fireBore(Creature& c);
   void fireBore(Player& p);
   void fireBoreLine(double ox, double oy, double dx, double dy, int damage,

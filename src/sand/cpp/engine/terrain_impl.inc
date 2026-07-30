@@ -41,8 +41,24 @@ int TerrainGen::classifyBiomeAt(int worldX) {
 // deterministic patches borrow the neighbouring biome, producing a readable
 // transition without per-pixel speckle or a single hard material seam.
 int TerrainGen::genBiomeAt(int worldX) {
-  if (E.planetId == PL_MOON) return BIOME_ROCKY;
-  if (E.planetId == PL_MARS) return BIOME_DESERT;
+  if (E.planetId == PL_SHIP) return BIOME_ROCKY;
+  if (E.planetId == PL_MOON || E.planetId == PL_MARS) {
+    uint32_t salt = E.planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u;
+    int region = floorDiv(worldX, 1536);
+    int pick = imin(5, (int)(whash1(E.L->worldSeed ^ salt ^ 0xB10B10u, region) * 6.0));
+    if (E.planetId == PL_MOON) {
+      static constexpr int moonBiomes[6] = {
+        BIOME_TUNDRA, BIOME_DESERT, BIOME_ROCKY,
+        BIOME_FOREST, BIOME_SWAMP, BIOME_JUNGLE,
+      };
+      return moonBiomes[pick];
+    }
+    static constexpr int marsBiomes[6] = {
+      BIOME_TUNDRA, BIOME_ROCKY, BIOME_DESERT,
+      BIOME_PLAINS, BIOME_SWAMP, BIOME_JUNGLE,
+    };
+    return marsBiomes[pick];
+  }
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x9e3779b9u);
   BiomeCacheEntry& cached = biomeCache[key & (BIOME_CACHE_SIZE - 1)];
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
@@ -66,6 +82,7 @@ int TerrainGen::genBiomeAt(int worldX) {
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
 int TerrainGen::genSurfaceAbs(int worldX) {
+  if (E.planetId == PL_SHIP) return 16;
   if (E.planetId != PL_EARTH) {
     uint32_t planetSeed = E.L->worldSeed
       ^ (E.planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u);
@@ -183,10 +200,22 @@ int TerrainGen::genCaveTopAbs(int worldX) {
   return genSurfaceAbs(worldX) + GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
 }
 int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
-  if (E.planetId == PL_MOON)
-    return worldY >= DEEP_BLEND_TOP ? CAVE_DEEP_GEODE : CAVE_CRYSTAL;
-  if (E.planetId == PL_MARS)
-    return worldY >= DEEP_BLEND_TOP ? CAVE_DEEP_MAGMA : CAVE_DEFAULT;
+  if (E.planetId == PL_SHIP) return CAVE_DEFAULT;
+  if (E.planetId == PL_MOON || E.planetId == PL_MARS) {
+    uint32_t salt = E.planetId == PL_MOON ? 0x1A2B3301u : 0x1A2B3302u;
+    double pick = wfbm2(E.L->gCaveSeed ^ salt,
+                         worldX * .0019, worldY * .0021, 3, .52);
+    if (worldY >= DEEP_BLEND_TOP) {
+      if (pick < .34) return E.planetId == PL_MOON ? CAVE_DEEP_GEODE : CAVE_DEEP_MAGMA;
+      if (pick < .58) return CAVE_DEEP_FOSSIL;
+      if (pick < .78) return CAVE_DEEP_VOID;
+      return CAVE_DEEP_GEODE;
+    }
+    if (pick < .25) return CAVE_DEFAULT;
+    if (pick < .50) return CAVE_CRYSTAL;
+    if (pick < .73) return CAVE_MUSHROOM;
+    return CAVE_LUSH;
+  }
   if (worldY >= DEEP_BLEND_TOP) {
     double transition = (double)(worldY - DEEP_BLEND_TOP)
                       / (double)(DEEP_BLEND_BOTTOM - DEEP_BLEND_TOP);
@@ -457,6 +486,7 @@ bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
 }
 
 bool TerrainGen::genIsCave(int worldX, int worldY) {
+  if (E.planetId == PL_SHIP) return false;
   if (E.planetId != PL_EARTH) {
     uint32_t seed = E.L->gCaveSeed ^ (E.L->isBackground ? 0x80000000u : 0u);
     uint32_t key = seed ^ ((uint32_t)worldX * 0x85ebca6bu)
@@ -634,6 +664,7 @@ uint8_t TerrainGen::genDeepRockAt(int worldX, int worldY) {
   return patch < mix ? DEEPSTONE : STONE;
 }
 uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int soil, int y) {
+  if (E.planetId == PL_SHIP) return EMPTY;
   if (E.planetId != PL_EARTH) {
     if (y < surf) return EMPTY;
     int depth = y - surf;
@@ -642,19 +673,47 @@ uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int so
     int bx = floorDiv(worldX, 2), by = floorDiv(worldY, 2);
     double pocket = whash2(E.L->gPocketSeed ^ 0x0FF0123u, bx, by);
     if (E.planetId == PL_MOON) {
-      if (depth == 0) return slope <= 3 ? SALT : DEBRIS;
-      if (depth < 7) return DEBRIS;
+      if (depth == 0) {
+        if (biome == BIOME_TUNDRA) return SNOW;
+        if (biome == BIOME_FOREST) return CRYSTAL;
+        if (biome == BIOME_SWAMP) return SALT;
+        if (biome == BIOME_JUNGLE) return MYCELIUM;
+        return slope <= 3 ? SALT : DEBRIS;
+      }
+      if (depth < 7) {
+        if (biome == BIOME_TUNDRA && depth < 4) return ICE;
+        if (biome == BIOME_DESERT) return SALT;
+        if (biome == BIOME_JUNGLE && pocket > .72) return MYCELIUM;
+        return DEBRIS;
+      }
       if (!E.L->isBackground && depth > 42 && pocket > 0.996) return ICE;
       if (!E.L->isBackground && depth > 70 && pocket < 0.003) return CRYSTAL;
       if (!E.L->isBackground && depth > 120 && pocket > 0.991) return IRON_ORE;
+      if (!E.L->isBackground && biome == BIOME_SWAMP && depth > 24 && pocket < .012)
+        return BRINE;
       return worldY >= DEEP_BLEND_BOTTOM ? DEEPSTONE : STONE;
     }
-    if (depth == 0) return slope <= 3 ? SAND : CLAY;
-    if (depth < 6) return CLAY;
-    if (depth < 16) return SANDSTONE;
+    if (depth == 0) {
+      if (biome == BIOME_TUNDRA) return SNOW;
+      if (biome == BIOME_ROCKY) return DEBRIS;
+      if (biome == BIOME_SWAMP) return SALT;
+      if (biome == BIOME_JUNGLE) return GRASS;
+      return slope <= 3 ? SAND : CLAY;
+    }
+    if (depth < 6) {
+      if (biome == BIOME_TUNDRA && depth < 3) return ICE;
+      if (biome == BIOME_JUNGLE && pocket > .42) return DIRT;
+      if (biome == BIOME_SWAMP) return CLAY;
+      return CLAY;
+    }
+    if (depth < 16) return biome == BIOME_ROCKY ? STONE : SANDSTONE;
     if (!E.L->isBackground && depth > 55 && pocket > 0.996) return ICE;
     if (!E.L->isBackground && depth > 85 && pocket < 0.004) return IRON_ORE;
     if (!E.L->isBackground && depth > 150 && pocket > 0.993) return GOLD_ORE;
+    if (!E.L->isBackground && biome == BIOME_SWAMP && depth > 30 && pocket < .014)
+      return ACID;
+    if (!E.L->isBackground && biome == BIOME_JUNGLE && depth > 28 && pocket > .985)
+      return MYCELIUM;
     return worldY >= DEEP_BLEND_BOTTOM ? DEEPSTONE : STONE;
   }
   int sea = E.L->gSeaRow - E.L->worldOffsetY;       // sea level as a buffer row (gSeaRow is absolute)

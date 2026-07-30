@@ -149,15 +149,21 @@ function ShipHub({
       ref={focusRef}
       tabIndex={-1}
       aria-label={`${SHIP_NAME} mission deck`}
-      className="relative min-h-screen overflow-hidden bg-[#080b10] px-5 py-5 text-white"
-      style={{
-        backgroundImage: 'radial-gradient(circle at 15% 20%,rgba(255,255,255,.55) 0 1px,transparent 1.5px),radial-gradient(circle at 78% 32%,rgba(255,255,255,.38) 0 1px,transparent 1.5px),radial-gradient(circle at 55% 80%,rgba(255,255,255,.32) 0 1px,transparent 1.5px),linear-gradient(145deg,#080b10,#111923 55%,#080a0d)',
-        backgroundSize: '130px 130px,190px 190px,230px 230px,auto',
-      }}
+      className="relative h-screen overflow-hidden bg-[#02040a] px-4 py-4 text-white"
     >
+      <SandGame mode="survival" planet="ship" worldSeed={0x4b455354} />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-2 bg-[#b5573f] shadow-[0_3px_0_#080a0c,0_6px_0_#283039]" />
-      <div className="relative mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-[1240px] flex-col">
-        <header className="mb-4 flex items-center justify-between border-b-2 border-[#3f4851] pb-3 pt-2 font-mono">
+      <div className="pointer-events-none absolute bottom-20 left-5 z-[79] hidden max-w-xs border-l-4 border-[#f0d465] bg-[#0a0d12]/72 p-3 font-mono md:block">
+        <p className="text-[8px] font-black uppercase tracking-[.18em] text-[#f0d465]">
+          Walkable ship
+        </p>
+        <p className="mt-1 text-[9px] leading-4 text-[#d4d9de]">
+          Move through the Kestrel with WASD. Commander Vale, Engineer Osei,
+          the transporter, armory, and observation deck are physically aboard.
+        </p>
+      </div>
+      <div className="pointer-events-none relative z-[80] ml-auto flex h-full w-full max-w-[720px] flex-col">
+        <header className="pointer-events-auto mb-3 flex items-center justify-between border-[3px] border-[#080a0c] bg-[#11171d]/92 p-3 font-mono shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)]">
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 place-items-center border-[3px] border-[#080a0c] bg-[#f0d465] text-[13px] font-black tracking-[-.05em] text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]">
               IRIS
@@ -180,8 +186,9 @@ function ShipHub({
           </div>
         </header>
 
+        <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-2">
         {save.interruptedRun && (
-          <section className={`${PANEL} mb-4 flex items-center justify-between gap-4 border-l-[#d48755] px-4 py-3 font-mono`}>
+          <section className={`${PANEL} mb-3 flex items-center justify-between gap-4 border-l-[#d48755] px-4 py-3 font-mono`}>
             <div>
               <p className="text-[9px] font-black uppercase tracking-[.16em] text-[#dca071]">Interrupted deployment</p>
               <p className="mt-1 text-[9px] text-[#b7c0c8]">
@@ -198,7 +205,7 @@ function ShipHub({
           </section>
         )}
 
-        <nav className="mb-4 flex gap-3" aria-label="Campaign missions">
+        <nav className="mb-3 flex gap-3" aria-label="Campaign missions">
           {CAMPAIGN_MISSIONS.map((entry, order) => (
             <PlanetBadge
               key={entry.id}
@@ -211,7 +218,7 @@ function ShipHub({
           ))}
         </nav>
 
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(390px,.92fr)]">
+        <div className="grid min-h-0 grid-cols-1 gap-3">
           <section className={`${PANEL} relative overflow-hidden p-5`}>
             <div
               className="absolute inset-x-0 top-0 h-28 opacity-45"
@@ -292,7 +299,7 @@ function ShipHub({
             </div>
 
             <p className="mb-3 font-mono text-[8px] leading-4 text-[#9fa8b0]">
-              Blast gun and iron mining tool are standard issue. Choose bounded mission supplies below.
+              Blast gun and IRIS mining manipulator are standard issue. Choose bounded mission supplies below.
             </p>
 
             <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
@@ -343,6 +350,7 @@ function ShipHub({
             </button>
           </section>
         </div>
+        </div>
       </div>
     </main>
   );
@@ -387,9 +395,10 @@ function DeploymentFailure({ mission, onRetry, onReturn }) {
 
 function Debrief({ mission, result, newlyRecovered, failed, onContinue, onRetry }) {
   const next = getNextCampaignMission(mission.id);
-  return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_50%_25%,#25313b,#0a0e13_68%)] p-6 text-white">
-      <section className={`${PANEL} w-full max-w-2xl p-7 font-mono`}>
+  const report = (
+      <section className={`${PANEL} w-full max-w-2xl p-7 font-mono ${
+        failed ? 'bg-[#171c21]/78 backdrop-blur-[2px]' : ''
+      }`}>
         <div className={`mb-5 inline-block px-3 py-2 text-[9px] font-black uppercase tracking-[.2em] text-[#111] ${
           failed ? 'bg-[#dc7657]' : 'bg-[#75d39a]'
         }`}>
@@ -438,7 +447,58 @@ function Debrief({ mission, result, newlyRecovered, failed, onContinue, onRetry 
           </button>
         </div>
       </section>
+  );
+  if (failed) {
+    return (
+      <div className="absolute inset-0 z-[98] grid place-items-center bg-transparent p-6 text-white">
+        {report}
+      </div>
+    );
+  }
+  return (
+    <main className="relative h-screen overflow-hidden bg-[#02040a] text-white">
+      <SandGame mode="survival" planet="ship" worldSeed={0x4b455354} />
+      <div className="absolute inset-0 z-[90] grid place-items-center bg-[#02040a]/28 p-6 backdrop-blur-[1px]">
+        {report}
+      </div>
     </main>
+  );
+}
+
+function BeamUpOverlay({ mission }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[97] overflow-hidden font-mono text-white">
+      <style>{`
+        @keyframes iris-beam-column {
+          0% { opacity: 0; transform: scaleX(.12); }
+          18% { opacity: .96; transform: scaleX(1); }
+          72% { opacity: .92; transform: scaleX(.72); }
+          100% { opacity: 0; transform: scaleX(.04); }
+        }
+        @keyframes iris-beam-rings {
+          from { opacity: .9; transform: translate(-50%,-50%) scale(.2); }
+          to { opacity: 0; transform: translate(-50%,-50%) scale(2.8); }
+        }
+      `}</style>
+      <div className="absolute inset-y-0 left-1/2 w-24 -translate-x-1/2 animate-[iris-beam-column_1.55s_ease-in-out_forwards] bg-[linear-gradient(90deg,transparent,rgba(91,241,255,.48),#f6ffff,rgba(91,241,255,.48),transparent)] shadow-[0_0_45px_18px_rgba(86,229,255,.44)]" />
+      {[0, 1, 2, 3].map((ring) => (
+        <span
+          key={ring}
+          className="absolute left-1/2 top-1/2 h-14 w-14 rounded-full border-4 border-[#a8fbff] shadow-[0_0_18px_#62ecff]"
+          style={{
+            animation: `iris-beam-rings .82s ${ring * .18}s ease-out both`,
+          }}
+        />
+      ))}
+      <div className="absolute inset-x-0 top-8 text-center">
+        <p className="text-[9px] font-black uppercase tracking-[.28em] text-[#a8fbff]">
+          Extraction lock confirmed
+        </p>
+        <h2 className="mt-2 text-lg font-black uppercase tracking-[.12em]">
+          Beaming to {SHIP_NAME} · {mission.operation}
+        </h2>
+      </div>
+    </div>
   );
 }
 
@@ -548,8 +608,7 @@ export function SandCampaign() {
       newlyRecovered: nextSave.unlockedWeapons.filter((kind) => !priorWeapons.has(kind)),
       failed: false,
     });
-    setRun(null);
-    setPhase('debrief');
+    setPhase('beam-up');
   }, [commitSave, run]);
 
   const failMission = useCallback((result = {}) => {
@@ -561,9 +620,17 @@ export function SandCampaign() {
       failed: true,
       retryRun: run,
     });
-    setRun(null);
-    setPhase('debrief');
+    setPhase('failed');
   }, [run]);
+
+  useEffect(() => {
+    if (phase !== 'beam-up') return undefined;
+    const timer = window.setTimeout(() => {
+      setRun(null);
+      setPhase('debrief');
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [phase]);
 
   const returnToShip = useCallback(() => {
     const nextSave = commitSave((current) => abandonCampaignRun(current));
@@ -630,6 +697,17 @@ export function SandCampaign() {
             mission={mission}
             onRetry={retryInitialization}
             onReturn={returnToShip}
+          />
+        )}
+        {phase === 'beam-up' && <BeamUpOverlay mission={mission} />}
+        {phase === 'failed' && debrief && (
+          <Debrief
+            mission={mission}
+            result={debrief.result}
+            newlyRecovered={[]}
+            failed
+            onContinue={returnToShip}
+            onRetry={retryFailed}
           />
         )}
         {phase === 'mission' && (

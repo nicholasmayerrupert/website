@@ -172,6 +172,7 @@ export function makeCreatures(tick, creatures) {
     data[o + O.aimX] = Number.isFinite(c.aimX) ? c.aimX : c.x;
     data[o + O.aimY] = Number.isFinite(c.aimY) ? c.aimY : c.y;
     data[o + O.spawnProgress] = Number.isFinite(c.spawnProgress) ? c.spawnProgress : 0;
+    data[o + O.attackPattern] = c.attackPattern | 0;
   }
   return { t: MSG.CREATURES, tick: Math.trunc(tick), data };
 }
@@ -283,6 +284,7 @@ function validateCreatures(m) {
     else if (!isInt(m.data[i])) return null;
     else if (f === O.species && (m.data[i] < 0 || m.data[i] > CREATURE_MAX)) return null;
     else if (f === O.attackState && (m.data[i] < 0 || m.data[i] > CREATURE_ATTACK_STATE_MAX)) return null;
+    else if (f === O.attackPattern && (m.data[i] < 0 || m.data[i] > 2)) return null;
   }
   return m;
 }

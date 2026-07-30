@@ -398,6 +398,9 @@ EMSCRIPTEN_KEEPALIVE float* engine_item_snapshot_ptr(Engine* e) { return e->item
 // Material-aware creatures. The spawn/damage entries are intentionally small
 // gameplay/test hooks; ordinary population is owned by CreatureSystem rules.
 EMSCRIPTEN_KEEPALIVE int engine_spawn_creature(Engine* e, int species, double worldX, double worldY) { return e->creatures.spawnCreature((uint8_t)species, worldX, worldY); }
+EMSCRIPTEN_KEEPALIVE int engine_spawn_scripted_creature(Engine* e, int species, double worldX, double worldY) {
+  return e->creatures.spawnCreature((uint8_t)species, worldX, worldY, false);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_near_focus(Engine* e, int species, int salt) {
   if (species < 0 || species >= CS_COUNT) return 0;
   return e->creatures.spawnNearFocus((uint8_t)species, (uint32_t)salt) ? 1 : 0;
@@ -443,6 +446,7 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, in
     c.vx = in[CSN_VX]; c.vy = in[CSN_VY]; c.facing = (int)in[CSN_FACING];
     c.health = (int)in[CSN_HEALTH]; c.alive = in[CSN_ALIVE] != 0; c.animFrame = (uint8_t)in[CSN_ANIM_FRAME];
     c.attackState = (uint8_t)in[CSN_ATTACK_STATE]; c.attackProgress = in[CSN_ATTACK_PROGRESS];
+    c.attackPattern = (uint8_t)in[CSN_ATTACK_PATTERN];
     c.attackAimX = sourceOffsetX + in[CSN_AIM_X]; c.attackAimY = sourceOffsetY + in[CSN_AIM_Y];
     c.spawnProgress = in[CSN_SPAWN_PROGRESS];
     e->creatures.creatures.push_back(c);

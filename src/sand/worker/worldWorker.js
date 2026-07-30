@@ -1,8 +1,10 @@
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
 import {
   CREATIVE_KIND,
+  CREATURE,
   ITEM_KIND,
   MISSION,
+  PLANET,
 } from '../wasmBridge/abi.generated.js';
 import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
@@ -40,6 +42,7 @@ let survival = false;
 let survivalSpawnViewReady = false;
 let localPlayerId = 0;
 let missionId = MISSION.NONE;
+let activePlanetId = PLANET.EARTH;
 let latestInput = null;
 let actorClock = null;
 let lastInventoryHash = -1;
@@ -282,8 +285,7 @@ function run() {
     }
     engine.stepActors();
   });
-  // The DEV delay hook isolates scheduling without burning a browser CPU core;
-  // normal production turns always execute the real WASM world step here.
+  // The DEV delay hook isolates scheduling without burning a browser CPU core.
   if (artificialDelayMs <= 0) engine.stepWorld();
   lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
   rateSteps++;
@@ -341,6 +343,12 @@ self.onmessage = async ({ data }) => {
     engine.setTool(data.tool | 0);
     localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
     missionId = survival ? data.missionId | 0 : MISSION.NONE;
+    activePlanetId = data.planetId | 0;
+    if (localPlayerId && activePlanetId === PLANET.SHIP) {
+      engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8);
+      engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8);
+      engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23);
+    }
     if (localPlayerId && Array.isArray(data.loadout)) {
       for (const stack of data.loadout.slice(0, 16)) {
         const count = Math.max(0, Math.min(5000, stack?.count | 0));
@@ -386,7 +394,10 @@ self.onmessage = async ({ data }) => {
     control = data;
     if (survival && !survivalSpawnViewReady) {
       survivalSpawnViewReady = true;
-      engine.setCreatureRuntime(true, missionId ? false : true);
+      engine.setCreatureRuntime(
+        true,
+        missionId || activePlanetId === PLANET.SHIP ? false : true,
+      );
     }
   } else if (data.type === 'input') {
     latestInput = data.input || null;

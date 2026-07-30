@@ -308,6 +308,7 @@ export function initSandWasm() {
         itemSnapshot: c('engine_item_snapshot', 'number', ['number']),
         itemSnapshotPtr: c('engine_item_snapshot_ptr', 'number', ['number']),
         spawnCreature: c('engine_spawn_creature', 'number', ['number', 'number', 'number', 'number']),
+        spawnScriptedCreature: c('engine_spawn_scripted_creature', 'number', ['number', 'number', 'number', 'number']),
         testSpawnNearFocus: c('engine_test_spawn_near_focus', 'number', ['number', 'number', 'number']),
         testSpawnBreachNearFocus: c('engine_test_spawn_breach_near_focus', 'number', ['number', 'number', 'number']),
         damageCreatures: c('engine_damage_creatures', 'number', ['number', 'number', 'number', 'number', 'number']),
@@ -438,7 +439,8 @@ export function createEngineWasm({
       cols > 16384 || rows > 16384 || !Number.isSafeInteger(cells) || cells > 0x7fffffff) {
     throw new RangeError(`invalid sand engine dimensions ${cols}x${rows}`);
   }
-  if (planetId !== PLANET.EARTH && planetId !== PLANET.MOON && planetId !== PLANET.MARS) {
+  if (planetId !== PLANET.EARTH && planetId !== PLANET.MOON &&
+      planetId !== PLANET.MARS && planetId !== PLANET.SHIP) {
     throw new RangeError(`invalid sand engine planet ${planetId}`);
   }
   if (gravityScale !== undefined
@@ -953,6 +955,9 @@ const renderStrides = Object.freeze({
     spawnItem(material, count, px, py, vx = 0, vy = 0) { return M.spawnItem(ptr, material | 0, count | 0, px, py, vx, vy); },
     itemCount() { return M.itemCount(ptr); },
     spawnCreature(species, worldX, worldY) { return M.spawnCreature(ptr, species | 0, worldX, worldY); },
+    spawnScriptedCreature(species, worldX, worldY) {
+      return M.spawnScriptedCreature(ptr, species | 0, worldX, worldY);
+    },
     _testSpawnNearFocus(species, salt = 0) {
       return M.testSpawnNearFocus(ptr, species | 0, salt | 0) === 1;
     },
@@ -1158,6 +1163,7 @@ const renderStrides = Object.freeze({
           health: f[o + O.health] | 0, maxHealth: f[o + O.maxHealth] | 0,
           alive: f[o + O.alive] === 1, animFrame: f[o + O.animFrame] | 0,
           attackState: f[o + O.attackState] | 0, attackProgress: f[o + O.attackProgress],
+          attackPattern: f[o + O.attackPattern] | 0,
           aimX: f[o + O.aimX], aimY: f[o + O.aimY],
           spawnProgress: f[o + O.spawnProgress],
         };

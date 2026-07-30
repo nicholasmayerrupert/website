@@ -148,6 +148,9 @@
 
   bool stepWorld() {
     if (storageRole == ESR_PRESENTATION) return false;
+    // The Kestrel is a protected static hub. Actors continue to simulate while
+    // its authored hull, decks, and room dressing stay rigid and inexpensive.
+    if (planetId == PL_SHIP) { perfStepMs = 0; return false; }
     auto retainSleepingBodySupportDirty = [&](Layer& lay) {
       if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
       for (Body* b : lay.bodies) if (b->jointRole != 2 && !b->awake) {

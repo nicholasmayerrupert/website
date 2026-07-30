@@ -106,8 +106,8 @@ export const CAMPAIGN_MISSIONS = Object.freeze([
     operation: 'Operation Silent Quarry',
     title: 'Silent Quarry',
     duration: '18–22 min',
-    gravity: 0.165,
-    gravityLabel: '0.17 G',
+    gravity: 0.33,
+    gravityLabel: '0.33 G',
     coordinates: 'Shackleton Mining Reach · L-04',
     briefing: 'The Silent Quarry has gone dark. Two shield anchors protect an illegal command bunker beneath the mine. Disable both, defeat the foreman, and signal Kestrel from the emergency pickup point.',
     objectives: [
@@ -128,8 +128,8 @@ export const CAMPAIGN_MISSIONS = Object.freeze([
     operation: 'Operation Red Furnace',
     title: 'Red Furnace',
     duration: '20–25 min',
-    gravity: 0.38,
-    gravityLabel: '0.38 G',
+    gravity: 0.76,
+    gravityLabel: '0.76 G',
     coordinates: 'Noctis Reactor Basin · M-31',
     briefing: 'A buried reactor is feeding weapons production beneath Noctis. Traverse the complex, disable its three anchors, defeat the reactor warden, and breach the core before the basin collapses.',
     objectives: [

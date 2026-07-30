@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 24;
+static const int ABI_VERSION = 25;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -54,7 +54,7 @@ enum ItemSnapshotField : int {
 };
 static const int IS_STRIDE = 12;
 
-// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress
+// creatureSnapshot: id, species, x, y, vx, vy, w, h, facing, health, maxHealth, alive, animFrame, attackState, attackProgress, aimX, aimY, spawnProgress, attackPattern
 enum CreatureSnapshotField : int {
   CSN_ID = 0,
   CSN_SPECIES = 1,
@@ -74,8 +74,9 @@ enum CreatureSnapshotField : int {
   CSN_AIM_X = 15,
   CSN_AIM_Y = 16,
   CSN_SPAWN_PROGRESS = 17,
+  CSN_ATTACK_PATTERN = 18,
 };
-static const int CSN_STRIDE = 18;
+static const int CSN_STRIDE = 19;
 
 // inventorySlot: material, isTool, toolClass, toolTier, count, plantType, itemKind, selected
 enum InventorySlotField : int {
@@ -313,6 +314,9 @@ enum CreatureSpeciesAbi : int {
   CREATURE_SHIELD_ANCHOR = 13,
   CREATURE_QUARRY_FOREMAN = 14,
   CREATURE_REACTOR_WARDEN = 15,
+  CREATURE_REACTOR_CORE = 16,
+  CREATURE_IRIS_COMMANDER = 17,
+  CREATURE_IRIS_ENGINEER = 18,
 };
 
 enum CreatureAttackState : uint8_t {
@@ -325,6 +329,7 @@ enum PlanetId : uint8_t {
   PL_EARTH = 0,
   PL_MOON = 1,
   PL_MARS = 2,
+  PL_SHIP = 3,
 };
 
 enum MissionId : uint8_t {

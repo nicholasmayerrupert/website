@@ -12,6 +12,7 @@ const { check, done } = makeChecker('planet terrain and gravity');
 const WORLD = {
   cols: 256, rows: 256, worldSeed: 0xBEEF77, sinksOn: false, infinite: true,
 };
+const BIOME_SAMPLE_X = Array.from({ length: 65 }, (_, index) => (index - 32) * 1024);
 
 const signature = (planetId) => {
   const options = planetId === undefined ? WORLD : { ...WORLD, planetId };
@@ -22,6 +23,9 @@ const signature = (planetId) => {
     foreground: gridHash(engine.getGrid()),
     background: gridHash(engine.getGridBg()),
     surfaces: [-192, -64, 0, 64, 192].map((x) => engine.worldSurfaceAbsAt(x)),
+    biomes: BIOME_SAMPLE_X.map((x) => engine.worldBiomeAt(x)),
+    caveBiomes: BIOME_SAMPLE_X.flatMap((x) =>
+      [96, 320, 700, 900].map((y) => engine.worldCaveBiomeAt(x, y))),
   };
   engine.destroy();
   return result;
@@ -33,6 +37,8 @@ const moonA = signature(PLANET.MOON);
 const moonB = signature(PLANET.MOON);
 const marsA = signature(PLANET.MARS);
 const marsB = signature(PLANET.MARS);
+const shipA = signature(PLANET.SHIP);
+const shipB = signature(PLANET.SHIP);
 
 check('default engine is explicit Earth',
   defaultEarth.planet === PLANET.EARTH
@@ -45,15 +51,24 @@ check('Moon generation repeats for the same seed',
   JSON.stringify(moonA) === JSON.stringify(moonB));
 check('Mars generation repeats for the same seed',
   JSON.stringify(marsA) === JSON.stringify(marsB));
+check('Kestrel generation repeats for the same seed and uses shipboard gravity',
+  JSON.stringify(shipA) === JSON.stringify(shipB)
+    && shipA.planet === PLANET.SHIP && shipA.gravity === 1);
+check('Kestrel is a physical foreground/background world',
+  shipA.foreground !== earth.foreground && shipA.background !== earth.background);
 check('all three planets generate distinct foreground terrain',
   new Set([earth.foreground, moonA.foreground, marsA.foreground]).size === 3);
 check('all three planets generate distinct surface profiles',
   new Set([
     earth.surfaces.join(','), moonA.surfaces.join(','), marsA.surfaces.join(','),
   ]).size === 3);
-check('planet defaults expose 1.0g, 0.165g, and 0.38g',
-  earth.gravity === 1 && Math.abs(moonA.gravity - 0.165) < 1e-12
-    && Math.abs(marsA.gravity - 0.38) < 1e-12);
+check('Moon and Mars each expose six surface biome families',
+  new Set(moonA.biomes).size === 6 && new Set(marsA.biomes).size === 6);
+check('Moon and Mars each expose upper and deep cave biome families',
+  new Set(moonA.caveBiomes).size >= 7 && new Set(marsA.caveBiomes).size >= 7);
+check('planet defaults expose 1.0g, 0.33g, and 0.76g',
+  earth.gravity === 1 && Math.abs(moonA.gravity - 0.33) < 1e-12
+    && Math.abs(marsA.gravity - 0.76) < 1e-12);
 
 const fallSample = (planetId) => {
   const engine = attachTestHooks(createEngineWasm({

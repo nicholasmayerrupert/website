@@ -693,6 +693,13 @@ export function createParallaxBackground(container, { planetId = PLANET.EARTH } 
     const horizon = Math.round(clamp(h * HORIZON_RATIO, -28, h - 36));
     const verticalDrift = Math.round(backgroundDriftY(qy));
     const skyHeight = Math.max(0, horizon);
+    if (planetId === PLANET.SHIP) {
+      ctx.fillStyle = '#02040a';
+      ctx.fillRect(0, 0, w, h);
+      drawStars(ctx, w, h, qx, qy, 1);
+      drawPixelOrb(ctx, w * .82, h * .22 - verticalDrift * .08, '#174a76', '#74b9d7');
+      return;
+    }
     if (planetId !== PLANET.EARTH) {
       const palette = planetId === PLANET.MOON ? MOON_PALETTE : MARS_PALETTE;
       const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, skyHeight));

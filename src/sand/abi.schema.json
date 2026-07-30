@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 24,
+  "abiVersion": 25,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -15,7 +15,7 @@
     "creatureSnapshot": {
       "$comment": "float32 creature records built by CreatureSystem; also used by the external GL renderer and CREATURES wire message.",
       "cPrefix": "CSN",
-      "fields": ["id", "species", "x", "y", "vx", "vy", "w", "h", "facing", "health", "maxHealth", "alive", "animFrame", "attackState", "attackProgress", "aimX", "aimY", "spawnProgress"]
+      "fields": ["id", "species", "x", "y", "vx", "vy", "w", "h", "facing", "health", "maxHealth", "alive", "animFrame", "attackState", "attackProgress", "aimX", "aimY", "spawnProgress", "attackPattern"]
     },
     "inventorySlot": {
       "$comment": "float32 records built by buildInventorySnapshot / buildCursorSnapshot (inventory.inc). The cursor snapshot uses the same layout with `selected` unused.",
@@ -168,7 +168,10 @@
         "CREATURE_SURVEYOR": 12,
         "CREATURE_SHIELD_ANCHOR": 13,
         "CREATURE_QUARRY_FOREMAN": 14,
-        "CREATURE_REACTOR_WARDEN": 15
+        "CREATURE_REACTOR_WARDEN": 15,
+        "CREATURE_REACTOR_CORE": 16,
+        "CREATURE_IRIS_COMMANDER": 17,
+        "CREATURE_IRIS_ENGINEER": 18
       }
     },
     "CreatureAttackState": {
@@ -185,7 +188,7 @@
       "cType": "uint8_t",
       "jsName": "PLANET",
       "jsPrefix": "PL",
-      "values": { "PL_EARTH": 0, "PL_MOON": 1, "PL_MARS": 2 }
+      "values": { "PL_EARTH": 0, "PL_MOON": 1, "PL_MARS": 2, "PL_SHIP": 3 }
     },
     "MissionId": {
       "$comment": "The first three ordered IRIS campaign operations.",

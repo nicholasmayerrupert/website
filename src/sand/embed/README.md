@@ -72,7 +72,7 @@ that shadow root for benchmark tooling.
 | `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows inventory, crafting, hotbar, and health UI. Creative uses free camera and palette. |
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
 | `auto-start` | presence | absent | Coarse-pointer creative mode starts with drawing active instead of showing its internal `START` button. |
-| `planet` | `earth`, `moon`, `mars` | `earth` | Selects immutable planet identity, deterministic worldgen family, backdrop, and default gravity: `1.0`, `0.165`, or `0.38`. |
+| `planet` | `earth`, `moon`, `mars`, `ship` | `earth` | Selects immutable world identity, deterministic worldgen family, backdrop, and default gravity: `1.0`, `0.33`, `0.76`, or shipboard `1.0`. |
 | `mission` | `greenfall-recovery`, `silent-quarry`, `red-furnace` | absent | Starts the matching authoritative survival operation and enables the mission tracker and markers. |
 | `world-seed` | unsigned 32-bit decimal | random per mount | Selects the deterministic world for this mount. Values are normalized with unsigned 32-bit semantics. |
 | `loadout` | JSON array of inventory stacks | `[]` | Adds material or recovered-weapon stacks before the mission starts. Malformed JSON becomes an empty loadout. |
@@ -81,7 +81,7 @@ Changing `initial-tool` after mount forwards the legacy tool selection to the
 runtime. `mode`, `planet`, `mission`, `world-seed`, and `loadout` are
 construction-time attributes; recreate the element to change them. The planet
 is immutable for the engine lifetime. The component has no gravity attribute:
-Earth, Moon, and Mars use `1.0`, `0.165`, and `0.38` gravity respectively.
+Earth, Moon, and Mars use `1.0`, `0.33`, and `0.76` gravity respectively.
 
 Loadout entries use the generated ABI inventory-stack fields. The authority
 accepts at most 16 entries, clamps each count to `0`–`5000`, and accepts material

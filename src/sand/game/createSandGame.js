@@ -45,12 +45,12 @@ export function createSandGame(container, opts = {}) {
   const survival = mode === 'survival';
   const planetId = typeof planet === 'number'
     ? planet
-    : ({ earth: PLANET.EARTH, moon: PLANET.MOON, mars: PLANET.MARS }[
+    : ({ earth: PLANET.EARTH, moon: PLANET.MOON, mars: PLANET.MARS, ship: PLANET.SHIP }[
       String(planet).toLowerCase()
     ] ?? PLANET.EARTH);
   const resolvedGravityScale = Number.isFinite(gravityScale)
     ? gravityScale
-    : (planetId === PLANET.MOON ? 0.165 : (planetId === PLANET.MARS ? 0.38 : 1));
+    : (planetId === PLANET.MOON ? 0.33 : (planetId === PLANET.MARS ? 0.76 : 1));
   const missionId = typeof mission === 'number'
     ? mission
     : ({

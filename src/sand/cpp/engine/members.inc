@@ -105,10 +105,12 @@
     return (double)(t ^ (t >> 14)) / 4294967296.0;
   }
   static inline PlanetId normalizedPlanet(int id) {
-    return id == PL_MOON ? PL_MOON : (id == PL_MARS ? PL_MARS : PL_EARTH);
+    return id == PL_MOON ? PL_MOON
+         : id == PL_MARS ? PL_MARS
+         : id == PL_SHIP ? PL_SHIP : PL_EARTH;
   }
   static inline double defaultGravityForPlanet(PlanetId id) {
-    return id == PL_MOON ? 0.165 : (id == PL_MARS ? 0.38 : 1.0);
+    return id == PL_MOON ? 0.33 : (id == PL_MARS ? 0.76 : 1.0);
   }
   void setGravityScale(double scale) {
     if (!std::isfinite(scale)) scale = defaultGravityForPlanet(planetId);

@@ -1890,11 +1890,155 @@
   void copyGridToNext(int colStart, int colEnd, int rowStart, int rowEnd) {
     for (int lx = colStart; lx < colEnd; lx++) for (int y = rowStart; y < rowEnd; y++) { int k = y * cols + lx; L->next[k] = L->grid[k]; }
   }
+  void fillSpaceship(int colStart, int colEnd, int rowStart, int rowEnd) {
+    auto put = [&](int worldX, int worldY, uint8_t material) {
+      int x = worldX - L->worldOffsetX, y = worldY - L->worldOffsetY;
+      if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
+      L->grid[I(x, y)] = material;
+    };
+    for (int x = colStart; x < colEnd; x++) {
+      int worldX = L->worldOffsetX + x;
+      int ax = std::abs(worldX);
+      if (ax > 144) continue;
+      int roof = -48 + ax / 8;
+      int belly = 22 - imax(0, ax - 116) / 4;
+      for (int y = rowStart; y < rowEnd; y++) {
+        int worldY = L->worldOffsetY + y;
+        if (worldY < roof || worldY > belly) continue;
+        if (L->isBackground) {
+          bool observationGlass =
+            worldY >= roof + 5 && worldY <= -20 &&
+            ((worldX >= -126 && worldX <= -83) ||
+             (worldX >= 83 && worldX <= 126));
+          uint8_t panel = observationGlass ? GLASS
+            : (((worldX / 9 + worldY / 7) & 7) == 0 ? DEEPSTONE : BRICK);
+          L->grid[I(x, y)] = panel;
+          continue;
+        }
+        bool shell = worldY <= roof + 2 || worldY >= belly - 2 || ax >= 140;
+        bool lowerDeck = worldY >= 16 && worldY <= 18 && ax < 138;
+        bool upperDeck = worldY >= -15 && worldY <= -13 && ax < 116;
+        bool partition = (std::abs(worldX - 52) <= 1 ||
+                          std::abs(worldX + 52) <= 1) &&
+                         worldY >= -13 && worldY <= 15 &&
+                         !(worldY >= 5 && worldY <= 12);
+        bool liftRail = std::abs(worldX) == 14 &&
+                        worldY >= -12 && worldY <= 15 &&
+                        ((worldY + 12) % 4 != 2);
+        if (shell || lowerDeck || upperDeck || partition || liftRail)
+          L->grid[I(x, y)] = shell ? DEEPSTONE : BRICK;
+      }
+    }
+
+    if (L->isBackground) return;
+    // Transporter dais, navigation table, armory racks, and upper-deck steps
+    // give the Kestrel interior distinct physical stations.
+    for (int x = -12; x <= 12; x++) {
+      put(x, 14, GLASS);
+      if (std::abs(x) <= 8) put(x, 13, CRYSTAL);
+    }
+    for (int x = -98; x <= -72; x++) put(x, 12, x % 4 ? BRICK : GOLD_ORE);
+    for (int x = 75; x <= 105; x += 6)
+      for (int y = 7; y <= 14; y++) put(x, y, y == 7 ? GLASS : DEEPSTONE);
+    for (int step = 0; step < 7; step++)
+      for (int x = -44 + step * 4; x <= -40 + step * 4; x++)
+        put(x, 13 - step * 4, BRICK);
+    for (int step = 0; step < 7; step++)
+      for (int x = 40 - step * 4; x <= 44 - step * 4; x++)
+        put(x, 13 - step * 4, BRICK);
+    for (int x : {-121, -109, 109, 121})
+      for (int y = -33; y <= -22; y++) put(x, y, GLASS);
+  }
+
+  void fillOffworldStructures(int colStart, int colEnd, int rowStart, int rowEnd) {
+    if (planetId != PL_MOON && planetId != PL_MARS) return;
+    constexpr int BASE_LATTICE = 260;
+    constexpr int BASE_REACH = 58;
+    int worldLeft = L->worldOffsetX + colStart;
+    int worldRight = L->worldOffsetX + colEnd - 1;
+    int q0 = floorDiv(worldLeft - BASE_REACH, BASE_LATTICE);
+    int q1 = floorDiv(worldRight + BASE_REACH, BASE_LATTICE);
+    auto put = [&](int worldX, int worldY, uint8_t material) {
+      int x = worldX - L->worldOffsetX, y = worldY - L->worldOffsetY;
+      if (x < colStart || x >= colEnd || y < rowStart || y >= rowEnd) return;
+      L->grid[I(x, y)] = material;
+    };
+    for (int q = q0; q <= q1; q++) {
+      uint32_t salt = planetId == PL_MOON ? 0xB4531001u : 0xB4531002u;
+      if (whash1(L->worldSeed ^ salt, q) < .38) continue;
+      int center = q * BASE_LATTICE + 70 +
+        (int)std::lround(whash1(L->worldSeed ^ salt ^ 0x51u, q) * 120.0);
+      int floorY = terrain.genSurfaceAbs(center) - 1;
+      int facilityTop = floorY + 50;
+      int facilityBottom = floorY + 116;
+      uint8_t frame = planetId == PL_MOON ? STONE : BRICK;
+
+      int left = imax(worldLeft, center - 54);
+      int right = imin(worldRight, center + 54);
+      int top = imax(L->worldOffsetY + rowStart, floorY - 30);
+      int bottom = imin(L->worldOffsetY + rowEnd - 1, facilityBottom);
+      for (int worldX = left; worldX <= right; worldX++) {
+        double nx = (worldX - center) / 42.0;
+        for (int worldY = top; worldY <= bottom; worldY++) {
+          bool domeBand = worldY <= floorY && worldY >= floorY - 27;
+          if (domeBand) {
+            double ny = (worldY - floorY) / 27.0;
+            double ellipse = nx * nx + ny * ny;
+            if (ellipse <= 1.0 && ellipse >= .82)
+              put(worldX, worldY, GLASS);
+            if (worldY >= floorY - 1 && worldY <= floorY + 1 &&
+                std::abs(worldX - center) <= 43)
+              put(worldX, worldY, frame);
+          }
+
+          bool lift = std::abs(worldX - center) <= 8 &&
+                      worldY >= floorY && worldY <= facilityTop + 8;
+          if (lift) {
+            if (L->isBackground) put(worldX, worldY, BRICK);
+            else if (std::abs(worldX - center) >= 7) put(worldX, worldY, frame);
+            else put(worldX, worldY, EMPTY);
+          }
+
+          bool facility = std::abs(worldX - center) <= 52 &&
+                          worldY >= facilityTop && worldY <= facilityBottom;
+          if (!facility) continue;
+          if (L->isBackground) {
+            bool window = (worldY >= facilityTop + 9 && worldY <= facilityTop + 17) &&
+                          ((worldX - center + 48) % 18 >= 4);
+            put(worldX, worldY, window ? GLASS : BRICK);
+            continue;
+          }
+          bool outer = std::abs(worldX - center) >= 50 ||
+                       worldY <= facilityTop + 2 || worldY >= facilityBottom - 2;
+          bool midFloor = std::abs(worldY - (facilityTop + 33)) <= 1;
+          bool divider = (std::abs(worldX - (center - 25)) <= 1 ||
+                          std::abs(worldX - (center + 25)) <= 1) &&
+                         !(worldY >= facilityTop + 20 && worldY <= facilityTop + 28) &&
+                         !(worldY >= facilityTop + 52 && worldY <= facilityTop + 60);
+          if (outer || midFloor || divider) put(worldX, worldY, frame);
+          else put(worldX, worldY, EMPTY);
+        }
+      }
+      if (!L->isBackground) {
+        for (int x = center - 7; x <= center + 7; x++) {
+          put(x, facilityTop + 31, GLASS);
+          if ((x - center) % 4 == 0) put(x, facilityTop + 30, CRYSTAL);
+        }
+      }
+    }
+  }
+
   // Generate worldgen into the buffer rect [colStart,colEnd) x [rowStart,rowEnd):
   // terrain, natural dressing, constructed structures, trees, then `L->next`.
   void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
+    if (planetId == PL_SHIP) {
+      fillSpaceship(colStart, colEnd, rowStart, rowEnd);
+      copyGridToNext(colStart, colEnd, rowStart, rowEnd);
+      return;
+    }
     if (planetId != PL_EARTH) {
+      fillOffworldStructures(colStart, colEnd, rowStart, rowEnd);
       copyGridToNext(colStart, colEnd, rowStart, rowEnd);
       return;
     }
@@ -1918,7 +2062,8 @@
     L->gPocketSeed = (seed ^ 0xC0FFEE11u) + layerSalt * 0x85ebca6bu;
     L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
     if (planetId != PL_EARTH) {
-      uint32_t planetSalt = planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u;
+      uint32_t planetSalt = planetId == PL_MOON ? 0x4D004E31u
+                          : planetId == PL_MARS ? 0x4D415253u : 0x53484950u;
       L->gSeaRow = INT_MAX / 4;
       L->gCaveSeed ^= planetSalt;
       L->gPocketSeed ^= planetSalt * 0x9e3779b9u;
@@ -2245,7 +2390,11 @@
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
     L = Lx; Lx->grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
-    if (planetId == PL_EARTH) {
+    if (planetId == PL_SHIP) {
+      fillSpaceship(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    } else if (planetId == PL_MOON || planetId == PL_MARS) {
+      fillOffworldStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    } else {
       // Cave features / structures BEFORE trees and BEFORE pfStoreTiles,
       // mirroring fillRect's order so a prefetched tile is byte-identical to
       // the synchronous fillRect tile.

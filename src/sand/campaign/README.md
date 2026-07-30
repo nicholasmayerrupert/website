@@ -1,9 +1,11 @@
 # IRIS campaign shell
 
-`/game` begins aboard the IRIS ship *Kestrel*. React owns the ship terminal,
-briefing/loadout selection, deployment transition, and debrief. A mission mounts
-the framework-free `<sand-game>` runtime; returning to the ship unmounts it, so
-its worker, RAF, audio graph, and WebGL target use the existing teardown path.
+`/game` begins aboard the physical IRIS ship *Kestrel*. The ship is its own
+walkable `<sand-game planet="ship">` world with a protected authored hull,
+decks, rooms, transporter, and crew. React layers the mission terminal,
+briefing/loadout selection, deployment transition, and debrief over that world.
+A planetary deployment replaces the ship runtime with the mission runtime, so
+each transition tears down the prior worker, RAF, audio graph, and WebGL target.
 
 `missions.js` contains display metadata and the bounded field-supply catalog.
 Simulation policy still belongs to C++: the mission id selects world generation,

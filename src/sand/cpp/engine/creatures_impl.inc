@@ -265,6 +265,8 @@ int CreatureSystem::addCreature(uint8_t speciesId, double wx, double wy, int id)
   Creature c; c.id = id; c.species = speciesId; c.wx = wx; c.wy = wy;
   c.health = CREATURE_SPECIES[speciesId].maxHealth;
   c.facing = whash1(E.fg.worldSeed ^ 0xC4EA7u, c.id) < 0.5 ? -1 : 1;
+  if (speciesId == CS_QUARRY_FOREMAN || speciesId == CS_REACTOR_WARDEN)
+    c.attackPattern = (uint8_t)(id % 3);
   creatures.push_back(c);
   return c.id;
 }
@@ -932,6 +934,94 @@ void CreatureSystem::updateMinigunnerAttack(Creature& c) {
   c.attackAimX = tx; c.attackAimY = ty; c.facing = dx >= 0 ? 1 : -1;
 }
 
+void CreatureSystem::updateBossAttack(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  bool warden = c.species == CS_REACTOR_WARDEN;
+  int chargeTicks = c.attackPattern == 2 ? 78 : (c.attackPattern == 1 ? 52 : 34);
+  int fireTicks = c.attackPattern == 0 ? (warden ? 64 : 14) : 18;
+
+  if (c.attackState == CAS_FIRING) {
+    if (warden && c.attackPattern == 0 && (c.attackTicks % 4) == 0) {
+      double spread = ((c.attackTicks / 4) % 5 - 2) * 2.2;
+      E.projectiles.spawnMinigunRound(
+        c, c.attackAimX - E.fg.worldOffsetX,
+        c.attackAimY - E.fg.worldOffsetY + spread);
+    }
+    c.attackTicks++;
+    c.attackProgress = std::max(0.0, 1.0 - c.attackTicks / (double)fireTicks);
+    if (c.attackTicks >= fireTicks) {
+      c.attackState = CAS_IDLE;
+      c.attackTicks = 0;
+      c.attackProgress = 0;
+      c.attackPattern = (uint8_t)((c.attackPattern + 1) % 3);
+    }
+    return;
+  }
+
+  double tx = 0, ty = 0;
+  bool hasTarget = targetPoint(c, tx, ty, nullptr, nullptr);
+  if (c.attackState == CAS_CHARGING) {
+    if (hasTarget && c.attackTicks < chargeTicks - 18) {
+      c.attackAimX = tx;
+      c.attackAimY = ty;
+    }
+    c.facing = c.attackAimX >= c.wx + s.w * .5 ? 1 : -1;
+    c.attackTicks++;
+    c.attackProgress = std::min(1.0, c.attackTicks / (double)chargeTicks);
+    if (c.attackTicks < chargeTicks) return;
+
+    double localTargetX = c.attackAimX - E.fg.worldOffsetX;
+    double localTargetY = c.attackAimY - E.fg.worldOffsetY;
+    double localX = c.wx - E.fg.worldOffsetX + s.w * .5;
+    double localY = c.wy - E.fg.worldOffsetY + s.h * .48;
+    if (!warden && c.attackPattern == 0) {
+      E.projectiles.spawnDynamite(c, localTargetX - 7, localTargetY);
+      E.projectiles.spawnDynamite(c, localTargetX, localTargetY - 3);
+      E.projectiles.spawnDynamite(c, localTargetX + 7, localTargetY);
+    } else if (!warden && c.attackPattern == 1) {
+      E.useLayer(&E.fg);
+      E.detonate((int)std::lround(localX), (int)std::lround(localY + s.h * .42),
+                 13, 15.0, 0, DEBRIS,
+                 (uint32_t)(E.actorTick ^ (c.id * 0x9e3779b9u)));
+      E.useLayer(&E.fg);
+    } else if (warden && c.attackPattern == 1) {
+      E.projectiles.spawnAcidShell(c, localTargetX - 5, localTargetY);
+      E.projectiles.spawnClusterBomb(c, localTargetX + 5, localTargetY);
+    } else if (c.attackPattern == 2) {
+      double dx = c.attackAimX - (E.fg.worldOffsetX + localX);
+      double dy = c.attackAimY - (E.fg.worldOffsetY + localY);
+      double d = std::hypot(dx, dy);
+      if (d < 1e-6) { dx = c.facing; dy = 0; d = 1; }
+      dx /= d;
+      dy /= d;
+      localX += dx * (s.w * .5 + .8);
+      localY += dy * (s.h * .35 + .8);
+      fireBoreLine(localX, localY, dx, dy, warden ? 58 : 44, 0, c.id);
+      E.projectiles.spawnBoreBeam(-c.id, localX, localY, dx, dy);
+    }
+    c.attackState = CAS_FIRING;
+    c.attackTicks = 0;
+    c.attackProgress = 1;
+    c.attackCooldown = imax(70, s.attackCooldown / 2);
+    return;
+  }
+
+  if (!hasTarget || c.attackCooldown > 0) return;
+  double dx = tx - (c.wx + s.w * .5);
+  double dy = ty - (c.wy + s.h * .5);
+  if (dx * dx + dy * dy > s.attackRange * s.attackRange) return;
+  c.attackState = CAS_CHARGING;
+  c.attackTicks = 0;
+  c.attackProgress = 0;
+  c.attackAimX = tx;
+  c.attackAimY = ty;
+  c.facing = dx >= 0 ? 1 : -1;
+  E.audio.emit(c.attackPattern == 2 ? SE_BORE_CHARGE : SE_CREATURE,
+               c.wx - E.fg.worldOffsetX + s.w * .5,
+               c.wy - E.fg.worldOffsetY + s.h * .42,
+               1.0, c.species, 0);
+}
+
 void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, int damage,
                                   int immunePlayerId, int immuneCreatureId) {
   double d = std::hypot(dx, dy);
@@ -1095,13 +1185,13 @@ void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
 }
 
 void CreatureSystem::attackTarget(Creature& c) {
-  if (c.species == CS_DYNAMITEER ||
-      c.species == CS_QUARRY_FOREMAN) { updateDynamiteerAttack(c); return; }
+  if (c.species == CS_QUARRY_FOREMAN ||
+      c.species == CS_REACTOR_WARDEN) { updateBossAttack(c); return; }
+  if (c.species == CS_DYNAMITEER) { updateDynamiteerAttack(c); return; }
   if (c.species == CS_BORE_SENTINEL) { updateBoreSentinelAttack(c); return; }
   if (c.species == CS_CAUSTIC_MORTARMAN) { updateCausticMortarmanAttack(c); return; }
   if (c.species == CS_CLUSTER_WASP) { updateClusterWaspAttack(c); return; }
-  if (c.species == CS_MINIGUNNER ||
-      c.species == CS_REACTOR_WARDEN) { updateMinigunnerAttack(c); return; }
+  if (c.species == CS_MINIGUNNER) { updateMinigunnerAttack(c); return; }
   const CreatureSpecies& s = species(c); if (c.attackCooldown > 0 || s.damage <= 0) return;
   double tx, ty; Creature* prey = nullptr; Player* player = nullptr;
   if (!targetPoint(c, tx, ty, &prey, &player)) return;
@@ -1230,6 +1320,7 @@ int CreatureSystem::buildCreatureSnapshot() {
     o[CSN_ATTACK_STATE] = (float)c.attackState; o[CSN_ATTACK_PROGRESS] = (float)c.attackProgress;
     o[CSN_AIM_X] = (float)(c.attackAimX - E.fg.worldOffsetX); o[CSN_AIM_Y] = (float)(c.attackAimY - E.fg.worldOffsetY);
     o[CSN_SPAWN_PROGRESS] = (float)c.spawnProgress;
+    o[CSN_ATTACK_PATTERN] = (float)c.attackPattern;
   }
   for (size_t i = 0; i < pendingSpawns.size(); i++) {
     const CreatureSpawnTelegraph& p = pendingSpawns[i];

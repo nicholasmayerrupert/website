@@ -46,8 +46,8 @@ The campaign contains three sequential operations:
 | Order | Planet | Mission | Authoritative objective sequence |
 | --- | --- | --- | --- |
 | 1 | Earth, 1.00 G | Greenfall Recovery (`greenfall-recovery`; tracker: Operation Greenfall) | Clear three demolition crew members; tag three surveyors with the rescue beam; reach the surface beacon. |
-| 2 | Moon, 0.165 G | Silent Quarry (`silent-quarry`; tracker: Operation Silent Quarry) | Disable two shield anchors in separate mine branches; defeat the Quarry Foreman; reach the emergency pickup point. |
-| 3 | Mars, 0.38 G | Red Furnace (`red-furnace`; tracker: Operation Red Furnace) | Disable three reactor anchors; defeat the Reactor Warden; breach the reactor core; escape to the surface pickup point. |
+| 2 | Moon, 0.33 G | Silent Quarry (`silent-quarry`; tracker: Operation Silent Quarry) | Disable two shield anchors in separate mine branches; defeat the Quarry Foreman; reach the emergency pickup point. |
+| 3 | Mars, 0.76 G | Red Furnace (`red-furnace`; tracker: Operation Red Furnace) | Disable three reactor anchors; defeat the Reactor Warden; breach the reactor core; escape to the surface pickup point. |
 
 `MissionSystem` in `cpp/engine/missions.hpp` and
 `cpp/engine/missions_impl.inc` owns live objective state, scripted actors,
@@ -79,8 +79,8 @@ engine's lifetime. The `<sand-game>` element reads `planet`, `world-seed`,
 them. Planet and seed together select deterministic terrain and a matching
 planetary backdrop.
 
-The canonical campaign gravity scales are Earth `1.0`, Moon `0.165`, and Mars
-`0.38`. The Web Component has no separate gravity attribute and campaign
+The canonical campaign gravity scales are Earth `1.0`, Moon `0.33`, and Mars
+`0.76`. The Web Component has no separate gravity attribute and campaign
 deployments use those planet defaults. The internal engine adapter can override
 gravity for tests and specialized hosts, clamped to `0.05`–`1.0`.
 

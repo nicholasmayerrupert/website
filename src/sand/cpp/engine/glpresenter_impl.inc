@@ -526,7 +526,8 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   if (animFrame < 0 || animFrame >= ANIM_N[animState]) animFrame = 0;
   double cell = (double)glCellDev;
   double pixel = cell * SPR_PIXEL_SCALE;
-  bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
+  bool aimedWeapon = heldItemKind == IK_MINING_TOOL ||
+                     heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
                      heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
                      heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN ||
                      heldItemKind == IK_RESCUE_BEAM;
@@ -765,7 +766,23 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
       glSolidDev(x - size * cell * .5, y - size * cell * .5, size * cell, size * cell);
     };
 
-    if (heldItemKind == IK_BLAST_GUN) {
+    if (heldItemKind == IK_MINING_TOOL) {
+      pixel(-.52, -.56, .94, .08f, .11f, .14f);
+      pixel(-.12, -.56, 1.02, .80f, .84f, .84f);
+      pixel(.38, -.56, .88, .94f, .95f, .90f);
+      pixel(-.30, .10, .72, .12f, .17f, .20f);
+      pixel(-.16, .58, .54, .08f, .10f, .12f);
+      pixel(-.58, -.56, .38, .96f, .67f, .10f);
+      for (int rail : {-1, 1}) {
+        for (int i = 0; i < 5; i++)
+          pixel(.72 + i * .42, -.56 + rail * .43, .25,
+                .20f, .91f, .94f);
+        pixel(2.54, -.56 + rail * .43, .36, .76f, 1.0f, 1.0f);
+      }
+      for (int i = 0; i < 4; i++)
+        pixel(.82 + i * .46, -.56, .18, .10f, .28f, .31f);
+      pixel(2.62, -.56, .54, .82f, 1.0f, 1.0f);
+    } else if (heldItemKind == IK_BLAST_GUN) {
       for (int i = 0; i < 7; i++) pixel(-.46 + i * .48, -.68, .58, .16f, .18f, .20f);
       for (int i = 0; i < 4; i++) pixel(-.20 + i * .48, -1.02, .40, .31f, .36f, .40f);
       pixel(2.59, -.68, .72, .90f, .48f, .10f);
@@ -1306,7 +1323,8 @@ void GLPresenter::glDrawProjectiles() {
 // negative space is intentional: ears, feet, tails, fins, and wing tips retain
 // a readable silhouette instead of collapsing into a filled rectangle.
 void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int facing, int health, int maxHealth,
-                    int alive, int animFrame, int attackState, double attackProgress,
+                    int alive, int animFrame, int attackState, int attackPattern,
+                    double attackProgress,
                     double aimX, double aimY, double spawnProgress, float light,
                     int camCol, int camRow) {
   static const float pal[CS_COUNT][6][4] = {
@@ -1322,6 +1340,13 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     {{0,0,0,0},{17/255.f,27/255.f,18/255.f,1},{43/255.f,67/255.f,37/255.f,1},{91/255.f,111/255.f,49/255.f,1},{139/255.f,201/255.f,45/255.f,1},{218/255.f,248/255.f,113/255.f,1}},
     {{0,0,0,0},{29/255.f,22/255.f,18/255.f,1},{86/255.f,53/255.f,24/255.f,1},{211/255.f,125/255.f,28/255.f,1},{248/255.f,199/255.f,55/255.f,1},{126/255.f,213/255.f,231/255.f,1}},
     {{0,0,0,0},{16/255.f,24/255.f,32/255.f,1},{49/255.f,66/255.f,79/255.f,1},{99/255.f,120/255.f,135/255.f,1},{214/255.f,173/255.f,68/255.f,1},{255/255.f,93/255.f,34/255.f,1}},
+    {{0,0,0,0},{14/255.f,24/255.f,29/255.f,1},{27/255.f,76/255.f,76/255.f,1},{44/255.f,141/255.f,132/255.f,1},{101/255.f,220/255.f,197/255.f,1},{237/255.f,180/255.f,134/255.f,1}},
+    {{0,0,0,0},{10/255.f,18/255.f,25/255.f,1},{43/255.f,58/255.f,68/255.f,1},{85/255.f,110/255.f,120/255.f,1},{75/255.f,228/255.f,236/255.f,1},{218/255.f,252/255.f,255/255.f,1}},
+    {{0,0,0,0},{18/255.f,21/255.f,25/255.f,1},{80/255.f,86/255.f,91/255.f,1},{186/255.f,194/255.f,190/255.f,1},{245/255.f,244/255.f,225/255.f,1},{255/255.f,116/255.f,35/255.f,1}},
+    {{0,0,0,0},{16/255.f,15/255.f,20/255.f,1},{74/255.f,27/255.f,31/255.f,1},{165/255.f,51/255.f,49/255.f,1},{69/255.f,222/255.f,229/255.f,1},{225/255.f,244/255.f,241/255.f,1}},
+    {{0,0,0,0},{11/255.f,17/255.f,22/255.f,1},{39/255.f,53/255.f,61/255.f,1},{76/255.f,102/255.f,108/255.f,1},{70/255.f,224/255.f,235/255.f,1},{255/255.f,116/255.f,29/255.f,1}},
+    {{0,0,0,0},{13/255.f,21/255.f,33/255.f,1},{23/255.f,54/255.f,99/255.f,1},{41/255.f,91/255.f,151/255.f,1},{233/255.f,190/255.f,68/255.f,1},{230/255.f,172/255.f,127/255.f,1}},
+    {{0,0,0,0},{22/255.f,19/255.f,18/255.f,1},{113/255.f,48/255.f,24/255.f,1},{205/255.f,89/255.f,32/255.f,1},{74/255.f,211/255.f,205/255.f,1},{224/255.f,160/255.f,113/255.f,1}},
   };
   static const char* const grids[CS_COUNT][4][7] = {
     {// minnow: a forked tail and alternating body bend
@@ -1384,20 +1409,45 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000011100000","0000123210000","0001233321000","0012333441000","0012222341000","0000110110000","0011000001100"},
      {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0000110110000","0011000001100"},
      {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0011000011000","0110000001100"}},
+    {// surveyor: exposed human face, teal pressure suit, backpack, and walking cycle
+     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334322100","0001200210000","0011000011000"},
+     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334322100","0000121200000","0001100110000"},
+     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334322100","0012000012000","0110000001100"},
+     {"0000011100000","0000155510000","0001255521000","0012333322100","0012334445100","0011000110000","0110000011000"}},
+    {// shield anchor: tripod generator with animated containment rings
+     {"0000004000000","0000045400000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"},
+     {"0000444444000","0000045400000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"},
+     {"0044444444400","0000045400000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"},
+     {"0444400044440","0004445444000","0001234321000","0012345432100","0122333332210","0100123210010","1100011100011"}},
+    {// lunar foreman: white industrial exosuit, orange visor, gravity shoulder pod
+     {"0022200000000","0233322222000","0234455443200","0123444432210","0012333332100","0112000021100","1100000000110"},
+     {"0022500000000","0234522222000","0234455443200","0123444432210","0012333332100","0011200211000","0110000011000"},
+     {"0002520000000","0023432222000","0234455443200","1234444432210","0012333332100","0001122110000","0011000011000"},
+     {"0022555555000","0234455555500","0234455443200","0123444432210","0012333332100","0112000021100","1100000000110"}},
+    {// reactor warden: asymmetrical crimson exosuit and luminous chest core
+     {"0002211122000","0023322233200","0233444433210","1233444443321","1233333333321","0112000021100","1100000000110"},
+     {"0002211122000","0023322433200","0233444433210","1233444443321","1233333333321","0011200211000","0110000011000"},
+     {"0002211122000","0023344433200","0233444433210","1233444444321","1233333333321","0001122110000","0011000011000"},
+     {"0002255522000","0023455433200","0233444433210","1233444444321","1233333333321","0112000021100","1100000000110"}},
+    {// reactor core: containment column, side coils, and increasingly unstable plasma
+     {"0012222222100","0123333333210","1234444444321","1234455444321","1234444444321","0123333333210","0012222222100"},
+     {"0012222222100","0123334333210","1234455444321","1234555544321","1234455444321","0123334333210","0012222222100"},
+     {"0012222222100","0123344433210","1234555544321","1234555544321","1234555544321","0123344433210","0012222222100"},
+     {"0512222222150","0153344433510","1234555544321","1234555544321","1234555544321","0153344433510","0512222222150"}},
+    {// Kestrel commander: human face, silver hair, navy uniform, gold rank trim
+     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344322100","0001200210000","0011000011000"},
+     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344322100","0000121200000","0001100110000"},
+     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344322100","0012000012000","0110000001100"},
+     {"0000011100000","0000144410000","0001455521000","0012333322100","0012344445100","0011000110000","0110000011000"}},
+    {// Kestrel engineer: human face, orange coveralls, cyan wrist display, tool belt
+     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0001200210000","0011000011000"},
+     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0000121200000","0001100110000"},
+     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0012000012000","0110000001100"},
+     {"0000011100000","0000111510000","0001155521000","0012333322100","0012344445100","0011000110000","0110000011000"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   int spriteId = speciesId;
   int paletteId = speciesId;
-  if (speciesId == CS_SURVEYOR) {
-    spriteId = CS_DYNAMITEER;
-    paletteId = CS_BORE_SENTINEL;
-  } else if (speciesId == CS_SHIELD_ANCHOR) {
-    spriteId = paletteId = CS_BORE_SENTINEL;
-  } else if (speciesId == CS_QUARRY_FOREMAN) {
-    spriteId = paletteId = CS_DYNAMITEER;
-  } else if (speciesId == CS_REACTOR_WARDEN) {
-    spriteId = paletteId = CS_MINIGUNNER;
-  }
   const int sw = 13, sh = 7;
   double cell = glCellDev;
   if (spawnProgress > 0) {
@@ -1442,7 +1492,9 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     glSolidDev(cx - slitW * .5, cy - slitH * .5, slitW, slitH);
     return;
   }
-  if (alive && speciesId == CS_BORE_SENTINEL &&
+  bool bossBore = (speciesId == CS_QUARRY_FOREMAN ||
+                   speciesId == CS_REACTOR_WARDEN) && attackPattern == 2;
+  if (alive && (speciesId == CS_BORE_SENTINEL || bossBore) &&
       (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
     double ox = px + CREATURE_SPECIES[speciesId].w * 0.5;
     double oy = py + CREATURE_SPECIES[speciesId].h * 0.42;
@@ -1544,9 +1596,40 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
       glSolidDev(bx - cell * .11, by - (sySign < 0 ? 0 : arm), cell * .22, arm);
     }
   }
+  if (alive && speciesId == CS_QUARRY_FOREMAN && attackPattern == 1 &&
+      attackState == CAS_CHARGING) {
+    double progress = std::max(0.0, std::min(1.0, attackProgress));
+    double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
+    double cy = (py + CREATURE_SPECIES[speciesId].h - camRow) * cell + glOffY;
+    for (int ring = 0; ring < 3; ring++) {
+      double radius = cell * (2.5 + ring * 2.4 + progress * 3.2);
+      glUniform4f(glc->uColor, 1.0f, .43f + ring * .12f, .08f,
+                  (float)(.18 + progress * .34));
+      glSolidDev(cx - radius, cy - cell * .12, radius * 2, cell * .24);
+      glSolidDev(cx - cell * .12, cy - radius * .20, cell * .24, radius * .40);
+    }
+  }
+  if (alive && speciesId == CS_REACTOR_WARDEN && attackPattern == 1 &&
+      (attackState == CAS_CHARGING || attackState == CAS_FIRING)) {
+    double progress = std::max(0.0, std::min(1.0, attackProgress));
+    double cx = (px + CREATURE_SPECIES[speciesId].w * .5 - camCol) * cell + glOffX;
+    double cy = (py + CREATURE_SPECIES[speciesId].h * .45 - camRow) * cell + glOffY;
+    for (int spark = 0; spark < 8; spark++) {
+      double angle = spark * .785398 + E.actorTick * .08;
+      double radius = cell * (1.8 + progress * 2.2);
+      double size = cell * (.24 + progress * .22);
+      glUniform4f(glc->uColor, spark & 1 ? .36f : 1.0f,
+                  spark & 1 ? .92f : .42f, .94f,
+                  (float)(.38 + progress * .42));
+      glSolidDev(cx + std::cos(angle) * radius - size * .5,
+                 cy + std::sin(angle) * radius - size * .5, size, size);
+    }
+  }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
   double sy = (py - camRow) * cell + glOffY - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
-  int frame = animFrame & 3;
+  int frame = (speciesId == CS_SHIELD_ANCHOR || speciesId == CS_REACTOR_CORE)
+    ? (int)((E.actorTick / 8) & 3)
+    : animFrame & 3;
   // A little whole-sprite follow-through keeps the detailed limbs from feeling
   // like a flipbook pasted to the AABB. Walkers rise on their passing steps,
   // swimmers roll gently, and the downstroke gives the bird visible lift.
@@ -1656,7 +1739,8 @@ void GLPresenter::glDrawCreatures() {
     for (int i = 0; i < n; i++) { const float* c = &glExtCreatures[(size_t)i * CSN_STRIDE];
       glDrawOneCreature((int)c[CSN_SPECIES], c[CSN_X], c[CSN_Y], (int)c[CSN_FACING], (int)c[CSN_HEALTH],
                         (int)c[CSN_MAX_HEALTH], (int)c[CSN_ALIVE], (int)c[CSN_ANIM_FRAME],
-                        (int)c[CSN_ATTACK_STATE], c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
+                        (int)c[CSN_ATTACK_STATE], (int)c[CSN_ATTACK_PATTERN],
+                        c[CSN_ATTACK_PROGRESS], c[CSN_AIM_X], c[CSN_AIM_Y],
                         c[CSN_SPAWN_PROGRESS],
                         glActorLight(c[CSN_X], c[CSN_Y], (int)c[CSN_W], (int)c[CSN_H]), camCol, camRow);
     }
@@ -1664,7 +1748,8 @@ void GLPresenter::glDrawCreatures() {
     for (const Creature& c : E.creatures.creatures) {
       const CreatureSpecies& s = E.creatures.species(c);
       glDrawOneCreature(c.species, c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, c.facing, c.health,
-                        s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState, c.attackProgress,
+                        s.maxHealth, c.alive ? 1 : 0, c.animFrame, c.attackState,
+                        c.attackPattern, c.attackProgress,
                         c.attackAimX - E.fg.worldOffsetX, c.attackAimY - E.fg.worldOffsetY,
                         c.spawnProgress,
                         glActorLight(c.wx - E.fg.worldOffsetX, c.wy - E.fg.worldOffsetY, s.w, s.h),
@@ -1677,7 +1762,7 @@ void GLPresenter::glDrawCreatures() {
         std::min(1.0, (elapsed + 1.0) / p.totalTicks));
       double x = p.wx - E.fg.worldOffsetX, y = p.wy - E.fg.worldOffsetY;
       glDrawOneCreature(p.species, x, y, 1, 0, s.maxHealth, 0, 0,
-                        CAS_IDLE, 0, x, y, progress,
+                        CAS_IDLE, 0, 0, x, y, progress,
                         glActorLight(x, y, s.w, s.h), camCol, camRow);
     }
   }
@@ -1756,6 +1841,47 @@ void GLPresenter::glDrawPreview() {
       } else {
         int r = erasing ? P_MINE_R : P_BUILD_R;
         for (int oy = -r; oy <= r; oy++) for (int ox = -r; ox <= r; ox++) { if (ox * ox + oy * oy > r * r) continue; cell(ax + ox, ay + oy); }
+      }
+      bool mineLocked = glSurvivalPreviewOn
+        ? glSurvivalPreviewLocked
+        : lp->mineActive && lp->mineFootprint >= 0;
+      if (erasing && mineLocked && inReach) {
+        double targetX = ax + .5, targetY = ay + .5;
+        double shoulderX = lp->px + lp->w * .5;
+        double shoulderY = lp->py + lp->h * .42;
+        double dx = targetX - shoulderX, dy = targetY - shoulderY;
+        double distance = std::hypot(dx, dy);
+        if (distance < 1e-6) { dx = lp->facing; dy = 0; distance = 1; }
+        dx /= distance;
+        dy /= distance;
+        double originX = shoulderX + dx * 3.85;
+        double originY = shoulderY + dy * 3.85;
+        double beamDistance = std::hypot(targetX - originX, targetY - originY);
+        int samples = imax(2, (int)std::ceil(beamDistance * 2.2));
+        for (int i = 0; i <= samples; i++) {
+          if (((i + E.actorTick / 2) % 5) == 0) continue;
+          double t = i / (double)samples;
+          double bx = (originX + (targetX - originX) * t - camCol) * glCellDev + glOffX;
+          double by = (originY + (targetY - originY) * t - camRow) * glCellDev + glOffY;
+          double pulse = .18 + ((i + E.actorTick) & 3) * .055;
+          glUniform4f(glc->uColor, .32f, .96f, 1.0f, .88f);
+          glSolidDev(bx - glCellDev * pulse * .5, by - glCellDev * pulse * .5,
+                     glCellDev * pulse, glCellDev * pulse);
+        }
+        double impactX = (targetX - camCol) * glCellDev + glOffX;
+        double impactY = (targetY - camRow) * glCellDev + glOffY;
+        for (int spark = 0; spark < 12; spark++) {
+          double angle = spark * .523599 + E.actorTick * .16;
+          double radius = glCellDev * (1.0 + ((spark + E.actorTick / 3) % 4) * .30);
+          double size = glCellDev * (spark % 3 ? .19 : .30);
+          glUniform4f(glc->uColor, spark & 1 ? .28f : .88f,
+                      1.0f, 1.0f, spark & 1 ? .74f : .94f);
+          glSolidDev(impactX + std::cos(angle) * radius - size * .5,
+                     impactY + std::sin(angle) * radius - size * .5, size, size);
+        }
+        glUniform4f(glc->uColor, .86f, 1.0f, 1.0f, .96f);
+        glSolidDev(impactX - glCellDev * .28, impactY - glCellDev * .28,
+                   glCellDev * .56, glCellDev * .56);
       }
     }
   }

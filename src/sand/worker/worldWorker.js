@@ -121,8 +121,10 @@ function postActors(force = false) {
   // cosmetic mining debris. A transferred packed snapshot avoids allocating an
   // object per item; multiplayer keeps its lower-bandwidth collectible-only path.
   const itemData = engine.getItemSnapshotData();
+  const projectileData = engine.getProjectileSnapshotData();
   const player = players.find((candidate) => candidate.id === localPlayerId) || null;
   const itemBuffer = itemData.buffer;
+  const projectileBuffer = projectileData.buffer;
   self.postMessage({
     type: 'actors', epoch, actorTick, localPlayerId, players,
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
@@ -132,10 +134,10 @@ function postActors(force = false) {
     inventory: inventoryChanged ? engine.getInventory(localPlayerId) : undefined,
     cursor: inventoryChanged ? engine.getCursor(localPlayerId) : undefined,
     itemData: itemBuffer,
-    projectiles: engine.getProjectiles(),
+    projectileData: projectileBuffer,
     mission: missionId ? engine.getMission() : null,
     ackSeq: player?.inputSeq ?? 0,
-  }, [itemBuffer]);
+  }, [itemBuffer, projectileBuffer]);
 }
 
 function postSounds() {

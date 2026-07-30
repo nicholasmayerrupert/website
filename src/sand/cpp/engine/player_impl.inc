@@ -862,7 +862,7 @@ void PlayerSystem::updatePlayers() {
         p.hurtCooldown = imax(p.hurtCooldown, 60);
         resetPlayerMine(p);
         E.inv.resetPlayerPlaceStroke(p);
-        E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, LIGHT);
+        E.audio.emit(SE_BEAM, p.px + p.w * .5, p.py + p.h * .5, 0.9, LIGHT);
       }
     }
     if (p.active) updatePlayerVitals(p);

@@ -141,6 +141,7 @@ check('Kestrel is a physical foreground/background world',
     x: spawn.x,
     y: 60 - engine.getWorldOffsetY(),
   });
+  engine.drainSoundEvents();
   for (let tick = 0; tick < 40; tick++) engine.stepActors();
   const falling = engine.getPlayer(playerId);
   check('Kestrel waits briefly before recovering a player below the hull',
@@ -150,6 +151,11 @@ check('Kestrel is a physical foreground/background world',
   check('Kestrel automatically beams a player back from open space',
     Math.abs(recovered.x - spawn.x) < 12 &&
       Math.abs(recovered.y - spawn.y) < 12);
+  const recoverySounds = engine.drainSoundEvents();
+  check('Kestrel recovery emits a transporter beam cue',
+    Array.from({ length: recoverySounds.length / STRIDES.soundEvent },
+      (_, index) => recoverySounds[index * STRIDES.soundEvent + OFF.soundEvent.type])
+      .includes(SOUND_EVENT.BEAM));
   for (const id of crewIds) {
     const crew = engine.getCreatures().find((creature) => creature.id === id);
     engine.damageCreatures(

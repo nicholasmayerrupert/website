@@ -508,6 +508,7 @@ export function createSandGame(container, opts = {}) {
     setAudioMuted(on) { audio.setMuted(!!on); },
     toggleAudioMuted() { return audio.toggleMuted(); },
     unlockAudio() { return audio.unlock(); },
+    playBeamSound() { return audio.playBeam(); },
     getAudioState() {
       return {
         enabled: audio.enabled, muted: audio.muted, ready: audio.ready,

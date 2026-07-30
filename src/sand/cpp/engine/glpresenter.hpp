@@ -53,7 +53,9 @@ class GLPresenter {
   // misaligns), a skylight change, or a forced full refresh always re-solves
   // immediately. glLightTick is the tick of the last solve.
   static constexpr int GL_LIGHT_THROTTLE_TICKS = 2;
+  static constexpr double GL_PRESENTATION_LIGHT_INTERVAL_MS = 125.0;
   int glLightTick = INT_MIN;
+  double glLightWallMs = -1e9;
   // Windowed lighting (Perf 7c): throttled solves cover only the visible
   // window + GL_LIGHT_WINDOW_MARGIN. Light influence dies within 59 cells of
   // its source (min loss 4/cell, 255 -> ambient 20) and the cross-layer

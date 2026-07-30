@@ -41,6 +41,7 @@ const EVENT_DISTANCE = Object.freeze({
   [SOUND_EVENT.SHIELD_BREAK]: 155,
   [SOUND_EVENT.SPAWN_BREACH]: 220,
   [SOUND_EVENT.WEAPON_EXPLOSION]: 190,
+  [SOUND_EVENT.BEAM]: 180,
 });
 const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.EXPLOSION]: 85,
@@ -71,6 +72,7 @@ const EVENT_COOLDOWN_MS = Object.freeze({
   [SOUND_EVENT.SHIELD_HIT]: 38,
   [SOUND_EVENT.SHIELD_BREAK]: 240,
   [SOUND_EVENT.SPAWN_BREACH]: 700,
+  [SOUND_EVENT.BEAM]: 120,
 });
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
@@ -645,6 +647,16 @@ export function createSandAudio() {
         delay: 0.69, attack: 0.025 });
       playTone({ from: 124, to: 42, duration: 0.30, gain: gain * 0.14, pan,
         wave: 'sine', delay: 0.67, attack: 0.018 });
+    } else if (type === SOUND_EVENT.BEAM) {
+      playTone({ from: 1840, to: 360, duration: 0.44, gain: gain * 0.14, pan,
+        wave: 'triangle', attack: 0.004 });
+      playTone({ from: 260, to: 1220, duration: 0.48, gain: gain * 0.105, pan,
+        wave: 'sine', delay: 0.025, attack: 0.025 });
+      playNoise({ duration: 0.43, gain: gain * 0.12, pan, frequency: 2350,
+        type: 'bandpass', q: 1.25, rate: 0.9 + variation * 0.14,
+        buffer: crackleBuffer, attack: 0.012 });
+      playTone({ from: 92, to: 42, duration: 0.50, gain: gain * 0.105, pan,
+        wave: 'sine', delay: 0.015, attack: 0.006 });
     } else if (type === SOUND_EVENT.EXPLOSION) {
       playTntExplosionEffect(gain, pan, variation, false);
     } else if (type === SOUND_EVENT.FUSE) {
@@ -757,6 +769,22 @@ export function createSandAudio() {
     }
   };
 
+  const playBeam = () => {
+    const emit = () => {
+      if (!audible() || !context || context.state !== 'running') return false;
+      renderEvent(SOUND_EVENT.BEAM, 1, MAT.LIGHT, {
+        gain: 1,
+        pan: 0,
+        distance: 0,
+      });
+      return true;
+    };
+    if (emit()) return true;
+    if (!audible()) return false;
+    unlock().then((ready) => { if (ready) emit(); });
+    return true;
+  };
+
   const updateAmbience = (packed, listener) => {
     if (!context || !ambienceVoices) return;
     const now = context.currentTime;
@@ -831,6 +859,7 @@ export function createSandAudio() {
   return {
     unlock,
     playEvents,
+    playBeam,
     updateAmbience,
     updatePlayerEffects,
     setEnabled,

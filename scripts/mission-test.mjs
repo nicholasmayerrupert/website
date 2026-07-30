@@ -15,7 +15,10 @@ import {
   MISSION_PHASE,
   OBJECTIVE_KIND,
   OBJECTIVE_STATE,
+  OFF,
   PLANET,
+  SOUND_EVENT,
+  STRIDES,
 } from '../src/sand/wasmBridge/abi.generated.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
 
@@ -107,6 +110,8 @@ function rescueSurveyors(engine, playerId) {
     itemKind === ITEM_KIND.RESCUE_BEAM && count > 0);
   check('Greenfall issues a rescue beam', rescueSlot >= 0);
   engine.setSelectedSlot(playerId, rescueSlot);
+  let beamSounds = 0;
+  engine.drainSoundEvents();
 
   for (let attempt = 0; attempt < 8; attempt++) {
     const target = livingSpecies(engine, CREATURE.SURVEYOR)[0];
@@ -122,9 +127,13 @@ function rescueSurveyors(engine, playerId) {
       aimY: target.y + target.h * 0.5,
     });
     engine.stepActors();
+    const sounds = engine.drainSoundEvents();
+    for (let i = 0; i < sounds.length; i += STRIDES.soundEvent)
+      if (sounds[i + OFF.soundEvent.type] === SOUND_EVENT.BEAM) beamSounds++;
     engine.setPlayerInput(playerId, {});
     for (let tick = 0; tick < 12; tick++) engine.stepActors();
   }
+  check('successful rescue-beam tags emit beam cues', beamSounds === 3);
 }
 
 const EXTRACTION_ENEMIES = new Set([

@@ -790,6 +790,15 @@ export function SandCampaign() {
   const [pendingDeployment, setPendingDeployment] = useState(null);
   const mission = getCampaignMission(run?.missionId || selectedMissionId);
 
+  useEffect(() => {
+    const game = phase === 'beam-down'
+      ? shipGameRef.current?._game
+      : (phase === 'beam-up' || phase === 'beam-return')
+          ? fieldGameRef.current?._game
+          : null;
+    game?.playBeamSound?.();
+  }, [phase]);
+
   const commitSave = useCallback((update) => {
     const stored = updateCampaignSave(saveRef.current, update);
     saveRef.current = stored;

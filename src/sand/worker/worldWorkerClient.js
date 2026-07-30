@@ -90,6 +90,10 @@ export function createWorldWorkerClient(ctx) {
         cursor: data.inventory !== undefined ? data.cursor : prior?.cursor,
         itemData: data.itemData !== undefined ? data.itemData : prior?.itemData,
         items: data.items !== undefined ? data.items : prior?.items,
+        projectileData: data.projectileData !== undefined
+          ? data.projectileData
+          : prior?.projectileData,
+        projectiles: data.projectiles !== undefined ? data.projectiles : prior?.projectiles,
         mission: data.mission !== undefined ? data.mission : prior?.mission,
       };
     } else if (data.type === 'sounds') {
@@ -351,7 +355,11 @@ export function createWorldWorkerClient(ctx) {
             items[o + O.toolClass] = item.toolClass || 0; items[o + O.toolTier] = item.toolTier || 0;
           }
         }
-        if (packet.projectiles !== undefined) {
+        if (packet.projectileData !== undefined) {
+          projectiles = new Float32Array(packet.projectileData);
+          translatePackedPositions(projectiles, STRIDES.projectileSnapshot,
+            OFF.projectileSnapshot.x, OFF.projectileSnapshot.y, itemDx, itemDy);
+        } else if (packet.projectiles !== undefined) {
           const O = OFF.projectileSnapshot;
           projectiles = new Float32Array(packet.projectiles.length * STRIDES.projectileSnapshot);
           for (let i = 0; i < packet.projectiles.length; i++) {

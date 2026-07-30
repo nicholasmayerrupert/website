@@ -26,6 +26,9 @@ instances:
 Only one authority packet is in flight. A full snapshot is used for startup,
 resize, and streaming; ordinary turns send accumulated diffs. The presentation
 mirror does not reconstruct static components because it never simulates them.
+Local items and projectiles cross the worker boundary as packed transferable
+buffers, and unchanged render buffers are not recopied into WebAssembly between
+actor snapshots.
 
 Direct survival multiplayer replaces the authority worker with
 `scripts/sand-server.mjs`. Clients send intents, apply authoritative state, and
@@ -333,8 +336,8 @@ are entities whose occupancy is stamped into the material grid.
 Players and other real-time actors advance on a deterministic 60 Hz actor clock;
 cellular world work is attempted at most once per presentation frame and does not
 accumulate catch-up debt.
-The offline worker transfers dropped items and cosmetic debris to the renderer as
-one packed buffer at actor cadence. Nearby identical collectible materials
+The offline worker transfers dropped items, cosmetic debris, and projectiles to
+the renderer as packed buffers at actor cadence. Nearby identical collectible materials
 coagulate into normal inventory-sized stacks, while independent debris flecks
 remain short-lived and visual-only. Multiplayer replicates only collectible
 items.
@@ -419,6 +422,9 @@ The C++ renderer generates material pixels and lighting, then the GL presenter
 uploads dirty regions and composites both layers, actors, previews, and overlays.
 Terrain grain is keyed to absolute world coordinates. Settled animated materials
 repaint only visible chunks that contain animation.
+Presentation mirrors coalesce synced lighting invalidations to an eight-Hz
+wall-clock cadence while applying terrain and actor snapshots at their normal
+rates. Glass transmits skylight and local light with mild attenuation.
 Jetpack exhaust, raised wards, and explosive or energy projectiles contribute a
 capped set of render-only light sources to the same terrain-aware flood as fire
 and lava. Their cell-quantized motion uses the existing throttled light solve, so
@@ -443,6 +449,8 @@ reflections, and mechanical action. Every projectile detonation bypasses the
 terrain-TNT chain cooldown and plays the same complete effect, runtime-mixed from
 all three recorded TNT layers into one uncapped weapon voice; cluster volleys
 therefore sound like sixteen staggered TNT blasts without tripling source count.
+Transporter transitions and successful rescue-beam tags share a distinct energy
+cue.
 Audio asset provenance is in
 `audio/assets/README.md`.
 

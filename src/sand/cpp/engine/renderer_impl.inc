@@ -318,12 +318,13 @@ void Renderer::buildRenderTables() {
   for (int m = 0; m < TABLE; m++) {
     bool empty = m == EMPTY || MAT_CLASS[m] == MC_NONE;
     bool gas = MAT_CLASS[m] == MC_GAS;
+    bool glass = m == GLASS;
     bool liquid = MAT_CLASS[m] == MC_LIQUID;
     bool looseSolid = MAT_CLASS[m] == MC_SOLID;
     bool rigid = MAT_CLASS[m] == MC_RIGID;
-    renderLightTransparent[m] = empty || gas;
+    renderLightTransparent[m] = empty || gas || glass;
     renderFaceLit[m] = !empty && !gas && !liquid;
-    renderLightLoss[m] = empty || gas ? 4 : liquid ? 8 : looseSolid ? 17 : rigid ? 24 : 20;
+    renderLightLoss[m] = empty || gas ? 4 : glass ? 6 : liquid ? 8 : looseSolid ? 17 : rigid ? 24 : 20;
     int alpha = (int)std::lround((1.0f - MAT_TRANSPARENCY[m]) * 255.0f);
     if (alpha < 0) alpha = 0; else if (alpha > 255) alpha = 255;
     renderAlphaMask[m] = (uint32_t)alpha << 24;

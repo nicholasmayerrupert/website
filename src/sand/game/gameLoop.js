@@ -144,6 +144,9 @@ export function createGameLoop(ctx, {
   // offset is snapped to whole device px inside the engine (the documented
   // bright-block-flicker fix); the snap/gutter A/B flags live there too.
   let packScratch = new Float32Array(0); // grow-only packing buffer (client player upload)
+  const unsetRenderSource = Symbol('unset-render-source');
+  let lastWorkerItems = unsetRenderSource;
+  let lastWorkerProjectiles = unsetRenderSource;
   const render = (full = false) => {
     const engine = ctx.engine;
     if (!engine) return;
@@ -195,8 +198,26 @@ export function createGameLoop(ctx, {
     }
     // Dropped items: a client draws the server's authoritative items; host/local
     // (and single-player) draws the engine's own (null = engine-owned).
-    engine.glSetItems(ctx.netClientReady() ? ctx.net.getItemsForRender() : ctx.worldWorker?.getItemsForRender() || null);
-    engine.glSetProjectiles(ctx.netClientReady() ? ctx.net.getProjectilesForRender() : ctx.worldWorker?.getProjectilesForRender() || null);
+    if (full || ctx.forceFullRender) {
+      lastWorkerItems = unsetRenderSource;
+      lastWorkerProjectiles = unsetRenderSource;
+    }
+    if (ctx.netClientReady()) {
+      engine.glSetItems(ctx.net.getItemsForRender());
+      engine.glSetProjectiles(ctx.net.getProjectilesForRender());
+      lastWorkerItems = lastWorkerProjectiles = unsetRenderSource;
+    } else {
+      const nextItems = ctx.worldWorker?.getItemsForRender() || null;
+      const nextProjectiles = ctx.worldWorker?.getProjectilesForRender() || null;
+      if (nextItems !== lastWorkerItems) {
+        engine.glSetItems(nextItems);
+        lastWorkerItems = nextItems;
+      }
+      if (nextProjectiles !== lastWorkerProjectiles) {
+        engine.glSetProjectiles(nextProjectiles);
+        lastWorkerProjectiles = nextProjectiles;
+      }
+    }
     engine.glSetCreatures(ctx.netClientReady() ? ctx.net.getCreaturesForRender() : null);
     engine.glRenderFrame(full || ctx.forceFullRender);
     ctx.forceFullRender = false;

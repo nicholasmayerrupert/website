@@ -345,7 +345,7 @@ bool MissionSystem::rescueCreature(Creature& creature) {
     refreshObjectiveMarker(*objective);
     revision++;
   }
-  E.audio.emit(SE_PICKUP,
+  E.audio.emit(SE_BEAM,
                creature.wx - E.fg.worldOffsetX +
                  CREATURE_SPECIES[creature.species].w * .5,
                creature.wy - E.fg.worldOffsetY +

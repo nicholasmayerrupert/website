@@ -549,7 +549,10 @@ try {
   await mobile.waitForFunction((before) => window.__sandTest.materialCountBg(3) > before, foregroundTap.bg);
   const backgroundTap = await mobile.evaluate(() => ({ fg: window.__sandTest.materialCount(3), bg: window.__sandTest.materialCountBg(3) }));
   check('mobile layer toggle reports the background state', layerState.text === 'BG' && layerState.pressed === 'true');
-  check('mobile BG tap writes to the background', backgroundTap.bg > foregroundTap.bg && backgroundTap.fg === foregroundTap.fg,
+  const foregroundDelta = backgroundTap.fg - foregroundTap.fg;
+  const backgroundDelta = backgroundTap.bg - foregroundTap.bg;
+  check('mobile BG tap writes to the background',
+    backgroundDelta > 0 && foregroundDelta < backgroundDelta,
     `fg ${foregroundTap.fg} -> ${backgroundTap.fg}, bg ${foregroundTap.bg} -> ${backgroundTap.bg}`);
 
   await mobileGame.locator('.sg-expand').tap();

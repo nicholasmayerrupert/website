@@ -27,17 +27,13 @@ const STYLE = `
   border-right:2px solid #080a0c; border-bottom:2px solid #080a0c; background:#f0d465;
   transform:translateX(-50%) rotate(45deg); }
 .sg-talk-button:hover, .sg-talk-button:focus-visible { background:#fff1a0; outline:2px solid #fff; outline-offset:2px; }
-.sg-quest-marker { position:absolute; left:0; top:0; display:grid; justify-items:center; min-width:68px;
+.sg-quest-marker { position:absolute; left:0; top:0; display:grid; justify-items:center; min-width:9px;
   color:#f0d465; filter:drop-shadow(2px 2px 0 #080a0c); will-change:transform; }
 .sg-quest-marker[hidden] { display:none; }
-.sg-quest-marker-icon { width:0; height:0; border-top:6px solid transparent; border-bottom:6px solid transparent;
-  border-left:10px solid currentColor; transform-origin:center; }
-.sg-quest-marker-label { margin-top:4px; padding:3px 5px; background:rgba(8,10,12,.84);
-  font:900 8px/1 inherit; letter-spacing:.12em; white-space:nowrap; }
-.sg-quest-marker.onscreen .sg-quest-marker-icon { display:grid; place-items:center; width:16px; height:16px;
-  box-sizing:border-box; border:2px solid currentColor; background:#342f18; transform:rotate(45deg)!important; }
-.sg-quest-marker.onscreen .sg-quest-marker-icon::before { content:"!"; color:#fff1a0;
-  font:900 10px/1 inherit; transform:rotate(-45deg); }
+.sg-quest-marker-icon { width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent;
+  border-left:9px solid currentColor; transform-origin:center; }
+.sg-quest-marker.onscreen .sg-quest-marker-icon { width:9px; height:9px; box-sizing:border-box;
+  border:2px solid currentColor; background:rgba(240,212,101,.2); transform:rotate(45deg)!important; }
 .sg-dialogue { position:absolute; left:50%; bottom:58px; z-index:79; width:min(560px,calc(100% - 24px));
   box-sizing:border-box; transform:translateX(-50%); border:3px solid #080a0c; padding:14px;
   pointer-events:auto; background:rgba(17,23,29,.97); color:#fff;
@@ -80,10 +76,7 @@ export function createTalkHud(root, game, onAction) {
   questMarker.setAttribute('aria-label', 'Mission coordinator Commander Vale');
   const questMarkerIcon = document.createElement('span');
   questMarkerIcon.className = 'sg-quest-marker-icon';
-  const questMarkerLabel = document.createElement('span');
-  questMarkerLabel.className = 'sg-quest-marker-label';
-  questMarkerLabel.textContent = 'Missions';
-  questMarker.append(questMarkerIcon, questMarkerLabel);
+  questMarker.appendChild(questMarkerIcon);
   layer.appendChild(questMarker);
 
   const dialogue = document.createElement('section');
@@ -196,9 +189,9 @@ export function createTalkHud(root, game, onAction) {
         rawX >= 24 && rawX <= width - 24 && rawY >= 30 && rawY <= height - 24;
       questMarker.hidden = talkVisible;
       if (!talkVisible) {
-        const x = Math.max(34, Math.min(width - 34, rawX));
+        const x = Math.max(26, Math.min(width - 26, rawX));
         const y = Math.max(54, Math.min(height - 64, rawY));
-        const onscreen = rawX >= 34 && rawX <= width - 34 &&
+        const onscreen = rawX >= 26 && rawX <= width - 26 &&
           rawY >= 54 && rawY <= height - 64;
         const angle = Math.atan2(rawY - height * 0.5, rawX - width * 0.5);
         questMarker.classList.toggle('onscreen', onscreen);

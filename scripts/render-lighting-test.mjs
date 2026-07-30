@@ -64,6 +64,24 @@ function sealedActorCave(e) {
   e.destroy();
 }
 
+// Glass panes preserve direct skylight through an otherwise open shaft.
+{
+  const paneBrightness = (material) => {
+    const e = mk();
+    fillStone(e, 8, 8, 87, 88);
+    carve(e, 45, 0, 50, 78);
+    for (let x = 45; x <= 50; x++) e.paintDisc(x, 30, 0, material, true);
+    e.renderFull();
+    const belowPane = brightness(e, 44, 70);
+    e.destroy();
+    return belowPane;
+  };
+  const throughGlass = paneBrightness(MAT.GLASS);
+  const throughStone = paneBrightness(MAT.STONE);
+  check(`glass transmits skylight (${throughGlass.toFixed(1)} > ${throughStone.toFixed(1)})`,
+    throughGlass > throughStone + 35);
+}
+
 // A winding cave connected to the entrance gets lossy bounce, not full skylight.
 {
   const e = mk();

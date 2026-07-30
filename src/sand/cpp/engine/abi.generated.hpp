@@ -393,6 +393,7 @@ enum SoundEventType : uint8_t {
   SE_SHIELD_BREAK = 26,
   SE_SPAWN_BREACH = 27,
   SE_WEAPON_EXPLOSION = 28,
+  SE_BEAM = 29,
 };
 
 static const int INV_HOTBAR = 9;

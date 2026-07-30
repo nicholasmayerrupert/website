@@ -64,7 +64,7 @@ int GLPresenter::glRestore() {
   glLastCamCol = glLastCamRow = INT_MIN;
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
   glLastVisX0 = glLastVisY0 = glLastVisX1 = glLastVisY1 = -1;
-  glLastSkyLight = glLightTick = INT_MIN;
+  glLastSkyLight = glLightTick = INT_MIN; glLightWallMs = -1e9;
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
   glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
@@ -133,7 +133,7 @@ int GLPresenter::glRebuildCellTextures(int texCols, int texRows) {
   glLastWorldOffX = glLastWorldOffY = INT_MIN;
   glLastVisX0 = glLastVisY0 = glLastVisX1 = glLastVisY1 = -1;
   glLastSkyLight = -1;
-  glLightTick = INT_MIN;
+  glLightTick = INT_MIN; glLightWallMs = -1e9;
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
   glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
@@ -1909,12 +1909,14 @@ void GLPresenter::glPresentWindow(int forceFull) {
   int camCol = (int)std::floor(glCamX), camRow = (int)std::floor(glCamY);
   bool worldShifted = E.fg.worldOffsetX != glLastWorldOffX || E.fg.worldOffsetY != glLastWorldOffY;
   bool skyChanged = (int)E.renderer.renderSkyLight != glLastSkyLight;
-  bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged ||
+  bool lightDirty = E.fg.skyDirty || E.bg.skyDirty;
+  bool contentDirty = forceFull || fgDirty || bgDirty || skyChanged || lightDirty ||
                       glDynamicLightPending;
   bool windowMoved = forceFull || camCol != glLastCamCol || camRow != glLastCamRow || worldShifted;
   // Reduce the monotonic clock through a safe 64-bit frame counter and keep only
   // the wrapping low 32 bits.
-  uint32_t wallAnimFrame = (uint32_t)(uint64_t)std::floor(emscripten_get_now() / GL_ANIM_FRAME_MS);
+  double nowMs = emscripten_get_now();
+  uint32_t wallAnimFrame = (uint32_t)(uint64_t)std::floor(nowMs / GL_ANIM_FRAME_MS);
   uint32_t animFrame = glAnimationPaused && glLastAnimFrame != UINT32_MAX ? glLastAnimFrame : wallAnimFrame;
   bool animationDue = !glAnimationPaused && glVisibleAnimated && animFrame != glLastAnimFrame;
   if (!contentDirty && !windowMoved && !animationDue) return;
@@ -1930,7 +1932,10 @@ void GLPresenter::glPresentWindow(int forceFull) {
   if (Renderer::RENDER_LIGHTING_ENABLED) {
     bool firstPresent = glCheapFirstPresent;
     bool lightForced = !firstPresent && (forceFull || worldShifted || skyChanged);
-    bool lightThrottleReady = glLightTick == INT_MIN || E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS;
+    bool lightThrottleReady = glLightTick == INT_MIN ||
+      (E.storageRole == ESR_PRESENTATION
+        ? nowMs - glLightWallMs >= GL_PRESENTATION_LIGHT_INTERVAL_MS
+        : E.tick - glLightTick >= GL_LIGHT_THROTTLE_TICKS);
     int ex0 = glLightX0 <= 0 ? 0 : glLightX0 + GL_LIGHT_EXACT_SHRINK;
     int ey0 = glLightY0 <= 0 ? 0 : glLightY0 + GL_LIGHT_EXACT_SHRINK;
     int ex1 = glLightX1 >= E.cols - 1 ? E.cols - 1 : glLightX1 - GL_LIGHT_EXACT_SHRINK;
@@ -1948,6 +1953,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
       E.renderer.computeLightingBoth(lx0, ly0, lx1, ly1);
       glLightX0 = lx0; glLightY0 = ly0; glLightX1 = lx1; glLightY1 = ly1;
       glLightTick = E.tick;
+      glLightWallMs = nowMs;
       E.perfLightMs = emscripten_get_now() - t0;
       lightUpdated = true;
       glDynamicLightPending = false;

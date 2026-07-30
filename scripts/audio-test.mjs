@@ -22,15 +22,18 @@ const mk = (storageRole = 'full') => createEngineWasm({
 });
 const O = OFF.soundEvent;
 
-check('ward, spawn-breach, and weapon-explosion cues have distinct semantic ids',
+check('ward, breach, explosion, and beam cues have distinct semantic ids',
   Number.isInteger(SOUND_EVENT.SHIELD_HIT)
     && SOUND_EVENT.SHIELD_BREAK === SOUND_EVENT.SHIELD_HIT + 1
     && SOUND_EVENT.SPAWN_BREACH === SOUND_EVENT.SHIELD_BREAK + 1
-    && SOUND_EVENT.WEAPON_EXPLOSION === SOUND_EVENT.SPAWN_BREACH + 1);
+    && SOUND_EVENT.WEAPON_EXPLOSION === SOUND_EVENT.SPAWN_BREACH + 1
+    && SOUND_EVENT.BEAM === SOUND_EVENT.WEAPON_EXPLOSION + 1);
 check('weapon detonations bypass the terrain-TNT presentation cooldown',
   semanticEventCooldownMs(SOUND_EVENT.WEAPON_EXPLOSION) === 0
     && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION, 0) === 190
     && semanticEventCooldownMs(SOUND_EVENT.EXPLOSION, 1) === 350);
+check('beam cues have an explicit presentation cooldown',
+  semanticEventCooldownMs(SOUND_EVENT.BEAM) === 120);
 
 {
   const assets = Object.fromEntries(TNT_EXPLOSION_LAYERS.map((layer, index) => [

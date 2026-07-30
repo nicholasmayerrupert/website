@@ -178,14 +178,18 @@ try {
       (commander.worldY - view.cameraWorldY) / view.viewRows * host.clientHeight;
     return {
       label: marker.textContent.trim(),
+      width: bounds.width,
+      height: bounds.height,
       markerCenterX: bounds.x + bounds.width * 0.5,
       markerBottom: bounds.y + bounds.height,
       commanderScreenX,
       commanderScreenY,
     };
   });
-  check('Commander Vale has a quest marker above him',
-    questMarkerState?.label === 'Missions' &&
+  check('Commander Vale has a compact icon-only quest marker above him',
+    questMarkerState?.label === '' &&
+    questMarkerState.width <= 24 &&
+    questMarkerState.height <= 24 &&
     Math.abs(questMarkerState.markerCenterX - questMarkerState.commanderScreenX) <= 2 &&
     questMarkerState.markerBottom < questMarkerState.commanderScreenY,
     JSON.stringify(questMarkerState));
@@ -316,6 +320,19 @@ try {
     }, deployment);
     await page.reload({ waitUntil: 'load' });
     await openMissionConsole(page);
+    if (deployment.planet === 'earth') {
+      await page.waitForFunction(() =>
+        typeof document.querySelector('sand-game')?._game?.playBeamSound === 'function');
+      await page.evaluate(() => {
+        window.__beamSoundCalls = 0;
+        const game = document.querySelector('sand-game')?._game;
+        const playBeamSound = game.playBeamSound.bind(game);
+        game.playBeamSound = (...args) => {
+          window.__beamSoundCalls++;
+          return playBeamSound(...args);
+        };
+      });
+    }
     const deployButton = page.getByRole('button', {
       name: new RegExp(`Beam down to ${deployment.planet === 'moon' ? 'The Moon' : deployment.planet}`, 'i'),
     });
@@ -359,6 +376,8 @@ try {
     check('campaign deployment uses a planetary backdrop without multiplayer controls',
       result.parallax && result.multiplayerCount === 0);
     if (deployment.planet === 'earth') {
+      check('leaving Kestrel triggers the beam cue',
+        await page.evaluate(() => window.__beamSoundCalls) === 1);
       const panelMutations = await page.evaluate(() => new Promise((resolve) => {
         const panel = document.querySelector('sand-game')?.shadowRoot?.querySelector('.sg-mission-hud');
         let mutations = 0;
@@ -371,6 +390,14 @@ try {
       }));
       check('idle mission snapshots do not continuously rebuild the status region',
         panelMutations === 0, String(panelMutations));
+      await page.evaluate(() => {
+        const game = document.querySelector('sand-game')?._game;
+        const playBeamSound = game.playBeamSound.bind(game);
+        game.playBeamSound = (...args) => {
+          window.__beamSoundCalls++;
+          return playBeamSound(...args);
+        };
+      });
     }
     if (pngPrefix) {
       await page.screenshot({
@@ -386,6 +413,10 @@ try {
     check('returning from deployment restores keyboard movement',
       returnInput.focused && (returnInput.bits & 1) !== 0,
       JSON.stringify(returnInput));
+    if (deployment.planet === 'earth') {
+      check('returning to Kestrel triggers the beam cue',
+        await page.evaluate(() => window.__beamSoundCalls) === 2);
+    }
   }
 
   await openMissionConsole(page);

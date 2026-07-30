@@ -88,6 +88,30 @@ async function openMissionConsole(page) {
   await page.locator('#kestrel-mission-console').waitFor({ state: 'visible' });
 }
 
+async function waitForShipGameFocus(page) {
+  await page.waitForFunction(() => {
+    const host = document.querySelector('sand-game[planet="ship"]');
+    const surface = host?.shadowRoot?.querySelector('.sg-sim');
+    return !!surface && host.shadowRoot.activeElement === surface;
+  }, null, { timeout: 30000 });
+}
+
+async function movementInputState(page) {
+  await page.keyboard.down('a');
+  try {
+    return await page.evaluate(() => {
+      const host = document.querySelector('sand-game[planet="ship"]');
+      const surface = host?.shadowRoot?.querySelector('.sg-sim');
+      return {
+        focused: !!surface && host.shadowRoot.activeElement === surface,
+        bits: window.__sandTest?.localInput?.().bits ?? 0,
+      };
+    });
+  } finally {
+    await page.keyboard.up('a');
+  }
+}
+
 const deployments = [
   {
     missionId: 'greenfall-recovery',
@@ -322,11 +346,11 @@ try {
 
     await page.getByRole('button', { name: /Abort to Kestrel/i }).click();
     await page.getByText('Field Ship Kestrel').waitFor({ state: 'visible' });
-    await page.waitForFunction(() =>
-      document.activeElement?.getAttribute('aria-label') === 'Kestrel mission deck');
-    check('returning from deployment restores focus to the mission deck',
-      await page.evaluate(() =>
-        document.activeElement?.getAttribute('aria-label') === 'Kestrel mission deck'));
+    await waitForShipGameFocus(page);
+    const returnInput = await movementInputState(page);
+    check('returning from deployment restores keyboard movement',
+      returnInput.focused && (returnInput.bits & 1) !== 0,
+      JSON.stringify(returnInput));
   }
 
   await openMissionConsole(page);
@@ -391,6 +415,13 @@ try {
     reviewBounds.actionTop >= 0 && reviewBounds.actionBottom <= 384,
     JSON.stringify(reviewBounds));
   await page.setViewportSize({ width: 1366, height: 768 });
+  await page.getByRole('button', { name: /Return to mission deck/i }).click();
+  await page.getByText('Field Ship Kestrel').waitFor({ state: 'visible' });
+  await waitForShipGameFocus(page);
+  const beamUpInput = await movementInputState(page);
+  check('beaming up after mission completion restores keyboard movement',
+    beamUpInput.focused && (beamUpInput.bits & 1) !== 0,
+    JSON.stringify(beamUpInput));
 
   check('ship and deployment flow produces no page exceptions',
     pageErrors.length === 0, pageErrors.join('; '));

@@ -243,6 +243,8 @@ function SupplyControl({ supply, packs, budgetLeft, onChange }) {
 function ShipHub({
   focusRef,
   gameHostRef,
+  onGameReady,
+  onRestoreGameFocus,
   save,
   mission,
   selection,
@@ -260,8 +262,8 @@ function ShipHub({
 
   const closeTerminal = useCallback(() => {
     setTerminalOpen(false);
-    requestAnimationFrame(() => focusRef.current?.focus());
-  }, [focusRef]);
+    requestAnimationFrame(onRestoreGameFocus);
+  }, [onRestoreGameFocus]);
 
   useEffect(() => {
     if (!terminalOpen) return undefined;
@@ -293,6 +295,7 @@ function ShipHub({
         planet="ship"
         worldSeed={0x4b455354}
         hostRef={gameHostRef}
+        onReady={onGameReady}
         onTalkAction={({ action }) => {
           if (action === 'mission-console') setTerminalOpen(true);
         }}
@@ -794,12 +797,16 @@ export function SandCampaign() {
     return stored;
   }, []);
 
-  useEffect(() => {
-    if (phase !== 'ship' || !focusShipOnMountRef.current) return undefined;
+  const focusShipGame = useCallback(() => {
+    const surface = shipGameRef.current?.shadowRoot?.querySelector('.sg-sim');
+    (surface || shipFocusRef.current)?.focus({ preventScroll: true });
+  }, []);
+
+  const restoreShipFocusWhenReady = useCallback(() => {
+    if (!focusShipOnMountRef.current) return;
     focusShipOnMountRef.current = false;
-    const frame = requestAnimationFrame(() => shipFocusRef.current?.focus());
-    return () => cancelAnimationFrame(frame);
-  }, [phase]);
+    focusShipGame();
+  }, [focusShipGame]);
 
   useEffect(() => {
     const syncExternalSave = (event) => {
@@ -1079,6 +1086,8 @@ export function SandCampaign() {
       <ShipHub
         focusRef={shipFocusRef}
         gameHostRef={shipGameRef}
+        onGameReady={restoreShipFocusWhenReady}
+        onRestoreGameFocus={focusShipGame}
         save={save}
         mission={mission}
         selection={selection}

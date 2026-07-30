@@ -68,6 +68,10 @@ int GLPresenter::glRestore() {
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
   glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
+  glTerrainLightIntervals.clear();
+  glDynamicLightPending = false;
+  glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
+  glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
   glCheapFirstPresent = false;
   E.useLayer(&E.fg); E.markAllDirty();
   E.useLayer(&E.bg); E.markAllDirty();
@@ -137,6 +141,10 @@ int GLPresenter::glRebuildCellTextures(int texCols, int texRows) {
   glLastAnimFrame = UINT32_MAX; glVisibleAnimated = false;
   glAnimatedFg.clear(); glAnimatedBg.clear();
   glLightX0 = glLightY0 = glLightX1 = glLightY1 = -1;
+  glTerrainLightIntervals.clear();
+  glDynamicLightPending = false;
+  glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
+  glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
   return 1;
 }
 // DEV A/B flags (flicker bench): toggle the gutter grid and offset snapping.
@@ -274,6 +282,16 @@ void GLPresenter::glCollectDynamicLights() {
     }
   }
   if (changed) {
+    auto include = [&](const std::vector<RenderLightSource>& sources) {
+      for (const RenderLightSource& source : sources) {
+        glDynamicLightX0 = imin(glDynamicLightX0, source.x);
+        glDynamicLightY0 = imin(glDynamicLightY0, source.y);
+        glDynamicLightX1 = imax(glDynamicLightX1, source.x);
+        glDynamicLightY1 = imax(glDynamicLightY1, source.y);
+      }
+    };
+    include(E.renderer.dynamicLights);
+    include(next);
     E.renderer.dynamicLights.swap(next);
     glDynamicLightPending = true;
   }
@@ -1928,7 +1946,7 @@ void GLPresenter::glPresentWindow(int forceFull) {
   // first authoritative frame has no cache to preserve, so solve only its
   // window+margin; newly exposed cells are solved on demand as the view moves.
   // Ordinary content changes use the same regional path on the usual throttle.
-  bool lightUpdated = false;
+  bool lightUpdated = false, fullLightUpdated = false;
   if (Renderer::RENDER_LIGHTING_ENABLED) {
     bool firstPresent = glCheapFirstPresent;
     bool lightForced = !firstPresent && (forceFull || worldShifted || skyChanged);
@@ -1955,14 +1973,91 @@ void GLPresenter::glPresentWindow(int forceFull) {
       glLightTick = E.tick;
       glLightWallMs = nowMs;
       E.perfLightMs = emscripten_get_now() - t0;
-      lightUpdated = true;
+      lightUpdated = fullLightUpdated = true;
+      glTerrainLightIntervals.clear();
       glDynamicLightPending = false;
+      glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
+      glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
+    } else if (E.storageRole == ESR_PRESENTATION) {
+      double t0 = emscripten_get_now();
+      std::vector<std::pair<int, int>> intervals;
+      for (const auto& changed : glTerrainLightIntervals) {
+        int ix0 = imax(x0, changed.first - GL_LIGHT_CHANGE_REACH);
+        int ix1 = imin(x1, changed.second + GL_LIGHT_CHANGE_REACH);
+        if (ix0 <= ix1) intervals.push_back({ix0, ix1});
+      }
+      glTerrainLightIntervals.clear();
+      std::sort(intervals.begin(), intervals.end());
+      size_t merged = 0;
+      for (const auto& interval : intervals) {
+        if (merged > 0 && interval.first <= intervals[merged - 1].second + 1) {
+          intervals[merged - 1].second = imax(intervals[merged - 1].second, interval.second);
+        } else {
+          intervals[merged++] = interval;
+        }
+      }
+      intervals.resize(merged);
+
+      auto markLightRefresh = [&](int rx0, int ry0, int rx1, int ry1) {
+        rx0 = imax(x0, rx0); ry0 = imax(y0, ry0);
+        rx1 = imin(x1, rx1); ry1 = imin(y1, ry1);
+        if (rx0 > rx1 || ry0 > ry1) return;
+        E.useLayer(&E.fg); E.markDirtyRect(rx0, ry0, rx1, ry1);
+        E.useLayer(&E.bg); E.markDirtyRect(rx0, ry0, rx1, ry1);
+        lightUpdated = true;
+      };
+      // Direct skylight travels down a whole column. Re-solving each touched
+      // column plus the finite bounce reach keeps falling-body and erase
+      // shadows current without paying for every visible column.
+      for (const auto& interval : intervals) {
+        int keepX0 = interval.first, keepX1 = interval.second;
+        int keepY0 = imax(0, y0 - 1), keepY1 = imin(E.rows - 1, y1 + 1);
+        E.renderer.computeLightingBothPatch(
+          keepX0 - GL_LIGHT_EXACT_SHRINK, keepY0 - GL_LIGHT_EXACT_SHRINK,
+          keepX1 + GL_LIGHT_EXACT_SHRINK, keepY1 + GL_LIGHT_EXACT_SHRINK,
+          keepX0, keepY0, keepX1, keepY1);
+        markLightRefresh(keepX0, y0, keepX1, y1);
+      }
+
+      // Entity/projectile emission has finite reach in both axes, so its old
+      // and new positions need only one bounded repair.
+      if (glDynamicLightPending && glDynamicLightX0 <= glDynamicLightX1) {
+        int keepX0 = imax(0, glDynamicLightX0 - GL_LIGHT_CHANGE_REACH);
+        int keepY0 = imax(0, glDynamicLightY0 - GL_LIGHT_CHANGE_REACH);
+        int keepX1 = imin(E.cols - 1, glDynamicLightX1 + GL_LIGHT_CHANGE_REACH);
+        int keepY1 = imin(E.rows - 1, glDynamicLightY1 + GL_LIGHT_CHANGE_REACH);
+        E.renderer.computeLightingBothPatch(
+          keepX0 - GL_LIGHT_EXACT_SHRINK, keepY0 - GL_LIGHT_EXACT_SHRINK,
+          keepX1 + GL_LIGHT_EXACT_SHRINK, keepY1 + GL_LIGHT_EXACT_SHRINK,
+          keepX0, keepY0, keepX1, keepY1);
+        markLightRefresh(keepX0, keepY0, keepX1, keepY1);
+        glDynamicLightPending = false;
+        glDynamicLightX0 = glDynamicLightY0 = INT_MAX;
+        glDynamicLightX1 = glDynamicLightY1 = INT_MIN;
+      }
+      if (lightUpdated) {
+        // The current sample window is exact. Constrain the validity region to
+        // it so the next whole-cell pan solves newly exposed lighting.
+        glLightX0 = imax(0, x0 - GL_LIGHT_WINDOW_MARGIN);
+        glLightY0 = imax(0, y0 - GL_LIGHT_WINDOW_MARGIN);
+        glLightX1 = imin(E.cols - 1, x1 + GL_LIGHT_WINDOW_MARGIN);
+        glLightY1 = imin(E.rows - 1, y1 + GL_LIGHT_WINDOW_MARGIN);
+        E.useLayer(&E.fg); E.foldRowMarksToRender();
+        E.useLayer(&E.bg); E.foldRowMarksToRender();
+        E.perfLightMs = emscripten_get_now() - t0;
+      }
+      // A patch makes the visible structural shadow current, but other changed
+      // materials in the same diff still need the scheduled catch-up solve.
+      if (fgDirty || bgDirty) {
+        E.fg.skyDirty = true;
+        E.bg.skyDirty = true;
+      }
     }
   }
-  // A lighting solve can change every visible pixel. A pure pan keeps the overlap
-  // valid and adds at most four non-overlapping edge bands; ordinary grid diffs
-  // between lighting solves continue to update their dirty chunks.
-  bool fullWindowRefresh = forceFull || worldShifted || lightUpdated || !previousWindowValid;
+  // A full lighting solve can change every visible pixel. Exact patches mark
+  // their repaired chunks above, while a pure pan keeps the overlap and adds at
+  // most four non-overlapping edge bands.
+  bool fullWindowRefresh = forceFull || worldShifted || fullLightUpdated || !previousWindowValid;
   int exposed[16], exposedCount = 0;
   auto addExposed = [&](int ax0, int ay0, int ax1, int ay1) {
     if (ax0 > ax1 || ay0 > ay1) return;

@@ -45,13 +45,10 @@ class GLPresenter {
   bool glVisibleAnimated = false;
   bool glAnimationPaused = false;
   std::vector<uint8_t> glAnimatedFg, glAnimatedBg;
-  // Lighting-recompute throttle. The full-buffer light solve is by far the costliest
-  // part of the present path, so on a continuously-active scene it is re-solved at most
-  // once every GL_LIGHT_THROTTLE_TICKS sim ticks and the (buffer-indexed, pan-invariant)
-  // result is reused between — a barely-perceptible lag in dynamic light for a large
-  // CPU saving. After the first presentation, a world shift (light buffer
-  // misaligns), a skylight change, or a forced full refresh always re-solves
-  // immediately. glLightTick is the tick of the last solve.
+  // Full-window lighting is throttled on continuously active scenes. Presentation
+  // mirrors repair the exact columns touched by structural or user-edit diffs,
+  // and moving render lights repair their bounded influence rect immediately.
+  // World shifts, skylight changes, and forced refreshes still solve immediately.
   static constexpr int GL_LIGHT_THROTTLE_TICKS = 2;
   static constexpr double GL_PRESENTATION_LIGHT_INTERVAL_MS = 125.0;
   int glLightTick = INT_MIN;
@@ -67,11 +64,19 @@ class GLPresenter {
   // the full buffer so the sky shift-remap caches stay coherent.
   static constexpr int GL_LIGHT_WINDOW_MARGIN = 72;
   static constexpr int GL_LIGHT_EXACT_SHRINK = 61;
+  static constexpr int GL_LIGHT_CHANGE_REACH = 60;
   static constexpr int GL_DYNAMIC_LIGHT_CAP = 32;
   int glLightX0 = -1, glLightY0 = -1, glLightX1 = -1, glLightY1 = -1; // last solve region (-1 = never solved)
-  // Stays pending across throttled frames so moving lights cannot be forgotten
-  // merely because they changed between scheduled terrain-light solves.
+  // Exact x-ranges where a presentation diff changed a structural cell or a
+  // worker-tagged user edit. NetSync records them before replacing mirror rows.
+  std::vector<std::pair<int, int>> glTerrainLightIntervals;
+  void glNoteTerrainLightChange(int x0, int x1) {
+    if (x0 <= x1) glTerrainLightIntervals.push_back({x0, x1});
+  }
+  // The old and new source bounds cover both sides of a moving light trail.
   bool glDynamicLightPending = false;
+  int glDynamicLightX0 = INT_MAX, glDynamicLightY0 = INT_MAX;
+  int glDynamicLightX1 = INT_MIN, glDynamicLightY1 = INT_MIN;
   int glOwnPlayerId = 0;                // which engine player draws as "own" (blue)
   bool glUseExtPlayers = false;         // client renders remote players from JS snapshots
   std::vector<float> glExtPlayers;      // packed GLP_* authority-render records

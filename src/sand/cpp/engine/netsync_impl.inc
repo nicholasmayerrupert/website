@@ -104,7 +104,8 @@ int NetSync::serializeDiff() {
   writeDiffLayer(true);
   return (int)blob.size();
 }
-int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background) {
+int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background,
+                           int lightEditX0, int lightEditX1) {
   Layer* lay = background ? &E.bg : &E.fg;
   if (p + 2 > len) return p;
   int rc = readLE16(buf, p); p += 2;
@@ -119,6 +120,23 @@ int NetSync::readDiffLayer(const uint8_t* buf, int len, int p, bool background) 
     for (int y = y0; y < y1; y++) {
       if (p + width > len) return p;
       if (validRect) {
+        if (E.storageRole == ESR_PRESENTATION) {
+          const uint8_t* incoming = buf + p;
+          const uint8_t* current = lay->grid + y * E.cols + x0;
+          int runX0 = -1;
+          for (int x = 0; x < width; x++) {
+            uint8_t oldM = current[x], newM = incoming[x];
+            bool immediateLightChange = oldM != newM &&
+              (MAT_CLASS[oldM] == MC_RIGID || MAT_CLASS[newM] == MC_RIGID ||
+               (x0 + x >= lightEditX0 && x0 + x <= lightEditX1));
+            if (immediateLightChange && runX0 < 0) runX0 = x0 + x;
+            if ((!immediateLightChange || x + 1 == width) && runX0 >= 0) {
+              int runX1 = immediateLightChange && x + 1 == width ? x0 + x : x0 + x - 1;
+              E.glp.glNoteTerrainLightChange(runX0, runX1);
+              runX0 = -1;
+            }
+          }
+        }
         std::memcpy(lay->grid + y * E.cols + x0, buf + p, (size_t)width);
         if (lay->fallSpeed) std::memset(lay->fallSpeed + y * E.cols + x0, 0, (size_t)width);
         if (lay->liquidVel) {
@@ -144,10 +162,10 @@ void NetSync::applyDiff(const uint8_t* buf, int len) {
   E.useLayer(&E.fg);
 }
 
-void NetSync::applyDiffMirror(const uint8_t* buf, int len) {
+void NetSync::applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1) {
   if (len < 2) return;
-  int p = readDiffLayer(buf, len, 0, false);
-  readDiffLayer(buf, len, p, true);
+  int p = readDiffLayer(buf, len, 0, false, lightEditX0, lightEditX1);
+  readDiffLayer(buf, len, p, true, lightEditX0, lightEditX1);
   E.fg.skyDirty = true; E.bg.skyDirty = true;
   E.bgEnabled = true;
   E.useLayer(&E.fg);

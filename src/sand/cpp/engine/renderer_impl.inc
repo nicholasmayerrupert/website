@@ -304,6 +304,57 @@ void Renderer::computeLightingBoth(int rx0, int ry0, int rx1, int ry1) {
   projectCrossLayerLight(&E.bg, &E.fg, rx0, ry0, rx1, ry1);                   // bg <- fg base (always)
 }
 
+// Recompute a lighting region while changing only its exact inner rectangle.
+// The surrounding solve margin supplies every source that can reach the kept
+// pixels; restoring that margin leaves unrelated cached light untouched.
+void Renderer::computeLightingBothPatch(int sx0, int sy0, int sx1, int sy1,
+                                        int keepX0, int keepY0, int keepX1, int keepY1) {
+  sx0 = imax(0, sx0); sy0 = imax(0, sy0);
+  sx1 = imin(E.cols - 1, sx1); sy1 = imin(E.rows - 1, sy1);
+  keepX0 = imax(sx0, keepX0); keepY0 = imax(sy0, keepY0);
+  keepX1 = imin(sx1, keepX1); keepY1 = imin(sy1, keepY1);
+  if (sx0 > sx1 || sy0 > sy1 || keepX0 > keepX1 || keepY0 > keepY1) return;
+
+  int width = sx1 - sx0 + 1, height = sy1 - sy0 + 1;
+  size_t plane = (size_t)width * height;
+  lightPatchScratch.resize(plane * 4);
+  auto snapshot = [&](const std::vector<uint8_t>& src, size_t planeIndex) {
+    uint8_t* out = lightPatchScratch.data() + planeIndex * plane;
+    for (int y = sy0; y <= sy1; y++) {
+      size_t srcOff = (size_t)y * E.cols + sx0;
+      size_t dstOff = (size_t)(y - sy0) * width;
+      std::copy(src.begin() + srcOff, src.begin() + srcOff + width, out + dstOff);
+    }
+  };
+  snapshot(E.fg.light, 0);
+  snapshot(E.fg.lightBase, 1);
+  snapshot(E.bg.light, 2);
+  snapshot(E.bg.lightBase, 3);
+
+  computeLightingBoth(sx0, sy0, sx1, sy1);
+
+  auto restoreRect = [&](std::vector<uint8_t>& dst, size_t planeIndex,
+                         int rx0, int ry0, int rx1, int ry1) {
+    if (rx0 > rx1 || ry0 > ry1) return;
+    const uint8_t* saved = lightPatchScratch.data() + planeIndex * plane;
+    for (int y = ry0; y <= ry1; y++) {
+      size_t dstOff = (size_t)y * E.cols + rx0;
+      size_t srcOff = (size_t)(y - sy0) * width + (rx0 - sx0);
+      std::copy(saved + srcOff, saved + srcOff + (rx1 - rx0 + 1), dst.begin() + dstOff);
+    }
+  };
+  auto restoreMargins = [&](std::vector<uint8_t>& dst, size_t planeIndex) {
+    restoreRect(dst, planeIndex, sx0, sy0, sx1, keepY0 - 1);
+    restoreRect(dst, planeIndex, sx0, keepY1 + 1, sx1, sy1);
+    restoreRect(dst, planeIndex, sx0, keepY0, keepX0 - 1, keepY1);
+    restoreRect(dst, planeIndex, keepX1 + 1, keepY0, sx1, keepY1);
+  };
+  restoreMargins(E.fg.light, 0);
+  restoreMargins(E.fg.lightBase, 1);
+  restoreMargins(E.bg.light, 2);
+  restoreMargins(E.bg.lightBase, 3);
+}
+
 uint8_t Renderer::renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) const {
   uint8_t v = light[k];
   if (!faceLitMaterial(m)) return v;

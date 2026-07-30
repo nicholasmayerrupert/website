@@ -278,7 +278,7 @@ export function createWorldWorkerClient(ctx) {
             changed = true;
           }
         } else if ((packet.epoch | 0) === appliedEpoch) {
-          ctx.engine.applyDiffMirror(bytes);
+          ctx.engine.applyDiffMirror(bytes, packet.lightEditX0, packet.lightEditX1);
           ctx.engine.setMirrorWorldTick(packet.worldTick);
           changed = true;
         } else {

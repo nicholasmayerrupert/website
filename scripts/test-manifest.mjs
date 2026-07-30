@@ -84,6 +84,7 @@ export const BROWSER_SUITES = [
   ['zoom-e2e', 'zoom-e2e.mjs', 240_000],
   ['creatures-e2e', 'creature-e2e.mjs', 180_000],
   ['day-night-e2e', 'day-night-e2e.mjs', 180_000],
+  ['lighting-latency-e2e', 'lighting-latency-e2e.mjs', 180_000],
   ['worker-e2e', 'worker-e2e.mjs', 300_000],
   ['multiplayer-e2e', 'mp-e2e.mjs', 240_000],
   ['acid-cut-e2e', 'acid-cut-e2e.mjs', 180_000],

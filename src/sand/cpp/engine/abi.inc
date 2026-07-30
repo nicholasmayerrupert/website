@@ -491,7 +491,10 @@ EMSCRIPTEN_KEEPALIVE uint8_t* engine_net_blob_ptr(Engine* e) { return e->net.blo
 EMSCRIPTEN_KEEPALIVE void engine_apply_world(Engine* e, uint8_t* buf, int len) { e->net.applyWorld(buf, len); }
 EMSCRIPTEN_KEEPALIVE void engine_apply_diff(Engine* e, uint8_t* buf, int len) { e->net.applyDiff(buf, len); }
 EMSCRIPTEN_KEEPALIVE void engine_apply_world_mirror(Engine* e, uint8_t* buf, int len) { e->net.applyWorldMirror(buf, len); }
-EMSCRIPTEN_KEEPALIVE void engine_apply_diff_mirror(Engine* e, uint8_t* buf, int len) { e->net.applyDiffMirror(buf, len); }
+EMSCRIPTEN_KEEPALIVE void engine_apply_diff_mirror(Engine* e, uint8_t* buf, int len,
+                                                   int lightEditX0, int lightEditX1) {
+  e->net.applyDiffMirror(buf, len, lightEditX0, lightEditX1);
+}
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_world_offset(Engine* e, int x, int y) {
   e->fg.worldOffsetX = e->bg.worldOffsetX = x;
   e->fg.worldOffsetY = e->bg.worldOffsetY = y;

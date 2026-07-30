@@ -354,7 +354,7 @@ export function initSandWasm() {
         applyWorld: c('engine_apply_world', null, ['number', 'number', 'number']),
         applyDiff: c('engine_apply_diff', null, ['number', 'number', 'number']),
         applyWorldMirror: c('engine_apply_world_mirror', null, ['number', 'number', 'number']),
-        applyDiffMirror: c('engine_apply_diff_mirror', null, ['number', 'number', 'number']),
+        applyDiffMirror: c('engine_apply_diff_mirror', null, ['number', 'number', 'number', 'number', 'number']),
         setMirrorWorldOffset: c('engine_set_mirror_world_offset', null, ['number', 'number', 'number']),
         setMirrorWorldTick: c('engine_set_mirror_world_tick', null, ['number', 'number']),
         setMirrorDraft: c('engine_set_mirror_draft', null, ['number', 'number', 'number', 'number']),
@@ -1223,11 +1223,11 @@ const renderStrides = Object.freeze({
       M.applyWorldMirror(ptr, buf, bytes.length);
       mod._free(buf);
     },
-    applyDiffMirror(bytes) {
+    applyDiffMirror(bytes, lightEditX0 = 1, lightEditX1 = 0) {
       if (!bytes.length) return;
       const buf = mod._malloc(bytes.length);
       mod.HEAPU8.set(bytes, buf);
-      M.applyDiffMirror(ptr, buf, bytes.length);
+      M.applyDiffMirror(ptr, buf, bytes.length, lightEditX0 | 0, lightEditX1 | 0);
       mod._free(buf);
     },
     setMirrorWorldTick(tick) { M.setMirrorWorldTick(ptr, tick | 0); },

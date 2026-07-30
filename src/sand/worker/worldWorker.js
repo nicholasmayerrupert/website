@@ -36,6 +36,9 @@ let lastStatsPost = 0;
 let controlsReceived = 0;
 let edgesProcessed = 0;
 let toolWrites = 0;
+let lightEditX0 = Infinity;
+let lightEditX1 = -Infinity;
+let lastToolWriteX = null;
 let resizeId = 0;
 let mirroredCreatures = false;
 let survival = false;
@@ -46,6 +49,14 @@ let activePlanetId = PLANET.EARTH;
 let latestInput = null;
 let actorClock = null;
 let lastInventoryHash = -1;
+
+function noteLightEdit(x, radius = 4) {
+  if (!Number.isFinite(x)) return;
+  const from = Number.isFinite(lastToolWriteX) ? lastToolWriteX : x;
+  lightEditX0 = Math.min(lightEditX0, from - radius, x - radius);
+  lightEditX1 = Math.max(lightEditX1, from + radius, x + radius);
+  lastToolWriteX = x;
+}
 
 function seedReactionInterface(material, cap, phase) {
   const grid = engine.getGrid(), cols = engine.cols, rows = engine.rows;
@@ -164,6 +175,9 @@ function postFull(reason) {
     worldOffsetX: engine.getWorldOffsetX(), worldOffsetY: engine.getWorldOffsetY(),
     worldTick: engine.getTick(), perf: perf(),
   }, bytes);
+  lightEditX0 = Infinity;
+  lightEditX1 = -Infinity;
+  lastToolWriteX = null;
 }
 
 function postDiffIfReady() {
@@ -173,7 +187,14 @@ function postDiffIfReady() {
   sequence++;
   awaitingAck = true;
   engine.consumeReplicaDirty();
-  postBytes({ type: 'diff', epoch, sequence, worldTick: engine.getTick(), perf: perf() }, bytes);
+  const editX0 = Number.isFinite(lightEditX0) ? Math.floor(lightEditX0) : 1;
+  const editX1 = Number.isFinite(lightEditX1) ? Math.ceil(lightEditX1) : 0;
+  postBytes({
+    type: 'diff', epoch, sequence, worldTick: engine.getTick(), perf: perf(),
+    lightEditX0: editX0, lightEditX1: editX1,
+  }, bytes);
+  lightEditX0 = Infinity;
+  lightEditX1 = -Infinity;
 }
 
 function toLocal(worldX, worldY) {
@@ -222,12 +243,14 @@ function applyEdges() {
     }
     if (edge.kind === 'down') {
       workerButtons |= edge.button === 2 ? 2 : 1;
-      engine.pointerDown(p.x, p.y, edge.button);
+      if (engine.pointerDown(p.x, p.y, edge.button)) noteLightEdit(p.x);
     }
     else {
-      engine.pointerDraft(p.x, p.y);
-      engine.pointerUp(edge.button);
+      const drafted = engine.pointerDraft(p.x, p.y);
+      const finalized = engine.pointerUp(edge.button);
+      if (drafted || finalized) noteLightEdit(p.x);
       workerButtons &= ~(edge.button === 2 ? 2 : 1);
+      if (!workerButtons) lastToolWriteX = null;
     }
   }
   edges = [];
@@ -242,7 +265,11 @@ function applyContinuous(now) {
   engine.pointerButtons(control.buttons | 0);
   const p = toLocal(control.worldX, control.worldY);
   engine.pointerDraft(p.x, p.y);
-  if (engine.applyTool(p.x, p.y, now, !!control.inside, !!control.drawMode)) toolWrites++;
+  if (engine.applyTool(p.x, p.y, now, !!control.inside, !!control.drawMode)) {
+    toolWrites++;
+    noteLightEdit(p.x);
+  }
+  if (!(control.buttons | 0)) lastToolWriteX = null;
 }
 
 function schedule(delay = WORLD_STEP_MS) {
@@ -381,6 +408,7 @@ self.onmessage = async ({ data }) => {
     actorClock = createFixedRateClock({ now: performance.now() });
     lastInventoryHash = -1;
     epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false;
+    lightEditX0 = Infinity; lightEditX1 = -Infinity; lastToolWriteX = null;
     survivalSpawnViewReady = false;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
     postFull('init');
@@ -437,7 +465,8 @@ self.onmessage = async ({ data }) => {
     if (!survival && (data.creativeKind !== undefined || data.creatureNaturalSpawning !== undefined)) applyCreatureRuntime();
   } else if (data.type === 'test-paint-disc') {
     const p = toLocal(data.worldX, data.worldY);
-    if (engine.paintDisc(p.x, p.y, Math.max(1, data.radius | 0), data.material | 0, false)) toolWrites++;
+    const radius = Math.max(1, data.radius | 0);
+    if (engine.paintDisc(p.x, p.y, radius, data.material | 0, false)) toolWrites++;
   } else if (data.type === 'test-seed-reaction') {
     seedReactionInterface(data.material | 0, Math.max(1, data.cap | 0), data.phase | 0);
   } else if (data.type === 'test-creature-runtime') {

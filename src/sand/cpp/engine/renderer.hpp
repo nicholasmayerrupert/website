@@ -49,6 +49,9 @@ class Renderer {
   std::vector<RenderLightSource> dynamicLights;
   // Packed [x:k] entries avoid dividing k by cols for every flood-fill pop.
   std::vector<uint64_t> lightQueue;   // render-only flood-fill scratch
+  // Snapshot storage used by exact lighting patches. A patch solves with a
+  // propagation margin, keeps its exact inner rect, then restores the margin.
+  std::vector<uint8_t> lightPatchScratch;
 
   void init(uint32_t seed) { renderRngState = seed ^ 0x9e3779b9u; buildRenderTables(); }
   inline double renderRand() {
@@ -117,6 +120,8 @@ class Renderer {
   void projectCrossLayerLight(Layer* lay, Layer* crossLay, int rx0, int ry0, int rx1, int ry1);
   void computeLighting(Layer* lay, Layer* crossLay = nullptr);
   void computeLightingBoth(int rx0, int ry0, int rx1, int ry1);
+  void computeLightingBothPatch(int sx0, int sy0, int sx1, int sy1,
+                                int keepX0, int keepY0, int keepX1, int keepY1);
   uint8_t renderLightForCell(const uint8_t* light, int k, int x, int y, uint8_t m) const;
   void buildRenderTables();
   bool fillRenderSpan(uint8_t* g, uint32_t* p, int x0, int y0, int x1, int y1);

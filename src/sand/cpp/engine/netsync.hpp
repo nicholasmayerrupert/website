@@ -16,7 +16,7 @@ class NetSync {
   void applyWorld(const uint8_t* buf, int len);
   void applyDiff(const uint8_t* buf, int len);
   void applyWorldMirror(const uint8_t* buf, int len);
-  void applyDiffMirror(const uint8_t* buf, int len);
+  void applyDiffMirror(const uint8_t* buf, int len, int lightEditX0, int lightEditX1);
   uint32_t gridHashFNV();
 
  private:
@@ -32,5 +32,6 @@ class NetSync {
   // Layer is Engine-nested (incomplete here), so the per-layer halves take a
   // background flag and resolve E.fg/E.bg in the impl.
   void writeDiffLayer(bool background);
-  int readDiffLayer(const uint8_t* buf, int len, int p, bool background);
+  int readDiffLayer(const uint8_t* buf, int len, int p, bool background,
+                    int lightEditX0 = 1, int lightEditX1 = 0);
 };

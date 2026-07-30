@@ -9,9 +9,9 @@
 
 import createSandModule from '../wasm/sandEngine.js';
 import { MAT } from '../materials.js';
-import { ABI_VERSION, OFF, STRIDES, INPUT } from './abi.generated.js';
+import { ABI_VERSION, OFF, STRIDES, INPUT, PLANET } from './abi.generated.js';
 
-export { MAT };
+export { MAT, PLANET };
 // Player input bitmask + snapshot layouts come from the generated ABI manifest
 // (abi.generated.js) — one schema edit changes both sides.
 export { INPUT };
@@ -210,7 +210,10 @@ export function initSandWasm() {
       }
       M = {
         mod,
-        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number']),
+        create: c('engine_create', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
+        getPlanet: c('engine_get_planet', 'number', ['number']),
+        getGravityScale: c('engine_get_gravity_scale', 'number', ['number']),
+        setGravityScale: c('engine_set_gravity_scale', null, ['number', 'number']),
         shiftWorld: c('engine_shift_world', null, ['number', 'number']),
         shiftWorldXY: c('engine_shift_world_xy', null, ['number', 'number', 'number']),
         maybeShiftWorld: c('engine_maybe_shift_world', 'number', ['number', 'number', 'number', 'number']),
@@ -311,6 +314,11 @@ export function initSandWasm() {
         creatureCount: c('engine_creature_count', 'number', ['number']),
         creatureSnapshot: c('engine_creature_snapshot', 'number', ['number']),
         creatureSnapshotPtr: c('engine_creature_snapshot_ptr', 'number', ['number']),
+        startMission: c('engine_start_mission', 'number', ['number', 'number', 'number']),
+        missionSnapshot: c('engine_mission_snapshot', 'number', ['number']),
+        missionSnapshotPtr: c('engine_mission_snapshot_ptr', 'number', ['number']),
+        objectiveSnapshot: c('engine_objective_snapshot', 'number', ['number']),
+        objectiveSnapshotPtr: c('engine_objective_snapshot_ptr', 'number', ['number']),
         projectileSnapshot: c('engine_projectile_snapshot', 'number', ['number']),
         projectileSnapshotPtr: c('engine_projectile_snapshot_ptr', 'number', ['number']),
         setMirrorCreatures: c('engine_set_mirror_creatures', null, ['number', 'number', 'number', 'number', 'number']),
@@ -318,6 +326,7 @@ export function initSandWasm() {
         setCreatureRuntime: c('engine_set_creature_runtime', null, ['number', 'number', 'number']),
         seedStarterTools: c('engine_seed_starter_tools', null, ['number', 'number']),
         addToInventory: c('engine_add_to_inventory', 'number', ['number', 'number', 'number', 'number']),
+        addSpecialItem: c('engine_add_special_item', 'number', ['number', 'number', 'number', 'number']),
         setSelectedSlot: c('engine_set_selected_slot', null, ['number', 'number', 'number']),
         cycleSelectedSlot: c('engine_cycle_selected_slot', null, ['number', 'number', 'number']),
         setSelectedFootprint: c('engine_set_selected_footprint', null, ['number', 'number', 'number']),
@@ -419,6 +428,8 @@ export function createEngineWasm({
   sinksOn = true,
   infinite = false,
   storageRole = 'full',
+  planetId = PLANET.EARTH,
+  gravityScale,
   worldSeed = (Math.floor(Math.random() * 4294967296) >>> 0),
 } = {}) {
   if (!M) throw new Error('initSandWasm() must resolve before createEngineWasm()');
@@ -427,9 +438,19 @@ export function createEngineWasm({
       cols > 16384 || rows > 16384 || !Number.isSafeInteger(cells) || cells > 0x7fffffff) {
     throw new RangeError(`invalid sand engine dimensions ${cols}x${rows}`);
   }
+  if (planetId !== PLANET.EARTH && planetId !== PLANET.MOON && planetId !== PLANET.MARS) {
+    throw new RangeError(`invalid sand engine planet ${planetId}`);
+  }
+  if (gravityScale !== undefined
+      && (!Number.isFinite(gravityScale) || gravityScale < 0.05 || gravityScale > 1)) {
+    throw new RangeError(`invalid sand engine gravity scale ${gravityScale}`);
+  }
   const { mod } = M;
   const role = storageRole === 'presentation' ? 1 : (storageRole === 'authority' ? 2 : 0);
-  const ptr = M.create(cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role);
+  const ptr = M.create(
+    cols, rows, worldSeed >>> 0, sinksOn ? 1 : 0, infinite ? 1 : 0, role, planetId,
+  );
+  if (gravityScale !== undefined) M.setGravityScale(ptr, gravityScale);
   // Live dims (mutable — resizeLoadedWindow can grow/shrink the buffer).
   let liveCols = cols;
   let liveRows = rows;
@@ -519,6 +540,13 @@ const renderStrides = Object.freeze({
     rows: liveRows,
     chunkCols: liveChunkCols,
     chunkRows: liveChunkRows,
+    getPlanet() { return M.getPlanet(ptr); },
+    getGravityScale() { return M.getGravityScale(ptr); },
+    setGravityScale(scale) {
+      if (!Number.isFinite(scale) || scale < 0.05 || scale > 1)
+        throw new RangeError(`invalid sand engine gravity scale ${scale}`);
+      M.setGravityScale(ptr, scale);
+    },
     step() { return M.step(ptr) === 1; },
     stepActors() { return M.stepActors(ptr) === 1; },
     stepWorld() { return M.stepWorld(ptr) === 1; },
@@ -933,6 +961,55 @@ const renderStrides = Object.freeze({
     },
     damageCreatures(x, y, radius, damage) { return M.damageCreatures(ptr, x | 0, y | 0, radius | 0, damage | 0) === 1; },
     creatureCount() { return M.creatureCount(ptr); },
+    startMission(missionId, playerId) {
+      return M.startMission(ptr, missionId | 0, playerId | 0) === 1;
+    },
+    getMission() {
+      if (M.missionSnapshot(ptr) !== 1) return null;
+      const objectiveCount = M.objectiveSnapshot(ptr);
+      const header = new Int32Array(
+        mod.HEAP32.buffer,
+        M.missionSnapshotPtr(ptr),
+        STRIDES.missionSnapshot,
+      );
+      const H = OFF.missionSnapshot;
+      const packed = objectiveCount
+        ? new Int32Array(
+          mod.HEAP32.buffer,
+          M.objectiveSnapshotPtr(ptr),
+          objectiveCount * STRIDES.objectiveSnapshot,
+        )
+        : null;
+      const O = OFF.objectiveSnapshot;
+      const objectives = new Array(objectiveCount);
+      for (let i = 0; i < objectiveCount; i++) {
+        const o = i * STRIDES.objectiveSnapshot;
+        objectives[i] = {
+          id: packed[o + O.id] | 0,
+          type: packed[o + O.type] | 0,
+          state: packed[o + O.state] | 0,
+          current: packed[o + O.current] | 0,
+          required: packed[o + O.required] | 0,
+          worldX: packed[o + O.worldX] | 0,
+          worldY: packed[o + O.worldY] | 0,
+          targetActorId: packed[o + O.targetActorId] | 0,
+          flags: packed[o + O.flags] | 0,
+        };
+      }
+      return {
+        revision: header[H.revision] | 0,
+        missionId: header[H.missionId] | 0,
+        planetId: header[H.planetId] | 0,
+        phase: header[H.phase] | 0,
+        objectiveCount: header[H.objectiveCount] | 0,
+        threatLevel: header[H.threatLevel] | 0,
+        extractionX: header[H.extractionX] | 0,
+        extractionY: header[H.extractionY] | 0,
+        elapsedTicks: header[H.elapsedTicks] | 0,
+        recoveredWeaponMask: header[H.recoveredWeaponMask] | 0,
+        objectives,
+      };
+    },
 
     // Survival inventory (authoritative in the engine). setSurvivalInventory routes
     // player controls through the hotbar; getInventory reads a packed snapshot for
@@ -941,6 +1018,9 @@ const renderStrides = Object.freeze({
     setCreatureRuntime(simulate, naturalSpawn) { M.setCreatureRuntime(ptr, simulate ? 1 : 0, naturalSpawn ? 1 : 0); },
     seedStarterTools(id) { M.seedStarterTools(ptr, id | 0); },
     addToInventory(id, material, count) { return M.addToInventory(ptr, id | 0, material | 0, count | 0) === 1; },
+    addSpecialItem(id, itemKind, count) {
+      return M.addSpecialItem(ptr, id | 0, itemKind | 0, count | 0) === 1;
+    },
     setSelectedSlot(id, slot) { M.setSelectedSlot(ptr, id | 0, slot | 0); },
     cycleSelectedSlot(id, delta) { M.cycleSelectedSlot(ptr, id | 0, delta | 0); },
     setSelectedFootprint(id, footprintId) { M.setSelectedFootprint(ptr, id | 0, footprintId | 0); },

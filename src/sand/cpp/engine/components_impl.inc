@@ -1983,6 +1983,14 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       continue;
     }
     if (decision == 0) continue;
+    if (!E.gravityCellStep) {
+      E.useLayer(&E.fg);
+      if (!fgCells.empty()) E.markCellIndex(fgCells[0]);
+      E.useLayer(&E.bg);
+      if (!bgCells.empty()) E.markCellIndex(bgCells[0]);
+      E.useLayer(&E.fg);
+      continue;
+    }
     int dir = decision > 0 ? E.cols : -E.cols;
     AssemblyBodyPush fgBodyPush, bgBodyPush;
     E.useLayer(&E.fg);
@@ -2694,6 +2702,10 @@ void ComponentSystem::moveRigidAssemblies() {
       continue;
     }
     if (decision == 0) continue;
+    if (!E.gravityCellStep) {
+      E.markCellIndex(all[grp->comps[0]]->cells[0]);
+      continue;
+    }
     int dirK = decision > 0 ? E.cols : -E.cols;
     bool fullySubmerged = current.liquidFaces > 0 && current.openAirFaces == 0;
     translateAssembly(grp, cells, dirK, decision, weight, fullySubmerged);

@@ -45,6 +45,8 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       storageRole: 'presentation',
       worldSeed: ctx.worldSeed,
       sinksOn: false, // taps/sinks are obsolete in the streaming world
+      planetId: ctx.planetId,
+      gravityScale: ctx.gravityScale,
     });
     ctx.engine = e;
     e.glInit(canvas);                                // WebGL2 context on our canvas

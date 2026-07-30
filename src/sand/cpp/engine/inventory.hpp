@@ -21,6 +21,7 @@ class InventorySystem {
   bool addToInventory(int id, uint8_t mat, int count, uint8_t plantType = PT_OAK);
   bool addStack(Player& p, const InvSlot& stack);
   bool addStack(int id, const InvSlot& stack);
+  bool addSpecialItem(int id, uint8_t itemKind, int count);
   static bool sameStack(const InvSlot& a, const InvSlot& b);
   bool consumeSelectedWeaponAmmo(Player& p, uint8_t itemKind);
   bool placeFromSelected(Player& p, int ax, int ay, Layer* layer);

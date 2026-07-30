@@ -30,6 +30,7 @@
     uint8_t m = L->grid[k];
     if (!isLooseDensityMaterial(m) || L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) return;
+    if (!gravityCellStep) return;
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
     // Liquid↔liquid density is handled by settleLiquid (deep sink through lighter
@@ -57,6 +58,23 @@
     uint8_t self = L->grid[k];
     int belowK = k + cols;
     if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
+    if (!gravityCellStep && y + 1 < rows) {
+      auto canFallInto = [&](int ik) {
+        uint8_t target = L->grid[ik];
+        return L->next[ik] == EMPTY
+          && (target == EMPTY || canDisplaceMaterial(self, target));
+      };
+      bool gravityPath = canFallInto(belowK)
+        || (x > 1 && canFallInto(belowK - 1))
+        || (x < cols - 2 && canFallInto(belowK + 1));
+      if (gravityPath) {
+        uint8_t speed = acceleratedFallSpeed(k, self);
+        writeNextIndex(k, self);
+        carryNextFallSpeed(k, speed);
+        markCellIndex(k);
+        return;
+      }
+    }
     if (y + 1 < rows && L->grid[belowK] == EMPTY && L->next[belowK] == EMPTY) {
       uint8_t speed = acceleratedFallSpeed(k, self);
       int dst = belowK;
@@ -105,6 +123,24 @@
         L->next[k] = m;
         carryNextLiquidVelocity(k, k);
         return; // settled flat surface -> go inert (no re-mark just for open sky above)
+      }
+    }
+    if (!gravityCellStep && y + 1 < rows) {
+      bool gravityPath = liquidColumnPassable(belowK, m);
+      if (!gravityPath) {
+        for (int dx : {-1, 1}) {
+          int nx = x + dx;
+          if (nx <= 0 || nx >= cols - 1) continue;
+          if (liquidCanClaim(belowK + dx, m)) { gravityPath = true; break; }
+        }
+      }
+      if (gravityPath) {
+        uint8_t speed = acceleratedFallSpeed(k, m);
+        writeNextIndex(k, m);
+        carryNextLiquidVelocity(k, k);
+        carryNextFallSpeed(k, speed);
+        markCellIndex(k);
+        return;
       }
     }
     // FALL / SINK: less-dense liquid is free volume for a *single-cell* sink
@@ -441,7 +477,7 @@
         int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
         if (L->grid[I(x, y + 1)] == EMPTY) continue;
         int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
-        if (relaxesGaps(above)) {
+        if (gravityCellStep && relaxesGaps(above)) {
           uint32_t velocity = L->liquidVel[aboveK];
           writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY);
           L->liquidVel[k] = velocity;
@@ -473,6 +509,7 @@
   // stay put and go inert. General same-level flow still does NOT treat lighter
   // liquid as air (canEnterIndex) — only this free-surface solver does.
   void levelLiquidSurfaces() {
+    if (!gravityCellStep) return;
     // The active candidate scan is authoritative for this tick. Avoid two full
     // active-span passes for gas/empty blast aftermath when no liquid exists.
     if (activeLiquidCells.empty()) return;

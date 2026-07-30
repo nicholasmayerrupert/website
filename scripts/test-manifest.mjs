@@ -4,6 +4,8 @@
 // cannot silently leave it outside the required aggregates.
 
 export const UNIT_SUITES = [
+  ['campaign', 'campaign-test.mjs'],
+  ['missions', 'mission-test.mjs'],
   ['deployment', 'deployment-cache-test.mjs'],
   ['life-search', 'life-search-test.mjs'],
   ['tooltier', 'tooltier-test.mjs'],
@@ -23,6 +25,7 @@ export const UNIT_SUITES = [
   ['mat-behavior', 'material-behavior-test.mjs'],
   ['liquid-mass', 'liquid-mass-test.mjs'],
   ['gas-bubble', 'gas-bubble-test.mjs'],
+  ['planet-gravity', 'planet-gravity-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
   ['worldgen-quality', 'worldgen-quality-test.mjs'],
   ['deep-world', 'worldgen-deep-test.mjs'],
@@ -75,6 +78,7 @@ export const UNIT_SUITES = [
 ];
 
 export const BROWSER_SUITES = [
+  ['campaign-e2e', 'campaign-e2e.mjs', 240_000],
   ['sand-lifecycle', 'sand-lifecycle-e2e.mjs', 180_000],
   ['players-e2e', 'player-e2e.mjs', 240_000],
   ['zoom-e2e', 'zoom-e2e.mjs', 240_000],

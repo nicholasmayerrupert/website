@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 23,
+  "abiVersion": 24,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -65,6 +65,16 @@
         "carryMs", "bodyMs", "sandMs", "liquidMs", "gasMs",
         "reactMs", "tailMs", "layersMs", "crossMs"
       ]
+    },
+    "missionSnapshot": {
+      "$comment": "int32 mission header built by MissionSystem. Objective coordinates are absolute world cells and remain stable across streaming.",
+      "cPrefix": "MS",
+      "fields": ["revision", "missionId", "planetId", "phase", "objectiveCount", "threatLevel", "extractionX", "extractionY", "elapsedTicks", "recoveredWeaponMask"]
+    },
+    "objectiveSnapshot": {
+      "$comment": "int32 authoritative objective records built by MissionSystem.",
+      "cPrefix": "OS",
+      "fields": ["id", "type", "state", "current", "required", "worldX", "worldY", "targetActorId", "flags"]
     }
   },
   "enums": {
@@ -91,7 +101,8 @@
         "IK_BORE_CANNON": 6,
         "IK_ACID_MORTAR": 7,
         "IK_CLUSTER_LAUNCHER": 8,
-        "IK_MINIGUN": 9
+        "IK_MINIGUN": 9,
+        "IK_RESCUE_BEAM": 10
       }
     },
     "ProjectileKind": {
@@ -107,7 +118,8 @@
         "PK_ACID_SHELL": 3,
         "PK_CLUSTER_BOMB": 4,
         "PK_MINIGUN_ROUND": 5,
-        "PK_BORE_BEAM": 6
+        "PK_BORE_BEAM": 6,
+        "PK_RESCUE_BEAM": 7
       }
     },
     "CraftIngredientKind": {
@@ -152,7 +164,11 @@
         "CREATURE_BORE_SENTINEL": 8,
         "CREATURE_CAUSTIC_MORTARMAN": 9,
         "CREATURE_CLUSTER_WASP": 10,
-        "CREATURE_MINIGUNNER": 11
+        "CREATURE_MINIGUNNER": 11,
+        "CREATURE_SURVEYOR": 12,
+        "CREATURE_SHIELD_ANCHOR": 13,
+        "CREATURE_QUARRY_FOREMAN": 14,
+        "CREATURE_REACTOR_WARDEN": 15
       }
     },
     "CreatureAttackState": {
@@ -162,6 +178,46 @@
       "jsName": "CREATURE_ATTACK_STATE",
       "jsPrefix": "CAS",
       "values": { "CAS_IDLE": 0, "CAS_CHARGING": 1, "CAS_FIRING": 2 }
+    },
+    "PlanetId": {
+      "$comment": "Planet policy shared by campaign metadata and the C++ simulation.",
+      "cName": "PlanetId",
+      "cType": "uint8_t",
+      "jsName": "PLANET",
+      "jsPrefix": "PL",
+      "values": { "PL_EARTH": 0, "PL_MOON": 1, "PL_MARS": 2 }
+    },
+    "MissionId": {
+      "$comment": "The first three ordered IRIS campaign operations.",
+      "cName": "MissionId",
+      "cType": "uint8_t",
+      "jsName": "MISSION",
+      "jsPrefix": "MI",
+      "values": { "MI_NONE": 0, "MI_GREENFALL_RECOVERY": 1, "MI_SILENT_QUARRY": 2, "MI_RED_FURNACE": 3 }
+    },
+    "MissionPhase": {
+      "$comment": "Authoritative lifecycle for a deployed mission.",
+      "cName": "MissionPhase",
+      "cType": "uint8_t",
+      "jsName": "MISSION_PHASE",
+      "jsPrefix": "MP",
+      "values": { "MP_INACTIVE": 0, "MP_ACTIVE": 1, "MP_EXTRACTION": 2, "MP_COMPLETE": 3, "MP_FAILED": 4 }
+    },
+    "ObjectiveKind": {
+      "$comment": "Mission objective semantics interpreted by the authority and HUD.",
+      "cName": "ObjectiveKind",
+      "cType": "uint8_t",
+      "jsName": "OBJECTIVE_KIND",
+      "jsPrefix": "OK",
+      "values": { "OK_CLEAR": 0, "OK_RESCUE": 1, "OK_ANCHOR": 2, "OK_BOSS": 3, "OK_CORE": 4, "OK_EXTRACT": 5 }
+    },
+    "ObjectiveState": {
+      "$comment": "Locked objectives are revealed when their prerequisites complete.",
+      "cName": "ObjectiveState",
+      "cType": "uint8_t",
+      "jsName": "OBJECTIVE_STATE",
+      "jsPrefix": "OS",
+      "values": { "OS_LOCKED": 0, "OS_ACTIVE": 1, "OS_COMPLETE": 2, "OS_FAILED": 3 }
     },
     "SoundEventType": {
       "$comment": "Semantic game sounds. The engine reports what happened; the browser audio mixer owns synthesis, spatialization, and voice policy.",

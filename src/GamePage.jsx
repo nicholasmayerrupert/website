@@ -1,13 +1,17 @@
-// Fullscreen survival entry. Small/coarse-pointer devices do not mount the heavy
-// engine because the survival UI still requires desktop input.
+// Fullscreen survival entry. Small screens do not mount the heavy engine because
+// the survival UI needs room for its mission, inventory, and movement controls.
 
 import { useEffect } from 'react';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { SandGame } from './sand/react/SandGame';
+import { SandCampaign } from './sand/react/SandCampaign';
 
-const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
-const PERF_GAME = typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).has('perf');
+const MOBILE_QUERY = '(max-width: 767px)';
+const GAME_QUERY = typeof window !== 'undefined'
+  ? new URLSearchParams(window.location.search)
+  : new URLSearchParams();
+const PERF_GAME = GAME_QUERY.has('perf');
+const DIRECT_SANDBOX = GAME_QUERY.has('sandbox') || PERF_GAME;
 
 function ControlChip({ keys, children, accent = false }) {
   return (
@@ -29,7 +33,9 @@ export default function GamePage() {
 
   useEffect(() => {
     const prev = document.title;
-    document.title = 'Explosive Survival — Nicholas Mayer-Rupert';
+    document.title = DIRECT_SANDBOX
+      ? 'Explosive Survival — Nicholas Mayer-Rupert'
+      : 'IRIS Field Operations — Nicholas Mayer-Rupert';
     return () => { document.title = prev; };
   }, []);
 
@@ -39,11 +45,14 @@ export default function GamePage() {
         <div className="max-w-sm">
           <div className="mb-4 text-5xl">🖥️</div>
           <h1 className="mb-3 text-xl font-semibold text-white">
-            Explosive Survival is desktop-only for now
+            {DIRECT_SANDBOX
+              ? 'Explosive Survival is desktop-only for now'
+              : 'IRIS field operations are desktop-only for now'}
           </h1>
           <p className="text-sm leading-relaxed text-white/70">
-            Visit on a larger screen with a mouse and keyboard to mine, build,
-            fight, and tear through the simulated world. Touch controls are coming later.
+            {DIRECT_SANDBOX
+              ? 'Open this page on a larger screen with a mouse and keyboard to mine, build, fight, and tear through the simulated world.'
+              : 'Visit the Kestrel on a larger screen with a mouse and keyboard to deploy, mine, build, fight, and tear through simulated worlds.'}
           </p>
           <a
             href="/"
@@ -55,6 +64,8 @@ export default function GamePage() {
       </div>
     );
   }
+
+  if (!DIRECT_SANDBOX) return <SandCampaign />;
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-dark">

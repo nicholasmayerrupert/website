@@ -123,7 +123,7 @@
     std::swap(L->fallSpeed, L->nextFallSpeed);
     std::swap(L->liquidVel, L->nextLiquidVel);
     if ((tick & 1) == 0) relaxLiquidGaps();
-    if (tick % 3 == 0) separateLooseByDensity();
+    if (gravityCellStep && tick % 3 == 0) separateLooseByDensity();
     levelLiquidSurfaces();
     applySideSinks();
     perfTailMs += emscripten_get_now() - tT;
@@ -139,6 +139,7 @@
     updateProjectiles();
     updateItems();
     updateCreatures();
+    missions.update();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
     return !psys.players.empty() || !projectiles.projectiles.empty() || !itemsys.items.empty() ||
@@ -146,6 +147,7 @@
   }
 
   bool stepWorld() {
+    if (storageRole == ESR_PRESENTATION) return false;
     auto retainSleepingBodySupportDirty = [&](Layer& lay) {
       if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
       for (Body* b : lay.bodies) if (b->jointRole != 2 && !b->awake) {
@@ -159,6 +161,7 @@
     if (!fgA && !bgA) { useLayer(&fg); perfStepMs = 0; return false; }
     double t0 = emscripten_get_now();
     tick++;
+    advanceGravityCadence();
     // Zero fine-phase timers + dirty volume (stepLayer / joint accumulate into these).
     perfDirtyChunks = perfDirtyRows = perfDirtyCells = 0;
     perfComponentCount = perfComponentCellCount = perfCrossBondCount = 0;

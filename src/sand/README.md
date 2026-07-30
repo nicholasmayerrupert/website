@@ -1,17 +1,23 @@
 # Sand engine
 
-The site runs the same falling-sand game in two places: creative mode in the
-home-page hero and survival mode at `/game`. The simulation, WebGL2 renderer,
-camera, input policy, tools, actors, and world streaming run in C++ compiled to
-WebAssembly. JavaScript owns browser lifecycle, canvas sizing, raw DOM events,
-audio presentation, workers, and WebSocket transport.
+The site uses the same falling-sand runtime for the creative home-page hero and
+the IRIS campaign at `/game`. The campaign begins aboard the field ship Kestrel
+and mounts a survival deployment only after the player selects a mission and
+loadout. `/game?sandbox` bypasses the campaign shell and opens the direct
+survival sandbox.
+
+The simulation, WebGL2 renderer, camera, input policy, tools, actors, authored
+missions, and world streaming run in C++ compiled to WebAssembly. JavaScript
+owns browser lifecycle, canvas sizing, raw DOM events, audio presentation,
+workers, WebSocket transport, and the ship/debrief presentation.
 
 The runtime ships as a framework-free `<sand-game>` Web Component. React only
 mounts that element on this site.
 
 ## Runtime topology
 
-Offline creative and survival use two engine instances:
+Offline creative, survival sandbox, and campaign deployments use two engine
+instances:
 
 - An authority worker simulates cells, actors, tools, inventory, and streaming.
 - A main-thread presentation engine applies backpressured world diffs and actor
@@ -21,8 +27,69 @@ Only one authority packet is in flight. A full snapshot is used for startup,
 resize, and streaming; ordinary turns send accumulated diffs. The presentation
 mirror does not reconstruct static components because it never simulates them.
 
-Multiplayer replaces the authority worker with `scripts/sand-server.mjs`. Clients
-send intents, apply authoritative state, and reconcile local-player prediction.
+Direct survival multiplayer replaces the authority worker with
+`scripts/sand-server.mjs`. Clients send intents, apply authoritative state, and
+reconcile local-player prediction. Authored campaign deployments use the offline
+authority worker and do not show the multiplayer connect panel.
+
+## IRIS campaign
+
+`/game` is the mission deck for IRIS — Interstellar Rescue & Intervention
+Service. The player deploys from Kestrel with the bound blast gun, an iron
+mining tool, bounded material packs, and one unlocked enemy weapon recovered
+from an operation. Completing an operation unlocks the next planet. Aborting
+returns to the mission deck and failure opens a debrief; neither commits terrain
+progress.
+
+The campaign contains three sequential operations:
+
+| Order | Planet | Mission | Authoritative objective sequence |
+| --- | --- | --- | --- |
+| 1 | Earth, 1.00 G | Greenfall Recovery (`greenfall-recovery`; tracker: Operation Greenfall) | Clear three demolition crew members; tag three surveyors with the rescue beam; reach the surface beacon. |
+| 2 | Moon, 0.165 G | Silent Quarry (`silent-quarry`; tracker: Operation Silent Quarry) | Disable two shield anchors in separate mine branches; defeat the Quarry Foreman; reach the emergency pickup point. |
+| 3 | Mars, 0.38 G | Red Furnace (`red-furnace`; tracker: Operation Red Furnace) | Disable three reactor anchors; defeat the Reactor Warden; breach the reactor core; escape to the surface pickup point. |
+
+`MissionSystem` in `cpp/engine/missions.hpp` and
+`cpp/engine/missions_impl.inc` owns live objective state, scripted actors,
+facility rooms, stage transitions, failure, extraction threat, completion, and
+recovered-weapon reporting. Objective and extraction positions use absolute
+world coordinates and remain stable across streaming. A mission starts only
+when its required planet matches the engine planet. Player death fails every
+operation; killing a Greenfall surveyor also fails that operation. Extraction
+raises the encounter threat, and breaching the Red Furnace core destabilizes its
+surrounding terrain.
+
+The worker sends packed mission and objective snapshots to the main thread. The
+embed presents those snapshots as the mission tracker and world-space markers,
+then emits lifecycle events for the React campaign shell. JavaScript never
+duplicates objective progression.
+
+`campaign/missions.js` owns ship-facing briefing text, mission order, loadout
+budgets, and the mapping from recovered weapons to deployment stacks.
+`campaign/campaignSave.js` validates the versioned `sand-campaign-v1`
+local-storage record. It persists completed mission IDs, preferred loadouts,
+unlocked weapons, and best times. An interrupted run stores only its mission,
+seed, and normalized loadout; it does not serialize terrain.
+
+## Planets and gravity
+
+Planet identity is an engine-construction property and is immutable for that
+engine's lifetime. The `<sand-game>` element reads `planet`, `world-seed`,
+`mission`, and `loadout` when it connects; recreate the element to change any of
+them. Planet and seed together select deterministic terrain and a matching
+planetary backdrop.
+
+The canonical campaign gravity scales are Earth `1.0`, Moon `0.165`, and Mars
+`0.38`. The Web Component has no separate gravity attribute and campaign
+deployments use those planet defaults. The internal engine adapter can override
+gravity for tests and specialized hosts, clamped to `0.05`–`1.0`.
+
+Gravity-driven actors, dropped items, arcing projectiles, and free rigid bodies
+scale their acceleration continuously. Powders, liquids, and falling structural
+components use a deterministic fractional-tick cadence shared by the foreground
+and background layers. Liquid pressure and velocity also use scaled gravity.
+The resulting freefall order for players, loose solids, fluids, and rigid bodies
+is Earth, then Mars, then Moon.
 
 ## Two simulated layers
 
@@ -108,11 +175,13 @@ limited by the device's WebGL texture dimensions rather than a fixed cell cap.
 - `cpp/sand.cpp`: unity translation unit and `Engine` composition.
 - `cpp/engine/common.hpp`: shared types and constants.
 - `cpp/engine/layer.hpp`: per-layer grids, caches, components, bodies, and stores.
-- `cpp/engine/`: eighteen composed subsystem classes (most use a header plus an
+- `cpp/engine/`: composed subsystem classes (most use a header plus an
   implementation include):
   audio, camera, components, crafting, creatures, explosives, GL presentation,
-  growth, inventory, items, net sync, player, projectiles, reactions, renderer,
-  rigid bodies, terrain, and tools.
+  growth, inventory, items, missions, net sync, player, projectiles, reactions,
+  renderer, rigid bodies, terrain, and tools.
+- `cpp/engine/missions.hpp`, `missions.inc`, and `missions_impl.inc`: authored
+  operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
 - `cpp/engine/step.inc`: world-step coordinator and cross-layer transfer.
 - `cpp/engine/worldgen.inc`: streaming, chunk persistence, and terrain fills.
@@ -125,6 +194,12 @@ limited by the device's WebGL texture dimensions rather than a fixed cell cap.
 - `worker/`: offline authority worker and main-thread replica client.
 - `net/`: multiplayer protocol, prediction, replication, and server authority.
 - `embed/`: the Web Component and framework-free UI.
+- `embed/missionHud.js`: mission snapshot labels, tracker, and objective markers.
+- `campaign/missions.js`: campaign metadata and bounded loadout construction.
+- `campaign/campaignSave.js`: sequential unlocks and validated local persistence.
+- `react/SandCampaign.jsx`: Kestrel mission deck, briefing, deployment, and
+  debrief flow.
+- `react/SandGame.jsx`: React-to-Web-Component attribute and event bridge.
 - `audio/sandAudio.js`: Web Audio mixer for semantic engine events.
 
 `MATERIAL_MODEL.md`, `PERF.md`, `GROUNDING_INCREMENTAL.md`,
@@ -239,12 +314,12 @@ accumulate catch-up debt.
 The offline worker transfers dropped items and cosmetic debris to the renderer as
 one packed buffer at actor cadence. Nearby identical collectible materials
 coagulate into normal inventory-sized stacks, while independent debris flecks
-remain short-lived and visual-only. Multiplayer continues to replicate only
-collectible items.
+remain short-lived and visual-only. Multiplayer replicates only collectible
+items.
 
-`/game` is explosive survival. Players spawn with a lower-cadence automatic
-blast gun whose swept, high-velocity rounds detonate on the first liquid, solid,
-or creature hit.
+Campaign deployments and `/game?sandbox` use the same explosive survival rules.
+Players spawn with a lower-cadence automatic blast gun whose swept,
+high-velocity rounds detonate on the first liquid, solid, or creature hit.
 Dynamiteers throw wide, high-damage bouncing charges; bore sentinels telegraph,
 lock, and then erase a player-traversable line through both simulated layers.
 Captured bore cannons deal 70 damage to creatures while preserving the
@@ -260,14 +335,14 @@ before saturating that line with long bursts of rapid, pinprick explosive rounds
 Blasts and bore cuts damage
 and knock back actors as well as changing terrain. Health, dropped equipment,
 the articulated player animation, an airborne rechargeable jetpack, and
-immediate manual respawning at a safe original-spawn location remain
+immediate manual respawning at a safe original-spawn location are
 authoritative in the engine. The rendered
 jetpack exposes its fuel level and animates twin thrust plumes without changing
 that authority. Holding `F` raises a cursor-facing 120-degree ward with 200
 durability; directional hits drain the ward instead of player health, and its
 meter quickly recharges after combat. The raised ward is an exclusive stance:
 shooting, mining, and placement remain disabled until it is lowered. Acid contact
-deals twice its former player damage and now corrodes creatures at the same rate.
+damages players and corrodes creatures.
 Mining, material pickups,
 block placement, the 36-slot inventory, 1x1–10x10 tool-size presets (10x10 by
 default), and crafting remain
@@ -277,9 +352,8 @@ that same inventory. Captured dynamite satchels carry 10 throws, bore cannons 15
 beams, acid mortars 20 shells, cluster launchers 15 carriers, and miniguns 250
 rounds. Picking up a duplicate weapon merges its full ammo load into the existing
 weapon, while the bound starter blast gun remains unlimited. The starting
-universal dig tool cuts ordinary terrain at
-roughly thirteen times its previous rate without accelerating bare hands or crafted
-material-specific picks.
+universal dig tool rapidly cuts ordinary terrain without accelerating bare hands
+or crafted material-specific picks.
 
 Projectile kind, fuse, and rotation plus creature attack state, progress, and
 buffer-local aim are packed into the ABI snapshots; the worker mirror restores
@@ -290,8 +364,8 @@ JavaScript.
 Creatures use absolute-world poses so they survive streaming. Off-window
 creatures hibernate, natural populations are capped locally and globally, and
 explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
-crawlers, moles, and birds are currently retired from natural spawning but remain
-available through their creative eggs.
+crawlers, moles, and birds do not spawn naturally and are available through
+their creative eggs.
 Survival encounters spend a shared deterministic threat budget at a paced
 two-second cadence: habitat-valid entries beyond the real viewport margin are
 preferred, while an audible, replicated 0.9–1.4 second breach portal telegraphs
@@ -389,7 +463,20 @@ npm run test:all         # headless + lint + builds + browser suites
 npm run lint
 npm run build
 npm run build:embed
+
+npm run test:campaign
+npm run test:missions
+node scripts/run-tests.mjs --only planet-gravity
+node scripts/run-tests.mjs --browser --only campaign-e2e
 ```
+
+The campaign test covers mission order, sequential unlocks, bounded loadouts,
+persistence validation, debrief rewards, and interrupted-run configuration. The
+mission test exercises authoritative objective progression, rescue-beam
+interaction, mission/planet validation, extraction, and recovered equipment.
+The planet-gravity test covers deterministic planet terrain and the Earth >
+Mars > Moon fall ordering. The campaign browser suite covers Kestrel and all
+three deployment configurations.
 
 `scripts/test-manifest.mjs` is the source of truth for executable test entries.
 The runner checks that every `*-test.mjs`, `*-e2e.mjs`, and `*-repro.mjs` file is

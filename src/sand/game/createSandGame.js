@@ -13,6 +13,7 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
+import { MISSION, PLANET } from '../wasmBridge/abi.generated.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -23,6 +24,11 @@ export function createSandGame(container, opts = {}) {
     // 'creative': free camera (WASD pans the infinite world), draw tools
     // place/erase anywhere with no reach limit, no character.
     mode = 'survival',
+    planet = 'earth',
+    gravityScale,
+    mission = null,
+    worldSeed,
+    loadout = [],
     // /fps enables engine-owned creature actors plus AABB outlines while
     // retaining creative controls and the performance HUD.
     debugHitboxes = false,
@@ -32,13 +38,30 @@ export function createSandGame(container, opts = {}) {
     // harmless compatibility inputs for older embeds.
     onInventory = null,
     onPlayerState = null,
+    onMission = null,
     onToggleInventory = null,
     onToggleFootprintMenu = null,
   } = opts;
   const survival = mode === 'survival';
+  const planetId = typeof planet === 'number'
+    ? planet
+    : ({ earth: PLANET.EARTH, moon: PLANET.MOON, mars: PLANET.MARS }[
+      String(planet).toLowerCase()
+    ] ?? PLANET.EARTH);
+  const resolvedGravityScale = Number.isFinite(gravityScale)
+    ? gravityScale
+    : (planetId === PLANET.MOON ? 0.165 : (planetId === PLANET.MARS ? 0.38 : 1));
+  const missionId = typeof mission === 'number'
+    ? mission
+    : ({
+      'greenfall-recovery': MISSION.GREENFALL_RECOVERY,
+      'silent-quarry': MISSION.SILENT_QUARRY,
+      'red-furnace': MISSION.RED_FURNACE,
+    }[String(mission || '').toLowerCase()] ?? MISSION.NONE);
+  const missionLoadout = Array.isArray(loadout) ? loadout : [];
 
   // Host canvas; the WASM engine owns its WebGL2 context and compositing.
-  const parallax = createParallaxBackground(container);
+  const parallax = createParallaxBackground(container, { planetId });
   const audio = createSandAudio();
 
   const canvas = document.createElement('canvas');
@@ -58,8 +81,12 @@ export function createSandGame(container, opts = {}) {
   // (set after the owning module is created).
   const ctx = {
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
+    planetId, gravityScale: resolvedGravityScale, missionId,
+    missionLoadout,
     // One seed per mount so resizing regenerates the *same* infinite world.
-    worldSeed: (Math.random() * 4294967296) >>> 0,
+    worldSeed: Number.isFinite(worldSeed)
+      ? worldSeed >>> 0
+      : (Math.random() * 4294967296) >>> 0,
     // devicePixelRatio at load. Browser page zoom later changes dpr (and the
     // CSS box) together; this is the "100%" baseline so the sim ignores page zoom.
     baselineDpr: (typeof window !== 'undefined' && window.devicePixelRatio) || 1,
@@ -143,6 +170,10 @@ export function createSandGame(container, opts = {}) {
       creativeKind: ctx.creativeKind, creativeValue: ctx.creativeValue,
       tool: TOOL_IDS[ctx.currentToolName] ?? 0,
       creatureNaturalSpawning: ctx.debugHitboxes,
+      planetId: ctx.planetId,
+      gravityScale: ctx.gravityScale,
+      missionId: ctx.missionId,
+      loadout: ctx.missionLoadout,
     });
     applyCreatureRuntimePolicy(ctx);
     return authority;
@@ -258,6 +289,7 @@ export function createSandGame(container, opts = {}) {
     updateMineProgress,
     onInventory,
     onPlayerState,
+    onMission,
   });
   ctx.fns.render = loop.render;
   const netGlue = createNetGlue(ctx, {
@@ -385,6 +417,28 @@ export function createSandGame(container, opts = {}) {
     getInventory() {
       if (ctx.netClientReady()) return ctx.net.getOwnInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
       return ctx.worldWorker?.getInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
+    },
+    getMission() { return ctx.worldWorker?.getMission() || null; },
+    getPlanetState() {
+      return {
+        id: ctx.engine?.getPlanet() ?? ctx.planetId,
+        gravityScale: ctx.engine?.getGravityScale() ?? ctx.gravityScale,
+      };
+    },
+    getMissionView() {
+      if (!ctx.engine) return null;
+      const cam = ctx.engine.getCam();
+      const offsetX = ctx.engine.getWorldOffsetX();
+      const offsetY = ctx.engine.getWorldOffsetY();
+      const player = ctx.worldWorker?.getOwnPlayer() || null;
+      return {
+        cameraWorldX: offsetX + cam.x,
+        cameraWorldY: offsetY + cam.y,
+        viewCols: ctx.viewCols,
+        viewRows: ctx.viewRows,
+        playerWorldX: player ? offsetX + player.x + player.w * 0.5 : null,
+        playerWorldY: player ? offsetY + player.y + player.h * 0.5 : null,
+      };
     },
     // Minecraft cursor model (carried stack) + throw-out (facing direction).
     cursorPick(slot, half) {

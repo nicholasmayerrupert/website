@@ -8,10 +8,11 @@ extern "C" {
 // ABI version stamp (abi.generated.hpp). initSandWasm() refuses a module whose
 // version mismatches the JS manifest — catches stale committed sandEngine artifacts.
 EMSCRIPTEN_KEEPALIVE int engine_abi_version() { return ABI_VERSION; }
-EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite, int storageRole) {
+EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, int sinks, int infinite,
+                                          int storageRole, int planetId) {
   EngineStorageRole role = storageRole == ESR_PRESENTATION ? ESR_PRESENTATION
                          : (storageRole == ESR_AUTHORITY ? ESR_AUTHORITY : ESR_FULL);
-  Engine* e = new Engine(cols, rows, seed, sinks != 0, role);
+  Engine* e = new Engine(cols, rows, seed, sinks != 0, role, planetId);
   if (infinite) {
     if (role == ESR_PRESENTATION) e->initInfinitePresentation(seed);
     else e->initInfinite(seed);
@@ -19,6 +20,9 @@ EMSCRIPTEN_KEEPALIVE Engine* engine_create(int cols, int rows, uint32_t seed, in
   e->markAllDirty();
   return e;
 }
+EMSCRIPTEN_KEEPALIVE int engine_get_planet(Engine* e) { return (int)e->planetId; }
+EMSCRIPTEN_KEEPALIVE double engine_get_gravity_scale(Engine* e) { return e->gravityScale; }
+EMSCRIPTEN_KEEPALIVE void engine_set_gravity_scale(Engine* e, double scale) { e->setGravityScale(scale); }
 EMSCRIPTEN_KEEPALIVE void engine_shift_world(Engine* e, int dx) { e->shiftWorld(dx, 0); }
 EMSCRIPTEN_KEEPALIVE void engine_shift_world_xy(Engine* e, int dx, int dy) { e->shiftWorld(dx, dy); }
 EMSCRIPTEN_KEEPALIVE int engine_maybe_shift_world(Engine* e, int cameraCellX, int visibleCols, int marginCols) { return e->maybeShiftWorld(cameraCellX, visibleCols, marginCols); }
@@ -410,6 +414,21 @@ EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int ra
 EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }
 EMSCRIPTEN_KEEPALIVE int engine_creature_snapshot(Engine* e) { return e->creatures.buildCreatureSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_creature_snapshot_ptr(Engine* e) { return e->creatures.snapshot.data(); }
+EMSCRIPTEN_KEEPALIVE int engine_start_mission(Engine* e, int missionId, int playerId) {
+  return e->missions.start(missionId, playerId) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int engine_mission_snapshot(Engine* e) {
+  return e->missions.buildMissionSnapshot();
+}
+EMSCRIPTEN_KEEPALIVE int32_t* engine_mission_snapshot_ptr(Engine* e) {
+  return e->missions.missionSnapshot.data();
+}
+EMSCRIPTEN_KEEPALIVE int engine_objective_snapshot(Engine* e) {
+  return e->missions.buildObjectiveSnapshot();
+}
+EMSCRIPTEN_KEEPALIVE int32_t* engine_objective_snapshot_ptr(Engine* e) {
+  return e->missions.objectiveSnapshot.data();
+}
 EMSCRIPTEN_KEEPALIVE int engine_projectile_snapshot(Engine* e) { return e->projectiles.buildSnapshot(); }
 EMSCRIPTEN_KEEPALIVE float* engine_projectile_snapshot_ptr(Engine* e) { return e->projectiles.snapshot.data(); }
 EMSCRIPTEN_KEEPALIVE void engine_set_mirror_creatures(Engine* e, float* data, int count, int sourceOffsetX, int sourceOffsetY) {
@@ -439,6 +458,9 @@ EMSCRIPTEN_KEEPALIVE void engine_set_creature_runtime(Engine* e, int simulate, i
 }
 EMSCRIPTEN_KEEPALIVE void engine_seed_starter_tools(Engine* e, int id) { e->seedStarterTools(id); }
 EMSCRIPTEN_KEEPALIVE int engine_add_to_inventory(Engine* e, int id, int mat, int count) { return e->addToInventory(id, (uint8_t)mat, count) ? 1 : 0; }
+EMSCRIPTEN_KEEPALIVE int engine_add_special_item(Engine* e, int id, int itemKind, int count) {
+  return e->inv.addSpecialItem(id, (uint8_t)itemKind, count) ? 1 : 0;
+}
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_slot(Engine* e, int id, int slot) { e->setSelectedSlot(id, slot); }
 EMSCRIPTEN_KEEPALIVE void engine_cycle_selected_slot(Engine* e, int id, int delta) { e->cycleSelectedSlot(id, delta); }
 EMSCRIPTEN_KEEPALIVE void engine_set_selected_footprint(Engine* e, int id, int footprintId) { e->setSelectedFootprint(id, footprintId); }

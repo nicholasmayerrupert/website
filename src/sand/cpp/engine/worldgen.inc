@@ -1894,6 +1894,10 @@
   // terrain, natural dressing, constructed structures, trees, then `L->next`.
   void fillRect(int colStart, int colEnd, int rowStart, int rowEnd) {
     fillTerrain(colStart, colEnd, rowStart, rowEnd);
+    if (planetId != PL_EARTH) {
+      copyGridToNext(colStart, colEnd, rowStart, rowEnd);
+      return;
+    }
     fillCaveFeatures(colStart, colEnd, rowStart, rowEnd);
     fillDeepCaveFeatures(colStart, colEnd, rowStart, rowEnd);
     fillOceanFlora(colStart, colEnd, rowStart, rowEnd);
@@ -1913,6 +1917,12 @@
     L->gCaveSeed = (seed ^ 0x5bd1e995u) + layerSalt * 0x9e3779b9u;
     L->gPocketSeed = (seed ^ 0xC0FFEE11u) + layerSalt * 0x85ebca6bu;
     L->gTreeSeed = seed ^ 0x1b56c4f9u; // shared so tree silhouettes line up across layers
+    if (planetId != PL_EARTH) {
+      uint32_t planetSalt = planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u;
+      L->gSeaRow = INT_MAX / 4;
+      L->gCaveSeed ^= planetSalt;
+      L->gPocketSeed ^= planetSalt * 0x9e3779b9u;
+    }
     L->worldOffsetX = (-(cols / 2)) & ~(CHUNK_SIZE - 1);   // tile-aligned origin (2D tile store needs alignment)
     L->worldOffsetY = (-L->gSurfBase) & ~(CHUNK_SIZE - 1); // surface centre (worldY=0) ~gSurfBase down the buffer
   }
@@ -2235,16 +2245,18 @@
     int sOffX = Lx->worldOffsetX, sOffY = Lx->worldOffsetY;
     L = Lx; Lx->grid = pfGrid.data();
     Lx->worldOffsetX = futOffX; Lx->worldOffsetY = futOffY;
-    // Cave features / structures BEFORE trees and BEFORE pfStoreTiles, mirroring
-    // fillRect's order, so a prefetched tile is byte-identical to the synchronous
-    // fillRect tile.
-    fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    fillDeepCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    fillOceanFlora(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    fillDeepStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    sealHazardBoundaries(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
-    fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    if (planetId == PL_EARTH) {
+      // Cave features / structures BEFORE trees and BEFORE pfStoreTiles,
+      // mirroring fillRect's order so a prefetched tile is byte-identical to
+      // the synchronous fillRect tile.
+      fillCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+      fillDeepCaveFeatures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+      fillOceanFlora(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+      fillStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+      fillDeepStructures(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+      sealHazardBoundaries(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+      fillTrees(pfEx0, pfEx0 + pfEw, pfEy0, pfEy0 + pfEh);
+    }
     Lx->worldOffsetX = sOffX; Lx->worldOffsetY = sOffY;
     Lx->grid = sGrid; L = sL;
     pfStoreTiles(Lx, futOffX, futOffY);

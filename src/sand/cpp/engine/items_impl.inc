@@ -164,7 +164,7 @@ void ItemSystem::updateItems() {
   for (auto& it : items) {
     if (it.pickupDelay > 0) it.pickupDelay--;
     if (it.kind == IT_PARTICLE) {
-      it.vy += IT_GRAVITY; if (it.vy > IT_MAX_FALL) it.vy = IT_MAX_FALL;
+      it.vy += E.scaledGravity(IT_GRAVITY); if (it.vy > IT_MAX_FALL) it.vy = IT_MAX_FALL;
       moveItemY(it); moveItemX(it);
       continue;
     }
@@ -184,7 +184,7 @@ void ItemSystem::updateItems() {
     }
     // Free-fall + settle on the surface; never buried.
     bool inLiquid = itemCellLiquidAt((int)std::floor(it.px), (int)std::floor(it.py));
-    double g = inLiquid ? IT_LIQUID_GRAVITY : IT_GRAVITY;
+    double g = E.scaledGravity(inLiquid ? IT_LIQUID_GRAVITY : IT_GRAVITY);
     double mx = inLiquid ? IT_LIQUID_MAX_FALL : IT_MAX_FALL;
     it.vy += g; if (it.vy > mx) it.vy = mx;
     if (inLiquid) { it.vx *= IT_LIQUID_DRAG; it.vy *= IT_LIQUID_DRAG; }

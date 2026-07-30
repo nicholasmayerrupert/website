@@ -75,7 +75,7 @@ try {
   // The survival route is the real gameplay entry point. Its encounter director
   // should begin with one armed reservation rather than all five species popping
   // into view at once.
-  await page.goto(`${baseURL}game`, { waitUntil: 'load' });
+  await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.getCreatures, null, { timeout: 30000 });
   await page.waitForFunction(() => {
     return window.__sandTest.getCreatures().some((c) =>

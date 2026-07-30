@@ -1,0 +1,667 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { SandGame } from './SandGame';
+import {
+  AGENCY,
+  CAMPAIGN_MISSIONS,
+  LOADOUT_SUPPLIES,
+  RECOVERABLE_WEAPONS,
+  SHIP_NAME,
+  buildMissionLoadout,
+  getCampaignMission,
+  getNextCampaignMission,
+  getRecoverableWeapon,
+  loadoutSelectionCost,
+} from '../campaign/missions.js';
+import {
+  CAMPAIGN_STORAGE_KEY,
+  abandonCampaignRun,
+  beginCampaignRun,
+  completeCampaignMission,
+  firstIncompleteMission,
+  isCampaignMissionUnlocked,
+  loadoutForCampaignMission,
+  readCampaignSave,
+  setCampaignLoadout,
+  updateCampaignSave,
+} from '../campaign/campaignSave.js';
+
+const PANEL = 'border-[3px] border-[#080a0c] bg-[#171c21]/95 shadow-[inset_0_0_0_2px_#4b555e,7px_7px_0_rgba(0,0,0,.5)]';
+const BUTTON = 'border-[3px] border-[#080a0c] font-mono text-[10px] font-black uppercase tracking-[.14em] shadow-[inset_0_0_0_2px_rgba(255,255,255,.18),4px_4px_0_#080a0c] transition enabled:hover:-translate-x-px enabled:hover:-translate-y-px disabled:cursor-not-allowed disabled:opacity-40';
+
+function randomSeed() {
+  const values = new Uint32Array(1);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(values);
+    return values[0];
+  }
+  return (Math.random() * 0x100000000) >>> 0;
+}
+
+function formatMissionTime(ticks) {
+  if (!(ticks > 0)) return '—';
+  const seconds = Math.floor(ticks / 60);
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function PlanetBadge({ mission, locked, completed, selected, onSelect }) {
+  return (
+    <button
+      type="button"
+      disabled={locked}
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`group relative min-w-0 flex-1 border-[3px] px-3 py-3 text-left font-mono transition ${
+        selected
+          ? 'border-[#f0d465] bg-[#2b2b25] shadow-[inset_0_0_0_2px_#736a3f,5px_5px_0_#080a0c]'
+          : 'border-[#080a0c] bg-[#20262b] shadow-[inset_0_0_0_2px_#4b555e,4px_4px_0_rgba(0,0,0,.45)] enabled:hover:bg-[#293138]'
+      } disabled:cursor-not-allowed disabled:saturate-0`}
+    >
+      <span
+        className="mb-2 block h-1.5 w-10"
+        style={{ background: locked ? '#59616a' : mission.accent }}
+      />
+      <span className="block text-[8px] font-black uppercase tracking-[.18em] text-[#8f9aa4]">
+        {locked ? 'Locked' : completed ? 'Complete' : `Mission ${mission.order + 1}`}
+      </span>
+      <span className="mt-1 block truncate text-[12px] font-black uppercase tracking-[.08em] text-white">
+        {mission.planetName}
+      </span>
+      <span className="mt-1 block truncate text-[8px] font-bold uppercase tracking-[.08em] text-[#b7c0c8]">
+        {locked ? 'Awaiting clearance' : mission.title}
+      </span>
+      {completed && (
+        <span className="absolute right-2 top-2 text-[12px] text-[#75d39a]" aria-label="Complete">✓</span>
+      )}
+    </button>
+  );
+}
+
+function SupplyControl({ supply, packs, budgetLeft, onChange }) {
+  const canAdd = packs < supply.maxPacks && budgetLeft >= supply.packCost;
+  return (
+    <div className="grid grid-cols-[36px_1fr_auto] items-center gap-3 border-2 border-[#0a0c0f] bg-[#20262b] p-2 shadow-[inset_2px_2px_0_#3e474f]">
+      <span
+        className="h-8 w-8 border-2 border-[#090b0d] shadow-[inset_3px_3px_0_rgba(255,255,255,.2),inset_-3px_-3px_0_rgba(0,0,0,.25)]"
+        style={{ background: supply.color }}
+        aria-hidden="true"
+      />
+      <span className="min-w-0">
+        <span className="block font-mono text-[10px] font-black uppercase tracking-[.08em] text-white">
+          {supply.name}
+        </span>
+        <span className="mt-0.5 block truncate font-mono text-[8px] text-[#8f9aa4]">
+          {supply.packSize} units · {supply.packCost} capacity
+        </span>
+      </span>
+      <span className="flex items-center gap-1">
+        <button
+          type="button"
+          disabled={packs <= 0}
+          onClick={() => onChange(packs - 1)}
+          className="grid h-7 w-7 place-items-center border-2 border-[#080a0c] bg-[#303840] font-mono text-sm font-black text-white shadow-[inset_0_0_0_1px_#59636c] disabled:opacity-30"
+          aria-label={`Remove one ${supply.name} pack`}
+        >
+          −
+        </button>
+        <output className="w-5 text-center font-mono text-[11px] font-black text-[#f0d465]">
+          {packs}
+        </output>
+        <button
+          type="button"
+          disabled={!canAdd}
+          onClick={() => onChange(packs + 1)}
+          className="grid h-7 w-7 place-items-center border-2 border-[#080a0c] bg-[#4d6041] font-mono text-sm font-black text-white shadow-[inset_0_0_0_1px_#788d65] disabled:opacity-30"
+          aria-label={`Add one ${supply.name} pack`}
+        >
+          +
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function ShipHub({
+  focusRef,
+  save,
+  mission,
+  selection,
+  onSelectMission,
+  onChangeSelection,
+  onDeploy,
+  onRetryInterrupted,
+}) {
+  const cost = loadoutSelectionCost(selection);
+  const budgetLeft = mission.loadoutBudget - cost;
+  const unlockedWeapons = RECOVERABLE_WEAPONS.filter(({ itemKind }) =>
+    save.unlockedWeapons.includes(itemKind));
+  const best = save.bestTimes[mission.id];
+
+  const updatePacks = (id, packs) => {
+    onChangeSelection({
+      ...selection,
+      packs: { ...selection.packs, [id]: packs },
+    });
+  };
+
+  return (
+    <main
+      ref={focusRef}
+      tabIndex={-1}
+      aria-label={`${SHIP_NAME} mission deck`}
+      className="relative min-h-screen overflow-hidden bg-[#080b10] px-5 py-5 text-white"
+      style={{
+        backgroundImage: 'radial-gradient(circle at 15% 20%,rgba(255,255,255,.55) 0 1px,transparent 1.5px),radial-gradient(circle at 78% 32%,rgba(255,255,255,.38) 0 1px,transparent 1.5px),radial-gradient(circle at 55% 80%,rgba(255,255,255,.32) 0 1px,transparent 1.5px),linear-gradient(145deg,#080b10,#111923 55%,#080a0d)',
+        backgroundSize: '130px 130px,190px 190px,230px 230px,auto',
+      }}
+    >
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-2 bg-[#b5573f] shadow-[0_3px_0_#080a0c,0_6px_0_#283039]" />
+      <div className="relative mx-auto flex min-h-[calc(100vh-2.5rem)] max-w-[1240px] flex-col">
+        <header className="mb-4 flex items-center justify-between border-b-2 border-[#3f4851] pb-3 pt-2 font-mono">
+          <div className="flex items-center gap-3">
+            <span className="grid h-11 w-11 place-items-center border-[3px] border-[#080a0c] bg-[#f0d465] text-[13px] font-black tracking-[-.05em] text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]">
+              IRIS
+            </span>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[.2em] text-[#f0d465]">{AGENCY.name}</p>
+              <h1 className="mt-1 text-[17px] font-black uppercase tracking-[.12em]">Field Ship {SHIP_NAME}</h1>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="hidden text-right text-[8px] font-bold uppercase tracking-[.15em] text-[#8f9aa4] md:block">
+              Agent status<br /><strong className="text-[#75d39a]">Ready for tasking</strong>
+            </span>
+            <a
+              href="/"
+              className={`${BUTTON} bg-[#252b31] px-3 py-2 text-white hover:text-[#f0d465]`}
+            >
+              ← Portfolio
+            </a>
+          </div>
+        </header>
+
+        {save.interruptedRun && (
+          <section className={`${PANEL} mb-4 flex items-center justify-between gap-4 border-l-[#d48755] px-4 py-3 font-mono`}>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[.16em] text-[#dca071]">Interrupted deployment</p>
+              <p className="mt-1 text-[9px] text-[#b7c0c8]">
+                Terrain progress was not saved. Kestrel can rebuild the same mission and loadout.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onRetryInterrupted}
+              className={`${BUTTON} shrink-0 bg-[#815436] px-4 py-2 text-white`}
+            >
+              Retry
+            </button>
+          </section>
+        )}
+
+        <nav className="mb-4 flex gap-3" aria-label="Campaign missions">
+          {CAMPAIGN_MISSIONS.map((entry, order) => (
+            <PlanetBadge
+              key={entry.id}
+              mission={{ ...entry, order }}
+              locked={!isCampaignMissionUnlocked(save, entry.id)}
+              completed={save.completedMissionIds.includes(entry.id)}
+              selected={mission.id === entry.id}
+              onSelect={() => onSelectMission(entry.id)}
+            />
+          ))}
+        </nav>
+
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(390px,.92fr)]">
+          <section className={`${PANEL} relative overflow-hidden p-5`}>
+            <div
+              className="absolute inset-x-0 top-0 h-28 opacity-45"
+              style={{ background: mission.sky }}
+            />
+            <div className="relative">
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-mono text-[9px] font-black uppercase tracking-[.2em]" style={{ color: mission.accent }}>
+                    {mission.operation}
+                  </p>
+                  <h2 className="mt-2 font-mono text-3xl font-black uppercase tracking-[.06em] text-white">
+                    {mission.title}
+                  </h2>
+                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[.12em] text-[#c0c8cf]">
+                    {mission.coordinates}
+                  </p>
+                </div>
+                <div className="grid shrink-0 grid-cols-2 gap-px border-2 border-[#080a0c] bg-[#080a0c] text-center font-mono">
+                  <span className="bg-[#252b31] px-3 py-2">
+                    <small className="block text-[7px] uppercase tracking-[.14em] text-[#87919a]">Gravity</small>
+                    <strong className="mt-1 block text-[11px] text-white">{mission.gravityLabel}</strong>
+                  </span>
+                  <span className="bg-[#252b31] px-3 py-2">
+                    <small className="block text-[7px] uppercase tracking-[.14em] text-[#87919a]">Window</small>
+                    <strong className="mt-1 block text-[11px] text-white">{mission.duration}</strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="border-l-4 border-[#f0d465] bg-[#101419]/90 p-4">
+                <p className="font-mono text-[8px] font-black uppercase tracking-[.18em] text-[#f0d465]">
+                  Commander&apos;s briefing
+                </p>
+                <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[#d4d9de]">{mission.briefing}</p>
+              </div>
+
+              <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto]">
+                <div>
+                  <h3 className="font-mono text-[9px] font-black uppercase tracking-[.18em] text-[#9fa8b0]">Mission sequence</h3>
+                  <ol className="mt-3 space-y-2">
+                    {mission.objectives.map((objective, index) => (
+                      <li key={objective} className="flex gap-3 border-2 border-[#0a0c0f] bg-[#20262b] p-3">
+                        <span className="grid h-6 w-6 shrink-0 place-items-center bg-[#f0d465] font-mono text-[10px] font-black text-[#17140a]">
+                          {index + 1}
+                        </span>
+                        <span className="text-[11px] leading-5 text-[#d4d9de]">{objective}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+                <aside className="min-w-40 border-2 border-[#0a0c0f] bg-[#20262b] p-3 font-mono">
+                  <h3 className="text-[8px] font-black uppercase tracking-[.18em] text-[#d48755]">Hazards</h3>
+                  <ul className="mt-2 space-y-2 text-[8px] font-bold uppercase tracking-[.08em] text-[#b7c0c8]">
+                    {mission.hazards.map((hazard) => <li key={hazard}>▸ {hazard}</li>)}
+                  </ul>
+                  <p className="mt-4 border-t border-[#4b555e] pt-3 text-[8px] uppercase tracking-[.1em] text-[#87919a]">
+                    Best extraction<br />
+                    <strong className="mt-1 block text-[12px] text-white">{formatMissionTime(best)}</strong>
+                  </p>
+                </aside>
+              </div>
+            </div>
+          </section>
+
+          <section className={`${PANEL} flex min-h-0 flex-col p-4`}>
+            <div className="mb-3 flex items-end justify-between gap-3 border-b-2 border-[#4b555e] pb-3 font-mono">
+              <div>
+                <p className="text-[8px] font-black uppercase tracking-[.18em] text-[#f0d465]">Kestrel armory</p>
+                <h2 className="mt-1 text-[15px] font-black uppercase tracking-[.1em]">Field loadout</h2>
+              </div>
+              <div className="text-right">
+                <p className="text-[7px] uppercase tracking-[.13em] text-[#87919a]">Capacity</p>
+                <p className={`mt-1 text-[13px] font-black ${budgetLeft ? 'text-white' : 'text-[#f0d465]'}`}>
+                  {cost}/{mission.loadoutBudget}
+                </p>
+              </div>
+            </div>
+
+            <p className="mb-3 font-mono text-[8px] leading-4 text-[#9fa8b0]">
+              Blast gun and iron mining tool are standard issue. Choose bounded mission supplies below.
+            </p>
+
+            <div className="min-h-0 space-y-2 overflow-y-auto pr-1">
+              {LOADOUT_SUPPLIES.map((supply) => (
+                <SupplyControl
+                  key={supply.id}
+                  supply={supply}
+                  packs={selection.packs[supply.id] || 0}
+                  budgetLeft={budgetLeft}
+                  onChange={(packs) => updatePacks(supply.id, packs)}
+                />
+              ))}
+            </div>
+
+            <div className="mt-3 border-2 border-[#0a0c0f] bg-[#20262b] p-3 font-mono">
+              <label htmlFor="campaign-weapon" className="block text-[8px] font-black uppercase tracking-[.16em] text-[#9fa8b0]">
+                Recovered weapon
+              </label>
+              <select
+                id="campaign-weapon"
+                value={selection.weaponItemKind ?? ''}
+                onChange={(event) => onChangeSelection({
+                  ...selection,
+                  weaponItemKind: event.target.value === '' ? null : Number(event.target.value),
+                })}
+                className="mt-2 w-full border-2 border-[#080a0c] bg-[#101419] px-3 py-2 font-mono text-[10px] font-bold text-white outline-none focus:border-[#f0d465]"
+              >
+                <option value="">Standard blast gun only</option>
+                {unlockedWeapons.map((weapon) => (
+                  <option key={weapon.itemKind} value={weapon.itemKind}>
+                    {weapon.name} · {weapon.ammo} ammo
+                  </option>
+                ))}
+              </select>
+              {!unlockedWeapons.length && (
+                <p className="mt-2 text-[8px] leading-4 text-[#78838c]">
+                  Extract enemy equipment to register it with the Kestrel armory.
+                </p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={onDeploy}
+              className={`${BUTTON} mt-4 bg-[#d4b94d] px-5 py-4 text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,5px_5px_0_#080a0c]`}
+            >
+              Beam down to {mission.planetName}
+            </button>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function DeploymentOverlay({ mission }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[95] grid place-items-center bg-[#080b10] font-mono text-white">
+      <div className="text-center">
+        <div className="mx-auto mb-5 h-24 w-1 bg-[#f0d465] shadow-[0_0_12px_3px_#f0d465,0_0_60px_22px_rgba(240,212,101,.28)]" />
+        <p className="text-[9px] font-black uppercase tracking-[.26em] text-[#f0d465]">Kestrel transporter locked</p>
+        <h2 className="mt-3 text-xl font-black uppercase tracking-[.12em]">{mission.operation}</h2>
+        <p className="mt-2 text-[9px] uppercase tracking-[.14em] text-[#8f9aa4]">Materializing field agent…</p>
+      </div>
+    </div>
+  );
+}
+
+function DeploymentFailure({ mission, onRetry, onReturn }) {
+  return (
+    <div className="absolute inset-0 z-[96] grid place-items-center bg-[#080b10]/95 p-6 font-mono text-white" role="alert">
+      <section className={`${PANEL} w-full max-w-lg p-7 text-center`}>
+        <p className="text-[9px] font-black uppercase tracking-[.22em] text-[#dc7657]">
+          Transporter link failed
+        </p>
+        <h2 className="mt-3 text-xl font-black uppercase tracking-[.1em]">{mission.operation}</h2>
+        <p className="mt-3 text-[10px] leading-5 text-[#b7c0c8]">
+          Kestrel could not initialize the field simulation. Retry the beam sequence or return to the mission deck.
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <button type="button" onClick={onReturn} className={`${BUTTON} bg-[#252b31] px-5 py-3 text-white`}>
+            Return to {SHIP_NAME}
+          </button>
+          <button type="button" onClick={onRetry} autoFocus className={`${BUTTON} bg-[#815436] px-5 py-3 text-white`}>
+            Retry deployment
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Debrief({ mission, result, newlyRecovered, failed, onContinue, onRetry }) {
+  const next = getNextCampaignMission(mission.id);
+  return (
+    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_50%_25%,#25313b,#0a0e13_68%)] p-6 text-white">
+      <section className={`${PANEL} w-full max-w-2xl p-7 font-mono`}>
+        <div className={`mb-5 inline-block px-3 py-2 text-[9px] font-black uppercase tracking-[.2em] text-[#111] ${
+          failed ? 'bg-[#dc7657]' : 'bg-[#75d39a]'
+        }`}>
+          {failed ? 'Mission interrupted' : 'Extraction confirmed'}
+        </div>
+        <p className="text-[8px] font-black uppercase tracking-[.2em] text-[#8f9aa4]">{mission.operation}</p>
+        <h1 className="mt-2 text-3xl font-black uppercase tracking-[.07em]">
+          {failed ? 'Agent signal lost' : 'Welcome back aboard'}
+        </h1>
+        <p className="mt-3 text-[11px] leading-6 text-[#c3cbd2]">
+          {failed
+            ? 'No field progress was committed. Kestrel can rebuild the deployment from its original seed and loadout.'
+            : `${mission.title} is complete. IRIS has archived the mission report and cleared recovered equipment for future deployments.`}
+        </p>
+
+        {!failed && (
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            <div className="border-2 border-[#080a0c] bg-[#20262b] p-4 shadow-[inset_2px_2px_0_#46515a]">
+              <span className="text-[8px] uppercase tracking-[.16em] text-[#8f9aa4]">Mission time</span>
+              <strong className="mt-2 block text-xl text-white">{formatMissionTime(result?.elapsedTicks)}</strong>
+            </div>
+            <div className="border-2 border-[#080a0c] bg-[#20262b] p-4 shadow-[inset_2px_2px_0_#46515a]">
+              <span className="text-[8px] uppercase tracking-[.16em] text-[#8f9aa4]">New armory records</span>
+              <strong className="mt-2 block text-xl text-white">{newlyRecovered.length}</strong>
+            </div>
+          </div>
+        )}
+
+        {!!newlyRecovered.length && (
+          <div className="mt-4 border-l-4 border-[#f0d465] bg-[#20262b] p-4">
+            <p className="text-[8px] font-black uppercase tracking-[.16em] text-[#f0d465]">Recovered equipment</p>
+            <p className="mt-2 text-[10px] text-white">
+              {newlyRecovered.map((kind) => getRecoverableWeapon(kind)?.name).filter(Boolean).join(' · ')}
+            </p>
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end gap-3">
+          {failed && (
+            <button type="button" onClick={onRetry} className={`${BUTTON} bg-[#815436] px-5 py-3 text-white`}>
+              Retry mission
+            </button>
+          )}
+          <button type="button" onClick={onContinue} className={`${BUTTON} bg-[#d4b94d] px-5 py-3 text-[#17140a]`}>
+            {failed ? `Return to ${SHIP_NAME}` : next ? `Brief ${next.planetName}` : 'Return to mission deck'}
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+export function SandCampaign() {
+  const [save, setSave] = useState(() => readCampaignSave());
+  const saveRef = useRef(save);
+  const shipFocusRef = useRef(null);
+  const focusShipOnMountRef = useRef(false);
+  const [selectedMissionId, setSelectedMissionId] = useState(() =>
+    readCampaignSave().selectedMissionId);
+  const [selection, setSelection] = useState(() => {
+    const initial = readCampaignSave();
+    return loadoutForCampaignMission(initial, initial.selectedMissionId);
+  });
+  const [run, setRun] = useState(null);
+  const [phase, setPhase] = useState('ship');
+  const [debrief, setDebrief] = useState(null);
+  const [missionUpdate, setMissionUpdate] = useState(null);
+  const mission = getCampaignMission(run?.missionId || selectedMissionId);
+
+  const commitSave = useCallback((update) => {
+    const stored = updateCampaignSave(saveRef.current, update);
+    saveRef.current = stored;
+    setSave(stored);
+    return stored;
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'ship' || !focusShipOnMountRef.current) return undefined;
+    focusShipOnMountRef.current = false;
+    const frame = requestAnimationFrame(() => shipFocusRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [phase]);
+
+  useEffect(() => {
+    const syncExternalSave = (event) => {
+      if (event.key !== CAMPAIGN_STORAGE_KEY) return;
+      const next = readCampaignSave();
+      saveRef.current = next;
+      setSave(next);
+      if (phase !== 'ship') return;
+      setSelectedMissionId((current) => {
+        const missionId = isCampaignMissionUnlocked(next, current)
+          ? current
+          : next.selectedMissionId;
+        setSelection(loadoutForCampaignMission(next, missionId));
+        return missionId;
+      });
+    };
+    window.addEventListener('storage', syncExternalSave);
+    return () => window.removeEventListener('storage', syncExternalSave);
+  }, [phase]);
+
+  const selectMission = useCallback((missionId) => {
+    const nextSave = commitSave((current) => isCampaignMissionUnlocked(current, missionId)
+      ? { ...current, selectedMissionId: missionId }
+      : current);
+    if (nextSave.selectedMissionId !== missionId) return;
+    setSelectedMissionId(missionId);
+    setSelection(loadoutForCampaignMission(nextSave, missionId));
+  }, [commitSave]);
+
+  const changeSelection = useCallback((nextSelection) => {
+    const nextSave = commitSave((current) =>
+      setCampaignLoadout(current, selectedMissionId, nextSelection));
+    setSelection(loadoutForCampaignMission(nextSave, selectedMissionId));
+  }, [commitSave, selectedMissionId]);
+
+  const deploy = useCallback((missionId, worldSeed, selectedLoadout) => {
+    const nextSave = commitSave((current) =>
+      beginCampaignRun(current, missionId, worldSeed, selectedLoadout));
+    const normalized = loadoutForCampaignMission(nextSave, missionId);
+    setSelection(normalized);
+    setMissionUpdate(null);
+    setRun({
+      missionId,
+      planet: getCampaignMission(missionId).planet,
+      worldSeed: worldSeed >>> 0,
+      loadout: buildMissionLoadout(missionId, normalized, nextSave.unlockedWeapons),
+      attempt: 0,
+    });
+    setPhase('deploying');
+  }, [commitSave]);
+
+  const beginDeployment = useCallback(() => {
+    deploy(selectedMissionId, randomSeed(), selection);
+  }, [deploy, selectedMissionId, selection]);
+
+  const retryInterrupted = useCallback(() => {
+    const interrupted = save.interruptedRun;
+    if (!interrupted) return;
+    setSelectedMissionId(interrupted.missionId);
+    setSelection(interrupted.loadout);
+    deploy(interrupted.missionId, interrupted.worldSeed, interrupted.loadout);
+  }, [deploy, save.interruptedRun]);
+
+  const finishMission = useCallback((result = {}) => {
+    if (!run) return;
+    let priorWeapons = new Set();
+    const nextSave = commitSave((current) => {
+      priorWeapons = new Set(current.unlockedWeapons);
+      return completeCampaignMission(current, run.missionId, result);
+    });
+    setDebrief({
+      missionId: run.missionId,
+      result,
+      newlyRecovered: nextSave.unlockedWeapons.filter((kind) => !priorWeapons.has(kind)),
+      failed: false,
+    });
+    setRun(null);
+    setPhase('debrief');
+  }, [commitSave, run]);
+
+  const failMission = useCallback((result = {}) => {
+    if (!run) return;
+    setDebrief({
+      missionId: run.missionId,
+      result,
+      newlyRecovered: [],
+      failed: true,
+      retryRun: run,
+    });
+    setRun(null);
+    setPhase('debrief');
+  }, [run]);
+
+  const returnToShip = useCallback(() => {
+    const nextSave = commitSave((current) => abandonCampaignRun(current));
+    const nextMission = firstIncompleteMission(nextSave);
+    setSelectedMissionId(nextMission.id);
+    setSelection(loadoutForCampaignMission(nextSave, nextMission.id));
+    setRun(null);
+    setDebrief(null);
+    setMissionUpdate(null);
+    focusShipOnMountRef.current = true;
+    setPhase('ship');
+  }, [commitSave]);
+
+  const retryFailed = useCallback(() => {
+    const retryRun = debrief?.retryRun;
+    if (!retryRun) return;
+    setDebrief(null);
+    deploy(
+      retryRun.missionId,
+      retryRun.worldSeed,
+      loadoutForCampaignMission(saveRef.current, retryRun.missionId),
+    );
+  }, [debrief, deploy]);
+
+  const retryInitialization = useCallback(() => {
+    setRun((current) => current ? { ...current, attempt: current.attempt + 1 } : current);
+    setPhase('deploying');
+  }, []);
+
+  const missionLoadout = useMemo(() => run?.loadout || [], [run]);
+
+  if (phase === 'debrief' && debrief) {
+    return (
+      <Debrief
+        mission={getCampaignMission(debrief.missionId)}
+        result={debrief.result}
+        newlyRecovered={debrief.newlyRecovered}
+        failed={debrief.failed}
+        onContinue={returnToShip}
+        onRetry={retryFailed}
+      />
+    );
+  }
+
+  if (run) {
+    return (
+      <main className="relative h-screen w-full overflow-hidden bg-[#080b10]">
+        <SandGame
+          key={`${run.missionId}-${run.worldSeed}-${run.attempt}`}
+          mode="survival"
+          planet={run.planet}
+          mission={run.missionId}
+          worldSeed={run.worldSeed}
+          loadout={missionLoadout}
+          onReady={() => setPhase('mission')}
+          onMissionUpdate={setMissionUpdate}
+          onMissionComplete={finishMission}
+          onMissionFailed={failMission}
+          onError={() => setPhase('deployment-error')}
+        />
+        {phase === 'deploying' && <DeploymentOverlay mission={mission} />}
+        {phase === 'deployment-error' && (
+          <DeploymentFailure
+            mission={mission}
+            onRetry={retryInitialization}
+            onReturn={returnToShip}
+          />
+        )}
+        {phase === 'mission' && (
+          <div className="pointer-events-none absolute left-3 top-3 z-[82] flex items-center gap-2 font-mono">
+            <button
+              type="button"
+              onClick={returnToShip}
+              className={`${BUTTON} pointer-events-auto bg-[#252b31] px-3 py-2 text-white hover:text-[#f0d465]`}
+            >
+              ↑ Abort to {SHIP_NAME}
+            </button>
+            {missionUpdate?.stageLabel && (
+              <span className="border-2 border-[#080a0c] bg-[#171c21]/90 px-3 py-2 text-[8px] font-black uppercase tracking-[.12em] text-[#d4d9de] shadow-[inset_0_0_0_1px_#4b555e]">
+                {missionUpdate.stageLabel}
+              </span>
+            )}
+          </div>
+        )}
+      </main>
+    );
+  }
+
+  return (
+    <ShipHub
+      focusRef={shipFocusRef}
+      save={save}
+      mission={mission}
+      selection={selection}
+      onSelectMission={selectMission}
+      onChangeSelection={changeSelection}
+      onDeploy={beginDeployment}
+      onRetryInterrupted={retryInterrupted}
+    />
+  );
+}

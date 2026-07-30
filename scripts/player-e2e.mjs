@@ -69,7 +69,7 @@ try {
       };
     };
   });
-  await page.goto(`${baseURL}game`, { waitUntil: 'load' }); // survival mode (the player character lives at /game)
+  await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' }); // direct survival sandbox
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.getPlayer && window.__sandTest.getPlayer(), null, { timeout: 30000 });
   // This suite verifies browser input wiring, not enemy lethality. Combat AI is
   // covered deterministically by explosive-survival-test; freeze any naturally
@@ -723,7 +723,7 @@ try {
   console.log('mobile /game gate');
   const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const mobilePage = await mobileContext.newPage();
-  await mobilePage.goto(`${baseURL}game`, { waitUntil: 'load' });
+  await mobilePage.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
   await mobilePage.getByText('Explosive Survival is desktop-only for now').waitFor();
   check('mobile /game never connects a sand-game element', await mobilePage.locator('sand-game').count() === 0);
   await mobileContext.close();
@@ -737,7 +737,7 @@ try {
   }
   if (webkitBrowser) {
   const webkitPage = await webkitBrowser.newPage({ viewport: { width: 900, height: 650 } });
-  await webkitPage.goto(`${baseURL}game`, { waitUntil: 'load' });
+  await webkitPage.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
   await webkitPage.waitForFunction(() => window.__sandTest?.getPlayer?.() && window.__sandPerf?.().worldTps > 0, null, { timeout: 30000 });
   const webkitBefore = await webkitPage.evaluate(() => window.__sandTest.getPlayer());
   await webkitPage.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));

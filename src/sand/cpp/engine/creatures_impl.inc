@@ -588,7 +588,7 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
   double desiredX = c.hasHabitatGoal ? (c.habitatX > c.wx + s.w * 0.5 ? 0.24 : -0.24)
                                      : c.wanderDir * 0.12;
   c.vx += std::max(-0.025, std::min(0.025, desiredX - c.vx));
-  c.vy = std::min(2.4, c.vy + 0.075);
+  c.vy = std::min(2.4, c.vy + E.scaledGravity(0.075));
   c.vx *= c.grounded ? 0.90 : 0.995;
   int flopPeriod = 32 + (c.id % 17);
   if (c.grounded && ((E.actorTick + c.id * 11) % flopPeriod) == 0) {
@@ -647,17 +647,22 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     }
     double wish;
     bool rangedEnemy = c.species == CS_DYNAMITEER || c.species == CS_BORE_SENTINEL ||
-      c.species == CS_CAUSTIC_MORTARMAN || c.species == CS_MINIGUNNER;
+      c.species == CS_CAUSTIC_MORTARMAN || c.species == CS_MINIGUNNER ||
+      c.species == CS_QUARRY_FOREMAN || c.species == CS_REACTOR_WARDEN;
     if (hasTarget && rangedEnemy) {
       double dx = tx - (c.wx + s.w * 0.5), distance = std::fabs(dx);
-      double nearRange = c.species == CS_DYNAMITEER ? 28.0
+      double nearRange = (c.species == CS_DYNAMITEER ||
+                          c.species == CS_QUARRY_FOREMAN) ? 28.0
         : c.species == CS_BORE_SENTINEL ? 46.0
         : c.species == CS_CAUSTIC_MORTARMAN ? 36.0
-        : c.species == CS_MINIGUNNER ? 38.0 : 10.0;
-      double farRange = c.species == CS_DYNAMITEER ? 58.0
+        : (c.species == CS_MINIGUNNER ||
+           c.species == CS_REACTOR_WARDEN) ? 38.0 : 10.0;
+      double farRange = (c.species == CS_DYNAMITEER ||
+                         c.species == CS_QUARRY_FOREMAN) ? 58.0
         : c.species == CS_BORE_SENTINEL ? 88.0
         : c.species == CS_CAUSTIC_MORTARMAN ? 76.0
-        : c.species == CS_MINIGUNNER ? 92.0 : 38.0;
+        : (c.species == CS_MINIGUNNER ||
+           c.species == CS_REACTOR_WARDEN) ? 92.0 : 38.0;
       if (c.attackState != CAS_IDLE) wish = 0;
       else if (distance > farRange) wish = dx > 0 ? s.walkSpeed : -s.walkSpeed;
       else if (distance < nearRange) wish = dx > 0 ? -s.walkSpeed : s.walkSpeed;
@@ -669,7 +674,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     }
     c.vx += std::max(-s.accel, std::min(s.accel, wish - c.vx));
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
-    c.vy += s.gravity; if (c.vy > 2.4) c.vy = 2.4;
+    c.vy += E.scaledGravity(s.gravity); if (c.vy > 2.4) c.vy = 2.4;
   }
   if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
   auto moveAxis = [&](double& pos, double delta, bool xAxis) {
@@ -1021,11 +1026,13 @@ void CreatureSystem::fireBore(Player& p) {
 }
 
 void CreatureSystem::dropWeapon(const Creature& c) {
-  uint8_t itemKind = c.species == CS_DYNAMITEER ? IK_DYNAMITE_SATCHEL
+  uint8_t itemKind = (c.species == CS_DYNAMITEER ||
+                      c.species == CS_QUARRY_FOREMAN) ? IK_DYNAMITE_SATCHEL
                    : c.species == CS_BORE_SENTINEL ? IK_BORE_CANNON
                    : c.species == CS_CAUSTIC_MORTARMAN ? IK_ACID_MORTAR
                    : c.species == CS_CLUSTER_WASP ? IK_CLUSTER_LAUNCHER
-                   : c.species == CS_MINIGUNNER ? IK_MINIGUN
+                   : (c.species == CS_MINIGUNNER ||
+                      c.species == CS_REACTOR_WARDEN) ? IK_MINIGUN
                    : IK_MATERIAL;
   if (itemKind == IK_MATERIAL) return;
   const CreatureSpecies& s = species(c);
@@ -1039,6 +1046,7 @@ void CreatureSystem::dropWeapon(const Creature& c) {
 void CreatureSystem::killCreature(Creature& c) {
   if (!c.alive) return;
   c.health = 0;
+  E.missions.onCreatureKilled(c);
   dropWeapon(c);
   c.alive = false;
   c.deathTicks = 18;
@@ -1087,11 +1095,13 @@ void CreatureSystem::updateBoreSentinelAttack(Creature& c) {
 }
 
 void CreatureSystem::attackTarget(Creature& c) {
-  if (c.species == CS_DYNAMITEER) { updateDynamiteerAttack(c); return; }
+  if (c.species == CS_DYNAMITEER ||
+      c.species == CS_QUARRY_FOREMAN) { updateDynamiteerAttack(c); return; }
   if (c.species == CS_BORE_SENTINEL) { updateBoreSentinelAttack(c); return; }
   if (c.species == CS_CAUSTIC_MORTARMAN) { updateCausticMortarmanAttack(c); return; }
   if (c.species == CS_CLUSTER_WASP) { updateClusterWaspAttack(c); return; }
-  if (c.species == CS_MINIGUNNER) { updateMinigunnerAttack(c); return; }
+  if (c.species == CS_MINIGUNNER ||
+      c.species == CS_REACTOR_WARDEN) { updateMinigunnerAttack(c); return; }
   const CreatureSpecies& s = species(c); if (c.attackCooldown > 0 || s.damage <= 0) return;
   double tx, ty; Creature* prey = nullptr; Player* player = nullptr;
   if (!targetPoint(c, tx, ty, &prey, &player)) return;
@@ -1137,7 +1147,8 @@ void CreatureSystem::updateCreatures() {
       } else moveBeachedAquatic(c);
     }
     else if (species(c).locomotion == CL_FLYING) moveFlying(c);
-    else moveAmphibious(c);
+    else if (species(c).locomotion == CL_AMPHIBIOUS) moveAmphibious(c);
+    else { c.vx = 0; c.vy = 0; c.grounded = true; }
     // Terrain can settle or be placed through an entity after movement. Mere
     // floor contact is outside the AABB and harmless; sustained burial over at
     // least half the body deals one point every half-second at 60 actor Hz.
@@ -1150,7 +1161,7 @@ void CreatureSystem::updateCreatures() {
     // Four authored poses per species. Tie pose selection to locomotion where
     // it matters so feet, wings, and body arcs describe the actual movement
     // instead of every creature sharing the same two-frame global blink.
-    if (c.species == CS_DYNAMITEER) {
+    if (c.species == CS_DYNAMITEER || c.species == CS_QUARRY_FOREMAN) {
       if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
       else if (c.attackState == CAS_FIRING) c.animFrame = 3;
       else c.animFrame = std::fabs(c.vx) > 0.035 ? (uint8_t)(((E.actorTick / 5) + c.id) & 1) : 0;
@@ -1166,7 +1177,8 @@ void CreatureSystem::updateCreatures() {
       if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.55 ? 1 : 2;
       else if (c.attackState == CAS_FIRING) c.animFrame = 3;
       else c.animFrame = (uint8_t)(((E.actorTick / 3) + c.id) & 3);
-    } else if (c.species == CS_MINIGUNNER) {
+    } else if (c.species == CS_MINIGUNNER ||
+               c.species == CS_REACTOR_WARDEN) {
       if (c.attackState == CAS_CHARGING) c.animFrame = c.attackProgress < 0.52 ? 1 : 2;
       else if (c.attackState == CAS_FIRING) c.animFrame = (uint8_t)(2 + ((E.actorTick / 2) & 1));
       else c.animFrame = std::fabs(c.vx) > 0.02 ? (uint8_t)(((E.actorTick / 7) + c.id) & 1) : 0;

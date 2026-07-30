@@ -23,8 +23,8 @@ const stoneFloor = (e, top) => {
 };
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
-check('roster includes ambient fauna plus all five explosive-survival enemies',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER');
+check('roster includes fauna, combatants, and authored mission actors',
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN');
 
 // Retired fauna remain available to direct spawns, but even an ideal habitat
 // must not add them to a natural population.

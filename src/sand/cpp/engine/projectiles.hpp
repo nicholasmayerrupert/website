@@ -16,6 +16,7 @@ class ProjectileSystem {
   void applyAcidMortarInput(Player& p, int previousInput);
   void applyClusterLauncherInput(Player& p, int previousInput);
   void applyMinigunInput(Player& p);
+  void applyRescueBeamInput(Player& p);
   void spawnArrow(Player& p, double charge);
   void spawnBlastRound(Player& p);
   void spawnDynamite(const Creature& thrower, double targetX, double targetY);
@@ -27,6 +28,7 @@ class ProjectileSystem {
   void spawnMinigunRound(const Creature& shooter, double targetX, double targetY);
   void spawnMinigunRound(Player& shooter);
   void spawnBoreBeam(int owner, double ox, double oy, double dx, double dy);
+  void fireRescueBeam(Player& player);
   void updateProjectiles();
   int buildSnapshot();
 

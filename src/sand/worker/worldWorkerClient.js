@@ -31,6 +31,9 @@ export function createWorldWorkerClient(ctx) {
   let mineProgress = 0;
   let mineTarget = null;
   let actionCount = 0;
+  let mission = null;
+  let missionSignature = '';
+  let missionDirty = false;
   let appliedEpoch = 0;
   let state = {
     ready: false, worldTick: 0, worldTps: 0, stepMs: 0, epoch: 0, sequence: 0,
@@ -87,6 +90,7 @@ export function createWorldWorkerClient(ctx) {
         cursor: data.inventory !== undefined ? data.cursor : prior?.cursor,
         itemData: data.itemData !== undefined ? data.itemData : prior?.itemData,
         items: data.items !== undefined ? data.items : prior?.items,
+        mission: data.mission !== undefined ? data.mission : prior?.mission,
       };
     } else if (data.type === 'sounds') {
       if (!data.epoch || data.epoch >= appliedEpoch) pendingSounds.push(new Float32Array(data.data));
@@ -128,11 +132,26 @@ export function createWorldWorkerClient(ctx) {
   };
 
   const api = {
-    init({ survival = false, creativeKind = 0, creativeValue = 0, tool = 0, creatureNaturalSpawning = false } = {}) {
-      initOptions = { survival, creativeKind, creativeValue, tool, creatureNaturalSpawning };
+    init({
+      survival = false,
+      creativeKind = 0,
+      creativeValue = 0,
+      tool = 0,
+      creatureNaturalSpawning = false,
+      planetId = ctx.planetId,
+      gravityScale = ctx.gravityScale,
+      missionId = ctx.missionId,
+      loadout = ctx.missionLoadout,
+    } = {}) {
+      initOptions = {
+        survival, creativeKind, creativeValue, tool, creatureNaturalSpawning,
+        planetId, gravityScale, missionId, loadout,
+      };
       worker.postMessage({
         type: 'init', cols: ctx.cols, rows: ctx.rows, worldSeed: ctx.worldSeed,
-        survival, drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue, creatureNaturalSpawning,
+        survival, drawMode: ctx.drawModeOn, tool, creativeKind, creativeValue,
+        creatureNaturalSpawning, planetId, gravityScale,
+        missionId, loadout,
       });
     },
     updateControl() {
@@ -347,6 +366,20 @@ export function createWorldWorkerClient(ctx) {
         mineProgress = packet.mineProgress || 0;
         mineTarget = packet.mineTarget || null;
         actionCount = packet.actionCount | 0;
+        if (packet.mission !== undefined) {
+          mission = packet.mission;
+          const signature = mission
+            ? `${mission.revision}:${mission.phase}:${mission.threatLevel}:` +
+              `${Math.floor((mission.elapsedTicks || 0) / 60)}:` +
+              mission.objectives.map((objective) =>
+                `${objective.id},${objective.state},${objective.current},${objective.worldX},${objective.worldY}`,
+              ).join('|')
+            : '';
+          if (signature !== missionSignature) {
+            missionSignature = signature;
+            missionDirty = true;
+          }
+        }
         state = { ...state, actorTick: packet.actorTick | 0 };
         changed = true;
       }
@@ -379,6 +412,12 @@ export function createWorldWorkerClient(ctx) {
     getMineProgress() { return mineProgress; },
     getMineTarget() { return mineTarget; },
     getActionCount() { return actionCount; },
+    getMission() { return mission; },
+    consumeMissionDirty() {
+      const dirty = missionDirty;
+      missionDirty = false;
+      return dirty;
+    },
     consumeSoundEvents() {
       if (!pendingSounds.length) return new Float32Array(0);
       if (pendingSounds.length === 1) return pendingSounds.shift();
@@ -422,7 +461,9 @@ export function createWorldWorkerClient(ctx) {
     predictor = predictorEngine = null;
     predictorPlayerId = authoritativePlayerId = 0;
     appliedEpoch = 0;
-    players = []; inventory = cursor = null; items = new Float32Array(0); projectiles = new Float32Array(0);
+    players = []; inventory = cursor = mission = null;
+    missionSignature = ''; missionDirty = false;
+    items = new Float32Array(0); projectiles = new Float32Array(0);
     inventoryDirty = false; mineProgress = 0; mineTarget = null; actionCount = 0;
     ctx.localPlayerId = 0;
     worker = new WorldWorker();

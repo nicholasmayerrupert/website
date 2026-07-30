@@ -9,6 +9,8 @@ import { createInventoryHud } from './inventoryHud';
 import { createSurvivalStatus } from './survivalStatus';
 import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
+import { createMissionHud, presentMissionSnapshot } from './missionHud';
+import { MISSION_PHASE } from '../wasmBridge/abi.generated.js';
 
 const HOST_CSS = `
 :host { position: absolute; inset: 0; display: block; pointer-events: none;
@@ -526,8 +528,21 @@ class SandGameElement extends HTMLElement {
     // 'survival' (default): armed player character + follow camera.
     // 'creative': free camera, draw anywhere, no character.
     const mode = this.getAttribute('mode') === 'creative' ? 'creative' : 'survival';
+    const planet = this.getAttribute('planet') || 'earth';
+    const mission = this.getAttribute('mission') || null;
+    const seedAttribute = this.getAttribute('world-seed');
+    const seedValue = seedAttribute === null ? NaN : Number(seedAttribute);
+    const worldSeed = Number.isFinite(seedValue) ? seedValue >>> 0 : undefined;
+    let loadout = [];
+    try {
+      const parsed = JSON.parse(this.getAttribute('loadout') || '[]');
+      if (Array.isArray(parsed)) loadout = parsed;
+    } catch {
+      loadout = [];
+    }
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
     const autoStart = this.hasAttribute('auto-start');
+    this._lastMissionTerminal = 0;
     let cancelled = false;
 
     const start = () => {
@@ -539,6 +554,10 @@ class SandGameElement extends HTMLElement {
         const game = createSandGame(sim, {
           initialTool,
           mode,
+          planet,
+          mission,
+          worldSeed,
+          loadout,
           debugHitboxes,
           onLayoutChange: ({ uiAtBottom }) => this._palette?.setLayout(uiAtBottom),
           // Survival inventory HUD wiring (the engine owns the inventory state).
@@ -547,6 +566,27 @@ class SandGameElement extends HTMLElement {
             this._sizeMenu?.update(this._game?.getSurvivalFootprints?.() || [], inv.selectedFootprint);
           },
           onPlayerState: (player) => this._status?.update(player),
+          onMission: (rawSnapshot) => {
+            const detail = presentMissionSnapshot(rawSnapshot);
+            this._missionHud?.update(detail);
+            this.dispatchEvent(new CustomEvent('sand:missionupdate', {
+              detail, bubbles: true, composed: true,
+            }));
+            if (detail.phase !== MISSION_PHASE.COMPLETE &&
+                detail.phase !== MISSION_PHASE.FAILED) return;
+            if (this._lastMissionTerminal === detail.phase) return;
+            this._lastMissionTerminal = detail.phase;
+            const terminalDetail = {
+              ...detail,
+              inventory: this._game?.getInventory() || null,
+            };
+            this.dispatchEvent(new CustomEvent(
+              detail.phase === MISSION_PHASE.COMPLETE
+                ? 'sand:missioncomplete'
+                : 'sand:missionfailed',
+              { detail: terminalDetail, bubbles: true, composed: true },
+            ));
+          },
           onToggleInventory: () => {
             this._sizeMenu?.setOpen(false);
             this._hud?.toggleOpen();
@@ -576,16 +616,19 @@ class SandGameElement extends HTMLElement {
           this._sizeMenu = createFootprintMenu(root, {
             selectFootprint: (id) => game.setSelectedFootprint(id),
           });
+          if (mission) this._missionHud = createMissionHud(root, game);
           this._hud.update(game.getInventory());
           this._sizeMenu.update(game.getSurvivalFootprints(), game.getInventory().selectedFootprint);
           // Multiplayer connect panel (collapsed): join an authoritative server
           // by IP:port. Survival-only; single-player UI is unchanged at rest.
-          this._mp = createConnectPanel(root, {
-            join: (url, room) => game.netJoin(url, room),
-            disconnect: () => game.netDisconnect(),
-            getStatus: () => game.netStatus(),
-            focusSurface: () => sim.focus({ preventScroll: true }),
-          });
+          if (!mission) {
+            this._mp = createConnectPanel(root, {
+              join: (url, room) => game.netJoin(url, room),
+              disconnect: () => game.netDisconnect(),
+              getStatus: () => game.netStatus(),
+              focusSurface: () => sim.focus({ preventScroll: true }),
+            });
+          }
         } else {
           // Creative uses the searchable "spawn anything" palette: every material +
           // a seed per species + eraser + cube, routed through setCreativeMaterial.
@@ -675,6 +718,11 @@ class SandGameElement extends HTMLElement {
       .catch((e) => {
         if (cancelled || !this.isConnected) return;
         console.error('sand-game: engine failed to initialize', e);
+        this.dispatchEvent(new CustomEvent('sand:error', {
+          detail: { message: e instanceof Error ? e.message : String(e) },
+          bubbles: true,
+          composed: true,
+        }));
         const failure = document.createElement('div');
         failure.className = 'sg-init-failure';
         failure.setAttribute('role', 'alert');
@@ -705,6 +753,7 @@ class SandGameElement extends HTMLElement {
     this._hud?.destroy();
     this._status?.destroy();
     this._sizeMenu?.destroy();
+    this._missionHud?.destroy();
     this._mp?.destroy();
     this._zoom?.destroy();
     this._start?.destroy();
@@ -714,9 +763,10 @@ class SandGameElement extends HTMLElement {
     this._visibilityObserver?.disconnect();
     if (this._onDocumentVisibility) document.removeEventListener('visibilitychange', this._onDocumentVisibility);
     setPageScrollLocked(false);
-    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
+    this._game = this._palette = this._hud = this._status = this._sizeMenu = this._missionHud = this._mp = this._stick = this._zoom = this._start = this._perfHud = this._sound = this._initFailure = null;
     this._visibilityObserver = this._onDocumentVisibility = null;
     this._cancel = null;
+    this._lastMissionTerminal = 0;
     this._mounted = false;
   }
 

@@ -519,12 +519,12 @@ void PlayerSystem::integratePlayer(Player& p) {
   // while swimming adds an upward impulse (capped rise speed).
   if (inLiquid) {
     p.vy *= P_LIQUID_DRAG_Y;
-    p.vy += P_LIQUID_GRAVITY;
+    p.vy += E.scaledGravity(P_LIQUID_GRAVITY);
     if (swimming && wantJump) p.vy -= P_LIQUID_SWIM_ACCEL;
     if (p.vy < P_LIQUID_MAX_RISE) p.vy = P_LIQUID_MAX_RISE;
     if (p.vy > P_LIQUID_MAX_FALL) p.vy = P_LIQUID_MAX_FALL;
   } else {
-    p.vy += P_GRAVITY;
+    p.vy += E.scaledGravity(P_GRAVITY);
     // Space keeps thrusting after the ordinary ground jump. Preserve the
     // stronger initial jump impulse, then accelerate upward once it decays into
     // the jetpack's speed band. Holding an empty pack does not create a

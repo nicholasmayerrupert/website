@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 23;
+static const int ABI_VERSION = 24;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -202,6 +202,35 @@ enum PerfSnapshotField : int {
 };
 static const int PF_STRIDE = 28;
 
+// missionSnapshot: revision, missionId, planetId, phase, objectiveCount, threatLevel, extractionX, extractionY, elapsedTicks, recoveredWeaponMask
+enum MissionSnapshotField : int {
+  MS_REVISION = 0,
+  MS_MISSION_ID = 1,
+  MS_PLANET_ID = 2,
+  MS_PHASE = 3,
+  MS_OBJECTIVE_COUNT = 4,
+  MS_THREAT_LEVEL = 5,
+  MS_EXTRACTION_X = 6,
+  MS_EXTRACTION_Y = 7,
+  MS_ELAPSED_TICKS = 8,
+  MS_RECOVERED_WEAPON_MASK = 9,
+};
+static const int MS_STRIDE = 10;
+
+// objectiveSnapshot: id, type, state, current, required, worldX, worldY, targetActorId, flags
+enum ObjectiveSnapshotField : int {
+  OS_ID = 0,
+  OS_TYPE = 1,
+  OS_STATE = 2,
+  OS_CURRENT = 3,
+  OS_REQUIRED = 4,
+  OS_WORLD_X = 5,
+  OS_WORLD_Y = 6,
+  OS_TARGET_ACTOR_ID = 7,
+  OS_FLAGS = 8,
+};
+static const int OS_STRIDE = 9;
+
 enum PlayerInput : int {
   PI_LEFT = 1,
   PI_RIGHT = 2,
@@ -225,6 +254,7 @@ enum InventoryItemKind : uint8_t {
   IK_ACID_MORTAR = 7,
   IK_CLUSTER_LAUNCHER = 8,
   IK_MINIGUN = 9,
+  IK_RESCUE_BEAM = 10,
 };
 
 enum ProjectileKind : uint8_t {
@@ -235,6 +265,7 @@ enum ProjectileKind : uint8_t {
   PK_CLUSTER_BOMB = 4,
   PK_MINIGUN_ROUND = 5,
   PK_BORE_BEAM = 6,
+  PK_RESCUE_BEAM = 7,
 };
 
 enum CraftIngredientKind : uint8_t {
@@ -278,12 +309,53 @@ enum CreatureSpeciesAbi : int {
   CREATURE_CAUSTIC_MORTARMAN = 9,
   CREATURE_CLUSTER_WASP = 10,
   CREATURE_MINIGUNNER = 11,
+  CREATURE_SURVEYOR = 12,
+  CREATURE_SHIELD_ANCHOR = 13,
+  CREATURE_QUARRY_FOREMAN = 14,
+  CREATURE_REACTOR_WARDEN = 15,
 };
 
 enum CreatureAttackState : uint8_t {
   CAS_IDLE = 0,
   CAS_CHARGING = 1,
   CAS_FIRING = 2,
+};
+
+enum PlanetId : uint8_t {
+  PL_EARTH = 0,
+  PL_MOON = 1,
+  PL_MARS = 2,
+};
+
+enum MissionId : uint8_t {
+  MI_NONE = 0,
+  MI_GREENFALL_RECOVERY = 1,
+  MI_SILENT_QUARRY = 2,
+  MI_RED_FURNACE = 3,
+};
+
+enum MissionPhase : uint8_t {
+  MP_INACTIVE = 0,
+  MP_ACTIVE = 1,
+  MP_EXTRACTION = 2,
+  MP_COMPLETE = 3,
+  MP_FAILED = 4,
+};
+
+enum ObjectiveKind : uint8_t {
+  OK_CLEAR = 0,
+  OK_RESCUE = 1,
+  OK_ANCHOR = 2,
+  OK_BOSS = 3,
+  OK_CORE = 4,
+  OK_EXTRACT = 5,
+};
+
+enum ObjectiveState : uint8_t {
+  OS_LOCKED = 0,
+  OS_ACTIVE = 1,
+  OS_COMPLETE = 2,
+  OS_FAILED = 3,
 };
 
 enum SoundEventType : uint8_t {

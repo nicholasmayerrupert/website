@@ -753,7 +753,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     Body* body = solverBodies[bi];
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
-    if (body->awake) body->vy += R_GRAVITY * tickDt;
+    if (body->awake) body->vy += E.scaledGravity(R_GRAVITY) * tickDt;
     predictedLiquidVy[bi] = body->vy;
     body->cs = std::cos(body->angle);
     body->sn = std::sin(body->angle);
@@ -812,7 +812,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     globalPointSpeed = std::fmax(globalPointSpeed, pointSpeed);
   }
   int substeps = (int)std::ceil(
-    (globalPointSpeed + R_GRAVITY * tickDt) / R_SAFE_SUBSTEP);
+    (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt) / R_SAFE_SUBSTEP);
   substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
   if (substeps == 1) {
     rigidIslands = n;
@@ -826,7 +826,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         ? std::hypot(body->vx, body->vy)
           + std::fabs(body->omega) * std::fmax(1.0, body->maxR)
         : 0;
-      double reach = (pointSpeed + R_MAX_SPEED + R_GRAVITY * tickDt) * tickDt
+      double reach = (pointSpeed + R_MAX_SPEED + E.scaledGravity(R_GRAVITY) * tickDt) * tickDt
         + R_CONTACT_SKIN + 0.5;
       bodyBounds(body, reach,
                  tickX0[bi], tickY0[bi], tickX1[bi], tickY1[bi]);
@@ -860,7 +860,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       if (islandBodyCount[root] == 0) continue;
       rigidIslands++;
       int count = (int)std::ceil(
-        (islandPointSpeed[root] + R_GRAVITY * tickDt) / R_SAFE_SUBSTEP);
+        (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt) / R_SAFE_SUBSTEP);
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);
@@ -1782,7 +1782,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
                    b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
         continue;
       }
-      if (b->awake) b->vy += R_GRAVITY * dt;
+      if (b->awake) b->vy += E.scaledGravity(R_GRAVITY) * dt;
       b->pvx = 0; b->pvy = 0; b->pw = 0;
       b->hadContact = liquidContact[bi] != 0;
       b->maxDepth = 0;
@@ -1816,7 +1816,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
           double powderSubmerged = (double)powderWet / b->boundaryPts.size();
           double powderSupport = powderWet > 0 ? (powderDensitySum / powderWet / b->density) * powderSubmerged : 0;
           powderSupport = std::fmin(1.0, powderSupport);
-          b->vy -= R_GRAVITY * powderSupport * dt;
+          b->vy -= E.scaledGravity(R_GRAVITY) * powderSupport * dt;
           if (std::fabs(powderSupport - 1.0) <= R_GRANULAR_REST_BAND) {
             b->vy *= R_GRANULAR_REST_DAMP;
             if (std::fabs(b->vy) < R_GRANULAR_ZERO_VY) b->vy = 0;
@@ -3025,9 +3025,9 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
                  && (aboveMaterial == EMPTY || E.isGasMaterial(aboveMaterial));
         }
         openSegment = exposed;
-        pressure = density * R_GRAVITY * dt * 0.5;
+        pressure = density * E.scaledGravity(R_GRAVITY) * dt * 0.5;
       } else {
-        pressure += (priorDensity + density) * 0.5 * R_GRAVITY * dt;
+        pressure += (priorDensity + density) * 0.5 * E.scaledGravity(R_GRAVITY) * dt;
       }
       inLiquid = true;
       priorDensity = density;
@@ -3126,7 +3126,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     double vx = E.liquidVelocityX(packedVelocity);
     double vy = E.liquidVelocityY(packedVelocity);
     double pressure = std::fmax(0.0f, fluidPressureCache[layer][k]);
-    fluidNodes.push_back({lay, k, -1, sourceBody, material, vx, vy + R_GRAVITY * dt,
+    fluidNodes.push_back({lay, k, -1, sourceBody, material, vx, vy + E.scaledGravity(R_GRAVITY) * dt,
                           pressure});
     fluidNodeDepth.push_back(depth);
     fluidQueue.push_back(layer * cellCount + k);
@@ -3236,7 +3236,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     if (E.isLiquidMaterial(material)) {
       uint32_t packedVelocity = layerAt(layer)->liquidVel[nk];
       double outsideVx = E.liquidVelocityX(packedVelocity);
-      double outsideVy = E.liquidVelocityY(packedVelocity) + R_GRAVITY * dt;
+      double outsideVy = E.liquidVelocityY(packedVelocity) + E.scaledGravity(R_GRAVITY) * dt;
       double predicted = (node.vx + outsideVx) * nx * 0.5
                        + (node.vy + outsideVy) * ny * 0.5;
       FluidFace face{ni, nk, -1, (int8_t)nx, (int8_t)ny,

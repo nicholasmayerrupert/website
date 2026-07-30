@@ -86,6 +86,13 @@ bool InventorySystem::addStack(Player& p, const InvSlot& incoming) {
 }
 bool InventorySystem::addToInventory(int id, uint8_t mat, int count, uint8_t plantType) { Player* p = E.findPlayer(id); return p ? addToInventory(*p, mat, count, plantType) : false; }
 bool InventorySystem::addStack(int id, const InvSlot& stack) { Player* p = E.findPlayer(id); return p ? addStack(*p, stack) : false; }
+bool InventorySystem::addSpecialItem(int id, uint8_t itemKind, int count) {
+  if (itemKind < IK_DYNAMITE_SATCHEL || itemKind > IK_RESCUE_BEAM) return false;
+  InvSlot stack;
+  stack.itemKind = itemKind;
+  stack.count = itemKind == IK_RESCUE_BEAM ? 1 : imax(1, count);
+  return addStack(id, stack);
+}
 bool InventorySystem::consumeSelectedWeaponAmmo(Player& p, uint8_t itemKind) {
   InvSlot& s = p.inv[p.selectedSlot];
   if (s.itemKind != itemKind || !isFiniteAmmoWeapon(itemKind) || s.count <= 0) return false;
@@ -183,7 +190,8 @@ void InventorySystem::cursorPick(int id, int slot, int half) { Player* p = E.fin
 // dropped and recovered. The soulbound starter gun and mining tools stay put.
 bool InventorySystem::throwFromCursor(Player& p, bool whole) {
   InvSlot& c = p.cursor;
-  if (c.count <= 0 || c.itemKind == IK_BLAST_GUN || c.itemKind == IK_MINING_TOOL) return false;
+  if (c.count <= 0 || c.itemKind == IK_BLAST_GUN ||
+      c.itemKind == IK_MINING_TOOL || c.itemKind == IK_RESCUE_BEAM) return false;
   if (c.itemKind == IK_DYNAMITE_SATCHEL || c.itemKind == IK_BORE_CANNON ||
       c.itemKind == IK_ACID_MORTAR || c.itemKind == IK_CLUSTER_LAUNCHER ||
       c.itemKind == IK_MINIGUN) {
@@ -208,7 +216,10 @@ void InventorySystem::dropAll(Player& p) {
     // The infinite-ammo starter gun is a bound loadout item. Respawn grants a
     // fresh loadout, so dropping this copy would duplicate it when the old gun
     // magnetized back to the player.
-    if (s.itemKind == IK_BLAST_GUN) { s = InvSlot(); return; }
+    if (s.itemKind == IK_BLAST_GUN || s.itemKind == IK_RESCUE_BEAM) {
+      s = InvSlot();
+      return;
+    }
     double a = ordinal++ * 2.399963229728653; // deterministic golden-angle scatter
     E.itemsys.spawnStack(s, p.px + p.w * 0.5, p.py + p.h * 0.45,
                          std::cos(a) * 1.35, -0.75 - std::fabs(std::sin(a)) * 0.8, 180);
@@ -309,6 +320,7 @@ void InventorySystem::applyInventoryPlayer(Player& p) {
   if (sel.itemKind == IK_ACID_MORTAR) { E.projectiles.applyAcidMortarInput(p, prev); return; }
   if (sel.itemKind == IK_CLUSTER_LAUNCHER) { E.projectiles.applyClusterLauncherInput(p, prev); return; }
   if (sel.itemKind == IK_MINIGUN) { E.projectiles.applyMinigunInput(p); return; }
+  if (sel.itemKind == IK_RESCUE_BEAM) { E.projectiles.applyRescueBeamInput(p); return; }
   if (sel.itemKind == IK_ARROW) { E.resetPlayerMine(p); resetPlayerPlaceStroke(p); return; }
   bool isSeed = !mineMode && sel.itemKind == IK_MATERIAL && sel.material == SEED;
   bool isComp = !mineMode && !isSeed && sel.material != EMPTY && E.isComponentMaterial(sel.material);

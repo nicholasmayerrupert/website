@@ -41,6 +41,8 @@ int TerrainGen::classifyBiomeAt(int worldX) {
 // deterministic patches borrow the neighbouring biome, producing a readable
 // transition without per-pixel speckle or a single hard material seam.
 int TerrainGen::genBiomeAt(int worldX) {
+  if (E.planetId == PL_MOON) return BIOME_ROCKY;
+  if (E.planetId == PL_MARS) return BIOME_DESERT;
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x9e3779b9u);
   BiomeCacheEntry& cached = biomeCache[key & (BIOME_CACHE_SIZE - 1)];
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
@@ -64,6 +66,52 @@ int TerrainGen::genBiomeAt(int worldX) {
 // Terrain top in ABSOLUTE world-Y (centred at worldY=0; smaller = higher). Smooth
 // multi-octave hills/valleys; valleys below the sea row flood (handled in genCellAt).
 int TerrainGen::genSurfaceAbs(int worldX) {
+  if (E.planetId != PL_EARTH) {
+    uint32_t planetSeed = E.L->worldSeed
+      ^ (E.planetId == PL_MOON ? 0x4D004E31u : 0x4D415253u);
+    uint32_t key = planetSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
+    SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
+    if (cached.seed == planetSeed && cached.x == worldX) return cached.value;
+
+    double surface = 0;
+    if (E.planetId == PL_MOON) {
+      double broad = wfbm2(planetSeed ^ 0x10A71u, worldX * 0.0028, 2.1, 4, 0.52);
+      double rubble = wridged2(planetSeed ^ 0x10A72u, worldX * 0.014, 8.5, 3, 0.52);
+      surface = (broad - 0.5) * 54.0 + (rubble - 0.5) * 15.0;
+      constexpr int CRATER_CELL = 112;
+      int cell = floorDiv(worldX, CRATER_CELL);
+      for (int c = cell - 1; c <= cell + 1; c++) {
+        double choose = whash1(planetSeed ^ 0xC2A7E2u, c);
+        if (choose < 0.28) continue;
+        int center = c * CRATER_CELL + 18
+          + (int)std::lround(whash1(planetSeed ^ 0xC2A7E3u, c) * (CRATER_CELL - 36));
+        double radius = 17.0 + whash1(planetSeed ^ 0xC2A7E4u, c) * 30.0;
+        double distance = std::fabs((double)worldX - center);
+        if (distance >= radius + 4.0) continue;
+        double t = distance / radius;
+        if (t < 1.0) {
+          double bowl = (1.0 - t * t)
+            * (7.0 + whash1(planetSeed ^ 0xC2A7E5u, c) * 17.0);
+          surface += bowl;
+        }
+        double rimDistance = std::fabs(distance - radius) / 4.0;
+        if (rimDistance < 1.0)
+          surface -= (1.0 - rimDistance) * (3.0 + choose * 5.0);
+      }
+    } else {
+      double continent = wfbm2(planetSeed ^ 0xA11CEu, worldX * 0.0017, 4.2, 4, 0.52);
+      double mesas = wridged2(planetSeed ^ 0xA11CFu, worldX * 0.0048, 11.0, 4, 0.5);
+      double gullies = wridged2(planetSeed ^ 0xA11D0u, worldX * 0.017, 3.0, 2, 0.55);
+      surface = -(continent - 0.5) * 96.0
+        - std::fmax(0.0, mesas - 0.52) * 58.0
+        + std::fmax(0.0, gullies - 0.68) * 42.0;
+    }
+    int value = (int)std::lround(surface);
+    cached.seed = planetSeed;
+    cached.x = worldX;
+    cached.value = value;
+    return value;
+  }
   uint32_t key = E.L->worldSeed ^ ((uint32_t)worldX * 0x85ebca6bu);
   SurfaceCacheEntry& cached = surfaceCache[key & (SURFACE_CACHE_SIZE - 1)];
   if (cached.seed == E.L->worldSeed && cached.x == worldX) return cached.value;
@@ -135,6 +183,10 @@ int TerrainGen::genCaveTopAbs(int worldX) {
   return genSurfaceAbs(worldX) + GEN_SKIN + soil + CAVE_SURFACE_BUFFER;
 }
 int TerrainGen::genCaveBiomeAt(int worldX, int worldY) {
+  if (E.planetId == PL_MOON)
+    return worldY >= DEEP_BLEND_TOP ? CAVE_DEEP_GEODE : CAVE_CRYSTAL;
+  if (E.planetId == PL_MARS)
+    return worldY >= DEEP_BLEND_TOP ? CAVE_DEEP_MAGMA : CAVE_DEFAULT;
   if (worldY >= DEEP_BLEND_TOP) {
     double transition = (double)(worldY - DEEP_BLEND_TOP)
                       / (double)(DEEP_BLEND_BOTTOM - DEEP_BLEND_TOP);
@@ -405,6 +457,42 @@ bool TerrainGen::genIsEntranceWall(int worldX, int worldY) {
 }
 
 bool TerrainGen::genIsCave(int worldX, int worldY) {
+  if (E.planetId != PL_EARTH) {
+    uint32_t seed = E.L->gCaveSeed ^ (E.L->isBackground ? 0x80000000u : 0u);
+    uint32_t key = seed ^ ((uint32_t)worldX * 0x85ebca6bu)
+      ^ ((uint32_t)worldY * 0xc2b2ae35u);
+    CaveCacheEntry& cached = caveCache[key & (CAVE_CACHE_SIZE - 1)];
+    if (cached.seed == seed && cached.x == worldX && cached.y == worldY)
+      return cached.value != 0;
+
+    bool result = !E.L->isBackground && genIsBackboneCave(worldX, worldY);
+    if (!result) {
+      double warp = (valueNoise2D(seed ^ 0x771u,
+        worldX * 0.006, worldY * 0.005) - 0.5) * 46.0;
+      if (E.planetId == PL_MOON) {
+        double tube = std::fabs(valueNoise2D(seed ^ 0x772u,
+          (worldX + warp) * 0.012, worldY * 0.0065) - 0.5);
+        double chamber = wfbm2(seed ^ 0x773u,
+          worldX * 0.0062, worldY * 0.0054, 2, 0.52);
+        result = E.L->isBackground
+          ? chamber > 0.815
+          : tube < 0.048 || chamber > 0.755;
+      } else {
+        double canyon = std::fabs(valueNoise2D(seed ^ 0x774u,
+          (worldX + warp) * 0.007, worldY * 0.014) - 0.5);
+        double chamber = wfbm2(seed ^ 0x775u,
+          worldX * 0.0055, worldY * 0.0068, 2, 0.52);
+        result = E.L->isBackground
+          ? chamber > 0.805
+          : canyon < 0.062 || chamber > 0.748;
+      }
+    }
+    cached.seed = seed;
+    cached.x = worldX;
+    cached.y = worldY;
+    cached.value = result ? 1 : 0;
+    return result;
+  }
   uint32_t seed = E.L->gCaveSeed ^ (E.L->isBackground ? 0x80000000u : 0u);
   uint32_t key = seed ^ ((uint32_t)worldX * 0x85ebca6bu) ^ ((uint32_t)worldY * 0xc2b2ae35u);
   CaveCacheEntry& cached = caveCache[key & (CAVE_CACHE_SIZE - 1)];
@@ -478,6 +566,12 @@ bool TerrainGen::genIsCave(int worldX, int worldY) {
   return result;
 }
 bool TerrainGen::genOpenCaveAt(int worldX, int worldY) {
+  if (E.planetId != PL_EARTH) {
+    int surface = genSurfaceAbs(worldX);
+    if (!E.L->isBackground && worldY >= surface
+        && genIsBackboneCave(worldX, worldY)) return true;
+    return worldY >= surface + 12 && genIsCave(worldX, worldY);
+  }
   if (!E.L->isBackground && worldY >= genSurfaceAbs(worldX) && genIsBackboneCave(worldX, worldY)) return true;
   return worldY >= genCaveTopAbs(worldX) && genIsCave(worldX, worldY);
 }
@@ -540,6 +634,29 @@ uint8_t TerrainGen::genDeepRockAt(int worldX, int worldY) {
   return patch < mix ? DEEPSTONE : STONE;
 }
 uint8_t TerrainGen::genCellAt(int worldX, int surf, int slope, int biome, int soil, int y) {
+  if (E.planetId != PL_EARTH) {
+    if (y < surf) return EMPTY;
+    int depth = y - surf;
+    int worldY = E.L->worldOffsetY + y;
+    if (genOpenCaveAt(worldX, worldY)) return EMPTY;
+    int bx = floorDiv(worldX, 2), by = floorDiv(worldY, 2);
+    double pocket = whash2(E.L->gPocketSeed ^ 0x0FF0123u, bx, by);
+    if (E.planetId == PL_MOON) {
+      if (depth == 0) return slope <= 3 ? SALT : DEBRIS;
+      if (depth < 7) return DEBRIS;
+      if (!E.L->isBackground && depth > 42 && pocket > 0.996) return ICE;
+      if (!E.L->isBackground && depth > 70 && pocket < 0.003) return CRYSTAL;
+      if (!E.L->isBackground && depth > 120 && pocket > 0.991) return IRON_ORE;
+      return worldY >= DEEP_BLEND_BOTTOM ? DEEPSTONE : STONE;
+    }
+    if (depth == 0) return slope <= 3 ? SAND : CLAY;
+    if (depth < 6) return CLAY;
+    if (depth < 16) return SANDSTONE;
+    if (!E.L->isBackground && depth > 55 && pocket > 0.996) return ICE;
+    if (!E.L->isBackground && depth > 85 && pocket < 0.004) return IRON_ORE;
+    if (!E.L->isBackground && depth > 150 && pocket > 0.993) return GOLD_ORE;
+    return worldY >= DEEP_BLEND_BOTTOM ? DEEPSTONE : STONE;
+  }
   int sea = E.L->gSeaRow - E.L->worldOffsetY;       // sea level as a buffer row (gSeaRow is absolute)
   if (y < surf) {
     // above the terrain: a valley below the sea row floods with water (a flat,

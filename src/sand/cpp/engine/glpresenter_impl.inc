@@ -237,6 +237,10 @@ void GLPresenter::glCollectDynamicLights() {
       // A few terrain-aware samples make the long beam illuminate its tunnel
       // without turning every beam pixel into a separate flood source.
       for (int i = 0; i < 6; i++) add(x + dx * i * 12.0, y + dy * i * 12.0, 245);
+    } else if (kind == PK_RESCUE_BEAM) {
+      double length = std::max(0.0, charge);
+      for (int i = 0; i < 4; i++)
+        add(x + vx * length * i / 4.0, y + vy * length * i / 4.0, 210);
     }
   };
   if (glUseExtProjectiles) {
@@ -524,7 +528,8 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
   double pixel = cell * SPR_PIXEL_SCALE;
   bool aimedWeapon = heldItemKind == IK_BLAST_GUN || heldItemKind == IK_DYNAMITE_SATCHEL ||
                      heldItemKind == IK_BORE_CANNON || heldItemKind == IK_ACID_MORTAR ||
-                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN;
+                     heldItemKind == IK_CLUSTER_LAUNCHER || heldItemKind == IK_MINIGUN ||
+                     heldItemKind == IK_RESCUE_BEAM;
 
   // Sub-cell follow-through complements the authored leg frames. Keep aimed
   // poses planted so the body never appears to slide away from the exact
@@ -824,6 +829,14 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
                                          -.02 + std::sin(k * 2.094) * .30,
                                          .28, .94f, .57f, .12f);
       pixel(.10, .52, .52, .11f, .15f, .20f);
+    } else if (heldItemKind == IK_RESCUE_BEAM) {
+      for (int i = 0; i < 7; i++)
+        pixel(-.42 + i * .45, -.66, .58, .10f, .22f, .27f);
+      for (int i = 1; i < 6; i++)
+        pixel(-.42 + i * .45, -.66, .27, .24f, .94f, .91f);
+      pixel(2.48, -.66, .76, .62f, 1.0f, .96f);
+      pixel(-.06, .02, .74, .13f, .28f, .31f);
+      pixel(.14, .48, .48, .11f, .19f, .22f);
     } else { // IK_MINIGUN
       // The rear motor and ammo drum sit around the grip while the barrel pack
       // projects forward, so the weapon remains planted in the hand at every
@@ -896,6 +909,7 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
              : itemKind == IK_ACID_MORTAR ? 0xff4fc760u
              : itemKind == IK_CLUSTER_LAUNCHER ? 0xffcf7939u
              : itemKind == IK_MINIGUN ? 0xff3f586bu
+             : itemKind == IK_RESCUE_BEAM ? 0xffd4f5d2u
              : (tier == TT_GOLD ? 0xff34c7f2u : tier == TT_IRON ? 0xffe4e0d8u : tier == TT_STONE ? 0xff8f969eu : 0xff447ab0u);
   float r = (c & 0xff) / 255.0f, g = ((c >> 8) & 0xff) / 255.0f, b = ((c >> 16) & 0xff) / 255.0f;
   float baseA = ((c >> 24) & 0xff) / 255.0f;
@@ -1050,6 +1064,17 @@ void GLPresenter::glDrawOneItem(int id, int kind, int itemKind, int material, in
     glSolidDev(cx - u * .76, bottom - u * .50, u * .54, u * .64);
     return;
   }
+  if (kind == IT_ITEM && itemKind == IK_RESCUE_BEAM) {
+    double u = glCellDev;
+    double bottom = (py + bob - camRow) * u + glOffY;
+    glUniform4f(glc->uColor, .08f, .20f, .24f, a);
+    glSolidDev(cx - u * 1.35, bottom - u * 1.20, u * 2.70, u * .72);
+    glUniform4f(glc->uColor, .28f, .94f, .90f, a);
+    glSolidDev(cx - u * .72, bottom - u * 1.02, u * 1.65, u * .28);
+    glUniform4f(glc->uColor, .65f, 1.0f, .96f, a);
+    glSolidDev(cx + u * 1.12, bottom - u * 1.28, u * .48, u * .88);
+    return;
+  }
   glSolidDev(cx - sz * 0.5, cy - sz * 0.5, sz, sz);
 }
 
@@ -1110,6 +1135,26 @@ void GLPresenter::glDrawProjectiles() {
         glSolidDev(bx - outer * .5, by - outer * .5, outer, outer);
         glUniform4f(glc->uColor, 1.0f, .88f, .34f, .96f);
         glSolidDev(bx - glCellDev * .68, by - glCellDev * .68, glCellDev * 1.36, glCellDev * 1.36);
+      }
+      continue;
+    }
+    if (kind == PK_RESCUE_BEAM) {
+      double speed = std::hypot(vx, vy);
+      if (speed < 1e-6 || charge <= 0) continue;
+      double dx = vx / speed, dy = vy / speed;
+      int samples = imax(1, (int)std::ceil(charge / 1.15));
+      for (int sample = 0; sample <= samples; sample++) {
+        double t = charge * sample / samples;
+        double bx = (x + dx * t - camCol) * glCellDev + glOffX;
+        double by = (y + dy * t - camRow) * glCellDev + glOffY;
+        double pulse = ((sample + E.actorTick) & 2) ? .52 : .72;
+        glUniform4f(glc->uColor, .08f, .72f, .72f, .48f);
+        glSolidDev(bx - glCellDev * pulse * .5,
+                   by - glCellDev * pulse * .5,
+                   glCellDev * pulse, glCellDev * pulse);
+        glUniform4f(glc->uColor, .68f, 1.0f, .94f, .96f);
+        glSolidDev(bx - glCellDev * .18, by - glCellDev * .18,
+                   glCellDev * .36, glCellDev * .36);
       }
       continue;
     }
@@ -1341,6 +1386,18 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000011100000","0000123210000","0001233341000","0012333444100","0012222341000","0011000011000","0110000001100"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
+  int spriteId = speciesId;
+  int paletteId = speciesId;
+  if (speciesId == CS_SURVEYOR) {
+    spriteId = CS_DYNAMITEER;
+    paletteId = CS_BORE_SENTINEL;
+  } else if (speciesId == CS_SHIELD_ANCHOR) {
+    spriteId = paletteId = CS_BORE_SENTINEL;
+  } else if (speciesId == CS_QUARRY_FOREMAN) {
+    spriteId = paletteId = CS_DYNAMITEER;
+  } else if (speciesId == CS_REACTOR_WARDEN) {
+    spriteId = paletteId = CS_MINIGUNNER;
+  }
   const int sw = 13, sh = 7;
   double cell = glCellDev;
   if (spawnProgress > 0) {
@@ -1507,14 +1564,15 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   double pixelH = alive ? cell : cell * 0.42;
   double corpseBase = sy + sh * cell;
   for (int r = 0; r < sh; r++) for (int c = 0; c < sw; c++) {
-    int idx = grids[speciesId][frame][r][c] - '0'; if (idx <= 0 || idx >= 6) continue;
-    int cc = facing >= 0 ? c : sw - 1 - c; const float* col = pal[speciesId][idx];
+    int idx = grids[spriteId][frame][r][c] - '0'; if (idx <= 0 || idx >= 6) continue;
+    int cc = facing >= 0 ? c : sw - 1 - c; const float* col = pal[paletteId][idx];
     float fade = alive ? 1.0f : 0.55f;
     glUniform4f(glc->uColor, col[0] * fade * light, col[1] * fade * light, col[2] * fade * light, col[3]);
     double drawY = alive ? sy + r * cell : corpseBase - (sh - r) * pixelH;
     glSolidDev(sx + cc * cell, drawY, cell, pixelH);
   }
-  if (alive && speciesId == CS_MINIGUNNER) {
+  if (alive && (speciesId == CS_MINIGUNNER ||
+                speciesId == CS_REACTOR_WARDEN)) {
     // Draw the active weapon over the body sprite so its grip remains attached
     // while the barrel pack follows the authoritative target in both axes.
     double gunX = px + CREATURE_SPECIES[speciesId].w * .56;

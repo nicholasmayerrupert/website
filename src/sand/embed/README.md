@@ -16,7 +16,34 @@ That emits one self-contained ES module:
 The bundle embeds the WASM engine, so host pages do not need a separate `.wasm`
 asset or React/Tailwind runtime.
 
-## Host Layout
+## IRIS campaign and direct survival
+
+On this site, `/game` opens the mission deck for IRIS — Interstellar Rescue &
+Intervention Service — aboard the field ship Kestrel. The React campaign shell
+owns briefing, sequential unlocks, bounded loadout selection, deployment,
+persistence, and debrief. It creates `<sand-game>` only for an active operation.
+`/game?sandbox` bypasses that shell and mounts direct survival.
+
+The standalone component contains the authoritative mission runtime, tracker,
+and world-space objective markers, but it does not contain the Kestrel menus or
+campaign save. A host starts an authored operation by supplying a matching
+planet and mission:
+
+```html
+<sand-game
+  mode="survival"
+  planet="moon"
+  mission="silent-quarry"
+  world-seed="437632751"
+  loadout="[]"
+></sand-game>
+```
+
+The authored pairs are `earth` + `greenfall-recovery`, `moon` +
+`silent-quarry`, and `mars` + `red-furnace`. A mismatched mission and planet
+fails closed during authority-worker initialization.
+
+## Host layout
 
 `<sand-game>` fills its containing box. Give the host element or a parent an
 explicit size:
@@ -45,10 +72,22 @@ that shadow root for benchmark tooling.
 | `mode` | `survival`, `creative` | `survival` | Survival starts the player armed and shows inventory, crafting, hotbar, and health UI. Creative uses free camera and palette. |
 | `initial-tool` | legacy tool name | `cube` | Back-compat bridge for tests and old embeds. Creative palette uses material picks instead. |
 | `auto-start` | presence | absent | Coarse-pointer creative mode starts with drawing active instead of showing its internal `START` button. |
+| `planet` | `earth`, `moon`, `mars` | `earth` | Selects immutable planet identity, deterministic worldgen family, backdrop, and default gravity: `1.0`, `0.165`, or `0.38`. |
+| `mission` | `greenfall-recovery`, `silent-quarry`, `red-furnace` | absent | Starts the matching authoritative survival operation and enables the mission tracker and markers. |
+| `world-seed` | unsigned 32-bit decimal | random per mount | Selects the deterministic world for this mount. Values are normalized with unsigned 32-bit semantics. |
+| `loadout` | JSON array of inventory stacks | `[]` | Adds material or recovered-weapon stacks before the mission starts. Malformed JSON becomes an empty loadout. |
 
 Changing `initial-tool` after mount forwards the legacy tool selection to the
-runtime. Changing `mode` after mount is not a supported live transition; recreate
-the element instead.
+runtime. `mode`, `planet`, `mission`, `world-seed`, and `loadout` are
+construction-time attributes; recreate the element to change them. The planet
+is immutable for the engine lifetime. The component has no gravity attribute:
+Earth, Moon, and Mars use `1.0`, `0.165`, and `0.38` gravity respectively.
+
+Loadout entries use the generated ABI inventory-stack fields. The authority
+accepts at most 16 entries, clamps each count to `0`–`5000`, and accepts material
+stacks plus the recoverable enemy-weapon item kinds. The site campaign constructs
+these arrays through `campaign/missions.js` rather than accepting raw player
+input.
 
 ## Events
 
@@ -56,13 +95,31 @@ the element instead.
 | --- | --- | --- |
 | `sand:drawmodechange` | `{ on: boolean }` | Creative palette toggles drawing. Bubbles and crosses the shadow boundary. |
 | `sand:ready` | none | The engine, renderer, and mode-specific controls have initialized. Bubbles and crosses the shadow boundary. |
+| `sand:error` | `{ message: string }` | Engine initialization failed and the embedded retry panel is available. |
+| `sand:missionupdate` | presented mission snapshot | Authoritative mission state changes. |
+| `sand:missioncomplete` | terminal mission snapshot plus `inventory` | Extraction completes. Emitted once per mount. |
+| `sand:missionfailed` | terminal mission snapshot plus `inventory` | The operation fails. Emitted once per mount. |
+
+These events bubble and cross the shadow boundary. A presented mission
+snapshot contains `revision`, `missionId`, `planetId`, `phase`,
+`objectiveCount`, `threatLevel`, extraction coordinates, `elapsedTicks`,
+`recoveredWeaponMask`, `objectives`, `missionName`, `stageLabel`, and
+`recoveredWeaponKinds`. Each objective is
+`{ id, type, state, current, required, worldX, worldY, targetActorId, flags }`.
+Mission, planet, phase, objective-type, and objective-state values come from
+`abi.schema.json` and its generated bindings.
 
 ## Runtime Behavior
 
 - JavaScript owns DOM lifecycle, canvas sizing, raw browser events, and optional
   WebSocket transport.
 - C++/WASM owns simulation, rendering, camera policy, player physics, tools,
-  terrain streaming, spawn placement, and inventory state.
+  terrain streaming, spawn placement, inventory state, and mission progression.
+- Planet gravity applies to players and other gravity-driven actors, rigid bodies,
+  fluids, and loose solids. The deterministic fall order is Earth, Mars, Moon.
+- A mission embed shows its tracker and objective markers and hides the
+  multiplayer connect panel. Direct survival without `mission` retains that
+  panel.
 - Survival combines explosive combat with inventory-backed mining and building.
   The hotbar can hold bare-hand slots, mining tools, collected blocks, or dropped
   weapons; `E` opens the inventory/crafting modal and `Q` selects the square tool
@@ -104,9 +161,9 @@ server from:
 npm run sand:server
 ```
 
-Browsers are pure clients in that mode. Server and client must currently share
-one authority window. The server expands and streams that window around the
-connected player group; widely separated players increase its simulation cost.
+Browsers are pure clients in that mode. Server and client share one authority
+window. The server expands and streams that window around the connected player
+group; widely separated players increase its simulation cost.
 
 The survival HUD exposes the player’s 100 health, rechargeable jetpack fuel, and
 200-point directional ward. Hold `F` while aiming to raise the ward across the
@@ -118,3 +175,12 @@ The survival HUD exposes the player’s 100 health, rechargeable jetpack fuel, a
   CSS.
 - Use `npm run build:embed` to verify bundle generation.
 - Use `npm run check:embed` to verify the dependency boundary.
+
+Campaign and planet checks:
+
+```sh
+npm run test:campaign
+npm run test:missions
+node scripts/run-tests.mjs --only planet-gravity
+node scripts/run-tests.mjs --browser --only campaign-e2e
+```

@@ -16,7 +16,15 @@ import {
   sampleDayNight,
 } from './dayNightCycle.js';
 
-export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, updateMineProgress, onInventory, onPlayerState }) {
+export function createGameLoop(ctx, {
+  fit,
+  parallaxCamera,
+  updatePointer,
+  updateMineProgress,
+  onInventory,
+  onPlayerState,
+  onMission,
+}) {
   ctx.timingStats = { actorSteps: 0, actorDebtMs: 0, actorDroppedMs: 0, worldStepped: false };
 
   // Presentation-only wall clock. Deriving phase from elapsed time lets a
@@ -328,6 +336,10 @@ export function createGameLoop(ctx, { fit, parallaxCamera, updatePointer, update
         lastPlayerStateSignature = signature;
         onPlayerState(player);
       }
+    }
+    if (onMission && ctx.worldWorker?.consumeMissionDirty()) {
+      const mission = ctx.worldWorker.getMission();
+      if (mission) onMission(mission);
     }
     updateMineProgress();
 

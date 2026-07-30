@@ -145,6 +145,10 @@ const SPECIAL_ART = {
     '............','....NNNN....','..NNGGGGNN..','.NNGGGGNNMMM','NNGGGGNNMMMM','.NNNNNNNMMM.',
     '...NNHH.....','....HH......','....HH......','.....H......','............','............',
   ],
+  [ITEM_KIND.RESCUE_BEAM]: [
+    '............','...NNNNNN...','..NAAAAAANN.','.NNAAIIAANNN','..NNNNNNNN..','....NNNN....',
+    '....NHH.....','....HHH.....','....HH......','.....H......','............','............',
+  ],
 };
 const SPECIAL_COLOR = {
   H: '#9b6a39', W: '#9b6a39', S: '#f8e7a1', M: '#c9d0d6',
@@ -155,7 +159,8 @@ const SPECIAL_COLOR = {
 const isSpecialKind = (kind) => kind === ITEM_KIND.BOW || kind === ITEM_KIND.ARROW
   || kind === ITEM_KIND.BLAST_GUN || kind === ITEM_KIND.DYNAMITE_SATCHEL
   || kind === ITEM_KIND.BORE_CANNON || kind === ITEM_KIND.ACID_MORTAR
-  || kind === ITEM_KIND.CLUSTER_LAUNCHER || kind === ITEM_KIND.MINIGUN;
+  || kind === ITEM_KIND.CLUSTER_LAUNCHER || kind === ITEM_KIND.MINIGUN
+  || kind === ITEM_KIND.RESCUE_BEAM;
 const isFiniteAmmoKind = (kind) => kind === ITEM_KIND.DYNAMITE_SATCHEL
   || kind === ITEM_KIND.BORE_CANNON || kind === ITEM_KIND.ACID_MORTAR
   || kind === ITEM_KIND.CLUSTER_LAUNCHER || kind === ITEM_KIND.MINIGUN;
@@ -567,6 +572,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (s.itemKind === ITEM_KIND.ACID_MORTAR) return 'Acid Mortar';
     if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) return 'Cluster Launcher';
     if (s.itemKind === ITEM_KIND.MINIGUN) return 'Minigun';
+    if (s.itemKind === ITEM_KIND.RESCUE_BEAM) return 'Rescue Beam';
     if (s.itemKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (s.itemKind === ITEM_KIND.BOW) return 'Bow';
     if (s.itemKind === ITEM_KIND.ARROW) return 'Arrow';
@@ -594,6 +600,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
     if (r.outputKind === ITEM_KIND.ACID_MORTAR) return 'Acid Mortar';
     if (r.outputKind === ITEM_KIND.CLUSTER_LAUNCHER) return 'Cluster Launcher';
     if (r.outputKind === ITEM_KIND.MINIGUN) return 'Minigun';
+    if (r.outputKind === ITEM_KIND.RESCUE_BEAM) return 'Rescue Beam';
     if (r.outputKind === ITEM_KIND.BLAST_GUN) return 'Blast Gun';
     if (r.outputKind === ITEM_KIND.BOW) return 'Bow';
     if (r.outputKind === ITEM_KIND.ARROW) return `${r.outputCount} Arrows`;
@@ -660,6 +667,7 @@ export function createInventoryHud(root, { selectSlot, cursorPick, throwFromCurs
         else if (s.itemKind === ITEM_KIND.ACID_MORTAR) el.title = `Acid Mortar — ${s.count} shells remaining`;
         else if (s.itemKind === ITEM_KIND.CLUSTER_LAUNCHER) el.title = `Cluster Launcher — ${s.count} carriers remaining`;
         else if (s.itemKind === ITEM_KIND.MINIGUN) el.title = `Minigun — ${s.count} rounds remaining`;
+        else if (s.itemKind === ITEM_KIND.RESCUE_BEAM) el.title = 'Rescue Beam — tag stranded personnel for orbital recovery';
         else if (s.itemKind === ITEM_KIND.BLAST_GUN) el.title = 'Blast Gun — LMB fires explosive rounds';
         else if (s.itemKind === ITEM_KIND.BOW) el.title = 'Bow — hold to charge, release to fire';
         else if (s.itemKind === ITEM_KIND.ARROW) el.title = `Arrows ×${s.count}`;

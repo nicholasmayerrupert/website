@@ -1,4 +1,5 @@
 import { normalizeDayPhase, sampleDayNight } from './dayNightCycle.js';
+import { PLANET } from '../wasmBridge/abi.generated.js';
 
 const PIXEL_SCALE = 4;
 
@@ -21,6 +22,14 @@ const NOON = Object.freeze({
   skyTop: '#448cc6', skyMid: '#78b7d5', skyGlow: '#add5e1', skyLow: '#d4e8ea',
   cloudDark: '#b8cdd5', cloudLight: '#edf4f2',
   ridgeFar: '#718d9a', ridgeMid: '#527264', ridgeNear: '#35634f', ridgeDeep: '#222b29',
+});
+const MOON_PALETTE = Object.freeze({
+  skyTop: '#03050b', skyMid: '#080d19', skyGlow: '#11192a', skyLow: '#202738',
+  ridgeFar: '#555c68', ridgeMid: '#3c424c', ridgeNear: '#292e36', ridgeDeep: '#171a20',
+});
+const MARS_PALETTE = Object.freeze({
+  skyTop: '#351315', skyMid: '#713328', skyGlow: '#b35d3d', skyLow: '#d78b5b',
+  ridgeFar: '#8e5543', ridgeMid: '#683b32', ridgeNear: '#4b2d29', ridgeDeep: '#271b1d',
 });
 const HORIZON_RATIO = 0.36;
 export const SURFACE_CAM_Y = -120;
@@ -629,7 +638,7 @@ function drawLodges(ctx, w, ridge, seed, daylight) {
   }
 }
 
-export function createParallaxBackground(container) {
+export function createParallaxBackground(container, { planetId = PLANET.EARTH } = {}) {
   const canvas = document.createElement('canvas');
   canvas.className = 'sand-parallax-bg';
   canvas.style.position = 'absolute';
@@ -684,6 +693,44 @@ export function createParallaxBackground(container) {
     const horizon = Math.round(clamp(h * HORIZON_RATIO, -28, h - 36));
     const verticalDrift = Math.round(backgroundDriftY(qy));
     const skyHeight = Math.max(0, horizon);
+    if (planetId !== PLANET.EARTH) {
+      const palette = planetId === PLANET.MOON ? MOON_PALETTE : MARS_PALETTE;
+      const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, skyHeight));
+      sky.addColorStop(0, palette.skyTop);
+      sky.addColorStop(0.58, palette.skyMid);
+      sky.addColorStop(0.86, palette.skyGlow);
+      sky.addColorStop(1, palette.skyLow);
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h);
+      drawDither(ctx, w, h, skyHeight, dayNight.daylight);
+      drawStars(
+        ctx,
+        w,
+        skyHeight,
+        qx,
+        qy,
+        planetId === PLANET.MOON ? 0.92 : Math.max(0.08, dayNight.starOpacity * 0.55),
+      );
+      if (planetId === PLANET.MOON) {
+        drawPixelOrb(ctx, w * 0.78, skyHeight * 0.28 - verticalDrift, '#397db4', '#a9d5e9');
+      } else if (dayNight.sunVisible) {
+        const t = dayNight.sunProgress;
+        drawPixelOrb(
+          ctx,
+          w * (0.08 + t * 0.64),
+          celestialOrbitY(skyHeight, t) - verticalDrift,
+          '#f3bb76',
+          '#fff0bd',
+          true,
+        );
+      }
+      drawRidge(ctx, w, h, qx, qy, 0.18, horizon + 18, 17, palette.ridgeFar, 5.1, palette.skyLow, 2);
+      drawRidge(ctx, w, h, qx, qy, 0.35, horizon + 31, 19, palette.ridgeMid, 9.7, palette.skyLow, 3);
+      drawRidge(ctx, w, h, qx, qy, 0.53, horizon + 53, 22, palette.ridgeNear, 14.2, palette.skyLow, 4);
+      drawRidge(ctx, w, h, qx, qy, 0.70, horizon + 105, 13, palette.ridgeDeep, 19.6, palette.skyLow, 2);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      return;
+    }
     const palette = paletteForPhase(dayNight.phase);
     const sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, skyHeight));
     sky.addColorStop(0, palette.skyTop);

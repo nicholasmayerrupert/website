@@ -9,9 +9,13 @@ enum CreatureSpeciesId : uint8_t {
   CS_MINNOW = 0, CS_PIKE, CS_FOX, CS_HARE, CS_CRAWLER, CS_MOLE, CS_BIRD,
   CS_DYNAMITEER = 7, CS_BORE_SENTINEL = 8,
   CS_CAUSTIC_MORTARMAN = 9, CS_CLUSTER_WASP = 10, CS_MINIGUNNER = 11,
+  CS_SURVEYOR = 12, CS_SHIELD_ANCHOR = 13,
+  CS_QUARRY_FOREMAN = 14, CS_REACTOR_WARDEN = 15,
   CS_COUNT
 };
-enum CreatureLocomotion : uint8_t { CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING };
+enum CreatureLocomotion : uint8_t {
+  CL_AQUATIC = 0, CL_AMPHIBIOUS, CL_FLYING, CL_STATIONARY
+};
 enum CreatureTarget : uint8_t { CT_NONE = 0, CT_PLAYER = 1, CT_PREY = 2 };
 enum CreatureSpawnMode : uint8_t { CSM_REGION = 0, CSM_CONTINUOUS };
 enum CreatureHabitat : uint8_t { CH_WATER = 0, CH_SURFACE, CH_CAVE, CH_AIR };
@@ -122,6 +126,30 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .damage=0, .attackCooldown=270, .scanInterval=6, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
    .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, SURVIVAL_SPAWN_MAX_DISTANCE}},
+  {.name="surveyor", .locomotion=CL_AMPHIBIOUS, .w=4, .h=8, .maxHealth=70,
+   .walkSpeed=0.12, .swimSpeed=0.16, .accel=0.036, .gravity=0.075, .jumpSpeed=0.72,
+   .fluidThreshold=0.34, .sightRange=36, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=24, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+  {.name="shield anchor", .locomotion=CL_STATIONARY, .w=7, .h=7, .maxHealth=210,
+   .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
+   .fluidThreshold=0, .sightRange=0, .attackRange=0,
+   .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
+   .targetMask=CT_NONE, .preyMask=0, .hostile=false,
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+  {.name="quarry foreman", .locomotion=CL_AMPHIBIOUS, .w=10, .h=7, .maxHealth=520,
+   .walkSpeed=0.19, .swimSpeed=0.14, .accel=0.038, .gravity=0.075, .jumpSpeed=0.92,
+   .fluidThreshold=0.32, .sightRange=148, .attackRange=112,
+   .damage=30, .attackCooldown=105, .scanInterval=8, .hopPeriod=0,
+   .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 160, 0, 0, 0.0, 0, 0}},
+  {.name="reactor warden", .locomotion=CL_AMPHIBIOUS, .w=11, .h=8, .maxHealth=760,
+   .walkSpeed=0.13, .swimSpeed=0.10, .accel=0.028, .gravity=0.075, .jumpSpeed=0.72,
+   .fluidThreshold=0.34, .sightRange=162, .attackRange=132,
+   .damage=0, .attackCooldown=190, .scanInterval=5, .hopPeriod=0,
+   .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 180, 0, 0, 0.0, 0, 0}},
 };
 
 struct Creature {
@@ -149,6 +177,8 @@ struct Creature {
   // Presentation mirrors also store pending-breach records in this compact
   // actor shape. Authority-side materialized creatures always keep this at 0.
   double spawnProgress = 0;
+  int missionObjective = -1;
+  bool missionActor = false;
 };
 
 struct CreatureSpawnTelegraph {

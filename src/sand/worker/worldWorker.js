@@ -1,6 +1,10 @@
 import { initSandWasm, createEngineWasm } from '../wasmBridge/engineFactory.js';
-import { CREATIVE_KIND } from '../wasmBridge/abi.generated.js';
-import { MAT_FLAGS, MF } from '../materials.generated.js';
+import {
+  CREATIVE_KIND,
+  ITEM_KIND,
+  MISSION,
+} from '../wasmBridge/abi.generated.js';
+import { MATERIALS, MAT_FLAGS, MF } from '../materials.generated.js';
 import { MAT } from '../materials.js';
 import { createFixedRateClock } from '../timing/fixedRateClock.js';
 
@@ -35,6 +39,7 @@ let mirroredCreatures = false;
 let survival = false;
 let survivalSpawnViewReady = false;
 let localPlayerId = 0;
+let missionId = MISSION.NONE;
 let latestInput = null;
 let actorClock = null;
 let lastInventoryHash = -1;
@@ -125,6 +130,7 @@ function postActors(force = false) {
     cursor: inventoryChanged ? engine.getCursor(localPlayerId) : undefined,
     itemData: itemBuffer,
     projectiles: engine.getProjectiles(),
+    mission: missionId ? engine.getMission() : null,
     ackSeq: player?.inputSeq ?? 0,
   }, [itemBuffer]);
 }
@@ -314,6 +320,8 @@ self.onmessage = async ({ data }) => {
     engine = createEngineWasm({
       cols: data.cols, rows: data.rows, worldSeed: data.worldSeed >>> 0,
       infinite: true, sinksOn: false, storageRole: 'authority',
+      planetId: data.planetId,
+      gravityScale: data.gravityScale,
     });
     survival = !!data.survival;
     engine.setPlayMode(survival);
@@ -332,6 +340,33 @@ self.onmessage = async ({ data }) => {
     // EMPTY placeholder until the palette emits a real material selection.
     engine.setTool(data.tool | 0);
     localPlayerId = survival ? engine.spawnPlayerAtSurface(Math.floor(data.cols / 2)) : 0;
+    missionId = survival ? data.missionId | 0 : MISSION.NONE;
+    if (localPlayerId && Array.isArray(data.loadout)) {
+      for (const stack of data.loadout.slice(0, 16)) {
+        const count = Math.max(0, Math.min(5000, stack?.count | 0));
+        const itemKind = stack?.itemKind | 0;
+        if (!count) continue;
+        if (itemKind === ITEM_KIND.MATERIAL) {
+          const material = stack?.material | 0;
+          if (material > MAT.EMPTY && material < MATERIALS.length) {
+            engine.addToInventory(localPlayerId, material, count);
+          }
+        } else if (itemKind >= ITEM_KIND.DYNAMITE_SATCHEL &&
+                   itemKind <= ITEM_KIND.MINIGUN) {
+          engine.addSpecialItem(localPlayerId, itemKind, count);
+        }
+      }
+    }
+    if (missionId && !engine.startMission(missionId, localPlayerId)) {
+      self.postMessage({
+        type: 'error',
+        phase: 'mission',
+        message: 'The selected campaign mission could not start on this planet.',
+      });
+      engine.destroy();
+      engine = null;
+      return;
+    }
     latestInput = null;
     actorClock = createFixedRateClock({ now: performance.now() });
     lastInventoryHash = -1;
@@ -351,7 +386,7 @@ self.onmessage = async ({ data }) => {
     control = data;
     if (survival && !survivalSpawnViewReady) {
       survivalSpawnViewReady = true;
-      engine.setCreatureRuntime(true, true);
+      engine.setCreatureRuntime(true, missionId ? false : true);
     }
   } else if (data.type === 'input') {
     latestInput = data.input || null;

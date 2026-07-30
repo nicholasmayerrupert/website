@@ -28,6 +28,8 @@ static constexpr int MINIGUN_COOLDOWN_LOCAL = 2;
 static constexpr int MINIGUN_ROUND_LIFE_LOCAL = 40;
 static constexpr double MINIGUN_ROUND_SPEED_LOCAL = 15.5;
 static constexpr int MINIGUN_BLAST_RADIUS_LOCAL = 2;
+static constexpr int RESCUE_BEAM_COOLDOWN_LOCAL = 18;
+static constexpr double RESCUE_BEAM_RANGE_LOCAL = 112.0;
 // Radius, not a weak visual-only puff, is what keeps these explosions tiny.
 // Thirteen power lets a direct hit chip durability-13 terrain while the
 // steep two-cell falloff prevents each high-rate round from opening a crater.
@@ -116,6 +118,14 @@ void ProjectileSystem::applyMinigunInput(Player& p) {
   E.playerActionCount++;
 }
 
+void ProjectileSystem::applyRescueBeamInput(Player& p) {
+  E.resetPlayerMine(p); E.inv.resetPlayerPlaceStroke(p); p.bowChargeTicks = 0;
+  if (!(p.input & PI_PRIMARY) || p.toolCooldown > 0) return;
+  fireRescueBeam(p);
+  p.toolCooldown = RESCUE_BEAM_COOLDOWN_LOCAL;
+  E.playerActionCount++;
+}
+
 void ProjectileSystem::spawnArrow(Player& p, double charge) {
   if ((int)projectiles.size() >= PROJECTILE_MAX) projectiles.erase(projectiles.begin());
   double sx = p.px + p.w * .5, sy = p.py + p.h * .42;
@@ -157,7 +167,8 @@ void ProjectileSystem::spawnDynamiteAt(int owner, double sx, double sy, double t
   double dx = targetX - dynamite.px, dy = targetY - dynamite.py;
   double flight = std::max(34.0, std::min(58.0, std::fabs(dx) * .72 + 24.0));
   dynamite.vx = std::max(-2.45, std::min(2.45, dx / flight));
-  dynamite.vy = std::max(-2.35, std::min(0.25, (dy - .5 * DYNAMITE_GRAVITY * flight * flight) / flight));
+  double gravity = E.scaledGravity(DYNAMITE_GRAVITY);
+  dynamite.vy = std::max(-2.35, std::min(0.25, (dy - .5 * gravity * flight * flight) / flight));
   dynamite.fuse = DYNAMITE_FUSE_TICKS;
   dynamite.life = DYNAMITE_FUSE_TICKS + 30;
   dynamite.rotation = std::atan2(dynamite.vy, dynamite.vx);
@@ -184,7 +195,8 @@ void ProjectileSystem::spawnAcidShellAt(int owner, double sx, double sy, double 
   Projectile shell; shell.id = nextId++; shell.owner = owner; shell.kind = PK_ACID_SHELL;
   shell.px = sx; shell.py = sy;
   shell.vx = dx / flight;
-  shell.vy = (dy - .5 * ACID_SHELL_GRAVITY_LOCAL * flight * flight) / flight;
+  double gravity = E.scaledGravity(ACID_SHELL_GRAVITY_LOCAL);
+  shell.vy = (dy - .5 * gravity * flight * flight) / flight;
   shell.life = ACID_SHELL_LIFE_LOCAL;
   // Charge doubles as the renderer's scale hint; acid shells are deliberately
   // chunkier than ordinary rounds and have a matching collision envelope.
@@ -356,6 +368,59 @@ void ProjectileSystem::spawnBoreBeam(int owner, double ox, double oy, double dx,
   projectiles.push_back(beam);
 }
 
+void ProjectileSystem::fireRescueBeam(Player& player) {
+  double ox = player.px + player.w * .5;
+  double oy = player.py + player.h * .42;
+  double dx = player.aimX - ox, dy = player.aimY - oy;
+  double d = std::hypot(dx, dy);
+  if (d < 1e-6) { dx = player.facing; dy = 0; d = 1; }
+  dx /= d; dy /= d;
+  double distance = RESCUE_BEAM_RANGE_LOCAL;
+  for (double t = .5; t <= RESCUE_BEAM_RANGE_LOCAL; t += .5) {
+    double px = ox + dx * t, py = oy + dy * t;
+    double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
+    bool rescued = false;
+    for (Creature& creature : E.creatures.creatures) {
+      if (!creature.alive || creature.species != CS_SURVEYOR) continue;
+      const CreatureSpecies& species = E.creatures.species(creature);
+      double nx = std::max(creature.wx, std::min(wx, creature.wx + species.w));
+      double ny = std::max(creature.wy, std::min(wy, creature.wy + species.h));
+      double ex = wx - nx, ey = wy - ny;
+      if (ex * ex + ey * ey > 1.15 * 1.15) continue;
+      rescued = E.missions.rescueCreature(creature);
+      if (rescued) break;
+    }
+    if (rescued) {
+      distance = t;
+      break;
+    }
+    int x = (int)std::floor(px), y = (int)std::floor(py);
+    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows - 1) {
+      distance = t;
+      break;
+    }
+    uint8_t material = E.fg.grid[E.I(x, y)];
+    if (!E.isEmptyMaterial(material) && !E.isGasMaterial(material)) {
+      distance = t;
+      break;
+    }
+  }
+  if ((int)projectiles.size() >= PROJECTILE_MAX) return;
+  Projectile beam;
+  beam.id = nextId++;
+  beam.owner = player.id;
+  beam.kind = PK_RESCUE_BEAM;
+  beam.px = ox;
+  beam.py = oy;
+  beam.vx = dx;
+  beam.vy = dy;
+  beam.life = 7;
+  beam.fuse = 7;
+  beam.charge = distance;
+  beam.rotation = std::atan2(dy, dx);
+  projectiles.push_back(beam);
+}
+
 void ProjectileSystem::updateProjectiles() {
   auto hitsCreature = [&](double px, double py, double radius, int owner) {
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
@@ -522,7 +587,7 @@ void ProjectileSystem::updateProjectiles() {
   size_t write = 0;
   for (size_t i = 0; i < projectiles.size(); i++) {
     Projectile p = projectiles[i];
-    if (p.kind == PK_BORE_BEAM) {
+    if (p.kind == PK_BORE_BEAM || p.kind == PK_RESCUE_BEAM) {
       if (--p.life <= 0) continue;
       p.fuse = imax(0, p.fuse - 1);
       projectiles[write++] = p;
@@ -554,7 +619,7 @@ void ProjectileSystem::updateProjectiles() {
         if (cx >= 0 && cx < E.cols && cy >= 0 && cy < E.rows && E.isLiquidMaterial(E.fg.grid[E.I(cx, cy)])) {
           p.vx *= 0.91; p.vy *= 0.88;
         }
-        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + DYNAMITE_GRAVITY);
+        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + E.scaledGravity(DYNAMITE_GRAVITY));
         p.rotation += p.vx * .22;
       }
       if (--p.fuse <= 0 && !outside) {
@@ -594,7 +659,7 @@ void ProjectileSystem::updateProjectiles() {
         continue;
       }
       if (outside || --p.life <= 0) continue;
-      p.vy += ACID_SHELL_GRAVITY_LOCAL;
+      p.vy += E.scaledGravity(ACID_SHELL_GRAVITY_LOCAL);
       p.rotation = std::atan2(p.vy, p.vx);
       projectiles[write++] = p;
       continue;
@@ -641,7 +706,7 @@ void ProjectileSystem::updateProjectiles() {
           } else p.py = ny;
         }
         if (!actorImpact && !outside) {
-          p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL * .62);
+          p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + E.scaledGravity(CLUSTER_GRAVITY_LOCAL) * .62);
           p.rotation += p.vx * .18;
         }
       }
@@ -678,7 +743,7 @@ void ProjectileSystem::updateProjectiles() {
             } else p.py = ny;
           }
         }
-        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + CLUSTER_GRAVITY_LOCAL);
+        p.vy = std::min(DYNAMITE_MAX_FALL, p.vy + E.scaledGravity(CLUSTER_GRAVITY_LOCAL));
         p.rotation += p.vx * .28;
       }
       if (--p.fuse <= 0 && !outside) {
@@ -758,7 +823,7 @@ void ProjectileSystem::updateProjectiles() {
       continue;
     }
     if (p.kind == PK_ARROW) {
-      p.vy += ARROW_GRAVITY;
+      p.vy += E.scaledGravity(ARROW_GRAVITY);
       p.rotation = std::atan2(p.vy, p.vx);
     }
     if (--p.life <= 0) continue;

@@ -19,6 +19,16 @@
 
   int stepSerial = 0, tick = 0, actorTick = 0, worldShiftCount = 0;
   int nextBakedAssemblyId = 1;
+  PlanetId planetId;
+  double gravityScale;
+  // Cell materials can only move in whole-cell increments. A fixed-point
+  // cadence turns fractional planetary gravity into deterministic settle turns
+  // without consuming the shared simulation RNG. The cadence advances once per
+  // world tick and is shared by foreground and background.
+  static constexpr uint32_t GRAVITY_CADENCE_ONE = 1u << 16;
+  uint32_t gravityCadenceStep = GRAVITY_CADENCE_ONE;
+  uint32_t gravityCadencePhase = 0;
+  bool gravityCellStep = true;
   // Last-step volume counters (accumulated across both layers in beginStepDirty /
   // end-of-step component scan). Zeroed at the start of each step().
   int perfDirtyChunks = 0, perfDirtyRows = 0, perfDirtyCells = 0;
@@ -94,6 +104,33 @@
     uint32_t t2 = t ^ (t >> 7); t = (t + (t2 * (61u | t))) ^ t;
     return (double)(t ^ (t >> 14)) / 4294967296.0;
   }
+  static inline PlanetId normalizedPlanet(int id) {
+    return id == PL_MOON ? PL_MOON : (id == PL_MARS ? PL_MARS : PL_EARTH);
+  }
+  static inline double defaultGravityForPlanet(PlanetId id) {
+    return id == PL_MOON ? 0.165 : (id == PL_MARS ? 0.38 : 1.0);
+  }
+  void setGravityScale(double scale) {
+    if (!std::isfinite(scale)) scale = defaultGravityForPlanet(planetId);
+    gravityScale = std::fmax(0.05, std::fmin(1.0, scale));
+    gravityCadenceStep = gravityScale >= 1.0
+      ? GRAVITY_CADENCE_ONE
+      : (uint32_t)std::lround(gravityScale * GRAVITY_CADENCE_ONE);
+    gravityCadencePhase = 0;
+    gravityCellStep = true;
+  }
+  inline double scaledGravity(double earthGravity) const {
+    return gravityScale == 1.0 ? earthGravity : earthGravity * gravityScale;
+  }
+  void advanceGravityCadence() {
+    if (gravityCadenceStep >= GRAVITY_CADENCE_ONE) {
+      gravityCellStep = true;
+      return;
+    }
+    uint32_t next = gravityCadencePhase + gravityCadenceStep;
+    gravityCellStep = next >= GRAVITY_CADENCE_ONE;
+    gravityCadencePhase = gravityCellStep ? next - GRAVITY_CADENCE_ONE : next;
+  }
   inline int I(int x, int y) { return y * cols + x; }
   inline double liquidVelocityX(uint32_t packed) {
     int component = packed & 0x7fff;
@@ -112,8 +149,11 @@
   }
 
 
-  Engine(int c, int r, uint32_t seed, bool sinks, EngineStorageRole role = ESR_FULL)
-      : cols(c), rows(r), storageRole(role), sinksEnabled(sinks), rngState(seed) {
+  Engine(int c, int r, uint32_t seed, bool sinks, EngineStorageRole role = ESR_FULL,
+         int planet = PL_EARTH)
+      : cols(c), rows(r), storageRole(role), planetId(normalizedPlanet(planet)),
+        gravityScale(defaultGravityForPlanet(planetId)), sinksEnabled(sinks), rngState(seed) {
+    setGravityScale(gravityScale);
     chunkCols = (cols + CHUNK_SIZE - 1) / CHUNK_SIZE;
     chunkRows = (rows + CHUNK_SIZE - 1) / CHUNK_SIZE;
     fg.alloc(cols, rows, chunkCols, chunkRows, storageRole);

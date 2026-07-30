@@ -42,7 +42,7 @@ try {
   browser = await browserType.launch();
   const context = await browser.newContext({ reducedMotion: 'no-preference', viewport: { width: 1200, height: 800 } });
   const page = await context.newPage();
-  await page.goto(`${baseURL}game`, { waitUntil: 'load' });
+  await page.goto(`${baseURL}game?sandbox`, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest && window.__sandTest.info && window.__sandTest.info().viewCols > 0, null, { timeout: 30000 });
   await page.waitForFunction(() => !!window.__sandTest.getPlayer?.(), null, { timeout: 30000 });
   const focusGame = () => page.locator('sand-game').evaluate((host) => host.shadowRoot.querySelector('.sg-sim').focus({ preventScroll: true }));

@@ -35,6 +35,8 @@ class MissionSystem {
   int elapsedTicks = 0;
   int recoveredWeaponMask = 0;
   int pendingObjective = -1;
+  int nextThreatActorTick = 0;
+  int extractionThreatWave = 0;
   bool coreDestabilized = false;
   std::vector<MissionObjective> objectives;
   std::vector<int32_t> missionSnapshot;

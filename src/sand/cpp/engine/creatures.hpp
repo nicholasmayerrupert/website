@@ -248,6 +248,7 @@ class CreatureSystem {
   int localDensityAll(double wx, double wy, int radius) const;
   bool farEnoughFromPlayers(double wx, double wy, int minDistance) const;
   bool spawnNearFocus(uint8_t speciesId, uint32_t salt);
+  bool spawnVisibleBreachNearFocus(uint8_t speciesId, uint32_t salt);
   bool findSpawnNearFocus(uint8_t speciesId, uint32_t salt, bool requireOffscreen,
                           double& outWx, double& outWy) const;
   bool queueSpawnTelegraph(uint8_t speciesId, double wx, double wy, uint32_t salt);

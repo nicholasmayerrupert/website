@@ -839,7 +839,9 @@ void ExplosivesSystem::detonate(int cx, int cy, int radius, double power,
                                double actorDamageScale,
                                bool bypassActorCooldown,
                                int immuneCreatureId) {
-  if (E.planetId == PL_SHIP) {
+  bool playerWeaponBlast = soundEvent == SE_WEAPON_EXPLOSION &&
+    immunePlayerId > 0;
+  if (E.planetId == PL_SHIP && !playerWeaponBlast) {
     E.audio.emit(soundEvent, cx, cy, std::min(2.5, power / TNT_BLAST_POWER),
                  explosiveMaterial, E.L == &E.bg ? 1 : 0);
     int particleCount = imin(16, imax(6, radius));

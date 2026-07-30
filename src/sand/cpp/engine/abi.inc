@@ -407,11 +407,8 @@ EMSCRIPTEN_KEEPALIVE int engine_test_spawn_near_focus(Engine* e, int species, in
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_breach_near_focus(Engine* e, int species, int salt) {
   if (species < 0 || species >= CS_COUNT) return 0;
-  double wx = 0, wy = 0;
-  if (!e->creatures.findSpawnNearFocus((uint8_t)species, (uint32_t)salt,
-                                       false, wx, wy)) return 0;
-  return e->creatures.queueSpawnTelegraph((uint8_t)species, wx, wy,
-    (uint32_t)salt) ? 1 : 0;
+  return e->creatures.spawnVisibleBreachNearFocus(
+    (uint8_t)species, (uint32_t)salt) ? 1 : 0;
 }
 EMSCRIPTEN_KEEPALIVE int engine_damage_creatures(Engine* e, int x, int y, int radius, int damage) { return e->damageCreaturesAt(x, y, radius, damage) ? 1 : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_creature_count(Engine* e) { return (int)e->creatures.creatures.size(); }

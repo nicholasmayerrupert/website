@@ -151,17 +151,39 @@ try {
     dialogueFocus && (dialogueMovementBits & 1) !== 0,
     `focus ${dialogueFocus}, bits ${dialogueMovementBits}`);
   await page.reload({ waitUntil: 'load' });
+  await page.setViewportSize({ width: 768, height: 384 });
   await openMissionConsole(page);
   const consoleBounds = await page.locator('#kestrel-mission-console').boundingBox();
-  check('mission console stays inside the viewport with deployment always visible',
+  const consoleHeaderBounds = await page.locator('#kestrel-mission-console header').boundingBox();
+  const consoleScrollBounds = await page.locator('[data-mission-console-scroll]').boundingBox();
+  const deployBounds = await page.getByRole('button', { name: /Beam down to Earth/i }).boundingBox();
+  const closeBounds = await page.getByRole('button', { name: 'Close mission console' }).boundingBox();
+  const consoleScale = await page.locator('[data-mission-console-viewport]')
+    .evaluate((node) => Number(node.dataset.viewportScale));
+  check('high-zoom mission console shrinks entirely inside the viewport',
     !!consoleBounds && consoleBounds.y >= 0 &&
-    consoleBounds.y + consoleBounds.height <= 768 &&
-    await page.getByRole('button', { name: /Beam down to Earth/i }).isVisible());
+    consoleBounds.y + consoleBounds.height <= 384 &&
+    !!consoleHeaderBounds && consoleHeaderBounds.y >= 0 &&
+    consoleHeaderBounds.y + consoleHeaderBounds.height <= 384 &&
+    !!consoleScrollBounds && consoleScrollBounds.height > 0 &&
+    consoleScrollBounds.y + consoleScrollBounds.height <= 384 &&
+    !!deployBounds && deployBounds.y >= 0 && deployBounds.y + deployBounds.height <= 384 &&
+    !!closeBounds && closeBounds.y >= 0 && closeBounds.y + closeBounds.height <= 384 &&
+    consoleScale > 0 && consoleScale < 1,
+    JSON.stringify({
+      consoleBounds,
+      consoleHeaderBounds,
+      consoleScrollBounds,
+      deployBounds,
+      closeBounds,
+      consoleScale,
+    }));
   check('Earth, Moon, and Mars are visible on the mission deck',
     await page.getByText('Earth', { exact: true }).count() > 0 &&
     await page.getByText('The Moon', { exact: true }).count() > 0 &&
     await page.getByText('Mars', { exact: true }).count() > 0);
   if (pngPrefix) await page.screenshot({ path: `${pngPrefix}-ship.png`, fullPage: true });
+  await page.setViewportSize({ width: 1366, height: 768 });
 
   for (const deployment of deployments) {
     await page.evaluate((save) => {

@@ -103,6 +103,66 @@ function ViewportFit({ children, className }) {
   );
 }
 
+function MissionConsoleViewport({ children }) {
+  const frameRef = useRef(null);
+  const contentRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    const content = contentRef.current;
+    if (!frame || !content) return undefined;
+    const fit = () => {
+      const style = window.getComputedStyle(frame);
+      const horizontalPadding = parseFloat(style.paddingLeft) +
+        parseFloat(style.paddingRight);
+      const verticalPadding = parseFloat(style.paddingTop) +
+        parseFloat(style.paddingBottom);
+      const viewport = window.visualViewport;
+      const availableWidth = Math.max(
+        1,
+        Math.min(frame.clientWidth, viewport?.width || Infinity) - horizontalPadding,
+      );
+      const availableHeight = Math.max(
+        1,
+        Math.min(frame.clientHeight, viewport?.height || Infinity) - verticalPadding,
+      );
+      const scale = Math.min(1, availableWidth / 320, availableHeight / 600);
+      content.style.width = `${availableWidth / scale}px`;
+      content.style.height = `${availableHeight / scale}px`;
+      content.style.right = style.paddingRight;
+      content.style.top = style.paddingTop;
+      content.style.setProperty('--mission-console-scale', String(scale));
+      content.dataset.viewportScale = String(scale);
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(frame);
+    window.addEventListener('resize', fit);
+    window.visualViewport?.addEventListener('resize', fit);
+    fit();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+      window.visualViewport?.removeEventListener('resize', fit);
+    };
+  }, []);
+
+  return (
+    <div
+      ref={frameRef}
+      className="fixed inset-0 z-[85] box-border h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#02040a]/48 p-2 backdrop-blur-[1px] md:p-4"
+    >
+      <div
+        ref={contentRef}
+        data-mission-console-viewport
+        className="pointer-events-none absolute origin-top-right"
+        style={{ transform: 'scale(var(--mission-console-scale, 1))' }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function PlanetBadge({ mission, locked, completed, selected, onSelect }) {
   return (
     <button
@@ -266,13 +326,13 @@ function ShipHub({
         </a>
       </div>
       {terminalOpen && (
-      <div className="fixed inset-0 z-[85] box-border h-[100dvh] max-h-[100dvh] overflow-hidden bg-[#02040a]/48 p-2 backdrop-blur-[1px] md:p-4">
+      <MissionConsoleViewport>
       <section
         id="kestrel-mission-console"
         role="dialog"
         aria-modal="true"
         aria-label={`${SHIP_NAME} mission console`}
-        className="pointer-events-none ml-auto flex h-full max-h-[calc(100dvh-1rem)] min-h-0 w-full max-w-[760px] flex-col overflow-hidden md:max-h-[calc(100dvh-2rem)]"
+        className="pointer-events-none ml-auto flex h-full min-h-0 w-full max-w-[760px] flex-col overflow-hidden"
       >
         <header className="pointer-events-auto mb-2 flex shrink-0 flex-col gap-2 border-[3px] border-[#080a0c] bg-[#11171d]/92 p-2 font-mono shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)] sm:flex-row sm:items-center sm:justify-between sm:p-3">
           <div className="flex items-center gap-3">
@@ -304,7 +364,10 @@ function ShipHub({
           </div>
         </header>
 
-        <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
+        <div
+          data-mission-console-scroll
+          className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2"
+        >
         {save.interruptedRun && (
           <section className={`${PANEL} mb-3 flex items-center justify-between gap-4 border-l-[#d48755] px-4 py-3 font-mono`}>
             <div>
@@ -463,7 +526,7 @@ function ShipHub({
         </div>
         </div>
       </section>
-      </div>
+      </MissionConsoleViewport>
       )}
     </main>
   );

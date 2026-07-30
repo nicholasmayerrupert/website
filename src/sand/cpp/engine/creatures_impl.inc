@@ -313,6 +313,13 @@ bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
   return queueSpawnTelegraph(speciesId, wx, wy, salt);
 }
 
+bool CreatureSystem::spawnVisibleBreachNearFocus(uint8_t speciesId,
+                                                 uint32_t salt) {
+  double wx = 0, wy = 0;
+  if (!findSpawnNearFocus(speciesId, salt, false, wx, wy)) return false;
+  return queueSpawnTelegraph(speciesId, wx, wy, salt);
+}
+
 int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat) {
   if (speciesId >= CS_COUNT || (requireHabitat && !boxFitsHabitat(speciesId, wx, wy))) return 0;
   return addCreature(speciesId, wx, wy, nextCreatureId++);

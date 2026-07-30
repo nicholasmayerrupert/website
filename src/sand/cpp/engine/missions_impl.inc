@@ -155,6 +155,8 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   elapsedTicks = 0;
   recoveredWeaponMask = 0;
   pendingObjective = -1;
+  nextThreatActorTick = 0;
+  extractionThreatWave = 0;
   coreDestabilized = false;
   objectives.clear();
   objectives.reserve(4);
@@ -363,6 +365,8 @@ void MissionSystem::beginExtraction() {
   phase = MP_EXTRACTION;
   threatLevel = missionId == MI_RED_FURNACE ? 3
               : missionId == MI_SILENT_QUARRY ? 2 : 1;
+  nextThreatActorTick = E.actorTick;
+  extractionThreatWave = 0;
   revision++;
   if (missionId == MI_RED_FURNACE && !coreDestabilized) {
     coreDestabilized = true;
@@ -399,14 +403,36 @@ void MissionSystem::fail() {
 
 void MissionSystem::updateThreat() {
   if (phase != MP_EXTRACTION) return;
+  if (E.actorTick < nextThreatActorTick) return;
   int cadence = missionId == MI_RED_FURNACE ? 150
               : missionId == MI_SILENT_QUARRY ? 210 : 260;
-  if (((E.actorTick - startActorTick) % cadence) != 0) return;
-  uint8_t species = missionId == MI_RED_FURNACE
-    ? ((E.actorTick / cadence) & 1 ? CS_MINIGUNNER : CS_CLUSTER_WASP)
-    : missionId == MI_SILENT_QUARRY ? CS_DYNAMITEER : CS_CRAWLER;
-  E.creatures.spawnNearFocus(species,
-    (uint32_t)E.actorTick ^ ((uint32_t)missionId * 0x9e3779b9u));
+  static const uint8_t GREENFALL_ROSTER[] = {
+    CS_CRAWLER, CS_BORE_SENTINEL, CS_DYNAMITEER, CS_CLUSTER_WASP
+  };
+  static const uint8_t QUARRY_ROSTER[] = {
+    CS_BORE_SENTINEL, CS_MINIGUNNER, CS_DYNAMITEER, CS_CLUSTER_WASP
+  };
+  static const uint8_t FURNACE_ROSTER[] = {
+    CS_MINIGUNNER, CS_BORE_SENTINEL, CS_CLUSTER_WASP,
+    CS_CAUSTIC_MORTARMAN, CS_DYNAMITEER
+  };
+  const uint8_t* roster = missionId == MI_RED_FURNACE ? FURNACE_ROSTER
+                        : missionId == MI_SILENT_QUARRY ? QUARRY_ROSTER
+                        : GREENFALL_ROSTER;
+  int rosterCount = missionId == MI_RED_FURNACE ? 5 : 4;
+  int start = extractionThreatWave % rosterCount;
+  for (int offset = 0; offset < rosterCount; offset++) {
+    uint8_t species = roster[(start + offset) % rosterCount];
+    uint32_t salt = (uint32_t)E.actorTick ^
+      ((uint32_t)missionId * 0x9e3779b9u) ^
+      ((uint32_t)extractionThreatWave * 2246822519u) ^
+      ((uint32_t)species * 3266489917u);
+    if (!E.creatures.spawnVisibleBreachNearFocus(species, salt)) continue;
+    extractionThreatWave++;
+    nextThreatActorTick = E.actorTick + cadence;
+    return;
+  }
+  nextThreatActorTick = E.actorTick + 20;
 }
 
 void MissionSystem::update() {

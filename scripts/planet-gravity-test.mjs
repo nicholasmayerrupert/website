@@ -123,6 +123,8 @@ check('Kestrel is a physical foreground/background world',
 
   engine.drainSoundEvents();
   const shooter = engine.getPlayer(playerId);
+  const gunForegroundBefore = gridHash(engine.getGrid());
+  const gunBackgroundBefore = gridHash(engine.getGridBg());
   const gunItemsBefore = engine.itemCount();
   const gunSounds = new Set();
   engine.setPlayerInput(playerId, {
@@ -150,16 +152,19 @@ check('Kestrel is a physical foreground/background world',
     gunSounds.has(SOUND_EVENT.BLAST_GUN) &&
       gunSounds.has(SOUND_EVENT.WEAPON_EXPLOSION) &&
       gunPeakItems > gunItemsBefore);
+  check('player blast-gun impacts carve the Kestrel hull',
+    gridHash(engine.getGrid()) !== gunForegroundBefore ||
+      gridHash(engine.getGridBg()) !== gunBackgroundBefore);
   for (let tick = 0; tick < 24; tick++) engine.stepActors();
 
   const foregroundBefore = gridHash(engine.getGrid());
   const backgroundBefore = gridHash(engine.getGridBg());
   const itemsBefore = engine.itemCount();
   engine._detonateTnt(engine.cols / 2, engine.rows / 2);
-  check('Kestrel weapon impacts leave the protected hull and cell grid unchanged',
+  check('ordinary Kestrel detonations leave the cell grid unchanged',
     gridHash(engine.getGrid()) === foregroundBefore
       && gridHash(engine.getGridBg()) === backgroundBefore);
-  check('Kestrel weapon impacts use actor-clock cosmetic particles',
+  check('ordinary Kestrel detonations use actor-clock cosmetic particles',
     engine.itemCount() > itemsBefore);
   for (let tick = 0; tick < 40; tick++) engine.stepActors();
   check('Kestrel impact particles expire without a world simulation step',

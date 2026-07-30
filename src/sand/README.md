@@ -51,13 +51,14 @@ The campaign contains three sequential operations:
 
 `MissionSystem` in `cpp/engine/missions.hpp` and
 `cpp/engine/missions_impl.inc` owns live objective state, scripted actors,
-facility rooms, stage transitions, failure, extraction threat, completion, and
-recovered-weapon reporting. Objective and extraction positions use absolute
-world coordinates and remain stable across streaming. A mission starts only
-when its required planet matches the engine planet. Player death fails every
-operation; killing a Greenfall surveyor also fails that operation. Extraction
-raises the encounter threat, and breaching the Red Furnace core destabilizes its
-surrounding terrain.
+safe actor placement, stage transitions, failure, extraction threat, completion,
+and recovered-weapon reporting. Objective and extraction positions use absolute
+world coordinates and remain stable across streaming. A mission starts only when
+its required planet matches the engine planet. Player death fails every operation;
+killing a Greenfall surveyor also fails that operation. Extraction immediately
+opens a visible reinforcement breach and schedules additional habitat-valid
+waves while the player returns; breaching the Red Furnace core also destabilizes
+its surrounding terrain.
 
 The worker sends packed mission and objective snapshots to the main thread. The
 embed presents those snapshots as the mission tracker and world-space markers,
@@ -78,8 +79,10 @@ deployment controls visible above its scrolling briefing/loadout body. The
 tapered hull contains non-blocking background-layer engineering, medbay,
 transport, armory, command, hydroponics, galley, and archive stations while the
 foreground main-deck route stays clear. Falling below the hull triggers a short
-automatic transporter recovery. The ship is a protected static world: weapon
-impacts produce short-lived actor particles instead of permanent terrain gas.
+automatic transporter recovery. The ship does not run cellular world ticks, but
+player-owned explosive weapon impacts and bore cuts immediately carve its
+foreground and background. Ordinary environmental and enemy explosions remain
+short-lived actor particles.
 Maximum-emission `LIGHT` component panels illuminate both authored decks.
 
 ## Planets and gravity

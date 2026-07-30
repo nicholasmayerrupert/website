@@ -127,6 +127,37 @@ function rescueSurveyors(engine, playerId) {
   }
 }
 
+const EXTRACTION_ENEMIES = new Set([
+  CREATURE.CRAWLER,
+  CREATURE.DYNAMITEER,
+  CREATURE.BORE_SENTINEL,
+  CREATURE.CAUSTIC_MORTARMAN,
+  CREATURE.CLUSTER_WASP,
+  CREATURE.MINIGUNNER,
+]);
+
+function collectExtractionWaves(engine, baselineIds, required, maxTicks) {
+  const reinforcementIds = new Set();
+  for (let tick = 0; tick < maxTicks && reinforcementIds.size < required; tick++) {
+    engine.stepActors();
+    const targets = engine.getCreatures().filter((creature) =>
+      creature.alive &&
+      creature.spawnProgress === 0 &&
+      !baselineIds.has(creature.id) &&
+      EXTRACTION_ENEMIES.has(creature.species));
+    for (const target of targets) {
+      reinforcementIds.add(target.id);
+      engine.damageCreatures(
+        Math.floor(target.x + target.w * 0.5),
+        Math.floor(target.y + target.h * 0.5),
+        2,
+        100000,
+      );
+    }
+  }
+  return reinforcementIds.size;
+}
+
 {
   const { engine, playerId } = makeMissionEngine(MISSION.GREENFALL_RECOVERY);
   const terrainBefore = [gridHash(engine.getGrid()), gridHash(engine.getGridBg())];
@@ -165,6 +196,13 @@ function rescueSurveyors(engine, playerId) {
   check('three rescue-beam tags activate extraction',
     snapshot.objectives[1].current === 3 &&
     snapshot.phase === MISSION_PHASE.EXTRACTION);
+  check('Greenfall extraction immediately opens a visible reinforcement breach',
+    engine.getCreatures().some(({ spawnProgress }) => spawnProgress > 0));
+  const greenfallBaseline = new Set(engine.getCreatures()
+    .filter(({ spawnProgress }) => spawnProgress === 0)
+    .map(({ id }) => id));
+  check('Greenfall extraction sends repeated reinforcements',
+    collectExtractionWaves(engine, greenfallBaseline, 2, 600) >= 2);
   moveToExtraction(engine, playerId, snapshot);
   check('Greenfall completes at its surface beacon',
     engine.getMission().phase === MISSION_PHASE.COMPLETE);
@@ -196,6 +234,13 @@ function rescueSurveyors(engine, playerId) {
   snapshot = engine.getMission();
   check('defeating the foreman starts the Moon extraction',
     snapshot.phase === MISSION_PHASE.EXTRACTION);
+  check('Silent Quarry extraction immediately opens a visible reinforcement breach',
+    engine.getCreatures().some(({ spawnProgress }) => spawnProgress > 0));
+  const quarryBaseline = new Set(engine.getCreatures()
+    .filter(({ spawnProgress }) => spawnProgress === 0)
+    .map(({ id }) => id));
+  check('Silent Quarry extraction sends repeated reinforcements',
+    collectExtractionWaves(engine, quarryBaseline, 2, 600) >= 2);
   engine.addSpecialItem(playerId, ITEM_KIND.BORE_CANNON, 4);
   const boreSlot = engine.getInventory(playerId).slots.findIndex(({ itemKind }) =>
     itemKind === ITEM_KIND.BORE_CANNON);
@@ -246,6 +291,13 @@ function rescueSurveyors(engine, playerId) {
   check('breaching the core triggers the severe threat spike',
     snapshot.phase === MISSION_PHASE.EXTRACTION &&
     snapshot.threatLevel === 3);
+  check('Red Furnace extraction immediately opens a visible reinforcement breach',
+    engine.getCreatures().some(({ spawnProgress }) => spawnProgress > 0));
+  const furnaceBaseline = new Set(engine.getCreatures()
+    .filter(({ spawnProgress }) => spawnProgress === 0)
+    .map(({ id }) => id));
+  check('Red Furnace extraction sends repeated reinforcements',
+    collectExtractionWaves(engine, furnaceBaseline, 2, 600) >= 2);
   moveToExtraction(engine, playerId, snapshot);
   check('Red Furnace completes after the altered return route',
     engine.getMission().phase === MISSION_PHASE.COMPLETE);

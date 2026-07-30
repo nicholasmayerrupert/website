@@ -207,7 +207,6 @@ struct CreatureSpawnTelegraph {
   uint8_t species = CS_DYNAMITEER;
   double wx = 0, wy = 0;
   int ticksRemaining = 0, totalTicks = 1;
-  int threatCost = 0;
 };
 
 class CreatureSystem {
@@ -235,6 +234,7 @@ class CreatureSystem {
   int encounterNextTick = 0;
 
   const CreatureSpecies& species(const Creature& c) const { return CREATURE_SPECIES[c.species]; }
+  bool isProtectedNpc(const Creature& c) const;
   bool inLoadedWindow(const Creature& c, int margin = 0) const;
   bool boxInsideLoadedWindow(double wx, double wy, int w, int h, int margin = 0) const;
   bool boxHitsSolid(double wx, double wy, int w, int h) const;
@@ -250,8 +250,7 @@ class CreatureSystem {
   bool spawnNearFocus(uint8_t speciesId, uint32_t salt);
   bool findSpawnNearFocus(uint8_t speciesId, uint32_t salt, bool requireOffscreen,
                           double& outWx, double& outWy) const;
-  bool queueSpawnTelegraph(uint8_t speciesId, double wx, double wy, uint32_t salt,
-                           int threatCost);
+  bool queueSpawnTelegraph(uint8_t speciesId, double wx, double wy, uint32_t salt);
   void updateSpawnTelegraphs();
   int encounterCost(uint8_t speciesId) const;
   int addCreature(uint8_t speciesId, double wx, double wy, int id);

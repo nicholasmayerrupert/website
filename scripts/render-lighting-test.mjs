@@ -175,6 +175,30 @@ function sealedActorCave(e) {
   const base = mk();
   sealedActorCave(base);
   base.renderFull();
+  const darkWall = brightness(base, 66, 52);
+  base.destroy();
+
+  const mining = attachTestHooks(mk());
+  sealedActorCave(mining);
+  mining.setSurvivalInventory(true);
+  const id = mining.spawnPlayer(42, 48);
+  mining.setSelectedSlot(id, 1);
+  mining.setPlayerInput(id, {
+    bits: INPUT.PRIMARY, aimX: 62, aimY: 52, seq: 1,
+  });
+  mining.stepActors();
+  const sources = mining._collectDynamicLights();
+  mining.renderFull();
+  const litWall = brightness(mining, 66, 52);
+  check(`mining tool lights terrain around the cursor (${litWall.toFixed(1)} > ${darkWall.toFixed(1)})`,
+    sources === 1 && litWall > darkWall + 30);
+  mining.destroy();
+}
+
+{
+  const base = mk();
+  sealedActorCave(base);
+  base.renderFull();
   const darkWall = brightness(base, 40, 67);
   base.destroy();
 

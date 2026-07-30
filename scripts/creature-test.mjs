@@ -422,6 +422,11 @@ for (const [species, label] of [
   const pendingWasInert = portal &&
     !e.damageCreatures(Math.floor(portal.x + portal.w / 2), Math.floor(portal.y + portal.h / 2), 2, 50) &&
     e.getProjectiles().length === 0;
+  const player = e.getPlayers()[0];
+  e.setPlayerState(player.id, {
+    x: portal.x + portal.w * 0.5 - player.w * 0.5,
+    y: portal.y + portal.h * 0.5 - player.h * 0.5,
+  });
   let progressMonotonic = true, previousProgress = portal?.spawnProgress || 0;
   let materializedAt = 0, materialized = null;
   for (let tick = 1; tick <= 90; tick++) {
@@ -437,7 +442,7 @@ for (const [species, label] of [
     requested && portal && !portal.alive && pendingWasInert);
   check('breach warning emits its dedicated semantic cue exactly once',
     soundTypes.filter((type) => type === SOUND_EVENT.SPAWN_BREACH).length === 1);
-  check(`breach progresses monotonically and materializes after ${materializedAt} ticks`,
+  check(`breach remains reserved inside the old safety radius and materializes after ${materializedAt} ticks`,
     progressMonotonic && materialized?.id === portal?.id &&
     materialized.spawnProgress === 0 && materializedAt >= 54 && materializedAt <= 84);
   e.destroy();

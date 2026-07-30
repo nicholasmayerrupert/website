@@ -733,7 +733,8 @@ void ExplosivesSystem::damageActors(int cx, int cy, int radius, double power,
   }
 
   for (Creature& c : E.creatures.creatures) {
-    if (!c.alive || c.id == immuneCreatureId) continue;
+    if (!c.alive || c.id == immuneCreatureId ||
+        E.creatures.isProtectedNpc(c)) continue;
     const CreatureSpecies& s = E.creatures.species(c);
     double localX = c.wx - E.fg.worldOffsetX, localY = c.wy - E.fg.worldOffsetY;
     int damage = hit(localX, localY, s.w, s.h, c.id, c.hurtCooldown, c.vx, c.vy);

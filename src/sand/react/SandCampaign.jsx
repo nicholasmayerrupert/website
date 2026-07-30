@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { SandGame } from './SandGame';
 import {
   AGENCY,
@@ -42,6 +49,58 @@ function formatMissionTime(ticks) {
   const seconds = Math.floor(ticks / 60);
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function ViewportFit({ children, className }) {
+  const frameRef = useRef(null);
+  const contentRef = useRef(null);
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    const content = contentRef.current;
+    if (!frame || !content) return undefined;
+    const fit = () => {
+      const frameStyle = window.getComputedStyle(frame);
+      const horizontalPadding = parseFloat(frameStyle.paddingLeft) +
+        parseFloat(frameStyle.paddingRight);
+      const verticalPadding = parseFloat(frameStyle.paddingTop) +
+        parseFloat(frameStyle.paddingBottom);
+      const viewport = window.visualViewport;
+      const frameWidth = Math.min(frame.clientWidth, viewport?.width || Infinity);
+      const frameHeight = Math.min(frame.clientHeight, viewport?.height || Infinity);
+      const availableWidth = Math.max(1, frameWidth - horizontalPadding);
+      const availableHeight = Math.max(1, frameHeight - verticalPadding);
+      const scale = Math.min(
+        1,
+        availableWidth / Math.max(1, content.offsetWidth),
+        availableHeight / Math.max(1, content.offsetHeight),
+      );
+      content.style.setProperty('--viewport-fit-scale', String(scale));
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(frame);
+    observer.observe(content);
+    window.addEventListener('resize', fit);
+    window.visualViewport?.addEventListener('resize', fit);
+    fit();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+      window.visualViewport?.removeEventListener('resize', fit);
+    };
+  }, []);
+
+  return (
+    <div ref={frameRef} className={className}>
+      <div
+        ref={contentRef}
+        className="absolute left-1/2 top-1/2 w-[calc(100%-3rem)] max-w-2xl origin-center"
+        style={{ transform: 'translate(-50%,-50%) scale(var(--viewport-fit-scale, 1))' }}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function PlanetBadge({ mission, locked, completed, selected, onSelect }) {
@@ -524,17 +583,17 @@ function Debrief({ mission, result, newlyRecovered, failed, onContinue, onRetry 
   );
   if (failed) {
     return (
-      <div className="absolute inset-0 z-[98] grid place-items-center bg-transparent p-6 text-white">
+      <ViewportFit className="absolute inset-0 z-[98] overflow-hidden bg-transparent p-6 text-white">
         {report}
-      </div>
+      </ViewportFit>
     );
   }
   return (
     <main className="relative h-screen overflow-hidden bg-[#02040a] text-white">
       <SandGame mode="survival" planet="ship" worldSeed={0x4b455354} />
-      <div className="absolute inset-0 z-[90] grid place-items-center bg-[#02040a]/28 p-6 backdrop-blur-[1px]">
+      <ViewportFit className="absolute inset-0 z-[90] overflow-hidden bg-[#02040a]/28 p-6 backdrop-blur-[1px]">
         {report}
-      </div>
+      </ViewportFit>
     </main>
   );
 }
@@ -710,13 +769,13 @@ export function SandCampaign() {
     const normalized = loadoutForCampaignMission(nextSave, missionId);
     setSelection(normalized);
     setMissionUpdate(null);
-    setRun({
+    setRun((current) => ({
       missionId,
       planet: getCampaignMission(missionId).planet,
       worldSeed: worldSeed >>> 0,
       loadout: buildMissionLoadout(missionId, normalized, nextSave.unlockedWeapons),
-      attempt: 0,
-    });
+      attempt: (current?.attempt ?? -1) + 1,
+    }));
     setPhase('deploying');
   }, [commitSave]);
 

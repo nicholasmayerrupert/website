@@ -486,7 +486,9 @@ void ProjectileSystem::updateProjectiles() {
     }
     double wx = E.fg.worldOffsetX + px, wy = E.fg.worldOffsetY + py;
     for (Creature& c : E.creatures.creatures) {
-      if (!c.alive || c.hurtCooldown > 0 || (owner < 0 && c.id == -owner)) continue;
+      if (!c.alive || c.hurtCooldown > 0 ||
+          E.creatures.isProtectedNpc(c) ||
+          (owner < 0 && c.id == -owner)) continue;
       const CreatureSpecies& s = E.creatures.species(c);
       double nx = std::max(c.wx, std::min(wx, c.wx + s.w));
       double ny = std::max(c.wy, std::min(wy, c.wy + s.h));

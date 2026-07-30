@@ -28,110 +28,100 @@ Creature* MissionSystem::findCreature(int actorId) {
   return nullptr;
 }
 
-void MissionSystem::carveRoom(int worldX, int worldY, int radius) {
-  int localX = worldX - E.fg.worldOffsetX;
-  int localY = worldY - E.fg.worldOffsetY;
-  if (localX + radius <= 1 || localX - radius >= E.cols - 2 ||
-      localY + radius <= 1 || localY - radius >= E.rows - 1) return;
-  E.useLayer(&E.fg);
-  E.eraseDisc(localX, localY, radius);
-  E.useLayer(&E.fg);
+bool MissionSystem::safeMissionSpawnAt(uint8_t species, int localX,
+                                       int localY) const {
+  static constexpr int HAZARD_MARGIN = 4;
+  const CreatureSpecies& policy = CREATURE_SPECIES[species];
+  int x0 = localX, x1 = localX + policy.w - 1;
+  int y0 = localY, y1 = localY + policy.h - 1;
+  if (x0 - HAZARD_MARGIN < 1 || x1 + HAZARD_MARGIN >= E.cols - 1 ||
+      y0 - HAZARD_MARGIN < 1 || y1 + HAZARD_MARGIN + 1 >= E.rows - 1)
+    return false;
+  auto dangerous = [](uint8_t material) {
+    return material == FIRE || material == ACID || material == LAVA ||
+           material == OIL || material == METHANE || material == TNT;
+  };
+  for (int y = y0 - HAZARD_MARGIN; y <= y1 + HAZARD_MARGIN; y++)
+    for (int x = x0 - HAZARD_MARGIN; x <= x1 + HAZARD_MARGIN; x++)
+      if (dangerous(E.fg.grid[E.I(x, y)])) return false;
+  for (int y = y0; y <= y1; y++) for (int x = x0; x <= x1; x++) {
+    uint8_t material = E.fg.grid[E.I(x, y)];
+    if (E.isBlockingForPlayer(material) || E.isLiquidMaterial(material))
+      return false;
+  }
+  int support = 0;
+  for (int x = x0; x <= x1; x++) {
+    int k = E.I(x, y1 + 1);
+    uint8_t material = E.fg.grid[k];
+    if (E.isBlockingForPlayer(material) && !dangerous(material) &&
+        E.fg.bodyOwner[k] < 0 && E.fg.groundedCell[k])
+      support++;
+  }
+  if (support < imax(2, (policy.w + 1) / 2)) return false;
+
+  double worldX = E.fg.worldOffsetX + localX;
+  double worldY = E.fg.worldOffsetY + localY;
+  for (const Creature& creature : E.creatures.creatures) {
+    if (!creature.alive) continue;
+    const CreatureSpecies& other = E.creatures.species(creature);
+    if (worldX < creature.wx + other.w && worldX + policy.w > creature.wx &&
+        worldY < creature.wy + other.h && worldY + policy.h > creature.wy)
+      return false;
+  }
+  for (const Player& player : E.psys.players) {
+    if (!player.active || !player.alive) continue;
+    if (localX < player.px + player.w && localX + policy.w > player.px &&
+        localY < player.py + player.h && localY + policy.h > player.py)
+      return false;
+  }
+  return true;
 }
 
-void MissionSystem::authorFacilityRoom(int worldX, int worldY, int radius) {
-  carveRoom(worldX, worldY, radius);
-  int halfW = imax(8, radius * 7 / 10);
-  int halfH = imax(6, radius / 2);
-  uint8_t frameMaterial = missionId == MI_SILENT_QUARRY ? STONE : BRICK;
-
-  int fgX = worldX - E.fg.worldOffsetX;
-  int fgY = worldY - E.fg.worldOffsetY;
-  std::unordered_set<int> foregroundFrame;
-  foregroundFrame.reserve((halfW * 2 + halfH * 2) * 3);
-  E.useLayer(&E.fg);
-  auto addForeground = [&](int x, int y) {
-    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return;
-    int k = E.I(x, y);
-    if (E.fg.bodyOwner[k] >= 0 || E.isComponentMaterial(E.fg.grid[k])) return;
-    E.writeGridIndex(k, frameMaterial);
-    foregroundFrame.insert(k);
+bool MissionSystem::findSafeMissionSpawn(uint8_t species, int worldX,
+                                         int worldY, double& spawnWorldX,
+                                         double& spawnWorldY) const {
+  const CreatureSpecies& policy = CREATURE_SPECIES[species];
+  int baseX = (int)std::lround(worldX - E.fg.worldOffsetX - policy.w * .5);
+  int baseY = (int)std::lround(worldY - E.fg.worldOffsetY - policy.h);
+  int bestDistance2 = INT_MAX, bestX = 0, bestY = 0;
+  auto consider = [&](int x, int y) {
+    int dx = x - baseX, dy = y - baseY;
+    int distance2 = dx * dx + dy * dy;
+    if (distance2 >= bestDistance2 || !safeMissionSpawnAt(species, x, y))
+      return;
+    bestDistance2 = distance2;
+    bestX = x;
+    bestY = y;
   };
-  for (int x = fgX - halfW; x <= fgX + halfW; x++) {
-    addForeground(x, fgY - halfH);
-    addForeground(x, fgY + halfH);
-  }
-  for (int y = fgY - halfH; y <= fgY + halfH; y++) {
-    bool doorway = y >= fgY - 4 && y < fgY + halfH;
-    if (!doorway) {
-      addForeground(fgX - halfW, y);
-      addForeground(fgX + halfW, y);
+  static constexpr int NEAR_X = 96;
+  static constexpr int NEAR_Y = 72;
+  for (int ax = 0; ax <= NEAR_X; ax++) {
+    for (int xs = 0; xs < (ax == 0 ? 1 : 2); xs++) {
+      int x = baseX + (ax == 0 ? 0 : (xs == 0 ? -ax : ax));
+      for (int ay = 0; ay <= NEAR_Y; ay++) {
+        int distance2 = ax * ax + ay * ay;
+        if (distance2 >= bestDistance2) continue;
+        for (int ys = 0; ys < (ay == 0 ? 1 : 2); ys++)
+          consider(x, baseY + (ay == 0 ? 0 : (ys == 0 ? -ay : ay)));
+      }
     }
   }
-  E.tools.registerComponentCells(frameMaterial, foregroundFrame);
-
-  int localX = worldX - E.bg.worldOffsetX;
-  int localY = worldY - E.bg.worldOffsetY;
-  if (localX + radius <= 1 || localX - radius >= E.cols - 2 ||
-      localY + radius <= 1 || localY - radius >= E.rows - 1) return;
-  E.useLayer(&E.bg);
-  E.eraseDisc(localX, localY, radius);
-  std::unordered_set<int> frame;
-  frame.reserve((halfW * 2 + halfH * 2) * 2 + E.rows - localY);
-  auto add = [&](int x, int y) {
-    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return;
-    int k = E.I(x, y);
-    if (E.bg.bodyOwner[k] >= 0 || E.isComponentMaterial(E.bg.grid[k])) return;
-    E.writeGridIndex(k, frameMaterial);
-    frame.insert(k);
-  };
-  for (int x = localX - halfW; x <= localX + halfW; x++) {
-    add(x, localY - halfH);
-    add(x, localY + halfH);
+  if (bestDistance2 == INT_MAX) {
+    for (int y = 5; y + policy.h + 5 < E.rows; y++)
+      for (int x = 5; x + policy.w + 5 < E.cols; x++)
+        consider(x, y);
   }
-  for (int y = localY - halfH; y <= localY + halfH; y++) {
-    add(localX - halfW, y);
-    add(localX + halfW, y);
-    add(localX - halfW / 2, y);
-    add(localX + halfW / 2, y);
-  }
-  // The background support reaches the loaded floor, keeping the authored
-  // frame grounded while retaining ordinary destructible component semantics.
-  for (int y = localY + halfH; y < E.rows; y++) add(localX, y);
-  E.tools.registerComponentCells(frameMaterial, frame);
-
-  std::unordered_set<int> lights, glass, timber, machinery;
-  auto decorate = [&](int x, int y, uint8_t material,
-                      std::unordered_set<int>& cells) {
-    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return;
-    int k = E.I(x, y);
-    if (E.bg.bodyOwner[k] >= 0 || E.isComponentMaterial(E.bg.grid[k])) return;
-    E.writeGridIndex(k, material);
-    cells.insert(k);
-  };
-  for (int x = localX - halfW + 3; x <= localX + halfW - 3; x += 7) {
-    decorate(x, localY - halfH + 1, LIGHT, lights);
-    decorate(x + 1, localY - halfH + 1, LIGHT, lights);
-  }
-  for (int x = localX - halfW + 4; x <= localX + halfW - 6; x += 10) {
-    for (int y = localY - 3; y < localY + halfH; y++)
-      decorate(x, y, GLASS, glass);
-    for (int y = localY + halfH - 4; y < localY + halfH; y++)
-      decorate(x + 4, y, IRON_ORE, machinery);
-  }
-  for (int x = localX - halfW + 2; x <= localX + halfW - 2; x++)
-    decorate(x, localY + halfH - 1, PINE_WOOD, timber);
-  E.tools.registerComponentCells(LIGHT, lights);
-  E.tools.registerComponentCells(GLASS, glass);
-  E.tools.registerComponentCells(PINE_WOOD, timber);
-  E.tools.registerComponentCells(IRON_ORE, machinery);
-  E.useLayer(&E.fg);
+  if (bestDistance2 == INT_MAX) return false;
+  spawnWorldX = E.fg.worldOffsetX + bestX;
+  spawnWorldY = E.fg.worldOffsetY + bestY;
+  return true;
 }
 
 int MissionSystem::spawnMissionCreature(uint8_t species, int worldX, int worldY,
                                         int objectiveId, int offsetX) {
-  const CreatureSpecies& policy = CREATURE_SPECIES[species];
-  double wx = worldX + offsetX - policy.w * .5;
-  double wy = worldY - policy.h * .5;
+  double wx = 0, wy = 0;
+  if (!findSafeMissionSpawn(species, worldX + offsetX, worldY, wx, wy))
+    return 0;
   int id = E.creatures.spawnCreature(species, wx, wy, false);
   if (!id) return 0;
   Creature* creature = findCreature(id);
@@ -140,6 +130,13 @@ int MissionSystem::spawnMissionCreature(uint8_t species, int worldX, int worldY,
     creature->missionActor = true;
   }
   return id;
+}
+
+int MissionSystem::spawnMissionResident(uint8_t species, int worldX,
+                                        int worldY) {
+  double wx = 0, wy = 0;
+  if (!findSafeMissionSpawn(species, worldX, worldY, wx, wy)) return 0;
+  return E.creatures.spawnCreature(species, wx, wy, false);
 }
 
 bool MissionSystem::start(int id, int ownerPlayerId) {
@@ -162,6 +159,8 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   objectives.clear();
   objectives.reserve(4);
   E.creatureNaturalSpawning = false;
+  E.useLayer(&E.fg);
+  E.ensureGroundedSingleLayer();
 
   Player* player = E.findPlayer(playerId);
   int centerX = (int)std::lround(player->spawnWorldX);
@@ -176,11 +175,6 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   auto depth = [&](double fraction) {
     return surfaceY + imax(32, (int)std::lround(maxDepth * fraction));
   };
-  auto spawnResident = [&](uint8_t species, int worldX, int worldY) {
-    const CreatureSpecies& resident = CREATURE_SPECIES[species];
-    return E.creatures.spawnCreature(
-      species, worldX - resident.w * .5, worldY - resident.h, false);
-  };
 
   if (missionId == MI_GREENFALL_RECOVERY) {
     int crewX = centerX + side * 2 / 3, crewY = depth(.40);
@@ -191,12 +185,11 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
       OK_RESCUE, OS_LOCKED, 3, rescueX, rescueY, MISSION_FLAG_PRIMARY_MARKER);
     addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
                  MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-    authorFacilityRoom(crewX, crewY, 20);
-    authorFacilityRoom(rescueX, rescueY, 20);
     clear.targetActorId = spawnMissionCreature(
-      CS_DYNAMITEER, crewX, crewY + 10, clear.id, -8);
-    spawnMissionCreature(CS_CAUSTIC_MORTARMAN, crewX, crewY + 10, clear.id, 0);
-    spawnMissionCreature(CS_DYNAMITEER, crewX, crewY + 10, clear.id, 8);
+      CS_DYNAMITEER, crewX, crewY, clear.id, -8);
+    spawnMissionCreature(CS_CAUSTIC_MORTARMAN, crewX, crewY, clear.id, 0);
+    spawnMissionCreature(CS_DYNAMITEER, crewX, crewY, clear.id, 8);
+    refreshObjectiveMarker(clear);
     rescue.targetActorId = 0;
   } else if (missionId == MI_SILENT_QUARRY) {
     int anchorY = depth(.48);
@@ -210,14 +203,12 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     extractionY = E.terrain.genSurfaceAbs(extractionX) - 5;
     addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
                  MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-    authorFacilityRoom(centerX - side, anchorY, 17);
-    authorFacilityRoom(centerX + side, depth(.68), 17);
-    authorFacilityRoom(boss.worldX, boss.worldY, 24);
-    spawnResident(CS_IRIS_ENGINEER, centerX - side + 8, anchorY + 8);
-    spawnResident(CS_SURVEYOR, centerX + side - 8, depth(.68) + 8);
+    spawnMissionResident(CS_IRIS_ENGINEER, centerX - side + 8, anchorY);
+    spawnMissionResident(CS_SURVEYOR, centerX + side - 8, depth(.68));
     anchors.targetActorId = spawnMissionCreature(
       CS_SHIELD_ANCHOR, centerX - side, anchorY, anchors.id);
     spawnMissionCreature(CS_SHIELD_ANCHOR, centerX + side, depth(.68), anchors.id);
+    refreshObjectiveMarker(anchors);
   } else {
     int y0 = depth(.36), y1 = depth(.58), y2 = depth(.78);
     MissionObjective& anchors = addObjective(
@@ -233,17 +224,13 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     extractionY = E.terrain.genSurfaceAbs(extractionX) - 6;
     addObjective(OK_EXTRACT, OS_LOCKED, 1, extractionX, extractionY,
                  MISSION_FLAG_PRIMARY_MARKER | MISSION_FLAG_EXTRACTION);
-    authorFacilityRoom(centerX - side, y0, 17);
-    authorFacilityRoom(centerX, y1, 17);
-    authorFacilityRoom(centerX + side, y2, 17);
-    authorFacilityRoom(boss.worldX, boss.worldY, 25);
-    authorFacilityRoom(core.worldX, core.worldY, 22);
-    spawnResident(CS_IRIS_ENGINEER, centerX - side + 8, y0 + 8);
-    spawnResident(CS_SURVEYOR, centerX + side - 8, y2 + 8);
+    spawnMissionResident(CS_IRIS_ENGINEER, centerX - side + 8, y0);
+    spawnMissionResident(CS_SURVEYOR, centerX + side - 8, y2);
     anchors.targetActorId = spawnMissionCreature(
       CS_SHIELD_ANCHOR, centerX - side, y0, anchors.id);
     spawnMissionCreature(CS_SHIELD_ANCHOR, centerX, y1, anchors.id);
     spawnMissionCreature(CS_SHIELD_ANCHOR, centerX + side, y2, anchors.id);
+    refreshObjectiveMarker(anchors);
     core.targetActorId = 0;
   }
 
@@ -257,26 +244,29 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
 void MissionSystem::activateObjective(int objectiveId) {
   MissionObjective* objective = findObjective(objectiveId);
   if (!objective || objective->state != OS_LOCKED) return;
+  E.useLayer(&E.fg);
+  E.ensureGroundedSingleLayer();
   objective->state = OS_ACTIVE;
   revision++;
   if (objective->type == OK_RESCUE) {
     objective->targetActorId = spawnMissionCreature(
-      CS_SURVEYOR, objective->worldX, objective->worldY + 10,
+      CS_SURVEYOR, objective->worldX, objective->worldY,
       objective->id, -8);
     spawnMissionCreature(CS_SURVEYOR, objective->worldX,
-                         objective->worldY + 10, objective->id, 0);
+                         objective->worldY, objective->id, 0);
     spawnMissionCreature(CS_SURVEYOR, objective->worldX,
-                         objective->worldY + 10, objective->id, 8);
+                         objective->worldY, objective->id, 8);
   } else if (objective->type == OK_BOSS) {
     uint8_t species = missionId == MI_SILENT_QUARRY
       ? CS_QUARRY_FOREMAN : CS_REACTOR_WARDEN;
     objective->targetActorId = spawnMissionCreature(
-      species, objective->worldX, objective->worldY + 10, objective->id);
+      species, objective->worldX, objective->worldY, objective->id);
   } else if (objective->type == OK_CORE) {
     objective->targetActorId = spawnMissionCreature(
       CS_REACTOR_CORE, objective->worldX, objective->worldY,
       objective->id);
   }
+  refreshObjectiveMarker(*objective);
 }
 
 void MissionSystem::refreshObjectiveMarker(MissionObjective& objective) {

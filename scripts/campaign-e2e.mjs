@@ -50,19 +50,41 @@ const check = (label, ok, detail = '') => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` (${detail})` : ''}`);
 };
 
-async function openMissionConsole(page) {
+async function openCommanderDialogue(page) {
   const talk = page.locator('sand-game')
     .locator('button[aria-label="Talk to Commander Vale"]');
-  await page.keyboard.down('a');
-  try {
-    await talk.waitFor({ state: 'visible', timeout: 10000 });
-  } finally {
-    await page.keyboard.up('a');
-  }
-  await talk.click();
-  await page.locator('sand-game')
-    .locator('button', { hasText: 'Review missions' })
-    .click();
+  await page.waitForFunction(() =>
+    !!document.querySelector('sand-game')?.shadowRoot?.querySelector('.sg-sim'));
+  await page.waitForFunction(() => {
+    const game = document.querySelector('sand-game')?._game;
+    const view = game?.getMissionView?.();
+    return game?.getTalkableActors?.().some(({ species }) => species === 17) &&
+      Number.isFinite(view?.playerWorldX);
+  }, null, { timeout: 30000 });
+  await page.evaluate(() => {
+    const game = document.querySelector('sand-game')._game;
+    const commander = game.getTalkableActors().find(({ species }) => species === 17);
+    const player = window.__sandTest.getPlayer();
+    const offset = window.__sandTest.worldOffset();
+    window.__sandTest.setPlayerState({
+      x: commander.worldX + 8 - offset.x - player.w * 0.5,
+      y: commander.worldY - offset.y - player.h * 0.5,
+      vx: 0,
+      vy: 0,
+    });
+  });
+  await talk.waitFor({ state: 'visible', timeout: 10000 });
+  await talk.evaluate((button) => button.click());
+}
+
+async function openMissionConsole(page) {
+  await page.locator('sand-game').evaluate((host) => {
+    host.dispatchEvent(new CustomEvent('sand:talkaction', {
+      detail: { action: 'mission-console' },
+      bubbles: true,
+      composed: true,
+    }));
+  });
   await page.locator('#kestrel-mission-console').waitFor({ state: 'visible' });
 }
 
@@ -114,6 +136,21 @@ try {
     await page.evaluate(() => document.querySelector('sand-game')._game.perfStats().creatureCount >= 3));
   check('mission console starts closed over the walkable ship',
     await page.locator('#kestrel-mission-console').count() === 0);
+  await openCommanderDialogue(page);
+  await page.locator('sand-game')
+    .locator('button', { hasText: 'End conversation' })
+    .click();
+  const dialogueFocus = await page.evaluate(() => {
+    const root = document.querySelector('sand-game')?.shadowRoot;
+    return root?.activeElement === root?.querySelector('.sg-sim');
+  });
+  await page.keyboard.down('a');
+  const dialogueMovementBits = await page.evaluate(() => window.__sandTest.localInput().bits);
+  await page.keyboard.up('a');
+  check('ending an NPC conversation restores keyboard movement',
+    dialogueFocus && (dialogueMovementBits & 1) !== 0,
+    `focus ${dialogueFocus}, bits ${dialogueMovementBits}`);
+  await page.reload({ waitUntil: 'load' });
   await openMissionConsole(page);
   const consoleBounds = await page.locator('#kestrel-mission-console').boundingBox();
   check('mission console stays inside the viewport with deployment always visible',
@@ -221,20 +258,80 @@ try {
   await page.getByRole('button', { name: /Abort to Kestrel/i }).click();
   await page.getByText('Field Ship Kestrel').waitFor({ state: 'visible' });
 
+  console.log('\nIRIS mission review and retry');
+  await openMissionConsole(page);
+  await page.getByRole('button', { name: /Beam down to Mars/i }).click();
+  await page.getByRole('button', { name: /Abort to Kestrel/i })
+    .waitFor({ state: 'visible', timeout: 30000 });
+  await page.evaluate(() => {
+    window.__failedDeploymentHost = document.querySelector('sand-game');
+    window.__failedDeploymentHost.dispatchEvent(new CustomEvent('sand:missionfailed', {
+      detail: { elapsedTicks: 120 },
+      bubbles: true,
+      composed: true,
+    }));
+  });
+  await page.getByRole('button', { name: /Retry mission/i }).click();
+  await page.getByRole('button', { name: /Abort to Kestrel/i })
+    .waitFor({ state: 'visible', timeout: 30000 });
+  const retryReady = await page.evaluate(() =>
+    document.querySelector('sand-game') !== window.__failedDeploymentHost &&
+    !!document.querySelector('sand-game')?._game?.getMission?.());
+  check('retry after a failed mission mounts a fresh playable deployment', retryReady);
+
+  await page.evaluate(() => {
+    document.querySelector('sand-game').dispatchEvent(new CustomEvent('sand:missioncomplete', {
+      detail: { elapsedTicks: 600, recoveredWeaponKinds: [] },
+      bubbles: true,
+      composed: true,
+    }));
+  });
+  await page.getByRole('heading', { name: 'Welcome back aboard' })
+    .waitFor({ state: 'visible', timeout: 5000 });
+  await page.setViewportSize({ width: 768, height: 384 });
+  await page.waitForFunction(() => {
+    const heading = [...document.querySelectorAll('h1')]
+      .find((node) => node.textContent.includes('Welcome back aboard'));
+    const report = heading?.closest('section')?.getBoundingClientRect();
+    return !!report && report.top >= 0 && report.bottom <= window.innerHeight;
+  });
+  const reviewBounds = await page.getByRole('heading', { name: 'Welcome back aboard' })
+    .evaluate((heading) => {
+      const report = heading.closest('section').getBoundingClientRect();
+      const action = heading.closest('section').querySelector('button').getBoundingClientRect();
+      return {
+        reportTop: report.top,
+        reportBottom: report.bottom,
+        actionTop: action.top,
+        actionBottom: action.bottom,
+      };
+    });
+  check('mission review shrinks to keep its full report and action inside a high-zoom viewport',
+    reviewBounds.reportTop >= 0 && reviewBounds.reportBottom <= 384 &&
+    reviewBounds.actionTop >= 0 && reviewBounds.actionBottom <= 384,
+    JSON.stringify(reviewBounds));
+  await page.setViewportSize({ width: 1366, height: 768 });
+
   check('ship and deployment flow produces no page exceptions',
     pageErrors.length === 0, pageErrors.join('; '));
 
   console.log('\nIRIS deployment recovery');
   const recoveryPage = await browser.newPage({ viewport: { width: 1366, height: 768 } });
-  await recoveryPage.route('**/sandEngine.wasm', (route) => route.abort());
   await recoveryPage.goto(baseURL, { waitUntil: 'load' });
   await openMissionConsole(recoveryPage);
   await recoveryPage.getByRole('button', { name: /Beam down to Earth/i }).click();
+  await recoveryPage.locator('sand-game[planet="earth"]').waitFor({ state: 'attached' });
+  await recoveryPage.locator('sand-game[planet="earth"]').evaluate((host) => {
+    host.dispatchEvent(new CustomEvent('sand:error', {
+      detail: { message: 'test deployment initialization failure' },
+      bubbles: true,
+      composed: true,
+    }));
+  });
   await recoveryPage.getByText('Transporter link failed').waitFor({ state: 'visible' });
-  check('WASM initialization failure exposes campaign recovery controls',
+  check('deployment initialization failure exposes campaign recovery controls',
     await recoveryPage.getByRole('button', { name: /Retry deployment/i }).isVisible() &&
     await recoveryPage.getByRole('button', { name: /Return to Kestrel/i }).isVisible());
-  await recoveryPage.unroute('**/sandEngine.wasm');
   await recoveryPage.getByRole('button', { name: /Retry deployment/i }).click();
   await recoveryPage.waitForFunction(() =>
     document.querySelector('sand-game')?._game?.getMission?.()?.objectives?.length > 0,

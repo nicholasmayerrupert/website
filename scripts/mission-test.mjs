@@ -4,8 +4,8 @@
 import {
   createEngineWasm,
   initSandWasm,
-  MAT,
 } from '../src/sand/wasmBridge/engineFactory.js';
+import { KIND, MATERIALS, MAT } from '../src/sand/materials.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import {
   CREATURE,
@@ -17,7 +17,7 @@ import {
   OBJECTIVE_STATE,
   PLANET,
 } from '../src/sand/wasmBridge/abi.generated.js';
-import { makeChecker } from './sand-test-util.mjs';
+import { gridHash, makeChecker } from './sand-test-util.mjs';
 
 await initSandWasm();
 const { check, done } = makeChecker('IRIS mission authority');
@@ -43,43 +43,40 @@ function makeMissionEngine(missionId) {
   return { engine, playerId };
 }
 
-function backgroundBodyBaseline(missionId) {
-  const engine = attachTestHooks(createEngineWasm({
-    cols: 512,
-    rows: 448,
-    worldSeed: 0x1A15BEEF,
-    sinksOn: false,
-    infinite: true,
-    planetId: PLANET_FOR_MISSION[missionId],
-  }));
-  for (let tick = 0; tick < 3; tick++) engine.stepWorld();
-  const count = engine._bodyCountLayer(1);
-  engine.destroy();
-  return count;
-}
-
 function livingSpecies(engine, species) {
   return engine.getCreatures().filter((creature) =>
     creature.alive && creature.species === species);
 }
 
-function insideFurnishedFacility(engine, creature) {
-  const foreground = engine.getGrid();
-  const background = engine.getGridBg();
-  const cx = Math.floor(creature.x + creature.w * 0.5);
-  const cy = Math.floor(creature.y + creature.h * 0.5);
-  let frame = 0;
-  const details = new Set();
-  for (let y = Math.max(1, cy - 22); y <= Math.min(engine.rows - 2, cy + 22); y++) {
-    for (let x = Math.max(1, cx - 24); x <= Math.min(engine.cols - 2, cx + 24); x++) {
-      const k = y * engine.cols + x;
-      if (foreground[k] === MAT.BRICK || foreground[k] === MAT.STONE) frame++;
-      if (background[k] === MAT.LIGHT || background[k] === MAT.GLASS ||
-          background[k] === MAT.PINE_WOOD || background[k] === MAT.IRON_ORE)
-        details.add(background[k]);
+function safelyPlacedInWorld(engine, creature) {
+  const grid = engine.getGrid();
+  const x0 = Math.floor(creature.x);
+  const x1 = Math.floor(creature.x + creature.w - 1e-6);
+  const y0 = Math.floor(creature.y);
+  const y1 = Math.floor(creature.y + creature.h - 1e-6);
+  const dangerous = new Set([
+    MAT.FIRE, MAT.ACID, MAT.LAVA, MAT.OIL, MAT.METHANE, MAT.TNT,
+  ]);
+  for (let y = y0 - 4; y <= y1 + 4; y++) {
+    for (let x = x0 - 4; x <= x1 + 4; x++) {
+      if (x < 0 || x >= engine.cols || y < 0 || y >= engine.rows ||
+          dangerous.has(grid[y * engine.cols + x])) return false;
     }
   }
-  return frame >= 30 && details.size >= 3;
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const kind = MATERIALS[grid[y * engine.cols + x]].kind;
+      if (kind !== KIND.NONE && kind !== KIND.GAS) return false;
+    }
+  }
+  let support = 0;
+  for (let x = x0; x <= x1; x++) {
+    const material = grid[(y1 + 1) * engine.cols + x];
+    const kind = MATERIALS[material].kind;
+    if (kind !== KIND.NONE && kind !== KIND.GAS && kind !== KIND.LIQUID &&
+        !dangerous.has(material)) support++;
+  }
+  return support >= Math.max(2, Math.ceil(creature.w / 2));
 }
 
 function eliminate(engine, creatures) {
@@ -132,15 +129,16 @@ function rescueSurveyors(engine, playerId) {
 
 {
   const { engine, playerId } = makeMissionEngine(MISSION.GREENFALL_RECOVERY);
-  const backgroundBodies = engine._bodyCountLayer(1);
-  const settledBackgroundBodies = backgroundBodyBaseline(MISSION.GREENFALL_RECOVERY);
+  const terrainBefore = [gridHash(engine.getGrid()), gridHash(engine.getGridBg())];
   check('Greenfall starts only on Earth',
     engine.startMission(MISSION.GREENFALL_RECOVERY, playerId));
-  check('Greenfall facilities begin as grounded background structure',
-    engine._bodyCountLayer(1) === backgroundBodies);
-  for (let tick = 0; tick < 3; tick++) engine.stepWorld();
-  check('Greenfall facilities remain grounded after world steps',
-    engine._bodyCountLayer(1) === settledBackgroundBodies);
+  check('Greenfall places actors without carving or authoring terrain',
+    gridHash(engine.getGrid()) === terrainBefore[0] &&
+    gridHash(engine.getGridBg()) === terrainBefore[1]);
+  check('Greenfall enemies begin in clear, supported, hazard-free world space',
+    [...livingSpecies(engine, CREATURE.DYNAMITEER),
+      ...livingSpecies(engine, CREATURE.CAUSTIC_MORTARMAN)]
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
   check('a mission engine rejects a second authored operation',
     !engine.startMission(MISSION.GREENFALL_RECOVERY, playerId));
   let snapshot = engine.getMission();
@@ -158,9 +156,9 @@ function rescueSurveyors(engine, playerId) {
     snapshot.objectives[0].state === OBJECTIVE_STATE.COMPLETE &&
     snapshot.objectives[1].state === OBJECTIVE_STATE.ACTIVE &&
     livingSpecies(engine, CREATURE.SURVEYOR).length === 3);
-  check('Greenfall surveyors wait inside furnished facility rooms',
+  check('Greenfall surveyors wait in clear, supported, hazard-free world space',
     livingSpecies(engine, CREATURE.SURVEYOR)
-      .every((creature) => insideFurnishedFacility(engine, creature)));
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
 
   rescueSurveyors(engine, playerId);
   snapshot = engine.getMission();
@@ -175,24 +173,25 @@ function rescueSurveyors(engine, playerId) {
 
 {
   const { engine, playerId } = makeMissionEngine(MISSION.SILENT_QUARRY);
-  const backgroundBodies = engine._bodyCountLayer(1);
-  const settledBackgroundBodies = backgroundBodyBaseline(MISSION.SILENT_QUARRY);
+  const terrainBefore = [gridHash(engine.getGrid()), gridHash(engine.getGridBg())];
   check('Silent Quarry starts on the Moon',
     engine.startMission(MISSION.SILENT_QUARRY, playerId));
-  check('Moon facilities begin as grounded background structure',
-    engine._bodyCountLayer(1) === backgroundBodies);
-  for (let tick = 0; tick < 3; tick++) engine.stepWorld();
-  check('Moon facilities remain grounded after world steps',
-    engine._bodyCountLayer(1) === settledBackgroundBodies);
-  check('Moon human residents occupy furnished facility rooms',
+  check('Silent Quarry places actors without carving or authoring terrain',
+    gridHash(engine.getGrid()) === terrainBefore[0] &&
+    gridHash(engine.getGridBg()) === terrainBefore[1]);
+  check('Moon actors begin in clear, supported, hazard-free world space',
     [...livingSpecies(engine, CREATURE.IRIS_ENGINEER),
-      ...livingSpecies(engine, CREATURE.SURVEYOR)]
-      .every((creature) => insideFurnishedFacility(engine, creature)));
+      ...livingSpecies(engine, CREATURE.SURVEYOR),
+      ...livingSpecies(engine, CREATURE.SHIELD_ANCHOR)]
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
   let snapshot = engine.getMission();
   check('two Moon anchors unlock the quarry foreman',
     snapshot.objectives[0].current === 2 &&
     livingSpecies(engine, CREATURE.QUARRY_FOREMAN).length === 1);
+  check('the quarry foreman materializes in safe existing world space',
+    livingSpecies(engine, CREATURE.QUARRY_FOREMAN)
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.QUARRY_FOREMAN));
   snapshot = engine.getMission();
   check('defeating the foreman starts the Moon extraction',
@@ -215,29 +214,33 @@ function rescueSurveyors(engine, playerId) {
 
 {
   const { engine, playerId } = makeMissionEngine(MISSION.RED_FURNACE);
-  const backgroundBodies = engine._bodyCountLayer(1);
-  const settledBackgroundBodies = backgroundBodyBaseline(MISSION.RED_FURNACE);
+  const terrainBefore = [gridHash(engine.getGrid()), gridHash(engine.getGridBg())];
   check('Red Furnace starts on Mars',
     engine.startMission(MISSION.RED_FURNACE, playerId));
-  check('Mars facilities begin as grounded background structure',
-    engine._bodyCountLayer(1) === backgroundBodies);
-  for (let tick = 0; tick < 3; tick++) engine.stepWorld();
-  check('Mars facilities remain grounded after world steps',
-    engine._bodyCountLayer(1) === settledBackgroundBodies);
-  check('Mars human residents occupy furnished facility rooms',
+  check('Red Furnace places actors without carving or authoring terrain',
+    gridHash(engine.getGrid()) === terrainBefore[0] &&
+    gridHash(engine.getGridBg()) === terrainBefore[1]);
+  check('Mars actors begin in clear, supported, hazard-free world space',
     [...livingSpecies(engine, CREATURE.IRIS_ENGINEER),
-      ...livingSpecies(engine, CREATURE.SURVEYOR)]
-      .every((creature) => insideFurnishedFacility(engine, creature)));
+      ...livingSpecies(engine, CREATURE.SURVEYOR),
+      ...livingSpecies(engine, CREATURE.SHIELD_ANCHOR)]
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
   let snapshot = engine.getMission();
   check('three Mars anchors unlock the reactor warden',
     snapshot.objectives[0].current === 3 &&
     livingSpecies(engine, CREATURE.REACTOR_WARDEN).length === 1);
+  check('the reactor warden materializes in safe existing world space',
+    livingSpecies(engine, CREATURE.REACTOR_WARDEN)
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.REACTOR_WARDEN));
   snapshot = engine.getMission();
   check('defeating the warden exposes the reactor core',
     snapshot.objectives[2].state === OBJECTIVE_STATE.ACTIVE &&
     livingSpecies(engine, CREATURE.REACTOR_CORE).length === 1);
+  check('the reactor core materializes in safe existing world space',
+    livingSpecies(engine, CREATURE.REACTOR_CORE)
+      .every((creature) => safelyPlacedInWorld(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.REACTOR_CORE));
   snapshot = engine.getMission();
   check('breaching the core triggers the severe threat spike',
@@ -253,6 +256,19 @@ function rescueSurveyors(engine, playerId) {
   const { engine, playerId } = makeMissionEngine(MISSION.SILENT_QUARRY);
   check('mission/planet mismatches fail closed',
     !engine.startMission(MISSION.RED_FURNACE, playerId));
+  engine.destroy();
+}
+
+{
+  const { engine, playerId } = makeMissionEngine(MISSION.GREENFALL_RECOVERY);
+  engine.startMission(MISSION.GREENFALL_RECOVERY, playerId);
+  eliminate(engine, [
+    ...livingSpecies(engine, CREATURE.DYNAMITEER),
+    ...livingSpecies(engine, CREATURE.CAUSTIC_MORTARMAN),
+  ]);
+  eliminate(engine, [livingSpecies(engine, CREATURE.SURVEYOR)[0]]);
+  check('planetside Greenfall hostages remain vulnerable mission actors',
+    engine.getMission().phase === MISSION_PHASE.FAILED);
   engine.destroy();
 }
 

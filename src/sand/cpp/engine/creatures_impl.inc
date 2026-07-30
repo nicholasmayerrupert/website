@@ -1,3 +1,9 @@
+bool CreatureSystem::isProtectedNpc(const Creature& c) const {
+  return c.species == CS_IRIS_COMMANDER ||
+    (E.planetId == PL_SHIP &&
+     (c.species == CS_IRIS_ENGINEER || c.species == CS_SURVEYOR));
+}
+
 bool CreatureSystem::inLoadedWindow(const Creature& c, int margin) const {
   double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
   const CreatureSpecies& s = species(c);
@@ -272,7 +278,7 @@ int CreatureSystem::addCreature(uint8_t speciesId, double wx, double wy, int id)
 }
 
 bool CreatureSystem::queueSpawnTelegraph(uint8_t speciesId, double wx, double wy,
-                                         uint32_t salt, int threatCost) {
+                                         uint32_t salt) {
   const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
   int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
   for (const CreatureSpawnTelegraph& p : pendingSpawns)
@@ -289,8 +295,7 @@ bool CreatureSystem::queueSpawnTelegraph(uint8_t speciesId, double wx, double wy
           SPAWN_TELEGRAPH_TICK_SPAN);
   duration = imin(SPAWN_TELEGRAPH_MIN_TICKS + SPAWN_TELEGRAPH_TICK_SPAN - 1,
                   imax(SPAWN_TELEGRAPH_MIN_TICKS, duration));
-  pendingSpawns.push_back({nextCreatureId++, speciesId, wx, wy, duration, duration,
-                           threatCost});
+  pendingSpawns.push_back({nextCreatureId++, speciesId, wx, wy, duration, duration});
   E.audio.emit(SE_SPAWN_BREACH, wx - E.fg.worldOffsetX + CREATURE_SPECIES[speciesId].w * 0.5,
                wy - E.fg.worldOffsetY + CREATURE_SPECIES[speciesId].h * 0.5,
                0.72, STONE, 0);
@@ -305,7 +310,7 @@ bool CreatureSystem::spawnNearFocus(uint8_t speciesId, uint32_t salt) {
   if (findSpawnNearFocus(speciesId, salt, true, wx, wy))
     return spawnCreatureNatural(speciesId, wx, wy) != 0;
   if (!findSpawnNearFocus(speciesId, salt ^ 0xB4EAC5u, false, wx, wy)) return false;
-  return queueSpawnTelegraph(speciesId, wx, wy, salt, encounterCost(speciesId));
+  return queueSpawnTelegraph(speciesId, wx, wy, salt);
 }
 
 int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool requireHabitat) {
@@ -410,26 +415,10 @@ void CreatureSystem::updateSpawnTelegraphs() {
     if (--pending.ticksRemaining > 0) { i++; continue; }
     CreatureSpawnTelegraph ready = pending;
     pendingSpawns.erase(pendingSpawns.begin() + i);
-    const CreatureSpecies& s = CREATURE_SPECIES[ready.species];
-    const CreatureSpawnRule& r = s.spawn;
-    int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
-    for (const CreatureSpawnTelegraph& p : pendingSpawns)
-      if (p.species == ready.species) activeOfSpecies++;
-    for (const Creature& c : creatures) if (c.alive) {
-      active++;
-      if (c.species == ready.species) activeOfSpecies++;
-    }
-    bool valid = boxInsideLoadedWindow(ready.wx, ready.wy, s.w, s.h, 2) &&
-      boxFitsHabitat(ready.species, ready.wx, ready.wy) &&
-      farEnoughFromPlayers(ready.wx + s.w * 0.5, ready.wy + s.h * 0.5,
-                           r.minPlayerDistance) &&
-      active < NATURAL_MOB_CAP && activeOfSpecies < r.maxActive &&
-      localDensity(ready.species, ready.wx, ready.wy, r.densityRadius) < r.densityCap &&
-      localDensityAll(ready.wx, ready.wy, MIXED_DENSITY_RADIUS) < MIXED_DENSITY_CAP;
-    if (!valid) {
-      encounterThreat = imin(ENCOUNTER_THREAT_MAX, encounterThreat + ready.threatCost);
-      continue;
-    }
+    // Placement, habitat, safety, and population policy are all accepted before
+    // a breach becomes visible. From that point its id is a real reservation:
+    // player movement or later population changes cannot turn the warning into
+    // an empty animation.
     addCreature(ready.species, ready.wx, ready.wy, ready.id);
   }
 }
@@ -1071,7 +1060,8 @@ void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, in
                              E.fg.worldOffsetX + p.px + p.w, E.fg.worldOffsetY + p.py + p.h, CREATURE_BORE_RADIUS))
     E.psys.damagePlayer(p, damage, 36, ox, oy);
   for (Creature& other : creatures) {
-    if (!other.alive || other.id == immuneCreatureId || other.hurtCooldown > 0) continue;
+    if (!other.alive || other.id == immuneCreatureId ||
+        isProtectedNpc(other) || other.hurtCooldown > 0) continue;
     const CreatureSpecies& os = species(other);
     if (!segmentHitsExpandedBox(awx0, awy0, awx1, awy1,
                                 other.wx, other.wy, other.wx + os.w, other.wy + os.h, CREATURE_BORE_RADIUS)) continue;
@@ -1135,6 +1125,11 @@ void CreatureSystem::dropWeapon(const Creature& c) {
 
 void CreatureSystem::killCreature(Creature& c) {
   if (!c.alive) return;
+  if (isProtectedNpc(c)) {
+    c.health = species(c).maxHealth;
+    c.deathTicks = 0;
+    return;
+  }
   c.health = 0;
   E.missions.onCreatureKilled(c);
   dropWeapon(c);
@@ -1201,7 +1196,11 @@ void CreatureSystem::attackTarget(Creature& c) {
     return gx * gx + gy * gy <= s.attackRange * s.attackRange;
   };
   bool hit = false;
-  if (prey) { const CreatureSpecies& ps = species(*prey); hit = inMeleeRange(prey->wx, prey->wy, ps.w, ps.h); if (hit) prey->health -= s.damage; }
+  if (prey) {
+    const CreatureSpecies& ps = species(*prey);
+    hit = inMeleeRange(prey->wx, prey->wy, ps.w, ps.h);
+    if (hit && !isProtectedNpc(*prey)) prey->health -= s.damage;
+  }
   if (player) {
     hit = inMeleeRange(E.fg.worldOffsetX + player->px, E.fg.worldOffsetY + player->py, player->w, player->h);
     if (hit) {
@@ -1220,6 +1219,7 @@ void CreatureSystem::updateCreatures() {
   if (E.creatureNaturalSpawning) updateNaturalPopulation();
   for (Creature& c : creatures) {
     if (!c.alive) { c.deathTicks--; continue; }
+    if (isProtectedNpc(c)) c.health = species(c).maxHealth;
     if (c.health <= 0) {
       killCreature(c);
       continue;
@@ -1286,6 +1286,7 @@ void CreatureSystem::updateCreatures() {
       bool moving = std::fabs(c.vx) > 0.035;
       c.animFrame = moving ? (uint8_t)(((E.actorTick / 5) + c.id) & 3) : 0;
     }
+    if (isProtectedNpc(c)) c.health = species(c).maxHealth;
   }
 }
 
@@ -1299,7 +1300,11 @@ bool CreatureSystem::damageAtPoint(int x, int y, int radius, int damage) {
     double ny = std::max(c.wy, std::min(wy, c.wy + s.h));
     double dx = wx - nx, dy = wy - ny;
     if (dx * dx + dy * dy <= r2) {
-      c.health -= damage; c.hurtCooldown = 7; hit = true;
+      if (!isProtectedNpc(c)) {
+        c.health -= damage;
+        c.hurtCooldown = 7;
+      }
+      hit = true;
       E.audio.emit(SE_CREATURE, c.wx - E.fg.worldOffsetX + s.w * 0.5,
                    c.wy - E.fg.worldOffsetY + s.h * 0.5, 0.65, c.species, 0);
     }

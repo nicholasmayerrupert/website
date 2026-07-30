@@ -4,6 +4,9 @@
 import {
   initSandWasm, createEngineWasm, MAT, PLANET,
 } from '../src/sand/wasmBridge/engineFactory.js';
+import {
+  CREATURE, INPUT, OFF, SOUND_EVENT, STRIDES,
+} from '../src/sand/wasmBridge/abi.generated.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { gridHash, makeChecker } from './sand-test-util.mjs';
 
@@ -80,7 +83,14 @@ check('Kestrel is a physical foreground/background world',
   }
   check('Kestrel keeps the crew-level main corridor clear of foreground scenery',
     blockedMainDeckCells === 0, String(blockedMainDeckCells));
+  engine.setSurvivalInventory(true);
+  engine.setCreatureRuntime(true, false);
   const playerId = engine.spawnPlayerAtSurface(engine.cols / 2);
+  const crewIds = [
+    engine.spawnScriptedCreature(CREATURE.IRIS_COMMANDER, -64, 8),
+    engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8),
+    engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23),
+  ];
   const spawn = engine.getPlayer(playerId);
   engine.setPlayerState(playerId, {
     x: spawn.x,
@@ -95,6 +105,53 @@ check('Kestrel is a physical foreground/background world',
   check('Kestrel automatically beams a player back from open space',
     Math.abs(recovered.x - spawn.x) < 12 &&
       Math.abs(recovered.y - spawn.y) < 12);
+  for (const id of crewIds) {
+    const crew = engine.getCreatures().find((creature) => creature.id === id);
+    engine.damageCreatures(
+      Math.floor(crew.x + crew.w * 0.5),
+      Math.floor(crew.y + crew.h * 0.5),
+      2,
+      100000,
+    );
+  }
+  engine.stepActors();
+  check('the Kestrel commander and authored crew cannot be killed',
+    crewIds.every((id) => {
+      const crew = engine.getCreatures().find((creature) => creature.id === id);
+      return crew?.alive && crew.health === crew.maxHealth;
+    }));
+
+  engine.drainSoundEvents();
+  const shooter = engine.getPlayer(playerId);
+  const gunItemsBefore = engine.itemCount();
+  const gunSounds = new Set();
+  engine.setPlayerInput(playerId, {
+    bits: INPUT.PRIMARY,
+    aimX: shooter.x + 20,
+    aimY: 18 - engine.getWorldOffsetY(),
+    seq: 1,
+  });
+  engine.stepActors();
+  engine.setPlayerInput(playerId, {
+    bits: 0,
+    aimX: shooter.x + 20,
+    aimY: 18 - engine.getWorldOffsetY(),
+    seq: 2,
+  });
+  let gunPeakItems = engine.itemCount();
+  for (let tick = 0; tick < 8; tick++) {
+    engine.stepActors();
+    gunPeakItems = Math.max(gunPeakItems, engine.itemCount());
+    const sounds = engine.drainSoundEvents();
+    for (let i = 0; i < sounds.length; i += STRIDES.soundEvent)
+      gunSounds.add(sounds[i + OFF.soundEvent.type]);
+  }
+  check('the blast gun still produces a full impact explosion aboard Kestrel',
+    gunSounds.has(SOUND_EVENT.BLAST_GUN) &&
+      gunSounds.has(SOUND_EVENT.WEAPON_EXPLOSION) &&
+      gunPeakItems > gunItemsBefore);
+  for (let tick = 0; tick < 24; tick++) engine.stepActors();
+
   const foregroundBefore = gridHash(engine.getGrid());
   const backgroundBefore = gridHash(engine.getGridBg());
   const itemsBefore = engine.itemCount();

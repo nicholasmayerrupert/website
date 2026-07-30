@@ -59,8 +59,10 @@ class MissionSystem {
   Creature* findCreature(int actorId);
   int spawnMissionCreature(uint8_t species, int worldX, int worldY,
                            int objectiveId, int offsetX = 0);
-  void carveRoom(int worldX, int worldY, int radius);
-  void authorFacilityRoom(int worldX, int worldY, int radius);
+  int spawnMissionResident(uint8_t species, int worldX, int worldY);
+  bool safeMissionSpawnAt(uint8_t species, int localX, int localY) const;
+  bool findSafeMissionSpawn(uint8_t species, int worldX, int worldY,
+                            double& spawnWorldX, double& spawnWorldY) const;
   void activateObjective(int objectiveId);
   void completeObjective(MissionObjective& objective);
   void refreshObjectiveMarker(MissionObjective& objective);

@@ -189,10 +189,13 @@ void GLPresenter::glCollectDynamicLights() {
     next.push_back({ix, iy, (uint8_t)imax(0, imin(255, intensity))});
   };
   auto addPlayer = [&](double x, double y, int w, int h, int facing, bool alive,
-                       double aimX, double aimY, bool jetpackActive,
+                       int heldItemKind, double aimX, double aimY,
+                       bool jetpackActive,
                        int shieldHealth, bool shieldActive) {
     if (!alive) return;
     double cx = x + w * .5, cy = y + h * .5;
+    if (heldItemKind == IK_MINING_TOOL)
+      add(aimX, aimY, 225);
     if (jetpackActive)
       add(cx - facing * 1.55, y + h - 1.15, 225);
     if (shieldActive && shieldHealth > 0) {
@@ -210,13 +213,17 @@ void GLPresenter::glCollectDynamicLights() {
       const float* p = glExtPlayers.data() + (size_t)i * GLP_STRIDE;
       addPlayer(p[GLP_X], p[GLP_Y], (int)p[GLP_W], (int)p[GLP_H],
                 (int)p[GLP_FACING], p[GLP_ALIVE] > .5f,
-                p[GLP_AIM_X], p[GLP_AIM_Y], p[GLP_JETPACK_ACTIVE] > .5f,
+                (int)p[GLP_HELD_ITEM_KIND], p[GLP_AIM_X], p[GLP_AIM_Y],
+                p[GLP_JETPACK_ACTIVE] > .5f,
                 (int)p[GLP_SHIELD_HEALTH], p[GLP_SHIELD_ACTIVE] > .5f);
     }
   } else {
     for (const Player& p : E.psys.players) if (p.active)
-      addPlayer(p.px, p.py, p.w, p.h, p.facing, p.alive, p.aimX, p.aimY,
-                p.jetpackActive, p.shieldHealth, p.shieldActive);
+      addPlayer(p.px, p.py, p.w, p.h, p.facing, p.alive,
+                p.inv[p.selectedSlot].count > 0
+                  ? p.inv[p.selectedSlot].itemKind : IK_MATERIAL,
+                p.aimX, p.aimY, p.jetpackActive, p.shieldHealth,
+                p.shieldActive);
   }
 
   int minigunLights = 0;

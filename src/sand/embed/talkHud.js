@@ -90,15 +90,16 @@ export function createTalkHud(root, game, onAction) {
   let lastActorRead = -Infinity;
   let raf = 0;
 
-  const closeDialogue = () => {
+  const closeDialogue = (restoreFocus = true) => {
     dialogue.hidden = true;
     activeActor = null;
+    if (restoreFocus) root.querySelector('.sg-sim')?.focus({ preventScroll: true });
   };
-  close.addEventListener('click', closeDialogue);
+  close.addEventListener('click', () => closeDialogue());
   primary.addEventListener('click', () => {
     if (!activeActor) return;
     onAction?.({ action: 'mission-console', actor: activeActor });
-    closeDialogue();
+    closeDialogue(false);
   });
 
   const openDialogue = (actor) => {

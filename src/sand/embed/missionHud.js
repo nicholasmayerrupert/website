@@ -182,7 +182,11 @@ export function createMissionHud(root, game) {
     stage.textContent = next.stageLabel;
     threat.classList.toggle('on', next.phase === MISSION_PHASE.EXTRACTION);
     threat.textContent = next.threatLevel
-      ? `Threat spike ${next.threatLevel} · terrain unstable`
+      ? `Threat spike ${next.threatLevel} · ${
+        next.missionId === MISSION.RED_FURNACE
+          ? 'terrain unstable'
+          : 'hostile reinforcements inbound'
+      }`
       : '';
     list.replaceChildren();
     for (const objective of next.objectives) {

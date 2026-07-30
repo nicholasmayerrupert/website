@@ -12,6 +12,18 @@ static bool rigidTightSlenderBounds(const Body* body) {
   return body->tightSlenderBounds;
 }
 
+static double rigidContactVx(const Body* body) {
+  return body->kinematic ? body->kinematicVx : body->vx;
+}
+
+static double rigidContactVy(const Body* body) {
+  return body->kinematic ? body->kinematicVy : body->vy;
+}
+
+static double rigidContactOmega(const Body* body) {
+  return body->kinematic ? body->kinematicOmega : body->omega;
+}
+
 void RigidBodySystem::clearContactCaches() {
   for (ContactCache& cache : contactCaches) cache.clear();
   for (auto& axes : pairAxes) axes.clear();
@@ -514,7 +526,10 @@ double RigidBodySystem::resolveContactNormal(Contact& c) {
   double aInvM = A->awake ? A->invMass : 0, aInvI = A->awake ? A->invInertia : 0;
   double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
   double rvx = A->vx - A->omega * c.ray, rvy = A->vy + A->omega * c.rax;
-  if (B) { rvx -= B->vx - B->omega * c.rby; rvy -= B->vy + B->omega * c.rbx; }
+  if (B) {
+    rvx -= rigidContactVx(B) - rigidContactOmega(B) * c.rby;
+    rvy -= rigidContactVy(B) + rigidContactOmega(B) * c.rbx;
+  }
   double vn = rvx * c.nx + rvy * c.ny;
   double movedN = 0;
   if (c.normalMass > 0) {
@@ -534,7 +549,10 @@ double RigidBodySystem::resolveContactFriction(Contact& c) {
   double bInvM = (B && B->awake) ? B->invMass : 0, bInvI = (B && B->awake) ? B->invInertia : 0;
   double tx = -c.ny, ty = c.nx;
   double rtvx = A->vx - A->omega * c.ray, rtvy = A->vy + A->omega * c.rax;
-  if (B) { rtvx -= B->vx - B->omega * c.rby; rtvy -= B->vy + B->omega * c.rbx; }
+  if (B) {
+    rtvx -= rigidContactVx(B) - rigidContactOmega(B) * c.rby;
+    rtvy -= rigidContactVy(B) + rigidContactOmega(B) * c.rbx;
+  }
   double vt = rtvx * tx + rtvy * ty;
   double movedT = 0;
   if (c.tangentMass > 0) {
@@ -571,8 +589,8 @@ double RigidBodySystem::resolveContactBlock(Contact& first, Contact& second) {
     double rvx = A->vx - A->omega * contact.ray;
     double rvy = A->vy + A->omega * contact.rax;
     if (B) {
-      rvx -= B->vx - B->omega * contact.rby;
-      rvy -= B->vy + B->omega * contact.rbx;
+      rvx -= rigidContactVx(B) - rigidContactOmega(B) * contact.rby;
+      rvy -= rigidContactVy(B) + rigidContactOmega(B) * contact.rbx;
     }
     return rvx * contact.nx + rvy * contact.ny;
   };
@@ -797,6 +815,114 @@ void RigidBodySystem::rigidStep(double tickDt) {
     x1 += margin;
     y1 += margin;
   };
+  struct ActorProxy {
+    Body body;
+    Player* player = nullptr;
+    Creature* creature = nullptr;
+    double crushImpulse = 0;
+  };
+  std::vector<ActorProxy> actorProxies;
+  if (E.L == &E.fg) {
+    actorProxies.reserve(
+      E.psys.players.size() + E.creatures.creatures.size());
+    auto addProxy = [&](double x, double y, int w, int h,
+                        double vx, double vy, int id,
+                        Player* player, Creature* creature) {
+      actorProxies.emplace_back();
+      ActorProxy& proxy = actorProxies.back();
+      proxy.player = player;
+      proxy.creature = creature;
+      Body& body = proxy.body;
+      body.id = id;
+      body.w = w;
+      body.h = h;
+      body.occ.assign((size_t)w * h, 1);
+      body.offsetX = -(w - 1) * 0.5;
+      body.offsetY = -(h - 1) * 0.5;
+      body.px = x + w * 0.5;
+      body.py = y + h * 0.5;
+      body.angle = 0;
+      body.vx = body.vy = body.omega = 0;
+      body.material = RIGID;
+      body.density = 1;
+      body.nPts = w * h;
+      body.geometryRevision = 1;
+      body.maxR = std::hypot((w - 1) * 0.5, (h - 1) * 0.5);
+      body.tightSlenderBounds = true;
+      BodyCollisionRect rect;
+      rect.x1 = w;
+      rect.y1 = h;
+      body.collisionSpans = {
+        {(float)(body.offsetY - 0.5),
+         (float)(body.offsetY + h - 0.5)},
+        {(float)(body.offsetY - 0.5),
+         (float)(body.offsetY + h - 0.5)},
+        {(float)(body.offsetX - 0.5),
+         (float)(body.offsetX + w - 0.5)},
+        {(float)(body.offsetX - 0.5),
+         (float)(body.offsetX + w - 0.5)},
+      };
+      for (int face = 0; face < 4; face++) {
+        rect.spanStart[face] = face;
+        rect.spanCount[face] = 1;
+      }
+      body.collisionRects.push_back(rect);
+      double left = -w * 0.5, right = w * 0.5;
+      double top = -h * 0.5, bottom = h * 0.5;
+      const double samples[8][2] = {
+        {left, top}, {right, top}, {right, bottom}, {left, bottom},
+        {0, top}, {right, 0}, {0, bottom}, {left, 0},
+      };
+      for (const auto& sample : samples) {
+        body.boundarySamples.push_back((float)sample[0]);
+        body.boundarySamples.push_back((float)sample[1]);
+        body.boundarySampleRadii.push_back(
+          std::hypot(sample[0], sample[1]));
+      }
+      body.kinematic = true;
+      body.kinematicVx = vx;
+      body.kinematicVy = vy;
+      body.kinematicOmega = 0;
+      body.awake = false;
+      body.stillTicks = 0;
+      body.idx = -1;
+      body.cs = 1;
+      body.sn = 0;
+      bodyBounds(&body, R_CONTACT_SKIN + 0.5,
+                 body.aabbX0, body.aabbY0, body.aabbX1, body.aabbY1);
+    };
+    for (size_t i = 0; i < E.psys.players.size(); i++) {
+      Player& player = E.psys.players[i];
+      if (!player.active || !player.alive) continue;
+      addProxy(player.px, player.py, player.w, player.h,
+               player.vx, player.vy, -1000000000 - player.id,
+               &player, nullptr);
+    }
+    for (size_t i = 0; i < E.creatures.creatures.size(); i++) {
+      Creature& creature = E.creatures.creatures[i];
+      if (!creature.alive) continue;
+      const CreatureSpecies& species = E.creatures.species(creature);
+      addProxy(creature.wx - E.fg.worldOffsetX,
+               creature.wy - E.fg.worldOffsetY,
+               species.w, species.h, creature.vx, creature.vy,
+               -1500000000 - creature.id, nullptr, &creature);
+    }
+  }
+  std::unordered_map<Body*, int> actorProxyIndex;
+  actorProxyIndex.reserve(actorProxies.size() * 2);
+  std::vector<int> actorProxyOrder(actorProxies.size());
+  for (int i = 0; i < (int)actorProxies.size(); i++) {
+    actorProxyIndex[&actorProxies[i].body] = i;
+    actorProxyOrder[i] = i;
+  }
+  std::sort(actorProxyOrder.begin(), actorProxyOrder.end(),
+            [&](int a, int b) {
+    const Body& first = actorProxies[a].body;
+    const Body& second = actorProxies[b].body;
+    if (first.aabbX0 != second.aabbX0)
+      return first.aabbX0 < second.aabbX0;
+    return first.id < second.id;
+  });
   // Build conservative tick islands before sub-stepping. Candidate bodies share
   // one cadence; unrelated slow islands no longer inherit the fastest body's
   // rotational or translational substep count.
@@ -873,7 +999,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<Contact>& contacts = solverContactScratch;
   contacts.clear();
   int nc = 0;
-  std::vector<uint8_t> actorSweepOverlap(n, 0);
+  std::vector<uint8_t> actorContact(n, 0);
   std::vector<uint8_t> solidContact(n, 0);
   std::vector<int> solveParent(n), solveBodyCount(n);
   std::vector<int> contactOrder, contactRoot;
@@ -1019,7 +1145,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
     }
   }
   auto cacheKey = [&](const Contact& contact, int normalBucket) {
-    bool peerLayer = contact.b && !contact.bIntegrated;
+    bool peerLayer = contact.b && !contact.bIntegrated
+      && !contact.b->kinematic;
     return ContactCacheKey{
       contact.a->id,
       contact.b ? contact.b->id : -1,
@@ -1843,31 +1970,6 @@ void RigidBodySystem::rigidStep(double tickDt) {
                  b->aabbX0, b->aabbY0, b->aabbX1, b->aabbY1);
       b->omegaPre = b->omega;                                  // spin entering this substep's contact solve
     }
-    // Players and creatures are pushed after the grid-body solve rather than
-    // represented as impulse bodies. Treat one inside this substep's swept AABB
-    // as a soft impact that absorbs restitution; otherwise a body can rebound
-    // from the terrain behind an actor before the established push/crush path
-    // gets to resolve their overlap.
-    std::fill(actorSweepOverlap.begin(), actorSweepOverlap.end(), 0);
-    if (E.L == &E.fg && (!E.psys.players.empty() || !E.creatures.creatures.empty())) {
-      auto overlapsAabb = [](Body* b, double x, double y, int w, int h) {
-        return x < b->aabbX1 && x + w > b->aabbX0 && y < b->aabbY1 && y + h > b->aabbY0;
-      };
-      for (int bi = 0; bi < n; bi++) {
-        if (!activeBody[bi]) continue;
-        Body* b = solverBodies[bi];
-        for (const Player& p : E.psys.players) {
-          if (p.active && p.alive && overlapsAabb(b, p.px, p.py, p.w, p.h)) { actorSweepOverlap[bi] = 1; break; }
-        }
-        if (actorSweepOverlap[bi]) continue;
-        for (const Creature& c : E.creatures.creatures) {
-          if (!c.alive) continue;
-          const CreatureSpecies& s = E.creatures.species(c);
-          double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
-          if (overlapsAabb(b, x, y, s.w, s.h)) { actorSweepOverlap[bi] = 1; break; }
-        }
-      }
-    }
     contacts.clear();
     // Penetration depth of a point that is already inside target T, measured by
     // marching outward along T's surface normal until it exits the mask.
@@ -2261,10 +2363,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
         double rax = p->wx - A->px, ray = p->wy - A->py;
         double rbx = B ? p->wx - B->px : 0, rby = B ? p->wy - B->py : 0;
         double rvx = A->vx - A->omega * ray, rvy = A->vy + A->omega * rax;
-        if (B) { rvx -= B->vx - B->omega * rby; rvy -= B->vy + B->omega * rbx; }
+        if (B) {
+          rvx -= rigidContactVx(B) - rigidContactOmega(B) * rby;
+          rvy -= rigidContactVy(B) + rigidContactOmega(B) * rbx;
+        }
         double impactVn = rvx * Nx[bk] + rvy * Ny[bk];
-        bool softImpact = actorSweepOverlap[A->idx]
-          || (bIndex >= 0 && actorSweepOverlap[bIndex]);
+        bool softImpact = B && B->kinematic;
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
         auto materialAtContact = [&](Body* body) {
@@ -2311,6 +2415,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       solidContact[A->idx] = 1;
       if (B) {
         B->hadContact = true;
+        if (B->kinematic) actorContact[A->idx] = 1;
         if (bIndex >= 0) solidContact[bIndex] = 1;
       }
     };
@@ -2446,6 +2551,60 @@ void RigidBodySystem::rigidStep(double tickDt) {
         }
       }
       reduceManifold(penAcc, A, B, 0, -1, pairDt);
+    }
+    for (int ai = 0; ai < n; ai++) {
+      if (!activeBody[ai]) continue;
+      Body* A = solverBodies[ai];
+      for (int proxyIndex : actorProxyOrder) {
+        Body* B = &actorProxies[proxyIndex].body;
+        if (B->aabbX0 > A->aabbX1) break;
+        if (B->aabbX1 < A->aabbX0
+            || A->aabbY1 < B->aabbY0
+            || B->aabbY1 < A->aabbY0)
+          continue;
+        double pairDt = bodyDt[ai];
+        ChildContactState childContactState =
+          collectChildContacts(A, B, pairDt);
+        ChildBounds sweptA, sweptB;
+        if (childContactState != CCS_CURRENT) {
+          sweptA = sweptBodyBounds(
+            A, currentChildFramesA[0], nextChildFramesA[0], pairDt);
+          sweptB = sweptBodyBounds(
+            B, currentChildFramesB[0], nextChildFramesB[0], pairDt);
+          if (childContactState == CCS_NONE
+              && !sweptBoundsOverlap(sweptA, sweptB))
+            continue;
+          if (childContactState == CCS_NONE
+              && sweptObbsSeparated(
+                A, currentChildFramesA[0], nextChildFramesA[0],
+                B, currentChildFramesB[0], nextChildFramesB[0], pairDt)) {
+            continue;
+          }
+        }
+        if (childContactState != CCS_CURRENT) {
+          rigidSweepFallbacks++;
+          penAcc.clear();
+          collectSweep(A, B, 1, pairDt);
+          collectSweep(B, A, -1, pairDt);
+          double fbx, fby;
+          bool hasSlenderObb = addSlenderObbManifold(
+            A, B, penAcc, fbx, fby);
+          if (!penAcc.empty()) {
+            if (!A->awake) wakeBody(A);
+            if (!hasSlenderObb)
+              pairSeparatingDirection(A, B, fbx, fby);
+            reduceManifold(penAcc, A, B, fbx, fby, pairDt);
+            continue;
+          }
+          if (childContactState == CCS_NONE) continue;
+        }
+        if (!A->awake) wakeBody(A);
+        penAcc.clear();
+        for (const ChildManifold& manifold : childManifoldScratch)
+          for (int pi = 0; pi < manifold.count; pi++)
+            penAcc.push_back(manifold.points[pi]);
+        reduceManifold(penAcc, A, B, 0, -1, pairDt);
+      }
     }
     for (int bi = 0; bi < n; bi++) {
       Body* b = solverBodies[bi];
@@ -2633,6 +2792,13 @@ void RigidBodySystem::rigidStep(double tickDt) {
       }
       islandStart = islandEnd;
     }
+    for (const Contact& contact : contacts) {
+      auto proxy = actorProxyIndex.find(contact.b);
+      if (proxy == actorProxyIndex.end() || contact.ny >= -0.35)
+        continue;
+      actorProxies[proxy->second].crushImpulse +=
+        contact.accJn * -contact.ny;
+    }
     ContactCache& nextContacts = nextContactCacheScratch;
     nextContacts.clear();
     nextContacts.reserve(previousContacts.size());
@@ -2735,6 +2901,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       bool sleepQuiet = b->vx * b->vx + b->vy * b->vy < sleepLinear * sleepLinear
                      && b->omega * b->omega < R_SLEEP_ANG * R_SLEEP_ANG
                      && b->maxDepth <= R_REST_DEPTH;
+      if (actorContact[bi]) sleepQuiet = false;
       if (fluidOnlyContact && !liquidSurfaceContact[bi]) sleepQuiet = false;
       if (sleepQuiet) {
         b->stillTicks++;
@@ -2749,6 +2916,21 @@ void RigidBodySystem::rigidStep(double tickDt) {
         b->stillTicks = settling ? std::fmax(0.0, b->stillTicks - 1.0) : 0;
       }
     }
+  }
+  for (ActorProxy& proxy : actorProxies) {
+    if (proxy.crushImpulse < ACTOR_CRUSH_IMPULSE) continue;
+    if (proxy.player) {
+      Player& player = *proxy.player;
+      if (E.psys.playerBoxHits(
+            player.px, player.py + 0.25, player.w, player.h))
+        E.psys.crushPlayer(player);
+      continue;
+    }
+    Creature& creature = *proxy.creature;
+    const CreatureSpecies& species = E.creatures.species(creature);
+    if (E.creatures.boxHitsSolid(
+          creature.wx, creature.wy + 0.25, species.w, species.h))
+      E.creatures.crushCreature(creature);
   }
   std::vector<int>& savedBroadphaseIds = broadphaseBodyIds[activeLayer];
   savedBroadphaseIds.resize(broadphaseOrder.size());
@@ -4286,142 +4468,6 @@ bool RigidBodySystem::depenetrateBodyRaster(Body* b, double prePx, double prePy,
   b->px = newPx; b->py = newPy; b->angle = newAngle; return false;
 }
 
-// Free bodies are grid entities while players/creatures are AABBs, so the rigid
-// solver cannot see them as ordinary contacts. Resolve body->actor overlap here,
-// while body cells are temporarily absent from the grid: push in the body's
-// swept direction. If terrain or another body blocks that displacement, keep
-// the actor in place and let its owning system apply the crush lifecycle.
-bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
-                                         double preAngle) {
-  const double finalPx = b->px, finalPy = b->py, finalAngle = b->angle;
-  const double dx = finalPx - prePx, dy = finalPy - prePy, da = finalAngle - preAngle;
-  // Every occupied pixel square stays inside this center-line capsule for the
-  // complete translation/rotation sweep. If no live actor AABB touches it,
-  // rasterizing intermediate poses cannot find an overlap.
-  const double sweepRadius = b->maxR + 0.7071067811865476;
-  const double sweepMinX = std::fmin(prePx, finalPx) - sweepRadius;
-  const double sweepMinY = std::fmin(prePy, finalPy) - sweepRadius;
-  const double sweepMaxX = std::fmax(prePx, finalPx) + sweepRadius;
-  const double sweepMaxY = std::fmax(prePy, finalPy) + sweepRadius;
-  auto sweepOverlaps = [&](double x, double y, double w, double h) {
-    return x <= sweepMaxX && x + w >= sweepMinX
-        && y <= sweepMaxY && y + h >= sweepMinY;
-  };
-  bool actorCandidate = false;
-  for (const Player& player : E.psys.players) {
-    if (player.active && player.alive
-        && sweepOverlaps(player.px, player.py, player.w, player.h)) {
-      actorCandidate = true;
-      break;
-    }
-  }
-  if (!actorCandidate) {
-    for (const Creature& creature : E.creatures.creatures) {
-      if (!creature.alive) continue;
-      const CreatureSpecies& species = E.creatures.species(creature);
-      double x = creature.wx - E.fg.worldOffsetX;
-      double y = creature.wy - E.fg.worldOffsetY;
-      if (sweepOverlaps(x, y, species.w, species.h)) {
-        actorCandidate = true;
-        break;
-      }
-    }
-  }
-  if (!actorCandidate) return false;
-  const double sweepDistance = std::max(std::hypot(dx, dy), std::fabs(da) * std::hypot(b->w, b->h) * 0.5);
-  const int sweepSteps = imin(256, imax(1, (int)std::ceil(sweepDistance / 0.5)));
-  const double maxCarrySpeed = 0.65;
-
-  int minX = 0, minY = 0, maxX = -1, maxY = -1;
-  std::vector<std::pair<int, int>> raster;
-  auto rasterBody = [&]() {
-    minX = E.cols; minY = E.rows; maxX = maxY = -1; raster.clear();
-    forEachBodyCell(b, [&](int x, int y, int) {
-      raster.push_back({x, y});
-      minX = imin(minX, x); minY = imin(minY, y); maxX = imax(maxX, x); maxY = imax(maxY, y);
-    });
-  };
-  auto broadOverlaps = [&](double ax, double ay, int aw, int ah) {
-    return ax < maxX + 1 && ax + aw > minX && ay < maxY + 1 && ay + ah > minY;
-  };
-  auto overlaps = [&](double ax, double ay, int aw, int ah) {
-    double ax1 = ax + aw, ay1 = ay + ah;
-    for (const auto& cell : raster)
-      if (ax < cell.first + 1 && ax1 > cell.first && ay < cell.second + 1 && ay1 > cell.second) return true;
-    return false;
-  };
-  auto pushOverlapping = [&](double& ax, double& ay, int aw, int ah,
-                             double& avx, double& avy, bool player) {
-    int contactMinX = E.cols, contactMinY = E.rows, contactMaxX = -1, contactMaxY = -1;
-    for (const auto& cell : raster) {
-      if (ay < cell.second + 1 && ay + ah > cell.second) {
-        contactMinX = imin(contactMinX, cell.first); contactMaxX = imax(contactMaxX, cell.first);
-      }
-      if (ax < cell.first + 1 && ax + aw > cell.first) {
-        contactMinY = imin(contactMinY, cell.second); contactMaxY = imax(contactMaxY, cell.second);
-      }
-    }
-    if (contactMaxX < 0 || contactMaxY < 0) return false;
-    double rx = ax + aw * 0.5 - b->px, ry = ay + ah * 0.5 - b->py;
-    double driveX = dx - da * ry, driveY = dy + da * rx;
-    int preferred = std::hypot(driveX, driveY) < 1e-6 ? -1 :
-      (std::fabs(driveX) >= std::fabs(driveY)
-        ? (driveX >= 0 ? 1 : 0)
-        : (driveY >= 0 ? 3 : 2)); // L,R,U,D = 0..3
-    struct Candidate { double x, y; int side; } c[4] = {
-      {(double)contactMinX - aw - 1e-4, ay, 0},
-      {(double)contactMaxX + 1 + 1e-4, ay, 1},
-      {ax, (double)contactMinY - ah - 1e-4, 2},
-      {ax, (double)contactMaxY + 1 + 1e-4, 3},
-    };
-    if (preferred < 0) return false; // resting solver jitter must not invent a new escape direction
-    Candidate& q = c[preferred];
-    bool blocked = player
-      ? (E.psys.playerBoxHits(q.x, q.y, aw, ah)
-          || E.psys.playerBoxHitsOtherBody(q.x, q.y, aw, ah, b))
-      : (E.creatures.boxHitsSolid(E.fg.worldOffsetX + q.x,
-                                  E.fg.worldOffsetY + q.y, aw, ah)
-          || E.creatures.boxHitsOtherBody(E.fg.worldOffsetX + q.x,
-                                          E.fg.worldOffsetY + q.y, aw, ah, b));
-    if (overlaps(q.x, q.y, aw, ah)) return false;
-    int crushCells = b->nPts;
-    if (b->jointRole == 1 && b->jointPeer) crushCells += b->jointPeer->nPts;
-    if (blocked) return crushCells >= imax(16, (aw * ah + 1) / 2);
-    ax = q.x; ay = q.y;
-    if (q.side == 0) avx = std::min(avx, -std::min(std::fabs(driveX), maxCarrySpeed));
-    else if (q.side == 1) avx = std::max(avx, std::min(std::fabs(driveX), maxCarrySpeed));
-    else if (q.side == 2) avy = std::min(avy, -std::min(std::fabs(driveY), maxCarrySpeed));
-    else avy = std::max(avy, std::min(std::fabs(driveY), maxCarrySpeed));
-    return false;
-  };
-  // Walk the body's swept path at sub-cell spacing. Resolving only its final
-  // raster lets a fast or thin body cross an actor completely between ticks.
-  for (int step = 1; step <= sweepSteps; step++) {
-    const double t = (double)step / sweepSteps;
-    b->px = prePx + dx * t; b->py = prePy + dy * t; b->angle = preAngle + da * t;
-    rasterBody();
-    if (raster.empty()) continue;
-    for (size_t i = 0; i < E.psys.players.size(); i++) {
-      Player& p = E.psys.players[i];
-      if (!p.active || !p.alive) continue;
-      if (!broadOverlaps(p.px, p.py, p.w, p.h) || !overlaps(p.px, p.py, p.w, p.h)) continue;
-      if (pushOverlapping(p.px, p.py, p.w, p.h, p.vx, p.vy, true))
-        E.psys.crushPlayer(p);
-    }
-    for (size_t i = 0; i < E.creatures.creatures.size(); i++) {
-      Creature& c = E.creatures.creatures[i];
-      if (!c.alive) continue;
-      const CreatureSpecies& s = E.creatures.species(c);
-      double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
-      if (!broadOverlaps(x, y, s.w, s.h) || !overlaps(x, y, s.w, s.h)) continue;
-      if (pushOverlapping(x, y, s.w, s.h, c.vx, c.vy, false))
-        E.creatures.crushCreature(c);
-      c.wx = E.fg.worldOffsetX + x; c.wy = E.fg.worldOffsetY + y;
-    }
-  }
-  b->px = finalPx; b->py = finalPy; b->angle = finalAngle;
-  return true;
-}
 // ===== Body material identity & solidify-on-rest =====
 // (See the BODY-MATERIAL INVARIANT block in members.inc.) A free body stamps its
 // real material into the grid; when a NON-RIGID body sleeps it bakes into a
@@ -4755,9 +4801,8 @@ void RigidBodySystem::moveBodies() {
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     auto it = prePoses.find(b->id); bool hp = it != prePoses.end();
-    double ppx = hp ? it->second[0] : 0, ppy = hp ? it->second[1] : 0, ppa = hp ? it->second[2] : 0;
+    double ppx = hp ? it->second[0] : 0, ppy = hp ? it->second[1] : 0;
     if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++;
-    if (hp && E.L == &E.fg) pushActorsFromBody(b, ppx, ppy, ppa);
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
   std::vector<int> cells, footprint;

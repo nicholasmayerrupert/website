@@ -26,23 +26,6 @@ bool CreatureSystem::boxHitsSolid(double wx, double wy, int w, int h) const {
   return false;
 }
 
-bool CreatureSystem::boxHitsOtherBody(double wx, double wy, int w, int h,
-                                      const Body* ignored) {
-  double px = wx - E.fg.worldOffsetX, py = wy - E.fg.worldOffsetY;
-  for (Body* body : E.fg.bodies) {
-    if (body == ignored || body->jointRole == 2) continue;
-    double radius = body->maxR + 1.0;
-    if (px >= body->px + radius || px + w <= body->px - radius ||
-        py >= body->py + radius || py + h <= body->py - radius) continue;
-    bool hit = false;
-    E.rigid.forEachBodyCell(body, [&](int x, int y, int) {
-      if (!hit && px < x + 1 && px + w > x && py < y + 1 && py + h > y) hit = true;
-    });
-    if (hit) return true;
-  }
-  return false;
-}
-
 double CreatureSystem::blockingCoverage(double wx, double wy, int w, int h) const {
   int x0 = (int)std::floor(wx - E.fg.worldOffsetX), x1 = (int)std::floor(wx - E.fg.worldOffsetX + w - 1e-6);
   int y0 = (int)std::floor(wy - E.fg.worldOffsetY), y1 = (int)std::floor(wy - E.fg.worldOffsetY + h - 1e-6);
@@ -1145,7 +1128,14 @@ void CreatureSystem::killCreature(Creature& c) {
 }
 
 void CreatureSystem::crushCreature(Creature& c) {
-  killCreature(c);
+  if (!c.alive || isProtectedNpc(c) || c.hurtCooldown > 0) return;
+  int damage = imin(ACTOR_CRUSH_DAMAGE, c.health - 1);
+  if (damage <= 0) return;
+  c.health -= damage;
+  c.hurtCooldown = ACTOR_CRUSH_COOLDOWN;
+  const CreatureSpecies& s = species(c);
+  E.audio.emit(SE_CREATURE, c.wx - E.fg.worldOffsetX + s.w * 0.5,
+               c.wy - E.fg.worldOffsetY + s.h * 0.5, 0.65, c.species, 0);
 }
 
 void CreatureSystem::updateBoreSentinelAttack(Creature& c) {

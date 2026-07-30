@@ -1,9 +1,10 @@
-// Deterministic player/creature interaction tests for free rigid bodies.
+// Deterministic kinematic actor-collider tests for free rigid bodies.
 //
 //   node scripts/actor-rigid-test.mjs
 //
-// Rigid poses are authoritative inputs here: actors may be swept, pushed, or
-// crushed, but never feed a correction or impulse back into a body.
+// Players and creatures remain gameplay-controlled AABBs, but the rigid solver
+// sees matching kinematic rectangles. Their contact normals and friction can
+// stop, carry, support, and rotate dynamic bodies.
 
 import {
   initSandWasm,
@@ -26,259 +27,155 @@ const stoneRect = (e, x0, y0, x1, y1) => {
   e.syncComponents();
 };
 const floor = (e, top = 110) => stoneRect(e, 4, top, COLS - 4, ROWS);
-const bodyOverlaps = (e, actor) => {
-  const owners = e._bodyOwnerGrid();
-  const x0 = Math.floor(actor.x), x1 = Math.floor(actor.x + actor.w - 1e-6);
-  const y0 = Math.floor(actor.y), y1 = Math.floor(actor.y + actor.h - 1e-6);
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)
-    if (x >= 0 && x < COLS && y >= 0 && y < ROWS && owners[y * COLS + x] >= 0)
-      return true;
-  return false;
-};
-const creature = (e, id) => e.getCreatures().find((entry) => entry.id === id);
 const stepWorld = (e, count) => {
   for (let i = 0; i < count; i++) e.stepWorld();
 };
+const creature = (e, id) =>
+  e.getCreatures().find((entry) => entry.id === id);
 
-// A fast body must sweep the player's AABB instead of passing completely
-// through it between final raster poses.
+// A fast thin body must sweep into the player proxy and stop on its near face
+// instead of crossing the complete actor between final raster poses.
 {
   const e = mk();
   const id = e.spawnPlayer(82, 58);
   e.spawnBox(58, 62, 1, 6, MAT.RIGID);
   e._setBodyMotion(0, 50, 0, 0);
-  let everOverlapped = false;
-  for (let i = 0; i < 18; i++) {
-    e.stepWorld();
-    everOverlapped ||= bodyOverlaps(e, e.getPlayer(id));
-  }
-  const p = e.getPlayer(id);
-  check(`fast thin body pushes player instead of tunneling (x ${p.x.toFixed(1)})`,
-    p.alive && p.x > 98 && !everOverlapped);
+  stepWorld(e, 18);
+  const body = e._bodyState(0), player = e.getPlayer(id);
+  check(`fast body stops at player (x ${body.px.toFixed(2)}, vx ${body.vx.toFixed(2)})`,
+    body.px < player.x && Math.abs(body.vx) < 0.05 &&
+    player.x === 82 && player.alive);
   e.destroy();
 }
 
-// An ordinary side contact carries velocity into the actor and leaves it on the
-// leading face rather than embedded in the body.
+// A centered slab has its center of mass over the actor support interval and
+// should reach a quiet equilibrium on the player's head.
+{
+  const e = mk();
+  e.spawnPlayer(82, 58);
+  e.spawnBox(84, 45, 5, 3, MAT.RIGID);
+  stepWorld(e, 45);
+  const body = e._bodyState(0);
+  check(`centered slab balances on player (${body.py.toFixed(2)}, ${body.angle.toFixed(3)} rad)`,
+    body.py > 54 && body.py < 56 &&
+    Math.abs(body.angle) < 0.02 && Math.abs(body.vy) < 0.01);
+  e.destroy();
+}
+
+// Moving the same slab until its center of mass is outside the support interval
+// must turn normal impulses into torque and let it roll off.
+{
+  const e = mk();
+  e.spawnPlayer(82, 58);
+  e.spawnBox(86, 45, 5, 3, MAT.RIGID);
+  stepWorld(e, 80);
+  const body = e._bodyState(0);
+  check(`off-center slab rolls off player (${body.py.toFixed(2)}, ${body.angle.toFixed(2)} rad)`,
+    body.py > 70 && Math.abs(body.angle) > 1);
+  e.destroy();
+}
+
+// Creatures use the same exact AABB proxy. This reproduces the oblong-body case
+// on the cluster wasp that motivated the kinematic contact path.
+{
+  const e = mk();
+  const id = e.spawnCreature(CREATURE.CLUSTER_WASP, 82, 60);
+  e.spawnBox(90, 48, 6, 2, MAT.RIGID);
+  stepWorld(e, 80);
+  const body = e._bodyState(0), wasp = creature(e, id);
+  check(`oblong body rolls off wasp (${body.py.toFixed(2)}, ${body.angle.toFixed(2)} rad)`,
+    wasp?.alive && body.py > 75 && Math.abs(body.angle) > 1);
+  e.destroy();
+}
+
+// Kinematic velocity participates in friction even though the proxy pose is not
+// integrated by the rigid solver.
 {
   const e = mk();
   const id = e.spawnPlayer(82, 58);
-  e.spawnBox(68, 62, 4, 5, MAT.RIGID);
-  e._setBodyMotion(0, 3, 0, 0);
-  stepWorld(e, 8);
-  const p = e.getPlayer(id);
-  check(`player is pushed in free space (x ${p.x.toFixed(1)}, vx ${p.vx.toFixed(2)})`,
-    p.alive && p.x > 90 && p.vx > 0 && !bodyOverlaps(e, p));
+  e.setPlayerState(id, { x: 82, y: 58, vx: 0.8, vy: 0 });
+  e.spawnBox(84, 50, 2, 1, MAT.RIGID);
+  stepWorld(e, 20);
+  const body = e._bodyState(0);
+  check(`moving actor surface carries body (vx ${body.vx.toFixed(2)})`,
+    body.vx > 0.55);
   e.destroy();
 }
 
-// Pure angular motion has a local swept direction even when the body's center
-// barely translates. The actor follows the rotating tip without body overlap.
-{
-  const e = mk();
-  const beam = [];
-  for (let x = 50; x <= 110; x++) beam.push([x, 70], [x, 71]);
-  e.spawnBody(beam);
-  const id = e.spawnPlayer(102, 56);
-  e._setBodyMotion(0, 0, -0.06, -0.25);
-  let everOverlapped = false;
-  for (let i = 0; i < 8; i++) {
-    e.stepWorld();
-    everOverlapped ||= bodyOverlaps(e, e.getPlayer(id));
-  }
-  const p = e.getPlayer(id);
-  check(`rotating beam pushes player along its swept tip (${p.x.toFixed(1)},${p.y.toFixed(1)})`,
-    p.alive && p.y < 52 && p.x < 100 && !everOverlapped);
-  e.destroy();
-}
-
-// A falling slab cannot move a player through the solid floor. The blocked
-// downward sweep is a cave-collapse crush, not a rescue teleport.
+// A high-load contact against terrain damages rather than executes the player.
 {
   const e = mk();
   floor(e, 105);
   const id = e.spawnPlayer(78, 97);
   e.spawnBox(80, 78, 8, 3, MAT.RIGID);
   e._setBodyMotion(0, 0, 20, 0);
-  let maxY = e.getPlayer(id).y;
-  for (let i = 0; i < 16 && e.getPlayer(id).alive; i++) {
-    e.stepWorld();
-    maxY = Math.max(maxY, e.getPlayer(id).y);
-  }
-  const p = e.getPlayer(id);
-  check(`falling slab crushes player against terrain without teleporting (y ${p.y.toFixed(1)})`,
-    !p.alive && p.health === 0 && maxY < 105);
+  stepWorld(e, 20);
+  const player = e.getPlayer(id), body = e._bodyState(0);
+  check(`falling slab deals bounded crush damage (${player.health} health)`,
+    player.alive && player.health === 82 &&
+    body.py < player.y && Math.abs(body.vy) < 0.05);
   e.destroy();
 }
 
-// The same sandwich along X must keep the player on the approach side of the
-// wall instead of selecting a distant escape face.
+// Sustained load can reduce health to one, but the crush lifecycle itself never
+// kills the player.
+{
+  const e = mk();
+  floor(e, 105);
+  const id = e.spawnPlayer(78, 97);
+  e.spawnBox(80, 78, 8, 3, MAT.RIGID);
+  e._setBodyMotion(0, 0, 20, 0);
+  for (let tick = 0; tick < 200; tick++) {
+    e.stepActors();
+    e.stepWorld();
+  }
+  const player = e.getPlayer(id);
+  check(`sustained crush remains nonlethal (${player.health} health)`,
+    player.alive && player.health === 1);
+  e.destroy();
+}
+
+// Enemies take the same bounded damage and remain valid combat actors.
 {
   const e = mk();
   floor(e);
-  stoneRect(e, 104, 88, 112, 110);
-  const id = e.spawnPlayer(100, 102);
-  e.spawnBox(88, 106, 4, 4, MAT.RIGID);
-  e._setBodyMotion(0, 20, 0, 0);
-  stepWorld(e, 8);
-  const p = e.getPlayer(id);
-  check(`side push crushes player against solid wall (x ${p.x.toFixed(1)})`,
-    !p.alive && p.x < 104);
-  e.destroy();
-}
-
-// A loose chip smaller than half an actor is not a cave collapse. If it cannot
-// displace the player, it stays pinned without executing or teleporting them.
-{
-  const e = mk();
-  floor(e);
-  stoneRect(e, 104, 88, 112, 110);
-  const id = e.spawnPlayer(100, 102);
-  e.spawnBox(97, 105, 1, 2, MAT.RIGID);
-  e._setBodyMotion(0, 20, 0, 0);
-  stepWorld(e, 8);
-  const p = e.getPlayer(id);
-  check(`small trapped rubble pins without becoming a lethal slab (x ${p.x.toFixed(1)})`,
-    p.alive && p.health === 100 && p.x < 104);
-  e.destroy();
-}
-
-// All body stamps are absent during the solver step, so this guards the direct
-// final-footprint query that makes the second rigid an obstacle.
-{
-  const e = mk();
-  const id = e.spawnPlayer(60, 46);
-  e.spawnBox(53, 50, 3, 5, MAT.RIGID);
-  e.spawnBox(68, 50, 3, 5, MAT.RIGID);
-  e._setBodyMotion(0, 5, 0, 0);
-  stepWorld(e, 8);
-  const p = e.getPlayer(id);
-  check(`rigid/player/rigid sandwich crushes without crossing the blocker (x ${p.x.toFixed(1)})`,
-    !p.alive && p.x < 65);
-  e.destroy();
-}
-
-// Walkers and flyers share the same no-tunneling contract despite using
-// different locomotion code on their actor ticks.
-for (const [label, species, y] of [
-  ['walker', CREATURE.DYNAMITEER, 105],
-  ['flyer', CREATURE.BIRD, 60],
-]) {
-  const e = mk();
-  if (label === 'walker') floor(e);
-  const id = e.spawnCreature(species, 82, y);
-  e.spawnBox(68, y + 2, 4, 3, MAT.RIGID);
-  e._setBodyMotion(0, 30, 0, 0);
-  let everOverlapped = false;
-  for (let i = 0; i < 10; i++) {
-    e.stepWorld();
-    everOverlapped ||= bodyOverlaps(e, creature(e, id));
-  }
-  const c = creature(e, id);
-  check(`${label} creature is pushed and remains outside the body (x ${c.x.toFixed(1)})`,
-    c.alive && c.x > 94 && c.vx > 0 && !everOverlapped);
-  e.destroy();
-}
-
-// Aquatic agents use the identical body sweep while surrounded by a fluid
-// pressure domain; fluid coupling may slow the body but cannot disable pushing.
-{
-  const e = mk();
-  for (let y = 38; y < 102; y++)
-    for (let x = 4; x < COLS - 4; x++) e.paintDisc(x, y, 0, MAT.WATER, true);
-  const id = e.spawnCreature(CREATURE.MINNOW, 82, 60);
-  e.spawnBox(68, 61, 4, 2, MAT.RIGID);
-  e._setBodyMotion(0, 30, 0, 0);
-  let everOverlapped = false;
-  for (let i = 0; i < 12; i++) {
-    e.stepWorld();
-    everOverlapped ||= bodyOverlaps(e, creature(e, id));
-  }
-  const c = creature(e, id);
-  check(`aquatic creature is pushed in a live fluid domain (x ${c.x.toFixed(1)})`,
-    c.alive && c.x > 86 && !everOverlapped);
-  e.destroy();
-}
-
-// Terrain and body sandwiches are lethal to creatures immediately, so high-
-// health enemies cannot survive for minutes while engulfed by a collapse.
-{
-  const e = mk();
-  floor(e);
-  stoneRect(e, 100, 88, 108, 110);
   const id = e.spawnCreature(CREATURE.MINIGUNNER, 91, 104);
-  e.spawnBox(79, 107, 4, 3, MAT.RIGID);
-  e._setBodyMotion(0, 30, 0, 0);
-  stepWorld(e, 10);
-  const c = creature(e, id);
-  check(`rigid/creature/terrain sandwich kills without crossing wall (x ${c.x.toFixed(1)})`,
-    !c.alive && c.health === 0 && c.x < 100);
-  e.destroy();
-}
-{
-  const e = mk();
-  floor(e);
-  const id = e.spawnCreature(CREATURE.DYNAMITEER, 60, 105);
-  e.spawnBox(52, 107, 3, 3, MAT.RIGID);
-  e.spawnBox(72, 107, 3, 3, MAT.RIGID);
-  e._setBodyMotion(0, 30, 0, 0);
-  stepWorld(e, 10);
-  const c = creature(e, id);
-  check(`rigid/creature/rigid sandwich kills without far-side teleport (x ${c.x.toFixed(1)})`,
-    !c.alive && c.x < 69);
+  e.spawnBox(95, 82, 8, 3, MAT.RIGID);
+  e._setBodyMotion(0, 0, 20, 0);
+  stepWorld(e, 20);
+  const target = creature(e, id);
+  check(`creature crush damage is bounded (${target?.health} health)`,
+    target?.alive && target.health === target.maxHealth - 18);
   e.destroy();
 }
 
-// Actor presence is one-way coupling. Compare every body state after each step
-// against an actor-free control to guarantee pushes and crushes never alter the
-// rigid solver's result.
-{
-  const setup = (withActor) => {
-    const e = mk();
-    floor(e, 118);
-    e.spawnBox(50, 66, 6, 4, MAT.RIGID);
-    e.spawnBox(94, 72, 5, 7, MAT.RIGID);
-    e._setBodyMotion(0, 3, 1.2, 0.07);
-    e._setBodyMotion(1, -2.1, 0.6, -0.04);
-    if (withActor) e.spawnPlayer(72, 67);
-    return e;
-  };
-  const control = setup(false), actors = setup(true);
-  let identical = true;
-  for (let tick = 0; tick < 32; tick++) {
-    control.stepWorld();
-    actors.stepWorld();
-    for (let i = 0; i < 2; i++) {
-      const a = control._bodyState(i), b = actors._bodyState(i);
-      identical &&= a.px === b.px && a.py === b.py && a.angle === b.angle &&
-        a.vx === b.vx && a.vy === b.vy && a.omega === b.omega;
-    }
-  }
-  check('players never feed impulses or corrections back into rigid bodies', identical);
-  control.destroy();
-  actors.destroy();
-}
-
-// Fixed initial state produces the same actor outcomes exactly.
+// Fixed initial state produces identical actor and rigid-body outcomes.
 {
   const replay = () => {
     const e = mk();
-    floor(e);
-    stoneRect(e, 104, 88, 112, 110);
-    const playerId = e.spawnPlayer(100, 102);
-    const creatureId = e.spawnCreature(CREATURE.DYNAMITEER, 82, 105);
-    e.spawnBox(68, 106, 4, 4, MAT.RIGID);
-    e._setBodyMotion(0, 30, 0, 0);
-    stepWorld(e, 16);
-    const p = e.getPlayer(playerId), c = creature(e, creatureId);
-    const result = [p.x, p.y, p.vx, p.vy, p.health, p.alive,
-      c.x, c.y, c.vx, c.vy, c.health, c.alive];
+    floor(e, 118);
+    const playerId = e.spawnPlayer(72, 67);
+    const creatureId = e.spawnCreature(CREATURE.CLUSTER_WASP, 108, 74);
+    e.spawnBox(50, 70, 6, 4, MAT.RIGID);
+    e.spawnBox(98, 62, 5, 2, MAT.RIGID);
+    e._setBodyMotion(0, 3, 0.4, 0.07);
+    e._setBodyMotion(1, 1.4, 0.8, -0.04);
+    stepWorld(e, 48);
+    const player = e.getPlayer(playerId);
+    const target = creature(e, creatureId);
+    const bodies = [e._bodyState(0), e._bodyState(1)];
+    const result = [
+      player.x, player.y, player.health, target.x, target.y, target.health,
+      ...bodies.flatMap((body) =>
+        [body.px, body.py, body.angle, body.vx, body.vy, body.omega]),
+    ];
     e.destroy();
     return result;
   };
-  const a = replay(), b = replay();
-  check('actor/body push and crush outcomes replay exactly',
-    a.length === b.length && a.every((value, i) => value === b[i]));
+  const first = replay(), second = replay();
+  check('actor/body contact outcomes replay exactly',
+    first.length === second.length &&
+    first.every((value, index) => value === second[index]));
 }
 
 const failures = done();

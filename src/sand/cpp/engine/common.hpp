@@ -253,6 +253,10 @@ struct Body {
   double offsetX = 0, offsetY = 0;
   double px = 0, py = 0, angle = 0;
   double vx = 0, vy = 0, omega = 0;
+  // Actor collision proxies keep a fixed solver pose while exposing the
+  // actor's velocity to contact friction and normal impulses.
+  bool kinematic = false;
+  double kinematicVx = 0, kinematicVy = 0, kinematicOmega = 0;
   uint8_t material = RIGID; double density = 1;
   bool awake = true; int stillTicks = 0;
   bool blastDebris = false; // tiny explosion rubble; non-structural until stable enough to bake
@@ -396,6 +400,8 @@ static const double P_GROUND_FRICTION = 0.55, P_AIR_FRICTION = 0.92, P_JUMP_VEL 
 static const double P_AIM_FACING_DEADZONE = 0.2; // retain side while aiming almost exactly vertical
 static const double P_MOVE_SUBSTEP = 0.25; // sub-cell stepping prevents tunneling
 static const double P_STEP_UP = 2.0;       // auto-climb height for low (1-2px) ledges
+static const int    ACTOR_CRUSH_DAMAGE = 18, ACTOR_CRUSH_COOLDOWN = 30;
+static const double ACTOR_CRUSH_IMPULSE = 0.85;
 static const int    P_BURY_JUMP_MAX = 4;   // max embed depth (px) a player can still jump out of (else must dig)
 // Rechargeable personal jetpack. Fuel is normalized [0,1] so the ABI/HUD can
 // expose it without duplicating a capacity constant. A full tank provides two

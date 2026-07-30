@@ -333,6 +333,11 @@ staged crater wave while pacing rigid rubble through a per-tick body budget.
 
 Players, creatures, items, and projectiles are non-grid actors. Free rigid bodies
 are entities whose occupancy is stamped into the material grid.
+During the foreground rigid solve, each live player and creature contributes an
+exact AABB kinematic collider. Rigid bodies receive ordinary contact normals,
+friction, and torque from those colliders, while actor movement remains under
+the gameplay controller. Sustained downward contact against terrain applies
+cooldown-limited, nonlethal crush damage.
 Players and other real-time actors advance on a deterministic 60 Hz actor clock;
 cellular world work is attempted at most once per presentation frame and does not
 accumulate catch-up debt.
@@ -526,13 +531,13 @@ node scripts/bench-actor-rigid.mjs --compare bench/actor-rigid-baseline.json
 
 Detached-solid and loose-acceleration behavior has focused coverage in
 `npm run test:detached-rigid` and `npm run test:loose-acceleration`.
-Player/creature sweeps, pushes, crushing, and rigid/actor sandwiches are covered
-by `npm run test:actor-rigid`.
+Player/creature support, rolling, swept contact, moving-surface friction, and
+bounded crushing are covered by `npm run test:actor-rigid`.
 
 Use the engine benchmark for simulation/render-fill/streaming changes and the pan
 benchmark for WebGL presentation, pointer mapping, two-axis cell stability, and
 parallax rigidity. Use the actor/rigid benchmark for dense actor cadence and
-one-way body sweeps through player/creature populations. Pure refactors must
+kinematic body contacts through player/creature populations. Pure refactors must
 preserve deterministic checksums. See `PERF.md` for metric ownership and focused
 commands.
 

@@ -1,4 +1,4 @@
-// Player/creature actor cadence plus dense one-way rigid sweep interactions.
+// Player/creature actor cadence plus dense kinematic rigid contacts.
 //
 //   node scripts/bench-actor-rigid.mjs
 //   node scripts/bench-actor-rigid.mjs --compare bench/actor-rigid-baseline.json

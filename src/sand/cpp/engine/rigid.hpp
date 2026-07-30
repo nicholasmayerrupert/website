@@ -103,7 +103,6 @@ class RigidBodySystem {
   bool sleepingBodyHasSupport(Body* b, double probe);
   int bodyDepenTolerance(Body* b);
   bool depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre);
-  bool pushActorsFromBody(Body* b, double prePx, double prePy, double preAngle);
   void bakeBodyToGrid(Body* b, int assemblyId);
   bool bodySolidifies(Body* b);
   bool bodyTouchesGroundedSolid(Body* b);

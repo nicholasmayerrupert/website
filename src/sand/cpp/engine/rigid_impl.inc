@@ -4786,37 +4786,71 @@ void RigidBodySystem::moveBodies() {
     }
     E.bg.passiveBodyCells.clear();
   }
-  std::unordered_map<int, std::vector<int>> previousFootprints;
+  bool rosterChanged = false;
+  size_t simulatedBodyCount = 0;
+  for (Body* b : E.L->bodies) if (b->jointRole != 2) {
+    if (simulatedBodyCount >= moveBodyIds.size()
+        || moveBodyIds[simulatedBodyCount] != b->id)
+      rosterChanged = true;
+    simulatedBodyCount++;
+  }
+  if (simulatedBodyCount != moveBodyIds.size()) rosterChanged = true;
+  if (rosterChanged) {
+    moveBodyIds.clear();
+    moveBodySlotById.clear();
+    moveBodyIds.reserve(simulatedBodyCount);
+    moveBodySlotById.reserve(simulatedBodyCount * 2);
+    for (Body* b : E.L->bodies) if (b->jointRole != 2) {
+      int slot = (int)moveBodyIds.size();
+      moveBodyIds.push_back(b->id);
+      moveBodySlotById[b->id] = slot;
+    }
+    movePreviousFootprints.resize(simulatedBodyCount);
+    moveDisplaced.resize(simulatedBodyCount);
+    moveStamped.resize(simulatedBodyCount);
+    movePrePoses.resize(simulatedBodyCount);
+  }
+  for (size_t slot = 0; slot < simulatedBodyCount; slot++) {
+    movePreviousFootprints[slot].clear();
+    moveDisplaced[slot].clear();
+    moveStamped[slot].clear();
+  }
   for (int k : E.L->bodyCells) {
     int owner = E.L->bodyOwner[k];
-    if (owner >= 0) previousFootprints[owner].push_back(k);
+    auto slot = moveBodySlotById.find(owner);
+    if (slot != moveBodySlotById.end())
+      movePreviousFootprints[slot->second].push_back(k);
     if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY);
     E.L->bodyOwner[k] = -1;
   } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
-  std::unordered_map<int, std::array<double, 3>> prePoses;
-  for (Body* b : E.L->bodies) if (b->jointRole != 2)
-    prePoses[b->id] = {b->px, b->py, b->angle};
+  for (Body* b : E.L->bodies) if (b->jointRole != 2) {
+    int slot = moveBodySlotById.find(b->id)->second;
+    movePrePoses[slot] = {b->px, b->py, b->angle};
+  }
   rigidStep(1.0);
   rigidRejectedCells = 0; rigidDepenetrations = 0;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
-    auto it = prePoses.find(b->id); bool hp = it != prePoses.end();
-    double ppx = hp ? it->second[0] : 0, ppy = hp ? it->second[1] : 0;
-    if (depenetrateBodyRaster(b, ppx, ppy, hp)) rigidDepenetrations++;
+    int slot = moveBodySlotById.find(b->id)->second;
+    const std::array<double, 3>& prePose = movePrePoses[slot];
+    if (depenetrateBodyRaster(b, prePose[0], prePose[1], true))
+      rigidDepenetrations++;
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
-  std::vector<int> cells, footprint;
-  std::unordered_map<int, std::pair<std::vector<Disp>, std::vector<int>>> perBody;
+  moveCells.clear();
+  moveFootprint.clear();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
-    auto& pb = perBody[b->id];
+    int slot = moveBodySlotById.find(b->id)->second;
+    std::vector<Disp>& displaced = moveDisplaced[slot];
+    std::vector<int>& stamped = moveStamped[slot];
     forEachBodyCell(b, [&](int x, int y, int local) {
       int k = y * E.cols + x; if (E.L->bodyOwner[k] != -1) return; uint8_t m = E.L->grid[k];
       if (!canBodyOccupy(m, k, b->density)) { rigidRejectedCells++; return; }
-      if (isBodyRelocatable(m, k, b->density)) pb.first.push_back({m, k});
+      if (isBodyRelocatable(m, k, b->density)) displaced.push_back({m, k});
       E.writeGridIndex(k, bodyMaterialAt(b, local)); E.L->bodyOwner[k] = b->id;
       if (b->blastDebris) E.L->groundedCell[k] = 0;
-      cells.push_back(k); footprint.push_back(k); pb.second.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
+      moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
   {
@@ -4824,8 +4858,8 @@ void RigidBodySystem::moveBodies() {
     keep.reserve(E.L->bodies.size());
     for (Body* b : E.L->bodies) {
       if (b->jointRole == 2) { keep.push_back(b); continue; }
-      auto it = perBody.find(b->id);
-      if (it != perBody.end() && it->second.second.empty()) {
+      int slot = moveBodySlotById.find(b->id)->second;
+      if (moveStamped[slot].empty()) {
         if (b->jointRole == 1 && b->jointPeer) {
           bool hasUnionCell = false;
           for (uint8_t occupied : b->occ)
@@ -4849,15 +4883,13 @@ void RigidBodySystem::moveBodies() {
     if (keep.size() != E.L->bodies.size()) E.L->bodies = std::move(keep);
   }
   int32_t footprintGen = ++E.L->seenGen;
-  for (int k : footprint) E.L->rigidSpillFootprint[k] = footprintGen;
+  for (int k : moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
-    auto it = perBody.find(b->id);
-    if (it == perBody.end()) continue;
-    auto old = previousFootprints.find(b->id);
-    const std::vector<int>* vacated =
-      old == previousFootprints.end() ? nullptr : &old->second;
-    spillDisplacedBodyMaterial(it->second.first, it->second.second,
+    int slot = moveBodySlotById.find(b->id)->second;
+    const std::vector<int>* vacated = movePreviousFootprints[slot].empty()
+      ? nullptr : &movePreviousFootprints[slot];
+    spillDisplacedBodyMaterial(moveDisplaced[slot], moveStamped[slot],
                                footprintGen, b->id, b->density, vacated);
   }
   if (E.L == &E.fg) {
@@ -4869,7 +4901,7 @@ void RigidBodySystem::moveBodies() {
     for (Body* b : E.fg.bodies) if (b->jointRole == 1) leaders.push_back(b);
     for (Body* leader : leaders) stampJointFollower(leader);
   }
-  erodeBodies(cells);
+  erodeBodies(moveCells);
 }
 
 template <class Cells>

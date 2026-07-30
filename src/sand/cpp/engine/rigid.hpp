@@ -230,6 +230,13 @@ class RigidBodySystem {
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
   std::vector<uint8_t> fluidBodySurface;
+  std::vector<int> moveBodyIds;
+  std::unordered_map<int, int> moveBodySlotById;
+  std::vector<std::vector<int>> movePreviousFootprints;
+  std::vector<std::vector<Disp>> moveDisplaced;
+  std::vector<std::vector<int>> moveStamped;
+  std::vector<std::array<double, 3>> movePrePoses;
+  std::vector<int> moveCells, moveFootprint;
 
   Engine& E;
 };

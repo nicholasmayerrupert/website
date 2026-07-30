@@ -7,6 +7,16 @@ void ReactionSystem::prepareActiveLists() {
   E.activeWaterCells.clear(); E.activeFireCells.clear(); E.activeAcidCells.clear();
   E.activeLavaCells.clear(); E.activeSaltCells.clear(); E.activeHeatCells.clear();
   E.L->heatAddedAfterPrepare = false;
+  auto besideExplosive = [&](int k, int x, int y) {
+    auto explosive = [&](int q) {
+      uint8_t material = E.L->grid[q];
+      return material == TNT || material == METHANE;
+    };
+    return (x + 1 < E.cols && explosive(k + 1))
+        || (x > 0 && explosive(k - 1))
+        || (y + 1 < E.rows && explosive(k + E.cols))
+        || (y > 0 && explosive(k - E.cols));
+  };
   for (int y = 1; y < E.rows; y++) {
     int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
     int rb = y * E.cols;
@@ -14,9 +24,9 @@ void ReactionSystem::prepareActiveLists() {
       int k = rb + x;
       switch (E.L->grid[k]) {
         case WATER: E.activeWaterCells.push_back(k); break;
-        case FIRE: E.activeFireCells.push_back(k); if (y < E.rows - 1) E.activeHeatCells.push_back(k); break;
+        case FIRE: E.activeFireCells.push_back(k); if (y < E.rows - 1 && besideExplosive(k, x, y)) E.activeHeatCells.push_back(k); break;
         case ACID: if (y < E.rows - 1) E.activeAcidCells.push_back(k); break;
-        case LAVA: if (y < E.rows - 1) { E.activeLavaCells.push_back(k); E.activeHeatCells.push_back(k); } break;
+        case LAVA: if (y < E.rows - 1) { E.activeLavaCells.push_back(k); if (besideExplosive(k, x, y)) E.activeHeatCells.push_back(k); } break;
         case SALT: if (y < E.rows - 1) E.activeSaltCells.push_back(k); break;
         default: break;
       }

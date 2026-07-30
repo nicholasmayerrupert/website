@@ -35,9 +35,9 @@ class ExplosivesSystem {
   static const int    BLAST_FORCED_DEBRIS_TRIES = 3; // nearby placement attempts after the debris roll succeeds
   static constexpr double BLAST_FORCED_DEBRIS_FRAC = 0.75; // generic open-air debris spawns on three quarters of blasts
   static const int    BLAST_DEBRIS_STEP_CAP = 3;  // max chunks a same-tick TNT wave can add per layer
-  static const int    BLAST_MASS_DEBRIS_STEP_CAP = 8; // bounded physical rubble from a dense TNT front
+  static const int    BLAST_MASS_DEBRIS_STEP_CAP = 4; // bounded physical rubble from a dense TNT front
   static const int    BLAST_DEBRIS_SAMPLE_SIDE = 3; // fixed spatial buckets; no growing candidate list in large craters
-  static const int    BLAST_DEBRIS_CAP = 64;      // hard live-body solver ceiling; per-step cap keeps chains paced
+  static const int    BLAST_DEBRIS_CAP = 24;      // hard live-body solver ceiling; per-step cap keeps chains paced
   static constexpr double BLAST_DEBRIS_SPEED = 2.2;   // chunk launch speed
   static constexpr double BLAST_PARTICLE_SPEED = 2.6; // cosmetic fleck speed
   static const int    BLAST_PARTICLE_LIFE = 26;
@@ -50,6 +50,7 @@ class ExplosivesSystem {
   static const int    BLAST_GAS_RING_DEPTH = 3; // fill the outer shell of each crater; no gas pathfinding
   static constexpr double BLAST_GAS_INNER_KEEP = 0.22; // inner shell is mostly air
   static constexpr double BLAST_GAS_OUTER_KEEP = 0.88; // rim stays visibly smoky
+  static const int    TNT_MASS_GAS_WAVES_PER_STEP = 2;
 
   // Per-step transaction: every crater first contributes to one damage field.
   // The union is classified from the untouched grid, cut once, repaired once,
@@ -88,7 +89,9 @@ class ExplosivesSystem {
     std::unordered_set<Body*> dirtyBodies;
     int minX = 1 << 30, minY = 1 << 30, maxX = -1, maxY = -1; // union dirty rect
     int particles = 0, debrisSpawned = 0, debrisStepCap = BLAST_DEBRIS_STEP_CAP;
+    int gasWaveCap = INT_MAX;
     bool any = false, structurePreserved = false, crossSupportUncertain = false;
+    bool emitGas = true, emitParticles = true;
   };
 
   // Schedule a detonation at a cell, shortening an existing fuse only when the new
@@ -96,7 +99,7 @@ class ExplosivesSystem {
   std::vector<std::pair<int, int>> blastBoxCells(int cx, int cy, int halfW, int halfH);
   void queueDetonation(int cell, int fuse);
   void shortenTntBodyFuse(Body* b, int fuse);
-  void spawnBlastRingGases(const std::vector<BlastWave>& waves);
+  void spawnBlastRingGases(const std::vector<BlastWave>& waves, int waveCap);
   void activateBlastRectNow(int x0, int y0, int x1, int y1);
   bool blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid);
   BlastDebrisEjection inferBlastDebrisEjection(int cx, int cy);

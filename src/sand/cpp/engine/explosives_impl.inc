@@ -47,8 +47,11 @@ void ExplosivesSystem::shortenTntBodyFuse(Body* b, int fuse) {
   b->awake = true; b->stillTicks = 0;
 }
 
-void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves) {
-  for (const BlastWave& wave : waves) {
+void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves,
+                                           int waveCap) {
+  int count = imin((int)waves.size(), waveCap);
+  for (int waveSlot = 0; waveSlot < count; waveSlot++) {
+    const BlastWave& wave = waves[(size_t)waveSlot * waves.size() / count];
     int cx = wave.cx, cy = wave.cy, radius = wave.radius;
     int r2 = radius * radius;
     int inner = imax(1, radius - BLAST_GAS_RING_DEPTH);
@@ -355,7 +358,11 @@ void ExplosivesSystem::carveStaticTntCluster(const std::vector<int>& cells, Blas
   if (cells.empty()) return;
   if (massFront || (int)cells.size() >= TNT_MASS_FRONT_CELLS) {
     bb.debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
-    if (otherBb) otherBb->debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
+    bb.gasWaveCap = TNT_MASS_GAS_WAVES_PER_STEP;
+    if (otherBb) {
+      otherBb->debrisStepCap = BLAST_MASS_DEBRIS_STEP_CAP;
+      otherBb->gasWaveCap = TNT_MASS_GAS_WAVES_PER_STEP;
+    }
   }
   std::vector<int> reps;
   if (!massFront && (int)cells.size() <= TNT_COMPACT_FRONT_CELLS) {
@@ -445,7 +452,8 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
       noteCrossSupportRemoval(k, bb);
       bb.erasedStructural.push_back(k);
     }
-    if (collectAftermath && material != TNT && E.isRigidMaterialClass(material)
+    if (collectAftermath && bb.debrisStepCap > 0
+        && material != TNT && E.isRigidMaterialClass(material)
         && waveIndex >= 0 && waveIndex < (int)bb.waves.size()) {
       BlastWave& wave = bb.waves[waveIndex];
       static const int SAMPLE_COUNT =
@@ -514,7 +522,8 @@ void ExplosivesSystem::evaluateBlastPlan(BlastBatch& bb) {
     } else {
       planStaticCut(k, material, waveIndex, dd, true);
     }
-    if (bb.particles < BLAST_PARTICLE_CAP && (((x * 7) ^ (y * 3)) % 8 == 0)) {
+    if (bb.emitParticles && bb.particles < BLAST_PARTICLE_CAP
+        && (((x * 7) ^ (y * 3)) % 8 == 0)) {
       double dist = std::sqrt((double)dd);
       double inv = dist > 0.5 ? 1.0 / dist : 0.0;
       double speed = BLAST_PARTICLE_SPEED * (1.0 - dist / wave.radius)
@@ -607,9 +616,10 @@ void ExplosivesSystem::repairBlastStructures(BlastBatch& bb) {
 
 void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
   if (!bb.any) return;
-  for (const BlastParticlePlan& particle : bb.particlePlans)
-    E.spawnParticle(particle.material, particle.x, particle.y,
-                    particle.vx, particle.vy, BLAST_PARTICLE_LIFE);
+  if (bb.emitParticles)
+    for (const BlastParticlePlan& particle : bb.particlePlans)
+      E.spawnParticle(particle.material, particle.x, particle.y,
+                      particle.vx, particle.vy, BLAST_PARTICLE_LIFE);
 
   static const int SAMPLE_COUNT = BLAST_DEBRIS_SAMPLE_SIDE * BLAST_DEBRIS_SAMPLE_SIDE;
   for (BlastWave& wave : bb.waves) {
@@ -692,7 +702,7 @@ void ExplosivesSystem::applyBlastAftermath(BlastBatch& bb) {
                           wave.cx, wave.cy, BLAST_FORCED_DEBRIS_CHUNKS, 97,
                           bb, wave.debrisEjection, BLAST_FORCED_DEBRIS_TRIES);
   }
-  spawnBlastRingGases(bb.waves);
+  if (bb.emitGas) spawnBlastRingGases(bb.waves, bb.gasWaveCap);
   activateBlastRectNow(bb.minX, bb.minY, bb.maxX, bb.maxY);
   E.markDirtyRect(bb.minX, bb.minY, bb.maxX, bb.maxY);
 }
@@ -764,10 +774,11 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
   Layer* other = (src == &E.fg) ? &E.bg : &E.fg;
   E.useLayer(other);
   carveBlast(cx, cy, radius, power, *otherBb, nullptr, explosiveMaterial, seedSerial);
-  // Cross-layer damage, gas, particles, support repair, and shock are mirrored.
-  // Physical rubble belongs to the layer containing the explosive so the peer
-  // crater does not duplicate simulated collision bodies.
+  // Cross-layer structural damage, support repair, and shock are mirrored.
+  // Gas, particles, and physical rubble belong to the source layer.
   otherBb->debrisStepCap = 0;
+  otherBb->emitGas = false;
+  otherBb->emitParticles = false;
   E.useLayer(src);
 }
 
@@ -876,11 +887,22 @@ void ExplosivesSystem::applyExplosives() {
   const std::vector<int>* heatCells = &E.activeHeatCells;
   if (E.L->heatAddedAfterPrepare) {
     addedHeatCells.clear();
+    auto besideExplosive = [&](int k, int x, int y) {
+      auto explosive = [&](int q) {
+        uint8_t material = E.L->grid[q];
+        return material == TNT || material == METHANE;
+      };
+      return (x + 1 < E.cols && explosive(k + 1))
+          || (x > 0 && explosive(k - 1))
+          || (y + 1 < E.rows && explosive(k + E.cols))
+          || (y > 0 && explosive(k - E.cols));
+    };
     for (int y = 1; y < E.rows - 1; y++) {
       int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
       for (int x = minX; x <= maxX; x++) {
         int k = E.I(x, y); uint8_t m = E.L->grid[k];
-        if (m == FIRE || m == LAVA) addedHeatCells.push_back(k);
+        if ((m == FIRE || m == LAVA) && besideExplosive(k, x, y))
+          addedHeatCells.push_back(k);
       }
     }
     heatCells = &addedHeatCells;

@@ -110,12 +110,24 @@ function runScenario({
     previousTnt = tnt;
     rollingHash = hashGrid(rollingHash, engine.getGrid());
     if (bg) rollingHash = hashGrid(rollingHash, engine.getGridBg());
-    records.push({ step, wallMs, perf, reactMs: perf.reactMs || 0, tnt, bodies: engine._bodyCount(), groundingDiag: engine.groundingDiag() });
+    const bodies = engine._bodyCount();
+    let awakeBodies = 0;
+    for (let body = 0; body < bodies; body++)
+      if (engine._bodyAwake(body)) awakeBodies++;
+    const rigidDiag = bodies ? engine.getRigidSolverDebug() : {
+      substeps: 0, contacts: 0, velocityIterations: 0, biasIterations: 0,
+    };
+    records.push({
+      step, wallMs, perf, reactMs: perf.reactMs || 0, tnt, bodies, awakeBodies,
+      rigidDiag,
+      groundingDiag: engine.groundingDiag(),
+    });
   }
 
   const blastRecords = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= (completed >= 0 ? completed : firstBlast));
   const blastAndAftermath = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast && step <= firstBlast + 5);
   const blastTail = records.filter(({ step }) => firstBlast >= 0 && step >= firstBlast);
+  const postBlast = records.filter(({ step }) => completed >= 0 && step > completed);
   let priorTnt = initialTnt;
   const detonationDrops = [];
   for (const record of records) {
@@ -129,6 +141,10 @@ function runScenario({
   const tailPhases = Object.fromEntries(PHASE_KEYS.map((key) => [
     key,
     blastTail.reduce((sum, record) => sum + (record.perf[key] || 0), 0),
+  ]));
+  const postBlastPhases = Object.fromEntries(PHASE_KEYS.map((key) => [
+    key,
+    postBlast.reduce((sum, record) => sum + (record.perf[key] || 0), 0),
   ]));
   const peak = blastRecords.reduce((best, record) => record.reactMs > best.reactMs ? record : best, blastRecords[0]);
   const groundingDiag = engine.groundingDiag();
@@ -154,6 +170,13 @@ function runScenario({
     blastAndAftermathWallMs: blastAndAftermath.reduce((sum, record) => sum + record.wallMs, 0),
     blastTailWallMs: blastTail.reduce((sum, record) => sum + record.wallMs, 0),
     blastTailBodyMs: blastTail.reduce((sum, record) => sum + (record.perf.bodyMs || 0), 0),
+    postBlastWallMs: postBlast.reduce((sum, record) => sum + record.wallMs, 0),
+    postBlastPhases,
+    postBlastAwakeBodySteps: postBlast.reduce((sum, record) => sum + record.awakeBodies, 0),
+    postBlastRigidSubsteps: postBlast.reduce((sum, record) => sum + record.rigidDiag.substeps, 0),
+    postBlastRigidContacts: postBlast.reduce((sum, record) => sum + record.rigidDiag.contacts, 0),
+    postBlastRigidIterations: postBlast.reduce((sum, record) =>
+      sum + record.rigidDiag.velocityIterations + record.rigidDiag.biasIterations, 0),
     peakBodies: Math.max(0, ...blastTail.map(({ bodies }) => bodies)),
     groundingDiag,
     groundingEvents,
@@ -193,6 +216,11 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   const blastAndAftermathWall = summary(runs.map(({ blastAndAftermathWallMs }) => blastAndAftermathWallMs));
   const blastTailWall = summary(runs.map(({ blastTailWallMs }) => blastTailWallMs));
   const blastTailBody = summary(runs.map(({ blastTailBodyMs }) => blastTailBodyMs));
+  const postBlastWall = summary(runs.map(({ postBlastWallMs }) => postBlastWallMs));
+  const postBlastAwakeBodySteps = summary(runs.map(({ postBlastAwakeBodySteps }) => postBlastAwakeBodySteps));
+  const postBlastRigidSubsteps = summary(runs.map(({ postBlastRigidSubsteps }) => postBlastRigidSubsteps));
+  const postBlastRigidContacts = summary(runs.map(({ postBlastRigidContacts }) => postBlastRigidContacts));
+  const postBlastRigidIterations = summary(runs.map(({ postBlastRigidIterations }) => postBlastRigidIterations));
   const first = runs[0];
   const phaseSummary = PHASE_KEYS
     .map((key) => [key.replace(/Ms$/, ''), summary(runs.map(({ aftermathPhases }) => aftermathPhases[key])).p50])
@@ -206,6 +234,12 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
     .sort((a, b) => b[1] - a[1])
     .map(([key, value]) => `${key} ${value.toFixed(3)}`)
     .join('  ');
+  const postBlastPhaseSummary = PHASE_KEYS
+    .map((key) => [key.replace(/Ms$/, ''), summary(runs.map(({ postBlastPhases }) => postBlastPhases[key])).p50])
+    .filter(([, value]) => value >= 0.10)
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, value]) => `${key} ${value.toFixed(3)}`)
+    .join('  ');
   console.log(`\n${scenario.name}: TNT ${first.initialTnt}, wave ${first.firstBlast}..${first.completed}, hash ${hashes.join(',')}${hashes.length === 1 ? '' : ' UNSTABLE'}`);
   console.log(`  cold wave   react ${first.waveReactMs.toFixed(3)}  wall ${first.waveWallMs.toFixed(3)} ms`);
   console.log(`  peak react  p50 ${peakReact.p50.toFixed(3)}  p95 ${peakReact.p95.toFixed(3)}  mean ${peakReact.mean.toFixed(3)} ms`);
@@ -215,6 +249,8 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  wave wall   p50 ${waveWall.p50.toFixed(3)}  p95 ${waveWall.p95.toFixed(3)}  mean ${waveWall.mean.toFixed(3)} ms`);
   console.log(`  blast +5   p50 ${blastAndAftermathWall.p50.toFixed(3)}  p95 ${blastAndAftermathWall.p95.toFixed(3)}  mean ${blastAndAftermathWall.mean.toFixed(3)} ms`);
   console.log(`  full tail  p50 ${blastTailWall.p50.toFixed(3)}  p95 ${blastTailWall.p95.toFixed(3)}  body ${blastTailBody.p50.toFixed(3)} ms`);
+  console.log(`  post blast p50 ${postBlastWall.p50.toFixed(3)}  p95 ${postBlastWall.p95.toFixed(3)} ms`);
+  console.log(`  post rigid awake-body-steps ${postBlastAwakeBodySteps.p50.toFixed(0)}  substeps ${postBlastRigidSubsteps.p50.toFixed(0)}  contacts ${postBlastRigidContacts.p50.toFixed(0)}  iterations ${postBlastRigidIterations.p50.toFixed(0)}`);
   console.log(`  rubble     peak ${first.peakBodies} bodies`);
   console.log(`  front steps ${first.detonationSteps}  max cells ${first.maxDetonationDrop}`);
   console.log(`  ground proof fast ${first.groundingDiag.fast}  cut ${first.groundingDiag.cut}  span ${first.groundingDiag.span}  edge ${first.groundingDiag.edge}  powder ${first.groundingDiag.powder}`);
@@ -222,4 +258,5 @@ for (const scenario of scenarios.filter(({ name }) => SCENARIO === 'all' || name
   console.log(`  ground events ${first.groundingEvents.join('  ') || 'none'}`);
   console.log(`  +5 phases  ${phaseSummary}`);
   console.log(`  tail phases ${tailPhaseSummary}`);
+  console.log(`  post phases ${postBlastPhaseSummary}`);
 }

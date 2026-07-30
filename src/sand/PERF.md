@@ -100,8 +100,9 @@ component registration, and generation/restoration. Browser presentation exposes
   maximum-energy field, with generation-stamped sparse storage for widely
   separated waves. Each unique affected cell is classified once, each
   foreground/background cell is cut once, and component repair completes before
-  physical or cosmetic aftermath is emitted. Cross-layer damage and visual
-  aftermath are mirrored, while physical rubble remains source-layer-owned.
+  physical or cosmetic aftermath is emitted. Cross-layer structural damage and
+  shock are mirrored, while gas, flecks, and physical rubble remain
+  source-layer-owned.
 - A blast whose structural removals pass the bounded exact-connectivity proof
   keeps its support cache and double-buffer carry sparse. Genuine cuts rebuild
   exact support; loose support, assembly movement, snapshots, resize, and world

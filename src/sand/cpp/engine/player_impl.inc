@@ -30,16 +30,14 @@ bool PlayerSystem::playerBoxHits(double px, double py, int w, int h) {
 // second body remains a real obstacle in a rigid/actor/rigid sandwich.
 bool PlayerSystem::playerBoxHitsOtherBody(double px, double py, int w, int h,
                                           const Body* ignored) {
-  double x0 = px - ACTOR_RIGID_SKIN, y0 = py - ACTOR_RIGID_SKIN;
-  double x1 = px + w + ACTOR_RIGID_SKIN, y1 = py + h + ACTOR_RIGID_SKIN;
   for (Body* body : E.fg.bodies) {
     if (body == ignored || body->jointRole == 2) continue;
     double radius = body->maxR + 1.0;
-    if (x0 >= body->px + radius || x1 <= body->px - radius ||
-        y0 >= body->py + radius || y1 <= body->py - radius) continue;
+    if (px >= body->px + radius || px + w <= body->px - radius ||
+        py >= body->py + radius || py + h <= body->py - radius) continue;
     bool hit = false;
     E.rigid.forEachBodyCell(body, [&](int x, int y, int) {
-      if (!hit && x0 < x + 1 && x1 > x && y0 < y + 1 && y1 > y) hit = true;
+      if (!hit && px < x + 1 && px + w > x && py < y + 1 && py + h > y) hit = true;
     });
     if (hit) return true;
   }
@@ -334,7 +332,7 @@ void PlayerSystem::killPlayer(Player& p) {
   E.audio.emit(SE_DEATH, p.px + p.w * .5, p.py + p.h * .5, 1.0, EMPTY);
 }
 void PlayerSystem::crushPlayer(Player& p) {
-  damagePlayer(p, imin(ACTOR_CRUSH_DAMAGE, p.health - 1), ACTOR_CRUSH_COOLDOWN);
+  killPlayer(p);
 }
 bool PlayerSystem::shieldCoversSource(const Player& p, double sourceX, double sourceY) const {
   if (!p.shieldActive || p.shieldHealth <= 0 ||

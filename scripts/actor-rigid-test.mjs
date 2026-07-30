@@ -35,20 +35,6 @@ const bodyOverlaps = (e, actor) => {
       return true;
   return false;
 };
-const bodyInvadesCollider = (e, actor, skin = 0.35) => {
-  const owners = e._bodyOwnerGrid();
-  const x0 = Math.floor(actor.x - skin);
-  const x1 = Math.floor(actor.x + actor.w + skin - 1e-6);
-  const y0 = Math.floor(actor.y - skin);
-  const y1 = Math.floor(actor.y + actor.h + skin - 1e-6);
-  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)
-    if (x >= 0 && x < COLS && y >= 0 && y < ROWS &&
-        owners[y * COLS + x] >= 0 &&
-        actor.x - skin < x + 1 && actor.x + actor.w + skin > x &&
-        actor.y - skin < y + 1 && actor.y + actor.h + skin > y)
-      return true;
-  return false;
-};
 const creature = (e, id) => e.getCreatures().find((entry) => entry.id === id);
 const stepWorld = (e, count) => {
   for (let i = 0; i < count; i++) e.stepWorld();
@@ -81,9 +67,8 @@ const stepWorld = (e, count) => {
   e._setBodyMotion(0, 3, 0, 0);
   stepWorld(e, 8);
   const p = e.getPlayer(id);
-  check(`player's padded rigid collider is pushed in free space (x ${p.x.toFixed(1)}, vx ${p.vx.toFixed(2)})`,
-    p.alive && p.x > 90 && p.vx > 0 &&
-      !bodyOverlaps(e, p) && !bodyInvadesCollider(e, p));
+  check(`player is pushed in free space (x ${p.x.toFixed(1)}, vx ${p.vx.toFixed(2)})`,
+    p.alive && p.x > 90 && p.vx > 0 && !bodyOverlaps(e, p));
   e.destroy();
 }
 
@@ -107,76 +92,8 @@ const stepWorld = (e, count) => {
   e.destroy();
 }
 
-// A player's padded collider is a real support surface: a falling body comes
-// to rest on it without passing through or displacing the player.
-{
-  const e = mk();
-  const id = e.spawnPlayer(82, 92);
-  e.spawnBox(80, 48, 8, 3, MAT.RIGID);
-  e._setBodyMotion(0, 0, 18, 0);
-  stepWorld(e, 32);
-  const p = e.getPlayer(id), b = e._bodyState(0);
-  check(`falling body is supported by the player collider (body y ${b.py.toFixed(1)}, player y ${p.y.toFixed(1)})`,
-    p.alive && Math.abs(p.y - 92) < 1e-6 &&
-      b.py < p.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, p));
-  e.destroy();
-}
-
-// Support classification follows the entering raster cells, not the body's
-// center of mass. This top-heavy offset shape reaches the player with its arm
-// while most of its mass is already below the player's top edge.
-{
-  const e = mk();
-  const id = e.spawnPlayer(82, 92);
-  const cells = [];
-  for (let y = 60; y < 70; y++)
-    for (let x = 70; x < 80; x++) cells.push([x, y]);
-  for (let x = 80; x < 85; x++) cells.push([x, 60]);
-  e.spawnBody(cells);
-  e._setBodyMotion(0, 0, 18, 0);
-  let invaded = false;
-  for (let i = 0; i < 32; i++) {
-    e.stepWorld();
-    invaded ||= bodyInvadesCollider(e, e.getPlayer(id));
-  }
-  const p = e.getPlayer(id), b = e._bodyState(0);
-  check(`offset body is supported by its entering arm (body y ${b.py.toFixed(1)}, player y ${p.y.toFixed(1)})`,
-    p.alive && Math.abs(b.vy) < 0.1 && !invaded);
-  e.destroy();
-}
-
-// Enemy colliders provide the same support surface as players.
-{
-  const e = mk();
-  const id = e.spawnCreature(CREATURE.BIRD, 82, 92);
-  e.spawnBox(80, 48, 8, 3, MAT.RIGID);
-  e._setBodyMotion(0, 0, 18, 0);
-  stepWorld(e, 32);
-  const c = creature(e, id), b = e._bodyState(0);
-  check(`falling body is supported by an enemy collider (body y ${b.py.toFixed(1)}, enemy y ${c.y.toFixed(1)})`,
-    c.alive && Math.abs(c.y - 92) < 1e-6 &&
-      b.py < c.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, c));
-  e.destroy();
-}
-
-// A grounded enemy still supports the body while receiving bounded crush
-// damage; terrain beneath it must not disable the support contact.
-{
-  const e = mk();
-  floor(e);
-  const id = e.spawnCreature(CREATURE.DYNAMITEER, 82, 105);
-  e.spawnBox(80, 60, 8, 3, MAT.RIGID);
-  e._setBodyMotion(0, 0, 18, 0);
-  stepWorld(e, 32);
-  const c = creature(e, id), b = e._bodyState(0);
-  check(`grounded enemy consistently supports body (body y ${b.py.toFixed(1)}, health ${c.health})`,
-    c.alive && c.health > 0 && c.health < c.maxHealth &&
-      b.py < c.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, c));
-  e.destroy();
-}
-
 // A falling slab cannot move a player through the solid floor. The blocked
-// downward sweep damages the player without killing or rescue-teleporting them.
+// downward sweep is a cave-collapse crush, not a rescue teleport.
 {
   const e = mk();
   floor(e, 105);
@@ -189,31 +106,8 @@ const stepWorld = (e, count) => {
     maxY = Math.max(maxY, e.getPlayer(id).y);
   }
   const p = e.getPlayer(id);
-  const b = e._bodyState(0);
-  check(`falling slab nonlethally crushes player against terrain (y ${p.y.toFixed(1)}, health ${p.health})`,
-    p.alive && p.health > 0 && p.health < 100 && maxY < 105 &&
-      b.py < p.y - 3 && !bodyInvadesCollider(e, p));
-  e.destroy();
-}
-
-// The real actor/world cadence must keep a body on a grounded player's head,
-// including across repeated crush-cooldown windows.
-{
-  const e = mk();
-  floor(e);
-  const id = e.spawnPlayer(82, 102);
-  e.spawnBox(80, 60, 8, 3, MAT.RIGID);
-  e._setBodyMotion(0, 0, 18, 0);
-  let invaded = false;
-  for (let i = 0; i < 120; i++) {
-    e.stepActors();
-    e.stepWorld();
-    invaded ||= bodyInvadesCollider(e, e.getPlayer(id));
-  }
-  const p = e.getPlayer(id), b = e._bodyState(0);
-  check(`grounded player consistently supports body across live cadence (body y ${b.py.toFixed(1)}, health ${p.health})`,
-    p.alive && p.health > 0 && p.health < 100 &&
-      b.py < p.y - 3 && Math.abs(b.vy) < 0.1 && !invaded);
+  check(`falling slab crushes player against terrain without teleporting (y ${p.y.toFixed(1)})`,
+    !p.alive && p.health === 0 && maxY < 105);
   e.destroy();
 }
 
@@ -228,26 +122,8 @@ const stepWorld = (e, count) => {
   e._setBodyMotion(0, 20, 0, 0);
   stepWorld(e, 8);
   const p = e.getPlayer(id);
-  check(`side push nonlethally crushes player against solid wall (x ${p.x.toFixed(1)}, health ${p.health})`,
-    p.alive && p.health > 0 && p.health < 100 && p.x < 104);
-  e.destroy();
-}
-
-// Crush damage cannot deliver a killing blow, including when the actor was
-// already at low health before the body arrived.
-{
-  const e = mk();
-  floor(e);
-  stoneRect(e, 104, 88, 112, 110);
-  const id = e.spawnPlayer(100, 102);
-  e._damagePlayer(id, 90);
-  e.stepActors();
-  e.spawnBox(88, 106, 4, 4, MAT.RIGID);
-  e._setBodyMotion(0, 20, 0, 0);
-  stepWorld(e, 8);
-  const p = e.getPlayer(id);
-  check(`crush damage leaves a low-health player at 1 HP (health ${p.health})`,
-    p.alive && p.health === 1 && p.x < 104);
+  check(`side push crushes player against solid wall (x ${p.x.toFixed(1)})`,
+    !p.alive && p.x < 104);
   e.destroy();
 }
 
@@ -277,8 +153,8 @@ const stepWorld = (e, count) => {
   e._setBodyMotion(0, 5, 0, 0);
   stepWorld(e, 8);
   const p = e.getPlayer(id);
-  check(`rigid/player/rigid sandwich damages without crossing the blocker (x ${p.x.toFixed(1)}, health ${p.health})`,
-    p.alive && p.health > 0 && p.health < 100 && p.x < 65);
+  check(`rigid/player/rigid sandwich crushes without crossing the blocker (x ${p.x.toFixed(1)})`,
+    !p.alive && p.x < 65);
   e.destroy();
 }
 
@@ -299,9 +175,8 @@ for (const [label, species, y] of [
     everOverlapped ||= bodyOverlaps(e, creature(e, id));
   }
   const c = creature(e, id);
-  check(`${label} creature collider is pushed and remains outside the body (x ${c.x.toFixed(1)})`,
-    c.alive && c.x > 94 && c.vx > 0 &&
-      !everOverlapped && !bodyInvadesCollider(e, c));
+  check(`${label} creature is pushed and remains outside the body (x ${c.x.toFixed(1)})`,
+    c.alive && c.x > 94 && c.vx > 0 && !everOverlapped);
   e.destroy();
 }
 
@@ -325,7 +200,8 @@ for (const [label, species, y] of [
   e.destroy();
 }
 
-// Terrain and body sandwiches use the same nonlethal crush rule for creatures.
+// Terrain and body sandwiches are lethal to creatures immediately, so high-
+// health enemies cannot survive for minutes while engulfed by a collapse.
 {
   const e = mk();
   floor(e);
@@ -335,8 +211,8 @@ for (const [label, species, y] of [
   e._setBodyMotion(0, 30, 0, 0);
   stepWorld(e, 10);
   const c = creature(e, id);
-  check(`rigid/creature/terrain sandwich damages without crossing wall (x ${c.x.toFixed(1)}, health ${c.health})`,
-    c.alive && c.health > 0 && c.health < c.maxHealth && c.x < 100);
+  check(`rigid/creature/terrain sandwich kills without crossing wall (x ${c.x.toFixed(1)})`,
+    !c.alive && c.health === 0 && c.x < 100);
   e.destroy();
 }
 {
@@ -348,31 +224,37 @@ for (const [label, species, y] of [
   e._setBodyMotion(0, 30, 0, 0);
   stepWorld(e, 10);
   const c = creature(e, id);
-  check(`rigid/creature/rigid sandwich damages without far-side teleport (x ${c.x.toFixed(1)}, health ${c.health})`,
-    c.alive && c.health > 0 && c.health < c.maxHealth && c.x < 69);
+  check(`rigid/creature/rigid sandwich kills without far-side teleport (x ${c.x.toFixed(1)})`,
+    !c.alive && c.x < 69);
   e.destroy();
 }
 
-// Body-to-actor displacement is one-way. A free body's pose and velocity remain
-// identical while it pushes an actor because no actor impulse is applied to it.
+// Actor presence is one-way coupling. Compare every body state after each step
+// against an actor-free control to guarantee pushes and crushes never alter the
+// rigid solver's result.
 {
   const setup = (withActor) => {
     const e = mk();
+    floor(e, 118);
     e.spawnBox(50, 66, 6, 4, MAT.RIGID);
-    e._setBodyMotion(0, 3, 0, 0);
+    e.spawnBox(94, 72, 5, 7, MAT.RIGID);
+    e._setBodyMotion(0, 3, 1.2, 0.07);
+    e._setBodyMotion(1, -2.1, 0.6, -0.04);
     if (withActor) e.spawnPlayer(72, 67);
     return e;
   };
   const control = setup(false), actors = setup(true);
   let identical = true;
-  for (let tick = 0; tick < 12; tick++) {
+  for (let tick = 0; tick < 32; tick++) {
     control.stepWorld();
     actors.stepWorld();
-    const a = control._bodyState(0), b = actors._bodyState(0);
-    identical &&= a.px === b.px && a.py === b.py && a.angle === b.angle &&
-      a.vx === b.vx && a.vy === b.vy && a.omega === b.omega;
+    for (let i = 0; i < 2; i++) {
+      const a = control._bodyState(i), b = actors._bodyState(i);
+      identical &&= a.px === b.px && a.py === b.py && a.angle === b.angle &&
+        a.vx === b.vx && a.vy === b.vy && a.omega === b.omega;
+    }
   }
-  check('actor displacement applies no direct impulse or correction to a free body', identical);
+  check('players never feed impulses or corrections back into rigid bodies', identical);
   control.destroy();
   actors.destroy();
 }

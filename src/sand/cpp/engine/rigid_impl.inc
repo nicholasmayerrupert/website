@@ -4301,14 +4301,12 @@ bool RigidBodySystem::depenetrateBodyRaster(Body* b, double prePx, double prePy,
 
 // Free bodies are grid entities while players/creatures are AABBs, so this
 // swept post-solve path resolves their contact while body cells are absent from
-// the grid. An airborne actor supports a descending body; other contact keeps
-// the established push and crush behavior.
+// the grid. Contact from above supports the body; other contact keeps the
+// established push behavior. A grounded actor can still take crush damage.
 bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
                                          double preAngle) {
   const double finalPx = b->px, finalPy = b->py, finalAngle = b->angle;
   const double dx = finalPx - prePx, dy = finalPy - prePy, da = finalAngle - preAngle;
-  const double angularSweep = std::fabs(da) * std::hypot(b->w, b->h) * 0.5;
-  const bool downwardSweep = dy > 1e-6 && dy >= std::fabs(dx) && dy >= angularSweep;
   // Every occupied pixel square stays inside this center-line capsule for the
   // complete translation/rotation sweep. If no live actor AABB touches it,
   // rasterizing intermediate poses cannot find an overlap.
@@ -4351,7 +4349,7 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
   const double maxCarrySpeed = 0.65;
 
   int minX = 0, minY = 0, maxX = -1, maxY = -1;
-  std::vector<std::pair<int, int>> raster;
+  std::vector<std::pair<int, int>> raster, priorRaster;
   auto rasterBody = [&]() {
     minX = E.cols; minY = E.rows; maxX = maxY = -1; raster.clear();
     forEachBodyCell(b, [&](int x, int y, int) {
@@ -4386,6 +4384,24 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
     b->px = prePx + dx * lo; b->py = prePy + dy * lo; b->angle = preAngle + da * lo;
     b->cs = std::cos(b->angle); b->sn = std::sin(b->angle);
     b->vy = 0; b->awake = true; b->stillTicks = 0;
+  };
+  auto approachesFromAbove = [&](double ax, double ay, int aw, int ah) {
+    double x0 = ax - ACTOR_RIGID_SKIN;
+    double x1 = ax + aw + ACTOR_RIGID_SKIN;
+    double top = ay - ACTOR_RIGID_SKIN;
+    bool spansActor = false;
+    double lowestBottom = -1e18;
+    for (const auto& cell : priorRaster) {
+      if (cell.first >= x1 || cell.first + 1 <= x0) continue;
+      spansActor = true;
+      lowestBottom = std::fmax(lowestBottom, cell.second + 1.0);
+    }
+    return spansActor && lowestBottom <= top + 1e-6;
+  };
+  auto bodyCanCrush = [&](int aw, int ah) {
+    int cells = b->nPts;
+    if (b->jointRole == 1 && b->jointPeer) cells += b->jointPeer->nPts;
+    return cells >= imax(16, (aw * ah + 1) / 2);
   };
   auto pushOverlapping = [&](double& ax, double& ay, int aw, int ah,
                              double& avx, double& avy, bool player) {
@@ -4425,9 +4441,7 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
           || E.creatures.boxHitsOtherBody(E.fg.worldOffsetX + q.x,
                                           E.fg.worldOffsetY + q.y, aw, ah, b));
     if (overlaps(q.x, q.y, aw, ah)) return false;
-    int crushCells = b->nPts;
-    if (b->jointRole == 1 && b->jointPeer) crushCells += b->jointPeer->nPts;
-    if (blocked) return crushCells >= imax(16, (aw * ah + 1) / 2);
+    if (blocked) return bodyCanCrush(aw, ah);
     ax = q.x; ay = q.y;
     if (q.side == 0) avx = std::min(avx, -std::min(std::fabs(driveX), maxCarrySpeed));
     else if (q.side == 1) avx = std::max(avx, std::min(std::fabs(driveX), maxCarrySpeed));
@@ -4437,6 +4451,9 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
   };
   // Walk the body's swept path at sub-cell spacing. Resolving only its final
   // raster lets a fast or thin body cross an actor completely between ticks.
+  b->px = prePx; b->py = prePy; b->angle = preAngle;
+  rasterBody();
+  priorRaster = raster;
   for (int step = 1; step <= sweepSteps; step++) {
     const double t = (double)step / sweepSteps;
     b->px = prePx + dx * t; b->py = prePy + dy * t; b->angle = preAngle + da * t;
@@ -4446,7 +4463,10 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
       Player& p = E.psys.players[i];
       if (!p.active || !p.alive) continue;
       if (!broadOverlaps(p.px, p.py, p.w, p.h) || !overlaps(p.px, p.py, p.w, p.h)) continue;
-      if (downwardSweep && !E.psys.playerBoxHits(p.px, p.py + .25, p.w, p.h)) {
+      if (approachesFromAbove(p.px, p.py, p.w, p.h)) {
+        if (bodyCanCrush(p.w, p.h) &&
+            E.psys.playerBoxHits(p.px, p.py + .25, p.w, p.h))
+          E.psys.crushPlayer(p);
         settleOnActor(p.px, p.py, p.w, p.h, step);
         return true;
       }
@@ -4459,9 +4479,12 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
       const CreatureSpecies& s = E.creatures.species(c);
       double x = c.wx - E.fg.worldOffsetX, y = c.wy - E.fg.worldOffsetY;
       if (!broadOverlaps(x, y, s.w, s.h) || !overlaps(x, y, s.w, s.h)) continue;
-      if (downwardSweep && !E.creatures.boxHitsSolid(E.fg.worldOffsetX + x,
-                                                      E.fg.worldOffsetY + y + .25,
-                                                      s.w, s.h)) {
+      if (approachesFromAbove(x, y, s.w, s.h)) {
+        if (bodyCanCrush(s.w, s.h) &&
+            E.creatures.boxHitsSolid(E.fg.worldOffsetX + x,
+                                     E.fg.worldOffsetY + y + .25,
+                                     s.w, s.h))
+          E.creatures.crushCreature(c);
         settleOnActor(x, y, s.w, s.h, step);
         return true;
       }
@@ -4469,6 +4492,7 @@ bool RigidBodySystem::pushActorsFromBody(Body* b, double prePx, double prePy,
         E.creatures.crushCreature(c);
       c.wx = E.fg.worldOffsetX + x; c.wy = E.fg.worldOffsetY + y;
     }
+    priorRaster = raster;
   }
   b->px = finalPx; b->py = finalPy; b->angle = finalAngle;
   return true;

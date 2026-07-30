@@ -122,6 +122,29 @@ const stepWorld = (e, count) => {
   e.destroy();
 }
 
+// Support classification follows the entering raster cells, not the body's
+// center of mass. This top-heavy offset shape reaches the player with its arm
+// while most of its mass is already below the player's top edge.
+{
+  const e = mk();
+  const id = e.spawnPlayer(82, 92);
+  const cells = [];
+  for (let y = 60; y < 70; y++)
+    for (let x = 70; x < 80; x++) cells.push([x, y]);
+  for (let x = 80; x < 85; x++) cells.push([x, 60]);
+  e.spawnBody(cells);
+  e._setBodyMotion(0, 0, 18, 0);
+  let invaded = false;
+  for (let i = 0; i < 32; i++) {
+    e.stepWorld();
+    invaded ||= bodyInvadesCollider(e, e.getPlayer(id));
+  }
+  const p = e.getPlayer(id), b = e._bodyState(0);
+  check(`offset body is supported by its entering arm (body y ${b.py.toFixed(1)}, player y ${p.y.toFixed(1)})`,
+    p.alive && Math.abs(b.vy) < 0.1 && !invaded);
+  e.destroy();
+}
+
 // Enemy colliders provide the same support surface as players.
 {
   const e = mk();
@@ -132,6 +155,22 @@ const stepWorld = (e, count) => {
   const c = creature(e, id), b = e._bodyState(0);
   check(`falling body is supported by an enemy collider (body y ${b.py.toFixed(1)}, enemy y ${c.y.toFixed(1)})`,
     c.alive && Math.abs(c.y - 92) < 1e-6 &&
+      b.py < c.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, c));
+  e.destroy();
+}
+
+// A grounded enemy still supports the body while receiving bounded crush
+// damage; terrain beneath it must not disable the support contact.
+{
+  const e = mk();
+  floor(e);
+  const id = e.spawnCreature(CREATURE.DYNAMITEER, 82, 105);
+  e.spawnBox(80, 60, 8, 3, MAT.RIGID);
+  e._setBodyMotion(0, 0, 18, 0);
+  stepWorld(e, 32);
+  const c = creature(e, id), b = e._bodyState(0);
+  check(`grounded enemy consistently supports body (body y ${b.py.toFixed(1)}, health ${c.health})`,
+    c.alive && c.health > 0 && c.health < c.maxHealth &&
       b.py < c.y - 3 && Math.abs(b.vy) < 0.1 && !bodyInvadesCollider(e, c));
   e.destroy();
 }
@@ -150,8 +189,31 @@ const stepWorld = (e, count) => {
     maxY = Math.max(maxY, e.getPlayer(id).y);
   }
   const p = e.getPlayer(id);
+  const b = e._bodyState(0);
   check(`falling slab nonlethally crushes player against terrain (y ${p.y.toFixed(1)}, health ${p.health})`,
-    p.alive && p.health > 0 && p.health < 100 && maxY < 105);
+    p.alive && p.health > 0 && p.health < 100 && maxY < 105 &&
+      b.py < p.y - 3 && !bodyInvadesCollider(e, p));
+  e.destroy();
+}
+
+// The real actor/world cadence must keep a body on a grounded player's head,
+// including across repeated crush-cooldown windows.
+{
+  const e = mk();
+  floor(e);
+  const id = e.spawnPlayer(82, 102);
+  e.spawnBox(80, 60, 8, 3, MAT.RIGID);
+  e._setBodyMotion(0, 0, 18, 0);
+  let invaded = false;
+  for (let i = 0; i < 120; i++) {
+    e.stepActors();
+    e.stepWorld();
+    invaded ||= bodyInvadesCollider(e, e.getPlayer(id));
+  }
+  const p = e.getPlayer(id), b = e._bodyState(0);
+  check(`grounded player consistently supports body across live cadence (body y ${b.py.toFixed(1)}, health ${p.health})`,
+    p.alive && p.health > 0 && p.health < 100 &&
+      b.py < p.y - 3 && Math.abs(b.vy) < 0.1 && !invaded);
   e.destroy();
 }
 

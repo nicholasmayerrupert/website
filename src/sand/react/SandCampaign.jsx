@@ -332,7 +332,7 @@ function ShipHub({
         role="dialog"
         aria-modal="true"
         aria-label={`${SHIP_NAME} mission console`}
-        className="pointer-events-none ml-auto flex h-full min-h-0 w-full max-w-[760px] flex-col overflow-hidden"
+        className="pointer-events-none ml-auto flex max-h-full min-h-0 w-full max-w-[1200px] flex-col overflow-hidden"
       >
         <header className="pointer-events-auto mb-2 flex shrink-0 flex-col gap-2 border-[3px] border-[#080a0c] bg-[#11171d]/92 p-2 font-mono shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)] sm:flex-row sm:items-center sm:justify-between sm:p-3">
           <div className="flex items-center gap-3">
@@ -344,14 +344,7 @@ function ShipHub({
               <h1 className="mt-1 text-[14px] font-black uppercase tracking-[.12em] sm:text-[17px]">Field Ship {SHIP_NAME}</h1>
             </div>
           </div>
-          <div className="grid grid-cols-[1fr_auto] items-center gap-2">
-            <button
-              type="button"
-              onClick={onDeploy}
-              className={`${BUTTON} bg-[#d4b94d] px-4 py-3 text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]`}
-            >
-              Beam down to {mission.planetName}
-            </button>
+          <div className="flex justify-end">
             <button
               type="button"
               autoFocus
@@ -399,7 +392,10 @@ function ShipHub({
           ))}
         </nav>
 
-        <div className="grid min-h-0 grid-cols-1 gap-3">
+        <div
+          data-mission-console-panels
+          className="grid min-h-0 grid-cols-1 gap-3 sm:grid-cols-[minmax(0,3fr)_minmax(250px,2fr)]"
+        >
           <section className={`${PANEL} relative overflow-hidden p-5`}>
             <div
               className="absolute inset-x-0 top-0 h-28 opacity-45"
@@ -437,7 +433,7 @@ function ShipHub({
                 <p className="mt-2 max-w-3xl text-[13px] leading-6 text-[#d4d9de]">{mission.briefing}</p>
               </div>
 
-              <div className="mt-5 grid gap-4 md:grid-cols-[1fr_auto]">
+              <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_auto]">
                 <div>
                   <h3 className="font-mono text-[9px] font-black uppercase tracking-[.18em] text-[#9fa8b0]">Mission sequence</h3>
                   <ol className="mt-3 space-y-2">
@@ -525,6 +521,19 @@ function ShipHub({
           </section>
         </div>
         </div>
+
+        <footer
+          data-mission-console-footer
+          className="pointer-events-auto mt-2 flex shrink-0 justify-end border-[3px] border-[#080a0c] bg-[#11171d]/92 p-2 shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)]"
+        >
+          <button
+            type="button"
+            onClick={onDeploy}
+            className={`${BUTTON} w-full bg-[#d4b94d] px-5 py-3 text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]`}
+          >
+            Beam down to {mission.planetName}
+          </button>
+        </footer>
       </section>
       </MissionConsoleViewport>
       )}

@@ -208,6 +208,38 @@ try {
     await page.getByText('Earth', { exact: true }).count() > 0 &&
     await page.getByText('The Moon', { exact: true }).count() > 0 &&
     await page.getByText('Mars', { exact: true }).count() > 0);
+  await page.setViewportSize({ width: 784, height: 1015 });
+  const zoomedConsoleLayout = await page.locator('[data-mission-console-scroll]')
+    .evaluate((node) => {
+      const bounds = node.getBoundingClientRect();
+      const weaponBounds = document.querySelector('#campaign-weapon')?.getBoundingClientRect();
+      const panelBounds = [...document.querySelector('[data-mission-console-panels]').children]
+        .map((panel) => panel.getBoundingClientRect());
+      const panelsBottom = Math.max(...panelBounds.map((panel) => panel.bottom));
+      const footer = document.querySelector('[data-mission-console-footer]');
+      const footerBounds = footer.getBoundingClientRect();
+      const deployBounds = footer.querySelector('button').getBoundingClientRect();
+      return {
+        clientHeight: node.clientHeight,
+        scrollHeight: node.scrollHeight,
+        bottom: bounds.bottom,
+        weaponBottom: weaponBounds?.bottom,
+        panelHeightDifference: Math.abs(panelBounds[0].height - panelBounds[1].height),
+        footerGap: footerBounds.top - panelsBottom,
+        footerBottom: footerBounds.bottom,
+        deployWidthRatio: deployBounds.width / footerBounds.width,
+      };
+    });
+  check('zoomed portrait desktop keeps the complete mission console on screen',
+    zoomedConsoleLayout.scrollHeight <= zoomedConsoleLayout.clientHeight &&
+    zoomedConsoleLayout.bottom <= 1015 &&
+    zoomedConsoleLayout.weaponBottom <= 1015 &&
+    zoomedConsoleLayout.panelHeightDifference <= 1 &&
+    zoomedConsoleLayout.footerGap >= 7 &&
+    zoomedConsoleLayout.footerGap <= 9 &&
+    zoomedConsoleLayout.footerBottom <= 1015 &&
+    zoomedConsoleLayout.deployWidthRatio >= 0.95,
+    JSON.stringify(zoomedConsoleLayout));
   if (pngPrefix) await page.screenshot({ path: `${pngPrefix}-ship.png`, fullPage: true });
   await page.setViewportSize({ width: 1366, height: 768 });
 

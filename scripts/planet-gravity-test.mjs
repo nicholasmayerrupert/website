@@ -62,6 +62,8 @@ check('Kestrel is a physical foreground/background world',
 {
   const engine = attachTestHooks(createEngineWasm({
     ...WORLD,
+    cols: 512,
+    rows: 352,
     planetId: PLANET.SHIP,
   }));
   const lightCount = engine.getGrid().reduce(
@@ -75,14 +77,17 @@ check('Kestrel is a physical foreground/background world',
     const y = worldY - engine.getWorldOffsetY();
     return engine.getGrid()[y * engine.cols + x];
   };
-  let blockedMainDeckCells = 0;
-  for (let worldY = 6; worldY <= 17; worldY++) {
-    for (let worldX = -88; worldX <= 88; worldX++) {
-      if (localCell(worldX, worldY) !== MAT.EMPTY) blockedMainDeckCells++;
+  const blockedMainDeckCells = () => {
+    let blocked = 0;
+    for (let worldY = 6; worldY <= 17; worldY++) {
+      for (let worldX = -88; worldX <= 88; worldX++) {
+        if (localCell(worldX, worldY) !== MAT.EMPTY) blocked++;
+      }
     }
-  }
+    return blocked;
+  };
   check('Kestrel keeps the crew-level main corridor clear of foreground scenery',
-    blockedMainDeckCells === 0, String(blockedMainDeckCells));
+    blockedMainDeckCells() === 0, String(blockedMainDeckCells()));
   engine.setSurvivalInventory(true);
   engine.setCreatureRuntime(true, false);
   const playerId = engine.spawnPlayerAtSurface(engine.cols / 2);
@@ -91,7 +96,47 @@ check('Kestrel is a physical foreground/background world',
     engine.spawnScriptedCreature(CREATURE.IRIS_ENGINEER, 64, 8),
     engine.spawnScriptedCreature(CREATURE.SURVEYOR, 30, -23),
   ];
+  const crewStart = crewIds.map((id) => {
+    const crew = engine.getCreatures().find((creature) => creature.id === id);
+    return {
+      x: engine.getWorldOffsetX() + crew.x,
+      y: engine.getWorldOffsetY() + crew.y,
+    };
+  });
   const spawn = engine.getPlayer(playerId);
+  const pristineForeground = gridHash(engine.getGrid());
+  const pristineBackground = gridHash(engine.getGridBg());
+  engine.stepActors();
+  const shipWorldAdvanced = engine.stepWorld();
+  for (let tick = 1; tick < 30; tick++) {
+    engine.stepActors();
+    engine.stepWorld();
+  }
+  const settledForeground = gridHash(engine.getGrid());
+  const settledBackground = gridHash(engine.getGridBg());
+  for (let tick = 30; tick < 120; tick++) {
+    engine.stepActors();
+    engine.stepWorld();
+  }
+  check('Kestrel advances its full cellular world physics',
+    shipWorldAdvanced &&
+      (settledForeground !== pristineForeground ||
+       settledBackground !== pristineBackground));
+  check('the untouched Kestrel settles without destabilizing its authored hull',
+    gridHash(engine.getGrid()) === settledForeground &&
+      gridHash(engine.getGridBg()) === settledBackground &&
+      blockedMainDeckCells() === 0 &&
+      engine.getGrid().reduce(
+        (count, material) => count + (material === MAT.LIGHT ? 1 : 0),
+        0,
+      ) === lightCount);
+  check('the Kestrel frame keeps its player and crew on their authored decks',
+    Math.abs(engine.getPlayer(playerId).y - spawn.y) < 0.01 &&
+      crewIds.every((id, index) => {
+        const crew = engine.getCreatures().find((creature) => creature.id === id);
+        return Math.abs(engine.getWorldOffsetX() + crew.x - crewStart[index].x) < 0.01 &&
+          Math.abs(engine.getWorldOffsetY() + crew.y - crewStart[index].y) < 0.01;
+      }));
   engine.setPlayerState(playerId, {
     x: spawn.x,
     y: 60 - engine.getWorldOffsetY(),
@@ -155,20 +200,23 @@ check('Kestrel is a physical foreground/background world',
   check('player blast-gun impacts carve the Kestrel hull',
     gridHash(engine.getGrid()) !== gunForegroundBefore ||
       gridHash(engine.getGridBg()) !== gunBackgroundBefore);
+  const blastForeground = gridHash(engine.getGrid());
+  const blastBackground = gridHash(engine.getGridBg());
+  for (let tick = 0; tick < 24; tick++) engine.stepWorld();
+  check('Kestrel blast aftermath continues evolving under world physics',
+    gridHash(engine.getGrid()) !== blastForeground ||
+      gridHash(engine.getGridBg()) !== blastBackground);
   for (let tick = 0; tick < 24; tick++) engine.stepActors();
 
   const foregroundBefore = gridHash(engine.getGrid());
   const backgroundBefore = gridHash(engine.getGridBg());
-  const itemsBefore = engine.itemCount();
-  engine._detonateTnt(engine.cols / 2, engine.rows / 2);
-  check('ordinary Kestrel detonations leave the cell grid unchanged',
-    gridHash(engine.getGrid()) === foregroundBefore
-      && gridHash(engine.getGridBg()) === backgroundBefore);
-  check('ordinary Kestrel detonations use actor-clock cosmetic particles',
-    engine.itemCount() > itemsBefore);
-  for (let tick = 0; tick < 40; tick++) engine.stepActors();
-  check('Kestrel impact particles expire without a world simulation step',
-    engine.itemCount() === itemsBefore);
+  engine._detonateTnt(
+    -engine.getWorldOffsetX(),
+    18 - engine.getWorldOffsetY(),
+  );
+  check('ordinary Kestrel detonations use full two-layer blast physics',
+    gridHash(engine.getGrid()) !== foregroundBefore ||
+      gridHash(engine.getGridBg()) !== backgroundBefore);
   engine.destroy();
 }
 check('all three planets generate distinct foreground terrain',

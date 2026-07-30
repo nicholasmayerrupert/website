@@ -839,23 +839,6 @@ void ExplosivesSystem::detonate(int cx, int cy, int radius, double power,
                                double actorDamageScale,
                                bool bypassActorCooldown,
                                int immuneCreatureId) {
-  bool playerWeaponBlast = soundEvent == SE_WEAPON_EXPLOSION &&
-    immunePlayerId > 0;
-  if (E.planetId == PL_SHIP && !playerWeaponBlast) {
-    E.audio.emit(soundEvent, cx, cy, std::min(2.5, power / TNT_BLAST_POWER),
-                 explosiveMaterial, E.L == &E.bg ? 1 : 0);
-    int particleCount = imin(16, imax(6, radius));
-    uint32_t seed = seedSerial == UINT32_MAX ? (uint32_t)E.actorTick : seedSerial;
-    for (int i = 0; i < particleCount; i++) {
-      double angle = ((seed + (uint32_t)i * 2654435761u) & 0xffffu)
-        / 65536.0 * 6.283185307179586;
-      double speed = .35 + ((seed >> ((i & 3) * 8)) & 0xffu) / 255.0 * .75;
-      E.spawnParticle(i & 1 ? LIGHT : DEBRIS, cx + .5, cy + .5,
-                      std::cos(angle) * speed, std::sin(angle) * speed - .18,
-                      12 + (i % 7));
-    }
-    return;
-  }
   BlastBatch bb, otherBb;
   carveBlastAcrossLayers(cx, cy, radius, power, bb, &otherBb, nullptr,
                         explosiveMaterial, immunePlayerId, seedSerial, soundEvent,

@@ -121,6 +121,7 @@ class ComponentSystem {
 
   void prepareAssemblyScratch(size_t gridLen);
 
+  bool isKestrelFrameAnchor(const Layer& lay, int x, int y) const;
   void indexComponents();
   void computeStaticGraphGrounded();
   void computeRigidGrounded(bool reuseComponentIndex = false);

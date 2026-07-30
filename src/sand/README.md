@@ -79,10 +79,10 @@ deployment controls visible above its scrolling briefing/loadout body. The
 tapered hull contains non-blocking background-layer engineering, medbay,
 transport, armory, command, hydroponics, galley, and archive stations while the
 foreground main-deck route stays clear. Falling below the hull triggers a short
-automatic transporter recovery. The ship does not run cellular world ticks, but
-player-owned explosive weapon impacts and bore cuts immediately carve its
-foreground and background. Ordinary environmental and enemy explosions remain
-short-lived actor particles.
+automatic transporter recovery. The ship runs the same two-layer cellular and
+rigid-body physics as planetary deployments. Explosive weapons, TNT, reactions,
+and bore cuts can all alter its foreground and background. A compact central
+frame anchors the connected vessel; severed pieces enter the rigid-body system.
 Maximum-emission `LIGHT` component panels illuminate both authored decks.
 
 ## Planets and gravity

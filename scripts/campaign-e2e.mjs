@@ -137,6 +137,32 @@ try {
   check('mission console starts closed over the walkable ship',
     await page.locator('#kestrel-mission-console').count() === 0);
   await openCommanderDialogue(page);
+  await page.waitForTimeout(300);
+  const conversationState = await page.evaluate(() => {
+    const host = document.querySelector('sand-game');
+    const root = host?.shadowRoot;
+    const game = host?._game;
+    const view = game?.getMissionView?.();
+    const commander = game?.getTalkableActors?.()
+      .find(({ species }) => species === 17);
+    const dialogue = root?.querySelector('.sg-dialogue');
+    return {
+      visible: !!dialogue && !dialogue.hidden,
+      playerWorldX: view?.playerWorldX,
+      playerWorldY: view?.playerWorldY,
+      commanderWorldX: commander?.worldX,
+      commanderWorldY: commander?.worldY,
+      distance: commander && view
+        ? Math.hypot(
+          commander.worldX - view.playerWorldX,
+          commander.worldY - view.playerWorldY,
+        )
+        : null,
+    };
+  });
+  check('NPC conversation remains open while the player stays in talk range',
+    conversationState.visible && conversationState.distance <= 28,
+    JSON.stringify(conversationState));
   await page.locator('sand-game')
     .locator('button', { hasText: 'End conversation' })
     .click();
@@ -354,7 +380,8 @@ try {
   check('deployment initialization failure exposes campaign recovery controls',
     await recoveryPage.getByRole('button', { name: /Retry deployment/i }).isVisible() &&
     await recoveryPage.getByRole('button', { name: /Return to Kestrel/i }).isVisible());
-  await recoveryPage.getByRole('button', { name: /Retry deployment/i }).click();
+  await recoveryPage.getByRole('button', { name: /Retry deployment/i })
+    .evaluate((button) => button.click());
   await recoveryPage.waitForFunction(() =>
     document.querySelector('sand-game')?._game?.getMission?.()?.objectives?.length > 0,
   null, { timeout: 30000 });

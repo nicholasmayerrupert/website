@@ -148,9 +148,6 @@
 
   bool stepWorld() {
     if (storageRole == ESR_PRESENTATION) return false;
-    // Kestrel actors and their immediate terrain edits keep running while its
-    // cellular world stays paused between those edits.
-    if (planetId == PL_SHIP) { perfStepMs = 0; return false; }
     auto retainSleepingBodySupportDirty = [&](Layer& lay) {
       if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
       for (Body* b : lay.bodies) if (b->jointRole != 2 && !b->awake) {

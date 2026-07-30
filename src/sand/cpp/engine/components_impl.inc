@@ -20,6 +20,13 @@ void ComponentSystem::prepareAssemblyScratch(size_t gridLen) {
   asmVacatedBits.reserve((size_t)E.rows * ((E.cols + 63) >> 6));
 }
 
+bool ComponentSystem::isKestrelFrameAnchor(const Layer& lay, int x, int y) const {
+  if (E.planetId != PL_SHIP || !lay.isBackground) return false;
+  int worldX = lay.worldOffsetX + x;
+  int worldY = lay.worldOffsetY + y;
+  return worldX >= -2 && worldX <= 2 && worldY >= -2 && worldY <= 2;
+}
+
 // Rebuild E.L->cellComp[] (cell -> component index) and the cgComps index.
 // Shared by the full reflood (computeGrounded) and the incremental refresh
 // (incrementalGroundingRefresh). Resets each Comp's grounded flag to false (the
@@ -142,6 +149,17 @@ void ComponentSystem::computeStaticGraphGrounded() {
       if (!openSkyLeaf) seedAt(k);
     }
   }
+  for (int worldY = -2; worldY <= 2; worldY++) {
+    int y = worldY - lay->worldOffsetY;
+    if (y < 0 || y >= E.rows) continue;
+    for (int worldX = -2; worldX <= 2; worldX++) {
+      int x = worldX - lay->worldOffsetX;
+      if (x < 0 || x >= E.cols) continue;
+      int k = y * E.cols + x;
+      if (isKestrelFrameAnchor(*lay, x, y) && isGroundingRigidCell(*lay, k))
+        seedAt(k);
+    }
+  }
 
   uint8_t* const grounded = lay->groundedCell.data();
   for (int i = 0; i < count; i++) {
@@ -155,7 +173,7 @@ void ComponentSystem::computeStaticGraphGrounded() {
 // Grounding is SEPARABLE (this is what makes the rigid part cacheable):
 //  - RIGID grounding never flows through loose cells: the vertical rule refuses
 //    loose-below -> rigid-above, and 8-adjacency requires rigid on both ends.
-//    So the rigid grounded-set depends ONLY on rigid cells + floor/edge seeds.
+//    So the rigid grounded-set depends ONLY on rigid cells + structural seeds.
 //  - LOOSE grounding is strictly vertical: a loose cell is grounded iff the
 //    cell directly below it is grounded (any class), or it sits on the floor
 //    row, or on denser liquid. No loose cell grounds sideways.
@@ -245,6 +263,17 @@ void ComponentSystem::computeRigidGrounded(bool reuseComponentIndex) {
       bool openSky = topMayBeSky
                   && topWorldY < E.terrain.genSurfaceAbs(lay->worldOffsetX + x);
       if (!openSky) groundRigidAt(k, x);
+    }
+  }
+  for (int worldY = -2; worldY <= 2; worldY++) {
+    int y = worldY - lay->worldOffsetY;
+    if (y < 0 || y >= E.rows) continue;
+    for (int worldX = -2; worldX <= 2; worldX++) {
+      int x = worldX - lay->worldOffsetX;
+      if (x < 0 || x >= E.cols) continue;
+      int k = y * E.cols + x;
+      if (isKestrelFrameAnchor(*lay, x, y) && isGroundingRigidCell(*lay, k))
+        groundRigidAt(k, x);
     }
   }
   int gridLen = E.cols * E.rows;
@@ -709,7 +738,7 @@ bool ComponentSystem::blobBoundaryReconnects(const std::vector<int>& boundary, i
 // than visit budget. Removing a blob can split its surviving boundary into
 // several static regions without changing grounding when every formerly-grounded
 // region still reaches a real base seed. Walk only those boundary regions and
-// stop as soon as a floor/stream-edge seed or an already-proven path is reached.
+// stop as soon as a floor/stream-edge/frame seed or an already-proven path is reached.
 // Free bodies are neither paths nor seeds. A capped/uncertain search returns
 // false and keeps the ordinary full reflood.
 bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& boundary, int32_t removedGen) {
@@ -729,6 +758,8 @@ bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& bo
     uint8_t m = grid[k];
     if (y == E.rows - 1 && isGroundingRigidCell(*E.L, k)
         && E.isBearingMaterial(m)) return true;
+    if (isKestrelFrameAnchor(*E.L, x, y)
+        && isGroundingRigidCell(*E.L, k)) return true;
     return E.L->infinite && !E.isIceMaterial(m)
       && (y == 1 || x == 1 || x == E.cols - 2);
   };
@@ -776,8 +807,8 @@ bool ComponentSystem::blobBoundaryRegionsStayGrounded(const std::vector<int>& bo
 // Decide whether ONE 8-connected blob of just-removed rigid cells (grid already
 // cleared at each) keeps the grounding cache valid. A removal changes another cell's
 // grounding only by disconnecting it from a SEED (floor / streamed buffer edge /
-// powder-on-dense-liquid). The blob is safe when it is (a) compact (small bbox) and
-// clear of the edge/floor seed margin, (b) free of powder in its neighbourhood, and
+// Kestrel frame / powder-on-dense-liquid). The blob is safe when it is (a) compact
+// (small bbox) and clear of fixed seeds, (b) free of powder in its neighbourhood, and
 // (c) such that every surviving rigid neighbour of the blob reconnects to the others
 // without the blob. Then removing it disconnects nothing and the only grounding
 // change is the removed cells themselves. Does NOT patch E.L->groundedCell -- the caller
@@ -792,6 +823,7 @@ bool ComponentSystem::blobKeepsGroundingValid(const std::vector<int>& blob) {
   for (int k : blob) {
     E.L->seenStamp[k] = gen;
     int y = k / E.cols, x = k - y * E.cols;
+    if (isKestrelFrameAnchor(*E.L, x, y)) return false;
     if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
   }
   if (bx1 - bx0 > SPAN || by1 - by0 > SPAN) { gbSpan++; return false; }

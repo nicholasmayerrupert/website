@@ -13,7 +13,7 @@ import { installDevHooks } from './devHooks';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { createWorldWorkerClient } from '../worker/worldWorkerClient.js';
 import { createSandAudio } from '../audio/sandAudio.js';
-import { MISSION, PLANET } from '../wasmBridge/abi.generated.js';
+import { CREATURE, MISSION, PLANET } from '../wasmBridge/abi.generated.js';
 
 export function createSandGame(container, opts = {}) {
   const {
@@ -419,6 +419,21 @@ export function createSandGame(container, opts = {}) {
       return ctx.worldWorker?.getInventory() || { slots: [], selected: 0, selectedFootprint: 0 };
     },
     getMission() { return ctx.worldWorker?.getMission() || null; },
+    getTalkableActors() {
+      if (!ctx.engine) return [];
+      const offsetX = ctx.engine.getWorldOffsetX();
+      const offsetY = ctx.engine.getWorldOffsetY();
+      return ctx.engine.getCreatures()
+        .filter(({ species, alive }) =>
+          alive && (species === CREATURE.SURVEYOR ||
+            species === CREATURE.IRIS_COMMANDER ||
+            species === CREATURE.IRIS_ENGINEER))
+        .map((actor) => ({
+          ...actor,
+          worldX: offsetX + actor.x + actor.w * 0.5,
+          worldY: offsetY + actor.y,
+        }));
+    },
     getPlanetState() {
       return {
         id: ctx.engine?.getPlanet() ?? ctx.planetId,

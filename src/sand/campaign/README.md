@@ -6,8 +6,9 @@ decks, rooms, transporter, and crew. React layers the mission terminal,
 briefing/loadout selection, deployment transition, and debrief over that world.
 A planetary deployment replaces the ship runtime with the mission runtime, so
 each transition tears down the prior worker, RAF, audio graph, and WebGL target.
-The terminal is closed by default and opens as a viewport-bounded console with
-its deploy action fixed in the header, leaving the Kestrel unobstructed between
+The terminal is closed by default and opens only from Commander Vale's
+world-space `TALK` conversation. It is a viewport-bounded console with its
+deploy action fixed in the header, leaving the Kestrel unobstructed between
 briefings.
 
 `missions.js` contains display metadata and the bounded field-supply catalog.

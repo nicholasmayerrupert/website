@@ -4,6 +4,7 @@
 import {
   createEngineWasm,
   initSandWasm,
+  MAT,
 } from '../src/sand/wasmBridge/engineFactory.js';
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import {
@@ -60,6 +61,25 @@ function backgroundBodyBaseline(missionId) {
 function livingSpecies(engine, species) {
   return engine.getCreatures().filter((creature) =>
     creature.alive && creature.species === species);
+}
+
+function insideFurnishedFacility(engine, creature) {
+  const foreground = engine.getGrid();
+  const background = engine.getGridBg();
+  const cx = Math.floor(creature.x + creature.w * 0.5);
+  const cy = Math.floor(creature.y + creature.h * 0.5);
+  let frame = 0;
+  const details = new Set();
+  for (let y = Math.max(1, cy - 22); y <= Math.min(engine.rows - 2, cy + 22); y++) {
+    for (let x = Math.max(1, cx - 24); x <= Math.min(engine.cols - 2, cx + 24); x++) {
+      const k = y * engine.cols + x;
+      if (foreground[k] === MAT.BRICK || foreground[k] === MAT.STONE) frame++;
+      if (background[k] === MAT.LIGHT || background[k] === MAT.GLASS ||
+          background[k] === MAT.PINE_WOOD || background[k] === MAT.IRON_ORE)
+        details.add(background[k]);
+    }
+  }
+  return frame >= 30 && details.size >= 3;
 }
 
 function eliminate(engine, creatures) {
@@ -138,6 +158,9 @@ function rescueSurveyors(engine, playerId) {
     snapshot.objectives[0].state === OBJECTIVE_STATE.COMPLETE &&
     snapshot.objectives[1].state === OBJECTIVE_STATE.ACTIVE &&
     livingSpecies(engine, CREATURE.SURVEYOR).length === 3);
+  check('Greenfall surveyors wait inside furnished facility rooms',
+    livingSpecies(engine, CREATURE.SURVEYOR)
+      .every((creature) => insideFurnishedFacility(engine, creature)));
 
   rescueSurveyors(engine, playerId);
   snapshot = engine.getMission();
@@ -161,6 +184,10 @@ function rescueSurveyors(engine, playerId) {
   for (let tick = 0; tick < 3; tick++) engine.stepWorld();
   check('Moon facilities remain grounded after world steps',
     engine._bodyCountLayer(1) === settledBackgroundBodies);
+  check('Moon human residents occupy furnished facility rooms',
+    [...livingSpecies(engine, CREATURE.IRIS_ENGINEER),
+      ...livingSpecies(engine, CREATURE.SURVEYOR)]
+      .every((creature) => insideFurnishedFacility(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
   let snapshot = engine.getMission();
   check('two Moon anchors unlock the quarry foreman',
@@ -197,6 +224,10 @@ function rescueSurveyors(engine, playerId) {
   for (let tick = 0; tick < 3; tick++) engine.stepWorld();
   check('Mars facilities remain grounded after world steps',
     engine._bodyCountLayer(1) === settledBackgroundBodies);
+  check('Mars human residents occupy furnished facility rooms',
+    [...livingSpecies(engine, CREATURE.IRIS_ENGINEER),
+      ...livingSpecies(engine, CREATURE.SURVEYOR)]
+      .every((creature) => insideFurnishedFacility(engine, creature)));
   eliminate(engine, livingSpecies(engine, CREATURE.SHIELD_ANCHOR));
   let snapshot = engine.getMission();
   check('three Mars anchors unlock the reactor warden',

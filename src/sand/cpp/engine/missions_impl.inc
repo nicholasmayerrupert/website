@@ -40,15 +40,41 @@ void MissionSystem::carveRoom(int worldX, int worldY, int radius) {
 
 void MissionSystem::authorFacilityRoom(int worldX, int worldY, int radius) {
   carveRoom(worldX, worldY, radius);
+  int halfW = imax(8, radius * 7 / 10);
+  int halfH = imax(6, radius / 2);
+  uint8_t frameMaterial = missionId == MI_SILENT_QUARRY ? STONE : BRICK;
+
+  int fgX = worldX - E.fg.worldOffsetX;
+  int fgY = worldY - E.fg.worldOffsetY;
+  std::unordered_set<int> foregroundFrame;
+  foregroundFrame.reserve((halfW * 2 + halfH * 2) * 3);
+  E.useLayer(&E.fg);
+  auto addForeground = [&](int x, int y) {
+    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return;
+    int k = E.I(x, y);
+    if (E.fg.bodyOwner[k] >= 0 || E.isComponentMaterial(E.fg.grid[k])) return;
+    E.writeGridIndex(k, frameMaterial);
+    foregroundFrame.insert(k);
+  };
+  for (int x = fgX - halfW; x <= fgX + halfW; x++) {
+    addForeground(x, fgY - halfH);
+    addForeground(x, fgY + halfH);
+  }
+  for (int y = fgY - halfH; y <= fgY + halfH; y++) {
+    bool doorway = y >= fgY - 4 && y < fgY + halfH;
+    if (!doorway) {
+      addForeground(fgX - halfW, y);
+      addForeground(fgX + halfW, y);
+    }
+  }
+  E.tools.registerComponentCells(frameMaterial, foregroundFrame);
+
   int localX = worldX - E.bg.worldOffsetX;
   int localY = worldY - E.bg.worldOffsetY;
   if (localX + radius <= 1 || localX - radius >= E.cols - 2 ||
       localY + radius <= 1 || localY - radius >= E.rows - 1) return;
   E.useLayer(&E.bg);
   E.eraseDisc(localX, localY, radius);
-  int halfW = imax(8, radius * 7 / 10);
-  int halfH = imax(6, radius / 2);
-  uint8_t frameMaterial = missionId == MI_SILENT_QUARRY ? STONE : BRICK;
   std::unordered_set<int> frame;
   frame.reserve((halfW * 2 + halfH * 2) * 2 + E.rows - localY);
   auto add = [&](int x, int y) {
@@ -72,6 +98,32 @@ void MissionSystem::authorFacilityRoom(int worldX, int worldY, int radius) {
   // frame grounded while retaining ordinary destructible component semantics.
   for (int y = localY + halfH; y < E.rows; y++) add(localX, y);
   E.tools.registerComponentCells(frameMaterial, frame);
+
+  std::unordered_set<int> lights, glass, timber, machinery;
+  auto decorate = [&](int x, int y, uint8_t material,
+                      std::unordered_set<int>& cells) {
+    if (x <= 0 || x >= E.cols - 1 || y <= 0 || y >= E.rows) return;
+    int k = E.I(x, y);
+    if (E.bg.bodyOwner[k] >= 0 || E.isComponentMaterial(E.bg.grid[k])) return;
+    E.writeGridIndex(k, material);
+    cells.insert(k);
+  };
+  for (int x = localX - halfW + 3; x <= localX + halfW - 3; x += 7) {
+    decorate(x, localY - halfH + 1, LIGHT, lights);
+    decorate(x + 1, localY - halfH + 1, LIGHT, lights);
+  }
+  for (int x = localX - halfW + 4; x <= localX + halfW - 6; x += 10) {
+    for (int y = localY - 3; y < localY + halfH; y++)
+      decorate(x, y, GLASS, glass);
+    for (int y = localY + halfH - 4; y < localY + halfH; y++)
+      decorate(x + 4, y, IRON_ORE, machinery);
+  }
+  for (int x = localX - halfW + 2; x <= localX + halfW - 2; x++)
+    decorate(x, localY + halfH - 1, PINE_WOOD, timber);
+  E.tools.registerComponentCells(LIGHT, lights);
+  E.tools.registerComponentCells(GLASS, glass);
+  E.tools.registerComponentCells(PINE_WOOD, timber);
+  E.tools.registerComponentCells(IRON_ORE, machinery);
   E.useLayer(&E.fg);
 }
 

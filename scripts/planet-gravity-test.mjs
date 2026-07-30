@@ -67,6 +67,34 @@ check('Kestrel is a physical foreground/background world',
   );
   check(`Kestrel has authored maximum-emission light panels (${lightCount})`,
     lightCount >= 20);
+  const localCell = (worldX, worldY) => {
+    const x = worldX - engine.getWorldOffsetX();
+    const y = worldY - engine.getWorldOffsetY();
+    return engine.getGrid()[y * engine.cols + x];
+  };
+  let blockedMainDeckCells = 0;
+  for (let worldY = 6; worldY <= 17; worldY++) {
+    for (let worldX = -88; worldX <= 88; worldX++) {
+      if (localCell(worldX, worldY) !== MAT.EMPTY) blockedMainDeckCells++;
+    }
+  }
+  check('Kestrel keeps the crew-level main corridor clear of foreground scenery',
+    blockedMainDeckCells === 0, String(blockedMainDeckCells));
+  const playerId = engine.spawnPlayerAtSurface(engine.cols / 2);
+  const spawn = engine.getPlayer(playerId);
+  engine.setPlayerState(playerId, {
+    x: spawn.x,
+    y: 60 - engine.getWorldOffsetY(),
+  });
+  for (let tick = 0; tick < 40; tick++) engine.stepActors();
+  const falling = engine.getPlayer(playerId);
+  check('Kestrel waits briefly before recovering a player below the hull',
+    engine.getWorldOffsetY() + falling.y > 52);
+  for (let tick = 0; tick < 4; tick++) engine.stepActors();
+  const recovered = engine.getPlayer(playerId);
+  check('Kestrel automatically beams a player back from open space',
+    Math.abs(recovered.x - spawn.x) < 12 &&
+      Math.abs(recovered.y - spawn.y) < 12);
   const foregroundBefore = gridHash(engine.getGrid());
   const backgroundBefore = gridHash(engine.getGridBg());
   const itemsBefore = engine.itemCount();
@@ -94,6 +122,119 @@ check('Moon and Mars each expose upper and deep cave biome families',
 check('planet defaults expose 1.0g, 0.33g, and 0.76g',
   earth.gravity === 1 && Math.abs(moonA.gravity - 0.33) < 1e-12
     && Math.abs(marsA.gravity - 0.76) < 1e-12);
+
+const surveyOffworldStructures = (planetId) => {
+  const cols = 384, rows = 320;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: WORLD.worldSeed, sinksOn: false, infinite: true, planetId,
+  });
+  engine.shiftWorldXY(0, -64);
+  const structures = new Map();
+  const constructed = new Set([
+    MAT.COPPER_ORE, MAT.IRON_ORE, MAT.GOLD_ORE, MAT.BRICK, MAT.PINE_WOOD,
+    MAT.CRYSTAL, MAT.GLASS, MAT.LIGHT, MAT.PLANT, MAT.GLOWBERRY,
+  ]);
+  let furnishedCells = 0;
+  for (let band = 0; band < 36; band++) {
+    const foreground = engine.getGrid(), background = engine.getGridBg();
+    const offsetX = engine.getWorldOffsetX(), offsetY = engine.getWorldOffsetY();
+    const seen = new Uint8Array(foreground.length);
+    const stack = [];
+    for (let start = 0; start < foreground.length; start++) {
+      if (seen[start]) continue;
+      const startX = start % cols, startY = (start / cols) | 0;
+      const startWorldY = offsetY + startY;
+      if (startWorldY >= engine.worldSurfaceAbsAt(offsetX + startX)
+          || (foreground[start] === MAT.EMPTY && background[start] === MAT.EMPTY)) continue;
+      seen[start] = 1;
+      stack.push(start);
+      let cells = 0, minX = cols, maxX = -1, minY = rows, maxY = -1;
+      const materials = new Set();
+      while (stack.length) {
+        const k = stack.pop();
+        const x = k % cols, y = (k / cols) | 0;
+        cells++;
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+        if (foreground[k] !== MAT.EMPTY) materials.add(foreground[k]);
+        if (background[k] !== MAT.EMPTY) materials.add(background[k]);
+        const neighbors = [
+          x ? k - 1 : -1, x + 1 < cols ? k + 1 : -1,
+          y ? k - cols : -1, y + 1 < rows ? k + cols : -1,
+        ];
+        for (const next of neighbors) {
+          if (next < 0 || seen[next]) continue;
+          const nx = next % cols, ny = (next / cols) | 0;
+          if (offsetY + ny >= engine.worldSurfaceAbsAt(offsetX + nx)
+              || (foreground[next] === MAT.EMPTY && background[next] === MAT.EMPTY)) continue;
+          seen[next] = 1;
+          stack.push(next);
+        }
+      }
+      const width = maxX - minX + 1, height = maxY - minY + 1;
+      if (cells < 180 || width < 70 || height < 18 || minX === 0 || maxX === cols - 1)
+        continue;
+      const centerX = offsetX + Math.round((minX + maxX) / 2);
+      const key = Math.round(centerX / 48);
+      const existing = structures.get(key);
+      if (!existing || cells > existing.cells)
+        structures.set(key, { centerX, cells, width, height, materials });
+    }
+    for (let k = 0; k < background.length; k++) {
+      const x = k % cols, y = (k / cols) | 0;
+      const worldY = offsetY + y;
+      const depth = worldY - engine.worldSurfaceAbsAt(offsetX + x);
+      if (depth >= 18 && depth <= 160 && constructed.has(background[k]))
+        furnishedCells++;
+    }
+    engine.shiftWorldXY(128, 0);
+  }
+  engine.destroy();
+  const profiles = new Set([...structures.values()].map((structure) => {
+    const marker = [
+      structure.materials.has(MAT.PLANT), structure.materials.has(MAT.COPPER_ORE),
+      structure.materials.has(MAT.LIGHT), structure.materials.has(MAT.BRICK),
+    ].map(Number).join('');
+    return `${Math.round(structure.width / 10)}:${Math.round(structure.height / 10)}:${marker}`;
+  }));
+  return { structures: [...structures.values()], profiles, furnishedCells };
+};
+
+const moonStructures = surveyOffworldStructures(PLANET.MOON);
+const marsStructures = surveyOffworldStructures(PLANET.MARS);
+for (const [name, survey] of [['Moon', moonStructures], ['Mars', marsStructures]]) {
+  const widest = Math.max(...survey.structures.map((structure) => structure.width));
+  const tallest = Math.max(...survey.structures.map((structure) => structure.height));
+  const richest = Math.max(...survey.structures.map((structure) => structure.materials.size));
+  check(`${name} landmarks are frequent and dramatically scaled (${survey.structures.length}, ${widest}x${tallest})`,
+    survey.structures.length >= 6 && widest >= 185 && tallest >= 55);
+  check(`${name} exposes at least three large structure silhouettes (${survey.profiles.size} profiles)`,
+    survey.profiles.size >= 3);
+  check(`${name} structures contain layered material detail (${richest} materials, ${survey.furnishedCells} furnished cells)`,
+    richest >= 6 && survey.furnishedCells >= 40000);
+}
+check('Moon and Mars use separate architectural palettes',
+  moonStructures.structures.every((structure) => !structure.materials.has(MAT.BRICK))
+    && marsStructures.structures.every((structure) => structure.materials.has(MAT.BRICK)));
+check('Moon generates observatory, mass-driver, and far-side relay silhouettes',
+  moonStructures.structures.some((structure) =>
+    structure.materials.has(MAT.GOLD_ORE))
+    && moonStructures.structures.some((structure) =>
+      structure.materials.has(MAT.IRON_ORE) && structure.materials.has(MAT.LIGHT)
+        && !structure.materials.has(MAT.GOLD_ORE))
+    && moonStructures.structures.some((structure) =>
+      !structure.materials.has(MAT.IRON_ORE) && !structure.materials.has(MAT.GOLD_ORE)));
+check('Martian greenhouse arcologies add a planet-unique inhabited silhouette',
+  marsStructures.structures.some((structure) =>
+    structure.materials.has(MAT.PLANT) && structure.materials.has(MAT.GLASS))
+    && moonStructures.structures.every((structure) => !structure.materials.has(MAT.PLANT)));
+check('Mars generates greenhouse, refinery, and canyon-foundry silhouettes',
+  marsStructures.structures.some((structure) =>
+    structure.materials.has(MAT.PLANT) && structure.materials.has(MAT.GLASS))
+    && marsStructures.structures.some((structure) =>
+      structure.materials.has(MAT.GOLD_ORE) && !structure.materials.has(MAT.PLANT))
+    && marsStructures.structures.some((structure) =>
+      structure.materials.has(MAT.GLASS) && !structure.materials.has(MAT.PLANT)));
 
 const fallSample = (planetId) => {
   const engine = attachTestHooks(createEngineWasm({

@@ -848,6 +848,23 @@ void PlayerSystem::updatePlayers() {
     if (p.hurtCooldown > 0) p.hurtCooldown--;
     if (p.shieldHurtCooldown > 0) p.shieldHurtCooldown--;
     if (p.active && p.alive) integratePlayer(p);
+    if (p.active && p.alive && E.planetId == PL_SHIP) {
+      double worldY = E.fg.worldOffsetY + p.py + p.h * .5;
+      p.deathTicks = worldY > 52.0 ? p.deathTicks + 1 : 0;
+      if (p.deathTicks >= 42) {
+        p.px = p.spawnWorldX - E.fg.worldOffsetX;
+        p.py = p.spawnWorldY - E.fg.worldOffsetY;
+        p.vx = p.vy = 0;
+        p.grounded = false;
+        p.jumpReady = false;
+        p.jetpackActive = false;
+        p.deathTicks = 0;
+        p.hurtCooldown = imax(p.hurtCooldown, 60);
+        resetPlayerMine(p);
+        E.inv.resetPlayerPlaceStroke(p);
+        E.audio.emit(SE_RESPAWN, p.px + p.w * .5, p.py + p.h * .5, 0.9, LIGHT);
+      }
+    }
     if (p.active) updatePlayerVitals(p);
   }
   applyPlayerTools();

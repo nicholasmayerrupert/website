@@ -10,6 +10,7 @@ import { createSurvivalStatus } from './survivalStatus';
 import { createFootprintMenu } from './footprintMenu';
 import { createConnectPanel } from './connectPanel';
 import { createMissionHud, presentMissionSnapshot } from './missionHud';
+import { createTalkHud } from './talkHud';
 import { MISSION_PHASE } from '../wasmBridge/abi.generated.js';
 
 const HOST_CSS = `
@@ -543,6 +544,7 @@ class SandGameElement extends HTMLElement {
     const debugHitboxes = this.hasAttribute('debug-hitboxes');
     const autoStart = this.hasAttribute('auto-start');
     this._lastMissionTerminal = 0;
+    this._ready = false;
     let cancelled = false;
 
     const start = () => {
@@ -613,6 +615,11 @@ class SandGameElement extends HTMLElement {
             craft: (recipe, max) => game.craft(recipe, max),
           });
           this._status = createSurvivalStatus(root, { respawn: () => game.respawn() });
+          this._talkHud = createTalkHud(root, game, (detail) => {
+            this.dispatchEvent(new CustomEvent('sand:talkaction', {
+              detail, bubbles: true, composed: true,
+            }));
+          });
           this._sizeMenu = createFootprintMenu(root, {
             selectFootprint: (id) => game.setSelectedFootprint(id),
           });
@@ -711,12 +718,14 @@ class SandGameElement extends HTMLElement {
             detail: { on: true }, bubbles: true, composed: true,
           }));
         }
+        this._ready = true;
         this.dispatchEvent(new CustomEvent('sand:ready', {
           bubbles: true, composed: true,
         }));
       })
       .catch((e) => {
         if (cancelled || !this.isConnected) return;
+        this._ready = false;
         console.error('sand-game: engine failed to initialize', e);
         this.dispatchEvent(new CustomEvent('sand:error', {
           detail: { message: e instanceof Error ? e.message : String(e) },
@@ -745,6 +754,7 @@ class SandGameElement extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._ready = false;
     this._cancel?.();
     // Release analog input while its engine is still alive.
     this._stick?.destroy();
@@ -754,6 +764,7 @@ class SandGameElement extends HTMLElement {
     this._status?.destroy();
     this._sizeMenu?.destroy();
     this._missionHud?.destroy();
+    this._talkHud?.destroy();
     this._mp?.destroy();
     this._zoom?.destroy();
     this._start?.destroy();

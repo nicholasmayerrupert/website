@@ -50,6 +50,22 @@ const check = (label, ok, detail = '') => {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label}${detail ? ` (${detail})` : ''}`);
 };
 
+async function openMissionConsole(page) {
+  const talk = page.locator('sand-game')
+    .locator('button[aria-label="Talk to Commander Vale"]');
+  await page.keyboard.down('a');
+  try {
+    await talk.waitFor({ state: 'visible', timeout: 10000 });
+  } finally {
+    await page.keyboard.up('a');
+  }
+  await talk.click();
+  await page.locator('sand-game')
+    .locator('button', { hasText: 'Review missions' })
+    .click();
+  await page.locator('#kestrel-mission-console').waitFor({ state: 'visible' });
+}
+
 const deployments = [
   {
     missionId: 'greenfall-recovery',
@@ -98,8 +114,7 @@ try {
     await page.evaluate(() => document.querySelector('sand-game')._game.perfStats().creatureCount >= 3));
   check('mission console starts closed over the walkable ship',
     await page.locator('#kestrel-mission-console').count() === 0);
-  await page.getByRole('button', { name: /Open mission console/i }).click();
-  await page.locator('#kestrel-mission-console').waitFor({ state: 'visible' });
+  await openMissionConsole(page);
   const consoleBounds = await page.locator('#kestrel-mission-console').boundingBox();
   check('mission console stays inside the viewport with deployment always visible',
     !!consoleBounds && consoleBounds.y >= 0 &&
@@ -124,7 +139,7 @@ try {
       }));
     }, deployment);
     await page.reload({ waitUntil: 'load' });
-    await page.getByRole('button', { name: /Open mission console/i }).click();
+    await openMissionConsole(page);
     const deployButton = page.getByRole('button', {
       name: new RegExp(`Beam down to ${deployment.planet === 'moon' ? 'The Moon' : deployment.planet}`, 'i'),
     });
@@ -197,6 +212,15 @@ try {
         document.activeElement?.getAttribute('aria-label') === 'Kestrel mission deck'));
   }
 
+  await openMissionConsole(page);
+  await page.getByRole('button', { name: /Beam down to Mars/i }).click();
+  await page.getByRole('button', { name: /Abort to Kestrel/i })
+    .waitFor({ state: 'visible', timeout: 30000 });
+  check('a cached second deployment leaves transporter calibration and becomes playable',
+    await page.getByText('Calibrating destination field…').count() === 0);
+  await page.getByRole('button', { name: /Abort to Kestrel/i }).click();
+  await page.getByText('Field Ship Kestrel').waitFor({ state: 'visible' });
+
   check('ship and deployment flow produces no page exceptions',
     pageErrors.length === 0, pageErrors.join('; '));
 
@@ -204,7 +228,7 @@ try {
   const recoveryPage = await browser.newPage({ viewport: { width: 1366, height: 768 } });
   await recoveryPage.route('**/sandEngine.wasm', (route) => route.abort());
   await recoveryPage.goto(baseURL, { waitUntil: 'load' });
-  await recoveryPage.getByRole('button', { name: /Open mission console/i }).click();
+  await openMissionConsole(recoveryPage);
   await recoveryPage.getByRole('button', { name: /Beam down to Earth/i }).click();
   await recoveryPage.getByText('Transporter link failed').waitFor({ state: 'visible' });
   check('WASM initialization failure exposes campaign recovery controls',

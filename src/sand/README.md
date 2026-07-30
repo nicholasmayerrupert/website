@@ -71,12 +71,16 @@ local-storage record. It persists completed mission IDs, preferred loadouts,
 unlocked weapons, and best times. An interrupted run stores only its mission,
 seed, and normalized loadout; it does not serialize terrain.
 
-The Kestrel remains fully walkable while its mission console is closed. The
-console opens on demand, stays within the viewport, and keeps deployment
-controls visible above its scrolling briefing/loadout body. The ship hull is a
-protected static world: weapon impacts produce short-lived actor particles
-instead of permanent terrain gas. Maximum-emission `LIGHT` component panels
-illuminate both authored decks.
+The Kestrel remains fully walkable while its mission console is closed. Nearby
+crew have world-space `TALK` controls, and Commander Vale's conversation is the
+only route to the mission selector. The viewport-bounded console keeps
+deployment controls visible above its scrolling briefing/loadout body. The
+tapered hull contains non-blocking background-layer engineering, medbay,
+transport, armory, command, hydroponics, galley, and archive stations while the
+foreground main-deck route stays clear. Falling below the hull triggers a short
+automatic transporter recovery. The ship is a protected static world: weapon
+impacts produce short-lived actor particles instead of permanent terrain gas.
+Maximum-emission `LIGHT` component panels illuminate both authored decks.
 
 ## Planets and gravity
 
@@ -85,6 +89,14 @@ engine's lifetime. The `<sand-game>` element reads `planet`, `world-seed`,
 `mission`, and `loadout` when it connects; recreate the element to change any of
 them. Planet and seed together select deterministic terrain and a matching
 planetary backdrop.
+
+Moon and Mars use separate constructed-landmark catalogues as well as separate
+terrain, cave, and surface-formation fields. Lunar exploration crosses mineral
+spire fields, observatories, helium-3 mass drivers, and far-side relay
+monasteries. Martian exploration crosses weathered fins and hoodoos, greenhouse
+arcologies, industrial refineries, and armored canyon foundries. Each complex
+has broad grounded foundations, a large surface silhouette, and three furnished,
+player-clear underground decks.
 
 The canonical campaign gravity scales are Earth `1.0`, Moon `0.33`, and Mars
 `0.76`. The Web Component has no separate gravity attribute and campaign

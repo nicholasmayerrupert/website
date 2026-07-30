@@ -56,6 +56,31 @@ check('Kestrel generation repeats for the same seed and uses shipboard gravity',
     && shipA.planet === PLANET.SHIP && shipA.gravity === 1);
 check('Kestrel is a physical foreground/background world',
   shipA.foreground !== earth.foreground && shipA.background !== earth.background);
+{
+  const engine = attachTestHooks(createEngineWasm({
+    ...WORLD,
+    planetId: PLANET.SHIP,
+  }));
+  const lightCount = engine.getGrid().reduce(
+    (count, material) => count + (material === MAT.LIGHT ? 1 : 0),
+    0,
+  );
+  check(`Kestrel has authored maximum-emission light panels (${lightCount})`,
+    lightCount >= 20);
+  const foregroundBefore = gridHash(engine.getGrid());
+  const backgroundBefore = gridHash(engine.getGridBg());
+  const itemsBefore = engine.itemCount();
+  engine._detonateTnt(engine.cols / 2, engine.rows / 2);
+  check('Kestrel weapon impacts leave the protected hull and cell grid unchanged',
+    gridHash(engine.getGrid()) === foregroundBefore
+      && gridHash(engine.getGridBg()) === backgroundBefore);
+  check('Kestrel weapon impacts use actor-clock cosmetic particles',
+    engine.itemCount() > itemsBefore);
+  for (let tick = 0; tick < 40; tick++) engine.stepActors();
+  check('Kestrel impact particles expire without a world simulation step',
+    engine.itemCount() === itemsBefore);
+  engine.destroy();
+}
 check('all three planets generate distinct foreground terrain',
   new Set([earth.foreground, moonA.foreground, marsA.foreground]).size === 3);
 check('all three planets generate distinct surface profiles',

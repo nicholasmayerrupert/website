@@ -96,6 +96,15 @@ try {
   check('Kestrel is a physical ship world with a player and crew',
     await page.locator('sand-game[planet="ship"]').count() === 1 &&
     await page.evaluate(() => document.querySelector('sand-game')._game.perfStats().creatureCount >= 3));
+  check('mission console starts closed over the walkable ship',
+    await page.locator('#kestrel-mission-console').count() === 0);
+  await page.getByRole('button', { name: /Open mission console/i }).click();
+  await page.locator('#kestrel-mission-console').waitFor({ state: 'visible' });
+  const consoleBounds = await page.locator('#kestrel-mission-console').boundingBox();
+  check('mission console stays inside the viewport with deployment always visible',
+    !!consoleBounds && consoleBounds.y >= 0 &&
+    consoleBounds.y + consoleBounds.height <= 768 &&
+    await page.getByRole('button', { name: /Beam down to Earth/i }).isVisible());
   check('Earth, Moon, and Mars are visible on the mission deck',
     await page.getByText('Earth', { exact: true }).count() > 0 &&
     await page.getByText('The Moon', { exact: true }).count() > 0 &&
@@ -115,6 +124,7 @@ try {
       }));
     }, deployment);
     await page.reload({ waitUntil: 'load' });
+    await page.getByRole('button', { name: /Open mission console/i }).click();
     const deployButton = page.getByRole('button', {
       name: new RegExp(`Beam down to ${deployment.planet === 'moon' ? 'The Moon' : deployment.planet}`, 'i'),
     });
@@ -194,6 +204,7 @@ try {
   const recoveryPage = await browser.newPage({ viewport: { width: 1366, height: 768 } });
   await recoveryPage.route('**/sandEngine.wasm', (route) => route.abort());
   await recoveryPage.goto(baseURL, { waitUntil: 'load' });
+  await recoveryPage.getByRole('button', { name: /Open mission console/i }).click();
   await recoveryPage.getByRole('button', { name: /Beam down to Earth/i }).click();
   await recoveryPage.getByText('Transporter link failed').waitFor({ state: 'visible' });
   check('WASM initialization failure exposes campaign recovery controls',

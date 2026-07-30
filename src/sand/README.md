@@ -71,6 +71,13 @@ local-storage record. It persists completed mission IDs, preferred loadouts,
 unlocked weapons, and best times. An interrupted run stores only its mission,
 seed, and normalized loadout; it does not serialize terrain.
 
+The Kestrel remains fully walkable while its mission console is closed. The
+console opens on demand, stays within the viewport, and keeps deployment
+controls visible above its scrolling briefing/loadout body. The ship hull is a
+protected static world: weapon impacts produce short-lived actor particles
+instead of permanent terrain gas. Maximum-emission `LIGHT` component panels
+illuminate both authored decks.
+
 ## Planets and gravity
 
 Planet identity is an engine-construction property and is immutable for that

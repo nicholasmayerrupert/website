@@ -1948,6 +1948,16 @@
         put(x, 13 - step * 4, BRICK);
     for (int x : {-121, -109, 109, 121})
       for (int y = -33; y <= -22; y++) put(x, y, GLASS);
+    // High-output ceiling panels keep both walkable decks evenly lit.
+    for (int x = -126; x <= 126; x += 18) {
+      put(x, -10, LIGHT);
+      put(x + 1, -10, LIGHT);
+    }
+    for (int x = -102; x <= 102; x += 18) {
+      int ceilingY = -44 + std::abs(x) / 8;
+      put(x, ceilingY, LIGHT);
+      put(x + 1, ceilingY, LIGHT);
+    }
   }
 
   void fillOffworldStructures(int colStart, int colEnd, int rowStart, int rowEnd) {

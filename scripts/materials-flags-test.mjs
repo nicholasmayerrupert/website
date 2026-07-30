@@ -45,7 +45,7 @@ const CLASS_EXPECTED = {
   RIGID: [
     'STONE', 'CLAY', 'SANDSTONE', 'MOSS', 'COPPER_ORE', 'IRON_ORE', 'COAL_ORE', 'GOLD_ORE', 'BRICK', 'DEBRIS',
     'CRYSTAL', 'MYCELIUM', 'MYCELIUM_SPORE',
-    'ICE', 'RIGID', 'TNT', 'DEEPSTONE', 'GLASS',
+    'ICE', 'RIGID', 'TNT', 'DEEPSTONE', 'GLASS', 'LIGHT',
     'SEED', 'WOOD', 'PLANT', 'DRIFTWOOD', 'PINE_WOOD', 'CACTUS', 'MUSH_STEM', 'MUSH_CAP', 'VINE',
     'GLOWBERRY', 'GLOWSHROOM', 'PINE_NEEDLES', 'WILLOW_LEAF', 'BUSH_LEAF',
   ],
@@ -54,7 +54,7 @@ const liveIds = new Set(MATERIALS.map((m) => m.id));
 check('transparency table covers every material slot', MAT_TRANSPARENCY.length >= Math.max(...liveIds) + 1);
 check('material transparency is normalized', MATERIALS.every((m) => m.transparency >= 0 && m.transparency <= 1 && MAT_TRANSPARENCY[m.id] === m.transparency));
 check('selected liquids, vapors, and glass are explicitly translucent',
-  [2, 6, 10, 31, 33, 43, MAT.GLASS]
+  [2, 6, 10, 31, 33, 43, MAT.GLASS, MAT.LIGHT]
     .every((id) => MAT_TRANSPARENCY[id] > 0 && MAT_TRANSPARENCY[id] < 1));
 let oneClassOk = true;
 for (const m of MATERIALS) {

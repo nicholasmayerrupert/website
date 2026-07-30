@@ -131,11 +131,29 @@ function ShipHub({
   onDeploy,
   onRetryInterrupted,
 }) {
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const terminalButtonRef = useRef(null);
   const cost = loadoutSelectionCost(selection);
   const budgetLeft = mission.loadoutBudget - cost;
   const unlockedWeapons = RECOVERABLE_WEAPONS.filter(({ itemKind }) =>
     save.unlockedWeapons.includes(itemKind));
   const best = save.bestTimes[mission.id];
+
+  const closeTerminal = useCallback(() => {
+    setTerminalOpen(false);
+    requestAnimationFrame(() => terminalButtonRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    if (!terminalOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      closeTerminal();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [closeTerminal, terminalOpen]);
 
   const updatePacks = (id, packs) => {
     onChangeSelection({
@@ -160,10 +178,38 @@ function ShipHub({
         <p className="mt-1 text-[9px] leading-4 text-[#d4d9de]">
           Move through the Kestrel with WASD. Commander Vale, Engineer Osei,
           the transporter, armory, and observation deck are physically aboard.
+          Open the mission console when you are ready to deploy.
         </p>
       </div>
-      <div className="pointer-events-none relative z-[80] ml-auto flex h-full w-full max-w-[720px] flex-col">
-        <header className="pointer-events-auto mb-3 flex items-center justify-between border-[3px] border-[#080a0c] bg-[#11171d]/92 p-3 font-mono shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)]">
+      <div className="absolute right-4 top-4 z-[80] flex items-stretch gap-2 font-mono">
+        <button
+          ref={terminalButtonRef}
+          type="button"
+          aria-expanded={terminalOpen}
+          aria-controls="kestrel-mission-console"
+          onClick={() => setTerminalOpen(true)}
+          className={`${BUTTON} bg-[#d4b94d] px-4 py-3 text-left text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,5px_5px_0_#080a0c]`}
+        >
+          <span className="block text-[7px] tracking-[.2em]">Field Ship {SHIP_NAME}</span>
+          <span className="mt-1 block text-[10px]">Open mission console</span>
+        </button>
+        <a
+          href="/"
+          className={`${BUTTON} grid place-items-center bg-[#252b31] px-3 py-2 text-white hover:text-[#f0d465]`}
+        >
+          ← Portfolio
+        </a>
+      </div>
+      {terminalOpen && (
+      <div className="absolute inset-0 z-[85] bg-[#02040a]/48 p-2 backdrop-blur-[1px] md:p-4">
+      <section
+        id="kestrel-mission-console"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${SHIP_NAME} mission console`}
+        className="pointer-events-none ml-auto flex h-full min-h-0 w-full max-w-[760px] flex-col overflow-hidden"
+      >
+        <header className="pointer-events-auto mb-3 flex flex-col gap-3 border-[3px] border-[#080a0c] bg-[#11171d]/92 p-3 font-mono shadow-[inset_0_0_0_1px_#4b555e,5px_5px_0_rgba(0,0,0,.5)] sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
             <span className="grid h-11 w-11 place-items-center border-[3px] border-[#080a0c] bg-[#f0d465] text-[13px] font-black tracking-[-.05em] text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]">
               IRIS
@@ -173,20 +219,27 @@ function ShipHub({
               <h1 className="mt-1 text-[17px] font-black uppercase tracking-[.12em]">Field Ship {SHIP_NAME}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="hidden text-right text-[8px] font-bold uppercase tracking-[.15em] text-[#8f9aa4] md:block">
-              Agent status<br /><strong className="text-[#75d39a]">Ready for tasking</strong>
-            </span>
-            <a
-              href="/"
-              className={`${BUTTON} bg-[#252b31] px-3 py-2 text-white hover:text-[#f0d465]`}
+          <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+            <button
+              type="button"
+              onClick={onDeploy}
+              className={`${BUTTON} bg-[#d4b94d] px-4 py-3 text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,4px_4px_0_#080a0c]`}
             >
-              ← Portfolio
-            </a>
+              Beam down to {mission.planetName}
+            </button>
+            <button
+              type="button"
+              autoFocus
+              onClick={closeTerminal}
+              aria-label="Close mission console"
+              className={`${BUTTON} bg-[#252b31] px-3 py-3 text-white hover:text-[#f0d465]`}
+            >
+              × Close
+            </button>
           </div>
         </header>
 
-        <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-2">
+        <div className="pointer-events-auto min-h-0 flex-1 overflow-y-auto overscroll-contain pr-2">
         {save.interruptedRun && (
           <section className={`${PANEL} mb-3 flex items-center justify-between gap-4 border-l-[#d48755] px-4 py-3 font-mono`}>
             <div>
@@ -205,7 +258,7 @@ function ShipHub({
           </section>
         )}
 
-        <nav className="mb-3 flex gap-3" aria-label="Campaign missions">
+        <nav className="mb-3 grid grid-cols-3 gap-2" aria-label="Campaign missions">
           {CAMPAIGN_MISSIONS.map((entry, order) => (
             <PlanetBadge
               key={entry.id}
@@ -341,17 +394,12 @@ function ShipHub({
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={onDeploy}
-              className={`${BUTTON} mt-4 bg-[#d4b94d] px-5 py-4 text-[#17140a] shadow-[inset_0_0_0_2px_#fff1a0,5px_5px_0_#080a0c]`}
-            >
-              Beam down to {mission.planetName}
-            </button>
           </section>
         </div>
         </div>
+      </section>
       </div>
+      )}
     </main>
   );
 }

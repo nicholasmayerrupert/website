@@ -160,7 +160,38 @@ try {
     await page.evaluate(() => document.querySelector('sand-game')._game.perfStats().creatureCount >= 3));
   check('mission console starts closed over the walkable ship',
     await page.locator('#kestrel-mission-console').count() === 0);
+  const questMarker = page.locator('sand-game').locator('.sg-quest-marker');
+  await questMarker.waitFor({ state: 'visible', timeout: 10000 });
+  const questMarkerState = await page.evaluate(() => {
+    const host = document.querySelector('sand-game');
+    const marker = host?.shadowRoot?.querySelector('.sg-quest-marker');
+    const game = host?._game;
+    const view = game?.getMissionView?.();
+    const commander = game?.getTalkableActors?.()
+      .find(({ species }) => species === 17);
+    if (!marker || !view || !commander) return null;
+    const hostBounds = host.getBoundingClientRect();
+    const bounds = marker.getBoundingClientRect();
+    const commanderScreenX = hostBounds.x +
+      (commander.worldX - view.cameraWorldX) / view.viewCols * host.clientWidth;
+    const commanderScreenY = hostBounds.y +
+      (commander.worldY - view.cameraWorldY) / view.viewRows * host.clientHeight;
+    return {
+      label: marker.textContent.trim(),
+      markerCenterX: bounds.x + bounds.width * 0.5,
+      markerBottom: bounds.y + bounds.height,
+      commanderScreenX,
+      commanderScreenY,
+    };
+  });
+  check('Commander Vale has a quest marker above him',
+    questMarkerState?.label === 'Missions' &&
+    Math.abs(questMarkerState.markerCenterX - questMarkerState.commanderScreenX) <= 2 &&
+    questMarkerState.markerBottom < questMarkerState.commanderScreenY,
+    JSON.stringify(questMarkerState));
   await openCommanderDialogue(page);
+  check('the nearby TALK prompt replaces the quest marker',
+    await questMarker.isHidden());
   await page.waitForTimeout(300);
   const conversationState = await page.evaluate(() => {
     const host = document.querySelector('sand-game');
@@ -233,6 +264,10 @@ try {
     await page.getByText('The Moon', { exact: true }).count() > 0 &&
     await page.getByText('Mars', { exact: true }).count() > 0);
   await page.setViewportSize({ width: 784, height: 1015 });
+  await page.waitForFunction(() => {
+    const node = document.querySelector('[data-mission-console-scroll]');
+    return node && node.scrollHeight <= node.clientHeight;
+  }, null, { timeout: 10000 });
   const zoomedConsoleLayout = await page.locator('[data-mission-console-scroll]')
     .evaluate((node) => {
       const bounds = node.getBoundingClientRect();

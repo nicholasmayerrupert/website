@@ -39,10 +39,10 @@ for (let i = 0; i < 8; i++) {
 const deltas = (rows) => rows.map((y, i) => y - (i ? rows[i - 1] : 10));
 const same = (a, b) => a.length === b.length && a.every((value, i) => value === b[i]);
 
-check(`sand fall distance ramps each tick (${deltas(sand.rows).join(', ')})`,
-  same(deltas(sand.rows), [1, 2, 3, 4, 5, 6, 7, 8]));
-check(`sand retains its accumulated speed (${sand.speeds.join(', ')})`,
-  same(sand.speeds, [1, 2, 3, 4, 5, 6, 7, 8]));
+check(`sand accelerates to water's terminal speed (${deltas(sand.rows).join(', ')})`,
+  same(deltas(sand.rows), [1, 2, 3, 3, 3, 3, 3, 3]));
+check(`sand speed remains capped (${sand.speeds.join(', ')})`,
+  same(sand.speeds, [1, 2, 3, 3, 3, 3, 3, 3]));
 check(`water accelerates to its terminal speed (${deltas(water.rows).join(', ')})`,
   same(deltas(water.rows), [1, 2, 3, 3, 3, 3, 3, 3]));
 check(`water speed remains capped (${water.speeds.join(', ')})`,

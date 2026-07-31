@@ -680,6 +680,8 @@ static const int    R_FLUID_PRESSURE_ITERS = 24;
 static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;
 static const double R_FLUID_CORRECTOR_TRAVEL = 1.0;
 static const double R_FLUID_CORRECTOR_SLIP = 0.5;
+static const int    R_FLUID_CORRECTOR_CADENCE = 3;
+static const int    R_FLUID_CORRECTOR_BATCH_BODIES = 16;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is

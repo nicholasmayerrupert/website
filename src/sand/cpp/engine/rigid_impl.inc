@@ -770,7 +770,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
   rigidMaxChildren = 0;
   fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
-  fluidCorrectorPasses = 0;
+  fluidCorrectorPasses = fluidCorrectorBodyCount = 0;
+  fluidInitialMs = fluidCorrectorMs = 0;
   rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
   rigidMaxContactDepth = 0;
   std::vector<Body*> solverBodies;
@@ -801,7 +802,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
     body->hadContact = false;
     body->idx = bi;
   }
+  double fluidInitialStart = emscripten_get_now();
   bool coupledLiquid = coupleLiquids(solverBodies, tickDt);
+  fluidInitialMs = emscripten_get_now() - fluidInitialStart;
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     liquidContact[bi] = body->hadContact;
@@ -1480,13 +1483,48 @@ void RigidBodySystem::rigidStep(double tickDt) {
         && std::fabs(a.cy - b.cy)
              <= aExtentY + bExtentY + R_CONTACT_SKIN;
   };
-  auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB) {
+  auto childBoundsAtBothPoses = [&](Body* body, const ChildFrame& now,
+                                    const ChildFrame& next, double dt) {
+    double nowX = std::fabs(now.ux) * now.hx
+                + std::fabs(now.vx) * now.hy;
+    double nowY = std::fabs(now.uy) * now.hx
+                + std::fabs(now.vy) * now.hy;
+    double nextX = std::fabs(next.ux) * next.hx
+                 + std::fabs(next.vx) * next.hy;
+    double nextY = std::fabs(next.uy) * next.hx
+                 + std::fabs(next.vy) * next.hy;
+    double theta = std::fabs(body->omega) * dt;
+    double radius = body->maxR + 0.7071067811865476;
+    double rotationReach = theta >= M_PI
+      ? radius * 2
+      : radius * 2 * std::sin(theta * 0.5);
+    double pad = rotationReach + R_CONTACT_SKIN * 0.5;
+    return ChildBounds{
+      std::fmin(now.cx - nowX, next.cx - nextX) - pad,
+      std::fmin(now.cy - nowY, next.cy - nextY) - pad,
+      std::fmax(now.cx + nowX, next.cx + nextX) + pad,
+      std::fmax(now.cy + nowY, next.cy + nextY) + pad,
+    };
+  };
+  auto childBoundsOverlap = [](const ChildBounds& a,
+                               const ChildBounds& b) {
+    return a.minX <= b.maxX && b.minX <= a.maxX
+        && a.minY <= b.maxY && b.minY <= a.maxY;
+  };
+  auto collectChildPairCandidates = [&](Body* bodyA, Body* bodyB, double dt) {
     int countA = (int)bodyA->collisionRects.size();
     int countB = (int)bodyB->collisionRects.size();
+    bool sweptCandidate = false;
     childPairScratch.clear();
     if ((int64_t)countA * countB <= 64) {
       for (int ai = 0; ai < countA; ai++)
         for (int bi = 0; bi < countB; bi++) {
+          ChildBounds boundsA = childBoundsAtBothPoses(
+            bodyA, currentChildFramesA[ai], nextChildFramesA[ai], dt);
+          ChildBounds boundsB = childBoundsAtBothPoses(
+            bodyB, currentChildFramesB[bi], nextChildFramesB[bi], dt);
+          if (!childBoundsOverlap(boundsA, boundsB)) continue;
+          sweptCandidate = true;
           if (!childFramesOverlap(currentChildFramesA[ai],
                                   currentChildFramesB[bi])
               && !childFramesOverlap(nextChildFramesA[ai],
@@ -1494,28 +1532,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
             continue;
           childPairScratch.push_back({ai, bi});
         }
-      return;
+      return sweptCandidate;
     }
     childBoundsA.resize(countA);
     childBoundsB.resize(countB);
-    auto boundsAtBothPoses = [&](const ChildFrame& now,
-                                 const ChildFrame& next) {
-      double nowX = std::fabs(now.ux) * now.hx
-                  + std::fabs(now.vx) * now.hy;
-      double nowY = std::fabs(now.uy) * now.hx
-                  + std::fabs(now.vy) * now.hy;
-      double nextX = std::fabs(next.ux) * next.hx
-                   + std::fabs(next.vx) * next.hy;
-      double nextY = std::fabs(next.uy) * next.hx
-                   + std::fabs(next.vy) * next.hy;
-      double pad = R_CONTACT_SKIN * 0.5;
-      return ChildBounds{
-        std::fmin(now.cx - nowX, next.cx - nextX) - pad,
-        std::fmin(now.cy - nowY, next.cy - nextY) - pad,
-        std::fmax(now.cx + nowX, next.cx + nextX) + pad,
-        std::fmax(now.cy + nowY, next.cy + nextY) + pad,
-      };
-    };
     double minX = 1e18, minY = 1e18, maxX = -1e18, maxY = -1e18;
     double totalX = 0, totalY = 0;
     auto includeBounds = [&](const ChildBounds& bounds) {
@@ -1527,13 +1547,13 @@ void RigidBodySystem::rigidStep(double tickDt) {
       totalY += bounds.maxY - bounds.minY;
     };
     for (int ai = 0; ai < countA; ai++) {
-      childBoundsA[ai] = boundsAtBothPoses(
-        currentChildFramesA[ai], nextChildFramesA[ai]);
+      childBoundsA[ai] = childBoundsAtBothPoses(bodyA,
+        currentChildFramesA[ai], nextChildFramesA[ai], dt);
       includeBounds(childBoundsA[ai]);
     }
     for (int bi = 0; bi < countB; bi++) {
-      childBoundsB[bi] = boundsAtBothPoses(
-        currentChildFramesB[bi], nextChildFramesB[bi]);
+      childBoundsB[bi] = childBoundsAtBothPoses(bodyB,
+        currentChildFramesB[bi], nextChildFramesB[bi], dt);
       includeBounds(childBoundsB[bi]);
     }
     double spanX = std::fmax(1e-9, maxX - minX);
@@ -1585,6 +1605,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         int bi = event.fromA ? peer : event.child;
         if (!overlapsOtherAxis(childBoundsA[ai], childBoundsB[bi]))
           continue;
+        sweptCandidate = true;
         if (!childFramesOverlap(currentChildFramesA[ai],
                                 currentChildFramesB[bi])
             && !childFramesOverlap(nextChildFramesA[ai],
@@ -1597,6 +1618,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     // Sequential manifold collection is order-sensitive. Restore the original
     // child-index nesting after exact swept-AABB culling.
     std::sort(childPairScratch.begin(), childPairScratch.end());
+    return sweptCandidate;
   };
   auto sweptBodyBounds = [&](Body* body, const ChildFrame& now,
                              const ChildFrame& next, double dt) {
@@ -1883,6 +1905,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     return false;
   };
   enum ChildContactState {
+    CCS_SEPARATED,
     CCS_NONE,
     CCS_SPECULATIVE,
     CCS_CURRENT,
@@ -1893,7 +1916,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     collectChildFrames(b, 0, currentChildFramesB);
     collectChildFrames(a, dt, nextChildFramesA);
     collectChildFrames(b, dt, nextChildFramesB);
-    collectChildPairCandidates(a, b);
+    bool sweptCandidate = collectChildPairCandidates(a, b, dt);
     bool currentContact = false;
     for (const auto& pair : childPairScratch) {
       int ai = pair.first, bi = pair.second;
@@ -1917,7 +1940,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
         childSatManifolds(nextA, nextB, true);
     }
     if (currentContact) return CCS_CURRENT;
-    return childManifoldScratch.empty() ? CCS_NONE : CCS_SPECULATIVE;
+    if (!childManifoldScratch.empty()) return CCS_SPECULATIVE;
+    return sweptCandidate ? CCS_NONE : CCS_SEPARATED;
   };
   std::vector<uint8_t> activeBody(n, 0);
   std::vector<double> bodyDt(n, 0);
@@ -2220,13 +2244,16 @@ void RigidBodySystem::rigidStep(double tickDt) {
             for (; x + 7 <= x1; x += 8) {
               uint64_t materials = 0;
               memcpy(&materials, row + x, sizeof(materials));
-              if (materials != 0) {
-                occupied = true;
-                break;
-              }
+              if (materials == 0) continue;
+              for (int lane = 0; lane < 8; lane++)
+                if (E.isRigidMaterialClass(row[x + lane])) {
+                  occupied = true;
+                  break;
+                }
+              if (occupied) break;
             }
             for (; x <= x1 && !occupied; x++) {
-              occupied = row[x] != EMPTY;
+              occupied = E.isRigidMaterialClass(row[x]);
             }
           }
           if (!occupied) return;
@@ -2494,6 +2521,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       bool bMoving = B->awake && (B->vx * B->vx + B->vy * B->vy > R_WAKE_LIN2 || B->omega * B->omega > R_WAKE_ANG2);
       ChildContactState childContactState =
         collectChildContacts(A, B, pairDt);
+      if (childContactState == CCS_SEPARATED) continue;
       ChildBounds sweptA, sweptB;
       if (childContactState != CCS_CURRENT) {
         sweptA = sweptBodyBounds(
@@ -2597,6 +2625,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         double pairDt = bodyDt[ai];
         ChildContactState childContactState =
           collectChildContacts(A, B, pairDt);
+        if (childContactState == CCS_SEPARATED) continue;
         ChildBounds sweptA, sweptB;
         if (childContactState != CCS_CURRENT) {
           sweptA = sweptBodyBounds(
@@ -2977,11 +3006,14 @@ void RigidBodySystem::rigidStep(double tickDt) {
       }
     }
   }
-  // Fast interface motion gets one regional projection at the advected pose.
-  // Slow motion keeps the ordinary single monolithic pass, and qualifying
-  // bodies do not make unrelated wet bodies rebuild their pressure domains.
+  // Fast liquid entry is projected at the advected pose immediately. Sustained
+  // interface slip is corrected periodically while the primary projection
+  // continues every tick, and unrelated wet bodies stay outside the regional
+  // pressure domain.
   std::vector<Body*> fluidCorrectorBodies;
   fluidCorrectorBodies.reserve(n);
+  int correctorCadence = n >= R_FLUID_CORRECTOR_BATCH_BODIES
+    ? R_FLUID_CORRECTOR_CADENCE : 1;
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     if (!body->awake) continue;
@@ -2989,13 +3021,18 @@ void RigidBodySystem::rigidStep(double tickDt) {
     double travel = std::hypot(body->px - start[0], body->py - start[1])
                   + std::fabs(body->angle - start[2]) * body->maxR;
     if (travel <= R_FLUID_CORRECTOR_TRAVEL) continue;
-    if (!liquidContact[bi]
-        || (bi < (int)fluidBodyMaxSlip.size()
-            && fluidBodyMaxSlip[bi] >= R_FLUID_CORRECTOR_SLIP)) {
-      fluidCorrectorBodies.push_back(body);
-    }
+    bool enteringLiquid = !liquidContact[bi];
+    bool slipping = bi < (int)fluidBodyMaxSlip.size()
+                 && fluidBodyMaxSlip[bi] >= R_FLUID_CORRECTOR_SLIP;
+    bool correctionDue = correctorCadence == 1
+      || body->id % correctorCadence == E.tick % correctorCadence;
+    if (!enteringLiquid && (!slipping
+        || !correctionDue))
+      continue;
+    fluidCorrectorBodies.push_back(body);
   }
   if (!fluidCorrectorBodies.empty()) {
+    fluidCorrectorBodyCount = (int)fluidCorrectorBodies.size();
     std::vector<std::array<double, 3>> beforeCorrection(
       fluidCorrectorBodies.size());
     for (int bi = 0; bi < (int)fluidCorrectorBodies.size(); bi++) {
@@ -3004,7 +3041,10 @@ void RigidBodySystem::rigidStep(double tickDt) {
       body->sn = std::sin(body->angle);
       beforeCorrection[bi] = {body->vx, body->vy, body->omega};
     }
-    if (coupleLiquids(fluidCorrectorBodies, 0)) {
+    double fluidCorrectorStart = emscripten_get_now();
+    bool correctedLiquid = coupleLiquids(fluidCorrectorBodies, 0);
+    fluidCorrectorMs = emscripten_get_now() - fluidCorrectorStart;
+    if (correctedLiquid) {
       fluidCorrectorPasses++;
       for (int bi = 0; bi < (int)fluidCorrectorBodies.size(); bi++) {
         Body* body = fluidCorrectorBodies[bi];
@@ -4936,6 +4976,7 @@ void RigidBodySystem::restampBodiesAfterStream() {
   E.L->sleepingBodySupportDirty = true;
 }
 void RigidBodySystem::moveBodies() {
+  rigidCoreMs = rigidClearMs = rigidDepenMs = rigidStampMs = rigidSpillMs = 0;
   bool hasSimulatedBody = false;
   for (Body* b : E.L->bodies)
     if (b->jointRole != 2) { hasSimulatedBody = true; break; }
@@ -5047,6 +5088,7 @@ void RigidBodySystem::moveBodies() {
     moveDisplaced[slot].clear();
     moveStamped[slot].clear();
   }
+  double clearStart = emscripten_get_now();
   for (int k : E.L->bodyCells) {
     int owner = E.L->bodyOwner[k];
     auto slot = moveBodySlotById.find(owner);
@@ -5055,12 +5097,16 @@ void RigidBodySystem::moveBodies() {
     if (E.isBodyCell(k)) E.writeGridIndex(k, EMPTY);
     E.L->bodyOwner[k] = -1;
   } // body-material invariant: body cells hold the body's real material; E.L->bodyOwner marks them
+  rigidClearMs = emscripten_get_now() - clearStart;
   for (Body* b : E.L->bodies) if (b->jointRole != 2) {
     int slot = moveBodySlotById.find(b->id)->second;
     movePrePoses[slot] = {b->px, b->py, b->angle};
   }
+  double coreStart = emscripten_get_now();
   rigidStep(1.0);
+  rigidCoreMs = emscripten_get_now() - coreStart;
   rigidRejectedCells = 0; rigidDepenetrations = 0;
+  double depenStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     int slot = moveBodySlotById.find(b->id)->second;
@@ -5069,8 +5115,10 @@ void RigidBodySystem::moveBodies() {
       rigidDepenetrations++;
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration
+  rigidDepenMs = emscripten_get_now() - depenStart;
   moveCells.clear();
   moveFootprint.clear();
+  double stampStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     int slot = moveBodySlotById.find(b->id)->second;
@@ -5085,6 +5133,7 @@ void RigidBodySystem::moveBodies() {
       moveCells.push_back(k); moveFootprint.push_back(k); stamped.push_back(k); // body-material invariant: stamp the body's REAL material so it renders/mines/reacts as that material
     });
   }
+  rigidStampMs = emscripten_get_now() - stampStart;
   {
     std::vector<Body*> keep;
     keep.reserve(E.L->bodies.size());
@@ -5116,6 +5165,7 @@ void RigidBodySystem::moveBodies() {
   }
   int32_t footprintGen = ++E.L->seenGen;
   for (int k : moveFootprint) E.L->rigidSpillFootprint[k] = footprintGen;
+  double spillStart = emscripten_get_now();
   for (Body* b : E.L->bodies) {
     if (b->jointRole == 2) continue;
     int slot = moveBodySlotById.find(b->id)->second;
@@ -5124,6 +5174,7 @@ void RigidBodySystem::moveBodies() {
     spillDisplacedBodyMaterial(moveDisplaced[slot], moveStamped[slot],
                                footprintGen, b->id, b->density, vacated);
   }
+  rigidSpillMs = emscripten_get_now() - spillStart;
   if (E.L == &E.fg) {
     // Joint erosion rebuilds pieces from the two live owner rasters. Restore
     // the follower before acid/fire can erase the leader so the splitter sees

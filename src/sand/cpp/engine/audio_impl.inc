@@ -41,6 +41,10 @@ void AudioSystem::beginRegionalPass() { regionalEventCount = 0; }
 void AudioSystem::noteRegional(uint8_t type, uint8_t material, int x, int y,
                                double weight, double mergeRadius) {
   if (weight <= 0 || E.storageRole == ESR_PRESENTATION) return;
+  // A saturated pass already has the maximum representable set of regional
+  // sounds. Stop accepting per-cell facts instead of searching all slots for
+  // every later cell in a broad falling-liquid or powder front.
+  if (regionalEventCount >= MAX_REGIONAL_EVENTS) return;
   int layer = E.L == &E.bg ? 1 : 0;
   const double mergeRadius2 = mergeRadius * mergeRadius;
   for (int i = 0; i < regionalEventCount; i++) {
@@ -52,7 +56,6 @@ void AudioSystem::noteRegional(uint8_t type, uint8_t material, int x, int y,
     region.x += x * weight; region.y += y * weight; region.weight += weight;
     return;
   }
-  if (regionalEventCount >= MAX_REGIONAL_EVENTS) return;
   regionalEvents[regionalEventCount++] = {
     type, material, (uint8_t)layer, x * weight, y * weight, weight
   };

@@ -36,7 +36,10 @@ class RigidBodySystem {
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
   int rigidMaxChildren = 0;
   int fluidNodeCount = 0, fluidFaceCount = 0, fluidPressureIterations = 0;
-  int fluidCorrectorPasses = 0;
+  int fluidCorrectorPasses = 0, fluidCorrectorBodyCount = 0;
+  double fluidInitialMs = 0, fluidCorrectorMs = 0;
+  double rigidCoreMs = 0, rigidClearMs = 0, rigidDepenMs = 0;
+  double rigidStampMs = 0, rigidSpillMs = 0;
   int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
   double rigidMaxContactDepth = 0;
   void clearContactCaches();

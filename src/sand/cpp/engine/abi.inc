@@ -348,6 +348,14 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 18: return e->rigid.rigidSpillVisits;
     case 19: return e->rigid.rigidSpillSearches;
     case 20: return e->rigid.fluidCorrectorPasses;
+    case 21: return e->rigid.fluidInitialMs;
+    case 22: return e->rigid.fluidCorrectorMs;
+    case 23: return e->rigid.rigidCoreMs;
+    case 24: return e->rigid.rigidClearMs;
+    case 25: return e->rigid.rigidDepenMs;
+    case 26: return e->rigid.rigidStampMs;
+    case 27: return e->rigid.rigidSpillMs;
+    case 28: return e->rigid.fluidCorrectorBodyCount;
     default: return 0;
   }
 }

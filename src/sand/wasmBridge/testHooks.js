@@ -156,6 +156,14 @@ export function attachTestHooks(engine) {
     spillVisits: t.rigidSolverDiag(ptr, 18),
     spillSearches: t.rigidSolverDiag(ptr, 19),
     fluidCorrectorPasses: t.rigidSolverDiag(ptr, 20),
+    fluidInitialMs: t.rigidSolverDiag(ptr, 21),
+    fluidCorrectorMs: t.rigidSolverDiag(ptr, 22),
+    rigidCoreMs: t.rigidSolverDiag(ptr, 23),
+    rigidClearMs: t.rigidSolverDiag(ptr, 24),
+    rigidDepenMs: t.rigidSolverDiag(ptr, 25),
+    rigidStampMs: t.rigidSolverDiag(ptr, 26),
+    rigidSpillMs: t.rigidSolverDiag(ptr, 27),
+    fluidCorrectorBodies: t.rigidSolverDiag(ptr, 28),
   });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);

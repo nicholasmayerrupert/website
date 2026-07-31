@@ -297,6 +297,10 @@ struct Body {
   double omegaPre = 0;
   bool hadContact = false;
   bool rasterMayOverlapSolid = false;
+  // Dense wet-island cadence carries impact/terrain risk across ticks so a
+  // newly turbulent or landing island stays on normal microsteps briefly.
+  double recentImpactSpeed = 0;
+  uint8_t denseMicrostepTicks = 0;
   double maxDepth = 0; int idx = 0;
 };
 struct Contact {
@@ -689,6 +693,9 @@ static const int    R_FLUID_DENSE_CORRECTOR_CADENCE = 6;
 static const int    R_FLUID_CORRECTOR_BATCH_BODIES = 16;
 static const int    R_FLUID_DENSE_BATCH_BODIES = 24;
 static const int    R_DENSE_RIGID_CARGO_BODIES = 64;
+static const double R_DENSE_COHERENT_RELATIVE_SPEED = 1.25;
+static const double R_DENSE_COHERENT_IMPACT_SPEED = 0.5;
+static const int    R_DENSE_MICROSTEP_HYSTERESIS = 3;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is

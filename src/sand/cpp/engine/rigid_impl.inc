@@ -769,6 +769,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
   rigidIslandBodySteps = rigidGlobalBodySteps = 0;
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
   rigidMaxChildren = 0;
+  rigidCoherentIslands = rigidDenseFallbackIslands = 0;
+  rigidTerrainRiskBodies = rigidImpactRiskBodies = 0;
+  rigidMaxRelativeSpeed = 0;
   fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
   fluidCorrectorPasses = fluidCorrectorBodyCount = 0;
   fluidInitialMs = fluidCorrectorMs = 0;
@@ -784,6 +787,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
     rigidMaxChildren = imax(rigidMaxChildren, (int)body->collisionRects.size());
   int n = (int)solverBodies.size();
   std::vector<int> islandParent(n);
+  std::vector<uint8_t> priorRasterRisk(n, 0);
+  std::vector<double> priorImpactSpeed(n, 0);
   std::vector<double> islandMinStill(n);
   std::vector<uint8_t> liquidContact(n, 0);
   std::vector<uint8_t> liquidSurfaceContact(n, 0);
@@ -794,6 +799,9 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<std::array<double, 3>> fluidStartPose(n);
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
+    priorRasterRisk[bi] = body->rasterMayOverlapSolid ? 1 : 0;
+    priorImpactSpeed[bi] = body->recentImpactSpeed;
+    if (body->denseMicrostepTicks > 0) body->denseMicrostepTicks--;
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
     fluidStartPose[bi] = {body->px, body->py, body->angle};
@@ -803,6 +811,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     body->sn = std::sin(body->angle);
     body->hadContact = false;
     body->rasterMayOverlapSolid = false;
+    body->recentImpactSpeed = 0;
     body->idx = bi;
   }
   double fluidInitialStart = emscripten_get_now();
@@ -958,31 +967,93 @@ void RigidBodySystem::rigidStep(double tickDt) {
   // one cadence; unrelated slow islands no longer inherit the fastest body's
   // rotational or translational substep count.
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
-  int wetSolverBodyCount = 0;
-  for (uint8_t contact : liquidContact)
-    if (contact) wetSolverBodyCount++;
-  // Dense wet cargo shares a co-moving frame. Its body/body and body/grid paths
-  // retain whole-tick swept collision, so absolute fall speed does not require
-  // repeating the contact solve across microsteps.
-  double safeSubstep =
-    n >= R_DENSE_RIGID_CARGO_BODIES
-      && wetSolverBodyCount >= R_FLUID_DENSE_BATCH_BODIES
-      ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
   double globalPointSpeed = 0;
+  double denseFrameVx = 0, denseFrameVy = 0;
+  int denseFrameBodyCount = 0, wetSolverBodyCount = 0;
   for (int bi = 0; bi < n; bi++) {
     stepIslandParent[bi] = bi;
     Body* body = solverBodies[bi];
+    if (liquidContact[bi]) wetSolverBodyCount++;
+    if (body->awake) {
+      denseFrameVx += body->vx;
+      denseFrameVy += body->vy;
+      denseFrameBodyCount++;
+    }
     double pointSpeed = body->awake
       ? std::hypot(body->vx, body->vy)
         + std::fabs(body->omega) * std::fmax(1.0, body->maxR)
       : 0;
     globalPointSpeed = std::fmax(globalPointSpeed, pointSpeed);
   }
+  bool denseWetScene =
+    n >= R_DENSE_RIGID_CARGO_BODIES
+    && wetSolverBodyCount >= R_FLUID_DENSE_BATCH_BODIES;
+  if (denseFrameBodyCount > 0) {
+    denseFrameVx /= denseFrameBodyCount;
+    denseFrameVy /= denseFrameBodyCount;
+  }
+  bool denseGlobalTerrainRisk = false;
+  bool denseGlobalImpactRisk = false;
+  bool denseGlobalCooldown = false;
+  double denseGlobalMaxRelativeSpeed = 0;
+  // The common case is one co-moving cargo frame. Prove it coherent in O(n)
+  // before building contact islands; any risk falls through to per-island
+  // cadence selection below.
+  if (denseWetScene) {
+    for (int bi = 0; bi < n; bi++) {
+      Body* body = solverBodies[bi];
+      double pointSpeed = body->awake
+        ? std::hypot(body->vx, body->vy)
+          + std::fabs(body->omega) * std::fmax(1.0, body->maxR)
+        : 0;
+      double reach =
+        (pointSpeed + R_MAX_SPEED + E.scaledGravity(R_GRAVITY) * tickDt)
+          * tickDt
+        + R_CONTACT_SKIN + 0.5;
+      double riskX0, riskY0, riskX1, riskY1;
+      bodyBounds(body, reach, riskX0, riskY0, riskX1, riskY1);
+      bool terrainRisk =
+        priorRasterRisk[bi]
+        || riskX0 <= 0 || riskY0 <= 0
+        || riskX1 >= E.cols || riskY1 >= E.rows;
+      denseGlobalTerrainRisk = denseGlobalTerrainRisk || terrainRisk;
+      denseGlobalImpactRisk =
+        denseGlobalImpactRisk
+        || priorImpactSpeed[bi] > R_DENSE_COHERENT_IMPACT_SPEED;
+      denseGlobalCooldown =
+        denseGlobalCooldown || body->denseMicrostepTicks > 0;
+      if (terrainRisk) rigidTerrainRiskBodies++;
+      if (priorImpactSpeed[bi] > R_DENSE_COHERENT_IMPACT_SPEED)
+        rigidImpactRiskBodies++;
+      if (!body->awake) continue;
+      double relativeSpeed =
+        std::hypot(body->vx - denseFrameVx, body->vy - denseFrameVy)
+        + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
+      denseGlobalMaxRelativeSpeed = std::fmax(
+        denseGlobalMaxRelativeSpeed, relativeSpeed);
+    }
+    rigidMaxRelativeSpeed = denseGlobalMaxRelativeSpeed;
+  }
+  bool denseGlobalNewRisk =
+    denseGlobalMaxRelativeSpeed > R_DENSE_COHERENT_RELATIVE_SPEED
+    || denseGlobalTerrainRisk || denseGlobalImpactRisk;
+  bool denseGlobalCoherent =
+    denseWetScene && !denseGlobalNewRisk && !denseGlobalCooldown;
+  double initialSafeSubstep = denseGlobalCoherent
+    ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
   int substeps = (int)std::ceil(
-    (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt) / safeSubstep);
+    (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt)
+      / initialSafeSubstep);
   substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
   if (substeps == 1) {
     rigidIslands = n;
+    if (denseWetScene) {
+      if (denseGlobalCoherent) rigidCoherentIslands++;
+      else rigidDenseFallbackIslands++;
+      if (denseGlobalNewRisk)
+        for (Body* body : solverBodies)
+          body->denseMicrostepTicks = R_DENSE_MICROSTEP_HYSTERESIS;
+    }
   } else {
     std::vector<int> islandOrder(n);
     std::vector<double> tickX0(n), tickY0(n), tickX1(n), tickY1(n);
@@ -1012,28 +1083,82 @@ void RigidBodySystem::rigidStep(double tickDt) {
       }
     }
     std::vector<double> islandPointSpeed(n, 0);
-    std::vector<int> islandBodyCount(n, 0), islandSubsteps(n, 1);
+    std::vector<double> islandVxSum(n, 0), islandVySum(n, 0);
+    std::vector<double> islandMaxRelativeSpeed(n, 0);
+    std::vector<double> islandMaxPriorImpact(n, 0);
+    std::vector<int> islandBodyCount(n, 0), islandAwakeCount(n, 0);
+    std::vector<int> islandSubsteps(n, 1);
+    std::vector<uint8_t> islandTerrainRisk(n, 0);
+    std::vector<uint8_t> islandCooldown(n, 0), islandRefreshCooldown(n, 0);
     for (int bi = 0; bi < n; bi++) {
       int root = ufFind(stepIslandParent, bi);
       Body* body = solverBodies[bi];
       islandBodyCount[root]++;
+      islandTerrainRisk[root] =
+        islandTerrainRisk[root] || priorRasterRisk[bi]
+        || tickX0[bi] <= 0 || tickY0[bi] <= 0
+        || tickX1[bi] >= E.cols || tickY1[bi] >= E.rows;
+      islandMaxPriorImpact[root] = std::fmax(
+        islandMaxPriorImpact[root], priorImpactSpeed[bi]);
+      islandCooldown[root] =
+        islandCooldown[root] || body->denseMicrostepTicks > 0;
       if (!body->awake) continue;
       double pointSpeed = std::hypot(body->vx, body->vy)
         + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
       islandPointSpeed[root] = std::fmax(islandPointSpeed[root], pointSpeed);
+      islandVxSum[root] += body->vx;
+      islandVySum[root] += body->vy;
+      islandAwakeCount[root]++;
+    }
+    for (int bi = 0; bi < n; bi++) {
+      Body* body = solverBodies[bi];
+      if (!body->awake) continue;
+      int root = ufFind(stepIslandParent, bi);
+      double meanVx = denseWetScene
+        ? denseFrameVx : islandVxSum[root] / islandAwakeCount[root];
+      double meanVy = denseWetScene
+        ? denseFrameVy : islandVySum[root] / islandAwakeCount[root];
+      double relativeSpeed =
+        std::hypot(body->vx - meanVx, body->vy - meanVy)
+        + std::fabs(body->omega) * std::fmax(1.0, body->maxR);
+      islandMaxRelativeSpeed[root] = std::fmax(
+        islandMaxRelativeSpeed[root], relativeSpeed);
+      rigidMaxRelativeSpeed = std::fmax(
+        rigidMaxRelativeSpeed, relativeSpeed);
     }
     substeps = 1;
     for (int root = 0; root < n; root++) {
       if (islandBodyCount[root] == 0) continue;
       rigidIslands++;
+      bool denseWetIsland = denseWetScene;
+      bool newDenseRisk =
+        islandMaxRelativeSpeed[root] > R_DENSE_COHERENT_RELATIVE_SPEED
+        || islandTerrainRisk[root]
+        || islandMaxPriorImpact[root] > R_DENSE_COHERENT_IMPACT_SPEED;
+      bool coherentDenseIsland =
+        denseWetIsland && !newDenseRisk && !islandCooldown[root];
+      if (denseWetIsland) {
+        if (coherentDenseIsland) rigidCoherentIslands++;
+        else rigidDenseFallbackIslands++;
+      }
+      if (denseWetIsland && newDenseRisk)
+        islandRefreshCooldown[root] = 1;
+      double safeSubstep = coherentDenseIsland
+        ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
       int count = (int)std::ceil(
-        (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt) / safeSubstep);
+        (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt)
+          / safeSubstep);
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);
     }
-    for (int bi = 0; bi < n; bi++)
-      bodySubsteps[bi] = islandSubsteps[ufFind(stepIslandParent, bi)];
+    for (int bi = 0; bi < n; bi++) {
+      int root = ufFind(stepIslandParent, bi);
+      bodySubsteps[bi] = islandSubsteps[root];
+      if (islandRefreshCooldown[root])
+        solverBodies[bi]->denseMicrostepTicks =
+          R_DENSE_MICROSTEP_HYSTERESIS;
+    }
   }
   rigidSubsteps = substeps;
   rigidGlobalBodySteps = n * substeps;
@@ -2452,6 +2577,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
           rvy -= rigidContactVy(B) + rigidContactOmega(B) * rbx;
         }
         double impactVn = rvx * Nx[bk] + rvy * Ny[bk];
+        double impactSpeed = std::max(0.0, -impactVn);
+        A->recentImpactSpeed = std::fmax(
+          A->recentImpactSpeed, impactSpeed);
+        if (B)
+          B->recentImpactSpeed = std::fmax(
+            B->recentImpactSpeed, impactSpeed);
         bool softImpact = B && B->kinematic;
         double restitution = B ? R_BODY_RESTITUTION : R_TERRAIN_RESTITUTION;
         double targetVn = !softImpact && impactVn < -R_BOUNCE_MIN_SPEED ? -restitution * impactVn : 0;
@@ -2475,7 +2606,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
           A, B, rax, ray, rbx, rby, Nx[bk], Ny[bk], p->depth,
           p->childA, p->childB, p->featureA, p->featureB,
           (uint8_t)bk,
-          bIndex >= 0, std::max(0.0, -impactVn), targetVn,
+          bIndex >= 0, impactSpeed, targetVn,
           contactDt, staticFriction, dynamicFriction,
           0, 0, 0,
           0, 0, 0, -1, false,

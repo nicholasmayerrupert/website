@@ -361,6 +361,11 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 31: return e->rigid.fluidMatrixMs;
     case 32: return e->rigid.fluidSolveMs;
     case 33: return e->rigid.fluidWritebackMs;
+    case 34: return e->rigid.rigidCoherentIslands;
+    case 35: return e->rigid.rigidDenseFallbackIslands;
+    case 36: return e->rigid.rigidMaxRelativeSpeed;
+    case 37: return e->rigid.rigidTerrainRiskBodies;
+    case 38: return e->rigid.rigidImpactRiskBodies;
     default: return 0;
   }
 }

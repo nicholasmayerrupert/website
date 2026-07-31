@@ -169,6 +169,11 @@ export function attachTestHooks(engine) {
     fluidMatrixMs: t.rigidSolverDiag(ptr, 31),
     fluidSolveMs: t.rigidSolverDiag(ptr, 32),
     fluidWritebackMs: t.rigidSolverDiag(ptr, 33),
+    coherentIslands: t.rigidSolverDiag(ptr, 34),
+    denseFallbackIslands: t.rigidSolverDiag(ptr, 35),
+    maxRelativeSpeed: t.rigidSolverDiag(ptr, 36),
+    terrainRiskBodies: t.rigidSolverDiag(ptr, 37),
+    impactRiskBodies: t.rigidSolverDiag(ptr, 38),
   });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);

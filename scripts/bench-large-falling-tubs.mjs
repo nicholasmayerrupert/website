@@ -98,6 +98,8 @@ const measure = (name, setup, expectedBodies = 0) => {
     substeps: [], bodySteps: [], contacts: [], childPairs: [], sweepFallbacks: [],
     velocityIterations: [], biasIterations: [],
     correctorBodies: [],
+    coherentIslands: [], denseFallbackIslands: [], maxRelativeSpeed: [],
+    terrainRiskBodies: [], impactRiskBodies: [],
   };
   let maxNodes = 0;
   let maxFaces = 0;
@@ -135,6 +137,11 @@ const measure = (name, setup, expectedBodies = 0) => {
     timing.velocityIterations.push(rigid.velocityIterations);
     timing.biasIterations.push(rigid.biasIterations);
     timing.correctorBodies.push(rigid.fluidCorrectorBodies);
+    timing.coherentIslands.push(rigid.coherentIslands);
+    timing.denseFallbackIslands.push(rigid.denseFallbackIslands);
+    timing.maxRelativeSpeed.push(rigid.maxRelativeSpeed);
+    timing.terrainRiskBodies.push(rigid.terrainRiskBodies);
+    timing.impactRiskBodies.push(rigid.impactRiskBodies);
     maxNodes = Math.max(maxNodes, rigid.fluidNodes);
     maxFaces = Math.max(maxFaces, rigid.fluidFaces);
     maxIterations = Math.max(maxIterations, rigid.fluidIterations);
@@ -185,9 +192,16 @@ const measure = (name, setup, expectedBodies = 0) => {
   failedBudget ||= overBudget > 0;
   const body = engine._bodyState(0);
   const finalBodyCount = engine._bodyCount();
+  const coherentTickCount =
+    timing.coherentIslands.filter((value) => value > 0).length;
+  const fallbackTickCount =
+    timing.denseFallbackIslands.filter((value) => value > 0).length;
   if (expectedBodies
       && (minBodyCount !== expectedBodies
           || finalBodyCount !== expectedBodies))
+    failedValidation = true;
+  if (expectedBodies >= 64
+      && (coherentTickCount === 0 || fallbackTickCount === 0))
     failedValidation = true;
   console.log(`\n${name} (${COLS}x${ROWS}, ${STEPS} measured ticks)`);
   console.log(
@@ -222,6 +236,16 @@ const measure = (name, setup, expectedBodies = 0) => {
     + `  fallbacks ${percentile(timing.sweepFallbacks, 0.5)}`
     + `  iterations ${percentile(timing.velocityIterations, 0.5)}`
     + `+${percentile(timing.biasIterations, 0.5)}`,
+  );
+  console.log(
+    `  adaptive coherent/fallback ticks`
+    + ` ${coherentTickCount}/${fallbackTickCount}`
+    + `  relative p50/p95`
+    + ` ${percentile(timing.maxRelativeSpeed, 0.5).toFixed(2)}`
+    + `/${percentile(timing.maxRelativeSpeed, 0.95).toFixed(2)}`
+    + `  terrain/impact risk p95`
+    + ` ${percentile(timing.terrainRiskBodies, 0.95)}`
+    + `/${percentile(timing.impactRiskBodies, 0.95)}`,
   );
   console.log(
     `  slow ticks >16.67ms ${over16}/${STEPS}`

@@ -35,6 +35,9 @@ class RigidBodySystem {
   int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
   int rigidMaxChildren = 0;
+  int rigidCoherentIslands = 0, rigidDenseFallbackIslands = 0;
+  int rigidTerrainRiskBodies = 0, rigidImpactRiskBodies = 0;
+  double rigidMaxRelativeSpeed = 0;
   int fluidNodeCount = 0, fluidFaceCount = 0, fluidPressureIterations = 0;
   int fluidCorrectorPasses = 0, fluidCorrectorBodyCount = 0;
   double fluidInitialMs = 0, fluidCorrectorMs = 0;

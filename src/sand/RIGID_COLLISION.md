@@ -100,9 +100,10 @@ lives in `rigid_impl.inc`.
 - Raster depenetration remains a last-resort fallback.
 
 Contact damping lets stable bodies sleep, but angular damping is skipped while a
-contact is consistently converting a fall into a real topple. Bodies treat the
-loaded-window boundary as solid; camera-driven streaming persists bodies through
-the chunk store instead of using that collision wall.
+contact is consistently converting a fall into a real topple. A body crossing an
+infinite world's loaded-window boundary stays fixed until streaming brings its
+complete occupied shape back into the window. Finite-world boundaries remain
+solid, and camera-driven streaming persists bodies through the chunk store.
 
 The exact inverse-raster footprint is cached for one pose and geometry revision.
 Systems that query an unchanged pose reuse the same ordered world/local cells.

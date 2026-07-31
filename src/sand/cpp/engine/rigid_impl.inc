@@ -24,6 +24,28 @@ static double rigidContactOmega(const Body* body) {
   return body->kinematic ? body->kinematicOmega : body->omega;
 }
 
+bool RigidBodySystem::bodyFullyInsideLoadedWindow(Body* body) const {
+  if (!E.L->infinite) return true;
+  double cs = std::cos(body->angle), sn = std::sin(body->angle);
+  constexpr double edgeTolerance = 1e-7;
+  for (const BodyCollisionRect& rect : body->collisionRects) {
+    double lx0 = body->offsetX + rect.x0 - 0.5;
+    double lx1 = body->offsetX + rect.x1 - 0.5;
+    double ly0 = body->offsetY + rect.y0 - 0.5;
+    double ly1 = body->offsetY + rect.y1 - 0.5;
+    auto inside = [&](double lx, double ly) {
+      double x = body->px + lx * cs - ly * sn;
+      double y = body->py + lx * sn + ly * cs;
+      return x >= -edgeTolerance && x <= E.cols + edgeTolerance
+          && y >= -edgeTolerance && y <= E.rows + edgeTolerance;
+    };
+    if (!inside(lx0, ly0) || !inside(lx1, ly0)
+        || !inside(lx1, ly1) || !inside(lx0, ly1))
+      return false;
+  }
+  return true;
+}
+
 void RigidBodySystem::clearContactCaches() {
   for (ContactCache& cache : contactCaches) cache.clear();
   for (auto& contacts : impactContactTicks) contacts.clear();
@@ -708,6 +730,7 @@ double RigidBodySystem::resolveBias(Contact& c) {
 }
 void RigidBodySystem::wakeBody(Body* b) {
   if (b->jointRole == 2 && b->jointPeer) b = b->jointPeer;
+  if (!bodyFullyInsideLoadedWindow(b)) return;
   b->awake = true;
   b->stillTicks = 0;
   if (b->jointRole == 1) syncJointFollower(b);
@@ -797,14 +820,33 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<uint8_t> awakeBeforeLiquid(n, 0);
   std::vector<double> vyBeforeLiquid(n, 0), predictedLiquidVy(n, 0);
   std::vector<std::array<double, 3>> fluidStartPose(n);
+  struct LoadedWindowFreezeState {
+    bool frozen = false;
+    bool awake = false;
+    bool hadContact = false;
+    bool rasterMayOverlapSolid = false;
+    int stillTicks = 0;
+    double recentImpactSpeed = 0;
+    uint8_t denseMicrostepTicks = 0;
+  };
+  std::vector<LoadedWindowFreezeState> loadedWindowFreeze(n);
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
+    LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
+    freeze.frozen = !bodyFullyInsideLoadedWindow(body);
+    freeze.awake = body->awake;
+    freeze.hadContact = body->hadContact;
+    freeze.rasterMayOverlapSolid = body->rasterMayOverlapSolid;
+    freeze.stillTicks = body->stillTicks;
+    freeze.recentImpactSpeed = body->recentImpactSpeed;
+    freeze.denseMicrostepTicks = body->denseMicrostepTicks;
     priorRasterRisk[bi] = body->rasterMayOverlapSolid ? 1 : 0;
     priorImpactSpeed[bi] = body->recentImpactSpeed;
     if (body->denseMicrostepTicks > 0) body->denseMicrostepTicks--;
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
     fluidStartPose[bi] = {body->px, body->py, body->angle};
+    if (freeze.frozen) body->awake = false;
     if (body->awake) body->vy += E.scaledGravity(R_GRAVITY) * tickDt;
     predictedLiquidVy[bi] = body->vy;
     body->cs = std::cos(body->angle);
@@ -3253,6 +3295,18 @@ void RigidBodySystem::rigidStep(double tickDt) {
     if (st < islandMinStill[r]) islandMinStill[r] = st;
   }
   for (int bi = 0; bi < n; bi++) { Body* b = solverBodies[bi]; if (!b->awake) continue; if (islandMinStill[ufFind(islandParent, bi)] >= R_SLEEP_TICKS) { b->awake = false; b->vx = 0; b->vy = 0; b->omega = 0; if (b->jointRole == 1) syncJointFollower(b); } }
+  for (int bi = 0; bi < n; bi++) {
+    const LoadedWindowFreezeState& freeze = loadedWindowFreeze[bi];
+    if (!freeze.frozen) continue;
+    Body* body = solverBodies[bi];
+    body->awake = freeze.awake;
+    body->hadContact = freeze.hadContact;
+    body->rasterMayOverlapSolid = freeze.rasterMayOverlapSolid;
+    body->stillTicks = freeze.stillTicks;
+    body->recentImpactSpeed = freeze.recentImpactSpeed;
+    body->denseMicrostepTicks = freeze.denseMicrostepTicks;
+    if (body->jointRole == 1) syncJointFollower(body);
+  }
 }
 template <class F> void RigidBodySystem::forEachBodyCell(Body* b, F cb) {
   // Inverse rasterization: for each grid cell in the body's world AABB, map its
@@ -5038,7 +5092,8 @@ void RigidBodySystem::bakeRestingBodies() {
       keep.push_back(b);
       continue;
     }
-    bool canBake = !b->awake && (!b->blastDebris || !deferBlastBake)
+    bool canBake = bodyFullyInsideLoadedWindow(b)
+      && !b->awake && (!b->blastDebris || !deferBlastBake)
       && bodySolidifies(b) && (!b->jointPeer || bodySolidifies(b->jointPeer));
     bool groundedContact = canBake && bodyTouchesGroundedSolid(b);
     bool peerGroundedContact = false;
@@ -5200,6 +5255,7 @@ void RigidBodySystem::moveBodies() {
   // support wakes a falling stack from the bottom up, while fresh liquid motion
   // wakes a fluid-supported body without disturbing rigidly grounded bodies.
   for (Body* b : E.L->bodies) if (b->jointRole != 2 && !b->awake) {
+    if (!bodyFullyInsideLoadedWindow(b)) continue;
     bool movingLiquid = sleepingBodyTouchesMovingLiquid(b);
     if (!movingLiquid && b->jointRole == 1 && b->jointPeer) {
       Layer* previous = E.L;
@@ -5406,6 +5462,7 @@ bool RigidBodySystem::planAssemblyBodyPush(const Cells& assemblyCells, int dir,
     if (E.L->passiveBodyIds.count(id)) return false;
     auto it = byId.find(id);
     if (it == byId.end()) return false;
+    if (!bodyFullyInsideLoadedWindow(it->second)) return false;
     if (it->second->blastDebris) crushed.insert(id);
     else if (selected.insert(id).second) queue.push_back(id);
   }
@@ -5426,6 +5483,7 @@ bool RigidBodySystem::planAssemblyBodyPush(const Cells& assemblyCells, int dir,
       if (nextId < 0 || selected.count(nextId) || crushed.count(nextId)) continue;
       auto nextIt = byId.find(nextId);
       if (nextIt == byId.end()) return false;
+      if (!bodyFullyInsideLoadedWindow(nextIt->second)) return false;
       if (nextIt->second->blastDebris) crushed.insert(nextId);
       else if (selected.insert(nextId).second) queue.push_back(nextId);
     }

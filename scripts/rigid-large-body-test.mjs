@@ -33,6 +33,38 @@ const speed = (state) =>
   state ? Math.hypot(state.vx, state.vy) + Math.abs(state.omega) * state.maxR : Infinity;
 
 {
+  const cols = 224, rows = 160;
+  const engine = createEngineWasm({
+    cols, rows, worldSeed: 0x31f7, sinksOn: false, infinite: true,
+  });
+  engine.spawnBody(rectangle(8, 10, 107, 12));
+  engine.shiftWorldXY(32, 0);
+  engine._setBodyMotion(0, 1.25, 0.5, 0.015);
+  const clipped = engine._bodyState(0);
+  for (let i = 0; i < 12; i++) engine.stepWorld();
+  const frozen = engine._bodyState(0);
+  check('body crossing the streamed window keeps its complete pose and motion frozen',
+    !!clipped && !!frozen
+      && Math.abs(frozen.px - clipped.px) < 1e-9
+      && Math.abs(frozen.py - clipped.py) < 1e-9
+      && Math.abs(frozen.angle - clipped.angle) < 1e-9
+      && Math.abs(frozen.vx - clipped.vx) < 1e-9
+      && Math.abs(frozen.vy - clipped.vy) < 1e-9
+      && Math.abs(frozen.omega - clipped.omega) < 1e-9);
+
+  engine.shiftWorldXY(-32, 0);
+  const restored = engine._bodyState(0);
+  engine.stepWorld();
+  const resumed = engine._bodyState(0);
+  check('fully streamed body resumes its retained motion',
+    !!restored && !!resumed
+      && resumed.px > restored.px
+      && resumed.py > restored.py
+      && resumed.angle > restored.angle);
+  engine.destroy();
+}
+
+{
   const cols = 420, rows = 260, floorY = rows - 3;
   const engine = createEngineWasm({
     cols, rows, worldSeed: 0x1a2b, sinksOn: false, infinite: false,

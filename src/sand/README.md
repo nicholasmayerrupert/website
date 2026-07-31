@@ -177,6 +177,17 @@ scaffolds, exhibits, shelves, lamps, and machinery. Coal and copper have compact
 starter lodes near the original spawn; iron, gold, and environmental hazards
 unlock progressively deeper.
 
+`WorldContextSystem` exposes the semantic plan behind generated terrain at any
+absolute coordinate: surface/cave biome, surface-relative depth, composable area
+tags, stable feature identity and bounds, parent feature, and nested site role.
+Worldgen and context queries share the village, child-building, mine, and
+off-world-facility plan functions, so spawning can target a settlement, home,
+mine gallery, or facility without inspecting mutable cell materials. These
+records are regenerated from the seed and version rather than added to the
+streaming store. `npm run test:world-context` covers feature nesting, spawn
+affinity, viewport independence, and streaming stability. See
+`WORLD_CONTEXT.md` for the model and extension path.
+
 Only changed simulation tiles enter persistent streaming storage. Pristine
 generated and prefetched tiles use RLE when useful and live in a bounded
 disposable cache, so ordinary exploration does not grow storage with total
@@ -204,7 +215,9 @@ limited by the device's WebGL texture dimensions rather than a fixed cell cap.
   implementation include):
   audio, camera, components, crafting, creatures, explosives, GL presentation,
   growth, inventory, items, missions, net sync, player, projectiles, reactions,
-  renderer, rigid bodies, terrain, and tools.
+  renderer, rigid bodies, terrain, tools, and semantic world context.
+- `cpp/engine/world_context.hpp` and `world_context_impl.inc`: deterministic
+  feature hierarchy and absolute-coordinate semantic queries.
 - `cpp/engine/missions.hpp`, `missions.inc`, and `missions_impl.inc`: authored
   operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
@@ -400,7 +413,10 @@ their creative eggs.
 Survival encounters spend a shared deterministic threat budget at a paced
 two-second cadence: habitat-valid entries beyond the real viewport margin are
 preferred, while an audible, replicated 0.9–1.4 second breach portal telegraphs
-the visible fallback before its reserved enemy becomes active.
+the visible fallback before its reserved enemy becomes active. Semantic spawn
+rules filter and weight that roster by biome, cave biome, depth, settlement,
+building interior, mine, and facility context before the existing live-material,
+distance, and density checks accept a final pose.
 
 ### Controls
 

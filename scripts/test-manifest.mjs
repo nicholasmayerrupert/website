@@ -27,6 +27,7 @@ export const UNIT_SUITES = [
   ['gas-bubble', 'gas-bubble-test.mjs'],
   ['planet-gravity', 'planet-gravity-test.mjs'],
   ['biomes', 'worldgen-biome-test.mjs'],
+  ['world-context', 'world-context-test.mjs'],
   ['worldgen-quality', 'worldgen-quality-test.mjs'],
   ['deep-world', 'worldgen-deep-test.mjs'],
   ['structures', 'worldgen-structures-test.mjs'],

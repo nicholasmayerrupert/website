@@ -40,6 +40,12 @@ EMSCRIPTEN_KEEPALIVE int engine_world_surface_at(Engine* e, int worldX) { e->use
 EMSCRIPTEN_KEEPALIVE int engine_world_surface_abs_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->genSurfaceAbs(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_world_biome_at(Engine* e, int worldX) { e->useLayer(&e->fg); return e->fg.infinite ? e->terrain.genBiomeAt(worldX) : 0; }
 EMSCRIPTEN_KEEPALIVE int engine_world_cave_biome_at(Engine* e, int worldX, int worldY) { e->useLayer(&e->fg); return e->fg.infinite ? e->terrain.genCaveBiomeAt(worldX, worldY) : 0; }
+EMSCRIPTEN_KEEPALIVE void engine_world_context_at(
+    Engine* e, int worldX, int worldY, int* out) {
+  e->useLayer(&e->fg);
+  if (e->fg.infinite) e->worldContext.writeSnapshot(worldX, worldY, out);
+  else memset(out, 0, WC_STRIDE * sizeof(int));
+}
 EMSCRIPTEN_KEEPALIVE int engine_world_is_cave_at(Engine* e, int layer, int worldX, int worldY) {
   e->useLayer(layer ? &e->bg : &e->fg);
   int result = e->fg.infinite && e->terrain.genOpenCaveAt(worldX, worldY) ? 1 : 0;
@@ -404,6 +410,18 @@ EMSCRIPTEN_KEEPALIVE int engine_spawn_scripted_creature(Engine* e, int species, 
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_near_focus(Engine* e, int species, int salt) {
   if (species < 0 || species >= CS_COUNT) return 0;
   return e->creatures.spawnNearFocus((uint8_t)species, (uint32_t)salt) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_spawn_world_allowed(
+    Engine* e, int species, double worldX, double worldY) {
+  if (species < 0 || species >= CS_COUNT) return 0;
+  return e->creatures.worldRuleAllows(
+    (uint8_t)species, worldX, worldY) ? 1 : 0;
+}
+EMSCRIPTEN_KEEPALIVE int engine_test_spawn_world_weight(
+    Engine* e, int species, double worldX, double worldY) {
+  if (species < 0 || species >= CS_COUNT) return 0;
+  return e->creatures.worldSpawnWeight(
+    (uint8_t)species, worldX, worldY);
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_breach_near_focus(Engine* e, int species, int salt) {
   if (species < 0 || species >= CS_COUNT) return 0;

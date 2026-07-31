@@ -13,6 +13,7 @@ struct Engine {
 #include "engine/growth.inc"
 #include "engine/tools.inc"
 #include "engine/worldgen.inc"
+#include "engine/world_context.inc"
 #include "engine/rigid.inc"
 #include "engine/explosives.inc"
 #include "engine/render.inc"
@@ -35,6 +36,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 // Subsystem method bodies require the complete Engine definition.
 #include "engine/netsync_impl.inc"
 #include "engine/terrain_impl.inc"
+#include "engine/world_context_impl.inc"
 #include "engine/renderer_impl.inc"
 #include "engine/glpresenter_impl.inc"
 #include "engine/items_impl.inc"

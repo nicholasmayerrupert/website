@@ -42,6 +42,10 @@ function table() {
     collectDynamicLights: c('engine_test_collect_dynamic_lights', 'number', ['number']),
     spawnNearFocus: c('engine_test_spawn_near_focus', 'number',
       ['number', 'number', 'number']),
+    spawnWorldAllowed: c('engine_test_spawn_world_allowed', 'number',
+      ['number', 'number', 'number', 'number']),
+    spawnWorldWeight: c('engine_test_spawn_world_weight', 'number',
+      ['number', 'number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
@@ -87,6 +91,10 @@ export function attachTestHooks(engine) {
   engine._collectDynamicLights = () => t.collectDynamicLights(ptr);
   engine._spawnNearFocus = (species, salt = 0) =>
     t.spawnNearFocus(ptr, species | 0, salt | 0) === 1;
+  engine._spawnWorldAllowed = (species, worldX, worldY) =>
+    t.spawnWorldAllowed(ptr, species | 0, worldX, worldY) === 1;
+  engine._spawnWorldWeight = (species, worldX, worldY) =>
+    t.spawnWorldWeight(ptr, species | 0, worldX, worldY);
   // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
   engine._bodyState = (i) => {
     const buf = mod._malloc(8 * 8);

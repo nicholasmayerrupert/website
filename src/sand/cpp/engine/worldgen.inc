@@ -10,8 +10,8 @@
   // Deterministic terrain queries (TerrainGen, terrain.hpp) — composed here;
   // method bodies in terrain_impl.inc. Streaming + fill passes below.
   TerrainGen terrain{*this};
-  static constexpr int VILLAGE_LATTICE = 420;
-  static constexpr double VILLAGE_CHANCE = 0.70;
+  static constexpr int VILLAGE_LATTICE = WorldContextSystem::VILLAGE_LATTICE;
+  static constexpr double VILLAGE_CHANCE = WorldContextSystem::VILLAGE_CHANCE;
   // Shims for the external users (player spawn, render lighting, ABI).
   int genSurfaceAt(int worldX) { return terrain.genSurfaceAt(worldX); }
   int genSurfaceAbs(int worldX) { return terrain.genSurfaceAbs(worldX); }
@@ -237,37 +237,13 @@
     // generous walk-through silhouette; the solid background wall carries the
     // windows, furniture, tools, produce, banners, and other lived-in detail.
     int vxMin = floorDiv(wx0, VILLAGE_LATTICE), vxMax = floorDiv(wx1, VILLAGE_LATTICE);
-    auto stampCottage = [&](int cx, int ordinal, bool hall) {
-      int role = ordinal & 3, variant = (ordinal >> 2) & 1;
-      int w = hall ? 52
-            : role == 0 ? 36 + variant * 4
-            : role == 1 ? 44 + variant * 2
-            : role == 2 ? 38 + variant * 4
-                        : 46 - variant * 2;
-      int h = hall ? 30
-            : role == 0 ? 24 + variant * 2
-            : role == 1 ? 22 + variant * 2
-            : role == 2 ? 27 + variant
-                        : 24 + variant * 2;
-      int biome = terrain.genBiomeAt(cx);
-      int ground = terrain.genSurfaceAbs(cx), left = cx - w / 2;
-      if (ground >= L->gSeaRow || biome == BIOME_ROCKY) return;
-      int lo = ground, hi = ground, surfaceSum = 0;
-      bool crossesCaveMouth = false;
-      {
-        ForegroundTerrainScope foregroundQuery(L);
-        for (int x = left; x <= left + w; x++) {
-          int sy = terrain.genSurfaceAbs(x);
-          lo = imin(lo, sy); hi = imax(hi, sy); surfaceSum += sy;
-          if (terrain.genOpenCaveAt(x, sy) || terrain.genOpenCaveAt(x, sy + 1)
-              || terrain.genOpenCaveAt(x, sy + 2)) crossesCaveMouth = true;
-        }
-      }
-      // Stone foundations absorb ordinary rolling terrain; reject only severe
-      // escarpments. A structure never bridges a surface cave entrance.
-      if (crossesCaveMouth || hi - lo > (hall ? 14 : 11)) return;
-      int floorY = floorDiv(surfaceSum, w + 1) - 1;
-      int wallTop = floorY - h, roofH = hall ? 11 : role == 2 ? 10 : 9;
+    auto stampCottage = [&](const VillageBuildingPlan& plan) {
+      int ordinal = plan.ordinal, role = ordinal & 3;
+      bool hall = plan.hall;
+      int cx = plan.center, w = plan.width;
+      int biome = plan.biome, left = plan.left;
+      int floorY = plan.floorY, wallTop = plan.wallTop;
+      int roofH = plan.roofHeight;
       if (left + w + 2 < rectX0 || left - 2 > rectX1
           || floorY < rectY0 || wallTop - roofH - 16 > rectY1) return;
       const int DOOR_CLEARANCE = PLAYER_H + 5;
@@ -469,10 +445,9 @@
       }
     };
     for (int vx = vxMin; vx <= vxMax; vx++) {
-      if (whash1(sseed ^ 0xA11A6Eu, vx) > VILLAGE_CHANCE) continue;
-      int center = vx * VILLAGE_LATTICE + 76 + (int)(whash1(sseed ^ 0xA11A6Fu, vx) * 268);
-      if (terrain.genSurfaceAbs(center) >= L->gSeaRow) continue;
-      int count = 5 + (int)(whash1(sseed ^ 0xA11A70u, vx) * 3);
+      VillagePlan village;
+      if (!worldContext.villagePlan(vx, village)) continue;
+      int center = village.center, count = village.buildingCount;
       int wellX = center + count * 29 + 12, wellY;
 
       // A continuous sand street and lanterns turn the individual facades into
@@ -481,7 +456,11 @@
       for (int x = streetLeft; x <= streetRight; x++) put(x, terrain.genSurfaceAbs(x), SAND);
       // Facades and their masonry foundations remain embedded through the loose
       // street layer.
-      for (int i = 0; i < count; i++) stampCottage(center + (i - count / 2) * 58, i, i == count / 2);
+      for (int i = 0; i < count; i++) {
+        VillageBuildingPlan building;
+        if (worldContext.villageBuildingPlan(village, i, building))
+          stampCottage(building);
+      }
       // Streetlamps live entirely in the background plane, whose emissive light
       // projects into the foreground. They remain bright without becoming narrow
       // collision posts between otherwise player-clear buildings.
@@ -539,26 +518,23 @@
     // carries matching timber frames, station walls, and rail beds. In side view
     // the support work therefore reads behind the player without cutting linear
     // voids through the backdrop.
-    static const int MINE_LATTICE = 512;
+    static const int MINE_LATTICE = WorldContextSystem::MINE_LATTICE;
     struct MineFootprint { int left, right, top, bottom; };
     std::vector<MineFootprint> mines;
     int mineMin = floorDiv(wx0, MINE_LATTICE), mineMax = floorDiv(wx1, MINE_LATTICE);
     for (int mr = mineMin; mr <= mineMax; mr++) {
-      if (whash1(sseed ^ 0xD16D0001u, mr) > 0.72) continue;
-      int center = mr * MINE_LATTICE + 112
-                 + (int)(whash1(sseed ^ 0xD16D0002u, mr) * (MINE_LATTICE - 224));
+      MinePlan plan;
+      if (!worldContext.minePlan(mr, plan)) continue;
+      int center = plan.center;
       int surface = terrain.genSurfaceAbs(center);
-      if (surface >= L->gSeaRow || terrain.genBiomeAt(center) == BIOME_ROCKY) continue;
 
-      int width = 152 + (int)(whash1(sseed ^ 0xD16D0003u, mr) * 57);
-      int levels = whash1(sseed ^ 0xD16D0004u, mr) < 0.38 ? 4 : 3;
+      int width = plan.width, levels = plan.levels;
       const int clearHeight = PLAYER_H + 7;
       const int levelGap = 27;
-      int firstFloor = surface + 126 + (int)(whash1(sseed ^ 0xD16D0005u, mr) * 64);
-      firstFloor = imin(firstFloor, TerrainGen::CAVE_BOTTOM - 28 - (levels - 1) * levelGap);
-      int left = center - width / 2, right = center + width / 2;
+      int firstFloor = plan.firstFloor;
+      int left = plan.left, right = plan.right;
       int shaftHalf = 6;
-      MineFootprint mine{left, right, surface - 36, firstFloor + (levels - 1) * levelGap};
+      MineFootprint mine{plan.left, plan.right, plan.top, plan.bottom};
       if (mine.right < rectX0 || mine.left > rectX1 || mine.bottom < rectY0 || mine.top > rectY1) continue;
       mines.push_back(mine);
 
@@ -730,12 +706,9 @@
 
       // A substantial headhouse makes the mine legible at the surface. Its
       // constructed shaft is intentionally regular; natural cave mouths are not.
-      int houseW = 42, houseH = 25, houseLeft = center - houseW / 2;
-      int houseSurfaceSum = 0;
-      for (int x = houseLeft; x <= houseLeft + houseW; x++)
-        houseSurfaceSum += terrain.genSurfaceAbs(x);
-      int floor = floorDiv(houseSurfaceSum, houseW + 1) - 1;
-      int houseTop = floor - houseH;
+      int houseW = plan.headhouseRight - plan.headhouseLeft;
+      int houseLeft = plan.headhouseLeft;
+      int floor = plan.headhouseFloor, houseTop = plan.headhouseTop;
       for (int y = houseTop; y <= floor; y++) for (int x = houseLeft; x <= houseLeft + houseW; x++) {
         bool shell = x == houseLeft || x == houseLeft + houseW || y == houseTop || y == floor;
         bool doorway = y >= floor - PLAYER_H - 4 && std::abs(x - center) <= shaftHalf;
@@ -2140,25 +2113,19 @@
       }
     }
 
-    constexpr int BASE_LATTICE = 420;
+    constexpr int BASE_LATTICE = WorldContextSystem::OFFWORLD_FACILITY_LATTICE;
     constexpr int BASE_REACH = 112;
     int q0 = floorDiv(worldLeft - BASE_REACH, BASE_LATTICE);
     int q1 = floorDiv(worldRight + BASE_REACH, BASE_LATTICE);
     for (int q = q0; q <= q1; q++) {
-      uint32_t salt = planetId == PL_MOON ? 0xB4531001u : 0xB4531002u;
-      if (whash1(L->worldSeed ^ salt, q) < .20) continue;
-      int center = q * BASE_LATTICE + 126
-        + (int)std::lround(whash1(L->worldSeed ^ salt ^ 0x51u, q) * 168.0);
-      int kind = imin(2, (int)(whash1(L->worldSeed ^ salt ^ 0x52u, q) * 3.0));
-      int halfWidth = planetId == PL_MOON
-        ? (kind == 1 ? 100 : 92) : (kind == 0 ? 104 : 96);
-      int highestSurface = terrain.genSurfaceAbs(center);
-      for (int x = center - halfWidth; x <= center + halfWidth; x += 8)
-        highestSurface = imin(highestSurface, terrain.genSurfaceAbs(x));
-      int deckY = highestSurface - 2;
-      int facilityTop = deckY + 34;
-      int facilityBottom = facilityTop + (kind == 2 ? 102 : 116);
-      int facilityHalf = halfWidth - 9;
+      OffworldFacilityPlan plan;
+      if (!worldContext.offworldFacilityPlan(q, plan)) continue;
+      int center = plan.center, kind = plan.kind;
+      int halfWidth = (plan.right - plan.left) / 2;
+      int deckY = plan.deckY;
+      int facilityTop = plan.facilityTop;
+      int facilityBottom = plan.facilityBottom;
+      int facilityHalf = plan.facilityRight - plan.center;
       uint8_t shell = planetId == PL_MOON ? STONE : BRICK;
       uint8_t wall = planetId == PL_MOON ? DEEPSTONE : SANDSTONE;
       uint8_t trim = planetId == PL_MOON ? CRYSTAL : COPPER_ORE;

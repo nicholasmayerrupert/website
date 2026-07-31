@@ -37,6 +37,20 @@ struct CreatureSpawnRule {
   int maxPlayerDistance;
 };
 
+struct CreatureWorldRule {
+  uint32_t requiredTags = 0;
+  uint32_t excludedTags = 0;
+  uint32_t preferredTags = 0;
+  uint32_t allowedSurfaceBiomes = (1u << 7) - 1;
+  uint32_t allowedCaveBiomes = (1u << 8) - 1;
+  uint32_t preferredSurfaceBiomes = 0;
+  uint32_t preferredCaveBiomes = 0;
+  int minDepth = INT_MIN;
+  int maxDepth = INT_MAX;
+  int baseWeight = 10;
+  int preferredBonus = 20;
+};
+
 struct CreatureSpecies {
   const char* name;
   CreatureLocomotion locomotion;
@@ -49,6 +63,7 @@ struct CreatureSpecies {
   uint32_t preyMask;
   bool hostile;
   CreatureSpawnRule spawn;
+  CreatureWorldRule world;
 };
 
 // One compact, centralized species table. Changing movement/combat/spawn cadence
@@ -103,31 +118,46 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.30, .sightRange=92, .attackRange=72,
    .damage=18, .attackCooldown=135, .scanInterval=12, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 224, 1, 1, 128, 1, 780, 0.70, 34, SURVIVAL_SPAWN_MAX_DISTANCE}},
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 224, 1, 1, 128, 1, 780, 0.70, 34, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .world={.excludedTags=WA_INDOOR, .preferredTags=WA_SETTLEMENT,
+           .preferredSurfaceBiomes=(1u << BIOME_PLAINS) | (1u << BIOME_DESERT)
+             | (1u << BIOME_ROCKY) | (1u << BIOME_TUNDRA)}},
   {.name="bore sentinel", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=170,
    .walkSpeed=0.12, .swimSpeed=0.11, .accel=0.026, .gravity=0.075, .jumpSpeed=0.72,
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
    .damage=42, .attackCooldown=260, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 1050, 0.55, 46, SURVIVAL_SPAWN_MAX_DISTANCE}},
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 1050, 0.55, 46, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .world={.preferredTags=WA_MINE | WA_DEEP,
+           .preferredCaveBiomes=(1u << CAVE_DEEP_GEODE)
+             | (1u << CAVE_DEEP_FOSSIL)}},
   {.name="caustic mortarman", .locomotion=CL_AMPHIBIOUS, .w=8, .h=6, .maxHealth=120,
    .walkSpeed=0.16, .swimSpeed=0.14, .accel=0.034, .gravity=0.075, .jumpSpeed=0.82,
    .fluidThreshold=0.32, .sightRange=112, .attackRange=92,
    .damage=16, .attackCooldown=180, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_SURFACE, 240, 1, 1, 144, 1, 900, 0.55, 40, SURVIVAL_SPAWN_MAX_DISTANCE}},
+   .spawn={CSM_CONTINUOUS, CH_SURFACE, 240, 1, 1, 144, 1, 900, 0.55, 40, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .world={.excludedTags=WA_INDOOR,
+           .preferredSurfaceBiomes=(1u << BIOME_DESERT) | (1u << BIOME_JUNGLE)
+             | (1u << BIOME_SWAMP)}},
   {.name="cluster wasp", .locomotion=CL_FLYING, .w=7, .h=5, .maxHealth=68,
    .walkSpeed=0, .swimSpeed=0.46, .accel=0.055, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=124, .attackRange=104,
    .damage=0, .attackCooldown=210, .scanInterval=10, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_AIR, 224, 1, 1, 144, 1, 840, 0.60, 38, SURVIVAL_SPAWN_MAX_DISTANCE}},
+   .spawn={CSM_CONTINUOUS, CH_AIR, 224, 1, 1, 144, 1, 840, 0.60, 38, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .world={.excludedTags=WA_INDOOR,
+           .preferredSurfaceBiomes=(1u << BIOME_FOREST) | (1u << BIOME_JUNGLE)
+             | (1u << BIOME_SWAMP)}},
   {.name="minigunner", .locomotion=CL_AMPHIBIOUS, .w=9, .h=6, .maxHealth=165,
    .walkSpeed=0.15, .swimSpeed=0.11, .accel=0.030, .gravity=0.075, .jumpSpeed=0.76,
    .fluidThreshold=0.34, .sightRange=138, .attackRange=118,
    .damage=0, .attackCooldown=270, .scanInterval=6, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, SURVIVAL_SPAWN_MAX_DISTANCE}},
+   .spawn={CSM_CONTINUOUS, CH_CAVE, 256, 1, 1, 156, 1, 960, 0.50, 44, SURVIVAL_SPAWN_MAX_DISTANCE},
+   .world={.preferredTags=WA_MINE | WA_FACILITY | WA_DEEP,
+           .preferredCaveBiomes=(1u << CAVE_CRYSTAL)
+             | (1u << CAVE_DEEP_MAGMA) | (1u << CAVE_DEEP_VOID)}},
   {.name="surveyor", .locomotion=CL_AMPHIBIOUS, .w=4, .h=8, .maxHealth=70,
    .walkSpeed=0.12, .swimSpeed=0.16, .accel=0.036, .gravity=0.075, .jumpSpeed=0.72,
    .fluidThreshold=0.34, .sightRange=36, .attackRange=0,
@@ -243,6 +273,8 @@ class CreatureSystem {
   bool boxTouchesMaterial(double wx, double wy, int w, int h, uint8_t material) const;
   bool boxTouchesLiquid(double wx, double wy, int w, int h) const;
   bool boxFitsHabitat(uint8_t speciesId, double wx, double wy) const;
+  bool worldRuleAllows(uint8_t speciesId, double wx, double wy) const;
+  int worldSpawnWeight(uint8_t speciesId, double wx, double wy) const;
   int localDensity(uint8_t speciesId, double wx, double wy, int radius) const;
   int localDensityAll(double wx, double wy, int radius) const;
   bool farEnoughFromPlayers(double wx, double wy, int minDistance) const;
@@ -289,4 +321,8 @@ class CreatureSystem {
 
  private:
   Engine& E;
+  WorldContext spawnWorldContext(double wx, double wy) const;
+  bool worldRuleAllows(
+    const CreatureWorldRule& rule, const WorldContext& context) const;
+  int worldSpawnWeight(uint8_t speciesId, const WorldContext& context) const;
 };

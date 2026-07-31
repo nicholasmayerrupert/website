@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 25;
+static const int ABI_VERSION = 26;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -232,6 +232,24 @@ enum ObjectiveSnapshotField : int {
 };
 static const int OS_STRIDE = 9;
 
+// worldContext: surfaceBiome, caveBiome, surfaceY, depth, tags, featureKind, siteRole, featureId, parentFeatureId, left, top, right, bottom
+enum WorldContextField : int {
+  WC_SURFACE_BIOME = 0,
+  WC_CAVE_BIOME = 1,
+  WC_SURFACE_Y = 2,
+  WC_DEPTH = 3,
+  WC_TAGS = 4,
+  WC_FEATURE_KIND = 5,
+  WC_SITE_ROLE = 6,
+  WC_FEATURE_ID = 7,
+  WC_PARENT_FEATURE_ID = 8,
+  WC_LEFT = 9,
+  WC_TOP = 10,
+  WC_RIGHT = 11,
+  WC_BOTTOM = 12,
+};
+static const int WC_STRIDE = 13;
+
 enum PlayerInput : int {
   PI_LEFT = 1,
   PI_RIGHT = 2,
@@ -330,6 +348,59 @@ enum PlanetId : uint8_t {
   PL_MOON = 1,
   PL_MARS = 2,
   PL_SHIP = 3,
+};
+
+enum Biome : int {
+  BIOME_PLAINS = 0,
+  BIOME_FOREST = 1,
+  BIOME_DESERT = 2,
+  BIOME_ROCKY = 3,
+  BIOME_TUNDRA = 4,
+  BIOME_JUNGLE = 5,
+  BIOME_SWAMP = 6,
+};
+
+enum CaveBiome : int {
+  CAVE_DEFAULT = 0,
+  CAVE_CRYSTAL = 1,
+  CAVE_MUSHROOM = 2,
+  CAVE_LUSH = 3,
+  CAVE_DEEP_MAGMA = 4,
+  CAVE_DEEP_GEODE = 5,
+  CAVE_DEEP_FOSSIL = 6,
+  CAVE_DEEP_VOID = 7,
+};
+
+enum WorldAreaTag : uint32_t {
+  WA_SURFACE = 1,
+  WA_UNDERGROUND = 2,
+  WA_DEEP = 4,
+  WA_STRUCTURE = 8,
+  WA_SETTLEMENT = 16,
+  WA_BUILDING = 32,
+  WA_INDOOR = 64,
+  WA_MINE = 128,
+  WA_FACILITY = 256,
+};
+
+enum WorldFeatureKind : uint8_t {
+  WF_NONE = 0,
+  WF_VILLAGE = 1,
+  WF_VILLAGE_BUILDING = 2,
+  WF_MINE = 3,
+  WF_OFFWORLD_FACILITY = 4,
+};
+
+enum WorldSiteRole : uint8_t {
+  WSR_NONE = 0,
+  WSR_HOME = 1,
+  WSR_WORKSHOP = 2,
+  WSR_APOTHECARY = 3,
+  WSR_STOREHOUSE = 4,
+  WSR_MEETING_HALL = 5,
+  WSR_MINE_HEADHOUSE = 6,
+  WSR_MINE_GALLERY = 7,
+  WSR_FACILITY = 8,
 };
 
 enum MissionId : uint8_t {

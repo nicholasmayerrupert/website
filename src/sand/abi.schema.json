@@ -1,6 +1,6 @@
 {
   "$comment": "Single source of truth for the JS<->WASM ABI: packed-snapshot field layouts, shared enums, and the version stamp. `npm run generate:abi` emits cpp/engine/abi.generated.hpp and wasmBridge/abi.generated.js; the wasm build fails if they are stale. Bump abiVersion on ANY layout/enum change — initSandWasm() refuses a module whose engine_abi_version() mismatches, which catches stale committed sandEngine artifacts immediately.",
-  "abiVersion": 25,
+  "abiVersion": 26,
   "structs": {
     "playerSnapshot": {
       "$comment": "float32 records built by buildPlayerSnapshot (player.inc); read by engineFactory.getPlayers/getPlayer and the net layer.",
@@ -75,6 +75,11 @@
       "$comment": "int32 authoritative objective records built by MissionSystem.",
       "cPrefix": "OS",
       "fields": ["id", "type", "state", "current", "required", "worldX", "worldY", "targetActorId", "flags"]
+    },
+    "worldContext": {
+      "$comment": "int32 semantic description of one absolute world coordinate. Feature bounds are inclusive and feature ids are stable for a worldgen version.",
+      "cPrefix": "WC",
+      "fields": ["surfaceBiome", "caveBiome", "surfaceY", "depth", "tags", "featureKind", "siteRole", "featureId", "parentFeatureId", "left", "top", "right", "bottom"]
     }
   },
   "enums": {
@@ -189,6 +194,89 @@
       "jsName": "PLANET",
       "jsPrefix": "PL",
       "values": { "PL_EARTH": 0, "PL_MOON": 1, "PL_MARS": 2, "PL_SHIP": 3 }
+    },
+    "SurfaceBiome": {
+      "$comment": "Surface climate classification returned by semantic world queries.",
+      "cName": "Biome",
+      "cType": "int",
+      "jsName": "BIOME",
+      "jsPrefix": "BIOME",
+      "values": {
+        "BIOME_PLAINS": 0,
+        "BIOME_FOREST": 1,
+        "BIOME_DESERT": 2,
+        "BIOME_ROCKY": 3,
+        "BIOME_TUNDRA": 4,
+        "BIOME_JUNGLE": 5,
+        "BIOME_SWAMP": 6
+      }
+    },
+    "CaveBiome": {
+      "$comment": "Cave realm classification returned by semantic world queries.",
+      "cName": "CaveBiome",
+      "cType": "int",
+      "jsName": "CAVE_BIOME",
+      "jsPrefix": "CAVE",
+      "values": {
+        "CAVE_DEFAULT": 0,
+        "CAVE_CRYSTAL": 1,
+        "CAVE_MUSHROOM": 2,
+        "CAVE_LUSH": 3,
+        "CAVE_DEEP_MAGMA": 4,
+        "CAVE_DEEP_GEODE": 5,
+        "CAVE_DEEP_FOSSIL": 6,
+        "CAVE_DEEP_VOID": 7
+      }
+    },
+    "WorldAreaTag": {
+      "$comment": "Composable semantic location tags used by world queries and natural spawn rules.",
+      "cName": "WorldAreaTag",
+      "cType": "uint32_t",
+      "jsName": "WORLD_AREA",
+      "jsPrefix": "WA",
+      "values": {
+        "WA_SURFACE": 1,
+        "WA_UNDERGROUND": 2,
+        "WA_DEEP": 4,
+        "WA_STRUCTURE": 8,
+        "WA_SETTLEMENT": 16,
+        "WA_BUILDING": 32,
+        "WA_INDOOR": 64,
+        "WA_MINE": 128,
+        "WA_FACILITY": 256
+      }
+    },
+    "WorldFeatureKind": {
+      "$comment": "The innermost deterministic generated feature containing a coordinate.",
+      "cName": "WorldFeatureKind",
+      "cType": "uint8_t",
+      "jsName": "WORLD_FEATURE",
+      "jsPrefix": "WF",
+      "values": {
+        "WF_NONE": 0,
+        "WF_VILLAGE": 1,
+        "WF_VILLAGE_BUILDING": 2,
+        "WF_MINE": 3,
+        "WF_OFFWORLD_FACILITY": 4
+      }
+    },
+    "WorldSiteRole": {
+      "$comment": "Nested role inside a generated feature; spawn policy can target a role without inspecting cell materials.",
+      "cName": "WorldSiteRole",
+      "cType": "uint8_t",
+      "jsName": "WORLD_SITE_ROLE",
+      "jsPrefix": "WSR",
+      "values": {
+        "WSR_NONE": 0,
+        "WSR_HOME": 1,
+        "WSR_WORKSHOP": 2,
+        "WSR_APOTHECARY": 3,
+        "WSR_STOREHOUSE": 4,
+        "WSR_MEETING_HALL": 5,
+        "WSR_MINE_HEADHOUSE": 6,
+        "WSR_MINE_GALLERY": 7,
+        "WSR_FACILITY": 8
+      }
     },
     "MissionId": {
       "$comment": "The first three ordered IRIS campaign operations.",

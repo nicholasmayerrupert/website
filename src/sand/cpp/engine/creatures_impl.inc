@@ -93,6 +93,60 @@ bool CreatureSystem::boxFitsHabitat(uint8_t speciesId, double wx, double wy) con
   return true;
 }
 
+WorldContext CreatureSystem::spawnWorldContext(double wx, double wy) const {
+  Layer* active = E.L;
+  E.useLayer(&E.fg);
+  WorldContext context = E.worldContext.at(
+    (int)std::floor(wx), (int)std::floor(wy));
+  E.useLayer(active);
+  return context;
+}
+
+bool CreatureSystem::worldRuleAllows(
+    const CreatureWorldRule& rule, const WorldContext& context) const {
+  if ((context.tags & rule.requiredTags) != rule.requiredTags
+      || (context.tags & rule.excludedTags) != 0
+      || context.depth < rule.minDepth || context.depth > rule.maxDepth)
+    return false;
+  uint32_t surfaceBit = context.surfaceBiome >= 0 && context.surfaceBiome < 32
+    ? 1u << context.surfaceBiome : 0;
+  uint32_t caveBit = context.caveBiome >= 0 && context.caveBiome < 32
+    ? 1u << context.caveBiome : 0;
+  return (context.tags & WA_UNDERGROUND)
+    ? (rule.allowedCaveBiomes & caveBit) != 0
+    : (rule.allowedSurfaceBiomes & surfaceBit) != 0;
+}
+
+bool CreatureSystem::worldRuleAllows(
+    uint8_t speciesId, double wx, double wy) const {
+  return speciesId < CS_COUNT
+    && worldRuleAllows(
+      CREATURE_SPECIES[speciesId].world, spawnWorldContext(wx, wy));
+}
+
+int CreatureSystem::worldSpawnWeight(
+    uint8_t speciesId, const WorldContext& context) const {
+  if (speciesId >= CS_COUNT) return 0;
+  const CreatureWorldRule& rule = CREATURE_SPECIES[speciesId].world;
+  if (!worldRuleAllows(rule, context)) return 0;
+  int weight = rule.baseWeight;
+  if (rule.preferredTags && (context.tags & rule.preferredTags))
+    weight += rule.preferredBonus;
+  uint32_t surfaceBit = 1u << context.surfaceBiome;
+  uint32_t caveBit = 1u << context.caveBiome;
+  if ((context.tags & WA_UNDERGROUND)
+      ? (rule.preferredCaveBiomes & caveBit) != 0
+      : (rule.preferredSurfaceBiomes & surfaceBit) != 0)
+    weight += rule.preferredBonus;
+  return weight;
+}
+
+int CreatureSystem::worldSpawnWeight(
+    uint8_t speciesId, double wx, double wy) const {
+  return speciesId < CS_COUNT
+    ? worldSpawnWeight(speciesId, spawnWorldContext(wx, wy)) : 0;
+}
+
 int CreatureSystem::localDensity(uint8_t speciesId, double wx, double wy, int radius) const {
   double r2 = (double)radius * radius; int n = 0;
   for (const Creature& c : creatures) {
@@ -226,6 +280,8 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
     }
     if (!boxInsideLoadedWindow(wx, wy, s.w, s.h, 2) ||
         !boxFitsHabitat(speciesId, wx, wy)) continue;
+    if (!worldRuleAllows(
+          speciesId, wx + s.w * 0.5, wy + s.h * 0.5)) continue;
     // Surface/cave/air habitat snapping can substantially change Y after the
     // radial candidate was chosen. Recheck the actual final pose so enemies do
     // not materialize on top of a player despite their spawn safety radius.
@@ -313,6 +369,9 @@ int CreatureSystem::spawnCreature(uint8_t speciesId, double wx, double wy, bool 
 // to these counts, so a high manual population pauses further natural births.
 int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy) {
   if (speciesId >= CS_COUNT || !boxFitsHabitat(speciesId, wx, wy)) return 0;
+  const CreatureSpecies& species = CREATURE_SPECIES[speciesId];
+  if (!worldRuleAllows(
+        speciesId, wx + species.w * 0.5, wy + species.h * 0.5)) return 0;
   const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
   int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
   for (const CreatureSpawnTelegraph& p : pendingSpawns)
@@ -430,10 +489,33 @@ void CreatureSystem::updateNaturalPopulation() {
   uint32_t salt = (uint32_t)E.actorTick ^
     ((uint32_t)std::max(0, E.fg.worldOffsetX) * 2246822519u) ^
     ((uint32_t)std::max(0, E.fg.worldOffsetY) * 3266489917u);
-  int start = (int)(whash2(E.fg.worldSeed ^ 0xC4EA7300u,
-                            E.actorTick / ENCOUNTER_CADENCE_TICKS,
-                            encounterThreat) * 5.0);
-  start = imin(4, imax(0, start));
+  double focusX = E.fg.worldOffsetX + E.cam.camX
+    + (E.cam.viewportCols > 0 ? E.cam.viewportCols : E.cols * .5) * .5;
+  double focusY = E.fg.worldOffsetY + E.cam.camY
+    + (E.cam.viewportRows > 0 ? E.cam.viewportRows : E.rows * .5) * .5;
+  for (const Player& player : E.psys.players) {
+    if (!player.active || !player.alive) continue;
+    focusX = E.fg.worldOffsetX + player.px + player.w * .5;
+    focusY = E.fg.worldOffsetY + player.py + player.h * .5;
+    break;
+  }
+  int totalWeight = 0;
+  int weights[5] = {};
+  WorldContext focusContext = spawnWorldContext(focusX, focusY);
+  for (int i = 0; i < 5; i++) {
+    weights[i] = worldSpawnWeight(roster[i], focusContext);
+    totalWeight += weights[i];
+  }
+  if (totalWeight <= 0) return;
+  int pick = imin(totalWeight - 1, (int)(
+    whash2(E.fg.worldSeed ^ 0xC4EA7300u,
+           E.actorTick / ENCOUNTER_CADENCE_TICKS,
+           encounterThreat) * totalWeight));
+  int start = 0;
+  while (start < 4 && pick >= weights[start]) {
+    pick -= weights[start];
+    start++;
+  }
   for (int offset = 0; offset < 5; offset++) {
     uint8_t sid = roster[(start + offset) % 5];
     int cost = encounterCost(sid);

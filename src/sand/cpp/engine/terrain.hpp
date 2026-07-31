@@ -4,12 +4,6 @@
 
 struct Engine;
 
-enum Biome : int { BIOME_PLAINS = 0, BIOME_FOREST = 1, BIOME_DESERT = 2, BIOME_ROCKY = 3,
-                   BIOME_TUNDRA = 4, BIOME_JUNGLE = 5, BIOME_SWAMP = 6 };
-enum CaveBiome : int {
-  CAVE_DEFAULT = 0, CAVE_CRYSTAL = 1, CAVE_MUSHROOM = 2, CAVE_LUSH = 3,
-  CAVE_DEEP_MAGMA = 4, CAVE_DEEP_GEODE = 5, CAVE_DEEP_FOSSIL = 6, CAVE_DEEP_VOID = 7
-};
 class TerrainGen {
  public:
   explicit TerrainGen(Engine& e) : E(e) {}

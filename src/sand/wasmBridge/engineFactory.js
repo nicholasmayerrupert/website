@@ -9,9 +9,15 @@
 
 import createSandModule from '../wasm/sandEngine.js';
 import { MAT } from '../materials.js';
-import { ABI_VERSION, OFF, STRIDES, INPUT, PLANET } from './abi.generated.js';
+import {
+  ABI_VERSION, OFF, STRIDES, INPUT, PLANET,
+  BIOME, CAVE_BIOME, WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
+} from './abi.generated.js';
 
-export { MAT, PLANET };
+export {
+  MAT, PLANET, BIOME, CAVE_BIOME,
+  WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
+};
 // Player input bitmask + snapshot layouts come from the generated ABI manifest
 // (abi.generated.js) — one schema edit changes both sides.
 export { INPUT };
@@ -231,6 +237,8 @@ export function initSandWasm() {
         worldSurfaceAbsAt: c('engine_world_surface_abs_at', 'number', ['number', 'number']),
         worldBiomeAt: c('engine_world_biome_at', 'number', ['number', 'number']),
         worldCaveBiomeAt: c('engine_world_cave_biome_at', 'number', ['number', 'number', 'number']),
+        worldContextAt: c('engine_world_context_at', null,
+          ['number', 'number', 'number', 'number']),
         worldIsCaveAt: c('engine_world_is_cave_at', 'number', ['number', 'number', 'number', 'number']),
         destroy: c('engine_destroy', null, ['number']),
         step: c('engine_step', 'number', ['number']),
@@ -500,6 +508,7 @@ const renderStrides = Object.freeze({
   const camOut = mod._malloc(16); // 2 doubles: cameraGet / aimCell
   const perfOut = mod._malloc(STRIDES.perfSnapshot * 8); // doubles for engine_perf_snapshot
   const ambienceOut = mod._malloc(12 * 4); // 4 groups × [amount, worldX, worldY]
+  const worldContextOut = mod._malloc(STRIDES.worldContext * 4);
   // Grow-only wasm scratch for the per-frame GL player/item uploads — a frame
   // reuses it instead of a _malloc/_free round trip per call.
   let glScratchPtr = 0, glScratchCap = 0;
@@ -834,6 +843,7 @@ const renderStrides = Object.freeze({
       mod._free(camOut);
       mod._free(perfOut);
       mod._free(ambienceOut);
+      mod._free(worldContextOut);
       M.destroy(ptr);
       if (releaseGlTarget && glTargetKey) {
         delete mod.specialHTMLTargets[glTargetKey];
@@ -870,6 +880,29 @@ const renderStrides = Object.freeze({
     worldSurfaceAbsAt(worldX) { return M.worldSurfaceAbsAt(ptr, worldX); },
     worldBiomeAt(worldX) { return M.worldBiomeAt(ptr, worldX); },
     worldCaveBiomeAt(worldX, worldY) { return M.worldCaveBiomeAt(ptr, worldX, worldY); },
+    worldContextAt(worldX, worldY) {
+      M.worldContextAt(ptr, worldX | 0, worldY | 0, worldContextOut);
+      const values = new Int32Array(
+        mod.HEAP32.buffer, worldContextOut, STRIDES.worldContext);
+      const W = OFF.worldContext;
+      return {
+        surfaceBiome: values[W.surfaceBiome],
+        caveBiome: values[W.caveBiome],
+        surfaceY: values[W.surfaceY],
+        depth: values[W.depth],
+        tags: values[W.tags] >>> 0,
+        featureKind: values[W.featureKind],
+        siteRole: values[W.siteRole],
+        featureId: values[W.featureId] >>> 0,
+        parentFeatureId: values[W.parentFeatureId] >>> 0,
+        bounds: {
+          left: values[W.left],
+          top: values[W.top],
+          right: values[W.right],
+          bottom: values[W.bottom],
+        },
+      };
+    },
     worldIsCaveAt(layer, worldX, worldY) { return M.worldIsCaveAt(ptr, layer ? 1 : 0, worldX, worldY) === 1; },
     shiftWorld(dx) { M.shiftWorld(ptr, dx); },
     shiftWorldXY(dx, dy) { M.shiftWorldXY(ptr, dx, dy); },

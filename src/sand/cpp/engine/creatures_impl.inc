@@ -112,9 +112,10 @@ bool CreatureSystem::worldRuleAllows(
     ? 1u << context.surfaceBiome : 0;
   uint32_t caveBit = context.caveBiome >= 0 && context.caveBiome < 32
     ? 1u << context.caveBiome : 0;
-  return (context.tags & WA_UNDERGROUND)
+  bool biomeAllowed = (context.tags & WA_UNDERGROUND)
     ? (rule.allowedCaveBiomes & caveBit) != 0
     : (rule.allowedSurfaceBiomes & surfaceBit) != 0;
+  return biomeAllowed;
 }
 
 bool CreatureSystem::worldRuleAllows(
@@ -165,7 +166,7 @@ int CreatureSystem::localDensity(uint8_t speciesId, double wx, double wy, int ra
 int CreatureSystem::localDensityAll(double wx, double wy, int radius) const {
   double r2 = (double)radius * radius; int n = 0;
   for (const Creature& c : creatures) {
-    if (!c.alive) continue;
+    if (!c.alive || c.species == CS_VILLAGER) continue;
     double dx = c.wx - wx, dy = c.wy - wy;
     if (dx * dx + dy * dy <= r2) n++;
   }
@@ -323,7 +324,7 @@ bool CreatureSystem::queueSpawnTelegraph(uint8_t speciesId, double wx, double wy
   for (const CreatureSpawnTelegraph& p : pendingSpawns)
     if (p.species == speciesId) activeOfSpecies++;
   for (const Creature& c : creatures) if (c.alive) {
-    active++;
+    if (c.species != CS_VILLAGER) active++;
     if (c.species == speciesId) activeOfSpecies++;
   }
   if (active >= NATURAL_MOB_CAP || activeOfSpecies >= r.maxActive ||
@@ -373,11 +374,17 @@ int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy
   if (!worldRuleAllows(
         speciesId, wx + species.w * 0.5, wy + species.h * 0.5)) return 0;
   const CreatureSpawnRule& r = CREATURE_SPECIES[speciesId].spawn;
-  int active = (int)pendingSpawns.size(), activeOfSpecies = 0;
+  int active = (int)pendingSpawns.size(), activeOfSpecies = 0, ambient = 0;
   for (const CreatureSpawnTelegraph& p : pendingSpawns)
     if (p.species == speciesId) activeOfSpecies++;
-  for (const Creature& c : creatures) if (c.alive) { active++; if (c.species == speciesId) activeOfSpecies++; }
-  if (active >= NATURAL_MOB_CAP || activeOfSpecies >= r.maxActive ||
+  for (const Creature& c : creatures) if (c.alive) {
+    if (c.species != CS_VILLAGER) active++;
+    if (c.species <= CS_BIRD) ambient++;
+    if (c.species == speciesId) activeOfSpecies++;
+  }
+  if (active >= NATURAL_MOB_CAP
+      || (speciesId <= CS_BIRD && ambient >= AMBIENT_MOB_CAP)
+      || activeOfSpecies >= r.maxActive ||
       localDensity(speciesId, wx, wy, r.densityRadius) >= r.densityCap ||
       localDensityAll(wx, wy, MIXED_DENSITY_RADIUS) >= MIXED_DENSITY_CAP) return 0;
   return spawnCreature(speciesId, wx, wy, false);
@@ -472,23 +479,93 @@ void CreatureSystem::updateSpawnTelegraphs() {
   }
 }
 
-void CreatureSystem::updateNaturalPopulation() {
-  // The survival director creates at most one encounter per cadence. Threat
-  // accrues on the deterministic actor clock and expensive enemies consume more
-  // of it; this replaces five independent timers that could all pop at once.
-  if (!E.survivalInventory) return;
-  if (E.actorTick % ENCOUNTER_THREAT_GAIN_TICKS == 0)
-    encounterThreat = imin(ENCOUNTER_THREAT_MAX, encounterThreat + 1);
-  if (E.actorTick < encounterNextTick) return;
-  encounterNextTick = E.actorTick + ENCOUNTER_CADENCE_TICKS;
+void CreatureSystem::updateVillageResidents() {
+  if (E.planetId != PL_EARTH || E.actorTick % ENCOUNTER_CADENCE_TICKS != 0)
+    return;
+  int residents = 0;
+  for (const Creature& c : creatures)
+    if (c.alive && c.species == CS_VILLAGER) residents++;
+  if (residents >= VILLAGE_RESIDENT_CAP) return;
 
-  static const uint8_t roster[] = {
-    CS_DYNAMITEER, CS_BORE_SENTINEL, CS_CAUSTIC_MORTARMAN,
-    CS_CLUSTER_WASP, CS_MINIGUNNER
+  Layer* activeLayer = E.L;
+  E.useLayer(&E.fg);
+  auto floorDiv = [](int value, int divisor) {
+    int q = value / divisor, r = value % divisor;
+    if (r < 0) q--;
+    return q;
   };
-  uint32_t salt = (uint32_t)E.actorTick ^
-    ((uint32_t)std::max(0, E.fg.worldOffsetX) * 2246822519u) ^
-    ((uint32_t)std::max(0, E.fg.worldOffsetY) * 3266489917u);
+  int lattice = WorldContextSystem::VILLAGE_LATTICE;
+  int q0 = floorDiv(E.fg.worldOffsetX - 300, lattice);
+  int q1 = floorDiv(E.fg.worldOffsetX + E.cols + 300, lattice);
+  const CreatureSpecies& villager = CREATURE_SPECIES[CS_VILLAGER];
+
+  auto placeResident = [&](uint64_t siteKey, const int* candidates,
+                           int candidateCount, bool indoors) {
+    if (residents >= VILLAGE_RESIDENT_CAP
+        || spawnedVillageResidentSites.count(siteKey)) return;
+    for (int i = 0; i < candidateCount; i += 2) {
+      double wx = candidates[i] - villager.w * .5;
+      double wy = candidates[i + 1] - villager.h;
+      if (!boxInsideLoadedWindow(wx, wy, villager.w, villager.h, 2)
+          || !boxFitsHabitat(CS_VILLAGER, wx, wy)) continue;
+      WorldContext context = E.worldContext.at(
+        (int)std::floor(wx + villager.w * .5),
+        (int)std::floor(wy + villager.h * .5));
+      if ((context.tags & WA_SETTLEMENT) == 0
+          || ((context.tags & WA_INDOOR) != 0) != indoors) continue;
+      addCreature(CS_VILLAGER, wx, wy, nextCreatureId++);
+      spawnedVillageResidentSites.insert(siteKey);
+      residents++;
+      return;
+    }
+  };
+
+  for (int q = q0; q <= q1 && residents < VILLAGE_RESIDENT_CAP; q++) {
+    VillagePlan village;
+    if (!E.worldContext.villagePlan(q, village)
+        || village.right < E.fg.worldOffsetX
+        || village.left >= E.fg.worldOffsetX + E.cols) continue;
+
+    int outdoorCandidates[16] = {};
+    int outdoorCount = 0;
+    int span = imax(1, village.right - village.left - 16);
+    int start = 8 + (int)(whash1(
+      E.fg.worldSeed ^ 0x711A6E51u, q) * span);
+    for (int attempt = 0; attempt < 8; attempt++) {
+      int x = village.left + 8 + (start + attempt * 37) % span;
+      int surface = E.terrain.genSurfaceAbs(x);
+      outdoorCandidates[outdoorCount++] = x;
+      outdoorCandidates[outdoorCount++] = surface;
+    }
+    placeResident((uint64_t)village.id << 1,
+                  outdoorCandidates, outdoorCount, false);
+
+    for (int ordinal = 0;
+         ordinal < village.buildingCount && residents < VILLAGE_RESIDENT_CAP;
+         ordinal++) {
+      VillageBuildingPlan building;
+      if (!E.worldContext.villageBuildingPlan(village, ordinal, building))
+        continue;
+      int quarter = imax(5, building.width / 4);
+      int indoorCandidates[] = {
+        building.center, building.floorY,
+        building.center - quarter, building.floorY,
+        building.center + quarter, building.floorY,
+        building.left + 6, building.floorY,
+        building.left + building.width - 6, building.floorY,
+      };
+      placeResident(((uint64_t)building.id << 1) | 1u,
+                    indoorCandidates,
+                    (int)(sizeof(indoorCandidates) / sizeof(int)), true);
+    }
+  }
+  E.useLayer(activeLayer);
+}
+
+void CreatureSystem::updateNaturalPopulation() {
+  if (!E.survivalInventory) return;
+  updateVillageResidents();
+
   double focusX = E.fg.worldOffsetX + E.cam.camX
     + (E.cam.viewportCols > 0 ? E.cam.viewportCols : E.cols * .5) * .5;
   double focusY = E.fg.worldOffsetY + E.cam.camY
@@ -499,9 +576,60 @@ void CreatureSystem::updateNaturalPopulation() {
     focusY = E.fg.worldOffsetY + player.py + player.h * .5;
     break;
   }
+  WorldContext focusContext = spawnWorldContext(focusX, focusY);
+  uint32_t salt = (uint32_t)E.actorTick ^
+    ((uint32_t)E.fg.worldOffsetX * 2246822519u) ^
+    ((uint32_t)E.fg.worldOffsetY * 3266489917u);
+
+  // Wildlife enters quietly and has a small reserved share of the natural
+  // population. Habitats still decide whether the weighted biome pick can
+  // actually materialize near the player.
+  if (E.actorTick >= ambientNextTick) {
+    ambientNextTick = E.actorTick + AMBIENT_CADENCE_TICKS;
+    static const uint8_t ambientRoster[] = {
+      CS_MINNOW, CS_PIKE, CS_FOX, CS_HARE, CS_CRAWLER, CS_MOLE, CS_BIRD
+    };
+    int weights[7] = {}, totalWeight = 0;
+    for (int i = 0; i < 7; i++) {
+      weights[i] = worldSpawnWeight(ambientRoster[i], focusContext);
+      totalWeight += weights[i];
+    }
+    if (totalWeight > 0) {
+      int pick = imin(totalWeight - 1, (int)(
+        whash2(E.fg.worldSeed ^ 0xC4EA7350u,
+               E.actorTick / AMBIENT_CADENCE_TICKS,
+               (int)focusContext.featureId) * totalWeight));
+      int start = 0;
+      while (start < 6 && pick >= weights[start]) {
+        pick -= weights[start];
+        start++;
+      }
+      for (int offset = 0; offset < 7; offset++) {
+        int index = (start + offset) % 7;
+        if (weights[index] <= 0) continue;
+        uint8_t sid = ambientRoster[index];
+        double wx = 0, wy = 0;
+        if (!findSpawnNearFocus(
+              sid, salt ^ ((uint32_t)sid * 9151u), true, wx, wy)) continue;
+        if (spawnCreatureNatural(sid, wx, wy)) break;
+      }
+    }
+  }
+
+  // The survival director creates at most one combat encounter per cadence.
+  // Threat accrues on the deterministic actor clock and expensive enemies
+  // consume more of it.
+  if (E.actorTick % ENCOUNTER_THREAT_GAIN_TICKS == 0)
+    encounterThreat = imin(ENCOUNTER_THREAT_MAX, encounterThreat + 1);
+  if (E.actorTick < encounterNextTick) return;
+  encounterNextTick = E.actorTick + ENCOUNTER_CADENCE_TICKS;
+
+  static const uint8_t roster[] = {
+    CS_DYNAMITEER, CS_BORE_SENTINEL, CS_CAUSTIC_MORTARMAN,
+    CS_CLUSTER_WASP, CS_MINIGUNNER
+  };
   int totalWeight = 0;
   int weights[5] = {};
-  WorldContext focusContext = spawnWorldContext(focusX, focusY);
   for (int i = 0; i < 5; i++) {
     weights[i] = worldSpawnWeight(roster[i], focusContext);
     totalWeight += weights[i];
@@ -517,7 +645,9 @@ void CreatureSystem::updateNaturalPopulation() {
     start++;
   }
   for (int offset = 0; offset < 5; offset++) {
-    uint8_t sid = roster[(start + offset) % 5];
+    int index = (start + offset) % 5;
+    if (weights[index] <= 0) continue;
+    uint8_t sid = roster[index];
     int cost = encounterCost(sid);
     if (encounterThreat < cost) continue;
     if (!spawnNearFocus(sid, salt ^ ((uint32_t)sid * 1013u))) continue;

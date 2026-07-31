@@ -82,7 +82,8 @@ check('settlements expose commons outside their child buildings',
 
 const mine = findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.MINE
-    && context.siteRole === WORLD_SITE_ROLE.MINE_GALLERY,
+    && context.siteRole === WORLD_SITE_ROLE.MINE_GALLERY
+    && !has(context, WORLD_AREA.SETTLEMENT),
   { minDepth: 40, maxDepth: 420, xStep: 8, yStep: 8 });
 check('mines expose stable underground regions independently of cave materials',
   mine

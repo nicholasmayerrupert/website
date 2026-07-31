@@ -66,6 +66,7 @@
     "test:mat-behavior": "node scripts/material-behavior-test.mjs",
     "test:biomes": "node scripts/worldgen-biome-test.mjs",
     "test:world-context": "node scripts/world-context-test.mjs",
+    "test:survival-spawn-context": "node scripts/survival-spawn-context-test.mjs",
     "test:worldgen": "node scripts/worldgen-quality-test.mjs",
     "test:deep-world": "node scripts/worldgen-deep-test.mjs",
     "test:structures": "node scripts/worldgen-structures-test.mjs",

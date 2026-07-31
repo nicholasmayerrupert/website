@@ -423,6 +423,12 @@ EMSCRIPTEN_KEEPALIVE int engine_test_spawn_world_weight(
   return e->creatures.worldSpawnWeight(
     (uint8_t)species, worldX, worldY);
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_spawn_natural_at(
+    Engine* e, int species, double worldX, double worldY) {
+  if (species < 0 || species >= CS_COUNT) return 0;
+  return e->creatures.spawnCreatureNatural(
+    (uint8_t)species, worldX, worldY);
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_spawn_breach_near_focus(Engine* e, int species, int salt) {
   if (species < 0 || species >= CS_COUNT) return 0;
   return e->creatures.spawnVisibleBreachNearFocus(

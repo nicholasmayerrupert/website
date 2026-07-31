@@ -178,6 +178,14 @@ export function installDevHooks(ctx, {
       engine()?.setCreatureRuntime(!!simulate, !!naturalSpawn);
       ctx.worldWorker?.testCreatureRuntime(!!simulate, !!naturalSpawn);
     },
+    spawnCreature(species, x, y) {
+      const e = engine();
+      if (!e) return 0;
+      const id = e.spawnScriptedCreature(
+        species | 0, e.getWorldOffsetX() + x, e.getWorldOffsetY() + y);
+      render(false);
+      return id;
+    },
     spawnNatural(species, salt = 0, forceBreach = false) {
       ctx.worldWorker?.testNaturalSpawn(species | 0, salt | 0, !!forceBreach);
     },

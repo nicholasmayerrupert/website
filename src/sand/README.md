@@ -408,15 +408,28 @@ JavaScript.
 Creatures use absolute-world poses so they survive streaming. Off-window
 creatures hibernate, natural populations are capped locally and globally, and
 explicit spawn eggs bypass natural-spawn caps. Minnows, pike, foxes, hares,
-crawlers, moles, and birds do not spawn naturally and are available through
-their creative eggs.
+crawlers, moles, and birds enter quietly on an ambient cadence, use a three-actor
+share of the eight-actor natural cap, and retain material-aware water, surface,
+cave, or air habitat requirements.
 Survival encounters spend a shared deterministic threat budget at a paced
 two-second cadence: habitat-valid entries beyond the real viewport margin are
 preferred, while an audible, replicated 0.9–1.4 second breach portal telegraphs
-the visible fallback before its reserved enemy becomes active. Semantic spawn
-rules filter and weight that roster by biome, cave biome, depth, settlement,
-building interior, mine, and facility context before the existing live-material,
-distance, and density checks accept a final pose.
+the visible fallback before its reserved enemy becomes active. All three surface
+combatants can appear in any surface biome and both cave combatants can appear
+in any cave biome. Biomes and generated structures adjust their weights:
+dynamiteers favor open terrain and settlements, mortarmen favor desert and
+swamp, wasps favor forests, jungles, and swamps, bore sentinels favor mines and
+geode/fossil depths, and minigunners favor mines, facilities, and
+crystal/magma/void depths. Village interiors remain excluded from combat
+spawning.
+
+Earth villages populate independently of the combat cap. Each material-valid
+building interior has one deterministic resident site and each village has one
+outdoor commons site, capped at twelve loaded villagers. Site identity follows
+the immutable village/building plan, so residents hibernate and restore with
+their absolute pose instead of duplicating as the window streams. Villagers,
+surveyors, and IRIS crew render with an upright 9x10 human silhouette aligned to
+their tall 4x8 actor shape.
 
 ### Controls
 

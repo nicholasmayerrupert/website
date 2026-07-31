@@ -1,6 +1,6 @@
-// Browser regression for creature visibility. It verifies that /fps does not
-// naturally populate retired fauna, /game still populates the armed roster,
-// and debug hitboxes alter rendered pixels around an active enemy.
+// Browser regression for creature visibility. It verifies that /fps remains
+// unpopulated, /game paces its ambient and armed populations, and debug
+// hitboxes alter rendered pixels around an active enemy.
 //
 //   node scripts/creature-e2e.mjs
 //   node scripts/creature-e2e.mjs --png /tmp/creatures-fps.png
@@ -67,10 +67,49 @@ try {
     return { creatures, debugAttr: host.hasAttribute('debug-hitboxes'), hud };
   });
   const species = new Set(initial.creatures.map((c) => c.species));
-  check('retired fauna and survival enemies stay absent from /fps natural spawns',
+  check('natural fauna and survival enemies stay absent from /fps',
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].every((id) => !species.has(id)));
   check('/fps enables debug hitboxes', initial.debugAttr);
   check('/fps HUD reports creatures', initial.hud.includes('creatures'));
+
+  const humanSprite = await page.evaluate(() => {
+    const T = window.__sandTest, info = T.info(), cam = T.getCam();
+    T.setPaused(true);
+    T.setHitboxes(false);
+    T.render();
+    const before = T.readPixels(0, 0, info.canvasW, info.canvasH);
+    const id = T.spawnCreature(
+      19,
+      cam.x + info.viewCols * 0.5 - 2,
+      cam.y + info.viewRows * 0.5 - 4,
+    );
+    T.render();
+    const after = T.readPixels(0, 0, info.canvasW, info.canvasH);
+    let changed = 0, minX = info.canvasW, minY = info.canvasH;
+    let maxX = -1, maxY = -1;
+    for (let i = 0; i < before.length; i += 4) {
+      if (before[i] === after[i]
+          && before[i + 1] === after[i + 1]
+          && before[i + 2] === after[i + 2]
+          && before[i + 3] === after[i + 3]) continue;
+      const pixel = i / 4;
+      const x = pixel % info.canvasW;
+      const y = Math.floor(pixel / info.canvasW);
+      changed++;
+      minX = Math.min(minX, x); minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+    }
+    T.setPaused(false);
+    return {
+      id,
+      changed,
+      width: maxX >= minX ? maxX - minX + 1 : 0,
+      height: maxY >= minY ? maxY - minY + 1 : 0,
+    };
+  });
+  check(`human NPC sprite is visibly tall and narrow (${humanSprite.width}x${humanSprite.height})`,
+    humanSprite.id > 0 && humanSprite.changed > 0
+      && humanSprite.height > humanSprite.width * 1.2);
 
   // The survival route is the real gameplay entry point. Its encounter director
   // should begin with one armed reservation rather than all five species popping
@@ -87,15 +126,16 @@ try {
     const population = T.getCreatures().filter((c) => c.alive || c.spawnProgress > 0);
     return {
       species: population.map((c) => c.species),
-      armed: population.filter((c) => c.species >= 7).length,
+      armed: population.filter((c) => c.species >= 7 && c.species <= 11).length,
+      ambient: population.filter((c) => c.species <= 6).length,
       debugAttr: host.hasAttribute('debug-hitboxes'),
     };
   });
   console.log('\n/game creature spawning');
   check(`survival begins with a paced armed encounter (${survival.armed} reserved)`,
     survival.armed >= 1 && survival.armed < 5);
-  check('survival keeps moles and other retired natural populations absent',
-    [0, 1, 2, 3, 4, 5, 6].every((id) => !survival.species.includes(id)));
+  check(`survival keeps ambient wildlife within its reserved cap (${survival.ambient}/3)`,
+    survival.ambient <= 3);
   check('hitboxes remain an /fps diagnostic', !survival.debugAttr);
 
   // Force the director's habitat-valid visible fallback through its DEV-only
@@ -182,7 +222,8 @@ try {
     const T = window.__sandTest;
     T.setPaused(true);
     const c = T.getCreatures().find((x) => x.id === materializedId && x.alive) ||
-      T.getCreatures().find((x) => x.alive && x.species >= 7);
+      T.getCreatures().find((x) =>
+        x.alive && x.species >= 7 && x.species <= 11);
     if (!c) { T.setPaused(false); return { changed: 0 }; }
     const info = T.info();
     T.setCam(c.x + c.w / 2 - info.viewCols / 2, c.y + c.h / 2 - info.viewRows / 2);

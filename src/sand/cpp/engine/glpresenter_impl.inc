@@ -1343,10 +1343,9 @@ void GLPresenter::glDrawProjectiles() {
   }
 }
 
-// Original pixel sprites authored for this renderer. Each animal has a 13x7
-// canvas, a six-color ramp, and four genuinely different poses. The extra
-// negative space is intentional: ears, feet, tails, fins, and wing tips retain
-// a readable silhouette instead of collapsing into a filled rectangle.
+// Animal and combat sprites use a wide 13x7 canvas for readable tails, weapons,
+// fins, and wings. Human NPCs use a shared upright 9x10 silhouette with each
+// character's own six-color palette.
 void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int facing, int health, int maxHealth,
                     int alive, int animFrame, int attackState, int attackPattern,
                     double attackProgress,
@@ -1372,6 +1371,17 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     {{0,0,0,0},{11/255.f,17/255.f,22/255.f,1},{39/255.f,53/255.f,61/255.f,1},{76/255.f,102/255.f,108/255.f,1},{70/255.f,224/255.f,235/255.f,1},{255/255.f,116/255.f,29/255.f,1}},
     {{0,0,0,0},{13/255.f,21/255.f,33/255.f,1},{23/255.f,54/255.f,99/255.f,1},{41/255.f,91/255.f,151/255.f,1},{233/255.f,190/255.f,68/255.f,1},{230/255.f,172/255.f,127/255.f,1}},
     {{0,0,0,0},{22/255.f,19/255.f,18/255.f,1},{113/255.f,48/255.f,24/255.f,1},{205/255.f,89/255.f,32/255.f,1},{74/255.f,211/255.f,205/255.f,1},{224/255.f,160/255.f,113/255.f,1}},
+    {{0,0,0,0},{38/255.f,27/255.f,22/255.f,1},{74/255.f,55/255.f,43/255.f,1},{91/255.f,132/255.f,69/255.f,1},{213/255.f,157/255.f,63/255.f,1},{226/255.f,171/255.f,128/255.f,1}},
+  };
+  static const char* const humanGrids[4][10] = {
+    {"000111000","001555100","001545100","000353000","001333100",
+     "010343010","000222000","000202000","002202200","022000220"},
+    {"000111000","001555100","001545100","000353000","001333100",
+     "010343001","000222000","000220000","002002000","022000220"},
+    {"000111000","001555100","001545100","000353000","001333100",
+     "100343010","000222000","000022000","000200200","022000220"},
+    {"000111000","001555100","001545100","000353010","001333010",
+     "001343110","000222000","000202000","002202200","022000220"},
   };
   static const char* const grids[CS_COUNT][4][7] = {
     {// minnow: a forked tail and alternating body bend
@@ -1469,11 +1479,21 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
      {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0000121200000","0001100110000"},
      {"0000011100000","0000111510000","0001155521000","0012333322100","0012344322100","0012000012000","0110000001100"},
      {"0000011100000","0000111510000","0001155521000","0012333322100","0012344445100","0011000110000","0110000011000"}},
+    {// villager fallback; human NPCs render through the upright grid
+     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334322100","0001200210000","0011000011000"},
+     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334322100","0000121200000","0001100110000"},
+     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334322100","0012000012000","0110000001100"},
+     {"0000011100000","0000155510000","0001254521000","0012333322100","0012334445100","0011000110000","0110000011000"}},
   };
   if (speciesId < 0 || speciesId >= CS_COUNT) return;
   int spriteId = speciesId;
   int paletteId = speciesId;
-  const int sw = 13, sh = 7;
+  bool humanNpc = speciesId == CS_SURVEYOR
+    || speciesId == CS_IRIS_COMMANDER
+    || speciesId == CS_IRIS_ENGINEER
+    || speciesId == CS_VILLAGER;
+  const int sw = humanNpc ? 9 : 13;
+  const int sh = humanNpc ? 10 : 7;
   double cell = glCellDev;
   if (spawnProgress > 0) {
     // A deterministic pixel breach: two counter-rotating broken rings tighten
@@ -1651,7 +1671,10 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
     }
   }
   double sx = (px - camCol) * cell + glOffX - (sw - CREATURE_SPECIES[speciesId].w) * 0.5 * cell;
-  double sy = (py - camRow) * cell + glOffY - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
+  double sy = humanNpc
+    ? (py + CREATURE_SPECIES[speciesId].h - sh - camRow) * cell + glOffY
+    : (py - camRow) * cell + glOffY
+      - (sh - CREATURE_SPECIES[speciesId].h) * 0.5 * cell;
   int frame = (speciesId == CS_SHIELD_ANCHOR || speciesId == CS_REACTOR_CORE)
     ? (int)((E.actorTick / 8) & 3)
     : animFrame & 3;
@@ -1666,13 +1689,17 @@ void GLPresenter::glDrawOneCreature(int speciesId, double px, double py, int fac
   }
   if (alive && CREATURE_SPECIES[speciesId].locomotion == CL_AMPHIBIOUS) {
     double shadowY = (py - camRow + CREATURE_SPECIES[speciesId].h) * cell + glOffY - 0.16 * cell;
+    double shadowW = humanNpc ? 5.0 : 7.0;
     glUniform4f(glc->uColor, 8/255.f * light, 10/255.f * light, 14/255.f * light, 0.24f);
-    glSolidDev(sx + 3.0 * cell, shadowY, 7.0 * cell, std::max(1.0, 0.30 * cell));
+    glSolidDev(sx + (sw - shadowW) * .5 * cell, shadowY,
+               shadowW * cell, std::max(1.0, 0.30 * cell));
   }
   double pixelH = alive ? cell : cell * 0.42;
   double corpseBase = sy + sh * cell;
   for (int r = 0; r < sh; r++) for (int c = 0; c < sw; c++) {
-    int idx = grids[spriteId][frame][r][c] - '0'; if (idx <= 0 || idx >= 6) continue;
+    int idx = (humanNpc ? humanGrids[frame][r][c]
+                        : grids[spriteId][frame][r][c]) - '0';
+    if (idx <= 0 || idx >= 6) continue;
     int cc = facing >= 0 ? c : sw - 1 - c; const float* col = pal[paletteId][idx];
     float fade = alive ? 1.0f : 0.55f;
     glUniform4f(glc->uColor, col[0] * fade * light, col[1] * fade * light, col[2] * fade * light, col[3]);

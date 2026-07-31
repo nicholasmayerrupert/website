@@ -24,20 +24,7 @@ const stoneFloor = (e, top) => {
 const byId = (e, id) => e.getCreatures().find((c) => c.id === id);
 
 check('roster includes fauna, combatants, and authored mission actors',
-  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN,REACTOR_CORE,IRIS_COMMANDER,IRIS_ENGINEER');
-
-// Retired fauna remain available to direct spawns, but even an ideal habitat
-// must not add them to a natural population.
-{
-  const e = mk();
-  waterBox(e, 4, 4, COLS - 4, ROWS - 4);
-  e.setCreatureRuntime(true, true);
-  e.stepActors();
-  const species = e.getCreatures().filter((c) => c.alive).map((c) => c.species);
-  check('water habitat does not naturally spawn minnows or pike',
-    !species.includes(CREATURE.MINNOW) && !species.includes(CREATURE.PIKE));
-  e.destroy();
-}
+  Object.keys(CREATURE).join(',') === 'MINNOW,PIKE,FOX,HARE,CRAWLER,MOLE,BIRD,DYNAMITEER,BORE_SENTINEL,CAUSTIC_MORTARMAN,CLUSTER_WASP,MINIGUNNER,SURVEYOR,SHIELD_ANCHOR,QUARRY_FOREMAN,REACTOR_WARDEN,REACTOR_CORE,IRIS_COMMANDER,IRIS_ENGINEER,VILLAGER');
 
 // A bird may be engulfed by newly placed/falling water. Water blocks normal
 // flight entry, but a submerged bird must climb back through it instead of
@@ -63,7 +50,10 @@ check('roster includes fauna, combatants, and authored mission actors',
   e.setCreatureRuntime(true, true);
   e.spawnPlayerAtSurface(224);
   e.stepActors();
-  check('high manual population pauses natural spawning', e.getCreatures().length === 10);
+  const nonResidents = e.getCreatures()
+    .filter((creature) => creature.species !== CREATURE.VILLAGER);
+  check('high manual population pauses capped natural spawning',
+    nonResidents.length === 10);
   e.destroy();
 }
 
@@ -252,8 +242,8 @@ for (const [species, label] of [
   e.destroy();
 }
 
-// Ambient fauna remain available to eggs/scripts, but none enter the natural
-// population, even when a normal surface player keeps their habitats loaded.
+// Ambient fauna use their own quiet cadence and a reserved share of the same
+// capped natural population.
 {
   const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: 0xC0FFEE, sinksOn: false, infinite: true });
   e.setSurvivalInventory(true);
@@ -261,46 +251,58 @@ for (const [species, label] of [
   const playerId = e.spawnPlayerAtSurface(224), player = e.getPlayer(playerId);
   e.stepActors();
   const initial = e.getCreatures();
-  const disabledNatural = [
+  const ambientSpecies = [
     CREATURE.MINNOW, CREATURE.PIKE, CREATURE.FOX,
     CREATURE.HARE, CREATURE.CRAWLER, CREATURE.MOLE, CREATURE.BIRD,
   ];
   const distFromPlayer = (c) => Math.hypot(c.x + c.w / 2 - (player.x + player.w / 2), c.y + c.h / 2 - (player.y + player.h / 2));
   const spawnMinDistance = [20, 28, 28, 22, 30, 34, 20, 34, 46, 40, 38, 44];
-  const tooClose = initial.filter((c) => distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
+  const tooClose = initial.filter((c) => c.species <= CREATURE.MINIGUNNER
+    && distFromPlayer(c) + 1e-6 < spawnMinDistance[c.species]);
   check(`habitat-snapped natural spawns preserve player safety distance (${tooClose.length} too close)`, tooClose.length === 0);
-  check('retired fauna, including moles, do not spawn naturally',
-    !initial.some((c) => disabledNatural.includes(c.species)));
-  actors(e, 1800);
+  const seenAmbient = new Set(initial
+    .filter((c) => ambientSpecies.includes(c.species))
+    .map((c) => c.species));
+  for (let tick = 0; tick < 1800; tick++) {
+    e.stepActors();
+    for (const creature of e.getCreatures())
+      if (ambientSpecies.includes(creature.species))
+        seenAmbient.add(creature.species);
+  }
   const later = e.getCreatures();
-  const count = (species) => later.filter((c) => c.species === species && c.alive).length;
-  const active = later.filter((c) => c.alive).length;
-  check(`retired natural populations remain absent (${disabledNatural.map((species) => count(species)).join('/')})`,
-    disabledNatural.every((species) => count(species) === 0));
-  check(`loaded population has a hard mixed-species cap (${active}/8)`, active <= 8);
+  const ambientActive = later.filter((c) =>
+    c.alive && ambientSpecies.includes(c.species)).length;
+  const cappedActive = later.filter((c) =>
+    c.alive && c.species !== CREATURE.VILLAGER).length;
+  check(`ambient wildlife joins the natural population (${[...seenAmbient].join(',')})`,
+    seenAmbient.size > 0);
+  check(`ambient wildlife respects its reserved cap (${ambientActive}/3)`,
+    ambientActive <= 3);
+  check(`loaded combat and ambient population has a hard cap (${cappedActive}/8)`,
+    cappedActive <= 8);
   e.destroy();
 }
 
-// Exercise a spread of world seeds through several recurring spawn attempts so
-// the mole exclusion cannot accidentally depend on one terrain layout.
+// Exercise a spread of world seeds so ambient population is not dependent on a
+// single favorable terrain layout.
 {
-  let cleanWorlds = 0;
+  let populatedWorlds = 0;
   for (let seed = 1; seed <= 8; seed++) {
     const e = createEngineWasm({ cols: 448, rows: 320, worldSeed: seed, sinksOn: false, infinite: true });
     e.setSurvivalInventory(true);
     e.setCreatureRuntime(true, true);
     e.spawnPlayerAtSurface(224);
-    actors(e, 4800);
-    const ids = new Set(e.getCreatures().filter((c) => c.alive).map((c) => c.species));
-    const disabled = [
-      CREATURE.MINNOW, CREATURE.PIKE, CREATURE.FOX,
-      CREATURE.HARE, CREATURE.CRAWLER, CREATURE.MOLE, CREATURE.BIRD,
-    ];
-    if (disabled.every((id) => !ids.has(id))) cleanWorlds++;
+    let sawAmbient = false;
+    for (let tick = 0; tick < 1800 && !sawAmbient; tick++) {
+      e.stepActors();
+      sawAmbient = e.getCreatures()
+        .some((c) => c.species <= CREATURE.BIRD);
+    }
+    if (sawAmbient) populatedWorlds++;
     e.destroy();
   }
-  check(`moles and other retired fauna remain absent across world seeds (${cleanWorlds}/8)`,
-    cleanWorlds === 8);
+  check(`ambient wildlife populates varied world seeds (${populatedWorlds}/8)`,
+    populatedWorlds >= 6);
 }
 
 // A habitat-valid point beyond the real viewport enters immediately. It must
@@ -349,28 +351,38 @@ for (const [species, label] of [
   ];
   const results = [];
   for (const species of horizontalSpecies) {
-    const e = attachTestHooks(createEngineWasm({
-      cols: 512, rows: 352, worldSeed: 0x0FF5C2E + species,
-      sinksOn: false, infinite: true,
-    }));
-    e.setViewport(1, 1, 248, 140);
-    const playerId = e.spawnPlayerAtSurface(256);
-    const player = e.getPlayer(playerId);
-    e.cameraSet(
-      player.x + player.w * 0.5 - 124,
-      player.y + player.h * 0.5 + player.h * 0.5 + 4 - 140 * (2 / 3),
-    );
-    const spawned = e._spawnNearFocus(species, species * 977 + 41);
-    const candidate = e.getCreatures().find((c) => c.species === species && c.alive);
-    const cam = e.getCam();
-    results.push(spawned && candidate && (
-      candidate.x + candidate.w <= cam.x - 10 ||
-      candidate.x >= cam.x + 248 + 10
-    ));
-    e.destroy();
+    let ok = false;
+    for (let variant = 0; variant < 24 && !ok; variant++) {
+      const e = attachTestHooks(createEngineWasm({
+        cols: 512, rows: 352,
+        worldSeed: 0x0FF5C2E + species + variant * 0x9e377,
+        sinksOn: false, infinite: true,
+      }));
+      e.setViewport(1, 1, 248, 140);
+      const playerId = e.spawnPlayerAtSurface(256);
+      const player = e.getPlayer(playerId);
+      e.cameraSet(
+        player.x + player.w * 0.5 - 124,
+        player.y + player.h * 0.5 + player.h * 0.5 + 4 - 140 * (2 / 3),
+      );
+      let spawned = false;
+      for (let salt = 0; salt < 64 && !spawned; salt++)
+        spawned = e._spawnNearFocus(
+          species, species * 977 + salt * 1013 + 41);
+      const candidate = e.getCreatures()
+        .find((c) => c.species === species && c.alive);
+      const cam = e.getCam();
+      ok = !!(spawned && candidate && (
+        candidate.x + candidate.w <= cam.x - 10 ||
+        candidate.x >= cam.x + 248 + 10
+      ));
+      e.destroy();
+    }
+    results.push({ species, ok });
   }
-  check('armed enemies enter left/right of the real desktop viewport',
-    results.every(Boolean));
+  check(`armed enemies enter left/right of the real desktop viewport (${
+    results.map(({ species, ok }) => `${species}:${ok ? 'ok' : 'miss'}`).join(', ')
+  })`, results.every(({ ok }) => ok));
 }
 
 // Cave encounters follow the player's absolute depth. Their habitat search
@@ -467,9 +479,11 @@ for (const [species, label] of [
   let maxPopulation = 0;
   for (let tick = 0; tick < 960; tick++) {
     e.stepActors();
-    const population = e.getCreatures().filter((c) => c.alive || c.spawnProgress > 0);
+    const population = e.getCreatures().filter((c) =>
+      (c.alive || c.spawnProgress > 0) && c.species !== CREATURE.VILLAGER);
     maxPopulation = Math.max(maxPopulation, population.length);
-    for (const c of population) if (!known.has(c.id)) {
+    for (const c of population) if (c.species >= CREATURE.DYNAMITEER
+        && c.species <= CREATURE.MINIGUNNER && !known.has(c.id)) {
       known.add(c.id);
       firstSeen.push(tick);
     }

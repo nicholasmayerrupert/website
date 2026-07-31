@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 26;
+static const int ABI_VERSION = 27;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -335,6 +335,7 @@ enum CreatureSpeciesAbi : int {
   CREATURE_REACTOR_CORE = 16,
   CREATURE_IRIS_COMMANDER = 17,
   CREATURE_IRIS_ENGINEER = 18,
+  CREATURE_VILLAGER = 19,
 };
 
 enum CreatureAttackState : uint8_t {

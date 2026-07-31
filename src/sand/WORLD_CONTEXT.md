@@ -54,17 +54,28 @@ spawn policy. The encounter director uses the weights at its player focus to
 select the first enemy archetype, then validates the final candidate context
 after surface/cave snapping.
 
-The current combat roster uses these affinities:
+The survival combat pools are broad within their physical realm:
 
-- Dynamiteers favor settlements and open/dry surface biomes.
-- Bore sentinels favor mines, deep areas, geodes, and fossil caverns.
-- Caustic mortarmen favor deserts, jungles, and swamps.
-- Cluster wasps favor forests, jungles, and swamps.
-- Minigunners favor mines, off-world facilities, deep areas, crystal caves,
-  magma realms, and voids.
+| Context | Eligible enemies | Affinities |
+| --- | --- | --- |
+| Any surface biome | Dynamiteer, caustic mortarman, cluster wasp | Dynamiteers favor open biomes and settlements; mortarmen favor desert and swamp; wasps favor forest, jungle, and swamp |
+| Any cave biome | Bore sentinel, minigunner | Bore sentinels favor mines and geode/fossil depths; minigunners favor mines, facilities, and crystal/magma/void depths |
 
 Surface combatants cannot naturally materialize inside designated building
-interiors.
+interiors, and cave enemies cannot materialize beneath a settlement. The
+director only falls back among species with positive weight at the player's
+context; every final surface/cave-snapped pose is checked again.
+
+Ambient wildlife has a separate four-second cadence and a three-creature share
+of the eight-creature natural cap. Its semantic affinities influence selection,
+then water, walking surface, cave floor, or open air determines whether the
+selected species has a viable off-screen entry.
+
+Village residents are generated from the same immutable plans as village
+terrain. A stable site key places one villager in each material-valid building
+interior and one in the outdoor commons. The twelve-resident loaded cap is
+separate from ambient and combat capacity; hibernation preserves resident IDs
+and prevents streaming from duplicating a site.
 
 ## Adding a generated site
 

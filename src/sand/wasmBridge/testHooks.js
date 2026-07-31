@@ -46,6 +46,8 @@ function table() {
       ['number', 'number', 'number', 'number']),
     spawnWorldWeight: c('engine_test_spawn_world_weight', 'number',
       ['number', 'number', 'number', 'number']),
+    spawnNaturalAt: c('engine_test_spawn_natural_at', 'number',
+      ['number', 'number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
@@ -95,6 +97,8 @@ export function attachTestHooks(engine) {
     t.spawnWorldAllowed(ptr, species | 0, worldX, worldY) === 1;
   engine._spawnWorldWeight = (species, worldX, worldY) =>
     t.spawnWorldWeight(ptr, species | 0, worldX, worldY);
+  engine._spawnNaturalAt = (species, worldX, worldY) =>
+    t.spawnNaturalAt(ptr, species | 0, worldX, worldY);
   // Continuous pose/motion of body i: { px, py, angle, vx, vy, omega, nPts, maxR } or null.
   engine._bodyState = (i) => {
     const buf = mod._malloc(8 * 8);

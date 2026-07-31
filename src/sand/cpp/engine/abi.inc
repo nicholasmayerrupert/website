@@ -325,6 +325,12 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 11: return e->rigid.rigidChildManifolds;
     case 12: return e->rigid.rigidSweepFallbacks;
     case 13: return e->rigid.rigidMaxChildren;
+    case 14: return e->rigid.fluidNodeCount;
+    case 15: return e->rigid.fluidFaceCount;
+    case 16: return e->rigid.fluidPressureIterations;
+    case 17: return e->rigid.rigidSpillDisplaced;
+    case 18: return e->rigid.rigidSpillVisits;
+    case 19: return e->rigid.rigidSpillSearches;
     default: return 0;
   }
 }

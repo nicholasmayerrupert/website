@@ -34,6 +34,7 @@ const gitCommit = safeExec('git', ['rev-parse', '--short', 'HEAD']);
 const gitDirty = spawnSync('git', ['diff', '--quiet']).status !== 0 || spawnSync('git', ['diff', '--cached', '--quiet']).status !== 0;
 const emccPath = safeExec('which', ['emcc']);
 const materialCheck = spawnSync(process.execPath, ['scripts/generate-materials.mjs', '--check'], { encoding: 'utf8' });
+const wasmCheck = spawnSync(process.execPath, ['scripts/write-wasm-build-info.mjs', '--check'], { encoding: 'utf8' });
 const bench = spawnSync(process.execPath, ['scripts/bench-sand.mjs', '--checksum-only', '--json', tmpJson], { encoding: 'utf8' });
 
 let benchResult = null;
@@ -54,6 +55,7 @@ console.log(`  wasm loader: ${loaderStat.size} bytes  fnv ${fmtHex(fileHash(load
 console.log(`  wasm binary: ${wasmStat.size} bytes  fnv ${fmtHex(fileHash(wasmPath))}`);
 if (wasmInfo) {
   console.log(`  wasm build-info: ${wasmInfo.source?.commit || 'unknown'}${wasmInfo.source?.dirty ? ' dirty' : ' clean'}  ${wasmInfo.toolchain?.emcc || 'emcc unknown'}`);
+  console.log(`  wasm provenance: ${status(wasmCheck.status === 0)}${wasmCheck.status === 0 ? '' : ` (${(wasmCheck.stderr || wasmCheck.stdout).trim()})`}`);
   if (wasmInfo.output?.bytes !== loaderStat.size) console.log(`  wasm loader build-info size: FAIL (${wasmInfo.output?.bytes} recorded)`);
   if (wasmInfo.wasm?.bytes !== wasmStat.size) console.log(`  wasm binary build-info size: FAIL (${wasmInfo.wasm?.bytes} recorded)`);
 } else {
@@ -77,4 +79,4 @@ if (!checksumMatches) {
   console.log('  node scripts/bench-pan.mjs --compare bench/pan-baseline.json');
 }
 
-process.exit(materialCheck.status === 0 && bench.status === 0 ? 0 : 1);
+process.exit(materialCheck.status === 0 && wasmCheck.status === 0 && bench.status === 0 ? 0 : 1);

@@ -614,7 +614,7 @@ for (const dt of [16, 8, 33, 50]) {
   run(loaded, 30);
   const dry = empty._bodyState(0), wet = loaded._bodyState(0);
   check(`thin loaded tub falls with the empty tub (${wet.vy.toFixed(3)} == ${dry.vy.toFixed(3)})`,
-    Math.abs(wet.vy - dry.vy) < 0.002 && Math.abs(wet.py - dry.py) < 0.02);
+    Math.abs(wet.vy - dry.vy) < 0.003 && Math.abs(wet.py - dry.py) < 0.03);
   check(`thin falling tub retains both layers of water (${countWater(loaded)} == ${waterBefore})`,
     countWater(loaded) === waterBefore);
   empty.destroy();

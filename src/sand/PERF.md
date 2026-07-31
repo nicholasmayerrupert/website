@@ -111,15 +111,17 @@ component registration, and generation/restoration. Browser presentation exposes
   invalidate cached cave grounding. Settled rubble bakes into ordinary static
   material once structural motion in its layer clears. Dense TNT fronts emit a
   bounded number of physical chunks.
-- Rigid/fluid pressure projection uses deterministic overlapping eight-cell
-  neighborhoods seeded only by wet raster boundaries. Nearby open-column
-  profiles provide mixed-density hydrostatic head without a connected-pool
-  flood, while persistent liquid velocity carries dynamics beyond the cutoff. A
-  local multi-material interface triggers exact connected projection; ordinary
-  single-material pools remain fixed-size. Pressure Krylov vectors use
-  contiguous storage, the common unpinned iteration keeps its convergence and
-  direction updates SIMD-vectorized, and the repeated matrix pass traverses
-  compact dynamic faces.
+- Rigid/fluid pressure projection uses deterministic overlapping four-cell
+  neighborhoods seeded only by wet raster boundaries. Ice uses an eight-cell
+  neighborhood so broad shallow rafts retain a density-based draft. Nearby
+  open-column profiles provide mixed-density hydrostatic head without a
+  connected-pool flood, while persistent liquid velocity carries dynamics
+  beyond the cutoff. A local multi-material interface triggers exact connected
+  projection; ordinary single-material pools remain fixed-size. Pressure Krylov
+  vectors use contiguous storage, the common unpinned iteration keeps its
+  convergence and direction updates SIMD-vectorized, and the repeated matrix
+  pass traverses compact dynamic faces. Extended ice projections resolve once
+  more when clamping tensile pressure changes the active constraints.
 - Body/body broadphase retains its sweep-and-prune order across ticks and repairs
   it with insertion sort, then restores surviving pairs to deterministic
   body-index order before generating contacts.

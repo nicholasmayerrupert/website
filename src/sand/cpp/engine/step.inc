@@ -328,6 +328,11 @@
     // shared stream is byte-identical to before; only the write is gated.
     bool fgIndexExact = fg.groundBaseValid && !fg.groundDirty && !fg.groundContentDirty;
     bool bgIndexExact = bg.groundBaseValid && !bg.groundDirty && !bg.groundContentDirty;
+    Layer* previousLayer = L;
+    auto igniteCell = [&](Layer& layer, int k) {
+      useLayer(&layer);
+      writeGridIndex(k, FIRE);
+    };
     crossFireErasedFg.clear(); crossFireErasedBg.clear();
     crossFrozenIceFg.clear(); crossFrozenIceBg.clear();
     crossBodyFrozenIceFg.clear(); crossBodyFrozenIceBg.clear();
@@ -343,12 +348,12 @@
         if (f == FIRE && isFlammable(b)) {
           if (rand() < FIRE_CROSS_P && bg.bodyOwner[k] == -1) {
             if (isPlantMaterial(b)) crossFireErasedBg.push_back(k);
-            bg.grid[k] = FIRE; if (x < bg.rowMarkMin[y]) bg.rowMarkMin[y] = x; if (x > bg.rowMarkMax[y]) bg.rowMarkMax[y] = x;
+            igniteCell(bg, k);
           }
         } else if (b == FIRE && isFlammable(f)) {
           if (rand() < FIRE_CROSS_P && fg.bodyOwner[k] == -1) {
             if (isPlantMaterial(f)) crossFireErasedFg.push_back(k);
-            fg.grid[k] = FIRE; if (x < fg.rowMarkMin[y]) fg.rowMarkMin[y] = x; if (x > fg.rowMarkMax[y]) fg.rowMarkMax[y] = x;
+            igniteCell(fg, k);
           }
         }
         // Co-occupied cells are adjacent across the two simulated planes.
@@ -415,10 +420,7 @@
     };
     commitFrozenIce(fg, crossFrozenIceFg);
     commitFrozenIce(bg, crossFrozenIceBg);
-    if (!crossFireErasedFg.empty() || !crossFireErasedBg.empty()
-        || !crossFrozenIceFg.empty() || !crossFrozenIceBg.empty()
-        || !crossBodyFrozenIceFg.empty() || !crossBodyFrozenIceBg.empty())
-      useLayer(&fg);
+    useLayer(previousLayer);
   }
 
   // ---- cross-layer transfer (RNG-free) ----

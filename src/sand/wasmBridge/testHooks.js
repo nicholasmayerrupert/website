@@ -145,6 +145,12 @@ export function attachTestHooks(engine) {
     childManifolds: t.rigidSolverDiag(ptr, 11),
     sweepFallbacks: t.rigidSolverDiag(ptr, 12),
     maxChildren: t.rigidSolverDiag(ptr, 13),
+    fluidNodes: t.rigidSolverDiag(ptr, 14),
+    fluidFaces: t.rigidSolverDiag(ptr, 15),
+    fluidIterations: t.rigidSolverDiag(ptr, 16),
+    spillDisplaced: t.rigidSolverDiag(ptr, 17),
+    spillVisits: t.rigidSolverDiag(ptr, 18),
+    spillSearches: t.rigidSolverDiag(ptr, 19),
   });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);

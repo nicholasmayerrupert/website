@@ -245,7 +245,8 @@ bool CreatureSystem::findSpawnNearFocus(uint8_t speciesId, uint32_t salt,
     // Armed survival encounters should enter from the simulated bands beside
     // the view. Keep a short radial tail for terrain that offers no valid
     // habitat on either side.
-    bool sideEntry = requireOffscreen && speciesId >= CS_DYNAMITEER && attempt < 48;
+    bool sideEntry =
+      requireOffscreen && isEncounterSpecies(speciesId) && attempt < 48;
     double angle = whash2(seed ^ 0x11u, attempt, (int)salt) * 6.283185307179586;
     double ux = sideEntry
       ? (whash2(seed ^ 0x51DEu, (int)salt, attempt) < 0.5 ? -1.0 : 1.0)
@@ -379,11 +380,11 @@ int CreatureSystem::spawnCreatureNatural(uint8_t speciesId, double wx, double wy
     if (p.species == speciesId) activeOfSpecies++;
   for (const Creature& c : creatures) if (c.alive) {
     if (c.species != CS_VILLAGER) active++;
-    if (c.species <= CS_BIRD) ambient++;
+    if (isAmbientSpecies(c.species)) ambient++;
     if (c.species == speciesId) activeOfSpecies++;
   }
   if (active >= NATURAL_MOB_CAP
-      || (speciesId <= CS_BIRD && ambient >= AMBIENT_MOB_CAP)
+      || (isAmbientSpecies(speciesId) && ambient >= AMBIENT_MOB_CAP)
       || activeOfSpecies >= r.maxActive ||
       localDensity(speciesId, wx, wy, r.densityRadius) >= r.densityCap ||
       localDensityAll(wx, wy, MIXED_DENSITY_RADIUS) >= MIXED_DENSITY_CAP) return 0;

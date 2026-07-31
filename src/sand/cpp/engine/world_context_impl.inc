@@ -191,8 +191,8 @@ WorldContext WorldContextSystem::at(int worldX, int worldY) const {
       VillagePlan village;
       if (!villagePlan(q, village)
           || worldX < village.left || worldX > village.right
-          || worldY < context.surfaceY - 96
-          || worldY > context.surfaceY + 48) continue;
+          || worldY < village.top
+          || worldY > village.bottom) continue;
       context.tags |= WA_STRUCTURE | WA_SETTLEMENT;
       context.featureKind = WF_VILLAGE;
       context.siteRole = WSR_NONE;

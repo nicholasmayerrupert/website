@@ -186,43 +186,50 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .fluidThreshold=0.34, .sightRange=36, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=24, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="shield anchor", .locomotion=CL_STATIONARY, .w=7, .h=7, .maxHealth=210,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="quarry foreman", .locomotion=CL_AMPHIBIOUS, .w=10, .h=7, .maxHealth=520,
    .walkSpeed=0.19, .swimSpeed=0.14, .accel=0.038, .gravity=0.075, .jumpSpeed=0.92,
    .fluidThreshold=0.32, .sightRange=148, .attackRange=112,
    .damage=30, .attackCooldown=105, .scanInterval=8, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 160, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 160, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="reactor warden", .locomotion=CL_AMPHIBIOUS, .w=11, .h=8, .maxHealth=760,
    .walkSpeed=0.13, .swimSpeed=0.10, .accel=0.028, .gravity=0.075, .jumpSpeed=0.72,
    .fluidThreshold=0.34, .sightRange=162, .attackRange=132,
    .damage=0, .attackCooldown=190, .scanInterval=5, .hopPeriod=0,
    .targetMask=CT_PLAYER, .preyMask=0, .hostile=true,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 180, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 180, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="reactor core", .locomotion=CL_STATIONARY, .w=9, .h=12, .maxHealth=460,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_CAVE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="IRIS commander", .locomotion=CL_STATIONARY, .w=4, .h=8, .maxHealth=100,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="IRIS engineer", .locomotion=CL_STATIONARY, .w=4, .h=8, .maxHealth=100,
    .walkSpeed=0, .swimSpeed=0, .accel=0, .gravity=0, .jumpSpeed=0,
    .fluidThreshold=0, .sightRange=0, .attackRange=0,
    .damage=0, .attackCooldown=0, .scanInterval=60, .hopPeriod=0,
    .targetMask=CT_NONE, .preyMask=0, .hostile=false,
-   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0}},
+   .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 96, 0, 0, 0.0, 0, 0},
+   .world={}},
   {.name="villager", .locomotion=CL_AMPHIBIOUS, .w=4, .h=8, .maxHealth=60,
    .walkSpeed=0.10, .swimSpeed=0.14, .accel=0.030, .gravity=0.075, .jumpSpeed=0.70,
    .fluidThreshold=0.34, .sightRange=28, .attackRange=0,
@@ -231,6 +238,34 @@ static const CreatureSpecies CREATURE_SPECIES[CS_COUNT] = {
    .spawn={CSM_REGION, CH_SURFACE, 256, 0, 0, 72, 0, 0, 0.0, 0, 0},
    .world={.requiredTags=WA_SETTLEMENT}},
 };
+
+inline bool isAmbientSpecies(uint8_t speciesId) {
+  switch (speciesId) {
+    case CS_MINNOW:
+    case CS_PIKE:
+    case CS_FOX:
+    case CS_HARE:
+    case CS_CRAWLER:
+    case CS_MOLE:
+    case CS_BIRD:
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool isEncounterSpecies(uint8_t speciesId) {
+  switch (speciesId) {
+    case CS_DYNAMITEER:
+    case CS_BORE_SENTINEL:
+    case CS_CAUSTIC_MORTARMAN:
+    case CS_CLUSTER_WASP:
+    case CS_MINIGUNNER:
+      return true;
+    default:
+      return false;
+  }
+}
 
 struct Creature {
   int id = 0;

@@ -235,7 +235,6 @@ void ReactionSystem::applyLava() {
   std::vector<int> burnedPlant;
   for (int k : E.activeLavaCells) {
       if (E.L->grid[k] != LAVA) continue;
-      int y = k / E.cols;
       int right = k + 1, left = k - 1, down = k + E.cols, up = k - E.cols;
       int snowK = -1;
       if (E.L->grid[right] == SNOW) snowK = right; else if (E.L->grid[left] == SNOW) snowK = left; else if (E.L->grid[down] == SNOW) snowK = down; else if (E.L->grid[up] == SNOW) snowK = up;

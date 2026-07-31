@@ -784,7 +784,8 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     double leadEX = shoulderX + dx * .72 + nx * .25;
     double leadEY = shoulderY + dy * .72 + ny * .25;
     articulatedArm(shoulderX, shoulderY, leadEX, leadEY, handX, handY, false);
-    auto pixel = [&](double forward, double side, double size, float r, float g, float b, float a = 1.0f) {
+    auto drawPixel = [&](double forward, double side, double size,
+                         float r, float g, float b, float a = 1.0f) {
       double x = hx + (dx * forward + nx * side) * cell;
       double y = hy + (dy * forward + ny * side) * cell;
       glUniform4f(glc->uColor, r * light, g * light, b * light, a);
@@ -792,47 +793,47 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
     };
 
     if (heldItemKind == IK_MINING_TOOL) {
-      pixel(-.52, -.56, .94, .08f, .11f, .14f);
-      pixel(-.12, -.56, 1.02, .80f, .84f, .84f);
-      pixel(.38, -.56, .88, .94f, .95f, .90f);
-      pixel(-.30, .10, .72, .12f, .17f, .20f);
-      pixel(-.16, .58, .54, .08f, .10f, .12f);
-      pixel(-.58, -.56, .38, .96f, .67f, .10f);
+      drawPixel(-.52, -.56, .94, .08f, .11f, .14f);
+      drawPixel(-.12, -.56, 1.02, .80f, .84f, .84f);
+      drawPixel(.38, -.56, .88, .94f, .95f, .90f);
+      drawPixel(-.30, .10, .72, .12f, .17f, .20f);
+      drawPixel(-.16, .58, .54, .08f, .10f, .12f);
+      drawPixel(-.58, -.56, .38, .96f, .67f, .10f);
       for (int rail : {-1, 1}) {
         for (int i = 0; i < 5; i++)
-          pixel(.72 + i * .42, -.56 + rail * .43, .25,
-                .20f, .91f, .94f);
-        pixel(2.54, -.56 + rail * .43, .36, .76f, 1.0f, 1.0f);
+          drawPixel(.72 + i * .42, -.56 + rail * .43, .25,
+                    .20f, .91f, .94f);
+        drawPixel(2.54, -.56 + rail * .43, .36, .76f, 1.0f, 1.0f);
       }
       for (int i = 0; i < 4; i++)
-        pixel(.82 + i * .46, -.56, .18, .10f, .28f, .31f);
-      pixel(2.62, -.56, .54, .82f, 1.0f, 1.0f);
+        drawPixel(.82 + i * .46, -.56, .18, .10f, .28f, .31f);
+      drawPixel(2.62, -.56, .54, .82f, 1.0f, 1.0f);
     } else if (heldItemKind == IK_BLAST_GUN) {
-      for (int i = 0; i < 7; i++) pixel(-.46 + i * .48, -.68, .58, .16f, .18f, .20f);
-      for (int i = 0; i < 4; i++) pixel(-.20 + i * .48, -1.02, .40, .31f, .36f, .40f);
-      pixel(2.59, -.68, .72, .90f, .48f, .10f);
-      pixel(2.21, -.68, .38, 1.0f, .72f, .18f);
-      pixel(-.08, -.06, .58, .31f, .24f, .17f);
-      pixel(.11, .34, .52, .26f, .20f, .15f);
+      for (int i = 0; i < 7; i++) drawPixel(-.46 + i * .48, -.68, .58, .16f, .18f, .20f);
+      for (int i = 0; i < 4; i++) drawPixel(-.20 + i * .48, -1.02, .40, .31f, .36f, .40f);
+      drawPixel(2.59, -.68, .72, .90f, .48f, .10f);
+      drawPixel(2.21, -.68, .38, 1.0f, .72f, .18f);
+      drawPixel(-.08, -.06, .58, .31f, .24f, .17f);
+      drawPixel(.11, .34, .52, .26f, .20f, .15f);
     } else if (heldItemKind == IK_DYNAMITE_SATCHEL) {
       for (int stick = -1; stick <= 1; stick++) for (int i = 0; i < 4; i++)
-        pixel(-.38 + i * .43, stick * .38, .48, stick == 0 ? .82f : .62f, .07f, .045f);
-      for (int stick = -1; stick <= 1; stick++) pixel(.24, stick * .38, .30, .16f, .12f, .10f);
-      pixel(1.20, 0, .30, .95f, .73f, .18f);
-      pixel(1.49, 0, .24, 1.0f, .33f, .05f);
+        drawPixel(-.38 + i * .43, stick * .38, .48, stick == 0 ? .82f : .62f, .07f, .045f);
+      for (int stick = -1; stick <= 1; stick++) drawPixel(.24, stick * .38, .30, .16f, .12f, .10f);
+      drawPixel(1.20, 0, .30, .95f, .73f, .18f);
+      drawPixel(1.49, 0, .24, 1.0f, .33f, .05f);
     } else if (heldItemKind == IK_BORE_CANNON) {
       for (int i = 0; i < 9; i++) {
         float shell = (i == 0 || i == 8) ? .30f : .18f;
-        pixel(-.66 + i * .46, -.78, .68, shell, .25f + i * .012f, .28f + i * .012f);
+        drawPixel(-.66 + i * .46, -.78, .68, shell, .25f + i * .012f, .28f + i * .012f);
       }
-      for (int i = 1; i < 8; i++) pixel(-.66 + i * .46, -.78, .32, .20f, .86f, .82f);
+      for (int i = 1; i < 8; i++) drawPixel(-.66 + i * .46, -.78, .32, .20f, .86f, .82f);
       for (int i = 1; i < 7; i += 2) {
-        pixel(-.66 + i * .46, -1.26, .34, .40f, .48f, .50f);
-        pixel(-.66 + i * .46, -.30, .34, .40f, .48f, .50f);
+        drawPixel(-.66 + i * .46, -1.26, .34, .40f, .48f, .50f);
+        drawPixel(-.66 + i * .46, -.30, .34, .40f, .48f, .50f);
       }
-      pixel(-.08, -.16, .58, .20f, .25f, .27f);
-      pixel(.12, .22, .50, .15f, .19f, .21f);
-      pixel(3.24, -.78, .76, .73f, 1.0f, .91f);
+      drawPixel(-.08, -.16, .58, .20f, .25f, .27f);
+      drawPixel(.12, .22, .50, .15f, .19f, .21f);
+      drawPixel(3.24, -.78, .76, .73f, 1.0f, .91f);
       if (bowCharge > 0) {
         double rayX = handX + dx * 3.52 + nx * -.78;
         double rayY = handY + dy * 3.52 + ny * -.78;
@@ -855,51 +856,51 @@ void GLPresenter::glDrawOnePlayer(double pxc, double pyc, int facing, int animSt
         }
       }
     } else if (heldItemKind == IK_ACID_MORTAR) {
-      for (int i = 0; i < 8; i++) pixel(-.48 + i * .46, -.66, .64, .16f, .22f, .15f);
-      for (int i = 1; i < 7; i++) pixel(-.48 + i * .46, -.66, .30, .49f, .63f, .20f);
-      pixel(2.82, -.66, .82, .25f, .34f, .19f);
-      pixel(-.10, .04, .76, .22f, .28f, .17f);
-      pixel(.02, .05, .42, .64f, .91f, .18f);
-      pixel(.18, .48, .52, .18f, .22f, .15f);
-      pixel(3.14, -.66, .30, .79f, 1.0f, .30f);
+      for (int i = 0; i < 8; i++) drawPixel(-.48 + i * .46, -.66, .64, .16f, .22f, .15f);
+      for (int i = 1; i < 7; i++) drawPixel(-.48 + i * .46, -.66, .30, .49f, .63f, .20f);
+      drawPixel(2.82, -.66, .82, .25f, .34f, .19f);
+      drawPixel(-.10, .04, .76, .22f, .28f, .17f);
+      drawPixel(.02, .05, .42, .64f, .91f, .18f);
+      drawPixel(.18, .48, .52, .18f, .22f, .15f);
+      drawPixel(3.14, -.66, .30, .79f, 1.0f, .30f);
     } else if (heldItemKind == IK_CLUSTER_LAUNCHER) {
-      for (int i = 0; i < 8; i++) pixel(-.50 + i * .46, -.68, .62, .10f, .15f, .24f);
-      for (int i = 1; i < 7; i += 2) pixel(-.50 + i * .46, -1.03, .42, .28f, .48f, .68f);
-      pixel(2.76, -.68, .80, .93f, .43f, .10f);
-      pixel(-.02, -.02, .92, .16f, .23f, .32f);
-      for (int k = 0; k < 3; k++) pixel(-.02 + std::cos(k * 2.094) * .30,
-                                         -.02 + std::sin(k * 2.094) * .30,
-                                         .28, .94f, .57f, .12f);
-      pixel(.10, .52, .52, .11f, .15f, .20f);
+      for (int i = 0; i < 8; i++) drawPixel(-.50 + i * .46, -.68, .62, .10f, .15f, .24f);
+      for (int i = 1; i < 7; i += 2) drawPixel(-.50 + i * .46, -1.03, .42, .28f, .48f, .68f);
+      drawPixel(2.76, -.68, .80, .93f, .43f, .10f);
+      drawPixel(-.02, -.02, .92, .16f, .23f, .32f);
+      for (int k = 0; k < 3; k++) drawPixel(-.02 + std::cos(k * 2.094) * .30,
+                                             -.02 + std::sin(k * 2.094) * .30,
+                                             .28, .94f, .57f, .12f);
+      drawPixel(.10, .52, .52, .11f, .15f, .20f);
     } else if (heldItemKind == IK_RESCUE_BEAM) {
       for (int i = 0; i < 7; i++)
-        pixel(-.42 + i * .45, -.66, .58, .10f, .22f, .27f);
+        drawPixel(-.42 + i * .45, -.66, .58, .10f, .22f, .27f);
       for (int i = 1; i < 6; i++)
-        pixel(-.42 + i * .45, -.66, .27, .24f, .94f, .91f);
-      pixel(2.48, -.66, .76, .62f, 1.0f, .96f);
-      pixel(-.06, .02, .74, .13f, .28f, .31f);
-      pixel(.14, .48, .48, .11f, .19f, .22f);
+        drawPixel(-.42 + i * .45, -.66, .27, .24f, .94f, .91f);
+      drawPixel(2.48, -.66, .76, .62f, 1.0f, .96f);
+      drawPixel(-.06, .02, .74, .13f, .28f, .31f);
+      drawPixel(.14, .48, .48, .11f, .19f, .22f);
     } else { // IK_MINIGUN
       // The rear motor and ammo drum sit around the grip while the barrel pack
       // projects forward, so the weapon remains planted in the hand at every
       // cursor angle. Alternating highlights give the rotary cage a live spin.
-      pixel(-.46, -.66, .86, .10f, .14f, .18f);
-      pixel(-.08, -.66, .94, .17f, .24f, .29f);
-      pixel(.34, -.66, .78, .27f, .34f, .35f);
-      pixel(-.16, -.04, 1.10, .13f, .18f, .21f);
-      pixel(-.16, -.04, .66, .74f, .53f, .16f);
-      pixel(.04, .52, .54, .15f, .18f, .19f);
+      drawPixel(-.46, -.66, .86, .10f, .14f, .18f);
+      drawPixel(-.08, -.66, .94, .17f, .24f, .29f);
+      drawPixel(.34, -.66, .78, .27f, .34f, .35f);
+      drawPixel(-.16, -.04, 1.10, .13f, .18f, .21f);
+      drawPixel(-.16, -.04, .66, .74f, .53f, .16f);
+      drawPixel(.04, .52, .54, .15f, .18f, .19f);
       int rotor = (E.actorTick / 2) % 3;
       for (int barrel = 0; barrel < 3; barrel++) {
         float hot = barrel == rotor ? .70f : .38f;
         for (int i = 0; i < 8; i++)
-          pixel(.54 + i * .43, -1.04 + barrel * .36, .28,
-                hot, hot * .88f, hot * .66f);
+          drawPixel(.54 + i * .43, -1.04 + barrel * .36, .28,
+                    hot, hot * .88f, hot * .66f);
       }
       for (int i = 0; i < 5; i++)
-        pixel(.72 + i * .67, -.68, .18, .10f, .13f, .15f);
-      pixel(3.76, -.68, .62, .19f, .22f, .22f);
-      pixel(3.94, -.68, .27, 1.0f, .55f, .10f);
+        drawPixel(.72 + i * .67, -.68, .18, .10f, .13f, .15f);
+      drawPixel(3.76, -.68, .62, .19f, .22f, .22f);
+      drawPixel(3.94, -.68, .27, 1.0f, .55f, .10f);
     }
   }
 }
@@ -2107,7 +2108,6 @@ void GLPresenter::glPresentWindow(int forceFull) {
   E.renderer.renderFrameSalt = animFrame;
   int cx0 = x0 >> CHUNK_SHIFT, cy0 = y0 >> CHUNK_SHIFT;
   int cx1 = x1 >> CHUNK_SHIFT, cy1 = y1 >> CHUNK_SHIFT;
-  int cw = cx1 - cx0 + 1, count = cw * (cy1 - cy0 + 1);
   auto fillLayer = [&](Layer& lay, std::vector<uint8_t>& animatedChunks) {
     E.useLayer(&lay);
     size_t chunkTotal = (size_t)E.chunkCols * E.chunkRows;

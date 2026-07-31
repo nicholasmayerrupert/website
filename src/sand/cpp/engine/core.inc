@@ -462,6 +462,27 @@
     liquidDispPending.clear();
   }
 
+  void swapSettledCells(int a, int b) {
+    const uint8_t materialA = L->grid[a];
+    const uint8_t materialB = L->grid[b];
+    const uint32_t velocityA = L->liquidVel[a];
+    const uint32_t velocityB = L->liquidVel[b];
+
+    writeGridIndex(a, materialB);
+    writeGridIndex(b, materialA);
+    if (isLiquidMaterial(materialB)) L->liquidVel[a] = velocityB;
+    if (isLiquidMaterial(materialA)) L->liquidVel[b] = velocityA;
+
+    // Tail motion runs after the simulation buffers are swapped. Mirror every
+    // exchange so cells remain valid even when they leave the next active span.
+    L->next[a] = materialB;
+    L->next[b] = materialA;
+    L->nextFallSpeed[a] = 0;
+    L->nextFallSpeed[b] = 0;
+    L->nextLiquidVel[a] = isLiquidMaterial(materialB) ? velocityB : 0;
+    L->nextLiquidVel[b] = isLiquidMaterial(materialA) ? velocityA : 0;
+  }
+
   void relaxLiquidGaps() {
     // Candidate discovery already scanned the active band. A blast-only band has
     // no liquid to relax, but used to pay two more full-span scans here. Preserve
@@ -481,9 +502,7 @@
         if (L->grid[I(x, y + 1)] == EMPTY) continue;
         int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
         if (gravityCellStep && relaxesGaps(above)) {
-          uint32_t velocity = L->liquidVel[aboveK];
-          writeGridIndex(k, above); writeGridIndex(aboveK, EMPTY);
-          L->liquidVel[k] = velocity;
+          swapSettledCells(aboveK, k);
           continue;
         }
         // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
@@ -497,9 +516,7 @@
           if (sx <= 0 || sx >= cols - 1) continue;
           int sk = I(sx, y); uint8_t side = L->grid[sk];
           if (!relaxesGaps(side)) continue;
-          uint32_t velocity = L->liquidVel[sk];
-          writeGridIndex(k, side); writeGridIndex(sk, EMPTY);
-          L->liquidVel[k] = velocity;
+          swapSettledCells(sk, k);
           if (L->grid[k] != EMPTY) break;
         }
       }
@@ -577,13 +594,7 @@
           // drop>=2 already: PE-down free-surface reshape (same as air into empty).
           // Swap is volume-safe; lighter liquid takes the denser free-surface cell and
           // is pushed up by later density sink / free-surface water fill.
-          uint8_t displaced = L->grid[toK];
-          uint32_t sourceVelocity = L->liquidVel[k];
-          uint32_t displacedVelocity = L->liquidVel[toK];
-          writeGridIndex(k, displaced);
-          writeGridIndex(toK, m);
-          if (isLiquidMaterial(displaced)) L->liquidVel[k] = displacedVelocity;
-          L->liquidVel[toK] = sourceVelocity;
+          swapSettledCells(k, toK);
           L->vacatedStamp[k] = tick;
           L->vacatedStamp[toK] = tick;
         }
@@ -603,11 +614,7 @@
         // Liquid↔liquid: settleLiquid + density-chain BFS only (no checkerboard swaps).
         if (isLiquidMaterial(upper) && isLiquidMaterial(lower)) continue;
         if (canDisplaceByLooseDensity(upper, lower)) {
-          uint32_t upperVelocity = L->liquidVel[k];
-          uint32_t lowerVelocity = L->liquidVel[belowK];
-          writeGridIndex(belowK, upper); writeGridIndex(k, lower);
-          if (isLiquidMaterial(upper)) L->liquidVel[belowK] = upperVelocity;
-          if (isLiquidMaterial(lower)) L->liquidVel[k] = lowerVelocity;
+          swapSettledCells(k, belowK);
         }
       }
     }

@@ -2008,8 +2008,6 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
     // share a pose only because this same detachment event produced both.
     // A lit static fuse keeps the one-cell assembly path until it detonates so
     // its buffer-local countdown remains attached to the TNT cell.
-    bool lostBakedLooseSupport = g->settledLooseSupport
-      && before.bottomPowderFaces == 0;
     // Every unsupported, inert structural assembly enters the rigid solver.
     // Only a live per-cell TNT fuse or an active growth source stays in the
     // component path long enough to finish that material-specific behavior.
@@ -2718,8 +2716,6 @@ void ComponentSystem::moveRigidAssemblies() {
       && current.bottomPowderFaces > 0;
     if (grp->settledBody
         && (decision == 0 || bakedPowderSupported || unchangedBakedPowderStack)) continue;
-    bool lostBakedLooseSupport = grp->settledLooseSupport
-      && current.bottomPowderFaces == 0;
     bool hasLiveFuse = false;
     for (int k : cells) if (E.L->pendingDetonations.count(k)) { hasLiveFuse = true; break; }
     bool hasActiveGrowthSource = false;

@@ -63,6 +63,13 @@ check('feature bounds contain the queried coordinate',
     && building.x <= building.context.bounds.right
     && building.y >= building.context.bounds.top
     && building.y <= building.context.bounds.bottom);
+const steepVillageEdge = earth.worldContextAt(-12000, -100);
+check('parent feature membership uses its returned inclusive bounds',
+  steepVillageEdge.featureKind === WORLD_FEATURE.NONE
+    || (-12000 >= steepVillageEdge.bounds.left
+      && -12000 <= steepVillageEdge.bounds.right
+      && -100 >= steepVillageEdge.bounds.top
+      && -100 <= steepVillageEdge.bounds.bottom));
 
 const villageCommons = building && findContext(earth,
   (context) => context.featureKind === WORLD_FEATURE.VILLAGE

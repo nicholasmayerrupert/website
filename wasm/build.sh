@@ -16,8 +16,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DEV_FLAGS=()
+INFO_FLAGS=()
 if [[ "${1:-}" == "--dev" ]]; then
   DEV_FLAGS+=(-DSAND_INVARIANT_CHECKS)
+  INFO_FLAGS+=(--dev)
   echo "=== DEV BUILD (SAND_INVARIANT_CHECKS) — do NOT commit this artifact ==="
 fi
 
@@ -30,6 +32,7 @@ local OUT="$1"
 shift
 em++ \
   -O3 -msimd128 -std=c++20 \
+  -Wall -Wextra -Wpedantic -Wshadow -Wnull-dereference -Werror \
   "$@" \
   ${DEV_FLAGS[@]+"${DEV_FLAGS[@]}"} \
   -s MODULARIZE=1 \
@@ -53,4 +56,5 @@ echo "built $OUT ($(wc -c < "$OUT") bytes) + $WASM_OUT ($(wc -c < "$WASM_OUT") b
 }
 
 build_engine src/sand/wasm/sandEngine.js
-node scripts/write-wasm-build-info.mjs src/sand/wasm/sandEngine.js
+node scripts/write-wasm-build-info.mjs src/sand/wasm/sandEngine.js \
+  ${INFO_FLAGS[@]+"${INFO_FLAGS[@]}"}

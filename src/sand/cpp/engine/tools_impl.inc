@@ -523,9 +523,9 @@ int ToolSystem::mineDamageFootprint(int cx, int cy, const SurvivalFootprint& fp,
   splitComponentsAfterDestroy(erasedStructural);
   return changed;
 }
-int ToolSystem::addDiscToDraft(std::unordered_set<int>& draft, int cx, int cy, int radius, int yLimit) {
+int ToolSystem::addDiscToDraft(std::unordered_set<int>& cells, int cx, int cy, int radius, int yLimit) {
   int changed = 0;
-  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= yLimit) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY && !draft.count(k)) { draft.insert(k); changed = 1; } } }
+  for (int oy = -radius; oy <= radius; oy++) { int yy = cy + oy; if (yy <= 0 || yy >= yLimit) continue; for (int ox = -radius; ox <= radius; ox++) { if (ox * ox + oy * oy > radius * radius) continue; int xx = cx + ox; if (xx <= 0 || xx >= E.cols - 1) continue; int k = E.I(xx, yy); if (E.L->grid[k] == EMPTY && !cells.count(k)) { cells.insert(k); changed = 1; } } }
   if (changed) E.markDirtyRect(cx - radius, cy - radius, cx + radius, cy + radius);
   return changed;
 }

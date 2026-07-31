@@ -35,6 +35,8 @@ class RigidBodySystem {
   int rigidIslandBodySteps = 0, rigidGlobalBodySteps = 0;
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
   int rigidMaxChildren = 0;
+  int fluidNodeCount = 0, fluidFaceCount = 0, fluidPressureIterations = 0;
+  int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
   double rigidMaxContactDepth = 0;
   void clearContactCaches();
   // Scratch for per-body bottom-edge support probes: membership
@@ -162,6 +164,7 @@ class RigidBodySystem {
   using ContactCache = std::unordered_map<
     ContactCacheKey, std::vector<CachedContact>, ContactCacheKeyHash>;
   std::array<ContactCache, 2> contactCaches;
+  std::array<std::unordered_map<uint64_t, int>, 2> impactContactTicks;
   struct PairAxisState {
     uint32_t aRevision = 0, bRevision = 0;
     double nx = 0, ny = 0;
@@ -231,7 +234,7 @@ class RigidBodySystem {
   std::vector<FluidSeed> fluidSeeds;
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
-  std::vector<uint8_t> fluidBodySurface;
+  std::vector<uint8_t> fluidBodySurface, fluidBodyDensityEquilibrium;
   std::vector<int> moveBodyIds;
   std::unordered_map<int, int> moveBodySlotById;
   std::vector<std::vector<int>> movePreviousFootprints;

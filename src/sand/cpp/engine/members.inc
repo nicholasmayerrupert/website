@@ -745,7 +745,6 @@
     if (isLiquidMaterial(m)) {
       if (toY > fromY) audio.noteFluidFall(m, toK - toY * cols, toY, toY - fromY);
     } else if (isLooseSolidMaterial(m) && fromK != toK) {
-      int toY = toK / cols;
       audio.notePowderMove(m, toK - toY * cols, toY,
                            std::max(1, std::abs(toK - fromK) / cols));
     }

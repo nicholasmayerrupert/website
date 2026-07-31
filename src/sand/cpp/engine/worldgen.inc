@@ -526,7 +526,6 @@
       MinePlan plan;
       if (!worldContext.minePlan(mr, plan)) continue;
       int center = plan.center;
-      int surface = terrain.genSurfaceAbs(center);
 
       int width = plan.width, levels = plan.levels;
       const int clearHeight = PLAYER_H + 7;
@@ -804,7 +803,7 @@
       put(ax + 3, ay + h - 4, CRYSTAL);
     };
     // A treasury with a monumental lock wall behind its ore-hoard.
-    auto stampVault = [&](int ax, int ay, int w, int h, int lx, int ly) {
+    auto stampVault = [&](int ax, int ay, int w, int h, int, int) {
       if (L->isBackground) {
         backdropRoom(ax, ay, w, h, STONE);
         int cx = ax + w / 2, cy = ay + h / 2;
@@ -839,7 +838,7 @@
       put(ax + 2, fy, CRYSTAL); put(ax + w - 3, fy, CRYSTAL);
     };
     // A ceremonial gallery. Painted arches continue behind the foreground pillars.
-    auto stampColonnade = [&](int ax, int ay, int w, int h, int lx, int ly) {
+    auto stampColonnade = [&](int ax, int ay, int w, int h, int, int) {
       if (L->isBackground) {
         backdropRoom(ax, ay, w, h, SANDSTONE);
         int fy = ay + h - 1;
@@ -893,7 +892,7 @@
       put(cx - 1, topY, CRYSTAL); put(cx + 1, topY, CRYSTAL);
     };
     // A smithy with a contained crucible, tool wall, bellows, and ore racks.
-    auto stampForge = [&](int ax, int ay, int w, int h, int lx, int ly) {
+    auto stampForge = [&](int ax, int ay, int w, int h, int, int) {
       if (L->isBackground) {
         backdropRoom(ax, ay, w, h, BRICK);
         int fy = ay + h - 1;
@@ -926,7 +925,7 @@
     // A lost archive with tall book bays, reading tables, maps, and balconies.
     // The shelves remain in the background; only edge stacks and a lectern enter
     // the foreground, preserving a broad central aisle.
-    auto stampArchive = [&](int ax, int ay, int w, int h, int lx, int ly) {
+    auto stampArchive = [&](int ax, int ay, int w, int h, int, int) {
       int fy = ay + h - 1, cx = ax + w / 2;
       if (L->isBackground) {
         backdropRoom(ax, ay, w, h, SANDSTONE);

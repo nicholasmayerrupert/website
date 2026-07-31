@@ -198,7 +198,7 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     MissionObjective& anchors = addObjective(
       OK_ANCHOR, OS_ACTIVE, 2, centerX - side, anchorY,
       MISSION_FLAG_PRIMARY_MARKER);
-    MissionObjective& boss = addObjective(
+    addObjective(
       OK_BOSS, OS_LOCKED, 1, centerX, depth(.88),
       MISSION_FLAG_PRIMARY_MARKER);
     extractionX = centerX + side;
@@ -216,7 +216,7 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
     MissionObjective& anchors = addObjective(
       OK_ANCHOR, OS_ACTIVE, 3, centerX - side, y0,
       MISSION_FLAG_PRIMARY_MARKER);
-    MissionObjective& boss = addObjective(
+    addObjective(
       OK_BOSS, OS_LOCKED, 1, centerX + side * 2 / 3, depth(.92),
       MISSION_FLAG_PRIMARY_MARKER);
     MissionObjective& core = addObjective(

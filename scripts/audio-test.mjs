@@ -138,6 +138,42 @@ check('beam cues have an explicit presentation cooldown',
   e.destroy();
 }
 
+// A crowded buoyant pile keeps exchanging fluid and contact impulses after it
+// looks still. Only a genuinely separated pair beginning a new collision may
+// create another impact event.
+{
+  const e = createEngineWasm({
+    cols: 144, rows: 104, worldSeed: 0x5151,
+    sinksOn: false, infinite: false,
+  });
+  e.setBgEnabled(false);
+  const paintRect = (x0, y0, x1, y1, material) => {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        e.paintDisc(x, y, 0, material, true);
+  };
+  paintRect(6, 94, 137, 98, MAT.STONE);
+  paintRect(6, 40, 10, 93, MAT.STONE);
+  paintRect(133, 40, 137, 93, MAT.STONE);
+  e.syncComponents();
+  paintRect(11, 55, 132, 93, MAT.WATER);
+  for (let row = 0; row < 3; row++)
+    for (let col = 0; col < 6; col++)
+      e.spawnBox(38 + col * 13, 40 + row * 5, 4, 2, MAT.WOOD);
+  e.drainSoundEvents();
+  let lateImpacts = 0;
+  for (let tick = 0; tick < 600; tick++) {
+    e.step();
+    const events = e.drainSoundEvents();
+    if (tick < 300) continue;
+    for (let o = 0; o < events.length; o += STRIDES.soundEvent)
+      if (events[o + O.type] === SOUND_EVENT.IMPACT) lateImpacts++;
+  }
+  check(`settled buoyant pile does not repeat impact sounds (${lateImpacts})`,
+    lateImpacts <= 2);
+  e.destroy();
+}
+
 {
   const e = mk();
   e.placeMaterial(48, 40, 0, MAT.TNT);

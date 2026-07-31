@@ -673,9 +673,10 @@ static const int    R_MAX_SUBSTEPS = 10, R_SOLVER_ITERS = 64, R_SLEEP_TICKS = 20
 static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_FLUID_SLEEP_TICKS = 80;
-static const int    R_FLUID_DOMAIN_RADIUS = 8;
+static const int    R_FLUID_DOMAIN_RADIUS = 4;
+static const int    R_FLUID_ICE_DOMAIN_RADIUS = 8;
 static const int    R_FLUID_REFERENCE_SEARCH = 16;
-static const int    R_FLUID_PRESSURE_ITERS = 96;
+static const int    R_FLUID_PRESSURE_ITERS = 24;
 static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
@@ -684,6 +685,8 @@ static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 static const double R_CONTACT_SKIN = 0.1, R_SWEEP_STEP = 0.4;
 static const double R_SLENDER_PARALLEL_COS = 0.75;
 static const double R_TERRAIN_RESTITUTION = 0.1, R_BODY_RESTITUTION = 0.18, R_BOUNCE_MIN_SPEED = 0.35;
+static const int    R_IMPACT_SOUND_SEPARATION_TICKS = 12;
+static const double R_FLUID_IMPACT_SOUND_MIN_SPEED = 1.5;
 static const double R_STATIC_FRICTION = 0.64, R_DYNAMIC_FRICTION = 0.6;
 static const double R_ICE_STATIC_FRICTION = 0.18, R_ICE_DYNAMIC_FRICTION = 0.10;
 static const double R_STATIC_FRICTION_SPEED = 0.025;

@@ -307,6 +307,22 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_body_motion(Engine* e, int i, double vx
   b->vx = vx; b->vy = vy; b->omega = omega; b->awake = true; b->stillTicks = 0;
   return 1;
 }
+EMSCRIPTEN_KEEPALIVE int engine_test_set_liquid_velocity(
+    Engine* e, int layer, int x, int y, double vx, double vy) {
+  if (x < 0 || x >= e->cols || y < 0 || y >= e->rows) return 0;
+  Layer& lay = layer ? e->bg : e->fg;
+  int k = y * e->cols + x;
+  if (!e->isLiquidMaterial(lay.grid[k])) return 0;
+  uint32_t velocity = e->packedLiquidVelocity(vx, vy);
+  lay.liquidVel[k] = velocity;
+  lay.nextLiquidVel[k] = velocity;
+  lay.sleepingBodySupportDirty = true;
+  Layer* previous = e->L;
+  e->useLayer(&lay);
+  e->markCellIndex(k);
+  e->useLayer(previous);
+  return 1;
+}
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigid.rigidRejectedCells; }
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_depen(Engine* e) { return e->rigid.rigidDepenetrations; }
 EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) {
@@ -331,6 +347,7 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 17: return e->rigid.rigidSpillDisplaced;
     case 18: return e->rigid.rigidSpillVisits;
     case 19: return e->rigid.rigidSpillSearches;
+    case 20: return e->rigid.fluidCorrectorPasses;
     default: return 0;
   }
 }

@@ -678,6 +678,8 @@ static const int    R_FLUID_ICE_DOMAIN_RADIUS = 8;
 static const int    R_FLUID_REFERENCE_SEARCH = 16;
 static const int    R_FLUID_PRESSURE_ITERS = 24;
 static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;
+static const double R_FLUID_CORRECTOR_TRAVEL = 1.0;
+static const double R_FLUID_CORRECTOR_SLIP = 0.5;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is
@@ -701,6 +703,7 @@ static const double R_CONTACT_LIN_DAMP = 0.9, R_CONTACT_ANG_DAMP = 0.6;
 static const double R_CONTACT_ZERO_SQUAT_ANG = 0.0005;
 static const double R_SLEEP_LIN = 0.015, R_SLEEP_ANG = 0.0045;
 static const double R_FLUID_SLEEP_LIN = 0.05;
+static const double R_FLUID_WAKE_LIN = 0.08;
 static const double R_FLUID_REST_DAMP = 0.98;
 static const double R_FLUID_SLENDER_REST_DAMP = 0.85;
 static const double R_SETTLE_LIN = 0.06, R_SETTLE_ANG = 0.036;

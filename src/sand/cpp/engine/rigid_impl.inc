@@ -770,6 +770,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
   rigidChildPairs = rigidChildManifolds = rigidSweepFallbacks = 0;
   rigidMaxChildren = 0;
   fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
+  fluidCorrectorPasses = 0;
   rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
   rigidMaxContactDepth = 0;
   std::vector<Body*> solverBodies;
@@ -787,10 +788,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
   std::vector<uint8_t> fluidOnlySleep(n, 0);
   std::vector<uint8_t> awakeBeforeLiquid(n, 0);
   std::vector<double> vyBeforeLiquid(n, 0), predictedLiquidVy(n, 0);
+  std::vector<std::array<double, 3>> fluidStartPose(n);
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     awakeBeforeLiquid[bi] = body->awake ? 1 : 0;
     vyBeforeLiquid[bi] = body->vy;
+    fluidStartPose[bi] = {body->px, body->py, body->angle};
     if (body->awake) body->vy += E.scaledGravity(R_GRAVITY) * tickDt;
     predictedLiquidVy[bi] = body->vy;
     body->cs = std::cos(body->angle);
@@ -2974,6 +2977,46 @@ void RigidBodySystem::rigidStep(double tickDt) {
       }
     }
   }
+  // Fast interface motion gets one regional projection at the advected pose.
+  // Slow motion keeps the ordinary single monolithic pass, and qualifying
+  // bodies do not make unrelated wet bodies rebuild their pressure domains.
+  std::vector<Body*> fluidCorrectorBodies;
+  fluidCorrectorBodies.reserve(n);
+  for (int bi = 0; bi < n; bi++) {
+    Body* body = solverBodies[bi];
+    if (!body->awake) continue;
+    const std::array<double, 3>& start = fluidStartPose[bi];
+    double travel = std::hypot(body->px - start[0], body->py - start[1])
+                  + std::fabs(body->angle - start[2]) * body->maxR;
+    if (travel <= R_FLUID_CORRECTOR_TRAVEL) continue;
+    if (!liquidContact[bi]
+        || (bi < (int)fluidBodyMaxSlip.size()
+            && fluidBodyMaxSlip[bi] >= R_FLUID_CORRECTOR_SLIP)) {
+      fluidCorrectorBodies.push_back(body);
+    }
+  }
+  if (!fluidCorrectorBodies.empty()) {
+    std::vector<std::array<double, 3>> beforeCorrection(
+      fluidCorrectorBodies.size());
+    for (int bi = 0; bi < (int)fluidCorrectorBodies.size(); bi++) {
+      Body* body = fluidCorrectorBodies[bi];
+      body->cs = std::cos(body->angle);
+      body->sn = std::sin(body->angle);
+      beforeCorrection[bi] = {body->vx, body->vy, body->omega};
+    }
+    if (coupleLiquids(fluidCorrectorBodies, 0)) {
+      fluidCorrectorPasses++;
+      for (int bi = 0; bi < (int)fluidCorrectorBodies.size(); bi++) {
+        Body* body = fluidCorrectorBodies[bi];
+        const std::array<double, 3>& before = beforeCorrection[bi];
+        double dvx = body->vx - before[0];
+        double dvy = body->vy - before[1];
+        double dw = (body->omega - before[2]) * body->maxR;
+        if (dvx * dvx + dvy * dvy + dw * dw > 1e-10)
+          body->stillTicks = 0;
+      }
+    }
+  }
   for (ActorProxy& proxy : actorProxies) {
     if (proxy.crushImpulse < ACTOR_CRUSH_IMPULSE) continue;
     if (proxy.player) {
@@ -3096,6 +3139,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   const int cellCount = E.cols * E.rows;
   fluidBodySurface.assign(bodies.size(), 0);
   fluidBodyDensityEquilibrium.assign(bodies.size(), 0);
+  fluidBodyMaxSlip.assign(bodies.size(), 0);
   if (bodies.empty() || cellCount == 0) return false;
   const int activeLayer = E.L == &E.bg ? 1 : 0;
   auto touchesLiquid = [&](Body* body, Layer& layer) {
@@ -3437,7 +3481,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     }
   }
   if (fluidNodes.empty()) return false;
-  fluidNodeCount = (int)fluidNodes.size();
+  fluidNodeCount = imax(fluidNodeCount, (int)fluidNodes.size());
   for (const FluidNode& node : fluidNodes) {
     if (node.sourceBody < 0 || node.sourceBody >= (int)bodies.size()) continue;
     bodyMinLiquidDensity[node.sourceBody] = std::fmin(
@@ -3510,6 +3554,10 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
         fluidFaces.push_back({ni, -1, -1, (int8_t)nx, (int8_t)ny,
                               0, 0, 0, FF_STATIC});
       } else {
+        double fluidNormal = node.vx * nx + node.vy * ny;
+        fluidBodyMaxSlip[bodyIndex] = std::fmax(
+          fluidBodyMaxSlip[bodyIndex],
+          std::fabs(fluidNormal - bodyNormal));
         fluidFaces.push_back({ni, -1, bodyIndex, (int8_t)nx, (int8_t)ny,
                               rx, ry, bodyNormal, FF_BODY});
         body->hadContact = true;
@@ -3568,7 +3616,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       addBoundaryFace(ni, layer, nk, nx[d], ny[d], outside);
     }
   }
-  fluidFaceCount = (int)fluidFaces.size();
+  fluidFaceCount = imax(fluidFaceCount, (int)fluidFaces.size());
   for (FluidFace& face : fluidFaces) {
     if (face.kind != FF_DOMAIN) continue;
     FluidNode& node = fluidNodes[face.a];
@@ -4562,6 +4610,36 @@ int RigidBodySystem::bodyFootprintBlocked(Body* b) {
   if (b->jointRole == 1 && b->jointPeer) forEachBodyCell(b->jointPeer, probe);
   return blocked;
 }
+bool RigidBodySystem::sleepingBodyTouchesMovingLiquid(Body* b) {
+  bool moving = false;
+  int previousTick = E.tick - 1;
+  auto movingLiquidAt = [&](int x, int y) {
+    if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
+    int k = y * E.cols + x;
+    if (!E.isLiquidMaterial(E.L->grid[k])) return false;
+    uint32_t packed = E.L->liquidVel[k];
+    double vx = E.liquidVelocityX(packed);
+    double vy = E.liquidVelocityY(packed);
+    if (vx * vx + vy * vy >= R_FLUID_WAKE_LIN * R_FLUID_WAKE_LIN
+        || E.L->fallSpeed[k] > 0
+        || E.L->vacatedStamp[k] == previousTick)
+      return true;
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+      int xx = x + ox, yy = y + oy;
+      if (xx < 0 || xx >= E.cols || yy < 0 || yy >= E.rows) continue;
+      if (E.L->vacatedStamp[yy * E.cols + xx] == previousTick) return true;
+    }
+    return false;
+  };
+  forEachBodyCell(b, [&](int x, int y, int) {
+    if (moving) return;
+    moving = movingLiquidAt(x - 1, y)
+          || movingLiquidAt(x + 1, y)
+          || movingLiquidAt(x, y - 1)
+          || movingLiquidAt(x, y + 1);
+  });
+  return moving;
+}
 // A sleeping body keeps its support if nudging it straight down by `probe`
 // cells makes its footprint overlap solid terrain or another body. If nothing
 // is there, its ground crumbled away (erased/dissolved/sand drained) and it
@@ -4893,11 +4971,30 @@ void RigidBodySystem::moveBodies() {
       if (E.bgEnabled) E.comps.jointDirty = true;
     }
   }
-  // Wake any sleeping body whose support crumbled away since it slept, so it
-  // falls instead of floating. Checked before the grid cells are cleared so
-  // other E.L->bodies still count as support; body-on-body stacks cascade (the
-  // bottom body wakes and moves, then the contact solver wakes those above).
+  // Revalidate sleeping bodies before their grid cells are cleared. Lost
+  // support wakes a falling stack from the bottom up, while fresh liquid motion
+  // wakes a fluid-supported body without disturbing rigidly grounded bodies.
   for (Body* b : E.L->bodies) if (b->jointRole != 2 && !b->awake) {
+    bool movingLiquid = sleepingBodyTouchesMovingLiquid(b);
+    if (!movingLiquid && b->jointRole == 1 && b->jointPeer) {
+      Layer* previous = E.L;
+      E.useLayer(&E.bg);
+      movingLiquid = sleepingBodyTouchesMovingLiquid(b->jointPeer);
+      E.useLayer(previous);
+    }
+    if (movingLiquid) {
+      bool rigidlySupported = bodyTouchesGroundedSolid(b);
+      if (!rigidlySupported && b->jointRole == 1 && b->jointPeer) {
+        Layer* previous = E.L;
+        E.useLayer(&E.bg);
+        rigidlySupported = bodyTouchesGroundedSolid(b->jointPeer);
+        E.useLayer(previous);
+      }
+      if (!rigidlySupported) {
+        wakeBody(b);
+        continue;
+      }
+    }
     bool supported = sleepingBodyHasSupport(b, 1.0);
     if (!supported && b->jointRole == 1 && b->jointPeer) {
       Layer* previous = E.L;

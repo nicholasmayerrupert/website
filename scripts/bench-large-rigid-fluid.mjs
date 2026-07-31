@@ -41,14 +41,15 @@ engine.spawnBox(COLS >> 1, 38, 60, 30, MAT.WOOD);
 engine._setBodyMotion(0, 0.3, 1.4, 0.002);
 
 let now = 0;
-let bodyMs = [], stepMs = [];
-console.log('ticks       body y/vy    body p50/p95   step p50/p95');
+let bodyMs = [], stepMs = [], correctors = 0;
+console.log('ticks       body y/vy    body p50/p95   step p50/p95   corr');
 for (let i = 0; i < STEPS; i++) {
   now += 16;
   engine.step(now);
   const perf = engine.getStepPerf();
   bodyMs.push(perf.bodyMs || 0);
   stepMs.push(engine.getPerf().stepMs);
+  correctors += engine.getRigidSolverDebug().fluidCorrectorPasses;
   if ((i + 1) % WINDOW !== 0) continue;
 
   const body = engine._bodyState(0);
@@ -56,10 +57,12 @@ for (let i = 0; i < STEPS; i++) {
     `${String(`${i + 2 - WINDOW}-${i + 1}`).padEnd(11)}`
     + `${body ? `${body.py.toFixed(1)}/${body.vy.toFixed(2)}`.padStart(12) : 'gone'.padStart(12)}`
     + `${mean(bodyMs).toFixed(2).padStart(8)}/${percentile(bodyMs, 0.95).toFixed(2).padEnd(7)}`
-    + `${mean(stepMs).toFixed(2).padStart(8)}/${percentile(stepMs, 0.95).toFixed(2)}`,
+    + `${mean(stepMs).toFixed(2).padStart(8)}/${percentile(stepMs, 0.95).toFixed(2)}`
+    + `${String(correctors).padStart(7)}`,
   );
   bodyMs = [];
   stepMs = [];
+  correctors = 0;
 }
 
 engine.destroy();

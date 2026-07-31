@@ -61,7 +61,8 @@ let maxNodes = 0;
 let maxFaces = 0;
 let maxIterations = 0;
 let maxSpillVisits = 0;
-console.log('ticks       tub y    body p50/p95   step p50/p95   nodes/faces/iters spill');
+let correctors = 0;
+console.log('ticks       tub y    body p50/p95   step p50/p95   nodes/faces/iters spill/corr');
 for (let tick = 0; tick < STEPS; tick++) {
   engine.stepWorld();
   const phases = engine.getStepPerf();
@@ -72,6 +73,7 @@ for (let tick = 0; tick < STEPS; tick++) {
   maxFaces = Math.max(maxFaces, rigid.fluidFaces);
   maxIterations = Math.max(maxIterations, rigid.fluidIterations);
   maxSpillVisits = Math.max(maxSpillVisits, rigid.spillVisits);
+  correctors += rigid.fluidCorrectorPasses;
   if ((tick + 1) % WINDOW !== 0) continue;
 
   const body = engine._bodyState(0);
@@ -83,7 +85,7 @@ for (let tick = 0; tick < STEPS; tick++) {
     + `${percentile(stepMs, 0.5).toFixed(2).padStart(8)}`
     + `/${percentile(stepMs, 0.95).toFixed(2).padEnd(7)}`
     + `${String(maxNodes).padStart(7)}/${maxFaces}/${maxIterations}`
-    + ` ${maxSpillVisits}`,
+    + ` ${maxSpillVisits}/${correctors}`,
   );
   bodyMs = [];
   stepMs = [];
@@ -91,6 +93,7 @@ for (let tick = 0; tick < STEPS; tick++) {
   maxFaces = 0;
   maxIterations = 0;
   maxSpillVisits = 0;
+  correctors = 0;
 }
 
 engine.destroy();

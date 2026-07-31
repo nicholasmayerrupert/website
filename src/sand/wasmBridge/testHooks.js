@@ -50,6 +50,8 @@ function table() {
       ['number', 'number', 'number', 'number']),
     bodyState: c('engine_test_body_state', 'number', ['number', 'number', 'number']),
     setBodyMotion: c('engine_test_set_body_motion', 'number', ['number', 'number', 'number', 'number', 'number']),
+    setLiquidVelocity: c('engine_test_set_liquid_velocity', 'number',
+      ['number', 'number', 'number', 'number', 'number', 'number']),
     rigidRejected: c('engine_test_rigid_rejected', 'number', ['number']),
     rigidDepen: c('engine_test_rigid_depen', 'number', ['number']),
     rigidSolverDiag: c('engine_test_rigid_solver_diag', 'number', ['number', 'number']),
@@ -129,6 +131,8 @@ export function attachTestHooks(engine) {
   engine._spawnBoxLayer = (layer, cx, cy, halfW, halfH, material) =>
     t.spawnBoxLayer(ptr, layer ? 1 : 0, cx | 0, cy | 0, halfW | 0, halfH | 0, material | 0);
   engine._setBodyMotion = (i, vx, vy, omega = 0) => t.setBodyMotion(ptr, i | 0, vx, vy, omega) > 0;
+  engine._setLiquidVelocity = (layer, x, y, vx, vy) =>
+    t.setLiquidVelocity(ptr, layer ? 1 : 0, x | 0, y | 0, vx, vy) > 0;
   engine.getRigidDebug = () => ({ rejectedCells: t.rigidRejected(ptr), depenetrations: t.rigidDepen(ptr) });
   engine.getRigidSolverDebug = () => ({
     substeps: t.rigidSolverDiag(ptr, 0),
@@ -151,6 +155,7 @@ export function attachTestHooks(engine) {
     spillDisplaced: t.rigidSolverDiag(ptr, 17),
     spillVisits: t.rigidSolverDiag(ptr, 18),
     spillSearches: t.rigidSolverDiag(ptr, 19),
+    fluidCorrectorPasses: t.rigidSolverDiag(ptr, 20),
   });
   engine._rigidSpillProbe = (sourceX, sourceY, x0, y0, x1, y1, material) =>
     t.rigidSpillProbe(ptr, sourceX | 0, sourceY | 0, x0 | 0, y0 | 0, x1 | 0, y1 | 0, material | 0);

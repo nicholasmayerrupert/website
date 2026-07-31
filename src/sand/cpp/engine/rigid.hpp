@@ -36,6 +36,7 @@ class RigidBodySystem {
   int rigidChildPairs = 0, rigidChildManifolds = 0, rigidSweepFallbacks = 0;
   int rigidMaxChildren = 0;
   int fluidNodeCount = 0, fluidFaceCount = 0, fluidPressureIterations = 0;
+  int fluidCorrectorPasses = 0;
   int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
   double rigidMaxContactDepth = 0;
   void clearContactCaches();
@@ -104,6 +105,7 @@ class RigidBodySystem {
   void finishErasedJointBodies(const std::unordered_set<Body*>& dirty);
   void erodeBodies(std::vector<int>& cells);
   int bodyFootprintBlocked(Body* b);
+  bool sleepingBodyTouchesMovingLiquid(Body* b);
   bool sleepingBodyHasSupport(Body* b, double probe);
   int bodyDepenTolerance(Body* b);
   bool depenetrateBodyRaster(Body* b, double prePx, double prePy, bool hasPre);
@@ -234,6 +236,7 @@ class RigidBodySystem {
   std::vector<FluidSeed> fluidSeeds;
   std::vector<double> fluidRHS;
   std::vector<double> fluidBodyDVX, fluidBodyDVY, fluidBodyDW;
+  std::vector<double> fluidBodyMaxSlip;
   std::vector<uint8_t> fluidBodySurface, fluidBodyDensityEquilibrium;
   std::vector<int> moveBodyIds;
   std::unordered_map<int, int> moveBodySlotById;

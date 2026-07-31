@@ -194,6 +194,50 @@ check(`naturally unsupported solid enters the rigid solver (bodies ${naturallyLo
   naturallyLoose._bodyCount() === 1 && naturalBody?.nPts === 16 && naturalBody.vy > 0);
 naturallyLoose.destroy();
 
+// A sleeping body on a static platform must enter free fall in the same solver
+// tick when a support cut converts that platform into a body. Their relative
+// separation stays fixed through the initial free-fall transition.
+{
+  const C = 160, R = 190;
+  const stacked = createEngineWasm({
+    cols: C, rows: R, worldSeed: 29, sinksOn: false, infinite: false,
+  });
+  const rect = (x0, y0, x1, y1, material) => {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        stacked.paintDisc(x, y, 0, material, true);
+  };
+  rect(0, R - 3, C - 1, R - 1, MAT.STONE);
+  rect(77, 100, 83, R - 4, MAT.STONE);
+  rect(35, 88, 125, 99, MAT.BRICK);
+  stacked.syncComponents();
+  stacked.stepWorld();
+  stacked.spawnBox(80, 83, 10, 5, MAT.RIGID);
+  for (let i = 0; i < 200; i++) stacked.stepWorld();
+  check('payload sleeps on the supported platform',
+    stacked._bodyCount() === 1 && stacked._bodyAwake(0) === 0);
+
+  rect(74, 125, 86, 145, MAT.EMPTY);
+  stacked.syncComponents();
+  stacked.stepWorld();
+  const payloadStart = stacked._bodyState(0);
+  const platformStart = stacked._bodyState(1);
+  const startSeparation = platformStart && payloadStart
+    ? platformStart.py - payloadStart.py
+    : Infinity;
+  for (let i = 0; i < 12; i++) stacked.stepWorld();
+  const payloadEnd = stacked._bodyState(0);
+  const platformEnd = stacked._bodyState(1);
+  const endSeparation = platformEnd && payloadEnd
+    ? platformEnd.py - payloadEnd.py
+    : -Infinity;
+  check(`detached platform keeps contact with its payload (separation drift `
+      + `${Math.abs(endSeparation - startSeparation).toFixed(3)})`,
+    stacked._bodyCount() === 2
+      && Math.abs(endSeparation - startSeparation) < 0.1);
+  stacked.destroy();
+}
+
 // A topology-changing TNT crater must force an exact support reflood. The
 // surviving cap is well clear of the floor after the pillar is removed, so its
 // largest remnant must enter the body solver instead of retaining a stale

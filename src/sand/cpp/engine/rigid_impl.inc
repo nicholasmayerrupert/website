@@ -711,6 +711,22 @@ void RigidBodySystem::wakeBody(Body* b) {
   b->stillTicks = 0;
   if (b->jointRole == 1) syncJointFollower(b);
 }
+void RigidBodySystem::wakeBodiesTouchingCells(
+    Layer& layer, const std::vector<std::pair<int, int>>& cells) {
+  std::unordered_set<int> touchingIds;
+  for (const auto& cell : cells) {
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      int x = cell.first + ox, y = cell.second + oy;
+      if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+      int owner = layer.bodyOwner[y * E.cols + x];
+      if (owner >= 0) touchingIds.insert(owner);
+    }
+  }
+  if (touchingIds.empty()) return;
+  for (Body* body : layer.bodies)
+    if (touchingIds.count(body->id)) wakeBody(body);
+}
 void RigidBodySystem::syncJointFollower(Body* leader) {
   if (!leader || leader->jointRole != 1 || !leader->jointPeer) return;
   Body* follower = leader->jointPeer;

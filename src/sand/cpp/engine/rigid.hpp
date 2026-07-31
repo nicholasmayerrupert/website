@@ -78,6 +78,8 @@ class RigidBodySystem {
   void applyWarmStart(Contact& c);
   double resolveBias(Contact& c);
   void wakeBody(Body* b);
+  void wakeBodiesTouchingCells(
+    Layer& layer, const std::vector<std::pair<int, int>>& cells);
   void syncJointFollower(Body* leader);
   void breakJointBody(Body* member);
   bool coupleLiquids(const std::vector<Body*>& bodies, double dt);

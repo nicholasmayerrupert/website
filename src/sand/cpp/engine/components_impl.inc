@@ -1601,6 +1601,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   lay.components = std::move(remaining);
 
   for (PendingBody& source : pending) {
+    E.rigid.wakeBodiesTouchingCells(lay, source.cells);
     Body* body = E.rigid.spawnBodyImpl(source.cells, source.materials);
     if (!body) continue;
     for (size_t i = 0; i < source.cells.size(); i++) {
@@ -1689,6 +1690,8 @@ void ComponentSystem::detachCrossLayerComponentGroups(
   removeDetached(E.bg, detachedBg);
 
   for (PendingJoint& source : pending) {
+    E.rigid.wakeBodiesTouchingCells(E.fg, source.fgCells);
+    E.rigid.wakeBodiesTouchingCells(E.bg, source.bgCells);
     Body* leader = E.rigid.spawnJointBodyImpl(
       source.fgCells, source.fgMaterials, source.bgCells, source.bgMaterials);
     if (!leader || !leader->jointPeer) continue;

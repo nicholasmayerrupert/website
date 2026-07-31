@@ -252,18 +252,18 @@ Material or ABI schema changes:
 npm run generate
 ```
 
-C++ changes (from the repository root):
+C++ changes (from the repository root, on any supported OS):
 
-```sh
-source ./wasm/emenv.sh
-./wasm/build.sh
+```text
+npm run build:sand
 ```
 
 The WASM loader, SIMD-enabled binary, and `src/sand/wasm/build-info.json` are
 committed so a normal site build does not require Emscripten. The site ships
 that single SIMD package without a scalar fallback. `npm run sand:doctor`
-checks its provenance and generated-source freshness. `wasm/build.sh --dev`
-enables the post-step component/body invariant validator.
+checks its provenance and generated-source freshness. `npm run build:sand -- --dev`
+enables the post-step component/body invariant validator. `wasm/README.md` has
+the macOS, Linux, Windows, and WSL Emscripten setup instructions.
 
 ## Materials and simulation
 

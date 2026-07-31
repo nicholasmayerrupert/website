@@ -271,7 +271,7 @@ export default function FallingSandCaseStudy() {
           <pre className="case-code"><code>{`npm test
 node scripts/bench-sand.mjs --compare bench/baseline.json
 node scripts/bench-tnt.mjs
-source wasm/emenv.sh && wasm/build.sh --dev`}</code></pre>
+npm run build:sand -- --dev`}</code></pre>
         </div>
       </section>
 

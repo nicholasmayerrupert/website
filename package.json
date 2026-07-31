@@ -10,6 +10,7 @@
     "generate:check": "node scripts/generate-materials.mjs --check && node scripts/generate-abi.mjs --check",
     "build": "npm run generate:check && npm run check:life-wasm && npm run check:sand-wasm && vite build",
     "build:life": "source wasm/emenv.sh && wasm/build-life.sh",
+    "build:sand": "node wasm/build.mjs",
     "build:resume": "node scripts/resume.mjs",
     "check:resume": "node scripts/resume.mjs --check",
     "check:life-wasm": "node scripts/life-wasm-build-info.mjs",

@@ -59,7 +59,7 @@ if (wasmInfo) {
   if (wasmInfo.output?.bytes !== loaderStat.size) console.log(`  wasm loader build-info size: FAIL (${wasmInfo.output?.bytes} recorded)`);
   if (wasmInfo.wasm?.bytes !== wasmStat.size) console.log(`  wasm binary build-info size: FAIL (${wasmInfo.wasm?.bytes} recorded)`);
 } else {
-  console.log('  wasm build-info: missing (run source wasm/emenv.sh && wasm/build.sh)');
+  console.log('  wasm build-info: missing (run npm run build:sand)');
 }
 if (benchResult) {
   console.log(`  current checksum: ${fmtHex(benchResult.checksum)}  stable: ${benchResult.checksumStable ? 'yes' : 'no'}`);

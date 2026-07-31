@@ -1,8 +1,14 @@
-# Source this to put emcc/em++ on PATH for building the sand WASM engine.
-# Usage:  source wasm/emenv.sh
-if [ -f "$HOME/Nick/emsdk/emsdk_env.sh" ]; then
-  source "$HOME/Nick/emsdk/emsdk_env.sh"
-elif command -v emcc >/dev/null 2>&1; then
+# Optional POSIX-shell helper for direct use of wasm/build.sh. The portable
+# entry point is `npm run build:sand`; see wasm/README.md for toolchain setup.
+if ! command -v emcc >/dev/null 2>&1; then
+  if [ -n "${EMSDK:-}" ] && [ -f "$EMSDK/emsdk_env.sh" ]; then
+    source "$EMSDK/emsdk_env.sh"
+  elif [ -f "$HOME/emsdk/emsdk_env.sh" ]; then
+    source "$HOME/emsdk/emsdk_env.sh"
+  fi
+fi
+
+if command -v emcc >/dev/null 2>&1; then
   echo "Using existing emcc: $(command -v emcc)"
   # Homebrew ships LLVM and Binaryen inside its Emscripten prefix, but an
   # unconfigured emcc does not discover those tools or a writable cache on its
@@ -52,6 +58,6 @@ elif command -v emcc >/dev/null 2>&1; then
     unset sand_emenv_source sand_wasm_dir
   fi
 else
-  echo "emcc not found. Install Emscripten or update wasm/emenv.sh." >&2
+  echo "Emscripten is not active. Follow the setup for your OS in wasm/README.md." >&2
   return 1 2>/dev/null || exit 1
 fi

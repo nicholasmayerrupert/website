@@ -25,6 +25,7 @@ const sourcePathPrefixes = [
   'src/sand/materials.generated.js',
   'src/sand/abi.schema.json',
   'wasm/build.sh',
+  'wasm/build.mjs',
   'scripts/write-wasm-build-info.mjs',
 ];
 const sourceRoots = [
@@ -32,6 +33,7 @@ const sourceRoots = [
   'src/sand/materials.schema.json',
   'src/sand/abi.schema.json',
   'wasm/build.sh',
+  'wasm/build.mjs',
   'scripts/write-wasm-build-info.mjs',
 ];
 
@@ -96,8 +98,10 @@ const info = {
   },
   variant,
   toolchain: {
-    emcc: safeExec('emcc', ['--version'])?.split('\n')[0] || null,
-    emccPath: safeExec('which', ['emcc']),
+    emcc: process.env.SAND_EMCC_VERSION
+      || safeExec('emcc', ['--version'])?.split('\n')[0] || null,
+    emccPath: process.env.SAND_EMCC_PATH
+      || safeExec(process.platform === 'win32' ? 'where.exe' : 'which', ['emcc'])?.split('\n')[0] || null,
   },
 };
 
@@ -121,7 +125,7 @@ if (checkOnly) {
   }
   if (failures.length) {
     console.error(`Sand WASM provenance failed: ${failures.join('; ')}.`);
-    console.error('Run: source wasm/emenv.sh && wasm/build.sh');
+    console.error('Run: npm run build:sand');
     process.exit(1);
   }
   console.log('sand WASM provenance is current');

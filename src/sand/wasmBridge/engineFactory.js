@@ -212,7 +212,7 @@ export function initSandWasm() {
       // manifest — the loud failure for stale committed sandEngine artifacts.
       const wasmAbi = c('engine_abi_version', 'number', [])();
       if (wasmAbi !== ABI_VERSION) {
-        throw new Error(`sand wasm ABI version ${wasmAbi} != JS manifest ${ABI_VERSION} — rebuild the wasm (wasm/build.sh) or regenerate (npm run generate:abi)`);
+        throw new Error(`sand wasm ABI version ${wasmAbi} != JS manifest ${ABI_VERSION} — rebuild the wasm (npm run build:sand) or regenerate (npm run generate:abi)`);
       }
       M = {
         mod,

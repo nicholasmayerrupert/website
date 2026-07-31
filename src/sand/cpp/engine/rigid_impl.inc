@@ -772,6 +772,8 @@ void RigidBodySystem::rigidStep(double tickDt) {
   fluidNodeCount = fluidFaceCount = fluidPressureIterations = 0;
   fluidCorrectorPasses = fluidCorrectorBodyCount = 0;
   fluidInitialMs = fluidCorrectorMs = 0;
+  fluidReferenceMs = fluidDomainMs = fluidMatrixMs = 0;
+  fluidSolveMs = fluidWritebackMs = 0;
   rigidSpillDisplaced = rigidSpillVisits = rigidSpillSearches = 0;
   rigidMaxContactDepth = 0;
   std::vector<Body*> solverBodies;
@@ -800,6 +802,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     body->cs = std::cos(body->angle);
     body->sn = std::sin(body->angle);
     body->hadContact = false;
+    body->rasterMayOverlapSolid = false;
     body->idx = bi;
   }
   double fluidInitialStart = emscripten_get_now();
@@ -955,6 +958,16 @@ void RigidBodySystem::rigidStep(double tickDt) {
   // one cadence; unrelated slow islands no longer inherit the fastest body's
   // rotational or translational substep count.
   std::vector<int> stepIslandParent(n), bodySubsteps(n, 1);
+  int wetSolverBodyCount = 0;
+  for (uint8_t contact : liquidContact)
+    if (contact) wetSolverBodyCount++;
+  // Dense wet cargo shares a co-moving frame. Its body/body and body/grid paths
+  // retain whole-tick swept collision, so absolute fall speed does not require
+  // repeating the contact solve across microsteps.
+  double safeSubstep =
+    n >= R_DENSE_RIGID_CARGO_BODIES
+      && wetSolverBodyCount >= R_FLUID_DENSE_BATCH_BODIES
+      ? R_SAFE_SUBSTEP * R_MAX_SUBSTEPS : R_SAFE_SUBSTEP;
   double globalPointSpeed = 0;
   for (int bi = 0; bi < n; bi++) {
     stepIslandParent[bi] = bi;
@@ -966,7 +979,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
     globalPointSpeed = std::fmax(globalPointSpeed, pointSpeed);
   }
   int substeps = (int)std::ceil(
-    (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt) / R_SAFE_SUBSTEP);
+    (globalPointSpeed + E.scaledGravity(R_GRAVITY) * tickDt) / safeSubstep);
   substeps = imax(1, imin(R_MAX_SUBSTEPS, substeps));
   if (substeps == 1) {
     rigidIslands = n;
@@ -1014,7 +1027,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
       if (islandBodyCount[root] == 0) continue;
       rigidIslands++;
       int count = (int)std::ceil(
-        (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt) / R_SAFE_SUBSTEP);
+        (islandPointSpeed[root] + E.scaledGravity(R_GRAVITY) * tickDt) / safeSubstep);
       count = imax(1, imin(R_MAX_SUBSTEPS, count));
       islandSubsteps[root] = count;
       substeps = imax(substeps, count);
@@ -2210,9 +2223,12 @@ void RigidBodySystem::rigidStep(double tickDt) {
           std::fabs(b->cs) * halfX + std::fabs(b->sn) * halfY;
         double extentY =
           std::fabs(b->sn) * halfX + std::fabs(b->cs) * halfY;
-        if (centerX - extentX >= 0 && centerY - extentY >= 0
-            && centerX + extentX < E.cols
-            && centerY + extentY < E.rows) {
+        bool sweepInside =
+          centerX - extentX >= 0 && centerY - extentY >= 0
+          && centerX + extentX < E.cols
+          && centerY + extentY < E.rows;
+        if (!sweepInside) b->rasterMayOverlapSolid = true;
+        if (sweepInside) {
           bool occupied = false;
           int y0 = imax(0, (int)std::ceil(
             centerY - extentY - 0.5 - 1e-9));
@@ -2245,15 +2261,24 @@ void RigidBodySystem::rigidStep(double tickDt) {
               uint64_t materials = 0;
               memcpy(&materials, row + x, sizeof(materials));
               if (materials == 0) continue;
-              for (int lane = 0; lane < 8; lane++)
-                if (E.isRigidMaterialClass(row[x + lane])) {
+              for (int lane = 0; lane < 8; lane++) {
+                uint8_t material = row[x + lane];
+                if (material != EMPTY && !E.isGasMaterial(material)
+                    && !E.isBuoyantMedium(material))
+                  b->rasterMayOverlapSolid = true;
+                if (E.isRigidMaterialClass(material)) {
                   occupied = true;
                   break;
                 }
+              }
               if (occupied) break;
             }
             for (; x <= x1 && !occupied; x++) {
-              occupied = E.isRigidMaterialClass(row[x]);
+              uint8_t material = row[x];
+              if (material != EMPTY && !E.isGasMaterial(material)
+                  && !E.isBuoyantMedium(material))
+                b->rasterMayOverlapSolid = true;
+              occupied = E.isRigidMaterialClass(material);
             }
           }
           if (!occupied) return;
@@ -2471,6 +2496,7 @@ void RigidBodySystem::rigidStep(double tickDt) {
         contacts[second].blockMate = first;
       }
       A->hadContact = true;
+      if (!B) A->rasterMayOverlapSolid = true;
       solidContact[A->idx] = 1;
       if (B) {
         B->hadContact = true;
@@ -3012,8 +3038,11 @@ void RigidBodySystem::rigidStep(double tickDt) {
   // pressure domain.
   std::vector<Body*> fluidCorrectorBodies;
   fluidCorrectorBodies.reserve(n);
-  int correctorCadence = n >= R_FLUID_CORRECTOR_BATCH_BODIES
-    ? R_FLUID_CORRECTOR_CADENCE : 1;
+  int correctorCadence =
+    n >= R_DENSE_RIGID_CARGO_BODIES
+      ? R_FLUID_DENSE_CORRECTOR_CADENCE
+    : n >= R_FLUID_CORRECTOR_BATCH_BODIES
+      ? R_FLUID_CORRECTOR_CADENCE : 1;
   for (int bi = 0; bi < n; bi++) {
     Body* body = solverBodies[bi];
     if (!body->awake) continue;
@@ -3296,6 +3325,9 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     if (body->jointRole == 1 && body->jointPeer)
       stampBody(body->jointPeer, i, 1 - activeLayer, body->awake);
   }
+  int wetBodyCount = 0;
+  for (double density : bodyMinLiquidDensity)
+    if (density < 1e30) wetBodyCount++;
 
   auto layerAt = [&](int index) -> Layer* { return index == 0 ? &E.fg : &E.bg; };
   fluidSeeds.clear();
@@ -3335,19 +3367,25 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
   // outside its raster. This preserves density layers and nearby wave height
   // without walking the connected pool. The local pressure domain interpolates
   // between the two sides; sealed regions fall back to their cached pressure.
+  double referenceStart = emscripten_get_now();
   fluidReferences.resize(bodies.size() * 2);
-  std::vector<double> candidatePressure;
-  candidatePressure.reserve(E.rows);
   std::vector<std::pair<int, int>> referenceColumns;
-  auto buildReferenceColumn = [&](int layer, int x,
-                                  std::vector<double>& pressureOut) {
-    pressureOut.assign(E.rows, 0);
+  for (int layer = 0; layer < 2; layer++) {
+    if ((int)fluidReferencePressure[layer].size() != cellCount)
+      fluidReferencePressure[layer].resize(cellCount);
+    fluidReferenceColumnState[layer].assign(E.cols, 0);
+  }
+  auto buildReferenceColumn = [&](int layer, int x) {
     if (x < 0 || x >= E.cols) return false;
+    uint8_t& columnState = fluidReferenceColumnState[layer][x];
+    if (columnState) return columnState == 2;
     Layer* lay = layerAt(layer);
+    std::vector<double>& pressureOut = fluidReferencePressure[layer];
     bool inLiquid = false, openSegment = false, found = false;
     double pressure = 0, priorDensity = 0;
     for (int y = 0; y < E.rows; y++) {
       int k = y * E.cols + x;
+      pressureOut[k] = 0;
       uint8_t material = lay->grid[k];
       bool liquid = fluidBodyStamp[layer][k] != fluidBodyGeneration
                  && E.isLiquidMaterial(material);
@@ -3373,68 +3411,66 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       inLiquid = true;
       priorDensity = density;
       if (openSegment) {
-        pressureOut[y] = pressure;
+        pressureOut[k] = pressure;
         found = true;
       }
     }
+    columnState = found ? 2 : 1;
     return found;
   };
   auto selectSideReference = [&](int layer, int edgeX, int direction,
-                                 int& referenceX,
-                                 std::vector<double>& pressureOut) {
+                                 int& referenceX) {
     referenceColumns.clear();
     for (int distance = 1; distance <= R_FLUID_REFERENCE_SEARCH; distance++) {
       int x = edgeX + direction * distance;
-      if (!buildReferenceColumn(layer, x, candidatePressure)) continue;
+      if (!buildReferenceColumn(layer, x)) continue;
       int surfaceY = 0;
-      while (surfaceY < E.rows && candidatePressure[surfaceY] <= 0) surfaceY++;
+      while (surfaceY < E.rows
+             && fluidReferencePressure[layer][surfaceY * E.cols + x] <= 0)
+        surfaceY++;
       if (surfaceY < E.rows) referenceColumns.push_back({surfaceY, x});
     }
     if (referenceColumns.empty()) return;
     std::sort(referenceColumns.begin(), referenceColumns.end());
     referenceX = referenceColumns[referenceColumns.size() / 2].second;
-    buildReferenceColumn(layer, referenceX, pressureOut);
   };
   for (int bodyIndex = 0; bodyIndex < (int)bodies.size(); bodyIndex++) {
     for (int layer = 0; layer < 2; layer++) {
       FluidReference& reference = fluidReferences[bodyIndex * 2 + layer];
       reference.leftX = reference.rightX = -1;
-      reference.leftPressure.clear();
-      reference.rightPressure.clear();
       const std::array<int, 4>& bounds =
         fluidBodyBounds[bodyIndex * 2 + layer];
       if (bounds[2] < bounds[0]) continue;
       if (E.isIceMaterial(bodies[bodyIndex]->material)) {
-        selectSideReference(layer, bounds[0], -1, reference.leftX,
-                            reference.leftPressure);
-        selectSideReference(layer, bounds[2], 1, reference.rightX,
-                            reference.rightPressure);
+        selectSideReference(layer, bounds[0], -1, reference.leftX);
+        selectSideReference(layer, bounds[2], 1, reference.rightX);
       } else {
         for (int distance = 1; distance <= R_FLUID_REFERENCE_SEARCH; distance++) {
           int x = bounds[0] - distance;
-          if (!buildReferenceColumn(layer, x, candidatePressure)) continue;
+          if (!buildReferenceColumn(layer, x)) continue;
           reference.leftX = x;
-          reference.leftPressure = candidatePressure;
           break;
         }
         for (int distance = 1; distance <= R_FLUID_REFERENCE_SEARCH; distance++) {
           int x = bounds[2] + distance;
-          if (!buildReferenceColumn(layer, x, candidatePressure)) continue;
+          if (!buildReferenceColumn(layer, x)) continue;
           reference.rightX = x;
-          reference.rightPressure = candidatePressure;
           break;
         }
       }
     }
   }
+  fluidReferenceMs += emscripten_get_now() - referenceStart;
   auto referencePressureAt = [&](int sourceBody, int layer, int cell) {
     double cached = std::fmax(0.0f, fluidPressureCache[layer][cell]);
     if (sourceBody < 0 || sourceBody >= (int)bodies.size()) return cached;
     const FluidReference& reference =
       fluidReferences[sourceBody * 2 + layer];
     int y = cell / E.cols, x = cell - y * E.cols;
-    double left = reference.leftX >= 0 ? reference.leftPressure[y] : 0;
-    double right = reference.rightX >= 0 ? reference.rightPressure[y] : 0;
+    double left = reference.leftX >= 0
+      ? fluidReferencePressure[layer][y * E.cols + reference.leftX] : 0;
+    double right = reference.rightX >= 0
+      ? fluidReferencePressure[layer][y * E.cols + reference.rightX] : 0;
     if (left <= 0) return right > 0 ? right : cached;
     if (right <= 0) return left;
     double width = reference.rightX - reference.leftX;
@@ -3444,6 +3480,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     return left + (right - left) * weight;
   };
 
+  double domainStart = emscripten_get_now();
   fluidNodes.clear();
   fluidNodeDepth.clear();
   fluidQueue.clear();
@@ -3459,8 +3496,12 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     }
   }
   auto domainRadius = [&] {
-    return iceCoupling
-      ? R_FLUID_ICE_DOMAIN_RADIUS : R_FLUID_DOMAIN_RADIUS;
+    if (iceCoupling) return R_FLUID_ICE_DOMAIN_RADIUS;
+    if (wetBodyCount >= R_FLUID_DENSE_BATCH_BODIES)
+      return R_FLUID_DENSE_DOMAIN_RADIUS;
+    if (wetBodyCount >= R_FLUID_CORRECTOR_BATCH_BODIES)
+      return R_FLUID_BATCH_DOMAIN_RADIUS;
+    return R_FLUID_DOMAIN_RADIUS;
   };
   // A deterministic multi-source flood extends a uniform near-field band from
   // wet body surfaces. Remote cells remain in the cellular solver.
@@ -3535,11 +3576,16 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       bodyMinLiquidDensity[bodyIndex] < body->density - 1e-6
       && bodyMaxLiquidDensity[bodyIndex] > body->density + 1e-6;
   }
-  std::sort(fluidNodes.begin(), fluidNodes.end(), [&](const FluidNode& a, const FluidNode& b) {
-    int aLayer = a.layer == &E.bg ? 1 : 0;
-    int bLayer = b.layer == &E.bg ? 1 : 0;
-    return aLayer != bLayer ? aLayer < bLayer : a.cell < b.cell;
-  });
+  std::sort(fluidQueue.begin(), fluidQueue.end());
+  fluidNodeSortScratch.clear();
+  fluidNodeSortScratch.reserve(fluidNodes.size());
+  for (int packed : fluidQueue) {
+    int layer = packed / cellCount;
+    int k = packed - layer * cellCount;
+    fluidNodeSortScratch.push_back(
+      std::move(fluidNodes[fluidNodeIndex[layer][k]]));
+  }
+  fluidNodes.swap(fluidNodeSortScratch);
   for (int i = 0; i < (int)fluidNodes.size(); i++) {
     FluidNode& node = fluidNodes[i];
     int layer = node.layer == &E.bg ? 1 : 0;
@@ -3684,7 +3730,9 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       fluidBodyFaceIndices.push_back(faceIndex);
     }
   }
+  fluidDomainMs += emscripten_get_now() - domainStart;
 
+  double matrixStart = emscripten_get_now();
   const int nodeCount = (int)fluidNodes.size();
   fluidSolvePressure.resize(nodeCount);
   fluidSolveResidual.assign(nodeCount, 0);
@@ -3789,9 +3837,11 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       ? fluidSolveDirection.data() : fluidSolvePressure.data();
     return applyPressureOperator(value, fluidSolveApplied);
   };
+  fluidMatrixMs += emscripten_get_now() - matrixStart;
 
   // Broad ice domains resolve once more after clamping negative pressure.
   // Compact domains leave residual surface motion to the cellular liquid pass.
+  double solveStart = emscripten_get_now();
   int activeSetPasses = iceCoupling ? 2 : 1;
   for (int activeSet = 0; activeSet < activeSetPasses; activeSet++) {
     if (hasPinned)
@@ -3923,7 +3973,9 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
       }
     if (!clamped) break;
   }
+  fluidSolveMs += emscripten_get_now() - solveStart;
 
+  double writebackStart = emscripten_get_now();
   for (int i = 0; i < nodeCount; i++)
     fluidNodes[i].pressure = fluidSolvePressure[i];
   applyPressureMatrix(false);
@@ -4054,6 +4106,7 @@ bool RigidBodySystem::coupleLiquids(const std::vector<Body*>& bodies, double dt)
     int layer = node.layer == &E.bg ? 1 : 0;
     fluidPressureCache[layer][node.cell] = (float)node.pressure;
   }
+  fluidWritebackMs += emscripten_get_now() - writebackStart;
   return true;
 }
 double RigidBodySystem::granularMediumDensityAt(int x, int y) {
@@ -5111,7 +5164,8 @@ void RigidBodySystem::moveBodies() {
     if (b->jointRole == 2) continue;
     int slot = moveBodySlotById.find(b->id)->second;
     const std::array<double, 3>& prePose = movePrePoses[slot];
-    if (depenetrateBodyRaster(b, prePose[0], prePose[1], true))
+    if (b->rasterMayOverlapSolid
+        && depenetrateBodyRaster(b, prePose[0], prePose[1], true))
       rigidDepenetrations++;
   }
   bakeRestingBodies(); // a non-RIGID body that just slept solidifies after depenetration

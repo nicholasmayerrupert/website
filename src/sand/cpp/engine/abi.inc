@@ -356,6 +356,11 @@ EMSCRIPTEN_KEEPALIVE double engine_test_rigid_solver_diag(Engine* e, int field) 
     case 26: return e->rigid.rigidStampMs;
     case 27: return e->rigid.rigidSpillMs;
     case 28: return e->rigid.fluidCorrectorBodyCount;
+    case 29: return e->rigid.fluidReferenceMs;
+    case 30: return e->rigid.fluidDomainMs;
+    case 31: return e->rigid.fluidMatrixMs;
+    case 32: return e->rigid.fluidSolveMs;
+    case 33: return e->rigid.fluidWritebackMs;
     default: return 0;
   }
 }

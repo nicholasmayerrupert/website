@@ -38,6 +38,8 @@ class RigidBodySystem {
   int fluidNodeCount = 0, fluidFaceCount = 0, fluidPressureIterations = 0;
   int fluidCorrectorPasses = 0, fluidCorrectorBodyCount = 0;
   double fluidInitialMs = 0, fluidCorrectorMs = 0;
+  double fluidReferenceMs = 0, fluidDomainMs = 0, fluidMatrixMs = 0;
+  double fluidSolveMs = 0, fluidWritebackMs = 0;
   double rigidCoreMs = 0, rigidClearMs = 0, rigidDepenMs = 0;
   double rigidStampMs = 0, rigidSpillMs = 0;
   int rigidSpillDisplaced = 0, rigidSpillVisits = 0, rigidSpillSearches = 0;
@@ -212,7 +214,6 @@ class RigidBodySystem {
   };
   struct FluidReference {
     int leftX = -1, rightX = -1;
-    std::vector<double> leftPressure, rightPressure;
   };
   std::array<std::vector<int32_t>, 2> fluidNodeStamp, fluidNodeIndex;
   std::array<std::vector<int32_t>, 2> fluidBodyStamp, fluidBodyIndex;
@@ -221,10 +222,13 @@ class RigidBodySystem {
   std::array<int, 2> fluidPressureWorldY{{INT32_MIN, INT32_MIN}};
   int32_t fluidNodeGeneration = 0, fluidBodyGeneration = 0;
   std::vector<FluidNode> fluidNodes;
+  std::vector<FluidNode> fluidNodeSortScratch;
   std::vector<FluidFace> fluidFaces;
   std::vector<FluidOperatorFace> fluidOperatorFaces;
   std::vector<int> fluidBodyFaceIndices;
   std::vector<FluidReference> fluidReferences;
+  std::array<std::vector<double>, 2> fluidReferencePressure;
+  std::array<std::vector<uint8_t>, 2> fluidReferenceColumnState;
   std::vector<std::array<int, 4>> fluidBodyBounds;
   std::vector<double> fluidSolvePressure, fluidSolveResidual;
   std::vector<double> fluidSolveDirection, fluidSolveApplied;

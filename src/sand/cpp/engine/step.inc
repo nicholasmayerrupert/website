@@ -95,7 +95,20 @@
       int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue;
       int rb = y * cols; bool ltr = (y & 1) == 0;
       activeGasRow.clear();
-      auto gather = [&](int x) { int k = rb + x; uint8_t m = L->grid[k]; if (isLooseDensityMaterial(m)) activeDensityCells.push_back(k); if (isLooseSolidMaterial(m)) activeSandCells.push_back(k); if (isLiquidMaterial(m)) activeLiquidCells.push_back(k); if (isGasMaterial(m)) activeGasRow.push_back(k); };
+      auto gather = [&](int x) {
+        int k = rb + x;
+        uint8_t m = L->grid[k];
+        if (isLooseDensityMaterial(m) && y + 1 < rows
+            && (canDisplaceByLooseDensity(m, L->grid[k + cols])
+                || (x > 1 && canDisplaceByLooseDensity(
+                      m, L->grid[k + cols - 1]))
+                || (x < cols - 2 && canDisplaceByLooseDensity(
+                      m, L->grid[k + cols + 1]))))
+          activeDensityCells.push_back(k);
+        if (isLooseSolidMaterial(m)) activeSandCells.push_back(k);
+        if (isLiquidMaterial(m)) activeLiquidCells.push_back(k);
+        if (isGasMaterial(m)) activeGasRow.push_back(k);
+      };
       if (ltr) for (int x = minX; x <= maxX; x++) gather(x); else for (int x = maxX; x >= minX; x--) gather(x);
       activeGasCells.insert(activeGasCells.end(), activeGasRow.rbegin(), activeGasRow.rend());
     }
@@ -122,7 +135,9 @@
     std::swap(L->grid, L->next);
     std::swap(L->fallSpeed, L->nextFallSpeed);
     std::swap(L->liquidVel, L->nextLiquidVel);
-    if ((tick & 1) == 0) relaxLiquidGaps();
+    if (L->bodies.size() >= R_DENSE_RIGID_CARGO_BODIES
+        || (tick & 1) == 0)
+      relaxLiquidGaps();
     if (gravityCellStep && tick % 3 == 0) separateLooseByDensity();
     levelLiquidSurfaces();
     applySideSinks();

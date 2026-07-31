@@ -295,7 +295,9 @@ struct Body {
   // feeds angular velocity that grows in one direction each substep — apart from
   // rest jitter, so contact damping settles the latter without crushing the former.
   double omegaPre = 0;
-  bool hadContact = false; double maxDepth = 0; int idx = 0;
+  bool hadContact = false;
+  bool rasterMayOverlapSolid = false;
+  double maxDepth = 0; int idx = 0;
 };
 struct Contact {
   Body* a; Body* b;
@@ -674,6 +676,8 @@ static const int    R_SOLVER_BASE_ITERS = 12, R_SOLVER_ITERS_PER_BODY = 2;
 static const int    R_SOLVER_LARGE_BODY_ITERS = 32, R_SHOCK_ORDER_ITERS = 4;
 static const int    R_FLUID_SLEEP_TICKS = 80;
 static const int    R_FLUID_DOMAIN_RADIUS = 4;
+static const int    R_FLUID_BATCH_DOMAIN_RADIUS = 3;
+static const int    R_FLUID_DENSE_DOMAIN_RADIUS = 2;
 static const int    R_FLUID_ICE_DOMAIN_RADIUS = 8;
 static const int    R_FLUID_REFERENCE_SEARCH = 16;
 static const int    R_FLUID_PRESSURE_ITERS = 24;
@@ -681,7 +685,10 @@ static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;
 static const double R_FLUID_CORRECTOR_TRAVEL = 1.0;
 static const double R_FLUID_CORRECTOR_SLIP = 0.5;
 static const int    R_FLUID_CORRECTOR_CADENCE = 3;
+static const int    R_FLUID_DENSE_CORRECTOR_CADENCE = 6;
 static const int    R_FLUID_CORRECTOR_BATCH_BODIES = 16;
+static const int    R_FLUID_DENSE_BATCH_BODIES = 24;
+static const int    R_DENSE_RIGID_CARGO_BODIES = 64;
 static const int    R_BLAST_DEBRIS_SOLVER_ITERS = 16;
 // Swept body collision: surfaces touch within R_CONTACT_SKIN cells (resting
 // stability + earlier contact), and a sample's per-substep relative path is

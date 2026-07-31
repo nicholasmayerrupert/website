@@ -485,39 +485,49 @@
 
   void relaxLiquidGaps() {
     // Candidate discovery already scanned the active band. A blast-only band has
-    // no liquid to relax, but used to pay two more full-span scans here. Preserve
-    // the per-active-row RNG draws so this remains byte-identical to the old path.
+    // no liquid to relax, so preserve its per-row direction draws without probing
+    // every cell. Dense rigid cargo interleaves rows to keep its work even while
+    // every row receives one cleanup pass every two ticks.
+    bool denseRigidCargo =
+      L->bodies.size() >= R_DENSE_RIGID_CARGO_BODIES;
+    int passCount = denseRigidCargo ? 1 : 2;
     if (activeLiquidCells.empty()) {
-      for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
-        int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
-        (void)rand();
+      for (int pass = 0; pass < passCount; pass++) {
+        for (int y = rows - 2; y > 0; y--) {
+          if (denseRigidCargo && ((y ^ tick) & 1)) continue;
+          int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
+          (void)rand();
+        }
       }
       return;
     }
-    for (int pass = 0; pass < 2; pass++) for (int y = rows - 2; y > 0; y--) {
-      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
-      bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
-      for (int x = start; x != end; x += stepX) {
-        int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
-        if (L->grid[I(x, y + 1)] == EMPTY) continue;
-        int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
-        if (gravityCellStep && relaxesGaps(above)) {
-          swapSettledCells(aboveK, k);
-          continue;
-        }
-        // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
-        // always migrates the same way — toward the layer's edge, where it vanishes.
-        // A holey liquid layer (e.g. oil arriving at the surface in scattered spots)
-        // thus coalesces into a solid, flat layer and SETTLES, instead of the random
-        // fill shuffling the holes around forever (perpetual churn).
-        static const int FILL_DIRS[2] = { -1, 1 };
-        for (int i = 0; i < 2; i++) {
-          int dx = FILL_DIRS[i], sx = x + dx;
-          if (sx <= 0 || sx >= cols - 1) continue;
-          int sk = I(sx, y); uint8_t side = L->grid[sk];
-          if (!relaxesGaps(side)) continue;
-          swapSettledCells(sk, k);
-          if (L->grid[k] != EMPTY) break;
+    for (int pass = 0; pass < passCount; pass++) {
+      for (int y = rows - 2; y > 0; y--) {
+        if (denseRigidCargo && ((y ^ tick) & 1)) continue;
+        int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
+        bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
+        for (int x = start; x != end; x += stepX) {
+          int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
+          if (L->grid[I(x, y + 1)] == EMPTY) continue;
+          int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
+          if (gravityCellStep && relaxesGaps(above)) {
+            swapSettledCells(aboveK, k);
+            continue;
+          }
+          // Fill the gap from a side DETERMINISTICALLY (left-first), so an internal hole
+          // always migrates the same way — toward the layer's edge, where it vanishes.
+          // A holey liquid layer (e.g. oil arriving at the surface in scattered spots)
+          // thus coalesces into a solid, flat layer and SETTLES, instead of the random
+          // fill shuffling the holes around forever (perpetual churn).
+          static const int FILL_DIRS[2] = { -1, 1 };
+          for (int i = 0; i < 2; i++) {
+            int dx = FILL_DIRS[i], sx = x + dx;
+            if (sx <= 0 || sx >= cols - 1) continue;
+            int sk = I(sx, y); uint8_t side = L->grid[sk];
+            if (!relaxesGaps(side)) continue;
+            swapSettledCells(sk, k);
+            if (L->grid[k] != EMPTY) break;
+          }
         }
       }
     }

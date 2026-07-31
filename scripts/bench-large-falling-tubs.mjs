@@ -13,9 +13,14 @@ const createEngineWasm = (options) =>
   attachTestHooks(createEngineWasmRaw(options));
 const COLS = 640;
 const ROWS = 520;
-const WARMUP = 5;
-const STEPS = 90;
+const WARMUP = Number.parseInt(process.env.WARMUP_TICKS ?? '5', 10);
+const STEPS = Number.parseInt(process.env.MEASURE_TICKS ?? '90', 10);
 const requested = process.argv[2] ?? 'all';
+const traceSlow = process.env.TRACE_SLOW === '1';
+const traceOverMs = Number.parseFloat(process.env.TRACE_OVER_MS ?? '33.33');
+const failOverMs = Number.parseFloat(process.env.FAIL_OVER_MS ?? 'Infinity');
+let failedBudget = false;
+let failedValidation = false;
 
 const percentile = (values, fraction) => {
   const ordered = [...values].sort((a, b) => a - b);
@@ -81,7 +86,7 @@ const createTub = (engine, cargo) => {
   }
 };
 
-const measure = (name, setup) => {
+const measure = (name, setup, expectedBodies = 0) => {
   const engine = makeEngine();
   setup(engine);
   for (let i = 0; i < WARMUP; i++) engine.stepWorld();
@@ -99,11 +104,17 @@ const measure = (name, setup) => {
   let maxIterations = 0;
   let maxSpillVisits = 0;
   let correctors = 0;
+  let maxRejectedCells = 0;
+  let maxDepenetrations = 0;
+  let minBodyCount = Infinity;
+  const slowTicks = [];
+  let maxHeapBytes = engine.getHeapBytes();
   for (let tick = 0; tick < STEPS; tick++) {
     engine.stepWorld();
     const step = engine.getPerf().stepMs;
     const phases = engine.getStepPerf();
     const rigid = engine.getRigidSolverDebug();
+    const integrity = engine.getRigidDebug();
     timing.step.push(step);
     timing.body.push(phases.bodyMs ?? 0);
     timing.liquid.push(phases.liquidMs ?? 0);
@@ -129,11 +140,55 @@ const measure = (name, setup) => {
     maxIterations = Math.max(maxIterations, rigid.fluidIterations);
     maxSpillVisits = Math.max(maxSpillVisits, rigid.spillVisits);
     correctors += rigid.fluidCorrectorPasses;
+    maxRejectedCells = Math.max(
+      maxRejectedCells, integrity.rejectedCells);
+    maxDepenetrations = Math.max(
+      maxDepenetrations, integrity.depenetrations);
+    minBodyCount = Math.min(minBodyCount, engine._bodyCount());
+    maxHeapBytes = Math.max(maxHeapBytes, engine.getHeapBytes());
+    if (traceSlow && step > traceOverMs) {
+      slowTicks.push({
+        tick,
+        step,
+        body: phases.bodyMs ?? 0,
+        grounding: phases.groundingMs ?? 0,
+        assembly: phases.assemblyUnionMs ?? 0,
+        react: phases.reactMs ?? 0,
+        sand: phases.sandMs ?? 0,
+        liquid: phases.liquidMs ?? 0,
+        gas: phases.gasMs ?? 0,
+        carry: phases.carryMs ?? 0,
+        tail: phases.tailMs ?? 0,
+        cross: phases.crossMs ?? 0,
+        fluidInitial: rigid.fluidInitialMs,
+        fluidCorrector: rigid.fluidCorrectorMs,
+        correctorBodies: rigid.fluidCorrectorBodies,
+        nodes: rigid.fluidNodes,
+        faces: rigid.fluidFaces,
+        iterations: rigid.fluidIterations,
+        reference: rigid.fluidReferenceMs,
+        domain: rigid.fluidDomainMs,
+        matrix: rigid.fluidMatrixMs,
+        solve: rigid.fluidSolveMs,
+        writeback: rigid.fluidWritebackMs,
+        contacts: rigid.contacts,
+        fallbacks: rigid.sweepFallbacks,
+        spill: rigid.spillVisits,
+      });
+    }
   }
   const waterAfter = countMaterial(engine, MAT.WATER);
+  if (!Number.isFinite(minBodyCount)) minBodyCount = 0;
   const over16 = timing.step.filter((value) => value > 16.67).length;
   const over33 = timing.step.filter((value) => value > 33.33).length;
+  const overBudget = timing.step.filter((value) => value > failOverMs).length;
+  failedBudget ||= overBudget > 0;
   const body = engine._bodyState(0);
+  const finalBodyCount = engine._bodyCount();
+  if (expectedBodies
+      && (minBodyCount !== expectedBodies
+          || finalBodyCount !== expectedBodies))
+    failedValidation = true;
   console.log(`\n${name} (${COLS}x${ROWS}, ${STEPS} measured ticks)`);
   console.log(
     `  step   mean ${mean(timing.step).toFixed(2)}`
@@ -170,17 +225,52 @@ const measure = (name, setup) => {
   );
   console.log(
     `  slow ticks >16.67ms ${over16}/${STEPS}`
-    + `  >33.33ms ${over33}/${STEPS}`,
+    + `  >33.33ms ${over33}/${STEPS}`
+    + (Number.isFinite(failOverMs)
+      ? `  budget misses ${overBudget}/${STEPS}` : ''),
   );
   console.log(
     `  rigid max nodes/faces/iters ${maxNodes}/${maxFaces}/${maxIterations}`
     + `  spill ${maxSpillVisits}  correctors ${correctors}`
-    + `  bodies p50 ${percentile(timing.correctorBodies, 0.5)}`,
+    + `  bodies p50 ${percentile(timing.correctorBodies, 0.5)}`
+    + `  heap ${(maxHeapBytes / 1048576).toFixed(1)}MB`,
+  );
+  console.log(
+    `  integrity bodies ${minBodyCount}/${finalBodyCount}`
+    + `  rejected max ${maxRejectedCells}`
+    + `  depenetrations max ${maxDepenetrations}`,
   );
   console.log(
     `  water ${waterBefore} -> ${waterAfter}`
     + `  tub y ${body?.py.toFixed(1) ?? 'n/a'}  checksum ${checksum(engine)}`,
   );
+  for (const sample of slowTicks) {
+    console.log(
+      `  slow ${sample.tick}: ${sample.step.toFixed(2)}ms`
+      + ` body ${sample.body.toFixed(2)}`
+      + ` ground ${sample.grounding.toFixed(2)}`
+      + ` asm ${sample.assembly.toFixed(2)}`
+      + ` react ${sample.react.toFixed(2)}`
+      + ` sand ${sample.sand.toFixed(2)}`
+      + ` liquid ${sample.liquid.toFixed(2)}`
+      + ` gas ${sample.gas.toFixed(2)}`
+      + ` carry ${sample.carry.toFixed(2)}`
+      + ` tail ${sample.tail.toFixed(2)}`
+      + ` cross ${sample.cross.toFixed(2)}`
+      + ` fluid ${sample.fluidInitial.toFixed(2)}`
+      + `+${sample.fluidCorrector.toFixed(2)}`
+      + ` (${sample.correctorBodies} bodies)`
+      + ` nodes ${sample.nodes}/${sample.faces}/${sample.iterations}`
+      + ` refs/domain/matrix/solve/write ${sample.reference.toFixed(2)}`
+      + `/${sample.domain.toFixed(2)}`
+      + `/${sample.matrix.toFixed(2)}`
+      + `/${sample.solve.toFixed(2)}`
+      + `/${sample.writeback.toFixed(2)}`
+      + ` contacts ${sample.contacts}`
+      + ` fallbacks ${sample.fallbacks}`
+      + ` spill ${sample.spill}`,
+    );
+  }
   engine.destroy();
 };
 
@@ -189,7 +279,8 @@ if (requested === 'all' || requested === 'water')
     paintRect(engine, 110, 40, 529, 219, MAT.WATER);
   });
 if (requested === 'all' || requested === 'tub')
-  measure('falling water tub', (engine) => createTub(engine, false));
+  measure('falling water tub', (engine) => createTub(engine, false), 1);
 if (requested === 'all' || requested === 'cargo')
   measure('falling water tub with 96 rigid bodies',
-    (engine) => createTub(engine, true));
+    (engine) => createTub(engine, true), 97);
+if (failedBudget || failedValidation) process.exitCode = 1;

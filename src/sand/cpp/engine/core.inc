@@ -33,6 +33,7 @@
     uint8_t m = L->grid[k];
     if (!isLooseDensityMaterial(m) || L->next[k] != EMPTY) return;
     if (L->vacatedStamp[k] == tick) return;
+    if (L->forceActive && forces.overridesGravity(x, y, m)) return;
     if (!gravityCellStep) return;
     if (!canLooseDensitySettleThisTick(m)) return;
     int belowK = k + cols;
@@ -485,7 +486,8 @@
     L->nextLiquidVel[b] = isLiquidMaterial(materialA) ? velocityA : 0;
   }
 
-  void relaxLiquidGaps() {
+  template <bool spatialForces>
+  void relaxLiquidGapsPass() {
     // Candidate discovery already scanned the active band. A blast-only band has
     // no liquid to relax, so preserve its per-row direction draws without probing
     // every cell. Dense rigid cargo interleaves rows to keep its work even while
@@ -512,6 +514,11 @@
           int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
           if (L->grid[I(x, y + 1)] == EMPTY) continue;
           int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
+          if constexpr (spatialForces) {
+            if (relaxesGaps(above)
+                && forces.overridesGravity(x, y - 1, above))
+              continue;
+          }
           if (gravityCellStep && relaxesGaps(above)) {
             swapSettledCells(aboveK, k);
             continue;
@@ -527,6 +534,9 @@
             if (sx <= 0 || sx >= cols - 1) continue;
             int sk = I(sx, y); uint8_t side = L->grid[sk];
             if (!relaxesGaps(side)) continue;
+            if constexpr (spatialForces) {
+              if (forces.overridesGravity(sx, y, side)) continue;
+            }
             swapSettledCells(sk, k);
             if (L->grid[k] != EMPTY) break;
           }
@@ -534,13 +544,18 @@
       }
     }
   }
+  void relaxLiquidGaps() {
+    if (L->forceActive) relaxLiquidGapsPass<true>();
+    else relaxLiquidGapsPass<false>();
+  }
   // Free-surface leveling — air and denser-under-lighter share one rule:
   // free volume for denser m = EMPTY / lighter powder / strictly lighter liquid
   // (lighter liquid = air). One sideways step only if the free surface drops by
   // >=2px (same anti-shimmer as air pyramids). Flat free surfaces (drop 0/1)
   // stay put and go inert. General same-level flow still does NOT treat lighter
   // liquid as air (canEnterIndex) — only this free-surface solver does.
-  void levelLiquidSurfaces() {
+  template <bool spatialForces>
+  void levelLiquidSurfacesPass() {
     if (!gravityCellStep) return;
     // The active candidate scan is authoritative for this tick. Avoid two full
     // active-span passes for gas/empty blast aftermath when no liquid exists.
@@ -579,6 +594,9 @@
           int k = I(x, y);
           uint8_t m = L->grid[k];
           if (!isLiquidMaterial(m)) continue;
+          if constexpr (spatialForces) {
+            if (forces.overridesGravity(x, y, m)) continue;
+          }
           if (MOBILITY[m] < 1 && rand() >= MOBILITY[m]) continue;
           uint8_t above = L->grid[k - cols];
           // Free surface: air/powder, or lighter liquid above (submerged denser).
@@ -613,7 +631,12 @@
       }
     }
   }
-  void separateLooseByDensity() {
+  void levelLiquidSurfaces() {
+    if (L->forceActive) levelLiquidSurfacesPass<true>();
+    else levelLiquidSurfacesPass<false>();
+  }
+  template <bool spatialForces>
+  void separateLooseByDensityPass() {
     int parity = rand() < 0.5 ? 0 : 1;
     // Keep the RNG draw above for deterministic parity with the former scan.
     if (activeDensityCells.empty()) return;
@@ -623,6 +646,11 @@
       for (int x = start; x != end; x += stepX) {
         if (((x + y) % 2) != parity) continue;
         int k = I(x, y), belowK = k + cols; uint8_t upper = L->grid[k], lower = L->grid[belowK];
+        if constexpr (spatialForces) {
+          if (isLooseDensityMaterial(upper)
+              && forces.overridesGravity(x, y, upper))
+            continue;
+        }
         // Liquid↔liquid: settleLiquid + density-chain BFS only (no checkerboard swaps).
         if (isLiquidMaterial(upper) && isLiquidMaterial(lower)) continue;
         if (canDisplaceByLooseDensity(upper, lower)) {
@@ -630,6 +658,10 @@
         }
       }
     }
+  }
+  void separateLooseByDensity() {
+    if (L->forceActive) separateLooseByDensityPass<true>();
+    else separateLooseByDensityPass<false>();
   }
   // Move a light gas upward into empty volume or exchange it with a heavier gas.
   // The upper row has already run in the gas pass: if it stayed, park that gas in

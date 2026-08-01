@@ -575,6 +575,9 @@
     int x = k - (k / cols) * cols;
     uint8_t old = L->grid[k];
     if (m == NEUTRONIUM) L->forceSourcePresent = true;
+    if (m == NEUTRONIUM || old == NEUTRONIUM) {
+      fg.forceWakePending = bg.forceWakePending = true;
+    }
     noteLooseGroundTouch2At(k, old, m);
     adjustLooseColCount(x, old, m);
     if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;

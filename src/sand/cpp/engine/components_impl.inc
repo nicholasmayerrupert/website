@@ -2796,7 +2796,10 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
       E.L->prevCompCells.insert(E.L->prevCompCells.end(), cells.begin(), cells.end());
       Comp c; c.id = E.L->nextComponentId++; c.cells = std::move(cells); c.yMax = yMax;
       c.growing = floodTargetMat == MYCELIUM_SPORE;
-      if (floodTargetMat == NEUTRONIUM) E.L->forceSourcePresent = true;
+      if (floodTargetMat == NEUTRONIUM) {
+        E.L->forceSourcePresent = true;
+        E.fg.forceWakePending = E.bg.forceWakePending = true;
+      }
       if (c.growing) {
         E.L->myceliumActive = true;
         E.L->myceliumSporePresent = true;
@@ -2840,7 +2843,10 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
 
 void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache) {
   if (cells.empty()) return;
-  if (mat == NEUTRONIUM) E.L->forceSourcePresent = true;
+  if (mat == NEUTRONIUM) {
+    E.L->forceSourcePresent = true;
+    E.fg.forceWakePending = E.bg.forceWakePending = true;
+  }
   E.L->groundDirty = true; // adds rigid cells (lava harden / tool placement) -> full reflood
   // Find which existing components the new cells touch. Comp.cells is a vector
   // now, so a linear .count() per neighbor would be O(cells * comps * size); use

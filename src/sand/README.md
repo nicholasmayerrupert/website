@@ -327,7 +327,11 @@ Neutronium is an ultra-dense component material that contributes one radial
 emitter per connected static component or moving body, attracts powders, liquids,
 and free rigid bodies, repels gases, and targets both layers; larger neutronium
 masses increase the bounded strength and reach without creating one emitter per
-material cell.
+material cell. Inside a strong neutronium field, force-directed settling owns
+loose-material motion instead of the ordinary downward density, gap, and liquid
+surface passes. Denser loose materials therefore sort closer to the source, and
+water forms the outer shell. A blocked static arrangement stops scheduling force
+wakes and becomes inactive; moving neutronium bodies continue to wake their field.
 
 Reactions are routed through generated flags where possible:
 

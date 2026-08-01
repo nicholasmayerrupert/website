@@ -39,6 +39,34 @@ const firstCell = (engine, mat) => {
 };
 const countMaterial = (engine, mat) =>
   [...engine.getGrid()].filter((value) => value === mat).length;
+const materialStats = (engine, mat, centerX, centerY) => {
+  const grid = engine.getGrid();
+  let count = 0, sumRadius = 0, maxY = -1;
+  for (let k = 0; k < grid.length; k++) {
+    if (grid[k] !== mat) continue;
+    const x = k % COLS, y = Math.floor(k / COLS);
+    count++;
+    sumRadius += Math.hypot(x + 0.5 - centerX, y + 0.5 - centerY);
+    maxY = Math.max(maxY, y);
+  }
+  return { count, meanRadius: count ? sumRadius / count : 0, maxY };
+};
+const runUntilIdle = (engine, limit) => {
+  for (let step = 1; step <= limit; step++) {
+    if (!engine.stepWorld()) return step;
+  }
+  return -1;
+};
+const createSuspendedSource = () => {
+  const engine = createEngineWasm();
+  const sourceX = 90, sourceY = 55;
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 124, sourceY, 126, 111, MAT.STONE);
+  paintRect(engine, sourceX, sourceY, 126, sourceY + 2, MAT.STONE);
+  engine.paintDisc(sourceX, sourceY, 5, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  return { engine, sourceX, sourceY };
+};
 
 // A source with no affected material keeps the cellular world asleep.
 {
@@ -70,6 +98,75 @@ const countMaterial = (engine, mat) =>
   check('loose material is conserved',
     countMaterial(engine, MAT.SAND) === 1
       && countMaterial(engine, MAT.WATER) === 1);
+  engine.destroy();
+}
+
+// Repelled transient gas keeps receiving decay ticks even after the field has
+// packed it against an impermeable boundary.
+{
+  const { engine } = createSuspendedSource();
+  paintRect(engine, 89, 74, 126, 76, MAT.STONE);
+  engine.paintDisc(90, 75, 0, MAT.EMPTY, true);
+  engine.paintDisc(90, 75, 0, MAT.STEAM, true);
+  engine.syncComponents();
+  const idleAt = runUntilIdle(engine, 400);
+  check(`force-blocked transient gas decays before sleeping (${idleAt} steps)`,
+    countMaterial(engine, MAT.STEAM) === 0
+      && idleAt > 0 && idleAt <= 400 && engine.stepWorld() === false);
+  engine.destroy();
+}
+
+// A suspended source owns loose-material settling in its strong field. Water
+// gathers around it instead of leaking to the floor, then the static scene
+// becomes inactive once no force-reducing cell move remains.
+{
+  const { engine, sourceX, sourceY } = createSuspendedSource();
+  engine.paintDisc(sourceX, 41, 8, MAT.WATER, true);
+  const before = countMaterial(engine, MAT.WATER);
+  const idleAt = runUntilIdle(engine, 200);
+  const held = materialStats(engine, MAT.WATER, sourceX, sourceY);
+  check(`suspended neutronium holds water radially (max y ${held.maxY})`,
+    held.count === before && held.maxY <= sourceY + 8);
+  check(`a static neutronium-water scene settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= 200 && engine.stepWorld() === false);
+
+  const neutroniumCells = [];
+  const grid = engine.getGrid();
+  for (let k = 0; k < grid.length; k++) {
+    if (grid[k] === MAT.NEUTRONIUM)
+      neutroniumCells.push([k % COLS, Math.floor(k / COLS)]);
+  }
+  for (const [x, y] of neutroniumCells)
+    engine.paintDisc(x, y, 0, MAT.EMPTY, true);
+  engine.syncComponents();
+  for (let i = 0; i < 40; i++) engine.stepWorld();
+  const released = materialStats(engine, MAT.WATER, sourceX, sourceY);
+  check(`removing neutronium releases held water (max y ${released.maxY})`,
+    released.count === before && released.maxY > held.maxY + 12);
+  engine.destroy();
+}
+
+// Radial density sorting places denser sand inside the water shell. Both
+// materials remain conserved and the resulting static arrangement goes idle.
+{
+  const { engine, sourceX, sourceY } = createSuspendedSource();
+  for (let y = 34; y <= 48; y++) {
+    for (let x = 76; x <= 104; x++) {
+      const mat = ((x + y) & 1) ? MAT.SAND : MAT.WATER;
+      engine.paintDisc(x, y, 0, mat, true);
+    }
+  }
+  const sandBefore = countMaterial(engine, MAT.SAND);
+  const waterBefore = countMaterial(engine, MAT.WATER);
+  const idleAt = runUntilIdle(engine, 250);
+  const sand = materialStats(engine, MAT.SAND, sourceX, sourceY);
+  const water = materialStats(engine, MAT.WATER, sourceX, sourceY);
+  check(`sand sorts inside water (${sand.meanRadius.toFixed(2)} < ${water.meanRadius.toFixed(2)})`,
+    sand.meanRadius + 2 < water.meanRadius);
+  check('radially sorted sand and water are conserved',
+    sand.count === sandBefore && water.count === waterBefore);
+  check(`a static mixed scene settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= 250 && engine.stepWorld() === false);
   engine.destroy();
 }
 

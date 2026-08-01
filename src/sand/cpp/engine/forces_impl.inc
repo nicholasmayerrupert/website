@@ -23,6 +23,7 @@ void ForceSystem::queueRadial(
   emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
   queued[layerIndex(layer)].push_back(emitter);
+  layer->forceWakePending = true;
 }
 
 void ForceSystem::queueDirectional(
@@ -45,6 +46,7 @@ void ForceSystem::queueDirectional(
   emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
   queued[layerIndex(layer)].push_back(emitter);
+  layer->forceWakePending = true;
 }
 
 void ForceSystem::addEmitter(
@@ -120,8 +122,10 @@ void ForceSystem::addNeutroniumEmitters(
       sumY += body->py + localX * sn + localY * cs;
       count++;
     }
-    if (count > 0)
+    if (count > 0) {
       addCluster(sumX / count, sumY / count, count, body->id);
+      E.fg.forceWakePending = E.bg.forceWakePending = true;
+    }
   }
   layer->forceSourcePresent = found;
 }
@@ -221,14 +225,32 @@ void ForceSystem::prepareLayer(Layer* layer) {
       state.emitters.clear();
       state.binHeads.clear();
       state.binLinks.clear();
+      // Releasing the final field must wake held loose material so ordinary
+      // gravity can resume. Source removal is rare, so one full-layer wake is
+      // cheaper and safer than retaining a second copy of the old force bins.
+      for (Layer* target : {&E.fg, &E.bg}) {
+        for (int y = 0; y < E.rows; y++) {
+          target->rowMarkMin[y] = 0;
+          target->rowMarkMax[y] = E.cols - 1;
+        }
+      }
     }
     layer->forceActive = false;
     return;
   }
+  bool hadEmitters = !state.emitters.empty();
   state.emitters.clear();
   for (const ForceEmitter& emitter : queued[index]) addEmitter(state, emitter);
   queued[index].clear();
   addNeutroniumEmitters(layer, state);
+  if (hadEmitters && state.emitters.empty()) {
+    for (Layer* target : {&E.fg, &E.bg}) {
+      for (int y = 0; y < E.rows; y++) {
+        target->rowMarkMin[y] = 0;
+        target->rowMarkMax[y] = E.cols - 1;
+      }
+    }
+  }
   buildBins(state);
 }
 
@@ -243,6 +265,7 @@ void ForceSystem::prepareWorldTick() {
   }
   if (states[0].emitters.empty() && states[1].emitters.empty()) {
     E.fg.forceActive = E.bg.forceActive = false;
+    E.fg.forceWakePending = E.bg.forceWakePending = false;
     return;
   }
   E.fg.forceActive = stateAffectsLayer(states[0], FORCE_LAYER_FOREGROUND)
@@ -250,8 +273,11 @@ void ForceSystem::prepareWorldTick() {
   E.bg.forceActive = E.bgEnabled
                   && (stateAffectsLayer(states[0], FORCE_LAYER_BACKGROUND)
                       || stateAffectsLayer(states[1], FORCE_LAYER_BACKGROUND));
-  if (E.fg.forceActive) wakeAffectedTargets(&E.fg);
-  if (E.bg.forceActive) wakeAffectedTargets(&E.bg);
+  bool wakeForeground = E.fg.forceWakePending;
+  bool wakeBackground = E.bg.forceWakePending;
+  E.fg.forceWakePending = E.bg.forceWakePending = false;
+  if (E.fg.forceActive && wakeForeground) wakeAffectedTargets(&E.fg);
+  if (E.bg.forceActive && wakeBackground) wakeAffectedTargets(&E.bg);
 }
 
 bool ForceSystem::sampleState(
@@ -316,6 +342,38 @@ bool ForceSystem::sample(
   return sampleLayer(E.L, x, y, target, sourceBodyId, forceX, forceY);
 }
 
+int ForceSystem::looseMoveCandidates(
+    double forceX, double forceY,
+    std::array<std::pair<int, int>, 3>& moves) const {
+  int stepX = forceX > 1e-9 ? 1 : (forceX < -1e-9 ? -1 : 0);
+  int stepY = forceY > 1e-9 ? 1 : (forceY < -1e-9 ? -1 : 0);
+  double absX = std::fabs(forceX), absY = std::fabs(forceY);
+  int moveCount = 0;
+  if (stepX && stepY && absX * 3 > absY && absY * 3 > absX)
+    moves[moveCount++] = {stepX, stepY};
+  if (absX >= absY) {
+    if (stepX) moves[moveCount++] = {stepX, 0};
+    if (stepY) moves[moveCount++] = {0, stepY};
+  } else {
+    if (stepY) moves[moveCount++] = {0, stepY};
+    if (stepX) moves[moveCount++] = {stepX, 0};
+  }
+  return moveCount;
+}
+
+bool ForceSystem::overridesGravity(
+    int x, int y, uint8_t material) const {
+  uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
+                 : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
+  double forceX, forceY;
+  if (!sampleLayer(E.L, x + 0.5, y + 0.5, target, -1,
+                   forceX, forceY))
+    return false;
+  constexpr double CELL_STEP_FORCE = 0.12;
+  return forceX * forceX + forceY * forceY
+      >= CELL_STEP_FORCE * CELL_STEP_FORCE;
+}
+
 void ForceSystem::applyBodyForces() {
   if (!E.L->forceActive) return;
   for (Body* body : E.L->bodies) {
@@ -336,50 +394,63 @@ bool ForceSystem::tryMoveLoose(
                  : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
   double forceX, forceY;
   if (!sample(x + 0.5, y + 0.5, target, -1, forceX, forceY)) return false;
-  double magnitude = std::hypot(forceX, forceY);
-  double chance = std::fmin(1.0, magnitude / 0.12);
-  uint32_t phase = E.L->worldSeed ^ 0x4E455554u
-                 ^ ((uint32_t)E.tick * 0x9e3779b9u);
-  if (whash2(phase, E.L->worldOffsetX + x,
-             E.L->worldOffsetY + y) >= chance)
-    return false;
-
-  int stepX = forceX > 1e-9 ? 1 : (forceX < -1e-9 ? -1 : 0);
-  int stepY = forceY > 1e-9 ? 1 : (forceY < -1e-9 ? -1 : 0);
-  double absX = std::fabs(forceX), absY = std::fabs(forceY);
   std::array<std::pair<int, int>, 3> moves;
-  int moveCount = 0;
-  if (stepX && stepY && absX * 3 > absY && absY * 3 > absX)
-    moves[moveCount++] = {stepX, stepY};
-  if (absX >= absY) {
-    if (stepX) moves[moveCount++] = {stepX, 0};
-    if (stepY) moves[moveCount++] = {0, stepY};
-  } else {
-    if (stepY) moves[moveCount++] = {0, stepY};
-    if (stepX) moves[moveCount++] = {stepX, 0};
-  }
+  int moveCount = looseMoveCandidates(forceX, forceY, moves);
+  int destination = -1;
   for (int i = 0; i < moveCount; i++) {
     int nx = x + moves[i].first, ny = y + moves[i].second;
     if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
     int toK = ny * E.cols + nx;
     bool canEnter;
     if (E.isLiquidMaterial(material)) {
-      canEnter = E.liquidCanClaim(toK, material);
+      // A same-material cell vacated earlier this tick is not new free volume.
+      // Rejecting that claim lets packed rings reach equilibrium instead of
+      // circulating through an occupancy pattern that never changes.
+      canEnter = !(E.L->vacatedStamp[toK] == E.tick
+                   && E.L->grid[toK] == material)
+              && E.liquidCanClaim(toK, material);
     } else if (E.isGasMaterial(material)) {
       uint8_t occupant = E.L->grid[toK];
       canEnter = E.L->next[toK] == EMPTY
         && (E.L->vacatedStamp[toK] == E.tick || occupant == EMPTY
-            || (E.isGasMaterial(occupant) && occupant != material));
+            || (E.isGasMaterial(occupant) && occupant != material))
+        && !(E.L->vacatedStamp[toK] == E.tick && occupant == material);
     } else {
       canEnter = E.canEnterIndex(toK, material);
     }
     if (!canEnter) continue;
-    int32_t blastGas = material == FIRE ? E.L->blastGasStamp[k] : -1;
-    bool recentBlastFire = blastGas >= 0
-      && E.tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
-    E.moveMaterialInto(k, toK, material);
-    if (recentBlastFire) E.L->blastGasStamp[toK] = blastGas;
+    destination = toK;
+    break;
+  }
+  if (destination < 0) {
+    // The field owns this cell for the tick, but a blocked cell creates no
+    // follow-up wake. Static force-balanced arrangements can therefore sleep.
+    E.L->next[k] = material;
+    E.L->nextFallSpeed[k] = 0;
+    E.L->nextLiquidVel[k] = 0;
+    // Transient gases still need future ticks for their normal decay. Methane
+    // is persistent and may sleep once the repulsive field has packed it.
+    if (E.isGasMaterial(material) && material != METHANE)
+      E.L->forceWakePending = true;
     return true;
   }
-  return false;
+
+  double magnitude = std::hypot(forceX, forceY);
+  constexpr double CELL_STEP_FORCE = 0.12;
+  double chance = std::fmin(1.0, magnitude / CELL_STEP_FORCE);
+  uint32_t phase = E.L->worldSeed ^ 0x4E455554u
+                 ^ ((uint32_t)E.tick * 0x9e3779b9u);
+  if (whash2(phase, E.L->worldOffsetX + x,
+             E.L->worldOffsetY + y) >= chance) {
+    E.L->forceWakePending = true;
+    return false;
+  }
+
+  int32_t blastGas = material == FIRE ? E.L->blastGasStamp[k] : -1;
+  bool recentBlastFire = blastGas >= 0
+    && E.tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
+  E.moveMaterialInto(k, destination, material);
+  if (recentBlastFire) E.L->blastGasStamp[destination] = blastGas;
+  E.L->forceWakePending = true;
+  return true;
 }

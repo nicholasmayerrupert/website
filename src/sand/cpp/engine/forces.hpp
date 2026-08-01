@@ -48,6 +48,7 @@ class ForceSystem {
                         int sourceBodyId = -1);
   void prepareWorldTick();
   void applyBodyForces();
+  bool overridesGravity(int x, int y, uint8_t material) const;
   bool tryMoveLoose(int x, int y, int k, uint8_t material);
 
  private:
@@ -79,4 +80,6 @@ class ForceSystem {
                    int sourceBodyId, double& forceX, double& forceY) const;
   bool sample(double x, double y, uint8_t target, int sourceBodyId,
               double& forceX, double& forceY) const;
+  int looseMoveCandidates(double forceX, double forceY,
+                          std::array<std::pair<int, int>, 3>& moves) const;
 };

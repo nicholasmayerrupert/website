@@ -854,6 +854,18 @@ a.project-card:hover .project-card__art .project-art {
   }
 }
 
+@media (pointer: coarse) {
+  .life-showcase button,
+  .life-showcase input,
+  .life-showcase textarea {
+    min-height: 44px;
+  }
+
+  .life-showcase button {
+    min-width: 44px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

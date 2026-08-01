@@ -13,7 +13,6 @@ html {
 }
 
 body {
-  min-width: 320px;
   background: var(--case-bg);
   color: var(--case-text);
 }
@@ -109,7 +108,7 @@ body {
 }
 
 .case-link {
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 15px;
   border: 1px solid var(--case-line);
   border-radius: 9px;
@@ -492,6 +491,15 @@ button:focus-visible {
     flex-direction: column;
     justify-content: center;
     gap: 8px;
+  }
+}
+
+@media (pointer: coarse) {
+  .case-nav a,
+  .case-footer a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
   }
 }
 

@@ -81,7 +81,7 @@ const Hero = ({ onDrawModeChange }) => {
 
       {/* Text block */}
       <div
-        className={`pointer-events-none absolute inset-x-0 top-16 px-6 text-center text-white transition-opacity duration-500 sm:top-20 sm:px-12 md:top-36 lg:top-40 ${
+        className={`pointer-events-none absolute inset-x-0 top-20 px-6 text-center text-white transition-opacity duration-500 sm:px-12 md:top-36 lg:top-40 ${
           drawModeActive ? 'z-0 opacity-20' : 'z-20 opacity-100'
         }`}
         aria-hidden={drawModeActive}

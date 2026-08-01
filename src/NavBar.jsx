@@ -60,7 +60,7 @@ const NavBar = ({ mobileHidden = false }) => {
             target={item.external ? '_blank' : undefined}
             rel={item.external ? 'noopener noreferrer' : undefined}
             aria-current={item.section && activeHref === item.href ? 'location' : undefined}
-            className={`rounded-full px-2 py-2 text-[11px] font-medium transition sm:px-4 sm:text-sm ${
+            className={`flex min-h-11 items-center rounded-full px-2 py-2 text-[11px] font-medium transition sm:px-4 sm:text-sm ${
               activeHref === item.href
                 ? 'bg-white/70 text-black shadow-lg'
                 : 'text-white/70 hover:text-white/90 hover:bg-white/10'

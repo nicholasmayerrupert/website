@@ -6,7 +6,7 @@ import { useMediaQuery } from './hooks/useMediaQuery';
 import { SandGame } from './sand/react/SandGame';
 import { SandCampaign } from './sand/react/SandCampaign';
 
-const MOBILE_QUERY = '(max-width: 767px)';
+const MOBILE_QUERY = '(max-width: 767px), (pointer: coarse)';
 const GAME_QUERY = typeof window !== 'undefined'
   ? new URLSearchParams(window.location.search)
   : new URLSearchParams();
@@ -41,7 +41,7 @@ export default function GamePage() {
 
   if (isMobile) {
     return (
-      <div className="relative flex h-screen w-full items-center justify-center overflow-hidden bg-dark px-6 text-center">
+      <div className="relative flex min-h-[100svh] w-full items-center justify-center bg-dark px-6 py-6 text-center">
         <div className="max-w-sm">
           <div className="mb-4 text-5xl">🖥️</div>
           <h1 className="mb-3 text-xl font-semibold text-white">
@@ -56,7 +56,7 @@ export default function GamePage() {
           </p>
           <a
             href="/"
-            className="mt-6 inline-flex rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white/85 backdrop-blur transition hover:bg-white/10 hover:text-white"
+            className="mt-6 inline-flex min-h-11 items-center rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-white/85 backdrop-blur transition hover:bg-white/10 hover:text-white"
           >
             ← back to site
           </a>

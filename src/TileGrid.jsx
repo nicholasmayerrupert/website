@@ -116,7 +116,6 @@ export default function TileGrid() {
           <div className="life-showcase__stage">
             <GameOfLife3D
               className="h-full w-full"
-              defaultControlsOpen
               intro={(
                 <div className="life-showcase__copy">
                   <div className="life-showcase__heading">

@@ -127,7 +127,7 @@ const createOpenSuspendedSource = () => {
 for (const [label, mat, limit] of [
   ['sand', MAT.SAND, 600],
   ['water', MAT.WATER, 600],
-  ['lava', MAT.LAVA, 2500],
+  ['lava', MAT.LAVA, 1200],
 ]) {
   const { engine, sourceX, sourceY } = createOpenSuspendedSource();
   engine.paintDisc(68, 33, 15, mat, true);

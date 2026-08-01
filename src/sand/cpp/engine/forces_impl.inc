@@ -24,8 +24,8 @@ void ForceSystem::queueRadial(
   emitter.sourceBodyId = sourceBodyId;
   int index = layerIndex(layer);
   queued[index].push_back(emitter);
-  looseFingerprintValid[index] = false;
-  looseEquilibriumSettled[index] = false;
+  looseCoverageValid[index] = false;
+  looseTangentialBalanced[index] = false;
   layer->forceWakePending = true;
 }
 
@@ -50,8 +50,8 @@ void ForceSystem::queueDirectional(
   emitter.sourceBodyId = sourceBodyId;
   int index = layerIndex(layer);
   queued[index].push_back(emitter);
-  looseFingerprintValid[index] = false;
-  looseEquilibriumSettled[index] = false;
+  looseCoverageValid[index] = false;
+  looseTangentialBalanced[index] = false;
   layer->forceWakePending = true;
 }
 
@@ -131,8 +131,8 @@ void ForceSystem::addNeutroniumEmitters(
     if (count > 0) {
       addCluster(sumX / count, sumY / count, count, body->id);
       E.fg.forceWakePending = E.bg.forceWakePending = true;
-      looseFingerprintValid[0] = looseFingerprintValid[1] = false;
-      looseEquilibriumSettled[0] = looseEquilibriumSettled[1] = false;
+      looseCoverageValid[0] = looseCoverageValid[1] = false;
+      looseTangentialBalanced[0] = looseTangentialBalanced[1] = false;
     }
   }
   layer->forceSourcePresent = found;
@@ -161,7 +161,7 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
   int index = layerIndex(layer);
   std::array<double, 256>& minForce = looseMinForce[index];
   minForce.fill(1e30);
-  looseHistogram.fill(0);
+  looseQuadrantCounts.fill(0);
   uint8_t targetLayer = layerBit(layer);
   int binCount = E.chunkCols * E.chunkRows;
   for (int bin = 0; bin < binCount; bin++) {
@@ -189,8 +189,7 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
         if (magnitude < minForce[material]) minForce[material] = magnitude;
         if (target != FORCE_GAS) {
           int quadrant = (forceX < 0 ? 1 : 0) | (forceY < 0 ? 2 : 0);
-          int band = imin(3, (int)(magnitude * 8.0));
-          looseHistogram[(material * 4 + quadrant) * 4 + band]++;
+          looseQuadrantCounts[material * 4 + quadrant]++;
         }
         if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
         if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
@@ -208,23 +207,48 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
     if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
     if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
   }
-  uint64_t fingerprint = 1469598103934665603ull;
-  for (uint32_t count : looseHistogram) {
-    fingerprint ^= count;
-    fingerprint *= 1099511628211ull;
+  // Pressure-driven tangential flow stays enabled while a material's force
+  // quadrants become more even. A balanced distribution, or 64 scans without
+  // improved coverage, parks the tangent path so blocked static scenes sleep.
+  bool hasUnbalancedMaterial = false;
+  bool coverageChanged = false;
+  bool coverageImproved = false;
+  for (int material = 0; material < TABLE; material++) {
+    int base = material * 4;
+    uint32_t counts[4] = {
+      looseQuadrantCounts[base], looseQuadrantCounts[base + 1],
+      looseQuadrantCounts[base + 2], looseQuadrantCounts[base + 3]
+    };
+    uint32_t total = counts[0] + counts[1] + counts[2] + counts[3];
+    uint64_t imbalance = 0;
+    uint32_t minimum = counts[0];
+    for (int quadrant = 0; quadrant < 4; quadrant++) {
+      imbalance += (uint64_t)counts[quadrant] * counts[quadrant];
+      if (counts[quadrant] < minimum) minimum = counts[quadrant];
+    }
+    if (!looseCoverageValid[index]
+        || looseCoverageTotals[index][material] != total) {
+      looseCoverageTotals[index][material] = total;
+      looseBestImbalance[index][material] = imbalance;
+      coverageChanged = true;
+    } else if (imbalance < looseBestImbalance[index][material]) {
+      looseBestImbalance[index][material] = imbalance;
+      coverageImproved = true;
+    }
+    uint32_t minimumShare = (uint32_t)imax(10, (int)(total / 20));
+    if (total >= 40 && minimum < minimumShare)
+      hasUnbalancedMaterial = true;
   }
-  if (looseFingerprintValid[index]
-      && looseFingerprint[index] == fingerprint) {
-    looseStableTicks[index] = (uint8_t)imin(255, looseStableTicks[index] + 1);
+  if (!looseCoverageValid[index] || coverageChanged || coverageImproved) {
+    looseCoverageValid[index] = true;
+    looseCoverageStagnantTicks[index] = 0;
   } else {
-    looseFingerprintValid[index] = true;
-    looseFingerprint[index] = fingerprint;
-    looseStableTicks[index] = 0;
-    looseEquilibriumSettled[index] = false;
+    looseCoverageStagnantTicks[index] = (uint8_t)imin(
+      255, looseCoverageStagnantTicks[index] + 1);
   }
-  static constexpr int LOOSE_EQUILIBRIUM_TICKS = 32;
-  if (looseStableTicks[index] >= LOOSE_EQUILIBRIUM_TICKS)
-    looseEquilibriumSettled[index] = true;
+  static constexpr int COVERAGE_STAGNANT_TICKS = 64;
+  looseTangentialBalanced[index] = !hasUnbalancedMaterial
+    || looseCoverageStagnantTicks[index] >= COVERAGE_STAGNANT_TICKS;
 }
 
 void ForceSystem::buildBins(LayerState& state) {
@@ -302,9 +326,9 @@ void ForceSystem::prepareWorldTick() {
   if (states[0].emitters.empty() && states[1].emitters.empty()) {
     E.fg.forceActive = E.bg.forceActive = false;
     E.fg.forceWakePending = E.bg.forceWakePending = false;
-    looseFingerprintValid[0] = looseFingerprintValid[1] = false;
-    looseEquilibriumSettled[0] = looseEquilibriumSettled[1] = false;
-    looseStableTicks[0] = looseStableTicks[1] = 0;
+    looseCoverageValid[0] = looseCoverageValid[1] = false;
+    looseCoverageStagnantTicks[0] = looseCoverageStagnantTicks[1] = 0;
+    looseTangentialBalanced[0] = looseTangentialBalanced[1] = false;
     return;
   }
   E.fg.forceActive = stateAffectsLayer(states[0], FORCE_LAYER_FOREGROUND)
@@ -436,13 +460,6 @@ bool ForceSystem::tryMoveLoose(
   double magnitude = std::hypot(forceX, forceY);
   constexpr double CELL_STEP_FORCE = 0.12;
   int forceLayer = layerIndex(E.L);
-  if (target != FORCE_GAS && looseEquilibriumSettled[forceLayer]
-      && magnitude >= CELL_STEP_FORCE) {
-    E.L->next[k] = material;
-    E.L->nextFallSpeed[k] = 0;
-    E.L->nextLiquidVel[k] = 0;
-    return true;
-  }
   std::array<std::pair<int, int>, 3> moves;
   int moveCount = looseMoveCandidates(forceX, forceY, moves);
   auto canEnter = [&](int toK, bool followPressureVacancy = false) {
@@ -461,9 +478,14 @@ bool ForceSystem::tryMoveLoose(
               || (E.isGasMaterial(occupant) && occupant != material))
           && !(E.L->vacatedStamp[toK] == E.tick && occupant == material);
     }
-    if (followPressureVacancy && E.L->vacatedStamp[toK] == E.tick
-        && E.L->grid[toK] == material && E.L->next[toK] == EMPTY)
-      return true;
+    if (followPressureVacancy) {
+      if (E.L->vacatedStamp[toK] == E.tick
+          && E.L->grid[toK] == material && E.L->next[toK] == EMPTY)
+        return true;
+      // Tangential powder flow fills free shell volume but does not churn a
+      // density interface; direct inward moves retain normal displacement.
+      return E.L->grid[toK] == EMPTY && E.L->next[toK] == EMPTY;
+    }
     return E.canEnterIndex(toK, material);
   };
   int destination = -1;
@@ -485,10 +507,10 @@ bool ForceSystem::tryMoveLoose(
                     && E.L->vacatedStamp[pressureK] != E.tick;
     }
     double minimum = looseMinForce[layerIndex(E.L)][material];
-    bool liquidPressureGradient = E.isLiquidMaterial(material)
+    bool forcePressureGradient = target != FORCE_GAS
       && minimum < 1e20 && magnitude > minimum + 0.015;
-    if (!looseEquilibriumSettled[forceLayer]
-        && (pressureBehind || liquidPressureGradient)) {
+    if (!looseTangentialBalanced[forceLayer]
+        && (pressureBehind || forcePressureGradient)) {
       std::array<std::pair<int, int>, 2> tangents = {{
         {stepY, -stepX}, {-stepY, stepX}
       }};

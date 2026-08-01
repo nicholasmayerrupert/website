@@ -329,9 +329,12 @@ and free rigid bodies, repels gases, and targets both layers; larger neutronium
 masses increase the bounded strength and reach without creating one emitter per
 material cell. Inside a strong neutronium field, force-directed settling owns
 loose-material motion instead of the ordinary downward density, gap, and liquid
-surface passes. Denser loose materials therefore sort closer to the source, and
-water forms the outer shell. A blocked static arrangement stops scheduling force
-wakes and becomes inactive; moving neutronium bodies continue to wake their field.
+surface passes. Pressure-blocked powders and liquids can move along force tangents,
+so a mass arriving from one direction wraps around the source instead of remaining
+in its starting quadrant. Denser loose materials sort closer to the source, with
+water forming the outer shell. Tangential flow stops after quadrant coverage is
+balanced or stops improving, and a blocked static arrangement becomes inactive;
+moving neutronium bodies continue to wake their field.
 
 Reactions are routed through generated flags where possible:
 

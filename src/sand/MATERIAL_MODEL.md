@@ -91,8 +91,10 @@ free body cell and a static `STONE` component cell.
   Each connected neutronium component or body emits a bounded radial force that
   attracts powders, liquids, and free rigid bodies while repelling gases in both
   simulated layers. Strong fields replace ordinary downward loose-material
-  settling, so denser materials sort inward and liquids form an outer shell.
-  Force-balanced loose cells become inactive around a static source.
+  settling. Pressure-blocked powders and liquids spread along force tangents to
+  wrap around the source, while density displacement sorts denser materials
+  inward and liquids into an outer shell. Force-balanced loose cells become
+  inactive around a static source.
 
 ## Which field should code use?
 

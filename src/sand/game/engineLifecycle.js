@@ -11,6 +11,7 @@ import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 import { chooseStableCssSize, computeViewportSizing, shouldResizeBuffer } from './viewportSizing';
 import { NIGHT_SKY_LIGHT } from './dayNightCycle.js';
 
+/** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createEngineLifecycle(ctx, { onLayoutChange }) {
   const { canvas, container, parallax } = ctx;
 
@@ -49,6 +50,9 @@ export function createEngineLifecycle(ctx, { onLayoutChange }) {
       gravityScale: ctx.gravityScale,
     });
     ctx.engine = e;
+    // The compiled engine owns planet defaults; retain its resolved value for
+    // the authority worker and later presentation-engine rebuilds.
+    ctx.gravityScale = e.getGravityScale();
     e.glInit(canvas);                                // WebGL2 context on our canvas
     const gl = canvas.getContext('webgl2');
     const maxTextureSize = gl?.getParameter(gl.MAX_TEXTURE_SIZE);

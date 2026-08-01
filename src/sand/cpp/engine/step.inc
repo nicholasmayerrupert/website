@@ -9,29 +9,30 @@
     audio.beginRegionalPass();
     // Timers accumulate across both layers and are reset once per world tick.
     double t0 = emscripten_get_now();
-    if (!comps.jointGroundReady) ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
+    if (!comps.jointGroundReady) comps.ensureGroundedSingleLayer(); // joint cross-layer flood already ran in step()
     perfGroundingMs += emscripten_get_now() - t0;
 
     double tA = emscripten_get_now();
     L->assemblyRelocatedCells.clear();
-    moveRigidAssemblies();
+    comps.moveRigidAssemblies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-assemblies");
 #endif
     perfAssemblyUnionMs += emscripten_get_now() - tA;
 
     double tB = emscripten_get_now();
-    moveBodies();
+    rigid.moveBodies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-moveBodies");
 #endif
     perfBodyMs += emscripten_get_now() - tB;
 
     double tR = emscripten_get_now();
-    growPlantComponents();
-    growMyceliumComponents();
-    prepareReactionLists();
-    applyReactions(); applyAcid(); applyLava(); applyIce(); applySalt(); applyExplosives();
+    growth.growPlantComponents();
+    growth.growMyceliumComponents();
+    reactions.prepareActiveLists();
+    reactions.applyReactions(); reactions.applyAcid(); reactions.applyLava();
+    reactions.applyIce(); reactions.applySalt(); explosives.applyExplosives();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-reactions");
 #endif
@@ -150,10 +151,10 @@
   bool stepActors() {
     double t0 = emscripten_get_now();
     useLayer(&fg);
-    updatePlayers();
-    updateProjectiles();
-    updateItems();
-    updateCreatures();
+    psys.updatePlayers();
+    projectiles.updateProjectiles();
+    itemsys.updateItems();
+    creatures.updateCreatures();
     missions.update();
     actorTick++;
     perfActorMs = emscripten_get_now() - t0;
@@ -226,14 +227,14 @@
     if (bgEnabled && needJoint && !reuseTranslatedJoint) {
       // computeGroundedBoth splits its wall time into groundingMs (base floods)
       // + crossLayerGroundingMs (bond scan / UF) + componentIndexMs (inside index).
-      computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
+      comps.computeGroundedBoth(); comps.jointGroundReady = true; comps.jointDirty = false;
       fgA = fgA || layerActive(&fg);
       bgA = bgA || layerActive(&bg);
     }
     double tL0 = emscripten_get_now();
     if (fgA) stepLayer(&fg); // foreground first -> deterministic shared-RNG order
     if (bgEnabled && comps.jointBakeNeedsGroundRefresh) {
-      computeGroundedBoth();
+      comps.computeGroundedBoth();
       comps.jointGroundReady = true;
       comps.jointDirty = false;
       comps.jointBondsInvalid = false;
@@ -261,7 +262,7 @@
       comps.jointDirtyDeferred = false;
     }
     if (bgEnabled && (comps.jointDirty || comps.jointBondsInvalid)) {
-      computeGroundedBoth(); // adds into grounding / crossLayer / componentIndex
+      comps.computeGroundedBoth(); // adds into grounding / crossLayer / componentIndex
       comps.jointGroundReady = true;
       comps.jointDirty = false;
       comps.jointBondsInvalid = false;
@@ -272,7 +273,7 @@
       validateInvariants("pre-crossmove");
 #endif
       double tAsm = emscripten_get_now();
-      moveCrossLayerBondedAssemblies();
+      comps.moveCrossLayerBondedAssemblies();
       perfAssemblyUnionMs += emscripten_get_now() - tAsm;
 #ifdef SAND_INVARIANT_CHECKS
       validateInvariants("post-crossmove");
@@ -283,8 +284,8 @@
       // moveCrossLayerBondedAssemblies above (and filtered out of this pass).
       if (jointRefreshedAfterLayers) {
         double tA2 = emscripten_get_now();
-        useLayer(&fg); moveRigidAssemblies();
-        useLayer(&bg); moveRigidAssemblies();
+        useLayer(&fg); comps.moveRigidAssemblies();
+        useLayer(&bg); comps.moveRigidAssemblies();
         perfAssemblyUnionMs += emscripten_get_now() - tA2;
       }
       fgA = fgA || layerActive(&fg);

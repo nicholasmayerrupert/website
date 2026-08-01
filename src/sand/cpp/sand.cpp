@@ -2,6 +2,27 @@
 // and thin subsystem shims; composed subsystem classes hold gameplay policy.
 
 #include "engine/common.hpp"
+#include "engine/camera.hpp"
+#include "engine/netsync.hpp"
+#include "engine/layer.hpp"
+#include "engine/terrain.hpp"
+#include "engine/world_context.hpp"
+#include "engine/renderer.hpp"
+#include "engine/creatures.hpp"
+#include "engine/missions.hpp"
+#include "engine/glpresenter.hpp"
+#include "engine/items.hpp"
+#include "engine/inventory.hpp"
+#include "engine/crafting.hpp"
+#include "engine/projectiles.hpp"
+#include "engine/player.hpp"
+#include "engine/tools.hpp"
+#include "engine/reactions.hpp"
+#include "engine/explosives.hpp"
+#include "engine/growth.hpp"
+#include "engine/components.hpp"
+#include "engine/rigid.hpp"
+#include "engine/audio.hpp"
 
 struct Engine {
 #include "engine/members.inc"

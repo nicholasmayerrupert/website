@@ -16,6 +16,7 @@ import {
   sampleDayNight,
 } from './dayNightCycle.js';
 
+/** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createGameLoop(ctx, {
   fit,
   parallaxCamera,

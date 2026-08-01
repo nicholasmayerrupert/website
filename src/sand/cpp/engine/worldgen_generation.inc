@@ -1,0 +1,5 @@
+#include "worldgen_terrain.inc"
+#include "worldgen_surface_structures.inc"
+#include "worldgen_caves.inc"
+#include "worldgen_offworld.inc"
+#include "worldgen_fill.inc"

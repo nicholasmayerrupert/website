@@ -13,6 +13,10 @@ import {
   ABI_VERSION, OFF, STRIDES, INPUT, PLANET,
   BIOME, CAVE_BIOME, WORLD_AREA, WORLD_FEATURE, WORLD_SITE_ROLE,
 } from './abi.generated.js';
+import {
+  withPatchedCanvasWebGLContext,
+  withResizableTextDecoder,
+} from './resizableBrowserBuffers.js';
 
 export {
   MAT, PLANET, BIOME, CAVE_BIOME,
@@ -26,186 +30,9 @@ export const CHUNK_SIZE = 32;
 let modPromise = null;
 let M = null; // resolved module + cwrapped fns
 let glTargetSeq = 0; // unique key per canvas for emscripten's specialHTMLTargets
-let resizableHeapPatched = false;
-
-// Chromium rejects views on a resizable ArrayBuffer; WebKit rejects WebGL views
-// backed by growable WASM memory. Copy those backings into an ordinary fixed
-// ArrayBuffer before browser APIs see them.
-
-function needsFixedBuffer(value) {
-  const buffer = ArrayBuffer.isView(value) ? value.buffer : value;
-  return buffer?.resizable === true;
-}
-
-function isBufferArg(value) {
-  return ArrayBuffer.isView(value)
-    || (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer);
-}
-
-function fixedBufferArg(value) {
-  if (value == null) return value;
-  if (ArrayBuffer.isView(value)) {
-    if (needsFixedBuffer(value)) {
-      if (typeof DataView !== 'undefined' && value instanceof DataView) {
-        const bytes = new Uint8Array(value.byteLength);
-        bytes.set(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
-        return new DataView(bytes.buffer);
-      }
-      const Ctor = value.constructor;
-      // Preserve the same TypedArray kind (Uint8Array, Float32Array, …).
-      const copy = new Ctor(value.length);
-      copy.set(value);
-      return copy;
-    }
-    return value;
-  }
-  if (needsFixedBuffer(value)) {
-    const copy = new Uint8Array(value.byteLength);
-    copy.set(new Uint8Array(value));
-    return copy.buffer;
-  }
-  return value;
-}
-
-function patchResizableWasmHeapForBrowserGL() {
-  if (resizableHeapPatched) return;
-  resizableHeapPatched = true;
-
-  // 1) TextDecoder — emscripten UTF8ArrayToString → glShaderSource
-  if (typeof TextDecoder !== 'undefined') {
-    const proto = TextDecoder.prototype;
-    const original = proto.decode;
-    if (typeof original === 'function') {
-      proto.decode = function decodeResizableSafe(input, options) {
-        return original.call(this, fixedBufferArg(input), options);
-      };
-    }
-  }
-
-  // 2) WebGL buffer/texture uploads from HEAP views
-  const patchGLProto = (Proto) => {
-    if (!Proto || !Proto.prototype) return;
-    const p = Proto.prototype;
-
-    const wrapDataArg = (name, dataIndex) => {
-      const orig = p[name];
-      if (typeof orig !== 'function') return;
-      p[name] = function patchedGLMethod(...args) {
-        if (args.length > dataIndex) args[dataIndex] = fixedBufferArg(args[dataIndex]);
-        return orig.apply(this, args);
-      };
-    };
-
-    // bufferData(target, srcData|size, usage[, srcOffset[, length]])
-    // bufferSubData(target, offset, srcData[, srcOffset[, length]])
-    wrapDataArg('bufferData', 1);
-    wrapDataArg('bufferSubData', 2);
-
-    // texImage2D / texSubImage2D have many overloads; the pixels arg is last
-    // when provided as a TypedArray. Patch by scanning args for WASM-backed views.
-    const wrapPixelsScan = (name) => {
-      const orig = p[name];
-      if (typeof orig !== 'function') return;
-      p[name] = function patchedTexMethod(...args) {
-        for (let i = 0; i < args.length; i++) {
-          if (isBufferArg(args[i])) args[i] = fixedBufferArg(args[i]);
-        }
-        return orig.apply(this, args);
-      };
-    };
-    wrapPixelsScan('texImage2D');
-    // Emscripten's WebGL2 upload overload passes (HEAPU8, srcOffset). Copying
-    // that view wholesale copies the entire WASM heap, so one extreme zoom made
-    // every later upload copy hundreds of MB even after the grid shrank. The
-    // engine uploads RGBA/UNSIGNED_BYTE; retain only the prefix reachable through
-    // its current UNPACK_ROW_LENGTH/SKIP_* state and keep the same overload.
-    {
-      const orig = p.texSubImage2D;
-      if (typeof orig === 'function') {
-        p.texSubImage2D = function patchedTexSubImage2D(...args) {
-          const heap = args[8];
-          const srcOffset = args[9] | 0;
-          if (args.length >= 10 && ArrayBuffer.isView(heap) && needsFixedBuffer(heap)
-              && args[6] === 0x1908 && args[7] === 0x1401) { // RGBA / UNSIGNED_BYTE
-            const width = args[4] | 0, height = args[5] | 0;
-            const rowLength = this.getParameter(0x0CF2) || width; // UNPACK_ROW_LENGTH
-            const skipRows = this.getParameter(0x0CF3) | 0;
-            const skipPixels = this.getParameter(0x0CF4) | 0;
-            const pixels = Math.max(0, (skipRows + height - 1) * rowLength + skipPixels + width);
-            const count = Math.min(heap.length - srcOffset, pixels * 4);
-            const fixed = new Uint8Array(Math.max(0, count));
-            fixed.set(heap.subarray(srcOffset, srcOffset + count));
-            args[8] = fixed;
-            args[9] = 0;
-            return orig.apply(this, args);
-          }
-          for (let i = 0; i < args.length; i++) {
-            if (isBufferArg(args[i])) args[i] = fixedBufferArg(args[i]);
-          }
-          return orig.apply(this, args);
-        };
-      }
-    }
-    wrapPixelsScan('compressedTexImage2D');
-    wrapPixelsScan('compressedTexSubImage2D');
-
-    // readPixels writes INTO the view. Chromium rejects the WebGL2
-    // (dstData, dstOffset) form when dstData is a resizable heap (Emscripten's
-    // growable memory). Subarray form is fine; heap+offset is not. Copy into a
-    // fixed buffer, call, then write back.
-    {
-      const orig = p.readPixels;
-      if (typeof orig === 'function') {
-        p.readPixels = function patchedReadPixels(...args) {
-          // WebGL2: (x, y, w, h, format, type, dstData, dstOffset)
-          if (args.length >= 7 && ArrayBuffer.isView(args[6]) && needsFixedBuffer(args[6])) {
-            const heap = args[6];
-            const offset = args[7] | 0;
-            const w = args[2] | 0, h = args[3] | 0;
-            // Engine always reads RGBA/UNSIGNED_BYTE; size is w*h*4 elements.
-            const tmp = new Uint8Array(Math.max(0, w * h * 4));
-            const ret = orig.call(this, args[0], args[1], w, h, args[4], args[5], tmp);
-            // dstOffset is an element index into the typed array (not a byte offset).
-            heap.set(tmp, offset);
-            return ret;
-          }
-          // WebGL1 / view form: (…, pixels)
-          const last = args.length - 1;
-          const dest = args[last];
-          if (ArrayBuffer.isView(dest) && needsFixedBuffer(dest)) {
-            const copy = fixedBufferArg(dest);
-            args[last] = copy;
-            const ret = orig.apply(this, args);
-            dest.set(copy);
-            return ret;
-          }
-          return orig.apply(this, args);
-        };
-      }
-    }
-
-    // Uniform matrix/vector uploads sometimes pass HEAPF32 views.
-    for (const name of Object.getOwnPropertyNames(p)) {
-      if (!/^uniform\d/.test(name) && !/^vertexAttrib\d/.test(name)) continue;
-      if (name.includes('Pointer')) continue; // pointer APIs take offsets, not views
-      const orig = p[name];
-      if (typeof orig !== 'function') continue;
-      p[name] = function patchedUniform(...args) {
-        for (let i = 0; i < args.length; i++) {
-          if (ArrayBuffer.isView(args[i])) args[i] = fixedBufferArg(args[i]);
-        }
-        return orig.apply(this, args);
-      };
-    }
-  };
-
-  if (typeof WebGLRenderingContext !== 'undefined') patchGLProto(WebGLRenderingContext);
-  if (typeof WebGL2RenderingContext !== 'undefined') patchGLProto(WebGL2RenderingContext);
-}
 
 export function initSandWasm() {
   if (!modPromise) {
-    patchResizableWasmHeapForBrowserGL();
     modPromise = createSandModule().then((mod) => {
       const c = (name, ret, args) => mod.cwrap(name, ret, args);
       // Refuse a module whose compiled-in ABI version mismatches the JS
@@ -636,9 +463,14 @@ const renderStrides = Object.freeze({
       }
       glTargetKey = key;
       glCanvas = canvasEl;
-      return M.glInit(ptr, key) === 1;
+      return withPatchedCanvasWebGLContext(
+        canvasEl,
+        () => M.glInit(ptr, key) === 1,
+      );
     },
-    glRestore() { return M.glRestore(ptr) === 1; },
+    glRestore() {
+      return withResizableTextDecoder(() => M.glRestore(ptr) === 1);
+    },
     glResize(devW, devH) { M.glResize(ptr, devW, devH); },
     glActorLight(x, y, w, h) { return M.glActorLight(ptr, x, y, w | 0, h | 0); },
     // Players to overlay. Host/local draws the engine's own players (own = the

@@ -1,10 +1,5 @@
   // Static components, grounding, and assembly movement.
   ComponentSystem comps{*this};
-  void computeGrounded() { comps.computeGrounded(); }
-  void ensureGroundedSingleLayer() { comps.ensureGroundedSingleLayer(); }
-  void computeGroundedBoth() { comps.computeGroundedBoth(); }
-  void moveRigidAssemblies() { comps.moveRigidAssemblies(); }
-  void moveCrossLayerBondedAssemblies() { comps.moveCrossLayerBondedAssemblies(); }
   bool removalsKeepGroundingValid(const std::vector<int>& removed) { return comps.removalsKeepGroundingValid(removed); }
   void registerSeededComponents(int colStart, int colEnd) { comps.registerSeededComponents(colStart, colEnd); }
   void registerSeededComponents(int colStart, int colEnd, int rowStart, int rowEnd) { comps.registerSeededComponents(colStart, colEnd, rowStart, rowEnd); }

@@ -4,6 +4,7 @@ import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
 
+/** @param {import('../game/runtimeContext.js').SandRuntimeContext} ctx */
 export function createWorldWorkerClient(ctx) {
   let worker = new WorldWorker();
   let initOptions = null;

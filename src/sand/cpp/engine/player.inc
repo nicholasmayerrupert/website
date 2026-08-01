@@ -1,6 +1,5 @@
   // Player characters (PlayerSystem, player.hpp) — composed here; method bodies
-  // in player_impl.inc. Shims keep the frequent internal call sites unchanged;
-  // the players vector lives on the system (psys.players).
+  // in player_impl.inc. The players vector lives on the system (psys.players).
   PlayerSystem psys{*this};
   Player* findPlayer(int id) { return psys.findPlayer(id); }
   int spawnPlayer(double x, double y) { return psys.spawnPlayer(x, y); }
@@ -19,7 +18,6 @@
   bool mineFootprintBoth(Player& p, int ax, int ay, bool scaledSpeed = true) { return psys.mineFootprintBoth(p, ax, ay, scaledSpeed); }
   void playerFinalizeSolidDraft() { psys.playerFinalizeSolidDraft(); }
   void applyPlayerTools() { psys.applyPlayerTools(); }
-  void updatePlayers() { psys.updatePlayers(); }
   void stepPlayerOnly(int id) { psys.stepPlayerOnly(id); }
   void setPlayerState(int id, double x, double y, double vx, double vy, int facing, int grounded,
                       int jumpReady, double jetpackFuel, int jetpackActive) {

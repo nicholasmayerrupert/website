@@ -39,6 +39,7 @@ export const UNIT_SUITES = [
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],
   ['rigid-collision', 'rigid-collision-test.mjs'],
+  ['rigid-fluid-accuracy', 'rigid-fluid-accuracy-test.mjs'],
   ['rigid-dense-pile', 'rigid-dense-pile-test.mjs'],
   ['rigid-large-body', 'rigid-large-body-test.mjs'],
   ['rigid-shape-stress', 'rigid-shape-stress-test.mjs'],
@@ -77,6 +78,7 @@ export const UNIT_SUITES = [
   ['acid-stuck', 'acid-stuck-test.mjs'],
   ['hold-place', 'hold-place-test.mjs'],
   ['item-float', 'item-float-test.mjs'],
+  ['webgl-buffer-isolation', 'webgl-buffer-isolation-test.mjs'],
 ];
 
 export const BROWSER_SUITES = [

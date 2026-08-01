@@ -8,6 +8,7 @@ import { ITEM_FIELDS } from '../net/protocol.js';
 import { TOOL_IDS } from './runtimeConfig';
 import { applyCreatureRuntimePolicy } from './creatureRuntimePolicy';
 
+/** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function installDevHooks(ctx, {
   render,
   doFixedStep,

@@ -94,11 +94,9 @@ bool CreatureSystem::boxFitsHabitat(uint8_t speciesId, double wx, double wy) con
 }
 
 WorldContext CreatureSystem::spawnWorldContext(double wx, double wy) const {
-  Layer* active = E.L;
-  E.useLayer(&E.fg);
+  Engine::ActiveLayerScope layerScope(E, &E.fg);
   WorldContext context = E.worldContext.at(
     (int)std::floor(wx), (int)std::floor(wy));
-  E.useLayer(active);
   return context;
 }
 
@@ -488,8 +486,7 @@ void CreatureSystem::updateVillageResidents() {
     if (c.alive && c.species == CS_VILLAGER) residents++;
   if (residents >= VILLAGE_RESIDENT_CAP) return;
 
-  Layer* activeLayer = E.L;
-  E.useLayer(&E.fg);
+  Engine::ActiveLayerScope layerScope(E, &E.fg);
   auto floorDiv = [](int value, int divisor) {
     int q = value / divisor, r = value % divisor;
     if (r < 0) q--;
@@ -560,7 +557,6 @@ void CreatureSystem::updateVillageResidents() {
                     (int)(sizeof(indoorCandidates) / sizeof(int)), true);
     }
   }
-  E.useLayer(activeLayer);
 }
 
 void CreatureSystem::updateNaturalPopulation() {
@@ -1249,10 +1245,9 @@ void CreatureSystem::fireBoreLine(double ox, double oy, double dx, double dy, in
     }
   }
   if (!cells.empty()) {
-    Layer* restore = E.L;
+    Engine::ActiveLayerScope layerScope(E, &E.fg);
     E.useLayer(&E.fg); E.eraseStrokeCells(cells, x0, y0, x1, y1);
     if (E.bgEnabled) { E.useLayer(&E.bg); E.eraseStrokeCells(cells, x0, y0, x1, y1); }
-    E.useLayer(restore);
   }
 
   double awx0 = E.fg.worldOffsetX + ox, awy0 = E.fg.worldOffsetY + oy;

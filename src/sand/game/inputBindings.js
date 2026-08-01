@@ -7,6 +7,7 @@
 
 import { BUTTON_BITS, KEY_CODES, TEXT_INPUT_TYPES } from './runtimeConfig';
 
+/** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createInputBindings(ctx, { refreshBounds, zoomBy, resetZoom, onToggleInventory, onToggleFootprintMenu }) {
   const hadTabIndex = ctx.container.hasAttribute('tabindex');
   const originalTabIndex = ctx.container.getAttribute('tabindex');

@@ -7,7 +7,16 @@
   Layer* L = &fg;     // active layer
 
   // Hot paths address the active layer through L->.
-  void useLayer(Layer* lay) { L = lay; }
+  inline void useLayer(Layer* lay) { L = lay; }
+  struct ActiveLayerScope {
+    Engine& engine;
+    Layer* previous;
+    inline ActiveLayerScope(Engine& owner, Layer* layer)
+        : engine(owner), previous(owner.L) { owner.L = layer; }
+    inline ~ActiveLayerScope() { engine.L = previous; }
+    ActiveLayerScope(const ActiveLayerScope&) = delete;
+    ActiveLayerScope& operator=(const ActiveLayerScope&) = delete;
+  };
   // Non-consuming check: does a layer have any active row marks this step?
   bool layerActive(Layer* lay) {
     if (!lay->pendingDetonations.empty()) return true;

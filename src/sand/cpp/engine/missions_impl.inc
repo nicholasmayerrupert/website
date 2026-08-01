@@ -162,7 +162,7 @@ bool MissionSystem::start(int id, int ownerPlayerId) {
   objectives.reserve(4);
   E.creatureNaturalSpawning = false;
   E.useLayer(&E.fg);
-  E.ensureGroundedSingleLayer();
+  E.comps.ensureGroundedSingleLayer();
 
   Player* player = E.findPlayer(playerId);
   int centerX = (int)std::lround(player->spawnWorldX);
@@ -247,7 +247,7 @@ void MissionSystem::activateObjective(int objectiveId) {
   MissionObjective* objective = findObjective(objectiveId);
   if (!objective || objective->state != OS_LOCKED) return;
   E.useLayer(&E.fg);
-  E.ensureGroundedSingleLayer();
+  E.comps.ensureGroundedSingleLayer();
   objective->state = OS_ACTIVE;
   revision++;
   if (objective->type == OK_RESCUE) {

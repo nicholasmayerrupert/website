@@ -728,26 +728,3 @@ static const double R_GRANULAR_DRAG = 0.12, R_GRANULAR_ANG_DRAG = 0.1;
 static const double R_GRANULAR_REST_BAND = 0.08, R_GRANULAR_REST_DAMP = 0.45;
 static const double R_GRANULAR_ZERO_VY = 0.02;
 static const double R_WAKE_LIN2 = 0.028 * 0.028, R_WAKE_ANG2 = 0.014 * 0.014, R_REST_DEPTH = 1.5;
-
-// Composed subsystem declarations.
-#include "camera.hpp"
-#include "netsync.hpp"
-#include "layer.hpp"
-#include "terrain.hpp"
-#include "world_context.hpp"
-#include "renderer.hpp"
-#include "creatures.hpp"
-#include "missions.hpp"
-#include "glpresenter.hpp"
-#include "items.hpp"
-#include "inventory.hpp"
-#include "crafting.hpp"
-#include "projectiles.hpp"
-#include "player.hpp"
-#include "tools.hpp"
-#include "reactions.hpp"
-#include "explosives.hpp"
-#include "growth.hpp"
-#include "components.hpp"
-#include "rigid.hpp"
-#include "audio.hpp"

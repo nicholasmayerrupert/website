@@ -510,10 +510,10 @@ void ProjectileSystem::updateProjectiles() {
     int y = imax(1, imin(E.rows - 2, (int)std::lround(shell.py)));
     damageSplash(x + .5, y + .5, ACID_SPLASH_RADIUS_LOCAL,
                  ACID_SPLASH_DAMAGE_LOCAL, shell.owner, false);
-    Layer* restore = E.L;
-    E.useLayer(&E.fg);
-    E.paintDisc(x, y, ACID_SPLASH_RADIUS_LOCAL, ACID, false);
-    E.useLayer(restore);
+    {
+      Engine::ActiveLayerScope layerScope(E, &E.fg);
+      E.paintDisc(x, y, ACID_SPLASH_RADIUS_LOCAL, ACID, false);
+    }
     E.audio.emit(SE_ACID_DISSOLVE, x, y, 1.0, ACID, 0);
   };
 

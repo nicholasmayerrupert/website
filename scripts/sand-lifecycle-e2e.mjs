@@ -41,12 +41,41 @@ try {
   await waitForServer();
   browser = await chromium.launch({ headless: true });
 
+  const guardBrowserPrototypes = async (targetPage) => {
+    await targetPage.addInitScript(() => {
+      const webgl = WebGLRenderingContext.prototype;
+      const webgl2 = WebGL2RenderingContext.prototype;
+      const snapshot = {
+        bufferData: webgl.bufferData,
+        uniform4fv: webgl.uniform4fv,
+        texSubImage2D: webgl.texSubImage2D,
+        readPixels: webgl.readPixels,
+        bufferData2: webgl2.bufferData,
+        texSubImage2D2: webgl2.texSubImage2D,
+        readPixels2: webgl2.readPixels,
+        decode: TextDecoder.prototype.decode,
+      };
+      window.__sandBrowserPrototypesUnchanged = () =>
+        webgl.bufferData === snapshot.bufferData
+        && webgl.uniform4fv === snapshot.uniform4fv
+        && webgl.texSubImage2D === snapshot.texSubImage2D
+        && webgl.readPixels === snapshot.readPixels
+        && webgl2.bufferData === snapshot.bufferData2
+        && webgl2.texSubImage2D === snapshot.texSubImage2D2
+        && webgl2.readPixels === snapshot.readPixels2
+        && TextDecoder.prototype.decode === snapshot.decode;
+    });
+  };
+
   console.log('sand-game reconnect + WebGL cleanup');
   const page = await browser.newPage();
+  await guardBrowserPrototypes(page);
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.goto(baseURL, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__sandTest?.sharedGlContexts?.() === 1, null, { timeout: 30000 });
+  check('sand initialization leaves browser prototypes unchanged',
+    await page.evaluate(() => window.__sandBrowserPrototypesUnchanged()));
 
   for (let cycle = 1; cycle <= 5; cycle++) {
     const detached = await page.evaluate(() => {
@@ -87,8 +116,29 @@ try {
   check('reconnects produce no page exceptions', pageErrors.length === 0, pageErrors.join('; '));
   await page.close();
 
+  console.log('\nsand + Three.js coexistence');
+  const coexistPage = await browser.newPage();
+  await guardBrowserPrototypes(coexistPage);
+  const coexistErrors = [];
+  coexistPage.on('pageerror', (error) => coexistErrors.push(error.message));
+  await coexistPage.goto(`http://127.0.0.1:${PORT}/#projects`, { waitUntil: 'load' });
+  await coexistPage.waitForFunction(() => {
+    const sandCanvas = document.querySelector('sand-game')?.shadowRoot
+      ?.getElementById('sand-main');
+    const lifeCanvas = document.querySelector('.life-showcase__visual canvas');
+    return !!sandCanvas && !!lifeCanvas
+      && window.__sandTest?.sharedGlContexts?.() === 1;
+  }, null, { timeout: 30000 });
+  check('sand and Three.js both create canvases', true);
+  check('coexisting renderers leave browser prototypes unchanged',
+    await coexistPage.evaluate(() => window.__sandBrowserPrototypesUnchanged()));
+  check('coexisting renderers produce no page exceptions',
+    coexistErrors.length === 0, coexistErrors.join('; '));
+  await coexistPage.close();
+
   console.log('\ninitialization failure + retry');
   const retryPage = await browser.newPage();
+  await guardBrowserPrototypes(retryPage);
   let wasmRequests = 0;
   let allowWasm = false;
   await retryPage.route('**/*.wasm*', async (route) => {

@@ -1,8 +1,6 @@
   // Free rigid bodies (RigidBodySystem, rigid.hpp) — composed here; method
-  // bodies in rigid_impl.inc. Shims keep the pipeline/tools/explosives/ABI
-  // call sites unchanged.
+  // bodies in rigid_impl.inc.
   RigidBodySystem rigid{*this};
-  void moveBodies() { rigid.moveBodies(); }
   bool planAssemblyBodyPush(const std::unordered_set<int>& assemblyCells, int dir, AssemblyBodyPush& plan) { return rigid.planAssemblyBodyPush(assemblyCells, dir, plan); }
   bool planAssemblyBodyPush(const std::vector<int>& assemblyCells, int dir, AssemblyBodyPush& plan) { return rigid.planAssemblyBodyPush(assemblyCells, dir, plan); }
   void applyAssemblyBodyPush(AssemblyBodyPush& plan) { rigid.applyAssemblyBodyPush(plan); }

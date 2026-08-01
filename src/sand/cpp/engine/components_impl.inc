@@ -1534,8 +1534,7 @@ void ComponentSystem::markBreakCandidates() {
 void ComponentSystem::detachComponentGroups(Layer& lay,
                                             const std::vector<std::vector<int>>& groups) {
   if (groups.empty()) return;
-  Layer* previous = E.L;
-  E.useLayer(&lay);
+  Engine::ActiveLayerScope layerScope(E, &lay);
 
   struct PendingBody {
     std::vector<std::pair<int, int>> cells;
@@ -1589,10 +1588,7 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
       pending.push_back(std::move(body));
     }
   }
-  if (pending.empty()) {
-    E.useLayer(previous);
-    return;
-  }
+  if (pending.empty()) return;
 
   std::vector<Comp> remaining;
   remaining.reserve(lay.components.size());
@@ -1629,7 +1625,6 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
   jointSupportValid = false;
   jointSupportSleeping = false;
   jointTranslationReady = false;
-  E.useLayer(previous);
 }
 
 void ComponentSystem::detachCrossLayerComponentGroups(

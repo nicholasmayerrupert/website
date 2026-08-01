@@ -222,7 +222,12 @@ limited by the device's WebGL texture dimensions rather than a fixed cell cap.
   operation state, objectives, scripted actors, extraction, and snapshots.
 - `cpp/engine/core.inc`: loose-material settling hot path.
 - `cpp/engine/step.inc`: world-step coordinator and cross-layer transfer.
-- `cpp/engine/worldgen.inc`: streaming, chunk persistence, and terrain fills.
+- `cpp/engine/rigid_impl.inc`: rigid-body operations; the hot solver is grouped
+  into prepare/contact/substep/finalize includes and liquid coupling into
+  domain/projection/solve/writeback includes without adding runtime boundaries.
+- `cpp/engine/worldgen.inc`: groups deterministic terrain, surface/deep/off-world
+  structure stamping under `worldgen_generation.inc`; loaded-window persistence,
+  prefetch, shifting, and resize live separately in `world_streaming.inc`.
 - `cpp/engine/abi.inc`: exported C ABI.
 - `materials.schema.json`: material identity and generated behavior/render tables.
 - `abi.schema.json`: packed ABI layouts and shared enums.

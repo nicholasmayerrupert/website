@@ -317,10 +317,8 @@ EMSCRIPTEN_KEEPALIVE int engine_test_set_liquid_velocity(
   lay.liquidVel[k] = velocity;
   lay.nextLiquidVel[k] = velocity;
   lay.sleepingBodySupportDirty = true;
-  Layer* previous = e->L;
-  e->useLayer(&lay);
+  Engine::ActiveLayerScope layerScope(*e, &lay);
   e->markCellIndex(k);
-  e->useLayer(previous);
   return 1;
 }
 EMSCRIPTEN_KEEPALIVE int engine_test_rigid_rejected(Engine* e) { return e->rigid.rigidRejectedCells; }

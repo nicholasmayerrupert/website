@@ -765,6 +765,7 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
                                              bool bypassActorCooldown,
                                              int immuneCreatureId) {
   Layer* src = E.L;
+  Engine::ActiveLayerScope layerScope(E, src);
   E.audio.emit(soundEvent, cx, cy, std::min(2.5, power / TNT_BLAST_POWER),
                explosiveMaterial, src == &E.bg ? 1 : 0);
   damageActors(cx, cy, radius, power, immunePlayerId, actorDamageScale,
@@ -779,11 +780,11 @@ void ExplosivesSystem::carveBlastAcrossLayers(int cx, int cy, int radius, double
   otherBb->debrisStepCap = 0;
   otherBb->emitGas = false;
   otherBb->emitParticles = false;
-  E.useLayer(src);
 }
 
 void ExplosivesSystem::finishBlastBatches(BlastBatch& bb, BlastBatch* otherBb) {
   Layer* src = E.L;
+  Engine::ActiveLayerScope layerScope(E, src);
   Layer* other = E.bgEnabled && otherBb ? (src == &E.fg ? &E.bg : &E.fg) : nullptr;
   bool jointDirtyBefore = E.comps.jointDirty;
   bool jointBondsInvalidBefore = E.comps.jointBondsInvalid;

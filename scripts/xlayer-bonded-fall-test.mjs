@@ -269,7 +269,9 @@ for (const [name, medium] of [['water', MAT.WATER], ['sand', MAT.SAND]]) {
 // a foreground body remain one bonded assembly through the full descent.
 {
   const cols = 96, rows = 120, floorY = 110;
-  const engine = createEngineWasm({ cols, rows, worldSeed: 123, sinksOn: false, infinite: false });
+  const engine = attachTestHooks(createEngineWasm({
+    cols, rows, worldSeed: 123, sinksOn: false, infinite: false,
+  }));
   engine.setBgEnabled(true);
   const rect = (layer, x0, y0, x1, y1, material) => {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++)
@@ -303,19 +305,44 @@ for (const [name, medium] of [['water', MAT.WATER], ['sand', MAT.SAND]]) {
   engine.syncComponentsLayer(0);
   engine.syncComponentsLayer(1);
 
+  const jointState = (layer, role) => {
+    for (let body = 0; body < engine._bodyCountLayer(layer); body++) {
+      if (engine._bodyJointRoleLayer(layer, body) === role)
+        return engine._bodyStateLayer(layer, body);
+    }
+    return null;
+  };
+  const samePose = (a, b) => a && b
+    && ['px', 'py', 'angle', 'vx', 'vy', 'omega']
+      .every((field) => Math.abs(a[field] - b[field]) <= 1e-9);
+
   const sand0 = total(MAT.SAND), water0 = total(MAT.WATER), fg = [], bg = [];
+  let jointMismatch = null, jointSeen = false, jointSettled = false;
   for (let i = 0; i < 180; i++) {
     engine.stepWorld();
     fg.push(top(engine.getGrid(), MAT.BRICK));
     bg.push(top(engine.getGridBg(), MAT.CLAY));
+    const leader = jointState(0, 1), follower = jointState(1, 2);
+    if (leader && follower) {
+      if (jointSettled && !jointMismatch) jointMismatch = `${i}: dynamic joint reappeared after settling`;
+      jointSeen = true;
+      if (!jointMismatch && !samePose(leader, follower))
+        jointMismatch = `${i}: pose ${leader.py.toFixed(3)}/${follower.py.toFixed(3)}, angle ${leader.angle.toFixed(3)}/${follower.angle.toFixed(3)}`;
+    } else if (leader || follower) {
+      if (!jointMismatch)
+        jointMismatch = `${i}: joint roles ${leader ? 'leader' : 'missing'}/${follower ? 'follower' : 'missing'}`;
+    } else if (jointSeen) {
+      jointSettled = true;
+    }
   }
-  const traceMismatch = fg.findIndex((y, i) => Math.abs(y - bg[i]) > 2
-    || (i > 0 && y < fg[i - 1] - 1)
-    || (i > 0 && bg[i] < bg[i - 1] - 1));
+  // The joint pose is authoritative. Offset masks can expose different topmost
+  // raster rows while the shared body rotates during a floor impact.
+  const traceMismatch = fg.findIndex((y, i) => Math.abs(y - bg[i]) > 2);
   const traceDetail = traceMismatch < 0 ? 'none'
-    : `${traceMismatch}: fg ${fg[traceMismatch - 1]}->${fg[traceMismatch]}, bg ${bg[traceMismatch - 1]}->${bg[traceMismatch]}`;
-  check(`full composite island falls in bounded raster lockstep (first mismatch ${traceDetail})`,
-    traceMismatch < 0);
+    : `${traceMismatch}: fg ${fg[traceMismatch]}, bg ${bg[traceMismatch]}`;
+  check(`full composite island keeps one foreground/background joint until settling (${jointMismatch || 'exact shared pose'})`,
+    jointSeen && jointMismatch === null);
+  check(`full composite island stays raster-aligned (first mismatch ${traceDetail})`, traceMismatch < 0);
   check(`full composite island reaches the floor (fg ${fg.at(-1)}; bg ${bg.at(-1)})`,
     fg.at(-1) >= 90 && bg.at(-1) >= 90);
   check(`full composite loose media are conserved (sand ${sand0} -> ${total(MAT.SAND)}, water ${water0} -> ${total(MAT.WATER)})`,

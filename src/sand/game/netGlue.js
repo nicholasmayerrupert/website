@@ -5,6 +5,7 @@
 
 import { createGameNet } from '../net/gameNet';
 
+/** @param {import('./runtimeContext.js').SandRuntimeContext} ctx */
 export function createNetGlue(ctx, { fit, rebuildEngineForDims, currentLocalInput }) {
   ctx.net = createGameNet({
     getEngine: () => ctx.engine,

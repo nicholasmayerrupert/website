@@ -50,7 +50,7 @@ export function createSandGame(container, opts = {}) {
     ] ?? PLANET.EARTH);
   const resolvedGravityScale = Number.isFinite(gravityScale)
     ? gravityScale
-    : (planetId === PLANET.MOON ? 0.33 : (planetId === PLANET.MARS ? 0.76 : 1));
+    : undefined;
   const missionId = typeof mission === 'number'
     ? mission
     : ({
@@ -79,6 +79,7 @@ export function createSandGame(container, opts = {}) {
   // Shared runtime state. Every module reads/writes this one object; the
   // fields are grouped by owner. ctx.fns holds late-bound cross-module calls
   // (set after the owning module is created).
+  /** @type {import('./runtimeContext.js').SandRuntimeContext} */
   const ctx = {
     container, canvas, parallax, audio, survival, debugHitboxes: !!debugHitboxes,
     planetId, gravityScale: resolvedGravityScale, missionId,
@@ -148,6 +149,14 @@ export function createSandGame(container, opts = {}) {
     // multiplayer (netGlue) + reduced motion
     net: null,
     reduced: false,
+    viewportActive: true,
+    audioEnabled: true,
+    timingStats: null,
+
+    // lifecycle callbacks are installed below before any module can invoke them.
+    startLocalAuthority: null,
+    stopLocalAuthority: null,
+    setAuthorityError: null,
 
     netClientReady: () => !!ctx.net && ctx.net.role === 'client' && ctx.net.connected && ctx.net.worldReady,
     zoomFactor: () => ctx.zoom,

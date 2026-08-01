@@ -1082,8 +1082,7 @@ for (const tc of [
 }
 
 // Ice density sits between oil and brine. It should find a buoyant row between
-// them without entering a deterministic one-cell up/down cycle while the two
-// liquids are still leveling.
+// them and settle to a bounded continuous pose while the liquids are leveling.
 {
   console.log('ice settles stably between oil and brine');
   const STONE = 3, OIL = 4, ICE = 12, BRINE = 33;
@@ -1102,17 +1101,27 @@ for (const tc of [
     for (let i = 0; i < g.length; i++) if (g[i] === ICE) { n++; sy += (i / COLS) | 0; }
     return n ? sy / n : null;
   };
-  const ys = [];
-  for (let i = 0; i < 360; i++) { e.step(16 * (i + 1)); const y = iceCy(); if (y !== null) ys.push(y); }
-  let reversals = 0, lastDir = 0;
-  for (let i = 1; i < ys.length; i++) {
-    const d = Math.sign(ys[i] - ys[i - 1]);
-    if (d && lastDir && d !== lastDir) reversals++;
-    if (d) lastDir = d;
+  let iceBodyIndex = -1;
+  const rasterYs = [], bodyYs = [];
+  for (let i = 0; i < 360; i++) {
+    e.step(16 * (i + 1));
+    const y = iceCy();
+    if (y !== null) rasterYs.push(y);
+    if (iceBodyIndex < 0) {
+      for (let body = 0; body < e._bodyCount(); body++)
+        if (e._bodyMaterial(body) === ICE) {
+          iceBodyIndex = body;
+          break;
+        }
+    }
+    if (iceBodyIndex >= 0) bodyYs.push(e._bodyState(iceBodyIndex).py);
   }
-  const tail = ys.slice(-120);
-  check(`ice stayed present in the oil/brine interface (${ys.length} samples)`, ys.length > 300);
-  check(`ice corrections end while liquids level (${reversals} reversals, ${new Set(tail).size} tail positions)`, new Set(tail).size === 1);
+  const tail = bodyYs.slice(-120);
+  const tailHeave = Math.max(...tail) - Math.min(...tail);
+  const finalBody = e._bodyState(iceBodyIndex);
+  check(`ice stayed present in the oil/brine interface (${rasterYs.length} samples)`, rasterYs.length > 300);
+  check(`ice motion settled while liquids level (heave ${tailHeave.toFixed(2)}, vy ${finalBody.vy.toFixed(3)})`,
+    bodyYs.length > 300 && tailHeave <= 0.75 && Math.abs(finalBody.vy) < 0.03);
   e.destroy();
 }
 

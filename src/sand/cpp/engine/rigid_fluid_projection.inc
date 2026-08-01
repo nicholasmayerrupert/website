@@ -119,8 +119,8 @@
   fluidNodes.clear();
   fluidNodeDepth.clear();
   fluidQueue.clear();
-  uint8_t coupledMaterial = EMPTY;
-  bool heterogeneousCoupling = false;
+  std::vector<uint8_t> bodyFluidMaterial(bodies.size(), EMPTY);
+  std::vector<uint8_t> bodyMixedFluid(bodies.size(), 0);
   bool iceCoupling = false;
   for (Body* body : bodies) {
     if (E.isIceMaterial(body->material)
@@ -146,10 +146,13 @@
     Layer* lay = layerAt(layer);
     uint8_t material = lay->grid[k];
     if (!E.isLiquidMaterial(material)) return false;
-    if (coupledMaterial == EMPTY)
-      coupledMaterial = material;
-    else if (coupledMaterial != material)
-      heterogeneousCoupling = true;
+    if (sourceBody >= 0 && sourceBody < (int)bodies.size()) {
+      uint8_t& firstMaterial = bodyFluidMaterial[sourceBody];
+      if (firstMaterial == EMPTY)
+        firstMaterial = material;
+      else if (firstMaterial != material)
+        bodyMixedFluid[sourceBody] = 1;
+    }
     fluidNodeStamp[layer][k] = fluidNodeGeneration;
     fluidNodeIndex[layer][k] = (int)fluidNodes.size();
     uint32_t packedVelocity = lay->liquidVel ? lay->liquidVel[k] : 0;
@@ -180,21 +183,23 @@
     if (y > 0) addNode(qLayer, qk - E.cols, depth + 1, sourceBody);
     if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, depth + 1, sourceBody);
   }
-  if (heterogeneousCoupling) {
-    // A local density interface needs both sides in one pressure projection.
-    // This fallback is intentionally rare: ordinary single-material reservoirs
-    // retain the fixed band and never walk the connected pool.
-    for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
-      int packed = fluidQueue[qi];
-      int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
-      int nodeIndex = fluidNodeIndex[qLayer][qk];
-      int sourceBody = fluidNodes[nodeIndex].sourceBody;
-      int y = qk / E.cols, x = qk - y * E.cols;
-      if (x > 0) addNode(qLayer, qk - 1, 0, sourceBody);
-      if (x + 1 < E.cols) addNode(qLayer, qk + 1, 0, sourceBody);
-      if (y > 0) addNode(qLayer, qk - E.cols, 0, sourceBody);
-      if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, 0, sourceBody);
-    }
+  // Density interfaces need more of both liquids than the ordinary near-field
+  // band, but the pressure solve must remain independent of reservoir size.
+  for (size_t qi = 0; qi < fluidQueue.size(); qi++) {
+    int packed = fluidQueue[qi];
+    int qLayer = packed / cellCount, qk = packed - qLayer * cellCount;
+    int nodeIndex = fluidNodeIndex[qLayer][qk];
+    int depth = fluidNodeDepth[nodeIndex];
+    int sourceBody = fluidNodes[nodeIndex].sourceBody;
+    if (sourceBody < 0 || sourceBody >= (int)bodies.size()
+        || !bodyMixedFluid[sourceBody]
+        || depth >= R_FLUID_MIXED_DOMAIN_RADIUS)
+      continue;
+    int y = qk / E.cols, x = qk - y * E.cols;
+    if (x > 0) addNode(qLayer, qk - 1, depth + 1, sourceBody);
+    if (x + 1 < E.cols) addNode(qLayer, qk + 1, depth + 1, sourceBody);
+    if (y > 0) addNode(qLayer, qk - E.cols, depth + 1, sourceBody);
+    if (y + 1 < E.rows) addNode(qLayer, qk + E.cols, depth + 1, sourceBody);
   }
   if (fluidNodes.empty()) return false;
   fluidNodeCount = imax(fluidNodeCount, (int)fluidNodes.size());

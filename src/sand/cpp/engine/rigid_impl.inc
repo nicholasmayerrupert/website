@@ -896,6 +896,31 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
   // into a pool then distributes the rise across the surface instead of firing a
   // narrow fountain straight up out of the entry column ("lava out the top").
   int offs[4] = {-1, 1, E.cols, -E.cols}; int gridLen = E.cols * E.rows;
+  uint8_t footprintLiquid = EMPTY;
+  bool mixedLiquidFootprint = false;
+  auto noteFootprintLiquid = [&](uint8_t material) {
+    if (!E.isLiquidMaterial(material)) return;
+    if (footprintLiquid == EMPTY)
+      footprintLiquid = material;
+    else if (footprintLiquid != material)
+      mixedLiquidFootprint = true;
+  };
+  for (const Disp& cell : displaced) noteFootprintLiquid(cell.material);
+  int footprintMinX = E.cols, footprintMaxX = -1, footprintMaxY = -1;
+  for (int k : edgeFootprint) {
+    int y = k / E.cols, x = k - y * E.cols;
+    footprintMinX = imin(footprintMinX, x);
+    footprintMaxX = imax(footprintMaxX, x);
+    footprintMaxY = imax(footprintMaxY, y);
+    if (x > 0) noteFootprintLiquid(E.L->grid[k - 1]);
+    if (x + 1 < E.cols) noteFootprintLiquid(E.L->grid[k + 1]);
+    if (y > 0) noteFootprintLiquid(E.L->grid[k - E.cols]);
+    if (y + 1 < E.rows) noteFootprintLiquid(E.L->grid[k + E.cols]);
+  }
+  for (int y = footprintMaxY + 1;
+       y < E.rows && y <= footprintMaxY + R_FLUID_REFERENCE_SEARCH; y++)
+    for (int x = footprintMinX; x <= footprintMaxX; x++)
+      noteFootprintLiquid(E.L->grid[y * E.cols + x]);
   // Passability is keyed to the DISPLACED material's own density (curD), not the
   // body's: a dense fluid (lava) shoved aside by a lighter body must be able to
   // percolate through its own pool to reach the free surface — otherwise, deep in
@@ -946,7 +971,7 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
   // cell. Heavier groups run first so they claim spill targets before lighter
   // material; evicted lighter material is processed in later waves.
   std::vector<Disp> pending = displaced, nextPending;
-  std::vector<int> queue, targets;
+  std::vector<int> queue, targets, surfaceTargets, fallbackTargets;
   for (int wave = 0; !pending.empty() && wave < TABLE + 4; wave++) {
     std::sort(pending.begin(), pending.end(), [](const Disp& a, const Disp& b) {
       if (DENSITY[a.material] != DENSITY[b.material]) return DENSITY[a.material] > DENSITY[b.material];
@@ -960,7 +985,8 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
       while (gj < pending.size() && pending[gj].material == mat) gj++;
       curD = DENSITY[mat];
       int need = (int)(gj - gi);
-      queue.clear(); targets.clear();
+      queue.clear(); targets.clear(); surfaceTargets.clear();
+      fallbackTargets.clear();
       // Exchange leading-edge displacement with the same body's trailing
       // vacancies before searching the wider pool. This keeps liquid wrapped
       // around a translating body instead of ejecting it to a distant free
@@ -1020,11 +1046,62 @@ void RigidBodySystem::spillDisplacedBodyMaterial(
         for (int nk : footprintEdgeStarts) enqueue(nk);
       }
       int visitBudget = imin(gridLen, imax(4096, need * 128));
+      int surfaceGoal = imax(64, need * 8);
       int visits = 0;
-      for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need && visits < visitBudget; qi++, visits++) {
+      for (size_t qi = 0; qi < queue.size() && (int)targets.size() < need
+           && visits < visitBudget; qi++, visits++) {
         int k = queue[qi];
-        if (isDropTarget(k, mat)) { E.L->rigidSpillReserved[k] = reservedGen; targets.push_back(k); }
+        if (isDropTarget(k, mat)) {
+          // Liquid exits at a supported free-surface cell when one is reachable.
+          // Dry cells bordering the body remain a volume-preserving fallback.
+          bool dryLiquidOutlet = (mixedLiquidFootprint
+              || DENSITY[mat] < DENSITY[WATER] - 1e-6)
+            && E.isLiquidMaterial(mat)
+            && E.L->grid[k] == EMPTY;
+          bool hasLiquidBelow = k + E.cols < gridLen
+            && !inFootprint(k + E.cols)
+            && !E.isBodyCell(k + E.cols)
+            && E.isLiquidMaterial(E.L->grid[k + E.cols]);
+          if (dryLiquidOutlet) {
+            if (hasLiquidBelow)
+              surfaceTargets.push_back(k);
+            else if ((int)fallbackTargets.size() < need)
+              fallbackTargets.push_back(k);
+            if ((int)surfaceTargets.size() >= surfaceGoal) break;
+            continue;
+          }
+          E.L->rigidSpillReserved[k] = reservedGen;
+          targets.push_back(k);
+        }
         for (int off : offs) enqueue(k + off);
+      }
+      // Fill the lowest reachable surface row first, distributing a partial row
+      // across its width so repeated body motion cannot build a narrow mound.
+      std::sort(surfaceTargets.begin(), surfaceTargets.end(), [&](int a, int b) {
+        int ay = a / E.cols, by = b / E.cols;
+        return ay != by ? ay > by : a < b;
+      });
+      for (size_t first = 0; first < surfaceTargets.size()
+           && (int)targets.size() < need;) {
+        size_t last = first + 1;
+        int row = surfaceTargets[first] / E.cols;
+        while (last < surfaceTargets.size()
+               && surfaceTargets[last] / E.cols == row)
+          last++;
+        int take = imin(need - (int)targets.size(), (int)(last - first));
+        for (int i = 0; i < take; i++) {
+          size_t offset = ((size_t)(i * 2 + 1) * (last - first))
+                        / (size_t)(take * 2);
+          int k = surfaceTargets[first + offset];
+          E.L->rigidSpillReserved[k] = reservedGen;
+          targets.push_back(k);
+        }
+        first = last;
+      }
+      for (int k : fallbackTargets) {
+        if ((int)targets.size() >= need) break;
+        E.L->rigidSpillReserved[k] = reservedGen;
+        targets.push_back(k);
       }
       rigidSpillVisits += visits;
       int n = imin((int)targets.size(), need);

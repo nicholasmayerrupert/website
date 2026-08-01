@@ -116,12 +116,13 @@ component registration, and generation/restoration. Browser presentation exposes
   neighborhood so broad shallow rafts retain a density-based draft. Nearby
   open-column profiles provide mixed-density hydrostatic head without a
   connected-pool flood, while persistent liquid velocity carries dynamics
-  beyond the cutoff. A local multi-material interface triggers exact connected
-  projection; ordinary single-material pools remain fixed-size. Pressure Krylov
-  vectors use contiguous storage, the common unpinned iteration keeps its
-  convergence and direction updates SIMD-vectorized, and the repeated matrix
-  pass traverses compact dynamic faces. Extended ice projections resolve once
-  more when clamping tensile pressure changes the active constraints.
+  beyond the cutoff. Mixed-liquid interfaces extend only the affected body's
+  projection to a fixed 24-cell radius; cutoff faces use the adjacent density
+  and the column's stratified pressure.
+  Pressure Krylov vectors use contiguous storage, the common unpinned iteration
+  keeps its convergence and direction updates SIMD-vectorized, and the repeated
+  matrix pass traverses compact dynamic faces. Extended ice projections resolve
+  once more when clamping tensile pressure changes the active constraints.
 - Body/body broadphase retains its sweep-and-prune order across ticks and repairs
   it with insertion sort, then restores surviving pairs to deterministic
   body-index order before generating contacts.

@@ -8,8 +8,11 @@ const COLS = 180;
 const ROWS = 130;
 const STONE = 3;
 const WATER = 2;
+const OIL = 4;
 const WOOD = 8;
+const ICE = 12;
 const RIGID = 13;
+const BRINE = 33;
 
 await initSandWasm();
 
@@ -49,6 +52,68 @@ const countMaterial = (engine, material) => {
   for (const value of engine.getGrid()) if (value === material) count++;
   return count;
 };
+
+{
+  console.log('ice crosses an oil/brine interface with a bounded local domain');
+  const engine = makeEngine();
+  engine.setBgEnabled(false);
+  paintRect(engine, 18, 20, 20, 116, STONE);
+  paintRect(engine, 159, 20, 161, 116, STONE);
+  paintRect(engine, 18, 116, 161, 118, STONE);
+  engine.syncComponents();
+  paintRect(engine, 21, 76, 158, 115, BRINE);
+  paintRect(engine, 21, 50, 158, 75, OIL);
+  let now = run(engine, 80);
+  const oilBefore = countMaterial(engine, OIL);
+  const brineBefore = countMaterial(engine, BRINE);
+  engine.addDiscToIceDraft(90, 32, 7);
+  engine.finalizeIceDraft();
+
+  let maxNodes = 0, maxSurfaceHump = 0;
+  let humpStep = 0, humpBodyY = 0;
+  for (let step = 0; step < 140; step++) {
+    now = run(engine, 1, now);
+    maxNodes = Math.max(maxNodes,
+      engine.getRigidSolverDebug().fluidNodes);
+    const grid = engine.getGrid();
+    const liquidTops = [];
+    for (let x = 21; x <= 158; x++) {
+      let top = ROWS;
+      for (let y = 20; y < 116; y++) {
+        const material = grid[y * COLS + x];
+        if (material === OIL || material === BRINE) {
+          top = y;
+          break;
+        }
+      }
+      liquidTops.push(top);
+    }
+    const far = [
+      ...liquidTops.slice(0, 40),
+      ...liquidTops.slice(-40),
+    ].sort((a, b) => a - b);
+    const farSurface = far[(far.length / 2) | 0];
+    const nearSurface = Math.min(...liquidTops.slice(55, 83));
+    const surfaceHump = farSurface - nearSurface;
+    if (surfaceHump > maxSurfaceHump) {
+      maxSurfaceHump = surfaceHump;
+      humpStep = step;
+      humpBodyY = engine._bodyState(0).py;
+    }
+  }
+  const body = engine._bodyState(0);
+  check(`mixed-liquid pressure domain stayed local (${maxNodes} nodes)`,
+    maxNodes > 0 && maxNodes < 2500);
+  check(`displaced liquid kept a flat free surface (${maxSurfaceHump} rows at step ${humpStep}, body y ${humpBodyY.toFixed(2)})`,
+    maxSurfaceHump <= 2);
+  check(`ice settled at the density interface (y ${body.py.toFixed(2)})`,
+    body.py > 65 && body.py < 85 && Math.abs(body.vy) < 0.05);
+  check(`oil volume was conserved (${oilBefore} == ${countMaterial(engine, OIL)})`,
+    countMaterial(engine, OIL) === oilBefore);
+  check(`brine volume was conserved (${brineBefore} == ${countMaterial(engine, BRINE)})`,
+    countMaterial(engine, BRINE) === brineBefore);
+  engine.destroy();
+}
 
 {
   console.log('fast wet motion receives a post-advection pressure correction');

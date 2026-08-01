@@ -162,11 +162,12 @@ flags.
 Liquids do not collide as terrain. A sparse pressure projection gathers a
 connected neighborhood around awake body surfaces, predicts liquid and body
 gravity together, and solves pressure against liquid, terrain, free surfaces,
-domain cutoffs, and the shared body degrees of freedom. The near-field band is
-always eight cells deep, independent of body area. Overlapping body
-neighborhoods form one domain. Only raster boundary cells seed it; liquid
-covered by the solid is excluded, while liquid in a cavity enters through its
-wet interior walls.
+domain cutoffs, and the shared body degrees of freedom. The ordinary near-field
+band is four cells deep, ice uses eight cells, and a density interface extends
+only the affected body's band to 24 cells. These bounds are independent of body
+area and reservoir size. Overlapping body neighborhoods form one domain. Only
+raster boundary cells seed it; liquid covered by the solid is excluded, while
+liquid in a cavity enters through its wet interior walls.
 
 The unresolved reservoir uses hydrostatic profiles from the nearest open
 columns on the two sides of each body. Each profile integrates the actual
@@ -175,12 +176,12 @@ densities reach the cutoff without a connected-pool flood. Cutoff faces
 interpolate the two profiles, retain the adjacent cellular velocity, use a
 distance-scaled lateral pressure response, and exchange viscosity with that
 reservoir. A sealed region with no nearby open column reuses its persistent
-pressure. If the local band encounters more than one liquid material, the
-connected liquid region joins the pressure projection so the density interface
-is represented exactly. Pressure and viscosity apply equal-and-opposite
-impulses to liquid and bodies. A nonnegative pressure constraint prevents
-unphysical suction. The solve handles both layers of a cross-layer body as
-separate fluid domains coupled by the shared body motion.
+pressure. The same bounded band crosses liquid-density interfaces; its cutoff
+faces use the adjacent material density and the mixed-density column profile.
+Pressure and viscosity apply equal-and-opposite impulses to liquid and bodies.
+A nonnegative pressure constraint prevents unphysical suction. The solve handles
+both layers of a cross-layer body as separate fluid domains coupled by the shared
+body motion.
 Its iteration cap and traversal orders are deterministic. Persistent cellular
 liquid velocity propagates dynamic motion beyond the near-field cutoff across
 ticks. For ordinary single-material pools, pressure cost scales with wet
@@ -197,9 +198,11 @@ contact does not use solid-contact settle damping. Fluid-supported bodies sleep
 only after reaching a free surface and remaining below the fluid sleep velocity
 through an extended quiet interval.
 
-A body entering liquid relocates displaced cells to the nearest reachable
-space, treating its own raster as traversal-only space. Other bodies remain
-barriers.
+A body entering liquid relocates displaced cells through reachable medium,
+treating its own raster as traversal-only space. Other bodies remain barriers.
+At a density stack and for liquids lighter than water, reachable free-surface
+outlets are filled from the lowest row and spread across that row; ordinary
+single-fluid wake exchange keeps its nearest-outlet behavior.
 
 Powders provide one-way support and can be displaced by a sufficiently heavy
 body. Material above a body contributes granular confinement only when the

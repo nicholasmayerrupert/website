@@ -683,6 +683,7 @@ static const int    R_FLUID_DOMAIN_RADIUS = 4;
 static const int    R_FLUID_BATCH_DOMAIN_RADIUS = 3;
 static const int    R_FLUID_DENSE_DOMAIN_RADIUS = 2;
 static const int    R_FLUID_ICE_DOMAIN_RADIUS = 8;
+static const int    R_FLUID_MIXED_DOMAIN_RADIUS = 24;
 static const int    R_FLUID_REFERENCE_SEARCH = 16;
 static const int    R_FLUID_PRESSURE_ITERS = 24;
 static const double R_FLUID_PRESSURE_REL_RESIDUAL2 = 1e-8;

@@ -33,6 +33,8 @@ struct ForceEmitter {
   uint8_t repelTargets = 0;
   uint8_t layerTargets = 0;
   int sourceBodyId = -1;
+  int sourceBodyLayer = -1;
+  int neutroniumCells = 0;
   bool nearestNeutronium = false;
 };
 
@@ -94,6 +96,7 @@ class ForceSystem {
 
   int layerIndex(const Layer* layer) const;
   uint8_t layerBit(const Layer* layer) const;
+  int bodyNeutroniumCellCount(const Body* body) const;
   void prepareLayer(Layer* layer);
   void addEmitter(LayerState& state, const ForceEmitter& emitter);
   void addNeutroniumEmitters(Layer* layer, LayerState& state);
@@ -108,11 +111,17 @@ class ForceSystem {
                    double& forceX, double& forceY) const;
   bool sampleNearestNeutronium(Layer* layer, double x, double y,
                                uint8_t target, int sourceBodyId,
+                               int targetNeutroniumCells,
+                               int targetBodyLayer,
                                double& forceX, double& forceY) const;
   bool sampleLayer(Layer* layer, double x, double y, uint8_t target,
-                   int sourceBodyId, double& forceX, double& forceY) const;
+                   int sourceBodyId, double& forceX, double& forceY,
+                   int targetNeutroniumCells = 0,
+                   int targetBodyLayer = -1) const;
   bool sample(double x, double y, uint8_t target, int sourceBodyId,
-              double& forceX, double& forceY) const;
+              double& forceX, double& forceY,
+              int targetNeutroniumCells = 0,
+              int targetBodyLayer = -1) const;
   int looseMoveCandidates(double forceX, double forceY,
                           std::array<std::pair<int, int>, 3>& moves) const;
 };

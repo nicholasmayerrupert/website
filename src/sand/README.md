@@ -329,8 +329,12 @@ and free rigid bodies, repels gases, and targets both layers; larger neutronium
 masses increase the bounded strength and reach without creating one emitter per
 material cell. Force direction uses the nearest neutronium cell rather than the
 component centroid, so long and irregular static or moving shapes attract along
-their local surface while component mass still controls strength and reach. Inside
-a strong neutronium field, force-directed settling owns loose-material motion
+their local surface while component mass still controls strength and reach.
+Between moving neutronium bodies, the source with more neutronium cells dominates;
+equal sizes use a stable layer/body identity tie-break. Only the subordinate body
+receives that pair's attraction, so touching pieces can keep compacting without
+their combined mass acquiring a reciprocal launch impulse. Inside a strong
+neutronium field, force-directed settling owns loose-material motion
 instead of the ordinary downward density, gap, and liquid surface passes.
 Pressure-blocked powders and liquids can move along force tangents, so a mass
 arriving from one direction wraps around the source instead of remaining in its

@@ -104,7 +104,9 @@ component registration, and generation/restoration. Browser presentation exposes
   pressure flow, without another grid traversal. Static fields wake affected bins
   only while a target still has a possible force move; balanced or blocked loose
   cells park without rescheduling the layer, so the scene returns to the normal
-  idle fast path.
+  idle fast path. Moving neutronium dominance is filtered from emitter cell-count
+  metadata during the existing nearest-source query; it does not add a body-pair
+  scan or a contact pass.
 - A per-layer spore-presence latch skips dormant-mycelium component scans when
   the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a

@@ -94,7 +94,10 @@ free body cell and a static `STONE` component cell.
   attracts powders, liquids, and free rigid bodies while repelling gases in both
   simulated layers. Component mass sets force strength and reach, while the
   nearest occupied neutronium cell sets direction for both static and moving
-  shapes. Strong fields replace ordinary downward loose-material settling.
+  shapes. Between moving neutronium bodies, the source with more neutronium cells
+  dominates; equal sizes use a stable layer/body identity tie-break, and only the
+  subordinate receives attraction from that pair. Strong fields replace ordinary
+  downward loose-material settling.
   Pressure-blocked powders and liquids spread along force tangents to wrap around
   the source, while density displacement sorts denser materials inward and
   liquids into an outer shell. Force-balanced loose cells become inactive around

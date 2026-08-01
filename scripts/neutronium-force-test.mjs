@@ -364,6 +364,91 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// Equal moving sources use a stable identity tie-break instead of applying
+// reciprocal attraction, so the dominant source cannot change every tick.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  engine.spawnBox(80, 25, 2, 2, MAT.NEUTRONIUM);
+  engine.spawnBox(100, 25, 2, 2, MAT.NEUTRONIUM);
+  const olderBefore = engine._bodyState(0);
+  const newerBefore = engine._bodyState(1);
+  for (let i = 0; i < 5; i++) engine.stepWorld();
+  const olderAfter = engine._bodyState(0);
+  const newerAfter = engine._bodyState(1);
+  check('equal neutronium bodies choose one stable dominant source',
+    olderBefore && olderAfter && newerBefore && newerAfter
+      && Math.abs(olderAfter.px - olderBefore.px) < 1e-9
+      && Math.abs(olderAfter.vx) < 1e-9
+      && newerAfter.px < newerBefore.px - 2);
+  engine.destroy();
+}
+
+// Dominance uses physical size across layers rather than layer-local body ids.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(true);
+  engine._spawnBoxLayer(0, 84, 25, 1, 1, MAT.NEUTRONIUM);
+  engine._spawnBoxLayer(1, 96, 28, 4, 3, MAT.NEUTRONIUM);
+  const smallBefore = engine._bodyStateLayer(0, 0);
+  const largeBefore = engine._bodyStateLayer(1, 0);
+  for (let i = 0; i < 4; i++) engine.stepWorld();
+  const smallAfter = engine._bodyStateLayer(0, 0);
+  const largeAfter = engine._bodyStateLayer(1, 0);
+  check('larger neutronium dominates a smaller body across layers',
+    smallBefore && smallAfter && largeBefore && largeAfter
+      && smallAfter.px > smallBefore.px + 2
+      && Math.abs(largeAfter.px - largeBefore.px) < 1e-9
+      && Math.abs(largeAfter.vx) < 1e-9);
+  engine.destroy();
+}
+
+// Between moving neutronium bodies, the larger source dominates the smaller
+// target. Offset contacts can keep compacting without the small body's field
+// launching the dominant mass sideways or upward.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  engine.spawnBox(84, 25, 1, 1, MAT.NEUTRONIUM);
+  engine.spawnBox(96, 28, 4, 3, MAT.NEUTRONIUM);
+  const smallBefore = engine._bodyState(0);
+  const largeBefore = engine._bodyState(1);
+  for (let i = 0; i < 4; i++) engine.stepWorld();
+  const smallApproaching = engine._bodyState(0);
+  const largeBeforeContact = engine._bodyState(1);
+  check('a larger neutronium body attracts a smaller one',
+    smallBefore && smallApproaching
+      && smallApproaching.px > smallBefore.px + 2);
+  check('the smaller neutronium body does not pull the larger one back',
+    largeBefore && largeBeforeContact
+      && Math.abs(largeBeforeContact.px - largeBefore.px) < 1e-9
+      && Math.abs(largeBeforeContact.vx) < 1e-9);
+  for (let i = 4; i < 20; i++) engine.stepWorld();
+  const smallAfter = engine._bodyState(0);
+  const largeAfter = engine._bodyState(1);
+  const initialCenterY = smallBefore && largeBefore
+    ? (smallBefore.py * smallBefore.nPts + largeBefore.py * largeBefore.nPts)
+      / (smallBefore.nPts + largeBefore.nPts)
+    : 0;
+  const initialSeparation = smallBefore && largeBefore
+    ? Math.hypot(smallBefore.px - largeBefore.px,
+      smallBefore.py - largeBefore.py)
+    : 0;
+  const settledCenterY = smallAfter && largeAfter
+    ? (smallAfter.py * smallAfter.nPts + largeAfter.py * largeAfter.nPts)
+      / (smallAfter.nPts + largeAfter.nPts)
+    : 0;
+  const settledSeparation = smallAfter && largeAfter
+    ? Math.hypot(smallAfter.px - largeAfter.px,
+      smallAfter.py - largeAfter.py)
+    : Infinity;
+  check('offset neutronium pieces keep falling after they meet',
+    largeBefore && largeAfter && settledCenterY > initialCenterY
+      && settledSeparation < initialSeparation * 0.5
+      && largeAfter.vy > 0 && Math.abs(largeAfter.vx) < 0.75);
+  engine.destroy();
+}
+
 const failures = done();
 console.log(failures === 0 ? '\nall checks passed' : `\n${failures} check(s) failed`);
 process.exit(failures === 0 ? 0 : 1);

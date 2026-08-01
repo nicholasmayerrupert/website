@@ -8,6 +8,21 @@ uint8_t ForceSystem::layerBit(const Layer* layer) const {
   return layer == &E.bg ? FORCE_LAYER_BACKGROUND : FORCE_LAYER_FOREGROUND;
 }
 
+int ForceSystem::bodyNeutroniumCellCount(const Body* body) const {
+  if (!body) return 0;
+  if (body->jointRole == 2 && body->jointPeer) body = body->jointPeer;
+  int count = 0;
+  if (body->cellMaterials.empty()) {
+    if (body->material == NEUTRONIUM) count = body->nPts;
+  } else {
+    count += (int)std::count(body->cellMaterials.begin(),
+                             body->cellMaterials.end(), NEUTRONIUM);
+  }
+  count += (int)std::count(body->jointPeerMaterials.begin(),
+                           body->jointPeerMaterials.end(), NEUTRONIUM);
+  return count;
+}
+
 void ForceSystem::queueRadial(
     Layer* layer, double x, double y, float radius, float strength,
     uint8_t targets, uint8_t repelTargets, int sourceBodyId) {
@@ -70,6 +85,7 @@ void ForceSystem::addNeutroniumEmitters(
   constexpr uint8_t targets = FORCE_POWDER | FORCE_LIQUID
                             | FORCE_RIGID | FORCE_GAS;
   auto addCluster = [&](double x, double y, int cellCount, int sourceBodyId,
+                        int sourceBodyLayer, int sourceNeutroniumCells,
                         size_t pointStart, float minX, float minY,
                         float maxX, float maxY) {
     if (cellCount <= 0) return -1;
@@ -89,6 +105,8 @@ void ForceSystem::addNeutroniumEmitters(
     emitter.repelTargets = FORCE_GAS;
     emitter.layerTargets = FORCE_LAYER_BOTH;
     emitter.sourceBodyId = sourceBodyId;
+    emitter.sourceBodyLayer = sourceBodyLayer;
+    emitter.neutroniumCells = sourceNeutroniumCells;
     emitter.geometryMinX = minX;
     emitter.geometryMinY = minY;
     emitter.geometryMaxX = maxX;
@@ -125,7 +143,7 @@ void ForceSystem::addNeutroniumEmitters(
       count++;
     }
     if (count > 0)
-      addCluster(sumX / count, sumY / count, count, -1, pointStart,
+      addCluster(sumX / count, sumY / count, count, -1, -1, count, pointStart,
                  minX, minY, maxX, maxY);
   }
 
@@ -160,7 +178,11 @@ void ForceSystem::addNeutroniumEmitters(
       count++;
     }
     if (count > 0) {
-      addCluster(sumX / count, sumY / count, count, body->id, pointStart,
+      Body* physicalBody = body->jointRole == 2 && body->jointPeer
+        ? body->jointPeer : body;
+      int physicalLayer = body->jointRole == 2 ? 0 : layerIndex(layer);
+      addCluster(sumX / count, sumY / count, count, physicalBody->id,
+                 physicalLayer, bodyNeutroniumCellCount(physicalBody), pointStart,
                  minX, minY, maxX, maxY);
       E.fg.forceWakePending = E.bg.forceWakePending = true;
       looseCoverageValid[0] = looseCoverageValid[1] = false;
@@ -600,6 +622,7 @@ bool ForceSystem::sampleState(
 
 bool ForceSystem::sampleNearestNeutronium(
     Layer* layer, double x, double y, uint8_t target, int sourceBodyId,
+    int targetNeutroniumCells, int targetBodyLayer,
     double& forceX, double& forceY) const {
   forceX = forceY = 0;
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows
@@ -614,10 +637,21 @@ bool ForceSystem::sampleNearestNeutronium(
     if (seed.emitter < 0 || seed.emitter >= (int)state.emitters.size())
       return false;
     const ForceEmitter& emitter = state.emitters[seed.emitter];
-    return emitter.nearestNeutronium && (emitter.targets & target)
-      && (emitter.layerTargets & layerBit(layer))
-      && !(seed.sourceLayer == targetLayer && sourceBodyId >= 0
-           && emitter.sourceBodyId == sourceBodyId);
+    if (!emitter.nearestNeutronium || !(emitter.targets & target)
+        || !(emitter.layerTargets & layerBit(layer)))
+      return false;
+    if (targetNeutroniumCells > 0 && emitter.sourceBodyId >= 0) {
+      if (emitter.sourceBodyLayer == targetBodyLayer
+          && emitter.sourceBodyId == sourceBodyId)
+        return false;
+      if (emitter.neutroniumCells != targetNeutroniumCells)
+        return emitter.neutroniumCells > targetNeutroniumCells;
+      if (emitter.sourceBodyLayer != targetBodyLayer)
+        return emitter.sourceBodyLayer < targetBodyLayer;
+      return emitter.sourceBodyId < sourceBodyId;
+    }
+    return !(seed.sourceLayer == targetLayer && sourceBodyId >= 0
+             && emitter.sourceBodyId == sourceBodyId);
   };
   int gridX = (int)std::floor(x), gridY = (int)std::floor(y);
   int fieldSeed = nearestNeutroniumField[gridY * E.cols + gridX];
@@ -654,7 +688,8 @@ bool ForceSystem::sampleNearestNeutronium(
 
 bool ForceSystem::sampleLayer(
     Layer* layer, double x, double y, uint8_t target, int sourceBodyId,
-    double& forceX, double& forceY) const {
+    double& forceX, double& forceY,
+    int targetNeutroniumCells, int targetBodyLayer) const {
   forceX = forceY = 0;
   int targetIndex = layerIndex(layer);
   uint8_t targetLayer = layerBit(layer);
@@ -667,7 +702,9 @@ bool ForceSystem::sampleLayer(
     forceY += sourceForceY;
   }
   double nearestForceX, nearestForceY;
-  if (sampleNearestNeutronium(layer, x, y, target, sourceBodyId,
+  if (sampleNearestNeutronium(
+        layer, x, y, target, sourceBodyId,
+        targetNeutroniumCells, targetBodyLayer,
                               nearestForceX, nearestForceY)) {
     forceX += nearestForceX;
     forceY += nearestForceY;
@@ -677,8 +714,10 @@ bool ForceSystem::sampleLayer(
 
 bool ForceSystem::sample(
     double x, double y, uint8_t target, int sourceBodyId,
-    double& forceX, double& forceY) const {
-  return sampleLayer(E.L, x, y, target, sourceBodyId, forceX, forceY);
+    double& forceX, double& forceY,
+    int targetNeutroniumCells, int targetBodyLayer) const {
+  return sampleLayer(E.L, x, y, target, sourceBodyId, forceX, forceY,
+                     targetNeutroniumCells, targetBodyLayer);
 }
 
 int ForceSystem::looseMoveCandidates(
@@ -717,9 +756,11 @@ void ForceSystem::applyBodyForces() {
   if (!E.L->forceActive) return;
   for (Body* body : E.L->bodies) {
     if (body->jointRole == 2) continue;
+    int neutroniumCells = bodyNeutroniumCellCount(body);
     double forceX, forceY;
     if (!sample(body->px, body->py, FORCE_RIGID, body->id,
-                forceX, forceY))
+                forceX, forceY, neutroniumCells,
+                neutroniumCells > 0 ? layerIndex(E.L) : -1))
       continue;
     E.rigid.wakeBody(body);
     body->vx += forceX;

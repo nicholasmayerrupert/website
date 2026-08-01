@@ -4,9 +4,13 @@ int ForceSystem::layerIndex(const Layer* layer) const {
   return layer == &E.bg ? 1 : 0;
 }
 
+uint8_t ForceSystem::layerBit(const Layer* layer) const {
+  return layer == &E.bg ? FORCE_LAYER_BACKGROUND : FORCE_LAYER_FOREGROUND;
+}
+
 void ForceSystem::queueRadial(
     Layer* layer, double x, double y, float radius, float strength,
-    uint8_t targets, int sourceBodyId) {
+    uint8_t targets, uint8_t repelTargets, int sourceBodyId) {
   if (!layer || radius <= 0 || strength == 0 || targets == 0) return;
   ForceEmitter emitter;
   emitter.x = x;
@@ -15,13 +19,16 @@ void ForceSystem::queueRadial(
   emitter.strength = strength;
   emitter.kind = FORCE_RADIAL;
   emitter.targets = targets;
+  emitter.repelTargets = repelTargets;
+  emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
   queued[layerIndex(layer)].push_back(emitter);
 }
 
 void ForceSystem::queueDirectional(
     Layer* layer, double x, double y, float radius, float strength,
-    float directionX, float directionY, uint8_t targets, int sourceBodyId) {
+    float directionX, float directionY, uint8_t targets,
+    uint8_t repelTargets, int sourceBodyId) {
   if (!layer || radius <= 0 || strength == 0 || targets == 0) return;
   double length = std::hypot((double)directionX, (double)directionY);
   if (length <= 1e-9) return;
@@ -34,13 +41,16 @@ void ForceSystem::queueDirectional(
   emitter.directionY = (float)(directionY / length);
   emitter.kind = FORCE_DIRECTIONAL;
   emitter.targets = targets;
+  emitter.repelTargets = repelTargets;
+  emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
   queued[layerIndex(layer)].push_back(emitter);
 }
 
 void ForceSystem::addEmitter(
     LayerState& state, const ForceEmitter& emitter) {
-  if (emitter.radius <= 0 || emitter.strength == 0 || emitter.targets == 0)
+  if (emitter.radius <= 0 || emitter.strength == 0 || emitter.targets == 0
+      || emitter.layerTargets == 0)
     return;
   state.emitters.push_back(emitter);
 }
@@ -49,7 +59,8 @@ void ForceSystem::addNeutroniumEmitters(
     Layer* layer, LayerState& state) {
   if (!layer->forceSourcePresent) return;
   bool found = false;
-  constexpr uint8_t targets = FORCE_POWDER | FORCE_LIQUID | FORCE_RIGID;
+  constexpr uint8_t targets = FORCE_POWDER | FORCE_LIQUID
+                            | FORCE_RIGID | FORCE_GAS;
   auto addCluster = [&](double x, double y, int cellCount,
                         int sourceBodyId) {
     if (cellCount <= 0) return;
@@ -66,6 +77,8 @@ void ForceSystem::addNeutroniumEmitters(
     emitter.strength = strength;
     emitter.kind = FORCE_RADIAL;
     emitter.targets = targets;
+    emitter.repelTargets = FORCE_GAS;
+    emitter.layerTargets = FORCE_LAYER_BOTH;
     emitter.sourceBodyId = sourceBodyId;
     addEmitter(state, emitter);
   };
@@ -113,10 +126,32 @@ void ForceSystem::addNeutroniumEmitters(
   layer->forceSourcePresent = found;
 }
 
-void ForceSystem::wakeAffectedTargets(
-    Layer* layer, const LayerState& state) {
-  for (int bin = 0; bin < (int)state.binHeads.size(); bin++) {
-    if (state.binHeads[bin] < 0) continue;
+bool ForceSystem::stateAffectsLayer(
+    const LayerState& state, uint8_t targetLayer) const {
+  for (const ForceEmitter& emitter : state.emitters)
+    if (emitter.layerTargets & targetLayer) return true;
+  return false;
+}
+
+bool ForceSystem::binAffectsLayer(
+    const LayerState& state, int bin, uint8_t targetLayer) const {
+  if (bin < 0 || bin >= (int)state.binHeads.size()) return false;
+  int link = state.binHeads[bin];
+  while (link >= 0) {
+    const ForceEmitter& emitter = state.emitters[state.binLinks[link].emitter];
+    if (emitter.layerTargets & targetLayer) return true;
+    link = state.binLinks[link].next;
+  }
+  return false;
+}
+
+void ForceSystem::wakeAffectedTargets(Layer* layer) {
+  uint8_t targetLayer = layerBit(layer);
+  int binCount = E.chunkCols * E.chunkRows;
+  for (int bin = 0; bin < binCount; bin++) {
+    if (!binAffectsLayer(states[0], bin, targetLayer)
+        && !binAffectsLayer(states[1], bin, targetLayer))
+      continue;
     int chunkX = bin % E.chunkCols, chunkY = bin / E.chunkCols;
     int x0 = chunkX * CHUNK_SIZE;
     int x1 = imin(E.cols, x0 + CHUNK_SIZE);
@@ -127,10 +162,11 @@ void ForceSystem::wakeAffectedTargets(
       for (int x = x0; x < x1; x++) {
         uint8_t material = layer->grid[row + x];
         uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
-                       : E.isLooseSolidMaterial(material) ? FORCE_POWDER : 0;
+                       : E.isLooseSolidMaterial(material) ? FORCE_POWDER
+                       : E.isGasMaterial(material) ? FORCE_GAS : 0;
         if (!target) continue;
         double forceX, forceY;
-        if (!sampleState(state, x + 0.5, y + 0.5, target, -1,
+        if (!sampleLayer(layer, x + 0.5, y + 0.5, target, -1,
                          forceX, forceY))
           continue;
         if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
@@ -141,7 +177,7 @@ void ForceSystem::wakeAffectedTargets(
   for (Body* body : layer->bodies) {
     if (body->jointRole == 2) continue;
     double forceX, forceY;
-    if (!sampleState(state, body->px, body->py, FORCE_RIGID, body->id,
+    if (!sampleLayer(layer, body->px, body->py, FORCE_RIGID, body->id,
                      forceX, forceY))
       continue;
     int x = (int)std::lround(body->px), y = (int)std::lround(body->py);
@@ -193,20 +229,34 @@ void ForceSystem::prepareLayer(Layer* layer) {
   for (const ForceEmitter& emitter : queued[index]) addEmitter(state, emitter);
   queued[index].clear();
   addNeutroniumEmitters(layer, state);
-  layer->forceActive = !state.emitters.empty();
   buildBins(state);
-  wakeAffectedTargets(layer, state);
 }
 
 void ForceSystem::prepareWorldTick() {
   prepareLayer(&E.fg);
   if (E.bgEnabled) prepareLayer(&E.bg);
-  else queued[1].clear();
+  else {
+    queued[1].clear();
+    states[1].emitters.clear();
+    states[1].binHeads.clear();
+    states[1].binLinks.clear();
+  }
+  if (states[0].emitters.empty() && states[1].emitters.empty()) {
+    E.fg.forceActive = E.bg.forceActive = false;
+    return;
+  }
+  E.fg.forceActive = stateAffectsLayer(states[0], FORCE_LAYER_FOREGROUND)
+                  || stateAffectsLayer(states[1], FORCE_LAYER_FOREGROUND);
+  E.bg.forceActive = E.bgEnabled
+                  && (stateAffectsLayer(states[0], FORCE_LAYER_BACKGROUND)
+                      || stateAffectsLayer(states[1], FORCE_LAYER_BACKGROUND));
+  if (E.fg.forceActive) wakeAffectedTargets(&E.fg);
+  if (E.bg.forceActive) wakeAffectedTargets(&E.bg);
 }
 
 bool ForceSystem::sampleState(
     const LayerState& state, double x, double y,
-    uint8_t target, int sourceBodyId,
+    uint8_t target, uint8_t targetLayer, int sourceBodyId,
     double& forceX, double& forceY) const {
   forceX = forceY = 0;
   if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) return false;
@@ -220,7 +270,7 @@ bool ForceSystem::sampleState(
   while (link >= 0) {
     const ForceEmitter& emitter = state.emitters[state.binLinks[link].emitter];
     link = state.binLinks[link].next;
-    if (!(emitter.targets & target)
+    if (!(emitter.targets & target) || !(emitter.layerTargets & targetLayer)
         || (sourceBodyId >= 0 && emitter.sourceBodyId == sourceBodyId))
       continue;
     double dx = emitter.x - x, dy = emitter.y - y;
@@ -230,6 +280,7 @@ bool ForceSystem::sampleState(
     double distance = std::sqrt(distance2);
     double falloff = 1.0 - distance / emitter.radius;
     double magnitude = emitter.strength * falloff * falloff;
+    if (emitter.repelTargets & target) magnitude = -magnitude;
     if (emitter.kind == FORCE_DIRECTIONAL) {
       forceX += emitter.directionX * magnitude;
       forceY += emitter.directionY * magnitude;
@@ -242,11 +293,27 @@ bool ForceSystem::sampleState(
   return forceX * forceX + forceY * forceY > 1e-12;
 }
 
+bool ForceSystem::sampleLayer(
+    Layer* layer, double x, double y, uint8_t target, int sourceBodyId,
+    double& forceX, double& forceY) const {
+  forceX = forceY = 0;
+  int targetIndex = layerIndex(layer);
+  uint8_t targetLayer = layerBit(layer);
+  for (int sourceIndex = 0; sourceIndex < 2; sourceIndex++) {
+    double sourceForceX, sourceForceY;
+    int excludedBody = sourceIndex == targetIndex ? sourceBodyId : -1;
+    sampleState(states[sourceIndex], x, y, target, targetLayer,
+                excludedBody, sourceForceX, sourceForceY);
+    forceX += sourceForceX;
+    forceY += sourceForceY;
+  }
+  return forceX * forceX + forceY * forceY > 1e-12;
+}
+
 bool ForceSystem::sample(
     double x, double y, uint8_t target, int sourceBodyId,
     double& forceX, double& forceY) const {
-  return sampleState(states[layerIndex(E.L)], x, y, target, sourceBodyId,
-                     forceX, forceY);
+  return sampleLayer(E.L, x, y, target, sourceBodyId, forceX, forceY);
 }
 
 void ForceSystem::applyBodyForces() {
@@ -265,7 +332,8 @@ void ForceSystem::applyBodyForces() {
 
 bool ForceSystem::tryMoveLoose(
     int x, int y, int k, uint8_t material) {
-  uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID : FORCE_POWDER;
+  uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
+                 : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
   double forceX, forceY;
   if (!sample(x + 0.5, y + 0.5, target, -1, forceX, forceY)) return false;
   double magnitude = std::hypot(forceX, forceY);
@@ -298,7 +366,11 @@ bool ForceSystem::tryMoveLoose(
       ? E.liquidCanClaim(toK, material)
       : E.canEnterIndex(toK, material);
     if (!canEnter) continue;
+    int32_t blastGas = material == FIRE ? E.L->blastGasStamp[k] : -1;
+    bool recentBlastFire = blastGas >= 0
+      && E.tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
     E.moveMaterialInto(k, toK, material);
+    if (recentBlastFire) E.L->blastGasStamp[toK] = blastGas;
     return true;
   }
   return false;

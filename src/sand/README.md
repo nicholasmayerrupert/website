@@ -320,11 +320,14 @@ interface remains exact. Ordinary single-material pressure work therefore
 scales with wet surface area and the fixed band, not body area or lake area.
 
 Spatial forces are target-masked radial or directional emitters consumed by
-powders, liquids, and free rigid bodies. Emitters are indexed into chunk-sized
-bins, so affected cells and bodies inspect only nearby sources. Neutronium is an
-ultra-dense component material that contributes one radial attraction emitter per
-connected static component or moving body; larger neutronium masses increase the
-bounded strength and reach without creating one emitter per material cell.
+powders, liquids, gases, and free rigid bodies. Each emitter selects which target
+classes it repels and which simulated layers it affects. Emitters are indexed into
+chunk-sized bins, so affected cells and bodies inspect only nearby sources.
+Neutronium is an ultra-dense component material that contributes one radial
+emitter per connected static component or moving body, attracts powders, liquids,
+and free rigid bodies, repels gases, and targets both layers; larger neutronium
+masses increase the bounded strength and reach without creating one emitter per
+material cell.
 
 Reactions are routed through generated flags where possible:
 

@@ -89,7 +89,8 @@ free body cell and a static `STONE` component cell.
   reaction path.
 - `NEUTRONIUM`: id `NEUTRONIUM`, `materialClass` `rigid`, `kind` `component`.
   Each connected neutronium component or body emits a bounded radial force that
-  attracts powders, liquids, and free rigid bodies.
+  attracts powders, liquids, and free rigid bodies while repelling gases in both
+  simulated layers.
 
 ## Which field should code use?
 

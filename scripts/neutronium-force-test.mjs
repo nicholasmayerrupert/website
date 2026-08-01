@@ -23,12 +23,19 @@ const paintRect = (engine, x0, y0, x1, y1, mat) => {
     for (let x = x0; x <= x1; x++) engine.paintDisc(x, y, 0, mat, true);
   }
 };
-const firstCell = (engine, mat) => {
-  const grid = engine.getGrid();
+const paintRectLayer = (engine, layer, x0, y0, x1, y1, mat) => {
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) engine.paintDiscLayer(layer, x, y, 0, mat, true);
+  }
+};
+const firstCellIn = (grid, mat) => {
   for (let k = 0; k < grid.length; k++) {
     if (grid[k] === mat) return { x: k % COLS, y: Math.floor(k / COLS) };
   }
   return null;
+};
+const firstCell = (engine, mat) => {
+  return firstCellIn(engine.getGrid(), mat);
 };
 const countMaterial = (engine, mat) =>
   [...engine.getGrid()].filter((value) => value === mat).length;
@@ -66,6 +73,54 @@ const countMaterial = (engine, mat) =>
   engine.destroy();
 }
 
+// Neutronium in either layer pulls loose material in the other layer.
+for (const [sourceLayer, targetLayer, label] of [
+  [0, 1, 'foreground neutronium pulls background material'],
+  [1, 0, 'background neutronium pulls foreground material'],
+]) {
+  const engine = createEngineWasm();
+  engine.setBgEnabled(true);
+  const floorY = 100, sourceX = 90, looseY = floorY - 1;
+  paintRectLayer(engine, sourceLayer, 0, floorY, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRectLayer(engine, targetLayer, 0, floorY, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRectLayer(engine, targetLayer, 0, looseY - 1, COLS - 1, looseY - 1, MAT.STONE);
+  engine.paintDiscLayer(sourceLayer, sourceX, looseY, 2, MAT.NEUTRONIUM, true);
+  engine.paintDiscLayer(targetLayer, 40, looseY, 0, MAT.SAND, true);
+  engine.paintDiscLayer(targetLayer, 140, looseY, 0, MAT.WATER, true);
+  engine.syncComponentsLayer(sourceLayer);
+  engine.syncComponentsLayer(targetLayer);
+  for (let i = 0; i < 40; i++) engine.stepWorld();
+  const grid = targetLayer ? engine.getGridBg() : engine.getGrid();
+  const sand = firstCellIn(grid, MAT.SAND);
+  const water = firstCellIn(grid, MAT.WATER);
+  check(`${label}: sand moves right (${sand?.x})`, sand?.x >= 46);
+  check(`${label}: water moves left (${water?.x})`, water?.x <= 134);
+  engine.destroy();
+}
+
+// Persistent gas is repelled across layers before its normal buoyant movement.
+for (const [sourceLayer, targetLayer, label] of [
+  [0, 1, 'foreground neutronium repels background gas'],
+  [1, 0, 'background neutronium repels foreground gas'],
+]) {
+  const engine = createEngineWasm();
+  engine.setBgEnabled(true);
+  const floorY = 100, sourceX = 90, gasY = floorY - 1;
+  for (const layer of [sourceLayer, targetLayer]) {
+    paintRectLayer(engine, layer, 0, floorY, COLS - 1, ROWS - 1, MAT.STONE);
+    paintRectLayer(engine, layer, 0, gasY - 1, COLS - 1, gasY - 1, MAT.STONE);
+  }
+  engine.paintDiscLayer(sourceLayer, sourceX, gasY, 2, MAT.NEUTRONIUM, true);
+  engine.paintDiscLayer(targetLayer, 55, gasY, 0, MAT.METHANE, true);
+  engine.syncComponentsLayer(sourceLayer);
+  engine.syncComponentsLayer(targetLayer);
+  for (let i = 0; i < 40; i++) engine.stepWorld();
+  const grid = targetLayer ? engine.getGridBg() : engine.getGrid();
+  const methane = firstCellIn(grid, MAT.METHANE);
+  check(`${label} (${methane?.x})`, methane?.x <= 49);
+  engine.destroy();
+}
+
 // Free bodies receive continuous acceleration and wake through the same field.
 // Only neutronium cells contribute to a mixed component's force centroid.
 {
@@ -82,6 +137,24 @@ const countMaterial = (engine, mat) =>
   check(`rigid body moves toward neutronium (${before?.px.toFixed(2)} -> ${after?.px.toFixed(2)})`,
     after && before && after.px > before.px + 2);
   check(`rigid body has rightward velocity (${after?.vx.toFixed(3)})`, after?.vx > 0.1);
+  engine.destroy();
+}
+
+// Moving sources and targets can occupy different layers with the same body id.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(true);
+  engine._spawnBoxLayer(0, 115, 55, 2, 2, MAT.NEUTRONIUM);
+  engine._spawnBoxLayer(1, 90, 55, 2, 2, MAT.RIGID);
+  const sourceBefore = engine._bodyStateLayer(0, 0);
+  const targetBefore = engine._bodyStateLayer(1, 0);
+  for (let i = 0; i < 12; i++) engine.stepWorld();
+  const sourceAfter = engine._bodyStateLayer(0, 0);
+  const targetAfter = engine._bodyStateLayer(1, 0);
+  check('cross-layer rigid is pulled by a neutronium body with the same body id',
+    targetBefore && targetAfter && targetAfter.px > targetBefore.px + 2);
+  check('moving neutronium still excludes its own force',
+    sourceBefore && sourceAfter && Math.abs(sourceAfter.px - sourceBefore.px) < 1e-9);
   engine.destroy();
 }
 

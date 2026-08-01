@@ -675,6 +675,7 @@
       if (!canVent) decayP = ACRID_TRAPPED_DECAY_P;
     }
     if ((m != METHANE && rand() < decayP) || y <= 1) { markCellIndex(k); return; }
+    if (L->forceActive && forces.tryMoveLoose(x, y, k, m)) return;
     int up = I(x, y - 1);
     if (canRiseGasInto(up, m) && rand() < 0.72 && tryRiseGasInto(k, up, m)) return;
     const int* dirs = rand() < 0.5 ? DIRS_LF : DIRS_RF;
@@ -709,6 +710,7 @@
     if (rand() < FIRE_DECAY_P || y <= 1) { markCellIndex(k); return; }
     int32_t blastGas = L->blastGasStamp[k];
     bool recentBlastFire = blastGas >= 0 && tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
+    if (L->forceActive && forces.tryMoveLoose(x, y, k, FIRE)) return;
     auto writeFire = [&](int dst) {
       writeNextIndex(dst, FIRE);
       if (recentBlastFire) L->blastGasStamp[dst] = blastGas;

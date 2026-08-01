@@ -90,11 +90,13 @@ free body cell and a static `STONE` component cell.
 - `NEUTRONIUM`: id `NEUTRONIUM`, `materialClass` `rigid`, `kind` `component`.
   Each connected neutronium component or body emits a bounded radial force that
   attracts powders, liquids, and free rigid bodies while repelling gases in both
-  simulated layers. Strong fields replace ordinary downward loose-material
-  settling. Pressure-blocked powders and liquids spread along force tangents to
-  wrap around the source, while density displacement sorts denser materials
-  inward and liquids into an outer shell. Force-balanced loose cells become
-  inactive around a static source.
+  simulated layers. Component mass sets force strength and reach, while the
+  nearest occupied neutronium cell sets direction for both static and moving
+  shapes. Strong fields replace ordinary downward loose-material settling.
+  Pressure-blocked powders and liquids spread along force tangents to wrap around
+  the source, while density displacement sorts denser materials inward and
+  liquids into an outer shell. Force-balanced loose cells become inactive around
+  a static source.
 
 ## Which field should code use?
 

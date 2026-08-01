@@ -327,14 +327,17 @@ Neutronium is an ultra-dense component material that contributes one radial
 emitter per connected static component or moving body, attracts powders, liquids,
 and free rigid bodies, repels gases, and targets both layers; larger neutronium
 masses increase the bounded strength and reach without creating one emitter per
-material cell. Inside a strong neutronium field, force-directed settling owns
-loose-material motion instead of the ordinary downward density, gap, and liquid
-surface passes. Pressure-blocked powders and liquids can move along force tangents,
-so a mass arriving from one direction wraps around the source instead of remaining
-in its starting quadrant. Denser loose materials sort closer to the source, with
-water forming the outer shell. Tangential flow stops after quadrant coverage is
-balanced or stops improving, and a blocked static arrangement becomes inactive;
-moving neutronium bodies continue to wake their field.
+material cell. Force direction uses the nearest neutronium cell rather than the
+component centroid, so long and irregular static or moving shapes attract along
+their local surface while component mass still controls strength and reach. Inside
+a strong neutronium field, force-directed settling owns loose-material motion
+instead of the ordinary downward density, gap, and liquid surface passes.
+Pressure-blocked powders and liquids can move along force tangents, so a mass
+arriving from one direction wraps around the source instead of remaining in its
+starting quadrant. Denser loose materials sort closer to the source, with water
+forming the outer shell. Tangential flow stops after quadrant coverage is balanced
+or stops improving, and a blocked static arrangement becomes inactive; moving
+neutronium bodies continue to wake their field.
 
 Reactions are routed through generated flags where possible:
 

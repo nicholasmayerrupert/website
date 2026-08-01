@@ -127,7 +127,7 @@ const createOpenSuspendedSource = () => {
 for (const [label, mat, limit] of [
   ['sand', MAT.SAND, 600],
   ['water', MAT.WATER, 600],
-  ['lava', MAT.LAVA, 1200],
+  ['lava', MAT.LAVA, 3000],
 ]) {
   const { engine, sourceX, sourceY } = createOpenSuspendedSource();
   engine.paintDisc(68, 33, 15, mat, true);
@@ -237,6 +237,40 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// A long static source pulls toward its nearby surface instead of funneling a
+// target sideways toward the component center.
+{
+  const engine = createEngineWasm();
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 125, 70, 125, 111, MAT.STONE);
+  paintRect(engine, 55, 70, 125, 72, MAT.NEUTRONIUM);
+  engine.paintDisc(60, 40, 0, MAT.SAND, true);
+  engine.syncComponents();
+  for (let i = 0; i < 24; i++) engine.stepWorld();
+  const sand = firstCell(engine, MAT.SAND);
+  check(`long static neutronium attracts toward its nearest surface (${sand?.x},${sand?.y})`,
+    sand && Math.abs(sand.x - 60) <= 2 && sand.y > 50);
+  engine.destroy();
+}
+
+// A long moving source uses its transformed occupied cells. The cross-layer
+// target above its left end accelerates downward without steering to the body's
+// center, while same-layer body-id exclusion remains independent.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(true);
+  engine._spawnBoxLayer(0, 90, 70, 30, 2, MAT.NEUTRONIUM);
+  engine._spawnBoxLayer(1, 65, 40, 1, 1, MAT.RIGID);
+  const targetBefore = engine._bodyStateLayer(1, 0);
+  for (let i = 0; i < 8; i++) engine.stepWorld();
+  const targetAfter = engine._bodyStateLayer(1, 0);
+  check('long rigid neutronium attracts toward its nearest transformed cell',
+    targetBefore && targetAfter
+      && Math.abs(targetAfter.px - targetBefore.px) < 1
+      && targetAfter.py > targetBefore.py + 4);
+  engine.destroy();
+}
+
 // Persistent gas is repelled across layers before its normal buoyant movement.
 for (const [sourceLayer, targetLayer, label] of [
   [0, 1, 'foreground neutronium repels background gas'],
@@ -280,7 +314,7 @@ for (const [sourceLayer, targetLayer, label] of [
 }
 
 // Free bodies receive continuous acceleration and wake through the same field.
-// Only neutronium cells contribute to a mixed component's force centroid.
+// Only neutronium cells contribute to a mixed component's force geometry.
 {
   const engine = createEngineWasm();
   const floorY = 112, sourceX = 115, sourceY = 68;

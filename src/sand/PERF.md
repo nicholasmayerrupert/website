@@ -93,11 +93,14 @@ component registration, and generation/restoration. Browser presentation exposes
 - Reaction passes build ordered active-material candidates once per layer.
 - Spatial force emitters use chunk-sized bins and aggregate neutronium by
   connected component/body, so force queries inspect nearby sources rather than
-  every source cell. The affected-bin wake scan also gathers the minimum force
-  and quadrant coverage used by pressure flow, without another grid traversal.
-  Static fields wake affected bins only while a target still has a possible
-  force move; balanced or blocked loose cells park without rescheduling the
-  layer, so the scene returns to the normal idle fast path.
+  summing every source cell. Neutronium direction uses a cached nearest-cell
+  distance transform; unchanged static geometry reuses it, while changed or
+  moving geometry updates the bounded source region plus force reach. The affected-
+  bin wake scan also gathers the minimum force and quadrant coverage used by
+  pressure flow, without another grid traversal. Static fields wake affected bins
+  only while a target still has a possible force move; balanced or blocked loose
+  cells park without rescheduling the layer, so the scene returns to the normal
+  idle fast path.
 - A per-layer spore-presence latch skips dormant-mycelium component scans when
   the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a

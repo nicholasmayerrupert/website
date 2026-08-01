@@ -270,7 +270,11 @@
   }
   void settleLava(int x, int y, int k) {
     if (L->next[k] != EMPTY) return;
-    if (rand() >= MOBILITY[LAVA]) {
+    bool movementAllowed = rand() < MOBILITY[LAVA];
+    if (!movementAllowed) {
+      if (L->forceActive
+          && forces.tryMoveLoose(x, y, k, LAVA, false))
+        return;
       writeNextIndex(k, LAVA);
       if (L->fallSpeed) carryNextFallSpeed(k, L->fallSpeed[k]);
       return;

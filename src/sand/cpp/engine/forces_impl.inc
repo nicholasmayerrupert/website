@@ -22,7 +22,10 @@ void ForceSystem::queueRadial(
   emitter.repelTargets = repelTargets;
   emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
-  queued[layerIndex(layer)].push_back(emitter);
+  int index = layerIndex(layer);
+  queued[index].push_back(emitter);
+  looseFingerprintValid[index] = false;
+  looseEquilibriumSettled[index] = false;
   layer->forceWakePending = true;
 }
 
@@ -45,7 +48,10 @@ void ForceSystem::queueDirectional(
   emitter.repelTargets = repelTargets;
   emitter.layerTargets = layerBit(layer);
   emitter.sourceBodyId = sourceBodyId;
-  queued[layerIndex(layer)].push_back(emitter);
+  int index = layerIndex(layer);
+  queued[index].push_back(emitter);
+  looseFingerprintValid[index] = false;
+  looseEquilibriumSettled[index] = false;
   layer->forceWakePending = true;
 }
 
@@ -125,6 +131,8 @@ void ForceSystem::addNeutroniumEmitters(
     if (count > 0) {
       addCluster(sumX / count, sumY / count, count, body->id);
       E.fg.forceWakePending = E.bg.forceWakePending = true;
+      looseFingerprintValid[0] = looseFingerprintValid[1] = false;
+      looseEquilibriumSettled[0] = looseEquilibriumSettled[1] = false;
     }
   }
   layer->forceSourcePresent = found;
@@ -150,6 +158,10 @@ bool ForceSystem::binAffectsLayer(
 }
 
 void ForceSystem::wakeAffectedTargets(Layer* layer) {
+  int index = layerIndex(layer);
+  std::array<double, 256>& minForce = looseMinForce[index];
+  minForce.fill(1e30);
+  looseHistogram.fill(0);
   uint8_t targetLayer = layerBit(layer);
   int binCount = E.chunkCols * E.chunkRows;
   for (int bin = 0; bin < binCount; bin++) {
@@ -173,6 +185,13 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
         if (!sampleLayer(layer, x + 0.5, y + 0.5, target, -1,
                          forceX, forceY))
           continue;
+        double magnitude = std::hypot(forceX, forceY);
+        if (magnitude < minForce[material]) minForce[material] = magnitude;
+        if (target != FORCE_GAS) {
+          int quadrant = (forceX < 0 ? 1 : 0) | (forceY < 0 ? 2 : 0);
+          int band = imin(3, (int)(magnitude * 8.0));
+          looseHistogram[(material * 4 + quadrant) * 4 + band]++;
+        }
         if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
         if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
       }
@@ -189,6 +208,23 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
     if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
     if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
   }
+  uint64_t fingerprint = 1469598103934665603ull;
+  for (uint32_t count : looseHistogram) {
+    fingerprint ^= count;
+    fingerprint *= 1099511628211ull;
+  }
+  if (looseFingerprintValid[index]
+      && looseFingerprint[index] == fingerprint) {
+    looseStableTicks[index] = (uint8_t)imin(255, looseStableTicks[index] + 1);
+  } else {
+    looseFingerprintValid[index] = true;
+    looseFingerprint[index] = fingerprint;
+    looseStableTicks[index] = 0;
+    looseEquilibriumSettled[index] = false;
+  }
+  static constexpr int LOOSE_EQUILIBRIUM_TICKS = 32;
+  if (looseStableTicks[index] >= LOOSE_EQUILIBRIUM_TICKS)
+    looseEquilibriumSettled[index] = true;
 }
 
 void ForceSystem::buildBins(LayerState& state) {
@@ -266,6 +302,9 @@ void ForceSystem::prepareWorldTick() {
   if (states[0].emitters.empty() && states[1].emitters.empty()) {
     E.fg.forceActive = E.bg.forceActive = false;
     E.fg.forceWakePending = E.bg.forceWakePending = false;
+    looseFingerprintValid[0] = looseFingerprintValid[1] = false;
+    looseEquilibriumSettled[0] = looseEquilibriumSettled[1] = false;
+    looseStableTicks[0] = looseStableTicks[1] = 0;
     return;
   }
   E.fg.forceActive = stateAffectsLayer(states[0], FORCE_LAYER_FOREGROUND)
@@ -389,36 +428,103 @@ void ForceSystem::applyBodyForces() {
 }
 
 bool ForceSystem::tryMoveLoose(
-    int x, int y, int k, uint8_t material) {
+    int x, int y, int k, uint8_t material, bool movementAllowed) {
   uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
                  : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
   double forceX, forceY;
   if (!sample(x + 0.5, y + 0.5, target, -1, forceX, forceY)) return false;
+  double magnitude = std::hypot(forceX, forceY);
+  constexpr double CELL_STEP_FORCE = 0.12;
+  int forceLayer = layerIndex(E.L);
+  if (target != FORCE_GAS && looseEquilibriumSettled[forceLayer]
+      && magnitude >= CELL_STEP_FORCE) {
+    E.L->next[k] = material;
+    E.L->nextFallSpeed[k] = 0;
+    E.L->nextLiquidVel[k] = 0;
+    return true;
+  }
   std::array<std::pair<int, int>, 3> moves;
   int moveCount = looseMoveCandidates(forceX, forceY, moves);
+  auto canEnter = [&](int toK, bool followPressureVacancy = false) {
+    if (E.isLiquidMaterial(material)) {
+      // Radial moves reject same-material vacancies because they are not new
+      // volume. Pressure chains may follow one after a frontier cell moves.
+      return (followPressureVacancy
+              || E.L->vacatedStamp[toK] != E.tick
+              || E.L->grid[toK] != material)
+          && E.liquidCanClaim(toK, material);
+    }
+    if (E.isGasMaterial(material)) {
+      uint8_t occupant = E.L->grid[toK];
+      return E.L->next[toK] == EMPTY
+          && (E.L->vacatedStamp[toK] == E.tick || occupant == EMPTY
+              || (E.isGasMaterial(occupant) && occupant != material))
+          && !(E.L->vacatedStamp[toK] == E.tick && occupant == material);
+    }
+    if (followPressureVacancy && E.L->vacatedStamp[toK] == E.tick
+        && E.L->grid[toK] == material && E.L->next[toK] == EMPTY)
+      return true;
+    return E.canEnterIndex(toK, material);
+  };
   int destination = -1;
-  for (int i = 0; i < moveCount; i++) {
+  if (moveCount > 0) {
+    int nx = x + moves[0].first, ny = y + moves[0].second;
+    if (nx > 0 && nx < E.cols - 1 && ny > 0 && ny < E.rows) {
+      int toK = ny * E.cols + nx;
+      if (canEnter(toK)) destination = toK;
+    }
+  }
+  if (destination < 0 && moveCount > 0) {
+    int stepX = moves[0].first, stepY = moves[0].second;
+    int pressureX = x - stepX, pressureY = y - stepY;
+    bool pressureBehind = false;
+    if (pressureX > 0 && pressureX < E.cols - 1
+        && pressureY > 0 && pressureY < E.rows) {
+      int pressureK = pressureY * E.cols + pressureX;
+      pressureBehind = E.L->grid[pressureK] == material
+                    && E.L->vacatedStamp[pressureK] != E.tick;
+    }
+    double minimum = looseMinForce[layerIndex(E.L)][material];
+    bool liquidPressureGradient = E.isLiquidMaterial(material)
+      && minimum < 1e20 && magnitude > minimum + 0.015;
+    if (!looseEquilibriumSettled[forceLayer]
+        && (pressureBehind || liquidPressureGradient)) {
+      std::array<std::pair<int, int>, 2> tangents = {{
+        {stepY, -stepX}, {-stepY, stepX}
+      }};
+      if (stepX == 0 || stepY == 0) {
+        for (auto& tangent : tangents) {
+          tangent.first += stepX;
+          tangent.second += stepY;
+        }
+      }
+      if (((E.L->worldOffsetX + x) + (E.L->worldOffsetY + y)
+           + E.tick) & 1)
+        std::swap(tangents[0], tangents[1]);
+      for (const auto& tangent : tangents) {
+        int nx = x + tangent.first, ny = y + tangent.second;
+        int innerX = nx + stepX, innerY = ny + stepY;
+        if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows
+            || innerX <= 0 || innerX >= E.cols - 1
+            || innerY <= 0 || innerY >= E.rows)
+          continue;
+        int toK = ny * E.cols + nx;
+        int innerK = innerY * E.cols + innerX;
+        uint8_t support = E.L->grid[innerK];
+        if (support == EMPTY || E.L->vacatedStamp[innerK] == E.tick
+            || E.canDisplaceMaterial(material, support)
+            || !canEnter(toK, true))
+          continue;
+        destination = toK;
+        break;
+      }
+    }
+  }
+  for (int i = 1; destination < 0 && i < moveCount; i++) {
     int nx = x + moves[i].first, ny = y + moves[i].second;
     if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
     int toK = ny * E.cols + nx;
-    bool canEnter;
-    if (E.isLiquidMaterial(material)) {
-      // A same-material cell vacated earlier this tick is not new free volume.
-      // Rejecting that claim lets packed rings reach equilibrium instead of
-      // circulating through an occupancy pattern that never changes.
-      canEnter = !(E.L->vacatedStamp[toK] == E.tick
-                   && E.L->grid[toK] == material)
-              && E.liquidCanClaim(toK, material);
-    } else if (E.isGasMaterial(material)) {
-      uint8_t occupant = E.L->grid[toK];
-      canEnter = E.L->next[toK] == EMPTY
-        && (E.L->vacatedStamp[toK] == E.tick || occupant == EMPTY
-            || (E.isGasMaterial(occupant) && occupant != material))
-        && !(E.L->vacatedStamp[toK] == E.tick && occupant == material);
-    } else {
-      canEnter = E.canEnterIndex(toK, material);
-    }
-    if (!canEnter) continue;
+    if (!canEnter(toK)) continue;
     destination = toK;
     break;
   }
@@ -435,8 +541,14 @@ bool ForceSystem::tryMoveLoose(
     return true;
   }
 
-  double magnitude = std::hypot(forceX, forceY);
-  constexpr double CELL_STEP_FORCE = 0.12;
+  if (!movementAllowed) {
+    E.L->next[k] = material;
+    E.L->nextFallSpeed[k] = 0;
+    E.L->nextLiquidVel[k] = 0;
+    E.L->forceWakePending = true;
+    return true;
+  }
+
   double chance = std::fmin(1.0, magnitude / CELL_STEP_FORCE);
   uint32_t phase = E.L->worldSeed ^ 0x4E455554u
                  ^ ((uint32_t)E.tick * 0x9e3779b9u);

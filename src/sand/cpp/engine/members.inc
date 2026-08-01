@@ -578,6 +578,11 @@
     if (m == NEUTRONIUM || old == NEUTRONIUM) {
       fg.forceWakePending = bg.forceWakePending = true;
     }
+    if (L->forceActive
+        && (isLooseSolidMaterial(m) || isLiquidMaterial(m) || isGasMaterial(m)
+            || isLooseSolidMaterial(old) || isLiquidMaterial(old)
+            || isGasMaterial(old)))
+      L->forceWakePending = true;
     noteLooseGroundTouch2At(k, old, m);
     adjustLooseColCount(x, old, m);
     if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;

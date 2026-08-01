@@ -49,7 +49,8 @@ class ForceSystem {
   void prepareWorldTick();
   void applyBodyForces();
   bool overridesGravity(int x, int y, uint8_t material) const;
-  bool tryMoveLoose(int x, int y, int k, uint8_t material);
+  bool tryMoveLoose(int x, int y, int k, uint8_t material,
+                    bool movementAllowed = true);
 
  private:
   struct BinLink { int emitter = -1, next = -1; };
@@ -62,6 +63,13 @@ class ForceSystem {
   Engine& E;
   LayerState states[2];
   std::vector<ForceEmitter> queued[2];
+  std::array<std::array<double, 256>, 2> looseMinForce = {};
+  static constexpr int LOOSE_HISTOGRAM_SIZE = TABLE * 4 * 4;
+  std::array<uint32_t, LOOSE_HISTOGRAM_SIZE> looseHistogram = {};
+  std::array<uint64_t, 2> looseFingerprint = {};
+  std::array<uint8_t, 2> looseStableTicks = {};
+  std::array<bool, 2> looseFingerprintValid = {};
+  std::array<bool, 2> looseEquilibriumSettled = {};
 
   int layerIndex(const Layer* layer) const;
   uint8_t layerBit(const Layer* layer) const;

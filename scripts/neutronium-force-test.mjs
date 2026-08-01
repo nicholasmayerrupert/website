@@ -51,6 +51,18 @@ const materialStats = (engine, mat, centerX, centerY) => {
   }
   return { count, meanRadius: count ? sumRadius / count : 0, maxY };
 };
+const quadrantCounts = (engine, mat, centerX, centerY) => {
+  const quadrants = [0, 0, 0, 0];
+  const grid = engine.getGrid();
+  for (let k = 0; k < grid.length; k++) {
+    if (grid[k] !== mat) continue;
+    const x = k % COLS, y = Math.floor(k / COLS);
+    const right = x >= centerX ? 1 : 0;
+    const bottom = y >= centerY ? 2 : 0;
+    quadrants[right + bottom]++;
+  }
+  return quadrants;
+};
 const runUntilIdle = (engine, limit) => {
   for (let step = 1; step <= limit; step++) {
     if (!engine.stepWorld()) return step;
@@ -63,6 +75,15 @@ const createSuspendedSource = () => {
   paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
   paintRect(engine, 124, sourceY, 126, 111, MAT.STONE);
   paintRect(engine, sourceX, sourceY, 126, sourceY + 2, MAT.STONE);
+  engine.paintDisc(sourceX, sourceY, 5, MAT.NEUTRONIUM, true);
+  engine.syncComponents();
+  return { engine, sourceX, sourceY };
+};
+const createOpenSuspendedSource = () => {
+  const engine = createEngineWasm();
+  const sourceX = 90, sourceY = 55;
+  paintRect(engine, 0, 112, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, sourceX, sourceY + 5, sourceX, 111, MAT.STONE);
   engine.paintDisc(sourceX, sourceY, 5, MAT.NEUTRONIUM, true);
   engine.syncComponents();
   return { engine, sourceX, sourceY };
@@ -101,6 +122,27 @@ const createSuspendedSource = () => {
   engine.destroy();
 }
 
+// Material arriving from one direction spreads along force tangents once its
+// inward path is pressure-blocked, allowing it to wrap around the source.
+for (const [label, mat, limit] of [
+  ['sand', MAT.SAND, 600],
+  ['water', MAT.WATER, 600],
+  ['lava', MAT.LAVA, 2500],
+]) {
+  const { engine, sourceX, sourceY } = createOpenSuspendedSource();
+  engine.paintDisc(68, 33, 15, mat, true);
+  const before = countMaterial(engine, mat);
+  const idleAt = runUntilIdle(engine, limit);
+  const quadrants = quadrantCounts(engine, mat, sourceX, sourceY);
+  check(`one-sided ${label} wraps around neutronium (${quadrants.join('/')})`,
+    quadrants.every((count) => count >= 10));
+  check(`one-sided radial flow conserves ${label}`,
+    countMaterial(engine, mat) === before);
+  check(`one-sided ${label} flow settles (${idleAt} steps)`,
+    idleAt > 0 && idleAt <= limit && engine.stepWorld() === false);
+  engine.destroy();
+}
+
 // Repelled transient gas keeps receiving decay ticks even after the field has
 // packed it against an impermeable boundary.
 {
@@ -123,12 +165,12 @@ const createSuspendedSource = () => {
   const { engine, sourceX, sourceY } = createSuspendedSource();
   engine.paintDisc(sourceX, 41, 8, MAT.WATER, true);
   const before = countMaterial(engine, MAT.WATER);
-  const idleAt = runUntilIdle(engine, 200);
+  const idleAt = runUntilIdle(engine, 600);
   const held = materialStats(engine, MAT.WATER, sourceX, sourceY);
   check(`suspended neutronium holds water radially (max y ${held.maxY})`,
     held.count === before && held.maxY <= sourceY + 8);
   check(`a static neutronium-water scene settles (${idleAt} steps)`,
-    idleAt > 0 && idleAt <= 200 && engine.stepWorld() === false);
+    idleAt > 0 && idleAt <= 600 && engine.stepWorld() === false);
 
   const neutroniumCells = [];
   const grid = engine.getGrid();

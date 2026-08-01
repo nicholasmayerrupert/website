@@ -82,6 +82,8 @@ free body cell and a static `STONE` component cell.
   `flammable`/`dissolvable`/`rigid`/`bearing`/`plantFamily`.
 - `SAND`: id `SAND`, `materialClass` `solid`, `kind` `powder`.
 - `WATER`: id `WATER`, `materialClass` `liquid`, `kind` `liquid`.
+- `STONE_DUST`: id `STONE_DUST`, `materialClass` `solid`, `kind` `powder`.
+  Water, acid, and brine produce it when they quench lava.
 - `FIRE`: id `FIRE`, `materialClass` `gas`, `kind` `gas`.
 - `TNT`: id `TNT`, `materialClass` `rigid`, `kind` `component`.
 - `RIGID`: id `RIGID`, `materialClass` `rigid`, `kind` `free_rigid`. It has no

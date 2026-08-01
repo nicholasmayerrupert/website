@@ -1349,23 +1349,23 @@ for (const tc of [
   e.destroy();
 }
 
-// Disconnected lava cells can quench in the same reaction batch. They must become
-// separate stone components: a grounded fragment must not pin a floating one.
+// Liquid-quenched lava becomes loose stone dust. Water, acid, and brine all use
+// this path, and disconnected residue must never enter the rigid-body solver.
 {
-  console.log('disconnected lava quench fragments fall independently');
-  const e = mk();
-  const x = 60, floorY = 100, floatingY = 20;
-  for (let y = floorY; y < ROWS; y++) for (let xx = 0; xx < COLS; xx++) e.paintDisc(xx, y, 0, MAT.STONE, true);
-  e.syncComponents();
-  for (const y of [floatingY, floorY - 1]) {
+  console.log('lava quenching produces loose stone dust');
+  for (const [name, quencher] of [['water', MAT.WATER], ['acid', MAT.ACID], ['brine', MAT.BRINE]]) {
+    const e = mk();
+    const x = 60, y = ROWS - 3;
     e.paintDisc(x, y, 0, MAT.LAVA, true);
-    e.paintDisc(x + 1, y, 0, MAT.WATER, true);
+    e.paintDisc(x + 1, y, 0, quencher, true);
+    run(20, e);
+    const materialCounts = counts(e.getGrid());
+    check(`${name}-quenched lava made stone dust (${materialCounts[MAT.STONE_DUST]})`,
+      materialCounts[MAT.STONE_DUST] === 1);
+    check(`${name}-quenched lava created no rigid fragments (${e._bodyCount()} bodies, ${materialCounts[MAT.STONE]} stone)`,
+      e._bodyCount() === 0 && materialCounts[MAT.STONE] === 0);
+    e.destroy();
   }
-  run(20, e);
-  let floatingStoneY = ROWS;
-  for (let y = 0; y < floorY; y++) if (e.getGrid()[y * COLS + x] === MAT.STONE) { floatingStoneY = y; break; }
-  check(`floating quenched stone fell independently (row ${floatingY} -> ${floatingStoneY})`, floatingStoneY > floatingY + 10);
-  e.destroy();
 }
 
 // A pressured reservoir released through a dam breach must not duplicate liquid.

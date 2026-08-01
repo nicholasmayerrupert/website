@@ -344,6 +344,8 @@ Reactions are routed through generated flags where possible:
 - Fire and lava ignite `flammable` cells.
 - Acid dissolves `dissolvable` cells.
 - Water, brine, ice, snow, salt, and lava handle freezing, melting, and quenching.
+  Water, acid, and brine quench lava into dense loose stone dust, so fragmented
+  cooling fronts settle as powder instead of spawning disconnected rigid bodies.
   Static and free-body ice freeze water in their own layer and at co-occupied
   cells in the adjacent layer. Water frozen by a free body extends that body's
   occupancy; cross-layer growth promotes a single-layer body to a shared-pose

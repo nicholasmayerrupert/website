@@ -90,7 +90,6 @@
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
   std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
-  std::unordered_set<int> lavaHardenedScratch;     // reusable per-call scratch for applyLava
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
   std::vector<int> reactionSnowMelt;               // reusable per-call scratch for applyReactions (snow melted by fire -> water)
   // Liquid↔liquid density-chain displacement: denser liquid treats lighter liquid as

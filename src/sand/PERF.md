@@ -28,6 +28,7 @@ mapping, and pan stability.
 | `npm run bench:rigid-long` | Continuously collide solid, thin, jagged, and L-shaped long bodies in one pile. |
 | `npm run bench:ice-growth` | Track rigid/fluid cost while one floating ice body grows through a pool. |
 | `node scripts/bench-reactions.mjs` | Stress fire cutting plants and acid cutting terrain. |
+| `node scripts/acid-lava-lag-bench.mjs` | Compare an idle lava lake with repeated acid quenching and report rigid/reaction phase spikes. |
 | `node scripts/bench-zoomed-out.mjs --cols 1000 --rows 1000 --reactions` | Exercise the real browser worker at extreme zoom. |
 
 Timing gates apply only when the baseline environment and benchmark dimensions
@@ -91,6 +92,9 @@ component registration, and generation/restoration. Browser presentation exposes
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
 - Reaction passes build ordered active-material candidates once per layer.
+- Liquid-quenched lava becomes loose stone dust in place. It never enters the
+  component registry or rigid-body solver, so fragmented cooling fronts scale as
+  ordinary powder cells rather than disconnected rigid islands.
 - Spatial force emitters use chunk-sized bins and aggregate neutronium by
   connected component/body, so force queries inspect nearby sources rather than
   summing every source cell. Neutronium direction uses a cached nearest-cell

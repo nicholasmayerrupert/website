@@ -231,7 +231,6 @@ void ReactionSystem::applyAcid() {
   }
 }
 void ReactionSystem::applyLava() {
-  std::unordered_set<int>& hardened = E.lavaHardenedScratch; hardened.clear();
   std::vector<int> burnedPlant;
   for (int k : E.activeLavaCells) {
       if (E.L->grid[k] != LAVA) continue;
@@ -245,13 +244,14 @@ void ReactionSystem::applyLava() {
       if (lavaBurns(right)) burnK = right; else if (lavaBurns(left)) burnK = left; else if (lavaBurns(down)) burnK = down; else if (lavaBurns(up)) burnK = up;
       if (burnK >= 0) { if (E.isPlantMaterial(E.L->grid[burnK])) burnedPlant.push_back(burnK); E.writeGridIndex(burnK, FIRE); continue; }
       int liquidK = -1;
-      // Flag-driven (quenchesLava: water/acid/brine) -> steam + hardened stone.
+      // Flag-driven (quenchesLava: water/acid/brine) -> steam + loose stone dust.
+      // Keeping disconnected quench residue granular avoids creating a rigid body
+      // for every isolated lava cell along a turbulent liquid boundary.
       auto quenches = [&](int q) { return E.isLavaQuencher(E.L->grid[q]); };
       if (quenches(right)) liquidK = right; else if (quenches(left)) liquidK = left; else if (quenches(down)) liquidK = down; else if (quenches(up)) liquidK = up;
-      if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE); hardened.insert(k); continue; }
+      if (liquidK >= 0) { E.writeGridIndex(liquidK, STEAM); E.writeGridIndex(k, STONE_DUST); continue; }
       if (E.rand() < LAVA_EMIT_FIRE_P) { int airK = -1; if (E.L->grid[up] == EMPTY) airK = up; else if (E.L->grid[right] == EMPTY) airK = right; else if (E.L->grid[left] == EMPTY) airK = left; if (airK >= 0) E.writeGridIndex(airK, FIRE); }
   }
-  if (!hardened.empty()) E.registerRigidCellsSplit(E.L->components, E.L->nextComponentId, STONE, hardened, false);
   if (!burnedPlant.empty()) E.splitPlantAfterErase(&burnedPlant);
 }
 void ReactionSystem::applyIce() {

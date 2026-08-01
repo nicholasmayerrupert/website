@@ -60,7 +60,7 @@ const CREATURE_EGGS = [
 // Main contains the complete catalog, with this useful set pinned first. The
 // remainder is curated roughly from unusual/reactive to ordinary building
 // material; creature eggs are appended separately so they always stay last.
-const FEATURED_LABELS = ['cube', 'eraser', 'rigid', 'stone', 'water', 'acid', 'lava', 'tnt', 'seed', 'sand'];
+const FEATURED_LABELS = ['cube', 'eraser', 'rigid', 'neutronium', 'stone', 'water', 'acid', 'lava', 'tnt', 'seed', 'sand'];
 const MAIN_TAIL_LABELS = [
   'fire', 'methane', 'oil', 'gunpowder', 'crystal', 'mycelium_spore', 'mycelium', 'glowberry', 'glowshroom',
   'brine', 'steam', 'acrid_smoke', 'ice',
@@ -75,7 +75,7 @@ const PALETTE_SECTIONS = [
   { id: 'main', label: 'Main', accent: '#f6c56f', all: true },
   { id: 'tools', label: 'Tools', accent: '#cbd5e1', labels: ['cube', 'eraser', 'rigid'] },
   { id: 'terrain', label: 'Terrain', accent: '#c99a6b', labels: [
-    'sand', 'stone', 'dirt', 'snow', 'mud', 'clay', 'sandstone', 'copper_ore', 'iron_ore',
+    'sand', 'stone', 'neutronium', 'dirt', 'snow', 'mud', 'clay', 'sandstone', 'copper_ore', 'iron_ore',
     'coal_ore', 'gold_ore', 'brick', 'salt', 'debris', 'crystal',
   ] },
   { id: 'fluids', label: 'Fluids', accent: '#70bfff', labels: ['water', 'oil', 'acid', 'lava', 'ice', 'steam', 'brine'] },
@@ -84,7 +84,7 @@ const PALETTE_SECTIONS = [
     'mush_cap', 'pine_needles', 'willow_leaf', 'bush_leaf', 'vine', 'mycelium', 'mycelium_spore', 'glowberry', 'glowshroom', 'grass',
   ], kinds: [CK_SEED] },
   { id: 'reactions', label: 'Reactions', accent: '#ff856c', labels: [
-    'fire', 'steam', 'methane', 'oil', 'acid', 'lava', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
+    'fire', 'steam', 'methane', 'oil', 'acid', 'lava', 'neutronium', 'acrid_smoke', 'salt', 'brine', 'gunpowder', 'tnt', 'debris',
   ] },
   { id: 'creatures', label: 'Creatures', accent: '#c99cff', kinds: [CK_CREATURE] },
 ];

@@ -87,6 +87,9 @@ free body cell and a static `STONE` component cell.
 - `RIGID`: id `RIGID`, `materialClass` `rigid`, `kind` `free_rigid`. It has no
   static component form; acid, lava, and fire erode it through the free-body
   reaction path.
+- `NEUTRONIUM`: id `NEUTRONIUM`, `materialClass` `rigid`, `kind` `component`.
+  Each connected neutronium component or body emits a bounded radial force that
+  attracts powders, liquids, and free rigid bodies.
 
 ## Which field should code use?
 

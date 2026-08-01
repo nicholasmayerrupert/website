@@ -91,6 +91,9 @@ component registration, and generation/restoration. Browser presentation exposes
   loose materials, reactions, tools, and actors keep their normal clocks. Free
   rigid bodies disable the deferral.
 - Reaction passes build ordered active-material candidates once per layer.
+- Spatial force emitters use chunk-sized bins and aggregate neutronium by
+  connected component/body, so force queries inspect nearby sources rather than
+  every source cell.
 - A per-layer spore-presence latch skips dormant-mycelium component scans when
   the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a

@@ -275,20 +275,21 @@ function survivalEngine() {
 
     // ACT_SELECT from A -> the server re-broadcasts A's inventory with selected=3.
     ai.length = 0;
-    a.send(encode(makeSelect('r', 'A', 3))); await wait(120);
-    const invSel = last(ai, MSG.INVENTORY);
+    a.send(encode(makeSelect('r', 'A', 3)));
+    const invSel = await waitFor(() => last(ai, MSG.INVENTORY));
     check('ACT_SELECT reflected in A inventory broadcast', invSel && invSel.selected === 3);
 
     ai.length = 0;
-    a.send(encode(makeSize('r', 'A', 4))); await wait(120);
-    const invSize = last(ai, MSG.INVENTORY);
+    a.send(encode(makeSize('r', 'A', 4)));
+    const invSize = await waitFor(() => last(ai, MSG.INVENTORY));
     check('ACT_SIZE reflected in A inventory broadcast', invSize && invSize.selectedFootprint === 4);
 
     // Put a stack in A's authoritative inventory, then ACT_PICK sends it to the cursor.
     srv.engine.addToInventory(assignA.player, MAT.WOOD, 3);
     await wait(80);
-    a.send(encode(makePick('r', 'A', 0, false))); await wait(120);
-    check('ACT_PICK reflected in A cursor broadcast', last(ai, MSG.CURSOR)?.cur != null);
+    a.send(encode(makePick('r', 'A', 0, false)));
+    const pickedCursor = await waitFor(() => last(ai, MSG.CURSOR)?.cur);
+    check('ACT_PICK reflected in A cursor broadcast', pickedCursor != null);
 
     // INPUT reaches the host (the player exists + is simulated); send RIGHT a while.
     const pidA = assignA.player;

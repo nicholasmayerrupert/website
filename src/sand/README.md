@@ -213,7 +213,7 @@ limited by the device's WebGL texture dimensions rather than a fixed cell cap.
 - `cpp/engine/layer.hpp`: per-layer grids, caches, components, bodies, and stores.
 - `cpp/engine/`: composed subsystem classes (most use a header plus an
   implementation include):
-  audio, camera, components, crafting, creatures, explosives, GL presentation,
+  audio, camera, components, crafting, creatures, explosives, spatial forces, GL presentation,
   growth, inventory, items, missions, net sync, player, projectiles, reactions,
   renderer, rigid bodies, terrain, tools, and semantic world context.
 - `cpp/engine/world_context.hpp` and `world_context_impl.inc`: deterministic
@@ -318,6 +318,13 @@ propagates dynamic motion across ticks. If the local band reaches a liquid
 density interface, that connected liquid region joins the projection so the
 interface remains exact. Ordinary single-material pressure work therefore
 scales with wet surface area and the fixed band, not body area or lake area.
+
+Spatial forces are target-masked radial or directional emitters consumed by
+powders, liquids, and free rigid bodies. Emitters are indexed into chunk-sized
+bins, so affected cells and bodies inspect only nearby sources. Neutronium is an
+ultra-dense component material that contributes one radial attraction emitter per
+connected static component or moving body; larger neutronium masses increase the
+bounded strength and reach without creating one emitter per material cell.
 
 Reactions are routed through generated flags where possible:
 

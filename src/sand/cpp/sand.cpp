@@ -5,6 +5,7 @@
 #include "engine/camera.hpp"
 #include "engine/netsync.hpp"
 #include "engine/layer.hpp"
+#include "engine/forces.hpp"
 #include "engine/terrain.hpp"
 #include "engine/world_context.hpp"
 #include "engine/renderer.hpp"
@@ -26,6 +27,7 @@
 
 struct Engine {
 #include "engine/members.inc"
+#include "engine/forces.inc"
 #include "engine/audio.inc"
 #include "engine/core.inc"
 #include "engine/step.inc"
@@ -56,6 +58,7 @@ const int Engine::DIRS_RF[2] = {1, -1};
 
 // Subsystem method bodies require the complete Engine definition.
 #include "engine/netsync_impl.inc"
+#include "engine/forces_impl.inc"
 #include "engine/terrain_impl.inc"
 #include "engine/world_context_impl.inc"
 #include "engine/renderer_impl.inc"

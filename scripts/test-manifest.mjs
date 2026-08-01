@@ -36,6 +36,7 @@ export const UNIT_SUITES = [
   ['sand', 'sand-test.mjs', 240_000],
   ['ice-body-growth', 'ice-body-growth-test.mjs'],
   ['loose-acceleration', 'loose-acceleration-test.mjs'],
+  ['neutronium-force', 'neutronium-force-test.mjs'],
   ['detached-rigid', 'detached-rigid-test.mjs'],
   ['rigid-detachment-matrix', 'rigid-detachment-matrix-test.mjs'],
   ['rigid-collision', 'rigid-collision-test.mjs'],

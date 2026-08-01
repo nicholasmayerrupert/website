@@ -21,6 +21,7 @@
     perfAssemblyUnionMs += emscripten_get_now() - tA;
 
     double tB = emscripten_get_now();
+    forces.applyBodyForces();
     rigid.moveBodies();
 #ifdef SAND_INVARIANT_CHECKS
     validateInvariants("post-moveBodies");
@@ -164,6 +165,8 @@
 
   bool stepWorld() {
     if (storageRole == ESR_PRESENTATION) return false;
+    double t0 = emscripten_get_now();
+    forces.prepareWorldTick();
     auto retainSleepingBodySupportDirty = [&](Layer& lay) {
       if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
       for (Body* b : lay.bodies) if (b->jointRole != 2 && !b->awake) {
@@ -175,7 +178,6 @@
     retainSleepingBodySupportDirty(bg);
     bool fgA = layerActive(&fg), bgA = layerActive(&bg);
     if (!fgA && !bgA) { useLayer(&fg); perfStepMs = 0; return false; }
-    double t0 = emscripten_get_now();
     tick++;
     advanceGravityCadence();
     // Zero fine-phase timers + dirty volume (stepLayer / joint accumulate into these).

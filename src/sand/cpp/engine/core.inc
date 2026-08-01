@@ -59,6 +59,7 @@
   void settleSand(int x, int y, int k) {
     if (L->next[k] != EMPTY) return;
     uint8_t self = L->grid[k];
+    if (L->forceActive && forces.tryMoveLoose(x, y, k, self)) return;
     int belowK = k + cols;
     if (y + 1 < rows && x > 0 && x < cols - 1 && L->grid[belowK] == self && L->grid[belowK - 1] == self && L->grid[belowK + 1] == self) { if (L->next[k] == EMPTY) L->next[k] = self; return; }
     if (!gravityCellStep && y + 1 < rows) {
@@ -111,6 +112,7 @@
     // and enqueued a lighter liquid instead of swapping into the source). Without this
     // guard the same grid cell is settled again and duplicates into a free next[].
     if (L->vacatedStamp[k] == tick) return;
+    if (L->forceActive && forces.tryMoveLoose(x, y, k, m)) return;
     int belowK = k + cols;
     // Packed early-out must use effective occupancy (next / vacated), not raw grid[].
     // Otherwise a denser cell above one that just sank still sees "solid pack of m"

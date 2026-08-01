@@ -75,6 +75,10 @@ struct Layer {
   // False proves that no growth-capable spore exists in this loaded layer.
   // It avoids searching every stone cell for dormant spores on ordinary terrain.
   bool myceliumSporePresent = false;
+  // Conservative latch for materials that generate spatial force emitters.
+  // ForceSystem clears it after rebuilding finds no remaining source.
+  bool forceSourcePresent = false;
+  bool forceActive = false;
   // Incremental-grounding cache state (see members near cgComps). groundDirty
   // true => the next grounding pass must be a full reflood; it is set true by any
   // component add/move/split/growth/sync.
@@ -254,6 +258,8 @@ struct Layer {
     nextComponentId = 1;
     myceliumActive = false;
     myceliumSporePresent = false;
+    forceSourcePresent = false;
+    forceActive = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;
     looseGroundDirty = true; looseDirtyX0 = 0; looseDirtyX1 = -1;
     looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;

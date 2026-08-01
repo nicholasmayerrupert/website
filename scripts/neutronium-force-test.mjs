@@ -121,6 +121,25 @@ for (const [sourceLayer, targetLayer, label] of [
   engine.destroy();
 }
 
+// Force-compressed persistent gas conserves every cell when neighboring gas
+// blocks its preferred movement direction.
+{
+  const engine = createEngineWasm();
+  engine.setBgEnabled(false);
+  paintRect(engine, 0, 100, COLS - 1, ROWS - 1, MAT.STONE);
+  paintRect(engine, 118, 28, 120, 99, MAT.STONE);
+  paintRect(engine, 90, 28, 120, 30, MAT.STONE);
+  engine.paintDisc(90, 33, 2, MAT.NEUTRONIUM, true);
+  paintRect(engine, 72, 48, 108, 72, MAT.METHANE);
+  engine.syncComponents();
+  const before = countMaterial(engine, MAT.METHANE);
+  for (let i = 0; i < 80; i++) engine.stepWorld();
+  const after = countMaterial(engine, MAT.METHANE);
+  check(`force-compressed methane is conserved (${before} -> ${after})`,
+    before > 0 && after === before);
+  engine.destroy();
+}
+
 // Free bodies receive continuous acceleration and wake through the same field.
 // Only neutronium cells contribute to a mixed component's force centroid.
 {

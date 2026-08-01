@@ -362,9 +362,17 @@ bool ForceSystem::tryMoveLoose(
     int nx = x + moves[i].first, ny = y + moves[i].second;
     if (nx <= 0 || nx >= E.cols - 1 || ny <= 0 || ny >= E.rows) continue;
     int toK = ny * E.cols + nx;
-    bool canEnter = E.isLiquidMaterial(material)
-      ? E.liquidCanClaim(toK, material)
-      : E.canEnterIndex(toK, material);
+    bool canEnter;
+    if (E.isLiquidMaterial(material)) {
+      canEnter = E.liquidCanClaim(toK, material);
+    } else if (E.isGasMaterial(material)) {
+      uint8_t occupant = E.L->grid[toK];
+      canEnter = E.L->next[toK] == EMPTY
+        && (E.L->vacatedStamp[toK] == E.tick || occupant == EMPTY
+            || (E.isGasMaterial(occupant) && occupant != material));
+    } else {
+      canEnter = E.canEnterIndex(toK, material);
+    }
     if (!canEnter) continue;
     int32_t blastGas = material == FIRE ? E.L->blastGasStamp[k] : -1;
     bool recentBlastFire = blastGas >= 0

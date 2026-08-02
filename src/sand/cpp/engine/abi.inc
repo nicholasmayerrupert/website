@@ -612,6 +612,7 @@ EMSCRIPTEN_KEEPALIVE void engine_reset_simulation_activity(Engine* e, int preser
   };
   reset(e->fg);
   reset(e->bg);
+  e->simulationActivityLimited = false;
   e->useLayer(&e->fg);
 }
 EMSCRIPTEN_KEEPALIVE void engine_activate_simulation_rect(
@@ -619,6 +620,8 @@ EMSCRIPTEN_KEEPALIVE void engine_activate_simulation_rect(
   x0 = imax(0, x0); y0 = imax(0, y0);
   x1 = imin(e->cols, x1); y1 = imin(e->rows, y1);
   if (x0 >= x1 || y0 >= y1) return;
+  if (x0 > 0 || y0 > 0 || x1 < e->cols || y1 < e->rows)
+    e->simulationActivityLimited = true;
   for (Layer* lay : {&e->fg, &e->bg})
     for (int y = y0; y < y1; y++)
       e->markLayerRowSpan(lay, y, x0, x1 - 1);

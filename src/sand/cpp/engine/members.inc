@@ -27,6 +27,9 @@
   }
 
   int stepSerial = 0, tick = 0, actorTick = 0, worldShiftCount = 0;
+  // True when the scheduler advances only a sub-rectangle of the loaded world.
+  // Destructive topology uses this to avoid waking off-focus structural masses.
+  bool simulationActivityLimited = false;
   int nextBakedAssemblyId = 1;
   PlanetId planetId;
   double gravityScale;
@@ -136,6 +139,10 @@
   }
   inline double scaledGravity(double earthGravity) const {
     return gravityScale == 1.0 ? earthGravity : earthGravity * gravityScale;
+  }
+  inline bool focusedSimulationLod() const {
+    return simulationActivityLimited
+      && (int64_t)cols * rows >= FOCUSED_STATIC_EROSION_MIN_CELLS;
   }
   void advanceGravityCadence() {
     if (gravityCadenceStep >= GRAVITY_CADENCE_ONE) {
@@ -385,14 +392,22 @@
   inline void refreshMobileComponentRegistry(Layer* layer) {
     layer->mobileComponents.clear();
     layer->landedComponents.clear();
+    bool bounded = focusedSimulationLod();
+    size_t dynamicCells = bounded
+      ? std::min(layer->bodyCells.size(), (size_t)R_DYNAMIC_CELL_BUDGET)
+      : 0;
     for (int i = 0; i < (int)layer->components.size(); i++) {
       Comp& component = layer->components[i];
       if (component.grounded) {
         component.detachedByBreak = false;
         if (component.buoyancyDirection > 0 && !component.cells.empty())
           layer->landedComponents.push_back(i);
-      } else {
+      } else if (!bounded || component.cells.size()
+                 <= (size_t)R_DYNAMIC_CELL_BUDGET - dynamicCells) {
         layer->mobileComponents.push_back(i);
+        if (bounded) dynamicCells += component.cells.size();
+      } else {
+        component.buoyancyDirection = 0;
       }
     }
   }

@@ -132,9 +132,9 @@ try {
   await game.locator('.sg-expand').click();
   const stableOption = await game.locator('.sg-opt').first().elementHandle();
   const mainLabels = await game.locator('.sg-opt:not([hidden]) .sg-name').allTextContents();
-  check('creative Main folder begins with the ten featured picks',
-    mainLabels.slice(0, 10).join(',') === 'cube,eraser,rigid,stone,water,acid,lava,tnt,seed,sand',
-    mainLabels.slice(0, 10).join(','));
+  check('creative Main folder begins with the eleven featured picks',
+    mainLabels.slice(0, 11).join(',') === 'cube,eraser,rigid,neutronium,stone,water,acid,lava,tnt,seed,sand',
+    mainLabels.slice(0, 11).join(','));
   const expectedMainLabels = buildEntries().map((entry) => entry.label);
   check('creative Main folder contains the complete catalog',
     mainLabels.join('\n') === expectedMainLabels.join('\n'),

@@ -777,7 +777,9 @@ const stoneFloor = (e, layer, cx, fy, hw) => {
 {
   console.log('bonded cross-layer ice rises and settles in lockstep');
   const C = 100, R0 = 110;
-  const e = createEngineWasm({ cols: C, rows: R0, infinite: false, sinksOn: false });
+  const e = createEngineWasm({
+    cols: C, rows: R0, infinite: false, sinksOn: false, worldSeed: 1,
+  });
   e.setBgEnabled(true);
   const L = 12, R = 88, top = 12, floorY = 98;
   const fillRect = (layer, mat, x0, x1, y0, y1) => {

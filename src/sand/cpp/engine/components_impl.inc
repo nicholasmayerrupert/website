@@ -653,6 +653,17 @@ void ComponentSystem::computeGrounded() {
         if (!openSkyLeaf) groundCellAt(k, x);
       }
     }
+    for (int worldY = -2; worldY <= 2; worldY++) {
+      int y = worldY - lay->worldOffsetY;
+      if (y < 0 || y >= E.rows) continue;
+      for (int worldX = -2; worldX <= 2; worldX++) {
+        int x = worldX - lay->worldOffsetX;
+        if (x < 0 || x >= E.cols) continue;
+        int k = y * E.cols + x;
+        if (isKestrelFrameAnchor(*lay, x, y)
+            && isGroundingRigidCell(*lay, k)) groundCellAt(k, x);
+      }
+    }
     for (int y = E.rows - 2; y > 0; y--) {
       int rb = y * E.cols;
       for (int x = 1; x < E.cols - 1; x++) {
@@ -3161,6 +3172,60 @@ bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& e
   return true;
 }
 
+// A focused authority simulation can occupy only a small part of a much larger
+// loaded window. Keep erosion of independently grounded terrain local in that
+// mode: remove exact component memberships without splitting the surviving mass
+// or invalidating support outside the live rectangle. Each component retains its
+// current support state; the focused dynamic-cell budget bounds mobile remnants.
+bool ComponentSystem::finishFocusedStaticErosion(const std::vector<int>& erased) {
+  if (!E.focusedSimulationLod() || erased.empty()
+      || !E.L->groundBaseValid || E.L->groundDirty || E.L->groundContentDirty
+      || E.L->groundRigidBase.size() != (size_t)E.cols * E.rows
+      || E.L->groundBaseFlags.size() != E.L->components.size()) return false;
+
+  std::vector<int>& touched = splitSurvivors;
+  touched.clear();
+  touched.reserve(erased.size());
+  splitRemovedSet.reset((size_t)E.cols * E.rows);
+  for (int k : erased) {
+    if (k < 0 || k >= E.cols * E.rows) return false;
+    int componentIndex = E.L->cellComp[k];
+    if (componentIndex < 0
+        || componentIndex >= (int)E.L->components.size()) return false;
+    splitRemovedSet.add(k);
+    touched.push_back(componentIndex);
+  }
+  std::sort(touched.begin(), touched.end());
+  touched.erase(std::unique(touched.begin(), touched.end()), touched.end());
+
+  for (int componentIndex : touched) {
+    Comp& component = E.L->components[componentIndex];
+    size_t out = 0;
+    component.yMax = component.woodCount = component.leafCount = 0;
+    for (int k : component.cells) {
+      if (splitRemovedSet.has(k)) continue;
+      component.cells[out++] = k;
+      component.yMax = imax(component.yMax, k / E.cols);
+      uint8_t material = E.L->grid[k];
+      if (E.isPlantWood(material)) component.woodCount++;
+      else if (E.isPlantLeaf(material)) component.leafCount++;
+    }
+    component.cells.resize(out);
+    component.cacheDirty = true;
+    if (component.cells.empty()) {
+      component.grounded = true;
+      E.L->groundBaseFlags[componentIndex] = 1;
+    }
+  }
+  for (int k : erased) {
+    E.L->cellComp[k] = -1;
+    E.L->groundedCell[k] = 0;
+    E.L->groundRigidBase[k] = 0;
+  }
+  E.L->componentRegistryDirty = true;
+  return true;
+}
+
 void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty, bool localConnectivityFastPath, bool deferJointRefresh) {
   if (erased && !erased->empty()) {
     E.L->componentCarryDirty = true;
@@ -3262,6 +3327,7 @@ void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexed
 // split order; real cuts on either path retain the full grounding reflood.
 void ComponentSystem::finishPlantErosion(std::vector<int>& erased, bool indexedExact, bool deferJointRefresh) {
   if (erased.empty()) return;
+  if (indexedExact && finishFocusedStaticErosion(erased)) return;
   E.L->compsReshaped = false;
   splitPlantAfterErase(&erased, indexedExact ? 0 : -1, false, deferJointRefresh, deferJointRefresh);
   if (!indexedExact || !removalsKeepGroundingValid(erased)) {

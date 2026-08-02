@@ -7,7 +7,7 @@ import { CREATIVE_KIND, OFF, SOUND_EVENT, STRIDES } from '../src/sand/wasmBridge
 import { MAT } from '../src/sand/materials.js';
 import {
   buildTntExplosionBuffer, derivePlayerEffectState,
-  semanticEventCooldownMs, spatializeSound,
+  sandMediaMetadata, semanticEventCooldownMs, spatializeSound,
 } from '../src/sand/audio/sandAudio.js';
 import {
   AUDIO_ASSET_URLS, TNT_EXPLOSION_LAYERS,
@@ -21,6 +21,21 @@ const mk = (storageRole = 'full') => createEngineWasm({
   cols: 96, rows: 72, worldSeed: 0x50a0d, sinksOn: false, infinite: false, storageRole,
 });
 const O = OFF.soundEvent;
+
+{
+  const metadata = sandMediaMetadata();
+  const artwork = metadata.artwork[0];
+  const png = await readFile(new URL(`../public${artwork.src}`, import.meta.url));
+  check('lock-screen media metadata identifies the sand engine',
+    metadata.title === 'Falling Sand'
+      && metadata.artist === 'Nicholas Mayer-Rupert'
+      && metadata.album === 'Interactive Sand Engine');
+  check('lock-screen artwork is a declared square PNG',
+    artwork.sizes === '512x512'
+      && artwork.type === 'image/png'
+      && png[0] === 0x89 && png[1] === 0x50 && png[2] === 0x4e && png[3] === 0x47
+      && png.readUInt32BE(16) === 512 && png.readUInt32BE(20) === 512);
+}
 
 check('ward, breach, explosion, and beam cues have distinct semantic ids',
   Number.isInteger(SOUND_EVENT.SHIELD_HIT)

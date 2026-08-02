@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">Falling Sand</title>
+  <desc id="description">A crescent moon above a colorful pixel landscape and layers of falling sand.</desc>
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111a30"/>
+      <stop offset="0.56" stop-color="#2f2946"/>
+      <stop offset="1" stop-color="#64364f"/>
+    </linearGradient>
+    <linearGradient id="titleGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f8df8d"/>
+      <stop offset="0.5" stop-color="#f2b65e"/>
+      <stop offset="1" stop-color="#e77a5f"/>
+    </linearGradient>
+    <linearGradient id="sand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3c66d"/>
+      <stop offset="1" stop-color="#cb6a50"/>
+    </linearGradient>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#ffffff" stroke-opacity="0.045" stroke-width="2"/>
+    </pattern>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+    <mask id="crescent">
+      <rect width="1024" height="1024" fill="black"/>
+      <circle cx="767" cy="226" r="111" fill="white"/>
+      <circle cx="719" cy="179" r="112" fill="black"/>
+    </mask>
+    <clipPath id="scene">
+      <rect x="32" y="32" width="960" height="960" rx="142"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#07070a"/>
+  <g clip-path="url(#scene)">
+    <rect x="32" y="32" width="960" height="960" fill="url(#sky)"/>
+    <rect x="32" y="32" width="960" height="960" fill="url(#grid)"/>
+
+    <circle cx="767" cy="226" r="130" fill="#f9dfa0" opacity="0.16" filter="url(#glow)"/>
+    <circle cx="767" cy="226" r="111" fill="#fae5a8" mask="url(#crescent)"/>
+
+    <g fill="#ffe8ac">
+      <rect x="181" y="152" width="12" height="12" rx="3" opacity="0.82"/>
+      <rect x="280" y="237" width="8" height="8" rx="2" opacity="0.56"/>
+      <rect x="533" y="128" width="10" height="10" rx="2" opacity="0.74"/>
+      <rect x="868" y="370" width="9" height="9" rx="2" opacity="0.5"/>
+      <rect x="126" y="338" width="7" height="7" rx="2" opacity="0.46"/>
+    </g>
+
+    <text x="114" y="171" fill="#ddd7ec" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" letter-spacing="7">A TINY WORLD IN MOTION</text>
+    <text x="106" y="412" fill="#fff5d1" font-family="Arial, Helvetica, sans-serif" font-size="111" font-weight="800" letter-spacing="14">FALLING</text>
+    <text x="99" y="568" fill="url(#titleGradient)" font-family="Arial, Helvetica, sans-serif" font-size="176" font-weight="900" letter-spacing="6">SAND</text>
+
+    <g fill="url(#sand)">
+      <rect x="139" y="624" width="18" height="18" rx="4"/>
+      <rect x="190" y="675" width="13" height="13" rx="3" opacity="0.9"/>
+      <rect x="229" y="632" width="10" height="10" rx="2" opacity="0.72"/>
+      <rect x="789" y="609" width="15" height="15" rx="3" opacity="0.82"/>
+      <rect x="845" y="659" width="10" height="10" rx="2" opacity="0.65"/>
+      <rect x="884" y="619" width="19" height="19" rx="4"/>
+    </g>
+
+    <path d="M32 785L32 738L146 636L254 724L360 612L474 720L589 628L701 735L821 633L992 770V992H32Z" fill="#151b2e"/>
+    <path d="M32 826L32 780L131 709L246 793L355 706L474 812L596 703L727 804L831 729L992 821V992H32Z" fill="#27243b"/>
+    <path d="M32 871L32 824L151 775L279 850L403 789L516 865L650 794L778 862L891 798L992 841V992H32Z" fill="#583047"/>
+    <path d="M32 901C156 846 257 855 368 900C487 949 577 826 718 880C826 922 906 895 992 854V992H32Z" fill="url(#sand)"/>
+    <path d="M32 942C161 902 279 922 388 958C516 1000 633 900 748 935C841 964 914 951 992 918V992H32Z" fill="#a94f43" opacity="0.75"/>
+
+    <g fill="#f9dc8a" opacity="0.86">
+      <rect x="110" y="878" width="9" height="9"/>
+      <rect x="219" y="904" width="7" height="7"/>
+      <rect x="321" y="881" width="11" height="11"/>
+      <rect x="481" y="921" width="8" height="8"/>
+      <rect x="618" y="886" width="10" height="10"/>
+      <rect x="759" y="909" width="8" height="8"/>
+      <rect x="896" y="877" width="12" height="12"/>
+    </g>
+  </g>
+  <rect x="32" y="32" width="960" height="960" rx="142" fill="none" stroke="#ffffff" stroke-opacity="0.09" stroke-width="3"/>
+</svg>

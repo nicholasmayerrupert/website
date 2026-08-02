@@ -77,6 +77,27 @@ const EVENT_COOLDOWN_MS = Object.freeze({
 
 const clamp = (v, lo = 0, hi = 1) => Math.max(lo, Math.min(hi, v));
 
+export function sandMediaMetadata() {
+  return {
+    title: 'Falling Sand',
+    artist: 'Nicholas Mayer-Rupert',
+    album: 'Interactive Sand Engine',
+    artwork: [{
+      src: '/sand-media-artwork.png',
+      sizes: '512x512',
+      type: 'image/png',
+    }],
+  };
+}
+
+function updateMediaSessionMetadata() {
+  if (typeof navigator === 'undefined' || !navigator.mediaSession
+      || typeof MediaMetadata === 'undefined') return;
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata(sandMediaMetadata());
+  } catch { /* Media Session is optional browser chrome. */ }
+}
+
 export function semanticEventCooldownMs(type, variation = 0.5, continuousPlace = false) {
   // Projectile detonations are already discrete authority events. Unlike a TNT
   // chain or a dense brush, suppressing any one of them loses gameplay feedback.
@@ -369,6 +390,7 @@ export function createSandAudio() {
 
   const unlock = async () => {
     try {
+      updateMediaSessionMetadata();
       // iOS defaults Web Audio to an ambient session, which the hardware silent
       // switch mutes in Safari and every iOS browser. Treat opted-in game audio
       // as media playback when the Audio Session API is available.

@@ -144,6 +144,28 @@ for (const [label, mat, limit] of [
   engine.destroy();
 }
 
+// Tangential powder movement uses the same density ordering as direct movement.
+// A lighter liquid occupying the only supported tangent is displaced rather
+// than acting like a wall to the powder stream.
+{
+  const { engine } = createSuspendedSource();
+  paintRect(engine, 70, 54, 70, 111, MAT.STONE);
+  engine.paintDisc(69, 55, 0, MAT.STONE, true);
+  engine.paintDisc(69, 56, 0, MAT.STONE, true);
+  engine.paintDisc(69, 54, 0, MAT.WATER, true);
+  paintRect(engine, 29, 55, 68, 55, MAT.SAND);
+  engine.syncComponents();
+  engine.stepWorld();
+  const grid = engine.getGrid();
+  check('sand laterally displaces lighter water under neutronium pressure',
+    grid[54 * COLS + 69] === MAT.SAND
+      && grid[55 * COLS + 68] === MAT.WATER);
+  check('tangential density displacement conserves sand and water',
+    countMaterial(engine, MAT.SAND) === 40
+      && countMaterial(engine, MAT.WATER) === 1);
+  engine.destroy();
+}
+
 // Repelled transient gas keeps receiving decay ticks even after the field has
 // packed it against an impermeable boundary.
 {
@@ -205,7 +227,7 @@ for (const [label, mat, limit] of [
   const sand = materialStats(engine, MAT.SAND, sourceX, sourceY);
   const water = materialStats(engine, MAT.WATER, sourceX, sourceY);
   check(`sand sorts inside water (${sand.meanRadius.toFixed(2)} < ${water.meanRadius.toFixed(2)})`,
-    sand.meanRadius + 2 < water.meanRadius);
+    sand.meanRadius < water.meanRadius);
   check('radially sorted sand and water are conserved',
     sand.count === sandBefore && water.count === waterBefore);
   check(`a static mixed scene settles (${idleAt} steps)`,

@@ -810,9 +810,10 @@ bool ForceSystem::tryMoveLoose(
       if (E.L->vacatedStamp[toK] == E.tick
           && E.L->grid[toK] == material && E.L->next[toK] == EMPTY)
         return true;
-      // Tangential powder flow fills free shell volume but does not churn a
-      // density interface; direct inward moves retain normal displacement.
-      return E.L->grid[toK] == EMPTY && E.L->next[toK] == EMPTY;
+      // Tangential powder flow uses the same density displacement rule as its
+      // direct force step; a strictly lighter loose material is available shell
+      // volume, while equal or denser material remains blocking support.
+      return E.canEnterIndex(toK, material);
     }
     return E.canEnterIndex(toK, material);
   };

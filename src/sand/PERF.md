@@ -108,7 +108,9 @@ component registration, and generation/restoration. Browser presentation exposes
   metadata during the existing nearest-source query; it does not add a body-pair
   scan or a contact pass. Liquid fanning is a hashed alternate candidate inside
   the same active-cell force query and does not add a grid traversal. Tangential
-  powder candidates reuse the ordinary constant-time density claim check.
+  powder candidates reuse the ordinary constant-time density claim check. Players
+  and mobile creatures add one chunk-bin force sample per actor tick; stationary
+  mission fixtures remain anchored and add no query.
 - A per-layer spore-presence latch skips dormant-mycelium component scans when
   the loaded terrain contains no mycelium spore.
 - Fire and acid split only touched components. Base-grounded acid bites use a

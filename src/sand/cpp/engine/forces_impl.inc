@@ -83,7 +83,7 @@ void ForceSystem::addNeutroniumEmitters(
   if (!layer->forceSourcePresent) return;
   bool found = false;
   constexpr uint8_t targets = FORCE_POWDER | FORCE_LIQUID
-                            | FORCE_RIGID | FORCE_GAS;
+                            | FORCE_RIGID | FORCE_GAS | FORCE_ACTOR;
   auto addCluster = [&](double x, double y, int cellCount, int sourceBodyId,
                         int sourceBodyLayer, int sourceNeutroniumCells,
                         size_t pointStart, float minX, float minY,
@@ -718,6 +718,15 @@ bool ForceSystem::sample(
     int targetNeutroniumCells, int targetBodyLayer) const {
   return sampleLayer(E.L, x, y, target, sourceBodyId, forceX, forceY,
                      targetNeutroniumCells, targetBodyLayer);
+}
+
+bool ForceSystem::sampleActor(
+    double x, double y, double& forceX, double& forceY) const {
+  if (states[0].emitters.empty() && states[1].emitters.empty()) {
+    forceX = forceY = 0;
+    return false;
+  }
+  return sampleLayer(&E.fg, x, y, FORCE_ACTOR, -1, forceX, forceY);
 }
 
 int ForceSystem::looseMoveCandidates(

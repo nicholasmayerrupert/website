@@ -366,6 +366,7 @@ class CreatureSystem {
   void acquireTarget(Creature& c);
   bool targetPoint(const Creature& c, double& tx, double& ty, Creature** prey, Player** player);
   bool findNearbyHabitat(const Creature& c, int maxRadius, double& tx, double& ty) const;
+  void applySpatialForce(Creature& c);
   void refreshWander(Creature& c);
   void steerAquatic(Creature& c);
   void moveAquatic(Creature& c);

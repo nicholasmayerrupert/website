@@ -726,6 +726,19 @@ void CreatureSystem::refreshWander(Creature& c) {
   c.wanderTicks = 90 + (int)(whash1(E.fg.worldSeed ^ 0xA11CE77u, (int)salt) * 150);
 }
 
+void CreatureSystem::applySpatialForce(Creature& c) {
+  const CreatureSpecies& s = species(c);
+  double forceX, forceY;
+  double x = c.wx - E.fg.worldOffsetX + s.w * 0.5;
+  double y = c.wy - E.fg.worldOffsetY + s.h * 0.5;
+  if (!E.forces.sampleActor(x, y, forceX, forceY)) return;
+  static constexpr double MAX_FORCE_SPEED = 3.0;
+  c.vx = std::max(-MAX_FORCE_SPEED,
+                  std::min(MAX_FORCE_SPEED, c.vx + forceX));
+  c.vy = std::max(-MAX_FORCE_SPEED,
+                  std::min(MAX_FORCE_SPEED, c.vy + forceY));
+}
+
 void CreatureSystem::steerAquatic(Creature& c) {
   const CreatureSpecies& s = species(c);
   double tx = 0, ty = 0; Creature* prey = nullptr; Player* player = nullptr;
@@ -747,6 +760,7 @@ void CreatureSystem::steerAquatic(Creature& c) {
 
 void CreatureSystem::moveAquatic(Creature& c) {
   const CreatureSpecies& s = species(c);
+  applySpatialForce(c);
   auto tryAxis = [&](double& pos, double delta, bool xAxis) {
     double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
     while (moved < mag - 1e-6) {
@@ -787,6 +801,7 @@ void CreatureSystem::moveBeachedAquatic(Creature& c) {
     c.vx = c.facing * kick;
     c.vy = -0.58 - whash1(E.fg.worldSeed ^ 0xF10F22u, c.id + E.actorTick) * 0.28;
   }
+  applySpatialForce(c);
   auto moveAxis = [&](double& pos, double delta, bool xAxis) {
     double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
     while (moved < mag - 1e-6) {
@@ -866,6 +881,7 @@ void CreatureSystem::moveAmphibious(Creature& c) {
     if (s.hopPeriod > 0 && c.grounded && ((E.actorTick + c.id * 7) % s.hopPeriod) == 0) c.vy = -s.jumpSpeed;
     c.vy += E.scaledGravity(s.gravity); if (c.vy > 2.4) c.vy = 2.4;
   }
+  applySpatialForce(c);
   if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
   auto moveAxis = [&](double& pos, double delta, bool xAxis) {
     double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;
@@ -934,6 +950,7 @@ void CreatureSystem::moveFlying(Creature& c) {
   desiredX = desiredX / d * s.swimSpeed; desiredY = desiredY / d * s.swimSpeed;
   c.vx += std::max(-s.accel, std::min(s.accel, desiredX - c.vx));
   c.vy += std::max(-s.accel, std::min(s.accel, desiredY - c.vy));
+  applySpatialForce(c);
   if (std::fabs(c.vx) > 0.02) c.facing = c.vx > 0 ? 1 : -1;
   auto moveAxis = [&](double& pos, double delta, bool xAxis) {
     double moved = 0, mag = std::fabs(delta), dir = delta >= 0 ? 1.0 : -1.0;

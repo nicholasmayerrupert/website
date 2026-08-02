@@ -320,16 +320,19 @@ interface remains exact. Ordinary single-material pressure work therefore
 scales with wet surface area and the fixed band, not body area or lake area.
 
 Spatial forces are target-masked radial or directional emitters consumed by
-powders, liquids, gases, and free rigid bodies. Each emitter selects which target
-classes it repels and which simulated layers it affects. Emitters are indexed into
-chunk-sized bins, so affected cells and bodies inspect only nearby sources.
+powders, liquids, gases, free rigid bodies, and mobile actors. Each emitter selects
+which target classes it repels and which simulated layers it affects. Emitters are
+indexed into chunk-sized bins, so affected cells, bodies, and actors inspect only
+nearby sources.
 Neutronium is an ultra-dense component material that contributes one radial
 emitter per connected static component or moving body, attracts powders, liquids,
-and free rigid bodies, repels gases, and targets both layers; larger neutronium
-masses increase the bounded strength and reach without creating one emitter per
-material cell. Force direction uses the nearest neutronium cell rather than the
-component centroid, so long and irregular static or moving shapes attract along
-their local surface while component mass still controls strength and reach.
+free rigid bodies, players, enemies, and mobile creatures, repels gases, and
+targets both layers; larger neutronium masses increase the bounded strength and
+reach without creating one emitter per material cell. Actor acceleration is
+sampled once at each AABB center and retains the actor's collision and locomotion
+rules. Force direction uses the nearest neutronium cell rather than the component
+centroid, so long and irregular static or moving shapes attract along their local
+surface while component mass still controls strength and reach.
 Between moving neutronium bodies, the source with more neutronium cells dominates;
 equal sizes use a stable layer/body identity tie-break. Only the subordinate body
 receives that pair's attraction, so touching pieces can keep compacting without

@@ -5,6 +5,7 @@ import { initSandWasm, createEngineWasm as createEngineWasmRaw } from '../src/sa
 import { attachTestHooks } from '../src/sand/wasmBridge/testHooks.js';
 import { MAT } from '../src/sand/materials.js';
 import { MATERIALS } from '../src/sand/materials.generated.js';
+import { CREATURE } from '../src/sand/wasmBridge/abi.generated.js';
 import { makeChecker } from './sand-test-util.mjs';
 
 const COLS = 180, ROWS = 120, SEED = 0xC0FFEE;
@@ -208,6 +209,37 @@ for (const [label, mat, limit] of [
   const released = materialStats(engine, MAT.WATER, sourceX, sourceY);
   check(`removing neutronium releases held water (max y ${released.maxY})`,
     released.count === before && released.maxY > held.maxY + 12);
+  engine.destroy();
+}
+
+// Mobile actors sample the same nearest-neutronium field once per actor tick.
+// Player controls, hostile walking, and ambient flight retain their collision
+// paths while the shared acceleration pulls each AABB toward the source.
+{
+  const { engine } = createSuspendedSource();
+  const playerId = engine.spawnPlayer(55, 72);
+  const enemyId = engine.spawnScriptedCreature(CREATURE.MINIGUNNER, 55, 82);
+  const birdId = engine.spawnScriptedCreature(CREATURE.BIRD, 55, 68);
+  engine.setCreatureRuntime(true, false);
+  const playerBefore = engine.getPlayer(playerId);
+  const creaturesBefore = engine.getCreatures();
+  const enemyBefore = creaturesBefore.find((entry) => entry.id === enemyId);
+  const birdBefore = creaturesBefore.find((entry) => entry.id === birdId);
+  engine.stepWorld();
+  for (let tick = 0; tick < 10; tick++) engine.stepActors();
+  const playerAfter = engine.getPlayer(playerId);
+  const creaturesAfter = engine.getCreatures();
+  const enemyAfter = creaturesAfter.find((entry) => entry.id === enemyId);
+  const birdAfter = creaturesAfter.find((entry) => entry.id === birdId);
+  check(`neutronium pulls the player (${playerBefore?.x.toFixed(1)} -> ${playerAfter?.x.toFixed(1)})`,
+    playerBefore && playerAfter && playerAfter.x > playerBefore.x + 4
+      && playerAfter.vx > 0.2);
+  check(`neutronium pulls a hostile enemy (${enemyBefore?.x.toFixed(1)} -> ${enemyAfter?.x.toFixed(1)})`,
+    enemyBefore && enemyAfter && enemyAfter.x > enemyBefore.x + 3
+      && enemyAfter.vx > 0.15);
+  check(`neutronium pulls an ambient flying creature (${birdBefore?.x.toFixed(1)} -> ${birdAfter?.x.toFixed(1)})`,
+    birdBefore && birdAfter && birdAfter.x > birdBefore.x + 3
+      && birdAfter.vx > 0.15);
   engine.destroy();
 }
 

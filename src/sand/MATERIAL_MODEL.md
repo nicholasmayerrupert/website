@@ -91,13 +91,15 @@ free body cell and a static `STONE` component cell.
   reaction path.
 - `NEUTRONIUM`: id `NEUTRONIUM`, `materialClass` `rigid`, `kind` `component`.
   Each connected neutronium component or body emits a bounded radial force that
-  attracts powders, liquids, and free rigid bodies while repelling gases in both
-  simulated layers. Component mass sets force strength and reach, while the
-  nearest occupied neutronium cell sets direction for both static and moving
-  shapes. Between moving neutronium bodies, the source with more neutronium cells
-  dominates; equal sizes use a stable layer/body identity tie-break, and only the
-  subordinate receives attraction from that pair. Strong fields replace ordinary
-  downward loose-material settling.
+  attracts powders, liquids, free rigid bodies, players, enemies, and mobile
+  creatures while repelling gases in both simulated layers. Mobile actors sample
+  one acceleration at their AABB center and resolve it through their ordinary
+  collision and locomotion paths. Component mass sets force strength and reach,
+  while the nearest occupied neutronium cell sets direction for both static and
+  moving shapes. Between moving neutronium bodies, the source with more neutronium
+  cells dominates; equal sizes use a stable layer/body identity tie-break, and only
+  the subordinate receives attraction from that pair. Strong fields replace
+  ordinary downward loose-material settling.
   Pressure-blocked powders and liquids spread along force tangents to wrap around
   the source. Powder tangents retain ordinary density displacement, allowing sand
   to move laterally through lighter liquids. Pressurized liquids occasionally take

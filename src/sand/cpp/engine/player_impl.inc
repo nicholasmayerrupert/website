@@ -463,6 +463,9 @@ void PlayerSystem::integratePlayer(Player& p) {
   double fluidCoverage = samplePlayerFluidCoverage(p);
   bool inLiquid = fluidCoverage >= P_LIQUID_MIN_COVERAGE;
   bool swimming = fluidCoverage >= P_LIQUID_SWIM_COVERAGE;
+  double forceX = 0, forceY = 0;
+  bool spatialForce = E.forces.sampleActor(
+    p.px + p.w * 0.5, p.py + p.h * 0.5, forceX, forceY);
   double maxRun = P_MAX_RUN * (run ? P_RUN_MULT : 1.0);
   if (p.analogInput) maxRun *= moveStrength;
   if (inLiquid) maxRun *= P_LIQUID_RUN_MULT;
@@ -479,6 +482,9 @@ void PlayerSystem::integratePlayer(Player& p) {
   if (inLiquid) {
     p.vx *= P_LIQUID_DRAG_X;
     if (std::fabs(p.vx) < 0.02) p.vx = 0;
+  }
+  if (spatialForce) {
+    p.vx = std::max(-P_MAX_FALL, std::min(P_MAX_FALL, p.vx + forceX));
   }
 
   // jump: allowed when grounded OR shallowly buried (sand piled into his feet, up
@@ -504,8 +510,12 @@ void PlayerSystem::integratePlayer(Player& p) {
     p.vy *= P_LIQUID_DRAG_Y;
     p.vy += E.scaledGravity(P_LIQUID_GRAVITY);
     if (swimming && wantJump) p.vy -= P_LIQUID_SWIM_ACCEL;
-    if (p.vy < P_LIQUID_MAX_RISE) p.vy = P_LIQUID_MAX_RISE;
-    if (p.vy > P_LIQUID_MAX_FALL) p.vy = P_LIQUID_MAX_FALL;
+    if (spatialForce) {
+      p.vy = std::max(-P_MAX_FALL, std::min(P_MAX_FALL, p.vy + forceY));
+    } else {
+      if (p.vy < P_LIQUID_MAX_RISE) p.vy = P_LIQUID_MAX_RISE;
+      if (p.vy > P_LIQUID_MAX_FALL) p.vy = P_LIQUID_MAX_FALL;
+    }
   } else {
     p.vy += E.scaledGravity(P_GRAVITY);
     // Space keeps thrusting after the ordinary ground jump. Preserve the
@@ -521,7 +531,8 @@ void PlayerSystem::integratePlayer(Player& p) {
     } else if (!wantJetpack || p.grounded) {
       p.jetpackFuel = std::min(1.0, p.jetpackFuel + P_JETPACK_RECHARGE);
     }
-    if (p.vy > P_MAX_FALL) p.vy = P_MAX_FALL;
+    if (spatialForce) p.vy += forceY;
+    p.vy = std::max(-P_MAX_FALL, std::min(P_MAX_FALL, p.vy));
   }
   // Liquids suppress the flame but safely recharge the pack; swimming retains
   // its established jump/up behavior.

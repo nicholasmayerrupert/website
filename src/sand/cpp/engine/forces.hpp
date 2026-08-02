@@ -1,5 +1,5 @@
 #pragma once
-// Spatial force emitters for loose materials and free rigid bodies.
+// Spatial force emitters for materials, free rigid bodies, and mobile actors.
 
 struct Engine;
 
@@ -8,6 +8,7 @@ enum ForceTarget : uint8_t {
   FORCE_LIQUID = 1u << 1,
   FORCE_RIGID = 1u << 2,
   FORCE_GAS = 1u << 3,
+  FORCE_ACTOR = 1u << 4,
 };
 
 enum ForceKind : uint8_t {
@@ -53,6 +54,8 @@ class ForceSystem {
                         int sourceBodyId = -1);
   void prepareWorldTick();
   void applyBodyForces();
+  bool sampleActor(double x, double y,
+                   double& forceX, double& forceY) const;
   bool overridesGravity(int x, int y, uint8_t material) const;
   bool tryMoveLoose(int x, int y, int k, uint8_t material,
                     bool movementAllowed = true);

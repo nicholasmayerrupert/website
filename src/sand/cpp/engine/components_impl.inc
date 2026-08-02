@@ -96,7 +96,50 @@ void ComponentSystem::indexComponents() {
       lay->compAdjPairs[cgAdjCounts[(uint32_t)(packed >> 32)]++] = packed;
     lay->compAdjPairs.erase(std::unique(lay->compAdjPairs.begin(), lay->compAdjPairs.end()), lay->compAdjPairs.end());
   }
+  E.invalidateComponentIndexPatches(lay);
   E.perfComponentIndexMs += emscripten_get_now() - t0;
+}
+
+bool ComponentSystem::patchComponentIndexAdditions() {
+  Layer* const lay = E.L;
+  if (!lay->componentIndexPatchOnly || lay->componentIndexPatches.empty()
+      || !lay->groundBaseValid
+      || lay->groundBaseFlags.size() != lay->components.size()) return false;
+  int32_t* const cc = lay->cellComp.data();
+  for (const auto& patch : lay->componentIndexPatches) {
+    int componentIndex = patch.first;
+    int k = patch.second;
+    if (componentIndex < 0 || componentIndex >= (int)lay->components.size()
+        || k < 0 || k >= E.cols * E.rows
+        || !E.isComponentMaterial(lay->grid[k])) return false;
+    cc[k] = componentIndex;
+  }
+  for (const auto& patch : lay->componentIndexPatches) {
+    int a = patch.first, k = patch.second;
+    int y = k / E.cols, x = k - y * E.cols;
+    if (y == 0 || x == 0 || x == E.cols - 1)
+      lay->groundHasDirectedBoundaryComp = true;
+    for (int oy = -1; oy <= 1; oy++) for (int ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      int nx = x + ox, ny = y + oy;
+      if (nx < 0 || nx >= E.cols || ny < 0 || ny >= E.rows) continue;
+      int nk = ny * E.cols + nx;
+      int b = cc[nk];
+      if (b < 0 || b == a) continue;
+      if (lay->infinite && (x == 0 || x == E.cols - 1
+                            || nx == 0 || nx == E.cols - 1)
+          && (E.isIceMaterial(lay->grid[k])
+              || E.isIceMaterial(lay->grid[nk]))) continue;
+      uint32_t lo = (uint32_t)(a < b ? a : b);
+      uint32_t hi = (uint32_t)(a < b ? b : a);
+      uint64_t edge = ((uint64_t)lo << 32) | hi;
+      auto it = std::lower_bound(lay->compAdjPairs.begin(),
+                                 lay->compAdjPairs.end(), edge);
+      if (it == lay->compAdjPairs.end() || *it != edge)
+        lay->compAdjPairs.insert(it, edge);
+    }
+  }
+  return true;
 }
 
 // Static rigid support is connectivity over the component contact graph.
@@ -388,6 +431,9 @@ void ComponentSystem::refreshLooseOverlayPreservingJoint(Layer* lay) {
 void ComponentSystem::normalizeDeferredConnectivity() {
   Layer* const lay = E.L;
   if (lay->deferredSplitIds.empty() && lay->componentTombstones == 0) return;
+  lay->componentCarryDirty = true;
+  lay->componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(lay);
   auto normalize = [&](std::vector<Comp>& list, std::vector<int>& ids, int& nextId) {
     std::vector<Comp> updated;
     updated.reserve(list.size());
@@ -519,9 +565,12 @@ void ComponentSystem::computeGrounded() {
     }
     lay->groundBaseReplay = false;
   } else {
-    bool componentIndexExact = !groundForceFull && lay->groundBaseValid
+    bool patchedComponentIndex = !groundForceFull && lay->groundDirty
+      && !lay->groundContentDirty && patchComponentIndexAdditions();
+    bool componentIndexExact = patchedComponentIndex
+      || (!groundForceFull && lay->groundBaseValid
       && !lay->groundDirty && !lay->groundContentDirty
-      && lay->groundBaseFlags.size() == totalComps;
+      && lay->groundBaseFlags.size() == totalComps);
     computeRigidGrounded(componentIndexExact);
     lay->groundRigidBase.assign(lay->groundedCell.begin(), lay->groundedCell.end());
     lay->groundBaseFlags.clear();
@@ -530,6 +579,7 @@ void ComponentSystem::computeGrounded() {
     lay->groundBaseValid = true;
     lay->groundDirty = false;
     lay->groundContentDirty = false;
+    E.invalidateComponentIndexPatches(lay);
     lay->groundBaseReplay = false;
     lay->looseDirtyFull = true;
     lay->looseDirtyX0 = 0; lay->looseDirtyX1 = E.cols - 1;
@@ -540,6 +590,7 @@ void ComponentSystem::computeGrounded() {
   lay->looseDirtyFull = false;
   if ((int)lay->looseDirtyCol.size() == E.cols)
     std::fill(lay->looseDirtyCol.begin(), lay->looseDirtyCol.end(), (uint8_t)0);
+  E.refreshMobileComponentRegistry(lay);
 #ifdef SAND_INVARIANT_CHECKS
   if (!jointSupportValid) {
     // Parity probe: re-run the PRE-SPLIT single-flood algorithm from scratch
@@ -657,11 +708,22 @@ void ComponentSystem::computeGrounded() {
 
 // Rebuild component bookkeeping after a removal that preserved cached grounding.
 void ComponentSystem::incrementalGroundingRefresh() {
+  if (!E.L->compsReshaped
+      && E.L->groundBaseFlags.size() == E.L->components.size()) {
+    cgComps.clear();
+    for (size_t i = 0; i < E.L->components.size(); i++) {
+      Comp& component = E.L->components[i];
+      component.grounded = E.L->groundBaseFlags[i] != 0;
+      cgComps.push_back(&component);
+    }
+    return;
+  }
   std::fill(E.L->cellComp.begin(), E.L->cellComp.end(), -1);
   indexComponents();                       // rebuilds E.L->cellComp and resets grounded=false
   for (Comp* c : cgComps) {                // a connected component is grounded iff ANY of its cells is
     for (int k : c->cells) if (E.L->groundedCell[k]) { c->grounded = true; break; }
   }
+  E.L->compsReshaped = false;
 }
 
 // Single-layer dispatch. Debug verification compares the selected path with a
@@ -948,11 +1010,8 @@ void ComponentSystem::groundLayerBase(Layer* lay) {
 // full grounding paths.
 void ComponentSystem::wakeCellsThatLostGrounding(Layer& lay, const std::vector<uint8_t>& prev) {
   const uint8_t* gr = lay.groundedCell.data();
-  int32_t* rmn = lay.rowMarkMin.data(); int32_t* rmx = lay.rowMarkMax.data();
   auto wake = [&](int k) {
-    int y = k / E.cols, x = k - y * E.cols;
-    if (x < rmn[y]) rmn[y] = x;
-    if (x > rmx[y]) rmx[y] = x;
+    E.markLayerCell(&lay, k);
   };
   // The support arrays contain bytes restricted to 0/1. Compare eight cells at
   // once, then resolve the rare 1->0 transitions against live component/body
@@ -1104,6 +1163,8 @@ void ComponentSystem::computeGroundedBoth() {
     E.useLayer(&E.fg);
     jointSupportValid = true;
     jointSupportSleeping = false;
+    E.refreshMobileComponentRegistry(&E.fg);
+    E.refreshMobileComponentRegistry(&E.bg);
     E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
     return;
   }
@@ -1156,6 +1217,8 @@ void ComponentSystem::computeGroundedBoth() {
     E.useLayer(&E.fg);
     jointSupportValid = true;
     jointSupportSleeping = false;
+    E.refreshMobileComponentRegistry(&E.fg);
+    E.refreshMobileComponentRegistry(&E.bg);
     E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
     return;
   }
@@ -1212,6 +1275,8 @@ void ComponentSystem::computeGroundedBoth() {
   E.useLayer(&E.fg);
   jointSupportValid = true;
   jointSupportSleeping = false;
+  E.refreshMobileComponentRegistry(&E.fg);
+  E.refreshMobileComponentRegistry(&E.bg);
   E.perfCrossLayerGroundingMs += emscripten_get_now() - tCross0;
 }
 
@@ -1589,6 +1654,9 @@ void ComponentSystem::detachComponentGroups(Layer& lay,
     }
   }
   if (pending.empty()) return;
+  lay.componentCarryDirty = true;
+  lay.componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(&lay);
 
   std::vector<Comp> remaining;
   remaining.reserve(lay.components.size());
@@ -1672,6 +1740,13 @@ void ComponentSystem::detachCrossLayerComponentGroups(
       pending.push_back(std::move(joint));
   }
   if (pending.empty()) return;
+
+  E.fg.componentCarryDirty = true;
+  E.bg.componentCarryDirty = true;
+  E.fg.componentRegistryDirty = true;
+  E.bg.componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(&E.fg);
+  E.invalidateComponentIndexPatches(&E.bg);
 
   auto removeDetached = [](Layer& lay,
                            const std::unordered_set<Comp*>& detached) {
@@ -1889,6 +1964,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
                         const AssemblyLayerMovePlan& plan, int dir,
                         bool updateGroundCache) {
     E.useLayer(&lay);
+    lay.componentCarryDirty = true;
     const bool trackWorldTiles = lay.infinite && lay.storageRole != ESR_PRESENTATION;
     const int tileX0 = trackWorldTiles ? E.floorDiv(lay.worldOffsetX, CHUNK_SIZE) : 0;
     const int tileY0 = trackWorldTiles ? E.floorDiv(lay.worldOffsetY, CHUNK_SIZE) : 0;
@@ -1907,8 +1983,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
       if ((material == FIRE || material == LAVA) && old != FIRE && old != LAVA)
         lay.heatAddedAfterPrepare = true;
       lay.grid[k] = material;
-      if (x < lay.rowMarkMin[y]) lay.rowMarkMin[y] = x;
-      if (x > lay.rowMarkMax[y]) lay.rowMarkMax[y] = x;
+      E.markLayerRowSpan(&lay, y, x, x);
       if (trackWorldTiles) {
         int tx = E.floorDiv(lay.worldOffsetX + x, CHUNK_SIZE) - tileX0;
         int ty = E.floorDiv(lay.worldOffsetY + y, CHUNK_SIZE) - tileY0;
@@ -1927,8 +2002,7 @@ void ComponentSystem::moveCrossLayerBondedAssemblies() {
         const AssemblyCellMat& cm = mats[materialIndex++];
         k += dir;
         int y = k / E.cols, x = k - y * E.cols;
-        if (x < lay.rowMarkMin[y]) lay.rowMarkMin[y] = x;
-        if (x > lay.rowMarkMax[y]) lay.rowMarkMax[y] = x;
+        E.markLayerRowSpan(&lay, y, x, x);
         writeAssemblyIndex(k, cm.material);
         if (updateGroundCache) {
           lay.cellComp[k] = id;
@@ -2078,6 +2152,7 @@ void ComponentSystem::moveRigidAssemblies() {
   // ungrounded `all` array (or -1 for grounded/none).
   int totalComps = (int)E.L->components.size();
   if (totalComps == 0) return;
+  if (E.L->mobileComponents.empty() && E.L->landedComponents.empty()) return;
   std::vector<Comp*> all;
   std::vector<int> allGlobalIds;
   std::vector<uint8_t> allImminentTnt;
@@ -2090,33 +2165,37 @@ void ComponentSystem::moveRigidAssemblies() {
     int comp = E.L->cellComp[k];
     if (comp >= 0 && comp < totalComps) imminentTnt[comp] = 1;
   }
-  int gi = 0;
-  auto addList = [&](std::vector<Comp>& list) {
-    for (auto& c : list) {
-      if (c.grounded) c.detachedByBreak = false;
-      if (c.grounded && c.buoyancyDirection > 0 && !c.cells.empty()) {
-        double x = 0, y = 0;
-        for (int k : c.cells) { x += k % E.cols; y += k / E.cols; }
-        uint8_t material = E.L->grid[c.cells[0]];
-        E.audio.emit(SE_SOLID_LAND, x / c.cells.size(), y / c.cells.size(),
-                     std::min(1.6, 0.28 + std::sqrt((double)c.cells.size()) * 0.065),
-                     material);
-        c.buoyancyDirection = 0;
-      }
-      // Due TNT stays in a mixed falling assembly so it cannot pin adjacent
-      // detached terrain for its final fuse tick. A due-only front is skipped
-      // below because it disappears in this tick's reaction pass.
-      if (!c.grounded
-          && (!jointGroundReady || gi >= (int)E.L->crossBondedComp.size() || !E.L->crossBondedComp[gi])) {
-        localOf[gi] = (int)all.size();
-        all.push_back(&c);
-        allGlobalIds.push_back(gi);
-        allImminentTnt.push_back(imminentTnt[gi]);
-      }
-      gi++;
+  for (int componentIndex : E.L->landedComponents) {
+    if (componentIndex < 0 || componentIndex >= totalComps) continue;
+    Comp& component = E.L->components[componentIndex];
+    if (!component.grounded || component.buoyancyDirection <= 0
+        || component.cells.empty()) continue;
+    double x = 0, y = 0;
+    for (int k : component.cells) { x += k % E.cols; y += k / E.cols; }
+    uint8_t material = E.L->grid[component.cells[0]];
+    E.audio.emit(SE_SOLID_LAND, x / component.cells.size(),
+                 y / component.cells.size(),
+                 std::min(1.6, 0.28
+                   + std::sqrt((double)component.cells.size()) * 0.065),
+                 material);
+    component.buoyancyDirection = 0;
+  }
+  for (int componentIndex : E.L->mobileComponents) {
+    if (componentIndex < 0 || componentIndex >= totalComps) continue;
+    Comp& component = E.L->components[componentIndex];
+    // Due TNT stays in a mixed falling assembly so it cannot pin adjacent
+    // detached terrain for its final fuse tick. A due-only front is skipped
+    // below because it disappears in this tick's reaction pass.
+    if (!component.grounded
+        && (!jointGroundReady
+            || componentIndex >= (int)E.L->crossBondedComp.size()
+            || !E.L->crossBondedComp[componentIndex])) {
+      localOf[componentIndex] = (int)all.size();
+      all.push_back(&component);
+      allGlobalIds.push_back(componentIndex);
+      allImminentTnt.push_back(imminentTnt[componentIndex]);
     }
-  };
-  addList(E.L->components);
+  }
   int n = (int)all.size();
   if (n == 0) return; // everything is grounded (settled) -> nothing to move
   for (auto* comp : all) { int ym = 0; for (int k : comp->cells) { int y = k / E.cols; if (y > ym) ym = y; } comp->yMax = ym; }
@@ -2571,6 +2650,8 @@ void ComponentSystem::moveRigidAssemblies() {
     }
     E.applyAssemblyBodyPush(bodyPush);
     E.L->groundDirty = true; // an assembly is relocating -> grounding changes -> full reflood
+    E.L->componentCarryDirty = true;
+    E.invalidateComponentIndexPatches(E.L);
     for (int k : cells) E.writeGridIndex(k, EMPTY);
     for (auto& mv : moves) {
       std::vector<int> newCells; newCells.reserve(mv.mats.size());
@@ -2770,6 +2851,9 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd) { regis
 // range (E.cols-wide); a horizontal band passes a col range (E.rows-tall).
 void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int rowStart, int rowEnd) {
   E.L->groundDirty = true; // bulk component rebuild (sync/tools/worldgen/shift) -> full reflood
+  E.L->componentCarryDirty = true;
+  E.L->componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(E.L);
   // Reused generation-stamped scratch (allocated once in Layer::alloc): a cell
   // is "seen" iff seenStamp[k] == gen. Each registration behavior bumps gen, so
   // the "clear" between materials costs O(1) instead of zeroing E.cols*E.rows.
@@ -2843,6 +2927,9 @@ void ComponentSystem::registerSeededComponents(int colStart, int colEnd, int row
 
 void ComponentSystem::registerRigidCells(std::vector<Comp>& list, int& nextId, uint8_t mat, std::unordered_set<int>& cells, int yMax, bool iceCache) {
   if (cells.empty()) return;
+  E.L->componentCarryDirty = true;
+  E.L->componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(E.L);
   if (mat == NEUTRONIUM) {
     E.L->forceSourcePresent = true;
     E.fg.forceWakePending = E.bg.forceWakePending = true;
@@ -2942,6 +3029,9 @@ void ComponentSystem::registerBakedCells(
     uint8_t mat, std::unordered_set<int>& cells, int assemblyId,
     bool iceCache, bool looseSupport) {
   if (cells.empty()) return;
+  E.L->componentCarryDirty = true;
+  E.L->componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(E.L);
   E.L->groundDirty = true;
   std::unordered_set<int> remaining(cells.begin(), cells.end());
   std::vector<int> stack;
@@ -3072,6 +3162,11 @@ bool ComponentSystem::componentRemovalLocallyConnected(const std::vector<int>& e
 }
 
 void ComponentSystem::splitPlantAfterErase(std::vector<int>* erased, int indexedOffset, bool markGroundDirty, bool localConnectivityFastPath, bool deferJointRefresh) {
+  if (erased && !erased->empty()) {
+    E.L->componentCarryDirty = true;
+    E.L->componentRegistryDirty = true;
+    E.invalidateComponentIndexPatches(E.L);
+  }
   markBreakCandidates();
   // A deferred joint refresh leaves jointGroundReady set until both layers have
   // stepped. The post-layer phase then rebuilds the shared support closure before
@@ -3193,6 +3288,11 @@ void ComponentSystem::splitRigidAfterErase(std::vector<Comp>& list, std::vector<
   // then ran ensureGroundedSingleLayer (no cross-support) and crept down one
   // cell per dissolve until co-occupation was lost and it free-fell.
   if (E.bgEnabled && !erased.empty()) { jointBondsInvalid = true; jointDirty = true; }
+  if (!erased.empty()) {
+    E.L->componentCarryDirty = true;
+    E.L->componentRegistryDirty = true;
+    E.invalidateComponentIndexPatches(E.L);
+  }
   if (markGroundDirty && !erased.empty()) E.L->groundDirty = true;
   if (erased.empty() || list.empty()) return;
   markBreakCandidates();

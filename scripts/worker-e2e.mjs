@@ -252,9 +252,37 @@ try {
     return { offX: off.x, absX: off.x + moved.x };
   });
   await page.waitForFunction((oldX) => window.__sandTest.worldOffset().x !== oldX, stream0.offX, { timeout: 10000 });
-  const stream1 = await page.evaluate(() => { const t = window.__sandTest, off = t.worldOffset(), cam = t.getCam(); return { offX: off.x, absX: off.x + cam.x }; });
+  const stream1 = await page.evaluate(() => {
+    const t = window.__sandTest, off = t.worldOffset(), cam = t.getCam(), perf = window.__sandPerf();
+    return {
+      offX: off.x, absX: off.x + cam.x,
+      shiftPackets: perf.mirrorShiftPackets,
+      shiftBytes: perf.mirrorShiftPacketBytes,
+    };
+  });
   check('worker owns horizontal streaming', stream1.offX !== stream0.offX, `${stream0.offX} -> ${stream1.offX}`);
-  check('stream snapshot preserves absolute camera position', Math.abs(stream1.absX - stream0.absX) < 2, `${stream0.absX.toFixed(1)} -> ${stream1.absX.toFixed(1)}`);
+  check('stream band preserves absolute camera position', Math.abs(stream1.absX - stream0.absX) < 2, `${stream0.absX.toFixed(1)} -> ${stream1.absX.toFixed(1)}`);
+  check('streaming applies a mirror-shift packet',
+    stream1.shiftPackets > 0 && stream1.shiftBytes > 4,
+    `${stream1.shiftPackets} packet(s), ${stream1.shiftBytes} bytes`);
+
+  const streamV0 = await page.evaluate(() => {
+    const t = window.__sandTest, info = t.info(), cam = t.getCam(), off = t.worldOffset();
+    t.setCam(cam.x, info.rows - info.viewRows - 2);
+    const moved = t.getCam();
+    return { offY: off.y, absY: off.y + moved.y, shiftPackets: window.__sandPerf().mirrorShiftPackets };
+  });
+  await page.waitForFunction((oldY) => window.__sandTest.worldOffset().y !== oldY,
+    streamV0.offY, { timeout: 10000 });
+  const streamV1 = await page.evaluate(() => {
+    const t = window.__sandTest, off = t.worldOffset(), cam = t.getCam(), perf = window.__sandPerf();
+    return { offY: off.y, absY: off.y + cam.y, shiftPackets: perf.mirrorShiftPackets };
+  });
+  check('worker owns vertical streaming', streamV1.offY !== streamV0.offY,
+    `${streamV0.offY} -> ${streamV1.offY}`);
+  check('vertical stream band preserves absolute camera position',
+    Math.abs(streamV1.absY - streamV0.absY) < 2 && streamV1.shiftPackets > streamV0.shiftPackets,
+    `${streamV0.absY.toFixed(1)} -> ${streamV1.absY.toFixed(1)}`);
 
   // Runtime/browser zoom can fire several fits before the debounced worker
   // resize. A larger control viewport must never make the old worker stream on
@@ -278,6 +306,32 @@ try {
   check('rapid zoom keeps the worker mirror on the same world center',
     Math.abs(zoomCenter1.x - zoomCenter0.x) < 2 && Math.abs(zoomCenter1.y - zoomCenter0.y) < 2,
     `${zoomCenter0.x.toFixed(1)},${zoomCenter0.y.toFixed(1)} -> ${zoomCenter1.x.toFixed(1)},${zoomCenter1.y.toFixed(1)}`);
+
+  // Once zoom makes the loaded window larger than the fixed live simulation
+  // focus, a stream packet carries the shifted dirty focus/band instead of both
+  // complete grids.
+  await page.waitForFunction(() => !window.__sandTest.info().workerResizePending,
+    null, { timeout: 10000 });
+  const zoomStream0 = await page.evaluate(() => {
+    const t = window.__sandTest, info = t.info(), cam = t.getCam(), off = t.worldOffset();
+    t.setCam(info.cols - info.viewCols - 2, cam.y);
+    const moved = t.getCam();
+    return { offX: off.x, absX: off.x + moved.x };
+  });
+  await page.waitForFunction((oldX) => window.__sandTest.worldOffset().x !== oldX,
+    zoomStream0.offX, { timeout: 10000 });
+  const zoomStream1 = await page.evaluate(() => {
+    const t = window.__sandTest, off = t.worldOffset(), cam = t.getCam(), perf = window.__sandPerf();
+    return {
+      absX: off.x + cam.x,
+      shiftBytes: perf.mirrorShiftPacketBytes,
+      fullBytes: t.info().cols * t.info().rows * 2,
+    };
+  });
+  check('zoomed-out streaming applies a partial mirror-shift packet',
+    zoomStream1.shiftBytes > 4 && zoomStream1.shiftBytes < zoomStream1.fullBytes &&
+      Math.abs(zoomStream1.absX - zoomStream0.absX) < 2,
+    `${zoomStream1.shiftBytes}/${zoomStream1.fullBytes} bytes`);
 
   // Force each worker world turn over budget. The main thread should continue
   // receiving ~60 RAF callbacks and pan the camera on its actor clock while the

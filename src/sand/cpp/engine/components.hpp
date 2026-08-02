@@ -123,6 +123,7 @@ class ComponentSystem {
 
   bool isKestrelFrameAnchor(const Layer& lay, int x, int y) const;
   void indexComponents();
+  bool patchComponentIndexAdditions();
   void computeStaticGraphGrounded();
   void computeRigidGrounded(bool reuseComponentIndex = false);
   void applyLooseOverlay();

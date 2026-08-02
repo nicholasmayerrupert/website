@@ -315,7 +315,7 @@
       // for materials that already settled. Gas rises AFTER this resolve pass;
       // powder may still sit only in grid if no sink claimed it. Treat both as
       // present so BFS does not place liquid on unmoved smoke/snow.
-      if (x >= L->activeRowMin[y] && x <= L->activeRowMax[y]) {
+      if (activeSpanContains(L, y, x)) {
         uint8_t n = L->next[k];
         if (n != EMPTY) return n;
         if (L->vacatedStamp[k] == tick) return EMPTY;
@@ -501,7 +501,7 @@
       for (int pass = 0; pass < passCount; pass++) {
         for (int y = rows - 2; y > 0; y--) {
           if (denseRigidCargo && ((y ^ tick) & 1)) continue;
-          int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
+          if (L->activeRowSpans[y].empty()) continue;
           (void)rand();
         }
       }
@@ -510,9 +510,13 @@
     for (int pass = 0; pass < passCount; pass++) {
       for (int y = rows - 2; y > 0; y--) {
         if (denseRigidCargo && ((y ^ tick) & 1)) continue;
-        int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
-        bool ltr = rand() < 0.5; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
-        for (int x = start; x != end; x += stepX) {
+        if (L->activeRowSpans[y].empty()) continue;
+        bool ltr = rand() < 0.5;
+        forEachActiveSpan(y, 1, cols - 2, ltr, [&](int minX, int maxX) {
+          int start = ltr ? minX : maxX;
+          int end = ltr ? maxX + 1 : minX - 1;
+          int stepX = ltr ? 1 : -1;
+          for (int x = start; x != end; x += stepX) {
           int k = I(x, y); if (L->grid[k] != EMPTY || L->assemblyWakeStamp[k] == tick) continue;
           if (L->grid[I(x, y + 1)] == EMPTY) continue;
           int aboveK = I(x, y - 1); uint8_t above = L->grid[aboveK];
@@ -542,7 +546,8 @@
             swapSettledCells(sk, k);
             if (L->grid[k] != EMPTY) break;
           }
-        }
+          }
+        });
       }
     }
   }
@@ -589,10 +594,13 @@
 
     for (int pass = 0; pass < LIQUID_SURFACE_FLOW_PASSES; pass++) {
       for (int y = rows - 2; y >= 1; y--) {
-        int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
+        if (L->activeRowSpans[y].empty()) continue;
         bool ltr = ((y + pass + tick) & 1) == 0;
-        int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
-        for (int x = start; x != end; x += stepX) {
+        forEachActiveSpan(y, 1, cols - 2, ltr, [&](int minX, int maxX) {
+          int start = ltr ? minX : maxX;
+          int end = ltr ? maxX + 1 : minX - 1;
+          int stepX = ltr ? 1 : -1;
+          for (int x = start; x != end; x += stepX) {
           int k = I(x, y);
           uint8_t m = L->grid[k];
           if (!isLiquidMaterial(m)) continue;
@@ -629,7 +637,8 @@
           swapSettledCells(k, toK);
           L->vacatedStamp[k] = tick;
           L->vacatedStamp[toK] = tick;
-        }
+          }
+        });
       }
     }
   }
@@ -643,9 +652,13 @@
     // Keep the RNG draw above for deterministic parity with the former scan.
     if (activeDensityCells.empty()) return;
     for (int y = 1; y < rows - 1; y++) {
-      int minX, maxX; if (!activeRowSpan(y, minX, maxX)) continue;
-      bool ltr = (y % 2) == 0; int start = ltr ? minX : maxX, end = ltr ? maxX + 1 : minX - 1, stepX = ltr ? 1 : -1;
-      for (int x = start; x != end; x += stepX) {
+      if (L->activeRowSpans[y].empty()) continue;
+      bool ltr = (y % 2) == 0;
+      forEachActiveSpan(y, 1, cols - 2, ltr, [&](int minX, int maxX) {
+        int start = ltr ? minX : maxX;
+        int end = ltr ? maxX + 1 : minX - 1;
+        int stepX = ltr ? 1 : -1;
+        for (int x = start; x != end; x += stepX) {
         if (((x + y) % 2) != parity) continue;
         int k = I(x, y), belowK = k + cols; uint8_t upper = L->grid[k], lower = L->grid[belowK];
         if constexpr (spatialForces) {
@@ -658,7 +671,8 @@
         if (canDisplaceByLooseDensity(upper, lower)) {
           swapSettledCells(k, belowK);
         }
-      }
+        }
+      });
     }
   }
   void separateLooseByDensity() {

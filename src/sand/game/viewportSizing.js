@@ -53,18 +53,29 @@ export function computeViewportSizing(cssW, cssH, dpr, cfg = SIZING, zoom = 1, _
     const view = fitCells(viewCssW, viewCssH, base * candidateZoom, cfg);
     let bufCols = roundChunks(view.viewCols + marginCols * 2, chunkSize);
     let heightFactor = cfg.worldHeightFactor ?? 2.5;
-    let worldRows = roundChunks(
-      Math.max(view.viewRows + marginRows * 2, Math.round(view.viewRows * heightFactor)),
+    let verticalMarginRows = marginRows;
+    const minVerticalMarginRows = Math.min(
+      marginRows,
+      cfg.minBufferMarginRows ?? marginRows,
+    );
+    const fitWorldRows = () => roundChunks(
+      Math.max(
+        view.viewRows + verticalMarginRows * 2,
+        Math.round(view.viewRows * heightFactor),
+      ),
       chunkSize,
     );
+    let worldRows = fitWorldRows();
     const softMax = cfg.bufferMaxCells ?? 0;
     if (softMax > 0) {
-      while (bufCols * worldRows > softMax * 4 && heightFactor > 1) {
-        heightFactor -= 0.25;
-        worldRows = roundChunks(
-          Math.max(view.viewRows + marginRows * 2, Math.round(view.viewRows * heightFactor)),
-          chunkSize,
+      while (bufCols * worldRows > softMax
+          && (heightFactor > 1 || verticalMarginRows > minVerticalMarginRows)) {
+        if (heightFactor > 1) heightFactor = Math.max(1, heightFactor - 0.25);
+        else verticalMarginRows = Math.max(
+          minVerticalMarginRows,
+          verticalMarginRows - chunkSize,
         );
+        worldRows = fitWorldRows();
       }
     }
     return { ...view, bufCols, worldRows };

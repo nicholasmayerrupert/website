@@ -2186,7 +2186,9 @@ void GLPresenter::glPresentWindow(int forceFull) {
     // A presentation replica never steps cells, so retaining them would make
     // buildDirtyRects re-promote every historical diff on every later frame.
     if (E.storageRole == ESR_PRESENTATION) {
-      for (int y = 0; y < E.rows; y++) { lay.rowMarkMin[y] = E.cols; lay.rowMarkMax[y] = -1; }
+      for (int y = 0; y < E.rows; y++) {
+        lay.rowMarkSpans[y].clear();
+      }
     }
   };
   clearPresentedDirty(E.fg);

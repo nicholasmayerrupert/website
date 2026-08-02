@@ -4,6 +4,33 @@ import { OFF, STRIDES } from '../wasmBridge/abi.generated.js';
 import { mergePlayerPrediction } from './playerPresentation.js';
 import { mapActorPacketToOffset, translatePackedPositions } from '../net/localCoordinates.js';
 
+function shiftGridInPlace(grid, cols, rows, dx, dy) {
+  if (dx) {
+    const amount = Math.abs(dx);
+    for (let y = 0; y < rows; y++) {
+      const row = y * cols;
+      if (dx > 0) {
+        grid.copyWithin(row, row + amount, row + cols);
+        grid.fill(0, row + cols - amount, row + cols);
+      } else {
+        grid.copyWithin(row + amount, row, row + cols - amount);
+        grid.fill(0, row, row + amount);
+      }
+    }
+  }
+  if (dy) {
+    const band = Math.abs(dy) * cols;
+    const cells = cols * rows;
+    if (dy > 0) {
+      grid.copyWithin(0, band, cells);
+      grid.fill(0, cells - band, cells);
+    } else {
+      grid.copyWithin(band, 0, cells - band);
+      grid.fill(0, 0, band);
+    }
+  }
+}
+
 /** @param {import('../game/runtimeContext.js').SandRuntimeContext} ctx */
 export function createWorldWorkerClient(ctx) {
   let worker = new WorldWorker();
@@ -43,7 +70,7 @@ export function createWorldWorkerClient(ctx) {
 
   const handleMessage = ({ data }) => {
     if (!data) return;
-    if (data.type === 'full' || data.type === 'diff') {
+    if (data.type === 'full' || data.type === 'shift' || data.type === 'diff') {
       if ((data.epoch | 0) < appliedEpoch) {
         worker.postMessage({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
         return;
@@ -51,20 +78,23 @@ export function createWorldWorkerClient(ctx) {
       // Runtime zoom can emit many buffer sizes in quick succession. While the
       // worker is catching up, discard packets from its old-sized world; applying
       // them to the already-resized render mirror is both stale and expensive.
-      if (awaitingResizeId && data.resizeId !== awaitingResizeId) {
+      if (awaitingResizeId &&
+          (data.type !== 'full' || data.resizeId !== awaitingResizeId)) {
         worker.postMessage({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
         return;
       }
-      if (awaitingResizeId && data.type === 'full') awaitingResizeId = 0;
-      // A full snapshot establishes an epoch. Never let a diff for a future
-      // frame replace it before the browser has applied that coordinate frame.
+      // Full and shift packets establish epochs. Never let a diff for a future
+      // frame replace one before the browser has applied that coordinate frame.
       if (data.type === 'diff' && data.epoch !== appliedEpoch) {
         worker.postMessage({ type: 'ack', epoch: data.epoch, sequence: data.sequence });
         return;
       }
+      const packetPriority = { diff: 0, shift: 1, full: 2 };
       if (!pending || data.epoch > pending.epoch ||
-          (data.type === 'full' && data.epoch >= pending.epoch) ||
-          (data.type === 'diff' && pending.type !== 'full' && data.sequence >= pending.sequence)) pending = data;
+          (data.epoch === pending.epoch &&
+           (packetPriority[data.type] > packetPriority[pending.type] ||
+            (packetPriority[data.type] === packetPriority[pending.type] &&
+             data.sequence >= pending.sequence)))) pending = data;
       state = {
         ...state, ...data.perf, ready: true, worldTick: data.worldTick || state.worldTick,
         worldTps: data.perf?.worldTps || state.worldTps,
@@ -254,6 +284,7 @@ export function createWorldWorkerClient(ctx) {
         pending = null;
         const bytes = new Uint8Array(packet.data);
         const applyStarted = performance.now();
+        let requestResync = false;
         if (packet.type === 'full') {
           const cam = ctx.engine.getCam();
           const oldOffsetX = ctx.engine.getWorldOffsetX();
@@ -267,15 +298,52 @@ export function createWorldWorkerClient(ctx) {
           // Applying a window that no longer contains the visible view would
           // clamp the camera and permanently lose its world center. Ack it and
           // let the worker's next turn stream around the latest control instead.
-          if (packet.reason === 'stream' && !containsView) {
+          if ((packet.reason === 'stream' || packet.reason === 'resync') && !containsView) {
             state = { ...state, droppedStaleStreams: (state.droppedStaleStreams || 0) + 1 };
+            requestResync = true;
           } else {
             ctx.engine.applyWorldMirror(bytes, packet.worldOffsetX, packet.worldOffsetY);
             ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
             ctx.engine.setMirrorWorldTick(packet.worldTick);
             rebasePresentation(oldOffsetX, oldOffsetY, packet.worldOffsetX, packet.worldOffsetY);
             appliedEpoch = packet.epoch | 0;
+            if (awaitingResizeId && packet.resizeId === awaitingResizeId) awaitingResizeId = 0;
             ctx.forceFullRender = true;
+            changed = true;
+          }
+        } else if (packet.type === 'shift') {
+          const cam = ctx.engine.getCam();
+          const oldOffsetX = ctx.engine.getWorldOffsetX();
+          const oldOffsetY = ctx.engine.getWorldOffsetY();
+          const worldCamX = oldOffsetX + cam.x;
+          const worldCamY = oldOffsetY + cam.y;
+          const dx = packet.shiftDx | 0;
+          const dy = packet.shiftDy | 0;
+          const containsView = worldCamX >= packet.worldOffsetX && worldCamY >= packet.worldOffsetY &&
+            worldCamX + ctx.viewCols <= packet.worldOffsetX + packet.cols &&
+            worldCamY + ctx.viewRows <= packet.worldOffsetY + packet.rows;
+          const validFrame = packet.cols === ctx.engine.cols && packet.rows === ctx.engine.rows &&
+            packet.fromWorldOffsetX === oldOffsetX && packet.fromWorldOffsetY === oldOffsetY &&
+            packet.worldOffsetX === oldOffsetX + dx && packet.worldOffsetY === oldOffsetY + dy &&
+            Math.abs(dx) < packet.cols && Math.abs(dy) < packet.rows && (dx || dy);
+          if (!validFrame || !containsView) {
+            const key = validFrame ? 'droppedStaleStreams' : 'droppedMismatchedShifts';
+            state = { ...state, [key]: (state[key] || 0) + 1 };
+            requestResync = true;
+          } else {
+            shiftGridInPlace(ctx.engine.getGrid(), packet.cols, packet.rows, dx, dy);
+            shiftGridInPlace(ctx.engine.getGridBg(), packet.cols, packet.rows, dx, dy);
+            ctx.engine.setMirrorWorldOffset(packet.worldOffsetX, packet.worldOffsetY);
+            ctx.engine.applyDiffMirror(bytes, packet.lightEditX0, packet.lightEditX1);
+            ctx.engine.cameraSet(worldCamX - packet.worldOffsetX, worldCamY - packet.worldOffsetY);
+            ctx.engine.setMirrorWorldTick(packet.worldTick);
+            rebasePresentation(oldOffsetX, oldOffsetY, packet.worldOffsetX, packet.worldOffsetY);
+            appliedEpoch = packet.epoch | 0;
+            state = {
+              ...state,
+              shiftPacketsApplied: (state.shiftPacketsApplied || 0) + 1,
+              lastShiftPacketBytes: bytes.length,
+            };
             changed = true;
           }
         } else if ((packet.epoch | 0) === appliedEpoch) {
@@ -286,13 +354,17 @@ export function createWorldWorkerClient(ctx) {
           state = { ...state, droppedWrongEpochDiffs: (state.droppedWrongEpochDiffs || 0) + 1 };
         }
         worker.postMessage({ type: 'ack', epoch: packet.epoch, sequence: packet.sequence });
+        if (requestResync) {
+          worker.postMessage({ type: 'resync', epoch: packet.epoch, sequence: packet.sequence });
+        }
         state = {
           ...state, epoch: appliedEpoch,
           mirrorApplyMs: performance.now() - applyStarted, packetBytes: bytes.length,
+          packetType: packet.type, resizePending: !!awaitingResizeId,
         };
       }
       // Draft indices do not carry enough information to translate across
-      // frames, so apply only after their matching full world is installed.
+      // frames, so apply only after their matching coordinate frame is installed.
       if (pendingDraft && (!pendingDraft.epoch || pendingDraft.epoch <= appliedEpoch)) {
         if (!pendingDraft.epoch || pendingDraft.epoch === appliedEpoch) {
           const cells = new Int32Array(pendingDraft.data);

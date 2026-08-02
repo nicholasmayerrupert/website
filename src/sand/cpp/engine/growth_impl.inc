@@ -548,17 +548,13 @@ int GrowthSystem::tryGrowLeaf(Comp& comp, std::unordered_set<int>& reserved) {
   return -1;
 }
 void GrowthSystem::growPlantComponents() {
-  if (E.L->components.empty()) return;
-  for (auto& comp : E.L->components) {
-    // Component registration keeps plant-family cells together and never mixes
-    // them with non-plant structural material, so one live member classifies
-    // the component without scanning its full footprint.
-    if (comp.cells.empty() || !E.isPlantMaterial(E.L->grid[comp.cells[0]])) continue;
+  E.ensureComponentRegistries();
+  for (int componentIndex : E.L->growingPlantComponents) {
+    Comp& comp = E.L->components[componentIndex];
+    if (!comp.growing) continue;
     comp.age++;
-    if (!comp.growing) continue;                          // worldgen/restored trees are inert scenery
     comp.requiresCellGrounding = true;
     if (!compHasSeed(comp)) { comp.growing = false; continue; }
-    E.L->groundDirty = true; // an actively-growing plant may add cells this step -> full reflood
     // Species materials + per-type caps. PT_STANDARD keeps the original caps.
     gGrowType = comp.plantType; gWoodMat = E.plantWoodMat(gGrowType); gLeafMat = E.plantLeafMat(gGrowType);
     uint32_t growthSignature = plantGrowthSignature(comp);
@@ -607,9 +603,10 @@ void GrowthSystem::growPlantComponents() {
       if ((woodBlocked || comp.woodCount >= maxWood) && (!leaves || leafBlocked || comp.leafCount >= maxLeaf)) comp.growing = false;
       continue;
     }
+    E.L->componentCarryDirty = true;
     for (int wk : waterCells) E.writeGridIndex(wk, EMPTY);
     // push_back (not a set insert) is safe: the EMPTY guard above means each targetK is written once, so no cell is added to comp.cells twice.
-    for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (E.L->grid[targetK] != EMPTY) continue; E.writeGridIndex(targetK, material); comp.cells.push_back(targetK); int y = targetK / E.cols; if (y > comp.yMax) comp.yMax = y; if (E.isPlantWood(material)) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
+    for (auto& g : growth) { int targetK = g.first; uint8_t material = g.second; if (E.L->grid[targetK] != EMPTY) continue; E.writeGridIndex(targetK, material); comp.cells.push_back(targetK); E.noteComponentIndexAddition(componentIndex, targetK); int y = targetK / E.cols; if (y > comp.yMax) comp.yMax = y; if (E.isPlantWood(material)) comp.woodCount++; else comp.leafCount++; comp.cacheDirty = true; }
   }
 }
 
@@ -680,7 +677,9 @@ bool GrowthSystem::myceliumCompTouchesStone(Comp& comp) {
 void GrowthSystem::refreshDormantMyceliumComponents() {
   bool active = false;
   bool present = false;
-  for (auto& comp : E.L->components) {
+  E.ensureComponentRegistries();
+  for (int componentIndex : E.L->myceliumComponents) {
+    Comp& comp = E.L->components[componentIndex];
     if (!myceliumCompHasSpore(comp)) continue;
     present = true;
     if ((int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
@@ -704,11 +703,11 @@ void GrowthSystem::growMyceliumComponents() {
   std::vector<MycGrowth> growth;
   std::unordered_set<int> reserved;
   bool anyGrowing = false;
-  for (auto& comp : E.L->components) {
+  for (int componentIndex : E.L->myceliumComponents) {
+    Comp& comp = E.L->components[componentIndex];
     if (!comp.growing || !myceliumCompHasSpore(comp)) continue;
     comp.age++;
     if (!myceliumCompHasSpore(comp) || comp.age > MYCELIUM_MAX_AGE || (int)comp.cells.size() >= MYCELIUM_MAX_CELLS) { comp.growing = false; continue; }
-    E.L->groundDirty = true; // an active colony may add rigid cells this step
     if (!comp.cells.empty()) E.markCellIndex(comp.cells[0]); // keep the colony awake while it is still active
     int targetK = -1;
     bool sawStone = myceliumFindStoneTarget(comp, targetK);
@@ -730,6 +729,8 @@ void GrowthSystem::growMyceliumComponents() {
     converted.push_back(g.targetK);
   }
   if (converted.empty()) return;
+
+  E.L->componentCarryDirty = true;
 
   E.splitRigidAfterErase(E.L->components, converted, E.L->nextComponentId, false);
   for (const MycGrowth& g : growth) {

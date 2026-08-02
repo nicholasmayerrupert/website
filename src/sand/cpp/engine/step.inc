@@ -6,6 +6,8 @@
   void stepLayer(Layer* layer) {
     useLayer(layer);
     if (!beginStepDirty()) return; // nothing active in this layer this step
+    if (L->groundDirty || L->groundContentDirty || !L->groundBaseValid)
+      L->componentCarryDirty = true;
     audio.beginRegionalPass();
     // Timers accumulate across both layers and are reset once per world tick.
     double t0 = emscripten_get_now();
@@ -41,41 +43,70 @@
 
     double tC = emscripten_get_now();
     prepareNextBuffer();
-    // A rigid/gas-only tick can synchronize just the active/marked union. Loose
-    // grounding and density motion retain the established full component carry:
-    // their sparse dirty-column cache is order-sensitive, and the full path is
-    // already a small fraction of those heavier settling ticks. This keeps a
-    // million-cell cave blast local without changing loose-material behavior.
-    bool localRigidCarry = L->blastSparseCarryReady
+    bool blastLocalCarry = L->blastSparseCarryReady
       && !L->looseGroundDirty && L->assemblyRelocatedCells.empty();
+    bool indexedLocalCarry = L->groundBaseValid
+      && !L->groundDirty && !L->groundContentDirty
+      && !L->componentCarryDirty
+      && L->assemblyRelocatedCells.empty();
+    bool localRigidCarry = blastLocalCarry || indexedLocalCarry;
     if (localRigidCarry) {
-      auto carryRigidRow = [&](int y) {
-        int minX = L->activeRowMin[y], maxX = L->activeRowMax[y];
-        if (L->rowMarkMax[y] >= L->rowMarkMin[y]) {
-          minX = imin(minX, L->rowMarkMin[y]);
-          maxX = imax(maxX, L->rowMarkMax[y]);
-        }
-        minX = imax(0, minX); maxX = imin(cols - 1, maxX);
-        if (maxX < minX) return;
+      auto carryRigidSpan = [&](int y, int minX, int maxX) {
         int rb = y * cols;
         for (int x = minX; x <= maxX; x++) {
           int k = rb + x;
-          if (isRigidMaterialClass(L->grid[k]) || isRigidMaterialClass(L->next[k]))
+          bool currentOwned = L->cellComp[k] >= 0 || L->bodyOwner[k] >= 0;
+          if ((blastLocalCarry && isRigidMaterialClass(L->grid[k]))
+              || currentOwned || isRigidMaterialClass(L->next[k]))
             L->next[k] = L->grid[k];
         }
       };
-      for (int y = 0; y < rows; y++) carryRigidRow(y);
+      for (int y = 0; y < rows; y++) {
+        for (const auto& span : L->activeRowSpans[y])
+          carryRigidSpan(y, span.first, span.second);
+        for (const auto& span : L->rowMarkSpans[y])
+          carryRigidSpan(y, span.first, span.second);
+      }
+      if (indexedLocalCarry) {
+        L->curBodyCells.clear();
+        auto noteBody = [&](int k) {
+          L->compOccStamp[k] = tick;
+          L->curBodyCells.push_back(k);
+        };
+        for (int k : L->bodyCells) noteBody(k);
+        for (int k : L->passiveBodyCells) noteBody(k);
+        for (int k : L->prevBodyCells) {
+          if (L->compOccStamp[k] == tick) continue;
+          if (L->grid[k] == EMPTY) {
+            L->next[k] = EMPTY;
+            markCellIndex(k);
+          } else if (!isRigidMaterialClass(L->grid[k])
+                     && isRigidMaterialClass(L->next[k])) {
+            L->next[k] = L->grid[k];
+            markCellIndex(k);
+          }
+        }
+        std::swap(L->prevBodyCells, L->curBodyCells);
+      }
     } else {
       L->curCompCells.clear();
       for (auto& comp : L->components) for (int k : comp.cells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-      for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
-      for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curCompCells.push_back(k); }
+      L->curBodyCells.clear();
+      for (int k : L->bodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curBodyCells.push_back(k); }
+      for (int k : L->passiveBodyCells) { L->next[k] = L->grid[k]; L->compOccStamp[k] = tick; L->curBodyCells.push_back(k); }
       for (int k : L->prevCompCells) {
         if (L->compOccStamp[k] == tick) continue;
         if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
         else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
       }
+      for (int k : L->prevBodyCells) {
+        if (L->compOccStamp[k] == tick) continue;
+        if (L->grid[k] == EMPTY) { L->next[k] = EMPTY; markCellIndex(k); }
+        else if (!isRigidMaterialClass(L->grid[k]) && isRigidMaterialClass(L->next[k])) { L->next[k] = L->grid[k]; markCellIndex(k); }
+      }
       std::swap(L->prevCompCells, L->curCompCells);
+      std::swap(L->prevBodyCells, L->curBodyCells);
+      L->componentCarryDirty = false;
     }
     // Component displacement already moved these media once in the live grid.
     // Carry them through the freshly blanked next buffer and stamp them so the
@@ -94,7 +125,7 @@
     // cell separately for density, powder, liquid, and gas.
     activeDensityCells.clear(); activeSandCells.clear(); activeLiquidCells.clear(); activeGasCells.clear();
     for (int y = rows - 1; y >= 0; y--) {
-      int minX = L->activeRowMin[y], maxX = L->activeRowMax[y]; if (maxX < minX) continue;
+      if (L->activeRowSpans[y].empty()) continue;
       int rb = y * cols; bool ltr = (y & 1) == 0;
       activeGasRow.clear();
       auto gather = [&](int x) {
@@ -111,7 +142,10 @@
         if (isLiquidMaterial(m)) activeLiquidCells.push_back(k);
         if (isGasMaterial(m)) activeGasRow.push_back(k);
       };
-      if (ltr) for (int x = minX; x <= maxX; x++) gather(x); else for (int x = maxX; x >= minX; x--) gather(x);
+      forEachActiveSpan(y, 0, cols - 1, ltr, [&](int minX, int maxX) {
+        if (ltr) for (int x = minX; x <= maxX; x++) gather(x);
+        else for (int x = maxX; x >= minX; x--) gather(x);
+      });
       activeGasCells.insert(activeGasCells.end(), activeGasRow.rbegin(), activeGasRow.rend());
     }
     std::reverse(activeGasCells.begin(), activeGasCells.end());
@@ -363,12 +397,9 @@
     crossFrozenIceFg.clear(); crossFrozenIceBg.clear();
     crossBodyFrozenIceFg.clear(); crossBodyFrozenIceBg.clear();
     for (int y = 1; y < rows - 1; y++) {
-      int mn = cols, mx = -1;
-      if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
-      if (bgA && bg.activeRowMax[y] >= bg.activeRowMin[y]) { if (bg.activeRowMin[y] < mn) mn = bg.activeRowMin[y]; if (bg.activeRowMax[y] > mx) mx = bg.activeRowMax[y]; }
-      if (mx < mn) continue;
-      mn = imax(1, mn); mx = imin(cols - 2, mx);
-      for (int x = mn; x <= mx; x++) {
+      forEachActiveUnionSpan(&fg, fgA, &bg, bgA, y, 1, cols - 2, true,
+                             [&](int mn, int mx) {
+        for (int x = mn; x <= mx; x++) {
         int k = y * cols + x;
         uint8_t f = fg.grid[k], b = bg.grid[k];
         if (f == FIRE && isFlammable(b)) {
@@ -406,7 +437,8 @@
               crossFrozenIceFg.insert(k);
           }
         }
-      }
+        }
+      });
     }
     if (!crossFireErasedFg.empty()) { useLayer(&fg); finishPlantErosion(crossFireErasedFg, fgIndexExact, true); }
     if (!crossFireErasedBg.empty()) { useLayer(&bg); finishPlantErosion(crossFireErasedBg, bgIndexExact, true); }
@@ -511,8 +543,8 @@
         to->liquidVel[k] = 0;
         from->liquidVel[k] = 0;
       }
-      if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
-      if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;
+      markLayerRowSpan(to, y, x, x);
+      markLayerRowSpan(from, y, x, x);
       return true;
     }
     // Powders AND liquids cross layers when stuck. The transfer only fires when the
@@ -571,18 +603,13 @@
     };
     touchLoose(from); touchLoose(to);
     // mark both layers dirty at (x,y) so render + net + L->next-step settle pick it up
-    if (x < to->rowMarkMin[y]) to->rowMarkMin[y] = x; if (x > to->rowMarkMax[y]) to->rowMarkMax[y] = x;
-    if (x < from->rowMarkMin[y]) from->rowMarkMin[y] = x; if (x > from->rowMarkMax[y]) from->rowMarkMax[y] = x;
+    markLayerRowSpan(to, y, x, x);
+    markLayerRowSpan(from, y, x, x);
     return true;
   }
   void transferPass(bool fgA, bool bgA) {
     if (!bgEnabled) return; // an empty/untouched background does not interact
     for (int y = rows - 1; y >= 0; y--) {
-      int mn = cols, mx = -1;
-      if (fgA && fg.activeRowMax[y] >= fg.activeRowMin[y]) { if (fg.activeRowMin[y] < mn) mn = fg.activeRowMin[y]; if (fg.activeRowMax[y] > mx) mx = fg.activeRowMax[y]; }
-      if (bgA && bg.activeRowMax[y] >= bg.activeRowMin[y]) { if (bg.activeRowMin[y] < mn) mn = bg.activeRowMin[y]; if (bg.activeRowMax[y] > mx) mx = bg.activeRowMax[y]; }
-      if (mx < mn) continue;
-      mn = imax(0, mn); mx = imin(cols - 1, mx);
       bool ltr = (y & 1) == 0;
       auto transferAt = [&](int x) {
         int k = y * cols + x;
@@ -592,7 +619,10 @@
         if (!isGasMaterial(f) && !isLooseMedium(f) && !isGasMaterial(b) && !isLooseMedium(b)) return;
         if (!tryTransfer(&fg, &bg, x, y, k)) tryTransfer(&bg, &fg, x, y, k);
       };
-      if (ltr) for (int x = mn; x <= mx; x++) transferAt(x);
-      else for (int x = mx; x >= mn; x--) transferAt(x);
+      forEachActiveUnionSpan(&fg, fgA, &bg, bgA, y, 0, cols - 1, ltr,
+                             [&](int mn, int mx) {
+        if (ltr) for (int x = mn; x <= mx; x++) transferAt(x);
+        else for (int x = mx; x >= mn; x--) transferAt(x);
+      });
     }
   }

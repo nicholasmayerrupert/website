@@ -20,12 +20,17 @@ struct Layer {
   // dirty tracking (per-layer active region)
   std::vector<uint8_t> dirtyRender;
   std::vector<int32_t> dirtyRects;
-  std::vector<int32_t> rowMarkMin, rowMarkMax, chunkStamp, activeRowMin, activeRowMax, vacatedStamp, assemblyWakeStamp, blastGasStamp;
+  std::vector<int32_t> chunkStamp, vacatedStamp, assemblyWakeStamp, blastGasStamp;
+  // Sorted, merged inclusive spans retain disjoint activity on each row.
+  std::vector<std::vector<std::pair<int32_t, int32_t>>> rowMarkSpans, activeRowSpans;
   // A locally-proven cave blast starts from synchronized buffers (its fuse ticks
   // paid the ordinary full carry). Once proven, gas/rigid-only ticks may keep
   // component carry local until a buffer replacement/stream invalidates the proof;
   // loose support or assembly relocation still selects the full carry path.
   bool blastSparseCarryReady = false;
+  // Static component membership changed since the last complete ping-pong
+  // carry. The next active layer turn refreshes both buffer membership views.
+  bool componentCarryDirty = true;
   int dirtyRenderCount = 0;
   // per-cell sim scratch
   std::vector<uint8_t> groundedCell;
@@ -36,7 +41,8 @@ struct Layer {
   // Free rigid-body displacement spill scratch. Footprint and reserved targets
   // must be live at the same time as a BFS seen set, so they use separate stamps.
   std::vector<int32_t> rigidSpillFootprint, rigidSpillReserved;
-  std::vector<int> prevCompCells, curCompCells, bodyCells, passiveBodyCells;
+  std::vector<int> prevCompCells, curCompCells, prevBodyCells, curBodyCells;
+  std::vector<int> bodyCells, passiveBodyCells;
   // Loose/gas cells relocated by static-component motion before prepareNextBuffer.
   // They are carried once into next[] and skipped by the loose pass that tick.
   std::vector<int> assemblyRelocatedCells;
@@ -70,6 +76,9 @@ struct Layer {
   // materials still select their own reactions and growth behavior from their
   // exact id/flags; component partitions are only a topology/performance detail.
   std::vector<Comp> components;
+  std::vector<int32_t> growingPlantComponents, myceliumComponents, iceComponents;
+  std::vector<int32_t> mobileComponents, landedComponents;
+  bool componentRegistryDirty = true;
   int nextComponentId = 1;
   bool myceliumActive = false;
   // False proves that no growth-capable spore exists in this loaded layer.
@@ -95,6 +104,11 @@ struct Layer {
   // clear (and the rigid base is valid), the cached grounding is the exact
   // grounding of the current grid and the whole pass can be skipped.
   bool groundDirty = true, groundSawPowder = false, groundContentDirty = true;
+  // Additions to existing components preserve positional ids. Record those
+  // exact cells so the next rigid refresh can patch cellComp and local graph
+  // edges without re-indexing every loaded component.
+  bool componentIndexPatchOnly = false;
+  std::vector<std::pair<int32_t, int32_t>> componentIndexPatches;
   bool looseGroundDirty = true;
   // Inclusive column span of powder/liquid writes since the last overlay.
   // looseDirtyX1 < looseDirtyX0 means "unknown / full width" when looseGroundDirty.
@@ -179,7 +193,9 @@ struct Layer {
     gridA.assign(n, EMPTY);
     grid = gridA.data();
     dirtyRender.assign((size_t)chunkCols * chunkRows, 0);
-    rowMarkMin.assign(rows, cols); rowMarkMax.assign(rows, -1);
+    rowMarkSpans.clear(); rowMarkSpans.resize(rows);
+    growingPlantComponents.clear(); myceliumComponents.clear(); iceComponents.clear();
+    componentRegistryDirty = true;
 
     // A presentation mirror receives authoritative grids and only performs
     // camera collision queries, lighting, pixel fill, and GL compositing. Point
@@ -202,7 +218,7 @@ struct Layer {
     liquidVelA.assign(n, 0); liquidVelB.assign(n, 0);
     liquidVel = liquidVelA.data(); nextLiquidVel = liquidVelB.data();
     chunkStamp.assign((size_t)chunkCols * chunkRows, -1);
-    activeRowMin.assign(rows, 0); activeRowMax.assign(rows, 0);
+    activeRowSpans.clear(); activeRowSpans.resize(rows);
     vacatedStamp.assign(n, -1);
     assemblyWakeStamp.assign(n, -1);
     blastGasStamp.assign(n, -1);
@@ -239,22 +255,29 @@ struct Layer {
       release(gridA); release(gridB); release(fallSpeedA); release(fallSpeedB);
       release(liquidVelA); release(liquidVelB);
       release(dirtyRender); release(dirtyRects);
-      release(rowMarkMin); release(rowMarkMax); release(chunkStamp);
-      release(activeRowMin); release(activeRowMax); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
+      release(rowMarkSpans); release(chunkStamp);
+      release(activeRowSpans); release(vacatedStamp); release(assemblyWakeStamp); release(blastGasStamp); release(assemblyRelocatedCells);
       release(groundedCell); release(cellComp); release(groundStack); release(compOccStamp);
       release(seenStamp); release(rigidSpillFootprint); release(rigidSpillReserved);
-      release(prevCompCells); release(curCompCells); release(bodyCells); release(passiveBodyCells);
+      release(prevCompCells); release(curCompCells); release(prevBodyCells); release(curBodyCells);
+      release(bodyCells); release(passiveBodyCells);
       release(reactionFlags); release(reactionSteam); release(reactionFires); release(reactionIgnite);
       release(mineDamage); release(light); release(lightBase); release(skyLight);
       release(skyTopInput); release(skyDownValue); release(skyDownDepth);
       release(components);
+      release(growingPlantComponents); release(myceliumComponents); release(iceComponents);
+      release(mobileComponents); release(landedComponents);
       release(deferredSplitIds);
+      release(componentIndexPatches);
       release(looseDirtyCol); release(looseColCount); release(groundRigidBase);
       release(groundBaseFlags); release(crossBondedComp); release(bodyOwner); release(renderPixels);
       release(compAdjPairs);
     }
     alloc(newCols, newRows, newChunkCols, newChunkRows, storageRole);
     components.clear();
+    growingPlantComponents.clear(); myceliumComponents.clear(); iceComponents.clear();
+    mobileComponents.clear(); landedComponents.clear();
+    componentRegistryDirty = true;
     deferredSplitIds.clear(); componentTombstones = 0;
     nextComponentId = 1;
     myceliumActive = false;
@@ -263,6 +286,7 @@ struct Layer {
     forceActive = false;
     forceWakePending = false;
     groundDirty = true; groundSawPowder = false; groundContentDirty = true;
+    componentIndexPatchOnly = false; componentIndexPatches.clear();
     looseGroundDirty = true; looseDirtyX0 = 0; looseDirtyX1 = -1;
     looseDirtyCol.assign(newCols, 0); looseDirtyFull = true;
     groundStreamX0 = groundStreamX1 = groundStreamY0 = groundStreamY1 = -1;
@@ -270,7 +294,9 @@ struct Layer {
     bodies.clear(); bodyCells.clear(); passiveBodyCells.clear(); passiveBodyIds.clear();
     pendingDetonations.clear();
     blastSparseCarryReady = false;
+    componentCarryDirty = true;
     prevCompCells.clear(); curCompCells.clear();
+    prevBodyCells.clear(); curBodyCells.clear();
     mineDamageAny = false;
     dirtyRenderCount = 0;
   }
@@ -301,12 +327,13 @@ struct Layer {
     size_t n = (size_t)newCols * newRows;
     if (n < light.size()) {
       auto release = [](auto& v) { std::decay_t<decltype(v)>().swap(v); };
-      release(dirtyRender); release(dirtyRects); release(rowMarkMin); release(rowMarkMax);
+      release(dirtyRender); release(dirtyRects); release(rowMarkSpans);
       release(light); release(lightBase); release(skyLight); release(skyTopInput);
       release(skyDownValue); release(skyDownDepth); release(renderPixels);
     }
     dirtyRender.assign((size_t)newChunkCols * newChunkRows, 0);
-    dirtyRects.clear(); rowMarkMin.assign(newRows, newCols); rowMarkMax.assign(newRows, -1);
+    dirtyRects.clear();
+    rowMarkSpans.clear(); rowMarkSpans.resize(newRows);
     light.assign(n, 0); lightBase.assign(n, 0); skyLight.assign(n, 0); skyTopInput.assign(newCols, 0);
     skyDownValue.assign(newCols, 0); skyDownDepth.assign(newCols, -1);
     renderPixels.assign(n * 4, 0);

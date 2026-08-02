@@ -88,10 +88,7 @@ void ExplosivesSystem::spawnBlastRingGases(const std::vector<BlastWave>& waves,
 
 void ExplosivesSystem::activateBlastRectNow(int x0, int y0, int x1, int y1) {
   x0 = imax(0, x0); x1 = imin(E.cols - 1, x1); y0 = imax(0, y0); y1 = imin(E.rows - 1, y1);
-  for (int y = y0; y <= y1; y++) {
-    if (x0 < E.L->activeRowMin[y]) E.L->activeRowMin[y] = x0;
-    if (x1 > E.L->activeRowMax[y]) E.L->activeRowMax[y] = x1;
-  }
+  for (int y = y0; y <= y1; y++) E.activateRowSpanNow(y, x0, x1);
 }
 
 bool ExplosivesSystem::blastBodyCandidateHasEscape(const std::vector<std::pair<int, int>>& cells, uint8_t material, bool footprintAlreadySolid) {
@@ -899,12 +896,13 @@ void ExplosivesSystem::applyExplosives() {
           || (y > 0 && explosive(k - E.cols));
     };
     for (int y = 1; y < E.rows - 1; y++) {
-      int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
-      for (int x = minX; x <= maxX; x++) {
-        int k = E.I(x, y); uint8_t m = E.L->grid[k];
-        if ((m == FIRE || m == LAVA) && besideExplosive(k, x, y))
-          addedHeatCells.push_back(k);
-      }
+      E.forEachActiveSpan(y, 1, E.cols - 2, true, [&](int minX, int maxX) {
+        for (int x = minX; x <= maxX; x++) {
+          int k = E.I(x, y); uint8_t m = E.L->grid[k];
+          if ((m == FIRE || m == LAVA) && besideExplosive(k, x, y))
+            addedHeatCells.push_back(k);
+        }
+      });
     }
     heatCells = &addedHeatCells;
   }

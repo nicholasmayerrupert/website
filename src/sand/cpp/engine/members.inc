@@ -22,7 +22,7 @@
     if (!lay->pendingDetonations.empty()) return true;
     for (Body* b : lay->bodies)
       if (b->jointRole != 2 && (b->awake || b->fuseTicks > 0)) return true;
-    for (int y = 0; y < rows; y++) if (lay->rowMarkMax[y] >= lay->rowMarkMin[y]) return true;
+    for (int y = 0; y < rows; y++) if (!lay->rowMarkSpans[y].empty()) return true;
     return false;
   }
 
@@ -92,6 +92,7 @@
   std::unordered_set<int> crossFrozenIceFg, crossFrozenIceBg;
   std::vector<int> activeWaterCells, activeFireCells, activeAcidCells, activeLavaCells, activeSaltCells, activeHeatCells;
   std::vector<int> activeDensityCells, activeSandCells, activeLiquidCells, activeGasCells, activeGasRow;
+  std::vector<std::pair<int32_t, int32_t>> activeSpanUnionScratch;
   std::vector<int64_t> acidCrossPairs;             // unique touched joint pairs, checked once after an acid batch
   std::vector<int> surfAbsScratch;                 // reusable per-band surface-height cache for fillTerrain
   std::vector<int> iceMeltedScratch;               // reusable per-call scratch for applyIce
@@ -250,13 +251,150 @@
   // detonates whether it is static or body-owned.
   inline bool isBodyCell(int k) { return L->bodyOwner[k] != -1; }
 
-  // Clamped active-row settle band for row y (the [1, cols-2] interior). Returns
-  // false when the row has no active cells — the per-row guard every reaction /
-  // interior scan starts with.
-  inline bool activeRowSpan(int y, int& minX, int& maxX) {
-    minX = imax(1, L->activeRowMin[y]);
-    maxX = imin(cols - 2, L->activeRowMax[y]);
-    return maxX >= minX;
+  inline void mergeRowSpan(
+      std::vector<std::pair<int32_t, int32_t>>& spans, int x0, int x1,
+      int mergeGap = 0) {
+    if (x1 < x0) return;
+    auto it = std::lower_bound(
+      spans.begin(), spans.end(), x0,
+      [mergeGap](const auto& span, int x) {
+        return span.second + mergeGap + 1 < x;
+      });
+    while (it != spans.end() && it->first <= x1 + mergeGap + 1) {
+      x0 = imin(x0, (int)it->first);
+      x1 = imax(x1, (int)it->second);
+      it = spans.erase(it);
+    }
+    spans.insert(it, {(int32_t)x0, (int32_t)x1});
+  }
+
+  inline void markLayerRowSpan(Layer* layer, int y, int x0, int x1) {
+    if (y < 0 || y >= rows) return;
+    x0 = imax(0, x0); x1 = imin(cols - 1, x1);
+    if (x1 < x0) return;
+    mergeRowSpan(layer->rowMarkSpans[y], x0, x1);
+  }
+
+  inline void markLayerCell(Layer* layer, int k) {
+    if (k < 0 || k >= cols * rows) return;
+    int y = k / cols;
+    markLayerRowSpan(layer, y, k - y * cols, k - y * cols);
+  }
+
+  inline void activateRowSpanNow(int y, int x0, int x1) {
+    if (y < 0 || y >= rows) return;
+    x0 = imax(0, x0); x1 = imin(cols - 1, x1);
+    if (x1 < x0) return;
+    // Surface flow can inspect this far along a connected liquid row. Treat
+    // nearby wakes as one causal region while retaining genuinely distant spans.
+    mergeRowSpan(L->activeRowSpans[y], x0, x1, LIQUID_SURFACE_LOOKAHEAD);
+  }
+
+  template <typename Fn>
+  inline void forEachActiveSpan(int y, int clampMin, int clampMax,
+                                bool leftToRight, Fn&& fn) {
+    const auto& spans = L->activeRowSpans[y];
+    if (leftToRight) {
+      for (const auto& span : spans) {
+        int x0 = imax(clampMin, (int)span.first);
+        int x1 = imin(clampMax, (int)span.second);
+        if (x1 >= x0) fn(x0, x1);
+      }
+    } else {
+      for (auto it = spans.rbegin(); it != spans.rend(); ++it) {
+        int x0 = imax(clampMin, (int)it->first);
+        int x1 = imin(clampMax, (int)it->second);
+        if (x1 >= x0) fn(x0, x1);
+      }
+    }
+  }
+
+  inline bool activeSpanContains(const Layer* layer, int y, int x) const {
+    const auto& spans = layer->activeRowSpans[y];
+    auto it = std::lower_bound(
+      spans.begin(), spans.end(), x,
+      [](const auto& span, int cellX) { return span.second < cellX; });
+    return it != spans.end() && it->first <= x;
+  }
+
+  template <typename Fn>
+  inline void forEachActiveUnionSpan(Layer* a, bool useA, Layer* b, bool useB,
+                                     int y, int clampMin, int clampMax,
+                                     bool leftToRight, Fn&& fn) {
+    activeSpanUnionScratch.clear();
+    if (useA) for (const auto& span : a->activeRowSpans[y])
+      mergeRowSpan(activeSpanUnionScratch, span.first, span.second);
+    if (useB) for (const auto& span : b->activeRowSpans[y])
+      mergeRowSpan(activeSpanUnionScratch, span.first, span.second);
+    if (leftToRight) {
+      for (const auto& span : activeSpanUnionScratch) {
+        int x0 = imax(clampMin, (int)span.first);
+        int x1 = imin(clampMax, (int)span.second);
+        if (x1 >= x0) fn(x0, x1);
+      }
+    } else {
+      for (auto it = activeSpanUnionScratch.rbegin();
+           it != activeSpanUnionScratch.rend(); ++it) {
+        int x0 = imax(clampMin, (int)it->first);
+        int x1 = imin(clampMax, (int)it->second);
+        if (x1 >= x0) fn(x0, x1);
+      }
+    }
+  }
+
+  void ensureComponentRegistries() {
+    if (!L->componentRegistryDirty) return;
+    L->growingPlantComponents.clear();
+    L->myceliumComponents.clear();
+    L->iceComponents.clear();
+    for (int i = 0; i < (int)L->components.size(); i++) {
+      Comp& component = L->components[i];
+      if (component.cells.empty()) continue;
+      uint8_t material = L->grid[component.cells[0]];
+      if (material == ICE) L->iceComponents.push_back(i);
+      if (isMyceliumMaterial(material)) {
+        for (int k : component.cells) if (L->grid[k] == MYCELIUM_SPORE) {
+          L->myceliumComponents.push_back(i);
+          break;
+        }
+      } else if (component.growing && isPlantMaterial(material)) {
+        L->growingPlantComponents.push_back(i);
+      }
+    }
+    L->componentRegistryDirty = false;
+  }
+
+  inline void invalidateComponentIndexPatches(Layer* layer) {
+    layer->componentIndexPatchOnly = false;
+    layer->componentIndexPatches.clear();
+  }
+
+  inline void noteComponentIndexAddition(int componentIndex, int k) {
+    if (!L->componentIndexPatchOnly) {
+      if (L->groundDirty || L->groundContentDirty || !L->groundBaseValid
+          || L->groundBaseFlags.size() != L->components.size()) {
+        L->groundDirty = true;
+        return;
+      }
+      L->componentIndexPatchOnly = true;
+    }
+    L->componentIndexPatches.push_back({componentIndex, k});
+    L->groundDirty = true;
+  }
+
+  inline void refreshMobileComponentRegistry(Layer* layer) {
+    layer->mobileComponents.clear();
+    layer->landedComponents.clear();
+    for (int i = 0; i < (int)layer->components.size(); i++) {
+      Comp& component = layer->components[i];
+      if (component.grounded) {
+        component.detachedByBreak = false;
+        if (component.buoyancyDirection > 0 && !component.cells.empty())
+          layer->landedComponents.push_back(i);
+      } else {
+        layer->mobileComponents.push_back(i);
+      }
+    }
   }
 
 
@@ -392,33 +530,41 @@
     if (k < 0 || k >= cols * rows) return;
     markWorldTileDirty(k);
     int y = k / cols, x = k - y * cols;
-    if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
-    if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
+    markLayerRowSpan(L, y, x, x);
   }
   void markDirtyRect(int x0, int y0, int x1, int y1) {
     int mx0 = imax(0, x0), mx1 = imin(cols - 1, x1), my0 = imax(0, y0), my1 = imin(rows - 1, y1);
     markWorldRectDirty(mx0, my0, mx1, my1);
-    for (int y = my0; y <= my1; y++) {
-      if (mx0 < L->rowMarkMin[y]) L->rowMarkMin[y] = mx0;
-      if (mx1 > L->rowMarkMax[y]) L->rowMarkMax[y] = mx1;
-    }
+    for (int y = my0; y <= my1; y++) markLayerRowSpan(L, y, mx0, mx1);
   }
-  void markAllDirty() { for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; } }
+  void markAllDirty() {
+    for (int y = 0; y < rows; y++) markLayerRowSpan(L, y, 0, cols - 1);
+  }
   // Fully reset dirty tracking (row marks + render chunk flags) for the active layer.
   void clearAllDirty() {
-    for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1; }
+    for (int y = 0; y < rows; y++) {
+      L->rowMarkSpans[y].clear();
+    }
     memset(L->dirtyRender.data(), 0, (size_t)chunkCols * chunkRows); L->dirtyRenderCount = 0;
   }
   void foldRowMarksToRender() {
     for (int y = 0; y < rows; y++) {
-      int mn = L->rowMarkMin[y], mx = L->rowMarkMax[y];
-      if (mx < mn) continue;
-      int px0 = imax(0, mn - DIRTY_PAD_X), px1 = imin(cols - 1, mx + DIRTY_PAD_X);
       int py0 = imax(0, y - DIRTY_PAD_Y), py1 = imin(rows - 1, y + DIRTY_PAD_Y);
-      int c0 = px0 >> CHUNK_SHIFT, c1 = px1 >> CHUNK_SHIFT, cy0 = py0 >> CHUNK_SHIFT, cy1 = py1 >> CHUNK_SHIFT;
-      for (int cy = cy0; cy <= cy1; cy++) {
-        int rb = cy * chunkCols;
-        for (int cx = c0; cx <= c1; cx++) { int ci = rb + cx; if (!L->dirtyRender[ci]) { L->dirtyRender[ci] = 1; L->dirtyRenderCount++; } }
+      for (const auto& span : L->rowMarkSpans[y]) {
+        int px0 = imax(0, (int)span.first - DIRTY_PAD_X);
+        int px1 = imin(cols - 1, (int)span.second + DIRTY_PAD_X);
+        int c0 = px0 >> CHUNK_SHIFT, c1 = px1 >> CHUNK_SHIFT;
+        int cy0 = py0 >> CHUNK_SHIFT, cy1 = py1 >> CHUNK_SHIFT;
+        for (int cy = cy0; cy <= cy1; cy++) {
+          int rb = cy * chunkCols;
+          for (int cx = c0; cx <= c1; cx++) {
+            int ci = rb + cx;
+            if (!L->dirtyRender[ci]) {
+              L->dirtyRender[ci] = 1;
+              L->dirtyRenderCount++;
+            }
+          }
+        }
       }
     }
   }
@@ -445,47 +591,55 @@
       int k = kv.first;
       if (k < 0 || k >= cols * rows) continue;
       int y = k / cols, x = k - y * cols;
-      if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
-      if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
+      markLayerRowSpan(L, y, x, x);
     }
     for (Body* b : L->bodies) if (b->jointRole != 2 && b->fuseTicks > 0) {
       int x = (int)std::lround(b->px), y = (int)std::lround(b->py);
       if (x < 0 || x >= cols || y < 0 || y >= rows) continue;
-      if (x < L->rowMarkMin[y]) L->rowMarkMin[y] = x;
-      if (x > L->rowMarkMax[y]) L->rowMarkMax[y] = x;
+      markLayerRowSpan(L, y, x, x);
     }
     foldRowMarksToRender();
-    for (int y = 0; y < rows; y++) { L->activeRowMin[y] = cols; L->activeRowMax[y] = -1; }
+    for (int y = 0; y < rows; y++) {
+      L->activeRowSpans[y].clear();
+    }
     bool hasActive = false;
     for (int y = 0; y < rows; y++) {
-      int mn = L->rowMarkMin[y], mx = L->rowMarkMax[y];
-      if (mx < mn) continue;
+      if (L->rowMarkSpans[y].empty()) continue;
       hasActive = true;
-      L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1;
-      int px0 = imax(0, mn - DIRTY_PAD_X), px1 = imin(cols - 1, mx + DIRTY_PAD_X);
       int py0 = imax(0, y - DIRTY_PAD_Y), py1 = imin(rows - 1, y + DIRTY_PAD_Y);
-      for (int yy = py0; yy <= py1; yy++) { if (px0 < L->activeRowMin[yy]) L->activeRowMin[yy] = px0; if (px1 > L->activeRowMax[yy]) L->activeRowMax[yy] = px1; }
+      for (const auto& span : L->rowMarkSpans[y]) {
+        int px0 = imax(0, (int)span.first - DIRTY_PAD_X);
+        int px1 = imin(cols - 1, (int)span.second + DIRTY_PAD_X);
+        for (int yy = py0; yy <= py1; yy++) activateRowSpanNow(yy, px0, px1);
+      }
+      L->rowMarkSpans[y].clear();
     }
     if (!hasActive) return false;
     stepSerial++;
     // Accumulate dirty volume for this layer (step() zeros the counters once).
     for (int y = 0; y < rows; y++) {
-      int mn = L->activeRowMin[y], mx = L->activeRowMax[y];
-      if (mx < mn) continue;
+      if (L->activeRowSpans[y].empty()) continue;
       perfDirtyRows++;
-      perfDirtyCells += (mx - mn + 1);
       int rb = (y >> CHUNK_SHIFT) * chunkCols;
-      for (int cx = mn >> CHUNK_SHIFT, c1 = mx >> CHUNK_SHIFT; cx <= c1; cx++) {
-        int ci = rb + cx;
-        if (L->chunkStamp[ci] != stepSerial) { L->chunkStamp[ci] = stepSerial; perfDirtyChunks++; }
+      for (const auto& span : L->activeRowSpans[y]) {
+        perfDirtyCells += span.second - span.first + 1;
+        for (int cx = span.first >> CHUNK_SHIFT,
+                 c1 = span.second >> CHUNK_SHIFT; cx <= c1; cx++) {
+          int ci = rb + cx;
+          if (L->chunkStamp[ci] != stepSerial) {
+            L->chunkStamp[ci] = stepSerial;
+            perfDirtyChunks++;
+          }
+        }
       }
     }
     return true;
   }
   void prepareNextBuffer() {
     for (int y = 0; y < rows; y++) {
-      int rs = y * cols, minX = L->activeRowMin[y], maxX = L->activeRowMax[y];
-      if (maxX >= minX) {
+      int rs = y * cols;
+      for (const auto& span : L->activeRowSpans[y]) {
+        int minX = span.first, maxX = span.second;
         size_t width = (size_t)(maxX - minX + 1);
         memset(L->next + rs + minX, EMPTY, width);
         if (L->nextFallSpeed) memset(L->nextFallSpeed + rs + minX, 0, width);

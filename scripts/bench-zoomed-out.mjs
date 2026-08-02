@@ -50,6 +50,14 @@ const summarize = (samples) => {
   return {
     tps: +measuredTps.toFixed(2), reportedTps: +median(values('worldTps')).toFixed(2),
     stepMs: median(values('stepMs')), frameMs: median(values('avgFrameMs')),
+    groundingMs: median(values('groundingMs')),
+    assemblyMs: median(values('assemblyUnionMs')),
+    carryMs: median(values('carryMs')), bodyMs: median(values('bodyMs')),
+    sandMs: median(values('sandMs')), liquidMs: median(values('liquidMs')),
+    reactMs: median(values('reactMs')), tailMs: median(values('tailMs')),
+    layersMs: median(values('layersMs')), crossMs: median(values('crossMs')),
+    dirtyCells: median(values('dirtyCells')),
+    componentCells: median(values('componentCellCount')),
     renderMs: median(values('renderMs')), lightMs: median(values('lightMs')),
     fillMs: median(values('fillMs')), uploadMs: median(values('uploadMs')),
     mirrorApplyMs: median(values('mirrorApplyMs')),
@@ -80,7 +88,11 @@ try {
       await page.keyboard.press('-');
       await page.waitForTimeout(180);
     }
-    await page.waitForTimeout(3000);
+    await page.waitForFunction(() => !window.__sandPerf().workerResizePending,
+      null, { timeout: 60000 });
+    const warmTick = await page.evaluate(() => window.__sandPerf().worldTick);
+    await page.waitForFunction((tick) => window.__sandPerf().worldTick >= tick + 8,
+      warmTick, { timeout: 60000 });
     return page.evaluate(() => window.__sandTest.info());
   };
   let info = await preparePage();

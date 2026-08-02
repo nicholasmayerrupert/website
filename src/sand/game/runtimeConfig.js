@@ -35,6 +35,9 @@ export const SIZING = Object.freeze({
   // with the current zoom; these margins keep streaming/prefetch runway.
   bufferMarginCols: 128,
   bufferMarginRows: 96,
+  // At high loaded-cell counts, vertical look-ahead may shrink to a 48-cell
+  // floor, safely above the worker's 40-cell stream margin.
+  minBufferMarginRows: 48,
   // Soft threshold for reducing vertical off-screen depth at extreme zoom.
   bufferMaxCells: 520000,
   // Continuous zoom: multiplier on cellPx. 1 = default density; >1 = zoomed in

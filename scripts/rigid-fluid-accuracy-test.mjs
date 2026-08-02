@@ -164,20 +164,23 @@ const countMaterial = (engine, material) => {
   const grid = engine.getGrid();
   const owners = engine._bodyOwnerGrid();
   let wetNeighbor = -1;
-  const offsets = [-1, 1, -COLS, COLS];
-  for (let k = 0; k < owners.length && wetNeighbor < 0; k++) {
-    if (owners[k] < 0) continue;
-    const x = k % COLS;
-    const y = (k / COLS) | 0;
-    for (const offset of offsets) {
-      const neighbor = k + offset;
-      if (neighbor < 0 || neighbor >= grid.length) continue;
-      const nx = neighbor % COLS;
-      const ny = (neighbor / COLS) | 0;
-      if (Math.abs(nx - x) + Math.abs(ny - y) !== 1) continue;
-      if (grid[neighbor] === WATER && owners[neighbor] < 0) {
-        wetNeighbor = neighbor;
-        break;
+  let currentVelocity = [0, 0];
+  for (const offsets of [[-1, 1], [-COLS, COLS]]) {
+    for (let k = 0; k < owners.length && wetNeighbor < 0; k++) {
+      if (owners[k] < 0) continue;
+      const x = k % COLS;
+      const y = (k / COLS) | 0;
+      for (const offset of offsets) {
+        const neighbor = k + offset;
+        if (neighbor < 0 || neighbor >= grid.length) continue;
+        const nx = neighbor % COLS;
+        const ny = (neighbor / COLS) | 0;
+        if (Math.abs(nx - x) + Math.abs(ny - y) !== 1) continue;
+        if (grid[neighbor] === WATER && owners[neighbor] < 0) {
+          wetNeighbor = neighbor;
+          currentVelocity = Math.abs(offset) === 1 ? [1.5, 0] : [0, 1.5];
+          break;
+        }
       }
     }
   }
@@ -185,13 +188,15 @@ const countMaterial = (engine, material) => {
   if (wetNeighbor >= 0) {
     const x = wetNeighbor % COLS;
     const y = (wetNeighbor / COLS) | 0;
-    engine._setLiquidVelocity(0, x, y, 1.5, 0);
+    engine._setLiquidVelocity(0, x, y, ...currentVelocity);
     now = run(engine, 1, now);
     const state = engine._bodyState(0);
     check(`current woke the body (awake ${engine._bodyAwake(0)})`,
       engine._bodyAwake(0) === 1);
-    check(`current transferred momentum (vx ${state.vx.toFixed(5)})`,
-      Math.abs(state.vx) > 1e-4);
+    const projectedVelocity = state.vx * currentVelocity[0]
+      + state.vy * currentVelocity[1];
+    check(`current transferred momentum (v ${state.vx.toFixed(5)},${state.vy.toFixed(5)})`,
+      Math.abs(projectedVelocity) > 1e-4);
   }
   engine.destroy();
 }

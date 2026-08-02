@@ -479,13 +479,24 @@
       shiftRowMajorU8(L->grid, dx, EMPTY); shiftRowMajorU8(L->next, dx, EMPTY); shiftRowMajorI32(L->bodyOwner.data(), dx, -1);
       shiftRowMajorU8(L->fallSpeed, dx, 0); shiftRowMajorU8(L->nextFallSpeed, dx, 0);
       shiftRowMajorU32(L->liquidVel, dx, 0); shiftRowMajorU32(L->nextLiquidVel, dx, 0);
-      for (int y = 0; y < rows; y++) { if (L->rowMarkMax[y] < L->rowMarkMin[y]) continue; int mn = L->rowMarkMin[y] - dx, mx = L->rowMarkMax[y] - dx; if (mx < 0 || mn > cols - 1) { L->rowMarkMin[y] = cols; L->rowMarkMax[y] = -1; continue; } L->rowMarkMin[y] = mn < 0 ? 0 : mn; L->rowMarkMax[y] = mx > cols - 1 ? cols - 1 : mx; }
+      for (int y = 0; y < rows; y++) {
+        auto oldSpans = std::move(L->rowMarkSpans[y]);
+        L->rowMarkSpans[y].clear();
+        for (const auto& span : oldSpans)
+          markLayerRowSpan(L, y, span.first - dx, span.second - dx);
+      }
     } else {
       shiftBufV(L->grid, dy, EMPTY); shiftBufV(L->next, dy, EMPTY); shiftBufVI32(L->bodyOwner.data(), dy, -1);
       shiftBufV(L->fallSpeed, dy, 0); shiftBufV(L->nextFallSpeed, dy, 0);
       shiftBufVU32(L->liquidVel, dy, 0); shiftBufVU32(L->nextLiquidVel, dy, 0);
-      if (dy > 0) for (int y = 0; y < rows; y++) { int sy = y + dy; L->rowMarkMin[y] = sy < rows ? L->rowMarkMin[sy] : cols; L->rowMarkMax[y] = sy < rows ? L->rowMarkMax[sy] : -1; }
-      else for (int y = rows - 1; y >= 0; y--) { int sy = y + dy; L->rowMarkMin[y] = sy >= 0 ? L->rowMarkMin[sy] : cols; L->rowMarkMax[y] = sy >= 0 ? L->rowMarkMax[sy] : -1; }
+      auto oldSpans = std::move(L->rowMarkSpans);
+      L->rowMarkSpans.clear(); L->rowMarkSpans.resize(rows);
+      for (int y = 0; y < rows; y++) {
+        int sy = y + dy;
+        if (sy < 0 || sy >= rows) continue;
+        for (const auto& span : oldSpans[sy])
+          markLayerRowSpan(L, y, span.first, span.second);
+      }
     }
     std::fill(L->compOccStamp.begin(), L->compOccStamp.end(), -1);
     std::fill(L->vacatedStamp.begin(), L->vacatedStamp.end(), -1);
@@ -503,11 +514,15 @@
     csRestoreBodies(ex0, ey0, ew, eh);
     perfShiftFill = emscripten_get_now() - _t;
     // 6) mark the entering band active so it simulates.
-    if (dx) for (int y = 0; y < rows; y++) { if (ex0 < L->rowMarkMin[y]) L->rowMarkMin[y] = ex0; if (ex0 + s - 1 > L->rowMarkMax[y]) L->rowMarkMax[y] = ex0 + s - 1; }
-    else for (int y = ey0; y < ey0 + s; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; }
+    if (dx) for (int y = 0; y < rows; y++)
+      markLayerRowSpan(L, y, ex0, ex0 + s - 1);
+    else for (int y = ey0; y < ey0 + s; y++)
+      markLayerRowSpan(L, y, 0, cols - 1);
     // 7) re-index components, register the entering band.
     _t = emscripten_get_now();
     L->prevCompCells.clear();
+    L->prevBodyCells.clear();
+    L->curBodyCells.clear();
     translateComponents(L->components, dx, dy);
     perfShiftTranslate = emscripten_get_now() - _t;
     _t = emscripten_get_now();
@@ -641,7 +656,7 @@
       csRestoreBodies(0, 0, cols, rows);
       registerSeededComponents(0, cols);
       // Wake the whole window so settle re-activates after the rebuild.
-      for (int y = 0; y < rows; y++) { L->rowMarkMin[y] = 0; L->rowMarkMax[y] = cols - 1; }
+      markAllDirty();
       L->groundDirty = true; L->groundContentDirty = true; L->looseGroundDirty = true;
       L->skyDirty = true; L->skyValid = false;
     };
@@ -692,4 +707,3 @@
     worldShiftCount++; // treat as a stream event for any counters/tests
     return 1;
   }
-

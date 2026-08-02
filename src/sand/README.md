@@ -23,9 +23,11 @@ instances:
 - A main-thread presentation engine applies backpressured world diffs and actor
   snapshots, renders WebGL, and predicts only the local survival player.
 
-Only one authority packet is in flight. A full snapshot is used for startup,
-resize, and streaming; ordinary turns send accumulated diffs. The presentation
-mirror does not reconstruct static components because it never simulates them.
+Only one authority packet is in flight. Full snapshots are used for startup,
+resize, and recovery. An ordinary stream shift sends its offset delta plus the
+dirty rectangles containing the entering bands; the presentation mirror slides
+both grids in place before applying them. Other turns send accumulated diffs.
+The presentation mirror does not reconstruct static components because it never simulates them.
 Local items and projectiles cross the worker boundary as packed transferable
 buffers, and unchanged render buffers are not recopied into WebAssembly between
 actor snapshots.
@@ -203,8 +205,18 @@ writes `bench/worldgen-atlas.png`, with foreground above background;
 their actual composited cell grids to `bench/structure-atlas.png`.
 
 Zoom changes both the visible cell count and the loaded-window dimensions. A
-larger zoomed-out window costs more to simulate. The effective zoom floor is
-limited by the device's WebGL texture dimensions rather than a fixed cell cap.
+larger zoomed-out window costs more to store and initially settle, while quiet
+loaded terrain remains passive outside exact active spans. Extreme buffers shed
+excess vertical runway before shrinking their streaming margin. The effective
+zoom floor is limited by the device's WebGL texture dimensions rather than a
+fixed cell cap.
+
+The offline authority keeps a camera-centered 512×352 procedural simulation
+focus independent of zoom. Moving the camera wakes only newly entered focus
+bands; tools, reactions, loose materials, and bodies can keep their own activity
+outside it until they settle. Loaded cells outside those regions remain visible,
+streamable, and persistent without being advanced merely because zoom exposed
+more of the world.
 
 ## Source map
 

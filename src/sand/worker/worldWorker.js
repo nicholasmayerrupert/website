@@ -12,12 +12,15 @@ import { createFixedRateClock } from '../timing/fixedRateClock.js';
 
 const WORLD_STEP_MS = 16;
 const STREAM_MARGIN = 40;
+const LIVE_SIM_COLS = 512;
+const LIVE_SIM_ROWS = 352;
 
 let engine = null;
 let timer = 0;
 let epoch = 1;
 let sequence = 0;
 let awaitingAck = false;
+let fullResyncRequested = false;
 let control = null;
 let edges = [];
 let creativeKind = 0;
@@ -49,6 +52,7 @@ let activePlanetId = PLANET.EARTH;
 let latestInput = null;
 let actorClock = null;
 let lastInventoryHash = -1;
+let liveSimulationFocus = null;
 
 function noteLightEdit(x, radius = 4) {
   if (!Number.isFinite(x)) return;
@@ -61,11 +65,19 @@ function noteLightEdit(x, radius = 4) {
 function seedReactionInterface(material, cap, phase) {
   const grid = engine.getGrid(), cols = engine.cols, rows = engine.rows;
   const sourceFlag = material === MAT.FIRE ? MF.flammable : MF.dissolvable;
+  const offsetX = engine.getWorldOffsetX(), offsetY = engine.getWorldOffsetY();
+  const focus = liveSimulationFocus;
+  const x0 = focus ? Math.max(2, focus.x0 - offsetX) : 2;
+  const x1 = focus ? Math.min(cols - 2, focus.x1 - offsetX) : cols - 2;
+  const y0 = focus ? Math.max(2, focus.y0 - offsetY) : 2;
+  const y1 = focus ? Math.min(rows - 2, focus.y1 - offsetY) : rows - 2;
+  const height = Math.max(0, y1 - y0);
   let count = 0;
-  const yStart = 2 + ((phase | 0) * 97) % Math.max(1, rows - 4);
-  for (let yo = 0; yo < rows - 4 && count < cap; yo++) {
-    const y = 2 + ((yStart - 2 + yo) % (rows - 4)), rb = y * cols;
-    for (let x = 2 + (((phase | 0) * 53 + y * 7) % 11); x < cols - 2 && count < cap; x += 11) {
+  const yStart = y0 + ((phase | 0) * 97) % Math.max(1, height);
+  for (let yo = 0; yo < height && count < cap; yo++) {
+    const y = y0 + ((yStart - y0 + yo) % height), rb = y * cols;
+    for (let x = x0 + (((phase | 0) * 53 + y * 7) % 11);
+         x < x1 && count < cap; x += 11) {
       const k = rb + x;
       if (grid[k] !== MAT.EMPTY) continue;
       if (![k - 1, k + 1, k - cols, k + cols].some((q) => (MAT_FLAGS[grid[q]] & sourceFlag) !== 0)) continue;
@@ -180,6 +192,30 @@ function postFull(reason) {
   lastToolWriteX = null;
 }
 
+function postShift(fromWorldOffsetX, fromWorldOffsetY) {
+  sequence++;
+  awaitingAck = true;
+  const bytes = engine.serializeDiff();
+  engine.consumeReplicaDirty();
+  const editX0 = Number.isFinite(lightEditX0) ? Math.floor(lightEditX0) : 1;
+  const editX1 = Number.isFinite(lightEditX1) ? Math.ceil(lightEditX1) : 0;
+  const worldOffsetX = engine.getWorldOffsetX();
+  const worldOffsetY = engine.getWorldOffsetY();
+  postBytes({
+    type: 'shift', epoch, sequence, reason: 'stream', resizeId,
+    cols: engine.cols, rows: engine.rows,
+    fromWorldOffsetX, fromWorldOffsetY,
+    shiftDx: worldOffsetX - fromWorldOffsetX,
+    shiftDy: worldOffsetY - fromWorldOffsetY,
+    worldOffsetX, worldOffsetY,
+    worldTick: engine.getTick(), perf: perf(),
+    lightEditX0: editX0, lightEditX1: editX1,
+  }, bytes);
+  lightEditX0 = Infinity;
+  lightEditX1 = -Infinity;
+  lastToolWriteX = null;
+}
+
 function postDiffIfReady() {
   if (awaitingAck) return;
   const bytes = engine.serializeDiff();
@@ -220,6 +256,58 @@ function streamForControl() {
   const dx = engine.maybeShiftWorld(localX, control.viewCols, STREAM_MARGIN);
   const dy = engine.maybeShiftWorldV(localY, control.viewRows, STREAM_MARGIN);
   return !!(dx || dy);
+}
+
+function simulationFocusRect() {
+  const width = Math.min(engine.cols, LIVE_SIM_COLS);
+  const height = Math.min(engine.rows, LIVE_SIM_ROWS);
+  const worldOffsetX = engine.getWorldOffsetX();
+  const worldOffsetY = engine.getWorldOffsetY();
+  const centerX = Math.floor(control.camWorldX + control.viewCols * 0.5);
+  const centerY = Math.floor(control.camWorldY + control.viewRows * 0.5);
+  const worldX0 = Math.max(
+    worldOffsetX,
+    Math.min(worldOffsetX + engine.cols - width, centerX - Math.floor(width / 2)),
+  );
+  const worldY0 = Math.max(
+    worldOffsetY,
+    Math.min(worldOffsetY + engine.rows - height, centerY - Math.floor(height / 2)),
+  );
+  return { x0: worldX0, y0: worldY0, x1: worldX0 + width, y1: worldY0 + height };
+}
+
+function activateWorldRect(rect) {
+  const offsetX = engine.getWorldOffsetX();
+  const offsetY = engine.getWorldOffsetY();
+  engine.activateSimulationRect(
+    rect.x0 - offsetX, rect.y0 - offsetY,
+    rect.x1 - offsetX, rect.y1 - offsetY,
+  );
+}
+
+function refreshSimulationFocus(reset = false, preserveReplicaDirty = false) {
+  if (!control) return;
+  const next = simulationFocusRect();
+  const previous = liveSimulationFocus;
+  if (reset || !previous) {
+    engine.resetSimulationActivity(preserveReplicaDirty);
+    activateWorldRect(next);
+  } else if (next.x0 !== previous.x0 || next.y0 !== previous.y0 ||
+             next.x1 !== previous.x1 || next.y1 !== previous.y1) {
+    const ix0 = Math.max(previous.x0, next.x0);
+    const iy0 = Math.max(previous.y0, next.y0);
+    const ix1 = Math.min(previous.x1, next.x1);
+    const iy1 = Math.min(previous.y1, next.y1);
+    if (ix0 >= ix1 || iy0 >= iy1) {
+      activateWorldRect(next);
+    } else {
+      activateWorldRect({ x0: next.x0, y0: next.y0, x1: next.x1, y1: iy0 });
+      activateWorldRect({ x0: next.x0, y0: iy1, x1: next.x1, y1: next.y1 });
+      activateWorldRect({ x0: next.x0, y0: iy0, x1: ix0, y1: iy1 });
+      activateWorldRect({ x0: ix1, y0: iy0, x1: next.x1, y1: iy1 });
+    }
+  }
+  liveSimulationFocus = next;
 }
 
 function applyEdges() {
@@ -281,6 +369,9 @@ function run() {
   if (!engine) return;
   const started = performance.now();
   if (paused) { actorClock?.reset(started); schedule(WORLD_STEP_MS); return; }
+  if (!control) { actorClock?.reset(started); schedule(WORLD_STEP_MS); return; }
+  const fromWorldOffsetX = engine.getWorldOffsetX();
+  const fromWorldOffsetY = engine.getWorldOffsetY();
   const shifted = streamForControl();
   if (shifted) {
     // The shift has already translated every authority-owned actor into the new
@@ -288,6 +379,11 @@ function run() {
     epoch++;
     sequence = 0;
     awaitingAck = false;
+    const shiftDx = engine.getWorldOffsetX() - fromWorldOffsetX;
+    if (Number.isFinite(lightEditX0)) lightEditX0 -= shiftDx;
+    if (Number.isFinite(lightEditX1)) lightEditX1 -= shiftDx;
+    if (Number.isFinite(lastToolWriteX)) lastToolWriteX -= shiftDx;
+    refreshSimulationFocus(true, true);
   }
   // Natural-spawn visibility is authority-owned. Keep its otherwise headless
   // camera aligned with the presentation camera so "off-screen" means outside
@@ -319,8 +415,15 @@ function run() {
   lastStepMs = artificialDelayMs > 0 ? artificialDelayMs : performance.now() - stepStart;
   rateSteps++;
   // Establish the new mirror coordinate frame before publishing any payload
-  // whose local coordinates were translated by the stream.
-  if (shifted) postFull('stream');
+  // whose local coordinates were translated by the stream. A requested full
+  // snapshot is reserved for recovery; ordinary shifts carry only dirty bands.
+  const postedFull = fullResyncRequested;
+  if (postedFull) {
+    fullResyncRequested = false;
+    postFull('resync');
+  } else if (shifted) {
+    postShift(fromWorldOffsetX, fromWorldOffsetY);
+  }
   postSounds();
   if (started - lastStatsPost >= 250) {
     lastStatsPost = started;
@@ -332,7 +435,7 @@ function run() {
   // the first packet of a new epoch so coalescing cannot strand an update that
   // was posted immediately before the shift.
   postActors(shifted);
-  if (!shifted) postDiffIfReady();
+  if (!shifted && !postedFull) postDiffIfReady();
   const targetTurnMs = artificialDelayMs > 0 ? artificialDelayMs : WORLD_STEP_MS;
   schedule(Math.max(0, targetTurnMs - (performance.now() - started)));
 }
@@ -407,7 +510,7 @@ self.onmessage = async ({ data }) => {
     latestInput = null;
     actorClock = createFixedRateClock({ now: performance.now() });
     lastInventoryHash = -1;
-    epoch = 1; sequence = 0; awaitingAck = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false;
+    epoch = 1; sequence = 0; awaitingAck = false; fullResyncRequested = false; resizeId = 0; control = null; edges = []; workerButtons = 0; mirroredCreatures = false; liveSimulationFocus = null;
     lightEditX0 = Infinity; lightEditX1 = -Infinity; lastToolWriteX = null;
     survivalSpawnViewReady = false;
     rateStart = performance.now(); rateSteps = 0; lastStepMs = 0;
@@ -419,9 +522,13 @@ self.onmessage = async ({ data }) => {
   if (!engine) return;
   if (data.type === 'ack') {
     if (data.epoch === epoch && data.sequence === sequence) awaitingAck = false;
+  } else if (data.type === 'resync') {
+    awaitingAck = false;
+    fullResyncRequested = true;
   } else if (data.type === 'control') {
     controlsReceived++;
     control = data;
+    refreshSimulationFocus();
     if (survival && !survivalSpawnViewReady) {
       survivalSpawnViewReady = true;
       engine.setCreatureRuntime(
@@ -483,6 +590,7 @@ self.onmessage = async ({ data }) => {
     postActors(true);
   } else if (data.type === 'resize') {
     awaitingAck = false;
+    fullResyncRequested = false;
     resizeId = data.resizeId | 0;
     if (survival) {
       survivalSpawnViewReady = false;
@@ -502,6 +610,7 @@ self.onmessage = async ({ data }) => {
     // The last control describes the pre-resize viewport. Wait for a fresh one
     // from the main thread after it accepts this full snapshot.
     control = null;
+    liveSimulationFocus = null;
     if (engine.resizeLoadedWindow(data.cols | 0, data.rows | 0)) {
       epoch++;
       sequence = 0;

@@ -250,8 +250,19 @@ EMSCRIPTEN_KEEPALIVE void engine_test_reset_topology(Engine* e) {
     lay.passiveBodyCells.clear();
     lay.passiveBodyIds.clear();
     lay.components.clear();
+    lay.growingPlantComponents.clear();
+    lay.myceliumComponents.clear();
+    lay.iceComponents.clear();
+    lay.mobileComponents.clear();
+    lay.landedComponents.clear();
+    lay.componentRegistryDirty = true;
+    lay.componentCarryDirty = true;
+    lay.componentIndexPatchOnly = false;
+    lay.componentIndexPatches.clear();
     lay.prevCompCells.clear();
     lay.curCompCells.clear();
+    lay.prevBodyCells.clear();
+    lay.curBodyCells.clear();
     lay.pendingDetonations.clear();
     std::fill(lay.bodyOwner.begin(), lay.bodyOwner.end(), -1);
     lay.nextComponentId = lay.nextBodyId = 1;
@@ -581,11 +592,36 @@ EMSCRIPTEN_KEEPALIVE void engine_set_mirror_draft(Engine* e, int* cells, int cou
 EMSCRIPTEN_KEEPALIVE int engine_grid_hash(Engine* e) { return (int)e->net.gridHashFNV(); }
 EMSCRIPTEN_KEEPALIVE void engine_clear_all_dirty(Engine* e) { e->useLayer(&e->fg); e->clearAllDirty(); e->useLayer(&e->bg); e->clearAllDirty(); e->useLayer(&e->fg); }
 // A replication consumer has copied the current dirty rectangles. Clear only
-// the accumulated packet/render chunks: rowMarkMin/Max are also the cellular
+// the accumulated packet/render chunks: rowMarkSpans are also the cellular
 // scheduler's next-active regions and must survive until beginStepDirty().
 EMSCRIPTEN_KEEPALIVE void engine_clear_replica_dirty(Engine* e) {
   memset(e->fg.dirtyRender.data(), 0, e->fg.dirtyRender.size()); e->fg.dirtyRenderCount = 0;
   memset(e->bg.dirtyRender.data(), 0, e->bg.dirtyRender.size()); e->bg.dirtyRenderCount = 0;
+}
+// Authority workers keep a fixed-size live simulation focus even when zoom
+// requires a much larger loaded/rendered window. These calls affect scheduling
+// only; the persistent and replicated grids remain unchanged.
+EMSCRIPTEN_KEEPALIVE void engine_reset_simulation_activity(Engine* e, int preserveReplicaDirty) {
+  auto reset = [&](Layer& lay) {
+    if (preserveReplicaDirty) {
+      e->useLayer(&lay);
+      e->foldRowMarksToRender();
+    }
+    for (auto& spans : lay.rowMarkSpans) spans.clear();
+    for (auto& spans : lay.activeRowSpans) spans.clear();
+  };
+  reset(e->fg);
+  reset(e->bg);
+  e->useLayer(&e->fg);
+}
+EMSCRIPTEN_KEEPALIVE void engine_activate_simulation_rect(
+    Engine* e, int x0, int y0, int x1, int y1) {
+  x0 = imax(0, x0); y0 = imax(0, y0);
+  x1 = imin(e->cols, x1); y1 = imin(e->rows, y1);
+  if (x0 >= x1 || y0 >= y1) return;
+  for (Layer* lay : {&e->fg, &e->bg})
+    for (int y = y0; y < y1; y++)
+      e->markLayerRowSpan(lay, y, x0, x1 - 1);
 }
 
 // ---- two-layer access (background = layer 1) ----

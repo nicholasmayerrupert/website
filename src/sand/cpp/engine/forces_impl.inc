@@ -381,8 +381,7 @@ void ForceSystem::wakeAffectedTargets(
             looseQuadrantCounts[material * 4 + quadrant]++;
           }
         }
-        if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
-        if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
+        E.markLayerRowSpan(layer, y, x, x);
       }
     }
   }
@@ -397,8 +396,7 @@ void ForceSystem::wakeAffectedTargets(
     double forceX, forceY;
     bool active = sampleBody(layer, body, forceX, forceY);
     if (!active && !wakeReleased) continue;
-    if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
-    if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
+    E.markLayerRowSpan(layer, y, x, x);
   }
   // Pressure-driven tangential flow stays enabled while a material's force
   // quadrants become more even. A balanced distribution, or 64 scans without

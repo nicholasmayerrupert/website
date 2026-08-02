@@ -18,19 +18,21 @@ void ReactionSystem::prepareActiveLists() {
         || (y > 0 && explosive(k - E.cols));
   };
   for (int y = 1; y < E.rows; y++) {
-    int minX, maxX; if (!E.activeRowSpan(y, minX, maxX)) continue;
+    if (E.L->activeRowSpans[y].empty()) continue;
     int rb = y * E.cols;
-    for (int x = minX; x <= maxX; x++) {
-      int k = rb + x;
-      switch (E.L->grid[k]) {
-        case WATER: E.activeWaterCells.push_back(k); break;
-        case FIRE: E.activeFireCells.push_back(k); if (y < E.rows - 1 && besideExplosive(k, x, y)) E.activeHeatCells.push_back(k); break;
-        case ACID: if (y < E.rows - 1) E.activeAcidCells.push_back(k); break;
-        case LAVA: if (y < E.rows - 1) { E.activeLavaCells.push_back(k); if (besideExplosive(k, x, y)) E.activeHeatCells.push_back(k); } break;
-        case SALT: if (y < E.rows - 1) E.activeSaltCells.push_back(k); break;
-        default: break;
+    E.forEachActiveSpan(y, 1, E.cols - 2, true, [&](int minX, int maxX) {
+      for (int x = minX; x <= maxX; x++) {
+        int k = rb + x;
+        switch (E.L->grid[k]) {
+          case WATER: E.activeWaterCells.push_back(k); break;
+          case FIRE: E.activeFireCells.push_back(k); if (y < E.rows - 1 && besideExplosive(k, x, y)) E.activeHeatCells.push_back(k); break;
+          case ACID: if (y < E.rows - 1) E.activeAcidCells.push_back(k); break;
+          case LAVA: if (y < E.rows - 1) { E.activeLavaCells.push_back(k); if (besideExplosive(k, x, y)) E.activeHeatCells.push_back(k); } break;
+          case SALT: if (y < E.rows - 1) E.activeSaltCells.push_back(k); break;
+          default: break;
+        }
       }
-    }
+    });
   }
 }
 
@@ -256,9 +258,9 @@ void ReactionSystem::applyLava() {
 }
 void ReactionSystem::applyIce() {
   bool melted = false; std::vector<int>& meltedCells = E.iceMeltedScratch; meltedCells.clear();
-  for (auto& comp : E.L->components) {
-    // Ice registration and freezing keep each ice component homogeneous.
-    if (comp.cells.empty() || E.L->grid[comp.cells[0]] != ICE) continue;
+  E.ensureComponentRegistries();
+  for (int componentIndex : E.L->iceComponents) {
+    Comp& comp = E.L->components[componentIndex];
     // Iterate by snapshot length, not a copy: freezing appends ICE cells to
     // comp.cells, and those new cells are already ICE (no further melt/freeze this
     // pass), so capping the loop at the pre-pass size is byte-identical to copying
@@ -288,7 +290,7 @@ void ReactionSystem::applyIce() {
       }
       if (E.rand() < ICE_FREEZE_P) {
         int waterK = -1; if (rm == WATER) waterK = right; else if (lm == WATER) waterK = left; else if (dm == WATER) waterK = down; else if (um == WATER) waterK = up;
-        if (waterK >= 0) { E.writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); int wy = waterK / E.cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; E.L->groundDirty = true; } // waterK was WATER (live grid read) -> not already in comp; new ICE cell -> reflood
+        if (waterK >= 0) { E.writeGridIndex(waterK, ICE); comp.cells.push_back(waterK); E.noteComponentIndexAddition(componentIndex, waterK); int wy = waterK / E.cols; if (wy > comp.yMax) comp.yMax = wy; comp.cacheDirty = true; E.L->componentCarryDirty = true; } // waterK was WATER (live grid read) -> not already in comp; new ICE cell -> reflood
       }
     }
   }

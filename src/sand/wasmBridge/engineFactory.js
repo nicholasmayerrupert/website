@@ -196,6 +196,8 @@ export function initSandWasm() {
         gridHash: c('engine_grid_hash', 'number', ['number']),
         clearAllDirty: c('engine_clear_all_dirty', null, ['number']),
         clearReplicaDirty: c('engine_clear_replica_dirty', null, ['number']),
+        resetSimulationActivity: c('engine_reset_simulation_activity', null, ['number', 'number']),
+        activateSimulationRect: c('engine_activate_simulation_rect', null, ['number', 'number', 'number', 'number', 'number']),
         gridBg: c('engine_grid_bg', 'number', ['number']),
         setBgEnabled: c('engine_set_bg_enabled', null, ['number', 'number']),
         paintDiscLayer: c('engine_paint_disc_layer', 'number', ['number', 'number', 'number', 'number', 'number', 'number', 'number']),
@@ -1107,6 +1109,9 @@ const renderStrides = Object.freeze({
       M.applyDiffMirror(ptr, buf, bytes.length, lightEditX0 | 0, lightEditX1 | 0);
       mod._free(buf);
     },
+    setMirrorWorldOffset(worldOffsetX, worldOffsetY) {
+      M.setMirrorWorldOffset(ptr, worldOffsetX | 0, worldOffsetY | 0);
+    },
     setMirrorWorldTick(tick) { M.setMirrorWorldTick(ptr, tick | 0); },
     setMirrorDraft(cells, material = 0) {
       const n = cells?.length || 0;
@@ -1121,6 +1126,12 @@ const renderStrides = Object.freeze({
     gridHash() { return M.gridHash(ptr) >>> 0; },
     resetDirty() { M.clearAllDirty(ptr); },
     consumeReplicaDirty() { M.clearReplicaDirty(ptr); },
+    resetSimulationActivity(preserveReplicaDirty = false) {
+      M.resetSimulationActivity(ptr, preserveReplicaDirty ? 1 : 0);
+    },
+    activateSimulationRect(x0, y0, x1, y1) {
+      M.activateSimulationRect(ptr, x0 | 0, y0 | 0, x1 | 0, y1 | 0);
+    },
 
     // ---- two-layer access (background = layer 1) ----
     getGridBg() { return new Uint8Array(mod.HEAPU8.buffer, M.gridBg(ptr), cellCount); },

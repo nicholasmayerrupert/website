@@ -60,6 +60,15 @@ console.log('viewport sizing');
   check(`extreme zoom-out can exceed old maxViewportCells (${far.viewCols * far.viewRows})`, far.viewCols * far.viewRows > SIZING.maxViewportCells);
   check(`fractional cellDev remains supported below one device px (${far.cellDev})`, far.cellDev < 1);
   check(`buffer dimensions stay chunk-aligned (${far.bufCols}x${far.worldRows})`, far.bufCols % SIZING.chunkSize === 0 && far.worldRows % SIZING.chunkSize === 0);
+  const fullRunwayRows = Math.ceil(
+    Math.max(
+      far.viewRows + SIZING.bufferMarginRows * 2,
+      far.viewRows * SIZING.worldHeightFactor,
+    ) / SIZING.chunkSize,
+  ) * SIZING.chunkSize;
+  check(`extreme zoom trims off-screen vertical runway (${far.worldRows} < ${fullRunwayRows})`, far.worldRows < fullRunwayRows);
+  check('extreme zoom retains the worker stream margin',
+    far.worldRows >= far.viewRows + SIZING.minBufferMarginRows * 2);
 }
 
 {

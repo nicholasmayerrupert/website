@@ -611,6 +611,9 @@ bool ToolSystem::placeSeedAtTyped(int x0, int y0, uint8_t pt) {
   Comp c; c.id = E.L->nextComponentId++; c.yMax = 0; c.age = 0; c.cacheDirty = true; c.plantType = pt; c.growing = true; c.requiresCellGrounding = true;
   { int k = E.I(x0, y0); E.L->grid[k] = SEED; c.cells.push_back(k); c.yMax = y0; } // fresh component, one cell
   E.L->components.push_back(std::move(c));
+  E.L->componentCarryDirty = true;
+  E.L->componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(E.L);
   E.L->skyDirty = true;
   E.markDirtyRect(x0 - 1, y0 - 1, x0 + 1, y0 + 1);
   return true;
@@ -623,6 +626,9 @@ bool ToolSystem::placeMyceliumSporeAt(int x0, int y0) {
   E.L->grid[k] = MYCELIUM_SPORE;
   c.cells.push_back(k);
   E.L->components.push_back(std::move(c));
+  E.L->componentCarryDirty = true;
+  E.L->componentRegistryDirty = true;
+  E.invalidateComponentIndexPatches(E.L);
   E.L->myceliumActive = true;
   E.L->myceliumSporePresent = true;
   E.L->groundDirty = true;

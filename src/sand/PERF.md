@@ -77,6 +77,21 @@ component registration, and generation/restoration. Browser presentation exposes
 
 ## Current structural optimizations
 
+- Dirty scheduling retains sorted row spans and merges only regions within the
+  liquid solver's causal lookahead, so distant edits do not activate the terrain
+  between them. Candidate gathering, reactions, settling, and cross-layer work
+  consume those spans; rendering and replication retain exact dirty spans.
+- The offline worker wakes procedural terrain in a camera-centered 512×352
+  focus. Zoom changes storage and presentation dimensions without automatically
+  advancing every newly visible cell; explicit edits and moving material retain
+  their own active spans outside the focus.
+- Stable static components use their cached positional index to carry only
+  active/newly marked cells through the ping-pong buffers. Previous free-body
+  footprints are tracked separately so vacated raster cells are still cleared.
+- Growth, mycelium, ice, and moving-component passes use material/state-specific
+  component registries. Add-only plant and ice growth patches the component
+  index and adjacent graph edges locally; topology changes retain the full
+  rebuild fallback.
 - Component indices cache same-layer adjacency. Static interior support is
   solved over that graph; free bodies and sentinel-touching components retain
   the cell flood.

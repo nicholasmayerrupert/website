@@ -59,6 +59,8 @@
   // Fine step-phase timers (ms). Dual-layer: ACCUMULATED across both stepLayer
   // calls (+ joint/cross at step level). Zeroed at the start of each step().
   double perfGroundingMs = 0;            // per-layer ensureGrounded + joint groundLayerBase
+  double perfForcePrepareMs = 0;          // emitter/bin/nearest-field preparation, excluding wake scans
+  double perfForceWakeMs = 0;             // affected-bin loose/body wake scans
   double perfCrossLayerGroundingMs = 0;  // joint bond scan + UF after base floods
   double perfComponentIndexMs = 0;       // indexComponents() (inside grounding)
   double perfAssemblyUnionMs = 0;        // moveRigidAssemblies + cross-layer assembly move
@@ -69,6 +71,8 @@
   double perfGasMs = 0;                  // fire/steam rise
   double perfReactMs = 0;
   double perfTailMs = 0;                 // swap + liquid relax/level/sinks
+  double perfLiquidRelaxMs = 0;          // post-swap liquid gap relaxation
+  double perfLiquidSurfaceMs = 0;        // post-swap free-surface leveling
   double perfLayersMs = 0;               // wall time of both stepLayer() calls
   double perfCrossMs = 0;                // post-layer joint refresh + cross react/transfer
   bool sinksEnabled;
@@ -577,11 +581,6 @@
     if (m == NEUTRONIUM || old == NEUTRONIUM) {
       fg.forceWakePending = bg.forceWakePending = true;
     }
-    if (L->forceActive
-        && (isLooseSolidMaterial(m) || isLiquidMaterial(m) || isGasMaterial(m)
-            || isLooseSolidMaterial(old) || isLiquidMaterial(old)
-            || isGasMaterial(old)))
-      L->forceWakePending = true;
     noteLooseGroundTouch2At(k, old, m);
     adjustLooseColCount(x, old, m);
     if ((m == FIRE || m == LAVA) && old != FIRE && old != LAVA) L->heatAddedAfterPrepare = true;

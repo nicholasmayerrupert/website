@@ -13,6 +13,7 @@ mapping, and pan stability.
 | `node scripts/bench-sand.mjs --repeat 5 --compare bench/baseline.json` | Repeat the comparison to separate timing noise from a regression. |
 | `node scripts/bench-sand.mjs --checksum-only` | Fast behavior check without timing. |
 | `node scripts/bench-sand.mjs --scenario all --repeat 3` | Run the broader gameplay workload sweep. |
+| `npm run bench:neutronium -- --repeat 3` | Profile static/moving neutronium against lava and rigid piles. |
 | `node scripts/bench-pan.mjs --compare bench/pan-baseline.json` | Check WebGL frame time, cursor mapping, two-axis cell stability, and parallax rigidity. |
 | `npm run bench:actor-rigid:compare` | Check dense player/creature cadence plus kinematic body contacts, crushes, and actor/body determinism. |
 | `npm run test:worldgen` | Check canonical coordinates, natural entrance shape, cave reachability, progression, and background solidity. |
@@ -48,6 +49,8 @@ match. Checksums and work-volume counters remain comparable across environments.
 
 | Phase | Work | Main owner |
 | --- | --- | --- |
+| `forcePrepareMs` | Emitter aggregation, spatial bins, and nearest-source field preparation | `forces_impl.inc` |
+| `forceWakeMs` | Changed/full force-bin target wake scans | `forces_impl.inc` |
 | `groundingMs` | Per-layer grounding and joint base floods | `components_impl.inc` |
 | `crossLayerGroundingMs` | Cross-layer bond collection and union | `components_impl.inc` |
 | `componentIndexMs` | Component index and adjacency rebuild | `components_impl.inc` |
@@ -59,6 +62,8 @@ match. Checksums and work-volume counters remain comparable across environments.
 | `gasMs` | Gas movement | `core.inc` |
 | `reactMs` | Growth, reactions, and explosives | subsystem implementations |
 | `tailMs` | Buffer swap and liquid relaxation | `step.inc` |
+| `liquidRelaxMs` | Gap relaxation after the buffer swap (nested in `tailMs`) | `core.inc` |
+| `liquidSurfaceMs` | Free-surface leveling after the buffer swap (nested in `tailMs`) | `core.inc` |
 | `layersMs` | Both `stepLayer()` calls | `step.inc` |
 | `crossMs` | Post-layer joint refresh and transfer | `step.inc` |
 
@@ -99,12 +104,15 @@ component registration, and generation/restoration. Browser presentation exposes
   connected component/body, so force queries inspect nearby sources rather than
   summing every source cell. Neutronium direction uses a cached nearest-cell
   distance transform; unchanged static geometry reuses it, while changed or
-  moving geometry updates the bounded source region plus force reach. The affected-
-  bin wake scan also gathers the minimum force and quadrant coverage used by
-  pressure flow, without another grid traversal. Static fields wake affected bins
-  only while a target still has a possible force move; balanced or blocked loose
-  cells park without rescheduling the layer, so the scene returns to the normal
-  idle fast path. Moving neutronium dominance is filtered from emitter cell-count
+  moving geometry updates the bounded source region plus force reach. Exact loose-
+  cell samples are cached in the affected chunks for the current tick, so settle,
+  density, and liquid-tail ownership checks reuse the wake scan's result. Per-bin
+  source signatures restrict moving/removed-field wakes to the swept bins; local
+  force retries mark only their own dirty cell. Periodic coverage scans gather the
+  minimum force and quadrant balance used by pressure flow without keeping the
+  whole field scheduled. Static blocked cells park without rescheduling the layer,
+  while already-awake rigid bodies retain their solver sleep progress when force
+  is applied. Moving neutronium dominance is filtered from emitter cell-count
   metadata during the existing nearest-source query; it does not add a body-pair
   scan or a contact pass. Liquid fanning is a hashed alternate candidate inside
   the same active-cell force query and does not add a grid traversal. Tangential

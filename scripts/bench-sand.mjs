@@ -133,10 +133,12 @@ await initSandWasm();
 // Fine step phases from getStepPerf() (perfSnapshot v2). Order is roughly the
 // pipeline order; componentIndexMs nests inside groundingMs.
 const STEP_PHASE_KEYS = [
+  'forcePrepareMs', 'forceWakeMs',
   'groundingMs', 'crossLayerGroundingMs', 'componentIndexMs',
   'assemblyUnionMs', 'carryMs', 'bodyMs',
   'sandMs', 'liquidMs', 'gasMs',
-  'reactMs', 'tailMs', 'layersMs', 'crossMs',
+  'reactMs', 'tailMs', 'liquidRelaxMs', 'liquidSurfaceMs',
+  'layersMs', 'crossMs',
   // Legacy aggregates (derived in getStepPerf) for older baselines / scripts.
   'ground', 'rigid', 'react', 'carry', 'settle', 'tail', 'joint', 'layers', 'cross',
 ];
@@ -332,12 +334,16 @@ const fmt = (s) => `mean ${s.mean.toFixed(3)}  p50 ${s.p50.toFixed(3)}  p95 ${s.
 const fmtP50 = (s) => (s ? s.p50.toFixed(3) : '-');
 // Fine keys printed as the actionable ms breakdown (legacy aggregates are secondary).
 const FINE_PHASE_KEYS = [
+  'forcePrepareMs', 'forceWakeMs',
   'groundingMs', 'crossLayerGroundingMs', 'componentIndexMs',
   'assemblyUnionMs', 'carryMs', 'bodyMs',
   'sandMs', 'liquidMs', 'gasMs',
-  'reactMs', 'tailMs', 'layersMs', 'crossMs',
+  'reactMs', 'tailMs', 'liquidRelaxMs', 'liquidSurfaceMs',
+  'layersMs', 'crossMs',
 ];
 const PHASE_HINTS = {
+  forcePrepareMs: 'forces_impl.inc emitter/bin/nearest-field preparation',
+  forceWakeMs: 'forces_impl.inc affected-bin loose/body wake scans',
   groundingMs: 'components.inc computeGrounded / groundLayerBase',
   crossLayerGroundingMs: 'components.inc computeGroundedBoth bond scan + UF',
   componentIndexMs: 'components.inc indexComponents (nested in grounding)',
@@ -349,6 +355,8 @@ const PHASE_HINTS = {
   gasMs: 'core.inc riseFire / riseSteam',
   reactMs: 'reactions.inc / explosives / growth',
   tailMs: 'step.inc swap + liquid relax/level/sinks',
+  liquidRelaxMs: 'core.inc post-swap liquid gap relaxation (nested in tail)',
+  liquidSurfaceMs: 'core.inc post-swap free-surface leveling (nested in tail)',
   layersMs: 'step.inc both stepLayer() wall time',
   crossMs: 'step.inc post-layer joint refresh + cross react/transfer',
   joint: 'groundingMs + crossLayerGroundingMs (total joint grounding)',
@@ -385,7 +393,7 @@ function printOne(r) {
   // Primary: fine phase medians (what is consuming ms inside step).
   printPhaseLine('step phases p50 (ms)', stp, FINE_PHASE_KEYS);
   // p95 for the usually-dominant buckets so spikes are visible without a full dump.
-  const hot = ['groundingMs', 'crossLayerGroundingMs', 'carryMs', 'sandMs', 'liquidMs', 'reactMs', 'layersMs', 'crossMs'];
+  const hot = ['forcePrepareMs', 'forceWakeMs', 'groundingMs', 'crossLayerGroundingMs', 'carryMs', 'sandMs', 'liquidMs', 'reactMs', 'layersMs', 'crossMs'];
   console.log(`  step phases p95 (ms): ${hot.map((k) => `${k.replace(/Ms$/, '')} ${stp[k] ? stp[k].p95.toFixed(3) : '-'}`).join('  ')}`);
   // Legacy aggregates (still in JSON) for scripts that still think in old names.
   console.log(`  step aggregates p50: joint ${fmtP50(stp.joint)}  settle ${fmtP50(stp.settle)}  rigid ${fmtP50(stp.rigid)}  [joint mean ${stp.joint?.mean ?? '-'} p95 ${stp.joint?.p95 ?? '-'}]`);

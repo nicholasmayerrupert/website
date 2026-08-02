@@ -36,7 +36,9 @@ struct ForceEmitter {
   int sourceBodyId = -1;
   int sourceBodyLayer = -1;
   int neutroniumCells = 0;
+  uint64_t geometryRevision = 0;
   bool nearestNeutronium = false;
+  bool dynamicGeometry = false;
 };
 
 class ForceSystem {
@@ -56,7 +58,7 @@ class ForceSystem {
   void applyBodyForces();
   bool sampleActor(double x, double y,
                    double& forceX, double& forceY) const;
-  bool overridesGravity(int x, int y, uint8_t material) const;
+  bool overridesGravity(int x, int y, uint8_t material);
   bool tryMoveLoose(int x, int y, int k, uint8_t material,
                     bool movementAllowed = true);
 
@@ -68,6 +70,16 @@ class ForceSystem {
     std::vector<GeometryPoint> neutroniumPoints;
     std::vector<int> binHeads;
     std::vector<BinLink> binLinks;
+  };
+  struct CachedLooseForce {
+    double x = 0, y = 0;
+    uint32_t serial = 0;
+    uint8_t target = 0;
+    bool active = false;
+  };
+  struct LooseForceCache {
+    std::vector<int32_t> binOffsets;
+    std::vector<CachedLooseForce> cells;
   };
   struct NeutroniumSeed {
     float x = 0, y = 0;
@@ -87,6 +99,13 @@ class ForceSystem {
   std::array<uint16_t, 2> looseForceAge = {};
   std::array<bool, 2> looseCoverageValid = {};
   std::array<bool, 2> looseTangentialBalanced = {};
+  std::array<int, 2> looseCoverageTick = {{-1, -1}};
+  std::array<bool, 2> dynamicField = {};
+  LooseForceCache looseForceCaches[2];
+  uint32_t looseCacheSerial = 0;
+  std::vector<uint64_t> previousBinSignatures[2];
+  std::vector<uint64_t> currentBinSignatures[2];
+  std::vector<uint8_t> changedBins[2];
   std::vector<NeutroniumSeed> neutroniumSeeds;
   std::vector<int> nearestSeedAt, nearestVertical, nearestNeutroniumField;
   std::vector<int> edtLocations;
@@ -108,7 +127,12 @@ class ForceSystem {
   bool stateAffectsLayer(const LayerState& state, uint8_t targetLayer) const;
   bool binAffectsLayer(const LayerState& state, int bin,
                        uint8_t targetLayer) const;
-  void wakeAffectedTargets(Layer* layer);
+  bool binAffectsLooseLayer(const LayerState& state, int bin,
+                            uint8_t targetLayer) const;
+  uint64_t forceBinSignature(int bin, uint8_t targetLayer) const;
+  void prepareLooseCachesAndDirtyBins();
+  void wakeAffectedTargets(Layer* layer, const std::vector<uint8_t>* bins,
+                           bool updateCoverage, bool wakeReleased);
   bool sampleState(const LayerState& state, double x, double y,
                    uint8_t target, uint8_t targetLayer, int sourceBodyId,
                    double& forceX, double& forceY) const;
@@ -121,6 +145,8 @@ class ForceSystem {
                    int sourceBodyId, double& forceX, double& forceY,
                    int targetNeutroniumCells = 0,
                    int targetBodyLayer = -1) const;
+  bool sampleLoose(Layer* layer, int x, int y, uint8_t target,
+                   double& forceX, double& forceY);
   bool sample(double x, double y, uint8_t target, int sourceBodyId,
               double& forceX, double& forceY,
               int targetNeutroniumCells = 0,

@@ -596,6 +596,8 @@ const renderStrides = Object.freeze({
         lightMs: d[F.lightMs],
         fillMs: d[F.fillMs],
         uploadMs: d[F.uploadMs],
+        forcePrepareMs: d[F.forcePrepareMs],
+        forceWakeMs: d[F.forceWakeMs],
         groundingMs: d[F.groundingMs],
         crossLayerGroundingMs: d[F.crossLayerGroundingMs],
         componentIndexMs: d[F.componentIndexMs],
@@ -607,6 +609,8 @@ const renderStrides = Object.freeze({
         gasMs: d[F.gasMs],
         reactMs: d[F.reactMs],
         tailMs: d[F.tailMs],
+        liquidRelaxMs: d[F.liquidRelaxMs],
+        liquidSurfaceMs: d[F.liquidSurfaceMs],
         layersMs: d[F.layersMs],
         crossMs: d[F.crossMs],
         phases: {},
@@ -618,6 +622,8 @@ const renderStrides = Object.freeze({
     // benches keep working after the perfSnapshot v2 expansion.
     getStepPerf() {
       const { d, F } = this.readPerf();
+      const forcePrepare = d[F.forcePrepareMs];
+      const forceWake = d[F.forceWakeMs];
       const grounding = d[F.groundingMs];
       const crossLayer = d[F.crossLayerGroundingMs];
       const assembly = d[F.assemblyUnionMs];
@@ -628,9 +634,13 @@ const renderStrides = Object.freeze({
       const react = d[F.reactMs];
       const carry = d[F.carryMs];
       const tail = d[F.tailMs];
+      const liquidRelax = d[F.liquidRelaxMs];
+      const liquidSurface = d[F.liquidSurfaceMs];
       const layers = d[F.layersMs];
       const cross = d[F.crossMs];
       return {
+        forcePrepareMs: forcePrepare,
+        forceWakeMs: forceWake,
         groundingMs: grounding,
         crossLayerGroundingMs: crossLayer,
         componentIndexMs: d[F.componentIndexMs],
@@ -642,6 +652,8 @@ const renderStrides = Object.freeze({
         gasMs: gas,
         reactMs: react,
         tailMs: tail,
+        liquidRelaxMs: liquidRelax,
+        liquidSurfaceMs: liquidSurface,
         layersMs: layers,
         crossMs: cross,
         // Legacy aggregates (acid-*, profile-shift, older baselines)

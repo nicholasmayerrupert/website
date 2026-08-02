@@ -114,6 +114,8 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_SHIFT_TRANSLATE] = e->perfShiftTranslate;
   out[PF_SHIFT_REGISTER] = e->perfShiftRegister;
   out[PF_SHIFT_FILL] = e->perfShiftFill;
+  out[PF_FORCE_PREPARE_MS] = e->perfForcePrepareMs;
+  out[PF_FORCE_WAKE_MS] = e->perfForceWakeMs;
   out[PF_GROUNDING_MS] = e->perfGroundingMs;
   out[PF_CROSS_LAYER_GROUNDING_MS] = e->perfCrossLayerGroundingMs;
   out[PF_COMPONENT_INDEX_MS] = e->perfComponentIndexMs;
@@ -125,6 +127,8 @@ EMSCRIPTEN_KEEPALIVE void engine_perf_snapshot(Engine* e, double* out) {
   out[PF_GAS_MS] = e->perfGasMs;
   out[PF_REACT_MS] = e->perfReactMs;
   out[PF_TAIL_MS] = e->perfTailMs;
+  out[PF_LIQUID_RELAX_MS] = e->perfLiquidRelaxMs;
+  out[PF_LIQUID_SURFACE_MS] = e->perfLiquidSurfaceMs;
   out[PF_LAYERS_MS] = e->perfLayersMs;
   out[PF_CROSS_MS] = e->perfCrossMs;
 }

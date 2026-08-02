@@ -105,6 +105,7 @@
     "sand:doctor": "node scripts/sand-doctor.mjs",
     "bench:eraser": "node scripts/bench-eraser.mjs",
     "bench:sand": "node scripts/bench-sand.mjs",
+    "bench:neutronium": "node scripts/bench-neutronium.mjs",
     "bench:life": "node scripts/bench-life.mjs",
     "bench:fire-plant": "node scripts/bench-fire-plant.mjs",
     "bench:sand:compare": "node scripts/bench-sand.mjs --compare bench/baseline.json",

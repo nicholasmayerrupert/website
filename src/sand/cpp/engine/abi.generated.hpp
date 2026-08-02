@@ -3,7 +3,7 @@
 #pragma once
 #include <cstdint>
 
-static const int ABI_VERSION = 27;
+static const int ABI_VERSION = 28;
 
 // playerSnapshot: id, active, x, y, vx, vy, w, h, facing, grounded, tool, aimX, aimY, health, inputSeq, alive, jumpReady, animState, animFrame, deathTicks, respawnReady, bowCharge, heldItemKind, jetpackFuel, jetpackActive, shieldHealth, shieldActive
 enum PlayerSnapshotField : int {
@@ -170,7 +170,7 @@ enum SoundEventField : int {
 };
 static const int SND_STRIDE = 6;
 
-// perfSnapshot: stepMs, actorMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, layersMs, crossMs
+// perfSnapshot: stepMs, actorMs, dirtyChunks, dirtyRows, dirtyCells, componentCount, componentCellCount, crossBondCount, lightMs, fillMs, uploadMs, shiftBuffers, shiftTranslate, shiftRegister, shiftFill, forcePrepareMs, forceWakeMs, groundingMs, crossLayerGroundingMs, componentIndexMs, assemblyUnionMs, carryMs, bodyMs, sandMs, liquidMs, gasMs, reactMs, tailMs, liquidRelaxMs, liquidSurfaceMs, layersMs, crossMs
 enum PerfSnapshotField : int {
   PF_STEP_MS = 0,
   PF_ACTOR_MS = 1,
@@ -187,21 +187,25 @@ enum PerfSnapshotField : int {
   PF_SHIFT_TRANSLATE = 12,
   PF_SHIFT_REGISTER = 13,
   PF_SHIFT_FILL = 14,
-  PF_GROUNDING_MS = 15,
-  PF_CROSS_LAYER_GROUNDING_MS = 16,
-  PF_COMPONENT_INDEX_MS = 17,
-  PF_ASSEMBLY_UNION_MS = 18,
-  PF_CARRY_MS = 19,
-  PF_BODY_MS = 20,
-  PF_SAND_MS = 21,
-  PF_LIQUID_MS = 22,
-  PF_GAS_MS = 23,
-  PF_REACT_MS = 24,
-  PF_TAIL_MS = 25,
-  PF_LAYERS_MS = 26,
-  PF_CROSS_MS = 27,
+  PF_FORCE_PREPARE_MS = 15,
+  PF_FORCE_WAKE_MS = 16,
+  PF_GROUNDING_MS = 17,
+  PF_CROSS_LAYER_GROUNDING_MS = 18,
+  PF_COMPONENT_INDEX_MS = 19,
+  PF_ASSEMBLY_UNION_MS = 20,
+  PF_CARRY_MS = 21,
+  PF_BODY_MS = 22,
+  PF_SAND_MS = 23,
+  PF_LIQUID_MS = 24,
+  PF_GAS_MS = 25,
+  PF_REACT_MS = 26,
+  PF_TAIL_MS = 27,
+  PF_LIQUID_RELAX_MS = 28,
+  PF_LIQUID_SURFACE_MS = 29,
+  PF_LAYERS_MS = 30,
+  PF_CROSS_MS = 31,
 };
-static const int PF_STRIDE = 28;
+static const int PF_STRIDE = 32;
 
 // missionSnapshot: revision, missionId, planetId, phase, objectiveCount, threatLevel, extractionX, extractionY, elapsedTicks, recoveredWeaponMask
 enum MissionSnapshotField : int {

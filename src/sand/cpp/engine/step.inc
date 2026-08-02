@@ -137,11 +137,15 @@
     std::swap(L->grid, L->next);
     std::swap(L->fallSpeed, L->nextFallSpeed);
     std::swap(L->liquidVel, L->nextLiquidVel);
+    double tRelax = emscripten_get_now();
     if (L->bodies.size() >= R_DENSE_RIGID_CARGO_BODIES
         || (tick & 1) == 0)
       relaxLiquidGaps();
+    perfLiquidRelaxMs += emscripten_get_now() - tRelax;
     if (gravityCellStep && tick % 3 == 0) separateLooseByDensity();
+    double tSurface = emscripten_get_now();
     levelLiquidSurfaces();
+    perfLiquidSurfaceMs += emscripten_get_now() - tSurface;
     applySideSinks();
     perfTailMs += emscripten_get_now() - tT;
     audio.flushRegionalPass();
@@ -166,7 +170,10 @@
   bool stepWorld() {
     if (storageRole == ESR_PRESENTATION) return false;
     double t0 = emscripten_get_now();
+    perfForceWakeMs = 0;
+    double tForce = emscripten_get_now();
     forces.prepareWorldTick();
+    perfForcePrepareMs = emscripten_get_now() - tForce - perfForceWakeMs;
     auto retainSleepingBodySupportDirty = [&](Layer& lay) {
       if (!lay.groundDirty && !lay.groundContentDirty && !lay.looseGroundDirty) return;
       for (Body* b : lay.bodies) if (b->jointRole != 2 && !b->awake) {
@@ -186,7 +193,8 @@
     perfGroundingMs = perfCrossLayerGroundingMs = perfComponentIndexMs = 0;
     perfAssemblyUnionMs = perfCarryMs = perfBodyMs = 0;
     perfSandMs = perfLiquidMs = perfGasMs = 0;
-    perfReactMs = perfTailMs = perfLayersMs = perfCrossMs = 0;
+    perfReactMs = perfTailMs = perfLiquidRelaxMs = perfLiquidSurfaceMs = 0;
+    perfLayersMs = perfCrossMs = 0;
     // Cross-layer grounding: compute groundedness jointly over both layers up
     // front so solids in one layer support solids at the same cell in the other
     // (gated on bgEnabled -> single-layer scenes stay byte-identical). Each

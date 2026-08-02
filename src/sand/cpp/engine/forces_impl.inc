@@ -86,7 +86,8 @@ void ForceSystem::addNeutroniumEmitters(
                             | FORCE_RIGID | FORCE_GAS | FORCE_ACTOR;
   auto addCluster = [&](double x, double y, int cellCount, int sourceBodyId,
                         int sourceBodyLayer, int sourceNeutroniumCells,
-                        size_t pointStart, float minX, float minY,
+                        bool dynamicGeometry, size_t pointStart,
+                        float minX, float minY,
                         float maxX, float maxY) {
     if (cellCount <= 0) return -1;
     found = true;
@@ -107,11 +108,23 @@ void ForceSystem::addNeutroniumEmitters(
     emitter.sourceBodyId = sourceBodyId;
     emitter.sourceBodyLayer = sourceBodyLayer;
     emitter.neutroniumCells = sourceNeutroniumCells;
+    emitter.dynamicGeometry = dynamicGeometry;
     emitter.geometryMinX = minX;
     emitter.geometryMinY = minY;
     emitter.geometryMaxX = maxX;
     emitter.geometryMaxY = maxY;
     emitter.nearestNeutronium = true;
+    uint64_t geometryRevision = 1469598103934665603ull;
+    for (size_t i = pointStart; i < state.neutroniumPoints.size(); i++) {
+      uint32_t xBits = 0, yBits = 0;
+      memcpy(&xBits, &state.neutroniumPoints[i].x, sizeof(xBits));
+      memcpy(&yBits, &state.neutroniumPoints[i].y, sizeof(yBits));
+      geometryRevision ^= xBits;
+      geometryRevision *= 1099511628211ull;
+      geometryRevision ^= yBits;
+      geometryRevision *= 1099511628211ull;
+    }
+    emitter.geometryRevision = geometryRevision;
     int emitterIndex = (int)state.emitters.size();
     addEmitter(state, emitter);
     if (emitterIndex >= (int)state.emitters.size()) return -1;
@@ -143,8 +156,8 @@ void ForceSystem::addNeutroniumEmitters(
       count++;
     }
     if (count > 0)
-      addCluster(sumX / count, sumY / count, count, -1, -1, count, pointStart,
-                 minX, minY, maxX, maxY);
+      addCluster(sumX / count, sumY / count, count, -1, -1, count, false,
+                 pointStart, minX, minY, maxX, maxY);
   }
 
   for (Body* body : layer->bodies) {
@@ -182,11 +195,8 @@ void ForceSystem::addNeutroniumEmitters(
         ? body->jointPeer : body;
       int physicalLayer = body->jointRole == 2 ? 0 : layerIndex(layer);
       addCluster(sumX / count, sumY / count, count, physicalBody->id,
-                 physicalLayer, bodyNeutroniumCellCount(physicalBody), pointStart,
-                 minX, minY, maxX, maxY);
-      E.fg.forceWakePending = E.bg.forceWakePending = true;
-      looseCoverageValid[0] = looseCoverageValid[1] = false;
-      looseTangentialBalanced[0] = looseTangentialBalanced[1] = false;
+                 physicalLayer, bodyNeutroniumCellCount(physicalBody),
+                 physicalBody->awake, pointStart, minX, minY, maxX, maxY);
     }
   }
   layer->forceSourcePresent = found;
@@ -211,16 +221,126 @@ bool ForceSystem::binAffectsLayer(
   return false;
 }
 
-void ForceSystem::wakeAffectedTargets(Layer* layer) {
+bool ForceSystem::binAffectsLooseLayer(
+    const LayerState& state, int bin, uint8_t targetLayer) const {
+  if (bin < 0 || bin >= (int)state.binHeads.size()) return false;
+  constexpr uint8_t looseTargets = FORCE_POWDER | FORCE_LIQUID | FORCE_GAS;
+  int link = state.binHeads[bin];
+  while (link >= 0) {
+    const ForceEmitter& emitter = state.emitters[state.binLinks[link].emitter];
+    if ((emitter.layerTargets & targetLayer)
+        && (emitter.targets & looseTargets))
+      return true;
+    link = state.binLinks[link].next;
+  }
+  return false;
+}
+
+uint64_t ForceSystem::forceBinSignature(
+    int bin, uint8_t targetLayer) const {
+  uint64_t hash = 1469598103934665603ull;
+  bool any = false;
+  auto mixBytes = [&](const void* data, size_t length) {
+    const uint8_t* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < length; i++) {
+      hash ^= bytes[i];
+      hash *= 1099511628211ull;
+    }
+  };
+  for (int sourceLayer = 0; sourceLayer < 2; sourceLayer++) {
+    const LayerState& state = states[sourceLayer];
+    if (bin < 0 || bin >= (int)state.binHeads.size()) continue;
+    int link = state.binHeads[bin];
+    while (link >= 0) {
+      const ForceEmitter& emitter = state.emitters[state.binLinks[link].emitter];
+      link = state.binLinks[link].next;
+      if (!(emitter.layerTargets & targetLayer)) continue;
+      any = true;
+      mixBytes(&sourceLayer, sizeof(sourceLayer));
+      mixBytes(&emitter.x, sizeof(emitter.x));
+      mixBytes(&emitter.y, sizeof(emitter.y));
+      mixBytes(&emitter.radius, sizeof(emitter.radius));
+      mixBytes(&emitter.strength, sizeof(emitter.strength));
+      mixBytes(&emitter.geometryMinX, sizeof(emitter.geometryMinX));
+      mixBytes(&emitter.geometryMinY, sizeof(emitter.geometryMinY));
+      mixBytes(&emitter.geometryMaxX, sizeof(emitter.geometryMaxX));
+      mixBytes(&emitter.geometryMaxY, sizeof(emitter.geometryMaxY));
+      mixBytes(&emitter.directionX, sizeof(emitter.directionX));
+      mixBytes(&emitter.directionY, sizeof(emitter.directionY));
+      mixBytes(&emitter.kind, sizeof(emitter.kind));
+      mixBytes(&emitter.targets, sizeof(emitter.targets));
+      mixBytes(&emitter.repelTargets, sizeof(emitter.repelTargets));
+      mixBytes(&emitter.layerTargets, sizeof(emitter.layerTargets));
+      mixBytes(&emitter.sourceBodyId, sizeof(emitter.sourceBodyId));
+      mixBytes(&emitter.sourceBodyLayer, sizeof(emitter.sourceBodyLayer));
+      mixBytes(&emitter.neutroniumCells, sizeof(emitter.neutroniumCells));
+      mixBytes(&emitter.geometryRevision, sizeof(emitter.geometryRevision));
+      mixBytes(&emitter.nearestNeutronium, sizeof(emitter.nearestNeutronium));
+    }
+  }
+  return any ? hash : 0;
+}
+
+void ForceSystem::prepareLooseCachesAndDirtyBins() {
+  looseCacheSerial++;
+  if (looseCacheSerial == 0) {
+    looseCacheSerial = 1;
+    for (LooseForceCache& cache : looseForceCaches)
+      for (CachedLooseForce& entry : cache.cells) entry.serial = 0;
+  }
+  int binCount = E.chunkCols * E.chunkRows;
+  for (int targetLayer = 0; targetLayer < 2; targetLayer++) {
+    uint8_t targetBit = targetLayer == 0
+      ? FORCE_LAYER_FOREGROUND : FORCE_LAYER_BACKGROUND;
+    currentBinSignatures[targetLayer].assign(binCount, 0);
+    changedBins[targetLayer].assign(binCount, 0);
+    LooseForceCache& cache = looseForceCaches[targetLayer];
+    cache.binOffsets.assign(binCount, -1);
+    dynamicField[targetLayer] = false;
+    for (const LayerState& state : states) {
+      for (const ForceEmitter& emitter : state.emitters) {
+        if ((emitter.layerTargets & targetBit) && emitter.dynamicGeometry)
+          dynamicField[targetLayer] = true;
+      }
+    }
+    int cacheBinCount = 0;
+    for (int bin = 0; bin < binCount; bin++) {
+      uint64_t signature = forceBinSignature(bin, targetBit);
+      currentBinSignatures[targetLayer][bin] = signature;
+      uint64_t previous = bin < (int)previousBinSignatures[targetLayer].size()
+        ? previousBinSignatures[targetLayer][bin] : 0;
+      if (signature != previous) {
+        changedBins[targetLayer][bin] = 1;
+      }
+      if (binAffectsLooseLayer(states[0], bin, targetBit)
+          || binAffectsLooseLayer(states[1], bin, targetBit)) {
+        cache.binOffsets[bin] = cacheBinCount * CHUNK_SIZE * CHUNK_SIZE;
+        cacheBinCount++;
+      }
+    }
+    cache.cells.resize(
+      (size_t)cacheBinCount * CHUNK_SIZE * CHUNK_SIZE);
+    previousBinSignatures[targetLayer] = currentBinSignatures[targetLayer];
+  }
+}
+
+void ForceSystem::wakeAffectedTargets(
+    Layer* layer, const std::vector<uint8_t>* bins,
+    bool updateCoverage, bool wakeReleased) {
+  double wakeStart = emscripten_get_now();
   int index = layerIndex(layer);
   std::array<double, 256>& minForce = looseMinForce[index];
-  minForce.fill(1e30);
-  looseQuadrantCounts.fill(0);
+  if (updateCoverage) {
+    minForce.fill(1e30);
+    looseQuadrantCounts.fill(0);
+  }
   uint8_t targetLayer = layerBit(layer);
   int binCount = E.chunkCols * E.chunkRows;
   for (int bin = 0; bin < binCount; bin++) {
-    if (!binAffectsLayer(states[0], bin, targetLayer)
-        && !binAffectsLayer(states[1], bin, targetLayer))
+    bool selected = bins ? bin < (int)bins->size() && (*bins)[bin]
+      : binAffectsLayer(states[0], bin, targetLayer)
+        || binAffectsLayer(states[1], bin, targetLayer);
+    if (!selected)
       continue;
     int chunkX = bin % E.chunkCols, chunkY = bin / E.chunkCols;
     int x0 = chunkX * CHUNK_SIZE;
@@ -236,14 +356,15 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
                        : E.isGasMaterial(material) ? FORCE_GAS : 0;
         if (!target) continue;
         double forceX, forceY;
-        if (!sampleLayer(layer, x + 0.5, y + 0.5, target, -1,
-                         forceX, forceY))
-          continue;
-        double magnitude = std::hypot(forceX, forceY);
-        if (magnitude < minForce[material]) minForce[material] = magnitude;
-        if (target != FORCE_GAS) {
-          int quadrant = (forceX < 0 ? 1 : 0) | (forceY < 0 ? 2 : 0);
-          looseQuadrantCounts[material * 4 + quadrant]++;
+        bool active = sampleLoose(layer, x, y, target, forceX, forceY);
+        if (!active && !wakeReleased) continue;
+        if (active && updateCoverage) {
+          double magnitude = std::hypot(forceX, forceY);
+          if (magnitude < minForce[material]) minForce[material] = magnitude;
+          if (target != FORCE_GAS) {
+            int quadrant = (forceX < 0 ? 1 : 0) | (forceY < 0 ? 2 : 0);
+            looseQuadrantCounts[material * 4 + quadrant]++;
+          }
         }
         if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
         if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
@@ -251,19 +372,30 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
     }
   }
   for (Body* body : layer->bodies) {
-    if (body->jointRole == 2) continue;
-    double forceX, forceY;
-    if (!sampleLayer(layer, body->px, body->py, FORCE_RIGID, body->id,
-                     forceX, forceY))
-      continue;
+    // Awake bodies already keep the layer scheduled and are sampled once in
+    // applyBodyForces. This pass only schedules sleeping bodies reached by a
+    // changed or newly rebuilt field.
+    if (body->jointRole == 2 || body->awake) continue;
     int x = (int)std::lround(body->px), y = (int)std::lround(body->py);
     if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) continue;
+    if (bins) {
+      int bin = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
+      if (bin < 0 || bin >= (int)bins->size() || !(*bins)[bin]) continue;
+    }
+    double forceX, forceY;
+    bool active = sampleLayer(layer, body->px, body->py, FORCE_RIGID,
+                              body->id, forceX, forceY);
+    if (!active && !wakeReleased) continue;
     if (x < layer->rowMarkMin[y]) layer->rowMarkMin[y] = x;
     if (x > layer->rowMarkMax[y]) layer->rowMarkMax[y] = x;
   }
   // Pressure-driven tangential flow stays enabled while a material's force
   // quadrants become more even. A balanced distribution, or 64 scans without
   // improved coverage, parks the tangent path so blocked static scenes sleep.
+  if (!updateCoverage) {
+    E.perfForceWakeMs += emscripten_get_now() - wakeStart;
+    return;
+  }
   bool hasUnbalancedMaterial = false;
   bool coverageChanged = false;
   bool coverageImproved = false;
@@ -294,21 +426,26 @@ void ForceSystem::wakeAffectedTargets(Layer* layer) {
       hasUnbalancedMaterial = true;
   }
   bool coverageReset = !looseCoverageValid[index] || coverageChanged;
+  int elapsed = looseCoverageTick[index] < 0
+    ? 1 : imax(1, E.tick - looseCoverageTick[index]);
+  looseCoverageTick[index] = E.tick;
   if (coverageReset) {
     looseForceAge[index] = 0;
   } else {
-    looseForceAge[index] = (uint16_t)imin(65535, looseForceAge[index] + 1);
+    looseForceAge[index] = (uint16_t)imin(
+      65535, looseForceAge[index] + elapsed);
   }
   if (coverageReset || coverageImproved) {
     looseCoverageValid[index] = true;
     looseCoverageStagnantTicks[index] = 0;
   } else {
     looseCoverageStagnantTicks[index] = (uint8_t)imin(
-      255, looseCoverageStagnantTicks[index] + 1);
+      255, looseCoverageStagnantTicks[index] + elapsed);
   }
   static constexpr int COVERAGE_STAGNANT_TICKS = 64;
   looseTangentialBalanced[index] = !hasUnbalancedMaterial
     || looseCoverageStagnantTicks[index] >= COVERAGE_STAGNANT_TICKS;
+  E.perfForceWakeMs += emscripten_get_now() - wakeStart;
 }
 
 void ForceSystem::buildBins(LayerState& state) {
@@ -513,38 +650,18 @@ void ForceSystem::prepareLayer(Layer* layer) {
   int index = layerIndex(layer);
   LayerState& state = states[index];
   if (!layer->forceSourcePresent && queued[index].empty()) {
-    if (!state.emitters.empty()) {
-      state.emitters.clear();
-      state.neutroniumPoints.clear();
-      state.binHeads.clear();
-      state.binLinks.clear();
-      // Releasing the final field must wake held loose material so ordinary
-      // gravity can resume. Source removal is rare, so one full-layer wake is
-      // cheaper and safer than retaining a second copy of the old force bins.
-      for (Layer* target : {&E.fg, &E.bg}) {
-        for (int y = 0; y < E.rows; y++) {
-          target->rowMarkMin[y] = 0;
-          target->rowMarkMax[y] = E.cols - 1;
-        }
-      }
-    }
+    state.emitters.clear();
+    state.neutroniumPoints.clear();
+    state.binHeads.clear();
+    state.binLinks.clear();
     layer->forceActive = false;
     return;
   }
-  bool hadEmitters = !state.emitters.empty();
   state.emitters.clear();
   state.neutroniumPoints.clear();
   for (const ForceEmitter& emitter : queued[index]) addEmitter(state, emitter);
   queued[index].clear();
   addNeutroniumEmitters(layer, state);
-  if (hadEmitters && state.emitters.empty()) {
-    for (Layer* target : {&E.fg, &E.bg}) {
-      for (int y = 0; y < E.rows; y++) {
-        target->rowMarkMin[y] = 0;
-        target->rowMarkMax[y] = E.cols - 1;
-      }
-    }
-  }
   buildBins(state);
 }
 
@@ -559,12 +676,19 @@ void ForceSystem::prepareWorldTick() {
     states[1].binLinks.clear();
   }
   buildNearestNeutroniumField();
+  prepareLooseCachesAndDirtyBins();
+  bool wakeForeground = E.fg.forceWakePending;
+  bool wakeBackground = E.bg.forceWakePending;
+  E.fg.forceWakePending = E.bg.forceWakePending = false;
   if (states[0].emitters.empty() && states[1].emitters.empty()) {
     E.fg.forceActive = E.bg.forceActive = false;
-    E.fg.forceWakePending = E.bg.forceWakePending = false;
+    wakeAffectedTargets(&E.fg, &changedBins[0], false, true);
+    if (E.bgEnabled)
+      wakeAffectedTargets(&E.bg, &changedBins[1], false, true);
     looseCoverageValid[0] = looseCoverageValid[1] = false;
     looseCoverageStagnantTicks[0] = looseCoverageStagnantTicks[1] = 0;
     looseForceAge[0] = looseForceAge[1] = 0;
+    looseCoverageTick[0] = looseCoverageTick[1] = -1;
     looseTangentialBalanced[0] = looseTangentialBalanced[1] = false;
     return;
   }
@@ -573,11 +697,23 @@ void ForceSystem::prepareWorldTick() {
   E.bg.forceActive = E.bgEnabled
                   && (stateAffectsLayer(states[0], FORCE_LAYER_BACKGROUND)
                       || stateAffectsLayer(states[1], FORCE_LAYER_BACKGROUND));
-  bool wakeForeground = E.fg.forceWakePending;
-  bool wakeBackground = E.bg.forceWakePending;
-  E.fg.forceWakePending = E.bg.forceWakePending = false;
-  if (E.fg.forceActive && wakeForeground) wakeAffectedTargets(&E.fg);
-  if (E.bg.forceActive && wakeBackground) wakeAffectedTargets(&E.bg);
+  static constexpr int COVERAGE_SCAN_CADENCE = 8;
+  auto prepareTarget = [&](Layer* layer, int index, bool fullWake) {
+    if (!layer->forceActive) {
+      wakeAffectedTargets(layer, &changedBins[index], false, true);
+      return;
+    }
+    bool coverageDue = looseCoverageTick[index] < 0
+      || E.tick - looseCoverageTick[index] >= COVERAGE_SCAN_CADENCE;
+    if (fullWake || coverageDue) {
+      wakeAffectedTargets(layer, nullptr, true, false);
+    }
+    // A changed bin can contain both the new field and cells just outside a
+    // swept/contracted old field. Revisit only those bins to release the latter.
+    wakeAffectedTargets(layer, &changedBins[index], false, true);
+  };
+  prepareTarget(&E.fg, 0, wakeForeground);
+  if (E.bgEnabled) prepareTarget(&E.bg, 1, wakeBackground);
 }
 
 bool ForceSystem::sampleState(
@@ -712,6 +848,41 @@ bool ForceSystem::sampleLayer(
   return forceX * forceX + forceY * forceY > 1e-12;
 }
 
+bool ForceSystem::sampleLoose(
+    Layer* layer, int x, int y, uint8_t target,
+    double& forceX, double& forceY) {
+  if (x < 0 || x >= E.cols || y < 0 || y >= E.rows) {
+    forceX = forceY = 0;
+    return false;
+  }
+  LooseForceCache& cache = looseForceCaches[layerIndex(layer)];
+  int bin = (y >> CHUNK_SHIFT) * E.chunkCols + (x >> CHUNK_SHIFT);
+  int offset = bin >= 0 && bin < (int)cache.binOffsets.size()
+    ? cache.binOffsets[bin] : -1;
+  if (offset < 0) {
+    // Every loose-target emitter is linked across its complete bounded reach.
+    // An unmapped bin therefore proves that no loose force can affect this cell.
+    forceX = forceY = 0;
+    return false;
+  }
+  int localX = x - ((x >> CHUNK_SHIFT) << CHUNK_SHIFT);
+  int localY = y - ((y >> CHUNK_SHIFT) << CHUNK_SHIFT);
+  CachedLooseForce& entry = cache.cells[
+    offset + localY * CHUNK_SIZE + localX];
+  if (entry.serial == looseCacheSerial && entry.target == target) {
+    forceX = entry.x;
+    forceY = entry.y;
+    return entry.active;
+  }
+  entry.active = sampleLayer(layer, x + 0.5, y + 0.5, target, -1,
+                             entry.x, entry.y);
+  entry.serial = looseCacheSerial;
+  entry.target = target;
+  forceX = entry.x;
+  forceY = entry.y;
+  return entry.active;
+}
+
 bool ForceSystem::sample(
     double x, double y, uint8_t target, int sourceBodyId,
     double& forceX, double& forceY,
@@ -749,12 +920,11 @@ int ForceSystem::looseMoveCandidates(
 }
 
 bool ForceSystem::overridesGravity(
-    int x, int y, uint8_t material) const {
+    int x, int y, uint8_t material) {
   uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
                  : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
   double forceX, forceY;
-  if (!sampleLayer(E.L, x + 0.5, y + 0.5, target, -1,
-                   forceX, forceY))
+  if (!sampleLoose(E.L, x, y, target, forceX, forceY))
     return false;
   constexpr double CELL_STEP_FORCE = 0.12;
   return forceX * forceX + forceY * forceY
@@ -771,7 +941,7 @@ void ForceSystem::applyBodyForces() {
                 forceX, forceY, neutroniumCells,
                 neutroniumCells > 0 ? layerIndex(E.L) : -1))
       continue;
-    E.rigid.wakeBody(body);
+    if (!body->awake) E.rigid.wakeBody(body);
     body->vx += forceX;
     body->vy += forceY;
   }
@@ -782,7 +952,7 @@ bool ForceSystem::tryMoveLoose(
   uint8_t target = E.isLiquidMaterial(material) ? FORCE_LIQUID
                  : E.isGasMaterial(material) ? FORCE_GAS : FORCE_POWDER;
   double forceX, forceY;
-  if (!sample(x + 0.5, y + 0.5, target, -1, forceX, forceY)) return false;
+  if (!sampleLoose(E.L, x, y, target, forceX, forceY)) return false;
   double magnitude = std::hypot(forceX, forceY);
   constexpr double CELL_STEP_FORCE = 0.12;
   int forceLayer = layerIndex(E.L);
@@ -790,7 +960,8 @@ bool ForceSystem::tryMoveLoose(
   // static field has processed an unchanged material population long enough,
   // strong-field non-gas cells park so the layer can become inactive.
   static constexpr int FORCE_EQUILIBRIUM_TICKS = 768;
-  if (target != FORCE_GAS && magnitude >= CELL_STEP_FORCE
+  if (target != FORCE_GAS && !dynamicField[forceLayer]
+      && magnitude >= CELL_STEP_FORCE
       && looseForceAge[forceLayer] >= FORCE_EQUILIBRIUM_TICKS) {
     E.L->next[k] = material;
     E.L->nextFallSpeed[k] = 0;
@@ -931,7 +1102,7 @@ bool ForceSystem::tryMoveLoose(
     // Transient gases still need future ticks for their normal decay. Methane
     // is persistent and may sleep once the repulsive field has packed it.
     if (E.isGasMaterial(material) && material != METHANE)
-      E.L->forceWakePending = true;
+      E.markCellIndex(k);
     return true;
   }
 
@@ -939,7 +1110,7 @@ bool ForceSystem::tryMoveLoose(
     E.L->next[k] = material;
     E.L->nextFallSpeed[k] = 0;
     E.L->nextLiquidVel[k] = 0;
-    E.L->forceWakePending = true;
+    E.markCellIndex(k);
     return true;
   }
 
@@ -948,7 +1119,7 @@ bool ForceSystem::tryMoveLoose(
                  ^ ((uint32_t)E.tick * 0x9e3779b9u);
   if (whash2(phase, E.L->worldOffsetX + x,
              E.L->worldOffsetY + y) >= chance) {
-    E.L->forceWakePending = true;
+    E.markCellIndex(k);
     return false;
   }
 
@@ -957,6 +1128,5 @@ bool ForceSystem::tryMoveLoose(
     && E.tick - blastGas <= ExplosivesSystem::TNT_FUSE_TICKS;
   E.moveMaterialInto(k, destination, material);
   if (recentBlastFire) E.L->blastGasStamp[destination] = blastGas;
-  E.L->forceWakePending = true;
   return true;
 }
